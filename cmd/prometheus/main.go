@@ -444,6 +444,9 @@ func main() {
 	a.Flag("web.enable-admin-api", "Enable API endpoints for admin control actions.").
 		Default("false").BoolVar(&cfg.web.EnableAdminAPI)
 
+	a.Flag("web.enable-target-scrape-proxy", "Enable the /api/v1/targets/scrape endpoint to proxy-scrape active targets through Prometheus.").
+		Default("false").BoolVar(&cfg.web.EnableTargetScrapeProxy)
+
 	// TODO(bwplotka): Consider allowing those remote receive flags to be changed in config.
 	// See https://github.com/prometheus/prometheus/issues/14410
 	a.Flag("web.enable-remote-write-receiver", "Enable API endpoint accepting remote write requests.").

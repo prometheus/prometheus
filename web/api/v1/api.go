@@ -264,6 +264,11 @@ type API struct {
 	parser parser.Parser
 }
 
+const (
+	targetScrapeProxyDefaultMaxBytes = 10 * 1024 * 1024
+	targetScrapeProxyMaxTimeout      = time.Minute
+)
+
 // NewAPI returns an initialized API type.
 func NewAPI(
 	qe promql.QueryEngine,
@@ -447,6 +452,7 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/scrape_pools", wrap(api.scrapePools))
 	r.Get("/targets", wrap(api.targets))
+	r.Get("/targets/scrape", api.ready(api.targetScrapeProxy))
 	r.Get("/targets/metadata", wrap(api.targetMetadata))
 	r.Get("/targets/relabel_steps", wrap(api.targetRelabelSteps))
 	r.Get("/alertmanagers", wrapAgent(api.alertmanagers))
@@ -482,6 +488,88 @@ func (api *API) Register(r *route.Router) {
 
 	// OpenAPI endpoint.
 	r.Get("/openapi.yaml", api.ready(api.openAPIBuilder.ServeOpenAPI))
+}
+
+func (api *API) targetScrapeProxy(w http.ResponseWriter, r *http.Request) {
+	httputil.SetCORS(w, api.CORSOrigin, r)
+
+	enabled := false
+	if api.featureRegistry != nil {
+		if cat, ok := api.featureRegistry.Get()[features.API]; ok {
+			enabled = cat["target_scrape_proxy"]
+		}
+	}
+	if !enabled {
+		http.Error(w, "targets scrape proxy is disabled; enable with --web.enable-target-scrape-proxy", http.StatusNotFound)
+		return
+	}
+
+	scrapePool := r.URL.Query().Get("scrapePool")
+	if scrapePool == "" {
+		http.Error(w, "no scrapePool parameter provided", http.StatusBadRequest)
+		return
+	}
+	scrapeURL := r.URL.Query().Get("scrapeUrl")
+	if scrapeURL == "" {
+		http.Error(w, "no scrapeUrl parameter provided", http.StatusBadRequest)
+		return
+	}
+
+	timeout := targetScrapeProxyMaxTimeout
+	if to := r.URL.Query().Get("timeout"); to != "" {
+		d, err := parseDuration(to)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid timeout parameter: %v", err), http.StatusBadRequest)
+			return
+		}
+		if d <= 0 {
+			http.Error(w, "timeout must be positive", http.StatusBadRequest)
+			return
+		}
+		if d < timeout {
+			timeout = d
+		}
+	}
+
+	maxBytes := int64(targetScrapeProxyDefaultMaxBytes)
+	if s := r.URL.Query().Get("maxBytes"); s != "" {
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid maxBytes parameter: %v", err), http.StatusBadRequest)
+			return
+		}
+		if n <= 0 {
+			http.Error(w, "maxBytes must be positive", http.StatusBadRequest)
+			return
+		}
+		if n < maxBytes {
+			maxBytes = n
+		}
+	}
+
+	tr := api.targetRetriever(r.Context())
+	sm, ok := tr.(*scrape.Manager)
+	if !ok || sm == nil {
+		http.Error(w, "scrape manager unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	ct, body, err := sm.ScrapeActiveTarget(ctx, scrapePool, scrapeURL, maxBytes, timeout)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+
+	if ct == "" {
+		ct = "text/plain; charset=utf-8"
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
 }
 
 type QueryData struct {

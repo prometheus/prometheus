@@ -271,6 +271,40 @@ func (*OpenAPIBuilder) targetsPath() *v3.PathItem {
 	}
 }
 
+func (*OpenAPIBuilder) targetsScrapePath() *v3.PathItem {
+	params := []*v3.Parameter{
+		queryParamWithExample("scrapePool", "Name of the scrape pool.", true, stringSchema(), []example{{"example", "kubernetes-pods"}}),
+		queryParamWithExample("scrapeUrl", "Exact scrape URL of an active target to proxy-scrape.", true, stringSchema(), []example{{"example", "http://10.0.0.42:8080/metrics"}}),
+		queryParamWithExample("timeout", "Optional. Upper-bounded by 1 minute. Lower values apply stricter timeouts.", false, stringSchema(), []example{{"example", "15s"}}),
+		queryParamWithExample("maxBytes", "Optional. Upper-bounded by 10MB. Lower values apply stricter response size limits.", false, stringSchema(), []example{{"example", "1048576"}}),
+	}
+
+	codes := orderedmap.New[string, *v3.Response]()
+	content := orderedmap.New[string, *v3.MediaType]()
+	content.Set("text/plain", &v3.MediaType{
+		Schema: base.CreateSchemaProxy(&base.Schema{
+			Type:        []string{"string"},
+			Description: "Raw metrics scrape response as plain text.",
+		}),
+	})
+	codes.Set("200", &v3.Response{
+		Description: "Scrape response retrieved successfully.",
+		Content:     content,
+	})
+	codes.Set("default", errorResponse())
+
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "targets-scrape",
+			Summary:     "Proxy-scrape an active target",
+			Description: "Scrape an active target through Prometheus. This endpoint is disabled by default and must be enabled explicitly.",
+			Tags:        []string{"targets"},
+			Parameters:  params,
+			Responses:   &v3.Responses{Codes: codes},
+		},
+	}
+}
+
 func (*OpenAPIBuilder) targetsMetadataPath() *v3.PathItem {
 	params := []*v3.Parameter{
 		queryParamWithExample("match_target", "Label selector to filter targets.", false, stringSchema(), []example{{"example", "{job=\"prometheus\"}"}}),
