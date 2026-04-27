@@ -15,6 +15,12 @@ package kahansum
 
 import "math"
 
+// isInf reports whether f is positive or negative infinity.
+// It avoids math.IsInf to prevent inflating Inc's inlining cost.
+func isInf(f float64) bool {
+	return f > math.MaxFloat64 || f < -math.MaxFloat64
+}
+
 // Inc performs addition of two floating-point numbers using the Kahan summation algorithm.
 func Inc(inc, sum, c float64) (newSum, newC float64) {
 	// We've seen Kahan summation return less accurate results when Inc function is
@@ -33,7 +39,7 @@ func Inc(inc, sum, c float64) (newSum, newC float64) {
 
 	t := sum + inc
 	switch {
-	case math.IsInf(t, 0):
+	case isInf(t):
 		c = 0
 
 		// Using Neumaier improvement, swap if next term larger than sum.
