@@ -150,6 +150,7 @@ var (
 )
 
 func TestHistogramFixtureValid(t *testing.T) {
+	t.Parallel()
 	for _, ts := range writeRequestFixture.Timeseries {
 		for _, h := range ts.Histograms {
 			if h.IsFloatHistogram() {
@@ -171,6 +172,7 @@ func TestHistogramFixtureValid(t *testing.T) {
 }
 
 func TestWriteV2RequestFixture(t *testing.T) {
+	t.Parallel()
 	// Generate dynamically writeV2RequestFixture, reusing v1 fixture elements.
 	st := writev2.NewSymbolTable()
 	b := labels.NewScratchBuilder(0)
@@ -219,6 +221,7 @@ func TestWriteV2RequestFixture(t *testing.T) {
 }
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input       []prompb.Label
 		expectedErr string
@@ -299,6 +302,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
+			t.Parallel()
 			err := validateLabelsAndMetricName(test.input)
 			if test.expectedErr != "" {
 				require.EqualError(t, err, test.expectedErr)
@@ -310,6 +314,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 }
 
 func TestConcreteSeriesSet(t *testing.T) {
+	t.Parallel()
 	series1 := &concreteSeries{
 		labels: labels.FromStrings("foo", "bar"),
 		floats: []prompb.Sample{{Value: 1, Timestamp: 2}},
@@ -329,6 +334,7 @@ func TestConcreteSeriesSet(t *testing.T) {
 }
 
 func TestConcreteSeriesClonesLabels(t *testing.T) {
+	t.Parallel()
 	lbls := labels.FromStrings("a", "b", "c", "d")
 	cs := concreteSeries{
 		labels: lbls,
@@ -344,6 +350,7 @@ func TestConcreteSeriesClonesLabels(t *testing.T) {
 }
 
 func TestConcreteSeriesIterator_FloatSamples(t *testing.T) {
+	t.Parallel()
 	series := &concreteSeries{
 		labels: labels.FromStrings("foo", "bar"),
 		floats: []prompb.Sample{
@@ -393,6 +400,7 @@ func TestConcreteSeriesIterator_FloatSamples(t *testing.T) {
 }
 
 func TestConcreteSeriesIterator_HistogramSamples(t *testing.T) {
+	t.Parallel()
 	histograms := tsdbutil.GenerateTestHistograms(5)
 	histProtos := make([]prompb.Histogram, len(histograms))
 	for i, h := range histograms {
@@ -448,6 +456,7 @@ func TestConcreteSeriesIterator_HistogramSamples(t *testing.T) {
 }
 
 func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
+	t.Parallel()
 	// Series starts as histograms, then transitions to floats at ts=8 (with an overlap from ts=8 to ts=10), then
 	// transitions back to histograms at ts=16.
 	histograms := tsdbutil.GenerateTestHistograms(15)
@@ -552,8 +561,10 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 }
 
 func TestConcreteSeriesIterator_HistogramSamplesWithInvalidSchema(t *testing.T) {
+	t.Parallel()
 	for _, schema := range []int32{-100, 100} {
 		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
+			t.Parallel()
 			h := prompb.FromIntHistogram(2, &testHistogram)
 			h.Schema = schema
 			fh := prompb.FromFloatHistogram(4, testHistogram.ToFloat(nil))
@@ -597,6 +608,7 @@ func TestConcreteSeriesIterator_HistogramSamplesWithInvalidSchema(t *testing.T) 
 }
 
 func TestConcreteSeriesIterator_HistogramSamplesWithMissingBucket(t *testing.T) {
+	t.Parallel()
 	mh := testHistogram.Copy()
 	mh.PositiveSpans = []histogram.Span{{Offset: 0, Length: 2}}
 	h := prompb.FromIntHistogram(2, mh)
@@ -638,8 +650,10 @@ func TestConcreteSeriesIterator_HistogramSamplesWithMissingBucket(t *testing.T) 
 }
 
 func TestConcreteSeriesIterator_ReducesHighResolutionHistograms(t *testing.T) {
+	t.Parallel()
 	for _, schema := range []int32{9, 52} {
 		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
+			t.Parallel()
 			h := testHistogram.Copy()
 			h.Schema = schema
 			fh := h.ToFloat(nil)
@@ -666,6 +680,7 @@ func TestConcreteSeriesIterator_ReducesHighResolutionHistograms(t *testing.T) {
 }
 
 func TestFromQueryResultWithDuplicates(t *testing.T) {
+	t.Parallel()
 	ts1 := prompb.TimeSeries{
 		Labels: []prompb.Label{
 			{Name: "foo", Value: "bar"},
@@ -692,6 +707,7 @@ func TestFromQueryResultWithDuplicates(t *testing.T) {
 }
 
 func TestNegotiateResponseType(t *testing.T) {
+	t.Parallel()
 	r, err := NegotiateResponseType([]prompb.ReadRequest_ResponseType{
 		prompb.ReadRequest_STREAMED_XOR_CHUNKS,
 		prompb.ReadRequest_SAMPLES,
@@ -716,6 +732,7 @@ func TestNegotiateResponseType(t *testing.T) {
 }
 
 func TestMergeLabels(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		primary, secondary, expected []prompb.Label
 	}{
@@ -735,6 +752,7 @@ func TestMergeLabels(t *testing.T) {
 }
 
 func TestDecodeOTLPWriteRequestGzipSizeLimit(t *testing.T) {
+	t.Parallel()
 	// Build a valid OTLP request whose serialized protobuf exceeds decodeReadLimit.
 	// A metric description filled with repeated characters compresses very
 	// efficiently, so the gzip payload is small while the decompressed form is
@@ -766,6 +784,7 @@ func TestDecodeOTLPWriteRequestGzipSizeLimit(t *testing.T) {
 }
 
 func TestDecodeWriteRequest(t *testing.T) {
+	t.Parallel()
 	buf, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
@@ -775,6 +794,7 @@ func TestDecodeWriteRequest(t *testing.T) {
 }
 
 func TestDecodeWriteV2Request(t *testing.T) {
+	t.Parallel()
 	buf, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
@@ -784,6 +804,7 @@ func TestDecodeWriteV2Request(t *testing.T) {
 }
 
 func TestStreamResponse(t *testing.T) {
+	t.Parallel()
 	lbs1 := prompb.FromLabels(labels.FromStrings("instance", "localhost1", "job", "demo1"), nil)
 	lbs2 := prompb.FromLabels(labels.FromStrings("instance", "localhost2", "job", "demo2"), nil)
 	chunk := prompb.Chunk{
@@ -901,7 +922,9 @@ func (*mockChunkIterator) Err() error {
 }
 
 func TestChunkedSeriesIterator(t *testing.T) {
+	t.Parallel()
 	t.Run("happy path", func(t *testing.T) {
+		t.Parallel()
 		chks := buildTestChunks(t)
 
 		it := newChunkedSeriesIterator(chks, 2000, 12000)
@@ -991,6 +1014,7 @@ func TestChunkedSeriesIterator(t *testing.T) {
 	})
 
 	t.Run("empty chunks", func(t *testing.T) {
+		t.Parallel()
 		emptyChunks := make([]prompb.Chunk, 0)
 
 		it1 := newChunkedSeriesIterator(emptyChunks, 0, 1000)
@@ -1008,7 +1032,9 @@ func TestChunkedSeriesIterator(t *testing.T) {
 }
 
 func TestChunkedSeries(t *testing.T) {
+	t.Parallel()
 	t.Run("happy path", func(t *testing.T) {
+		t.Parallel()
 		chks := buildTestChunks(t)
 
 		s := chunkedSeries{
@@ -1036,7 +1062,9 @@ func TestChunkedSeries(t *testing.T) {
 }
 
 func TestChunkedSeriesSet(t *testing.T) {
+	t.Parallel()
 	t.Run("happy path", func(t *testing.T) {
+		t.Parallel()
 		buf := &bytes.Buffer{}
 		flusher := &mockFlusher{}
 
