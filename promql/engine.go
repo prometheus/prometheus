@@ -1882,7 +1882,7 @@ func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr
 	val, ws := ev.eval(ctx, subq)
 	// Update the parent samples stats with the subquery samples stats.
 	parentSamplesStats.UpdatePeakFromSubquery(ev.samplesStats)
-	parentSamplesStats.MergeSamplesReadFromSubquery(ev.samplesStats, 0)
+	parentSamplesStats.MergeSamplesReadFromSubquery(ev.samplesStats)
 	// Restore the parent samples stats.
 	ev.samplesStats = parentSamplesStats
 	mat := val.(Matrix)
@@ -2427,7 +2427,14 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 	case *parser.SubqueryExpr:
 		offsetMillis := durationMilliseconds(e.Offset)
 		rangeMillis := durationMilliseconds(e.Range)
-		subqEnd := ev.endTimestamp - offsetMillis
+		// Use the last actual parent evaluation timestamp rather than the
+		// raw endTimestamp so the subquery does not evaluate past the
+		// parent's range when endTimestamp is not step-aligned.
+		parentEnd := ev.endTimestamp
+		if ev.interval > 0 {
+			parentEnd = ev.startTimestamp + ((ev.endTimestamp-ev.startTimestamp)/ev.interval)*ev.interval
+		}
+		subqEnd := parentEnd - offsetMillis
 		var subqInterval, subqStart int64
 		if e.Step != 0 {
 			subqInterval = durationMilliseconds(e.Step)
@@ -2439,10 +2446,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			subqStart += subqInterval
 		}
 
-		// Always enable per-step tracking on the subquery child so that
-		// MergeSamplesReadFromSubquery can apply range-windowed attribution
-		// regardless of whether the parent tracks per-step stats.
-		subqSamplesStats := stats.NewChildWithStepTracking(true, subqStart, subqEnd, subqInterval)
+		subqSamplesStats := stats.NewChildWithStepTracking(ev.samplesStats.StepTrackingEnabled(), subqStart, subqEnd, subqInterval)
 
 		newEv := &evaluator{
 			startTimestamp:           subqStart,
@@ -2471,18 +2475,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		ev.currentSamples = newEv.currentSamples
 		ev.samplesStats.UpdatePeakFromSubquery(newEv.samplesStats)
 		ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, newEv.samplesStats.TotalSamples)
-		// Merge SamplesRead from the subquery into the parent. When neither
-		// offset nor @ modifier is used, apply range-windowed attribution so
-		// that only subquery steps inside each parent step's
-		// [parentTs-range, parentTs] window are counted, consistent with
-		// range vector selectors. With offset or @ modifier the subquery's
-		// time frame is shifted relative to the parent, so we attribute all
-		// steps without windowing.
-		effectiveRange := rangeMillis
-		if offsetMillis != 0 || e.Timestamp != nil {
-			effectiveRange = 0
-		}
-		ev.samplesStats.MergeSamplesReadFromSubquery(newEv.samplesStats, effectiveRange)
+		ev.samplesStats.MergeSamplesReadFromSubquery(newEv.samplesStats)
 		return res, ws
 	case *parser.StepInvariantExpr:
 		newEv := &evaluator{

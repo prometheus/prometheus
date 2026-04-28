@@ -1416,7 +1416,7 @@ load 10s
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
-			PeakSamples:  72,
+			PeakSamples:  69,
 			TotalSamples: 144, // 3 sample per query * 12 queries (60/5) * 4 steps
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 36,
@@ -1437,7 +1437,7 @@ load 10s
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
-			PeakSamples:  32,
+			PeakSamples:  31,
 			TotalSamples: 48, // 1 sample per query * 12 queries (60/5) * 4 steps
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 12,
@@ -1458,7 +1458,7 @@ load 10s
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
-			PeakSamples:  32,
+			PeakSamples:  31,
 			TotalSamples: 48, // 1 sample per query * 12 queries (60/5) * 4 steps
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 12,
@@ -1479,7 +1479,7 @@ load 10s
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
-			PeakSamples:  76,
+			PeakSamples:  73,
 			TotalSamples: 288, // 2 * (3 sample per query * 12 queries (60/5) * 4 steps)
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 72,
@@ -1500,7 +1500,7 @@ load 10s
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
-			PeakSamples:  72,
+			PeakSamples:  69,
 			TotalSamples: 192, // (1 sample per query * 12 queries (60/5) + 3 sample per query * 12 queries (60/5)) * 4 steps
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 48,
@@ -1653,7 +1653,7 @@ load 10s
 			Start:        time.Unix(200, 0),
 			End:          time.Unix(400, 0),
 			Interval:     30 * time.Second,
-			PeakSamples:  105,
+			PeakSamples:  99,
 			TotalSamples: 126,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				200000: 18,
@@ -1676,7 +1676,7 @@ load 10s
 			},
 		},
 
-		// Subquery with @ modifier: effectiveRange = 0, windowing disabled.
+		// Subquery with @ modifier.
 		{
 			Query:        "sum_over_time(metricWith3SampleEvery10Seconds[20s:10s] @ 200)",
 			Start:        time.Unix(250, 0),
