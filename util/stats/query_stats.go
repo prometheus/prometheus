@@ -444,6 +444,10 @@ func (qs *QuerySamples) MergeSamplesReadFromSubquery(child *QuerySamples) {
 	if qs.SamplesReadPerStep != nil {
 		numParent = len(qs.SamplesReadPerStep)
 	}
+	if numParent == 0 {
+		qs.SamplesRead += child.SamplesRead
+		return
+	}
 
 	for k := range child.SamplesReadPerStep {
 		n := child.SamplesReadPerStep[k]
@@ -456,14 +460,12 @@ func (qs *QuerySamples) MergeSamplesReadFromSubquery(child *QuerySamples) {
 		if tk > parentStart {
 			outerStep = int((tk - parentStart + parentInterval - 1) / parentInterval)
 		}
-		if numParent > 0 && outerStep >= numParent {
+		if outerStep >= numParent {
 			outerStep = numParent - 1
 		}
 
 		qs.SamplesRead += n
-		if numParent > 0 && outerStep < numParent {
-			qs.SamplesReadPerStep[outerStep] += n
-		}
+		qs.SamplesReadPerStep[outerStep] += n
 	}
 }
 
