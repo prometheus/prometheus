@@ -1926,30 +1926,42 @@ func (ev *evaluator) numSteps() int {
 // into the parent: peak and samples-read are always safe to absorb, while
 // TotalSamples should only be absorbed when the caller does not later
 // re-count the materialized matrix (e.g. evalSubquery does not absorb it).
-func (ev *evaluator) runSubquery(ctx context.Context, e *parser.SubqueryExpr) (parser.Value, *stats.QuerySamples, annotations.Annotations) {
+// subqueryTimeRange computes the start, end and step (all in milliseconds) of
+// the child evaluator used to evaluate subquery e within the context of the
+// parent evaluator ev.
+//
+// The parent end timestamp is aligned down to the parent's step grid before the
+// subquery offset is applied. A range query's outer loop only iterates up to
+// its last aligned step (start + N*interval), so when the caller supplies an
+// end timestamp that is not step-aligned the subquery must stop at that aligned
+// step too; otherwise it evaluates points the parent can never consume,
+// inflating PeakSamples and wasting work.
+func (ev *evaluator) subqueryTimeRange(e *parser.SubqueryExpr) (start, end, interval int64) {
 	offsetMillis := durationMilliseconds(e.Offset)
 	rangeMillis := durationMilliseconds(e.Range)
 
-	// Align the parent end timestamp down to the parent's step grid before
-	// applying the subquery offset, so the subquery does not evaluate past
-	// the parent's last actual evaluation point when the caller supplied
-	// an end timestamp that is not step-aligned.
 	parentEnd := ev.endTimestamp
 	if ev.interval > 0 {
 		parentEnd = ev.startTimestamp + ((ev.endTimestamp-ev.startTimestamp)/ev.interval)*ev.interval
 	}
-	subqEnd := parentEnd - offsetMillis
+	end = parentEnd - offsetMillis
 
-	var subqInterval int64
 	if e.Step != 0 {
-		subqInterval = durationMilliseconds(e.Step)
+		interval = durationMilliseconds(e.Step)
 	} else {
-		subqInterval = ev.noStepSubqueryIntervalFn(rangeMillis)
+		interval = ev.noStepSubqueryIntervalFn(rangeMillis)
 	}
-	subqStart := subqInterval * ((ev.startTimestamp - offsetMillis - rangeMillis) / subqInterval)
-	if subqStart <= (ev.startTimestamp - offsetMillis - rangeMillis) {
-		subqStart += subqInterval
+	// Start with the first timestamp after (ev.startTimestamp - offset - range)
+	// that is aligned with the step (multiple of 'interval').
+	start = interval * ((ev.startTimestamp - offsetMillis - rangeMillis) / interval)
+	if start <= (ev.startTimestamp - offsetMillis - rangeMillis) {
+		start += interval
 	}
+	return start, end, interval
+}
+
+func (ev *evaluator) runSubquery(ctx context.Context, e *parser.SubqueryExpr) (parser.Value, *stats.QuerySamples, annotations.Annotations) {
+	subqStart, subqEnd, subqInterval := ev.subqueryTimeRange(e)
 
 	// Subquery children always track per-step samples-read (independent of
 	// the parent's per-step setting) so MergeSamplesReadFromSubquery can
