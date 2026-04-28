@@ -2179,7 +2179,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 						counter++
 					}
 				}
-				var fullWindowCount, samplesReadCount int64
+				var samplesReadCount int64
 				// Evaluate the matrix selector for this series
 				// for this step, but only if this is the 1st
 				// iteration or no @ modifier has been used.
@@ -2194,18 +2194,23 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 						maxt += durationMilliseconds(ev.lookbackDelta)
 					}
 					floats, histograms, startTimestamps = ev.matrixIterSlice(it, mint, maxt, floats, histograms, startTimestamps)
-					fullWindowCount = int64(len(floats) + totalHPointSize(histograms))
 					// For subquery-derived matrices, SamplesRead was already counted
 					// inside evalSubquery via MergeSamplesReadFromSubquery; skip here
 					// to avoid double-counting the storage I/O.
 					if !matrixFromSubquery {
 						if step == 0 {
-							samplesReadCount = fullWindowCount
+							samplesReadCount = int64(len(floats) + totalHPointSize(histograms))
 						} else {
 							samplesReadCount = countSamplesAfter(floats, histograms, maxt-ev.interval)
 						}
 					}
 				}
+				// fullWindowCount reflects the matrix window consumed at this
+				// step. With an @ modifier the same window is reused across all
+				// steps, so floats/histograms persist from step 0; computing
+				// this after the conditional re-fetch handles both cases
+				// uniformly.
+				fullWindowCount := int64(len(floats) + totalHPointSize(histograms))
 				if len(floats)+len(histograms) == 0 {
 					continue
 				}
