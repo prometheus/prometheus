@@ -1413,9 +1413,35 @@ load 10s
 			},
 		},
 		{
+			// Aligned counterpart of the unaligned case below: end=216 is the
+			// last actual evaluation step when start=201, step=5. Both cases
+			// should yield identical sample stats; subqueries inside an
+			// unaligned range query must not evaluate past the parent's last
+			// aligned step.
 			Query:        "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
 			Start:        time.Unix(201, 0),
-			End:          time.Unix(220, 0),
+			End:          time.Unix(216, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  69,
+			TotalSamples: 144,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 36,
+				206000: 36,
+				211000: 36,
+				216000: 36,
+			},
+			SamplesRead: 45,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 36,
+				206000: 3,
+				211000: 3,
+				216000: 3,
+			},
+		},
+		{
+			Query:        "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0), // 4s past the last aligned step (216).
 			Interval:     5 * time.Second,
 			PeakSamples:  69,
 			TotalSamples: 144, // 3 sample per query * 12 queries (60/5) * 4 steps
@@ -1497,9 +1523,34 @@ load 10s
 			},
 		},
 		{
+			// Aligned counterpart of the unaligned case below (composite
+			// expression with two sibling subqueries). end=216 is the last
+			// aligned step when start=201, step=5. Both cases should yield
+			// identical sample stats.
 			Query:        "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith1SampleEvery10Seconds[60s:5s]))",
 			Start:        time.Unix(201, 0),
-			End:          time.Unix(220, 0),
+			End:          time.Unix(216, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  69,
+			TotalSamples: 192,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 48,
+				206000: 48,
+				211000: 48,
+				216000: 48,
+			},
+			SamplesRead: 60,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 48,
+				206000: 4,
+				211000: 4,
+				216000: 4,
+			},
+		},
+		{
+			Query:        "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith1SampleEvery10Seconds[60s:5s]))",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0), // 4s past the last aligned step (216).
 			Interval:     5 * time.Second,
 			PeakSamples:  69,
 			TotalSamples: 192, // (1 sample per query * 12 queries (60/5) + 3 sample per query * 12 queries (60/5)) * 4 steps
