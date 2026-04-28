@@ -189,6 +189,24 @@ func totalHPointSize(histograms []HPoint) int {
 	return total
 }
 
+// countSamplesAfter returns the number of sample equivalents in floats and histograms
+// with timestamp strictly after cutoff. Float samples count as 1; histogram samples
+// count via HPoint.size. Used for range-vector sample stats to count only new points per step.
+func countSamplesAfter(floats []FPoint, histograms []HPoint, cutoff int64) int64 {
+	var n int64
+	for _, f := range floats {
+		if f.T > cutoff {
+			n++
+		}
+	}
+	for _, h := range histograms {
+		if h.T > cutoff {
+			n += int64(h.size())
+		}
+	}
+	return n
+}
+
 // Sample is a single sample belonging to a metric. It represents either a float
 // sample or a histogram sample. If H is nil, it is a float sample. Otherwise,
 // it is a histogram sample.
