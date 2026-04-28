@@ -1869,22 +1869,75 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 	return mat
 }
 
+// runSubquery evaluates the given SubqueryExpr in a fresh child evaluator
+// aligned to the subquery's own step grid and returns the result along with
+// the child's samples stats. The caller decides how to merge the child stats
+// into the parent: peak and samples-read are always safe to absorb, while
+// TotalSamples should only be absorbed when the caller does not later
+// re-count the materialized matrix (e.g. evalSubquery does not absorb it).
+func (ev *evaluator) runSubquery(ctx context.Context, e *parser.SubqueryExpr) (parser.Value, *stats.QuerySamples, annotations.Annotations) {
+	offsetMillis := durationMilliseconds(e.Offset)
+	rangeMillis := durationMilliseconds(e.Range)
+
+	// Align the parent end timestamp down to the parent's step grid before
+	// applying the subquery offset, so the subquery does not evaluate past
+	// the parent's last actual evaluation point when the caller supplied
+	// an end timestamp that is not step-aligned.
+	parentEnd := ev.endTimestamp
+	if ev.interval > 0 {
+		parentEnd = ev.startTimestamp + ((ev.endTimestamp-ev.startTimestamp)/ev.interval)*ev.interval
+	}
+	subqEnd := parentEnd - offsetMillis
+
+	var subqInterval int64
+	if e.Step != 0 {
+		subqInterval = durationMilliseconds(e.Step)
+	} else {
+		subqInterval = ev.noStepSubqueryIntervalFn(rangeMillis)
+	}
+	subqStart := subqInterval * ((ev.startTimestamp - offsetMillis - rangeMillis) / subqInterval)
+	if subqStart <= (ev.startTimestamp - offsetMillis - rangeMillis) {
+		subqStart += subqInterval
+	}
+
+	childStats := stats.NewChildWithStepTracking(ev.samplesStats.StepTrackingEnabled(), subqStart, subqEnd, subqInterval)
+	newEv := &evaluator{
+		startTimestamp:           subqStart,
+		endTimestamp:             subqEnd,
+		interval:                 subqInterval,
+		currentSamples:           ev.currentSamples,
+		maxSamples:               ev.maxSamples,
+		logger:                   ev.logger,
+		lookbackDelta:            ev.lookbackDelta,
+		samplesStats:             childStats,
+		noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
+		enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
+		enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
+		useStartTimestamps:       ev.useStartTimestamps,
+		querier:                  ev.querier,
+	}
+
+	if subqStart != ev.startTimestamp {
+		// Adjust the offset of selectors based on the new start time of
+		// the evaluator since the calculation of the offset with @ happens
+		// w.r.t. the start time.
+		setOffsetForAtModifier(subqStart, e.Expr)
+	}
+
+	res, ws := newEv.eval(ctx, e.Expr)
+	ev.currentSamples = newEv.currentSamples
+	return res, childStats, ws
+}
+
 // evalSubquery evaluates given SubqueryExpr and returns an equivalent
 // evaluated MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
-// Only SamplesRead (and SamplesReadPerStep when per-step stats are enabled) from the
-// subquery are merged into the parent; TotalSamples and TotalSamplesPerStep are left unchanged.
+// Only PeakSamples and SamplesRead from the subquery are merged into the
+// parent; TotalSamples is intentionally not merged because the call/range-vector
+// caller will count samples again from the materialized matrix.
 func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr) (*parser.MatrixSelector, int, annotations.Annotations) {
-	// Store the parent samples stats for later use.
-	parentSamplesStats := ev.samplesStats
-	// Create a child samples stats object to track the subquery samples read.
-	ev.samplesStats = stats.NewChildWithStepTracking(parentSamplesStats.StepTrackingEnabled(), ev.startTimestamp, ev.endTimestamp, ev.interval)
-	// Evaluate the subquery.
-	val, ws := ev.eval(ctx, subq)
-	// Update the parent samples stats with the subquery samples stats.
-	parentSamplesStats.UpdatePeakFromSubquery(ev.samplesStats)
-	parentSamplesStats.MergeSamplesReadFromSubquery(ev.samplesStats)
-	// Restore the parent samples stats.
-	ev.samplesStats = parentSamplesStats
+	val, childStats, ws := ev.runSubquery(ctx, subq)
+	ev.samplesStats.UpdatePeakFromSubquery(childStats)
+	ev.samplesStats.MergeSamplesReadFromSubquery(childStats)
 	mat := val.(Matrix)
 	vs := &parser.VectorSelector{
 		OriginalOffset: subq.OriginalOffset,
@@ -2430,57 +2483,12 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		return ev.matrixSelector(ctx, e)
 
 	case *parser.SubqueryExpr:
-		offsetMillis := durationMilliseconds(e.Offset)
-		rangeMillis := durationMilliseconds(e.Range)
-		// Use the last actual parent evaluation timestamp rather than the
-		// raw endTimestamp so the subquery does not evaluate past the
-		// parent's range when endTimestamp is not step-aligned.
-		parentEnd := ev.endTimestamp
-		if ev.interval > 0 {
-			parentEnd = ev.startTimestamp + ((ev.endTimestamp-ev.startTimestamp)/ev.interval)*ev.interval
-		}
-		subqEnd := parentEnd - offsetMillis
-		var subqInterval, subqStart int64
-		if e.Step != 0 {
-			subqInterval = durationMilliseconds(e.Step)
-		} else {
-			subqInterval = ev.noStepSubqueryIntervalFn(rangeMillis)
-		}
-		subqStart = subqInterval * ((ev.startTimestamp - offsetMillis - rangeMillis) / subqInterval)
-		if subqStart <= (ev.startTimestamp - offsetMillis - rangeMillis) {
-			subqStart += subqInterval
-		}
-
-		subqSamplesStats := stats.NewChildWithStepTracking(ev.samplesStats.StepTrackingEnabled(), subqStart, subqEnd, subqInterval)
-
-		newEv := &evaluator{
-			startTimestamp:           subqStart,
-			endTimestamp:             subqEnd,
-			interval:                 subqInterval,
-			currentSamples:           ev.currentSamples,
-			maxSamples:               ev.maxSamples,
-			logger:                   ev.logger,
-			lookbackDelta:            ev.lookbackDelta,
-			samplesStats:             subqSamplesStats,
-			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
-			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
-			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
-			useStartTimestamps:       ev.useStartTimestamps,
-			querier:                  ev.querier,
-		}
-
-		if subqStart != ev.startTimestamp {
-			// Adjust the offset of selectors based on the new
-			// start time of the evaluator since the calculation
-			// of the offset with @ happens w.r.t. the start time.
-			setOffsetForAtModifier(subqStart, e.Expr)
-		}
-
-		res, ws := newEv.eval(ctx, e.Expr)
-		ev.currentSamples = newEv.currentSamples
-		ev.samplesStats.UpdatePeakFromSubquery(newEv.samplesStats)
-		ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, newEv.samplesStats.TotalSamples)
-		ev.samplesStats.MergeSamplesReadFromSubquery(newEv.samplesStats)
+		res, childStats, ws := ev.runSubquery(ctx, e)
+		ev.samplesStats.UpdatePeakFromSubquery(childStats)
+		// Attribute the subquery's TotalSamples to the parent's end step
+		// so they appear in the parent's TotalSamples stat.
+		ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, childStats.TotalSamples)
+		ev.samplesStats.MergeSamplesReadFromSubquery(childStats)
 		return res, ws
 	case *parser.StepInvariantExpr:
 		newEv := &evaluator{
