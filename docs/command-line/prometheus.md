@@ -1,5 +1,5 @@
 ---
-title: prometheus_new
+title: prometheus
 ---
 
 The Prometheus monitoring server
