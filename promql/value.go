@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -194,16 +195,17 @@ func totalHPointSize(histograms []HPoint) int {
 // count via HPoint.size. Used for range-vector sample stats to count only new points per step.
 func countSamplesAfter(floats []FPoint, histograms []HPoint, cutoff int64) int64 {
 	var n int64
-	for _, f := range floats {
-		if f.T > cutoff {
-			n++
-		}
+
+	// Both slices are sorted by timestamp; binary-search for the first
+	// element after cutoff then count from there.
+	i := sort.Search(len(floats), func(i int) bool { return floats[i].T > cutoff })
+	n += int64(len(floats) - i)
+
+	j := sort.Search(len(histograms), func(j int) bool { return histograms[j].T > cutoff })
+	for _, h := range histograms[j:] {
+		n += int64(h.size())
 	}
-	for _, h := range histograms {
-		if h.T > cutoff {
-			n += int64(h.size())
-		}
-	}
+
 	return n
 }
 
