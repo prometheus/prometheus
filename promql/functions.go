@@ -521,7 +521,7 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 			prevPoint := samples.Floats[i]
 			// Check for start timestamp overlap once.
 			if i+1 < len(startTimestamps) {
-				if overlap := checkStartTimeOverlap(startTimestamps[i], prevPoint.T, startTimestamps[i+1]); overlap {
+				if checkStartTimeOverlap(startTimestamps[i], prevPoint.T, startTimestamps[i+1]) {
 					// Extract metric name only when needed.
 					annos.Add(annotations.NewStartTimeOverlapWarning(getMetricName(samples.Metric), args[0].PositionRange()))
 					break
@@ -725,7 +725,7 @@ func histogramRate(
 			curr := currPoint.H
 			// Check for start timestamp overlap once.
 			if i+1 < len(startTimestamps) {
-				if overlap := checkStartTimeOverlap(startTimestamps[i], points[i].T, startTimestamps[i+1]); overlap {
+				if checkStartTimeOverlap(startTimestamps[i], points[i].T, startTimestamps[i+1]) {
 					// Extract metric name only when needed.
 					annos.Add(annotations.NewStartTimeOverlapWarning(getMetricName(labels), pos))
 					break
