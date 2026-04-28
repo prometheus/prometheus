@@ -98,7 +98,7 @@ Besides enabling this feature in Prometheus, start timestamps need to be exposed
 > * It introduces new WAL record type (SamplesV2) that can only be replayed with Prometheus 3.11 or later versions.
 > * For persistent storage support (TSDB blocks), you need to manually opt-in for XOR2 chunk format ([`xor2-encoding` flag](#xor2-chunk-encoding)). 
 > This might change later once we finish experimentation phase with XOR2.
-> * ST for native histograms and NHCBs are not yet implemented (see [#18315](https://github.com/prometheus/prometheus/issues/18315)).
+> * ST for native histograms and NHCBs are not yet implemented end-to-end. The `histogramST` and `floathistogramST` chunk encodings (also gated behind [`xor2-encoding`](#xor2-chunk-encoding)) but other areas are still in progress (see [#18315](https://github.com/prometheus/prometheus/issues/18315)).
 > * PromQL use of ST is out of scope of this feature.
 
 ## Concurrent evaluation of independent rules
@@ -339,7 +339,8 @@ For more details, see the [proposal](https://github.com/prometheus/proposals/pul
 > * We are still experimenting on the final encoding. As of now this encoding can change in any Prometheus version. All your persistent block data will be lost between versions.
 > * This is encoding is new, meaning downstream tools and LTS systems might now support it yet (e.g. Thanos sidecar uploaded blocks).
 
-This setting enables the new XOR2 chunk encoding for float samples, which provides better disk compression than the default XOR encoding for typical Prometheus workloads. This format also allow storing Start Timestamp (ST).
+This setting enables the new XOR2 chunk encoding for float samples, which provides better disk compression than the default XOR encoding for typical Prometheus workloads. This format also allows storing Start Timestamp (ST). 
+It also enables the new `histogramST` and `floathistogramST` chunk encodings for histogram and float histogram samples, which extend the histogram chunk format with the same ST header and per-sample ST encoding.
 
 ## Extended Range Selectors
 
