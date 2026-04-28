@@ -782,18 +782,19 @@ load 10s
   metricWith1HistogramEvery10Seconds {{schema:1 count:5 sum:20 buckets:[1 2 1 1]}}+{{schema:1 count:10 sum:5 buckets:[1 2 3 4]}}x100
 `)
 
-	cases := []struct {
+	type testCase struct {
 		Query               string
 		SkipMaxCheck        bool
 		TotalSamples        int64
 		TotalSamplesPerStep stats.TotalSamplesPerStep
-		SamplesRead         int64                     // samples read (delta for range-vector)
-		SamplesReadPerStep  stats.TotalSamplesPerStep // per-step samples read
+		SamplesRead         int64                     // Samples read (delta for range-vector).
+		SamplesReadPerStep  stats.TotalSamplesPerStep // Per-step samples read.
 		PeakSamples         int
 		Start               time.Time
 		End                 time.Time
 		Interval            time.Duration
-	}{
+	}
+	cases := []testCase{
 		{
 			Query:        `"literal string"`,
 			SkipMaxCheck: true, // This can't fail from a max samples limit.
@@ -1779,50 +1780,55 @@ load 10s
 		},
 	}
 
+	runQuery := func(t *testing.T, engine promql.QueryEngine, opts promql.QueryOpts, c testCase, expErr error) *stats.Statistics {
+		t.Helper()
+		var err error
+		var qry promql.Query
+		if c.Interval == 0 {
+			qry, err = engine.NewInstantQuery(context.Background(), storage, opts, c.Query, c.Start)
+		} else {
+			qry, err = engine.NewRangeQuery(context.Background(), storage, opts, c.Query, c.Start, c.End, c.Interval)
+		}
+		require.NoError(t, err)
+
+		res := qry.Exec(context.Background())
+		require.Equal(t, expErr, res.Err)
+
+		return qry.Stats()
+	}
+
 	for _, c := range cases {
 		t.Run(c.Query, func(t *testing.T) {
-			opts := promql.NewPrometheusQueryOpts(true, 0)
-			engine := promqltest.NewTestEngine(t, true, 0, promqltest.DefaultMaxSamplesPerQuery)
+			t.Run("perStepEnabled", func(t *testing.T) {
+				opts := promql.NewPrometheusQueryOpts(true, 0)
+				engine := promqltest.NewTestEngine(t, true, 0, promqltest.DefaultMaxSamplesPerQuery)
 
-			runQuery := func(engine promql.QueryEngine, opts promql.QueryOpts, expErr error) *stats.Statistics {
-				var err error
-				var qry promql.Query
-				if c.Interval == 0 {
-					qry, err = engine.NewInstantQuery(context.Background(), storage, opts, c.Query, c.Start)
-				} else {
-					qry, err = engine.NewRangeQuery(context.Background(), storage, opts, c.Query, c.Start, c.End, c.Interval)
+				stats := runQuery(t, engine, opts, c, nil)
+				require.Equal(t, c.TotalSamples, stats.Samples.TotalSamples, "Total samples mismatch")
+				require.Equal(t, &c.TotalSamplesPerStep, stats.Samples.TotalSamplesPerStepMap(), "Total samples per time mismatch")
+				require.Equal(t, c.SamplesRead, stats.Samples.SamplesRead, "Samples read mismatch")
+				require.Equal(t, &c.SamplesReadPerStep, stats.Samples.SamplesReadPerStepMap(), "Samples read per step mismatch")
+				require.Equal(t, c.PeakSamples, stats.Samples.PeakSamples, "Peak samples mismatch")
+
+				// Re-run with the max set to one less than the observed peak;
+				// confirms the peak is what gates the query.max-samples limit.
+				if c.SkipMaxCheck {
+					return
 				}
-				require.NoError(t, err)
+				engine = promqltest.NewTestEngine(t, true, 0, stats.Samples.PeakSamples-1)
+				runQuery(t, engine, opts, c, promql.ErrTooManySamples(env))
+			})
 
-				res := qry.Exec(context.Background())
-				require.Equal(t, expErr, res.Err)
+			t.Run("perStepDisabled", func(t *testing.T) {
+				opts := promql.NewPrometheusQueryOpts(false, 0)
+				engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
 
-				return qry.Stats()
-			}
-
-			stats := runQuery(engine, opts, nil)
-			require.Equal(t, c.TotalSamples, stats.Samples.TotalSamples, "Total samples mismatch")
-			require.Equal(t, &c.TotalSamplesPerStep, stats.Samples.TotalSamplesPerStepMap(), "Total samples per time mismatch")
-			require.Equal(t, c.SamplesRead, stats.Samples.SamplesRead, "Samples read mismatch")
-			require.Equal(t, &c.SamplesReadPerStep, stats.Samples.SamplesReadPerStepMap(), "Samples read per step mismatch")
-			require.Equal(t, c.PeakSamples, stats.Samples.PeakSamples, "Peak samples mismatch")
-
-			// Verify TotalSamples and SamplesRead are correct when per-step stats are disabled.
-			opts = promql.NewPrometheusQueryOpts(false, 0)
-			engine = promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
-			stats = runQuery(engine, opts, nil)
-			require.Equal(t, c.TotalSamples, stats.Samples.TotalSamples,
-				"TotalSamples should match when per-step stats are disabled")
-			require.Equal(t, c.SamplesRead, stats.Samples.SamplesRead,
-				"SamplesRead should match when per-step stats are disabled")
-
-			// Check that the peak is correct by setting the max to one less.
-			if c.SkipMaxCheck {
-				return
-			}
-			opts = promql.NewPrometheusQueryOpts(true, 0)
-			engine = promqltest.NewTestEngine(t, true, 0, stats.Samples.PeakSamples-1)
-			runQuery(engine, opts, promql.ErrTooManySamples(env))
+				stats := runQuery(t, engine, opts, c, nil)
+				require.Equal(t, c.TotalSamples, stats.Samples.TotalSamples,
+					"TotalSamples should match when per-step stats are disabled")
+				require.Equal(t, c.SamplesRead, stats.Samples.SamplesRead,
+					"SamplesRead should match when per-step stats are disabled")
+			})
 		})
 	}
 }
