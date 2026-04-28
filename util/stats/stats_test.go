@@ -84,6 +84,69 @@ func TestQueryStatsWithSpanTimers(t *testing.T) {
 	require.True(t, match, "Expected timings with one non-zero entry.")
 }
 
+func TestMergeSamplesReadFromSubquery(t *testing.T) {
+	const start, end, interval int64 = 1000, 3000, 1000
+
+	parent := NewQuerySamples(true)
+	parent.InitStepTracking(start, end, interval)
+	parent.SamplesReadPerStep[0] = 1
+	parent.SamplesReadPerStep[1] = 2
+	parent.SamplesReadPerStep[2] = 3
+	parent.SamplesRead = 6
+
+	child := NewChildWithStepTracking(true, start, end, interval)
+	child.SamplesReadPerStep[0] = 10
+	child.SamplesReadPerStep[1] = 20
+	child.SamplesReadPerStep[2] = 30
+	child.SamplesRead = 60
+
+	parent.MergeSamplesReadFromSubquery(child)
+
+	require.Equal(t, int64(66), parent.SamplesRead)
+	require.Equal(t, []int64{11, 22, 33}, parent.SamplesReadPerStep)
+}
+
+func TestMergeSamplesReadFromSubquery_offsetsChildGrid(t *testing.T) {
+	parent := NewQuerySamples(true)
+	parent.InitStepTracking(1000, 3000, 1000)
+	parent.SamplesReadPerStep[1] = 5
+	parent.SamplesRead = 5
+
+	child := NewQuerySamples(true)
+	child.InitStepTracking(2000, 4000, 1000)
+	child.SamplesReadPerStep[1] = 100 // tk=3000 → parent step 2
+	child.SamplesRead = 100
+
+	parent.MergeSamplesReadFromSubquery(child)
+
+	require.Equal(t, int64(105), parent.SamplesRead)
+	require.Equal(t, []int64{0, 5, 100}, parent.SamplesReadPerStep)
+}
+
+func TestMergeSamplesReadFromSubquery_childBeforeAndAfterParentWindow(t *testing.T) {
+	parent := NewQuerySamples(true)
+	parent.InitStepTracking(5000, 7000, 1000)
+	parent.SamplesRead = 0
+
+	child := NewQuerySamples(true)
+	child.InitStepTracking(1000, 9000, 1000)
+	for i := range child.SamplesReadPerStep {
+		child.SamplesReadPerStep[i] = 1
+	}
+	child.SamplesRead = int64(len(child.SamplesReadPerStep))
+
+	parent.MergeSamplesReadFromSubquery(child)
+
+	require.Equal(t, child.SamplesRead, parent.SamplesRead)
+	var sum int64
+	for _, v := range parent.SamplesReadPerStep {
+		sum += v
+	}
+	require.Equal(t, parent.SamplesRead, sum, "per-step sum should match merged SamplesRead")
+	// tk 1000..5000 (k=0..4) → step 0; tk 6000 → step 1; tk 7000 → step 2; tk 8000,9000 → last step.
+	require.Equal(t, []int64{5, 1, 3}, parent.SamplesReadPerStep)
+}
+
 func TestTimerGroup(t *testing.T) {
 	tg := NewTimerGroup()
 	require.Equal(t, "Exec total time: 0s", tg.GetTimer(ExecTotalTime).String())

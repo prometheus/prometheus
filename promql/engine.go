@@ -2472,24 +2472,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, newEv.samplesStats.TotalSamples)
 		// Merge SamplesRead with incremental attribution; subquery steps before/after outer window → step 0 / last step.
 		if ev.samplesStats.SamplesReadPerStep != nil && newEv.samplesStats.SamplesReadPerStep != nil {
-			ev.samplesStats.SamplesRead += newEv.samplesStats.SamplesRead
-			numOuterSteps := len(ev.samplesStats.SamplesReadPerStep)
-			for k := 0; k < len(newEv.samplesStats.SamplesReadPerStep); k++ {
-				tk := newEv.startTimestamp + int64(k)*newEv.interval
-				n := newEv.samplesStats.SamplesReadPerStep[k]
-				if n == 0 {
-					continue
-				}
-				outerStep := 0
-				if tk > ev.startTimestamp {
-					outerStep = int((tk - ev.startTimestamp + ev.samplesStats.Interval - 1) / ev.samplesStats.Interval)
-				}
-				// After last outer step; attribute to last step so all disk reads are counted.
-				if outerStep >= numOuterSteps {
-					outerStep = numOuterSteps - 1
-				}
-				ev.samplesStats.SamplesReadPerStep[outerStep] += n
-			}
+			ev.samplesStats.MergeSamplesReadFromSubquery(newEv.samplesStats)
 		} else {
 			ev.samplesStats.IncrementSamplesReadAtTimestamp(ev.endTimestamp, newEv.samplesStats.SamplesRead)
 		}
