@@ -107,7 +107,7 @@ Besides enabling this feature in Prometheus, start timestamps need to be exposed
 >   If the resolved encoding is XOR (that is, `--enable-feature=xor2-encoding` is not set and `chunk_encoding.floats: xor2` is not configured), Prometheus refuses to start and fails the configuration validation with an error rather than continuing to run.
 >   Likewise, explicitly setting `chunk_encoding.floats: xor` in the config file while `st-storage` is active is rejected at config reload.
 >   This might change later once we finish experimentation phase with XOR2.
-> * ST for native histograms and NHCBs are not yet implemented (see [#18315](https://github.com/prometheus/prometheus/issues/18315)).
+> * ST for native histograms and NHCBs is not yet implemented end-to-end. The `histogramST` and `floathistogramST` chunk encodings are available (also gated behind [`xor2-encoding`](#xor2-chunk-encoding)), but other areas are still in progress (see [#18315](https://github.com/prometheus/prometheus/issues/18315)).
 > * PromQL use of ST is out of scope of this feature.
 
 ## Start timestamp (ST) usage in PromQL functions
@@ -298,6 +298,7 @@ For more details, see the [proposal](https://github.com/prometheus/proposals/pul
 > * This encoding is new, meaning downstream tools and LTS systems might not support it yet (e.g. Thanos sidecar uploaded blocks).
 
 This setting enables the new XOR2 chunk encoding for float samples, which provides better disk compression than the default XOR encoding for typical Prometheus workloads. This format also allows storing Start Timestamp (ST).
+It also enables the new `histogramST` and `floathistogramST` chunk encodings for histogram and float histogram samples, which extend the histogram chunk format with the same ST header and per-sample ST encoding.
 
 The encoding can also be controlled at each configuration reload via the `chunk_encoding.floats` field in the `storage.tsdb` section of the configuration file. Setting `chunk_encoding.floats: xor` forces standard XOR encoding even when `--enable-feature=xor2-encoding` is set; setting `chunk_encoding.floats: xor2` requires `--enable-feature=xor2-encoding` to be enabled.
 
