@@ -100,7 +100,7 @@ func TestMergeSamplesReadFromSubquery(t *testing.T) {
 	child.SamplesReadPerStep[2] = 30
 	child.SamplesRead = 60
 
-	parent.MergeSamplesReadFromSubquery(child)
+	parent.MergeSamplesReadFromSubquery(child, 0)
 
 	require.Equal(t, int64(66), parent.SamplesRead)
 	require.Equal(t, []int64{11, 22, 33}, parent.SamplesReadPerStep)
@@ -114,10 +114,10 @@ func TestMergeSamplesReadFromSubquery_offsetsChildGrid(t *testing.T) {
 
 	child := NewQuerySamples(true)
 	child.InitStepTracking(2000, 4000, 1000)
-	child.SamplesReadPerStep[1] = 100 // tk=3000 → parent step 2
+	child.SamplesReadPerStep[1] = 100 // tk=3000 -> parent step 2
 	child.SamplesRead = 100
 
-	parent.MergeSamplesReadFromSubquery(child)
+	parent.MergeSamplesReadFromSubquery(child, 0)
 
 	require.Equal(t, int64(105), parent.SamplesRead)
 	require.Equal(t, []int64{0, 5, 100}, parent.SamplesReadPerStep)
@@ -135,7 +135,7 @@ func TestMergeSamplesReadFromSubquery_childBeforeAndAfterParentWindow(t *testing
 	}
 	child.SamplesRead = int64(len(child.SamplesReadPerStep))
 
-	parent.MergeSamplesReadFromSubquery(child)
+	parent.MergeSamplesReadFromSubquery(child, 0)
 
 	require.Equal(t, child.SamplesRead, parent.SamplesRead)
 	var sum int64
@@ -143,8 +143,58 @@ func TestMergeSamplesReadFromSubquery_childBeforeAndAfterParentWindow(t *testing
 		sum += v
 	}
 	require.Equal(t, parent.SamplesRead, sum, "per-step sum should match merged SamplesRead")
-	// tk 1000..5000 (k=0..4) → step 0; tk 6000 → step 1; tk 7000 → step 2; tk 8000,9000 → last step.
+	// tk 1000..5000 (k=0..4) -> step 0; tk 6000 -> step 1; tk 7000 -> step 2; tk 8000,9000 -> last step.
 	require.Equal(t, []int64{5, 1, 3}, parent.SamplesReadPerStep)
+}
+
+func TestMergeSamplesReadFromSubquery_windowed(t *testing.T) {
+	// Parent: step=1000, range=500. Windows: [500,1000], [1500,2000], [2500,3000].
+	// Child steps at 100-unit intervals from 500 to 3000.
+	parent := NewQuerySamples(true)
+	parent.InitStepTracking(1000, 3000, 1000)
+	parent.SamplesRead = 0
+
+	child := NewQuerySamples(true)
+	child.InitStepTracking(500, 3000, 100)
+	for i := range child.SamplesReadPerStep {
+		child.SamplesReadPerStep[i] = 1
+	}
+	child.SamplesRead = int64(len(child.SamplesReadPerStep))
+
+	parent.MergeSamplesReadFromSubquery(child, 500)
+
+	// Step 0 window (500,1000]: tk=600,700,800,900,1000 -> 5.
+	// Step 1 window (1500,2000]: tk=1600,1700,1800,1900,2000 -> 5.
+	// Step 2 window (2500,3000]: tk=2600,2700,2800,2900,3000 -> 5.
+	// Boundary and gap steps are not attributed.
+	require.Equal(t, int64(15), parent.SamplesRead)
+	require.Equal(t, []int64{5, 5, 5}, parent.SamplesReadPerStep)
+}
+
+func TestMergeSamplesReadFromSubquery_windowedNoGaps(t *testing.T) {
+	// When interval <= range, there are no gaps and all child steps are attributed.
+	parent := NewQuerySamples(true)
+	parent.InitStepTracking(1000, 3000, 1000)
+	parent.SamplesRead = 0
+
+	child := NewQuerySamples(true)
+	child.InitStepTracking(0, 3000, 100)
+	for i := range child.SamplesReadPerStep {
+		child.SamplesReadPerStep[i] = 1
+	}
+	child.SamplesRead = int64(len(child.SamplesReadPerStep))
+
+	parent.MergeSamplesReadFromSubquery(child, 1000)
+
+	// range=1000 equals interval=1000, so windows tile perfectly with no gaps.
+	// The first child step (tk=0) falls on the boundary of step 0 and is
+	// excluded: the window is (parentTs-range, parentTs] = (0, 1000].
+	require.Equal(t, child.SamplesRead-1, parent.SamplesRead)
+	var sum int64
+	for _, v := range parent.SamplesReadPerStep {
+		sum += v
+	}
+	require.Equal(t, parent.SamplesRead, sum)
 }
 
 func TestTimerGroup(t *testing.T) {
