@@ -1676,6 +1676,32 @@ load 10s
 			},
 		},
 
+		// Range query with @ modifier on a matrix selector wrapped in an
+		// at-modifier-unsafe function (predict_linear), so the call is not
+		// hoisted into a step-invariant expression. The @ modifier freezes
+		// the evaluation window, so every parent step consumes the same
+		// matrix. TotalSamples must reflect the full window at every step;
+		// SamplesRead is counted only once (no new I/O after step 0).
+		{
+			Query:        "predict_linear(metricWith1SampleEvery10Seconds[60s] @ 100, 60)",
+			Start:        time.Unix(100, 0),
+			End:          time.Unix(300, 0),
+			Interval:     100 * time.Second,
+			PeakSamples:  12,
+			TotalSamples: 18, // 6 samples per window * 3 steps.
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				100000: 6,
+				200000: 6,
+				300000: 6,
+			},
+			SamplesRead: 6, // @ modifier: single read at step 0; later steps reuse.
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				100000: 6,
+				200000: 0,
+				300000: 0,
+			},
+		},
+
 		// Subquery with @ modifier.
 		{
 			Query:        "sum_over_time(metricWith3SampleEvery10Seconds[20s:10s] @ 200)",
