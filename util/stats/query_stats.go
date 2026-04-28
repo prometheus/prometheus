@@ -179,7 +179,8 @@ func (qs *QuerySamples) TotalSamplesPerStepMap() *TotalSamplesPerStep {
 	return &ts
 }
 
-// SamplesReadPerStepMap returns the per-step samples read as a map (timestamp -> count), or nil if per-step stats are disabled.
+// SamplesReadPerStepMap returns the per-step samples read as a map
+// (timestamp -> count), or nil if per-step stats are disabled.
 func (qs *QuerySamples) SamplesReadPerStepMap() *TotalSamplesPerStep {
 	if !qs.EnablePerStepStats || qs.SamplesReadPerStep == nil {
 		return nil
@@ -282,7 +283,9 @@ type QuerySamples struct {
 	SamplesRead int64
 
 	// SamplesReadPerStep is the number of samples read per step. For
-	// range-vector functions, step 0 is the full window, later steps only new points.
+	// range-vector functions, step 0 counts the full window and later
+	// steps count only the points not already covered by the previous
+	// step's window.
 	SamplesReadPerStep []int64
 
 	EnablePerStepStats bool
@@ -343,18 +346,20 @@ func (qs *QuerySamples) IncrementSamplesAtTimestamp(t, samples int64) {
 	}
 }
 
-// IncrementSamplesReadAtStep increments the samples-read count. Use this when you know the step index.
+// IncrementSamplesReadAtStep increments the samples-read count.
+// Use this when you know the step index.
 func (qs *QuerySamples) IncrementSamplesReadAtStep(i int, n int64) {
 	if qs == nil {
 		return
 	}
 	qs.SamplesRead += n
-	if qs.SamplesReadPerStep != nil && i < len(qs.SamplesReadPerStep) {
+	if qs.SamplesReadPerStep != nil {
 		qs.SamplesReadPerStep[i] += n
 	}
 }
 
-// IncrementSamplesReadAtTimestamp increments the samples-read count. Use this when you only have the step timestamp.
+// IncrementSamplesReadAtTimestamp increments the samples-read count.
+// Use this when you only have the step timestamp.
 func (qs *QuerySamples) IncrementSamplesReadAtTimestamp(t, n int64) {
 	if qs == nil {
 		return
@@ -362,9 +367,7 @@ func (qs *QuerySamples) IncrementSamplesReadAtTimestamp(t, n int64) {
 	qs.SamplesRead += n
 	if qs.SamplesReadPerStep != nil {
 		i := int((t - qs.StartTimestamp) / qs.Interval)
-		if i >= 0 && i < len(qs.SamplesReadPerStep) {
-			qs.SamplesReadPerStep[i] += n
-		}
+		qs.SamplesReadPerStep[i] += n
 	}
 }
 
@@ -404,11 +407,12 @@ func (*QuerySamples) NewChild() *QuerySamples {
 }
 
 // NewChildWithStepTracking creates a child QuerySamples and, when
-// enablePerStepStats is true, initializes per-step arrays.
+// enablePerStepStats is true, initializes per-step arrays via
+// InitStepTracking. When enablePerStepStats is false the timing fields
+// are intentionally left zero; the per-step merge helpers detect this
+// and fall back to a flat SamplesRead accumulation.
 func NewChildWithStepTracking(enablePerStepStats bool, start, end, interval int64) *QuerySamples {
 	qs := NewQuerySamples(enablePerStepStats)
-	qs.StartTimestamp = start
-	qs.Interval = interval
 	if enablePerStepStats {
 		qs.InitStepTracking(start, end, interval)
 	}
@@ -423,31 +427,23 @@ func NewChildWithStepTracking(enablePerStepStats bool, start, end, interval int6
 // Each child step is attributed to the earliest parent step whose timestamp is
 // >= the child timestamp. Child steps before the first parent step are attributed
 // to step 0; child steps after the last parent step are attributed to the last
-// step. When the parent has per-step arrays they receive per-step attribution,
-// otherwise only SamplesRead is updated.
+// step. When either side lacks per-step arrays we fall back to a flat
+// SamplesRead accumulation.
 func (qs *QuerySamples) MergeSamplesReadFromSubquery(child *QuerySamples) {
 	if qs == nil || child == nil {
 		return
 	}
-	if child.SamplesReadPerStep == nil {
-		qs.SamplesRead += child.SamplesRead
-		return
-	}
-	if qs.Interval == 0 {
+	// InitStepTracking is the only setter of qs.Interval and it always
+	// allocates SamplesReadPerStep, so qs.Interval == 0 is equivalent to
+	// the parent having no per-step array.
+	if child.SamplesReadPerStep == nil || qs.Interval == 0 {
 		qs.SamplesRead += child.SamplesRead
 		return
 	}
 
 	parentStart := qs.StartTimestamp
 	parentInterval := qs.Interval
-	numParent := 0
-	if qs.SamplesReadPerStep != nil {
-		numParent = len(qs.SamplesReadPerStep)
-	}
-	if numParent == 0 {
-		qs.SamplesRead += child.SamplesRead
-		return
-	}
+	numParent := len(qs.SamplesReadPerStep)
 
 	for k := range child.SamplesReadPerStep {
 		n := child.SamplesReadPerStep[k]
