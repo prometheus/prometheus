@@ -51,6 +51,8 @@ func TestQueryStatsWithTimersAndSamples(t *testing.T) {
 	timer.Stop()
 	qs.IncrementSamplesAtTimestamp(20001000, 5)
 	qs.IncrementSamplesAtTimestamp(25001000, 5)
+	qs.IncrementSamplesReadAtTimestamp(20001000, 5)
+	qs.IncrementSamplesReadAtTimestamp(25001000, 5)
 
 	qstats := NewQueryStats(&Statistics{Timers: qt, Samples: qs})
 	actual, err := json.Marshal(qstats)
@@ -62,6 +64,8 @@ func TestQueryStatsWithTimersAndSamples(t *testing.T) {
 
 	require.Regexpf(t, `[,{]"totalQueryableSamples":10[,}]`, string(actual), "expected totalQueryableSamples")
 	require.Regexpf(t, `[,{]"totalQueryableSamplesPerStep":\[\[20001,5\],\[21001,0\],\[22001,0\],\[23001,0\],\[24001,0\],\[25001,5\]\]`, string(actual), "expected totalQueryableSamplesPerStep")
+	require.Regexpf(t, `[,{]"samplesRead":10[,}]`, string(actual), "expected samplesRead")
+	require.Regexpf(t, `[,{]"samplesReadPerStep":\[\[20001,5\],\[21001,0\],\[22001,0\],\[23001,0\],\[24001,0\],\[25001,5\]\]`, string(actual), "expected samplesReadPerStep")
 }
 
 func TestQueryStatsWithSpanTimers(t *testing.T) {
