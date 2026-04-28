@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/schema"
 )
@@ -191,6 +192,12 @@ func (p *PromParser) Series() ([]byte, *int64, float64) {
 // format does not support sparse histograms yet.
 func (*PromParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
 	return nil, nil, nil, nil
+}
+
+// Stateset returns (nil, nil, nil) because the Prometheus text format does not
+// support statesets.
+func (*PromParser) Stateset() ([]byte, *int64, *stateset.StateSet) {
+	return nil, nil, nil
 }
 
 // Help returns the metric name and help text in the current entry.

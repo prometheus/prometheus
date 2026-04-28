@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
@@ -148,13 +149,14 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 loop:
 	for {
 		var (
-			et                       textparse.Entry
-			sampleAdded, isHistogram bool
-			met                      []byte
-			parsedTimestamp          *int64
-			val                      float64
-			h                        *histogram.Histogram
-			fh                       *histogram.FloatHistogram
+			et                                   textparse.Entry
+			sampleAdded, isHistogram, isStateset bool
+			met                                  []byte
+			parsedTimestamp                      *int64
+			val                                  float64
+			h                                    *histogram.Histogram
+			fh                                   *histogram.FloatHistogram
+			ss                                   *stateset.StateSet
 		)
 		if et, err = p.Next(); err != nil {
 			if errors.Is(err, io.EOF) {
@@ -180,14 +182,19 @@ loop:
 			continue
 		case textparse.EntryHistogram:
 			isHistogram = true
+		case textparse.EntryStateset:
+			isStateset = true
 		default:
 		}
 		total++
 
 		t := defTime
-		if isHistogram {
+		switch {
+		case isStateset:
+			met, parsedTimestamp, ss = p.Stateset()
+		case isHistogram:
 			met, parsedTimestamp, h, fh = p.Histogram()
-		} else {
+		default:
 			met, parsedTimestamp, val = p.Series()
 		}
 		if !sl.honorTimestamps {
@@ -312,7 +319,7 @@ loop:
 			}
 
 			// Append sample to the storage.
-			ref, err = app.Append(ref, lset, st, t, val, h, fh, nil, appOpts)
+			ref, err = app.Append(ref, lset, st, t, val, h, fh, ss, appOpts)
 		}
 		sampleAdded, err = sl.checkAddError(met, exemplars, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
 		if err != nil {

@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 )
 
 // Parser parses samples from a byte slice of samples in different exposition formats.
@@ -42,6 +43,10 @@ type Parser interface {
 	// We already accepted in many places (PRW, proto parsing histograms) that 0 timestamp is not a
 	// a valid timestamp. If needed it can be represented as 0+1ms.
 	Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram)
+
+	// Stateset returns the metric bytes, the timestamp if set, and the StateSet
+	// for the current entry. Must only be called after Next returns EntryStateset.
+	Stateset() ([]byte, *int64, *stateset.StateSet)
 
 	// Help returns the metric name and help text in the current entry.
 	// Must only be called after Next returned a help entry.
@@ -142,6 +147,10 @@ type ParserOptions struct {
 	// to native histogram custom buckets (NHCB) format.
 	ConvertClassicHistogramsToNHCB bool
 
+	// ConvertStatesets enables aggregation of OpenMetrics stateset float series
+	// into native EntryStateset entries.
+	ConvertStatesets bool
+
 	// KeepClassicOnClassicAndNativeHistograms causes parser to output classic histogram
 	// that is also present as a native histogram. (Proto parsing only).
 	KeepClassicOnClassicAndNativeHistograms bool
@@ -197,6 +206,10 @@ func New(b []byte, contentType string, st *labels.SymbolTable, opts ParserOption
 		baseParser = NewNHCBParser(baseParser, st, opts.KeepClassicOnClassicAndNativeHistograms)
 	}
 
+	if baseParser != nil && opts.ConvertStatesets {
+		baseParser = NewStateSetParser(baseParser, st)
+	}
+
 	return baseParser, err
 }
 
@@ -211,4 +224,5 @@ const (
 	EntryComment   Entry = 3
 	EntryUnit      Entry = 4
 	EntryHistogram Entry = 5 // EntryHistogram marks a series with a native histogram as a value.
+	EntryStateset  Entry = 6 // EntryStateset marks a series with a native stateset as a value.
 )

@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/util/convertnhcb"
 )
 
@@ -121,6 +122,12 @@ func (p *NHCBParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogr
 		return p.bytesNHCB, p.ts, p.hNHCB, p.fhNHCB
 	}
 	return p.bytes, p.ts, p.h, p.fh
+}
+
+// Stateset returns (nil, nil, nil) because NHCBParser does not aggregate statesets;
+// that is handled by StateSetParser which wraps NHCBParser.
+func (*NHCBParser) Stateset() ([]byte, *int64, *stateset.StateSet) {
+	return nil, nil, nil
 }
 
 func (p *NHCBParser) Help() ([]byte, []byte) {
