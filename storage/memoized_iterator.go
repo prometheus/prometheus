@@ -17,6 +17,7 @@ import (
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
@@ -35,6 +36,7 @@ type MemoizedSeriesIterator struct {
 	prevTime           int64
 	prevValue          float64
 	prevFloatHistogram *histogram.FloatHistogram
+	prevStateset       *stateset.StateSet
 }
 
 // NewMemoizedEmptyIterator is like NewMemoizedIterator but it's initialised with an empty iterator.
@@ -64,11 +66,11 @@ func (b *MemoizedSeriesIterator) Reset(it chunkenc.Iterator) {
 
 // PeekPrev returns the previous element of the iterator. If there is none buffered,
 // ok is false.
-func (b *MemoizedSeriesIterator) PeekPrev() (t int64, v float64, fh *histogram.FloatHistogram, ok bool) {
+func (b *MemoizedSeriesIterator) PeekPrev() (t int64, v float64, fh *histogram.FloatHistogram, ss *stateset.StateSet, ok bool) {
 	if b.prevTime == math.MinInt64 {
-		return 0, 0, nil, false
+		return 0, 0, nil, nil, false
 	}
-	return b.prevTime, b.prevValue, b.prevFloatHistogram, true
+	return b.prevTime, b.prevValue, b.prevFloatHistogram, b.prevStateset, true
 }
 
 // Seek advances the iterator to the element at time t or greater.
@@ -111,9 +113,15 @@ func (b *MemoizedSeriesIterator) Next() chunkenc.ValueType {
 	case chunkenc.ValFloat:
 		b.prevTime, b.prevValue = b.it.At()
 		b.prevFloatHistogram = nil
+		b.prevStateset = nil
 	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 		b.prevValue = 0
 		b.prevTime, b.prevFloatHistogram = b.it.AtFloatHistogram(nil)
+		b.prevStateset = nil
+	case chunkenc.ValStateset:
+		b.prevValue = 0
+		b.prevFloatHistogram = nil
+		b.prevTime, b.prevStateset = b.it.AtStateset(nil)
 	}
 
 	b.valueType = b.it.Next()
@@ -134,6 +142,11 @@ func (b *MemoizedSeriesIterator) At() (int64, float64) {
 // AtFloatHistogram returns the current float-histogram element of the iterator.
 func (b *MemoizedSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	return b.it.AtFloatHistogram(nil)
+}
+
+// AtStateset returns the current stateset element of the iterator.
+func (b *MemoizedSeriesIterator) AtStateset() (int64, *stateset.StateSet) {
+	return b.it.AtStateset(nil)
 }
 
 // AtT returns the timestamp of the current element of the iterator.

@@ -2224,6 +2224,57 @@ func funcYear(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNode
 	}), nil
 }
 
+// === stateset_is_active(Vector, string) (Vector, Annotations) ===
+// Returns 1 for each series where the named state is active, 0 otherwise.
+func funcStatesetIsActive(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	stateName := stringFromArg(args[1])
+	for _, el := range vectorVals[0] {
+		if el.SS == nil {
+			continue
+		}
+		v := 0.0
+		if el.SS.IsActive(stateName) {
+			v = 1.0
+		}
+		enh.Out = append(enh.Out, Sample{Metric: el.Metric, F: v, DropName: true})
+	}
+	return enh.Out, nil
+}
+
+// === stateset_active_states(Vector) (Vector, Annotations) ===
+// Emits one sample (value 1) per active state, adding the state label to the metric.
+func funcStatesetActiveStates(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	for _, el := range vectorVals[0] {
+		if el.SS == nil {
+			continue
+		}
+		for _, name := range el.SS.ActiveNames() {
+			m := labels.NewBuilder(el.Metric).Set(el.SS.LabelName, name).Labels()
+			enh.Out = append(enh.Out, Sample{Metric: m, F: 1.0})
+		}
+	}
+	return enh.Out, nil
+}
+
+// === stateset_known_states(Vector) (Vector, Annotations) ===
+// Emits one sample per known state (1 if active, 0 if inactive), adding the state label.
+func funcStatesetKnownStates(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	for _, el := range vectorVals[0] {
+		if el.SS == nil {
+			continue
+		}
+		for i, name := range el.SS.Names {
+			v := 0.0
+			if el.SS.Values>>uint(i)&1 == 1 {
+				v = 1.0
+			}
+			m := labels.NewBuilder(el.Metric).Set(el.SS.LabelName, name).Labels()
+			enh.Out = append(enh.Out, Sample{Metric: m, F: v})
+		}
+	}
+	return enh.Out, nil
+}
+
 // FunctionCalls is a list of all functions supported by PromQL, including their types.
 var FunctionCalls = map[string]FunctionCall{
 	"abs":                          funcAbs,
@@ -2298,6 +2349,9 @@ var FunctionCalls = map[string]FunctionCall{
 	"sin":                          funcSin,
 	"sinh":                         funcSinh,
 	"sort":                         funcSort,
+	"stateset_active_states":       funcStatesetActiveStates,
+	"stateset_is_active":           funcStatesetIsActive,
+	"stateset_known_states":        funcStatesetKnownStates,
 	"sort_desc":                    funcSortDesc,
 	"sort_by_label":                funcSortByLabel,
 	"sort_by_label_desc":           funcSortByLabelDesc,

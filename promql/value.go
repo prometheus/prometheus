@@ -70,6 +70,7 @@ type Series struct {
 	Metric     labels.Labels `json:"metric"`
 	Floats     []FPoint      `json:"values,omitempty"`
 	Histograms []HPoint      `json:"histograms,omitempty"`
+	Statesets  []SSPoint     `json:"statesets,omitempty"`
 	// DropName is used to indicate whether the __name__ label should be dropped
 	// as part of the query evaluation.
 	DropName bool `json:"-"`
@@ -173,6 +174,17 @@ func (p HPoint) MarshalJSON() ([]byte, error) {
 	return json.Marshal([...]any{float64(p.T) / 1000, h})
 }
 
+// SSPoint represents a single stateset data point for a given timestamp.
+// SS must never be nil.
+type SSPoint struct {
+	T  int64
+	SS *stateset.StateSet
+}
+
+func (p SSPoint) String() string {
+	return fmt.Sprintf("%s @[%v]", p.SS.LabelName, p.T)
+}
+
 // size returns the size of the HPoint compared to the size of an FPoint.
 // The total size is calculated considering the histogram timestamp (p.T - 8 bytes),
 // and then a number of bytes in the histogram.
@@ -194,9 +206,10 @@ func totalHPointSize(histograms []HPoint) int {
 // sample or a histogram sample. If H is nil, it is a float sample. Otherwise,
 // it is a histogram sample.
 type Sample struct {
-	T int64
-	F float64
-	H *histogram.FloatHistogram
+	T  int64
+	F  float64
+	H  *histogram.FloatHistogram
+	SS *stateset.StateSet // Non-nil for stateset samples.
 
 	Metric labels.Labels
 	// DropName is used to indicate whether the __name__ label should be dropped
@@ -502,7 +515,7 @@ func (ssi *storageSeriesIterator) AtFloatHistogram(fh *histogram.FloatHistogram)
 	return ssi.currT, fh
 }
 
-func (ssi *storageSeriesIterator) AtStateset(ss *stateset.StateSet) (int64, *stateset.StateSet) {
+func (*storageSeriesIterator) AtStateset(_ *stateset.StateSet) (int64, *stateset.StateSet) {
 	panic(errors.New("storageSeriesIterator: AtStateset not supported"))
 }
 

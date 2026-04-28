@@ -24,11 +24,12 @@ type ValueType string
 
 // The valid value types.
 const (
-	ValueTypeNone   ValueType = "none"
-	ValueTypeVector ValueType = "vector"
-	ValueTypeScalar ValueType = "scalar"
-	ValueTypeMatrix ValueType = "matrix"
-	ValueTypeString ValueType = "string"
+	ValueTypeNone     ValueType = "none"
+	ValueTypeVector   ValueType = "vector"
+	ValueTypeScalar   ValueType = "scalar"
+	ValueTypeMatrix   ValueType = "matrix"
+	ValueTypeString   ValueType = "string"
+	ValueTypeStateset ValueType = "stateset"
 )
 
 // DocumentedType returns the internal type to the equivalent
