@@ -85,66 +85,64 @@ func TestQueryStatsWithSpanTimers(t *testing.T) {
 }
 
 func TestMergeSamplesReadFromSubquery(t *testing.T) {
-	const start, end, interval int64 = 1000, 3000, 1000
-
-	parent := NewQuerySamples(true)
-	parent.InitStepTracking(start, end, interval)
-	parent.SamplesReadPerStep[0] = 1
-	parent.SamplesReadPerStep[1] = 2
-	parent.SamplesReadPerStep[2] = 3
-	parent.SamplesRead = 6
-
-	child := NewChildWithStepTracking(true, start, end, interval)
-	child.SamplesReadPerStep[0] = 10
-	child.SamplesReadPerStep[1] = 20
-	child.SamplesReadPerStep[2] = 30
-	child.SamplesRead = 60
-
-	parent.MergeSamplesReadFromSubquery(child)
-
-	require.Equal(t, int64(66), parent.SamplesRead)
-	require.Equal(t, []int64{11, 22, 33}, parent.SamplesReadPerStep)
-}
-
-func TestMergeSamplesReadFromSubquery_offsetsChildGrid(t *testing.T) {
-	parent := NewQuerySamples(true)
-	parent.InitStepTracking(1000, 3000, 1000)
-	parent.SamplesReadPerStep[1] = 5
-	parent.SamplesRead = 5
-
-	child := NewQuerySamples(true)
-	child.InitStepTracking(2000, 4000, 1000)
-	child.SamplesReadPerStep[1] = 100 // tk=3000 -> parent step 2
-	child.SamplesRead = 100
-
-	parent.MergeSamplesReadFromSubquery(child)
-
-	require.Equal(t, int64(105), parent.SamplesRead)
-	require.Equal(t, []int64{0, 5, 100}, parent.SamplesReadPerStep)
-}
-
-func TestMergeSamplesReadFromSubquery_childBeforeAndAfterParentWindow(t *testing.T) {
-	parent := NewQuerySamples(true)
-	parent.InitStepTracking(5000, 7000, 1000)
-	parent.SamplesRead = 0
-
-	child := NewQuerySamples(true)
-	child.InitStepTracking(1000, 9000, 1000)
-	for i := range child.SamplesReadPerStep {
-		child.SamplesReadPerStep[i] = 1
+	type stepGrid struct {
+		start, end, interval int64
+		perStep              []int64
 	}
-	child.SamplesRead = int64(len(child.SamplesReadPerStep))
-
-	parent.MergeSamplesReadFromSubquery(child)
-
-	require.Equal(t, child.SamplesRead, parent.SamplesRead)
-	var sum int64
-	for _, v := range parent.SamplesReadPerStep {
-		sum += v
+	cases := []struct {
+		name            string
+		parent          stepGrid
+		child           stepGrid
+		wantPerStep     []int64
+		wantSamplesRead int64
+	}{
+		{
+			name:            "alignedChildGridAddsToParentSteps",
+			parent:          stepGrid{1000, 3000, 1000, []int64{1, 2, 3}},
+			child:           stepGrid{1000, 3000, 1000, []int64{10, 20, 30}},
+			wantPerStep:     []int64{11, 22, 33},
+			wantSamplesRead: 66,
+		},
+		{
+			name:            "offsetChildGridAttributesByTimestamp",
+			parent:          stepGrid{1000, 3000, 1000, []int64{0, 5, 0}},
+			child:           stepGrid{2000, 4000, 1000, []int64{0, 100, 0}}, // tk=3000 -> parent step 2.
+			wantPerStep:     []int64{0, 5, 100},
+			wantSamplesRead: 105,
+		},
+		{
+			// Child spans 1000..9000 (9 steps). Steps with tk <= parentStart=5000
+			// (k=0..4) clamp to parent step 0; tk=6000 -> step 1; tk=7000 -> step 2;
+			// tk=8000,9000 clamp to the last parent step (also 2).
+			name:            "childBeforeAndAfterParentWindowClampsToEndpoints",
+			parent:          stepGrid{5000, 7000, 1000, []int64{0, 0, 0}},
+			child:           stepGrid{1000, 9000, 1000, []int64{1, 1, 1, 1, 1, 1, 1, 1, 1}},
+			wantPerStep:     []int64{5, 1, 3},
+			wantSamplesRead: 9,
+		},
 	}
-	require.Equal(t, parent.SamplesRead, sum, "per-step sum should match merged SamplesRead")
-	// tk 1000..5000 (k=0..4) -> step 0; tk 6000 -> step 1; tk 7000 -> step 2; tk 8000,9000 -> last step.
-	require.Equal(t, []int64{5, 1, 3}, parent.SamplesReadPerStep)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parent := NewQuerySamples(true)
+			parent.InitStepTracking(tc.parent.start, tc.parent.end, tc.parent.interval)
+			copy(parent.SamplesReadPerStep, tc.parent.perStep)
+			for _, v := range tc.parent.perStep {
+				parent.SamplesRead += v
+			}
+
+			child := NewChildWithStepTracking(true, tc.child.start, tc.child.end, tc.child.interval)
+			copy(child.SamplesReadPerStep, tc.child.perStep)
+			for _, v := range tc.child.perStep {
+				child.SamplesRead += v
+			}
+
+			parent.MergeSamplesReadFromSubquery(child)
+
+			require.Equal(t, tc.wantSamplesRead, parent.SamplesRead)
+			require.Equal(t, tc.wantPerStep, parent.SamplesReadPerStep)
+		})
+	}
 }
 
 func TestTimerGroup(t *testing.T) {
