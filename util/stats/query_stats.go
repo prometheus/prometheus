@@ -421,21 +421,36 @@ func NewChildWithStepTracking(enablePerStepStats bool, start, end, interval int6
 // not merged, because the outer range-eval loop already counts those when it
 // iterates over the pre-computed matrix. This function ensures the outer query's
 // samples-read stats reflect the subquery's actual storage I/O.
-//
-// Precondition: the child must have been created with NewChildWithStepTracking
-// using the parent evaluator's (start, end, interval), so the child's step
-// indices map 1:1 to the parent's. In evalSubquery, the SubqueryExpr case maps
-// inner subquery steps to the child's (= parent's) step indices via time-based
-// attribution before this function is called, making the 1:1 index merge correct.
 func (qs *QuerySamples) MergeSamplesReadFromSubquery(child *QuerySamples) {
 	if qs == nil || child == nil {
 		return
 	}
 	qs.SamplesRead += child.SamplesRead
-	if qs.SamplesReadPerStep != nil && child.SamplesReadPerStep != nil {
-		for i := 0; i < len(qs.SamplesReadPerStep) && i < len(child.SamplesReadPerStep); i++ {
-			qs.SamplesReadPerStep[i] += child.SamplesReadPerStep[i]
+	if qs.SamplesReadPerStep == nil || child.SamplesReadPerStep == nil {
+		return
+	}
+	if len(qs.SamplesReadPerStep) == 0 || qs.Interval == 0 {
+		return
+	}
+
+	numParent := len(qs.SamplesReadPerStep)
+	parentStart := qs.StartTimestamp
+	parentInterval := qs.Interval
+
+	for k := range child.SamplesReadPerStep {
+		n := child.SamplesReadPerStep[k]
+		if n == 0 {
+			continue
 		}
+		tk := child.StartTimestamp + int64(k)*child.Interval
+		outerStep := 0
+		if tk > parentStart {
+			outerStep = int((tk - parentStart + parentInterval - 1) / parentInterval)
+		}
+		if outerStep >= numParent {
+			outerStep = numParent - 1
+		}
+		qs.SamplesReadPerStep[outerStep] += n
 	}
 }
 
