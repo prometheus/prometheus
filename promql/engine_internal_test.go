@@ -17,14 +17,17 @@ import (
 	"bytes"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/stats"
 )
 
 var testParser = parser.NewParser(parser.Options{})
@@ -80,6 +83,95 @@ func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
 	defer ev.recover(nil, &ws, &err)
 
 	panic(e)
+}
+
+func TestNewSubqueryEvaluator(t *testing.T) {
+	// noStepInterval mimics the default step PromQL picks for a subquery without
+	// an explicit step ([range:]): one tenth of the range, clamped to >= 1ms.
+	noStepInterval := func(rangeMillis int64) int64 {
+		if step := rangeMillis / 10; step > 0 {
+			return step
+		}
+		return 1
+	}
+
+	const second = 1000
+
+	for _, tc := range []struct {
+		name string
+		// Parent evaluator (the outer range/instant query) time range.
+		parentStart, parentEnd, parentInterval int64
+		query                                  string
+
+		wantStart, wantEnd, wantInterval int64
+	}{
+		{
+			// Instant query: a single evaluation step, no end alignment needed.
+			// Subquery steps span (1000s-60s, 1000s] on the 5s grid: 945s..1000s.
+			name:        "instant query",
+			parentStart: 1000 * second, parentEnd: 1000 * second, parentInterval: 0,
+			query:     "metric[60s:5s]",
+			wantStart: 945 * second, wantEnd: 1000 * second, wantInterval: 5 * second,
+		},
+		{
+			// Range query whose end is already on the 5s step grid
+			// (steps at 201s, 206s, 211s, 216s): subquery ends at the parent end.
+			name:        "range query, end already step-aligned",
+			parentStart: 201 * second, parentEnd: 216 * second, parentInterval: 5 * second,
+			query:     "metric[60s:5s]",
+			wantStart: 145 * second, wantEnd: 216 * second, wantInterval: 5 * second,
+		},
+		{
+			// Same query but end=220s is 4s past the last aligned step (216s).
+			// The subquery must still stop at 216s, matching the aligned case.
+			name:        "range query, end past last step is aligned down",
+			parentStart: 201 * second, parentEnd: 220 * second, parentInterval: 5 * second,
+			query:     "metric[60s:5s]",
+			wantStart: 145 * second, wantEnd: 216 * second, wantInterval: 5 * second,
+		},
+		{
+			// Offset shifts both the subquery start and end back by the offset.
+			name:        "range query with offset, end aligned down",
+			parentStart: 201 * second, parentEnd: 220 * second, parentInterval: 5 * second,
+			query:     "metric[60s:5s] offset 30s",
+			wantStart: 115 * second, wantEnd: 186 * second, wantInterval: 5 * second,
+		},
+		{
+			// Subquery without an explicit step uses noStepSubqueryIntervalFn.
+			name:        "range query, subquery without explicit step",
+			parentStart: 201 * second, parentEnd: 220 * second, parentInterval: 5 * second,
+			query:     "metric[100s:]",
+			wantStart: 110 * second, wantEnd: 216 * second, wantInterval: 10 * second,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			expr, err := testParser.ParseExpr(tc.query)
+			require.NoError(t, err)
+			// Mirror the engine's query setup: PreprocessExpr resolves
+			// duration expressions, then setOffsetForAtModifier resolves
+			// OriginalOffset into the Offset the evaluator uses.
+			step := time.Duration(tc.parentInterval) * time.Millisecond
+			expr, err = PreprocessExpr(expr, timestamp.Time(tc.parentStart), timestamp.Time(tc.parentEnd), step)
+			require.NoError(t, err)
+			setOffsetForAtModifier(tc.parentStart, expr)
+			sq, ok := expr.(*parser.SubqueryExpr)
+			require.True(t, ok, "query must parse to a subquery expression")
+
+			ev := &evaluator{
+				startTimestamp:           tc.parentStart,
+				endTimestamp:             tc.parentEnd,
+				interval:                 tc.parentInterval,
+				samplesStats:             stats.NewQuerySamples(false),
+				noStepSubqueryIntervalFn: noStepInterval,
+			}
+
+			newEv := ev.newSubqueryEvaluator(sq)
+
+			require.Equal(t, tc.wantStart, newEv.startTimestamp, "subquery start timestamp")
+			require.Equal(t, tc.wantEnd, newEv.endTimestamp, "subquery end timestamp")
+			require.Equal(t, tc.wantInterval, newEv.interval, "subquery interval")
+		})
+	}
 }
 
 func TestVectorElemBinop_Histograms(t *testing.T) {
