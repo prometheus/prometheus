@@ -40,8 +40,9 @@ import (
 )
 
 type writeHandler struct {
-	logger     *slog.Logger
-	appendable storage.Appendable
+	logger       *slog.Logger
+	appendable   storage.Appendable
+	appendableV2 storage.AppendableV2 // optional; enables stateset receive on the v2 path
 
 	samplesWithInvalidLabelsTotal  prometheus.Counter
 	samplesAppendedWithoutMetadata prometheus.Counter
@@ -55,13 +56,17 @@ const maxAheadTime = 10 * time.Minute
 
 // NewWriteHandler creates a http.Handler that accepts remote write requests with
 // the given message in acceptedMsgs and writes them to the provided appendable.
+// apV2 is optional: when non-nil the v2 write path uses AppenderV2, enabling
+// native stateset receive. Pass nil to use the legacy v1 appender for v2 writes
+// (statesets will be silently dropped).
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMsgs remoteapi.MessageTypes, ingestSTZeroSample, enableTypeAndUnitLabels, appendMetadata bool) http.Handler {
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, apV2 storage.AppendableV2, acceptedMsgs remoteapi.MessageTypes, ingestSTZeroSample, enableTypeAndUnitLabels, appendMetadata bool) http.Handler {
 	h := &writeHandler{
-		logger:     logger,
-		appendable: appendable,
+		logger:       logger,
+		appendable:   appendable,
+		appendableV2: apV2,
 		samplesWithInvalidLabelsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
 			Subsystem: "api",
@@ -269,9 +274,42 @@ func (h *writeHandler) appendV1Histograms(app storage.Appender, hh []prompb.Hist
 // NOTE(bwplotka): TSDB storage is NOT idempotent, so we don't allow "partial retry-able" errors.
 // Once we have 5xx type of error, we immediately stop and rollback all appends.
 func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ remoteapi.WriteResponseStats, errHTTPCode int, _ error) {
+	maxTime := timestamp.FromTime(time.Now().Add(maxAheadTime))
+
+	// When AppendableV2 is configured, use the AppenderV2 path which supports
+	// native statesets (and also handles exemplars/metadata inline with samples).
+	if h.appendableV2 != nil {
+		app := &remoteWriteAppenderV2{
+			AppenderV2: h.appendableV2.AppenderV2(ctx),
+			maxTime:    maxTime,
+		}
+		s := remoteapi.WriteResponseStats{}
+		samplesWithoutMetadata, errHTTPCode, err := h.appendV2Native(app, req, &s)
+		if err != nil {
+			if errHTTPCode/5 == 100 {
+				if rerr := app.Rollback(); rerr != nil {
+					h.logger.Error("writev2 rollback failed on retry-able error", "err", rerr)
+				}
+				return remoteapi.WriteResponseStats{}, errHTTPCode, err
+			}
+			commitErr := app.Commit()
+			if commitErr != nil {
+				return remoteapi.WriteResponseStats{}, http.StatusInternalServerError, commitErr
+			}
+			h.samplesAppendedWithoutMetadata.Add(float64(samplesWithoutMetadata))
+			return s, errHTTPCode, err
+		}
+		if err := app.Commit(); err != nil {
+			return remoteapi.WriteResponseStats{}, http.StatusInternalServerError, err
+		}
+		h.samplesAppendedWithoutMetadata.Add(float64(samplesWithoutMetadata))
+		return s, 0, nil
+	}
+
+	// Legacy path: v1 appender (statesets silently dropped).
 	app := &remoteWriteAppender{
 		Appender: h.appendable.Appender(ctx),
-		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
+		maxTime:  maxTime,
 	}
 
 	s := remoteapi.WriteResponseStats{}
@@ -472,6 +510,202 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		return samplesWithoutMetadata, 0, nil
 	}
 	// TODO(bwplotka): Better concat formatting? Perhaps add size limit?
+	return samplesWithoutMetadata, http.StatusBadRequest, errors.Join(badRequestErrs...)
+}
+
+// appendV2Native handles a v2 remote-write request using AppenderV2. It
+// supports all sample types including native statesets. Exemplars and metadata
+// are passed inline with the first sample of each TimeSeries via AOptions.
+func (h *writeHandler) appendV2Native(app storage.AppenderV2, req *writev2.Request, rs *remoteapi.WriteResponseStats) (samplesWithoutMetadata, errHTTPCode int, err error) {
+	var (
+		badRequestErrs                                                   []error
+		outOfOrderExemplarErrs, samplesWithInvalidLabels, statesetsTotal int
+
+		b = labels.NewScratchBuilder(0)
+	)
+	for _, ts := range req.Timeseries {
+		ls, err := ts.ToLabels(&b, req.Symbols)
+		if err != nil {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing labels for series %v: %w", ts.LabelsRefs, err))
+			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			continue
+		}
+
+		m := ts.ToMetadata(req.Symbols)
+		if h.enableTypeAndUnitLabels && (m.Type != model.MetricTypeUnknown || m.Unit != "") {
+			slb := labels.NewScratchBuilder(ls.Len() + 2)
+			ls.Range(func(l labels.Label) {
+				if l.Name != model.MetricTypeLabel && l.Name != model.MetricUnitLabel {
+					slb.Add(l.Name, l.Value)
+				}
+			})
+			schema.Metadata{Type: m.Type, Unit: m.Unit}.AddToLabels(&slb)
+			slb.Sort()
+			ls = slb.Labels()
+		}
+
+		if !ls.Has(labels.MetricName) || !ls.IsValid(model.UTF8Validation) {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid metric name or labels, got %v", ls.String()))
+			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			continue
+		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v, duplicated label %s", ls.String(), duplicateLabel))
+			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			continue
+		}
+
+		// Extract statesets early so the validation below can account for them.
+		ssMeta, ssSamples, hasStateset := writev2.ExtractStatesetFromTimeSeries(&ts)
+
+		// A TimeSeries must carry at least one data point.
+		if len(ts.Samples) == 0 && len(ts.Histograms) == 0 && !hasStateset {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("TimeSeries must contain at least one sample, histogram, or stateset for series %v", ls.String()))
+			continue
+		}
+
+		// Pre-collect exemplars so they can be attached to the first sample via AOptions.
+		var collectedExemplars []exemplar.Exemplar
+		for _, ep := range ts.Exemplars {
+			e, err := ep.ToExemplar(&b, req.Symbols)
+			if err != nil {
+				badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing exemplar for series %v: %w", ls.String(), err))
+				continue
+			}
+			collectedExemplars = append(collectedExemplars, e)
+		}
+
+		// firstOpts carries exemplars and metadata for the first data point.
+		// Subsequent data points in the same TimeSeries use empty AOptions.
+		firstOpts := storage.AOptions{Exemplars: collectedExemplars}
+		if h.appendMetadata {
+			firstOpts.Metadata = m
+		}
+		firstSample := true
+
+		nextOpts := func() storage.AOptions {
+			if firstSample {
+				firstSample = false
+				return firstOpts
+			}
+			return storage.AOptions{}
+		}
+
+		allSamplesSoFar := rs.AllSamples()
+		var ref storage.SeriesRef
+
+		// Float samples. The AppenderV2 handles ST zero-sample injection
+		// internally when st != 0 and EnableSTAsZeroSample is set.
+		for _, s := range ts.Samples {
+			ref, err = app.Append(ref, ls, s.GetStartTimestamp(), s.Timestamp, s.GetValue(), nil, nil, nil, nextOpts())
+			if err == nil {
+				rs.Samples++
+				continue
+			}
+			var pErr *storage.AppendPartialError
+			if errors.As(err, &pErr) {
+				outOfOrderExemplarErrs += len(pErr.ExemplarErrors)
+				rs.Samples++
+				continue
+			}
+			if errors.Is(err, storage.ErrOutOfOrderSample) ||
+				errors.Is(err, storage.ErrOutOfBounds) ||
+				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) ||
+				errors.Is(err, storage.ErrTooOldSample) {
+				h.logger.Error("Out of order sample from remote write", "err", err.Error(), "series", ls.String(), "timestamp", s.Timestamp)
+				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
+				continue
+			}
+			return 0, http.StatusInternalServerError, err
+		}
+
+		// Native Histograms.
+		for _, hp := range ts.Histograms {
+			var h2 *histogram.Histogram
+			var fh *histogram.FloatHistogram
+			if hp.IsFloatHistogram() {
+				fh = hp.ToFloatHistogram()
+			} else {
+				h2 = hp.ToIntHistogram()
+			}
+			ref, err = app.Append(ref, ls, hp.GetStartTimestamp(), hp.Timestamp, 0, h2, fh, nil, nextOpts())
+			if err == nil {
+				rs.Histograms++
+				continue
+			}
+			var pErr *storage.AppendPartialError
+			if errors.As(err, &pErr) {
+				outOfOrderExemplarErrs += len(pErr.ExemplarErrors)
+				rs.Histograms++
+				continue
+			}
+			if errors.Is(err, storage.ErrOutOfOrderSample) ||
+				errors.Is(err, storage.ErrOutOfBounds) ||
+				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) ||
+				errors.Is(err, storage.ErrTooOldSample) {
+				h.logger.Error("Out of order histogram from remote write", "err", err.Error(), "series", ls.String(), "timestamp", hp.Timestamp)
+				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
+				continue
+			}
+			if isHistogramValidationError(err) {
+				h.logger.Error("Invalid histogram received", "err", err.Error(), "series", ls.String(), "timestamp", hp.Timestamp)
+				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
+				continue
+			}
+			return 0, http.StatusInternalServerError, err
+		}
+
+		// Native Statesets.
+		if hasStateset && len(ssSamples) > 0 {
+			ss := &stateset.StateSet{
+				LabelName: ssMeta.LabelName,
+				Names:     ssMeta.StateNames,
+			}
+			for _, sample := range ssSamples {
+				ss.Values = sample.Values
+				ref, err = app.Append(ref, ls, 0, sample.TimestampMs, 0, nil, nil, ss, nextOpts())
+				if err == nil {
+					statesetsTotal++
+					continue
+				}
+				if errors.Is(err, storage.ErrOutOfOrderSample) ||
+					errors.Is(err, storage.ErrOutOfBounds) ||
+					errors.Is(err, storage.ErrDuplicateSampleForTimestamp) ||
+					errors.Is(err, storage.ErrTooOldSample) {
+					h.logger.Error("Out of order stateset from remote write", "err", err.Error(), "series", ls.String(), "timestamp", sample.TimestampMs)
+					badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
+					continue
+				}
+				return 0, http.StatusInternalServerError, err
+			}
+		}
+
+		if firstSample && len(collectedExemplars) > 0 {
+			// No data points were appended to attach exemplars to.
+			// This should not happen given the validation above, but log it.
+			h.logger.Error("exemplars without any data point for series", "series", ls.String())
+		}
+
+		if h.appendMetadata && rs.AllSamples() == allSamplesSoFar {
+			// Metadata was not attached because no samples were written.
+			samplesWithoutMetadata++
+		} else if h.appendMetadata && !firstOpts.Metadata.IsEmpty() {
+			// If metadata was passed in firstOpts but samples were written
+			// without metadata (e.g. first sample failed), count it.
+			samplesWithoutMetadata += rs.AllSamples() - allSamplesSoFar
+		}
+	}
+
+	if outOfOrderExemplarErrs > 0 {
+		h.logger.Warn("Error on ingesting out-of-order exemplars", "num_dropped", outOfOrderExemplarErrs)
+	}
+	if statesetsTotal > 0 {
+		h.logger.Debug("Ingested native statesets via remote write v2", "count", statesetsTotal)
+	}
+	h.samplesWithInvalidLabelsTotal.Add(float64(samplesWithInvalidLabels))
+
+	if len(badRequestErrs) == 0 {
+		return samplesWithoutMetadata, 0, nil
+	}
 	return samplesWithoutMetadata, http.StatusBadRequest, errors.Join(badRequestErrs...)
 }
 
