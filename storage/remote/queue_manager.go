@@ -65,6 +65,7 @@ const (
 	reasonDroppedSeries              = "dropped_series"
 	reasonUnintentionalDroppedSeries = "unintentionally_dropped_series"
 	reasonNHCBNotSupported           = "nhcb_in_rw1_not_supported"
+	reasonStatesetInRW1NotSupported  = "stateset_in_rw1_not_supported"
 )
 
 type queueManagerMetrics struct {
@@ -973,6 +974,14 @@ func (t *QueueManager) AppendStatesets(statesets []record.RefStatesetSample) boo
 	if !t.sendNativeHistograms {
 		return true
 	}
+	if t.protoMsg == remoteapi.WriteV1MessageType {
+		// v1 has no wire representation for native statesets; drop early with
+		// a metric so operators can see the misconfiguration.
+		for range statesets {
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonStatesetInRW1NotSupported).Inc()
+		}
+		return true
+	}
 	currentTime := time.Now()
 outer:
 	for _, ss := range statesets {
@@ -1428,7 +1437,10 @@ func (s *shards) enqueue(ref chunks.HeadSeriesRef, data timeSeries) bool {
 			return false
 		}
 		switch data.sType {
-		case tSample:
+		case tSample, tStateset:
+			// Statesets share the sample pending/enqueued counters because
+			// populateV2TimeSeries counts them as nPendingSamples; keeping the
+			// enqueue side consistent prevents the gauge from going negative.
 			s.qm.metrics.pendingSamples.Inc()
 			s.enqueuedSamples.Inc()
 		case tExemplar:
@@ -1716,45 +1728,54 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 
 func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sendExemplars, sendNativeHistograms bool) (int, int, int) {
 	var nPendingSamples, nPendingExemplars, nPendingHistograms int
-	for nPending, d := range batch {
-		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
+	// nOut is the output index into pendingData. It differs from the batch
+	// index when entries are skipped (e.g. tStateset, which v1 cannot encode).
+	// Every non-skipped entry must increment exactly one counter so that
+	// nPendingSamples+nPendingExemplars+nPendingHistograms == nOut at the end.
+	nOut := 0
+	for _, d := range batch {
+		if d.sType == tStateset {
+			// v1 protocol has no native stateset representation. Skip before
+			// writing to pendingData so the output slice stays contiguous and
+			// subsequent entries are not lost. A downgrade path (expanding to
+			// per-state float series) is deferred to a follow-up.
+			continue
+		}
+		pendingData[nOut].Samples = pendingData[nOut].Samples[:0]
 		if sendExemplars {
-			pendingData[nPending].Exemplars = pendingData[nPending].Exemplars[:0]
+			pendingData[nOut].Exemplars = pendingData[nOut].Exemplars[:0]
 		}
 		if sendNativeHistograms {
-			pendingData[nPending].Histograms = pendingData[nPending].Histograms[:0]
+			pendingData[nOut].Histograms = pendingData[nOut].Histograms[:0]
 		}
 
 		// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
 		// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
 		// stop reading from the queue. This makes it safe to reference pendingSamples by index.
-		pendingData[nPending].Labels = prompb.FromLabels(d.seriesLabels, pendingData[nPending].Labels)
+		pendingData[nOut].Labels = prompb.FromLabels(d.seriesLabels, pendingData[nOut].Labels)
 
 		switch d.sType {
 		case tSample:
-			pendingData[nPending].Samples = append(pendingData[nPending].Samples, prompb.Sample{
+			pendingData[nOut].Samples = append(pendingData[nOut].Samples, prompb.Sample{
 				Value:     d.value,
 				Timestamp: d.timestamp,
 			})
 			nPendingSamples++
 		case tExemplar:
-			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, prompb.Exemplar{
+			pendingData[nOut].Exemplars = append(pendingData[nOut].Exemplars, prompb.Exemplar{
 				Labels:    prompb.FromLabels(d.exemplarLabels, nil),
 				Value:     d.value,
 				Timestamp: d.timestamp,
 			})
 			nPendingExemplars++
 		case tHistogram:
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, prompb.FromIntHistogram(d.timestamp, d.histogram))
+			pendingData[nOut].Histograms = append(pendingData[nOut].Histograms, prompb.FromIntHistogram(d.timestamp, d.histogram))
 			nPendingHistograms++
 		case tFloatHistogram:
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, prompb.FromFloatHistogram(d.timestamp, d.floatHistogram))
+			pendingData[nOut].Histograms = append(pendingData[nOut].Histograms, prompb.FromFloatHistogram(d.timestamp, d.floatHistogram))
 			nPendingHistograms++
-		case tStateset:
-			// v1 protocol does not support native statesets; drop silently.
-			// The v1 downgrade path (exploding to float series) requires per-state
-			// label sets and is deferred to a follow-up implementation.
 		}
+		nOut++
 	}
 	return nPendingSamples, nPendingExemplars, nPendingHistograms
 }
@@ -2083,19 +2104,20 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromFloatHistogram(d.timestamp, d.floatHistogram))
 			nPendingHistograms++
 		case tStateset:
-			if d.stateset != nil {
-				writev2.AppendStatesetToTimeSeries(&pendingData[nPending],
-					writev2.StatesetMetadata{
-						LabelName:  d.stateset.LabelName,
-						StateNames: d.stateset.Names,
-					},
-					[]writev2.StatesetSample{{
-						TimestampMs: d.timestamp,
-						Values:      d.stateset.Values,
-					}},
-				)
-				nPendingSamples++
-			}
+			// d.stateset is always non-nil for tStateset entries (AppendStatesets
+			// validates before enqueuing). The unconditional call keeps nPendingSamples
+			// consistent with nPending so pendingDataV2[:n] stays contiguous.
+			writev2.AppendStatesetToTimeSeries(&pendingData[nPending],
+				writev2.StatesetMetadata{
+					LabelName:  d.stateset.LabelName,
+					StateNames: d.stateset.Names,
+				},
+				[]writev2.StatesetSample{{
+					TimestampMs: d.timestamp,
+					Values:      d.stateset.Values,
+				}},
+			)
+			nPendingSamples++
 		case tMetadata:
 			nUnexpectedMetadata++
 		}
