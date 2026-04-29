@@ -2279,12 +2279,13 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 						counter++
 					}
 				}
-				var samplesReadCount int64
+				var maxt int64
 				// Evaluate the matrix selector for this series
 				// for this step, but only if this is the 1st
 				// iteration or no @ modifier has been used.
-				if ts == ev.startTimestamp || selVS.Timestamp == nil {
-					maxt := ts - offset
+				refetch := ts == ev.startTimestamp || selVS.Timestamp == nil
+				if refetch {
+					maxt = ts - offset
 					mint := maxt - selRange
 					switch {
 					case selVS.Anchored:
@@ -2294,16 +2295,9 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 						maxt += durationMilliseconds(ev.lookbackDelta)
 					}
 					floats, histograms, startTimestamps = ev.matrixIterSlice(it, mint, maxt, floats, histograms, startTimestamps)
-					// For subquery-derived matrices, SamplesRead was already counted
-					// inside evalSubquery via MergeSamplesReadFromSubquery; skip here
-					// to avoid double-counting the storage I/O.
-					if !matrixFromSubquery {
-						if step == 0 {
-							samplesReadCount = int64(len(floats) + totalHPointSize(histograms))
-						} else {
-							samplesReadCount = countSamplesAfter(floats, histograms, maxt-ev.interval)
-						}
-					}
+				}
+				if len(floats)+len(histograms) == 0 {
+					continue
 				}
 				// fullWindowCount reflects the matrix window consumed at this
 				// step. With an @ modifier the same window is reused across all
@@ -2311,8 +2305,18 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				// this after the conditional re-fetch handles both cases
 				// uniformly.
 				fullWindowCount := int64(len(floats) + totalHPointSize(histograms))
-				if len(floats)+len(histograms) == 0 {
-					continue
+				// For subquery-derived matrices, SamplesRead was already counted
+				// inside evalSubquery via MergeSamplesReadFromSubquery; skip here
+				// to avoid double-counting the storage I/O. On step 0 the full
+				// window is new; on later steps only points past the previous
+				// step's cutoff are new.
+				var samplesReadCount int64
+				if refetch && !matrixFromSubquery {
+					if step == 0 {
+						samplesReadCount = fullWindowCount
+					} else {
+						samplesReadCount = countSamplesAfter(floats, histograms, maxt-ev.interval)
+					}
 				}
 				inMatrix[0].Floats = floats
 				inMatrix[0].Histograms = histograms
@@ -2323,7 +2327,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				outVec, annos := call(vectorVals, inMatrix, e.Args, enh)
 				warnings.Merge(annos)
 				ev.samplesStats.IncrementSamplesAtStep(step, fullWindowCount)
-				if !matrixFromSubquery {
+				if samplesReadCount > 0 {
 					ev.samplesStats.IncrementSamplesReadAtStep(step, samplesReadCount)
 				}
 
