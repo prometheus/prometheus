@@ -14,11 +14,13 @@
 package chunkenc
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
@@ -330,4 +332,202 @@ func TestFloatHistogramSTChunkMixedST(t *testing.T) {
 		{st: 0, t: 4000, fh: fhs[3]},
 		{st: 200, t: 5000, fh: fhs[4]},
 	})
+}
+
+func TestFloatHistogramSTChunkSeek(t *testing.T) {
+	fhs := tsdbutil.GenerateTestFloatHistograms(5)
+	c := NewFloatHistogramSTChunk()
+	app, err := c.Appender()
+	require.NoError(t, err)
+
+	samples := []floatHistogramSTSample{
+		{st: 0, t: 1000, fh: fhs[0]},
+		{st: 0, t: 2000, fh: fhs[1]},
+		{st: 100, t: 3000, fh: fhs[2]},
+		{st: 100, t: 4000, fh: fhs[3]},
+		{st: 200, t: 5000, fh: fhs[4]},
+	}
+	for _, s := range samples {
+		_, _, app, err = app.AppendFloatHistogram(nil, s.st, s.t, s.fh, false)
+		require.NoError(t, err)
+	}
+
+	it := c.Iterator(nil)
+	require.Equal(t, ValFloatHistogram, it.Seek(2000))
+	require.Equal(t, int64(2000), it.AtT())
+	require.Equal(t, int64(0), it.AtST())
+
+	require.Equal(t, ValFloatHistogram, it.Seek(3000))
+	require.Equal(t, int64(3000), it.AtT())
+	require.Equal(t, int64(100), it.AtST())
+
+	require.Equal(t, ValFloatHistogram, it.Seek(3000))
+	require.Equal(t, int64(3000), it.AtT())
+	require.Equal(t, int64(100), it.AtST())
+
+	require.Equal(t, ValFloatHistogram, it.Seek(4000))
+	require.Equal(t, int64(4000), it.AtT())
+	require.Equal(t, int64(100), it.AtST())
+
+	require.Equal(t, ValFloatHistogram, it.Seek(5000))
+	require.Equal(t, int64(5000), it.AtT())
+	require.Equal(t, int64(200), it.AtST())
+
+	require.Equal(t, ValNone, it.Seek(5001))
+	require.NoError(t, it.Err())
+}
+
+func TestFloatHistogramSTChunkStaleSamples(t *testing.T) {
+	c := NewFloatHistogramSTChunk()
+	app, err := c.Appender()
+	require.NoError(t, err)
+
+	fh1 := tsdbutil.GenerateTestFloatHistogram(0)
+	stale1 := &histogram.FloatHistogram{Sum: math.Float64frombits(value.StaleNaN)}
+	stale2 := &histogram.FloatHistogram{Sum: math.Float64frombits(value.StaleNaN)}
+
+	_, _, app, err = app.AppendFloatHistogram(nil, 100, 1000, fh1, false)
+	require.NoError(t, err)
+	_, _, app, err = app.AppendFloatHistogram(nil, 200, 2000, stale1, false)
+	require.NoError(t, err)
+	_, _, app, err = app.AppendFloatHistogram(nil, 0, 3000, stale2, false)
+	require.NoError(t, err)
+
+	it := c.Iterator(nil)
+
+	require.Equal(t, ValFloatHistogram, it.Next())
+	require.Equal(t, int64(1000), it.AtT())
+	require.Equal(t, int64(100), it.AtST())
+	_, fh := it.AtFloatHistogram(nil)
+	require.False(t, value.IsStaleNaN(fh.Sum))
+
+	require.Equal(t, ValFloatHistogram, it.Next())
+	require.Equal(t, int64(2000), it.AtT())
+	require.Equal(t, int64(200), it.AtST())
+	_, fh = it.AtFloatHistogram(nil)
+	require.True(t, value.IsStaleNaN(fh.Sum))
+
+	require.Equal(t, ValFloatHistogram, it.Next())
+	require.Equal(t, int64(3000), it.AtT())
+	require.Equal(t, int64(0), it.AtST())
+	_, fh = it.AtFloatHistogram(nil)
+	require.True(t, value.IsStaleNaN(fh.Sum))
+
+	require.Equal(t, ValNone, it.Next())
+	require.NoError(t, it.Err())
+}
+
+func TestFloatHistogramSTAppendOnlyErrorsPreserveChunk(t *testing.T) {
+	t.Run("schema change", func(t *testing.T) {
+		c := NewFloatHistogramSTChunk()
+		app, err := c.Appender()
+		require.NoError(t, err)
+
+		h := tsdbutil.GenerateTestFloatHistogram(0)
+		_, recoded, nextApp, err := app.AppendFloatHistogram(nil, 100, 1000, h, true)
+		require.NoError(t, err)
+		require.False(t, recoded)
+
+		before := append([]byte(nil), c.Bytes()...)
+		beforeSamples := c.NumSamples()
+
+		h2 := h.Copy()
+		h2.Schema++
+		newChunk, recoded, _, err := nextApp.AppendFloatHistogram(nil, 200, 2000, h2, true)
+		require.Nil(t, newChunk)
+		require.False(t, recoded)
+		require.EqualError(t, err, "float histogram schema change")
+		require.Equal(t, beforeSamples, c.NumSamples())
+		require.Equal(t, before, c.Bytes())
+	})
+
+	t.Run("counter reset", func(t *testing.T) {
+		c := NewFloatHistogramSTChunk()
+		app, err := c.Appender()
+		require.NoError(t, err)
+
+		h := tsdbutil.GenerateTestFloatHistogram(0)
+		_, recoded, nextApp, err := app.AppendFloatHistogram(nil, 100, 1000, h, true)
+		require.NoError(t, err)
+		require.False(t, recoded)
+
+		before := append([]byte(nil), c.Bytes()...)
+		beforeSamples := c.NumSamples()
+
+		h2 := h.Copy()
+		h2.CounterResetHint = histogram.CounterReset
+		newChunk, recoded, _, err := nextApp.AppendFloatHistogram(nil, 200, 2000, h2, true)
+		require.Nil(t, newChunk)
+		require.False(t, recoded)
+		require.EqualError(t, err, "float histogram counter reset")
+		require.Equal(t, beforeSamples, c.NumSamples())
+		require.Equal(t, before, c.Bytes())
+	})
+}
+
+func TestFloatHistogramSTChunkGaugeRecodePreservesST(t *testing.T) {
+	c := NewFloatHistogramSTChunk()
+	app, err := c.Appender()
+	require.NoError(t, err)
+
+	fh1 := &histogram.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Count:            5,
+		ZeroCount:        2,
+		Sum:              18.4,
+		ZeroThreshold:    1e-125,
+		Schema:           1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 2, Length: 1},
+			{Offset: 3, Length: 2},
+			{Offset: 3, Length: 1},
+			{Offset: 1, Length: 1},
+		},
+		PositiveBuckets: []float64{6, 3, 3, 2, 4, 5, 1},
+	}
+
+	_, _, app, err = app.AppendFloatHistogram(nil, 100, 1000, fh1, false)
+	require.NoError(t, err)
+	require.Equal(t, GaugeType, c.GetCounterResetHeader())
+
+	fh2 := fh1.Copy()
+	fh2.Count += 9
+	fh2.ZeroCount++
+	fh2.Sum = 30
+	fh2.PositiveSpans = []histogram.Span{
+		{Offset: 0, Length: 3},
+		{Offset: 1, Length: 1},
+		{Offset: 1, Length: 4},
+		{Offset: 3, Length: 3},
+	}
+	fh2.PositiveBuckets = []float64{7, 5, 1, 3, 1, 0, 2, 5, 5, 0, 1}
+
+	newChunk, recoded, newApp, err := app.AppendFloatHistogram(nil, 200, 2000, fh2, false)
+	require.NoError(t, err)
+	require.True(t, recoded)
+
+	stChunk, ok := newChunk.(*FloatHistogramSTChunk)
+	require.True(t, ok)
+	require.Equal(t, GaugeType, stChunk.GetCounterResetHeader())
+
+	it := stChunk.Iterator(nil)
+	require.Equal(t, ValFloatHistogram, it.Next())
+	require.Equal(t, int64(1000), it.AtT())
+	require.Equal(t, int64(100), it.AtST())
+
+	require.Equal(t, ValFloatHistogram, it.Next())
+	require.Equal(t, int64(2000), it.AtT())
+	require.Equal(t, int64(200), it.AtST())
+	require.Equal(t, ValNone, it.Next())
+	require.NoError(t, it.Err())
+
+	fh3 := fh2.Copy()
+	fh3.Sum = 35
+	for i := range fh3.PositiveBuckets {
+		fh3.PositiveBuckets[i]++
+	}
+	_, _, _, err = newApp.AppendFloatHistogram(nil, 300, 3000, fh3, false)
+	require.NoError(t, err)
+	require.Equal(t, 3, stChunk.NumSamples())
 }

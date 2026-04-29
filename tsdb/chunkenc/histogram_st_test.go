@@ -14,11 +14,13 @@
 package chunkenc
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
@@ -327,4 +329,202 @@ func TestHistogramSTChunkMixedST(t *testing.T) {
 		{st: 0, t: 4000, h: hs[3]},
 		{st: 200, t: 5000, h: hs[4]},
 	})
+}
+
+func TestHistogramSTChunkSeek(t *testing.T) {
+	hs := tsdbutil.GenerateTestHistograms(5)
+	c := NewHistogramSTChunk()
+	app, err := c.Appender()
+	require.NoError(t, err)
+
+	samples := []histogramSTSample{
+		{st: 0, t: 1000, h: hs[0]},
+		{st: 0, t: 2000, h: hs[1]},
+		{st: 100, t: 3000, h: hs[2]},
+		{st: 100, t: 4000, h: hs[3]},
+		{st: 200, t: 5000, h: hs[4]},
+	}
+	for _, s := range samples {
+		_, _, app, err = app.AppendHistogram(nil, s.st, s.t, s.h, false)
+		require.NoError(t, err)
+	}
+
+	it := c.Iterator(nil)
+	require.Equal(t, ValHistogram, it.Seek(2000))
+	require.Equal(t, int64(2000), it.AtT())
+	require.Equal(t, int64(0), it.AtST())
+
+	require.Equal(t, ValHistogram, it.Seek(3000))
+	require.Equal(t, int64(3000), it.AtT())
+	require.Equal(t, int64(100), it.AtST())
+
+	require.Equal(t, ValHistogram, it.Seek(3000))
+	require.Equal(t, int64(3000), it.AtT())
+	require.Equal(t, int64(100), it.AtST())
+
+	require.Equal(t, ValHistogram, it.Seek(4000))
+	require.Equal(t, int64(4000), it.AtT())
+	require.Equal(t, int64(100), it.AtST())
+
+	require.Equal(t, ValHistogram, it.Seek(5000))
+	require.Equal(t, int64(5000), it.AtT())
+	require.Equal(t, int64(200), it.AtST())
+
+	require.Equal(t, ValNone, it.Seek(5001))
+	require.NoError(t, it.Err())
+}
+
+func TestHistogramSTChunkStaleSamples(t *testing.T) {
+	c := NewHistogramSTChunk()
+	app, err := c.Appender()
+	require.NoError(t, err)
+
+	h1 := tsdbutil.GenerateTestHistogram(0)
+	stale1 := &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}
+	stale2 := &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}
+
+	_, _, app, err = app.AppendHistogram(nil, 100, 1000, h1, false)
+	require.NoError(t, err)
+	_, _, app, err = app.AppendHistogram(nil, 200, 2000, stale1, false)
+	require.NoError(t, err)
+	_, _, app, err = app.AppendHistogram(nil, 0, 3000, stale2, false)
+	require.NoError(t, err)
+
+	it := c.Iterator(nil)
+
+	require.Equal(t, ValHistogram, it.Next())
+	require.Equal(t, int64(1000), it.AtT())
+	require.Equal(t, int64(100), it.AtST())
+	_, h := it.AtHistogram(nil)
+	require.False(t, value.IsStaleNaN(h.Sum))
+
+	require.Equal(t, ValHistogram, it.Next())
+	require.Equal(t, int64(2000), it.AtT())
+	require.Equal(t, int64(200), it.AtST())
+	_, h = it.AtHistogram(nil)
+	require.True(t, value.IsStaleNaN(h.Sum))
+
+	require.Equal(t, ValHistogram, it.Next())
+	require.Equal(t, int64(3000), it.AtT())
+	require.Equal(t, int64(0), it.AtST())
+	_, h = it.AtHistogram(nil)
+	require.True(t, value.IsStaleNaN(h.Sum))
+
+	require.Equal(t, ValNone, it.Next())
+	require.NoError(t, it.Err())
+}
+
+func TestHistogramSTAppendOnlyErrorsPreserveChunk(t *testing.T) {
+	t.Run("schema change", func(t *testing.T) {
+		c := NewHistogramSTChunk()
+		app, err := c.Appender()
+		require.NoError(t, err)
+
+		h := tsdbutil.GenerateTestHistogram(0)
+		_, recoded, nextApp, err := app.AppendHistogram(nil, 100, 1000, h, true)
+		require.NoError(t, err)
+		require.False(t, recoded)
+
+		before := append([]byte(nil), c.Bytes()...)
+		beforeSamples := c.NumSamples()
+
+		h2 := h.Copy()
+		h2.Schema++
+		newChunk, recoded, _, err := nextApp.AppendHistogram(nil, 200, 2000, h2, true)
+		require.Nil(t, newChunk)
+		require.False(t, recoded)
+		require.EqualError(t, err, "histogram schema change")
+		require.Equal(t, beforeSamples, c.NumSamples())
+		require.Equal(t, before, c.Bytes())
+	})
+
+	t.Run("counter reset", func(t *testing.T) {
+		c := NewHistogramSTChunk()
+		app, err := c.Appender()
+		require.NoError(t, err)
+
+		h := tsdbutil.GenerateTestHistogram(0)
+		_, recoded, nextApp, err := app.AppendHistogram(nil, 100, 1000, h, true)
+		require.NoError(t, err)
+		require.False(t, recoded)
+
+		before := append([]byte(nil), c.Bytes()...)
+		beforeSamples := c.NumSamples()
+
+		h2 := h.Copy()
+		h2.CounterResetHint = histogram.CounterReset
+		newChunk, recoded, _, err := nextApp.AppendHistogram(nil, 200, 2000, h2, true)
+		require.Nil(t, newChunk)
+		require.False(t, recoded)
+		require.EqualError(t, err, "histogram counter reset")
+		require.Equal(t, beforeSamples, c.NumSamples())
+		require.Equal(t, before, c.Bytes())
+	})
+}
+
+func TestHistogramSTChunkGauge(t *testing.T) {
+	c := NewHistogramSTChunk()
+	app, err := c.Appender()
+	require.NoError(t, err)
+
+	h1 := &histogram.Histogram{
+		CounterResetHint: histogram.GaugeType,
+		Count:            5,
+		ZeroCount:        2,
+		Sum:              18.4,
+		ZeroThreshold:    1e-125,
+		Schema:           1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 2, Length: 1},
+			{Offset: 3, Length: 2},
+			{Offset: 3, Length: 1},
+			{Offset: 1, Length: 1},
+		},
+		PositiveBuckets: []int64{6, -3, 0, -1, 2, 1, -4},
+	}
+
+	_, _, app, err = app.AppendHistogram(nil, 100, 1000, h1, false)
+	require.NoError(t, err)
+	require.Equal(t, GaugeType, c.GetCounterResetHeader())
+
+	h2 := h1.Copy()
+	h2.Count += 9
+	h2.ZeroCount++
+	h2.Sum = 30
+	h2.PositiveSpans = []histogram.Span{
+		{Offset: 0, Length: 3},
+		{Offset: 1, Length: 1},
+		{Offset: 1, Length: 4},
+		{Offset: 3, Length: 3},
+	}
+	h2.PositiveBuckets = []int64{7, -2, -4, 2, -2, -1, 2, 3, 0, -5, 1}
+
+	newChunk, recoded, newApp, err := app.AppendHistogram(nil, 200, 2000, h2, false)
+	require.NoError(t, err)
+	require.True(t, recoded)
+
+	stChunk, ok := newChunk.(*HistogramSTChunk)
+	require.True(t, ok)
+	require.Equal(t, GaugeType, stChunk.GetCounterResetHeader())
+
+	it := stChunk.Iterator(nil)
+	require.Equal(t, ValHistogram, it.Next())
+	require.Equal(t, int64(1000), it.AtT())
+	require.Equal(t, int64(100), it.AtST())
+
+	require.Equal(t, ValHistogram, it.Next())
+	require.Equal(t, int64(2000), it.AtT())
+	require.Equal(t, int64(200), it.AtST())
+	require.Equal(t, ValNone, it.Next())
+	require.NoError(t, it.Err())
+
+	h3 := h2.Copy()
+	h3.Sum = 35
+	for i := range h3.PositiveBuckets {
+		h3.PositiveBuckets[i]++
+	}
+	_, _, _, err = newApp.AppendHistogram(nil, 300, 3000, h3, false)
+	require.NoError(t, err)
+	require.Equal(t, 3, stChunk.NumSamples())
 }
