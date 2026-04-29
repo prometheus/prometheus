@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
@@ -965,6 +966,64 @@ outer:
 	return true
 }
 
+// AppendStatesets appends stateset samples from the WAL to the queue.
+// Statesets share the sendNativeHistograms gate since they are similarly
+// advanced sample types that not all receivers understand.
+func (t *QueueManager) AppendStatesets(statesets []record.RefStatesetSample) bool {
+	if !t.sendNativeHistograms {
+		return true
+	}
+	currentTime := time.Now()
+outer:
+	for _, ss := range statesets {
+		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), ss.T) {
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
+			continue
+		}
+		t.seriesMtx.Lock()
+		lbls, ok := t.seriesLabels[ss.Ref]
+		if !ok {
+			t.dataDropped.incr(1)
+			if _, ok := t.droppedSeries[ss.Ref]; !ok {
+				t.logger.Info("Dropped stateset for series that was not explicitly dropped via relabelling", "ref", ss.Ref)
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+			} else {
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+			}
+			t.seriesMtx.Unlock()
+			continue
+		}
+		meta := t.seriesMetadata[ss.Ref]
+		t.seriesMtx.Unlock()
+
+		backoff := model.Duration(5 * time.Millisecond)
+		for {
+			select {
+			case <-t.quit:
+				return false
+			default:
+			}
+			if t.shards.enqueue(ss.Ref, timeSeries{
+				seriesLabels: lbls,
+				metadata:     meta,
+				timestamp:    ss.T,
+				stateset:     ss.SS,
+				sType:        tStateset,
+			}) {
+				continue outer
+			}
+
+			t.metrics.enqueueRetriesTotal.Inc()
+			time.Sleep(time.Duration(backoff))
+			backoff *= 2
+			if backoff > t.cfg.MaxBackoff {
+				backoff = t.cfg.MaxBackoff
+			}
+		}
+	}
+	return true
+}
+
 // Start the queue manager sending samples to the remote storage.
 // Does not block.
 func (t *QueueManager) Start() {
@@ -1404,10 +1463,11 @@ type timeSeries struct {
 	value                     float64
 	histogram                 *histogram.Histogram
 	floatHistogram            *histogram.FloatHistogram
+	stateset                  *stateset.StateSet
 	metadata                  *metadata.Metadata
 	startTimestamp, timestamp int64
 	exemplarLabels            labels.Labels
-	// The type of series: sample, exemplar, or histogram.
+	// The type of series: sample, exemplar, histogram, or stateset.
 	sType seriesType
 }
 
@@ -1419,6 +1479,7 @@ const (
 	tHistogram
 	tFloatHistogram
 	tMetadata
+	tStateset
 )
 
 func newQueue(batchSize, capacity int) *queue {
@@ -1689,6 +1750,10 @@ func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sen
 		case tFloatHistogram:
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, prompb.FromFloatHistogram(d.timestamp, d.floatHistogram))
 			nPendingHistograms++
+		case tStateset:
+			// v1 protocol does not support native statesets; drop silently.
+			// The v1 downgrade path (exploding to float series) requires per-state
+			// label sets and is deferred to a follow-up implementation.
 		}
 	}
 	return nPendingSamples, nPendingExemplars, nPendingHistograms
@@ -2017,6 +2082,20 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			// TODO(bwplotka): Extend with ST once histograms populate it.
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromFloatHistogram(d.timestamp, d.floatHistogram))
 			nPendingHistograms++
+		case tStateset:
+			if d.stateset != nil {
+				writev2.AppendStatesetToTimeSeries(&pendingData[nPending],
+					writev2.StatesetMetadata{
+						LabelName:  d.stateset.LabelName,
+						StateNames: d.stateset.Names,
+					},
+					[]writev2.StatesetSample{{
+						TimestampMs: d.timestamp,
+						Values:      d.stateset.Values,
+					}},
+				)
+				nPendingSamples++
+			}
 		case tMetadata:
 			nUnexpectedMetadata++
 		}

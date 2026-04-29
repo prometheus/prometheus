@@ -26,6 +26,7 @@ type BuffersPool struct {
 	histograms      zeropool.Pool[[]RefHistogramSample]
 	floatHistograms zeropool.Pool[[]RefFloatHistogramSample]
 	metadata        zeropool.Pool[[]RefMetadata]
+	statesets       zeropool.Pool[[]RefStatesetSample]
 }
 
 // NewBuffersPool returns a new BuffersPool object.
@@ -112,4 +113,17 @@ func (p *BuffersPool) GetMetadata(capacity int) []RefMetadata {
 func (p *BuffersPool) PutMetadata(b []RefMetadata) {
 	clear(b)
 	p.metadata.Put(b[:0])
+}
+
+func (p *BuffersPool) GetStatesets(capacity int) []RefStatesetSample {
+	b := p.statesets.Get()
+	if b == nil {
+		return make([]RefStatesetSample, 0, capacity)
+	}
+	return b
+}
+
+func (p *BuffersPool) PutStatesets(b []RefStatesetSample) {
+	clear(b)
+	p.statesets.Put(b[:0])
 }
