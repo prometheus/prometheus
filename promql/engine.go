@@ -2482,17 +2482,24 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			panic(fmt.Errorf("unexpected result in StepInvariantExpr evaluation: %T", expr))
 		}
 		for i := range mat {
-			if len(mat[i].Floats)+len(mat[i].Histograms) != 1 {
+			if len(mat[i].Floats)+len(mat[i].Histograms)+len(mat[i].Statesets) != 1 {
 				panic(errors.New("unexpected number of samples"))
 			}
 			for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts += ev.interval {
-				if len(mat[i].Floats) > 0 {
+				switch {
+				case len(mat[i].Floats) > 0:
 					mat[i].Floats = append(mat[i].Floats, FPoint{
 						T: ts,
 						F: mat[i].Floats[0].F,
 					})
 					ev.currentSamples++
-				} else {
+				case len(mat[i].Statesets) > 0:
+					mat[i].Statesets = append(mat[i].Statesets, SSPoint{
+						T:  ts,
+						SS: mat[i].Statesets[0].SS,
+					})
+					ev.currentSamples++
+				default:
 					point := HPoint{
 						T: ts,
 						H: mat[i].Histograms[0].H,

@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // MaxStates is the maximum number of states a StateSet may have.
@@ -36,6 +37,30 @@ type StateSet struct {
 	LabelName string
 	Names     []string
 	Values    uint64
+}
+
+// String returns a human-readable representation of the stateset in the
+// promqltest load/eval syntax: ss(labelName, state1=0 state2=1 ...).
+func (s *StateSet) String() string {
+	if s == nil {
+		return "ss()"
+	}
+	var b strings.Builder
+	b.WriteString("ss(")
+	b.WriteString(s.LabelName)
+	b.WriteString(",")
+	for i, n := range s.Names {
+		b.WriteByte(' ')
+		b.WriteString(n)
+		b.WriteByte('=')
+		if s.Values>>uint(i)&1 == 1 {
+			b.WriteByte('1')
+		} else {
+			b.WriteByte('0')
+		}
+	}
+	b.WriteByte(')')
+	return b.String()
 }
 
 // Validate reports whether s satisfies all invariants: LabelName non-empty,

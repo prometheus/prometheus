@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -508,6 +509,9 @@ func parseDurationPrefix(s string) (int64, string, error) {
 }
 
 func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValue, error) {
+	if isStatesetLine(defLine) {
+		return parseStatesetSeries(defLine, line)
+	}
 	testParser := parser.NewParser(TestParserOpts)
 	metric, vals, err := testParser.ParseSeriesDesc(defLine)
 	if err != nil {
@@ -517,6 +521,201 @@ func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValu
 		return labels.Labels{}, nil, err
 	}
 	return metric, vals, nil
+}
+
+// isStatesetLine reports whether the values portion of a series description
+// line contains at least one ss(...) stateset token.
+func isStatesetLine(line string) bool {
+	_, valPart, err := splitMetricPrefix(strings.TrimSpace(line))
+	if err != nil {
+		return false
+	}
+	// Look for ss( as a token start (preceded by start-of-string or whitespace).
+	for i := 0; i < len(valPart)-2; i++ {
+		if valPart[i] == 's' && valPart[i+1] == 's' && valPart[i+2] == '(' {
+			if i == 0 || valPart[i-1] == ' ' || valPart[i-1] == '\t' {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// splitMetricPrefix splits a series description line into the metric+labels
+// prefix (everything up to and including the closing '}' or the metric name
+// if there are no labels) and the values part that follows.
+func splitMetricPrefix(line string) (prefix, values string, err error) {
+	i := 0
+	// Skip metric name characters.
+	for i < len(line) && line[i] != '{' && line[i] != ' ' && line[i] != '\t' {
+		i++
+	}
+	// If we hit a '{', scan to the matching '}'.
+	if i < len(line) && line[i] == '{' {
+		depth := 1
+		i++
+		for i < len(line) && depth > 0 {
+			switch line[i] {
+			case '{':
+				depth++
+			case '}':
+				depth--
+			}
+			i++
+		}
+		if depth != 0 {
+			return "", "", errors.New("unmatched '{' in series line")
+		}
+	}
+	return strings.TrimSpace(line[:i]), strings.TrimSpace(line[i:]), nil
+}
+
+// parseStatesetSeries parses a series description line whose values portion
+// contains ss(...) tokens.  Float and histogram tokens are not supported on
+// the same line; mixing them with ss() is a parse error.
+func parseStatesetSeries(line string, lineNum int) (labels.Labels, []parser.SequenceValue, error) {
+	line = strings.TrimSpace(line)
+	prefix, valPart, err := splitMetricPrefix(line)
+	if err != nil {
+		return labels.Labels{}, nil, raise(lineNum, "%s", err)
+	}
+
+	// Use the yacc parser to obtain the metric labels by feeding "metric{...} _".
+	lbls, _, err := parseSeries(prefix+" _", lineNum)
+	if err != nil {
+		return labels.Labels{}, nil, err
+	}
+
+	vals, err := parseStatesetValues(valPart, lineNum)
+	if err != nil {
+		return labels.Labels{}, nil, err
+	}
+	return lbls, vals, nil
+}
+
+// parseStatesetValues tokenises a values string that may contain ss(...)
+// tokens, _ (omitted), and x N repeat counts.
+func parseStatesetValues(s string, lineNum int) ([]parser.SequenceValue, error) {
+	var vals []parser.SequenceValue
+	s = strings.TrimSpace(s)
+	for s != "" {
+		s = strings.TrimLeft(s, " \t")
+		if s == "" {
+			break
+		}
+		switch {
+		case strings.HasPrefix(s, "_"):
+			s = strings.TrimLeft(s[1:], " \t")
+			if n, rest, ok := consumeRepeat(s); ok {
+				for range n {
+					vals = append(vals, parser.SequenceValue{Omitted: true})
+				}
+				s = rest
+			} else {
+				vals = append(vals, parser.SequenceValue{Omitted: true})
+			}
+		case strings.HasPrefix(s, "ss("):
+			ss, rest, err := consumeStatesetToken(s[3:], lineNum)
+			if err != nil {
+				return nil, err
+			}
+			s = strings.TrimLeft(rest, " \t")
+			sv := parser.SequenceValue{StateSet: ss}
+			if n, rest2, ok := consumeRepeat(s); ok {
+				// x N → emit N+1 copies (matches histogram convention).
+				for i := uint64(0); i <= n; i++ {
+					vals = append(vals, sv)
+				}
+				s = rest2
+			} else {
+				vals = append(vals, sv)
+			}
+		default:
+			return nil, raise(lineNum, "unexpected token in stateset values: %q", s)
+		}
+	}
+	return vals, nil
+}
+
+// consumeRepeat checks whether s starts with "x<uint>"; returns (n, rest, true) if so.
+func consumeRepeat(s string) (uint64, string, bool) {
+	if s == "" || s[0] != 'x' {
+		return 0, s, false
+	}
+	rest := strings.TrimLeft(s[1:], " \t")
+	end := 0
+	for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return 0, s, false
+	}
+	n, err := strconv.ParseUint(rest[:end], 10, 64)
+	if err != nil {
+		return 0, s, false
+	}
+	return n, strings.TrimLeft(rest[end:], " \t"), true
+}
+
+// consumeStatesetToken parses the content after the opening "ss(" up to and
+// including the matching ')'.  It returns the StateSet and the remaining input.
+func consumeStatesetToken(s string, lineNum int) (*stateset.StateSet, string, error) {
+	// Find the matching ')'.
+	depth := 1
+	i := 0
+	for i < len(s) && depth > 0 {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		}
+		i++
+	}
+	if depth != 0 {
+		return nil, "", raise(lineNum, "unclosed ss( in stateset value")
+	}
+	inner := s[:i-1] // everything between the parens
+	rest := s[i:]
+
+	labelName, statesPart, ok := strings.Cut(inner, ",")
+	if !ok {
+		return nil, "", raise(lineNum, "ss(): missing comma; expected ss(label_name, state=value ...)")
+	}
+	labelName = strings.TrimSpace(labelName)
+	statesPart = strings.TrimSpace(statesPart)
+
+	type pair struct {
+		name   string
+		active bool
+	}
+	var pairs []pair
+	for tok := range strings.FieldsSeq(statesPart) {
+		name, valStr, ok := strings.Cut(tok, "=")
+		if !ok {
+			return nil, "", raise(lineNum, "ss() token %q missing '=value'", tok)
+		}
+		if valStr != "0" && valStr != "1" {
+			return nil, "", raise(lineNum, "ss() state %q: value must be 0 or 1, got %q", name, valStr)
+		}
+		pairs = append(pairs, pair{name: name, active: valStr == "1"})
+	}
+	// Sort by name: StateSet.Names must be lexicographically sorted.
+	slices.SortFunc(pairs, func(a, b pair) int { return strings.Compare(a.name, b.name) })
+
+	names := make([]string, len(pairs))
+	var values uint64
+	for i, p := range pairs {
+		names[i] = p.name
+		if p.active {
+			values |= 1 << uint(i)
+		}
+	}
+	ss := &stateset.StateSet{LabelName: labelName, Names: names, Values: values}
+	if err := ss.Validate(); err != nil {
+		return nil, "", raise(lineNum, "invalid stateset: %s", err)
+	}
+	return ss, rest, nil
 }
 
 func parseExpect(defLine string) (expectCmdType, expectCmd, error) {
@@ -852,9 +1051,12 @@ func (*evalCmd) testCmd()  {}
 
 // sampleST extends promql.Sample with an optional start timestamp.
 // ST=0 means no start timestamp (unknown), matching the AppenderV2 convention.
+// When SS is set the sample is a native stateset; F, H, and Metric on the
+// embedded Sample are unused.
 type sampleST struct {
 	promql.Sample
 	ST int64
+	SS *stateset.StateSet
 }
 
 // loadCmd is a command that loads sequences of sample values for specific
@@ -899,6 +1101,7 @@ func (cmd *loadCmd) set(m labels.Labels, vals, stVals []parser.SequenceValue) {
 					F: v.Value,
 					H: v.Histogram,
 				},
+				SS: v.StateSet,
 			}
 			if len(stVals) > 0 && !stVals[i].Omitted {
 				s.ST = tsMs + int64(stVals[i].Value)
@@ -1027,6 +1230,10 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.AppenderV2) error {
 }
 
 func appendSample(a storage.AppenderV2, s sampleST, m labels.Labels) error {
+	if s.SS != nil {
+		_, err := a.Append(0, m, s.ST, s.T, 0, nil, nil, s.SS, storage.AppendV2Options{})
+		return err
+	}
 	if s.H != nil {
 		_, err := a.Append(0, m, s.ST, s.T, 0, nil, s.H, nil, storage.AppendV2Options{})
 		return err
@@ -1276,6 +1483,8 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			}
 			var expectedHistograms []expectedHPoint
 
+			var expectedStatesets []promql.SSPoint
+
 			for i, e := range exp.vals {
 				ts := ev.start.Add(time.Duration(i) * ev.step)
 
@@ -1285,18 +1494,21 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 
 				t := ts.UnixNano() / int64(time.Millisecond/time.Nanosecond)
 
-				if e.Histogram != nil {
+				switch {
+				case e.StateSet != nil:
+					expectedStatesets = append(expectedStatesets, promql.SSPoint{T: t, SS: e.StateSet})
+				case e.Histogram != nil:
 					expectedHistograms = append(expectedHistograms, expectedHPoint{
 						HPoint:              promql.HPoint{T: t, H: e.Histogram},
 						CounterResetHintSet: e.CounterResetHintSet,
 					})
-				} else if !e.Omitted {
+				case !e.Omitted:
 					expectedFloats = append(expectedFloats, promql.FPoint{T: t, F: e.Value})
 				}
 			}
 
-			if len(expectedFloats) != len(s.Floats) || len(expectedHistograms) != len(s.Histograms) {
-				return fmt.Errorf("expected %v float points and %v histogram points for %s, but got %s", len(expectedFloats), len(expectedHistograms), ev.metrics[hash], formatSeriesResult(s))
+			if len(expectedFloats) != len(s.Floats) || len(expectedHistograms) != len(s.Histograms) || len(expectedStatesets) != len(s.Statesets) {
+				return fmt.Errorf("expected %v float points, %v histogram points, and %v stateset points for %s, but got %s", len(expectedFloats), len(expectedHistograms), len(expectedStatesets), ev.metrics[hash], formatSeriesResult(s))
 			}
 
 			for i, expected := range expectedFloats {
@@ -1322,6 +1534,16 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 					return fmt.Errorf("expected histogram value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.H.TestExpression(), actual.H.TestExpression(), formatSeriesResult(s))
 				}
 			}
+
+			for i, expected := range expectedStatesets {
+				actual := s.Statesets[i]
+				if expected.T != actual.T {
+					return fmt.Errorf("expected stateset at index %v for %s to have timestamp %v, but it had timestamp %v (result has %s)", i, ev.metrics[hash], expected.T, actual.T, formatSeriesResult(s))
+				}
+				if !expected.SS.Equals(actual.SS) {
+					return fmt.Errorf("expected stateset at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.SS, actual.SS, formatSeriesResult(s))
+				}
+			}
 		}
 
 		for hash := range ev.expected {
@@ -1339,28 +1561,36 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		for pos, v := range val {
 			fp := v.Metric.Hash()
 			if _, ok := ev.metrics[fp]; !ok {
-				if v.H != nil {
+				switch {
+				case v.SS != nil:
+					return fmt.Errorf("unexpected metric %s in result, has stateset %s", v.Metric, v.SS)
+				case v.H != nil:
 					return fmt.Errorf("unexpected metric %s in result, has value %s", v.Metric, HistogramTestExpression(v.H))
+				default:
+					return fmt.Errorf("unexpected metric %s in result, has value %v", v.Metric, v.F)
 				}
-
-				return fmt.Errorf("unexpected metric %s in result, has value %v", v.Metric, v.F)
 			}
 			exp := ev.expected[fp]
 			if ev.isOrdered() && exp.pos != pos+1 {
 				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
 			}
 			exp0 := exp.vals[0]
+			expSS := exp0.StateSet
 			expH := exp0.Histogram
-			if expH == nil && v.H != nil {
+			switch {
+			case expSS != nil && v.SS == nil:
+				return fmt.Errorf("expected stateset %s for %s but got float value %v", expSS, v.Metric, v.F)
+			case expSS == nil && v.SS != nil:
+				return fmt.Errorf("expected float value %v for %s but got stateset %s", exp0, v.Metric, v.SS)
+			case expSS != nil && !expSS.Equals(v.SS):
+				return fmt.Errorf("expected stateset %s for %s but got %s", expSS, v.Metric, v.SS)
+			case expH == nil && v.H != nil:
 				return fmt.Errorf("expected float value %v for %s but got histogram %s", exp0, v.Metric, HistogramTestExpression(v.H))
-			}
-			if expH != nil && v.H == nil {
+			case expH != nil && v.H == nil:
 				return fmt.Errorf("expected histogram %s for %s but got float value %v", HistogramTestExpression(expH), v.Metric, v.F)
-			}
-			if expH != nil && !compareNativeHistogram(expH.Compact(0), v.H.Compact(0), exp0.CounterResetHintSet) {
+			case expH != nil && !compareNativeHistogram(expH.Compact(0), v.H.Compact(0), exp0.CounterResetHintSet):
 				return fmt.Errorf("expected %v for %s but got %s", HistogramTestExpression(expH), v.Metric, HistogramTestExpression(v.H))
-			}
-			if !almost.Equal(exp0.Value, v.F, defaultEpsilon) {
+			case expSS == nil && expH == nil && !almost.Equal(exp0.Value, v.F, defaultEpsilon):
 				return fmt.Errorf("expected %v for %s but got %v", exp0.Value, v.Metric, v.F)
 			}
 
@@ -1547,22 +1777,32 @@ func (ev *evalCmd) checkExpectedFailure(actual error) error {
 func formatSeriesResult(s promql.Series) string {
 	floatPlural := "s"
 	histogramPlural := "s"
+	statesetPlural := "s"
 
 	if len(s.Floats) == 1 {
 		floatPlural = ""
 	}
-
 	if len(s.Histograms) == 1 {
 		histogramPlural = ""
 	}
+	if len(s.Statesets) == 1 {
+		statesetPlural = ""
+	}
 
 	histograms := make([]string, 0, len(s.Histograms))
-
 	for _, p := range s.Histograms {
 		histograms = append(histograms, fmt.Sprintf("%v @[%v]", p.H.TestExpression(), p.T))
 	}
 
-	return fmt.Sprintf("%v float point%s %v and %v histogram point%s %v", len(s.Floats), floatPlural, s.Floats, len(s.Histograms), histogramPlural, histograms)
+	statesets := make([]string, 0, len(s.Statesets))
+	for _, p := range s.Statesets {
+		statesets = append(statesets, fmt.Sprintf("%v @[%v]", p.SS, p.T))
+	}
+
+	return fmt.Sprintf("%v float point%s %v, %v histogram point%s %v, and %v stateset point%s %v",
+		len(s.Floats), floatPlural, s.Floats,
+		len(s.Histograms), histogramPlural, histograms,
+		len(s.Statesets), statesetPlural, statesets)
 }
 
 // HistogramTestExpression returns TestExpression() for the given histogram or "" if the histogram is nil.
@@ -1828,7 +2068,7 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 
 	vec := make(promql.Vector, 0, len(mat))
 	for _, series := range mat {
-		// We expect either Floats or Histograms.
+		// We expect either Floats, Histograms, or Statesets.
 		for _, point := range series.Floats {
 			if point.T == timeMilliseconds(iq.evalTime) {
 				vec = append(vec, promql.Sample{Metric: series.Metric, T: point.T, F: point.F})
@@ -1838,6 +2078,12 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 		for _, point := range series.Histograms {
 			if point.T == timeMilliseconds(iq.evalTime) {
 				vec = append(vec, promql.Sample{Metric: series.Metric, T: point.T, H: point.H})
+				break
+			}
+		}
+		for _, point := range series.Statesets {
+			if point.T == timeMilliseconds(iq.evalTime) {
+				vec = append(vec, promql.Sample{Metric: series.Metric, T: point.T, SS: point.SS})
 				break
 			}
 		}

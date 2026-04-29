@@ -1,0 +1,123 @@
+# Tests for native stateset sample type.
+# Syntax: ss(label_name, state1=0 state2=1 ...) where each state value is 0 or 1.
+# State names in the ss() literal do not need to be sorted; the parser sorts them.
+# x N repeats produce N+1 copies (same convention as histograms).
+
+# ---------------------------------------------------------------------------
+# Basic load and instant query
+# ---------------------------------------------------------------------------
+
+load 5m
+  pod_phase{pod="p1"} ss(phase, Running=1 Failed=0 Pending=0 Succeeded=0 Unknown=0)
+  pod_phase{pod="p2"} ss(phase, Running=0 Failed=1 Pending=0 Succeeded=0 Unknown=0)
+
+eval instant at 0m pod_phase
+  {__name__="pod_phase", pod="p1"} ss(phase, Failed=0 Pending=0 Running=1 Succeeded=0 Unknown=0)
+  {__name__="pod_phase", pod="p2"} ss(phase, Failed=1 Pending=0 Running=0 Succeeded=0 Unknown=0)
+
+clear
+
+# ---------------------------------------------------------------------------
+# Stateset with x-repeat in load block
+# ---------------------------------------------------------------------------
+
+load 1m
+  state_metric ss(status, active=1 inactive=0) x4
+
+eval instant at 0m state_metric
+  {__name__="state_metric"} ss(status, active=1 inactive=0)
+
+eval instant at 4m state_metric
+  {__name__="state_metric"} ss(status, active=1 inactive=0)
+
+clear
+
+# ---------------------------------------------------------------------------
+# Stateset with omitted (_) values in load block
+# ---------------------------------------------------------------------------
+
+load 1m
+  partial_state ss(s, a=1 b=0) _ ss(s, a=0 b=1)
+
+eval instant at 0m partial_state
+  {__name__="partial_state"} ss(s, a=1 b=0)
+
+eval instant at 2m partial_state
+  {__name__="partial_state"} ss(s, a=0 b=1)
+
+clear
+
+# ---------------------------------------------------------------------------
+# All states inactive
+# ---------------------------------------------------------------------------
+
+load 5m
+  all_off ss(flag, on=0 off=0)
+
+eval instant at 0m all_off
+  {__name__="all_off"} ss(flag, off=0 on=0)
+
+clear
+
+# ---------------------------------------------------------------------------
+# All states active
+# ---------------------------------------------------------------------------
+
+load 5m
+  all_on ss(flag, on=1 off=1)
+
+eval instant at 0m all_on
+  {__name__="all_on"} ss(flag, off=1 on=1)
+
+clear
+
+# ---------------------------------------------------------------------------
+# Range query (matrix) with stateset values
+# ---------------------------------------------------------------------------
+
+load 1m
+  phase_series ss(phase, a=1 b=0) ss(phase, a=0 b=1) ss(phase, a=1 b=0)
+
+eval range from 0 to 2m step 1m phase_series
+  {__name__="phase_series"} ss(phase, a=1 b=0) ss(phase, a=0 b=1) ss(phase, a=1 b=0)
+
+clear
+
+# ---------------------------------------------------------------------------
+# Multiple independent stateset series
+# ---------------------------------------------------------------------------
+
+load 5m
+  metric{env="prod"} ss(status, ok=1 err=0)
+  metric{env="dev"}  ss(status, ok=0 err=1)
+
+eval instant at 0m metric
+  {__name__="metric", env="prod"} ss(status, err=0 ok=1)
+  {__name__="metric", env="dev"}  ss(status, err=1 ok=0)
+
+clear
+
+# ---------------------------------------------------------------------------
+# Names in test file not sorted — parser must sort them
+# ---------------------------------------------------------------------------
+
+load 5m
+  unsorted ss(phase, Zzz=0 Aaa=1 Mmm=0)
+
+# After sorting: Aaa=1 Mmm=0 Zzz=0
+eval instant at 0m unsorted
+  {__name__="unsorted"} ss(phase, Aaa=1 Mmm=0 Zzz=0)
+
+clear
+
+# ---------------------------------------------------------------------------
+# Stateset with explicit label selector
+# ---------------------------------------------------------------------------
+
+load 5m
+  kube_pod_status_phase{pod="web-1"} ss(phase, Running=1 Failed=0 Pending=0)
+
+eval instant at 0m kube_pod_status_phase{pod="web-1"}
+  {__name__="kube_pod_status_phase", pod="web-1"} ss(phase, Failed=0 Pending=0 Running=1)
+
+clear

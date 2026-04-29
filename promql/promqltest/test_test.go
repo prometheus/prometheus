@@ -422,7 +422,7 @@ eval range from 0 to 10m step 5m sum by (group) (http_requests)
 	{group="production"} 0 30 60
 	{group="canary"} 0 80 140
 `,
-			expectedError: `error in eval sum by (group) (http_requests) (line 10): expected float value at index 1 (t=300000) for {group="canary"} to be 80, but got 70 (result has 3 float points [0 @[0] 70 @[300000] 140 @[600000]] and 0 histogram points [])`,
+			expectedError: `error in eval sum by (group) (http_requests) (line 10): expected float value at index 1 (t=300000) for {group="canary"} to be 80, but got 70 (result has 3 float points [0 @[0] 70 @[300000] 140 @[600000]], 0 histogram points [], and 0 stateset points [])`,
 		},
 		"range query with expected histogram values": {
 			input: `
@@ -441,7 +441,7 @@ load 5m
 eval range from 0 to 10m step 5m testmetric
 	testmetric {{schema:-1 sum:4 count:1 buckets:[1] offset:1}} {{schema:-1 sum:7 count:1 buckets:[1] offset:1}} {{schema:-1 sum:8 count:1 buckets:[1] offset:1}}
 `,
-			expectedError: `error in eval testmetric (line 5): expected histogram value at index 1 (t=300000) for {__name__="testmetric"} to be {{schema:-1 count:1 sum:7 offset:1 buckets:[1]}}, but got {{schema:-1 count:1 sum:5 counter_reset_hint:not_reset offset:1 buckets:[1]}} (result has 0 float points [] and 3 histogram points [{{schema:-1 count:1 sum:4 offset:1 buckets:[1]}} @[0] {{schema:-1 count:1 sum:5 counter_reset_hint:not_reset offset:1 buckets:[1]}} @[300000] {{schema:-1 count:1 sum:6 counter_reset_hint:not_reset offset:1 buckets:[1]}} @[600000]])`,
+			expectedError: `error in eval testmetric (line 5): expected histogram value at index 1 (t=300000) for {__name__="testmetric"} to be {{schema:-1 count:1 sum:7 offset:1 buckets:[1]}}, but got {{schema:-1 count:1 sum:5 counter_reset_hint:not_reset offset:1 buckets:[1]}} (result has 0 float points [], 3 histogram points [{{schema:-1 count:1 sum:4 offset:1 buckets:[1]}} @[0] {{schema:-1 count:1 sum:5 counter_reset_hint:not_reset offset:1 buckets:[1]}} @[300000] {{schema:-1 count:1 sum:6 counter_reset_hint:not_reset offset:1 buckets:[1]}} @[600000]], and 0 stateset points [])`,
 		},
 		"range query with too many points for query time range": {
 			input: testData + `
@@ -459,7 +459,7 @@ load 5m
 eval range from 0 to 6m step 6m testmetric
 	testmetric 5 10
 `,
-			expectedError: `error in eval testmetric (line 5): expected 2 float points and 0 histogram points for {__name__="testmetric"}, but got 1 float point [5 @[0]] and 0 histogram points []`,
+			expectedError: `error in eval testmetric (line 5): expected 2 float points, 0 histogram points, and 0 stateset points for {__name__="testmetric"}, but got 1 float point [5 @[0]], 0 histogram points [], and 0 stateset points []`,
 		},
 		"range query with extra point in result": {
 			input: testData + `
@@ -467,14 +467,14 @@ eval range from 0 to 10m step 5m sum by (group) (http_requests)
 	{group="production"} 0 30
 	{group="canary"} 0 70 140
 `,
-			expectedError: `error in eval sum by (group) (http_requests) (line 10): expected 2 float points and 0 histogram points for {group="production"}, but got 3 float points [0 @[0] 30 @[300000] 60 @[600000]] and 0 histogram points []`,
+			expectedError: `error in eval sum by (group) (http_requests) (line 10): expected 2 float points, 0 histogram points, and 0 stateset points for {group="production"}, but got 3 float points [0 @[0] 30 @[300000] 60 @[600000]], 0 histogram points [], and 0 stateset points []`,
 		},
 		"range query, but result has an unexpected series": {
 			input: testData + `
 eval range from 0 to 10m step 5m sum by (group) (http_requests)
 	{group="production"} 0 30 60
 `,
-			expectedError: `error in eval sum by (group) (http_requests) (line 10): unexpected metric {group="canary"} in result, has 3 float points [0 @[0] 70 @[300000] 140 @[600000]] and 0 histogram points []`,
+			expectedError: `error in eval sum by (group) (http_requests) (line 10): unexpected metric {group="canary"} in result, has 3 float points [0 @[0] 70 @[300000] 140 @[600000]], 0 histogram points [], and 0 stateset points []`,
 		},
 		"range query, but result is missing a series": {
 			input: testData + `
@@ -572,7 +572,7 @@ load 6m
 eval range from 0 to 18m step 6m testmetric
 	testmetric 1 _ 3
 `,
-			expectedError: `error in eval testmetric (line 5): expected 2 float points and 0 histogram points for {__name__="testmetric"}, but got 3 float points [1 @[0] 2 @[360000] 3 @[720000]] and 0 histogram points []`,
+			expectedError: `error in eval testmetric (line 5): expected 2 float points, 0 histogram points, and 0 stateset points for {__name__="testmetric"}, but got 3 float points [1 @[0] 2 @[360000] 3 @[720000]], 0 histogram points [], and 0 stateset points []`,
 		},
 		"range query with float value returned when histogram expected": {
 			input: `
@@ -582,7 +582,7 @@ load 5m
 eval range from 0 to 5m step 5m testmetric
 	testmetric {{}} {{}}
 `,
-			expectedError: `error in eval testmetric (line 5): expected 0 float points and 2 histogram points for {__name__="testmetric"}, but got 2 float points [2 @[0] 3 @[300000]] and 0 histogram points []`,
+			expectedError: `error in eval testmetric (line 5): expected 0 float points, 2 histogram points, and 0 stateset points for {__name__="testmetric"}, but got 2 float points [2 @[0] 3 @[300000]], 0 histogram points [], and 0 stateset points []`,
 		},
 		"range query with histogram returned when float expected": {
 			input: `
@@ -592,7 +592,7 @@ load 5m
 eval range from 0 to 5m step 5m testmetric
 	testmetric 2 3
 `,
-			expectedError: `error in eval testmetric (line 5): expected 2 float points and 0 histogram points for {__name__="testmetric"}, but got 0 float points [] and 2 histogram points [{{}} @[0] {{counter_reset_hint:not_reset}} @[300000]]`,
+			expectedError: `error in eval testmetric (line 5): expected 2 float points, 0 histogram points, and 0 stateset points for {__name__="testmetric"}, but got 0 float points [], 2 histogram points [{{}} @[0] {{counter_reset_hint:not_reset}} @[300000]], and 0 stateset points []`,
 		},
 		"range query with expected mixed results": {
 			input: `
@@ -612,7 +612,7 @@ load 5m
 eval range from 0 to 5m step 5m testmetric
 	testmetric {{}} 3
 `,
-			expectedError: `error in eval testmetric (line 5): expected float value at index 0 for {__name__="testmetric"} to have timestamp 300000, but it had timestamp 0 (result has 1 float point [3 @[0]] and 1 histogram point [{{}} @[300000]])`,
+			expectedError: `error in eval testmetric (line 5): expected float value at index 0 for {__name__="testmetric"} to have timestamp 300000, but it had timestamp 0 (result has 1 float point [3 @[0]], 1 histogram point [{{}} @[300000]], and 0 stateset points [])`,
 		},
 		"instant query with expected scalar result": {
 			input: `
@@ -1041,7 +1041,7 @@ eval instant at 0m http_requests
 					expect range vector from 10s to 1m step 10s
   					some_metric{env="a"} 2 3 4 5 6
 			`,
-			expectedError: `error in eval some_metric[1m] (line 6): unexpected metric {__name__="some_metric", env="b"} in result, has 5 float points [2 @[10000] 3 @[20000] 4 @[30000] 5 @[40000] 6 @[50000]] and 0 histogram points []`,
+			expectedError: `error in eval some_metric[1m] (line 6): unexpected metric {__name__="some_metric", env="b"} in result, has 5 float points [2 @[10000] 3 @[20000] 4 @[30000] 5 @[40000] 6 @[50000]], 0 histogram points [], and 0 stateset points []`,
 		},
 		"instant query with range result - result has a value that is not expected": {
 			input: `
@@ -1052,7 +1052,7 @@ eval instant at 0m http_requests
 					expect range vector from 10s to 1m step 10s
   					some_metric{env="a"} 9 3 4 5 6
 			`,
-			expectedError: `error in eval some_metric[1m] (line 5): expected float value at index 0 (t=10000) for {__name__="some_metric", env="a"} to be 9, but got 2 (result has 5 float points [2 @[10000] 3 @[20000] 4 @[30000] 5 @[40000] 6 @[50000]] and 0 histogram points [])`,
+			expectedError: `error in eval some_metric[1m] (line 5): expected float value at index 0 (t=10000) for {__name__="some_metric", env="a"} to be 9, but got 2 (result has 5 float points [2 @[10000] 3 @[20000] 4 @[30000] 5 @[40000] 6 @[50000]], 0 histogram points [], and 0 stateset points [])`,
 		},
 		"instant query with range result - invalid expect range vector directive": {
 			input: `
@@ -1086,7 +1086,7 @@ eval instant at 0m http_requests
 					expect range vector from 1m to 3m step 60s
 					some_metric_with_stale_marker{} 1 2 3
 			`,
-			expectedError: `error in eval some_metric_with_stale_marker[3m] (line 5): expected 3 float points and 0 histogram points for {__name__="some_metric_with_stale_marker"}, but got 2 float points [1 @[60000] 3 @[180000]] and 0 histogram points []`,
+			expectedError: `error in eval some_metric_with_stale_marker[3m] (line 5): expected 3 float points, 0 histogram points, and 0 stateset points for {__name__="some_metric_with_stale_marker"}, but got 2 float points [1 @[60000] 3 @[180000]], 0 histogram points [], and 0 stateset points []`,
 		},
 		"instant query with range result - result has a sample where none is expected": {
 			input: `
@@ -1097,7 +1097,7 @@ eval instant at 0m http_requests
 					expect range vector from 1m to 3m step 60s
 					some_metric_with_stale_marker{} 1 _ 3
 			`,
-			expectedError: `error in eval some_metric_with_stale_marker[3m] (line 5): expected 2 float points and 0 histogram points for {__name__="some_metric_with_stale_marker"}, but got 3 float points [1 @[60000] 2 @[120000] 3 @[180000]] and 0 histogram points []`,
+			expectedError: `error in eval some_metric_with_stale_marker[3m] (line 5): expected 2 float points, 0 histogram points, and 0 stateset points for {__name__="some_metric_with_stale_marker"}, but got 3 float points [1 @[60000] 2 @[120000] 3 @[180000]], 0 histogram points [], and 0 stateset points []`,
 		},
 	}
 

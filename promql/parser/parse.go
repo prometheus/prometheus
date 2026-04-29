@@ -28,6 +28,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/features"
@@ -272,6 +273,9 @@ type SequenceValue struct {
 	// This allows distinguishing between "no hint specified" (don't care)
 	// vs "counter_reset_hint:unknown" (verify it's unknown).
 	CounterResetHintSet bool
+	// StateSet is set when this sequence value is a native stateset sample.
+	// Mutually exclusive with Histogram.
+	StateSet *stateset.StateSet
 }
 
 func (v SequenceValue) String() string {
@@ -280,6 +284,9 @@ func (v SequenceValue) String() string {
 	}
 	if v.Histogram != nil {
 		return v.Histogram.String()
+	}
+	if v.StateSet != nil {
+		return v.StateSet.String()
 	}
 	return fmt.Sprintf("%f", v.Value)
 }
