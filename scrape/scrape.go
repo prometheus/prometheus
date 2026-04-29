@@ -113,6 +113,9 @@ type scrapePool struct {
 	metrics    *scrapeMetrics
 	buffers    *pool.Pool
 	offsetSeed uint64
+	// STEP 5: Infrastructure for target-specific proxies
+	proxyMu      sync.RWMutex
+	proxyClients map[string]*http.Client
 }
 
 type labelLimits struct {
@@ -178,6 +181,7 @@ func newScrapePool(
 		options:              options,
 		config:               cfg,
 		client:               client,
+		proxyClients:         make(map[string]*http.Client), // ADDED Initialize here
 		loops:                map[uint64]loop{},
 		symbolTable:          symbols,
 		lastSymbolTableCheck: time.Now(),
@@ -262,6 +266,12 @@ func (sp *scrapePool) stop() {
 	// context (via sl.parentCtx) and would fail if the context was cancelled early.
 	sp.cancel()
 	sp.client.CloseIdleConnections()
+	// --- ADDED THIS BLOCK HERE ---
+	sp.proxyMu.Lock()
+	for _, c := range sp.proxyClients {
+		c.CloseIdleConnections()
+	}
+	sp.proxyMu.Unlock()
 
 	if sp.config != nil {
 		sp.metrics.targetScrapePoolSyncsCounter.DeleteLabelValues(sp.config.JobName)
@@ -293,6 +303,11 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.config = cfg
 	oldClient := sp.client
 	sp.client = client
+	// --- ADD THIS BLOCK HERE ---
+    sp.proxyMu.Lock()
+    oldProxyClients := sp.proxyClients
+    sp.proxyClients = make(map[string]*http.Client)
+    sp.proxyMu.Unlock()
 
 	// Validate scheme so we don't need to do it later.
 	if err := namevalidationutil.CheckNameValidationScheme(cfg.MetricNameValidationScheme); err != nil {
@@ -303,8 +318,9 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	}
 	sp.metrics.targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
 
-	sp.restartLoops(reuseCache)
-	oldClient.CloseIdleConnections()
+	// --- ADDITION 2: CLOSE OLD CONNECTIONS ---
+	for _, c := range oldProxyClients {
+		c.CloseIdleConnections()
 	sp.metrics.targetReloadIntervalLength.WithLabelValues(time.Duration(sp.config.ScrapeInterval).String()).Observe(
 		time.Since(start).Seconds(),
 	)
@@ -382,11 +398,55 @@ func (sp *scrapePool) checkSymbolTable() {
 		} else if sp.symbolTable.Len() > 2*sp.initialSymbolTableLen {
 			sp.symbolTable = labels.NewSymbolTable()
 			sp.initialSymbolTableLen = 0
+			//ADDED// 
+			 sp.proxyMu.Lock()
+          oldProxyClients := sp.proxyClients
+           sp.proxyClients = make(map[string]*http.Client)
+         sp.proxyMu.Unlock()
+
+// Close idle connections of previous clients to release resources
+for _, c := range oldProxyClients {
+    if c != nil {
+        if transport, ok := c.Transport.(*http.Transport); ok {
+            transport.CloseIdleConnections()
+        }
+    }
+}
 			sp.restartLoops(false) // To drop all caches.
 		}
 		sp.lastSymbolTableCheck = time.Now()
 	}
+	//ADDED stp 6//
+	func (sp *scrapePool) getClient(t *Target) (*http.Client, error) {
+    if t == nil || t.proxyURL == nil {
+        return sp.client, nil // fallback to global client
+    }
+    key := normalizeProxyKey(t.proxyURL)
+
+    sp.proxyMu.RLock()
+    c, ok := sp.proxyClients[key]
+    sp.proxyMu.RUnlock()
+    if ok {
+        return c, nil
+    }
+
+    sp.proxyMu.Lock()
+    defer sp.proxyMu.Unlock()
+
+    // Double check
+    if c, ok = sp.proxyClients[key]; ok {
+        return c, nil
+    }
+
+    // Create new client with proxy
+    client, err := newScrapeClient(cfg.HTTPClientConfig, cfg.JobName, t.ProxyURL(), options.HTTPClientOptions...)
+    if err != nil {
+        return nil, err
+    }
+    sp.proxyClients[key] = client
+    return client, nil
 }
+
 
 // Sync converts target groups into actual scrape targets and synchronizes
 // the currently running scraper with the resulting set and returns all scraped and dropped targets.
@@ -456,18 +516,25 @@ func (sp *scrapePool) sync(targets []*Target) {
 				time.Duration(sp.config.ScrapeInterval),
 				time.Duration(sp.config.ScrapeTimeout),
 			)
-			l := sp.newLoop(scrapeLoopOptions{
-				target: t,
-				scraper: &targetScraper{
-					Target:               t,
-					client:               sp.client,
-					timeout:              targetTimeout,
-					bodySizeLimit:        int64(sp.config.BodySizeLimit),
-					acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
-					acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression),
-					metrics:              sp.metrics,
-				},
-				cache:    newScrapeCache(sp.metrics),
+			escapingScheme, _ := config.ToEscapingScheme(sp.config.MetricNameEscapingScheme, sp.config.MetricNameValidationScheme)
+		
+		client, clientErr := sp.getClient(t)
+		if err == nil {
+			err = clientErr
+		}
+
+		newLoop := sp.newLoop(scrapeLoopOptions{
+			target: t,
+			scraper: &targetScraper{
+				Target:               t,
+				client:               client,
+				timeout:              targetTimeout,
+				bodySizeLimit:        int64(sp.config.BodySizeLimit),
+				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
+				acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression),
+				metrics:              sp.metrics,
+			},
+			cache:    newScrapeCache(sp.metrics),
 				interval: targetInterval,
 				timeout:  targetTimeout,
 				sp:       sp,
@@ -479,7 +546,6 @@ func (sp *scrapePool) sync(targets []*Target) {
 
 			sp.activeTargets[hash] = t
 			sp.loops[hash] = l
-
 			uniqueLoops[hash] = l
 		} else {
 			// This might be a duplicated target.
@@ -2287,15 +2353,41 @@ func pickSchema(bucketFactor float64) int32 {
 	}
 }
 
-func newScrapeClient(cfg config_util.HTTPClientConfig, name string, optFuncs ...config_util.HTTPClientOption) (*http.Client, error) {
-	client, err := config_util.NewClientFromConfig(cfg, name, optFuncs...)
-	if err != nil {
-		return nil, fmt.Errorf("error creating HTTP client: %w", err)
-	}
-	client.Transport = otelhttp.NewTransport(
-		client.Transport,
-		otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
-			return otelhttptrace.NewClientTrace(ctx, otelhttptrace.WithoutSubSpans())
-		}))
-	return client, nil
+//stp 10 Added//
+func newScrapeClient(cfg config_util.HTTPClientConfig, name string, proxyURL *url.URL, optFuncs ...config_util.HTTPClientOption) (*http.Client, error) {
+    client, err := config_util.NewClientFromConfig(cfg, name, optFuncs...)
+    if err != nil {
+        return nil, err
+    }
+
+    // Clone the transport to set proxy
+    if base, ok := client.Transport.(*http.Transport); ok {
+        clone := base.Clone()
+        if proxyURL != nil {
+            clone.Proxy = http.ProxyURL(proxyURL)
+        } else {
+            clone.Proxy = http.ProxyFromEnvironment
+        }
+        client.Transport = otelhttp.NewTransport(clone, otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
+            return otelhttptrace.NewClientTrace(ctx)
+        }))
+    }
+
+    return client, nil
+}
+//ADDED step 7//
+func normalizeProxyKey(u *url.URL) string {
+    if u == nil { return "" }
+    nu := *u // Shallow copy
+    nu.Fragment = ""
+    nu.RawFragment = ""
+    nu.Host = strings.ToLower(nu.Host)
+    
+    // Standardize ports
+    if (nu.Scheme == "http" && nu.Port() == "80") || (nu.Scheme == "https" && nu.Port() == "443") {
+        nu.Host = nu.Hostname()
+    }
+    
+    if nu.Path == "/" { nu.Path = "" }
+    return nu.String()
 }
