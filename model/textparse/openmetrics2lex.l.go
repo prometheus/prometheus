@@ -100,7 +100,7 @@ yystate0:
 		goto yystart71
 	}
 
-// ---- INITIAL state ---------------------------------------------------------
+	// ---- INITIAL state ---------------------------------------------------------
 
 yystate1:
 	c = l.next()
@@ -142,7 +142,7 @@ yystate5:
 	c = l.next()
 	goto yyrule11
 
-// ---- sComment state --------------------------------------------------------
+	// ---- sComment state --------------------------------------------------------
 
 yystate6:
 	c = l.next()
@@ -311,7 +311,7 @@ yystate25:
 	c = l.next()
 	goto yyrule4
 
-// ---- sMeta1 state ----------------------------------------------------------
+	// ---- sMeta1 state ----------------------------------------------------------
 
 yystate26:
 	c = l.next()
@@ -360,7 +360,7 @@ yystate30:
 		goto yystate30
 	}
 
-// ---- sMeta2 state ----------------------------------------------------------
+	// ---- sMeta2 state ----------------------------------------------------------
 
 yystate31:
 	c = l.next()
@@ -387,7 +387,7 @@ yystate33:
 	c = l.next()
 	goto yyrule8
 
-// ---- sLabels state ---------------------------------------------------------
+	// ---- sLabels state ---------------------------------------------------------
 
 yystate34:
 	c = l.next()
@@ -454,7 +454,7 @@ yystate41:
 	c = l.next()
 	goto yyrule14
 
-// ---- sLValue state ---------------------------------------------------------
+	// ---- sLValue state ---------------------------------------------------------
 
 yystate42:
 	c = l.next()
@@ -492,7 +492,7 @@ yystate45:
 		goto yystate43
 	}
 
-// ---- sValue state ----------------------------------------------------------
+	// ---- sValue state ----------------------------------------------------------
 
 yystate46:
 	c = l.next()
@@ -528,12 +528,12 @@ yystate49:
 	c = l.next()
 	goto yyrule10
 
-// ---- sTimestamp state ------------------------------------------------------
-//
-// OM2 additions vs OM1:
-//   - After "{S}", if next chars are "st@", return tStartTimestamp instead of
-//     tTimestamp.
-//   - States 75-79 implement the "st@" recognition.
+	// ---- sTimestamp state ------------------------------------------------------
+	//
+	// OM2 additions vs OM1:
+	//   - After "{S}", if next chars are "st@", return tStartTimestamp instead of
+	//     tTimestamp.
+	//   - States 75-79 implement the "st@" recognition.
 
 yystate50:
 	c = l.next()
@@ -551,7 +551,7 @@ yystate51:
 	c = l.next()
 	goto yyrule20
 
-// yystate52: space consumed in sTimestamp; branch on first char of next token.
+	// yystate52: space consumed in sTimestamp; branch on first char of next token.
 yystate52:
 	c = l.next()
 	switch {
@@ -565,7 +565,7 @@ yystate52:
 		goto yystate53
 	}
 
-// yystate53: consuming chars of a plain tTimestamp value.
+	// yystate53: consuming chars of a plain tTimestamp value.
 yystate53:
 	c = l.next()
 	switch {
@@ -575,7 +575,7 @@ yystate53:
 		goto yystate53
 	}
 
-// yystate54–56: " # {" → tComment (exemplar).
+	// yystate54–56: " # {" → tComment (exemplar).
 yystate54:
 	c = l.next()
 	switch {
@@ -600,9 +600,9 @@ yystate56:
 	c = l.next()
 	goto yyrule21
 
-// ---- sTimestamp new states for "st@<float>" recognition --------------------
+	// ---- sTimestamp new states for "st@<float>" recognition --------------------
 
-// yystate75: consumed " s"; check if next char is 't'.
+	// yystate75: consumed " s"; check if next char is 't'.
 yystate75:
 	c = l.next()
 	switch {
@@ -614,7 +614,7 @@ yystate75:
 		goto yystate79 // " s<non-t>" → fall through as plain tTimestamp
 	}
 
-// yystate76: consumed " st"; check if next char is '@'.
+	// yystate76: consumed " st"; check if next char is '@'.
 yystate76:
 	c = l.next()
 	switch {
@@ -626,7 +626,7 @@ yystate76:
 		goto yystate79 // " st<non-@>" → plain tTimestamp
 	}
 
-// yystate77: consumed " st@"; need at least one body char.
+	// yystate77: consumed " st@"; need at least one body char.
 yystate77:
 	c = l.next()
 	switch {
@@ -636,7 +636,7 @@ yystate77:
 		goto yystate78
 	}
 
-// yystate78: consuming body of " st@<chars>".
+	// yystate78: consuming body of " st@<chars>".
 yystate78:
 	c = l.next()
 	switch {
@@ -646,9 +646,9 @@ yystate78:
 		goto yystate78
 	}
 
-// yystate79: "no-advance" fallback when we have a plain timestamp char in
-// hand (c already set by the caller state).  Equivalent to re-entering
-// yystate53's body without calling l.next() first.
+	// yystate79: "no-advance" fallback when we have a plain timestamp char in
+	// hand (c already set by the caller state).  Equivalent to re-entering
+	// yystate53's body without calling l.next() first.
 yystate79:
 	switch {
 	default:
@@ -657,7 +657,7 @@ yystate79:
 		goto yystate53 // advance and keep consuming
 	}
 
-// ---- sExemplar state -------------------------------------------------------
+	// ---- sExemplar state -------------------------------------------------------
 
 yystate57:
 	c = l.next()
@@ -724,7 +724,7 @@ yystate64:
 	c = l.next()
 	goto yyrule24
 
-// ---- sEValue state ---------------------------------------------------------
+	// ---- sEValue state ---------------------------------------------------------
 
 yystate65:
 	c = l.next()
@@ -782,10 +782,10 @@ yystate70:
 		goto yystate68
 	}
 
-// ---- sETimestamp state -----------------------------------------------------
-//
-// OM2 addition: after the exemplar timestamp we may see another exemplar
-// introduced by "{S}#{S}\{".  States 80-83 implement this.
+	// ---- sETimestamp state -----------------------------------------------------
+	//
+	// OM2 addition: after the exemplar timestamp we may see another exemplar
+	// introduced by "{S}#{S}\{".  States 80-83 implement this.
 
 yystate71:
 	c = l.next()
@@ -803,7 +803,7 @@ yystate72:
 	c = l.next()
 	goto yyrule30
 
-// yystate73: space consumed in sETimestamp; branch on first char of next token.
+	// yystate73: space consumed in sETimestamp; branch on first char of next token.
 yystate73:
 	c = l.next()
 	switch {
@@ -815,7 +815,7 @@ yystate73:
 		goto yystate74
 	}
 
-// yystate74: consuming chars of a plain tTimestamp in sETimestamp.
+	// yystate74: consuming chars of a plain tTimestamp in sETimestamp.
 yystate74:
 	c = l.next()
 	switch {
@@ -825,9 +825,9 @@ yystate74:
 		goto yystate74
 	}
 
-// ---- sETimestamp new states for multiple-exemplar recognition --------------
+	// ---- sETimestamp new states for multiple-exemplar recognition --------------
 
-// yystate80: consumed " #" in sETimestamp; check if next char is ' '.
+	// yystate80: consumed " #" in sETimestamp; check if next char is ' '.
 yystate80:
 	c = l.next()
 	switch {
@@ -839,7 +839,7 @@ yystate80:
 		goto yystate83 // " #<non-space>" → plain tTimestamp (use current c)
 	}
 
-// yystate81: consumed " # " in sETimestamp; need '{'.
+	// yystate81: consumed " # " in sETimestamp; need '{'.
 yystate81:
 	c = l.next()
 	switch c {
@@ -849,12 +849,12 @@ yystate81:
 		goto yystate82
 	}
 
-// yystate82: consumed " # {" in sETimestamp → return tComment.
+	// yystate82: consumed " # {" in sETimestamp → return tComment.
 yystate82:
 	c = l.next()
 	goto yyrule32
 
-// yystate83: "no-advance" fallback for sETimestamp timestamp body.
+	// yystate83: "no-advance" fallback for sETimestamp timestamp body.
 yystate83:
 	switch {
 	default:
@@ -863,7 +863,7 @@ yystate83:
 		goto yystate74
 	}
 
-// ---- Rules (actions) -------------------------------------------------------
+	// ---- Rules (actions) -------------------------------------------------------
 
 yyrule1: // #{S}
 	{
@@ -1011,7 +1011,7 @@ yyrule30: // <sETimestamp>\n
 	}
 	panic("unreachable")
 
-// OM2-specific rules:
+	// OM2-specific rules:
 
 yyrule31: // <sTimestamp>{S}st@[^ \n]+
 	{

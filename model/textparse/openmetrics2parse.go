@@ -57,7 +57,7 @@ type om2Exemplar struct {
 
 // OpenMetrics2Parser parses samples from a byte slice in the OpenMetrics 2.0
 // text exposition format.
-// Specification: https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md
+// Specification: https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetric.md
 type OpenMetrics2Parser struct {
 	l       *openMetrics2Lexer
 	builder labels.ScratchBuilder
@@ -693,12 +693,12 @@ func kvMap(raw []byte) (map[string]string, error) {
 		if len(part) == 0 {
 			continue
 		}
-		idx := bytes.IndexByte(part, ':')
-		if idx < 0 {
+		before, after, ok := bytes.Cut(part, []byte{':'})
+		if !ok {
 			return nil, fmt.Errorf("invalid composite field (missing ':'): %q", part)
 		}
-		k := string(bytes.TrimSpace(part[:idx]))
-		v := string(bytes.TrimSpace(part[idx+1:]))
+		k := string(bytes.TrimSpace(before))
+		v := string(bytes.TrimSpace(after))
 		m[k] = v
 	}
 	return m, nil
@@ -916,22 +916,22 @@ func parseSpans(s string) ([]histogram.Span, error) {
 		return nil, nil
 	}
 	var spans []histogram.Span
-	for _, part := range strings.Split(inner, ",") {
+	for part := range strings.SplitSeq(inner, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
 		}
-		idx := strings.IndexByte(part, ':')
-		if idx < 0 {
+		before, after, ok := strings.Cut(part, ":")
+		if !ok {
 			return nil, fmt.Errorf("span missing ':': %q", part)
 		}
-		offset, err := strconv.ParseInt(strings.TrimSpace(part[:idx]), 10, 32)
+		offset, err := strconv.ParseInt(strings.TrimSpace(before), 10, 32)
 		if err != nil {
-			return nil, fmt.Errorf("invalid span offset %q: %w", part[:idx], err)
+			return nil, fmt.Errorf("invalid span offset %q: %w", before, err)
 		}
-		length, err := strconv.ParseUint(strings.TrimSpace(part[idx+1:]), 10, 32)
+		length, err := strconv.ParseUint(strings.TrimSpace(after), 10, 32)
 		if err != nil {
-			return nil, fmt.Errorf("invalid span length %q: %w", part[idx+1:], err)
+			return nil, fmt.Errorf("invalid span length %q: %w", after, err)
 		}
 		spans = append(spans, histogram.Span{Offset: int32(offset), Length: uint32(length)})
 	}
@@ -952,7 +952,7 @@ func parseIntDeltas(s string) ([]int64, error) {
 		return nil, nil
 	}
 	var deltas []int64
-	for _, part := range strings.Split(inner, ",") {
+	for part := range strings.SplitSeq(inner, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
@@ -980,7 +980,7 @@ func parseFloatDeltas(s string) ([]float64, error) {
 		return nil, nil
 	}
 	var deltas []float64
-	for _, part := range strings.Split(inner, ",") {
+	for part := range strings.SplitSeq(inner, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
@@ -1136,11 +1136,10 @@ func extractMFName(series []byte, mfNameLen int) string {
 // extractExtraLabels extracts label name-value pairs from the "{...}" part of
 // the series bytes.
 func extractExtraLabels(series []byte, mfNameLen int) []labels.Label {
-	braceIdx := bytes.IndexByte(series, '{')
-	if braceIdx < 0 {
+	_, inner, ok := bytes.Cut(series, []byte{'{'})
+	if !ok {
 		return nil
 	}
-	inner := series[braceIdx+1:]
 	if len(inner) == 0 || inner[len(inner)-1] != '}' {
 		return nil
 	}
@@ -1221,7 +1220,7 @@ func parseBuckets(s string) ([]bucketEntry, error) {
 	}
 	inner := s[1 : len(s)-1]
 	var buckets []bucketEntry
-	for _, part := range strings.Split(inner, ",") {
+	for part := range strings.SplitSeq(inner, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
@@ -1263,19 +1262,19 @@ func parseQuantiles(s string) ([]quantileEntry, error) {
 	}
 	inner := s[1 : len(s)-1]
 	var quantiles []quantileEntry
-	for _, part := range strings.Split(inner, ",") {
+	for part := range strings.SplitSeq(inner, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
 		}
-		idx := strings.IndexByte(part, ':')
-		if idx < 0 {
+		before, after, ok := strings.Cut(part, ":")
+		if !ok {
 			return nil, fmt.Errorf("quantile missing ':': %q", part)
 		}
-		q := strings.TrimSpace(part[:idx])
-		val, err := strconv.ParseFloat(strings.TrimSpace(part[idx+1:]), 64)
+		q := strings.TrimSpace(before)
+		val, err := strconv.ParseFloat(strings.TrimSpace(after), 64)
 		if err != nil {
-			return nil, fmt.Errorf("invalid quantile value %q: %w", part[idx+1:], err)
+			return nil, fmt.Errorf("invalid quantile value %q: %w", after, err)
 		}
 		// Normalise quantile label to OpenMetrics float format.
 		if qf, err := strconv.ParseFloat(q, 64); err == nil {
