@@ -1612,6 +1612,25 @@ load 10s
 			},
 		},
 
+		// Range query + subquery, outer step wider than subquery range.
+		{
+			Query:        "max_over_time(metricWith1SampleEvery10Seconds[30s:10s])",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(261, 0),
+			Interval:     1 * time.Minute,
+			PeakSamples:  14,
+			TotalSamples: 6,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 3,
+				261000: 3,
+			},
+			SamplesRead: 9,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 3,
+				261000: 6,
+			},
+		},
+
 		// Histogram subquery: histogram size counting in subquery path.
 		{
 			Query:        "histogram_count(max_over_time(metricWith1HistogramEvery10Seconds[20s:10s]))",
