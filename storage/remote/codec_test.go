@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage"
@@ -1160,6 +1161,143 @@ func (c *oneShotCloser) Close() error {
 
 	c.closed = true
 	return nil
+}
+
+// TestToQueryResult_Statesets verifies that native stateset series are expanded
+// into one float prompb.TimeSeries per state (1.0 active, 0.0 inactive).
+func TestToQueryResult_Statesets(t *testing.T) {
+	// Build a stateset chunk: 3 states, 2 samples.
+	//   t=1000: Running active  (Values = 0b010)
+	//   t=2000: Succeeded active (Values = 0b100)
+	chunk := chunkenc.NewStateSetChunk()
+	app, err := chunk.Appender()
+	require.NoError(t, err)
+
+	names := []string{"Failed", "Running", "Succeeded"} // lexicographically sorted
+	_, _, err = app.AppendStateset(1000, &stateset.StateSet{
+		LabelName: "phase",
+		Names:     names,
+		Values:    0b010, // Running active
+	})
+	require.NoError(t, err)
+	_, _, err = app.AppendStateset(2000, &stateset.StateSet{
+		LabelName: "phase",
+		Names:     names,
+		Values:    0b100, // Succeeded active
+	})
+	require.NoError(t, err)
+
+	seriesLbls := labels.FromStrings("__name__", "pod_phase", "ns", "default", "pod", "p1")
+	ss := &concreteSeriesSet{
+		series: []storage.Series{
+			&storage.SeriesEntry{
+				Lset: seriesLbls,
+				SampleIteratorFn: func(it chunkenc.Iterator) chunkenc.Iterator {
+					return chunk.Iterator(it)
+				},
+			},
+		},
+	}
+
+	result, warnings, err := ToQueryResult(ss, 0)
+	require.NoError(t, err)
+	require.Empty(t, warnings)
+
+	// One expanded TimeSeries per state.
+	require.Len(t, result.Timeseries, 3)
+
+	// Build expected per-state results indexed by state name.
+	baseLabels := prompb.FromLabels(seriesLbls, nil)
+	type stateExpect struct {
+		ts1, ts2 float64
+	}
+	expected := map[string]stateExpect{
+		"Failed":    {0, 0},
+		"Running":   {1, 0},
+		"Succeeded": {0, 1},
+	}
+
+	for _, ts := range result.Timeseries {
+		// Locate the state label.
+		var stateName string
+		for _, l := range ts.Labels {
+			if l.Name == "phase" {
+				stateName = l.Value
+			}
+		}
+		require.NotEmpty(t, stateName, "TimeSeries missing phase label: %v", ts.Labels)
+
+		exp, ok := expected[stateName]
+		require.True(t, ok, "unexpected state %q", stateName)
+
+		require.Equal(t, []prompb.Sample{
+			{Timestamp: 1000, Value: exp.ts1},
+			{Timestamp: 2000, Value: exp.ts2},
+		}, ts.Samples, "samples for state %q", stateName)
+
+		// Labels must be the base labels with the phase label inserted.
+		wantLabels := insertStateLabel(baseLabels, "phase", stateName)
+		require.Equal(t, wantLabels, ts.Labels, "labels for state %q", stateName)
+	}
+}
+
+// TestToQueryResult_StatesetSampleLimit verifies that the sample limit counts
+// each expanded state as a separate sample.
+func TestToQueryResult_StatesetSampleLimit(t *testing.T) {
+	chunk := chunkenc.NewStateSetChunk()
+	app, err := chunk.Appender()
+	require.NoError(t, err)
+
+	// 3 states × 2 samples = 6 expanded float samples.
+	names := []string{"A", "B", "C"}
+	for _, ts := range []int64{1000, 2000} {
+		_, _, err = app.AppendStateset(ts, &stateset.StateSet{
+			LabelName: "state",
+			Names:     names,
+			Values:    0b001,
+		})
+		require.NoError(t, err)
+	}
+
+	ss := &concreteSeriesSet{
+		series: []storage.Series{
+			&storage.SeriesEntry{
+				Lset: labels.FromStrings("__name__", "m"),
+				SampleIteratorFn: func(it chunkenc.Iterator) chunkenc.Iterator {
+					return chunk.Iterator(it)
+				},
+			},
+		},
+	}
+
+	// Limit 5: should fail because 6 > 5.
+	_, _, err = ToQueryResult(ss, 5)
+	require.Error(t, err)
+	var httpErr HTTPError
+	require.ErrorAs(t, err, &httpErr)
+	require.Equal(t, http.StatusBadRequest, httpErr.Status())
+}
+
+// TestInsertStateLabel verifies sorted insertion of the state label.
+func TestInsertStateLabel(t *testing.T) {
+	base := prompb.FromLabels(labels.FromStrings("__name__", "m", "ns", "default", "pod", "p1"), nil)
+
+	// "phase" sorts between "ns" and "pod".
+	got := insertStateLabel(base, "phase", "Running")
+	want := prompb.FromLabels(labels.FromStrings("__name__", "m", "ns", "default", "phase", "Running", "pod", "p1"), nil)
+	require.Equal(t, want, got)
+
+	// "aaa" > "__name__" ('_'=95 < 'a'=97), so it inserts between __name__ and ns.
+	got = insertStateLabel(base, "aaa", "x")
+	require.Equal(t, prompb.FromLabels(
+		labels.FromStrings("__name__", "m", "aaa", "x", "ns", "default", "pod", "p1"), nil,
+	), got)
+
+	// State label sorts after all existing labels.
+	got = insertStateLabel(base, "zzz", "x")
+	require.Equal(t, prompb.FromLabels(
+		labels.FromStrings("__name__", "m", "ns", "default", "pod", "p1", "zzz", "x"), nil,
+	), got)
 }
 
 const (

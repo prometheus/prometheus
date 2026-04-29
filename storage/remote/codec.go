@@ -122,6 +122,11 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, hints *storage.SelectHi
 }
 
 // ToQueryResult builds a QueryResult proto.
+//
+// Native stateset series are expanded into one float prompb.TimeSeries per
+// state (value 1.0 if the state is active, 0.0 otherwise), restoring the
+// OpenMetrics per-state gauge representation that older remote-read clients
+// expect. The state label is inserted at the correct sorted position.
 func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, annotations.Annotations, error) {
 	numSamples := 0
 	resp := &prompb.QueryResult{}
@@ -133,6 +138,11 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 		var (
 			samples    []prompb.Sample
 			histograms []prompb.Histogram
+
+			// statesamples accumulates float samples per state name for the
+			// stateset expansion. Populated only when ValStateset is seen.
+			statesamples   map[string][]prompb.Sample
+			stateLabelName string
 		)
 
 		for valType := iter.Next(); valType != chunkenc.ValNone; valType = iter.Next() {
@@ -157,6 +167,34 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 			case chunkenc.ValFloatHistogram:
 				ts, fh := iter.AtFloatHistogram(nil)
 				histograms = append(histograms, prompb.FromFloatHistogram(ts, fh))
+			case chunkenc.ValStateset:
+				ts, sss := iter.AtStateset(nil)
+				if sss == nil || len(sss.Names) == 0 {
+					break
+				}
+				// Each expanded state contributes one float sample; count all
+				// of them toward the sample limit (1 was already counted above).
+				numSamples += len(sss.Names) - 1
+				if sampleLimit > 0 && numSamples > sampleLimit {
+					return nil, ss.Warnings(), HTTPError{
+						msg:    fmt.Sprintf("exceeded sample limit (%d)", sampleLimit),
+						status: http.StatusBadRequest,
+					}
+				}
+				if statesamples == nil {
+					stateLabelName = sss.LabelName
+					statesamples = make(map[string][]prompb.Sample, len(sss.Names))
+				}
+				for i, name := range sss.Names {
+					val := 0.0
+					if (sss.Values>>uint(i))&1 == 1 {
+						val = 1.0
+					}
+					statesamples[name] = append(statesamples[name], prompb.Sample{
+						Timestamp: ts,
+						Value:     val,
+					})
+				}
 			default:
 				return nil, ss.Warnings(), fmt.Errorf("unrecognized value type: %s", valType)
 			}
@@ -165,13 +203,47 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 			return nil, ss.Warnings(), err
 		}
 
-		resp.Timeseries = append(resp.Timeseries, &prompb.TimeSeries{
-			Labels:     prompb.FromLabels(series.Labels(), nil),
-			Samples:    samples,
-			Histograms: histograms,
-		})
+		// Emit the primary series unless it is a pure stateset series (which is
+		// expanded below into per-state float series). The original code always
+		// emitted even for empty-sample series; preserve that so callers that
+		// filter by label but have no data in range still see the series.
+		if statesamples == nil || len(samples) > 0 || len(histograms) > 0 {
+			resp.Timeseries = append(resp.Timeseries, &prompb.TimeSeries{
+				Labels:     prompb.FromLabels(series.Labels(), nil),
+				Samples:    samples,
+				Histograms: histograms,
+			})
+		}
+
+		// Expand statesets: one TimeSeries per state, in sorted order, with the
+		// state label inserted at the correct position.
+		if statesamples != nil {
+			baseLabels := prompb.FromLabels(series.Labels(), nil)
+			stateNames := make([]string, 0, len(statesamples))
+			for name := range statesamples {
+				stateNames = append(stateNames, name)
+			}
+			slices.Sort(stateNames)
+			for _, name := range stateNames {
+				resp.Timeseries = append(resp.Timeseries, &prompb.TimeSeries{
+					Labels:  insertStateLabel(baseLabels, stateLabelName, name),
+					Samples: statesamples[name],
+				})
+			}
+		}
 	}
 	return resp, ss.Warnings(), ss.Err()
+}
+
+// insertStateLabel inserts {Name: labelName, Value: stateName} into a sorted
+// prompb.Label slice at the lexicographically correct position.
+func insertStateLabel(lbls []prompb.Label, labelName, stateName string) []prompb.Label {
+	pos := sort.Search(len(lbls), func(i int) bool { return lbls[i].Name >= labelName })
+	out := make([]prompb.Label, len(lbls)+1)
+	copy(out, lbls[:pos])
+	out[pos] = prompb.Label{Name: labelName, Value: stateName}
+	copy(out[pos+1:], lbls[pos:])
+	return out
 }
 
 // FromQueryResult unpacks and sorts a QueryResult proto.
