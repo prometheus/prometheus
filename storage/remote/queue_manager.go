@@ -64,8 +64,7 @@ const (
 	reasonTooOld                     = "too_old"
 	reasonDroppedSeries              = "dropped_series"
 	reasonUnintentionalDroppedSeries = "unintentionally_dropped_series"
-	reasonNHCBNotSupported           = "nhcb_in_rw1_not_supported"
-	reasonStatesetInRW1NotSupported  = "stateset_in_rw1_not_supported"
+	reasonNHCBNotSupported = "nhcb_in_rw1_not_supported"
 )
 
 type queueManagerMetrics struct {
@@ -975,12 +974,10 @@ func (t *QueueManager) AppendStatesets(statesets []record.RefStatesetSample) boo
 		return true
 	}
 	if t.protoMsg == remoteapi.WriteV1MessageType {
-		// v1 has no wire representation for native statesets; drop early with
-		// a metric so operators can see the misconfiguration.
-		for range statesets {
-			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonStatesetInRW1NotSupported).Inc()
-		}
-		return true
+		// v1 has no native stateset wire type. Expand each stateset into one
+		// float gauge sample per state (value 1.0 if active, 0.0 if not),
+		// adding the state-carrying label to the base series labels.
+		return t.expandStatesetAsV1Floats(statesets)
 	}
 	currentTime := time.Now()
 outer:
@@ -1027,6 +1024,70 @@ outer:
 			backoff *= 2
 			if backoff > t.cfg.MaxBackoff {
 				backoff = t.cfg.MaxBackoff
+			}
+		}
+	}
+	return true
+}
+
+// expandStatesetAsV1Floats expands native stateset samples into per-state float
+// gauge samples for v1 remote write endpoints. Each state becomes a separate
+// time series with the state-carrying label added; the sample value is 1.0 if
+// the state is active and 0.0 if it is not.
+func (t *QueueManager) expandStatesetAsV1Floats(statesets []record.RefStatesetSample) bool {
+	currentTime := time.Now()
+	for _, ss := range statesets {
+		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), ss.T) {
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
+			continue
+		}
+		t.seriesMtx.Lock()
+		baseLbls, ok := t.seriesLabels[ss.Ref]
+		if !ok {
+			t.dataDropped.incr(1)
+			if _, ok := t.droppedSeries[ss.Ref]; !ok {
+				t.logger.Info("Dropped stateset for series that was not explicitly dropped via relabelling", "ref", ss.Ref)
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+			} else {
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+			}
+			t.seriesMtx.Unlock()
+			continue
+		}
+		meta := t.seriesMetadata[ss.Ref]
+		t.seriesMtx.Unlock()
+
+		b := labels.NewBuilder(baseLbls)
+		for i, name := range ss.SS.Names {
+			val := 0.0
+			if ss.SS.Values>>uint(i)&1 == 1 {
+				val = 1.0
+			}
+			b.Set(ss.SS.LabelName, name)
+			stateLbls := b.Labels()
+
+			backoff := model.Duration(5 * time.Millisecond)
+			for {
+				select {
+				case <-t.quit:
+					return false
+				default:
+				}
+				if t.shards.enqueue(ss.Ref, timeSeries{
+					seriesLabels: stateLbls,
+					metadata:     meta,
+					timestamp:    ss.T,
+					value:        val,
+					sType:        tSample,
+				}) {
+					break
+				}
+				t.metrics.enqueueRetriesTotal.Inc()
+				time.Sleep(time.Duration(backoff))
+				backoff *= 2
+				if backoff > t.cfg.MaxBackoff {
+					backoff = t.cfg.MaxBackoff
+				}
 			}
 		}
 	}
@@ -1735,10 +1796,9 @@ func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sen
 	nOut := 0
 	for _, d := range batch {
 		if d.sType == tStateset {
-			// v1 protocol has no native stateset representation. Skip before
-			// writing to pendingData so the output slice stays contiguous and
-			// subsequent entries are not lost. A downgrade path (expanding to
-			// per-state float series) is deferred to a follow-up.
+			// Safety net: tStateset entries are expanded to float samples in
+			// expandStatesetAsV1Floats before they reach the queue, so this
+			// branch should never be taken in practice.
 			continue
 		}
 		pendingData[nOut].Samples = pendingData[nOut].Samples[:0]

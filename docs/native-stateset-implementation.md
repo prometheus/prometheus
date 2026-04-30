@@ -440,12 +440,32 @@ model/stateset
                                     └── scrape/scrape_append_v2
 ```
 
+### `storage/remote/queue_manager.go` — v1 remote write expansion
+
+When the queue manager targets a v1 remote write endpoint and
+`sendNativeHistograms` is true (the gate that controls stateset sending),
+`AppendStatesets` now expands each native stateset sample into N float gauge
+time series — one per state — instead of silently dropping them.
+
+- Removed the early-drop block and the `reasonStatesetInRW1NotSupported`
+  metric label.
+- Added `expandStatesetAsV1Floats`: looks up base labels from
+  `seriesLabels[ss.Ref]`, then for each state builds
+  `labels.NewBuilder(baseLbls).Set(ss.SS.LabelName, name).Labels()` and
+  enqueues as a `tSample` entry (value 1.0 if active, 0.0 otherwise).
+- Age and unknown-series drop paths mirror the regular sample path.
+- The `tStateset` skip in `populateTimeSeries` becomes a safety net only;
+  under normal operation all stateset entries are expanded before reaching the
+  queue.
+
+### `storage/remote/queue_manager_test.go` — `TestExpandStatesetAsV1Floats`
+
+New test verifying the v1 expansion end-to-end:
+
+1. Creates a v1 `QueueManager` with `sendNativeHistograms = true`.
+2. Registers a base series `{__name__="pod_phase", pod="p1"}`.
+3. Appends one stateset sample with `Values=4` (bit 2 set → Running active).
+4. Asserts three float samples are received: `phase="Failed"→0.0`,
+   `phase="Pending"→0.0`, `phase="Running"→1.0`.
+
 ---
-
-## What is not yet done
-
-The following item from `docs/native-stateset-steps.md` remains deferred:
-
-- **v1 remote write expansion**: the v1 downgrade path (exploding a stateset
-  into per-state float-gauge series) is silently dropped rather than expanded.
-  Clients receiving remote write v1 will not see stateset data.
