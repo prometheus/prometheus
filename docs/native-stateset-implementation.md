@@ -1,5 +1,11 @@
 # Native Stateset — Implementation Summary
 
+> **Experimental extension.** Native statesets are a Prometheus-specific
+> extension to the data model. They are not part of the OpenMetrics
+> specification, and the HTTP query API response fields (`"stateset"`,
+> `"statesets"`) are not covered by the Prometheus OpenAPI specification.
+> The feature is gated behind `--enable-feature=native-statesets`.
+
 This document records every file created or modified on the
 `native-stateset-representation` branch and explains what changed and why.
 For the design rationale see `docs/native-stateset-proposal.md`.

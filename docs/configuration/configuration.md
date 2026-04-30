@@ -156,6 +156,9 @@ global:
   # dimension labelset. Requires a storage backend that supports AppenderV2
   # (the default TSDB does). If false, stateset float series are stored as
   # ordinary gauge samples.
+  # NOTE: This is an experimental extension not covered by the OpenAPI spec.
+  # Enabling --enable-feature=native-statesets sets this to true globally and
+  # also enables the stateset_* PromQL functions.
   [ scrape_native_statesets: <bool> | default = false ]
 
   # Specifies whether to convert scraped classic histograms into native
@@ -659,6 +662,7 @@ metric_relabel_configs:
 # If true, native statesets are ingested as first-class stateset samples.
 # OpenMetrics stateset float series are aggregated into a single stateset
 # sample per dimension labelset. Requires AppenderV2-capable storage.
+# NOTE: Experimental extension; see --enable-feature=native-statesets.
 [ scrape_native_statesets: <bool> | default = <global.scrape_native_statesets> ]
 
 # Specifies whether to convert classic histograms into native histograms with
