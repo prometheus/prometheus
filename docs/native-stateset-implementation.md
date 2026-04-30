@@ -335,21 +335,28 @@ live in `stateset.go` and bytes are placed in `XXX_unrecognized`.
 
 `scrapeAppendV2` loop: added `textparse.EntryStateset` case — reads
 `p.Stateset()`, sets the series reference, calls
-`app.Append(..., ss, appOpts)`.
+`app.Append(..., ss, appOpts)`. Also passes
+`ConvertStatesets: sl.enableNativeStatesetScraping` in `ParserOptions` so
+the `StateSetParser` wrapper is activated when the config flag is set.
 
-### `scrape/target.go`
+### `scrape/scrape.go`
 
-`ParserOptions` construction: passes `ConvertStateSetsToNative` from scrape
-config.
+Added `enableNativeStatesetScraping bool` field to `scrapeLoop` (initialised
+from `ScrapeNativeStatesetsEnabled()`). Added
+`case textparse.EntryStateset: continue` in the V1 append path so statesets
+are silently skipped rather than mis-processed (they require `AppenderV2`).
 
-### `scrape/target_test.go`
+### `config/config.go`
 
-Tests updated for new scrape-loop stateset path.
+Added `ScrapeNativeStatesets *bool` field to both `GlobalConfig` and
+`ScrapeConfig`, with YAML tag `scrape_native_statesets`. Added default
+propagation in both `UnmarshalYAML` methods and a
+`ScrapeNativeStatesetsEnabled() bool` helper method on `ScrapeConfig`.
 
-### `cmd/prometheus/main.go`
+### `docs/configuration/configuration.md`
 
-Feature-flag wiring for `convert-stateset-to-native` (opt-in, analogous to
-`convert-classic-histograms-to-nhcb`).
+Documented `scrape_native_statesets` in both the global and per-job scrape
+config sections.
 
 ### `cmd/prometheus/testdata/features.json`
 
@@ -399,8 +406,5 @@ The following items from `docs/native-stateset-steps.md` were deferred:
   yet be authored directly in `.test` files.
 - **v1 remote write expansion**: the v1 downgrade path (exploding a stateset
   into 5 float-gauge series) is silently dropped rather than expanded.
-- **Config plumbing** (`config/config.go`): `convert_stateset_to_native` YAML
-  key and scrape-config struct field are not wired; the feature is only
-  accessible via the `--enable-feature` flag.
 - **UI / API exposure**: the HTTP API does not expose stateset samples in query
   results (they are returned as empty vectors to non-stateset-aware clients).

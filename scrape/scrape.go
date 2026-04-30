@@ -861,6 +861,7 @@ type scrapeLoop struct {
 	honorTimestamps               bool
 	trackTimestampsStaleness      bool
 	enableNativeHistogramScraping bool
+	enableNativeStatesetScraping  bool
 	alwaysScrapeClassicHist       bool
 	convertClassicHistToNHCB      bool
 	fallbackScrapeProtocol        string
@@ -1216,6 +1217,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		honorTimestamps:               opts.sp.config.HonorTimestamps,
 		trackTimestampsStaleness:      opts.sp.config.TrackTimestampsStaleness,
 		enableNativeHistogramScraping: opts.sp.config.ScrapeNativeHistogramsEnabled(),
+		enableNativeStatesetScraping:  opts.sp.config.ScrapeNativeStatesetsEnabled(),
 		alwaysScrapeClassicHist:       opts.sp.config.AlwaysScrapeClassicHistogramsEnabled(),
 		convertClassicHistToNHCB:      opts.sp.config.ConvertClassicHistogramsToNHCBEnabled(),
 		fallbackScrapeProtocol:        opts.sp.config.ScrapeFallbackProtocol.HeaderMediaType(),
@@ -1679,6 +1681,9 @@ loop:
 			lastMFName, lastMeta = sl.cache.setUnit(p.Unit())
 			continue
 		case textparse.EntryComment:
+			continue
+		case textparse.EntryStateset:
+			// Native statesets require AppenderV2; skip silently in the V1 path.
 			continue
 		case textparse.EntryHistogram:
 			isHistogram = true

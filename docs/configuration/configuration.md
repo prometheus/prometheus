@@ -150,6 +150,14 @@ global:
   # buckets are part of the histogram).
   [ scrape_native_histograms: <bool> | default = false ]
 
+  # If true, native statesets are ingested as first-class stateset samples.
+  # OpenMetrics stateset float series (one series per state, labelled with the
+  # metric family name) are aggregated into a single stateset sample per
+  # dimension labelset. Requires a storage backend that supports AppenderV2
+  # (the default TSDB does). If false, stateset float series are stored as
+  # ordinary gauge samples.
+  [ scrape_native_statesets: <bool> | default = false ]
+
   # Specifies whether to convert scraped classic histograms into native
   # histograms with custom buckets.
   [ convert_classic_histograms_to_nhcb: <bool> | default = false ]
@@ -647,6 +655,11 @@ metric_relabel_configs:
 # a classic histogram with only the +Inf buckets if no explicit classic
 # buckets are part of the histogram).
 [ scrape_native_histograms: <bool> | default = <global.scrape_native_histograms> ]
+
+# If true, native statesets are ingested as first-class stateset samples.
+# OpenMetrics stateset float series are aggregated into a single stateset
+# sample per dimension labelset. Requires AppenderV2-capable storage.
+[ scrape_native_statesets: <bool> | default = <global.scrape_native_statesets> ]
 
 # Specifies whether to convert classic histograms into native histograms with
 # custom buckets.

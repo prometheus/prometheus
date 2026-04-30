@@ -103,6 +103,7 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 		IgnoreNativeHistograms:                  !sl.enableNativeHistogramScraping,
 		ConvertClassicHistogramsToNHCB:          sl.convertClassicHistToNHCB,
 		KeepClassicOnClassicAndNativeHistograms: sl.alwaysScrapeClassicHist,
+		ConvertStatesets:                        sl.enableNativeStatesetScraping,
 		OpenMetricsSkipSTSeries:                 sl.parseST,
 		FallbackContentType:                     sl.fallbackScrapeProtocol,
 	})

@@ -530,6 +530,8 @@ type GlobalConfig struct {
 	MetricNameEscapingScheme string `yaml:"metric_name_escaping_scheme,omitempty"`
 	// Whether to scrape native histograms.
 	ScrapeNativeHistograms *bool `yaml:"scrape_native_histograms,omitempty"`
+	// Whether to scrape native statesets.
+	ScrapeNativeStatesets *bool `yaml:"scrape_native_statesets,omitempty"`
 	// Whether to convert all scraped classic histograms into native histograms with custom buckets.
 	ConvertClassicHistogramsToNHCB bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
 	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
@@ -677,6 +679,9 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if gc.ScrapeNativeHistograms == nil {
 		gc.ScrapeNativeHistograms = DefaultGlobalConfig.ScrapeNativeHistograms
 	}
+	if gc.ScrapeNativeStatesets == nil {
+		gc.ScrapeNativeStatesets = DefaultGlobalConfig.ScrapeNativeStatesets
+	}
 	if gc.ExtraScrapeMetrics == nil {
 		gc.ExtraScrapeMetrics = DefaultGlobalConfig.ExtraScrapeMetrics
 	}
@@ -788,6 +793,8 @@ type ScrapeConfig struct {
 	ScrapeFallbackProtocol ScrapeProtocol `yaml:"fallback_scrape_protocol,omitempty"`
 	// Whether to scrape native histograms.
 	ScrapeNativeHistograms *bool `yaml:"scrape_native_histograms,omitempty"`
+	// Whether to scrape native statesets.
+	ScrapeNativeStatesets *bool `yaml:"scrape_native_statesets,omitempty"`
 	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
 	AlwaysScrapeClassicHistograms *bool `yaml:"always_scrape_classic_histograms,omitempty"`
 	// Whether to convert all scraped classic histograms into a native histogram with custom buckets.
@@ -940,6 +947,9 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	if c.ScrapeNativeHistograms == nil {
 		c.ScrapeNativeHistograms = globalConfig.ScrapeNativeHistograms
 	}
+	if c.ScrapeNativeStatesets == nil {
+		c.ScrapeNativeStatesets = globalConfig.ScrapeNativeStatesets
+	}
 	if c.ExtraScrapeMetrics == nil {
 		c.ExtraScrapeMetrics = globalConfig.ExtraScrapeMetrics
 	}
@@ -1079,6 +1089,11 @@ func ToEscapingScheme(s string, v model.ValidationScheme) (model.EscapingScheme,
 // ScrapeNativeHistogramsEnabled returns whether to scrape native histograms.
 func (c *ScrapeConfig) ScrapeNativeHistogramsEnabled() bool {
 	return c.ScrapeNativeHistograms != nil && *c.ScrapeNativeHistograms
+}
+
+// ScrapeNativeStatesetsEnabled returns whether to scrape native statesets.
+func (c *ScrapeConfig) ScrapeNativeStatesetsEnabled() bool {
+	return c.ScrapeNativeStatesets != nil && *c.ScrapeNativeStatesets
 }
 
 // ConvertClassicHistogramsToNHCBEnabled returns whether to convert classic histograms to NHCB.
