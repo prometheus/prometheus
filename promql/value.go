@@ -185,6 +185,26 @@ func (p SSPoint) String() string {
 	return fmt.Sprintf("%s @[%v]", p.SS.LabelName, p.T)
 }
 
+// MarshalJSON implements json.Marshaler.
+//
+// JSON marshaling is only needed for the HTTP API. Since SSPoint is such a
+// frequently marshaled type, it gets an optimized treatment directly in
+// web/api/v1/json_codec.go. Therefore, this method is unused within Prometheus.
+// It is still provided here as convenience for debugging and for other users of
+// this code.
+func (p SSPoint) MarshalJSON() ([]byte, error) {
+	ss := struct {
+		LabelName string   `json:"labelName"`
+		Names     []string `json:"names"`
+		Values    string   `json:"values"`
+	}{
+		LabelName: p.SS.LabelName,
+		Names:     p.SS.Names,
+		Values:    strconv.FormatUint(p.SS.Values, 10),
+	}
+	return json.Marshal([...]any{float64(p.T) / 1000, ss})
+}
+
 // size returns the size of the HPoint compared to the size of an FPoint.
 // The total size is calculated considering the histogram timestamp (p.T - 8 bytes),
 // and then a number of bytes in the histogram.
@@ -229,10 +249,29 @@ func (s Sample) String() string {
 	return fmt.Sprintf("%s => %s", s.Metric, str)
 }
 
-// MarshalJSON is mirrored in web/api/v1/api.go with jsoniter because FPoint and
-// HPoint wouldn't be marshaled with jsoniter otherwise.
+// MarshalJSON is mirrored in web/api/v1/json_codec.go with jsoniter because
+// FPoint, HPoint, and SSPoint wouldn't be marshaled with jsoniter otherwise.
 func (s Sample) MarshalJSON() ([]byte, error) {
-	if s.H == nil {
+	switch {
+	case s.SS != nil:
+		ss := struct {
+			M  labels.Labels `json:"metric"`
+			SS SSPoint       `json:"stateset"`
+		}{
+			M:  s.Metric,
+			SS: SSPoint{T: s.T, SS: s.SS},
+		}
+		return json.Marshal(ss)
+	case s.H != nil:
+		h := struct {
+			M labels.Labels `json:"metric"`
+			H HPoint        `json:"histogram"`
+		}{
+			M: s.Metric,
+			H: HPoint{T: s.T, H: s.H},
+		}
+		return json.Marshal(h)
+	default:
 		f := struct {
 			M labels.Labels `json:"metric"`
 			F FPoint        `json:"value"`
@@ -242,14 +281,6 @@ func (s Sample) MarshalJSON() ([]byte, error) {
 		}
 		return json.Marshal(f)
 	}
-	h := struct {
-		M labels.Labels `json:"metric"`
-		H HPoint        `json:"histogram"`
-	}{
-		M: s.Metric,
-		H: HPoint{T: s.T, H: s.H},
-	}
-	return json.Marshal(h)
 }
 
 // Vector is basically only an alias for []Sample, but the contract is that

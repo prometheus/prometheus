@@ -20,6 +20,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/stateset"
 )
 
 // MarshalTimestamp marshals a point timestamp using the passed jsoniter stream.
@@ -87,6 +88,43 @@ func MarshalFloat(f float64, stream *jsoniter.Stream) {
 //
 // The 2nd and 3rd elements are the lower and upper boundary. The 4th element is
 // the bucket count.
+
+// MarshalStateset marshals a stateset value using the passed jsoniter stream.
+// It writes something like:
+//
+//	{
+//	    "labelName": "phase",
+//	    "names": ["Failed","Pending","Running"],
+//	    "values": "4"
+//	}
+//
+// "names" is sorted lexicographically. "values" is the bitset as a decimal
+// string where bit i is set if names[i] is an active state.
+func MarshalStateset(ss *stateset.StateSet, stream *jsoniter.Stream) {
+	stream.WriteObjectStart()
+	stream.WriteObjectField(`labelName`)
+	stream.WriteString(ss.LabelName)
+	stream.WriteMore()
+	stream.WriteObjectField(`names`)
+	stream.WriteArrayStart()
+	for i, name := range ss.Names {
+		if i > 0 {
+			stream.WriteMore()
+		}
+		stream.WriteString(name)
+	}
+	stream.WriteArrayEnd()
+	stream.WriteMore()
+	stream.WriteObjectField(`values`)
+	stream.WriteRaw(`"`)
+	buf := stream.Buffer()
+	buf = strconv.AppendUint(buf, ss.Values, 10)
+	stream.SetBuffer(buf)
+	stream.WriteRaw(`"`)
+	stream.WriteObjectEnd()
+}
+
+// MarshalHistogram marshals a histogram value using the passed jsoniter stream.
 func MarshalHistogram(h *histogram.FloatHistogram, stream *jsoniter.Stream) {
 	stream.WriteObjectStart()
 	stream.WriteObjectField(`count`)

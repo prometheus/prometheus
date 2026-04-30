@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 )
@@ -161,6 +162,89 @@ func TestJsonCodec_Encode(t *testing.T) {
 		{
 			response: promql.FPoint{F: 1.2345678e-67, T: 0},
 			expected: `{"status":"success","data":[0,"1.2345678e-67"]}`,
+		},
+		{
+			// Stateset instant query (vector): single series, one active state.
+			response: &QueryData{
+				ResultType: parser.ValueTypeVector,
+				Result: promql.Vector{
+					promql.Sample{
+						Metric: labels.FromStrings("__name__", "pod_phase", "pod", "p1"),
+						T:      1000,
+						SS: &stateset.StateSet{
+							LabelName: "phase",
+							Names:     []string{"Failed", "Pending", "Running"},
+							Values:    4, // bit 2 = Running
+						},
+					},
+				},
+			},
+			expected: `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"pod_phase","pod":"p1"},"stateset":[1,{"labelName":"phase","names":["Failed","Pending","Running"],"values":"4"}]}]}}`,
+		},
+		{
+			// Stateset range query (matrix): single series, two points.
+			response: &QueryData{
+				ResultType: parser.ValueTypeMatrix,
+				Result: promql.Matrix{
+					promql.Series{
+						Metric: labels.FromStrings("__name__", "pod_phase", "pod", "p1"),
+						Statesets: []promql.SSPoint{
+							{T: 1000, SS: &stateset.StateSet{
+								LabelName: "phase",
+								Names:     []string{"Failed", "Pending", "Running"},
+								Values:    4,
+							}},
+							{T: 2000, SS: &stateset.StateSet{
+								LabelName: "phase",
+								Names:     []string{"Failed", "Pending", "Running"},
+								Values:    1, // bit 0 = Failed
+							}},
+						},
+					},
+				},
+			},
+			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"pod_phase","pod":"p1"},"statesets":[[1,{"labelName":"phase","names":["Failed","Pending","Running"],"values":"4"}],[2,{"labelName":"phase","names":["Failed","Pending","Running"],"values":"1"}]]}]}}`,
+		},
+		{
+			// Stateset with all states inactive (values == 0).
+			response: &QueryData{
+				ResultType: parser.ValueTypeVector,
+				Result: promql.Vector{
+					promql.Sample{
+						Metric: labels.FromStrings("__name__", "flags"),
+						T:      5000,
+						SS: &stateset.StateSet{
+							LabelName: "flag",
+							Names:     []string{"a", "b", "c"},
+							Values:    0,
+						},
+					},
+				},
+			},
+			expected: `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"flags"},"stateset":[5,{"labelName":"flag","names":["a","b","c"],"values":"0"}]}]}}`,
+		},
+		{
+			// Matrix with both float values and stateset values in the same response.
+			response: &QueryData{
+				ResultType: parser.ValueTypeMatrix,
+				Result: promql.Matrix{
+					promql.Series{
+						Metric: labels.FromStrings("__name__", "plain"),
+						Floats: []promql.FPoint{{F: 1, T: 1000}},
+					},
+					promql.Series{
+						Metric: labels.FromStrings("__name__", "ss"),
+						Statesets: []promql.SSPoint{
+							{T: 1000, SS: &stateset.StateSet{
+								LabelName: "s",
+								Names:     []string{"on"},
+								Values:    1,
+							}},
+						},
+					},
+				},
+			},
+			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"plain"},"values":[[1,"1"]]},{"metric":{"__name__":"ss"},"statesets":[[1,{"labelName":"s","names":["on"],"values":"1"}]]}]}}`,
 		},
 		{
 			response: []exemplar.QueryResult{
