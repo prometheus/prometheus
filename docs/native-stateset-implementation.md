@@ -363,6 +363,51 @@ config sections.
 Golden file updated to include `stateset_is_active`, `stateset_active_states`,
 and `stateset_known_states` in the `/api/v1/metadata/features` response.
 
+### `util/jsonutil/marshal.go`
+
+Added `MarshalStateset(*stateset.StateSet, *jsoniter.Stream)` — encodes a
+stateset as a JSON object with three fields:
+
+```json
+{"labelName": "phase", "names": ["Failed","Pending","Running"], "values": "4"}
+```
+
+`names` is the sorted slice of state names; `values` is the active-state bitset
+as a quoted decimal uint64 (bit i set ↔ `names[i]` is active).
+
+### `web/api/v1/json_codec.go`
+
+Added stateset encoding to the HTTP query API:
+
+- Registered `unsafeMarshalSSPointJSON` for `promql.SSPoint` via
+  `jsoniter.RegisterTypeEncoderFunc`.
+- Added `marshalSSPointJSON` — writes `[<timestamp>, {<stateset>}]`, mirroring
+  `marshalHPointJSON`.
+- Extended `marshalSeriesJSON` to emit a `"statesets"` array alongside
+  `"values"` and `"histograms"` for range (matrix) results.
+- Extended `marshalSampleJSON` to emit a `"stateset"` field (instead of
+  `"value"` or `"histogram"`) when `s.SS != nil` for instant (vector) results.
+
+### `promql/value.go`
+
+- Added `SSPoint.MarshalJSON()` — fallback JSON marshaler for non-jsoniter
+  callers; encodes `[timestamp/1000, {labelName, names, values}]`.
+- Updated `Sample.MarshalJSON()` to handle `SS != nil` with a `"stateset"`
+  field, consistent with the jsoniter path.
+
+### `promql/promqltest/testdata/statesets.test`
+
+Added 41 promqltest cases covering all three PromQL functions:
+
+- `stateset_is_active(v, name)` — returns 1/0 per series; drops metric name;
+  unknown state name returns 0; tracks changes over time.
+- `stateset_active_states(v)` — one sample per active state (value 1);
+  preserves metric name; empty result when no states active.
+- `stateset_known_states(v)` — one sample per known state (1 if active, 0 if
+  not); preserves metric name.
+- All three functions return an empty vector for plain float (non-stateset)
+  input.
+
 ### `util/teststorage/appender.go`, `appender_test.go`
 
 Test-storage `AppenderV2` stub updated for the new `ss` parameter.
@@ -399,12 +444,8 @@ model/stateset
 
 ## What is not yet done
 
-The following items from `docs/native-stateset-steps.md` were deferred:
+The following item from `docs/native-stateset-steps.md` remains deferred:
 
-- **PromQL test data** (`promql/promqltest/testdata/`): the test-format loader
-  for native stateset `load` blocks is not implemented; stateset values cannot
-  yet be authored directly in `.test` files.
 - **v1 remote write expansion**: the v1 downgrade path (exploding a stateset
-  into 5 float-gauge series) is silently dropped rather than expanded.
-- **UI / API exposure**: the HTTP API does not expose stateset samples in query
-  results (they are returned as empty vectors to non-stateset-aware clients).
+  into per-state float-gauge series) is silently dropped rather than expanded.
+  Clients receiving remote write v1 will not see stateset data.
