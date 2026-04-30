@@ -122,6 +122,9 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	case h != nil:
 		sampleMetricType = sampleMetricTypeHistogram
 		valErr = h.Validate()
+	case ss != nil:
+		sampleMetricType = sampleMetricTypeStateset
+		valErr = ss.Validate()
 	}
 	if valErr != nil {
 		return 0, valErr
@@ -154,6 +157,8 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	case h != nil:
 		isStale = value.IsStaleNaN(h.Sum)
 		appErr = a.appendHistogram(s, t, h, opts.RejectOutOfOrder)
+	case ss != nil:
+		appErr = a.appendStateset(s, t, ss)
 	default:
 		isStale = value.IsStaleNaN(v)
 		if isStale {
@@ -301,6 +306,30 @@ func (a *headAppenderV2) appendFloatHistogram(s *memSeries, t int64, fh *histogr
 	b := a.getCurrentBatch(st, s.ref)
 	b.floatHistograms = append(b.floatHistograms, record.RefFloatHistogramSample{Ref: s.ref, T: t, FH: fh})
 	b.floatHistogramSeries = append(b.floatHistogramSeries, s)
+	return nil
+}
+
+func (a *headAppenderV2) appendStateset(s *memSeries, t int64, ss *stateset.StateSet) error {
+	s.Lock()
+	isOOO, delta, err := s.appendable(t, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	if isOOO {
+		s.Unlock()
+		return storage.ErrOutOfOrderSample
+	}
+	if err == nil {
+		s.pendingCommit = true
+	}
+	s.Unlock()
+	if delta > 0 {
+		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
+	}
+	if err != nil {
+		return err
+	}
+
+	b := a.getCurrentBatch(stStateset, s.ref)
+	b.statesets = append(b.statesets, record.RefStatesetSample{Ref: s.ref, T: t, SS: ss})
+	b.statesetSeries = append(b.statesetSeries, s)
 	return nil
 }
 

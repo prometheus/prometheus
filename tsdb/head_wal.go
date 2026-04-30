@@ -230,6 +230,18 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 					return
 				}
 				decoded <- hists
+			case record.StatesetSamples:
+				statesets := h.wlReplayStatesetsPool.Get()[:0]
+				statesets, err = dec.StatesetSamples(r.Record(), statesets)
+				if err != nil {
+					decodeErr = &wlog.CorruptionErr{
+						Err:     fmt.Errorf("decode stateset samples: %w", err),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- statesets
 			case record.Metadata:
 				meta := h.wlReplayMetadataPool.Get()[:0]
 				meta, err := dec.Metadata(r.Record(), meta)
@@ -441,6 +453,41 @@ Outer:
 			}
 			clear(v) // Zero out to avoid retaining histogram data.
 			h.wlReplayFloatHistogramsPool.Put(v[:0])
+		case []record.RefStatesetSample:
+			minValidTime := h.minValidTime.Load()
+			appendChunkOpts := chunkOpts{
+				chunkDiskMapper: h.chunkDiskMapper,
+				chunkRange:      h.chunkRange.Load(),
+				samplesPerChunk: h.opts.SamplesPerChunk,
+			}
+			for _, s := range v {
+				if s.T < minValidTime {
+					continue
+				}
+				if r, ok := multiRef[s.Ref]; ok {
+					s.Ref = r
+				}
+				ms := h.series.getByID(s.Ref)
+				if ms == nil {
+					unknownSeriesRefs.refs[s.Ref] = struct{}{}
+					continue
+				}
+				if s.T <= ms.mmMaxTime {
+					continue
+				}
+				ms.Lock()
+				if ok, chunkCreated := ms.appendStateset(s.T, s.SS, 0, appendChunkOpts); ok {
+					if chunkCreated {
+						h.metrics.chunksCreated.Inc()
+						h.metrics.chunks.Inc()
+						_ = ms.mmapChunks(h.chunkDiskMapper)
+					}
+					h.updateMinMaxTime(s.T, s.T)
+				}
+				ms.Unlock()
+			}
+			clear(v)
+			h.wlReplayStatesetsPool.Put(v[:0])
 		case []record.RefMetadata:
 			for _, m := range v {
 				if r, ok := multiRef[m.Ref]; ok {

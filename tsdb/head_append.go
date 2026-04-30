@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -287,6 +288,19 @@ func (h *Head) putFloatHistogramBuffer(b []record.RefFloatHistogramSample) {
 	h.floatHistogramsPool.Put(b[:0])
 }
 
+func (h *Head) getStatesetBuffer() []record.RefStatesetSample {
+	b := h.statesetsPool.Get()
+	if b == nil {
+		return make([]record.RefStatesetSample, 0, 512)
+	}
+	return b
+}
+
+func (h *Head) putStatesetBuffer(b []record.RefStatesetSample) {
+	clear(b)
+	h.statesetsPool.Put(b[:0])
+}
+
 func (h *Head) getMetadataBuffer() []record.RefMetadata {
 	b := h.metadataPool.Get()
 	if b == nil {
@@ -357,6 +371,7 @@ const (
 	stCustomBucketHistogram                        // Native integer histograms with custom bucket boundaries. Goes to `histograms`.
 	stFloatHistogram                               // Native float histograms. Goes to `floatHistograms`.
 	stCustomBucketFloatHistogram                   // Native float histograms with custom bucket boundaries. Goes to `floatHistograms`.
+	stStateset                                     // Native statesets. Goes to `statesets`.
 )
 
 // appendBatch is used to partition all the appended data into batches that are
@@ -376,6 +391,8 @@ type appendBatch struct {
 	metadata             []record.RefMetadata             // New metadata held by this appender.
 	metadataSeries       []*memSeries                     // Series corresponding to the metadata held by this appender.
 	exemplars            []exemplarWithSeriesRef          // New exemplars held by this appender.
+	statesets            []record.RefStatesetSample       // New stateset samples held by this appender.
+	statesetSeries       []*memSeries                     // Stateset series (same-index correspondence).
 }
 
 // close returns all the slices to the pools in Head and nil's them.
@@ -398,6 +415,10 @@ func (b *appendBatch) close(h *Head) {
 	b.metadataSeries = nil
 	h.putExemplarBuffer(b.exemplars)
 	b.exemplars = nil
+	h.putStatesetBuffer(b.statesets)
+	b.statesets = nil
+	h.putSeriesBuffer(b.statesetSeries)
+	b.statesetSeries = nil
 }
 
 type headAppenderBase struct {
@@ -575,6 +596,8 @@ func (a *headAppenderBase) getCurrentBatch(st sampleType, s chunks.HeadSeriesRef
 			floatHistogramSeries: h.getSeriesBuffer(),
 			metadata:             h.getMetadataBuffer(),
 			metadataSeries:       h.getSeriesBuffer(),
+			statesets:            h.getStatesetBuffer(),
+			statesetSeries:       h.getSeriesBuffer(),
 		}
 
 		// Allocate the exemplars buffer only if exemplars are enabled.
@@ -1126,6 +1149,13 @@ func (a *headAppenderBase) log() error {
 				}
 			}
 		}
+		if len(b.statesets) > 0 {
+			rec = enc.StatesetSamples(b.statesets, buf)
+			buf = rec[:0]
+			if err := a.head.wal.Log(rec); err != nil {
+				return fmt.Errorf("log statesets: %w", err)
+			}
+		}
 		// Exemplars should be logged after samples (float/native histogram/etc),
 		// otherwise it might happen that we send the exemplars in a remote write
 		// batch before the samples, which in turn means the exemplar is rejected
@@ -1158,6 +1188,7 @@ func exemplarsForEncoding(es []exemplarWithSeriesRef) []record.RefExemplar {
 type appenderCommitContext struct {
 	floatsAppended     int
 	histogramsAppended int
+	statesetsAppended  int
 	// Number of samples out of order but accepted: with ooo enabled and within time window.
 	oooFloatsAccepted    int
 	oooHistogramAccepted int
@@ -1688,6 +1719,96 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 	}
 }
 
+// commitStatesets processes and commits the stateset samples in the provided
+// batch to the series, updating the appenderCommitContext with the results.
+func (a *headAppenderBase) commitStatesets(b *appendBatch, acc *appenderCommitContext) {
+	for i, s := range b.statesets {
+		series := b.statesetSeries[i]
+		series.Lock()
+
+		ok, chunkCreated := series.appendStateset(s.T, s.SS, a.appendID, chunkOpts{
+			chunkDiskMapper: a.head.chunkDiskMapper,
+			chunkRange:      a.head.chunkRange.Load(),
+			samplesPerChunk: a.head.opts.SamplesPerChunk,
+		})
+		if ok {
+			if s.T < acc.inOrderMint {
+				acc.inOrderMint = s.T
+			}
+			if s.T > acc.inOrderMaxt {
+				acc.inOrderMaxt = s.T
+			}
+		} else {
+			acc.statesetsAppended--
+		}
+
+		if chunkCreated {
+			a.head.metrics.chunks.Inc()
+			a.head.metrics.chunksCreated.Inc()
+		}
+
+		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
+		series.pendingCommit = false
+		series.Unlock()
+	}
+}
+
+// appendStateset adds a stateset sample to the series.
+// It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
+// When the stateset names change a new chunk is allocated; the old appender is discarded.
+func (s *memSeries) appendStateset(t int64, ss *stateset.StateSet, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
+	c := s.headChunks
+
+	if c == nil {
+		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
+			return false, false
+		}
+		c = s.cutNewHeadChunk(t, chunkenc.EncStateset, o.chunkRange)
+		chunkCreated = true
+	}
+
+	if c.maxTime >= t {
+		return false, chunkCreated
+	}
+
+	if c.chunk.Encoding() != chunkenc.EncStateset {
+		c = s.cutNewHeadChunk(t, chunkenc.EncStateset, o.chunkRange)
+		chunkCreated = true
+	}
+
+	if c.chunk.NumSamples() == 0 {
+		c.minTime = t
+		s.nextAt = rangeForTimestamp(c.minTime, o.chunkRange)
+	}
+
+	newChunk, app, err := s.app.AppendStateset(t, ss)
+	if err != nil {
+		return false, chunkCreated
+	}
+	s.app = app
+	s.lastStatesetValue = ss
+
+	if appendID > 0 {
+		s.txs.add(appendID)
+	}
+
+	if newChunk == nil {
+		c.maxTime = t
+		return true, chunkCreated
+	}
+
+	// Names changed — new chunk was cut by the chunk appender.
+	s.headChunks = &memChunk{
+		chunk:   newChunk,
+		minTime: t,
+		maxTime: t,
+		prev:    s.headChunks,
+	}
+	s.headChunkCount.Add(1)
+	s.nextAt = rangeForTimestamp(t, o.chunkRange)
+	return true, true
+}
+
 // commitMetadata commits the metadata for each series in the provided batch.
 // It iterates over the metadata slice and updates the corresponding series
 // with the new metadata information. The series is locked during the update
@@ -1759,6 +1880,7 @@ func (a *headAppenderBase) Commit() (err error) {
 	for _, b := range a.batches {
 		acc.floatsAppended += len(b.floats)
 		acc.histogramsAppended += len(b.histograms) + len(b.floatHistograms)
+		acc.statesetsAppended += len(b.statesets)
 		a.commitExemplars(b)
 		defer b.close(h)
 	}
@@ -1778,6 +1900,7 @@ func (a *headAppenderBase) Commit() (err error) {
 		a.commitFloats(b, acc)
 		a.commitHistograms(b, acc)
 		a.commitFloatHistograms(b, acc)
+		a.commitStatesets(b, acc)
 		commitMetadata(b)
 	}
 	// Unmark all series as pending commit after all samples have been committed.
@@ -1789,6 +1912,7 @@ func (a *headAppenderBase) Commit() (err error) {
 	h.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatTooOldRejected))
 	h.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatsAppended))
 	h.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histogramsAppended))
+	h.metrics.samplesAppended.WithLabelValues(sampleMetricTypeStateset).Add(float64(acc.statesetsAppended))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.oooFloatsAccepted))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.oooHistogramAccepted))
 	h.updateMinMaxTime(acc.inOrderMint, acc.inOrderMaxt)
