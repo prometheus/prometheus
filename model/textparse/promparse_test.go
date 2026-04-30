@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 )
 
 // lbls is a helper for the readability of the expectations.
@@ -626,5 +627,133 @@ func TestPromNullByteHandling(t *testing.T) {
 		}
 
 		require.EqualError(t, err, c.err, "test %d", i)
+	}
+}
+
+func TestPromParseNativeStateset(t *testing.T) {
+	st := labels.NewSymbolTable()
+
+	input := "# TYPE pod_phase stateset\n" +
+		`pod_phase{pod="web-1"} {{lname:pod_phase Failed=0 Pending=0 Running=1 Succeeded=0 Unknown=0}}` + "\n" +
+		`pod_phase{pod="web-2"} {{lname:pod_phase Failed=1 Pending=0 Running=0 Succeeded=0 Unknown=0}} 1704067200000` + "\n"
+
+	p := NewPromParser([]byte(input), st, false)
+	got := testParse(t, p)
+
+	want := []parsedEntry{
+		{m: "pod_phase", typ: model.MetricTypeStateset},
+		{
+			m:    `pod_phase{pod="web-1"}`,
+			lset: labels.FromStrings("__name__", "pod_phase", "pod", "web-1"),
+			ss: &stateset.StateSet{
+				LabelName: "pod_phase",
+				Names:     []string{"Failed", "Pending", "Running", "Succeeded", "Unknown"},
+				Values:    0b00100, // Running=1 is bit 2
+			},
+		},
+		{
+			m:    `pod_phase{pod="web-2"}`,
+			lset: labels.FromStrings("__name__", "pod_phase", "pod", "web-2"),
+			t:    int64p(1704067200000),
+			ss: &stateset.StateSet{
+				LabelName: "pod_phase",
+				Names:     []string{"Failed", "Pending", "Running", "Succeeded", "Unknown"},
+				Values:    0b00001, // Failed=1 is bit 0
+			},
+		},
+	}
+	requireEntries(t, want, got)
+}
+
+func TestPromParseNativeStatesetSorted(t *testing.T) {
+	// State names in the wire format are unsorted; parser must sort them.
+	// Note: the Prom text format requires an explicit "{}" when there are no
+	// extra labels so the parser does not mistake "{{" for a label set open.
+	input := "# TYPE flags stateset\n" +
+		"flags{} {{lname:flag Zzz=0 Aaa=1 Mmm=0}}\n"
+
+	p := NewPromParser([]byte(input), labels.NewSymbolTable(), false)
+	got := testParse(t, p)
+
+	want := []parsedEntry{
+		{m: "flags", typ: model.MetricTypeStateset},
+		{
+			m:    "flags{}",
+			lset: labels.FromStrings("__name__", "flags"),
+			ss: &stateset.StateSet{
+				LabelName: "flag",
+				Names:     []string{"Aaa", "Mmm", "Zzz"},
+				Values:    0b001, // Aaa=1 is bit 0 after sort
+			},
+		},
+	}
+	requireEntries(t, want, got)
+}
+
+func TestPromParseNativeStatesetEmpty(t *testing.T) {
+	// Empty stateset body (no states).
+	input := "# TYPE ephemeral stateset\n" +
+		"ephemeral{} {{lname:state}}\n"
+
+	p := NewPromParser([]byte(input), labels.NewSymbolTable(), false)
+	got := testParse(t, p)
+
+	want := []parsedEntry{
+		{m: "ephemeral", typ: model.MetricTypeStateset},
+		{
+			m:    "ephemeral{}",
+			lset: labels.FromStrings("__name__", "ephemeral"),
+			ss:   &stateset.StateSet{LabelName: "state"},
+		},
+	}
+	requireEntries(t, want, got)
+}
+
+func TestPromParseNativeStatesetErrors(t *testing.T) {
+	// Note: in the Prometheus text format a bare "metric {{" (without an
+	// explicit label set) is parsed as parseLVals because the first "{" looks
+	// like a label-set open. Use "metric{} {{" so the second tBraceOpen
+	// reaches parseMetricSuffix and the stateset detection fires correctly.
+	cases := []struct {
+		input string
+		err   string
+	}{
+		{
+			// Missing TYPE annotation: stateset branch not entered; tBraceOpen is rejected.
+			// parseError shows p.l.b[p.l.start:p.l.i+1] which spans "{{".
+			input: "pod_phase{} {{lname:phase Running=1}}\n",
+			err:   "expected value after metric, got \"{{\" (\"BOPEN\") while parsing: \"pod_phase{} {{\"",
+		},
+		{
+			// Wrong type annotation: same path.
+			input: "# TYPE pod_phase gauge\npod_phase{} {{lname:phase Running=1}}\n",
+			err:   "expected value after metric, got \"{{\" (\"BOPEN\") while parsing: \"pod_phase{} {{\"",
+		},
+		{
+			// Missing lname keyword.
+			input: "# TYPE ss stateset\nss{} {{phase Running=1}}\n",
+			err:   "expected 'lname' keyword in stateset value, got \"phase\" while parsing: \"ss{} {{\"",
+		},
+		{
+			// Missing closing }}.
+			input: "# TYPE ss stateset\nss{} {{lname:phase Running=1}\n",
+			err:   "expected '}}' to close stateset value while parsing: \"ss{} {{\"",
+		},
+		{
+			// Invalid flag value.
+			input: "# TYPE ss stateset\nss{} {{lname:phase Running=2}}\n",
+			err:   "expected '0' or '1' for state \"Running\" in stateset value while parsing: \"ss{} {{\"",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.err[:min(40, len(c.err))], func(t *testing.T) {
+			p := NewPromParser([]byte(c.input), labels.NewSymbolTable(), false)
+			var err error
+			for err == nil {
+				_, err = p.Next()
+			}
+			require.EqualError(t, err, c.err)
+		})
 	}
 }

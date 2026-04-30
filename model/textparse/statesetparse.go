@@ -70,6 +70,14 @@ type StateSetParser struct {
 	ssSS    *stateset.StateSet
 	ssLset  labels.Labels // dimension labels for the emitted stateset
 
+	// Native stateset saved during a flush+replay sequence. When the inner parser
+	// emits EntryStateset while we are flushing an OM1-aggregated group, we store
+	// the native stateset here so the stateEmitting replay can return it correctly.
+	nativeSS    *stateset.StateSet
+	nativeBytes []byte
+	nativeTS    *int64
+	nativeLset  labels.Labels
+
 	// Accumulation fields for the stateset group being built.
 	statesetFamilyName string // non-empty when inside a TYPE stateset block
 	tempTS             *int64
@@ -141,6 +149,15 @@ func (p *StateSetParser) Next() (Entry, error) {
 	for {
 		if p.state == stateEmitting {
 			p.state = stateStart
+			// If a native stateset was saved during flush, emit it now.
+			if p.nativeSS != nil {
+				p.ssBytes = p.nativeBytes
+				p.ssTS = p.nativeTS
+				p.ssSS = p.nativeSS
+				p.ssLset = p.nativeLset
+				p.nativeSS = nil
+				return EntryStateset, nil
+			}
 			// Replay the saved underlying entry. If it looks like a member
 			// of a stateset family, try to start collecting a new group.
 			if p.entry == EntrySeries && p.statesetFamilyName != "" {
@@ -199,6 +216,27 @@ func (p *StateSetParser) Next() (Entry, error) {
 				return EntryStateset, nil
 			}
 			return EntryHistogram, nil
+
+		case EntryStateset:
+			// Native stateset from the inner parser — cache its data and pass through.
+			nativeBytes, nativeTS, nativeSS := p.parser.Stateset()
+			var nativeLset labels.Labels
+			p.parser.Labels(&nativeLset)
+			if p.state == stateCollecting && p.emitStateset() {
+				// Flush the pending OM1 group first, then replay the native entry.
+				p.nativeBytes = nativeBytes
+				p.nativeTS = nativeTS
+				p.nativeSS = nativeSS
+				p.nativeLset = nativeLset
+				p.entry = EntryStateset
+				p.state = stateEmitting
+				return EntryStateset, nil
+			}
+			p.ssBytes = nativeBytes
+			p.ssTS = nativeTS
+			p.ssSS = nativeSS
+			p.ssLset = nativeLset
+			return EntryStateset, nil
 
 		case EntryType:
 			p.bName, p.typ = p.parser.Type()

@@ -113,6 +113,10 @@ type OpenMetricsParser struct {
 	visitedMFName           []byte
 	skipSTSeries            bool
 	enableTypeAndUnitLabels bool
+
+	// Native stateset state: set by parseSeriesEndOfLine when a "{{lname:…}}" value is parsed.
+	ss               *stateset.StateSet
+	isNativeStateset bool
 }
 
 type openMetricsParserOptions struct {
@@ -177,10 +181,15 @@ func (*OpenMetricsParser) Histogram() ([]byte, *int64, *histogram.Histogram, *hi
 	return nil, nil, nil, nil
 }
 
-// Stateset returns (nil, nil, nil) because OpenMetricsParser emits stateset
-// members as individual EntrySeries entries; aggregation is done by StateSetParser.
-func (*OpenMetricsParser) Stateset() ([]byte, *int64, *stateset.StateSet) {
-	return nil, nil, nil
+// Stateset returns the series bytes, optional timestamp, and StateSet for the
+// current entry. Must only be called after Next returns EntryStateset.
+// For OM1 stateset float series, StateSetParser performs the aggregation instead.
+func (p *OpenMetricsParser) Stateset() ([]byte, *int64, *stateset.StateSet) {
+	if p.hasTS {
+		ts := p.ts
+		return p.series, &ts, p.ss
+	}
+	return p.series, nil, p.ss
 }
 
 // Help returns the metric name and help text in the current entry.
@@ -551,6 +560,9 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		if err := p.parseSeriesEndOfLine(p.nextToken()); err != nil {
 			return EntryInvalid, err
 		}
+		if p.isNativeStateset {
+			return EntryStateset, nil
+		}
 		if p.skipSTSeries && p.isCreatedSeries() {
 			return p.Next()
 		}
@@ -571,6 +583,9 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 
 		if err := p.parseSeriesEndOfLine(t2); err != nil {
 			return EntryInvalid, err
+		}
+		if p.isNativeStateset {
+			return EntryStateset, nil
 		}
 		if p.skipSTSeries && p.isCreatedSeries() {
 			return p.Next()
@@ -716,8 +731,52 @@ func (p *OpenMetricsParser) isCreatedSeries() bool {
 // timestamp, commentary, etc.) after the metric name and labels.
 // It starts parsing with the provided token.
 func (p *OpenMetricsParser) parseSeriesEndOfLine(t token) error {
+	p.isNativeStateset = false
+
 	if p.offsets[0] == -1 {
 		return fmt.Errorf("metric name not set while parsing: %q", p.l.b[p.start:p.l.i])
+	}
+
+	// Native stateset: the OpenMetrics tValue rule matches " {{lname:name …more"
+	// (everything up to the first space inside the body). Detect "{{" and hand-parse.
+	if t == tValue && p.mtype == model.MetricTypeStateset {
+		buf := p.l.buf() // includes the leading space from the tValue rule
+		if len(buf) >= 3 && buf[0] == ' ' && buf[1] == '{' && buf[2] == '{' {
+			// Back up l.i to right after "{{" so parseStatesetBody sees the full body.
+			p.l.i = p.l.start + 3
+			parsedSS, n, err := parseStatesetBody(p.l.b[p.l.i:])
+			if err != nil {
+				return fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
+			}
+			p.l.i += n
+			p.ss = parsedSS
+			p.isNativeStateset = true
+			p.hasTS = false
+			// l.state is already sTimestamp (set when tValue was emitted).
+			switch t2 := p.nextToken(); t2 {
+			case tEOF:
+				return errors.New("data does not end with # EOF")
+			case tLinebreak:
+			case tTimestamp:
+				p.hasTS = true
+				var ts float64
+				if ts, err = parseFloat(yoloString(p.l.buf()[1:])); err != nil {
+					return fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
+				}
+				if math.IsNaN(ts) || math.IsInf(ts, 0) {
+					return fmt.Errorf("invalid timestamp %f", ts)
+				}
+				p.ts = int64(ts * 1000)
+				switch t3 := p.nextToken(); t3 {
+				case tLinebreak:
+				default:
+					return p.parseError("expected next entry after stateset timestamp", t3)
+				}
+			default:
+				return p.parseError("expected timestamp or newline after stateset", t2)
+			}
+			return nil
+		}
 	}
 
 	var err error
