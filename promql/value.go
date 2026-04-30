@@ -24,6 +24,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -499,6 +500,10 @@ func (ssi *storageSeriesIterator) AtFloatHistogram(fh *histogram.FloatHistogram)
 	}
 	ssi.currH.CopyTo(fh)
 	return ssi.currT, fh
+}
+
+func (ssi *storageSeriesIterator) AtStateset(ss *stateset.StateSet) (int64, *stateset.StateSet) {
+	panic(errors.New("storageSeriesIterator: AtStateset not supported"))
 }
 
 func (ssi *storageSeriesIterator) AtT() int64 {

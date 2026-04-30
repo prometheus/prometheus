@@ -1028,10 +1028,10 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.AppenderV2) error {
 
 func appendSample(a storage.AppenderV2, s sampleST, m labels.Labels) error {
 	if s.H != nil {
-		_, err := a.Append(0, m, s.ST, s.T, 0, nil, s.H, storage.AppendV2Options{})
+		_, err := a.Append(0, m, s.ST, s.T, 0, nil, s.H, nil, storage.AppendV2Options{})
 		return err
 	}
-	_, err := a.Append(0, m, s.ST, s.T, s.F, nil, nil, storage.AppendV2Options{})
+	_, err := a.Append(0, m, s.ST, s.T, s.F, nil, nil, nil, storage.AppendV2Options{})
 	return err
 }
 

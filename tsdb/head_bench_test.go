@@ -52,7 +52,7 @@ func appendV2Float(b *testing.B, h *Head, ts int64, series []storage.Series, sam
 	for _, s := range series {
 		var ref storage.SeriesRef
 		for sampleIndex := range samplesPerAppend {
-			ref, err = app.Append(ref, s.Labels(), 0, ts+sampleIndex, float64(ts+sampleIndex), nil, nil, storage.AOptions{})
+			ref, err = app.Append(ref, s.Labels(), 0, ts+sampleIndex, float64(ts+sampleIndex), nil, nil, nil, storage.AOptions{})
 			require.NoError(b, err)
 		}
 	}
@@ -137,7 +137,7 @@ func appendV2FloatOrHistogramWithExemplars(b *testing.B, h *Head, ts int64, seri
 					Value:  rand.Float64(),
 					Ts:     ts + sampleIndex,
 				})
-				ref, err = app.Append(ref, s.Labels(), 0, ts, float64(ts), nil, nil, aOpts)
+				ref, err = app.Append(ref, s.Labels(), 0, ts, float64(ts), nil, nil, nil, aOpts)
 				require.NoError(b, err)
 				continue
 			}
@@ -172,7 +172,7 @@ func appendV2FloatOrHistogramWithExemplars(b *testing.B, h *Head, ts int64, seri
 					Ts:     ts + sampleIndex,
 				},
 			)
-			ref, err = app.Append(ref, s.Labels(), 0, ts, 0, h, nil, aOpts)
+			ref, err = app.Append(ref, s.Labels(), 0, ts, 0, h, nil, nil, aOpts)
 			require.NoError(b, err)
 		}
 	}

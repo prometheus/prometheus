@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -272,6 +273,33 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 	decGaugeFloatHistograms = append(decGaugeFloatHistograms, decCustomBucketsGaugeFloatHistograms...)
 	require.Equal(t, floatHistograms, decGaugeFloatHistograms)
+
+	// Stateset samples.
+	statesetSamples := []RefStatesetSample{
+		{
+			Ref: 1,
+			T:   1000,
+			SS: &stateset.StateSet{
+				LabelName: "phase",
+				Names:     []string{"failed", "pending", "running"},
+				Values:    0b010,
+			},
+		},
+		{
+			Ref: 2,
+			T:   2000,
+			SS: &stateset.StateSet{
+				LabelName: "health",
+				Names:     []string{"bad", "good"},
+				Values:    0b01,
+			},
+		},
+	}
+	encoded = enc.StatesetSamples(statesetSamples, nil)
+	require.Equal(t, StatesetSamples, dec.Type(encoded))
+	decStatesetSamples, err := dec.StatesetSamples(encoded, nil)
+	require.NoError(t, err)
+	require.Equal(t, statesetSamples, decStatesetSamples)
 }
 
 func TestRecord_DecodeInvalidHistogramSchema(t *testing.T) {
@@ -603,6 +631,20 @@ func TestRecord_Type(t *testing.T) {
 	customBucketsHists := enc.CustomBucketsHistogramSamples(customBucketsHistograms, nil)
 	recordType = dec.Type(customBucketsHists)
 	require.Equal(t, CustomBucketsHistogramSamples, recordType)
+
+	statesetSamples := []RefStatesetSample{
+		{
+			Ref: 1,
+			T:   1000,
+			SS: &stateset.StateSet{
+				LabelName: "phase",
+				Names:     []string{"pending", "running"},
+				Values:    0b10,
+			},
+		},
+	}
+	recordType = dec.Type(enc.StatesetSamples(statesetSamples, nil))
+	require.Equal(t, StatesetSamples, recordType)
 
 	recordType = dec.Type(nil)
 	require.Equal(t, Unknown, recordType)

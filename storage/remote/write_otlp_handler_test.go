@@ -715,7 +715,7 @@ func TestOTLPInstrumentedAppendable(t *testing.T) {
 		require.Equal(t, 0.0, testutil.ToFloat64(oa.samplesAppendedWithoutMetadata))
 
 		app := oa.AppenderV2(t.Context())
-		_, err := app.Append(0, labels.EmptyLabels(), -1, 1, 2, nil, nil, storage.AOptions{Metadata: metadata.Metadata{Help: "yo"}})
+		_, err := app.Append(0, labels.EmptyLabels(), -1, 1, 2, nil, nil, nil, storage.AOptions{Metadata: metadata.Metadata{Help: "yo"}})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 		require.Len(t, appTest.ResultSamples(), 1)
@@ -731,7 +731,7 @@ func TestOTLPInstrumentedAppendable(t *testing.T) {
 		require.Equal(t, 0.0, testutil.ToFloat64(oa.samplesAppendedWithoutMetadata))
 
 		app := oa.AppenderV2(t.Context())
-		_, err := app.Append(0, labels.EmptyLabels(), -1, 1, 2, nil, nil, storage.AOptions{})
+		_, err := app.Append(0, labels.EmptyLabels(), -1, 1, 2, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 		require.Len(t, appTest.ResultSamples(), 1)
@@ -747,7 +747,7 @@ func TestOTLPInstrumentedAppendable(t *testing.T) {
 		require.Equal(t, 0.0, testutil.ToFloat64(oa.samplesAppendedWithoutMetadata))
 
 		app := oa.AppenderV2(t.Context())
-		_, err := app.Append(0, labels.EmptyLabels(), -1, 1, 2, nil, nil, storage.AOptions{Exemplars: []exemplar.Exemplar{{}, {}}})
+		_, err := app.Append(0, labels.EmptyLabels(), -1, 1, 2, nil, nil, nil, storage.AOptions{Exemplars: []exemplar.Exemplar{{}, {}}})
 		// Partial errors should be handled in the middleware, OTLP converter does not handle it.
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())

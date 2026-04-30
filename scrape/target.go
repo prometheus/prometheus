@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -462,7 +463,7 @@ type limitAppenderV2 struct {
 	i     int
 }
 
-func (app *limitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+func (app *limitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, ss *stateset.StateSet, opts storage.AOptions) (storage.SeriesRef, error) {
 	// Bypass sample_limit checks only if we have a staleness marker for a known series (ref value is non-zero).
 	// This ensures that if a series is already in TSDB then we always write the marker.
 	if ref == 0 || !value.IsStaleNaN(v) {
@@ -471,7 +472,7 @@ func (app *limitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, 
 			return 0, errSampleLimit
 		}
 	}
-	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, ss, opts)
 }
 
 type timeLimitAppenderV2 struct {
@@ -480,12 +481,12 @@ type timeLimitAppenderV2 struct {
 	maxTime int64
 }
 
-func (app *timeLimitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+func (app *timeLimitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, ss *stateset.StateSet, opts storage.AOptions) (storage.SeriesRef, error) {
 	if t > app.maxTime {
 		return 0, storage.ErrOutOfBounds
 	}
 
-	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, ss, opts)
 }
 
 // bucketLimitAppender limits the number of total appended samples in a batch.
@@ -495,7 +496,7 @@ type bucketLimitAppenderV2 struct {
 	limit int
 }
 
-func (app *bucketLimitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (_ storage.SeriesRef, err error) {
+func (app *bucketLimitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, ss *stateset.StateSet, opts storage.AOptions) (_ storage.SeriesRef, err error) {
 	if h != nil {
 		// Return with an early error if the histogram has too many buckets and the
 		// schema is not exponential, in which case we can't reduce the resolution.
@@ -526,7 +527,7 @@ func (app *bucketLimitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels
 			}
 		}
 	}
-	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, ss, opts)
 }
 
 type maxSchemaAppenderV2 struct {
@@ -535,7 +536,7 @@ type maxSchemaAppenderV2 struct {
 	maxSchema int32
 }
 
-func (app *maxSchemaAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (_ storage.SeriesRef, err error) {
+func (app *maxSchemaAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, ss *stateset.StateSet, opts storage.AOptions) (_ storage.SeriesRef, err error) {
 	if h != nil {
 		if histogram.IsExponentialSchemaReserved(h.Schema) && h.Schema > app.maxSchema {
 			if err = h.ReduceResolution(app.maxSchema); err != nil {
@@ -550,7 +551,7 @@ func (app *maxSchemaAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, 
 			}
 		}
 	}
-	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, ss, opts)
 }
 
 // PopulateDiscoveredLabels sets base labels on lb from target and group labels and scrape configuration, before relabeling.

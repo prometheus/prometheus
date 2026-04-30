@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
@@ -437,6 +438,10 @@ func (*mockSeriesIterator) AtST() int64 {
 	return 0 // Not really mocked.
 }
 
+func (*mockSeriesIterator) AtStateset(*stateset.StateSet) (int64, *stateset.StateSet) {
+	return 0, nil // Not really mocked.
+}
+
 type fakeSeriesIterator struct {
 	nsamples int64
 	step     int64
@@ -465,6 +470,10 @@ func (it *fakeSeriesIterator) AtT() int64 {
 
 func (*fakeSeriesIterator) AtST() int64 {
 	return 0 // No start timestamps in this fake iterator.
+}
+
+func (*fakeSeriesIterator) AtStateset(*stateset.StateSet) (int64, *stateset.StateSet) {
+	return 0, nil // Not really mocked.
 }
 
 func (it *fakeSeriesIterator) Next() chunkenc.ValueType {

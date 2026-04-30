@@ -61,6 +61,7 @@ import (
 	"math/bits"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/model/value"
 )
 
@@ -508,6 +509,10 @@ func (*xor2Appender) AppendFloatHistogram(*FloatHistogramAppender, int64, int64,
 	panic("appended a float histogram sample to a float chunk")
 }
 
+func (*xor2Appender) AppendStateset(int64, *stateset.StateSet) (Chunk, Appender, error) {
+	panic("appended a stateset sample to a float chunk")
+}
+
 // xor2Iterator decodes XOR2 chunks.
 type xor2Iterator struct {
 	br       bstreamReader
@@ -554,6 +559,10 @@ func (*xor2Iterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histog
 
 func (*xor2Iterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	panic("cannot call xor2Iterator.AtFloatHistogram")
+}
+
+func (*xor2Iterator) AtStateset(*stateset.StateSet) (int64, *stateset.StateSet) {
+	panic("cannot call xor2Iterator.AtStateset")
 }
 
 func (it *xor2Iterator) AtT() int64 {

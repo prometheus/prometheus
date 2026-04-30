@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -1718,6 +1719,10 @@ func (errIterator) AtT() int64 {
 
 func (errIterator) AtST() int64 {
 	return 0
+}
+
+func (errIterator) AtStateset(*stateset.StateSet) (int64, *stateset.StateSet) {
+	return 0, nil
 }
 
 func (e errIterator) Err() error {

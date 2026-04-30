@@ -21,6 +21,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -236,5 +237,9 @@ func (h *histogramIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, 
 func (*histogramIterator) AtT() int64 { return 0 }
 
 func (*histogramIterator) AtST() int64 { return 0 }
+
+func (*histogramIterator) AtStateset(*stateset.StateSet) (int64, *stateset.StateSet) {
+	panic("not implemented")
+}
 
 func (*histogramIterator) Err() error { return nil }

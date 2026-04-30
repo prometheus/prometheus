@@ -649,7 +649,7 @@ func TestBucketLimitAppender(t *testing.T) {
 					var err error
 					if floatHisto {
 						fh := c.h.Copy().ToFloat(nil)
-						_, err = app.Append(0, lbls, 0, ts, 0, nil, fh, storage.AOptions{})
+						_, err = app.Append(0, lbls, 0, ts, 0, nil, fh, nil, storage.AOptions{})
 						if c.expectError {
 							require.Error(t, err)
 						} else {
@@ -659,7 +659,7 @@ func TestBucketLimitAppender(t *testing.T) {
 						}
 					} else {
 						h := c.h.Copy()
-						_, err = app.Append(0, lbls, 0, ts, 0, h, nil, storage.AOptions{})
+						_, err = app.Append(0, lbls, 0, ts, 0, h, nil, nil, storage.AOptions{})
 						if c.expectError {
 							require.Error(t, err)
 						} else {
@@ -753,12 +753,12 @@ func TestMaxSchemaAppender(t *testing.T) {
 					var err error
 					if floatHisto {
 						fh := c.h.Copy().ToFloat(nil)
-						_, err = app.Append(0, lbls, 0, ts, 0, nil, fh, storage.AOptions{})
+						_, err = app.Append(0, lbls, 0, ts, 0, nil, fh, nil, storage.AOptions{})
 						require.Equal(t, c.expectSchema, fh.Schema)
 						require.NoError(t, err)
 					} else {
 						h := c.h.Copy()
-						_, err = app.Append(0, lbls, 0, ts, 0, h, nil, storage.AOptions{})
+						_, err = app.Append(0, lbls, 0, ts, 0, h, nil, nil, storage.AOptions{})
 						require.Equal(t, c.expectSchema, h.Schema)
 						require.NoError(t, err)
 					}
@@ -803,7 +803,7 @@ func TestAppendWithSampleLimitAndNativeHistogram(t *testing.T) {
 		app := appenderV2WithLimits(teststorage.NewAppendable().AppenderV2(t.Context()), 2, 0, histogram.ExponentialSchemaMax)
 
 		// sample_limit is set to 2, so first two scrapes should work
-		_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "foo"), 0, timestamp.FromTime(now), 1, nil, nil, storage.AOptions{})
+		_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "foo"), 0, timestamp.FromTime(now), 1, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 
 		// Second sample, should be ok.
@@ -814,6 +814,7 @@ func TestAppendWithSampleLimitAndNativeHistogram(t *testing.T) {
 			timestamp.FromTime(now),
 			0,
 			&histogram.Histogram{},
+			nil,
 			nil,
 			storage.AOptions{},
 		)
@@ -827,6 +828,7 @@ func TestAppendWithSampleLimitAndNativeHistogram(t *testing.T) {
 			timestamp.FromTime(now),
 			0,
 			&histogram.Histogram{},
+			nil,
 			nil,
 			storage.AOptions{},
 		)

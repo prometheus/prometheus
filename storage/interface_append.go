@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/stateset"
 )
 
 // AppendableV2 allows creating AppenderV2.
@@ -186,7 +187,7 @@ type AppenderV2 interface {
 	//   type and unit suffixes in metric names we start to hit cases of ls being not enough for id
 	//   of the series (metadata matters). Current solution is to enable 'type-and-unit-label' features for those cases, but we may
 	//   start to extend the id with metadata one day.
-	Append(ref SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts AppendV2Options) (SeriesRef, error)
+	Append(ref SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, ss *stateset.StateSet, opts AppendV2Options) (SeriesRef, error)
 }
 
 // AppenderTransaction allows transactional appends.
@@ -223,9 +224,9 @@ type limitedAppenderV1 struct {
 }
 
 func (a *limitedAppenderV1) Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error) {
-	return a.AppenderV2.Append(ref, l, 0, t, v, nil, nil, AppendV2Options{})
+	return a.AppenderV2.Append(ref, l, 0, t, v, nil, nil, nil, AppendV2Options{})
 }
 
 func (a *limitedAppenderV1) AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error) {
-	return a.AppenderV2.Append(ref, l, 0, t, 0, h, fh, AppendV2Options{})
+	return a.AppenderV2.Append(ref, l, 0, t, 0, h, fh, nil, AppendV2Options{})
 }

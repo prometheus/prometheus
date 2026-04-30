@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -36,12 +37,12 @@ type initAppenderV2 struct {
 
 var _ storage.GetRef = &initAppenderV2{}
 
-func (a *initAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+func (a *initAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, ss *stateset.StateSet, opts storage.AOptions) (storage.SeriesRef, error) {
 	if a.app == nil {
 		a.head.initTime(t)
 		a.app = a.head.appenderV2()
 	}
-	return a.app.Append(ref, ls, st, t, v, h, fh, opts)
+	return a.app.Append(ref, ls, st, t, v, h, fh, ss, opts)
 }
 
 func (a *initAppenderV2) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
@@ -105,7 +106,7 @@ type headAppenderV2 struct {
 	headAppenderBase
 }
 
-func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, ss *stateset.StateSet, opts storage.AOptions) (storage.SeriesRef, error) {
 	var (
 		// Avoid shadowing err variables for reliability.
 		valErr, appErr, partialErr error
@@ -165,11 +166,11 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			// an optimization for the more likely case.
 			switch a.typesInBatch[s.ref] {
 			case stHistogram, stCustomBucketHistogram:
-				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, &histogram.Histogram{Sum: v}, nil, storage.AOptions{
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, &histogram.Histogram{Sum: v}, nil, nil, storage.AOptions{
 					RejectOutOfOrder: opts.RejectOutOfOrder,
 				})
 			case stFloatHistogram, stCustomBucketFloatHistogram:
-				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, nil, &histogram.FloatHistogram{Sum: v}, storage.AOptions{
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, nil, &histogram.FloatHistogram{Sum: v}, nil, storage.AOptions{
 					RejectOutOfOrder: opts.RejectOutOfOrder,
 				})
 			}

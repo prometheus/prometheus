@@ -33,6 +33,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -827,6 +828,10 @@ func (it *mockSampleIterator) AtT() int64 {
 
 func (it *mockSampleIterator) AtST() int64 {
 	return it.s[it.idx].ST()
+}
+
+func (*mockSampleIterator) AtStateset(*stateset.StateSet) (int64, *stateset.StateSet) {
+	return 0, nil
 }
 
 func (it *mockSampleIterator) Next() chunkenc.ValueType {

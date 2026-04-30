@@ -31,6 +31,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage"
@@ -556,6 +557,11 @@ func (c *concreteSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (in
 	}
 }
 
+// AtStateset implements chunkenc.Iterator.
+func (*concreteSeriesIterator) AtStateset(*stateset.StateSet) (int64, *stateset.StateSet) {
+	return 0, nil
+}
+
 // AtT implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) AtT() int64 {
 	if c.curValType == chunkenc.ValHistogram || c.curValType == chunkenc.ValFloatHistogram {
@@ -832,6 +838,10 @@ func (it *chunkedSeriesIterator) AtHistogram(h *histogram.Histogram) (int64, *hi
 
 func (it *chunkedSeriesIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return it.cur.AtFloatHistogram(fh)
+}
+
+func (it *chunkedSeriesIterator) AtStateset(ss *stateset.StateSet) (int64, *stateset.StateSet) {
+	return it.cur.AtStateset(ss)
 }
 
 func (it *chunkedSeriesIterator) AtT() int64 {
