@@ -193,6 +193,9 @@ loop:
 		switch {
 		case isStateset:
 			met, parsedTimestamp, ss = p.Stateset()
+			if ss != nil && ss.LabelName != string(met) {
+				sl.metrics.targetScrapeStatesetNonCanonicalLabelName.Inc()
+			}
 		case isHistogram:
 			met, parsedTimestamp, h, fh = p.Histogram()
 		default:
