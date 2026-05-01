@@ -4431,9 +4431,14 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvaria
 		}
 
 		for i, isi := range shouldWrap {
-			if isi {
-				n.Args[i] = newStepInvariantExpr(n.Args[i])
+			if !isi {
+				continue
 			}
+			
+			if _, ok := n.Args[i].(*parser.SubqueryExpr); ok {
+				continue
+			}
+			n.Args[i] = newStepInvariantExpr(n.Args[i])
 		}
 		return false, false
 
