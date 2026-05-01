@@ -4434,7 +4434,7 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvaria
 			if !isi {
 				continue
 			}
-			
+
 			if _, ok := n.Args[i].(*parser.SubqueryExpr); ok {
 				continue
 			}
