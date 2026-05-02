@@ -30,21 +30,13 @@ var (
 // Port range used by getPort. Chosen to live entirely below Linux's
 // default ephemeral allocation range (32768–60999), so a concurrent
 // net.Listen(":0") elsewhere on the host will never be assigned a port
-// from here. Adjust if the runtime host has a non-default
-// /proc/sys/net/ipv4/ip_local_port_range.
+// from here.
 const (
 	testPortLo = 20000
 	testPortHi = 30000
 )
 
-// RandomUnprivilegedPort returns a random TCP port number that is currently
-// free, drawn from a range outside the kernel's ephemeral allocation range.
-//
-// Drawing from a non-ephemeral range eliminates the dominant
-// "bind: address already in use" race in subprocess tests: the kernel will
-// not hand a port from this range to anyone calling net.Listen(":0"), so
-// other tests that pass --web.listen-address=0.0.0.0:0 cannot grab the
-// port between this helper's Close and the caller's subprocess bind.
+// RandomUnprivilegedPort returns valid unprivileged random port number which can be used for testing.
 func RandomUnprivilegedPort(t *testing.T) int {
 	t.Helper()
 	mu.Lock()
