@@ -491,6 +491,72 @@ latency_seconds_count 2
 	}, stats)
 }
 
+func TestParseMetricFamiliesOpenMetricsInfoFamilyUsesBaseName(t *testing.T) {
+	t.Parallel()
+
+	const input = `# TYPE target info
+# HELP target Target metadata.
+target_info{service_name="service"} 1
+# EOF
+`
+
+	metricFamilies, err := parseMetricFamilies(strings.NewReader(input), metricsFormatOpenMetrics)
+	require.NoError(t, err)
+	require.Len(t, metricFamilies, 1)
+	require.Equal(t, "target", metricFamilies[0].GetName())
+	require.Equal(t, "Target metadata.", metricFamilies[0].GetHelp())
+	require.Equal(t, dto.MetricType_UNTYPED, metricFamilies[0].GetType())
+	require.Len(t, metricFamilies[0].Metric, 1)
+	require.Len(t, metricFamilies[0].Metric[0].GetLabel(), 1)
+	require.Equal(t, "service_name", metricFamilies[0].Metric[0].GetLabel()[0].GetName())
+}
+
+func TestCheckMetricsOpenMetricsNoFalsePositives(t *testing.T) {
+	const input = `# TYPE target info
+# HELP target Target metadata.
+target_info{service_name="service"} 1
+# HELP requests Number of requests.
+# TYPE requests counter
+requests_total 2
+# EOF
+`
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	_, err = w.WriteString(input)
+	require.NoError(t, err)
+	w.Close()
+
+	oldStdin := os.Stdin
+	os.Stdin = r
+	defer func() { os.Stdin = oldStdin }()
+
+	oldStdout := os.Stdout
+	oldStderr := os.Stderr
+	rOut, wOut, err := os.Pipe()
+	require.NoError(t, err)
+	rErr, wErr, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stdout = wOut
+	os.Stderr = wErr
+
+	code := CheckMetrics(metricsFormatOpenMetrics, false, lintOptionAll)
+
+	wOut.Close()
+	wErr.Close()
+	os.Stdout = oldStdout
+	os.Stderr = oldStderr
+
+	var outBuf, errBuf bytes.Buffer
+	_, _ = io.Copy(&outBuf, rOut)
+	_, _ = io.Copy(&errBuf, rErr)
+
+	require.Equal(t, successExitCode, code)
+	require.Empty(t, outBuf.String())
+	require.NotContains(t, errBuf.String(), `counter metrics should have "_total" suffix`)
+	require.NotContains(t, errBuf.String(), "no help text")
+}
+
 func TestCheckMetricsLintOptions(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Skipping on windows")

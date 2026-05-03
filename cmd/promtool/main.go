@@ -1068,8 +1068,7 @@ func CheckMetrics(format string, extended bool, lint string) int {
 
 	var problems []promlint.Problem
 	if lint != lintOptionNone {
-		l := promlint.NewWithMetricFamilies(metricFamilies)
-		problems, err = l.Lint()
+		problems, err = lintMetricFamilies(metricFamilies, format)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error while linting:", err)
 			return failureExitCode
@@ -1101,6 +1100,46 @@ func CheckMetrics(format string, extended bool, lint string) int {
 	}
 
 	return successExitCode
+}
+
+func lintMetricFamilies(metricFamilies []*dto.MetricFamily, format string) ([]promlint.Problem, error) {
+	l := promlint.NewWithMetricFamilies(metricFamilies)
+	problems, err := l.Lint()
+	if err != nil {
+		return nil, err
+	}
+
+	if format == metricsFormatOpenMetrics {
+		problems = filterOpenMetricsLintProblems(metricFamilies, problems)
+	}
+
+	return problems, nil
+}
+
+func filterOpenMetricsLintProblems(metricFamilies []*dto.MetricFamily, problems []promlint.Problem) []promlint.Problem {
+	if len(problems) == 0 {
+		return problems
+	}
+
+	counterFamilies := make(map[string]struct{}, len(metricFamilies))
+	for _, metricFamily := range metricFamilies {
+		if metricFamily.GetType() == dto.MetricType_COUNTER {
+			counterFamilies[metricFamily.GetName()] = struct{}{}
+		}
+	}
+
+	filteredProblems := problems[:0]
+	for _, problem := range problems {
+		if problem.Text == `counter metrics should have "_total" suffix` {
+			if _, ok := counterFamilies[problem.Metric]; ok {
+				continue
+			}
+		}
+
+		filteredProblems = append(filteredProblems, problem)
+	}
+
+	return filteredProblems
 }
 
 type metricStat struct {

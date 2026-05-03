@@ -139,7 +139,7 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 )
 
-replace github.com/prometheus/common => github.com/martincostello/common v0.0.0-20260503195019-ed3033948166
+replace github.com/prometheus/common => github.com/martincostello/common v0.0.0-20260503213144-a6754a1811aa
 
 require (
 	cloud.google.com/go/auth v0.18.2 // indirect
