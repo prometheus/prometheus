@@ -506,10 +506,6 @@ type ruleDependencyController struct{}
 func (ruleDependencyController) AnalyseRules(rules []Rule) {
 	depMap := buildDependencyMap(rules)
 
-	if depMap == nil {
-		return
-	}
-
 	for _, r := range rules {
 		r.SetDependentRules(depMap.dependents(r))
 		r.SetDependencyRules(depMap.dependencies(r))
