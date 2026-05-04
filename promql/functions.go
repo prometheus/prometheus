@@ -262,8 +262,8 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 	extrapolationThreshold := averageDurationBetweenSamples * 1.1
 
 	if sts := startTimestamps; len(sts) > 0 && sts[0] != 0 && sts[0] > rangeStart && sts[0] <= firstT {
-		// Take the first datapoint in the range and check whether its ST points inside the range
-		// (while also having a sensible value). If yes, we assume that there is a zero-value datapoint
+		// Take the first sample in the range and check whether its ST points inside the range
+		// (while also having a sensible value). If yes, we assume that there is a zero-value sample
 		// at the time of ST, and use that instead of extrapolating towards left side.
 		//
 		// Note that the rangeStart is exclusive, thus ST=rangeStart would be outside the range.
@@ -283,6 +283,7 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 			}
 		}
 	} else if numSamplesMinusOne == 0 {
+		// There's a single sample, and we do not have suitable ST to calculate the increase. Return nothing.
 		return enh.Out, annos
 	} else {
 		// If samples are close enough to the (lower or upper) boundary of the
