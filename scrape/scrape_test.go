@@ -7012,3 +7012,87 @@ func TestPerTargetProxyURL(t *testing.T) {
 	_, wasProxied = proxiedRequests.Load(targetURL.String())
 	require.True(t, wasProxied, "expected request to go through proxy")
 }
+
+func TestProxyURLLabelNotPopulatedWhenDisabled(t *testing.T) {
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	cfg := &config.ScrapeConfig{
+		Scheme:         "http",
+		MetricsPath:    "/metrics",
+		JobName:        "job",
+		ScrapeInterval: model.Duration(time.Second),
+		ScrapeTimeout:  model.Duration(time.Second),
+		HTTPClientConfig: config_util.HTTPClientConfig{
+			ProxyConfig: config_util.ProxyConfig{
+				ProxyURL: config_util.URL{URL: &url.URL{Scheme: "http", Host: "proxy.example.com:8080"}},
+			},
+		},
+	}
+
+	// With flag disabled, __proxy_url__ should not be populated.
+	PopulateDiscoveredLabels(lb, cfg, model.LabelSet{model.AddressLabel: "1.2.3.4:1000"}, nil, false)
+	require.Empty(t, lb.Get(proxyURLLabel), "__proxy_url__ should not be populated when feature flag is disabled")
+
+	// With flag enabled, __proxy_url__ should be populated.
+	PopulateDiscoveredLabels(lb, cfg, model.LabelSet{model.AddressLabel: "1.2.3.4:1000"}, nil, true)
+	require.Equal(t, "http://proxy.example.com:8080", lb.Get(proxyURLLabel))
+}
+
+func TestProxyURLLabelNotRespectedWhenDisabled(t *testing.T) {
+	var proxiedRequests sync.Map
+
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxiedRequests.Store(r.URL.String(), true)
+		resp, err := http.DefaultTransport.RoundTrip(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		for k, vv := range resp.Header {
+			for _, v := range vv {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+	}))
+	defer proxy.Close()
+
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Fprint(w, "test_metric 1\n")
+	}))
+	defer targetServer.Close()
+
+	client, err := newScrapeClient(config_util.DefaultHTTPClientConfig, "test")
+	require.NoError(t, err)
+
+	targetURL, _ := url.Parse(targetServer.URL + "/metrics")
+	proxyURL, _ := url.Parse(proxy.URL)
+
+	// Create a target with __proxy_url__ label set but feature flag disabled.
+	tgt := NewTarget(
+		labels.FromStrings(
+			model.AddressLabel, targetURL.Host,
+			model.SchemeLabel, "http",
+			model.MetricsPathLabel, "/metrics",
+			proxyURLLabel, proxyURL.String(),
+		),
+		&config.ScrapeConfig{}, nil, nil, false,
+	)
+
+	scraper := &targetScraper{
+		Target:  tgt,
+		client:  client,
+		timeout: time.Second,
+	}
+
+	// Even though the target has __proxy_url__, scraper should not use it
+	// because enableProxyURLLabel is false.
+	resp, err := scraper.scrape(context.Background())
+	require.NoError(t, err)
+	resp.Body.Close()
+
+	_, wasProxied := proxiedRequests.Load(targetURL.String())
+	require.False(t, wasProxied, "__proxy_url__ should not be respected when feature flag is disabled")
+}

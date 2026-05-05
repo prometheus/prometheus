@@ -179,6 +179,7 @@
   },
   "scrape": {
     "extra_scrape_metrics": true,
+    "proxy_url_label": false,
     "start_timestamp_zero_ingestion": false,
     "type_and_unit_labels": false
   },

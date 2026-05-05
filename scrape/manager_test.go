@@ -544,13 +544,13 @@ func TestPopulateLabels(t *testing.T) {
 		for i := range c.cfg.RelabelConfigs {
 			c.cfg.RelabelConfigs[i].NameValidationScheme = model.UTF8Validation
 		}
-		res, err := PopulateLabels(lb, c.cfg, c.in, nil)
+		res, err := PopulateLabels(lb, c.cfg, c.in, nil, true)
 		if c.err != "" {
 			require.EqualError(t, err, c.err)
 		} else {
 			require.NoError(t, err)
 			testutil.RequireEqual(t, c.res, res)
-			PopulateDiscoveredLabels(lb, c.cfg, c.in, nil)
+			PopulateDiscoveredLabels(lb, c.cfg, c.in, nil, true)
 			testutil.RequireEqual(t, c.resOrig, lb.Labels())
 		}
 		require.Equal(t, c.in, in) // Check this wasn't altered by PopulateLabels().

@@ -110,7 +110,7 @@ func TestDiscoveredLabelsRedactsProxyURL(t *testing.T) {
 			model.AddressLabel, "1.2.3.4:1000",
 			proxyURLLabel, proxyURL.String(),
 		),
-		cfg, tLabels, nil,
+		cfg, tLabels, nil, true,
 	)
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
@@ -182,7 +182,7 @@ func TestTargetURL(t *testing.T) {
 		"__param_abc":          "overwrite",
 		"__param_cde":          "huu",
 	})
-	target := NewTarget(labels, scrapeConfig, nil, nil)
+	target := NewTarget(labels, scrapeConfig, nil, nil, false)
 
 	// The reserved labels are concatenated into a full URL. The first value for each
 	// URL query parameter can be set/modified via labels as well.
@@ -416,7 +416,7 @@ func TestTargetsFromGroup(t *testing.T) {
 		ScrapeInterval: model.Duration(1 * time.Minute),
 	}
 	lb := labels.NewBuilder(labels.EmptyLabels())
-	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, nil, lb)
+	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, nil, lb, false)
 	require.Len(t, targets, 1)
 	require.Len(t, failures, 1)
 	require.EqualError(t, failures[0], expectedError)
@@ -482,7 +482,7 @@ scrape_configs:
 		t.Run(tt.name, func(t *testing.T) {
 			config := loadConfiguration(t, tt.cfgText)
 			lb := labels.NewBuilder(labels.EmptyLabels())
-			targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: tt.targets}, config.ScrapeConfigs[0], nil, lb)
+			targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: tt.targets}, config.ScrapeConfigs[0], nil, lb, false)
 
 			if tt.shouldDropTarget {
 				require.Len(t, failures, 1)
@@ -577,7 +577,7 @@ scrape_configs:
 			lb := labels.NewBuilder(labels.EmptyLabels())
 			group := &targetgroup.Group{Targets: targets}
 			for b.Loop() {
-				tgets, _ = TargetsFromGroup(group, config.ScrapeConfigs[0], tgets, lb)
+				tgets, _ = TargetsFromGroup(group, config.ScrapeConfigs[0], tgets, lb, false)
 				if len(targets) != nTargets {
 					b.Fatalf("Expected %d targets, got %d", nTargets, len(targets))
 				}

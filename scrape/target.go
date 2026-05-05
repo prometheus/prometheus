@@ -61,16 +61,19 @@ type Target struct {
 	lastScrapeDuration time.Duration
 	health             TargetHealth
 	metadata           MetricMetadataStore
+
+	enableProxyURLLabel bool
 }
 
 // NewTarget creates a reasonably configured target for querying.
-func NewTarget(labels labels.Labels, scrapeConfig *config.ScrapeConfig, tLabels, tgLabels model.LabelSet) *Target {
+func NewTarget(labels labels.Labels, scrapeConfig *config.ScrapeConfig, tLabels, tgLabels model.LabelSet, enableProxyURLLabel bool) *Target {
 	return &Target{
-		labels:       labels,
-		tLabels:      tLabels,
-		tgLabels:     tgLabels,
-		scrapeConfig: scrapeConfig,
-		health:       HealthUnknown,
+		labels:              labels,
+		tLabels:             tLabels,
+		tgLabels:            tgLabels,
+		scrapeConfig:        scrapeConfig,
+		health:              HealthUnknown,
+		enableProxyURLLabel: enableProxyURLLabel,
 	}
 }
 
@@ -196,7 +199,7 @@ func (t *Target) DiscoveredLabels(lb *labels.Builder) labels.Labels {
 	t.mtx.RLock()
 	cfg, tLabels, tgLabels := t.scrapeConfig, t.tLabels, t.tgLabels
 	t.mtx.RUnlock()
-	PopulateDiscoveredLabels(lb, cfg, tLabels, tgLabels)
+	PopulateDiscoveredLabels(lb, cfg, tLabels, tgLabels, t.enableProxyURLLabel)
 	RedactLabels(lb)
 	return lb.Labels()
 }
@@ -571,7 +574,8 @@ func (app *maxSchemaAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, 
 }
 
 // PopulateDiscoveredLabels sets base labels on lb from target and group labels and scrape configuration, before relabeling.
-func PopulateDiscoveredLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLabels, tgLabels model.LabelSet) {
+// When enableProxyURLLabel is false, the __proxy_url__ label is not populated from config.
+func PopulateDiscoveredLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLabels, tgLabels model.LabelSet, enableProxyURLLabel bool) {
 	lb.Reset(labels.EmptyLabels())
 
 	for ln, lv := range tLabels {
@@ -591,7 +595,7 @@ func PopulateDiscoveredLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLab
 		{Name: model.MetricsPathLabel, Value: cfg.MetricsPath},
 		{Name: model.SchemeLabel, Value: cfg.Scheme},
 	}
-	if cfg.HTTPClientConfig.ProxyURL.URL != nil {
+	if enableProxyURLLabel && cfg.HTTPClientConfig.ProxyURL.URL != nil {
 		scrapeLabels = append(scrapeLabels, labels.Label{
 			Name: proxyURLLabel, Value: cfg.HTTPClientConfig.ProxyURL.Redacted(),
 		})
@@ -624,8 +628,8 @@ func RedactLabels(lb *labels.Builder) {
 // PopulateLabels builds labels from target and group labels and scrape configuration,
 // performs defined relabeling, checks validity, and adds Prometheus standard labels such as 'instance'.
 // A return of empty labels and nil error means the target was dropped by relabeling.
-func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLabels, tgLabels model.LabelSet) (res labels.Labels, err error) {
-	PopulateDiscoveredLabels(lb, cfg, tLabels, tgLabels)
+func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLabels, tgLabels model.LabelSet, enableProxyURLLabel bool) (res labels.Labels, err error) {
+	PopulateDiscoveredLabels(lb, cfg, tLabels, tgLabels, enableProxyURLLabel)
 	keep := relabel.ProcessBuilder(lb, cfg.RelabelConfigs...)
 
 	// Check if the target was dropped.
@@ -692,16 +696,16 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLabels, tgLab
 }
 
 // TargetsFromGroup builds targets based on the given TargetGroup and config.
-func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig, targets []*Target, lb *labels.Builder) ([]*Target, []error) {
+func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig, targets []*Target, lb *labels.Builder, enableProxyURLLabel bool) ([]*Target, []error) {
 	targets = targets[:0]
 	failures := []error{}
 
 	for i, tLabels := range tg.Targets {
-		lset, err := PopulateLabels(lb, cfg, tLabels, tg.Labels)
+		lset, err := PopulateLabels(lb, cfg, tLabels, tg.Labels, enableProxyURLLabel)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("instance %d in group %s: %w", i, tg, err))
 		} else {
-			targets = append(targets, NewTarget(lset, cfg, tLabels, tg.Labels))
+			targets = append(targets, NewTarget(lset, cfg, tLabels, tg.Labels, enableProxyURLLabel))
 		}
 	}
 	return targets, failures

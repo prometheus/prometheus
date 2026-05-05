@@ -403,7 +403,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	sp.droppedTargets = []*Target{}
 	sp.droppedTargetsCount = 0
 	for _, tg := range tgs {
-		targets, failures := TargetsFromGroup(tg, sp.config, targets, lb)
+		targets, failures := TargetsFromGroup(tg, sp.config, targets, lb, sp.options.EnableProxyURLLabel)
 		for _, err := range failures {
 			sp.logger.Error("Creating target failed", "err", err)
 		}
@@ -749,8 +749,10 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 
 		s.req = req
 	}
-	if proxyURL := s.ProxyURL(); proxyURL != nil {
-		ctx = contextWithProxyURL(ctx, proxyURL)
+	if s.enableProxyURLLabel {
+		if proxyURL := s.ProxyURL(); proxyURL != nil {
+			ctx = contextWithProxyURL(ctx, proxyURL)
+		}
 	}
 
 	ctx, span := otel.Tracer("").Start(ctx, "Scrape", trace.WithSpanKind(trace.SpanKindClient))
