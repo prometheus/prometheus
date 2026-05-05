@@ -77,10 +77,10 @@ func (c *FloatHistogramSTChunk) Appender() (Appender, error) {
 	if len(c.b.stream) == histogramSTHeaderSize {
 		return &FloatHistogramSTAppender{
 			FloatHistogramAppender: FloatHistogramAppender{
-				b:   &c.b,
-				t:   math.MinInt64,
-				sum: xorValue{leading: 0xff},
-				cnt: xorValue{leading: 0xff},
+				b:    &c.b,
+				t:    math.MinInt64,
+				sum:  xorValue{leading: 0xff},
+				cnt:  xorValue{leading: 0xff},
 				zCnt: xorValue{leading: 0xff},
 			},
 		}, nil
@@ -183,8 +183,8 @@ type FloatHistogramSTAppender struct {
 func (a *FloatHistogramSTAppender) encodeST(prevT, st int64) {
 	num := binary.BigEndian.Uint16(a.b.bytes())
 
-	switch {
-	case num == 1: // First sample (count was just incremented from 0).
+	switch num {
+	case 1: // First sample (count was just incremented from 0).
 		if st != 0 {
 			buf := make([]byte, binary.MaxVarintLen64)
 			for _, b := range buf[:binary.PutVarint(buf, a.t-st)] {
@@ -193,7 +193,7 @@ func (a *FloatHistogramSTAppender) encodeST(prevT, st int64) {
 			a.firstSTKnown = true
 			writeHeaderFirstSTKnown(a.b.bytes()[histogramSTHeaderSize-1:])
 		}
-	case num == 2: // Second sample.
+	case 2: // Second sample.
 		if st != a.st {
 			stDiff := prevT - st
 			a.firstSTChangeOn = 1
@@ -476,8 +476,8 @@ func (it *floatHistogramSTIterator) Seek(t int64) ValueType {
 // numRead is the number of samples read so far (already incremented by floatHistogramIterator.Next()).
 // prevT is the timestamp of the previous sample (before floatHistogramIterator.Next() updated it.t).
 func (it *floatHistogramSTIterator) decodeST(numRead uint16, prevT int64) error {
-	switch {
-	case numRead == 1: // After sample 0.
+	switch numRead {
+	case 1: // After sample 0.
 		if it.firstSTKnown {
 			stDiff, err := it.br.readVarint()
 			if err != nil {
@@ -486,7 +486,7 @@ func (it *floatHistogramSTIterator) decodeST(numRead uint16, prevT int64) error 
 			it.stDiff = stDiff
 			it.st = it.t - stDiff
 		}
-	case numRead == 2: // After sample 1.
+	case 2: // After sample 1.
 		if it.firstSTChangeOn == 1 {
 			sdod, err := readVarbitInt(&it.br)
 			if err != nil {
