@@ -998,6 +998,100 @@ describe("serializeNode and formatNode", () => {
     {"metric_ü"}
   )`,
       },
+      // Aligned subqueries (evaluation-time-aligned).
+      {
+        node: {
+          type: nodeType.subquery,
+          expr: { type: nodeType.placeholder, children: [] },
+          range: 1800000,
+          offset: 0,
+          step: 600000,
+          alignEvalTime: true,
+          timestamp: null,
+          startOrEnd: null,
+        },
+        output: "…[30m::10m]",
+      },
+      {
+        node: {
+          type: nodeType.subquery,
+          expr: {
+            type: nodeType.vectorSelector,
+            name: "metric_name",
+            matchers: [],
+            offset: 0,
+            timestamp: null,
+            startOrEnd: null,
+            anchored: false,
+            smoothed: false,
+          },
+          range: 3600000,
+          offset: 0,
+          step: 300000,
+          alignEvalTime: true,
+          timestamp: null,
+          startOrEnd: null,
+        },
+        output: "metric_name[1h::5m]",
+      },
+      {
+        node: {
+          type: nodeType.subquery,
+          expr: {
+            type: nodeType.call,
+            func: functionSignatures["rate"],
+            args: [
+              {
+                type: nodeType.matrixSelector,
+                range: 300000,
+                name: "metric_name",
+                matchers: [],
+                offset: 0,
+                timestamp: null,
+                startOrEnd: null,
+                anchored: false,
+                smoothed: false,
+              },
+            ],
+          },
+          range: 1800000,
+          offset: 0,
+          step: 600000,
+          alignEvalTime: true,
+          timestamp: null,
+          startOrEnd: null,
+        },
+        output: "rate(metric_name[5m])[30m::10m]",
+        prettyOutput: `rate(
+  metric_name[5m]
+)[30m::10m]`,
+      },
+      {
+        node: {
+          type: nodeType.subquery,
+          expr: { type: nodeType.placeholder, children: [] },
+          range: 1800000,
+          offset: 300000,
+          step: 600000,
+          alignEvalTime: true,
+          timestamp: null,
+          startOrEnd: null,
+        },
+        output: "…[30m::10m] offset 5m",
+      },
+      {
+        node: {
+          type: nodeType.subquery,
+          expr: { type: nodeType.placeholder, children: [] },
+          range: 1800000,
+          offset: 0,
+          step: 600000,
+          alignEvalTime: true,
+          timestamp: 1234567890,
+          startOrEnd: null,
+        },
+        output: "…[30m::10m] @ 1234567.890",
+      },
     ];
 
     tests.forEach((t) => {
