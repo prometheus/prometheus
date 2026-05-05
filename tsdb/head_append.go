@@ -1873,7 +1873,13 @@ func (s *memSeries) appendHistogram(st, t int64, h *histogram.Histogram, appendI
 	// chunk reference afterwards and mmap used up chunks.
 
 	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
-	prevApp, _ := s.app.(*chunkenc.HistogramAppender)
+	var prevApp *chunkenc.HistogramAppender
+	switch p := s.app.(type) {
+	case *chunkenc.HistogramAppender:
+		prevApp = p
+	case *chunkenc.HistogramSTAppender:
+		prevApp = &p.HistogramAppender
+	}
 
 	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValHistogram.ChunkEncoding(o.useXOR2), o)
 	if !sampleInOrder {
@@ -1930,7 +1936,13 @@ func (s *memSeries) appendFloatHistogram(st, t int64, fh *histogram.FloatHistogr
 	// chunk reference afterwards and mmap used up chunks.
 
 	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
-	prevApp, _ := s.app.(*chunkenc.FloatHistogramAppender)
+	var prevApp *chunkenc.FloatHistogramAppender
+	switch p := s.app.(type) {
+	case *chunkenc.FloatHistogramAppender:
+		prevApp = p
+	case *chunkenc.FloatHistogramSTAppender:
+		prevApp = &p.FloatHistogramAppender
+	}
 
 	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValFloatHistogram.ChunkEncoding(o.useXOR2), o)
 	if !sampleInOrder {
