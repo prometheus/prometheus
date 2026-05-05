@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
@@ -2724,4 +2725,55 @@ func TestAppendHistogramSchemaValidation(t *testing.T) {
 			require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedHistogramsTotal))
 		})
 	}
+}
+
+// TestExpandStatesetAsV1Floats verifies that AppendStatesets expands native stateset
+// samples into per-state float gauge time series when the v1 remote write protocol
+// is in use, since v1 has no native stateset wire type.
+func TestExpandStatesetAsV1Floats(t *testing.T) {
+	c := NewTestWriteClient(remoteapi.WriteV1MessageType)
+	cfg := testDefaultQueueConfig()
+	cfg.MaxShards = 1
+
+	m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, c, remoteapi.WriteV1MessageType)
+	m.sendNativeHistograms = true
+	m.Start()
+	defer m.Stop()
+
+	baseSeries := []record.RefSeries{
+		{
+			Ref:    chunks.HeadSeriesRef(0),
+			Labels: labels.FromStrings("__name__", "pod_phase", "pod", "p1"),
+		},
+	}
+	m.StoreSeries(baseSeries, 0)
+
+	// bit 2 set → Running active, Failed and Pending inactive.
+	ss := &stateset.StateSet{
+		LabelName: "phase",
+		Names:     []string{"Failed", "Pending", "Running"},
+		Values:    4,
+	}
+	statesets := []record.RefStatesetSample{
+		{Ref: chunks.HeadSeriesRef(0), T: 1000, SS: ss},
+	}
+
+	// Expect three float samples: one per state.
+	c.mtx.Lock()
+	c.expectedSamples = map[string][]writev2.Sample{
+		labels.FromStrings("__name__", "pod_phase", "pod", "p1", "phase", "Failed").String(): {
+			{Timestamp: 1000, Value: 0.0},
+		},
+		labels.FromStrings("__name__", "pod_phase", "pod", "p1", "phase", "Pending").String(): {
+			{Timestamp: 1000, Value: 0.0},
+		},
+		labels.FromStrings("__name__", "pod_phase", "pod", "p1", "phase", "Running").String(): {
+			{Timestamp: 1000, Value: 1.0},
+		},
+	}
+	c.receivedSamples = map[string][]writev2.Sample{}
+	c.mtx.Unlock()
+
+	require.True(t, m.AppendStatesets(statesets))
+	c.waitForExpectedData(t, 10*time.Second)
 }

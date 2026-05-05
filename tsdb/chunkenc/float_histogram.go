@@ -20,6 +20,7 @@ import (
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/model/value"
 )
 
@@ -686,6 +687,10 @@ func (*FloatHistogramAppender) AppendHistogram(*HistogramAppender, int64, int64,
 	panic("appended a histogram sample to a float histogram chunk")
 }
 
+func (*FloatHistogramAppender) AppendStateset(int64, *stateset.StateSet) (Chunk, Appender, error) {
+	panic("appended a stateset sample to a float histogram chunk")
+}
+
 func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppender, _, t int64, h *histogram.FloatHistogram, appendOnly bool) (Chunk, bool, Appender, error) {
 	if a.NumSamples() == 0 {
 		a.appendFloatHistogram(t, h)
@@ -858,6 +863,10 @@ func (*floatHistogramIterator) At() (int64, float64) {
 
 func (*floatHistogramIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	panic("cannot call floatHistogramIterator.AtHistogram")
+}
+
+func (*floatHistogramIterator) AtStateset(*stateset.StateSet) (int64, *stateset.StateSet) {
+	panic("cannot call floatHistogramIterator.AtStateset")
 }
 
 func (it *floatHistogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {

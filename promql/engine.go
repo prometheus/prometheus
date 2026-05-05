@@ -41,6 +41,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -838,9 +839,12 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			for i, s := range mat {
 				// Point might have a different timestamp, force it to the evaluation
 				// timestamp as that is when we ran the evaluation.
-				if len(s.Histograms) > 0 {
+				switch {
+				case len(s.Statesets) > 0:
+					vector[i] = Sample{Metric: s.Metric, SS: s.Statesets[0].SS, T: start, DropName: s.DropName}
+				case len(s.Histograms) > 0:
 					vector[i] = Sample{Metric: s.Metric, H: s.Histograms[0].H, T: start, DropName: s.DropName}
-				} else {
+				default:
 					vector[i] = Sample{Metric: s.Metric, F: s.Floats[0].F, T: start, DropName: s.DropName}
 				}
 			}
@@ -1809,28 +1813,20 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 
 		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 			step++
-			origT, f, h, ok := ev.vectorSelectorSingle(it, offset, ts)
+			origT, f, h, ssSample, ok := ev.vectorSelectorSingle(it, offset, ts)
 			if !ok {
 				continue
 			}
 
-			if h == nil {
+			switch {
+			case ssSample != nil:
 				ev.currentSamples++
 				ev.samplesStats.IncrementSamplesAtStep(step, 1)
 				if ev.currentSamples > ev.maxSamples {
 					ev.error(ErrTooManySamples(env))
 				}
-				if ss.Floats == nil {
-					ss.Floats = reuseOrGetFPointSlices(prevSS, numSteps)
-				}
-				if recordOrigT {
-					// This is an info metric, where we want to track the original sample timestamp.
-					// Info metric values should be 1 by convention, therefore we can re-use this
-					// space in the sample.
-					f = float64(origT)
-				}
-				ss.Floats = append(ss.Floats, FPoint{F: f, T: ts})
-			} else {
+				ss.Statesets = append(ss.Statesets, SSPoint{SS: ssSample, T: ts})
+			case h != nil:
 				if recordOrigT {
 					ev.error(fmt.Errorf("this should be an info metric, with float samples: %s", ss.Metric))
 				}
@@ -1846,10 +1842,26 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 					ss.Histograms = reuseOrGetHPointSlices(prevSS, numSteps)
 				}
 				ss.Histograms = append(ss.Histograms, point)
+			default:
+				ev.currentSamples++
+				ev.samplesStats.IncrementSamplesAtStep(step, 1)
+				if ev.currentSamples > ev.maxSamples {
+					ev.error(ErrTooManySamples(env))
+				}
+				if ss.Floats == nil {
+					ss.Floats = reuseOrGetFPointSlices(prevSS, numSteps)
+				}
+				if recordOrigT {
+					// This is an info metric, where we want to track the original sample timestamp.
+					// Info metric values should be 1 by convention, therefore we can re-use this
+					// space in the sample.
+					f = float64(origT)
+				}
+				ss.Floats = append(ss.Floats, FPoint{F: f, T: ts})
 			}
 		}
 
-		if len(ss.Floats)+len(ss.Histograms) > 0 {
+		if len(ss.Floats)+len(ss.Histograms)+len(ss.Statesets) > 0 {
 			mat = append(mat, ss)
 			prevSS = &mat[len(mat)-1]
 		}
@@ -2470,17 +2482,24 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			panic(fmt.Errorf("unexpected result in StepInvariantExpr evaluation: %T", expr))
 		}
 		for i := range mat {
-			if len(mat[i].Floats)+len(mat[i].Histograms) != 1 {
+			if len(mat[i].Floats)+len(mat[i].Histograms)+len(mat[i].Statesets) != 1 {
 				panic(errors.New("unexpected number of samples"))
 			}
 			for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts += ev.interval {
-				if len(mat[i].Floats) > 0 {
+				switch {
+				case len(mat[i].Floats) > 0:
 					mat[i].Floats = append(mat[i].Floats, FPoint{
 						T: ts,
 						F: mat[i].Floats[0].F,
 					})
 					ev.currentSamples++
-				} else {
+				case len(mat[i].Statesets) > 0:
+					mat[i].Statesets = append(mat[i].Statesets, SSPoint{
+						T:  ts,
+						SS: mat[i].Statesets[0].SS,
+					})
+					ev.currentSamples++
+				default:
 					point := HPoint{
 						T: ts,
 						H: mat[i].Histograms[0].H,
@@ -2547,7 +2566,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 		vec := make(Vector, 0, len(vs.Series))
 		for i, s := range vs.Series {
 			it := seriesIterators[i]
-			t, _, _, ok := ev.vectorSelectorSingle(it, vs.Offset, enh.Ts)
+			t, _, _, _, ok := ev.vectorSelectorSingle(it, vs.Offset, enh.Ts)
 			if !ok {
 				continue
 			}
@@ -2572,12 +2591,13 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 
 // vectorSelectorSingle evaluates an instant vector for the iterator of one time series.
 func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, offset time.Duration, ts int64) (
-	int64, float64, *histogram.FloatHistogram, bool,
+	int64, float64, *histogram.FloatHistogram, *stateset.StateSet, bool,
 ) {
 	refTime := ts - durationMilliseconds(offset)
 	var t int64
 	var v float64
 	var h *histogram.FloatHistogram
+	var ss *stateset.StateSet
 
 	valueType := it.Seek(refTime)
 	switch valueType {
@@ -2589,20 +2609,22 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, of
 		t, v = it.At()
 	case chunkenc.ValFloatHistogram:
 		t, h = it.AtFloatHistogram()
+	case chunkenc.ValStateset:
+		t, ss = it.AtStateset()
 	default:
 		panic(fmt.Errorf("unknown value type %v", valueType))
 	}
 	if valueType == chunkenc.ValNone || t > refTime {
 		var ok bool
-		t, v, h, ok = it.PeekPrev()
+		t, v, h, ss, ok = it.PeekPrev()
 		if !ok || t <= refTime-durationMilliseconds(ev.lookbackDelta) {
-			return 0, 0, nil, false
+			return 0, 0, nil, nil, false
 		}
 	}
 	if value.IsStaleNaN(v) || (h != nil && value.IsStaleNaN(h.Sum)) {
-		return 0, 0, nil, false
+		return 0, 0, nil, nil, false
 	}
-	return t, v, h, true
+	return t, v, h, ss, true
 }
 
 var (
@@ -4676,6 +4698,10 @@ func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelp
 	output = output[:0]
 	for i, series := range input {
 		switch {
+		case len(series.Statesets) > 0 && series.Statesets[0].T == ts:
+			s := series.Statesets[0]
+			output = append(output, Sample{Metric: series.Metric, SS: s.SS, T: ts, DropName: series.DropName})
+			input[i].Statesets = series.Statesets[1:]
 		case len(series.Floats) > 0 && series.Floats[0].T == ts:
 			s := series.Floats[0]
 			output = append(output, Sample{Metric: series.Metric, F: s.F, T: ts, DropName: series.DropName})

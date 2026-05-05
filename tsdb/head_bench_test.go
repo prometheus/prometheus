@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/compression"
@@ -52,7 +53,7 @@ func appendV2Float(b *testing.B, h *Head, ts int64, series []storage.Series, sam
 	for _, s := range series {
 		var ref storage.SeriesRef
 		for sampleIndex := range samplesPerAppend {
-			ref, err = app.Append(ref, s.Labels(), 0, ts+sampleIndex, float64(ts+sampleIndex), nil, nil, storage.AOptions{})
+			ref, err = app.Append(ref, s.Labels(), 0, ts+sampleIndex, float64(ts+sampleIndex), nil, nil, nil, storage.AOptions{})
 			require.NoError(b, err)
 		}
 	}
@@ -137,7 +138,7 @@ func appendV2FloatOrHistogramWithExemplars(b *testing.B, h *Head, ts int64, seri
 					Value:  rand.Float64(),
 					Ts:     ts + sampleIndex,
 				})
-				ref, err = app.Append(ref, s.Labels(), 0, ts, float64(ts), nil, nil, aOpts)
+				ref, err = app.Append(ref, s.Labels(), 0, ts, float64(ts), nil, nil, nil, aOpts)
 				require.NoError(b, err)
 				continue
 			}
@@ -172,7 +173,7 @@ func appendV2FloatOrHistogramWithExemplars(b *testing.B, h *Head, ts int64, seri
 					Ts:     ts + sampleIndex,
 				},
 			)
-			ref, err = app.Append(ref, s.Labels(), 0, ts, 0, h, nil, aOpts)
+			ref, err = app.Append(ref, s.Labels(), 0, ts, 0, h, nil, nil, aOpts)
 			require.NoError(b, err)
 		}
 	}
@@ -311,6 +312,89 @@ type failingSeriesLifecycleCallback struct{}
 func (failingSeriesLifecycleCallback) PreCreation(labels.Labels) error                     { return errors.New("failed") }
 func (failingSeriesLifecycleCallback) PostCreation(labels.Labels)                          {}
 func (failingSeriesLifecycleCallback) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}
+
+// BenchmarkStateset compares appending a 5-state native stateset (one series)
+// versus the equivalent 5 separate float gauge series (the classic OpenMetrics representation).
+//
+// Run with:
+//
+//	go test -run='^$' -bench='^BenchmarkStateset$' -benchtime=5s -count=6 -benchmem ./tsdb/ | tee stateset.txt
+//	benchstat stateset.txt
+func BenchmarkStateset(b *testing.B) {
+	// kube_pod_status_phase shape: 5 states, one active at a time.
+	stateNames := []string{"Failed", "Pending", "Running", "Succeeded", "Unknown"}
+	ss := &stateset.StateSet{
+		LabelName: "phase",
+		Names:     stateNames,
+		Values:    0b00100, // "Running" active
+	}
+
+	podLabels := labels.FromStrings("__name__", "kube_pod_status_phase", "pod", "mypod", "namespace", "default")
+
+	// One float gauge series per state (classic representation).
+	floatSeries := make([]labels.Labels, len(stateNames))
+	for i, name := range stateNames {
+		floatSeries[i] = labels.FromStrings("__name__", "kube_pod_status_phase", "pod", "mypod", "namespace", "default", "phase", name)
+	}
+
+	b.Run("native_stateset", func(b *testing.B) {
+		opts := newTestHeadDefaultOptions(10000, false)
+		h, _ := newTestHeadWithOptions(b, compression.None, opts)
+
+		ts := int64(1000)
+		app := h.AppenderV2(b.Context())
+		_, err := app.Append(0, podLabels, 0, ts, 0, nil, nil, ss, storage.AOptions{})
+		require.NoError(b, err)
+		require.NoError(b, app.Commit())
+		ts += 1000
+
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for b.Loop() {
+			app := h.AppenderV2(b.Context())
+			_, err := app.Append(0, podLabels, 0, ts, 0, nil, nil, ss, storage.AOptions{})
+			require.NoError(b, err)
+			require.NoError(b, app.Commit())
+			ts += 1000
+		}
+	})
+
+	b.Run("float_gauges", func(b *testing.B) {
+		opts := newTestHeadDefaultOptions(10000, false)
+		h, _ := newTestHeadWithOptions(b, compression.None, opts)
+
+		ts := int64(1000)
+		app := h.Appender(b.Context())
+		for i, lset := range floatSeries {
+			v := float64(0)
+			if ss.Values&(1<<i) != 0 {
+				v = 1
+			}
+			_, err := app.Append(0, lset, ts, v)
+			require.NoError(b, err)
+		}
+		require.NoError(b, app.Commit())
+		ts += 1000
+
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for b.Loop() {
+			app := h.Appender(b.Context())
+			for i, lset := range floatSeries {
+				v := float64(0)
+				if ss.Values&(1<<i) != 0 {
+					v = 1
+				}
+				_, err := app.Append(0, lset, ts, v)
+				require.NoError(b, err)
+			}
+			require.NoError(b, app.Commit())
+			ts += 1000
+		}
+	})
+}
 
 func BenchmarkMmapHeadChunks(b *testing.B) {
 	for _, seriesCount := range []int{1000, 10000, 100000} {

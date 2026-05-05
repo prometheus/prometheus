@@ -82,6 +82,31 @@ message TimeSeries {
   // This field is reserved for backward compatibility with the deprecated fields;
   // previously present in the experimental remote write period.
   reserved 6;
+
+  // stateset_metadata describes the label name and sorted state names for a
+  // native stateset series. Must be present when stateset_samples is non-empty.
+  // Field numbers 7 and 8 are encoded into TimeSeries.XXX_unrecognized by the
+  // Go implementation until protoc codegen is wired up (see stateset.go).
+  StatesetMetadata stateset_metadata = 7;
+
+  // stateset_samples holds the stateset data points, sorted by timestamp.
+  repeated StatesetSample stateset_samples = 8;
+}
+
+// StatesetMetadata describes the state names of a native stateset series.
+message StatesetMetadata {
+  // label_name is the label that carries the state value in the OM1 wire format.
+  string label_name = 1;
+  // state_names lists all known state names, sorted lexicographically.
+  repeated string state_names = 2;
+}
+
+// StatesetSample is a single native stateset data point.
+message StatesetSample {
+  // timestamp_ms is the sample timestamp in milliseconds.
+  int64 timestamp_ms = 1;
+  // values is a bitset: bit i is set when state_names[i] is active.
+  uint64 values = 2;
 }
 
 // Exemplar is an additional information attached to some series' samples.

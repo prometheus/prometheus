@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
@@ -60,6 +61,8 @@ const (
 	CustomBucketsFloatHistogramSamples Type = 10
 	// SamplesV2 is an enhanced sample record with an encoding scheme that allows storing float samples with timestamp and an optional ST per sample.
 	SamplesV2 Type = 11
+	// StatesetSamples is used to match WAL records of type Stateset.
+	StatesetSamples Type = 12
 )
 
 func (rt Type) String() string {
@@ -86,6 +89,8 @@ func (rt Type) String() string {
 		return "mmapmarkers"
 	case Metadata:
 		return "metadata"
+	case StatesetSamples:
+		return "stateset_samples"
 	default:
 		return "unknown"
 	}
@@ -201,6 +206,13 @@ type RefFloatHistogramSample struct {
 	FH  *histogram.FloatHistogram
 }
 
+// RefStatesetSample is a stateset sample associated with a series reference.
+type RefStatesetSample struct {
+	Ref chunks.HeadSeriesRef
+	T   int64
+	SS  *stateset.StateSet
+}
+
 // RefMmapMarker marks that the all the samples of the given series until now have been m-mapped to disk.
 type RefMmapMarker struct {
 	Ref     chunks.HeadSeriesRef
@@ -226,7 +238,7 @@ func (*Decoder) Type(rec []byte) Type {
 		return Unknown
 	}
 	switch t := Type(rec[0]); t {
-	case Series, Samples, SamplesV2, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples, CustomBucketsHistogramSamples, CustomBucketsFloatHistogramSamples:
+	case Series, Samples, SamplesV2, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples, CustomBucketsHistogramSamples, CustomBucketsFloatHistogramSamples, StatesetSamples:
 		return t
 	}
 	return Unknown
@@ -1115,4 +1127,81 @@ func EncodeFloatHistogram(buf *encoding.Encbuf, h *histogram.FloatHistogram) {
 			buf.PutBEFloat64(v)
 		}
 	}
+}
+
+// StatesetSamples encodes stateset samples into b and returns the result.
+// Wire format per record:
+//
+//	[type byte = StatesetSamples]
+//	[base_ref uint64 BE][base_t int64 BE]
+//	repeated per sample:
+//	  [dref varint][dt varint]
+//	  [label_name_len uint16 BE][label_name bytes]
+//	  [num_states uint16 BE]
+//	  repeated num_states:
+//	    [name_len uint16 BE][name bytes]
+//	  [values uint64 BE]
+func (*Encoder) StatesetSamples(samples []RefStatesetSample, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(StatesetSamples))
+	if len(samples) == 0 {
+		return buf.Get()
+	}
+	first := samples[0]
+	buf.PutBE64(uint64(first.Ref))
+	buf.PutBE64int64(first.T)
+	for _, s := range samples {
+		buf.PutVarint64(int64(s.Ref) - int64(first.Ref))
+		buf.PutVarint64(s.T - first.T)
+		buf.PutUvarintStr(s.SS.LabelName)
+		buf.PutUvarint(len(s.SS.Names))
+		for _, name := range s.SS.Names {
+			buf.PutUvarintStr(name)
+		}
+		buf.PutBE64(s.SS.Values)
+	}
+	return buf.Get()
+}
+
+// StatesetSamples decodes stateset samples from rec into the given slice.
+func (*Decoder) StatesetSamples(rec []byte, samples []RefStatesetSample) ([]RefStatesetSample, error) {
+	dec := encoding.Decbuf{B: rec}
+	t := Type(dec.Byte())
+	if t != StatesetSamples {
+		return nil, errors.New("invalid record type")
+	}
+	if dec.Len() == 0 {
+		return samples, nil
+	}
+	baseRef := dec.Be64()
+	baseTime := dec.Be64int64()
+	for len(dec.B) > 0 && dec.Err() == nil {
+		dref := dec.Varint64()
+		dt := dec.Varint64()
+
+		ln := dec.UvarintStr()
+		nStates := dec.Uvarint()
+		names := make([]string, nStates)
+		for i := range names {
+			names[i] = dec.UvarintStr()
+		}
+		values := dec.Be64()
+
+		samples = append(samples, RefStatesetSample{
+			Ref: chunks.HeadSeriesRef(baseRef + uint64(dref)),
+			T:   baseTime + dt,
+			SS: &stateset.StateSet{
+				LabelName: ln,
+				Names:     names,
+				Values:    values,
+			},
+		})
+	}
+	if dec.Err() != nil {
+		return nil, fmt.Errorf("decode error after %d stateset samples: %w", len(samples), dec.Err())
+	}
+	if len(dec.B) > 0 {
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return samples, nil
 }

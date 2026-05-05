@@ -23,6 +23,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 )
 
 func int64p(x int64) *int64 { return &x }
@@ -1230,4 +1231,82 @@ func resetValAndLset(e []parsedEntry) {
 		e[i].v = 0
 		e[i].lset = labels.EmptyLabels()
 	}
+}
+
+func TestOpenMetricsParseNativeStateset(t *testing.T) {
+	st := labels.NewSymbolTable()
+
+	input := "# TYPE pod_phase stateset\n" +
+		`pod_phase{pod="web-1"} {{lname:pod_phase Failed=0 Pending=0 Running=1 Succeeded=0 Unknown=0}}` + "\n" +
+		`pod_phase{pod="web-2"} {{lname:pod_phase Failed=1 Pending=0 Running=0 Succeeded=0 Unknown=0}} 1704067200.000` + "\n" +
+		"# EOF\n"
+
+	p := NewOpenMetricsParser([]byte(input), st)
+	got := testParse(t, p)
+
+	want := []parsedEntry{
+		{m: "pod_phase", typ: model.MetricTypeStateset},
+		{
+			m:    `pod_phase{pod="web-1"}`,
+			lset: labels.FromStrings("__name__", "pod_phase", "pod", "web-1"),
+			ss: &stateset.StateSet{
+				LabelName: "pod_phase",
+				Names:     []string{"Failed", "Pending", "Running", "Succeeded", "Unknown"},
+				Values:    0b00100, // Running=1 is bit 2
+			},
+		},
+		{
+			m:    `pod_phase{pod="web-2"}`,
+			lset: labels.FromStrings("__name__", "pod_phase", "pod", "web-2"),
+			t:    int64p(1704067200000),
+			ss: &stateset.StateSet{
+				LabelName: "pod_phase",
+				Names:     []string{"Failed", "Pending", "Running", "Succeeded", "Unknown"},
+				Values:    0b00001, // Failed=1 is bit 0
+			},
+		},
+	}
+	requireEntries(t, want, got)
+}
+
+func TestOpenMetricsParseNativeStatesetSorted(t *testing.T) {
+	input := "# TYPE flags stateset\n" +
+		"flags {{lname:flag Zzz=0 Aaa=1 Mmm=0}}\n" +
+		"# EOF\n"
+
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable())
+	got := testParse(t, p)
+
+	want := []parsedEntry{
+		{m: "flags", typ: model.MetricTypeStateset},
+		{
+			m:    "flags",
+			lset: labels.FromStrings("__name__", "flags"),
+			ss: &stateset.StateSet{
+				LabelName: "flag",
+				Names:     []string{"Aaa", "Mmm", "Zzz"},
+				Values:    0b001, // Aaa=1 is bit 0 after sort
+			},
+		},
+	}
+	requireEntries(t, want, got)
+}
+
+func TestOpenMetricsParseNativeStatesetEmpty(t *testing.T) {
+	input := "# TYPE ephemeral stateset\n" +
+		"ephemeral{} {{lname:state}}\n" +
+		"# EOF\n"
+
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable())
+	got := testParse(t, p)
+
+	want := []parsedEntry{
+		{m: "ephemeral", typ: model.MetricTypeStateset},
+		{
+			m:    "ephemeral{}",
+			lset: labels.FromStrings("__name__", "ephemeral"),
+			ss:   &stateset.StateSet{LabelName: "state"},
+		},
+	}
+	requireEntries(t, want, got)
 }

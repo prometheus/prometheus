@@ -31,6 +31,7 @@ func init() {
 	jsoniter.RegisterTypeEncoderFunc("promql.Sample", unsafeMarshalSampleJSON, neverEmpty)
 	jsoniter.RegisterTypeEncoderFunc("promql.FPoint", unsafeMarshalFPointJSON, neverEmpty)
 	jsoniter.RegisterTypeEncoderFunc("promql.HPoint", unsafeMarshalHPointJSON, neverEmpty)
+	jsoniter.RegisterTypeEncoderFunc("promql.SSPoint", unsafeMarshalSSPointJSON, neverEmpty)
 	jsoniter.RegisterTypeEncoderFunc("exemplar.Exemplar", marshalExemplarJSON, neverEmpty)
 	jsoniter.RegisterTypeEncoderFunc("labels.Labels", unsafeMarshalLabelsJSON, labelsIsEmpty)
 }
@@ -100,6 +101,17 @@ func marshalSeriesJSON(s promql.Series, stream *jsoniter.Stream) {
 	if len(s.Histograms) > 0 {
 		stream.WriteArrayEnd()
 	}
+	for i, p := range s.Statesets {
+		stream.WriteMore()
+		if i == 0 {
+			stream.WriteObjectField(`statesets`)
+			stream.WriteArrayStart()
+		}
+		marshalSSPointJSON(p, stream)
+	}
+	if len(s.Statesets) > 0 {
+		stream.WriteArrayEnd()
+	}
 	stream.WriteObjectEnd()
 }
 
@@ -139,18 +151,24 @@ func marshalSampleJSON(s promql.Sample, stream *jsoniter.Stream) {
 	stream.WriteObjectField(`metric`)
 	marshalLabelsJSON(s.Metric, stream)
 	stream.WriteMore()
-	if s.H == nil {
-		stream.WriteObjectField(`value`)
-	} else {
+	switch {
+	case s.SS != nil:
+		stream.WriteObjectField(`stateset`)
+	case s.H != nil:
 		stream.WriteObjectField(`histogram`)
+	default:
+		stream.WriteObjectField(`value`)
 	}
 	stream.WriteArrayStart()
 	jsonutil.MarshalTimestamp(s.T, stream)
 	stream.WriteMore()
-	if s.H == nil {
-		jsonutil.MarshalFloat(s.F, stream)
-	} else {
+	switch {
+	case s.SS != nil:
+		jsonutil.MarshalStateset(s.SS, stream)
+	case s.H != nil:
 		jsonutil.MarshalHistogram(s.H, stream)
+	default:
+		jsonutil.MarshalFloat(s.F, stream)
 	}
 	stream.WriteArrayEnd()
 	stream.WriteObjectEnd()
@@ -181,6 +199,20 @@ func marshalHPointJSON(p promql.HPoint, stream *jsoniter.Stream) {
 	jsonutil.MarshalTimestamp(p.T, stream)
 	stream.WriteMore()
 	jsonutil.MarshalHistogram(p.H, stream)
+	stream.WriteArrayEnd()
+}
+
+// unsafeMarshalSSPointJSON writes `[ts, { < stateset, see jsonutil.MarshalStateset > } ]`.
+func unsafeMarshalSSPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+	p := *((*promql.SSPoint)(ptr))
+	marshalSSPointJSON(p, stream)
+}
+
+func marshalSSPointJSON(p promql.SSPoint, stream *jsoniter.Stream) {
+	stream.WriteArrayStart()
+	jsonutil.MarshalTimestamp(p.T, stream)
+	stream.WriteMore()
+	jsonutil.MarshalStateset(p.SS, stream)
 	stream.WriteArrayEnd()
 }
 

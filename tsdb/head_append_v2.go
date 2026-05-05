@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -36,12 +37,12 @@ type initAppenderV2 struct {
 
 var _ storage.GetRef = &initAppenderV2{}
 
-func (a *initAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+func (a *initAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, ss *stateset.StateSet, opts storage.AOptions) (storage.SeriesRef, error) {
 	if a.app == nil {
 		a.head.initTime(t)
 		a.app = a.head.appenderV2()
 	}
-	return a.app.Append(ref, ls, st, t, v, h, fh, opts)
+	return a.app.Append(ref, ls, st, t, v, h, fh, ss, opts)
 }
 
 func (a *initAppenderV2) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
@@ -105,7 +106,7 @@ type headAppenderV2 struct {
 	headAppenderBase
 }
 
-func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, ss *stateset.StateSet, opts storage.AOptions) (storage.SeriesRef, error) {
 	var (
 		// Avoid shadowing err variables for reliability.
 		valErr, appErr, partialErr error
@@ -121,6 +122,9 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	case h != nil:
 		sampleMetricType = sampleMetricTypeHistogram
 		valErr = h.Validate()
+	case ss != nil:
+		sampleMetricType = sampleMetricTypeStateset
+		valErr = ss.Validate()
 	}
 	if valErr != nil {
 		return 0, valErr
@@ -153,6 +157,8 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	case h != nil:
 		isStale = value.IsStaleNaN(h.Sum)
 		appErr = a.appendHistogram(s, t, h, opts.RejectOutOfOrder)
+	case ss != nil:
+		appErr = a.appendStateset(s, t, ss)
 	default:
 		isStale = value.IsStaleNaN(v)
 		if isStale {
@@ -165,11 +171,11 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			// an optimization for the more likely case.
 			switch a.typesInBatch[s.ref] {
 			case stHistogram, stCustomBucketHistogram:
-				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, &histogram.Histogram{Sum: v}, nil, storage.AOptions{
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, &histogram.Histogram{Sum: v}, nil, nil, storage.AOptions{
 					RejectOutOfOrder: opts.RejectOutOfOrder,
 				})
 			case stFloatHistogram, stCustomBucketFloatHistogram:
-				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, nil, &histogram.FloatHistogram{Sum: v}, storage.AOptions{
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, nil, &histogram.FloatHistogram{Sum: v}, nil, storage.AOptions{
 					RejectOutOfOrder: opts.RejectOutOfOrder,
 				})
 			}
@@ -300,6 +306,30 @@ func (a *headAppenderV2) appendFloatHistogram(s *memSeries, t int64, fh *histogr
 	b := a.getCurrentBatch(st, s.ref)
 	b.floatHistograms = append(b.floatHistograms, record.RefFloatHistogramSample{Ref: s.ref, T: t, FH: fh})
 	b.floatHistogramSeries = append(b.floatHistogramSeries, s)
+	return nil
+}
+
+func (a *headAppenderV2) appendStateset(s *memSeries, t int64, ss *stateset.StateSet) error {
+	s.Lock()
+	isOOO, delta, err := s.appendable(t, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	if isOOO {
+		s.Unlock()
+		return storage.ErrOutOfOrderSample
+	}
+	if err == nil {
+		s.pendingCommit = true
+	}
+	s.Unlock()
+	if delta > 0 {
+		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
+	}
+	if err != nil {
+		return err
+	}
+
+	b := a.getCurrentBatch(stStateset, s.ref)
+	b.statesets = append(b.statesets, record.RefStatesetSample{Ref: s.ref, T: t, SS: ss})
+	b.statesetSeries = append(b.statesetSeries, s)
 	return nil
 }
 

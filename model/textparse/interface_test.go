@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -188,10 +189,13 @@ type parsedEntry struct {
 	shs *histogram.Histogram
 	fhs *histogram.FloatHistogram
 
+	// In EntryStateset.
+	ss *stateset.StateSet
+
 	// In EntrySeries.
 	v float64
 
-	// In EntrySeries and EntryHistogram.
+	// In EntrySeries, EntryHistogram, and EntryStateset.
 	lset labels.Labels
 	t    *int64
 	es   []exemplar.Exemplar
@@ -241,12 +245,15 @@ func testParse(t *testing.T, p Parser) (ret []parsedEntry) {
 		switch et {
 		case EntryInvalid:
 			t.Fatal("entry invalid not expected")
-		case EntrySeries, EntryHistogram:
+		case EntrySeries, EntryHistogram, EntryStateset:
 			var ts *int64
-			if et == EntrySeries {
+			switch et {
+			case EntrySeries:
 				m, ts, got.v = p.Series()
-			} else {
+			case EntryHistogram:
 				m, ts, got.shs, got.fhs = p.Histogram()
+			case EntryStateset:
+				m, ts, got.ss = p.Stateset()
 			}
 			if ts != nil {
 				// TODO(bwplotka): Change to 0 in the interface for set check to
@@ -257,8 +264,10 @@ func testParse(t *testing.T, p Parser) (ret []parsedEntry) {
 			p.Labels(&got.lset)
 			got.st = p.StartTimestamp()
 
-			for e := (exemplar.Exemplar{}); p.Exemplar(&e); {
-				got.es = append(got.es, e)
+			if et != EntryStateset {
+				for e := (exemplar.Exemplar{}); p.Exemplar(&e); {
+					got.es = append(got.es, e)
+				}
 			}
 		case EntryType:
 			m, got.typ = p.Type()

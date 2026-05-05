@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -284,6 +285,10 @@ func (*FakeSeriesIterator) AtST() int64 {
 	return 0
 }
 
+func (*FakeSeriesIterator) AtStateset(*stateset.StateSet) (int64, *stateset.StateSet) {
+	panic("not implemented")
+}
+
 func (*FakeSeriesIterator) Err() error {
 	return nil
 }
@@ -345,6 +350,10 @@ func (f *FakeHistogramSeriesIterator) AtT() int64 {
 
 func (*FakeHistogramSeriesIterator) AtST() int64 {
 	return 0
+}
+
+func (*FakeHistogramSeriesIterator) AtStateset(*stateset.StateSet) (int64, *stateset.StateSet) {
+	panic("not implemented")
 }
 
 func (*FakeHistogramSeriesIterator) Err() error {

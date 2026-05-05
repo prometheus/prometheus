@@ -24,6 +24,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -855,6 +856,10 @@ func (p *populateWithDelSeriesIterator) AtFloatHistogram(fh *histogram.FloatHist
 	return p.curr.AtFloatHistogram(fh)
 }
 
+func (p *populateWithDelSeriesIterator) AtStateset(ss *stateset.StateSet) (int64, *stateset.StateSet) {
+	return p.curr.AtStateset(ss)
+}
+
 func (p *populateWithDelSeriesIterator) AtT() int64 {
 	return p.curr.AtT()
 }
@@ -1269,6 +1274,10 @@ func (it *DeletedIterator) AtHistogram(h *histogram.Histogram) (int64, *histogra
 func (it *DeletedIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	t, h := it.Iter.AtFloatHistogram(fh)
 	return t, h
+}
+
+func (it *DeletedIterator) AtStateset(ss *stateset.StateSet) (int64, *stateset.StateSet) {
+	return it.Iter.AtStateset(ss)
 }
 
 func (it *DeletedIterator) AtT() int64 {

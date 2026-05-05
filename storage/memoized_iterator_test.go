@@ -40,7 +40,7 @@ func TestMemoizedSeriesIterator(t *testing.T) {
 		require.Equal(t, ets, it.AtT(), "AtT() timestamp mismatch")
 	}
 	prevSampleEq := func(ets int64, ev float64, efh *histogram.FloatHistogram, eok bool) {
-		ts, v, fh, ok := it.PeekPrev()
+		ts, v, fh, _, ok := it.PeekPrev()
 		require.Equal(t, eok, ok, "exist mismatch")
 		require.Equal(t, ets, ts, "timestamp mismatch")
 		if efh == nil {

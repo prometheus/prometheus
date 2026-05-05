@@ -55,6 +55,30 @@ Enables PromQL functions that are considered experimental. These functions
 might change their name, syntax, or semantics. They might also get removed
 entirely.
 
+## Native StateSet ingestion
+
+`--enable-feature=native-statesets`
+
+> **Note:** This is an experimental extension to the Prometheus data model that
+> is not part of the OpenMetrics specification and is not covered by the
+> Prometheus HTTP API OpenAPI specification. The wire format, API response
+> format, and PromQL function signatures may change in future releases.
+
+Enables first-class native stateset support throughout Prometheus:
+
+- **Scraping**: OpenMetrics stateset metric families are aggregated from their
+  per-state float gauge representation into a single compact stateset sample per
+  labelset (analogous to how native histograms are aggregated from classic
+  histogram series). Equivalent to setting `scrape_native_statesets: true` in
+  the global scrape configuration.
+- **PromQL**: The `stateset_is_active`, `stateset_active_states`, and
+  `stateset_known_states` functions become available for querying stateset
+  series (these functions are otherwise gated behind
+  `--enable-feature=promql-experimental-functions`).
+- **Remote write v2**: Stateset samples are forwarded natively. When targeting
+  a v1 endpoint, each stateset sample is expanded into per-state float gauge
+  series (value 1.0 if active, 0.0 if inactive).
+
 ## Start (Created) Timestamps Zero Injection
 
 `--enable-feature=created-timestamp-zero-ingestion`

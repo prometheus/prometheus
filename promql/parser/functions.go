@@ -407,6 +407,24 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
+	"stateset_active_states": {
+		Name:         "stateset_active_states",
+		ArgTypes:     []ValueType{ValueTypeVector},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
+	"stateset_is_active": {
+		Name:         "stateset_is_active",
+		ArgTypes:     []ValueType{ValueTypeVector, ValueTypeString},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
+	"stateset_known_states": {
+		Name:         "stateset_known_states",
+		ArgTypes:     []ValueType{ValueTypeVector},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"sort_desc": {
 		Name:       "sort_desc",
 		ArgTypes:   []ValueType{ValueTypeVector},

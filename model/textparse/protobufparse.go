@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
 	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/util/convertnhcb"
@@ -279,6 +280,12 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 		return p.entryBytes.Bytes(), ts, &sh, nil
 	}
 	return p.entryBytes.Bytes(), nil, &sh, nil
+}
+
+// Stateset returns (nil, nil, nil) because the protobuf format does not
+// support native statesets.
+func (*ProtobufParser) Stateset() ([]byte, *int64, *stateset.StateSet) {
+	return nil, nil, nil
 }
 
 // Help returns the metric name and help text in the current entry.

@@ -67,7 +67,7 @@ func TestDataAvailableOnlyAfterCommit_AppendV2(t *testing.T) {
 	ctx := context.Background()
 	app := db.AppenderV2(ctx)
 
-	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, 0, 0, nil, nil, storage.AOptions{})
+	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, 0, 0, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 
 	querier, err := db.Querier(0, 1)
@@ -101,7 +101,7 @@ func TestNoPanicAfterWALCorruption_AppendV2(t *testing.T) {
 		// Appending 121 samples because on the 121st a new chunk will be created.
 		for range 121 {
 			app := db.AppenderV2(ctx)
-			_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, maxt, 0, nil, nil, storage.AOptions{})
+			_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, maxt, 0, nil, nil, nil, storage.AOptions{})
 			expSamples = append(expSamples, sample{t: maxt, f: 0})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
@@ -144,12 +144,13 @@ func TestDataNotAvailableAfterRollback_AppendV2(t *testing.T) {
 	db := newTestDB(t)
 
 	app := db.AppenderV2(context.Background())
-	_, err := app.Append(0, labels.FromStrings("type", "float"), 0, 0, 0, nil, nil, storage.AOptions{})
+	_, err := app.Append(0, labels.FromStrings("type", "float"), 0, 0, 0, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 
 	_, err = app.Append(
 		0, labels.FromStrings("type", "histogram"), 0, 0, 0,
 		&histogram.Histogram{Count: 42, Sum: math.NaN()}, nil,
+		nil,
 		storage.AOptions{},
 	)
 	require.NoError(t, err)
@@ -157,6 +158,7 @@ func TestDataNotAvailableAfterRollback_AppendV2(t *testing.T) {
 	_, err = app.Append(
 		0, labels.FromStrings("type", "floathistogram"), 0, 0, 0,
 		nil, &histogram.FloatHistogram{Count: 42, Sum: math.NaN()},
+		nil,
 		storage.AOptions{},
 	)
 	require.NoError(t, err)
@@ -235,11 +237,11 @@ func TestDBAppenderV2_AddRef(t *testing.T) {
 	ctx := context.Background()
 	app1 := db.AppenderV2(ctx)
 
-	ref1, err := app1.Append(0, labels.FromStrings("a", "b"), 0, 123, 0, nil, nil, storage.AOptions{})
+	ref1, err := app1.Append(0, labels.FromStrings("a", "b"), 0, 123, 0, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 
 	// Reference should already work before commit.
-	ref2, err := app1.Append(ref1, labels.EmptyLabels(), 0, 124, 1, nil, nil, storage.AOptions{})
+	ref2, err := app1.Append(ref1, labels.EmptyLabels(), 0, 124, 1, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.Equal(t, ref1, ref2)
 
@@ -249,21 +251,21 @@ func TestDBAppenderV2_AddRef(t *testing.T) {
 	app2 := db.AppenderV2(ctx)
 
 	// first ref should already work in next transaction.
-	ref3, err := app2.Append(ref1, labels.EmptyLabels(), 0, 125, 0, nil, nil, storage.AOptions{})
+	ref3, err := app2.Append(ref1, labels.EmptyLabels(), 0, 125, 0, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.Equal(t, ref1, ref3)
 
-	ref4, err := app2.Append(ref1, labels.FromStrings("a", "b"), 0, 133, 1, nil, nil, storage.AOptions{})
+	ref4, err := app2.Append(ref1, labels.FromStrings("a", "b"), 0, 133, 1, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.Equal(t, ref1, ref4)
 
 	// Reference must be valid to add another sample.
-	ref5, err := app2.Append(ref2, labels.EmptyLabels(), 0, 143, 2, nil, nil, storage.AOptions{})
+	ref5, err := app2.Append(ref2, labels.EmptyLabels(), 0, 143, 2, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.Equal(t, ref1, ref5)
 
 	// Missing labels & invalid refs should fail.
-	_, err = app2.Append(9999999, labels.EmptyLabels(), 0, 1, 1, nil, nil, storage.AOptions{})
+	_, err = app2.Append(9999999, labels.EmptyLabels(), 0, 1, 1, nil, nil, nil, storage.AOptions{})
 	require.ErrorIs(t, err, ErrInvalidSample)
 
 	require.NoError(t, app2.Commit())
@@ -290,11 +292,11 @@ func TestDBAppenderV2_EmptyLabelsIgnored(t *testing.T) {
 	ctx := context.Background()
 	app1 := db.AppenderV2(ctx)
 
-	ref1, err := app1.Append(0, labels.FromStrings("a", "b"), 0, 123, 0, nil, nil, storage.AOptions{})
+	ref1, err := app1.Append(0, labels.FromStrings("a", "b"), 0, 123, 0, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 
 	// Add with empty label.
-	ref2, err := app1.Append(0, labels.FromStrings("a", "b", "c", ""), 0, 124, 0, nil, nil, storage.AOptions{})
+	ref2, err := app1.Append(0, labels.FromStrings("a", "b", "c", ""), 0, 124, 0, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 
 	// Should be the same series.
@@ -309,7 +311,7 @@ func TestDBAppenderV2_EmptyLabelsetCausesError(t *testing.T) {
 
 	ctx := context.Background()
 	app := db.AppenderV2(ctx)
-	_, err := app.Append(0, labels.Labels{}, 0, 0, 0, nil, nil, storage.AOptions{})
+	_, err := app.Append(0, labels.Labels{}, 0, 0, 0, nil, nil, nil, storage.AOptions{})
 	require.Error(t, err)
 	require.Equal(t, "empty labelset: invalid sample", err.Error())
 }
@@ -353,7 +355,7 @@ func TestDeleteSimple_AppendV2(t *testing.T) {
 			smpls := make([]float64, numSamples)
 			for i := range numSamples {
 				smpls[i] = rand.Float64()
-				app.Append(0, labels.FromStrings("a", "b"), 0, i, smpls[i], nil, nil, storage.AOptions{})
+				app.Append(0, labels.FromStrings("a", "b"), 0, i, smpls[i], nil, nil, nil, storage.AOptions{})
 			}
 
 			require.NoError(t, app.Commit())
@@ -407,14 +409,14 @@ func TestAmendHistogramDatapointCausesError_AppendV2(t *testing.T) {
 
 	ctx := context.Background()
 	app := db.AppenderV2(ctx)
-	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 0, 0, nil, nil, storage.AOptions{})
+	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 0, 0, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	app = db.AppenderV2(ctx)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 0, 0, nil, nil, storage.AOptions{})
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 0, 0, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 0, 1, nil, nil, storage.AOptions{})
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 0, 1, nil, nil, nil, storage.AOptions{})
 	require.ErrorIs(t, err, storage.ErrDuplicateSampleForTimestamp)
 	require.NoError(t, app.Rollback())
 
@@ -433,29 +435,29 @@ func TestAmendHistogramDatapointCausesError_AppendV2(t *testing.T) {
 	fh := h.ToFloat(nil)
 
 	app = db.AppenderV2(ctx)
-	_, err = app.Append(0, labels.FromStrings("a", "c"), 0, 0, 0, h.Copy(), nil, storage.AOptions{})
+	_, err = app.Append(0, labels.FromStrings("a", "c"), 0, 0, 0, h.Copy(), nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	app = db.AppenderV2(ctx)
-	_, err = app.Append(0, labels.FromStrings("a", "c"), 0, 0, 0, h.Copy(), nil, storage.AOptions{})
+	_, err = app.Append(0, labels.FromStrings("a", "c"), 0, 0, 0, h.Copy(), nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	h.Schema = 2
-	_, err = app.Append(0, labels.FromStrings("a", "c"), 0, 0, 0, h.Copy(), nil, storage.AOptions{})
+	_, err = app.Append(0, labels.FromStrings("a", "c"), 0, 0, 0, h.Copy(), nil, nil, storage.AOptions{})
 	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
 	require.NoError(t, app.Rollback())
 
 	// Float histogram.
 	app = db.AppenderV2(ctx)
-	_, err = app.Append(0, labels.FromStrings("a", "d"), 0, 0, 0, nil, fh.Copy(), storage.AOptions{})
+	_, err = app.Append(0, labels.FromStrings("a", "d"), 0, 0, 0, nil, fh.Copy(), nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	app = db.AppenderV2(ctx)
-	_, err = app.Append(0, labels.FromStrings("a", "d"), 0, 0, 0, nil, fh.Copy(), storage.AOptions{})
+	_, err = app.Append(0, labels.FromStrings("a", "d"), 0, 0, 0, nil, fh.Copy(), nil, storage.AOptions{})
 	require.NoError(t, err)
 	fh.Schema = 2
-	_, err = app.Append(0, labels.FromStrings("a", "d"), 0, 0, 0, nil, fh.Copy(), storage.AOptions{})
+	_, err = app.Append(0, labels.FromStrings("a", "d"), 0, 0, 0, nil, fh.Copy(), nil, storage.AOptions{})
 	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
 	require.NoError(t, app.Rollback())
 }
@@ -465,12 +467,12 @@ func TestDuplicateNaNDatapointNoAmendError_AppendV2(t *testing.T) {
 
 	ctx := context.Background()
 	app := db.AppenderV2(ctx)
-	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 0, math.NaN(), nil, nil, storage.AOptions{})
+	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 0, math.NaN(), nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	app = db.AppenderV2(ctx)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 0, math.NaN(), nil, nil, storage.AOptions{})
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 0, math.NaN(), nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 }
 
@@ -479,12 +481,12 @@ func TestNonDuplicateNaNDatapointsCausesAmendError_AppendV2(t *testing.T) {
 
 	ctx := context.Background()
 	app := db.AppenderV2(ctx)
-	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 0, math.Float64frombits(0x7ff0000000000001), nil, nil, storage.AOptions{})
+	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 0, math.Float64frombits(0x7ff0000000000001), nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	app = db.AppenderV2(ctx)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 0, math.Float64frombits(0x7ff0000000000002), nil, nil, storage.AOptions{})
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 0, math.Float64frombits(0x7ff0000000000002), nil, nil, nil, storage.AOptions{})
 	require.ErrorIs(t, err, storage.ErrDuplicateSampleForTimestamp)
 }
 
@@ -494,9 +496,9 @@ func TestSkippingInvalidValuesInSameTxn_AppendV2(t *testing.T) {
 	// Append AmendedValue.
 	ctx := context.Background()
 	app := db.AppenderV2(ctx)
-	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 0, 1, nil, nil, storage.AOptions{})
+	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 0, 1, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 0, 2, nil, nil, storage.AOptions{})
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 0, 2, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -512,9 +514,9 @@ func TestSkippingInvalidValuesInSameTxn_AppendV2(t *testing.T) {
 
 	// Append Out of Order Value.
 	app = db.AppenderV2(ctx)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 10, 3, nil, nil, storage.AOptions{})
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 10, 3, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 7, 5, nil, nil, storage.AOptions{})
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 7, 5, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -536,7 +538,7 @@ func TestDB_Snapshot_AppendV2(t *testing.T) {
 	app := db.AppenderV2(ctx)
 	mint := int64(1414141414000)
 	for i := range 1000 {
-		_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, mint+int64(i), 1.0, nil, nil, storage.AOptions{})
+		_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, mint+int64(i), 1.0, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -580,7 +582,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange_AppendV2(t *testing.T) {
 	app := db.AppenderV2(ctx)
 	mint := int64(1414141414000)
 	for i := range 1000 {
-		_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, mint+int64(i), 1.0, nil, nil, storage.AOptions{})
+		_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, mint+int64(i), 1.0, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -630,7 +632,7 @@ func TestDB_SnapshotWithDelete_AppendV2(t *testing.T) {
 	smpls := make([]float64, numSamples)
 	for i := range numSamples {
 		smpls[i] = rand.Float64()
-		app.Append(0, labels.FromStrings("a", "b"), 0, i, smpls[i], nil, nil, storage.AOptions{})
+		app.Append(0, labels.FromStrings("a", "b"), 0, i, smpls[i], nil, nil, nil, storage.AOptions{})
 	}
 
 	require.NoError(t, app.Commit())
@@ -774,7 +776,7 @@ func TestDB_e2e_AppendV2(t *testing.T) {
 
 			series = append(series, sample{0, ts, v, nil, nil})
 
-			_, err := app.Append(0, lset, 0, ts, v, nil, nil, storage.AOptions{})
+			_, err := app.Append(0, lset, 0, ts, v, nil, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 
 			ts += rand.Int63n(timeInterval) + 1
@@ -867,7 +869,7 @@ func TestWALFlushedOnDBClose_AppendV2(t *testing.T) {
 
 	ctx := context.Background()
 	app := db.AppenderV2(ctx)
-	_, err := app.Append(0, lbls, 0, 0, 1, nil, nil, storage.AOptions{})
+	_, err := app.Append(0, lbls, 0, 0, 1, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -943,10 +945,10 @@ func TestWALSegmentSizeOptions_AppendV2(t *testing.T) {
 
 			for i := range int64(155) {
 				app := db.AppenderV2(context.Background())
-				ref, err := app.Append(0, labels.FromStrings("wal"+strconv.Itoa(int(i)), "size"), 0, i, rand.Float64(), nil, nil, storage.AOptions{})
+				ref, err := app.Append(0, labels.FromStrings("wal"+strconv.Itoa(int(i)), "size"), 0, i, rand.Float64(), nil, nil, nil, storage.AOptions{})
 				require.NoError(t, err)
 				for j := int64(1); j <= 78; j++ {
-					_, err := app.Append(ref, labels.EmptyLabels(), 0, i+j, rand.Float64(), nil, nil, storage.AOptions{})
+					_, err := app.Append(ref, labels.EmptyLabels(), 0, i+j, rand.Float64(), nil, nil, nil, storage.AOptions{})
 					require.NoError(t, err)
 				}
 				require.NoError(t, app.Commit())
@@ -1006,7 +1008,7 @@ func testWALReplayRaceOnSamplesLoggedBeforeSeriesAppendV2(t *testing.T, numSampl
 		lbls := labels.FromStrings("series_id", strconv.Itoa(seriesRef))
 
 		for ts := numSamplesBeforeSeriesCreation; ts < numSamplesBeforeSeriesCreation+numSamplesAfterSeriesCreation; ts++ {
-			_, err := app.Append(0, lbls, 0, int64(ts), float64(ts), nil, nil, storage.AOptions{})
+			_, err := app.Append(0, lbls, 0, int64(ts), float64(ts), nil, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -1055,7 +1057,7 @@ func TestTombstoneClean_AppendV2(t *testing.T) {
 	smpls := make([]float64, numSamples)
 	for i := range numSamples {
 		smpls[i] = rand.Float64()
-		app.Append(0, labels.FromStrings("a", "b"), 0, i, smpls[i], nil, nil, storage.AOptions{})
+		app.Append(0, labels.FromStrings("a", "b"), 0, i, smpls[i], nil, nil, nil, storage.AOptions{})
 	}
 
 	require.NoError(t, app.Commit())
@@ -1148,7 +1150,7 @@ func TestTombstoneCleanResultEmptyBlock_AppendV2(t *testing.T) {
 	smpls := make([]float64, numSamples)
 	for i := range numSamples {
 		smpls[i] = rand.Float64()
-		app.Append(0, labels.FromStrings("a", "b"), 0, i, smpls[i], nil, nil, storage.AOptions{})
+		app.Append(0, labels.FromStrings("a", "b"), 0, i, smpls[i], nil, nil, nil, storage.AOptions{})
 	}
 
 	require.NoError(t, app.Commit())
@@ -1211,7 +1213,7 @@ func TestSizeRetention_AppendV2(t *testing.T) {
 					it = s.Iterator(it)
 					for it.Next() == chunkenc.ValFloat {
 						tim, v := it.At()
-						_, err := headApp.Append(0, s.Labels(), 0, tim, v, nil, nil, storage.AOptions{})
+						_, err := headApp.Append(0, s.Labels(), 0, tim, v, nil, nil, nil, storage.AOptions{})
 						require.NoError(t, err)
 					}
 					require.NoError(t, it.Err())
@@ -1269,7 +1271,7 @@ func TestSizeRetention_AppendV2(t *testing.T) {
 			// Add some out of order samples to check the size of WBL.
 			headApp = db.Head().AppenderV2(context.Background())
 			for ts := int64(750); ts < 800; ts++ {
-				_, err := headApp.Append(0, aSeries, 0, ts, float64(ts), nil, nil, storage.AOptions{})
+				_, err := headApp.Append(0, aSeries, 0, ts, float64(ts), nil, nil, nil, storage.AOptions{})
 				require.NoError(t, err)
 			}
 			require.NoError(t, headApp.Commit())
@@ -1328,7 +1330,7 @@ func TestNotMatcherSelectsLabelsUnsetSeries_AppendV2(t *testing.T) {
 	ctx := context.Background()
 	app := db.AppenderV2(ctx)
 	for _, lbls := range labelpairs {
-		_, err := app.Append(0, lbls, 0, 0, 1, nil, nil, storage.AOptions{})
+		_, err := app.Append(0, lbls, 0, 0, 1, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -1400,9 +1402,9 @@ func TestChunkAtBlockBoundary_AppendV2(t *testing.T) {
 	label := labels.FromStrings("foo", "bar")
 
 	for i := range int64(3) {
-		_, err := app.Append(0, label, 0, i*blockRange, 0, nil, nil, storage.AOptions{})
+		_, err := app.Append(0, label, 0, i*blockRange, 0, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
-		_, err = app.Append(0, label, 0, i*blockRange+1000, 0, nil, nil, storage.AOptions{})
+		_, err = app.Append(0, label, 0, i*blockRange+1000, 0, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
@@ -1454,9 +1456,9 @@ func TestQuerierWithBoundaryChunks_AppendV2(t *testing.T) {
 	label := labels.FromStrings("foo", "bar")
 
 	for i := range int64(5) {
-		_, err := app.Append(0, label, 0, i*blockRange, 0, nil, nil, storage.AOptions{})
+		_, err := app.Append(0, label, 0, i*blockRange, 0, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
-		_, err = app.Append(0, labels.FromStrings("blockID", strconv.FormatInt(i, 10)), 0, i*blockRange, 0, nil, nil, storage.AOptions{})
+		_, err = app.Append(0, labels.FromStrings("blockID", strconv.FormatInt(i, 10)), 0, i*blockRange, 0, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
@@ -1498,7 +1500,7 @@ func TestInitializeHeadTimestamp_AppendV2(t *testing.T) {
 		// First added sample initializes the writable range.
 		ctx := context.Background()
 		app := db.AppenderV2(ctx)
-		_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 1000, 1, nil, nil, storage.AOptions{})
+		_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 1000, 1, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 
 		require.Equal(t, int64(1000), db.head.MinTime())
@@ -1603,11 +1605,11 @@ func TestNoEmptyBlocks_AppendV2(t *testing.T) {
 
 	t.Run("Test no blocks after deleting all samples from head.", func(t *testing.T) {
 		app := db.AppenderV2(ctx)
-		_, err := app.Append(0, defaultLabel, 0, 1, 0, nil, nil, storage.AOptions{})
+		_, err := app.Append(0, defaultLabel, 0, 1, 0, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
-		_, err = app.Append(0, defaultLabel, 0, 2, 0, nil, nil, storage.AOptions{})
+		_, err = app.Append(0, defaultLabel, 0, 2, 0, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
-		_, err = app.Append(0, defaultLabel, 0, 3+rangeToTriggerCompaction, 0, nil, nil, storage.AOptions{})
+		_, err = app.Append(0, defaultLabel, 0, 3+rangeToTriggerCompaction, 0, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 		require.NoError(t, db.Delete(ctx, math.MinInt64, math.MaxInt64, defaultMatcher))
@@ -1620,16 +1622,16 @@ func TestNoEmptyBlocks_AppendV2(t *testing.T) {
 		require.Empty(t, actBlocks)
 
 		app = db.AppenderV2(ctx)
-		_, err = app.Append(0, defaultLabel, 0, 1, 0, nil, nil, storage.AOptions{})
+		_, err = app.Append(0, defaultLabel, 0, 1, 0, nil, nil, nil, storage.AOptions{})
 		require.Equal(t, storage.ErrOutOfBounds, err, "the head should be truncated so no samples in the past should be allowed")
 
 		// Adding new blocks.
 		currentTime := db.Head().MaxTime()
-		_, err = app.Append(0, defaultLabel, 0, currentTime, 0, nil, nil, storage.AOptions{})
+		_, err = app.Append(0, defaultLabel, 0, currentTime, 0, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
-		_, err = app.Append(0, defaultLabel, 0, currentTime+1, 0, nil, nil, storage.AOptions{})
+		_, err = app.Append(0, defaultLabel, 0, currentTime+1, 0, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
-		_, err = app.Append(0, defaultLabel, 0, currentTime+rangeToTriggerCompaction, 0, nil, nil, storage.AOptions{})
+		_, err = app.Append(0, defaultLabel, 0, currentTime+rangeToTriggerCompaction, 0, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 
@@ -1646,11 +1648,11 @@ func TestNoEmptyBlocks_AppendV2(t *testing.T) {
 		oldBlocks := db.Blocks()
 		app := db.AppenderV2(ctx)
 		currentTime := db.Head().MaxTime()
-		_, err := app.Append(0, defaultLabel, 0, currentTime, 0, nil, nil, storage.AOptions{})
+		_, err := app.Append(0, defaultLabel, 0, currentTime, 0, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
-		_, err = app.Append(0, defaultLabel, 0, currentTime+1, 0, nil, nil, storage.AOptions{})
+		_, err = app.Append(0, defaultLabel, 0, currentTime+1, 0, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
-		_, err = app.Append(0, defaultLabel, 0, currentTime+rangeToTriggerCompaction, 0, nil, nil, storage.AOptions{})
+		_, err = app.Append(0, defaultLabel, 0, currentTime+rangeToTriggerCompaction, 0, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 		require.NoError(t, db.head.Delete(ctx, math.MinInt64, math.MaxInt64, defaultMatcher))
@@ -1732,7 +1734,7 @@ func TestDB_LabelNames_AppendV2(t *testing.T) {
 		for i := mint; i <= maxt; i++ {
 			for _, tuple := range sampleLabels {
 				label := labels.FromStrings(tuple[0], tuple[1])
-				_, err := app.Append(0, label, 0, i*blockRange, 0, nil, nil, storage.AOptions{})
+				_, err := app.Append(0, label, 0, i*blockRange, 0, nil, nil, nil, storage.AOptions{})
 				require.NoError(t, err)
 			}
 		}
@@ -1798,7 +1800,7 @@ func TestCorrectNumTombstones_AppendV2(t *testing.T) {
 	app := db.AppenderV2(ctx)
 	for i := range int64(3) {
 		for j := range int64(15) {
-			_, err := app.Append(0, defaultLabel, 0, i*blockRange+j, 0, nil, nil, storage.AOptions{})
+			_, err := app.Append(0, defaultLabel, 0, i*blockRange+j, 0, nil, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 		}
 	}
@@ -1852,14 +1854,14 @@ func TestBlockRanges_AppendV2(t *testing.T) {
 
 	app := db.AppenderV2(ctx)
 	lbl := labels.FromStrings("a", "b")
-	_, err = app.Append(0, lbl, 0, firstBlockMaxT-1, rand.Float64(), nil, nil, storage.AOptions{})
+	_, err = app.Append(0, lbl, 0, firstBlockMaxT-1, rand.Float64(), nil, nil, nil, storage.AOptions{})
 	require.Error(t, err, "appending a sample with a timestamp covered by a previous block shouldn't be possible")
-	_, err = app.Append(0, lbl, 0, firstBlockMaxT+1, rand.Float64(), nil, nil, storage.AOptions{})
+	_, err = app.Append(0, lbl, 0, firstBlockMaxT+1, rand.Float64(), nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
-	_, err = app.Append(0, lbl, 0, firstBlockMaxT+2, rand.Float64(), nil, nil, storage.AOptions{})
+	_, err = app.Append(0, lbl, 0, firstBlockMaxT+2, rand.Float64(), nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	secondBlockMaxt := firstBlockMaxT + rangeToTriggerCompaction
-	_, err = app.Append(0, lbl, 0, secondBlockMaxt, rand.Float64(), nil, nil, storage.AOptions{}) // Add samples to trigger a new compaction
+	_, err = app.Append(0, lbl, 0, secondBlockMaxt, rand.Float64(), nil, nil, nil, storage.AOptions{}) // Add samples to trigger a new compaction
 
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -1873,13 +1875,13 @@ func TestBlockRanges_AppendV2(t *testing.T) {
 	// Test that wal records are skipped when an existing block covers the same time ranges
 	// and compaction doesn't create an overlapping block.
 	app = db.AppenderV2(ctx)
-	_, err = app.Append(0, lbl, 0, secondBlockMaxt+1, rand.Float64(), nil, nil, storage.AOptions{})
+	_, err = app.Append(0, lbl, 0, secondBlockMaxt+1, rand.Float64(), nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
-	_, err = app.Append(0, lbl, 0, secondBlockMaxt+2, rand.Float64(), nil, nil, storage.AOptions{})
+	_, err = app.Append(0, lbl, 0, secondBlockMaxt+2, rand.Float64(), nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
-	_, err = app.Append(0, lbl, 0, secondBlockMaxt+3, rand.Float64(), nil, nil, storage.AOptions{})
+	_, err = app.Append(0, lbl, 0, secondBlockMaxt+3, rand.Float64(), nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
-	_, err = app.Append(0, lbl, 0, secondBlockMaxt+4, rand.Float64(), nil, nil, storage.AOptions{})
+	_, err = app.Append(0, lbl, 0, secondBlockMaxt+4, rand.Float64(), nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.NoError(t, db.Close())
@@ -1896,7 +1898,7 @@ func TestBlockRanges_AppendV2(t *testing.T) {
 	require.Equal(t, db.Blocks()[2].Meta().MaxTime, thirdBlockMaxt, "unexpected maxt of the last block")
 
 	app = db.AppenderV2(ctx)
-	_, err = app.Append(0, lbl, 0, thirdBlockMaxt+rangeToTriggerCompaction, rand.Float64(), nil, nil, storage.AOptions{}) // Trigger a compaction
+	_, err = app.Append(0, lbl, 0, thirdBlockMaxt+rangeToTriggerCompaction, rand.Float64(), nil, nil, nil, storage.AOptions{}) // Trigger a compaction
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.NoError(t, db.Compact(ctx))
@@ -1951,7 +1953,7 @@ func TestDBReadOnly_AppendV2(t *testing.T) {
 		dbSizeBeforeAppend, err := fileutil.DirSize(dbWritable.Dir())
 		require.NoError(t, err)
 		app := dbWritable.AppenderV2(context.Background())
-		_, err = app.Append(0, labels.FromStrings("foo", "bar"), 0, dbWritable.Head().MaxTime()+1, 0, nil, nil, storage.AOptions{})
+		_, err = app.Append(0, labels.FromStrings("foo", "bar"), 0, dbWritable.Head().MaxTime()+1, 0, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 
@@ -2042,7 +2044,7 @@ func TestDBReadOnly_FlushWAL_AppendV2(t *testing.T) {
 		app := db.AppenderV2(ctx)
 		maxt = 1000
 		for i := 0; i < maxt; i++ {
-			_, err := app.Append(0, labels.FromStrings(defaultLabelName, "flush"), 0, int64(i), 1.0, nil, nil, storage.AOptions{})
+			_, err := app.Append(0, labels.FromStrings(defaultLabelName, "flush"), 0, int64(i), 1.0, nil, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -2124,7 +2126,7 @@ func TestDBReadOnly_Querier_NoAlteration_AppendV2(t *testing.T) {
 		// Append until the first mmapped head chunk.
 		for i := range 121 {
 			app := db.AppenderV2(context.Background())
-			_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, int64(i), 0, nil, nil, storage.AOptions{})
+			_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, int64(i), 0, nil, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 		}
@@ -2175,7 +2177,7 @@ func TestDBCannotSeePartialCommits_AppendV2(t *testing.T) {
 			app := db.AppenderV2(ctx)
 
 			for j := range 100 {
-				_, err := app.Append(0, labels.FromStrings("foo", "bar", "a", strconv.Itoa(j)), 0, int64(iter), float64(iter), nil, nil, storage.AOptions{})
+				_, err := app.Append(0, labels.FromStrings("foo", "bar", "a", strconv.Itoa(j)), 0, int64(iter), float64(iter), nil, nil, nil, storage.AOptions{})
 				require.NoError(t, err)
 			}
 			require.NoError(t, app.Commit())
@@ -2235,7 +2237,7 @@ func TestDBQueryDoesntSeeAppendsAfterCreation_AppendV2(t *testing.T) {
 
 	ctx := context.Background()
 	app := db.AppenderV2(ctx)
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 0, 0, 0, nil, nil, storage.AOptions{})
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 0, 0, 0, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 
 	querierAfterAddButBeforeCommit, err := db.Querier(0, 1000000)
@@ -2311,7 +2313,7 @@ func TestCompactHead_AppendV2(t *testing.T) {
 	maxt := 100
 	for i := range maxt {
 		val := rand.Float64()
-		_, err := app.Append(0, labels.FromStrings("a", "b"), 0, int64(i), val, nil, nil, storage.AOptions{})
+		_, err := app.Append(0, labels.FromStrings("a", "b"), 0, int64(i), val, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		expSamples = append(expSamples, sample{0, int64(i), val, nil, nil})
 	}
@@ -2355,7 +2357,7 @@ func TestCompactHeadWithDeletion_AppendV2(t *testing.T) {
 	ctx := context.Background()
 
 	app := db.AppenderV2(ctx)
-	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 10, rand.Float64(), nil, nil, storage.AOptions{})
+	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 10, rand.Float64(), nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -2388,9 +2390,9 @@ func TestOneCheckpointPerCompactCall_AppendV2(t *testing.T) {
 	// Append samples spanning 59 block ranges.
 	app := db.AppenderV2(context.Background())
 	for i := range int64(60) {
-		_, err := app.Append(0, lbls, 0, blockRange*i, rand.Float64(), nil, nil, storage.AOptions{})
+		_, err := app.Append(0, lbls, 0, blockRange*i, rand.Float64(), nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
-		_, err = app.Append(0, lbls, 0, (blockRange*i)+blockRange/2, rand.Float64(), nil, nil, storage.AOptions{})
+		_, err = app.Append(0, lbls, 0, (blockRange*i)+blockRange/2, rand.Float64(), nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		// Rotate the WAL file so that there is >3 files for checkpoint to happen.
 		_, err = db.head.wal.NextSegment()
@@ -2447,7 +2449,7 @@ func TestOneCheckpointPerCompactCall_AppendV2(t *testing.T) {
 
 	// Adding sample way into the future.
 	app = db.AppenderV2(context.Background())
-	_, err = app.Append(0, lbls, 0, blockRange*120, rand.Float64(), nil, nil, storage.AOptions{})
+	_, err = app.Append(0, lbls, 0, blockRange*120, rand.Float64(), nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -2502,7 +2504,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier_AppendV
 	// Push samples after the OOO sample we'll write below.
 	for ; ts < 10*interval; ts += interval {
 		app := db.AppenderV2(ctx)
-		_, err := app.Append(0, metric, 0, ts, float64(ts), nil, nil, storage.AOptions{})
+		_, err := app.Append(0, metric, 0, ts, float64(ts), nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 		samplesWritten++
@@ -2510,7 +2512,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier_AppendV
 
 	// Push a single OOO sample.
 	app := db.AppenderV2(ctx)
-	_, err := app.Append(0, metric, 0, oooTS, float64(ts), nil, nil, storage.AOptions{})
+	_, err := app.Append(0, metric, 0, oooTS, float64(ts), nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	samplesWritten++
@@ -2593,7 +2595,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterSelecting_AppendV2(t *tes
 	// Push samples after the OOO sample we'll write below.
 	for ; ts < 10*interval; ts += interval {
 		app := db.AppenderV2(ctx)
-		_, err := app.Append(0, metric, 0, ts, float64(ts), nil, nil, storage.AOptions{})
+		_, err := app.Append(0, metric, 0, ts, float64(ts), nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 		samplesWritten++
@@ -2601,7 +2603,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterSelecting_AppendV2(t *tes
 
 	// Push a single OOO sample.
 	app := db.AppenderV2(ctx)
-	_, err := app.Append(0, metric, 0, oooTS, float64(ts), nil, nil, storage.AOptions{})
+	_, err := app.Append(0, metric, 0, oooTS, float64(ts), nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	samplesWritten++
@@ -2672,7 +2674,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators_Appen
 	// Push samples after the OOO sample we'll write below.
 	for ; ts < 10*interval; ts += interval {
 		app := db.AppenderV2(ctx)
-		_, err := app.Append(0, metric, 0, ts, float64(ts), nil, nil, storage.AOptions{})
+		_, err := app.Append(0, metric, 0, ts, float64(ts), nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 		samplesWritten++
@@ -2680,7 +2682,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators_Appen
 
 	// Push a single OOO sample.
 	app := db.AppenderV2(ctx)
-	_, err := app.Append(0, metric, 0, oooTS, float64(ts), nil, nil, storage.AOptions{})
+	_, err := app.Append(0, metric, 0, oooTS, float64(ts), nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	samplesWritten++
@@ -2748,7 +2750,7 @@ func TestOOOWALWrite_AppendV2(t *testing.T) {
 	}{
 		"float": {
 			appendSample: func(app storage.AppenderV2, l labels.Labels, mins int64) (storage.SeriesRef, error) {
-				seriesRef, err := app.Append(0, l, 0, minutes(mins), float64(mins), nil, nil, storage.AOptions{})
+				seriesRef, err := app.Append(0, l, 0, minutes(mins), float64(mins), nil, nil, nil, storage.AOptions{})
 				require.NoError(t, err)
 				return seriesRef, nil
 			},
@@ -2839,7 +2841,7 @@ func TestOOOWALWrite_AppendV2(t *testing.T) {
 		},
 		"integer histogram": {
 			appendSample: func(app storage.AppenderV2, l labels.Labels, mins int64) (storage.SeriesRef, error) {
-				seriesRef, err := app.Append(0, l, 0, minutes(mins), 0, tsdbutil.GenerateTestHistogram(mins), nil, storage.AOptions{})
+				seriesRef, err := app.Append(0, l, 0, minutes(mins), 0, tsdbutil.GenerateTestHistogram(mins), nil, nil, storage.AOptions{})
 				require.NoError(t, err)
 				return seriesRef, nil
 			},
@@ -2930,7 +2932,7 @@ func TestOOOWALWrite_AppendV2(t *testing.T) {
 		},
 		"float histogram": {
 			appendSample: func(app storage.AppenderV2, l labels.Labels, mins int64) (storage.SeriesRef, error) {
-				seriesRef, err := app.Append(0, l, 0, minutes(mins), 0, nil, tsdbutil.GenerateTestFloatHistogram(mins), storage.AOptions{})
+				seriesRef, err := app.Append(0, l, 0, minutes(mins), 0, nil, tsdbutil.GenerateTestFloatHistogram(mins), nil, storage.AOptions{})
 				require.NoError(t, err)
 				return seriesRef, nil
 			},
@@ -3021,7 +3023,7 @@ func TestOOOWALWrite_AppendV2(t *testing.T) {
 		},
 		"custom buckets histogram": {
 			appendSample: func(app storage.AppenderV2, l labels.Labels, mins int64) (storage.SeriesRef, error) {
-				seriesRef, err := app.Append(0, l, 0, minutes(mins), 0, tsdbutil.GenerateTestCustomBucketsHistogram(mins), nil, storage.AOptions{})
+				seriesRef, err := app.Append(0, l, 0, minutes(mins), 0, tsdbutil.GenerateTestCustomBucketsHistogram(mins), nil, nil, storage.AOptions{})
 				require.NoError(t, err)
 				return seriesRef, nil
 			},
@@ -3112,7 +3114,7 @@ func TestOOOWALWrite_AppendV2(t *testing.T) {
 		},
 		"custom buckets float histogram": {
 			appendSample: func(app storage.AppenderV2, l labels.Labels, mins int64) (storage.SeriesRef, error) {
-				seriesRef, err := app.Append(0, l, 0, minutes(mins), 0, nil, tsdbutil.GenerateTestCustomBucketsFloatHistogram(mins), storage.AOptions{})
+				seriesRef, err := app.Append(0, l, 0, minutes(mins), 0, nil, tsdbutil.GenerateTestCustomBucketsFloatHistogram(mins), nil, storage.AOptions{})
 				require.NoError(t, err)
 				return seriesRef, nil
 			},
@@ -3326,7 +3328,7 @@ func TestDBPanicOnMmappingHeadChunk_AppendV2(t *testing.T) {
 		var ref storage.SeriesRef
 		lbls := labels.FromStrings("__name__", "testing", "foo", "bar")
 		for i := range numSamples {
-			ref, err = app.Append(ref, lbls, 0, lastTs, float64(lastTs), nil, nil, storage.AOptions{})
+			ref, err = app.Append(ref, lbls, 0, lastTs, float64(lastTs), nil, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 			lastTs += itvl
 			if i%10 == 0 {
@@ -3386,13 +3388,13 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 
 	app := db.AppenderV2(ctx)
 	ts := int64(0)
-	_, err := app.Append(0, s1, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m1})
+	_, err := app.Append(0, s1, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m1})
 	require.NoError(t, err)
-	_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m2})
+	_, err = app.Append(0, s2, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m2})
 	require.NoError(t, err)
-	_, err = app.Append(0, s3, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m3})
+	_, err = app.Append(0, s3, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m3})
 	require.NoError(t, err)
-	_, err = app.Append(0, s4, 0, ts, 0, nil, nil, storage.AOptions{})
+	_, err = app.Append(0, s4, 0, ts, 0, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -3403,11 +3405,11 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
 	app = db.AppenderV2(ctx)
 	ts++
-	_, err = app.Append(0, s1, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m1})
+	_, err = app.Append(0, s1, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m1})
 	require.NoError(t, err)
-	_, err = app.Append(0, s4, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m4})
+	_, err = app.Append(0, s4, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m4})
 	require.NoError(t, err)
-	_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m5})
+	_, err = app.Append(0, s2, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m5})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -3453,13 +3455,13 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry_AppendV2(t *testing.T) {
 
 			app := hb.AppenderV2(ctx)
 			ts := int64(0)
-			_, err := app.Append(0, s1, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m1})
+			_, err := app.Append(0, s1, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m1})
 			require.NoError(t, err)
-			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m2})
+			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m2})
 			require.NoError(t, err)
-			_, err = app.Append(0, s3, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m3})
+			_, err = app.Append(0, s3, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m3})
 			require.NoError(t, err)
-			_, err = app.Append(0, s4, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m4})
+			_, err = app.Append(0, s4, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m4})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
@@ -3467,7 +3469,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry_AppendV2(t *testing.T) {
 			m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
 			app = hb.AppenderV2(ctx)
 			ts++
-			_, err = app.Append(0, s1, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m5})
+			_, err = app.Append(0, s1, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m5})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
@@ -3477,31 +3479,31 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry_AppendV2(t *testing.T) {
 
 			app = hb.AppenderV2(ctx)
 			ts++
-			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m6})
+			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m6})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
 			app = hb.AppenderV2(ctx)
 			ts++
-			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m2})
+			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m2})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
 			app = hb.AppenderV2(ctx)
 			ts++
-			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m6})
+			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m6})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
 			app = hb.AppenderV2(ctx)
 			ts++
-			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m2})
+			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m2})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
 			app = hb.AppenderV2(ctx)
 			ts++
-			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m6})
+			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m6})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
@@ -3565,13 +3567,13 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 
 	app := db.AppenderV2(ctx)
 	ts := int64(0)
-	_, err := app.Append(0, s1, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m1})
+	_, err := app.Append(0, s1, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m1})
 	require.NoError(t, err)
-	_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m2})
+	_, err = app.Append(0, s2, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m2})
 	require.NoError(t, err)
-	_, err = app.Append(0, s3, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m3})
+	_, err = app.Append(0, s3, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m3})
 	require.NoError(t, err)
-	_, err = app.Append(0, s4, 0, ts, 0, nil, nil, storage.AOptions{})
+	_, err = app.Append(0, s4, 0, ts, 0, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -3592,11 +3594,11 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
 	app = db.AppenderV2(ctx)
 	ts++
-	_, err = app.Append(0, s1, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m1})
+	_, err = app.Append(0, s1, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m1})
 	require.NoError(t, err)
-	_, err = app.Append(0, s4, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m4})
+	_, err = app.Append(0, s4, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m4})
 	require.NoError(t, err)
-	_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m5})
+	_, err = app.Append(0, s2, 0, ts, 0, nil, nil, nil, storage.AOptions{Metadata: m5})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -3641,18 +3643,18 @@ func TestMultipleEncodingsCommitOrder_AppendV2(t *testing.T) {
 	series1 := labels.FromStrings("foo", "bar1")
 	addSample := func(app storage.AppenderV2, ts int64, valType chunkenc.ValueType) chunks.Sample {
 		if valType == chunkenc.ValFloat {
-			_, err := app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, float64(ts), nil, nil, storage.AOptions{})
+			_, err := app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, float64(ts), nil, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 			return sample{t: ts, f: float64(ts)}
 		}
 		if valType == chunkenc.ValHistogram {
 			h := tsdbutil.GenerateTestHistogram(ts)
-			_, err := app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, h, nil, storage.AOptions{})
+			_, err := app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, h, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 			return sample{t: ts, h: h}
 		}
 		fh := tsdbutil.GenerateTestFloatHistogram(ts)
-		_, err := app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, nil, fh, storage.AOptions{})
+		_, err := app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, nil, fh, nil, storage.AOptions{})
 		require.NoError(t, err)
 		return sample{t: ts, fh: fh}
 	}
@@ -4295,7 +4297,7 @@ func TestQuerierOOOQuery_AppendV2(t *testing.T) {
 	}{
 		"float": {
 			appendFunc: func(app storage.AppenderV2, ts int64, _ bool) (storage.SeriesRef, error) {
-				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, float64(ts), nil, nil, storage.AOptions{})
+				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, float64(ts), nil, nil, nil, storage.AOptions{})
 			},
 			sampleFunc: func(ts int64) chunks.Sample {
 				return sample{t: ts, f: float64(ts)}
@@ -4307,7 +4309,7 @@ func TestQuerierOOOQuery_AppendV2(t *testing.T) {
 				if counterReset {
 					h.CounterResetHint = histogram.CounterReset
 				}
-				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, h, nil, storage.AOptions{})
+				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, h, nil, nil, storage.AOptions{})
 			},
 			sampleFunc: func(ts int64) chunks.Sample {
 				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
@@ -4319,7 +4321,7 @@ func TestQuerierOOOQuery_AppendV2(t *testing.T) {
 				if counterReset {
 					fh.CounterResetHint = histogram.CounterReset
 				}
-				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, nil, fh, storage.AOptions{})
+				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, nil, fh, nil, storage.AOptions{})
 			},
 			sampleFunc: func(ts int64) chunks.Sample {
 				return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(ts)}
@@ -4330,7 +4332,7 @@ func TestQuerierOOOQuery_AppendV2(t *testing.T) {
 			appendFunc: func(app storage.AppenderV2, ts int64, _ bool) (storage.SeriesRef, error) {
 				h := tsdbutil.GenerateTestHistogram(ts)
 				h.CounterResetHint = histogram.CounterReset // For this scenario, ignore the counterReset argument.
-				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, h, nil, storage.AOptions{})
+				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, h, nil, nil, storage.AOptions{})
 			},
 			sampleFunc: func(ts int64) chunks.Sample {
 				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
@@ -4606,7 +4608,7 @@ func TestChunkQuerierOOOQuery_AppendV2(t *testing.T) {
 	}{
 		"float": {
 			appendFunc: func(app storage.AppenderV2, ts int64, _ bool) (storage.SeriesRef, error) {
-				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, float64(ts), nil, nil, storage.AOptions{})
+				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, float64(ts), nil, nil, nil, storage.AOptions{})
 			},
 			sampleFunc: func(ts int64) chunks.Sample {
 				return sample{t: ts, f: float64(ts)}
@@ -4618,7 +4620,7 @@ func TestChunkQuerierOOOQuery_AppendV2(t *testing.T) {
 				if counterReset {
 					h.CounterResetHint = histogram.CounterReset
 				}
-				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, h, nil, storage.AOptions{})
+				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, h, nil, nil, storage.AOptions{})
 			},
 			sampleFunc: func(ts int64) chunks.Sample {
 				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
@@ -4630,7 +4632,7 @@ func TestChunkQuerierOOOQuery_AppendV2(t *testing.T) {
 				if counterReset {
 					fh.CounterResetHint = histogram.CounterReset
 				}
-				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, nil, fh, storage.AOptions{})
+				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, nil, fh, nil, storage.AOptions{})
 			},
 			sampleFunc: func(ts int64) chunks.Sample {
 				return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(ts)}
@@ -4641,7 +4643,7 @@ func TestChunkQuerierOOOQuery_AppendV2(t *testing.T) {
 			appendFunc: func(app storage.AppenderV2, ts int64, _ bool) (storage.SeriesRef, error) {
 				h := tsdbutil.GenerateTestHistogram(ts)
 				h.CounterResetHint = histogram.CounterReset // For this scenario, ignore the counterReset argument.
-				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, h, nil, storage.AOptions{})
+				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, h, nil, nil, storage.AOptions{})
 			},
 			sampleFunc: func(ts int64) chunks.Sample {
 				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
@@ -4651,7 +4653,7 @@ func TestChunkQuerierOOOQuery_AppendV2(t *testing.T) {
 			// Histograms have increasing number of buckets so their chunks are recoded.
 			appendFunc: func(app storage.AppenderV2, ts int64, _ bool) (storage.SeriesRef, error) {
 				n := ts / time.Minute.Milliseconds()
-				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, nBucketHistogram(n), nil, storage.AOptions{})
+				return app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, nBucketHistogram(n), nil, nil, storage.AOptions{})
 			},
 			sampleFunc: func(ts int64) chunks.Sample {
 				n := ts / time.Minute.Milliseconds()
@@ -5127,7 +5129,7 @@ func testOOOInterleavedImplicitCounterResetsV2(t *testing.T, name string, scenar
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 				PositiveBuckets: []int64{v},
 			}
-			_, err := app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, h, nil, storage.AOptions{})
+			_, err := app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, h, nil, nil, storage.AOptions{})
 			return err
 		}
 	case floatHistogram:
@@ -5138,7 +5140,7 @@ func testOOOInterleavedImplicitCounterResetsV2(t *testing.T, name string, scenar
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 				PositiveBuckets: []float64{float64(v)},
 			}
-			_, err := app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, nil, fh, storage.AOptions{})
+			_, err := app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, nil, fh, nil, storage.AOptions{})
 			return err
 		}
 	case customBucketsIntHistogram:
@@ -5151,7 +5153,7 @@ func testOOOInterleavedImplicitCounterResetsV2(t *testing.T, name string, scenar
 				PositiveBuckets: []int64{v},
 				CustomValues:    []float64{float64(1), float64(2), float64(3)},
 			}
-			_, err := app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, h, nil, storage.AOptions{})
+			_, err := app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, h, nil, nil, storage.AOptions{})
 			return err
 		}
 	case customBucketsFloatHistogram:
@@ -5164,7 +5166,7 @@ func testOOOInterleavedImplicitCounterResetsV2(t *testing.T, name string, scenar
 				PositiveBuckets: []float64{float64(v)},
 				CustomValues:    []float64{float64(1), float64(2), float64(3)},
 			}
-			_, err := app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, nil, fh, storage.AOptions{})
+			_, err := app.Append(0, labels.FromStrings("foo", "bar1"), 0, ts, 0, nil, fh, nil, storage.AOptions{})
 			return err
 		}
 	case gaugeIntHistogram, gaugeFloatHistogram:
@@ -5776,7 +5778,7 @@ func TestOOOHistogramCompactionWithCounterResets_AppendV2(t *testing.T) {
 			if floatHistogram {
 				h := tsdbutil.GenerateTestFloatHistogram(int64(val))
 				h.CounterResetHint = hint
-				_, err := app.Append(0, l, 0, tsMs, 0, nil, h, storage.AOptions{})
+				_, err := app.Append(0, l, 0, tsMs, 0, nil, h, nil, storage.AOptions{})
 				require.NoError(t, err)
 				require.NoError(t, app.Commit())
 				return sample{t: tsMs, fh: h.Copy()}
@@ -5784,7 +5786,7 @@ func TestOOOHistogramCompactionWithCounterResets_AppendV2(t *testing.T) {
 
 			h := tsdbutil.GenerateTestHistogram(int64(val))
 			h.CounterResetHint = hint
-			_, err := app.Append(0, l, 0, tsMs, 0, h, nil, storage.AOptions{})
+			_, err := app.Append(0, l, 0, tsMs, 0, h, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 			return sample{t: tsMs, h: h.Copy()}
@@ -6127,14 +6129,14 @@ func TestInterleavedInOrderAndOOOHistogramCompactionWithCounterResets_AppendV2(t
 			tsMs := ts
 			if floatHistogram {
 				h := tsdbutil.GenerateTestFloatHistogram(int64(val))
-				_, err := app.Append(0, l, 0, tsMs, 0, nil, h, storage.AOptions{})
+				_, err := app.Append(0, l, 0, tsMs, 0, nil, h, nil, storage.AOptions{})
 				require.NoError(t, err)
 				require.NoError(t, app.Commit())
 				return sample{t: tsMs, fh: h.Copy()}
 			}
 
 			h := tsdbutil.GenerateTestHistogram(int64(val))
-			_, err := app.Append(0, l, 0, tsMs, 0, h, nil, storage.AOptions{})
+			_, err := app.Append(0, l, 0, tsMs, 0, h, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 			return sample{t: tsMs, h: h.Copy()}
@@ -6356,7 +6358,7 @@ func TestWBLCorruption_AppendV2(t *testing.T) {
 		app := db.AppenderV2(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
-			_, err := app.Append(0, series1, 0, ts, float64(ts), nil, nil, storage.AOptions{})
+			_, err := app.Append(0, series1, 0, ts, float64(ts), nil, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 			allSamples = append(allSamples, sample{t: ts, f: float64(ts)})
 			if afterRestart {
@@ -7082,12 +7084,12 @@ func testHistogramAppendAndQueryHelperAppendV2(t *testing.T, floatHistogram bool
 		var err error
 		app := db.AppenderV2(ctx)
 		if floatHistogram {
-			_, err = app.Append(0, lbls, 0, minute(tsMinute), 0, nil, h.ToFloat(nil), storage.AOptions{})
+			_, err = app.Append(0, lbls, 0, minute(tsMinute), 0, nil, h.ToFloat(nil), nil, storage.AOptions{})
 			efh := h.ToFloat(nil)
 			efh.CounterResetHint = expCRH
 			*exp = append(*exp, sample{t: minute(tsMinute), fh: efh})
 		} else {
-			_, err = app.Append(0, lbls, 0, minute(tsMinute), 0, h.Copy(), nil, storage.AOptions{})
+			_, err = app.Append(0, lbls, 0, minute(tsMinute), 0, h.Copy(), nil, nil, storage.AOptions{})
 			eh := h.Copy()
 			eh.CounterResetHint = expCRH
 			*exp = append(*exp, sample{t: minute(tsMinute), h: eh})
@@ -7098,7 +7100,7 @@ func testHistogramAppendAndQueryHelperAppendV2(t *testing.T, floatHistogram bool
 	appendFloat := func(t *testing.T, lbls labels.Labels, tsMinute int, val float64, exp *[]chunks.Sample) {
 		t.Helper()
 		app := db.AppenderV2(ctx)
-		_, err := app.Append(0, lbls, 0, minute(tsMinute), val, nil, nil, storage.AOptions{})
+		_, err := app.Append(0, lbls, 0, minute(tsMinute), val, nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 		*exp = append(*exp, sample{t: minute(tsMinute), f: val})
@@ -7352,10 +7354,10 @@ func TestOOONativeHistogramsSettings_AppendV2(t *testing.T) {
 		db := newTestDB(t, withOpts(opts), withRngs(100))
 
 		app := db.AppenderV2(context.Background())
-		_, err := app.Append(0, l, 0, 100, 0, h, nil, storage.AOptions{})
+		_, err := app.Append(0, l, 0, 100, 0, h, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 
-		_, err = app.Append(0, l, 0, 50, 0, h, nil, storage.AOptions{})
+		_, err = app.Append(0, l, 0, 50, 0, h, nil, nil, storage.AOptions{})
 		require.NoError(t, err) // The OOO sample is not detected until it is committed, so no error is returned
 
 		require.NoError(t, app.Commit())
@@ -7374,13 +7376,13 @@ func TestOOONativeHistogramsSettings_AppendV2(t *testing.T) {
 
 		// Add in-order samples
 		app := db.AppenderV2(context.Background())
-		_, err := app.Append(0, l, 0, 200, 0, h, nil, storage.AOptions{})
+		_, err := app.Append(0, l, 0, 200, 0, h, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 
 		// Add OOO samples
-		_, err = app.Append(0, l, 0, 100, 0, h, nil, storage.AOptions{})
+		_, err = app.Append(0, l, 0, 100, 0, h, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
-		_, err = app.Append(0, l, 0, 150, 0, h, nil, storage.AOptions{})
+		_, err = app.Append(0, l, 0, 150, 0, h, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 
 		require.NoError(t, app.Commit())
@@ -7411,7 +7413,7 @@ func TestChunkQuerierReadWriteRace_AppendV2(t *testing.T) {
 			app := db.AppenderV2(context.Background())
 			for range 10 {
 				ts++
-				_, err := app.Append(0, lbls, 0, int64(ts), float64(ts*100), nil, nil, storage.AOptions{})
+				_, err := app.Append(0, lbls, 0, int64(ts), float64(ts*100), nil, nil, nil, storage.AOptions{})
 				if err != nil {
 					return err
 				}
@@ -7525,7 +7527,7 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 	mint := 100
 	maxt := 200
 	for i := mint; i < maxt; i++ {
-		_, err := app.Append(0, labels.FromStrings("a", "b"), 50, int64(i), float64(i), nil, nil, storage.AOptions{})
+		_, err := app.Append(0, labels.FromStrings("a", "b"), 50, int64(i), float64(i), nil, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -7663,7 +7665,7 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 
 			for _, s := range tc.appendSamples {
 				app := db.AppenderV2(context.Background())
-				_, err := app.Append(0, lbls, s.ST(), s.T(), s.F(), s.H(), s.FH(), storage.AOptions{})
+				_, err := app.Append(0, lbls, s.ST(), s.T(), s.F(), s.H(), s.FH(), nil, storage.AOptions{})
 				require.NoError(t, err, "Appending OOO sample with ST should succeed")
 				require.NoError(t, app.Commit(), "Committing OOO sample with ST should succeed")
 			}

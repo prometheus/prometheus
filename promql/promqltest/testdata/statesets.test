@@ -1,0 +1,373 @@
+# Tests for native stateset sample type.
+# Syntax: ss(label_name, state1=0 state2=1 ...) where each state value is 0 or 1.
+# State names in the ss() literal do not need to be sorted; the parser sorts them.
+# x N repeats produce N+1 copies (same convention as histograms).
+
+# ---------------------------------------------------------------------------
+# Basic load and instant query
+# ---------------------------------------------------------------------------
+
+load 5m
+  pod_phase{pod="p1"} ss(phase, Running=1 Failed=0 Pending=0 Succeeded=0 Unknown=0)
+  pod_phase{pod="p2"} ss(phase, Running=0 Failed=1 Pending=0 Succeeded=0 Unknown=0)
+
+eval instant at 0m pod_phase
+  {__name__="pod_phase", pod="p1"} ss(phase, Failed=0 Pending=0 Running=1 Succeeded=0 Unknown=0)
+  {__name__="pod_phase", pod="p2"} ss(phase, Failed=1 Pending=0 Running=0 Succeeded=0 Unknown=0)
+
+clear
+
+# ---------------------------------------------------------------------------
+# Stateset with x-repeat in load block
+# ---------------------------------------------------------------------------
+
+load 1m
+  state_metric ss(status, active=1 inactive=0) x4
+
+eval instant at 0m state_metric
+  {__name__="state_metric"} ss(status, active=1 inactive=0)
+
+eval instant at 4m state_metric
+  {__name__="state_metric"} ss(status, active=1 inactive=0)
+
+clear
+
+# ---------------------------------------------------------------------------
+# Stateset with omitted (_) values in load block
+# ---------------------------------------------------------------------------
+
+load 1m
+  partial_state ss(s, a=1 b=0) _ ss(s, a=0 b=1)
+
+eval instant at 0m partial_state
+  {__name__="partial_state"} ss(s, a=1 b=0)
+
+eval instant at 2m partial_state
+  {__name__="partial_state"} ss(s, a=0 b=1)
+
+clear
+
+# ---------------------------------------------------------------------------
+# All states inactive
+# ---------------------------------------------------------------------------
+
+load 5m
+  all_off ss(flag, on=0 off=0)
+
+eval instant at 0m all_off
+  {__name__="all_off"} ss(flag, off=0 on=0)
+
+clear
+
+# ---------------------------------------------------------------------------
+# All states active
+# ---------------------------------------------------------------------------
+
+load 5m
+  all_on ss(flag, on=1 off=1)
+
+eval instant at 0m all_on
+  {__name__="all_on"} ss(flag, off=1 on=1)
+
+clear
+
+# ---------------------------------------------------------------------------
+# Range query (matrix) with stateset values
+# ---------------------------------------------------------------------------
+
+load 1m
+  phase_series ss(phase, a=1 b=0) ss(phase, a=0 b=1) ss(phase, a=1 b=0)
+
+eval range from 0 to 2m step 1m phase_series
+  {__name__="phase_series"} ss(phase, a=1 b=0) ss(phase, a=0 b=1) ss(phase, a=1 b=0)
+
+clear
+
+# ---------------------------------------------------------------------------
+# Multiple independent stateset series
+# ---------------------------------------------------------------------------
+
+load 5m
+  metric{env="prod"} ss(status, ok=1 err=0)
+  metric{env="dev"}  ss(status, ok=0 err=1)
+
+eval instant at 0m metric
+  {__name__="metric", env="prod"} ss(status, err=0 ok=1)
+  {__name__="metric", env="dev"}  ss(status, err=1 ok=0)
+
+clear
+
+# ---------------------------------------------------------------------------
+# Names in test file not sorted — parser must sort them
+# ---------------------------------------------------------------------------
+
+load 5m
+  unsorted ss(phase, Zzz=0 Aaa=1 Mmm=0)
+
+# After sorting: Aaa=1 Mmm=0 Zzz=0
+eval instant at 0m unsorted
+  {__name__="unsorted"} ss(phase, Aaa=1 Mmm=0 Zzz=0)
+
+clear
+
+# ---------------------------------------------------------------------------
+# Stateset with explicit label selector
+# ---------------------------------------------------------------------------
+
+load 5m
+  kube_pod_status_phase{pod="web-1"} ss(phase, Running=1 Failed=0 Pending=0)
+
+eval instant at 0m kube_pod_status_phase{pod="web-1"}
+  {__name__="kube_pod_status_phase", pod="web-1"} ss(phase, Failed=0 Pending=0 Running=1)
+
+clear
+
+# ---------------------------------------------------------------------------
+# stateset_is_active: active state returns 1, inactive returns 0
+# ---------------------------------------------------------------------------
+
+load 5m
+  pod_phase{pod="p1"} ss(phase, Running=1 Failed=0 Pending=0)
+  pod_phase{pod="p2"} ss(phase, Running=0 Failed=1 Pending=0)
+  pod_phase{pod="p3"} ss(phase, Running=0 Failed=0 Pending=0)
+
+eval instant at 0m stateset_is_active(pod_phase, "Running")
+  {pod="p1"} 1
+  {pod="p2"} 0
+  {pod="p3"} 0
+
+eval instant at 0m stateset_is_active(pod_phase, "Failed")
+  {pod="p1"} 0
+  {pod="p2"} 1
+  {pod="p3"} 0
+
+eval instant at 0m stateset_is_active(pod_phase, "Pending")
+  {pod="p1"} 0
+  {pod="p2"} 0
+  {pod="p3"} 0
+
+# Unknown state name returns 0 for all series.
+eval instant at 0m stateset_is_active(pod_phase, "Completed")
+  {pod="p1"} 0
+  {pod="p2"} 0
+  {pod="p3"} 0
+
+clear
+
+# ---------------------------------------------------------------------------
+# stateset_is_active: all states active
+# ---------------------------------------------------------------------------
+
+load 5m
+  flags ss(flag, a=1 b=1 c=1)
+
+eval instant at 0m stateset_is_active(flags, "a")
+  {} 1
+
+eval instant at 0m stateset_is_active(flags, "b")
+  {} 1
+
+eval instant at 0m stateset_is_active(flags, "c")
+  {} 1
+
+clear
+
+# ---------------------------------------------------------------------------
+# stateset_is_active: all states inactive
+# ---------------------------------------------------------------------------
+
+load 5m
+  flags ss(flag, a=0 b=0 c=0)
+
+eval instant at 0m stateset_is_active(flags, "a")
+  {} 0
+
+eval instant at 0m stateset_is_active(flags, "unknown")
+  {} 0
+
+clear
+
+# ---------------------------------------------------------------------------
+# stateset_is_active: metric name is dropped from result
+# ---------------------------------------------------------------------------
+
+load 5m
+  mymetric{env="prod"} ss(status, ok=1 err=0)
+
+eval instant at 0m stateset_is_active(mymetric, "ok")
+  {env="prod"} 1
+
+eval instant at 0m stateset_is_active(mymetric, "err")
+  {env="prod"} 0
+
+clear
+
+# ---------------------------------------------------------------------------
+# stateset_active_states: emits one sample per active state
+# ---------------------------------------------------------------------------
+
+load 5m
+  pod_phase{pod="p1"} ss(phase, Running=1 Failed=0 Pending=1)
+  pod_phase{pod="p2"} ss(phase, Running=0 Failed=1 Pending=0)
+
+eval instant at 0m stateset_active_states(pod_phase)
+  {__name__="pod_phase", pod="p1", phase="Pending"} 1
+  {__name__="pod_phase", pod="p1", phase="Running"} 1
+  {__name__="pod_phase", pod="p2", phase="Failed"} 1
+
+clear
+
+# ---------------------------------------------------------------------------
+# stateset_active_states: no active states produces no output
+# ---------------------------------------------------------------------------
+
+load 5m
+  flags ss(flag, a=0 b=0)
+
+eval instant at 0m stateset_active_states(flags)
+
+clear
+
+# ---------------------------------------------------------------------------
+# stateset_active_states: all states active
+# ---------------------------------------------------------------------------
+
+load 5m
+  flags ss(flag, x=1 y=1 z=1)
+
+eval instant at 0m stateset_active_states(flags)
+  {__name__="flags", flag="x"} 1
+  {__name__="flags", flag="y"} 1
+  {__name__="flags", flag="z"} 1
+
+clear
+
+# ---------------------------------------------------------------------------
+# stateset_known_states: emits one sample per known state
+# ---------------------------------------------------------------------------
+
+load 5m
+  pod_phase{pod="p1"} ss(phase, Running=1 Failed=0 Pending=0)
+
+eval instant at 0m stateset_known_states(pod_phase)
+  {__name__="pod_phase", pod="p1", phase="Failed"}  0
+  {__name__="pod_phase", pod="p1", phase="Pending"} 0
+  {__name__="pod_phase", pod="p1", phase="Running"} 1
+
+clear
+
+# ---------------------------------------------------------------------------
+# stateset_known_states: multiple series, mixed states
+# ---------------------------------------------------------------------------
+
+load 5m
+  pod_phase{pod="p1"} ss(phase, Running=1 Failed=0 Pending=0)
+  pod_phase{pod="p2"} ss(phase, Running=0 Failed=1 Pending=0)
+  pod_phase{pod="p3"} ss(phase, Running=0 Failed=0 Pending=1)
+
+eval instant at 0m stateset_known_states(pod_phase)
+  {__name__="pod_phase", pod="p1", phase="Failed"}  0
+  {__name__="pod_phase", pod="p1", phase="Pending"} 0
+  {__name__="pod_phase", pod="p1", phase="Running"} 1
+  {__name__="pod_phase", pod="p2", phase="Failed"}  1
+  {__name__="pod_phase", pod="p2", phase="Pending"} 0
+  {__name__="pod_phase", pod="p2", phase="Running"} 0
+  {__name__="pod_phase", pod="p3", phase="Failed"}  0
+  {__name__="pod_phase", pod="p3", phase="Pending"} 1
+  {__name__="pod_phase", pod="p3", phase="Running"} 0
+
+clear
+
+# ---------------------------------------------------------------------------
+# stateset_known_states: all states inactive
+# ---------------------------------------------------------------------------
+
+load 5m
+  flags ss(flag, a=0 b=0 c=0)
+
+eval instant at 0m stateset_known_states(flags)
+  {__name__="flags", flag="a"} 0
+  {__name__="flags", flag="b"} 0
+  {__name__="flags", flag="c"} 0
+
+clear
+
+# ---------------------------------------------------------------------------
+# stateset_known_states: all states active
+# ---------------------------------------------------------------------------
+
+load 5m
+  flags ss(flag, a=1 b=1 c=1)
+
+eval instant at 0m stateset_known_states(flags)
+  {__name__="flags", flag="a"} 1
+  {__name__="flags", flag="b"} 1
+  {__name__="flags", flag="c"} 1
+
+clear
+
+# ---------------------------------------------------------------------------
+# stateset_known_states: metric name is preserved in output labels
+# ---------------------------------------------------------------------------
+
+load 5m
+  mymetric{env="prod"} ss(status, ok=1 err=0)
+
+eval instant at 0m stateset_known_states(mymetric)
+  {__name__="mymetric", env="prod", status="err"} 0
+  {__name__="mymetric", env="prod", status="ok"}  1
+
+clear
+
+# ---------------------------------------------------------------------------
+# stateset functions return empty vector for non-stateset (float) input
+# ---------------------------------------------------------------------------
+
+load 5m
+  plain_gauge 42
+
+eval instant at 0m stateset_is_active(plain_gauge, "anything")
+
+eval instant at 0m stateset_active_states(plain_gauge)
+
+eval instant at 0m stateset_known_states(plain_gauge)
+
+clear
+
+# ---------------------------------------------------------------------------
+# stateset_active_states: state label added, existing labels preserved
+# ---------------------------------------------------------------------------
+
+load 5m
+  app_state{env="prod", region="us-east"} ss(status, running=1 degraded=0 down=0)
+
+eval instant at 0m stateset_active_states(app_state)
+  {__name__="app_state", env="prod", region="us-east", status="running"} 1
+
+eval instant at 0m stateset_known_states(app_state)
+  {__name__="app_state", env="prod", region="us-east", status="degraded"} 0
+  {__name__="app_state", env="prod", region="us-east", status="down"}     0
+  {__name__="app_state", env="prod", region="us-east", status="running"}  1
+
+clear
+
+# ---------------------------------------------------------------------------
+# stateset_is_active: tracks changes over time
+# ---------------------------------------------------------------------------
+
+load 1m
+  svc ss(status, up=1 down=0) ss(status, up=0 down=1) ss(status, up=1 down=0)
+
+eval instant at 0m stateset_is_active(svc, "up")
+  {} 1
+
+eval instant at 1m stateset_is_active(svc, "up")
+  {} 0
+
+eval instant at 2m stateset_is_active(svc, "up")
+  {} 1
+
+eval instant at 1m stateset_is_active(svc, "down")
+  {} 1
+
+clear

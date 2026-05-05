@@ -55,8 +55,9 @@ type scrapeMetrics struct {
 	targetScrapeSampleOutOfBounds          prometheus.Counter
 	targetScrapeExemplarOutOfOrder         prometheus.Counter
 	targetScrapePoolExceededLabelLimits    prometheus.Counter
-	targetScrapeNativeHistogramBucketLimit prometheus.Counter
-	targetScrapeDuration                   prometheus.Histogram
+	targetScrapeNativeHistogramBucketLimit      prometheus.Counter
+	targetScrapeStatesetNonCanonicalLabelName   prometheus.Counter
+	targetScrapeDuration                        prometheus.Histogram
 }
 
 func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
@@ -247,6 +248,12 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 			Help: "Total number of scrapes that hit the native histogram bucket limit and were rejected.",
 		},
 	)
+	sm.targetScrapeStatesetNonCanonicalLabelName = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrapes_stateset_noncanonical_label_name_total",
+			Help: "Total number of native stateset samples where the state label name differs from the metric family name, violating the OpenMetrics specification.",
+		},
+	)
 	sm.targetScrapeExemplarOutOfOrder = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_exemplar_out_of_order_total",
@@ -294,6 +301,7 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 		sm.targetScrapeExemplarOutOfOrder,
 		sm.targetScrapePoolExceededLabelLimits,
 		sm.targetScrapeNativeHistogramBucketLimit,
+		sm.targetScrapeStatesetNonCanonicalLabelName,
 		sm.targetScrapeDuration,
 	} {
 		err := reg.Register(collector)
@@ -335,6 +343,7 @@ func (sm *scrapeMetrics) Unregister() {
 	sm.reg.Unregister(sm.targetScrapeExemplarOutOfOrder)
 	sm.reg.Unregister(sm.targetScrapePoolExceededLabelLimits)
 	sm.reg.Unregister(sm.targetScrapeNativeHistogramBucketLimit)
+	sm.reg.Unregister(sm.targetScrapeStatesetNonCanonicalLabelName)
 	sm.reg.Unregister(sm.targetScrapeDuration)
 }
 

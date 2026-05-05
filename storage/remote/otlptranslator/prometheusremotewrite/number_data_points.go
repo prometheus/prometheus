@@ -63,7 +63,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(
 		}
 		ts := convertTimeStamp(pt.Timestamp())
 		st := convertTimeStamp(pt.StartTimestamp())
-		if _, err = c.appender.Append(0, labels, st, ts, val, nil, nil, appOpts); err != nil {
+		if _, err = c.appender.Append(0, labels, st, ts, val, nil, nil, nil, appOpts); err != nil {
 			return err
 		}
 	}
@@ -113,7 +113,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(
 		}
 
 		appOpts.Exemplars = exemplars
-		if _, err = c.appender.Append(0, lbls, st, ts, val, nil, nil, appOpts); err != nil {
+		if _, err = c.appender.Append(0, lbls, st, ts, val, nil, nil, nil, appOpts); err != nil {
 			return err
 		}
 	}

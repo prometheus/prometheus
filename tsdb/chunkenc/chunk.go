@@ -19,6 +19,7 @@ import (
 	"sync"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/stateset"
 )
 
 // Encoding is the identifier for a chunk encoding.
@@ -31,6 +32,7 @@ const (
 	EncHistogram
 	EncFloatHistogram
 	EncXOR2
+	EncStateset
 )
 
 func (e Encoding) String() string {
@@ -45,13 +47,15 @@ func (e Encoding) String() string {
 		return "floathistogram"
 	case EncXOR2:
 		return "XOR2"
+	case EncStateset:
+		return "stateset"
 	}
 	return "<unknown>"
 }
 
 // IsValidEncoding returns true for supported encodings.
 func IsValidEncoding(e Encoding) bool {
-	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram || e == EncXOR2
+	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram || e == EncXOR2 || e == EncStateset
 }
 
 const (
@@ -121,6 +125,10 @@ type Appender interface {
 	// The Appender app that can be used for the next append is always returned.
 	AppendHistogram(prev *HistogramAppender, st, t int64, h *histogram.Histogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
 	AppendFloatHistogram(prev *FloatHistogramAppender, st, t int64, h *histogram.FloatHistogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
+	// AppendStateset appends a stateset sample. If the state names in ss
+	// differ from those in the current chunk, a new chunk is returned. The
+	// returned Chunk c is nil if the sample was appended to the current chunk.
+	AppendStateset(t int64, ss *stateset.StateSet) (c Chunk, app Appender, err error)
 }
 
 // Iterator is a simple iterator that can only get the next value.
@@ -153,6 +161,12 @@ type Iterator interface {
 	// The method accepts an optional FloatHistogram object which will be
 	// reused when not nil. Otherwise, a new FloatHistogram object will be allocated.
 	AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram)
+	// AtStateset returns the current timestamp/value pair if the value is a
+	// stateset. Before the iterator has advanced, the behaviour is unspecified.
+	// The method accepts an optional StateSet object which will be reused when
+	// not nil. Callers must not retain references to the returned StateSet's
+	// Names slice after the next call to Next or Seek.
+	AtStateset(*stateset.StateSet) (int64, *stateset.StateSet)
 	// AtT returns the current timestamp.
 	// Before the iterator has advanced, the behaviour is unspecified.
 	AtT() int64
@@ -174,6 +188,7 @@ const (
 	ValFloat                           // A simple float, retrieved with At.
 	ValHistogram                       // A histogram, retrieve with AtHistogram, but AtFloatHistogram works, too.
 	ValFloatHistogram                  // A floating-point histogram, retrieve with AtFloatHistogram.
+	ValStateset                        // A stateset, retrieved with AtStateset.
 )
 
 func (v ValueType) String() string {
@@ -186,6 +201,8 @@ func (v ValueType) String() string {
 		return "histogram"
 	case ValFloatHistogram:
 		return "floathistogram"
+	case ValStateset:
+		return "stateset"
 	default:
 		return "unknown"
 	}
@@ -202,6 +219,8 @@ func (v ValueType) ChunkEncoding(useXOR2 bool) Encoding {
 		return EncHistogram
 	case ValFloatHistogram:
 		return EncFloatHistogram
+	case ValStateset:
+		return EncStateset
 	default:
 		return EncNone
 	}
@@ -246,6 +265,10 @@ func (*mockSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *
 	return math.MinInt64, nil
 }
 
+func (*mockSeriesIterator) AtStateset(*stateset.StateSet) (int64, *stateset.StateSet) {
+	return math.MinInt64, nil
+}
+
 func (it *mockSeriesIterator) AtT() int64 {
 	return it.timestamps[it.currIndex]
 }
@@ -284,6 +307,11 @@ func (nopIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogra
 func (nopIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return math.MinInt64, nil
 }
+
+func (nopIterator) AtStateset(*stateset.StateSet) (int64, *stateset.StateSet) {
+	return math.MinInt64, nil
+}
+
 func (nopIterator) AtT() int64  { return math.MinInt64 }
 func (nopIterator) AtST() int64 { return 0 }
 func (nopIterator) Err() error  { return nil }
@@ -300,6 +328,7 @@ type pool struct {
 	histogram      sync.Pool
 	floatHistogram sync.Pool
 	xo2            sync.Pool
+	stateset       sync.Pool
 }
 
 // NewPool returns a new pool.
@@ -325,6 +354,11 @@ func NewPool() Pool {
 				return &XOR2Chunk{b: bstream{}}
 			},
 		},
+		stateset: sync.Pool{
+			New: func() any {
+				return &StateSetChunk{}
+			},
+		},
 	}
 }
 
@@ -339,6 +373,8 @@ func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
 		c = p.floatHistogram.Get().(*FloatHistogramChunk)
 	case EncXOR2:
 		c = p.xo2.Get().(*XOR2Chunk)
+	case EncStateset:
+		c = p.stateset.Get().(*StateSetChunk)
 	default:
 		return nil, fmt.Errorf("invalid chunk encoding %q", e)
 	}
@@ -363,6 +399,9 @@ func (p *pool) Put(c Chunk) error {
 	case EncXOR2:
 		_, ok = c.(*XOR2Chunk)
 		sp = &p.xo2
+	case EncStateset:
+		_, ok = c.(*StateSetChunk)
+		sp = &p.stateset
 	default:
 		return fmt.Errorf("invalid chunk encoding %q", c.Encoding())
 	}
@@ -391,6 +430,10 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 		return &FloatHistogramChunk{b: bstream{count: 0, stream: d}}, nil
 	case EncXOR2:
 		return &XOR2Chunk{b: bstream{count: 0, stream: d}}, nil
+	case EncStateset:
+		c := &StateSetChunk{}
+		c.Reset(d)
+		return c, nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
@@ -406,6 +449,8 @@ func NewEmptyChunk(e Encoding) (Chunk, error) {
 		return NewFloatHistogramChunk(), nil
 	case EncXOR2:
 		return NewXOR2Chunk(), nil
+	case EncStateset:
+		return NewStateSetChunk(), nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }

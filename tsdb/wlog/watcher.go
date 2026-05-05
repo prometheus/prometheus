@@ -59,6 +59,7 @@ type WriteTo interface {
 	AppendExemplars([]record.RefExemplar) bool
 	AppendHistograms([]record.RefHistogramSample) bool
 	AppendFloatHistograms([]record.RefFloatHistogramSample) bool
+	AppendStatesets([]record.RefStatesetSample) bool
 	StoreSeries([]record.RefSeries, int)
 	StoreMetadata([]record.RefMetadata)
 
@@ -519,6 +520,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 	histograms := w.recordBuf.GetHistograms(512)
 	floatHistograms := w.recordBuf.GetFloatHistograms(512)
 	metadata := w.recordBuf.GetMetadata(512)
+	statesets := w.recordBuf.GetStatesets(512)
 	defer func() {
 		w.recordBuf.PutRefSeries(series)
 		w.recordBuf.PutSamples(samples)
@@ -526,6 +528,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 		w.recordBuf.PutHistograms(histograms)
 		w.recordBuf.PutFloatHistograms(floatHistograms)
 		w.recordBuf.PutMetadata(metadata)
+		w.recordBuf.PutStatesets(statesets)
 	}()
 
 	dec := record.NewDecoder(labels.NewSymbolTable(), w.logger) // One table per WAL segment means it won't grow indefinitely.
@@ -646,6 +649,34 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			if len(floatHistogramsToSend) > 0 {
 				w.writer.AppendFloatHistograms(floatHistogramsToSend)
+			}
+
+		case record.StatesetSamples:
+			// Skip if native histograms (and thus advanced sample types) are not enabled.
+			if !w.sendHistograms {
+				break
+			}
+			if !tail {
+				break
+			}
+			statesets, err = dec.StatesetSamples(rec, statesets[:0])
+			if err != nil {
+				w.recordDecodeFailsMetric.Inc()
+				return err
+			}
+			statesetsToSend := statesets[:0]
+			for _, ss := range statesets {
+				if ss.T > w.startTimestamp {
+					if !w.sendSamples {
+						w.sendSamples = true
+						duration := time.Since(w.startTime)
+						w.logger.Info("Done replaying WAL", "duration", duration)
+					}
+					statesetsToSend = append(statesetsToSend, ss)
+				}
+			}
+			if len(statesetsToSend) > 0 {
+				w.writer.AppendStatesets(statesetsToSend)
 			}
 
 		case record.Metadata:

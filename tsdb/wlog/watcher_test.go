@@ -75,6 +75,7 @@ type writeToMock struct {
 	exemplarsAppended       []record.RefExemplar
 	histogramsAppended      []record.RefHistogramSample
 	floatHistogramsAppended []record.RefFloatHistogramSample
+	statesetsAppended       []record.RefStatesetSample
 
 	seriesStores           int
 	metadataStores         int
@@ -82,6 +83,7 @@ type writeToMock struct {
 	exemplarAppends        int
 	histogramAppends       int
 	floatHistogramsAppends int
+	statesetAppends        int
 
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
 
@@ -126,6 +128,16 @@ func (wtm *writeToMock) AppendFloatHistograms(fh []record.RefFloatHistogramSampl
 	time.Sleep(wtm.delay)
 	wtm.floatHistogramsAppends++
 	wtm.floatHistogramsAppended = append(wtm.floatHistogramsAppended, fh...)
+	return true
+}
+
+func (wtm *writeToMock) AppendStatesets(ss []record.RefStatesetSample) bool {
+	wtm.mu.Lock()
+	defer wtm.mu.Unlock()
+
+	time.Sleep(wtm.delay)
+	wtm.statesetAppends++
+	wtm.statesetsAppended = append(wtm.statesetsAppended, ss...)
 	return true
 }
 

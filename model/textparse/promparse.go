@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -32,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/schema"
 )
@@ -166,6 +168,7 @@ type PromParser struct {
 	// of the label name and value start and end characters.
 	offsets []int
 
+	ss                      *stateset.StateSet
 	enableTypeAndUnitLabels bool
 }
 
@@ -191,6 +194,15 @@ func (p *PromParser) Series() ([]byte, *int64, float64) {
 // format does not support sparse histograms yet.
 func (*PromParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
 	return nil, nil, nil, nil
+}
+
+// Stateset returns the series bytes, optional timestamp, and StateSet for the
+// current entry. Must only be called after Next returns EntryStateset.
+func (p *PromParser) Stateset() ([]byte, *int64, *stateset.StateSet) {
+	if p.hasTS {
+		return p.series, &p.ts, p.ss
+	}
+	return p.series, nil, p.ss
 }
 
 // Help returns the metric name and help text in the current entry.
@@ -346,6 +358,8 @@ func (p *PromParser) Next() (Entry, error) {
 				p.mtype = model.MetricTypeSummary
 			case "untyped":
 				p.mtype = model.MetricTypeUnknown
+			case "stateset":
+				p.mtype = model.MetricTypeStateset
 			default:
 				return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
 			}
@@ -469,6 +483,36 @@ func (p *PromParser) parseMetricSuffix(t token) (Entry, error) {
 	if p.offsets[0] == -1 {
 		return EntryInvalid, fmt.Errorf("metric name not set while parsing: %q", p.l.b[p.start:p.l.i])
 	}
+
+	// Native stateset: "{{lname:name state=0|1 ...}}" — the lexer emits tBraceOpen
+	// for the first '{'; we detect the second '{' by peeking at the raw buffer.
+	if t == tBraceOpen && p.mtype == model.MetricTypeStateset &&
+		p.l.i < len(p.l.b) && p.l.b[p.l.i] == '{' {
+		p.l.i++ // consume second '{'
+		parsedSS, n, err := parseStatesetBody(p.l.b[p.l.i:])
+		if err != nil {
+			return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
+		}
+		p.l.i += n
+		p.ss = parsedSS
+		p.hasTS = false
+		p.l.state = sTimestamp
+		switch t2 := p.nextToken(); t2 {
+		case tLinebreak:
+		case tTimestamp:
+			p.hasTS = true
+			if p.ts, err = strconv.ParseInt(yoloString(p.l.buf()), 10, 64); err != nil {
+				return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
+			}
+			if t3 := p.nextToken(); t3 != tLinebreak {
+				return EntryInvalid, p.parseError("expected next entry after stateset timestamp", t3)
+			}
+		default:
+			return EntryInvalid, p.parseError("expected timestamp or newline after stateset", t2)
+		}
+		return EntryStateset, nil
+	}
+
 	if t != tValue {
 		return EntryInvalid, p.parseError("expected value after metric", t)
 	}
@@ -532,4 +576,103 @@ func parseFloat(s string) (float64, error) {
 		return 0, errors.New("unsupported character in float")
 	}
 	return strconv.ParseFloat(s, 64)
+}
+
+// isSSIdentByte reports whether b is a valid byte inside a stateset identifier
+// (keyword, label name, or state name): [a-zA-Z0-9_].  Colons are used only
+// as the separator in "lname:<name>" and are therefore not included here.
+func isSSIdentByte(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') ||
+		(b >= '0' && b <= '9') || b == '_'
+}
+
+// parseStatesetBody parses a native stateset body from b, which must begin
+// immediately after the opening "{{".  It returns the constructed StateSet and
+// the number of bytes consumed, including the closing "}}".
+func parseStatesetBody(b []byte) (*stateset.StateSet, int, error) {
+	i := 0
+
+	skipWS := func() {
+		for i < len(b) && (b[i] == ' ' || b[i] == '\t') {
+			i++
+		}
+	}
+	readIdent := func() string {
+		s := i
+		for i < len(b) && isSSIdentByte(b[i]) {
+			i++
+		}
+		return string(b[s:i])
+	}
+
+	// Expect "lname" keyword.
+	skipWS()
+	kw := readIdent()
+	if kw != "lname" {
+		return nil, 0, fmt.Errorf("expected 'lname' keyword in stateset value, got %q", kw)
+	}
+	if i >= len(b) || b[i] != ':' {
+		return nil, 0, errors.New("expected ':' after 'lname' in stateset value")
+	}
+	i++ // consume ':'
+
+	// Read the label name.
+	labelName := readIdent()
+	if labelName == "" {
+		return nil, 0, errors.New("expected label name after 'lname:' in stateset value")
+	}
+
+	// Parse state=0|1 pairs until "}}".
+	type ssEntry struct {
+		name   string
+		active bool
+	}
+	var entries []ssEntry
+
+	for {
+		skipWS()
+		if i >= len(b) {
+			return nil, 0, errors.New("unexpected end of stateset value body")
+		}
+		if b[i] == '}' {
+			i++
+			if i >= len(b) || b[i] != '}' {
+				return nil, 0, errors.New("expected '}}' to close stateset value")
+			}
+			i++
+			break
+		}
+		name := readIdent()
+		if name == "" {
+			return nil, 0, fmt.Errorf("unexpected character %q in stateset value body", b[i])
+		}
+		if i >= len(b) || b[i] != '=' {
+			return nil, 0, fmt.Errorf("expected '=' after state name %q in stateset value", name)
+		}
+		i++ // consume '='
+		if i >= len(b) || (b[i] != '0' && b[i] != '1') {
+			return nil, 0, fmt.Errorf("expected '0' or '1' for state %q in stateset value", name)
+		}
+		active := b[i] == '1'
+		i++
+		entries = append(entries, ssEntry{name: name, active: active})
+	}
+
+	if len(entries) > stateset.MaxStates {
+		return nil, 0, stateset.ErrTooManyStates
+	}
+
+	sort.Slice(entries, func(a, b int) bool { return entries[a].name < entries[b].name })
+
+	ss := &stateset.StateSet{
+		LabelName: labelName,
+		Names:     make([]string, len(entries)),
+	}
+	for idx, e := range entries {
+		ss.Names[idx] = e.name
+		if e.active {
+			ss.Values |= 1 << uint(idx)
+		}
+	}
+	return ss, i, nil
 }

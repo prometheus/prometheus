@@ -20,6 +20,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
@@ -133,6 +134,10 @@ func (it *listSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64
 	return s.T(), s.FH()
 }
 
+func (*listSeriesIterator) AtStateset(*stateset.StateSet) (int64, *stateset.StateSet) {
+	return 0, nil
+}
+
 func (it *listSeriesIterator) AtT() int64 {
 	s := it.samples.Get(it.idx)
 	return s.T()
@@ -202,6 +207,10 @@ func (it *listSeriesIteratorWithCopy) AtFloatHistogram(fh *histogram.FloatHistog
 	}
 	ih.CopyTo(fh)
 	return t, fh
+}
+
+func (*listSeriesIteratorWithCopy) AtStateset(*stateset.StateSet) (int64, *stateset.StateSet) {
+	return 0, nil
 }
 
 type listChunkSeriesIterator struct {

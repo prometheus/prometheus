@@ -141,39 +141,39 @@ func TestFanout_SelectSorted_AppenderV2(t *testing.T) {
 
 	priStorage := teststorage.New(t)
 	app1 := priStorage.AppenderV2(t.Context())
-	_, err := app1.Append(0, inputLabel, 0, 0, 0, nil, nil, storage.AOptions{})
+	_, err := app1.Append(0, inputLabel, 0, 0, 0, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	inputTotalSize++
-	_, err = app1.Append(0, inputLabel, 0, 1000, 1, nil, nil, storage.AOptions{})
+	_, err = app1.Append(0, inputLabel, 0, 1000, 1, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	inputTotalSize++
-	_, err = app1.Append(0, inputLabel, 0, 2000, 2, nil, nil, storage.AOptions{})
+	_, err = app1.Append(0, inputLabel, 0, 2000, 2, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	inputTotalSize++
 	require.NoError(t, app1.Commit())
 
 	remoteStorage1 := teststorage.New(t)
 	app2 := remoteStorage1.AppenderV2(t.Context())
-	_, err = app2.Append(0, inputLabel, 0, 3000, 3, nil, nil, storage.AOptions{})
+	_, err = app2.Append(0, inputLabel, 0, 3000, 3, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	inputTotalSize++
-	_, err = app2.Append(0, inputLabel, 0, 4000, 4, nil, nil, storage.AOptions{})
+	_, err = app2.Append(0, inputLabel, 0, 4000, 4, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	inputTotalSize++
-	_, err = app2.Append(0, inputLabel, 0, 5000, 5, nil, nil, storage.AOptions{})
+	_, err = app2.Append(0, inputLabel, 0, 5000, 5, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	inputTotalSize++
 	require.NoError(t, app2.Commit())
 
 	remoteStorage2 := teststorage.New(t)
 	app3 := remoteStorage2.AppenderV2(t.Context())
-	_, err = app3.Append(0, inputLabel, 0, 6000, 6, nil, nil, storage.AOptions{})
+	_, err = app3.Append(0, inputLabel, 0, 6000, 6, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	inputTotalSize++
-	_, err = app3.Append(0, inputLabel, 0, 7000, 7, nil, nil, storage.AOptions{})
+	_, err = app3.Append(0, inputLabel, 0, 7000, 7, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	inputTotalSize++
-	_, err = app3.Append(0, inputLabel, 0, 8000, 8, nil, nil, storage.AOptions{})
+	_, err = app3.Append(0, inputLabel, 0, 8000, 8, nil, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	inputTotalSize++
 
@@ -516,7 +516,7 @@ func TestFanoutAppenderV2(t *testing.T) {
 			f := storage.NewFanout(nil, mockStorage{appV2: tt.primary}, mockStorage{appV2: tt.secondary})
 
 			app := f.AppenderV2(t.Context())
-			_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "metric1"), -1, 0, 1, nil, nil, storage.AOptions{
+			_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "metric1"), -1, 0, 1, nil, nil, nil, storage.AOptions{
 				Exemplars: []exemplar.Exemplar{ex},
 			})
 			switch {
@@ -533,14 +533,14 @@ func TestFanoutAppenderV2(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "metric2"), -2, 1, 0, h, nil, storage.AOptions{})
+			_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "metric2"), -2, 1, 0, h, nil, nil, storage.AOptions{})
 			if tt.expectAppendErr {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 			}
 
-			_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "metric3"), -3, 2, 0, nil, fh, storage.AOptions{})
+			_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "metric3"), -3, 2, 0, nil, fh, nil, storage.AOptions{})
 			if tt.expectAppendErr {
 				require.Error(t, err)
 			} else {
@@ -593,7 +593,7 @@ func BenchmarkFanoutAppenderV2(b *testing.B) {
 				app := f.AppenderV2(b.Context())
 				for _, s := range series {
 					// Purposefully skip errors as we want to benchmark error cases too (majority of the fanout logic).
-					_, _ = app.Append(0, s, 0, 0, 1, nil, nil, storage.AOptions{
+					_, _ = app.Append(0, s, 0, 0, 1, nil, nil, nil, storage.AOptions{
 						Exemplars: ex,
 					})
 				}

@@ -24,6 +24,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/stateset"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -590,6 +591,13 @@ func (c *chainSampleIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (in
 		fh.CounterResetHint = histogram.UnknownCounterReset
 	}
 	return t, fh
+}
+
+func (c *chainSampleIterator) AtStateset(ss *stateset.StateSet) (int64, *stateset.StateSet) {
+	if c.curr == nil {
+		panic("chainSampleIterator.AtStateset called before first .Next or after .Next returned false.")
+	}
+	return c.curr.AtStateset(ss)
 }
 
 func (c *chainSampleIterator) AtT() int64 {
