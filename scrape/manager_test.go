@@ -474,7 +474,7 @@ func TestPopulateLabels(t *testing.T) {
 func loadConfiguration(t testing.TB, c string) *config.Config {
 	t.Helper()
 
-	cfg, err := config.Load(c, promslog.NewNopLogger(), false)
+	cfg, err := config.Load(c, promslog.NewNopLogger(), config.LoadOptions{})
 	require.NoError(t, err)
 	return cfg
 }

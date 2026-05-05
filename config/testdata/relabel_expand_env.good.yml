@@ -18,6 +18,16 @@ scrape_configs:
         target_label: undefined_env
       - source_labels: [job]
         target_label: $CUSTOM_LABEL_NAME
+      - source_labels: [__address__]
+        regex: '(.+):(\d+)'
+        replacement: $1
+        target_label: back_ref_label
+      - source_labels: [__address__]
+        regex: '(.+)'
+        replacement: $1_${MY_ENV}
+        target_label: mixed_label
+      - replacement: $$ESCAPED
+        target_label: escaped_label
     metric_relabel_configs:
       - source_labels: [__name__]
         regex: 'up|node_cpu_seconds_total'
@@ -29,3 +39,17 @@ alerting:
   alert_relabel_configs:
     - replacement: $ALERT_ENV
       target_label: alert_env_label
+  alertmanagers:
+    - scheme: http
+      static_configs:
+        - targets:
+            - localhost:9093
+      relabel_configs:
+        - replacement: $AM_RELABEL_ENV
+          target_label: am_env_label
+
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    write_relabel_configs:
+      - replacement: $REMOTE_WRITE_ENV
+        target_label: rw_env_label

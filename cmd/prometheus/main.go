@@ -726,7 +726,7 @@ func main() {
 
 	// Throw error for invalid config before starting other components.
 	var cfgFile *config.Config
-	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, promslog.NewNopLogger(), cfg.expandRelabelEnv); err != nil {
+	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, promslog.NewNopLogger(), config.LoadOptions{ExpandRelabelEnv: cfg.expandRelabelEnv}); err != nil {
 		absPath, pathErr := filepath.Abs(cfg.configFile)
 		if pathErr != nil {
 			absPath = cfg.configFile
@@ -1677,7 +1677,7 @@ func reloadConfig(filename string, enableExemplarStorage, expandRelabelEnv bool,
 		}
 	}()
 
-	conf, err := config.LoadFile(filename, agentMode, logger, expandRelabelEnv)
+	conf, err := config.LoadFile(filename, agentMode, logger, config.LoadOptions{ExpandRelabelEnv: expandRelabelEnv})
 	if err != nil {
 		return fmt.Errorf("couldn't load configuration (--config.file=%q): %w", filename, err)
 	}
