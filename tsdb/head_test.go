@@ -5426,6 +5426,63 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 	}
 }
 
+func TestHistogramSTCounterResetHeaderOnChunkCut(t *testing.T) {
+	for _, floatHisto := range []bool{false, true} {
+		t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
+			l := labels.FromStrings("a", "b")
+			opts := newTestHeadDefaultOptions(2, false)
+			opts.EnableXOR2Encoding.Store(true)
+			head, _ := newTestHeadWithOptions(t, compression.None, opts)
+			t.Cleanup(func() {
+				require.NoError(t, head.Close())
+			})
+			require.NoError(t, head.Init(0))
+
+			appendHistogram := func(ts int64, h *histogram.Histogram) {
+				app := head.Appender(context.Background())
+				var err error
+				if floatHisto {
+					_, err = app.AppendHistogram(0, l, ts, nil, h.ToFloat(nil))
+				} else {
+					_, err = app.AppendHistogram(0, l, ts, h.Copy(), nil)
+				}
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+			}
+
+			h1 := tsdbutil.GenerateTestHistogram(0)
+			h2 := tsdbutil.GenerateTestHistogram(1)
+
+			// Chunk range is 2, so appending at t=1 and t=2 cuts a new chunk on the second append.
+			appendHistogram(1, h1)
+			appendHistogram(2, h2)
+
+			ms, _, err := head.getOrCreate(l.Hash(), l, false)
+			require.NoError(t, err)
+			require.NotNil(t, ms.headChunks)
+			require.NotNil(t, ms.headChunks.prev)
+
+			if floatHisto {
+				prevChunk, ok := ms.headChunks.prev.chunk.(*chunkenc.FloatHistogramSTChunk)
+				require.True(t, ok)
+				require.Equal(t, chunkenc.UnknownCounterReset, prevChunk.GetCounterResetHeader())
+
+				headChunk, ok := ms.headChunks.chunk.(*chunkenc.FloatHistogramSTChunk)
+				require.True(t, ok)
+				require.Equal(t, chunkenc.NotCounterReset, headChunk.GetCounterResetHeader())
+			} else {
+				prevChunk, ok := ms.headChunks.prev.chunk.(*chunkenc.HistogramSTChunk)
+				require.True(t, ok)
+				require.Equal(t, chunkenc.UnknownCounterReset, prevChunk.GetCounterResetHeader())
+
+				headChunk, ok := ms.headChunks.chunk.(*chunkenc.HistogramSTChunk)
+				require.True(t, ok)
+				require.Equal(t, chunkenc.NotCounterReset, headChunk.GetCounterResetHeader())
+			}
+		})
+	}
+}
+
 func TestOOOHistogramCounterResetHeaders(t *testing.T) {
 	for _, floatHisto := range []bool{true, false} {
 		t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
