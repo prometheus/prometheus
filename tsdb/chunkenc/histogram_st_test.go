@@ -387,7 +387,7 @@ func TestHistogramSTChunkStaleSamples(t *testing.T) {
 	require.NoError(t, err)
 	_, _, app, err = app.AppendHistogram(nil, 200, 2000, stale1, false)
 	require.NoError(t, err)
-	_, _, app, err = app.AppendHistogram(nil, 0, 3000, stale2, false)
+	_, _, _, err = app.AppendHistogram(nil, 0, 3000, stale2, false)
 	require.NoError(t, err)
 
 	it := c.Iterator(nil)
