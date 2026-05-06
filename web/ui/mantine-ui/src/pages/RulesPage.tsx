@@ -56,6 +56,14 @@ type RulesPageData = {
   groups: (RuleGroup & { prefilterRulesCount: number })[];
 };
 
+const groupMatchesSearch = (group: RuleGroup, search: string): boolean => {
+  const lowerSearch = search.toLowerCase();
+  return (
+    group.name.toLowerCase().includes(lowerSearch) ||
+    group.file.toLowerCase().includes(lowerSearch)
+  );
+};
+
 const buildRulesPageData = (
   data: RulesResult,
   search: string,
@@ -66,7 +74,9 @@ const buildRulesPageData = (
     prefilterRulesCount: group.rules.length,
     rules: (search === ""
       ? group.rules
-      : kvSearch.filter(search, group.rules).map((value) => value.original)
+      : groupMatchesSearch(group, search)
+        ? group.rules
+        : kvSearch.filter(search, group.rules).map((value) => value.original)
     ).filter(
       (r) => healthFilter.length === 0 || healthFilter.includes(r.health)
     ),
@@ -351,7 +361,7 @@ export default function RulesPage() {
         <TextInput
           flex={1}
           leftSection={<IconSearch style={inputIconStyle} />}
-          placeholder="Filter by rule name or labels"
+          placeholder="Filter by rule name, labels, group, or file"
           value={searchFilter || ""}
           onChange={(event) =>
             setSearchFilter(event.currentTarget.value || null)
