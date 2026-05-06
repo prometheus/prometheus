@@ -131,10 +131,12 @@ func (c *FloatHistogramSTChunk) Appender() (Appender, error) {
 			nBuckets:     nBuckets,
 			sum:          it.sum,
 		},
-		st:              it.st,
-		stDiff:          it.stDiff,
-		firstSTKnown:    it.firstSTKnown,
-		firstSTChangeOn: uint16(it.firstSTChangeOn),
+		stEncoder: stEncoder{
+			st:              it.st,
+			stDiff:          it.stDiff,
+			firstSTKnown:    it.firstSTKnown,
+			firstSTChangeOn: uint16(it.firstSTChangeOn),
+		},
 	}
 	return a, nil
 }
@@ -169,65 +171,15 @@ func (c *FloatHistogramSTChunk) Iterator(it Iterator) Iterator {
 // It embeds FloatHistogramAppender and adds ST encoding after each sample.
 type FloatHistogramSTAppender struct {
 	FloatHistogramAppender
-
-	st              int64
-	stDiff          int64
-	firstSTChangeOn uint16
-	firstSTKnown    bool
-}
-
-// encodeST encodes the start timestamp for the current sample.
-// It must be called after appendFloatHistogram() which increments the sample count.
-// prevT is the timestamp of the previous sample (before appendFloatHistogram updated a.t).
-// For sample 0, prevT is unused.
-func (a *FloatHistogramSTAppender) encodeST(prevT, st int64) {
-	num := binary.BigEndian.Uint16(a.b.bytes())
-
-	switch num {
-	case 1: // First sample (count was just incremented from 0).
-		if st != 0 {
-			buf := make([]byte, binary.MaxVarintLen64)
-			for _, b := range buf[:binary.PutVarint(buf, a.t-st)] {
-				a.b.writeByte(b)
-			}
-			a.firstSTKnown = true
-			writeHeaderFirstSTKnown(a.b.bytes()[histogramSTHeaderSize-1:])
-		}
-	case 2: // Second sample.
-		if st != a.st {
-			stDiff := prevT - st
-			a.firstSTChangeOn = 1
-			writeHeaderFirstSTChangeOn(a.b.bytes()[histogramSTHeaderSize-1:], 1)
-			putVarbitInt(a.b, stDiff)
-			a.stDiff = stDiff
-		}
-	default: // Sample N >= 2.
-		// Fast path: no ST data to write.
-		if st == 0 && num-1 != maxFirstSTChangeOn && a.firstSTChangeOn == 0 && !a.firstSTKnown {
-			break
-		}
-		if a.firstSTChangeOn == 0 {
-			if st != a.st || num-1 == maxFirstSTChangeOn {
-				stDiff := prevT - st
-				a.firstSTChangeOn = num - 1
-				writeHeaderFirstSTChangeOn(a.b.bytes()[histogramSTHeaderSize-1:], num-1)
-				putVarbitInt(a.b, stDiff)
-				a.stDiff = stDiff
-			}
-		} else {
-			stDiff := prevT - st
-			putVarbitInt(a.b, stDiff-a.stDiff)
-			a.stDiff = stDiff
-		}
-	}
-	a.st = st
+	stEncoder
 }
 
 // appendFloatHistogramST encodes a float histogram sample with start timestamp.
 func (a *FloatHistogramSTAppender) appendFloatHistogramST(st, t int64, fh *histogram.FloatHistogram) {
 	prevT := a.t
 	a.appendFloatHistogram(t, fh)
-	a.encodeST(prevT, st)
+	num := binary.BigEndian.Uint16(a.b.bytes())
+	a.encode(a.b, num, a.t, prevT, st)
 }
 
 // Append implements Appender. This implementation panics because normal float
@@ -400,12 +352,7 @@ func (a *FloatHistogramSTAppender) recodeST(
 // floatHistogramSTIterator is an iterator for FloatHistogramSTChunk that decodes ST after each sample.
 type floatHistogramSTIterator struct {
 	floatHistogramIterator
-
-	// ST fields.
-	st              int64
-	stDiff          int64
-	firstSTKnown    bool
-	firstSTChangeOn uint8
+	stDecoder
 }
 
 // AtST returns the start timestamp for the current sample.
@@ -415,9 +362,8 @@ func (it *floatHistogramSTIterator) AtST() int64 {
 
 // Reset resets the iterator for reuse.
 func (it *floatHistogramSTIterator) Reset(b []byte) {
+	it.stDecoder = stDecoder{}
 	it.firstSTKnown, it.firstSTChangeOn = readSTHeader(b[histogramSTHeaderSize-1:])
-	it.st = 0
-	it.stDiff = 0
 
 	// Reset the embedded floatHistogramIterator but with the correct header offset.
 	it.br = newBReader(b[histogramSTHeaderSize:])
@@ -452,7 +398,7 @@ func (it *floatHistogramSTIterator) Next() ValueType {
 	if vt == ValNone {
 		return ValNone
 	}
-	if err := it.decodeST(it.numRead, prevT); err != nil {
+	if err := it.decode(&it.br, it.numRead, it.t, prevT); err != nil {
 		it.err = err
 		return ValNone
 	}
@@ -470,44 +416,4 @@ func (it *floatHistogramSTIterator) Seek(t int64) ValueType {
 		}
 	}
 	return ValFloatHistogram
-}
-
-// decodeST decodes the start timestamp for the current sample.
-// numRead is the number of samples read so far (already incremented by floatHistogramIterator.Next()).
-// prevT is the timestamp of the previous sample (before floatHistogramIterator.Next() updated it.t).
-func (it *floatHistogramSTIterator) decodeST(numRead uint16, prevT int64) error {
-	switch numRead {
-	case 1: // After sample 0.
-		if it.firstSTKnown {
-			stDiff, err := it.br.readVarint()
-			if err != nil {
-				return err
-			}
-			it.stDiff = stDiff
-			it.st = it.t - stDiff
-		}
-	case 2: // After sample 1.
-		if it.firstSTChangeOn == 1 {
-			sdod, err := readVarbitInt(&it.br)
-			if err != nil {
-				return err
-			}
-			it.stDiff = sdod
-			it.st = prevT - sdod
-		}
-	default: // After sample N >= 2.
-		if it.firstSTChangeOn > 0 && numRead-1 >= uint16(it.firstSTChangeOn) {
-			sdod, err := readVarbitInt(&it.br)
-			if err != nil {
-				return err
-			}
-			if numRead-1 == uint16(it.firstSTChangeOn) {
-				it.stDiff = sdod
-			} else {
-				it.stDiff += sdod
-			}
-			it.st = prevT - it.stDiff
-		}
-	}
-	return nil
 }
