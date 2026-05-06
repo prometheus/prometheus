@@ -14,6 +14,7 @@
 package prompb
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/prometheus/common/model"
@@ -28,6 +29,33 @@ import (
 // ToLabels return model labels.Labels from timeseries' remote labels.
 func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, _ []string) labels.Labels {
 	return labelProtosToLabels(b, m.GetLabels())
+}
+
+// ErrLabelValueTooLong is returned when a label value exceeds the maximum allowed length.
+type ErrLabelValueTooLong struct {
+	LabelName   string
+	ValueLength int
+	Limit       int
+}
+
+func (e ErrLabelValueTooLong) Error() string {
+	return "label value exceeds maximum length: label " + e.LabelName + " has length " + strconv.Itoa(e.ValueLength) + ", limit " + strconv.Itoa(e.Limit)
+}
+
+// ToLabelsWithLimits returns model labels.Labels from timeseries' remote labels,
+// with validation of label value length. Returns an error if any label value
+// exceeds maxLabelValueLength.
+func (m TimeSeries) ToLabelsWithLimits(b *labels.ScratchBuilder, _ []string, maxLabelValueLength int) (labels.Labels, error) {
+	for _, l := range m.GetLabels() {
+		if len(l.Value) > maxLabelValueLength {
+			return labels.EmptyLabels(), ErrLabelValueTooLong{
+				LabelName:   l.Name,
+				ValueLength: len(l.Value),
+				Limit:       maxLabelValueLength,
+			}
+		}
+	}
+	return labelProtosToLabels(b, m.GetLabels()), nil
 }
 
 // ToLabels return model labels.Labels from timeseries' remote labels.
