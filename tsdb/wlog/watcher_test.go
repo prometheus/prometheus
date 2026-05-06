@@ -56,7 +56,7 @@ func retry(t *testing.T, interval time.Duration, n int, f func() bool) {
 		<-ticker.C
 	}
 	ticker.Stop()
-	t.Logf("function returned false")
+	t.Log("function returned false")
 }
 
 // Overwrite readTimeout defined in watcher.go.

@@ -51,7 +51,7 @@ func TestOpenAPIGolden_3_1(t *testing.T) {
 		err = os.WriteFile(goldenPath, []byte(resp.Body), 0o644)
 		require.NoError(t, err, "failed to write golden file")
 
-		t.Logf("Golden file updated successfully")
+		t.Log("Golden file updated successfully")
 		return
 	}
 
@@ -98,7 +98,7 @@ func TestOpenAPIGolden_3_2(t *testing.T) {
 		err = os.WriteFile(goldenPath, []byte(resp.Body), 0o644)
 		require.NoError(t, err, "failed to write golden file")
 
-		t.Logf("Golden file updated successfully")
+		t.Log("Golden file updated successfully")
 		return
 	}
 

@@ -212,7 +212,7 @@ func TestCommit_AppendV2(t *testing.T) {
 
 				case record.Samples:
 					if enableSTStorage {
-						t.Errorf("Got V1 Samples when ST enabled")
+						t.Error("Got V1 Samples when ST enabled")
 					}
 					var samples []record.RefSample
 					samples, err = dec.Samples(rec, samples)
@@ -220,7 +220,7 @@ func TestCommit_AppendV2(t *testing.T) {
 					walSamplesCount += len(samples)
 				case record.SamplesV2:
 					if !enableSTStorage {
-						t.Errorf("Got V2 Samples when ST disabled")
+						t.Error("Got V2 Samples when ST disabled")
 					}
 					var samples []record.RefSample
 					samples, err = dec.Samples(rec, samples)
@@ -370,13 +370,13 @@ func TestRollbackAppendV2(t *testing.T) {
 				walSeriesCount += len(series)
 
 			case record.Samples, record.SamplesV2:
-				t.Errorf("should not have found samples")
+				t.Error("should not have found samples")
 
 			case record.Exemplars:
-				t.Errorf("should not have found exemplars")
+				t.Error("should not have found exemplars")
 
 			case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
-				t.Errorf("should not have found histograms")
+				t.Error("should not have found histograms")
 
 			default:
 			}

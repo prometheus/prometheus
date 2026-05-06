@@ -669,14 +669,14 @@ func (h *Handler) testReady(f http.HandlerFunc) http.HandlerFunc {
 		case NotReady:
 			w.Header().Set("X-Prometheus-Stopping", "false")
 			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprintf(w, "Service Unavailable")
+			fmt.Fprint(w, "Service Unavailable")
 		case Stopping:
 			w.Header().Set("X-Prometheus-Stopping", "true")
 			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprintf(w, "Service Unavailable")
+			fmt.Fprint(w, "Service Unavailable")
 		default:
 			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintf(w, "Unknown state")
+			fmt.Fprint(w, "Unknown state")
 		}
 	}
 }
@@ -935,10 +935,10 @@ func (h *Handler) quit(w http.ResponseWriter, _ *http.Request) {
 	h.quitOnce.Do(func() {
 		closed = true
 		close(h.quitCh)
-		fmt.Fprintf(w, "Requesting termination... Goodbye!")
+		fmt.Fprint(w, "Requesting termination... Goodbye!")
 	})
 	if !closed {
-		fmt.Fprintf(w, "Termination already in progress.")
+		fmt.Fprint(w, "Termination already in progress.")
 	}
 }
 
