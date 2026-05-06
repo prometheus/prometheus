@@ -2100,7 +2100,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		var chkIter chunkenc.Iterator
 
 		var startTimestamps *StartTimestamps
-		if ev.useStartTimestamps && (e.Func.Name == "rate" || e.Func.Name == "irate" || e.Func.Name == "increase") {
+		if ev.useStartTimestamps && (e.Func.Name == "rate" || e.Func.Name == "irate" || e.Func.Name == "increase" || e.Func.Name == "resets") {
 			// TODO: consider pooling this.
 			startTimestamps = &StartTimestamps{}
 		}

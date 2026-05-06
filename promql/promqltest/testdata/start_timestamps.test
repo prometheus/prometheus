@@ -38,6 +38,12 @@ eval range from 7m to 15m step 1m increase(cumulative[5m:1m])
     {type="st_resets"}          300x8
     {type="normalized_resets"}  420 780 675 675 1275 900 900 1725 1125
 
+# Resets function also considers start timestamp resets.
+eval range from 7m to 15m step 1m resets(cumulative[5m])
+    {type="no_st"}              0x8
+    {type="st_resets"}          1 2 1 1 2 1 1 2 1
+    {type="normalized_resets"}  0x8
+
 clear
 
 # Tests for rate(), irate() and increase() on deltas. Includes various approaches for start timestamps:
@@ -130,6 +136,10 @@ eval range from 7m to 15m step 1m rate(cumulative[5m])
 
 eval range from 7m to 15m step 1m irate(cumulative[5m])
     {} {{count:1 sum:1}}x8
+
+# Resets function also considers start timestamp resets.
+eval range from 7m to 15m step 1m resets(cumulative[5m])
+    {} 0x8
 
 clear
 
