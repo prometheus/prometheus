@@ -1911,6 +1911,15 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 	return mat
 }
 
+// numSteps returns the number of steps in the evaluator's range,
+// treating an instant query (interval == 0) as a single step.
+func (ev *evaluator) numSteps() int {
+	if ev.interval <= 0 {
+		return 1
+	}
+	return int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
+}
+
 // runSubquery evaluates the given SubqueryExpr in a fresh child evaluator
 // aligned to the subquery's own step grid and returns the result along with
 // the child's samples stats. The caller decides how to merge the child stats
@@ -1942,7 +1951,12 @@ func (ev *evaluator) runSubquery(ctx context.Context, e *parser.SubqueryExpr) (p
 		subqStart += subqInterval
 	}
 
-	childStats := stats.NewChildWithStepTracking(ev.samplesStats.StepTrackingEnabled(), subqStart, subqEnd, subqInterval)
+	// Subquery children always track per-step samples-read (independent of
+	// the parent's per-step setting) so MergeSamplesReadFromSubquery can
+	// attribute each subquery iteration to a parent step and drop iterations
+	// that fall in gaps between parent windows. The arrays don't escape this
+	// call.
+	childStats := stats.NewChildWithStepTracking(subqStart, subqEnd, subqInterval)
 	newEv := &evaluator{
 		startTimestamp:           subqStart,
 		endTimestamp:             subqEnd,
@@ -1976,10 +1990,16 @@ func (ev *evaluator) runSubquery(ctx context.Context, e *parser.SubqueryExpr) (p
 // Only PeakSamples and SamplesRead from the subquery are merged into the
 // parent; TotalSamples is intentionally not merged because the call/range-vector
 // caller will count samples again from the materialized matrix.
-func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr) (*parser.MatrixSelector, int, annotations.Annotations) {
+//
+// outerOffset is durationMilliseconds(subq.OriginalOffset) so the merge can
+// shift child timestamps to match the parent step that consumes them.
+// outerRange is the outer call's selRange so the merge can drop subquery
+// iterations whose timestamps fall in gaps between consecutive outer-step
+// windows (i.e. when the outer step is wider than the subquery range).
+func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr, outerOffset, outerRange int64) (*parser.MatrixSelector, int, annotations.Annotations) {
 	val, childStats, ws := ev.runSubquery(ctx, subq)
 	ev.samplesStats.UpdatePeakFromSubquery(childStats)
-	ev.samplesStats.MergeSamplesReadFromSubquery(childStats)
+	ev.samplesStats.MergeSamplesReadFromSubquery(childStats, ev.startTimestamp, ev.interval, ev.numSteps(), outerOffset, outerRange)
 	mat := val.(Matrix)
 	vs := &parser.VectorSelector{
 		OriginalOffset: subq.OriginalOffset,
@@ -2113,7 +2133,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				matrixArg = true
 				matrixFromSubquery = true
 				// Replacing parser.SubqueryExpr with parser.MatrixSelector.
-				val, totalSamples, ws := ev.evalSubquery(ctx, subq)
+				val, totalSamples, ws := ev.evalSubquery(ctx, subq, durationMilliseconds(subq.OriginalOffset), durationMilliseconds(subq.Range))
 				e.Args[i] = val
 				warnings.Merge(ws)
 				defer func() {
@@ -2534,7 +2554,9 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		// Attribute the subquery's TotalSamples to the parent's end step
 		// so they appear in the parent's TotalSamples stat.
 		ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, childStats.TotalSamples)
-		ev.samplesStats.MergeSamplesReadFromSubquery(childStats)
+		// outerOffset=0, outerRange=0: every subquery iteration becomes part of
+		// the parent's matrix output, so no shifting or gap filtering is needed.
+		ev.samplesStats.MergeSamplesReadFromSubquery(childStats, ev.startTimestamp, ev.interval, ev.numSteps(), 0, 0)
 		return res, ws
 	case *parser.StepInvariantExpr:
 		newEv := &evaluator{

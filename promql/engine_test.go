@@ -1613,6 +1613,10 @@ load 10s
 		},
 
 		// Range query + subquery, outer step wider than subquery range.
+		// Subquery materialises 9 samples (T=180,190,...,260) but only the
+		// 3 samples in each outer step's window contribute to that step's
+		// output; the 3 samples in the gap (201,231] between outer windows
+		// are not counted.
 		{
 			Query:        "max_over_time(metricWith1SampleEvery10Seconds[30s:10s])",
 			Start:        time.Unix(201, 0),
@@ -1624,10 +1628,10 @@ load 10s
 				201000: 3,
 				261000: 3,
 			},
-			SamplesRead: 9,
+			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
 				201000: 3,
-				261000: 6,
+				261000: 3,
 			},
 		},
 

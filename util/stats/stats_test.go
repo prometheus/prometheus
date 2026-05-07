@@ -93,6 +93,8 @@ func TestMergeSamplesReadFromSubquery(t *testing.T) {
 		name            string
 		parent          stepGrid
 		child           stepGrid
+		outerOffset     int64
+		outerRange      int64
 		wantPerStep     []int64
 		wantSamplesRead int64
 	}{
@@ -120,6 +122,40 @@ func TestMergeSamplesReadFromSubquery(t *testing.T) {
 			wantPerStep:     []int64{5, 1, 3},
 			wantSamplesRead: 9,
 		},
+		{
+			// Parent step 60s, outer range 30s: window per step is (parentTs-30, parentTs].
+			// Child grid at 10s; tk values 10/20/30k -> step 0 window (0,30k];
+			// 70/80/90k -> step 1 window (60k,90k]; 40/50/60k fall in gap (30k,60k].
+			name:            "outerRangeExcludesGapSamples",
+			parent:          stepGrid{30000, 90000, 60000, []int64{0, 0}},
+			child:           stepGrid{10000, 90000, 10000, []int64{1, 1, 1, 1, 1, 1, 1, 1, 1}},
+			outerRange:      30000,
+			wantPerStep:     []int64{3, 3},
+			wantSamplesRead: 6,
+		},
+		{
+			// outerRange=0 disables filtering even when the parent has a wider step
+			// than the child's range; preserves old behaviour for bare-subquery merges.
+			name:            "outerRangeZeroDisablesGapFilter",
+			parent:          stepGrid{30000, 90000, 60000, []int64{0, 0}},
+			child:           stepGrid{10000, 90000, 10000, []int64{1, 1, 1, 1, 1, 1, 1, 1, 1}},
+			wantPerStep:     []int64{3, 6},
+			wantSamplesRead: 9,
+		},
+		{
+			// Offset 60s shifts child tk forward before matching the parent grid.
+			// Parent instant at T=240000 (start=end, interval=1, single step).
+			// Child iterations at tk=170000, 180000 (already shifted earlier by the
+			// subquery's offset); shifted tk+60000 = 230000, 240000 falls inside the
+			// outer window (240000-20000, 240000] = (220000, 240000].
+			name:            "outerOffsetShiftsTkIntoWindow",
+			parent:          stepGrid{240000, 240000, 1, []int64{0}},
+			child:           stepGrid{170000, 180000, 10000, []int64{1, 1}},
+			outerOffset:     60000,
+			outerRange:      20000,
+			wantPerStep:     []int64{2},
+			wantSamplesRead: 2,
+		},
 	}
 
 	for _, tc := range cases {
@@ -131,13 +167,13 @@ func TestMergeSamplesReadFromSubquery(t *testing.T) {
 				parent.SamplesRead += v
 			}
 
-			child := NewChildWithStepTracking(true, tc.child.start, tc.child.end, tc.child.interval)
+			child := NewChildWithStepTracking(tc.child.start, tc.child.end, tc.child.interval)
 			copy(child.SamplesReadPerStep, tc.child.perStep)
 			for _, v := range tc.child.perStep {
 				child.SamplesRead += v
 			}
 
-			parent.MergeSamplesReadFromSubquery(child)
+			parent.MergeSamplesReadFromSubquery(child, tc.parent.start, tc.parent.interval, len(tc.parent.perStep), tc.outerOffset, tc.outerRange)
 
 			require.Equal(t, tc.wantSamplesRead, parent.SamplesRead)
 			require.Equal(t, tc.wantPerStep, parent.SamplesReadPerStep)

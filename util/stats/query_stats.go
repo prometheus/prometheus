@@ -406,62 +406,80 @@ func (*QuerySamples) NewChild() *QuerySamples {
 	return NewQuerySamples(false)
 }
 
-// NewChildWithStepTracking creates a child QuerySamples and, when
-// enablePerStepStats is true, initializes per-step arrays via
-// InitStepTracking. When enablePerStepStats is false the timing fields
-// are intentionally left zero; the per-step merge helpers detect this
-// and fall back to a flat SamplesRead accumulation.
-func NewChildWithStepTracking(enablePerStepStats bool, start, end, interval int64) *QuerySamples {
-	qs := NewQuerySamples(enablePerStepStats)
-	if enablePerStepStats {
-		qs.InitStepTracking(start, end, interval)
-	}
+// NewChildWithStepTracking creates a child QuerySamples with per-step tracking
+// enabled and initializes its per-step arrays via InitStepTracking.
+func NewChildWithStepTracking(start, end, interval int64) *QuerySamples {
+	qs := NewQuerySamples(true)
+	qs.InitStepTracking(start, end, interval)
 	return qs
 }
 
 // MergeSamplesReadFromSubquery merges only SamplesRead and SamplesReadPerStep from
 // the child (subquery) into the parent. TotalSamples and TotalSamplesPerStep are
 // not merged, because the outer range-eval loop already counts those when it
-// iterates over the pre-computed matrix.
+// iterates over the pre-computed matrix. The child must have per-step tracking
+// enabled (callers should construct it via NewChildWithStepTracking).
 //
-// Each child step is attributed to the earliest parent step whose timestamp is
-// >= the child timestamp. Child steps before the first parent step are attributed
-// to step 0; child steps after the last parent step are attributed to the last
-// step. When either side lacks per-step arrays we fall back to a flat
-// SamplesRead accumulation.
-func (qs *QuerySamples) MergeSamplesReadFromSubquery(child *QuerySamples) {
+// parentStart, parentInterval and parentNumSteps describe the parent's step
+// grid; they are passed explicitly so that gap filtering still works when the
+// parent has per-step tracking disabled. parentNumSteps <= 1 (instant query)
+// disables step attribution and gap filtering: the child's total is folded into
+// qs.SamplesRead (and qs.SamplesReadPerStep[0] when allocated).
+//
+// The child timestamp tk is shifted forward by outerOffset before being matched
+// against the parent's step grid, so that an offset subquery (whose iterations
+// run earlier than the parent step) is attributed to the parent step that
+// actually consumes its output. Each child step is attributed to the earliest
+// parent step whose timestamp is >= tk+outerOffset; samples before the first
+// parent step are attributed to step 0 and samples after the last clamp to the
+// last step.
+//
+// outerRange is the consumed window width at each parent step (i.e. selRange of
+// the outer call when the subquery is used as a function's matrix argument). When
+// outerRange > 0, child steps whose shifted timestamp falls in a gap between
+// consecutive parent windows (i.e. tk+outerOffset <= parentTs-outerRange) are
+// skipped, so the count reflects only samples that actually contribute to the
+// output. Pass 0 for both outerOffset and outerRange to disable shifting and gap
+// filtering (e.g. for a bare *parser.SubqueryExpr where every child step is part
+// of the parent matrix output).
+func (qs *QuerySamples) MergeSamplesReadFromSubquery(child *QuerySamples, parentStart, parentInterval int64, parentNumSteps int, outerOffset, outerRange int64) {
 	if qs == nil || child == nil {
 		return
 	}
-	// InitStepTracking is the only setter of qs.Interval and it always
-	// allocates SamplesReadPerStep, so qs.Interval == 0 is equivalent to
-	// the parent having no per-step array.
-	if child.SamplesReadPerStep == nil || qs.Interval == 0 {
+	if parentNumSteps <= 1 {
 		qs.SamplesRead += child.SamplesRead
+		if qs.SamplesReadPerStep != nil {
+			qs.SamplesReadPerStep[0] += child.SamplesRead
+		}
 		return
 	}
-
-	parentStart := qs.StartTimestamp
-	parentInterval := qs.Interval
-	numParent := len(qs.SamplesReadPerStep)
 
 	for k := range child.SamplesReadPerStep {
 		n := child.SamplesReadPerStep[k]
 		if n == 0 {
 			continue
 		}
-		tk := child.StartTimestamp + int64(k)*child.Interval
+		tk := child.StartTimestamp + int64(k)*child.Interval + outerOffset
 
 		outerStep := 0
 		if tk > parentStart {
 			outerStep = int((tk - parentStart + parentInterval - 1) / parentInterval)
 		}
-		if outerStep >= numParent {
-			outerStep = numParent - 1
+		if outerStep >= parentNumSteps {
+			outerStep = parentNumSteps - 1
+		}
+
+		if outerRange > 0 {
+			parentTs := parentStart + int64(outerStep)*parentInterval
+			if tk <= parentTs-outerRange {
+				continue
+			}
 		}
 
 		qs.SamplesRead += n
-		qs.SamplesReadPerStep[outerStep] += n
+		if qs.SamplesReadPerStep != nil {
+			qs.SamplesReadPerStep[outerStep] += n
+		}
 	}
 }
 
