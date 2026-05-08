@@ -1959,7 +1959,7 @@ func funcResets(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eval
 
 	var (
 		prevSample, curSample  Sample
-		prevST, curST          int64
+		prevST                 int64
 		floatSTs, histogramSTs []int64
 	)
 	if sts := enh.StartTimestamps; sts != nil {
@@ -1971,7 +1971,7 @@ func funcResets(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eval
 		return enh.Out, nil
 	}
 	for iFloat, iHistogram := firstSampleIndex, 0; iFloat < len(floats) || iHistogram < len(histograms); {
-		curST = 0
+		var curST int64
 		switch {
 		// Process a float sample if no histogram sample remains or its timestamp is earlier.
 		// Process a histogram sample if no float sample remains or its timestamp is earlier.
