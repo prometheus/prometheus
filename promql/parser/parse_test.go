@@ -4719,6 +4719,32 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `foo[2m/range()]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			RangeExpr: &DurationExpr{
+				Op: DIV,
+				LHS: &NumberLiteral{
+					Val:      120,
+					Duration: true,
+					PosRange: posrange.PositionRange{Start: 4, End: 6},
+				},
+				RHS: &DurationExpr{
+					Op:       RANGE,
+					StartPos: 7,
+					EndPos:   14,
+				},
+			},
+			EndPos: 15,
+		},
+	},
+	{
 		input: `foo[-range()]`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
