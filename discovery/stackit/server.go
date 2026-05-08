@@ -90,8 +90,8 @@ func newServerDiscovery(conf *SDConfig, logger *slog.Logger) (*iaasDiscovery, er
 		Servers:    servers,
 		NoAuth:     conf.ServiceAccountKey == "" && conf.ServiceAccountKeyPath == "",
 
-		ServiceAccountKey:     conf.ServiceAccountKey,
-		PrivateKey:            conf.PrivateKey,
+		ServiceAccountKey:     string(conf.ServiceAccountKey),
+		PrivateKey:            string(conf.PrivateKey),
 		ServiceAccountKeyPath: conf.ServiceAccountKeyPath,
 		PrivateKeyPath:        conf.PrivateKeyPath,
 		CredentialsFilePath:   conf.CredentialsFilePath,
