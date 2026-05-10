@@ -14,6 +14,7 @@ import {
   Pagination,
   rem,
   Divider,
+  Select,
 } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
 import { AlertingRule, AlertingRulesResult } from "../api/responseTypes/rules";
@@ -152,13 +153,26 @@ const buildAlertsPageData = (
 // computations to re-run as long as no state filter is selected.
 const emptyStateFilter: string[] = [];
 
+const refreshIntervals: Record<string, false | number> = {
+  "": false,
+  "30s": 30_000,
+  "1m": 60_000,
+  "5m": 5 * 60_000,
+};
+
 export default function AlertsPage() {
+  const [refreshInterval, setRefreshInterval] = useQueryParam(
+    "refresh",
+    withDefault(StringParam, "")
+  );
+
   // Fetch the alerting rules data.
   const { data } = useSuspenseAPIQuery<AlertingRulesResult>({
     path: `/rules`,
     params: {
       type: "alert",
     },
+    refetchInterval: refreshIntervals[refreshInterval || ""] ?? false,
   });
 
   const { showAnnotations } = useSettings();
@@ -454,6 +468,19 @@ export default function AlertsPage() {
             setSearchFilter(event.currentTarget.value || null)
           }
         ></TextInput>
+        <Select
+          w={240}
+          label={null}
+          aria-label="Refresh interval"
+          data={[
+            { value: "", label: "Refresh: Never" },
+            { value: "30s", label: "Refresh: 30s" },
+            { value: "1m", label: "Refresh: 1m" },
+            { value: "5m", label: "Refresh: 5m" },
+          ]}
+          value={refreshInterval || ""}
+          onChange={(value) => setRefreshInterval(value || null)}
+        />
       </Group>
       {alertsPageData.groups.length === 0 ? (
         <Alert title="No rules found" icon={<IconInfoCircle />}>
