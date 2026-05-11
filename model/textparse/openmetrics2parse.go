@@ -728,8 +728,8 @@ func splitCompositeFields(b []byte) [][]byte {
 // parseHistogramComposite parses a composite histogram value such as:
 //
 //	{count:12,sum:5.5,schema:0,zero_threshold:0.001,zero_count:2,
-//	 positive_spans:[0:3,2:1],positive_deltas:[1,1,-1,2],
-//	 negative_spans:[],negative_deltas:[]}
+//	 positive_spans:[0:3,2:1],positive_buckets:[1,1,-1,2],
+//	 negative_spans:[],negative_buckets:[]}
 //
 // or a classic histogram:
 //
@@ -745,8 +745,8 @@ func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 
 	isNative := false
 	for _, k := range []string{
-		"schema", "positive_spans", "positive_deltas",
-		"negative_spans", "negative_deltas",
+		"schema", "positive_spans", "positive_buckets",
+		"negative_spans", "negative_buckets",
 	} {
 		if _, ok := kv[k]; ok {
 			isNative = true
@@ -852,13 +852,13 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 	}
 
 	if isFloat {
-		posDeltas, err := parseFloatDeltas(kv["positive_deltas"])
+		posDeltas, err := parseFloatDeltas(kv["positive_buckets"])
 		if err != nil {
-			return nil, nil, fmt.Errorf("invalid positive_deltas: %w", err)
+			return nil, nil, fmt.Errorf("invalid positive_buckets: %w", err)
 		}
-		negDeltas, err := parseFloatDeltas(kv["negative_deltas"])
+		negDeltas, err := parseFloatDeltas(kv["negative_buckets"])
 		if err != nil {
-			return nil, nil, fmt.Errorf("invalid negative_deltas: %w", err)
+			return nil, nil, fmt.Errorf("invalid negative_buckets: %w", err)
 		}
 		fh := &histogram.FloatHistogram{
 			Schema:          int32(schema64),
@@ -877,13 +877,13 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 		return nil, fh, nil
 	}
 
-	posDeltas, err := parseIntDeltas(kv["positive_deltas"])
+	posDeltas, err := parseIntDeltas(kv["positive_buckets"])
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid positive_deltas: %w", err)
+		return nil, nil, fmt.Errorf("invalid positive_buckets: %w", err)
 	}
-	negDeltas, err := parseIntDeltas(kv["negative_deltas"])
+	negDeltas, err := parseIntDeltas(kv["negative_buckets"])
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid negative_deltas: %w", err)
+		return nil, nil, fmt.Errorf("invalid negative_buckets: %w", err)
 	}
 	h := &histogram.Histogram{
 		Schema:          int32(schema64),

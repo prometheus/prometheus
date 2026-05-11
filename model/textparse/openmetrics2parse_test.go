@@ -274,7 +274,7 @@ req_duration {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,1.0:2]}
 func TestOpenMetrics2ParseNativeHistogram(t *testing.T) {
 	input := `# HELP test_histogram Native histogram.
 # TYPE test_histogram histogram
-test_histogram {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:3],positive_deltas:[1,1,-1],negative_spans:[],negative_deltas:[]}
+test_histogram {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:3],positive_buckets:[1,1,-1],negative_spans:[],negative_buckets:[]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -291,6 +291,63 @@ test_histogram {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,posi
 				Sum:             12.1,
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
 				PositiveBuckets: []int64{1, 1, -1},
+			},
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
+func TestOpenMetrics2ParseNativeHistogramOmittedEmptyFields(t *testing.T) {
+	// The OM2 spec says empty spans/buckets SHOULD be omitted; verify the
+	// parser treats absent keys identically to explicit empty lists.
+	input := `# TYPE test_histogram histogram
+test_histogram {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:3],positive_buckets:[1,1,-1]}
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "test_histogram", typ: model.MetricTypeHistogram},
+		{
+			m:    "test_histogram",
+			lset: labels.FromStrings("__name__", "test_histogram"),
+			shs: &histogram.Histogram{
+				Schema:          0,
+				ZeroThreshold:   0.001,
+				ZeroCount:       2,
+				Count:           5,
+				Sum:             12.1,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+				PositiveBuckets: []int64{1, 1, -1},
+			},
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
+func TestOpenMetrics2ParseNativeHistogramOmittedPositiveFields(t *testing.T) {
+	// Histogram with only negative buckets; positive_spans and positive_buckets are omitted.
+	input := `# TYPE test_histogram histogram
+test_histogram {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,negative_spans:[0:3],negative_buckets:[1,1,-1]}
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "test_histogram", typ: model.MetricTypeHistogram},
+		{
+			m:    "test_histogram",
+			lset: labels.FromStrings("__name__", "test_histogram"),
+			shs: &histogram.Histogram{
+				Schema:          0,
+				ZeroThreshold:   0.001,
+				ZeroCount:       2,
+				Count:           5,
+				Sum:             12.1,
+				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+				NegativeBuckets: []int64{1, 1, -1},
 			},
 		},
 	}
@@ -467,7 +524,7 @@ req_duration {count:2,sum:4.0} 1234567.0 st@1000.0
 
 func TestOpenMetrics2ParseFloatHistogram(t *testing.T) {
 	input := `# TYPE test_histogram histogram
-test_histogram {count:5.5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2.5,positive_spans:[0:2],positive_deltas:[2.0,1.0],negative_spans:[],negative_deltas:[]}
+test_histogram {count:5.5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2.5,positive_spans:[0:2],positive_buckets:[2.0,1.0],negative_spans:[],negative_buckets:[]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -494,7 +551,7 @@ test_histogram {count:5.5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2.5,
 
 func TestOpenMetrics2ParseCompositeGaugeHistogram(t *testing.T) {
 	input := `# TYPE req_size gaugehistogram
-req_size {count:10,sum:100.0,schema:0,zero_threshold:0.001,zero_count:1,positive_spans:[0:2],positive_deltas:[3,2],negative_spans:[],negative_deltas:[]}
+req_size {count:10,sum:100.0,schema:0,zero_threshold:0.001,zero_count:1,positive_spans:[0:2],positive_buckets:[3,2],negative_spans:[],negative_buckets:[]}
 # EOF
 `
 	exp := []parsedEntry{
