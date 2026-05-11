@@ -24,8 +24,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/AliyunContainerService/ack-ram-tool/pkg/ecsmetadata"
-	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
+	openapiutil "github.com/alibabacloud-go/darabonba-openapi/v2/utils"
+	ecs "github.com/alibabacloud-go/ecs-20140526/v7/client"
+	"github.com/alibabacloud-go/tea/dara"
+	"github.com/aliyun/credentials-go/credentials"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -33,8 +35,6 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-
-	ecs_pop "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
 )
 
 const (
@@ -197,7 +197,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		labels, err := addLabel(d.ecsCfg.UserID, d.port, instance)
 		if err != nil {
 			noIPAddressInstanceCount++
-			d.logger.Debug("Skipping instance without address", "instance_id", instance.InstanceId)
+			d.logger.Debug("Skipping instance without address", "instance_id", dara.StringValue(instance.InstanceId))
 			continue
 		}
 		tg.Targets = append(tg.Targets, labels)
@@ -214,7 +214,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	return []*targetgroup.Group{tg}, nil
 }
 
-func (cl *ecsClient) QueryInstances(tagFilters []*TagFilter, cache *targetgroup.Group) ([]ecs_pop.Instance, error) {
+func (cl *ecsClient) QueryInstances(tagFilters []*TagFilter, cache *targetgroup.Group) ([]*ecs.DescribeInstancesResponseBodyInstancesInstance, error) {
 	if len(tagFilters) > 0 { // len(tagFilters) = 0 when tagFilters = nil
 		// 1. tagFilter situation. query ListTagResources first, then query DescribeInstances
 		instancesFromListTagResources, err := cl.queryFromListTagResources(tagFilters)
@@ -239,28 +239,35 @@ func (cl *ecsClient) QueryInstances(tagFilters []*TagFilter, cache *targetgroup.
 
 // listTagInstanceIDs get instance ids and filterred by tag.
 func (cl *ecsClient) listTagInstanceIDs(token string, tagFilters []*TagFilter) ([]string, string, error) {
-	listTagResourcesRequest := ecs_pop.CreateListTagResourcesRequest()
-	listTagResourcesRequest.RegionId = cl.regionID
-	listTagResourcesRequest.ResourceType = "instance"
+	listTagResourcesRequest := &ecs.ListTagResourcesRequest{
+		RegionId:     dara.String(cl.regionID),
+		ResourceType: dara.String("instance"),
+	}
 
 	// FIRST token is empty, and continue
 	if token != "FIRST" {
 		if token != "" && token != "ICM=" {
-			listTagResourcesRequest.NextToken = token
+			listTagResourcesRequest.NextToken = dara.String(token)
 		} else {
 			return []string{}, "", errors.New("token is empty, but not first request")
 		}
 	}
 
 	filters := tagFiltersCast(tagFilters)
-	listTagResourcesRequest.TagFilter = &filters
-	response, err := cl.ListTagResources(listTagResourcesRequest)
+	listTagResourcesRequest.TagFilter = filters
+	runtime := &dara.RuntimeOptions{}
+	response, err := cl.ListTagResourcesWithOptions(listTagResourcesRequest, runtime)
 	if err != nil {
 		return []string{}, "", fmt.Errorf("response from ListTagResources, err: %w", err)
 	}
-	cl.logger.Debug("Received ListTagResources response", "next_token", response.NextToken)
 
-	tagResources := response.TagResources.TagResource
+	nextToken := dara.StringValue(response.Body.NextToken)
+	cl.logger.Debug("Received ListTagResources response", "next_token", nextToken)
+
+	var tagResources []*ecs.ListTagResourcesResponseBodyTagResourcesTagResource
+	if response.Body != nil && response.Body.TagResources != nil {
+		tagResources = response.Body.TagResources.TagResource
+	}
 	if len(tagResources) == 0 { // len(tagResources) = 0 when tagResources = nil
 		cl.logger.Debug("No resources found for tag filters")
 		return []string{}, "", nil
@@ -268,33 +275,33 @@ func (cl *ecsClient) listTagInstanceIDs(token string, tagFilters []*TagFilter) (
 
 	var resourceIDs []string
 	for _, tagResource := range tagResources {
-		resourceIDs = append(resourceIDs, tagResource.ResourceId)
+		resourceIDs = append(resourceIDs, dara.StringValue(tagResource.ResourceId))
 	}
 	cl.logger.Debug("Listed tag resources", "count", len(resourceIDs))
-	return resourceIDs, response.NextToken, nil
+	return resourceIDs, nextToken, nil
 }
 
-func tagFiltersCast(tagFilters []*TagFilter) []ecs_pop.ListTagResourcesTagFilter {
-	var ret []ecs_pop.ListTagResourcesTagFilter
+func tagFiltersCast(tagFilters []*TagFilter) []*ecs.ListTagResourcesRequestTagFilter {
+	var ret []*ecs.ListTagResourcesRequestTagFilter
 	for _, tagFilter := range tagFilters {
 		if len(tagFilter.Values) == 0 {
 			continue
 		}
-		tagFilter := ecs_pop.ListTagResourcesTagFilter{
-			TagKey:    tagFilter.Key,
-			TagValues: &tagFilter.Values,
+		tagValues := make([]*string, 0, len(tagFilter.Values))
+		for _, v := range tagFilter.Values {
+			tagValues = append(tagValues, dara.String(v))
 		}
-		ret = append(ret, tagFilter)
+		f := &ecs.ListTagResourcesRequestTagFilter{
+			TagKey:    dara.String(tagFilter.Key),
+			TagValues: tagValues,
+		}
+		ret = append(ret, f)
 	}
 	return ret
 }
 
-func (cl *ecsClient) queryFromDescribeInstances() ([]ecs_pop.Instance, error) {
-	describeInstancesRequest := ecs_pop.CreateDescribeInstancesRequest()
-	describeInstancesRequest.RegionId = cl.regionID
-	describeInstancesRequest.PageSize = requests.NewInteger(MaxPageLimit)
-
-	var instances []ecs_pop.Instance
+func (cl *ecsClient) queryFromDescribeInstances() ([]*ecs.DescribeInstancesResponseBodyInstancesInstance, error) {
+	var instances []*ecs.DescribeInstancesResponseBodyInstancesInstance
 	pageNumber := 1
 	neededCount := MaxPageLimit // number of instances still needed
 	if cl.limit >= 0 {
@@ -302,19 +309,29 @@ func (cl *ecsClient) queryFromDescribeInstances() ([]ecs_pop.Instance, error) {
 	}
 
 	for neededCount > 0 {
-		describeInstancesRequest.PageNumber = requests.NewInteger(pageNumber)
-		response, err := cl.DescribeInstances(describeInstancesRequest)
+		describeInstancesRequest := &ecs.DescribeInstancesRequest{
+			RegionId:   dara.String(cl.regionID),
+			PageSize:   dara.Int32(int32(MaxPageLimit)),
+			PageNumber: dara.Int32(int32(pageNumber)),
+		}
+		runtime := &dara.RuntimeOptions{}
+		response, err := cl.DescribeInstancesWithOptions(describeInstancesRequest, runtime)
 		if err != nil {
 			return nil, fmt.Errorf("could not get ecs describeInstances response, err: %w", err)
 		}
 
-		count := len(response.Instances.Instance)
+		var instanceList []*ecs.DescribeInstancesResponseBodyInstancesInstance
+		if response.Body != nil && response.Body.Instances != nil {
+			instanceList = response.Body.Instances.Instance
+		}
+
+		count := len(instanceList)
 		if count == 0 {
 			break
 		}
 		// first page
 		if pageNumber == 1 {
-			neededCount = response.TotalCount
+			neededCount = int(dara.Int32Value(response.Body.TotalCount))
 			if cl.limit > 0 {
 				neededCount = min(neededCount, cl.limit)
 			}
@@ -322,7 +339,7 @@ func (cl *ecsClient) queryFromDescribeInstances() ([]ecs_pop.Instance, error) {
 		// if current page is last page, neededCount < count
 		// else neededCount >= count
 		pageLimit := min(count, neededCount) // number of instances in one page
-		instances = append(instances, response.Instances.Instance[:pageLimit]...)
+		instances = append(instances, instanceList[:pageLimit]...)
 
 		neededCount -= count
 		pageNumber++
@@ -333,10 +350,10 @@ func (cl *ecsClient) queryFromDescribeInstances() ([]ecs_pop.Instance, error) {
 // getCacheReCheckInstances
 // get cache targetGroup's instanceIDs, and query DescribeInstances again to double check.
 // every 50 instance per page.
-func (cl *ecsClient) getCacheReCheckInstances(cache *targetgroup.Group) []ecs_pop.Instance {
+func (cl *ecsClient) getCacheReCheckInstances(cache *targetgroup.Group) []*ecs.DescribeInstancesResponseBodyInstancesInstance {
 	pageCount := 0
 	var instanceIDs []string
-	var retInstances []ecs_pop.Instance
+	var retInstances []*ecs.DescribeInstancesResponseBodyInstancesInstance
 	for tgLabelSetIndex, tgLabelSet := range cache.Targets {
 		pageCount++
 
@@ -363,9 +380,9 @@ func (cl *ecsClient) getCacheReCheckInstances(cache *targetgroup.Group) []ecs_po
 
 // queryFromListTagResources
 // token query.
-func (cl *ecsClient) queryFromListTagResources(tagFilters []*TagFilter) ([]ecs_pop.Instance, error) {
-	var currentInstances []ecs_pop.Instance
-	var retInstances []ecs_pop.Instance
+func (cl *ecsClient) queryFromListTagResources(tagFilters []*TagFilter) ([]*ecs.DescribeInstancesResponseBodyInstancesInstance, error) {
+	var currentInstances []*ecs.DescribeInstancesResponseBodyInstancesInstance
+	var retInstances []*ecs.DescribeInstancesResponseBodyInstancesInstance
 	var err error
 
 	token := "FIRST"
@@ -393,29 +410,35 @@ func (cl *ecsClient) queryFromListTagResources(tagFilters []*TagFilter) ([]ecs_p
 
 // describeInstances get instance
 // page query, max size 50 every page.
-func (cl *ecsClient) describeInstances(ids []string) ([]ecs_pop.Instance, error) {
-	describeInstancesRequest := ecs_pop.CreateDescribeInstancesRequest()
-	describeInstancesRequest.RegionId = cl.regionID
-	describeInstancesRequest.PageNumber = requests.NewInteger(1)
-	describeInstancesRequest.PageSize = requests.NewInteger(MaxPageLimit)
-
+func (cl *ecsClient) describeInstances(ids []string) ([]*ecs.DescribeInstancesResponseBodyInstancesInstance, error) {
 	if ids == nil {
 		ids = []string{}
 	}
 	idsJSON, err := json.Marshal(ids)
 	if err != nil {
-		return []ecs_pop.Instance{}, err
+		return nil, err
 	}
-	describeInstancesRequest.InstanceIds = string(idsJSON)
 
-	response, err := cl.DescribeInstances(describeInstancesRequest)
-	if err != nil {
-		return []ecs_pop.Instance{}, fmt.Errorf("could not invoke DescribeInstances API, err: %w", err)
+	describeInstancesRequest := &ecs.DescribeInstancesRequest{
+		RegionId:    dara.String(cl.regionID),
+		PageNumber:  dara.Int32(1),
+		PageSize:    dara.Int32(int32(MaxPageLimit)),
+		InstanceIds: dara.String(string(idsJSON)),
 	}
-	return response.Instances.Instance, nil
+
+	runtime := &dara.RuntimeOptions{}
+	response, err := cl.DescribeInstancesWithOptions(describeInstancesRequest, runtime)
+	if err != nil {
+		return nil, fmt.Errorf("could not invoke DescribeInstances API, err: %w", err)
+	}
+
+	if response.Body != nil && response.Body.Instances != nil {
+		return response.Body.Instances.Instance, nil
+	}
+	return nil, nil
 }
 
-func (cl *ecsClient) listTagInstances(token string, currentTotalCount int, tagFilters []*TagFilter) (string, []ecs_pop.Instance, error) {
+func (cl *ecsClient) listTagInstances(token string, currentTotalCount int, tagFilters []*TagFilter) (string, []*ecs.DescribeInstancesResponseBodyInstancesInstance, error) {
 	ids, nextToken, err := cl.listTagInstanceIDs(token, tagFilters)
 	if err != nil {
 		return "", nil, fmt.Errorf("get ecs instance ids, err: %w", err)
@@ -435,11 +458,11 @@ func (cl *ecsClient) listTagInstances(token string, currentTotalCount int, tagFi
 }
 
 type client interface {
-	DescribeInstances(request *ecs_pop.DescribeInstancesRequest) (response *ecs_pop.DescribeInstancesResponse, err error)
-	ListTagResources(request *ecs_pop.ListTagResourcesRequest) (response *ecs_pop.ListTagResourcesResponse, err error)
+	DescribeInstancesWithOptions(request *ecs.DescribeInstancesRequest, runtime *dara.RuntimeOptions) (*ecs.DescribeInstancesResponse, error)
+	ListTagResourcesWithOptions(request *ecs.ListTagResourcesRequest, runtime *dara.RuntimeOptions) (*ecs.ListTagResourcesResponse, error)
 }
 
-var _ client = &ecsClient{}
+var _ client = &ecs.Client{}
 
 type ecsClient struct {
 	regionID string
@@ -461,97 +484,88 @@ func newECSClient(config *ECSConfig, logger *slog.Logger) (*ecsClient, error) {
 	}, nil
 }
 
-func getClient(config *ECSConfig, logger *slog.Logger) (*ecs_pop.Client, error) {
+func getClient(config *ECSConfig, logger *slog.Logger) (*ecs.Client, error) {
 	logger.Debug("Resolving ECS client credentials", "region", config.RegionID)
 
 	if config.RegionID == "" {
 		return nil, errors.New("aliyun ECS service discovery config need regionId")
 	}
 
-	// 1. Args
+	var credConfig *credentials.Config
 
-	// NewClientWithRamRoleArnAndPolicy
+	// Determine credential type based on config.
 	if config.Policy != "" && config.AccessKey != "" && config.AccessKeySecret != "" && config.RoleArn != "" && config.RoleSessionName != "" {
-		client, clientErr := ecs_pop.NewClientWithRamRoleArnAndPolicy(config.RegionID, config.AccessKey, config.AccessKeySecret, config.RoleArn, config.RoleSessionName, config.Policy)
-		return client, clientErr
+		credConfig = &credentials.Config{
+			Type:            dara.String("ram_role_arn"),
+			AccessKeyId:     dara.String(config.AccessKey),
+			AccessKeySecret: dara.String(config.AccessKeySecret),
+			RoleArn:         dara.String(config.RoleArn),
+			RoleSessionName: dara.String(config.RoleSessionName),
+			Policy:          dara.String(config.Policy),
+		}
+	} else if config.RoleSessionName != "" && config.AccessKey != "" && config.AccessKeySecret != "" && config.RoleArn != "" {
+		credConfig = &credentials.Config{
+			Type:            dara.String("ram_role_arn"),
+			AccessKeyId:     dara.String(config.AccessKey),
+			AccessKeySecret: dara.String(config.AccessKeySecret),
+			RoleArn:         dara.String(config.RoleArn),
+			RoleSessionName: dara.String(config.RoleSessionName),
+		}
+	} else if config.StsToken != "" && config.AccessKey != "" && config.AccessKeySecret != "" {
+		credConfig = &credentials.Config{
+			Type:            dara.String("sts"),
+			AccessKeyId:     dara.String(config.AccessKey),
+			AccessKeySecret: dara.String(config.AccessKeySecret),
+			SecurityToken:   dara.String(config.StsToken),
+		}
+	} else if config.AccessKey != "" && config.AccessKeySecret != "" {
+		credConfig = &credentials.Config{
+			Type:            dara.String("access_key"),
+			AccessKeyId:     dara.String(config.AccessKey),
+			AccessKeySecret: dara.String(config.AccessKeySecret),
+		}
+	} else if config.RoleName != "" {
+		credConfig = &credentials.Config{
+			Type:     dara.String("ecs_ram_role"),
+			RoleName: dara.String(config.RoleName),
+		}
+	} else {
+		// Default: use ECS RAM role from metadata.
+		credConfig = &credentials.Config{
+			Type: dara.String("ecs_ram_role"),
+		}
 	}
 
-	// NewClientWithRamRoleArn
-	if config.RoleSessionName != "" && config.AccessKey != "" && config.AccessKeySecret != "" && config.RoleArn != "" {
-		client, clientErr := ecs_pop.NewClientWithRamRoleArn(config.RegionID, config.AccessKey, config.AccessKeySecret, config.RoleArn, config.RoleSessionName)
-		return client, clientErr
+	cred, err := credentials.NewCredential(credConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create credentials: %w", err)
 	}
 
-	// NewClientWithStsToken
-	if config.StsToken != "" && config.AccessKey != "" && config.AccessKeySecret != "" {
-		client, clientErr := ecs_pop.NewClientWithStsToken(config.RegionID, config.AccessKey, config.AccessKeySecret, config.StsToken)
-		return client, clientErr
+	apiConfig := &openapiutil.Config{
+		Credential: cred,
+		RegionId:   dara.String(config.RegionID),
 	}
 
-	// NewClientWithAccessKey
-	if config.AccessKey != "" && config.AccessKeySecret != "" {
-		client, clientErr := ecs_pop.NewClientWithAccessKey(config.RegionID, config.AccessKey, config.AccessKeySecret)
-		return client, clientErr
+	ecsClient, err := ecs.NewClient(apiConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ECS client: %w", err)
 	}
-
-	// NewClientWithEcsRamRole
-	if config.RoleName != "" {
-		client, clientErr := ecs_pop.NewClientWithEcsRamRole(config.RegionID, config.RoleName)
-		return client, clientErr
-	}
-
-	// NewClientWithRsaKeyPair
-	if config.PublicKeyID != "" && config.PrivateKey != "" && config.SessionExpiration != 0 {
-		client, clientErr := ecs_pop.NewClientWithRsaKeyPair(config.RegionID, config.PublicKeyID, config.PrivateKey, config.SessionExpiration)
-		return client, clientErr
-	}
-
-	logger.Debug("Resolving ECS client via instance RAM role")
-
-	// 2. ACS
-	// get all RoleName for check
-
-	metaData := ecsmetadata.DefaultClient
-	roleName, getRoleNameErr := metaData.GetRoleName(context.Background())
-	if getRoleNameErr != nil {
-		logger.Debug("Failed to get RAM role name from instance metadata", "err", getRoleNameErr)
-		return nil, errors.New("aliyun ECS service discovery cant init client, need auth config")
-	}
-
-	logger.Debug("Fetched RAM role name", "role", roleName)
-
-	roleAuth, roleAuthErr := metaData.GetRoleCredentials(context.Background(), roleName)
-	if roleAuthErr != nil {
-		logger.Debug("Failed to get RAM role credentials", "role", roleName, "err", roleAuthErr)
-		return nil, errors.New("aliyun ECS service discovery cant init client, need auth config")
-	}
-
-	logger.Debug("Initializing ECS client with STS token", "role", roleName)
-
-	client := ecs_pop.Client{}
-	clientConfig := client.InitClientConfig()
-	clientConfig.Debug = true
-	clientErr := client.InitWithStsToken(config.RegionID, roleAuth.AccessKeyId, roleAuth.AccessKeySecret, roleAuth.SecurityToken)
-	if clientErr != nil {
-		logger.Debug("Failed to initialize ECS client with STS token", "err", clientErr)
-		return nil, errors.New("aliyun ECS service discovery cant init client, need auth config")
-	}
-	return &client, nil
+	return ecsClient, nil
 }
 
 // mergeHashInstances hash by instanceId and merge.
 // O(n + m)
 // The purpose is to remove duplicate elements.
-func mergeHashInstances(instances1, instances2 []ecs_pop.Instance) []ecs_pop.Instance {
-	instancesMap := make(map[string]ecs_pop.Instance)
+func mergeHashInstances(instances1, instances2 []*ecs.DescribeInstancesResponseBodyInstancesInstance) []*ecs.DescribeInstancesResponseBodyInstancesInstance {
+	instancesMap := make(map[string]*ecs.DescribeInstancesResponseBodyInstancesInstance)
 	for _, each := range instances1 {
-		instancesMap[each.InstanceId] = each
+		instancesMap[dara.StringValue(each.InstanceId)] = each
 	}
 	for _, each := range instances2 {
-		instancesMap[each.InstanceId] = each
+		instancesMap[dara.StringValue(each.InstanceId)] = each
 	}
 
-	var instances []ecs_pop.Instance
+	var instances []*ecs.DescribeInstancesResponseBodyInstancesInstance
 	for _, eachInstance := range instancesMap {
 		instances = append(instances, eachInstance)
 	}
@@ -559,13 +573,13 @@ func mergeHashInstances(instances1, instances2 []ecs_pop.Instance) []ecs_pop.Ins
 }
 
 // addLabel add label, return LabelSet and error (!=nil when isAddressLabelExist equal to false).
-func addLabel(userID string, port int, instance ecs_pop.Instance) (model.LabelSet, error) {
+func addLabel(userID string, port int, instance *ecs.DescribeInstancesResponseBodyInstancesInstance) (model.LabelSet, error) {
 	labels := model.LabelSet{
-		ecsLabelInstanceID:  model.LabelValue(instance.InstanceId),
-		ecsLabelRegionID:    model.LabelValue(instance.RegionId),
-		ecsLabelStatus:      model.LabelValue(instance.Status),
-		ecsLabelZoneID:      model.LabelValue(instance.ZoneId),
-		ecsLabelNetworkType: model.LabelValue(instance.InstanceNetworkType),
+		ecsLabelInstanceID:  model.LabelValue(dara.StringValue(instance.InstanceId)),
+		ecsLabelRegionID:    model.LabelValue(dara.StringValue(instance.RegionId)),
+		ecsLabelStatus:      model.LabelValue(dara.StringValue(instance.Status)),
+		ecsLabelZoneID:      model.LabelValue(dara.StringValue(instance.ZoneId)),
+		ecsLabelNetworkType: model.LabelValue(dara.StringValue(instance.InstanceNetworkType)),
 	}
 
 	if userID != "" {
@@ -577,44 +591,50 @@ func addLabel(userID string, port int, instance ecs_pop.Instance) (model.LabelSe
 	isAddressLabelExist := false
 
 	// check classic public ip
-	if len(instance.PublicIpAddress.IpAddress) > 0 {
-		labels[ecsLabelPublicIP] = model.LabelValue(instance.PublicIpAddress.IpAddress[0])
-		addr := net.JoinHostPort(instance.PublicIpAddress.IpAddress[0], portStr)
+	if instance.PublicIpAddress != nil && len(instance.PublicIpAddress.IpAddress) > 0 {
+		ip := dara.StringValue(instance.PublicIpAddress.IpAddress[0])
+		labels[ecsLabelPublicIP] = model.LabelValue(ip)
+		addr := net.JoinHostPort(ip, portStr)
 		labels[model.AddressLabel] = model.LabelValue(addr)
 		isAddressLabelExist = true
 	}
 
 	// check classic inner ip
-	if len(instance.InnerIpAddress.IpAddress) > 0 {
-		labels[ecsLabelInnerIP] = model.LabelValue(instance.InnerIpAddress.IpAddress[0])
-		addr := net.JoinHostPort(instance.InnerIpAddress.IpAddress[0], portStr)
+	if instance.InnerIpAddress != nil && len(instance.InnerIpAddress.IpAddress) > 0 {
+		ip := dara.StringValue(instance.InnerIpAddress.IpAddress[0])
+		labels[ecsLabelInnerIP] = model.LabelValue(ip)
+		addr := net.JoinHostPort(ip, portStr)
 		labels[model.AddressLabel] = model.LabelValue(addr)
 		isAddressLabelExist = true
 	}
 
 	// check vpc eip
-	if instance.EipAddress.IpAddress != "" {
-		labels[ecsLabelEip] = model.LabelValue(instance.EipAddress.IpAddress)
-		addr := net.JoinHostPort(instance.EipAddress.IpAddress, portStr)
+	if instance.EipAddress != nil && dara.StringValue(instance.EipAddress.IpAddress) != "" {
+		ip := dara.StringValue(instance.EipAddress.IpAddress)
+		labels[ecsLabelEip] = model.LabelValue(ip)
+		addr := net.JoinHostPort(ip, portStr)
 		labels[model.AddressLabel] = model.LabelValue(addr)
 		isAddressLabelExist = true
 	}
 
 	// check vpc private ip
-	if len(instance.VpcAttributes.PrivateIpAddress.IpAddress) > 0 {
-		labels[ecsLabelPrivateIP] = model.LabelValue(instance.VpcAttributes.PrivateIpAddress.IpAddress[0])
-		addr := net.JoinHostPort(instance.VpcAttributes.PrivateIpAddress.IpAddress[0], portStr)
+	if instance.VpcAttributes != nil && instance.VpcAttributes.PrivateIpAddress != nil && len(instance.VpcAttributes.PrivateIpAddress.IpAddress) > 0 {
+		ip := dara.StringValue(instance.VpcAttributes.PrivateIpAddress.IpAddress[0])
+		labels[ecsLabelPrivateIP] = model.LabelValue(ip)
+		addr := net.JoinHostPort(ip, portStr)
 		labels[model.AddressLabel] = model.LabelValue(addr)
 		isAddressLabelExist = true
 	}
 
 	if !isAddressLabelExist {
-		return nil, fmt.Errorf("instance %s dont have AddressLabel", instance.InstanceId)
+		return nil, fmt.Errorf("instance %s dont have AddressLabel", dara.StringValue(instance.InstanceId))
 	}
 
 	// tags
-	for _, tag := range instance.Tags.Tag {
-		labels[ecsLabelTag+model.LabelName(tag.TagKey)] = model.LabelValue(tag.TagValue)
+	if instance.Tags != nil {
+		for _, tag := range instance.Tags.Tag {
+			labels[ecsLabelTag+model.LabelName(dara.StringValue(tag.TagKey))] = model.LabelValue(dara.StringValue(tag.TagValue))
+		}
 	}
 	return labels, nil
 }

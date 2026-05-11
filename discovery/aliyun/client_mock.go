@@ -26,7 +26,8 @@ package aliyun
 import (
 	reflect "reflect"
 
-	ecs "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
+	ecs "github.com/alibabacloud-go/ecs-20140526/v7/client"
+	"github.com/alibabacloud-go/tea/dara"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -53,32 +54,32 @@ func (m *Mockclient) EXPECT() *MockclientMockRecorder {
 	return m.recorder
 }
 
-// DescribeInstances mocks base method.
-func (m *Mockclient) DescribeInstances(request *ecs.DescribeInstancesRequest) (*ecs.DescribeInstancesResponse, error) {
+// DescribeInstancesWithOptions mocks base method.
+func (m *Mockclient) DescribeInstancesWithOptions(request *ecs.DescribeInstancesRequest, runtime *dara.RuntimeOptions) (*ecs.DescribeInstancesResponse, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DescribeInstances", request)
+	ret := m.ctrl.Call(m, "DescribeInstancesWithOptions", request, runtime)
 	ret0, _ := ret[0].(*ecs.DescribeInstancesResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// DescribeInstances indicates an expected call of DescribeInstances.
-func (mr *MockclientMockRecorder) DescribeInstances(request any) *gomock.Call {
+// DescribeInstancesWithOptions indicates an expected call of DescribeInstancesWithOptions.
+func (mr *MockclientMockRecorder) DescribeInstancesWithOptions(request, runtime any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DescribeInstances", reflect.TypeOf((*Mockclient)(nil).DescribeInstances), request)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DescribeInstancesWithOptions", reflect.TypeOf((*Mockclient)(nil).DescribeInstancesWithOptions), request, runtime)
 }
 
-// ListTagResources mocks base method.
-func (m *Mockclient) ListTagResources(request *ecs.ListTagResourcesRequest) (*ecs.ListTagResourcesResponse, error) {
+// ListTagResourcesWithOptions mocks base method.
+func (m *Mockclient) ListTagResourcesWithOptions(request *ecs.ListTagResourcesRequest, runtime *dara.RuntimeOptions) (*ecs.ListTagResourcesResponse, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListTagResources", request)
+	ret := m.ctrl.Call(m, "ListTagResourcesWithOptions", request, runtime)
 	ret0, _ := ret[0].(*ecs.ListTagResourcesResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// ListTagResources indicates an expected call of ListTagResources.
-func (mr *MockclientMockRecorder) ListTagResources(request any) *gomock.Call {
+// ListTagResourcesWithOptions indicates an expected call of ListTagResourcesWithOptions.
+func (mr *MockclientMockRecorder) ListTagResourcesWithOptions(request, runtime any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListTagResources", reflect.TypeOf((*Mockclient)(nil).ListTagResources), request)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListTagResourcesWithOptions", reflect.TypeOf((*Mockclient)(nil).ListTagResourcesWithOptions), request, runtime)
 }

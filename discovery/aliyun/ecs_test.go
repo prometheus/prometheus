@@ -21,7 +21,8 @@ import (
 	"strconv"
 	"testing"
 
-	ecs_pop "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
+	ecs "github.com/alibabacloud-go/ecs-20140526/v7/client"
+	"github.com/alibabacloud-go/tea/dara"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -52,158 +53,162 @@ func newClient(t *testing.T) *ecsClient {
 	}
 
 	mockClient.EXPECT().
-		ListTagResources(gomock.All(
-			gomock.AssignableToTypeOf(&ecs_pop.ListTagResourcesRequest{}),
-		)).
-		DoAndReturn(func(request *ecs_pop.ListTagResourcesRequest) (*ecs_pop.ListTagResourcesResponse, error) {
+		ListTagResourcesWithOptions(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(request *ecs.ListTagResourcesRequest, runtime *dara.RuntimeOptions) (*ecs.ListTagResourcesResponse, error) {
 			// construct response
 			// [NextToken] indicates the location where the next query starts
-			if len(request.NextToken) == 0 {
-				request.NextToken = "0"
+			nextToken := dara.StringValue(request.NextToken)
+			if nextToken == "" {
+				nextToken = "0"
 			}
-			start, err := strconv.Atoi(request.NextToken)
+			start, err := strconv.Atoi(nextToken)
 			if err != nil {
-				// return nil, fmt.Errorf("token valid, err: %w", err)
-				return &ecs_pop.ListTagResourcesResponse{}, nil
+				return &ecs.ListTagResourcesResponse{
+					Body: &ecs.ListTagResourcesResponseBody{},
+				}, nil
 			}
 			if start >= UpperLimit { // up to 1000 instances
-				return &ecs_pop.ListTagResourcesResponse{}, nil
+				return &ecs.ListTagResourcesResponse{
+					Body: &ecs.ListTagResourcesResponseBody{},
+				}, nil
 			}
 
 			end := min(UpperLimit, start+MaxPageLimit)
-			tagResources := make([]ecs_pop.TagResource, end-start)
+			tagResources := make([]*ecs.ListTagResourcesResponseBodyTagResourcesTagResource, end-start)
 			for i := start; i < end; i++ {
-				tagResource := ecs_pop.TagResource{
-					ResourceType: "instance",
-					ResourceId:   strconv.Itoa(i),
-					TagKey:       "name",
-					TagValue:     "ecs-test",
+				tagResource := &ecs.ListTagResourcesResponseBodyTagResourcesTagResource{
+					ResourceType: dara.String("instance"),
+					ResourceId:   dara.String(strconv.Itoa(i)),
+					TagKey:       dara.String("name"),
+					TagValue:     dara.String("ecs-test"),
 				}
 				tagResources[i-start] = tagResource
 			}
-			listTagResponse := ecs_pop.ListTagResourcesResponse{
-				TagResources: ecs_pop.TagResources{TagResource: tagResources},
-				NextToken:    strconv.Itoa(start + MaxPageLimit),
+			responseNextToken := strconv.Itoa(start + MaxPageLimit)
+			listTagResponse := &ecs.ListTagResourcesResponse{
+				Body: &ecs.ListTagResourcesResponseBody{
+					TagResources: &ecs.ListTagResourcesResponseBodyTagResources{
+						TagResource: tagResources,
+					},
+					NextToken: dara.String(responseNextToken),
+				},
 			}
-			return &listTagResponse, nil
+			return listTagResponse, nil
 		}).AnyTimes()
 
 	mockClient.EXPECT().
-		DescribeInstances(gomock.All(
-			gomock.AssignableToTypeOf(&ecs_pop.DescribeInstancesRequest{}),
-		)).
-		DoAndReturn(func(request *ecs_pop.DescribeInstancesRequest) (*ecs_pop.DescribeInstancesResponse, error) {
+		DescribeInstancesWithOptions(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(request *ecs.DescribeInstancesRequest, runtime *dara.RuntimeOptions) (*ecs.DescribeInstancesResponse, error) {
 			// construct data
 			totalCount := UpperLimit
-			allInstances := make([]ecs_pop.Instance, totalCount)
+			allInstances := make([]*ecs.DescribeInstancesResponseBodyInstancesInstance, totalCount)
 			for i := 0; i < totalCount; i++ {
-				instance := ecs_pop.Instance{
-					InstanceId: strconv.Itoa(i),
-					Tags: ecs_pop.TagsInDescribeInstances{
-						Tag: []ecs_pop.Tag{
-							{TagKey: "name", TagValue: "ecs-test"},
+				instance := &ecs.DescribeInstancesResponseBodyInstancesInstance{
+					InstanceId: dara.String(strconv.Itoa(i)),
+					Tags: &ecs.DescribeInstancesResponseBodyInstancesInstanceTags{
+						Tag: []*ecs.DescribeInstancesResponseBodyInstancesInstanceTagsTag{
+							{TagKey: dara.String("name"), TagValue: dara.String("ecs-test")},
 						},
 					},
 				}
 				allInstances[i] = instance
 			}
 
-			if len(request.InstanceIds) == 0 {
-				pageNumber, err := strconv.Atoi(string(request.PageNumber))
-				if err != nil {
-					return nil, err
-				}
-				pageSize, err := strconv.Atoi(string(request.PageSize))
-				if err != nil {
-					return nil, err
-				}
+			instanceIds := dara.StringValue(request.InstanceIds)
+			if instanceIds == "" {
+				pageNumber := int(dara.Int32Value(request.PageNumber))
+				pageSize := int(dara.Int32Value(request.PageSize))
 				start, end := (pageNumber-1)*pageSize, pageNumber*pageSize
-				describeResponse := ecs_pop.DescribeInstancesResponse{
-					TotalCount: totalCount,
-					Instances: ecs_pop.InstancesInDescribeInstances{
-						Instance: allInstances[start:end],
+				describeResponse := &ecs.DescribeInstancesResponse{
+					Body: &ecs.DescribeInstancesResponseBody{
+						TotalCount: dara.Int32(int32(totalCount)),
+						Instances: &ecs.DescribeInstancesResponseBodyInstances{
+							Instance: allInstances[start:end],
+						},
 					},
 				}
-				return &describeResponse, nil
+				return describeResponse, nil
 			}
 
 			// construct response
 			ids := make([]string, 0)
-			err := json.Unmarshal([]byte(request.InstanceIds), &ids)
+			err := json.Unmarshal([]byte(instanceIds), &ids)
 			if err != nil {
 				return nil, fmt.Errorf("unmarshal instance ids, err: %w", err)
 			}
 
-			retInstances := make([]ecs_pop.Instance, 0)
+			retInstances := make([]*ecs.DescribeInstancesResponseBodyInstancesInstance, 0)
 			for _, instance := range allInstances {
-				if contains(ids, instance.InstanceId) {
+				if contains(ids, dara.StringValue(instance.InstanceId)) {
 					retInstances = append(retInstances, instance)
 				}
 			}
-			describeResponse := ecs_pop.DescribeInstancesResponse{
-				TotalCount: totalCount,
-				Instances: ecs_pop.InstancesInDescribeInstances{
-					Instance: retInstances,
+			describeResponse := &ecs.DescribeInstancesResponse{
+				Body: &ecs.DescribeInstancesResponseBody{
+					TotalCount: dara.Int32(int32(totalCount)),
+					Instances: &ecs.DescribeInstancesResponseBodyInstances{
+						Instance: retInstances,
+					},
 				},
 			}
-			return &describeResponse, nil
+			return describeResponse, nil
 		}).AnyTimes()
 	return cli
 }
 
 func TestMergeHashInstances(t *testing.T) {
 	testCases := []struct {
-		instances1 []ecs_pop.Instance
-		instances2 []ecs_pop.Instance
-		expected   []ecs_pop.Instance
+		instances1 []*ecs.DescribeInstancesResponseBodyInstancesInstance
+		instances2 []*ecs.DescribeInstancesResponseBodyInstancesInstance
+		expected   []*ecs.DescribeInstancesResponseBodyInstancesInstance
 	}{
 		{
-			instances1: []ecs_pop.Instance{},
-			instances2: []ecs_pop.Instance{},
-			expected:   []ecs_pop.Instance{},
+			instances1: []*ecs.DescribeInstancesResponseBodyInstancesInstance{},
+			instances2: []*ecs.DescribeInstancesResponseBodyInstancesInstance{},
+			expected:   []*ecs.DescribeInstancesResponseBodyInstancesInstance{},
 		},
 		{
-			instances1: []ecs_pop.Instance{},
-			instances2: []ecs_pop.Instance{
-				{InstanceId: "1"},
-				{InstanceId: "2"},
-				{InstanceId: "3"},
+			instances1: []*ecs.DescribeInstancesResponseBodyInstancesInstance{},
+			instances2: []*ecs.DescribeInstancesResponseBodyInstancesInstance{
+				{InstanceId: dara.String("1")},
+				{InstanceId: dara.String("2")},
+				{InstanceId: dara.String("3")},
 			},
-			expected: []ecs_pop.Instance{
-				{InstanceId: "1"},
-				{InstanceId: "2"},
-				{InstanceId: "3"},
-			},
-		},
-		{
-			instances1: []ecs_pop.Instance{
-				{InstanceId: "1"},
-				{InstanceId: "2"},
-			},
-			instances2: []ecs_pop.Instance{
-				{InstanceId: "2"},
-				{InstanceId: "3"},
-			},
-			expected: []ecs_pop.Instance{
-				{InstanceId: "1"},
-				{InstanceId: "2"},
-				{InstanceId: "3"},
+			expected: []*ecs.DescribeInstancesResponseBodyInstancesInstance{
+				{InstanceId: dara.String("1")},
+				{InstanceId: dara.String("2")},
+				{InstanceId: dara.String("3")},
 			},
 		},
 		{
-			instances1: []ecs_pop.Instance{
-				{InstanceId: "1"},
-				{InstanceId: "2"},
+			instances1: []*ecs.DescribeInstancesResponseBodyInstancesInstance{
+				{InstanceId: dara.String("1")},
+				{InstanceId: dara.String("2")},
 			},
-			instances2: []ecs_pop.Instance{
-				{InstanceId: "3"},
-				{InstanceId: "4"},
+			instances2: []*ecs.DescribeInstancesResponseBodyInstancesInstance{
+				{InstanceId: dara.String("2")},
+				{InstanceId: dara.String("3")},
 			},
-			expected: []ecs_pop.Instance{
-				{InstanceId: "1"},
-				{InstanceId: "2"},
-				{InstanceId: "3"},
-				{InstanceId: "4"},
+			expected: []*ecs.DescribeInstancesResponseBodyInstancesInstance{
+				{InstanceId: dara.String("1")},
+				{InstanceId: dara.String("2")},
+				{InstanceId: dara.String("3")},
+			},
+		},
+		{
+			instances1: []*ecs.DescribeInstancesResponseBodyInstancesInstance{
+				{InstanceId: dara.String("1")},
+				{InstanceId: dara.String("2")},
+			},
+			instances2: []*ecs.DescribeInstancesResponseBodyInstancesInstance{
+				{InstanceId: dara.String("3")},
+				{InstanceId: dara.String("4")},
+			},
+			expected: []*ecs.DescribeInstancesResponseBodyInstancesInstance{
+				{InstanceId: dara.String("1")},
+				{InstanceId: dara.String("2")},
+				{InstanceId: dara.String("3")},
+				{InstanceId: dara.String("4")},
 			},
 		},
 	}
@@ -277,7 +282,7 @@ func TestAddLabel(t *testing.T) {
 		name           string
 		userID         string
 		port           int
-		instance       ecs_pop.Instance
+		instance       *ecs.DescribeInstancesResponseBodyInstancesInstance
 		expectedLabels model.LabelSet
 		expectedError  error
 	}{
@@ -285,20 +290,22 @@ func TestAddLabel(t *testing.T) {
 			name:   "ClassicNetwork",
 			userID: "testUserId",
 			port:   8888,
-			instance: ecs_pop.Instance{
-				InstanceId:          "1",
-				RegionId:            "cn-beijing",
-				Status:              "Running",
-				ZoneId:              "cn-beijing",
-				InstanceNetworkType: "classic",
-				PublicIpAddress: ecs_pop.PublicIpAddressInDescribeInstances{
-					IpAddress: []string{"1.2.3.4"},
+			instance: &ecs.DescribeInstancesResponseBodyInstancesInstance{
+				InstanceId:          dara.String("1"),
+				RegionId:            dara.String("cn-beijing"),
+				Status:              dara.String("Running"),
+				ZoneId:              dara.String("cn-beijing"),
+				InstanceNetworkType: dara.String("classic"),
+				PublicIpAddress: &ecs.DescribeInstancesResponseBodyInstancesInstancePublicIpAddress{
+					IpAddress: []*string{dara.String("1.2.3.4")},
 				},
-				InnerIpAddress: ecs_pop.InnerIpAddressInDescribeInstances{
-					IpAddress: []string{"10.0.0.1"},
+				InnerIpAddress: &ecs.DescribeInstancesResponseBodyInstancesInstanceInnerIpAddress{
+					IpAddress: []*string{dara.String("10.0.0.1")},
 				},
-				Tags: ecs_pop.TagsInDescribeInstances{
-					Tag: []ecs_pop.Tag{{TagKey: "app", TagValue: "k8s"}},
+				Tags: &ecs.DescribeInstancesResponseBodyInstancesInstanceTags{
+					Tag: []*ecs.DescribeInstancesResponseBodyInstancesInstanceTagsTag{
+						{TagKey: dara.String("app"), TagValue: dara.String("k8s")},
+					},
 				},
 			},
 			expectedLabels: model.LabelSet{
@@ -319,22 +326,24 @@ func TestAddLabel(t *testing.T) {
 			name:   "VPCNetwork",
 			userID: "testUserId",
 			port:   8888,
-			instance: ecs_pop.Instance{
-				InstanceId:          "2",
-				RegionId:            "cn-beijing",
-				Status:              "Running",
-				ZoneId:              "cn-beijing",
-				InstanceNetworkType: "vpc",
-				EipAddress: ecs_pop.EipAddressInDescribeInstances{
-					IpAddress: "1.2.3.4",
+			instance: &ecs.DescribeInstancesResponseBodyInstancesInstance{
+				InstanceId:          dara.String("2"),
+				RegionId:            dara.String("cn-beijing"),
+				Status:              dara.String("Running"),
+				ZoneId:              dara.String("cn-beijing"),
+				InstanceNetworkType: dara.String("vpc"),
+				EipAddress: &ecs.DescribeInstancesResponseBodyInstancesInstanceEipAddress{
+					IpAddress: dara.String("1.2.3.4"),
 				},
-				VpcAttributes: ecs_pop.VpcAttributes{
-					PrivateIpAddress: ecs_pop.PrivateIpAddressInDescribeInstanceAttribute{
-						IpAddress: []string{"10.0.0.1"},
+				VpcAttributes: &ecs.DescribeInstancesResponseBodyInstancesInstanceVpcAttributes{
+					PrivateIpAddress: &ecs.DescribeInstancesResponseBodyInstancesInstanceVpcAttributesPrivateIpAddress{
+						IpAddress: []*string{dara.String("10.0.0.1")},
 					},
 				},
-				Tags: ecs_pop.TagsInDescribeInstances{
-					Tag: []ecs_pop.Tag{{TagKey: "app", TagValue: "k8s"}},
+				Tags: &ecs.DescribeInstancesResponseBodyInstancesInstanceTags{
+					Tag: []*ecs.DescribeInstancesResponseBodyInstancesInstanceTagsTag{
+						{TagKey: dara.String("app"), TagValue: dara.String("k8s")},
+					},
 				},
 			},
 			expectedLabels: model.LabelSet{
@@ -355,13 +364,15 @@ func TestAddLabel(t *testing.T) {
 			name:   "NoAddressLabel",
 			userID: "testUserId",
 			port:   8888,
-			instance: ecs_pop.Instance{
-				InstanceId: "3",
-				RegionId:   "cn-beijing",
-				Status:     "Running",
-				ZoneId:     "cn-beijing",
-				Tags: ecs_pop.TagsInDescribeInstances{
-					Tag: []ecs_pop.Tag{{TagKey: "app", TagValue: "k8s"}},
+			instance: &ecs.DescribeInstancesResponseBodyInstancesInstance{
+				InstanceId: dara.String("3"),
+				RegionId:   dara.String("cn-beijing"),
+				Status:     dara.String("Running"),
+				ZoneId:     dara.String("cn-beijing"),
+				Tags: &ecs.DescribeInstancesResponseBodyInstancesInstanceTags{
+					Tag: []*ecs.DescribeInstancesResponseBodyInstancesInstanceTagsTag{
+						{TagKey: dara.String("app"), TagValue: dara.String("k8s")},
+					},
 				},
 			},
 			expectedLabels: nil,
@@ -389,15 +400,15 @@ func TestQueryInstances(t *testing.T) {
 
 	totalCount := 200
 	allLabelSets := make([]model.LabelSet, totalCount)
-	allInstances := make([]ecs_pop.Instance, totalCount)
+	allInstances := make([]*ecs.DescribeInstancesResponseBodyInstancesInstance, totalCount)
 	for i := 0; i < totalCount; i++ {
 		labelSet := model.LabelSet{
 			ecsLabelInstanceID: model.LabelValue(strconv.Itoa(i)),
 		}
 		allLabelSets[i] = labelSet
 
-		instance := ecs_pop.Instance{
-			InstanceId: strconv.Itoa(i),
+		instance := &ecs.DescribeInstancesResponseBodyInstancesInstance{
+			InstanceId: dara.String(strconv.Itoa(i)),
 		}
 		allInstances[i] = instance
 	}
@@ -406,7 +417,7 @@ func TestQueryInstances(t *testing.T) {
 		name              string
 		tagFilters        []*TagFilter
 		labelSets         []model.LabelSet
-		expectedInstances []ecs_pop.Instance
+		expectedInstances []*ecs.DescribeInstancesResponseBodyInstancesInstance
 	}{
 		{
 			name:              "EmptyTagFiltersAndLabelSets",
@@ -546,7 +557,7 @@ func TestGetCacheReCheckInstances(t *testing.T) {
 	cli := newClient(t)
 	totalCount := 100
 	allLabelSets := make([]model.LabelSet, totalCount)
-	allInstances := make([]ecs_pop.Instance, totalCount)
+	allInstances := make([]*ecs.DescribeInstancesResponseBodyInstancesInstance, totalCount)
 
 	for i := 0; i < totalCount; i++ {
 		labelSet := model.LabelSet{
@@ -554,8 +565,8 @@ func TestGetCacheReCheckInstances(t *testing.T) {
 		}
 		allLabelSets[i] = labelSet
 
-		instance := ecs_pop.Instance{
-			InstanceId: strconv.Itoa(i),
+		instance := &ecs.DescribeInstancesResponseBodyInstancesInstance{
+			InstanceId: dara.String(strconv.Itoa(i)),
 		}
 		allInstances[i] = instance
 	}
@@ -563,12 +574,12 @@ func TestGetCacheReCheckInstances(t *testing.T) {
 	testCases := []struct {
 		name              string
 		labelSets         []model.LabelSet
-		expectedInstances []ecs_pop.Instance
+		expectedInstances []*ecs.DescribeInstancesResponseBodyInstancesInstance
 	}{
 		{
 			name:              "LabelSets0:0",
 			labelSets:         []model.LabelSet{},
-			expectedInstances: []ecs_pop.Instance{},
+			expectedInstances: []*ecs.DescribeInstancesResponseBodyInstancesInstance{},
 		},
 		{
 			name:              "LabelSets0:50",
@@ -604,28 +615,28 @@ func TestDescribeInstances(t *testing.T) {
 	testCases := []struct {
 		name              string
 		ids               []string
-		expectedInstances []ecs_pop.Instance
+		expectedInstances []*ecs.DescribeInstancesResponseBodyInstancesInstance
 		expectedError     error
 	}{
 		{
 			name:              "NilIds",
 			ids:               nil,
-			expectedInstances: []ecs_pop.Instance{},
+			expectedInstances: []*ecs.DescribeInstancesResponseBodyInstancesInstance{},
 			expectedError:     nil,
 		},
 		{
 			name:              "EmptyIds",
 			ids:               []string{},
-			expectedInstances: []ecs_pop.Instance{},
+			expectedInstances: []*ecs.DescribeInstancesResponseBodyInstancesInstance{},
 			expectedError:     nil,
 		},
 		{
 			name: "ThreeIds",
 			ids:  []string{"1", "2", "3"},
-			expectedInstances: []ecs_pop.Instance{
-				{InstanceId: "1"},
-				{InstanceId: "2"},
-				{InstanceId: "3"},
+			expectedInstances: []*ecs.DescribeInstancesResponseBodyInstancesInstance{
+				{InstanceId: dara.String("1")},
+				{InstanceId: dara.String("2")},
+				{InstanceId: dara.String("3")},
 			},
 			expectedError: nil,
 		},
@@ -795,14 +806,14 @@ func contains(s []string, v string) bool {
 }
 
 // instancesEqual determine whether two instance lists are the same based on id.
-func instancesEqual(instances1, instances2 []ecs_pop.Instance) bool {
+func instancesEqual(instances1, instances2 []*ecs.DescribeInstancesResponseBodyInstancesInstance) bool {
 	// remove duplicate elements
 	ids1, ids2 := make(map[string]struct{}, 0), make(map[string]struct{}, 0)
 	for _, in1 := range instances1 {
-		ids1[in1.InstanceId] = struct{}{}
+		ids1[dara.StringValue(in1.InstanceId)] = struct{}{}
 	}
 	for _, in2 := range instances2 {
-		ids2[in2.InstanceId] = struct{}{}
+		ids2[dara.StringValue(in2.InstanceId)] = struct{}{}
 	}
 	if len(ids1) != len(ids2) {
 		return false
