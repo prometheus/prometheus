@@ -81,8 +81,6 @@ func (e *BinaryExpr) Pretty(level int) string {
 
 func (e *DurationExpr) Pretty(int) string {
 	var s string
-	fmt.Println("e.LHS", e.LHS)
-	fmt.Println("e.RHS", e.RHS)
 	if e.LHS == nil {
 		// This is a unary duration expression.
 		s = fmt.Sprintf("%s%s", e.Op, e.RHS.Pretty(0))

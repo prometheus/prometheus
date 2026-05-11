@@ -2,6 +2,9 @@
 name: govulncheck
 on:
   pull_request:
+    paths:
+      - VERSION
+      - .github/workflows/govulncheck.yml
   push:
     branches:
       - main
