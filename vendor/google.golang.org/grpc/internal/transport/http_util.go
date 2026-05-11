@@ -411,12 +411,6 @@ var writeBufferPoolMap = make(map[int]*sync.Pool)
 var writeBufferMutex sync.Mutex
 
 func newFramer(conn io.ReadWriter, writeBufferSize, readBufferSize int, sharedWriteBuffer bool, maxHeaderListSize uint32, memPool mem.BufferPool) *framer {
-	if memPool == nil {
-		// Note that this is only supposed to be nil in tests. Otherwise, stream
-		// is always initialized with a BufferPool.
-		memPool = mem.DefaultBufferPool()
-	}
-
 	if writeBufferSize < 0 {
 		writeBufferSize = 0
 	}

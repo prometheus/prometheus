@@ -76,6 +76,7 @@ const (
 	MetricTypeFloatHisto
 	MetricTypeIntGauge
 	MetricTypeIntUpDownCount
+	MetricTypeIntAsyncGauge
 )
 
 // Int64CountHandle is a typed handle for a int count metric. This handle
@@ -170,6 +171,30 @@ func (h *Int64GaugeHandle) Descriptor() *MetricDescriptor {
 // Record records the int64 histo value on the metrics recorder provided.
 func (h *Int64GaugeHandle) Record(recorder MetricsRecorder, incr int64, labels ...string) {
 	recorder.RecordInt64Gauge(h, incr, labels...)
+}
+
+// AsyncMetric is a marker interface for asynchronous metric types.
+type AsyncMetric interface {
+	isAsync()
+	Descriptor() *MetricDescriptor
+}
+
+// Int64AsyncGaugeHandle is a typed handle for an int gauge metric. This handle is
+// passed at the recording point in order to know which metric to record on.
+type Int64AsyncGaugeHandle MetricDescriptor
+
+// isAsync implements the AsyncMetric interface.
+func (h *Int64AsyncGaugeHandle) isAsync() {}
+
+// Descriptor returns the int64 gauge handle typecast to a pointer to a
+// MetricDescriptor.
+func (h *Int64AsyncGaugeHandle) Descriptor() *MetricDescriptor {
+	return (*MetricDescriptor)(h)
+}
+
+// Record records the int64 gauge value on the metrics recorder provided.
+func (h *Int64AsyncGaugeHandle) Record(recorder AsyncMetricsRecorder, value int64, labels ...string) {
+	recorder.RecordInt64AsyncGauge(h, value, labels...)
 }
 
 // registeredMetrics are the registered metric descriptor names.
@@ -280,6 +305,20 @@ func RegisterInt64UpDownCount(descriptor MetricDescriptor) *Int64UpDownCountHand
 	descPtr := &descriptor
 	metricsRegistry[descriptor.Name] = descPtr
 	return (*Int64UpDownCountHandle)(descPtr)
+}
+
+// RegisterInt64AsyncGauge registers the metric description onto the global registry.
+// It returns a typed handle to use for recording data.
+//
+// NOTE: this function must only be called during initialization time (i.e. in
+// an init() function), and is not thread-safe. If multiple metrics are
+// registered with the same name, this function will panic.
+func RegisterInt64AsyncGauge(descriptor MetricDescriptor) *Int64AsyncGaugeHandle {
+	registerMetric(descriptor.Name, descriptor.Default)
+	descriptor.Type = MetricTypeIntAsyncGauge
+	descPtr := &descriptor
+	metricsRegistry[descriptor.Name] = descPtr
+	return (*Int64AsyncGaugeHandle)(descPtr)
 }
 
 // snapshotMetricsRegistryForTesting snapshots the global data of the metrics

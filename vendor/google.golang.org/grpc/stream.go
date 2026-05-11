@@ -25,6 +25,7 @@ import (
 	"math"
 	rand "math/rand/v2"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,7 +52,8 @@ import (
 var metadataFromOutgoingContextRaw = internal.FromOutgoingContextRaw.(func(context.Context) (metadata.MD, [][]string, bool))
 
 // StreamHandler defines the handler called by gRPC server to complete the
-// execution of a streaming RPC.
+// execution of a streaming RPC. srv is the service implementation on which the
+// RPC was invoked.
 //
 // If a StreamHandler returns an error, it should either be produced by the
 // status package, or be one of the context errors. Otherwise, gRPC will use
@@ -179,13 +181,41 @@ func NewClientStream(ctx context.Context, desc *StreamDesc, cc *ClientConn, meth
 
 var emptyMethodConfig = serviceconfig.MethodConfig{}
 
+// endOfClientStream performs cleanup actions required for both successful and
+// failed streams. This includes incrementing channelz stats and invoking all
+// registered OnFinish call options.
+func endOfClientStream(cc *ClientConn, err error, opts ...CallOption) {
+	if channelz.IsOn() {
+		if err != nil {
+			cc.incrCallsFailed()
+		} else {
+			cc.incrCallsSucceeded()
+		}
+	}
+
+	for _, o := range opts {
+		if o, ok := o.(OnFinishCallOption); ok {
+			o.OnFinish(err)
+		}
+	}
+}
+
 func newClientStream(ctx context.Context, desc *StreamDesc, cc *ClientConn, method string, opts ...CallOption) (_ ClientStream, err error) {
+	if channelz.IsOn() {
+		cc.incrCallsStarted()
+	}
+	defer func() {
+		if err != nil {
+			// Ensure cleanup when stream creation fails.
+			endOfClientStream(cc, err, opts...)
+		}
+	}()
+
 	// Start tracking the RPC for idleness purposes. This is where a stream is
 	// created for both streaming and unary RPCs, and hence is a good place to
 	// track active RPC count.
-	if err := cc.idlenessMgr.OnCallBegin(); err != nil {
-		return nil, err
-	}
+	cc.idlenessMgr.OnCallBegin()
+
 	// Add a calloption, to decrement the active call count, that gets executed
 	// when the RPC completes.
 	opts = append([]CallOption{OnFinish(func(error) { cc.idlenessMgr.OnCallEnd() })}, opts...)
@@ -203,14 +233,6 @@ func newClientStream(ctx context.Context, desc *StreamDesc, cc *ClientConn, meth
 				}
 			}
 		}
-	}
-	if channelz.IsOn() {
-		cc.incrCallsStarted()
-		defer func() {
-			if err != nil {
-				cc.incrCallsFailed()
-			}
-		}()
 	}
 	// Provide an opportunity for the first RPC to see the first service config
 	// provided by the resolver.
@@ -300,6 +322,10 @@ func newClientStreamWithParams(ctx context.Context, desc *StreamDesc, cc *Client
 		ContentSubtype: callInfo.contentSubtype,
 		DoneFunc:       doneFunc,
 		Authority:      callInfo.authority,
+	}
+	if allowed := callInfo.acceptedResponseCompressors; len(allowed) > 0 {
+		headerValue := strings.Join(allowed, ",")
+		callHdr.AcceptedCompressors = &headerValue
 	}
 
 	// Set our outgoing compression according to the UseCompressor CallOption, if
@@ -484,7 +510,7 @@ func (a *csAttempt) getTransport() error {
 		return err
 	}
 	if a.trInfo != nil {
-		a.trInfo.firstLine.SetRemoteAddr(a.transport.RemoteAddr())
+		a.trInfo.firstLine.SetRemoteAddr(a.transport.Peer().Addr)
 	}
 	if pick.blocked && a.statsHandler != nil {
 		a.statsHandler.HandleRPC(a.ctx, &stats.DelayedPickComplete{})
@@ -512,9 +538,17 @@ func (a *csAttempt) newStream() error {
 		md, _ := metadata.FromOutgoingContext(a.ctx)
 		md = metadata.Join(md, a.pickResult.Metadata)
 		a.ctx = metadata.NewOutgoingContext(a.ctx, md)
-	}
 
-	s, err := a.transport.NewStream(a.ctx, cs.callHdr)
+		// If the `CallAuthority` CallOption is not set, check if the LB picker
+		// has provided an authority override in the PickResult metadata and
+		// apply it, as specified in gRFC A81.
+		if cs.callInfo.authority == "" {
+			if authMD := a.pickResult.Metadata.Get(":authority"); len(authMD) > 0 {
+				cs.callHdr.Authority = authMD[0]
+			}
+		}
+	}
+	s, err := a.transport.NewStream(a.ctx, cs.callHdr, a.statsHandler)
 	if err != nil {
 		nse, ok := err.(*transport.NewStreamError)
 		if !ok {
@@ -1042,9 +1076,6 @@ func (cs *clientStream) finish(err error) {
 		return
 	}
 	cs.finished = true
-	for _, onFinish := range cs.callInfo.onFinish {
-		onFinish(err)
-	}
 	cs.commitAttemptLocked()
 	if cs.attempt != nil {
 		cs.attempt.finish(err)
@@ -1084,13 +1115,7 @@ func (cs *clientStream) finish(err error) {
 	if err == nil {
 		cs.retryThrottler.successfulRPC()
 	}
-	if channelz.IsOn() {
-		if err != nil {
-			cs.cc.incrCallsFailed()
-		} else {
-			cs.cc.incrCallsSucceeded()
-		}
-	}
+	endOfClientStream(cs.cc, err, cs.opts...)
 	cs.cancel()
 }
 
@@ -1133,6 +1158,10 @@ func (a *csAttempt) recvMsg(m any, payInfo *payloadInfo) (err error) {
 				// message encoding; attempt to find a registered compressor that does.
 				a.decompressorV0 = nil
 				a.decompressorV1 = encoding.GetCompressor(ct)
+			}
+			// Validate that the compression method is acceptable for this call.
+			if !acceptedCompressorAllows(cs.callInfo.acceptedResponseCompressors, ct) {
+				return status.Errorf(codes.Internal, "grpc: peer compressed the response with %q which is not allowed by AcceptCompressors", ct)
 			}
 		} else {
 			// No compression is used; disable our decompressor.
@@ -1321,10 +1350,12 @@ func newNonRetryClientStream(ctx context.Context, desc *StreamDesc, method strin
 		codec:            c.codec,
 		sendCompressorV0: cp,
 		sendCompressorV1: comp,
+		decompressorV0:   ac.cc.dopts.dc,
 		transport:        t,
 	}
 
-	s, err := as.transport.NewStream(as.ctx, as.callHdr)
+	// nil stats handler: internal streams like health and ORCA do not support telemetry.
+	s, err := as.transport.NewStream(as.ctx, as.callHdr, nil)
 	if err != nil {
 		err = toRPCErr(err)
 		return nil, err
@@ -1478,6 +1509,10 @@ func (as *addrConnStream) RecvMsg(m any) (err error) {
 				// message encoding; attempt to find a registered compressor that does.
 				as.decompressorV0 = nil
 				as.decompressorV1 = encoding.GetCompressor(ct)
+			}
+			// Validate that the compression method is acceptable for this call.
+			if !acceptedCompressorAllows(as.callInfo.acceptedResponseCompressors, ct) {
+				return status.Errorf(codes.Internal, "grpc: peer compressed the response with %q which is not allowed by AcceptCompressors", ct)
 			}
 		} else {
 			// No compression is used; disable our decompressor.

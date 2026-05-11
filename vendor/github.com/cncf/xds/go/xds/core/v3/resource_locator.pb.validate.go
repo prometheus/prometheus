@@ -177,7 +177,7 @@ type ResourceLocatorMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m ResourceLocatorMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -370,7 +370,7 @@ type ResourceLocator_DirectiveMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m ResourceLocator_DirectiveMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}

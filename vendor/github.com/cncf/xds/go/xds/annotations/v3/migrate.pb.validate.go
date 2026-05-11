@@ -73,7 +73,7 @@ type MigrateAnnotationMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m MigrateAnnotationMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -179,7 +179,7 @@ type FieldMigrateAnnotationMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m FieldMigrateAnnotationMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -283,7 +283,7 @@ type FileMigrateAnnotationMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m FileMigrateAnnotationMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
