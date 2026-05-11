@@ -2,13 +2,6 @@
 # TYPE http_requests_total counter
 http_requests_total{method="get"} 1027.0 1395066363000 st@1395066363000
 http_requests_total{method="post"} 3.0
-# HELP rpc_duration_seconds RPC duration distribution.
-# TYPE rpc_duration_seconds summary
-rpc_duration_seconds{quantile="0.01"} 3102.0
-rpc_duration_seconds{quantile="0.05"} 3272.0
-rpc_duration_seconds{quantile="0.5"} 4773.0
-rpc_duration_seconds_count 2693.0
-rpc_duration_seconds_sum 1.7560473e+07
 # HELP go_gc_duration_seconds GC duration percentiles.
 # TYPE go_gc_duration_seconds summary
 go_gc_duration_seconds {count:100,sum:1.5,quantile:[0.25:0.0001,0.5:0.0002,0.75:0.0003,1.0:0.0004]}
@@ -28,4 +21,8 @@ build_info{version="1.0.0"} 1.0
 # TYPE subsystem_enabled stateset
 subsystem_enabled{subsystem_enabled="auth"} 0.0
 subsystem_enabled{subsystem_enabled="metrics"} 1.0
+# HELP unknown_metric Some metric of unknown type.
+# TYPE unknown_metric unknown
+unknown_metric 42.0
+another_unknown_metric 41.0
 # EOF

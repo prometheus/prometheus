@@ -376,6 +376,68 @@ func TestOpenMetrics2ParseUTF8MetricName(t *testing.T) {
 	requireEntries(t, exp, got)
 }
 
+func TestOpenMetrics2ParseUnknown(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input string
+		exp   []parsedEntry
+	}{
+		{
+			name: "explicit help and type",
+			input: `# HELP un Some unknown metric.
+# TYPE un unknown
+un 1
+# EOF
+`,
+			exp: []parsedEntry{
+				{m: "un", help: "Some unknown metric."},
+				{m: "un", typ: model.MetricTypeUnknown},
+				{
+					m:    "un",
+					v:    1,
+					lset: labels.FromStrings("__name__", "un"),
+				},
+			},
+		},
+		{
+			name: "no type declaration",
+			input: `bare_metric 42
+# EOF
+`,
+			exp: []parsedEntry{
+				{
+					m:    "bare_metric",
+					v:    42,
+					lset: labels.FromStrings("__name__", "bare_metric"),
+				},
+			},
+		},
+		{
+			name: "explicit type and unit",
+			input: `# TYPE un_seconds unknown
+# UNIT un_seconds seconds
+un_seconds 1.5
+# EOF
+`,
+			exp: []parsedEntry{
+				{m: "un_seconds", typ: model.MetricTypeUnknown},
+				{m: "un_seconds", unit: "seconds"},
+				{
+					m:    "un_seconds",
+					v:    1.5,
+					lset: labels.FromStrings("__name__", "un_seconds"),
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable())
+			got := testParse(t, p)
+			requireEntries(t, tc.exp, got)
+		})
+	}
+}
+
 func TestOpenMetrics2ParseErrors(t *testing.T) {
 	for _, tc := range []struct {
 		input string
