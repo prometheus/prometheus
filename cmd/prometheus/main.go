@@ -41,6 +41,7 @@ import (
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/alecthomas/units"
+	"github.com/bboreham/go-huge"
 	"github.com/grafana/regexp"
 	"github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
@@ -1582,6 +1583,33 @@ func main() {
 			func(error) {
 				logger.Info("Stopping notifier manager...")
 				notifierManager.Stop()
+			},
+		)
+	}
+	{
+		// Ask Linux to give us Transparent Huge Pages, which should be more efficient.
+		// (Note this may also give an increased working set.)
+		cancel := make(chan struct{})
+		g.Add(
+			func() error {
+				if err := huge.RegisterMetrics(prometheus.DefaultRegisterer); err != nil {
+					logger.Error("Failed to register metrics for huge pages", "err", err)
+				}
+				for {
+					select {
+					case <-time.Tick(time.Minute):
+						_, err := huge.MarkAll(1024 * 1024 * 16)
+						if err != nil {
+							logger.Error("huge.MarkAll", "err", err)
+						}
+						_ = huge.UpdateExtraMetrics()
+					case <-cancel:
+						return nil
+					}
+				}
+			},
+			func(error) {
+				close(cancel)
 			},
 		)
 	}
