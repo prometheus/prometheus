@@ -1575,7 +1575,9 @@ func main() {
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
-				huge.RegisterMetrics(prometheus.DefaultRegisterer)
+				if err := huge.RegisterMetrics(prometheus.DefaultRegisterer); err != nil {
+					logger.Error("Failed to register metrics for huge pages", "err", err)
+				}
 				for {
 					select {
 					case <-time.Tick(time.Minute):
@@ -1583,7 +1585,7 @@ func main() {
 						if err != nil {
 							logger.Error("huge.MarkAll", "err", err)
 						}
-						huge.UpdateExtraMetrics()
+						_ = huge.UpdateExtraMetrics()
 					case <-cancel:
 						return nil
 					}
