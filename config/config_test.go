@@ -1579,8 +1579,10 @@ var expectedConf = &Config{
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&stackit.SDConfig{
-					Project: "11111111-1111-1111-1111-111111111111",
-					Region:  "eu01",
+					Project:           "11111111-1111-1111-1111-111111111111",
+					ServiceAccountKey: "mysecret_sa_key",
+					PrivateKey:        "mysecret_private_key",
+					Region:            "eu01",
 					HTTPClientConfig: config.HTTPClientConfig{
 						Authorization: &config.Authorization{
 							Type:        "Bearer",
@@ -2157,7 +2159,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Len(t, matches, 26, "wrong number of secret matches found")
+	require.Len(t, matches, 28, "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }

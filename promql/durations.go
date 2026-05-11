@@ -87,10 +87,21 @@ func (v *durationVisitor) calculateDuration(expr parser.Expr, allowedNegative bo
 	if err != nil {
 		return 0, err
 	}
+	// Reject NaN and infinities up front. NaN compares false against everything,
+	// so without this guard a NaN duration would slip past the bounds check
+	// below and produce an implementation-defined int64 in the time.Duration
+	// conversion at the end of this function.
+	if math.IsNaN(duration) || math.IsInf(duration, 0) {
+		return 0, fmt.Errorf("%d:%d: duration is NaN or infinite", expr.PositionRange().Start, expr.PositionRange().End)
+	}
 	if duration <= 0 && !allowedNegative {
 		return 0, fmt.Errorf("%d:%d: duration must be greater than 0", expr.PositionRange().Start, expr.PositionRange().End)
 	}
-	if duration > 1<<63-1 || duration < -1<<63 {
+	// duration is in seconds; the conversion below produces nanoseconds in an
+	// int64, so the safe input range is +/- math.MaxInt64 / 1e9 seconds. Match
+	// the bound used by the parser for duration literals (see
+	// offset_duration_expr in generated_parser.y).
+	if duration > 1<<63/1e9 || duration < -(1<<63)/1e9 {
 		return 0, fmt.Errorf("%d:%d: duration is out of range", expr.PositionRange().Start, expr.PositionRange().End)
 	}
 	return time.Duration(duration*1000) * time.Millisecond, nil

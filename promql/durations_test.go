@@ -266,6 +266,37 @@ func TestCalculateDuration(t *testing.T) {
 			},
 			errorMessage: "modulo by zero",
 		},
+		{
+			name: "NaN from negative base raised to fractional power",
+			expr: &parser.DurationExpr{
+				LHS: &parser.NumberLiteral{Val: -1},
+				RHS: &parser.NumberLiteral{Val: 0.5},
+				Op:  parser.POW,
+			},
+			errorMessage:    "duration is NaN or infinite",
+			allowedNegative: true,
+		},
+		{
+			name: "infinity from huge power",
+			expr: &parser.DurationExpr{
+				LHS: &parser.NumberLiteral{Val: 2},
+				RHS: &parser.NumberLiteral{Val: 1e10},
+				Op:  parser.POW,
+			},
+			errorMessage: "duration is NaN or infinite",
+		},
+		{
+			name:         "duration exceeds time.Duration range",
+			expr:         &parser.NumberLiteral{Val: 1e10},
+			errorMessage: "duration is out of range",
+		},
+		{
+			name: "duration just below the upper bound is accepted",
+			expr: &parser.NumberLiteral{Val: 1e9},
+			// 1e9 seconds is below 1<<63/1e9 seconds (~9.22e9), so it is
+			// representable as a time.Duration. The exact value is preserved.
+			expected: time.Duration(1e9) * time.Second,
+		},
 	}
 
 	for _, tt := range tests {

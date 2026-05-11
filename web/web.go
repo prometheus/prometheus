@@ -114,7 +114,10 @@ const (
 	Stopping
 )
 
-var fgprofHandler = fgprof.Handler()
+var (
+	fgprofHandler = fgprof.Handler()
+	fgprofMu      sync.Mutex
+)
 
 // withStackTracer logs the stack trace in case the request panics. The function
 // will re-raise the error which will then be handled by the net/http package.
@@ -636,6 +639,11 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 	case "trace":
 		pprof.Trace(w, req)
 	case "fgprof":
+		if !fgprofMu.TryLock() {
+			http.Error(w, "Could not enable fgprof profiling: fgprof profiling already in use", http.StatusInternalServerError)
+			return
+		}
+		defer fgprofMu.Unlock()
 		fgprofHandler.ServeHTTP(w, req)
 	default:
 		req.URL.Path = "/debug/pprof/" + subpath

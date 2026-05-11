@@ -30,20 +30,20 @@
   "homepage": "https://github.com/prometheus/prometheus/blob/main/web/ui/module/codemirror-promql/README.md",
   "dependencies": {
     "@prometheus-io/lezer-promql": "0.311.3",
-    "lru-cache": "^11.2.7"
+    "lru-cache": "^11.3.6"
   },
   "devDependencies": {
-    "@codemirror/autocomplete": "^6.20.1",
+    "@codemirror/autocomplete": "^6.20.2",
     "@codemirror/language": "^6.12.3",
-    "@codemirror/lint": "^6.9.5",
+    "@codemirror/lint": "^6.9.6",
     "@codemirror/state": "^6.6.0",
-    "@codemirror/view": "^6.40.0",
-    "@lezer/common": "^1.5.1",
+    "@codemirror/view": "^6.42.1",
+    "@lezer/common": "^1.5.2",
     "@lezer/highlight": "^1.2.3",
-    "@lezer/lr": "^1.4.8",
+    "@lezer/lr": "^1.4.10",
     "eslint-plugin-prettier": "^5.5.5",
     "isomorphic-fetch": "^3.0.0",
-    "nock": "^14.0.11"
+    "nock": "^14.0.15"
   },
   "peerDependencies": {
     "@codemirror/autocomplete": "^6.4.0",
