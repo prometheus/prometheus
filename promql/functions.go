@@ -20,6 +20,7 @@ import (
 	"math"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -726,11 +727,7 @@ func funcSortByLabel(vectorVals []Vector, _ Matrix, args parser.Expressions, _ *
 				continue
 			}
 
-			if natsort.Compare(lv1, lv2) {
-				return -1
-			}
-
-			return +1
+			return naturalLabelCompare(lv1, lv2)
 		}
 
 		// If all labels provided as arguments were equal, sort by the full label set. This ensures a consistent ordering.
@@ -752,11 +749,7 @@ func funcSortByLabelDesc(vectorVals []Vector, _ Matrix, args parser.Expressions,
 				continue
 			}
 
-			if natsort.Compare(lv1, lv2) {
-				return +1
-			}
-
-			return -1
+			return -naturalLabelCompare(lv1, lv2)
 		}
 
 		// If all labels provided as arguments were equal, sort by the full label set. This ensures a consistent ordering.
@@ -764,6 +757,32 @@ func funcSortByLabelDesc(vectorVals []Vector, _ Matrix, args parser.Expressions,
 	})
 
 	return vectorVals[0], nil
+}
+
+func naturalLabelCompare(a, b string) int {
+	if af, aok := parseFiniteLabelFloat(a); aok {
+		if bf, bok := parseFiniteLabelFloat(b); bok {
+			if af < bf {
+				return -1
+			}
+			if af > bf {
+				return 1
+			}
+		}
+	}
+
+	if natsort.Compare(a, b) {
+		return -1
+	}
+	return 1
+}
+
+func parseFiniteLabelFloat(s string) (float64, bool) {
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || math.IsInf(f, 0) || math.IsNaN(f) {
+		return 0, false
+	}
+	return f, true
 }
 
 func clamp(vec Vector, minVal, maxVal float64, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
