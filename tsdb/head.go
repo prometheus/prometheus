@@ -1025,8 +1025,9 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 		})
 		h.updateMinMaxTime(mint, maxt)
 		if ms.headChunks != nil && maxt >= ms.headChunks.minTime {
-			// The head chunk was completed and was m-mapped after taking the snapshot.
-			// Hence remove this chunk.
+			// The most recent head chunk was completed and m-mapped after the snapshot
+			// was taken, so its samples are now covered by the mmapped chunk we just
+			// loaded. Drop the in-memory head chunk chain.
 			ms.nextAt = 0
 			if ms.headChunkCount.Load() >= 2 {
 				h.series.decMmapReady(ms.ref)
@@ -1934,6 +1935,17 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	h.series.postCreation(lset)
 
 	return s, true, nil
+}
+
+// onChunkCreated records the side-effects of creating a new head chunk for
+// the given series: it bumps the chunk metrics and, when the chunk brings
+// the series to two head chunks, marks the series as ready for mmapping.
+func (h *Head) onChunkCreated(series *memSeries) {
+	h.metrics.chunks.Inc()
+	h.metrics.chunksCreated.Inc()
+	if series.headChunkCount.Load() == 2 {
+		h.series.incMmapReady(series.ref)
+	}
 }
 
 // mmapHeadChunks iterates all memSeries stored on Head ready for m-mapping and calls
