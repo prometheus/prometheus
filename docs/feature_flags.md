@@ -252,6 +252,22 @@ When this feature is enabled and the metadata WAL records exists, in an unlikely
 the Prometheus outputs intends to prefer the `__type__` and `__unit__` labels values. For example on Remote Write 2.0,
 if  the metadata record somehow (e.g. due to bug) says "counter", but `__type__="gauge"` the remote time series will be set to a gauge.
 
+## Proxy URL Label
+
+`--enable-feature=proxy-url-label`
+
+When enabled, Prometheus populates the `__proxy_url__` meta label from the
+scrape configuration's `proxy_url` setting. The label can be overridden via
+relabeling to configure per-target proxy routing, allowing different targets
+within the same job to use different proxies.
+
+When the feature flag is disabled (the default), the `__proxy_url__` label is
+neither populated from the scrape configuration nor respected during scraping,
+even if set via relabeling or service discovery.
+
+Credentials in the proxy URL are redacted in all display paths (targets API,
+web UI, and promtool output).
+
 ## Use Uncached IO
 
 `--enable-feature=use-uncached-io`

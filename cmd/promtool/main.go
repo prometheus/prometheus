@@ -1343,7 +1343,7 @@ func checkTargetGroupsForScrapeConfig(targetGroups []*targetgroup.Group, scfg *c
 	lb := labels.NewBuilder(labels.EmptyLabels())
 	for _, tg := range targetGroups {
 		var failures []error
-		targets, failures = scrape.TargetsFromGroup(tg, scfg, targets, lb)
+		targets, failures = scrape.TargetsFromGroup(tg, scfg, targets, lb, false)
 		if len(failures) > 0 {
 			first := failures[0]
 			return first

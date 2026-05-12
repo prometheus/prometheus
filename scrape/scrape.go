@@ -24,6 +24,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptrace"
+	"net/url"
 	"reflect"
 	"slices"
 	"strconv"
@@ -402,7 +403,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	sp.droppedTargets = []*Target{}
 	sp.droppedTargetsCount = 0
 	for _, tg := range tgs {
-		targets, failures := TargetsFromGroup(tg, sp.config, targets, lb)
+		targets, failures := TargetsFromGroup(tg, sp.config, targets, lb, sp.options.EnableProxyURLLabel)
 		for _, err := range failures {
 			sp.logger.Error("Creating target failed", "err", err)
 		}
@@ -748,6 +749,12 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 
 		s.req = req
 	}
+	if s.enableProxyURLLabel {
+		if proxyURL := s.ProxyURL(); proxyURL != nil {
+			ctx = contextWithProxyURL(ctx, proxyURL)
+		}
+	}
+
 	ctx, span := otel.Tracer("").Start(ctx, "Scrape", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
@@ -2252,6 +2259,7 @@ type ctxKey int
 const (
 	ctxKeyMetadata ctxKey = iota + 1
 	ctxKeyTarget
+	ctxKeyProxyURL
 )
 
 func ContextWithMetricMetadataStore(ctx context.Context, s MetricMetadataStore) context.Context {
@@ -2270,6 +2278,15 @@ func ContextWithTarget(ctx context.Context, t *Target) context.Context {
 func TargetFromContext(ctx context.Context) (*Target, bool) {
 	t, ok := ctx.Value(ctxKeyTarget).(*Target)
 	return t, ok
+}
+
+func contextWithProxyURL(ctx context.Context, u *url.URL) context.Context {
+	return context.WithValue(ctx, ctxKeyProxyURL, u)
+}
+
+func proxyURLFromContext(ctx context.Context) *url.URL {
+	u, _ := ctx.Value(ctxKeyProxyURL).(*url.URL)
+	return u
 }
 
 func pickSchema(bucketFactor float64) int32 {
@@ -2291,6 +2308,19 @@ func newScrapeClient(cfg config_util.HTTPClientConfig, name string, optFuncs ...
 	client, err := config_util.NewClientFromConfig(cfg, name, optFuncs...)
 	if err != nil {
 		return nil, fmt.Errorf("error creating HTTP client: %w", err)
+	}
+	// Allow per-target proxy URLs via request context.
+	if t, ok := client.Transport.(*http.Transport); ok {
+		origProxy := t.Proxy
+		t.Proxy = func(req *http.Request) (*url.URL, error) {
+			if u := proxyURLFromContext(req.Context()); u != nil {
+				return u, nil
+			}
+			if origProxy != nil {
+				return origProxy(req)
+			}
+			return nil, nil
+		}
 	}
 	client.Transport = otelhttp.NewTransport(
 		client.Transport,

@@ -62,6 +62,69 @@ func TestTargetLabels(t *testing.T) {
 	require.Equal(t, 2, i)
 }
 
+func TestRedactLabels(t *testing.T) {
+	lb := labels.NewBuilder(labels.EmptyLabels())
+
+	// Proxy URL with credentials should be redacted.
+	lb.Set(proxyURLLabel, "http://user:secret@proxy.example.com:8080")
+	RedactLabels(lb)
+	require.Equal(t, "http://user:xxxxx@proxy.example.com:8080", lb.Get(proxyURLLabel))
+
+	// Proxy URL without credentials should be unchanged.
+	lb.Reset(labels.EmptyLabels())
+	lb.Set(proxyURLLabel, "http://proxy.example.com:8080")
+	RedactLabels(lb)
+	require.Equal(t, "http://proxy.example.com:8080", lb.Get(proxyURLLabel))
+
+	// No proxy URL label should be a no-op.
+	lb.Reset(labels.EmptyLabels())
+	lb.Set("job", "test")
+	RedactLabels(lb)
+	require.Equal(t, "test", lb.Get("job"))
+	require.Empty(t, lb.Get(proxyURLLabel))
+}
+
+func TestDiscoveredLabelsRedactsProxyURL(t *testing.T) {
+	proxyURL := &url.URL{
+		Scheme: "http",
+		User:   url.UserPassword("user", "secret"),
+		Host:   "proxy.example.com:8080",
+	}
+	cfg := &config.ScrapeConfig{
+		Scheme:         "http",
+		MetricsPath:    "/metrics",
+		JobName:        "test",
+		ScrapeInterval: model.Duration(time.Second),
+		ScrapeTimeout:  model.Duration(time.Second),
+		HTTPClientConfig: config_util.HTTPClientConfig{
+			ProxyConfig: config_util.ProxyConfig{
+				ProxyURL: config_util.URL{URL: proxyURL},
+			},
+		},
+	}
+	tLabels := model.LabelSet{
+		model.AddressLabel: "1.2.3.4:1000",
+	}
+	target := NewTarget(
+		labels.FromStrings(
+			model.AddressLabel, "1.2.3.4:1000",
+			proxyURLLabel, proxyURL.String(),
+		),
+		cfg, tLabels, nil, true,
+	)
+	lb := labels.NewBuilder(labels.EmptyLabels())
+
+	// DiscoveredLabels should have redacted proxy URL (password masked).
+	discovered := target.DiscoveredLabels(lb)
+	require.Equal(t, "http://user:xxxxx@proxy.example.com:8080", discovered.Get(proxyURLLabel))
+
+	// ProxyURL() should still return the full URL with credentials for functional use.
+	got := target.ProxyURL()
+	require.NotNil(t, got)
+	require.Equal(t, "secret", func() string { p, _ := got.User.Password(); return p }())
+	require.Equal(t, "proxy.example.com:8080", got.Host)
+}
+
 func TestTargetOffset(t *testing.T) {
 	interval := 10 * time.Second
 	offsetSeed := uint64(0)
@@ -119,7 +182,7 @@ func TestTargetURL(t *testing.T) {
 		"__param_abc":          "overwrite",
 		"__param_cde":          "huu",
 	})
-	target := NewTarget(labels, scrapeConfig, nil, nil)
+	target := NewTarget(labels, scrapeConfig, nil, nil, false)
 
 	// The reserved labels are concatenated into a full URL. The first value for each
 	// URL query parameter can be set/modified via labels as well.
@@ -353,7 +416,7 @@ func TestTargetsFromGroup(t *testing.T) {
 		ScrapeInterval: model.Duration(1 * time.Minute),
 	}
 	lb := labels.NewBuilder(labels.EmptyLabels())
-	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, nil, lb)
+	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, nil, lb, false)
 	require.Len(t, targets, 1)
 	require.Len(t, failures, 1)
 	require.EqualError(t, failures[0], expectedError)
@@ -419,7 +482,7 @@ scrape_configs:
 		t.Run(tt.name, func(t *testing.T) {
 			config := loadConfiguration(t, tt.cfgText)
 			lb := labels.NewBuilder(labels.EmptyLabels())
-			targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: tt.targets}, config.ScrapeConfigs[0], nil, lb)
+			targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: tt.targets}, config.ScrapeConfigs[0], nil, lb, false)
 
 			if tt.shouldDropTarget {
 				require.Len(t, failures, 1)
@@ -514,7 +577,7 @@ scrape_configs:
 			lb := labels.NewBuilder(labels.EmptyLabels())
 			group := &targetgroup.Group{Targets: targets}
 			for b.Loop() {
-				tgets, _ = TargetsFromGroup(group, config.ScrapeConfigs[0], tgets, lb)
+				tgets, _ = TargetsFromGroup(group, config.ScrapeConfigs[0], tgets, lb, false)
 				if len(targets) != nTargets {
 					b.Fatalf("Expected %d targets, got %d", nTargets, len(targets))
 				}
