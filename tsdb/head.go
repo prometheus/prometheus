@@ -73,7 +73,7 @@ type Head struct {
 	numSeries                atomic.Uint64
 	numStaleSeries           atomic.Uint64
 	minOOOTime, maxOOOTime   atomic.Int64 // TODO(jesusvazquez) These should be updated after garbage collection.
-	minTime, maxTime         atomic.Int64 // Current min and max of the samples included in the head. TODO(jesusvazquez) Ensure these are properly tracked.
+	minTime, maxTime         atomic.Int64 // Current min and max of the samples included in the head. minTime != math.MaxInt64 is used to determine whether the head has been initialized, so care must be taken that the initialized state only changes after maxTime is already updated.
 	minValidTime             atomic.Int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
 	lastWALTruncationTime    atomic.Int64
 	lastMemoryTruncationTime atomic.Int64
@@ -1139,6 +1139,8 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string, limit int) *ind
 	return h.cardinalityCache
 }
 
+// Expands the Head time bounds to include the provided in-order range.
+// Concurrent updates retry with compare-and-swap so the bounds only move outward.
 func (h *Head) updateMinMaxTime(mint, maxt int64) {
 	for {
 		lt := h.MinTime()
@@ -1813,7 +1815,8 @@ func (h *Head) Meta() BlockMeta {
 	}
 }
 
-// MinTime returns the lowest time bound on visible data in the head.
+// MinTime returns the lowest time bound on visible data in the head. If this
+// value is math.MaxInt64, we consider the head to be uninitialized.
 func (h *Head) MinTime() int64 {
 	return h.minTime.Load()
 }

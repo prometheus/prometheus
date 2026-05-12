@@ -118,10 +118,10 @@ func (a *initAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 // for a completely fresh head with an empty WAL.
 func (h *Head) initTime(t int64) {
 	// maxTime must be set before minTime, because initialized() keys off minTime.
-	// If minTime were set first, a concurrent Head.Appender call could observe
-	// initialized() == true while maxTime is still math.MinInt64; the resulting
-	// underflow in appendableMinValidTime would reject in-range samples with
-	// ErrOutOfBounds.
+	// If minTime were set to t first, a concurrent Head.Appender call could
+	// observe initialized() == true while maxTime is still math.MinInt64; the
+	// resulting underflow in appendableMinValidTime would reject in-range samples
+	// with ErrOutOfBounds.
 	if !h.maxTime.CompareAndSwap(math.MinInt64, t) {
 		// Another goroutine already won the init race. Wait until it also sets
 		// minTime, so callers that next read initialized() can rely on both
