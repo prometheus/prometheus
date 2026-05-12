@@ -262,7 +262,13 @@ eval instant at 50m http_requests_total{group="canary"} unless ignoring(group) h
 	http_requests_total{__type__="counter", __unit__="not-request", group="canary", instance="1", job="api-server"} 400
 	http_requests_total{group="canary", instance="1", job="app-server"} 800
 
+# Default vector matching is now transparent to __type__ / __unit__,
+# so different type/unit combos on lhs and rhs should still match.
 eval instant at 50m http_requests_total{group="canary"} / ignoring(group) http_requests_total{group="production"}
+	{instance="0", job="api-server"} 3
+	{instance="0", job="app-server"} 1.4
+	{instance="1", job="api-server"} 2
+	{instance="1", job="app-server"} 1.3333333333333333
 
 # Comparisons.
 eval instant at 50m SUM(http_requests_total) BY (job) > 1000
@@ -278,3 +284,22 @@ eval instant at 50m SUM(http_requests_total) BY (job) != bool SUM(http_requests_
 
 eval instant at 50m http_requests_total{job="api-server", instance="0", group="production"} == bool 100
 	{job="api-server", instance="0", group="production"} 1
+
+clear
+
+# B. Binary operations should be transparent to __type__ and __unit__ labels.
+# Verifies that (metric_a - metric_b) / metric_a works correctly and __type__/__unit__
+# do not cause label set mismatches in chained binary operations.
+
+load 5m
+  kubelet_volume_stats_capacity_bytes{__type__="gauge", __unit__="bytes", namespace="test", persistentvolumeclaim="data-0"} 100
+  kubelet_volume_stats_available_bytes{__type__="gauge", __unit__="bytes", namespace="test", persistentvolumeclaim="data-0"} 40
+
+# Subtraction should drop __type__ and __unit__ from result (like __name__)
+eval instant at 0m kubelet_volume_stats_capacity_bytes - kubelet_volume_stats_available_bytes
+  {namespace="test", persistentvolumeclaim="data-0"} 60
+
+# Division of binary op result by raw metric should work (not return empty)
+# This was broken before the fix - __type__ mismatch caused no data
+eval instant at 0m (kubelet_volume_stats_capacity_bytes - kubelet_volume_stats_available_bytes) / kubelet_volume_stats_capacity_bytes * 100
+  {namespace="test", persistentvolumeclaim="data-0"} 60
