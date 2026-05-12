@@ -12,7 +12,7 @@
     "gomodUpdateImportPaths"
   ],
   "schedule": [
-    "* * 21 * *"
+    "* * 7,21 * *"
   ],
   "timezone": "UTC",
   "github-actions": {

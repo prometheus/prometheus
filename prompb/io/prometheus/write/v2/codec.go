@@ -14,6 +14,8 @@
 package writev2
 
 import (
+	"fmt"
+
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -29,8 +31,8 @@ func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, symbols []string) (labels
 	return desymbolizeLabels(b, m.GetLabelsRefs(), symbols)
 }
 
-// ToMetadata return model metadata from timeseries' remote metadata.
-func (m TimeSeries) ToMetadata(symbols []string) metadata.Metadata {
+// ToMetadata returns model metadata from timeseries' remote metadata.
+func (m TimeSeries) ToMetadata(symbols []string) (metadata.Metadata, error) {
 	typ := model.MetricTypeUnknown
 	switch m.Metadata.Type {
 	case Metadata_METRIC_TYPE_COUNTER:
@@ -48,11 +50,17 @@ func (m TimeSeries) ToMetadata(symbols []string) metadata.Metadata {
 	case Metadata_METRIC_TYPE_STATESET:
 		typ = model.MetricTypeStateset
 	}
+	if int(m.Metadata.UnitRef) >= len(symbols) {
+		return metadata.Metadata{}, fmt.Errorf("metadata unit_ref %d outside of symbols table (size %d)", m.Metadata.UnitRef, len(symbols))
+	}
+	if int(m.Metadata.HelpRef) >= len(symbols) {
+		return metadata.Metadata{}, fmt.Errorf("metadata help_ref %d outside of symbols table (size %d)", m.Metadata.HelpRef, len(symbols))
+	}
 	return metadata.Metadata{
 		Type: typ,
 		Unit: symbols[m.Metadata.UnitRef],
 		Help: symbols[m.Metadata.HelpRef],
-	}
+	}, nil
 }
 
 // FromMetadataType transforms a Prometheus metricType into writev2 metricType.

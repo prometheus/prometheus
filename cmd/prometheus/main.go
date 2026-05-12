@@ -824,7 +824,7 @@ func main() {
 			if cfg.tsdb.MaxBytes > 0 {
 				logger.Warn("storage.tsdb.retention.size is ignored, because storage.tsdb.retention.percentage is specified")
 			}
-			if prom_runtime.FsSize(localStoragePath) == 0 {
+			if storagePathFsSize(localStoragePath) == 0 {
 				fmt.Fprintln(os.Stderr, fmt.Errorf("unable to detect total capacity of metric storage at %s, please disable retention percentage (%g%%)", localStoragePath, cfg.tsdb.MaxPercentage))
 				os.Exit(2)
 			}
@@ -1754,6 +1754,25 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	eu.Path = ppref
 
 	return eu, nil
+}
+
+// storagePathFsSize returns the filesystem size for path or its closest existing parent.
+func storagePathFsSize(path string) uint64 {
+	for {
+		if size := prom_runtime.FsSize(path); size > 0 {
+			return size
+		}
+
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			return 0
+		}
+
+		parent := filepath.Dir(path)
+		if parent == path {
+			return 0
+		}
+		path = parent
+	}
 }
 
 // readyStorage implements the Storage interface while allowing to set the actual

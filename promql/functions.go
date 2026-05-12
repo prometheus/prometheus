@@ -1957,41 +1957,61 @@ func funcResets(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eval
 		return enh.Out, nil
 	}
 
-	var prevSample, curSample Sample
+	var (
+		prevSample, curSample  Sample
+		prevST                 int64
+		floatSTs, histogramSTs []int64
+	)
+	if sts := enh.StartTimestamps; sts != nil {
+		floatSTs = sts.Floats
+		histogramSTs = sts.Histograms
+	}
 	firstSampleIndex, found := pickFirstSampleIndex(floats, args, enh)
 	if !found {
 		return enh.Out, nil
 	}
 	for iFloat, iHistogram := firstSampleIndex, 0; iFloat < len(floats) || iHistogram < len(histograms); {
+		var curST int64
 		switch {
 		// Process a float sample if no histogram sample remains or its timestamp is earlier.
 		// Process a histogram sample if no float sample remains or its timestamp is earlier.
 		case iHistogram >= len(histograms) || iFloat < len(floats) && floats[iFloat].T < histograms[iHistogram].T:
+			curSample.T = floats[iFloat].T
 			curSample.F = floats[iFloat].F
 			curSample.H = nil
+			if iFloat < len(floatSTs) {
+				curST = floatSTs[iFloat]
+			}
 			iFloat++
 		case iFloat >= len(floats) || iHistogram < len(histograms) && floats[iFloat].T > histograms[iHistogram].T:
+			curSample.T = histograms[iHistogram].T
 			curSample.H = histograms[iHistogram].H
+			if iHistogram < len(histogramSTs) {
+				curST = histogramSTs[iHistogram]
+			}
 			iHistogram++
 		}
 		// Skip the comparison for the first sample, just initialize prevSample.
 		if iFloat+iHistogram == 1+firstSampleIndex {
 			prevSample = curSample
+			prevST = curST
 			continue
 		}
+
 		switch {
 		case prevSample.H == nil && curSample.H == nil:
-			if curSample.F < prevSample.F {
+			if curSample.F < prevSample.F || isStartTimestampReset(prevST, prevSample.T, curST, curSample.T) {
 				resets++
 			}
 		case prevSample.H != nil && curSample.H == nil, prevSample.H == nil && curSample.H != nil:
 			resets++
 		case prevSample.H != nil && curSample.H != nil:
-			if curSample.H.DetectReset(prevSample.H) {
+			if isStartTimestampReset(prevST, prevSample.T, curST, curSample.T) || curSample.H.DetectReset(prevSample.H) {
 				resets++
 			}
 		}
 		prevSample = curSample
+		prevST = curST
 	}
 
 	return append(enh.Out, Sample{F: float64(resets)}), nil

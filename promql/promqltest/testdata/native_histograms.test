@@ -1118,6 +1118,13 @@ eval instant at 1m30s rate(some_metric[1m30s])
     expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "some_metric"
     # Should produce no results.
 
+# histogram_count(rate()) must also warn when the schema mix falls inside the stats-only
+# path (HistogramStatsIterator). Without Schema being set in that iterator, all histograms
+# appear as Schema=0 and the custom-bucket mismatch is silently missed.
+eval instant at 1m histogram_count(rate(some_metric[1m30s]))
+    expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "some_metric"
+    # Should produce no results.
+
 # Start with custom, end with exponential. Return the exponential histogram divided by 48.
 # (The 1st sample is the NHCB with count:1. It is mostly ignored with the exception of the
 # count, which means the rate calculation extrapolates until the count hits 0.)

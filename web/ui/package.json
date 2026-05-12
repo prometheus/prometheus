@@ -17,12 +17,12 @@
   ],
   "devDependencies": {
     "@types/jest": "^29.5.14",
-    "@typescript-eslint/eslint-plugin": "^8.57.2",
-    "@typescript-eslint/parser": "^8.57.2",
+    "@typescript-eslint/eslint-plugin": "^8.59.2",
+    "@typescript-eslint/parser": "^8.59.2",
     "eslint-config-prettier": "^10.1.8",
-    "prettier": "^3.8.1",
-    "ts-jest": "^29.4.6",
+    "prettier": "^3.8.3",
+    "ts-jest": "^29.4.9",
     "typescript": "^5.9.3",
-    "vite": "^6.4.1"
+    "vite": "^6.4.2"
   }
 }

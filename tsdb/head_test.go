@@ -164,11 +164,11 @@ func readTestWAL(t testing.TB, dir string) (recs []any) {
 			samples, err := dec.Samples(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, samples)
-		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
 			samples, err := dec.HistogramSamples(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, samples)
-		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
 			samples, err := dec.FloatHistogramSamples(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, samples)
