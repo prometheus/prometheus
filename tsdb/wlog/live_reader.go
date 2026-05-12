@@ -107,10 +107,8 @@ type LiveReader struct {
 
 // Close closes the reader and returns the decode buffer to the pool.
 func (r *LiveReader) Close() {
-	if r.decBuf != nil {
-		compression.PutDecodeBuffer(r.decBuf)
-		r.decBuf = nil
-	}
+	compression.PutDecodeBuffer(r.decBuf)
+	r.decBuf = nil
 }
 
 // Err returns any errors encountered reading the WAL.  io.EOFs are not terminal

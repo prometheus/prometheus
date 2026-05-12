@@ -17,6 +17,7 @@ package wlog
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -27,46 +28,71 @@ import (
 	"github.com/prometheus/prometheus/util/compression"
 )
 
-func BenchmarkLiveReader_ReadSegment(b *testing.B) {
+func BenchmarkLiveReader_DecodeLargeRecord(b *testing.B) {
+	for _, readers := range []int{1, 16, 128} {
+		b.Run(fmt.Sprintf("readers=%d", readers), func(b *testing.B) {
+			benchmarkLiveReaderDecodeLargeRecord(b, readers)
+		})
+	}
+}
+
+func benchmarkLiveReaderDecodeLargeRecord(b *testing.B, readers int) {
 	dir := b.TempDir()
+
 	w, err := New(nil, nil, dir, compression.Snappy)
 	require.NoError(b, err)
 
-	// Create a dummy record roughly simulating a series or sample record.
-	// We want enough data to trigger compression and decoding.
-	rec := make([]byte, 1024)
-	for i := range rec {
-		rec[i] = byte(i % 256)
-	}
+	// Make the decoded record large, but highly compressible.
+	// This isolates the cost this benchmark is intended to expose:
+	// repeated snappy.Decode destination-buffer allocation when creating
+	// multiple LiveReader instances.
+	rec := bytes.Repeat([]byte{42}, 256*1024)
 
-	// Write enough records to fill a few pages.
-	var recs [][]byte
-	for range 1000 {
-		recs = append(recs, rec)
+	const records = 32
+	for range records {
+		require.NoError(b, w.Log(rec))
 	}
-	require.NoError(b, w.Log(recs...))
 	require.NoError(b, w.Close())
 
-	// Read the first segment file into memory.
-	segName := SegmentName(dir, 0)
-	segData, err := os.ReadFile(segName)
+	segData, err := os.ReadFile(SegmentName(dir, 0))
 	require.NoError(b, err)
 
 	logger := promslog.NewNopLogger()
-	// We reuse the metrics object as Watcher would (it's created once in NewWatcher)
 	metrics := NewLiveReaderMetrics(nil)
 
-	b.ResetTimer()
 	b.ReportAllocs()
+	b.SetBytes(int64(readers * records * len(rec)))
+	b.ResetTimer()
+
+	var sink int
 	for b.Loop() {
-		// Simulate the loop in Watcher.readCheckpoint or similar where a new LiveReader is created for the segment.
-		r := NewLiveReader(logger, metrics, bytes.NewReader(segData))
-		for r.Next() {
-			_ = r.Record()
+		total := 0
+		readRecords := 0
+
+		for range readers {
+			r := NewLiveReader(logger, metrics, bytes.NewReader(segData))
+			for r.Next() {
+				got := r.Record()
+				readRecords++
+				total += len(got)
+			}
+			r.Close()
+			if err := r.Err(); err != nil && !errors.Is(err, io.EOF) {
+				b.Fatal(err)
+			}
 		}
-		r.Close()
-		if r.Err() != nil && !errors.Is(r.Err(), io.EOF) {
-			b.Fatal(r.Err())
+
+		wantRecords := readers * records
+		if readRecords != wantRecords {
+			b.Fatalf("read %d records, want %d", readRecords, wantRecords)
 		}
+
+		wantBytes := readers * records * len(rec)
+		if total != wantBytes {
+			b.Fatalf("read %d bytes, want %d", total, wantBytes)
+		}
+
+		sink = total
 	}
+	_ = sink
 }
