@@ -1157,15 +1157,15 @@ func TestRegexp_JSONUnmarshalThenMarshal(t *testing.T) {
 	}{
 		{
 			name:  "Empty regex",
-			input: `{"regex":""}`,
+			input: `{"separator":"","regex":"","replacement":""}`,
 		},
 		{
 			name:  "string literal",
-			input: `{"regex":"foo"}`,
+			input: `{"separator":"","regex":"foo","replacement":""}`,
 		},
 		{
 			name:  "regex",
-			input: `{"regex":".*foo.*"}`,
+			input: `{"separator":"","regex":".*foo.*","replacement":""}`,
 		},
 	}
 	for _, test := range tests {
