@@ -55,6 +55,7 @@ import {
   QuotedLabelName,
   NumberDurationLiteralInDurationContext,
   NumberDurationLiteral,
+  DurationExpr,
   AggregateOp,
   Topk,
   Bottomk,
@@ -330,7 +331,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         // `metric_name offset 5` that leads to this tree:
         // `OffsetExpr(VectorSelector(Identifier),Offset,⚠)`
         // Here we can just autocomplete a duration.
-        result.push({ kind: ContextKind.Duration }, { kind: ContextKind.DurationExpr });
+        result.push({ kind: ContextKind.Duration });
         break;
       }
       if (node.parent?.type.id === UnquotedLabelMatcher || node.parent?.type.id === QuotedLabelMatcher) {
@@ -343,14 +344,14 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         // we are likely in the given situation:
         // `metric_name{}[5]`
         // We can also just autocomplete a duration
-        result.push({ kind: ContextKind.Duration }, { kind: ContextKind.DurationExpr });
+        result.push({ kind: ContextKind.Duration });
         break;
       }
       if (node.parent?.type.id === SubqueryExpr && node.parent.getChild('DurationExpr') !== null) {
         // we are likely in the given situation:
         //    `rate(foo[5d:5])`
         // so we should autocomplete a duration
-        result.push({ kind: ContextKind.Duration }, { kind: ContextKind.DurationExpr });
+        result.push({ kind: ContextKind.Duration });
         break;
       }
       // when we are in the situation 'metric_name !', we have the following tree
@@ -405,9 +406,11 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         if (
           errorNodeParent?.type.id === MatrixSelector ||
           errorNodeParent?.type.id === OffsetExpr ||
-          errorNodeParent?.type.id === SubqueryExpr
+          errorNodeParent?.type.id === SubqueryExpr ||
+          errorNodeParent?.type.id === DurationExpr
         ) {
-          // Identifier typed in a duration slot (e.g. `foo[ste]`, `foo offset ste`, `go[5d:ste]`).
+          // Identifier typed in a duration slot or inside a DurationExpr arithmetic expression
+          // (e.g. `foo[ste]`, `foo offset ste`, `go[5d:ste]`, `foo[5m+2ms+m`).
           // Offer duration-expression functions so the user can complete `step()`, `range()`, etc.
           result.push({ kind: ContextKind.DurationExpr });
           break;
@@ -604,7 +607,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       break;
     case MatrixSelector:
       if (pos >= node.from + 1 && pos <= node.to - 1) {
-        result.push({ kind: ContextKind.Duration }, { kind: ContextKind.DurationExpr });
+        result.push({ kind: ContextKind.Duration });
       }
       break;
     case SubqueryExpr:
@@ -613,11 +616,11 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         if (subqueryInputExpr !== null && pos < subqueryInputExpr.to) {
           break;
         }
-        result.push({ kind: ContextKind.Duration }, { kind: ContextKind.DurationExpr });
+        result.push({ kind: ContextKind.Duration });
       }
       break;
     case OffsetExpr:
-      result.push({ kind: ContextKind.Duration }, { kind: ContextKind.DurationExpr });
+      result.push({ kind: ContextKind.Duration });
       break;
     case FunctionCallBody:
       if (isAfterClosedFunctionCallBody(state, node, pos)) {
@@ -667,7 +670,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
     case Mod:
     case Add:
     case Sub:
-      if (node.parent?.name === 'DurationExpr') {
+      if (node.parent?.type.id === DurationExpr) {
         result.push({ kind: ContextKind.DurationExprOperator });
       } else {
         result.push({ kind: ContextKind.BinOp });
