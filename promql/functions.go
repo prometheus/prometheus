@@ -1575,12 +1575,12 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 }
 
 // === integral(Matrix parser.ValueTypeMatrix, strategy=2 Scalar) (Vector, Annotations) ===
-func funcIntegral(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcIntegral(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	var annos annotations.Annotations
 
 	strategy := 2
-	if len(args) >= 2 {
-		strategy = int(vals[1].(Vector)[0].F)
+	if len(vectorVals) > 0 && len(vectorVals[0]) > 0 {
+		strategy = int(vectorVals[0][0].F)
 	}
 	if strategy < 0 || strategy > 2 {
 		annos.Add(annotations.NewInvalidIntegralStrategyWarning(strategy, args[1].PositionRange()))
@@ -1594,7 +1594,7 @@ func funcIntegral(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 		return v
 	}
 
-	return aggrOverTime(vals, enh, func(s Series) float64 {
+	return aggrOverTime(matrixVal, enh, func(s Series) float64 {
 		var sum, c float64
 		var prev FPoint
 		for i, f := range s.Floats {
@@ -1677,10 +1677,10 @@ func funcIntegral(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 				//                      (t2-t1)   (t3-t2)   (t4-t3)
 				//
 
-				// NB: use kahanSumInc() here also for big vs small number precision
+				// NB: use kahansum.Inc() here also for big vs small number precision
 				// to implement (currVal+prevVal)/2
 				if prevVal != 0 || currVal != 0 {
-					value, cValue = kahanSumInc(currVal, prevVal, 0)
+					value, cValue = kahansum.Inc(currVal, prevVal, 0)
 					value /= 2
 					cValue /= 2
 				}
@@ -1688,7 +1688,7 @@ func funcIntegral(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 			// Skip the first sample, aggregate non-zero values.
 			if i > 0 && (value != 0 || cValue != 0) {
 				deltaT := float64(f.T-prev.T) / 1000
-				sum, c = kahanSumInc(value*deltaT, sum, c+cValue*deltaT)
+				sum, c = kahansum.Inc(value*deltaT, sum, c+cValue*deltaT)
 			}
 			prev = f
 		}
