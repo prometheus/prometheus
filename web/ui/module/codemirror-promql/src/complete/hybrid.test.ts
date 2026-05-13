@@ -528,13 +528,13 @@ describe('analyzeCompletion test', () => {
       title: 'autocomplete duration with offset',
       expr: 'http_requests_total offset 5',
       pos: 28,
-      expectedContext: [{ kind: ContextKind.Duration }, { kind: ContextKind.DurationExpr }, { kind: ContextKind.DurationExprOperator }],
+      expectedContext: [{ kind: ContextKind.Duration }],
     },
     {
       title: 'autocomplete duration with offset',
       expr: 'sum(http_requests_total{method="GET"} offset 4)',
       pos: 46,
-      expectedContext: [{ kind: ContextKind.Duration }, { kind: ContextKind.DurationExpr }, { kind: ContextKind.DurationExprOperator }],
+      expectedContext: [{ kind: ContextKind.Duration }],
     },
     {
       title: 'autocomplete offset or binOp',
@@ -582,7 +582,7 @@ describe('analyzeCompletion test', () => {
       title: 'autocomplete duration for a matrixSelector',
       expr: 'go[5]',
       pos: 4,
-      expectedContext: [{ kind: ContextKind.Duration }, { kind: ContextKind.DurationExpr }, { kind: ContextKind.DurationExprOperator }],
+      expectedContext: [{ kind: ContextKind.Duration }],
     },
     {
       title: 'autocomplete duration for a matrixSelector 2',
@@ -594,7 +594,7 @@ describe('analyzeCompletion test', () => {
       title: 'autocomplete duration for a matrixSelector 3',
       expr: 'rate(my_metric{l1="l2"}[25])',
       pos: 26,
-      expectedContext: [{ kind: ContextKind.Duration }, { kind: ContextKind.DurationExpr }, { kind: ContextKind.DurationExprOperator }],
+      expectedContext: [{ kind: ContextKind.Duration }],
     },
     {
       title: 'autocomplete duration for a matrixSelector 4',
@@ -606,19 +606,61 @@ describe('analyzeCompletion test', () => {
       title: 'do not autocomplete duration when unit already present in matrixSelector',
       expr: 'rate(foo[5m])',
       pos: 10,
-      expectedContext: [{ kind: ContextKind.DurationExpr }, { kind: ContextKind.DurationExprOperator }],
+      expectedContext: [],
     },
     {
       title: 'do not autocomplete duration when multi char unit already present in matrixSelector',
       expr: 'rate(foo[5ms])',
       pos: 10,
-      expectedContext: [{ kind: ContextKind.DurationExpr }, { kind: ContextKind.DurationExprOperator }],
+      expectedContext: [],
+    },
+    {
+      title: 'autocomplete duration expr operator after complete unit in matrixSelector',
+      expr: 'foo[5m+]',
+      pos: 7,
+      expectedContext: [{ kind: ContextKind.DurationExprOperator }],
+    },
+    {
+      title: 'autocomplete duration expr operator after complete multi-char unit in matrixSelector',
+      expr: 'foo[5ms+]',
+      pos: 8,
+      expectedContext: [{ kind: ContextKind.DurationExprOperator }],
+    },
+    {
+      title: 'autocomplete duration expr operator in subquery step',
+      expr: 'go[5d:5m+]',
+      pos: 9,
+      expectedContext: [{ kind: ContextKind.DurationExprOperator }],
+    },
+    {
+      title: 'autocomplete duration expr function when typing identifier in empty duration slot',
+      expr: 'foo[ste]',
+      pos: 7,
+      expectedContext: [{ kind: ContextKind.DurationExpr }],
+    },
+    {
+      title: 'autocomplete duration expr function after complete duration in matrixSelector',
+      expr: 'foo[5mss]',
+      pos: 8,
+      expectedContext: [{ kind: ContextKind.DurationExpr }],
+    },
+    {
+      title: 'autocomplete duration expr function in subquery step',
+      expr: 'go[5d:st]',
+      pos: 8,
+      expectedContext: [{ kind: ContextKind.DurationExpr }],
+    },
+    {
+      title: 'autocomplete duration expr function when typing identifier in offset duration slot',
+      expr: 'foo offset st',
+      pos: 13,
+      expectedContext: [{ kind: ContextKind.DurationExpr }],
     },
     {
       title: 'autocomplete duration for a subQuery',
       expr: 'go[5d:5]',
       pos: 7,
-      expectedContext: [{ kind: ContextKind.Duration }, { kind: ContextKind.DurationExpr }, { kind: ContextKind.DurationExprOperator }],
+      expectedContext: [{ kind: ContextKind.Duration }],
     },
     {
       title: 'autocomplete duration for a subQuery 2',
@@ -630,7 +672,7 @@ describe('analyzeCompletion test', () => {
       title: 'autocomplete duration for a subQuery 3',
       expr: 'rate(my_metric{l1="l2"}[25d:6])',
       pos: 29,
-      expectedContext: [{ kind: ContextKind.Duration }, { kind: ContextKind.DurationExpr }, { kind: ContextKind.DurationExprOperator }],
+      expectedContext: [{ kind: ContextKind.Duration }],
     },
     {
       title: 'autocomplete duration for a subQuery 4',
@@ -1400,7 +1442,7 @@ describe('autocomplete promQL test', () => {
       expr: 'http_requests_total offset 5',
       pos: 28,
       expectedResult: {
-        options: durationExprOperandOptions,
+        options: durationTerms,
         from: 28,
         to: 28,
         validFor: undefined,
@@ -1411,7 +1453,7 @@ describe('autocomplete promQL test', () => {
       expr: 'sum(http_requests_total{method="GET"} offset 4)',
       pos: 46,
       expectedResult: {
-        options: durationExprOperandOptions,
+        options: durationTerms,
         from: 46,
         to: 46,
         validFor: undefined,
@@ -1499,7 +1541,7 @@ describe('autocomplete promQL test', () => {
       expr: 'go[5]',
       pos: 4,
       expectedResult: {
-        options: durationExprOperandOptions,
+        options: durationTerms,
         from: 4,
         to: 4,
         validFor: undefined,
@@ -1521,7 +1563,7 @@ describe('autocomplete promQL test', () => {
       expr: 'rate(my_metric{l1="l2"}[25])',
       pos: 26,
       expectedResult: {
-        options: durationExprOperandOptions,
+        options: durationTerms,
         from: 26,
         to: 26,
         validFor: undefined,
@@ -1543,10 +1585,10 @@ describe('autocomplete promQL test', () => {
       expr: 'rate(foo[5m])',
       pos: 10,
       expectedResult: {
-        options: durationExprContinuationOptions,
+        options: [],
         from: 10,
         to: 11,
-        validFor: undefined,
+        validFor: /^[a-zA-Z0-9_:]+$/,
       },
     },
     {
@@ -1554,9 +1596,42 @@ describe('autocomplete promQL test', () => {
       expr: 'rate(foo[5ms])',
       pos: 10,
       expectedResult: {
-        options: durationExprContinuationOptions,
+        options: [],
         from: 10,
         to: 12,
+        validFor: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
+    {
+      title: 'offline autocomplete duration expr operator after complete unit in matrixSelector',
+      expr: 'foo[5m+]',
+      pos: 7,
+      expectedResult: {
+        options: durationExprOperatorTerms,
+        from: 6,
+        to: 7,
+        validFor: undefined,
+      },
+    },
+    {
+      title: 'offline autocomplete duration expr function when typing identifier in empty duration slot',
+      expr: 'foo[ste]',
+      pos: 7,
+      expectedResult: {
+        options: durationExprTerms,
+        from: 4,
+        to: 7,
+        validFor: undefined,
+      },
+    },
+    {
+      title: 'offline autocomplete duration expr function after complete duration in matrixSelector',
+      expr: 'foo[5mss]',
+      pos: 8,
+      expectedResult: {
+        options: durationExprTerms,
+        from: 7,
+        to: 8,
         validFor: undefined,
       },
     },
@@ -1565,7 +1640,7 @@ describe('autocomplete promQL test', () => {
       expr: 'go[5d:5]',
       pos: 7,
       expectedResult: {
-        options: durationExprOperandOptions,
+        options: durationTerms,
         from: 7,
         to: 7,
         validFor: undefined,
@@ -1587,7 +1662,7 @@ describe('autocomplete promQL test', () => {
       expr: 'rate(my_metric{l1="l2"}[25d:6])',
       pos: 29,
       expectedResult: {
-        options: durationExprOperandOptions,
+        options: durationTerms,
         from: 29,
         to: 29,
         validFor: undefined,

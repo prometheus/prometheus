@@ -402,6 +402,17 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
           break;
         }
 
+        if (
+          errorNodeParent?.type.id === MatrixSelector ||
+          errorNodeParent?.type.id === OffsetExpr ||
+          errorNodeParent?.type.id === SubqueryExpr
+        ) {
+          // Identifier typed in a duration slot (e.g. `foo[ste]`, `foo offset ste`, `go[5d:ste]`).
+          // Offer duration-expression functions so the user can complete `step()`, `range()`, etc.
+          result.push({ kind: ContextKind.DurationExpr });
+          break;
+        }
+
         if (errorNodeParent && containsChild(errorNodeParent, 'Expr')) {
           // this last case can appear with the following expression:
           // 1. http_requests_total{method="GET"} off
@@ -515,6 +526,17 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         // so we have or to continue to autocomplete any kind of labelName or
         // to continue to autocomplete only the labelName associated to the metric
         result.push({ kind: ContextKind.LabelName, metricName: getMetricNameInVectorSelector(node, state) });
+      } else if (node.parent?.type.id === 0) {
+        const grandParent = node.parent.parent;
+        if (
+          grandParent?.type.id === MatrixSelector ||
+          grandParent?.type.id === OffsetExpr ||
+          grandParent?.type.id === SubqueryExpr
+        ) {
+          // LabelName typed after a complete duration in a duration slot (e.g. `foo[5mss]`).
+          // Offer duration-expression functions so the user can complete `step()`, `range()`, etc.
+          result.push({ kind: ContextKind.DurationExpr });
+        }
       }
       break;
     case StringLiteral:
@@ -578,9 +600,6 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
     case NumberDurationLiteralInDurationContext:
       if (!hasCompleteDurationUnit(state, node)) {
         result.push({ kind: ContextKind.Duration });
-      }
-      if (node.parent?.name === 'DurationExpr' || node.parent?.name === 'OffsetDurationExpr') {
-        result.push({ kind: ContextKind.DurationExpr }, { kind: ContextKind.DurationExprOperator });
       }
       break;
     case MatrixSelector:
@@ -648,6 +667,12 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
     case Mod:
     case Add:
     case Sub:
+      if (node.parent?.name === 'DurationExpr') {
+        result.push({ kind: ContextKind.DurationExprOperator });
+      } else {
+        result.push({ kind: ContextKind.BinOp });
+      }
+      break;
     case Eql:
     case Gte:
     case Gtr:
