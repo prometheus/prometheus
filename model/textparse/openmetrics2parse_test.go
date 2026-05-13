@@ -15,6 +15,7 @@ package textparse
 
 import (
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -206,6 +207,37 @@ http_requests_total 1027 1710000000.0 # {trace_id="abc123",span_id="def456"} 1.0
 					Value:  1.0,
 					HasTs:  true,
 					Ts:     1709999999000,
+				},
+			},
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
+func TestOpenMetrics2ParseExemplarExceedsOM1Limit(t *testing.T) {
+	// OM1 capped exemplar LabelSets at 128 UTF-8 code points (sum of all
+	// label names and values).  OM2 removes that cap; this exemplar is
+	// well over the old limit (4 + 200 = 204 code points).
+	longValue := strings.Repeat("x", 200)
+	input := `# TYPE foo counter
+foo_total 1.0 # {data="` + longValue + `"} 1.0 1234567.0
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "foo", typ: model.MetricTypeCounter},
+		{
+			m:    "foo_total",
+			v:    1.0,
+			lset: labels.FromStrings("__name__", "foo_total"),
+			es: []exemplar.Exemplar{
+				{
+					Labels: labels.FromStrings("data", longValue),
+					Value:  1.0,
+					HasTs:  true,
+					Ts:     1234567000,
 				},
 			},
 		},
