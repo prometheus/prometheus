@@ -89,7 +89,7 @@
     "idelta": true,
     "increase": true,
     "info": false,
-    "integral": true,
+    "integral": false,
     "irate": true,
     "label_join": true,
     "label_replace": true,
