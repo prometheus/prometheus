@@ -1432,6 +1432,16 @@ func funcSqrt(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNode
 	return simpleFloatFunc(vectorVals, enh, math.Sqrt), nil
 }
 
+// === greatest(a, b parser.ValueTypeScalar) Scalar ===
+func funcGreatest(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return append(enh.Out, Sample{F: math.Max(vectorVals[0][0].F, vectorVals[1][0].F)}), nil
+}
+
+// === least(a, b parser.ValueTypeScalar) Scalar ===
+func funcLeast(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return append(enh.Out, Sample{F: math.Min(vectorVals[0][0].F, vectorVals[1][0].F)}), nil
+}
+
 // === ln(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcLn(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFloatFunc(vectorVals, enh, math.Log), nil
@@ -2289,8 +2299,10 @@ var FunctionCalls = map[string]FunctionCall{
 	"increase":                     funcIncrease,
 	"info":                         nil,
 	"irate":                        funcIrate,
+	"greatest":                     funcGreatest,
 	"label_replace":                nil, // evalLabelReplace not called via this map.
 	"label_join":                   nil, // evalLabelJoin not called via this map.
+	"least":                        funcLeast,
 	"ln":                           funcLn,
 	"log10":                        funcLog10,
 	"log2":                         funcLog2,

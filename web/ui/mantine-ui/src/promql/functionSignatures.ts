@@ -56,6 +56,12 @@ export const functionSignatures: Record<string, Func> = {
   exp: { name: "exp", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   first_over_time: { name: "first_over_time", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   floor: { name: "floor", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
+  greatest: {
+    name: "greatest",
+    argTypes: [valueType.scalar, valueType.scalar],
+    variadic: 0,
+    returnType: valueType.scalar,
+  },
   histogram_avg: { name: "histogram_avg", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   histogram_count: { name: "histogram_count", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   histogram_fraction: {
@@ -107,6 +113,7 @@ export const functionSignatures: Record<string, Func> = {
     returnType: valueType.vector,
   },
   last_over_time: { name: "last_over_time", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
+  least: { name: "least", argTypes: [valueType.scalar, valueType.scalar], variadic: 0, returnType: valueType.scalar },
   ln: { name: "ln", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   log10: { name: "log10", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   log2: { name: "log2", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
