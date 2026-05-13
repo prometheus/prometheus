@@ -45,7 +45,7 @@ ss{ss="bar"} 0
 # TYPE un unknown
 un 1
 # TYPE foo counter
-foo_total 17.0 1520879607.789 # {id="counter-test"} 5
+foo_total 17.0 1520879607.789 # {id="counter-test"} 5 1520879600.789
 # EOF
 `
 
@@ -115,7 +115,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5
 			v:    17.0,
 			t:    int64p(1520879607789),
 			lset: labels.FromStrings("__name__", "foo_total"),
-			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5, HasTs: true, Ts: 1520879600789}},
 		},
 	}
 
@@ -167,7 +167,7 @@ requests_total 42.0 st@500000.0
 
 func TestOpenMetrics2ParseMultipleExemplars(t *testing.T) {
 	input := `# TYPE foo counter
-foo_total 17.0 # {id="a"} 1.0 # {id="b"} 2.0 1234567.0
+foo_total 17.0 # {id="a"} 1.0 1234566.0 # {id="b"} 2.0 1234567.0
 # EOF
 `
 	exp := []parsedEntry{
@@ -177,8 +177,36 @@ foo_total 17.0 # {id="a"} 1.0 # {id="b"} 2.0 1234567.0
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "foo_total"),
 			es: []exemplar.Exemplar{
-				{Labels: labels.FromStrings("id", "a"), Value: 1.0},
+				{Labels: labels.FromStrings("id", "a"), Value: 1.0, HasTs: true, Ts: 1234566000},
 				{Labels: labels.FromStrings("id", "b"), Value: 2.0, HasTs: true, Ts: 1234567000},
+			},
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
+func TestOpenMetrics2ParseExemplarMultipleLabels(t *testing.T) {
+	input := `# TYPE http_requests counter
+http_requests_total 1027 1710000000.0 # {trace_id="abc123",span_id="def456"} 1.0 1709999999.0
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "http_requests", typ: model.MetricTypeCounter},
+		{
+			m:    "http_requests_total",
+			v:    1027,
+			t:    int64p(1710000000000),
+			lset: labels.FromStrings("__name__", "http_requests_total"),
+			es: []exemplar.Exemplar{
+				{
+					Labels: labels.FromStrings("span_id", "def456", "trace_id", "abc123"),
+					Value:  1.0,
+					HasTs:  true,
+					Ts:     1709999999000,
+				},
 			},
 		},
 	}
@@ -458,6 +486,14 @@ func TestOpenMetrics2ParseErrors(t *testing.T) {
 `,
 			err: "composite value not supported",
 		},
+		{
+			// OM2 requires every exemplar to carry a timestamp.
+			input: `# TYPE foo counter
+foo_total 1.0 # {id="x"} 1.0
+# EOF
+`,
+			err: "expected exemplar timestamp",
+		},
 	} {
 		t.Run(tc.err, func(t *testing.T) {
 			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable())
@@ -684,7 +720,7 @@ rpc_duration_seconds {count:10,sum:5.0,quantile:[0.5:1.0]}
 
 func TestOpenMetrics2ParseExemplarOnCompositeLine(t *testing.T) {
 	input := `# TYPE req_duration histogram
-req_duration {count:2,sum:4.0,bucket:[+Inf:2,1.0:1]} # {id="req-1"} 3.8
+req_duration {count:2,sum:4.0,bucket:[+Inf:2,1.0:1]} # {id="req-1"} 3.8 9999999.0
 # EOF
 `
 	exp := []parsedEntry{
@@ -694,7 +730,7 @@ req_duration {count:2,sum:4.0,bucket:[+Inf:2,1.0:1]} # {id="req-1"} 3.8
 			m:    "req_duration_count",
 			v:    2,
 			lset: labels.FromStrings("__name__", "req_duration_count"),
-			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 3.8}},
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "req-1"), Value: 3.8, HasTs: true, Ts: 9999999000}},
 		},
 		{
 			m:    "req_duration_sum",
