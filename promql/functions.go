@@ -228,6 +228,45 @@ func subHistogramWithAnnotations(base, other *histogram.FloatHistogram, annos *a
 	return true
 }
 
+// validateHistogramRange checks all histogram samples in h for schema
+// consistency and counter-type hints. It returns false (and adds an annotation
+// to annos) when exponential and custom buckets are mixed. It adds a
+// NativeHistogramNotCounterWarning for any sample carrying a gauge hint while
+// isCounter is true.
+func validateHistogramRange(h []HPoint, isCounter bool, annos *annotations.Annotations, metricName string, pos posrange.PositionRange) bool {
+	usingCustomBuckets := h[0].H.UsesCustomBuckets()
+	for _, p := range h {
+		if p.H.UsesCustomBuckets() != usingCustomBuckets {
+			annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
+			return false
+		}
+		if isCounter && p.H.CounterResetHint == histogram.GaugeType {
+			annos.Add(annotations.NewNativeHistogramNotCounterWarning(metricName, pos))
+		}
+	}
+	return true
+}
+
+// innerHistogramBounds returns the (first, last) indices for the inner slice
+// passed to correctForCounterResetsHistogram. firstSampleIndex is always
+// excluded because it is already represented by left (directly or via
+// interpolation). When the left-boundary interpolation itself spanned a reset
+// (smoothed mode, first sample before rangeStart, DetectReset true), the reset
+// between firstSampleIndex and firstSampleIndex+1 is already accounted for, so
+// firstSampleIndex+1 is also excluded. lastSampleIndex is excluded when its
+// timestamp is at or after rangeEnd, mirroring the float version.
+func innerHistogramBounds(h []HPoint, firstSampleIndex, lastSampleIndex int, rangeStart, rangeEnd int64, smoothed bool) (int, int) {
+	first := firstSampleIndex + 1
+	if smoothed && h[firstSampleIndex].T < rangeStart && h[firstSampleIndex+1].H.DetectReset(h[firstSampleIndex].H) {
+		first++
+	}
+	last := lastSampleIndex
+	if h[last].T >= rangeEnd {
+		last--
+	}
+	return first, last
+}
+
 // correctForCounterResetsHistogram calculates the histogram correction for
 // counter resets in points, using left and right as the boundary samples.
 // It is only used by extendedHistogramRate. It returns the accumulated
@@ -349,14 +388,8 @@ func extendedHistogramRate(vals Matrix, args parser.Expressions, enh *EvalNodeHe
 		return enh.Out, annos
 	}
 
-	usingCustomBuckets := h[firstSampleIndex].H.UsesCustomBuckets()
-	for _, p := range h[firstSampleIndex : lastSampleIndex+1] {
-		if p.H.UsesCustomBuckets() != usingCustomBuckets {
-			return enh.Out, annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
-		}
-		if isCounter && p.H.CounterResetHint == histogram.GaugeType {
-			annos.Add(annotations.NewNativeHistogramNotCounterWarning(metricName, pos))
-		}
+	if !validateHistogramRange(h[firstSampleIndex:lastSampleIndex+1], isCounter, &annos, metricName, pos) {
+		return enh.Out, annos
 	}
 
 	left, err := pickOrInterpolateLeftHistogram(h, firstSampleIndex, rangeStart, smoothed, isCounter, &annos, pos)
@@ -372,32 +405,13 @@ func extendedHistogramRate(vals Matrix, args parser.Expressions, enh *EvalNodeHe
 		annos.Add(annotations.NewNativeHistogramNotGaugeWarning(metricName, pos))
 	}
 
-	// Compute result = right - left.
 	resultHistogram := right.Copy()
 	if !subHistogramWithAnnotations(resultHistogram, left, &annos, metricName, pos) {
 		return enh.Out, annos
 	}
 
 	if isCounter {
-		leftInterpolationHandledReset := smoothed && h[firstSampleIndex].T < rangeStart && h[firstSampleIndex+1].H.DetectReset(h[firstSampleIndex].H)
-
-		// Always skip firstSampleIndex: it is either already represented by
-		// left (when h[firstSampleIndex].T >= rangeStart) or by the
-		// interpolation between h[firstSampleIndex] and h[firstSampleIndex+1]
-		// (when smoothed). Including it in the correction slice would
-		// double-count via DetectReset's CounterReset shortcut when
-		// h[firstSampleIndex].CounterResetHint == CounterReset.
-		first := firstSampleIndex + 1
-		if leftInterpolationHandledReset {
-			// The reset between h[firstSampleIndex] and h[firstSampleIndex+1]
-			// is already accounted for by the left boundary interpolation.
-			first++
-		}
-		last := lastSampleIndex
-		if h[last].T >= rangeEnd {
-			last--
-		}
-
+		first, last := innerHistogramBounds(h, firstSampleIndex, lastSampleIndex, rangeStart, rangeEnd, smoothed)
 		if first <= last {
 			correction, newAnnos, ok := correctForCounterResetsHistogram(left, right, h[first:last+1], metricName, pos)
 			annos.Merge(newAnnos)
