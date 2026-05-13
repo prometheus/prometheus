@@ -73,7 +73,7 @@ type FileStatusAnnotationMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m FileStatusAnnotationMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -177,7 +177,7 @@ type MessageStatusAnnotationMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m MessageStatusAnnotationMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -281,7 +281,7 @@ type FieldStatusAnnotationMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m FieldStatusAnnotationMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -387,7 +387,7 @@ type StatusAnnotationMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m StatusAnnotationMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
