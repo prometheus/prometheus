@@ -338,13 +338,9 @@ func (p *OpenMetrics2Parser) Next() (Entry, error) {
 		case tType:
 			return EntryType, nil
 		case tUnit:
+			// OM2 only RECOMMENDS the unit be an underscore-separated suffix
+			// of the MetricFamily name; it is not a hard requirement.
 			p.unit = string(p.text)
-			m := yoloString(p.l.b[p.offsets[0]:p.offsets[1]])
-			if p.unit != "" {
-				if !strings.HasSuffix(m, p.unit) || len(m) < len(p.unit)+1 || p.l.b[p.offsets[1]-len(p.unit)-1] != '_' {
-					return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", p.unit, m)
-				}
-			}
 			return EntryUnit, nil
 		}
 
@@ -520,13 +516,12 @@ func (p *OpenMetrics2Parser) parseSingleExemplar() (done bool, err error) {
 	p.builder.Sort()
 	ex.e.Labels = p.builder.Labels()
 
-	// Read the token following the exemplar value (sETimestamp state).
+	// Read the token following the exemplar value.  OM2 requires every
+	// exemplar to carry a timestamp, so anything other than tTimestamp here
+	// (including end-of-line or the start of another exemplar) is an error.
 	switch t2 := p.nextToken(); t2 {
 	case tEOF:
 		return false, errors.New("data does not end with # EOF")
-	case tLinebreak:
-		p.exemplars = append(p.exemplars, ex)
-		return true, nil
 	case tTimestamp:
 		ex.e.HasTs = true
 		var ts float64
@@ -538,8 +533,8 @@ func (p *OpenMetrics2Parser) parseSingleExemplar() (done bool, err error) {
 		}
 		ex.e.Ts = int64(ts * 1000)
 		p.exemplars = append(p.exemplars, ex)
-		// After exemplar timestamp, sETimestamp state may yield tLinebreak
-		// or tComment (for a next exemplar per OM2 yyrule32).
+		// After the exemplar timestamp, the line may end (tLinebreak) or
+		// another exemplar may follow (tComment).
 		switch t3 := p.nextToken(); t3 {
 		case tEOF:
 			return false, errors.New("data does not end with # EOF")
@@ -550,12 +545,8 @@ func (p *OpenMetrics2Parser) parseSingleExemplar() (done bool, err error) {
 		default:
 			return false, p.parseError("expected end of line or next exemplar", t3)
 		}
-	case tComment:
-		// No timestamp for this exemplar; another exemplar follows.
-		p.exemplars = append(p.exemplars, ex)
-		return false, nil
 	default:
-		return false, p.parseError("expected exemplar timestamp or newline", t2)
+		return false, p.parseError("expected exemplar timestamp", t2)
 	}
 }
 
