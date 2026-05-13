@@ -495,6 +495,6 @@ func NewMismatchedCustomBucketsHistogramsInfo(pos posrange.PositionRange, operat
 func NewInvalidIntegralStrategyWarning(strategy int, pos posrange.PositionRange) error {
 	return &annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w %q", InvalidIntegralStrategy, strategy),
+		Err:           fmt.Errorf("%w, got %d", InvalidIntegralStrategy, strategy),
 	}
 }

@@ -1401,8 +1401,8 @@ func funcIntegral(vectorVals []Vector, matrixVal Matrix, args parser.Expressions
 				//                      (t2-t1)   (t3-t2)   (t4-t3)
 				//
 
-				// NB: use kahansum.Inc() here also for big vs small number precision
-				// to implement (currVal+prevVal)/2
+				// Use kahansum.Inc() here also for big vs small number precision
+				// to implement (currVal+prevVal)/2.
 				if prevVal != 0 || currVal != 0 {
 					value, cValue = kahansum.Inc(currVal, prevVal, 0)
 					value /= 2
