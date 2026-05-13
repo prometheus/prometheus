@@ -331,6 +331,67 @@ req_duration {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,1.0:2]}
 	requireEntries(t, exp, got)
 }
 
+func TestOpenMetrics2ParseCompositeNativeAndClassicHistogram(t *testing.T) {
+	// A composite value exposing both representations in one line: native
+	// histogram fields (schema, positive_spans, positive_buckets, ...) AND a
+	// classic bucket list. The KeepClassicOnNativeHistogram option mirrors
+	// the protobuf parser's parseClassicHistograms flag: when off, only the
+	// native histogram is emitted and the classic bucket list is dropped;
+	// when on, classic _count/_sum/_bucket flat series are also emitted.
+	input := `# HELP req_duration Request duration histogram with both representations.
+# TYPE req_duration histogram
+req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positive_spans:[0:2],positive_buckets:[1,1],bucket:[+Inf:3,0.1:1,1.0:2]}
+# EOF
+`
+	header := []parsedEntry{
+		{m: "req_duration", help: "Request duration histogram with both representations."},
+		{m: "req_duration", typ: model.MetricTypeHistogram},
+	}
+	nativeEntry := parsedEntry{
+		m:    "req_duration",
+		lset: labels.FromStrings("__name__", "req_duration"),
+		shs: &histogram.Histogram{
+			Schema:          0,
+			ZeroThreshold:   0.001,
+			ZeroCount:       0,
+			Count:           3,
+			Sum:             6.0,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+			PositiveBuckets: []int64{1, 1},
+		},
+	}
+	classicSeries := []parsedEntry{
+		{m: "req_duration_count", v: 3, lset: labels.FromStrings("__name__", "req_duration_count")},
+		{m: "req_duration_sum", v: 6.0, lset: labels.FromStrings("__name__", "req_duration_sum")},
+		{m: "req_duration_bucket", v: 3, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf")},
+		{m: "req_duration_bucket", v: 1, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.1")},
+		{m: "req_duration_bucket", v: 2, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0")},
+	}
+
+	for _, tc := range []struct {
+		name string
+		opts []OpenMetrics2Option
+		exp  []parsedEntry
+	}{
+		{
+			name: "keep_classic_off",
+			opts: nil,
+			exp:  append(append([]parsedEntry{}, header...), nativeEntry),
+		},
+		{
+			name: "keep_classic_on",
+			opts: []OpenMetrics2Option{WithOM2KeepClassicOnNativeHistogram()},
+			exp:  append(append(append([]parsedEntry{}, header...), nativeEntry), classicSeries...),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), tc.opts...)
+			got := testParse(t, p)
+			requireEntries(t, tc.exp, got)
+		})
+	}
+}
+
 func TestOpenMetrics2ParseNativeHistogram(t *testing.T) {
 	input := `# HELP test_histogram Native histogram.
 # TYPE test_histogram histogram

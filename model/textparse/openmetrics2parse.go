@@ -103,10 +103,17 @@ type OpenMetrics2Parser struct {
 	pendingIdx int
 
 	enableTypeAndUnitLabels bool
+
+	// When true, a composite histogram that exposes both native fields and a
+	// classic bucket list emits the native histogram followed by classic
+	// _count/_sum/_bucket flat series. Mirrors the protobuf parser's
+	// KeepClassicOnClassicAndNativeHistograms option.
+	keepClassicOnNativeHist bool
 }
 
 type openMetrics2ParserOptions struct {
 	enableTypeAndUnitLabels bool
+	keepClassicOnNativeHist bool
 }
 
 // OpenMetrics2Option is a functional option for OpenMetrics2Parser.
@@ -117,6 +124,16 @@ type OpenMetrics2Option func(*openMetrics2ParserOptions)
 func WithOM2TypeAndUnitLabels() OpenMetrics2Option {
 	return func(o *openMetrics2ParserOptions) {
 		o.enableTypeAndUnitLabels = true
+	}
+}
+
+// WithOM2KeepClassicOnNativeHistogram causes a composite histogram that
+// exposes both native and classic representations in the same composite value
+// to emit the native histogram and the classic _count/_sum/_bucket flat
+// series. By default only the native histogram is emitted.
+func WithOM2KeepClassicOnNativeHistogram() OpenMetrics2Option {
+	return func(o *openMetrics2ParserOptions) {
+		o.keepClassicOnNativeHist = true
 	}
 }
 
@@ -131,6 +148,7 @@ func NewOpenMetrics2Parser(b []byte, st *labels.SymbolTable, opts ...OpenMetrics
 		l:                       &openMetrics2Lexer{b: b},
 		builder:                 labels.NewScratchBuilderWithSymbolTable(st, 16),
 		enableTypeAndUnitLabels: options.enableTypeAndUnitLabels,
+		keepClassicOnNativeHist: options.keepClassicOnNativeHist,
 	}
 }
 
@@ -752,6 +770,17 @@ func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 		}
 		p.h = h
 		p.fh = fh
+		// When the composite also carries a classic bucket list and the
+		// caller asked to keep it, queue the classic flat series so that
+		// subsequent Next() calls drain them after the EntryHistogram.
+		if _, hasBucket := kv["bucket"]; hasBucket && p.keepClassicOnNativeHist {
+			pending, err := buildClassicHistogramPending(kv, p.series, p.mfNameLen, p.mtype, p.hasTS, p.ts)
+			if err != nil {
+				return EntryInvalid, fmt.Errorf("error parsing classic histogram composite: %w", err)
+			}
+			p.pending = pending
+			p.pendingIdx = 0
+		}
 		return EntryHistogram, nil
 	}
 
@@ -843,11 +872,11 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 	}
 
 	if isFloat {
-		posDeltas, err := parseFloatDeltas(kv["positive_buckets"])
+		posBuckets, err := parseFloatBuckets(kv["positive_buckets"])
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid positive_buckets: %w", err)
 		}
-		negDeltas, err := parseFloatDeltas(kv["negative_buckets"])
+		negBuckets, err := parseFloatBuckets(kv["negative_buckets"])
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid negative_buckets: %w", err)
 		}
@@ -859,8 +888,8 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 			Sum:             sum,
 			PositiveSpans:   posSpans,
 			NegativeSpans:   negSpans,
-			PositiveBuckets: posDeltas,
-			NegativeBuckets: negDeltas,
+			PositiveBuckets: posBuckets,
+			NegativeBuckets: negBuckets,
 		}
 		if isGauge {
 			fh.CounterResetHint = histogram.GaugeType
@@ -868,11 +897,11 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 		return nil, fh, nil
 	}
 
-	posDeltas, err := parseIntDeltas(kv["positive_buckets"])
+	posBuckets, err := parseIntBuckets(kv["positive_buckets"])
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid positive_buckets: %w", err)
 	}
-	negDeltas, err := parseIntDeltas(kv["negative_buckets"])
+	negBuckets, err := parseIntBuckets(kv["negative_buckets"])
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid negative_buckets: %w", err)
 	}
@@ -884,8 +913,8 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 		Sum:             sum,
 		PositiveSpans:   posSpans,
 		NegativeSpans:   negSpans,
-		PositiveBuckets: posDeltas,
-		NegativeBuckets: negDeltas,
+		PositiveBuckets: posBuckets,
+		NegativeBuckets: negBuckets,
 	}
 	if isGauge {
 		h.CounterResetHint = histogram.GaugeType
@@ -929,60 +958,60 @@ func parseSpans(s string) ([]histogram.Span, error) {
 	return spans, nil
 }
 
-// parseIntDeltas parses "[d1,d2,...]" into delta-encoded []int64 buckets.
-func parseIntDeltas(s string) ([]int64, error) {
+// parseIntBuckets parses "[b1,b2,...]" into delta-encoded []int64 buckets.
+func parseIntBuckets(s string) ([]int64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" || s == "[]" {
 		return nil, nil
 	}
 	if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
-		return nil, fmt.Errorf("deltas must be wrapped in []: %q", s)
+		return nil, fmt.Errorf("buckets must be wrapped in []: %q", s)
 	}
 	inner := s[1 : len(s)-1]
 	if strings.TrimSpace(inner) == "" {
 		return nil, nil
 	}
-	var deltas []int64
+	var buckets []int64
 	for part := range strings.SplitSeq(inner, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
 		}
-		d, err := strconv.ParseInt(part, 10, 64)
+		b, err := strconv.ParseInt(part, 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("invalid delta %q: %w", part, err)
+			return nil, fmt.Errorf("invalid bucket %q: %w", part, err)
 		}
-		deltas = append(deltas, d)
+		buckets = append(buckets, b)
 	}
-	return deltas, nil
+	return buckets, nil
 }
 
-// parseFloatDeltas parses "[d1,d2,...]" into []float64 bucket values.
-func parseFloatDeltas(s string) ([]float64, error) {
+// parseFloatBuckets parses "[b1,b2,...]" into []float64 bucket values.
+func parseFloatBuckets(s string) ([]float64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" || s == "[]" {
 		return nil, nil
 	}
 	if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
-		return nil, fmt.Errorf("float deltas must be wrapped in []: %q", s)
+		return nil, fmt.Errorf("float buckets must be wrapped in []: %q", s)
 	}
 	inner := s[1 : len(s)-1]
 	if strings.TrimSpace(inner) == "" {
 		return nil, nil
 	}
-	var deltas []float64
+	var buckets []float64
 	for part := range strings.SplitSeq(inner, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
 		}
-		d, err := strconv.ParseFloat(part, 64)
+		b, err := strconv.ParseFloat(part, 64)
 		if err != nil {
-			return nil, fmt.Errorf("invalid float delta %q: %w", part, err)
+			return nil, fmt.Errorf("invalid float bucket %q: %w", part, err)
 		}
-		deltas = append(deltas, d)
+		buckets = append(buckets, b)
 	}
-	return deltas, nil
+	return buckets, nil
 }
 
 func buildClassicHistogramPending(
