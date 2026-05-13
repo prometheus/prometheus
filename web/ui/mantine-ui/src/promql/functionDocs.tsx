@@ -1855,6 +1855,29 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  integral: (
+    <>
+      <p>
+        <code>integral(v range-vector, strategy=2 scalar)</code> calculates the integral of the time series over time in
+        seconds, using trapezoidal approximation. The optional <code>strategy</code> for calculating the integral
+        modifies how the value for the interval is handled: <code>0</code> for the left sample, <code>1</code> for the
+        right sample, and
+        <code>2</code> for the average between these two (aka <em>mid-point</em>). The default is <code>2</code>.
+      </p>
+
+      <p>
+        <code>integral</code> should only be used with gauges, most likely representing a rate in units per seconds.
+      </p>
+
+      <p>For example, to calculate the total nodes cost accumulated the last 7 days, given its hourly cost:</p>
+
+      <pre>
+        <code>
+          integral(hourly_cost{"{"}job=&quot;nodes&quot;{"}"}[7d]) / 3600
+        </code>
+      </pre>
+    </>
+  ),
   irate: (
     <>
       <p>
