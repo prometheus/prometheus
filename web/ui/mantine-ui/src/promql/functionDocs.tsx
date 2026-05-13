@@ -1858,6 +1858,14 @@ const funcDocs: Record<string, React.ReactNode> = {
   integral: (
     <>
       <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
         <code>integral(v range-vector, strategy=2 scalar)</code> calculates the integral of the time series over time in
         seconds, using trapezoidal approximation. The optional <code>strategy</code> for calculating the integral
         modifies how the value for the interval is handled: <code>0</code> for the left sample, <code>1</code> for the

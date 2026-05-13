@@ -629,6 +629,10 @@ consider all matching info series and with their appropriate identifying labels.
 
 ## `integral()`
 
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
 `integral(v range-vector, strategy=2 scalar)` calculates the integral of the
 time series over time in seconds, using trapezoidal approximation.
 The optional `strategy` for calculating the integral modifies how the value for

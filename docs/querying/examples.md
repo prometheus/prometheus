@@ -101,7 +101,8 @@ we could use the following to get approximately 10% of them:
 
     limit_ratio(0.1, app_foo_metric_bar)
 
-Calculate the total cost over past week given the per-node hourly cost:
+Calculate the total cost over past week given the per-node hourly cost
+(`integral()` requires `--enable-feature=promql-experimental-functions`):
 
     integral(hourly_cost[7d]) / 3600
 
