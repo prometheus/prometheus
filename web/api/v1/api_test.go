@@ -3888,6 +3888,7 @@ func assertAPIResponse(t *testing.T, got, exp any) {
 
 	testutil.RequireEqualWithOptions(t, exp, got, []cmp.Option{
 		cmpopts.IgnoreUnexported(regexp.Regexp{}),
+		cmpopts.IgnoreUnexported(relabel.Regexp{}),
 	})
 }
 
