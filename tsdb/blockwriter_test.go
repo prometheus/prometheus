@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	samplemod "github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
@@ -70,10 +71,10 @@ func TestBlockWriter_AppenderV2(t *testing.T) {
 	// Add some series.
 	app := w.AppenderV2(ctx)
 	ts1, v1 := int64(44), float64(7)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, ts1, v1, nil, nil, storage.AOptions{})
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, ts1, samplemod.Float(v1), storage.AOptions{})
 	require.NoError(t, err)
 	ts2, v2 := int64(55), float64(12)
-	_, err = app.Append(0, labels.FromStrings("c", "d"), 0, ts2, v2, nil, nil, storage.AOptions{})
+	_, err = app.Append(0, labels.FromStrings("c", "d"), 0, ts2, samplemod.Float(v2), storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	id, err := w.Flush(ctx)

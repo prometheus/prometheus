@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	samplemod "github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
@@ -1351,11 +1352,11 @@ type noOpAppender struct {
 
 var _ storage.AppenderV2 = &noOpAppender{}
 
-func (a *noOpAppender) Append(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ float64, h *histogram.Histogram, _ *histogram.FloatHistogram, opts storage.AOptions) (_ storage.SeriesRef, err error) {
+func (a *noOpAppender) Append(_ storage.SeriesRef, _ labels.Labels, _, _ int64, val samplemod.Value, opts storage.AOptions) (_ storage.SeriesRef, err error) {
 	if !opts.Metadata.IsEmpty() {
 		a.metadata++
 	}
-	if h != nil {
+	if val.IsHistogram() {
 		a.histograms++
 		return 1, nil
 	}
