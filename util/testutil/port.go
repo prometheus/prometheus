@@ -14,6 +14,8 @@
 package testutil
 
 import (
+	"fmt"
+	"math/rand/v2"
 	"net"
 	"slices"
 	"sync"
@@ -25,26 +27,26 @@ var (
 	usedPorts []int
 )
 
+// Port range used by getPort. Chosen to live entirely below Linux's
+// default ephemeral allocation range (32768–60999), so a concurrent
+// net.Listen(":0") elsewhere on the host will never be assigned a port
+// from here.
+const (
+	testPortLo = 20000
+	testPortHi = 30000
+)
+
 // RandomUnprivilegedPort returns valid unprivileged random port number which can be used for testing.
 func RandomUnprivilegedPort(t *testing.T) int {
 	t.Helper()
 	mu.Lock()
 	defer mu.Unlock()
 
-	port, err := getPort()
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	port := getPort()
 	for portWasUsed(port) {
-		port, err = getPort()
-		if err != nil {
-			t.Fatal(err)
-		}
+		port = getPort()
 	}
-
 	usedPorts = append(usedPorts, port)
-
 	return port
 }
 
@@ -52,15 +54,14 @@ func portWasUsed(port int) bool {
 	return slices.Contains(usedPorts, port)
 }
 
-func getPort() (int, error) {
-	listener, err := net.Listen("tcp", ":0")
-	if err != nil {
-		return 0, err
+func getPort() int {
+	for {
+		port := testPortLo + rand.IntN(testPortHi-testPortLo)
+		listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+		if err != nil {
+			continue
+		}
+		listener.Close()
+		return port
 	}
-
-	if err := listener.Close(); err != nil {
-		return 0, err
-	}
-
-	return listener.Addr().(*net.TCPAddr).Port, nil
 }
