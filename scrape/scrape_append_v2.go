@@ -381,8 +381,16 @@ loop:
 	return total, added, seriesAdded, err
 }
 
-func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float64, b *labels.Builder, rejectOOO bool) (err error) {
-	ce, ok, _ := sl.cache.get(s.name)
+func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float64, b *labels.Builder, rejectOOO bool, extraLabels labels.Labels) (err error) {
+	var cacheKey []byte
+	if extraLabels.IsEmpty() {
+		cacheKey = s.name
+	} else {
+		// Combine name (without \xff) and extra labels, and append \xff to avoid collisions.
+		cacheKey = []byte(string(s.name[:len(s.name)-1]) + "_" + extraLabels.String() + "\xff")
+	}
+
+	ce, ok, _ := sl.cache.get(cacheKey)
 	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {
@@ -394,6 +402,9 @@ func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float
 		// We have to drop it when building the actual metric.
 		b.Reset(labels.EmptyLabels())
 		b.Set(model.MetricNameLabel, string(s.name[:len(s.name)-1]))
+		extraLabels.Range(func(l labels.Label) {
+			b.Set(l.Name, l.Value)
+		})
 		lset = sl.reportSampleMutator(b.Labels())
 	}
 
@@ -405,7 +416,7 @@ func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float
 	switch {
 	case err == nil:
 		if !ok {
-			sl.cache.addRef(s.name, ref, lset, lset.Hash())
+			sl.cache.addRef(cacheKey, ref, lset, lset.Hash())
 		}
 		return nil
 	case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
