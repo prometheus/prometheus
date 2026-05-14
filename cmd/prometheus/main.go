@@ -761,7 +761,6 @@ func main() {
 		cfg.tsdb.BlockReloadInterval = model.Duration(1 * time.Second)
 	}
 	cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
-	cfg.tsdb.StaleSeriesCompactionThreshold = cfgFile.StorageConfig.TSDBConfig.StaleSeriesCompactionThreshold
 	cfg.tsdb.RetentionDuration = cfgFile.StorageConfig.TSDBConfig.Retention.Time
 	cfg.tsdb.MaxBytes = cfgFile.StorageConfig.TSDBConfig.Retention.Size
 	cfg.tsdb.MaxPercentage = cfgFile.StorageConfig.TSDBConfig.Retention.Percentage
@@ -2080,7 +2079,6 @@ type tsdbOptions struct {
 	EnableSTAsZeroSample           bool
 	EnableSTStorage                bool
 	EnableXOR2Encoding             bool
-	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
 }
 
@@ -2112,7 +2110,6 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableSTAsZeroSample:           opts.EnableSTAsZeroSample,
 		EnableSTStorage:                opts.EnableSTStorage,
 		EnableXOR2Encoding:             opts.EnableXOR2Encoding,
-		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
 	}
 }
