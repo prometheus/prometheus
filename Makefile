@@ -212,6 +212,15 @@ cli-documentation:
 	$(GO) run ./cmd/prometheus/ --write-documentation > docs/command-line/prometheus.md
 	$(GO) run ./cmd/promtool/ write-documentation > docs/command-line/promtool.md
 
+METRIC_DOC_SOURCES := $(shell find . -name '*.go' -not -path './vendor/*' -not -path './.git/*' -not -name '*_test.go')
+
+docs/internal-metrics.md: $(METRIC_DOC_SOURCES)
+	@echo ">> generating internal metrics documentation"
+	$(GO) run ./tools/metric-docs > $@
+
+.PHONY: internal-metrics-docs
+internal-metrics-docs: docs/internal-metrics.md
+
 .PHONY: check-go-mod-version
 check-go-mod-version:
 	@echo ">> checking go.mod version matching"
