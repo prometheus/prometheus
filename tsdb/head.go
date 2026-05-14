@@ -114,6 +114,10 @@ type Head struct {
 	// All series addressable by their ID or hash.
 	series *stripeSeries
 
+	// A temporary map used exclusively during WAL replay.
+	// It is merged into 'series' at the end of the replay.
+	walSeries *stripeSeries
+
 	walExpiriesMtx sync.Mutex
 	walExpiries    map[chunks.HeadSeriesRef]int64 // Series no longer in the head, and what time they must be kept until.
 
@@ -142,6 +146,12 @@ type Head struct {
 	// For running the background goroutine which updates series_state.json.
 	seriesStateQuit chan struct{}
 	seriesStateWg   sync.WaitGroup
+
+	// For running the background WAL replay.
+	walReplayWg sync.WaitGroup
+
+	// For signalling when the background WAL replay finishes.
+	walReplayDone chan struct{}
 
 	stats *HeadStats
 	reg   prometheus.Registerer
@@ -279,6 +289,12 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		return nil, fmt.Errorf("OOOCapMax of %d is invalid. must be > 0 and <= 255", capMax)
 	}
 
+	if opts.EnableFastStartup {
+		if opts.OutOfOrderTimeWindow.Load() > 0 {
+			return nil, errors.New("fast startup is disabled because OOO time window is enabled")
+		}
+	}
+
 	if opts.ChunkRange < 1 {
 		return nil, fmt.Errorf("invalid chunk range %d", opts.ChunkRange)
 	}
@@ -307,6 +323,7 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		stats:           stats,
 		reg:             r,
 		seriesStateQuit: make(chan struct{}),
+		walReplayDone:   make(chan struct{}),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -363,6 +380,11 @@ func (h *Head) resetInMemoryState() error {
 	}
 
 	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
+
+	if h.opts.EnableFastStartup {
+		h.walSeries = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
+	}
+
 	h.iso = newIsolation(h.opts.IsolationDisabled)
 	h.oooIso = newOOOIsolation()
 	h.numSeries.Store(0)
@@ -680,11 +702,7 @@ func (s *WALReplayStatus) GetWALReplayStatus() WALReplayStatus {
 
 const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 
-// Init loads data from the write ahead log and prepares the head for writes.
-// It should be called before using an appender so that it
-// limits the ingested samples to the head min valid time.
-func (h *Head) Init(minValidTime int64) error {
-	h.minValidTime.Store(minValidTime)
+func (h *Head) replayDiskChunksAndWAL() error {
 	defer h.resetWLReplayResources()
 	defer func() {
 		h.postings.EnsureOrder(h.opts.WALReplayConcurrency)
@@ -700,6 +718,11 @@ func (h *Head) Init(minValidTime int64) error {
 
 	h.logger.Info("Replaying on-disk memory mappable chunks if any")
 	start := time.Now()
+
+	targetStripeMap := h.series
+	if h.opts.EnableFastStartup {
+		targetStripeMap = h.walSeries
+	}
 
 	snapIdx, snapOffset := -1, 0
 	refSeries := make(map[chunks.HeadSeriesRef]*memSeries)
@@ -733,7 +756,7 @@ func (h *Head) Init(minValidTime int64) error {
 		}
 		if loadSnapshot {
 			var err error
-			snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot()
+			snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot(targetStripeMap)
 			if err == nil {
 				snapshotLoaded = true
 				chunkSnapshotLoadDuration = time.Since(start)
@@ -807,28 +830,6 @@ func (h *Head) Init(minValidTime int64) error {
 		return fmt.Errorf("finding WAL segments: %w", e)
 	}
 
-	if h.opts.EnableFastStartup {
-		state, err := h.readSeriesStateFile()
-		if err != nil && !os.IsNotExist(err) {
-			h.logger.Warn("Failed to read series state file, skipping the fast startup", "err", err)
-		}
-		if err == nil {
-			if state.CleanShutdown {
-				h.lastSeriesID.Store(state.LastSeriesID)
-				h.logger.Info("Fast startup: clean shutdown detected, restored last series ID", "last_series_id", state.LastSeriesID)
-			} else {
-				h.logger.Info("Fast startup: unclean shutdown detected, performing WAL scan", "from_segment", state.LastWALSegment, "to_segment", endAt)
-				id, scanErr := h.findLastSeriesID(state, endAt)
-				if scanErr != nil {
-					h.logger.Error("Fast startup: WAL scan failed, skipping fast startup", "err", scanErr)
-				} else {
-					h.lastSeriesID.Store(id)
-					h.logger.Info("Fast startup: WAL scan completed", "last_series_id", id)
-				}
-			}
-		}
-	}
-
 	h.startWALReplayStatus(startFrom, endAt)
 
 	syms := labels.NewSymbolTable() // One table for the whole WAL.
@@ -846,7 +847,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks); err != nil {
+		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, targetStripeMap); err != nil {
 			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		h.updateWALReplayStatusRead(startFrom)
@@ -880,7 +881,7 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			return fmt.Errorf("segment reader (offset=%d): %w", offset, err)
 		}
-		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks)
+		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, targetStripeMap)
 		if err := sr.Close(); err != nil {
 			h.logger.Warn("Error while closing the wal segments reader", "err", err)
 		}
@@ -934,14 +935,68 @@ func (h *Head) Init(minValidTime int64) error {
 		"total_replay_duration", totalReplayDuration.String(),
 	)
 
-	// TODO(RushabhMehta2005): Remove this 'if' block and always run the series state ticker when the feature is fully implemented.
-	if h.opts.EnableFastStartup {
-		// Start the background goroutine that writes to series_state.json.
-		h.seriesStateWg.Add(1)
-		go h.runSeriesStateTicker()
+	return nil
+}
+
+// Init loads data from the write ahead log and prepares the head for writes.
+// It should be called before using an appender so that it
+// limits the ingested samples to the head min valid time.
+func (h *Head) Init(minValidTime int64) error {
+	h.minValidTime.Store(minValidTime)
+	err := h.replayDiskChunksAndWAL()
+	close(h.walReplayDone)
+	return err
+}
+
+func (h *Head) InitFastStartup(minValidTime int64) error {
+	h.minValidTime.Store(minValidTime)
+
+	if h.wal != nil {
+		// Find the last WAL segment.
+		_, endAt, e := wlog.Segments(h.wal.Dir())
+		if e != nil {
+			return fmt.Errorf("finding WAL segments: %w", e)
+		}
+
+		state, err := h.readSeriesStateFile()
+		if err != nil && !os.IsNotExist(err) {
+			h.logger.Warn("Failed to read series state file, skipping the fast startup", "err", err)
+		}
+		if err == nil {
+			if state.CleanShutdown {
+				h.lastSeriesID.Store(state.LastSeriesID)
+				h.logger.Info("Fast startup: clean shutdown detected, restored last series ID", "last_series_id", state.LastSeriesID)
+			} else {
+				h.logger.Info("Fast startup: unclean shutdown detected, performing WAL scan", "from_segment", state.LastWALSegment, "to_segment", endAt)
+				id, scanErr := h.findLastSeriesID(state, endAt)
+				if scanErr != nil {
+					h.logger.Error("Fast startup: WAL scan failed, skipping fast startup", "err", scanErr)
+				} else {
+					h.lastSeriesID.Store(id)
+					h.logger.Info("Fast startup: WAL scan completed", "last_series_id", id)
+				}
+			}
+		}
 	}
 
+	// Start the background goroutine that writes to series_state.json.
+	h.seriesStateWg.Add(1)
+	go h.runSeriesStateTicker()
+
+	h.walReplayWg.Go(func() {
+		defer close(h.walReplayDone)
+		if err := h.replayDiskChunksAndWAL(); err != nil {
+			h.logger.Error("Fast startup: Background WAL replay failed", "err", err)
+		}
+		h.mergeWALSeries()
+	})
+
 	return nil
+}
+
+// WaitForWALReplay returns a channel that is closed when the WAL replay has finished.
+func (h *Head) WaitForWALReplay() <-chan struct{} {
+	return h.walReplayDone
 }
 
 func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) (map[chunks.HeadSeriesRef][]*mmappedChunk, map[chunks.HeadSeriesRef][]*mmappedChunk, chunks.ChunkDiskMapperRef, error) {
@@ -1854,6 +1909,10 @@ func (h *Head) compactable() bool {
 // Close flushes the WAL and closes the head.
 // It also takes a snapshot of in-memory chunks if enabled.
 func (h *Head) Close() error {
+	// Wait for background WAL replay to finish before shutdown.
+	h.walReplayWg.Wait()
+	h.mergeWALSeries() // TODO: Is this needed here? Not sure. 
+
 	h.closedMtx.Lock()
 	defer h.closedMtx.Unlock()
 	h.closed = true
@@ -1901,8 +1960,14 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels, pendingCommit bool) 
 }
 
 // If id is zero, one will be allocated.
+// It always writes to the live h.series map.
 func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels, pendingCommit bool) (*memSeries, bool, error) {
-	if preCreationErr := h.series.seriesLifecycleCallback.PreCreation(lset); preCreationErr != nil {
+	return h.getOrCreateInStripe(h.series, id, hash, lset, pendingCommit)
+}
+
+// getOrCreateInStripe allows injecting a specific stripe map like walSeries for background replay.
+func (h *Head) getOrCreateInStripe(stripeMap *stripeSeries, id chunks.HeadSeriesRef, hash uint64, lset labels.Labels, pendingCommit bool) (*memSeries, bool, error) {
+	if preCreationErr := stripeMap.seriesLifecycleCallback.PreCreation(lset); preCreationErr != nil {
 		return nil, false, preCreationErr
 	}
 	if id == 0 {
@@ -1916,7 +1981,7 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	}
 	optimisticallyCreatedSeries := newMemSeries(lset, id, shardHash, h.opts.IsolationDisabled, pendingCommit)
 
-	s, created := h.series.setUnlessAlreadySet(hash, lset, optimisticallyCreatedSeries)
+	s, created := stripeMap.setUnlessAlreadySet(hash, lset, optimisticallyCreatedSeries)
 	if !created {
 		return s, false, nil
 	}
@@ -1928,7 +1993,7 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 
 	// Adding the series in the postings marks the creation of series
 	// as any further calls to this and the read methods would return that series.
-	h.series.postCreation(lset)
+	stripeMap.postCreation(lset)
 
 	return s, true, nil
 }

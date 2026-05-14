@@ -76,7 +76,7 @@ func counterAddNonZero(v *prometheus.CounterVec, value float64, lvs ...string) {
 	}
 }
 
-func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
+func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk, targetStripeMap *stripeSeries) (err error) {
 	// Track number of missing series records that were referenced by other records.
 	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
 	// Track number of different records that referenced a series we don't know about
@@ -120,7 +120,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		processors[i].setup()
 
 		go func(wp *walSubsetProcessor) {
-			missingSeries, unknownSamples, unknownHistograms, overlapping := wp.processWALSamples(h, mmappedChunks, oooMmappedChunks)
+			missingSeries, unknownSamples, unknownHistograms, overlapping := wp.processWALSamples(h, mmappedChunks, oooMmappedChunks, targetStripeMap)
 			unknownSeriesRefs.merge(missingSeries)
 			unknownSampleRefs.Add(unknownSamples)
 			mmapOverlappingChunks.Add(overlapping)
@@ -136,7 +136,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		var err error
 		defer wg.Done()
 		for e := range input {
-			ms := h.series.getByID(e.Ref)
+			ms := targetStripeMap.getByID(e.Ref)
 			if ms == nil {
 				unknownExemplarRefs.Inc()
 				missingSeries[e.Ref] = struct{}{}
@@ -255,7 +255,7 @@ Outer:
 		switch v := d.(type) {
 		case []record.RefSeries:
 			for _, walSeries := range v {
-				mSeries, created, err := h.getOrCreateWithOptionalID(walSeries.Ref, walSeries.Labels.Hash(), walSeries.Labels, false)
+				mSeries, created, err := h.getOrCreateInStripe(targetStripeMap, walSeries.Ref, walSeries.Labels.Hash(), walSeries.Labels, false)
 				if err != nil {
 					seriesCreationErr = err
 					break Outer
@@ -335,7 +335,7 @@ Outer:
 						h.updateWALExpiry(chunks.HeadSeriesRef(s.Ref), itv.Maxt)
 						s.Ref = storage.SeriesRef(r)
 					}
-					if m := h.series.getByID(chunks.HeadSeriesRef(s.Ref)); m == nil {
+					if m := targetStripeMap.getByID(chunks.HeadSeriesRef(s.Ref)); m == nil {
 						unknownTombstoneRefs.Inc()
 						missingSeries[chunks.HeadSeriesRef(s.Ref)] = struct{}{}
 						continue
@@ -446,7 +446,7 @@ Outer:
 				if r, ok := multiRef[m.Ref]; ok {
 					m.Ref = r
 				}
-				s := h.series.getByID(m.Ref)
+				s := targetStripeMap.getByID(m.Ref)
 				if s == nil {
 					unknownMetadataRefs.Inc()
 					missingSeries[m.Ref] = struct{}{}
@@ -635,7 +635,7 @@ func (wp *walSubsetProcessor) reuseHistogramBuf() []histogramRecord {
 // processWALSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
 // Samples before the minValidTime timestamp are discarded.
-func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (map[chunks.HeadSeriesRef]struct{}, uint64, uint64, uint64) {
+func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk, targetStripeMap *stripeSeries) (map[chunks.HeadSeriesRef]struct{}, uint64, uint64, uint64) {
 	defer close(wp.output)
 	defer close(wp.histogramsOutput)
 
@@ -662,7 +662,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 		}
 
 		for _, s := range in.samples {
-			ms := h.series.getByID(s.Ref)
+			ms := targetStripeMap.getByID(s.Ref)
 			if ms == nil {
 				unknownSampleRefs++
 				missingSeries[s.Ref] = struct{}{}
@@ -700,7 +700,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if s.t < minValidTime {
 				continue
 			}
-			ms := h.series.getByID(s.ref)
+			ms := targetStripeMap.getByID(s.ref)
 			if ms == nil {
 				unknownHistogramRefs++
 				missingSeries[s.ref] = struct{}{}
@@ -1593,7 +1593,7 @@ func DeleteChunkSnapshots(dir string, maxIndex, maxOffset int) error {
 
 // loadChunkSnapshot replays the chunk snapshot and restores the Head state from it. If there was any error returned,
 // it is the responsibility of the caller to clear the contents of the Head.
-func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSeries, error) {
+func (h *Head) loadChunkSnapshot(targetStripeMap *stripeSeries) (int, int, map[chunks.HeadSeriesRef]*memSeries, error) {
 	dir, snapIdx, snapOffset, err := LastChunkSnapshot(h.opts.ChunkDirRoot)
 	if err != nil {
 		if errors.Is(err, record.ErrNotFound) {
@@ -1642,11 +1642,12 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 			localRefSeries := shardedRefSeries[idx]
 
 			for csr := range rc {
-				series, _, err := h.getOrCreateWithOptionalID(csr.ref, csr.lset.Hash(), csr.lset, false)
+				series, _, err := h.getOrCreateInStripe(targetStripeMap, csr.ref, csr.lset.Hash(), csr.lset, false)
 				if err != nil {
 					errChan <- err
 					return
 				}
+
 				localRefSeries[csr.ref] = series
 				for {
 					seriesID := uint64(series.ref)
@@ -1954,4 +1955,55 @@ func (h *Head) findLastSeriesID(state SeriesLifecycleState, endSegment int) (uin
 	// If we scanned the segments and found no series records,
 	// the ID from our state file has to be used.
 	return state.LastSeriesID, nil
+}
+
+// mergeWALSeries is called once the WAL replay is done, and merges the data in the WAL map, into the live scraper map.
+func (h *Head) mergeWALSeries() {
+	h.logger.Info("Starting to merge WAL series into live series")
+	start := time.Now()
+
+	for i := 0; i < h.walSeries.size; i++ {
+		addedSeries := make([]labels.Labels, 0)
+
+		h.series.locks[i].Lock()
+
+		// Helper function to process a single series. 
+		processWALSeries := func(hash uint64, walS *memSeries) {
+			liveS, exists := h.series.series[i][walS.ref]
+
+			if !exists {
+				// First case: The scraper hasn't seen this series yet.
+				// Move it over to the live maps.
+				h.series.series[i][walS.ref] = walS
+				h.series.hashes[i].set(hash, walS) 				
+				addedSeries = append(addedSeries, walS.lset)
+				return
+			}
+
+			// Other case: overlap
+			// liveS.Lock()
+			// walS.Lock()
+			
+			// TODO: Implement this: h.mergeOverlappingSeries(walS, liveS)
+			
+			// walS.Unlock()
+			// liveS.Unlock()
+		}
+
+		// Iterate conflicts first
+		for hash, all := range h.walSeries.hashes[i].conflicts {
+			for _, walS := range all {
+				processWALSeries(hash, walS)
+			}
+		}
+
+		// Iterate uniques 
+		for hash, walS := range h.walSeries.hashes[i].unique {
+			processWALSeries(hash, walS)
+		}
+
+		h.series.locks[i].Unlock()
+	}
+
+	h.logger.Info("WAL series merge completed", "duration", time.Since(start).String())
 }

@@ -1127,7 +1127,14 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		minValidTime = inOrderMaxTime
 	}
 
-	if initErr := db.head.Init(minValidTime); initErr != nil {
+	var initErr error
+	if headOpts.EnableFastStartup {
+		initErr = db.head.Init(minValidTime)
+	} else {
+		initErr = db.head.InitFastStartup(minValidTime)
+	}
+
+	if initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()
 		var e *errLoadWbl
 		if errors.As(initErr, &e) {
