@@ -109,9 +109,13 @@ type Iterable interface {
 
 // Appender adds sample with start timestamp, timestamp, and value to a chunk.
 type Appender interface {
+	// Append may panic if the chunk is already at full capacity. It is the
+	// responsibility of the caller to decide how to cut new chunks before that.
 	Append(st, t int64, v float64)
 
 	// AppendHistogram and AppendFloatHistogram append a histogram sample to a histogram or float histogram chunk.
+	// Appending may panic if the chunk is already at full capacity. It is the
+	// responsibility of the caller to decide how to cut new chunks before that.
 	// Appending a histogram may require creating a completely new chunk or recoding (changing) the current chunk.
 	// The Appender prev is used to determine if there is a counter reset between the previous Appender and the current Appender.
 	// The Appender prev is optional and only taken into account when the first sample is being appended.
