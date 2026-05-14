@@ -8368,6 +8368,103 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		}
 	})
 
+	// Verify the WAL-replay path's eager mmap (appendChunkAndMmap) keeps
+	// mmapReady consistent when a series enters the path with
+	// headChunkCount >= 2 (typical after loadChunkSnapshot restores a
+	// series that had multiple head chunks at shutdown).
+	t.Run("wal replay does not leak mmap ready", func(t *testing.T) {
+		// Pre-generate varied histograms; reusing the same histogram every
+		// iteration compresses too well to trigger chunk cuts.
+		histograms := tsdbutil.GenerateTestHistograms(chunkCutIterations)
+		floatHistograms := tsdbutil.GenerateTestFloatHistograms(chunkCutIterations)
+
+		type testCase struct {
+			appendOnce     func(app storage.Appender, lbls labels.Labels, ts int64, i int) error
+			appendInternal func(ms *memSeries, t int64, opts chunkOpts) bool
+		}
+		testCases := map[string]testCase{
+			"floats": {
+				appendOnce: func(app storage.Appender, lbls labels.Labels, ts int64, _ int) error {
+					_, err := app.Append(0, lbls, ts, float64(ts))
+					return err
+				},
+				appendInternal: func(ms *memSeries, t int64, opts chunkOpts) bool {
+					_, chunkCreated := ms.append(0, t, 0, 0, opts)
+					return chunkCreated
+				},
+			},
+			"histograms": {
+				appendOnce: func(app storage.Appender, lbls labels.Labels, ts int64, i int) error {
+					_, err := app.AppendHistogram(0, lbls, ts, histograms[i], nil)
+					return err
+				},
+				appendInternal: func(ms *memSeries, t int64, opts chunkOpts) bool {
+					_, chunkCreated := ms.appendHistogram(0, t, histograms[0], 0, opts)
+					return chunkCreated
+				},
+			},
+			"float histograms": {
+				appendOnce: func(app storage.Appender, lbls labels.Labels, ts int64, i int) error {
+					_, err := app.AppendHistogram(0, lbls, ts, nil, floatHistograms[i])
+					return err
+				},
+				appendInternal: func(ms *memSeries, t int64, opts chunkOpts) bool {
+					_, chunkCreated := ms.appendFloatHistogram(0, t, floatHistograms[0], 0, opts)
+					return chunkCreated
+				},
+			},
+		}
+		for name, tc := range testCases {
+			t.Run(name, func(t *testing.T) {
+				h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+				require.NoError(t, h.Init(0))
+
+				mmapReadyTotal := func() int32 {
+					var n int32
+					for i := range h.series.size {
+						n += h.series.mmapReady[i].Load()
+					}
+					return n
+				}
+
+				// Build a series naturally to headChunkCount >= 2 via the normal
+				// appender path. This sets mmapReady to 1.
+				lbls := labels.FromStrings("__name__", "test")
+				ts := int64(0)
+				app := h.Appender(t.Context())
+				for i := range chunkCutIterations {
+					require.NoError(t, tc.appendOnce(app, lbls, ts, i))
+					ts += interval
+				}
+				require.NoError(t, app.Commit())
+
+				s := h.series.getByHash(lbls.Hash(), lbls)
+				require.NotNil(t, s)
+				require.GreaterOrEqual(t, s.headChunkCount.Load(), uint32(2))
+				require.Equal(t, int32(1), mmapReadyTotal())
+
+				// Invoke the WAL-replay-style helper with a sample timestamped
+				// past the next chunk boundary to force a chunk cut.
+				s.Lock()
+				chunkCreated := h.appendChunkAndMmap(s, func() bool {
+					return tc.appendInternal(s, ts+h.chunkRange.Load(), chunkOpts{
+						chunkDiskMapper: h.chunkDiskMapper,
+						chunkRange:      h.chunkRange.Load(),
+						samplesPerChunk: h.opts.SamplesPerChunk,
+					})
+				})
+				s.Unlock()
+				require.True(t, chunkCreated, "test needs a chunk cut to be meaningful")
+
+				// After the chunk cut + mmap, headChunkCount == 1 (mmapChunks
+				// always sets it to 1 when it does work). The series is no
+				// longer mmap-ready, so mmapReady must be 0.
+				require.Equal(t, int32(0), mmapReadyTotal(),
+					"WAL-replay-style chunk cut must decrement mmapReady when prev >= 2")
+			})
+		}
+	})
+
 	// Verify the mmapReady per-stripe counter stays in sync with the actual
 	// number of series that have headChunkCount >= 2, across append, mmap,
 	// GC, and stale-series deletion.
