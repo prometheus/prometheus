@@ -1937,13 +1937,13 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	return s, true, nil
 }
 
-// onChunkCreated records the side-effects of creating a new head chunk for
-// the given series: it bumps the chunk metrics and, when the chunk brings
-// the series to two head chunks, marks the series as ready for mmapping.
-func (h *Head) onChunkCreated(series *memSeries) {
+// onChunkCreated bumps the head chunk metrics for any newly created chunk, in-order or OOO.
+// If prevHeadChunkCount < 2 and series.headChunkCount == 2, the corresponding
+// stripe's count of mmap ready series is incremented.
+func (h *Head) onChunkCreated(series *memSeries, prevHeadChunkCount uint32) {
 	h.metrics.chunks.Inc()
 	h.metrics.chunksCreated.Inc()
-	if series.headChunkCount.Load() == 2 {
+	if prevHeadChunkCount < 2 && series.headChunkCount.Load() == 2 {
 		h.series.incMmapReady(series.ref)
 	}
 }

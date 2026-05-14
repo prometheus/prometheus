@@ -8295,6 +8295,79 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		require.Equal(t, countBefore, s.headChunkCount.Load(), "OOO insert should not inflate headChunkCount")
 	})
 
+	// Verify OOO chunk creation does not spuriously increment mmapReady when the
+	// series happens to be at headChunkCount == 2. This simulates the natural
+	// window where a series has just become mmap-ready and an OOO sample arrives.
+	// Covers all three commit paths: floats, histograms, and float histograms.
+	t.Run("ooo insert does not increment mmap ready", func(t *testing.T) {
+		type testCase struct {
+			appendSample func(app storage.Appender, lbls labels.Labels, ts int64) error
+		}
+		testCases := map[string]testCase{
+			"floats": {
+				appendSample: func(app storage.Appender, lbls labels.Labels, ts int64) error {
+					_, err := app.Append(0, lbls, ts, float64(ts))
+					return err
+				},
+			},
+			"histograms": {
+				appendSample: func(app storage.Appender, lbls labels.Labels, ts int64) error {
+					_, err := app.AppendHistogram(0, lbls, ts, tsdbutil.GenerateTestHistograms(1)[0], nil)
+					return err
+				},
+			},
+			"float histograms": {
+				appendSample: func(app storage.Appender, lbls labels.Labels, ts int64) error {
+					_, err := app.AppendHistogram(0, lbls, ts, nil, tsdbutil.GenerateTestFloatHistograms(1)[0])
+					return err
+				},
+			},
+		}
+		for name, tc := range testCases {
+			t.Run(name, func(t *testing.T) {
+				h, _ := newTestHead(t, DefaultBlockDuration, compression.None, true /* oooEnabled */)
+				require.NoError(t, h.Init(0))
+
+				mmapReadyTotal := func() int32 {
+					var n int32
+					for i := range h.series.size {
+						n += h.series.mmapReady[i].Load()
+					}
+					return n
+				}
+
+				// Create a series with one in-order sample.
+				lbls := labels.FromStrings("__name__", "test")
+				ts := int64(0)
+				app := h.Appender(t.Context())
+				require.NoError(t, tc.appendSample(app, lbls, ts))
+				require.NoError(t, app.Commit())
+				ts += interval
+
+				s := h.series.getByHash(lbls.Hash(), lbls)
+				require.NotNil(t, s)
+
+				// Force the exact state required to trigger the bug: series at
+				// headChunkCount == 2 (mmap-ready) with mmapReady already incremented.
+				s.Lock()
+				s.headChunkCount.Store(2)
+				s.Unlock()
+				h.series.incMmapReady(s.ref)
+				require.Equal(t, int32(1), mmapReadyTotal())
+
+				// Append an OOO sample. This creates an OOO chunk (not a regular
+				// head chunk), so mmapReady must stay at 1.
+				oooTs := ts - 5*time.Minute.Milliseconds()
+				app = h.Appender(t.Context())
+				require.NoError(t, tc.appendSample(app, lbls, oooTs))
+				require.NoError(t, app.Commit())
+
+				require.Equal(t, int32(1), mmapReadyTotal(),
+					"OOO chunk creation must not increment mmapReady")
+			})
+		}
+	})
+
 	// Verify the mmapReady per-stripe counter stays in sync with the actual
 	// number of series that have headChunkCount >= 2, across append, mmap,
 	// GC, and stale-series deletion.

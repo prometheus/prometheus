@@ -1384,6 +1384,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			handleAppendableError(err, &acc.floatsAppended, &acc.floatOOORejected, &acc.floatOOBRejected, &acc.floatTooOldRejected)
 		}
 
+		prevHeadChunkCount := series.headChunkCount.Load()
 		switch {
 		case err != nil:
 			// Do nothing here.
@@ -1456,7 +1457,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 		}
 
 		if chunkCreated {
-			a.head.onChunkCreated(series)
+			a.head.onChunkCreated(series, prevHeadChunkCount)
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
@@ -1488,6 +1489,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
 
+		prevHeadChunkCount := series.headChunkCount.Load()
 		switch {
 		case err != nil:
 			// Do nothing here.
@@ -1566,7 +1568,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 		}
 
 		if chunkCreated {
-			a.head.onChunkCreated(series)
+			a.head.onChunkCreated(series, prevHeadChunkCount)
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
@@ -1598,6 +1600,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
 
+		prevHeadChunkCount := series.headChunkCount.Load()
 		switch {
 		case err != nil:
 			// Do nothing here.
@@ -1676,7 +1679,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 		}
 
 		if chunkCreated {
-			a.head.onChunkCreated(series)
+			a.head.onChunkCreated(series, prevHeadChunkCount)
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
