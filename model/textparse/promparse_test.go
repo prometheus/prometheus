@@ -233,7 +233,7 @@ type_and_unit_test2{__type__="counter"} 123`
 						typeAndUnitEnabled,
 						// NOTE(bwplotka): This is knowingly broken, inheriting old type when TYPE was not specified on a new metric.
 						// This was broken forever on a case for a broken exposition. Don't fix for now (expensive).
-						labels.FromStrings("A", "2", "__name__", "wind_speed", "__type__", string(model.MetricTypeHistogram), "c", "3"),
+						labels.FromStrings("A", "2", "__name__", "wind_speed", "c", "3"),
 						labels.FromStrings("A", "2", "__name__", "wind_speed", "c", "3"),
 					),
 				},
@@ -254,38 +254,38 @@ type_and_unit_test2{__type__="counter"} 123`
 				{
 					m:    `go_gc_duration_seconds{ quantile="1.0", a="b" }`,
 					v:    8.3835e-05,
-					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), model.MetricTypeHistogram),
+					lset: typeAndUnitLabels(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b")),
 				},
 				{
 					m:    `go_gc_duration_seconds { quantile="1.0", a="b" }`,
 					v:    8.3835e-05,
-					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), model.MetricTypeHistogram),
+					lset: typeAndUnitLabels(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b")),
 				},
 				{
 					m:    `go_gc_duration_seconds { quantile= "1.0", a= "b", }`,
 					v:    8.3835e-05,
-					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), model.MetricTypeHistogram),
+					lset: typeAndUnitLabels(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b")),
 				},
 				{
 					m:    `go_gc_duration_seconds { quantile = "1.0", a = "b" }`,
 					v:    8.3835e-05,
-					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), model.MetricTypeHistogram),
+					lset: typeAndUnitLabels(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"), labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b")),
 				},
 				{
 					// NOTE: Unlike OpenMetrics, PromParser allows spaces between label terms. This appears to be unintended and should probably be fixed.
 					m:    `go_gc_duration_seconds { quantile = "2.0" a = "b" }`,
 					v:    8.3835e-05,
-					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "2.0", "a", "b"), model.MetricTypeHistogram),
+					lset: typeAndUnitLabels(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "2.0", "a", "b"), labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "2.0", "a", "b")),
 				},
 				{
 					m:    `go_gc_duration_seconds_count`,
 					v:    99,
-					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds_count"), model.MetricTypeHistogram),
+					lset: typeAndUnitLabels(typeAndUnitEnabled, labels.FromStrings("__name__", "go_gc_duration_seconds_count"), labels.FromStrings("__name__", "go_gc_duration_seconds_count")),
 				},
 				{
 					m:    `some:aggregate:rate5m{a_b="c"}`,
 					v:    1,
-					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"), model.MetricTypeHistogram),
+					lset: typeAndUnitLabels(typeAndUnitEnabled, labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"), labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c")),
 				},
 				{
 					m:    "go_goroutines",
@@ -329,22 +329,22 @@ type_and_unit_test2{__type__="counter"} 123`
 				{
 					m:    "_metric_starting_with_underscore",
 					v:    1,
-					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "_metric_starting_with_underscore"), model.MetricTypeCounter),
+					lset: typeAndUnitLabels(typeAndUnitEnabled, labels.FromStrings("__name__", "_metric_starting_with_underscore"), labels.FromStrings("__name__", "_metric_starting_with_underscore")),
 				},
 				{
 					m:    "testmetric{_label_starting_with_underscore=\"foo\"}",
 					v:    1,
-					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "testmetric", "_label_starting_with_underscore", "foo"), model.MetricTypeCounter),
+					lset: typeAndUnitLabels(typeAndUnitEnabled, labels.FromStrings("__name__", "testmetric", "_label_starting_with_underscore", "foo"), labels.FromStrings("__name__", "testmetric", "_label_starting_with_underscore", "foo")),
 				},
 				{
 					m:    "testmetric{label=\"\\\"bar\\\"\"}",
 					v:    1,
-					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "testmetric", "label", `"bar"`), model.MetricTypeCounter),
+					lset: typeAndUnitLabels(typeAndUnitEnabled, labels.FromStrings("__name__", "testmetric", "label", `"bar"`), labels.FromStrings("__name__", "testmetric", "label", `"bar"`)),
 				},
 				{
 					m:    `testmetric{le="10"}`,
 					v:    1,
-					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "testmetric", "le", "10"), model.MetricTypeCounter),
+					lset: typeAndUnitLabels(typeAndUnitEnabled, labels.FromStrings("__name__", "testmetric", "le", "10"), labels.FromStrings("__name__", "testmetric", "le", "10")),
 				},
 				{
 					m:    "type_and_unit_test1",
@@ -370,7 +370,7 @@ type_and_unit_test2{__type__="counter"} 123`
 				{
 					m:    "type_and_unit_test2{__type__=\"counter\"}",
 					v:    123,
-					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "type_and_unit_test2", "__type__", string(model.MetricTypeCounter)), model.MetricTypeGauge),
+					lset: typeAndUnitLabels(typeAndUnitEnabled, labels.FromStrings("__name__", "type_and_unit_test2", "__type__", string(model.MetricTypeCounter)), labels.FromStrings("__name__", "type_and_unit_test2", "__type__", string(model.MetricTypeCounter))),
 				},
 				{
 					m:    "metric",
@@ -379,7 +379,7 @@ type_and_unit_test2{__type__="counter"} 123`
 				{
 					m:    "null_byte_metric{a=\"abc\x00\"}",
 					v:    1,
-					lset: todoDetectFamilySwitch(typeAndUnitEnabled, labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"), model.MetricTypeGauge),
+					lset: typeAndUnitLabels(typeAndUnitEnabled, labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"), labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00")),
 				},
 			}
 
