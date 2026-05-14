@@ -688,6 +688,11 @@ func (*FloatHistogramAppender) AppendHistogram(*HistogramAppender, int64, int64,
 
 func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppender, _, t int64, h *histogram.FloatHistogram, appendOnly bool) (Chunk, bool, Appender, error) {
 	numSamples := a.NumSamples()
+
+	if numSamples == math.MaxUint16 {
+		panic("chunk capacity exceeded")
+	}
+
 	if numSamples == 0 {
 		a.appendFloatHistogram(t, h)
 		if h.CounterResetHint == histogram.GaugeType {
@@ -709,10 +714,6 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			}
 		}
 		return nil, false, a, nil
-	}
-
-	if numSamples == math.MaxUint16 {
-		panic("chunk capacity exceeded")
 	}
 
 	// Adding counter-like histogram.
