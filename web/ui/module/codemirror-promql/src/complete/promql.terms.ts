@@ -14,6 +14,24 @@
 import { Completion, snippet } from '@codemirror/autocomplete';
 
 export const durationTerms = [{ label: 'y' }, { label: 'w' }, { label: 'd' }, { label: 'h' }, { label: 'm' }, { label: 's' }, { label: 'ms' }];
+// We intentionally surface these unconditionally. Experimental feature gating is
+// runtime/server-side, and other editor completions follow the same pattern.
+export const durationExprTerms: Completion[] = [
+  { label: 'step()', info: 'Resolves to the current query step duration', type: 'keyword' },
+  { label: 'range()', info: 'Resolves to the total query range duration', type: 'keyword' },
+  {
+    label: 'min(, )',
+    info: 'Returns the minimum of two durations',
+    type: 'keyword',
+    apply: snippet('min(${duration_a}, ${duration_b})'),
+  },
+  {
+    label: 'max(, )',
+    info: 'Returns the maximum of two durations',
+    type: 'keyword',
+    apply: snippet('max(${duration_a}, ${duration_b})'),
+  },
+];
 export const matchOpTerms = [{ label: '=' }, { label: '!=' }, { label: '=~' }, { label: '!~' }];
 export const binOpTerms = [
   { label: '^' },

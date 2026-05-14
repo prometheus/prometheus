@@ -73,6 +73,7 @@ import {
   binOpModifierTerms,
   binOpTerms,
   durationTerms,
+  durationExprTerms,
   functionIdentifierTerms,
   matchOpTerms,
   numberTerms,
@@ -85,6 +86,7 @@ const autocompleteNodes: { [key: string]: Completion[] } = {
   matchOp: matchOpTerms,
   binOp: binOpTerms,
   duration: durationTerms,
+  durationExpr: durationExprTerms,
   binOpModifier: binOpModifierTerms,
   atModifier: atModifierTerms,
   functionIdentifier: functionIdentifierTerms,
@@ -107,6 +109,7 @@ export enum ContextKind {
   MatchOp,
   AggregateOpModifier,
   Duration,
+  DurationExpr,
   Offset,
   Bool,
   AtModifiers,
@@ -156,8 +159,10 @@ function getMetricNameInVectorSelector(tree: SyntaxNode, state: EditorState): st
 }
 
 function arrayToCompletionResult(data: Completion[], from: number, to: number, includeSnippet = false, span = true): CompletionResult {
-  const options = data;
+  const options = dedupeCompletions(data);
   if (includeSnippet) {
+    // Snippets are appended after deduplication; if a snippet label ever matched a
+    // deduped option, both could appear until dedupe is extended to cover snippets.
     options.push(...snippets);
   }
   return {
@@ -166,6 +171,21 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
     options: options,
     validFor: span ? /^[a-zA-Z0-9_:]+$/ : undefined,
   } as CompletionResult;
+}
+
+function dedupeCompletions(data: Completion[]): Completion[] {
+  const seen = new Set<string>();
+  const deduped: Completion[] = [];
+  for (const completion of data) {
+    const infoKey = typeof completion.info === 'string' ? completion.info : '';
+    const key = `${completion.label}|${completion.type ?? ''}|${infoKey}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(completion);
+  }
+  return deduped;
 }
 
 // computeEndCompletePosition calculates the end position for autocompletion replacement.
@@ -242,6 +262,11 @@ export function computeStartCompletePosition(state: EditorState, node: SyntaxNod
     // When the cursor is between bracket, quote, we need to increment the starting position to avoid to consider the open bracket/ first string.
     start++;
   } else if (
+    // MatrixSelector/SubqueryExpr are safe here: this branch is only reached when
+    // `resolve()` returns those bracket nodes directly, i.e. cursor is in duration
+    // slots where replacing from `pos` avoids clobbering the selector expression.
+    node.type.id === MatrixSelector ||
+    node.type.id === SubqueryExpr ||
     node.type.id === OffsetExpr ||
     // Since duration and number are equivalent, writing go[5] or go[5d] is syntactically accurate.
     // Before we were able to guess when we had to autocomplete the duration later based on the error node,
@@ -253,7 +278,7 @@ export function computeStartCompletePosition(state: EditorState, node: SyntaxNod
     (node.type.id === 0 &&
       (node.parent?.type.id === OffsetExpr ||
         node.parent?.type.id === MatrixSelector ||
-        (node.parent?.type.id === SubqueryExpr && containsAtLeastOneChild(node.parent, NumberDurationLiteralInDurationContext))))
+        (node.parent?.type.id === SubqueryExpr && node.parent.getChild('DurationExpr') !== null)))
   ) {
     start = pos;
   }
@@ -297,14 +322,14 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         // we are likely in the given situation:
         // `metric_name{}[5]`
         // We can also just autocomplete a duration
-        result.push({ kind: ContextKind.Duration });
+        result.push({ kind: ContextKind.Duration }, { kind: ContextKind.DurationExpr });
         break;
       }
-      if (node.parent?.type.id === SubqueryExpr && containsAtLeastOneChild(node.parent, NumberDurationLiteralInDurationContext)) {
+      if (node.parent?.type.id === SubqueryExpr && node.parent.getChild('DurationExpr') !== null) {
         // we are likely in the given situation:
         //    `rate(foo[5d:5])`
         // so we should autocomplete a duration
-        result.push({ kind: ContextKind.Duration });
+        result.push({ kind: ContextKind.Duration }, { kind: ContextKind.DurationExpr });
         break;
       }
       // when we are in the situation 'metric_name !', we have the following tree
@@ -533,6 +558,23 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       if (!hasCompleteDurationUnit(state, node)) {
         result.push({ kind: ContextKind.Duration });
       }
+      if (node.parent?.name === 'DurationExpr') {
+        result.push({ kind: ContextKind.DurationExpr });
+      }
+      break;
+    case MatrixSelector:
+      if (pos >= node.from + 1 && pos <= node.to - 1) {
+        result.push({ kind: ContextKind.Duration }, { kind: ContextKind.DurationExpr });
+      }
+      break;
+    case SubqueryExpr:
+      if (pos < node.to - 1) {
+        const subqueryInputExpr = node.getChild('Expr');
+        if (subqueryInputExpr !== null && pos < subqueryInputExpr.to) {
+          break;
+        }
+        result.push({ kind: ContextKind.Duration }, { kind: ContextKind.DurationExpr });
+      }
       break;
     case OffsetExpr:
       result.push({ kind: ContextKind.Duration });
@@ -662,6 +704,12 @@ export class HybridComplete implements CompleteStrategy {
           span = false;
           asyncResult = asyncResult.then((result) => {
             return result.concat(autocompleteNodes.duration);
+          });
+          break;
+        case ContextKind.DurationExpr:
+          span = false;
+          asyncResult = asyncResult.then((result) => {
+            return result.concat(autocompleteNodes.durationExpr);
           });
           break;
         case ContextKind.Offset:

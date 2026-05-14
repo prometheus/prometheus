@@ -241,11 +241,11 @@ OffsetExpr {
 
 MatrixSelector {
   // TODO: Can this not be more specific than "expr"?
-  expr "[" NumberDurationLiteralInDurationContext "]"
+  expr "[" DurationExpr "]"
 }
 
 SubqueryExpr {
-  expr "[" NumberDurationLiteralInDurationContext ":" ("" | NumberDurationLiteralInDurationContext) "]"
+  expr "[" DurationExpr ":" ("" | DurationExpr) "]"
 }
 
 UnaryExpr {
@@ -300,6 +300,15 @@ NumberDurationLiteral  {
 
 NumberDurationLiteralInDurationContext {
  ("-"|"+")?~signed (number | inf | nan)
+}
+
+DurationExpr {
+  DurationStep "(" ")" |
+  DurationRange "(" ")" |
+  Min "(" DurationExpr "," DurationExpr ")" |
+  Max "(" DurationExpr "," DurationExpr ")" |
+  "(" DurationExpr ")" |
+  NumberDurationLiteralInDurationContext
 }
 
 @skip { whitespace | LineComment }
@@ -494,3 +503,5 @@ NumberDurationLiteralInDurationContext {
 
 // Conditional function names (only parsed as function names when used as such).
 condFn<term> { @extend<Identifier, term> }
+DurationStep { condFn<"step"> }
+DurationRange { condFn<"range"> }
