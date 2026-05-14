@@ -57,6 +57,9 @@ func IsValidEncoding(e Encoding) bool {
 const (
 	// MaxBytesPerXORChunk is the maximum size an XOR chunk can be.
 	MaxBytesPerXORChunk = 1024
+	// MaxBytesPerXORChunkBeforeAppend is used for cutting new XOR chunks, to prevent going over MaxBytesPerXORChunk
+	// as a hard limit. We assume the next sample will be a maximally-sized sample (19 bytes).
+	MaxBytesPerXORChunkBeforeAppend = MaxBytesPerXORChunk - 19
 	// TargetBytesPerHistogramChunk sets a size target for each histogram chunk.
 	TargetBytesPerHistogramChunk = 1024
 	// MinSamplesPerHistogramChunk sets a minimum sample count for histogram chunks. This is desirable because a single
