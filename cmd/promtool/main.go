@@ -84,6 +84,8 @@ const (
 	lintOptionDuplicateRules        = "duplicate-rules"
 	lintOptionTooLongScrapeInterval = "too-long-scrape-interval"
 	lintOptionNone                  = "none"
+	metricsFormatPrometheus         = "prometheus"
+	metricsFormatOpenMetrics        = "openmetrics"
 	checkHealth                     = "/-/healthy"
 	checkReadiness                  = "/-/ready"
 )
@@ -91,7 +93,8 @@ const (
 var (
 	lintRulesOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
 	// Same as lintRulesOptions, but including scrape config linting options as well.
-	lintConfigOptions = append(append([]string{}, lintRulesOptions...), lintOptionTooLongScrapeInterval)
+	lintConfigOptions   = append(append([]string{}, lintRulesOptions...), lintOptionTooLongScrapeInterval)
+	checkMetricsFormats = []string{metricsFormatPrometheus, metricsFormatOpenMetrics}
 )
 
 const httpConfigFileDescription = "HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool"
@@ -168,6 +171,7 @@ func main() {
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 	checkMetricsExtended := checkMetricsCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
+	checkMetricsFormat := checkMetricsCmd.Flag("format", "Metrics format to expect in standard input.").Default(metricsFormatPrometheus).Enum(checkMetricsFormats...)
 	checkMetricsLint := checkMetricsCmd.Flag(
 		"lint",
 		"Linting checks to apply for metrics. Available options are: all, none. Use --lint=none to disable metrics linting.",
@@ -390,7 +394,7 @@ func main() {
 		os.Exit(CheckRules(newRulesLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesIgnoreUnknownFields, model.UTF8Validation), promtoolParser, *ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
-		os.Exit(CheckMetrics(*checkMetricsExtended, *checkMetricsLint))
+		os.Exit(CheckMetrics(*checkMetricsFormat, *checkMetricsExtended, *checkMetricsLint))
 
 	case pushMetricsCmd.FullCommand():
 		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsProtoMsg, *pushMetricsLabels, *metricFiles...))
@@ -1040,13 +1044,15 @@ examples:
 
 $ cat metrics.prom | promtool check metrics
 
+$ cat metrics.om | promtool check metrics --format=openmetrics
+
 $ curl -s http://localhost:9090/metrics | promtool check metrics --extended
 
 $ curl -s http://localhost:9100/metrics | promtool check metrics --extended --lint=none
 `)
 
 // CheckMetrics performs a linting pass on input metrics.
-func CheckMetrics(extended bool, lint string) int {
+func CheckMetrics(format string, extended bool, lint string) int {
 	// Validate that at least one feature is enabled.
 	if !extended && lint == lintOptionNone {
 		fmt.Fprintln(os.Stderr, "error: at least one of --extended or linting must be enabled")
@@ -1054,17 +1060,15 @@ func CheckMetrics(extended bool, lint string) int {
 		return failureExitCode
 	}
 
-	var buf bytes.Buffer
-	var (
-		problems []promlint.Problem
-		reader   io.Reader
-		err      error
-	)
+	metricFamilies, err := parseMetricFamilies(os.Stdin, format)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error while parsing metrics:", err)
+		return failureExitCode
+	}
 
+	var problems []promlint.Problem
 	if lint != lintOptionNone {
-		tee := io.TeeReader(os.Stdin, &buf)
-		l := promlint.New(tee)
-		problems, err = l.Lint()
+		problems, err = lintMetricFamilies(metricFamilies, format)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error while linting:", err)
 			return failureExitCode
@@ -1072,15 +1076,12 @@ func CheckMetrics(extended bool, lint string) int {
 		for _, p := range problems {
 			fmt.Fprintln(os.Stderr, p.Metric, p.Text)
 		}
-		reader = &buf
-	} else {
-		reader = os.Stdin
 	}
 
 	hasLintProblems := len(problems) > 0
 
 	if extended {
-		stats, total, err := checkMetricsExtended(reader)
+		stats, total, err := checkMetricsExtended(metricFamilies)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return failureExitCode
@@ -1101,22 +1102,83 @@ func CheckMetrics(extended bool, lint string) int {
 	return successExitCode
 }
 
+func lintMetricFamilies(metricFamilies []*dto.MetricFamily, format string) ([]promlint.Problem, error) {
+	l := promlint.NewWithMetricFamilies(metricFamilies)
+	problems, err := l.Lint()
+	if err != nil {
+		return nil, err
+	}
+
+	if format == metricsFormatOpenMetrics {
+		problems = filterOpenMetricsLintProblems(metricFamilies, problems)
+	}
+
+	return problems, nil
+}
+
+func filterOpenMetricsLintProblems(metricFamilies []*dto.MetricFamily, problems []promlint.Problem) []promlint.Problem {
+	if len(problems) == 0 {
+		return problems
+	}
+
+	counterFamilies := make(map[string]struct{}, len(metricFamilies))
+	for _, metricFamily := range metricFamilies {
+		if metricFamily.GetType() == dto.MetricType_COUNTER {
+			counterFamilies[metricFamily.GetName()] = struct{}{}
+		}
+	}
+
+	filteredProblems := problems[:0]
+	for _, problem := range problems {
+		if problem.Text == `counter metrics should have "_total" suffix` {
+			if _, ok := counterFamilies[problem.Metric]; ok {
+				continue
+			}
+		}
+
+		filteredProblems = append(filteredProblems, problem)
+	}
+
+	return filteredProblems
+}
+
 type metricStat struct {
 	name        string
 	cardinality int
 	percentage  float64
 }
 
-func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
-	// Lacking information about what the intended validation scheme is, use the
-	// deprecated library bool.
-	//nolint:staticcheck
-	p := expfmt.NewTextParser(model.NameValidationScheme)
-	metricFamilies, err := p.TextToMetricFamilies(r)
-	if err != nil {
-		return nil, 0, fmt.Errorf("error while parsing text to metric families: %w", err)
+func parseMetricFamilies(r io.Reader, format string) ([]*dto.MetricFamily, error) {
+	var decoder expfmt.Decoder
+	switch format {
+	case metricsFormatPrometheus:
+		decoder = expfmt.NewDecoder(r, expfmt.NewFormat(expfmt.TypeTextPlain))
+	case metricsFormatOpenMetrics:
+		decoder = expfmt.NewDecoder(r, expfmt.NewFormat(expfmt.TypeOpenMetrics))
+	default:
+		return nil, fmt.Errorf("unsupported metrics format %q", format)
 	}
 
+	metricFamilies := make([]*dto.MetricFamily, 0)
+	for {
+		mf := &dto.MetricFamily{}
+		if err := decoder.Decode(mf); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, err
+		}
+		metricFamilies = append(metricFamilies, mf)
+	}
+
+	sort.SliceStable(metricFamilies, func(i, j int) bool {
+		return metricFamilies[i].GetName() < metricFamilies[j].GetName()
+	})
+
+	return metricFamilies, nil
+}
+
+func checkMetricsExtended(metricFamilies []*dto.MetricFamily) ([]metricStat, int, error) {
 	var total int
 	stats := make([]metricStat, 0, len(metricFamilies))
 	for _, mf := range metricFamilies {
@@ -1124,7 +1186,7 @@ func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
 		switch mf.GetType() {
 		case dto.MetricType_COUNTER, dto.MetricType_GAUGE, dto.MetricType_UNTYPED:
 			cardinality = len(mf.Metric)
-		case dto.MetricType_HISTOGRAM:
+		case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
 			// Histogram metrics includes sum, count, buckets.
 			buckets := len(mf.Metric[0].Histogram.Bucket)
 			cardinality = len(mf.Metric) * (2 + buckets)
