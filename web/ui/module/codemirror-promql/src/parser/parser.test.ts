@@ -86,6 +86,58 @@ describe('promql operations', () => {
       expectedDiag: [] as Diagnostic[],
     },
     {
+      expr: 'some_metric[1h:range()]',
+      expectedValueType: ValueType.matrix,
+      expectedDiag: [
+        {
+          from: 15,
+          to: 22,
+          message: 'range() is not meaningful as a subquery resolution step; consider a concrete duration',
+          severity: 'warning',
+        },
+      ] as Diagnostic[],
+    },
+    {
+      // Colon inside a label value must not be mistaken for the subquery colon.
+      expr: 'some_metric{job=~"a:b"}[1h:range()]',
+      expectedValueType: ValueType.matrix,
+      expectedDiag: [
+        {
+          // Warning span is the step `DurationExpr` (`range()`), i.e. doc[27:34] in this string.
+          from: 27,
+          to: 34,
+          message: 'range() is not meaningful as a subquery resolution step; consider a concrete duration',
+          severity: 'warning',
+        },
+      ] as Diagnostic[],
+    },
+    {
+      // Nested duration in the subquery step: two direct `DurationExpr` children; step is not `range()`.
+      expr: 'some_metric[1h:min(step(), 1m)]',
+      expectedValueType: ValueType.matrix,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'foo offset step()',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'foo offset range()',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'foo offset (1h / 2)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'foo offset ((2 ^ 3) * 1m)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
       expr: 'sum(metric_name offset 1m)',
       expectedValueType: ValueType.vector,
       expectedDiag: [] as Diagnostic[],
@@ -643,6 +695,41 @@ describe('promql operations', () => {
       expectedDiag: [],
     },
     {
+      expr: 'rate(some_metric[1h + 30m])',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'rate(some_metric[(5 + 2) * 1m])',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'rate(some_metric[4h % 3h])',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'rate(some_metric[step()])',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'rate(some_metric[min(5m, range())])',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'avg_over_time(metric[max(step(), 1m)])',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'some_metric[1h:step()]',
+      expectedValueType: ValueType.matrix,
+      expectedDiag: [],
+    },
+    {
       expr: 'round(some_metric)',
       expectedValueType: ValueType.vector,
       expectedDiag: [],
@@ -1007,6 +1094,30 @@ describe('promql operations', () => {
     it(value.expr, () => {
       expect(parser.checkAST(syntaxTree(state).topNode.firstChild)).toEqual(value.expectedValueType);
       expect(parser.getDiagnostics()).toEqual(value.expectedDiag);
+    });
+  });
+
+  describe('analyze()', () => {
+    it('does not duplicate invalid-offset diagnostics when the offset is not at EOF', () => {
+      const state = createEditorState('foo offset abc * 2');
+      const parser = new Parser(state);
+      parser.analyze();
+      const diags = parser.getDiagnostics();
+      expect(diags).toHaveLength(1);
+      expect(diags[0].message).toBe('offset requires a duration expression');
+      expect(diags[0].from).toBe(0);
+      expect(diags[0].to).toBe(15);
+    });
+
+    it('still reports a single targeted offset diagnostic with trailing document space (editor-like)', () => {
+      const state = createEditorState('foo offset abc   ');
+      const parser = new Parser(state);
+      parser.analyze();
+      const diags = parser.getDiagnostics();
+      expect(diags).toHaveLength(1);
+      expect(diags[0].message).toBe('offset requires a duration expression');
+      expect(diags[0].from).toBe(0);
+      expect(diags[0].to).toBe(17);
     });
   });
 });

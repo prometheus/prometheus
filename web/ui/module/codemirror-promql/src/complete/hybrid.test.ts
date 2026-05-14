@@ -21,6 +21,8 @@ import {
   binOpModifierTerms,
   binOpTerms,
   durationTerms,
+  durationExprTerms,
+  durationExprOperatorTerms,
   functionIdentifierTerms,
   matchOpTerms,
   numberTerms,
@@ -30,6 +32,9 @@ import { EqlSingle, Neq } from '@prometheus-io/lezer-promql';
 import { syntaxTree } from '@codemirror/language';
 import { newCompleteStrategy } from './index';
 import nock from 'nock';
+
+const durationExprOperandOptions = ([] as Completion[]).concat(durationTerms, durationExprTerms, durationExprOperatorTerms);
+const durationExprContinuationOptions = ([] as Completion[]).concat(durationExprTerms, durationExprOperatorTerms);
 
 describe('analyzeCompletion test', () => {
   const testCases = [
@@ -528,13 +533,13 @@ describe('analyzeCompletion test', () => {
       title: 'not autocompleting duration for a matrixSelector',
       expr: 'go[]',
       pos: 3,
-      expectedContext: [],
+      expectedContext: [{ kind: ContextKind.Duration }],
     },
     {
       title: 'not autocompleting duration for a matrixSelector 2',
       expr: 'go{l1="l2"}[]',
       pos: 12,
-      expectedContext: [],
+      expectedContext: [{ kind: ContextKind.Duration }],
     },
     {
       title: 'autocomplete duration for a matrixSelector',
@@ -571,6 +576,54 @@ describe('analyzeCompletion test', () => {
       expr: 'rate(foo[5ms])',
       pos: 10,
       expectedContext: [],
+    },
+    {
+      title: 'autocomplete duration expr operator after complete unit in matrixSelector',
+      expr: 'foo[5m+]',
+      pos: 7,
+      expectedContext: [{ kind: ContextKind.DurationExprOperator }],
+    },
+    {
+      title: 'autocomplete duration expr operator after complete multi-char unit in matrixSelector',
+      expr: 'foo[5ms+]',
+      pos: 8,
+      expectedContext: [{ kind: ContextKind.DurationExprOperator }],
+    },
+    {
+      title: 'autocomplete duration expr operator in subquery step',
+      expr: 'go[5d:5m+]',
+      pos: 9,
+      expectedContext: [{ kind: ContextKind.DurationExprOperator }],
+    },
+    {
+      title: 'autocomplete duration expr function when typing identifier in empty duration slot',
+      expr: 'foo[ste]',
+      pos: 7,
+      expectedContext: [{ kind: ContextKind.DurationExpr }],
+    },
+    {
+      title: 'autocomplete duration expr function after complete duration in matrixSelector',
+      expr: 'foo[5mss]',
+      pos: 8,
+      expectedContext: [{ kind: ContextKind.DurationExpr }],
+    },
+    {
+      title: 'autocomplete duration expr function in subquery step',
+      expr: 'go[5d:st]',
+      pos: 8,
+      expectedContext: [{ kind: ContextKind.DurationExpr }],
+    },
+    {
+      title: 'autocomplete duration expr function when typing identifier in offset duration slot',
+      expr: 'foo offset st',
+      pos: 13,
+      expectedContext: [{ kind: ContextKind.DurationExpr }],
+    },
+    {
+      title: 'autocomplete duration expr function inside DurationExpr arithmetic (not metric functions)',
+      expr: 'foo[5m+2ms+m',
+      pos: 12,
+      expectedContext: [{ kind: ContextKind.DurationExpr }],
     },
     {
       title: 'autocomplete duration for a subQuery',
@@ -805,7 +858,7 @@ describe('computeStartCompletePosition test', () => {
       title: 'start should not be equal to the pos for the duration in a matrix selector',
       expr: 'go[]',
       pos: 3,
-      expectedStart: 0,
+      expectedStart: 3,
     },
     {
       title: 'start should be equal to the pos for the duration in a matrix selector',
@@ -1378,10 +1431,10 @@ describe('autocomplete promQL test', () => {
       expr: 'go[]',
       pos: 3,
       expectedResult: {
-        options: [],
-        from: 0,
+        options: durationTerms,
+        from: 3,
         to: 3,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: undefined,
       },
     },
     {
@@ -1389,10 +1442,10 @@ describe('autocomplete promQL test', () => {
       expr: 'go{l1="l2"}[]',
       pos: 12,
       expectedResult: {
-        options: [],
-        from: 0,
+        options: durationTerms,
+        from: 12,
         to: 12,
-        validFor: /^[a-zA-Z0-9_:]+$/,
+        validFor: undefined,
       },
     },
     {
@@ -1459,6 +1512,39 @@ describe('autocomplete promQL test', () => {
         from: 10,
         to: 12,
         validFor: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
+    {
+      title: 'offline autocomplete duration expr operator after complete unit in matrixSelector',
+      expr: 'foo[5m+]',
+      pos: 7,
+      expectedResult: {
+        options: durationExprOperatorTerms,
+        from: 6,
+        to: 7,
+        validFor: undefined,
+      },
+    },
+    {
+      title: 'offline autocomplete duration expr function when typing identifier in empty duration slot',
+      expr: 'foo[ste]',
+      pos: 7,
+      expectedResult: {
+        options: durationExprTerms,
+        from: 4,
+        to: 7,
+        validFor: undefined,
+      },
+    },
+    {
+      title: 'offline autocomplete duration expr function after complete duration in matrixSelector',
+      expr: 'foo[5mss]',
+      pos: 8,
+      expectedResult: {
+        options: durationExprTerms,
+        from: 7,
+        to: 8,
+        validFor: undefined,
       },
     },
     {

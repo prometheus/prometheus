@@ -5,13 +5,94 @@ import {
   nodeType,
   LabelMatcher,
   matchType,
+  DurationNode,
 } from "../../../promql/ast";
 import { escapeString } from "../../../promql/utils";
 import { useSuspenseAPIQuery } from "../../../api/api";
 import { Card, Text, Divider, List } from "@mantine/core";
 import { MetadataResult } from "../../../api/responseTypes/metadata";
 import { formatPrometheusDuration } from "../../../lib/formatTime";
+import { formatDurationNode } from "../../../promql/format";
 import { useSettings } from "../../../state/settingsSlice";
+
+const collectNotes = (
+  node: DurationNode | null,
+  notes: ReactNode[],
+  seen: Set<string>
+): void => {
+  if (!node || node.type === "numberLiteral") {
+    return;
+  }
+  if (node.op === "step") {
+    if (!seen.has("step")) {
+      seen.add("step");
+      notes.push(
+        <>
+          <span className="promql-code promql-keyword">step()</span> resolves to
+          the query step (the interval between data points in a range query, or
+          the default evaluation step for instant queries).
+        </>
+      );
+    }
+    return;
+  }
+  if (node.op === "range") {
+    if (!seen.has("range")) {
+      seen.add("range");
+      notes.push(
+        <>
+          <span className="promql-code promql-keyword">range()</span> resolves to
+          the query range (the total time window covered by a range query).
+        </>
+      );
+    }
+    return;
+  }
+  if ((node.op === "min" || node.op === "max") && node.lhs && node.rhs) {
+    const key = `${node.op}:${formatDurationNode(node.lhs)}:${formatDurationNode(node.rhs)}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      notes.push(
+        <>
+          <span className="promql-code promql-keyword">{node.op}()</span> returns
+          the {node.op === "min" ? "smaller" : "larger"} of{" "}
+          <span className="promql-code">{formatDurationNode(node.lhs)}</span> and{" "}
+          <span className="promql-code">{formatDurationNode(node.rhs)}</span>.
+        </>
+      );
+    }
+  }
+  collectNotes(node.lhs, notes, seen);
+  collectNotes(node.rhs, notes, seen);
+};
+
+const durationExprNote = (expr: DurationNode): ReactNode => {
+  const notes: ReactNode[] = [];
+  collectNotes(expr, notes, new Set<string>());
+  if (notes.length === 0) {
+    return null;
+  }
+  const exprCode = (
+    <span className="promql-code">{formatDurationNode(expr)}</span>
+  );
+  if (notes.length === 1) {
+    return (
+      <Text fz="sm" mt="sm">
+        In the duration expression {exprCode}, {notes[0]}
+      </Text>
+    );
+  }
+  return (
+    <Text fz="sm" mt="sm">
+      In the duration expression {exprCode}:
+      <List mt="xs" withPadding>
+        {notes.map((note, i) => (
+          <List.Item key={i}>{note}</List.Item>
+        ))}
+      </List>
+    </Text>
+  );
+};
 
 interface SelectorExplainViewProps {
   node: VectorSelector | MatrixSelector;
@@ -190,11 +271,22 @@ const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
           </>
         ) : (
           <>
-            This node selects{" "}
-            <span className="promql-code promql-duration">
-              {formatPrometheusDuration(node.range)}
-            </span>{" "}
-            of data going backward from the evaluation timestamp
+            This node looks back{" "}
+            {node.rangeExpr ? (
+              <>
+                a duration defined by{" "}
+                <span className="promql-code">
+                  {formatDurationNode(node.rangeExpr)}
+                </span>
+              </>
+            ) : (
+              <span className="promql-code">
+                <span className="promql-duration">
+                  {formatPrometheusDuration(node.range)}
+                </span>
+              </span>
+            )}{" "}
+            from the evaluation timestamp
             {node.anchored && (
               <>
                 {" "}
@@ -224,7 +316,20 @@ const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
         ) : (
           <></>
         )}
-        {node.offset === 0 ? (
+        {node.offsetExpr ? (
+          <>
+            , time-shifted{" "}
+            <span className="promql-code">
+              {formatDurationNode(node.offsetExpr)}
+            </span>
+            {node.offset > 0
+              ? " into the past"
+              : node.offset < 0
+                ? " into the future"
+                : ""}
+            ,
+          </>
+        ) : node.offset === 0 ? (
           <></>
         ) : node.offset > 0 ? (
           <>
@@ -247,24 +352,29 @@ const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
       </Text>
       {matchingCriteriaList(node.name, node.matchers)}
       <Text fz="sm">
-        If a series has no values in the last{" "}
-        <span className="promql-code promql-duration">
-          {node.type === nodeType.vectorSelector
-            ? lookbackDelta
-            : formatPrometheusDuration(node.range)}
-        </span>
-        {node.offset > 0 && (
+        If a series has no values in that window
+        {(node.offsetExpr || node.offset > 0) && (
           <>
             {" "}
             (relative to the time-shifted instant{" "}
-            <span className="promql-code promql-duration">
-              {formatPrometheusDuration(node.offset)}
+            <span className="promql-code">
+              {node.offsetExpr ? (
+                formatDurationNode(node.offsetExpr)
+              ) : (
+                <span className="promql-duration">
+                  {formatPrometheusDuration(node.offset)}
+                </span>
+              )}
             </span>{" "}
             in the past)
           </>
         )}
         , the series will not be returned.
       </Text>
+      {node.type === nodeType.matrixSelector &&
+        node.rangeExpr &&
+        durationExprNote(node.rangeExpr)}
+      {node.offsetExpr && durationExprNote(node.offsetExpr)}
     </Card>
   );
 };
