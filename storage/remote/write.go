@@ -76,12 +76,13 @@ type WriteStorage struct {
 	recordBuf *record.BuffersPool
 
 	// For timestampTracker.
-	highestTimestamp        *maxTimestamp
-	enableTypeAndUnitLabels bool
+	highestTimestamp         *maxTimestamp
+	enableTypeAndUnitLabels  bool
+	enableMetadataWALRecords bool
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels bool) *WriteStorage {
+func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels, enableMetadataWALRecords bool) *WriteStorage {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
@@ -105,8 +106,9 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch. Initialized to 0 when no data has been received yet. Deprecated, check prometheus_remote_storage_queue_highest_timestamp_seconds which is more accurate.",
 			}),
 		},
-		recordBuf:               record.NewBuffersPool(),
-		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
+		recordBuf:                record.NewBuffersPool(),
+		enableTypeAndUnitLabels:  enableTypeAndUnitLabels,
+		enableMetadataWALRecords: enableMetadataWALRecords,
 	}
 	if reg != nil {
 		reg.MustRegister(rws.highestTimestamp)
@@ -218,6 +220,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.SendExemplars,
 			rwConf.SendNativeHistograms,
 			rws.enableTypeAndUnitLabels,
+			rws.enableMetadataWALRecords,
 			rwConf.ProtobufMessage,
 			rws.recordBuf,
 		)
