@@ -3977,12 +3977,14 @@ func TestChunkQuerier_OverlappingInOrderAndOOOChunks(t *testing.T) {
 }
 
 func testChunkQuerierOverlappingInOrderAndOOOChunks(t *testing.T, valType chunkenc.ValueType, storeST bool) {
-	const oooCapMax = 32
-	// Pick more OOO samples than any chunk encoding can hold so the
-	// querier is forced to cut the merged iterable into multiple chunks.
-	const oooSamplesToAppend = int(math.MaxUint16) + 10
-	const firstIndex = 0                     // Position of in-order sample at the start.
-	const lastIndex = oooSamplesToAppend + 1 // Position of in-order sample at the end to overlap all OOO samples.
+	const (
+		oooCapMax = 32
+		// Pick more OOO samples than any chunk encoding can hold so the
+		// querier is forced to cut the merged iterable into multiple chunks.
+		oooSamplesToAppend = int(math.MaxUint16) + 10
+		firstIndex         = 0                      // Position of in-order sample at the start.
+		lastIndex          = oooSamplesToAppend + 1 // Position of in-order sample at the end to overlap all OOO samples.
+	)
 
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = oooCapMax
@@ -4050,9 +4052,7 @@ func testChunkQuerierOverlappingInOrderAndOOOChunks(t *testing.T, valType chunke
 	matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
 	css := chunkQuerier.Select(context.Background(), false, nil, matcher)
 
-	seriesCount := 0
-	chunkCount := 0
-	sampleCount := 0
+	var seriesCount, chunkCount, sampleCount int
 	lastTS := int64(math.MinInt64)
 	for css.Next() {
 		seriesCount++
