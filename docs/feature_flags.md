@@ -353,6 +353,16 @@ Example query:
 
 **Note**: When using the anchored modifier with the increase function, the results returned are integers.
 
+**Composability (additive property)**: With `anchored`, `increase`, `rate`, and `delta` are *additive* over adjacent ranges. For any series `m` and timestamps `T₀ < T₁ < T₂` with `r₁ = T₁ − T₀` (≤ lookback delta) and `r₂ = T₂ − T₁`:
+
+```
+  increase(m[r₁]      anchored)  @ T₁
++ increase(m[r₂]      anchored)  @ T₂
+= increase(m[r₁ + r₂] anchored)  @ T₂
+```
+
+This invariant is what makes anchored `increase` composable: splitting a wider range into adjacent sub-ranges and summing the results gives the same answer as asking for the wider range directly — and it does this for any possible sub-ranges. See [#18679](https://github.com/prometheus/prometheus/issues/18679) for the precise statement and proposed invariant tests.
+
 ### `smoothed`
 
 In range selectors, linearly interpolates values at the range boundaries, using the sample values before and after the boundaries for an improved estimation that is robust against irregular scrapes and missing samples. However, it requires a sample after the evaluation interval to work properly, see note below.
