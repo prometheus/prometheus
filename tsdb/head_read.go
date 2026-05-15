@@ -473,6 +473,11 @@ func (h *headChunkReader) Close() error {
 	return nil
 }
 
+// EnableChunkCache enables the head-chunk cache for sequential chunk access patterns.
+func (h *headChunkReader) EnableChunkCache() {
+	h.enableCache = true
+}
+
 func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 	// Skip if the cache is disabled (instant queries) or there are no head chunks or there's only one.
 	if !h.enableCache || s.headChunks == nil || s.headChunks.prev == nil {
@@ -591,28 +596,11 @@ func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool,
 // (and not the chunkenc.Chunk inside it) can be garbage collected after its usage.
 // if isOpen is true, it means that the returned *memChunk is used for appends.
 func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool, headChunks []*memChunk) (chunk *memChunk, headChunk, isOpen bool, err error) {
-	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk id's are
-	// incremented by 1 when new chunk is created, hence (id - firstChunkID) gives the slice index.
-	// The max index for the s.mmappedChunks slice can be len(s.mmappedChunks)-1, hence if the ix
-	// is >= len(s.mmappedChunks), it represents one of the chunks on s.headChunks linked list.
-	// The order of elements is different for slice and linked list.
-	// For s.mmappedChunks slice newer chunks are appended to it.
-	// For s.headChunks list newer chunks are prepended to it.
-	//
-	// memSeries {
-	//   mmappedChunks: [t0, t1, t2]
-	//   headChunk:     {t5}->{t4}->{t3}
-	// }
+	// ix is the chunk's position in the logical sequence: mmappedChunks first
+	// (oldest at index 0), then headChunks (oldest first). Values 0..len(mmappedChunks)-1
+	// refer to mmapped chunks; values >= len(mmappedChunks) refer to head chunks.
 	ix := int(id) - int(s.firstChunkID)
-
-	var headChunksLen int
-	if headChunks != nil {
-		headChunksLen = len(headChunks)
-	} else if s.headChunks != nil {
-		headChunksLen = s.headChunks.len()
-	}
-
-	if ix < 0 || ix > len(s.mmappedChunks)+headChunksLen-1 {
+	if ix < 0 {
 		return nil, false, false, storage.ErrNotFound
 	}
 
@@ -643,18 +631,20 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 		return headChunks[ix], true, ix == len(headChunks)-1, nil
 	}
 
-	// Fallback: walk the linked list.
-
-	offset := headChunksLen - ix - 1
-	// headChunks is a linked list where first element is the most recent one and the last one is the oldest.
-	// This order is reversed when compared with mmappedChunks, since mmappedChunks[0] is the oldest chunk,
-	// while headChunk.atOffset(0) would give us the most recent chunk.
-	// So when calling headChunk.atOffset() we need to reverse the value of ix.
-	elem := s.headChunks.atOffset(offset)
-	if elem == nil {
-		// This should never really happen and would mean that headChunksLen value is NOT equal
-		// to the length of the headChunks list.
+	// Fallback: walk the linked list using cached length.
+	headChunksLen := int(s.headChunkCount.Load())
+	if ix >= headChunksLen {
 		return nil, false, false, storage.ErrNotFound
+	}
+	// Walk from newest (offset 0) to target. The list is newest-first,
+	// but ix is oldest-first, so reverse the offset.
+	offset := headChunksLen - ix - 1
+	elem := s.headChunks
+	for range offset {
+		if elem.prev == nil {
+			return nil, false, false, storage.ErrNotFound
+		}
+		elem = elem.prev
 	}
 	return elem, true, offset == 0, nil
 }
@@ -711,15 +701,11 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *
 		ix -= len(s.mmappedChunks)
 		if s.headChunks != nil {
 			// Iterate all head chunks from the oldest to the newest.
-			headChunksLen := s.headChunks.len()
-			for j := headChunksLen - 1; j >= 0; j-- {
-				chk := s.headChunks.atOffset(j)
+			hc := collectHeadChunks(s.headChunks, make([]*memChunk, 0, s.headChunkCount.Load()))
+			for j, chk := range hc {
 				chkSamples := chk.chunk.NumSamples()
 				totalSamples += chkSamples
-				// Chunk ID is len(s.mmappedChunks) + $(headChunks list position).
-				// Where $(headChunks list position) is zero for the oldest chunk and $(s.headChunks.len() - 1)
-				// for the newest (open) chunk.
-				if headChunksLen-1-j < ix {
+				if j < ix {
 					previousSamples += chkSamples
 				}
 			}
