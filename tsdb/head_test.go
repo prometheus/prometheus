@@ -101,6 +101,26 @@ func newTestHeadWithOptions(t testing.TB, compressWAL compression.Type, opts *He
 	return h, wal
 }
 
+// requireMmapReadyConsistent asserts that, for every stripe, the mmapReady
+// atomic equals the number of registered series with headChunkCountAtomic
+// >= 2 in that stripe. Used by tests that exercise the setters across
+// real WAL replay paths to lock in the invariant end-to-end.
+func requireMmapReadyConsistent(t testing.TB, h *Head, msg string) {
+	t.Helper()
+	for i := range h.series.size {
+		var expected int32
+		h.series.locks[i].RLock()
+		for _, s := range h.series.series[i] {
+			if s.headChunkCountAtomic.Load() >= 2 {
+				expected++
+			}
+		}
+		h.series.locks[i].RUnlock()
+		require.Equal(t, expected, h.series.mmapReady[i].Load(),
+			"%s: stripe %d mmapReady out of sync", msg, i)
+	}
+}
+
 func BenchmarkCreateSeries(b *testing.B) {
 	series := genSeries(b.N, 10, 0, 0)
 	h, _ := newTestHead(b, 10000, compression.None, false)
@@ -1734,12 +1754,11 @@ func TestMemSeries_truncateChunks_scenarios(t *testing.T) {
 			}
 			require.Len(t, series.mmappedChunks, tc.mmappedChunks, "wrong number of mmapped chunks")
 
-			// Set headChunkCount before truncation (series.append bypasses observeChunkCreated).
-			series.headChunkCount.Store(uint32(tc.headChunks))
+			series.setHeadChunkCount(uint32(tc.headChunks))
 
 			truncated := series.truncateChunksBefore(tc.truncateBefore, 0)
 			require.Equal(t, tc.expectedTruncated, truncated, "wrong number of truncated chunks returned")
-			require.Equal(t, uint32(tc.expectedHead), series.headChunkCount.Load(), "wrong headChunkCount after truncation")
+			require.Equal(t, uint32(tc.expectedHead), series.headChunkCountAtomic.Load(), "wrong headChunkCount after truncation")
 
 			require.Len(t, series.mmappedChunks, tc.expectedMmap, "wrong number of mmappedChunks after truncation")
 
@@ -4634,6 +4653,7 @@ func TestChunkSnapshot(t *testing.T) {
 				checkFloatHistograms()
 				checkTombstones()
 				checkExemplars()
+				requireMmapReadyConsistent(t, head, "after WAL replay")
 			}
 
 			{ // Initial data that goes into snapshot.
@@ -8168,7 +8188,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 			for i := range h.series.size {
 				h.series.locks[i].RLock()
 				for _, s := range h.series.series[i] {
-					if s.headChunkCount.Load() >= 2 {
+					if s.headChunkCountAtomic.Load() >= 2 {
 						n++
 					}
 				}
@@ -8180,7 +8200,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		getCount := func(lbls labels.Labels) uint32 {
 			s := h.series.getByHash(lbls.Hash(), lbls)
 			require.NotNil(t, s, "series %s not found", lbls)
-			return s.headChunkCount.Load()
+			return s.headChunkCountAtomic.Load()
 		}
 
 		lblsA := labels.FromStrings("__name__", "seriesA")
@@ -8281,7 +8301,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 
 		s := h.series.getByHash(lbls.Hash(), lbls)
 		require.NotNil(t, s)
-		countBefore := s.headChunkCount.Load()
+		countBefore := s.headChunkCountAtomic.Load()
 		require.GreaterOrEqual(t, countBefore, uint32(2), "need multiple head chunks for this test")
 
 		// Append an OOO sample that creates an OOO chunk.
@@ -8292,7 +8312,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		require.NoError(t, app.Commit())
 
 		// headChunkCount must not change from an OOO insert.
-		require.Equal(t, countBefore, s.headChunkCount.Load(), "OOO insert should not inflate headChunkCount")
+		require.Equal(t, countBefore, s.headChunkCountAtomic.Load(), "OOO insert should not inflate headChunkCount")
 	})
 
 	// Verify OOO chunk creation does not spuriously increment mmapReady when the
@@ -8350,9 +8370,8 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 				// Force the exact state required to trigger the bug: series at
 				// headChunkCount == 2 (mmap-ready) with mmapReady already incremented.
 				s.Lock()
-				s.headChunkCount.Store(2)
+				s.setHeadChunkCount(2)
 				s.Unlock()
-				h.series.incMmapReady(s.ref)
 				require.Equal(t, int32(1), mmapReadyTotal())
 
 				// Append an OOO sample. This creates an OOO chunk (not a regular
@@ -8440,7 +8459,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 
 				s := h.series.getByHash(lbls.Hash(), lbls)
 				require.NotNil(t, s)
-				require.GreaterOrEqual(t, s.headChunkCount.Load(), uint32(2))
+				require.GreaterOrEqual(t, s.headChunkCountAtomic.Load(), uint32(2))
 				require.Equal(t, int32(1), mmapReadyTotal())
 
 				// Invoke the WAL-replay-style helper with a sample timestamped
@@ -8482,19 +8501,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		}
 		requireCounterConsistent := func(msg string) {
 			t.Helper()
-
-			var actual int32
-			for i := range h.series.size {
-				h.series.locks[i].RLock()
-				for _, s := range h.series.series[i] {
-					if s.headChunkCount.Load() >= 2 {
-						actual++
-					}
-				}
-				h.series.locks[i].RUnlock()
-			}
-			counter := mmapReadyCounter()
-			require.Equal(t, actual, counter, "%s: mmapReady counter (%d) != actual ready count (%d)", msg, counter, actual)
+			requireMmapReadyConsistent(t, h, msg)
 		}
 
 		lblsA := labels.FromStrings("__name__", "seriesA")
@@ -8594,7 +8601,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 
 		sB := h.series.getByHash(lblsB.Hash(), lblsB)
 		require.NotNil(t, sB)
-		require.GreaterOrEqual(t, sB.headChunkCount.Load(), uint32(2),
+		require.GreaterOrEqual(t, sB.headChunkCountAtomic.Load(), uint32(2),
 			"seriesB must be mmap-ready at deletion time for this test to be meaningful")
 		requireCounterConsistent("before stale series deletion")
 		readyBefore := mmapReadyCounter()
@@ -8613,10 +8620,10 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		// acquired, another goroutine (GC) has already reduced the count.
 		//
 		// We create a fresh series with 1 head chunk, then artificially set
-		// headChunkCount to 2 and mmapReady to 1. mmapChunks will see
-		// headChunks.prev == nil and return 0. Without the n > 0 guard,
-		// the counter would be decremented to 0 even though the "real"
-		// decrement never happened (simulating a double-decrement).
+		// headChunkCount to 2 and mmapReady to 1 (bypassing the safe
+		// setters to simulate the racy state). mmapChunks will see
+		// headChunks.prev == nil and return 0 without crossing the >= 2
+		// threshold, so mmapReady must stay at 1.
 		lblsD := labels.FromStrings("__name__", "seriesD")
 		app = h.Appender(t.Context())
 		_, err = app.Append(0, lblsD, ts, float64(ts))
@@ -8625,25 +8632,24 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 
 		sD := h.series.getByHash(lblsD.Hash(), lblsD)
 		require.NotNil(t, sD)
-		require.Equal(t, uint32(1), sD.headChunkCount.Load())
+		require.Equal(t, uint32(1), sD.headChunkCountAtomic.Load())
 		require.Nil(t, sD.headChunks.prev, "only one head chunk, prev must be nil")
 		stripeD := h.series.refStripe(sD.ref)
 
 		// Simulate the race: inflate headChunkCount so the series passes the
 		// >= 2 filter, and set mmapReady to 1 (as the increment site would).
-		sD.headChunkCount.Store(2)
+		sD.headChunkCountAtomic.Store(2)
 		h.series.mmapReady[stripeD].Add(1)
 
 		h.mmapHeadChunks()
 
-		// mmapChunks returned 0 (headChunks.prev is nil). With the n > 0
-		// guard, the counter stays at 1. Without the guard, it would drop
-		// to 0 — an incorrect extra decrement.
+		// mmapChunks returned 0 (headChunks.prev is nil). Its setter only
+		// runs after that early-return guard, so the counter stays at 1.
 		require.Equal(t, int32(1), h.series.mmapReady[stripeD].Load(),
 			"mmapHeadChunks must not decrement when mmapChunks returns 0")
 
 		// Clean up: restore the real state.
-		sD.headChunkCount.Store(1)
+		sD.headChunkCountAtomic.Store(1)
 		h.series.mmapReady[stripeD].Add(-1)
 		requireCounterConsistent("final state")
 	})
