@@ -29,7 +29,7 @@ import (
 )
 
 // PushMetrics to a prometheus remote write (for testing purpose only).
-func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, timeout time.Duration, protoMsg string, labels map[string]string, files ...string) int {
+func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, timeout time.Duration, protoMsg string, labels map[string]string, apiPath string, files ...string) int {
 	addressURL, err := url.Parse(url.String())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -46,7 +46,11 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 	}
 
 	// Create remote write API client.
-	writeAPI, err := remoteapi.NewAPI(addressURL.String(), remoteapi.WithAPIHTTPClient(httpClient))
+	apiOpts := []remoteapi.APIOption{remoteapi.WithAPIHTTPClient(httpClient)}
+	if apiPath != "" {
+		apiOpts = append(apiOpts, remoteapi.WithAPIPath(apiPath))
+	}
+	writeAPI, err := remoteapi.NewAPI(addressURL.String(), apiOpts...)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return failureExitCode
