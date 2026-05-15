@@ -55,6 +55,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestEC2DiscoveryRefreshAZIDs(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// iterate through the test cases
@@ -99,6 +100,7 @@ func TestEC2DiscoveryRefreshAZIDs(t *testing.T) {
 }
 
 func TestEC2DiscoveryRefresh(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// iterate through the test cases
