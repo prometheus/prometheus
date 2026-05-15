@@ -262,8 +262,6 @@ eval instant at 50m http_requests_total{group="canary"} unless ignoring(group) h
 	http_requests_total{__type__="counter", __unit__="not-request", group="canary", instance="1", job="api-server"} 400
 	http_requests_total{group="canary", instance="1", job="app-server"} 800
 
-# Default vector matching is now transparent to __type__ / __unit__,
-# so different type/unit combos on lhs and rhs should still match.
 eval instant at 50m http_requests_total{group="canary"} / ignoring(group) http_requests_total{group="production"}
 	{instance="0", job="api-server"} 3
 	{instance="0", job="app-server"} 1.4
@@ -300,6 +298,6 @@ eval instant at 0m kubelet_volume_stats_capacity_bytes - kubelet_volume_stats_av
   {namespace="test", persistentvolumeclaim="data-0"} 60
 
 # Division of binary op result by raw metric should work (not return empty)
-# This was broken before the fix - __type__ mismatch caused no data
 eval instant at 0m (kubelet_volume_stats_capacity_bytes - kubelet_volume_stats_available_bytes) / kubelet_volume_stats_capacity_bytes * 100
   {namespace="test", persistentvolumeclaim="data-0"} 60
+
