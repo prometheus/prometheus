@@ -1058,19 +1058,25 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 		// not capable.
 		st = p.currDelIter.AtST()
 		needTS := st != 0
-		overSizeChunk := func() bool {
+		// Decide whether to cut a new chunk. The size check inside `if !cutNewChunk`
+		// is reachable only when currentValueType == prevValueType, which excludes
+		// the first iteration (prevValueType == ValNone forces cutNewChunk true),
+		// so currentChunk is non-nil there.
+		cutNewChunk := currentValueType != prevValueType || (!hasTS && needTS)
+		if !cutNewChunk {
+			chunkBytes := len(currentChunk.Bytes())
 			switch currentValueType {
 			case chunkenc.ValFloat:
 				// In the TSDB head we also take into account the number of samples, but here we want to keep it
 				// simple and consistent with histograms. Also the size limit is checked before sample limit in
 				// the head as well.
-				return len(currentChunk.Bytes()) > chunkenc.MaxBytesPerXORChunkBeforeAppend
+				cutNewChunk = chunkBytes > chunkenc.MaxBytesPerXORChunkBeforeAppend
 			case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
-				return len(currentChunk.Bytes()) > chunkenc.TargetBytesPerHistogramChunk && currentChunk.NumSamples() > chunkenc.MinSamplesPerHistogramChunk
+				cutNewChunk = chunkBytes > chunkenc.TargetBytesPerHistogramChunk &&
+					currentChunk.NumSamples() > chunkenc.MinSamplesPerHistogramChunk
 			}
-			return false
 		}
-		if currentValueType != prevValueType || !hasTS && needTS || overSizeChunk() {
+		if cutNewChunk {
 			if prevValueType != chunkenc.ValNone {
 				p.chunksFromIterable = append(p.chunksFromIterable, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
 			}
