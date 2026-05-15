@@ -577,12 +577,11 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	}
 
 	// Any samples replayed till now would already be compacted. Resetting the head chunk.
+	// No series.Lock: walSubsetProcessor partitions inputs by series ref, so
+	// this series has no concurrent writer during WAL replay.
 	mSeries.nextAt = 0
-	if mSeries.headChunkCount.Load() >= 2 {
-		h.series.decMmapReady(mSeries.ref)
-	}
 	mSeries.headChunks = nil
-	mSeries.headChunkCount.Store(0)
+	mSeries.resetHeadChunkCount()
 	mSeries.app = nil
 	return overlapped
 }
@@ -640,20 +639,15 @@ func (wp *walSubsetProcessor) reuseHistogramBuf() []histogramRecord {
 // by WAL replay paths to keep memory bounded by mmapping eagerly rather than
 // waiting for the periodic mmapHeadChunks pass.
 //
-// If the chunk cut + mmap reduces headChunkCount from >= 2 to < 2 (which
-// happens whenever prev >= 2, since mmapChunks always sets the count to 1
-// when it does work), the per-stripe mmap-ready counter is decremented to
-// maintain its invariant.
+// The mmap-ready bookkeeping is handled inside memSeries' setters
+// (incHeadChunkCount in the append path, setHeadChunkCount(1) in mmapChunks).
+// No series.Lock is taken: walSubsetProcessor partitions inputs by series ref,
+// so ms has no concurrent writer.
 func (h *Head) appendChunkAndMmap(ms *memSeries, appendFn func() bool) bool {
-	prev := ms.headChunkCount.Load()
 	chunkCreated := appendFn()
 	if chunkCreated {
-		h.metrics.chunksCreated.Inc()
-		h.metrics.chunks.Inc()
+		h.onChunkCreatedMetrics()
 		_ = ms.mmapChunks(h.chunkDiskMapper)
-		if prev >= 2 {
-			h.series.decMmapReady(ms.ref)
-		}
 	}
 	return chunkCreated
 }
@@ -1687,11 +1681,10 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 				}
 				series.nextAt = csr.mc.maxTime // This will create a new chunk on append.
 				series.headChunks = csr.mc
-				chunkCount := uint32(csr.mc.len())
-				series.headChunkCount.Store(chunkCount)
-				if chunkCount >= 2 {
-					h.series.incMmapReady(series.ref)
-				}
+				// No series.Lock: snapshot loading runs before Head.Appender
+				// returns a real appender, and each csr.ref appears in the
+				// snapshot at most once, so this series has no concurrent writer.
+				series.setHeadChunkCount(uint32(csr.mc.len()))
 				series.lastValue = csr.lastValue
 				series.lastHistogramValue = csr.lastHistogramValue
 				series.lastFloatHistogramValue = csr.lastFloatHistogramValue

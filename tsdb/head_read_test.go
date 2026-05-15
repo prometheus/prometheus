@@ -449,7 +449,7 @@ func TestMemSeries_chunk_FastPath(t *testing.T) {
 
 	hc := collectHeadChunks(series.headChunks, nil)
 
-	headChunkCount := int(series.headChunkCount.Load())
+	headChunkCount := int(series.headChunkCountAtomic.Load())
 	require.Equal(t, 3, headChunkCount, "expected 3 head chunks")
 	totalChunks := len(series.mmappedChunks) + headChunkCount
 	for ix := range totalChunks {
