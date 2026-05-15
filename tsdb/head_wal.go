@@ -799,11 +799,10 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	}
 
 	// Any samples replayed till now would already be compacted. Resetting the head chunk.
+	// No series.Lock: walSubsetProcessor partitions inputs by series ref, so
+	// this series has no concurrent writer during WAL replay.
 	mSeries.nextAt = 0
-	if mSeries.headChunkCount.Load() >= 2 {
-		h.series.decMmapReady(mSeries.ref)
-	}
-	mSeries.setHeadChunks(nil, 0)
+	mSeries.setHeadChunks(nil, 0, h.series)
 	mSeries.app = nil
 	return overlapped
 }
@@ -862,28 +861,15 @@ func (wp *walSubsetProcessor) reuseHistogramBuf() []histogramRecord {
 	return nil
 }
 
-// appendChunkAndMmap appends a sample to ms via appendFn and, if a new head
-// chunk was created, immediately mmaps the now-completed predecessors. Used
-// by WAL replay paths to keep memory bounded by mmapping eagerly rather than
-// waiting for the periodic mmapHeadChunks pass. appendFn returns whether the
-// sample was accepted as in-order and whether it cut a new chunk, and those
-// values are returned to the caller so it can skip metric updates for samples
-// that were rejected (e.g. an older sample appearing later in the WAL).
-//
-// If the chunk cut + mmap reduces headChunkCount from >= 2 to < 2 (which
-// happens whenever prev >= 2, since mmapChunks always sets the count to 1
-// when it does work), the per-stripe mmap-ready counter is decremented to
-// maintain its invariant.
+// appendChunkAndMmap appends through appendFn and eagerly m-maps completed
+// predecessors after a chunk cut. It returns appendFn's acceptance and chunk
+// creation results. WAL replay partitions work by series reference, giving the
+// caller exclusive write ownership without taking series.Lock.
 func (h *Head) appendChunkAndMmap(ms *memSeries, appendFn func() (sampleInOrder, chunkCreated bool)) (sampleInOrder, chunkCreated bool) {
-	prev := ms.headChunkCount.Load()
 	sampleInOrder, chunkCreated = appendFn()
 	if chunkCreated {
-		h.metrics.chunksCreated.Inc()
-		h.metrics.chunks.Inc()
-		_ = ms.mmapChunks(h.chunkDiskMapper)
-		if prev >= 2 {
-			h.series.decMmapReady(ms.ref)
-		}
+		h.onChunkCreatedMetrics()
+		_ = ms.mmapChunks(h.chunkDiskMapper, h.series)
 	}
 	return sampleInOrder, chunkCreated
 }
@@ -1007,6 +993,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 		useXOR2:         h.opts.UseXOR2FloatEncoding(),
 		useHistogramST:  h.opts.EnableHistogramSTEncoding.Load(),
 		storeST:         h.opts.EnableSTStorage.Load(),
+		stripes:         h.series,
 	}
 
 	for in := range wp.input {
@@ -1993,10 +1980,10 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 				}
 				series.nextAt = csr.mc.maxTime // This will create a new chunk on append.
 				chunkCount := uint32(csr.mc.len())
-				series.setHeadChunks(csr.mc, chunkCount)
-				if chunkCount >= 2 {
-					h.series.incMmapReady(series.ref)
-				}
+				// No series.Lock: snapshot loading runs before Head.Appender
+				// returns a real appender, and each csr.ref appears in the
+				// snapshot at most once, so this series has no concurrent writer.
+				series.setHeadChunks(csr.mc, chunkCount, h.series)
 				series.lastValue = csr.lastValue
 				series.lastHistogramValue = csr.lastHistogramValue
 				series.lastFloatHistogramValue = csr.lastFloatHistogramValue
