@@ -1036,12 +1036,11 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			// The most recent head chunk was completed and m-mapped after the snapshot
 			// was taken, so its samples are now covered by the mmapped chunk we just
 			// loaded. Drop the in-memory head chunk chain.
+			// No series.Lock: loadMmappedChunks runs at startup before any
+			// appender goroutine can reach this series.
 			ms.nextAt = 0
-			if ms.headChunkCount.Load() >= 2 {
-				h.series.decMmapReady(ms.ref)
-			}
 			ms.headChunks = nil
-			ms.headChunkCount.Store(0)
+			ms.resetHeadChunkCount(h.series)
 			ms.app = nil
 		}
 		return nil
@@ -1948,15 +1947,13 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	return s, true, nil
 }
 
-// onChunkCreated bumps the head chunk metrics for any newly created chunk, in-order or OOO.
-// If prevHeadChunkCount < 2 and series.headChunkCount == 2, the corresponding
-// stripe's count of mmap ready series is incremented.
-func (h *Head) onChunkCreated(series *memSeries, prevHeadChunkCount uint32) {
+// onChunkCreatedMetrics bumps the head chunk metrics for any newly created
+// chunk, in-order or OOO. The mmap-ready bookkeeping is owned by the
+// memSeries setters and runs at the actual headChunkCount mutation site
+// (e.g. cutNewHeadChunk via incHeadChunkCount).
+func (h *Head) onChunkCreatedMetrics() {
 	h.metrics.chunks.Inc()
 	h.metrics.chunksCreated.Inc()
-	if prevHeadChunkCount < 2 && series.headChunkCount.Load() == 2 {
-		h.series.incMmapReady(series.ref)
-	}
 }
 
 // mmapHeadChunks iterates all memSeries stored on Head ready for m-mapping and calls
@@ -1983,12 +1980,8 @@ func (h *Head) mmapHeadChunks() {
 			}
 
 			series.Lock()
-			n := series.mmapChunks(h.chunkDiskMapper)
+			count += series.mmapChunks(h.chunkDiskMapper, h.series)
 			series.Unlock()
-			if n > 0 {
-				count += n
-				h.series.decMmapReady(series.ref)
-			}
 		}
 		h.series.locks[i].RUnlock()
 	}
@@ -2143,11 +2136,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		series.Lock()
 		defer series.Unlock()
 
-		wasMmapReady := series.headChunkCount.Load() >= 2
-		rmChunks += series.truncateChunksBefore(mint, minOOOMmapRef)
-		if wasMmapReady && series.headChunkCount.Load() < 2 {
-			s.decMmapReady(series.ref)
-		}
+		rmChunks += series.truncateChunksBefore(mint, minOOOMmapRef, s)
 
 		if len(series.mmappedChunks) > 0 {
 			seq, _ := series.mmappedChunks[0].ref.Unpack()
@@ -2290,13 +2279,10 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		if series.headChunks != nil {
 			chunksRemoved += series.headChunks.len()
 		}
-		if series.headChunkCount.Load() >= 2 {
-			h.series.decMmapReady(series.ref)
-		}
-		// Zero the count to prevent a double decrement of the stripe's
-		// mmapReady counter if a duplicate series record for this series
-		// is replayed after the deletion.
-		series.headChunkCount.Store(0)
+		// No series.Lock: deleteSeriesByID is only invoked during WAL replay,
+		// where walSubsetProcessor partitions inputs by series ref so this
+		// series has no concurrent writer.
+		series.resetHeadChunkCount(h.series)
 		// Defense in depth: resetSeriesWithMMappedChunks is a no-op for
 		// deleted series, but clear the m-mapped chunks anyway so a stale
 		// reference to this object cannot double-subtract from the
@@ -2367,9 +2353,7 @@ func (s *stripeSeries) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64)
 		// If we don't hold them all, there's a very small chance that a series receives
 		// samples again while we are half-way into deleting it.
 		stripe := s.refStripe(series.ref)
-		if series.headChunkCount.Load() >= 2 {
-			s.decMmapReady(series.ref)
-		}
+		series.resetHeadChunkCount(s)
 		if hashShard != stripe {
 			s.locks[stripe].Lock()
 			defer s.locks[stripe].Unlock()
@@ -2421,14 +2405,10 @@ func (s *stripeSeries) refStripe(ref chunks.HeadSeriesRef) int {
 	return int(uint64(ref) & uint64(s.size-1))
 }
 
-// incMmapReady increments the per-stripe mmap-ready counter for the given series.
-func (s *stripeSeries) incMmapReady(ref chunks.HeadSeriesRef) {
-	s.mmapReady[s.refStripe(ref)].Add(1)
-}
-
-// decMmapReady decrements the per-stripe mmap-ready counter for the given series.
-func (s *stripeSeries) decMmapReady(ref chunks.HeadSeriesRef) {
-	s.mmapReady[s.refStripe(ref)].Add(-1)
+// mmapReadyFor returns the per-stripe mmap-ready counter for the stripe that
+// the given series ref belongs to.
+func (s *stripeSeries) mmapReadyFor(ref chunks.HeadSeriesRef) *paddedAtomicInt32 {
+	return &s.mmapReady[s.refStripe(ref)]
 }
 
 func (s *stripeSeries) getByID(id chunks.HeadSeriesRef) *memSeries {
@@ -2556,12 +2536,13 @@ type memSeries struct {
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
 	// headChunkCount tracks the number of head chunks.
-	// It is incremented in cutNewHeadChunk and the histogram new-chunk paths,
-	// and reset by mmapChunks and truncateChunksBefore.
+	// The wrapper type only exposes Load(); mutation goes through
+	// setHeadChunkCount/incHeadChunkCount/resetHeadChunkCount so that the
+	// owning stripe's mmapReady counter stays in sync with the >= 2 threshold.
 	// Chunk counts are bounded by the 3-byte field in HeadChunkRef, so cannot overflow uint32.
-	// Explicitly uses sync/atomic.Uint32 (4 bytes) to fit in the existing padding
+	// The underlying sync/atomic.Uint32 (4 bytes) fits in the existing padding
 	// between two bools and a float64.
-	headChunkCount stdatomic.Uint32
+	headChunkCount headChunkCounter
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastValue float64
@@ -2601,6 +2582,57 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64,
 	return s
 }
 
+// headChunkCounter wraps the head chunk count so it can only be mutated via
+// the memSeries setters, which keep the stripe's mmapReady counter in sync.
+type headChunkCounter struct {
+	n stdatomic.Uint32
+}
+
+// Load returns the current head chunk count.
+func (c *headChunkCounter) Load() uint32 { return c.n.Load() }
+
+// incHeadChunkCount atomically increments the head chunk count and bumps the
+// stripe's mmap-ready counter on the 1 -> 2 edge.
+//
+// Callers MUST either hold series.Lock or otherwise guarantee single-writer
+// ownership of this series (e.g. WAL replay's per-ref partitioning). Two
+// concurrent setters on the same series can race the threshold check
+// against the mmapReady update and leave mmapReady transiently out of sync
+// with headChunkCount.
+//
+// stripes is nil only for memSeries that are not registered in a
+// stripeSeries (test paths constructing a memSeries directly via
+// newMemSeries); the stripe accounting is simply skipped in that case.
+func (s *memSeries) incHeadChunkCount(stripes *stripeSeries) {
+	if s.headChunkCount.n.Add(1) == 2 && stripes != nil {
+		stripes.mmapReadyFor(s.ref).Add(1)
+	}
+}
+
+// setHeadChunkCount atomically stores the head chunk count and adjusts the
+// stripe's mmap-ready counter if the >= 2 threshold is crossed in either
+// direction. Same single-writer and nil-stripes semantics as
+// incHeadChunkCount.
+func (s *memSeries) setHeadChunkCount(n uint32, stripes *stripeSeries) {
+	prev := s.headChunkCount.n.Swap(n)
+	if stripes == nil {
+		return
+	}
+	switch {
+	case prev < 2 && n >= 2:
+		stripes.mmapReadyFor(s.ref).Add(1)
+	case prev >= 2 && n < 2:
+		stripes.mmapReadyFor(s.ref).Add(-1)
+	}
+}
+
+// resetHeadChunkCount clears the head chunk count and decrements the stripe's
+// mmap-ready counter if the series was previously mmap-ready. Same
+// single-writer and nil-stripes semantics as incHeadChunkCount.
+func (s *memSeries) resetHeadChunkCount(stripes *stripeSeries) {
+	s.setHeadChunkCount(0, stripes)
+}
+
 func (s *memSeries) minTime() int64 {
 	if len(s.mmappedChunks) > 0 {
 		return s.mmappedChunks[0].minTime
@@ -2625,7 +2657,7 @@ func (s *memSeries) maxTime() int64 {
 // truncateChunksBefore removes all chunks from the series that
 // have no timestamp at or after mint.
 // Chunk IDs remain unchanged.
-func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) int {
+func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef, stripes *stripeSeries) int {
 	var removedInOrder int
 	if s.headChunks != nil {
 		var i uint32
@@ -2639,11 +2671,11 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 				if i == 0 {
 					// This is the first chunk on the list so we need to remove the entire list.
 					s.headChunks = nil
-					s.headChunkCount.Store(0)
+					s.resetHeadChunkCount(stripes)
 				} else {
 					// This is NOT the first chunk, unlink it from parent.
 					nextChk.prev = nil
-					s.headChunkCount.Store(i)
+					s.setHeadChunkCount(i, stripes)
 				}
 				s.mmappedChunks = nil
 				break

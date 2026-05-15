@@ -2561,7 +2561,7 @@ func TestHeadAppenderV2_Append_CounterResetHeader(t *testing.T) {
 
 				ms, _, err := head.getOrCreate(l.Hash(), l, false)
 				require.NoError(t, err)
-				ms.mmapChunks(head.chunkDiskMapper)
+				ms.mmapChunks(head.chunkDiskMapper, head.series)
 				require.Len(t, ms.mmappedChunks, len(expHeaders)-1) // One is the head chunk.
 
 				for i, mmapChunk := range ms.mmappedChunks {
@@ -3214,7 +3214,7 @@ func TestHead_Init_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
 	require.False(t, created, "should already exist")
 	require.NotNil(t, series, "should return the series we created above")
 
-	series.mmapChunks(h.chunkDiskMapper)
+	series.mmapChunks(h.chunkDiskMapper, h.series)
 	expChunks := make([]*mmappedChunk, len(series.mmappedChunks))
 	copy(expChunks, series.mmappedChunks)
 
