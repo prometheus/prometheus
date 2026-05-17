@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- [BUGFIX] Remote write receiver: Validate label value lengths before deserialization to prevent crashes on values ≥16 MB. Respects `global.label_value_length_limit`; defaults to 16 MB safety cap when not configured. #16525
+
 ## 3.11.3 / 2026-04-27
 
 This release fixes mutiple security issues.
