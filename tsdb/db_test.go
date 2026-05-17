@@ -3232,6 +3232,75 @@ func TestCompactHeadWithDeletion(t *testing.T) {
 	require.NoError(t, db.CompactHead(ctx, NewRangeHead(db.Head(), 0, 100)))
 }
 
+// TestCompactCancellation verifies that Compact returns when its context is
+// canceled while it is waiting for in-flight appenders that overlap the
+// compaction range to finish.
+func TestCompactCancellation(t *testing.T) {
+	t.Parallel()
+
+	blockRange := int64(1000)
+	opts := &Options{
+		RetentionDuration: blockRange * 1000,
+		NoLockfile:        true,
+		MinBlockDuration:  blockRange,
+		MaxBlockDuration:  blockRange,
+	}
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	lbls := labels.FromStrings("foo", "bar")
+
+	// Initialise the head with a sample at t=0 so that subsequent appenders
+	// take the regular path and register with isolation.
+	app := db.Appender(context.Background())
+	_, err := app.Append(0, lbls, 0, 0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Open another appender and keep it open. Its isolation minTime is
+	// captured at creation (currently 0) and will overlap the compaction
+	// range even after the head grows past it, forcing Compact() to wait.
+	pending := db.Appender(context.Background())
+	defer func() { require.NoError(t, pending.Rollback()) }()
+
+	// Extend MaxTime past 1.5 * blockRange so the head becomes compactable.
+	app = db.Appender(context.Background())
+	_, err = app.Append(0, lbls, 2*blockRange, 0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.True(t, db.head.compactable(), "head should be compactable")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- db.Compact(ctx)
+	}()
+
+	// Confirm Compact is blocked waiting for `pending` rather than returning
+	// on its own, then cancel and check that it observes the cancellation.
+	select {
+	case err := <-errCh:
+		t.Fatalf("Compact returned before cancel: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	cancel()
+
+	select {
+	case err := <-errCh:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Compact did not return after context cancellation")
+	}
+
+	// No block was created.
+	require.Empty(t, db.Blocks())
+	// Cancellation is explicitly excluded from the failure counter.
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed))
+}
+
 func deleteNonBlocks(dbDir string) error {
 	dirs, err := os.ReadDir(dbDir)
 	if err != nil {
