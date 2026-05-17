@@ -45,7 +45,7 @@ var (
 	ErrNativeHistogramsDisabled    = errors.New("native histograms are disabled")
 
 	// ErrOutOfOrderST indicates failed append of ST to the storage
-	// due to ST being older the then newer sample.
+	// due to ST being older than the newer sample.
 	// NOTE(bwplotka): This can be both an instrumentation failure or commonly expected
 	// behaviour, and we currently don't have a way to determine this. As a result
 	// it's recommended to ignore this error for now.
