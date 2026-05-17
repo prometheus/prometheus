@@ -11,24 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !slicelabels && !dedupelabels && !toplabels
+//go:build !toplabels
 
-package labels
+package main
 
-var expectedSizeOfLabels = []uint64{ // Values must line up with testCaseLabels.
-	12,
-	0,
-	37,
-	266,
-	270,
-	309,
-}
+import (
+	"log/slog"
 
-var expectedByteSize = []uint64{ // Values must line up with testCaseLabels.
-	12,
-	0,
-	37,
-	266,
-	270,
-	309,
+	"github.com/prometheus/prometheus/tsdb"
+)
+
+func mapCommonLabelSymbols(_ *tsdb.DB, _ *slog.Logger) error {
+	return nil
 }
