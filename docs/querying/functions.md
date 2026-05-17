@@ -627,6 +627,28 @@ At the current stage, this is an experiment to find out how useful the approach
 turns out to be in practice. A final version of the `info` function will indeed
 consider all matching info series and with their appropriate identifying labels.
 
+## `integral()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`integral(v range-vector, strategy=2 scalar)` calculates the integral of the
+time series over time in seconds, using trapezoidal approximation.
+The optional `strategy` for calculating the integral modifies how the value for
+the interval is handled: `0` for the left sample, `1` for the right sample, and
+`2` for the average between these two (aka _mid-point_). The default is `2`.
+
+`integral` should only be used with gauges, most likely representing a rate in
+units per seconds.
+
+For example, to calculate the total nodes cost accumulated the last 7 days,
+given its hourly cost:
+
+```
+integral(hourly_cost{job="nodes"}[7d]) / 3600
+```
+
 ## `irate()`
 
 `irate(v range-vector)` calculates the per-second instant rate of increase of
