@@ -1,9 +1,11 @@
 import {
   Accordion,
+  ActionIcon,
   Alert,
   Anchor,
   Badge,
   Card,
+  CopyButton,
   Group,
   Pagination,
   rem,
@@ -20,6 +22,8 @@ import {
 import {
   IconAlertTriangle,
   IconBell,
+  IconCheck,
+  IconCopy,
   IconHourglass,
   IconInfoCircle,
   IconRefresh,
@@ -265,6 +269,20 @@ export default function RulesPage() {
                               </Tooltip>
                             )}
                             <Text>{r.name}</Text>
+                            <CopyButton value={r.name}>
+                              {({ copied, copy }) => (
+                                <ActionIcon
+                                  variant="subtle"
+                                  color={copied ? 'teal' : 'gray'}
+                                  onClick={(e) => {
+                                    e.stopPropagation(); copy();
+                                  }}
+                                  size="xs"
+                                >
+                                  {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
+                                </ActionIcon>
+                              )}
+                            </CopyButton>
                           </Group>
                           <Group gap="xs">
                             <Group gap="xs" wrap="wrap">
