@@ -92,7 +92,7 @@ func fetchLatestLTSRelease(t *testing.T, prefix string) (version, assetURL strin
 	return "", ""
 }
 
-func getPrometheusMetricValue(t *testing.T, port int, metricType model.MetricType, metricName string) (float64, error) {
+func getPrometheusMetricValue(t *testing.T, port int, metricType model.MetricType, metricName string, isVecMetric bool) (float64, error) {
 	t.Helper()
 
 	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
@@ -102,6 +102,9 @@ func getPrometheusMetricValue(t *testing.T, port int, metricType model.MetricTyp
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("bad status code %d", resp.StatusCode)
+	}
+	if isVecMetric {
+		return getMetricValueSum(t, resp.Body, metricType, metricName)
 	}
 	return getMetricValue(t, resp.Body, metricType, metricName)
 }
@@ -159,59 +162,60 @@ func (c versionChangeTest) ensureHealthyMetrics(t *testing.T) {
 	checkStartTime := time.Now()
 
 	for _, mc := range []struct {
-		mType model.MetricType
-		mName string
-		check func(float64) bool
+		mType       model.MetricType
+		mName       string
+		isVecMetric bool // true if the metric is a vector type (e.g., CounterVec or GaugeVec).
+		check       func(float64) bool
 	}{
-		{model.MetricTypeGauge, "prometheus_ready", func(v float64) bool { return v == 1 }},
-		{model.MetricTypeGauge, "prometheus_config_last_reload_successful", func(v float64) bool { return v == 1 }},
+		{model.MetricTypeGauge, "prometheus_ready", false, func(v float64) bool { return v == 1 }},
+		{model.MetricTypeGauge, "prometheus_config_last_reload_successful", false, func(v float64) bool { return v == 1 }},
 
-		{model.MetricTypeCounter, "prometheus_target_scrape_pools_total", func(v float64) bool { return v == 3 }},
-		{model.MetricTypeCounter, "prometheus_target_scrape_pools_failed_total", func(v float64) bool { return v == 0 }},
-		{model.MetricTypeCounter, "prometheus_target_scrape_pool_reloads_failed_total", func(v float64) bool { return v == 0 }},
+		{model.MetricTypeCounter, "prometheus_target_scrape_pools_total", false, func(v float64) bool { return v == 3 }},
+		{model.MetricTypeCounter, "prometheus_target_scrape_pools_failed_total", false, func(v float64) bool { return v == 0 }},
+		{model.MetricTypeCounter, "prometheus_target_scrape_pool_reloads_failed_total", false, func(v float64) bool { return v == 0 }},
 
-		{model.MetricTypeGauge, "prometheus_remote_storage_highest_timestamp_in_seconds", func(v float64) bool { return v > float64(checkStartTime.Unix()) }},
+		{model.MetricTypeGauge, "prometheus_remote_storage_highest_timestamp_in_seconds", false, func(v float64) bool { return v > float64(checkStartTime.Unix()) }},
 
-		{model.MetricTypeGauge, "prometheus_rule_group_rules", func(v float64) bool { return v == 2 }},
-		{model.MetricTypeCounter, "prometheus_rule_evaluations_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_rule_evaluation_failures_total", func(v float64) bool { return v == 0 }},
+		{model.MetricTypeGauge, "prometheus_rule_group_rules", false, func(v float64) bool { return v == 2 }},
+		{model.MetricTypeCounter, "prometheus_rule_evaluations_total", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeCounter, "prometheus_rule_evaluation_failures_total", false, func(v float64) bool { return v == 0 }},
 
-		{model.MetricTypeCounter, "prometheus_tsdb_compactions_triggered_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_compactions_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_compactions_failed_total", func(v float64) bool { return v == 0 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_compactions_triggered_total", true, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_compactions_total", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_compactions_failed_total", true, func(v float64) bool { return v == 0 }},
 
-		{model.MetricTypeGauge, "prometheus_tsdb_head_series", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeGauge, "prometheus_tsdb_head_chunks", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeGauge, "prometheus_tsdb_head_chunks_storage_size_bytes", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_head_series_created_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeGauge, "prometheus_tsdb_blocks_loaded", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeGauge, "prometheus_tsdb_storage_blocks_bytes", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_reloads_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_reloads_failures_total", func(v float64) bool { return v == 0 }},
+		{model.MetricTypeGauge, "prometheus_tsdb_head_series", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeGauge, "prometheus_tsdb_head_chunks", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeGauge, "prometheus_tsdb_head_chunks_storage_size_bytes", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_head_series_created_total", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeGauge, "prometheus_tsdb_blocks_loaded", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeGauge, "prometheus_tsdb_storage_blocks_bytes", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_reloads_total", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_reloads_failures_total", false, func(v float64) bool { return v == 0 }},
 
-		{model.MetricTypeCounter, "prometheus_tsdb_head_chunks_created_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_head_chunks_removed_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_mmap_chunks_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_mmap_chunk_corruptions_total", func(v float64) bool { return v == 0 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_head_chunks_created_total", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_head_chunks_removed_total", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_mmap_chunks_total", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_mmap_chunk_corruptions_total", false, func(v float64) bool { return v == 0 }},
 
-		{model.MetricTypeCounter, "prometheus_tsdb_checkpoint_creations_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_checkpoint_creations_failed_total", func(v float64) bool { return v == 0 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_checkpoint_deletions_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_checkpoint_deletions_failed_total", func(v float64) bool { return v == 0 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_checkpoint_creations_total", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_checkpoint_creations_failed_total", false, func(v float64) bool { return v == 0 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_checkpoint_deletions_total", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_checkpoint_deletions_failed_total", false, func(v float64) bool { return v == 0 }},
 
-		{model.MetricTypeCounter, "prometheus_tsdb_head_truncations_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_head_truncations_failed_total", func(v float64) bool { return v == 0 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_head_truncations_total", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_head_truncations_failed_total", false, func(v float64) bool { return v == 0 }},
 
-		{model.MetricTypeGauge, "prometheus_tsdb_wal_storage_size_bytes", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_wal_completed_pages_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_wal_page_flushes_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_wal_truncations_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_wal_writes_failed_total", func(v float64) bool { return v == 0 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_wal_corruptions_total", func(v float64) bool { return v == 0 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_wal_truncations_failed_total", func(v float64) bool { return v == 0 }},
+		{model.MetricTypeGauge, "prometheus_tsdb_wal_storage_size_bytes", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_wal_completed_pages_total", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_wal_page_flushes_total", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_wal_truncations_total", false, func(v float64) bool { return v >= 1 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_wal_writes_failed_total", false, func(v float64) bool { return v == 0 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_wal_corruptions_total", false, func(v float64) bool { return v == 0 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_wal_truncations_failed_total", false, func(v float64) bool { return v == 0 }},
 	} {
 		require.Eventually(t, func() bool {
-			val, err := getPrometheusMetricValue(t, c.prometheusPort, mc.mType, mc.mName)
+			val, err := getPrometheusMetricValue(t, c.prometheusPort, mc.mType, mc.mName, mc.isVecMetric)
 			if err != nil {
 				return false
 			}

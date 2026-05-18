@@ -1340,13 +1340,13 @@ func TestDisableAutoCompactions(t *testing.T) {
 	}
 
 	for range 10 {
-		if prom_testutil.ToFloat64(db.metrics.compactionsSkipped) > 0.0 {
+		if prom_testutil.ToFloat64(db.metrics.compactionsSkipped.WithLabelValues("head")) > 0.0 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	require.Greater(t, prom_testutil.ToFloat64(db.metrics.compactionsSkipped), 0.0, "No compaction was skipped after the set timeout.")
+	require.Greater(t, prom_testutil.ToFloat64(db.metrics.compactionsSkipped.WithLabelValues("head")), 0.0, "No compaction was skipped after the set timeout.")
 	require.Empty(t, db.blocks)
 
 	// Enable the compaction, trigger it and check that the block is persisted.
@@ -1489,7 +1489,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 
 			require.Equal(t, 0.0, prom_testutil.ToFloat64(db.metrics.reloadsFailed), "initial 'failed db reloadBlocks' count metrics mismatch")
 			require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial `compactions` count metric mismatch")
-			require.Equal(t, 0.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed), "initial `compactions failed` count metric mismatch")
+			require.Equal(t, 0.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed.WithLabelValues("head")), "initial `compactions failed` count metric mismatch")
 
 			// Do the compaction and check the metrics.
 			// Compaction should succeed, but the reloadBlocks should fail and
@@ -1497,7 +1497,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			require.Error(t, db.Compact(ctx))
 			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.metrics.reloadsFailed), "'failed db reloadBlocks' count metrics mismatch")
 			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "`compaction` count metric mismatch")
-			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed), "`compactions failed` count metric mismatch")
+			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed.WithLabelValues("head")), "`compactions failed` count metric mismatch")
 
 			actBlocks, err = blockDirs(db.Dir())
 			require.NoError(t, err)
@@ -2054,7 +2054,7 @@ func TestDelayedCompaction(t *testing.T) {
 			require.Equal(t, 1.0, compactorRanCount(db))
 			// The compaction delay doesn't block or wait on the trigger;
 			// 3 triggers were processed above without blocking.
-			require.GreaterOrEqual(t, prom_testutil.ToFloat64(db.metrics.compactionsTriggered)-prom_testutil.ToFloat64(db.metrics.compactionsSkipped), 3.0)
+			require.GreaterOrEqual(t, prom_testutil.ToFloat64(db.metrics.compactionsTriggered.WithLabelValues("head"))-prom_testutil.ToFloat64(db.metrics.compactionsSkipped.WithLabelValues("head")), 3.0)
 			// The delay doesn't change the head blocks alignment.
 			require.Equal(t, db.compactor.(*LeveledCompactor).ranges[0]+1, db.head.MinTime())
 
