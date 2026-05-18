@@ -39,7 +39,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/almost"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/convertnhcb"
@@ -159,10 +158,7 @@ func GetBuiltInExprs() ([]string, error) {
 // RunBuiltinTests runs an acceptance test suite against the provided engine.
 func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 	RunBuiltinTestsWithStorage(t, engine, func(t testing.TB) storage.Storage {
-		return teststorage.New(t, func(opt *tsdb.Options) {
-			opt.EnableSTStorage = true
-			opt.EnableXOR2Encoding = true
-		})
+		return teststorage.New(t)
 	})
 }
 
@@ -260,14 +256,8 @@ func newTest(t testing.TB, input string, testingMode bool, newStorage func(testi
 	return test, err
 }
 
-// testStorageOptions holds additional tsdb.Options applied by newTestStorage.
-// It is populated via init() in test files so that options only take effect
-// when the promqltest package itself is under test, not when callers such as
-// promql_test.go invoke RunBuiltinTests.
-var testStorageOptions []teststorage.Option
-
 func newTestStorage(t testing.TB) storage.Storage {
-	return teststorage.New(t, testStorageOptions...)
+	return teststorage.New(t)
 }
 
 //go:embed testdata
