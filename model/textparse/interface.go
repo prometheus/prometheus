@@ -143,7 +143,9 @@ type ParserOptions struct {
 	ConvertClassicHistogramsToNHCB bool
 
 	// KeepClassicOnClassicAndNativeHistograms causes parser to output classic histogram
-	// that is also present as a native histogram. (Proto parsing only).
+	// that is also present as a native histogram. Supported by the protobuf
+	// parser and by the OpenMetrics 2.0 parser (where both representations
+	// can appear in a single composite value).
 	KeepClassicOnClassicAndNativeHistograms bool
 
 	// OpenMetricsSkipSTSeries determines whether to skip `_created` timestamp series
@@ -174,10 +176,25 @@ func New(b []byte, contentType string, st *labels.SymbolTable, opts ParserOption
 	var baseParser Parser
 	switch mediaType {
 	case "application/openmetrics-text":
-		baseParser = NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
-			o.skipSTSeries = opts.OpenMetricsSkipSTSeries
-			o.enableTypeAndUnitLabels = opts.EnableTypeAndUnitLabels
-		})
+		var version string
+		if _, params, err2 := mime.ParseMediaType(contentType); err2 == nil {
+			version = params["version"]
+		}
+		if version == "2.0.0" {
+			var om2Opts []OpenMetrics2Option
+			if opts.EnableTypeAndUnitLabels {
+				om2Opts = append(om2Opts, WithOM2TypeAndUnitLabels())
+			}
+			if opts.KeepClassicOnClassicAndNativeHistograms {
+				om2Opts = append(om2Opts, WithOM2KeepClassicOnNativeHistogram())
+			}
+			baseParser = NewOpenMetrics2Parser(b, st, om2Opts...)
+		} else {
+			baseParser = NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
+				o.skipSTSeries = opts.OpenMetricsSkipSTSeries
+				o.enableTypeAndUnitLabels = opts.EnableTypeAndUnitLabels
+			})
+		}
 	case "application/vnd.google.protobuf":
 		return NewProtobufParser(
 			b,
