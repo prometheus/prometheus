@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -88,6 +89,30 @@ type SDKConfig struct {
 	TenantID string `yaml:"tenant_id,omitempty"`
 }
 
+// CertificateConfig is used to store azure certificate-based authentication config values.
+type CertificateConfig struct {
+	// ClientID is the clientId of the azure active directory application that is being used to authenticate.
+	ClientID string `yaml:"client_id,omitempty"`
+
+	// TenantID is the tenantId of the azure active directory application that is being used to authenticate.
+	TenantID string `yaml:"tenant_id,omitempty"`
+
+	// CertificatePath is the path to the certificate file (PEM or PFX format).
+	CertificatePath string `yaml:"certificate_path,omitempty"`
+
+	// CertificateKeyPath is the path to the private key file (PEM format).
+	// This is optional and only needed if the certificate and key are in separate files.
+	CertificateKeyPath string `yaml:"certificate_key_path,omitempty"`
+
+	// CertificatePassword is the password for the certificate file (for PFX files).
+	// This is optional and only needed if the certificate file is password-protected.
+	CertificatePassword string `yaml:"certificate_password,omitempty"`
+
+	// SendCertificateChain controls whether to include x5c header in assertion to support
+	// subject name / issuer-based authentication.
+	SendCertificateChain bool `yaml:"send_certificate_chain,omitempty"`
+}
+
 // AzureADConfig is used to store the config values.
 type AzureADConfig struct { //nolint:revive // exported.
 	// ManagedIdentity is the managed identity that is being used to authenticate.
@@ -101,6 +126,9 @@ type AzureADConfig struct { //nolint:revive // exported.
 
 	// SDK is the SDK config that is being used to authenticate.
 	SDK *SDKConfig `yaml:"sdk,omitempty"`
+
+	// Certificate is the certificate config that is being used to authenticate.
+	Certificate *CertificateConfig `yaml:"certificate,omitempty"`
 
 	// Cloud is the Azure cloud in which the service is running. Example: AzurePublic/AzureGovernment/AzureChina.
 	Cloud string `yaml:"cloud,omitempty"`
@@ -151,9 +179,12 @@ func (c *AzureADConfig) Validate() error {
 	if c.SDK != nil {
 		authenticators++
 	}
+	if c.Certificate != nil {
+		authenticators++
+	}
 
 	if authenticators == 0 {
-		return errors.New("must provide an Azure Managed Identity, Azure Workload Identity, Azure OAuth or Azure SDK in the Azure AD config")
+		return errors.New("must provide an Azure Managed Identity, Azure Workload Identity, Azure OAuth, Azure Certificate or Azure SDK in the Azure AD config")
 	}
 	if authenticators > 1 {
 		return errors.New("cannot provide multiple authentication methods in the Azure AD config")
@@ -212,6 +243,25 @@ func (c *AzureADConfig) Validate() error {
 			if _, err := regexp.MatchString("^[0-9a-zA-Z-.]+$", c.SDK.TenantID); err != nil {
 				return errors.New("the provided Azure SDK tenant_id is invalid")
 			}
+		}
+	}
+
+	if c.Certificate != nil {
+		if c.Certificate.ClientID == "" {
+			return errors.New("must provide an Azure Certificate client_id in the Azure AD config")
+		}
+		if c.Certificate.TenantID == "" {
+			return errors.New("must provide an Azure Certificate tenant_id in the Azure AD config")
+		}
+		if c.Certificate.CertificatePath == "" {
+			return errors.New("must provide an Azure Certificate certificate_path in the Azure AD config")
+		}
+
+		if _, err := uuid.Parse(c.Certificate.ClientID); err != nil {
+			return errors.New("the provided Azure Certificate client_id is invalid")
+		}
+		if _, err := regexp.MatchString("^[0-9a-zA-Z-.]+$", c.Certificate.TenantID); err != nil {
+			return errors.New("the provided Azure Certificate tenant_id is invalid")
 		}
 	}
 
@@ -325,6 +375,21 @@ func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
 		}
 	}
 
+	if cfg.Certificate != nil {
+		certificateConfig := &CertificateConfig{
+			ClientID:             cfg.Certificate.ClientID,
+			TenantID:             cfg.Certificate.TenantID,
+			CertificatePath:      cfg.Certificate.CertificatePath,
+			CertificateKeyPath:   cfg.Certificate.CertificateKeyPath,
+			CertificatePassword:  cfg.Certificate.CertificatePassword,
+			SendCertificateChain: cfg.Certificate.SendCertificateChain,
+		}
+		cred, err = newCertificateTokenCredential(clientOpts, certificateConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return cred, nil
 }
 
@@ -365,6 +430,46 @@ func newOAuthTokenCredential(clientOpts *azcore.ClientOptions, oAuthConfig *OAut
 func newSDKTokenCredential(clientOpts *azcore.ClientOptions, sdkConfig *SDKConfig) (azcore.TokenCredential, error) {
 	opts := &azidentity.DefaultAzureCredentialOptions{ClientOptions: *clientOpts, TenantID: sdkConfig.TenantID}
 	return azidentity.NewDefaultAzureCredential(opts)
+}
+
+// newCertificateTokenCredential returns new certificate-based token credential.
+func newCertificateTokenCredential(clientOpts *azcore.ClientOptions, certConfig *CertificateConfig) (azcore.TokenCredential, error) {
+	certData, err := os.ReadFile(certConfig.CertificatePath)
+	if err != nil {
+		return nil, errors.New("failed to read certificate file " + certConfig.CertificatePath + ": " + err.Error())
+	}
+
+	// If a separate key file is provided, append it to the cert data so ParseCertificates can find the private key.
+	if certConfig.CertificateKeyPath != "" {
+		keyData, err := os.ReadFile(certConfig.CertificateKeyPath)
+		if err != nil {
+			return nil, errors.New("failed to read private key file " + certConfig.CertificateKeyPath + ": " + err.Error())
+		}
+		certData = append(append(certData, '\n'), keyData...)
+	}
+
+	var password []byte
+	if certConfig.CertificatePassword != "" {
+		password = []byte(certConfig.CertificatePassword)
+	}
+
+	certs, key, err := azidentity.ParseCertificates(certData, password)
+	if err != nil {
+		return nil, errors.New("failed to parse certificate data: " + err.Error())
+	}
+
+	opts := &azidentity.ClientCertificateCredentialOptions{
+		ClientOptions:        *clientOpts,
+		SendCertificateChain: certConfig.SendCertificateChain,
+	}
+
+	return azidentity.NewClientCertificateCredential(
+		certConfig.TenantID,
+		certConfig.ClientID,
+		certs,
+		key,
+		opts,
+	)
 }
 
 // newTokenProvider helps to fetch accessToken for different types of credential. This also takes care of

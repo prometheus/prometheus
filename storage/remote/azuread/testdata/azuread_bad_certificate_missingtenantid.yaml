@@ -1,0 +1,4 @@
+cloud: AzurePublic
+certificate:
+  client_id: 00000000-0000-0000-0000-000000000000
+  certificate_path: /path/to/certificate.pem
