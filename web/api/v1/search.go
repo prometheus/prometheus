@@ -45,6 +45,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -557,7 +558,6 @@ func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWr
 	// firstWarnings' canonical order.
 	trailerWarnings := searchWarnings(rs)
 	slices.Sort(trailerWarnings)
-	trailerWarnings := searchWarnings(rs)
 	if slices.Equal(trailerWarnings, firstWarnings) {
 		trailerWarnings = nil
 	}
