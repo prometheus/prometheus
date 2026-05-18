@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -40,6 +41,7 @@ type readHandler struct {
 	remoteReadMaxBytesInFrame int
 	remoteReadGate            *gate.Gate
 	queries                   prometheus.Gauge
+	gateWaitDuration          prometheus.Histogram
 	marshalPool               *sync.Pool
 }
 
@@ -61,19 +63,32 @@ func NewReadHandler(logger *slog.Logger, r prometheus.Registerer, queryable stor
 			Name:      "queries",
 			Help:      "The current number of remote read queries that are either in execution or queued on the handler.",
 		}),
+
+		gateWaitDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace:                       namespace,
+			Subsystem:                       "remote_read_handler",
+			Name:                            "gate_wait_duration_seconds",
+			Help:                            "How long the remote read handler is waiting for the concurrency gate to allow the query to execute.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			Buckets:                         prometheus.DefBuckets,
+		}),
 	}
 	if r != nil {
-		r.MustRegister(h.queries)
+		r.MustRegister(h.queries, h.gateWaitDuration)
 	}
 	return h
 }
 
 func (h *readHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	start := time.Now()
 	if err := h.remoteReadGate.Start(ctx); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	h.gateWaitDuration.Observe(time.Since(start).Seconds())
 	h.queries.Inc()
 
 	defer h.remoteReadGate.Done()
