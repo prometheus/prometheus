@@ -578,6 +578,9 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 
 	// Any samples replayed till now would already be compacted. Resetting the head chunk.
 	mSeries.nextAt = 0
+	if mSeries.headChunkCount.Load() >= 2 {
+		h.series.decMmapReady(mSeries.ref)
+	}
 	mSeries.headChunks = nil
 	mSeries.headChunkCount.Store(0)
 	mSeries.app = nil
@@ -632,6 +635,29 @@ func (wp *walSubsetProcessor) reuseHistogramBuf() []histogramRecord {
 	return nil
 }
 
+// appendChunkAndMmap appends a sample to ms via appendFn and, if a new head
+// chunk was created, immediately mmaps the now-completed predecessors. Used
+// by WAL replay paths to keep memory bounded by mmapping eagerly rather than
+// waiting for the periodic mmapHeadChunks pass.
+//
+// If the chunk cut + mmap reduces headChunkCount from >= 2 to < 2 (which
+// happens whenever prev >= 2, since mmapChunks always sets the count to 1
+// when it does work), the per-stripe mmap-ready counter is decremented to
+// maintain its invariant.
+func (h *Head) appendChunkAndMmap(ms *memSeries, appendFn func() bool) bool {
+	prev := ms.headChunkCount.Load()
+	chunkCreated := appendFn()
+	if chunkCreated {
+		h.metrics.chunksCreated.Inc()
+		h.metrics.chunks.Inc()
+		_ = ms.mmapChunks(h.chunkDiskMapper)
+		if prev >= 2 {
+			h.series.decMmapReady(ms.ref)
+		}
+	}
+	return chunkCreated
+}
+
 // processWALSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
 // Samples before the minValidTime timestamp are discarded.
@@ -679,11 +705,10 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				h.numStaleSeries.Dec()
 			}
 
-			if _, chunkCreated := ms.append(s.ST, s.T, s.V, 0, appendChunkOpts); chunkCreated {
-				h.metrics.chunksCreated.Inc()
-				h.metrics.chunks.Inc()
-				_ = ms.mmapChunks(h.chunkDiskMapper)
-			}
+			h.appendChunkAndMmap(ms, func() bool {
+				_, chunkCreated := ms.append(s.ST, s.T, s.V, 0, appendChunkOpts)
+				return chunkCreated
+			})
 			if s.T > maxt {
 				maxt = s.T
 			}
@@ -709,7 +734,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if s.t <= ms.mmMaxTime {
 				continue
 			}
-			var chunkCreated, newlyStale, staleToNonStale bool
+			var newlyStale, staleToNonStale bool
 			if s.h != nil {
 				newlyStale = value.IsStaleNaN(s.h.Sum)
 				if ms.lastHistogramValue != nil {
@@ -717,7 +742,10 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 					staleToNonStale = value.IsStaleNaN(ms.lastHistogramValue.Sum) && !value.IsStaleNaN(s.h.Sum)
 				}
 				// TODO(krajorama,ywwg): Pass ST when available in WBL.
-				_, chunkCreated = ms.appendHistogram(0, s.t, s.h, 0, appendChunkOpts)
+				h.appendChunkAndMmap(ms, func() bool {
+					_, chunkCreated := ms.appendHistogram(0, s.t, s.h, 0, appendChunkOpts)
+					return chunkCreated
+				})
 			} else {
 				newlyStale = value.IsStaleNaN(s.fh.Sum)
 				if ms.lastFloatHistogramValue != nil {
@@ -725,18 +753,16 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 					staleToNonStale = value.IsStaleNaN(ms.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.fh.Sum)
 				}
 				// TODO(krajorama,ywwg): Pass ST when available in WBL.
-				_, chunkCreated = ms.appendFloatHistogram(0, s.t, s.fh, 0, appendChunkOpts)
+				h.appendChunkAndMmap(ms, func() bool {
+					_, chunkCreated := ms.appendFloatHistogram(0, s.t, s.fh, 0, appendChunkOpts)
+					return chunkCreated
+				})
 			}
 			if newlyStale {
 				h.numStaleSeries.Inc()
 			}
 			if staleToNonStale {
 				h.numStaleSeries.Dec()
-			}
-			if chunkCreated {
-				h.metrics.chunksCreated.Inc()
-				h.metrics.chunks.Inc()
-				_ = ms.mmapChunks(h.chunkDiskMapper)
 			}
 			if s.t > maxt {
 				maxt = s.t
@@ -1661,7 +1687,11 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 				}
 				series.nextAt = csr.mc.maxTime // This will create a new chunk on append.
 				series.headChunks = csr.mc
-				series.headChunkCount.Store(uint32(csr.mc.len()))
+				chunkCount := uint32(csr.mc.len())
+				series.headChunkCount.Store(chunkCount)
+				if chunkCount >= 2 {
+					h.series.incMmapReady(series.ref)
+				}
 				series.lastValue = csr.lastValue
 				series.lastHistogramValue = csr.lastHistogramValue
 				series.lastFloatHistogramValue = csr.lastFloatHistogramValue
