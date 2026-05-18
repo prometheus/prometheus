@@ -247,32 +247,38 @@ func validateHistogramRange(h []HPoint, isCounter bool, annos *annotations.Annot
 	return true
 }
 
-// innerHistogramBounds returns the (first, last) indices for the inner slice
-// passed to correctForCounterResetsHistogram. firstSampleIndex is always
-// excluded because it is already represented by left (directly or via
-// interpolation). When the left-boundary interpolation itself spanned a reset
-// (smoothed mode, first sample before rangeStart, DetectReset true), the reset
-// between firstSampleIndex and firstSampleIndex+1 is already accounted for, so
-// firstSampleIndex+1 is also excluded. lastSampleIndex is excluded when its
-// timestamp is at or after rangeEnd, mirroring the float version.
-func innerHistogramBounds(h []HPoint, firstSampleIndex, lastSampleIndex int, rangeStart, rangeEnd int64, smoothed bool) (int, int) {
+// correctForCounterResetsHistogram calculates the histogram correction for
+// counter resets between firstSampleIndex and lastSampleIndex in h, using
+// left and right as the boundary values. It mirrors correctForCounterResets
+// for float samples. It returns the accumulated correction (nil if none),
+// any annotations, and false if combining histograms failed.
+func correctForCounterResetsHistogram(h []HPoint, firstSampleIndex, lastSampleIndex int, left, right *histogram.FloatHistogram, rangeStart int64, smoothed bool, metricName string, pos posrange.PositionRange) (*histogram.FloatHistogram, annotations.Annotations, bool) {
+	// firstSampleIndex is represented by left, so the loop starts one beyond.
 	first := firstSampleIndex + 1
+	prev := left
 	if smoothed && h[firstSampleIndex].T < rangeStart && h[firstSampleIndex+1].H.DetectReset(h[firstSampleIndex].H) {
+		// The left interpolation spanned the reset between h[firstSampleIndex]
+		// and h[firstSampleIndex+1]. That reset is already accounted for, so
+		// skip h[firstSampleIndex+1] from the loop and use it as the comparison
+		// anchor for any reset that immediately follows.
+		prev = h[firstSampleIndex+1].H
 		first++
 	}
-	last := lastSampleIndex
-	if h[last].T >= rangeEnd {
-		last--
-	}
-	return first, last
-}
+	// lastSampleIndex is always excluded: right is either a direct copy of
+	// h[lastSampleIndex] or an interpolation that inherits its CounterResetHint.
+	// Including h[lastSampleIndex] in the loop would make right.DetectReset
+	// self-detect on the same hint. The final right.DetectReset(prev) below
+	// handles the right-boundary reset safely once h[lastSampleIndex] is not prev.
+	last := lastSampleIndex - 1
 
-// correctForCounterResetsHistogram calculates the histogram correction for
-// counter resets in points, using left and right as the boundary samples.
-// It is only used by extendedHistogramRate. It returns the accumulated
-// correction (nil if no resets were detected), any annotations produced, and
-// false if combining histograms failed.
-func correctForCounterResetsHistogram(left, right *histogram.FloatHistogram, points []HPoint, metricName string, pos posrange.PositionRange) (*histogram.FloatHistogram, annotations.Annotations, bool) {
+	// first > last+1 only when leftInterpolationHandledReset is true and there
+	// is only one sample interval (lastSampleIndex == firstSampleIndex+1).
+	// Both left and right were interpolated from the same reset segment, so
+	// there is nothing more to correct.
+	if first > last+1 {
+		return nil, nil, true
+	}
+
 	var (
 		correction *histogram.FloatHistogram
 		annos      annotations.Annotations
@@ -286,8 +292,7 @@ func correctForCounterResetsHistogram(left, right *histogram.FloatHistogram, poi
 		return addHistogramWithAnnotations(correction, h, &annos, metricName, pos)
 	}
 
-	prev := left
-	for _, p := range points {
+	for _, p := range h[first : last+1] {
 		if p.H.DetectReset(prev) {
 			if !addCorrection(prev) {
 				return nil, annos, false
@@ -411,16 +416,13 @@ func extendedHistogramRate(vals Matrix, args parser.Expressions, enh *EvalNodeHe
 	}
 
 	if isCounter {
-		first, last := innerHistogramBounds(h, firstSampleIndex, lastSampleIndex, rangeStart, rangeEnd, smoothed)
-		if first <= last {
-			correction, newAnnos, ok := correctForCounterResetsHistogram(left, right, h[first:last+1], metricName, pos)
-			annos.Merge(newAnnos)
-			if !ok {
-				return enh.Out, annos
-			}
-			if correction != nil && !addHistogramWithAnnotations(resultHistogram, correction, &annos, metricName, pos) {
-				return enh.Out, annos
-			}
+		correction, newAnnos, ok := correctForCounterResetsHistogram(h, firstSampleIndex, lastSampleIndex, left, right, rangeStart, smoothed, metricName, pos)
+		annos.Merge(newAnnos)
+		if !ok {
+			return enh.Out, annos
+		}
+		if correction != nil && !addHistogramWithAnnotations(resultHistogram, correction, &annos, metricName, pos) {
+			return enh.Out, annos
 		}
 	}
 	if isRate {

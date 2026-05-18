@@ -604,6 +604,51 @@ load 10s
 eval instant at 20s500ms histogram_count(rate(reset_boundary[1s] smoothed))
     {} 9.7
 
+# Anchored increase with reset at last sample (T < rangeEnd): the reset hint on
+# h[2] must not self-detect when right is a direct copy of h[2].
+# Float reference (5 10 3): increase = 10 - 5 + 10 - 3? No: right - left + correction.
+# left=5 right=3 correction=h[1]=10 → 8. Bug returns 11 (adds h[2]=3 twice).
+clear
+load 30s
+  anchored_reset_at_end {{schema:0 sum:5 count:5 buckets:[5]}} {{schema:0 sum:10 count:10 buckets:[10]}} {{schema:0 sum:3 count:3 buckets:[3] counter_reset_hint:reset}}
+
+eval instant at 70s histogram_count(increase(anchored_reset_at_end[70s] anchored))
+    {} 8
+
+# Anchored increase with only two samples, second is a reset at rangeEnd.
+# The two-sample case must still apply the reset correction even though the
+# inner slice is empty after excluding both boundary samples.
+# Float reference: right - left + correction = 3 - 5 + 5 = 3.
+clear
+load 30s
+  anchored_two_sample_reset {{schema:0 sum:5 count:5 buckets:[5]}} {{schema:0 sum:3 count:3 buckets:[3] counter_reset_hint:reset}}
+
+eval instant at 30s histogram_count(increase(anchored_two_sample_reset[30s] anchored))
+    {} 3
+
+# Smoothed increase where the left interpolation crosses the first reset and a
+# second reset immediately follows the skipped sample. The correction must be
+# taken against h[firstSampleIndex+1] (count=5), not the interpolated left
+# (count=0.5). Float reference: 5.5.
+clear
+load 10s
+  smoothed_double_reset {{schema:0 sum:10 count:10 buckets:[10]}} {{schema:0 sum:5 count:5 buckets:[5] counter_reset_hint:reset}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:reset}} {{schema:0 sum:4 count:4 buckets:[4]}}
+
+eval instant at 15s histogram_count(increase(smoothed_double_reset[14s] smoothed))
+    {} 5.5
+
+# Two-sample smoothed window where both left and right are interpolated from the
+# same reset. The left interpolation already accounts for the reset, so no
+# correction should be applied. Float reference: right-left = h[1].Mul(0.75) -
+# h[1].Mul(0.25) = h[1].Mul(0.5) = count 2.5. (prev initialPrev path must not
+# fire here, since first > last+1 for this two-sample case.)
+clear
+load 20s
+  smoothed_two_sample_both_interp {{schema:0 sum:10 count:10 buckets:[10]}} {{schema:0 sum:5 count:5 buckets:[5] counter_reset_hint:reset}}
+
+eval instant at 15s histogram_count(increase(smoothed_two_sample_both_interp[10s] smoothed))
+    {} 2.5
+
 # Smoothed vector selector emits MixedExponentialCustomHistogramsWarning and
 # produces no result when interpolating between exponential and custom-bucket
 # histograms. At t=45s: prev=t=30 (custom), next=t=60 (exp) → skip + warn.
