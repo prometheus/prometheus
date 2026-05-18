@@ -1057,6 +1057,24 @@ load 10s
 			},
 		},
 		{
+			Query:        "rate(metricWith3SampleEvery10Seconds[60s])[60s:5s]",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 216, // 3/10 * 60 * 12 = 216 (3 samples per 10s, 60s range, 12 subquery evaluations)
+			PeakSamples:  42,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 216,
+			},
+		},
+		{
+			Query:        "max_over_time(rate(metricWith3SampleEvery10Seconds[60s])[60s:5s])",
+			Start:        time.Unix(201, 0),
+			PeakSamples:  51,
+			TotalSamples: 216, // Should match the subquery above: 3/10 * 60 * 12 = 216
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 216,
+			},
+		},
+		{
 			Query:        "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
 			Start:        time.Unix(201, 0),
 			PeakSamples:  51,
