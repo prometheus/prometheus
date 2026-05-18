@@ -40,6 +40,7 @@ type ecsDataStore struct {
 }
 
 func TestECSDiscoveryListClusterARNs(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// iterate through the test cases
@@ -114,6 +115,7 @@ func TestECSDiscoveryListClusterARNs(t *testing.T) {
 }
 
 func TestECSDiscoveryDescribeClusters(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// iterate through the test cases
@@ -212,6 +214,7 @@ func TestECSDiscoveryDescribeClusters(t *testing.T) {
 }
 
 func TestECSDiscoveryListServiceARNs(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	for _, tt := range []struct {
@@ -310,6 +313,7 @@ func TestECSDiscoveryListServiceARNs(t *testing.T) {
 }
 
 func TestECSDiscoveryDescribeServices(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	for _, tt := range []struct {
@@ -402,6 +406,7 @@ func TestECSDiscoveryDescribeServices(t *testing.T) {
 }
 
 func TestECSDiscoveryDescribeContainerInstances(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	for _, tt := range []struct {
@@ -506,6 +511,7 @@ func TestECSDiscoveryDescribeContainerInstances(t *testing.T) {
 }
 
 func TestECSDiscoveryDescribeEC2Instances(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	for _, tt := range []struct {
@@ -619,6 +625,7 @@ func TestECSDiscoveryDescribeEC2Instances(t *testing.T) {
 }
 
 func TestECSDiscoveryDescribeNetworkInterfaces(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	for _, tt := range []struct {
@@ -760,6 +767,7 @@ func TestECSDiscoveryDescribeNetworkInterfaces(t *testing.T) {
 }
 
 func TestECSDiscoveryListTaskARNs(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// iterate through the test cases
@@ -834,6 +842,7 @@ func TestECSDiscoveryListTaskARNs(t *testing.T) {
 }
 
 func TestECSDiscoveryDescribeTasks(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// iterate through the test cases
@@ -923,6 +932,7 @@ func TestECSDiscoveryDescribeTasks(t *testing.T) {
 }
 
 func TestECSDiscoveryRefresh(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	tests := []struct {
@@ -1712,6 +1722,7 @@ func (m *mockECSEC2Client) DescribeNetworkInterfaces(_ context.Context, input *e
 }
 
 func TestIsStandaloneTask(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		task     ecsTypes.Task
@@ -1763,6 +1774,7 @@ func TestIsStandaloneTask(t *testing.T) {
 }
 
 func TestGetServiceNameFromTaskGroup(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		task     ecsTypes.Task

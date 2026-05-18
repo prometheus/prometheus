@@ -30,6 +30,7 @@ import (
 )
 
 func TestRoleUnmarshalYAML(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -84,6 +85,7 @@ func TestRoleUnmarshalYAML(t *testing.T) {
 }
 
 func TestRoleString(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		role     Role
@@ -114,16 +116,19 @@ func TestRoleString(t *testing.T) {
 }
 
 func TestSDConfigName(t *testing.T) {
+	t.Parallel()
 	cfg := &SDConfig{}
 	require.Equal(t, "aws", cfg.Name())
 }
 
 func TestDefaultSDConfig(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, Role(""), DefaultSDConfig.Role)
 	require.Equal(t, model.Duration(60*time.Second), DefaultSDConfig.RefreshInterval)
 }
 
 func TestSDConfigUnmarshalYAML(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		yaml         string
@@ -189,6 +194,7 @@ port: 9300`,
 // all configs pointed to the same global default, causing port and other
 // settings from one job to overwrite settings in another job.
 func TestMultipleSDConfigsDoNotShareState(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		yaml         string
@@ -489,6 +495,7 @@ region = ` + randomRegion + `
 }
 
 func TestSDConfigSetDirectory(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	tests := []struct {
 		name string
