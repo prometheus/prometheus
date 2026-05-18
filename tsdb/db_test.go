@@ -3184,7 +3184,7 @@ func TestCompactHead(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// Compact the Head to create a new block.
-	require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), 0, int64(maxt)-1)))
+	require.NoError(t, db.CompactHead(ctx, NewRangeHead(db.Head(), 0, int64(maxt)-1)))
 	require.NoError(t, db.Close())
 
 	// Delete everything but the new block and
@@ -3229,7 +3229,76 @@ func TestCompactHeadWithDeletion(t *testing.T) {
 	require.NoError(t, err)
 
 	// This recreates the bug.
-	require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), 0, 100)))
+	require.NoError(t, db.CompactHead(ctx, NewRangeHead(db.Head(), 0, 100)))
+}
+
+// TestCompactCancellation verifies that Compact returns when its context is
+// canceled while it is waiting for in-flight appenders that overlap the
+// compaction range to finish.
+func TestCompactCancellation(t *testing.T) {
+	t.Parallel()
+
+	blockRange := int64(1000)
+	opts := &Options{
+		RetentionDuration: blockRange * 1000,
+		NoLockfile:        true,
+		MinBlockDuration:  blockRange,
+		MaxBlockDuration:  blockRange,
+	}
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	lbls := labels.FromStrings("foo", "bar")
+
+	// Initialise the head with a sample at t=0 so that subsequent appenders
+	// take the regular path and register with isolation.
+	app := db.Appender(context.Background())
+	_, err := app.Append(0, lbls, 0, 0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Open another appender and keep it open. Its isolation minTime is
+	// captured at creation (currently 0) and will overlap the compaction
+	// range even after the head grows past it, forcing Compact() to wait.
+	pending := db.Appender(context.Background())
+	defer func() { require.NoError(t, pending.Rollback()) }()
+
+	// Extend MaxTime past 1.5 * blockRange so the head becomes compactable.
+	app = db.Appender(context.Background())
+	_, err = app.Append(0, lbls, 2*blockRange, 0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.True(t, db.head.compactable(), "head should be compactable")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- db.Compact(ctx)
+	}()
+
+	// Confirm Compact is blocked waiting for `pending` rather than returning
+	// on its own, then cancel and check that it observes the cancellation.
+	select {
+	case err := <-errCh:
+		t.Fatalf("Compact returned before cancel: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	cancel()
+
+	select {
+	case err := <-errCh:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Compact did not return after context cancellation")
+	}
+
+	// No block was created.
+	require.Empty(t, db.Blocks())
+	// Cancellation is explicitly excluded from the failure counter.
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed))
 }
 
 func deleteNonBlocks(dbDir string) error {
@@ -5211,7 +5280,7 @@ func testOOOCompaction(t *testing.T, scenario sampleTypeScenario, addExtraSample
 
 	// Compact the in-order head and expect another block.
 	// Since this is a forced compaction, this block is not aligned with 2h.
-	err = db.CompactHead(NewRangeHead(db.head, 250*time.Minute.Milliseconds(), 350*time.Minute.Milliseconds()))
+	err = db.CompactHead(ctx, NewRangeHead(db.head, 250*time.Minute.Milliseconds(), 350*time.Minute.Milliseconds()))
 	require.NoError(t, err)
 	require.Len(t, db.Blocks(), 4) // [0, 120), [120, 240), [240, 360), [250, 351)
 	verifySamples(db.Blocks()[3], 250, highest)
@@ -7350,7 +7419,7 @@ func TestOOOHistogramCompactionWithCounterResets(t *testing.T) {
 
 		// Compact the in-order head and expect another block.
 		// Since this is a forced compaction, this block is not aligned with 2h.
-		err = db.CompactHead(NewRangeHead(db.head, 500*time.Minute.Milliseconds(), 550*time.Minute.Milliseconds()))
+		err = db.CompactHead(ctx, NewRangeHead(db.head, 500*time.Minute.Milliseconds(), 550*time.Minute.Milliseconds()))
 		require.NoError(t, err)
 		require.Len(t, db.Blocks(), 6)
 		verifyBlockSamples(db.Blocks()[5], 520, 520)
@@ -7453,7 +7522,7 @@ func TestInterleavedInOrderAndOOOHistogramCompactionWithCounterResets(t *testing
 
 		// Compact the in-order head and expect another block.
 		// Since this is a forced compaction, this block is not aligned with 2h.
-		require.NoError(t, db.CompactHead(NewRangeHead(db.head, 0, 3)))
+		require.NoError(t, db.CompactHead(ctx, NewRangeHead(db.head, 0, 3)))
 		require.Len(t, db.Blocks(), 2)
 
 		// Blocks created out of normal and OOO head now. But not merged.
@@ -7612,7 +7681,7 @@ func testOOOCompactionFailure(t *testing.T, scenario sampleTypeScenario) {
 
 	// Compact the in-order head and expect another block.
 	// Since this is a forced compaction, this block is not aligned with 2h.
-	err = db.CompactHead(NewRangeHead(db.head, 250*time.Minute.Milliseconds(), 350*time.Minute.Milliseconds()))
+	err = db.CompactHead(ctx, NewRangeHead(db.head, 250*time.Minute.Milliseconds(), 350*time.Minute.Milliseconds()))
 	require.NoError(t, err)
 	require.Len(t, db.Blocks(), 4) // [0, 120), [120, 240), [240, 360), [250, 351)
 	verifySamples(db.Blocks()[3], 250, 350)
@@ -8761,7 +8830,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		}
 
 		require.Empty(t, db.Blocks())
-		require.NoError(t, db.reload())
+		require.NoError(t, db.reload(context.Background()))
 		require.Len(t, db.Blocks(), len(blockSeries))
 
 		q, err := db.Querier(math.MinInt64, math.MaxInt64)
@@ -8778,7 +8847,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		ids, err := db.compactor.Compact(db.Dir(), blockDirs, blocks)
 		require.NoError(t, err)
 		require.Len(t, ids, 1)
-		require.NoError(t, db.reload())
+		require.NoError(t, db.reload(t.Context()))
 		require.Len(t, db.Blocks(), 1)
 
 		q, err = db.Querier(math.MinInt64, math.MaxInt64)
@@ -9493,7 +9562,7 @@ func TestStaleSeriesCompaction(t *testing.T) {
 	addNormalSamples(1100, staleSeriesCrossingBoundary, staleHistCrossingBoundary, staleFHistCrossingBoundary)
 	addStaleSamples(1200, staleSeriesCrossingBoundary, staleHistCrossingBoundary, staleFHistCrossingBoundary)
 
-	require.NoError(t, db.CompactStaleHead())
+	require.NoError(t, db.CompactStaleHead(t.Context()))
 
 	require.Equal(t, uint64(3*numSeriesPerCategory), db.Head().NumSeries())
 	require.Equal(t, uint64(0), db.Head().NumStaleSeries())
@@ -9509,7 +9578,7 @@ func TestStaleSeriesCompaction(t *testing.T) {
 	require.Truef(t, m.Compaction.FromStaleSeries(), "stale series info not found in block meta")
 
 	// To make sure that Head is not truncated based on stale series block.
-	require.NoError(t, db.reload())
+	require.NoError(t, db.reload(t.Context()))
 
 	nonFirstH := h.Copy()
 	nonFirstH.CounterResetHint = histogram.NotCounterReset
@@ -9647,7 +9716,7 @@ func TestStaleSeriesCompactionWithZeroSeries(t *testing.T) {
 	require.Equal(t, uint64(0), db.Head().NumStaleSeries())
 
 	// CompactStaleHead should handle zero series gracefully (no panic, no error).
-	require.NoError(t, db.CompactStaleHead())
+	require.NoError(t, db.CompactStaleHead(t.Context()))
 
 	// Should still have no blocks since there was nothing to compact.
 	require.Empty(t, db.Blocks())

@@ -2318,7 +2318,7 @@ func TestCompactHead_AppendV2(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// Compact the Head to create a new block.
-	require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), 0, int64(maxt)-1)))
+	require.NoError(t, db.CompactHead(ctx, NewRangeHead(db.Head(), 0, int64(maxt)-1)))
 	require.NoError(t, db.Close())
 
 	// Delete everything but the new block and
@@ -2363,7 +2363,7 @@ func TestCompactHeadWithDeletion_AppendV2(t *testing.T) {
 	require.NoError(t, err)
 
 	// This recreates the bug.
-	require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), 0, 100)))
+	require.NoError(t, db.CompactHead(ctx, NewRangeHead(db.Head(), 0, 100)))
 	require.NoError(t, db.Close())
 }
 
@@ -3940,7 +3940,7 @@ func testOOOCompactionAppenderV2(t *testing.T, scenario sampleTypeScenario, addE
 
 	// Compact the in-order head and expect another block.
 	// Since this is a forced compaction, this block is not aligned with 2h.
-	err = db.CompactHead(NewRangeHead(db.head, 250*time.Minute.Milliseconds(), 350*time.Minute.Milliseconds()))
+	err = db.CompactHead(ctx, NewRangeHead(db.head, 250*time.Minute.Milliseconds(), 350*time.Minute.Milliseconds()))
 	require.NoError(t, err)
 	require.Len(t, db.Blocks(), 4) // [0, 120), [120, 240), [240, 360), [250, 351)
 	verifySamples(db.Blocks()[3], 250, highest)
@@ -6079,7 +6079,7 @@ func TestOOOHistogramCompactionWithCounterResets_AppendV2(t *testing.T) {
 
 		// Compact the in-order head and expect another block.
 		// Since this is a forced compaction, this block is not aligned with 2h.
-		err = db.CompactHead(NewRangeHead(db.head, 500*time.Minute.Milliseconds(), 550*time.Minute.Milliseconds()))
+		err = db.CompactHead(t.Context(), NewRangeHead(db.head, 500*time.Minute.Milliseconds(), 550*time.Minute.Milliseconds()))
 		require.NoError(t, err)
 		require.Len(t, db.Blocks(), 6)
 		verifyBlockSamples(db.Blocks()[5], 520, 520)
@@ -6182,7 +6182,7 @@ func TestInterleavedInOrderAndOOOHistogramCompactionWithCounterResets_AppendV2(t
 
 		// Compact the in-order head and expect another block.
 		// Since this is a forced compaction, this block is not aligned with 2h.
-		err := db.CompactHead(NewRangeHead(db.head, 0, 3))
+		err := db.CompactHead(ctx, NewRangeHead(db.head, 0, 3))
 		require.NoError(t, err)
 		require.Len(t, db.Blocks(), 2)
 
@@ -6333,7 +6333,7 @@ func testOOOCompactionFailureAppendV2(t *testing.T, scenario sampleTypeScenario)
 
 	// Compact the in-order head and expect another block.
 	// Since this is a forced compaction, this block is not aligned with 2h.
-	err = db.CompactHead(NewRangeHead(db.head, 250*time.Minute.Milliseconds(), 350*time.Minute.Milliseconds()))
+	err = db.CompactHead(ctx, NewRangeHead(db.head, 250*time.Minute.Milliseconds(), 350*time.Minute.Milliseconds()))
 	require.NoError(t, err)
 	require.Len(t, db.Blocks(), 4) // [0, 120), [120, 240), [240, 360), [250, 351)
 	verifySamples(db.Blocks()[3], 250, 350)
@@ -7530,7 +7530,7 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 	}
 	require.NoError(t, app.Commit())
 
-	require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), int64(mint), int64(maxt)-1)))
+	require.NoError(t, db.CompactHead(ctx, NewRangeHead(db.Head(), int64(mint), int64(maxt)-1)))
 	require.Len(t, db.Blocks(), 1)
 	b := db.Blocks()[0]
 

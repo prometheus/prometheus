@@ -855,7 +855,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 	require.NoError(t, app.Commit())
 	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
-	require.NoError(t, head.Truncate(1600))
+	require.NoError(t, head.Truncate(context.Background(), 1600))
 
 	app = head.Appender(context.Background())
 	ref2, err := app.Append(0, labels.FromStrings("foo", "bar"), 1700, 3)
@@ -937,7 +937,7 @@ func TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative(t *testing.T) {
 
 	// Truncate stale series: removes ref1 from the head and writes a
 	// [MinInt64, MaxInt64] tombstone record to the WAL.
-	require.NoError(t, head.truncateStaleSeries([]storage.SeriesRef{ref1}, 3500))
+	require.NoError(t, head.truncateStaleSeries(t.Context(), []storage.SeriesRef{ref1}, 3500))
 
 	// Append a single sample with the same labels to create ref2.
 	// Ref2 has 0 m-mapped chunks, fewer than ref1's 3.
@@ -1443,7 +1443,7 @@ func BenchmarkHead_Truncate(b *testing.B) {
 			b.ResetTimer()
 
 			for i := 0; b.Loop(); i++ {
-				require.NoError(b, h.Truncate(1000*int64(i)))
+				require.NoError(b, h.Truncate(b.Context(), 1000*int64(i)))
 				// Make sure the benchmark is meaningful and it's actually truncating the expected amount of series.
 				require.Equal(b, total-churn*i, int(h.NumSeries()))
 			}
@@ -1480,9 +1480,9 @@ func TestHead_Truncate(t *testing.T) {
 	s4.mmappedChunks = []*mmappedChunk{}
 
 	// Truncation need not be aligned.
-	require.NoError(t, h.Truncate(1))
+	require.NoError(t, h.Truncate(context.Background(), 1))
 
-	require.NoError(t, h.Truncate(2000))
+	require.NoError(t, h.Truncate(context.Background(), 2000))
 
 	require.Equal(t, []*mmappedChunk{
 		{minTime: 2000, maxTime: 2999},
@@ -1983,7 +1983,7 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 	require.NoError(t, hb.Delete(context.Background(), 0, int64(numSamples), labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
-	require.NoError(t, hb.Truncate(1))
+	require.NoError(t, hb.Truncate(context.Background(), 1))
 	require.NoError(t, hb.Close())
 
 	// Confirm there's been a checkpoint.
@@ -2559,7 +2559,7 @@ func TestGCChunkAccess(t *testing.T) {
 	_, _, err = cr.ChunkOrIterable(chnks[1])
 	require.NoError(t, err)
 
-	require.NoError(t, h.Truncate(1500)) // Remove a chunk.
+	require.NoError(t, h.Truncate(context.Background(), 1500)) // Remove a chunk.
 
 	_, _, err = cr.ChunkOrIterable(chnks[0])
 	require.Equal(t, storage.ErrNotFound, err)
@@ -2615,7 +2615,7 @@ func TestGCSeriesAccess(t *testing.T) {
 	_, _, err = cr.ChunkOrIterable(chunks[1])
 	require.NoError(t, err)
 
-	require.NoError(t, h.Truncate(2000)) // Remove the series.
+	require.NoError(t, h.Truncate(context.Background(), 2000)) // Remove the series.
 
 	require.Equal(t, (*memSeries)(nil), h.series.getByID(1))
 
@@ -2635,7 +2635,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 	_, err := app.Append(0, lset, 2100, 1)
 	require.NoError(t, err)
 
-	require.NoError(t, h.Truncate(2000))
+	require.NoError(t, h.Truncate(context.Background(), 2000))
 	require.NotNil(t, h.series.getByHash(lset.Hash(), lset), "series should not have been garbage collected")
 
 	require.NoError(t, app.Commit())
@@ -2662,7 +2662,7 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 	_, err := app.Append(0, lset, 2100, 1)
 	require.NoError(t, err)
 
-	require.NoError(t, h.Truncate(2000))
+	require.NoError(t, h.Truncate(context.Background(), 2000))
 	require.NotNil(t, h.series.getByHash(lset.Hash(), lset), "series should not have been garbage collected")
 
 	require.NoError(t, app.Rollback())
@@ -2676,7 +2676,7 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 	require.NoError(t, q.Close())
 
 	// Truncate again, this time the series should be deleted
-	require.NoError(t, h.Truncate(2050))
+	require.NoError(t, h.Truncate(context.Background(), 2050))
 	require.Equal(t, (*memSeries)(nil), h.series.getByHash(lset.Hash(), lset))
 }
 
@@ -2992,13 +2992,13 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 	require.Equal(t, 0, last)
 
 	add(1)
-	require.NoError(t, h.Truncate(1))
+	require.NoError(t, h.Truncate(context.Background(), 1))
 	_, last, err = wlog.Segments(wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 1, last)
 
 	add(2)
-	require.NoError(t, h.Truncate(2))
+	require.NoError(t, h.Truncate(context.Background(), 2))
 	_, last, err = wlog.Segments(wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 2, last)
@@ -3746,19 +3746,19 @@ func TestHeadMintAfterTruncation(t *testing.T) {
 
 	// Truncating outside the appendable window and actual mint being outside
 	// appendable window should leave mint at the actual mint.
-	require.NoError(t, head.Truncate(3500))
+	require.NoError(t, head.Truncate(context.Background(), 3500))
 	require.Equal(t, int64(4000), head.MinTime())
 	require.Equal(t, int64(4000), head.minValidTime.Load())
 
 	// After truncation outside the appendable window if the actual min time
 	// is in the appendable window then we should leave mint at the start of appendable window.
-	require.NoError(t, head.Truncate(5000))
+	require.NoError(t, head.Truncate(context.Background(), 5000))
 	require.Equal(t, head.appendableMinValidTime(), head.MinTime())
 	require.Equal(t, head.appendableMinValidTime(), head.minValidTime.Load())
 
 	// If the truncation time is inside the appendable window, then the min time
 	// should be the truncation time.
-	require.NoError(t, head.Truncate(7500))
+	require.NoError(t, head.Truncate(context.Background(), 7500))
 	require.Equal(t, int64(7500), head.MinTime())
 	require.Equal(t, int64(7500), head.minValidTime.Load())
 }
@@ -4080,7 +4080,7 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
 					var waitOver atomic.Bool
 					go func() {
-						db.head.WaitForPendingReadersInTimeRange(truncMint, truncMaxt)
+						db.head.WaitForPendingReadersInTimeRange(t.Context(), truncMint, truncMaxt)
 						waitOver.Store(true)
 					}()
 
@@ -6261,7 +6261,7 @@ func testHeadMinOOOTimeUpdate(t *testing.T, scenario sampleTypeScenario) {
 	require.Equal(t, 295*time.Minute.Milliseconds(), h.MinOOOTime())
 
 	// Allowed window for OOO is >=290, which is before the earliest ooo sample 295, so it gets set to the lower value.
-	require.NoError(t, h.truncateOOO(0, 1))
+	require.NoError(t, h.truncateOOO(t.Context(), 0, 1))
 	require.Equal(t, 290*time.Minute.Milliseconds(), h.MinOOOTime())
 
 	appendSample(310) // In-order sample.
@@ -6270,7 +6270,7 @@ func testHeadMinOOOTimeUpdate(t *testing.T, scenario sampleTypeScenario) {
 
 	// Now the OOO sample 295 was not gc'ed yet. And allowed window for OOO is now >=300.
 	// So the lowest among them, 295, is set as minOOOTime.
-	require.NoError(t, h.truncateOOO(0, 2))
+	require.NoError(t, h.truncateOOO(t.Context(), 0, 2))
 	require.Equal(t, 295*time.Minute.Milliseconds(), h.MinOOOTime())
 }
 
@@ -6781,7 +6781,7 @@ func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
 	app = h.Appender(context.Background())
 	_, err = app.AppendExemplar(ref, lbls, exemplar.Exemplar{Value: 1, Ts: 20})
 	require.NoError(t, err)
-	h.Truncate(10)
+	h.Truncate(context.Background(), 10)
 	app.Commit()
 }
 
@@ -7480,7 +7480,7 @@ func TestHead_NumStaleSeries(t *testing.T) {
 
 	// Test garbage collection behavior - stale series should be decremented when GC'd.
 	// Force a garbage collection by truncating old data.
-	require.NoError(t, head.Truncate(300))
+	require.NoError(t, head.Truncate(t.Context(), 300))
 
 	// After truncation, run GC to collect old chunks/series.
 	head.gc()
@@ -7993,7 +7993,7 @@ func TestWALReplayRaceWithStaleSeriesCompaction(t *testing.T) {
 		require.NotNil(t, ms)
 		staleRefs = append(staleRefs, storage.SeriesRef(ms.ref))
 	}
-	require.NoError(t, head.truncateStaleSeries(staleRefs, 300))
+	require.NoError(t, head.truncateStaleSeries(t.Context(), staleRefs, 300))
 	require.Equal(t, uint64(0), head.NumStaleSeries())
 	require.Equal(t, uint64(0), head.NumSeries())
 
@@ -8600,7 +8600,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		readyBefore := mmapReadyCounter()
 
 		// Use truncateStaleSeries which calls gcStaleSeries internally.
-		require.NoError(t, h.truncateStaleSeries(
+		require.NoError(t, h.truncateStaleSeries(t.Context(),
 			[]storage.SeriesRef{storage.SeriesRef(sB.ref)}, ts,
 		))
 		requireCounterConsistent("after truncateStaleSeries")
