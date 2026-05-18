@@ -2393,8 +2393,16 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 	case *parser.SubqueryExpr:
 		offsetMillis := durationMilliseconds(e.Offset)
 		rangeMillis := durationMilliseconds(e.Range)
+		// Align the parent end timestamp down to the parent's step grid
+		// before applying the subquery offset, so the subquery does not
+		// evaluate past the parent's last actual step when the caller
+		// supplied an end timestamp that is not step-aligned.
+		parentEnd := ev.endTimestamp
+		if ev.interval > 0 {
+			parentEnd = ev.startTimestamp + ((ev.endTimestamp-ev.startTimestamp)/ev.interval)*ev.interval
+		}
 		newEv := &evaluator{
-			endTimestamp:             ev.endTimestamp - offsetMillis,
+			endTimestamp:             parentEnd - offsetMillis,
 			currentSamples:           ev.currentSamples,
 			maxSamples:               ev.maxSamples,
 			logger:                   ev.logger,
