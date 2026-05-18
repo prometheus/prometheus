@@ -270,22 +270,22 @@ func TestExprString(t *testing.T) {
 			out: "foo offset (5 * 2)",
 		},
 		{
-			in:  "foo offset +min(10s, 20s)",
-			out: "foo offset min(10s, 20s)",
+			in:  "foo offset +least(10s, 20s)",
+			out: "foo offset least(10s, 20s)",
 		},
 		{
-			in: "foo offset -min(10s, 20s)",
+			in: "foo offset -least(10s, 20s)",
 		},
 		{
-			in:  "foo offset -min(10s, +max(step() ^ 2, 2))",
-			out: "foo offset -min(10s, max(step() ^ 2, 2))",
+			in:  "foo offset -least(10s, +greatest(step() ^ 2, 2))",
+			out: "foo offset -least(10s, greatest(step() ^ 2, 2))",
 		},
 		{
-			in:  "foo[200-min(-step()^+step(),1)]",
-			out: "foo[200 - min(-step() ^ step(), 1)]",
+			in:  "foo[200-least(-step()^+step(),1)]",
+			out: "foo[200 - least(-step() ^ step(), 1)]",
 		},
 		{
-			in: "foo[200 - min(step() + 10s, -max(step() ^ 2, 3))]",
+			in: "foo[200 - least(step() + 10s, -greatest(step() ^ 2, 3))]",
 		},
 		{
 			in: "foo[range()]",
@@ -300,7 +300,7 @@ func TestExprString(t *testing.T) {
 			in: "foo offset -range()",
 		},
 		{
-			in: "foo[max(range(), 5s)]",
+			in: "foo[greatest(range(), 5s)]",
 		},
 		{
 			in: `predict_linear(foo[1h], 3000)`,

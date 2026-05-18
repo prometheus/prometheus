@@ -143,10 +143,12 @@ var key = map[string]ItemType{
 	"bool":        BOOL,
 
 	// Preprocessors.
-	"start": START,
-	"end":   END,
-	"step":  STEP,
-	"range": RANGE,
+	"start":    START,
+	"end":      END,
+	"step":     STEP,
+	"range":    RANGE,
+	"greatest": GREATEST,
+	"least":    LEAST,
 }
 
 var histogramDesc = map[string]ItemType{
@@ -937,10 +939,10 @@ func lexNumber(l *Lexer) stateFn {
 
 // durationKeywordTokens maps lowercase duration keyword names to their token types.
 var durationKeywordTokens = map[string]ItemType{
-	"step":  STEP,
-	"range": RANGE,
-	"min":   MIN,
-	"max":   MAX,
+	"step":     STEP,
+	"range":    RANGE,
+	"greatest": GREATEST,
+	"least":    LEAST,
 }
 
 // durationKeywordStartChars is the set of lowercase runes that can start a duration keyword,
