@@ -1776,9 +1776,8 @@ var expectedConf = &Config{
 	},
 	StorageConfig: StorageConfig{
 		TSDBConfig: &TSDBConfig{
-			OutOfOrderTimeWindow:           30 * time.Minute.Milliseconds(),
-			OutOfOrderTimeWindowFlag:       model.Duration(30 * time.Minute),
-			StaleSeriesCompactionThreshold: 0.5,
+			OutOfOrderTimeWindow:     30 * time.Minute.Milliseconds(),
+			OutOfOrderTimeWindowFlag: model.Duration(30 * time.Minute),
 			Retention: &TSDBRetentionConfig{
 				Time:       model.Duration(24 * time.Hour),
 				Size:       1 * units.GiB,

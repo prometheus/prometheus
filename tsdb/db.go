@@ -1286,7 +1286,6 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	oooTimeWindow := int64(0)
 	if conf.StorageConfig.TSDBConfig != nil {
 		oooTimeWindow = conf.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
-		db.opts.staleSeriesCompactionThreshold.Store(conf.StorageConfig.TSDBConfig.StaleSeriesCompactionThreshold)
 		// Update retention configuration if provided.
 		if conf.StorageConfig.TSDBConfig.Retention != nil {
 			db.retentionMtx.Lock()
@@ -1298,8 +1297,6 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 			db.metrics.maxPercentage.Set(db.opts.MaxPercentage)
 			db.retentionMtx.Unlock()
 		}
-	} else {
-		db.opts.staleSeriesCompactionThreshold.Store(0)
 	}
 	if oooTimeWindow < 0 {
 		oooTimeWindow = 0
