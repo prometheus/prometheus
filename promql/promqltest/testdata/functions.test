@@ -750,6 +750,19 @@ load 5m
 	node_uname_info{job="node_exporter", instance="4m600", release="1.2.3"} 0+10x10
 	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 0+10x10
 	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 0+10x10
+	response_size_bucket{le="+Inf"} 0+1x10
+	response_size_bucket{le="100"} 0+1x10
+	response_size_bucket{le="100.0"} 0+1x10
+	response_size_bucket{le="1000"} 0+1x10
+	response_size_bucket{le="1000.0"} 0+1x10
+	response_size_bucket{le="10000"} 0+1x10
+	response_size_bucket{le="10000.0"} 0+1x10
+	response_size_bucket{le="100000"} 0+1x10
+	response_size_bucket{le="100000.0"} 0+1x10
+	response_size_bucket{le="1e+06"} 0+1x10
+	response_size_bucket{le="1e+07"} 0+1x10
+	response_size_bucket{le="1e+08"} 0+1x10
+	response_size_bucket{le="1e+09"} 0+1x10
 
 eval instant at 50m sort_by_label(http_requests, "instance")
 	expect ordered
@@ -879,6 +892,37 @@ eval instant at 50m sort_by_label(node_uname_info, "release")
 	node_uname_info{job="node_exporter", instance="4m600", release="1.2.3"} 100
 	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 100
 	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 100
+
+eval instant at 50m sort_by_label(response_size_bucket, "le")
+	expect ordered
+	response_size_bucket{le="+Inf"} 10
+	response_size_bucket{le="100"} 10
+	response_size_bucket{le="100.0"} 10
+	response_size_bucket{le="1000"} 10
+	response_size_bucket{le="1000.0"} 10
+	response_size_bucket{le="10000"} 10
+	response_size_bucket{le="10000.0"} 10
+	response_size_bucket{le="100000"} 10
+	response_size_bucket{le="100000.0"} 10
+	response_size_bucket{le="1e+06"} 10
+	response_size_bucket{le="1e+07"} 10
+	response_size_bucket{le="1e+08"} 10
+	response_size_bucket{le="1e+09"} 10
+
+eval instant at 50m sort_by_label_desc(response_size_bucket{le!="+Inf"}, "le")
+	expect ordered
+	response_size_bucket{le="1e+09"} 10
+	response_size_bucket{le="1e+08"} 10
+	response_size_bucket{le="1e+07"} 10
+	response_size_bucket{le="1e+06"} 10
+	response_size_bucket{le="100000.0"} 10
+	response_size_bucket{le="100000"} 10
+	response_size_bucket{le="10000.0"} 10
+	response_size_bucket{le="10000"} 10
+	response_size_bucket{le="1000.0"} 10
+	response_size_bucket{le="1000"} 10
+	response_size_bucket{le="100.0"} 10
+	response_size_bucket{le="100"} 10
 
 # Tests for double_exponential_smoothing
 clear
