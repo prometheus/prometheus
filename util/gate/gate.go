@@ -13,7 +13,21 @@
 
 package gate
 
-import "context"
+import (
+	"context"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+var gateWaitingDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+	Namespace: "prometheus",
+	Subsystem: "query",
+	Name:      "gate_waiting_duration_seconds",
+	Help:      "Histogram of request waiting time at the query gate in seconds.",
+	Buckets:   prometheus.DefBuckets,
+})
 
 // A Gate controls the maximum number of concurrently running and waiting queries.
 type Gate struct {
@@ -30,10 +44,12 @@ func New(length int) *Gate {
 
 // Start blocks until the gate has a free spot or the context is done.
 func (g *Gate) Start(ctx context.Context) error {
+	startTime := time.Now()
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case g.ch <- struct{}{}:
+		gateWaitingDuration.Observe(time.Since(startTime).Seconds())
 		return nil
 	}
 }
