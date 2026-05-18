@@ -14,7 +14,7 @@
 package relabel
 
 import (
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -269,9 +269,19 @@ func (re Regexp) String() string {
 	return str[5 : len(str)-2]
 }
 
+// maxLabelValueLength is the maximum allowed length for a label value processed through relabeling.
+// Labels with values exceeding this limit or containing invalid UTF-8 are dropped before relabeling
+// to prevent externally-sourced labels from being crafted to manipulate drop/keep rules.
+const maxLabelValueLength = 1 << 17 // 128KB
+
 // ProcessBuilder applies relabeling configurations (rules) to the labels in lb.
 // The rules are applied in order of input. Returns false if the rule says to drop.
 func ProcessBuilder(lb *labels.Builder, cfgs ...*Config) (keep bool) {
+	lb.Range(func(l labels.Label) {
+		if len(l.Value) > maxLabelValueLength || !model.LabelValue(l.Value).IsValid() {
+			lb.Del(l.Name)
+		}
+	})
 	for _, cfg := range cfgs {
 		keep = relabel(cfg, lb)
 		if !keep {
@@ -337,8 +347,8 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 	case Uppercase:
 		lb.Set(cfg.TargetLabel, strings.ToUpper(val))
 	case HashMod:
-		hash := md5.Sum([]byte(val))
-		// Use only the last 8 bytes of the hash to give the same result as earlier versions of this code.
+		hash := sha256.Sum256([]byte(val))
+		// Use only 8 bytes of the hash for the modulus computation.
 		mod := binary.BigEndian.Uint64(hash[8:]) % cfg.Modulus
 		lb.Set(cfg.TargetLabel, strconv.FormatUint(mod, 10))
 	case LabelMap:
