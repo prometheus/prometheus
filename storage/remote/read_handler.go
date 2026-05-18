@@ -104,9 +104,11 @@ func (h *readHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	disableFlushing := r.URL.Query().Get("disable_immediate_flushing") == "true"
+
 	switch responseType {
 	case prompb.ReadRequest_STREAMED_XOR_CHUNKS:
-		h.remoteReadStreamedXORChunks(ctx, w, req, externalLabels, sortedExternalLabels)
+		h.remoteReadStreamedXORChunks(ctx, w, req, externalLabels, sortedExternalLabels, disableFlushing)
 	default:
 		// On empty or unknown types in req.AcceptedResponseTypes we default to non streamed, raw samples response.
 		h.remoteReadSamples(ctx, w, req, externalLabels, sortedExternalLabels)
@@ -185,7 +187,7 @@ func (h *readHandler) remoteReadSamples(
 	}
 }
 
-func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest, externalLabels map[string]string, sortedExternalLabels []prompb.Label) {
+func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest, externalLabels map[string]string, sortedExternalLabels []prompb.Label, disableFlushing bool) {
 	w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
 
 	f, ok := w.(http.Flusher)
@@ -193,6 +195,9 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 		http.Error(w, "internal http.ResponseWriter does not implement http.Flusher interface", http.StatusInternalServerError)
 		return
 	}
+
+	cw := NewChunkedWriter(w, f, !disableFlushing)
+	defer cw.Close()
 
 	for i, query := range req.Queries {
 		if err := func() error {
@@ -225,7 +230,7 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 			}
 
 			ws, err := StreamChunkedReadResponses(
-				NewChunkedWriter(w, f),
+				cw,
 				int64(i),
 				// The streaming API has to provide the series sorted.
 				querier.Select(ctx, true, hints, filteredMatchers...),

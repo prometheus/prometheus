@@ -283,7 +283,7 @@ func TestReadClient(t *testing.T) {
 				flusher, ok := w.(http.Flusher)
 				require.True(t, ok)
 
-				cw := NewChunkedWriter(w, flusher)
+				cw := NewChunkedWriter(w, flusher, true)
 				l := []prompb.Label{
 					{Name: "foo", Value: "bar"},
 				}
@@ -967,7 +967,7 @@ func createChunkedResponseHandler(t *testing.T, queries []*prompb.Query) http.Ha
 		flusher, ok := w.(http.Flusher)
 		require.True(t, ok)
 
-		cw := NewChunkedWriter(w, flusher)
+		cw := NewChunkedWriter(w, flusher, true)
 
 		// For each query, simulate multiple chunks
 		for queryIndex := range queries {
@@ -1064,7 +1064,7 @@ func createOverlappingSeriesHandler(t *testing.T, queries []*prompb.Query) http.
 		flusher, ok := w.(http.Flusher)
 		require.True(t, ok)
 
-		cw := NewChunkedWriter(w, flusher)
+		cw := NewChunkedWriter(w, flusher, true)
 
 		// Same series labels for both queries (will be merged)
 		commonLabels := []prompb.Label{

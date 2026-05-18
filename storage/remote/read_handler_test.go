@@ -15,10 +15,12 @@ package remote
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -461,6 +463,101 @@ func TestStreamReadEndpoint(t *testing.T) {
 			QueryIndex: 2,
 		},
 	}, results)
+}
+
+func setupFrameStuffingBench(b *testing.B) (http.Handler, []byte) {
+	b.Helper()
+
+	const (
+		numSeries  = 100_000
+		frameLimit = 2048 // 4 MB
+	)
+
+	store := teststorage.New(b)
+
+	app := store.Appender(context.Background())
+	for i := range numSeries {
+		lbls := labels.FromStrings(
+			"__name__", "bench_metric",
+			"series", strconv.Itoa(i),
+		)
+		_, err := app.Append(0, lbls, 0, float64(i))
+		require.NoError(b, err)
+	}
+	require.NoError(b, app.Commit())
+
+	api := NewReadHandler(nil, nil, store, func() config.Config {
+		return config.Config{}
+	}, 0, 1, frameLimit)
+
+	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "bench_metric")
+	require.NoError(b, err)
+
+	query, err := ToQuery(0, 1, []*labels.Matcher{matcher}, &storage.SelectHints{
+		Start: 0,
+		End:   1,
+	})
+	require.NoError(b, err)
+
+	req := &prompb.ReadRequest{
+		Queries:               []*prompb.Query{query},
+		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+	}
+	data, err := proto.Marshal(req)
+	require.NoError(b, err)
+
+	return api, snappy.Encode(nil, data)
+}
+
+func BenchmarkStreamReadEndpointFrameStuffingNetwork(b *testing.B) {
+	api, compressed := setupFrameStuffingBench(b)
+
+	var responseBytes int64
+	{
+		srv := httptest.NewServer(api)
+		resp, err := http.Post(srv.URL+"?disable_immediate_flushing=true", "application/x-protobuf", bytes.NewReader(compressed))
+		require.NoError(b, err)
+		responseBytes, err = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		srv.Close()
+		require.NoError(b, err)
+	}
+
+	b.ReportAllocs()
+
+	b.Run("regular", func(b *testing.B) {
+		srv := httptest.NewServer(api)
+		defer srv.Close()
+		client := srv.Client()
+
+		b.SetBytes(responseBytes)
+		b.ResetTimer()
+		for b.Loop() {
+			resp, err := client.Post(srv.URL+"/api/v1/read", "application/x-protobuf", bytes.NewReader(compressed))
+			require.NoError(b, err)
+			_, err = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			require.NoError(b, err)
+			require.Equal(b, 2, resp.StatusCode/100)
+		}
+	})
+
+	b.Run("no flushing", func(b *testing.B) {
+		srv := httptest.NewServer(api)
+		defer srv.Close()
+		client := srv.Client()
+
+		b.SetBytes(responseBytes)
+		b.ResetTimer()
+		for b.Loop() {
+			resp, err := client.Post(srv.URL+"/api/v1/read?disable_immediate_flushing=true", "application/x-protobuf", bytes.NewReader(compressed))
+			require.NoError(b, err)
+			_, err = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			require.NoError(b, err)
+			require.Equal(b, 2, resp.StatusCode/100)
+		}
+	})
 }
 
 func addNativeHistogramsToTestSuite(t *testing.T, storage *teststorage.TestStorage, n int) {
