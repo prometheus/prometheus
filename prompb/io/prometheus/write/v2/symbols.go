@@ -96,3 +96,42 @@ func desymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []s
 	b.Sort()
 	return b.Labels(), nil
 }
+
+// ErrLabelValueTooLong is returned when a label value exceeds the configured limit.
+type ErrLabelValueTooLong struct {
+	LabelName   string
+	ValueLength int
+	Limit       int
+}
+
+func (e ErrLabelValueTooLong) Error() string {
+	return fmt.Sprintf("label value too long: label %q has value length %d, limit %d",
+		e.LabelName, e.ValueLength, e.Limit)
+}
+
+// desymbolizeLabelsWithLimits decodes label references from the symbol table,
+// validating that no label value exceeds maxLabelValueLength bytes.
+func desymbolizeLabelsWithLimits(b *labels.ScratchBuilder, labelRefs []uint32, symbols []string, maxLabelValueLength int) (labels.Labels, error) {
+	if len(labelRefs)%2 != 0 {
+		return labels.EmptyLabels(), fmt.Errorf("invalid labelRefs length %d", len(labelRefs))
+	}
+	b.Reset()
+	for i := 0; i < len(labelRefs); i += 2 {
+		nameRef, valueRef := labelRefs[i], labelRefs[i+1]
+		if int(nameRef) >= len(symbols) || int(valueRef) >= len(symbols) {
+			return labels.EmptyLabels(), fmt.Errorf("labelRefs %d (name) = %d (value) outside of symbols table (size %d)",
+				nameRef, valueRef, len(symbols))
+		}
+		value := symbols[valueRef]
+		if len(value) > maxLabelValueLength {
+			return labels.EmptyLabels(), ErrLabelValueTooLong{
+				LabelName:   symbols[nameRef],
+				ValueLength: len(value),
+				Limit:       maxLabelValueLength,
+			}
+		}
+		b.Add(symbols[nameRef], value)
+	}
+	b.Sort()
+	return b.Labels(), nil
+}

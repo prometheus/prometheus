@@ -31,6 +31,12 @@ func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, symbols []string) (labels
 	return desymbolizeLabels(b, m.GetLabelsRefs(), symbols)
 }
 
+// ToLabelsWithLimits returns labels from this TimeSeries, validating that no label value
+// exceeds maxLabelValueLength bytes. Returns ErrLabelValueTooLong on violation.
+func (m TimeSeries) ToLabelsWithLimits(b *labels.ScratchBuilder, symbols []string, maxLabelValueLength int) (labels.Labels, error) {
+	return desymbolizeLabelsWithLimits(b, m.GetLabelsRefs(), symbols, maxLabelValueLength)
+}
+
 // ToMetadata returns model metadata from timeseries' remote metadata.
 func (m TimeSeries) ToMetadata(symbols []string) (metadata.Metadata, error) {
 	typ := model.MetricTypeUnknown

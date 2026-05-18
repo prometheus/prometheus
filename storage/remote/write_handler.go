@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -48,6 +49,28 @@ type writeHandler struct {
 	ingestSTZeroSample      bool
 	enableTypeAndUnitLabels bool
 	appendMetadata          bool
+
+	// configFunc returns the current Prometheus configuration.
+	// Used to read GlobalConfig.LabelValueLengthLimit dynamically.
+	configFunc func() config.Config
+}
+
+// DefaultMaxLabelValueLength is the safety cap applied to the remote write receiver
+// when no explicit GlobalConfig.LabelValueLengthLimit is configured.
+// This prevents panics caused by label values exceeding the 16 MB internal cap.
+const DefaultMaxLabelValueLength = 16 * 1024 * 1024 // 16 MB
+
+// effectiveLabelValueLengthLimit returns the label value length limit to enforce
+// for remote write. It reads GlobalConfig.LabelValueLengthLimit from the current
+// configuration; if that is 0 (no explicit limit), it falls back to
+// DefaultMaxLabelValueLength to prevent crashes from oversized values.
+func (h *writeHandler) effectiveLabelValueLengthLimit() int {
+	if h.configFunc != nil {
+		if limit := int(h.configFunc().GlobalConfig.LabelValueLengthLimit); limit > 0 {
+			return limit
+		}
+	}
+	return DefaultMaxLabelValueLength
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -57,7 +80,7 @@ const maxAheadTime = 10 * time.Minute
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMsgs remoteapi.MessageTypes, ingestSTZeroSample, enableTypeAndUnitLabels, appendMetadata bool) http.Handler {
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMsgs remoteapi.MessageTypes, ingestSTZeroSample, enableTypeAndUnitLabels, appendMetadata bool, configFunc func() config.Config) http.Handler {
 	h := &writeHandler{
 		logger:     logger,
 		appendable: appendable,
@@ -77,6 +100,7 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable 
 		ingestSTZeroSample:      ingestSTZeroSample,
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 		appendMetadata:          appendMetadata,
+		configFunc:              configFunc,
 	}
 	return remoteapi.NewWriteHandler(h, acceptedMsgs, remoteapi.WithWriteHandlerLogger(logger))
 }
@@ -168,8 +192,14 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	}()
 
 	b := labels.NewScratchBuilder(0)
+	limit := h.effectiveLabelValueLengthLimit()
 	for _, ts := range req.Timeseries {
-		ls := ts.ToLabels(&b, nil)
+		ls, err := ts.ToLabelsWithLimits(&b, nil, limit)
+		if err != nil {
+			h.logger.Warn("Label value exceeds configured limit, dropping series", "err", err)
+			samplesWithInvalidLabels++
+			continue
+		}
 
 		// TODO(bwplotka): Even as per 1.0 spec, this should be a 400 error, while other samples are
 		// potentially written. Perhaps unify with fixed writeV2 implementation a bit.
@@ -311,8 +341,9 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 		b = labels.NewScratchBuilder(0)
 	)
+	limit := h.effectiveLabelValueLengthLimit()
 	for _, ts := range req.Timeseries {
-		ls, err := ts.ToLabels(&b, req.Symbols)
+		ls, err := ts.ToLabelsWithLimits(&b, req.Symbols, limit)
 		if err != nil {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing labels for series %v: %w", ts.LabelsRefs, err))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
