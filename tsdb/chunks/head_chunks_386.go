@@ -11,10 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build 386 && !windows
+
 package chunks
 
 // HeadChunkFilePreallocationSize is the size to which the m-map file should be preallocated when a new file is cut.
-// Windows needs pre-allocation to m-map the file.
-var HeadChunkFilePreallocationSize int64 = MaxHeadChunkFileSize
+var HeadChunkFilePreallocationSize int64 = MinWriteBufferSize * 2
 
-const MaxHeadChunkFileSize = 128 * 1024 * 1024
+// MaxHeadChunkFileSize is reduced on 32-bit systems to avoid exhausting the 2GiB virtual
+// address space when multiple ChunkDiskMapper instances hold concurrent mmap reservations.
+const MaxHeadChunkFileSize = 16 * 1024 * 1024 // 16MiB

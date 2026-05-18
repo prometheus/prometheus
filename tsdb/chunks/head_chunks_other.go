@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows
+//go:build !windows && !386
 
 package chunks
 
@@ -19,3 +19,6 @@ package chunks
 // Windows needs pre-allocations while the other OS does not. But we observed that a 0 pre-allocation causes unit tests to flake.
 // This small allocation for non-Windows OSes removes the flake.
 var HeadChunkFilePreallocationSize int64 = MinWriteBufferSize * 2
+
+// MaxHeadChunkFileSize is the max size of a head chunk file.
+const MaxHeadChunkFileSize = 128 * 1024 * 1024 // 128MiB

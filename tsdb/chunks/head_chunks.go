@@ -54,8 +54,6 @@ const (
 	SeriesRefSize = 8
 	// HeadChunkFileHeaderSize is the total size of the header for a head chunk file.
 	HeadChunkFileHeaderSize = SegmentHeaderSize
-	// MaxHeadChunkFileSize is the max size of a head chunk file.
-	MaxHeadChunkFileSize = 128 * 1024 * 1024 // 128 MiB.
 	// CRCSize is the size of crc32 sum on disk.
 	CRCSize = 4
 	// MaxHeadChunkMetaSize is the max size of an mmapped chunks minus the chunks data.
