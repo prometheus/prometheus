@@ -2500,7 +2500,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "section_key_dup.bad.yml",
-		errMsg:   "field scrape_configs already set in type config.plain",
+		errMsg:   `mapping key "scrape_configs" already defined at line 1`,
 	},
 	{
 		filename: "azure_client_id_missing.bad.yml",
@@ -2640,7 +2640,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "empty_scrape_config_action.bad.yml",
-		errMsg:   "relabel action cannot be empty",
+		errMsg:   "relabel configuration for replace action requires 'target_label' value",
 	},
 	{
 		filename: "tracing_missing_endpoint.bad.yml",
