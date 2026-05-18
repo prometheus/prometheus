@@ -13,27 +13,49 @@
 
 package gate
 
-import "context"
+import (
+	"context"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 // A Gate controls the maximum number of concurrently running and waiting queries.
 type Gate struct {
-	ch chan struct{}
+	ch        chan struct{}
+	histogram prometheus.Histogram
 }
 
-// New returns a query gate that limits the number of queries
-// being concurrently executed.
-func New(length int) *Gate {
+// New returns a gate that limits the number of concurrent operations.
+// If registerer is not nil, a histogram metric tracking wait duration will be registered.
+// The metric name will be "{metricPrefix}_gate_wait_duration_seconds".
+func New(length int, registerer prometheus.Registerer, metricPrefix string) *Gate {
+	histogram := prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name: metricPrefix + "_gate_wait_duration_seconds",
+		Help: "Time spent waiting for the gate in seconds.",
+	})
+
+	if registerer != nil {
+		registerer.MustRegister(histogram)
+	}
+
 	return &Gate{
-		ch: make(chan struct{}, length),
+		ch:        make(chan struct{}, length),
+		histogram: histogram,
 	}
 }
 
 // Start blocks until the gate has a free spot or the context is done.
+// It records the duration spent waiting in the histogram metric.
 func (g *Gate) Start(ctx context.Context) error {
+	startTime := time.Now()
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case g.ch <- struct{}{}:
+		// Successfully acquired the gate, record the wait time
+		g.histogram.Observe(time.Since(startTime).Seconds())
 		return nil
 	}
 }
