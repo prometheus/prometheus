@@ -421,6 +421,7 @@ type headMetrics struct {
 	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
 	oooHistogram              prometheus.Histogram
 	mmapChunksTotal           prometheus.Counter
+	headChunksMaxMmapped      prometheus.Gauge
 	walReplayUnknownRefsTotal *prometheus.CounterVec
 	wblReplayUnknownRefsTotal *prometheus.CounterVec
 }
@@ -560,6 +561,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_mmap_chunks_total",
 			Help: "Total number of chunks that were memory-mapped.",
 		}),
+		headChunksMaxMmapped: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_chunks_max_mmapped",
+			Help: "Maximum number of head chunks memory-mapped for any individual series during the last memory-mapping pass.",
+		}),
 		walReplayUnknownRefsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_wal_replay_unknown_refs_total",
 			Help: "Total number of unknown series references encountered during WAL replay.",
@@ -598,6 +603,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.checkpointCreationTotal,
 			m.oooHistogram,
 			m.mmapChunksTotal,
+			m.headChunksMaxMmapped,
 			m.mmapChunkCorruptionTotal,
 			m.snapshotReplayErrorTotal,
 			// Metrics bound to functions and not needed in tests
@@ -1959,7 +1965,7 @@ func (h *Head) onChunkCreated(series *memSeries, prevHeadChunkCount uint32) {
 // M-mapping is serialised via the per-series lock and done away from the sample append path,
 // since holding the lock during an append could delay the next scrape or cause query timeouts.
 func (h *Head) mmapHeadChunks() {
-	var count int
+	var count, maxMmappedChunks int
 	for i := range h.series.size {
 		if h.series.mmapReady[i].Load() == 0 {
 			continue // No series in this stripe need mmapping.
@@ -1977,10 +1983,14 @@ func (h *Head) mmapHeadChunks() {
 			if n > 0 {
 				count += n
 				h.series.decMmapReady(series.ref)
+				if n > maxMmappedChunks {
+					maxMmappedChunks = n
+				}
 			}
 		}
 		h.series.locks[i].RUnlock()
 	}
+	h.metrics.headChunksMaxMmapped.Set(float64(maxMmappedChunks))
 	h.metrics.mmapChunksTotal.Add(float64(count))
 }
 

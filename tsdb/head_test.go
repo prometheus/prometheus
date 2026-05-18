@@ -8233,12 +8233,14 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		require.Equal(t, uint32(1), getCount(lblsB), "headChunkCount should be 1 after mmap")
 		require.Equal(t, uint32(1), getCount(lblsC), "headChunkCount should be 1 after mmap")
 		require.Equal(t, 0, countReady(), "ready set should be empty after mmapHeadChunks")
+		require.Equal(t, float64(2), prom_testutil.ToFloat64(h.metrics.headChunksMaxMmapped), "max mmapped should be 2 (both series had 3 head chunks, 2 of which got m-mapped)")
 
 		// A second call should be a no-op.
 		beforeMetric := prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
 		h.mmapHeadChunks()
 		afterMetric := prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
 		require.Equal(t, beforeMetric, afterMetric, "second call should mmap 0 chunks")
+		require.Equal(t, float64(0), prom_testutil.ToFloat64(h.metrics.headChunksMaxMmapped), "max mmapped should be 0 when no series needs mmapping")
 
 		// Only newly ready series should be processed.
 		app = h.Appender(t.Context())
@@ -8259,6 +8261,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		afterMetric = prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
 		require.Greater(t, afterMetric, beforeMetric, "third call should mmap chunks from series B")
 		require.Equal(t, uint32(1), getCount(lblsB), "series B headChunkCount should be 1 after mmap")
+		require.Equal(t, float64(2), prom_testutil.ToFloat64(h.metrics.headChunksMaxMmapped), "max mmapped should be 2 (only series B had 3 head chunks, 2 of which got m-mapped)")
 	})
 
 	t.Run("ooo does not inflate count", func(t *testing.T) {
