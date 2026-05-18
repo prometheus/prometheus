@@ -151,16 +151,6 @@ func (c *PrometheusConverter) createAttributes(
 		}
 	}
 
-	if c.scopeLabels != nil {
-		// Merge cached scope labels if scope promotion is enabled.
-		c.scopeLabels.scopeAttrs.Range(func(l labels.Label) {
-			c.builder.Set(l.Name, l.Value)
-		})
-		c.builder.Set("otel_scope_name", c.scopeLabels.scopeName)
-		c.builder.Set("otel_scope_version", c.scopeLabels.scopeVersion)
-		c.builder.Set("otel_scope_schema_url", c.scopeLabels.scopeSchemaURL)
-	}
-
 	if settings.EnableTypeAndUnitLabels {
 		unitNamer := otlptranslator.UnitNamer{UTF8Allowed: settings.AllowUTF8}
 		if meta.Type != model.MetricTypeUnknown {
@@ -271,6 +261,9 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		var cumulativeCount uint64
 
 		// Process each bound, based on histograms proto definition, # of buckets = # of explicit bounds + 1.
+		// Note: appOpts.Exemplars is resliced per bucket below. This is safe because appOpts is
+		// passed by value to Append(). The shared Resource pointer is also safe because TSDB
+		// deep-copies it via NewVersionedResource/AddOrExtend.
 		for i := 0; i < pt.ExplicitBounds().Len() && i < pt.BucketCounts().Len(); i++ {
 			if err := c.everyN.checkContext(ctx); err != nil {
 				return err
@@ -528,6 +521,8 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		// Do not pass identifying attributes as ignoreAttrs below.
 		identifyingAttrs = nil
 	}
+	// Resource is intentionally nil: target_info IS the resource representation,
+	// so attaching resource attributes to it would be redundant/circular.
 	appOpts := storage.AOptions{
 		Metadata: metadata.Metadata{
 			Type: model.MetricTypeGauge,
@@ -536,12 +531,7 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		MetricFamilyName: name,
 	}
 	// TODO: should target info have the __type__ metadata label?
-	// target_info is a resource-level metric and should not include scope labels.
-	// Temporarily clear scope labels for this call.
-	savedScopeLabels := c.scopeLabels
-	c.scopeLabels = nil
 	lbls, err := c.createAttributes(attributes, settings, identifyingAttrs, false, metadata.Metadata{}, model.MetricNameLabel, name)
-	c.scopeLabels = savedScopeLabels
 	if err != nil {
 		return err
 	}

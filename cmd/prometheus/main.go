@@ -79,6 +79,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/documentcli"
 	"github.com/prometheus/prometheus/util/features"
@@ -220,6 +221,7 @@ type flagConfig struct {
 	corsRegexString string
 
 	promqlEnableDelayedNameRemoval bool
+	infoResourceStrategy           string
 
 	parserOpts parser.Options
 
@@ -247,6 +249,11 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.web.AppendMetadata = true
 				features.Enable(features.TSDB, "metadata_wal_records")
 				logger.Info("Experimental metadata records in WAL enabled")
+			case "native-metadata":
+				c.tsdb.EnableNativeMetadata = true
+				c.web.EnableNativeMetadata = true
+				features.Enable(features.TSDB, "native_metadata")
+				logger.Info("Experimental native metadata persistence enabled")
 			case "promql-per-step-stats":
 				c.enablePerStepStats = true
 				logger.Info("Experimental per-step statistics reporting")
@@ -622,10 +629,13 @@ func main() {
 	serverOnlyFlag(a, "query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
+	serverOnlyFlag(a, "query.info-resource-strategy", "Strategy for resolving resource attributes in info(): 'target-info' uses target_info metric-join, 'resource-attributes' uses stored resource attributes (requires native-metadata), 'hybrid' combines both (requires native-metadata).").
+		Default("target-info").EnumVar(&cfg.infoResourceStrategy, "target-info", "resource-attributes", "hybrid")
+
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-duration-expr, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, memory-snapshot-on-shutdown, metadata-wal-records, native-metadata, old-ui, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-duration-expr, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -979,8 +989,15 @@ func main() {
 			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
 			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
 			UseStartTimestamps:       cfg.useStartTimestamps,
+			EnableNativeMetadata:     cfg.tsdb.EnableNativeMetadata,
+			InfoResourceStrategy:     promql.InfoResourceStrategy(cfg.infoResourceStrategy),
 			FeatureRegistry:          features.DefaultRegistry,
 			Parser:                   promqlParser,
+			LabelNamerConfig: &promql.LabelNamerConfig{
+				UTF8Allowed:                 !cfgFile.OTLPConfig.TranslationStrategy.ShouldEscape(),
+				UnderscoreLabelSanitization: cfgFile.OTLPConfig.LabelNameUnderscoreSanitization,
+				PreserveMultipleUnderscores: cfgFile.OTLPConfig.LabelNamePreserveMultipleUnderscores,
+			},
 		}
 
 		queryEngine = promql.NewEngine(opts)
@@ -1348,7 +1365,7 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.tsdb.EnableNativeMetadata, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else if cfg.enableAutoReload {
 							checksum, err = config.GenerateChecksum(cfg.configFile)
@@ -1357,7 +1374,7 @@ func main() {
 							}
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.tsdb.EnableNativeMetadata, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -1382,7 +1399,7 @@ func main() {
 						}
 						logger.Info("Configuration file change detected, reloading the configuration.")
 
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.tsdb.EnableNativeMetadata, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else {
 							checksum = currentChecksum
@@ -1414,7 +1431,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, func(bool) {}, reloaders...); err != nil {
+				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.tsdb.EnableNativeMetadata, logger, noStepSubqueryInterval, func(bool) {}, reloaders...); err != nil {
 					return fmt.Errorf("error loading config from %q: %w", cfg.configFile, err)
 				}
 
@@ -1656,7 +1673,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logger, noStepSubqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
+func reloadConfig(filename string, enableExemplarStorage, enableNativeMetadata bool, logger *slog.Logger, noStepSubqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
 	start := time.Now()
 	timingsLogger := logger
 	logger.Info("Loading configuration file", "filename", filename)
@@ -1681,6 +1698,11 @@ func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logg
 		if conf.StorageConfig.ExemplarsConfig == nil {
 			conf.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig
 		}
+	}
+
+	if conf.OTLPConfig.DisableTargetInfo && !enableNativeMetadata {
+		logger.Warn("otlp.disable_target_info is true but native-metadata feature is not enabled; " +
+			"target_info metric will not be generated and no resource attributes will be persisted")
 	}
 
 	failed := false
@@ -1915,6 +1937,10 @@ func (notReadyAppender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadat
 	return 0, tsdb.ErrNotReady
 }
 
+func (notReadyAppender) UpdateResource(storage.SeriesRef, labels.Labels, map[string]string, map[string]string, int64) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+
 func (notReadyAppender) AppendSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
@@ -1961,6 +1987,21 @@ func (s *readyStorage) BlockMetas() ([]tsdb.BlockMeta, error) {
 		switch db := x.(type) {
 		case *tsdb.DB:
 			return db.BlockMetas(), nil
+		case *agent.DB:
+			return nil, agent.ErrUnsupported
+		default:
+			panic(fmt.Sprintf("unknown storage type %T", db))
+		}
+	}
+	return nil, tsdb.ErrNotReady
+}
+
+// SeriesMetadata implements the api_v1.TSDBAdminStats interface.
+func (s *readyStorage) SeriesMetadata() (seriesmetadata.Reader, error) {
+	if x := s.get(); x != nil {
+		switch db := x.(type) {
+		case *tsdb.DB:
+			return db.SeriesMetadata()
 		case *agent.DB:
 			return nil, agent.ErrUnsupported
 		default:
@@ -2080,6 +2121,7 @@ type tsdbOptions struct {
 	EnableSTAsZeroSample           bool
 	EnableSTStorage                bool
 	EnableXOR2Encoding             bool
+	EnableNativeMetadata           bool
 	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
 }
@@ -2112,6 +2154,8 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableSTAsZeroSample:           opts.EnableSTAsZeroSample,
 		EnableSTStorage:                opts.EnableSTStorage,
 		EnableXOR2Encoding:             opts.EnableXOR2Encoding,
+		EnableNativeMetadata:           opts.EnableNativeMetadata,
+		EnableResourceAttrIndex:        true,
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
 	}
