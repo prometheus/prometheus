@@ -10,6 +10,7 @@
     "query_stats": true,
     "query_warnings": true,
     "remote_write_receiver": false,
+    "target_scrape_proxy": false,
     "time_range_labels": true,
     "time_range_series": true
   },
@@ -257,8 +258,8 @@
     "isolation": true,
     "native_histograms": true,
     "st_storage": false,
-    "xor2_encoding": false,
-    "use_uncached_io": false
+    "use_uncached_io": false,
+    "xor2_encoding": false
   },
   "ui": {
     "ui_v2": false,

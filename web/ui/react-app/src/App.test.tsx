@@ -18,7 +18,9 @@ import {
 } from './pages';
 
 describe('App', () => {
-  const app = shallow(<App consolesLink={null} agentMode={false} ready={false} />);
+  const app = shallow(
+    <App consolesLink={null} agentMode={false} ready={false} enableTargetScrapeProxy={false} />
+  );
 
   it('navigates', () => {
     expect(app.find(Navigation)).toHaveLength(1);
