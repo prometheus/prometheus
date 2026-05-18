@@ -367,6 +367,17 @@ func extendedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isC
 // with native histograms. It calculates the rate (allowing for counter resets if
 // isCounter is true), interpolates at the range boundaries if needed, and returns
 // the result as either per-second (if isRate is true) or overall.
+//
+// TODO: histogramRate pre-computes the minimum exponential schema across all
+// samples and reduces every sample to that schema before doing arithmetic, so
+// the schema is reduced at most once. extendedHistogramRate reduces schema on
+// the fly during pairwise Sub/Add operations. In the common constant-schema
+// case both produce identical results. In mixed-schema cases the final schema
+// is also the same (global minimum wins either way), but intermediate values
+// may briefly sit at a higher resolution before being pulled down when the
+// correction is added. Aligning the two approaches requires a min-schema
+// pre-scan followed by CopyToSchema on the interpolated boundaries, which is
+// a non-trivial change and warrants its own PR.
 func extendedHistogramRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isCounter, isRate bool) (Vector, annotations.Annotations) {
 	var (
 		ms              = args[0].(*parser.MatrixSelector)
