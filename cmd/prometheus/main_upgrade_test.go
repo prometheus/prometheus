@@ -61,7 +61,9 @@ func fetchLTSPrefix(t *testing.T) string {
 	return string(matches[1])
 }
 
-func fetchLatestLTSRelease(t *testing.T, prefix string) (version, assetURL string) {
+// fetchLatestRelease returns the latest stable release matching the given prefix,
+// or the absolute latest stable release if prefix is empty.
+func fetchLatestRelease(t *testing.T, prefix string) (version, assetURL string) {
 	t.Helper()
 
 	resp, err := http.Get("https://api.github.com/repos/prometheus/prometheus/releases?per_page=100")
@@ -78,7 +80,10 @@ func fetchLatestLTSRelease(t *testing.T, prefix string) (version, assetURL strin
 
 	// Releases are assumed sorted by publish date (newest first).
 	for _, r := range releases {
-		if r.Draft || r.Prerelease || !strings.HasPrefix(r.TagName, fmt.Sprintf("v%s.", prefix)) {
+		if r.Draft || r.Prerelease {
+			continue
+		}
+		if prefix != "" && !strings.HasPrefix(r.TagName, fmt.Sprintf("v%s.", prefix)) {
 			continue
 		}
 		version = strings.TrimPrefix(r.TagName, "v")
@@ -88,9 +93,12 @@ func fetchLatestLTSRelease(t *testing.T, prefix string) (version, assetURL strin
 		)
 		return version, assetURL
 	}
-	require.FailNow(t, "no release found matching LTS", "prefix", prefix)
+	require.FailNow(t, "no matching release found", "prefix", prefix)
 	return "", ""
 }
+
+func eq(v float64) func(float64) bool { return func(f float64) bool { return f == v } }
+func gt(v float64) func(float64) bool { return func(f float64) bool { return f > v } }
 
 func getPrometheusMetricValue(t *testing.T, port int, metricType model.MetricType, metricName string) (float64, error) {
 	t.Helper()
@@ -106,23 +114,45 @@ func getPrometheusMetricValue(t *testing.T, port int, metricType model.MetricTyp
 	return getMetricValue(t, resp.Body, metricType, metricName)
 }
 
+// getPrometheusBuildVersion returns the running Prometheus version for sanity checking.
+func getPrometheusBuildVersion(t *testing.T, port int) string {
+	t.Helper()
+
+	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/v1/status/buildinfo", port))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var parsed struct {
+		Data struct {
+			Version string `json:"version"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&parsed))
+	return parsed.Data.Version
+}
+
 type versionChangeTest struct {
 	start time.Time
 
-	ltsAssetURL       string
-	ltsVersionBinPath string
+	releaseVersion string
+	binPath        string
 
 	prometheusPort           int
 	prometheusDataPath       string
 	prometheusConfigFilePath string
 	rulesFilePath            string
 	remoteWriteURL           string
+
+	queryRangeSnapshotEnd time.Time
+	queryRangeBaseline    string
 }
 
-func (c versionChangeTest) downloadAndExtractLatestLTS(t *testing.T) {
-	const prometheusBinName = "prometheus"
+// downloadBinary downloads and extracts the prometheus binary from the given release tarball URL.
+func (c versionChangeTest) downloadBinary(t *testing.T, assetURL string) {
+	t.Helper()
 
-	resp, err := http.Get(c.ltsAssetURL)
+	resp, err := http.Get(assetURL)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -139,17 +169,33 @@ func (c versionChangeTest) downloadAndExtractLatestLTS(t *testing.T) {
 		}
 		require.NoError(t, err)
 
-		if header.Typeflag == tar.TypeReg && filepath.Base(header.Name) == prometheusBinName {
-			out, err := os.OpenFile(c.ltsVersionBinPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
+		if header.Typeflag == tar.TypeReg && filepath.Base(header.Name) == "prometheus" {
+			out, err := os.OpenFile(c.binPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
 			require.NoError(t, err)
-			defer out.Close()
-
 			_, err = io.Copy(out, tarReader)
+			out.Close()
 			require.NoError(t, err)
 			return
 		}
 	}
-	require.FailNow(t, "prometheus binary not found in LTS tarball", "URL", c.ltsAssetURL)
+	require.FailNow(t, "prometheus binary not found in tarball", "URL", assetURL)
+}
+
+type releaseKind string
+
+const (
+	releaseLTS    releaseKind = "LTS"
+	releaseStable releaseKind = "latest stable"
+)
+
+// ensureHealthyQueryAPI ensures query results stay consistent across version changes.
+func (c *versionChangeTest) ensureHealthyQueryAPI(t *testing.T) {
+	t.Helper()
+	if c.queryRangeBaseline != "" {
+		require.Equal(t, c.queryRangeBaseline, c.snapshotQueryRange(t, c.queryRangeSnapshotEnd))
+	}
+	c.queryRangeSnapshotEnd = time.Now().Add(-3 * time.Second)
+	c.queryRangeBaseline = c.snapshotQueryRange(t, c.queryRangeSnapshotEnd)
 }
 
 // ensureHealthyMetrics polls metrics until all health invariants are satisfied. It checks
@@ -163,52 +209,52 @@ func (c versionChangeTest) ensureHealthyMetrics(t *testing.T) {
 		mName string
 		check func(float64) bool
 	}{
-		{model.MetricTypeGauge, "prometheus_ready", func(v float64) bool { return v == 1 }},
-		{model.MetricTypeGauge, "prometheus_config_last_reload_successful", func(v float64) bool { return v == 1 }},
+		{model.MetricTypeGauge, "prometheus_ready", eq(1)},
+		{model.MetricTypeGauge, "prometheus_config_last_reload_successful", eq(1)},
 
-		{model.MetricTypeCounter, "prometheus_target_scrape_pools_total", func(v float64) bool { return v == 3 }},
-		{model.MetricTypeCounter, "prometheus_target_scrape_pools_failed_total", func(v float64) bool { return v == 0 }},
-		{model.MetricTypeCounter, "prometheus_target_scrape_pool_reloads_failed_total", func(v float64) bool { return v == 0 }},
+		{model.MetricTypeCounter, "prometheus_target_scrape_pools_total", eq(3)},
+		{model.MetricTypeCounter, "prometheus_target_scrape_pools_failed_total", eq(0)},
+		{model.MetricTypeCounter, "prometheus_target_scrape_pool_reloads_failed_total", eq(0)},
 
-		{model.MetricTypeGauge, "prometheus_remote_storage_highest_timestamp_in_seconds", func(v float64) bool { return v > float64(checkStartTime.Unix()) }},
+		{model.MetricTypeGauge, "prometheus_remote_storage_highest_timestamp_in_seconds", gt(float64(checkStartTime.Unix()))},
 
-		{model.MetricTypeGauge, "prometheus_rule_group_rules", func(v float64) bool { return v == 2 }},
-		{model.MetricTypeCounter, "prometheus_rule_evaluations_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_rule_evaluation_failures_total", func(v float64) bool { return v == 0 }},
+		{model.MetricTypeGauge, "prometheus_rule_group_rules", eq(2)},
+		{model.MetricTypeCounter, "prometheus_rule_evaluations_total", gt(0)},
+		{model.MetricTypeCounter, "prometheus_rule_evaluation_failures_total", eq(0)},
 
-		{model.MetricTypeCounter, "prometheus_tsdb_compactions_triggered_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_compactions_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_compactions_failed_total", func(v float64) bool { return v == 0 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_compactions_triggered_total", gt(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_compactions_total", gt(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_compactions_failed_total", eq(0)},
 
-		{model.MetricTypeGauge, "prometheus_tsdb_head_series", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeGauge, "prometheus_tsdb_head_chunks", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeGauge, "prometheus_tsdb_head_chunks_storage_size_bytes", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_head_series_created_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeGauge, "prometheus_tsdb_blocks_loaded", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeGauge, "prometheus_tsdb_storage_blocks_bytes", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_reloads_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_reloads_failures_total", func(v float64) bool { return v == 0 }},
+		{model.MetricTypeGauge, "prometheus_tsdb_head_series", gt(0)},
+		{model.MetricTypeGauge, "prometheus_tsdb_head_chunks", gt(0)},
+		{model.MetricTypeGauge, "prometheus_tsdb_head_chunks_storage_size_bytes", gt(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_head_series_created_total", gt(0)},
+		{model.MetricTypeGauge, "prometheus_tsdb_blocks_loaded", gt(0)},
+		{model.MetricTypeGauge, "prometheus_tsdb_storage_blocks_bytes", gt(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_reloads_total", gt(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_reloads_failures_total", eq(0)},
 
-		{model.MetricTypeCounter, "prometheus_tsdb_head_chunks_created_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_head_chunks_removed_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_mmap_chunks_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_mmap_chunk_corruptions_total", func(v float64) bool { return v == 0 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_head_chunks_created_total", gt(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_head_chunks_removed_total", gt(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_mmap_chunks_total", gt(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_mmap_chunk_corruptions_total", eq(0)},
 
-		{model.MetricTypeCounter, "prometheus_tsdb_checkpoint_creations_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_checkpoint_creations_failed_total", func(v float64) bool { return v == 0 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_checkpoint_deletions_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_checkpoint_deletions_failed_total", func(v float64) bool { return v == 0 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_checkpoint_creations_total", gt(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_checkpoint_creations_failed_total", eq(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_checkpoint_deletions_total", gt(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_checkpoint_deletions_failed_total", eq(0)},
 
-		{model.MetricTypeCounter, "prometheus_tsdb_head_truncations_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_head_truncations_failed_total", func(v float64) bool { return v == 0 }},
+		{model.MetricTypeCounter, "prometheus_tsdb_head_truncations_total", gt(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_head_truncations_failed_total", eq(0)},
 
-		{model.MetricTypeGauge, "prometheus_tsdb_wal_storage_size_bytes", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_wal_completed_pages_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_wal_page_flushes_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_wal_truncations_total", func(v float64) bool { return v >= 1 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_wal_writes_failed_total", func(v float64) bool { return v == 0 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_wal_corruptions_total", func(v float64) bool { return v == 0 }},
-		{model.MetricTypeCounter, "prometheus_tsdb_wal_truncations_failed_total", func(v float64) bool { return v == 0 }},
+		{model.MetricTypeGauge, "prometheus_tsdb_wal_storage_size_bytes", gt(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_wal_completed_pages_total", gt(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_wal_page_flushes_total", gt(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_wal_truncations_total", gt(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_wal_writes_failed_total", eq(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_wal_corruptions_total", eq(0)},
+		{model.MetricTypeCounter, "prometheus_tsdb_wal_truncations_failed_total", eq(0)},
 	} {
 		require.Eventually(t, func() bool {
 			val, err := getPrometheusMetricValue(t, c.prometheusPort, mc.mType, mc.mName)
@@ -285,6 +331,7 @@ func (c versionChangeTest) snapshotQueryRange(t *testing.T, end time.Time) strin
 	}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&parsed))
 	require.NotEqual(t, "[]", string(parsed.Data.Result))
+	// Return raw JSON so diffs are readable on failure.
 	return string(parsed.Data.Result)
 }
 
@@ -300,45 +347,9 @@ func ensureHealthyLogs(t *testing.T, r io.Reader) {
 
 var testVersionUpgrade = flag.Bool("test.version-upgrade", false, "run resource-intensive and probably slow version upgrade tests")
 
-// TestVersionUpgrade_UpgradeDowngradeLatestLTS verifies that Prometheus can
-// upgrade from the latest LTS release to the current build and then downgrade
-// back without errors (data loss, corruption, etc.).
-//
-// NOTE: If this test is renamed, update the corresponding invocation in CI.
-func TestVersionUpgrade_UpgradeDowngradeLatestLTS(t *testing.T) {
-	if !*testVersionUpgrade {
-		t.Skip("test can be slow, resource-intensive or requires internet access")
-	}
-
-	start := time.Now()
-	rootDir := t.TempDir()
-
-	ltsPrefix := fetchLTSPrefix(t)
-	t.Logf("[%s] current LTS major.minor is %s from %s", time.Since(start), ltsPrefix, prometheusDocsLTSConfigURL)
-	ltsVersion, ltsAssetURL := fetchLatestLTSRelease(t, ltsPrefix)
-	t.Logf("[%s] using LTS tag %s from %s", time.Since(start), ltsVersion, ltsAssetURL)
-
-	rwServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	t.Cleanup(rwServer.Close)
-
-	c := versionChangeTest{
-		start: start,
-
-		ltsAssetURL: ltsAssetURL,
-
-		ltsVersionBinPath: filepath.Join(rootDir, fmt.Sprintf("prometheus-%s", ltsVersion)),
-
-		prometheusPort:           testutil.RandomUnprivilegedPort(t),
-		prometheusDataPath:       filepath.Join(rootDir, "data"),
-		prometheusConfigFilePath: filepath.Join(rootDir, "prometheus.yml"),
-		rulesFilePath:            filepath.Join(rootDir, "rules.yml"),
-		remoteWriteURL:           rwServer.URL,
-	}
-
-	t.Logf("[%s] downloading and preparing LTS %s", time.Since(start), ltsVersion)
-	// TODO: Cache if downloads are expensive in CI.
-	c.downloadAndExtractLatestLTS(t)
-	t.Logf("[%s] downloaded and prepared LTS %s at %s", time.Since(start), ltsVersion, c.ltsVersionBinPath)
+// run executes a 3-phase upgrade/downgrade cycle: release -> current build -> release.
+func (c *versionChangeTest) run(t *testing.T, kind releaseKind) {
+	t.Helper()
 
 	c.generatePrometheusConfig(t)
 
@@ -346,52 +357,118 @@ func TestVersionUpgrade_UpgradeDowngradeLatestLTS(t *testing.T) {
 		fmt.Sprintf("--config.file=%s", c.prometheusConfigFilePath),
 		fmt.Sprintf("--web.listen-address=0.0.0.0:%d", c.prometheusPort),
 		fmt.Sprintf("--storage.tsdb.path=%s", c.prometheusDataPath),
-		// Accelerate compaction.
-		"--storage.tsdb.min-block-duration=65s",
 		// Accelerate chunks mmapping.
 		"--storage.tsdb.samples-per-chunk=10",
+		// Speed up compaction but still allow chunks mmapping between compactions.
+		"--storage.tsdb.min-block-duration=65s",
 		"--log.level=debug",
 	}
 
-	runLTS := append([]string{c.ltsVersionBinPath}, commonArgs...)
+	runRelease := append([]string{c.binPath}, commonArgs...)
 	runCurrent := append([]string{os.Args[0], "-test.main"}, commonArgs...)
 
-	var (
-		queryRangeSnapshotEnd time.Time
-		queryRangeBaseline    string
-	)
-
-	t.Run("Running the LTS version", func(t *testing.T) {
-		cmd := commandWithLogging(t, ensureHealthyLogs, runLTS[0], runLTS[1:]...)
+	t.Run(fmt.Sprintf("Running the %s version", kind), func(t *testing.T) {
+		cmd := commandWithLogging(t, ensureHealthyLogs, runRelease[0], runRelease[1:]...)
 		require.NoError(t, cmd.Start())
 		c.ensureHealthyMetrics(t)
-		queryRangeSnapshotEnd = time.Now().Add(-3 * time.Second)
-		queryRangeBaseline = c.snapshotQueryRange(t, queryRangeSnapshotEnd)
+		c.ensureHealthyQueryAPI(t)
+		require.Equal(t, c.releaseVersion, getPrometheusBuildVersion(t, c.prometheusPort))
 	})
 
 	t.Run("Upgrading to the current build", func(t *testing.T) {
 		cmd := commandWithLogging(t, ensureHealthyLogs, runCurrent[0], runCurrent[1:]...)
 		require.NoError(t, cmd.Start())
 		c.ensureHealthyMetrics(t)
-		require.Equal(t, queryRangeBaseline, c.snapshotQueryRange(t, queryRangeSnapshotEnd))
-		// Take a new snapshot after the upgrade.
-		queryRangeSnapshotEnd = time.Now().Add(-3 * time.Second)
-		queryRangeBaseline = c.snapshotQueryRange(t, queryRangeSnapshotEnd)
+		c.ensureHealthyQueryAPI(t)
 	})
 
-	t.Run("Downgrading to the LTS version", func(t *testing.T) {
-		cmd := commandWithLogging(t, ensureHealthyLogs, runLTS[0], runLTS[1:]...)
+	t.Run(fmt.Sprintf("Downgrading to the %s version", kind), func(t *testing.T) {
+		cmd := commandWithLogging(t, ensureHealthyLogs, runRelease[0], runRelease[1:]...)
 		require.NoError(t, cmd.Start())
 		c.ensureHealthyMetrics(t)
-		require.Equal(t, queryRangeBaseline, c.snapshotQueryRange(t, queryRangeSnapshotEnd))
+		c.ensureHealthyQueryAPI(t)
+		require.Equal(t, c.releaseVersion, getPrometheusBuildVersion(t, c.prometheusPort))
 	})
 }
 
+func newVersionChangeTest(t *testing.T, start time.Time, version string) versionChangeTest {
+	t.Helper()
+
+	rootDir := t.TempDir()
+
+	rwServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	t.Cleanup(rwServer.Close)
+
+	return versionChangeTest{
+		start:                    start,
+		releaseVersion:           version,
+		binPath:                  filepath.Join(rootDir, fmt.Sprintf("prometheus-%s", version)),
+		prometheusPort:           testutil.RandomUnprivilegedPort(t),
+		prometheusDataPath:       filepath.Join(rootDir, "data"),
+		prometheusConfigFilePath: filepath.Join(rootDir, "prometheus.yml"),
+		rulesFilePath:            filepath.Join(rootDir, "rules.yml"),
+		remoteWriteURL:           rwServer.URL,
+	}
+}
+
+// TestVersionUpgrade_UpgradeDowngradeLatestLTS tests upgrade/downgrade against the latest LTS release.
+// It covers the upgrade path for users who move exclusively between LTS releases.
+//
+// NOTE: If this test is renamed, update the corresponding invocation in CI.
+func TestVersionUpgrade_UpgradeDowngradeLatestLTS(t *testing.T) {
+	if !*testVersionUpgrade {
+		t.Skip("test can be slow, resource-intensive or requires internet access")
+	}
+	t.Parallel()
+
+	start := time.Now()
+
+	ltsPrefix := fetchLTSPrefix(t)
+	t.Logf("[%s] current LTS major.minor is %s from %s", time.Since(start), ltsPrefix, prometheusDocsLTSConfigURL)
+	ltsVersion, ltsAssetURL := fetchLatestRelease(t, ltsPrefix)
+	t.Logf("[%s] using LTS tag %s from %s", time.Since(start), ltsVersion, ltsAssetURL)
+
+	c := newVersionChangeTest(t, start, ltsVersion)
+
+	t.Logf("[%s] downloading and preparing LTS %s", time.Since(start), ltsVersion)
+	c.downloadBinary(t, ltsAssetURL)
+	t.Logf("[%s] downloaded and prepared LTS %s at %s", time.Since(start), ltsVersion, c.binPath)
+
+	c.run(t, releaseLTS)
+}
+
+// TestVersionUpgrade_UpgradeDowngradeLatestStable tests upgrade/downgrade against the latest stable release.
+// It covers the upgrade path for users who track every stable release.
+//
+// NOTE: If this test is renamed, update the corresponding invocation in CI.
+func TestVersionUpgrade_UpgradeDowngradeLatestStable(t *testing.T) {
+	if !*testVersionUpgrade {
+		t.Skip("test can be slow, resource-intensive or requires internet access")
+	}
+	t.Parallel()
+
+	start := time.Now()
+
+	stableVersion, stableAssetURL := fetchLatestRelease(t, "")
+	t.Logf("[%s] using latest stable tag %s from %s", time.Since(start), stableVersion, stableAssetURL)
+
+	c := newVersionChangeTest(t, start, stableVersion)
+
+	t.Logf("[%s] downloading and preparing stable %s", time.Since(start), stableVersion)
+	c.downloadBinary(t, stableAssetURL)
+	t.Logf("[%s] downloaded and prepared stable %s at %s", time.Since(start), stableVersion, c.binPath)
+
+	c.run(t, releaseStable)
+}
+
 // TestVersionUpgrade_fetchLTSPrefix sanity-checks that the docs config reports the right LTS prefix.
+//
+// NOTE: If this test is renamed, update the corresponding invocation in CI.
 func TestVersionUpgrade_fetchLTSPrefix(t *testing.T) {
 	if !*testVersionUpgrade {
 		t.Skip("test can be slow, resource-intensive or requires internet access")
 	}
+	t.Parallel()
 	// Update this when the LTS changes which happens at most once a year.
 	require.Equal(t, "3.5", fetchLTSPrefix(t))
 }
