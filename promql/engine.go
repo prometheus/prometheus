@@ -1738,6 +1738,7 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration,
 
 		var floats []FPoint
 		var hists []HPoint
+		metricName := s.Labels().Get(labels.MetricName)
 
 		for evalTS := ev.startTimestamp; evalTS <= ev.endTimestamp; evalTS += step {
 			// Apply offset to get the data timestamp.
@@ -1751,7 +1752,7 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration,
 			}
 
 			if len(hists) > 0 && len(floats) > 0 {
-				annos.Add(annotations.NewMixedFloatsHistogramsWarning(s.Labels().Get(labels.MetricName), pos))
+				annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, pos))
 				continue
 			}
 
@@ -1770,21 +1771,25 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration,
 					// unless both samples explicitly carry the gauge hint.
 					prev, next := hists[i-1], hists[i]
 					if prev.H.UsesCustomBuckets() != next.H.UsesCustomBuckets() {
-						annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(s.Labels().Get(labels.MetricName), pos))
+						annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
 						continue
 					}
 					isCounter := prev.H.CounterResetHint != histogram.GaugeType || next.H.CounterResetHint != histogram.GaugeType
 					h, err := interpolateHistograms(prev.H, prev.T, next.H, next.T, dataTS, isCounter, &annos, pos)
 					if err != nil {
-						annos = annosFromInterpolationError(annos, err, s.Labels().Get(labels.MetricName), pos)
+						annosFromInterpolationError(&annos, err, metricName, pos)
 						continue
 					}
 					ss.Histograms = append(ss.Histograms, HPoint{H: h, T: evalTS})
 
 				case i > 0:
 					// No next point yet; carry forward previous value.
+					// CounterResetHint is reset to UnknownCounterReset because the hint
+					// describes the relationship between consecutive samples, not the value.
 					prev := hists[i-1]
-					ss.Histograms = append(ss.Histograms, HPoint{H: prev.H.Copy(), T: evalTS})
+					h := prev.H.Copy()
+					h.CounterResetHint = histogram.UnknownCounterReset
+					ss.Histograms = append(ss.Histograms, HPoint{H: h, T: evalTS})
 
 				default:
 					// i == 0 and hists[0].T > dataTS: there is no previous data yet; skip.
@@ -2754,7 +2759,7 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 			ss.Floats = extendFloats(ss.Floats, matrixMint, matrixMaxt, false)
 		case vs.Smoothed:
 			if ss.Histograms != nil {
-				ev.errorf("anchored modifier is not supported with histograms")
+				ev.errorf("smoothed modifier is not supported with histograms")
 			}
 			ss.Floats = extendFloats(ss.Floats, matrixMint, matrixMaxt, true)
 		}

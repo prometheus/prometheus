@@ -506,8 +506,20 @@ eval instant at 5s histogram_sum(increase(hist_counter[1m] anchored))
 
 # Smoothed delta (non-counter) at 50s: same values as smoothed increase
 # for a monotonic series (no counter reset correction needed).
+# hist_counter samples have no GaugeType hint so a not-a-gauge warning is emitted.
 eval instant at 50s histogram_count(delta(hist_counter[1m] smoothed))
+    expect warn msg: PromQL warning: this native histogram metric is not a gauge: "hist_counter"
     {} 3.333333333333333
+
+# Anchored rate at 50s: left=count:1 (t=0), right=count:4 (t=45), rate=3/60.
+eval instant at 50s histogram_count(rate(hist_counter[1m] anchored))
+    {} 0.05
+
+# Anchored delta (non-counter) at 50s: same result as anchored increase but
+# hist_counter samples have no GaugeType hint so a not-a-gauge warning is emitted.
+eval instant at 50s histogram_count(delta(hist_counter[1m] anchored))
+    expect warn msg: PromQL warning: this native histogram metric is not a gauge: "hist_counter"
+    {} 3
 
 # Smoothed vector selector interpolation for native histograms.
 # At t=7s, interpolate between t=0 (count:1) and t=15 (count:2), fraction=7/15.
@@ -517,6 +529,21 @@ eval instant at 7s histogram_count(hist_counter smoothed)
 # At t=15s, exact match: count:2.
 eval instant at 15s histogram_count(hist_counter smoothed)
     {} 2
+
+# At t=110s, no next sample; carry forward the last value (count:8 at t=105).
+eval instant at 110s histogram_count(hist_counter smoothed)
+    {} 8
+
+# Range eval for smoothed rate: verify per-step boundary handling.
+# hist_counter increments count:1 and sum:1 every 15s starting at t=0.
+# rate(hist_counter[1m] smoothed) at each step computes increase/60.
+# t=0:  left=right=count:1, increase=0, rate=0.
+# t=15: left=count:1, right=count:2 (exact), increase=1, rate=1/60.
+# t=30: left=count:1, right=count:3 (exact), increase=2, rate=2/60.
+# t=45: left=count:1, right=count:4 (exact), increase=3, rate=3/60.
+# t=60: left=count:1, right=count:5 (exact), increase=4, rate=4/60.
+eval range from 0s to 60s step 15s histogram_count(rate(hist_counter[1m] smoothed))
+    {} 0 0.016666666666666666 0.03333333333333333 0.05 0.06666666666666667
 
 # Anchored and smoothed native histogram modifiers with custom buckets.
 clear
@@ -640,8 +667,8 @@ eval instant at 15s histogram_count(increase(smoothed_double_reset[14s] smoothed
 # Two-sample smoothed window where both left and right are interpolated from the
 # same reset. The left interpolation already accounts for the reset, so no
 # correction should be applied. Float reference: right-left = h[1].Mul(0.75) -
-# h[1].Mul(0.25) = h[1].Mul(0.5) = count 2.5. (prev initialPrev path must not
-# fire here, since first > last+1 for this two-sample case.)
+# h[1].Mul(0.25) = h[1].Mul(0.5) = count 2.5. The first > last+1 early-return
+# in correctForCounterResetsHistogram prevents double-counting this case.
 clear
 load 20s
   smoothed_two_sample_both_interp {{schema:0 sum:10 count:10 buckets:[10]}} {{schema:0 sum:5 count:5 buckets:[5] counter_reset_hint:reset}}
@@ -667,3 +694,20 @@ load 30s
 
 eval instant at 45s sort(mixed_types smoothed)
     expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_types"
+
+# Smoothed rate where the RIGHT boundary interpolation crosses a counter reset.
+# Samples: t=0 count:5, t=10 count:10, t=20 count:3 (reset).
+# At t=15s, range=10s: rangeStart=5s, rangeEnd=15s.
+# left: interpolate(t=0 count:5, t=10 count:10, t=5s) = count:5+(count:5*0.5) = count:7.5.
+# right: interpolate(t=10 count:10, t=20 count:3 reset, t=15s) → reset path →
+#   count:3 * 0.5 = count:1.5 (CounterResetHint=reset inherited).
+# Inner samples: h[t=10 count:10]. h[10].DetectReset(left=7.5)? no (10>7.5).
+# right.DetectReset(prev=count:10)? yes (reset hint). correction=count:10.
+# increase = count:1.5 - count:7.5 + count:10 = count:4.
+# rate = count:4/10 = 0.4.
+clear
+load 10s
+  right_boundary_reset {{schema:0 sum:5 count:5 buckets:[5]}} {{schema:0 sum:10 count:10 buckets:[10]}} {{schema:0 sum:3 count:3 buckets:[3] counter_reset_hint:reset}}
+
+eval instant at 15s histogram_count(rate(right_boundary_reset[10s] smoothed))
+    {} 0.4

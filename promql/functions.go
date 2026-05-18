@@ -128,23 +128,23 @@ func interpolateHistograms(h1 *histogram.FloatHistogram, t1 int64, h2 *histogram
 	}
 
 	// Result = H1 + (H2 - H1) * fraction.
-	delta := h2.Copy()
-	_, _, nhcbReconciled, err := delta.Sub(h1)
+	result := h2.Copy()
+	_, _, nhcbReconciled, err := result.Sub(h1)
 	if err != nil {
 		return nil, err
 	}
 	if nhcbReconciled {
 		annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(pos, annotations.HistogramSub))
 	}
-	delta.Mul(fraction)
-	_, _, nhcbReconciled, err = delta.Add(h1)
+	result.Mul(fraction)
+	_, _, nhcbReconciled, err = result.Add(h1)
 	if err != nil {
 		return nil, err
 	}
 	if nhcbReconciled {
 		annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(pos, annotations.HistogramAdd))
 	}
-	return delta, nil
+	return result, nil
 }
 
 // pickOrInterpolateLeftHistogram returns the histogram at the left boundary of the range.
@@ -186,12 +186,11 @@ func correctForCounterResets(left, right float64, points []FPoint) float64 {
 
 // annosFromInterpolationError classifies an error returned by
 // interpolateHistograms (via pickOrInterpolate*Histogram) into the appropriate
-// annotation. If the error is not recognised, annos is returned unchanged.
-func annosFromInterpolationError(annos annotations.Annotations, err error, metricName string, pos posrange.PositionRange) annotations.Annotations {
+// annotation. If the error is not recognised, annos is left unchanged.
+func annosFromInterpolationError(annos *annotations.Annotations, err error, metricName string, pos posrange.PositionRange) {
 	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
-		return annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
+		annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
 	}
-	return annos
 }
 
 // addHistogramWithAnnotations adds other into base in place, translating
@@ -271,10 +270,12 @@ func correctForCounterResetsHistogram(h []HPoint, firstSampleIndex, lastSampleIn
 	// handles the right-boundary reset safely once h[lastSampleIndex] is not prev.
 	last := lastSampleIndex - 1
 
-	// first > last+1 only when leftInterpolationHandledReset is true and there
-	// is only one sample interval (lastSampleIndex == firstSampleIndex+1).
-	// Both left and right were interpolated from the same reset segment, so
-	// there is nothing more to correct.
+	// first > last+1 when there is nothing between the two boundary samples to
+	// check. This happens when firstSampleIndex == lastSampleIndex (single-sample
+	// window), or when the smoothed left interpolation already spanned the only
+	// reset interval (lastSampleIndex == firstSampleIndex+1 and first was
+	// incremented above). Both boundaries were interpolated from the same reset
+	// segment, so there is nothing more to correct.
 	if first > last+1 {
 		return nil, nil, true
 	}
@@ -310,7 +311,7 @@ func correctForCounterResetsHistogram(h []HPoint, firstSampleIndex, lastSampleIn
 
 // extendedRate is a utility function for anchored/smoothed rate/increase/delta.
 // It calculates the rate (allowing for counter resets if isCounter is true),
-// extrapolates if the first/last sample if needed, and returns
+// interpolates at the first/last sample boundary if needed, and returns
 // the result as either per-second (if isRate is true) or overall.
 func extendedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isCounter, isRate bool) (Vector, annotations.Annotations) {
 	var (
@@ -399,17 +400,21 @@ func extendedHistogramRate(vals Matrix, args parser.Expressions, enh *EvalNodeHe
 
 	left, err := pickOrInterpolateLeftHistogram(h, firstSampleIndex, rangeStart, smoothed, isCounter, &annos, pos)
 	if err != nil {
-		return enh.Out, annosFromInterpolationError(annos, err, metricName, pos)
+		annosFromInterpolationError(&annos, err, metricName, pos)
+		return enh.Out, annos
 	}
 	right, err := pickOrInterpolateRightHistogram(h, lastSampleIndex, rangeEnd, smoothed, isCounter, &annos, pos)
 	if err != nil {
-		return enh.Out, annosFromInterpolationError(annos, err, metricName, pos)
+		annosFromInterpolationError(&annos, err, metricName, pos)
+		return enh.Out, annos
 	}
 
 	if !isCounter && (left.CounterResetHint != histogram.GaugeType || right.CounterResetHint != histogram.GaugeType) {
 		annos.Add(annotations.NewNativeHistogramNotGaugeWarning(metricName, pos))
 	}
 
+	// Copy right so that correctForCounterResetsHistogram can still call
+	// right.DetectReset without observing mutations from subHistogramWithAnnotations.
 	resultHistogram := right.Copy()
 	if !subHistogramWithAnnotations(resultHistogram, left, &annos, metricName, pos) {
 		return enh.Out, annos
