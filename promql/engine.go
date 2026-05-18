@@ -1408,17 +1408,18 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 	var warnings annotations.Annotations
 	for i, e := range exprs {
 		// Functions will take string arguments from the expressions, not the values.
-		if e != nil && e.Type() != parser.ValueTypeString {
-			// ev.currentSamples will be updated to the correct value within the ev.eval call.
-			val, ws := ev.eval(ctx, e)
-			warnings.Merge(ws)
-			matrixes[i] = val.(Matrix)
-
-			// Keep a copy of the original point slices so that they
-			// can be returned to the pool.
-			origMatrixes[i] = make(Matrix, len(matrixes[i]))
-			copy(origMatrixes[i], matrixes[i])
+		if e == nil || e.Type() == parser.ValueTypeString {
+			continue
 		}
+		// ev.currentSamples will be updated to the correct value within the ev.eval call.
+		val, ws := ev.eval(ctx, e)
+		warnings.Merge(ws)
+		matrixes[i] = val.(Matrix)
+
+		// Keep a copy of the original point slices so that they
+		// can be returned to the pool.
+		origMatrixes[i] = make(Matrix, len(matrixes[i]))
+		copy(origMatrixes[i], matrixes[i])
 	}
 
 	vectors := make([]Vector, len(exprs)) // Input vectors for the function.
