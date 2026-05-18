@@ -42,10 +42,24 @@ jobs:
       - run: go test --tags=dedupelabels ./...
       - run: go test --tags=slicelabels -race ./cmd/prometheus ./model/textparse ./prompb/...
       - run: go test --tags=forcedirectio -race ./tsdb/
-      - run: GOARCH=386 go test ./...
       - run: make protoc
       - run: make proto
       - run: git diff --exit-code
+
+  test_go_386:
+    name: Go tests for 32-bit x86
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/prometheus/golang-builder:1.26-base
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: prometheus/promci-setup@5af30ba8c199a91d6c04ebdc3c48e630e355f62d # v0.1.0
+      # NOTE(bwplotka): We limit concurrency to avoid issues around too many concurrent mmaps
+      # caused by parallel tests. See context: https://github.com/prometheus/prometheus/pull/18709
+      # Alternatively we could adjust each relevant test to have 386 aware parallelization setting.
+      - run: GOARCH=386 go test -parallel=1 ./...
 
   test_version_upgrade:
     name: Go tests for Prometheus upgrades and downgrades
