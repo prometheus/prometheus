@@ -59,13 +59,6 @@ import (
 // Scalar results should be returned as the value of a sample in a Vector.
 type FunctionCall func(vectorVals []Vector, matrixVals Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations)
 
-// funcQueryContext is a placeholder for start(), end(), range(), and step() functions.
-// These are folded into NumberLiteral nodes by foldQueryContextFunctions during query
-// preprocessing and must never reach the evaluator.
-func funcQueryContext(_ []Vector, _ Matrix, _ parser.Expressions, _ *EvalNodeHelper) (Vector, annotations.Annotations) {
-	panic("query context functions must be folded during preprocessing and must never be evaluated")
-}
-
 // === time() float64 ===
 func funcTime(_ []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return Vector{Sample{
@@ -2269,7 +2262,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"day_of_week":                  funcDayOfWeek,
 	"day_of_year":                  funcDayOfYear,
 	"deg":                          funcDeg,
-	"end":                          funcQueryContext,
+	"end":                          nil, // Folded into NumberLiteral by foldQueryContextFunctions.
 	"delta":                        funcDelta,
 	"deriv":                        funcDeriv,
 	"exp":                          funcExp,
@@ -2309,7 +2302,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"present_over_time":            funcPresentOverTime,
 	"quantile_over_time":           funcQuantileOverTime,
 	"rad":                          funcRad,
-	"range":                        funcQueryContext,
+	"range":                        nil, // Folded into NumberLiteral by foldQueryContextFunctions.
 	"rate":                         funcRate,
 	"resets":                       funcResets,
 	"round":                        funcRound,
@@ -2321,8 +2314,8 @@ var FunctionCalls = map[string]FunctionCall{
 	"sort_desc":                    funcSortDesc,
 	"sort_by_label":                funcSortByLabel,
 	"sort_by_label_desc":           funcSortByLabelDesc,
-	"start":                        funcQueryContext,
-	"step":                         funcQueryContext,
+	"start":                        nil, // Folded into NumberLiteral by foldQueryContextFunctions.
+	"step":                         nil, // Folded into NumberLiteral by foldQueryContextFunctions.
 	"sqrt":                         funcSqrt,
 	"stddev_over_time":             funcStddevOverTime,
 	"stdvar_over_time":             funcStdvarOverTime,
