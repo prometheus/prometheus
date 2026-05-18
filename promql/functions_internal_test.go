@@ -136,33 +136,33 @@ func TestInterpolateHistograms(t *testing.T) {
 	}{
 		{
 			name: "exact match t1",
-			h1: h1, h2: h2, t1: 0, t2: 20, t: 0,
+			h1:   h1, h2: h2, t1: 0, t2: 20, t: 0,
 			isCounter: false, wantCount: 1,
 		},
 		{
 			name: "exact match t2",
-			h1: h1, h2: h2, t1: 0, t2: 20, t: 20,
+			h1:   h1, h2: h2, t1: 0, t2: 20, t: 20,
 			isCounter: false, wantCount: 3,
 		},
 		{
 			name: "midpoint no reset",
-			h1: h1, h2: h2, t1: 0, t2: 20, t: 10,
+			h1:   h1, h2: h2, t1: 0, t2: 20, t: 10,
 			isCounter: false, wantCount: 2,
 		},
 		{
 			name: "counter midpoint no reset",
-			h1: h1, h2: h2, t1: 0, t2: 20, t: 10,
+			h1:   h1, h2: h2, t1: 0, t2: 20, t: 10,
 			isCounter: true, wantCount: 2,
 		},
 		{
 			name: "counter midpoint with reset: scale from zero",
-			h1: h1, h2: h2Reset, t1: 0, t2: 20, t: 10,
+			h1:   h1, h2: h2Reset, t1: 0, t2: 20, t: 10,
 			// h2Reset * (10/20) = count:1 * 0.5 = 0.5.
 			isCounter: true, wantCount: 0.5,
 		},
 		{
 			name: "quarter point",
-			h1: h1, h2: h2, t1: 0, t2: 20, t: 5,
+			h1:   h1, h2: h2, t1: 0, t2: 20, t: 5,
 			// h1 + (h2-h1)*0.25 = 1 + 2*0.25 = 1.5.
 			isCounter: false, wantCount: 1.5,
 		},
