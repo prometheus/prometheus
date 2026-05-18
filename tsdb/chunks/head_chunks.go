@@ -443,7 +443,7 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 	// for proper repair mechanism to happen in the Head.
 	if size < MagicChunksSize || binary.BigEndian.Uint32(buf) == 0 {
 		// Corrupt file, hence remove it.
-		if err := os.RemoveAll(files[lastFile]); err != nil {
+		if err := removeChunkFile(files[lastFile]); err != nil {
 			return files, fmt.Errorf("delete corrupted, empty head chunk file during last file repair: %w", err)
 		}
 		delete(files, lastFile)
