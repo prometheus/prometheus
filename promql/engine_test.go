@@ -4051,6 +4051,26 @@ load 10m
 eval range from 0 to 20m step 10m -metric_a or -metric_b
     {} -1  -4
 
+# Test range vector functions with non-overlapping series that have the same labelset
+# after __name__ removal. This verifies the fix for issue #14695.
+# When evaluated as a range query, at each step only one series has data in the
+# window, so the results should merge correctly without collision.
+clear
+load 6m
+  metric_1{common="label"} 0 1 _ _ 4
+  metric_2{common="label"} _ _ 2 3 _
+
+eval range from 0 to 24m step 6m max_over_time({__name__=~"metric_.*"}[5m])
+  {common="label"} 0 1 2 3 4
+
+# Range vector function should fail when both series have data within the same window.
+clear
+load 6m
+  metric_1{common="label"} 0 1 2
+  metric_2{common="label"} 3 4 5
+
+eval_fail instant at 12m max_over_time({__name__=~"metric_.*"}[30m])
+
 `, engine)
 }
 
