@@ -113,6 +113,56 @@ func makeLoadBalancerService() *v1.Service {
 	}
 }
 
+func makeLoadBalancerServiceWithStatusIPs(name string, ips []string) *v1.Service {
+	ing := make([]v1.LoadBalancerIngress, 0, len(ips))
+	for _, ip := range ips {
+		ing = append(ing, v1.LoadBalancerIngress{IP: ip})
+	}
+	return &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Ports: []v1.ServicePort{{
+				Name:     "testport",
+				Protocol: v1.ProtocolTCP,
+				Port:     int32(32001),
+			}},
+			Type:      v1.ServiceTypeLoadBalancer,
+			ClusterIP: "10.0.0.1",
+		},
+		Status: v1.ServiceStatus{
+			LoadBalancer: v1.LoadBalancerStatus{Ingress: ing},
+		},
+	}
+}
+
+func makeLoadBalancerServiceWithStatusHostnames(name string, hosts []string) *v1.Service {
+	ing := make([]v1.LoadBalancerIngress, 0, len(hosts))
+	for _, h := range hosts {
+		ing = append(ing, v1.LoadBalancerIngress{Hostname: h})
+	}
+	return &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Ports: []v1.ServicePort{{
+				Name:     "testport",
+				Protocol: v1.ProtocolTCP,
+				Port:     int32(32002),
+			}},
+			Type:      v1.ServiceTypeLoadBalancer,
+			ClusterIP: "10.0.0.1",
+		},
+		Status: v1.ServiceStatus{
+			LoadBalancer: v1.LoadBalancerStatus{Ingress: ing},
+		},
+	}
+}
+
 func TestServiceDiscoveryAdd(t *testing.T) {
 	t.Parallel()
 	n, c := makeDiscovery(RoleService, NamespaceDiscovery{})
@@ -173,6 +223,7 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 						"__meta_kubernetes_service_port_number":     "31900",
 						"__meta_kubernetes_service_cluster_ip":      "10.0.0.1",
 						"__meta_kubernetes_service_loadbalancer_ip": "127.0.0.1",
+						"__meta_kubernetes_service_loadbalancer_ips": "127.0.0.1",
 					},
 				},
 				Labels: model.LabelSet{
@@ -180,6 +231,82 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 					"__meta_kubernetes_namespace":    "default",
 				},
 				Source: "svc/default/testservice-loadbalancer",
+			},
+		},
+	}.Run(t)
+}
+
+func TestServiceDiscoveryLoadBalancerRealWorld(t *testing.T) {
+	t.Parallel()
+	n, c := makeDiscovery(RoleService, NamespaceDiscovery{})
+
+	metallbV4 := makeLoadBalancerServiceWithStatusIPs("svc-metallb-v4", []string{"1.2.3.4"})
+	metallbDual := makeLoadBalancerServiceWithStatusIPs("svc-metallb-dual", []string{"2001:1:2:3:4::", "1.2.3.4"})
+	eks := makeLoadBalancerServiceWithStatusHostnames("svc-eks", []string{"example-lb-name-abc.elb.eu-central-1.test.com"})
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			c.CoreV1().Services(metallbV4.Namespace).Create(context.Background(), metallbV4, metav1.CreateOptions{})
+			c.CoreV1().Services(metallbDual.Namespace).Create(context.Background(), metallbDual, metav1.CreateOptions{})
+			c.CoreV1().Services(eks.Namespace).Create(context.Background(), eks, metav1.CreateOptions{})
+		},
+		expectedMaxItems: 3,
+		expectedRes: map[string]*targetgroup.Group{
+			"svc/default/svc-metallb-v4": {
+				Targets: []model.LabelSet{
+					{
+						"__meta_kubernetes_service_port_protocol": "TCP",
+						"__address__":                                "svc-metallb-v4.default.svc:32001",
+						"__meta_kubernetes_service_type":             "LoadBalancer",
+						"__meta_kubernetes_service_port_name":        "testport",
+						"__meta_kubernetes_service_port_number":      "32001",
+						"__meta_kubernetes_service_cluster_ip":       "10.0.0.1",
+						"__meta_kubernetes_service_loadbalancer_ips": "1.2.3.4",
+						"__meta_kubernetes_service_loadbalancer_ip": "1.2.3.4",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_service_name": "svc-metallb-v4",
+					"__meta_kubernetes_namespace":    "default",
+				},
+				Source: "svc/default/svc-metallb-v4",
+			},
+			"svc/default/svc-metallb-dual": {
+				Targets: []model.LabelSet{
+					{
+						"__meta_kubernetes_service_port_protocol": "TCP",
+						"__address__":                                "svc-metallb-dual.default.svc:32001",
+						"__meta_kubernetes_service_type":             "LoadBalancer",
+						"__meta_kubernetes_service_port_name":        "testport",
+						"__meta_kubernetes_service_port_number":      "32001",
+						"__meta_kubernetes_service_cluster_ip":       "10.0.0.1",
+						"__meta_kubernetes_service_loadbalancer_ips": "2001:1:2:3:4::,1.2.3.4",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_service_name": "svc-metallb-dual",
+					"__meta_kubernetes_namespace":    "default",
+				},
+				Source: "svc/default/svc-metallb-dual",
+			},
+			"svc/default/svc-eks": {
+				Targets: []model.LabelSet{
+					{
+						"__meta_kubernetes_service_port_protocol": "TCP",
+						"__address__":                                      "svc-eks.default.svc:32002",
+						"__meta_kubernetes_service_type":                   "LoadBalancer",
+						"__meta_kubernetes_service_port_name":              "testport",
+						"__meta_kubernetes_service_port_number":            "32002",
+						"__meta_kubernetes_service_cluster_ip":             "10.0.0.1",
+						"__meta_kubernetes_service_loadbalancer_hostnames": "example-lb-name-abc.elb.eu-central-1.test.com",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_service_name": "svc-eks",
+					"__meta_kubernetes_namespace":    "default",
+				},
+				Source: "svc/default/svc-eks",
 			},
 		},
 	}.Run(t)
