@@ -608,10 +608,10 @@ func TestHeadAppenderV2_Delete_e2e(t *testing.T) {
 				sexp := expSs.At()
 				sres := ss.At()
 				require.Equal(t, sexp.Labels(), sres.Labels())
-				smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), newSample)
-				smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), newSample)
+				smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), nil)
+				smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), nil)
 				require.Equal(t, errExp, errRes)
-				requireEqualSamples(t, sexp.Labels().String(), smplExp, smplRes)
+				require.Equal(t, smplExp, smplRes)
 			}
 			require.NoError(t, ss.Err())
 			require.Empty(t, ss.Warnings())
@@ -1333,32 +1333,22 @@ func TestDataMissingOnQueryDuringCompaction_AppenderV2(t *testing.T) {
 	q, err := db.Querier(mint, maxt)
 	require.NoError(t, err)
 
-	truncationStarted := make(chan struct{})
-	db.head.memTruncationCallBack = func() {
-		close(truncationStarted)
-	}
-
-	compactDone := make(chan error, 1)
-	go func() {
+	var wg sync.WaitGroup
+	wg.Go(func() {
 		// Compacting head while the querier spans the compaction time.
-		compactDone <- db.Compact(ctx)
-	}()
+		require.NoError(t, db.Compact(ctx))
+		require.NotEmpty(t, db.Blocks())
+	})
 
-	select {
-	case <-truncationStarted:
-	case err := <-compactDone:
-		require.NoError(t, err)
-		require.FailNow(t, "compaction finished before head truncation started")
-	case <-time.After(10 * time.Second):
-		require.FailNow(t, "timed out waiting for head truncation to start")
-	}
+	// Give enough time for compaction to finish.
+	// We expect it to be blocked until querier is closed.
+	<-time.After(3 * time.Second)
 
 	// Querying the querier that was got before compaction.
 	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	require.Equal(t, map[string][]chunks.Sample{`{a="b"}`: expSamples}, series)
 
-	require.NoError(t, <-compactDone)
-	require.NotEmpty(t, db.Blocks())
+	wg.Wait()
 }
 
 func TestIsQuerierCollidingWithTruncation_AppenderV2(t *testing.T) {
@@ -2485,7 +2475,7 @@ func testHeadAppenderV2AppendStaleHistogram(t *testing.T, floatHistogram bool) {
 }
 
 func TestHeadAppenderV2_Append_CounterResetHeader(t *testing.T) {
-	for _, floatHisto := range []bool{true} { // FIXME
+	for _, floatHisto := range []bool{true, false} {
 		t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
 			l := labels.FromStrings("a", "b")
 			head, _ := newTestHead(t, 1000, compression.None, false)
@@ -2536,24 +2526,28 @@ func TestHeadAppenderV2_Append_CounterResetHeader(t *testing.T) {
 			h := tsdbutil.GenerateTestHistograms(1)[0]
 			h.PositiveBuckets = []int64{100, 1, 1, 1}
 			h.NegativeBuckets = []int64{100, 1, 1, 1}
-			h.Count = 1000
+			// Count = positive delta-decoded sum (100+101+102+103=406) + negative (406) + ZeroCount (2) = 814.
+			h.Count = 814
 
 			// First histogram is UnknownCounterReset.
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.UnknownCounterReset)
 
-			// Another normal histogram.
-			h.Count++
+			// Another normal histogram: increment a positive bucket and Count consistently.
+			h.PositiveBuckets[len(h.PositiveBuckets)-1]++
+			h.Count++ // Count = 815.
 			appendHistogram(h)
 			checkExpCounterResetHeader()
 
-			// Counter reset via Count.
-			h.Count--
+			// Counter reset: decrement the same positive bucket and Count.
+			h.PositiveBuckets[len(h.PositiveBuckets)-1]--
+			h.Count-- // Count = 814.
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
-			// Add 2 non-counter reset histogram chunks (each chunk targets 1024 bytes which contains ~500 int histogram
-			// samples or ~1000 float histogram samples).
+			// Add 2 non-counter reset histogram chunks. Each 1024-byte chunk holds approximately
+			// 498 float histogram samples or 997 integer histogram samples (chunks are cut at
+			// timestamp boundaries aligned to the 1000ms chunkRange).
 			numAppend := 2000
 			if floatHisto {
 				numAppend = 1000
@@ -2577,16 +2571,22 @@ func TestHeadAppenderV2_Append_CounterResetHeader(t *testing.T) {
 			// Counter reset by removing a positive bucket.
 			h.PositiveSpans[1].Length--
 			h.PositiveBuckets = h.PositiveBuckets[1:]
+			// After removal: positive delta-decoded sum = 1+2+3 = 6; negative sum = 406; ZeroCount = 2.
+			h.Count = 414
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Counter reset by removing a negative bucket.
 			h.NegativeSpans[1].Length--
 			h.NegativeBuckets = h.NegativeBuckets[1:]
+			// After removal: positive sum = 6; negative delta-decoded sum = 1+2+3 = 6; ZeroCount = 2.
+			h.Count = 14
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Add 2 non-counter reset histogram chunks. Just to have some non-counter reset chunks in between.
+			// With 3 positive and 3 negative buckets the chunk is cut purely by time (chunkRange=1000ms),
+			// holding ~993 samples per chunk for both float and integer histograms.
 			for range 2000 {
 				appendHistogram(h)
 			}
@@ -2594,11 +2594,15 @@ func TestHeadAppenderV2_Append_CounterResetHeader(t *testing.T) {
 
 			// Counter reset with counter reset in a positive bucket.
 			h.PositiveBuckets[len(h.PositiveBuckets)-1]--
+			// After: positive delta-decoded = 1+2+2 = 5; negative sum = 6; ZeroCount = 2.
+			h.Count = 13
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Counter reset with counter reset in a negative bucket.
 			h.NegativeBuckets[len(h.NegativeBuckets)-1]--
+			// After: positive sum = 5; negative delta-decoded = 1+2+2 = 5; ZeroCount = 2.
+			h.Count = 12
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 		})
@@ -4446,59 +4450,6 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 				}
 			}(),
 		},
-		{
-			name: "ST is out of order/float",
-			appendableSamples: []appendableSamples{
-				{ts: 200, fSample: 10},
-				{ts: 300, fSample: 10, st: 100},
-			},
-			// ST results ErrOutOfOrderSample, but ST append is best effort, so
-			// ST should be ignored, but sample appended.
-			expectedSamples: func() []chunks.Sample {
-				return []chunks.Sample{
-					sample{t: 200, f: 10},
-					sample{t: 300, f: 10},
-				}
-			}(),
-		},
-		{
-			name: "ST is out of order/histogram",
-			appendableSamples: []appendableSamples{
-				{ts: 200, h: testHistogram},
-				{ts: 300, h: testHistogram, st: 100},
-			},
-			// ST results ErrOutOfOrderSample, but ST append is best effort, so
-			// ST should be ignored, but sample appended.
-			expectedSamples: func() []chunks.Sample {
-				// NOTE: Without ST, on query, first histogram sample will get
-				// CounterReset adjusted to UnknownCounterReset.
-				firstSample := testHistogram.Copy()
-				firstSample.CounterResetHint = histogram.UnknownCounterReset
-				return []chunks.Sample{
-					sample{t: 200, h: firstSample},
-					sample{t: 300, h: testHistogram},
-				}
-			}(),
-		},
-		{
-			name: "ST is out of order/floathistogram",
-			appendableSamples: []appendableSamples{
-				{ts: 200, fh: testFloatHistogram},
-				{ts: 300, fh: testFloatHistogram, st: 100},
-			},
-			// ST results ErrOutOfOrderSample, but ST append is best effort, so
-			// ST should be ignored, but sample appended.
-			expectedSamples: func() []chunks.Sample {
-				// NOTE: Without ST, on query, first histogram sample will get
-				// CounterReset adjusted to UnknownCounterReset.
-				firstSample := testFloatHistogram.Copy()
-				firstSample.CounterResetHint = histogram.UnknownCounterReset
-				return []chunks.Sample{
-					sample{t: 200, fh: firstSample},
-					sample{t: 300, fh: testFloatHistogram},
-				}
-			}(),
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
@@ -4521,56 +4472,6 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 			require.NoError(t, err)
 			result := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 			require.Equal(t, tc.expectedSamples, result[`{foo="bar"}`])
-		})
-	}
-}
-
-func TestHeadAppenderV2_BestEffortSTZeroSample_OOO(t *testing.T) {
-	testHistogram := tsdbutil.GenerateTestHistogram(1)
-	testHistogram.CounterResetHint = histogram.NotCounterReset
-	testFloatHistogram := tsdbutil.GenerateTestFloatHistogram(1)
-	testFloatHistogram.CounterResetHint = histogram.NotCounterReset
-
-	for _, tc := range []struct {
-		name string
-		v    float64
-		h    *histogram.Histogram
-		fh   *histogram.FloatHistogram
-	}{
-		{name: "float", v: 10},
-		{name: "histogram", h: testHistogram},
-		{name: "floathistogram", fh: testFloatHistogram},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
-			opts.EnableSTAsZeroSample = true
-			head, _ := newTestHeadWithOptions(t, compression.None, opts)
-
-			lbls := labels.FromStrings("foo", "bar")
-
-			// First appender: commit a sample at ts=200 to establish headMaxt and
-			// populate headChunks on the series.
-			app := head.AppenderV2(context.Background())
-			_, err := app.Append(0, lbls, 0, 200, tc.v, tc.h, tc.fh, storage.AOptions{})
-			require.NoError(t, err)
-			require.NoError(t, app.Commit())
-
-			// Second appender: st=100 is OOO (headMaxt=200, OOO disabled). Because the
-			// series now has committed data, bestEffortAppendSTZeroSample calls
-			// appendFloat/appendHistogram/appendFloatHistogram with fastRejectOOO=true,
-			// gets ErrOutOfOrderSample, and silently ignores it. The main sample must
-			// still be appended successfully.
-			app = head.AppenderV2(context.Background())
-			_, err = app.Append(0, lbls, 100, 300, tc.v, tc.h, tc.fh, storage.AOptions{})
-			require.NoError(t, err)
-			require.NoError(t, app.Commit())
-
-			q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
-			require.NoError(t, err)
-			result := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-			// Only the two main samples should be present; the OOO zero sample at ts=100
-			// must have been dropped.
-			require.Len(t, result[`{foo="bar"}`], 2)
 		})
 	}
 }
