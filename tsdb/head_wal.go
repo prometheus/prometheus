@@ -1239,7 +1239,7 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 		buf.PutUvarintBytes(s.headChunks.chunk.Bytes())
 
 		switch enc {
-		case chunkenc.EncXOR:
+		case chunkenc.EncXOR, chunkenc.EncXOR2:
 			// Backwards compatibility for old sampleBuf which had last 4 samples.
 			for range 3 {
 				buf.PutBE64int64(0)
@@ -1247,9 +1247,9 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 			}
 			buf.PutBE64int64(0)
 			buf.PutBEFloat64(s.lastValue)
-		case chunkenc.EncHistogram:
+		case chunkenc.EncHistogram, chunkenc.EncHistogramST:
 			record.EncodeHistogram(&buf, s.lastHistogramValue)
-		default: // chunkenc.FloatHistogram.
+		default: // chunkenc.EncFloatHistogram, chunkenc.EncFloatHistogramST.
 			record.EncodeFloatHistogram(&buf, s.lastFloatHistogramValue)
 		}
 	}
@@ -1300,10 +1300,10 @@ func decodeSeriesFromChunkSnapshot(d *record.Decoder, b []byte) (csr chunkSnapsh
 		}
 		_ = dec.Be64int64()
 		csr.lastValue = dec.Be64Float64()
-	case chunkenc.EncHistogram:
+	case chunkenc.EncHistogram, chunkenc.EncHistogramST:
 		csr.lastHistogramValue = &histogram.Histogram{}
 		record.DecodeHistogram(&dec, csr.lastHistogramValue)
-	default: // chunkenc.FloatHistogram.
+	default: // chunkenc.EncFloatHistogram, chunkenc.EncFloatHistogramST.
 		csr.lastFloatHistogramValue = &histogram.FloatHistogram{}
 		record.DecodeFloatHistogram(&dec, csr.lastFloatHistogramValue)
 	}

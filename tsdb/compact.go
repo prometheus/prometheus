@@ -917,9 +917,9 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 			samples := uint64(chk.Chunk.NumSamples())
 			meta.Stats.NumSamples += samples
 			switch chk.Chunk.Encoding() {
-			case chunkenc.EncHistogram, chunkenc.EncFloatHistogram:
+			case chunkenc.EncHistogram, chunkenc.EncFloatHistogram, chunkenc.EncHistogramST, chunkenc.EncFloatHistogramST:
 				meta.Stats.NumHistogramSamples += samples
-			case chunkenc.EncXOR:
+			case chunkenc.EncXOR, chunkenc.EncXOR2:
 				meta.Stats.NumFloatSamples += samples
 			}
 		}

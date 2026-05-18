@@ -387,13 +387,13 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 func histogramSample(ts int64, hint histogram.CounterResetHint) hSample {
 	h := tsdbutil.GenerateTestHistogram(ts + 1)
 	h.CounterResetHint = hint
-	return hSample{st: -ts, t: ts, h: h}
+	return hSample{st: 0, t: ts, h: h}
 }
 
 func floatHistogramSample(ts int64, hint histogram.CounterResetHint) fhSample {
 	fh := tsdbutil.GenerateTestFloatHistogram(ts + 1)
 	fh.CounterResetHint = hint
-	return fhSample{st: -ts, t: ts, fh: fh}
+	return fhSample{st: 0, t: ts, fh: fh}
 }
 
 // Shorthands for counter reset hints.
