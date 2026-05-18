@@ -1757,41 +1757,12 @@ type partialErrSearchQuerier struct {
 }
 
 func (q *partialErrSearchQuerier) SearchLabelNames(_ context.Context, _ *SearchHints, _ ...*labels.Matcher) SearchResultSet {
-	return newErrAfterResultsSet(q.names, q.err)
+	return NewSearchResultSetFromSliceAndError(q.names, nil, q.err)
 }
 
 func (q *partialErrSearchQuerier) SearchLabelValues(_ context.Context, _ string, _ *SearchHints, _ ...*labels.Matcher) SearchResultSet {
-	return newErrAfterResultsSet(q.values, q.err)
+	return NewSearchResultSetFromSliceAndError(q.values, nil, q.err)
 }
-
-// errAfterResultsSet is a SearchResultSet that yields results then returns an error.
-type errAfterResultsSet struct {
-	results []SearchResult
-	idx     int // starts at -1; incremented by Next.
-	err     error
-}
-
-func newErrAfterResultsSet(results []SearchResult, err error) *errAfterResultsSet {
-	return &errAfterResultsSet{results: results, err: err, idx: -1}
-}
-
-func (s *errAfterResultsSet) Next() bool {
-	s.idx++
-	return s.idx < len(s.results)
-}
-
-func (s *errAfterResultsSet) At() SearchResult { return s.results[s.idx] }
-
-func (*errAfterResultsSet) Warnings() annotations.Annotations { return nil }
-
-func (s *errAfterResultsSet) Err() error {
-	if s.idx >= len(s.results) {
-		return s.err
-	}
-	return nil
-}
-
-func (*errAfterResultsSet) Close() error { return nil }
 
 func collectSearchResults(t *testing.T, rs SearchResultSet) []SearchResult {
 	t.Helper()
@@ -1916,8 +1887,9 @@ func TestMergeQuerierSearch(t *testing.T) {
 		// the caller closes before exhaustion. This cannot be tested
 		// through the public API because the error-to-warning conversion
 		// only fires on exhaustion.
-		inner := newErrAfterResultsSet(
+		inner := NewSearchResultSetFromSliceAndError(
 			[]SearchResult{{Value: "zone", Score: 0.5}},
+			nil,
 			errors.New("early close failure"),
 		)
 		rs := warningsOnErrorSearchResultSet(inner)
@@ -2051,7 +2023,7 @@ func TestMergeQuerierSearch(t *testing.T) {
 		}, got)
 	})
 
-	t.Run("primary error preserves warnings from prior searchers", func(t *testing.T) {
+	t.Run("primary error preserves prior results and warnings", func(t *testing.T) {
 		var ws annotations.Annotations
 		ws.Add(errors.New("prior warning"))
 		q1 := &searchQuerier{
@@ -2063,7 +2035,11 @@ func TestMergeQuerierSearch(t *testing.T) {
 		defer merged.Close()
 
 		rs := merged.(Searcher).SearchLabelNames(ctx, nil)
-		// Iteration should see no results because the merge errored.
+		// The successful searcher's results must come through even though
+		// the other primary failed; only after the surviving side exhausts
+		// does iteration end.
+		require.True(t, rs.Next())
+		require.Equal(t, SearchResult{Value: "env", Score: 1.0}, rs.At())
 		require.False(t, rs.Next())
 		require.Error(t, rs.Err())
 		require.Contains(t, rs.Err().Error(), "primary failure")
@@ -2071,6 +2047,29 @@ func TestMergeQuerierSearch(t *testing.T) {
 		warnings := rs.Warnings().AsErrors()
 		require.Len(t, warnings, 1)
 		require.Contains(t, warnings[0].Error(), "prior warning")
+		require.NoError(t, rs.Close())
+	})
+
+	t.Run("partial primary failure mid-stream keeps surviving values", func(t *testing.T) {
+		// q1 yields two values then errors; q2 yields one value cleanly.
+		q1 := &partialErrSearchQuerier{
+			names: []SearchResult{{Value: "alpha", Score: 1.0}, {Value: "beta", Score: 1.0}},
+			err:   errors.New("a tail error"),
+		}
+		q2 := &searchQuerier{
+			names: []SearchResult{{Value: "delta", Score: 1.0}},
+		}
+		merged := NewMergeQuerier([]Querier{q1, q2}, nil, ChainedSeriesMerge)
+		defer merged.Close()
+
+		rs := merged.(Searcher).SearchLabelNames(ctx, nil)
+		var got []string
+		for rs.Next() {
+			got = append(got, rs.At().Value)
+		}
+		require.Equal(t, []string{"alpha", "beta", "delta"}, got)
+		require.Error(t, rs.Err())
+		require.Contains(t, rs.Err().Error(), "a tail error")
 		require.NoError(t, rs.Close())
 	})
 
