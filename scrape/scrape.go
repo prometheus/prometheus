@@ -30,6 +30,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unique"
 	"unsafe"
 
 	"github.com/klauspost/compress/gzip"
@@ -900,6 +901,16 @@ type scrapeLoop struct {
 // storage references. Additionally, it tracks staleness of series between
 // scrapes.
 // Cache is meant to be used per a single target.
+// Since there's a lot of series that share the same parsed string, especially
+// for metrics with no labels other than the __name__, we use unique package
+// to de-duplicate these for us in the cache, so we only store each raw string once,
+// and then keep a reference to that raw string here.
+// This saves us memory because unique.Handle needs 8 bytes, while the average series
+// would need a lot more than 8 bytes.
+// All scrapeCache functions take arguments as unique.Handle, rather than a raw string
+// that require unique.Make() call to get the handle value, because unique.Make is
+// a relatively expensive, so we want to call it once and then pass the results of
+// it around.
 type scrapeCache struct {
 	iter uint64 // Current scrape iteration.
 
@@ -908,11 +919,11 @@ type scrapeCache struct {
 
 	// Parsed string to an entry with information about the actual label set
 	// and its storage reference.
-	series map[string]*cacheEntry
+	series map[unique.Handle[string]]*cacheEntry
 
 	// Cache of dropped metric strings and their iteration. The iteration must
 	// be a pointer so we can update it.
-	droppedSeries map[string]*uint64
+	droppedSeries map[unique.Handle[string]]*uint64
 
 	// Series that were seen in the current and previous scrape, for staleness detection.
 	seriesCur  map[storage.SeriesRef]*cacheEntry
@@ -920,8 +931,8 @@ type scrapeCache struct {
 
 	// TODO(bwplotka): Consider moving metadata caching to head. See
 	// https://github.com/prometheus/prometheus/issues/17619.
-	metaMtx  sync.Mutex            // Mutex is needed due to api touching it when metadata is queried.
-	metadata map[string]*metaEntry // metadata by metric family name.
+	metaMtx  sync.Mutex                           // Mutex is needed due to api touching it when metadata is queried.
+	metadata map[unique.Handle[string]]*metaEntry // metadata by metric family name.
 
 	metrics *scrapeMetrics
 }
@@ -929,6 +940,9 @@ type scrapeCache struct {
 // metaEntry holds meta information about a metric.
 type metaEntry struct {
 	metadata.Metadata
+
+	help unique.Handle[string]
+	unit unique.Handle[string]
 
 	lastIter       uint64 // Last scrape iteration the entry was observed at.
 	lastIterChange uint64 // Last scrape iteration the entry was changed at.
@@ -941,11 +955,11 @@ func (m *metaEntry) size() int {
 
 func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 	return &scrapeCache{
-		series:        map[string]*cacheEntry{},
-		droppedSeries: map[string]*uint64{},
+		series:        map[unique.Handle[string]]*cacheEntry{},
+		droppedSeries: map[unique.Handle[string]]*uint64{},
 		seriesCur:     map[storage.SeriesRef]*cacheEntry{},
 		seriesPrev:    map[storage.SeriesRef]*cacheEntry{},
-		metadata:      map[string]*metaEntry{},
+		metadata:      map[unique.Handle[string]]*metaEntry{},
 		metrics:       metrics,
 	}
 }
@@ -999,8 +1013,8 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 	c.iter++
 }
 
-func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
-	e, ok := c.series[string(met)]
+func (c *scrapeCache) get(met unique.Handle[string]) (*cacheEntry, bool, bool) {
+	e, ok := c.series[met]
 	if !ok {
 		return nil, false, false
 	}
@@ -1009,19 +1023,19 @@ func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
 	return e, true, alreadyScraped
 }
 
-func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels, hash uint64) (ce *cacheEntry) {
+func (c *scrapeCache) addRef(met unique.Handle[string], ref storage.SeriesRef, lset labels.Labels, hash uint64) (ce *cacheEntry) {
 	ce = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
-	c.series[string(met)] = ce
+	c.series[met] = ce
 	return ce
 }
 
-func (c *scrapeCache) addDropped(met []byte) {
+func (c *scrapeCache) addDropped(met unique.Handle[string]) {
 	iter := c.iter
-	c.droppedSeries[string(met)] = &iter
+	c.droppedSeries[met] = &iter
 }
 
-func (c *scrapeCache) getDropped(met []byte) bool {
-	iterp, ok := c.droppedSeries[string(met)]
+func (c *scrapeCache) getDropped(met unique.Handle[string]) bool {
+	iterp, ok := c.droppedSeries[met]
 	if ok {
 		*iterp = c.iter
 	}
@@ -1047,13 +1061,15 @@ func yoloString(b []byte) string {
 }
 
 func (c *scrapeCache) setType(mfName []byte, t model.MetricType) ([]byte, *metaEntry) {
+	key := unique.Make(string(mfName))
+
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	e, ok := c.metadata[string(mfName)]
+	e, ok := c.metadata[key]
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
-		c.metadata[string(mfName)] = e
+		c.metadata[key] = e
 	}
 	if e.Type != t {
 		e.Type = t
@@ -1064,16 +1080,19 @@ func (c *scrapeCache) setType(mfName []byte, t model.MetricType) ([]byte, *metaE
 }
 
 func (c *scrapeCache) setHelp(mfName, help []byte) ([]byte, *metaEntry) {
+	key := unique.Make(string(mfName))
+
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	e, ok := c.metadata[string(mfName)]
+	e, ok := c.metadata[key]
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
-		c.metadata[string(mfName)] = e
+		c.metadata[key] = e
 	}
 	if e.Help != string(help) {
-		e.Help = string(help)
+		e.help = unique.Make(string(help))
+		e.Help = e.help.Value()
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
@@ -1081,16 +1100,19 @@ func (c *scrapeCache) setHelp(mfName, help []byte) ([]byte, *metaEntry) {
 }
 
 func (c *scrapeCache) setUnit(mfName, unit []byte) ([]byte, *metaEntry) {
+	key := unique.Make(string(mfName))
+
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	e, ok := c.metadata[string(mfName)]
+	e, ok := c.metadata[key]
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
-		c.metadata[string(mfName)] = e
+		c.metadata[key] = e
 	}
 	if e.Unit != string(unit) {
-		e.Unit = string(unit)
+		e.unit = unique.Make(string(unit))
+		e.Unit = e.unit.Value()
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
@@ -1099,10 +1121,12 @@ func (c *scrapeCache) setUnit(mfName, unit []byte) ([]byte, *metaEntry) {
 
 // GetMetadata returns metadata given the metric family name.
 func (c *scrapeCache) GetMetadata(mfName string) (MetricMetadata, bool) {
+	key := unique.Make(mfName)
+
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	m, ok := c.metadata[mfName]
+	m, ok := c.metadata[key]
 	if !ok {
 		return MetricMetadata{}, false
 	}
@@ -1123,7 +1147,7 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 
 	for m, e := range c.metadata {
 		res = append(res, MetricMetadata{
-			MetricFamily: m,
+			MetricFamily: m.Value(),
 			Type:         e.Type,
 			Help:         e.Help,
 			Unit:         e.Unit,
@@ -1656,6 +1680,7 @@ loop:
 			et                       textparse.Entry
 			sampleAdded, isHistogram bool
 			met                      []byte
+			metHandle                unique.Handle[string]
 			parsedTimestamp          *int64
 			val                      float64
 			h                        *histogram.Histogram
@@ -1695,6 +1720,7 @@ loop:
 		} else {
 			met, parsedTimestamp, val = p.Series()
 		}
+		metHandle = unique.Make(string(met))
 		if !sl.honorTimestamps {
 			parsedTimestamp = nil
 		}
@@ -1702,10 +1728,10 @@ loop:
 			t = *parsedTimestamp
 		}
 
-		if sl.cache.getDropped(met) {
+		if sl.cache.getDropped(metHandle) {
 			continue
 		}
-		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
+		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(metHandle)
 		var (
 			ref  storage.SeriesRef
 			hash uint64
@@ -1725,7 +1751,7 @@ loop:
 
 			// The label set may be set to empty to indicate dropping.
 			if lset.IsEmpty() {
-				sl.cache.addDropped(met)
+				sl.cache.addDropped(metHandle)
 				continue
 			}
 
@@ -1797,7 +1823,7 @@ loop:
 		// If a series was new but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
-			ce = sl.cache.addRef(met, ref, lset, hash)
+			ce = sl.cache.addRef(metHandle, ref, lset, hash)
 			if ce != nil && ce.ref != 0 && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
 				// Bypass staleness logic if there is an explicit timestamp.
 				// But make sure we only do this if we have a cache entry (ce) for our series.
@@ -2181,7 +2207,8 @@ func (sl *scrapeLoop) reportStale(app scrapeLoopAppendAdapter, start time.Time) 
 }
 
 func (sl *scrapeLoopAppender) addReportSample(s reportSample, t int64, v float64, b *labels.Builder, rejectOOO bool) (err error) {
-	ce, ok, _ := sl.cache.get(s.name)
+	handle := unique.Make(string(s.name))
+	ce, ok, _ := sl.cache.get(handle)
 	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {
@@ -2208,7 +2235,7 @@ func (sl *scrapeLoopAppender) addReportSample(s reportSample, t int64, v float64
 	switch {
 	case err == nil:
 		if !ok {
-			sl.cache.addRef(s.name, ref, lset, lset.Hash())
+			sl.cache.addRef(handle, ref, lset, lset.Hash())
 			// We only need to add metadata once a scrape target appears.
 			if sl.appendMetadataToWAL {
 				if _, merr := sl.UpdateMetadata(ref, lset, s.Metadata); merr != nil {

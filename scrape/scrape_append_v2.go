@@ -20,6 +20,7 @@ import (
 	"math"
 	"slices"
 	"time"
+	"unique"
 
 	"github.com/prometheus/common/model"
 
@@ -152,6 +153,7 @@ loop:
 			sampleAdded, isHistogram bool
 			st                       int64
 			met                      []byte
+			metHandle                unique.Handle[string]
 			parsedTimestamp          *int64
 			val                      float64
 			h                        *histogram.Histogram
@@ -193,6 +195,7 @@ loop:
 		} else {
 			met, parsedTimestamp, val = p.Series()
 		}
+		metHandle = unique.Make(string(met))
 		if !sl.honorTimestamps {
 			parsedTimestamp = nil
 		}
@@ -200,10 +203,10 @@ loop:
 			t = *parsedTimestamp
 		}
 
-		if sl.cache.getDropped(met) {
+		if sl.cache.getDropped(metHandle) {
 			continue
 		}
-		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
+		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(metHandle)
 		var (
 			ref  storage.SeriesRef
 			hash uint64
@@ -223,7 +226,7 @@ loop:
 
 			// The label set may be set to empty to indicate dropping.
 			if lset.IsEmpty() {
-				sl.cache.addDropped(met)
+				sl.cache.addDropped(metHandle)
 				continue
 			}
 
@@ -348,7 +351,7 @@ loop:
 		// If a series was new, but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
-			ce = sl.cache.addRef(met, ref, lset, hash)
+			ce = sl.cache.addRef(metHandle, ref, lset, hash)
 
 			if sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
@@ -414,7 +417,8 @@ loop:
 }
 
 func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float64, b *labels.Builder, rejectOOO bool) (err error) {
-	ce, ok, _ := sl.cache.get(s.name)
+	handle := unique.Make(string(s.name))
+	ce, ok, _ := sl.cache.get(handle)
 	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {
@@ -437,7 +441,7 @@ func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float
 	switch {
 	case err == nil:
 		if !ok {
-			sl.cache.addRef(s.name, ref, lset, lset.Hash())
+			sl.cache.addRef(handle, ref, lset, lset.Hash())
 		}
 		return nil
 	case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):

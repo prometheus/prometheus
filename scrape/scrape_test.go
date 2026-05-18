@@ -37,6 +37,7 @@ import (
 	"testing/synctest"
 	"text/template"
 	"time"
+	"unique"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/regexp"
@@ -2878,14 +2879,14 @@ func testScrapeLoopCache(t *testing.T, appV2 bool) {
 	scraper.scrapeFunc = func(_ context.Context, w io.Writer) error {
 		switch numScrapes {
 		case 1, 2:
-			_, ok := sl.cache.series["metric_a"]
+			_, ok := sl.cache.series[unique.Make("metric_a")]
 			require.True(t, ok, "metric_a missing from cache after scrape %d", numScrapes)
-			_, ok = sl.cache.series["metric_b"]
+			_, ok = sl.cache.series[unique.Make("metric_b")]
 			require.True(t, ok, "metric_b missing from cache after scrape %d", numScrapes)
 		case 3:
-			_, ok := sl.cache.series["metric_a"]
+			_, ok := sl.cache.series[unique.Make("metric_a")]
 			require.True(t, ok, "metric_a missing from cache after scrape %d", numScrapes)
-			_, ok = sl.cache.series["metric_b"]
+			_, ok = sl.cache.series[unique.Make("metric_b")]
 			require.False(t, ok, "metric_b present in cache after scrape %d", numScrapes)
 		}
 
@@ -3153,7 +3154,7 @@ func testScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T, appV2 bool) {
 	hash := lset.Hash()
 
 	// Create a fake entry in the cache
-	sl.cache.addRef(metric, fakeRef, lset, hash)
+	sl.cache.addRef(unique.Make(string(metric)), fakeRef, lset, hash)
 	now := time.Now()
 
 	app := sl.appender()
