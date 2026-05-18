@@ -16,6 +16,7 @@ package annotations
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -111,4 +112,55 @@ func newTestCustomWarning(q float64, pos posrange.PositionRange, smallest, large
 		Min:           []float64{smallest},
 		Max:           []float64{largest},
 	}
+}
+
+func TestStartTimeOverlapWarning(t *testing.T) {
+	pos := posrange.PositionRange{Start: 5, End: 10}
+
+	// Test single warning.
+	warning := NewStartTimeOverlapWarning("test_metric", pos)
+	require.Error(t, warning)
+	require.ErrorIs(t, warning, StartTimeOverlapWarning)
+	require.ErrorIs(t, warning, PromQLWarning)
+
+	// Test merging of warnings.
+	var annos Annotations
+	annos.Add(NewStartTimeOverlapWarning("test_metric", pos))
+	annos.Add(NewStartTimeOverlapWarning("test_metric", pos))
+	annos.Add(NewStartTimeOverlapWarning("test_metric", pos))
+
+	warnings, _ := annos.AsStrings("test query", 0, 0)
+	require.Len(t, warnings, 1)
+	require.Contains(t, warnings[0], "sample has start time that overlaps with previous sample timestamp")
+	require.Contains(t, warnings[0], "test_metric")
+	// Each warning starts with count=1. After merging 3 warnings: 1+1+1=3 occurrences.
+	require.Contains(t, warnings[0], "3 occurrences")
+}
+
+func TestStartTimeOverlapWarning_DifferentMetrics(t *testing.T) {
+	pos := posrange.PositionRange{Start: 5, End: 10}
+
+	var annos Annotations
+	annos.Add(NewStartTimeOverlapWarning("metric_a", pos))
+	annos.Add(NewStartTimeOverlapWarning("metric_b", pos))
+	annos.Add(NewStartTimeOverlapWarning("metric_a", pos))
+
+	warnings, _ := annos.AsStrings("test query", 0, 0)
+	require.Len(t, warnings, 2)
+
+	// Check that we have warnings for both metrics.
+	hasMetricA := false
+	hasMetricB := false
+	for _, w := range warnings {
+		if strings.Contains(w, "metric_a") {
+			hasMetricA = true
+			require.Contains(t, w, "2 occurrences")
+		}
+		if strings.Contains(w, "metric_b") {
+			hasMetricB = true
+			require.NotContains(t, w, "occurrences")
+		}
+	}
+	require.True(t, hasMetricA)
+	require.True(t, hasMetricB)
 }
