@@ -41,6 +41,7 @@ import (
 var longErrMessage = strings.Repeat("error message", maxErrMsgLen)
 
 func TestStoreHTTPErrorHandling(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		code int
 		err  error
@@ -95,6 +96,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 }
 
 func TestClientRetryAfter(t *testing.T) {
+	t.Parallel()
 	setupServer := func(statusCode int) *httptest.Server {
 		return httptest.NewServer(
 			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -134,6 +136,7 @@ func TestClientRetryAfter(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			server := setupServer(tc.statusCode)
 			defer server.Close()
 
@@ -153,6 +156,7 @@ func TestClientRetryAfter(t *testing.T) {
 }
 
 func TestRetryAfterDuration(t *testing.T) {
+	t.Parallel()
 	tc := []struct {
 		name     string
 		tInput   string
@@ -180,6 +184,7 @@ func TestRetryAfterDuration(t *testing.T) {
 }
 
 func TestClientCustomHeaders(t *testing.T) {
+	t.Parallel()
 	headersToSend := map[string]string{"Foo": "Bar", "Baz": "qux"}
 
 	var called bool
@@ -220,6 +225,7 @@ func TestClientCustomHeaders(t *testing.T) {
 }
 
 func TestReadClient(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name                  string
 		query                 *prompb.Query
@@ -353,6 +359,7 @@ func TestReadClient(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			server := httptest.NewServer(test.httpHandler)
 			defer server.Close()
 
@@ -480,6 +487,7 @@ func delayedResponseHTTPHandler(t *testing.T, delay time.Duration) http.HandlerF
 }
 
 func TestReadMultipleErrorHandling(t *testing.T) {
+	t.Parallel()
 	m := &mockedRemoteClient{
 		store: []*prompb.TimeSeries{
 			{Labels: []prompb.Label{{Name: "job", Value: "prometheus"}}},
@@ -504,6 +512,7 @@ func TestReadMultipleErrorHandling(t *testing.T) {
 }
 
 func TestReadMultiple(t *testing.T) {
+	t.Parallel()
 	const sampleIntervalMs = 250
 
 	// Helper function to calculate series multiplier based on labels
@@ -726,6 +735,7 @@ func TestReadMultiple(t *testing.T) {
 }
 
 func TestReadMultipleSorting(t *testing.T) {
+	t.Parallel()
 	// Test data with labels designed to test sorting behavior
 	// When sorted: aaa < bbb < ccc
 	// When unsorted: order depends on processing order
@@ -813,6 +823,7 @@ func TestReadMultipleSorting(t *testing.T) {
 }
 
 func TestReadMultipleWithChunks(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name                 string
 		queries              []*prompb.Query
@@ -910,6 +921,7 @@ func TestReadMultipleWithChunks(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			server := httptest.NewServer(tc.mockHandler(t, tc.queries))
 			defer server.Close()
 
