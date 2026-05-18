@@ -63,6 +63,7 @@ const (
 	azureLabelMachineTag           = azureLabel + "machine_tag_"
 	azureLabelMachineScaleSet      = azureLabel + "machine_scale_set"
 	azureLabelMachineSize          = azureLabel + "machine_size"
+	azureLabelMachineState         = azureLabel + "machine_state"
 
 	authMethodOAuth            = "OAuth"
 	authMethodSDK              = "SDK"
@@ -341,6 +342,7 @@ type virtualMachine struct {
 	Tags              map[string]*string
 	NetworkInterfaces []string
 	Size              string
+	PowerState        string
 }
 
 // Create a new azureResource object from an ID string.
@@ -445,6 +447,7 @@ func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualM
 		azureLabelMachineLocation:      model.LabelValue(vm.Location),
 		azureLabelMachineResourceGroup: model.LabelValue(r.ResourceGroupName),
 		azureLabelMachineSize:          model.LabelValue(vm.Size),
+		azureLabelMachineState:         model.LabelValue(vm.PowerState),
 	}
 
 	if vm.ScaleSet != "" {
@@ -520,7 +523,9 @@ func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualM
 func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]virtualMachine, error) {
 	var vms []virtualMachine
 	if resourceGroup == "" {
-		pager := client.vm.NewListAllPager(nil)
+		pager := client.vm.NewListAllPager(&armcompute.VirtualMachinesClientListAllOptions{
+			Expand: to.Ptr(armcompute.ExpandTypesForListVMsInstanceView),
+		})
 		for pager.More() {
 			nextResult, err := pager.NextPage(ctx)
 			if err != nil {
@@ -531,7 +536,9 @@ func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]
 			}
 		}
 	} else {
-		pager := client.vm.NewListPager(resourceGroup, nil)
+		pager := client.vm.NewListPager(resourceGroup, &armcompute.VirtualMachinesClientListOptions{
+			Expand: to.Ptr(armcompute.ExpandTypeForListVMsInstanceView),
+		})
 		for pager.More() {
 			nextResult, err := pager.NextPage(ctx)
 			if err != nil {
@@ -581,7 +588,9 @@ func (client *azureClient) getScaleSetVMs(ctx context.Context, scaleSet armcompu
 		return nil, fmt.Errorf("could not parse scale set ID: %w", err)
 	}
 
-	pager := client.vmssvm.NewListPager(r.ResourceGroupName, *(scaleSet.Name), nil)
+	pager := client.vmssvm.NewListPager(r.ResourceGroupName, *(scaleSet.Name), &armcompute.VirtualMachineScaleSetVMsClientListOptions{
+		Expand: to.Ptr("instanceView"),
+	})
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
@@ -601,6 +610,7 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 	networkInterfaces := []string{}
 	var computerName string
 	var size string
+	var powerState string
 
 	if vm.Tags != nil {
 		tags = vm.Tags
@@ -623,6 +633,16 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 		}
 		if vm.Properties.HardwareProfile != nil {
 			size = string(*vm.Properties.HardwareProfile.VMSize)
+		}
+
+		// Extract power state from InstanceView
+		if vm.Properties.InstanceView != nil && vm.Properties.InstanceView.Statuses != nil {
+			for _, status := range vm.Properties.InstanceView.Statuses {
+				if status.Code != nil && strings.HasPrefix(*status.Code, "PowerState/") {
+					powerState = strings.TrimPrefix(*status.Code, "PowerState/")
+					break
+				}
+			}
 		}
 	}
 
@@ -637,6 +657,7 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 		Tags:              tags,
 		NetworkInterfaces: networkInterfaces,
 		Size:              size,
+		PowerState:        powerState,
 	}
 }
 
@@ -646,6 +667,7 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 	networkInterfaces := []string{}
 	var computerName string
 	var size string
+	var powerState string
 
 	if vm.Tags != nil {
 		tags = vm.Tags
@@ -668,6 +690,16 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 		}
 		if vm.Properties.HardwareProfile != nil {
 			size = string(*vm.Properties.HardwareProfile.VMSize)
+		}
+
+		// Extract power state from InstanceView
+		if vm.Properties.InstanceView != nil && vm.Properties.InstanceView.Statuses != nil {
+			for _, status := range vm.Properties.InstanceView.Statuses {
+				if status.Code != nil && strings.HasPrefix(*status.Code, "PowerState/") {
+					powerState = strings.TrimPrefix(*status.Code, "PowerState/")
+					break
+				}
+			}
 		}
 	}
 
@@ -683,6 +715,7 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 		Tags:              tags,
 		NetworkInterfaces: networkInterfaces,
 		Size:              size,
+		PowerState:        powerState,
 	}
 }
 
