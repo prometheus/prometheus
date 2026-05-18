@@ -45,10 +45,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -209,7 +209,8 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 	if len(sp.searches) > maxSearchTermsPerRequest {
 		return sp, &apiError{errorBadData, fmt.Errorf(
 			"too many search[] terms: got %d, maximum is %d",
-			len(sp.searches), maxSearchTermsPerRequest)}
+			len(sp.searches), maxSearchTermsPerRequest,
+		)}
 	}
 
 	sp.fuzzThreshold = 0

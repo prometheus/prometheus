@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 // newSearchTestAPI creates a minimal API suitable for search endpoint testing.
@@ -102,6 +103,7 @@ func minimalSearchAPI() *API {
 		metaCache:    &searchMetadataCache{},
 	}
 }
+
 // parseNDJSON parses NDJSON response body into individual JSON objects.
 func parseNDJSON(t *testing.T, body string) []json.RawMessage {
 	t.Helper()
@@ -1120,6 +1122,7 @@ func TestSearchStreamFirstBatchError(t *testing.T) {
 	var lastTrailer searchTrailer
 	require.NoError(t, json.Unmarshal(lines[len(lines)-1], &lastTrailer))
 	require.Equal(t, "error", lastTrailer.Status, "stream must terminate with an error line, not a success trailer")
+}
 
 // TestStreamSearchResultsWarningsSorted verifies that warnings emitted in the
 // first NDJSON batch are sorted (so the on-wire order is deterministic) and
@@ -1242,7 +1245,6 @@ func TestStreamSearchResultsWarningsTrailerDiff(t *testing.T) {
 	require.Equal(t, []string{"base-warn", "late-warn"}, trailer.Warnings,
 		"trailer must surface warnings that appeared only after iteration exhausted")
 }
-
 
 // TestSearchParamsRejectsExcessSearchTerms ensures that a request padded
 // with more than maxSearchTermsPerRequest search[] params is rejected
