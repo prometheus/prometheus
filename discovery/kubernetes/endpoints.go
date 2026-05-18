@@ -46,6 +46,7 @@ type Endpoints struct {
 	withNamespaceMetadata  bool
 	replicaSetInf          cache.SharedInformer
 	withDeploymentMetadata bool
+	withDaemonSetMetadata  bool
 	jobInf                 cache.SharedInformer
 	withJobMetadata        bool
 	withCronJobMetadata    bool
@@ -60,7 +61,7 @@ type Endpoints struct {
 // NewEndpoints returns a new endpoints discovery.
 //
 // Deprecated: The Endpoints API is deprecated starting in K8s v1.33+. Use NewEndpointSlice.
-func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node, namespace, rs, job cache.SharedInformer, withDeploymentMetadata, withJobMetadata, withCronJobMetadata bool, eventCount *prometheus.CounterVec) *Endpoints {
+func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node, namespace, rs, job cache.SharedInformer, withDeploymentMetadata, withDaemonSetMetadata, withJobMetadata, withCronJobMetadata bool, eventCount *prometheus.CounterVec) *Endpoints {
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
@@ -89,6 +90,7 @@ func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node,
 		withNamespaceMetadata:  namespace != nil,
 		replicaSetInf:          rs,
 		withDeploymentMetadata: withDeploymentMetadata,
+		withDaemonSetMetadata:  withDaemonSetMetadata,
 		jobInf:                 job,
 		withJobMetadata:        withJobMetadata,
 		withCronJobMetadata:    withCronJobMetadata,
@@ -410,7 +412,7 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 		}
 
 		// Attach standard pod labels.
-		target = target.Merge(podLabels(pod, e.replicaSetInf, e.jobInf, e.withDeploymentMetadata, e.withJobMetadata, e.withCronJobMetadata))
+		target = target.Merge(podLabels(pod, e.replicaSetInf, e.jobInf, e.withDeploymentMetadata, e.withDaemonSetMetadata, e.withJobMetadata, e.withCronJobMetadata))
 
 		// Attach potential container port labels matching the endpoint port.
 		containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
@@ -494,7 +496,7 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
 					podContainerIsInit:            lv(strconv.FormatBool(isInit)),
 				}
-				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod, e.replicaSetInf, e.jobInf, e.withDeploymentMetadata, e.withJobMetadata, e.withCronJobMetadata)))
+				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod, e.replicaSetInf, e.jobInf, e.withDeploymentMetadata, e.withDaemonSetMetadata, e.withJobMetadata, e.withCronJobMetadata)))
 			}
 		}
 	}
