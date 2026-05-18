@@ -117,11 +117,17 @@ func (a *initAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 // initTime initializes a head with the first timestamp. This only needs to be called
 // for a completely fresh head with an empty WAL.
 func (h *Head) initTime(t int64) {
-	if !h.minTime.CompareAndSwap(math.MaxInt64, t) {
-		// Concurrent appends that are initializing.
-		// Wait until h.maxTime is swapped to avoid minTime/maxTime races.
+	// maxTime must be set before minTime, because initialized() keys off minTime.
+	// If minTime were set to t first, a concurrent Head.Appender call could
+	// observe initialized() == true while maxTime is still math.MinInt64; the
+	// resulting underflow in appendableMinValidTime would reject in-range samples
+	// with ErrOutOfBounds.
+	if !h.maxTime.CompareAndSwap(math.MinInt64, t) {
+		// Another goroutine already won the init race. Wait until it also sets
+		// minTime, so callers that next read initialized() can rely on both
+		// bounds being valid.
 		antiDeadlockTimeout := time.After(500 * time.Millisecond)
-		for h.maxTime.Load() == math.MinInt64 {
+		for h.minTime.Load() == math.MaxInt64 {
 			select {
 			case <-antiDeadlockTimeout:
 				return
@@ -130,8 +136,7 @@ func (h *Head) initTime(t int64) {
 		}
 		return
 	}
-	// Ensure that max time is initialized to at least the min time we just set.
-	h.maxTime.CompareAndSwap(math.MinInt64, t)
+	h.minTime.CompareAndSwap(math.MaxInt64, t)
 }
 
 func (a *initAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
