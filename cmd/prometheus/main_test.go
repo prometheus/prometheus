@@ -16,6 +16,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1574,4 +1575,100 @@ func TestFeatureFlagsDocumented(t *testing.T) {
 	require.NotEmpty(t, docFlags)
 	require.True(t, slices.IsSorted(helpFlags))
 	require.ElementsMatch(t, helpFlags, docFlags)
+}
+
+func cpFile(t *testing.T, dst, src string) {
+	t.Helper()
+	data, err := os.ReadFile(src)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(dst, data, 0o644))
+}
+
+// TestClientTLSCertRotationWithoutCAFile checks that scrapes keep working after
+// a client cert rotation when no ca_file is configured (cert_file + key_file only).
+// Regression test for: https://github.com/prometheus/prometheus/issues/16622.
+func TestClientTLSCertRotationWithoutCAFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	// The target starts serving an extra metric after client cert rotation.
+	// If the scrape recovers, the new series should get ingested.
+	target := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "test_up 1")
+		// The cert was rotated.
+		if len(r.TLS.PeerCertificates) > 0 && r.TLS.PeerCertificates[0].Subject.CommonName == "localhost" {
+			fmt.Fprintln(w, "test_after_rotation 1")
+		}
+	}))
+	target.TLS = &tls.Config{
+		ClientAuth: tls.RequireAnyClientCert,
+	}
+	target.StartTLS()
+	defer target.Close()
+
+	clientCertFile := filepath.Join(tmpDir, "client.cer")
+	clientKeyFile := filepath.Join(tmpDir, "client.key")
+	cpFile(t, clientCertFile, filepath.Join("..", "..", "scrape", "testdata", "client.cer"))
+	cpFile(t, clientKeyFile, filepath.Join("..", "..", "scrape", "testdata", "client.key"))
+
+	port := testutil.RandomUnprivilegedPort(t)
+	configFile := filepath.Join(tmpDir, "prometheus.yml")
+	require.NoError(t, os.WriteFile(configFile, fmt.Appendf(nil, `
+scrape_configs:
+  - job_name: target
+    scrape_interval: 1s
+    scheme: https
+    static_configs:
+      - targets: ['%s']
+    tls_config:
+      cert_file: %s
+      key_file: %s
+      insecure_skip_verify: true
+`, target.Listener.Addr().String(), clientCertFile, clientKeyFile), 0o644))
+
+	prom := prometheusCommandWithLogging(t, configFile, port,
+		"--storage.tsdb.path="+filepath.Join(tmpDir, "data"),
+		"--scrape.discovery-reload-interval=100ms",
+	)
+	require.NoError(t, prom.Start())
+
+	promURL := "http://localhost:" + strconv.Itoa(port)
+	const headSeriesCreated = "prometheus_tsdb_head_series_created_total"
+
+	getHeadSeriesCreated := func() (float64, error) {
+		r, err := http.Get(promURL + "/metrics")
+		if err != nil {
+			return 0, err
+		}
+		defer r.Body.Close()
+		b, _ := io.ReadAll(r.Body)
+		return getMetricValue(t, bytes.NewReader(b), model.MetricTypeCounter, headSeriesCreated)
+	}
+
+	// Wait for at least one scrape to ingest series.
+	// 1 scraped series + 5 synthetic series.
+	seriesCreatedBeforeRotation := 6.0
+	require.Eventually(t, func() bool {
+		v, err := getHeadSeriesCreated()
+		if err != nil {
+			return false
+		}
+		return v == seriesCreatedBeforeRotation
+	}, startupTime, 500*time.Millisecond)
+
+	// Overwrite client cert files (content doesn't matter) to trigger a
+	// transport rebuild.
+	cpFile(t, clientCertFile, filepath.Join("..", "..", "scrape", "testdata", "server.cer"))
+	cpFile(t, clientKeyFile, filepath.Join("..", "..", "scrape", "testdata", "server.key"))
+
+	require.Eventually(t, func() bool {
+		v, err := getHeadSeriesCreated()
+		if err != nil {
+			return false
+		}
+		return v > seriesCreatedBeforeRotation
+	}, 5*time.Second, 1*time.Second, "scrape should keep working after cert rotation")
 }
