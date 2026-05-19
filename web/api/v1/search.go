@@ -60,6 +60,12 @@ import (
 // defaultFuzzAlg is the algorithm assumed when fuzz_alg is not specified.
 const defaultFuzzAlg = "subsequence"
 
+// defaultSearchLimit is the default value for the limit parameter when the client omits it.
+const defaultSearchLimit = 100
+
+// defaultSearchBatchSize is the default value for the batch_size parameter when the client omits it.
+const defaultSearchBatchSize = 100
+
 // maxSearchTermsPerRequest caps the number of search[] query parameters
 // accepted in one request. Per-value filter cost grows with the number of
 // terms (each term adds at least one substring filter, optionally a fuzzy
@@ -264,33 +270,28 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 	// Default limit is shrunk to maxSearchLimit when the operator configured
 	// a smaller cap, so a request that omits "limit" still serves up to the
 	// configured maximum rather than failing the cap check unconditionally.
-	sp.limit = 100
+	sp.limit = defaultSearchLimit
 	if api.maxSearchLimit > 0 && sp.limit > api.maxSearchLimit {
 		sp.limit = api.maxSearchLimit
 	}
 	if v := r.FormValue("limit"); v != "" {
 		l, err := strconv.Atoi(v)
-		if err != nil || l < 0 {
-			return sp, &apiError{errorBadData, fmt.Errorf("invalid limit %q: must be non-negative integer", v)}
+		if err != nil || l <= 0 {
+			return sp, &apiError{errorBadData, fmt.Errorf("invalid limit %q: must be a positive integer", v)}
 		}
-		if l > 0 {
-			if api.maxSearchLimit > 0 && l > api.maxSearchLimit {
-				return sp, &apiError{errorBadData, fmt.Errorf("limit %d exceeds the configured maximum (%d, see --web.search.max-limit)", l, api.maxSearchLimit)}
-			}
-			sp.limit = l
+		if api.maxSearchLimit > 0 && l > api.maxSearchLimit {
+			return sp, &apiError{errorBadData, fmt.Errorf("limit %d exceeds the configured maximum (%d, see --web.search.max-limit)", l, api.maxSearchLimit)}
 		}
+		sp.limit = l
 	}
 
-	sp.batchSize = 100
+	sp.batchSize = defaultSearchBatchSize
 	if v := r.FormValue("batch_size"); v != "" {
 		bs, err := strconv.Atoi(v)
-		if err != nil || bs < 0 {
-			return sp, &apiError{errorBadData, fmt.Errorf("invalid batch_size %q: must be non-negative integer", v)}
+		if err != nil || bs <= 0 {
+			return sp, &apiError{errorBadData, fmt.Errorf("invalid batch_size %q: must be a positive integer", v)}
 		}
-		if bs > 0 {
-			sp.batchSize = bs
-		}
-		// batch_size=0 means server-determined; keep default.
+		sp.batchSize = bs
 	}
 
 	return sp, nil

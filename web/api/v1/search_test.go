@@ -458,16 +458,22 @@ func TestSearchMetricNames(t *testing.T) {
 		require.Equal(t, http.StatusOK, rec.Code)
 	})
 
-	t.Run("batch_size zero uses server default", func(t *testing.T) {
-		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
-			"batch_size": []string{"0"},
+	for _, v := range []string{"0", "-1"} {
+		t.Run("batch_size "+v+" is rejected", func(t *testing.T) {
+			rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
+				"batch_size": []string{v},
+			})
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			require.Contains(t, rec.Body.String(), "must be a positive integer")
 		})
-		require.Equal(t, http.StatusOK, rec.Code)
-
-		lines := parseNDJSON(t, rec.Body.String())
-		// With batch_size=0 (server default 100), all 5 results fit in one batch + trailer.
-		require.Len(t, lines, 2)
-	})
+		t.Run("limit "+v+" is rejected", func(t *testing.T) {
+			rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
+				"limit": []string{v},
+			})
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			require.Contains(t, rec.Body.String(), "must be a positive integer")
+		})
+	}
 
 	t.Run("sort_by cardinality is invalid", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
@@ -663,6 +669,22 @@ func TestSearchLabelNames(t *testing.T) {
 		})
 		require.Equal(t, http.StatusBadRequest, rec.Code)
 	})
+	for _, v := range []string{"0", "-1"} {
+		t.Run("limit "+v+" is rejected", func(t *testing.T) {
+			rec := doSearchRequest(t, api, "/search/label_names", url.Values{
+				"limit": []string{v},
+			})
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			require.Contains(t, rec.Body.String(), "must be a positive integer")
+		})
+		t.Run("batch_size "+v+" is rejected", func(t *testing.T) {
+			rec := doSearchRequest(t, api, "/search/label_names", url.Values{
+				"batch_size": []string{v},
+			})
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			require.Contains(t, rec.Body.String(), "must be a positive integer")
+		})
+	}
 }
 
 func TestSearchLabelValues(t *testing.T) {
@@ -761,6 +783,24 @@ func TestSearchLabelValues(t *testing.T) {
 		})
 		require.Equal(t, http.StatusBadRequest, rec.Code)
 	})
+	for _, v := range []string{"0", "-1"} {
+		t.Run("limit "+v+" is rejected", func(t *testing.T) {
+			rec := doSearchRequest(t, api, "/search/label_values", url.Values{
+				"label": []string{"job"},
+				"limit": []string{v},
+			})
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			require.Contains(t, rec.Body.String(), "must be a positive integer")
+		})
+		t.Run("batch_size "+v+" is rejected", func(t *testing.T) {
+			rec := doSearchRequest(t, api, "/search/label_values", url.Values{
+				"label":      []string{"job"},
+				"batch_size": []string{v},
+			})
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			require.Contains(t, rec.Body.String(), "must be a positive integer")
+		})
+	}
 
 	t.Run("multiple search terms OR logic", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/label_values", url.Values{

@@ -754,7 +754,7 @@ func propsMap(pairs []schemaProp) *orderedmap.Map[string, *base.SchemaProxy] {
 }
 
 // commonSearchPostProps returns the properties shared by all three search POST bodies.
-func commonSearchPostProps() []schemaProp {
+func (b *OpenAPIBuilder) commonSearchPostProps() []schemaProp {
 	return []schemaProp{
 		{"fuzz_threshold", integerSchemaWithDescriptionAndExample("Form field: Fuzzy threshold in the range 0-100. Default is 0, the lowest fuzzy threshold.", 80)},
 		{"fuzz_alg", enumStringSchemaWithDescription("Form field: Fuzzy algorithm. Supported values are subsequence (default) and jarowinkler.", FuzzAlgorithms()...)},
@@ -764,16 +764,16 @@ func commonSearchPostProps() []schemaProp {
 		{"include_score", booleanSchemaWithDescription("Form field: Include the relevance score in each result record.")},
 		{"start", stringSchemaWithDescriptionAndExample("Form field: The start time of the query.", "2026-01-02T12:37:00.000Z")},
 		{"end", stringSchemaWithDescriptionAndExample("Form field: The end time of the query.", "2026-01-02T13:37:00.000Z")},
-		{"limit", integerSchemaWithDescriptionAndExample("Form field: The maximum number of results to return.", 20)},
-		{"batch_size", integerSchemaWithDescriptionAndExample("Form field: Preferred number of results per NDJSON batch.", 20)},
+		{"limit", integerSchemaWithDescriptionDefaultAndExample("Form field: The maximum number of results to return.", b.searchDefaultLimit(), 20)},
+		{"batch_size", integerSchemaWithDescriptionDefaultAndExample("Form field: Preferred number of results per NDJSON batch.", defaultSearchBatchSize, 20)},
 	}
 }
 
-func (*OpenAPIBuilder) searchMetricNamesPostInputBodySchema() *base.SchemaProxy {
+func (b *OpenAPIBuilder) searchMetricNamesPostInputBodySchema() *base.SchemaProxy {
 	props := append([]schemaProp{
 		{"match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope metric discovery.", []string{"{job=\"prometheus\"}"})},
 		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against metric names (OR logic).", []string{"http_req"})},
-	}, commonSearchPostProps()...)
+	}, b.commonSearchPostProps()...)
 	props = append(props, schemaProp{"include_metadata", booleanSchemaWithDescription("Form field: Include metric metadata in each result.")})
 
 	return base.CreateSchemaProxy(&base.Schema{
@@ -784,11 +784,11 @@ func (*OpenAPIBuilder) searchMetricNamesPostInputBodySchema() *base.SchemaProxy 
 	})
 }
 
-func (*OpenAPIBuilder) searchLabelNamesPostInputBodySchema() *base.SchemaProxy {
+func (b *OpenAPIBuilder) searchLabelNamesPostInputBodySchema() *base.SchemaProxy {
 	props := append([]schemaProp{
 		{"match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope label discovery.", []string{"{__name__=\"up\"}"})},
 		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against label names (OR logic).", []string{"inst"})},
-	}, commonSearchPostProps()...)
+	}, b.commonSearchPostProps()...)
 
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:                 []string{"object"},
@@ -798,12 +798,12 @@ func (*OpenAPIBuilder) searchLabelNamesPostInputBodySchema() *base.SchemaProxy {
 	})
 }
 
-func (*OpenAPIBuilder) searchLabelValuesPostInputBodySchema() *base.SchemaProxy {
+func (b *OpenAPIBuilder) searchLabelValuesPostInputBodySchema() *base.SchemaProxy {
 	props := append([]schemaProp{
 		{"label", stringSchemaWithDescriptionAndExample("Form field: Label name whose values should be searched.", "instance")},
 		{"match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope label value discovery.", []string{"up"})},
 		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against label values (OR logic).", []string{"909"})},
-	}, commonSearchPostProps()...)
+	}, b.commonSearchPostProps()...)
 
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:                 []string{"object"},

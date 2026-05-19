@@ -434,8 +434,9 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		nil,
 		o.FeatureRegistry,
 		api_v1.OpenAPIOptions{
-			ExternalURL: o.ExternalURL.String(),
-			Version:     version,
+			ExternalURL:    o.ExternalURL.String(),
+			Version:        version,
+			MaxSearchLimit: o.MaxSearchLimit,
 		},
 		o.Parser,
 	)
