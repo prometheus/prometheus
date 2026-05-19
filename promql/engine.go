@@ -2063,6 +2063,11 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			return ev.evalInfo(ctx, e.Args)
 		}
 
+		// Functions with nil entries in FunctionCalls should have been handled before reaching this point.
+		if call == nil {
+			panic(fmt.Errorf("unexpected nil implementation for function %q", e.Func.Name))
+		}
+
 		// Emit a warning when sort is used for range queries.
 		if (e.Func.Name == "sort" || e.Func.Name == "sort_desc" || e.Func.Name == "sort_by_label" || e.Func.Name == "sort_by_label_desc") && ev.startTimestamp != ev.endTimestamp {
 			warnings.Add(annotations.NewSortInRangeQueryWarning(e.PositionRange()))
