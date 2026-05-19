@@ -1425,7 +1425,7 @@ func TestCanceledCompactionDoesNotMarkBlocksFailed(t *testing.T) {
 		createBlock(t, tmpdir, genSeries(1, 1, 100, 200)),
 	}
 
-	compactor, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{200}, nil, nil)
+	compactor, err := NewLeveledCompactor(t.Context(), nil, promslog.NewNopLogger(), []int64{200}, nil, nil)
 	require.NoError(t, err)
 
 	_, err = compactor.CompactWithBlockPopulator(tmpdir, blockDirs, nil, blockPopulatorFunc(
