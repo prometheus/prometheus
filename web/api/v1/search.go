@@ -112,7 +112,7 @@ type searchLabelNameResult struct {
 
 // searchLabelValueResult is a single result record for the label_values endpoint.
 type searchLabelValueResult struct {
-	Name  string   `json:"name"`
+	Value string   `json:"value"`
 	Score *float64 `json:"score,omitempty"`
 }
 
@@ -832,7 +832,7 @@ func (api *API) searchLabelValues(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	searchResults := searchLabelValues(ctx, req.searcher, labelName, req.sp.matcherSets, req.hints)
 	streamSearchResults(ctx, api, w, searchResults, req.sp, func(sr storage.SearchResult) searchLabelValueResult {
-		result := searchLabelValueResult{Name: sr.Value}
+		result := searchLabelValueResult{Value: sr.Value}
 		if req.sp.includeScore {
 			score := sr.Score
 			result.Score = &score

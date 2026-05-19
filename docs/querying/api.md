@@ -625,7 +625,7 @@ curl -g 'http://localhost:9090/api/v1/search/label_values?label=instance&match[]
 ```
 
 ```json
-{"results":[{"name":"localhost:9090"},{"name":"localhost:9091"}]}
+{"results":[{"value":"localhost:9090"},{"value":"localhost:9091"}]}
 {"status":"success","has_more":true}
 ```
 

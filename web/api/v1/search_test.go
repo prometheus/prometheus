@@ -679,7 +679,7 @@ func TestSearchLabelValues(t *testing.T) {
 		var batch searchBatch[searchLabelValueResult]
 		require.NoError(t, json.Unmarshal(lines[0], &batch))
 		require.Len(t, batch.Results, 1)
-		require.Equal(t, "prometheus", batch.Results[0].Name)
+		require.Equal(t, "prometheus", batch.Results[0].Value)
 	})
 
 	t.Run("missing label parameter", func(t *testing.T) {
@@ -710,7 +710,7 @@ func TestSearchLabelValues(t *testing.T) {
 		var batch searchBatch[searchLabelValueResult]
 		require.NoError(t, json.Unmarshal(lines[0], &batch))
 		require.Len(t, batch.Results, 1)
-		require.Equal(t, "prometheus", batch.Results[0].Name)
+		require.Equal(t, "prometheus", batch.Results[0].Value)
 	})
 
 	t.Run("sort by alpha descending", func(t *testing.T) {
@@ -725,8 +725,8 @@ func TestSearchLabelValues(t *testing.T) {
 		var batch searchBatch[searchLabelValueResult]
 		require.NoError(t, json.Unmarshal(lines[0], &batch))
 		require.Len(t, batch.Results, 2)
-		require.Equal(t, "prometheus", batch.Results[0].Name)
-		require.Equal(t, "node", batch.Results[1].Name)
+		require.Equal(t, "prometheus", batch.Results[0].Value)
+		require.Equal(t, "node", batch.Results[1].Value)
 	})
 
 	t.Run("with limit and has_more", func(t *testing.T) {

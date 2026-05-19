@@ -1113,7 +1113,7 @@ func searchLabelValuesResponseExamples() *orderedmap.Map[string, *base.Example] 
 
 	examples.Set("labelValuesStream", &base.Example{
 		Summary: "NDJSON stream of label values",
-		Value:   createYAMLNode("{\"results\":[{\"name\":\"localhost:9090\"},{\"name\":\"localhost:9091\"}]}\n{\"status\":\"success\",\"has_more\":true}\n"),
+		Value:   createYAMLNode("{\"results\":[{\"value\":\"localhost:9090\"},{\"value\":\"localhost:9091\"}]}\n{\"status\":\"success\",\"has_more\":true}\n"),
 	})
 
 	return examples
