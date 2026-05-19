@@ -774,7 +774,7 @@ func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 		// caller asked to keep it, queue the classic flat series so that
 		// subsequent Next() calls drain them after the EntryHistogram.
 		if _, hasBucket := kv["bucket"]; hasBucket && p.keepClassicOnNativeHist {
-			pending, err := buildClassicHistogramPending(kv, p.series, p.mfNameLen, p.mtype, p.hasTS, p.ts)
+			pending, err := p.buildClassicHistogramPending(kv, p.series, p.mfNameLen, p.hasTS, p.ts)
 			if err != nil {
 				return EntryInvalid, fmt.Errorf("error parsing classic histogram composite: %w", err)
 			}
@@ -785,7 +785,7 @@ func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 	}
 
 	// Classic histogram: explode into flat pending entries.
-	pending, err := buildClassicHistogramPending(kv, p.series, p.mfNameLen, p.mtype, p.hasTS, p.ts)
+	pending, err := p.buildClassicHistogramPending(kv, p.series, p.mfNameLen, p.hasTS, p.ts)
 	if err != nil {
 		return EntryInvalid, fmt.Errorf("error parsing classic histogram composite: %w", err)
 	}
@@ -801,7 +801,7 @@ func (p *OpenMetrics2Parser) parseSummaryComposite(raw []byte) (Entry, error) {
 		return EntryInvalid, err
 	}
 
-	pending, err := buildSummaryPending(kv, p.series, p.mfNameLen, p.hasTS, p.ts)
+	pending, err := p.buildSummaryPending(kv, p.series, p.mfNameLen, p.hasTS, p.ts)
 	if err != nil {
 		return EntryInvalid, fmt.Errorf("error parsing summary composite: %w", err)
 	}
@@ -1014,11 +1014,10 @@ func parseFloatBuckets(s string) ([]float64, error) {
 	return buckets, nil
 }
 
-func buildClassicHistogramPending(
+func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 	kv map[string]string,
 	series []byte,
 	mfNameLen int,
-	_ model.MetricType,
 	hasTS bool,
 	ts int64,
 ) ([]pendingEntry, error) {
@@ -1041,7 +1040,7 @@ func buildClassicHistogramPending(
 		name := mfName + "_count"
 		pending = append(pending, pendingEntry{
 			series: []byte(name),
-			lset:   buildPendingLabels(name, extraLabels, "", ""),
+			lset:   p.buildPendingLabels(name, extraLabels, "", ""),
 			val:    v,
 			ts:     tsPtr,
 		})
@@ -1056,7 +1055,7 @@ func buildClassicHistogramPending(
 		name := mfName + "_sum"
 		pending = append(pending, pendingEntry{
 			series: []byte(name),
-			lset:   buildPendingLabels(name, extraLabels, "", ""),
+			lset:   p.buildPendingLabels(name, extraLabels, "", ""),
 			val:    v,
 			ts:     tsPtr,
 		})
@@ -1069,10 +1068,11 @@ func buildClassicHistogramPending(
 			return nil, fmt.Errorf("invalid bucket: %w", err)
 		}
 		name := mfName + "_bucket"
+		bucketSeries := []byte(name)
 		for _, b := range buckets {
 			pending = append(pending, pendingEntry{
-				series: []byte(name),
-				lset:   buildPendingLabels(name, extraLabels, "le", b.le),
+				series: bucketSeries,
+				lset:   p.buildPendingLabels(name, extraLabels, "le", b.le),
 				val:    b.count,
 				ts:     tsPtr,
 			})
@@ -1082,7 +1082,7 @@ func buildClassicHistogramPending(
 	return pending, nil
 }
 
-func buildSummaryPending(
+func (p *OpenMetrics2Parser) buildSummaryPending(
 	kv map[string]string,
 	series []byte,
 	mfNameLen int,
@@ -1107,7 +1107,7 @@ func buildSummaryPending(
 		name := mfName + "_count"
 		pending = append(pending, pendingEntry{
 			series: []byte(name),
-			lset:   buildPendingLabels(name, extraLabels, "", ""),
+			lset:   p.buildPendingLabels(name, extraLabels, "", ""),
 			val:    v,
 			ts:     tsPtr,
 		})
@@ -1121,7 +1121,7 @@ func buildSummaryPending(
 		name := mfName + "_sum"
 		pending = append(pending, pendingEntry{
 			series: []byte(name),
-			lset:   buildPendingLabels(name, extraLabels, "", ""),
+			lset:   p.buildPendingLabels(name, extraLabels, "", ""),
 			val:    v,
 			ts:     tsPtr,
 		})
@@ -1132,10 +1132,11 @@ func buildSummaryPending(
 		if err != nil {
 			return nil, fmt.Errorf("invalid quantile: %w", err)
 		}
+		quantileSeries := []byte(mfName)
 		for _, q := range quantiles {
 			pending = append(pending, pendingEntry{
-				series: []byte(mfName),
-				lset:   buildPendingLabels(mfName, extraLabels, "quantile", q.q),
+				series: quantileSeries,
+				lset:   p.buildPendingLabels(mfName, extraLabels, "quantile", q.q),
 				val:    q.val,
 				ts:     tsPtr,
 			})
@@ -1208,19 +1209,25 @@ func extractExtraLabels(series []byte, mfNameLen int) []labels.Label {
 	return result
 }
 
-// buildPendingLabels builds labels for a pending entry.  injectKey and
-// injectVal are the extra label to inject (e.g. "le"/"quantile") — pass empty
-// strings for _count and _sum series.
-func buildPendingLabels(name string, extra []labels.Label, injectKey, injectVal string) labels.Labels {
-	b := labels.NewBuilder(labels.EmptyLabels())
-	b.Set(labels.MetricName, name)
+// buildPendingLabels builds labels for a pending entry, reusing p.builder so
+// successive calls (one per bucket/quantile) avoid allocating a fresh Builder
+// each time.  injectKey and injectVal are the extra label to inject (e.g.
+// "le"/"quantile") — pass empty strings for _count and _sum series.
+//
+// p.builder must not be in use elsewhere while this runs; it is safe to call
+// once parseAfterValue has finished consuming the line (any exemplar labels
+// have already been materialised into their own labels.Labels values).
+func (p *OpenMetrics2Parser) buildPendingLabels(name string, extra []labels.Label, injectKey, injectVal string) labels.Labels {
+	p.builder.Reset()
+	p.builder.Add(model.MetricNameLabel, name)
 	for _, l := range extra {
-		b.Set(l.Name, l.Value)
+		p.builder.Add(l.Name, l.Value)
 	}
 	if injectKey != "" {
-		b.Set(injectKey, injectVal)
+		p.builder.Add(injectKey, injectVal)
 	}
-	return b.Labels()
+	p.builder.Sort()
+	return p.builder.Labels()
 }
 
 // bucketEntry holds one parsed classic histogram bucket.
