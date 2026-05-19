@@ -49,8 +49,8 @@ type OpenAPIOptions struct {
 	// If empty, defaults to "0.0.1-undefined".
 	Version string
 
-	// MaxSearchLimit is the operator-configured cap for the search API "limit" parameter
-	// (--web.search.max-limit). Zero means no cap is applied.
+	// MaxSearchLimit is the operator-configured cap for the search API "limit" parameter.
+	// Zero means no cap is applied.
 	MaxSearchLimit int
 }
 
