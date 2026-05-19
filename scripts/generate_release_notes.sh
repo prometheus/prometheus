@@ -51,9 +51,6 @@ TMPL='{{- $version := .CurrentRevision -}}
 
 release_branch="release-${major}.${minor}"
 
-tmp_file=$(mktemp)
-trap 'rm -f "${tmp_file}"' EXIT
-
 if [[ "${patch}" == "0" ]]; then
 	# Minor release (any RC or final): cover the full cycle from the previous minor's branch-cut point.
 	prev_minor=$(( minor - 1 ))
@@ -67,7 +64,7 @@ if [[ "${patch}" == "0" ]]; then
 		--org prometheus --repo prometheus \
 		--required-author="" --dependencies=false \
 		--go-template="go-template:inline:${TMPL}" \
-		--output="${tmp_file}" || exit 1
+		--output=/dev/stdout
 else
 	# Patch release: cover commits since the previous patch tag.
 	prev_patch=$(( patch - 1 ))
@@ -82,12 +79,5 @@ else
 		--required-author="" --dependencies=false \
 		--go-template="go-template:inline:${TMPL}" \
 		--skip-first-commit \
-		--output="${tmp_file}" || exit 1
+		--output=/dev/stdout
 fi
-
-# sed is used to remove the @user references from the release notes.
-# Prometheus CHANGELOG used to not do this.
-sed -E 's/\((#[0-9]+), @[^)]+\)/\1/g' "${tmp_file}"
-
-echo "Done; Removing "${tmp_file}" temporary file."
-echo "Maintainers, please copy the output to CHANGELOG.md and adjust if needed."
