@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"math"
 	"strconv"
 	"strings"
@@ -697,7 +698,7 @@ func kvMap(raw []byte) (map[string]string, error) {
 	}
 	inner := raw[1 : len(raw)-1]
 	m := map[string]string{}
-	for _, part := range splitCompositeFields(inner) {
+	for part := range splitCompositeFields(inner) {
 		part = bytes.TrimSpace(part)
 		if len(part) == 0 {
 			continue
@@ -713,25 +714,29 @@ func kvMap(raw []byte) (map[string]string, error) {
 	return m, nil
 }
 
-// splitCompositeFields splits b at top-level commas (not inside brackets).
-func splitCompositeFields(b []byte) [][]byte {
-	var result [][]byte
-	depth := 0
-	start := 0
-	for i, ch := range b {
-		switch ch {
-		case '[', '(':
-			depth++
-		case ']', ')':
-			depth--
-		case ',':
-			if depth == 0 {
-				result = append(result, b[start:i])
-				start = i + 1
+// splitCompositeFields yields each top-level field of b (split at commas not
+// inside brackets) as a sub-slice of b.
+func splitCompositeFields(b []byte) iter.Seq[[]byte] {
+	return func(yield func([]byte) bool) {
+		depth := 0
+		start := 0
+		for i, ch := range b {
+			switch ch {
+			case '[', '(':
+				depth++
+			case ']', ')':
+				depth--
+			case ',':
+				if depth == 0 {
+					if !yield(b[start:i]) {
+						return
+					}
+					start = i + 1
+				}
 			}
 		}
+		yield(b[start:])
 	}
-	return append(result, b[start:])
 }
 
 // parseHistogramComposite parses a composite histogram value such as:
