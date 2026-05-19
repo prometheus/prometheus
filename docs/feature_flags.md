@@ -401,3 +401,21 @@ Example query:
 ```
 
 See [the fill modifiers documentation](querying/operators.md#filling-in-missing-matches) for more details and examples.
+
+
+## Search API
+
+`--enable-feature=search-api`
+
+Enables the experimental search API endpoints for discovering metric names,
+label names, and label values with fuzzy matching and filtering support. See
+[the search API documentation](querying/api.md#searching-metric-names-label-names-and-label-values)
+for details.
+
+The `--web.search.max-limit` flag (default `10000`) bounds the `limit` query
+parameter accepted by the search endpoints. Requests with a higher `limit` are
+rejected with HTTP 400. The default response limit (100) is silently clamped
+to this maximum, so an operator setting a smaller cap does not break
+no-`limit` requests. Setting the flag to `0` disables the cap entirely; this
+is **not recommended** for endpoints exposed beyond a trusted network because a
+single client can then request the entire index in one response.
