@@ -159,8 +159,8 @@ START
 END
 STEP
 RANGE
-GREATEST
-LEAST
+MAX_OF
+MIN_OF
 %token preprocessorEnd
 
 // Counter reset hints.
@@ -185,7 +185,7 @@ START_METRIC_SELECTOR
 // Type definitions for grammar rules.
 %type <matchers> label_match_list
 %type <matcher> label_matcher
-%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op at_modifier_preprocessors string_identifier counter_reset_hint greatest_least
+%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op at_modifier_preprocessors string_identifier counter_reset_hint max_of_min_of
 %type <labels> label_set metric
 %type <lblList> label_set_list
 %type <label> label_set_item
@@ -528,7 +528,7 @@ function_call   : IDENTIFIER function_call_body
                                 },
                         }
                         }
-                | greatest_least function_call_body
+                | max_of_min_of function_call_body
                         {
                         fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
@@ -834,7 +834,7 @@ metric          : metric_identifier label_set
                 ;
 
 
-metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | FILL | FILL_LEFT | FILL_RIGHT | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END | LIMITK | LIMIT_RATIO | STEP | RANGE | ANCHORED | SMOOTHED | GREATEST | LEAST;
+metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | FILL | FILL_LEFT | FILL_RIGHT | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END | LIMITK | LIMIT_RATIO | STEP | RANGE | ANCHORED | SMOOTHED | MAX_OF | MIN_OF;
 
 label_set       : LEFT_BRACE label_set_list RIGHT_BRACE
                         { $$ = labels.New($2...) }
@@ -1092,7 +1092,7 @@ counter_reset_hint : UNKNOWN_COUNTER_RESET | COUNTER_RESET | NOT_COUNTER_RESET |
 aggregate_op    : AVG | BOTTOMK | COUNT | COUNT_VALUES | GROUP | MAX | MIN | QUANTILE | STDDEV | STDVAR | SUM | TOPK | LIMITK | LIMIT_RATIO;
 
 // Inside of grouping options label names can be recognized as keywords by the lexer. This is a list of keywords that could also be a label name.
-maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | FILL | FILL_LEFT | FILL_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK | START | END | ATAN2 | LIMITK | LIMIT_RATIO | STEP | RANGE | ANCHORED | SMOOTHED | GREATEST | LEAST;
+maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | FILL | FILL_LEFT | FILL_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK | START | END | ATAN2 | LIMITK | LIMIT_RATIO | STEP | RANGE | ANCHORED | SMOOTHED | MAX_OF | MIN_OF;
 
 unary_op        : ADD | SUB;
 
@@ -1267,7 +1267,7 @@ offset_duration_expr    : number_duration_literal
                                 yylex.(*parser).experimentalDurationExpr(de)
                                 $$ = de
                                 }
-                        | greatest_least LEFT_PAREN duration_expr COMMA duration_expr RIGHT_PAREN
+                        | max_of_min_of LEFT_PAREN duration_expr COMMA duration_expr RIGHT_PAREN
                                 {
                                     de := &DurationExpr{
                                         Op:       $1.Typ,
@@ -1279,7 +1279,7 @@ offset_duration_expr    : number_duration_literal
                                     yylex.(*parser).experimentalDurationExpr(de)
                                     $$ = de
                                 }
-                        | unary_op greatest_least LEFT_PAREN duration_expr COMMA duration_expr RIGHT_PAREN
+                        | unary_op max_of_min_of LEFT_PAREN duration_expr COMMA duration_expr RIGHT_PAREN
                                 {
                                     de := &DurationExpr{
                                         Op:       $1.Typ,
@@ -1313,7 +1313,7 @@ offset_duration_expr    : number_duration_literal
                         | duration_expr
                         ;
 
-greatest_least: GREATEST | LEAST ;
+max_of_min_of: MAX_OF | MIN_OF ;
 
 duration_expr   : number_duration_literal
                         {
@@ -1417,7 +1417,7 @@ duration_expr   : number_duration_literal
                             yylex.(*parser).experimentalDurationExpr(de)
                             $$ = de
                         }
-                | greatest_least LEFT_PAREN duration_expr COMMA duration_expr RIGHT_PAREN
+                | max_of_min_of LEFT_PAREN duration_expr COMMA duration_expr RIGHT_PAREN
                         {
                             de := &DurationExpr{
                                 Op:       $1.Typ,

@@ -205,14 +205,14 @@ func (node *DurationExpr) writeTo(b *bytes.Buffer) {
 		b.WriteString("step()")
 	case node.Op == RANGE:
 		b.WriteString("range()")
-	case node.Op == LEAST:
-		b.WriteString("least(")
+	case node.Op == MIN_OF:
+		b.WriteString("min_of(")
 		b.WriteString(node.LHS.String())
 		b.WriteString(", ")
 		b.WriteString(node.RHS.String())
 		b.WriteByte(')')
-	case node.Op == GREATEST:
-		b.WriteString("greatest(")
+	case node.Op == MAX_OF:
+		b.WriteString("max_of(")
 		b.WriteString(node.LHS.String())
 		b.WriteString(", ")
 		b.WriteString(node.RHS.String())

@@ -4610,7 +4610,7 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: `foo[greatest(step(),5s)]`,
+		input: `foo[max_of(step(),5s)]`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
 				Name: "foo",
@@ -4620,83 +4620,83 @@ var testExpr = []struct {
 				PosRange: posrange.PositionRange{Start: 0, End: 3},
 			},
 			RangeExpr: &DurationExpr{
-				Op: GREATEST,
+				Op: MAX_OF,
 				LHS: &DurationExpr{
 					Op:       STEP,
-					StartPos: 13,
-					EndPos:   19,
+					StartPos: 11,
+					EndPos:   17,
 				},
 				RHS: &NumberLiteral{
 					Val:      5,
 					Duration: true,
-					PosRange: posrange.PositionRange{Start: 20, End: 22},
+					PosRange: posrange.PositionRange{Start: 18, End: 20},
 				},
 				StartPos: 4,
-				EndPos:   23,
+				EndPos:   21,
 			},
-			EndPos: 24,
+			EndPos: 22,
 		},
 	},
 	{
-		input: `foo offset greatest(step(),5s)`,
+		input: `foo offset max_of(step(),5s)`,
 		expected: &VectorSelector{
 			Name: "foo",
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
 			},
-			PosRange: posrange.PositionRange{Start: 0, End: 30},
+			PosRange: posrange.PositionRange{Start: 0, End: 28},
 			OriginalOffsetExpr: &DurationExpr{
-				Op: GREATEST,
+				Op: MAX_OF,
 				LHS: &DurationExpr{
 					Op:       STEP,
-					StartPos: 20,
-					EndPos:   26,
+					StartPos: 18,
+					EndPos:   24,
 				},
 				RHS: &NumberLiteral{
 					Val:      5,
 					Duration: true,
-					PosRange: posrange.PositionRange{Start: 27, End: 29},
+					PosRange: posrange.PositionRange{Start: 25, End: 27},
 				},
 				StartPos: 11,
-				EndPos:   30,
+				EndPos:   28,
 			},
 		},
 	},
 	{
-		input: `foo offset -least(5s,step()+8s)`,
+		input: `foo offset -min_of(5s,step()+8s)`,
 		expected: &VectorSelector{
 			Name: "foo",
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
 			},
-			PosRange: posrange.PositionRange{Start: 0, End: 31},
+			PosRange: posrange.PositionRange{Start: 0, End: 32},
 			OriginalOffsetExpr: &DurationExpr{
 				Op: SUB,
 				RHS: &DurationExpr{
-					Op: LEAST,
+					Op: MIN_OF,
 					LHS: &NumberLiteral{
 						Val:      5,
 						Duration: true,
-						PosRange: posrange.PositionRange{Start: 18, End: 20},
+						PosRange: posrange.PositionRange{Start: 19, End: 21},
 					},
 					RHS: &DurationExpr{
 						Op: ADD,
 						LHS: &DurationExpr{
 							Op:       STEP,
-							StartPos: 21,
-							EndPos:   27,
+							StartPos: 22,
+							EndPos:   28,
 						},
 						RHS: &NumberLiteral{
 							Val:      8,
 							Duration: true,
-							PosRange: posrange.PositionRange{Start: 28, End: 30},
+							PosRange: posrange.PositionRange{Start: 29, End: 31},
 						},
 					},
 					StartPos: 12,
-					EndPos:   30,
+					EndPos:   31,
 				},
 				StartPos: 11,
-				EndPos:   30,
+				EndPos:   31,
 			},
 		},
 	},
@@ -4793,7 +4793,7 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: `foo[greatest(range(),5s)]`,
+		input: `foo[max_of(range(),5s)]`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
 				Name: "foo",
@@ -4803,21 +4803,21 @@ var testExpr = []struct {
 				PosRange: posrange.PositionRange{Start: 0, End: 3},
 			},
 			RangeExpr: &DurationExpr{
-				Op: GREATEST,
+				Op: MAX_OF,
 				LHS: &DurationExpr{
 					Op:       RANGE,
-					StartPos: 13,
-					EndPos:   20,
+					StartPos: 11,
+					EndPos:   18,
 				},
 				RHS: &NumberLiteral{
 					Val:      5,
 					Duration: true,
-					PosRange: posrange.PositionRange{Start: 21, End: 23},
+					PosRange: posrange.PositionRange{Start: 19, End: 21},
 				},
 				StartPos: 4,
-				EndPos:   24,
+				EndPos:   22,
 			},
-			EndPos: 25,
+			EndPos: 23,
 		},
 	},
 	{

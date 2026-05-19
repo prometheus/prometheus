@@ -228,7 +228,7 @@ func TestCalculateDuration(t *testing.T) {
 			expected: 150 * time.Second,
 		},
 		{
-			name: "greatest of step and range",
+			name: "max_of of step and range",
 			expr: &parser.DurationExpr{
 				LHS: &parser.DurationExpr{
 					Op: parser.STEP,
@@ -236,7 +236,7 @@ func TestCalculateDuration(t *testing.T) {
 				RHS: &parser.DurationExpr{
 					Op: parser.RANGE,
 				},
-				Op: parser.GREATEST,
+				Op: parser.MAX_OF,
 			},
 			expected: 5 * time.Minute,
 		},

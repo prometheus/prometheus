@@ -75,11 +75,11 @@ func TestTranslateASTDurationExpressions(t *testing.T) {
 		},
 		{
 			name:     "complex matrix selector range expression",
-			query:    `foo[greatest(step(),5m+3m) ]`,
+			query:    `foo[max_of(step(),5m+3m) ]`,
 			wantType: "matrixSelector",
 			wantFields: map[string]any{
 				"range": int64(0),
-				"rangeExpr": durationExpr("greatest",
+				"rangeExpr": durationExpr("max_of",
 					durationExpr("step", nil, nil, false),
 					durationExpr("+", durationNumber("300", true), durationNumber("180", true), false),
 					false,
@@ -87,13 +87,13 @@ func TestTranslateASTDurationExpressions(t *testing.T) {
 			},
 		},
 		{
-			name:     "nested least and greatest matrix selector range expression",
-			query:    `foo[least(greatest(step(),5m+3m),10m-2m)]`,
+			name:     "nested min_of and max_of matrix selector range expression",
+			query:    `foo[min_of(max_of(step(),5m+3m),10m-2m)]`,
 			wantType: "matrixSelector",
 			wantFields: map[string]any{
 				"range": int64(0),
-				"rangeExpr": durationExpr("least",
-					durationExpr("greatest",
+				"rangeExpr": durationExpr("min_of",
+					durationExpr("max_of",
 						durationExpr("step", nil, nil, false),
 						durationExpr("+", durationNumber("300", true), durationNumber("180", true), false),
 						false,
@@ -149,12 +149,12 @@ func TestTranslateASTDurationExpressions(t *testing.T) {
 		},
 		{
 			name:     "vector selector offset expression",
-			query:    `foo offset -least(5s,step()+8s)`,
+			query:    `foo offset -min_of(5s,step()+8s)`,
 			wantType: "vectorSelector",
 			wantFields: map[string]any{
 				"offset": int64(0),
 				"offsetExpr": durationExpr("-", nil,
-					durationExpr("least",
+					durationExpr("min_of",
 						durationNumber("5", true),
 						durationExpr("+", durationExpr("step", nil, nil, false), durationNumber("8", true), false),
 						false,

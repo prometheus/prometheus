@@ -130,8 +130,8 @@ const START = 57437
 const END = 57438
 const STEP = 57439
 const RANGE = 57440
-const GREATEST = 57441
-const LEAST = 57442
+const MAX_OF = 57441
+const MIN_OF = 57442
 const preprocessorEnd = 57443
 const counterResetHintsStart = 57444
 const UNKNOWN_COUNTER_RESET = 57445
@@ -245,8 +245,8 @@ var yyToknames = [...]string{
 	"END",
 	"STEP",
 	"RANGE",
-	"GREATEST",
-	"LEAST",
+	"MAX_OF",
+	"MIN_OF",
 	"preprocessorEnd",
 	"counterResetHintsStart",
 	"UNKNOWN_COUNTER_RESET",

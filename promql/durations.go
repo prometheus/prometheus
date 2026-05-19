@@ -135,9 +135,9 @@ func (v *durationVisitor) evaluateDurationExpr(expr parser.Expr) (float64, error
 			return float64(v.step.Seconds()), nil
 		case parser.RANGE:
 			return float64(v.queryRange.Seconds()), nil
-		case parser.LEAST:
+		case parser.MIN_OF:
 			return math.Min(lhs, rhs), nil
-		case parser.GREATEST:
+		case parser.MAX_OF:
 			return math.Max(lhs, rhs), nil
 		case parser.ADD:
 			if n.LHS == nil {
