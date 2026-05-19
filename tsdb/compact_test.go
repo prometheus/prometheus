@@ -1369,51 +1369,41 @@ func TestDisableAutoCompactions(t *testing.T) {
 // TestCancelCompactions ensures that when the db is closed
 // any running compaction is cancelled to unblock closing the db.
 func TestCancelCompactions(t *testing.T) {
-	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		compactionStarted := make(chan struct{})
+		compactionCanceled := make(chan struct{})
 
-	compactionStarted := make(chan struct{})
-	compactionCanceled := make(chan struct{})
+		opts := DefaultOptions()
+		opts.NewCompactorFunc = func(ctx context.Context, _ prometheus.Registerer, _ *slog.Logger, _ []int64, _ chunkenc.Pool, _ *Options) (Compactor, error) {
+			return &mockCompactorFn{
+				planFn: func() ([]string, error) {
+					return []string{"block-a", "block-b"}, nil
+				},
+				compactFn: func() ([]ulid.ULID, error) {
+					close(compactionStarted)
+					<-ctx.Done()
+					close(compactionCanceled)
+					return nil, ctx.Err()
+				},
+				// writeFn is unused: this test never reaches the head, OOO,
+				// or stale-series compaction paths that would call Write.
+				writeFn: func() ([]ulid.ULID, error) {
+					return nil, nil
+				},
+			}, nil
+		}
+		db := newTestDB(t, withOpts(opts))
 
-	opts := DefaultOptions()
-	opts.NewCompactorFunc = func(ctx context.Context, _ prometheus.Registerer, _ *slog.Logger, _ []int64, _ chunkenc.Pool, _ *Options) (Compactor, error) {
-		return &mockCompactorFn{
-			planFn: func() ([]string, error) {
-				return []string{"block-a", "block-b"}, nil
-			},
-			compactFn: func() ([]ulid.ULID, error) {
-				close(compactionStarted)
-				<-ctx.Done()
-				close(compactionCanceled)
-				return nil, ctx.Err()
-			},
-			writeFn: func() ([]ulid.ULID, error) {
-				return nil, nil
-			},
-		}, nil
-	}
-	db := newTestDB(t, withOpts(opts))
+		db.compactc <- struct{}{}
+		<-compactionStarted
 
-	select {
-	case db.compactc <- struct{}{}:
-	case <-time.After(time.Second):
-		t.Fatal("triggering compaction timed out")
-	}
+		require.NoError(t, db.Close())
+		<-compactionCanceled
 
-	select {
-	case <-compactionStarted:
-	case <-time.After(time.Second):
-		t.Fatal("compaction did not start")
-	}
-
-	start := time.Now()
-	require.NoError(t, db.Close())
-	require.Less(t, time.Since(start), time.Second)
-
-	select {
-	case <-compactionCanceled:
-	case <-time.After(time.Second):
-		t.Fatal("compaction was not canceled")
-	}
+		// Wrapped context.Canceled must not be counted as a real compaction
+		// failure (verifies errors.Is at every level of the chain).
+		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed))
+	})
 }
 
 type blockPopulatorFunc func(context.Context, *CompactorMetrics, *slog.Logger, chunkenc.Pool, storage.VerticalChunkSeriesMergeFunc, []BlockReader, *BlockMeta, IndexWriter, ChunkWriter, IndexReaderPostingsFunc) error
