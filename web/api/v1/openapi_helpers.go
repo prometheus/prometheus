@@ -38,6 +38,10 @@ func int64Ptr(i int64) *int64 {
 	return &i
 }
 
+func float64Ptr(f float64) *float64 {
+	return &f
+}
+
 type example struct {
 	name  string
 	value any
@@ -105,6 +109,26 @@ func integerSchemaWithDescriptionAndExample(description string, example any) *ba
 		Type:        []string{"integer"},
 		Format:      "int64",
 		Description: description,
+		Example:     createYAMLNode(example),
+	})
+}
+
+func integerSchemaWithDefault(defaultVal any) *base.SchemaProxy {
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:    []string{"integer"},
+		Format:  "int64",
+		Minimum: float64Ptr(1),
+		Default: createYAMLNode(defaultVal),
+	})
+}
+
+func integerSchemaWithDescriptionDefaultAndExample(description string, defaultVal, example any) *base.SchemaProxy {
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"integer"},
+		Format:      "int64",
+		Description: description,
+		Minimum:     float64Ptr(1),
+		Default:     createYAMLNode(defaultVal),
 		Example:     createYAMLNode(example),
 	})
 }

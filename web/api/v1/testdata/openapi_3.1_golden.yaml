@@ -1196,7 +1196,9 @@ paths:
                   explode: false
                   schema:
                     type: integer
+                    minimum: 1
                     format: int64
+                    default: 100
                   examples:
                     example:
                         value: 20
@@ -1207,7 +1209,9 @@ paths:
                   explode: false
                   schema:
                     type: integer
+                    minimum: 1
                     format: int64
+                    default: 100
                   examples:
                     example:
                         value: 20
@@ -1428,7 +1432,9 @@ paths:
                   explode: false
                   schema:
                     type: integer
+                    minimum: 1
                     format: int64
+                    default: 100
                   examples:
                     example:
                         value: 20
@@ -1439,7 +1445,9 @@ paths:
                   explode: false
                   schema:
                     type: integer
+                    minimum: 1
                     format: int64
+                    default: 100
                   examples:
                     example:
                         value: 20
@@ -1671,7 +1679,9 @@ paths:
                   explode: false
                   schema:
                     type: integer
+                    minimum: 1
                     format: int64
+                    default: 100
                   examples:
                     example:
                         value: 10
@@ -1682,7 +1692,9 @@ paths:
                   explode: false
                   schema:
                     type: integer
+                    minimum: 1
                     format: int64
+                    default: 100
                   examples:
                     example:
                         value: 10
@@ -4027,13 +4039,17 @@ components:
                     example: "2026-01-02T13:37:00.000Z"
                 limit:
                     type: integer
+                    minimum: 1
                     format: int64
                     description: 'Form field: The maximum number of results to return.'
+                    default: 100
                     example: 20
                 batch_size:
                     type: integer
+                    minimum: 1
                     format: int64
                     description: 'Form field: Preferred number of results per NDJSON batch.'
+                    default: 100
                     example: 20
                 include_metadata:
                     type: boolean
@@ -4099,13 +4115,17 @@ components:
                     example: "2026-01-02T13:37:00.000Z"
                 limit:
                     type: integer
+                    minimum: 1
                     format: int64
                     description: 'Form field: The maximum number of results to return.'
+                    default: 100
                     example: 20
                 batch_size:
                     type: integer
+                    minimum: 1
                     format: int64
                     description: 'Form field: Preferred number of results per NDJSON batch.'
+                    default: 100
                     example: 20
             additionalProperties: false
             description: POST request body for label name search.
@@ -4172,13 +4192,17 @@ components:
                     example: "2026-01-02T13:37:00.000Z"
                 limit:
                     type: integer
+                    minimum: 1
                     format: int64
                     description: 'Form field: The maximum number of results to return.'
+                    default: 100
                     example: 20
                 batch_size:
                     type: integer
+                    minimum: 1
                     format: int64
                     description: 'Form field: Preferred number of results per NDJSON batch.'
+                    default: 100
                     example: 20
             required:
                 - label

@@ -211,7 +211,7 @@ func commonSearchParams() []*v3.Parameter {
 	}
 }
 
-func (*OpenAPIBuilder) searchMetricNamesPath() *v3.PathItem {
+func (b *OpenAPIBuilder) searchMetricNamesPath() *v3.PathItem {
 	params := append([]*v3.Parameter{
 		queryParamWithExample("match[]", "Series selector argument used to scope metric discovery.", false, base.CreateSchemaProxy(&base.Schema{
 			Type:  []string{"array"},
@@ -226,8 +226,8 @@ func (*OpenAPIBuilder) searchMetricNamesPath() *v3.PathItem {
 		queryParamWithExample("include_metadata", "Include metric metadata in each result.", false, booleanSchema(), []example{{"example", true}}),
 		queryParamWithExample("start", "Start timestamp for metric name search.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
 		queryParamWithExample("end", "End timestamp for metric name search.", false, timestampSchema(), timestampExamples(exampleTime)),
-		queryParamWithExample("limit", "Maximum number of metric names to return.", false, integerSchema(), []example{{"example", 20}}),
-		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch.", false, integerSchema(), []example{{"example", 20}}),
+		queryParamWithExample("limit", "Maximum number of metric names to return.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 20}}),
+		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch.", false, integerSchemaWithDefault(defaultSearchBatchSize), []example{{"example", 20}}),
 	)
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -247,7 +247,7 @@ func (*OpenAPIBuilder) searchMetricNamesPath() *v3.PathItem {
 	}
 }
 
-func (*OpenAPIBuilder) searchLabelNamesPath() *v3.PathItem {
+func (b *OpenAPIBuilder) searchLabelNamesPath() *v3.PathItem {
 	params := append([]*v3.Parameter{
 		queryParamWithExample("match[]", "Series selector argument used to scope label discovery.", false, base.CreateSchemaProxy(&base.Schema{
 			Type:  []string{"array"},
@@ -261,8 +261,8 @@ func (*OpenAPIBuilder) searchLabelNamesPath() *v3.PathItem {
 	params = append(params,
 		queryParamWithExample("start", "Start timestamp for label name search.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
 		queryParamWithExample("end", "End timestamp for label name search.", false, timestampSchema(), timestampExamples(exampleTime)),
-		queryParamWithExample("limit", "Maximum number of label names to return.", false, integerSchema(), []example{{"example", 20}}),
-		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch.", false, integerSchema(), []example{{"example", 20}}),
+		queryParamWithExample("limit", "Maximum number of label names to return.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 20}}),
+		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch.", false, integerSchemaWithDefault(defaultSearchBatchSize), []example{{"example", 20}}),
 	)
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -282,7 +282,7 @@ func (*OpenAPIBuilder) searchLabelNamesPath() *v3.PathItem {
 	}
 }
 
-func (*OpenAPIBuilder) searchLabelValuesPath() *v3.PathItem {
+func (b *OpenAPIBuilder) searchLabelValuesPath() *v3.PathItem {
 	params := append([]*v3.Parameter{
 		queryParamWithExample("label", "Label name whose values should be searched.", true, stringSchema(), []example{{"example", "instance"}}),
 		queryParamWithExample("match[]", "Series selector argument used to scope label value discovery.", false, base.CreateSchemaProxy(&base.Schema{
@@ -297,8 +297,8 @@ func (*OpenAPIBuilder) searchLabelValuesPath() *v3.PathItem {
 	params = append(params,
 		queryParamWithExample("start", "Start timestamp for label value search.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
 		queryParamWithExample("end", "End timestamp for label value search.", false, timestampSchema(), timestampExamples(exampleTime)),
-		queryParamWithExample("limit", "Maximum number of label values to return.", false, integerSchema(), []example{{"example", 10}}),
-		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch.", false, integerSchema(), []example{{"example", 10}}),
+		queryParamWithExample("limit", "Maximum number of label values to return.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 10}}),
+		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch.", false, integerSchemaWithDefault(defaultSearchBatchSize), []example{{"example", 10}}),
 	)
 	return &v3.PathItem{
 		Get: &v3.Operation{
