@@ -666,10 +666,10 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 			// This only checks against the latest in-order sample.
 			// The OOO headchunk has its own method to detect these duplicates.
 			if s.lastHistogramValue != nil || s.lastFloatHistogramValue != nil {
-				return false, 0, storage.NewDuplicateHistogramToFloatErr(t, v)
+				return false, 0, storage.NewDuplicateHistogramToFloatErr(t, v, s.lset)
 			}
 			if math.Float64bits(s.lastValue) != math.Float64bits(v) {
-				return false, 0, storage.NewDuplicateFloatErr(t, s.lastValue, v)
+				return false, 0, storage.NewDuplicateFloatErr(t, s.lastValue, v, s.lset)
 			}
 			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
 			return false, 0, nil
@@ -711,7 +711,7 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMax
 			// This only checks against the latest in-order sample.
 			// The OOO headchunk has its own method to detect these duplicates.
 			if !h.Equals(s.lastHistogramValue) {
-				return false, 0, storage.ErrDuplicateSampleForTimestamp
+				return false, 0, storage.NewDuplicateNativeHistogramSampleErr(t, s.lset)
 			}
 			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
 			return false, 0, nil
@@ -753,7 +753,7 @@ func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogr
 			// This only checks against the latest in-order sample.
 			// The OOO headchunk has its own method to detect these duplicates.
 			if !fh.Equals(s.lastFloatHistogramValue) {
-				return false, 0, storage.ErrDuplicateSampleForTimestamp
+				return false, 0, storage.NewDuplicateNativeHistogramSampleErr(t, s.lset)
 			}
 			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
 			return false, 0, nil

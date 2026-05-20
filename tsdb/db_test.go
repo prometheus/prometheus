@@ -634,7 +634,7 @@ func TestAmendHistogramDatapointCausesError(t *testing.T) {
 	require.NoError(t, err)
 	h.Schema = 2
 	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy(), nil)
-	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
+	require.ErrorIs(t, err, storage.ErrDuplicateSampleForTimestamp)
 	require.NoError(t, app.Rollback())
 
 	// Float histogram.
@@ -648,7 +648,7 @@ func TestAmendHistogramDatapointCausesError(t *testing.T) {
 	require.NoError(t, err)
 	fh.Schema = 2
 	_, err = app.AppendHistogram(0, labels.FromStrings("a", "d"), 0, nil, fh.Copy())
-	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
+	require.ErrorIs(t, err, storage.ErrDuplicateSampleForTimestamp)
 	require.NoError(t, app.Rollback())
 }
 

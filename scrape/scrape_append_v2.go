@@ -246,7 +246,7 @@ loop:
 		exemplars = exemplars[:0] // Reset and reuse the exemplar slice.
 
 		if seriesAlreadyScraped && parsedTimestamp == nil {
-			err = storage.ErrDuplicateSampleForTimestamp
+			err = storage.NewDuplicateSampleWithoutTimestampErr(lset)
 		} else {
 			// Double check we don't append float 0 for
 			// histogram case where parser returns bad data.

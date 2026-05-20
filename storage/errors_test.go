@@ -18,6 +18,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 func TestAppendPartialErrorToError(t *testing.T) {
@@ -43,9 +45,9 @@ func TestErrDuplicateSampleForTimestamp(t *testing.T) {
 	require.ErrorIs(t, ErrDuplicateSampleForTimestamp, errDuplicateSampleForTimestamp{})
 
 	// Same type only is if it has same properties.
-	err := NewDuplicateFloatErr(1_000, 10, 20)
-	sameErr := NewDuplicateFloatErr(1_000, 10, 20)
-	differentErr := NewDuplicateFloatErr(1_001, 30, 40)
+	err := NewDuplicateFloatErr(1_000, 10, 20, labels.EmptyLabels())
+	sameErr := NewDuplicateFloatErr(1_000, 10, 20, labels.EmptyLabels())
+	differentErr := NewDuplicateFloatErr(1_001, 30, 40, labels.EmptyLabels())
 
 	require.ErrorIs(t, err, sameErr)
 	require.NotErrorIs(t, err, differentErr)

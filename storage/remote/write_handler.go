@@ -383,7 +383,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 				errors.Is(err, storage.ErrTooOldSample) {
 				// TODO(bwplotka): Not too spammy log?
 				h.logger.Error("Out of order sample from remote write", "err", err.Error(), "series", ls.String(), "timestamp", s.Timestamp)
-				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
+				badRequestErrs = append(badRequestErrs, storage.WrapRemoteWriteAppendErrIfNeeded(err, ls))
 				continue
 			}
 			return 0, http.StatusInternalServerError, err
@@ -419,12 +419,12 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 				errors.Is(err, storage.ErrTooOldSample) {
 				// TODO(bwplotka): Not too spammy log?
 				h.logger.Error("Out of order histogram from remote write", "err", err.Error(), "series", ls.String(), "timestamp", hp.Timestamp)
-				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
+				badRequestErrs = append(badRequestErrs, storage.WrapRemoteWriteAppendErrIfNeeded(err, ls))
 				continue
 			}
 			if isHistogramValidationError(err) {
 				h.logger.Error("Invalid histogram received", "err", err.Error(), "series", ls.String(), "timestamp", hp.Timestamp)
-				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
+				badRequestErrs = append(badRequestErrs, storage.WrapRemoteWriteAppendErrIfNeeded(err, ls))
 				continue
 			}
 			return 0, http.StatusInternalServerError, err

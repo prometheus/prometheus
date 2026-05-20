@@ -1746,7 +1746,7 @@ loop:
 		}
 
 		if seriesAlreadyScraped && parsedTimestamp == nil {
-			err = storage.ErrDuplicateSampleForTimestamp
+			err = storage.NewDuplicateSampleWithoutTimestampErr(lset)
 		} else {
 			if sl.enableSTZeroIngestion {
 				if stMs := p.StartTimestamp(); stMs != 0 {
