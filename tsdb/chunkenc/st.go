@@ -74,13 +74,13 @@ func (e *stEncoder) encode(b *bstream, num uint16, curT, prevT, st int64) {
 				b.writeByte(x)
 			}
 			e.firstSTKnown = true
-			writeHeaderFirstSTKnown(b.bytes()[histogramSTHeaderSize-1:])
+			writeHeaderFirstSTKnown(b.bytes()[histogramHeaderSize-1:])
 		}
 	case 2:
 		if st != e.st {
 			stDiff := prevT - st
 			e.firstSTChangeOn = 1
-			writeHeaderFirstSTChangeOn(b.bytes()[histogramSTHeaderSize-1:], 1)
+			writeHeaderFirstSTChangeOn(b.bytes()[histogramHeaderSize-1:], 1)
 			putVarbitInt(b, stDiff)
 			e.stDiff = stDiff
 		}
@@ -93,7 +93,7 @@ func (e *stEncoder) encode(b *bstream, num uint16, curT, prevT, st int64) {
 			if st != e.st || num-1 == maxFirstSTChangeOn {
 				stDiff := prevT - st
 				e.firstSTChangeOn = num - 1
-				writeHeaderFirstSTChangeOn(b.bytes()[histogramSTHeaderSize-1:], num-1)
+				writeHeaderFirstSTChangeOn(b.bytes()[histogramHeaderSize-1:], num-1)
 				putVarbitInt(b, stDiff)
 				e.stDiff = stDiff
 			}
