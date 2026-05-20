@@ -1967,6 +1967,59 @@ const funcDocs: Record<string, React.ReactNode> = {
       </pre>
     </>
   ),
+  labelmap: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>labelmap(v instant-vector, regex string, replacement string)</code> matches the
+        <a href="./basics.md#regular-expressions">regular expression</a> <code>regex</code> against the
+        <em>name</em> of every label in each timeseries of <code>v</code>. For every label whose name matches, the label
+        is renamed to the expansion of <code>replacement</code>. Capturing groups in the regular expression can be
+        referenced with <code>$1</code>, <code>$2</code>, etc. Named capturing groups can be referenced with{" "}
+        <code>$name</code>.
+      </p>
+
+      <p>
+        Reserved labels (those starting with <code>__</code>, including <code>__name__</code>) are never renamed. If the
+        expanded replacement is empty the label is dropped, and if it is not a valid label name the label is left
+        untouched.
+      </p>
+
+      <p>
+        <strong>Note:</strong> If the expanded replacement results in a label name that already exists in the
+        timeseries, the existing label&rsquo;s value is silently overwritten.
+      </p>
+
+      <p>
+        <code>labelmap</code> acts on float and histogram samples in the same way.
+      </p>
+
+      <p>
+        This example strips a <code>kubernetes_</code> prefix from every matching label, so that
+        <code>
+          up{"{"}job=&quot;api&quot;,kubernetes_cluster=&quot;c1&quot;,kubernetes_pod=&quot;p1&quot;{"}"}
+        </code>{" "}
+        becomes
+        <code>
+          up{"{"}job=&quot;api&quot;,cluster=&quot;c1&quot;,pod=&quot;p1&quot;{"}"}
+        </code>
+        :
+      </p>
+
+      <pre>
+        <code>
+          labelmap(up{"{"}job=&quot;api&quot;{"}"}, &quot;kubernetes_(.+)&quot;, &quot;$1&quot;)
+        </code>
+      </pre>
+    </>
+  ),
   last_over_time: (
     <>
       <p>
