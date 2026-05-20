@@ -167,6 +167,9 @@ func (ce *CircularExemplarStorage) Select(start, end int64, matchers ...[]*label
 
 	// Loop through each index entry, which will point us to first/last exemplar for each series.
 	for _, idx := range ce.index {
+		if idx.oldest == noExemplar || idx.newest == noExemplar {
+			continue
+		}
 		var se exemplar.QueryResult
 		e := ce.exemplars[idx.oldest]
 		if e.exemplar.Ts > end || ce.exemplars[idx.newest].exemplar.Ts < start {
@@ -248,7 +251,8 @@ func (ce *CircularExemplarStorage) validateExemplar(idx *indexEntry, e exemplar.
 		return err
 	}
 
-	if idx == nil {
+	if idx == nil || idx.oldest == noExemplar || idx.newest == noExemplar {
+		// No prior exemplar exists for this series.
 		return nil
 	}
 
@@ -395,6 +399,8 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	seriesLabels := l.Bytes(buf[:])
 
 	idx, indexExists := ce.index[string(seriesLabels)]
+	emptyIndex := indexExists && (idx.oldest == noExemplar || idx.newest == noExemplar)
+
 	err := ce.validateExemplar(idx, e, true)
 	if err != nil {
 		if errors.Is(err, storage.ErrDuplicateExemplar) {
@@ -408,7 +414,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	// index to check for duplicates.
 	var insertionIndex int
 	var outOfOrder bool
-	if indexExists {
+	if indexExists && !emptyIndex {
 		outOfOrder = e.Ts >= ce.exemplars[idx.oldest].exemplar.Ts && e.Ts < ce.exemplars[idx.newest].exemplar.Ts
 		if outOfOrder {
 			insertionIndex = ce.findInsertionIndex(e, idx)
@@ -433,8 +439,8 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 		prevRef := prev.ref
 		if ce.removeExemplar(prev) {
 			if prevRef == idx {
-				// Do not delete the indexEntry we're inserting to.
-				indexExists = false
+				// All exemplars for this series were just evicted.
+				emptyIndex = true
 			} else {
 				ce.removeIndex(prevRef)
 			}
@@ -451,7 +457,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	ce.exemplars[ce.nextIndex].ref = idx
 
 	switch {
-	case !indexExists:
+	case !indexExists || emptyIndex:
 		// Add the first and only exemplar to the list.
 		idx.oldest = ce.nextIndex
 		idx.newest = ce.nextIndex

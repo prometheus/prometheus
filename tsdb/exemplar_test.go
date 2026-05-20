@@ -941,6 +941,46 @@ func TestIndexOverwrite(t *testing.T) {
 	require.Equal(t, &indexEntry{0, 0, l2}, i)
 }
 
+// TestStaleIndexEntry verifies that Select, ValidateExemplar,
+// and AddExemplar handle a stale indexEntry (oldest == newest == noExemplar)
+// without panicking.
+func TestStaleIndexEntry(t *testing.T) {
+	exs, err := NewCircularExemplarStorage(10, eMetrics, 0)
+	require.NoError(t, err)
+	es := exs.(*CircularExemplarStorage)
+
+	series := labels.FromStrings("service", "a")
+
+	// Add one exemplar so the index entry exists.
+	require.NoError(t, es.AddExemplar(series, exemplar.Exemplar{Value: 1, Ts: 1}))
+
+	// Simulate a stale index entry: exemplars were evicted but the entry
+	// remains in the index map.
+	idx := es.index[string(series.Bytes(nil))]
+	require.NotNil(t, idx)
+	idx.oldest = noExemplar
+	idx.newest = noExemplar
+
+	// Select must not panic and should return an empty slice since there are
+	// no valid exemplars for the series.
+	res, err := es.Select(0, 10, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "service", "a")})
+	require.NoError(t, err)
+	require.Empty(t, res)
+
+	// ValidateExemplar must not panic; it should treat the stale entry like
+	// a missing one and return nil.
+	require.NoError(t, es.ValidateExemplar(series, exemplar.Exemplar{Value: 2, Ts: 2}))
+
+	// AddExemplar must not panic and should reinitialize the entry.
+	require.NoError(t, es.AddExemplar(series, exemplar.Exemplar{Value: 2, Ts: 2}))
+
+	res, err = es.Select(0, 10, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "service", "a")})
+	require.NoError(t, err)
+	require.Len(t, res, 1)
+	require.Len(t, res[0].Exemplars, 1)
+	require.Equal(t, int64(2), res[0].Exemplars[0].Ts)
+}
+
 func TestResize(t *testing.T) {
 	testCases := []struct {
 		name              string
