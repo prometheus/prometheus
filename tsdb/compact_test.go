@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -1368,63 +1369,53 @@ func TestDisableAutoCompactions(t *testing.T) {
 // TestCancelCompactions ensures that when the db is closed
 // any running compaction is cancelled to unblock closing the db.
 func TestCancelCompactions(t *testing.T) {
-	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		compactionStarted := make(chan struct{})
+		compactionCanceled := make(chan struct{})
 
-	db := newTestDB(t)
+		opts := DefaultOptions()
+		opts.NewCompactorFunc = func(ctx context.Context, _ prometheus.Registerer, _ *slog.Logger, _ []int64, _ chunkenc.Pool, _ *Options) (Compactor, error) {
+			return &mockCompactorFn{
+				planFn: func() ([]string, error) {
+					return []string{"block-a", "block-b"}, nil
+				},
+				compactFn: func() ([]ulid.ULID, error) {
+					close(compactionStarted)
+					<-ctx.Done()
+					close(compactionCanceled)
+					return nil, ctx.Err()
+				},
+				// writeFn is unused: this test never reaches the head, OOO,
+				// or stale-series compaction paths that would call Write.
+				writeFn: func() ([]ulid.ULID, error) {
+					return nil, nil
+				},
+			}, nil
+		}
+		db := newTestDB(t, withOpts(opts))
 
-	compactionStarted := make(chan struct{})
-	compactionCanceled := make(chan struct{})
-	ctx, cancel := context.WithCancel(context.Background())
-	originalCancel := db.compactCancel
-	db.compactCancel = func() {
-		cancel()
-		originalCancel()
-	}
+		db.compactc <- struct{}{}
+		<-compactionStarted
 
-	var startedOnce sync.Once
-	var canceledOnce sync.Once
-	db.compactor = &mockCompactorFn{
-		planFn: func() ([]string, error) {
-			return []string{"block-a", "block-b"}, nil
-		},
-		compactFn: func() ([]ulid.ULID, error) {
-			startedOnce.Do(func() {
-				close(compactionStarted)
-			})
-			<-ctx.Done()
-			canceledOnce.Do(func() {
-				close(compactionCanceled)
-			})
-			return nil, ctx.Err()
-		},
-		writeFn: func() ([]ulid.ULID, error) {
-			return nil, nil
-		},
-	}
+		require.NoError(t, db.Close())
+		<-compactionCanceled
 
-	select {
-	case db.compactc <- struct{}{}:
-	case <-time.After(time.Second):
-		t.Fatal("triggering compaction timed out")
-	}
-
-	select {
-	case <-compactionStarted:
-	case <-time.After(time.Second):
-		t.Fatal("compaction did not start")
-	}
-
-	start := time.Now()
-	require.NoError(t, db.Close())
-	require.Less(t, time.Since(start), time.Second)
-
-	select {
-	case <-compactionCanceled:
-	case <-time.After(30 * time.Second):
-		t.Fatal("compaction was not canceled")
-	}
+		// Wrapped context.Canceled must not be counted as a real compaction
+		// failure (verifies errors.Is at every level of the chain).
+		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed))
+	})
 }
 
+type blockPopulatorFunc func(context.Context, *CompactorMetrics, *slog.Logger, chunkenc.Pool, storage.VerticalChunkSeriesMergeFunc, []BlockReader, *BlockMeta, IndexWriter, ChunkWriter, IndexReaderPostingsFunc) error
+
+func (f blockPopulatorFunc) PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger *slog.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter, postingsFunc IndexReaderPostingsFunc) error {
+	return f(ctx, metrics, logger, chunkPool, mergeFunc, blocks, meta, indexw, chunkw, postingsFunc)
+}
+
+// TestCanceledCompactionDoesNotMarkBlocksFailed ensures that a compaction
+// aborted via context cancellation does not mark its source blocks as
+// Compaction.Failed. The context.Canceled error must be detected with
+// errors.Is so wrapped values are still recognized at every level.
 func TestCanceledCompactionDoesNotMarkBlocksFailed(t *testing.T) {
 	t.Parallel()
 
@@ -1434,12 +1425,12 @@ func TestCanceledCompactionDoesNotMarkBlocksFailed(t *testing.T) {
 		createBlock(t, tmpdir, genSeries(1, 1, 100, 200)),
 	}
 
-	compactor, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{200}, nil, nil)
+	compactor, err := NewLeveledCompactor(t.Context(), nil, promslog.NewNopLogger(), []int64{200}, nil, nil)
 	require.NoError(t, err)
 
 	_, err = compactor.CompactWithBlockPopulator(tmpdir, blockDirs, nil, blockPopulatorFunc(
 		func(context.Context, *CompactorMetrics, *slog.Logger, chunkenc.Pool, storage.VerticalChunkSeriesMergeFunc, []BlockReader, *BlockMeta, IndexWriter, ChunkWriter, IndexReaderPostingsFunc) error {
-			return fmt.Errorf("populate block: %w", context.Canceled)
+			return context.Canceled
 		},
 	))
 	require.ErrorIs(t, err, context.Canceled)
@@ -1449,12 +1440,6 @@ func TestCanceledCompactionDoesNotMarkBlocksFailed(t *testing.T) {
 		require.NoError(t, err)
 		require.Falsef(t, meta.Compaction.Failed, "block %s should not be marked as compaction failed", meta.ULID)
 	}
-}
-
-type blockPopulatorFunc func(context.Context, *CompactorMetrics, *slog.Logger, chunkenc.Pool, storage.VerticalChunkSeriesMergeFunc, []BlockReader, *BlockMeta, IndexWriter, ChunkWriter, IndexReaderPostingsFunc) error
-
-func (f blockPopulatorFunc) PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger *slog.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter, postingsFunc IndexReaderPostingsFunc) error {
-	return f(ctx, metrics, logger, chunkPool, mergeFunc, blocks, meta, indexw, chunkw, postingsFunc)
 }
 
 // TestDeleteCompactionBlockAfterFailedReload ensures that a failed reloadBlocks immediately after a compaction
