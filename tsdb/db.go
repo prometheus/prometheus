@@ -1712,14 +1712,14 @@ func (db *DB) CompactStaleHead() (err error) {
 		}
 	}
 
-	if err := db.head.truncateStaleSeries(staleSeriesRefs, maxt); err != nil {
+	if err := db.head.truncateStaleSeries(staleSeriesRefs.sortedByRef, maxt); err != nil {
 		return fmt.Errorf("head truncate: %w", err)
 	}
 	db.head.RebuildSymbolTable(db.logger)
 
 	elapsed := time.Since(start)
 	db.metrics.staleSeriesCompactionDuration.Observe(elapsed.Seconds())
-	db.logger.Info("Ending stale series compaction", "num_series", len(staleSeriesRefs), "duration", elapsed)
+	db.logger.Info("Ending stale series compaction", "num_series", len(staleSeriesRefs.sortedByRef), "duration", elapsed)
 	return nil
 }
 
