@@ -920,19 +920,23 @@ float and histogram samples in the same way.
 **Note:** This function is experimental and disabled by default. It can be
 enabled by starting Prometheus with `--enable-feature=promql-experimental-functions`.
 
-`timeseries_gen(metric_name string, tpl string)` emits a synthetic instant
-vector built from a Go [`text/template`][gotpl] supplied as `tpl`. Its primary
-use case is providing inline "filter" series for `*` / `on(...)` joins without
-precomputing them via recording rules or storage:
+`timeseries_gen(tpl string, metric_name ...string)` emits a synthetic
+instant vector built from a Go [`text/template`][gotpl] supplied as `tpl`.
+Its primary use case is providing inline "filter" series for `*` / `on(...)`
+joins without precomputing them via recording rules or storage:
 
 ```
-metric * on(env) timeseries_gen("", `{{rangeSeries "env" "prod,stage,canary" 1.0}}`)
+metric * on(env) timeseries_gen(`{{rangeSeries "env" "prod,stage,canary" 1.0}}`)
 ```
 
-`metric_name`:
+The optional `metric_name` argument controls the `__name__` label on
+emitted series:
 
-- If empty, emitted series have no `__name__` label.
-- Otherwise every emitted series gets `__name__=<metric_name>`.
+- If omitted (or empty), emitted series have no `__name__` label. This is
+  the usual case for join-filter usage where vector matching ignores
+  `__name__` anyway.
+- If provided and non-empty, every emitted series gets
+  `__name__=<metric_name>`.
 
 The template runs **once per query** and the result is cached, so range queries
 do not re-execute the template at every step. Output cardinality is capped at
@@ -958,22 +962,27 @@ embedded label-string grammar, no escape hell.
 Examples:
 
 ```
-# One sample, two labels.
-timeseries_gen("f", `{{series 1.0 "env" "prod" "job" "api"}}`)
+# One sample, two labels, with an explicit metric name.
+timeseries_gen(`{{series 1.0 "env" "prod" "job" "api"}}`, "f")
 
-# Fan-out across env values plus a fixed job label.
-timeseries_gen("", `{{rangeSeries "env" "prod,stage,dev" 1.0 "job" "api"}}`)
+# Fan-out across env values plus a fixed job label (no __name__).
+timeseries_gen(`{{rangeSeries "env" "prod,stage,dev" 1.0 "job" "api"}}`)
 
 # Indexed series via seq + printf.
-timeseries_gen("", `{{range $i := seq 1 5}}{{series 1.0 "i" (printf "%d" $i)}}{{end}}`)
+timeseries_gen(`{{range $i := seq 1 5}}{{series 1.0 "i" (printf "%d" $i)}}{{end}}`)
 ```
 
 ### Restrictions
 
 - The `{{define}}` and `{{template}}` template actions are rejected at parse
   time to prevent recursive expansion.
-- Setting `__name__` from the `kvPairs` (or from `rangeSeries`'s `fanoutLabel`)
-  is rejected; supply `metric_name` instead.
+- When the `metric_name` argument is provided, the template MUST NOT set
+  `__name__` (via `kvPairs` or as a `rangeSeries` `fanoutLabel`) — the
+  function argument is the single source of truth.
+- When `metric_name` is omitted, the template MAY set `__name__` on a
+  per-series basis via `kvPairs`, or fan out over multiple metric names
+  via `rangeSeries "__name__" "a,b,c" ...`. This lets a single call emit
+  several related metrics.
 - Each call must produce a unique label set; duplicates are a hard error.
 - All label names must match the Prometheus label-name grammar
   `[a-zA-Z_][a-zA-Z0-9_]*`.

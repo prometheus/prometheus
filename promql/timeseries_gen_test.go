@@ -23,7 +23,7 @@ import (
 )
 
 func TestKVPairsToLabels_Valid(t *testing.T) {
-	got, err := kvPairsToLabels([]string{"env", "prod", "job", "api"})
+	got, err := kvPairsToLabels([]string{"env", "prod", "job", "api"}, true)
 	require.NoError(t, err)
 	require.Equal(t,
 		labels.FromStrings("env", "prod", "job", "api"),
@@ -32,28 +32,39 @@ func TestKVPairsToLabels_Valid(t *testing.T) {
 }
 
 func TestKVPairsToLabels_Empty(t *testing.T) {
-	got, err := kvPairsToLabels(nil)
+	got, err := kvPairsToLabels(nil, true)
 	require.NoError(t, err)
 	require.Equal(t, labels.EmptyLabels(), got)
 }
 
 func TestKVPairsToLabels_OddLength(t *testing.T) {
-	_, err := kvPairsToLabels([]string{"env", "prod", "job"})
+	_, err := kvPairsToLabels([]string{"env", "prod", "job"}, true)
 	require.ErrorContains(t, err, "expected even number")
 }
 
 func TestKVPairsToLabels_InvalidName(t *testing.T) {
-	_, err := kvPairsToLabels([]string{"1bad", "x"})
+	_, err := kvPairsToLabels([]string{"1bad", "x"}, true)
 	require.ErrorContains(t, err, "invalid label name")
 }
 
-func TestKVPairsToLabels_RejectsNameLabel(t *testing.T) {
-	_, err := kvPairsToLabels([]string{"__name__", "foo", "env", "prod"})
+func TestKVPairsToLabels_RejectsNameLabelWhenFlagSet(t *testing.T) {
+	_, err := kvPairsToLabels([]string{"__name__", "foo", "env", "prod"}, true)
 	require.ErrorContains(t, err, "__name__ must not be set")
 }
 
+func TestKVPairsToLabels_AllowsNameLabelWhenFlagUnset(t *testing.T) {
+	// When the caller has not supplied a metric_name argument, the
+	// template is free to set __name__ on a per-series basis.
+	got, err := kvPairsToLabels([]string{"__name__", "foo", "env", "prod"}, false)
+	require.NoError(t, err)
+	require.Equal(t,
+		labels.FromStrings("__name__", "foo", "env", "prod"),
+		got,
+	)
+}
+
 func TestKVPairsToLabels_AllowsCommaInValue(t *testing.T) {
-	got, err := kvPairsToLabels([]string{"tags", "a,b,c", "env", "prod"})
+	got, err := kvPairsToLabels([]string{"tags", "a,b,c", "env", "prod"}, true)
 	require.NoError(t, err)
 	require.Equal(t,
 		labels.FromStrings("env", "prod", "tags", "a,b,c"),
@@ -236,20 +247,52 @@ func TestTplEngine_Build_CapEnforced(t *testing.T) {
 	require.Nil(t, v)
 }
 
-func TestTplEngine_Build_TemplateSetsNameRejected(t *testing.T) {
+func TestTplEngine_Build_TemplateSetsNameRejectedWhenMetricArg(t *testing.T) {
+	// metric_name argument provided → template MUST NOT set __name__.
 	e, err := newTplEngine(`{{series 1.0 "__name__" "foo" "env" "prod"}}`)
 	require.NoError(t, err)
 
-	_, err = e.build("", 0)
+	_, err = e.build("my_metric", 0)
 	require.ErrorContains(t, err, "__name__ must not be set")
 }
 
-func TestTplEngine_Build_RangeSeriesRejectsNameAsFanoutLabel(t *testing.T) {
+func TestTplEngine_Build_TemplateSetsNameAllowedWhenNoMetricArg(t *testing.T) {
+	// metric_name argument omitted → template MAY set __name__ per series.
+	e, err := newTplEngine(`{{series 1.0 "__name__" "foo" "env" "prod"}}`)
+	require.NoError(t, err)
+
+	v, err := e.build("", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 1)
+	require.Equal(t,
+		labels.FromStrings("__name__", "foo", "env", "prod"),
+		v[0].Metric,
+	)
+}
+
+func TestTplEngine_Build_RangeSeriesNameFanoutRejectedWhenMetricArg(t *testing.T) {
 	e, err := newTplEngine(`{{rangeSeries "__name__" "a,b" 1.0}}`)
 	require.NoError(t, err)
 
-	_, err = e.build("", 0)
-	require.ErrorContains(t, err, "__name__ must not be set")
+	_, err = e.build("my_metric", 0)
+	require.ErrorContains(t, err, "__name__ must not be the fanout label")
+}
+
+func TestTplEngine_Build_RangeSeriesNameFanoutAllowedWhenNoMetricArg(t *testing.T) {
+	// Fan out across multiple metric names. Useful for emitting several
+	// related synthetic series in one call.
+	e, err := newTplEngine(`{{rangeSeries "__name__" "a,b,c" 1.0 "env" "prod"}}`)
+	require.NoError(t, err)
+
+	v, err := e.build("", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 3)
+	names := []string{}
+	for _, s := range v {
+		names = append(names, s.Metric.Get("__name__"))
+		require.Equal(t, "prod", s.Metric.Get("env"))
+	}
+	require.ElementsMatch(t, []string{"a", "b", "c"}, names)
 }
 
 func TestTplEngine_Build_SeriesOddKVPairs(t *testing.T) {
@@ -262,7 +305,7 @@ func TestTplEngine_Build_SeriesOddKVPairs(t *testing.T) {
 
 func TestEvalTimeseriesGen_FirstCallBuilds(t *testing.T) {
 	enh := &EvalNodeHelper{Ts: 1000}
-	args := mustParseArgs(t, `timeseries_gen("f", "{{series 1.0 \"env\" \"prod\"}}")`)
+	args := mustParseArgs(t, `timeseries_gen("{{series 1.0 \"env\" \"prod\"}}", "f")`)
 	v, _ := funcTimeseriesGen(nil, nil, args, enh)
 
 	require.Len(t, v, 1)
@@ -276,7 +319,7 @@ func TestEvalTimeseriesGen_FirstCallBuilds(t *testing.T) {
 
 func TestEvalTimeseriesGen_SecondCallReusesCache(t *testing.T) {
 	enh := &EvalNodeHelper{Ts: 1000}
-	args := mustParseArgs(t, `timeseries_gen("f", "{{series 1.0 \"env\" \"prod\"}}")`)
+	args := mustParseArgs(t, `timeseries_gen("{{series 1.0 \"env\" \"prod\"}}", "f")`)
 	_, _ = funcTimeseriesGen(nil, nil, args, enh)
 	first := enh.NodeCache
 
@@ -289,7 +332,7 @@ func TestEvalTimeseriesGen_SecondCallReusesCache(t *testing.T) {
 
 func TestEvalTimeseriesGen_BadTemplatePanics(t *testing.T) {
 	enh := &EvalNodeHelper{Ts: 1000}
-	args := mustParseArgs(t, `timeseries_gen("", "{{define \"x\"}}y{{end}}")`)
+	args := mustParseArgs(t, `timeseries_gen("{{define \"x\"}}y{{end}}")`)
 
 	require.PanicsWithError(t, "timeseries_gen: forbidden template action: define", func() {
 		_, _ = funcTimeseriesGen(nil, nil, args, enh)
@@ -313,7 +356,7 @@ func mustParseArgs(t *testing.T, expr string) parser.Expressions {
 // the underlying text/template.
 func BenchmarkTimeseriesGen_WarmPath(b *testing.B) {
 	enh := &EvalNodeHelper{Ts: 1000}
-	args := mustParseArgsB(b, `timeseries_gen("f", "{{range $i := seq 1 100}}{{series 1.0 \"i\" (printf \"%d\" $i)}}{{end}}")`)
+	args := mustParseArgsB(b, `timeseries_gen("{{range $i := seq 1 100}}{{series 1.0 \"i\" (printf \"%d\" $i)}}{{end}}", "f")`)
 
 	// Prime the cache so the loop below exercises the warm path only.
 	_, _ = funcTimeseriesGen(nil, nil, args, enh)

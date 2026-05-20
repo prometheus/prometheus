@@ -33,10 +33,12 @@ import (
 const maxTimeseriesGenSeries = 10_000
 
 // kvPairsToLabels converts a flat slice of alternating key,value strings into
-// a sorted labels.Labels. The slice must have even length; setting __name__
-// is rejected because the metric name is supplied to timeseries_gen as a
-// separate argument. An empty input yields labels.EmptyLabels().
-func kvPairsToLabels(kvPairs []string) (labels.Labels, error) {
+// a sorted labels.Labels. The slice must have even length. When rejectName
+// is true, setting __name__ is an error (because the caller has supplied a
+// metric_name argument and the builder will inject it); when false, the
+// template is allowed to set __name__ on a per-series basis. An empty input
+// yields labels.EmptyLabels().
+func kvPairsToLabels(kvPairs []string, rejectName bool) (labels.Labels, error) {
 	if len(kvPairs) == 0 {
 		return labels.EmptyLabels(), nil
 	}
@@ -49,8 +51,8 @@ func kvPairsToLabels(kvPairs []string) (labels.Labels, error) {
 		if !labelNameValid(name) {
 			return labels.EmptyLabels(), fmt.Errorf("invalid label name: %q", name)
 		}
-		if name == model.MetricNameLabel {
-			return labels.EmptyLabels(), errors.New("__name__ must not be set in template label arguments")
+		if rejectName && name == model.MetricNameLabel {
+			return labels.EmptyLabels(), errors.New("__name__ must not be set in template label arguments when metric_name is provided")
 		}
 		b.Add(name, val)
 	}
@@ -307,7 +309,7 @@ func (e *tplEngine) buildWithCap(metric string, ts int64, seriesCap int) (Vector
 			if err != nil {
 				return "", err
 			}
-			ls, err := kvPairsToLabels(kvPairs)
+			ls, err := kvPairsToLabels(kvPairs, b.metric != "")
 			if err != nil {
 				return "", err
 			}
@@ -320,14 +322,14 @@ func (e *tplEngine) buildWithCap(metric string, ts int64, seriesCap int) (Vector
 			if !labelNameValid(label) {
 				return "", fmt.Errorf("invalid label name: %q", label)
 			}
-			if label == model.MetricNameLabel {
-				return "", errors.New("__name__ must not be set in template label arguments")
+			if b.metric != "" && label == model.MetricNameLabel {
+				return "", errors.New("__name__ must not be the fanout label when metric_name is provided")
 			}
 			f, err := toFloat64(v)
 			if err != nil {
 				return "", err
 			}
-			extras, err := kvPairsToLabels(kvPairs)
+			extras, err := kvPairsToLabels(kvPairs, b.metric != "")
 			if err != nil {
 				return "", err
 			}
@@ -448,8 +450,11 @@ func funcTimeseriesGen(_ []Vector, _ Matrix, args parser.Expressions, enh *EvalN
 		return out, nil
 	}
 
-	metric := stringFromArg(args[0])
-	tplSrc := stringFromArg(args[1])
+	tplSrc := stringFromArg(args[0])
+	metric := ""
+	if len(args) >= 2 {
+		metric = stringFromArg(args[1])
+	}
 
 	e, err := newTplEngine(tplSrc)
 	if err != nil {

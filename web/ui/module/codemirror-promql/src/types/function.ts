@@ -627,7 +627,7 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   [TimeseriesGen]: {
     name: 'timeseries_gen',
     argTypes: [ValueType.string, ValueType.string],
-    variadic: 0,
+    variadic: 1,
     returnType: ValueType.vector,
   },
   [Timestamp]: {

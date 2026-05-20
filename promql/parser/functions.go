@@ -483,6 +483,7 @@ var Functions = map[string]*Function{
 	"timeseries_gen": {
 		Name:         "timeseries_gen",
 		ArgTypes:     []ValueType{ValueTypeString, ValueTypeString},
+		Variadic:     1,
 		ReturnType:   ValueTypeVector,
 		Experimental: true,
 	},
