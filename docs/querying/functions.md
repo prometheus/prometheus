@@ -710,6 +710,8 @@ Reserved labels (those starting with `__`, including `__name__`) are never
 renamed. If the expanded replacement is empty the label is dropped, and if
 it is not a valid label name the label is left untouched.
 
+**Note:** If the expanded replacement results in a label name that already exists in the timeseries, the existing label's value is silently overwritten.
+
 `labelmap` acts on float and histogram samples in the same way.
 
 This example strips a `kubernetes_` prefix from every matching label, so that
