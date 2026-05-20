@@ -593,6 +593,59 @@ eval instant at 0m label_join(dup, "label", "", "this")
 
 clear
 
+# Tests for labelmap.
+load 5m
+  testmetric{job="api",kubernetes_cluster="c1",kubernetes_namespace="ns1",kubernetes_pod="p1"} 0
+  testmetric{job="api",kubernetes_cluster="c2",kubernetes_namespace="ns2",kubernetes_pod="p2"} 1
+
+# labelmap strips a common prefix from matching label names.
+eval instant at 0m labelmap(testmetric, "kubernetes_(.+)", "$1")
+  testmetric{job="api",cluster="c1",namespace="ns1",pod="p1"} 0
+  testmetric{job="api",cluster="c2",namespace="ns2",pod="p2"} 1
+
+# labelmap leaves labels that do not match the regex untouched.
+eval instant at 0m labelmap(testmetric, "nomatch_(.+)", "$1")
+  testmetric{job="api",kubernetes_cluster="c1",kubernetes_namespace="ns1",kubernetes_pod="p1"} 0
+  testmetric{job="api",kubernetes_cluster="c2",kubernetes_namespace="ns2",kubernetes_pod="p2"} 1
+
+clear
+
+load 5m
+  testmetric{job="api",foo="x",bar="y",keep_me="z"} 0
+
+# labelmap drops labels when the replacement is empty.
+eval instant at 0m labelmap(testmetric, "foo|bar", "")
+  testmetric{job="api",keep_me="z"} 0
+
+# labelmap is a no-op when the replacement equals the original name.
+eval instant at 0m labelmap(testmetric, "(foo)", "$1")
+  testmetric{job="api",foo="x",bar="y",keep_me="z"} 0
+
+# labelmap silently skips labels whose replacement is not a valid label name.
+eval instant at 0m labelmap(testmetric, "foo", "\xff")
+  testmetric{job="api",foo="x",bar="y",keep_me="z"} 0
+
+# labelmap never touches __name__ even if the regex matches it.
+eval instant at 0m labelmap(testmetric, "__name__", "renamed")
+  testmetric{job="api",foo="x",bar="y",keep_me="z"} 0
+
+clear
+
+load 5m
+  testmetric{src_a="x"} 0
+  testmetric{src_b="x"} 1
+
+# labelmap fails when two distinct series end up with the same labelset because
+# the regex collapses different label names onto a shared destination.
+eval instant at 0m labelmap(testmetric, "src_.", "renamed")
+  expect fail msg:vector cannot contain metrics with the same labelset
+
+# labelmap fails when the regex is invalid.
+eval instant at 0m labelmap(testmetric, "(.*", "$1")
+  expect fail
+
+clear
+
 # Tests for vector.
 eval instant at 0m vector(1)
   {} 1

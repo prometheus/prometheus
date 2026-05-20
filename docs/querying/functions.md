@@ -693,6 +693,33 @@ This second example has the same effect than the first example, and illustrates 
 label_replace(up{job="api-server",service="a:c"}, "foo", "$name", "service", "(?P<name>.*):(?P<version>.*)")
 ```
 
+## `labelmap()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`labelmap(v instant-vector, regex string, replacement string)` matches the
+[regular expression](./basics.md#regular-expressions) `regex` against the
+*name* of every label in each timeseries of `v`. For every label whose name
+matches, the label is renamed to the expansion of `replacement`. Capturing
+groups in the regular expression can be referenced with `$1`, `$2`, etc.
+Named capturing groups can be referenced with `$name`.
+
+Reserved labels (those starting with `__`, including `__name__`) are never
+renamed. If the expanded replacement is empty the label is dropped, and if
+it is not a valid label name the label is left untouched.
+
+`labelmap` acts on float and histogram samples in the same way.
+
+This example strips a `kubernetes_` prefix from every matching label, so that
+`up{job="api",kubernetes_cluster="c1",kubernetes_pod="p1"}` becomes
+`up{job="api",cluster="c1",pod="p1"}`:
+
+```
+labelmap(up{job="api"}, "kubernetes_(.+)", "$1")
+```
+
 ## `ln()`
 
 `ln(v instant-vector)` calculates the natural logarithm for all float samples
