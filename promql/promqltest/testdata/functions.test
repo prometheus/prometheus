@@ -632,6 +632,15 @@ eval instant at 0m labelmap(testmetric, "__name__", "renamed")
 clear
 
 load 5m
+  testmetric{job="api",a_x="new",x="old"} 0
+
+# labelmap silently overwrites an existing label when the replacement collides with it.
+eval instant at 0m labelmap(testmetric, "a_(.*)", "$1")
+  testmetric{job="api",x="new"} 0
+
+clear
+
+load 5m
   testmetric{src_a="x"} 0
   testmetric{src_b="x"} 1
 
