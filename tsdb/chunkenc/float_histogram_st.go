@@ -20,23 +20,23 @@ import (
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/value"
 )
 
 // FloatHistogramSTChunk is a chunk for float histogram samples with start timestamp (ST) support.
-// It extends the FloatHistogramChunk format with a 1-byte ST header after the flags byte.
 //
-// Header layout (4 bytes):
+// Header layout:
 //
-//	bytes 0-1: sample count (big-endian uint16)
-//	byte 2:    flags (bits 7-6 = counter reset header)
-//	byte 3:    ST header (bit 7 = firstSTKnown, bits 6-0 = firstSTChangeOn)
+//	byte 0 bits 7-6:           counter reset header.
+//	byte 0 bits 5-0 + byte 1:  14-bit big-endian sample count.
+//	byte 2:                    ST header (bit 7 = firstSTKnown, bits 6-0 = firstSTChangeOn).
 type FloatHistogramSTChunk struct {
 	b bstream
 }
 
 // NewFloatHistogramSTChunk returns a new empty FloatHistogramSTChunk.
 func NewFloatHistogramSTChunk() *FloatHistogramSTChunk {
-	b := make([]byte, histogramSTHeaderSize, chunkAllocationSize)
+	b := make([]byte, histogramHeaderSize, chunkAllocationSize)
 	return &FloatHistogramSTChunk{b: bstream{stream: b, count: 0}}
 }
 
@@ -55,12 +55,14 @@ func (c *FloatHistogramSTChunk) Bytes() []byte {
 
 // NumSamples returns the number of samples in the chunk.
 func (c *FloatHistogramSTChunk) NumSamples() int {
-	return int(binary.BigEndian.Uint16(c.b.bytes()))
+	return int(binary.BigEndian.Uint16(c.b.bytes()) & 0x3FFF)
 }
 
-// GetCounterResetHeader returns the counter reset header from the flags byte.
+// GetCounterResetHeader returns the counter reset header from bits 7-6 of
+// byte 0. This differs from base FloatHistogramChunk (which reads byte 2 via
+// histogramFlagPos) — in ST chunks byte 2 holds the ST header.
 func (c *FloatHistogramSTChunk) GetCounterResetHeader() CounterResetHeader {
-	return CounterResetHeader(c.b.bytes()[histogramFlagPos] & CounterResetHeaderMask)
+	return CounterResetHeader(c.b.bytes()[0] & CounterResetHeaderMask)
 }
 
 // Compact implements the Chunk interface.
@@ -74,7 +76,7 @@ func (c *FloatHistogramSTChunk) Compact() {
 
 // Appender implements the Chunk interface.
 func (c *FloatHistogramSTChunk) Appender() (Appender, error) {
-	if len(c.b.stream) == histogramSTHeaderSize {
+	if len(c.b.stream) == histogramHeaderSize {
 		return &FloatHistogramSTAppender{
 			FloatHistogramAppender: FloatHistogramAppender{
 				b:    &c.b,
@@ -144,13 +146,13 @@ func (c *FloatHistogramSTChunk) Appender() (Appender, error) {
 func newFloatHistogramSTIterator(b []byte) *floatHistogramSTIterator {
 	it := &floatHistogramSTIterator{
 		floatHistogramIterator: floatHistogramIterator{
-			br:       newBReader(b[histogramSTHeaderSize:]),
-			numTotal: binary.BigEndian.Uint16(b),
+			br:       newBReader(b[histogramHeaderSize:]),
+			numTotal: binary.BigEndian.Uint16(b) & 0x3FFF,
 			t:        math.MinInt64,
 		},
 	}
-	it.counterResetHeader = CounterResetHeader(b[histogramFlagPos] & CounterResetHeaderMask)
-	it.firstSTKnown, it.firstSTChangeOn = readSTHeader(b[histogramSTHeaderSize-1:])
+	it.counterResetHeader = CounterResetHeader(b[0] & CounterResetHeaderMask)
+	it.firstSTKnown, it.firstSTChangeOn = readSTHeader(b[histogramHeaderSize-1:])
 	return it
 }
 
@@ -174,11 +176,220 @@ type FloatHistogramSTAppender struct {
 	stEncoder
 }
 
+// GetCounterResetHeader returns the counter-reset header from bits 7-6 of byte 0.
+func (a *FloatHistogramSTAppender) GetCounterResetHeader() CounterResetHeader {
+	return CounterResetHeader(a.b.bytes()[0] & CounterResetHeaderMask)
+}
+
+// setCounterResetHeader writes the counter-reset header into bits 7-6 of byte 0.
+func (a *FloatHistogramSTAppender) setCounterResetHeader(cr CounterResetHeader) {
+	b := a.b.bytes()
+	b[0] = (b[0] &^ CounterResetHeaderMask) | (byte(cr) & CounterResetHeaderMask)
+}
+
+func (a *FloatHistogramSTAppender) appendable(h *histogram.FloatHistogram) (
+	positiveInserts, negativeInserts []Insert,
+	backwardPositiveInserts, backwardNegativeInserts []Insert,
+	okToAppend, counterReset bool,
+) {
+	if a.NumSamples() > 0 && a.GetCounterResetHeader() == GaugeType {
+		return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, okToAppend, counterReset
+	}
+	if h.CounterResetHint == histogram.CounterReset {
+		// Always honor the explicit counter reset hint.
+		counterReset = true
+		return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, okToAppend, counterReset
+	}
+	if value.IsStaleNaN(h.Sum) {
+		// This is a stale sample whose buckets and spans don't matter.
+		okToAppend = true
+		return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, okToAppend, counterReset
+	}
+	if value.IsStaleNaN(a.sum.value) {
+		// If the last sample was stale, then we can only accept stale
+		// samples in this chunk.
+		return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, okToAppend, counterReset
+	}
+
+	if h.Count < a.cnt.value {
+		// There has been a counter reset.
+		counterReset = true
+		return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, okToAppend, counterReset
+	}
+
+	if h.Schema != a.schema || h.ZeroThreshold != a.zThreshold {
+		return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, okToAppend, counterReset
+	}
+
+	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.CustomBucketBoundsMatch(h.CustomValues, a.customValues) {
+		counterReset = true
+		return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, okToAppend, counterReset
+	}
+
+	if h.ZeroCount < a.zCnt.value {
+		// There has been a counter reset since ZeroThreshold didn't change.
+		counterReset = true
+		return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, okToAppend, counterReset
+	}
+
+	var ok bool
+	positiveInserts, backwardPositiveInserts, ok = expandFloatSpansAndBuckets(a.pSpans, h.PositiveSpans, a.pBuckets, h.PositiveBuckets)
+	if !ok {
+		counterReset = true
+		return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, okToAppend, counterReset
+	}
+	negativeInserts, backwardNegativeInserts, ok = expandFloatSpansAndBuckets(a.nSpans, h.NegativeSpans, a.nBuckets, h.NegativeBuckets)
+	if !ok {
+		counterReset = true
+		return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, okToAppend, counterReset
+	}
+
+	okToAppend = true
+	return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, okToAppend, counterReset
+}
+
+func (a *FloatHistogramSTAppender) appendableGauge(h *histogram.FloatHistogram) (
+	positiveInserts, negativeInserts []Insert,
+	backwardPositiveInserts, backwardNegativeInserts []Insert,
+	positiveSpans, negativeSpans []histogram.Span,
+	okToAppend bool,
+) {
+	if a.NumSamples() > 0 && a.GetCounterResetHeader() != GaugeType {
+		return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, positiveSpans, negativeSpans, okToAppend
+	}
+	if value.IsStaleNaN(h.Sum) {
+		// This is a stale sample whose buckets and spans don't matter.
+		okToAppend = true
+		return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, positiveSpans, negativeSpans, okToAppend
+	}
+	if value.IsStaleNaN(a.sum.value) {
+		// If the last sample was stale, then we can only accept stale
+		// samples in this chunk.
+		return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, positiveSpans, negativeSpans, okToAppend
+	}
+
+	if h.Schema != a.schema || h.ZeroThreshold != a.zThreshold {
+		return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, positiveSpans, negativeSpans, okToAppend
+	}
+
+	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.CustomBucketBoundsMatch(h.CustomValues, a.customValues) {
+		return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, positiveSpans, negativeSpans, okToAppend
+	}
+
+	positiveInserts, backwardPositiveInserts, positiveSpans = expandSpansBothWays(a.pSpans, h.PositiveSpans)
+	negativeInserts, backwardNegativeInserts, negativeSpans = expandSpansBothWays(a.nSpans, h.NegativeSpans)
+	okToAppend = true
+	return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, positiveSpans, negativeSpans, okToAppend
+}
+
+func (a *FloatHistogramSTAppender) appendFloatHistogram(t int64, h *histogram.FloatHistogram) {
+	var tDelta int64
+	num := binary.BigEndian.Uint16(a.b.bytes()) & 0x3FFF
+
+	if value.IsStaleNaN(h.Sum) {
+		// Emptying out other fields to write no buckets, and an empty
+		// layout in case of first histogram in the chunk.
+		h = &histogram.FloatHistogram{Sum: h.Sum}
+	}
+
+	if num == 0 {
+		// The first append gets the privilege to dictate the layout
+		// but it's also responsible for encoding it into the chunk!
+		writeHistogramChunkLayout(a.b, h.Schema, h.ZeroThreshold, h.PositiveSpans, h.NegativeSpans, h.CustomValues)
+		a.schema = h.Schema
+		a.zThreshold = h.ZeroThreshold
+
+		if len(h.PositiveSpans) > 0 {
+			a.pSpans = make([]histogram.Span, len(h.PositiveSpans))
+			copy(a.pSpans, h.PositiveSpans)
+		} else {
+			a.pSpans = nil
+		}
+		if len(h.NegativeSpans) > 0 {
+			a.nSpans = make([]histogram.Span, len(h.NegativeSpans))
+			copy(a.nSpans, h.NegativeSpans)
+		} else {
+			a.nSpans = nil
+		}
+		if len(h.CustomValues) > 0 {
+			a.customValues = make([]float64, len(h.CustomValues))
+			copy(a.customValues, h.CustomValues)
+		} else {
+			a.customValues = nil
+		}
+
+		numPBuckets, numNBuckets := countSpans(h.PositiveSpans), countSpans(h.NegativeSpans)
+		if numPBuckets > 0 {
+			a.pBuckets = make([]xorValue, numPBuckets)
+			for i := range numPBuckets {
+				a.pBuckets[i] = xorValue{
+					value:   h.PositiveBuckets[i],
+					leading: 0xff,
+				}
+			}
+		} else {
+			a.pBuckets = nil
+		}
+		if numNBuckets > 0 {
+			a.nBuckets = make([]xorValue, numNBuckets)
+			for i := range numNBuckets {
+				a.nBuckets[i] = xorValue{
+					value:   h.NegativeBuckets[i],
+					leading: 0xff,
+				}
+			}
+		} else {
+			a.nBuckets = nil
+		}
+
+		// Now store the actual data.
+		putVarbitInt(a.b, t)
+		a.b.writeBits(math.Float64bits(h.Count), 64)
+		a.b.writeBits(math.Float64bits(h.ZeroCount), 64)
+		a.b.writeBits(math.Float64bits(h.Sum), 64)
+		a.cnt.value = h.Count
+		a.zCnt.value = h.ZeroCount
+		a.sum.value = h.Sum
+		for _, b := range h.PositiveBuckets {
+			a.b.writeBits(math.Float64bits(b), 64)
+		}
+		for _, b := range h.NegativeBuckets {
+			a.b.writeBits(math.Float64bits(b), 64)
+		}
+	} else {
+		// The case for the 2nd sample with single deltas is implicitly handled correctly with the double delta code,
+		// so we don't need a separate single delta logic for the 2nd sample.
+		tDelta = t - a.t
+		tDod := tDelta - a.tDelta
+		putVarbitInt(a.b, tDod)
+
+		a.writeXorValue(&a.cnt, h.Count)
+		a.writeXorValue(&a.zCnt, h.ZeroCount)
+		a.writeXorValue(&a.sum, h.Sum)
+
+		for i, b := range h.PositiveBuckets {
+			a.writeXorValue(&a.pBuckets[i], b)
+		}
+		for i, b := range h.NegativeBuckets {
+			a.writeXorValue(&a.nBuckets[i], b)
+		}
+	}
+
+	// Write the incremented count back, preserving the counter-reset bits in
+	// the top 2 bits of byte 0.
+	buf := a.b.bytes()
+	crBits := buf[0] & CounterResetHeaderMask
+	binary.BigEndian.PutUint16(buf, (uint16(crBits)<<8)|(num+1))
+
+	a.t = t
+	a.tDelta = tDelta
+}
+
 // appendFloatHistogramST encodes a float histogram sample with start timestamp.
 func (a *FloatHistogramSTAppender) appendFloatHistogramST(st, t int64, fh *histogram.FloatHistogram) {
 	prevT := a.t
 	a.appendFloatHistogram(t, fh)
-	num := binary.BigEndian.Uint16(a.b.bytes())
+	num := binary.BigEndian.Uint16(a.b.bytes()) & 0x3FFF
 	a.encode(a.b, num, a.t, prevT, st)
 }
 
@@ -345,7 +556,7 @@ func (a *FloatHistogramSTAppender) recodeST(
 		happ.appendFloatHistogramST(stOld, tOld, fhOld)
 	}
 
-	happ.setCounterResetHeader(CounterResetHeader(byts[histogramFlagPos] & CounterResetHeaderMask))
+	happ.setCounterResetHeader(CounterResetHeader(byts[0] & CounterResetHeaderMask))
 	return hc, app
 }
 
@@ -363,14 +574,14 @@ func (it *floatHistogramSTIterator) AtST() int64 {
 // Reset resets the iterator for reuse.
 func (it *floatHistogramSTIterator) Reset(b []byte) {
 	it.stDecoder = stDecoder{}
-	it.firstSTKnown, it.firstSTChangeOn = readSTHeader(b[histogramSTHeaderSize-1:])
+	it.firstSTKnown, it.firstSTChangeOn = readSTHeader(b[histogramHeaderSize-1:])
 
 	// Reset the embedded floatHistogramIterator but with the correct header offset.
-	it.br = newBReader(b[histogramSTHeaderSize:])
-	it.numTotal = binary.BigEndian.Uint16(b)
+	it.br = newBReader(b[histogramHeaderSize:])
+	it.numTotal = binary.BigEndian.Uint16(b) & 0x3FFF
 	it.numRead = 0
 
-	it.counterResetHeader = CounterResetHeader(b[histogramFlagPos] & CounterResetHeaderMask)
+	it.counterResetHeader = CounterResetHeader(b[0] & CounterResetHeaderMask)
 
 	it.t, it.tDelta = 0, 0
 	it.cnt, it.zCnt, it.sum = xorValue{}, xorValue{}, xorValue{}

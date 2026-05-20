@@ -270,15 +270,17 @@ bound of 33554430 is picked so that the varbit encoded value will take at most
 ## Histogram ST chunk data
 
 The histogram ST chunk extends the histogram chunk format with optional Start
-Timestamp (ST) data, using the same ST encoding scheme as XOR2. The base histogram
-sample encoding is identical to the [histogram chunk](#histogram-chunk-data).
-A 1-byte `st_header` is inserted after `histogram_flags`, and an optional ST 
-field is appended after each sample's data. 
+Timestamp (ST) data, using the same ST encoding scheme as XOR2. The base
+histogram sample encoding is identical to the
+[histogram chunk](#histogram-chunk-data). The total header is 3 bytes — the
+same size as the histogram chunk header — but the counter-reset bits are
+relocated into the high 2 bits of the sample count byte so that byte 2 can
+hold the ST header. An optional ST field is appended after each sample's data.
 
 ```
-┌──────────────────────┬──────────────────────────┬────────────────────┬───────────────────────────────┬─────────────────────┬──────────────────┬──────────────────┬──────────────────────┬────────────────┬──────────────────┐
-│ num_samples <uint16> │ histogram_flags <1 byte> │ st_header <1 byte> │ zero_threshold <1 or 9 bytes> │ schema <varbit_int> │ pos_spans <data> │ neg_spans <data> │ custom_values <data> │ samples <data> │ padding <x bits> │
-└──────────────────────┴──────────────────────────┴────────────────────┴───────────────────────────────┴─────────────────────┴──────────────────┴──────────────────┴──────────────────────┴────────────────┴──────────────────┘
+┌────────────────────────┬───────────────────────┬────────────────────┬───────────────────────────────┬─────────────────────┬──────────────────┬──────────────────┬──────────────────────┬────────────────┬──────────────────┐
+│ counter_reset <2 bits> │ num_samples <14 bits> │ st_header <1 byte> │ zero_threshold <1 or 9 bytes> │ schema <varbit_int> │ pos_spans <data> │ neg_spans <data> │ custom_values <data> │ samples <data> │ padding <x bits> │
+└────────────────────────┴───────────────────────┴────────────────────┴───────────────────────────────┴─────────────────────┴──────────────────┴──────────────────┴──────────────────────┴────────────────┴──────────────────┘
 ```
 
 ### Start timestamp encoding
@@ -305,7 +307,6 @@ have `st_i` present.
   previous sample (or from 0 if not previously set).
 * `st_i` (i > 1) is encoded as a `<varbit_int>` "delta of delta" of the ST
   difference from the previous sample.
-
 
 ### Samples data:
 
@@ -376,14 +377,14 @@ Float histograms have the same layout as histograms apart from the encoding of s
 
 The float histogram ST chunk extends the float histogram chunk format with
 optional Start Timestamp (ST) data, with the same ST encoding scheme as
-[Histogram ST](#histogram-st-chunk-data). THe float histogram sample encoding is unchanged. A 1-byte
-`st_header` is inserted after `histogram_flags`, and an optional ST field is
-appended after each sample's data.
+[Histogram ST](#histogram-st-chunk-data). The float histogram sample encoding
+is unchanged. The 3-byte chunk header layout is identical to the
+[Histogram ST header layout](#chunk-header-layout).
 
 ```
-┌──────────────────────┬──────────────────────────┬────────────────────┬───────────────────────────────┬─────────────────────┬──────────────────┬──────────────────┬──────────────────────┬────────────────┬──────────────────┐
-│ num_samples <uint16> │ histogram_flags <1 byte> │ st_header <1 byte> │ zero_threshold <1 or 9 bytes> │ schema <varbit_int> │ pos_spans <data> │ neg_spans <data> │ custom_values <data> │ samples <data> │ padding <x bits> │
-└──────────────────────┴──────────────────────────┴────────────────────┴───────────────────────────────┴─────────────────────┴──────────────────┴──────────────────┴──────────────────────┴────────────────┴──────────────────┘
+┌────────────────────────┬───────────────────────┬────────────────────┬───────────────────────────────┬─────────────────────┬──────────────────┬──────────────────┬──────────────────────┬────────────────┬──────────────────┐
+│ counter_reset <2 bits> │ num_samples <14 bits> │ st_header <1 byte> │ zero_threshold <1 or 9 bytes> │ schema <varbit_int> │ pos_spans <data> │ neg_spans <data> │ custom_values <data> │ samples <data> │ padding <x bits> │
+└────────────────────────┴───────────────────────┴────────────────────┴───────────────────────────────┴─────────────────────┴──────────────────┴──────────────────┴──────────────────────┴────────────────┴──────────────────┘
 ```
 
 ### Samples data:
