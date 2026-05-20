@@ -987,8 +987,11 @@ timeseries_gen(`{{range $i := seq 1 5}}{{series 1.0 "i" (printf "%d" $i)}}{{end}
   via `rangeSeries "__name__" "a,b,c" ...`. This lets a single call emit
   several related metrics.
 - Each call must produce a unique label set; duplicates are a hard error.
-- All label names must match the Prometheus label-name grammar
-  `[a-zA-Z_][a-zA-Z0-9_]*`.
+- Label names are validated under Prometheus' UTF-8 label-name scheme,
+  so dotted OpenTelemetry-style names such as `http.method`,
+  `service.name`, and `deployment.environment` are accepted alongside
+  the legacy `[a-zA-Z_][a-zA-Z0-9_]*` form. Dotted names must be quoted
+  in PromQL selectors, e.g. `{"http.method"="GET"}`.
 
 [gotpl]: https://pkg.go.dev/text/template
 

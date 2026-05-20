@@ -42,8 +42,15 @@ func TestKVPairsToLabels_OddLength(t *testing.T) {
 	require.ErrorContains(t, err, "expected even number")
 }
 
-func TestKVPairsToLabels_InvalidName(t *testing.T) {
-	_, err := kvPairsToLabels([]string{"1bad", "x"}, true)
+func TestKVPairsToLabels_AcceptsDottedName(t *testing.T) {
+	// UTF-8 validation allows OpenTelemetry-style dotted label names.
+	got, err := kvPairsToLabels([]string{"http.method", "GET"}, true)
+	require.NoError(t, err)
+	require.Equal(t, labels.FromStrings("http.method", "GET"), got)
+}
+
+func TestKVPairsToLabels_RejectsEmptyName(t *testing.T) {
+	_, err := kvPairsToLabels([]string{"", "x"}, true)
 	require.ErrorContains(t, err, "invalid label name")
 }
 

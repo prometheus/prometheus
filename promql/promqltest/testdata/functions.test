@@ -2360,6 +2360,54 @@ eval instant at 0m timeseries_gen(`{{series (min 3 7) "k" "min"}}{{series (max 3
   {k="min"} 3
   {k="max"} 7
 
+# OpenTelemetry-style resource catalog: emit a baseline series per service
+# carrying the standard OTel resource attributes, translated to legacy
+# Prometheus label names (dot -> underscore). Lookup-table pattern.
+eval instant at 0m timeseries_gen(`{{series 1 "service_name" "checkout" "service_namespace" "shop" "service_version" "1.4.2" "deployment_environment" "prod"}}{{series 1 "service_name" "payments" "service_namespace" "shop" "service_version" "0.9.0" "deployment_environment" "prod"}}{{series 1 "service_name" "search" "service_namespace" "search" "service_version" "2.0.0" "deployment_environment" "stage"}}`, "otel_resource")
+  otel_resource{deployment_environment="prod",service_name="checkout",service_namespace="shop",service_version="1.4.2"} 1
+  otel_resource{deployment_environment="prod",service_name="payments",service_namespace="shop",service_version="0.9.0"} 1
+  otel_resource{deployment_environment="stage",service_name="search",service_namespace="search",service_version="2.0.0"} 1
+
+# OTel HTTP server attributes used as a per-route filter for an existing
+# metric. The fanned-out label is http_route; common request attributes
+# travel as extra kvPairs on every emitted series.
+eval instant at 0m timeseries_gen(`{{rangeSeries "http_route" "/cart,/checkout,/search" 1 "http_request_method" "GET" "http_response_status_code" "200" "network_protocol_name" "http"}}`)
+  {http_request_method="GET",http_response_status_code="200",http_route="/cart",     network_protocol_name="http"} 1
+  {http_request_method="GET",http_response_status_code="200",http_route="/checkout", network_protocol_name="http"} 1
+  {http_request_method="GET",http_response_status_code="200",http_route="/search",   network_protocol_name="http"} 1
+
+# OTel Kubernetes resource attributes: a per-cluster baseline mask. Useful
+# for `metric * on(k8s_cluster_name) timeseries_gen(...)` style filters.
+eval instant at 0m timeseries_gen(`{{rangeSeries "k8s_cluster_name" "us-east-1,eu-west-1" 1 "cloud_provider" "aws" "cloud_region" "global"}}`)
+  {cloud_provider="aws",cloud_region="global",k8s_cluster_name="us-east-1"} 1
+  {cloud_provider="aws",cloud_region="global",k8s_cluster_name="eu-west-1"} 1
+
+# Multi-metric output, OTel style: emit several related synthetic metrics
+# in one call by fanning out across __name__.
+eval instant at 0m timeseries_gen(`{{rangeSeries "__name__" "http_server_request_duration_seconds,http_server_request_body_size_bytes,http_server_response_body_size_bytes" 1 "service_name" "checkout"}}`)
+  http_server_request_duration_seconds{service_name="checkout"} 1
+  http_server_request_body_size_bytes{service_name="checkout"} 1
+  http_server_response_body_size_bytes{service_name="checkout"} 1
+
+# Native OTel semantic-convention labels (dotted names) are accepted under
+# the UTF-8 label-name validation scheme that Prometheus uses by default
+# in 3.x. Dotted names require quoting in PromQL series selectors (the
+# expected-output syntax below uses `{"name"="value"}` form). The names
+# come verbatim from the OTel semantic conventions (resource + http
+# server attribute groups).
+eval instant at 0m timeseries_gen(`{{series 1 "service.name" "checkout" "service.namespace" "shop" "service.version" "1.4.2" "deployment.environment" "prod"}}`, "otel.resource")
+  {"__name__"="otel.resource","deployment.environment"="prod","service.name"="checkout","service.namespace"="shop","service.version"="1.4.2"} 1
+
+# Dotted fanout label: emit one filter series per http.route.
+eval instant at 0m timeseries_gen(`{{rangeSeries "http.route" "/cart,/checkout,/search" 1 "http.request.method" "GET" "http.response.status_code" "200"}}`)
+  {"http.request.method"="GET","http.response.status_code"="200","http.route"="/cart"} 1
+  {"http.request.method"="GET","http.response.status_code"="200","http.route"="/checkout"} 1
+  {"http.request.method"="GET","http.response.status_code"="200","http.route"="/search"} 1
+
+# Mixing legacy and dotted label names in the same call is fine.
+eval instant at 0m timeseries_gen(`{{series 1 "service.name" "payments" "deployment_environment" "prod"}}`)
+  {deployment_environment="prod","service.name"="payments"} 1
+
 # Duplicate label set across two emit calls is a hard error.
 eval instant at 0m timeseries_gen(`{{series 1.0 "env" "prod"}}{{series 2.0 "env" "prod"}}`)
   expect fail regex:duplicate label set

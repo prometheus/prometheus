@@ -60,23 +60,12 @@ func kvPairsToLabels(kvPairs []string, rejectName bool) (labels.Labels, error) {
 	return b.Labels(), nil
 }
 
-// labelNameValid reports whether name matches the standard Prometheus
-// label-name grammar: [a-zA-Z_][a-zA-Z0-9_]*.
+// labelNameValid reports whether name is a valid Prometheus label name
+// under the UTF-8 validation scheme. UTF-8 mode accepts dotted OpenTelemetry
+// names like `http.method` or `service.name` in addition to the legacy
+// `[a-zA-Z_][a-zA-Z0-9_]*` grammar.
 func labelNameValid(name string) bool {
-	if name == "" {
-		return false
-	}
-	for i, r := range name {
-		switch {
-		case r >= 'a' && r <= 'z':
-		case r >= 'A' && r <= 'Z':
-		case r == '_':
-		case i > 0 && r >= '0' && r <= '9':
-		default:
-			return false
-		}
-	}
-	return true
+	return model.UTF8Validation.IsValidLabelName(name)
 }
 
 // add returns a + b, coercing each operand to float64 first.
