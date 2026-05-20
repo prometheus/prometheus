@@ -334,8 +334,8 @@ func (h *headStaleIndexReader) SortedPostings(p index.Postings) index.Postings {
 	}
 }
 
-// SortedStaleSeriesRefsNoOOOData returns all the series refs of the stale series that do not have any out-of-order data.
-func (h *Head) SortedStaleSeriesRefsNoOOOData(ctx context.Context) (staleSeriesRefs, error) {
+// sortedStaleSeriesRefsNoOOOData returns all the series refs of the stale series that do not have any out-of-order data.
+func (h *Head) sortedStaleSeriesRefsNoOOOData(ctx context.Context) (staleSeriesRefs, error) {
 	k, v := index.AllPostingsKey()
 	return h.filterStaleSeriesAndSortPostings(h.postings.Postings(ctx, k, v))
 }

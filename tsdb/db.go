@@ -1684,7 +1684,7 @@ func (db *DB) CompactStaleHead() (err error) {
 
 	// We get the stale series reference first because this list can change during the compaction below.
 	// It is more efficient and easier to provide an index interface for the stale series when we have a static list.
-	staleSeriesRefs, err := db.head.SortedStaleSeriesRefsNoOOOData(context.Background())
+	staleSeriesRefs, err := db.head.sortedStaleSeriesRefsNoOOOData(context.Background())
 	if err != nil {
 		return err
 	}
