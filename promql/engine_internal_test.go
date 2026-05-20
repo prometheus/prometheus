@@ -168,3 +168,8 @@ func TestVectorElemBinop_Histograms(t *testing.T) {
 		})
 	}
 }
+
+func TestEvalNodeHelper_NodeCacheDefaultNil(t *testing.T) {
+	enh := &EvalNodeHelper{}
+	require.Nil(t, enh.NodeCache, "EvalNodeHelper.NodeCache should default to nil")
+}

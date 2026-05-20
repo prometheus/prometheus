@@ -6152,3 +6152,26 @@ func TestNewParser(t *testing.T) {
 	_, err = p.ParseExpr("===")
 	require.Error(t, err)
 }
+
+func TestParse_TimeseriesGenSignature(t *testing.T) {
+	p := NewParser(Options{EnableExperimentalFunctions: true})
+
+	expr, err := p.ParseExpr(`timeseries_gen("foo", "tpl")`)
+	require.NoError(t, err)
+
+	call, ok := expr.(*Call)
+	require.True(t, ok, "expected *Call, got %T", expr)
+	require.Equal(t, "timeseries_gen", call.Func.Name)
+	require.Equal(t,
+		[]ValueType{ValueTypeString, ValueTypeString},
+		call.Func.ArgTypes,
+	)
+	require.Equal(t, ValueTypeVector, call.Func.ReturnType)
+	require.True(t, call.Func.Experimental)
+}
+
+func TestParse_TimeseriesGenRejectsWithoutFlag(t *testing.T) {
+	p := NewParser(Options{EnableExperimentalFunctions: false})
+	_, err := p.ParseExpr(`timeseries_gen("foo", "tpl")`)
+	require.Error(t, err)
+}

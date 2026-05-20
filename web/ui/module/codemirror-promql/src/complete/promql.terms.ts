@@ -566,6 +566,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'timeseries_gen',
+    detail: 'function',
+    info: 'Emit a synthetic instant vector from a Go text/template (experimental)',
+    type: 'function',
+  },
+  {
     label: 'timestamp',
     detail: 'function',
     info: 'Return the Unix timestamp for the samples in the input vector',

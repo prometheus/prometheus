@@ -915,6 +915,70 @@ expression is to be evaluated.
 the given vector as the number of seconds since January 1, 1970 UTC. It acts on
 float and histogram samples in the same way.
 
+## `timeseries_gen()` (experimental)
+
+**Note:** This function is experimental and disabled by default. It can be
+enabled by starting Prometheus with `--enable-feature=promql-experimental-functions`.
+
+`timeseries_gen(metric_name string, tpl string)` emits a synthetic instant
+vector built from a Go [`text/template`][gotpl] supplied as `tpl`. Its primary
+use case is providing inline "filter" series for `*` / `on(...)` joins without
+precomputing them via recording rules or storage:
+
+```
+metric * on(env) timeseries_gen("", `{{rangeSeries "env" "prod,stage,canary" 1.0}}`)
+```
+
+`metric_name`:
+
+- If empty, emitted series have no `__name__` label.
+- Otherwise every emitted series gets `__name__=<metric_name>`.
+
+The template runs **once per query** and the result is cached, so range queries
+do not re-execute the template at every step. Output cardinality is capped at
+10000 series; exceeding the cap aborts the query.
+
+### Template helpers
+
+Labels are supplied as flat `key, value, key, value, ...` variadic pairs — no
+embedded label-string grammar, no escape hell.
+
+| Helper | Signature | Effect |
+| --- | --- | --- |
+| `series` | `series(value float, kvPairs ...string)` | Emit one sample. Pairs must be even length. |
+| `rangeSeries` | `rangeSeries(fanoutLabel string, csv string, value float, kvPairs ...string)` | Emit one sample per comma-separated value of `csv`, with `fanoutLabel` set to that value and any extra `kvPairs` attached to every emitted sample. Empty entries in `csv` are skipped. |
+| `seq` | `seq(start, end int) []int` | Inclusive integer range. |
+| `split` | `split(s, sep string) []string` | Same as Go's `strings.Split`. |
+| `lower` / `upper` | `lower(s) string` / `upper(s) string` | Case conversion. |
+| `replace` | `replace(s, old, new string) string` | Same as Go's `strings.ReplaceAll`. |
+| `trim` | `trim(s string) string` | Same as Go's `strings.TrimSpace`. |
+| `printf` | (built-in) | Standard Go template `printf`. |
+
+Examples:
+
+```
+# One sample, two labels.
+timeseries_gen("f", `{{series 1.0 "env" "prod" "job" "api"}}`)
+
+# Fan-out across env values plus a fixed job label.
+timeseries_gen("", `{{rangeSeries "env" "prod,stage,dev" 1.0 "job" "api"}}`)
+
+# Indexed series via seq + printf.
+timeseries_gen("", `{{range $i := seq 1 5}}{{series 1.0 "i" (printf "%d" $i)}}{{end}}`)
+```
+
+### Restrictions
+
+- The `{{define}}` and `{{template}}` template actions are rejected at parse
+  time to prevent recursive expansion.
+- Setting `__name__` from the `kvPairs` (or from `rangeSeries`'s `fanoutLabel`)
+  is rejected; supply `metric_name` instead.
+- Each call must produce a unique label set; duplicates are a hard error.
+- All label names must match the Prometheus label-name grammar
+  `[a-zA-Z_][a-zA-Z0-9_]*`.
+
+[gotpl]: https://pkg.go.dev/text/template
+
 ## `vector()`
 
 `vector(s scalar)` converts the scalar `s` to a float sample and returns it as

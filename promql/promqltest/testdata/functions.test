@@ -2239,3 +2239,92 @@ eval instant at 0s max_of(NaN, 3)
 
 eval instant at 0s max_of(3, NaN)
   NaN
+
+clear
+
+# Tests for timeseries_gen.
+
+load 5m
+  metric{env="prod"} 10
+  metric{env="stage"} 20
+  metric{env="dev"} 30
+  metric{env="qa"} 40
+
+# Filter via on(env) join (the canonical use case).
+eval instant at 0m metric * on(env) timeseries_gen("", `{{rangeSeries "env" "prod,stage" 1.0}}`)
+  {env="prod"} 10
+  {env="stage"} 20
+
+# Empty template yields an empty Vector.
+eval instant at 0m timeseries_gen("", ``)
+
+# Non-empty metric_name injects __name__.
+eval instant at 0m timeseries_gen("f", `{{series 1.0 "env" "prod"}}`)
+  f{env="prod"} 1
+
+# Forbidden {{define}}.
+eval instant at 0m timeseries_gen("", `{{define "x"}}y{{end}}`)
+  expect fail regex:timeseries_gen: forbidden template action: define
+
+# Forbidden {{template}}.
+eval instant at 0m timeseries_gen("", `{{template "x"}}`)
+  expect fail regex:timeseries_gen: forbidden template action: template
+
+# Template attempting to set __name__ is rejected.
+eval instant at 0m timeseries_gen("", `{{series 1.0 "__name__" "foo" "env" "prod"}}`)
+  expect fail regex:__name__ must not be set
+
+# Cardinality cap.
+eval instant at 0m timeseries_gen("f", `{{range $i := seq 1 10001}}{{series 1.0 "i" (printf "%d" $i)}}{{end}}`)
+  expect fail regex:emitted series exceeds limit
+
+# Multi-label series.
+eval instant at 0m timeseries_gen("", `{{series 1.0 "env" "prod" "job" "api"}}`)
+  {env="prod",job="api"} 1
+
+# Comma inside a label value (no escape rules needed any more).
+eval instant at 0m timeseries_gen("", `{{series 1.0 "tags" "a,b,c" "env" "prod"}}`)
+  {env="prod",tags="a,b,c"} 1
+
+# rangeSeries with extra kv pairs attaches the extras to every fanned-out series.
+eval instant at 0m timeseries_gen("", `{{rangeSeries "env" "prod,stage" 1.0 "job" "api"}}`)
+  {env="prod",job="api"} 1
+  {env="stage",job="api"} 1
+
+# seq + printf builds N indexed series.
+eval instant at 0m timeseries_gen("", `{{range $i := seq 1 3}}{{series 1.0 "i" (printf "%d" $i)}}{{end}}`)
+  {i="1"} 1
+  {i="2"} 1
+  {i="3"} 1
+
+# Duplicate label set across two emit calls is a hard error.
+eval instant at 0m timeseries_gen("", `{{series 1.0 "env" "prod"}}{{series 2.0 "env" "prod"}}`)
+  expect fail regex:duplicate label set
+
+# Odd-arity kv pairs surface as a hard error.
+eval instant at 0m timeseries_gen("", `{{series 1.0 "env" "prod" "lonely"}}`)
+  expect fail regex:expected even number
+
+# `unless` composition: drop envs that ARE in the synthetic set.
+eval instant at 0m metric unless on(env) timeseries_gen("", `{{series 1.0 "env" "qa"}}`)
+  metric{env="prod"} 10
+  metric{env="stage"} 20
+  metric{env="dev"} 30
+
+# Aggregation over a synthetic Vector.
+eval instant at 0m count(timeseries_gen("f", `{{rangeSeries "env" "prod,stage,dev" 1.0}}`))
+  {} 3
+
+# Empty rangeSeries csv yields an empty Vector (empty entries are skipped).
+eval instant at 0m timeseries_gen("", `{{rangeSeries "env" "" 1.0}}`)
+
+clear
+
+# Range query: same series at every step.
+load 1m
+  metric{env="prod"} 0+1x10
+
+eval range from 0 to 5m step 1m metric * on(env) timeseries_gen("", `{{rangeSeries "env" "prod" 1.0}}`)
+  {env="prod"} 0 1 2 3 4 5
+
+clear

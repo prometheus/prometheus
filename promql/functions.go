@@ -2617,6 +2617,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"sum_over_time":                funcSumOverTime,
 	"tan":                          funcTan,
 	"tanh":                         funcTanh,
+	"timeseries_gen":               funcTimeseriesGen,
 	"time":                         funcTime,
 	"timestamp":                    funcTimestamp,
 	"vector":                       funcVector,

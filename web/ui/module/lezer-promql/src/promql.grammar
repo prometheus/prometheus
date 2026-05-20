@@ -221,6 +221,7 @@ FunctionIdentifier {
   SumOverTime |
   Tan |
   Tanh |
+  TimeseriesGen |
   Timestamp |
   Time |
   Vector |
@@ -488,6 +489,7 @@ NumberDurationLiteralInDurationContext {
   Tan { condFn<"tan"> }
   Tanh { condFn<"tanh">}
   Time { condFn<"time"> }
+  TimeseriesGen { condFn<"timeseries_gen"> }
   Timestamp { condFn<"timestamp"> }
   Vector { condFn<"vector"> }
   Year { condFn<"year"> }
