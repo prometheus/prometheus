@@ -16,6 +16,7 @@ package promql
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"text/template"
 	"text/template/parse"
@@ -74,6 +75,79 @@ func labelNameValid(name string) bool {
 		}
 	}
 	return true
+}
+
+// add returns a + b, coercing each operand to float64 first.
+func tplAdd(a, b any) (float64, error) {
+	af, err := toFloat64(a)
+	if err != nil {
+		return 0, err
+	}
+	bf, err := toFloat64(b)
+	if err != nil {
+		return 0, err
+	}
+	return af + bf, nil
+}
+
+// tplSub returns a - b, coercing each operand to float64 first.
+func tplSub(a, b any) (float64, error) {
+	af, err := toFloat64(a)
+	if err != nil {
+		return 0, err
+	}
+	bf, err := toFloat64(b)
+	if err != nil {
+		return 0, err
+	}
+	return af - bf, nil
+}
+
+// tplMul returns a * b, coercing each operand to float64 first.
+func tplMul(a, b any) (float64, error) {
+	af, err := toFloat64(a)
+	if err != nil {
+		return 0, err
+	}
+	bf, err := toFloat64(b)
+	if err != nil {
+		return 0, err
+	}
+	return af * bf, nil
+}
+
+// tplDiv returns a / b, coercing each operand to float64 first.
+// Dividing by zero is an error rather than producing ±Inf or NaN so
+// authors notice the bug at template-execute time.
+func tplDiv(a, b any) (float64, error) {
+	af, err := toFloat64(a)
+	if err != nil {
+		return 0, err
+	}
+	bf, err := toFloat64(b)
+	if err != nil {
+		return 0, err
+	}
+	if bf == 0 {
+		return 0, errors.New("division by zero")
+	}
+	return af / bf, nil
+}
+
+// tplMod returns math.Mod(a, b), coercing each operand to float64 first.
+func tplMod(a, b any) (float64, error) {
+	af, err := toFloat64(a)
+	if err != nil {
+		return 0, err
+	}
+	bf, err := toFloat64(b)
+	if err != nil {
+		return 0, err
+	}
+	if bf == 0 {
+		return 0, errors.New("modulo by zero")
+	}
+	return math.Mod(af, bf), nil
 }
 
 // toFloat64 coerces any numeric value Go's text/template can produce
@@ -180,6 +254,11 @@ func newTplEngine(src string) (*tplEngine, error) {
 		"upper":       strings.ToUpper,
 		"replace":     strings.ReplaceAll,
 		"trim":        strings.TrimSpace,
+		"add":         tplAdd,
+		"sub":         tplSub,
+		"mul":         tplMul,
+		"div":         tplDiv,
+		"mod":         tplMod,
 	}).Parse(src)
 	if err != nil {
 		return nil, fmt.Errorf("template parse error: %w", err)

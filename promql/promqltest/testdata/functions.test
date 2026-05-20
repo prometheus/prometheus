@@ -2305,6 +2305,26 @@ eval instant at 0m timeseries_gen("", `{{range $i := seq 1 5}}{{series $i "i" (p
   {i="4"} 4
   {i="5"} 5
 
+# Math helper div lets templates compute fractional labels and values.
+eval instant at 0m timeseries_gen("", `{{range $i := seq 1 5}}{{series $i "i" (printf "%f" (div $i 10))}}{{end}}`)
+  {i="0.100000"} 1
+  {i="0.200000"} 2
+  {i="0.300000"} 3
+  {i="0.400000"} 4
+  {i="0.500000"} 5
+
+# Math helper div also works for computing the sample value itself.
+eval instant at 0m timeseries_gen("", `{{range $i := seq 1 5}}{{series (div $i 10) "i" (printf "%d" $i)}}{{end}}`)
+  {i="1"} 0.1
+  {i="2"} 0.2
+  {i="3"} 0.3
+  {i="4"} 0.4
+  {i="5"} 0.5
+
+# Division by zero is a hard error.
+eval instant at 0m timeseries_gen("", `{{series (div 1 0) "env" "prod"}}`)
+  expect fail regex:division by zero
+
 # Duplicate label set across two emit calls is a hard error.
 eval instant at 0m timeseries_gen("", `{{series 1.0 "env" "prod"}}{{series 2.0 "env" "prod"}}`)
   expect fail regex:duplicate label set

@@ -952,6 +952,7 @@ embedded label-string grammar, no escape hell.
 | `lower` / `upper` | `lower(s) string` / `upper(s) string` | Case conversion. |
 | `replace` | `replace(s, old, new string) string` | Same as Go's `strings.ReplaceAll`. |
 | `trim` | `trim(s string) string` | Same as Go's `strings.TrimSpace`. |
+| `add` / `sub` / `mul` / `div` / `mod` | `(a, b numeric) float` | Numeric helpers; operands accept any integer or float type. `div` and `mod` reject a zero divisor. |
 | `printf` | (built-in) | Standard Go template `printf`. |
 
 Examples:

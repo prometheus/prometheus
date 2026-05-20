@@ -201,6 +201,31 @@ func TestTplEngine_Build_NonNumericValueRejected(t *testing.T) {
 	require.ErrorContains(t, err, "expected numeric value")
 }
 
+func TestTplEngine_Build_MathHelpers(t *testing.T) {
+	// add/sub/mul/div/mod let templates compute values from loop indices.
+	e, err := newTplEngine(
+		`{{range $i := seq 1 5}}{{series (div $i 10) "i" (printf "%d" $i)}}{{end}}`,
+	)
+	require.NoError(t, err)
+
+	v, err := e.build("", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 5)
+	values := make([]float64, len(v))
+	for i, s := range v {
+		values[i] = s.F
+	}
+	require.ElementsMatch(t, []float64{0.1, 0.2, 0.3, 0.4, 0.5}, values)
+}
+
+func TestTplEngine_Build_DivByZero(t *testing.T) {
+	e, err := newTplEngine(`{{series (div 1 0) "env" "prod"}}`)
+	require.NoError(t, err)
+
+	_, err = e.build("", 0)
+	require.ErrorContains(t, err, "division by zero")
+}
+
 func TestTplEngine_Build_CapEnforced(t *testing.T) {
 	e, err := newTplEngine(`{{range $i := seq 1 5}}{{series 1.0 "i" (printf "%d" $i)}}{{end}}`)
 	require.NoError(t, err)
