@@ -3704,6 +3704,32 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  timeseries_gen: (
+    <>
+      <p>
+        <strong>This function is experimental</strong> and gated by{" "}
+        <code>--enable-feature=promql-experimental-functions</code>.
+      </p>
+      <p>
+        <code>timeseries_gen(tpl string, metric_name ...string)</code> emits a synthetic instant vector built from a
+        Go <code>text/template</code> supplied as <code>tpl</code>. The optional <code>metric_name</code> argument, when
+        non-empty, becomes the <code>__name__</code> label of every emitted series; if omitted, the template itself may
+        set <code>__name__</code> on a per-series basis.
+      </p>
+      <p>
+        The primary use case is providing inline filter sets for <code>*</code> / <code>on(...)</code> joins without a
+        round-trip through recording rules or storage. The template runs once per query and the result is cached, so
+        range queries do not re-execute the template at every step. Output cardinality is capped at 10000 series.
+      </p>
+      <p>
+        See the{" "}
+        <a href="https://prometheus.io/docs/prometheus/latest/querying/functions/#timeseries_gen" target="_blank" rel="noreferrer">
+          full documentation
+        </a>{" "}
+        for the template helper API.
+      </p>
+    </>
+  ),
   timestamp: (
     <>
       <p>
