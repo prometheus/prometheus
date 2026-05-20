@@ -106,7 +106,7 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2 bool) (chks []memCh
 		// prevApp is the appender for the previous sample.
 		prevApp := app
 
-		if encoding != prevEncoding { // For the first sample, this will always be true as EncNone != EncXOR | EncHistogram | EncFloatHistogram
+		if encoding != prevEncoding { // For the first sample, this will always be true as EncNone != EncXOR | EncXOR2 | EncHistogram | EncFloatHistogram
 			if prevEncoding != chunkenc.EncNone {
 				chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
 			}
