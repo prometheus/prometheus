@@ -76,6 +76,42 @@ func labelNameValid(name string) bool {
 	return true
 }
 
+// toFloat64 coerces any numeric value Go's text/template can produce
+// (literals, loop indices from {{range}}, variables) into float64. Go
+// text/template does not auto-convert int to float64 in function calls,
+// so accepting `any` and converting inside the helper lets templates
+// write `{{series $i ...}}` where $i comes from `seq`.
+func toFloat64(v any) (float64, error) {
+	switch n := v.(type) {
+	case float64:
+		return n, nil
+	case float32:
+		return float64(n), nil
+	case int:
+		return float64(n), nil
+	case int8:
+		return float64(n), nil
+	case int16:
+		return float64(n), nil
+	case int32:
+		return float64(n), nil
+	case int64:
+		return float64(n), nil
+	case uint:
+		return float64(n), nil
+	case uint8:
+		return float64(n), nil
+	case uint16:
+		return float64(n), nil
+	case uint32:
+		return float64(n), nil
+	case uint64:
+		return float64(n), nil
+	default:
+		return 0, fmt.Errorf("expected numeric value, got %T", v)
+	}
+}
+
 // seriesBuilder collects synthetic samples emitted by the timeseries_gen
 // template helpers. It enforces the output cardinality cap, deduplicates
 // identical label sets, and injects __name__ when a metric name is supplied.
@@ -136,8 +172,8 @@ type tplEngine struct {
 // rejecting forbidden actions {{define}} and {{template}}.
 func newTplEngine(src string) (*tplEngine, error) {
 	tpl, err := template.New("ts_gen").Funcs(template.FuncMap{
-		"series":      func(float64, ...string) string { return "" },
-		"rangeSeries": func(string, string, float64, ...string) string { return "" },
+		"series":      func(any, ...string) string { return "" },
+		"rangeSeries": func(string, string, any, ...string) string { return "" },
 		"seq":         func(int, int) []int { return nil },
 		"split":       strings.Split,
 		"lower":       strings.ToLower,
@@ -187,22 +223,30 @@ func (e *tplEngine) buildWithCap(metric string, ts int64, seriesCap int) (Vector
 		return nil, fmt.Errorf("template clone error: %w", err)
 	}
 	tpl = tpl.Funcs(template.FuncMap{
-		"series": func(v float64, kvPairs ...string) (string, error) {
+		"series": func(v any, kvPairs ...string) (string, error) {
+			f, err := toFloat64(v)
+			if err != nil {
+				return "", err
+			}
 			ls, err := kvPairsToLabels(kvPairs)
 			if err != nil {
 				return "", err
 			}
-			if err := b.add(ls, v); err != nil {
+			if err := b.add(ls, f); err != nil {
 				return "", err
 			}
 			return "", nil
 		},
-		"rangeSeries": func(label, csv string, v float64, kvPairs ...string) (string, error) {
+		"rangeSeries": func(label, csv string, v any, kvPairs ...string) (string, error) {
 			if !labelNameValid(label) {
 				return "", fmt.Errorf("invalid label name: %q", label)
 			}
 			if label == model.MetricNameLabel {
 				return "", errors.New("__name__ must not be set in template label arguments")
+			}
+			f, err := toFloat64(v)
+			if err != nil {
+				return "", err
 			}
 			extras, err := kvPairsToLabels(kvPairs)
 			if err != nil {
@@ -217,7 +261,7 @@ func (e *tplEngine) buildWithCap(metric string, ts int64, seriesCap int) (Vector
 				}
 				lb := labels.NewBuilder(extras)
 				lb.Set(label, val)
-				if err := b.add(lb.Labels(), v); err != nil {
+				if err := b.add(lb.Labels(), f); err != nil {
 					return "", err
 				}
 			}

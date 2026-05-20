@@ -177,6 +177,30 @@ func TestTplEngine_Build_SeqAndPrintf(t *testing.T) {
 	require.Len(t, v, 3)
 }
 
+func TestTplEngine_Build_IntValueCoercedToFloat(t *testing.T) {
+	// The loop variable from seq is an int; Go's text/template does not
+	// auto-convert int to float64 in function calls, so series accepts any
+	// and coerces internally.
+	e, err := newTplEngine(`{{range $i := seq 1 3}}{{series $i "i" (printf "%d" $i)}}{{end}}`)
+	require.NoError(t, err)
+
+	v, err := e.build("", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 3)
+	values := []float64{v[0].F, v[1].F, v[2].F}
+	require.ElementsMatch(t, []float64{1, 2, 3}, values)
+}
+
+func TestTplEngine_Build_NonNumericValueRejected(t *testing.T) {
+	// A string passed where a numeric value is expected should error
+	// rather than silently producing zero.
+	e, err := newTplEngine(`{{series "not-a-number" "env" "prod"}}`)
+	require.NoError(t, err)
+
+	_, err = e.build("", 0)
+	require.ErrorContains(t, err, "expected numeric value")
+}
+
 func TestTplEngine_Build_CapEnforced(t *testing.T) {
 	e, err := newTplEngine(`{{range $i := seq 1 5}}{{series 1.0 "i" (printf "%d" $i)}}{{end}}`)
 	require.NoError(t, err)
