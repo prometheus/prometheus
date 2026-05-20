@@ -152,6 +152,80 @@ func tplMod(a, b any) (float64, error) {
 	return math.Mod(af, bf), nil
 }
 
+// tplInt truncates v toward zero and returns the result as an int. It is
+// the inverse of toFloat64 for the common case "I have a float result from
+// add/sub/mul/div and need an int for printf %d".
+func tplInt(v any) (int, error) {
+	f, err := toFloat64(v)
+	if err != nil {
+		return 0, err
+	}
+	return int(math.Trunc(f)), nil
+}
+
+// tplAbs returns math.Abs(v), coercing v to float64 first.
+func tplAbs(v any) (float64, error) {
+	f, err := toFloat64(v)
+	if err != nil {
+		return 0, err
+	}
+	return math.Abs(f), nil
+}
+
+// tplFloor returns math.Floor(v), coercing v to float64 first.
+func tplFloor(v any) (float64, error) {
+	f, err := toFloat64(v)
+	if err != nil {
+		return 0, err
+	}
+	return math.Floor(f), nil
+}
+
+// tplCeil returns math.Ceil(v), coercing v to float64 first.
+func tplCeil(v any) (float64, error) {
+	f, err := toFloat64(v)
+	if err != nil {
+		return 0, err
+	}
+	return math.Ceil(f), nil
+}
+
+// tplRound returns math.Round(v), coercing v to float64 first. Returns a
+// float64; chain with int to get an integer.
+func tplRound(v any) (float64, error) {
+	f, err := toFloat64(v)
+	if err != nil {
+		return 0, err
+	}
+	return math.Round(f), nil
+}
+
+// tplMin returns math.Min(a, b), coercing each operand to float64 first.
+func tplMin(a, b any) (float64, error) {
+	af, err := toFloat64(a)
+	if err != nil {
+		return 0, err
+	}
+	bf, err := toFloat64(b)
+	if err != nil {
+		return 0, err
+	}
+	return math.Min(af, bf), nil
+}
+
+// tplMax returns math.Max(a, b), coercing each operand to float64 first.
+func tplMax(a, b any) (float64, error) {
+	af, err := toFloat64(a)
+	if err != nil {
+		return 0, err
+	}
+	bf, err := toFloat64(b)
+	if err != nil {
+		return 0, err
+	}
+	return math.Max(af, bf), nil
+}
+
 // toFloat64 coerces any numeric value Go's text/template can produce
 // (literals, loop indices from {{range}}, variables) into float64. Go
 // text/template does not auto-convert int to float64 in function calls,
@@ -261,6 +335,13 @@ func newTplEngine(src string) (*tplEngine, error) {
 		"mul":         tplMul,
 		"div":         tplDiv,
 		"mod":         tplMod,
+		"int":         tplInt,
+		"abs":         tplAbs,
+		"floor":       tplFloor,
+		"ceil":        tplCeil,
+		"round":       tplRound,
+		"min":         tplMin,
+		"max":         tplMax,
 	}).Parse(src)
 	if err != nil {
 		return nil, fmt.Errorf("template parse error: %w", err)

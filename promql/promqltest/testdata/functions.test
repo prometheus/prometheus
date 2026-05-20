@@ -2340,6 +2340,26 @@ eval instant at 0m timeseries_gen(`{{range $i := seq 1 5}}{{series (div $i 10) "
 eval instant at 0m timeseries_gen(`{{series (div 1 0) "env" "prod"}}`)
   expect fail regex:division by zero
 
+# `int` converts a numeric result so printf %d works (math helpers return float64).
+eval instant at 0m timeseries_gen(`{{range $i := seq 1 5}}{{series (div $i 10) "__name__" (printf "x%d" $i) "foo" (printf "%d" (int (mul $i 2)))}}{{end}}`)
+  x1{foo="2"} 0.1
+  x2{foo="4"} 0.2
+  x3{foo="6"} 0.3
+  x4{foo="8"} 0.4
+  x5{foo="10"} 0.5
+
+# round / floor / ceil / abs return float64; pair with int for label-friendly text.
+eval instant at 0m timeseries_gen(`{{series (round 1.5) "k" "r"}}{{series (floor 1.7) "k" "f"}}{{series (ceil 1.2) "k" "c"}}{{series (abs (sub 0 3)) "k" "a"}}`)
+  {k="r"} 2
+  {k="f"} 1
+  {k="c"} 2
+  {k="a"} 3
+
+# min / max clamp computed values.
+eval instant at 0m timeseries_gen(`{{series (min 3 7) "k" "min"}}{{series (max 3 7) "k" "max"}}`)
+  {k="min"} 3
+  {k="max"} 7
+
 # Duplicate label set across two emit calls is a hard error.
 eval instant at 0m timeseries_gen(`{{series 1.0 "env" "prod"}}{{series 2.0 "env" "prod"}}`)
   expect fail regex:duplicate label set

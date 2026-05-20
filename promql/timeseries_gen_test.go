@@ -237,6 +237,64 @@ func TestTplEngine_Build_DivByZero(t *testing.T) {
 	require.ErrorContains(t, err, "division by zero")
 }
 
+func TestTplEngine_Build_IntHelper(t *testing.T) {
+	// (int (mul $i 2)) feeds printf %d cleanly.
+	e, err := newTplEngine(
+		`{{range $i := seq 1 3}}{{series $i "x" (printf "%d" (int (mul $i 2)))}}{{end}}`,
+	)
+	require.NoError(t, err)
+
+	v, err := e.build("", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 3)
+	xs := []string{}
+	for _, s := range v {
+		xs = append(xs, s.Metric.Get("x"))
+	}
+	require.ElementsMatch(t, []string{"2", "4", "6"}, xs)
+}
+
+func TestTplEngine_Build_RoundFloorCeilAbs(t *testing.T) {
+	e, err := newTplEngine(`{{series (round 1.5) "r" "1"}}{{series (floor 1.7) "f" "1"}}{{series (ceil 1.2) "c" "1"}}{{series (abs (sub 0 3)) "a" "1"}}`)
+	require.NoError(t, err)
+
+	v, err := e.build("", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 4)
+	got := make(map[string]float64, len(v))
+	for _, s := range v {
+		switch {
+		case s.Metric.Has("r"):
+			got["round"] = s.F
+		case s.Metric.Has("f"):
+			got["floor"] = s.F
+		case s.Metric.Has("c"):
+			got["ceil"] = s.F
+		case s.Metric.Has("a"):
+			got["abs"] = s.F
+		}
+	}
+	require.Equal(t, 2.0, got["round"])
+	require.Equal(t, 1.0, got["floor"])
+	require.Equal(t, 2.0, got["ceil"])
+	require.Equal(t, 3.0, got["abs"])
+}
+
+func TestTplEngine_Build_MinMax(t *testing.T) {
+	e, err := newTplEngine(`{{series (min 3 7) "k" "min"}}{{series (max 3 7) "k" "max"}}`)
+	require.NoError(t, err)
+
+	v, err := e.build("", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 2)
+	got := map[string]float64{}
+	for _, s := range v {
+		got[s.Metric.Get("k")] = s.F
+	}
+	require.Equal(t, 3.0, got["min"])
+	require.Equal(t, 7.0, got["max"])
+}
+
 func TestTplEngine_Build_CapEnforced(t *testing.T) {
 	e, err := newTplEngine(`{{range $i := seq 1 5}}{{series 1.0 "i" (printf "%d" $i)}}{{end}}`)
 	require.NoError(t, err)

@@ -956,7 +956,10 @@ embedded label-string grammar, no escape hell.
 | `lower` / `upper` | `lower(s) string` / `upper(s) string` | Case conversion. |
 | `replace` | `replace(s, old, new string) string` | Same as Go's `strings.ReplaceAll`. |
 | `trim` | `trim(s string) string` | Same as Go's `strings.TrimSpace`. |
-| `add` / `sub` / `mul` / `div` / `mod` | `(a, b numeric) float` | Numeric helpers; operands accept any integer or float type. `div` and `mod` reject a zero divisor. |
+| `add` / `sub` / `mul` / `div` / `mod` | `(a, b numeric) float` | Binary math; operands accept any integer or float type. `div` and `mod` reject a zero divisor. |
+| `int` | `(v numeric) int` | Truncate toward zero. Useful for feeding `printf "%d"` because the binary math helpers always return float64. |
+| `abs` / `floor` / `ceil` / `round` | `(v numeric) float` | `math.Abs` / `math.Floor` / `math.Ceil` / `math.Round`. |
+| `min` / `max` | `(a, b numeric) float` | `math.Min` / `math.Max`. |
 | `printf` | (built-in) | Standard Go template `printf`. |
 
 Examples:
