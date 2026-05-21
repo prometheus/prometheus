@@ -255,3 +255,6 @@ exclude (
 	github.com/grpc-ecosystem/grpc-gateway v1.14.7
 	google.golang.org/api v0.30.0
 )
+
+// Carry fix for https://redhat.atlassian.net/browse/OCPBUGS-62118: TLS cert rotation failing without ca_file
+replace github.com/prometheus/common => github.com/machine424/prometheus-common v0.0.0-20260519224734-c5c1231167ea
