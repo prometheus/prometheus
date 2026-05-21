@@ -51,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -4926,6 +4927,91 @@ func TestSnapshotError(t *testing.T) {
 
 	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.seriesRemoved))
 	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.seriesCreated))
+}
+
+// TestSnapshotUnknownEncodingFallsBackToWAL verifies that a snapshot containing
+// an unknown chunk encoding causes the entire snapshot load to fail and fall back
+// to full WAL replay, recovering all series without data loss.
+func TestSnapshotUnknownEncodingFallsBackToWAL(t *testing.T) {
+	head, _ := newTestHead(t, 120*4, compression.None, false)
+	defer func() {
+		head.opts.EnableMemorySnapshotOnShutdown = false
+		require.NoError(t, head.Close())
+	}()
+
+	floatHist := tsdbutil.GenerateTestGaugeFloatHistograms(1)[0]
+	lblsFloatHist := labels.FromStrings("floathist", "bar")
+	lblsFloat := labels.FromStrings("foo", "bar")
+
+	app := head.Appender(context.Background())
+	_, err := app.AppendHistogram(0, lblsFloatHist, 99, nil, floatHist)
+	require.NoError(t, err)
+	_, err = app.Append(0, lblsFloat, 99, 99.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	head.opts.EnableMemorySnapshotOnShutdown = true
+	require.NoError(t, head.Close())
+
+	// Find the snapshot and corrupt the encoding byte of the float histogram series.
+	snapDir, _, _, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
+	require.NoError(t, err)
+
+	sr, err := wlog.NewSegmentsReader(snapDir)
+	require.NoError(t, err)
+	r := wlog.NewReader(sr)
+	syms := labels.NewSymbolTable()
+	rdec := record.NewDecoder(syms, promslog.NewNopLogger())
+	var (
+		records [][]byte
+		mutated bool
+	)
+	for r.Next() {
+		rec := append([]byte(nil), r.Record()...)
+		if rec[0] == chunkSnapshotRecordTypeSeries {
+			buf := encoding.Decbuf{B: rec}
+			_ = buf.Byte() // flag
+			_ = buf.Be64() // ref
+			lset := rdec.DecodeLabels(&buf)
+			_ = buf.Be64int64() // chunkRange
+			if buf.Uvarint() == 1 && lset.Get("floathist") == "bar" {
+				_ = buf.Be64int64() // minTime
+				_ = buf.Be64int64() // maxTime
+				encPos := len(rec) - buf.Len()
+				require.Equal(t, byte(chunkenc.EncFloatHistogram), rec[encPos],
+					"expected float histogram encoding at computed offset")
+				rec[encPos] = 0xFF
+				mutated = true
+			}
+		}
+		records = append(records, rec)
+	}
+	require.NoError(t, r.Err())
+	require.NoError(t, sr.Close())
+	require.True(t, mutated, "expected to find and corrupt the float histogram series record")
+
+	// Rewrite the snapshot with the mutated records.
+	files, err := os.ReadDir(snapDir)
+	require.NoError(t, err)
+	for _, f := range files {
+		require.NoError(t, os.Remove(filepath.Join(snapDir, f.Name())))
+	}
+	cp, err := wlog.New(nil, nil, snapDir, compression.None)
+	require.NoError(t, err)
+	require.NoError(t, cp.Log(records...))
+	require.NoError(t, cp.Close())
+
+	// Reload the head; snapshot should fail due to unknown encoding and fall back to WAL.
+	w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, compression.None)
+	require.NoError(t, err)
+	head, err = NewHead(prometheus.NewRegistry(), nil, w, nil, head.opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(math.MinInt64))
+
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+	require.Equal(t, uint64(2), head.NumSeries(), "both series must be recovered from WAL")
+	require.NotNil(t, head.series.getByHash(lblsFloat.Hash(), lblsFloat))
+	require.NotNil(t, head.series.getByHash(lblsFloatHist.Hash(), lblsFloatHist))
 }
 
 func TestHistogramMetrics(t *testing.T) {

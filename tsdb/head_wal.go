@@ -1249,8 +1249,10 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 			buf.PutBEFloat64(s.lastValue)
 		case chunkenc.EncHistogram:
 			record.EncodeHistogram(&buf, s.lastHistogramValue)
-		default: // chunkenc.FloatHistogram.
+		case chunkenc.EncFloatHistogram:
 			record.EncodeFloatHistogram(&buf, s.lastFloatHistogramValue)
+		default:
+			panic(fmt.Sprintf("unknown chunk encoding: %v", enc))
 		}
 	}
 	s.Unlock()
@@ -1303,9 +1305,12 @@ func decodeSeriesFromChunkSnapshot(d *record.Decoder, b []byte) (csr chunkSnapsh
 	case chunkenc.EncHistogram:
 		csr.lastHistogramValue = &histogram.Histogram{}
 		record.DecodeHistogram(&dec, csr.lastHistogramValue)
-	default: // chunkenc.FloatHistogram.
+	case chunkenc.EncFloatHistogram:
 		csr.lastFloatHistogramValue = &histogram.FloatHistogram{}
 		record.DecodeFloatHistogram(&dec, csr.lastFloatHistogramValue)
+	default:
+		// Guard against a new encoding added to chunkenc.FromData without a corresponding case here.
+		return csr, fmt.Errorf("chunk encoding %v has no decode case", enc)
 	}
 
 	err = dec.Err()
