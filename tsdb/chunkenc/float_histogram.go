@@ -629,7 +629,7 @@ func (a *FloatHistogramAppender) writeXorValue(old *xorValue, v float64) {
 func (a *FloatHistogramAppender) recode(
 	positiveInserts, negativeInserts []Insert,
 	positiveSpans, negativeSpans []histogram.Span,
-) (Chunk, Appender) {
+) (Chunk, *FloatHistogramAppender) {
 	// TODO(beorn7): This currently just decodes everything and then encodes
 	// it again with the new span layout. This can probably be done in-place
 	// by editing the chunk. But let's first see how expensive it is in the
@@ -673,7 +673,7 @@ func (a *FloatHistogramAppender) recode(
 	happ.setNumSamples(num)
 
 	happ.setCounterResetHeader(CounterResetHeader(byts[histogramFlagPos] & CounterResetHeaderMask))
-	return hc, app
+	return hc, happ
 }
 
 // recodeHistogram converts the current histogram (in-place) to accommodate an expansion of the set of
@@ -769,13 +769,12 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			if appendOnly {
 				return nil, false, a, fmt.Errorf("float histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 			}
-			chk, app := a.recode(
+			chk, happ := a.recode(
 				pForwardInserts, nForwardInserts,
 				h.PositiveSpans, h.NegativeSpans,
 			)
-			happ := app.(*FloatHistogramAppender)
 			happ.setNumSamples(happ.appendFloatHistogram(happ.NumSamples(), t, h))
-			return chk, true, app, nil
+			return chk, true, happ, nil
 		}
 		a.setNumSamples(a.appendFloatHistogram(numSamples, t, h))
 		return nil, false, a, nil
@@ -810,13 +809,12 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 		if appendOnly {
 			return nil, false, a, fmt.Errorf("float gauge histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 		}
-		chk, app := a.recode(
+		chk, happ := a.recode(
 			pForwardInserts, nForwardInserts,
 			h.PositiveSpans, h.NegativeSpans,
 		)
-		happ := app.(*FloatHistogramAppender)
 		happ.setNumSamples(happ.appendFloatHistogram(happ.NumSamples(), t, h))
-		return chk, true, app, nil
+		return chk, true, happ, nil
 	}
 
 	a.setNumSamples(a.appendFloatHistogram(numSamples, t, h))
