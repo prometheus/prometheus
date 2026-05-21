@@ -2228,6 +2228,22 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  max_of: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>max_of(a scalar, b scalar)</code> returns the larger of the two scalar values <code>a</code>
+        and <code>b</code>.
+      </p>
+    </>
+  ),
   max_over_time: (
     <>
       <p>
@@ -2335,6 +2351,22 @@ const funcDocs: Record<string, React.ReactNode> = {
         useful with <code>first_over_time(m[step()])</code>
         in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
         sample selected is within the range step.
+      </p>
+    </>
+  ),
+  min_of: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>min_of(a scalar, b scalar)</code> returns the smaller of the two scalar values <code>a</code>
+        and <code>b</code>.
       </p>
     </>
   ),

@@ -263,10 +263,22 @@ var Functions = map[string]*Function{
 		Variadic:   -1,
 		ReturnType: ValueTypeVector,
 	},
+	"max_of": {
+		Name:         "max_of",
+		ArgTypes:     []ValueType{ValueTypeScalar, ValueTypeScalar},
+		ReturnType:   ValueTypeScalar,
+		Experimental: true,
+	},
 	"last_over_time": {
 		Name:       "last_over_time",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
+	},
+	"min_of": {
+		Name:         "min_of",
+		ArgTypes:     []ValueType{ValueTypeScalar, ValueTypeScalar},
+		ReturnType:   ValueTypeScalar,
+		Experimental: true,
 	},
 	"ln": {
 		Name:       "ln",
