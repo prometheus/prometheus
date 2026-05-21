@@ -677,7 +677,7 @@ func (a *HistogramAppender) appendHistogram(num int, t int64, h *histogram.Histo
 func (a *HistogramAppender) recode(
 	positiveInserts, negativeInserts []Insert,
 	positiveSpans, negativeSpans []histogram.Span,
-) (Chunk, Appender) {
+) (Chunk, *HistogramAppender) {
 	// TODO(beorn7): This currently just decodes everything and then encodes
 	// it again with the new span layout. This can probably be done in-place
 	// by editing the chunk. But let's first see how expensive it is in the
@@ -721,7 +721,7 @@ func (a *HistogramAppender) recode(
 	happ.setNumSamples(num)
 
 	happ.setCounterResetHeader(CounterResetHeader(byts[histogramFlagPos] & CounterResetHeaderMask))
-	return hc, app
+	return hc, happ
 }
 
 // recodeHistogram converts the current histogram (in-place) to accommodate an
@@ -815,13 +815,12 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, _, t int64,
 			if appendOnly {
 				return nil, false, a, fmt.Errorf("histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 			}
-			chk, app := a.recode(
+			chk, happ := a.recode(
 				pForwardInserts, nForwardInserts,
 				h.PositiveSpans, h.NegativeSpans,
 			)
-			happ := app.(*HistogramAppender)
 			happ.setNumSamples(happ.appendHistogram(happ.NumSamples(), t, h))
-			return chk, true, app, nil
+			return chk, true, happ, nil
 		}
 		a.setNumSamples(a.appendHistogram(numSamples, t, h))
 		return nil, false, a, nil
@@ -856,13 +855,12 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, _, t int64,
 		if appendOnly {
 			return nil, false, a, fmt.Errorf("gauge histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 		}
-		chk, app := a.recode(
+		chk, happ := a.recode(
 			pForwardInserts, nForwardInserts,
 			h.PositiveSpans, h.NegativeSpans,
 		)
-		happ := app.(*HistogramAppender)
 		happ.setNumSamples(happ.appendHistogram(happ.NumSamples(), t, h))
-		return chk, true, app, nil
+		return chk, true, happ, nil
 	}
 
 	a.setNumSamples(a.appendHistogram(numSamples, t, h))
