@@ -193,6 +193,11 @@ func (a *FloatHistogramAppender) NumSamples() int {
 	return int(binary.BigEndian.Uint16(a.b.bytes()))
 }
 
+// setNumSamples writes the float histogram sample count into the chunk header.
+func (a *FloatHistogramAppender) setNumSamples(num int) {
+	binary.BigEndian.PutUint16(a.b.bytes(), uint16(num))
+}
+
 // Append implements Appender. This implementation panics because normal float
 // samples must never be appended to a histogram chunk.
 func (*FloatHistogramAppender) Append(int64, int64, float64) {
@@ -509,9 +514,12 @@ func (a *FloatHistogramAppender) appendableGauge(h *histogram.FloatHistogram) (
 // the histogram is properly structured, e.g. the number of buckets used
 // corresponds to the number conveyed by the span structures. First call
 // Appendable() and act accordingly!
-func (a *FloatHistogramAppender) appendFloatHistogram(t int64, h *histogram.FloatHistogram) {
+//
+// num is the current sample count in the chunk (as returned by NumSamples).
+// appendFloatHistogram does not update the chunk header itself; it returns the
+// new sample count (num+1), which the caller must persist via setNumSamples.
+func (a *FloatHistogramAppender) appendFloatHistogram(num int, t int64, h *histogram.FloatHistogram) int {
 	var tDelta int64
-	num := binary.BigEndian.Uint16(a.b.bytes())
 
 	if value.IsStaleNaN(h.Sum) {
 		// Emptying out other fields to write no buckets, and an empty
@@ -602,10 +610,10 @@ func (a *FloatHistogramAppender) appendFloatHistogram(t int64, h *histogram.Floa
 		}
 	}
 
-	binary.BigEndian.PutUint16(a.b.bytes(), num+1)
-
 	a.t = t
 	a.tDelta = tDelta
+
+	return num + 1
 }
 
 func (a *FloatHistogramAppender) writeXorValue(old *xorValue, v float64) {
@@ -636,6 +644,7 @@ func (a *FloatHistogramAppender) recode(
 	happ := app.(*FloatHistogramAppender)
 	numPositiveBuckets, numNegativeBuckets := countSpans(positiveSpans), countSpans(negativeSpans)
 
+	num := happ.NumSamples()
 	for it.Next() == ValFloatHistogram {
 		tOld, hOld := it.AtFloatHistogram(nil)
 
@@ -659,8 +668,9 @@ func (a *FloatHistogramAppender) recode(
 		if len(negativeInserts) > 0 {
 			hOld.NegativeBuckets = insert(hOld.NegativeBuckets, negativeBuckets, negativeInserts, false)
 		}
-		happ.appendFloatHistogram(tOld, hOld)
+		num = happ.appendFloatHistogram(num, tOld, hOld)
 	}
+	happ.setNumSamples(num)
 
 	happ.setCounterResetHeader(CounterResetHeader(byts[histogramFlagPos] & CounterResetHeaderMask))
 	return hc, app
@@ -694,7 +704,7 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 	}
 
 	if numSamples == 0 {
-		a.appendFloatHistogram(t, h)
+		a.setNumSamples(a.appendFloatHistogram(numSamples, t, h))
 		if h.CounterResetHint == histogram.GaugeType {
 			a.setCounterResetHeader(GaugeType)
 			return nil, false, a, nil
@@ -735,7 +745,7 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			if counterReset {
 				happ.setCounterResetHeader(CounterReset)
 			}
-			happ.appendFloatHistogram(t, h)
+			happ.setNumSamples(happ.appendFloatHistogram(0, t, h))
 			return newChunk, false, app, nil
 		}
 		if len(pBackwardInserts) > 0 || len(nBackwardInserts) > 0 {
@@ -763,10 +773,11 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 				pForwardInserts, nForwardInserts,
 				h.PositiveSpans, h.NegativeSpans,
 			)
-			app.(*FloatHistogramAppender).appendFloatHistogram(t, h)
+			happ := app.(*FloatHistogramAppender)
+			happ.setNumSamples(happ.appendFloatHistogram(happ.NumSamples(), t, h))
 			return chk, true, app, nil
 		}
-		a.appendFloatHistogram(t, h)
+		a.setNumSamples(a.appendFloatHistogram(numSamples, t, h))
 		return nil, false, a, nil
 	}
 	// Adding gauge histogram.
@@ -782,7 +793,7 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 		}
 		happ := app.(*FloatHistogramAppender)
 		happ.setCounterResetHeader(GaugeType)
-		happ.appendFloatHistogram(t, h)
+		happ.setNumSamples(happ.appendFloatHistogram(0, t, h))
 		return newChunk, false, app, nil
 	}
 
@@ -803,11 +814,12 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			pForwardInserts, nForwardInserts,
 			h.PositiveSpans, h.NegativeSpans,
 		)
-		app.(*FloatHistogramAppender).appendFloatHistogram(t, h)
+		happ := app.(*FloatHistogramAppender)
+		happ.setNumSamples(happ.appendFloatHistogram(happ.NumSamples(), t, h))
 		return chk, true, app, nil
 	}
 
-	a.appendFloatHistogram(t, h)
+	a.setNumSamples(a.appendFloatHistogram(numSamples, t, h))
 	return nil, false, a, nil
 }
 
