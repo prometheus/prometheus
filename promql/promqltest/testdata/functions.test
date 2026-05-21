@@ -2249,3 +2249,55 @@ eval range from 0s to 9s step 3s metric_for_at @ start()
 
 eval range from 1s to 9s step 2s metric_for_at @ end()
   {__name__="metric_for_at"} 10 10 10 10 10
+
+# Tests for min_of() and max_of() scalar functions.
+
+# min_of(a, b) returns math.Min(a, b).
+# max_of(a, b) returns math.Max(a, b).
+
+# Basic literal comparisons.
+eval instant at 0s min_of(3, 5)
+  3
+
+eval instant at 0s min_of(5, 3)
+  3
+
+eval instant at 0s max_of(3, 5)
+  5
+
+eval instant at 0s max_of(5, 3)
+  5
+
+# Equal values.
+eval instant at 0s min_of(4, 4)
+  4
+
+eval instant at 0s max_of(4, 4)
+  4
+
+# Negative values.
+eval instant at 0s min_of(-2, -5)
+  -5
+
+eval instant at 0s max_of(-2, -5)
+  -2
+
+# Zero and positive.
+eval instant at 0s min_of(0, 1)
+  0
+
+eval instant at 0s max_of(0, 1)
+  1
+
+# NaN propagation: any NaN input yields NaN.
+eval instant at 0s min_of(NaN, 3)
+  NaN
+
+eval instant at 0s min_of(3, NaN)
+  NaN
+
+eval instant at 0s max_of(NaN, 3)
+  NaN
+
+eval instant at 0s max_of(3, NaN)
+  NaN

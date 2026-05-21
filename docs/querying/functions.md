@@ -722,6 +722,20 @@ This example strips a `kubernetes_` prefix from every matching label, so that
 labelmap(up{job="api"}, "kubernetes_(.+)", "$1")
 ```
 
+## `max_of()`
+
+`max_of(a scalar, b scalar)` returns the larger of the two scalar values `a`
+and `b`.
+
+## `min_of()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`min_of(a scalar, b scalar)` returns the smaller of the two scalar values `a`
+and `b`.
+
 ## `ln()`
 
 `ln(v instant-vector)` calculates the natural logarithm for all float samples

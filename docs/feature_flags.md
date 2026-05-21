@@ -236,7 +236,10 @@ For a **range query**, it resolves to the full range of the query (end time - st
 For an **instant query**, it resolves to `0s`.
 This is particularly useful in combination with `@end()` to look back over the entire query range, e.g., `max_over_time(metric[range()] @ end())`.
 
-`min(<duration>, <duration>)` and `max(<duration>, <duration>)` can be used to find the minimum or maximum of two duration expressions.
+`min_of(<duration>, <duration>)` and `max_of(<duration>, <duration>)` select between two duration expressions.
+`min_of` returns the smaller of the two, which is useful for capping a duration at a maximum value.
+`max_of` returns the larger of the two, which is useful for enforcing a minimum value.
+For example, `max_of(step(), 5s)` ensures the duration is never shorter than `5s`, while `min_of(range(), 1h)` caps the duration at `1h`.
 
 **Note**: Duration expressions are not supported in the @ timestamp operator.
 
@@ -258,8 +261,8 @@ Examples of equivalent durations:
 * `4h % 3h` is equivalent to `1h` or `3600s`
 * `(2 ^ 3) * 1m` is equivalent to `8m` or `480s`
 * `step() + 1` is equivalent to the query step width increased by 1s.
-* `max(step(), 5s)` is equivalent to the larger of the query step width and `5s`.
-* `min(2 * step() + 5s, 5m)` is equivalent to the smaller of twice the query step increased by `5s` and `5m`.
+* `max_of(step(), 5s)` is equivalent to the larger of the query step width and `5s`.
+* `min_of(2 * step() + 5s, 5m)` is equivalent to the smaller of twice the query step increased by `5s` and `5m`.
 
 
 ## OTLP Native Delta Support
