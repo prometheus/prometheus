@@ -1086,8 +1086,12 @@ func (p *parser) setAnchored(e Node) {
 			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
 		}
 	case *MatrixSelector:
-		s.VectorSelector.(*VectorSelector).Anchored = true
-		if s.VectorSelector.(*VectorSelector).Smoothed {
+		vs, ok := s.VectorSelector.(*VectorSelector)
+		if !ok {
+			return
+		}
+		vs.Anchored = true
+		if vs.Smoothed {
 			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
 		}
 	case *SubqueryExpr:
@@ -1109,8 +1113,12 @@ func (p *parser) setSmoothed(e Node) {
 			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
 		}
 	case *MatrixSelector:
-		s.VectorSelector.(*VectorSelector).Smoothed = true
-		if s.VectorSelector.(*VectorSelector).Anchored {
+		vs, ok := s.VectorSelector.(*VectorSelector)
+		if !ok {
+			return
+		}
+		vs.Smoothed = true
+		if vs.Anchored {
 			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
 		}
 	case *SubqueryExpr:
