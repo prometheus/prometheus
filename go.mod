@@ -48,7 +48,7 @@ require (
 	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.18.6
 	github.com/kolo/xmlrpc v0.0.0-20220921171641-a4b6fa1dd06b
-	github.com/linode/linodego v1.69.0
+	github.com/linode/linodego v1.69.1
 	github.com/miekg/dns v1.1.72
 	github.com/moby/moby/api v1.54.2
 	github.com/moby/moby/client v0.4.1
