@@ -1577,20 +1577,20 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 const (
 	integralLeftPoint = iota
 	integralRightPoint
-	integralMidPoint
+	integralTrapezoidal
 )
 
 // === integral(Matrix parser.ValueTypeMatrix, strategy=2 Scalar) (Vector, Annotations) ===
 func funcIntegral(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	var annos annotations.Annotations
 
-	strategy := integralMidPoint
+	strategy := integralTrapezoidal
 	if len(vectorVals) > 0 && len(vectorVals[0]) > 0 {
 		strategy = int(vectorVals[0][0].F)
 	}
-	if strategy < integralLeftPoint || strategy > integralMidPoint {
+	if strategy < integralLeftPoint || strategy > integralTrapezoidal {
 		annos.Add(annotations.NewInvalidIntegralStrategyWarning(strategy, args[1].PositionRange()))
-		strategy = integralMidPoint
+		strategy = integralTrapezoidal
 	}
 
 	nanAsZero := func(v float64) float64 {
@@ -1657,8 +1657,8 @@ func funcIntegral(vectorVals []Vector, matrixVal Matrix, args parser.Expressions
 				//                         *                   *
 				//                      (t2-t1)             (t4-t3)
 				value = currVal
-			case integralMidPoint:
-				// Mid-point rule (default).
+			case integralTrapezoidal:
+				// Trapezoidal rule (default).
 				// With NaN as zero, "neighboring" non-zero values are
 				// aggregated (halved at each interval eval).
 				//

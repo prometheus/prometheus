@@ -634,10 +634,10 @@ flag](../feature_flags.md#experimental-promql-functions)
 `--enable-feature=promql-experimental-functions`.**
 
 `integral(v range-vector, strategy=2 scalar)` calculates the integral of the
-time series over time in seconds, using trapezoidal approximation.
-The optional `strategy` for calculating the integral modifies how the value for
-the interval is handled: `0` for the left sample, `1` for the right sample, and
-`2` for the average between these two (aka _mid-point_). The default is `2`.
+time series over time in seconds. The optional `strategy` controls which
+quadrature rule is used for each interval: `0` for the left-point rectangle
+rule, `1` for the right-point rectangle rule, and `2` for the trapezoidal rule
+using the average of the adjacent samples. The default is `2`.
 
 `integral` should only be used with gauges, most likely representing a rate in
 units per seconds.

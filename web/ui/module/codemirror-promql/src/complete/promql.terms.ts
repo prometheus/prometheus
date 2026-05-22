@@ -308,7 +308,7 @@ export const functionIdentifierTerms = [
   {
     label: 'integral',
     detail: 'function',
-    info: 'Calculate the integral over time of input series using mid-point, left-point or right-point trapezoidal approximation',
+    info: 'Calculate the integral over time of input series using left-point rectangle, right-point rectangle, or trapezoidal approximation',
     type: 'function',
   },
   {
