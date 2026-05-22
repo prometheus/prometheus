@@ -1723,10 +1723,17 @@ yydefault:
 			}
 
 			var rangeNl time.Duration
-			if numLit, ok := yyDollar[3].node.(*NumberLiteral); ok {
-				rangeNl = time.Duration(math.Round(numLit.Val * float64(time.Second)))
+			var rangeExpr Expr
+			switch e := yyDollar[3].node.(type) {
+			case *NumberLiteral:
+				if e.Wrapped {
+					rangeExpr = e
+				} else {
+					rangeNl = time.Duration(math.Round(e.Val * float64(time.Second)))
+				}
+			case *DurationExpr:
+				rangeExpr = e
 			}
-			rangeExpr, _ := yyDollar[3].node.(*DurationExpr)
 			yyVAL.node = &MatrixSelector{
 				VectorSelector: yyDollar[1].node.(Expr),
 				Range:          rangeNl,
@@ -2541,12 +2548,16 @@ yydefault:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			yylex.(*parser).experimentalDurationExpr(yyDollar[2].node.(Expr))
-			if durationExpr, ok := yyDollar[2].node.(*DurationExpr); ok {
-				durationExpr.Wrapped = true
-				yyVAL.node = durationExpr
-				break
+			switch expr := yyDollar[2].node.(type) {
+			case *DurationExpr:
+				expr.Wrapped = true
+				yyVAL.node = expr
+			case *NumberLiteral:
+				expr.Wrapped = true
+				yyVAL.node = expr
+			default:
+				yyVAL.node = yyDollar[2].node
 			}
-			yyVAL.node = yyDollar[2].node
 		}
 	}
 	goto yystack /* stack new state and value */
