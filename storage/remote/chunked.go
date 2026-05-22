@@ -42,23 +42,19 @@ type ChunkedWriter struct {
 	flusher http.Flusher
 
 	crc32 hash.Hash32
-
-	flushImmediately bool
 }
 
 // NewChunkedWriter constructs a ChunkedWriter.
-func NewChunkedWriter(w io.Writer, f http.Flusher, flushImmediately bool) *ChunkedWriter {
-	return &ChunkedWriter{writer: w, flusher: f, crc32: crc32.New(castagnoliTable), flushImmediately: flushImmediately}
+func NewChunkedWriter(w io.Writer, f http.Flusher) *ChunkedWriter {
+	return &ChunkedWriter{writer: w, flusher: f, crc32: crc32.New(castagnoliTable)}
 }
 
 func (w *ChunkedWriter) Close() {
-	if w.flushImmediately {
-		return
-	}
 	w.flusher.Flush()
 }
 
-// Write writes given bytes to the stream and flushes it.
+// Write writes given bytes to the stream. The underlying flusher is invoked
+// only on Close, so callers control batching by choosing when to Close.
 // Each frame includes:
 //
 // 1. uvarint for the size of the data frame.
@@ -86,16 +82,7 @@ func (w *ChunkedWriter) Write(b []byte) (int, error) {
 		return 0, err
 	}
 
-	n, err := w.writer.Write(b)
-	if err != nil {
-		return n, err
-	}
-
-	if w.flushImmediately {
-		w.flusher.Flush()
-	}
-
-	return n, nil
+	return w.writer.Write(b)
 }
 
 // ChunkedReader is a buffered reader that expects uvarint delimiter and checksum before each message.

@@ -15,7 +15,6 @@ package remote
 import (
 	"bytes"
 	"io"
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -30,62 +29,54 @@ func (f *mockedFlusher) Flush() {
 }
 
 func TestChunkedReaderCanReadFromChunkedWriter(t *testing.T) {
-	for _, immediateFlushing := range []bool{true, false} {
-		t.Run(strconv.FormatBool(immediateFlushing), func(t *testing.T) {
-			b := &bytes.Buffer{}
-			f := &mockedFlusher{}
-			w := NewChunkedWriter(b, f, immediateFlushing)
+	b := &bytes.Buffer{}
+	f := &mockedFlusher{}
+	w := NewChunkedWriter(b, f)
 
-			r := NewChunkedReader(b, 20, nil)
+	r := NewChunkedReader(b, 20, nil)
 
-			msgs := [][]byte{
-				[]byte("test1"),
-				[]byte("test2"),
-				[]byte("test3"),
-				[]byte("test4"),
-				{}, // This is ignored by writer.
-				[]byte("test5-after-empty"),
-			}
-
-			for _, msg := range msgs {
-				n, err := w.Write(msg)
-				require.NoError(t, err)
-				require.Len(t, msg, n)
-			}
-			w.Close()
-
-			i := 0
-			for ; i < 4; i++ {
-				msg, err := r.Next()
-				require.NoError(t, err)
-				require.Less(t, i, len(msgs), "more messages then expected")
-				require.Equal(t, msgs[i], msg)
-			}
-
-			// Empty byte slice is skipped.
-			i++
-
-			msg, err := r.Next()
-			require.NoError(t, err)
-			require.Less(t, i, len(msgs), "more messages then expected")
-			require.Equal(t, msgs[i], msg)
-
-			_, err = r.Next()
-			require.Error(t, err, "expected io.EOF")
-			require.Equal(t, io.EOF, err)
-
-			expectedFlushes := 5
-			if !immediateFlushing {
-				expectedFlushes = 1
-			}
-			require.Equal(t, expectedFlushes, f.flushed)
-		})
+	msgs := [][]byte{
+		[]byte("test1"),
+		[]byte("test2"),
+		[]byte("test3"),
+		[]byte("test4"),
+		{}, // This is ignored by writer.
+		[]byte("test5-after-empty"),
 	}
+
+	for _, msg := range msgs {
+		n, err := w.Write(msg)
+		require.NoError(t, err)
+		require.Len(t, msg, n)
+	}
+	w.Close()
+
+	i := 0
+	for ; i < 4; i++ {
+		msg, err := r.Next()
+		require.NoError(t, err)
+		require.Less(t, i, len(msgs), "more messages than expected")
+		require.Equal(t, msgs[i], msg)
+	}
+
+	// Empty byte slice is skipped.
+	i++
+
+	msg, err := r.Next()
+	require.NoError(t, err)
+	require.Less(t, i, len(msgs), "more messages than expected")
+	require.Equal(t, msgs[i], msg)
+
+	_, err = r.Next()
+	require.Error(t, err, "expected io.EOF")
+	require.Equal(t, io.EOF, err)
+
+	require.Equal(t, 1, f.flushed)
 }
 
 func TestChunkedReader_Overflow(t *testing.T) {
 	b := &bytes.Buffer{}
-	_, err := NewChunkedWriter(b, &mockedFlusher{}, true).Write([]byte("twelve bytes"))
+	_, err := NewChunkedWriter(b, &mockedFlusher{}).Write([]byte("twelve bytes"))
 	require.NoError(t, err)
 
 	b2 := make([]byte, 12)
@@ -102,7 +93,7 @@ func TestChunkedReader_Overflow(t *testing.T) {
 
 func TestChunkedReader_CorruptedFrame(t *testing.T) {
 	b := &bytes.Buffer{}
-	w := NewChunkedWriter(b, &mockedFlusher{}, true)
+	w := NewChunkedWriter(b, &mockedFlusher{})
 
 	n, err := w.Write([]byte("test1"))
 	require.NoError(t, err)
