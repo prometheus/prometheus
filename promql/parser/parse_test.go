@@ -1714,6 +1714,28 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: "foo offset +(5)",
+		expected: &VectorSelector{
+			Name:           "foo",
+			OriginalOffset: 5 * time.Second,
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 15},
+		},
+	},
+	{
+		input: "foo offset -(5)",
+		expected: &VectorSelector{
+			Name:           "foo",
+			OriginalOffset: -5 * time.Second,
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 15},
+		},
+	},
+	{
 		input: `http_requests{group="production"} + on(instance) group_left(job,instance) cpu_count{type="smp"}`,
 		fail:  true,
 		errors: ParseErrors{

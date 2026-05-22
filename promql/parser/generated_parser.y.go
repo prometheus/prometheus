@@ -2438,17 +2438,33 @@ yydefault:
 	case 293:
 		yyDollar = yyS[yypt-4 : yypt+1]
 		{
-			de := yyDollar[3].node.(*DurationExpr)
-			de.Wrapped = true
-			if yyDollar[1].item.Typ == SUB {
-				yyVAL.node = &DurationExpr{
-					Op:       SUB,
-					RHS:      de,
-					StartPos: yyDollar[1].item.Pos,
+			switch expr := yyDollar[3].node.(type) {
+			case *DurationExpr:
+				expr.Wrapped = true
+				if yyDollar[1].item.Typ == SUB {
+					yyVAL.node = &DurationExpr{
+						Op:       SUB,
+						RHS:      expr,
+						StartPos: yyDollar[1].item.Pos,
+					}
+					break
 				}
-				break
+				yyVAL.node = expr
+			case *NumberLiteral:
+				if yyDollar[1].item.Typ == SUB {
+					expr.Val *= -1
+				}
+				if expr.Val > 1<<63/1e9 || expr.Val < -(1<<63)/1e9 {
+					yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "duration out of range")
+					yyVAL.node = &NumberLiteral{Val: 0}
+					break
+				}
+				expr.PosRange.Start = yyDollar[1].item.Pos
+				yyVAL.node = expr
+			default:
+				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "expected number literal or duration expression")
+				yyVAL.node = &NumberLiteral{Val: 0}
 			}
-			yyVAL.node = yyDollar[3].node
 		}
 	case 297:
 		yyDollar = yyS[yypt-1 : yypt+1]

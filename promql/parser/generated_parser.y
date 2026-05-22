@@ -1298,17 +1298,33 @@ offset_duration_expr    : number_duration_literal
                                 }
                         | unary_op LEFT_PAREN duration_expr RIGHT_PAREN %prec MUL
                                 {
-                                de := $3.(*DurationExpr)
-                                de.Wrapped = true
-                                if $1.Typ == SUB {
-                                        $$ = &DurationExpr{
-                                                Op: SUB,
-                                                RHS: de,
-                                                StartPos: $1.Pos,
+                                switch expr := $3.(type) {
+                                case *DurationExpr:
+                                        expr.Wrapped = true
+                                        if $1.Typ == SUB {
+                                                $$ = &DurationExpr{
+                                                        Op:       SUB,
+                                                        RHS:      expr,
+                                                        StartPos: $1.Pos,
+                                                }
+                                                break
                                         }
-                                        break
+                                        $$ = expr
+                                case *NumberLiteral:
+                                        if $1.Typ == SUB {
+                                                expr.Val *= -1
+                                        }
+                                        if expr.Val > 1<<63/1e9 || expr.Val < -(1<<63)/1e9 {
+                                                yylex.(*parser).addParseErrf($1.PositionRange(), "duration out of range")
+                                                $$ = &NumberLiteral{Val: 0}
+                                                break
+                                        }
+                                        expr.PosRange.Start = $1.Pos
+                                        $$ = expr
+                                default:
+                                        yylex.(*parser).addParseErrf($1.PositionRange(), "expected number literal or duration expression")
+                                        $$ = &NumberLiteral{Val: 0}
                                 }
-                                $$ = $3
                                 }
                         | duration_expr
                         ;
