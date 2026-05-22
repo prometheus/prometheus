@@ -50,8 +50,8 @@ type histogramRecord struct {
 	ref chunks.HeadSeriesRef
 	t   int64
 	// TODO(ywwg): need to add st here
-	h   *histogram.Histogram
-	fh  *histogram.FloatHistogram
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
 }
 
 type seriesRefSet struct {
