@@ -915,10 +915,11 @@ expression is to be evaluated.
 the given vector as the number of seconds since January 1, 1970 UTC. It acts on
 float and histogram samples in the same way.
 
-## `timeseries_gen()` (experimental)
+## `timeseries_gen()`
 
-**Note:** This function is experimental and disabled by default. It can be
-enabled by starting Prometheus with `--enable-feature=promql-experimental-functions`.
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
 
 `timeseries_gen(tpl string, metric_name ...string)` emits a synthetic
 instant vector built from a Go [`text/template`][gotpl] supplied as `tpl`.
@@ -951,7 +952,7 @@ embedded label-string grammar, no escape hell.
 | --- | --- | --- |
 | `series` | `series(value float, kvPairs ...string)` | Emit one sample. Pairs must be even length. |
 | `rangeSeries` | `rangeSeries(fanoutLabel string, csv string, value float, kvPairs ...string)` | Emit one sample per comma-separated value of `csv`, with `fanoutLabel` set to that value and any extra `kvPairs` attached to every emitted sample. Empty entries in `csv` are skipped. |
-| `seq` | `seq(start, end int) []int` | Inclusive integer range. |
+| `seq` | `seq(start, end int)` | Inclusive integer range. |
 | `split` | `split(s, sep string) []string` | Same as Go's `strings.Split`. |
 | `lower` / `upper` | `lower(s) string` / `upper(s) string` | Case conversion. |
 | `replace` | `replace(s, old, new string) string` | Same as Go's `strings.ReplaceAll`. |
@@ -987,6 +988,7 @@ timeseries_gen(`{{range $i := seq 1 5}}{{series 1.0 "i" (printf "%d" $i)}}{{end}
   via `rangeSeries "__name__" "a,b,c" ...`. This lets a single call emit
   several related metrics.
 - Each call must produce a unique label set; duplicates are a hard error.
+- `seq` ranges are capped at 10000 items; exceeding the cap aborts the query.
 - Label names are validated under Prometheus' UTF-8 label-name scheme,
   so dotted OpenTelemetry-style names such as `http.method`,
   `service.name`, and `deployment.environment` are accepted alongside

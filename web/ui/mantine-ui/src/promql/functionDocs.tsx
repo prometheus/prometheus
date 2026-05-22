@@ -3707,8 +3707,11 @@ const funcDocs: Record<string, React.ReactNode> = {
   timeseries_gen: (
     <>
       <p>
-        <strong>This function is experimental</strong> and gated by{" "}
-        <code>--enable-feature=promql-experimental-functions</code>.
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
       </p>
       <p>
         <code>timeseries_gen(tpl string, metric_name ...string)</code> emits a synthetic instant vector built from a
@@ -3719,7 +3722,8 @@ const funcDocs: Record<string, React.ReactNode> = {
       <p>
         The primary use case is providing inline filter sets for <code>*</code> / <code>on(...)</code> joins without a
         round-trip through recording rules or storage. The template runs once per query and the result is cached, so
-        range queries do not re-execute the template at every step. Output cardinality is capped at 10000 series.
+        range queries do not re-execute the template at every step. Output cardinality is capped at 10000 series;
+        exceeding the cap aborts the query. The <code>seq</code> helper is also capped at 10000 items.
       </p>
       <p>
         See the{" "}
