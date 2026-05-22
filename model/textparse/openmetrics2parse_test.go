@@ -740,6 +740,100 @@ test_histogram {count:5.5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2.5,
 	requireEntries(t, exp, got)
 }
 
+// TestOpenMetrics2ParseNativeHistogramIntVsFloatDiscriminator covers each input
+// that can flip the parser between *histogram.Histogram and *histogram.FloatHistogram.
+// Per the OM2 spec a native histogram is integer only if count, zero_count, and
+// every bucket value are integers; any fractional value anywhere makes it a
+// FloatHistogram. sum is float64 in both kinds and must not discriminate.
+func TestOpenMetrics2ParseNativeHistogramIntVsFloatDiscriminator(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input string
+		shs   *histogram.Histogram
+		fhs   *histogram.FloatHistogram
+	}{
+		{
+			name:  "all integer fields -> Histogram",
+			input: `h {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[2,1]}`,
+			shs: &histogram.Histogram{
+				Schema: 0, ZeroThreshold: 0.001, ZeroCount: 2, Count: 5, Sum: 12.1,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []int64{2, 1},
+			},
+		},
+		{
+			name:  "fractional count -> FloatHistogram",
+			input: `h {count:5.5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[2,1]}`,
+			fhs: &histogram.FloatHistogram{
+				Schema: 0, ZeroThreshold: 0.001, ZeroCount: 2, Count: 5.5, Sum: 12.1,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []float64{2, 1},
+			},
+		},
+		{
+			name:  "fractional zero_count -> FloatHistogram",
+			input: `h {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2.5,positive_spans:[0:2],positive_buckets:[2,1]}`,
+			fhs: &histogram.FloatHistogram{
+				Schema: 0, ZeroThreshold: 0.001, ZeroCount: 2.5, Count: 5, Sum: 12.1,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []float64{2, 1},
+			},
+		},
+		{
+			name:  "fractional positive bucket -> FloatHistogram",
+			input: `h {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[2.0,1.0]}`,
+			fhs: &histogram.FloatHistogram{
+				Schema: 0, ZeroThreshold: 0.001, ZeroCount: 2, Count: 5, Sum: 12.1,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []float64{2.0, 1.0},
+			},
+		},
+		{
+			name:  "fractional negative bucket -> FloatHistogram",
+			input: `h {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,negative_spans:[0:2],negative_buckets:[2.0,1.0]}`,
+			fhs: &histogram.FloatHistogram{
+				Schema: 0, ZeroThreshold: 0.001, ZeroCount: 2, Count: 5, Sum: 12.1,
+				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				NegativeBuckets: []float64{2.0, 1.0},
+			},
+		},
+		{
+			name:  "exponent notation in bucket -> FloatHistogram",
+			input: `h {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[1e2,1]}`,
+			fhs: &histogram.FloatHistogram{
+				Schema: 0, ZeroThreshold: 0.001, ZeroCount: 2, Count: 5, Sum: 12.1,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []float64{1e2, 1},
+			},
+		},
+		{
+			name:  "fractional sum only -> Histogram (sum does not discriminate)",
+			input: `h {count:5,sum:12.5,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:2],positive_buckets:[2,1]}`,
+			shs: &histogram.Histogram{
+				Schema: 0, ZeroThreshold: 0.001, ZeroCount: 2, Count: 5, Sum: 12.5,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []int64{2, 1},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := "# TYPE h histogram\n" + tc.input + "\n# EOF\n"
+			exp := []parsedEntry{
+				{m: "h", typ: model.MetricTypeHistogram},
+				{
+					m:    "h",
+					lset: labels.FromStrings("__name__", "h"),
+					shs:  tc.shs,
+					fhs:  tc.fhs,
+				},
+			}
+			p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+			got := testParse(t, p)
+			requireEntries(t, exp, got)
+		})
+	}
+}
+
 func TestOpenMetrics2ParseCompositeGaugeHistogram(t *testing.T) {
 	input := `# TYPE req_size gaugehistogram
 req_size {count:10,sum:100.0,schema:0,zero_threshold:0.001,zero_count:1,positive_spans:[0:2],positive_buckets:[3,2],negative_spans:[],negative_buckets:[]}
