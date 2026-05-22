@@ -1574,17 +1574,23 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 	}), nil
 }
 
+const (
+	integralLeftPoint = iota
+	integralRightPoint
+	integralMidPoint
+)
+
 // === integral(Matrix parser.ValueTypeMatrix, strategy=2 Scalar) (Vector, Annotations) ===
 func funcIntegral(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	var annos annotations.Annotations
 
-	strategy := 2
+	strategy := integralMidPoint
 	if len(vectorVals) > 0 && len(vectorVals[0]) > 0 {
 		strategy = int(vectorVals[0][0].F)
 	}
-	if strategy < 0 || strategy > 2 {
+	if strategy < integralLeftPoint || strategy > integralMidPoint {
 		annos.Add(annotations.NewInvalidIntegralStrategyWarning(strategy, args[1].PositionRange()))
-		strategy = 2
+		strategy = integralMidPoint
 	}
 
 	nanAsZero := func(v float64) float64 {
@@ -1603,9 +1609,9 @@ func funcIntegral(vectorVals []Vector, matrixVal Matrix, args parser.Expressions
 			currVal := nanAsZero(f.F)
 			prevVal := nanAsZero(prev.F)
 
-			// Discrete integral using simple (trapezoidal rule).
+			// Discrete integral using the selected quadrature strategy.
 			switch strategy {
-			case 0:
+			case integralLeftPoint:
 				// Left-point rectangle rule.
 				//
 				//   metric
@@ -1628,7 +1634,7 @@ func funcIntegral(vectorVals []Vector, matrixVal Matrix, args parser.Expressions
 				//                         *         *
 				//                      (t2-t1)   (t3-t2)
 				value = prevVal
-			case 1:
+			case integralRightPoint:
 				// Right-point rectangle rule.
 				//
 				//   metric
@@ -1651,7 +1657,7 @@ func funcIntegral(vectorVals []Vector, matrixVal Matrix, args parser.Expressions
 				//                         *                   *
 				//                      (t2-t1)             (t4-t3)
 				value = currVal
-			case 2:
+			case integralMidPoint:
 				// Mid-point rule (default).
 				// With NaN as zero, "neighboring" non-zero values are
 				// aggregated (halved at each interval eval).
