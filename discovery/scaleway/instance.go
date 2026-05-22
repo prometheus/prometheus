@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	"github.com/scaleway/scaleway-sdk-go/api/instance/v1"
+	ipam "github.com/scaleway/scaleway-sdk-go/api/ipam/v1"
 	"github.com/scaleway/scaleway-sdk-go/scw"
 
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -104,7 +105,8 @@ func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
 }
 
 func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	api := instance.NewAPI(d.client)
+	instanceAPI := instance.NewAPI(d.client)
+	ipamAPI := ipam.NewAPI(d.client)
 
 	req := &instance.ListServersRequest{}
 
@@ -116,7 +118,12 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 		req.Tags = d.tagsFilter
 	}
 
-	servers, err := api.ListServers(req, scw.WithAllPages(), scw.WithContext(ctx))
+	servers, err := instanceAPI.ListServers(req, scw.WithAllPages(), scw.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+
+	privateNICIPByID, err := privateNICIPs(ctx, ipamAPI, servers.Servers)
 	if err != nil {
 		return nil, err
 	}
@@ -208,6 +215,19 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 			addr = *server.PrivateIP
 		}
 
+		if addr == "" {
+			for _, privateNIC := range server.PrivateNics {
+				if privateNIC == nil {
+					continue
+				}
+				if privateIP := privateNICIPByID[privateNIC.ID]; privateIP != "" {
+					labels[instancePrivateIPv4Label] = model.LabelValue(privateIP)
+					addr = privateIP
+					break
+				}
+			}
+		}
+
 		if addr != "" {
 			addr := net.JoinHostPort(addr, strconv.FormatUint(uint64(d.port), 10))
 			labels[model.AddressLabel] = model.LabelValue(addr)
@@ -216,4 +236,44 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	}
 
 	return []*targetgroup.Group{{Source: "scaleway", Targets: targets}}, nil
+}
+
+func privateNICIPs(ctx context.Context, api *ipam.API, servers []*instance.Server) (map[string]string, error) {
+	privateNICIDsByRegion := map[scw.Region][]string{}
+	for _, server := range servers {
+		if server.PrivateIP != nil || server.PublicIP != nil || server.IPv6 != nil { //nolint:staticcheck
+			continue
+		}
+
+		region, err := server.Zone.Region()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, privateNIC := range server.PrivateNics {
+			if privateNIC != nil && privateNIC.ID != "" {
+				privateNICIDsByRegion[region] = append(privateNICIDsByRegion[region], privateNIC.ID)
+			}
+		}
+	}
+
+	privateNICIPs := map[string]string{}
+	for region, privateNICIDs := range privateNICIDsByRegion {
+		ips, err := api.ListIPs(&ipam.ListIPsRequest{
+			Region:        region,
+			ResourceIDs:   privateNICIDs,
+			ResourceTypes: []ipam.ResourceType{ipam.ResourceTypeInstancePrivateNic},
+		}, scw.WithAllPages(), scw.WithContext(ctx))
+		if err != nil {
+			return nil, err
+		}
+
+		for _, ip := range ips.IPs {
+			if ip != nil && ip.Resource != nil && !ip.IsIPv6 && ip.Address.IP != nil {
+				privateNICIPs[ip.Resource.ID] = ip.Address.IP.String()
+			}
+		}
+	}
+
+	return privateNICIPs, nil
 }
