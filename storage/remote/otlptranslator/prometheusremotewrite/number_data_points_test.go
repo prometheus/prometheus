@@ -34,14 +34,27 @@ import (
 )
 
 func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
+	scopeAttrs := pcommon.NewMap()
+	scopeAttrs.FromRaw(map[string]any{
+		"attr1": "value1",
+		"attr2": "value2",
+	})
+	defaultScope := scope{
+		name:       "test-scope",
+		version:    "1.0.0",
+		schemaURL:  "https://schema.com",
+		attributes: scopeAttrs,
+	}
 	ts := uint64(time.Now().UnixNano())
 	tests := []struct {
-		name   string
-		metric func() pmetric.Metric
-		want   func() []sample
+		name         string
+		metric       func() pmetric.Metric
+		scope        scope
+		promoteScope bool
+		want         func() []sample
 	}{
 		{
-			name: "gauge",
+			name: "gauge without scope promotion",
 			metric: func() pmetric.Metric {
 				return getIntGaugeMetric(
 					"test",
@@ -49,9 +62,42 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 					1, ts,
 				)
 			},
+			scope:        defaultScope,
+			promoteScope: false,
 			want: func() []sample {
 				lbls := labels.FromStrings(
 					model.MetricNameLabel, "test",
+				)
+				return []sample{
+					{
+						MF: "test",
+						L:  lbls,
+						M:  metadata.Metadata{},
+						T:  convertTimeStamp(pcommon.Timestamp(ts)),
+						V:  1,
+					},
+				}
+			},
+		},
+		{
+			name: "gauge with scope promotion",
+			metric: func() pmetric.Metric {
+				return getIntGaugeMetric(
+					"test",
+					pcommon.NewMap(),
+					1, ts,
+				)
+			},
+			scope:        defaultScope,
+			promoteScope: true,
+			want: func() []sample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test",
+					"otel_scope_name", defaultScope.name,
+					"otel_scope_schema_url", defaultScope.schemaURL,
+					"otel_scope_version", defaultScope.version,
+					"otel_scope_attr1", "value1",
+					"otel_scope_attr2", "value2",
 				)
 				return []sample{
 					{
@@ -71,10 +117,14 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			appTest := teststorage.NewAppendable()
 			app := appTest.AppenderV2(t.Context())
 			converter := NewPrometheusConverter(app)
-			settings := Settings{}
+			settings := Settings{
+				PromoteScopeMetadata: tt.promoteScope,
+			}
 			resource := pcommon.NewResource()
 
+			// Initialize resource and scope context as FromMetrics would.
 			require.NoError(t, converter.setResourceContext(resource, settings))
+			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			converter.addGaugeNumberDataPoints(
 				context.Background(),
@@ -91,14 +141,27 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 }
 
 func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
+	scopeAttrs := pcommon.NewMap()
+	scopeAttrs.FromRaw(map[string]any{
+		"attr1": "value1",
+		"attr2": "value2",
+	})
+	defaultScope := scope{
+		name:       "test-scope",
+		version:    "1.0.0",
+		schemaURL:  "https://schema.com",
+		attributes: scopeAttrs,
+	}
 	ts := pcommon.Timestamp(time.Now().UnixNano())
 	tests := []struct {
-		name   string
-		metric func() pmetric.Metric
-		want   func() []sample
+		name         string
+		metric       func() pmetric.Metric
+		scope        scope
+		promoteScope bool
+		want         func() []sample
 	}{
 		{
-			name: "sum",
+			name: "sum without scope promotion",
 			metric: func() pmetric.Metric {
 				return getIntSumMetric(
 					"test",
@@ -107,6 +170,8 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 					uint64(ts.AsTime().UnixNano()),
 				)
 			},
+			scope:        defaultScope,
+			promoteScope: false,
 			want: func() []sample {
 				lbls := labels.FromStrings(
 					model.MetricNameLabel, "test",
@@ -123,7 +188,39 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 		},
 		{
-			name: "sum with exemplars",
+			name: "sum with scope promotion",
+			metric: func() pmetric.Metric {
+				return getIntSumMetric(
+					"test",
+					pcommon.NewMap(),
+					1,
+					uint64(ts.AsTime().UnixNano()),
+				)
+			},
+			scope:        defaultScope,
+			promoteScope: true,
+			want: func() []sample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test",
+					"otel_scope_name", defaultScope.name,
+					"otel_scope_schema_url", defaultScope.schemaURL,
+					"otel_scope_version", defaultScope.version,
+					"otel_scope_attr1", "value1",
+					"otel_scope_attr2", "value2",
+				)
+				return []sample{
+					{
+						MF: "test",
+						L:  lbls,
+						M:  metadata.Metadata{},
+						T:  convertTimeStamp(ts),
+						V:  1,
+					},
+				}
+			},
+		},
+		{
+			name: "sum with exemplars and without scope promotion",
 			metric: func() pmetric.Metric {
 				m := getIntSumMetric(
 					"test",
@@ -134,7 +231,8 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				m.Sum().DataPoints().At(0).Exemplars().AppendEmpty().SetDoubleValue(2)
 				return m
 			},
-
+			scope:        defaultScope,
+			promoteScope: false,
 			want: func() []sample {
 				lbls := labels.FromStrings(
 					model.MetricNameLabel, "test",
@@ -154,7 +252,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 		},
 		{
-			name: "monotonic cumulative sum with start timestamp",
+			name: "monotonic cumulative sum with start timestamp and without scope promotion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_sum")
@@ -168,7 +266,8 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 
 				return metric
 			},
-
+			scope:        defaultScope,
+			promoteScope: false,
 			want: func() []sample {
 				lbls := labels.FromStrings(
 					model.MetricNameLabel, "test_sum",
@@ -186,7 +285,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 		},
 		{
-			name: "monotonic cumulative sum with no start time",
+			name: "monotonic cumulative sum with no start time and without scope promotion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_sum")
@@ -198,7 +297,8 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 
 				return metric
 			},
-
+			scope:        defaultScope,
+			promoteScope: false,
 			want: func() []sample {
 				lbls := labels.FromStrings(
 					model.MetricNameLabel, "test_sum",
@@ -215,7 +315,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			},
 		},
 		{
-			name: "non-monotonic cumulative sum with start time",
+			name: "non-monotonic cumulative sum with start time and without scope promotion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_sum")
@@ -227,7 +327,8 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 
 				return metric
 			},
-
+			scope:        defaultScope,
+			promoteScope: false,
 			want: func() []sample {
 				lbls := labels.FromStrings(
 					model.MetricNameLabel, "test_sum",
@@ -250,10 +351,14 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			appTest := teststorage.NewAppendable()
 			app := appTest.AppenderV2(t.Context())
 			converter := NewPrometheusConverter(app)
-			settings := Settings{}
+			settings := Settings{
+				PromoteScopeMetadata: tt.promoteScope,
+			}
 			resource := pcommon.NewResource()
 
+			// Initialize resource and scope context as FromMetrics would.
 			require.NoError(t, converter.setResourceContext(resource, settings))
+			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			converter.addSumNumberDataPoints(
 				context.Background(),
