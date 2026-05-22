@@ -7973,11 +7973,11 @@ func TestHeadAppender_STStorage_WBLReplay(t *testing.T) {
 }
 
 // TestHeadAppender_STStorage_HistogramWALReplay verifies that histogram ST
-// values supplied via AppenderV2 survive a WAL replay. Pre-PR #18609 the
-// chunk encoder drops histogram ST, so chunk-level assertions are
-// deliberately avoided. Instead we verify the WAL records carry ST before
-// replay, then re-verify that a post-replay append on the same series
-// reuses the same series ref and that its new ST is written to the WAL.
+// values supplied via AppenderV2 are written to WAL records used during replay.
+// Pre-PR #18609 the chunk encoder drops histogram ST, so replayed samples cannot
+// expose ST through the chunk iterator yet. Instead we verify the WAL records
+// carry ST before replay, then re-verify that a post-replay append on the same
+// series reuses the same series ref and that its new ST is written to the WAL.
 func TestHeadAppender_STStorage_HistogramWALReplay(t *testing.T) {
 	opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
 	opts.EnableSTStorage.Store(true)
@@ -8042,7 +8042,8 @@ func TestHeadAppender_STStorage_HistogramWALReplay(t *testing.T) {
 	}
 	require.Equal(t, expectedTS, seenTS)
 	// TODO: Once PR #18609 lands and the chunk encoder preserves histogram
-	// ST, assert it.AtST() == stPre here too.
+	// ST, assert it.AtST() == stPre here too. Until then this test cannot
+	// directly observe the ST value after WAL replay.
 
 	// Append a fresh sample post-replay with a new ST, and verify the WAL
 	// records it under the same series ref with the new ST.
@@ -8062,8 +8063,9 @@ func TestHeadAppender_STStorage_HistogramWALReplay(t *testing.T) {
 
 // TestHeadAppender_STStorage_HistogramWBLReplay verifies that histogram ST
 // values supplied via AppenderV2 for out-of-order samples are written into
-// the WBL with the correct V2 record type and ST. Chunk-level ST assertions
-// are deferred until PR #18609 lands.
+// the WBL with the correct V2 record type and ST. Pre-PR #18609 the chunk
+// encoder drops histogram ST, so this test reads the WBL directly rather than
+// asserting through a replayed chunk iterator.
 func TestHeadAppender_STStorage_HistogramWBLReplay(t *testing.T) {
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
@@ -8114,6 +8116,9 @@ func TestHeadAppender_STStorage_HistogramWBLReplay(t *testing.T) {
 		require.Equal(t, st, s.ST, "WBL sample %d carries wrong ST", i)
 		require.Equal(t, record.HistogramSamplesV2, wblTypes[i])
 	}
+	// TODO: Once PR #18609 lands and the chunk encoder preserves histogram ST,
+	// reopen the head and assert replayed OOO histogram samples expose ST
+	// through the chunk iterator, mirroring TestHeadAppender_STStorage_WBLReplay.
 }
 
 // TestHeadAppender_STStorage_ChunkEncoding verifies that the correct chunk encoding
