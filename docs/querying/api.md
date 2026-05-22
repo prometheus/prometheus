@@ -103,6 +103,11 @@ URL query parameters:
 - `limit=<number>`: Maximum number of returned series. Doesn't affect scalars or strings but truncates the number of series for matrices and vectors. Optional. 0 means disabled.
 - `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
 - `stats=<string>`: Include query statistics in the response. If set to `all`, includes detailed statistics. Optional.
+- `histogram_format=<string>`: Selects an alternative JSON representation for
+  native histograms in the response. If set to `native`, each histogram is
+  emitted using the schema-aware shape described in [Native histograms (native
+  format)](#native-histograms-native-format) instead of the default
+  boundary-based shape. Optional.
 
 The current server time is used if the `time` parameter is omitted.
 
@@ -177,6 +182,11 @@ URL query parameters:
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 - `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
 - `stats=<string>`: Include query statistics in the response. If set to `all`, includes detailed statistics. Optional.
+- `histogram_format=<string>`: Selects an alternative JSON representation for
+  native histograms in the response. If set to `native`, each histogram is
+  emitted using the schema-aware shape described in [Native histograms (native
+  format)](#native-histograms-native-format) instead of the default
+  boundary-based shape. Optional.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -795,6 +805,63 @@ following meaning:
 Note that with the currently implemented bucket schemas, positive buckets are
 “open left”, negative buckets are “open right”, and the zero bucket (with a
 negative left boundary and a positive right boundary) is “closed both”.
+
+### Native histograms (native format)
+
+When the `histogram_format=native` query parameter is set on `/api/v1/query` or
+`/api/v1/query_range`, the `<histogram>` placeholder is rendered using a
+schema-aware shape that mirrors the native histogram data model more closely.
+The caller is expected to know how buckets are organised for the given schema
+(and, for custom-bucket histograms, the supplied bucket boundaries). The
+shape depends on the schema.
+
+For exponential-schema histograms:
+
+```json
+{
+  "count": "<count_of_observations>",
+  "sum": "<sum_of_observations>",
+  "schema": <schema_number>,
+  "zero_threshold": "<zero_bucket_threshold>",
+  "zero_count": "<count_in_zero_bucket>",
+  "negative_buckets": [ [ <index>, "<count_in_bucket>" ], ... ],
+  "buckets": [ [ <index>, "<count_in_bucket>" ], ... ]
+}
+```
+
+- `zero_threshold` is the zero-bucket threshold and is always present, because
+  together with `schema` it fully describes the bucket layout.
+- `zero_count` is the observation count in the zero bucket; it is only present
+  when non-zero.
+- `negative_buckets` and `buckets` (the positive buckets) are each optional and
+  only present when at least one bucket on that side has a non-zero count. Each
+  entry is a two-element array `[ <index>, <count> ]` where `<index>` is the
+  schema-defined bucket index.
+
+For custom-bucket histograms (schema `-53`):
+
+```json
+{
+  "count": "<count_of_observations>",
+  "sum": "<sum_of_observations>",
+  "schema": -53,
+  "boundaries": [ "<bucket_upper_bound>", ... ],
+  "buckets": [ [ <index>, "<count_in_bucket>" ], ... ]
+}
+```
+
+- `boundaries` lists the bucket upper bounds.
+- Each entry in `buckets` is `[ <index>, <count> ]` where `<index>` is the
+  0-based index into `boundaries` identifying the bucket's upper bound. The
+  implicit overflow bucket `(boundaries[len-1], +Inf]` has index `len(boundaries)`
+  and is emitted just like any other bucket; `+Inf` itself never appears in
+  the response.
+
+For exponential schemas, observations of ±Inf land in a regular bucket whose
+schema-defined upper bound is `+Inf`, one index past the last finite-bound
+bucket. It is emitted as any other `[ <index>, <count> ]` entry.
+
+Empty buckets are omitted in both representations.
 
 ## Scrape pools
 

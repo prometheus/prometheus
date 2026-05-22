@@ -580,7 +580,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 
 	return apiFuncResult{&QueryData{
 		ResultType: res.Value.Type(),
-		Result:     res.Value,
+		Result:     applyHistogramFormat(res.Value, r.FormValue("histogram_format")),
 		Stats:      qs,
 	}, nil, warnings, qry.Close}
 }
@@ -705,7 +705,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 
 	return apiFuncResult{&QueryData{
 		ResultType: res.Value.Type(),
-		Result:     res.Value,
+		Result:     applyHistogramFormat(res.Value, r.FormValue("histogram_format")),
 		Stats:      qs,
 	}, nil, warnings, qry.Close}
 }

@@ -332,26 +332,44 @@ func (*OpenAPIBuilder) floatSampleSchema() *base.SchemaProxy {
 }
 
 func (*OpenAPIBuilder) histogramValueSchema() *base.SchemaProxy {
+	indexCountArray := base.CreateSchemaProxy(&base.Schema{
+		Type: []string{"array"},
+		Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: base.CreateSchemaProxy(&base.Schema{
+			OneOf: []*base.SchemaProxy{
+				base.CreateSchemaProxy(&base.Schema{Type: []string{"number"}}),
+				stringSchema(),
+			},
+		})},
+	})
+
 	props := orderedmap.New[string, *base.SchemaProxy]()
 	props.Set("count", stringSchemaWithDescription("Total count of observations."))
 	props.Set("sum", stringSchemaWithDescription("Sum of all observed values."))
 	props.Set("buckets", base.CreateSchemaProxy(&base.Schema{
 		Type:        []string{"array"},
-		Description: "Histogram buckets as [boundary_rule, lower, upper, count].",
-		Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: base.CreateSchemaProxy(&base.Schema{
-			Type: []string{"array"},
-			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: base.CreateSchemaProxy(&base.Schema{
-				OneOf: []*base.SchemaProxy{
-					base.CreateSchemaProxy(&base.Schema{Type: []string{"number"}}),
-					stringSchema(),
-				},
-			})},
-		})},
+		Description: "Histogram buckets. The default representation uses [boundary_rule, lower, upper, count] entries; when histogram_format=native was requested each entry is [index, count] for the positive buckets only.",
+		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: indexCountArray},
+	}))
+	props.Set("schema", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"integer"},
+		Description: "Bucket schema number. Only present when histogram_format=native was requested.",
+	}))
+	props.Set("zero_threshold", stringSchemaWithDescription("Zero-bucket threshold for exponential-schema histograms. Always present when histogram_format=native was requested for an exponential-schema histogram, because it is part of the schema definition."))
+	props.Set("zero_count", stringSchemaWithDescription("Observation count in the zero bucket for exponential-schema histograms. Only present when histogram_format=native was requested and the zero-bucket count is non-zero."))
+	props.Set("negative_buckets", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"array"},
+		Description: "Negative buckets for exponential-schema histograms as [index, count] pairs. Only present when histogram_format=native was requested.",
+		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: indexCountArray},
+	}))
+	props.Set("boundaries", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"array"},
+		Description: "Bucket upper bounds for custom-bucket histograms (schema -53). Only present when histogram_format=native was requested.",
+		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
 	}))
 
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:                 []string{"object"},
-		Description:          "Native histogram value representation.",
+		Description:          "Native histogram value representation. The default response uses [boundary_rule, lower, upper, count] bucket entries. With histogram_format=native exponential histograms expose zero_threshold, optional zero_count, and optional negative_buckets/buckets ([index, count] pairs); custom-bucket histograms (schema -53) expose boundaries plus buckets.",
 		Required:             []string{"count", "sum"},
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
 		Properties:           props,
@@ -620,6 +638,7 @@ func (*OpenAPIBuilder) queryPostInputBodySchema() *base.SchemaProxy {
 	props.Set("timeout", stringSchemaWithDescriptionAndExample("Form field: Evaluation timeout (optional, defaults to and is capped by the value of the -query.timeout flag).", "30s"))
 	props.Set("lookback_delta", stringSchemaWithDescriptionAndExample("Form field: Override the lookback period for this query (optional).", "5m"))
 	props.Set("stats", stringSchemaWithDescriptionAndExample("Form field: When provided, include query statistics in the response (the special value 'all' enables more comprehensive statistics).", "all"))
+	props.Set("histogram_format", stringSchemaWithDescriptionAndExample("Form field: Alternative JSON representation for native histograms. Set to 'native' to emit raw bucket indices instead of bucket boundaries (optional).", "native"))
 
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:                 []string{"object"},
@@ -640,6 +659,7 @@ func (*OpenAPIBuilder) queryRangePostInputBodySchema() *base.SchemaProxy {
 	props.Set("timeout", stringSchemaWithDescriptionAndExample("Form field: Evaluation timeout (optional, defaults to and is capped by the value of the -query.timeout flag).", "30s"))
 	props.Set("lookback_delta", stringSchemaWithDescriptionAndExample("Form field: Override the lookback period for this query (optional).", "5m"))
 	props.Set("stats", stringSchemaWithDescriptionAndExample("Form field: When provided, include query statistics in the response (the special value 'all' enables more comprehensive statistics).", "all"))
+	props.Set("histogram_format", stringSchemaWithDescriptionAndExample("Form field: Alternative JSON representation for native histograms. Set to 'native' to emit raw bucket indices instead of bucket boundaries (optional).", "native"))
 
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:                 []string{"object"},
