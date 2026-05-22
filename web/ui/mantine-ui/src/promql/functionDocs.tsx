@@ -1869,7 +1869,8 @@ const funcDocs: Record<string, React.ReactNode> = {
         <code>integral(v range-vector, strategy=2 scalar)</code> calculates the integral of the time series over time in
         seconds. The optional <code>strategy</code> controls which quadrature rule is used for each interval:{" "}
         <code>0</code> for the left-point rectangle rule, <code>1</code> for the right-point rectangle rule, and{" "}
-        <code>2</code> for the trapezoidal rule using the average of the adjacent samples. The default is <code>2</code>.
+        <code>2</code> for the trapezoidal rule using the average of the adjacent samples. The default is <code>2</code>
+        .
       </p>
 
       <p>
