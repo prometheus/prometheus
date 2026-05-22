@@ -2291,7 +2291,7 @@ eval instant at 0m timeseries_gen(`{{rangeSeries "__name__" "a,b" 1.0}}`, "my_me
 
 # Cardinality cap.
 eval instant at 0m timeseries_gen(`{{range $i := seq 1 10001}}{{series 1.0 "i" (printf "%d" $i)}}{{end}}`, "f")
-  expect fail regex:emitted series exceeds limit
+  expect fail regex:seq length exceeds limit
 
 # Multi-label series.
 eval instant at 0m timeseries_gen(`{{series 1.0 "env" "prod" "job" "api"}}`)
