@@ -863,9 +863,12 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 		return nil, nil, fmt.Errorf("invalid zero_count: %w", err)
 	}
 
-	// Treat as FloatHistogram only if the count or zero_count are non-integer.
+	// Treat as FloatHistogram if count, zero_count, or any bucket value is non-integer.
 	// sum is always float64 in both histogram types and does not determine the kind.
-	isFloat := count != math.Trunc(count) || zeroCount != math.Trunc(zeroCount)
+	// Bucket strings are scanned for '.', 'e', or 'E' since OM2 emits floats with
+	// decimals or exponent notation; the cheap pre-scan avoids parsing buckets twice.
+	isFloat := count != math.Trunc(count) || zeroCount != math.Trunc(zeroCount) ||
+		bucketsHaveFloat(kv["positive_buckets"]) || bucketsHaveFloat(kv["negative_buckets"])
 
 	posSpans, err := parseSpans(kv["positive_spans"])
 	if err != nil {
@@ -961,6 +964,19 @@ func parseSpans(s string) ([]histogram.Span, error) {
 		spans = append(spans, histogram.Span{Offset: int32(offset), Length: uint32(length)})
 	}
 	return spans, nil
+}
+
+// bucketsHaveFloat reports whether the raw bucket string contains any non-integer
+// value. OM2 formats floats with a decimal point or exponent, so a byte-level scan
+// for '.', 'e', or 'E' is sufficient to discriminate integer from float buckets.
+func bucketsHaveFloat(s string) bool {
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '.', 'e', 'E':
+			return true
+		}
+	}
+	return false
 }
 
 // parseIntBuckets parses "[b1,b2,...]" into delta-encoded []int64 buckets.
