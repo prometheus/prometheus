@@ -1198,7 +1198,7 @@ maybe_grouping_labels: /* empty */ { $$ = nil }
 offset_duration_expr    : number_duration_literal
                                 {
                                 nl := $1.(*NumberLiteral)
-                                if nl.Val > 1<<63/1e9 || nl.Val < -(1<<63)/1e9 {
+                                if durationLiteralOutOfRange(nl.Val) {
                                         yylex.(*parser).addParseErrf(nl.PosRange, "duration out of range")
                                         $$ = &NumberLiteral{Val: 0}
                                         break
@@ -1211,7 +1211,7 @@ offset_duration_expr    : number_duration_literal
                                 if $1.Typ == SUB {
                                         nl.Val *= -1
                                 }
-                                if nl.Val > 1<<63/1e9 || nl.Val < -(1<<63)/1e9 {
+                                if durationLiteralOutOfRange(nl.Val) {
                                         yylex.(*parser).addParseErrf($1.PositionRange(), "duration out of range")
                                         $$ = &NumberLiteral{Val: 0}
                                         break
@@ -1298,17 +1298,7 @@ offset_duration_expr    : number_duration_literal
                                 }
                         | unary_op LEFT_PAREN duration_expr RIGHT_PAREN %prec MUL
                                 {
-                                de := $3.(*DurationExpr)
-                                de.Wrapped = true
-                                if $1.Typ == SUB {
-                                        $$ = &DurationExpr{
-                                                Op: SUB,
-                                                RHS: de,
-                                                StartPos: $1.Pos,
-                                        }
-                                        break
-                                }
-                                $$ = $3
+                                $$ = yylex.(*parser).applyUnaryOpToDurationExpr($1, $3.(Node), true)
                                 }
                         | duration_expr
                         ;
@@ -1318,7 +1308,7 @@ max_of_min_of: MAX_OF | MIN_OF ;
 duration_expr   : number_duration_literal
                         {
                         nl := $1.(*NumberLiteral)
-                        if nl.Val > 1<<63/1e9 || nl.Val < -(1<<63)/1e9 {
+                        if durationLiteralOutOfRange(nl.Val) {
                                 yylex.(*parser).addParseErrf(nl.PosRange, "duration out of range")
                                 $$ = &NumberLiteral{Val: 0}
                                 break
@@ -1327,36 +1317,8 @@ duration_expr   : number_duration_literal
                         }
                 | unary_op duration_expr %prec MUL
                         {
-                        switch expr := $2.(type) {
-                        case *NumberLiteral:
-                                if $1.Typ == SUB {
-                                        expr.Val *= -1
-                                }
-                                if expr.Val > 1<<63/1e9 || expr.Val < -(1<<63)/1e9 {
-                                        yylex.(*parser).addParseErrf($1.PositionRange(), "duration out of range")
-                                        $$ = &NumberLiteral{Val: 0}
-                                        break
-                                }
-                                expr.PosRange.Start = $1.Pos
-                                $$ = expr
-                                break
-                        case *DurationExpr:
-                                if $1.Typ == SUB {
-                                        $$ = &DurationExpr{
-                                                Op: SUB,
-                                                RHS: expr,
-                                                StartPos: $1.Pos,
-                                        }
-                                        break
-                                }
-                                $$ = expr
-                                break
-                        default:
-                                yylex.(*parser).addParseErrf($1.PositionRange(), "expected number literal or duration expression")
-                                $$ = &NumberLiteral{Val: 0}
-                                break
+                        $$ = yylex.(*parser).applyUnaryOpToDurationExpr($1, $2.(Node), false)
                         }
-                }
                 | duration_expr ADD duration_expr
                         {
                         yylex.(*parser).experimentalDurationExpr($1.(Expr))

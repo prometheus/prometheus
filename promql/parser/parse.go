@@ -1201,9 +1201,48 @@ func (p *parser) getAtModifierVars(e Node) (**int64, *ItemType, *posrange.Pos, b
 	return timestampp, preprocp, endPosp, true
 }
 
+// durationLiteralOutOfRange reports whether val, interpreted as seconds, would
+// overflow a time.Duration (int64 nanoseconds).
+func durationLiteralOutOfRange(val float64) bool {
+	return val > 1<<63/1e9 || val < -(1<<63)/1e9
+}
+
 func (p *parser) experimentalDurationExpr(e Expr) {
 	if !p.options.ExperimentalDurationExpr {
 		p.addParseErrf(e.PositionRange(), "experimental duration expression is not enabled")
+	}
+}
+
+// applyUnaryOpToDurationExpr applies a unary operator to a duration expression
+// node, which may be a *DurationExpr or a *NumberLiteral. When wrapped is true
+// (parenthesised form), the Wrapped flag is set on *DurationExpr nodes.
+func (p *parser) applyUnaryOpToDurationExpr(op Item, expr Node, wrapped bool) Node {
+	switch e := expr.(type) {
+	case *DurationExpr:
+		if wrapped {
+			e.Wrapped = true
+		}
+		if op.Typ == SUB {
+			return &DurationExpr{
+				Op:       SUB,
+				RHS:      e,
+				StartPos: op.Pos,
+			}
+		}
+		return e
+	case *NumberLiteral:
+		if op.Typ == SUB {
+			e.Val *= -1
+		}
+		if durationLiteralOutOfRange(e.Val) {
+			p.addParseErrf(op.PositionRange(), "duration out of range")
+			return &NumberLiteral{Val: 0}
+		}
+		e.PosRange.Start = op.Pos
+		return e
+	default:
+		p.addParseErrf(op.PositionRange(), "expected number literal or duration expression")
+		return &NumberLiteral{Val: 0}
 	}
 }
 
