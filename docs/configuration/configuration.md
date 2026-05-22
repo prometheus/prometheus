@@ -3977,6 +3977,25 @@ with this feature.
 # This is an experimental feature, this behaviour could change or be removed in the future.
 [ stale_series_compaction_threshold: <float> | default = 0 ]
 
+# Configures the float chunk encoding to use for new chunks.
+# Valid values are 'xor' and 'xor2'. When absent, the encoding follows the
+# --enable-feature=xor2-encoding flag: 'xor2' if the flag is set, 'xor' otherwise.
+# Setting 'xor' forces standard XOR encoding even when --enable-feature=xor2-encoding is set.
+# Setting 'xor2' is only valid when --enable-feature=xor2-encoding is set;
+# Prometheus will refuse to reload if 'xor2' is set without the feature flag.
+# Setting 'xor' is incompatible with --enable-feature=st-storage (XOR chunks do not store
+# start timestamps); Prometheus will refuse to reload in that case too.
+# Omitting 'floats' (or the entire 'chunk_encoding' field) is equivalent; the encoding
+# follows the --enable-feature=xor2-encoding flag.
+# This field is runtime-reloadable.
+# When --enable-feature=st-storage is disabled, XOR and XOR2 are compatible
+# encodings and in-progress chunks are not cut on an encoding change; the new
+# encoding takes effect when the current chunk is next cut for any reason (size, time range, or sample count).
+# When --enable-feature=st-storage is enabled, XOR and XOR2 are not compatible
+# (XOR chunks do not store start timestamps), so an in-progress chunk is cut
+# on the next append after the encoding changes.
+[ chunk_encoding:
+  [ floats: <string> ] ]
 
 # Configures data retention settings for TSDB.
 #

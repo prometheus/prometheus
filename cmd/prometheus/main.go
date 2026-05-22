@@ -78,6 +78,7 @@ import (
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/documentcli"
@@ -280,7 +281,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				logger.Info("Experimental start timestamp zero ingestion enabled. OpenMetrics 1.0 parsing will parse <metric>_created metrics as ST instead of normal sample. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "xor2-encoding":
-				c.tsdb.EnableXOR2Encoding = true
+				c.tsdb.FloatChunkEncoding = chunkenc.EncXOR2
 				logger.Info("Experimental XOR2 chunk encoding enabled.")
 			case "st-synthesis":
 				// TODO(ridwanmsharif): Move this to scrape configuration once stable.
@@ -392,6 +393,10 @@ func main() {
 		promslogConfig: promslog.Config{},
 		scrape: scrape.Options{
 			FeatureRegistry: features.DefaultRegistry,
+		},
+		tsdb: tsdbOptions{
+			// Default to XOR encoding; xor2-encoding feature flag overrides this to EncXOR2.
+			FloatChunkEncoding: chunkenc.EncXOR,
 		},
 	}
 
@@ -2090,9 +2095,9 @@ type tsdbOptions struct {
 	BlockReloadInterval            model.Duration
 	EnableSTAsZeroSample           bool
 	EnableSTStorage                bool
-	EnableXOR2Encoding             bool
 	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
+	FloatChunkEncoding             chunkenc.Encoding
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -2122,9 +2127,9 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		FeatureRegistry:                features.DefaultRegistry,
 		EnableSTAsZeroSample:           opts.EnableSTAsZeroSample,
 		EnableSTStorage:                opts.EnableSTStorage,
-		EnableXOR2Encoding:             opts.EnableXOR2Encoding,
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
+		FloatChunkEncoding:             opts.FloatChunkEncoding,
 	}
 }
 

@@ -219,6 +219,22 @@ func (v ValueType) NewChunk(useXOR2 bool) (Chunk, error) {
 	return NewEmptyChunk(v.ChunkEncoding(useXOR2))
 }
 
+// Compatible reports whether two encodings are mutually compatible, meaning a chunk
+// opened with one encoding can continue to receive appends even when the desired
+// encoding changes to the other, without requiring a new chunk to be started.
+// Data written into the existing chunk continues to use the chunk's original encoding;
+// the new encoding takes effect only when a new chunk is created.
+// The EncXOR family (EncXOR and EncXOR2) is mutually compatible; all other encoding
+// pairs, including same-histogram-type pairs, are not compatible.
+func Compatible(a, b Encoding) bool {
+	return isFloatXOREncoding(a) && isFloatXOREncoding(b)
+}
+
+// isFloatXOREncoding reports whether the encoding e belongs to the XOR float family (EncXOR or EncXOR2).
+func isFloatXOREncoding(e Encoding) bool {
+	return e == EncXOR || e == EncXOR2
+}
+
 // MockSeriesIterator returns an iterator for a mock series with custom
 // start timestamp, timestamps, and values.
 // Start timestamps is optional, pass nil or empty slice to indicate no start

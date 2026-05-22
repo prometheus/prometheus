@@ -1921,7 +1921,7 @@ func TestScrapeLoopAppend_StartTimeSynthesis_WithSTStorage(t *testing.T) {
 
 	s := teststorage.New(t, func(opt *tsdb.Options) {
 		opt.EnableSTStorage = true
-		opt.EnableXOR2Encoding = true
+		opt.FloatChunkEncoding = chunkenc.EncXOR2
 	})
 
 	appTest := teststorage.NewAppendable().Then(s)
