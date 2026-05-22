@@ -44,6 +44,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minimum Go version is met.
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
@@ -257,6 +258,21 @@ type Options struct {
 	// is implemented.
 	EnableMetadataWALRecords bool
 
+	// EnableNativeMetadata represents 'native-metadata' feature flag.
+	// When enabled, OTel resource attributes are persisted per time series
+	// in Parquet-based metadata files alongside TSDB blocks.
+	EnableNativeMetadata bool
+
+	// IndexedResourceAttrs specifies additional descriptive resource attribute
+	// names to include in the inverted index beyond identifying attributes
+	// (which are always indexed). nil means index only identifying attributes.
+	IndexedResourceAttrs map[string]struct{}
+
+	// EnableResourceAttrIndex enables the resource attribute inverted index
+	// for O(1) reverse lookup by attribute key:value. When disabled, the index
+	// is not built in memory or written to Parquet. Default: true.
+	EnableResourceAttrIndex bool
+
 	// BlockCompactionExcludeFunc is a function which returns true for blocks that should NOT be compacted.
 	// It's passed down to the TSDB compactor.
 	BlockCompactionExcludeFunc BlockExcludeFilterFunc
@@ -393,6 +409,7 @@ type dbMetrics struct {
 	selectedSeriesCompactionsTriggered prometheus.Counter
 	selectedSeriesCompactionsFailed    prometheus.Counter
 	selectedSeriesCompactionDuration   prometheus.Histogram
+	seriesMetadataBytes                prometheus.Gauge
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -513,6 +530,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
+	m.seriesMetadataBytes = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_storage_series_metadata_bytes",
+		Help: "The number of bytes used by series metadata (Parquet) files across all blocks.",
+	})
 
 	if r != nil {
 		r.MustRegister(
@@ -537,6 +558,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.selectedSeriesCompactionsTriggered,
 			m.selectedSeriesCompactionsFailed,
 			m.selectedSeriesCompactionDuration,
+			m.seriesMetadataBytes,
 		)
 	}
 	return m
@@ -1095,6 +1117,9 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			UseUncachedIO:               opts.UseUncachedIO,
 			BlockExcludeFilter:          opts.BlockCompactionExcludeFunc,
 			FloatChunkEncoding:          db.floatChunkEncoding,
+			EnableNativeMetadata:        opts.EnableNativeMetadata,
+			IndexedResourceAttrs:        opts.IndexedResourceAttrs,
+			EnableResourceAttrIndex:     opts.EnableResourceAttrIndex,
 		})
 	}
 	if err != nil {
@@ -1166,6 +1191,9 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableHistogramSTEncoding.Store(opts.EnableHistogramSTEncoding)
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
 	headOpts.EnableFastStartup = opts.EnableFastStartup
+	headOpts.EnableNativeMetadata = opts.EnableNativeMetadata
+	headOpts.IndexedResourceAttrs = opts.IndexedResourceAttrs
+	headOpts.EnableResourceAttrIndex = opts.EnableResourceAttrIndex
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}
@@ -1261,6 +1289,18 @@ func (db *DB) BlockMetas() []BlockMeta {
 		metas = append(metas, b.Meta())
 	}
 	return metas
+}
+
+// SeriesMetadata returns the head's series metadata reader.
+//
+// Block-level series metadata persistence has been disabled in this build —
+// metadata is kept in memory in the head only and dropped on compaction.
+// Returns an empty reader when native metadata is not enabled.
+func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
+	if !db.opts.EnableNativeMetadata {
+		return seriesmetadata.NewMemSeriesMetadata(), nil
+	}
+	return db.head.SeriesMetadata()
 }
 
 func (db *DB) run(ctx context.Context) {
@@ -2133,6 +2173,7 @@ func (db *DB) reloadBlocks() (err error) {
 		blocksSize += block.Size()
 	}
 	db.metrics.blocksBytes.Set(float64(blocksSize))
+	db.metrics.seriesMetadataBytes.Set(0)
 
 	slices.SortFunc(toLoad, func(a, b *Block) int {
 		switch {
@@ -2475,6 +2516,13 @@ func (db *DB) inOrderBlocksMaxTime() (maxt int64, ok bool) {
 // Head returns the databases's head.
 func (db *DB) Head() *Head {
 	return db.head
+}
+
+// ResourceHasContentHash reports whether the series at labelsHash has
+// a resource version with the given contentHash. Convenience pass-through
+// to Head.ResourceHasContentHash.
+func (db *DB) ResourceHasContentHash(labelsHash, contentHash uint64) bool {
+	return db.head.ResourceHasContentHash(labelsHash, contentHash)
 }
 
 // Close the partition.
