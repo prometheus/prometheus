@@ -724,6 +724,10 @@ labelmap(up{job="api"}, "kubernetes_(.+)", "$1")
 
 ## `max_of()`
 
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
 `max_of(a scalar, b scalar)` returns the larger of the two scalar values `a`
 and `b`.
 
