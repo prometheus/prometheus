@@ -96,10 +96,10 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2 bool) (chks []memCh
 		encoding := chunkenc.ValFloat.ChunkEncoding(useXOR2)
 		switch {
 		case s.h != nil:
-			// TODO(krajorama): use ST capable histogram chunk.
+			// TODO(krajorama,ywwg): use ST capable histogram chunk.
 			encoding = chunkenc.EncHistogram
 		case s.fh != nil:
-			// TODO(krajorama): use ST capable float histogram chunk.
+			// TODO(krajorama,ywwg): use ST capable float histogram chunk.
 			encoding = chunkenc.EncFloatHistogram
 		}
 
@@ -126,7 +126,7 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2 bool) (chks []memCh
 		case chunkenc.EncXOR, chunkenc.EncXOR2:
 			app.Append(s.st, s.t, s.f)
 		case chunkenc.EncHistogram:
-			// TODO(krajorama): handle ST capable histogram chunk.
+			// TODO(krajorama,ywwg): handle ST capable histogram chunk.
 			// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 			prevHApp, _ := prevApp.(*chunkenc.HistogramAppender)
 			var (
@@ -142,7 +142,7 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2 bool) (chks []memCh
 				chunk = newChunk
 			}
 		case chunkenc.EncFloatHistogram:
-			// TODO(krajorama): handle ST capable float histogram chunk.
+			// TODO(krajorama,ywwg): handle ST capable float histogram chunk.
 			// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 			prevHApp, _ := prevApp.(*chunkenc.FloatHistogramAppender)
 			var (
