@@ -5308,6 +5308,29 @@ var testExpr = []struct {
 			},
 		},
 	},
+	// Anchored/smoothed on non-selector range must not panic.
+	{
+		input: "1[5m] smoothed",
+		fail:  true,
+		errors: ParseErrors{
+			{
+				PositionRange: posrange.PositionRange{Start: 1, End: 5},
+				Err:           errors.New("ranges only allowed for vector selectors"),
+				Query:         "1[5m] smoothed",
+			},
+		},
+	},
+	{
+		input: "1[5m] anchored",
+		fail:  true,
+		errors: ParseErrors{
+			{
+				PositionRange: posrange.PositionRange{Start: 1, End: 5},
+				Err:           errors.New("ranges only allowed for vector selectors"),
+				Query:         "1[5m] anchored",
+			},
+		},
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {
@@ -5326,8 +5349,9 @@ func readable(s string) string {
 
 func TestParseExpressions(t *testing.T) {
 	optsParser := NewParser(Options{
-		EnableExperimentalFunctions: true,
-		ExperimentalDurationExpr:    true,
+		EnableExperimentalFunctions:  true,
+		ExperimentalDurationExpr:     true,
+		EnableExtendedRangeSelectors: true,
 	})
 
 	for _, test := range testExpr {
