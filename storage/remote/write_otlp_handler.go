@@ -123,6 +123,7 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		ConvertHistogramsToNHCB:              otlpCfg.ConvertHistogramsToNHCB,
 		AllowDeltaTemporality:                rw.allowDeltaTemporality,
 		LookbackDelta:                        rw.lookbackDelta,
+		PromoteScopeMetadata:                 otlpCfg.PromoteScopeMetadata,
 		EnableTypeAndUnitLabels:              rw.enableTypeAndUnitLabels,
 		LabelNameUnderscoreSanitization:      otlpCfg.LabelNameUnderscoreSanitization,
 		LabelNamePreserveMultipleUnderscores: otlpCfg.LabelNamePreserveMultipleUnderscores,

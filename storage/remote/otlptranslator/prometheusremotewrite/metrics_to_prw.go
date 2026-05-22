@@ -52,7 +52,9 @@ type Settings struct {
 	ConvertHistogramsToNHCB           bool
 	AllowDeltaTemporality             bool
 	// LookbackDelta is the PromQL engine lookback delta.
-	LookbackDelta           time.Duration
+	LookbackDelta time.Duration
+	// PromoteScopeMetadata controls whether to promote OTel scope metadata to metric labels.
+	PromoteScopeMetadata    bool
 	EnableTypeAndUnitLabels bool
 	// LabelNameUnderscoreSanitization controls whether to enable prepending of 'key' to labels
 	// starting with '_'. Reserved labels starting with `__` are not modified.
@@ -71,6 +73,15 @@ type cachedResourceLabels struct {
 	externalLabels map[string]string
 }
 
+// cachedScopeLabels holds precomputed scope metadata labels.
+// These are computed once per ScopeMetrics boundary and reused for all datapoints.
+type cachedScopeLabels struct {
+	scopeName      string
+	scopeVersion   string
+	scopeSchemaURL string
+	scopeAttrs     labels.Labels // otel_scope_* labels.
+}
+
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
 type PrometheusConverter struct {
 	everyN         everyNTimes
@@ -80,8 +91,9 @@ type PrometheusConverter struct {
 	// seenTargetInfo tracks target_info samples within a batch to prevent duplicates.
 	seenTargetInfo map[targetInfoKey]struct{}
 
-	// Label caching for optimization - computed once per resource boundary.
+	// Label caching for optimization - computed once per resource/scope boundary.
 	resourceLabels *cachedResourceLabels
+	scopeLabels    *cachedScopeLabels
 	labelNamer     otlptranslator.LabelNamer
 
 	// resourceCtx holds the current resource context for the
@@ -148,6 +160,23 @@ func TranslatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric
 	return m
 }
 
+type scope struct {
+	name       string
+	version    string
+	schemaURL  string
+	attributes pcommon.Map
+}
+
+func newScopeFromScopeMetrics(scopeMetrics pmetric.ScopeMetrics) scope {
+	s := scopeMetrics.Scope()
+	return scope{
+		name:       s.Name(),
+		version:    s.Version(),
+		schemaURL:  scopeMetrics.SchemaUrl(),
+		attributes: s.Attributes(),
+	}
+}
+
 // FromMetrics appends pmetric.Metrics to storage.AppenderV2.
 func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings) (annots annotations.Annotations, errs error) {
 	namer := otlptranslator.MetricNamer{
@@ -176,6 +205,11 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		latestTimestamp := pcommon.Timestamp(0)
 		for j := range scopeMetricsSlice.Len() {
 			scopeMetrics := scopeMetricsSlice.At(j)
+			scope := newScopeFromScopeMetrics(scopeMetrics)
+			if err := c.setScopeContext(scope, settings); err != nil {
+				errs = errors.Join(errs, err)
+				continue
+			}
 
 			metricSlice := scopeMetrics.Metrics()
 
@@ -414,9 +448,44 @@ func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, sett
 	return nil
 }
 
+// setScopeContext precomputes and caches scope-level labels.
+// Called once per ScopeMetrics boundary, before processing any metrics.
+// If an error is returned, scope level cache is reset.
+func (c *PrometheusConverter) setScopeContext(scope scope, settings Settings) error {
+	if !settings.PromoteScopeMetadata || scope.name == "" {
+		c.scopeLabels = nil
+		return nil
+	}
+
+	c.scopeLabels = &cachedScopeLabels{
+		scopeName:      scope.name,
+		scopeVersion:   scope.version,
+		scopeSchemaURL: scope.schemaURL,
+	}
+	c.builder.Reset(labels.EmptyLabels())
+	var err error
+	scope.attributes.Range(func(k string, v pcommon.Value) bool {
+		var name string
+		name, err = c.buildLabelName("otel_scope_" + k)
+		if err != nil {
+			return false
+		}
+		c.builder.Set(name, v.AsString())
+		return true
+	})
+	if err != nil {
+		c.scopeLabels = nil
+		return err
+	}
+
+	c.scopeLabels.scopeAttrs = c.builder.Labels()
+	return nil
+}
+
 // clearResourceContext clears cached labels between ResourceMetrics.
 func (c *PrometheusConverter) clearResourceContext() {
 	c.resourceLabels = nil
+	c.scopeLabels = nil
 	c.resourceCtx = nil
 }
 
