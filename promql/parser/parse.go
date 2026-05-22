@@ -337,7 +337,8 @@ func (p *parser) unexpected(context, expected string) {
 	p.addParseErr(p.yyParser.lval.item.PositionRange(), errors.New(errMsg.String()))
 }
 
-var errUnexpected = errors.New("unexpected error")
+// ErrUnexpected is returned when the parser recovers from a runtime panic.
+var ErrUnexpected = errors.New("unexpected error")
 
 // recover is the handler that turns panics into returns from the top level of Parse.
 func (*parser) recover(errp *error) {
@@ -349,7 +350,7 @@ func (*parser) recover(errp *error) {
 		buf = buf[:runtime.Stack(buf, false)]
 
 		fmt.Fprintf(os.Stderr, "parser panic: %v\n%s", e, buf)
-		*errp = errUnexpected
+		*errp = ErrUnexpected
 	case e != nil:
 		*errp = e.(error)
 	}

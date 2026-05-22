@@ -5359,7 +5359,7 @@ func TestParseExpressions(t *testing.T) {
 			expr, err := optsParser.ParseExpr(test.input)
 
 			// Unexpected errors are always caused by a bug.
-			require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
+			require.NotEqual(t, err, ErrUnexpected, "unexpected error occurred")
 
 			if !test.fail {
 				require.NoError(t, err)
@@ -6013,7 +6013,7 @@ func TestParseSeries(t *testing.T) {
 		metric, vals, err := testParser.ParseSeriesDesc(test.input)
 
 		// Unexpected errors are always caused by a bug.
-		require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
+		require.NotEqual(t, err, ErrUnexpected, "unexpected error occurred")
 
 		if !test.fail {
 			require.NoError(t, err)
@@ -6030,7 +6030,7 @@ func TestRecoverParserRuntime(t *testing.T) {
 	var err error
 
 	defer func() {
-		require.Equal(t, errUnexpected, err)
+		require.Equal(t, ErrUnexpected, err)
 	}()
 	defer p.recover(&err)
 	// Cause a runtime panic.
