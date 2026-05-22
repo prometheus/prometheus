@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
@@ -152,6 +153,9 @@ type BlockReader interface {
 
 	// Tombstones returns a tombstones.Reader over the block's deleted data.
 	Tombstones() (tombstones.Reader, error)
+
+	// SeriesMetadata returns a seriesmetadata.Reader over the block's series metadata.
+	SeriesMetadata() (seriesmetadata.Reader, error)
 
 	// Meta provides meta information about the block reader.
 	Meta() BlockMeta
@@ -463,6 +467,16 @@ func (pb *Block) Tombstones() (tombstones.Reader, error) {
 	return blockTombstoneReader{Reader: pb.tombstones, b: pb}, nil
 }
 
+// SeriesMetadata returns an empty seriesmetadata.Reader.
+// Block-level series metadata persistence has been disabled; metadata is kept
+// in memory in the head only and dropped on compaction to disk.
+func (pb *Block) SeriesMetadata() (seriesmetadata.Reader, error) {
+	if err := pb.startRead(); err != nil {
+		return nil, err
+	}
+	return &blockSeriesMetadataReader{Reader: seriesmetadata.NewMemSeriesMetadata(), b: pb}, nil
+}
+
 // GetSymbolTableSize returns the Symbol Table Size in the index of this block.
 func (pb *Block) GetSymbolTableSize() uint64 {
 	return pb.symbolTableSize
@@ -585,6 +599,21 @@ type blockChunkReader struct {
 func (r blockChunkReader) Close() error {
 	r.b.pendingReaders.Done()
 	return nil
+}
+
+type blockSeriesMetadataReader struct {
+	seriesmetadata.Reader
+	b         *Block
+	closeOnce sync.Once
+	closeErr  error
+}
+
+func (r *blockSeriesMetadataReader) Close() error {
+	r.closeOnce.Do(func() {
+		r.b.pendingReaders.Done()
+		r.closeErr = r.Reader.Close()
+	})
+	return r.closeErr
 }
 
 // Delete matching series between mint and maxt in the block.
