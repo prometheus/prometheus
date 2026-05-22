@@ -303,12 +303,22 @@ func TestTplEngine_Build_MinMax(t *testing.T) {
 }
 
 func TestTplEngine_Build_CapEnforced(t *testing.T) {
-	e, err := newTplEngine(`{{range $i := seq 1 5}}{{series 1.0 "i" (printf "%d" $i)}}{{end}}`)
+	e, err := newTplEngine(`{{series 1.0 "i" "1"}}{{series 1.0 "i" "2"}}{{series 1.0 "i" "3"}}{{series 1.0 "i" "4"}}`)
 	require.NoError(t, err)
 
 	v, err := e.buildWithCap("f", 0, 3)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "emitted series exceeds limit 3")
+	require.Nil(t, v)
+}
+
+func TestTplEngine_Build_SeqCapEnforced(t *testing.T) {
+	e, err := newTplEngine(`{{range $i := seq 1 4}}{{end}}`)
+	require.NoError(t, err)
+
+	v, err := e.buildWithCap("f", 0, 3)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "seq length exceeds limit 3")
 	require.Nil(t, v)
 }
 

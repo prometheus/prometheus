@@ -29,7 +29,8 @@ import (
 )
 
 // maxTimeseriesGenSeries is the hard cap on how many series a single
-// timeseries_gen call may emit.
+// timeseries_gen call may emit. It bounds memory use and query fanout from
+// synthetic series templates.
 const maxTimeseriesGenSeries = 10_000
 
 // kvPairsToLabels converts a flat slice of alternating key,value strings into
@@ -68,7 +69,7 @@ func labelNameValid(name string) bool {
 	return model.UTF8Validation.IsValidLabelName(name)
 }
 
-// add returns a + b, coercing each operand to float64 first.
+// tplAdd returns a + b, coercing each operand to float64 first.
 func tplAdd(a, b any) (float64, error) {
 	af, err := toFloat64(a)
 	if err != nil {
@@ -308,12 +309,15 @@ type tplEngine struct {
 
 // newTplEngine parses src with a minimal placeholder FuncMap (the real
 // helpers are bound per-execution by build), then walks the parse tree
-// rejecting forbidden actions {{define}} and {{template}}.
+// rejecting forbidden actions {{define}} and {{template}}. The template
+// sandbox intentionally exposes only pure string/math helpers and the
+// side-effecting series emitters below; do not add helpers that perform I/O,
+// networking, process execution, or unbounded allocation.
 func newTplEngine(src string) (*tplEngine, error) {
 	tpl, err := template.New("ts_gen").Funcs(template.FuncMap{
 		"series":      func(any, ...string) string { return "" },
 		"rangeSeries": func(string, string, any, ...string) string { return "" },
-		"seq":         func(int, int) []int { return nil },
+		"seq":         func(int, int) ([]int, error) { return nil, nil },
 		"split":       strings.Split,
 		"lower":       strings.ToLower,
 		"upper":       strings.ToUpper,
@@ -418,15 +422,19 @@ func (e *tplEngine) buildWithCap(metric string, ts int64, seriesCap int) (Vector
 			}
 			return "", nil
 		},
-		"seq": func(start, end int) []int {
+		"seq": func(start, end int) ([]int, error) {
 			if end < start {
-				return nil
+				return nil, nil
 			}
-			out := make([]int, 0, end-start+1)
+			n := end - start + 1
+			if n > seriesCap {
+				return nil, fmt.Errorf("seq length exceeds limit %d", seriesCap)
+			}
+			out := make([]int, 0, n)
 			for i := start; i <= end; i++ {
 				out = append(out, i)
 			}
-			return out
+			return out, nil
 		},
 	})
 
