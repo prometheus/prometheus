@@ -102,6 +102,7 @@ test_metric{label="value2"} 43.0
 				30*time.Second,
 				tc.protoMsg,
 				map[string]string{"job": "test"},
+				 "/api/v1/write",
 				tmpFile,
 			)
 
@@ -154,6 +155,7 @@ func TestPushMetricsInvalidProtoMsg(t *testing.T) {
 		30*time.Second,
 		"blablalba", // Invalid protoMsg.
 		map[string]string{"job": "test"},
+		 "/api/v1/write",
 		tmpFile,
 	)
 
