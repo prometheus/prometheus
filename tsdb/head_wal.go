@@ -49,8 +49,9 @@ import (
 type histogramRecord struct {
 	ref chunks.HeadSeriesRef
 	t   int64
-	h   *histogram.Histogram
-	fh  *histogram.FloatHistogram
+	// TODO(ywwg): need to add st here
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
 }
 
 type seriesRefSet struct {
@@ -393,6 +394,7 @@ Outer:
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
+					// TODO(ywwg): ST needs to be set here
 					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, h: sam.H})
 				}
 				for i := range concurrency {
@@ -429,6 +431,7 @@ Outer:
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
+					// TODO(ywwg): ST needs to be set here
 					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, fh: sam.FH})
 				}
 				for i := range concurrency {
@@ -969,6 +972,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
+					// TODO(ywwg): ST needs to be set here
 					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, h: sam.H})
 				}
 				for i := range concurrency {
@@ -999,6 +1003,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
+					// TODO(ywwg): ST needs to be set here
 					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, fh: sam.FH})
 				}
 				for i := range concurrency {

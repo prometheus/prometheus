@@ -859,7 +859,7 @@ func (p *populateWithDelSeriesIterator) AtT() int64 {
 	return p.curr.AtT()
 }
 
-// AtST TODO(krajorama): test AtST() when chunks support it.
+// AtST TODO(krajorama,ywwg): test AtST() when chunks support it.
 func (p *populateWithDelSeriesIterator) AtST() int64 {
 	return p.curr.AtST()
 }
@@ -1293,7 +1293,7 @@ func (it *DeletedIterator) AtT() int64 {
 	return it.Iter.AtT()
 }
 
-// AtST TODO(krajorama): test AtST() when chunks support it.
+// AtST TODO(krajorama,ywwg): test AtST() when chunks support it.
 func (it *DeletedIterator) AtST() int64 {
 	return it.Iter.AtST()
 }
