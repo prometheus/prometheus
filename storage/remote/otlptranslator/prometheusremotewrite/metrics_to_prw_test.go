@@ -500,79 +500,6 @@ func TestFromMetrics(t *testing.T) {
 		}, targetInfoSamples)
 	})
 
-	t.Run("target_info should not include scope labels when PromoteScopeMetadata is enabled", func(t *testing.T) {
-		// Regression test: When PromoteScopeMetadata is enabled and a scope has a non-empty name,
-		// the cached scopeLabels should NOT be merged into target_info.
-		request := pmetricotlp.NewExportRequest()
-		rm := request.Metrics().ResourceMetrics().AppendEmpty()
-
-		// Set up resource attributes for job/instance labels.
-		rm.Resource().Attributes().PutStr("service.name", "test-service")
-		rm.Resource().Attributes().PutStr("service.instance.id", "instance-1")
-		generateAttributes(rm.Resource().Attributes(), "resource", 2)
-
-		// Create a scope with a non-empty name (this triggers scope label caching).
-		scopeMetrics := rm.ScopeMetrics().AppendEmpty()
-		scope := scopeMetrics.Scope()
-		scope.SetName("my-scope")
-		scope.SetVersion("1.0.0")
-		scope.Attributes().PutStr("scope-attr", "scope-value")
-
-		// Add a metric.
-		ts := pcommon.NewTimestampFromTime(time.Now())
-		m := scopeMetrics.Metrics().AppendEmpty()
-		m.SetEmptyGauge()
-		m.SetName("test_gauge")
-		m.SetDescription("test gauge")
-		point := m.Gauge().DataPoints().AppendEmpty()
-		point.SetTimestamp(ts)
-		point.SetDoubleValue(1.0)
-
-		appTest := teststorage.NewAppendable()
-		app := appTest.AppenderV2(t.Context())
-		converter := NewPrometheusConverter(app)
-		annots, err := converter.FromMetrics(
-			context.Background(),
-			request.Metrics(),
-			Settings{
-				PromoteScopeMetadata: true,
-				LookbackDelta:        defaultLookbackDelta,
-			},
-		)
-		require.NoError(t, err)
-		require.Empty(t, annots)
-		require.NoError(t, app.Commit())
-
-		// Find target_info samples.
-		var targetInfoSamples []sample
-		for _, s := range appTest.ResultSamples() {
-			if s.L.Get(labels.MetricName) == "target_info" {
-				targetInfoSamples = append(targetInfoSamples, s)
-			}
-		}
-		require.NotEmpty(t, targetInfoSamples, "expected target_info samples")
-
-		// Verify target_info does NOT have scope labels.
-		for _, s := range targetInfoSamples {
-			require.Empty(t, s.L.Get("otel_scope_name"), "target_info should not have otel_scope_name")
-			require.Empty(t, s.L.Get("otel_scope_version"), "target_info should not have otel_scope_version")
-			require.Empty(t, s.L.Get("otel_scope_schema_url"), "target_info should not have otel_scope_schema_url")
-			require.Empty(t, s.L.Get("otel_scope_scope_attr"), "target_info should not have scope attributes")
-		}
-
-		// Verify the metric itself DOES have scope labels.
-		var metricSamples []sample
-		for _, s := range appTest.ResultSamples() {
-			if s.L.Get(labels.MetricName) == "test_gauge" {
-				metricSamples = append(metricSamples, s)
-			}
-		}
-
-		require.NotEmpty(t, metricSamples, "expected metric samples")
-		require.Equal(t, "my-scope", metricSamples[0].L.Get("otel_scope_name"), "metric should have otel_scope_name")
-		require.Equal(t, "1.0.0", metricSamples[0].L.Get("otel_scope_version"), "metric should have otel_scope_version")
-	})
-
 	t.Run("target_info should include promoted resource attributes", func(t *testing.T) {
 		// Promoted resource attributes should appear on both metrics and target_info.
 		request := pmetricotlp.NewExportRequest()
@@ -1731,41 +1658,6 @@ func BenchmarkFromMetrics_LabelCaching_RepeatedLabelNames(b *testing.B) {
 					uniqueLabels,
 					datapoints,
 					labelsPerDatapoint,
-				)
-				b.ReportAllocs()
-				b.ResetTimer()
-
-				for b.Loop() {
-					app := &noOpAppender{}
-					converter := NewPrometheusConverter(app)
-					_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
-					require.NoError(b, err)
-				}
-			})
-		}
-	}
-}
-
-// BenchmarkFromMetrics_LabelCaching_ScopeMetadata benchmarks scope-level label caching when
-// PromoteScopeMetadata is enabled. Scope metadata labels (otel_scope_name, version, etc.)
-// should be computed once per ScopeMetrics and reused for all metrics within that scope.
-func BenchmarkFromMetrics_LabelCaching_ScopeMetadata(b *testing.B) {
-	const (
-		resourceAttributeCount = 5
-		labelsPerMetric        = 5
-	)
-	for _, scopeAttrs := range []int{0, 10} {
-		for _, metricsPerScope := range []int{10, 100} {
-			b.Run(fmt.Sprintf("scope_attrs=%d/metrics=%d", scopeAttrs, metricsPerScope), func(b *testing.B) {
-				settings := Settings{
-					PromoteScopeMetadata: true,
-				}
-				payload := createMultiScopeExportRequest(
-					resourceAttributeCount,
-					1, // single scope to isolate scope caching benefit
-					metricsPerScope,
-					labelsPerMetric,
-					scopeAttrs,
 				)
 				b.ReportAllocs()
 				b.ResetTimer()

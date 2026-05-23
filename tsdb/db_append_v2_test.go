@@ -3421,11 +3421,11 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 	}
 
 	expectedMetadata := []record.RefMetadata{
-		{Ref: 1, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help},
-		{Ref: 2, Type: record.GetMetricType(m2.Type), Unit: m2.Unit, Help: m2.Help},
-		{Ref: 3, Type: record.GetMetricType(m3.Type), Unit: m3.Unit, Help: m3.Help},
-		{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
-		{Ref: 2, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
+		{Ref: 1, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help, MinTime: 0, MaxTime: 0},
+		{Ref: 2, Type: record.GetMetricType(m2.Type), Unit: m2.Unit, Help: m2.Help, MinTime: 0, MaxTime: 0},
+		{Ref: 3, Type: record.GetMetricType(m3.Type), Unit: m3.Unit, Help: m3.Help, MinTime: 0, MaxTime: 0},
+		{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help, MinTime: 1, MaxTime: 1},
+		{Ref: 2, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help, MinTime: 1, MaxTime: 1},
 	}
 	require.Len(t, gotMetadataBlocks, 2)
 	require.Equal(t, expectedMetadata[:3], gotMetadataBlocks[0])
@@ -3530,9 +3530,9 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry_AppendV2(t *testing.T) {
 			// There should only be 1 metadata block present, with only the latest
 			// metadata kept around.
 			wantMetadata := []record.RefMetadata{
-				{Ref: 1, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
-				{Ref: 2, Type: record.GetMetricType(m6.Type), Unit: m6.Unit, Help: m6.Help},
-				{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
+				{Ref: 1, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help, MinTime: 1, MaxTime: 1},
+				{Ref: 2, Type: record.GetMetricType(m6.Type), Unit: m6.Unit, Help: m6.Help, MinTime: 6, MaxTime: 6},
+				{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help, MinTime: 0, MaxTime: 0},
 			}
 			require.Len(t, gotMetadataBlocks, 1)
 			require.Len(t, gotMetadataBlocks[0], 3)
