@@ -46,7 +46,7 @@
     "react-infinite-scroll-component": "^6.1.1",
     "react-redux": "^9.2.0",
     "react-router-dom": "^7.15.0",
-    "sanitize-html": "^2.17.3",
+    "sanitize-html": "^2.17.4",
     "uplot": "^1.6.32",
     "uplot-react": "^1.2.4",
     "use-query-params": "^2.2.2"
