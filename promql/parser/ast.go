@@ -84,6 +84,26 @@ type Expr interface {
 	PromQLExpr()
 }
 
+// Comment contains a PromQL line comment preserved by the parser.
+type Comment struct {
+	// Text is the original comment text, including the leading "#".
+	Text string
+	// PosRange is the byte position range of the comment in the parsed input.
+	PosRange posrange.PositionRange
+}
+
+// CommentedExpr wraps an expression with comments collected during parsing.
+//
+// CommentedExpr is only returned when Options.PreserveComments is enabled.
+// Comments are rendered in a stable canonical form and are not semantic PromQL
+// nodes.
+type CommentedExpr struct {
+	// Expr is the parsed PromQL expression.
+	Expr Expr
+	// Comments are the preserved comments in source order.
+	Comments []Comment
+}
+
 // Expressions is a list of expression nodes that implements Node.
 type Expressions []Expr
 
@@ -198,6 +218,8 @@ type StepInvariantExpr struct {
 
 func (e *StepInvariantExpr) String() string { return e.Expr.String() }
 
+func (e *CommentedExpr) String() string { return renderWithComments(e.Expr, e.Comments) }
+
 func (e *StepInvariantExpr) PositionRange() posrange.PositionRange {
 	return e.Expr.PositionRange()
 }
@@ -248,15 +270,16 @@ func (TestStmt) PositionRange() posrange.PositionRange {
 		End:   -1,
 	}
 }
-func (*AggregateExpr) Type() ValueType  { return ValueTypeVector }
-func (e *Call) Type() ValueType         { return e.Func.ReturnType }
-func (*MatrixSelector) Type() ValueType { return ValueTypeMatrix }
-func (*SubqueryExpr) Type() ValueType   { return ValueTypeMatrix }
-func (*NumberLiteral) Type() ValueType  { return ValueTypeScalar }
-func (e *ParenExpr) Type() ValueType    { return e.Expr.Type() }
-func (*StringLiteral) Type() ValueType  { return ValueTypeString }
-func (e *UnaryExpr) Type() ValueType    { return e.Expr.Type() }
-func (*VectorSelector) Type() ValueType { return ValueTypeVector }
+func (*AggregateExpr) Type() ValueType   { return ValueTypeVector }
+func (e *Call) Type() ValueType          { return e.Func.ReturnType }
+func (e *CommentedExpr) Type() ValueType { return e.Expr.Type() }
+func (*MatrixSelector) Type() ValueType  { return ValueTypeMatrix }
+func (*SubqueryExpr) Type() ValueType    { return ValueTypeMatrix }
+func (*NumberLiteral) Type() ValueType   { return ValueTypeScalar }
+func (e *ParenExpr) Type() ValueType     { return e.Expr.Type() }
+func (*StringLiteral) Type() ValueType   { return ValueTypeString }
+func (e *UnaryExpr) Type() ValueType     { return e.Expr.Type() }
+func (*VectorSelector) Type() ValueType  { return ValueTypeVector }
 func (e *BinaryExpr) Type() ValueType {
 	if e.LHS.Type() == ValueTypeScalar && e.RHS.Type() == ValueTypeScalar {
 		return ValueTypeScalar
@@ -269,6 +292,7 @@ func (*DurationExpr) Type() ValueType        { return ValueTypeScalar }
 func (*AggregateExpr) PromQLExpr()     {}
 func (*BinaryExpr) PromQLExpr()        {}
 func (*Call) PromQLExpr()              {}
+func (*CommentedExpr) PromQLExpr()     {}
 func (*MatrixSelector) PromQLExpr()    {}
 func (*SubqueryExpr) PromQLExpr()      {}
 func (*NumberLiteral) PromQLExpr()     {}
@@ -431,6 +455,8 @@ func ChildrenIter(node Node) func(func(Node) bool) {
 					return
 				}
 			}
+		case *CommentedExpr:
+			yield(n.Expr)
 		case *SubqueryExpr:
 			yield(n.Expr)
 		case *ParenExpr:
@@ -510,6 +536,20 @@ func (e *DurationExpr) PositionRange() posrange.PositionRange {
 
 func (e *Call) PositionRange() posrange.PositionRange {
 	return e.PosRange
+}
+
+func (e *CommentedExpr) PositionRange() posrange.PositionRange {
+	if len(e.Comments) == 0 {
+		return e.Expr.PositionRange()
+	}
+	rng := e.Expr.PositionRange()
+	if e.Comments[0].PosRange.Start < rng.Start {
+		rng.Start = e.Comments[0].PosRange.Start
+	}
+	if e.Comments[len(e.Comments)-1].PosRange.End > rng.End {
+		rng.End = e.Comments[len(e.Comments)-1].PosRange.End
+	}
+	return rng
 }
 
 func (e *EvalStmt) PositionRange() posrange.PositionRange {
