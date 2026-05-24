@@ -1582,7 +1582,17 @@ const (
 
 // === integral(Matrix parser.ValueTypeMatrix, strategy=2 Scalar) (Vector, Annotations) ===
 func funcIntegral(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
+	samples := matrixVal[0]
 	var annos annotations.Annotations
+	if len(samples.Floats) == 0 {
+		return enh.Out, nil
+	}
+	if len(samples.Histograms) > 0 {
+		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(getMetricName(samples.Metric), args[0].PositionRange()))
+	}
 
 	strategy := integralTrapezoidal
 	if len(vectorVals) > 0 && len(vectorVals[0]) > 0 {
