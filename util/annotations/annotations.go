@@ -492,9 +492,9 @@ func NewMismatchedCustomBucketsHistogramsInfo(pos posrange.PositionRange, operat
 }
 
 // NewInvalidIntegralStrategyWarning is used when the user specifies an invalid integral strategy.
-func NewInvalidIntegralStrategyWarning(strategy int, pos posrange.PositionRange) error {
+func NewInvalidIntegralStrategyWarning(strategy float64, pos posrange.PositionRange) error {
 	return &annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w, got %d", InvalidIntegralStrategy, strategy),
+		Err:           fmt.Errorf("%w, got %g", InvalidIntegralStrategy, strategy),
 	}
 }

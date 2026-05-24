@@ -640,7 +640,7 @@ rule, `1` for the right-point rectangle rule, and `2` for the trapezoidal rule
 using the average of the adjacent samples. The default is `2`.
 
 `integral` should only be used with gauges, most likely representing a rate in
-units per seconds.
+units per second.
 
 For example, to calculate the total nodes cost accumulated the last 7 days,
 given its hourly cost:

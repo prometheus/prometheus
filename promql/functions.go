@@ -1586,11 +1586,12 @@ func funcIntegral(vectorVals []Vector, matrixVal Matrix, args parser.Expressions
 
 	strategy := integralTrapezoidal
 	if len(vectorVals) > 0 && len(vectorVals[0]) > 0 {
-		strategy = int(vectorVals[0][0].F)
-	}
-	if strategy < integralLeftPoint || strategy > integralTrapezoidal {
-		annos.Add(annotations.NewInvalidIntegralStrategyWarning(strategy, args[1].PositionRange()))
-		strategy = integralTrapezoidal
+		strategyArg := vectorVals[0][0].F
+		if math.IsNaN(strategyArg) || math.IsInf(strategyArg, 0) || math.Trunc(strategyArg) != strategyArg || strategyArg < integralLeftPoint || strategyArg > integralTrapezoidal {
+			annos.Add(annotations.NewInvalidIntegralStrategyWarning(strategyArg, args[1].PositionRange()))
+		} else {
+			strategy = int(strategyArg)
+		}
 	}
 
 	nanAsZero := func(v float64) float64 {
