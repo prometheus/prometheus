@@ -266,6 +266,22 @@ func TestExprString(t *testing.T) {
 			in: "foo offset -(step())",
 		},
 		{
+			in: "foo offset (5)",
+		},
+		{
+			in:  "foo offset +(5)",
+			out: "foo offset (5)",
+		},
+		{
+			in: "foo offset -(5)",
+		},
+		{
+			in: "foo offset (5m)",
+		},
+		{
+			in: "foo[(5s)]",
+		},
+		{
 			in:  "foo offset +(5*2)",
 			out: "foo offset (5 * 2)",
 		},

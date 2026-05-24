@@ -1716,8 +1716,16 @@ var testExpr = []struct {
 	{
 		input: "foo offset +(5)",
 		expected: &VectorSelector{
-			Name:           "foo",
-			OriginalOffset: 5 * time.Second,
+			Name: "foo",
+			OriginalOffsetExpr: &DurationExpr{
+				Op: ADD,
+				RHS: &NumberLiteral{
+					Val:      5,
+					PosRange: posrange.PositionRange{Start: 13, End: 14},
+				},
+				Wrapped:  true,
+				StartPos: 13,
+			},
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
 			},
@@ -1727,8 +1735,20 @@ var testExpr = []struct {
 	{
 		input: "foo offset -(5)",
 		expected: &VectorSelector{
-			Name:           "foo",
-			OriginalOffset: -5 * time.Second,
+			Name: "foo",
+			OriginalOffsetExpr: &DurationExpr{
+				Op: SUB,
+				RHS: &DurationExpr{
+					Op: ADD,
+					RHS: &NumberLiteral{
+						Val:      5,
+						PosRange: posrange.PositionRange{Start: 13, End: 14},
+					},
+					Wrapped:  true,
+					StartPos: 13,
+				},
+				StartPos: 11,
+			},
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
 			},
