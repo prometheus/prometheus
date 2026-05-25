@@ -768,6 +768,11 @@ func TestMaxSchemaAppender(t *testing.T) {
 		}
 	}
 }
+func TestTargetURLWithIPv6Zone(t *testing.T) {
+	target := newTestTarget("[fe80::1%25ens3]:9100", 0, labels.EmptyLabels())
+
+	require.Equal(t, "http://[fe80::1%25ens3]:9100/metrics", target.URL().String())
+}
 
 // Test sample_limit when a scrape contains Native Histograms.
 func TestAppendWithSampleLimitAndNativeHistogram(t *testing.T) {
