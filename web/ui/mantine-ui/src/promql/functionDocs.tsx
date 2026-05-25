@@ -1877,7 +1877,7 @@ const funcDocs: Record<string, React.ReactNode> = {
         <code>integral</code> should only be used with gauges, most likely representing a rate in units per second.
       </p>
 
-      <p>For example, to calculate the total nodes cost accumulated over the last 7 days, given its hourly cost:</p>
+      <p>For example, to calculate the total nodes cost accumulated the last 7 days, given its hourly cost:</p>
 
       <pre>
         <code>
