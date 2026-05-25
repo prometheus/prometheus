@@ -168,6 +168,13 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
   } as CompletionResult;
 }
 
+function escapePromQLString(str: string): string {
+  // PromQL only evaluates escape sequences in single- and double-quoted strings.
+  // Backtick-quoted string completions are not handled separately today, so keep
+  // the inserted value escaped unconditionally.
+  return str.replace(/([\\"])/g, '\\$1');
+}
+
 // computeEndCompletePosition calculates the end position for autocompletion replacement.
 // When the cursor is in the middle of a token, this ensures the entire token is replaced,
 // not just the portion before the cursor. This fixes issue #15839.
@@ -794,7 +801,7 @@ export class HybridComplete implements CompleteStrategy {
       return result;
     }
     return this.prometheusClient.labelValues(context.labelName, context.metricName, context.matchers).then((labelValues: string[]) => {
-      return result.concat(labelValues.map((value) => ({ label: value, type: 'text' })));
+      return result.concat(labelValues.map((value) => ({ label: value, apply: escapePromQLString(value), type: 'text' })));
     });
   }
 }

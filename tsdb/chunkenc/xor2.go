@@ -251,6 +251,9 @@ func (a *xor2Appender) Append(st, t int64, v float64) {
 			putVarbitIntFast(a.b, stDiff)
 		}
 
+	case math.MaxUint16:
+		panic("chunk capacity exceeded")
+
 	default:
 		tDelta = uint64(t - a.t)
 		dod := int64(tDelta - a.tDelta)

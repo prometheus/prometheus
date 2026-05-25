@@ -23,6 +23,7 @@ import (
 
 func TestExprString(t *testing.T) {
 	optsParser := NewParser(Options{
+		ExperimentalDurationExpr:     true,
 		EnableExtendedRangeSelectors: true,
 		EnableBinopFillModifiers:     true,
 	})
@@ -269,22 +270,22 @@ func TestExprString(t *testing.T) {
 			out: "foo offset (5 * 2)",
 		},
 		{
-			in:  "foo offset +min(10s, 20s)",
-			out: "foo offset min(10s, 20s)",
+			in:  "foo offset +min_of(10s, 20s)",
+			out: "foo offset min_of(10s, 20s)",
 		},
 		{
-			in: "foo offset -min(10s, 20s)",
+			in: "foo offset -min_of(10s, 20s)",
 		},
 		{
-			in:  "foo offset -min(10s, +max(step() ^ 2, 2))",
-			out: "foo offset -min(10s, max(step() ^ 2, 2))",
+			in:  "foo offset -min_of(10s, +max_of(step() ^ 2, 2))",
+			out: "foo offset -min_of(10s, max_of(step() ^ 2, 2))",
 		},
 		{
-			in:  "foo[200-min(-step()^+step(),1)]",
-			out: "foo[200 - min(-step() ^ step(), 1)]",
+			in:  "foo[200-min_of(-step()^+step(),1)]",
+			out: "foo[200 - min_of(-step() ^ step(), 1)]",
 		},
 		{
-			in: "foo[200 - min(step() + 10s, -max(step() ^ 2, 3))]",
+			in: "foo[200 - min_of(step() + 10s, -max_of(step() ^ 2, 3))]",
 		},
 		{
 			in: "foo[range()]",
@@ -299,7 +300,7 @@ func TestExprString(t *testing.T) {
 			in: "foo offset -range()",
 		},
 		{
-			in: "foo[max(range(), 5s)]",
+			in: "foo[max_of(range(), 5s)]",
 		},
 		{
 			in: `predict_linear(foo[1h], 3000)`,

@@ -269,6 +269,7 @@ func (a *headAppenderV2) appendHistogram(s *memSeries, t int64, h *histogram.His
 		st = stCustomBucketHistogram
 	}
 	b := a.getCurrentBatch(st, s.ref)
+	// TODO(ywwg): ST needs to be set here
 	b.histograms = append(b.histograms, record.RefHistogramSample{Ref: s.ref, T: t, H: h})
 	b.histogramSeries = append(b.histogramSeries, s)
 	return nil
@@ -298,6 +299,7 @@ func (a *headAppenderV2) appendFloatHistogram(s *memSeries, t int64, fh *histogr
 		st = stCustomBucketFloatHistogram
 	}
 	b := a.getCurrentBatch(st, s.ref)
+	// TODO(ywwg): ST needs to be set here
 	b.floatHistograms = append(b.floatHistograms, record.RefFloatHistogramSample{Ref: s.ref, T: t, FH: fh})
 	b.floatHistogramSeries = append(b.floatHistogramSeries, s)
 	return nil

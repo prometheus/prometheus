@@ -319,7 +319,11 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			continue
 		}
 
-		m := ts.ToMetadata(req.Symbols)
+		m, err := ts.ToMetadata(req.Symbols)
+		if err != nil {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing metadata for series %v: %w", ts.LabelsRefs, err))
+			continue
+		}
 		if h.enableTypeAndUnitLabels && (m.Type != model.MetricTypeUnknown || m.Unit != "") {
 			slb := labels.NewScratchBuilder(ls.Len() + 2) // +2 for __type__ and __unit__
 			ls.Range(func(l labels.Label) {
@@ -446,7 +450,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 				continue
 			}
 			// TODO(bwplotka): Add strict mode which would trigger rollback of everything if needed.
-			// For now we keep the previously released flow (just error not debug leve) of dropping them without rollback and 5xx.
+			// For now we keep the previously released flow (just error not debug level) of dropping them without rollback and 5xx.
 			h.logger.Error("failed to ingest exemplar, emitting error log, but no error for PRW caller", "err", err.Error(), "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e))
 		}
 

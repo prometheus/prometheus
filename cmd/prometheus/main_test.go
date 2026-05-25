@@ -148,6 +148,47 @@ func TestFailedStartupExitCode(t *testing.T) {
 	require.Equal(t, expectedExitStatus, status.ExitStatus())
 }
 
+func TestRetentionPercentageStartsWithMissingStoragePath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	if storagePathFsSize(tmpDir) == 0 {
+		t.Skip("skipping test because filesystem size detection is unavailable.")
+	}
+
+	configFile := filepath.Join(tmpDir, "prometheus.yml")
+	storagePath := filepath.Join(tmpDir, "missing", "data")
+
+	require.NoError(t, os.WriteFile(configFile, []byte(`
+storage:
+  tsdb:
+    retention:
+      percentage: 1.5
+`), 0o777))
+
+	port := testutil.RandomUnprivilegedPort(t)
+	prom := prometheusCommandWithLogging(
+		t,
+		configFile,
+		port,
+		"--storage.tsdb.path="+storagePath,
+	)
+	require.NoError(t, prom.Start())
+
+	require.Eventually(t, func() bool {
+		r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+		if err != nil {
+			return false
+		}
+		defer r.Body.Close()
+		return r.StatusCode == http.StatusOK
+	}, startupTime, 100*time.Millisecond)
+	require.DirExists(t, storagePath)
+}
+
 type senderFunc func(alerts ...*notifier.Alert)
 
 func (s senderFunc) Send(alerts ...*notifier.Alert) {

@@ -505,7 +505,7 @@ func (ssi *storageSeriesIterator) AtT() int64 {
 	return ssi.currT
 }
 
-// TODO(krajorama): implement AtST.
+// TODO(krajorama,ywwg): implement AtST.
 func (*storageSeriesIterator) AtST() int64 {
 	return 0
 }

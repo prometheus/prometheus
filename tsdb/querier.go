@@ -859,7 +859,7 @@ func (p *populateWithDelSeriesIterator) AtT() int64 {
 	return p.curr.AtT()
 }
 
-// AtST TODO(krajorama): test AtST() when chunks support it.
+// AtST TODO(krajorama,ywwg): test AtST() when chunks support it.
 func (p *populateWithDelSeriesIterator) AtST() int64 {
 	return p.curr.AtST()
 }
@@ -1058,7 +1058,25 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 		// not capable.
 		st = p.currDelIter.AtST()
 		needTS := st != 0
-		if currentValueType != prevValueType || !hasTS && needTS {
+		// Decide whether to cut a new chunk. The size check inside `if !cutNewChunk`
+		// is reachable only when currentValueType == prevValueType, which excludes
+		// the first iteration (prevValueType == ValNone forces cutNewChunk true),
+		// so currentChunk is non-nil there.
+		cutNewChunk := currentValueType != prevValueType || (!hasTS && needTS)
+		if !cutNewChunk {
+			chunkBytes := len(currentChunk.Bytes())
+			switch currentValueType {
+			case chunkenc.ValFloat:
+				// In the TSDB head we also take into account the number of samples, but here we want to keep it
+				// simple and consistent with histograms. Also the size limit is checked before sample limit in
+				// the head as well.
+				cutNewChunk = chunkBytes > chunkenc.MaxBytesPerXORChunkBeforeAppend
+			case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+				cutNewChunk = chunkBytes > chunkenc.TargetBytesPerHistogramChunk &&
+					currentChunk.NumSamples() > chunkenc.MinSamplesPerHistogramChunk
+			}
+		}
+		if cutNewChunk {
 			if prevValueType != chunkenc.ValNone {
 				p.chunksFromIterable = append(p.chunksFromIterable, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
 			}
@@ -1275,7 +1293,7 @@ func (it *DeletedIterator) AtT() int64 {
 	return it.Iter.AtT()
 }
 
-// AtST TODO(krajorama): test AtST() when chunks support it.
+// AtST TODO(krajorama,ywwg): test AtST() when chunks support it.
 func (it *DeletedIterator) AtST() int64 {
 	return it.Iter.AtST()
 }

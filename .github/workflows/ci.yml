@@ -42,10 +42,24 @@ jobs:
       - run: go test --tags=dedupelabels ./...
       - run: go test --tags=slicelabels -race ./cmd/prometheus ./model/textparse ./prompb/...
       - run: go test --tags=forcedirectio -race ./tsdb/
-      - run: GOARCH=386 go test ./...
       - run: make protoc
       - run: make proto
       - run: git diff --exit-code
+
+  test_go_386:
+    name: Go tests for 32-bit x86
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/prometheus/golang-builder:1.26-base
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: prometheus/promci-setup@5af30ba8c199a91d6c04ebdc3c48e630e355f62d # v0.1.0
+      # NOTE(bwplotka): We limit concurrency to avoid issues around too many concurrent mmaps
+      # caused by parallel tests. See context: https://github.com/prometheus/prometheus/pull/18709
+      # Alternatively we could adjust each relevant test to have 386 aware parallelization setting.
+      - run: GOARCH=386 go test -parallel=1 ./...
 
   test_version_upgrade:
     name: Go tests for Prometheus upgrades and downgrades
@@ -140,7 +154,7 @@ jobs:
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
-      image: quay.io/prometheus/golang-builder:1.25-base
+      image: quay.io/prometheus/golang-builder:1.26-base
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -337,11 +351,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Install nodejs
-        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version-file: "web/ui/.nvmrc"
           registry-url: "https://registry.npmjs.org"
-      - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.npm
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}

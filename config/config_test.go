@@ -1579,8 +1579,10 @@ var expectedConf = &Config{
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&stackit.SDConfig{
-					Project: "11111111-1111-1111-1111-111111111111",
-					Region:  "eu01",
+					Project:           "11111111-1111-1111-1111-111111111111",
+					ServiceAccountKey: "mysecret_sa_key",
+					PrivateKey:        "mysecret_private_key",
+					Region:            "eu01",
 					HTTPClientConfig: config.HTTPClientConfig{
 						Authorization: &config.Authorization{
 							Type:        "Bearer",
@@ -2157,7 +2159,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Len(t, matches, 26, "wrong number of secret matches found")
+	require.Len(t, matches, 28, "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
@@ -2455,6 +2457,30 @@ var expectedErrors = []struct {
 	{
 		filename: "remote_write_dup.bad.yml",
 		errMsg:   `found multiple remote write configs with job name "queue1"`,
+	},
+	{
+		filename: "remote_write_queue_max_samples_per_send_zero.bad.yml",
+		errMsg:   `remote write queue max_samples_per_send must be positive`,
+	},
+	{
+		filename: "remote_write_queue_max_shards_zero.bad.yml",
+		errMsg:   `remote write queue max_shards must be positive`,
+	},
+	{
+		filename: "remote_write_queue_min_shards_zero.bad.yml",
+		errMsg:   `remote write queue min_shards must be positive`,
+	},
+	{
+		filename: "remote_write_queue_capacity_zero.bad.yml",
+		errMsg:   `remote write queue capacity must be positive`,
+	},
+	{
+		filename: "remote_write_queue_min_shards_greater_than_max.bad.yml",
+		errMsg:   `remote write queue min_shards must not be greater than max_shards`,
+	},
+	{
+		filename: "remote_write_queue_max_backoff_less_than_min.bad.yml",
+		errMsg:   `remote write queue max_backoff must not be less than min_backoff`,
 	},
 	{
 		filename: "remote_read_dup.bad.yml",

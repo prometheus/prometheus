@@ -117,11 +117,17 @@ func (a *initAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 // initTime initializes a head with the first timestamp. This only needs to be called
 // for a completely fresh head with an empty WAL.
 func (h *Head) initTime(t int64) {
-	if !h.minTime.CompareAndSwap(math.MaxInt64, t) {
-		// Concurrent appends that are initializing.
-		// Wait until h.maxTime is swapped to avoid minTime/maxTime races.
+	// maxTime must be set before minTime, because initialized() keys off minTime.
+	// If minTime were set to t first, a concurrent Head.Appender call could
+	// observe initialized() == true while maxTime is still math.MinInt64; the
+	// resulting underflow in appendableMinValidTime would reject in-range samples
+	// with ErrOutOfBounds.
+	if !h.maxTime.CompareAndSwap(math.MinInt64, t) {
+		// Another goroutine already won the init race. Wait until it also sets
+		// minTime, so callers that next read initialized() can rely on both
+		// bounds being valid.
 		antiDeadlockTimeout := time.After(500 * time.Millisecond)
-		for h.maxTime.Load() == math.MinInt64 {
+		for h.minTime.Load() == math.MaxInt64 {
 			select {
 			case <-antiDeadlockTimeout:
 				return
@@ -130,8 +136,7 @@ func (h *Head) initTime(t int64) {
 		}
 		return
 	}
-	// Ensure that max time is initialized to at least the min time we just set.
-	h.maxTime.CompareAndSwap(math.MinInt64, t)
+	h.minTime.CompareAndSwap(math.MaxInt64, t)
 }
 
 func (a *initAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
@@ -1384,6 +1389,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			handleAppendableError(err, &acc.floatsAppended, &acc.floatOOORejected, &acc.floatOOBRejected, &acc.floatTooOldRejected)
 		}
 
+		prevHeadChunkCount := series.headChunkCount.Load()
 		switch {
 		case err != nil:
 			// Do nothing here.
@@ -1456,8 +1462,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 		}
 
 		if chunkCreated {
-			a.head.metrics.chunks.Inc()
-			a.head.metrics.chunksCreated.Inc()
+			a.head.onChunkCreated(series, prevHeadChunkCount)
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
@@ -1489,6 +1494,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
 
+		prevHeadChunkCount := series.headChunkCount.Load()
 		switch {
 		case err != nil:
 			// Do nothing here.
@@ -1567,8 +1573,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 		}
 
 		if chunkCreated {
-			a.head.metrics.chunks.Inc()
-			a.head.metrics.chunksCreated.Inc()
+			a.head.onChunkCreated(series, prevHeadChunkCount)
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
@@ -1600,6 +1605,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
 
+		prevHeadChunkCount := series.headChunkCount.Load()
 		switch {
 		case err != nil:
 			// Do nothing here.
@@ -1678,8 +1684,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 		}
 
 		if chunkCreated {
-			a.head.metrics.chunks.Inc()
-			a.head.metrics.chunksCreated.Inc()
+			a.head.onChunkCreated(series, prevHeadChunkCount)
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
@@ -1984,11 +1989,6 @@ func (s *memSeries) appendFloatHistogram(st, t int64, fh *histogram.FloatHistogr
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 // This should be called only when appending data.
 func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts) (c *memChunk, sampleInOrder, chunkCreated bool) {
-	// We target chunkenc.MaxBytesPerXORChunk as a hard for the size of an XOR chunk. We must determine whether to cut
-	// a new head chunk without knowing the size of the next sample, however, so we assume the next sample will be a
-	// maximally-sized sample (19 bytes).
-	const maxBytesPerXORChunk = chunkenc.MaxBytesPerXORChunk - 19
-
 	c = s.headChunks
 
 	if c == nil {
@@ -2007,7 +2007,7 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 	}
 
 	// Check the chunk size, unless we just created it and if the chunk is too large, cut a new one.
-	if !chunkCreated && len(c.chunk.Bytes()) > maxBytesPerXORChunk {
+	if !chunkCreated && len(c.chunk.Bytes()) > chunkenc.MaxBytesPerXORChunkBeforeAppend {
 		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
 	}

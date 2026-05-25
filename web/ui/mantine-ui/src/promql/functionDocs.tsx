@@ -589,7 +589,8 @@ const funcDocs: Record<string, React.ReactNode> = {
         first sample of <code>m</code> <em>within</em> the 1m range, where <code>m offset 1m</code> will select the most
         recent sample within the lookback interval <em>outside and prior to</em> the 1m offset. This is particularly
         useful with <code>first_over_time(m[step()])</code>
-        in range queries to ensure that the sample selected is within the range step.
+        in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
+        sample selected is within the range step.
       </p>
     </>
   ),
@@ -908,7 +909,8 @@ const funcDocs: Record<string, React.ReactNode> = {
         first sample of <code>m</code> <em>within</em> the 1m range, where <code>m offset 1m</code> will select the most
         recent sample within the lookback interval <em>outside and prior to</em> the 1m offset. This is particularly
         useful with <code>first_over_time(m[step()])</code>
-        in range queries to ensure that the sample selected is within the range step.
+        in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
+        sample selected is within the range step.
       </p>
     </>
   ),
@@ -1238,7 +1240,8 @@ const funcDocs: Record<string, React.ReactNode> = {
         first sample of <code>m</code> <em>within</em> the 1m range, where <code>m offset 1m</code> will select the most
         recent sample within the lookback interval <em>outside and prior to</em> the 1m offset. This is particularly
         useful with <code>first_over_time(m[step()])</code>
-        in range queries to ensure that the sample selected is within the range step.
+        in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
+        sample selected is within the range step.
       </p>
     </>
   ),
@@ -2069,7 +2072,8 @@ const funcDocs: Record<string, React.ReactNode> = {
         first sample of <code>m</code> <em>within</em> the 1m range, where <code>m offset 1m</code> will select the most
         recent sample within the lookback interval <em>outside and prior to</em> the 1m offset. This is particularly
         useful with <code>first_over_time(m[step()])</code>
-        in range queries to ensure that the sample selected is within the range step.
+        in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
+        sample selected is within the range step.
       </p>
     </>
   ),
@@ -2219,7 +2223,24 @@ const funcDocs: Record<string, React.ReactNode> = {
         first sample of <code>m</code> <em>within</em> the 1m range, where <code>m offset 1m</code> will select the most
         recent sample within the lookback interval <em>outside and prior to</em> the 1m offset. This is particularly
         useful with <code>first_over_time(m[step()])</code>
-        in range queries to ensure that the sample selected is within the range step.
+        in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
+        sample selected is within the range step.
+      </p>
+    </>
+  ),
+  max_of: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>max_of(a scalar, b scalar)</code> returns the larger of the two scalar values <code>a</code>
+        and <code>b</code>.
       </p>
     </>
   ),
@@ -2328,7 +2349,24 @@ const funcDocs: Record<string, React.ReactNode> = {
         first sample of <code>m</code> <em>within</em> the 1m range, where <code>m offset 1m</code> will select the most
         recent sample within the lookback interval <em>outside and prior to</em> the 1m offset. This is particularly
         useful with <code>first_over_time(m[step()])</code>
-        in range queries to ensure that the sample selected is within the range step.
+        in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
+        sample selected is within the range step.
+      </p>
+    </>
+  ),
+  min_of: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>min_of(a scalar, b scalar)</code> returns the smaller of the two scalar values <code>a</code>
+        and <code>b</code>.
       </p>
     </>
   ),
@@ -2437,7 +2475,8 @@ const funcDocs: Record<string, React.ReactNode> = {
         first sample of <code>m</code> <em>within</em> the 1m range, where <code>m offset 1m</code> will select the most
         recent sample within the lookback interval <em>outside and prior to</em> the 1m offset. This is particularly
         useful with <code>first_over_time(m[step()])</code>
-        in range queries to ensure that the sample selected is within the range step.
+        in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
+        sample selected is within the range step.
       </p>
     </>
   ),
@@ -2652,7 +2691,8 @@ const funcDocs: Record<string, React.ReactNode> = {
         first sample of <code>m</code> <em>within</em> the 1m range, where <code>m offset 1m</code> will select the most
         recent sample within the lookback interval <em>outside and prior to</em> the 1m offset. This is particularly
         useful with <code>first_over_time(m[step()])</code>
-        in range queries to ensure that the sample selected is within the range step.
+        in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
+        sample selected is within the range step.
       </p>
     </>
   ),
@@ -2761,7 +2801,8 @@ const funcDocs: Record<string, React.ReactNode> = {
         first sample of <code>m</code> <em>within</em> the 1m range, where <code>m offset 1m</code> will select the most
         recent sample within the lookback interval <em>outside and prior to</em> the 1m offset. This is particularly
         useful with <code>first_over_time(m[step()])</code>
-        in range queries to ensure that the sample selected is within the range step.
+        in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
+        sample selected is within the range step.
       </p>
     </>
   ),
@@ -3274,7 +3315,8 @@ const funcDocs: Record<string, React.ReactNode> = {
         first sample of <code>m</code> <em>within</em> the 1m range, where <code>m offset 1m</code> will select the most
         recent sample within the lookback interval <em>outside and prior to</em> the 1m offset. This is particularly
         useful with <code>first_over_time(m[step()])</code>
-        in range queries to ensure that the sample selected is within the range step.
+        in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
+        sample selected is within the range step.
       </p>
     </>
   ),
@@ -3383,7 +3425,8 @@ const funcDocs: Record<string, React.ReactNode> = {
         first sample of <code>m</code> <em>within</em> the 1m range, where <code>m offset 1m</code> will select the most
         recent sample within the lookback interval <em>outside and prior to</em> the 1m offset. This is particularly
         useful with <code>first_over_time(m[step()])</code>
-        in range queries to ensure that the sample selected is within the range step.
+        in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
+        sample selected is within the range step.
       </p>
     </>
   ),
@@ -3508,7 +3551,8 @@ const funcDocs: Record<string, React.ReactNode> = {
         first sample of <code>m</code> <em>within</em> the 1m range, where <code>m offset 1m</code> will select the most
         recent sample within the lookback interval <em>outside and prior to</em> the 1m offset. This is particularly
         useful with <code>first_over_time(m[step()])</code>
-        in range queries to ensure that the sample selected is within the range step.
+        in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
+        sample selected is within the range step.
       </p>
     </>
   ),
@@ -3773,7 +3817,8 @@ const funcDocs: Record<string, React.ReactNode> = {
         first sample of <code>m</code> <em>within</em> the 1m range, where <code>m offset 1m</code> will select the most
         recent sample within the lookback interval <em>outside and prior to</em> the 1m offset. This is particularly
         useful with <code>first_over_time(m[step()])</code>
-        in range queries to ensure that the sample selected is within the range step.
+        in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
+        sample selected is within the range step.
       </p>
     </>
   ),
@@ -3882,7 +3927,8 @@ const funcDocs: Record<string, React.ReactNode> = {
         first sample of <code>m</code> <em>within</em> the 1m range, where <code>m offset 1m</code> will select the most
         recent sample within the lookback interval <em>outside and prior to</em> the 1m offset. This is particularly
         useful with <code>first_over_time(m[step()])</code>
-        in range queries to ensure that the sample selected is within the range step.
+        in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
+        sample selected is within the range step.
       </p>
     </>
   ),
@@ -3991,7 +4037,8 @@ const funcDocs: Record<string, React.ReactNode> = {
         first sample of <code>m</code> <em>within</em> the 1m range, where <code>m offset 1m</code> will select the most
         recent sample within the lookback interval <em>outside and prior to</em> the 1m offset. This is particularly
         useful with <code>first_over_time(m[step()])</code>
-        in range queries to ensure that the sample selected is within the range step.
+        in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
+        sample selected is within the range step.
       </p>
     </>
   ),
@@ -4100,7 +4147,8 @@ const funcDocs: Record<string, React.ReactNode> = {
         first sample of <code>m</code> <em>within</em> the 1m range, where <code>m offset 1m</code> will select the most
         recent sample within the lookback interval <em>outside and prior to</em> the 1m offset. This is particularly
         useful with <code>first_over_time(m[step()])</code>
-        in range queries to ensure that the sample selected is within the range step.
+        in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
+        sample selected is within the range step.
       </p>
     </>
   ),

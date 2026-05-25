@@ -1,6 +1,6 @@
 {
   "name": "@prometheus-io/lezer-promql",
-  "version": "0.311.2",
+  "version": "0.311.3",
   "description": "lezer-based PromQL grammar",
   "main": "dist/index.cjs",
   "type": "module",
@@ -33,7 +33,7 @@
   "devDependencies": {
     "@lezer/generator": "^1.8.0",
     "@lezer/highlight": "^1.2.3",
-    "@lezer/lr": "^1.4.8",
+    "@lezer/lr": "^1.4.10",
     "@rollup/plugin-node-resolve": "^16.0.3"
   },
   "peerDependencies": {

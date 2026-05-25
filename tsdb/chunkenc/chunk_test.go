@@ -20,6 +20,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/histogram"
 )
 
 type triple struct {
@@ -217,4 +219,24 @@ func (c fakeChunk) Encoding() Encoding {
 
 func (c fakeChunk) Reset([]byte) {
 	c.t.Fatal("Reset should not be called")
+}
+
+func testChunkOverFlowPanics(t *testing.T, e Encoding, vt ValueType) {
+	chunk, err := NewEmptyChunk(e)
+	require.NoError(t, err)
+	app, err := chunk.Appender()
+	require.NoError(t, err)
+
+	require.PanicsWithValue(t, "chunk capacity exceeded", func() {
+		for i := range int64(1000000) {
+			switch vt {
+			case ValFloat:
+				app.Append(0, i, float64(i))
+			case ValHistogram:
+				app.AppendHistogram(nil, 0, i, &histogram.Histogram{Count: uint64(i), ZeroThreshold: 1e-128, ZeroCount: uint64(i)}, true)
+			case ValFloatHistogram:
+				app.AppendFloatHistogram(nil, 0, i, &histogram.FloatHistogram{Count: float64(i), ZeroThreshold: 1e-128, ZeroCount: float64(i)}, true)
+			}
+		}
+	})
 }

@@ -190,37 +190,288 @@ func NewSearchResultSetFromSlice(results []SearchResult, warns annotations.Annot
 	return &sliceSearchResultSet{results: results, warnings: warns, idx: -1}
 }
 
+// errAfterSliceSet yields a fixed slice of results and then surfaces err once
+// the slice is exhausted. It is the partial-results-then-error counterpart to
+// sliceSearchResultSet.
+type errAfterSliceSet struct {
+	results  []SearchResult
+	warnings annotations.Annotations
+	idx      int
+	err      error
+}
+
+func (s *errAfterSliceSet) Next() bool {
+	s.idx++
+	return s.idx < len(s.results)
+}
+
+func (s *errAfterSliceSet) At() SearchResult { return s.results[s.idx] }
+
+func (s *errAfterSliceSet) Warnings() annotations.Annotations { return s.warnings }
+
+func (s *errAfterSliceSet) Err() error {
+	if s.idx >= len(s.results) {
+		return s.err
+	}
+	return nil
+}
+
+func (*errAfterSliceSet) Close() error { return nil }
+
+// NewSearchResultSetFromSliceAndError returns a SearchResultSet that iterates
+// the given slice and, once exhausted, exposes err via Err(). Any warnings
+// accumulated by the upstream are surfaced via Warnings(). It models a backend
+// that produced partial output and warnings before its underlying iterator
+// failed, which is common when a remote source returns a stream that aborts
+// mid-flight. Callers should use this rather than ad-hoc test fakes so the
+// error-surfacing behaviour stays consistent with the merge contract.
+func NewSearchResultSetFromSliceAndError(results []SearchResult, warns annotations.Annotations, err error) SearchResultSet {
+	return &errAfterSliceSet{results: results, warnings: warns, err: err, idx: -1}
+}
+
+// minLinearAllocCap is the floor for the linear-path result capacity hint when
+// a Filter is active. It avoids degenerate growth for tiny limits while still
+// keeping the upfront allocation small for sparse matches against large indices.
+const minLinearAllocCap = 256
+
 // ApplySearchHints filters, sorts, and limits a slice of string values according to hints,
 // returning scored SearchResult entries. A nil hints value is treated as the zero value.
 // The input values slice is assumed to be ordered ascending by value; the function only
 // performs extra work for orderings that differ from this.
+//
+// Allocation and ordering are tuned to the (Filter, OrderBy, Limit) combination:
+//   - Filter == nil: at most Limit entries are copied; OrderByValueDesc walks the input
+//     in reverse so we never materialise the full slice when limited.
+//   - OrderByValueAsc + Filter + Limit: stream-filter with early exit at Limit matches.
+//   - OrderByValueDesc + Filter + Limit: reverse stream-filter with early exit at Limit
+//     matches, taking advantage of the input being ascending so the tail is the largest.
+//   - OrderByScoreDesc + Filter + Limit: top-K min-heap of size Limit, avoiding a full
+//     sort over the matched set.
+//   - Other combinations fall back to filter-then-reorder-then-slice, with the upfront
+//     capacity capped by min(len(values), max(2*Limit, minLinearAllocCap)).
 func ApplySearchHints(values []string, hints *SearchHints) []SearchResult {
 	if hints == nil {
 		hints = &SearchHints{}
 	}
-	results := make([]SearchResult, 0, len(values))
+	if hints.Filter == nil {
+		return applySearchHintsNoFilter(values, hints)
+	}
+	if hints.Limit > 0 {
+		switch hints.OrderBy {
+		case OrderByScoreDesc:
+			return topKByScore(values, hints.Filter, hints.Limit)
+		case OrderByValueDesc:
+			return reverseFilterEarlyExit(values, hints.Filter, hints.Limit)
+		}
+	}
+	return applySearchHintsLinear(values, hints)
+}
+
+// reverseFilterEarlyExit walks the input ascending-sorted slice from the tail,
+// accepting up to limit matches. Because the input is ascending, the tail
+// holds the lex-largest entries, so iterating in reverse yields results in
+// descending order without an extra sort.
+func reverseFilterEarlyExit(values []string, filter Filter, limit int) []SearchResult {
+	results := make([]SearchResult, 0, min(limit, len(values)))
+	for i := len(values) - 1; i >= 0 && len(results) < limit; i-- {
+		accepted, score := filter.Accept(values[i])
+		if !accepted {
+			continue
+		}
+		results = append(results, SearchResult{Value: values[i], Score: score})
+	}
+	return results
+}
+
+// applySearchHintsNoFilter handles the unfiltered path: scores are uniformly 1.0
+// and at most Limit entries are emitted in the requested order.
+func applySearchHintsNoFilter(values []string, hints *SearchHints) []SearchResult {
+	n := len(values)
+	if hints.Limit > 0 && hints.Limit < n {
+		n = hints.Limit
+	}
+	results := make([]SearchResult, 0, n)
+	if hints.OrderBy == OrderByValueDesc {
+		// Walk the input in reverse so we keep the largest-Value entries
+		// without materialising the full slice when limited. The i >= 0
+		// guard is defensive: n is clamped to len(values) above, so we
+		// should always exit on len(results) == n first.
+		for i := len(values) - 1; i >= 0 && len(results) < n; i-- {
+			results = append(results, SearchResult{Value: values[i], Score: 1.0})
+		}
+		return results
+	}
+	// OrderByValueAsc and OrderByScoreDesc both reduce to value-ascending here:
+	// uniform scores tie-break on Value asc under (Score desc, Value asc).
+	for i := range n {
+		results = append(results, SearchResult{Value: values[i], Score: 1.0})
+	}
+	return results
+}
+
+// applySearchHintsLinear handles the filtered path for orderings other than
+// OrderByScoreDesc-with-limit (which uses top-K). It streams the filter and,
+// for OrderByValueAsc with a limit, exits as soon as the limit is reached.
+func applySearchHintsLinear(values []string, hints *SearchHints) []SearchResult {
+	results := make([]SearchResult, 0, linearResultCap(len(values), hints.Limit))
+	earlyExit := hints.OrderBy == OrderByValueAsc && hints.Limit > 0
 	for _, v := range values {
-		if hints.Filter != nil {
-			accepted, score := hints.Filter.Accept(v)
-			if accepted {
-				results = append(results, SearchResult{Value: v, Score: score})
-			}
-		} else {
-			results = append(results, SearchResult{Value: v, Score: 1.0})
+		accepted, score := hints.Filter.Accept(v)
+		if !accepted {
+			continue
+		}
+		results = append(results, SearchResult{Value: v, Score: score})
+		if earlyExit && len(results) >= hints.Limit {
+			break
 		}
 	}
 	switch hints.OrderBy {
-	case OrderByValueAsc:
-		// Input is already ascending; nothing to do.
 	case OrderByValueDesc:
 		slices.Reverse(results)
 	case OrderByScoreDesc:
+		// Reached only when Limit == 0; ApplySearchHints routes
+		// OrderByScoreDesc + Limit > 0 to topKByScore instead.
 		slices.SortFunc(results, compareSearchResults(OrderByScoreDesc))
 	}
 	if hints.Limit > 0 && len(results) > hints.Limit {
 		results = results[:hints.Limit]
 	}
 	return results
+}
+
+// linearResultCap returns the upfront capacity hint for the linear-path result
+// slice. We cannot know the filter selectivity ahead of time, so we use 2*Limit
+// as a heuristic for the expected match count and floor it at minLinearAllocCap;
+// it is always bounded by len(values).
+func linearResultCap(numValues, limit int) int {
+	if limit <= 0 {
+		return numValues
+	}
+	// Defensive overflow guard: 2*limit can wrap when an untrusted limit
+	// value is in the upper int range (only reachable when the operator
+	// disabled --web.search.max-limit). Fall back to the small-allocation
+	// floor instead of numValues so a sparse filter does not cause a
+	// multi-MB upfront allocation; append amortizes the growth from
+	// there.
+	allocCap := 2 * limit
+	if allocCap < limit {
+		return minLinearAllocCap
+	}
+	if allocCap < minLinearAllocCap {
+		allocCap = minLinearAllocCap
+	}
+	if allocCap > numValues {
+		allocCap = numValues
+	}
+	return allocCap
+}
+
+// topKByScore returns the top-K matches under the (Score desc, Value asc) total
+// order, using a min-heap of size limit. This avoids sorting the full matched
+// set when only the best Limit results are needed.
+//
+// The heap is a small typed structure (no container/heap interface) so each
+// candidate replacement is a direct struct write rather than an interface
+// box. This keeps the hot loop allocation-free past the initial fill.
+func topKByScore(values []string, filter Filter, limit int) []SearchResult {
+	h := make(searchTopKHeap, 0, min(limit, len(values)))
+	for _, v := range values {
+		accepted, score := filter.Accept(v)
+		if !accepted {
+			continue
+		}
+		if len(h) < limit {
+			h = h.push(SearchResult{Value: v, Score: score})
+			continue
+		}
+		// The heap minimum is the worst entry currently kept. Three cases:
+		//   - Lower score: cannot improve, skip without a string compare.
+		//   - Higher score: definitely better, replace.
+		//   - Tied score:   keep the lex-smaller Value.
+		worst := h[0]
+		switch {
+		case score < worst.Score:
+			continue
+		case score > worst.Score:
+			h[0] = SearchResult{Value: v, Score: score}
+			h.siftDown(0)
+		case v < worst.Value:
+			h[0] = SearchResult{Value: v, Score: score}
+			h.siftDown(0)
+		}
+	}
+	out := make([]SearchResult, len(h))
+	// Pop returns worst-first under our heap order; place results from the tail
+	// so the final slice is best-first (Score desc, Value asc).
+	for i := len(out) - 1; i >= 0; i-- {
+		var r SearchResult
+		r, h = h.pop()
+		out[i] = r
+	}
+	return out
+}
+
+// searchTopKHeap is a typed binary min-heap under the inverse of the (Score
+// desc, Value asc) total order, so heap[0] is the worst entry currently kept.
+// Replacing the minimum on better candidates keeps the K best entries without
+// a full sort and without the per-operation interface boxing that
+// container/heap would introduce.
+type searchTopKHeap []SearchResult
+
+// less reports whether index i should sift above index j in the heap. The
+// "lighter" entry (lower score, or higher Value on ties) sits at the root.
+func (h searchTopKHeap) less(i, j int) bool {
+	if h[i].Score != h[j].Score {
+		return h[i].Score < h[j].Score
+	}
+	return h[i].Value > h[j].Value
+}
+
+func (h searchTopKHeap) push(r SearchResult) searchTopKHeap {
+	h = append(h, r)
+	h.siftUp(len(h) - 1)
+	return h
+}
+
+func (h searchTopKHeap) pop() (SearchResult, searchTopKHeap) {
+	n := len(h) - 1
+	out := h[0]
+	h[0] = h[n]
+	h = h[:n]
+	if n > 0 {
+		h.siftDown(0)
+	}
+	return out, h
+}
+
+func (h searchTopKHeap) siftUp(i int) {
+	for i > 0 {
+		parent := (i - 1) / 2
+		if !h.less(i, parent) {
+			return
+		}
+		h[i], h[parent] = h[parent], h[i]
+		i = parent
+	}
+}
+
+func (h searchTopKHeap) siftDown(i int) {
+	n := len(h)
+	for {
+		left := 2*i + 1
+		if left >= n {
+			return
+		}
+		smallest := left
+		if right := left + 1; right < n && h.less(right, left) {
+			smallest = right
+		}
+		if !h.less(smallest, i) {
+			return
+		}
+		h[i], h[smallest] = h[smallest], h[i]
+		i = smallest
+	}
 }
 
 // compareSearchResults returns the total-order comparison function for the
@@ -274,6 +525,38 @@ func mergeSearchSets(hints *SearchHints, fn func(Searcher) SearchResultSet, sear
 	return pairwiseMergeSearchSets(sets, order, limit)
 }
 
+// MergeSearchResultSets merges pre-sorted SearchResultSets into a single set
+// according to hints.OrderBy and hints.Limit. A nil hints value is treated as
+// the zero value (OrderByValueAsc, no limit).
+//
+// All inputs must yield results in the requested order. Duplicates collapse in
+// place: under value-based orderings the higher score wins; under
+// OrderByScoreDesc the Searcher contract requires identical scores for a given
+// Value, so duplicates tie on (Score, Value) and are adjacent.
+//
+// The returned set owns all inputs: the caller closes the returned set exactly
+// once and must not close the inputs separately. If a single input errors, the
+// merge keeps draining the surviving inputs and surfaces the joined error via
+// Err() once iteration ends.
+//
+// MergeSearchResultSets does not lazily construct its inputs: each set in
+// `sets` is taken as already opened, since SearchResultSet construction is
+// the caller's responsibility. Callers that hold Searcher instances and want
+// to defer SearchLabel* calls until the result is actually consumed should
+// wrap each input in their own lazy SearchResultSet (the storage package
+// uses an internal lazy wrapper for that path).
+func MergeSearchResultSets(sets []SearchResultSet, hints *SearchHints) SearchResultSet {
+	var (
+		order Ordering
+		limit int
+	)
+	if hints != nil {
+		order = hints.OrderBy
+		limit = hints.Limit
+	}
+	return pairwiseMergeSearchSets(sets, order, limit)
+}
+
 // pairwiseMergeSearchSets recursively merges SearchResultSets in a balanced
 // binary tree. Each merge node respects the requested ordering and stops after
 // emitting limit results, enabling early termination that avoids consuming the
@@ -293,6 +576,15 @@ func pairwiseMergeSearchSets(sets []SearchResultSet, order Ordering, limit int) 
 		right := pairwiseMergeSearchSets(sets[mid:], order, limit)
 		return newMergingSearchResultSet(left, right, order, limit)
 	}
+}
+
+// NewLazySearchResultSet returns a SearchResultSet that defers calling init
+// until the first Next, At, Warnings, Err, or Close. It is intended for
+// callers of MergeSearchResultSets that want to amortize sub-query
+// construction cost across a merge tree with an early-terminating limit:
+// branches that the merge never pulls from incur no construction cost.
+func NewLazySearchResultSet(init func() SearchResultSet) SearchResultSet {
+	return &lazySearchResultSet{init: init}
 }
 
 // lazySearchResultSet defers the creation of a SearchResultSet until the first
@@ -370,6 +662,14 @@ func (s *limitSearchResultSet) Close() error                      { return s.rs.
 // that order. Equal entries (same Value under value orderings, same
 // (Score, Value) under OrderByScoreDesc) collapse in place; under value
 // orderings the higher score wins.
+//
+// Partial-error semantics: if one side returns Next()==false with a non-nil
+// Err(), iteration does not terminate. The other side keeps draining until
+// it too is exhausted, after which Err() returns errors.Join of any errors
+// recorded on either side. This trades a strict fail-fast contract for the
+// preservation of buffered results from the surviving side, which is the
+// behaviour expected by callers that fan out queries across heterogeneous
+// backends.
 type mergingSearchResultSet struct {
 	a, b         SearchResultSet
 	cmpFn        func(a, b SearchResult) int
@@ -402,7 +702,11 @@ func (s *mergingSearchResultSet) Next() bool {
 		return false
 	}
 
-	// Prime both sides on first call.
+	// Prime both sides on first call. A side returning Next()=false here
+	// either ran clean out of values or surfaced an error; in either case
+	// we stop pulling from it but keep draining the other side. The error
+	// (if any) is reported via Err() once iteration ends, joined with the
+	// other side's error if it also fails.
 	if !s.aInit {
 		s.aOk = s.a.Next()
 		if s.aOk {
@@ -416,13 +720,6 @@ func (s *mergingSearchResultSet) Next() bool {
 			s.bVal = s.b.At()
 		}
 		s.bInit = true
-	}
-
-	// Check for errors from either side after priming or after the
-	// previous advance. An error means we should stop iteration.
-	if s.a.Err() != nil || s.b.Err() != nil {
-		s.done = true
-		return false
 	}
 
 	switch {

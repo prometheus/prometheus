@@ -245,6 +245,8 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	decFloatHistograms = append(decFloatHistograms, decCustomBucketsFloatHistograms...)
 	require.Equal(t, floatHistograms, decFloatHistograms)
 
+	enc = Encoder{EnableSTStorage: true}
+
 	// Gauge integer histograms.
 	for i := range histograms {
 		histograms[i].H.CounterResetHint = histogram.GaugeType
@@ -272,6 +274,385 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 	decGaugeFloatHistograms = append(decGaugeFloatHistograms, decCustomBucketsGaugeFloatHistograms...)
 	require.Equal(t, floatHistograms, decGaugeFloatHistograms)
+
+	// V2 gauge int-histogram round-trip. V2 does not disentangle regular and custom bucket histograms, so the encoder never returns a slice of leftover items.
+	t.Run("V2 gauge int-histogram", func(t *testing.T) {
+		enc = Encoder{EnableSTStorage: true}
+		gaugeHistsV2 := []RefHistogramSample{
+			{Ref: 56, T: 1234, ST: 1000, H: histograms[0].H},
+			{Ref: 42, T: 5678, ST: 1000, H: histograms[1].H},
+			{Ref: 67, T: 5678, ST: 1000, H: histograms[2].H},
+		}
+		histSamplesV2, leftOver := enc.HistogramSamples(gaugeHistsV2, nil)
+		require.Nil(t, leftOver)
+		decHistsV2, err := dec.HistogramSamples(histSamplesV2, nil)
+		require.NoError(t, err)
+		require.Equal(t, gaugeHistsV2, decHistsV2)
+	})
+
+	// V2 gauge float-histogram round-trip.
+	t.Run("V2 gauge float-histogram", func(t *testing.T) {
+		gaugeHistsV2 := []RefHistogramSample{
+			{Ref: 56, T: 1234, ST: 1000, H: histograms[0].H},
+			{Ref: 42, T: 5678, ST: 1000, H: histograms[1].H},
+			{Ref: 67, T: 5678, ST: 1000, H: histograms[2].H},
+		}
+		gaugeFloatHistsV2 := make([]RefFloatHistogramSample, len(gaugeHistsV2))
+		for i, h := range gaugeHistsV2 {
+			gaugeFloatHistsV2[i] = RefFloatHistogramSample{
+				Ref: h.Ref,
+				T:   h.T,
+				ST:  h.ST,
+				FH:  h.H.ToFloat(nil),
+			}
+		}
+		floatHistSamplesV2, leftOver := enc.FloatHistogramSamples(gaugeFloatHistsV2, nil)
+		require.Nil(t, leftOver)
+		decFloatHistsV2, err := dec.FloatHistogramSamples(floatHistSamplesV2, nil)
+		require.NoError(t, err)
+		require.Equal(t, gaugeFloatHistsV2, decFloatHistsV2)
+	})
+
+	for _, enableSTStorage := range []bool{false, true} {
+		t.Run(fmt.Sprintf("int-histogram empty slice stStorage=%v", enableSTStorage), func(t *testing.T) {
+			enc := Encoder{EnableSTStorage: enableSTStorage}
+			histBuf, customBuckets := enc.HistogramSamples(nil, nil)
+			require.Nil(t, customBuckets)
+
+			decoded, err := dec.HistogramSamples(histBuf, nil)
+			require.NoError(t, err)
+			require.Empty(t, decoded)
+		})
+
+		t.Run(fmt.Sprintf("float-histogram empty slice stStorage=%v", enableSTStorage), func(t *testing.T) {
+			enc := Encoder{EnableSTStorage: enableSTStorage}
+			floatBuf, customBucketsFloat := enc.FloatHistogramSamples(nil, nil)
+			require.Nil(t, customBucketsFloat)
+
+			decoded, err := dec.FloatHistogramSamples(floatBuf, nil)
+			require.NoError(t, err)
+			require.Empty(t, decoded)
+		})
+	}
+
+	// When all histograms are custom-bucket, V1 HistogramSamples must return an
+	// empty buffer (buf.Reset path) and pass every sample through as custom.
+	t.Run("V1 int-histogram all custom bucket", func(t *testing.T) {
+		encV1 := Encoder{}
+		allCustom := []RefHistogramSample{
+			{Ref: 56, T: 1234, H: histograms[2].H},
+			{Ref: 67, T: 5678, H: histograms[2].H},
+		}
+		histBuf, customBuckets := encV1.HistogramSamples(allCustom, nil)
+		require.Empty(t, histBuf, "regular histogram buffer must be empty when all samples are custom bucket")
+		require.Equal(t, allCustom, customBuckets)
+
+		customBuf := encV1.CustomBucketsHistogramSamples(customBuckets, nil)
+		decoded, err := dec.HistogramSamples(customBuf, nil)
+		require.NoError(t, err)
+		require.Equal(t, allCustom, decoded)
+	})
+
+	t.Run("V1 float-histogram all custom bucket", func(t *testing.T) {
+		encV1 := Encoder{}
+		allCustomFloat := []RefFloatHistogramSample{
+			{Ref: 56, T: 1234, FH: histograms[2].H.ToFloat(nil)},
+			{Ref: 67, T: 5678, FH: histograms[2].H.ToFloat(nil)},
+		}
+		floatBuf, customBucketsFloat := encV1.FloatHistogramSamples(allCustomFloat, nil)
+		require.Empty(t, floatBuf, "regular float histogram buffer must be empty when all samples are custom bucket")
+		require.Equal(t, allCustomFloat, customBucketsFloat)
+
+		customFloatBuf := encV1.CustomBucketsFloatHistogramSamples(customBucketsFloat, nil)
+		decoded, err := dec.FloatHistogramSamples(customFloatBuf, nil)
+		require.NoError(t, err)
+		require.Equal(t, allCustomFloat, decoded)
+	})
+
+	// Backward compat: V1-encoded histograms decode with ST=0.
+	t.Run("V1 backward compat int-histogram ST=0", func(t *testing.T) {
+		encV1 := Encoder{}
+		v1HistSamples, v1CustomBucketsHists := encV1.HistogramSamples(histograms, nil)
+		v1CustomBucketsHistSamples := encV1.CustomBucketsHistogramSamples(v1CustomBucketsHists, nil)
+		decV1Hists, err := dec.HistogramSamples(v1HistSamples, nil)
+		require.NoError(t, err)
+		decV1CustomBuckets, err := dec.HistogramSamples(v1CustomBucketsHistSamples, nil)
+		require.NoError(t, err)
+		for _, h := range append(decV1Hists, decV1CustomBuckets...) {
+			require.Equal(t, int64(0), h.ST, "V1 histogram records must decode with ST=0")
+		}
+	})
+
+	// Backward compat: V1-encoded float histograms decode with ST=0.
+	t.Run("V1 backward compat float-histogram ST=0", func(t *testing.T) {
+		encV1 := Encoder{}
+		v1FloatHistSamples, v1CustomBucketsFloatHists := encV1.FloatHistogramSamples(floatHistograms, nil)
+		v1CustomBucketsFloatHistSamples := encV1.CustomBucketsFloatHistogramSamples(v1CustomBucketsFloatHists, nil)
+		decV1FloatHists, err := dec.FloatHistogramSamples(v1FloatHistSamples, nil)
+		require.NoError(t, err)
+		decV1CustomBucketsFloatHists, err := dec.FloatHistogramSamples(v1CustomBucketsFloatHistSamples, nil)
+		require.NoError(t, err)
+		for _, h := range append(decV1FloatHists, decV1CustomBucketsFloatHists...) {
+			require.Equal(t, int64(0), h.ST, "V1 float histogram records must decode with ST=0")
+		}
+	})
+}
+
+// TestRecord_V1MixedRegularAndCustomBucketHistogramPermutations verifies that
+// V1 encoding correctly splits mixed regular and custom-bucket histograms into
+// separate records regardless of input ordering. The split is only meaningful
+// for V1, which keeps the two record types distinct for backwards
+// compatibility. See TestRecord_V2MixedRegularAndCustomBucketHistogram for the
+// V2 behaviour.
+func TestRecord_V1MixedRegularAndCustomBucketHistogramPermutations(t *testing.T) {
+	dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+
+	regularA := &histogram.Histogram{
+		Count:         5,
+		ZeroCount:     2,
+		ZeroThreshold: 0.001,
+		Sum:           18.4,
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 1, -1, 0},
+	}
+	regularB := &histogram.Histogram{
+		Count:         11,
+		ZeroCount:     4,
+		ZeroThreshold: 0.001,
+		Sum:           35.5,
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 2, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 1, -1, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 1},
+			{Offset: 1, Length: 2},
+		},
+		NegativeBuckets: []int64{1, 2, -1},
+	}
+	custom := &histogram.Histogram{
+		Count:         8,
+		ZeroThreshold: 0.001,
+		Sum:           42.0,
+		Schema:        histogram.CustomBucketsSchema,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 2, Length: 2},
+		},
+		PositiveBuckets: []int64{2, -1, 2, 0},
+		CustomValues:    []float64{0, 2, 4, 6, 8},
+	}
+
+	type tc struct {
+		name  string
+		kinds []string
+	}
+
+	testCases := []tc{
+		{
+			name:  "regular then custom",
+			kinds: []string{"regularA", "custom"},
+		},
+		{
+			name:  "custom then regular",
+			kinds: []string{"custom", "regularA"},
+		},
+		{
+			name:  "regular custom regular",
+			kinds: []string{"regularA", "custom", "regularB"},
+		},
+		{
+			name:  "custom regular custom",
+			kinds: []string{"custom", "regularA", "custom"},
+		},
+	}
+
+	buildIntSamples := func(kinds []string) []RefHistogramSample {
+		samples := make([]RefHistogramSample, 0, len(kinds))
+		for i, kind := range kinds {
+			var h *histogram.Histogram
+			switch kind {
+			case "regularA":
+				h = regularA
+			case "regularB":
+				h = regularB
+			case "custom":
+				h = custom
+			default:
+				t.Fatalf("unknown histogram kind %q", kind)
+			}
+
+			samples = append(samples, RefHistogramSample{
+				Ref: chunks.HeadSeriesRef(100 + i*11),
+				T:   int64(1000 + i*250),
+				H:   h,
+			})
+		}
+		return samples
+	}
+
+	toExpectedIntPartitions := func(samples []RefHistogramSample) ([]RefHistogramSample, []RefHistogramSample) {
+		var regularSamples []RefHistogramSample
+		var customSamples []RefHistogramSample
+		for _, sample := range samples {
+			if sample.H.UsesCustomBuckets() {
+				customSamples = append(customSamples, sample)
+				continue
+			}
+			regularSamples = append(regularSamples, sample)
+		}
+		return regularSamples, customSamples
+	}
+
+	toFloatSamples := func(samples []RefHistogramSample) []RefFloatHistogramSample {
+		floatSamples := make([]RefFloatHistogramSample, 0, len(samples))
+		for _, sample := range samples {
+			floatSamples = append(floatSamples, RefFloatHistogramSample{
+				Ref: sample.Ref,
+				T:   sample.T,
+				FH:  sample.H.ToFloat(nil),
+			})
+		}
+		return floatSamples
+	}
+
+	toExpectedFloatPartitions := func(samples []RefFloatHistogramSample) ([]RefFloatHistogramSample, []RefFloatHistogramSample) {
+		var regularSamples []RefFloatHistogramSample
+		var customSamples []RefFloatHistogramSample
+		for _, sample := range samples {
+			if sample.FH.UsesCustomBuckets() {
+				customSamples = append(customSamples, sample)
+				continue
+			}
+			regularSamples = append(regularSamples, sample)
+		}
+		return regularSamples, customSamples
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			enc := Encoder{}
+
+			intSamples := buildIntSamples(tc.kinds)
+			wantRegularInt, wantCustomInt := toExpectedIntPartitions(intSamples)
+
+			histBuf, customInt := enc.HistogramSamples(intSamples, nil)
+			customBuf := enc.CustomBucketsHistogramSamples(customInt, nil)
+
+			gotRegularInt, err := dec.HistogramSamples(histBuf, nil)
+			require.NoError(t, err)
+			gotCustomInt, err := dec.HistogramSamples(customBuf, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, wantRegularInt, gotRegularInt)
+			require.Equal(t, wantCustomInt, gotCustomInt)
+
+			floatSamples := toFloatSamples(intSamples)
+			wantRegularFloat, wantCustomFloat := toExpectedFloatPartitions(floatSamples)
+
+			floatBuf, customFloat := enc.FloatHistogramSamples(floatSamples, nil)
+			customFloatBuf := enc.CustomBucketsFloatHistogramSamples(customFloat, nil)
+
+			gotRegularFloat, err := dec.FloatHistogramSamples(floatBuf, nil)
+			require.NoError(t, err)
+			gotCustomFloat, err := dec.FloatHistogramSamples(customFloatBuf, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, wantRegularFloat, gotRegularFloat)
+			require.Equal(t, wantCustomFloat, gotCustomFloat)
+		})
+	}
+}
+
+// TestRecord_V2MixedRegularAndCustomBucketHistogram verifies that V2 encodes
+// regular and custom-bucket histograms into a single HistogramSamplesV2 /
+// FloatHistogramSamplesV2 record. V2 drops the V1 split because the on-wire
+// format has no need to preserve backwards compatibility with readers that
+// predate custom buckets.
+func TestRecord_V2HistogramRoundTrip(t *testing.T) {
+	dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+
+	regularA := &histogram.Histogram{
+		Count:         5,
+		ZeroCount:     2,
+		ZeroThreshold: 0.001,
+		Sum:           18.4,
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 1, -1, 0},
+	}
+	regularB := &histogram.Histogram{
+		Count:         11,
+		ZeroCount:     4,
+		ZeroThreshold: 0.001,
+		Sum:           35.5,
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 2, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 1, -1, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 1},
+			{Offset: 1, Length: 2},
+		},
+		NegativeBuckets: []int64{1, 2, -1},
+	}
+	custom := &histogram.Histogram{
+		Count:         8,
+		ZeroThreshold: 0.001,
+		Sum:           42.0,
+		Schema:        histogram.CustomBucketsSchema,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 2, Length: 2},
+		},
+		PositiveBuckets: []int64{2, -1, 2, 0},
+		CustomValues:    []float64{0, 2, 4, 6, 8},
+	}
+
+	enc := Encoder{EnableSTStorage: true}
+
+	intSamples := []RefHistogramSample{
+		{Ref: 100, T: 1000, ST: 1000, H: regularA},
+		{Ref: 111, T: 1250, ST: 1000, H: custom},
+		{Ref: 122, T: 1500, ST: 1234, H: regularB},
+	}
+
+	histBuf, leftOver := enc.HistogramSamples(intSamples, nil)
+	require.Nil(t, leftOver, "V2 must not return a separate custom-bucket slice")
+	require.Equal(t, HistogramSamplesV2, dec.Type(histBuf), "V2 must emit a single HistogramSamplesV2 record for mixed inputs")
+
+	gotInt, err := dec.HistogramSamples(histBuf, nil)
+	require.NoError(t, err)
+	require.Equal(t, intSamples, gotInt)
+
+	floatSamples := make([]RefFloatHistogramSample, len(intSamples))
+	for i, s := range intSamples {
+		floatSamples[i] = RefFloatHistogramSample{
+			Ref: s.Ref,
+			T:   s.T,
+			ST:  s.ST,
+			FH:  s.H.ToFloat(nil),
+		}
+	}
+
+	floatBuf, leftOverFloat := enc.FloatHistogramSamples(floatSamples, nil)
+	require.Nil(t, leftOverFloat)
+	require.Equal(t, FloatHistogramSamplesV2, dec.Type(floatBuf), "V2 must emit a single FloatHistogramSamplesV2 record for mixed inputs")
+
+	gotFloat, err := dec.FloatHistogramSamples(floatBuf, nil)
+	require.NoError(t, err)
+	require.Equal(t, floatSamples, gotFloat)
 }
 
 func TestRecord_DecodeInvalidHistogramSchema(t *testing.T) {
@@ -346,6 +727,116 @@ func TestRecord_DecodeInvalidFloatHistogramSchema(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestRecord_DecodeV2UnknownFirstHistogramSchema(t *testing.T) {
+	enc := Encoder{EnableSTStorage: true}
+
+	var output bytes.Buffer
+	logger := promslog.New(&promslog.Config{Writer: &output})
+	dec := NewDecoder(labels.NewSymbolTable(), logger)
+	histograms := []RefHistogramSample{
+		{
+			Ref: 56,
+			ST:  1000,
+			T:   1234,
+			H: &histogram.Histogram{
+				Count:         5,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           18.4,
+				Schema:        -100, // "unknown" schema
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+			},
+		},
+		{
+			Ref: 42,
+			ST:  1000,
+			T:   5678,
+			H: &histogram.Histogram{
+				Count:         11,
+				ZeroCount:     4,
+				ZeroThreshold: 0.001,
+				Sum:           35.5,
+				Schema:        1,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 2, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 1},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{1, 2, -1},
+			},
+		},
+	}
+	histSamples, _ := enc.HistogramSamples(histograms, nil)
+	decHistograms, err := dec.HistogramSamples(histSamples, nil)
+	require.NoError(t, err)
+	require.Equal(t, histograms[1:], decHistograms)
+	// Ensure that the schema ID above is actually unknown. If this fails then
+	// someone started using that value.
+	require.Contains(t, output.String(), "skipping histogram with unknown schema in WAL record")
+}
+
+func TestRecord_DecodeV2UnknownFirstFloatHistogramSchema(t *testing.T) {
+	enc := Encoder{EnableSTStorage: true}
+
+	var output bytes.Buffer
+	logger := promslog.New(&promslog.Config{Writer: &output})
+	dec := NewDecoder(labels.NewSymbolTable(), logger)
+	histograms := []RefFloatHistogramSample{
+		{
+			Ref: 56,
+			ST:  1000,
+			T:   1234,
+			FH: &histogram.FloatHistogram{
+				Count:         5,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           18.4,
+				Schema:        -100,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []float64{1, 1, -1, 0},
+			},
+		},
+		{
+			Ref: 42,
+			ST:  1000,
+			T:   5678,
+			FH: &histogram.FloatHistogram{
+				Count:         11,
+				ZeroCount:     4,
+				ZeroThreshold: 0.001,
+				Sum:           35.5,
+				Schema:        1,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 2, Length: 2},
+				},
+				PositiveBuckets: []float64{1, 1, -1, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 1},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []float64{1, 2, -1},
+			},
+		},
+	}
+	histSamples, _ := enc.FloatHistogramSamples(histograms, nil)
+	decHistograms, err := dec.FloatHistogramSamples(histSamples, nil)
+	require.NoError(t, err)
+	require.Equal(t, histograms[1:], decHistograms)
+	require.Contains(t, output.String(), "skipping histogram with unknown schema in WAL record")
 }
 
 func TestRecord_DecodeTooHighResolutionHistogramSchema(t *testing.T) {
@@ -597,12 +1088,35 @@ func TestRecord_Type(t *testing.T) {
 			},
 		},
 	}
+	// V1 histogram type recognition (requires EnableSTStorage off).
+	enc = Encoder{}
 	hists, customBucketsHistograms := enc.HistogramSamples(histograms, nil)
 	recordType = dec.Type(hists)
 	require.Equal(t, HistogramSamples, recordType)
 	customBucketsHists := enc.CustomBucketsHistogramSamples(customBucketsHistograms, nil)
 	recordType = dec.Type(customBucketsHists)
 	require.Equal(t, CustomBucketsHistogramSamples, recordType)
+
+	// V2 histogram type recognition.
+	enc = Encoder{EnableSTStorage: true}
+	hists, leftOver := enc.HistogramSamples(histograms, nil)
+	require.Nil(t, leftOver)
+	recordType = dec.Type(hists)
+	require.Equal(t, HistogramSamplesV2, recordType)
+
+	// V2 float-histogram type recognition.
+	floatHistograms := make([]RefFloatHistogramSample, len(histograms))
+	for i, h := range histograms {
+		floatHistograms[i] = RefFloatHistogramSample{
+			Ref: h.Ref,
+			T:   h.T,
+			FH:  h.H.ToFloat(nil),
+		}
+	}
+	floatHists, leftOverFloat := enc.FloatHistogramSamples(floatHistograms, nil)
+	require.Nil(t, leftOverFloat)
+	recordType = dec.Type(floatHists)
+	require.Equal(t, FloatHistogramSamplesV2, recordType)
 
 	recordType = dec.Type(nil)
 	require.Equal(t, Unknown, recordType)
