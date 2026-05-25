@@ -537,7 +537,7 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 	}
 	extrapolationThreshold := averageDurationBetweenSamples * 1.1
 
-	if sts := startTimestamps; len(sts) > 0 && sts[0] != 0 && sts[0] > rangeStart && sts[0] <= firstT {
+	if sts := startTimestamps; len(sts) > 0 && sts[0] != 0 && sts[0] > rangeStart && sts[0] < firstT {
 		// Take the first sample in the range and check whether its ST points inside the range
 		// (while also having a sensible value). If yes, we assume that there is a zero-value sample
 		// at the time of ST, and use that instead of extrapolating towards left side.
@@ -735,8 +735,9 @@ func histogramRate(
 
 // isStartTimestampReset tells whether there was a counter reset by checking the start timestamp value.
 func isStartTimestampReset(prevStartTimestamp, prevTimestamp, currStartTimestamp, currTimestamp int64) bool {
-	if currStartTimestamp == 0 || currStartTimestamp > currTimestamp {
-		// No reset if start timestamp is not set (value is 0), or if it is clearly invalid.
+	if currStartTimestamp == 0 || currStartTimestamp >= currTimestamp {
+		// No reset if start timestamp is not set (value is 0), if it is clearly invalid
+		// (ST > T), or if it is OTel's unknown start time (ST == T).
 		return false
 	}
 
@@ -762,7 +763,7 @@ func isStartTimestampReset(prevStartTimestamp, prevTimestamp, currStartTimestamp
 	if prevStartTimestamp > prevTimestamp {
 		return false
 	}
-	return prevStartTimestamp != 0
+	return prevStartTimestamp != 0 && prevStartTimestamp != prevTimestamp
 }
 
 // === delta(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
