@@ -3713,25 +3713,268 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>--enable-feature=promql-experimental-functions</code>.
         </strong>
       </p>
+
       <p>
-        <code>timeseries_gen(tpl string, metric_name ...string)</code> emits a synthetic instant vector built from a
-        Go <code>text/template</code> supplied as <code>tpl</code>. The optional <code>metric_name</code> argument, when
-        non-empty, becomes the <code>__name__</code> label of every emitted series; if omitted, the template itself may
-        set <code>__name__</code> on a per-series basis.
-      </p>
-      <p>
-        The primary use case is providing inline filter sets for <code>*</code> / <code>on(...)</code> joins without a
-        round-trip through recording rules or storage. The template runs once per query and the result is cached, so
-        range queries do not re-execute the template at every step. Output cardinality is capped at 10000 series;
-        exceeding the cap aborts the query. The <code>seq</code> helper is also capped at 10000 items.
-      </p>
-      <p>
-        See the{" "}
-        <a href="https://prometheus.io/docs/prometheus/latest/querying/functions/#timeseries_gen" target="_blank" rel="noreferrer">
-          full documentation
+        <code>timeseries_gen(tpl string, metric_name ...string)</code> emits a synthetic instant vector built from a Go{" "}
+        <a href="https://pkg.go.dev/text/template">
+          <code>text/template</code>
         </a>{" "}
-        for the template helper API.
+        supplied as <code>tpl</code>. Its primary use case is providing inline &ldquo;filter&rdquo; series for{" "}
+        <code>*</code> / <code>on(...)</code>
+        joins without precomputing them via recording rules or storage:
       </p>
+
+      <pre>
+        <code>
+          metric * on(env) timeseries_gen(`{"{"}
+          {"{"}rangeSeries &quot;env&quot; &quot;prod,stage,canary&quot; 1.0{"}"}
+          {"}"}`)
+        </code>
+      </pre>
+
+      <p>
+        The optional <code>metric_name</code> argument controls the <code>__name__</code> label on emitted series:
+      </p>
+
+      <ul>
+        <li>
+          If omitted (or empty), emitted series have no <code>__name__</code> label. This is the usual case for
+          join-filter usage where vector matching ignores
+          <code>__name__</code> anyway.
+        </li>
+        <li>
+          If provided and non-empty, every emitted series gets
+          <code>__name__=&lt;metric_name&gt;</code>.
+        </li>
+      </ul>
+
+      <p>
+        The template runs <strong>once per query</strong> and the result is cached, so range queries do not re-execute
+        the template at every step. Output cardinality is capped at 10000 series; exceeding the cap aborts the query.
+      </p>
+
+      <h3>Template helpers</h3>
+
+      <p>
+        Labels are supplied as flat <code>key, value, key, value, ...</code> variadic pairs — no embedded label-string
+        grammar, no escape hell.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Helper</th>
+            <th>Signature</th>
+            <th>Effect</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr>
+            <td>
+              <code>series</code>
+            </td>
+            <td>
+              <code>series(value float, kvPairs ...string)</code>
+            </td>
+            <td>Emit one sample. Pairs must be even length.</td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>rangeSeries</code>
+            </td>
+            <td>
+              <code>rangeSeries(fanoutLabel string, csv string, value float, kvPairs ...string)</code>
+            </td>
+            <td>
+              Emit one sample per comma-separated value of <code>csv</code>, with <code>fanoutLabel</code> set to that
+              value and any extra <code>kvPairs</code> attached to every emitted sample. Empty entries in{" "}
+              <code>csv</code> are skipped.
+            </td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>seq</code>
+            </td>
+            <td>
+              <code>seq(start, end int)</code>
+            </td>
+            <td>Inclusive integer range.</td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>split</code>
+            </td>
+            <td>
+              <code>split(s, sep string) []string</code>
+            </td>
+            <td>
+              Same as Go&rsquo;s <code>strings.Split</code>.
+            </td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>lower</code> / <code>upper</code>
+            </td>
+            <td>
+              <code>lower(s) string</code> / <code>upper(s) string</code>
+            </td>
+            <td>Case conversion.</td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>replace</code>
+            </td>
+            <td>
+              <code>replace(s, old, new string) string</code>
+            </td>
+            <td>
+              Same as Go&rsquo;s <code>strings.ReplaceAll</code>.
+            </td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>trim</code>
+            </td>
+            <td>
+              <code>trim(s string) string</code>
+            </td>
+            <td>
+              Same as Go&rsquo;s <code>strings.TrimSpace</code>.
+            </td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>add</code> / <code>sub</code> / <code>mul</code> / <code>div</code> / <code>mod</code>
+            </td>
+            <td>
+              <code>(a, b numeric) float</code>
+            </td>
+            <td>
+              Binary math; operands accept any integer or float type. <code>div</code> and <code>mod</code> reject a
+              zero divisor.
+            </td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>int</code>
+            </td>
+            <td>
+              <code>(v numeric) int</code>
+            </td>
+            <td>
+              Truncate toward zero. Useful for feeding <code>printf &quot;%d&quot;</code> because the binary math
+              helpers always return float64.
+            </td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>abs</code> / <code>floor</code> / <code>ceil</code> / <code>round</code>
+            </td>
+            <td>
+              <code>(v numeric) float</code>
+            </td>
+            <td>
+              <code>math.Abs</code> / <code>math.Floor</code> / <code>math.Ceil</code> / <code>math.Round</code>.
+            </td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>min</code> / <code>max</code>
+            </td>
+            <td>
+              <code>(a, b numeric) float</code>
+            </td>
+            <td>
+              <code>math.Min</code> / <code>math.Max</code>.
+            </td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>printf</code>
+            </td>
+            <td>(built-in)</td>
+            <td>
+              Standard Go template <code>printf</code>.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p>Examples:</p>
+
+      <pre>
+        <code>
+          # One sample, two labels, with an explicit metric name. timeseries_gen(`{"{"}
+          {"{"}series 1.0 &quot;env&quot; &quot;prod&quot; &quot;job&quot; &quot;api&quot;{"}"}
+          {"}"}`, &quot;f&quot;) # Fan-out across env values plus a fixed job label (no __name__). timeseries_gen(`{"{"}
+          {"{"}rangeSeries &quot;env&quot; &quot;prod,stage,dev&quot; 1.0 &quot;job&quot; &quot;api&quot;{"}"}
+          {"}"}`) # Indexed series via seq + printf. timeseries_gen(`{"{"}
+          {"{"}range $i := seq 1 5{"}"}
+          {"}"}
+          {"{"}
+          {"{"}series 1.0 &quot;i&quot; (printf &quot;%d&quot; $i){"}"}
+          {"}"}
+          {"{"}
+          {"{"}end{"}"}
+          {"}"}`)
+        </code>
+      </pre>
+
+      <h3>Restrictions</h3>
+
+      <ul>
+        <li>
+          The{" "}
+          <code>
+            {"{"}
+            {"{"}define{"}"}
+            {"}"}
+          </code>{" "}
+          and{" "}
+          <code>
+            {"{"}
+            {"{"}template{"}"}
+            {"}"}
+          </code>{" "}
+          template actions are rejected at parse time to prevent recursive expansion.
+        </li>
+        <li>
+          When the <code>metric_name</code> argument is provided, the template MUST NOT set
+          <code>__name__</code> (via <code>kvPairs</code> or as a <code>rangeSeries</code> <code>fanoutLabel</code>) —
+          the function argument is the single source of truth.
+        </li>
+        <li>
+          When <code>metric_name</code> is omitted, the template MAY set <code>__name__</code> on a per-series basis via{" "}
+          <code>kvPairs</code>, or fan out over multiple metric names via{" "}
+          <code>rangeSeries &quot;__name__&quot; &quot;a,b,c&quot; ...</code>. This lets a single call emit several
+          related metrics.
+        </li>
+        <li>Each call must produce a unique label set; duplicates are a hard error.</li>
+        <li>
+          <code>seq</code> ranges are capped at 10000 items; exceeding the cap aborts the query.
+        </li>
+        <li>
+          Label names are validated under Prometheus&rsquo; UTF-8 label-name scheme, so dotted OpenTelemetry-style names
+          such as <code>http.method</code>,<code>service.name</code>, and <code>deployment.environment</code> are
+          accepted alongside the legacy <code>[a-zA-Z_][a-zA-Z0-9_]*</code> form. Dotted names must be quoted in PromQL
+          selectors, e.g.{" "}
+          <code>
+            {"{"}&quot;http.method&quot;=&quot;GET&quot;{"}"}
+          </code>
+          .
+        </li>
+      </ul>
     </>
   ),
   timestamp: (
