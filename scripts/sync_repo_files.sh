@@ -12,6 +12,7 @@ commit_msg="Update common Prometheus files"
 pr_title="Synchronize common files from prometheus/prometheus"
 pr_msg="Propagating changes from prometheus/prometheus default branch.\n\n*Source can be found [here](https://github.com/prometheus/prometheus/blob/main/scripts/sync_repo_files.sh).*"
 orgs="prometheus prometheus-community"
+fork_org="prombot"
 
 color_red='\e[31m'
 color_green='\e[32m'
@@ -81,6 +82,19 @@ fetch_repos() {
     jq -r '.[] | select( .archived == false and .fork == false and .name != "prometheus" ) | .name'
 }
 
+# Fork ${1} into ${fork_org}. The forks API is idempotent: it returns the
+# existing fork if one already exists. The fork name is prefixed with the
+# upstream org to avoid collisions between orgs (e.g. prometheus_node_exporter).
+fork_repo() {
+  local org_repo="$1"
+  local fork_name="${org_repo//\//_}"
+  github_api "repos/${org_repo}/forks" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    --data "{\"organization\":\"${fork_org}\",\"name\":\"${fork_name}\"}" \
+    > /dev/null || return 1
+  echo "${fork_org}/${fork_name}"
+}
+
 push_branch() {
   local git_url
   git_url="https://${git_user}:${GITHUB_TOKEN}@github.com/${1}"
@@ -88,14 +102,23 @@ push_branch() {
   # the token in the logs.
   # Delete the remote branch in case it was merged but not deleted.
   git push --quiet "${git_url}" ":${branch}" 1>/dev/null 2>&1
-  git push --quiet "${git_url}" --set-upstream "${branch}" 1>/dev/null 2>&1
+  # Forking is asynchronous; retry for up to 5 minutes until the git objects
+  # are available before giving up.
+  local deadline=$(( $(date +%s) + 300 ))
+  until git push --quiet "${git_url}" --set-upstream "${branch}" 1>/dev/null 2>&1; do
+    if [[ $(date +%s) -ge ${deadline} ]]; then
+      return 1
+    fi
+    sleep 10
+  done
 }
 
 post_pull_request() {
   local repo="$1"
   local default_branch="$2"
+  local fork_owner="$3"
   local post_json
-  post_json="$(printf '{"title":"%s","base":"%s","head":"%s","body":"%s"}' "${pr_title}" "${default_branch}" "${branch}" "${pr_msg}")"
+  post_json="$(printf '{"title":"%s","base":"%s","head":"%s:%s","body":"%s"}' "${pr_title}" "${default_branch}" "${fork_owner}" "${branch}" "${pr_msg}")"
   echo "Posting PR to ${default_branch} on ${repo}"
   github_api "repos/${repo}/pulls" --data "${post_json}" --show-error |
     jq -r '"PR URL " + .html_url'
@@ -220,13 +243,15 @@ process_repo() {
     git add .
     git commit -s -m "${commit_msg}"
     repo_log "Commit created"
-    if push_branch "${org_repo}"; then
-      if ! post_pull_request "${org_repo}" "${default_branch}"; then
+    local fork_org_repo
+    fork_org_repo="$(fork_repo "${org_repo}")" || { repo_log_red "Forking ${org_repo} failed"; return 1; }
+    if push_branch "${fork_org_repo}"; then
+      if ! post_pull_request "${org_repo}" "${default_branch}" "${fork_org}"; then
         repo_log_red "Posting PR failed"
         return 1
       fi
     else
-      repo_log_red "Pushing ${branch} to ${org_repo} failed"
+      repo_log_red "Pushing ${branch} to ${fork_org_repo} failed"
       return 1
     fi
   fi
@@ -239,8 +264,8 @@ for org in ${orgs}; do
   # at most but it should be enough for us as there are less than 40 repositories
   # currently.
   fetch_repos "${org}" | while read -r repo; do
-    # Check if a PR is already opened for the branch.
-    fetch_uri="repos/${org}/${repo}/pulls?state=open&head=${org}:${branch}"
+    # Check if a PR is already opened for the branch from the prombot fork.
+    fetch_uri="repos/${org}/${repo}/pulls?state=open&head=${fork_org}:${branch}"
     prLink="$(github_api "${fetch_uri}" --show-error | jq -r '.[0].html_url')"
     if [[ "${prLink}" != "null" ]]; then
       echo_green "Pull request already opened for branch '${branch}': ${prLink}"
