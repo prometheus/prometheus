@@ -243,6 +243,8 @@ jobs:
   publish_release:
     name: Publish release artefacts
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     needs: [test_ui, test_go, test_go_more, test_windows, golangci, codeql, build_all]
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
@@ -259,7 +261,7 @@ jobs:
           docker_hub_password: ${{ secrets.docker_hub_password }}
           quay_io_login: ${{ secrets.quay_io_login }}
           quay_io_password: ${{ secrets.quay_io_password }}
-          github_token: ${{ secrets.PROMBOT_GITHUB_TOKEN }}
+          github_token: ${{ github.token }}
   publish_ui_release:
     name: Publish UI on npm Registry
     runs-on: ubuntu-latest
