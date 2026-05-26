@@ -117,8 +117,10 @@ post_pull_request() {
   local repo="$1"
   local default_branch="$2"
   local fork_owner="$3"
+  local fork_name="${repo//\//_}"
+  local checkout_hint="To check out this branch locally and push changes back:\\n\`\`\`\\ngit remote add ${fork_owner} https://github.com/${fork_owner}/${fork_name}.git\\ngit fetch ${fork_owner} ${branch}\\ngit checkout -b ${branch} ${fork_owner}/${branch}\\n\`\`\`"
   local post_json
-  post_json="$(printf '{"title":"%s","base":"%s","head":"%s:%s","body":"%s"}' "${pr_title}" "${default_branch}" "${fork_owner}" "${branch}" "${pr_msg}")"
+  post_json="$(printf '{"title":"%s","base":"%s","head":"%s:%s","body":"%s"}' "${pr_title}" "${default_branch}" "${fork_owner}" "${branch}" "${pr_msg}\\n\\n${checkout_hint}")"
   echo "Posting PR to ${default_branch} on ${repo}"
   github_api "repos/${repo}/pulls" --data "${post_json}" --show-error |
     jq -r '"PR URL " + .html_url'
