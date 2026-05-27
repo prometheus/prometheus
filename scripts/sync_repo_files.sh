@@ -85,14 +85,15 @@ fetch_repos() {
 # Fork ${1} into ${fork_org}. The forks API is idempotent: it returns the
 # existing fork if one already exists. The fork name is prefixed with the
 # upstream org to avoid collisions between orgs (e.g. prometheus_node_exporter).
+# Returns the full_name of the fork (which may differ from the requested name
+# when a fork already exists under a different name).
 fork_repo() {
   local org_repo="$1"
   local fork_name="${org_repo//\//_}"
   github_api "repos/${org_repo}/forks" \
-    -H "X-GitHub-Api-Version: 2022-11-28" \
-    --data "{\"organization\":\"${fork_org}\",\"name\":\"${fork_name}\"}" \
-    > /dev/null || return 1
-  echo "${fork_org}/${fork_name}"
+    -H "X-GitHub-Api-Version: 2026-03-10" \
+    --data "{\"organization\":\"${fork_org}\",\"name\":\"${fork_name}\"}" |
+    jq -r '.full_name' || return 1
 }
 
 push_branch() {
@@ -117,8 +118,8 @@ post_pull_request() {
   local repo="$1"
   local default_branch="$2"
   local fork_owner="$3"
-  local fork_name="${repo//\//_}"
-  local checkout_hint="To check out this branch locally and push changes back:\\n\`\`\`\\ngit remote add ${fork_owner} https://github.com/${fork_owner}/${fork_name}.git\\ngit fetch ${fork_owner} ${branch}\\ngit checkout -b ${branch} ${fork_owner}/${branch}\\n\`\`\`"
+  local fork_org_repo="$4"
+  local checkout_hint="To check out this branch locally and push changes back:\\n\`\`\`\\ngit remote add ${fork_owner} https://github.com/${fork_org_repo}.git\\ngit fetch ${fork_owner} ${branch}\\ngit checkout -b ${branch} ${fork_owner}/${branch}\\n\`\`\`"
   local post_json
   post_json="$(printf '{"title":"%s","base":"%s","head":"%s:%s","body":"%s"}' "${pr_title}" "${default_branch}" "${fork_owner}" "${branch}" "${pr_msg}\\n\\n${checkout_hint}")"
   echo "Posting PR to ${default_branch} on ${repo}"
@@ -248,7 +249,7 @@ process_repo() {
     local fork_org_repo
     fork_org_repo="$(fork_repo "${org_repo}")" || { repo_log_red "Forking ${org_repo} failed"; return 1; }
     if push_branch "${fork_org_repo}"; then
-      if ! post_pull_request "${org_repo}" "${default_branch}" "${fork_org}"; then
+      if ! post_pull_request "${org_repo}" "${default_branch}" "${fork_org}" "${fork_org_repo}"; then
         repo_log_red "Posting PR failed"
         return 1
       fi
