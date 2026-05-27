@@ -190,10 +190,6 @@ process_repo() {
         continue
       fi
     fi
-    if [[ "${source_file}" == 'LICENSE' ]] && ! check_license "${target_file}" ; then
-      repo_log "LICENSE in ${org_repo} is not apache, skipping."
-      continue
-    fi
     target_filename="${source_file}"
     if [[ "${source_file}" == 'scripts/golangci-lint.yml' ]] ; then
       target_filename=".github/workflows/golangci-lint.yml"
@@ -207,6 +203,10 @@ process_repo() {
           needs_update+=("${source_file}")
           ;;
       esac
+      continue
+    fi
+    if [[ "${source_file}" == 'LICENSE' ]] && ! check_license "${target_file}" ; then
+      repo_log "LICENSE in ${org_repo} is not apache, skipping."
       continue
     fi
     target_checksum="$(echo "${target_file}" | sha256sum | cut -d' ' -f1)"
