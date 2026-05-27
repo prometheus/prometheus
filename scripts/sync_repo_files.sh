@@ -12,7 +12,6 @@ commit_msg="Update common Prometheus files"
 pr_title="Synchronize common files from prometheus/prometheus"
 pr_msg="Propagating changes from prometheus/prometheus default branch.\n\n*Source can be found [here](https://github.com/prometheus/prometheus/blob/main/scripts/sync_repo_files.sh).*"
 orgs="prometheus prometheus-community"
-fork_org="prombot"
 
 color_red='\e[31m'
 color_green='\e[32m'
@@ -82,7 +81,7 @@ fetch_repos() {
     jq -r '.[] | select( .archived == false and .fork == false and .name != "prometheus" ) | .name'
 }
 
-# Fork ${1} into ${fork_org}. The forks API is idempotent: it returns the
+# Fork ${1} into ${git_user}. The forks API is idempotent: it returns the
 # existing fork if one already exists. The fork name is prefixed with the
 # upstream org to avoid collisions between orgs (e.g. prometheus_node_exporter).
 # Returns the full_name of the fork (which may differ from the requested name
@@ -92,7 +91,7 @@ fork_repo() {
   local fork_name="${org_repo//\//_}"
   github_api "repos/${org_repo}/forks" \
     -H "X-GitHub-Api-Version: 2026-03-10" \
-    --data "{\"organization\":\"${fork_org}\",\"name\":\"${fork_name}\"}" |
+    --data "{\"name\":\"${fork_name}\"}" |
     jq -r '.full_name' || return 1
 }
 
@@ -249,7 +248,7 @@ process_repo() {
     local fork_org_repo
     fork_org_repo="$(fork_repo "${org_repo}")" || { repo_log_red "Forking ${org_repo} failed"; return 1; }
     if push_branch "${fork_org_repo}"; then
-      if ! post_pull_request "${org_repo}" "${default_branch}" "${fork_org}" "${fork_org_repo}"; then
+      if ! post_pull_request "${org_repo}" "${default_branch}" "${git_user}" "${fork_org_repo}"; then
         repo_log_red "Posting PR failed"
         return 1
       fi
@@ -268,7 +267,7 @@ for org in ${orgs}; do
   # currently.
   fetch_repos "${org}" | while read -r repo; do
     # Check if a PR is already opened for the branch from the prombot fork.
-    fetch_uri="repos/${org}/${repo}/pulls?state=open&head=${fork_org}:${branch}"
+    fetch_uri="repos/${org}/${repo}/pulls?state=open&head=${git_user}:${branch}"
     prLink="$(github_api "${fetch_uri}" --show-error | jq -r '.[0].html_url')"
     if [[ "${prLink}" != "null" ]]; then
       echo_green "Pull request already opened for branch '${branch}': ${prLink}"
