@@ -209,6 +209,12 @@ func BenchmarkLoadWLs(b *testing.B) {
 		// compression.None below to keep the existing baseline shapes
 		// unchanged.
 		compress compression.Type
+		// parallelDecodeKs lists the ParallelWALDecodeConcurrency
+		// values to run this shape at. Nil/empty means "only run the
+		// serial decoder" — that keeps existing shapes' subtest names
+		// unchanged so old benchstat baselines stay comparable. Set
+		// this on shapes that exercise the parallel-decode regime.
+		parallelDecodeKs []int
 	}{
 		{ // Less series and more samples. 2 hour WAL with 1 second scrape interval.
 			batches:          10,
@@ -259,11 +265,14 @@ func BenchmarkLoadWLs(b *testing.B) {
 		{ // Large head with snappy WAL. 500k series x 240 samples = 120M
 			// samples; snappy puts decompression on the producer-side hot
 			// path, which is what real Prometheus deployments see during
-			// replay.
+			// replay. Parameterised over K so benchstat can show the
+			// parallel-vs-serial delta on the regime the parallel WAL
+			// decode work targets.
 			batches:          200,
 			seriesPerBatch:   2500,
 			samplesPerSeries: 240,
 			compress:         compression.Snappy,
+			parallelDecodeKs: []int{0, 2, 4, 8},
 		},
 	}
 
@@ -427,21 +436,38 @@ func BenchmarkLoadWLs(b *testing.B) {
 								}
 							}
 
-							b.ResetTimer()
-
-							// Load the WAL.
-							for b.Loop() {
-								opts := DefaultHeadOptions()
-								opts.ChunkRange = 1000
-								opts.ChunkDirRoot = dir
-								if c.oooCapMax > 0 {
-									opts.OutOfOrderCapMax.Store(c.oooCapMax)
+							replay := func(b *testing.B, k int) {
+								for b.Loop() {
+									opts := DefaultHeadOptions()
+									opts.ChunkRange = 1000
+									opts.ChunkDirRoot = dir
+									if c.oooCapMax > 0 {
+										opts.OutOfOrderCapMax.Store(c.oooCapMax)
+									}
+									opts.ParallelWALDecode = k > 0
+									opts.ParallelWALDecodeConcurrency = k
+									h, err := NewHead(nil, nil, wal, wbl, opts, nil)
+									require.NoError(b, err)
+									h.Init(0)
 								}
-								h, err := NewHead(nil, nil, wal, wbl, opts, nil)
-								require.NoError(b, err)
-								h.Init(0)
 							}
-							b.StopTimer()
+
+							// Load the WAL. Shapes that opt into parallel
+							// decode get an inner b.Run per K so benchstat
+							// can compare each K against the serial
+							// baseline; other shapes run only the serial
+							// path under the existing subtest name.
+							if len(c.parallelDecodeKs) == 0 {
+								b.ResetTimer()
+								replay(b, 0)
+								b.StopTimer()
+							} else {
+								for _, k := range c.parallelDecodeKs {
+									b.Run(fmt.Sprintf("parallel_decode=%d", k), func(b *testing.B) {
+										replay(b, k)
+									})
+								}
+							}
 							wal.Close()
 							if wbl != nil {
 								wbl.Close()
@@ -467,29 +493,40 @@ func BenchmarkLoadRealWLs(b *testing.B) {
 		b.SkipNow()
 	}
 
-	// Load the WAL.
-	for b.Loop() {
-		b.StopTimer()
-		dir := b.TempDir()
-		require.NoError(b, fileutil.CopyDirs(srcDir, dir))
+	replay := func(b *testing.B, k int) {
+		for b.Loop() {
+			b.StopTimer()
+			dir := b.TempDir()
+			require.NoError(b, fileutil.CopyDirs(srcDir, dir))
 
-		wal, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
-		require.NoError(b, err)
-		b.Cleanup(func() { wal.Close() })
+			wal, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
+			require.NoError(b, err)
+			b.Cleanup(func() { wal.Close() })
 
-		wbl, err := wlog.New(nil, nil, filepath.Join(dir, "wbl"), compression.None)
-		require.NoError(b, err)
-		b.Cleanup(func() { wbl.Close() })
-		b.StartTimer()
+			wbl, err := wlog.New(nil, nil, filepath.Join(dir, "wbl"), compression.None)
+			require.NoError(b, err)
+			b.Cleanup(func() { wbl.Close() })
+			b.StartTimer()
 
-		opts := DefaultHeadOptions()
-		opts.ChunkDirRoot = dir
-		h, err := NewHead(nil, nil, wal, wbl, opts, nil)
-		require.NoError(b, err)
-		require.NoError(b, h.Init(0))
+			opts := DefaultHeadOptions()
+			opts.ChunkDirRoot = dir
+			opts.ParallelWALDecode = k > 0
+			opts.ParallelWALDecodeConcurrency = k
+			h, err := NewHead(nil, nil, wal, wbl, opts, nil)
+			require.NoError(b, err)
+			require.NoError(b, h.Init(0))
 
-		b.StopTimer()
-		require.NoError(b, os.RemoveAll(dir))
+			b.StopTimer()
+			require.NoError(b, os.RemoveAll(dir))
+		}
+	}
+
+	// Parameterise over ParallelWALDecodeConcurrency so benchstat can
+	// show the parallel-vs-serial delta on real WAL data.
+	for _, k := range []int{0, 2, 4, 8} {
+		b.Run(fmt.Sprintf("parallel_decode=%d", k), func(b *testing.B) {
+			replay(b, k)
+		})
 	}
 }
 
