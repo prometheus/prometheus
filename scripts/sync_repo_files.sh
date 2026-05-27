@@ -52,6 +52,17 @@ if [ -z "${GITHUB_TOKEN}" ]; then
   exit 1
 fi
 
+# Each org requires a dedicated PAT for posting PRs: GITHUB_TOKEN_<ORG>
+# where the org name is uppercased and dashes replaced with underscores.
+for org in ${orgs}; do
+  org_var="GITHUB_TOKEN_${org^^}"
+  org_var="${org_var//-/_}"
+  if [ -z "${!org_var:-}" ]; then
+    echo_red "GitHub token ${org_var} not set. Terminating."
+    exit 1
+  fi
+done
+
 # List of files that should be synced.
 SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .dockerignore .yamllint scripts/golangci-lint.yml .github/workflows/govulncheck.yml .github/workflows/scorecards.yml .github/workflows/container_description.yml .github/workflows/stale.yml"
 
@@ -123,11 +134,15 @@ post_pull_request() {
   local default_branch="$2"
   local fork_owner="$3"
   local fork_org_repo="$4"
+  local pr_token="$5"
   local checkout_hint="To check out this branch locally and push changes back:\\n\`\`\`\\ngit remote add ${fork_owner} https://github.com/${fork_org_repo}.git\\ngit fetch ${fork_owner} ${branch}\\ngit checkout -b ${branch} ${fork_owner}/${branch}\\n\`\`\`"
   local post_json
   post_json="$(printf '{"title":"%s","base":"%s","head":"%s:%s","body":"%s"}' "${pr_title}" "${default_branch}" "${fork_owner}" "${branch}" "${pr_msg}\\n\\n${checkout_hint}")"
   echo "Posting PR to ${default_branch} on ${repo}"
-  github_api "repos/${repo}/pulls" --data "${post_json}" --show-error |
+  curl --retry 5 --silent --fail --show-error \
+    -u "${git_user}:${!pr_token}" \
+    "https://api.github.com/repos/${repo}/pulls" \
+    --data "${post_json}" |
     jq -r '"PR URL " + .html_url'
 }
 
@@ -157,7 +172,9 @@ check_docker() {
 process_repo() {
   local org_repo
   local default_branch
+  local pr_token
   org_repo="$1"
+  pr_token="$2"
   repo_log "Analyzing '${org_repo}'"
 
   default_branch="$(get_default_branch "${org_repo}")"
@@ -253,7 +270,7 @@ process_repo() {
     local fork_org_repo
     fork_org_repo="$(fork_repo "${org_repo}")" || { repo_log_red "Forking ${org_repo} failed"; return 1; }
     if push_branch "${fork_org_repo}"; then
-      if ! post_pull_request "${org_repo}" "${default_branch}" "${git_user}" "${fork_org_repo}"; then
+      if ! post_pull_request "${org_repo}" "${default_branch}" "${git_user}" "${fork_org_repo}" "${pr_token}"; then
         repo_log_red "Posting PR failed"
         return 1
       fi
@@ -267,6 +284,8 @@ process_repo() {
 ## main
 for org in ${orgs}; do
   mkdir -p "${tmp_dir}/${org}"
+  org_token_var="GITHUB_TOKEN_${org^^}"
+  org_token_var="${org_token_var//-/_}"
   # Iterate over all repositories in ${org}. The GitHub API can return 100 items
   # at most but it should be enough for us as there are less than 40 repositories
   # currently.
@@ -280,7 +299,7 @@ for org in ${orgs}; do
       continue
     fi
 
-    if ! process_repo "${org}/${repo}"; then
+    if ! process_repo "${org}/${repo}" "${org_token_var}"; then
       echo_red "Failed to process '${org}/${repo}'"
       exit 1
     fi
