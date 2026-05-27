@@ -274,6 +274,10 @@ type Options struct {
 
 	// EnableFastStartup enables scraping in parallel with WAL replay but with queries still disabled.
 	EnableFastStartup bool
+
+	// ParallelWALDecode enables a pool of decoder goroutines during WAL
+	// replay. Represents the 'parallel-wal-decode' feature flag.
+	ParallelWALDecode bool
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -1088,6 +1092,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableXOR2Encoding.Store(opts.EnableXOR2Encoding)
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
 	headOpts.EnableFastStartup = opts.EnableFastStartup
+	headOpts.ParallelWALDecode = opts.ParallelWALDecode
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}

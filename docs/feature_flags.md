@@ -422,3 +422,21 @@ to this maximum, so an operator setting a smaller cap does not break
 no-`limit` requests. Setting the flag to `0` disables the cap entirely; this
 is **not recommended** for endpoints exposed beyond a trusted network because a
 single client can then request the entire index in one response.
+
+## Parallel WAL decode
+
+`--enable-feature=parallel-wal-decode`
+
+When enabled, WAL replay during head startup decodes records on a pool of
+goroutines instead of a single decoder. The decoder pool sits between the
+WAL byte reader and the existing router; a re-sequencer guarantees that
+records still reach the router in WAL byte order, so replay semantics are
+unchanged.
+
+The pool size defaults to `min(max(GOMAXPROCS/4, 2), 4)` when the flag is
+enabled.
+
+This is primarily useful on large heads (many segments, high series
+count) where the producer side of WAL replay is the bottleneck. On
+smaller heads the channel/goroutine overhead can outweigh the win — keep
+the flag disabled there.
