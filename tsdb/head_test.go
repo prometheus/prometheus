@@ -205,6 +205,10 @@ func BenchmarkLoadWLs(b *testing.B) {
 		// The first oooSamplesPct*samplesPerSeries samples in an OOO series are written as OOO samples.
 		oooSamplesPct float64
 		oooCapMax     int64
+		// compress selects the WAL compression. Zero value is treated as
+		// compression.None below to keep the existing baseline shapes
+		// unchanged.
+		compress compression.Type
 	}{
 		{ // Less series and more samples. 2 hour WAL with 1 second scrape interval.
 			batches:          10,
@@ -252,6 +256,15 @@ func BenchmarkLoadWLs(b *testing.B) {
 			oooSamplesPct:    0.3,
 			oooCapMax:        DefaultOutOfOrderCapMax,
 		},
+		{ // Large head with snappy WAL. 500k series x 240 samples = 120M
+			// samples; snappy puts decompression on the producer-side hot
+			// path, which is what real Prometheus deployments see during
+			// replay.
+			batches:          200,
+			seriesPerBatch:   2500,
+			samplesPerSeries: 240,
+			compress:         compression.Snappy,
+		},
 	}
 
 	labelsPerSeries := 5
@@ -270,15 +283,19 @@ func BenchmarkLoadWLs(b *testing.B) {
 						continue
 					}
 					lastExemplarsPerSeries = exemplarsPerSeries
-					b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d,mmappedChunkT=%d,oooSeriesPct=%.3f,oooSamplesPct=%.3f,oooCapMax=%d,missingSeriesPct=%.3f,stStorage=%v", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries, c.mmappedChunkT, c.oooSeriesPct, c.oooSamplesPct, c.oooCapMax, missingSeriesPct, enableSTStorage),
+					compress := c.compress
+					if compress == "" {
+						compress = compression.None
+					}
+					b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d,mmappedChunkT=%d,oooSeriesPct=%.3f,oooSamplesPct=%.3f,oooCapMax=%d,missingSeriesPct=%.3f,stStorage=%v,compress=%s", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries, c.mmappedChunkT, c.oooSeriesPct, c.oooSamplesPct, c.oooCapMax, missingSeriesPct, enableSTStorage, compress),
 						func(b *testing.B) {
 							dir := b.TempDir()
 
-							wal, err := wlog.New(nil, nil, dir, compression.None)
+							wal, err := wlog.New(nil, nil, dir, compress)
 							require.NoError(b, err)
 							var wbl *wlog.WL
 							if c.oooSeriesPct != 0 {
-								wbl, err = wlog.New(nil, nil, dir, compression.None)
+								wbl, err = wlog.New(nil, nil, dir, compress)
 								require.NoError(b, err)
 							}
 
