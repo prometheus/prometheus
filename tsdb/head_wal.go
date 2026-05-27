@@ -76,10 +76,27 @@ func counterAddNonZero(v *prometheus.CounterVec, value float64, lvs ...string) {
 	}
 }
 
-func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
+// loadWAL replays the WAL into the head. It dispatches to the serial
+// or parallel decoder pipeline based on h.opts.ParallelWALDecode; both
+// paths drive the same router and worker pool via runWALReplay.
+func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) error {
 	if h.opts.ParallelWALDecode {
 		return h.loadWALParallel(r, syms, multiRef, mmappedChunks, oooMmappedChunks)
 	}
+	return h.runWALReplay(r, syms, multiRef, mmappedChunks, oooMmappedChunks, h.serialDecodeWALRecords)
+}
+
+// runWALReplay is the shared WAL-replay body: it sets up the worker
+// pool, exemplar processor, and router, runs the supplied producer in
+// its own goroutine to populate the decoded channel, and finalises.
+//
+// The producer reads records from r, decodes them, and pushes typed
+// values onto decoded in WAL byte order. It must NOT close decoded;
+// runWALReplay's launching goroutine handles that via deferred close.
+// The producer returns nil on clean drain of r, or a
+// *wlog.CorruptionErr on the first decoder failure (with Segment and
+// Offset embedded).
+func (h *Head) runWALReplay(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk, produce func(*wlog.Reader, *labels.SymbolTable, chan<- any) error) (err error) {
 	// Track number of missing series records that were referenced by other records.
 	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
 	// Track number of different records that referenced a series we don't know about
@@ -157,7 +174,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 	go func() {
 		defer close(decoded)
-		decodeErr = h.serialDecodeWALRecords(r, syms, decoded)
+		decodeErr = produce(r, syms, decoded)
 	}()
 
 	// The records are always replayed from the oldest to the newest.
