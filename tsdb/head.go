@@ -201,6 +201,20 @@ type HeadOptions struct {
 	// If it is set to a negative value or zero, the default value is used.
 	WALReplayConcurrency int
 
+	// ParallelWALDecode enables a pool of decoder goroutines during WAL
+	// replay. When false (default), WAL records are decoded on a single
+	// goroutine, as before. When true, ParallelWALDecodeConcurrency
+	// goroutines decode records in parallel; a reorder buffer guarantees
+	// the existing in-order semantics to the router.
+	//
+	// Represents the 'parallel-wal-decode' feature flag.
+	ParallelWALDecode bool
+
+	// ParallelWALDecodeConcurrency is the size of the decoder pool when
+	// ParallelWALDecode is enabled. If it is set to a negative value or
+	// zero, the default value of min(max(GOMAXPROCS/4, 2), 4) is used.
+	ParallelWALDecodeConcurrency int
+
 	// EnableSharding enables ShardedPostings() support in the Head.
 	EnableSharding bool
 
@@ -318,6 +332,9 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 
 	if opts.WALReplayConcurrency <= 0 {
 		opts.WALReplayConcurrency = defaultWALReplayConcurrency
+	}
+	if opts.ParallelWALDecode && opts.ParallelWALDecodeConcurrency <= 0 {
+		opts.ParallelWALDecodeConcurrency = min(max(runtime.GOMAXPROCS(0)/4, 2), 4)
 	}
 
 	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(

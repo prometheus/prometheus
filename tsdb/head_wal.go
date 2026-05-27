@@ -77,6 +77,9 @@ func counterAddNonZero(v *prometheus.CounterVec, value float64, lvs ...string) {
 }
 
 func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
+	if h.opts.ParallelWALDecode {
+		return h.loadWALParallel(r, syms, multiRef, mmappedChunks, oooMmappedChunks)
+	}
 	// Track number of missing series records that were referenced by other records.
 	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
 	// Track number of different records that referenced a series we don't know about
@@ -527,6 +530,22 @@ func (h *Head) decodeWALRecord(rec []byte, typ record.Type, dec *record.Decoder,
 		return meta, nil
 	}
 	return nil, nil
+}
+
+// loadWALParallel is the entry point for WAL replay when the
+// ParallelWALDecode feature is enabled. It will replace the serial
+// decoder goroutine in loadWAL with a byte-reader → decoder-pool →
+// reorder-buffer pipeline as described in the design doc; see
+// (*Head).decodeWALRecord for the pure decode function the pool will
+// dispatch to.
+//
+// This is currently a stub: the flag is wired and the dispatch is in
+// place so that the surrounding plumbing can land in isolation, but the
+// pipeline itself has not been built yet. Calling this with the flag on
+// returns an error rather than silently doing the wrong thing.
+func (h *Head) loadWALParallel(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) error {
+	_, _, _, _, _ = r, syms, multiRef, mmappedChunks, oooMmappedChunks
+	return errors.New("tsdb: ParallelWALDecode is enabled but the parallel decode pipeline has not landed yet")
 }
 
 // resetSeriesWithMMappedChunks is only used during the WAL replay.
