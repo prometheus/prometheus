@@ -157,19 +157,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 	go func() {
 		defer close(decoded)
-		dec := record.NewDecoder(syms, h.logger)
-		for r.Next() {
-			rec := r.Record()
-			val, err := h.decodeWALRecord(rec, dec.Type(rec), &dec, r.Segment(), r.Offset())
-			if err != nil {
-				decodeErr = err
-				return
-			}
-			if val == nil {
-				continue
-			}
-			decoded <- val
-		}
+		decodeErr = h.serialDecodeWALRecords(r, syms, decoded)
 	}()
 
 	// The records are always replayed from the oldest to the newest.
@@ -530,6 +518,32 @@ func (h *Head) decodeWALRecord(rec []byte, typ record.Type, dec *record.Decoder,
 		return meta, nil
 	}
 	return nil, nil
+}
+
+// serialDecodeWALRecords reads WAL records sequentially from r, decodes
+// each via decodeWALRecord with a single record.Decoder, and pushes the
+// typed records onto decoded in WAL byte order. It returns when r
+// drains or when decodeWALRecord returns a *wlog.CorruptionErr.
+//
+// The function does not close decoded; the caller (loadWAL) closes it
+// via a deferred close on the goroutine that runs this function. Doing
+// so keeps the close-once contract for decoded local to the call site
+// even when loadWALParallel adds an alternative producer with a
+// different goroutine topology.
+func (h *Head) serialDecodeWALRecords(r *wlog.Reader, syms *labels.SymbolTable, decoded chan<- any) error {
+	dec := record.NewDecoder(syms, h.logger)
+	for r.Next() {
+		rec := r.Record()
+		val, err := h.decodeWALRecord(rec, dec.Type(rec), &dec, r.Segment(), r.Offset())
+		if err != nil {
+			return err
+		}
+		if val == nil {
+			continue
+		}
+		decoded <- val
+	}
+	return nil
 }
 
 // loadWALParallel is the entry point for WAL replay when the
