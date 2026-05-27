@@ -154,97 +154,18 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 	go func() {
 		defer close(decoded)
-		var err error
 		dec := record.NewDecoder(syms, h.logger)
 		for r.Next() {
-			switch dec.Type(r.Record()) {
-			case record.Series:
-				series := h.wlReplaySeriesPool.Get()[:0]
-				series, err = dec.Series(r.Record(), series)
-				if err != nil {
-					decodeErr = &wlog.CorruptionErr{
-						Err:     fmt.Errorf("decode series: %w", err),
-						Segment: r.Segment(),
-						Offset:  r.Offset(),
-					}
-					return
-				}
-				decoded <- series
-			case record.Samples, record.SamplesV2:
-				samples := h.wlReplaySamplesPool.Get()[:0]
-				samples, err = dec.Samples(r.Record(), samples)
-				if err != nil {
-					decodeErr = &wlog.CorruptionErr{
-						Err:     fmt.Errorf("decode samples: %w", err),
-						Segment: r.Segment(),
-						Offset:  r.Offset(),
-					}
-					return
-				}
-				decoded <- samples
-			case record.Tombstones:
-				tstones := h.wlReplaytStonesPool.Get()[:0]
-				tstones, err = dec.Tombstones(r.Record(), tstones)
-				if err != nil {
-					decodeErr = &wlog.CorruptionErr{
-						Err:     fmt.Errorf("decode tombstones: %w", err),
-						Segment: r.Segment(),
-						Offset:  r.Offset(),
-					}
-					return
-				}
-				decoded <- tstones
-			case record.Exemplars:
-				exemplars := h.wlReplayExemplarsPool.Get()[:0]
-				exemplars, err = dec.Exemplars(r.Record(), exemplars)
-				if err != nil {
-					decodeErr = &wlog.CorruptionErr{
-						Err:     fmt.Errorf("decode exemplars: %w", err),
-						Segment: r.Segment(),
-						Offset:  r.Offset(),
-					}
-					return
-				}
-				decoded <- exemplars
-			case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
-				hists := h.wlReplayHistogramsPool.Get()[:0]
-				hists, err = dec.HistogramSamples(r.Record(), hists)
-				if err != nil {
-					decodeErr = &wlog.CorruptionErr{
-						Err:     fmt.Errorf("decode histograms: %w", err),
-						Segment: r.Segment(),
-						Offset:  r.Offset(),
-					}
-					return
-				}
-				decoded <- hists
-			case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
-				hists := h.wlReplayFloatHistogramsPool.Get()[:0]
-				hists, err = dec.FloatHistogramSamples(r.Record(), hists)
-				if err != nil {
-					decodeErr = &wlog.CorruptionErr{
-						Err:     fmt.Errorf("decode float histograms: %w", err),
-						Segment: r.Segment(),
-						Offset:  r.Offset(),
-					}
-					return
-				}
-				decoded <- hists
-			case record.Metadata:
-				meta := h.wlReplayMetadataPool.Get()[:0]
-				meta, err := dec.Metadata(r.Record(), meta)
-				if err != nil {
-					decodeErr = &wlog.CorruptionErr{
-						Err:     fmt.Errorf("decode metadata: %w", err),
-						Segment: r.Segment(),
-						Offset:  r.Offset(),
-					}
-					return
-				}
-				decoded <- meta
-			default:
-				// Noop.
+			rec := r.Record()
+			val, err := h.decodeWALRecord(rec, dec.Type(rec), &dec, r.Segment(), r.Offset())
+			if err != nil {
+				decodeErr = err
+				return
 			}
+			if val == nil {
+				continue
+			}
+			decoded <- val
 		}
 	}()
 
@@ -509,6 +430,103 @@ Outer:
 		h.logger.Info("Overlapping m-map chunks on duplicate series records", "count", count)
 	}
 	return nil
+}
+
+// decodeWALRecord decodes one WAL record's bytes into a typed slice ready
+// for the loadWAL router. It returns:
+//
+//   - (decoded slice, nil) for handled record types (Series, Samples,
+//     Tombstones, Exemplars, HistogramSamples, FloatHistogramSamples,
+//     Metadata, and their custom-buckets / v2 variants),
+//   - (nil, nil) for record types loadWAL doesn't act on (e.g. Unknown),
+//   - (nil, *wlog.CorruptionErr) when the underlying decoder fails — the
+//     error embeds the supplied segment/offset so callers don't need a
+//     back-channel to the reader.
+//
+// The function is intentionally pure: it reads from the supplied bytes
+// and *record.Decoder, writes to h's wlReplay* pools (which are
+// goroutine-safe sync.Pools), and otherwise touches no head state.
+func (h *Head) decodeWALRecord(rec []byte, typ record.Type, dec *record.Decoder, segment int, offset int64) (any, error) {
+	switch typ {
+	case record.Series:
+		series := h.wlReplaySeriesPool.Get()[:0]
+		series, err := dec.Series(rec, series)
+		if err != nil {
+			return nil, &wlog.CorruptionErr{
+				Err:     fmt.Errorf("decode series: %w", err),
+				Segment: segment,
+				Offset:  offset,
+			}
+		}
+		return series, nil
+	case record.Samples, record.SamplesV2:
+		samples := h.wlReplaySamplesPool.Get()[:0]
+		samples, err := dec.Samples(rec, samples)
+		if err != nil {
+			return nil, &wlog.CorruptionErr{
+				Err:     fmt.Errorf("decode samples: %w", err),
+				Segment: segment,
+				Offset:  offset,
+			}
+		}
+		return samples, nil
+	case record.Tombstones:
+		tstones := h.wlReplaytStonesPool.Get()[:0]
+		tstones, err := dec.Tombstones(rec, tstones)
+		if err != nil {
+			return nil, &wlog.CorruptionErr{
+				Err:     fmt.Errorf("decode tombstones: %w", err),
+				Segment: segment,
+				Offset:  offset,
+			}
+		}
+		return tstones, nil
+	case record.Exemplars:
+		exemplars := h.wlReplayExemplarsPool.Get()[:0]
+		exemplars, err := dec.Exemplars(rec, exemplars)
+		if err != nil {
+			return nil, &wlog.CorruptionErr{
+				Err:     fmt.Errorf("decode exemplars: %w", err),
+				Segment: segment,
+				Offset:  offset,
+			}
+		}
+		return exemplars, nil
+	case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
+		hists := h.wlReplayHistogramsPool.Get()[:0]
+		hists, err := dec.HistogramSamples(rec, hists)
+		if err != nil {
+			return nil, &wlog.CorruptionErr{
+				Err:     fmt.Errorf("decode histograms: %w", err),
+				Segment: segment,
+				Offset:  offset,
+			}
+		}
+		return hists, nil
+	case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
+		hists := h.wlReplayFloatHistogramsPool.Get()[:0]
+		hists, err := dec.FloatHistogramSamples(rec, hists)
+		if err != nil {
+			return nil, &wlog.CorruptionErr{
+				Err:     fmt.Errorf("decode float histograms: %w", err),
+				Segment: segment,
+				Offset:  offset,
+			}
+		}
+		return hists, nil
+	case record.Metadata:
+		meta := h.wlReplayMetadataPool.Get()[:0]
+		meta, err := dec.Metadata(rec, meta)
+		if err != nil {
+			return nil, &wlog.CorruptionErr{
+				Err:     fmt.Errorf("decode metadata: %w", err),
+				Segment: segment,
+				Offset:  offset,
+			}
+		}
+		return meta, nil
+	}
+	return nil, nil
 }
 
 // resetSeriesWithMMappedChunks is only used during the WAL replay.
