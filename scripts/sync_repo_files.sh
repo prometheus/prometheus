@@ -97,7 +97,9 @@ fork_repo() {
 
 push_branch() {
   local git_url
+  local safe_url
   git_url="https://${git_user}:${GITHUB_TOKEN}@github.com/${1}"
+  safe_url="https://${git_user}:***@github.com/${1}"
   # stdout and stderr are redirected to /dev/null otherwise git-push could leak
   # the token in the logs.
   # Delete the remote branch in case it was merged but not deleted.
@@ -105,10 +107,13 @@ push_branch() {
   # Forking is asynchronous; retry for up to 5 minutes until the git objects
   # are available before giving up.
   local deadline=$(( $(date +%s) + 300 ))
-  until git push --quiet "${git_url}" --set-upstream "${branch}" 1>/dev/null 2>&1; do
+  local push_output
+  until push_output="$(git push "${git_url}" --set-upstream "${branch}" 2>&1)"; do
     if [[ $(date +%s) -ge ${deadline} ]]; then
+      repo_log_red "push to ${safe_url} failed: $(echo "${push_output}" | sed "s|${GITHUB_TOKEN}|***|g")"
       return 1
     fi
+    repo_log_yellow "push to ${safe_url} failed, retrying in 10 seconds."
     sleep 10
   done
 }
