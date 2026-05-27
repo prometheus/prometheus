@@ -563,22 +563,6 @@ func (h *Head) serialDecodeWALRecords(r *wlog.Reader, syms *labels.SymbolTable, 
 	return nil
 }
 
-// loadWALParallel is the entry point for WAL replay when the
-// ParallelWALDecode feature is enabled. It will replace the serial
-// decoder goroutine in loadWAL with a byte-reader → decoder-pool →
-// reorder-buffer pipeline as described in the design doc; see
-// (*Head).decodeWALRecord for the pure decode function the pool will
-// dispatch to.
-//
-// This is currently a stub: the flag is wired and the dispatch is in
-// place so that the surrounding plumbing can land in isolation, but the
-// pipeline itself has not been built yet. Calling this with the flag on
-// returns an error rather than silently doing the wrong thing.
-func (h *Head) loadWALParallel(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) error {
-	_, _, _, _, _ = r, syms, multiRef, mmappedChunks, oooMmappedChunks
-	return errors.New("tsdb: ParallelWALDecode is enabled but the parallel decode pipeline has not landed yet")
-}
-
 // resetSeriesWithMMappedChunks is only used during the WAL replay.
 func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*mmappedChunk, walSeriesRef chunks.HeadSeriesRef) (overlapped bool) {
 	if mSeries.ref != walSeriesRef {
