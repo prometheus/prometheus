@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.12.0-rc.0 / 2026-05-15
+## 3.12.0 / 2026-05-28
 
 - [SECURITY] Remote-write: Reject snappy-compressed requests whose declared decoded length exceeds the 32MB. Thanks to @hibrian827 for reporting it. #18642
 - [SECURITY] STACKIT SD: Fix secrets being exposed in plaintext via `/-/config` endpoint. Thanks to @August829 and @Phaxma for reporting. GHSA-39j6-789q-qxvh #18649
