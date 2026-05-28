@@ -276,6 +276,48 @@ func TestQueryError(t *testing.T) {
 	require.ErrorIs(t, res.Err, errStorage, "expected error doesn't match")
 }
 
+// TestManyToManyErrorDeterministic guards against re-introduction of a
+// non-deterministic ordering in the "found duplicate series for the match
+// group ... [X, Y] ..." error returned from VectorBinop. The two
+// Metric.String() values inside `[...]` are rendered in whichever order the
+// duplicate pair arrives from the right-hand side. That arrival order is not
+// guaranteed stable across evaluations or engine implementations (it can, for
+// example, derive from Go map iteration when the right-hand side is an
+// aggregation), so two runs of the same query could previously produce error
+// strings that differed only in the order of the pair. That divergence showed
+// up in Cortex's fuzz tests (cortexproject/cortex#7546). The fix sorts the
+// pair before formatting, so the rendered order is stable regardless of how
+// the duplicates arrive.
+func TestManyToManyErrorDeterministic(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 5m
+			dup_metric{label="alpha"} 1
+			dup_metric{label="beta"}  2
+			scalar_metric{}           3
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	engine := newTestEngine(t)
+	ctx := t.Context()
+
+	// The expected pair is sorted lexicographically; Labels.String() renders
+	// __name__ as a regular label, so it sorts before "label" in each set.
+	const wantErr = `found duplicate series for the match group {} on the right hand-side of the operation: ` +
+		`[{__name__="dup_metric", label="alpha"}, {__name__="dup_metric", label="beta"}];` +
+		`many-to-many matching not allowed: matching labels must be unique on one side`
+
+	// Sorting makes a single evaluation deterministic; evaluate repeatedly as
+	// a cheap guard against any arrival-order variation slipping back in.
+	const iterations = 100
+	for i := range iterations {
+		q, err := engine.NewInstantQuery(ctx, storage, nil, "scalar_metric > on() dup_metric", time.Unix(0, 0))
+		require.NoError(t, err)
+		res := q.Exec(ctx)
+		q.Close()
+		require.EqualError(t, res.Err, wantErr, "iteration %d: error message does not match the sorted-pair contract", i)
+	}
+}
+
 type noopHintRecordingQueryable struct {
 	hints []*storage.SelectHints
 }
