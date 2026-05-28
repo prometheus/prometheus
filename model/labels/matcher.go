@@ -168,10 +168,3 @@ func (m *Matcher) IsRegexOptimized() bool {
 	}
 	return m.re.IsOptimized()
 }
-
-func (m *Matcher) HasCaseInsensitivePrefix() bool {
-	if m.re == nil {
-		return false
-	}
-	return m.re.caseInsensitivePrefix
-}
