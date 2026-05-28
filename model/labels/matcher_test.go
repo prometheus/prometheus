@@ -27,6 +27,13 @@ func mustNewMatcher(t *testing.T, mType MatchType, value string) *Matcher {
 	return m
 }
 
+func (m *Matcher) hasCaseInsensitivePrefix() bool {
+	if m.re == nil {
+		return false
+	}
+	return m.re.caseInsensitivePrefix
+}
+
 func TestMatcher(t *testing.T) {
 	tests := []struct {
 		matcher *Matcher
@@ -189,7 +196,7 @@ func TestPrefix(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("%d: %s", i, tc.matcher), func(t *testing.T) {
 			require.Equal(t, tc.prefix, tc.matcher.Prefix())
-			require.Equal(t, tc.caseInsensitivePrefix, tc.matcher.HasCaseInsensitivePrefix())
+			require.Equal(t, tc.caseInsensitivePrefix, tc.matcher.hasCaseInsensitivePrefix())
 		})
 	}
 }
