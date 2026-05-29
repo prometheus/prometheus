@@ -276,6 +276,30 @@ type rdsClient interface {
 	DescribeDBInstances(context.Context, *rds.DescribeDBInstancesInput, ...func(*rds.Options)) (*rds.DescribeDBInstancesOutput, error)
 }
 
+// rdsClientAdapter captures only the RDS API calls AWS discovery uses as
+// method-value closures, keeping the concrete *rds.Client out of any
+// interface-boxed struct field. See ec2ClientAdapter for the full rationale:
+// this stops the linker from retaining the entire RDS API surface (~5 MB).
+type rdsClientAdapter struct {
+	describeDBClusters  func(context.Context, *rds.DescribeDBClustersInput, ...func(*rds.Options)) (*rds.DescribeDBClustersOutput, error)
+	describeDBInstances func(context.Context, *rds.DescribeDBInstancesInput, ...func(*rds.Options)) (*rds.DescribeDBInstancesOutput, error)
+}
+
+func newRDSClientAdapter(c *rds.Client) rdsClientAdapter {
+	return rdsClientAdapter{
+		describeDBClusters:  c.DescribeDBClusters,
+		describeDBInstances: c.DescribeDBInstances,
+	}
+}
+
+func (a rdsClientAdapter) DescribeDBClusters(ctx context.Context, params *rds.DescribeDBClustersInput, optFns ...func(*rds.Options)) (*rds.DescribeDBClustersOutput, error) {
+	return a.describeDBClusters(ctx, params, optFns...)
+}
+
+func (a rdsClientAdapter) DescribeDBInstances(ctx context.Context, params *rds.DescribeDBInstancesInput, optFns ...func(*rds.Options)) (*rds.DescribeDBInstancesOutput, error) {
+	return a.describeDBInstances(ctx, params, optFns...)
+}
+
 // RDSDiscovery periodically performs RDS-SD requests. It implements
 // the Discoverer interface.
 type RDSDiscovery struct {
@@ -358,12 +382,12 @@ func (d *RDSDiscovery) initRdsClient(ctx context.Context) error {
 		cfg.Credentials = aws.NewCredentialsCache(assumeProvider)
 	}
 
-	d.rds = rds.NewFromConfig(cfg, func(options *rds.Options) {
+	d.rds = newRDSClientAdapter(rds.NewFromConfig(cfg, func(options *rds.Options) {
 		if d.cfg.Endpoint != "" {
 			options.BaseEndpoint = &d.cfg.Endpoint
 		}
 		options.HTTPClient = client
-	})
+	}))
 
 	// Test credentials by making a simple API call
 	testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)

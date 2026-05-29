@@ -162,6 +162,60 @@ type ecsClient interface {
 	DescribeContainerInstances(context.Context, *ecs.DescribeContainerInstancesInput, ...func(*ecs.Options)) (*ecs.DescribeContainerInstancesOutput, error)
 }
 
+// ecsClientAdapter captures only the ECS API calls AWS discovery uses as
+// method-value closures, keeping the concrete *ecs.Client out of any
+// interface-boxed struct field. See ec2ClientAdapter for the full rationale:
+// this stops the linker from retaining the entire ECS API surface (~2 MB).
+type ecsClientAdapter struct {
+	listClusters               func(context.Context, *ecs.ListClustersInput, ...func(*ecs.Options)) (*ecs.ListClustersOutput, error)
+	describeClusters           func(context.Context, *ecs.DescribeClustersInput, ...func(*ecs.Options)) (*ecs.DescribeClustersOutput, error)
+	listServices               func(context.Context, *ecs.ListServicesInput, ...func(*ecs.Options)) (*ecs.ListServicesOutput, error)
+	describeServices           func(context.Context, *ecs.DescribeServicesInput, ...func(*ecs.Options)) (*ecs.DescribeServicesOutput, error)
+	listTasks                  func(context.Context, *ecs.ListTasksInput, ...func(*ecs.Options)) (*ecs.ListTasksOutput, error)
+	describeTasks              func(context.Context, *ecs.DescribeTasksInput, ...func(*ecs.Options)) (*ecs.DescribeTasksOutput, error)
+	describeContainerInstances func(context.Context, *ecs.DescribeContainerInstancesInput, ...func(*ecs.Options)) (*ecs.DescribeContainerInstancesOutput, error)
+}
+
+func newECSClientAdapter(c *ecs.Client) ecsClientAdapter {
+	return ecsClientAdapter{
+		listClusters:               c.ListClusters,
+		describeClusters:           c.DescribeClusters,
+		listServices:               c.ListServices,
+		describeServices:           c.DescribeServices,
+		listTasks:                  c.ListTasks,
+		describeTasks:              c.DescribeTasks,
+		describeContainerInstances: c.DescribeContainerInstances,
+	}
+}
+
+func (a ecsClientAdapter) ListClusters(ctx context.Context, params *ecs.ListClustersInput, optFns ...func(*ecs.Options)) (*ecs.ListClustersOutput, error) {
+	return a.listClusters(ctx, params, optFns...)
+}
+
+func (a ecsClientAdapter) DescribeClusters(ctx context.Context, params *ecs.DescribeClustersInput, optFns ...func(*ecs.Options)) (*ecs.DescribeClustersOutput, error) {
+	return a.describeClusters(ctx, params, optFns...)
+}
+
+func (a ecsClientAdapter) ListServices(ctx context.Context, params *ecs.ListServicesInput, optFns ...func(*ecs.Options)) (*ecs.ListServicesOutput, error) {
+	return a.listServices(ctx, params, optFns...)
+}
+
+func (a ecsClientAdapter) DescribeServices(ctx context.Context, params *ecs.DescribeServicesInput, optFns ...func(*ecs.Options)) (*ecs.DescribeServicesOutput, error) {
+	return a.describeServices(ctx, params, optFns...)
+}
+
+func (a ecsClientAdapter) ListTasks(ctx context.Context, params *ecs.ListTasksInput, optFns ...func(*ecs.Options)) (*ecs.ListTasksOutput, error) {
+	return a.listTasks(ctx, params, optFns...)
+}
+
+func (a ecsClientAdapter) DescribeTasks(ctx context.Context, params *ecs.DescribeTasksInput, optFns ...func(*ecs.Options)) (*ecs.DescribeTasksOutput, error) {
+	return a.describeTasks(ctx, params, optFns...)
+}
+
+func (a ecsClientAdapter) DescribeContainerInstances(ctx context.Context, params *ecs.DescribeContainerInstancesInput, optFns ...func(*ecs.Options)) (*ecs.DescribeContainerInstancesOutput, error) {
+	return a.describeContainerInstances(ctx, params, optFns...)
+}
+
 type ecsEC2Client interface {
 	DescribeInstances(context.Context, *ec2.DescribeInstancesInput, ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
 	DescribeNetworkInterfaces(context.Context, *ec2.DescribeNetworkInterfacesInput, ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error)
@@ -250,16 +304,16 @@ func (d *ECSDiscovery) initEcsClient(ctx context.Context) error {
 		cfg.Credentials = aws.NewCredentialsCache(assumeProvider)
 	}
 
-	d.ecs = ecs.NewFromConfig(cfg, func(options *ecs.Options) {
+	d.ecs = newECSClientAdapter(ecs.NewFromConfig(cfg, func(options *ecs.Options) {
 		if d.cfg.Endpoint != "" {
 			options.BaseEndpoint = &d.cfg.Endpoint
 		}
 		options.HTTPClient = client
-	})
+	}))
 
-	d.ec2 = ec2.NewFromConfig(cfg, func(options *ec2.Options) {
+	d.ec2 = newEC2ClientAdapter(ec2.NewFromConfig(cfg, func(options *ec2.Options) {
 		options.HTTPClient = client
-	})
+	}))
 
 	// Test credentials by making a simple API call
 	testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
