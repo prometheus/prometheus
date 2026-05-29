@@ -3,6 +3,9 @@ name: "CodeQL"
 
 on:
   workflow_call:
+  pull_request:
+    paths:
+      - .github/workflows/codeql-analysis.yml
   schedule:
     - cron: "26 14 * * 1"
 
@@ -19,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ["javascript"]
+        language: ["javascript","go"]
 
     steps:
       - name: Checkout repository
