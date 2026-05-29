@@ -1110,7 +1110,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 
 	// Calling db.reload() calls db.reloadBlocks() which requires cmtx to be locked.
 	db.cmtx.Lock()
-	if err := db.reload(); err != nil {
+	if err := db.reload(context.Background()); err != nil {
 		db.cmtx.Unlock()
 		return nil, err
 	}
@@ -1227,7 +1227,7 @@ func (db *DB) run(ctx context.Context) {
 					}
 
 					if !nextCompactionIsSoon {
-						if err := db.CompactStaleHead(); err != nil {
+						if err := db.CompactStaleHead(ctx); err != nil {
 							db.logger.Error("immediate stale series compaction failed", "err", err)
 						}
 					}
@@ -1478,9 +1478,11 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 		// ensures that maxt is more than chunkRange/2 back from now, and
 		// head.appendableMinValidTime() ensures that no new appends can start within the compaction range.
 		// We do need to wait for any overlapping appenders that started previously to finish.
-		db.head.WaitForAppendersOverlapping(rh.MaxTime())
+		if err := db.head.WaitForAppendersOverlapping(ctx, rh.MaxTime()); err != nil {
+			return err
+		}
 
-		if err := db.compactHead(rh); err != nil {
+		if err := db.compactHead(ctx, rh); err != nil {
 			return fmt.Errorf("compact head: %w", err)
 		}
 		// Consider only successful compactions for WAL truncation.
@@ -1513,11 +1515,11 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 }
 
 // CompactHead compacts the given RangeHead.
-func (db *DB) CompactHead(head *RangeHead) error {
+func (db *DB) CompactHead(ctx context.Context, head *RangeHead) error {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
-	if err := db.compactHead(head); err != nil {
+	if err := db.compactHead(ctx, head); err != nil {
 		return fmt.Errorf("compact head: %w", err)
 	}
 
@@ -1583,7 +1585,7 @@ func (db *DB) compactOOOHead(ctx context.Context) error {
 			db.mtx.Unlock()
 		}
 
-		if err := db.head.truncateOOO(lastWBLFile, minOOOMmapRef); err != nil {
+		if err := db.head.truncateOOO(ctx, lastWBLFile, minOOOMmapRef); err != nil {
 			return fmt.Errorf("truncate ooo wbl: %w", err)
 		}
 	}
@@ -1640,7 +1642,7 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 
 // compactHead compacts the given RangeHead.
 // The db.cmtx should be held before calling this method.
-func (db *DB) compactHead(head *RangeHead) error {
+func (db *DB) compactHead(ctx context.Context, head *RangeHead) error {
 	db.lastHeadCompactionTime = time.Now()
 
 	uids, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), nil)
@@ -1659,7 +1661,7 @@ func (db *DB) compactHead(head *RangeHead) error {
 		}
 		return errors.Join(errs...)
 	}
-	if err = db.head.truncateMemory(head.BlockMaxTime()); err != nil {
+	if err = db.head.truncateMemory(ctx, head.BlockMaxTime()); err != nil {
 		return fmt.Errorf("head memory truncate: %w", err)
 	}
 
@@ -1668,7 +1670,7 @@ func (db *DB) compactHead(head *RangeHead) error {
 	return nil
 }
 
-func (db *DB) CompactStaleHead() (err error) {
+func (db *DB) CompactStaleHead(ctx context.Context) (err error) {
 	db.cmtx.Lock()
 	defer func() {
 		db.cmtx.Unlock()
@@ -1712,7 +1714,7 @@ func (db *DB) CompactStaleHead() (err error) {
 		}
 	}
 
-	if err := db.head.truncateStaleSeries(staleSeriesRefs, maxt); err != nil {
+	if err := db.head.truncateStaleSeries(ctx, staleSeriesRefs, maxt); err != nil {
 		return fmt.Errorf("head truncate: %w", err)
 	}
 	db.head.RebuildSymbolTable(db.logger)
@@ -1782,7 +1784,7 @@ func getBlock(allBlocks []*Block, id ulid.ULID) (*Block, bool) {
 
 // reload reloads blocks and truncates the head and its WAL.
 // The db.cmtx mutex should be held before calling this method.
-func (db *DB) reload() error {
+func (db *DB) reload(ctx context.Context) error {
 	if err := db.reloadBlocks(); err != nil {
 		return fmt.Errorf("reloadBlocks: %w", err)
 	}
@@ -1790,7 +1792,7 @@ func (db *DB) reload() error {
 	if !ok {
 		return nil
 	}
-	if err := db.head.Truncate(maxt); err != nil {
+	if err := db.head.Truncate(ctx, maxt); err != nil {
 		return fmt.Errorf("head truncate: %w", err)
 	}
 	return nil
