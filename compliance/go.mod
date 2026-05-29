@@ -1,6 +1,6 @@
 module compliance
 
-go 1.25.6
+go 1.25.0
 
 require github.com/prometheus/compliance/remotewrite v0.0.0-20260223092825-818283e1171e
 
@@ -14,7 +14,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/oklog/run v1.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/client_golang/exp v0.0.0-20260506204903-0ac87e14c303 // indirect
+	github.com/prometheus/client_golang/exp v0.0.0-20260518105423-c9d5bc4c50a9 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.67.5 // indirect
 	github.com/prometheus/prometheus v0.307.4-0.20251119130332-1174b0ce4f1f // indirect
