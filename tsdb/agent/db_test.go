@@ -1498,7 +1498,7 @@ func readWALSamples(t *testing.T, walDir string) []walSample {
 			for _, h := range histograms {
 				outputSamples = append(outputSamples, walSample{
 					t:    h.T,
-					h:    h.H,
+					h:    h.H.Copy(), // copy: decode buffer is reused across WAL records
 					lbls: lastSeries.Labels.Copy(),
 					ref:  storage.SeriesRef(lastSeries.Ref),
 				})
