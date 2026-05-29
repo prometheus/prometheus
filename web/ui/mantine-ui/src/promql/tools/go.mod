@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus/web/ui/mantine-ui/src/promql/tools
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc
@@ -20,7 +20,8 @@ require (
 	github.com/prometheus/common v0.55.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	golang.org/x/sys v0.22.0 // indirect
-	golang.org/x/text v0.16.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 )
