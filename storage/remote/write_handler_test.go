@@ -338,6 +338,33 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	}
 }
 
+func TestRemoteWriteHandler_V1Message_RejectsUnsortedLabels(t *testing.T) {
+	payload, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
+		Labels: []prompb.Label{
+			{Name: "foo", Value: "bar"},
+			{Name: "__name__", Value: "test_metric"},
+		},
+		Samples: []prompb.Sample{{Value: 1, Timestamp: 1}},
+	}}, nil, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+	require.NoError(t, err)
+
+	appendable := &mockAppendable{}
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false, false)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	require.Contains(t, string(body), "labels are not sorted")
+	require.Empty(t, appendable.samples)
+}
+
 func expectHeaderValue(t testing.TB, expected int, got string) {
 	t.Helper()
 
@@ -405,6 +432,15 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				writeV2RequestFixture.Timeseries...),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "invalid labels for series, labels {__name__=\"test_metric1\", test_metric1=\"test_metric1\", test_metric1=\"test_metric1\"}, duplicated label test_metric1\n",
+		},
+		{
+			desc: "Partial write; first series with unsorted labels",
+			input: append(
+				// Series with foo="bar",__name__="test_metric1" labels.
+				[]writev2.TimeSeries{{LabelsRefs: []uint32{9, 10, 1, 2}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				writeV2RequestFixture.Timeseries...),
+			expectedCode:     http.StatusBadRequest,
+			expectedRespBody: "labels for series [9 10 1 2] are not sorted\n",
 		},
 		{
 			desc: "Partial write; first series with odd number of label refs",
