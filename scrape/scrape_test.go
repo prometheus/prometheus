@@ -161,7 +161,7 @@ type closeCountingTransport struct {
 	closed *atomic.Int32
 }
 
-func (ct *closeCountingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+func (*closeCountingTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	return nil, errors.New("not used")
 }
 
