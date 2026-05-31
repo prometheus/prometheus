@@ -94,7 +94,7 @@ var (
 	lintConfigOptions = append(append([]string{}, lintRulesOptions...), lintOptionTooLongScrapeInterval)
 )
 
-const httpConfigFileDescription = "HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool"
+const httpConfigFileDescription = "HTTP client configuration file (supports TLS, basic auth, OAuth2, etc.), see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool"
 
 func main() {
 	var (
@@ -144,11 +144,11 @@ func main() {
 		"The config files to check.",
 	).Required().ExistingFiles()
 
-	checkServerHealthCmd := checkCmd.Command("healthy", "Check if the Prometheus server is healthy.")
+	checkServerHealthCmd := checkCmd.Command("healthy", "Check if the Prometheus server is healthy. Use --http.config.file flag to pass authentication credentials.")
 	checkServerHealthCmd.Flag("http.config.file", httpConfigFileDescription).PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 	checkServerHealthCmd.Flag("url", "The URL for the Prometheus server.").Default("http://localhost:9090").URLVar(&serverURL)
 
-	checkServerReadyCmd := checkCmd.Command("ready", "Check if the Prometheus server is ready.")
+	checkServerReadyCmd := checkCmd.Command("ready", "Check if the Prometheus server is ready. Use --http.config.file flag to pass authentication credentials.")
 	checkServerReadyCmd.Flag("http.config.file", httpConfigFileDescription).PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 	checkServerReadyCmd.Flag("url", "The URL for the Prometheus server.").Default("http://localhost:9090").URLVar(&serverURL)
 

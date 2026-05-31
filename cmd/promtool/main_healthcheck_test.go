@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	promconfig "github.com/prometheus/common/config"
+	"github.com/stretchr/testify/require"
 )
 
 // TestCheckServerStatusWithBasicAuth verifies health check works with basic auth
