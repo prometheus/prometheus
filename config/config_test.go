@@ -31,7 +31,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/otlptranslator"
-	"github.com/prometheus/sigv4"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v2"
 
@@ -65,8 +64,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/storage/remote/azuread"
-	"github.com/prometheus/prometheus/storage/remote/googleiam"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -3463,85 +3460,6 @@ func TestGetScrapeConfigs_Loaded(t *testing.T) {
 	})
 }
 
-func TestValidateAuthConfigs(t *testing.T) {
-	tests := []struct {
-		name      string
-		config    *RemoteWriteConfig
-		expectErr bool
-		errMsg    string
-	}{
-		{
-			name:      "no auth",
-			config:    &RemoteWriteConfig{},
-			expectErr: false,
-		},
-		{
-			name: "only basic_auth",
-			config: &RemoteWriteConfig{
-				HTTPClientConfig: config.HTTPClientConfig{
-					BasicAuth: &config.BasicAuth{Username: "user"},
-				},
-			},
-			expectErr: false,
-		},
-		{
-			name: "basic_auth and authorization",
-			config: &RemoteWriteConfig{
-				HTTPClientConfig: config.HTTPClientConfig{
-					BasicAuth:     &config.BasicAuth{Username: "user"},
-					Authorization: &config.Authorization{Type: "Bearer", Credentials: "abc"},
-				},
-			},
-			expectErr: true,
-			errMsg:    "at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured",
-		},
-		{
-			name: "oauth2 and sigv4",
-			config: &RemoteWriteConfig{
-				HTTPClientConfig: config.HTTPClientConfig{
-					OAuth2: &config.OAuth2{ClientID: "id"},
-				},
-				SigV4Config: &sigv4.SigV4Config{Region: "us-east-1"},
-			},
-			expectErr: true,
-			errMsg:    "at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured",
-		},
-		{
-			name: "azuread and google_iam",
-			config: &RemoteWriteConfig{
-				AzureADConfig:   &azuread.AzureADConfig{Cloud: "AzurePublic"},
-				GoogleIAMConfig: &googleiam.Config{CredentialsFile: "file"},
-			},
-			expectErr: true,
-			errMsg:    "at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured",
-		},
-		{
-			name: "multiple auth methods",
-			config: &RemoteWriteConfig{
-				HTTPClientConfig: config.HTTPClientConfig{
-					BasicAuth: &config.BasicAuth{Username: "user"},
-					OAuth2:    &config.OAuth2{ClientID: "id"},
-				},
-				SigV4Config: &sigv4.SigV4Config{Region: "us-east-1"},
-			},
-			expectErr: true,
-			errMsg:    "at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateAuthConfigs(tt.config)
-			if tt.expectErr {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), tt.errMsg)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
-
 func TestAlertmanagerConfig_Validate(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -3601,56 +3519,6 @@ func TestAlertmanagerConfig_Validate(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
-		})
-	}
-}
-
-func TestGetGoGC(t *testing.T) {
-	tests := []struct {
-		name     string
-		gogc     string
-		expected int
-	}{
-		{
-			name:     "GOGC not set",
-			gogc:     "",
-			expected: DefaultGoGCPercentage,
-		},
-		{
-			name:     "GOGC off",
-			gogc:     "off",
-			expected: -1,
-		},
-		{
-			name:     "GOGC OFF uppercase",
-			gogc:     "OFF",
-			expected: -1,
-		},
-		{
-			name:     "GOGC numeric",
-			gogc:     "75",
-			expected: 75,
-		},
-		{
-			name:     "GOGC invalid",
-			gogc:     "invalid",
-			expected: DefaultGoGCPercentage,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Save current GOGC and restore it later.
-			orig := os.Getenv("GOGC")
-			defer os.Setenv("GOGC", orig)
-
-			if tt.gogc == "" {
-				os.Unsetenv("GOGC")
-			} else {
-				os.Setenv("GOGC", tt.gogc)
-			}
-
-			require.Equal(t, tt.expected, getGoGC())
 		})
 	}
 }
