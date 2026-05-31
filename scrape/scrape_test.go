@@ -125,6 +125,50 @@ func testNewScrapePool(t *testing.T, appV2 bool) {
 	require.Nil(t, sp.appendableV2)
 }
 
+func TestScrapePoolDNSRefresh(t *testing.T) {
+	t.Parallel()
+
+	var closeCount atomic.Int32
+	client := &http.Client{Transport: &closeCountingTransport{closed: &closeCount}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sp := &scrapePool{
+		ctx:                context.Background(),
+		cancel:             cancel,
+		client:             client,
+		dnsRefreshInterval: 20 * time.Millisecond,
+		loops:              map[uint64]loop{},
+		activeTargets:      map[uint64]*Target{},
+		config:             &config.ScrapeConfig{},
+		options:            &Options{},
+		logger:             promslog.NewNopLogger(),
+		symbolTable:        labels.NewSymbolTable(),
+		metrics:            newTestScrapeMetrics(t),
+	}
+	sp.ctx = ctx
+
+	go sp.runDNSRefresh()
+
+	// Wait long enough for at least two refresh ticks.
+	time.Sleep(60 * time.Millisecond)
+	cancel()
+
+	require.GreaterOrEqual(t, closeCount.Load(), int32(2), "expected at least 2 CloseIdleConnections calls")
+}
+
+// closeCountingTransport counts CloseIdleConnections calls.
+type closeCountingTransport struct {
+	closed *atomic.Int32
+}
+
+func (ct *closeCountingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("not used")
+}
+
+func (ct *closeCountingTransport) CloseIdleConnections() {
+	ct.closed.Add(1)
+}
+
 func TestStorageHandlesOutOfOrderTimestamps(t *testing.T) {
 	foreachAppendable(t, func(t *testing.T, appV2 bool) {
 		testStorageHandlesOutOfOrderTimestamps(t, appV2)

@@ -110,9 +110,10 @@ type scrapePool struct {
 	// newLoop injection for testing purposes.
 	injectTestNewLoop func(scrapeLoopOptions) loop
 
-	metrics    *scrapeMetrics
-	buffers    *pool.Pool
-	offsetSeed uint64
+	metrics            *scrapeMetrics
+	buffers            *pool.Pool
+	offsetSeed         uint64
+	dnsRefreshInterval time.Duration
 }
 
 type labelLimits struct {
@@ -185,9 +186,29 @@ func newScrapePool(
 		metrics:              metrics,
 		buffers:              buffers,
 		offsetSeed:           offsetSeed,
+		dnsRefreshInterval:   time.Duration(cfg.DNSRefreshInterval),
 	}
 	sp.metrics.targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
+	if sp.dnsRefreshInterval > 0 {
+		go sp.runDNSRefresh()
+	}
 	return sp, nil
+}
+
+// runDNSRefresh periodically closes idle HTTP connections so that the next
+// scrape re-dials and re-resolves DNS for all targets in this pool.
+// It exits when the pool's context is cancelled (i.e. on stop or reload).
+func (sp *scrapePool) runDNSRefresh() {
+	ticker := time.NewTicker(sp.dnsRefreshInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-sp.ctx.Done():
+			return
+		case <-ticker.C:
+			sp.client.CloseIdleConnections()
+		}
+	}
 }
 
 func (sp *scrapePool) newLoop(opts scrapeLoopOptions) loop {
@@ -291,6 +312,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 
 	reuseCache := reusableCache(sp.config, cfg)
 	sp.config = cfg
+	sp.dnsRefreshInterval = time.Duration(cfg.DNSRefreshInterval)
 	oldClient := sp.client
 	sp.client = client
 
