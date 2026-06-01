@@ -178,9 +178,17 @@ func (c *HistogramChunk) Iterator(it Iterator) Iterator {
 	return c.iterator(it)
 }
 
+type histogramHeaderLayout uint8
+
+const (
+	histogramHeaderST histogramHeaderLayout = 1
+)
+
 // HistogramAppender is an Appender implementation for sparse histograms.
 type HistogramAppender struct {
 	b *bstream
+
+	headerLayout histogramHeaderLayout
 
 	// Layout:
 	schema         int32
@@ -205,16 +213,32 @@ type HistogramAppender struct {
 	trailing uint8
 }
 
+func (a *HistogramAppender) counterResetHeaderPos() int {
+	if a.headerLayout == histogramHeaderST {
+		return 0
+	}
+	return histogramFlagPos
+}
+
+func (a *HistogramAppender) sampleCountMask() uint16 {
+	if a.headerLayout == histogramHeaderST {
+		return 0x3FFF
+	}
+	return 0xFFFF
+}
+
 func (a *HistogramAppender) GetCounterResetHeader() CounterResetHeader {
-	return CounterResetHeader(a.b.bytes()[histogramFlagPos] & CounterResetHeaderMask)
+	return CounterResetHeader(a.b.bytes()[a.counterResetHeaderPos()] & CounterResetHeaderMask)
 }
 
 func (a *HistogramAppender) setCounterResetHeader(cr CounterResetHeader) {
-	a.b.bytes()[histogramFlagPos] = (a.b.bytes()[histogramFlagPos] & (^CounterResetHeaderMask)) | (byte(cr) & CounterResetHeaderMask)
+	b := a.b.bytes()
+	pos := a.counterResetHeaderPos()
+	b[pos] = (b[pos] &^ CounterResetHeaderMask) | (byte(cr) & CounterResetHeaderMask)
 }
 
 func (a *HistogramAppender) NumSamples() int {
-	return int(binary.BigEndian.Uint16(a.b.bytes()))
+	return int(binary.BigEndian.Uint16(a.b.bytes()) & a.sampleCountMask())
 }
 
 // setNumSamples writes the histogram sample count into the chunk header.

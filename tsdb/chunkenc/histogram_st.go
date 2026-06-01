@@ -78,9 +78,10 @@ func (c *HistogramSTChunk) Appender() (Appender, error) {
 	if len(c.b.stream) == histogramHeaderSize {
 		return &HistogramSTAppender{
 			HistogramAppender: HistogramAppender{
-				b:       &c.b,
-				t:       math.MinInt64,
-				leading: 0xff,
+				b:            &c.b,
+				headerLayout: histogramHeaderST,
+				t:            math.MinInt64,
+				leading:      0xff,
 			},
 		}, nil
 	}
@@ -99,7 +100,8 @@ func (c *HistogramSTChunk) Appender() (Appender, error) {
 
 	a := &HistogramSTAppender{
 		HistogramAppender: HistogramAppender{
-			b: &c.b,
+			b:            &c.b,
+			headerLayout: histogramHeaderST,
 
 			schema:        it.schema,
 			zThreshold:    it.zThreshold,
