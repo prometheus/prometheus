@@ -170,6 +170,8 @@ func (c *FloatHistogramChunk) Iterator(it Iterator) Iterator {
 type FloatHistogramAppender struct {
 	b *bstream
 
+	headerLayout histogramHeaderLayout
+
 	// Layout:
 	schema         int32
 	zThreshold     float64
@@ -181,16 +183,32 @@ type FloatHistogramAppender struct {
 	pBuckets, nBuckets []xorValue
 }
 
+func (a *FloatHistogramAppender) counterResetHeaderPos() int {
+	if a.headerLayout == histogramHeaderST {
+		return 0
+	}
+	return histogramFlagPos
+}
+
+func (a *FloatHistogramAppender) sampleCountMask() uint16 {
+	if a.headerLayout == histogramHeaderST {
+		return 0x3FFF
+	}
+	return 0xFFFF
+}
+
 func (a *FloatHistogramAppender) GetCounterResetHeader() CounterResetHeader {
-	return CounterResetHeader(a.b.bytes()[histogramFlagPos] & CounterResetHeaderMask)
+	return CounterResetHeader(a.b.bytes()[a.counterResetHeaderPos()] & CounterResetHeaderMask)
 }
 
 func (a *FloatHistogramAppender) setCounterResetHeader(cr CounterResetHeader) {
-	a.b.bytes()[histogramFlagPos] = (a.b.bytes()[histogramFlagPos] & (^CounterResetHeaderMask)) | (byte(cr) & CounterResetHeaderMask)
+	b := a.b.bytes()
+	pos := a.counterResetHeaderPos()
+	b[pos] = (b[pos] &^ CounterResetHeaderMask) | (byte(cr) & CounterResetHeaderMask)
 }
 
 func (a *FloatHistogramAppender) NumSamples() int {
-	return int(binary.BigEndian.Uint16(a.b.bytes()))
+	return int(binary.BigEndian.Uint16(a.b.bytes()) & a.sampleCountMask())
 }
 
 // setNumSamples writes the float histogram sample count into the chunk header.

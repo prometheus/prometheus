@@ -79,11 +79,12 @@ func (c *FloatHistogramSTChunk) Appender() (Appender, error) {
 	if len(c.b.stream) == histogramHeaderSize {
 		return &FloatHistogramSTAppender{
 			FloatHistogramAppender: FloatHistogramAppender{
-				b:    &c.b,
-				t:    math.MinInt64,
-				sum:  xorValue{leading: 0xff},
-				cnt:  xorValue{leading: 0xff},
-				zCnt: xorValue{leading: 0xff},
+				b:            &c.b,
+				headerLayout: histogramHeaderST,
+				t:            math.MinInt64,
+				sum:          xorValue{leading: 0xff},
+				cnt:          xorValue{leading: 0xff},
+				zCnt:         xorValue{leading: 0xff},
 			},
 		}, nil
 	}
@@ -118,7 +119,8 @@ func (c *FloatHistogramSTChunk) Appender() (Appender, error) {
 
 	a := &FloatHistogramSTAppender{
 		FloatHistogramAppender: FloatHistogramAppender{
-			b: &c.b,
+			b:            &c.b,
+			headerLayout: histogramHeaderST,
 
 			schema:       it.schema,
 			zThreshold:   it.zThreshold,
