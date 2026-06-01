@@ -273,9 +273,24 @@ type staleSeriesRefs struct {
 	sortedByLabels []storage.SeriesRef
 }
 
-// filterStaleSeriesAndSortPostings returns the stale series references from the given postings
-// that also do not have any out-of-order data.
-func (h *Head) filterStaleSeriesAndSortPostings(p index.Postings) (staleSeriesRefs, error) {
+// SortedPostings returns the provided postings sorted by labels.
+// This implementation expects the input postings to be the one returned by headStaleIndexReader.Postings() with AllPostingsKey, and will return the pre-sorted postings by labels in that case.
+func (h *headStaleIndexReader) SortedPostings(p index.Postings) index.Postings {
+	switch p.(type) {
+	case allStaleSeriesPostings:
+		// This is the marker we expect.
+		return index.NewListPostings(h.staleSeriesRefs.sortedByLabels)
+	default:
+		// This is not expected, but implementing it is easy: just delegate to headIndexReader's logic.
+		return h.headIndexReader.SortedPostings(p)
+	}
+}
+
+// staleSeriesRefsNoOOOData returns all the series refs of the stale series that do not have any out-of-order data.
+func (h *Head) staleSeriesRefsNoOOOData(ctx context.Context) (staleSeriesRefs, error) {
+	k, v := index.AllPostingsKey()
+	p := h.postings.Postings(ctx, k, v)
+
 	sortedByRef := make([]storage.SeriesRef, 0, 1024)
 	series := make([]*memSeries, 0, 1024)
 
@@ -319,25 +334,6 @@ func (h *Head) filterStaleSeriesAndSortPostings(p index.Postings) (staleSeriesRe
 		sortedByLabels = append(sortedByLabels, storage.SeriesRef(p.ref))
 	}
 	return staleSeriesRefs{sortedByRef: sortedByRef, sortedByLabels: sortedByLabels}, nil
-}
-
-// SortedPostings returns the provided postings sorted by labels.
-// This implementation expects the input postings to be the one returned by headStaleIndexReader.Postings() with AllPostingsKey, and will return the pre-sorted postings by labels in that case.
-func (h *headStaleIndexReader) SortedPostings(p index.Postings) index.Postings {
-	switch p.(type) {
-	case allStaleSeriesPostings:
-		// This is the marker we expect.
-		return index.NewListPostings(h.staleSeriesRefs.sortedByLabels)
-	default:
-		// This is not expected, but implementing it is easy: just delegate to headIndexReader's logic.
-		return h.headIndexReader.SortedPostings(p)
-	}
-}
-
-// sortedStaleSeriesRefsNoOOOData returns all the series refs of the stale series that do not have any out-of-order data.
-func (h *Head) sortedStaleSeriesRefsNoOOOData(ctx context.Context) (staleSeriesRefs, error) {
-	k, v := index.AllPostingsKey()
-	return h.filterStaleSeriesAndSortPostings(h.postings.Postings(ctx, k, v))
 }
 
 // appendSeriesChunks appends chunk metadata for s to chks.
