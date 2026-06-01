@@ -276,6 +276,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'end',
+    detail: 'function',
+    info: 'Return the query end timestamp in seconds',
+    type: 'function',
+  },
+  {
     label: 'hour',
     detail: 'function',
     info: 'Return the hour of the day for provided timestamps',
@@ -318,9 +324,15 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'first_over_time',
+    detail: 'function',
+    info: 'Return the value of the oldest sample in the specified interval',
+    type: 'function',
+  },
+  {
     label: 'last_over_time',
     detail: 'function',
-    info: 'The most recent point value in specified interval.',
+    info: 'Return the value of the most recent sample in the specified interval',
     type: 'function',
   },
   {
@@ -372,6 +384,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'ts_of_first_over_time',
+    detail: 'function',
+    info: 'Return the timestamp of the first value over time for input series',
+    type: 'function',
+  },
+  {
     label: 'ts_of_last_over_time',
     detail: 'function',
     info: 'Return the timestamp of the last value over time for input series',
@@ -420,6 +438,12 @@ export const functionIdentifierTerms = [
     type: 'function',
     // Avoid ranking higher than `rate`.
     boost: -1,
+  },
+  {
+    label: 'range',
+    detail: 'function',
+    info: 'Return the query range in seconds',
+    type: 'function',
   },
   {
     label: 'rate',
@@ -491,6 +515,18 @@ export const functionIdentifierTerms = [
     label: 'sqrt',
     detail: 'function',
     info: 'Return the square root for input series',
+    type: 'function',
+  },
+  {
+    label: 'start',
+    detail: 'function',
+    info: 'Return the query start timestamp in seconds',
+    type: 'function',
+  },
+  {
+    label: 'step',
+    detail: 'function',
+    info: 'Return the query step in seconds',
     type: 'function',
   },
   {

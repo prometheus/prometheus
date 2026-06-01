@@ -1,4 +1,5 @@
 import {
+  Accordion,
   Alert,
   Anchor,
   Box,
@@ -32,7 +33,6 @@ import { targetPoolDisplayLimit } from "./ServiceDiscoveryPage";
 import { LabelBadges } from "../../components/LabelBadges";
 import ErrorBoundary from "../../components/ErrorBoundary";
 import RelabelSteps from "./RelabelSteps";
-import { Accordion } from "../../components/Accordion";
 
 type TargetLabels = {
   discoveredLabels: Labels;
@@ -238,6 +238,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
       <Accordion
         multiple
         variant="separated"
+        keepMounted={false}
         value={allPoolNames.filter((p) => !collapsedPools.includes(p))}
         onChange={(value) =>
           dispatch(

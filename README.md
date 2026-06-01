@@ -12,9 +12,9 @@ examples and guides.</p>
 [![Docker Pulls](https://img.shields.io/docker/pulls/prom/prometheus.svg?maxAge=604800)][hub]
 [![Go Report Card](https://goreportcard.com/badge/github.com/prometheus/prometheus)](https://goreportcard.com/report/github.com/prometheus/prometheus)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/486/badge)](https://bestpractices.coreinfrastructure.org/projects/486)
+[![govulncheck](https://github.com/prometheus/prometheus/actions/workflows/govulncheck.yml/badge.svg?event=schedule)](https://github.com/prometheus/prometheus/actions/workflows/govulncheck.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/prometheus/prometheus/badge)](https://securityscorecards.dev/viewer/?uri=github.com/prometheus/prometheus)
 [![CLOMonitor](https://img.shields.io/endpoint?url=https://clomonitor.io/api/projects/cncf/prometheus/badge)](https://clomonitor.io/projects/cncf/prometheus)
-[![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/prometheus/prometheus)
 [![Fuzzing Status](https://oss-fuzz-build-logs.storage.googleapis.com/badges/prometheus.svg)](https://bugs.chromium.org/p/oss-fuzz/issues/list?sort=-opened&can=1&q=proj:prometheus)
 
 </div>
@@ -40,14 +40,14 @@ The features that distinguish Prometheus from other metrics and monitoring syste
 
 ## Install
 
-There are various ways of installing Prometheus.
+There are various ways to install Prometheus.
 
 ### Precompiled binaries
 
 Precompiled binaries for released versions are available in the
 [*download* section](https://prometheus.io/download/)
 on [prometheus.io](https://prometheus.io). Using the latest production release binary
-is the recommended way of installing Prometheus.
+is the recommended way to install Prometheus.
 See the [Installing](https://prometheus.io/docs/introduction/install/)
 chapter in the documentation for all the details.
 
@@ -65,7 +65,7 @@ Prometheus will now be reachable at <http://localhost:9090/>.
 
 ### Building from source
 
-To build Prometheus from source code, You need:
+To build Prometheus from source code, you need:
 
 * Go: Version specified in [go.mod](./go.mod) or greater.
 * NodeJS: Version specified in [.nvmrc](./web/ui/.nvmrc) or greater.

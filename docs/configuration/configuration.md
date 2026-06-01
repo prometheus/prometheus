@@ -490,6 +490,10 @@ nomad_sd_configs:
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
 
+# List of Outscale service discovery configurations.
+outscale_sd_configs:
+  [ - <outscale_sd_config> ... ]
+
 # List of OVHcloud service discovery configurations.
 ovhcloud_sd_configs:
   [ - <ovhcloud_sd_config> ... ]
@@ -898,6 +902,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
 * `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
 * `__meta_ec2_platform`: the Operating System platform, set to 'windows' on Windows servers, absent otherwise
+* `__meta_ec2_default_ipv6_address`: the first primary IPv6 address found if present, otherwise first non-primary IPv6 address, if present
 * `__meta_ec2_primary_ipv6_addresses`: comma separated list of the Primary IPv6 addresses of the instance, if present. The list is ordered based on the position of each corresponding network interface in the attachment order.
 * `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
 * `__meta_ec2_private_dns_name`: the private DNS name of the instance, if available
@@ -1326,6 +1331,9 @@ role: <string>
 # AWS Role ARN, an alternative to using AWS API keys.
 [ role_arn: <string> ]
 
+# Optional External ID that can go along with role_arn.
+[ external_id: <string> ]
+
 # Refresh interval to re-read the targets list.
 [ refresh_interval: <duration> | default = 60s ]
 
@@ -1418,7 +1426,17 @@ subscription_id: <string>
 ### `<consul_sd_config>`
 
 Consul SD configurations allow retrieving scrape targets from [Consul's](https://www.consul.io)
-Catalog API.
+service catalog. Discovery uses two Consul API endpoints:
+
+1. The [Catalog API](https://developer.hashicorp.com/consul/api-docs/catalog) to list services
+   (used when `services` is empty, or when `tags` or `filter` are set).
+2. The [Health API](https://developer.hashicorp.com/consul/api-docs/health) to retrieve service
+   instances and their health status.
+
+Because these two APIs have different filtering field schemas, Prometheus exposes separate filter
+options for each: `filter` applies to the Catalog API and `health_filter` applies to the Health API.
+For example, tags are exposed as `ServiceTags` in the Catalog API but as `Service.Tags` in the
+Health API.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
@@ -1458,17 +1476,18 @@ The following meta labels are available on targets during [relabeling](#relabel_
 services:
   [ - <string> ]
 
-# A Consul Filter expression used to filter the catalog results
-# See https://www.consul.io/api-docs/catalog#list-services to know more
-# about the filter expressions that can be used.
+# Filter expression for the Catalog API. See https://developer.hashicorp.com/consul/api-docs/catalog#filtering for syntax.
 [ filter: <string> ]
 
-# The `tags` and `node_meta` fields are deprecated in Consul in favor of `filter`.
+# Filter expression for the Health API. See https://developer.hashicorp.com/consul/api-docs/health#filtering for syntax.
+[ health_filter: <string> ]
+
+# The `tags` and `node_meta` fields are deprecated in favor of `filter` and `health_filter`.
 # An optional list of tags used to filter nodes for a given service. Services must contain all tags in the list.
 tags:
   [ - <string> ]
 
-# Node metadata key/value pairs to filter nodes for a given service. As of Consul 1.14, consider `filter` instead.
+# Node metadata key/value pairs to filter nodes for a given service. As of Consul 1.14, consider `filter` or `health_filter` instead.
 [ node_meta:
   [ <string>: <string> ... ] ]
 
@@ -1502,10 +1521,15 @@ metadata and a single tag).
 ### `<digitalocean_sd_config>`
 
 DigitalOcean SD configurations allow retrieving scrape targets from [DigitalOcean's](https://www.digitalocean.com/)
-Droplets API.
-This service discovery uses the public IPv4 address by default, by that can be
-changed with relabeling, as demonstrated in [the Prometheus digitalocean-sd
-configuration file](/documentation/examples/prometheus-digitalocean.yml).
+API.
+This service discovery supports multiple roles through the `role` parameter.
+
+One of the following `role` types can be configured to discover targets:
+
+#### `droplets`
+
+The `droplets` role discovers targets from DigitalOcean Droplets. The public IPv4 address is used by default,
+but may be changed with relabeling.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
@@ -1523,11 +1547,33 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_digitalocean_tags`: the comma-separated list of tags of the droplet
 * `__meta_digitalocean_vpc`: the id of the droplet's VPC
 
+#### `databases`
+
+The `databases` role discovers targets from DigitalOcean Managed Databases.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_digitalocean_db_id`: the id of the database cluster
+* `__meta_digitalocean_db_name`: the name of the database cluster
+* `__meta_digitalocean_db_engine`: the engine of the database cluster (e.g., `pg`, `mysql`, `redis`, `mongodb`)
+* `__meta_digitalocean_db_version`: the version of the engine
+* `__meta_digitalocean_db_status`: the status of the database cluster
+* `__meta_digitalocean_db_region`: the region of the database cluster
+* `__meta_digitalocean_db_size`: the size of the database cluster
+* `__meta_digitalocean_db_num_nodes`: the number of nodes in the database cluster
+* `__meta_digitalocean_db_host`: the public host of the database cluster
+* `__meta_digitalocean_db_private_host`: the private host of the database cluster
+* `__meta_digitalocean_db_tag_<tagname>`: each tag of the database cluster, with its value set to `true`
+
 ```yaml
+# The DigitalOcean role to use for service discovery.
+# Must be one of: droplets or databases.
+[ role: <string> | default = droplets ]
+
 # The port to scrape metrics from.
 [ port: <int> | default = 80 ]
 
-# The time after which the droplets are refreshed.
+# The time after which the targets are refreshed.
 [ refresh_interval: <duration> | default = 60s ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
@@ -1788,6 +1834,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
 * `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
 * `__meta_ec2_platform`: the Operating System platform, set to 'windows' on Windows servers, absent otherwise
+* `__meta_ec2_default_ipv6_address`: the first primary IPv6 address found if present, otherwise first non-primary IPv6 address, if present
 * `__meta_ec2_primary_ipv6_addresses`: comma separated list of the Primary IPv6 addresses of the instance, if present. The list is ordered based on the position of each corresponding network interface in the attachment order.
 * `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
 * `__meta_ec2_private_dns_name`: the private DNS name of the instance, if available
@@ -1819,6 +1866,9 @@ See below for the configuration options for EC2 discovery:
 
 # AWS Role ARN, an alternative to using AWS API keys.
 [ role_arn: <string> ]
+
+# Optional External ID that can go along with role_arn.
+[ external_id: <string> ]
 
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 60s ]
@@ -2239,7 +2289,10 @@ The following meta labels are available on all targets during [relabeling](#rela
 * `__meta_hetzner_server_status`: the status of the server
 * `__meta_hetzner_public_ipv4`: the public ipv4 address of the server
 * `__meta_hetzner_public_ipv6_network`: the public ipv6 network (/64) of the server
-* `__meta_hetzner_datacenter`: the datacenter of the server
+
+Note that the `__meta_hetzner_datacenter` label is deprecated for both roles `robot` and `hcloud`:
+- For the `robot` role, the replacement label is `__meta_hetzner_robot_datacenter`.
+- For the `hcloud` role, the label will be removed after 1 July 2026. For more details, see the [changelog](https://docs.hetzner.cloud/changelog#2025-12-16-phasing-out-datacenters).
 
 The labels below are only available for targets with `role` set to `hcloud`:
 
@@ -2247,8 +2300,10 @@ The labels below are only available for targets with `role` set to `hcloud`:
 * `__meta_hetzner_hcloud_image_description`: the description of the server image
 * `__meta_hetzner_hcloud_image_os_flavor`: the OS flavor of the server image
 * `__meta_hetzner_hcloud_image_os_version`: the OS version of the server image
-* `__meta_hetzner_hcloud_datacenter_location`: the location of the server
-* `__meta_hetzner_hcloud_datacenter_location_network_zone`: the network zone of the server
+* `__meta_hetzner_hcloud_location`: the location of the server
+* `__meta_hetzner_hcloud_location_network_zone`: the network zone of the server
+* `__meta_hetzner_hcloud_datacenter_location`: the location of the server (deprecated in favor of `__meta_hetzner_hcloud_location`)
+* `__meta_hetzner_hcloud_datacenter_location_network_zone`: the network zone of the server (deprecated in favor of `__meta_hetzner_hcloud_location_network_zone`)
 * `__meta_hetzner_hcloud_server_type`: the type of the server
 * `__meta_hetzner_hcloud_cpu_cores`: the CPU cores count of the server
 * `__meta_hetzner_hcloud_cpu_type`: the CPU type of the server (shared or dedicated)
@@ -2260,6 +2315,7 @@ The labels below are only available for targets with `role` set to `hcloud`:
 
 The labels below are only available for targets with `role` set to `robot`:
 
+* `__meta_hetzner_robot_datacenter`: the datacenter of the server
 * `__meta_hetzner_robot_product`: the product of the server
 * `__meta_hetzner_robot_cancelled`: the server cancellation status
 
@@ -2314,6 +2370,10 @@ refresh failures.
 Each target has a meta label `__meta_url` during the
 [relabeling phase](#relabel_config). Its value is set to the
 URL from which the target was extracted.
+
+There is a list of
+[integrations](https://prometheus.io/docs/operating/integrations/#http-service-discovery) with this
+discovery mechanism.
 
 ```yaml
 # URL from which the targets are fetched.
@@ -2389,6 +2449,7 @@ Available meta labels:
 
 * `__meta_kubernetes_node_name`: The name of the node object.
 * `__meta_kubernetes_node_provider_id`: The cloud provider's name for the node object.
+* `__meta_kubernetes_node_condition_<condition_type>`: For every entry in node.Status.Conditions, a label with the condition type in lowercase. Possible values are `true`, `false`, or `unknown`. Examples: `__meta_kubernetes_node_condition_ready`, `__meta_kubernetes_node_condition_memorypressure`, `__meta_kubernetes_node_condition_diskpressure`.
 * `__meta_kubernetes_node_label_<labelname>`: Each label from the node object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_node_labelpresent_<labelname>`: `true` for each label from the node object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_node_annotation_<annotationname>`: Each annotation from the node object.
@@ -2494,7 +2555,7 @@ The role requires the `discovery.k8s.io/v1` API version (available since Kuberne
 
 Available meta labels:
 
-* `__meta_kubernetes_namespace`: The namespace of the endpoints object.
+* `__meta_kubernetes_namespace`: The namespace of the endpointslice object.
 * `__meta_kubernetes_endpointslice_name`: The name of endpointslice object.
 * `__meta_kubernetes_endpointslice_label_<labelname>`: Each label from the endpointslice object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_endpointslice_labelpresent_<labelname>`: `true` for each label from the endpointslice object, with any unsupported characters converted to an underscore.
@@ -2694,6 +2755,9 @@ See below for the configuration options for Lightsail discovery:
 
 # AWS Role ARN, an alternative to using AWS API keys.
 [ role_arn: <string> ]
+
+# Optional External ID that can go along with role_arn.
+[ external_id: <string> ]
 
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 60s ]
@@ -3288,6 +3352,49 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ <http_config> ]
 ```
 
+### `<outscale_sd_config>`
+
+Outscale SD configurations allow retrieving scrape targets from [Outscale Cloud](https://outscale.com/) VMs via the Outscale API (OAPI).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_outscale_vm_instance_id`: the ID of the VM
+* `__meta_outscale_vm_region`: the region of the VM
+* `__meta_outscale_vm_subregion`: the subregion of the VM
+* `__meta_outscale_vm_state`: the state of the VM
+* `__meta_outscale_vm_private_ip`: the private IP address of the VM
+* `__meta_outscale_vm_public_ip`: the public IP address of the VM
+* `__meta_outscale_vm_tag_<key>`: each tag value; the tag key is sanitized and appended (e.g. tag key `Name` → `__meta_outscale_vm_tag_Name`)
+
+Targets use the first address found: private IP, then public IP. This can be changed with relabeling, as demonstrated in [the Prometheus outscale-sd configuration file](/documentation/examples/prometheus-outscale.yml).
+
+See below for the configuration options for Outscale discovery:
+
+```yaml
+# Region to use.
+[ region: <string> | default = "eu-west-2" ]
+
+# Access key (20 alphanumeric characters). See https://docs.outscale.com/en/userguide/Creating-an-Access-Key.html
+access_key: <string>
+
+# Secret key (40 characters). Use one of `secret_key` or `secret_key_file`.
+[ secret_key: <secret> ]
+
+# Secret key file.
+[ secret_key_file: <filename> ]
+
+# API endpoint URL. Defaults to https://api.<region>.outscale.com/api/v1 if empty.
+[ endpoint: <string> ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# Refresh interval to re-read the targets list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# HTTP client settings.
+[ <http_config> ]
+```
 
 ### `<static_config>`
 
@@ -3564,6 +3671,10 @@ nomad_sd_configs:
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
 
+# List of Outscale service discovery configurations.
+outscale_sd_configs:
+  [ - <outscale_sd_config> ... ]
+
 # List of OVHcloud service discovery configurations.
 ovhcloud_sd_configs:
   [ - <ovhcloud_sd_config> ... ]
@@ -3627,7 +3738,7 @@ url: <string>
 # * The `prometheus.WriteRequest` represents the message introduced in Remote Write 1.0, which
 # will be deprecated eventually.
 # * The `io.prometheus.write.v2.Request` was introduced in Remote Write 2.0 and replaces the former,
-# by improving efficiency and sending metadata, created timestamp and native histograms by default.
+# by improving efficiency and sending metadata, start timestamp and native histograms by default.
 #
 # Before changing this value, consult with your remote storage provider (or test) what message it supports.
 # Read more on https://prometheus.io/docs/specs/remote_write_spec_2_0/#io-prometheus-write-v2-request
@@ -3868,9 +3979,9 @@ with this feature.
 # or when a compaction completes, whichever comes first.
 [ retention: <retention> ] :
   # How long to retain samples in storage. If neither this option nor the size option
-  # is set, the retention time defaults to 15d. Units Supported: y, w, d, h, m, s, ms.
+  # is set, the retention time defaults to 15d. Setting this to 0 disables time-based retention.
   # This option takes precedence over the deprecated command-line flag --storage.tsdb.retention.time.
-  [ time: <duration> | default = 15d ]
+  [ time: <duration> ]
 
   # Maximum number of bytes that can be stored for blocks. A unit is required,
   # supported units: B, KB, MB, GB, TB, PB, EB. Ex: "512MB". Based on powers-of-2, so 1KB is 1024B.

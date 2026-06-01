@@ -135,7 +135,9 @@ type Meta struct {
 }
 
 // ChunkFromSamples requires all samples to have the same type.
-// TODO(krajorama): test with ST when chunk formats support it.
+// It is not efficient and meant for testing purposes only.
+// It scans the samples to determine whether any sample has ST set and
+// creates a chunk accordingly.
 func ChunkFromSamples(s []Sample) (Meta, error) {
 	return ChunkFromSamplesGeneric(SampleSlice(s))
 }
@@ -154,7 +156,17 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 	}
 
 	sampleType := s.Get(0).Type()
-	c, err := chunkenc.NewEmptyChunk(sampleType.ChunkEncoding())
+
+	hasST := false
+	for i := range s.Len() {
+		if s.Get(i).ST() != 0 {
+			hasST = true
+			break
+		}
+	}
+
+	// Request storing ST in the chunk if available.
+	c, err := sampleType.NewChunk(hasST)
 	if err != nil {
 		return Meta{}, err
 	}

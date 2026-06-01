@@ -48,6 +48,8 @@ type RecordsCase struct {
 	// HistogramFn source histogram for histogram and float histogram records.
 	// By default, newTestHist is used (exponential bucketing)
 	HistogramFn func(ref int) *histogram.Histogram
+	// NoST controls if ref samples should skip generating Start Timestamps. If true, ST is 0.
+	NoST bool
 }
 
 // Records represents batches of generated WAL records.
@@ -118,10 +120,18 @@ func GenerateRecords(c RecordsCase) (ret Records) {
 			Help: fmt.Sprintf("help text for %d", ref),
 		}
 		for j := range c.SamplesPerSeries {
+			ts := c.TsFn(ref, j)
+			// Keep ST simple for now; we don't test the exact semantics.
+			// We can improve later (e.g. STsFN).
+			sts := ts - 1
+			if c.NoST {
+				sts = 0
+			}
+
 			ret.Samples[i*c.SamplesPerSeries+j] = record.RefSample{
 				Ref: chunks.HeadSeriesRef(ref),
-				T:   c.TsFn(ref, j),
-				V:   float64(ref),
+				ST:  sts, T: ts,
+				V: float64(ref),
 			}
 		}
 		h := c.HistogramFn(ref)

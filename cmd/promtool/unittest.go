@@ -228,9 +228,9 @@ type testGroup struct {
 func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag, debug, ignoreUnknownFields, fuzzyCompare bool, ruleFiles ...string) (outErr []error) {
 	if debug {
 		testStart := time.Now()
-		fmt.Printf("DEBUG: Starting test %s\n", testname)
+		fmt.Fprintf(os.Stderr, "DEBUG: Starting test %s\n", testname)
 		defer func() {
-			fmt.Printf("DEBUG: Test %s finished, took %v\n", testname, time.Since(testStart))
+			fmt.Fprintf(os.Stderr, "DEBUG: Test %s finished, took %v\n", testname, time.Since(testStart))
 		}()
 	}
 	// Setup testing suite.
@@ -534,20 +534,20 @@ Outer:
 		expr := fmt.Sprintf(`{__name__=~".+"}[%v]`, ts)
 		q, err := suite.QueryEngine().NewInstantQuery(context.Background(), suite.Queryable(), nil, expr, mint.Add(ts))
 		if err != nil {
-			fmt.Printf("DEBUG: Failed querying, expr: %q, err: %v\n", expr, err)
+			fmt.Fprintf(os.Stderr, "DEBUG: Failed querying, expr: %q, err: %v\n", expr, err)
 			return errs
 		}
 		res := q.Exec(suite.Context())
 		if res.Err != nil {
-			fmt.Printf("DEBUG: Failed query exec, expr: %q, err: %v\n", expr, res.Err)
+			fmt.Fprintf(os.Stderr, "DEBUG: Failed query exec, expr: %q, err: %v\n", expr, res.Err)
 			return errs
 		}
 		switch v := res.Value.(type) {
 		case promql.Matrix:
-			fmt.Printf("DEBUG: Dump of all data (input_series and rules) at %v:\n", ts)
-			fmt.Println(v.String())
+			fmt.Fprintf(os.Stderr, "DEBUG: Dump of all data (input_series and rules) at %v:\n", ts)
+			fmt.Fprintln(os.Stderr, v.String())
 		default:
-			fmt.Printf("DEBUG: Got unexpected type %T\n", v)
+			fmt.Fprintf(os.Stderr, "DEBUG: Got unexpected type %T\n", v)
 			return errs
 		}
 	}

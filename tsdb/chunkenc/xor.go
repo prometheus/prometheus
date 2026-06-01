@@ -177,6 +177,8 @@ func (a *xorAppender) Append(_, t int64, v float64) {
 		}
 
 		a.writeVDelta(v)
+	case math.MaxUint16:
+		panic("chunk capacity exceeded")
 	default:
 		tDelta = uint64(t - a.t)
 		dod := int64(tDelta - a.tDelta)

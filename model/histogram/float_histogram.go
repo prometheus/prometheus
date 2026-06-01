@@ -465,16 +465,14 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (updatedC *FloatHist
 		return c, counterResetCollision, nhcbBoundsReconciled, nil
 	}
 
-	otherC := other.newCompensationHistogram()
-
 	var (
 		hNegativeSpans        = h.NegativeSpans
 		hNegativeBuckets      = h.NegativeBuckets
 		otherNegativeSpans    = other.NegativeSpans
 		otherNegativeBuckets  = other.NegativeBuckets
 		cNegativeBuckets      = c.NegativeBuckets
-		otherCPositiveBuckets = otherC.PositiveBuckets
-		otherCNegativeBuckets = otherC.NegativeBuckets
+		otherCPositiveBuckets []float64
+		otherCNegativeBuckets []float64
 	)
 
 	switch {
@@ -492,16 +490,22 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (updatedC *FloatHist
 		h.Schema = other.Schema
 
 	case other.Schema > h.Schema:
-		otherPositiveSpans, otherPositiveBuckets, otherCPositiveBuckets = kahanReduceResolution(
-			otherPositiveSpans, otherPositiveBuckets, otherCPositiveBuckets,
-			other.Schema, h.Schema,
-			false,
-		)
-		otherNegativeSpans, otherNegativeBuckets, otherCNegativeBuckets = kahanReduceResolution(
-			otherNegativeSpans, otherNegativeBuckets, otherCNegativeBuckets,
-			other.Schema, h.Schema,
-			false,
-		)
+		if len(otherPositiveBuckets) > 0 {
+			otherCPositiveBuckets = make([]float64, len(otherPositiveBuckets))
+			otherPositiveSpans, otherPositiveBuckets, otherCPositiveBuckets = kahanReduceResolution(
+				otherPositiveSpans, otherPositiveBuckets, otherCPositiveBuckets,
+				other.Schema, h.Schema,
+				false,
+			)
+		}
+		if len(otherNegativeBuckets) > 0 {
+			otherCNegativeBuckets = make([]float64, len(otherNegativeBuckets))
+			otherNegativeSpans, otherNegativeBuckets, otherCNegativeBuckets = kahanReduceResolution(
+				otherNegativeSpans, otherNegativeBuckets, otherCNegativeBuckets,
+				other.Schema, h.Schema,
+				false,
+			)
+		}
 	}
 
 	h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = kahanAddBuckets(
@@ -1600,7 +1604,9 @@ func kahanAddBuckets(
 				} else if spansA[0].Offset == indexB {
 					// Just add to first bucket.
 					bucketsA[0], compensationBucketsA[0] = kahansum.Inc(bucketB, bucketsA[0], compensationBucketsA[0])
-					bucketsA[0], compensationBucketsA[0] = kahansum.Inc(compensationBucketB, bucketsA[0], compensationBucketsA[0])
+					if compensationBucketB != 0 {
+						bucketsA[0], compensationBucketsA[0] = kahansum.Inc(compensationBucketB, bucketsA[0], compensationBucketsA[0])
+					}
 					goto nextLoop
 				}
 				iSpan, iBucket, iInSpan = 0, 0, 0
@@ -1614,7 +1620,9 @@ func kahanAddBuckets(
 					iBucket += int(deltaIndex)
 					iInSpan += deltaIndex
 					bucketsA[iBucket], compensationBucketsA[iBucket] = kahansum.Inc(bucketB, bucketsA[iBucket], compensationBucketsA[iBucket])
-					bucketsA[iBucket], compensationBucketsA[iBucket] = kahansum.Inc(compensationBucketB, bucketsA[iBucket], compensationBucketsA[iBucket])
+					if compensationBucketB != 0 {
+						bucketsA[iBucket], compensationBucketsA[iBucket] = kahansum.Inc(compensationBucketB, bucketsA[iBucket], compensationBucketsA[iBucket])
+					}
 					break
 				}
 				deltaIndex -= remainingInSpan

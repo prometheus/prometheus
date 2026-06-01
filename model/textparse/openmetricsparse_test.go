@@ -16,6 +16,7 @@ package textparse
 import (
 	"fmt"
 	"io"
+	"math"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 )
 
 func int64p(x int64) *int64 { return &x }
@@ -113,7 +115,13 @@ foobar_count 21
 foobar_created 1520430004
 foobar_sum 324789.6
 foobar{quantile="0.95"} 123.8
-foobar{quantile="0.99"} 150.1`
+foobar{quantile="0.99"} 150.1
+# HELP nansum Summary with NaN value
+# TYPE nansum summary
+nansum_count 0
+nansum_sum 0.0
+nansum{quantile="0.95"} nan
+nansum{quantile="0.99"} NaN`
 
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
@@ -632,6 +640,42 @@ foobar{quantile="0.99"} 150.1`
 					),
 					st: 1520430004000,
 				}, {
+					m:    "nansum",
+					help: "Summary with NaN value",
+				}, {
+					m:   "nansum",
+					typ: model.MetricTypeSummary,
+				}, {
+					m: "nansum_count",
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "nansum_count", "__type__", string(model.MetricTypeSummary)),
+						labels.FromStrings("__name__", "nansum_count"),
+					),
+				}, {
+					m: "nansum_sum",
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "nansum_sum", "__type__", string(model.MetricTypeSummary)),
+						labels.FromStrings("__name__", "nansum_sum"),
+					),
+				}, {
+					m: `nansum{quantile="0.95"}`,
+					v: math.Float64frombits(value.NormalNaN),
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "nansum", "__type__", string(model.MetricTypeSummary), "quantile", "0.95"),
+						labels.FromStrings("__name__", "nansum", "quantile", "0.95"),
+					),
+				}, {
+					m: `nansum{quantile="0.99"}`,
+					v: math.Float64frombits(value.NormalNaN),
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "nansum", "__type__", string(model.MetricTypeSummary), "quantile", "0.99"),
+						labels.FromStrings("__name__", "nansum", "quantile", "0.99"),
+					),
+				}, {
 					m:    "metric",
 					help: "foo\x00bar",
 				}, {
@@ -942,6 +986,10 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 			err:   "expected label name, got \"=\\\"\" (\"EQUAL\") while parsing: \"empty_label_name{=\\\"\"",
 		},
 		{
+			input: "{A}0\n# EOF\n",
+			err:   "expected equal, got \"}0\" (\"BCLOSE\") while parsing: \"{A}0\"",
+		},
+		{
 			input: "foo 1_2\n\n# EOF\n",
 			err:   "unsupported character in float while parsing: \"foo 1_2\"",
 		},
@@ -971,11 +1019,11 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		},
 		{
 			input: `custom_metric_total 1 # {bb}`,
-			err:   "expected label name, got \"}\" (\"BCLOSE\") while parsing: \"custom_metric_total 1 # {bb}\"",
+			err:   "expected equal, got \"}\" (\"BCLOSE\") while parsing: \"custom_metric_total 1 # {bb}\"",
 		},
 		{
 			input: `custom_metric_total 1 # {bb, a="dd"}`,
-			err:   "expected label name, got \", \" (\"COMMA\") while parsing: \"custom_metric_total 1 # {bb, \"",
+			err:   "expected equal, got \", \" (\"COMMA\") while parsing: \"custom_metric_total 1 # {bb, \"",
 		},
 		{
 			input: `custom_metric_total 1 # {aa="bb",,cc="dd"} 1`,
@@ -1035,6 +1083,22 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		}
 		require.Equal(t, c.err, err.Error(), "test %d: %s", i, c.input)
 	}
+}
+
+func TestOpenMetricsParseBareIdentifierInBraces(t *testing.T) {
+	require.NotPanics(t, func() {
+		p := NewOpenMetricsParser([]byte("{A} 0\n# EOF\n"), labels.NewSymbolTable(), WithOMParserSTSeriesSkipped())
+		for {
+			et, err := p.Next()
+			if err != nil {
+				break
+			}
+			if et == EntrySeries {
+				var lset labels.Labels
+				p.Labels(&lset)
+			}
+		}
+	})
 }
 
 func TestOMNullByteHandling(t *testing.T) {

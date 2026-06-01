@@ -1,3 +1,0 @@
-# HELP api_http_request_count The total number of HTTP requests.
-# TYPE api_http_request_count counter
-http_request_count{method="post",code="200"} 1027 1395066363000

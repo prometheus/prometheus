@@ -418,6 +418,41 @@ func TestBlockQuerier(t *testing.T) {
 	}
 }
 
+func TestBlockBaseQuerier_LabelNamesLimit(t *testing.T) {
+	ix := newMockIndex()
+	ls := labels.FromStrings("aaa", "1", "bbb", "2", "ccc", "3")
+	require.NoError(t, ix.AddSeries(1, ls))
+	ls.Range(func(lbl labels.Label) {
+		require.NoError(t, ix.WritePostings(lbl.Name, lbl.Value, index.NewListPostings([]storage.SeriesRef{1})))
+	})
+
+	q := &blockBaseQuerier{index: ix, chunks: mockChunkReader(nil), tombstones: tombstones.NewMemTombstones()}
+
+	t.Run("no limit", func(t *testing.T) {
+		names, _, err := q.LabelNames(context.Background(), nil)
+		require.NoError(t, err)
+		require.Equal(t, []string{"aaa", "bbb", "ccc"}, names)
+	})
+
+	t.Run("limit applied", func(t *testing.T) {
+		names, _, err := q.LabelNames(context.Background(), &storage.LabelHints{Limit: 2})
+		require.NoError(t, err)
+		require.Equal(t, []string{"aaa", "bbb"}, names)
+	})
+
+	t.Run("limit larger than result", func(t *testing.T) {
+		names, _, err := q.LabelNames(context.Background(), &storage.LabelHints{Limit: 10})
+		require.NoError(t, err)
+		require.Equal(t, []string{"aaa", "bbb", "ccc"}, names)
+	})
+
+	t.Run("zero limit means no limit", func(t *testing.T) {
+		names, _, err := q.LabelNames(context.Background(), &storage.LabelHints{Limit: 0})
+		require.NoError(t, err)
+		require.Equal(t, []string{"aaa", "bbb", "ccc"}, names)
+	})
+}
+
 func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 	for _, c := range []blockQuerierTestCase{
 		{
@@ -2021,6 +2056,207 @@ func TestPopulateWithDelSeriesIterator_NextWithMinTime(t *testing.T) {
 			it.reset(ulid.ULID{}, f, chkMetas, tombstones.Intervals{{Mint: math.MinInt64, Maxt: 2}}.Add(tombstones.Interval{Mint: 4, Maxt: math.MaxInt64}))
 			require.Equal(t, chunkenc.ValNone, it.Next())
 			require.Equal(t, int64(1), chkMetas[0].MinTime)
+		})
+	}
+}
+
+// TestPopulateWithDelSeriesIterator_WithST tests that ST (start time) values are
+// correctly preserved when iterating through chunks with ST support.
+func TestPopulateWithDelSeriesIterator_WithST(t *testing.T) {
+	// Samples with non-zero ST values to test ST preservation.
+	samplesWithST := [][]chunks.Sample{
+		{
+			sample{st: 100, t: 1000, f: 1.0},
+			sample{st: 200, t: 2000, f: 2.0},
+			sample{st: 300, t: 3000, f: 3.0},
+		},
+	}
+
+	// Samples with varying ST patterns.
+	samplesVaryingST := [][]chunks.Sample{
+		{
+			sample{st: 0, t: 1000, f: 1.0},    // st=0
+			sample{st: 1500, t: 1500, f: 1.5}, // st=t
+			sample{st: 1900, t: 2000, f: 2.0}, // st=t-100
+			sample{st: 500, t: 3000, f: 3.0},  // st < t
+		},
+	}
+
+	cases := []struct {
+		name     string
+		samples  [][]chunks.Sample
+		expected []chunks.Sample
+	}{
+		{
+			name:    "all samples have non-zero ST",
+			samples: samplesWithST,
+			expected: []chunks.Sample{
+				sample{st: 100, t: 1000, f: 1.0},
+				sample{st: 200, t: 2000, f: 2.0},
+				sample{st: 300, t: 3000, f: 3.0},
+			},
+		},
+		{
+			name:    "samples with varying ST patterns",
+			samples: samplesVaryingST,
+			expected: []chunks.Sample{
+				sample{st: 0, t: 1000, f: 1.0},
+				sample{st: 1500, t: 1500, f: 1.5},
+				sample{st: 1900, t: 2000, f: 2.0},
+				sample{st: 500, t: 3000, f: 3.0},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Test with chunks (not iterables).
+			t.Run("chunks", func(t *testing.T) {
+				f, chkMetas := createFakeReaderAndNotPopulatedChunks(tc.samples...)
+				it := &populateWithDelSeriesIterator{}
+				it.reset(ulid.ULID{}, f, chkMetas, nil)
+
+				var result []chunks.Sample
+				for it.Next() != chunkenc.ValNone {
+					st := it.AtST()
+					ts, v := it.At()
+					result = append(result, sample{st: st, t: ts, f: v})
+				}
+				require.NoError(t, it.Err())
+				require.Equal(t, tc.expected, result)
+			})
+
+			// Test with iterables.
+			t.Run("iterables", func(t *testing.T) {
+				f, chkMetas := createFakeReaderAndIterables(tc.samples...)
+				it := &populateWithDelSeriesIterator{}
+				it.reset(ulid.ULID{}, f, chkMetas, nil)
+
+				var result []chunks.Sample
+				for it.Next() != chunkenc.ValNone {
+					st := it.AtST()
+					ts, v := it.At()
+					result = append(result, sample{st: st, t: ts, f: v})
+				}
+				require.NoError(t, it.Err())
+				require.Equal(t, tc.expected, result)
+			})
+		})
+	}
+}
+
+// TestPopulateWithDelChunkSeriesIterator_WithST tests that ST (start time) values are
+// correctly preserved when re-encoding chunks with deletions.
+func TestPopulateWithDelChunkSeriesIterator_WithST(t *testing.T) {
+	samplesWithST := []chunks.Sample{
+		sample{st: 100, t: 1000, f: 1.0},
+		sample{st: 200, t: 2000, f: 2.0},
+		sample{st: 300, t: 3000, f: 3.0},
+		sample{st: 400, t: 4000, f: 4.0},
+		sample{st: 500, t: 5000, f: 5.0},
+	}
+	samplesWithNoLeadingST := []chunks.Sample{
+		sample{st: 0, t: 1000, f: 1.0},
+		sample{st: 0, t: 2000, f: 2.0},
+		sample{st: 0, t: 3000, f: 3.0},
+		sample{st: 400, t: 4000, f: 4.0},
+		sample{st: 500, t: 5000, f: 5.0},
+	}
+
+	cases := []struct {
+		name      string
+		samples   [][]chunks.Sample
+		intervals tombstones.Intervals
+		expected  []chunks.Sample
+	}{
+		{
+			name:      "no deletions - ST preserved",
+			samples:   [][]chunks.Sample{samplesWithST},
+			intervals: nil,
+			expected:  samplesWithST,
+		},
+		{
+			name:    "with deletions - ST preserved in remaining samples",
+			samples: [][]chunks.Sample{samplesWithST},
+			// Delete samples at t=2000 and t=4000.
+			intervals: tombstones.Intervals{{Mint: 2000, Maxt: 2000}, {Mint: 4000, Maxt: 4000}},
+			expected: []chunks.Sample{
+				sample{st: 100, t: 1000, f: 1.0},
+				sample{st: 300, t: 3000, f: 3.0},
+				sample{st: 500, t: 5000, f: 5.0},
+			},
+		},
+		{
+			name:    "delete first sample - ST preserved",
+			samples: [][]chunks.Sample{samplesWithST},
+			// Delete first sample.
+			intervals: tombstones.Intervals{{Mint: 1000, Maxt: 1000}},
+			expected: []chunks.Sample{
+				sample{st: 200, t: 2000, f: 2.0},
+				sample{st: 300, t: 3000, f: 3.0},
+				sample{st: 400, t: 4000, f: 4.0},
+				sample{st: 500, t: 5000, f: 5.0},
+			},
+		},
+		{
+			// This tests that populateCurrForSingleChunk can handle
+			// chunks that don't start with ST, but introduce ST later.
+			name:    "delete first sample - ST late preserved",
+			samples: [][]chunks.Sample{samplesWithNoLeadingST},
+			// Delete first sample.
+			intervals: tombstones.Intervals{{Mint: 1000, Maxt: 1000}},
+			expected: []chunks.Sample{
+				sample{st: 0, t: 2000, f: 2.0},
+				sample{st: 0, t: 3000, f: 3.0},
+				sample{st: 400, t: 4000, f: 4.0},
+				sample{st: 500, t: 5000, f: 5.0},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Test with chunks that need re-encoding due to deletions.
+			t.Run("chunks", func(t *testing.T) {
+				f, chkMetas := createFakeReaderAndNotPopulatedChunks(tc.samples...)
+				it := &populateWithDelChunkSeriesIterator{}
+				it.reset(ulid.ULID{}, f, chkMetas, tc.intervals)
+
+				var result []chunks.Sample
+				for it.Next() {
+					meta := it.At()
+					chkIt := meta.Chunk.Iterator(nil)
+					for chkIt.Next() != chunkenc.ValNone {
+						st := chkIt.AtST()
+						ts, v := chkIt.At()
+						result = append(result, sample{st: st, t: ts, f: v})
+					}
+					require.NoError(t, chkIt.Err())
+				}
+				require.NoError(t, it.Err())
+				require.Equal(t, tc.expected, result)
+			})
+
+			// Test with iterables.
+			t.Run("iterables", func(t *testing.T) {
+				f, chkMetas := createFakeReaderAndIterables(tc.samples...)
+				it := &populateWithDelChunkSeriesIterator{}
+				it.reset(ulid.ULID{}, f, chkMetas, tc.intervals)
+
+				var result []chunks.Sample
+				for it.Next() {
+					meta := it.At()
+					chkIt := meta.Chunk.Iterator(nil)
+					for chkIt.Next() != chunkenc.ValNone {
+						st := chkIt.AtST()
+						ts, v := chkIt.At()
+						result = append(result, sample{st: st, t: ts, f: v})
+					}
+					require.NoError(t, chkIt.Err())
+				}
+				require.NoError(t, it.Err())
+				require.Equal(t, tc.expected, result)
+			})
 		})
 	}
 }
@@ -3716,6 +3952,134 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 	require.Equal(t, 1, seriesCount)
 }
 
+// TestChunkQuerier_OverlappingInOrderAndOOOChunks verifies the chunks
+// returned by the ChunkQuerier when an in-order chunk overlaps with many
+// out-of-order chunks. All sample timestamps are distinct. The total
+// number of samples is chosen to exceed math.MaxUint16 so that the
+// querier must split the merged iterable into multiple output chunks.
+func TestChunkQuerier_OverlappingInOrderAndOOOChunks(t *testing.T) {
+	for _, storeST := range []bool{false, true} {
+		t.Run(fmt.Sprintf("store-st=%v", storeST), func(t *testing.T) {
+			for _, tc := range []struct {
+				name    string
+				valType chunkenc.ValueType
+			}{
+				{"float", chunkenc.ValFloat},
+				{"histogram", chunkenc.ValHistogram},
+				{"float histogram", chunkenc.ValFloatHistogram},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					testChunkQuerierOverlappingInOrderAndOOOChunks(t, tc.valType, storeST)
+				})
+			}
+		})
+	}
+}
+
+func testChunkQuerierOverlappingInOrderAndOOOChunks(t *testing.T, valType chunkenc.ValueType, storeST bool) {
+	const (
+		oooCapMax = 32
+		// Pick more OOO samples than any chunk encoding can hold so the
+		// querier is forced to cut the merged iterable into multiple chunks.
+		oooSamplesToAppend = int(math.MaxUint16) + 10
+		firstIndex         = 0                      // Position of in-order sample at the start.
+		lastIndex          = oooSamplesToAppend + 1 // Position of in-order sample at the end to overlap all OOO samples.
+	)
+
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = oooCapMax
+	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
+	opts.EnableSTStorage = storeST
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	lbls := labels.FromStrings("foo", "bar")
+
+	appendSample := func(app storage.Appender, ts int64) error {
+		switch valType {
+		case chunkenc.ValFloat:
+			_, err := app.Append(0, lbls, ts, float64(ts))
+			return err
+		case chunkenc.ValHistogram:
+			_, err := app.AppendHistogram(0, lbls, ts, tsdbutil.GenerateTestHistogram(ts), nil)
+			return err
+		case chunkenc.ValFloatHistogram:
+			_, err := app.AppendHistogram(0, lbls, ts, nil, tsdbutil.GenerateTestFloatHistogram(ts))
+			return err
+		default:
+			return fmt.Errorf("unsupported value type: %v", valType)
+		}
+	}
+
+	// Append the two in-order samples at the start and end of the range,
+	// so that the in-order chunk spans the full range that the OOO samples
+	// will land in.
+	app := db.Appender(context.Background())
+	for _, i := range []int{firstIndex, lastIndex} {
+		require.NoError(t, appendSample(app, int64(10000+i*10)))
+	}
+	require.NoError(t, app.Commit())
+
+	// Sanity check: the two in-order samples form a single in-memory head
+	// chunk covering the whole timestamp range, with no m-mapped chunks.
+	ms, _, err := db.head.getOrCreate(lbls.Hash(), lbls, false)
+	require.NoError(t, err)
+	require.NotNil(t, ms.headChunks)
+	require.Equal(t, 1, ms.headChunks.len())
+	require.Nil(t, ms.headChunks.prev)
+	require.Empty(t, ms.mmappedChunks)
+	require.Equal(t, int64(10000+firstIndex*10), ms.headChunks.minTime)
+	require.Equal(t, int64(10000+lastIndex*10), ms.headChunks.maxTime)
+	require.Equal(t, 2, ms.headChunks.chunk.NumSamples())
+
+	// Append the OOO samples in the gap between the two in-order samples.
+	app = db.Appender(context.Background())
+	for i := firstIndex + 1; i < lastIndex; i++ {
+		require.NoError(t, appendSample(app, int64(10000+i*10)))
+	}
+	require.NoError(t, app.Commit())
+
+	// Sanity check: the head holds the expected number of OOO chunks for
+	// the series. Each m-mapped OOO chunk has oooCapMax samples; whatever
+	// remains lives in the in-memory head OOO chunk.
+	require.NotNil(t, ms.ooo)
+	require.Len(t, ms.ooo.oooMmappedChunks, oooSamplesToAppend/oooCapMax)
+	require.Equal(t, oooSamplesToAppend%oooCapMax, ms.ooo.oooHeadChunk.chunk.NumSamples())
+
+	chunkQuerier, err := db.ChunkQuerier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+
+	matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
+	css := chunkQuerier.Select(context.Background(), false, nil, matcher)
+
+	var seriesCount, chunkCount, sampleCount int
+	lastTS := int64(math.MinInt64)
+	for css.Next() {
+		seriesCount++
+		series := css.At()
+		it := series.Iterator(nil)
+		for it.Next() {
+			chunkCount++
+			chk := it.At()
+			cit := chk.Chunk.Iterator(nil)
+			for vt := cit.Next(); vt != chunkenc.ValNone; vt = cit.Next() {
+				require.Equal(t, valType, vt)
+				ts := cit.AtT()
+				require.Greater(t, ts, lastTS, "timestamps must be strictly increasing across the returned chunks")
+				lastTS = ts
+				sampleCount++
+			}
+			require.NoError(t, cit.Err())
+		}
+		require.NoError(t, it.Err())
+	}
+	require.NoError(t, css.Err())
+
+	require.Equal(t, 1, seriesCount)
+	require.Greater(t, chunkCount, 1)
+	require.Equal(t, lastIndex-firstIndex+1, sampleCount)
+}
+
 func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	ir := mockReaderOfLabels{}
 
@@ -3809,4 +4173,139 @@ func TestMergeQuerierConcurrentSelectMatchers(t *testing.T) {
 	mergedQuerier.Select(context.Background(), false, nil, matchers...)
 
 	require.Equal(t, originalMatchers, matchers)
+}
+
+// prefixFilter accepts values that start with the given prefix and scores them 1.0.
+type prefixFilter struct{ prefix string }
+
+func (f prefixFilter) Accept(v string) (bool, float64) {
+	if strings.HasPrefix(v, f.prefix) {
+		return true, 1.0
+	}
+	return false, 0
+}
+
+func newBlockBaseQuerierForSearch(t *testing.T, labelSets ...labels.Labels) *blockBaseQuerier {
+	t.Helper()
+	ix := newMockIndex()
+	// Group series refs by label for writing postings.
+	postings := make(map[labels.Label][]storage.SeriesRef)
+	for i, ls := range labelSets {
+		ref := storage.SeriesRef(i)
+		require.NoError(t, ix.AddSeries(ref, ls))
+		ls.Range(func(lbl labels.Label) {
+			postings[lbl] = append(postings[lbl], ref)
+		})
+	}
+	for lbl, refs := range postings {
+		require.NoError(t, ix.WritePostings(lbl.Name, lbl.Value, index.NewListPostings(refs)))
+	}
+	return &blockBaseQuerier{index: ix, chunks: nil, tombstones: tombstones.NewMemTombstones()}
+}
+
+func collectSearchResultSet(t *testing.T, rs storage.SearchResultSet) []storage.SearchResult {
+	t.Helper()
+	var got []storage.SearchResult
+	for rs.Next() {
+		got = append(got, rs.At())
+	}
+	require.NoError(t, rs.Err())
+	require.NoError(t, rs.Close())
+	return got
+}
+
+func TestBlockBaseQuerierSearchLabelNames(t *testing.T) {
+	ctx := t.Context()
+	q := newBlockBaseQuerierForSearch(t,
+		labels.FromStrings("env", "prod", "job", "api"),
+		labels.FromStrings("env", "dev", "job", "api"),
+		labels.FromStrings("region", "eu"),
+	)
+
+	t.Run("no filter returns all names", func(t *testing.T) {
+		rs := q.SearchLabelNames(ctx, nil)
+		got := collectSearchResultSet(t, rs)
+		gotValues := make([]string, len(got))
+		for i, r := range got {
+			gotValues[i] = r.Value
+			require.Equal(t, 1.0, r.Score)
+		}
+		slices.Sort(gotValues)
+		require.Equal(t, []string{"env", "job", "region"}, gotValues)
+	})
+
+	t.Run("filter selects matching names", func(t *testing.T) {
+		rs := q.SearchLabelNames(ctx, &storage.SearchHints{Filter: prefixFilter{"e"}})
+		got := collectSearchResultSet(t, rs)
+		require.Len(t, got, 1)
+		require.Equal(t, "env", got[0].Value)
+	})
+
+	t.Run("limit is applied", func(t *testing.T) {
+		rs := q.SearchLabelNames(ctx, &storage.SearchHints{Limit: 1})
+		got := collectSearchResultSet(t, rs)
+		require.Len(t, got, 1)
+	})
+}
+
+func TestBlockBaseQuerierSearchLabelValues(t *testing.T) {
+	ctx := t.Context()
+	q := newBlockBaseQuerierForSearch(t,
+		labels.FromStrings("env", "prod"),
+		labels.FromStrings("env", "dev"),
+		labels.FromStrings("env", "staging"),
+	)
+
+	t.Run("no filter returns all values", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "env", nil)
+		got := collectSearchResultSet(t, rs)
+		gotValues := make([]string, len(got))
+		for i, r := range got {
+			gotValues[i] = r.Value
+			require.Equal(t, 1.0, r.Score)
+		}
+		slices.Sort(gotValues)
+		require.Equal(t, []string{"dev", "prod", "staging"}, gotValues)
+	})
+
+	t.Run("filter selects matching values", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "env", &storage.SearchHints{Filter: prefixFilter{"p"}})
+		got := collectSearchResultSet(t, rs)
+		require.Len(t, got, 1)
+		require.Equal(t, "prod", got[0].Value)
+	})
+
+	t.Run("limit is applied after filtering", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "env", &storage.SearchHints{
+			Filter: prefixFilter{"p"},
+			Limit:  1,
+		})
+		got := collectSearchResultSet(t, rs)
+		require.Equal(t, []storage.SearchResult{{Value: "prod", Score: 1.0}}, got)
+	})
+
+	t.Run("limit is applied", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "env", &storage.SearchHints{Limit: 2})
+		got := collectSearchResultSet(t, rs)
+		require.Len(t, got, 2)
+	})
+
+	t.Run("unknown label name returns empty", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "unknown", nil)
+		got := collectSearchResultSet(t, rs)
+		require.Empty(t, got)
+	})
+
+	t.Run("OrderByValueDesc returns values in reverse alphabetical order", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "env", &storage.SearchHints{
+			OrderBy: storage.OrderByValueDesc,
+		})
+		got := collectSearchResultSet(t, rs)
+		gotValues := make([]string, len(got))
+		for i, r := range got {
+			gotValues[i] = r.Value
+			require.Equal(t, 1.0, r.Score)
+		}
+		require.Equal(t, []string{"staging", "prod", "dev"}, gotValues)
+	})
 }

@@ -119,7 +119,7 @@ func runTestSteps(t *testing.T, steps []struct {
 	require.NoError(t, os.WriteFile(configFilePath, []byte(steps[0].configText), 0o644), "Failed to write initial config file")
 
 	port := testutil.RandomUnprivilegedPort(t)
-	prom := prometheusCommandWithLogging(t, configFilePath, port, "--enable-feature=auto-reload-config", "--config.auto-reload-interval=1s")
+	prom := prometheusCommandWithLogging(t, configFilePath, port, "--config.auto-reload", "--config.auto-reload-interval=1s")
 	require.NoError(t, prom.Start())
 
 	baseURL := "http://localhost:" + strconv.Itoa(port)
@@ -198,38 +198,46 @@ func captureLogsToTLog(t *testing.T, r io.Reader) {
 	}
 }
 
-func prometheusCommandWithLogging(t *testing.T, configFilePath string, port int, extraArgs ...string) *exec.Cmd {
+func commandWithLogging(t *testing.T, logProcessor func(*testing.T, io.Reader), name string, args ...string) *exec.Cmd {
+	if logProcessor == nil {
+		logProcessor = captureLogsToTLog
+	}
+
 	stdoutPipe, stdoutWriter := io.Pipe()
 	stderrPipe, stderrWriter := io.Pipe()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = stdoutWriter
+	cmd.Stderr = stderrWriter
+
+	go func() {
+		defer wg.Done()
+		logProcessor(t, stdoutPipe)
+	}()
+	go func() {
+		defer wg.Done()
+		logProcessor(t, stderrPipe)
+	}()
+
+	t.Cleanup(func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+		stdoutWriter.Close()
+		stderrWriter.Close()
+		wg.Wait()
+	})
+	return cmd
+}
+
+func prometheusCommandWithLogging(t *testing.T, configFilePath string, port int, extraArgs ...string) *exec.Cmd {
 	args := []string{
 		"-test.main",
 		"--config.file=" + configFilePath,
 		"--web.listen-address=0.0.0.0:" + strconv.Itoa(port),
 	}
 	args = append(args, extraArgs...)
-	prom := exec.Command(promPath, args...)
-	prom.Stdout = stdoutWriter
-	prom.Stderr = stderrWriter
-
-	go func() {
-		defer wg.Done()
-		captureLogsToTLog(t, stdoutPipe)
-	}()
-	go func() {
-		defer wg.Done()
-		captureLogsToTLog(t, stderrPipe)
-	}()
-
-	t.Cleanup(func() {
-		prom.Process.Kill()
-		prom.Wait()
-		stdoutWriter.Close()
-		stderrWriter.Close()
-		wg.Wait()
-	})
-	return prom
+	return commandWithLogging(t, nil, promPath, args...)
 }

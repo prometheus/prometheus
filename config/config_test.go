@@ -51,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/moby"
 	"github.com/prometheus/prometheus/discovery/nomad"
 	"github.com/prometheus/prometheus/discovery/openstack"
+	"github.com/prometheus/prometheus/discovery/outscale"
 	"github.com/prometheus/prometheus/discovery/ovhcloud"
 	"github.com/prometheus/prometheus/discovery/puppetdb"
 	"github.com/prometheus/prometheus/discovery/scaleway"
@@ -481,6 +482,7 @@ var expectedConf = &Config{
 					PathPrefix:      "/consul",
 					Token:           "mysecret",
 					Services:        []string{"nginx", "cache", "mysql"},
+					HealthFilter:    `Service.Tags contains "canary"`,
 					ServiceTags:     []string{"canary", "v1"},
 					NodeMeta:        map[string]string{"rack": "123"},
 					TagSeparator:    consul.DefaultSDConfig.TagSeparator,
@@ -1151,6 +1153,7 @@ var expectedConf = &Config{
 					},
 					Port:            80,
 					RefreshInterval: model.Duration(60 * time.Second),
+					Role:            "droplets",
 				},
 			},
 		},
@@ -1576,8 +1579,10 @@ var expectedConf = &Config{
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&stackit.SDConfig{
-					Project: "11111111-1111-1111-1111-111111111111",
-					Region:  "eu01",
+					Project:           "11111111-1111-1111-1111-111111111111",
+					ServiceAccountKey: "mysecret_sa_key",
+					PrivateKey:        "mysecret_private_key",
+					Region:            "eu01",
 					HTTPClientConfig: config.HTTPClientConfig{
 						Authorization: &config.Authorization{
 							Type:        "Bearer",
@@ -1705,6 +1710,44 @@ var expectedConf = &Config{
 					},
 					Port:            80,
 					RefreshInterval: model.Duration(60 * time.Second),
+				},
+			},
+		},
+		{
+			JobName: "outscale",
+
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
+			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&outscale.SDConfig{
+					Endpoint:         "https://api.eu-west-2.outscale.com/api/v1",
+					Region:           "eu-west-2",
+					AccessKey:        "A1B2C3D4E5F6G7H8I9J0",
+					SecretKey:        "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+					Port:             80,
+					RefreshInterval:  model.Duration(60 * time.Second),
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
 				},
 			},
 		},
@@ -2087,6 +2130,7 @@ func TestLoadConfig(t *testing.T) {
 	testutil.RequireEqualWithOptions(t, expectedConf, c, []cmp.Option{
 		cmpopts.IgnoreUnexported(config.ProxyConfig{}),
 		cmpopts.IgnoreUnexported(ionos.SDConfig{}),
+		cmpopts.IgnoreUnexported(outscale.SDConfig{}),
 		cmpopts.IgnoreUnexported(stackit.SDConfig{}),
 		cmpopts.IgnoreUnexported(regexp.Regexp{}),
 		cmpopts.IgnoreUnexported(hetzner.SDConfig{}),
@@ -2115,7 +2159,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Len(t, matches, 25, "wrong number of secret matches found")
+	require.Len(t, matches, 28, "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
@@ -2415,6 +2459,30 @@ var expectedErrors = []struct {
 		errMsg:   `found multiple remote write configs with job name "queue1"`,
 	},
 	{
+		filename: "remote_write_queue_max_samples_per_send_zero.bad.yml",
+		errMsg:   `remote write queue max_samples_per_send must be positive`,
+	},
+	{
+		filename: "remote_write_queue_max_shards_zero.bad.yml",
+		errMsg:   `remote write queue max_shards must be positive`,
+	},
+	{
+		filename: "remote_write_queue_min_shards_zero.bad.yml",
+		errMsg:   `remote write queue min_shards must be positive`,
+	},
+	{
+		filename: "remote_write_queue_capacity_zero.bad.yml",
+		errMsg:   `remote write queue capacity must be positive`,
+	},
+	{
+		filename: "remote_write_queue_min_shards_greater_than_max.bad.yml",
+		errMsg:   `remote write queue min_shards must not be greater than max_shards`,
+	},
+	{
+		filename: "remote_write_queue_max_backoff_less_than_min.bad.yml",
+		errMsg:   `remote write queue max_backoff must not be less than min_backoff`,
+	},
+	{
 		filename: "remote_read_dup.bad.yml",
 		errMsg:   `found multiple remote read configs with job name "queue1"`,
 	},
@@ -2539,6 +2607,18 @@ var expectedErrors = []struct {
 		errMsg:   "at most one of secret_key & secret_key_file must be configured",
 	},
 	{
+		filename: "outscale_no_region.bad.yml",
+		errMsg:   "outscale SD configuration requires a region",
+	},
+	{
+		filename: "outscale_no_secret.bad.yml",
+		errMsg:   "one of secret_key & secret_key_file must be configured",
+	},
+	{
+		filename: "outscale_two_secrets.bad.yml",
+		errMsg:   "at most one of secret_key & secret_key_file must be configured",
+	},
+	{
 		filename: "scrape_body_size_limit.bad.yml",
 		errMsg:   "units: unknown unit  in 100",
 	},
@@ -2626,6 +2706,22 @@ var expectedErrors = []struct {
 		filename: "stackit_endpoint.bad.yml",
 		errMsg:   "invalid endpoint",
 	},
+	{
+		filename: "tsdb_retention_time.bad.yml",
+		errMsg:   `not a valid duration string: "-1h"`,
+	},
+	{
+		filename: "tsdb_retention_size.bad.yml",
+		errMsg:   `'storage.tsdb.retention.size' must be greater than or equal to 0`,
+	},
+	{
+		filename: "tsdb_retention_percentage.bad.yml",
+		errMsg:   `'storage.tsdb.retention.percentage' must be in the range [0, 100]`,
+	},
+	{
+		filename: "tsdb_retention_percentage_negative.bad.yml",
+		errMsg:   "'storage.tsdb.retention.percentage' must be in the range [0, 100]",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
@@ -2634,6 +2730,12 @@ func TestBadConfigs(t *testing.T) {
 		require.ErrorContains(t, err, ee.errMsg,
 			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
 	}
+}
+
+func TestTSDBRetentionPercentageFloat(t *testing.T) {
+	c, err := LoadFile("testdata/tsdb_retention_percentage_float.good.yml", false, promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, 0.5, c.StorageConfig.TSDBConfig.Retention.Percentage)
 }
 
 func TestBadStaticConfigsYML(t *testing.T) {
@@ -2649,6 +2751,8 @@ func TestEmptyConfig(t *testing.T) {
 	require.NoError(t, err)
 	exp := DefaultConfig
 	exp.loaded = true
+	retention := DefaultTSDBRetentionConfig
+	exp.StorageConfig.TSDBConfig = &TSDBConfig{Retention: &retention}
 	require.Equal(t, exp, *c)
 	require.Equal(t, 75, c.Runtime.GoGC)
 }
@@ -2700,6 +2804,10 @@ func TestGlobalConfig(t *testing.T) {
 		require.NoError(t, err)
 		exp := DefaultConfig
 		exp.loaded = true
+		// TSDBConfig is always injected by Config.UnmarshalYAML even when no
+		// storage.tsdb section is present, so the expected config must include it.
+		retention := DefaultTSDBRetentionConfig
+		exp.StorageConfig.TSDBConfig = &TSDBConfig{Retention: &retention}
 		require.Equal(t, exp, *c)
 	})
 

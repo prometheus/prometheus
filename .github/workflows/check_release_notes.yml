@@ -1,8 +1,7 @@
 name: 'Check release notes'
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main, 'release-*']
     types:
       - opened
       - reopened
@@ -21,6 +20,8 @@ jobs:
     if: (github.repository_owner == 'prometheus' || github.repository_owner == 'prometheus-community') && github.event.pull_request.user.login != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - env:
           PR_DESCRIPTION: ${{ github.event.pull_request.body }}
         run: |

@@ -116,9 +116,12 @@ type SDConfig struct {
 	ServiceTags []string `yaml:"tags,omitempty"`
 	// Desired node metadata. As of Consul 1.14, consider `filter` instead.
 	NodeMeta map[string]string `yaml:"node_meta,omitempty"`
-	// Consul filter string
-	// See https://www.consul.io/api-docs/catalog#filtering-1, for syntax
+	// Filter expression for the Catalog API.
+	// See https://developer.hashicorp.com/consul/api-docs/catalog#filtering for syntax.
 	Filter string `yaml:"filter,omitempty"`
+	// Filter expression for the Health API.
+	// See https://developer.hashicorp.com/consul/api-docs/health#filtering for syntax.
+	HealthFilter string `yaml:"health_filter,omitempty"`
 
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 }
@@ -170,20 +173,21 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 // Discovery retrieves target information from a Consul server
 // and updates them via watches.
 type Discovery struct {
-	client           *consul.Client
-	clientDatacenter string
-	clientNamespace  string
-	clientPartition  string
-	tagSeparator     string
-	watchedServices  []string // Set of services which will be discovered.
-	watchedTags      []string // Tags used to filter instances of a service.
-	watchedNodeMeta  map[string]string
-	watchedFilter    string
-	allowStale       bool
-	refreshInterval  time.Duration
-	finalizer        func()
-	logger           *slog.Logger
-	metrics          *consulMetrics
+	client              *consul.Client
+	clientDatacenter    string
+	clientNamespace     string
+	clientPartition     string
+	tagSeparator        string
+	watchedServices     []string // Set of services which will be discovered.
+	watchedTags         []string // Tags used to filter instances of a service.
+	watchedNodeMeta     map[string]string
+	watchedFilter       string
+	watchedHealthFilter string
+	allowStale          bool
+	refreshInterval     time.Duration
+	finalizer           func()
+	logger              *slog.Logger
+	metrics             *consulMetrics
 }
 
 // NewDiscovery returns a new Discovery for the given config.
@@ -218,20 +222,21 @@ func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.Discove
 		return nil, err
 	}
 	cd := &Discovery{
-		client:           client,
-		tagSeparator:     conf.TagSeparator,
-		watchedServices:  conf.Services,
-		watchedTags:      conf.ServiceTags,
-		watchedNodeMeta:  conf.NodeMeta,
-		watchedFilter:    conf.Filter,
-		allowStale:       conf.AllowStale,
-		refreshInterval:  time.Duration(conf.RefreshInterval),
-		clientDatacenter: conf.Datacenter,
-		clientNamespace:  conf.Namespace,
-		clientPartition:  conf.Partition,
-		finalizer:        wrapper.CloseIdleConnections,
-		logger:           logger,
-		metrics:          m,
+		client:              client,
+		tagSeparator:        conf.TagSeparator,
+		watchedServices:     conf.Services,
+		watchedTags:         conf.ServiceTags,
+		watchedNodeMeta:     conf.NodeMeta,
+		watchedFilter:       conf.Filter,
+		watchedHealthFilter: conf.HealthFilter,
+		allowStale:          conf.AllowStale,
+		refreshInterval:     time.Duration(conf.RefreshInterval),
+		clientDatacenter:    conf.Datacenter,
+		clientNamespace:     conf.Namespace,
+		clientPartition:     conf.Partition,
+		finalizer:           wrapper.CloseIdleConnections,
+		logger:              logger,
+		metrics:             m,
 	}
 
 	return cd, nil
@@ -330,7 +335,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 	d.initialize(ctx)
 
-	if len(d.watchedServices) == 0 || len(d.watchedTags) != 0 {
+	if len(d.watchedServices) == 0 || len(d.watchedTags) != 0 || d.watchedFilter != "" {
 		// We need to watch the catalog.
 		ticker := time.NewTicker(d.refreshInterval)
 
@@ -499,7 +504,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 		WaitTime:   watchTimeout,
 		AllowStale: srv.discovery.allowStale,
 		NodeMeta:   srv.discovery.watchedNodeMeta,
-		Filter:     srv.discovery.watchedFilter,
+		Filter:     srv.discovery.watchedHealthFilter,
 	}
 
 	t0 := time.Now()

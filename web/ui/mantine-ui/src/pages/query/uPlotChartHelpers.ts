@@ -5,52 +5,79 @@ import { getSeriesColor } from "./colorPool";
 import { computePosition, shift, flip, offset } from "@floating-ui/dom";
 import uPlot, { AlignedData, Series } from "uplot";
 
-const formatYAxisTickValue = (y: number | null): string => {
+const formatYAxisTickValue = (y: number | null, precision = 2): string => {
   if (y === null) {
     return "null";
   }
   const absY = Math.abs(y);
 
   if (absY >= 1e24) {
-    return (y / 1e24).toFixed(2) + "Y";
+    return (y / 1e24).toFixed(precision) + "Y";
   } else if (absY >= 1e21) {
-    return (y / 1e21).toFixed(2) + "Z";
+    return (y / 1e21).toFixed(precision) + "Z";
   } else if (absY >= 1e18) {
-    return (y / 1e18).toFixed(2) + "E";
+    return (y / 1e18).toFixed(precision) + "E";
   } else if (absY >= 1e15) {
-    return (y / 1e15).toFixed(2) + "P";
+    return (y / 1e15).toFixed(precision) + "P";
   } else if (absY >= 1e12) {
-    return (y / 1e12).toFixed(2) + "T";
+    return (y / 1e12).toFixed(precision) + "T";
   } else if (absY >= 1e9) {
-    return (y / 1e9).toFixed(2) + "G";
+    return (y / 1e9).toFixed(precision) + "G";
   } else if (absY >= 1e6) {
-    return (y / 1e6).toFixed(2) + "M";
+    return (y / 1e6).toFixed(precision) + "M";
   } else if (absY >= 1e3) {
-    return (y / 1e3).toFixed(2) + "k";
+    return (y / 1e3).toFixed(precision) + "k";
   } else if (absY >= 1) {
-    return y.toFixed(2);
+    return y.toFixed(precision);
   } else if (absY === 0) {
-    return y.toFixed(2);
+    return y.toFixed(precision);
   } else if (absY < 1e-23) {
-    return (y / 1e-24).toFixed(2) + "y";
+    return (y / 1e-24).toFixed(precision) + "y";
   } else if (absY < 1e-20) {
-    return (y / 1e-21).toFixed(2) + "z";
+    return (y / 1e-21).toFixed(precision) + "z";
   } else if (absY < 1e-17) {
-    return (y / 1e-18).toFixed(2) + "a";
+    return (y / 1e-18).toFixed(precision) + "a";
   } else if (absY < 1e-14) {
-    return (y / 1e-15).toFixed(2) + "f";
+    return (y / 1e-15).toFixed(precision) + "f";
   } else if (absY < 1e-11) {
-    return (y / 1e-12).toFixed(2) + "p";
+    return (y / 1e-12).toFixed(precision) + "p";
   } else if (absY < 1e-8) {
-    return (y / 1e-9).toFixed(2) + "n";
+    return (y / 1e-9).toFixed(precision) + "n";
   } else if (absY < 1e-5) {
-    return (y / 1e-6).toFixed(2) + "µ";
+    return (y / 1e-6).toFixed(precision) + "µ";
   } else if (absY < 1e-2) {
-    return (y / 1e-3).toFixed(2) + "m";
+    return (y / 1e-3).toFixed(precision) + "m";
   } else if (absY <= 1) {
-    return y.toFixed(2);
+    return y.toFixed(precision);
   }
   throw Error("couldn't format a value, this is a bug");
+};
+
+const maxYAxisTickPrecision = 8;
+
+const hasDuplicateLabels = (labels: string[]): boolean =>
+  new Set(labels).size !== labels.length;
+
+const formatYAxisTickValues = (splits: number[]): string[] => {
+  const labels = splits.map((split) => formatYAxisTickValue(split));
+
+  if (!hasDuplicateLabels(labels)) {
+    return labels;
+  }
+
+  for (let precision = 3; precision <= maxYAxisTickPrecision; precision++) {
+    const preciseLabels = splits.map((split) =>
+      formatYAxisTickValue(split, precision)
+    );
+
+    if (!hasDuplicateLabels(preciseLabels)) {
+      return preciseLabels;
+    }
+  }
+
+  return splits.map((split) =>
+    formatYAxisTickValue(split, maxYAxisTickPrecision)
+  );
 };
 
 const escapeHTML = (str: string): string => {
@@ -76,15 +103,13 @@ const formatLabels = (labels: { [key: string]: string }): string => `
                 .filter((k) => k !== "__name__")
                 .map(
                   (k) =>
-                    `<div><strong>${escapeHTML(k)}</strong>: ${escapeHTML(labels[k])}</div>`
+                    `<div><strong>${escapeHTML(k)}</strong>: ${escapeHTML(labels[k])}</div>`,
                 )
                 .join("")}
             </div>`;
 
 const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
   let over: HTMLDivElement;
-  let boundingLeft: number;
-  let boundingTop: number;
   let selectedSeriesIdx: number | null = null;
 
   const overlay = document.createElement("div");
@@ -110,12 +135,6 @@ const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
       // When the chart is destroyed, remove the overlay from the DOM.
       destroy: () => {
         overlay.remove();
-      },
-      // When the chart is resized, store the bounding box of the overlay.
-      setSize: () => {
-        const bbox = over.getBoundingClientRect();
-        boundingLeft = bbox.left;
-        boundingTop = bbox.top;
       },
       // When a series is selected by hovering close to it, store the
       // index of the selected series, so we can update the hover tooltip
@@ -150,14 +169,18 @@ const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
         }
         const color = series.stroke(u, selectedSeriesIdx);
 
-        const x = left + boundingLeft;
-        const y = top + boundingTop;
+        // Get the bounding rect fresh on every cursor move to account for
+        // page scrolling, which would otherwise cause a growing Y offset
+        // for charts further down the page.
+        const bbox = over.getBoundingClientRect();
+        const x = left + bbox.left;
+        const y = top + bbox.top;
 
         overlay.innerHTML = `
             <div class="date">${formatTimestamp(ts, useLocalTime)}</div>
             <div class="series-value">
               <span class="detail-swatch" style="background-color: ${color}"></span>
-              <span>${labels.__name__ ? labels.__name__ + ": " : " "}<strong>${value}</strong></span>
+              <span>${labels.__name__ ? escapeHTML(labels.__name__) + ": " : " "}<strong>${value}</strong></span>
             </div>
             ${formatLabels(labels)}
           `.trimEnd();
@@ -197,7 +220,7 @@ const autoPadLeft = (
   u: uPlot,
   values: string[],
   axisIdx: number,
-  cycleNum: number
+  cycleNum: number,
 ) => {
   const axis = u.axes[axisIdx];
 
@@ -212,7 +235,7 @@ const autoPadLeft = (
   // Find longest tick text.
   const longestVal = (values ?? []).reduce(
     (acc, val) => (val.length > acc.length ? val : acc),
-    ""
+    "",
   );
 
   if (longestVal != "") {
@@ -232,7 +255,7 @@ const onlyDrawPointsForDisconnectedSamplesFilter = (
   u: uPlot,
   seriesIdx: number,
   show: boolean,
-  gaps?: null | number[][]
+  gaps?: null | number[][],
 ) => {
   const filtered = [];
 
@@ -291,7 +314,7 @@ export const getUPlotOptions = (
   useLocalTime: boolean,
   yAxisMin: number | null,
   light: boolean,
-  onSelectRange: (_start: number, _end: number) => void
+  onSelectRange: (_start: number, _end: number) => void,
 ): uPlot.Options => ({
   width: width - 30,
   height: 550,
@@ -318,7 +341,7 @@ export const getUPlotOptions = (
     markers: {
       fill: (
         _u: uPlot,
-        seriesIdx: number
+        seriesIdx: number,
       ): CSSStyleDeclaration["borderColor"] =>
         // Because the index here is coming from uPlot, we need to subtract 1. Series 0
         // represents the X axis, so we need to skip it.
@@ -387,7 +410,7 @@ export const getUPlotOptions = (
     },
     // Y axis (sample value).
     {
-      values: (_u: uPlot, splits: number[]) => splits.map(formatYAxisTickValue),
+      values: (_u: uPlot, splits: number[]) => formatYAxisTickValues(splits),
       ticks: {
         stroke: light ? "#00000010" : "#ffffff20",
       },
@@ -415,7 +438,7 @@ export const getUPlotOptions = (
         // @ts-expect-error - uPlot doesn't have a field for labels, but we just attach some anyway.
         labels: r.metric,
         stroke: getSeriesColor(idx, light),
-      })
+      }),
     ),
   ],
   hooks: {
@@ -425,7 +448,7 @@ export const getUPlotOptions = (
         const leftVal = self.posToVal(self.select.left, "x");
         const rightVal = Math.max(
           self.posToVal(self.select.left + self.select.width, "x"),
-          leftVal + 1
+          leftVal + 1,
         );
 
         onSelectRange(leftVal, rightVal);
@@ -445,7 +468,7 @@ export const getUPlotData = (
   inputData: RangeSamples[],
   startTime: number,
   endTime: number,
-  resolution: number
+  resolution: number,
 ): uPlot.AlignedData => {
   const timeData: number[] = [];
   for (let t = startTime; t <= endTime; t += resolution) {

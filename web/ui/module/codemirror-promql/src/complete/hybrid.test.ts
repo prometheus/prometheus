@@ -1566,6 +1566,17 @@ describe('autocomplete promQL test', () => {
         options: [
           {
             label: 'demo',
+            apply: 'demo',
+            type: 'text',
+          },
+          {
+            label: '\\x2d',
+            apply: '\\\\x2d',
+            type: 'text',
+          },
+          {
+            label: 'quoted"value',
+            apply: 'quoted\\"value',
             type: 'text',
           },
         ],

@@ -238,7 +238,6 @@ func (sp *scrapePool) SetScrapeFailureLogger(l FailureLogger) {
 func (sp *scrapePool) stop() {
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
-	sp.cancel()
 	var wg sync.WaitGroup
 
 	sp.targetMtx.Lock()
@@ -258,6 +257,10 @@ func (sp *scrapePool) stop() {
 	sp.targetMtx.Unlock()
 
 	wg.Wait()
+	// Cancel the context after all loops have stopped. This is required for
+	// scrapeOnShutdown to work properly, as the shutdown scrape uses this
+	// context (via sl.parentCtx) and would fail if the context was cancelled early.
+	sp.cancel()
 	sp.client.CloseIdleConnections()
 
 	if sp.config != nil {
@@ -817,14 +820,23 @@ type cacheEntry struct {
 	lastIter uint64
 	hash     uint64
 	lset     labels.Labels
+
+	// st is an optional state for ST synthesis.
+	st *stCache
 }
 
 type scrapeLoop struct {
-	// Parameters.
-	ctx         context.Context
-	cancel      func()
-	stopped     chan struct{}
-	parentCtx   context.Context
+	// ctx represents a local context that is cancellable via s.cancel.
+	// It's meant to synchronize run() with stop().
+	// It inherits parentCtx.
+	ctx     context.Context
+	cancel  func()
+	stopped chan struct{}
+	// parentCtx represents manager-level context, typically connected
+	// to process shutdown.
+	parentCtx context.Context
+	// appenderCtx is a parentCtx with some extra context for appender
+	// implementations. Potentially remove-able with removal of AppenderV1.
 	appenderCtx context.Context
 	l           *slog.Logger
 	cache       *scrapeCache
@@ -839,6 +851,8 @@ type scrapeLoop struct {
 	appendable   storage.Appendable
 	appendableV2 storage.AppendableV2
 	buffers      *pool.Pool
+
+	synthesizeST bool
 	offsetSeed   uint64
 	symbolTable  *labels.SymbolTable
 	metrics      *scrapeMetrics
@@ -861,12 +875,14 @@ type scrapeLoop struct {
 
 	// Options from scrape.Options.
 	enableSTZeroIngestion   bool
+	parseST                 bool // Used by AppenderV2 only.
 	enableTypeAndUnitLabels bool
 	reportExtraMetrics      bool
 	appendMetadataToWAL     bool
 	passMetadataInContext   bool
-	skipOffsetting          bool // For testability.
-
+	skipJitterOffsetting    bool // For testability.
+	scrapeOnShutdown        bool
+	initialScrapeOffset     time.Duration
 	// error injection through setForcedError.
 	forcedErr    error
 	forcedErrMtx sync.Mutex
@@ -994,9 +1010,6 @@ func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
 }
 
 func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels, hash uint64) (ce *cacheEntry) {
-	if ref == 0 {
-		return nil
-	}
 	ce = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
 	c.series[string(met)] = ce
 	return ce
@@ -1214,11 +1227,19 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		validationScheme:              opts.sp.config.MetricNameValidationScheme,
 
 		// scrape.Options.
-		enableSTZeroIngestion:   opts.sp.options.EnableStartTimestampZeroIngestion,
+		enableSTZeroIngestion: opts.sp.options.EnableStartTimestampZeroIngestion,
+		// parseST was added recently. Before EnableStartTimestampZeroIngestion
+		// was enabling parsing ST. For non-Prometheus users of the scrape
+		// manager, we ensure appenderV2 parseST is set on EnableStartTimestampZeroIngestion
+		// This will be removed when EnableStartTimestampZeroIngestion is removed.
+		parseST:                 opts.sp.options.ParseST || opts.sp.options.EnableStartTimestampZeroIngestion,
+		synthesizeST:            opts.sp.options.SynthesizeST,
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
-		skipOffsetting:          opts.sp.options.skipOffsetting,
+		skipJitterOffsetting:    opts.sp.options.skipJitterOffsetting,
+		scrapeOnShutdown:        opts.sp.options.ScrapeOnShutdown,
+		initialScrapeOffset:     opts.sp.options.InitialScrapeOffset,
 	}
 }
 
@@ -1231,31 +1252,52 @@ func (sl *scrapeLoop) setScrapeFailureLogger(l FailureLogger) {
 	sl.scrapeFailureLogger = l
 }
 
+func (sl *scrapeLoop) getScrapeOffset() time.Duration {
+	offset := sl.scraper.offset(sl.interval, sl.offsetSeed)
+	if sl.skipJitterOffsetting {
+		offset = time.Duration(0)
+	}
+	return sl.initialScrapeOffset + offset
+}
+
 func (sl *scrapeLoop) run(errc chan<- error) {
-	if !sl.skipOffsetting {
+	var (
+		last   time.Time
+		ticker = time.NewTicker(sl.interval)
+	)
+	defer func() {
+		if sl.scrapeOnShutdown {
+			last = sl.scrapeAndReport(last, time.Now().Round(0), errc)
+		}
+		// Let the stop() know it can continue.
+		close(sl.stopped)
+		if sl.parentCtx.Err() == nil {
+			if !sl.disabledEndOfRunStalenessMarkers.Load() {
+				sl.endOfRunStaleness(last, ticker, sl.interval)
+			}
+		}
+		ticker.Stop()
+	}()
+
+	// Initial offset and jitter offset, if any.
+	offset := sl.getScrapeOffset()
+	if offset > 0 {
 		select {
-		case <-time.After(sl.scraper.offset(sl.interval, sl.offsetSeed)):
+		case <-time.After(offset):
 			// Continue after a scraping offset.
 		case <-sl.ctx.Done():
-			close(sl.stopped)
 			return
 		}
 	}
 
-	var last time.Time
-
+	// Reset the ticker so target scrape times are aligned to the offset+intervals.
+	ticker.Reset(sl.interval)
 	alignedScrapeTime := time.Now().Round(0)
-	ticker := time.NewTicker(sl.interval)
-	defer ticker.Stop()
 
-mainLoop:
 	for {
 		select {
-		case <-sl.parentCtx.Done():
-			close(sl.stopped)
-			return
 		case <-sl.ctx.Done():
-			break mainLoop
+			return
 		default:
 		}
 
@@ -1282,19 +1324,10 @@ mainLoop:
 		last = sl.scrapeAndReport(last, scrapeTime, errc)
 
 		select {
-		case <-sl.parentCtx.Done():
-			close(sl.stopped)
-			return
 		case <-sl.ctx.Done():
-			break mainLoop
+			return
 		case <-ticker.C:
 		}
-	}
-
-	close(sl.stopped)
-
-	if !sl.disabledEndOfRunStalenessMarkers.Load() {
-		sl.endOfRunStaleness(last, ticker, sl.interval)
 	}
 }
 
@@ -1746,7 +1779,7 @@ loop:
 		}
 
 		if err == nil {
-			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil {
+			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil && ce.ref != 0 {
 				sl.cache.trackStaleness(ce.ref, ce)
 			}
 		}
@@ -1765,7 +1798,7 @@ loop:
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
 			ce = sl.cache.addRef(met, ref, lset, hash)
-			if ce != nil && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
+			if ce != nil && ce.ref != 0 && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
 				// Bypass staleness logic if there is an explicit timestamp.
 				// But make sure we only do this if we have a cache entry (ce) for our series.
 				sl.cache.trackStaleness(ref, ce)

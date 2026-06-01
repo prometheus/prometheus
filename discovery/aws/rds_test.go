@@ -82,6 +82,7 @@ func (m *mockRDSClient) DescribeDBInstances(_ context.Context, input *rds.Descri
 }
 
 func TestRDSDiscoveryRefresh(t *testing.T) {
+	t.Parallel()
 	testTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	tests := []struct {
@@ -421,6 +422,7 @@ func TestRDSDiscoveryRefresh(t *testing.T) {
 }
 
 func TestDescribeAllDBClusters(t *testing.T) {
+	t.Parallel()
 	mockClient := &mockRDSClient{
 		clusters: map[string]types.DBCluster{
 			"arn:aws:rds:us-east-1:123456789012:cluster:cluster-1": {

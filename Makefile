@@ -12,10 +12,6 @@
 # limitations under the License.
 
 # Needs to be defined before including Makefile.common to auto-generate targets
-DOCKER_ARCHS ?= amd64 armv7 arm64 ppc64le riscv64 s390x
-DOCKERFILE_ARCH_EXCLUSIONS ?= Dockerfile.distroless:riscv64
-DOCKER_REGISTRY_ARCH_EXCLUSIONS ?= quay.io:riscv64
-
 UI_PATH = web/ui
 BUILD_UI ?= all
 UI_NODE_MODULES_PATH = $(UI_PATH)/node_modules
@@ -30,6 +26,15 @@ GOLANGCI_LINT_OPTS ?= --timeout 4m
 GOYACC_VERSION ?= v0.6.0
 
 include Makefile.common
+
+ifeq (arm, $(GOHOSTARCH))
+	PROTOC_ARCH ?= aarch_64
+else
+	PROTOC_ARCH ?= x86_64
+endif
+
+PROTOC_VERSION ?= 3.15.8
+PROTOC_URL     ?= https://github.com/protocolbuffers/protobuf/releases/download/v$(PROTOC_VERSION)/protoc-$(PROTOC_VERSION)-linux-$(PROTOC_ARCH).zip
 
 DOCKER_IMAGE_NAME       ?= prometheus
 
@@ -129,6 +134,15 @@ assets-tarball: assets
 	@echo '>> packaging assets'
 	scripts/package_assets.sh
 
+.PHONY: protoc
+protoc:
+	@echo ">> Installing protoc"
+	$(eval PROTOC_TMP := $(shell mktemp))
+	curl -s -o $(PROTOC_TMP) -L $(PROTOC_URL) 
+	unzip -u $(PROTOC_TMP) bin/protoc -d $(FIRST_GOPATH)
+	chmod +x $(FIRST_GOPATH)/bin/protoc
+	rm -v $(PROTOC_TMP)
+
 .PHONY: parser
 parser:
 	@echo ">> running goyacc to generate the .go file."
@@ -146,7 +160,12 @@ promql/parser/generated_parser.y.go: promql/parser/generated_parser.y
 .PHONY: clean-parser
 clean-parser:
 	@echo ">> cleaning generated parser"
+ifeq (, $(shell command -v goyacc 2> /dev/null))
+	@echo "goyacc not installed so skipping"
+	@echo "To install: \"go install golang.org/x/tools/cmd/goyacc@$(GOYACC_VERSION)\" or run \"make install-goyacc\""
+else
 	@rm -f promql/parser/generated_parser.y.go
+endif
 
 .PHONY: check-generated-parser
 check-generated-parser: clean-parser promql/parser/generated_parser.y.go
@@ -203,7 +222,7 @@ update-features-testdata:
 	@echo ">> updating features testdata"
 	@$(GO) test ./cmd/prometheus -run TestFeaturesAPI -update-features
 
-GO_SUBMODULE_DIRS := documentation/examples/remote_storage internal/tools web/ui/mantine-ui/src/promql/tools
+GO_SUBMODULE_DIRS := documentation/examples/remote_storage internal/tools web/ui/mantine-ui/src/promql/tools compliance
 
 .PHONY: update-all-go-deps
 update-all-go-deps: update-go-deps

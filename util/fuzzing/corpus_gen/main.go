@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 
 	"github.com/prometheus/prometheus/util/fuzzing"
 )
@@ -32,7 +33,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println("Successfully generated all seed corpus ZIP files.")
+	fmt.Println("Successfully generated all seed corpus ZIP files and dictionary files.")
 }
 
 func run() error {
@@ -45,6 +46,13 @@ func run() error {
 		return fmt.Errorf("failed to generate FuzzParseExpr_seed_corpus.zip: %w", err)
 	}
 	fmt.Printf("Generated fuzzParseExpr_seed_corpus.zip with %d entries.\n", len(exprs))
+
+	// Generate FuzzParseExpr dictionary.
+	dict := fuzzing.GetDictForFuzzParseExpr()
+	if err := generateDictFile("fuzzParseExpr", dict); err != nil {
+		return fmt.Errorf("failed to generate fuzzParseExpr.dict: %w", err)
+	}
+	fmt.Printf("Generated fuzzParseExpr.dict with %d entries.\n", len(dict))
 
 	// Generate FuzzParseMetricSelector seed corpus.
 	selectors := fuzzing.GetCorpusForFuzzParseMetricSelector()
@@ -66,6 +74,30 @@ func run() error {
 		return fmt.Errorf("failed to generate FuzzParseOpenMetric_seed_corpus.zip: %w", err)
 	}
 	fmt.Printf("Generated fuzzParseOpenMetric_seed_corpus.zip with %d entries.\n", len(openMetrics))
+
+	// Generate FuzzXORChunk seed corpus.
+	xorSeeds := fuzzing.GetCorpusForFuzzXORChunk()
+	if err := generateZipFromXORChunkSeeds("fuzzXORChunk", xorSeeds); err != nil {
+		return fmt.Errorf("failed to generate fuzzXORChunk_seed_corpus.zip: %w", err)
+	}
+	fmt.Printf("Generated fuzzXORChunk_seed_corpus.zip with %d entries.\n", len(xorSeeds))
+
+	// Generate FuzzXOR2Chunk seed corpus.
+	xor2Seeds := fuzzing.GetCorpusForFuzzXOR2Chunk()
+	if err := generateZipFromXOR2ChunkSeeds("fuzzXOR2Chunk", xor2Seeds); err != nil {
+		return fmt.Errorf("failed to generate fuzzXOR2Chunk_seed_corpus.zip: %w", err)
+	}
+	fmt.Printf("Generated fuzzXOR2Chunk_seed_corpus.zip with %d entries.\n", len(xor2Seeds))
+
+	// Generate FuzzParseProtobuf seed corpus.
+	protobufSeeds, err := fuzzing.GetCorpusForFuzzParseProtobuf()
+	if err != nil {
+		return fmt.Errorf("failed to get corpus for FuzzParseProtobuf: %w", err)
+	}
+	if err := generateZipFromProtobufSeeds("fuzzParseProtobuf", protobufSeeds); err != nil {
+		return fmt.Errorf("failed to generate fuzzParseProtobuf_seed_corpus.zip: %w", err)
+	}
+	fmt.Printf("Generated fuzzParseProtobuf_seed_corpus.zip with %d entries.\n", len(protobufSeeds))
 
 	return nil
 }
@@ -107,10 +139,99 @@ func generateZipFromBytes(fuzzName string, corpus [][]byte) error {
 
 // generateZipFromStrings creates a seed corpus ZIP file from a slice of strings.
 func generateZipFromStrings(fuzzName string, corpus []string) error {
-	// Convert []string to [][]byte and delegate to generateZipFromBytes
+	// Convert []string to [][]byte and delegate to generateZipFromBytes.
 	byteCorpus := make([][]byte, len(corpus))
 	for i, s := range corpus {
 		byteCorpus[i] = []byte(s)
 	}
 	return generateZipFromBytes(fuzzName, byteCorpus)
+}
+
+// generateZipFromSeedEntries creates a seed corpus ZIP file from pre-serialised
+// Go fuzz corpus entries. Entries are sorted deterministically before writing.
+func generateZipFromSeedEntries(fuzzName string, entries [][]byte) error {
+	sort.Slice(entries, func(i, j int) bool {
+		return string(entries[i]) < string(entries[j])
+	})
+
+	zipPath := filepath.Join("..", fuzzName+"_seed_corpus.zip")
+	zipFile, err := os.Create(zipPath)
+	if err != nil {
+		return fmt.Errorf("failed to create zip file: %w", err)
+	}
+	defer zipFile.Close()
+
+	zipWriter := zip.NewWriter(zipFile)
+	defer zipWriter.Close()
+
+	for i, entry := range entries {
+		fileName := fmt.Sprintf("seed%d", i)
+		writer, err := zipWriter.Create(fileName)
+		if err != nil {
+			return fmt.Errorf("failed to create zip entry %s: %w", fileName, err)
+		}
+		if _, err := writer.Write(entry); err != nil {
+			return fmt.Errorf("failed to write zip entry %s: %w", fileName, err)
+		}
+	}
+
+	return nil
+}
+
+// generateZipFromXORChunkSeeds creates a seed corpus ZIP file for fuzz functions
+// with signature (int64, uint8, uint64), using the Go fuzz corpus file format.
+func generateZipFromXORChunkSeeds(fuzzName string, seeds []fuzzing.ChunkFuzzSeed) error {
+	entries := make([][]byte, len(seeds))
+	for i, s := range seeds {
+		entries[i] = []byte(fmt.Sprintf("go test fuzz v1\nint64(%d)\nuint8(%d)\nuint64(%d)\n", s.Seed, s.N, s.NaNMask))
+	}
+	return generateZipFromSeedEntries(fuzzName, entries)
+}
+
+// generateZipFromXOR2ChunkSeeds creates a seed corpus ZIP file for FuzzXOR2Chunk.
+func generateZipFromXOR2ChunkSeeds(fuzzName string, seeds []fuzzing.XOR2ChunkFuzzSeed) error {
+	entries := make([][]byte, len(seeds))
+	for i, s := range seeds {
+		entries[i] = []byte(fmt.Sprintf("go test fuzz v1\nint64(%d)\nuint8(%d)\nuint64(%d)\nuint8(%d)\n", s.Seed, s.N, s.NaNMask, s.STMode))
+	}
+	return generateZipFromSeedEntries(fuzzName, entries)
+}
+
+// generateZipFromProtobufSeeds creates a seed corpus ZIP file for FuzzParseProtobuf.
+func generateZipFromProtobufSeeds(fuzzName string, seeds []fuzzing.ProtobufCorpusSeed) error {
+	entries := make([][]byte, len(seeds))
+	for i, s := range seeds {
+		entries[i] = []byte(fmt.Sprintf(
+			"go test fuzz v1\n[]byte(%s)\nbool(%v)\nbool(%v)\nbool(%v)\nbool(%v)\n",
+			strconv.Quote(string(s.Data)),
+			s.IgnoreNative,
+			s.ParseClassic,
+			s.ConvertNHCB,
+			s.TypeAndUnit,
+		))
+	}
+	return generateZipFromSeedEntries(fuzzName, entries)
+}
+
+// generateDictFile writes a libFuzzer dictionary file to the parent directory.
+// Each token is written as a quoted string on its own line, sorted
+// deterministically so the output is stable across runs.
+func generateDictFile(fuzzName string, tokens []string) error {
+	sorted := make([]string, len(tokens))
+	copy(sorted, tokens)
+	sort.Strings(sorted)
+
+	dictPath := filepath.Join("..", fuzzName+".dict")
+	f, err := os.Create(dictPath)
+	if err != nil {
+		return fmt.Errorf("failed to create dict file: %w", err)
+	}
+	defer f.Close()
+
+	for _, token := range sorted {
+		if _, err := fmt.Fprintf(f, "%q\n", token); err != nil {
+			return fmt.Errorf("failed to write dict entry %q: %w", token, err)
+		}
+	}
+	return nil
 }

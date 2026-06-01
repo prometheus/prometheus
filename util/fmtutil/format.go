@@ -108,7 +108,7 @@ func makeTimeseries(wr *prompb.WriteRequest, labels map[string]string, m *dto.Me
 
 	timestamp := m.GetTimestampMs()
 	if timestamp == 0 {
-		timestamp = time.Now().UnixNano() / int64(time.Millisecond)
+		timestamp = time.Now().UnixMilli()
 	}
 
 	switch {

@@ -65,6 +65,96 @@ Notes:
 * `padding` of 0 to 7 bits so that the whole chunk data is byte-aligned.
 * The chunk can have as few as one sample, i.e. `ts_1`, `v_1`, etc. are optional.
 
+## XOR2 chunk data
+
+XOR2 uses the same structure as XOR for samples 0 and 1. Starting from sample 2,
+a joint control prefix encodes both the timestamp delta-of-delta (dod) and whether
+the value changed, with common dod cases byte-aligned for efficient writing.
+
+XOR2 can encode start timestamp (ST) as well optionally, see details further
+down.
+
+
+```
+┌──────────────────────┬───────────────────┬───────────────┬───────────────┬────────────────┬─-
+│ num_samples <uint16> │ st_header <uint8> | ts_0 <varint> │ v_0 <float64> │ ?st_0 <varint> |
+└──────────────────────┴───────────────────┴───────────────┴───────────────┴────────────────┴─-
+
+-─────────────────────┬───────────────────────┬─────────────────────────┬─-
+ ts_1_delta <uvarint> │ v_1_xor <varbit_xor2> │ ?st_1_delta <varbit_ts> |
+-─────────────────────┴───────────────────────┴─────────────────────────┴─-
+
+-─────────────────────────┬───────────────────────┬─────┬─-
+ sample_2 <joint_sample2> │ ?st_2_dod <varbit_ts> | ... │
+-─────────────────────────┴───────────────────────┴─────┴─-
+
+-─────────────────────────┬───────────────────────┬──────────────────┐
+ sample_n <joint_sample2> │ ?st_n_dod <varbit_ts> | padding <x bits> │
+-─────────────────────────┴───────────────────────┴──────────────────┘
+
+```
+
+### Joint sample encoding for n >= 2 (`<joint_sample2>`):
+
+Each sample starts with a variable-length control prefix that jointly encodes the
+dod and value change status:
+
+| Control prefix | dod | Value encoding that follows |
+|---|---|---|
+| `0` | 0 | (none, value unchanged) |
+| `10` | 0 | `<varbit_xor2_nn>` (value known non-zero and non-stale) |
+| `110DDDDD` `DDDDDDDD` | 13-bit signed [-4096, 4095] | `<varbit_xor2>` |
+| `1110DDDD` `DDDDDDDD` `DDDDDDDD` | 20-bit signed [-524288, 524287] | `<varbit_xor2>` |
+| `11110` + 64-bit dod | exact | `<varbit_xor2>` |
+| `11111` | 0 | (none, stale NaN — no value field) |
+
+The `110` and `1110` cases pack the prefix and the most-significant dod bits into
+the first byte, making the full dod field byte-aligned.
+
+### Value delta encoding (`<varbit_xor2>`):
+
+Used after the dod≠0 control prefixes. The XOR of the current and previous value is encoded as:
+
+| Prefix | Meaning |
+|---|---|
+| `0` | XOR = 0 (value unchanged) |
+| `10` | Reuse previous leading/trailing window; `sigbits` value bits follow |
+| `110` + leading(5) + sigbits(6) + value(sigbits) | New leading/trailing window |
+| `111` | Stale NaN marker (3 bits) |
+
+### Value delta encoding, known non-zero (`<varbit_xor2_nn>`):
+
+Used after the `10` control prefix (dod=0, value known to have changed and be non-stale).
+The delta=0 check is skipped, saving one bit on the reuse path:
+
+| Prefix | Meaning |
+|---|---|
+| `0` | Reuse previous leading/trailing window; `sigbits` value bits follow |
+| `1` + leading(5) + sigbits(6) + value(sigbits) | New leading/trailing window |
+
+### Start timestamp encoding
+
+* We use `st_i_dod` and `st_i` interchangeably when `i>1` in these notes.
+* `st_header` is one byte:
+   ```
+   ┌───────────────────────┬───────────────────────┐
+   │ first_st_known<1 bit> | st_changed_on<7 bits> │
+   └───────────────────────┴───────────────────────┘
+   ```
+   where the highest bit `first_st_known` indicates if `st_0` is present or not.
+   If the lower 7bits `st_changed_on` is 0, no `st_i (i>0)` is present.
+   Otherwise `st_i (i>=st_changed_on>)` is present, while
+   `st_i (0<i<st_changed_on)` is not present.
+
+   Due to the 7 bit limitation, once a chunk has at least 127 samples,
+   `st_changed_on` is set to 127 (0xEF) and the 127th and further samples will
+   have `st_i` present.
+* `st_0` is encoded as a `varint` if present.
+* `st_1` is encoded as a `varbit_ts` delta from `st_0` (or from 0 if `st_0` is
+   not present).
+* `st_i_dod` aka `st_i (i>1)` is encoded as a `varbit_ts` "delta of delta" from
+  `st_i-1` (or from 0 if `st_i-1` is not present).
+
 ## Histogram chunk data
 
 ```

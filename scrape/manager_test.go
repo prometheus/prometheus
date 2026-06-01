@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -767,7 +768,8 @@ func TestManagerSTZeroIngestion(t *testing.T) {
 							app := teststorage.NewAppendable()
 							discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 								EnableStartTimestampZeroIngestion: testSTZeroIngest,
-								skipOffsetting:                    true,
+								ParseST:                           testSTZeroIngest,
+								skipJitterOffsetting:              true,
 							}, app, nil)
 							defer scrapeManager.Stop()
 
@@ -953,7 +955,8 @@ func TestManagerSTZeroIngestionHistogram(t *testing.T) {
 			app := teststorage.NewAppendable()
 			discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 				EnableStartTimestampZeroIngestion: tc.enableSTZeroIngestion,
-				skipOffsetting:                    true,
+				ParseST:                           tc.enableSTZeroIngestion,
+				skipJitterOffsetting:              true,
 			}, app, nil)
 			defer scrapeManager.Stop()
 
@@ -1065,7 +1068,8 @@ func TestNHCBAndSTZeroIngestion(t *testing.T) {
 	app := teststorage.NewAppendable()
 	discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 		EnableStartTimestampZeroIngestion: true,
-		skipOffsetting:                    true,
+		ParseST:                           true,
+		skipJitterOffsetting:              true,
 	}, app, nil)
 	defer scrapeManager.Stop()
 
@@ -1169,8 +1173,13 @@ func runManagers(t *testing.T, ctx context.Context, opts *Options, app storage.A
 	opts.DiscoveryReloadInterval = model.Duration(100 * time.Millisecond)
 
 	reg := prometheus.NewRegistry()
-	sdMetrics, err := discovery.RegisterSDMetrics(reg, discovery.NewRefreshMetrics(reg))
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	mechanismMetrics, err := discovery.RegisterSDMetrics(reg, refreshMetrics)
 	require.NoError(t, err)
+	sdMetrics := &discovery.SDMetrics{
+		MechanismMetrics: mechanismMetrics,
+		RefreshManager:   refreshMetrics,
+	}
 	discoveryManager := discovery.NewManager(
 		ctx,
 		promslog.NewNopLogger(),
@@ -1584,7 +1593,7 @@ scrape_configs:
 
 	// Disable end of run staleness markers for some targets.
 	m.DisableEndOfRunStalenessMarkers("one", targetsToDisable)
-	// This should be a no-op
+	// This should be a no-op.
 	m.DisableEndOfRunStalenessMarkers("non-existent-job", targetsToDisable)
 
 	// Check that the end of run staleness markers are disabled for the correct targets.
@@ -1594,5 +1603,268 @@ scrape_configs:
 			expectedDisabled := slices.Contains(targetsToDisable, tg)
 			require.Equal(t, expectedDisabled, loop.disabledEndOfRunStalenessMarkers.Load())
 		}
+	}
+}
+
+func TestManager_InitialScrapeOffset(t *testing.T) {
+	interval := 10 * time.Second
+
+	for _, tcase := range []struct {
+		name                string
+		initialScrapeOffset time.Duration
+		runDuration         time.Duration
+		expectedSamples     int
+	}{
+		{
+			name:            "zero offset scrapes immediately",
+			expectedSamples: 1,
+		},
+		{
+			name:            "zero offset scrapes twice after one interval",
+			runDuration:     interval,
+			expectedSamples: 2,
+		},
+		{
+			name:                "large offset prevents immediate scrape",
+			initialScrapeOffset: 1 * time.Hour,
+			runDuration:         59 * time.Minute,
+		},
+	} {
+		t.Run(tcase.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				opts := &Options{InitialScrapeOffset: tcase.initialScrapeOffset}
+				scrapeManager, app, cleanupConns := setupSynctestManager(t, opts)
+				defer cleanupConns()
+
+				applyDefaultSynctestConfig(t, scrapeManager, interval)
+
+				// Wait for the scrape manager to block on its timers.
+				synctest.Wait()
+
+				// Fast-forward the fake clock by the test case's run duration.
+				time.Sleep(tcase.runDuration)
+				synctest.Wait()
+
+				// Stop the manager to clean up background goroutines.
+				scrapeManager.Stop()
+
+				require.Len(t, findSamplesForMetric(app.ResultSamples(), "expected_metric"), tcase.expectedSamples)
+			})
+		})
+	}
+}
+
+func TestManager_ScrapeOnShutdown(t *testing.T) {
+	interval := 10 * time.Second
+
+	for _, tcase := range []struct {
+		name                 string
+		scrapeOnShutdown     bool
+		initialScrapeOffset  time.Duration
+		runDuration          time.Duration
+		expectedSamplesTotal int
+	}{
+		{
+			name:                 "no scrape on shutdown",
+			scrapeOnShutdown:     false,
+			expectedSamplesTotal: 1,
+		},
+		{
+			name:                 "scrape on shutdown",
+			scrapeOnShutdown:     true,
+			expectedSamplesTotal: 2,
+		},
+		{
+			name:                 "scrape on shutdown after some scrapes",
+			scrapeOnShutdown:     true,
+			runDuration:          interval,
+			expectedSamplesTotal: 3,
+		},
+		{
+			name:                 "scrape on shutdown with initial offset",
+			scrapeOnShutdown:     true,
+			initialScrapeOffset:  10 * time.Second,
+			runDuration:          5 * time.Second,
+			expectedSamplesTotal: 1,
+		},
+		{
+			name:                 "scrape on shutdown with short running instance (offset 5s)",
+			scrapeOnShutdown:     true,
+			initialScrapeOffset:  5 * time.Second,
+			runDuration:          8 * time.Second,
+			expectedSamplesTotal: 2,
+		},
+	} {
+		t.Run(tcase.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				opts := &Options{
+					ScrapeOnShutdown:    tcase.scrapeOnShutdown,
+					InitialScrapeOffset: tcase.initialScrapeOffset,
+				}
+				scrapeManager, app, cleanupConns := setupSynctestManager(t, opts)
+				defer cleanupConns()
+
+				applyDefaultSynctestConfig(t, scrapeManager, interval)
+
+				// Wait for the initial scrape to happen exactly at t=0.
+				synctest.Wait()
+
+				// Fast-forward fake time to simulate scheduled scrapes before shutdown.
+				if tcase.runDuration > 0 {
+					time.Sleep(tcase.runDuration)
+					synctest.Wait()
+				}
+
+				// Stop the manager. This triggers the ScrapeOnShutdown logic synchronously.
+				scrapeManager.Stop()
+
+				require.Len(t, findSamplesForMetric(app.ResultSamples(), "expected_metric"), tcase.expectedSamplesTotal)
+			})
+		})
+	}
+}
+
+func TestManagerReloader(t *testing.T) {
+	for _, tcase := range []struct {
+		name                     string
+		discoveryReloadOnStartup bool
+		scrapeOnShutdown         bool
+		discoveryReloadInterval  time.Duration
+		updateTarget             bool
+		runDuration              time.Duration
+		expectedSamplesTotal     int
+	}{
+		{
+			name:                 "no startup reload default interval",
+			runDuration:          6 * time.Second,
+			expectedSamplesTotal: 1,
+		},
+		{
+			name:                    "no startup reload short interval",
+			discoveryReloadInterval: 1 * time.Second,
+			runDuration:             1 * time.Second,
+			expectedSamplesTotal:    1,
+		},
+		{
+			name:                 "no startup reload default interval with target update",
+			updateTarget:         true,
+			runDuration:          12 * time.Second,
+			expectedSamplesTotal: 1,
+		},
+		{
+			name:                    "no startup reload short interval after ticker",
+			discoveryReloadInterval: 1 * time.Second,
+			updateTarget:            true,
+			runDuration:             2 * time.Second,
+			expectedSamplesTotal:    1,
+		},
+		{
+			name:                 "no startup reload default interval after ticker with update",
+			updateTarget:         true,
+			runDuration:          6 * time.Second,
+			expectedSamplesTotal: 1,
+		},
+		{
+			name:                     "startup reload",
+			discoveryReloadOnStartup: true,
+			runDuration:              2 * time.Second,
+			expectedSamplesTotal:     1,
+		},
+		{
+			name:                     "startup reload with target update",
+			discoveryReloadOnStartup: true,
+			updateTarget:             true,
+			runDuration:              2 * time.Second,
+			expectedSamplesTotal:     1,
+		},
+		{
+			name:                     "startup reload with update after ticker",
+			discoveryReloadOnStartup: true,
+			runDuration:              6 * time.Second,
+			expectedSamplesTotal:     1,
+		},
+		{
+			name:                 "no startup reload with scrape on shutdown after reload",
+			scrapeOnShutdown:     true,
+			runDuration:          6 * time.Second,
+			expectedSamplesTotal: 2,
+		},
+		{
+			name:                 "stop before no startup reload",
+			scrapeOnShutdown:     true,
+			runDuration:          2 * time.Second,
+			expectedSamplesTotal: 0,
+		},
+		{
+			name:                     "startup reload and scrape on shutdown",
+			discoveryReloadOnStartup: true,
+			scrapeOnShutdown:         true,
+			runDuration:              2 * time.Second,
+			expectedSamplesTotal:     2,
+		},
+	} {
+		t.Run(tcase.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				opts := &Options{
+					DiscoveryReloadOnStartup: tcase.discoveryReloadOnStartup,
+					ScrapeOnShutdown:         tcase.scrapeOnShutdown,
+					DiscoveryReloadInterval:  model.Duration(tcase.discoveryReloadInterval),
+				}
+				scrapeManager, app, cleanupConns := setupSynctestManager(t, opts)
+				defer cleanupConns()
+
+				cfg := &config.Config{
+					GlobalConfig: config.GlobalConfig{
+						ScrapeInterval:  model.Duration(10 * time.Second),
+						ScrapeTimeout:   model.Duration(10 * time.Second),
+						ScrapeProtocols: []config.ScrapeProtocol{config.PrometheusProto, config.OpenMetricsText1_0_0},
+					},
+					ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
+				}
+				cfgText, err := yaml.Marshal(*cfg)
+				require.NoError(t, err)
+				cfg = loadConfiguration(t, string(cfgText))
+				require.NoError(t, scrapeManager.ApplyConfig(cfg))
+
+				tsetsCh := make(chan map[string][]*targetgroup.Group)
+				go scrapeManager.Run(tsetsCh)
+
+				// Send initial target to trigger the first reload via the normal flow.
+				initialTargetLabels := model.LabelSet{
+					model.SchemeLabel:  "http",
+					model.AddressLabel: "test.local",
+				}
+				tsetsCh <- map[string][]*targetgroup.Group{
+					"test": {{
+						Targets: []model.LabelSet{initialTargetLabels},
+					}},
+				}
+				synctest.Wait() // Wait for Run to process tsetsCh and for reloader to trigger reload.
+
+				if tcase.updateTarget {
+					newTargetLabels := model.LabelSet{
+						model.SchemeLabel:  "http",
+						model.AddressLabel: "test-updated.local",
+					}
+					tsetsCh <- map[string][]*targetgroup.Group{
+						"test": {{
+							Source:  "test",
+							Targets: []model.LabelSet{newTargetLabels},
+						}},
+					}
+					synctest.Wait() // Wait for Run to process tsetsCh.
+				}
+
+				if tcase.runDuration > 0 {
+					time.Sleep(tcase.runDuration)
+					synctest.Wait()
+				}
+
+				scrapeManager.Stop()
+				synctest.Wait()
+
+				require.Len(t, findSamplesForMetric(app.ResultSamples(), "expected_metric"), tcase.expectedSamplesTotal)
+			})
+		})
 	}
 }

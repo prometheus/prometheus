@@ -1,1 +1,0 @@
-http_request_duration_seconds_bucket{le="+Inf"} 144320

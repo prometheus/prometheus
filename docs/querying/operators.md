@@ -400,7 +400,7 @@ vector of fewer elements with aggregated values:
 * `count_values(l, v)` (count number of elements with the same value)
 
 * `stddev(v)` (calculate population standard deviation over dimensions)
-* `stdvar(v)` (calculate population standard variance over dimensions)
+* `stdvar(v)` (calculate population variance over dimensions)
 * `quantile(φ, v)` (calculate φ-quantile (0 ≤ φ ≤ 1) over dimensions)
 
 These operators can either be used to aggregate over **all** label dimensions
@@ -563,7 +563,7 @@ an info-level annotation.
 
 #### `stdvar`
 
-`stdvar(v)` returns the standard deviation of `v`.
+`stdvar(v)` returns the variance of `v`.
 
 `stdvar` only works with float samples, following IEEE 754 floating
 point arithmetic. Histogram samples in the input vector are ignored, flagged by

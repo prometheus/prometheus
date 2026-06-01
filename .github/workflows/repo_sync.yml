@@ -19,4 +19,6 @@ jobs:
           persist-credentials: false
       - run: ./scripts/sync_repo_files.sh
         env:
-          GITHUB_TOKEN: ${{ secrets.PROMBOT_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PROMBOT_REPOSYNC_TOKEN }}
+          GITHUB_TOKEN_PROMETHEUS: ${{ secrets.PROMBOT_REPOSYNC_TOKEN_PROMETHEUS }}
+          GITHUB_TOKEN_PROMETHEUS_COMMUNITY: ${{ secrets.PROMBOT_REPOSYNC_TOKEN_PROMETHEUS_COMMUNITY }}

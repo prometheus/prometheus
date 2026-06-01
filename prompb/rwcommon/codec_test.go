@@ -130,9 +130,31 @@ func TestToMetadata(t *testing.T) {
 	} {
 		t.Run("", func(t *testing.T) {
 			ts := writev2.TimeSeries{Metadata: tc.input}
-			require.Equal(t, tc.expected, ts.ToMetadata(sym.Symbols()))
+			meta, err := ts.ToMetadata(sym.Symbols())
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, meta)
 		})
 	}
+
+	t.Run("out of bounds unit ref", func(t *testing.T) {
+		ts := writev2.TimeSeries{Metadata: writev2.Metadata{UnitRef: 999}}
+		_, err := ts.ToMetadata(sym.Symbols())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "metadata unit_ref 999 outside of symbols table")
+	})
+
+	t.Run("out of bounds help ref", func(t *testing.T) {
+		ts := writev2.TimeSeries{Metadata: writev2.Metadata{HelpRef: 999}}
+		_, err := ts.ToMetadata(sym.Symbols())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "metadata help_ref 999 outside of symbols table")
+	})
+
+	t.Run("empty symbols table", func(t *testing.T) {
+		ts := writev2.TimeSeries{Metadata: writev2.Metadata{}}
+		_, err := ts.ToMetadata([]string{})
+		require.Error(t, err)
+	})
 }
 
 func TestToHistogram_Empty(t *testing.T) {

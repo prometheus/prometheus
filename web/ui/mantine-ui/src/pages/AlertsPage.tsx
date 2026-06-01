@@ -1,4 +1,5 @@
 import {
+  Accordion,
   Card,
   Group,
   Table,
@@ -38,7 +39,6 @@ import { KVSearch } from "@nexucis/kvsearch";
 import { inputIconStyle } from "../styles";
 import CustomInfiniteScroll from "../components/CustomInfiniteScroll";
 import classes from "./AlertsPage.module.css";
-import { Accordion } from "../components/Accordion";
 
 type AlertsPageData = {
   // How many rules are in each state across all groups.
@@ -287,7 +287,7 @@ export default function AlertsPage() {
             <CustomInfiniteScroll
               allItems={g.rules}
               child={({ items }) => (
-                <Accordion multiple variant="separated" classNames={classes}>
+                <Accordion multiple variant="separated" keepMounted={false} classNames={classes}>
                   {items.map((r, j) => {
                     return (
                       <Accordion.Item

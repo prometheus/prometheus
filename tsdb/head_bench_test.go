@@ -311,3 +311,75 @@ type failingSeriesLifecycleCallback struct{}
 func (failingSeriesLifecycleCallback) PreCreation(labels.Labels) error                     { return errors.New("failed") }
 func (failingSeriesLifecycleCallback) PostCreation(labels.Labels)                          {}
 func (failingSeriesLifecycleCallback) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}
+
+func BenchmarkMmapHeadChunks(b *testing.B) {
+	for _, seriesCount := range []int{1000, 10000, 100000} {
+		for _, readyPct := range []float64{0.01, 0.1, 1.0} {
+			readyCount := max(int(float64(seriesCount)*readyPct), 1)
+			b.Run(fmt.Sprintf("series=%d/ready=%d", seriesCount, readyCount), func(b *testing.B) {
+				db := newTestDB(b)
+				db.DisableCompactions()
+				chunkRange := DefaultBlockDuration
+
+				// Create all series in batches.
+				refs := make([]storage.SeriesRef, seriesCount)
+				lblsPerSeries := make([]labels.Labels, seriesCount)
+				ts := int64(0)
+				const batchSize = 1000
+				for batchStart := 0; batchStart < seriesCount; batchStart += batchSize {
+					app := db.Appender(b.Context())
+					batchEnd := min(batchStart+batchSize, seriesCount)
+					for i := batchStart; i < batchEnd; i++ {
+						lbls := labels.FromStrings("__name__", "bench", "i", strconv.Itoa(i))
+						lblsPerSeries[i] = lbls
+						ref, err := app.Append(0, lbls, ts, float64(i))
+						require.NoError(b, err)
+						refs[i] = ref
+					}
+					require.NoError(b, app.Commit())
+				}
+
+				// Pick a random, spread-out set of series to make ready each iteration.
+				// Using a Fisher-Yates shuffle prefix ensures coverage across stripes.
+				rng := rand.New(rand.NewSource(42))
+				perm := rng.Perm(seriesCount)
+				readyIndices := perm[:readyCount]
+
+				// makeReady appends a sample past the chunk range boundary to
+				// trigger a new head chunk on each ready series. Two appends
+				// suffice: one near the current ts, one past nextAt.
+				makeReady := func() {
+					ts++ // small increment for first sample
+					app := db.Appender(b.Context())
+					for _, idx := range readyIndices {
+						var err error
+						refs[idx], err = app.Append(refs[idx], lblsPerSeries[idx], ts, float64(ts))
+						require.NoError(b, err)
+					}
+					require.NoError(b, app.Commit())
+
+					ts += chunkRange // jump past nextAt to force chunk cut
+					app = db.Appender(b.Context())
+					for _, idx := range readyIndices {
+						var err error
+						refs[idx], err = app.Append(refs[idx], lblsPerSeries[idx], ts, float64(ts))
+						require.NoError(b, err)
+					}
+					require.NoError(b, app.Commit())
+				}
+
+				makeReady()
+
+				b.ResetTimer()
+				b.ReportAllocs()
+
+				for range b.N {
+					db.ForceHeadMMap()
+					b.StopTimer()
+					makeReady()
+					b.StartTimer()
+				}
+			})
+		}
+	}
+}

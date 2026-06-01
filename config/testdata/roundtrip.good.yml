@@ -41,6 +41,7 @@ scrape_configs:
       - server: localhost:1234
         token: <secret>
         services: [nginx, cache, mysql]
+        health_filter: 'Service.Tags contains "canary"'
         tags: [canary, v1]
         node_meta:
           rack: "123"

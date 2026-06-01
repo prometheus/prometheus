@@ -36,7 +36,7 @@ const (
 	hetznerLabelServerID          = hetznerLabelPrefix + "server_id"
 	hetznerLabelServerName        = hetznerLabelPrefix + "server_name"
 	hetznerLabelServerStatus      = hetznerLabelPrefix + "server_status"
-	hetznerLabelDatacenter        = hetznerLabelPrefix + "datacenter"
+	hetznerLabelDatacenter        = hetznerLabelPrefix + "datacenter" // Label name kept for backward compatibility
 	hetznerLabelPublicIPv4        = hetznerLabelPrefix + "public_ipv4"
 	hetznerLabelPublicIPv6Network = hetznerLabelPrefix + "public_ipv6_network"
 )

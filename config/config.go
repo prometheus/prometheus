@@ -83,6 +83,13 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 		return nil, err
 	}
 
+	// When the config body is empty, UnmarshalYAML is never called, so
+	// TSDBConfig may still be nil.
+	if cfg.StorageConfig.TSDBConfig == nil {
+		retention := DefaultTSDBRetentionConfig
+		cfg.StorageConfig.TSDBConfig = &TSDBConfig{Retention: &retention}
+	}
+
 	b := labels.NewScratchBuilder(0)
 	cfg.GlobalConfig.ExternalLabels.Range(func(v labels.Label) {
 		newV := os.Expand(v.Value, func(s string) string {
@@ -276,6 +283,9 @@ var (
 		// For backwards compatibility.
 		LabelNamePreserveMultipleUnderscores: true,
 	}
+
+	// DefaultTSDBRetentionConfig is the default TSDB retention configuration.
+	DefaultTSDBRetentionConfig TSDBRetentionConfig
 )
 
 // Config is the top-level configuration for Prometheus's config files.
@@ -403,6 +413,13 @@ func (c *Config) UnmarshalYAML(unmarshal func(any) error) error {
 	// We have to restore it here.
 	if c.Runtime.isZero() {
 		c.Runtime = DefaultRuntimeConfig
+	}
+
+	// If no storage.tsdb section is present, TSDBConfig is nil and its
+	// UnmarshalYAML never runs. Inject the default retention here.
+	if c.StorageConfig.TSDBConfig == nil {
+		retention := DefaultTSDBRetentionConfig
+		c.StorageConfig.TSDBConfig = &TSDBConfig{Retention: &retention}
 	}
 
 	for _, rf := range c.RuleFiles {
@@ -1094,7 +1111,23 @@ type TSDBRetentionConfig struct {
 	Size units.Base2Bytes `yaml:"size,omitempty"`
 
 	// Maximum percentage of disk used for TSDB storage.
-	Percentage uint `yaml:"percentage,omitempty"`
+	Percentage float64 `yaml:"percentage,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (t *TSDBRetentionConfig) UnmarshalYAML(unmarshal func(any) error) error {
+	*t = TSDBRetentionConfig{}
+	type plain TSDBRetentionConfig
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+	if t.Size < 0 {
+		return fmt.Errorf("'storage.tsdb.retention.size' must be greater than or equal to 0, got %v", t.Size)
+	}
+	if t.Percentage < 0 || t.Percentage > 100 {
+		return fmt.Errorf("'storage.tsdb.retention.percentage' must be in the range [0, 100], got %v", t.Percentage)
+	}
+	return nil
 }
 
 // TSDBConfig configures runtime reloadable configuration options.
@@ -1126,6 +1159,11 @@ func (t *TSDBConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 
 	t.OutOfOrderTimeWindow = time.Duration(t.OutOfOrderTimeWindowFlag).Milliseconds()
+
+	if t.Retention == nil {
+		retention := DefaultTSDBRetentionConfig
+		t.Retention = &retention
+	}
 
 	return nil
 }
@@ -1474,6 +1512,10 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
+	if err := c.QueueConfig.Validate(); err != nil {
+		return err
+	}
+
 	return validateAuthConfigs(c)
 }
 
@@ -1564,6 +1606,29 @@ type QueueConfig struct {
 
 	// Samples older than the limit will be dropped.
 	SampleAgeLimit model.Duration `yaml:"sample_age_limit,omitempty"`
+}
+
+// Validate checks QueueConfig fields for invalid values.
+func (c *QueueConfig) Validate() error {
+	if c.MaxShards <= 0 {
+		return errors.New("remote write queue max_shards must be positive")
+	}
+	if c.MinShards <= 0 {
+		return errors.New("remote write queue min_shards must be positive")
+	}
+	if c.MinShards > c.MaxShards {
+		return errors.New("remote write queue min_shards must not be greater than max_shards")
+	}
+	if c.MaxSamplesPerSend <= 0 {
+		return errors.New("remote write queue max_samples_per_send must be positive")
+	}
+	if c.Capacity <= 0 {
+		return errors.New("remote write queue capacity must be positive")
+	}
+	if c.MaxBackoff < c.MinBackoff {
+		return errors.New("remote write queue max_backoff must not be less than min_backoff")
+	}
+	return nil
 }
 
 // MetadataConfig is the configuration for sending metadata to remote

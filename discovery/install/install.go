@@ -33,6 +33,7 @@ import (
 	_ "github.com/prometheus/prometheus/discovery/moby"         // register moby
 	_ "github.com/prometheus/prometheus/discovery/nomad"        // register nomad
 	_ "github.com/prometheus/prometheus/discovery/openstack"    // register openstack
+	_ "github.com/prometheus/prometheus/discovery/outscale"     // register outscale
 	_ "github.com/prometheus/prometheus/discovery/ovhcloud"     // register ovhcloud
 	_ "github.com/prometheus/prometheus/discovery/puppetdb"     // register puppetdb
 	_ "github.com/prometheus/prometheus/discovery/scaleway"     // register scaleway

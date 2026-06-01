@@ -14,8 +14,33 @@
 package fuzzing
 
 import (
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 )
+
+// ChunkFuzzSeed is a seed corpus entry for FuzzXORChunk.
+type ChunkFuzzSeed struct {
+	// Seed is the RNG seed used to generate sample timestamps and values.
+	Seed int64
+	// N drives the sample count: count = int(N)%120 + 1.
+	N uint8
+	// NaNMask forces StaleNaN on specific samples: bit i set means sample i
+	// uses StaleNaN instead of a random value.
+	NaNMask uint64
+}
+
+// XOR2ChunkFuzzSeed is a seed corpus entry for FuzzXOR2Chunk.
+type XOR2ChunkFuzzSeed struct {
+	// Seed is the RNG seed used to generate sample timestamps and values.
+	Seed int64
+	// N drives the sample count: count = int(N)%120 + 1.
+	N uint8
+	// NaNMask forces StaleNaN on specific samples: bit i set means sample i
+	// uses StaleNaN instead of a random value.
+	NaNMask uint64
+	// STMode selects the start-timestamp pattern used by the fuzzer.
+	STMode uint8
+}
 
 // GetCorpusForFuzzParseMetricText returns the seed corpus for FuzzParseMetricText.
 func GetCorpusForFuzzParseMetricText() [][]byte {
@@ -108,4 +133,75 @@ func GetCorpusForFuzzParseExpr() ([]string, error) {
 	}
 
 	return append(builtInExprs, additionalExprs...), nil
+}
+
+// GetCorpusForFuzzXORChunk returns the seed corpus for FuzzXORChunk.
+func GetCorpusForFuzzXORChunk() []ChunkFuzzSeed {
+	return []ChunkFuzzSeed{
+		// Basic cases: no StaleNaN.
+		{Seed: 0, N: 0, NaNMask: 0},
+		{Seed: 42, N: 2, NaNMask: 0},
+		{Seed: 1234567890, N: 119, NaNMask: 0},
+		// Single StaleNaN at first sample.
+		{Seed: 0, N: 0, NaNMask: 0b1},
+		// StaleNaN in the middle of a run.
+		{Seed: 42, N: 4, NaNMask: 0b00100},
+		// Alternating StaleNaN.
+		{Seed: 1, N: 9, NaNMask: 0b0101010101},
+		// All StaleNaN.
+		{Seed: 7, N: 9, NaNMask: ^uint64(0)},
+	}
+}
+
+// GetDictForFuzzParseExpr returns the libFuzzer dictionary tokens for
+// FuzzParseExpr. Tokens are derived from the exported PromQL keyword list,
+// function names, and operator symbols so that the dictionary stays in sync
+// with the grammar automatically.
+func GetDictForFuzzParseExpr() []string {
+	seen := make(map[string]struct{})
+
+	// All PromQL keywords (aggregators, modifiers, histogram descriptors, etc.).
+	for _, kw := range parser.Keywords() {
+		seen[kw] = struct{}{}
+	}
+
+	// All built-in function names.
+	for name := range parser.Functions {
+		seen[name] = struct{}{}
+	}
+
+	// Operator and syntax tokens from ItemTypeStr. The SPACE entry is a
+	// display-only placeholder ("<space>"), not an actual token, so remove it.
+	for _, s := range parser.ItemTypeStr {
+		seen[s] = struct{}{}
+	}
+	delete(seen, parser.ItemTypeStr[parser.SPACE])
+
+	// Special numeric literals not covered by the keyword map.
+	for _, s := range []string{"+Inf", "-Inf", "NaN"} {
+		seen[s] = struct{}{}
+	}
+
+	result := make([]string, 0, len(seen))
+	for s := range seen {
+		result = append(result, s)
+	}
+	return result
+}
+
+// GetCorpusForFuzzXOR2Chunk returns the seed corpus for FuzzXOR2Chunk.
+func GetCorpusForFuzzXOR2Chunk() []XOR2ChunkFuzzSeed {
+	return []XOR2ChunkFuzzSeed{
+		// No ST at all.
+		{Seed: 0, N: 0, NaNMask: 0, STMode: 0},
+		{Seed: 1234567890, N: 119, NaNMask: 0, STMode: 0},
+		// ST known from sample 0 and then constant.
+		{Seed: 42, N: 2, NaNMask: 0, STMode: 1},
+		// First ST change happens after sample 1.
+		{Seed: 42, N: 4, NaNMask: 0b00100, STMode: 2},
+		// Active ST with small deltas to hit compact encodings.
+		{Seed: 1, N: 9, NaNMask: 0b0101010101, STMode: 3},
+		// Active ST with large deltas to hit varbit fallback.
+		{Seed: 7, N: 9, NaNMask: ^uint64(0), STMode: 4},
+	}
 }

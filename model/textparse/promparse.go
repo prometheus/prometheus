@@ -408,11 +408,13 @@ func (p *PromParser) parseLVals() error {
 	for {
 		curTStart := p.l.start
 		curTI := p.l.i
+		var isQString bool
 		switch t {
 		case tBraceClose:
 			return nil
 		case tLName:
 		case tQString:
+			isQString = true
 		default:
 			return p.parseError("expected label name", t)
 		}
@@ -420,7 +422,7 @@ func (p *PromParser) parseLVals() error {
 		t = p.nextToken()
 		// A quoted string followed by a comma or brace is a metric name. Set the
 		// offsets and continue processing.
-		if t == tComma || t == tBraceClose {
+		if isQString && (t == tComma || t == tBraceClose) {
 			if p.offsets[0] != -1 || p.offsets[1] != -1 {
 				return fmt.Errorf("metric name already set while parsing: %q", p.l.b[p.start:p.l.i])
 			}

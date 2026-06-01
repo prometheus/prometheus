@@ -3,6 +3,7 @@ import {
   getNonParenNodeType,
   containsPlaceholders,
   nodeValueType,
+  maybeQuoteLabelName,
 } from "./utils";
 import { nodeType, valueType, binaryOperatorType } from "./ast";
 
@@ -157,5 +158,18 @@ describe("nodeValueType", () => {
         bool: false,
       })
     ).toBe(valueType.vector);
+  });
+});
+
+describe("maybeQuoteLabelName", () => {
+  it("does not quote valid PromQL label names", () => {
+    expect(maybeQuoteLabelName("job")).toBe("job");
+    expect(maybeQuoteLabelName("status_code")).toBe("status_code");
+  });
+
+  it("quotes and escapes label names with extended characters", () => {
+    expect(maybeQuoteLabelName("service.version")).toBe('"service.version"');
+    expect(maybeQuoteLabelName("team/name")).toBe('"team/name"');
+    expect(maybeQuoteLabelName('team"name')).toBe('"team\\"name"');
   });
 });
