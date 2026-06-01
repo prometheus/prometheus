@@ -53,7 +53,7 @@ import (
 
 const (
 	chunkHeaderSize               = 2
-	chunkAllocationSize           = 128
+	chunkAllocationSize           = 32
 	chunkCompactCapacityThreshold = 32
 )
 
