@@ -105,7 +105,7 @@ type CertificateConfig struct {
 
 	// CertificatePassword is the password for the certificate file (for PFX files).
 	// This is optional and only needed if the certificate file is password-protected.
-	CertificatePassword string `yaml:"certificate_password,omitempty"`
+	CertificatePassword config_util.Secret `yaml:"certificate_password,omitempty"`
 
 	// SendCertificateChain controls whether to include x5c header in assertion to support
 	// subject name / issuer-based authentication.
