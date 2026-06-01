@@ -81,19 +81,30 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 		if parsed.Op == syntax.OpConcat {
 			m.prefix, m.suffix, m.contains = optimizeConcatRegex(parsed)
 		}
-		if matches, caseSensitive := findSetMatches(parsed); caseSensitive {
-			m.setMatches = matches
+		if matches, caseSensitive := findSetMatches(parsed); len(matches) > 0 {
+			if caseSensitive {
+				m.setMatches = matches
+			}
+			if len(matches) > 1 {
+				emsm := newEqualMultiStringMatcher(caseSensitive, len(matches), 0, 0)
+				for _, match := range matches {
+					emsm.add(match)
+				}
+				m.stringMatcher = emsm
+			}
 		}
 
-		// Check if we have a pattern like .*-.*-.*.
-		// If so, then we can rely on the containsInOrder check in compileMatchStringFunction,
-		// so no further inspection of the string is required.
-		// We can't do this in stringMatcherFromRegexpInternal as we only want to apply this
-		// if the top-level pattern satisfies this requirement.
-		if isSimpleConcatenationPattern(parsed) {
-			m.stringMatcher = trueMatcher{}
-		} else {
-			m.stringMatcher = stringMatcherFromRegexp(parsed)
+		if m.stringMatcher == nil {
+			// Check if we have a pattern like .*-.*-.*.
+			// If so, then we can rely on the containsInOrder check in compileMatchStringFunction,
+			// so no further inspection of the string is required.
+			// We can't do this in stringMatcherFromRegexpInternal as we only want to apply this
+			// if the top-level pattern satisfies this requirement.
+			if isSimpleConcatenationPattern(parsed) {
+				m.stringMatcher = trueMatcher{}
+			} else {
+				m.stringMatcher = stringMatcherFromRegexp(parsed)
+			}
 		}
 
 		m.matchString = m.compileMatchStringFunction()
@@ -104,15 +115,17 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 
 // compileMatchStringFunction returns the function to run by MatchString().
 func (m *FastRegexMatcher) compileMatchStringFunction() func(string) bool {
+	// Special case for a single element matcher (equality).
+	if len(m.setMatches) == 1 {
+		return func(s string) bool { return s == m.setMatches[0] }
+	}
+
 	// If the only optimization available is the string matcher, then we can just run it.
-	if len(m.setMatches) == 0 && m.prefix == "" && m.suffix == "" && len(m.contains) == 0 && m.stringMatcher != nil {
+	if m.prefix == "" && m.suffix == "" && len(m.contains) == 0 && m.stringMatcher != nil {
 		return m.stringMatcher.Matches
 	}
 
 	return func(s string) bool {
-		if len(m.setMatches) != 0 {
-			return slices.Contains(m.setMatches, s)
-		}
 		if m.prefix != "" && !strings.HasPrefix(s, m.prefix) {
 			return false
 		}
@@ -835,12 +848,20 @@ func newEqualMultiStringMatcher(caseSensitive bool, estimatedSize, estimatedPref
 // equalMultiStringSliceMatcher matches a string exactly against a slice of valid values.
 type equalMultiStringSliceMatcher struct {
 	values []string
+	// lengthsMask is a bitmask of the lengths of the strings in values.
+	// If the bit at position i is set, it means that there's at least one string of length i in values.
+	// It's like a bloom filter but we don't hash, we just take the values.
+	// Bit 64 means there are strings longer than 63 characters.
+	// This can be used to filter case-sensitive values.
+	// Case-insensitive Unicode strings can have different lengths when case folded.
+	lengthsMask uint64
 
 	caseSensitive bool
 }
 
 func (m *equalMultiStringSliceMatcher) add(s string) {
 	m.values = append(m.values, s)
+	m.lengthsMask |= lengthMask(s)
 }
 
 func (*equalMultiStringSliceMatcher) addPrefix(string, bool, StringMatcher) {
@@ -853,7 +874,7 @@ func (m *equalMultiStringSliceMatcher) setMatches() []string {
 
 func (m *equalMultiStringSliceMatcher) Matches(s string) bool {
 	if m.caseSensitive {
-		return slices.Contains(m.values, s)
+		return m.lengthsMask&lengthMask(s) > 0 && slices.Contains(m.values, s)
 	}
 	for _, v := range m.values {
 		if strings.EqualFold(s, v) {
@@ -869,6 +890,13 @@ type equalMultiStringMapMatcher struct {
 	// values contains values to match a string against. If the matching is case insensitive,
 	// the values here must be lowercase.
 	values map[string]struct{}
+	// lengthsMask is a bitmask of the lengths of the strings in values.
+	// If the bit at position i is set, it means that there's at least one string of length i in values.
+	// It's like a bloom filter but we don't hash, we just take the values.
+	// Bit 64 means there are strings longer than 63 characters.
+	// This can be used to filter case-sensitive values.
+	// Case-insensitive Unicode strings can have different lengths when case folded.
+	lengthsMask uint64
 	// prefixes maps strings, all of length minPrefixLen, to sets of matchers to check the rest of the string.
 	// If the matching is case insensitive, prefixes are all lowercase.
 	prefixes map[string][]StringMatcher
@@ -880,6 +908,8 @@ type equalMultiStringMapMatcher struct {
 func (m *equalMultiStringMapMatcher) add(s string) {
 	if !m.caseSensitive {
 		s = toNormalisedLower(s, nil) // Don't pass a stack buffer here - it will always escape to heap.
+	} else {
+		m.lengthsMask |= lengthMask(s)
 	}
 
 	m.values[s] = struct{}{}
@@ -918,6 +948,9 @@ func (m *equalMultiStringMapMatcher) setMatches() []string {
 
 func (m *equalMultiStringMapMatcher) Matches(s string) bool {
 	if len(m.values) > 0 {
+		if m.minPrefixLen == 0 && m.caseSensitive && m.lengthsMask&lengthMask(s) == 0 {
+			return false
+		}
 		sNorm := s
 		var a [32]byte
 		if !m.caseSensitive {
@@ -1184,4 +1217,10 @@ func containsInOrderMulti(s string, contains []string) bool {
 	}
 
 	return true
+}
+
+// lengthMask returns a bitmask with the bit at position len(s) set to 1, and all other bits set to 0.
+// If len(s) is greater than 63, it returns a bitmask with only the bit at position 63 set to 1.
+func lengthMask(s string) uint64 {
+	return 1 << min(len(s), 63)
 }
