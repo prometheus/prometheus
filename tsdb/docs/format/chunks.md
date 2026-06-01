@@ -295,7 +295,7 @@ The ST header is one byte:
 
 where the highest bit `first_st_known` indicates if `st_0` is present or not.
 If the lower 7bits `st_changed_on` is 0, no `st_i (i>0)` is present.
-Otherwise `st_i (i>=st_changed_on>)` is present, while
+Otherwise `st_i (i>=st_changed_on)` is present, while
 `st_i (0<i<st_changed_on)` is not present.
 
 Once a chunk has at least 127 samples,
@@ -313,7 +313,7 @@ have `st_i` present.
 Each `sample_i <data>` payload uses the exact same encoding as the equivalent
 sample in the [histogram chunk](#histogram-chunk-data) (sample 0, sample 1, and
 sample 2-and-following), but with an optional ST field. If an ST payload is present, 
-it is appended immediately after the histogram same payload. 
+it is appended immediately after the histogram sample payload.
 
 ```
 ┌─────────────────┬──────────────────────┐
@@ -379,7 +379,7 @@ The float histogram ST chunk extends the float histogram chunk format with
 optional Start Timestamp (ST) data, with the same ST encoding scheme as
 [Histogram ST](#histogram-st-chunk-data). The float histogram sample encoding
 is unchanged. The 3-byte chunk header layout is identical to the
-[Histogram ST header layout](#chunk-header-layout).
+[Histogram ST header layout](#histogram-st-chunk-data)).
 
 ```
 ┌────────────────────────┬───────────────────────┬────────────────────┬───────────────────────────────┬─────────────────────┬──────────────────┬──────────────────┬──────────────────────┬────────────────┬──────────────────┐
