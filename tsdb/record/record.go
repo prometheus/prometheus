@@ -593,8 +593,10 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 	firstRef := chunks.HeadSeriesRef(dec.Varint64())
 	firstT := dec.Varint64()
 	firstST := dec.Varint64()
-	var prevRef chunks.HeadSeriesRef
-	var prevST int64
+	var (
+		prevRef chunks.HeadSeriesRef
+		prevST  int64
+	)
 	hasPrev := false
 
 	for len(dec.B) > 0 && dec.Err() == nil {
