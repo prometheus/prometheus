@@ -104,15 +104,18 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 
 // compileMatchStringFunction returns the function to run by MatchString().
 func (m *FastRegexMatcher) compileMatchStringFunction() func(string) bool {
+	if len(m.setMatches) != 0 {
+		return func(s string) bool {
+			return slices.Contains(m.setMatches, s)
+		}
+	}
+
 	// If the only optimization available is the string matcher, then we can just run it.
-	if len(m.setMatches) == 0 && m.prefix == "" && m.suffix == "" && len(m.contains) == 0 && m.stringMatcher != nil {
+	if m.prefix == "" && m.suffix == "" && len(m.contains) == 0 && m.stringMatcher != nil {
 		return m.stringMatcher.Matches
 	}
 
 	return func(s string) bool {
-		if len(m.setMatches) != 0 {
-			return slices.Contains(m.setMatches, s)
-		}
 		if m.prefix != "" && !strings.HasPrefix(s, m.prefix) {
 			return false
 		}
