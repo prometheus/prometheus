@@ -6901,7 +6901,7 @@ func TestHeadAppender_AppendFloatWithSameTimestampAsPreviousHistogram(t *testing
 	app := head.Appender(context.Background())
 	_, err := app.Append(0, ls, 2_000, 10.0)
 	require.Error(t, err)
-	require.ErrorIs(t, err, storage.NewDuplicateHistogramToFloatErr(2_000, 10.0, ls))
+	require.ErrorIs(t, err, storage.NewDuplicateHistogramToFloatErr(2_000, 10.0))
 }
 
 func TestHeadAppender_AppendST(t *testing.T) {

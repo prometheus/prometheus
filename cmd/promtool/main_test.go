@@ -681,19 +681,16 @@ func TestCheckRulesWithFeatureFlag(t *testing.T) {
 
 func TestCheckRulesWithRuleFiles(t *testing.T) {
 	t.Run("rules-good", func(t *testing.T) {
-		t.Parallel()
 		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false, model.UTF8Validation), parser.NewParser(parser.Options{}), "./testdata/rules.yml")
 		require.Equal(t, successExitCode, exitCode)
 	})
 
 	t.Run("rules-bad", func(t *testing.T) {
-		t.Parallel()
 		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false, model.UTF8Validation), parser.NewParser(parser.Options{}), "./testdata/rules-bad.yml")
 		require.Equal(t, failureExitCode, exitCode)
 	})
 
 	t.Run("rules-lint-fatal", func(t *testing.T) {
-		t.Parallel()
 		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, true, false, model.UTF8Validation), parser.NewParser(parser.Options{}), "./testdata/prometheus-rules.lint.yml")
 		require.Equal(t, lintErrExitCode, exitCode)
 	})
