@@ -1155,6 +1155,53 @@ func testHeadAppenderV2OutOfOrderSamplesMetric(t *testing.T, scenario sampleType
 	require.NoError(t, app.Commit())
 }
 
+// TestHeadAppenderV2_HistogramErrorDoesNotSetPendingCommit is the V2
+// counterpart of TestAppendHistogramErrorDoesNotSetPendingCommit. The V2
+// histogram paths in head_append_v2.go already set pendingCommit only on
+// success, so this test is here to lock that property in.
+func TestHeadAppenderV2_HistogramErrorDoesNotSetPendingCommit(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		h    *histogram.Histogram
+		fh   *histogram.FloatHistogram
+	}{
+		{name: "integer", h: tsdbutil.GenerateTestHistogram(0)},
+		{name: "float", fh: tsdbutil.GenerateTestFloatHistogram(0)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			head, _ := newTestHead(t, 1000, compression.None, false)
+			require.NoError(t, head.Init(0))
+
+			lbls := labels.FromStrings("a", "b")
+			ctx := context.Background()
+
+			app := head.AppenderV2(ctx)
+			_, err := app.Append(0, lbls, 0, 200, 0, tc.h, tc.fh, storage.AOptions{})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			ms, _, err := head.getOrCreate(lbls.Hash(), lbls, false)
+			require.NoError(t, err)
+			require.NotNil(t, ms)
+			ms.Lock()
+			pc := ms.pendingCommit
+			ms.Unlock()
+			require.False(t, pc, "pendingCommit should be cleared after a successful commit")
+
+			// Out-of-order append for the same series, OOO window disabled.
+			app = head.AppenderV2(ctx)
+			_, err = app.Append(0, lbls, 0, 100, 0, tc.h, tc.fh, storage.AOptions{})
+			require.ErrorIs(t, err, storage.ErrOutOfOrderSample)
+			require.NoError(t, app.Rollback())
+
+			ms.Lock()
+			pc = ms.pendingCommit
+			ms.Unlock()
+			require.False(t, pc, "pendingCommit should remain false after a failed AppenderV2.Append")
+		})
+	}
+}
+
 func TestHeadLabelNamesValuesWithMinMaxRange_AppenderV2(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
 	defer func() {
