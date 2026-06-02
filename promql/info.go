@@ -25,12 +25,11 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/infohelper"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 )
-
-const targetInfo = "target_info"
 
 // identifyingLabels are the labels we consider as identifying for info metrics.
 // Currently hard coded, so we don't need knowledge of individual info metrics.
@@ -57,7 +56,7 @@ func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (par
 			}
 		}
 	} else {
-		infoNameMatchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, targetInfo)}
+		infoNameMatchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, infohelper.DefaultInfoMetricName)}
 	}
 
 	// Don't try to enrich info series.
@@ -106,7 +105,7 @@ func effectiveInfoNameMatchers(matchers []*labels.Matcher) []*labels.Matcher {
 		return append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+_info")}, matchers...)
 	}
 
-	return []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, targetInfo)}
+	return []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, infohelper.DefaultInfoMetricName)}
 }
 
 type infoSeriesReference struct {

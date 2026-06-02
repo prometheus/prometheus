@@ -685,7 +685,18 @@ func filterChainHasExpensiveScoring(fuzzThreshold int, fuzzAlg string) bool {
 	return fuzzThreshold > 0
 }
 
-// searchRequest holds the common objects prepared by newSearchRequest for a search request.
+// autocompleteRequest holds the common objects prepared by newAutocompleteRequest:
+// the parsed search-style parameters, the resulting search hints (filter, limit,
+// ordering), and the acquired storage querier. Callers must defer q.Close().
+type autocompleteRequest struct {
+	sp    searchParams
+	hints *storage.SearchHints
+	q     storage.Querier
+}
+
+// searchRequest holds the common objects prepared by newSearchRequest. It is
+// autocompleteRequest plus a typed Searcher view of q, since the /api/v1/search/*
+// endpoints depend on the Searcher interface for their index-side filtering.
 type searchRequest struct {
 	sp       searchParams
 	hints    *storage.SearchHints
@@ -693,12 +704,14 @@ type searchRequest struct {
 	q        storage.Querier
 }
 
-// newSearchRequest handles the setup shared by all search endpoints: CORS headers,
-// feature-gate checks, form parsing, common parameter parsing, sort_by
-// validation, querier acquisition, and search hint construction. On success a
-// non-nil searchRequest is returned and the caller must defer req.q.Close(). On
-// failure the error has already been written to w and nil is returned.
-func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoint string) *searchRequest {
+// newAutocompleteRequest performs the setup shared by all autocomplete-style
+// endpoints (search endpoints and /info_labels): CORS headers, feature-gate
+// check, agent check, form parsing, common search parameter parsing, sort_by
+// validation, querier acquisition, and search hints construction (filter,
+// limit-plus-one, ordering). On success a non-nil request is returned and the
+// caller must defer req.q.Close(). On failure the error has already been
+// written to w and nil is returned.
+func (api *API) newAutocompleteRequest(w http.ResponseWriter, r *http.Request, endpoint string) *autocompleteRequest {
 	httputil.SetCORS(w, api.CORSOrigin, r)
 
 	if !api.enableSearch {
@@ -733,20 +746,31 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 		return nil
 	}
 
-	searcher, ok := q.(storage.Searcher)
-	if !ok {
-		_ = q.Close()
-		api.respondError(w, &apiError{errorInternal, errors.New("search not supported by storage")}, nil)
-		return nil
-	}
-
 	hints := &storage.SearchHints{
 		Filter: buildSearchFilter(sp.searches, sp.fuzzThreshold, sp.fuzzAlg, sp.caseSensitive),
 		Limit:  searchHintsLimit(sp.limit), // Fetch one extra to detect has_more (with saturation guard).
 	}
 	hints.OrderBy = sortOrdering(sp.sortBy, sp.sortDir)
 
-	return &searchRequest{sp: sp, hints: hints, searcher: searcher, q: q}
+	return &autocompleteRequest{sp: sp, hints: hints, q: q}
+}
+
+// newSearchRequest is newAutocompleteRequest specialised for the /api/v1/search/*
+// endpoints: it additionally requires the storage to implement Searcher and
+// returns a searchRequest exposing both the typed Searcher and the underlying
+// querier.
+func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoint string) *searchRequest {
+	aReq := api.newAutocompleteRequest(w, r, endpoint)
+	if aReq == nil {
+		return nil
+	}
+	searcher, ok := aReq.q.(storage.Searcher)
+	if !ok {
+		_ = aReq.q.Close()
+		api.respondError(w, &apiError{errorInternal, errors.New("search not supported by storage")}, nil)
+		return nil
+	}
+	return &searchRequest{sp: aReq.sp, hints: aReq.hints, searcher: searcher, q: aReq.q}
 }
 
 // searchMetricNames handles GET/POST /api/v1/search/metric_names.
