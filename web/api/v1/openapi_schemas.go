@@ -57,6 +57,7 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	schemas.Set("SearchMetricNamesPostInputBody", b.searchMetricNamesPostInputBodySchema())
 	schemas.Set("SearchLabelNamesPostInputBody", b.searchLabelNamesPostInputBodySchema())
 	schemas.Set("SearchLabelValuesPostInputBody", b.searchLabelValuesPostInputBodySchema())
+	schemas.Set("InfoLabelsPostInputBody", b.infoLabelsPostInputBodySchema())
 
 	// Series schemas.
 	schemas.Set("SeriesOutputBody", b.labelsArrayResponseBodySchema())
@@ -734,6 +735,22 @@ func (*OpenAPIBuilder) labelsPostInputBodySchema() *base.SchemaProxy {
 		Description:          "POST request body for labels query.",
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
 		Properties:           props,
+	})
+}
+
+func (b *OpenAPIBuilder) infoLabelsPostInputBodySchema() *base.SchemaProxy {
+	props := append([]schemaProp{
+		{"expr", stringSchemaWithDescriptionAndExample("Form field: Optional PromQL expression. When provided, identifying labels are extracted from the result to scope the info-metric query.", "up{job=\"prometheus\"}")},
+		{"metric_match", stringSchemaWithDescriptionAndExample("Form field: Matcher for the info metric name. Default: exact match on target_info.", "target_info")},
+		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against data label names (OR logic).", []string{"ver"})},
+	}, b.commonSearchPostProps()...)
+	props = append(props, schemaProp{"values_limit", integerSchemaWithDescriptionAndExample("Form field: Maximum number of values returned per label. 0 means no cap.", 100)})
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "POST request body for info labels query.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Properties:           propsMap(props),
 	})
 }
 

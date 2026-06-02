@@ -11,15 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { FetchFn } from './index';
-import { Matcher } from '../types';
-import { labelMatchersToString } from '../parser';
+import { FetchFn, Matcher, MetricMetadata, labelMatchersToString } from './types';
 import { LRUCache } from 'lru-cache';
-
-export interface MetricMetadata {
-  type: string;
-  help: string;
-}
 
 export interface PrometheusClient {
   labelNames(metricName?: string): Promise<string[]>;
@@ -39,6 +32,14 @@ export interface PrometheusClient {
 
   // flags returns flag values that prometheus was configured with.
   flags(): Promise<Record<string, string>>;
+
+  // infoLabelPairs returns data labels from info metrics (like target_info) and their values.
+  // If expr is provided, the expression is evaluated and identifying labels (job, instance)
+  // are extracted from the result to filter which info metrics are returned.
+  // If metricMatch is provided, it specifies which info metrics to query (supports =, =~, !=, !~).
+  // If search is provided, label names are filtered by case-insensitive substring match and
+  // the returned Record preserves relevance ordering.
+  infoLabelPairs(expr?: string, metricMatch?: string, search?: string): Promise<Record<string, string[]>>;
 
   // destroy is called to release all resources held by this client
   destroy?(): void;
@@ -81,7 +82,7 @@ const serviceUnavailable = 503;
 
 // HTTPPrometheusClient is the HTTP client that should be used to get some information from the different endpoint provided by prometheus.
 export class HTTPPrometheusClient implements PrometheusClient {
-  private readonly lookbackInterval: undefined | number; //12 hours
+  private readonly lookbackInterval: undefined | number;
   private readonly url: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly errorHandler?: (error: any) => void;
@@ -203,6 +204,152 @@ export class HTTPPrometheusClient implements PrometheusClient {
     });
   }
 
+  infoLabelPairs(expr?: string, metricMatch?: string, search?: string): Promise<Record<string, string[]>> {
+    const params: URLSearchParams = new URLSearchParams();
+    if (this.lookbackInterval) {
+      const end = new Date();
+      const start = new Date(end.getTime() - this.lookbackInterval);
+      params.set('start', start.toISOString());
+      params.set('end', end.toISOString());
+    }
+    if (expr) {
+      params.set('expr', expr);
+    }
+    if (metricMatch) {
+      params.set('metric_match', metricMatch);
+    }
+    if (search) {
+      // search[] mirrors the /api/v1/search/* contract; the server treats
+      // case_sensitive=false as opt-in so we set it explicitly to preserve
+      // the pre-NDJSON case-insensitive autocomplete UX.
+      params.append('search[]', search);
+      params.set('case_sensitive', 'false');
+      params.set('sort_by', 'score');
+    }
+    // Server emits NDJSON: zero-or-more {results,warnings?} batch lines,
+    // then a {status,has_more,warnings?} trailer (or {status,errorType,
+    // error} on mid-stream failure). We accumulate batches into an ordered
+    // Record so Object.keys() preserves the server-side ordering.
+    return this.fetchNDJSON<{ name: string; values: string[] }>(`${this.infoLabelsEndpoint()}?${params}`)
+      .then((records) => {
+        const result: Record<string, string[]> = {};
+        for (const r of records) {
+          if (r && typeof r.name === 'string' && Array.isArray(r.values)) {
+            result[r.name] = r.values;
+          }
+        }
+        return result;
+      })
+      .catch((error) => {
+        if (this.errorHandler) {
+          this.errorHandler(error);
+        }
+        return {};
+      });
+  }
+
+  // fetchNDJSON streams an NDJSON response from a search-api-style endpoint,
+  // accumulates the result records across batches, and rejects if the stream
+  // ends with an in-band error line or the response has a non-OK status.
+  // The body is consumed incrementally via a ReadableStream reader so we do
+  // not buffer the full response before parsing.
+  private async fetchNDJSON<T>(resource: string): Promise<T[]> {
+    const controller = new AbortController();
+    this.abortControllers.add(controller);
+
+    try {
+      const res = await this.fetchFn(this.url + resource, { headers: this.requestHeaders, signal: controller.signal });
+      if (!res.ok && ![badRequest, unprocessableEntity, serviceUnavailable].includes(res.status)) {
+        throw new Error(res.statusText);
+      }
+      if (!res.body) {
+        // Runtime without ReadableStream (e.g. some legacy environments).
+        // Fall back to a buffered read; behaviour is identical.
+        return this.parseNDJSONBody<T>(await res.text());
+      }
+
+      const records: T[] = [];
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+
+      // Each iteration consumes any complete lines accumulated in the
+      // buffer; the trailing partial line is kept for the next chunk.
+      //
+      // The abort check at the top of the loop is a belt-and-suspenders
+      // safeguard: the underlying fetch already wires `signal` into the
+      // reader, so an in-flight read() will reject with AbortError on its
+      // own — but explicitly polling the signal between chunks gives a
+      // clean exit even if a chunk landed before the abort was observed,
+      // and removes the dependency on the platform ReadableStream
+      // correctly propagating signal to read().
+      for (;;) {
+        if (controller.signal.aborted) {
+          throw new DOMException('aborted', 'AbortError');
+        }
+        const { value, done } = await reader.read();
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+          let newlineIdx = buffer.indexOf('\n');
+          while (newlineIdx !== -1) {
+            const line = buffer.slice(0, newlineIdx);
+            buffer = buffer.slice(newlineIdx + 1);
+            this.handleNDJSONLine<T>(line, records);
+            newlineIdx = buffer.indexOf('\n');
+          }
+        }
+        if (done) {
+          break;
+        }
+      }
+      // Flush any trailing bytes from the decoder and process the residual
+      // line (a body without a trailing newline is well-formed).
+      buffer += decoder.decode();
+      if (buffer.length > 0) {
+        this.handleNDJSONLine<T>(buffer, records);
+      }
+      return records;
+    } finally {
+      this.abortControllers.delete(controller);
+    }
+  }
+
+  // parseNDJSONBody is the buffered fallback used when ReadableStream is not
+  // available on the response. It applies the same per-line logic as the
+  // streaming path.
+  private parseNDJSONBody<T>(body: string): T[] {
+    const records: T[] = [];
+    for (const line of body.split('\n')) {
+      this.handleNDJSONLine<T>(line, records);
+    }
+    return records;
+  }
+
+  // handleNDJSONLine parses one NDJSON line and either appends its results
+  // to the accumulator, throws on an in-band error line, or skips a trailer
+  // / malformed-but-empty line.
+  private handleNDJSONLine<T>(line: string, records: T[]): void {
+    if (line.length === 0) {
+      return;
+    }
+    const parsed: unknown = JSON.parse(line);
+    if (parsed === null || typeof parsed !== 'object') {
+      return;
+    }
+    const obj = parsed as Record<string, unknown>;
+    if ('errorType' in obj) {
+      const errMsg = typeof obj.error === 'string' ? obj.error : 'info_labels stream error';
+      throw new Error(errMsg);
+    }
+    if (Array.isArray(obj.results)) {
+      for (const r of obj.results as unknown[]) {
+        records.push(r as T);
+      }
+    }
+    // Trailer lines (status without results) are not surfaced — the caller
+    // only cares about the accumulated records.
+  }
+
   destroy(): void {
     for (const controller of this.abortControllers) {
       controller.abort();
@@ -271,6 +418,10 @@ export class HTTPPrometheusClient implements PrometheusClient {
   private flagsEndpoint(): string {
     return `${this.apiPrefix}/status/flags`;
   }
+
+  private infoLabelsEndpoint(): string {
+    return `${this.apiPrefix}/info_labels`;
+  }
 }
 
 class Cache {
@@ -281,6 +432,7 @@ class Cache {
   private labelValues: LRUCache<string, string[]>;
   private labelNames: string[];
   private flags: Record<string, string>;
+  private infoLabelPairs: LRUCache<string, Record<string, string[]>>;
 
   constructor(config?: CacheConfig) {
     const maxAge = {
@@ -292,6 +444,7 @@ class Cache {
     this.labelValues = new LRUCache<string, string[]>(maxAge);
     this.labelNames = [];
     this.flags = {};
+    this.infoLabelPairs = new LRUCache<string, Record<string, string[]>>(maxAge);
     if (config?.initialMetricList) {
       this.setLabelValues('__name__', config.initialMetricList);
     }
@@ -399,6 +552,14 @@ class Cache {
     }
     return [];
   }
+
+  setInfoLabelPairs(cacheKey: string, labels: Record<string, string[]>): void {
+    this.infoLabelPairs.set(cacheKey, labels);
+  }
+
+  getInfoLabelPairs(cacheKey: string): Record<string, string[]> | undefined {
+    return this.infoLabelPairs.get(cacheKey);
+  }
 }
 
 export class CachedPrometheusClient implements PrometheusClient {
@@ -464,6 +625,22 @@ export class CachedPrometheusClient implements PrometheusClient {
     return this.client.flags().then((flags) => {
       this.cache.setFlags(flags);
       return flags;
+    });
+  }
+
+  infoLabelPairs(expr?: string, metricMatch?: string, search?: string): Promise<Record<string, string[]>> {
+    // Info labels are expected to be relatively stable, so we cache them.
+    // The cache key includes the expression, metric match, and search string.
+    // Use JSON.stringify to avoid collisions when parameters contain underscores.
+    const cacheKey = JSON.stringify(['infoLabels', expr || '', metricMatch || '', search || '']);
+    const cached = this.cache.getInfoLabelPairs(cacheKey);
+    if (cached !== undefined) {
+      return Promise.resolve(cached);
+    }
+
+    return this.client.infoLabelPairs(expr, metricMatch, search).then((labels) => {
+      this.cache.setInfoLabelPairs(cacheKey, labels);
+      return labels;
     });
   }
 

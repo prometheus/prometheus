@@ -586,6 +586,63 @@ func labelValuesResponseExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
+// infoLabelsResponseExamples returns NDJSON examples for /info_labels.
+func infoLabelsResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("infoLabelsStream", &base.Example{
+		Summary: "NDJSON stream of info-metric data labels",
+		Value:   createYAMLNode("{\"results\":[{\"name\":\"commit\",\"values\":[\"abc123\"]},{\"name\":\"go_version\",\"values\":[\"go1.21.0\"]},{\"name\":\"version\",\"values\":[\"1.0.0\",\"2.0.0\"]}]}\n{\"status\":\"success\",\"has_more\":false}\n"),
+	})
+
+	examples.Set("infoLabelsStreamWithSearch", &base.Example{
+		Summary: "NDJSON stream filtered by search[]=ver with sort_by=score and include_score=true",
+		Value:   createYAMLNode("{\"results\":[{\"name\":\"version\",\"values\":[\"1.0.0\",\"2.0.0\"],\"score\":1},{\"name\":\"go_version\",\"values\":[\"go1.21.0\"],\"score\":0.5}]}\n{\"status\":\"success\",\"has_more\":false}\n"),
+	})
+
+	return examples
+}
+
+// infoLabelsPostExamples returns examples for POST /info_labels endpoint.
+func infoLabelsPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("simpleQuery", &base.Example{
+		Summary: "Simple info labels query",
+		Value: createYAMLNode(map[string]any{
+			"metric_match": "target_info",
+		}),
+	})
+
+	examples.Set("queryWithExpr", &base.Example{
+		Summary: "Info labels query with expression",
+		Value: createYAMLNode(map[string]any{
+			"expr":         "up{job=\"prometheus\"}",
+			"metric_match": "target_info",
+		}),
+	})
+
+	examples.Set("queryWithSearch", &base.Example{
+		Summary: "Info labels query with search and score",
+		Value: createYAMLNode(map[string]any{
+			"metric_match":  "target_info",
+			"search[]":      []string{"ver"},
+			"sort_by":       "score",
+			"include_score": true,
+		}),
+	})
+
+	examples.Set("queryWithValuesLimit", &base.Example{
+		Summary: "Info labels query capping values per label",
+		Value: createYAMLNode(map[string]any{
+			"metric_match": "target_info",
+			"values_limit": 5,
+		}),
+	})
+
+	return examples
+}
+
 // metadataResponseExamples returns examples for /metadata response.
 func metadataResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
