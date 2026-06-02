@@ -874,6 +874,7 @@ curl http://localhost:9090/api/v1/targets
       {
         "discoveredLabels": {
           "__address__": "127.0.0.1:9100",
+          "__convert_classic_histograms_to_nhcb__": "false",
           "__metrics_path__": "/metrics",
           "__scheme__": "http",
           "__scrape_interval__": "1m",

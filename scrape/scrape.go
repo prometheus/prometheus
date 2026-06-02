@@ -1219,7 +1219,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		trackTimestampsStaleness:      opts.sp.config.TrackTimestampsStaleness,
 		enableNativeHistogramScraping: opts.sp.config.ScrapeNativeHistogramsEnabled(),
 		alwaysScrapeClassicHist:       opts.sp.config.AlwaysScrapeClassicHistogramsEnabled(),
-		convertClassicHistToNHCB:      opts.sp.config.ConvertClassicHistogramsToNHCBEnabled(),
+		convertClassicHistToNHCB:      opts.target.convertClassicHistogramsToNHCB(opts.sp.config.ConvertClassicHistogramsToNHCBEnabled()),
 		fallbackScrapeProtocol:        opts.sp.config.ScrapeFallbackProtocol.HeaderMediaType(),
 		enableCompression:             opts.sp.config.EnableCompression,
 		mrc:                           opts.sp.config.MetricRelabelConfigs,

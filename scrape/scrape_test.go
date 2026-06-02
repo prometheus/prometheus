@@ -391,7 +391,7 @@ func testDroppedTargetsList(t *testing.T, appV2 bool) {
 		}
 		sa                     = selectAppendable(app, appV2)
 		sp, _                  = newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
-		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __scrape_interval__=\"0s\", __scrape_timeout__=\"0s\", job=\"dropMe\"}"
+		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __convert_classic_histograms_to_nhcb__=\"false\", __scrape_interval__=\"0s\", __scrape_timeout__=\"0s\", job=\"dropMe\"}"
 		expectedLength         = 2
 	)
 	sp.Sync(tgs)
@@ -5616,6 +5616,53 @@ func testTargetScrapeIntervalAndTimeoutRelabel(t *testing.T, appV2 bool) {
 
 	require.Equal(t, "3s", sp.ActiveTargets()[0].labels.Get(model.ScrapeIntervalLabel))
 	require.Equal(t, "750ms", sp.ActiveTargets()[0].labels.Get(model.ScrapeTimeoutLabel))
+}
+
+func TestTargetScrapeConvertClassicHistogramsToNHCBRelabel(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testTargetScrapeConvertClassicHistogramsToNHCBRelabel(t, appV2)
+	})
+}
+
+func testTargetScrapeConvertClassicHistogramsToNHCBRelabel(t *testing.T, appV2 bool) {
+	interval, _ := model.ParseDuration("2s")
+	timeout, _ := model.ParseDuration("500ms")
+	cfg := &config.ScrapeConfig{
+		ScrapeInterval:             interval,
+		ScrapeTimeout:              timeout,
+		MetricNameValidationScheme: model.UTF8Validation,
+		MetricNameEscapingScheme:   model.AllowUTF8,
+		RelabelConfigs: []*relabel.Config{
+			{
+				SourceLabels:         model.LabelNames{convertClassicHistogramsToNHCBLabel},
+				Regex:                relabel.MustNewRegexp("false"),
+				Replacement:          "true",
+				TargetLabel:          convertClassicHistogramsToNHCBLabel,
+				Action:               relabel.Replace,
+				NameValidationScheme: model.UTF8Validation,
+			},
+		},
+	}
+
+	sa := selectAppendable(teststorage.NewAppendable(), appV2)
+	sp, _ := newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+	tgts := []*targetgroup.Group{
+		{
+			Targets: []model.LabelSet{{model.AddressLabel: "127.0.0.1:9090"}},
+		},
+	}
+
+	sp.Sync(tgts)
+	defer sp.stop()
+
+	require.Equal(t, "true", sp.ActiveTargets()[0].labels.Get(convertClassicHistogramsToNHCBLabel))
+
+	sp.targetMtx.Lock()
+	require.Len(t, sp.loops, 1)
+	for _, l := range sp.loops {
+		require.True(t, l.(*scrapeLoop).convertClassicHistToNHCB)
+	}
+	sp.targetMtx.Unlock()
 }
 
 // Testing whether we can remove trailing .0 from histogram 'le' and summary 'quantile' labels.
