@@ -53,7 +53,7 @@ import (
 
 const (
 	chunkHeaderSize               = 2
-	chunkAllocationSize           = 128
+	chunkAllocationSize           = 32
 	chunkCompactCapacityThreshold = 32
 )
 
@@ -65,6 +65,21 @@ type XORChunk struct {
 // NewXORChunk returns a new chunk with XOR encoding.
 func NewXORChunk() *XORChunk {
 	b := make([]byte, chunkHeaderSize, chunkAllocationSize)
+	return &XORChunk{b: bstream{stream: b, count: 0}}
+}
+
+// NewXORChunkWithCap returns a new chunk with XOR encoding and the given initial
+// capacity. If capacity is less than the header size, the default allocation size
+// is used instead. The capacity is capped at MaxBytesPerXORChunk to prevent
+// over-allocation.
+func NewXORChunkWithCap(capacity int) *XORChunk {
+	if capacity < chunkHeaderSize {
+		capacity = chunkAllocationSize
+	}
+	if capacity > MaxBytesPerXORChunk {
+		capacity = MaxBytesPerXORChunk
+	}
+	b := make([]byte, chunkHeaderSize, capacity)
 	return &XORChunk{b: bstream{stream: b, count: 0}}
 }
 

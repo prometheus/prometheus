@@ -416,3 +416,20 @@ func NewEmptyChunk(e Encoding) (Chunk, error) {
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
+
+// NewEmptyChunkWithCap returns a new empty chunk for the given encoding with
+// the specified initial capacity. If capacity is zero, the default allocation
+// size for the encoding is used.
+func NewEmptyChunkWithCap(e Encoding, capacity int) (Chunk, error) {
+	switch e {
+	case EncXOR:
+		return NewXORChunkWithCap(capacity), nil
+	case EncHistogram:
+		return NewHistogramChunkWithCap(capacity), nil
+	case EncFloatHistogram:
+		return NewFloatHistogramChunkWithCap(capacity), nil
+	case EncXOR2:
+		return NewXOR2ChunkWithCap(capacity), nil
+	}
+	return nil, fmt.Errorf("invalid chunk encoding %q", e)
+}

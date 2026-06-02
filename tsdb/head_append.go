@@ -1997,7 +1997,7 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 			return c, false, false
 		}
 		// There is no head chunk in this series yet, create the first chunk for the sample.
-		c = s.cutNewHeadChunk(t, e, o.chunkRange)
+		c = s.cutNewHeadChunk(t, e, o.chunkRange, 0)
 		chunkCreated = true
 	}
 
@@ -2008,14 +2008,14 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 
 	// Check the chunk size, unless we just created it and if the chunk is too large, cut a new one.
 	if !chunkCreated && len(c.chunk.Bytes()) > chunkenc.MaxBytesPerXORChunkBeforeAppend {
-		c = s.cutNewHeadChunk(t, e, o.chunkRange)
+		c = s.cutNewHeadChunk(t, e, o.chunkRange, len(c.chunk.Bytes()))
 		chunkCreated = true
 	}
 
 	if c.chunk.Encoding() != e {
 		// The chunk encoding expected by this append is different than the head chunk's
 		// encoding. So we cut a new chunk with the expected encoding.
-		c = s.cutNewHeadChunk(t, e, o.chunkRange)
+		c = s.cutNewHeadChunk(t, e, o.chunkRange, len(c.chunk.Bytes()))
 		chunkCreated = true
 	}
 
@@ -2040,7 +2040,7 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 	// as we expect more chunks to come.
 	// Note that next chunk will have its nextAt recalculated for the new rate.
 	if t >= s.nextAt || numSamples >= o.samplesPerChunk*2 {
-		c = s.cutNewHeadChunk(t, e, o.chunkRange)
+		c = s.cutNewHeadChunk(t, e, o.chunkRange, len(c.chunk.Bytes()))
 		chunkCreated = true
 	}
 
@@ -2060,7 +2060,7 @@ func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o
 			return c, false, false
 		}
 		// There is no head chunk in this series yet, create the first chunk for the sample.
-		c = s.cutNewHeadChunk(t, e, o.chunkRange)
+		c = s.cutNewHeadChunk(t, e, o.chunkRange, 0)
 		chunkCreated = true
 	}
 
@@ -2072,7 +2072,7 @@ func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o
 	if c.chunk.Encoding() != e {
 		// The chunk encoding expected by this append is different than the head chunk's
 		// encoding. So we cut a new chunk with the expected encoding.
-		c = s.cutNewHeadChunk(t, e, o.chunkRange)
+		c = s.cutNewHeadChunk(t, e, o.chunkRange, len(c.chunk.Bytes()))
 		chunkCreated = true
 	}
 
@@ -2113,7 +2113,7 @@ func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o
 	// increased or if the bucket/span count has increased.
 	// Note that next chunk will have its nextAt recalculated for the new rate.
 	if (t >= s.nextAt || numBytes >= targetBytes*2) && (numSamples >= chunkenc.MinSamplesPerHistogramChunk || t >= nextChunkRangeStart) {
-		c = s.cutNewHeadChunk(t, e, o.chunkRange)
+		c = s.cutNewHeadChunk(t, e, o.chunkRange, numBytes)
 		chunkCreated = true
 	}
 
@@ -2138,7 +2138,7 @@ func computeChunkEndTime(start, cur, maxT int64, ratioToFull float64) int64 {
 	return int64(float64(start) + float64(maxT-start)/math.Floor(n))
 }
 
-func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange int64) *memChunk {
+func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange int64, hintCapacity int) *memChunk {
 	// When cutting a new head chunk we create a new memChunk instance with .prev
 	// pointing at the current .headChunks, so it forms a linked list.
 	// All but first headChunks list elements will be m-mapped as soon as possible
@@ -2152,7 +2152,7 @@ func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange 
 
 	if chunkenc.IsValidEncoding(e) {
 		var err error
-		s.headChunks.chunk, err = chunkenc.NewEmptyChunk(e)
+		s.headChunks.chunk, err = chunkenc.NewEmptyChunkWithCap(e, hintCapacity)
 		if err != nil {
 			panic(err) // This should never happen.
 		}

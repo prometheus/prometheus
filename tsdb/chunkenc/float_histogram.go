@@ -45,6 +45,17 @@ func NewFloatHistogramChunk() *FloatHistogramChunk {
 	return &FloatHistogramChunk{b: bstream{stream: b, count: 0}}
 }
 
+// NewFloatHistogramChunkWithCap is like NewFloatHistogramChunk but with the
+// given initial capacity. If capacity is less than the header size, the default
+// allocation size is used instead.
+func NewFloatHistogramChunkWithCap(capacity int) *FloatHistogramChunk {
+	if capacity < histogramHeaderSize {
+		capacity = chunkAllocationSize
+	}
+	b := make([]byte, histogramHeaderSize, capacity)
+	return &FloatHistogramChunk{b: bstream{stream: b, count: 0}}
+}
+
 func (c *FloatHistogramChunk) Reset(stream []byte) {
 	c.b.Reset(stream)
 }

@@ -112,6 +112,21 @@ func NewXOR2Chunk() *XOR2Chunk {
 	return &XOR2Chunk{b: bstream{stream: b, count: 0}}
 }
 
+// NewXOR2ChunkWithCap is like NewXOR2Chunk but with the given initial capacity.
+// If capacity is less than the header size, the default allocation size is used
+// instead. The capacity is capped at MaxBytesPerXORChunk to prevent over-allocation.
+func NewXOR2ChunkWithCap(capacity int) *XOR2Chunk {
+	headerSize := chunkHeaderSize + chunkSTHeaderSize
+	if capacity < headerSize {
+		capacity = chunkAllocationSize
+	}
+	if capacity > MaxBytesPerXORChunk {
+		capacity = MaxBytesPerXORChunk
+	}
+	b := make([]byte, headerSize, capacity)
+	return &XOR2Chunk{b: bstream{stream: b, count: 0}}
+}
+
 func (c *XOR2Chunk) Reset(stream []byte) {
 	c.b.Reset(stream)
 }
