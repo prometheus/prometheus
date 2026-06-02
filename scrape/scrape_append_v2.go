@@ -295,7 +295,7 @@ loop:
 				appOpts.Exemplars = exemplars
 			}
 
-			// Metadata path mimicks the scrape appender V1 flow. Once we remove v2
+			// Metadata path mimics the scrape appender V1 flow. Once we remove v2
 			// flow we should rename "appendMetadataToWAL" flag to "passMetadata" because for v2 flow
 			// the metadata storage detail is behind the appendableV2 contract. V2 also means we always pass the metadata,
 			// we don't check if it changed (that code can be removed).
