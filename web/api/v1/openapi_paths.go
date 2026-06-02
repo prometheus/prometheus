@@ -318,6 +318,42 @@ func (b *OpenAPIBuilder) searchLabelValuesPath() *v3.PathItem {
 	}
 }
 
+func (b *OpenAPIBuilder) infoLabelsPath() *v3.PathItem {
+	params := append([]*v3.Parameter{
+		queryParamWithExample("expr", "Optional PromQL expression. When provided, the expression is evaluated and identifying labels (job, instance) are extracted from the result to scope the info-metric query.", false, stringSchema(), []example{{"example", "up{job=\"prometheus\"}"}}),
+		queryParamWithExample("metric_match", "Matcher for the info metric name. Accepts =/=~/!=/!~ prefixes; default is exact match on target_info.", false, stringSchema(), []example{{"example", "target_info"}}),
+		queryParamWithExample("search[]", "One or more search terms matched against data label names (OR logic).", false, base.CreateSchemaProxy(&base.Schema{
+			Type:  []string{"array"},
+			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+		}), []example{{"example", []string{"ver"}}}),
+	}, commonSearchParams()...)
+	params = append(params,
+		queryParamWithExample("start", "Start timestamp for info labels query.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "End timestamp for info labels query.", false, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("limit", "Maximum number of label names to return.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 20}}),
+		queryParamWithExample("values_limit", "Maximum number of values returned per label. 0 means no cap.", false, integerSchema(), []example{{"example", 100}}),
+		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch.", false, integerSchemaWithDefault(defaultSearchBatchSize), []example{{"example", 20}}),
+	)
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "info-labels",
+			Summary:     "Get info metric labels",
+			Description: "Streams data label names (and their values) from info metrics matching metric_match, optionally restricted to series whose identifying labels match the result of evaluating expr.",
+			Tags:        []string{"labels"},
+			Parameters:  params,
+			Responses:   ndjsonResponsesWithErrorExamples(infoLabelsResponseExamples(), errorResponseExamples(), "Info labels streamed successfully.", "Error retrieving info labels."),
+		},
+		Post: &v3.Operation{
+			OperationId: "info-labels-post",
+			Summary:     "Get info metric labels",
+			Description: "Streams data label names (and their values) from info metrics. Accepts the same parameters as the GET version.",
+			Tags:        []string{"labels"},
+			RequestBody: formRequestBodyWithExamples("InfoLabelsPostInputBody", infoLabelsPostExamples(), "Submit an info labels query."),
+			Responses:   ndjsonResponsesWithErrorExamples(infoLabelsResponseExamples(), errorResponseExamples(), "Info labels streamed successfully via POST.", "Error retrieving info labels via POST."),
+		},
+	}
+}
+
 func (*OpenAPIBuilder) seriesPath() *v3.PathItem {
 	params := []*v3.Parameter{
 		queryParamWithExample("start", "Start timestamp for series query.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
