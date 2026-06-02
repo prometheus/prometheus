@@ -258,6 +258,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Experimental concurrent rule evaluation enabled.")
 			case "promql-experimental-functions":
 				c.parserOpts.EnableExperimentalFunctions = true
+				c.web.EnableExperimentalFunctions = true
 				logger.Info("Experimental PromQL functions enabled.")
 			case "promql-duration-expr":
 				c.parserOpts.ExperimentalDurationExpr = true

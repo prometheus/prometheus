@@ -632,6 +632,18 @@ describe('analyzeCompletion test', () => {
       pos: 24,
       expectedContext: [{ kind: ContextKind.MetricName, metricName: 'r' }, { kind: ContextKind.Function }, { kind: ContextKind.Aggregation }],
     },
+    {
+      title: 'info() function second arg - label name after __name__ matcher',
+      expr: 'info(http_requests_total, {__name__=~"build_info", })',
+      pos: 50,
+      expectedContext: [{ kind: ContextKind.InfoDataLabelName, metricName: 'http_requests_total', infoMetricMatch: '~build_info' }],
+    },
+    {
+      title: 'info() function second arg - label name without __name__ matcher',
+      expr: 'info(http_requests_total, {})',
+      pos: 27,
+      expectedContext: [{ kind: ContextKind.InfoDataLabelName, metricName: 'http_requests_total', infoMetricMatch: undefined }],
+    },
   ];
   testCases.forEach((value) => {
     it(value.title, () => {

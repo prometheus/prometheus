@@ -14,6 +14,7 @@
 package v1
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -914,6 +915,518 @@ func TestLabelNames(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestInfoLabels(t *testing.T) {
+	// Data spans [0s, 7800s] at 1m intervals so that the default search
+	// window [now-1h, now] and instant-query lookback at now both include
+	// recent samples when we pin now to 7200s.
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			target_info{job="prometheus", instance="localhost:9090", version="2.0", env="prod"} 1+0x130
+			target_info{job="prometheus", instance="localhost:9091", version="2.1", env="staging"} 1+0x130
+			target_info{job="node", instance="node1:9100", version="1.0", region="us-east"} 1+0x130
+			http_requests_total{job="prometheus", instance="localhost:9090"} 100+0x130
+			http_requests_total{job="prometheus", instance="localhost:9091"} 200+0x130
+			http_requests_total{job="node", instance="node1:9100"} 50+0x130
+			custom_info{job="app", instance="app1:8080", custom_label="custom_value"} 1+0x130
+	`)
+
+	newAPI := func() *API {
+		return &API{
+			Queryable:                   storage,
+			QueryEngine:                 testEngine(t),
+			now:                         func() time.Time { return time.Unix(7200, 0) },
+			parser:                      parser.NewParser(parser.Options{}),
+			enableSearch:                true,
+			enableExperimentalFunctions: true,
+		}
+	}
+
+	api := newAPI()
+
+	for _, tc := range []struct {
+		name              string
+		api               *API
+		params            url.Values
+		expected          []infoLabelsResult
+		expectedHasMore   bool
+		expectedHTTPCode  int
+		expectedErrorType errorType
+	}{
+		{
+			name: "all target_info labels without filter",
+			expected: []infoLabelsResult{
+				{Name: "env", Values: []string{"prod", "staging"}},
+				{Name: "region", Values: []string{"us-east"}},
+				{Name: "version", Values: []string{"1.0", "2.0", "2.1"}},
+			},
+		},
+		{
+			name:   "filter by job=prometheus using expr",
+			params: url.Values{"expr": {`http_requests_total{job="prometheus"}`}},
+			expected: []infoLabelsResult{
+				{Name: "env", Values: []string{"prod", "staging"}},
+				{Name: "version", Values: []string{"2.0", "2.1"}},
+			},
+		},
+		{
+			name:   "filter by specific instance using expr",
+			params: url.Values{"expr": {`http_requests_total{instance="localhost:9090"}`}},
+			expected: []infoLabelsResult{
+				{Name: "env", Values: []string{"prod"}},
+				{Name: "version", Values: []string{"2.0"}},
+			},
+		},
+		{
+			name:   "filter with aggregation expression",
+			params: url.Values{"expr": {`sum by (job, instance) (http_requests_total{job="prometheus", instance="localhost:9090"})`}},
+			expected: []infoLabelsResult{
+				{Name: "env", Values: []string{"prod"}},
+				{Name: "version", Values: []string{"2.0"}},
+			},
+		},
+		{
+			name:   "filter with regex in expr",
+			params: url.Values{"expr": {`http_requests_total{job=~"prometheus|node", instance=~"localhost:9090|node1:9100"}`}},
+			expected: []infoLabelsResult{
+				{Name: "env", Values: []string{"prod"}},
+				{Name: "region", Values: []string{"us-east"}},
+				{Name: "version", Values: []string{"1.0", "2.0"}},
+			},
+		},
+		{
+			name:   "custom info metric with metric_match",
+			params: url.Values{"metric_match": {"custom_info"}},
+			expected: []infoLabelsResult{
+				{Name: "custom_label", Values: []string{"custom_value"}},
+			},
+		},
+		{
+			name:     "non-existent info metric",
+			params:   url.Values{"metric_match": {"nonexistent_info"}},
+			expected: []infoLabelsResult{},
+		},
+		{
+			name:   "regex match on info metric name",
+			params: url.Values{"metric_match": {"=~.*_info"}},
+			expected: []infoLabelsResult{
+				{Name: "custom_label", Values: []string{"custom_value"}},
+				{Name: "env", Values: []string{"prod", "staging"}},
+				{Name: "region", Values: []string{"us-east"}},
+				{Name: "version", Values: []string{"1.0", "2.0", "2.1"}},
+			},
+		},
+		{
+			name:   "negated match on info metric",
+			params: url.Values{"metric_match": {"!=custom_info"}},
+			expected: []infoLabelsResult{
+				{Name: "env", Values: []string{"prod", "staging"}},
+				{Name: "region", Values: []string{"us-east"}},
+				{Name: "version", Values: []string{"1.0", "2.0", "2.1"}},
+			},
+		},
+		{
+			name:     "no matching expr results",
+			params:   url.Values{"expr": {`http_requests_total{job="nonexistent"}`}},
+			expected: []infoLabelsResult{},
+		},
+		{
+			name:   "limit truncates label names and sets has_more",
+			params: url.Values{"limit": {"2"}},
+			expected: []infoLabelsResult{
+				{Name: "env", Values: []string{"prod", "staging"}},
+				{Name: "region", Values: []string{"us-east"}},
+			},
+			expectedHasMore: true,
+		},
+		{
+			name:   "values_limit caps per-label values",
+			params: url.Values{"values_limit": {"1"}},
+			expected: []infoLabelsResult{
+				{Name: "env", Values: []string{"prod"}},
+				{Name: "region", Values: []string{"us-east"}},
+				{Name: "version", Values: []string{"1.0"}},
+			},
+		},
+		{
+			name:   "search[]=ver matches version only",
+			params: url.Values{"search[]": {"ver"}},
+			expected: []infoLabelsResult{
+				{Name: "version", Values: []string{"1.0", "2.0", "2.1"}},
+			},
+		},
+		{
+			name:   "search[]=env exact match",
+			params: url.Values{"search[]": {"env"}},
+			expected: []infoLabelsResult{
+				{Name: "env", Values: []string{"prod", "staging"}},
+			},
+		},
+		{
+			name:   "search[]=ion position ordering with sort_by=score",
+			params: url.Values{"search[]": {"ion"}, "sort_by": {"score"}},
+			expected: []infoLabelsResult{
+				{Name: "region", Values: []string{"us-east"}},
+				{Name: "version", Values: []string{"1.0", "2.0", "2.1"}},
+			},
+		},
+		{
+			name:     "search[]=zzz no matches",
+			params:   url.Values{"search[]": {"zzz"}},
+			expected: []infoLabelsResult{},
+		},
+		{
+			// Default case_sensitive=true (search-api convention); "ENV"
+			// does not match "env" without case_sensitive=false.
+			name:     "search[]=ENV case-sensitive default rejects",
+			params:   url.Values{"search[]": {"ENV"}},
+			expected: []infoLabelsResult{},
+		},
+		{
+			name:   "search[]=ENV case_sensitive=false matches env",
+			params: url.Values{"search[]": {"ENV"}, "case_sensitive": {"false"}},
+			expected: []infoLabelsResult{
+				{Name: "env", Values: []string{"prod", "staging"}},
+			},
+		},
+		{
+			name:   "sort_by=alpha sort_dir=dsc reverses alphabetical order",
+			params: url.Values{"sort_by": {"alpha"}, "sort_dir": {"dsc"}},
+			expected: []infoLabelsResult{
+				{Name: "version", Values: []string{"1.0", "2.0", "2.1"}},
+				{Name: "region", Values: []string{"us-east"}},
+				{Name: "env", Values: []string{"prod", "staging"}},
+			},
+		},
+		{
+			name:   "search[] with multiple terms OR-matches",
+			params: url.Values{"search[]": {"env", "region"}},
+			expected: []infoLabelsResult{
+				{Name: "env", Values: []string{"prod", "staging"}},
+				{Name: "region", Values: []string{"us-east"}},
+			},
+		},
+		{
+			name:   "fuzz_threshold + jarowinkler accepts near-matches",
+			params: url.Values{"search[]": {"envi"}, "fuzz_alg": {"jarowinkler"}, "fuzz_threshold": {"80"}},
+			expected: []infoLabelsResult{
+				// "env" is close enough to "envi" under Jaro-Winkler at
+				// threshold 0.8; "region" and "version" are not.
+				{Name: "env", Values: []string{"prod", "staging"}},
+			},
+		},
+		{
+			name:   "include_score=true surfaces scores",
+			params: url.Values{"search[]": {"env"}, "include_score": {"true"}},
+			expected: []infoLabelsResult{
+				{Name: "env", Values: []string{"prod", "staging"}, Score: float64Ptr(1.0)},
+			},
+		},
+		{
+			name:              "invalid metric_match returns 400",
+			params:            url.Values{"metric_match": {"=~"}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "invalid expr parameter",
+			params:            url.Values{"expr": {`invalid{`}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "scalar expr returns error",
+			params:            url.Values{"expr": {`1+1`}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "match[] is rejected",
+			params:            url.Values{"match[]": {`{job="prometheus"}`}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "invalid values_limit",
+			params:            url.Values{"values_limit": {"-1"}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "sort_by=score without search[] is rejected",
+			params:            url.Values{"sort_by": {"score"}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:   "exec error from queryable",
+			params: url.Values{},
+			api: &API{
+				Queryable:                   errorTestQueryable{err: errors.New("generic")},
+				QueryEngine:                 testEngine(t),
+				now:                         func() time.Time { return time.Unix(7200, 0) },
+				parser:                      parser.NewParser(parser.Options{}),
+				enableSearch:                true,
+				enableExperimentalFunctions: true,
+			},
+			expectedErrorType: errorExec,
+			expectedHTTPCode:  http.StatusUnprocessableEntity,
+		},
+		{
+			// errorUnavailable maps to HTTP 500 via getDefaultErrorCode —
+			// same as the search-api flow when the gate is disabled.
+			name:   "search-api flag disabled returns errorUnavailable",
+			params: url.Values{},
+			api: &API{
+				Queryable:                   storage,
+				QueryEngine:                 testEngine(t),
+				now:                         func() time.Time { return time.Unix(7200, 0) },
+				parser:                      parser.NewParser(parser.Options{}),
+				enableSearch:                false,
+				enableExperimentalFunctions: true,
+			},
+			expectedErrorType: errorUnavailable,
+			expectedHTTPCode:  http.StatusInternalServerError,
+		},
+		{
+			// /info_labels is dual-gated; the experimental-functions flag
+			// must also be enabled because the endpoint only exists to
+			// serve info() autocomplete.
+			name:   "experimental-functions flag disabled returns errorUnavailable",
+			params: url.Values{},
+			api: &API{
+				Queryable:                   storage,
+				QueryEngine:                 testEngine(t),
+				now:                         func() time.Time { return time.Unix(7200, 0) },
+				parser:                      parser.NewParser(parser.Options{}),
+				enableSearch:                true,
+				enableExperimentalFunctions: false,
+			},
+			expectedErrorType: errorUnavailable,
+			expectedHTTPCode:  http.StatusInternalServerError,
+		},
+		{
+			// metric_match with only a prefix and no value should be
+			// rejected with errorBadData.
+			name:              "metric_match=!~ empty value rejected",
+			params:            url.Values{"metric_match": {"!~"}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				apiUnderTest := tc.api
+				if apiUnderTest == nil {
+					apiUnderTest = api
+				}
+				req := infoLabelsRequest(t, method, tc.params)
+				rec := httptest.NewRecorder()
+				apiUnderTest.infoLabels(rec, req)
+
+				if tc.expectedErrorType != errorNone {
+					require.Equal(t, tc.expectedHTTPCode, rec.Code)
+					var resp Response
+					require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+					require.Equal(t, statusError, resp.Status)
+					require.Equal(t, tc.expectedErrorType.str, resp.ErrorType)
+					continue
+				}
+
+				require.Equal(t, http.StatusOK, rec.Code)
+				records, trailer, errLine := parseInfoLabelsNDJSON(t, rec.Body.String())
+				require.Nil(t, errLine, "unexpected in-band error line: %+v", errLine)
+				require.NotNil(t, trailer)
+				require.Equal(t, "success", trailer.Status)
+				require.Equal(t, tc.expectedHasMore, trailer.HasMore)
+				require.Equal(t, tc.expected, records)
+			}
+		})
+	}
+}
+
+// cancelOnWriteRecorder is an httptest.ResponseRecorder that cancels its
+// associated context as soon as the first Write is observed. Used to drive
+// the streamer's between-batches ctx.Done branch: the first batch flushes,
+// then the loop sees the cancellation and returns without writing further
+// batches or the trailer.
+//
+// This test relies on two implementation contracts of streamInfoLabelRecords
+// that are NOT load-bearing for production behaviour but ARE load-bearing for
+// the determinism of this test:
+//
+//  1. context.WithCancel propagates cancellation synchronously, so the
+//     select { case <-ctx.Done() } executed right after the Write returns
+//     observes the cancellation without a sleep or yield.
+//  2. The streamer checks ctx.Done() BETWEEN batches, not inside the
+//     per-batch write path. The first batch is therefore always flushed
+//     before the cancellation is honoured.
+//
+// If either of those contracts changes (e.g. the streamer starts buffering
+// internally, splits the trailer into a separate Write, or moves the ctx
+// check inside emitBatch), this test will need to be rewritten — the
+// recorder's first-Write cancel is too coarse to encode the new contract.
+type cancelOnWriteRecorder struct {
+	*httptest.ResponseRecorder
+	cancel    context.CancelFunc
+	triggered bool
+}
+
+func (r *cancelOnWriteRecorder) Write(b []byte) (int, error) {
+	n, err := r.ResponseRecorder.Write(b)
+	if !r.triggered {
+		r.triggered = true
+		r.cancel()
+	}
+	return n, err
+}
+
+func (*cancelOnWriteRecorder) Flush() {}
+
+// TestInfoLabels_ContextCancellationMidStream covers the streamer's ctx.Done
+// branch: when the context is canceled after the first batch is flushed, the
+// loop short-circuits and no further batches or the trailer are written.
+func TestInfoLabels_ContextCancellationMidStream(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			target_info{job="prometheus", instance="localhost:9090", version="2.0", env="prod"} 1+0x130
+			target_info{job="node", instance="node1:9100", version="1.0", region="us-east"} 1+0x130
+	`)
+
+	api := &API{
+		Queryable:                   storage,
+		QueryEngine:                 testEngine(t),
+		now:                         func() time.Time { return time.Unix(7200, 0) },
+		parser:                      parser.NewParser(parser.Options{}),
+		enableSearch:                true,
+		enableExperimentalFunctions: true,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	req := infoLabelsRequest(t, http.MethodGet, url.Values{"batch_size": {"1"}}).WithContext(ctx)
+	rec := &cancelOnWriteRecorder{ResponseRecorder: httptest.NewRecorder(), cancel: cancel}
+	api.infoLabels(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	records, trailer, errLine := parseInfoLabelsNDJSON(t, rec.Body.String())
+	require.Nil(t, errLine, "unexpected in-band error line: %+v", errLine)
+	require.Nil(t, trailer, "trailer should be absent on mid-stream cancellation")
+	require.Len(t, records, 1)
+}
+
+// failingResponseWriter wraps an httptest.ResponseRecorder and returns an
+// io.ErrShortWrite from Write() after a configurable number of successful
+// writes. Used to exercise the streamer's emitBatch error path without
+// triggering a panic.
+type failingResponseWriter struct {
+	*httptest.ResponseRecorder
+	writeCount int
+	failAfter  int
+}
+
+func (w *failingResponseWriter) Write(b []byte) (int, error) {
+	w.writeCount++
+	if w.writeCount > w.failAfter {
+		return 0, io.ErrShortWrite
+	}
+	return w.ResponseRecorder.Write(b)
+}
+
+func (*failingResponseWriter) Flush() {
+	// Required by ndjsonWriter; no-op for the recorder.
+}
+
+// TestInfoLabels_WriteErrorMidStream covers the streamer's emitBatch error
+// path: when the response writer starts returning errors after the first
+// batch, the handler must surface the failure (via the in-band error line)
+// without panicking.
+func TestInfoLabels_WriteErrorMidStream(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			target_info{job="prometheus", instance="localhost:9090", version="2.0", env="prod"} 1+0x130
+			target_info{job="node", instance="node1:9100", version="1.0", region="us-east"} 1+0x130
+	`)
+
+	api := &API{
+		Queryable:                   storage,
+		QueryEngine:                 testEngine(t),
+		now:                         func() time.Time { return time.Unix(7200, 0) },
+		parser:                      parser.NewParser(parser.Options{}),
+		enableSearch:                true,
+		enableExperimentalFunctions: true,
+	}
+
+	req := infoLabelsRequest(t, http.MethodGet, url.Values{"batch_size": {"1"}})
+	// Fail on the second write — the first batch lands, subsequent writes
+	// (further batches, the in-band error line, the trailer) return errors.
+	rec := &failingResponseWriter{ResponseRecorder: httptest.NewRecorder(), failAfter: 1}
+
+	require.NotPanics(t, func() {
+		api.infoLabels(rec, req)
+	})
+}
+
+// infoLabelsRequest builds a /api/v1/info_labels request with the given method.
+// GET requests carry params in the URL; POST requests in form-encoded body.
+func infoLabelsRequest(t *testing.T, method string, params url.Values) *http.Request {
+	t.Helper()
+	if method == http.MethodPost {
+		req := httptest.NewRequest(method, "http://example.com/api/v1/info_labels", strings.NewReader(params.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		return req
+	}
+	return httptest.NewRequest(method, "http://example.com/api/v1/info_labels?"+params.Encode(), http.NoBody)
+}
+
+// parseInfoLabelsNDJSON walks the NDJSON body, returning the accumulated
+// records, the success trailer (nil if absent), and any in-band error line.
+func parseInfoLabelsNDJSON(t *testing.T, body string) ([]infoLabelsResult, *searchTrailer, *searchErrorResponse) {
+	t.Helper()
+	records := []infoLabelsResult{}
+	var trailer *searchTrailer
+	var errLine *searchErrorResponse
+
+	scanner := bufio.NewScanner(strings.NewReader(body))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		// Probe the line's shape via its top-level fields.
+		var probe struct {
+			Status  *string `json:"status"`
+			Results *json.RawMessage
+		}
+		// Use a second decode because we need the explicit "results" presence
+		// check.
+		var fields map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(line, &fields))
+		_, hasResults := fields["results"]
+		_, hasStatus := fields["status"]
+		_, hasErrorType := fields["errorType"]
+		_ = probe
+
+		switch {
+		case hasErrorType:
+			var er searchErrorResponse
+			require.NoError(t, json.Unmarshal(line, &er))
+			errLine = &er
+		case hasStatus && !hasResults:
+			var tr searchTrailer
+			require.NoError(t, json.Unmarshal(line, &tr))
+			trailer = &tr
+		case hasResults:
+			var batch searchBatch[infoLabelsResult]
+			require.NoError(t, json.Unmarshal(line, &batch))
+			records = append(records, batch.Results...)
+		}
+	}
+	require.NoError(t, scanner.Err())
+	return records, trailer, errLine
 }
 
 type testStats struct {
