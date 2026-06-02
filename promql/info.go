@@ -25,16 +25,11 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/infohelper"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 )
-
-const targetInfo = "target_info"
-
-// identifyingLabels are the labels we consider as identifying for info metrics.
-// Currently hard coded, so we don't need knowledge of individual info metrics.
-var identifyingLabels = []string{"instance", "job"}
 
 // evalInfo implements the info PromQL function.
 func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
@@ -57,7 +52,7 @@ func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (par
 			}
 		}
 	} else {
-		infoNameMatchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, targetInfo)}
+		infoNameMatchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, infohelper.DefaultInfoMetricName)}
 	}
 
 	// Don't try to enrich info series.
@@ -106,7 +101,7 @@ func effectiveInfoNameMatchers(matchers []*labels.Matcher) []*labels.Matcher {
 		return append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+_info")}, matchers...)
 	}
 
-	return []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, targetInfo)}
+	return []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, infohelper.DefaultInfoMetricName)}
 }
 
 type infoSeriesReference struct {
@@ -304,10 +299,10 @@ func infoIdentifyingMatcherSets(mat Matrix, ignoreSeries map[uint64]struct{}) []
 			continue
 		}
 
-		presence := make([]byte, len(identifyingLabels))
-		values := make(map[string]string, len(identifyingLabels))
+		presence := make([]byte, len(infohelper.DefaultIdentifyingLabels))
+		values := make(map[string]string, len(infohelper.DefaultIdentifyingLabels))
 		hasIdentifier := false
-		for i, name := range identifyingLabels {
+		for i, name := range infohelper.DefaultIdentifyingLabels {
 			value := s.Metric.Get(name)
 			if value == "" {
 				presence[i] = '0'
@@ -341,8 +336,8 @@ func infoIdentifyingMatcherSets(mat Matrix, ignoreSeries map[uint64]struct{}) []
 
 	matcherSets := make([][]*labels.Matcher, 0, len(groups))
 	for _, key := range keys {
-		matchers := make([]*labels.Matcher, 0, len(identifyingLabels))
-		for i, name := range identifyingLabels {
+		matchers := make([]*labels.Matcher, 0, len(infohelper.DefaultIdentifyingLabels))
+		for i, name := range infohelper.DefaultIdentifyingLabels {
 			if key[i] == '0' {
 				matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, name, ""))
 				continue
@@ -376,7 +371,7 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 		return func(lset labels.Labels) string {
 			lb.Reset()
 			lb.Add(model.MetricNameLabel, name)
-			lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
+			lset.MatchLabels(true, infohelper.DefaultIdentifyingLabels...).Range(func(l labels.Label) {
 				lb.Add(l.Name, l.Value)
 			})
 			lb.Sort()
