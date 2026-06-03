@@ -515,7 +515,8 @@ Outer:
 							h.metrics.seriesmetadataInserts.WithLabelValues("resource").Inc()
 						}
 						h.metrics.seriesmetadataContentChanges.WithLabelValues("resource").Inc()
-						h.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
+						h.seriesMeta.TrackResourceAttrNames(newVR)
+						_ = oldVR
 					}
 				}
 			}

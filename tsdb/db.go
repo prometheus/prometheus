@@ -257,19 +257,9 @@ type Options struct {
 	EnableMetadataWALRecords bool
 
 	// EnableNativeMetadata represents 'native-metadata' feature flag.
-	// When enabled, OTel resource attributes are persisted per time series
-	// in Parquet-based metadata files alongside TSDB blocks.
+	// When enabled, OTel resource attributes are kept per time series in the
+	// head's in-memory store (replayed from WAL, dropped on compaction).
 	EnableNativeMetadata bool
-
-	// IndexedResourceAttrs specifies additional descriptive resource attribute
-	// names to include in the inverted index beyond identifying attributes
-	// (which are always indexed). nil means index only identifying attributes.
-	IndexedResourceAttrs map[string]struct{}
-
-	// EnableResourceAttrIndex enables the resource attribute inverted index
-	// for O(1) reverse lookup by attribute key:value. When disabled, the index
-	// is not built in memory or written to Parquet. Default: true.
-	EnableResourceAttrIndex bool
 
 	// BlockCompactionExcludeFunc is a function which returns true for blocks that should NOT be compacted.
 	// It's passed down to the TSDB compactor.
@@ -1040,8 +1030,6 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			UseUncachedIO:               opts.UseUncachedIO,
 			BlockExcludeFilter:          opts.BlockCompactionExcludeFunc,
 			EnableNativeMetadata:        opts.EnableNativeMetadata,
-			IndexedResourceAttrs:        opts.IndexedResourceAttrs,
-			EnableResourceAttrIndex:     opts.EnableResourceAttrIndex,
 		})
 	}
 	if err != nil {
@@ -1114,8 +1102,6 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
 	headOpts.EnableFastStartup = opts.EnableFastStartup
 	headOpts.EnableNativeMetadata = opts.EnableNativeMetadata
-	headOpts.IndexedResourceAttrs = opts.IndexedResourceAttrs
-	headOpts.EnableResourceAttrIndex = opts.EnableResourceAttrIndex
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}

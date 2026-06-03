@@ -252,13 +252,6 @@ type HeadOptions struct {
 	// EnableNativeMetadata represents 'native-metadata' feature flag.
 	// When enabled, OTel resource attributes are persisted per time series.
 	EnableNativeMetadata bool
-
-	// IndexedResourceAttrs specifies additional descriptive resource attribute
-	// names to include in the inverted index beyond identifying attributes.
-	IndexedResourceAttrs map[string]struct{}
-
-	// EnableResourceAttrIndex enables the resource attribute inverted index.
-	EnableResourceAttrIndex bool
 }
 
 const (
@@ -420,11 +413,6 @@ func (h *Head) resetInMemoryState() error {
 
 	if h.opts.EnableNativeMetadata {
 		h.seriesMeta = seriesmetadata.NewMemSeriesMetadata()
-		h.seriesMeta.SetIndexedResourceAttrs(h.opts.IndexedResourceAttrs)
-		// Note: InitResourceAttrIndex is NOT called here. The attr index stays nil
-		// during WAL replay so that UpdateResourceAttrIndex early-returns (avoiding
-		// O(n) sortedInsert/sortedRemove churn per series). BuildResourceAttrIndex
-		// is called once after all replay completes — see Init().
 	}
 
 	return nil
@@ -744,12 +732,6 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				}, func() float64 {
 					return float64(h.seriesMeta.ResourceStore().TotalCanonical())
 				}),
-				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-					Name: "prometheus_tsdb_head_seriesmetadata_attr_index_keys",
-					Help: "Number of distinct keys in the resource attribute inverted index.",
-				}, func() float64 {
-					return float64(h.seriesMeta.AttrIndexKeyCount())
-				}),
 			}
 			r.MustRegister(metaGauges...)
 		}
@@ -1034,13 +1016,6 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 
 	wblReplayDuration := time.Since(wblReplayStart)
-
-	// Enable lazy attr index build: the index will be built on first
-	// LookupResourceAttr call via sync.Once, deferring the expensive
-	// O(n) build until actually needed for query.
-	if h.seriesMeta != nil && h.opts.EnableResourceAttrIndex {
-		h.seriesMeta.SetAttrIndexEnabled(true)
-	}
 
 	totalReplayDuration := time.Since(start)
 	h.metrics.dataTotalReplayDuration.Set(totalReplayDuration.Seconds())
@@ -1931,11 +1906,6 @@ func (h *Head) cleanupSharedMetadata(deletedHashes map[uint64]struct{}) {
 		return
 	}
 	for hash := range deletedHashes {
-		// Remove from inverted index before deleting from store.
-		if oldVR, ok := h.seriesMeta.GetVersionedResource(hash); ok {
-			h.seriesMeta.RemoveFromResourceAttrIndex(hash, oldVR)
-		}
-
 		// Delete from all kind stores (internally concurrent-safe).
 		// If a live series shares the hash (extremely unlikely), its next
 		// commit will re-add it.
@@ -2013,10 +1983,6 @@ func (r *headMetadataReader) TotalResourceVersions() uint64 {
 	return r.head.seriesMeta.TotalResourceVersions()
 }
 
-func (r *headMetadataReader) LookupResourceAttr(key, value string) []uint64 {
-	return r.head.seriesMeta.LookupResourceAttr(key, value)
-}
-
 func (r *headMetadataReader) UniqueResourceAttrNames() map[string]struct{} {
 	return r.head.seriesMeta.UniqueResourceAttrNames()
 }
@@ -2031,16 +1997,6 @@ func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
 	return &headMetadataReader{head: h}, nil
 }
 
-// SetIndexedResourceAttrs reconfigures which descriptive resource attributes
-// are included in the inverted index at runtime. This enables per-tenant
-// overrides in downstream ingesters. Note: changing the indexed set does NOT
-// retroactively rebuild the index — it only affects future updates.
-func (h *Head) SetIndexedResourceAttrs(attrs map[string]struct{}) {
-	if h.seriesMeta != nil {
-		h.seriesMeta.SetIndexedResourceAttrs(attrs)
-	}
-}
-
 // ResourceHasContentHash reports whether the series at labelsHash has
 // a resource version with the given contentHash. Read-only, zero-allocation.
 // Returns false if native metadata is not enabled or the series is unknown.
@@ -2049,16 +2005,6 @@ func (h *Head) ResourceHasContentHash(labelsHash, contentHash uint64) bool {
 		return false
 	}
 	return h.seriesMeta.ResourceHasContentHash(labelsHash, contentHash)
-}
-
-// GetIndexedResourceAttrs returns the current set of additional descriptive
-// resource attribute names included in the inverted index. Returns nil if
-// native metadata is not enabled.
-func (h *Head) GetIndexedResourceAttrs() map[string]struct{} {
-	if h.seriesMeta != nil {
-		return h.seriesMeta.GetIndexedResourceAttrs()
-	}
-	return nil
 }
 
 // NumSeries returns the number of series tracked in the head.
