@@ -917,4 +917,3 @@ func populateSeries(lbls []map[string]string, mint, maxt int64) []storage.Series
 	}
 	return series
 }
-
