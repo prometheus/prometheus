@@ -624,8 +624,9 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 
 // histogramRate is a helper function for extrapolatedRate. It requires
 // points[0] to be a histogram. It returns nil if any other Point in points is
-// not a histogram, and a warning wrapped in an annotation in that case.
-// Otherwise, it returns the calculated histogram and an empty annotation.
+// not a histogram or there are incompatibilities between histograms, and a warning
+// wrapped in an annotation in that case. Otherwise, it returns the calculated histogram,
+// and potentially some annotations.
 func histogramRate(
 	points []HPoint,
 	startTimestamps []int64,
@@ -654,10 +655,24 @@ func histogramRate(
 		annos.Add(annotations.NewNativeHistogramNotCounterWarning(getMetricName(labels), pos))
 	}
 
+	if len(points) == 1 {
+		// Single point: no rate can be computed from one sample. Returning nil histogram would signify
+		// for the caller that there are some incompatibilities in the input. Thus, we're returning a zero
+		// histogram, so that the caller could still try to calculate a rate with the help of start timestamps.
+		if !isCounter && prev.CounterResetHint != histogram.GaugeType {
+			annos.Add(annotations.NewNativeHistogramNotGaugeWarning(getMetricName(labels), pos))
+		}
+		return &histogram.FloatHistogram{
+			Schema:           prev.Schema,
+			CustomValues:     prev.CustomValues,
+			CounterResetHint: histogram.GaugeType,
+		}, annos
+	}
+
 	// Null out the 1st sample if there is a counter reset between the 1st
 	// and 2nd. In this case, we want to ignore any incompatibility in the
 	// bucket layout of the 1st sample because we do not need to look at it.
-	if isCounter && len(points) > 1 {
+	if isCounter {
 		second := points[1].H
 		if second != nil && (len(startTimestamps) > 1 && isStartTimestampReset(startTimestamps[0], points[0].T, startTimestamps[1], points[1].T) || second.DetectReset(prev)) {
 			prev = &histogram.FloatHistogram{}
@@ -675,27 +690,25 @@ func histogramRate(
 	// - What's the smallest relevant schema?
 	// - Are all data points histograms?
 	minSchema := min(last.Schema, prev.Schema)
-	if len(points) > 1 {
-		for _, currPoint := range points[1 : len(points)-1] {
-			curr := currPoint.H
-			if curr == nil {
-				return nil, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(getMetricName(labels), pos))
-			}
-			if !isCounter {
-				continue
-			}
-			if curr.CounterResetHint == histogram.GaugeType {
-				// TODO(start-timestamps): for delta histograms, we plan to use Gauge counter reset hint,
-				// while the reset will be indicated via a start timestamp. This will be an expected usage pattern,
-				// thus we should not be returning the following warning.
-				annos.Add(annotations.NewNativeHistogramNotCounterWarning(getMetricName(labels), pos))
-			}
-			if curr.Schema < minSchema {
-				minSchema = curr.Schema
-			}
-			if curr.UsesCustomBuckets() != usingCustomBuckets {
-				return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(getMetricName(labels), pos))
-			}
+	for _, currPoint := range points[1 : len(points)-1] {
+		curr := currPoint.H
+		if curr == nil {
+			return nil, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(getMetricName(labels), pos))
+		}
+		if !isCounter {
+			continue
+		}
+		if curr.CounterResetHint == histogram.GaugeType {
+			// TODO(start-timestamps): for delta histograms, we plan to use Gauge counter reset hint,
+			// while the reset will be indicated via a start timestamp. This will be an expected usage pattern,
+			// thus we should not be returning the following warning.
+			annos.Add(annotations.NewNativeHistogramNotCounterWarning(getMetricName(labels), pos))
+		}
+		if curr.Schema < minSchema {
+			minSchema = curr.Schema
+		}
+		if curr.UsesCustomBuckets() != usingCustomBuckets {
+			return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(getMetricName(labels), pos))
 		}
 	}
 
