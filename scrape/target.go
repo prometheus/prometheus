@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,11 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 )
+
+// convertClassicHistogramsToNHCBLabel is the name of the label that holds whether
+// to convert classic histograms to native histograms with custom buckets when
+// scraping a target.
+const convertClassicHistogramsToNHCBLabel = "__convert_classic_histograms_to_nhcb__"
 
 // TargetHealth describes the health state of a target.
 type TargetHealth string
@@ -306,6 +312,24 @@ func (t *Target) intervalAndTimeout(defaultInterval, defaultDuration time.Durati
 	return time.Duration(interval), time.Duration(timeout), nil
 }
 
+// convertClassicHistogramsToNHCB returns whether classic histograms scraped from
+// the target should be converted to native histograms with custom buckets,
+// derived from the target's labels and falling back to def when unset or invalid.
+func (t *Target) convertClassicHistogramsToNHCB(def bool) bool {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	v := t.labels.Get(convertClassicHistogramsToNHCBLabel)
+	if v == "" {
+		return def
+	}
+	convert, err := strconv.ParseBool(v)
+	if err != nil {
+		return def
+	}
+	return convert
+}
+
 // GetValue gets a label value from the entire label set.
 func (t *Target) GetValue(name string) string {
 	return t.labels.Get(name)
@@ -573,6 +597,7 @@ func PopulateDiscoveredLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLab
 		{Name: model.ScrapeTimeoutLabel, Value: cfg.ScrapeTimeout.String()},
 		{Name: model.MetricsPathLabel, Value: cfg.MetricsPath},
 		{Name: model.SchemeLabel, Value: cfg.Scheme},
+		{Name: convertClassicHistogramsToNHCBLabel, Value: strconv.FormatBool(cfg.ConvertClassicHistogramsToNHCBEnabled())},
 	}
 
 	for _, l := range scrapeLabels {
@@ -629,6 +654,12 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLabels, tgLab
 
 	if timeoutDuration > intervalDuration {
 		return labels.EmptyLabels(), fmt.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
+	}
+
+	if convertNHCB := lb.Get(convertClassicHistogramsToNHCBLabel); convertNHCB != "" {
+		if _, err := strconv.ParseBool(convertNHCB); err != nil {
+			return labels.EmptyLabels(), fmt.Errorf("error parsing convert classic histograms to nhcb: %w", err)
+		}
 	}
 
 	// Meta labels are deleted after relabelling. Other internal labels propagate to
