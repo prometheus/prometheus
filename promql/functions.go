@@ -480,13 +480,14 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 		annos              annotations.Annotations
 	)
 
-	// We need either at least two Histograms and no Floats, or at least two
-	// Floats and no Histograms to calculate a rate. Otherwise, drop this
-	// Vector element.
+	// Drop this vector element and return a warning if this rate window contains mixed float and histogram samples.
 	if len(samples.Histograms) > 0 && len(samples.Floats) > 0 {
 		return enh.Out, annos.Add(annotations.NewMixedFloatsHistogramsWarning(getMetricName(samples.Metric), args[0].PositionRange()))
 	}
 
+	// To calculate a rate, we normally need at least two float or two histogram samples. However,
+	// we can calculate a rate with a single sample as long as it has a known start timestamps and
+	// the latter also points inside this rate window.
 	switch {
 	case len(samples.Histograms) > 0:
 		numSamplesMinusOne = len(samples.Histograms) - 1
