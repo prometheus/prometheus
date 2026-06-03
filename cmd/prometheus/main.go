@@ -252,7 +252,6 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Experimental metadata records in WAL enabled")
 			case "native-metadata":
 				c.tsdb.EnableNativeMetadata = true
-				c.web.EnableNativeMetadata = true
 				features.Enable(features.TSDB, "native_metadata")
 				logger.Info("Experimental native metadata persistence enabled")
 			case "promql-per-step-stats":
@@ -2185,7 +2184,6 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableSTStorage:                opts.EnableSTStorage,
 		EnableHistogramSTEncoding:      opts.EnableHistogramSTEncoding,
 		EnableNativeMetadata:           opts.EnableNativeMetadata,
-		EnableResourceAttrIndex:        true,
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
 		FloatChunkEncoding:             opts.FloatChunkEncoding,

@@ -9,7 +9,6 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4 v4.3.0
 	github.com/Code-Hex/go-generics-cache v1.5.1
 	github.com/KimMachineGun/automemlimit v0.7.5
-	github.com/RoaringBitmap/roaring v1.9.4
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 	github.com/aws/aws-sdk-go-v2 v1.43.0
@@ -79,7 +78,6 @@ require (
 	go.opentelemetry.io/collector/component v1.63.0
 	go.opentelemetry.io/collector/consumer v1.63.0
 	go.opentelemetry.io/collector/pdata v1.63.0
-	go.opentelemetry.io/collector/pdata/xpdata v0.157.0
 	go.opentelemetry.io/collector/processor v1.63.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.69.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0
@@ -112,10 +110,8 @@ require (
 )
 
 require (
-	github.com/bits-and-blooms/bitset v1.12.0 // indirect
 	github.com/gofrs/flock v0.13.0 // indirect
 	github.com/hashicorp/go-metrics v0.6.0 // indirect
-	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/sony/gobreaker/v2 v2.4.0 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 )
