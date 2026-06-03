@@ -250,6 +250,21 @@ func TestRDSDiscoveryRefresh(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "NoInstancesInCluster",
+			clusters: map[string]types.DBCluster{
+				"arn:aws:rds:us-west-2:123456789012:cluster:prod-cluster": {
+					DBClusterArn:        aws.String("arn:aws:rds:us-west-2:123456789012:cluster:prod-cluster"),
+					DBClusterIdentifier: aws.String("prod-cluster"),
+					Engine:              aws.String("aurora-mysql"),
+					EngineVersion:       aws.String("8.0.mysql_aurora.3.04.0"),
+					Status:              aws.String("available"),
+					DBClusterMembers:    []types.DBClusterMember{},
+				},
+			},
+			instances:      map[string][]types.DBInstance{},
+			expectedLabels: []model.LabelSet{},
+		},
 	}
 
 	for _, tt := range tests {
