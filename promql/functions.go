@@ -648,6 +648,9 @@ func histogramRate(
 	// below does not run on the first and last point, so check the first
 	// and last point now.
 	if isCounter && (prev.CounterResetHint == histogram.GaugeType || last.CounterResetHint == histogram.GaugeType) {
+		// TODO(start-timestamps): for delta histograms, we plan to use Gauge counter reset hint,
+		// while the reset will be indicated via a start timestamp. This will be an expected usage pattern,
+		// thus we should not be returning the following warning.
 		annos.Add(annotations.NewNativeHistogramNotCounterWarning(getMetricName(labels), pos))
 	}
 
@@ -682,6 +685,9 @@ func histogramRate(
 				continue
 			}
 			if curr.CounterResetHint == histogram.GaugeType {
+				// TODO(start-timestamps): for delta histograms, we plan to use Gauge counter reset hint,
+				// while the reset will be indicated via a start timestamp. This will be an expected usage pattern,
+				// thus we should not be returning the following warning.
 				annos.Add(annotations.NewNativeHistogramNotCounterWarning(getMetricName(labels), pos))
 			}
 			if curr.Schema < minSchema {
