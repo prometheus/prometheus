@@ -9721,6 +9721,63 @@ func TestCompactStaleHead_EvictedSeriesRecordKeptInCheckpoint(t *testing.T) {
 			"still holds sample records referencing this ref")
 }
 
+// TestCompactStaleHead_ChunkBoundarySampleNotLost verifies that CompactStaleHead
+// preserves a sample whose timestamp lands exactly on a chunk-range boundary.
+//
+// CompactStaleHead walks the head's time range one fixed-width slice
+// (chunkRange) at a time, writes one on-disk block per slice for the stale
+// series, then removes those series from memory. A sample sitting exactly on
+// the upper boundary must still be captured by a block before the in-memory
+// copy is removed.
+//
+// The test plants a stale series with samples at t=500 (regular value) and at
+// t=chunkRange (=1000, stale-NaN marker). The stale-NaN at the boundary is
+// what makes sel stale and a candidate for CompactStaleHead; the earlier
+// regular sample keeps the head's lower bound below the boundary so the
+// removal step runs end to end and the boundary slice is exercised. After
+// CompactStaleHead completes, both samples must still be queryable.
+func TestCompactStaleHead_ChunkBoundarySampleNotLost(t *testing.T) {
+	const chunkRange = 1000
+	opts := DefaultOptions()
+	opts.MinBlockDuration = chunkRange
+	opts.MaxBlockDuration = chunkRange
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	staleV := math.Float64frombits(value.StaleNaN)
+
+	sel := labels.FromStrings("name", "selected")
+	app := db.Appender(context.Background())
+	selRef, err := app.Append(0, sel, 500, 1.0)
+	require.NoError(t, err)
+	_, err = app.Append(selRef, sel, chunkRange, staleV) // T == chunkRange, marks sel stale
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.Equal(t, int64(500), db.Head().MinTime(), "test precondition")
+	require.Equal(t, int64(chunkRange), db.Head().MaxTime(), "test precondition")
+	require.Equal(t, uint64(1), db.Head().NumStaleSeries(),
+		"sel must be the only stale series")
+
+	require.NoError(t, db.CompactStaleHead())
+
+	q, err := db.Querier(0, 2*chunkRange)
+	require.NoError(t, err)
+	// Use the no-replacement variant so the stale-NaN bit pattern survives into the result.
+	seriesSet := queryWithoutReplacingNaNs(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+	actual := seriesSet[`{name="selected"}`]
+
+	require.Len(t, actual, 2,
+		"both samples must remain queryable; if the boundary sample is missing the "+
+			"loop in compactHeadViewLocked exited one iteration too early and the slice "+
+			"covering [chunkRange, 2*chunkRange-1] was never produced as a block")
+	require.Equal(t, int64(500), actual[0].T(), "first sample timestamp")
+	require.Equal(t, 1.0, actual[0].F(), "first sample value")
+	require.Equal(t, int64(chunkRange), actual[1].T(), "boundary sample timestamp")
+	require.True(t, value.IsStaleNaN(actual[1].F()),
+		"boundary sample must remain the stale-NaN marker")
+}
+
 func TestBeyondSizeRetentionWithPercentage(t *testing.T) {
 	const maxBlock = 100
 	const numBytesChunks = 1024
