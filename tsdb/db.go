@@ -1691,7 +1691,7 @@ func (db *DB) CompactStaleHead() (err error) {
 	meta := &BlockMeta{}
 	meta.Compaction.SetStaleSeries()
 	mint, maxt := db.head.opts.ChunkRange*(db.head.MinTime()/db.head.opts.ChunkRange), db.head.MaxTime()
-	for ; mint < maxt; mint += db.head.chunkRange.Load() {
+	for ; mint <= maxt; mint += db.head.chunkRange.Load() {
 		staleHead := NewStaleHead(db.Head(), mint, mint+db.head.chunkRange.Load()-1, staleSeriesRefs)
 
 		uids, err := db.compactor.Write(db.dir, staleHead, staleHead.MinTime(), staleHead.BlockMaxTime(), meta)
