@@ -601,12 +601,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 		meta.Compaction.Parents = []BlockDesc{
 			{ULID: base.ULID, MinTime: base.MinTime, MaxTime: base.MaxTime},
 		}
-		if base.Compaction.FromOutOfOrder() {
-			meta.Compaction.SetOutOfOrder()
-		}
-		if base.Compaction.FromStaleSeries() {
-			meta.Compaction.SetStaleSeries()
-		}
+		meta.Compaction.Hints = slices.Clone(base.Compaction.Hints)
 	}
 
 	err := c.write(dest, meta, DefaultBlockPopulator{}, b)
