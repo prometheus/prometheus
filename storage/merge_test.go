@@ -1786,7 +1786,6 @@ func (m *mockResourceQuerier) IterUniqueAttributeNames(fn func(name string)) err
 	return nil
 }
 
-
 func collectSearchResults(t *testing.T, rs SearchResultSet) []SearchResult {
 	t.Helper()
 	var got []SearchResult

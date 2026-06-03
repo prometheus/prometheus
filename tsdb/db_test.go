@@ -9688,4 +9688,3 @@ func TestBeyondSizeRetentionWithPercentage(t *testing.T) {
 	require.Len(t, deletable, 1)
 	require.Contains(t, deletable, ulid)
 }
-
