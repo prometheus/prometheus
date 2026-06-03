@@ -2051,7 +2051,7 @@ func (rm *readyScrapeManager) Set(m *scrape.Manager) {
 	rm.m = m
 }
 
-// Get the scrape manager. If is not ready, return an error.
+// Get the scrape manager. If it is not ready, return an error.
 func (rm *readyScrapeManager) Get() (*scrape.Manager, error) {
 	rm.mtx.RLock()
 	defer rm.mtx.RUnlock()

@@ -777,7 +777,7 @@ var exponentialBounds = [][]float64{
 // deltas. Set it to false if the buckets contain absolute counts.
 // Set inplace to true to reuse input slices and avoid allocations (otherwise
 // new slices will be allocated for result).
-// The functions returns an error if there are too many or too few buckets for the spans
+// The function returns an error if there are too many or too few buckets for the spans
 // or if any span except the first has a negative offset.
 func reduceResolution[IBC InternalBucketCount](
 	originSpans []Span,
