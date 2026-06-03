@@ -2226,16 +2226,15 @@ func (h *Head) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) map[sto
 	h.tombstones.DeleteTombstones(deleted)
 
 	if h.wal != nil {
-		_, last, _ := wlog.Segments(h.wal.Dir())
 		h.walExpiriesMtx.Lock()
-		// Keep series records until we're past segment 'last'
+		// Keep series records until we're past timestamp maxt
 		// because the WAL will still have samples records with
 		// this ref ID. If we didn't keep these series records then
 		// on start up when we replay the WAL, or any other code
 		// that reads the WAL, wouldn't be able to use those
 		// samples since we would have no labels for that ref ID.
 		for ref := range deleted {
-			h.walExpiries[chunks.HeadSeriesRef(ref)] = int64(last)
+			h.walExpiries[chunks.HeadSeriesRef(ref)] = maxt
 		}
 		h.walExpiriesMtx.Unlock()
 	}
