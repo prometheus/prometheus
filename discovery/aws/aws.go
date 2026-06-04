@@ -68,6 +68,12 @@ func (c Role) String() string {
 	return string(c)
 }
 
+// Filter is the configuration for filtering AWS resources.
+type Filter struct {
+	Name   string   `yaml:"name"`
+	Values []string `yaml:"values"`
+}
+
 // SDConfig is the configuration for AWS service discovery.
 type SDConfig struct {
 	Role             Role                    `yaml:"role"`
@@ -82,8 +88,8 @@ type SDConfig struct {
 	Port             int                     `yaml:"port,omitempty"`
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 
-	// ec2 specific
-	Filters []*EC2Filter `yaml:"filters,omitempty"`
+	// ec2, rds specific
+	Filters []*Filter `yaml:"filters,omitempty"`
 
 	// ecs, msk specific
 	Clusters []string `yaml:"clusters,omitempty"`
@@ -312,6 +318,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 		if c.RefreshInterval != 0 {
 			c.RDSSDConfig.RefreshInterval = c.RefreshInterval
+		}
+		if c.Filters != nil {
+			c.RDSSDConfig.Filters = c.Filters
 		}
 		if c.Clusters != nil {
 			c.RDSSDConfig.Clusters = c.Clusters

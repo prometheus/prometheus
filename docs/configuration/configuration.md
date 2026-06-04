@@ -1341,10 +1341,14 @@ role: <string>
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
 
-# Filters can be used optionally to filter the instance list by other criteria (ec2 role only).
+# Filters can be used optionally to filter the instance list by other criteria (ec2 & rds role only).
 # Available filter criteria can be found here:
-# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
-# Filter API documentation: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Filter.html
+# EC2:
+#  - https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
+#  - Filter API documentation: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Filter.html
+# RDS:
+#  - https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_DescribeDBInstances.html
+#  - Filter API documentation: https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_Filter.html
 filters:
   [ - name: <string>
       values: <string>, [...] ]
