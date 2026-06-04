@@ -28,7 +28,7 @@ func TestFindMatcherVariants_RequiresSemconvURL(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "http.server.duration"),
 	}
 
-	_, _, err := e.findMatcherVariants("", "", matchers)
+	_, _, err := e.findMatcherVariants("", "", nil, matchers)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "semconvURL is required")
 }

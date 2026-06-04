@@ -20,9 +20,15 @@ import (
 	"strings"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
+
+// errStrategyUnresolved is returned by findMatcherVariants when an
+// __otlp_strategy__ is supplied but the metric name does not resolve to any
+// metric in the referenced semconv registry under that strategy.
+var errStrategyUnresolved = errors.New("__otlp_strategy__ set but no matching metric found in the semconv registry")
 
 type schemaEngine struct {
 	otelSchemaCache *staticCache[otelSchema]
@@ -46,6 +52,30 @@ func extractMetricName(matchers []*labels.Matcher) (string, error) {
 		}
 	}
 	return "", nil
+}
+
+// mergeAttributes merges two attribute slices, removing duplicates from b that exist in a.
+func mergeAttributes(a, b []string) []string {
+	if len(b) == 0 {
+		return a
+	}
+	if len(a) == 0 {
+		return b
+	}
+
+	seen := make(map[string]struct{}, len(a))
+	for _, attr := range a {
+		seen[attr] = struct{}{}
+	}
+
+	result := make([]string, len(a), len(a)+len(b))
+	copy(result, a)
+	for _, attr := range b {
+		if _, exists := seen[attr]; !exists {
+			result = append(result, attr)
+		}
+	}
+	return result
 }
 
 // findVersionAnchorIndex returns the index of the largest version <= targetVersion.
@@ -173,6 +203,16 @@ func applyVersionRenames(matchers []*labels.Matcher, renames versionRenames) []*
 type queryContext struct {
 	// labelMapping is a mapping to the requested OTel semantic conventions version.
 	labelMapping *labelMapping
+
+	// outputStrategy, when non-nil, renders result labels in that OTLP
+	// strategy's dialect instead of canonical OTel names. outputMeta carries
+	// the canonical metric's unit/type so the metric name can be suffixed.
+	outputStrategy *otlptranslator.TranslationStrategyOption
+	outputMeta     *metricMeta
+
+	// warning, when non-empty, is an advisory message the wrapper surfaces
+	// alongside the (still-produced) results.
+	warning string
 }
 
 // getSemconv returns the semconv parsed from url, fetching it via the
@@ -203,14 +243,14 @@ func (e *schemaEngine) getOTelSchema(url string) (otelSchema, error) {
 	return s, nil
 }
 
-// findMatcherVariants returns all variants to match for a single schematized
-// metric selection. semconvURL points to a semantic conventions file and is
-// required; schemaURL points to an OTel schema file (versions with renames)
-// and is optional. It returns one variant per schema-version rename of the
-// metric, plus a label mapping for transforming results back to the requested
-// version. The returned matchers do not include the reserved schema matchers.
-// It returns an error if semconvURL is not provided.
-func (e *schemaEngine) findMatcherVariants(semconvURL, schemaURL string, originalMatchers []*labels.Matcher) ([][]*labels.Matcher, queryContext, error) {
+// findMatcherVariants returns all variants to match for a single schematized metric selection.
+// semconvURL points to a semantic conventions file (groups with metric metadata) and is required.
+// schemaURL points to an OTel schema file (versions with attribute renames) and is optional.
+// Returns variants for all semantic conventions renames and OTLP translation strategies,
+// plus a label mapping for transforming results to the current version.
+// The returned matchers do not include __semconv_url__ or __schema_url__.
+// It returns an error if semconvURL is not provided or if the metric is not found.
+func (e *schemaEngine) findMatcherVariants(semconvURL, schemaURL string, strategy *otlptranslator.TranslationStrategyOption, originalMatchers []*labels.Matcher) ([][]*labels.Matcher, queryContext, error) {
 	if semconvURL == "" {
 		return nil, queryContext{}, errors.New("semconvURL is required")
 	}
@@ -218,7 +258,7 @@ func (e *schemaEngine) findMatcherVariants(semconvURL, schemaURL string, origina
 	// Filter out the wrapper's reserved matchers.
 	matchers := stripReservedLabels(originalMatchers)
 
-	// Fetch semantic conventions for the anchor version (also validates the URL).
+	// Fetch semantic conventions for metric metadata.
 	sc, err := e.getSemconv(semconvURL)
 	if err != nil {
 		return nil, queryContext{}, err
@@ -230,22 +270,119 @@ func (e *schemaEngine) findMatcherVariants(semconvURL, schemaURL string, origina
 	}
 	if metricName == "" {
 		// Without an explicit __name__ matcher we have no anchor to resolve
-		// renames against; fall through to the underlying querier without
-		// applying any rewrite.
+		// attribute or metric renames against; fall through to the underlying
+		// querier without applying any rewrite.
 		return [][]*labels.Matcher{matchers}, queryContext{}, nil
 	}
 
-	// Generate schema-version rename variants (if a schema URL is provided).
-	allVariants := [][]*labels.Matcher{matchers}
+	// When an OTLP strategy is declared, the query is expressed in that
+	// strategy's dialect. Reverse-resolve the metric name and label matchers to
+	// canonical OTel names so the schema/strategy fan-out below anchors on the
+	// canonical metric. A name that matches no registry metric is reported so
+	// the wrapper can warn and pass through.
+	var outputMeta *metricMeta
+	var dialectWarning string
+	if strategy != nil {
+		canonical, ok := resolveCanonicalMetric(sc, metricName, *strategy)
+		if !ok {
+			return nil, queryContext{}, errStrategyUnresolved
+		}
+		// Detect mismatched-dialect label matchers before canonicalizing, while
+		// the names are still as the caller wrote them.
+		dialectWarning = dialectMismatchWarning(sc, canonical, *strategy, matchers)
+		matchers = canonicalizeMatchers(sc, canonical, *strategy, matchers)
+		metricName = canonical
+		meta := sc.metricMetadata[canonical]
+		outputMeta = &meta
+	}
+
+	// Stage 1: Generate schema version variants (if schemaURL provided).
+	schemaVariants := [][]*labels.Matcher{matchers}
+	var attributes []string
+	var schema otelSchema
+	haveSchema := false
 	if schemaURL != "" {
-		schema, err := e.getOTelSchema(schemaURL)
+		schema, err = e.getOTelSchema(schemaURL)
 		if err != nil {
 			return nil, queryContext{}, err
 		}
-		allVariants = generateMatcherVariants(sc.version, &schema, matchers)
+		haveSchema = true
+		schemaVariants = generateMatcherVariants(sc.version, &schema, matchers)
+		// Merge semconv attributes with schema attributes (which include renamed versions).
+		attributes = mergeAttributes(sc.attributesPerMetric[metricName], schema.getAttributesForMetric(metricName))
+	} else {
+		attributes = sc.attributesPerMetric[metricName]
 	}
 
-	return allVariants, queryContext{labelMapping: buildLabelMapping(metricName)}, nil
+	// Build a metric-name → meta lookup that covers every version a schema
+	// variant may resolve to, not just the anchor. Without this, OTLP
+	// variants for historical metric names would be escaped using the
+	// anchor's unit/type, which is incorrect once a metric's unit or
+	// instrument changes across schema versions.
+	metaLookup := map[string]*metricMeta{}
+	for n, m := range sc.metricMetadata {
+		metaLookup[n] = &m
+	}
+	if haveSchema {
+		// Walk every version listed in the schema, not just the ones with
+		// renames: a baseline version (e.g. 1.0.0) may have no rename
+		// changes and therefore not appear in versionRenames, yet still
+		// own the historical metric metadata (unit/type) needed for OTLP
+		// translation of its metric names. Walk in sorted order so the
+		// first-writer-wins selection below is deterministic.
+		versions := make([]string, 0, len(schema.Versions))
+		for versionStr := range schema.Versions {
+			versions = append(versions, versionStr)
+		}
+		slices.SortFunc(versions, compareSemver)
+		for _, versionStr := range versions {
+			if versionStr == sc.version {
+				continue
+			}
+			verSC, err := e.getSemconv("registry/" + versionStr)
+			if err != nil {
+				// Best-effort: missing version-specific semconv files just
+				// mean we fall back to the anchor's meta for those variants.
+				continue
+			}
+			for n, m := range verSC.metricMetadata {
+				if _, exists := metaLookup[n]; exists {
+					continue
+				}
+				metaLookup[n] = &m
+			}
+		}
+	}
+
+	// Stage 2: Generate OTLP translation variants for each schema variant,
+	// using each variant's own metric metadata where available. OTLP-strategy
+	// fan-out only runs when an __otlp_strategy__ was supplied; otherwise the
+	// schema variants are queried under their raw OTel names.
+	seen := map[string]struct{}{}
+	allVariants := make([][]*labels.Matcher, 0, len(schemaVariants)*(len(otelStrategies)+1))
+	for _, sv := range schemaVariants {
+		variants := [][]*labels.Matcher{sv}
+		if strategy != nil {
+			svMetric, _ := extractMetricName(sv)
+			variants = generateOTLPVariants(sv, metaLookup[svMetric]) // nil meta for unknown metrics
+		}
+		for _, v := range variants {
+			key := matcherKey(v)
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			allVariants = append(allVariants, v)
+		}
+	}
+
+	qc := queryContext{labelMapping: buildLabelMapping(metricName, attributes)}
+	if strategy != nil {
+		qc.outputStrategy = strategy
+		qc.outputMeta = outputMeta
+		qc.warning = dialectWarning
+	}
+	return allVariants, qc, nil
 }
 
 // transformSeries returns the series labels rewritten to the canonical OTel
@@ -254,7 +391,13 @@ func (e *schemaEngine) findMatcherVariants(semconvURL, schemaURL string, origina
 // returned otherwise unchanged.
 func (*schemaEngine) transformSeries(q queryContext, originalLabels labels.Labels) labels.Labels {
 	if q.labelMapping != nil {
-		return transformOTelSchemaLabels(originalLabels, q.labelMapping)
+		canonical := transformOTelSchemaLabels(originalLabels, q.labelMapping)
+		if q.outputStrategy == nil {
+			return canonical
+		}
+		// Render the canonical labels in the requested strategy's dialect so
+		// every era converges on the same names and merges into one series.
+		return forwardTranslateLabels(canonical, q.labelMapping.translatedMetric, q.outputMeta, *q.outputStrategy)
 	}
 	if originalLabels.Get(schemaURLLabel) == "" {
 		return originalLabels
@@ -270,12 +413,28 @@ type labelMapping struct {
 	translatedMetric string
 }
 
-// buildLabelMapping creates the mapping used to rewrite result labels back to
-// the requested semantic-conventions version: the schema-version fan-out maps
-// the result metric name to the queried (anchor) name, while attribute label
-// names pass through unchanged.
-func buildLabelMapping(metricName string) *labelMapping {
-	return &labelMapping{translatedMetric: metricName}
+// buildLabelMapping creates a mapping from translated label names back to original OTLP names.
+// For each attribute, generates all possible Prometheus translations and maps them back.
+// Translation errors are silently ignored to be lenient with malformed attribute names.
+func buildLabelMapping(metricName string, attributes []string) *labelMapping {
+	mapping := &labelMapping{
+		translatedLabels: make(map[string]string, len(attributes)*len(otelStrategies)),
+		translatedMetric: metricName,
+	}
+
+	for _, attr := range attributes {
+		for _, strategy := range otelStrategies {
+			translatedName, err := translateLabelName(attr, strategy)
+			if err != nil {
+				// Skip attributes that cannot be translated (e.g., invalid names).
+				continue
+			}
+			// Map translated Prometheus name back to original OTel name.
+			mapping.translatedLabels[translatedName] = attr
+		}
+	}
+
+	return mapping
 }
 
 // transformOTelSchemaLabels transforms series labels to the current semantic conventions version

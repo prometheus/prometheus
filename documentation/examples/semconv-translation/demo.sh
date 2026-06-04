@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Semantic Conventions Versioned Read Browser Demo
+# Semantic Conventions Translation Browser Demo
 #
 # This script:
-# 1. Populates a TSDB with a native-OTel metric renamed across semconv versions
+# 1. Populates a TSDB with sample metrics using different OTLP naming conventions
 # 2. Launches Prometheus to serve the data via browser UI
-# 3. Opens the browser so you can query with __semconv_url__ + __schema_url__
+# 3. Opens the browser so you can query with __semconv_url__
 #
 # Usage: ./demo.sh [port]
 # Example: ./demo.sh 9091  # Use port 9091 instead of default 9090
@@ -39,7 +39,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 DATA_DIR="$SCRIPT_DIR/demo-data"
 
-echo -e "\n${BOLD}${CYAN}=== Semconv Versioned Read Browser Demo ===${NC}\n"
+echo -e "\n${BOLD}${CYAN}=== Semconv Translation Browser Demo ===${NC}\n"
 
 # Clean up any existing data
 if [ -d "$DATA_DIR" ]; then
@@ -87,18 +87,23 @@ echo -e "${BOLD}${GREEN}Starting Prometheus server...${NC}"
 echo -e "  Web UI: ${CYAN}http://localhost:${PORT}${NC}\n"
 
 echo -e "${BOLD}Try these queries in the browser:${NC}\n"
-echo -e "  ${YELLOW}The Problem - a rename splits the series across two names:${NC}"
-echo -e "    ${CYAN}{\"test.counter\"}${NC}   - Only the semconv 1.0.0 era (2h-1h ago)"
-echo -e "    ${CYAN}test${NC}             - Only the semconv 1.1.0 era (1h-now)\n"
-echo -e "  ${GREEN}The Solution - __schema_url__ walks the version renames:${NC}"
-echo -e "    ${CYAN}test{__semconv_url__=\"registry/1.1.0\", __schema_url__=\"registry/registry.yaml\"}${NC}        - Both eras under \"test\""
-echo -e "    ${CYAN}sum(test{__semconv_url__=\"registry/1.1.0\", __schema_url__=\"registry/registry.yaml\"})${NC}   - Aggregation spans the rename\n"
+echo -e "  ${YELLOW}The Problem - Queries break across migrations:${NC}"
+echo -e "    ${CYAN}test_counter_bytes_total${NC}                   - Only the semconv 1.0.0 era (3h-2h ago)"
+echo -e "    ${CYAN}test_bytes_total${NC}                           - Only the escaped 1.1.0 era (2h-1h ago)"
+echo -e "    ${CYAN}test${NC}                                       - Only the native 1.1.0 era (1h-now)\n"
+echo -e "  ${GREEN}OTLP-strategy fan-out (__otlp_strategy__ selects the dialect):${NC}"
+echo -e "    ${CYAN}test{__semconv_url__=\"registry/1.1.0\", __otlp_strategy__=\"NoTranslation\"}${NC}                  - Both 1.1.0 eras, native names"
+echo -e "    ${CYAN}test_bytes_total{__semconv_url__=\"registry/1.1.0\", __otlp_strategy__=\"UnderscoreEscapingWithSuffixes\"}${NC} - Same data, escaped names"
+echo -e "    ${CYAN}sum(test{__semconv_url__=\"registry/1.1.0\", __otlp_strategy__=\"NoTranslation\"})${NC}             - Aggregation works"
+echo -e "    ${CYAN}rate(test{__semconv_url__=\"registry/1.1.0\", __otlp_strategy__=\"NoTranslation\"}[5m])${NC}        - Rate works too"
+echo -e "  ${GREEN}OTLP + schema-version fan-out (add __schema_url__):${NC}"
+echo -e "    ${CYAN}test{__semconv_url__=\"registry/1.1.0\", __schema_url__=\"registry/registry.yaml\", __otlp_strategy__=\"NoTranslation\"}${NC} - ALL three eras!\n"
 
 echo -e "${YELLOW}Press Ctrl+C to stop the demo.${NC}\n"
 
 # Give user a moment to read, then open browser
 sleep 2
-open_browser "http://localhost:${PORT}/graph?g0.expr=test%7B__semconv_url__%3D%22registry%2F1.1.0%22%2C%20__schema_url__%3D%22registry%2Fregistry.yaml%22%7D&g0.tab=0&g0.range_input=4h"
+open_browser "http://localhost:${PORT}/graph?g0.expr=test%7B__semconv_url__%3D%22registry%2F1.1.0%22%2C%20__otlp_strategy__%3D%22NoTranslation%22%7D&g0.tab=0&g0.range_input=4h"
 
 # Start Prometheus (this blocks until Ctrl+C)
 # Note: --enable-feature=semconv-versioned-read is required for __semconv_url__ queries

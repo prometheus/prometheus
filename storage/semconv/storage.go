@@ -20,6 +20,7 @@ import (
 	"slices"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -28,16 +29,17 @@ import (
 )
 
 const (
-	semconvURLLabel = "__semconv_url__"
-	schemaURLLabel  = "__schema_url__"
+	semconvURLLabel   = "__semconv_url__"
+	schemaURLLabel    = "__schema_url__"
+	otlpStrategyLabel = "__otlp_strategy__"
 
 	// fanOutLimit caps the number of concurrent queries issued to the
 	// underlying storage when a Select / LabelNames / LabelValues call fans
-	// out across semconv variants. The schema-version fan-out can produce
-	// several variants per call; without a cap, concurrent PromQL evaluation
-	// would spawn unbounded goroutines. The chosen value follows the same
-	// errgroup.SetLimit convention used elsewhere in the codebase (see
-	// discovery/aws/rds.go).
+	// out across semconv variants. The cross-product of schema versions and
+	// OTLP translation strategies can easily produce 20+ variants per call;
+	// without a cap, concurrent PromQL evaluation would spawn unbounded
+	// goroutines. The chosen value follows the same errgroup.SetLimit
+	// convention used elsewhere in the codebase (see discovery/aws/rds.go).
 	fanOutLimit = 16
 )
 
@@ -85,16 +87,19 @@ func (s *awareStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, err
 	return &awareChunkQuerier{ChunkQuerier: q, engine: s.engine}, nil
 }
 
-// classifyMatchers inspects matchers for the reserved __semconv_url__ and
-// __schema_url__ labels and decides how the query is handled. A non-empty
-// warning means pass through and annotate the result. fanout=true means the
-// caller should fan out via findMatcherVariants; fanout=false with an empty
-// warning means a plain passthrough (no schematization was requested).
+// classifyMatchers inspects matchers for the reserved __semconv_url__,
+// __schema_url__ and __otlp_strategy__ labels and decides how the query is
+// handled. A non-empty warning means pass through and annotate the result.
+// fanout=true means the caller should fan out via findMatcherVariants;
+// fanout=false with an empty warning means a plain passthrough (no
+// schematization was requested).
 //
-// __schema_url__ triggers schema-version rename fan-out and requires
-// __semconv_url__ (the registry source); __semconv_url__ on its own has no
-// effect and is reported as such, rather than silently doing nothing.
-func classifyMatchers(matchers []*labels.Matcher) (semconvURL, schemaURL, warning string, fanout bool) {
+// The two fan-out axes are independent and each requires __semconv_url__ for
+// metric metadata: __otlp_strategy__ triggers OTLP-strategy fan-out and
+// __schema_url__ triggers version-rename fan-out. __semconv_url__ on its own
+// has no effect and is reported as such, rather than silently doing nothing.
+func classifyMatchers(matchers []*labels.Matcher) (semconvURL, schemaURL string, strategy *otlptranslator.TranslationStrategyOption, warning string, fanout bool) {
+	var strategyValue string
 	dup := func(label string) string {
 		return fmt.Sprintf("%s matcher was used more than once, schematization logic is skipped for %v", label, matchers)
 	}
@@ -105,46 +110,68 @@ func classifyMatchers(matchers []*labels.Matcher) (semconvURL, schemaURL, warnin
 		switch m.Name {
 		case semconvURLLabel:
 			if semconvURL != "" {
-				return "", "", dup(semconvURLLabel), false
+				return "", "", nil, dup(semconvURLLabel), false
 			}
 			if m.Type != labels.MatchEqual {
-				return "", "", ambiguous(semconvURLLabel), false
+				return "", "", nil, ambiguous(semconvURLLabel), false
 			}
 			semconvURL = m.Value
 		case schemaURLLabel:
 			if schemaURL != "" {
-				return "", "", dup(schemaURLLabel), false
+				return "", "", nil, dup(schemaURLLabel), false
 			}
 			if m.Type != labels.MatchEqual {
-				return "", "", ambiguous(schemaURLLabel), false
+				return "", "", nil, ambiguous(schemaURLLabel), false
 			}
 			schemaURL = m.Value
+		case otlpStrategyLabel:
+			if strategyValue != "" {
+				return "", "", nil, dup(otlpStrategyLabel), false
+			}
+			if m.Type != labels.MatchEqual {
+				return "", "", nil, ambiguous(otlpStrategyLabel), false
+			}
+			strategyValue = m.Value
 		}
 	}
 
+	// The fan-out triggers require the registry source.
 	if semconvURL == "" {
-		if schemaURL != "" {
-			return "", "", fmt.Sprintf("__schema_url__ requires __semconv_url__, schematization logic is skipped for %v", matchers), false
+		if schemaURL != "" || strategyValue != "" {
+			return "", "", nil, fmt.Sprintf("a fan-out trigger (__otlp_strategy__ or __schema_url__) requires __semconv_url__, schematization logic is skipped for %v", matchers), false
 		}
-		return "", "", "", false // Nothing requested.
+		return "", "", nil, "", false // Nothing requested.
 	}
 
-	if schemaURL == "" {
-		return "", "", fmt.Sprintf("__semconv_url__ alone has no effect; add __schema_url__ to fan out, schematization logic is skipped for %v", matchers), false
+	if strategyValue != "" {
+		opt, ok := parseOTLPStrategy(strategyValue)
+		if !ok {
+			return "", "", nil, fmt.Sprintf("__otlp_strategy__ %q is not a recognized OTLP translation strategy, schematization logic is skipped for %v", strategyValue, matchers), false
+		}
+		strategy = &opt
 	}
 
-	return semconvURL, schemaURL, "", true
+	if strategy == nil && schemaURL == "" {
+		return "", "", nil, fmt.Sprintf("__semconv_url__ alone has no effect; add __otlp_strategy__ and/or __schema_url__ to fan out, schematization logic is skipped for %v", matchers), false
+	}
+
+	return semconvURL, schemaURL, strategy, "", true
 }
 
-// variantErrorWarning formats the passthrough warning for a findMatcherVariants failure.
+// variantErrorWarning formats the passthrough warning for a findMatcherVariants
+// failure, giving the __otlp_strategy__ no-match case a clearer message than
+// the generic variant-resolution failure.
 func variantErrorWarning(matchers []*labels.Matcher, err error) string {
+	if errors.Is(err, errStrategyUnresolved) {
+		return fmt.Sprintf("%v; query passed through without schematization", err)
+	}
 	return fmt.Sprintf("failed to find variants, schematization logic is skipped for %v: %v", matchers, err)
 }
 
 // isReservedLabel reports whether name is one of the wrapper's reserved matcher
 // labels.
 func isReservedLabel(name string) bool {
-	return name == semconvURLLabel || name == schemaURLLabel
+	return name == semconvURLLabel || name == schemaURLLabel || name == otlpStrategyLabel
 }
 
 // stripReservedLabels returns matchers without the wrapper's reserved labels so
@@ -181,10 +208,18 @@ func reverseLabelName(q queryContext, n string) string {
 	if q.labelMapping == nil {
 		return n
 	}
+	canonical := n
 	if canon, ok := q.labelMapping.translatedLabels[n]; ok {
-		return canon
+		canonical = canon
 	}
-	return n
+	// When an output strategy is set, label names are reported in that
+	// strategy's dialect to mirror Select.
+	if q.outputStrategy != nil {
+		if translated, err := translateLabelName(canonical, *q.outputStrategy); err == nil {
+			return translated
+		}
+	}
+	return canonical
 }
 
 type awareQuerier struct {
@@ -194,7 +229,7 @@ type awareQuerier struct {
 }
 
 func (q *awareQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	semconvURL, schemaURL, warning, fanout := classifyMatchers(matchers)
+	semconvURL, schemaURL, strategy, warning, fanout := classifyMatchers(matchers)
 	passthrough := stripReservedLabels(matchers)
 	if warning != "" {
 		return annotateSeriesSet(q.Querier.Select(ctx, sortSeries, hints, passthrough...), warning)
@@ -203,7 +238,7 @@ func (q *awareQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 		return q.Querier.Select(ctx, sortSeries, hints, passthrough...)
 	}
 
-	variants, qCtx, err := q.engine.findMatcherVariants(semconvURL, schemaURL, matchers)
+	variants, qCtx, err := q.engine.findMatcherVariants(semconvURL, schemaURL, strategy, matchers)
 	if err != nil {
 		return annotateSeriesSet(
 			q.Querier.Select(ctx, sortSeries, hints, passthrough...),
@@ -230,7 +265,11 @@ func (q *awareQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 		})
 	}
 	_ = g.Wait()
-	return storage.NewMergeSeriesSet(seriesSets, 0, storage.ChainedSeriesMerge)
+	merged := storage.NewMergeSeriesSet(seriesSets, 0, storage.ChainedSeriesMerge)
+	if qCtx.warning != "" {
+		return annotateSeriesSet(merged, qCtx.warning)
+	}
+	return merged
 }
 
 func (q *awareQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
@@ -248,7 +287,7 @@ type awareChunkQuerier struct {
 }
 
 func (q *awareChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
-	semconvURL, schemaURL, warning, fanout := classifyMatchers(matchers)
+	semconvURL, schemaURL, strategy, warning, fanout := classifyMatchers(matchers)
 	passthrough := stripReservedLabels(matchers)
 	if warning != "" {
 		return annotateChunkSeriesSet(q.ChunkQuerier.Select(ctx, sortSeries, hints, passthrough...), warning)
@@ -257,7 +296,7 @@ func (q *awareChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *
 		return q.ChunkQuerier.Select(ctx, sortSeries, hints, passthrough...)
 	}
 
-	variants, qCtx, err := q.engine.findMatcherVariants(semconvURL, schemaURL, matchers)
+	variants, qCtx, err := q.engine.findMatcherVariants(semconvURL, schemaURL, strategy, matchers)
 	if err != nil {
 		return annotateChunkSeriesSet(
 			q.ChunkQuerier.Select(ctx, sortSeries, hints, passthrough...),
@@ -282,7 +321,11 @@ func (q *awareChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *
 		})
 	}
 	_ = g.Wait()
-	return storage.NewMergeChunkSeriesSet(chunkSeriesSets, 0, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge))
+	merged := storage.NewMergeChunkSeriesSet(chunkSeriesSets, 0, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge))
+	if qCtx.warning != "" {
+		return annotateChunkSeriesSet(merged, qCtx.warning)
+	}
+	return merged
 }
 
 func (q *awareChunkQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
@@ -301,7 +344,7 @@ type labelQuerier interface {
 }
 
 func queryLabelNames(ctx context.Context, q labelQuerier, e *schemaEngine, hints *storage.LabelHints, matchers []*labels.Matcher) ([]string, annotations.Annotations, error) {
-	semconvURL, schemaURL, warning, fanout := classifyMatchers(matchers)
+	semconvURL, schemaURL, strategy, warning, fanout := classifyMatchers(matchers)
 	passthrough := stripReservedLabels(matchers)
 	if warning != "" {
 		names, anns, err := q.LabelNames(ctx, hints, passthrough...)
@@ -311,7 +354,7 @@ func queryLabelNames(ctx context.Context, q labelQuerier, e *schemaEngine, hints
 		return q.LabelNames(ctx, hints, passthrough...)
 	}
 
-	variants, qCtx, err := e.findMatcherVariants(semconvURL, schemaURL, matchers)
+	variants, qCtx, err := e.findMatcherVariants(semconvURL, schemaURL, strategy, matchers)
 	if err != nil {
 		names, anns, lerr := q.LabelNames(ctx, hints, passthrough...)
 		return names, anns.Add(schemaWarning(variantErrorWarning(matchers, err))), lerr
@@ -356,11 +399,14 @@ func queryLabelNames(ctx context.Context, q labelQuerier, e *schemaEngine, hints
 		}
 	}
 	slices.Sort(combined)
+	if qCtx.warning != "" {
+		combinedAnns = combinedAnns.Add(schemaWarning(qCtx.warning))
+	}
 	return combined, combinedAnns, errors.Join(errs...)
 }
 
 func queryLabelValues(ctx context.Context, q labelQuerier, e *schemaEngine, name string, hints *storage.LabelHints, matchers []*labels.Matcher) ([]string, annotations.Annotations, error) {
-	semconvURL, schemaURL, warning, fanout := classifyMatchers(matchers)
+	semconvURL, schemaURL, strategy, warning, fanout := classifyMatchers(matchers)
 	passthrough := stripReservedLabels(matchers)
 	if warning != "" {
 		values, anns, err := q.LabelValues(ctx, name, hints, passthrough...)
@@ -370,7 +416,7 @@ func queryLabelValues(ctx context.Context, q labelQuerier, e *schemaEngine, name
 		return q.LabelValues(ctx, name, hints, passthrough...)
 	}
 
-	variants, qCtx, err := e.findMatcherVariants(semconvURL, schemaURL, matchers)
+	variants, qCtx, err := e.findMatcherVariants(semconvURL, schemaURL, strategy, matchers)
 	if err != nil {
 		values, anns, lerr := q.LabelValues(ctx, name, hints, passthrough...)
 		return values, anns.Add(schemaWarning(variantErrorWarning(matchers, err))), lerr
@@ -421,6 +467,13 @@ func queryLabelValues(ctx context.Context, q labelQuerier, e *schemaEngine, name
 		for _, v := range p.values {
 			if metricNameQuery {
 				v = qCtx.labelMapping.translatedMetric
+				// Mirror Select: report the metric name in the requested
+				// strategy's dialect when one is set.
+				if qCtx.outputStrategy != nil {
+					if translated, err := translateMetricName(v, qCtx.outputMeta, *qCtx.outputStrategy); err == nil {
+						v = translated
+					}
+				}
 			}
 			if _, ok := seen[v]; ok {
 				continue
@@ -430,6 +483,9 @@ func queryLabelValues(ctx context.Context, q labelQuerier, e *schemaEngine, name
 		}
 	}
 	slices.Sort(combined)
+	if qCtx.warning != "" {
+		combinedAnns = combinedAnns.Add(schemaWarning(qCtx.warning))
+	}
 	return combined, combinedAnns, errors.Join(errs...)
 }
 

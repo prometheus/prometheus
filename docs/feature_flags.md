@@ -427,30 +427,38 @@ single client can then request the entire index in one response.
 
 `--enable-feature=semconv-versioned-read`
 
-Wraps the query path with a semconv-aware storage layer that recognises two
+Wraps the query path with a semconv-aware storage layer that recognises three
 special matchers in PromQL queries:
 
 - `__semconv_url__="registry/<version>"` selects the semantic conventions
-  version that supplies metric metadata. It is required by `__schema_url__` and
-  has no effect on its own.
+  version that supplies metric metadata. It is required by the other two
+  matchers and has no effect on its own.
+- `__otlp_strategy__="<strategy>"` triggers OTLP-strategy fan-out: it matches
+  data written under any OTLP translation strategy and renders the merged
+  results in the named dialect (e.g. `NoTranslation`,
+  `UnderscoreEscapingWithSuffixes`). The queried metric name must be written
+  in that dialect; it is reverse-resolved to the canonical metric. Label
+  matchers should likewise be written in that dialect; a matcher matching a
+  known attribute in a different escaping is applied verbatim and warns.
 - `__schema_url__="registry/<file>"` selects an OTel schema file that declares
-  per-version attribute and metric renames; it triggers version-rename fan-out,
-  matching the metric's historical names and rendering the merged results under
-  the queried version's name.
+  per-version attribute and metric renames; it triggers version-rename fan-out
+  as an independent axis.
 
-Both matchers may only reference paths inside the embedded semconv registry
+All matchers may only reference paths inside the embedded semconv registry
 shipped with the binary under `storage/semconv/registry/`. Arbitrary HTTP URLs
 or local file paths are rejected.
 
 Example:
 
 ```
-test{__semconv_url__="registry/1.1.0", __schema_url__="registry/registry.yaml"}
+test{__semconv_url__="registry/1.1.0", __otlp_strategy__="NoTranslation"}
 ```
 
-For `test` in semconv 1.1.0, this matches the metric's earlier names (e.g.
-`test.counter` in 1.0.0) declared by the schema's `versions` section and merges
-the results under the queried name `test`.
+The series returned for that query merge data written under any OTLP
+translation strategy for `test` in semconv 1.1.0, rendered here under canonical
+OTel names. Add `__schema_url__` to also span historical metric and attribute
+renames across semconv versions.
 
-This feature is experimental: the matcher names and the registry layout are
-subject to change.
+This feature is experimental: the matcher names, the registry layout, and the
+set of OTLP translation strategies probed when fanning out are all subject to
+change.

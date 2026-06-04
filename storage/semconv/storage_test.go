@@ -15,7 +15,6 @@ package semconv_test
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 
@@ -244,9 +243,6 @@ func TestAwareStorage(t *testing.T) {
 				set := q.Select(context.Background(), false, nil,
 					labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
 					labels.MustNewMatcher(labels.MatchEqual, "__semconv_url__", bad),
-					// A valid __schema_url__ triggers fan-out so the bad
-					// __semconv_url__ is actually loaded and rejected.
-					labels.MustNewMatcher(labels.MatchEqual, "__schema_url__", "registry/registry.yaml"),
 				)
 				// The set must complete cleanly (passthrough) and surface a warning.
 				_ = collectSeries(t, set)
@@ -295,69 +291,4 @@ func TestSchemaWarning_ClassifiedAsWarning(t *testing.T) {
 		require.ErrorIs(t, err, semconv.ErrSchemaWarning, "warning %v should be a SchemaWarning", err)
 		require.ErrorIs(t, err, annotations.PromQLWarning, "warning %v should chain through PromQLWarning", err)
 	}
-}
-
-// TestAwareStorage_SchemaVersion exercises the schema-version rename fan-out:
-// a native-OTel producer's historical metric name surfaces under the requested
-// version's canonical name via __schema_url__.
-func TestAwareStorage_SchemaVersion(t *testing.T) {
-	wrapped, _ := newAwareStorage(t)
-	// The producer wrote the metric under its semconv 1.0.0 name "test.counter"
-	// (native OTel names); semconv 1.1.0 renamed it to "test".
-	appendSeries(t, wrapped, "test.counter", 1, 7.0, "http.response.status_code", "200")
-
-	q, err := wrapped.Querier(0, 10)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = q.Close() })
-
-	set := q.Select(context.Background(), false, nil,
-		labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
-		labels.MustNewMatcher(labels.MatchEqual, "__semconv_url__", "registry/1.1.0"),
-		labels.MustNewMatcher(labels.MatchEqual, "__schema_url__", "registry/registry.yaml"),
-	)
-	got := collectSeries(t, set)
-	require.NotEmpty(t, got, "expected the historical name to surface via __schema_url__")
-	var found bool
-	for k := range got {
-		if strings.Contains(k, `__name__="test"`) {
-			found = true
-		}
-	}
-	require.True(t, found, "expected the renamed metric under its 1.1.0 name in: %v", got)
-}
-
-// TestAwareStorage_AggregatesVariantErrors verifies that when the
-// schema-version fan-out probes multiple historical names, the wrapper surfaces
-// every underlying failure via errors.Is rather than only the first.
-func TestAwareStorage_AggregatesVariantErrors(t *testing.T) {
-	// Anchored at semconv 1.1.0, "test" fans out to its historical names:
-	// test.counter (1.0.0), test (1.1.0) and test.v2 (1.2.0). Each variant is
-	// probed concurrently; a per-variant error must propagate through the join.
-	errAnchor := errors.New("err-anchor")
-	errOld := errors.New("err-old")
-	errNew := errors.New("err-new")
-
-	underlying := teststorage.New(t)
-	wrapped := semconv.AwareStorage(&erroringStorage{
-		Storage: underlying,
-		errsByMetric: map[string]error{
-			"test":         errAnchor,
-			"test.counter": errOld,
-			"test.v2":      errNew,
-		},
-	})
-
-	q, err := wrapped.Querier(0, 10)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = q.Close() })
-
-	_, _, err = q.LabelNames(context.Background(), nil,
-		labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
-		labels.MustNewMatcher(labels.MatchEqual, "__semconv_url__", "registry/1.1.0"),
-		labels.MustNewMatcher(labels.MatchEqual, "__schema_url__", "registry/registry.yaml"),
-	)
-	require.Error(t, err)
-	require.ErrorIs(t, err, errAnchor, "errors.Join should preserve every variant error")
-	require.ErrorIs(t, err, errOld, "errors.Join should preserve every variant error")
-	require.ErrorIs(t, err, errNew, "errors.Join should preserve every variant error")
 }

@@ -281,23 +281,32 @@ A workaround for this restriction is to use the `__name__` label:
 #### Schema-aware metric selection (experimental)
 
 When Prometheus is started with
-`--enable-feature=semconv-versioned-read`, two reserved matchers become
+`--enable-feature=semconv-versioned-read`, three reserved matchers become
 recognised inside instant vector selectors:
 
 * `__semconv_url__="registry/<version>"` — selects an OpenTelemetry
   semantic-conventions version. It supplies the metric metadata the other
-  matcher needs and has no effect on its own.
+  two matchers need and has no effect on its own.
+* `__otlp_strategy__="<strategy>"` — triggers a fan-out across the OTLP
+  translation strategies for the selected semantic conventions, matching
+  data written under any strategy and rendering the merged results in the
+  named dialect (for example `NoTranslation` for canonical OTel names or
+  `UnderscoreEscapingWithSuffixes` for escaped names). The queried metric
+  name must be written in that dialect; it is reverse-resolved to the
+  canonical metric. Label matchers should likewise be written in that
+  dialect; a matcher that matches a known attribute in a different escaping
+  is applied verbatim and produces a warning.
 * `__schema_url__="registry/<file>"` — selects an OpenTelemetry schema file
   declaring per-version renames and triggers a fan-out across
-  schema-version boundaries, matching the metric's historical names and
-  rendering the merged results under the queried version's name.
+  schema-version boundaries. It is an independent axis from
+  `__otlp_strategy__`.
 
-`__schema_url__` requires `__semconv_url__`. All values are resolved
-exclusively against an embedded registry shipped with the binary; arbitrary
-HTTP or filesystem paths are rejected. See
+`__otlp_strategy__` and `__schema_url__` both require `__semconv_url__`. All
+values are resolved exclusively against an embedded registry shipped
+with the binary; arbitrary HTTP or filesystem paths are rejected. See
 [Semconv Versioned Read](../feature_flags.md#semconv-versioned-read) for
 the supported registry layout, examples, and the limitations of the
-fan-out.
+fan-out (which strategies are probed and how warnings are surfaced).
 
 ### Range Vector Selectors
 
