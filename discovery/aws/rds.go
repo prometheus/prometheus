@@ -486,9 +486,6 @@ func (d *RDSDiscovery) describeDBInstances(ctx context.Context, dbClusterARN str
 		if err != nil {
 			return nil, fmt.Errorf("failed to describe DB instances for cluster ARN %s: %w", dbClusterARN, err)
 		}
-		if len(output.DBInstances) == 0 {
-			return nil, fmt.Errorf("no DB instances found for cluster ARN %s", dbClusterARN)
-		}
 
 		for _, dbInstance := range output.DBInstances {
 			mu.Lock()
