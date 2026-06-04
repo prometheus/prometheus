@@ -13,25 +13,56 @@
 
 package gate
 
-import "context"
+import (
+	"context"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 // A Gate controls the maximum number of concurrently running and waiting queries.
 type Gate struct {
 	ch chan struct{}
+	// available tracks the net available capacity of the gate:
+	//   - Positive values: Number of free slots (e.g., 2 means 2 requests can proceed immediately)
+	//   - Zero: Gate at full capacity (next request will wait)
+	//   - Negative values: Number of requests waiting in queue (e.g., -3 means 3 requests are waiting)
+	available    prometheus.Gauge
+	waitDuration prometheus.Counter // waitDuration tracks time spent waiting for gate access
 }
 
 // New returns a query gate that limits the number of queries
 // being concurrently executed.
-func New(length int) *Gate {
-	return &Gate{
-		ch: make(chan struct{}, length),
+func New(length int, available prometheus.Gauge, waitDuration prometheus.Counter) *Gate {
+	g := &Gate{
+		ch:           make(chan struct{}, length),
+		available:    available,
+		waitDuration: waitDuration,
 	}
+	if available != nil {
+		available.Set(float64(length))
+	}
+	return g
 }
 
 // Start blocks until the gate has a free spot or the context is done.
 func (g *Gate) Start(ctx context.Context) error {
+	start := time.Now()
+	if g.available != nil {
+		g.available.Dec() // Decrement available slots (may go negative)
+	}
+
+	defer func() {
+		if g.waitDuration != nil {
+			g.waitDuration.Add(time.Since(start).Seconds())
+		}
+	}()
+
 	select {
 	case <-ctx.Done():
+		if g.available != nil {
+			g.available.Inc() // Restore the slot if context cancelled
+		}
 		return ctx.Err()
 	case g.ch <- struct{}{}:
 		return nil
@@ -42,6 +73,9 @@ func (g *Gate) Start(ctx context.Context) error {
 func (g *Gate) Done() {
 	select {
 	case <-g.ch:
+		if g.available != nil {
+			g.available.Inc() // Release a slot
+		}
 	default:
 		panic("gate.Done: more operations done than started")
 	}
