@@ -1,0 +1,22 @@
+file_format: "1.1.0"
+schema_url: https://example.com/schemas/1.1.0
+
+versions:
+  1.0.0:
+    metrics:
+      changes:
+        - rename_metrics:
+            name_map:
+              metric.v1: metric.v2
+        - rename_attributes:
+            attribute_map:
+              attr.v1: attr.v2
+  1.1.0:
+    metrics:
+      changes:
+        - rename_metrics:
+            name_map:
+              metric.v2: metric.v3
+        - rename_attributes:
+            attribute_map:
+              attr.v2: attr.v3
