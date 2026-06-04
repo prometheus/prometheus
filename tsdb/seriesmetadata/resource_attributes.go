@@ -13,13 +13,6 @@
 
 package seriesmetadata
 
-// Identifying attribute keys per OTel semantic conventions.
-const (
-	AttrServiceName       = "service.name"
-	AttrServiceNamespace  = "service.namespace"
-	AttrServiceInstanceID = "service.instance.id"
-)
-
 // IsIdentifyingAttribute returns true if the given key is an identifying attribute.
 // Identifying attributes are used to uniquely identify a resource.
 func IsIdentifyingAttribute(key string) bool {

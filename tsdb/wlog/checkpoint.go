@@ -27,6 +27,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cespare/xxhash/v2"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
@@ -34,6 +36,43 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
+
+// contentMapping maps a series ref to a content hash with a time range.
+// Used during checkpoint to dedup resource content across series.
+type contentMapping struct {
+	contentHash uint64
+	minTime     int64
+	maxTime     int64
+}
+
+// hashResourceWALContent computes a deterministic xxhash for a RefResource's
+// content (identifying + descriptive attrs). It does NOT include
+// Ref, MinTime, or MaxTime since those are per-mapping, not per-content.
+func hashResourceWALContent(r *record.RefResource) uint64 {
+	h := xxhash.New()
+
+	hashMapInto(h, r.Identifying)
+	_, _ = h.Write([]byte{1})
+	hashMapInto(h, r.Descriptive)
+	_, _ = h.Write([]byte{1})
+
+	return h.Sum64()
+}
+
+// hashMapInto writes a deterministic representation of a string map into a hash digest.
+func hashMapInto(h *xxhash.Digest, m map[string]string) {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		_, _ = h.WriteString(k)
+		_, _ = h.Write([]byte{0})
+		_, _ = h.WriteString(m[k])
+		_, _ = h.Write([]byte{0})
+	}
+}
 
 // CheckpointStats returns stats about a created checkpoint.
 type CheckpointStats struct {
@@ -86,6 +125,11 @@ func DeleteCheckpoints(dir string, maxIndex int) error {
 
 // CheckpointTempFileSuffix is the suffix used when creating temporary checkpoint files.
 const CheckpointTempFileSuffix = ".tmp"
+
+// checkpointFlushChunkSize is the number of resource records to buffer
+// before flushing to the checkpoint WAL. Bounds peak memory to ~2 MB per chunk
+// instead of potentially gigabytes for the full monolithic slice.
+const checkpointFlushChunkSize = 10000
 
 // DeleteTempCheckpoints deletes all temporary checkpoint directories in the given directory.
 func DeleteTempCheckpoints(logger *slog.Logger, dir string) error {
@@ -177,7 +221,12 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		// Resources are versioned (descriptive attributes can change over time),
 		// so we keep ALL records per ref, not just the latest. This preserves version history
 		// so that VersionAt() returns correct attributes for historical timestamps after replay.
-		allResources []record.RefResource
+		//
+		// Content-addressed dedup: many series share the same resource content.
+		// Store unique content once in a table, and map refs to content hashes.
+		// This dramatically reduces memory when N series share K unique resources (K << N).
+		resourceContentTable = make(map[uint64]record.RefResource)             // contentHash → canonical record
+		resourceRefToContent = make(map[chunks.HeadSeriesRef][]contentMapping) // ref → content hashes with time ranges
 	)
 	for r.Next() {
 		series, samples, histogramSamples, floatHistogramSamples, tstones, exemplars, metadata, resources = series[:0], samples[:0], histogramSamples[:0], floatHistogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0], resources[:0]
@@ -376,10 +425,18 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 				return nil, fmt.Errorf("decode resources: %w", err)
 			}
 			repl := 0
-			for _, r := range resources {
+			for i, r := range resources {
 				if keep(r.Ref) {
 					repl++
-					allResources = append(allResources, r)
+					ch := hashResourceWALContent(&resources[i])
+					if _, exists := resourceContentTable[ch]; !exists {
+						resourceContentTable[ch] = r
+					}
+					resourceRefToContent[r.Ref] = append(resourceRefToContent[r.Ref], contentMapping{
+						contentHash: ch,
+						minTime:     r.MinTime,
+						maxTime:     r.MaxTime,
+					})
 				}
 			}
 			stats.TotalResources += len(resources)
@@ -422,10 +479,33 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		}
 	}
 
-	// Flush all retained resource records (preserving version history).
-	if len(allResources) > 0 {
-		if err := cp.Log(enc.Resources(allResources, buf[:0])); err != nil {
-			return nil, fmt.Errorf("flush resource records: %w", err)
+	// Flush all resource records for each series (preserving version history).
+	// Reconstruct full RefResource records from the content-addressed table.
+	// Flush in chunks to bound peak memory instead of materializing all records at once.
+	if len(resourceRefToContent) > 0 {
+		chunk := make([]record.RefResource, 0, checkpointFlushChunkSize)
+		for ref, mappings := range resourceRefToContent {
+			for _, m := range mappings {
+				canonical := resourceContentTable[m.contentHash]
+				chunk = append(chunk, record.RefResource{
+					Ref:         ref,
+					MinTime:     m.minTime,
+					MaxTime:     m.maxTime,
+					Identifying: canonical.Identifying,
+					Descriptive: canonical.Descriptive,
+				})
+				if len(chunk) >= checkpointFlushChunkSize {
+					if err := cp.Log(enc.Resources(chunk, buf[:0])); err != nil {
+						return nil, fmt.Errorf("flush resource records: %w", err)
+					}
+					chunk = chunk[:0]
+				}
+			}
+		}
+		if len(chunk) > 0 {
+			if err := cp.Log(enc.Resources(chunk, buf[:0])); err != nil {
+				return nil, fmt.Errorf("flush resource records: %w", err)
+			}
 		}
 	}
 
