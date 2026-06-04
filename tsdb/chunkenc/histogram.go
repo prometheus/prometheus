@@ -734,11 +734,11 @@ func (a *HistogramAppender) writeSumDelta(v float64) {
 	xorWrite(a.b, v, a.sum, &a.leading, &a.trailing)
 }
 
-func (*HistogramAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
+func (*HistogramAppender) AppendFloatHistogram(Appender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a float histogram sample to a histogram chunk")
 }
 
-func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, _, t int64, h *histogram.Histogram, appendOnly bool) (Chunk, bool, Appender, error) {
+func (a *HistogramAppender) AppendHistogram(prev Appender, _, t int64, h *histogram.Histogram, appendOnly bool) (Chunk, bool, Appender, error) {
 	numSamples := a.NumSamples()
 
 	if numSamples == math.MaxUint16 {
@@ -757,9 +757,18 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, _, t int64,
 			// Always honor the explicit counter reset hint.
 			a.setCounterResetHeader(CounterReset)
 		case prev != nil:
-			// This is a new chunk, but continued from a previous one. We need to calculate the reset header unless already set.
-			_, _, _, _, _, counterReset := prev.appendable(h)
-			a.setCounterResetHeader(counterReset)
+			// This is a new chunk, but continued from a previous one. We need
+			// to calculate the reset header unless already set. We only need
+			// the prev appender's appendable() method, so we type-assert here
+			// rather than at the interface boundary; this lets callers pass
+			// any Appender (xor, xor2, histogram, histogramST, ...) and we
+			// silently ignore prev when it isn't an integer-histogram appender
+			// (e.g. a transition from a float chunk, where there is no counter
+			// to reset against).
+			if p, ok := prev.(histogramAppendable); ok {
+				_, _, _, _, _, counterReset := p.appendable(h)
+				a.setCounterResetHeader(counterReset)
+			}
 		}
 		return nil, false, a, nil
 	}

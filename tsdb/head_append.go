@@ -1877,8 +1877,7 @@ func (s *memSeries) appendHistogram(st, t int64, h *histogram.Histogram, appendI
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
-	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
-	prevApp, _ := s.app.(*chunkenc.HistogramAppender)
+	prevApp := s.app
 
 	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValHistogram.ChunkEncoding(o.useXOR2), o)
 	if !sampleInOrder {
@@ -1935,8 +1934,7 @@ func (s *memSeries) appendFloatHistogram(st, t int64, fh *histogram.FloatHistogr
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
-	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
-	prevApp, _ := s.app.(*chunkenc.FloatHistogramAppender)
+	prevApp := s.app
 
 	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValFloatHistogram.ChunkEncoding(o.useXOR2), o)
 	if !sampleInOrder {
