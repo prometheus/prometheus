@@ -1,14 +1,12 @@
 # config/testdata/remote_write_auth_exclusive.bad.yml
 # This file is intentionally invalid.
 # It tests that mutually exclusive authentication methods
-# (e.g., basic_auth and oauth2) cannot be configured together.
+# (e.g., oauth2 and sigv4) cannot be configured together.
 remote_write:
-  - url: localhost:9090
-    name: queue1
-    basic_auth:
-      username: foo
-      password: bar
+  - url: http://localhost:9090
     oauth2:
       client_id: foo
       client_secret: bar
       token_url: http://localhost:9090/token
+    sigv4:
+      region: us-east-1

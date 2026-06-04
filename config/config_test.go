@@ -2457,6 +2457,10 @@ var expectedErrors = []struct {
 		errMsg:   `found multiple remote write configs with job name "queue1"`,
 	},
 	{
+		filename: "remote_write_auth_exclusive.bad.yml",
+		errMsg:   "at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured",
+	},
+	{
 		filename: "remote_read_dup.bad.yml",
 		errMsg:   `found multiple remote read configs with job name "queue1"`,
 	},
