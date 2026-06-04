@@ -670,7 +670,7 @@ func TestUnaryPretty(t *testing.T) {
 }
 
 func TestDurationExprPretty(t *testing.T) {
-	optsParser := NewParser(Options{})
+	optsParser := NewParser(Options{ExperimentalDurationExpr: true})
 	maxCharactersPerLine = 10
 	inputs := []struct {
 		in, out string

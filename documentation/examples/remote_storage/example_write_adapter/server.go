@@ -104,7 +104,10 @@ func printV2(req *writev2.Request) error {
 		if err != nil {
 			return err
 		}
-		m := ts.ToMetadata(req.Symbols)
+		m, err := ts.ToMetadata(req.Symbols)
+		if err != nil {
+			return err
+		}
 		fmt.Println(l, m)
 
 		for _, s := range ts.Samples {

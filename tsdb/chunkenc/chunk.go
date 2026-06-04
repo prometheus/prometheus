@@ -57,6 +57,9 @@ func IsValidEncoding(e Encoding) bool {
 const (
 	// MaxBytesPerXORChunk is the maximum size an XOR chunk can be.
 	MaxBytesPerXORChunk = 1024
+	// MaxBytesPerXORChunkBeforeAppend is used for cutting new XOR chunks, to prevent going over MaxBytesPerXORChunk
+	// as a hard limit. We assume the next sample will be a maximally-sized sample (19 bytes).
+	MaxBytesPerXORChunkBeforeAppend = MaxBytesPerXORChunk - 19
 	// TargetBytesPerHistogramChunk sets a size target for each histogram chunk.
 	TargetBytesPerHistogramChunk = 1024
 	// MinSamplesPerHistogramChunk sets a minimum sample count for histogram chunks. This is desirable because a single
@@ -106,9 +109,13 @@ type Iterable interface {
 
 // Appender adds sample with start timestamp, timestamp, and value to a chunk.
 type Appender interface {
+	// Append may panic if the chunk is already at full capacity. It is the
+	// responsibility of the caller to decide how to cut new chunks before that.
 	Append(st, t int64, v float64)
 
 	// AppendHistogram and AppendFloatHistogram append a histogram sample to a histogram or float histogram chunk.
+	// Appending may panic if the chunk is already at full capacity. It is the
+	// responsibility of the caller to decide how to cut new chunks before that.
 	// Appending a histogram may require creating a completely new chunk or recoding (changing) the current chunk.
 	// The Appender prev is used to determine if there is a counter reset between the previous Appender and the current Appender.
 	// The Appender prev is optional and only taken into account when the first sample is being appended.

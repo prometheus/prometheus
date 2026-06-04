@@ -630,3 +630,7 @@ func TestXOR2DecodeFunctionsAcrossPadding(t *testing.T) {
 		}, (*xor2Iterator).decodeNewLeadingTrailing)
 	})
 }
+
+func TestXOR2ChunkOverFlowPanics(t *testing.T) {
+	testChunkOverFlowPanics(t, EncXOR2, ValFloat)
+}

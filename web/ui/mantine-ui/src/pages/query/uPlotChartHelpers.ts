@@ -5,52 +5,79 @@ import { getSeriesColor } from "./colorPool";
 import { computePosition, shift, flip, offset } from "@floating-ui/dom";
 import uPlot, { AlignedData, Series } from "uplot";
 
-const formatYAxisTickValue = (y: number | null): string => {
+const formatYAxisTickValue = (y: number | null, precision = 2): string => {
   if (y === null) {
     return "null";
   }
   const absY = Math.abs(y);
 
   if (absY >= 1e24) {
-    return (y / 1e24).toFixed(2) + "Y";
+    return (y / 1e24).toFixed(precision) + "Y";
   } else if (absY >= 1e21) {
-    return (y / 1e21).toFixed(2) + "Z";
+    return (y / 1e21).toFixed(precision) + "Z";
   } else if (absY >= 1e18) {
-    return (y / 1e18).toFixed(2) + "E";
+    return (y / 1e18).toFixed(precision) + "E";
   } else if (absY >= 1e15) {
-    return (y / 1e15).toFixed(2) + "P";
+    return (y / 1e15).toFixed(precision) + "P";
   } else if (absY >= 1e12) {
-    return (y / 1e12).toFixed(2) + "T";
+    return (y / 1e12).toFixed(precision) + "T";
   } else if (absY >= 1e9) {
-    return (y / 1e9).toFixed(2) + "G";
+    return (y / 1e9).toFixed(precision) + "G";
   } else if (absY >= 1e6) {
-    return (y / 1e6).toFixed(2) + "M";
+    return (y / 1e6).toFixed(precision) + "M";
   } else if (absY >= 1e3) {
-    return (y / 1e3).toFixed(2) + "k";
+    return (y / 1e3).toFixed(precision) + "k";
   } else if (absY >= 1) {
-    return y.toFixed(2);
+    return y.toFixed(precision);
   } else if (absY === 0) {
-    return y.toFixed(2);
+    return y.toFixed(precision);
   } else if (absY < 1e-23) {
-    return (y / 1e-24).toFixed(2) + "y";
+    return (y / 1e-24).toFixed(precision) + "y";
   } else if (absY < 1e-20) {
-    return (y / 1e-21).toFixed(2) + "z";
+    return (y / 1e-21).toFixed(precision) + "z";
   } else if (absY < 1e-17) {
-    return (y / 1e-18).toFixed(2) + "a";
+    return (y / 1e-18).toFixed(precision) + "a";
   } else if (absY < 1e-14) {
-    return (y / 1e-15).toFixed(2) + "f";
+    return (y / 1e-15).toFixed(precision) + "f";
   } else if (absY < 1e-11) {
-    return (y / 1e-12).toFixed(2) + "p";
+    return (y / 1e-12).toFixed(precision) + "p";
   } else if (absY < 1e-8) {
-    return (y / 1e-9).toFixed(2) + "n";
+    return (y / 1e-9).toFixed(precision) + "n";
   } else if (absY < 1e-5) {
-    return (y / 1e-6).toFixed(2) + "µ";
+    return (y / 1e-6).toFixed(precision) + "µ";
   } else if (absY < 1e-2) {
-    return (y / 1e-3).toFixed(2) + "m";
+    return (y / 1e-3).toFixed(precision) + "m";
   } else if (absY <= 1) {
-    return y.toFixed(2);
+    return y.toFixed(precision);
   }
   throw Error("couldn't format a value, this is a bug");
+};
+
+const maxYAxisTickPrecision = 8;
+
+const hasDuplicateLabels = (labels: string[]): boolean =>
+  new Set(labels).size !== labels.length;
+
+const formatYAxisTickValues = (splits: number[]): string[] => {
+  const labels = splits.map((split) => formatYAxisTickValue(split));
+
+  if (!hasDuplicateLabels(labels)) {
+    return labels;
+  }
+
+  for (let precision = 3; precision <= maxYAxisTickPrecision; precision++) {
+    const preciseLabels = splits.map((split) =>
+      formatYAxisTickValue(split, precision)
+    );
+
+    if (!hasDuplicateLabels(preciseLabels)) {
+      return preciseLabels;
+    }
+  }
+
+  return splits.map((split) =>
+    formatYAxisTickValue(split, maxYAxisTickPrecision)
+  );
 };
 
 const escapeHTML = (str: string): string => {
@@ -383,7 +410,7 @@ export const getUPlotOptions = (
     },
     // Y axis (sample value).
     {
-      values: (_u: uPlot, splits: number[]) => splits.map(formatYAxisTickValue),
+      values: (_u: uPlot, splits: number[]) => formatYAxisTickValues(splits),
       ticks: {
         stroke: light ? "#00000010" : "#ffffff20",
       },

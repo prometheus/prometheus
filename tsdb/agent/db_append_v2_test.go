@@ -232,12 +232,36 @@ func TestCommit_AppendV2(t *testing.T) {
 					walSamplesCount += len(samples)
 
 				case record.HistogramSamples, record.CustomBucketsHistogramSamples:
+					if enableSTStorage {
+						t.Errorf("Got V1 Samples when ST enabled")
+					}
+					var histograms []record.RefHistogramSample
+					histograms, err = dec.HistogramSamples(rec, histograms)
+					require.NoError(t, err)
+					walHistogramCount += len(histograms)
+
+				case record.HistogramSamplesV2:
+					if !enableSTStorage {
+						t.Errorf("Got V2 Samples when ST disabled")
+					}
 					var histograms []record.RefHistogramSample
 					histograms, err = dec.HistogramSamples(rec, histograms)
 					require.NoError(t, err)
 					walHistogramCount += len(histograms)
 
 				case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
+					if enableSTStorage {
+						t.Errorf("Got V1 Samples when ST enabled")
+					}
+					var floatHistograms []record.RefFloatHistogramSample
+					floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
+					require.NoError(t, err)
+					walFloatHistogramCount += len(floatHistograms)
+
+				case record.FloatHistogramSamplesV2:
+					if !enableSTStorage {
+						t.Errorf("Got V2 Samples when ST disabled")
+					}
 					var floatHistograms []record.RefFloatHistogramSample
 					floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
 					require.NoError(t, err)
@@ -375,7 +399,7 @@ func TestRollbackAppendV2(t *testing.T) {
 			case record.Exemplars:
 				t.Errorf("should not have found exemplars")
 
-			case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
+			case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.HistogramSamplesV2, record.FloatHistogramSamplesV2:
 				t.Errorf("should not have found histograms")
 
 			default:

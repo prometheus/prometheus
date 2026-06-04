@@ -287,3 +287,47 @@ func TestOpenAPIVersionConsistency(t *testing.T) {
 	require.Len(t, paths32, len(paths31)+1,
 		"OpenAPI 3.2 should have exactly one more path than 3.1")
 }
+
+// TestOpenAPISearchDefaultLimit verifies that the search endpoint default for "limit"
+// reflects the MaxSearchLimit option when it is smaller than the built-in default.
+func TestOpenAPISearchDefaultLimit(t *testing.T) {
+	serveSpec := func(opts OpenAPIOptions) map[string]any {
+		builder := NewOpenAPIBuilder(opts, promslog.NewNopLogger())
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", http.NoBody)
+		rec := httptest.NewRecorder()
+		builder.ServeOpenAPI(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		var spec map[string]any
+		require.NoError(t, yaml.Unmarshal(rec.Body.Bytes(), &spec))
+		return spec
+	}
+
+	searchLimitDefault := func(spec map[string]any) any {
+		paths := spec["paths"].(map[any]any)
+		metricNames := paths["/search/metric_names"].(map[any]any)
+		get := metricNames["get"].(map[any]any)
+		params := get["parameters"].([]any)
+		for _, p := range params {
+			param := p.(map[any]any)
+			if param["name"] == "limit" {
+				return param["schema"].(map[any]any)["default"]
+			}
+		}
+		return nil
+	}
+
+	t.Run("default limit is 100 when no cap is set", func(t *testing.T) {
+		spec := serveSpec(OpenAPIOptions{})
+		require.Equal(t, 100, searchLimitDefault(spec))
+	})
+
+	t.Run("default limit is capped when MaxSearchLimit is smaller", func(t *testing.T) {
+		spec := serveSpec(OpenAPIOptions{MaxSearchLimit: 50})
+		require.Equal(t, 50, searchLimitDefault(spec))
+	})
+
+	t.Run("default limit is 100 when MaxSearchLimit exceeds default", func(t *testing.T) {
+		spec := serveSpec(OpenAPIOptions{MaxSearchLimit: 200})
+		require.Equal(t, 100, searchLimitDefault(spec))
+	})
+}

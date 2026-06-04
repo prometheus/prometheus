@@ -693,6 +693,24 @@ This second example has the same effect than the first example, and illustrates 
 label_replace(up{job="api-server",service="a:c"}, "foo", "$name", "service", "(?P<name>.*):(?P<version>.*)")
 ```
 
+## `max_of()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`max_of(a scalar, b scalar)` returns the larger of the two scalar values `a`
+and `b`.
+
+## `min_of()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`min_of(a scalar, b scalar)` returns the smaller of the two scalar values `a`
+and `b`.
+
 ## `ln()`
 
 `ln(v instant-vector)` calculates the natural logarithm for all float samples
@@ -961,7 +979,8 @@ These functions act on histograms in the following way:
 select the first sample of `m` _within_ the 1m range, where `m offset 1m` will
 select the most recent sample within the lookback interval _outside and prior
 to_ the 1m offset. This is particularly useful with `first_over_time(m[step()])`
-in range queries to ensure that the sample selected is within the range step.
+in range queries (available when `--enable-feature=promql-duration-expr` is set)
+to ensure that the sample selected is within the range step.
 
 ## Trigonometric Functions
 

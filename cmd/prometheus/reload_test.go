@@ -119,7 +119,7 @@ func runTestSteps(t *testing.T, steps []struct {
 	require.NoError(t, os.WriteFile(configFilePath, []byte(steps[0].configText), 0o644), "Failed to write initial config file")
 
 	port := testutil.RandomUnprivilegedPort(t)
-	prom := prometheusCommandWithLogging(t, configFilePath, port, "--enable-feature=auto-reload-config", "--config.auto-reload-interval=1s")
+	prom := prometheusCommandWithLogging(t, configFilePath, port, "--config.auto-reload", "--config.auto-reload-interval=1s")
 	require.NoError(t, prom.Start())
 
 	baseURL := "http://localhost:" + strconv.Itoa(port)

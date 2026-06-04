@@ -114,7 +114,10 @@ const (
 	Stopping
 )
 
-var fgprofHandler = fgprof.Handler()
+var (
+	fgprofHandler = fgprof.Handler()
+	fgprofMu      sync.Mutex
+)
 
 // withStackTracer logs the stack trace in case the request panics. The function
 // will re-raise the error which will then be handled by the net/http package.
@@ -295,6 +298,8 @@ type Options struct {
 	UseOldUI                   bool
 	EnableLifecycle            bool
 	EnableAdminAPI             bool
+	EnableSearch               bool
+	MaxSearchLimit             int
 	PageTitle                  string
 	RemoteReadSampleLimit      int
 	RemoteReadConcurrencyLimit int
@@ -401,6 +406,8 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		h.options.LocalStorage,
 		h.options.TSDBDir,
 		h.options.EnableAdminAPI,
+		h.options.EnableSearch,
+		h.options.MaxSearchLimit,
 		logger,
 		FactoryRr,
 		h.options.RemoteReadSampleLimit,
@@ -427,8 +434,9 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		nil,
 		o.FeatureRegistry,
 		api_v1.OpenAPIOptions{
-			ExternalURL: o.ExternalURL.String(),
-			Version:     version,
+			ExternalURL:    o.ExternalURL.String(),
+			Version:        version,
+			MaxSearchLimit: o.MaxSearchLimit,
 		},
 		o.Parser,
 	)
@@ -439,6 +447,10 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		r.Set(features.API, "admin", o.EnableAdminAPI)
 		r.Set(features.API, "remote_write_receiver", o.EnableRemoteWriteReceiver)
 		r.Set(features.API, "otlp_write_receiver", o.EnableOTLPWriteReceiver)
+		r.Set(features.API, "search", o.EnableSearch)
+		for _, alg := range api_v1.FuzzAlgorithms() {
+			r.Enable(features.API, "search_fuzz_alg_"+alg)
+		}
 		r.Set(features.OTLPReceiver, "delta_conversion", o.ConvertOTLPDelta)
 		r.Set(features.OTLPReceiver, "native_delta_ingestion", o.NativeOTLPDeltaIngestion)
 		r.Enable(features.API, "label_values_match") // match[] parameter for label values endpoint.
@@ -636,6 +648,11 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 	case "trace":
 		pprof.Trace(w, req)
 	case "fgprof":
+		if !fgprofMu.TryLock() {
+			http.Error(w, "Could not enable fgprof profiling: fgprof profiling already in use", http.StatusInternalServerError)
+			return
+		}
+		defer fgprofMu.Unlock()
 		fgprofHandler.ServeHTTP(w, req)
 	default:
 		req.URL.Path = "/debug/pprof/" + subpath

@@ -36,6 +36,7 @@ type mskDataStore struct {
 }
 
 func TestMSKDiscoveryListClusters(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	for _, tt := range []struct {
@@ -126,6 +127,7 @@ func TestMSKDiscoveryListClusters(t *testing.T) {
 }
 
 func TestMSKDiscoveryDescribeClusters(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	for _, tt := range []struct {
@@ -240,6 +242,7 @@ func TestMSKDiscoveryDescribeClusters(t *testing.T) {
 }
 
 func TestMSKDiscoveryListNodes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	for _, tt := range []struct {
@@ -406,6 +409,7 @@ func TestMSKDiscoveryListNodes(t *testing.T) {
 }
 
 func TestMSKDiscoveryRefresh(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	tests := []struct {
@@ -1031,6 +1035,7 @@ func TestMSKDiscoveryRefresh(t *testing.T) {
 }
 
 func TestNodeType(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		node     types.NodeInfo

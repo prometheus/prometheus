@@ -48,6 +48,10 @@ type OpenAPIOptions struct {
 	// Version is the API version to include in the OpenAPI spec.
 	// If empty, defaults to "0.0.1-undefined".
 	Version string
+
+	// MaxSearchLimit is the operator-configured cap for the search API "limit" parameter.
+	// Zero means no cap is applied.
+	MaxSearchLimit int
 }
 
 // OpenAPIBuilder builds and caches OpenAPI specifications.
@@ -122,6 +126,15 @@ func (b *OpenAPIBuilder) ServeOpenAPI(w http.ResponseWriter, r *http.Request) {
 // WrapHandler returns the handler unchanged (no validation).
 func (*OpenAPIBuilder) WrapHandler(next http.HandlerFunc) http.HandlerFunc {
 	return next
+}
+
+// searchDefaultLimit returns the effective default for the search "limit" parameter,
+// capped by the operator-configured MaxSearchLimit when it is smaller.
+func (b *OpenAPIBuilder) searchDefaultLimit() int {
+	if b.options.MaxSearchLimit > 0 && b.options.MaxSearchLimit < defaultSearchLimit {
+		return b.options.MaxSearchLimit
+	}
+	return defaultSearchLimit
 }
 
 // shouldIncludePath checks if a path should be included based on options.
@@ -272,6 +285,9 @@ func (b *OpenAPIBuilder) getAllPathDefinitions() *orderedmap.Map[string, *v3.Pat
 	// Label endpoints.
 	paths.Set("/labels", b.labelsPath())
 	paths.Set("/label/{name}/values", b.labelValuesPath())
+	paths.Set("/search/metric_names", b.searchMetricNamesPath())
+	paths.Set("/search/label_names", b.searchLabelNamesPath())
+	paths.Set("/search/label_values", b.searchLabelValuesPath())
 
 	// Series endpoints.
 	paths.Set("/series", b.seriesPath())

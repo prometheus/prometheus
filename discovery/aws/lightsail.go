@@ -119,12 +119,29 @@ func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	return c.HTTPClientConfig.Validate()
 }
 
+// lightsailClientAdapter captures only the Lightsail API calls AWS discovery
+// uses as method-value closures, keeping the concrete *lightsail.Client out of
+// any interface-boxed struct field. See ec2ClientAdapter for the full
+// rationale: this stops the linker from retaining the entire Lightsail API
+// surface (~3.4 MB).
+type lightsailClientAdapter struct {
+	getInstances func(ctx context.Context, params *lightsail.GetInstancesInput, optFns ...func(*lightsail.Options)) (*lightsail.GetInstancesOutput, error)
+}
+
+func newLightsailClientAdapter(c *lightsail.Client) *lightsailClientAdapter {
+	return &lightsailClientAdapter{getInstances: c.GetInstances}
+}
+
+func (a *lightsailClientAdapter) GetInstances(ctx context.Context, params *lightsail.GetInstancesInput, optFns ...func(*lightsail.Options)) (*lightsail.GetInstancesOutput, error) {
+	return a.getInstances(ctx, params, optFns...)
+}
+
 // LightsailDiscovery periodically performs Lightsail-SD requests. It implements
 // the Discoverer interface.
 type LightsailDiscovery struct {
 	*refresh.Discovery
 	cfg       *LightsailSDConfig
-	lightsail *lightsail.Client
+	lightsail *lightsailClientAdapter
 }
 
 // NewLightsailDiscovery returns a new LightsailDiscovery which periodically refreshes its targets.
@@ -154,7 +171,7 @@ func NewLightsailDiscovery(conf *LightsailSDConfig, opts discovery.DiscovererOpt
 	return d, nil
 }
 
-func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsail.Client, error) {
+func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsailClientAdapter, error) {
 	if d.lightsail != nil {
 		return d.lightsail, nil
 	}
@@ -198,12 +215,12 @@ func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsail.Cl
 		cfg.Credentials = aws.NewCredentialsCache(assumeProvider)
 	}
 
-	d.lightsail = lightsail.NewFromConfig(cfg, func(options *lightsail.Options) {
+	d.lightsail = newLightsailClientAdapter(lightsail.NewFromConfig(cfg, func(options *lightsail.Options) {
 		if d.cfg.Endpoint != "" {
 			options.BaseEndpoint = &d.cfg.Endpoint
 		}
 		options.HTTPClient = httpClient
-	})
+	}))
 
 	return d.lightsail, nil
 }

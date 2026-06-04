@@ -55,12 +55,14 @@ func TestSDCheckResult(t *testing.T) {
 		{
 			DiscoveredLabels: labels.FromStrings(
 				"__address__", "localhost:8080",
+				"__convert_classic_histograms_to_nhcb__", "false",
 				"__scrape_interval__", "1m",
 				"__scrape_timeout__", "10s",
 				"foo", "bar",
 			),
 			Labels: labels.FromStrings(
 				"__address__", "localhost:8080",
+				"__convert_classic_histograms_to_nhcb__", "false",
 				"__scrape_interval__", "1m",
 				"__scrape_timeout__", "10s",
 				"foo", "bar",

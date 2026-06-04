@@ -53,6 +53,8 @@ func EngineQueryFunc(engine promql.QueryEngine, q storage.Queryable) QueryFunc {
 		if err != nil {
 			return nil, err
 		}
+		defer q.Close()
+
 		res := q.Exec(ctx)
 		if res.Err != nil {
 			return nil, res.Err

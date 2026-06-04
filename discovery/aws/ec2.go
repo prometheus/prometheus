@@ -55,6 +55,7 @@ const (
 	ec2LabelInstanceType         = ec2Label + "instance_type"
 	ec2LabelOwnerID              = ec2Label + "owner_id"
 	ec2LabelPlatform             = ec2Label + "platform"
+	ec2LabelDefaultIPv6Address   = ec2Label + "default_ipv6_address"
 	ec2LabelPrimaryIPv6Addresses = ec2Label + "primary_ipv6_addresses"
 	ec2LabelPrimarySubnetID      = ec2Label + "primary_subnet_id"
 	ec2LabelPrivateDNS           = ec2Label + "private_dns_name"
@@ -149,6 +150,47 @@ type ec2Client interface {
 	DescribeInstances(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
 }
 
+// ec2ClientAdapter holds the EC2 API calls that AWS discovery actually uses as
+// method-value closures over the concrete *ec2.Client.
+//
+// It exists purely to keep the binary small. The Go linker, once reflection
+// (reflect.Value.Method/Call plus struct-field traversal, both reachable via
+// the YAML/config machinery) is live, conservatively retains every exported
+// method of any concrete type that is reachable through an interface — and a
+// type stored as a field of an interface-boxed struct counts. *ec2.Client has
+// ~470 operation methods; retaining all of them pulls in ~1,500 serializers and
+// roughly 21 MB. By capturing only the needed methods as func values, the
+// concrete *ec2.Client is hidden inside closure contexts (which reflection
+// cannot traverse) and never appears as a field of a boxed type, so dead-code
+// elimination drops the unused operations.
+type ec2ClientAdapter struct {
+	describeAvailabilityZones func(ctx context.Context, params *ec2.DescribeAvailabilityZonesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error)
+	describeInstances         func(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+	describeNetworkInterfaces func(ctx context.Context, params *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error)
+}
+
+// newEC2ClientAdapter wraps a concrete *ec2.Client, capturing only the API
+// calls AWS discovery needs. See the ec2ClientAdapter doc comment for why.
+func newEC2ClientAdapter(c *ec2.Client) ec2ClientAdapter {
+	return ec2ClientAdapter{
+		describeAvailabilityZones: c.DescribeAvailabilityZones,
+		describeInstances:         c.DescribeInstances,
+		describeNetworkInterfaces: c.DescribeNetworkInterfaces,
+	}
+}
+
+func (a ec2ClientAdapter) DescribeAvailabilityZones(ctx context.Context, params *ec2.DescribeAvailabilityZonesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error) {
+	return a.describeAvailabilityZones(ctx, params, optFns...)
+}
+
+func (a ec2ClientAdapter) DescribeInstances(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+	return a.describeInstances(ctx, params, optFns...)
+}
+
+func (a ec2ClientAdapter) DescribeNetworkInterfaces(ctx context.Context, params *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error) {
+	return a.describeNetworkInterfaces(ctx, params, optFns...)
+}
+
 // EC2Discovery periodically performs EC2-SD requests. It implements
 // the Discoverer interface.
 type EC2Discovery struct {
@@ -234,12 +276,12 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (ec2Client, error) {
 		cfg.Credentials = aws.NewCredentialsCache(assumeProvider)
 	}
 
-	d.ec2 = ec2.NewFromConfig(cfg, func(options *ec2.Options) {
+	d.ec2 = newEC2ClientAdapter(ec2.NewFromConfig(cfg, func(options *ec2.Options) {
 		if d.cfg.Endpoint != "" {
 			options.BaseEndpoint = &d.cfg.Endpoint
 		}
 		options.HTTPClient = httpClient
-	})
+	}))
 
 	return d.ec2, nil
 }
@@ -306,7 +348,9 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 
 		for _, r := range p.Reservations {
 			for _, inst := range r.Instances {
-				if inst.PrivateIpAddress == nil {
+				defaultIPv6Addr, primaryIPv6Addrs, ipv6Addrs := getInstanceIPv6Addresses(&inst)
+
+				if inst.PrivateIpAddress == nil && defaultIPv6Addr == nil {
 					continue
 				}
 
@@ -319,12 +363,20 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					labels[ec2LabelOwnerID] = model.LabelValue(*r.OwnerId)
 				}
 
-				labels[ec2LabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
+				if defaultIPv6Addr != nil {
+					labels[ec2LabelDefaultIPv6Address] = model.LabelValue(*defaultIPv6Addr)
+				}
+
+				if inst.PrivateIpAddress != nil {
+					labels[ec2LabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
+					labels[model.AddressLabel] = model.LabelValue(net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port)))
+				} else {
+					labels[model.AddressLabel] = model.LabelValue(net.JoinHostPort(*defaultIPv6Addr, strconv.Itoa(d.cfg.Port)))
+				}
+
 				if inst.PrivateDnsName != nil {
 					labels[ec2LabelPrivateDNS] = model.LabelValue(*inst.PrivateDnsName)
 				}
-				addr := net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port))
-				labels[model.AddressLabel] = model.LabelValue(addr)
 
 				if inst.Platform != "" {
 					labels[ec2LabelPlatform] = model.LabelValue(inst.Platform)
@@ -334,6 +386,21 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					labels[ec2LabelPublicIP] = model.LabelValue(*inst.PublicIpAddress)
 					labels[ec2LabelPublicDNS] = model.LabelValue(*inst.PublicDnsName)
 				}
+
+				if primaryIPv6Addrs != nil {
+					labels[ec2LabelPrimaryIPv6Addresses] = model.LabelValue(
+						ec2LabelSeparator +
+							strings.Join(primaryIPv6Addrs, ec2LabelSeparator) +
+							ec2LabelSeparator)
+				}
+
+				if ipv6Addrs != nil {
+					labels[ec2LabelIPv6Addresses] = model.LabelValue(
+						ec2LabelSeparator +
+							strings.Join(ipv6Addrs, ec2LabelSeparator) +
+							ec2LabelSeparator)
+				}
+
 				labels[ec2LabelAMI] = model.LabelValue(*inst.ImageId)
 				labels[ec2LabelAZ] = model.LabelValue(*inst.Placement.AvailabilityZone)
 				azID, ok := d.azToAZID[*inst.Placement.AvailabilityZone]
@@ -359,8 +426,6 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					labels[ec2LabelPrimarySubnetID] = model.LabelValue(*inst.SubnetId)
 
 					var subnets []string
-					var ipv6addrs []string
-					var primaryipv6addrs []string
 					subnetsMap := make(map[string]struct{})
 					for _, eni := range inst.NetworkInterfaces {
 						if eni.SubnetId == nil {
@@ -371,36 +436,11 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 							subnetsMap[*eni.SubnetId] = struct{}{}
 							subnets = append(subnets, *eni.SubnetId)
 						}
-
-						for _, ipv6addr := range eni.Ipv6Addresses {
-							ipv6addrs = append(ipv6addrs, *ipv6addr.Ipv6Address)
-							if *ipv6addr.IsPrimaryIpv6 {
-								// we might have to extend the slice with more than one element
-								// that could leave empty strings in the list which is intentional
-								// to keep the position/device index information
-								for int32(len(primaryipv6addrs)) <= *eni.Attachment.DeviceIndex {
-									primaryipv6addrs = append(primaryipv6addrs, "")
-								}
-								primaryipv6addrs[*eni.Attachment.DeviceIndex] = *ipv6addr.Ipv6Address
-							}
-						}
 					}
 					labels[ec2LabelSubnetID] = model.LabelValue(
 						ec2LabelSeparator +
 							strings.Join(subnets, ec2LabelSeparator) +
 							ec2LabelSeparator)
-					if len(ipv6addrs) > 0 {
-						labels[ec2LabelIPv6Addresses] = model.LabelValue(
-							ec2LabelSeparator +
-								strings.Join(ipv6addrs, ec2LabelSeparator) +
-								ec2LabelSeparator)
-					}
-					if len(primaryipv6addrs) > 0 {
-						labels[ec2LabelPrimaryIPv6Addresses] = model.LabelValue(
-							ec2LabelSeparator +
-								strings.Join(primaryipv6addrs, ec2LabelSeparator) +
-								ec2LabelSeparator)
-					}
 				}
 
 				for _, t := range inst.Tags {
@@ -416,4 +456,40 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	}
 
 	return []*targetgroup.Group{tg}, nil
+}
+
+func getInstanceIPv6Addresses(i *ec2Types.Instance) (*string, []string, []string) {
+	var primaryIPv6Addrs []string
+	var ipv6Addrs []string
+
+	if i.VpcId != nil {
+		for _, eni := range i.NetworkInterfaces {
+			if eni.SubnetId == nil {
+				continue
+			}
+
+			for _, ipv6addr := range eni.Ipv6Addresses {
+				ipv6Addrs = append(ipv6Addrs, *ipv6addr.Ipv6Address)
+				if *ipv6addr.IsPrimaryIpv6 {
+					// we might have to extend the slice with more than one element
+					// that could leave empty strings in the list which is intentional
+					// to keep the position/device index information
+					for int32(len(primaryIPv6Addrs)) <= *eni.Attachment.DeviceIndex {
+						primaryIPv6Addrs = append(primaryIPv6Addrs, "")
+					}
+					primaryIPv6Addrs[*eni.Attachment.DeviceIndex] = *ipv6addr.Ipv6Address
+				}
+			}
+		}
+
+		// Find an IPv6 address we can use by default. Pick the first primary one if
+		// there is any available, if not then pick the first non-primary address.
+		for _, ipv6addr := range append(primaryIPv6Addrs, ipv6Addrs...) {
+			if ipv6addr != "" {
+				return &ipv6addr, primaryIPv6Addrs, ipv6Addrs
+			}
+		}
+	}
+
+	return nil, primaryIPv6Addrs, ipv6Addrs
 }

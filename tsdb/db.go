@@ -1684,14 +1684,14 @@ func (db *DB) CompactStaleHead() (err error) {
 
 	// We get the stale series reference first because this list can change during the compaction below.
 	// It is more efficient and easier to provide an index interface for the stale series when we have a static list.
-	staleSeriesRefs, err := db.head.SortedStaleSeriesRefsNoOOOData(context.Background())
+	staleSeriesRefs, err := db.head.staleSeriesRefsNoOOOData(context.Background())
 	if err != nil {
 		return err
 	}
 	meta := &BlockMeta{}
 	meta.Compaction.SetStaleSeries()
 	mint, maxt := db.head.opts.ChunkRange*(db.head.MinTime()/db.head.opts.ChunkRange), db.head.MaxTime()
-	for ; mint < maxt; mint += db.head.chunkRange.Load() {
+	for ; mint <= maxt; mint += db.head.chunkRange.Load() {
 		staleHead := NewStaleHead(db.Head(), mint, mint+db.head.chunkRange.Load()-1, staleSeriesRefs)
 
 		uids, err := db.compactor.Write(db.dir, staleHead, staleHead.MinTime(), staleHead.BlockMaxTime(), meta)
@@ -1712,14 +1712,14 @@ func (db *DB) CompactStaleHead() (err error) {
 		}
 	}
 
-	if err := db.head.truncateStaleSeries(staleSeriesRefs, maxt); err != nil {
+	if err := db.head.truncateStaleSeries(staleSeriesRefs.sortedByRef, maxt); err != nil {
 		return fmt.Errorf("head truncate: %w", err)
 	}
 	db.head.RebuildSymbolTable(db.logger)
 
 	elapsed := time.Since(start)
 	db.metrics.staleSeriesCompactionDuration.Observe(elapsed.Seconds())
-	db.logger.Info("Ending stale series compaction", "num_series", len(staleSeriesRefs), "duration", elapsed)
+	db.logger.Info("Ending stale series compaction", "num_series", len(staleSeriesRefs.sortedByRef), "duration", elapsed)
 	return nil
 }
 

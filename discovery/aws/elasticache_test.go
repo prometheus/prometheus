@@ -36,6 +36,7 @@ type elasticacheDataStore struct {
 }
 
 func TestElasticacheDiscoveryDescribeServerlessCaches(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	for _, tt := range []struct {
@@ -125,6 +126,7 @@ func TestElasticacheDiscoveryDescribeServerlessCaches(t *testing.T) {
 }
 
 func TestElasticacheDiscoveryDescribeCacheClusters(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	for _, tt := range []struct {
@@ -184,6 +186,7 @@ func TestElasticacheDiscoveryDescribeCacheClusters(t *testing.T) {
 }
 
 func TestAddServerlessCacheTargets(t *testing.T) {
+	t.Parallel()
 	testTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	tests := []struct {
@@ -269,6 +272,7 @@ func TestAddServerlessCacheTargets(t *testing.T) {
 }
 
 func TestAddCacheClusterTargets(t *testing.T) {
+	t.Parallel()
 	testTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	tests := []struct {
@@ -532,6 +536,7 @@ func (m *mockElasticacheClient) ListTagsForResource(_ context.Context, input *el
 }
 
 func TestSplitCacheDeploymentOptions(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name                       string
 		caches                     []string
