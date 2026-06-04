@@ -1825,8 +1825,7 @@ func (a *headAppenderBase) commitAndFilterResources(b *appendBatch) int {
 			a.head.metrics.seriesmetadataInserts.WithLabelValues("resource").Inc()
 		}
 		a.head.metrics.seriesmetadataContentChanges.WithLabelValues("resource").Inc()
-		a.head.seriesMeta.TrackResourceAttrNames(newVR)
-		_ = oldVR
+		a.head.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
 		b.resources[n] = b.resources[i]
 		b.resourceSeries[n] = b.resourceSeries[i]
 		n++
