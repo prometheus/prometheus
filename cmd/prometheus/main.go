@@ -75,6 +75,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/storage/semconv"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
@@ -228,6 +229,8 @@ type flagConfig struct {
 	parserOpts parser.Options
 
 	promslogConfig promslog.Config
+
+	enableSemconvVersionedRead bool
 }
 
 // setFeatureListOptions sets the corresponding options from the featureList.
@@ -361,6 +364,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.enableQueryCost = true
 				c.web.EnableQueryCost = true
 				logger.Info("Experimental query cost guardrails enabled.")
+			case "semconv-versioned-read":
+				c.enableSemconvVersionedRead = true
+				logger.Info("Experimental OTel semconv versioned read enabled")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -658,7 +664,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-per-step-stats, promql-unquoted-utf8-names, query-cost, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-per-step-stats, promql-unquoted-utf8-names, query-cost, search-api, semconv-versioned-read, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -960,6 +966,21 @@ func main() {
 		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
+
+	// AwareStorage wraps the fanout storage so PromQL queries carrying
+	// __semconv_url__ / __schema_url__ matchers see a semconv-aware Querier
+	// and ChunkQuerier. The wrap reaches every downstream consumer of
+	// fanoutStorage: the PromQL engine used by the web API and the rule
+	// manager, the federation endpoint, and the remote-read responder.
+	// In agent mode there are no query consumers; skip the wrap so the
+	// engine and caches aren't constructed for no purpose.
+	if cfg.enableSemconvVersionedRead {
+		if agentMode {
+			logger.Warn("semconv-versioned-read has no effect in agent mode; ignoring")
+		} else {
+			fanoutStorage = semconv.AwareStorage(fanoutStorage)
+		}
+	}
 
 	var (
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())

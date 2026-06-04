@@ -347,6 +347,27 @@ A workaround for this restriction is to use the `__name__` label:
 
     {__name__="on"} # Good!
 
+#### Schema-aware metric selection (experimental)
+
+When Prometheus is started with
+`--enable-feature=semconv-versioned-read`, two reserved matchers become
+recognised inside instant vector selectors:
+
+* `__semconv_url__="registry/<version>"` — selects an OpenTelemetry
+  semantic-conventions version. It supplies the metric metadata the other
+  matcher needs and has no effect on its own.
+* `__schema_url__="registry/<file>"` — selects an OpenTelemetry schema file
+  declaring per-version renames and triggers a fan-out across
+  schema-version boundaries, matching the metric's historical names and
+  rendering the merged results under the queried version's name.
+
+`__schema_url__` requires `__semconv_url__`. All values are resolved
+exclusively against an embedded registry shipped with the binary; arbitrary
+HTTP or filesystem paths are rejected. See
+[Semconv Versioned Read](../feature_flags.md#semconv-versioned-read) for
+the supported registry layout, examples, and the limitations of the
+fan-out.
+
 ### Metric and label names
 
 Metric and label names containing characters outside the traditional ASCII name
