@@ -1774,7 +1774,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
 					{
-						DiscoveredLabels:   labels.FromStrings("__param_target", "example.com", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
+						DiscoveredLabels:   labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__param_target", "example.com", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
 						Labels:             labels.FromStrings("job", "blackbox"),
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
@@ -1787,7 +1787,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						ScrapeTimeout:      "10s",
 					},
 					{
-						DiscoveredLabels:   labels.FromStrings("__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
+						DiscoveredLabels:   labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
 						Labels:             labels.FromStrings("job", "test"),
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
@@ -1804,6 +1804,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					{
 						DiscoveredLabels: labels.FromStrings(
 							"__address__", "http://dropped.example.com:9115",
+							"__convert_classic_histograms_to_nhcb__", "false",
 							"__metrics_path__", "/probe",
 							"__scheme__", "http",
 							"job", "blackbox",
@@ -1824,7 +1825,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
 					{
-						DiscoveredLabels:   labels.FromStrings("__param_target", "example.com", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
+						DiscoveredLabels:   labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__param_target", "example.com", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
 						Labels:             labels.FromStrings("job", "blackbox"),
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
@@ -1837,7 +1838,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						ScrapeTimeout:      "10s",
 					},
 					{
-						DiscoveredLabels:   labels.FromStrings("__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
+						DiscoveredLabels:   labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
 						Labels:             labels.FromStrings("job", "test"),
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
@@ -1854,6 +1855,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					{
 						DiscoveredLabels: labels.FromStrings(
 							"__address__", "http://dropped.example.com:9115",
+							"__convert_classic_histograms_to_nhcb__", "false",
 							"__metrics_path__", "/probe",
 							"__scheme__", "http",
 							"job", "blackbox",
@@ -1874,7 +1876,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
 					{
-						DiscoveredLabels:   labels.FromStrings("__param_target", "example.com", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
+						DiscoveredLabels:   labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__param_target", "example.com", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
 						Labels:             labels.FromStrings("job", "blackbox"),
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
@@ -1887,7 +1889,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						ScrapeTimeout:      "10s",
 					},
 					{
-						DiscoveredLabels:   labels.FromStrings("__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
+						DiscoveredLabels:   labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
 						Labels:             labels.FromStrings("job", "test"),
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
@@ -1914,6 +1916,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					{
 						DiscoveredLabels: labels.FromStrings(
 							"__address__", "http://dropped.example.com:9115",
+							"__convert_classic_histograms_to_nhcb__", "false",
 							"__metrics_path__", "/probe",
 							"__scheme__", "http",
 							"job", "blackbox",

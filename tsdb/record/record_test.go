@@ -1323,3 +1323,64 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkDecodeHistogramSamples measures per-sample allocation cost for
+// histogram WAL decoding — both V1 and V2 paths. This exercises the hot
+// path identified in finding B/C of the allocation analysis: one
+// *histogram.Histogram allocation per sample (unavoidable with current
+// design) plus one escaped *RefHistogramSample per V2 iteration (fixable).
+func BenchmarkDecodeHistogramSamples(b *testing.B) {
+	const numSamples = 1000
+
+	makeHistogram := func(buckets int) *histogram.Histogram {
+		spans := make([]histogram.Span, buckets)
+		for i := range spans {
+			spans[i] = histogram.Span{Offset: int32(i), Length: 1}
+		}
+		bkts := make([]int64, buckets)
+		for i := range bkts {
+			bkts[i] = int64(i + 1)
+		}
+		return &histogram.Histogram{
+			Schema:          1,
+			Count:           uint64(buckets * 10),
+			Sum:             float64(buckets),
+			PositiveSpans:   spans,
+			PositiveBuckets: bkts,
+		}
+	}
+
+	for _, buckets := range []int{0, 4, 16} {
+		for _, version := range []string{"v1", "v2"} {
+			b.Run(fmt.Sprintf("buckets=%d/%s", buckets, version), func(b *testing.B) {
+				samples := make([]RefHistogramSample, numSamples)
+				for i := range samples {
+					samples[i] = RefHistogramSample{
+						Ref: chunks.HeadSeriesRef(i),
+						T:   int64(i) * 1000,
+						H:   makeHistogram(buckets),
+					}
+				}
+
+				var raw []byte
+				if version == "v1" {
+					enc := Encoder{}
+					raw, _ = enc.HistogramSamples(samples, raw)
+				} else {
+					enc := Encoder{EnableSTStorage: true}
+					raw, _ = enc.HistogramSamples(samples, raw)
+				}
+
+				dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+				buf := make([]RefHistogramSample, 0, numSamples)
+
+				b.ResetTimer()
+				b.ReportAllocs()
+				for b.Loop() {
+					buf, _ = dec.HistogramSamples(raw, buf[:0])
+				}
+				_ = buf
+			})
+		}
+	}
+}

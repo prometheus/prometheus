@@ -205,6 +205,16 @@ func BenchmarkLoadWLs(b *testing.B) {
 		// The first oooSamplesPct*samplesPerSeries samples in an OOO series are written as OOO samples.
 		oooSamplesPct float64
 		oooCapMax     int64
+		// histogramSeriesPct is the fraction of series that emit native
+		// histogram samples instead of float samples. 0 means all float
+		// (the default for existing cases), 1 means all histograms.
+		// Histogram series use the last histogramSeriesPct*seriesPerBatch
+		// refs in each batch so existing float-only shapes are unaffected.
+		histogramSeriesPct float64
+		// bucketsPerHistogram is the number of positive buckets written
+		// per native histogram sample. Each bucket adds one span entry
+		// and one bucket delta to the encoded histogram.
+		bucketsPerHistogram int
 	}{
 		{ // Less series and more samples. 2 hour WAL with 1 second scrape interval.
 			batches:          10,
@@ -252,6 +262,27 @@ func BenchmarkLoadWLs(b *testing.B) {
 			oooSamplesPct:    0.3,
 			oooCapMax:        DefaultOutOfOrderCapMax,
 		},
+		{ // All-histogram WAL, matching the "In between" float shape.
+			// Exercises the native-histogram decode hot path (DecodeHistogram
+			// + histogramSamplesV1/V2) which is shared by WAL replay,
+			// WAL watcher (remote write), and checkpoint creation.
+			// bucketsPerHistogram=8 is representative of a moderately
+			// complex exponential histogram seen in practice.
+			batches:             10,
+			seriesPerBatch:      1000,
+			samplesPerSeries:    480,
+			histogramSeriesPct:  1.0,
+			bucketsPerHistogram: 8,
+		},
+		{ // Mixed WAL: 50% float series, 50% native histogram series.
+			// Models a deployment that is partway through migrating metrics
+			// to native histograms.
+			batches:             10,
+			seriesPerBatch:      1000,
+			samplesPerSeries:    480,
+			histogramSeriesPct:  0.5,
+			bucketsPerHistogram: 8,
+		},
 	}
 
 	labelsPerSeries := 5
@@ -270,7 +301,11 @@ func BenchmarkLoadWLs(b *testing.B) {
 						continue
 					}
 					lastExemplarsPerSeries = exemplarsPerSeries
-					b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d,mmappedChunkT=%d,oooSeriesPct=%.3f,oooSamplesPct=%.3f,oooCapMax=%d,missingSeriesPct=%.3f,stStorage=%v", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries, c.mmappedChunkT, c.oooSeriesPct, c.oooSamplesPct, c.oooCapMax, missingSeriesPct, enableSTStorage),
+					name := fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d,mmappedChunkT=%d,oooSeriesPct=%.3f,oooSamplesPct=%.3f,oooCapMax=%d,missingSeriesPct=%.3f,stStorage=%v", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries, c.mmappedChunkT, c.oooSeriesPct, c.oooSamplesPct, c.oooCapMax, missingSeriesPct, enableSTStorage)
+					if c.histogramSeriesPct > 0 {
+						name += fmt.Sprintf(",histogramSeriesPct=%.3f,bucketsPerHistogram=%d", c.histogramSeriesPct, c.bucketsPerHistogram)
+					}
+					b.Run(name,
 						func(b *testing.B) {
 							dir := b.TempDir()
 
@@ -312,30 +347,77 @@ func BenchmarkLoadWLs(b *testing.B) {
 								buf = populateTestWL(b, wal, []any{writeSeries}, buf, enableSTStorage)
 							}
 
-							// Write samples.
-							refSamples := make([]record.RefSample, 0, c.seriesPerBatch)
+							// Write samples. Series are split into float and
+							// histogram series: the last histogramSeriesPerBatch
+							// refs in each batch emit RefHistogramSample records;
+							// the rest emit RefSample records. This mirrors how
+							// real Prometheus deployments work — a given series is
+							// committed to one type.
+							histogramSeriesPerBatch := int(float64(c.seriesPerBatch) * c.histogramSeriesPct)
+							floatSeriesPerBatch := c.seriesPerBatch - histogramSeriesPerBatch
+
+							refSamples := make([]record.RefSample, 0, floatSeriesPerBatch)
+							refHistSamples := make([]record.RefHistogramSample, 0, histogramSeriesPerBatch)
 
 							oooSeriesPerBatch := int(float64(c.seriesPerBatch) * c.oooSeriesPct)
 							oooSamplesPerSeries := int(float64(c.samplesPerSeries) * c.oooSamplesPct)
 
+							// Build a reusable histogram template with the configured
+							// bucket count. All histogram series share the same shape;
+							// only the value (Sum/Count) changes per sample.
+							var histTemplate *histogram.Histogram
+							if histogramSeriesPerBatch > 0 {
+								spans := make([]histogram.Span, c.bucketsPerHistogram)
+								for idx := range spans {
+									spans[idx] = histogram.Span{Offset: int32(idx), Length: 1}
+								}
+								buckets := make([]int64, c.bucketsPerHistogram)
+								for idx := range buckets {
+									buckets[idx] = int64(idx + 1)
+								}
+								histTemplate = &histogram.Histogram{
+									Schema:          1,
+									PositiveSpans:   spans,
+									PositiveBuckets: buckets,
+								}
+							}
+
 							for i := 0; i < c.samplesPerSeries; i++ {
 								for j := 0; j < c.batches; j++ {
 									refSamples = refSamples[:0]
+									refHistSamples = refHistSamples[:0]
 
+									// Float series occupy refs [j*seriesPerBatch, j*seriesPerBatch+floatSeriesPerBatch).
 									k := j * c.seriesPerBatch
-									// Skip appending the first oooSamplesPerSeries samples for the series in the batch that
-									// should have OOO samples. OOO samples are appended after all the in-order samples.
 									if i < oooSamplesPerSeries {
 										k += oooSeriesPerBatch
 									}
-									for ; k < (j+1)*c.seriesPerBatch; k++ {
+									floatEnd := j*c.seriesPerBatch + floatSeriesPerBatch
+									for ; k < floatEnd; k++ {
 										refSamples = append(refSamples, record.RefSample{
 											Ref: chunks.HeadSeriesRef(k) * 101,
 											T:   int64(i) * 10,
 											V:   float64(i) * 100,
 										})
 									}
-									buf = populateTestWL(b, wal, []any{refSamples}, buf, enableSTStorage)
+									if len(refSamples) > 0 {
+										buf = populateTestWL(b, wal, []any{refSamples}, buf, enableSTStorage)
+									}
+
+									// Histogram series occupy refs [j*seriesPerBatch+floatSeriesPerBatch, (j+1)*seriesPerBatch).
+									for k = floatEnd; k < (j+1)*c.seriesPerBatch; k++ {
+										h := *histTemplate
+										h.Count = uint64(i + 1)
+										h.Sum = float64(i) * 100
+										refHistSamples = append(refHistSamples, record.RefHistogramSample{
+											Ref: chunks.HeadSeriesRef(k) * 101,
+											T:   int64(i) * 10,
+											H:   &h,
+										})
+									}
+									if len(refHistSamples) > 0 {
+										buf = populateTestWL(b, wal, []any{refHistSamples}, buf, enableSTStorage)
+									}
 								}
 							}
 
@@ -5217,7 +5299,7 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 }
 
 func TestHistogramCounterResetHeader(t *testing.T) {
-	for _, floatHisto := range []bool{true} { // FIXME
+	for _, floatHisto := range []bool{true, false} {
 		t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
 			l := labels.FromStrings("a", "b")
 			head, _ := newTestHead(t, 1000, compression.None, false)
@@ -5268,32 +5350,31 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 			h := tsdbutil.GenerateTestHistograms(1)[0]
 			h.PositiveBuckets = []int64{100, 1, 1, 1}
 			h.NegativeBuckets = []int64{100, 1, 1, 1}
-			h.Count = 1000
+			// Count = positive delta-decoded (100+101+102+103=406) + negative (406) + ZeroCount (2) = 814.
+			h.Count = 814
 
 			// First histogram is UnknownCounterReset.
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.UnknownCounterReset)
 
-			// Another normal histogram.
-			h.Count++
+			// Another normal histogram: increment a bucket and Count consistently.
+			h.PositiveBuckets[len(h.PositiveBuckets)-1]++
+			h.Count++ // Count = 815.
 			appendHistogram(h)
 			checkExpCounterResetHeader()
 
-			// Counter reset via Count.
-			h.Count--
+			// Counter reset: decrement the same bucket and Count.
+			h.PositiveBuckets[len(h.PositiveBuckets)-1]--
+			h.Count-- // Count = 814.
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
-			// Add 2 non-counter reset histogram chunks (each chunk targets 1024 bytes which contains ~500 int histogram
-			// samples or ~1000 float histogram samples).
-			numAppend := 2000
-			if floatHisto {
-				numAppend = 1000
-			}
-			for i := 0; i < numAppend; i++ {
+			// Add 2 non-counter reset histogram chunks.
+			ms, _, err := head.getOrCreate(l.Hash(), l, false)
+			require.NoError(t, err)
+			for ms.headChunkCount.Load() < 3 {
 				appendHistogram(h)
 			}
-
 			checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
 
 			// Changing schema will cut a new chunk with unknown counter reset.
@@ -5309,28 +5390,36 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 			// Counter reset by removing a positive bucket.
 			h.PositiveSpans[1].Length--
 			h.PositiveBuckets = h.PositiveBuckets[1:]
+			// After removal: positive delta-decoded (1+2+3=6) + negative (406) + ZeroCount (2) = 414.
+			h.Count = 414
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Counter reset by removing a negative bucket.
 			h.NegativeSpans[1].Length--
 			h.NegativeBuckets = h.NegativeBuckets[1:]
+			// After removal: positive (6) + negative delta-decoded (1+2+3=6) + ZeroCount (2) = 14.
+			h.Count = 14
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Add 2 non-counter reset histogram chunks. Just to have some non-counter reset chunks in between.
-			for range 2000 {
+			for ms.headChunkCount.Load() < 3 {
 				appendHistogram(h)
 			}
 			checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
 
 			// Counter reset with counter reset in a positive bucket.
 			h.PositiveBuckets[len(h.PositiveBuckets)-1]--
+			// After: positive delta-decoded (1+2+2=5) + negative (6) + ZeroCount (2) = 13.
+			h.Count = 13
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Counter reset with counter reset in a negative bucket.
 			h.NegativeBuckets[len(h.NegativeBuckets)-1]--
+			// After: positive (5) + negative delta-decoded (1+2+2=5) + ZeroCount (2) = 12.
+			h.Count = 12
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 		})
@@ -5624,6 +5713,58 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 
 	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	require.Equal(t, map[string][]chunks.Sample{lbls.String(): expResult}, series)
+}
+
+// TestAppendHistogramErrorDoesNotSetPendingCommit verifies that when
+// AppendHistogram fails with a sample-validation error (e.g. out-of-order),
+// the existing memSeries's pendingCommit flag is not left set to true.
+// A stuck pendingCommit flag keeps the series alive across head GC even
+// though no samples are pending for it.
+func TestAppendHistogramErrorDoesNotSetPendingCommit(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		h    *histogram.Histogram
+		fh   *histogram.FloatHistogram
+	}{
+		{name: "integer", h: tsdbutil.GenerateTestHistogram(0)},
+		{name: "float", fh: tsdbutil.GenerateTestFloatHistogram(0)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			head, _ := newTestHead(t, 1000, compression.None, false)
+			require.NoError(t, head.Init(0))
+
+			lbls := labels.FromStrings("a", "b")
+
+			// Seed an in-order sample so the series exists with maxTime=200.
+			app := head.Appender(context.Background())
+			_, err := app.AppendHistogram(0, lbls, 200, tc.h, tc.fh)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			ms, _, err := head.getOrCreate(lbls.Hash(), lbls, false)
+			require.NoError(t, err)
+			require.NotNil(t, ms)
+			ms.Lock()
+			pc := ms.pendingCommit
+			ms.Unlock()
+			require.False(t, pc, "pendingCommit should be cleared after a successful commit")
+
+			// Attempt an out-of-order append: same series, earlier timestamp,
+			// OOO time window disabled. appendableHistogram returns
+			// ErrOutOfOrderSample, so the sample is never recorded in the
+			// appender's batch and Commit/Rollback never clears pendingCommit
+			// for this series.
+			app = head.Appender(context.Background())
+			_, err = app.AppendHistogram(0, lbls, 100, tc.h, tc.fh)
+			require.ErrorIs(t, err, storage.ErrOutOfOrderSample)
+			require.NoError(t, app.Rollback())
+
+			ms.Lock()
+			pc = ms.pendingCommit
+			ms.Unlock()
+			require.False(t, pc, "pendingCommit should remain false after a failed AppendHistogram")
+		})
+	}
 }
 
 // Tests https://github.com/prometheus/prometheus/issues/9725.

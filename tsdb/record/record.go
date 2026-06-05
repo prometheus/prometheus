@@ -593,22 +593,21 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 	firstRef := chunks.HeadSeriesRef(dec.Varint64())
 	firstT := dec.Varint64()
 	firstST := dec.Varint64()
-	var prev *RefHistogramSample
+	var (
+		prevRef chunks.HeadSeriesRef
+		prevST  int64
+	)
+	hasPrev := false
 
 	for len(dec.B) > 0 && dec.Err() == nil {
 		var ref, t, st int64
-		if prev == nil {
-			prev = &RefHistogramSample{
-				Ref: firstRef,
-				ST:  firstST,
-			}
-			ref = int64(firstRef)
-			t = firstT
-			st = firstST
+		if !hasPrev {
+			ref, t, st = int64(firstRef), firstT, firstST
+			hasPrev = true
 		} else {
-			ref = int64(prev.Ref) + dec.Varint64()
+			ref = int64(prevRef) + dec.Varint64()
 			t = firstT + dec.Varint64()
-			st = readSTMarker(dec, prev.ST, firstST)
+			st = readSTMarker(dec, prevST, firstST)
 		}
 
 		rh := RefHistogramSample{
@@ -617,7 +616,7 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 			T:   t,
 			H:   &histogram.Histogram{},
 		}
-		prev = &rh
+		prevRef, prevST = rh.Ref, rh.ST
 		DecodeHistogram(dec, rh.H)
 
 		if !histogram.IsKnownSchema(rh.H.Schema) {
@@ -768,22 +767,19 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 	firstRef := chunks.HeadSeriesRef(dec.Varint64())
 	firstT := dec.Varint64()
 	firstST := dec.Varint64()
-	var prev *RefFloatHistogramSample
+	var prevRef chunks.HeadSeriesRef
+	var prevST int64
+	hasPrev := false
 
 	for len(dec.B) > 0 && dec.Err() == nil {
 		var ref, t, st int64
-		if prev == nil {
-			prev = &RefFloatHistogramSample{
-				Ref: firstRef,
-				ST:  firstST,
-			}
-			ref = int64(firstRef)
-			t = firstT
-			st = firstST
+		if !hasPrev {
+			ref, t, st = int64(firstRef), firstT, firstST
+			hasPrev = true
 		} else {
-			ref = int64(prev.Ref) + dec.Varint64()
+			ref = int64(prevRef) + dec.Varint64()
 			t = firstT + dec.Varint64()
-			st = readSTMarker(dec, prev.ST, firstST)
+			st = readSTMarker(dec, prevST, firstST)
 		}
 
 		rfh := RefFloatHistogramSample{
@@ -792,7 +788,7 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 			T:   t,
 			FH:  &histogram.FloatHistogram{},
 		}
-		prev = &rfh
+		prevRef, prevST = rfh.Ref, rfh.ST
 		DecodeFloatHistogram(dec, rfh.FH)
 
 		if !histogram.IsKnownSchema(rfh.FH.Schema) {

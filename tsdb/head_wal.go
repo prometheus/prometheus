@@ -1852,7 +1852,7 @@ Outer:
 // Name of the file used to store the state.
 const seriesStateFilename = "series_state.json"
 
-// SeriesLifecycleState descibes the information we record in the series_state.json file.
+// SeriesLifecycleState describes the information we record in the series_state.json file.
 type SeriesLifecycleState struct {
 	LastSeriesID   uint64 `json:"last_series_id"`
 	LastWALSegment int    `json:"last_wal_segment"`

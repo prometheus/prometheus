@@ -738,10 +738,10 @@ func createMockAzureClient(t *testing.T, vmResp []armcompute.VirtualMachinesClie
 
 	return &mockAzureClient{
 		azureClient: azureClient{
-			vm:     vmClient,
-			vmss:   vmssClient,
-			vmssvm: vmssvmClient,
-			nic:    interfacesClient,
+			vm:     newVirtualMachinesClientAdapter(vmClient),
+			vmss:   newVirtualMachineScaleSetsClientAdapter(vmssClient),
+			vmssvm: newVirtualMachineScaleSetVMsClientAdapter(vmssvmClient),
+			nic:    newInterfacesClientAdapter(interfacesClient),
 			logger: logger,
 		},
 	}
