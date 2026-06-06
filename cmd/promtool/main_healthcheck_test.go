@@ -1,3 +1,16 @@
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package main
 
 import (
@@ -12,7 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestCheckServerStatusWithBasicAuth verifies health check works with basic auth
+// TestCheckServerStatusWithBasicAuth verifies health check works with basic auth.
 func TestCheckServerStatusWithBasicAuth(t *testing.T) {
 	// Create a test HTTP server that requires basic auth
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +45,7 @@ func TestCheckServerStatusWithBasicAuth(t *testing.T) {
   password: secret
 `
 	configFile := filepath.Join(t.TempDir(), "http-config.yml")
-	require.NoError(t, os.WriteFile(configFile, []byte(configContent), 0644))
+	require.NoError(t, os.WriteFile(configFile, []byte(configContent), 0o644))
 
 	// Load HTTP config
 	httpConfig, _, err := promconfig.LoadHTTPConfigFile(configFile)
@@ -51,7 +64,7 @@ func TestCheckServerStatusWithBasicAuth(t *testing.T) {
 	require.NoError(t, err, "health check should succeed with correct basic auth")
 }
 
-// TestCheckServerStatusWithoutAuth verifies health check fails without auth
+// TestCheckServerStatusWithoutAuth verifies health check fails without auth.
 func TestCheckServerStatusWithoutAuth(t *testing.T) {
 	// Create a test HTTP server that requires basic auth
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
