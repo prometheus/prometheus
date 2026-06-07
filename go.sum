@@ -186,8 +186,8 @@ github.com/go-openapi/loads v0.23.3 h1:g5Xap1JfwKkUnZdn+S0L3SzBDpcTIYzZ5Qaag0YDk
 github.com/go-openapi/loads v0.23.3/go.mod h1:NOH07zLajXo8y55hom0omlHWDVVvCwBM/S+csCK8LqA=
 github.com/go-openapi/spec v0.22.4 h1:4pxGjipMKu0FzFiu/DPwN3CTBRlVM2yLf/YTWorYfDQ=
 github.com/go-openapi/spec v0.22.4/go.mod h1:WQ6Ai0VPWMZgMT4XySjlRIE6GP1bGQOtEThn3gcWLtQ=
-github.com/go-openapi/strfmt v0.26.2 h1:ysjheCh4i1rmFEo2LanhELDNucNzfWTZhUDKgWWPaFM=
-github.com/go-openapi/strfmt v0.26.2/go.mod h1:fXh1e449cyUn2NYuz+wb3wARBUdMl7qPEZwX00nqivY=
+github.com/go-openapi/strfmt v0.26.3 h1:rzmslHarJgBbf2qfGge+X3htclQfmXqBZMm0Too0HhU=
+github.com/go-openapi/strfmt v0.26.3/go.mod h1:a5nsUw0oRpQzZeOwx8bi6cKbzFZslpbCKt1LEot+KnQ=
 github.com/go-openapi/swag v0.25.5 h1:pNkwbUEeGwMtcgxDr+2GBPAk4kT+kJ+AaB+TMKAg+TU=
 github.com/go-openapi/swag v0.25.5/go.mod h1:B3RT6l8q7X803JRxa2e59tHOiZlX1t8viplOcs9CwTA=
 github.com/go-openapi/swag/cmdutils v0.25.5 h1:yh5hHrpgsw4NwM9KAEtaDTXILYzdXh/I8Whhx9hKj7c=
@@ -216,8 +216,8 @@ github.com/go-openapi/swag/yamlutils v0.25.5 h1:kASCIS+oIeoc55j28T4o8KwlV2S4ZLPT
 github.com/go-openapi/swag/yamlutils v0.25.5/go.mod h1:Gek1/SjjfbYvM+Iq4QGwa/2lEXde9n2j4a3wI3pNuOQ=
 github.com/go-openapi/testify/enable/yaml/v2 v2.4.1 h1:NZOrZmIb6PTv5LTFxr5/mKV/FjbUzGE7E6gLz7vFoOQ=
 github.com/go-openapi/testify/enable/yaml/v2 v2.4.1/go.mod h1:r7dwsujEHawapMsxA69i+XMGZrQ5tRauhLAjV/sxg3Q=
-github.com/go-openapi/testify/v2 v2.4.2 h1:tiByHpvE9uHrrKjOszax7ZvKB7QOgizBWGBLuq0ePx4=
-github.com/go-openapi/testify/v2 v2.4.2/go.mod h1:SgsVHtfooshd0tublTtJ50FPKhujf47YRqauXXOUxfw=
+github.com/go-openapi/testify/v2 v2.5.1 h1:TMdhCaw8fUNraVSf3Omoob1dO/AzBfhtFAPW0an6sBo=
+github.com/go-openapi/testify/v2 v2.5.1/go.mod h1:SgsVHtfooshd0tublTtJ50FPKhujf47YRqauXXOUxfw=
 github.com/go-openapi/validate v0.25.2 h1:12NsfLAwGegqbGWr2CnvT65X/Q2USJipmJ9b7xDJZz0=
 github.com/go-openapi/validate v0.25.2/go.mod h1:Pgl1LpPPGFnZ+ys4/hTlDiRYQdI1ocKypgE+8Q8BLfY=
 github.com/go-resty/resty/v2 v2.17.2 h1:FQW5oHYcIlkCNrMD2lloGScxcHJ0gkjshV3qcQAyHQk=
