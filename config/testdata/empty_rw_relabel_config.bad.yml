@@ -1,0 +1,4 @@
+remote_write:
+  - url: "foo"
+    write_relabel_configs:
+      -

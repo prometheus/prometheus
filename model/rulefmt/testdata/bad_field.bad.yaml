@@ -1,0 +1,9 @@
+groups:
+  - name: yolo
+    rules:
+      - alert: hola
+        expr: 1
+        labels:
+          instance: localhost
+        annotation:
+          summary: annotations is written without s above

@@ -1,0 +1,257 @@
+[
+  {
+    "ID": "3qvd7bwfptmoht16t1f7jllb6",
+    "Version": {
+      "Index": 41
+    },
+    "CreatedAt": "2020-06-19T19:14:29.269637662Z",
+    "UpdatedAt": "2020-06-19T19:14:29.288101671Z",
+    "Spec": {
+      "Name": "mon_node-exporter",
+      "Labels": {
+        "com.docker.stack.image": "stefanprodan/swarmprom-node-exporter:v0.16.0",
+        "com.docker.stack.namespace": "mon"
+      },
+      "TaskTemplate": {
+        "ContainerSpec": {
+          "Image": "stefanprodan/swarmprom-node-exporter:v0.16.0@sha256:1d2518ec0501dd848e718bf008df37852b1448c862d6f256f2d39244975758d6",
+          "Labels": {
+            "com.docker.stack.namespace": "mon"
+          },
+          "Args": [
+            "--path.sysfs=/host/sys",
+            "--path.procfs=/host/proc",
+            "--collector.textfile.directory=/etc/node-exporter/",
+            "--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($|/)",
+            "--no-collector.ipvs"
+          ],
+          "Env": [
+            "NODE_ID={{.Node.ID}}"
+          ],
+          "Privileges": {
+            "CredentialSpec": null,
+            "SELinuxContext": null
+          },
+          "Mounts": [
+            {
+              "Type": "bind",
+              "Source": "/proc",
+              "Target": "/host/proc",
+              "ReadOnly": true
+            },
+            {
+              "Type": "bind",
+              "Source": "/sys",
+              "Target": "/host/sys",
+              "ReadOnly": true
+            },
+            {
+              "Type": "bind",
+              "Source": "/",
+              "Target": "/rootfs",
+              "ReadOnly": true
+            },
+            {
+              "Type": "bind",
+              "Source": "/etc/hostname",
+              "Target": "/etc/nodename"
+            }
+          ],
+          "Isolation": "default"
+        },
+        "Resources": {
+          "Limits": {
+            "MemoryBytes": 134217728
+          },
+          "Reservations": {
+            "MemoryBytes": 67108864
+          }
+        },
+        "Placement": {
+          "Platforms": [
+            {
+              "Architecture": "amd64",
+              "OS": "linux"
+            }
+          ]
+        },
+        "Networks": [
+          {
+            "Target": "npq2closzy836m07eaq1425k3",
+            "Aliases": [
+              "node-exporter"
+            ]
+          }
+        ],
+        "ForceUpdate": 0,
+        "Runtime": "container"
+      },
+      "Mode": {
+        "Global": {}
+      },
+      "EndpointSpec": {
+        "Mode": "vip",
+        "Ports": [
+          {
+            "Protocol": "tcp",
+            "TargetPort": 9100,
+            "PublishedPort": 9100,
+            "PublishMode": "ingress"
+          }
+        ]
+      }
+    },
+    "Endpoint": {
+      "Spec": {
+        "Mode": "vip",
+        "Ports": [
+          {
+            "Protocol": "tcp",
+            "TargetPort": 9100,
+            "PublishedPort": 9100,
+            "PublishMode": "ingress"
+          }
+        ]
+      },
+      "Ports": [
+        {
+          "Protocol": "tcp",
+          "TargetPort": 9100,
+          "PublishedPort": 9100,
+          "PublishMode": "ingress"
+        }
+      ],
+      "VirtualIPs": [
+        {
+          "NetworkID": "qvwhwd6p61k4o0ulsknqb066z",
+          "Addr": "10.0.0.7/24"
+        },
+        {
+          "NetworkID": "npq2closzy836m07eaq1425k3",
+          "Addr": "10.0.1.2/24"
+        }
+      ]
+    }
+  },
+  {
+    "ID": "uk9su5tb9ykfzew3qtmp14uzh",
+    "Version": {
+      "Index": 92
+    },
+    "CreatedAt": "2020-06-19T19:14:54.28743674Z",
+    "UpdatedAt": "2020-06-19T19:14:54.301718496Z",
+    "Spec": {
+      "Name": "mon_grafana",
+      "Labels": {
+        "com.docker.stack.image": "stefanprodan/swarmprom-grafana:5.3.4",
+        "com.docker.stack.namespace": "mon"
+      },
+      "TaskTemplate": {
+        "ContainerSpec": {
+          "Image": "stefanprodan/swarmprom-grafana:5.3.4@sha256:2aca8aa5716e6e0eed3fcdc88fec256a0a1828c491a8cf240486ae7cc473092d",
+          "Labels": {
+            "com.docker.stack.namespace": "mon"
+          },
+          "Env": [
+            "GF_SECURITY_ADMIN_PASSWORD=admin",
+            "GF_SECURITY_ADMIN_USER=admin",
+            "GF_USERS_ALLOW_SIGN_UP=false"
+          ],
+          "Privileges": {
+            "CredentialSpec": null,
+            "SELinuxContext": null
+          },
+          "Mounts": [
+            {
+              "Type": "volume",
+              "Source": "mon_grafana",
+              "Target": "/var/lib/grafana",
+              "VolumeOptions": {
+                "Labels": {
+                  "com.docker.stack.namespace": "mon"
+                }
+              }
+            }
+          ],
+          "Isolation": "default"
+        },
+        "Resources": {
+          "Limits": {
+            "MemoryBytes": 134217728
+          },
+          "Reservations": {
+            "MemoryBytes": 67108864
+          }
+        },
+        "Placement": {
+          "Constraints": [
+            "node.role == manager"
+          ],
+          "Platforms": [
+            {
+              "Architecture": "amd64",
+              "OS": "linux"
+            }
+          ]
+        },
+        "Networks": [
+          {
+            "Target": "npq2closzy836m07eaq1425k3",
+            "Aliases": [
+              "grafana"
+            ]
+          }
+        ],
+        "ForceUpdate": 0,
+        "Runtime": "container"
+      },
+      "Mode": {
+        "Replicated": {
+          "Replicas": 1
+        }
+      },
+      "EndpointSpec": {
+        "Mode": "vip",
+        "Ports": [
+          {
+            "Protocol": "tcp",
+            "TargetPort": 3000,
+            "PublishedPort": 3000,
+            "PublishMode": "ingress"
+          }
+        ]
+      }
+    },
+    "Endpoint": {
+      "Spec": {
+        "Mode": "vip",
+        "Ports": [
+          {
+            "Protocol": "tcp",
+            "TargetPort": 3000,
+            "PublishedPort": 3000,
+            "PublishMode": "ingress"
+          }
+        ]
+      },
+      "Ports": [
+        {
+          "Protocol": "tcp",
+          "TargetPort": 3000,
+          "PublishedPort": 3000,
+          "PublishMode": "ingress"
+        }
+      ],
+      "VirtualIPs": [
+        {
+          "NetworkID": "qvwhwd6p61k4o0ulsknqb066z",
+          "Addr": "10.0.0.15/24"
+        },
+        {
+          "NetworkID": "npq2closzy836m07eaq1425k3",
+          "Addr": "10.0.1.29/24"
+        }
+      ]
+    }
+  }
+]

@@ -1,0 +1,5 @@
+scrape_configs:
+  - job_name: "some job"
+    tls_config:
+      cert_file: nonexistent_cert_file.yml
+      key_file: nonexistent_key_file.yml

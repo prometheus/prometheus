@@ -1,0 +1,4 @@
+scrape_configs:
+  - azure_sd_configs:
+      - authentication_method: invalid
+        subscription_id: 11AAAA11-A11A-111A-A111-1111A1111A11

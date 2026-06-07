@@ -1,0 +1,12 @@
+scrape_configs:
+  - job_name: prometheus
+
+    kubernetes_sd_configs:
+      - role: pod
+        api_server: "https://localhost:1234"
+
+        authorization:
+          credentials: 1234
+        basic_auth:
+          username: user
+          password: password

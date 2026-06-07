@@ -1,0 +1,615 @@
+{
+  "id": "8feda53f-15f0-447f-badf-ebe32dad2fc0/servers",
+  "type": "collection",
+  "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers",
+  "items": [
+    {
+      "id": "d6bf44ee-f7e8-4e19-8716-96fdd18cc697",
+      "type": "server",
+      "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/d6bf44ee-f7e8-4e19-8716-96fdd18cc697",
+      "metadata": {
+        "etag": "3bd2cf1f190fdba8502ba8c0cc79433e",
+        "createdDate": "2019-09-02T11:51:53Z",
+        "createdBy": "System",
+        "createdByUserId": "[UNKNOWN]",
+        "lastModifiedDate": "2019-09-02T11:51:53Z",
+        "lastModifiedBy": "System",
+        "lastModifiedByUserId": "[UNKNOWN]",
+        "state": "AVAILABLE"
+      },
+      "properties": {
+        "name": "prometheus-3",
+        "cores": 2,
+        "ram": 4096,
+        "availabilityZone": "AUTO",
+        "vmState": "RUNNING",
+        "bootCdrom": {
+          "id": "0e4d57f9-cd78-11e9-b88c-525400f64d8d",
+          "type": "image",
+          "href": "https://api.ionos.com/cloudapi/v6/images/0e4d57f9-cd78-11e9-b88c-525400f64d8d",
+          "metadata": {
+            "etag": "ca643281fd2a5b68002bc00ac0ecd920",
+            "createdDate": "2019-09-02T11:51:53Z",
+            "createdBy": "System",
+            "createdByUserId": "[UNKNOWN]",
+            "lastModifiedDate": "2019-09-02T11:51:53Z",
+            "lastModifiedBy": "System",
+            "lastModifiedByUserId": "[UNKNOWN]",
+            "state": "AVAILABLE"
+          },
+          "properties": {
+            "name": "debian-10.0.0-amd64-netinst.iso",
+            "description": null,
+            "location": "de/txl",
+            "size": 0.33,
+            "cpuHotPlug": true,
+            "cpuHotUnplug": false,
+            "ramHotPlug": true,
+            "ramHotUnplug": false,
+            "nicHotPlug": true,
+            "nicHotUnplug": true,
+            "discVirtioHotPlug": true,
+            "discVirtioHotUnplug": true,
+            "discScsiHotPlug": false,
+            "discScsiHotUnplug": false,
+            "licenceType": "LINUX",
+            "imageType": "CDROM",
+            "imageAliases": [
+              "debian:latest_iso",
+              "debian:10_iso"
+            ],
+            "cloudInit": "NONE",
+            "public": true
+          }
+        },
+        "bootVolume": null,
+        "cpuFamily": "INTEL_SKYLAKE",
+        "type": "ENTERPRISE"
+      },
+      "entities": {
+        "cdroms": {
+          "id": "d6bf44ee-f7e8-4e19-8716-96fdd18cc697/cdroms",
+          "type": "collection",
+          "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/d6bf44ee-f7e8-4e19-8716-96fdd18cc697/cdroms",
+          "items": [
+            {
+              "id": "0e4d57f9-cd78-11e9-b88c-525400f64d8d",
+              "type": "image",
+              "href": "https://api.ionos.com/cloudapi/v6/images/0e4d57f9-cd78-11e9-b88c-525400f64d8d",
+              "metadata": {
+                "etag": "ca643281fd2a5b68002bc00ac0ecd920",
+                "createdDate": "2019-09-02T11:51:53Z",
+                "createdBy": "System",
+                "createdByUserId": "[UNKNOWN]",
+                "lastModifiedDate": "2019-09-02T11:51:53Z",
+                "lastModifiedBy": "System",
+                "lastModifiedByUserId": "[UNKNOWN]",
+                "state": "AVAILABLE"
+              },
+              "properties": {
+                "name": "debian-10.0.0-amd64-netinst.iso",
+                "description": null,
+                "location": "de/txl",
+                "size": 0.33,
+                "cpuHotPlug": true,
+                "cpuHotUnplug": false,
+                "ramHotPlug": true,
+                "ramHotUnplug": false,
+                "nicHotPlug": true,
+                "nicHotUnplug": true,
+                "discVirtioHotPlug": true,
+                "discVirtioHotUnplug": true,
+                "discScsiHotPlug": false,
+                "discScsiHotUnplug": false,
+                "licenceType": "LINUX",
+                "imageType": "CDROM",
+                "imageAliases": [
+                  "debian:10_iso",
+                  "debian:latest_iso"
+                ],
+                "cloudInit": "NONE",
+                "public": true
+              }
+            }
+          ]
+        },
+        "volumes": {
+          "id": "d6bf44ee-f7e8-4e19-8716-96fdd18cc697/volumes",
+          "type": "collection",
+          "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/d6bf44ee-f7e8-4e19-8716-96fdd18cc697/volumes",
+          "items": []
+        },
+        "nics": {
+          "id": "d6bf44ee-f7e8-4e19-8716-96fdd18cc697/nics",
+          "type": "collection",
+          "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/d6bf44ee-f7e8-4e19-8716-96fdd18cc697/nics",
+          "items": []
+        }
+      }
+    },
+    {
+      "id": "b501942c-4e08-43e6-8ec1-00e59c64e0e4",
+      "type": "server",
+      "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4",
+      "metadata": {
+        "etag": "fe405a5f2e041d506086ee0c2159b678",
+        "createdDate": "2019-09-02T11:51:53Z",
+        "createdBy": "System",
+        "createdByUserId": "[UNKNOWN]",
+        "lastModifiedDate": "2019-09-02T11:51:53Z",
+        "lastModifiedBy": "System",
+        "lastModifiedByUserId": "[UNKNOWN]",
+        "state": "AVAILABLE"
+      },
+      "properties": {
+        "name": "prometheus-2",
+        "cores": 1,
+        "ram": 1024,
+        "availabilityZone": "ZONE_2",
+        "vmState": "RUNNING",
+        "bootCdrom": {
+          "id": "0e4d57f9-cd78-11e9-b88c-525400f64d8d",
+          "type": "image",
+          "href": "https://api.ionos.com/cloudapi/v6/images/0e4d57f9-cd78-11e9-b88c-525400f64d8d",
+          "metadata": {
+            "etag": "ca643281fd2a5b68002bc00ac0ecd920",
+            "createdDate": "2019-09-02T11:51:53Z",
+            "createdBy": "System",
+            "createdByUserId": "[UNKNOWN]",
+            "lastModifiedDate": "2019-09-02T11:51:53Z",
+            "lastModifiedBy": "System",
+            "lastModifiedByUserId": "[UNKNOWN]",
+            "state": "AVAILABLE"
+          },
+          "properties": {
+            "name": "debian-10.0.0-amd64-netinst.iso",
+            "description": null,
+            "location": "de/txl",
+            "size": 0.33,
+            "cpuHotPlug": true,
+            "cpuHotUnplug": false,
+            "ramHotPlug": true,
+            "ramHotUnplug": false,
+            "nicHotPlug": true,
+            "nicHotUnplug": true,
+            "discVirtioHotPlug": true,
+            "discVirtioHotUnplug": true,
+            "discScsiHotPlug": false,
+            "discScsiHotUnplug": false,
+            "licenceType": "LINUX",
+            "imageType": "CDROM",
+            "imageAliases": [
+              "debian:latest_iso",
+              "debian:10_iso"
+            ],
+            "cloudInit": "NONE",
+            "public": true
+          }
+        },
+        "bootVolume": null,
+        "cpuFamily": "INTEL_SKYLAKE",
+        "type": "ENTERPRISE"
+      },
+      "entities": {
+        "cdroms": {
+          "id": "b501942c-4e08-43e6-8ec1-00e59c64e0e4/cdroms",
+          "type": "collection",
+          "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4/cdroms",
+          "items": [
+            {
+              "id": "0e4d57f9-cd78-11e9-b88c-525400f64d8d",
+              "type": "image",
+              "href": "https://api.ionos.com/cloudapi/v6/images/0e4d57f9-cd78-11e9-b88c-525400f64d8d",
+              "metadata": {
+                "etag": "ca643281fd2a5b68002bc00ac0ecd920",
+                "createdDate": "2019-09-02T11:51:53Z",
+                "createdBy": "System",
+                "createdByUserId": "[UNKNOWN]",
+                "lastModifiedDate": "2019-09-02T11:51:53Z",
+                "lastModifiedBy": "System",
+                "lastModifiedByUserId": "[UNKNOWN]",
+                "state": "AVAILABLE"
+              },
+              "properties": {
+                "name": "debian-10.0.0-amd64-netinst.iso",
+                "description": null,
+                "location": "de/txl",
+                "size": 0.33,
+                "cpuHotPlug": true,
+                "cpuHotUnplug": false,
+                "ramHotPlug": true,
+                "ramHotUnplug": false,
+                "nicHotPlug": true,
+                "nicHotUnplug": true,
+                "discVirtioHotPlug": true,
+                "discVirtioHotUnplug": true,
+                "discScsiHotPlug": false,
+                "discScsiHotUnplug": false,
+                "licenceType": "LINUX",
+                "imageType": "CDROM",
+                "imageAliases": [
+                  "debian:10_iso",
+                  "debian:latest_iso"
+                ],
+                "cloudInit": "NONE",
+                "public": true
+              }
+            }
+          ]
+        },
+        "volumes": {
+          "id": "b501942c-4e08-43e6-8ec1-00e59c64e0e4/volumes",
+          "type": "collection",
+          "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4/volumes",
+          "items": [
+            {
+              "id": "97a58f00-e2a5-4ebb-8b9a-f694837b0548",
+              "type": "volume",
+              "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/volumes/97a58f00-e2a5-4ebb-8b9a-f694837b0548",
+              "metadata": {
+                "etag": "27491713a77c5453c6ae7d0f98a1beec",
+                "createdDate": "2019-09-02T11:51:53Z",
+                "createdBy": "System",
+                "createdByUserId": "[UNKNOWN]",
+                "lastModifiedDate": "2019-09-02T11:51:53Z",
+                "lastModifiedBy": "System",
+                "lastModifiedByUserId": "[UNKNOWN]",
+                "state": "AVAILABLE"
+              },
+              "properties": {
+                "name": "prometheus-data-1",
+                "type": "HDD",
+                "size": 10,
+                "availabilityZone": "AUTO",
+                "image": null,
+                "imagePassword": null,
+                "sshKeys": null,
+                "bus": "VIRTIO",
+                "licenceType": "UNKNOWN",
+                "cpuHotPlug": false,
+                "ramHotPlug": false,
+                "nicHotPlug": false,
+                "nicHotUnplug": false,
+                "discVirtioHotPlug": false,
+                "discVirtioHotUnplug": false,
+                "deviceNumber": 1,
+                "userData": null,
+                "pciSlot": 6,
+                "bootServer": "b501942c-4e08-43e6-8ec1-00e59c64e0e4"
+              }
+            }
+          ]
+        },
+        "nics": {
+          "id": "b501942c-4e08-43e6-8ec1-00e59c64e0e4/nics",
+          "type": "collection",
+          "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4/nics",
+          "items": [
+            {
+              "id": "206e9a88-097c-4c87-8544-1f5fe0b6b0f1",
+              "type": "nic",
+              "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4/nics/206e9a88-097c-4c87-8544-1f5fe0b6b0f1",
+              "metadata": {
+                "etag": "be2b6fff29e7e09c1a4a5ca150876eaa",
+                "createdDate": "2019-09-02T11:51:53Z",
+                "createdBy": "System",
+                "createdByUserId": "[UNKNOWN]",
+                "lastModifiedDate": "2019-09-02T11:51:53Z",
+                "lastModifiedBy": "System",
+                "lastModifiedByUserId": "[UNKNOWN]",
+                "state": "AVAILABLE"
+              },
+              "properties": {
+                "name": null,
+                "mac": "02:01:4b:1c:cf:57",
+                "ips": [
+                  "85.215.238.118"
+                ],
+                "dhcp": true,
+                "lan": 1,
+                "firewallActive": false,
+                "firewallType": "INGRESS",
+                "deviceNumber": 1,
+                "pciSlot": 5
+              },
+              "entities": {
+                "firewallrules": {
+                  "id": "206e9a88-097c-4c87-8544-1f5fe0b6b0f1/firewallrules",
+                  "type": "collection",
+                  "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4/nics/206e9a88-097c-4c87-8544-1f5fe0b6b0f1/firewallrules"
+                },
+                "flowlogs": {
+                  "id": "206e9a88-097c-4c87-8544-1f5fe0b6b0f1/flowlogs",
+                  "type": "collection",
+                  "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4/nics/206e9a88-097c-4c87-8544-1f5fe0b6b0f1/flowlogs"
+                }
+              }
+            },
+            {
+              "id": "8a568a32-da62-437d-8b73-f580d1a1588f",
+              "type": "nic",
+              "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4/nics/8a568a32-da62-437d-8b73-f580d1a1588f",
+              "metadata": {
+                "etag": "2dca0340a0610b1dfdb2e66f6aae3ed3",
+                "createdDate": "2022-05-05T13:12:31Z",
+                "createdBy": "felix.ehrenpfort@codecentric.cloud",
+                "createdByUserId": "cfcb4526-fbe0-461e-9149-ffb00a83fbec",
+                "lastModifiedDate": "2022-05-05T13:12:31Z",
+                "lastModifiedBy": "felix.ehrenpfort@codecentric.cloud",
+                "lastModifiedByUserId": "cfcb4526-fbe0-461e-9149-ffb00a83fbec",
+                "state": "AVAILABLE"
+              },
+              "properties": {
+                "name": null,
+                "mac": "02:01:56:f6:47:a8",
+                "ips": [
+                  "185.56.150.9"
+                ],
+                "dhcp": true,
+                "lan": 1,
+                "firewallActive": false,
+                "firewallType": "INGRESS",
+                "deviceNumber": 3,
+                "pciSlot": 8
+              },
+              "entities": {
+                "firewallrules": {
+                  "id": "8a568a32-da62-437d-8b73-f580d1a1588f/firewallrules",
+                  "type": "collection",
+                  "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4/nics/8a568a32-da62-437d-8b73-f580d1a1588f/firewallrules"
+                },
+                "flowlogs": {
+                  "id": "8a568a32-da62-437d-8b73-f580d1a1588f/flowlogs",
+                  "type": "collection",
+                  "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4/nics/8a568a32-da62-437d-8b73-f580d1a1588f/flowlogs"
+                }
+              }
+            },
+            {
+              "id": "17ecc866-4a08-4ada-858f-7b726a5f5070",
+              "type": "nic",
+              "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4/nics/17ecc866-4a08-4ada-858f-7b726a5f5070",
+              "metadata": {
+                "etag": "f6a82276c6fdb460811d3789e54e0054",
+                "createdDate": "2022-05-05T11:45:36Z",
+                "createdBy": "felix.ehrenpfort@codecentric.cloud",
+                "createdByUserId": "cfcb4526-fbe0-461e-9149-ffb00a83fbec",
+                "lastModifiedDate": "2022-05-05T11:45:36Z",
+                "lastModifiedBy": "felix.ehrenpfort@codecentric.cloud",
+                "lastModifiedByUserId": "cfcb4526-fbe0-461e-9149-ffb00a83fbec",
+                "state": "AVAILABLE"
+              },
+              "properties": {
+                "name": "metrics",
+                "mac": "02:01:93:80:fa:a4",
+                "ips": [
+                  "85.215.243.177"
+                ],
+                "dhcp": true,
+                "lan": 1,
+                "firewallActive": false,
+                "firewallType": "INGRESS",
+                "deviceNumber": 2,
+                "pciSlot": 7
+              },
+              "entities": {
+                "firewallrules": {
+                  "id": "17ecc866-4a08-4ada-858f-7b726a5f5070/firewallrules",
+                  "type": "collection",
+                  "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4/nics/17ecc866-4a08-4ada-858f-7b726a5f5070/firewallrules"
+                },
+                "flowlogs": {
+                  "id": "17ecc866-4a08-4ada-858f-7b726a5f5070/flowlogs",
+                  "type": "collection",
+                  "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4/nics/17ecc866-4a08-4ada-858f-7b726a5f5070/flowlogs"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "523415e6-ff8c-4dc0-86d3-09c256039b30",
+      "type": "server",
+      "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/523415e6-ff8c-4dc0-86d3-09c256039b30",
+      "metadata": {
+        "etag": "fe405a5f2e041d506086ee0c2159b678",
+        "createdDate": "2019-09-02T11:51:53Z",
+        "createdBy": "System",
+        "createdByUserId": "[UNKNOWN]",
+        "lastModifiedDate": "2019-09-02T11:51:53Z",
+        "lastModifiedBy": "System",
+        "lastModifiedByUserId": "[UNKNOWN]",
+        "state": "AVAILABLE"
+      },
+      "properties": {
+        "name": "prometheus-1",
+        "cores": 1,
+        "ram": 1024,
+        "availabilityZone": "ZONE_1",
+        "vmState": "RUNNING",
+        "bootCdrom": {
+          "id": "0e4d57f9-cd78-11e9-b88c-525400f64d8d",
+          "type": "image",
+          "href": "https://api.ionos.com/cloudapi/v6/images/0e4d57f9-cd78-11e9-b88c-525400f64d8d",
+          "metadata": {
+            "etag": "ca643281fd2a5b68002bc00ac0ecd920",
+            "createdDate": "2019-09-02T11:51:53Z",
+            "createdBy": "System",
+            "createdByUserId": "[UNKNOWN]",
+            "lastModifiedDate": "2019-09-02T11:51:53Z",
+            "lastModifiedBy": "System",
+            "lastModifiedByUserId": "[UNKNOWN]",
+            "state": "AVAILABLE"
+          },
+          "properties": {
+            "name": "debian-10.0.0-amd64-netinst.iso",
+            "description": null,
+            "location": "de/txl",
+            "size": 0.33,
+            "cpuHotPlug": true,
+            "cpuHotUnplug": false,
+            "ramHotPlug": true,
+            "ramHotUnplug": false,
+            "nicHotPlug": true,
+            "nicHotUnplug": true,
+            "discVirtioHotPlug": true,
+            "discVirtioHotUnplug": true,
+            "discScsiHotPlug": false,
+            "discScsiHotUnplug": false,
+            "licenceType": "LINUX",
+            "imageType": "CDROM",
+            "imageAliases": [
+              "debian:latest_iso",
+              "debian:10_iso"
+            ],
+            "cloudInit": "NONE",
+            "public": true
+          }
+        },
+        "bootVolume": null,
+        "cpuFamily": "INTEL_SKYLAKE",
+        "type": "ENTERPRISE"
+      },
+      "entities": {
+        "cdroms": {
+          "id": "523415e6-ff8c-4dc0-86d3-09c256039b30/cdroms",
+          "type": "collection",
+          "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/523415e6-ff8c-4dc0-86d3-09c256039b30/cdroms",
+          "items": [
+            {
+              "id": "0e4d57f9-cd78-11e9-b88c-525400f64d8d",
+              "type": "image",
+              "href": "https://api.ionos.com/cloudapi/v6/images/0e4d57f9-cd78-11e9-b88c-525400f64d8d",
+              "metadata": {
+                "etag": "ca643281fd2a5b68002bc00ac0ecd920",
+                "createdDate": "2019-09-02T11:51:53Z",
+                "createdBy": "System",
+                "createdByUserId": "[UNKNOWN]",
+                "lastModifiedDate": "2019-09-02T11:51:53Z",
+                "lastModifiedBy": "System",
+                "lastModifiedByUserId": "[UNKNOWN]",
+                "state": "AVAILABLE"
+              },
+              "properties": {
+                "name": "debian-10.0.0-amd64-netinst.iso",
+                "description": null,
+                "location": "de/txl",
+                "size": 0.33,
+                "cpuHotPlug": true,
+                "cpuHotUnplug": false,
+                "ramHotPlug": true,
+                "ramHotUnplug": false,
+                "nicHotPlug": true,
+                "nicHotUnplug": true,
+                "discVirtioHotPlug": true,
+                "discVirtioHotUnplug": true,
+                "discScsiHotPlug": false,
+                "discScsiHotUnplug": false,
+                "licenceType": "LINUX",
+                "imageType": "CDROM",
+                "imageAliases": [
+                  "debian:10_iso",
+                  "debian:latest_iso"
+                ],
+                "cloudInit": "NONE",
+                "public": true
+              }
+            }
+          ]
+        },
+        "volumes": {
+          "id": "523415e6-ff8c-4dc0-86d3-09c256039b30/volumes",
+          "type": "collection",
+          "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/523415e6-ff8c-4dc0-86d3-09c256039b30/volumes",
+          "items": [
+            {
+              "id": "5dc21326-7e33-4dc7-84ac-63b02aad4624",
+              "type": "volume",
+              "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/volumes/5dc21326-7e33-4dc7-84ac-63b02aad4624",
+              "metadata": {
+                "etag": "27491713a77c5453c6ae7d0f98a1beec",
+                "createdDate": "2019-09-02T11:51:53Z",
+                "createdBy": "System",
+                "createdByUserId": "[UNKNOWN]",
+                "lastModifiedDate": "2019-09-02T11:51:53Z",
+                "lastModifiedBy": "System",
+                "lastModifiedByUserId": "[UNKNOWN]",
+                "state": "AVAILABLE"
+              },
+              "properties": {
+                "name": "prometheus-data-2",
+                "type": "HDD",
+                "size": 10,
+                "availabilityZone": "AUTO",
+                "image": null,
+                "imagePassword": null,
+                "sshKeys": null,
+                "bus": "VIRTIO",
+                "licenceType": "UNKNOWN",
+                "cpuHotPlug": false,
+                "ramHotPlug": false,
+                "nicHotPlug": false,
+                "nicHotUnplug": false,
+                "discVirtioHotPlug": false,
+                "discVirtioHotUnplug": false,
+                "deviceNumber": 1,
+                "userData": null,
+                "pciSlot": 6,
+                "bootServer": "523415e6-ff8c-4dc0-86d3-09c256039b30"
+              }
+            }
+          ]
+        },
+        "nics": {
+          "id": "523415e6-ff8c-4dc0-86d3-09c256039b30/nics",
+          "type": "collection",
+          "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/523415e6-ff8c-4dc0-86d3-09c256039b30/nics",
+          "items": [
+            {
+              "id": "684033a2-317f-4977-8a01-68263d59336c",
+              "type": "nic",
+              "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/523415e6-ff8c-4dc0-86d3-09c256039b30/nics/684033a2-317f-4977-8a01-68263d59336c",
+              "metadata": {
+                "etag": "fe405a5f2e041d506086ee0c2159b678",
+                "createdDate": "2019-09-02T11:51:53Z",
+                "createdBy": "System",
+                "createdByUserId": "[UNKNOWN]",
+                "lastModifiedDate": "2019-09-02T11:51:53Z",
+                "lastModifiedBy": "System",
+                "lastModifiedByUserId": "[UNKNOWN]",
+                "state": "AVAILABLE"
+              },
+              "properties": {
+                "name": null,
+                "mac": "02:01:17:12:27:1b",
+                "ips": [
+                  "85.215.248.84"
+                ],
+                "dhcp": true,
+                "lan": 1,
+                "firewallActive": false,
+                "firewallType": "INGRESS",
+                "deviceNumber": 1,
+                "pciSlot": 5
+              },
+              "entities": {
+                "firewallrules": {
+                  "id": "684033a2-317f-4977-8a01-68263d59336c/firewallrules",
+                  "type": "collection",
+                  "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/523415e6-ff8c-4dc0-86d3-09c256039b30/nics/684033a2-317f-4977-8a01-68263d59336c/firewallrules"
+                },
+                "flowlogs": {
+                  "id": "684033a2-317f-4977-8a01-68263d59336c/flowlogs",
+                  "type": "collection",
+                  "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/523415e6-ff8c-4dc0-86d3-09c256039b30/nics/684033a2-317f-4977-8a01-68263d59336c/flowlogs"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

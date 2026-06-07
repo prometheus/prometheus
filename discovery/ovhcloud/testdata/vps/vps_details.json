@@ -1,0 +1,25 @@
+{
+  "offerType": "ssd",
+  "monitoringIpBlocks": [],
+  "displayName": "abc",
+  "zone": "zone",
+  "cluster": "cluster_test",
+  "slaMonitoring": false,
+  "name": "abc",
+  "vcore": 1,
+  "state": "running",
+  "keymap": null,
+  "netbootMode": "local",
+  "model": {
+    "name": "vps-value-1-2-40",
+    "availableOptions": [],
+    "maximumAdditionnalIp": 16,
+    "offer": "VPS abc",
+    "disk": 40,
+    "version": "2019v1",
+    "vcore": 1,
+    "memory": 2048,
+    "datacenter": []
+  },
+  "memoryLimit": 2048
+}

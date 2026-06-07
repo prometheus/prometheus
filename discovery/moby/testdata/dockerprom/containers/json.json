@@ -1,0 +1,301 @@
+[
+  {
+    "Id": "c301b928faceb1a18fe379f6bc178727ef920bb30b0f9b8592b32b36255a0eca",
+    "Names": [
+      "/dockersd_node_1"
+    ],
+    "Image": "prom/node-exporter:v1.1.2",
+    "ImageID": "sha256:c19ae228f0699185488b6a1c0debb9c6b79672181356ad455c9a7924a41a01bb",
+    "Command": "/bin/node_exporter",
+    "Created": 1616273136,
+    "Ports": [
+      {
+        "PrivatePort": 9100,
+        "Type": "tcp"
+      }
+    ],
+    "Labels": {
+      "com.docker.compose.project": "dockersd",
+      "com.docker.compose.service": "node",
+      "com.docker.compose.version": "1.25.0",
+      "maintainer": "The Prometheus Authors <prometheus-developers@googlegroups.com>",
+      "prometheus-job": "node"
+    },
+    "State": "running",
+    "Status": "Up 40 seconds",
+    "HostConfig": {
+      "NetworkMode": "dockersd_default"
+    },
+    "NetworkSettings": {
+      "Networks": {
+        "dockersd_default": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "NetworkID": "7189986ab399e144e52a71b7451b4e04e2158c044b4cd2f3ae26fc3a285d3798",
+          "EndpointID": "423198ed568efa36699c5f13289c46230580a0ad6453d9e726f5e3cf1a911f77",
+          "Gateway": "172.19.0.1",
+          "IPAddress": "172.19.0.2",
+          "IPPrefixLen": 16,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "MacAddress": "02:42:ac:13:00:02",
+          "DriverOpts": null
+        }
+      }
+    },
+    "Mounts": []
+  },
+  {
+    "Id": "c301b928faceb1a18fe379f6bc178727ef920bb30b0f9b8592b32b36255a0eca",
+    "Names": [
+      "/dockersd_noport_1"
+    ],
+    "Image": "prom/node-exporter:v1.1.2",
+    "ImageID": "sha256:c19ae228f0699185488b6a1c0debb9c6b79672181356ad455c9a7924a41a01bb",
+    "Command": "/bin/node_exporter",
+    "Created": 1616273136,
+    "Ports": [],
+    "Labels": {
+      "com.docker.compose.project": "dockersd",
+      "com.docker.compose.service": "noport",
+      "com.docker.compose.version": "1.25.0",
+      "maintainer": "The Prometheus Authors <prometheus-developers@googlegroups.com>",
+      "prometheus-job": "noport"
+    },
+    "State": "running",
+    "Status": "Up 40 seconds",
+    "HostConfig": {
+      "NetworkMode": "dockersd_default"
+    },
+    "NetworkSettings": {
+      "Networks": {
+        "dockersd_default": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "NetworkID": "7189986ab399e144e52a71b7451b4e04e2158c044b4cd2f3ae26fc3a285d3798",
+          "EndpointID": "423198ed568efa36699c5f13289c46230580a0ad6453d9e726f5e3cf1a911f77",
+          "Gateway": "172.19.0.1",
+          "IPAddress": "172.19.0.3",
+          "IPPrefixLen": 16,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "MacAddress": "02:42:ac:13:00:03",
+          "DriverOpts": null
+        }
+      }
+    },
+    "Mounts": []
+  },
+  {
+    "Id": "54ed6cc5c0988260436cb0e739b7b6c9cad6c439a93b4c4fdbe9753e1c94b189",
+    "Names": [
+      "/dockersd_host_networking_1"
+    ],
+    "Image": "httpd",
+    "ImageID": "sha256:73b8cfec11558fe86f565b4357f6d6c8560f4c49a5f15ae970a24da86c9adc93",
+    "Command": "httpd-foreground",
+    "Created": 1627440494,
+    "Ports": [],
+    "Labels": {
+      "com.docker.compose.project": "dockersd",
+      "com.docker.compose.service": "host_networking",
+      "com.docker.compose.version": "1.25.0"
+    },
+    "State": "running",
+    "Status": "Up 3 minutes",
+    "HostConfig": { "NetworkMode": "host" },
+    "NetworkSettings": {
+      "Networks": {
+        "host": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "NetworkID": "80c4459fa193c5c8b57e90e117d2f899d1a86708e548738149d62e03df0ec35c",
+          "EndpointID": "e9bea4c499c34bd41609b0e1e9b38f9964c69180c1a22130f28b6af802c156d8",
+          "Gateway": "",
+          "IPAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "MacAddress": "",
+          "DriverOpts": null
+        }
+      }
+    },
+    "Mounts": []
+  },
+  {
+    "Id": "f9ade4b83199d6f83020b7c0bfd1e8281b19dbf9e6cef2cf89bc45c8f8d20fe8",
+    "Names": [
+      "/dockersd_mysql"
+    ],
+    "Image": "mysql:5.7.29",
+    "ImageID": "sha256:5d9483f9a7b21c87e0f5b9776c3e06567603c28c0062013eda127c968175f5e8",
+    "Command": "mysqld",
+    "Created": 1616273136,
+    "Ports": [
+      {
+        "PrivatePort": 3306,
+        "Type": "tcp"
+      },
+      {
+        "PrivatePort": 33060,
+        "Type": "tcp"
+      }
+    ],
+    "Labels": {
+      "com.docker.compose.project": "dockersd",
+      "com.docker.compose.service": "mysql",
+      "com.docker.compose.version": "2.2.2"
+    },
+    "State": "running",
+    "Status": "Up 40 seconds",
+    "HostConfig": {
+      "NetworkMode": "dockersd_private"
+    },
+    "NetworkSettings": {
+      "Networks": {
+        "dockersd_private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "NetworkID": "e804771e55254a360fdb70dfdd78d3610fdde231b14ef2f837a00ac1eeb9e601",
+          "EndpointID": "80f8a61b37701a9991bb98c75ddd23fd9b7c16b5575ca81343f6b44ff4a2a9d9",
+          "Gateway": "172.20.0.1",
+          "IPAddress": "172.20.0.2",
+          "IPPrefixLen": 16,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "MacAddress": "02:42:ac:14:00:0a",
+          "DriverOpts": null
+        },
+        "dockersd_private1": {
+          "IPAMConfig": {},
+          "Links": null,
+          "Aliases": [
+            "mysql",
+            "mysql",
+            "f9ade4b83199"
+          ],
+          "NetworkID": "bfcf66a6b64f7d518f009e34290dc3f3c66a08164257ad1afc3bd31d75f656e8",
+          "EndpointID": "f80921d10e78c99a5907705aae75befea40c3d3e9f820e66ab392f7274be16b8",
+          "Gateway": "172.21.0.1",
+          "IPAddress": "172.21.0.2",
+          "IPPrefixLen": 24,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "MacAddress": "02:42:ac:15:00:02",
+          "DriverOpts": null
+        }
+      }
+    },
+    "Mounts": []
+  },
+  {
+    "Id": "59bf76e8816af98856b90dd619c91027145ca501043b1c51756d03b085882e06",
+    "Names": [
+      "/dockersd_mysql_exporter"
+    ],
+    "Image": "prom/mysqld-exporter:latest",
+    "ImageID": "sha256:121b8a7cd0525dd89aaec58ad7d34c3bb3714740e5a67daf6510ccf71ab219a9",
+    "Command": "/bin/mysqld_exporter",
+    "Created": 1616273136,
+    "Ports": [
+      {
+        "PrivatePort": 9104,
+        "Type": "tcp"
+      }
+    ],
+    "Labels": {
+      "com.docker.compose.project": "dockersd",
+      "com.docker.compose.service": "mysqlexporter",
+      "com.docker.compose.version": "2.2.2",
+      "maintainer": "The Prometheus Authors <prometheus-developers@googlegroups.com>"
+    },
+    "State": "running",
+    "Status": "Up 40 seconds",
+    "HostConfig": {
+      "NetworkMode": "container:f9ade4b83199d6f83020b7c0bfd1e8281b19dbf9e6cef2cf89bc45c8f8d20fe8"
+    },
+    "NetworkSettings": {
+      "Networks": {}
+    },
+    "Mounts": []
+  },
+  {
+    "Id": "f84b2a0cfaa58d9e70b0657e2b3c6f44f0e973de4163a871299b4acf127b224f",
+    "Names": [
+      "/dockersd_multi_networks"
+    ],
+    "Image": "mysql:5.7.29",
+    "ImageID": "sha256:16ae2f4625ba63a250462bedeece422e741de9f0caf3b1d89fd5b257aca80cd1",
+    "Command": "mysqld",
+    "Created": 1616273136,
+    "Ports": [
+      {
+        "PrivatePort": 3306,
+        "Type": "tcp"
+      },
+      {
+        "PrivatePort": 33060,
+        "Type": "tcp"
+      }
+    ],
+    "Labels": {
+      "com.docker.compose.project": "dockersd",
+      "com.docker.compose.service": "mysql",
+      "com.docker.compose.version": "2.2.2"
+    },
+    "State": "running",
+    "Status": "Up 40 seconds",
+    "HostConfig": {
+      "NetworkMode": "dockersd_private_none"
+    },
+    "NetworkSettings": {
+      "Networks": {
+        "dockersd_private": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "NetworkID": "e804771e55254a360fdb70dfdd78d3610fdde231b14ef2f837a00ac1eeb9e601",
+          "EndpointID": "972d6807997369605ace863af58de6cb90c787a5bf2ffc4105662d393ae539b7",
+          "Gateway": "172.20.0.1",
+          "IPAddress": "172.20.0.3",
+          "IPPrefixLen": 16,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "MacAddress": "02:42:ac:14:00:02",
+          "DriverOpts": null
+        },
+        "dockersd_private1": {
+          "IPAMConfig": {},
+          "Links": null,
+          "Aliases": [
+            "mysql",
+            "mysql",
+            "f9ade4b83199"
+          ],
+          "NetworkID": "bfcf66a6b64f7d518f009e34290dc3f3c66a08164257ad1afc3bd31d75f656e8",
+          "EndpointID": "91a98405344ee1cb7d977cafabe634837876651544b32da20a5e0155868e6f5f",
+          "Gateway": "172.21.0.1",
+          "IPAddress": "172.21.0.3",
+          "IPPrefixLen": 24,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "MacAddress": "02:42:ac:15:00:02",
+          "DriverOpts": null
+        }
+      }
+    },
+    "Mounts": []
+  }
+]

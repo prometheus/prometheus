@@ -1,0 +1,4 @@
+rule_files:
+    - 'first.rules'
+    - 'rules/second.rules'
+    - '/absolute/third.rules'

@@ -1,0 +1,32 @@
+groups:
+  - name: http
+    rules:
+      # independents
+      - record: job:http_requests:rate1m
+        expr: sum by (job)(rate(http_requests_total[1m]))
+      - record: job:http_requests:rate5m
+        expr: sum by (job)(rate(http_requests_total[5m]))
+      - record: job:http_requests:rate10m
+        expr: sum by (job)(rate(http_requests_total[10m]))
+
+      # dependents
+      - record: job:http_requests:rate15m
+        expr: sum by (job)(rate(http_requests_total[15m]))
+      - record: TooManyHTTPRequests
+        expr: job:http_requests:rate15m > 100
+
+  - name: grpc
+    rules:
+      # independents
+      - record: job:grpc_requests:rate1m
+        expr: sum by (job)(rate(grpc_requests_total[1m]))
+      - record: job:grpc_requests:rate5m
+        expr: sum by (job)(rate(grpc_requests_total[5m]))
+      - record: job:grpc_requests:rate10m
+        expr: sum by (job)(rate(grpc_requests_total[10m]))
+
+      # dependents
+      - record: job:grpc_requests:rate15m
+        expr: sum by (job)(rate(grpc_requests_total[15m]))
+      - record: TooManyGRPCRequests
+        expr: job:grpc_requests:rate15m > 100

@@ -1,0 +1,105 @@
+.uplot {
+  .u-legend {
+    text-align: left;
+    margin-left: 25px;
+
+    .u-marker {
+      margin-right: 8px;
+      height: 0.8em;
+      width: 0.8em;
+    }
+
+    th {
+      font-weight: 500;
+      font-size: var(--mantine-font-size-xs);
+    }
+
+    tr {
+      display: block;
+    }
+  }
+
+  .u-under {
+    background-color: light-dark(unset, #1f1f1f);
+  }
+
+  .u-over {
+    box-shadow: 0px 0px 0px 0.5px #ccc;
+    cursor: crosshair;
+  }
+
+  .u-legend {
+    text-align: left;
+    margin: 20px 25px;
+  }
+
+  .u-inline tr {
+    margin-right: 8px;
+  }
+
+  .u-label {
+    font-size: 12px;
+  }
+
+  .u-select {
+    background: rgba(255, 200, 150, 0.2);
+  }
+
+  .u-hz .u-cursor-x,
+  .u-vt .u-cursor-y {
+    border-right: 1px dashed light-dark(#607d8b, #90adbc);
+  }
+
+  .u-hz .u-cursor-y,
+  .u-vt .u-cursor-x {
+    border-bottom: 1px dashed light-dark(#607d8b, #90adbc);
+  }
+}
+
+.u-tooltip {
+  font-size: 0.8em;
+  white-space: nowrap;
+  /* background: var(--mantine-color-gray-7);
+  color: var(--mantine-color-gray-1); */
+  /* background: rgba(0, 0, 0, 0.8); */
+  /* color: #fff; */
+  background: light-dark(rgba(255, 255, 255, 0.95), rgba(25, 25, 25, 0.95));
+  color: light-dark(var(--mantine-color-gray-9), var(--mantine-color-gray-5));
+  border: 2px solid
+    light-dark(var(--mantine-color-gray-6), var(--mantine-color-gray-6));
+  border-radius: 4px;
+  position: absolute;
+  padding: 0.8em 1.5em;
+  margin: 0.75rem;
+  z-index: 10;
+  pointer-events: none;
+
+  .series-value {
+    margin: 5px 0;
+  }
+
+  .series-label {
+    margin-top: 0.5em;
+    margin-bottom: 0.3em;
+    font-weight: bold;
+  }
+
+  .labels {
+    font-size: 0.9em;
+    line-height: 1.3em;
+
+    div {
+      margin-bottom: 0.2em;
+    }
+
+    .no-labels {
+      font-style: italic;
+    }
+  }
+
+  .detail-swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+  }
+}

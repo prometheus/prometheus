@@ -1,0 +1,14 @@
+.input {
+  font-family: "DejaVu Sans Mono";
+  padding-top: 7px;
+  transition: none;
+
+  &:focus-within {
+    outline: rem(2px) solid var(--mantine-color-blue-filled);
+    border-color: transparent;
+  }
+
+  &:placeholder-shown {
+    font-family: unset;
+  }
+}

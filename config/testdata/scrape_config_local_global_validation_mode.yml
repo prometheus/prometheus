@@ -1,0 +1,7 @@
+global:
+  metric_name_validation_scheme: legacy
+  metric_name_escaping_scheme: values
+scrape_configs:
+  - job_name: prometheus
+    metric_name_validation_scheme: utf8
+    metric_name_escaping_scheme: dots

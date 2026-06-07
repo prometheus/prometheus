@@ -1,0 +1,4 @@
+workload_identity:
+  client_id: "00000000-0000-0000-0000-000000000000"
+  tenant_id: "invalid-tenant-id-!"
+cloud: "AzurePublic"

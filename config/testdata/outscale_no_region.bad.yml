@@ -1,0 +1,6 @@
+scrape_configs:
+  - job_name: outscale
+    outscale_sd_configs:
+      - region: ""
+        access_key: A1B2C3D4E5F6G7H8I9J0
+        secret_key: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX

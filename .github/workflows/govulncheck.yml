@@ -1,0 +1,26 @@
+---
+name: govulncheck
+on:
+  pull_request:
+    paths:
+      - VERSION
+      - .github/workflows/govulncheck.yml
+  push:
+    branches:
+      - main
+      - master
+  schedule:
+    - cron: '33 2 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    name: Run govulncheck
+    steps:
+      - id: govulncheck
+        uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1.0.4
+        env:
+          GOOS: ${{ contains(github.repository, 'windows_exporter') && 'windows' || '' }}

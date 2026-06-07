@@ -1,0 +1,10 @@
+data/
+.build/
+.tarballs/
+
+!.build/linux-amd64/
+!.build/linux-arm64/
+!.build/linux-armv7/
+!.build/linux-ppc64le/
+!.build/linux-riscv64/
+!.build/linux-s390x/

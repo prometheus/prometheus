@@ -1,0 +1,76 @@
+rule_files:
+  - rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Test with default start_time (0 / Unix epoch).
+  - name: default_start_time
+    interval: 1m
+    promql_expr_test:
+      - expr: time()
+        eval_time: 0m
+        exp_samples:
+          - value: 0
+      - expr: time()
+        eval_time: 5m
+        exp_samples:
+          - value: 300
+
+  # Test with RFC3339 start_timestamp.
+  - name: rfc3339_start_timestamp
+    interval: 1m
+    start_timestamp: "2024-01-01T00:00:00Z"
+    promql_expr_test:
+      - expr: time()
+        eval_time: 0m
+        exp_samples:
+          - value: 1704067200
+      - expr: time()
+        eval_time: 5m
+        exp_samples:
+          - value: 1704067500
+
+  # Test with Unix timestamp start_timestamp.
+  - name: unix_timestamp_start_timestamp
+    interval: 1m
+    start_timestamp: 1609459200
+    input_series:
+      - series: test_metric
+        values: "1 1 1"
+    promql_expr_test:
+      - expr: time()
+        eval_time: 0m
+        exp_samples:
+          - value: 1609459200
+      - expr: time()
+        eval_time: 10m
+        exp_samples:
+          - value: 1609459800
+
+  # Test that input series samples are correctly timestamped with custom start_timestamp.
+  - name: samples_with_start_timestamp
+    interval: 1m
+    start_timestamp: "2024-01-01T00:00:00Z"
+    input_series:
+      - series: 'my_metric{label="test"}'
+        values: "10+10x15"
+    promql_expr_test:
+      # Query at absolute timestamp (start_timestamp = 1704067200).
+      - expr: my_metric@1704067200
+        eval_time: 5m
+        exp_samples:
+          - labels: 'my_metric{label="test"}'
+            value: 10
+      # Query at 2 minutes after start_timestamp (1704067200 + 120 = 1704067320).
+      - expr: my_metric@1704067320
+        eval_time: 5m
+        exp_samples:
+          - labels: 'my_metric{label="test"}'
+            value: 30
+      # Verify timestamp() function returns the absolute timestamp.
+      - expr: timestamp(my_metric)
+        eval_time: 5m
+        exp_samples:
+          - labels: '{label="test"}'
+            value: 1704067500

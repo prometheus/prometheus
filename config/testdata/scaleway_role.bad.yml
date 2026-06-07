@@ -1,0 +1,6 @@
+scrape_configs:
+  - scaleway_sd_configs:
+      - role: invalid
+        project_id: 11111111-1111-1111-1111-111111111112
+        access_key: SCWXXXXXXXXXXXXXXXXX
+        secret_key_file: bar

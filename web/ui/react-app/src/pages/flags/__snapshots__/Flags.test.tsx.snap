@@ -1,0 +1,1114 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Flags should match snapshot 1`] = `
+<Fragment>
+  <h2>
+    Command-Line Flags
+  </h2>
+  <InputGroup
+    tag="div"
+  >
+    <Input
+      autoFocus={true}
+      className="my-3"
+      onChange={[Function]}
+      placeholder="Filter by flag name or value..."
+      type="text"
+      value=""
+    />
+  </InputGroup>
+  <Table
+    bordered={true}
+    hover={true}
+    responsiveTag="div"
+    size="sm"
+    striped={true}
+    tag="table"
+  >
+    <thead>
+      <tr>
+        <td
+          className="px-4 Flag"
+          key="Flag"
+          onClick={[Function]}
+          style={
+            Object {
+              "width": "50%",
+            }
+          }
+        >
+          <span
+            className="mr-2"
+          >
+            Flag
+          </span>
+          <FontAwesomeIcon
+            beat={false}
+            beatFade={false}
+            border={false}
+            bounce={false}
+            className=""
+            fade={false}
+            fixedWidth={false}
+            flip={false}
+            icon={
+              Object {
+                "icon": Array [
+                  320,
+                  512,
+                  Array [
+                    "sort-desc",
+                  ],
+                  "f0dd",
+                  "M182.6 470.6c-12.5 12.5-32.8 12.5-45.3 0l-128-128c-9.2-9.2-11.9-22.9-6.9-34.9s16.6-19.8 29.6-19.8H288c12.9 0 24.6 7.8 29.6 19.8s2.2 25.7-6.9 34.9l-128 128z",
+                ],
+                "iconName": "sort-down",
+                "prefix": "fas",
+              }
+            }
+            inverse={false}
+            listItem={false}
+            mask={null}
+            maskId={null}
+            pull={null}
+            pulse={false}
+            rotation={null}
+            shake={false}
+            size={null}
+            spin={false}
+            spinPulse={false}
+            spinReverse={false}
+            swapOpacity={false}
+            symbol={false}
+            title=""
+            titleId={null}
+            transform={null}
+          />
+        </td>
+        <td
+          className="px-4 Value"
+          key="Value"
+          onClick={[Function]}
+          style={
+            Object {
+              "width": "50%",
+            }
+          }
+        >
+          <span
+            className="mr-2"
+          >
+            Value
+          </span>
+          <FontAwesomeIcon
+            beat={false}
+            beatFade={false}
+            border={false}
+            bounce={false}
+            className=""
+            fade={false}
+            fixedWidth={false}
+            flip={false}
+            icon={
+              Object {
+                "icon": Array [
+                  320,
+                  512,
+                  Array [
+                    "unsorted",
+                  ],
+                  "f0dc",
+                  "M137.4 41.4c12.5-12.5 32.8-12.5 45.3 0l128 128c9.2 9.2 11.9 22.9 6.9 34.9s-16.6 19.8-29.6 19.8H32c-12.9 0-24.6-7.8-29.6-19.8s-2.2-25.7 6.9-34.9l128-128zm0 429.3l-128-128c-9.2-9.2-11.9-22.9-6.9-34.9s16.6-19.8 29.6-19.8H288c12.9 0 24.6 7.8 29.6 19.8s2.2 25.7-6.9 34.9l-128 128c-12.5 12.5-32.8 12.5-45.3 0z",
+                ],
+                "iconName": "sort",
+                "prefix": "fas",
+              }
+            }
+            inverse={false}
+            listItem={false}
+            mask={null}
+            maskId={null}
+            pull={null}
+            pulse={false}
+            rotation={null}
+            shake={false}
+            size={null}
+            spin={false}
+            spinPulse={false}
+            spinReverse={false}
+            swapOpacity={false}
+            symbol={false}
+            title=""
+            titleId={null}
+            transform={null}
+          />
+        </td>
+      </tr>
+    </thead>
+    <tbody>
+      <tr
+        key="--alertmanager.notification-queue-capacity"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--alertmanager.notification-queue-capacity",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "10000",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--alertmanager.timeout"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--alertmanager.timeout",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "10s",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--config.file"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--config.file",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "./documentation/examples/prometheus.yml",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--log.format"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--log.format",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "logfmt",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--log.level"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--log.level",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "info",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--query.lookback-delta"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--query.lookback-delta",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "5m",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--query.max-concurrency"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--query.max-concurrency",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "20",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--query.max-samples"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--query.max-samples",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "50000000",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--query.timeout"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--query.timeout",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "2m",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--rules.alert.for-grace-period"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--rules.alert.for-grace-period",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "10m",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--rules.alert.for-outage-tolerance"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--rules.alert.for-outage-tolerance",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "1h",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--rules.alert.resend-delay"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--rules.alert.resend-delay",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "1m",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--storage.remote.flush-deadline"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.remote.flush-deadline",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "1m",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--storage.remote.read-concurrent-limit"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.remote.read-concurrent-limit",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "10",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--storage.remote.read-max-bytes-in-frame"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.remote.read-max-bytes-in-frame",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "1048576",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--storage.remote.read-sample-limit"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.remote.read-sample-limit",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "50000000",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--storage.tsdb.allow-overlapping-blocks"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.allow-overlapping-blocks",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "false",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--storage.tsdb.max-block-duration"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.max-block-duration",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "36h",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--storage.tsdb.min-block-duration"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.min-block-duration",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "2h",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--storage.tsdb.no-lockfile"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.no-lockfile",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "false",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--storage.tsdb.path"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.path",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "data/",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--storage.tsdb.retention.size"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.retention.size",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "0B",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--storage.tsdb.retention.time"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.retention.time",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "0s",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--storage.tsdb.wal-compression"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.wal-compression",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "false",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--storage.tsdb.wal-segment-size"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.wal-segment-size",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "0B",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--web.console.libraries"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.console.libraries",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "console_libraries",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--web.console.templates"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.console.templates",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "consoles",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--web.cors.origin"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.cors.origin",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": ".*",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--web.enable-admin-api"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.enable-admin-api",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "false",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--web.enable-lifecycle"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.enable-lifecycle",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "false",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--web.external-url"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.external-url",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--web.listen-address"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.listen-address",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "0.0.0.0:9090",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--web.max-connections"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.max-connections",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "512",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--web.page-title"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.page-title",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "Prometheus Time Series Collection and Processing Server",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--web.read-timeout"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.read-timeout",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "5m",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--web.route-prefix"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.route-prefix",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "/",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="--web.user-assets"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.user-assets",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "",
+              }
+            }
+          />
+        </td>
+      </tr>
+    </tbody>
+  </Table>
+</Fragment>
+`;

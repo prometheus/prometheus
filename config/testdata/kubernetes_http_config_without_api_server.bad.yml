@@ -1,0 +1,6 @@
+scrape_configs:
+  - job_name: prometheus
+    kubernetes_sd_configs:
+      - role: pod
+        authorization:
+          credentials: 1234

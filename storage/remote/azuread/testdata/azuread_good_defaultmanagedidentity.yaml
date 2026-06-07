@@ -1,0 +1,3 @@
+cloud: AzurePublic
+managed_identity:
+  client_id:

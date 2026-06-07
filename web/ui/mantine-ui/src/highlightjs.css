@@ -1,0 +1,97 @@
+/* Adapted from Mantine 7, where highlighting was still included automatically as part of <CodeHighlight>,
+   see https://github.com/mantinedev/mantine/blob/v7/packages/%40mantine/code-highlight/src/CodeHighlight.theme.module.css */
+.hljs {
+  color: var(--code-text-color);
+  background: var(--code-background);
+
+  @mixin where-light {
+    --code-text-color: var(--mantine-color-gray-7);
+    --code-background: var(--mantine-color-gray-0);
+    --code-comment-color: var(--mantine-color-gray-6);
+    --code-keyword-color: var(--mantine-color-violet-8);
+    --code-tag-color: var(--mantine-color-red-9);
+    --code-literal-color: var(--mantine-color-blue-6);
+    --code-string-color: var(--mantine-color-blue-9);
+    --code-variable-color: var(--mantine-color-lime-9);
+    --code-class-color: var(--mantine-color-orange-9);
+  }
+
+  @mixin where-dark {
+    --code-text-color: var(--mantine-color-dark-1);
+    --code-background: var(--mantine-color-dark-8);
+    --code-comment-color: var(--mantine-color-dark-3);
+    --code-keyword-color: var(--mantine-color-violet-3);
+    --code-tag-color: var(--mantine-color-yellow-4);
+    --code-literal-color: var(--mantine-color-blue-4);
+    --code-string-color: var(--mantine-color-green-6);
+    --code-variable-color: var(--mantine-color-blue-2);
+    --code-class-color: var(--mantine-color-orange-5);
+  }
+
+  .hljs-comment,
+  .hljs-quote {
+    font-style: italic;
+    color: var(--code-comment-color);
+  }
+
+  .hljs-doctag,
+  .hljs-formula,
+  .hljs-keyword {
+    color: var(--code-keyword-color);
+  }
+
+  .hljs-deletion,
+  .hljs-name,
+  .hljs-section,
+  .hljs-selector-tag,
+  .hljs-subst {
+    color: var(--code-tag-color);
+  }
+
+  .hljs-literal {
+    color: var(--code-literal-color);
+  }
+
+  .hljs-addition,
+  .hljs-attribute,
+  .hljs-meta .hljs-string,
+  .hljs-regexp,
+  .hljs-string {
+    color: var(--code-string-color);
+  }
+
+  .hljs-attr,
+  .hljs-number,
+  .hljs-selector-attr,
+  .hljs-selector-class,
+  .hljs-selector-pseudo,
+  .hljs-template-variable,
+  .hljs-type,
+  .hljs-variable {
+    color: var(--code-variable-color);
+  }
+
+  .hljs-bullet,
+  .hljs-link,
+  .hljs-meta,
+  .hljs-selector-id,
+  .hljs-symbol,
+  .hljs-title,
+  .hljs-built_in,
+  .hljs-class .hljs-title,
+  .hljs-title.class_ {
+    color: var(--code-class-color);
+  }
+
+  .hljs-emphasis {
+    font-style: italic;
+  }
+
+  .hljs-strong {
+    font-weight: 700;
+  }
+
+  .hljs-link {
+    text-decoration: underline;
+  }
+}

@@ -1,0 +1,713 @@
+# Reference from PROM-52: Complete dataset
+
+load 15s
+  metric 1+1x4 9+1x4
+
+eval instant at 5s increase(metric[1m])
+
+eval instant at 20s increase(metric[1m])
+    {} 1.833333333
+
+eval instant at 35s increase(metric[1m])
+    {} 2.833333333
+
+eval instant at 50s increase(metric[1m])
+    {} 4
+
+eval instant at 65s increase(metric[1m])
+    {} 4
+
+eval instant at 80s increase(metric[1m])
+    {} 8
+
+eval instant at 95s increase(metric[1m])
+    {} 8
+
+eval instant at 110s increase(metric[1m])
+    {} 8
+
+eval instant at 125s increase(metric[1m])
+    {} 4
+
+eval instant at 5s increase(metric[1m] anchored)
+    {} 0
+
+eval instant at 20s increase(metric[1m] anchored)
+    {} 1
+
+eval instant at 35s increase(metric[1m] anchored)
+    {} 2
+
+eval instant at 50s increase(metric[1m] anchored)
+    {} 3
+
+eval instant at 65s increase(metric[1m] anchored)
+    {} 4
+
+eval instant at 80s increase(metric[1m] anchored)
+    {} 7
+
+eval instant at 95s increase(metric[1m] anchored)
+    {} 7
+
+eval instant at 110s increase(metric[1m] anchored)
+    {} 7
+
+eval instant at 125s increase(metric[1m] anchored)
+    {} 7
+
+eval instant at 5s increase(metric[1m] smoothed)
+    {} 0.333333333
+
+eval instant at 20s increase(metric[1m] smoothed)
+    {} 1.333333333
+
+eval instant at 35s increase(metric[1m] smoothed)
+    {} 2.333333333
+
+eval instant at 50s increase(metric[1m] smoothed)
+    {} 3.333333333
+
+eval instant at 65s increase(metric[1m] smoothed)
+    {} 5
+
+eval instant at 80s increase(metric[1m] smoothed)
+    {} 7
+
+eval instant at 95s increase(metric[1m] smoothed)
+    {} 7
+
+eval instant at 110s increase(metric[1m] smoothed)
+    {} 7
+
+eval instant at 125s increase(metric[1m] smoothed)
+    {} 6
+
+# Reference from PROM-52: Partial dataset
+
+clear
+load 15s
+  metric 1+1x2 _ _ 9+1x4
+
+eval instant at 5s increase(metric[1m])
+
+eval instant at 20s increase(metric[1m])
+    {} 1.833333333
+
+eval instant at 35s increase(metric[1m])
+    {} 2.833333333
+
+eval instant at 50s increase(metric[1m])
+    {} 3.166666666
+
+eval instant at 65s increase(metric[1m])
+    {} 2.166666666
+
+eval instant at 80s increase(metric[1m])
+    {} 8
+
+eval instant at 95s increase(metric[1m])
+    {} 1.833333333
+
+eval instant at 110s increase(metric[1m])
+    {} 2.833333333
+
+eval instant at 125s increase(metric[1m])
+    {} 4
+
+eval instant at 5s increase(metric[1m] anchored)
+    {} 0
+
+eval instant at 20s increase(metric[1m] anchored)
+    {} 1
+
+eval instant at 35s increase(metric[1m] anchored)
+    {} 2
+
+eval instant at 50s increase(metric[1m] anchored)
+    {} 2
+
+eval instant at 65s increase(metric[1m] anchored)
+    {} 2
+
+eval instant at 80s increase(metric[1m] anchored)
+    {} 7
+
+eval instant at 95s increase(metric[1m] anchored)
+    {} 7
+
+eval instant at 110s increase(metric[1m] anchored)
+    {} 8
+
+eval instant at 125s increase(metric[1m] anchored)
+    {} 9
+
+eval instant at 5s increase(metric[1m] smoothed)
+    {} 0.333333333
+
+eval instant at 20s increase(metric[1m] smoothed)
+    {} 1.333333333
+
+eval instant at 35s increase(metric[1m] smoothed)
+    {} 2.666666666
+
+eval instant at 50s increase(metric[1m] smoothed)
+    {} 4.666666666
+
+eval instant at 65s increase(metric[1m] smoothed)
+    {} 6.333333333
+
+eval instant at 80s increase(metric[1m] smoothed)
+    {} 7
+
+eval instant at 95s increase(metric[1m] smoothed)
+    {} 6.666666666
+
+eval instant at 110s increase(metric[1m] smoothed)
+    {} 5.666666666
+
+eval instant at 125s increase(metric[1m] smoothed)
+    {} 4.666666666
+
+# Test that interval is left-open.
+
+clear
+load 1m
+    metric 1 2 _ 4 5
+
+eval instant at 2m increase(metric[1m] smoothed)
+    {} 1
+
+eval instant at 2m increase(metric[1m] anchored)
+
+# Basic test with counter resets
+
+clear
+load 1m
+    metric{id="1"} 1+1x4 1+1x4
+    metric{id="2"} 3 2+2x9
+    metric{id="3"} 5+3x2 3+3x6
+
+eval instant at 1m30s increase(metric[1m])
+
+eval instant at 1m30s increase(metric[1m] smoothed)
+    {id="1"} 1
+    {id="2"} 2
+    {id="3"} 3
+
+eval instant at 1m30s increase(metric[1m] anchored)
+    {id="1"} 1
+    {id="2"} 2
+    {id="3"} 3
+
+eval instant at 1m30s delta(metric[1m])
+
+eval instant at 1m30s delta(metric[1m] anchored)
+    {id="1"} 1
+    {id="2"} -1
+    {id="3"} 3
+
+eval instant at 3m0s delta(metric[1m] anchored)
+    {id="1"} 1
+    {id="2"} 2
+    {id="3"} -8
+
+eval instant at 3m30s delta(metric[1m] anchored)
+    {id="1"} 1
+    {id="2"} 2
+    {id="3"} -8
+
+eval instant at 6m increase(metric[5m])
+    {id="1"} 5
+    {id="2"} 10
+    {id="3"} 15
+
+eval instant at 6m15s increase(metric[5m] smoothed)
+    {id="1"} 5
+    {id="2"} 10
+    {id="3"} 15
+
+eval instant at 6m increase(metric[5m] smoothed)
+    {id="1"} 5
+    {id="2"} 10
+    {id="3"} 15
+
+eval instant at 5m increase(metric[5m] anchored)
+    {id="1"} 5
+    {id="2"} 10
+    {id="3"} 15
+
+eval instant at 15m increase(metric[5m] anchored)
+
+clear
+load 1m
+    metric{id="1"} 11 -1 100 0
+    metric{id="2"} 0 0 100 0 0 11 -1
+
+eval instant at 5m30s delta(metric[5m] smoothed)
+    {id="1"} -5
+    {id="2"} 5
+
+eval instant at 5m45s delta(metric[5m] smoothed)
+    {id="1"} -2
+    {id="2"} 2
+
+clear
+load 1m
+    metric{id="1"} 1+1x10
+    metric{id="2"} 1 1+1x10
+    metric{id="3"} 99-1x10
+    metric{id="4"} 99 99-1x10
+
+eval instant at 5m changes(metric[5m])
+    {id="1"} 4
+    {id="2"} 4
+    {id="3"} 4
+    {id="4"} 4
+
+eval instant at 5m30s changes(metric[5m])
+    {id="1"} 4
+    {id="2"} 4
+    {id="3"} 4
+    {id="4"} 4
+
+
+eval instant at 5m0s changes(metric[5m] anchored)
+    {id="1"} 5
+    {id="2"} 4
+    {id="3"} 5
+    {id="4"} 4
+
+eval instant at 6m changes(metric[5m] anchored)
+    {id="1"} 5
+    {id="2"} 5
+    {id="3"} 5
+    {id="4"} 5
+
+eval instant at 5m30s changes(metric[5m] anchored)
+    {id="1"} 5
+    {id="2"} 4
+    {id="3"} 5
+    {id="4"} 4
+
+eval instant at 5m30s resets(metric[5m])
+    {id="1"} 0
+    {id="2"} 0
+    {id="3"} 4
+    {id="4"} 4
+
+eval instant at 5m30s resets(metric[5m] anchored)
+    {id="1"} 0
+    {id="2"} 0
+    {id="3"} 5
+    {id="4"} 4
+
+clear
+load 1m
+    metric{id="1"} 2 _ 1 _ _ _ _ _ 0
+    metric{id="2"} 99-1x10
+
+eval instant at 2m changes(metric[1m])
+    {id="1"} 0
+    {id="2"} 0
+
+eval instant at 3m changes(metric[1m])
+    {id="2"} 0
+
+eval instant at 2m changes(metric[1m] anchored)
+    {id="1"} 1
+    {id="2"} 1
+
+eval instant at 3m changes(metric[1m] anchored)
+    {id="2"} 1
+
+eval instant at 8m changes(metric[1m] anchored)
+    {id="1"} 0
+    {id="2"} 1
+
+eval instant at 8m changes(metric[1m1ms] anchored)
+    {id="1"} 1
+    {id="2"} 2
+
+eval instant at 2m resets(metric[1m])
+    {id="1"} 0
+    {id="2"} 0
+
+eval instant at 3m resets(metric[1m])
+    {id="2"} 0
+
+eval instant at 2m resets(metric[1m] anchored)
+    {id="1"} 1
+    {id="2"} 1
+
+eval instant at 3m resets(metric[1m] anchored)
+    {id="2"} 1
+
+eval instant at 8m resets(metric[1m] anchored)
+    {id="1"} 0
+    {id="2"} 1
+
+eval instant at 8m resets(metric[1m1ms] anchored)
+    {id="1"} 1
+    {id="2"} 2
+
+clear
+load 1m
+    metric 9 8 5 4 
+    
+eval instant at 2m15s increase(metric[2m] smoothed)
+    {} 12
+
+# Smoothed rate interpolation across a counter reset.
+clear
+load 15s
+  metric 100 10
+
+eval instant at 12s rate(metric[10s] smoothed)
+    {} 0.666666666666667
+
+clear
+eval instant at 1m deriv(foo[3m] smoothed)
+    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with deriv
+
+eval instant at 1m resets(foo[3m] smoothed)
+    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with resets
+
+eval instant at 1m changes(foo[3m] smoothed)
+    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with changes
+
+eval instant at 1m max_over_time(foo[3m] smoothed)
+    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with max_over_time
+
+eval instant at 1m predict_linear(foo[3m] smoothed, 4)
+    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with predict_linear
+
+eval instant at 1m deriv(foo[3m] anchored)
+    expect fail msg: anchored modifier can only be used with: changes, delta, increase, rate, resets - not with deriv
+
+eval instant at 1m resets(foo[3m] anchored)
+
+eval instant at 1m changes(foo[3m] anchored)
+
+eval instant at 1m max_over_time(foo[3m] anchored)
+    expect fail msg: anchored modifier can only be used with: changes, delta, increase, rate, resets - not with max_over_time
+
+eval instant at 1m predict_linear(foo[3m] anchored, 4)
+    expect fail msg: anchored modifier can only be used with: changes, delta, increase, rate, resets - not with predict_linear
+
+clear
+load 10s
+    metric 1+1x10
+    withreset 1+1x4 1+1x5
+    notregular 0 5 100 2 8
+
+eval instant at 10s metric smoothed
+    metric 2
+
+eval instant at 15s metric smoothed
+    metric 2.5
+
+eval instant at 5s metric smoothed
+    metric 1.5
+
+eval instant at 105s metric smoothed
+    metric 11
+
+eval instant at 45s withreset smoothed
+    withreset 3
+
+eval instant at 30s notregular smoothed
+    notregular 2
+
+# Smoothed rate returns empty when data is only before or only after the range.
+clear
+load 10s
+    metric _ 5+1x4
+
+eval instant at 5s rate(metric[5s] smoothed)
+
+eval instant at 5s increase(metric[5s] smoothed)
+
+eval instant at 15s increase(metric[10s] smoothed)
+    {} 0.5
+
+eval instant at 60s rate(metric[5s] smoothed)
+
+eval instant at 60s increase(metric[5s] smoothed)
+
+# Smoothed vector selector with @ and offset modifier and binop
+clear
+load 10s
+    metric 0+1x20
+
+eval range from 0s to 60s step 15s metric @ 100
+    metric 10 10 10 10 10
+
+eval range from 0s to 60s step 15s metric @ 100 smoothed
+    metric 10 10 10 10 10
+
+eval range from 0s to 60s step 15s metric @ 100 smoothed + 0
+    {} 10 10 10 10 10
+
+eval range from 0s to 60s step 15s metric offset -100
+    metric 10 11 13 14 16
+
+eval range from 0s to 60s step 15s metric offset -100 smoothed
+    metric 10 11.5 13 14.5 16
+
+eval range from 0s to 60s step 15s metric offset -100 smoothed + 0
+    {} 10 11.5 13 14.5 16
+
+# Native histogram tests for smoothed/anchored modifiers.
+# Simple histogram counter incrementing by count:1, sum:1, buckets:[1] every 15s.
+clear
+load 15s
+  hist_counter {{schema:0 count:1 sum:1 buckets:[1] offset:1}}+{{count:1 sum:1 buckets:[1] offset:1}}x7
+
+# Standard (non-smoothed/anchored) rate and increase at 50s for reference.
+eval instant at 50s histogram_count(rate(hist_counter[1m]))
+    {} 0.06666666666666667
+
+eval instant at 50s histogram_count(increase(hist_counter[1m]))
+    {} 4
+
+# Anchored increase at 50s: left=count:1 (t=0), right=count:4 (t=45), increase=3.
+eval instant at 50s histogram_count(increase(hist_counter[1m] anchored))
+    {} 3
+
+eval instant at 50s histogram_sum(increase(hist_counter[1m] anchored))
+    {} 3
+
+# Smoothed increase at 50s: left=count:1 (t=0), right interpolated at t=50
+# between count:4 (t=45) and count:5 (t=60), fraction=1/3, right=count:4.333...,
+# increase=3.333...
+eval instant at 50s histogram_count(increase(hist_counter[1m] smoothed))
+    {} 3.333333333333333
+
+eval instant at 50s histogram_sum(increase(hist_counter[1m] smoothed))
+    {} 3.333333333333333
+
+# Smoothed increase at 5s: left=count:1 (t=0, not before rangeStart=-55s),
+# right interpolated at t=5 between count:1 (t=0) and count:2 (t=15),
+# fraction=1/3, right=count:1.333..., increase=0.333...
+eval instant at 5s histogram_count(increase(hist_counter[1m] smoothed))
+    {} 0.3333333333333333
+
+# Smoothed rate at 50s: increase / 60s.
+eval instant at 50s histogram_count(rate(hist_counter[1m] smoothed))
+    {} 0.05555555555555555
+
+# Anchored increase at 5s: only one sample (t=0) in range, increase from itself is 0.
+eval instant at 5s histogram_count(increase(hist_counter[1m] anchored))
+    {} 0
+
+eval instant at 5s histogram_sum(increase(hist_counter[1m] anchored))
+    {} 0
+
+# Smoothed delta (non-counter) at 50s: same values as smoothed increase
+# for a monotonic series (no counter reset correction needed).
+# hist_counter samples have no GaugeType hint so a not-a-gauge warning is emitted.
+eval instant at 50s histogram_count(delta(hist_counter[1m] smoothed))
+    expect warn msg: PromQL warning: this native histogram metric is not a gauge: "hist_counter"
+    {} 3.333333333333333
+
+# Anchored rate at 50s: left=count:1 (t=0), right=count:4 (t=45), rate=3/60.
+eval instant at 50s histogram_count(rate(hist_counter[1m] anchored))
+    {} 0.05
+
+# Anchored delta (non-counter) at 50s: same result as anchored increase but
+# hist_counter samples have no GaugeType hint so a not-a-gauge warning is emitted.
+eval instant at 50s histogram_count(delta(hist_counter[1m] anchored))
+    expect warn msg: PromQL warning: this native histogram metric is not a gauge: "hist_counter"
+    {} 3
+
+# Smoothed vector selector interpolation for native histograms.
+# At t=7s, interpolate between t=0 (count:1) and t=15 (count:2), fraction=7/15.
+eval instant at 7s histogram_count(hist_counter smoothed)
+    {} 1.4666666666666668
+
+# At t=15s, exact match: count:2.
+eval instant at 15s histogram_count(hist_counter smoothed)
+    {} 2
+
+# At t=110s, no next sample; carry forward the last value (count:8 at t=105).
+eval instant at 110s histogram_count(hist_counter smoothed)
+    {} 8
+
+# Range eval for smoothed rate: verify per-step boundary handling.
+# hist_counter increments count:1 and sum:1 every 15s starting at t=0.
+# rate(hist_counter[1m] smoothed) at each step computes increase/60.
+# t=0:  left=right=count:1, increase=0, rate=0.
+# t=15: left=count:1, right=count:2 (exact), increase=1, rate=1/60.
+# t=30: left=count:1, right=count:3 (exact), increase=2, rate=2/60.
+# t=45: left=count:1, right=count:4 (exact), increase=3, rate=3/60.
+# t=60: left=count:1, right=count:5 (exact), increase=4, rate=4/60.
+eval range from 0s to 60s step 15s histogram_count(rate(hist_counter[1m] smoothed))
+    {} 0 0.016666666666666666 0.03333333333333333 0.05 0.06666666666666667
+
+# Anchored and smoothed native histogram modifiers with custom buckets.
+clear
+load 30s
+  mixed_hist {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+
+# Anchored rate should warn and return no result when the range mixes exponential
+# and custom buckets at the boundaries.
+eval instant at 1m rate(mixed_hist[1m] anchored)
+    expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "mixed_hist"
+    # Should produce no results.
+
+# Smoothed rate should warn and return no result when interpolation would cross
+# exponential and custom buckets.
+eval instant at 45s rate(mixed_hist[1m] smoothed)
+    expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "mixed_hist"
+    # Should produce no results.
+
+# Anchored increase should still account for resets for custom-bucket histograms.
+clear
+load 30s
+  reset_custom_hist {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:4 count:4 custom_values:[5 10] buckets:[4]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:reset}} {{schema:-53 sum:3 count:3 custom_values:[5 10] buckets:[3]}}
+
+eval instant at 90s histogram_count(increase(reset_custom_hist[90s]))
+    {} 4.5
+
+eval instant at 90s histogram_sum(increase(reset_custom_hist[90s]))
+    {} 4.5
+
+eval instant at 90s histogram_count(increase(reset_custom_hist[90s] anchored))
+    {} 6
+
+eval instant at 90s histogram_sum(increase(reset_custom_hist[90s] anchored))
+    {} 6
+
+# A gauge-hint on a middle (non-boundary) sample must trigger the "not a counter"
+# warning for rate/increase, matching the behaviour of the non-extended path.
+clear
+load 30s
+  mid_gauge_hist {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}} {{schema:0 sum:3 count:3 buckets:[3]}}
+
+eval instant at 90s histogram_count(rate(mid_gauge_hist[90s] anchored))
+    expect warn msg: PromQL warning: this native histogram metric is not a counter: "mid_gauge_hist"
+    {} 0.022222222222222223
+
+eval instant at 90s histogram_count(increase(mid_gauge_hist[90s] smoothed))
+    expect warn msg: PromQL warning: this native histogram metric is not a counter: "mid_gauge_hist"
+    {} 2
+
+# Gauge op on a counter-typed series must warn when a boundary sample lacks the
+# gauge hint.
+eval instant at 90s histogram_count(delta(mid_gauge_hist[90s] anchored))
+    expect warn msg: PromQL warning: this native histogram metric is not a gauge: "mid_gauge_hist"
+    {} 2
+
+# Smoothed rate on a custom-bucket-only series interpolates cleanly.
+clear
+load 15s
+  custom_only {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}+{{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}x7
+
+eval instant at 50s histogram_count(increase(custom_only[1m] smoothed))
+    {} 3.333333333333333
+
+eval instant at 50s histogram_sum(increase(custom_only[1m] smoothed))
+    {} 3.333333333333333
+
+# Smoothed vector-selector interpolation for a histogram counter crossing a
+# reset. isCounter=true (CounterResetHint != GaugeType), so the reset between
+# h[1]=count:10 and h[2]=count:2 (counter_reset_hint:reset) is detected and
+# the interpolation models the counter as restarting from zero:
+# h[2].Mul(fraction) = count:2 * (5/15) = 0.666...
+clear
+load 15s
+  reset_middle {{schema:0 sum:5 count:5 buckets:[5]}} {{schema:0 sum:10 count:10 buckets:[10]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:reset}} {{schema:0 sum:6 count:6 buckets:[6]}}
+
+eval instant at 20s histogram_count(reset_middle smoothed)
+    {} 0.6666666666666666
+
+# Smoothed histogram rate must not double-count the first post-reset sample when
+# the left range boundary is interpolated across the reset.
+clear
+load 10s
+  reset_boundary _ {{schema:0 sum:396 count:396 buckets:[396] counter_reset_hint:not_reset}} {{schema:0 sum:110 count:110 buckets:[110] counter_reset_hint:reset}} {{schema:0 sum:194 count:194 buckets:[194] counter_reset_hint:not_reset}}
+
+eval instant at 20s500ms histogram_count(rate(reset_boundary[1s] smoothed))
+    {} 9.7
+
+# Anchored increase with reset at last sample (T < rangeEnd): the reset hint on
+# h[2] must not self-detect when right is a direct copy of h[2].
+# Float reference (5 10 3): increase = 10 - 5 + 10 - 3? No: right - left + correction.
+# left=5 right=3 correction=h[1]=10 → 8. Bug returns 11 (adds h[2]=3 twice).
+clear
+load 30s
+  anchored_reset_at_end {{schema:0 sum:5 count:5 buckets:[5]}} {{schema:0 sum:10 count:10 buckets:[10]}} {{schema:0 sum:3 count:3 buckets:[3] counter_reset_hint:reset}}
+
+eval instant at 70s histogram_count(increase(anchored_reset_at_end[70s] anchored))
+    {} 8
+
+# Anchored increase with only two samples, second is a reset at rangeEnd.
+# The two-sample case must still apply the reset correction even though the
+# inner slice is empty after excluding both boundary samples.
+# Float reference: right - left + correction = 3 - 5 + 5 = 3.
+clear
+load 30s
+  anchored_two_sample_reset {{schema:0 sum:5 count:5 buckets:[5]}} {{schema:0 sum:3 count:3 buckets:[3] counter_reset_hint:reset}}
+
+eval instant at 30s histogram_count(increase(anchored_two_sample_reset[30s] anchored))
+    {} 3
+
+# Smoothed increase where the left interpolation crosses the first reset and a
+# second reset immediately follows the skipped sample. The correction must be
+# taken against h[firstSampleIndex+1] (count=5), not the interpolated left
+# (count=0.5). Float reference: 5.5.
+clear
+load 10s
+  smoothed_double_reset {{schema:0 sum:10 count:10 buckets:[10]}} {{schema:0 sum:5 count:5 buckets:[5] counter_reset_hint:reset}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:reset}} {{schema:0 sum:4 count:4 buckets:[4]}}
+
+eval instant at 15s histogram_count(increase(smoothed_double_reset[14s] smoothed))
+    {} 5.5
+
+# Two-sample smoothed window where both left and right are interpolated from the
+# same reset. The left interpolation already accounts for the reset, so no
+# correction should be applied. Float reference: right-left = h[1].Mul(0.75) -
+# h[1].Mul(0.25) = h[1].Mul(0.5) = count 2.5. The first > last+1 early-return
+# in correctForCounterResetsHistogram prevents double-counting this case.
+clear
+load 20s
+  smoothed_two_sample_both_interp {{schema:0 sum:10 count:10 buckets:[10]}} {{schema:0 sum:5 count:5 buckets:[5] counter_reset_hint:reset}}
+
+eval instant at 15s histogram_count(increase(smoothed_two_sample_both_interp[10s] smoothed))
+    {} 2.5
+
+# Smoothed vector selector emits MixedExponentialCustomHistogramsWarning and
+# produces no result when interpolating between exponential and custom-bucket
+# histograms. At t=45s: prev=t=30 (custom), next=t=60 (exp) → skip + warn.
+clear
+load 30s
+  smoothed_mix {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+
+eval instant at 45s histogram_count(smoothed_mix smoothed)
+    expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "smoothed_mix"
+
+# Smoothed vector selector must emit a warning and produce no result when the
+# lookback window mixes floats and histograms.
+clear
+load 30s
+  mixed_types 1 2 {{schema:0 sum:3 count:3 buckets:[3]}} {{schema:0 sum:4 count:4 buckets:[4]}}
+
+eval instant at 45s sort(mixed_types smoothed)
+    expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_types"
+
+# Smoothed rate where the RIGHT boundary interpolation crosses a counter reset.
+# Samples: t=0 count:5, t=10 count:10, t=20 count:3 (reset).
+# At t=15s, range=10s: rangeStart=5s, rangeEnd=15s.
+# left: interpolate(t=0 count:5, t=10 count:10, t=5s) = count:5+(count:5*0.5) = count:7.5.
+# right: interpolate(t=10 count:10, t=20 count:3 reset, t=15s) → reset path →
+#   count:3 * 0.5 = count:1.5 (CounterResetHint=reset inherited).
+# Inner samples: h[t=10 count:10]. h[10].DetectReset(left=7.5)? no (10>7.5).
+# right.DetectReset(prev=count:10)? yes (reset hint). correction=count:10.
+# increase = count:1.5 - count:7.5 + count:10 = count:4.
+# rate = count:4/10 = 0.4.
+clear
+load 10s
+  right_boundary_reset {{schema:0 sum:5 count:5 buckets:[5]}} {{schema:0 sum:10 count:10 buckets:[10]}} {{schema:0 sum:3 count:3 buckets:[3] counter_reset_hint:reset}}
+
+eval instant at 15s histogram_count(rate(right_boundary_reset[10s] smoothed))
+    {} 0.4

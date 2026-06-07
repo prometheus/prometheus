@@ -1,0 +1,7 @@
+# This is the rules file for bad-rules-syntax-test.yml.
+
+groups:
+  - name: bad-syntax
+    rules:
+      - record: x
+        expr: 'test +'

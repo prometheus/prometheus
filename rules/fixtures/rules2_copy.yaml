@@ -1,0 +1,5 @@
+groups:
+  - name: test_2 copy
+    rules:
+      - record: test_2
+        expr: vector(2)
