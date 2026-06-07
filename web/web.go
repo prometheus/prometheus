@@ -333,6 +333,11 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.Parser = parser.NewParser(parser.Options{})
 	}
 
+	// Register the template metrics
+	if o.Registerer != nil {
+		template.RegisterTemplateMetrics(o.Registerer)
+	}
+
 	m := newMetrics(o.Registerer)
 	router := route.New().
 		WithInstrumentation(m.instrumentHandler).
@@ -499,7 +504,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	}
 
 	router.Get("/version", h.version)
-	router.Get("/metrics", promhttp.Handler().ServeHTTP)
+	router.Get("/metrics", promhttp.HandlerFor(o.Gatherer, promhttp.HandlerOpts{}).ServeHTTP)
 
 	router.Get("/federate", readyf(httputil.CompressionHandler{
 		Handler: http.HandlerFunc(h.federation),
