@@ -1029,8 +1029,8 @@ func TestHead_WALDuplicateRefDifferentLabels(t *testing.T) {
 	// series_b, so this query would incorrectly return series_b's labels.
 	got := head2.series.getByID(800000)
 	require.NotNil(t, got, "series with ref 800000 should exist after WAL replay")
-	require.Equal(t, labels.FromStrings("__name__", "series_a", "job", "test"), got.labels(),
-		"ref 800000 should keep the FIRST series (series_a), not be overwritten by the second (series_b)")
+	require.True(t, labels.Equal(labels.FromStrings("__name__", "series_a", "job", "test"), got.labels()),
+		"ref 800000 should keep the FIRST series (series_a), not be overwritten by the second (series_b); got %v", got.labels())
 }
 
 // TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative is a regression test
