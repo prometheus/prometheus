@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus
 
-go 1.25.0
+go 1.26
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.1
@@ -41,7 +41,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gophercloud/gophercloud/v2 v2.12.0
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
-	github.com/hashicorp/consul/api v1.32.1
+	github.com/hashicorp/consul/api v1.34.3
 	github.com/hashicorp/nomad/api v0.0.0-20260528135333-5b027732945f
 	github.com/hetznercloud/hcloud-go/v2 v2.41.2
 	github.com/ionos-cloud/sdk-go/v6 v6.3.7
@@ -128,7 +128,6 @@ require (
 	github.com/go-openapi/swag/typeutils v0.25.5 // indirect
 	github.com/go-openapi/swag/yamlutils v0.25.5 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
-	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/pb33f/jsonpath v0.8.2 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
