@@ -980,6 +980,59 @@ func TestHead_WALMultiRef(t *testing.T) {
 	}}, series)
 }
 
+// TestHead_WALDuplicateRefDifferentLabels is a regression test for
+// https://github.com/prometheus/prometheus/issues/18547.
+//
+// If a corrupted WAL contains two series records that share the same ref but
+// have different label sets, the second series must NOT overwrite the first in
+// the stripeSeries ref map. Without the guard, querying metric A would return
+// metric B's data because the postings entry for A still points at the ref
+// that now maps to B.
+func TestHead_WALDuplicateRefDifferentLabels(t *testing.T) {
+	head, w := newTestHead(t, 1000, compression.None, false)
+
+	// Write a WAL with two series records sharing the same ref (800000)
+	// but with different label sets.
+	populateTestWL(t, w, []any{
+		[]record.RefSeries{
+			{Ref: 800000, Labels: labels.FromStrings("__name__", "series_a", "job", "test")},
+		},
+		[]record.RefSample{
+			{Ref: 800000, T: 100, V: 1},
+		},
+		[]record.RefSeries{
+			// Duplicate ref with different labels — this is the corruption scenario.
+			{Ref: 800000, Labels: labels.FromStrings("__name__", "series_b", "job", "test")},
+		},
+		[]record.RefSample{
+			{Ref: 800000, T: 200, V: 2},
+		},
+	}, nil, false)
+	require.NoError(t, head.Close())
+
+	// Re-open the head and replay the WAL.
+	w2, err := wlog.New(nil, nil, w.Dir(), compression.None)
+	require.NoError(t, err)
+
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = head.opts.ChunkDirRoot
+	head2, err := NewHead(nil, nil, w2, nil, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head2.Init(0))
+	defer func() {
+		require.NoError(t, head2.Close())
+	}()
+
+	// The series_a postings entry should resolve to series_a's labels, not
+	// series_b's. Before the fix, head.series[800000] was overwritten by
+	// series_b, so this query would incorrectly return series_b's labels.
+	got := head2.series.getByID(800000)
+	require.NotNil(t, got, "series with ref 800000 should exist after WAL replay")
+	require.Equal(t, labels.FromStrings("__name__", "series_a", "job", "test"), got.labels(),
+		"ref 800000 should keep the FIRST series (series_a), not be overwritten by the second (series_b)")
+}
+
 // TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative is a regression test
 // for https://github.com/prometheus/prometheus/issues/10884.
 //
