@@ -73,11 +73,11 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 
 // Register implements discovery.DiscovererMetrics.
 // Metrics are registered in newDiscovererMetrics, so this is a no-op.
-func (m *zookeeperMetrics) Register() error {
+func (*zookeeperMetrics) Register() error {
 	return nil
 }
 
 // Unregister implements discovery.DiscovererMetrics.
 // The metrics are shared between ServerSet and Nerve SD, so they are not unregistered here.
-func (m *zookeeperMetrics) Unregister() {
+func (*zookeeperMetrics) Unregister() {
 }
