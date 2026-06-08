@@ -21,7 +21,7 @@ const (
 
 type stEncoder struct {
 	st, stDiff      int64
-	firstSTChangeOn uint16
+	firstSTChangeOn uint8
 	firstSTKnown    bool
 }
 
@@ -48,18 +48,7 @@ func writeHeaderFirstSTChangeOn(b []byte, firstSTChangeOn uint16) {
 }
 
 func readSTHeader(b []byte) (firstSTKnown bool, firstSTChangeOn uint8) {
-	if b[0] == 0x00 {
-		return false, 0
-	}
-	if b[0] == 0x80 {
-		return true, 0
-	}
-	mask := byte(0x80)
-	if b[0]&mask != 0 {
-		firstSTKnown = true
-	}
-	mask = 0x7F
-	return firstSTKnown, b[0] & mask
+	return b[0]&0x80 != 0, b[0] & 0x7F
 }
 
 // encode writes the start timestamp data for the current histogram or float histogram sample and updates the encoder state.
@@ -92,7 +81,7 @@ func (e *stEncoder) encode(b *bstream, num uint16, curT, prevT, st int64) {
 		if e.firstSTChangeOn == 0 {
 			if st != e.st || num-1 == maxFirstSTChangeOn {
 				stDiff := prevT - st
-				e.firstSTChangeOn = num - 1
+				e.firstSTChangeOn = uint8(num - 1)
 				writeHeaderFirstSTChangeOn(b.bytes()[histogramHeaderSize-1:], num-1)
 				putVarbitInt(b, stDiff)
 				e.stDiff = stDiff

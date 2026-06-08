@@ -577,3 +577,7 @@ func TestFloatHistogramSTAppenderPreviousEmbeddedAppenderUsesSTHeader(t *testing
 	require.NoError(t, err)
 	require.Equal(t, CounterReset, nextChunk.GetCounterResetHeader())
 }
+
+func TestFloatHistogramSTChunkOverFlowPanics(t *testing.T) {
+	testChunkOverFlowPanics(t, EncFloatHistogramST, ValFloatHistogram)
+}
