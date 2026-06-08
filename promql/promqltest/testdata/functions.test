@@ -2239,3 +2239,17 @@ eval instant at 0s max_of(NaN, 3)
 
 eval instant at 0s max_of(3, NaN)
   NaN
+
+# Range queries with literals
+eval range from 0 to 4m step 1m max_of(4, 4)
+  {} 4 4 4 4 4
+
+eval range from 0 to 4m step 1m min_of(0, 1)
+  {} 0 0 0 0 0
+
+# Range queries with scalar functions
+eval range from 0 to 4m step 1m max_of(time(), 90)
+  {} 90 90 120 180 240
+
+eval range from 0 to 4m step 1m min_of(90, time())
+  {} 0 60 90 90 90
