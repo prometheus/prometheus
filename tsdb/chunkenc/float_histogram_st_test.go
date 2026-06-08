@@ -550,7 +550,7 @@ func TestFloatHistogramSTChunk_CounterResetHeader(t *testing.T) {
 		require.Equal(t, cr, c.GetCounterResetHeader())
 		require.Equal(t, cr, happ.FloatHistogramAppender.GetCounterResetHeader())
 		require.Equal(t, 1, c.NumSamples(), "NumSamples must not include CR bits")
-		require.Equal(t, 1, happ.FloatHistogramAppender.NumSamples(), "NumSamples must not include CR bits")
+		require.Equal(t, 1, happ.NumSamples(), "NumSamples must not include CR bits")
 		require.Equal(t, byte2Before, c.Bytes()[2], "setting CR must not disturb byte 2 (ST header)")
 	}
 }
