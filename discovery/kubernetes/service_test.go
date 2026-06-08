@@ -113,14 +113,10 @@ func makeLoadBalancerService() *v1.Service {
 	}
 }
 
-func makeLoadBalancerServiceWithStatusIPs(name string, ips []string) *v1.Service {
-	ing := make([]v1.LoadBalancerIngress, 0, len(ips))
-	for _, ip := range ips {
-		ing = append(ing, v1.LoadBalancerIngress{IP: ip})
-	}
+func makeMetalLBIPv4Service() *v1.Service {
 	return &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
+			Name:      "svc-metallb-v4",
 			Namespace: "default",
 		},
 		Spec: v1.ServiceSpec{
@@ -133,19 +129,40 @@ func makeLoadBalancerServiceWithStatusIPs(name string, ips []string) *v1.Service
 			ClusterIP: "10.0.0.1",
 		},
 		Status: v1.ServiceStatus{
-			LoadBalancer: v1.LoadBalancerStatus{Ingress: ing},
+			LoadBalancer: v1.LoadBalancerStatus{
+				Ingress: []v1.LoadBalancerIngress{{IP: "1.2.3.4"}},
+			},
 		},
 	}
 }
 
-func makeLoadBalancerServiceWithStatusHostnames(name string, hosts []string) *v1.Service {
-	ing := make([]v1.LoadBalancerIngress, 0, len(hosts))
-	for _, h := range hosts {
-		ing = append(ing, v1.LoadBalancerIngress{Hostname: h})
-	}
+func makeMetalLBDualStackService() *v1.Service {
 	return &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
+			Name:      "svc-metallb-dual",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Ports: []v1.ServicePort{{
+				Name:     "testport",
+				Protocol: v1.ProtocolTCP,
+				Port:     int32(32001),
+			}},
+			Type:      v1.ServiceTypeLoadBalancer,
+			ClusterIP: "10.0.0.1",
+		},
+		Status: v1.ServiceStatus{
+			LoadBalancer: v1.LoadBalancerStatus{
+				Ingress: []v1.LoadBalancerIngress{{IP: "2001:1:2:3:4::"}, {IP: "1.2.3.4"}},
+			},
+		},
+	}
+}
+
+func makeEKSLoadBalancerService() *v1.Service {
+	return &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-eks",
 			Namespace: "default",
 		},
 		Spec: v1.ServiceSpec{
@@ -158,7 +175,12 @@ func makeLoadBalancerServiceWithStatusHostnames(name string, hosts []string) *v1
 			ClusterIP: "10.0.0.1",
 		},
 		Status: v1.ServiceStatus{
-			LoadBalancer: v1.LoadBalancerStatus{Ingress: ing},
+			LoadBalancer: v1.LoadBalancerStatus{
+				Ingress: []v1.LoadBalancerIngress{
+					{Hostname: "example-lb-name-abc.elb.eu-central-1.test.com"},
+					{Hostname: "example-lb-name-def.elb.eu-central-1.test.com"},
+				},
+			},
 		},
 	}
 }
@@ -223,7 +245,6 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 						"__meta_kubernetes_service_port_number":     "31900",
 						"__meta_kubernetes_service_cluster_ip":      "10.0.0.1",
 						"__meta_kubernetes_service_loadbalancer_ip": "127.0.0.1",
-						"__meta_kubernetes_service_loadbalancer_ips": "127.0.0.1",
 					},
 				},
 				Labels: model.LabelSet{
@@ -240,9 +261,9 @@ func TestServiceDiscoveryLoadBalancerRealWorld(t *testing.T) {
 	t.Parallel()
 	n, c := makeDiscovery(RoleService, NamespaceDiscovery{})
 
-	metallbV4 := makeLoadBalancerServiceWithStatusIPs("svc-metallb-v4", []string{"1.2.3.4"})
-	metallbDual := makeLoadBalancerServiceWithStatusIPs("svc-metallb-dual", []string{"2001:1:2:3:4::", "1.2.3.4"})
-	eks := makeLoadBalancerServiceWithStatusHostnames("svc-eks", []string{"example-lb-name-abc.elb.eu-central-1.test.com"})
+	metallbV4 := makeMetalLBIPv4Service()
+	metallbDual := makeMetalLBDualStackService()
+	eks := makeEKSLoadBalancerService()
 
 	k8sDiscoveryTest{
 		discovery: n,
@@ -263,7 +284,6 @@ func TestServiceDiscoveryLoadBalancerRealWorld(t *testing.T) {
 						"__meta_kubernetes_service_port_number":      "32001",
 						"__meta_kubernetes_service_cluster_ip":       "10.0.0.1",
 						"__meta_kubernetes_service_loadbalancer_ips": "1.2.3.4",
-						"__meta_kubernetes_service_loadbalancer_ip": "1.2.3.4",
 					},
 				},
 				Labels: model.LabelSet{
@@ -299,7 +319,7 @@ func TestServiceDiscoveryLoadBalancerRealWorld(t *testing.T) {
 						"__meta_kubernetes_service_port_name":              "testport",
 						"__meta_kubernetes_service_port_number":            "32002",
 						"__meta_kubernetes_service_cluster_ip":             "10.0.0.1",
-						"__meta_kubernetes_service_loadbalancer_hostnames": "example-lb-name-abc.elb.eu-central-1.test.com",
+						"__meta_kubernetes_service_loadbalancer_hostnames": "example-lb-name-abc.elb.eu-central-1.test.com,example-lb-name-def.elb.eu-central-1.test.com",
 					},
 				},
 				Labels: model.LabelSet{
