@@ -124,7 +124,7 @@ type readClientMetrics struct {
 func newRemoteReadMetrics(
 	name string,
 	url string,
-	_ prometheus.Registerer, // ignored: remote-read carve-out uses the global registry
+	reg prometheus.Registerer,
 ) (
 	prometheus.Gauge,
 	*prometheus.CounterVec,
@@ -138,12 +138,6 @@ func newRemoteReadMetrics(
 			return old.readQueries, old.readQueriesTotalVec, old.readQueryDurationVec
 		}
 	}
-
-	// Carve-out: keep using the global registerer for remote-read.
-	wrappedReg := prometheus.WrapRegistererWith(prometheus.Labels{
-		"remote_name": name,
-		"endpoint":    url,
-	}, prometheus.DefaultRegisterer)
 
 	readQueries := prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: namespace,
@@ -170,7 +164,18 @@ func newRemoteReadMetrics(
 		NativeHistogramMinResetDuration: time.Hour,
 	}, []string{"response_type"})
 
-	// Register OR reuse if already present (avoid panics and counter resets).
+	if reg == nil {
+		return readQueries, readQueriesTotalVec, readQueryDurationVec
+	}
+
+	// Each remote-read client gets its own metrics, distinguished by the
+	// remote_name and endpoint labels and registered with the provided registry.
+	wrappedReg := prometheus.WrapRegistererWith(prometheus.Labels{
+		"remote_name": name,
+		"endpoint":    url,
+	}, reg)
+
+	// Register OR reuse if already present (avoid panics and counter resets on reload).
 	var are prometheus.AlreadyRegisteredError
 	if err := wrappedReg.Register(readQueries); err != nil {
 		if !errors.As(err, &are) {
@@ -231,7 +236,7 @@ func NewReadClient(name string, conf *ClientConfig, reg prometheus.Registerer, o
 		acceptedResponseTypes = AcceptedResponseTypes
 	}
 
-	// Always create metrics; helper uses the default registry for the carve-out.
+	// Create (or reuse) the per-client read metrics, registered with the provided registry.
 	var (
 		readQueries         prometheus.Gauge
 		readQueriesTotal    *prometheus.CounterVec
