@@ -139,7 +139,7 @@ func (c *FloatHistogramSTChunk) Appender() (Appender, error) {
 			st:              it.st,
 			stDiff:          it.stDiff,
 			firstSTKnown:    it.firstSTKnown,
-			firstSTChangeOn: uint16(it.firstSTChangeOn),
+			firstSTChangeOn: it.firstSTChangeOn,
 		},
 	}
 	return a, nil
@@ -409,7 +409,13 @@ func (*FloatHistogramSTAppender) AppendHistogram(Appender, int64, int64, *histog
 
 // AppendFloatHistogram implements Appender for FloatHistogramSTAppender.
 func (a *FloatHistogramSTAppender) AppendFloatHistogram(prev Appender, st, t int64, fh *histogram.FloatHistogram, appendOnly bool) (Chunk, bool, Appender, error) {
-	if a.NumSamples() == 0 {
+	numSamples := a.NumSamples()
+
+	if numSamples == int(a.sampleCountMask()) {
+		panic("chunk capacity exceeded")
+	}
+
+	if numSamples == 0 {
 		a.appendFloatHistogramST(st, t, fh)
 		if fh.CounterResetHint == histogram.GaugeType {
 			a.setCounterResetHeader(GaugeType)
