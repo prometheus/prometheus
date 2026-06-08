@@ -547,7 +547,7 @@ func TestHistogramSTChunk_CounterResetHeader(t *testing.T) {
 		require.Equal(t, cr, c.GetCounterResetHeader())
 		require.Equal(t, cr, happ.HistogramAppender.GetCounterResetHeader())
 		require.Equal(t, 1, c.NumSamples())
-		require.Equal(t, 1, happ.HistogramAppender.NumSamples())
+		require.Equal(t, 1, happ.NumSamples())
 		require.Equal(t, byte2Before, c.Bytes()[2])
 	}
 }
