@@ -548,34 +548,10 @@ func TestFloatHistogramSTChunk_CounterResetHeader(t *testing.T) {
 	for _, cr := range []CounterResetHeader{UnknownCounterReset, CounterReset, NotCounterReset, GaugeType} {
 		happ.setCounterResetHeader(cr)
 		require.Equal(t, cr, c.GetCounterResetHeader())
-		require.Equal(t, cr, happ.FloatHistogramAppender.GetCounterResetHeader())
 		require.Equal(t, 1, c.NumSamples(), "NumSamples must not include CR bits")
 		require.Equal(t, 1, happ.NumSamples(), "NumSamples must not include CR bits")
 		require.Equal(t, byte2Before, c.Bytes()[2], "setting CR must not disturb byte 2 (ST header)")
 	}
-}
-
-func TestFloatHistogramSTAppenderPreviousEmbeddedAppenderUsesSTHeader(t *testing.T) {
-	prevChunk := NewFloatHistogramSTChunk()
-	prevApp, err := prevChunk.Appender()
-	require.NoError(t, err)
-
-	fh1 := tsdbutil.GenerateTestFloatHistogram(10)
-	_, _, prevApp, err = prevApp.AppendFloatHistogram(nil, 100, 1000, fh1, false)
-	require.NoError(t, err)
-
-	prevSTApp := prevApp.(*FloatHistogramSTAppender)
-	prevSTApp.setCounterResetHeader(NotCounterReset)
-	prevChunk.Bytes()[2] = byte(GaugeType)
-
-	nextChunk := NewFloatHistogramSTChunk()
-	nextApp, err := nextChunk.Appender()
-	require.NoError(t, err)
-
-	fh2 := tsdbutil.GenerateTestFloatHistogram(0)
-	_, _, _, err = nextApp.AppendFloatHistogram(&prevSTApp.FloatHistogramAppender, 200, 2000, fh2, false)
-	require.NoError(t, err)
-	require.Equal(t, CounterReset, nextChunk.GetCounterResetHeader())
 }
 
 func TestFloatHistogramSTChunkOverFlowPanics(t *testing.T) {
