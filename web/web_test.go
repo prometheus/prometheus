@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -741,4 +742,111 @@ func waitForServerReady(t *testing.T, baseURL string, timeout time.Duration) {
 		time.Sleep(interval)
 	}
 	t.Fatalf("Server did not become ready within %v", timeout)
+}
+
+func TestConfigAssistantApplySuccess(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "prometheus.yml")
+
+	originalConfig := `global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+`
+
+	err := os.WriteFile(configFile, []byte(originalConfig), 0o644)
+	require.NoError(t, err)
+
+	h := &Handler{
+		logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		options:  &Options{ConfigFile: configFile},
+		reloadCh: make(chan chan error),
+	}
+
+	go func() {
+		rc := <-h.reloadCh
+		rc <- nil
+	}()
+
+	newConfig := `global:
+  scrape_interval: 30s
+
+scrape_configs:
+  - job_name: "prometheus-updated"
+    static_configs:
+      - targets: ["localhost:9090"]
+`
+
+	reqBody := strings.NewReader(fmt.Sprintf(`{"yaml": %q}`, newConfig))
+	req := httptest.NewRequest(http.MethodPost, "/-/config-assistant/apply", reqBody)
+	resp := httptest.NewRecorder()
+
+	h.configAssistantApply(resp, req)
+
+	require.Equal(t, http.StatusOK, resp.Code)
+
+	var applyResp configAssistantResponse
+	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &applyResp))
+	require.Equal(t, "success", applyResp.Status)
+	require.Equal(t, configFile+".bak", applyResp.BackupFile)
+
+	writtenConfig, err := os.ReadFile(configFile)
+	require.NoError(t, err)
+	require.Equal(t, newConfig, string(writtenConfig))
+
+	backupConfig, err := os.ReadFile(configFile + ".bak")
+	require.NoError(t, err)
+	require.Equal(t, originalConfig, string(backupConfig))
+}
+
+func TestConfigAssistantApplyRejectsInvalidConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "prometheus.yml")
+
+	originalConfig := `global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+`
+
+	err := os.WriteFile(configFile, []byte(originalConfig), 0o644)
+	require.NoError(t, err)
+
+	h := &Handler{
+		logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		options:  &Options{ConfigFile: configFile},
+		reloadCh: make(chan chan error),
+	}
+
+	badConfig := `global:
+  scrape_interval: bad-duration
+
+scrape_configs:
+  - job_name: "broken"
+    static_configs:
+      - targets: ["localhost:9090"]
+`
+
+	reqBody := strings.NewReader(fmt.Sprintf(`{"yaml": %q}`, badConfig))
+	req := httptest.NewRequest(http.MethodPost, "/-/config-assistant/apply", reqBody)
+	resp := httptest.NewRecorder()
+
+	h.configAssistantApply(resp, req)
+
+	require.Equal(t, http.StatusBadRequest, resp.Code)
+
+	var applyResp configAssistantResponse
+	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &applyResp))
+	require.Equal(t, "error", applyResp.Status)
+	require.Contains(t, applyResp.Message, "Configuration validation failed")
+
+	writtenConfig, err := os.ReadFile(configFile)
+	require.NoError(t, err)
+	require.Equal(t, originalConfig, string(writtenConfig))
 }
