@@ -14,6 +14,7 @@
 package scaleway
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -23,7 +24,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v3"
 )
 
 var (
@@ -32,6 +33,12 @@ var (
 	testSecretKey     = "6d6579e5-a5b9-49fc-a35f-b4feb9b87301"
 	testAccessKey     = "SCW0W8NG6024YHRJ7723"
 )
+
+func unmarshalYAMLStrict(data []byte, v interface{}) error {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	return dec.Decode(v)
+}
 
 func TestScalewayInstanceRefresh(t *testing.T) {
 	mock := httptest.NewServer(http.HandlerFunc(mockScalewayInstance))
@@ -46,7 +53,7 @@ access_key: %s
 api_url: %s
 `, testProjectID, testSecretKey, testAccessKey, mock.URL)
 	var cfg SDConfig
-	require.NoError(t, yaml.UnmarshalStrict([]byte(cfgString), &cfg))
+	require.NoError(t, unmarshalYAMLStrict([]byte(cfgString), &cfg))
 
 	d, err := newRefresher(&cfg)
 	require.NoError(t, err)
@@ -262,7 +269,7 @@ access_key: %s
 api_url: %s
 `, testProjectID, testSecretKey, testAccessKey, mock.URL)
 	var cfg SDConfig
-	require.NoError(t, yaml.UnmarshalStrict([]byte(cfgString), &cfg))
+	require.NoError(t, unmarshalYAMLStrict([]byte(cfgString), &cfg))
 
 	d, err := newRefresher(&cfg)
 	require.NoError(t, err)
@@ -289,7 +296,7 @@ access_key: %s
 api_url: %s
 `, testProjectID, testSecretKeyFile, testAccessKey, mock.URL)
 	var cfg SDConfig
-	require.NoError(t, yaml.UnmarshalStrict([]byte(cfgString), &cfg))
+	require.NoError(t, unmarshalYAMLStrict([]byte(cfgString), &cfg))
 
 	d, err := newRefresher(&cfg)
 	require.NoError(t, err)

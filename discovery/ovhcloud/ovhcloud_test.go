@@ -14,6 +14,7 @@
 package ovhcloud
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"testing"
@@ -22,7 +23,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/prometheus/prometheus/discovery"
 )
@@ -36,6 +37,12 @@ var (
 const (
 	mockURL = "https://localhost:1234"
 )
+
+func unmarshalYAMLStrict(data []byte, v interface{}) error {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	return dec.Decode(v)
+}
 
 func getMockConf(service string) (SDConfig, error) {
 	confString := fmt.Sprintf(`
@@ -52,7 +59,7 @@ service: %s
 
 func getMockConfFromString(confString string) (SDConfig, error) {
 	var conf SDConfig
-	err := yaml.UnmarshalStrict([]byte(confString), &conf)
+	err := unmarshalYAMLStrict([]byte(confString), &conf)
 	return conf, err
 }
 

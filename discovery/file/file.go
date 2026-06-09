@@ -14,6 +14,7 @@
 package file
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -33,7 +34,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -50,6 +51,12 @@ var (
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
+}
+
+func unmarshalYAMLStrict(data []byte, v interface{}) error {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	return dec.Decode(v)
 }
 
 // SDConfig is the configuration for file based discovery.
@@ -398,7 +405,7 @@ func (d *Discovery) readFile(filename string) ([]*targetgroup.Group, error) {
 			return nil, err
 		}
 	case ".yml", ".yaml":
-		if err := yaml.UnmarshalStrict(content, &targetGroups); err != nil {
+		if err := unmarshalYAMLStrict(content, &targetGroups); err != nil {
 			return nil, err
 		}
 	default:

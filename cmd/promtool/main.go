@@ -44,7 +44,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -67,6 +67,12 @@ var (
 	promtoolParserOpts             parser.Options
 	logger                         = promslog.New(&promslog.Config{})
 )
+
+func unmarshalYAMLStrict(data []byte, v interface{}) error {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	return dec.Decode(v)
+}
 
 func init() {
 	// This can be removed when the legacy global mode is fully deprecated.
@@ -832,7 +838,7 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 			return nil, err
 		}
 	case ".yml", ".yaml":
-		if err := yaml.UnmarshalStrict(content, &targetGroups); err != nil {
+		if err := unmarshalYAMLStrict(content, &targetGroups); err != nil {
 			return nil, err
 		}
 	default:

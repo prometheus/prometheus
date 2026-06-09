@@ -14,6 +14,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -34,7 +35,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/sigv4"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
@@ -71,6 +72,12 @@ var (
 )
 
 // Load parses the YAML input s into a Config.
+func unmarshalYAMLStrict(data []byte, v interface{}) error {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	return dec.Decode(v)
+}
+
 func Load(s string, logger *slog.Logger) (*Config, error) {
 	cfg := &Config{}
 	// If the entire config body is empty the UnmarshalYAML method is
@@ -78,7 +85,7 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 	// point as well.
 	*cfg = DefaultConfig
 
-	err := yaml.UnmarshalStrict([]byte(s), cfg)
+	err := unmarshalYAMLStrict([]byte(s), cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -369,7 +376,7 @@ func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 			if err != nil {
 				return nil, fileErr(filename, err)
 			}
-			err = yaml.UnmarshalStrict(content, &cfg)
+			err = unmarshalYAMLStrict(content, &cfg)
 			if err != nil {
 				return nil, fileErr(filename, err)
 			}
