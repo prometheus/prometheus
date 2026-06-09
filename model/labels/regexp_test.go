@@ -148,6 +148,43 @@ func TestFastRegexMatcher_MatchString(t *testing.T) {
 	}
 }
 
+// TestFastRegexMatcher_CapturingGroupBetweenLiterals is a regression test for a
+// false-positive match in patterns of the shape `.*<lit1>(group)<lit2>.*`. When
+// the group is a capturing group it is stripped before the concat fast path runs
+// (added in #17828), which loses the surrounding delimiter literals and degrades
+// to a substring-style check on the inner literal. The equivalent non-capturing
+// pattern takes a different path and stays correct. In every case the result must
+// agree with Go's stdlib RE2.
+func TestFastRegexMatcher_CapturingGroupBetweenLiterals(t *testing.T) {
+	cases := []struct {
+		pattern string
+		value   string
+	}{
+		// The captured literal is a prefix of a longer token in the input, so
+		// the delimiter `|` does not follow it: `|foo|` is absent from
+		// `|foo-bar|` and the correct answer is false.
+		{`.*\|(foo)\|.*`, "|foo-bar|"},
+		// Control: the same pattern with a non-capturing group, which must
+		// also be false.
+		{`.*\|(?:foo)\|.*`, "|foo-bar|"},
+		// A genuine match must still be reported for the capturing-group form.
+		{`.*\|(foo)\|.*`, "x|foo|y"},
+		// Other delimiters and prefix-overlap shapes.
+		{`.*-(ab)-.*`, "x-abc-y"},
+		{`.*-(ab)-.*`, "x-ab-y"},
+	}
+
+	for _, c := range cases {
+		t.Run(readable(c.pattern)+` on "`+readable(c.value)+`"`, func(t *testing.T) {
+			m, err := NewFastRegexMatcher(c.pattern)
+			require.NoError(t, err)
+			want := regexp.MustCompile("^(?s:" + c.pattern + ")$").MatchString(c.value)
+			require.Equal(t, want, m.MatchString(c.value),
+				"FastRegexMatcher disagrees with stdlib RE2 for pattern %q on %q", c.pattern, c.value)
+		})
+	}
+}
+
 func readable(s string) string {
 	const maxReadableStringLen = 40
 	if len(s) < maxReadableStringLen {
@@ -406,7 +443,7 @@ func TestNewFastRegexMatcher(t *testing.T) {
 		{"foo-.*$", &literalPrefixSensitiveStringMatcher{prefix: "foo-", right: trueMatcher{}}},
 		{"(prometheus|api_prom)_api_v1_.+", &containsStringMatcher{substrings: []string{"prometheus_api_v1_", "api_prom_api_v1_"}, left: nil, right: &anyNonEmptyStringMatcher{matchNL: true}}},
 		{"^((.*)(bar|b|buzz)(.+)|foo)$", orStringMatcher([]StringMatcher{&containsStringMatcher{substrings: []string{"bar", "b", "buzz"}, left: trueMatcher{}, right: &anyNonEmptyStringMatcher{matchNL: true}}, &equalStringMatcher{s: "foo", caseSensitive: true}})},
-		{"((fo(bar))|.+foo)", orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "fobar", caseSensitive: true}}), &literalSuffixStringMatcher{suffix: "foo", suffixCaseSensitive: true, left: &anyNonEmptyStringMatcher{matchNL: true}}})},
+		{"((fo(bar))|.+foo)", orStringMatcher([]StringMatcher{&equalStringMatcher{s: "fobar", caseSensitive: true}, &literalSuffixStringMatcher{suffix: "foo", suffixCaseSensitive: true, left: &anyNonEmptyStringMatcher{matchNL: true}}})},
 		{"(.+)/(gateway|cortex-gw|cortex-gw-internal)", &containsStringMatcher{substrings: []string{"/gateway", "/cortex-gw", "/cortex-gw-internal"}, left: &anyNonEmptyStringMatcher{matchNL: true}, right: nil}},
 		// we don't support case insensitive matching for contains.
 		// This is because there's no strings.IndexOfFold function.

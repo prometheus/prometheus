@@ -78,8 +78,10 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 			return nil, err
 		}
 
-		// Remove any capture operations before trying to optimize the remaining operations.
-		clearCapture(parsed)
+		// Remove any capture operations and merge the adjacent literals they
+		// expose before trying to optimize the remaining operations. This is
+		// done after compiling m.re above so the fallback regexp is unaffected.
+		normalizeRegexp(parsed)
 
 		if parsed.Op == syntax.OpConcat {
 			m.caseInsensitivePrefix, m.prefix, m.suffix, m.contains = optimizeConcatRegex(parsed)
@@ -278,6 +280,50 @@ func clearCapture(regs ...*syntax.Regexp) {
 			*r = *r.Sub[0]
 		}
 	}
+}
+
+// normalizeRegexp removes capture operations throughout re and merges any
+// adjacent literals exposed as a result. The Go regexp parser never emits two
+// consecutive literals in a concat, but stripping a capture group can break
+// that invariant: `\|(foo)\|` parses as the literals `|`, `foo`, `|` separated
+// by the capture and, once the capture is removed by clearCapture, those three
+// literals are left adjacent. Downstream optimizations (optimizeConcatRegex,
+// isSimpleConcatenationPattern) would then treat them as independent substrings
+// that may be separated by arbitrary text, producing false-positive matches.
+// Merging restores the invariant so the contiguous literal `|foo|` is matched
+// as a unit.
+func normalizeRegexp(re *syntax.Regexp) {
+	clearCapture(re)
+	for _, sub := range re.Sub {
+		normalizeRegexp(sub)
+	}
+	if re.Op == syntax.OpConcat {
+		re.Sub = mergeAdjacentLiterals(re.Sub)
+	}
+}
+
+// mergeAdjacentLiterals merges consecutive literal sub-expressions of a concat
+// into a single literal. Only literals with matching case-sensitivity are
+// merged, so case-sensitive and case-insensitive literals are kept distinct.
+func mergeAdjacentLiterals(sub []*syntax.Regexp) []*syntax.Regexp {
+	if len(sub) < 2 {
+		return sub
+	}
+	merged := make([]*syntax.Regexp, 0, len(sub))
+	for _, r := range sub {
+		if n := len(merged); n > 0 && r.Op == syntax.OpLiteral {
+			if prev := merged[n-1]; prev.Op == syntax.OpLiteral &&
+				(prev.Flags&syntax.FoldCase) == (r.Flags&syntax.FoldCase) {
+				combined := make([]rune, 0, len(prev.Rune)+len(r.Rune))
+				combined = append(combined, prev.Rune...)
+				combined = append(combined, r.Rune...)
+				merged[n-1] = &syntax.Regexp{Op: syntax.OpLiteral, Rune: combined, Flags: prev.Flags}
+				continue
+			}
+		}
+		merged = append(merged, r)
+	}
+	return merged
 }
 
 // clearBeginEndText removes the begin and end text from the regexp. Prometheus regexp are anchored to the beginning and end of the string.
