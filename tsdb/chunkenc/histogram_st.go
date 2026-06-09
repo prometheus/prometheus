@@ -181,6 +181,14 @@ func (a *HistogramSTAppender) NumSamples() int {
 	return int(binary.BigEndian.Uint16(a.b.bytes()) & histogramSTSampleCountMask)
 }
 
+// setNumSamples writes the sample count into the low 14 bits of bytes 0-1,
+// preserving the counter-reset header in the top 2 bits of byte 0.
+func (a *HistogramSTAppender) setNumSamples(num int) {
+	buf := a.b.bytes()
+	crBits := buf[0] & CounterResetHeaderMask
+	binary.BigEndian.PutUint16(buf, uint16(crBits)<<8|uint16(num)&histogramSTSampleCountMask)
+}
+
 func (a *HistogramSTAppender) appendable(h *histogram.Histogram) (
 	positiveInserts, negativeInserts []Insert,
 	backwardPositiveInserts, backwardNegativeInserts []Insert,
@@ -279,131 +287,17 @@ func (a *HistogramSTAppender) appendableGauge(h *histogram.Histogram) (
 	return positiveInserts, negativeInserts, backwardPositiveInserts, backwardNegativeInserts, positiveSpans, negativeSpans, okToAppend
 }
 
-func (a *HistogramSTAppender) appendHistogram(t int64, h *histogram.Histogram) {
-	var tDelta, cntDelta, zCntDelta int64
-	num := binary.BigEndian.Uint16(a.b.bytes()) & 0x3FFF
-
-	if value.IsStaleNaN(h.Sum) {
-		// Emptying out other fields to write no buckets, and an empty
-		// layout in case of first histogram in the chunk.
-		h = &histogram.Histogram{Sum: h.Sum}
-	}
-
-	if num == 0 {
-		// The first append gets the privilege to dictate the layout
-		// but it's also responsible for encoding it into the chunk!
-		writeHistogramChunkLayout(a.b, h.Schema, h.ZeroThreshold, h.PositiveSpans, h.NegativeSpans, h.CustomValues)
-		a.schema = h.Schema
-		a.zThreshold = h.ZeroThreshold
-
-		if len(h.PositiveSpans) > 0 {
-			a.pSpans = make([]histogram.Span, len(h.PositiveSpans))
-			copy(a.pSpans, h.PositiveSpans)
-		} else {
-			a.pSpans = nil
-		}
-		if len(h.NegativeSpans) > 0 {
-			a.nSpans = make([]histogram.Span, len(h.NegativeSpans))
-			copy(a.nSpans, h.NegativeSpans)
-		} else {
-			a.nSpans = nil
-		}
-		if len(h.CustomValues) > 0 {
-			a.customValues = make([]float64, len(h.CustomValues))
-			copy(a.customValues, h.CustomValues)
-		} else {
-			a.customValues = nil
-		}
-
-		numPBuckets, numNBuckets := countSpans(h.PositiveSpans), countSpans(h.NegativeSpans)
-		if numPBuckets > 0 {
-			a.pBuckets = make([]int64, numPBuckets)
-			a.pBucketsDelta = make([]int64, numPBuckets)
-		} else {
-			a.pBuckets = nil
-			a.pBucketsDelta = nil
-		}
-		if numNBuckets > 0 {
-			a.nBuckets = make([]int64, numNBuckets)
-			a.nBucketsDelta = make([]int64, numNBuckets)
-		} else {
-			a.nBuckets = nil
-			a.nBucketsDelta = nil
-		}
-
-		// Now store the actual data.
-		putVarbitInt(a.b, t)
-		putVarbitUint(a.b, h.Count)
-		putVarbitUint(a.b, h.ZeroCount)
-		a.b.writeBits(math.Float64bits(h.Sum), 64)
-		for _, b := range h.PositiveBuckets {
-			putVarbitInt(a.b, b)
-		}
-		for _, b := range h.NegativeBuckets {
-			putVarbitInt(a.b, b)
-		}
-	} else {
-		// The case for the 2nd sample with single deltas is implicitly
-		// handled correctly with the double delta code, so we don't
-		// need a separate single delta logic for the 2nd sample.
-
-		tDelta = t - a.t
-		cntDelta = int64(h.Count) - int64(a.cnt)
-		zCntDelta = int64(h.ZeroCount) - int64(a.zCnt)
-
-		tDod := tDelta - a.tDelta
-		cntDod := cntDelta - a.cntDelta
-		zCntDod := zCntDelta - a.zCntDelta
-
-		if value.IsStaleNaN(h.Sum) {
-			cntDod, zCntDod = 0, 0
-		}
-
-		putVarbitInt(a.b, tDod)
-		putVarbitInt(a.b, cntDod)
-		putVarbitInt(a.b, zCntDod)
-
-		a.writeSumDelta(h.Sum)
-
-		for i, b := range h.PositiveBuckets {
-			delta := b - a.pBuckets[i]
-			dod := delta - a.pBucketsDelta[i]
-			putVarbitInt(a.b, dod)
-			a.pBucketsDelta[i] = delta
-		}
-		for i, b := range h.NegativeBuckets {
-			delta := b - a.nBuckets[i]
-			dod := delta - a.nBucketsDelta[i]
-			putVarbitInt(a.b, dod)
-			a.nBucketsDelta[i] = delta
-		}
-	}
-
-	// Write the incremented count back, preserving the counter-reset bits in
-	// the top 2 bits of byte 0.
-	buf := a.b.bytes()
-	crBits := buf[0] & CounterResetHeaderMask
-	binary.BigEndian.PutUint16(buf, (uint16(crBits)<<8)|(num+1))
-
-	a.t = t
-	a.cnt = h.Count
-	a.zCnt = h.ZeroCount
-	a.tDelta = tDelta
-	a.cntDelta = cntDelta
-	a.zCntDelta = zCntDelta
-
-	copy(a.pBuckets, h.PositiveBuckets)
-	copy(a.nBuckets, h.NegativeBuckets)
-	// Note that the bucket deltas were already updated above.
-	a.sum = h.Sum
-}
-
-// appendHistogramST encodes a histogram sample with start timestamp.
-func (a *HistogramSTAppender) appendHistogramST(st, t int64, h *histogram.Histogram) {
+// appendHistogramST encodes a histogram sample with start timestamp. It
+// delegates the sample encoding to the embedded base appendHistogram and
+// writes the ST encoding afterward. The base no longer touches the chunk
+// header sample count: num is passed in and the new count (num+1) is
+// returned, leaving the caller to persist it via setNumSamples (the ST
+// override preserves the counter-reset bits in byte 0).
+func (a *HistogramSTAppender) appendHistogramST(num int, st, t int64, h *histogram.Histogram) int {
 	prevT := a.t
-	a.appendHistogram(t, h)
-	num := binary.BigEndian.Uint16(a.b.bytes()) & 0x3FFF
-	a.encode(a.b, num, a.t, prevT, st)
+	newNum := a.appendHistogram(num, t, h)
+	a.encode(a.b, uint16(newNum), a.t, prevT, st)
+	return newNum
 }
 
 func (*HistogramSTAppender) Append(int64, int64, float64) {
@@ -426,7 +320,7 @@ func (a *HistogramSTAppender) AppendHistogram(prev Appender, st, t int64, h *his
 	}
 
 	if numSamples == 0 {
-		a.appendHistogramST(st, t, h)
+		a.setNumSamples(a.appendHistogramST(numSamples, st, t, h))
 		if h.CounterResetHint == histogram.GaugeType {
 			a.setCounterResetHeader(GaugeType)
 			return nil, false, a, nil
@@ -461,7 +355,7 @@ func (a *HistogramSTAppender) AppendHistogram(prev Appender, st, t int64, h *his
 			}
 			happ := app.(*HistogramSTAppender)
 			happ.setCounterResetHeader(counterResetHint)
-			happ.appendHistogramST(st, t, h)
+			happ.setNumSamples(happ.appendHistogramST(0, st, t, h))
 			return newChunk, false, app, nil
 		}
 		if len(pBackwardInserts) > 0 || len(nBackwardInserts) > 0 {
@@ -480,14 +374,14 @@ func (a *HistogramSTAppender) AppendHistogram(prev Appender, st, t int64, h *his
 			if appendOnly {
 				return nil, false, a, fmt.Errorf("histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 			}
-			chk, app := a.recodeST(
+			chk, happ := a.recodeST(
 				pForwardInserts, nForwardInserts,
 				h.PositiveSpans, h.NegativeSpans,
 			)
-			app.(*HistogramSTAppender).appendHistogramST(st, t, h)
-			return chk, true, app, nil
+			happ.setNumSamples(happ.appendHistogramST(happ.NumSamples(), st, t, h))
+			return chk, true, happ, nil
 		}
-		a.appendHistogramST(st, t, h)
+		a.setNumSamples(a.appendHistogramST(numSamples, st, t, h))
 		return nil, false, a, nil
 	}
 
@@ -504,7 +398,7 @@ func (a *HistogramSTAppender) AppendHistogram(prev Appender, st, t int64, h *his
 		}
 		happ := app.(*HistogramSTAppender)
 		happ.setCounterResetHeader(GaugeType)
-		happ.appendHistogramST(st, t, h)
+		happ.setNumSamples(happ.appendHistogramST(0, st, t, h))
 		return newChunk, false, app, nil
 	}
 
@@ -521,15 +415,15 @@ func (a *HistogramSTAppender) AppendHistogram(prev Appender, st, t int64, h *his
 		if appendOnly {
 			return nil, false, a, fmt.Errorf("gauge histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 		}
-		chk, app := a.recodeST(
+		chk, happ := a.recodeST(
 			pForwardInserts, nForwardInserts,
 			h.PositiveSpans, h.NegativeSpans,
 		)
-		app.(*HistogramSTAppender).appendHistogramST(st, t, h)
-		return chk, true, app, nil
+		happ.setNumSamples(happ.appendHistogramST(happ.NumSamples(), st, t, h))
+		return chk, true, happ, nil
 	}
 
-	a.appendHistogramST(st, t, h)
+	a.setNumSamples(a.appendHistogramST(numSamples, st, t, h))
 	return nil, false, a, nil
 }
 
@@ -537,7 +431,7 @@ func (a *HistogramSTAppender) AppendHistogram(prev Appender, st, t int64, h *his
 func (a *HistogramSTAppender) recodeST(
 	positiveInserts, negativeInserts []Insert,
 	positiveSpans, negativeSpans []histogram.Span,
-) (Chunk, Appender) {
+) (Chunk, *HistogramSTAppender) {
 	byts := a.b.bytes()
 	it := newHistogramSTIterator(byts)
 	hc := NewHistogramSTChunk()
@@ -548,6 +442,7 @@ func (a *HistogramSTAppender) recodeST(
 	happ := app.(*HistogramSTAppender)
 	numPositiveBuckets, numNegativeBuckets := countSpans(positiveSpans), countSpans(negativeSpans)
 
+	num := happ.NumSamples()
 	for it.Next() == ValHistogram {
 		tOld, hOld := it.AtHistogram(nil)
 		stOld := it.AtST()
@@ -567,11 +462,12 @@ func (a *HistogramSTAppender) recodeST(
 		if len(negativeInserts) > 0 {
 			hOld.NegativeBuckets = insert(hOld.NegativeBuckets, negativeBuckets, negativeInserts, true)
 		}
-		happ.appendHistogramST(stOld, tOld, hOld)
+		num = happ.appendHistogramST(num, stOld, tOld, hOld)
 	}
+	happ.setNumSamples(num)
 
 	happ.setCounterResetHeader(CounterResetHeader(byts[0] & CounterResetHeaderMask))
-	return hc, app
+	return hc, happ
 }
 
 // histogramSTIterator is an iterator for HistogramSTChunk that decodes ST after each sample.
