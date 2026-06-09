@@ -119,6 +119,9 @@ type Appender interface {
 	// Appending a histogram may require creating a completely new chunk or recoding (changing) the current chunk.
 	// The Appender prev is used to determine if there is a counter reset between the previous Appender and the current Appender.
 	// The Appender prev is optional and only taken into account when the first sample is being appended.
+	// It is typed as the generic Appender interface so callers can pass whichever concrete appender they
+	// currently hold without first type-asserting; each implementation performs the type check itself,
+	// and only on the code path that actually needs the previous appender's state.
 	// The bool appendOnly governs what happens when a sample cannot be appended to the current chunk. If appendOnly is true, then
 	// in such case an error is returned without modifying the chunk. If appendOnly is false, then a new chunk is created or the
 	// current chunk is recoded to accommodate the sample.
@@ -126,8 +129,8 @@ type Appender interface {
 	// The returned bool isRecoded can be used to distinguish between the new Chunk c being a completely new Chunk
 	// or the current Chunk recoded to a new Chunk.
 	// The Appender app that can be used for the next append is always returned.
-	AppendHistogram(prev *HistogramAppender, st, t int64, h *histogram.Histogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
-	AppendFloatHistogram(prev *FloatHistogramAppender, st, t int64, h *histogram.FloatHistogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
+	AppendHistogram(prev Appender, st, t int64, h *histogram.Histogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
+	AppendFloatHistogram(prev Appender, st, t int64, h *histogram.FloatHistogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
 }
 
 // Iterator is a simple iterator that can only get the next value.
