@@ -761,7 +761,7 @@ scrape_configs:
 	require.NoError(t, err)
 
 	h := &Handler{
-		logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		logger:   slog.New(slog.DiscardHandler),
 		options:  &Options{ConfigFile: configFile},
 		reloadCh: make(chan chan error),
 	}
@@ -819,7 +819,7 @@ scrape_configs:
 	require.NoError(t, err)
 
 	h := &Handler{
-		logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		logger:   slog.New(slog.DiscardHandler),
 		options:  &Options{ConfigFile: configFile},
 		reloadCh: make(chan chan error),
 	}
