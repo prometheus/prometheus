@@ -1081,8 +1081,9 @@ type Target struct {
 	Health             scrape.TargetHealth `json:"health"`
 	ScrapeTimeoutUsage float64             `json:"scrapeTimeoutUsage"`
 
-	ScrapeInterval string `json:"scrapeInterval"`
-	ScrapeTimeout  string `json:"scrapeTimeout"`
+	ScrapeInterval      string `json:"scrapeInterval"`
+	ScrapeTimeout       string `json:"scrapeTimeout"`
+	ConsecutiveFailures int    `json:"consecutiveFailures"`
 }
 
 type ScrapePoolsDiscovery struct {
@@ -1239,12 +1240,13 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 							return lastErrStr
 						}
 					}(),
-					LastScrape:         target.LastScrape(),
-					LastScrapeDuration: target.LastScrapeDuration().Seconds(),
-					Health:             target.Health(),
-					ScrapeInterval:     target.GetValue(model.ScrapeIntervalLabel),
-					ScrapeTimeout:      scrapeTimeout,
-					ScrapeTimeoutUsage: scrapeTimeoutUsage(target.LastScrapeDuration(), scrapeTimeout),
+					LastScrape:          target.LastScrape(),
+					LastScrapeDuration:  target.LastScrapeDuration().Seconds(),
+					Health:              target.Health(),
+					ScrapeInterval:      target.GetValue(model.ScrapeIntervalLabel),
+					ScrapeTimeout:       scrapeTimeout,
+					ScrapeTimeoutUsage:  scrapeTimeoutUsage(target.LastScrapeDuration(), scrapeTimeout),
+					ConsecutiveFailures: target.ConsecutiveFailures(),
 				})
 			}
 		}
