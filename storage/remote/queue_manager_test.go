@@ -628,9 +628,15 @@ func TestReshardPartialBatch(t *testing.T) {
 
 			for range 100 {
 				done := make(chan struct{})
+				prevCalls := c.NumCalls()
 				go func() {
 					m.Append(recs.Samples)
-					time.Sleep(batchSendDeadline)
+					// Wait until the shard goroutine has entered Store (i.e. a
+					// send is actually in progress) before stopping, so we
+					// reliably test that stop() can interrupt an in-flight send.
+					for c.NumCalls() == prevCalls {
+						time.Sleep(time.Millisecond)
+					}
 					m.shards.stop()
 					m.shards.start(1)
 					done <- struct{}{}
