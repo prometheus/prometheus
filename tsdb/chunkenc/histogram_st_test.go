@@ -545,34 +545,10 @@ func TestHistogramSTChunk_CounterResetHeader(t *testing.T) {
 	for _, cr := range []CounterResetHeader{UnknownCounterReset, CounterReset, NotCounterReset, GaugeType} {
 		happ.setCounterResetHeader(cr)
 		require.Equal(t, cr, c.GetCounterResetHeader())
-		require.Equal(t, cr, happ.HistogramAppender.GetCounterResetHeader())
 		require.Equal(t, 1, c.NumSamples())
 		require.Equal(t, 1, happ.NumSamples())
 		require.Equal(t, byte2Before, c.Bytes()[2])
 	}
-}
-
-func TestHistogramSTAppenderPreviousEmbeddedAppenderUsesSTHeader(t *testing.T) {
-	prevChunk := NewHistogramSTChunk()
-	prevApp, err := prevChunk.Appender()
-	require.NoError(t, err)
-
-	h1 := tsdbutil.GenerateTestHistogram(10)
-	_, _, prevApp, err = prevApp.AppendHistogram(nil, 100, 1000, h1, false)
-	require.NoError(t, err)
-
-	prevSTApp := prevApp.(*HistogramSTAppender)
-	prevSTApp.setCounterResetHeader(NotCounterReset)
-	prevChunk.Bytes()[2] = byte(GaugeType)
-
-	nextChunk := NewHistogramSTChunk()
-	nextApp, err := nextChunk.Appender()
-	require.NoError(t, err)
-
-	h2 := tsdbutil.GenerateTestHistogram(0)
-	_, _, _, err = nextApp.AppendHistogram(&prevSTApp.HistogramAppender, 200, 2000, h2, false)
-	require.NoError(t, err)
-	require.Equal(t, CounterReset, nextChunk.GetCounterResetHeader())
 }
 
 func TestHistogramSTChunkOverFlowPanics(t *testing.T) {

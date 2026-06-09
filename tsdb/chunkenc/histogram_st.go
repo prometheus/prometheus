@@ -78,10 +78,9 @@ func (c *HistogramSTChunk) Appender() (Appender, error) {
 	if len(c.b.stream) == histogramHeaderSize {
 		return &HistogramSTAppender{
 			HistogramAppender: HistogramAppender{
-				b:            &c.b,
-				headerLayout: histogramHeaderST,
-				t:            math.MinInt64,
-				leading:      0xff,
+				b:       &c.b,
+				t:       math.MinInt64,
+				leading: 0xff,
 			},
 		}, nil
 	}
@@ -100,8 +99,7 @@ func (c *HistogramSTChunk) Appender() (Appender, error) {
 
 	a := &HistogramSTAppender{
 		HistogramAppender: HistogramAppender{
-			b:            &c.b,
-			headerLayout: histogramHeaderST,
+			b: &c.b,
 
 			schema:        it.schema,
 			zThreshold:    it.zThreshold,
@@ -175,6 +173,12 @@ func (a *HistogramSTAppender) GetCounterResetHeader() CounterResetHeader {
 func (a *HistogramSTAppender) setCounterResetHeader(cr CounterResetHeader) {
 	b := a.b.bytes()
 	b[0] = (b[0] &^ CounterResetHeaderMask) | (byte(cr) & CounterResetHeaderMask)
+}
+
+// NumSamples returns the number of samples in the chunk. Since the counter-reset header
+// is in the top 2 bits of the sample count word, so samples count occupies only the low 14 bits.
+func (a *HistogramSTAppender) NumSamples() int {
+	return int(binary.BigEndian.Uint16(a.b.bytes()) & histogramSTSampleCountMask)
 }
 
 func (a *HistogramSTAppender) appendable(h *histogram.Histogram) (
@@ -406,15 +410,18 @@ func (*HistogramSTAppender) Append(int64, int64, float64) {
 	panic("appended a float sample to a histogram chunk")
 }
 
-func (*HistogramSTAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
+func (*HistogramSTAppender) AppendFloatHistogram(Appender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a float histogram sample to a histogram chunk")
 }
 
 // AppendHistogram implements Appender for HistogramSTAppender.
-func (a *HistogramSTAppender) AppendHistogram(prev *HistogramAppender, st, t int64, h *histogram.Histogram, appendOnly bool) (Chunk, bool, Appender, error) {
+func (a *HistogramSTAppender) AppendHistogram(prev Appender, st, t int64, h *histogram.Histogram, appendOnly bool) (Chunk, bool, Appender, error) {
 	numSamples := a.NumSamples()
 
-	if numSamples == int(a.sampleCountMask()) {
+	// ST chunks store the sample count in the low 14 bits (the high 2 are the
+	// counter-reset header), so the capacity is histogramSTSampleCountMask rather
+	// than math.MaxUint16.
+	if numSamples == histogramSTSampleCountMask {
 		panic("chunk capacity exceeded")
 	}
 
@@ -429,8 +436,10 @@ func (a *HistogramSTAppender) AppendHistogram(prev *HistogramAppender, st, t int
 		case h.CounterResetHint == histogram.CounterReset:
 			a.setCounterResetHeader(CounterReset)
 		case prev != nil:
-			_, _, _, _, _, counterReset := prev.appendable(h)
-			a.setCounterResetHeader(counterReset)
+			if p, ok := prev.(histogramAppendable); ok {
+				_, _, _, _, _, counterReset := p.appendable(h)
+				a.setCounterResetHeader(counterReset)
+			}
 		}
 		return nil, false, a, nil
 	}

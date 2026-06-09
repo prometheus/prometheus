@@ -17,6 +17,9 @@ import "encoding/binary"
 
 const (
 	maxFirstSTChangeOn = 0x7F
+	// histogramSTSampleCountMask masks the low 14 bits of the histogram ST chunk's sample
+	// count — the high 2 bits hold the counter-reset header.
+	histogramSTSampleCountMask = 0x3FFF
 )
 
 type stEncoder struct {
