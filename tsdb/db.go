@@ -645,6 +645,9 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 		return nil, err
 	}
 	opts.ChunkDirRoot = db.sandboxDir
+	// The head operates on sandbox hardlinks, so repair deletion failures should
+	// not be fatal (Windows may transiently prevent deletion of hardlinked files).
+	opts.ReadOnly = true
 	head, err := NewHead(nil, db.logger, nil, nil, opts, NewHeadStats())
 	if err != nil {
 		return nil, err
@@ -673,6 +676,7 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 		}
 		opts := DefaultHeadOptions()
 		opts.ChunkDirRoot = db.sandboxDir
+		opts.ReadOnly = true
 		head, err = NewHead(nil, db.logger, w, wbl, opts, NewHeadStats())
 		if err != nil {
 			return nil, err
