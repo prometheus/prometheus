@@ -54,7 +54,7 @@ func (c *HistogramSTChunk) Bytes() []byte {
 
 // NumSamples returns the number of samples in the chunk.
 func (c *HistogramSTChunk) NumSamples() int {
-	return int(binary.BigEndian.Uint16(c.b.bytes()) & 0x3FFF)
+	return int(binary.BigEndian.Uint16(c.b.bytes()) & histogramSTSampleCountMask)
 }
 
 // GetCounterResetHeader returns the counter reset header from bits 7-6 of
@@ -135,7 +135,7 @@ func newHistogramSTIterator(b []byte) *histogramSTIterator {
 	it := &histogramSTIterator{
 		histogramIterator: histogramIterator{
 			br:       newBReader(b[histogramHeaderSize:]),
-			numTotal: binary.BigEndian.Uint16(b) & 0x3FFF,
+			numTotal: binary.BigEndian.Uint16(b) & histogramSTSampleCountMask,
 			t:        math.MinInt64,
 		},
 	}
@@ -486,7 +486,7 @@ func (it *histogramSTIterator) Reset(b []byte) {
 
 	// Reset the embedded histogramIterator but with the correct header offset.
 	it.br = newBReader(b[histogramHeaderSize:])
-	it.numTotal = binary.BigEndian.Uint16(b) & 0x3FFF
+	it.numTotal = binary.BigEndian.Uint16(b) & histogramSTSampleCountMask
 	it.numRead = 0
 
 	it.counterResetHeader = CounterResetHeader(b[0] & CounterResetHeaderMask)

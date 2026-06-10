@@ -299,7 +299,7 @@ Otherwise `st_i (i>=st_changed_on)` is present, while
 `st_i (0<i<st_changed_on)` is not present.
 
 Once a chunk has at least 127 samples,
-`st_changed_on` is set to 127 (0xEF) and the 127th and further samples will
+`st_changed_on` is set to 127 (0x7F) and the 128th and further samples will
 have `st_i` present.
 
 * `st_0` is encoded as a `<varint>` if present.
