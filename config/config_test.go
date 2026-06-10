@@ -801,7 +801,7 @@ var expectedConf = &Config{
 					Profile:         "profile",
 					RefreshInterval: model.Duration(60 * time.Second),
 					Port:            80,
-					Filters: []*aws.EC2Filter{
+					Filters: []*aws.Filter{
 						{
 							Name:   "tag:environment",
 							Values: []string{"prod"},
