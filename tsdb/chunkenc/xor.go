@@ -182,7 +182,7 @@ func (a *xorAppender) Append(_, t int64, v float64) {
 		for _, b := range buf[:binary.PutVarint(buf, t)] {
 			a.b.writeByte(b)
 		}
-		a.b.writeBits(math.Float64bits(v), 64)
+		a.b.writeBitsFast(math.Float64bits(v), 64)
 	case 1:
 		tDelta = uint64(t - a.t)
 
@@ -213,14 +213,14 @@ func (a *xorAppender) Append(_, t int64, v float64) {
 			a.b.writeByte(0b10<<6 | (uint8(dod>>8) & (1<<6 - 1))) // 0b10 size code combined with 6 bits of dod.
 			a.b.writeByte(uint8(dod))                             // Bottom 8 bits of dod.
 		case bitRange(dod, 17):
-			a.b.writeBits(0b110, 3)
-			a.b.writeBits(uint64(dod), 17)
+			a.b.writeBitsFast(0b110, 3)
+			a.b.writeBitsFast(uint64(dod), 17)
 		case bitRange(dod, 20):
-			a.b.writeBits(0b1110, 4)
-			a.b.writeBits(uint64(dod), 20)
+			a.b.writeBitsFast(0b1110, 4)
+			a.b.writeBitsFast(uint64(dod), 20)
 		default:
-			a.b.writeBits(0b1111, 4)
-			a.b.writeBits(uint64(dod), 64)
+			a.b.writeBitsFast(0b1111, 4)
+			a.b.writeBitsFast(uint64(dod), 64)
 		}
 
 		a.writeVDelta(v)
@@ -444,7 +444,7 @@ func xorWrite(b *bstream, newValue, currentValue float64, leading, trailing *uin
 	if *leading != 0xff && newLeading >= *leading && newTrailing >= *trailing {
 		// In this case, we stick with the current leading/trailing.
 		b.writeBit(zero)
-		b.writeBits(delta>>*trailing, 64-int(*leading)-int(*trailing))
+		b.writeBitsFast(delta>>*trailing, 64-int(*leading)-int(*trailing))
 		return
 	}
 
@@ -452,7 +452,7 @@ func xorWrite(b *bstream, newValue, currentValue float64, leading, trailing *uin
 	*leading, *trailing = newLeading, newTrailing
 
 	b.writeBit(one)
-	b.writeBits(uint64(newLeading), 5)
+	b.writeBitsFast(uint64(newLeading), 5)
 
 	// Note that if newLeading == newTrailing == 0, then sigbits == 64. But
 	// that value doesn't actually fit into the 6 bits we have.  Luckily, we
@@ -460,8 +460,8 @@ func xorWrite(b *bstream, newValue, currentValue float64, leading, trailing *uin
 	// the other case (vdelta == 0).  So instead we write out a 0 and adjust
 	// it back to 64 on unpacking.
 	sigbits := 64 - newLeading - newTrailing
-	b.writeBits(uint64(sigbits), 6)
-	b.writeBits(delta>>newTrailing, int(sigbits))
+	b.writeBitsFast(uint64(sigbits), 6)
+	b.writeBitsFast(delta>>newTrailing, int(sigbits))
 }
 
 func xorRead(br *bstreamReader, value *float64, leading, trailing *uint8) error {

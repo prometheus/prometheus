@@ -613,7 +613,7 @@ func (a *HistogramAppender) appendHistogram(t int64, h *histogram.Histogram) {
 		putVarbitInt(a.b, t)
 		putVarbitUint(a.b, h.Count)
 		putVarbitUint(a.b, h.ZeroCount)
-		a.b.writeBits(math.Float64bits(h.Sum), 64)
+		a.b.writeBitsFast(math.Float64bits(h.Sum), 64)
 		for _, b := range h.PositiveBuckets {
 			putVarbitInt(a.b, b)
 		}
