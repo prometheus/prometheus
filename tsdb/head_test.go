@@ -1696,7 +1696,7 @@ func TestMemSeries_cutNewHeadChunkCompactsPreviousChunk(t *testing.T) {
 	s.cutNewHeadChunk(1, chunkenc.EncXOR, 1000, 0)
 
 	require.Same(t, previous, s.headChunks.prev)
-	require.Equal(t, previousLen, len(previous.chunk.Bytes()))
+	require.Len(t, previous.chunk.Bytes(), previousLen)
 	require.Equal(t, previousLen, cap(previous.chunk.Bytes()))
 }
 
