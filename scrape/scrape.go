@@ -159,7 +159,6 @@ func newScrapePool(
 
 	// Validate scheme so we don't need to do it later.
 	// We also do it on scrapePool.reload(...)
-	// TODO(bwplotka): Can we move it to scrape config validation?
 	if err := namevalidationutil.CheckNameValidationScheme(cfg.MetricNameValidationScheme); err != nil {
 		return nil, errors.New("newScrapePool: MetricNameValidationScheme must be set in scrape configuration")
 	}
