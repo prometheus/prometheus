@@ -157,13 +157,36 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
-// ShardedPostings implements IndexReader. This function returns an failing postings list if sharding
+// ShardedPostings implements IndexReader. This function returns a failing postings list if sharding
 // has not been enabled in the Head.
 func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
 	if !h.head.opts.EnableSharding {
 		return index.ErrPostings(errors.New("sharding is disabled"))
 	}
+	if shardIndex >= shardCount {
+		// An out-of-range shard index selects nothing: hash % shardCount
+		// never reaches shardIndex.
+		return index.EmptyPostings()
+	}
+	if shardCount == 1 {
+		// Every series belongs to shard 0 of 1.
+		return p
+	}
 
+	// Fast path: a shard is the union of the shard hash buckets congruent to
+	// the shard index, so filtering tests membership against sorted ref
+	// lists instead of looking up every series. The input postings are
+	// drained sequentially, never seeked: the input may be an expensive
+	// postings tree, while the bucket side seeks cheaply. The returned
+	// postings may include refs of series deleted since p was built; readers
+	// resolve those like any other stale postings entry.
+	if lists, ok := h.head.shardBuckets.postingsFor(shardIndex, shardCount); ok {
+		return newShardFilterPostings(p, index.Merge(context.Background(), lists...))
+	}
+
+	// The shard count does not divide the bucket count: filter by looking up
+	// every series instead.
+	h.head.metrics.shardedPostingsFallback.Inc()
 	out := make([]storage.SeriesRef, 0, 128)
 	notFoundSeriesCount := 0
 

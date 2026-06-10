@@ -126,6 +126,10 @@ type Head struct {
 	// TODO(codesome): Extend MemPostings to return only OOOPostings, Set OOOStatus, ... Like an additional map of ooo postings.
 	postings *index.MemPostings // Postings lists for terms.
 
+	// Sorted series refs per shard hash bucket, used by ShardedPostings.
+	// Nil when sharding is disabled.
+	shardBuckets *shardBucketPostings
+
 	tombstones *tombstones.MemTombstones
 
 	iso *isolation
@@ -217,6 +221,13 @@ type HeadOptions struct {
 	// EnableSharding enables ShardedPostings() support in the Head.
 	EnableSharding bool
 
+	// ShardedPostingsBuckets is the number of shard hash buckets the head
+	// indexes series into for ShardedPostings. Must be a power of two; shard
+	// counts that do not divide it are served by per-series filtering
+	// instead of the bucket index. 0 means DefaultShardedPostingsBuckets.
+	// Only used when EnableSharding is true.
+	ShardedPostingsBuckets int
+
 	// EnableSTAsZeroSample represents 'created-timestamp-zero-ingestion' feature flag.
 	// If true, ST, if non-empty and earlier than sample timestamp, will be stored
 	// as a zero sample before the actual sample.
@@ -244,16 +255,17 @@ const (
 
 func DefaultHeadOptions() *HeadOptions {
 	ho := &HeadOptions{
-		ChunkRange:           DefaultBlockDuration,
-		ChunkDirRoot:         "",
-		ChunkPool:            chunkenc.NewPool(),
-		ChunkWriteBufferSize: chunks.DefaultWriteBufferSize,
-		ChunkWriteQueueSize:  chunks.DefaultWriteQueueSize,
-		SamplesPerChunk:      DefaultSamplesPerChunk,
-		StripeSize:           DefaultStripeSize,
-		SeriesCallback:       &noopSeriesLifecycleCallback{},
-		IsolationDisabled:    defaultIsolationDisabled,
-		WALReplayConcurrency: defaultWALReplayConcurrency,
+		ChunkRange:             DefaultBlockDuration,
+		ChunkDirRoot:           "",
+		ChunkPool:              chunkenc.NewPool(),
+		ChunkWriteBufferSize:   chunks.DefaultWriteBufferSize,
+		ChunkWriteQueueSize:    chunks.DefaultWriteQueueSize,
+		SamplesPerChunk:        DefaultSamplesPerChunk,
+		StripeSize:             DefaultStripeSize,
+		SeriesCallback:         &noopSeriesLifecycleCallback{},
+		ShardedPostingsBuckets: DefaultShardedPostingsBuckets,
+		IsolationDisabled:      defaultIsolationDisabled,
+		WALReplayConcurrency:   defaultWALReplayConcurrency,
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
 	ho.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR))
@@ -303,6 +315,14 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 	}
 	if opts.SeriesCallback == nil {
 		opts.SeriesCallback = &noopSeriesLifecycleCallback{}
+	}
+	if opts.EnableSharding {
+		if opts.ShardedPostingsBuckets == 0 {
+			opts.ShardedPostingsBuckets = DefaultShardedPostingsBuckets
+		}
+		if opts.ShardedPostingsBuckets < 0 || opts.ShardedPostingsBuckets&(opts.ShardedPostingsBuckets-1) != 0 {
+			return nil, fmt.Errorf("invalid sharded postings bucket count %d, must be a power of two", opts.ShardedPostingsBuckets)
+		}
 	}
 
 	if stats == nil {
@@ -390,6 +410,13 @@ func (h *Head) resetInMemoryState() error {
 	h.exemplarMetrics = em
 	h.exemplars = es
 	h.postings = index.NewUnorderedMemPostings()
+	if h.opts.EnableSharding {
+		buckets := h.opts.ShardedPostingsBuckets
+		if buckets == 0 {
+			buckets = DefaultShardedPostingsBuckets
+		}
+		h.shardBuckets = newShardBucketPostings(buckets)
+	}
 	h.tombstones = tombstones.NewMemTombstones()
 	h.walExpiries = map[chunks.HeadSeriesRef]int64{}
 	h.chunkRange.Store(h.opts.ChunkRange)
@@ -422,6 +449,8 @@ type headMetrics struct {
 	seriesCreated             prometheus.Counter
 	seriesRemoved             prometheus.Counter
 	seriesNotFound            prometheus.Counter
+	shardedPostingsFallback   prometheus.Counter
+	shardBucketSeries         prometheus.GaugeFunc
 	chunks                    prometheus.Gauge
 	chunksCreated             prometheus.Counter
 	chunksRemoved             prometheus.Counter
@@ -494,6 +523,16 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		seriesNotFound: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_series_not_found_total",
 			Help: "Total number of requests for series that were not found.",
+		}),
+		shardedPostingsFallback: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_sharded_postings_fallback_total",
+			Help: "Total number of ShardedPostings calls served by per-series filtering because the shard count does not divide the shard bucket count.",
+		}),
+		shardBucketSeries: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_shard_bucket_postings_series",
+			Help: "Number of series refs held in the head shard bucket postings lists, including refs of deleted series not yet removed.",
+		}, func() float64 {
+			return float64(h.shardBuckets.numSeries())
 		}),
 		chunks: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_head_chunks",
@@ -618,6 +657,8 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.seriesCreated,
 			m.seriesRemoved,
 			m.seriesNotFound,
+			m.shardedPostingsFallback,
+			m.shardBucketSeries,
 			m.gcDuration,
 			m.walTruncateDuration,
 			m.walCorruptionsTotal,
@@ -1885,6 +1926,7 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
+	h.shardBuckets.remove(deleted)
 
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
@@ -2099,6 +2141,12 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	h.metrics.seriesCreated.Inc()
 	h.numSeries.Inc()
 
+	if h.shardBuckets != nil {
+		// The series must be in its shard bucket before it becomes visible
+		// in the postings index: ShardedPostings relies on every
+		// postings-visible ref being present in its bucket.
+		h.shardBuckets.add(id, shardHash)
+	}
 	h.postings.Add(storage.SeriesRef(id), lset)
 
 	// Adding the series in the postings marks the creation of series
@@ -2412,6 +2460,7 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
+	h.shardBuckets.remove(deleted)
 
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
@@ -2509,6 +2558,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
+	h.shardBuckets.remove(deleted)
 
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
