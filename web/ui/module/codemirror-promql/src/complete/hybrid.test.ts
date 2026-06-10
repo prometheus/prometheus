@@ -75,6 +75,31 @@ describe('analyzeCompletion test', () => {
       ],
     },
     {
+      title: 'autocomplete AggregateOpModifier or BinOp after closing aggregation',
+      expr: 'sum()',
+      pos: 5, // cursor is after the closing bracket
+      expectedContext: [{ kind: ContextKind.AggregateOpModifier }, { kind: ContextKind.BinOp }],
+    },
+    {
+      title: 'metric/function/aggregation autocompletion in incomplete function',
+      expr: 'sum(',
+      pos: 4,
+      expectedContext: [
+        {
+          kind: ContextKind.MetricName,
+          metricName: '',
+        },
+        { kind: ContextKind.Function },
+        { kind: ContextKind.Aggregation },
+      ],
+    },
+    {
+      title: 'autocomplete binOp after closing function',
+      expr: 'rate(foo[5m])',
+      pos: 13, // cursor is after the closing bracket
+      expectedContext: [{ kind: ContextKind.BinOp }],
+    },
+    {
       title: 'metric/function/aggregation autocompletion 2',
       expr: 'sum(rat)',
       pos: 7,
@@ -99,6 +124,18 @@ describe('analyzeCompletion test', () => {
         { kind: ContextKind.Function },
         { kind: ContextKind.Aggregation },
       ],
+    },
+    {
+      title: 'autocomplete AggregateOpModifier or BinOp after closing nested aggregation',
+      expr: 'sum(rate(foo[5m]))',
+      pos: 18, // cursor is after the closing bracket
+      expectedContext: [{ kind: ContextKind.AggregateOpModifier }, { kind: ContextKind.BinOp }],
+    },
+    {
+      title: 'autocomplete binOp after closing aggregation with existing modifier',
+      expr: 'sum by(job)(rate(foo[5m]))',
+      pos: 26, // cursor is after the closing bracket
+      expectedContext: [{ kind: ContextKind.BinOp }],
     },
     {
       title: 'metric/function/aggregation autocompletion 4',
@@ -718,6 +755,18 @@ describe('computeStartCompletePosition test', () => {
       expectedStart: 9,
     },
     {
+      title: 'start should be equal to the pos after closing function',
+      expr: 'rate(foo[5m])',
+      pos: 13, // cursor is after the closing bracket
+      expectedStart: 13,
+    },
+    {
+      title: 'start should be equal to the pos after closing aggregation',
+      expr: 'sum(rate(foo[5m]))',
+      pos: 18, // cursor is after the closing bracket
+      expectedStart: 18,
+    },
+    {
       title: 'bracket containing a substring',
       expr: '{myL}',
       pos: 4, // cursor is between the bracket
@@ -994,12 +1043,24 @@ describe('computeEndCompletePosition test', () => {
       pos: 13, // cursor at '!' (error node)
       expectedEnd: 13, // error node returns pos
     },
+    {
+      title: 'end should be equal to the pos after closing function',
+      expr: 'rate(foo[5m])',
+      pos: 13, // cursor is after the closing bracket
+      expectedEnd: 13,
+    },
+    {
+      title: 'end should be equal to the pos after closing aggregation',
+      expr: 'sum(rate(foo[5m]))',
+      pos: 18, // cursor is after the closing bracket
+      expectedEnd: 18,
+    },
   ];
   testCases.forEach((value) => {
     it(value.title, () => {
       const state = createEditorState(value.expr);
       const node = syntaxTree(state).resolve(value.pos, -1);
-      const result = computeEndCompletePosition(node, value.pos);
+      const result = computeEndCompletePosition(state, node, value.pos);
       expect(result).toEqual(value.expectedEnd);
     });
   });
@@ -1044,6 +1105,28 @@ describe('autocomplete promQL test', () => {
       },
     },
     {
+      title: 'offline autocomplete aggregate operation modifier or binary operator after closing aggregation',
+      expr: 'sum()',
+      pos: 5, // cursor is after the closing bracket
+      expectedResult: {
+        options: ([] as Completion[]).concat(aggregateOpModifierTerms, binOpTerms),
+        from: 5,
+        to: 5,
+        validFor: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
+    {
+      title: 'offline autocomplete binary operator after closing function',
+      expr: 'rate(foo[5m])',
+      pos: 13, // cursor is after the closing bracket
+      expectedResult: {
+        options: binOpTerms,
+        from: 13,
+        to: 13,
+        validFor: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
+    {
       title: 'offline function/aggregation autocompletion in aggregation 2',
       expr: 'sum(ra)',
       pos: 6,
@@ -1084,6 +1167,17 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, snippets),
         from: 9,
         to: 9,
+        validFor: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
+    {
+      title: 'offline autocomplete aggregate operation modifier or binary operator after closing nested aggregation',
+      expr: 'sum(rate(foo[5m]))',
+      pos: 18, // cursor is after the closing bracket
+      expectedResult: {
+        options: ([] as Completion[]).concat(aggregateOpModifierTerms, binOpTerms),
+        from: 18,
+        to: 18,
         validFor: /^[a-zA-Z0-9_:]+$/,
       },
     },
