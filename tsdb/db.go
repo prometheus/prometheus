@@ -1743,6 +1743,8 @@ func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSerie
 	// only if it has not received any samples with appendID > watermark
 	// since compaction began.
 	appendIDWatermark := db.head.iso.lastAppendID()
+	// The bound is inclusive so that a sample sitting exactly on a chunk-range boundary
+	// (mint == maxt) still gets a block written before its series is evicted.
 	for ; mint <= maxt; mint += db.head.chunkRange.Load() {
 		view := viewFactory(db.head, mint, mint+db.head.chunkRange.Load()-1)
 
@@ -1753,6 +1755,13 @@ func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSerie
 		uids, err := db.compactor.Write(db.dir, view, view.Meta().MinTime, view.Meta().MaxTime+1, meta)
 		if err != nil {
 			return fmt.Errorf("persist head portion: %w", err)
+		}
+
+		// compactor.Write returns no UIDs when the view contained no chunks, which happens
+		// on a chunk-range slice that holds no data for the selected series. There is nothing
+		// to reload or log in that case.
+		if len(uids) == 0 {
+			continue
 		}
 
 		db.logger.Info("Head portion block created", "ulids", fmt.Sprintf("%v", uids), "min_time", mint, "max_time", maxt)
