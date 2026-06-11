@@ -9879,10 +9879,10 @@ func TestCompactSelectedSeries_MultipleChunkRanges(t *testing.T) {
 	}
 }
 
-// TestCompactSelectedSeries_DoesNotDecrementNumStaleSeries verifies that evicting non-stale
-// series via CompactSelectedSeries does not decrement Head.numStaleSeries — the wereStale=false
-// flag inside truncateSeries gates the decrement.
-func TestCompactSelectedSeries_DoesNotDecrementNumStaleSeries(t *testing.T) {
+// TestCompactSelectedSeries_DecrementsNumStaleSeriesWhenStaleSeriesCompacted verifies
+// that evicting a stale series via CompactSelectedSeries keeps Head.numStaleSeries in sync,
+// i.e., it is decremented only when CompactSelectedSeries actually compacts a stale serie.
+func TestCompactSelectedSeries_DecrementsNumStaleSeriesWhenStaleSeriesCompacted(t *testing.T) {
 	opts := DefaultOptions()
 	opts.MinBlockDuration = 1000
 	opts.MaxBlockDuration = 1000
@@ -9892,28 +9892,39 @@ func TestCompactSelectedSeries_DoesNotDecrementNumStaleSeries(t *testing.T) {
 
 	staleV := math.Float64frombits(value.StaleNaN)
 	stale := labels.FromStrings("name", "stale")
-	nonStale := labels.FromStrings("name", "non-stale")
+	nonStale1 := labels.FromStrings("name", "non-stale-1")
+	nonStale2 := labels.FromStrings("name", "non-stale-2")
 
 	// Stale series: a normal sample followed by a stale-NaN.
 	app := db.Appender(context.Background())
-	_, err := app.Append(0, stale, 100, 1.0)
+	staleRef, err := app.Append(0, stale, 100, 1.0)
 	require.NoError(t, err)
-	_, err = app.Append(0, stale, 200, staleV)
+	staleRef, err = app.Append(staleRef, stale, 200, staleV)
 	require.NoError(t, err)
 	// Non-stale series: ordinary samples only.
-	nonStaleRef, err := app.Append(0, nonStale, 100, 2.0)
+	nonStaleRef1, err := app.Append(0, nonStale1, 100, 2.0)
+	require.NoError(t, err)
+	nonStaleRef2, err := app.Append(0, nonStale2, 100, 3.0)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	require.Equal(t, uint64(2), db.Head().NumSeries())
+	require.Equal(t, uint64(3), db.Head().NumSeries())
 	require.Equal(t, uint64(1), db.Head().NumStaleSeries())
 
-	// Evict only the non-stale series.
-	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{nonStaleRef}))
+	// Evict only a non-stale serie.
+	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{nonStaleRef1}))
 
 	// The stale series remains, and the stale counter must not have been touched.
-	require.Equal(t, uint64(1), db.Head().NumSeries())
+	require.Equal(t, uint64(2), db.Head().NumSeries())
 	require.Equal(t, uint64(1), db.Head().NumStaleSeries(), "numStaleSeries must not be decremented when evicting non-stale series")
+
+	// Evict a stale serie and a non-stale serie.
+	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{staleRef, nonStaleRef2}))
+
+	// The stale series is removed, and the stale counter must be decremented.
+	require.Equal(t, uint64(0), db.Head().NumSeries())
+	require.Equal(t, uint64(0), db.Head().NumStaleSeries(),
+		"numStaleSeries must be decremented when CompactSelectedSeries evicts a stale serie")
 }
 
 // TestCompactSelectedSeries_SkipsSeriesWithOOOData verifies that CompactSelectedSeries skips
