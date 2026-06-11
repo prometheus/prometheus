@@ -127,6 +127,7 @@ func (m *SDMock) HandleServiceHashiCupsGet() {
 }
 
 func TestConfiguredService(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name        string
 		server      string
@@ -140,6 +141,7 @@ func TestConfiguredService(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			conf := &SDConfig{
 				Server: tc.server,
 			}
@@ -165,6 +167,7 @@ func TestConfiguredService(t *testing.T) {
 }
 
 func TestNomadSDRefresh(t *testing.T) {
+	t.Parallel()
 	sdmock := &NomadSDTestSuite{}
 	sdmock.SetupTest(t)
 	t.Cleanup(sdmock.TearDownSuite)
