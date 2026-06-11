@@ -274,6 +274,9 @@ type Options struct {
 
 	// EnableFastStartup enables scraping in parallel with WAL replay but with queries still disabled.
 	EnableFastStartup bool
+
+	// PreInitFunc is a function that will be called before the HEAD is initialized.
+	PreInitFunc PreInitFunc
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -285,6 +288,8 @@ type BlockQuerierFunc func(b BlockReader, mint, maxt int64) (storage.Querier, er
 type BlockChunkQuerierFunc func(b BlockReader, mint, maxt int64) (storage.ChunkQuerier, error)
 
 type FsSizeFunc func(path string) uint64
+
+type PreInitFunc func(*DB)
 
 // DB handles reads and writes of time series falling into
 // a hashed partition of a seriedb.
@@ -1125,6 +1130,10 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	inOrderMaxTime, ok := db.inOrderBlocksMaxTime()
 	if ok {
 		minValidTime = inOrderMaxTime
+	}
+
+	if db.opts.PreInitFunc != nil {
+		db.opts.PreInitFunc(db)
 	}
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
