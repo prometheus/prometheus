@@ -1764,7 +1764,7 @@ func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSerie
 			continue
 		}
 
-		db.logger.Info("Head portion block created", "ulids", fmt.Sprintf("%v", uids), "min_time", mint, "max_time", maxt)
+		db.logger.Info("Head portion block created", "ulids", fmt.Sprintf("%v", uids), "min_time", mint, "max_time", mint+db.head.chunkRange.Load()-1)
 
 		if err := db.reloadBlocks(); err != nil {
 			errs := []error{fmt.Errorf("reloadBlocks blocks: %w", err)}
@@ -1864,7 +1864,7 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 		return err
 	}
 	skippedSeries := totalSeries - len(selectedSeriesRefs.sortedByRef)
-	db.logger.Info("Starting selected series compaction", "num_series", len(selectedSeriesRefs.sortedByRef), "num_skipped_ooo", skippedSeries)
+	db.logger.Info("Starting selected series compaction", "num_series", len(selectedSeriesRefs.sortedByRef), "num_skipped_ooo", skippedSeries, "isolation_disabled", db.head.opts.IsolationDisabled)
 
 	if len(selectedSeriesRefs.sortedByRef) == 0 {
 		elapsed := time.Since(start)
