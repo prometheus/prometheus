@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -94,6 +95,11 @@ type PrometheusConverter struct {
 	resourceLabels *cachedResourceLabels
 	scopeLabels    *cachedScopeLabels
 	labelNamer     otlptranslator.LabelNamer
+
+	// resourceCtx holds the current resource context for the
+	// current ResourceMetrics boundary. Set once per resource via setResourceContext,
+	// then passed through AppendV2Options.Resource to the storage layer.
+	resourceCtx *storage.ResourceContext
 
 	// sanitizedLabels caches the results of label name sanitization within a request.
 	// This avoids repeated string allocations for the same label names.
@@ -191,6 +197,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 			errs = errors.Join(errs, err)
 			continue
 		}
+		c.buildResourceContext(resource)
 
 		// keep track of the earliest and latest timestamp in the ResourceMetrics for
 		// use with the "target" info metric
@@ -245,6 +252,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						Help: metric.Description(),
 					},
 					MetricFamilyName: promName,
+					Resource:         c.resourceCtx,
 				}
 
 				// handle individual metrics based on type
@@ -478,4 +486,35 @@ func (c *PrometheusConverter) setScopeContext(scope scope, settings Settings) er
 func (c *PrometheusConverter) clearResourceContext() {
 	c.resourceLabels = nil
 	c.scopeLabels = nil
+	c.resourceCtx = nil
+}
+
+// buildResourceContext builds a ResourceContext from the given OTLP resource.
+// The context is cached on the converter and reused for all datapoints within the same ResourceMetrics.
+func (c *PrometheusConverter) buildResourceContext(resource pcommon.Resource) {
+	attrs := resourceAttrsToMap(resource.Attributes())
+	if len(attrs) == 0 {
+		c.resourceCtx = nil
+		return
+	}
+
+	identifying, descriptive := seriesmetadata.SplitAttributes(attrs)
+
+	c.resourceCtx = &storage.ResourceContext{
+		Identifying: identifying,
+		Descriptive: descriptive,
+	}
+}
+
+// resourceAttrsToMap converts OTel resource attributes to a map[string]string.
+func resourceAttrsToMap(attrs pcommon.Map) map[string]string {
+	if attrs.Len() == 0 {
+		return nil
+	}
+	result := make(map[string]string, attrs.Len())
+	attrs.Range(func(key string, value pcommon.Value) bool {
+		result[key] = value.AsString()
+		return true
+	})
+	return result
 }

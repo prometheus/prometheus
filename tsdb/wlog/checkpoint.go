@@ -42,11 +42,13 @@ type CheckpointStats struct {
 	DroppedTombstones int
 	DroppedExemplars  int
 	DroppedMetadata   int
+	DroppedResources  int
 	TotalSeries       int // Processed series including dropped ones.
 	TotalSamples      int // Processed float and histogram samples including dropped ones.
 	TotalTombstones   int // Processed tombstones including dropped ones.
 	TotalExemplars    int // Processed exemplars including dropped ones.
 	TotalMetadata     int // Processed metadata including dropped ones.
+	TotalResources    int // Processed resource updates including dropped ones.
 }
 
 // LastCheckpoint returns the directory name and index of the most recent checkpoint.
@@ -164,6 +166,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		tstones               []tombstones.Stone
 		exemplars             []record.RefExemplar
 		metadata              []record.RefMetadata
+		resources             []record.RefResource
 		st                    = labels.NewSymbolTable() // Needed for decoding; labels do not outlive this function.
 		dec                   = record.NewDecoder(st, logger)
 		enc                   = record.Encoder{EnableSTStorage: enableSTStorage}
@@ -171,9 +174,13 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		recs                  [][]byte
 
 		latestMetadataMap = make(map[chunks.HeadSeriesRef]record.RefMetadata)
+		// Resources are versioned (descriptive attributes can change over time),
+		// so we keep ALL records per ref, not just the latest. This preserves version history
+		// so that VersionAt() returns correct attributes for historical timestamps after replay.
+		allResources []record.RefResource
 	)
 	for r.Next() {
-		series, samples, histogramSamples, floatHistogramSamples, tstones, exemplars, metadata = series[:0], samples[:0], histogramSamples[:0], floatHistogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0]
+		series, samples, histogramSamples, floatHistogramSamples, tstones, exemplars, metadata, resources = series[:0], samples[:0], histogramSamples[:0], floatHistogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0], resources[:0]
 
 		// We don't reset the buffer since we batch up multiple records
 		// before writing them to the checkpoint.
@@ -363,6 +370,20 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			}
 			stats.TotalMetadata += len(metadata)
 			stats.DroppedMetadata += len(metadata) - repl
+		case record.ResourceUpdate:
+			resources, err = dec.Resources(rec, resources)
+			if err != nil {
+				return nil, fmt.Errorf("decode resources: %w", err)
+			}
+			repl := 0
+			for _, r := range resources {
+				if keep(r.Ref) {
+					repl++
+					allResources = append(allResources, r)
+				}
+			}
+			stats.TotalResources += len(resources)
+			stats.DroppedResources += len(resources) - repl
 		default:
 			// Unknown record type, probably from a future Prometheus version.
 			continue
@@ -391,7 +412,6 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		return nil, fmt.Errorf("flush records: %w", err)
 	}
 
-	// Flush latest metadata records for each series.
 	if len(latestMetadataMap) > 0 {
 		latestMetadata := make([]record.RefMetadata, 0, len(latestMetadataMap))
 		for _, m := range latestMetadataMap {
@@ -399,6 +419,13 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		}
 		if err := cp.Log(enc.Metadata(latestMetadata, buf[:0])); err != nil {
 			return nil, fmt.Errorf("flush metadata records: %w", err)
+		}
+	}
+
+	// Flush all retained resource records (preserving version history).
+	if len(allResources) > 0 {
+		if err := cp.Log(enc.Resources(allResources, buf[:0])); err != nil {
+			return nil, fmt.Errorf("flush resource records: %w", err)
 		}
 	}
 

@@ -90,6 +90,7 @@ type LeveledCompactor struct {
 	postingsEncoder             index.PostingsEncoder
 	postingsDecoderFactory      PostingsDecoderFactory
 	enableOverlappingCompaction bool
+	enableNativeMetadata        bool
 }
 
 type CompactorMetrics struct {
@@ -182,6 +183,8 @@ type LeveledCompactorOptions struct {
 	Metrics *CompactorMetrics
 	// UseUncachedIO allows bypassing the page cache when appropriate.
 	UseUncachedIO bool
+	// EnableNativeMetadata enables persistence of OTel resource attributes during compaction.
+	EnableNativeMetadata bool
 }
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
@@ -237,6 +240,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		postingsDecoderFactory:      opts.PD,
 		enableOverlappingCompaction: opts.EnableOverlappingCompaction,
 		blockExcludeFunc:            opts.BlockExcludeFilter,
+		enableNativeMetadata:        opts.EnableNativeMetadata,
 	}, nil
 }
 
@@ -739,6 +743,9 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 	if _, err := tombstones.WriteFile(c.logger, tmp, tombstones.NewMemTombstones()); err != nil {
 		return fmt.Errorf("write new tombstones file: %w", err)
 	}
+
+	// Series metadata (OTel resources) is intentionally NOT persisted to disk.
+	// It is kept in memory in the head only and dropped on compaction to a block.
 
 	df, err := fileutil.OpenDir(tmp)
 	if err != nil {

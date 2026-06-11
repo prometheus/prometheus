@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
@@ -65,6 +66,10 @@ func (r *mockBReader) Index() (IndexReader, error)  { return r.ir, nil }
 func (r *mockBReader) Chunks() (ChunkReader, error) { return r.cr, nil }
 func (*mockBReader) Tombstones() (tombstones.Reader, error) {
 	return tombstones.NewMemTombstones(), nil
+}
+
+func (*mockBReader) SeriesMetadata() (seriesmetadata.Reader, error) {
+	return seriesmetadata.NewMemSeriesMetadata(), nil
 }
 func (r *mockBReader) Meta() BlockMeta { return BlockMeta{MinTime: r.mint, MaxTime: r.maxt} }
 func (*mockBReader) Size() int64       { return 0 }
