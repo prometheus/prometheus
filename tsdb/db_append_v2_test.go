@@ -4028,6 +4028,7 @@ func testOOOCompactionWithNormalCompactionAppendV2(t *testing.T, scenario sample
 
 	// Compacts normal and OOO head.
 	require.NoError(t, db.Compact(ctx))
+	require.NoError(t, db.CompactOOOHead(ctx))
 
 	// 2 blocks exist now. [0, 120), [250, 360)
 	require.Len(t, db.Blocks(), 2)
@@ -4134,6 +4135,7 @@ func testOOOCompactionWithDisabledWriteLogAppend2(t *testing.T, scenario sampleT
 
 	// Compacts normal and OOO head.
 	require.NoError(t, db.Compact(ctx))
+	require.NoError(t, db.CompactOOOHead(ctx))
 
 	// 2 blocks exist now. [0, 120), [250, 360)
 	require.Len(t, db.Blocks(), 2)
@@ -6921,6 +6923,7 @@ func testNoGapAfterRestartWithOOOAppendV2(t *testing.T, scenario sampleTypeScena
 
 			// We get 2 blocks. 1 from OOO, 1 from in-order.
 			require.NoError(t, db.Compact(ctx))
+			require.NoError(t, db.CompactOOOHead(ctx))
 			verifyBlockRanges := func() {
 				blocks := db.Blocks()
 				require.Len(t, blocks, len(c.blockRanges))
