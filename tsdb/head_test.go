@@ -437,7 +437,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 									// There's only one head chunk because only a single sample is appended. mmapChunks()
 									// ignores the latest chunk, so we need to cut a new head chunk to guarantee the chunk with
 									// the sample at c.mmappedChunkT is mmapped.
-									s.cutNewHeadChunk(c.mmappedChunkT, chunkenc.EncXOR, c.mmappedChunkT)
+									s.cutNewHeadChunk(c.mmappedChunkT, chunkenc.EncXOR, c.mmappedChunkT, 0)
 									s.mmapChunks(chunkDiskMapper)
 								}
 								require.NoError(b, chunkDiskMapper.Close())
@@ -1670,6 +1670,34 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	chk, _, _, err = s.chunk(lastID, chunkDiskMapper, &memChunkPool, nil)
 	require.NoError(t, err)
 	require.Equal(t, lastChunk, chk)
+}
+
+func TestMemSeries_cutNewHeadChunkCompactsPreviousChunk(t *testing.T) {
+	s := newMemSeries(labels.EmptyLabels(), 1, 0, true, false)
+
+	empty := chunkenc.NewXORChunk().Bytes()
+	overAllocated := make([]byte, len(empty), 1024)
+	copy(overAllocated, empty)
+	chk, err := chunkenc.FromData(chunkenc.EncXOR, overAllocated)
+	require.NoError(t, err)
+
+	s.headChunks = &memChunk{
+		chunk:   chk,
+		minTime: 0,
+		maxTime: 0,
+	}
+	s.headChunkCount.Store(1)
+
+	previous := s.headChunks
+	previousLen := len(previous.chunk.Bytes())
+	previousCap := cap(previous.chunk.Bytes())
+	require.Greater(t, previousCap, previousLen)
+
+	s.cutNewHeadChunk(1, chunkenc.EncXOR, 1000, 0)
+
+	require.Same(t, previous, s.headChunks.prev)
+	require.Len(t, previous.chunk.Bytes(), previousLen)
+	require.Equal(t, previousLen, cap(previous.chunk.Bytes()))
 }
 
 func TestMemSeries_truncateChunks_scenarios(t *testing.T) {

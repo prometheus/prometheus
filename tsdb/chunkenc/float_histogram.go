@@ -45,6 +45,17 @@ func NewFloatHistogramChunk() *FloatHistogramChunk {
 	return &FloatHistogramChunk{b: bstream{stream: b, count: 0}}
 }
 
+// NewFloatHistogramChunkWithCap is like NewFloatHistogramChunk but with the
+// given initial capacity. If capacity is less than the header size, the default
+// allocation size is used instead.
+func NewFloatHistogramChunkWithCap(capacity int) *FloatHistogramChunk {
+	if capacity < histogramHeaderSize {
+		capacity = chunkAllocationSize
+	}
+	b := make([]byte, histogramHeaderSize, capacity)
+	return &FloatHistogramChunk{b: bstream{stream: b, count: 0}}
+}
+
 func (c *FloatHistogramChunk) Reset(stream []byte) {
 	c.b.Reset(stream)
 }
@@ -579,17 +590,17 @@ func (a *FloatHistogramAppender) appendFloatHistogram(num int, t int64, h *histo
 
 		// Now store the actual data.
 		putVarbitInt(a.b, t)
-		a.b.writeBits(math.Float64bits(h.Count), 64)
-		a.b.writeBits(math.Float64bits(h.ZeroCount), 64)
-		a.b.writeBits(math.Float64bits(h.Sum), 64)
+		a.b.writeBitsFast(math.Float64bits(h.Count), 64)
+		a.b.writeBitsFast(math.Float64bits(h.ZeroCount), 64)
+		a.b.writeBitsFast(math.Float64bits(h.Sum), 64)
 		a.cnt.value = h.Count
 		a.zCnt.value = h.ZeroCount
 		a.sum.value = h.Sum
 		for _, b := range h.PositiveBuckets {
-			a.b.writeBits(math.Float64bits(b), 64)
+			a.b.writeBitsFast(math.Float64bits(b), 64)
 		}
 		for _, b := range h.NegativeBuckets {
-			a.b.writeBits(math.Float64bits(b), 64)
+			a.b.writeBitsFast(math.Float64bits(b), 64)
 		}
 	} else {
 		// The case for the 2nd sample with single deltas is implicitly handled correctly with the double delta code,

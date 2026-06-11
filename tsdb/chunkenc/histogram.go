@@ -46,6 +46,17 @@ func NewHistogramChunk() *HistogramChunk {
 	return &HistogramChunk{b: bstream{stream: b, count: 0}}
 }
 
+// NewHistogramChunkWithCap is like NewHistogramChunk but with the given initial
+// capacity. If capacity is less than the header size, the default allocation
+// size is used instead.
+func NewHistogramChunkWithCap(capacity int) *HistogramChunk {
+	if capacity < histogramHeaderSize {
+		capacity = chunkAllocationSize
+	}
+	b := make([]byte, histogramHeaderSize, capacity)
+	return &HistogramChunk{b: bstream{stream: b, count: 0}}
+}
+
 func (c *HistogramChunk) Reset(stream []byte) {
 	c.b.Reset(stream)
 }
@@ -610,7 +621,7 @@ func (a *HistogramAppender) appendHistogram(num int, t int64, h *histogram.Histo
 		putVarbitInt(a.b, t)
 		putVarbitUint(a.b, h.Count)
 		putVarbitUint(a.b, h.ZeroCount)
-		a.b.writeBits(math.Float64bits(h.Sum), 64)
+		a.b.writeBitsFast(math.Float64bits(h.Sum), 64)
 		for _, b := range h.PositiveBuckets {
 			putVarbitInt(a.b, b)
 		}
