@@ -3984,6 +3984,46 @@ func TestHeadShardedPostings(t *testing.T) {
 	})
 }
 
+func TestHeadSortedPostings(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+
+	// Create series whose label order is the reverse of their ref order.
+	const numSeries = 100
+	app := head.Appender(t.Context())
+	refs := make([]storage.SeriesRef, 0, numSeries)
+	for i := range numSeries {
+		lset := labels.FromStrings("const", "1", "unique", fmt.Sprintf("value%03d", numSeries-1-i))
+		ref, err := app.Append(0, lset, 100, 0)
+		require.NoError(t, err)
+		refs = append(refs, ref)
+	}
+	require.NoError(t, app.Commit())
+
+	ir := head.indexRange(0, 200)
+	sp := ir.SortedPostings(index.NewListPostings(refs))
+
+	var builder labels.ScratchBuilder
+	prev := labels.EmptyLabels()
+	seen := 0
+	for sp.Next() {
+		require.NoError(t, ir.Series(sp.At(), &builder, nil))
+		cur := builder.Labels()
+		if seen > 0 {
+			require.Negative(t, labels.Compare(prev, cur), "output must be sorted by labels")
+		}
+		prev = cur
+		seen++
+	}
+	require.NoError(t, sp.Err())
+	require.Equal(t, numSeries, seen)
+
+	// Refs of unknown series are dropped.
+	sp = ir.SortedPostings(index.NewListPostings(append([]storage.SeriesRef{9999999}, refs[:10]...)))
+	got, err := index.ExpandPostings(sp)
+	require.NoError(t, err)
+	require.Len(t, got, 10)
+}
+
 func TestErrReuseAppender(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
 
