@@ -2018,8 +2018,8 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 	// switching between them does not require cutting the current chunk. When ST
 	// storage is enabled the two encodings differ in their start-timestamp support
 	// and must not be mixed within a single chunk; the o.storeST override forces
-	// an immediate cut that Compatible would otherwise allow to skip.
-	if c.chunk.Encoding() != e && (!chunkenc.Compatible(c.chunk.Encoding(), e) || o.storeST) {
+	// an immediate cut that CompatibleValues would otherwise allow to skip.
+	if c.chunk.Encoding() != e && (!chunkenc.CompatibleValues(c.chunk.Encoding(), e) || o.storeST) {
 		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
 	}

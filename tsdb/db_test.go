@@ -1907,7 +1907,7 @@ func TestValidateOptsInvalidFloatChunkEncoding(t *testing.T) {
 	opts := DefaultOptions()
 	opts.FloatChunkEncoding = chunkenc.EncHistogram
 	_, _, err := validateOpts(opts, nil)
-	require.ErrorContains(t, err, "unsupported FloatChunkEncoding")
+	require.ErrorContains(t, err, "unsupported float chunk encoding")
 }
 
 func TestValidateOptsSTStorageRequiresXOR2(t *testing.T) {
@@ -1916,7 +1916,7 @@ func TestValidateOptsSTStorageRequiresXOR2(t *testing.T) {
 	opts.EnableSTStorage = true
 	// Default encoding is EncXOR; combining it with EnableSTStorage must be rejected.
 	_, _, err := validateOpts(opts, nil)
-	require.ErrorContains(t, err, "incompatible with EnableSTStorage")
+	require.ErrorContains(t, err, "is incompatible with start-timestamp storage")
 
 	// EncXOR2 + st-storage must be accepted.
 	opts.FloatChunkEncoding = chunkenc.EncXOR2

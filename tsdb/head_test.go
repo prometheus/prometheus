@@ -8044,7 +8044,7 @@ func TestHeadAppender_STStorage_WALReplay(t *testing.T) {
 // TestWALReplayStoreSTPassed is a regression test verifying that processWALSamples
 // passes storeST to chunkOpts. Without storeST, a WAL written with EncXOR would be
 // replayed into an EncXOR2+STStorage head without cutting the in-progress XOR chunk
-// (Compatible returns true for the XOR family), silently continuing a chunk that
+// (CompatibleValues returns true for the XOR family), silently continuing a chunk that
 // cannot hold start timestamps. With storeST set, the encoding mismatch forces an
 // immediate chunk cut.
 func TestWALReplayStoreSTPassed(t *testing.T) {
@@ -8065,7 +8065,7 @@ func TestWALReplayStoreSTPassed(t *testing.T) {
 
 	// Phase 2: replay the WAL with EncXOR2 + ST storage enabled. If storeST were
 	// not passed during WAL replay, the XOR chunk loaded from the chunk snapshot
-	// would be continued with EncXOR2 appends (Compatible = true, no cut), which
+	// would be continued with EncXOR2 appends (CompatibleValues = true, no cut), which
 	// would produce a chunk that cannot store start timestamps.
 	opts2 := newTestHeadDefaultOptions(DefaultBlockDuration, false)
 	opts2.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))

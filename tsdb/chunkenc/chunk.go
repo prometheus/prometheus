@@ -219,14 +219,17 @@ func (v ValueType) NewChunk(useXOR2 bool) (Chunk, error) {
 	return NewEmptyChunk(v.ChunkEncoding(useXOR2))
 }
 
-// Compatible reports whether two encodings are mutually compatible, meaning a chunk
-// opened with one encoding can continue to receive appends even when the desired
-// encoding changes to the other, without requiring a new chunk to be started.
+// CompatibleValues reports whether two encodings are mutually compatible with
+// respect to sample-value encoding, meaning a chunk opened with one encoding can
+// continue to receive appends even when the desired encoding changes to the other,
+// without requiring a new chunk to be started.
 // Data written into the existing chunk continues to use the chunk's original encoding;
 // the new encoding takes effect only when a new chunk is created.
 // The EncXOR family (EncXOR and EncXOR2) is mutually compatible; all other encoding
 // pairs, including same-histogram-type pairs, are not compatible.
-func Compatible(a, b Encoding) bool {
+// This concerns only the sample-value encoding. Start timestamp (ST) compatibility
+// is a separate concern that the caller must check itself.
+func CompatibleValues(a, b Encoding) bool {
 	return isFloatXOREncoding(a) && isFloatXOREncoding(b)
 }
 

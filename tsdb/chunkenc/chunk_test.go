@@ -241,8 +241,8 @@ func testChunkOverFlowPanics(t *testing.T, e Encoding, vt ValueType) {
 	})
 }
 
-func TestCompatible(t *testing.T) {
-	// Compatible is about whether a chunk can continue to receive appends for a
+func TestCompatibleValues(t *testing.T) {
+	// CompatibleValues is about whether a chunk can continue to receive appends for a
 	// different encoding without being cut. Only the XOR float family (EncXOR and
 	// EncXOR2) is mutually compatible. All other pairs — including same-type
 	// histogram pairs — return false because histogram encodings are not part of the
@@ -274,6 +274,6 @@ func TestCompatible(t *testing.T) {
 		{EncNone, EncNone, false},
 	}
 	for _, tc := range cases {
-		require.Equal(t, tc.want, Compatible(tc.a, tc.b), "Compatible(%v, %v)", tc.a, tc.b)
+		require.Equal(t, tc.want, CompatibleValues(tc.a, tc.b), "CompatibleValues(%v, %v)", tc.a, tc.b)
 	}
 }

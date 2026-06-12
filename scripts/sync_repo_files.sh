@@ -212,10 +212,6 @@ process_repo() {
       target_filename=".github/workflows/golangci-lint.yml"
     fi
     target_file="$(curl -sL --fail "https://raw.githubusercontent.com/${org_repo}/${default_branch}/${target_filename}")"
-    if [[ "${source_file}" == 'LICENSE' ]] && ! check_license "${target_file}" ; then
-      repo_log "LICENSE in ${org_repo} is not apache, skipping."
-      continue
-    fi
     if [[ -z "${target_file}" ]]; then
       repo_log "${target_filename} doesn't exist in ${org_repo}"
       case "${source_file}" in

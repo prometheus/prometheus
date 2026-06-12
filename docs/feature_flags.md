@@ -97,8 +97,9 @@ Besides enabling this feature in Prometheus, start timestamps need to be exposed
 > NOTE: This is an experimental feature with known limitations until fully implemented.
 > * It introduces new WAL record type (SamplesV2) that can only be replayed with Prometheus 3.11 or later versions.
 > * For persistent storage support (TSDB blocks), you need to manually opt-in for XOR2 chunk format ([`xor2-encoding` flag](#xor2-chunk-encoding)).
->   Without `--enable-feature=xor2-encoding`, Prometheus will emit a startup warning but continue running; start timestamps will not be stored in persistent TSDB blocks.
->   Explicitly setting `chunk_encoding.floats: xor` in the config file while `st-storage` is active is rejected at config reload.
+>   The float chunk encoding must resolve to XOR2 when `st-storage` is active, because XOR chunks do not store start timestamps.
+>   If the resolved encoding is XOR (that is, `--enable-feature=xor2-encoding` is not set and `chunk_encoding.floats: xor2` is not configured), Prometheus refuses to start and fails the configuration validation with an error rather than continuing to run.
+>   Likewise, explicitly setting `chunk_encoding.floats: xor` in the config file while `st-storage` is active is rejected at config reload.
 >   This might change later once we finish experimentation phase with XOR2.
 > * ST for native histograms and NHCBs are not yet implemented (see [#18315](https://github.com/prometheus/prometheus/issues/18315)).
 > * PromQL use of ST is out of scope of this feature.

@@ -898,10 +898,10 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64, error) {
 		opts.FloatChunkEncoding = chunkenc.EncXOR
 	}
 	if opts.FloatChunkEncoding != chunkenc.EncXOR && opts.FloatChunkEncoding != chunkenc.EncXOR2 {
-		return nil, nil, fmt.Errorf("unsupported FloatChunkEncoding %v; valid values are EncXOR and EncXOR2", opts.FloatChunkEncoding)
+		return nil, nil, fmt.Errorf("unsupported float chunk encoding %q; valid values are %q and %q", strings.ToLower(opts.FloatChunkEncoding.String()), config.FloatChunkEncodingXOR, config.FloatChunkEncodingXOR2)
 	}
 	if opts.EnableSTStorage && opts.FloatChunkEncoding == chunkenc.EncXOR {
-		return nil, nil, errors.New("FloatChunkEncoding EncXOR is incompatible with EnableSTStorage; XOR chunks do not store start timestamps, use EncXOR2")
+		return nil, nil, fmt.Errorf("float chunk encoding %q is incompatible with start-timestamp storage; XOR chunks do not store start timestamps, use %q", config.FloatChunkEncodingXOR, config.FloatChunkEncodingXOR2)
 	}
 	if opts.StripeSize <= 0 {
 		opts.StripeSize = DefaultStripeSize
