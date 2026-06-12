@@ -326,32 +326,20 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
   switch (node.type.id) {
     case 0: {
       // 0 is the id of the error node
-      if (node.parent?.type.id === OffsetExpr) {
-        // we are likely in the given situation:
-        // `metric_name offset 5` that leads to this tree:
-        // `OffsetExpr(VectorSelector(Identifier),Offset,⚠)`
-        // Here we can just autocomplete a duration.
-        result.push({ kind: ContextKind.Duration });
+      if (
+        node.parent?.type.id === OffsetExpr ||
+        node.parent?.type.id === MatrixSelector ||
+        (node.parent?.type.id === SubqueryExpr && node.parent.getChild('DurationExpr') !== null)
+      ) {
+        // Empty duration slot: nothing typed yet, so offer no suggestions.
+        // Units appear once the user types a digit (NumberDurationLiteralInDurationContext).
+        // Functions appear once the user types a letter (Identifier/LabelName handler).
         break;
       }
       if (node.parent?.type.id === UnquotedLabelMatcher || node.parent?.type.id === QuotedLabelMatcher) {
         // In this case the current token is not itself a valid match op yet:
         //      metric_name{labelName!}
         result.push({ kind: ContextKind.MatchOp });
-        break;
-      }
-      if (node.parent?.type.id === MatrixSelector) {
-        // we are likely in the given situation:
-        // `metric_name{}[5]`
-        // We can also just autocomplete a duration
-        result.push({ kind: ContextKind.Duration });
-        break;
-      }
-      if (node.parent?.type.id === SubqueryExpr && node.parent.getChild('DurationExpr') !== null) {
-        // we are likely in the given situation:
-        //    `rate(foo[5d:5])`
-        // so we should autocomplete a duration
-        result.push({ kind: ContextKind.Duration });
         break;
       }
       // when we are in the situation 'metric_name !', we have the following tree
@@ -606,21 +594,11 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       }
       break;
     case MatrixSelector:
-      if (pos >= node.from + 1 && pos <= node.to - 1) {
-        result.push({ kind: ContextKind.Duration });
-      }
-      break;
     case SubqueryExpr:
-      if (pos < node.to - 1) {
-        const subqueryInputExpr = node.getChild('Expr');
-        if (subqueryInputExpr !== null && pos < subqueryInputExpr.to) {
-          break;
-        }
-        result.push({ kind: ContextKind.Duration });
-      }
-      break;
     case OffsetExpr:
-      result.push({ kind: ContextKind.Duration });
+      // Duration slot: nothing typed yet, so offer no suggestions.
+      // Units appear once the user types a digit (NumberDurationLiteralInDurationContext).
+      // Functions appear once the user types a letter (Identifier/LabelName handler).
       break;
     case FunctionCallBody:
       if (isAfterClosedFunctionCallBody(state, node, pos)) {

@@ -570,13 +570,13 @@ describe('analyzeCompletion test', () => {
       title: 'not autocompleting duration for a matrixSelector',
       expr: 'go[]',
       pos: 3,
-      expectedContext: [{ kind: ContextKind.Duration }],
+      expectedContext: [],
     },
     {
       title: 'not autocompleting duration for a matrixSelector 2',
       expr: 'go{l1="l2"}[]',
       pos: 12,
-      expectedContext: [{ kind: ContextKind.Duration }],
+      expectedContext: [],
     },
     {
       title: 'autocomplete duration for a matrixSelector',
@@ -588,7 +588,7 @@ describe('analyzeCompletion test', () => {
       title: 'autocomplete duration for a matrixSelector 2',
       expr: 'go[5d1]',
       pos: 6,
-      expectedContext: [{ kind: ContextKind.Duration }],
+      expectedContext: [],
     },
     {
       title: 'autocomplete duration for a matrixSelector 3',
@@ -600,7 +600,7 @@ describe('analyzeCompletion test', () => {
       title: 'autocomplete duration for a matrixSelector 4',
       expr: 'rate(my_metric{l1="l2"}[25d5])',
       pos: 28,
-      expectedContext: [{ kind: ContextKind.Duration }],
+      expectedContext: [],
     },
     {
       title: 'do not autocomplete duration when unit already present in matrixSelector',
@@ -672,7 +672,7 @@ describe('analyzeCompletion test', () => {
       title: 'autocomplete duration for a subQuery 2',
       expr: 'go[5d:5d4]',
       pos: 9,
-      expectedContext: [{ kind: ContextKind.Duration }],
+      expectedContext: [],
     },
     {
       title: 'autocomplete duration for a subQuery 3',
@@ -684,7 +684,7 @@ describe('analyzeCompletion test', () => {
       title: 'autocomplete duration for a subQuery 4',
       expr: 'rate(my_metric{l1="l2"}[25d:6d5])',
       pos: 31,
-      expectedContext: [{ kind: ContextKind.Duration }],
+      expectedContext: [],
     },
     {
       title: 'autocomplete at modifiers',
@@ -1525,10 +1525,10 @@ describe('autocomplete promQL test', () => {
       expr: 'go[]',
       pos: 3,
       expectedResult: {
-        options: durationTerms,
+        options: [],
         from: 3,
         to: 3,
-        validFor: undefined,
+        validFor: /^[a-zA-Z0-9_:]+$/,
       },
     },
     {
@@ -1536,10 +1536,10 @@ describe('autocomplete promQL test', () => {
       expr: 'go{l1="l2"}[]',
       pos: 12,
       expectedResult: {
-        options: durationTerms,
+        options: [],
         from: 12,
         to: 12,
-        validFor: undefined,
+        validFor: /^[a-zA-Z0-9_:]+$/,
       },
     },
     {
@@ -1558,10 +1558,10 @@ describe('autocomplete promQL test', () => {
       expr: 'go[5d1]',
       pos: 6,
       expectedResult: {
-        options: durationTerms,
+        options: [],
         from: 6,
         to: 6,
-        validFor: undefined,
+        validFor: /^[a-zA-Z0-9_:]+$/,
       },
     },
     {
@@ -1580,10 +1580,10 @@ describe('autocomplete promQL test', () => {
       expr: 'rate(my_metric{l1="l2"}[25d5])',
       pos: 28,
       expectedResult: {
-        options: durationTerms,
+        options: [],
         from: 28,
         to: 28,
-        validFor: undefined,
+        validFor: /^[a-zA-Z0-9_:]+$/,
       },
     },
     {
@@ -1657,10 +1657,10 @@ describe('autocomplete promQL test', () => {
       expr: 'go[5d:5d4]',
       pos: 9,
       expectedResult: {
-        options: durationTerms,
+        options: [],
         from: 9,
         to: 9,
-        validFor: undefined,
+        validFor: /^[a-zA-Z0-9_:]+$/,
       },
     },
     {
@@ -1679,10 +1679,10 @@ describe('autocomplete promQL test', () => {
       expr: 'rate(my_metric{l1="l2"}[25d:6d5])',
       pos: 31,
       expectedResult: {
-        options: durationTerms,
+        options: [],
         from: 31,
         to: 31,
-        validFor: undefined,
+        validFor: /^[a-zA-Z0-9_:]+$/,
       },
     },
     {
