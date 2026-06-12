@@ -607,6 +607,9 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 		if base.Compaction.FromStaleSeries() {
 			meta.Compaction.SetStaleSeries()
 		}
+		if base.Compaction.FromSelectedSeries() {
+			meta.Compaction.SetSelectedSeries()
+		}
 	}
 
 	err := c.write(dest, meta, DefaultBlockPopulator{}, b)
