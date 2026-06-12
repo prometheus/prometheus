@@ -530,6 +530,98 @@ func BenchmarkHeadShardedPostings(b *testing.B) {
 	})
 }
 
+func BenchmarkHeadSortedPostings(b *testing.B) {
+	for _, numSeries := range []int{100_000, 1_000_000} {
+		b.Run(fmt.Sprintf("series=%d", numSeries), func(b *testing.B) {
+			h, refs := setupHeadWithSeriesForSharding(b, numSeries)
+			ir := h.indexRange(math.MinInt64, math.MaxInt64)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				sp := ir.SortedPostings(index.NewListPostings(refs))
+				for sp.Next() {
+				}
+				require.NoError(b, sp.Err())
+			}
+			b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(len(refs)), "ns/series")
+		})
+	}
+
+	// Input shaped like the sharded query pipeline: sort the output of
+	// ShardedPostings for one shard.
+	b.Run("series=1000000/postSharding", func(b *testing.B) {
+		const numSeries = 1_000_000
+		h, refs := setupHeadWithSeriesForSharding(b, numSeries)
+		ir := h.indexRange(math.MinInt64, math.MaxInt64)
+
+		b.ReportAllocs()
+		shard := uint64(0)
+		for b.Loop() {
+			sp := ir.SortedPostings(ir.ShardedPostings(index.NewListPostings(refs), shard%16, 16))
+			for sp.Next() {
+			}
+			require.NoError(b, sp.Err())
+			shard++
+		}
+		b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(len(refs)), "ns/series")
+	})
+
+	// Production-shaped label sets: long shared prefixes mean every
+	// comparison scans through the common bytes, unlike the quickly
+	// diverging labels of the other variants.
+	for _, numSeries := range []int{100_000, 1_000_000} {
+		b.Run(fmt.Sprintf("series=%d/realisticLabels", numSeries), func(b *testing.B) {
+			h, refs := setupHeadWithRealisticSeries(b, numSeries)
+			ir := h.indexRange(math.MinInt64, math.MaxInt64)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				sp := ir.SortedPostings(index.NewListPostings(refs))
+				for sp.Next() {
+				}
+				require.NoError(b, sp.Err())
+			}
+			b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(len(refs)), "ns/series")
+		})
+	}
+}
+
+// setupHeadWithRealisticSeries returns a head with numSeries series shaped
+// like Kubernetes container metrics: a dozen labels whose leading values are
+// shared across all series (the shape of single-metric selects), diverging
+// only at the instance/node/pod labels.
+func setupHeadWithRealisticSeries(b testing.TB, numSeries int) (*Head, []storage.SeriesRef) {
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = b.TempDir()
+	opts.EnableSharding = true
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, h.Close()) })
+
+	refs := make([]storage.SeriesRef, 0, numSeries)
+	for i := range numSeries {
+		lset := labels.FromStrings(
+			"__name__", "container_network_transmit_bytes_total",
+			"cluster", "prod-us-central-0-very-long-cluster-name",
+			"container", "server",
+			"endpoint", "https-metrics",
+			"instance", fmt.Sprintf("10.128.%d.%d:10250", i/250%250, i%250),
+			"job", "integrations/kubernetes/cadvisor",
+			"metrics_path", "/metrics/cadvisor",
+			"namespace", "very-long-production-namespace-name",
+			"node", fmt.Sprintf("gke-prod-us-central-0-pool-1-%08d", i/8),
+			"pod", fmt.Sprintf("server-deployment-7d4b9c8f6d-%05x", i),
+			"prometheus", "monitoring/kube-prometheus-stack",
+			"service", "kubelet",
+		)
+		s, _, err := h.getOrCreate(lset.Hash(), lset, false)
+		require.NoError(b, err)
+		refs = append(refs, storage.SeriesRef(s.ref))
+	}
+	return h, refs
+}
+
 func BenchmarkStripeSeriesShardHashLookup(b *testing.B) {
 	for _, numSeries := range []int{1_000_000, 3_000_000} {
 		b.Run(fmt.Sprintf("series=%d", numSeries), func(b *testing.B) {
