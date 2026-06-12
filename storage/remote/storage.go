@@ -15,7 +15,7 @@ package remote
 
 import (
 	"context"
-	"crypto/sha256"
+	"crypto/md5"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -231,6 +231,6 @@ func toHash(data any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	hash := sha256.Sum256(bytes)
+	hash := md5.Sum(bytes)
 	return hex.EncodeToString(hash[:]), nil
 }

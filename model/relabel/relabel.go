@@ -14,7 +14,7 @@
 package relabel
 
 import (
-	"crypto/sha256"
+	"crypto/md5"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -337,9 +337,9 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 	case Uppercase:
 		lb.Set(cfg.TargetLabel, strings.ToUpper(val))
 	case HashMod:
-		hash := sha256.Sum256([]byte(val))
+		hash := md5.Sum([]byte(val))
 		// Use only the last 8 bytes of the hash to give the same result as earlier versions of this code.
-		mod := binary.BigEndian.Uint64(hash[24:]) % cfg.Modulus
+		mod := binary.BigEndian.Uint64(hash[8:]) % cfg.Modulus
 		lb.Set(cfg.TargetLabel, strconv.FormatUint(mod, 10))
 	case LabelMap:
 		lb.Range(func(l labels.Label) {
