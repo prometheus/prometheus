@@ -7,7 +7,7 @@ root_ui_folder=${current}/web/ui
 
 function ncu() {
     target=$1
-    npx npm-check-updates -u --target "${target}"
+    pnpm dlx npm-check-updates -u --target "${target}"
 }
 
 cd "${root_ui_folder}"
@@ -19,4 +19,8 @@ for workspace in $(jq -r '.workspaces[]' < package.json); do
 done
 
 ncu "$1"
-npm install
+pnpm install
+
+cd "${root_ui_folder}/react-app"
+ncu "$1"
+pnpm install
