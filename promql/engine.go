@@ -1020,6 +1020,55 @@ func getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorSelector, path
 	return start, end
 }
 
+// newSubqueryEvaluator returns a child evaluator set up to evaluate subquery e
+// within the context of the parent evaluator ev. It computes the subquery's
+// time range (start, end and step) but does not run the evaluation.
+//
+// The parent end timestamp is aligned down to the parent's step grid before the
+// subquery offset is applied. A range query's outer loop only iterates up to
+// its last aligned step (start + N*interval), so when the caller supplies an
+// end timestamp that is not step-aligned the subquery must stop at that aligned
+// step too; otherwise it evaluates points the parent can never consume,
+// inflating PeakSamples and wasting work.
+func (ev *evaluator) newSubqueryEvaluator(e *parser.SubqueryExpr) *evaluator {
+	offsetMillis := durationMilliseconds(e.Offset)
+	rangeMillis := durationMilliseconds(e.Range)
+
+	parentEnd := ev.endTimestamp
+	if ev.interval > 0 {
+		parentEnd = ev.startTimestamp + ((ev.endTimestamp-ev.startTimestamp)/ev.interval)*ev.interval
+	}
+
+	newEv := &evaluator{
+		endTimestamp:             parentEnd - offsetMillis,
+		currentSamples:           ev.currentSamples,
+		maxSamples:               ev.maxSamples,
+		logger:                   ev.logger,
+		lookbackDelta:            ev.lookbackDelta,
+		samplesStats:             ev.samplesStats.NewChild(),
+		noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
+		enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
+		enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
+		useStartTimestamps:       ev.useStartTimestamps,
+		querier:                  ev.querier,
+	}
+
+	if e.Step != 0 {
+		newEv.interval = durationMilliseconds(e.Step)
+	} else {
+		newEv.interval = ev.noStepSubqueryIntervalFn(rangeMillis)
+	}
+
+	// Start with the first timestamp after (ev.startTimestamp - offset - range)
+	// that is aligned with the step (multiple of 'newEv.interval').
+	newEv.startTimestamp = newEv.interval * ((ev.startTimestamp - offsetMillis - rangeMillis) / newEv.interval)
+	if newEv.startTimestamp <= (ev.startTimestamp - offsetMillis - rangeMillis) {
+		newEv.startTimestamp += newEv.interval
+	}
+
+	return newEv
+}
+
 func (ng *Engine) getLastSubqueryInterval(path []parser.Node) time.Duration {
 	var interval time.Duration
 	for _, node := range path {
@@ -2433,34 +2482,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		return ev.matrixSelector(ctx, e)
 
 	case *parser.SubqueryExpr:
-		offsetMillis := durationMilliseconds(e.Offset)
-		rangeMillis := durationMilliseconds(e.Range)
-		newEv := &evaluator{
-			endTimestamp:             ev.endTimestamp - offsetMillis,
-			currentSamples:           ev.currentSamples,
-			maxSamples:               ev.maxSamples,
-			logger:                   ev.logger,
-			lookbackDelta:            ev.lookbackDelta,
-			samplesStats:             ev.samplesStats.NewChild(),
-			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
-			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
-			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
-			useStartTimestamps:       ev.useStartTimestamps,
-			querier:                  ev.querier,
-		}
-
-		if e.Step != 0 {
-			newEv.interval = durationMilliseconds(e.Step)
-		} else {
-			newEv.interval = ev.noStepSubqueryIntervalFn(rangeMillis)
-		}
-
-		// Start with the first timestamp after (ev.startTimestamp - offset - range)
-		// that is aligned with the step (multiple of 'newEv.interval').
-		newEv.startTimestamp = newEv.interval * ((ev.startTimestamp - offsetMillis - rangeMillis) / newEv.interval)
-		if newEv.startTimestamp <= (ev.startTimestamp - offsetMillis - rangeMillis) {
-			newEv.startTimestamp += newEv.interval
-		}
+		newEv := ev.newSubqueryEvaluator(e)
 
 		if newEv.startTimestamp != ev.startTimestamp {
 			// Adjust the offset of selectors based on the new
