@@ -6,6 +6,7 @@ import ASTNode, {
   nodeType,
   StartOrEnd,
   MatrixSelector,
+  DurationNode,
 } from "./ast";
 import { formatPrometheusDuration } from "../lib/formatTime";
 import {
@@ -14,6 +15,71 @@ import {
   maybeQuoteLabelName,
   metricContainsExtendedCharset,
 } from "./utils";
+
+export const formatDurationNode = (node: DurationNode): ReactNode => {
+  if (node.type === "numberLiteral") {
+    if (node.duration) {
+      return (
+        <span className="promql-duration">
+          {formatPrometheusDuration(parseFloat(node.val) * 1000)}
+        </span>
+      );
+    }
+    return <span className="promql-number">{node.val}</span>;
+  }
+
+  const { op, lhs, rhs, wrapped } = node;
+  let content: ReactNode;
+
+  if (op === "step" || op === "range") {
+    content = (
+      <>
+        <span className="promql-keyword">{op}</span>
+        <span className="promql-paren">(</span>
+        <span className="promql-paren">)</span>
+      </>
+    );
+  } else if (op === "min_of" || op === "max_of") {
+    content = (
+      <>
+        <span className="promql-keyword">{op}</span>
+        <span className="promql-paren">(</span>
+        {lhs && formatDurationNode(lhs)}
+        {lhs && rhs && <>, </>}
+        {rhs && formatDurationNode(rhs)}
+        <span className="promql-paren">)</span>
+      </>
+    );
+  } else if (lhs !== null && rhs !== null) {
+    content = (
+      <>
+        {formatDurationNode(lhs)}{" "}
+        <span className="promql-operator">{op}</span>{" "}
+        {formatDurationNode(rhs)}
+      </>
+    );
+  } else {
+    // Unary op: only rhs is set.
+    content = (
+      <>
+        <span className="promql-operator">{op}</span>
+        {rhs && formatDurationNode(rhs)}
+      </>
+    );
+  }
+
+  if (wrapped) {
+    return (
+      <>
+        <span className="promql-paren">(</span>
+        {content}
+        <span className="promql-paren">)</span>
+      </>
+    );
+  }
+
+  return content;
+};
 
 export const labelNameList = (labels: string[]): React.ReactNode[] => {
   return labels.map((l, i) => {
@@ -31,7 +97,8 @@ export const labelNameList = (labels: string[]): React.ReactNode[] => {
 const formatAtAndOffset = (
   timestamp: number | null,
   startOrEnd: StartOrEnd,
-  offset: number
+  offset: number,
+  offsetExpr?: DurationNode | null
 ): ReactNode => (
   <>
     {timestamp !== null ? (
@@ -51,7 +118,13 @@ const formatAtAndOffset = (
     ) : (
       <></>
     )}
-    {offset === 0 ? (
+    {offsetExpr ? (
+      <>
+        {" "}
+        <span className="promql-keyword">offset</span>{" "}
+        {formatDurationNode(offsetExpr)}
+      </>
+    ) : offset === 0 ? (
       <></>
     ) : offset > 0 ? (
       <>
@@ -125,9 +198,13 @@ const formatSelector = (
       {node.type === nodeType.matrixSelector && (
         <>
           [
-          <span className="promql-duration">
-            {formatPrometheusDuration(node.range)}
-          </span>
+          {node.rangeExpr ? (
+            formatDurationNode(node.rangeExpr)
+          ) : (
+            <span className="promql-duration">
+              {formatPrometheusDuration(node.range)}
+            </span>
+          )}
           ]
         </>
       )}
@@ -143,7 +220,12 @@ const formatSelector = (
           <span className="promql-keyword">smoothed</span>
         </>
       )}
-      {formatAtAndOffset(node.timestamp, node.startOrEnd, node.offset)}
+      {formatAtAndOffset(
+        node.timestamp,
+        node.startOrEnd,
+        node.offset,
+        node.offsetExpr
+      )}
     </>
   );
 };
@@ -201,16 +283,30 @@ const formatNodeInternal = (
       return (
         <>
           {showChildren && formatNode(node.expr, showChildren, childMaxDepth)}[
-          <span className="promql-duration">
-            {formatPrometheusDuration(node.range)}
-          </span>
-          :
-          {node.step !== 0 && (
+          {node.rangeExpr ? (
+            formatDurationNode(node.rangeExpr)
+          ) : (
             <span className="promql-duration">
-              {formatPrometheusDuration(node.step)}
+              {formatPrometheusDuration(node.range)}
             </span>
           )}
-          ]{formatAtAndOffset(node.timestamp, node.startOrEnd, node.offset)}
+          :
+          {node.stepExpr ? (
+            formatDurationNode(node.stepExpr)
+          ) : (
+            node.step !== 0 && (
+              <span className="promql-duration">
+                {formatPrometheusDuration(node.step)}
+              </span>
+            )
+          )}
+          ]
+          {formatAtAndOffset(
+            node.timestamp,
+            node.startOrEnd,
+            node.offset,
+            node.offsetExpr
+          )}
         </>
       );
     case nodeType.parenExpr:

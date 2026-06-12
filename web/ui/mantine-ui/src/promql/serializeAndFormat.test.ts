@@ -1010,4 +1010,198 @@ describe("serializeNode and formatNode", () => {
       expect(container.textContent).toBe(t.output);
     });
   });
+
+  it("should serialize duration expressions correctly", () => {
+    const tests: { node: ASTNode; output: string }[] = [
+      // Matrix range using the step() duration expression.
+      {
+        node: {
+          type: nodeType.matrixSelector,
+          name: "foo",
+          matchers: [],
+          range: 0,
+          rangeExpr: {
+            type: "durationExpr",
+            op: "step",
+            lhs: null,
+            rhs: null,
+            wrapped: false,
+          },
+          offset: 0,
+          timestamp: null,
+          startOrEnd: null,
+          anchored: false,
+          smoothed: false,
+        },
+        output: "foo[step()]",
+      },
+      // Matrix range using a binary duration expression.
+      {
+        node: {
+          type: nodeType.matrixSelector,
+          name: "foo",
+          matchers: [],
+          range: 0,
+          rangeExpr: {
+            type: "durationExpr",
+            op: "+",
+            lhs: { type: "numberLiteral", val: "3600", duration: true },
+            rhs: { type: "numberLiteral", val: "1800", duration: true },
+            wrapped: false,
+          },
+          offset: 0,
+          timestamp: null,
+          startOrEnd: null,
+          anchored: false,
+          smoothed: false,
+        },
+        output: "foo[1h + 30m]",
+      },
+      // Subquery range using a numeric literal and a step() step expression.
+      {
+        node: {
+          type: nodeType.subquery,
+          expr: {
+            type: nodeType.vectorSelector,
+            name: "foo",
+            matchers: [],
+            offset: 0,
+            timestamp: null,
+            startOrEnd: null,
+            anchored: false,
+            smoothed: false,
+          },
+          range: 3600000,
+          offset: 0,
+          step: 0,
+          stepExpr: {
+            type: "durationExpr",
+            op: "step",
+            lhs: null,
+            rhs: null,
+            wrapped: false,
+          },
+          timestamp: null,
+          startOrEnd: null,
+        },
+        output: "foo[1h:step()]",
+      },
+      // Subquery range and step both using duration expressions.
+      {
+        node: {
+          type: nodeType.subquery,
+          expr: {
+            type: nodeType.vectorSelector,
+            name: "foo",
+            matchers: [],
+            offset: 0,
+            timestamp: null,
+            startOrEnd: null,
+            anchored: false,
+            smoothed: false,
+          },
+          range: 0,
+          rangeExpr: {
+            type: "durationExpr",
+            op: "range",
+            lhs: null,
+            rhs: null,
+            wrapped: false,
+          },
+          offset: 0,
+          step: 0,
+          stepExpr: {
+            type: "durationExpr",
+            op: "step",
+            lhs: null,
+            rhs: null,
+            wrapped: false,
+          },
+          timestamp: null,
+          startOrEnd: null,
+        },
+        output: "foo[range():step()]",
+      },
+      // Offset using a step() duration expression.
+      {
+        node: {
+          type: nodeType.vectorSelector,
+          name: "foo",
+          matchers: [],
+          offset: 0,
+          offsetExpr: {
+            type: "durationExpr",
+            op: "step",
+            lhs: null,
+            rhs: null,
+            wrapped: false,
+          },
+          timestamp: null,
+          startOrEnd: null,
+          anchored: false,
+          smoothed: false,
+        },
+        output: "foo offset step()",
+      },
+      // Offset using a wrapped binary duration expression with a scalar rhs.
+      {
+        node: {
+          type: nodeType.vectorSelector,
+          name: "foo",
+          matchers: [],
+          offset: 0,
+          offsetExpr: {
+            type: "durationExpr",
+            op: "/",
+            lhs: { type: "numberLiteral", val: "3600", duration: true },
+            rhs: { type: "numberLiteral", val: "2", duration: false },
+            wrapped: true,
+          },
+          timestamp: null,
+          startOrEnd: null,
+          anchored: false,
+          smoothed: false,
+        },
+        output: "foo offset (1h / 2)",
+      },
+      // min_of/max_of nesting with the wrapped parenthesization flag.
+      {
+        node: {
+          type: nodeType.matrixSelector,
+          name: "foo",
+          matchers: [],
+          range: 0,
+          rangeExpr: {
+            type: "durationExpr",
+            op: "max_of",
+            lhs: {
+              type: "durationExpr",
+              op: "min_of",
+              lhs: { type: "numberLiteral", val: "300", duration: true },
+              rhs: {
+                type: "durationExpr",
+                op: "step",
+                lhs: null,
+                rhs: null,
+                wrapped: false,
+              },
+              wrapped: true,
+            },
+            rhs: { type: "numberLiteral", val: "60", duration: true },
+            wrapped: false,
+          },
+          offset: 0,
+          timestamp: null,
+          startOrEnd: null,
+          anchored: false,
+          smoothed: false,
+        },
+        output: "foo[max_of((min_of(5m,step())),1m)]",
+      },
+    ];
+
+    tests.forEach((t) => {
+      expect(serializeNode(t.node)).toBe(t.output);
+    });
+  });
 });
