@@ -333,8 +333,8 @@ github.com/hashicorp/nomad/api v0.0.0-20260528135333-5b027732945f h1:sdf4a6FF3tC
 github.com/hashicorp/nomad/api v0.0.0-20260528135333-5b027732945f/go.mod h1:Kr8imJwigbQ/50BqVae2+JL+AyX+FnzbnuCoIFb6iYg=
 github.com/hashicorp/serf v0.10.1 h1:Z1H2J60yRKvfDYAOZLd2MU0ND4AH/WDz7xYHDWQsIPY=
 github.com/hashicorp/serf v0.10.1/go.mod h1:yL2t6BqATOLGc5HF7qbFkTfXoPIY0WZdWHfEvMqbG+4=
-github.com/hetznercloud/hcloud-go/v2 v2.41.2 h1:fO5zsMgp5oejrtnFj8mYuqlp+iMuirpaKv4b5FYNRdQ=
-github.com/hetznercloud/hcloud-go/v2 v2.41.2/go.mod h1:9OGvC//jbHE4sv2Oyo0bQ2vEWuUMKYoNMyj9Qxz2qcc=
+github.com/hetznercloud/hcloud-go/v2 v2.43.0 h1:soqEUxJJqbf8UICQmDXfUwY/khfROAk0fi1s0bnBtd8=
+github.com/hetznercloud/hcloud-go/v2 v2.43.0/go.mod h1:d0s2WLe7jSoStamv3eHoWgBSOxc/K17tYSXsqUkbse0=
 github.com/ianlancetaylor/demangle v0.0.0-20230524184225-eabc099b10ab/go.mod h1:gx7rwoVhcfuVKG5uya9Hs3Sxj7EIvldVofAWIUtGouw=
 github.com/ionos-cloud/sdk-go/v6 v6.3.7 h1:t773JkC/asnyVqeQ+OvN9WCRZuosSoPtJfyM82EFCWY=
 github.com/ionos-cloud/sdk-go/v6 v6.3.7/go.mod h1:nUGHP4kZHAZngCVr4v6C8nuargFrtvt7GrzH/hqn7c4=
