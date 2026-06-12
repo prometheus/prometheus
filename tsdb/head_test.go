@@ -8228,6 +8228,62 @@ func TestHeadAppender_STStorage_WALReplay_CrossEncoding(t *testing.T) {
 		"chunks after replay into EncXOR2+STStorage head must use EncXOR2")
 }
 
+// TestHeadAppender_STStorage_WALReplay_CrossEncoding_Reverse verifies the reverse
+// cross-encoding migration: samples written with EncXOR2+STStorage enabled (so the
+// WAL records are V2 and carry start timestamps) are replayed into a head with
+// EncXOR and ST storage disabled. The sample timestamps and values must survive,
+// but the start timestamps are dropped (ST=0) because EncXOR chunks cannot store
+// them and ST storage is disabled. The in-memory chunks must use EncXOR (the
+// replay-time encoding).
+func TestHeadAppender_STStorage_WALReplay_CrossEncoding_Reverse(t *testing.T) {
+	// Phase 1: write with EncXOR2 and ST storage enabled.
+	opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
+	opts.EnableSTStorage.Store(true)
+	opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+	h, w := newTestHeadWithOptions(t, compression.None, opts)
+
+	lbls := labels.FromStrings("foo", "bar")
+
+	a := h.AppenderV2(context.Background())
+	for ts := int64(100); ts < 110; ts++ {
+		_, err := a.Append(0, lbls, 50, ts, float64(ts), nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, a.Commit())
+	require.NoError(t, h.Close())
+
+	// Phase 2: reopen with EncXOR and ST storage disabled (migration away from ST storage).
+	w, err := wlog.New(nil, nil, w.Dir(), compression.None)
+	require.NoError(t, err)
+	opts.ChunkDirRoot = h.opts.ChunkDirRoot
+	opts.EnableSTStorage.Store(false)
+	opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR))
+	h2, err := NewHead(nil, nil, w, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = h2.Close() })
+	require.NoError(t, h2.Init(0))
+
+	// Data must survive the replay; ST values are dropped to 0 because the head
+	// has ST storage disabled and EncXOR chunks do not store start timestamps.
+	q, err := NewBlockQuerier(h2, 100, 109)
+	require.NoError(t, err)
+	got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+
+	var expected []chunks.Sample
+	for ts := int64(100); ts < 110; ts++ {
+		expected = append(expected, sample{0, ts, float64(ts), nil, nil})
+	}
+	require.Equal(t, map[string][]chunks.Sample{`{foo="bar"}`: expected}, got)
+
+	// Verify the in-memory head chunk uses EncXOR (replay-time encoding).
+	ms, created, err := h2.getOrCreate(lbls.Hash(), lbls, false)
+	require.NoError(t, err)
+	require.False(t, created)
+	require.NotNil(t, ms.headChunks)
+	require.Equal(t, chunkenc.EncXOR, ms.headChunks.chunk.Encoding(),
+		"chunks after replay into EncXOR+no-ST head must use EncXOR")
+}
+
 // TestHeadAppender_STStorage_ChunkEncoding verifies that the correct chunk encoding
 // is used based on EnableSTStorage setting.
 func TestHeadAppender_STStorage_ChunkEncoding(t *testing.T) {
