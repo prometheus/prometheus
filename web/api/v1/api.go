@@ -1740,7 +1740,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 	}
 
 	if maxGroups > 0 && nextToken != "" && !foundToken {
-		return invalidParamError(fmt.Errorf("invalid group_next_token '%v'. The pagination state may have been invalidated.", nextToken), "group_next_token")
+		return invalidParamError(fmt.Errorf("invalid group_next_token %q; the pagination state may have been invalidated", nextToken), "group_next_token")
 	}
 
 	res.RuleGroups = rgs
