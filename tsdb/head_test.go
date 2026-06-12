@@ -9009,6 +9009,52 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		}
 	})
 
+	// Verify deleteSeriesByID leaves the series object in a state where a
+	// later resetSeriesWithMMappedChunks on the same object (queued for a
+	// duplicate series record on the same WAL-replay processor) does not
+	// decrement the stripe's mmapReady counter a second time. A double
+	// decrement drives the counter negative and masks mmap-ready series in
+	// that stripe from mmapHeadChunks.
+	t.Run("delete then duplicate series reset does not double decrement", func(t *testing.T) {
+		h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+		require.NoError(t, h.Init(0))
+
+		mmapReadyTotal := func() int32 {
+			var n int32
+			for i := range h.series.size {
+				n += h.series.mmapReady[i].Load()
+			}
+			return n
+		}
+
+		// Build a series to headChunkCount >= 2 via the appender.
+		lbls := labels.FromStrings("__name__", "seriesToDelete")
+		ts := int64(0)
+		app := h.Appender(t.Context())
+		for range chunkCutIterations {
+			_, err := app.Append(0, lbls, ts, float64(ts))
+			require.NoError(t, err)
+			ts += interval
+		}
+		require.NoError(t, app.Commit())
+
+		s := h.series.getByHash(lbls.Hash(), lbls)
+		require.NotNil(t, s)
+		require.GreaterOrEqual(t, s.headChunkCount.Load(), uint32(2),
+			"series must be mmap-ready for this test to be meaningful")
+		require.Equal(t, int32(1), mmapReadyTotal())
+
+		// WAL replay sequence: a deletion record removes the series, then a
+		// duplicate series record resets the same memSeries object.
+		h.deleteSeriesByID([]chunks.HeadSeriesRef{s.ref})
+		require.Equal(t, int32(0), mmapReadyTotal(),
+			"deletion must release the ready count exactly once")
+
+		h.resetSeriesWithMMappedChunks(s, nil, nil, s.ref)
+		require.Equal(t, int32(0), mmapReadyTotal(),
+			"duplicate series reset must not decrement again")
+	})
+
 	// Verify the mmapReady per-stripe counter stays in sync with the actual
 	// number of series that have headChunkCount >= 2, across append, mmap,
 	// GC, and stale-series deletion.
