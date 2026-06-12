@@ -23,8 +23,9 @@ export const collectNotes = (
       notes.push(
         <>
           <span className="promql-code promql-keyword">step()</span> resolves to
-          the query step (the interval between data points in a range query, or
-          the default evaluation step for instant queries).
+          the query step (the interval between data points in a range query, or{" "}
+          <span className="promql-code promql-number">0</span> for instant
+          queries).
         </>
       );
     }
