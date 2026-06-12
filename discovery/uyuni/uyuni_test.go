@@ -60,6 +60,7 @@ func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, err
 }
 
 func TestUyuniSDHandleError(t *testing.T) {
+	t.Parallel()
 	var (
 		errTesting  = "unable to login to Uyuni API: request error: bad status code - 500"
 		respHandler = func(w http.ResponseWriter, _ *http.Request) {
@@ -75,6 +76,7 @@ func TestUyuniSDHandleError(t *testing.T) {
 }
 
 func TestUyuniSDLogin(t *testing.T) {
+	t.Parallel()
 	var (
 		errTesting  = "unable to get the managed system groups information of monitored clients: request error: bad status code - 500"
 		call        = 0
@@ -107,6 +109,7 @@ func TestUyuniSDLogin(t *testing.T) {
 }
 
 func TestUyuniSDSkipLogin(t *testing.T) {
+	t.Parallel()
 	var (
 		errTesting  = "unable to get the managed system groups information of monitored clients: request error: bad status code - 500"
 		respHandler = func(w http.ResponseWriter, _ *http.Request) {
