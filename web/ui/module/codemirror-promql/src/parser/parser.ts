@@ -156,8 +156,11 @@ export class Parser {
         }
         const subqueryStepExpr = this.getSubqueryStepDurationExpr(node);
         // A subquery step should represent a resolution interval. range() in this
-        // position expands to the full query range and is not meaningful.
-        if (subqueryStepExpr && this.containsDurationRangeExpr(subqueryStepExpr)) {
+        // position expands to the full query range and is not meaningful. We only
+        // warn when range() is the top-level step expression (the step
+        // `DurationExpr` is directly a `DurationRange`); nested uses such as
+        // `min_of(range(), 5m)` are bounded operands and remain valid.
+        if (subqueryStepExpr && this.isTopLevelDurationRangeExpr(subqueryStepExpr)) {
           this.addDiagnosticWithSeverity(
             subqueryStepExpr,
             'range() is not meaningful as a subquery resolution step; consider a concrete duration',
@@ -445,21 +448,18 @@ export class Parser {
     });
   }
 
-  private containsDurationRangeExpr(node: SyntaxNode): boolean {
-    let found = false;
-    node.cursor().iterate((cursor) => {
-      if (found) {
-        // Already matched; skip this subtree to avoid redundant descent.
-        return false;
+  // isTopLevelDurationRangeExpr reports whether the step `DurationExpr` is
+  // directly a `range()` call. `durationPrimary` is inlined in the grammar, so a
+  // top-level `range()` step appears as an immediate `DurationRange` child of the
+  // step `DurationExpr`. Nested uses (e.g. inside `min_of`/`max_of` or
+  // arithmetic) are represented by deeper nodes and must not trigger the warning.
+  private isTopLevelDurationRangeExpr(node: SyntaxNode): boolean {
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      if (child.type.name === 'DurationRange') {
+        return true;
       }
-      if (cursor.type.name === 'DurationRange') {
-        found = true;
-        // `false` stops descending into this node's subtree; siblings are still visited.
-        return false;
-      }
-      return;
-    });
-    return found;
+    }
+    return false;
   }
 
   /**

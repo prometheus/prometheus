@@ -118,6 +118,13 @@ describe('promql operations', () => {
       expectedDiag: [] as Diagnostic[],
     },
     {
+      // range() nested inside min_of is a bounded operand, not the top-level step expression,
+      // so it must not trigger the resolution-step warning.
+      expr: 'some_metric[1h:min_of(range(), 5m)]',
+      expectedValueType: ValueType.matrix,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
       expr: 'foo offset step()',
       expectedValueType: ValueType.vector,
       expectedDiag: [] as Diagnostic[],
