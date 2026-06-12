@@ -1215,3 +1215,85 @@ func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 		})
 	}
 }
+
+// TestDB_AppendV2_HistogramSTInWAL verifies that when EnableSTStorage is on
+// the agent's v2 appender writes histogram and float-histogram samples to
+// the WAL with their start timestamp set, matching what counter samples
+// already do.
+func TestDB_AppendV2_HistogramSTInWAL(t *testing.T) {
+	t.Parallel()
+
+	testHistograms := tsdbutil.GenerateTestHistograms(3)
+	for _, h := range testHistograms {
+		h.CounterResetHint = histogram.NotCounterReset
+	}
+	testFloatHistograms := tsdbutil.GenerateTestFloatHistograms(3)
+	for _, fh := range testFloatHistograms {
+		fh.CounterResetHint = histogram.NotCounterReset
+	}
+
+	lbls := labelsForTest(t.Name(), 1)
+	defLbls := labels.New(lbls[0]...)
+
+	type input struct {
+		st, t int64
+		h     *histogram.Histogram
+		fh    *histogram.FloatHistogram
+	}
+
+	testCases := []struct {
+		name     string
+		inputs   []input
+		expected []walSample
+	}{
+		{
+			name: "integer histograms with varying ST per sample",
+			inputs: []input{
+				{st: 10, t: 100, h: testHistograms[0]},
+				{st: 20, t: 200, h: testHistograms[1]},
+				{st: 150, t: 300, h: testHistograms[2]},
+			},
+			expected: []walSample{
+				{st: 10, t: 100, h: testHistograms[0], lbls: defLbls, ref: 1},
+				{st: 20, t: 200, h: testHistograms[1], lbls: defLbls, ref: 1},
+				{st: 150, t: 300, h: testHistograms[2], lbls: defLbls, ref: 1},
+			},
+		},
+		{
+			name: "float histograms with varying ST per sample",
+			inputs: []input{
+				{st: 11, t: 101, fh: testFloatHistograms[0]},
+				{st: 22, t: 202, fh: testFloatHistograms[1]},
+				{st: 151, t: 303, fh: testFloatHistograms[2]},
+			},
+			expected: []walSample{
+				{st: 11, t: 101, fh: testFloatHistograms[0], lbls: defLbls, ref: 1},
+				{st: 22, t: 202, fh: testFloatHistograms[1], lbls: defLbls, ref: 1},
+				{st: 151, t: 303, fh: testFloatHistograms[2], lbls: defLbls, ref: 1},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			reg := prometheus.NewRegistry()
+			opts := DefaultOptions()
+			opts.EnableSTStorage = true
+			s := createTestAgentDB(t, reg, opts)
+
+			for _, sample := range tc.inputs {
+				app := s.AppenderV2(t.Context())
+				_, err := app.Append(0, defLbls, sample.st, sample.t, 0, sample.h, sample.fh, storage.AOptions{})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+			}
+
+			require.NoError(t, s.Close())
+
+			got := readWALSamples(t, s.wal.Dir())
+			testutil.RequireEqualWithOptions(t, tc.expected, got, cmp.Options{cmp.AllowUnexported(walSample{})})
+		})
+	}
+}

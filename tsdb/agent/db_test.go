@@ -1196,9 +1196,11 @@ func TestDBOutOfOrderTimeWindow(t *testing.T) {
 }
 
 type walSample struct {
+	st   int64
 	t    int64
 	f    float64
 	h    *histogram.Histogram
+	fh   *histogram.FloatHistogram
 	lbls labels.Labels
 	ref  storage.SeriesRef
 }
@@ -1467,8 +1469,9 @@ func readWALSamples(t *testing.T, walDir string) []walSample {
 	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
 
 	var (
-		samples    []record.RefSample
-		histograms []record.RefHistogramSample
+		samples         []record.RefSample
+		histograms      []record.RefHistogramSample
+		floatHistograms []record.RefFloatHistogramSample
 
 		lastSeries    record.RefSeries
 		outputSamples = make([]walSample, 0)
@@ -1486,19 +1489,33 @@ func readWALSamples(t *testing.T, walDir string) []walSample {
 			require.NoError(t, err)
 			for _, s := range samples {
 				outputSamples = append(outputSamples, walSample{
+					st:   s.ST,
 					t:    s.T,
 					f:    s.V,
 					lbls: lastSeries.Labels.Copy(),
 					ref:  storage.SeriesRef(lastSeries.Ref),
 				})
 			}
-		case record.HistogramSamples:
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
 			histograms, err = dec.HistogramSamples(rec, histograms[:0])
 			require.NoError(t, err)
 			for _, h := range histograms {
 				outputSamples = append(outputSamples, walSample{
+					st:   h.ST,
 					t:    h.T,
 					h:    h.H,
+					lbls: lastSeries.Labels.Copy(),
+					ref:  storage.SeriesRef(lastSeries.Ref),
+				})
+			}
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
+			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms[:0])
+			require.NoError(t, err)
+			for _, h := range floatHistograms {
+				outputSamples = append(outputSamples, walSample{
+					st:   h.ST,
+					t:    h.T,
+					fh:   h.FH,
 					lbls: lastSeries.Labels.Copy(),
 					ref:  storage.SeriesRef(lastSeries.Ref),
 				})
