@@ -711,3 +711,53 @@ load 10s
 
 eval instant at 15s histogram_count(rate(right_boundary_reset[10s] smoothed))
     {} 0.4
+
+clear
+
+# These tests explore an anchored window of (2m, 3m].
+# We have a point at t=3m. The anchor (last sample at or before rangeStart=2m)
+# is selected to be the t=2m sample. The test verifies that the all-float,
+# all-histogram, and mixed cases are handled the same: the anchor is prepended
+# and the t=2m -> t=3m transition counts as one reset/change. Per-series shape:
+#   ftohmixed:      float -> histogram
+#   htofmixed:      histogram -> float
+#   floats:         all floats
+#   histograms:     all histograms
+#   honlywithreset: all histograms, with a counter reset hint
+load 1m
+  ftohmixed 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 4 5 6 7+1x60
+  htofmixed {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2]}} {{schema:0 sum:3 count:3 buckets:[3]}} 5
+  floats 2 1 2 1 2 1
+  histograms {{schema:0 sum:5 count:2}} {{schema:0 sum:5 count:1}} {{schema:0 sum:5 count:2}} {{schema:0 sum:5 count:1}} {{schema:0 sum:5 count:2}}
+  honlywithreset {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2]}} {{schema:0 sum:3 count:3 buckets:[3]}} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:reset}}
+
+
+eval instant at 3m resets(ftohmixed[1m] anchored)
+    {} 1
+
+eval instant at 3m resets(floats[1m] anchored)
+    {} 1
+
+eval instant at 3m resets(histograms[1m] anchored)
+    {} 1
+
+eval instant at 3m resets(htofmixed[1m] anchored)
+    {} 1
+
+eval instant at 3m resets(honlywithreset[1m] anchored)
+    {} 1
+
+eval instant at 3m changes(ftohmixed[1m] anchored)
+    {} 1
+
+eval instant at 3m changes(floats[1m] anchored)
+    {} 1
+
+eval instant at 3m changes(histograms[1m] anchored)
+    {} 1
+
+eval instant at 3m changes(htofmixed[1m] anchored)
+    {} 1
+
+eval instant at 3m changes(honlywithreset[1m] anchored)
+    {} 1
