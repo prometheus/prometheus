@@ -2253,13 +2253,7 @@ func (h *Head) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) map[sto
 // deleteSeriesByID deletes the series with the given reference.
 // Only used for WAL replay.
 func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
-	var (
-		deleted            = map[storage.SeriesRef]struct{}{}
-		affected           = map[labels.Label]struct{}{}
-		staleSeriesDeleted = 0
-		chunksRemoved      = 0
-	)
-
+	detached := make([]*memSeries, 0, len(refs))
 	for _, ref := range refs {
 		// Delete the reference from the series map.
 		// Copying getByID here to avoid locking and unlocking twice.
@@ -2280,6 +2274,27 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		h.series.hashes[hashStripe].del(hash, series.ref)
 		h.series.locks[hashStripe].Unlock()
 
+		detached = append(detached, series)
+	}
+
+	h.accountDeletedSeries(detached)
+}
+
+// accountDeletedSeries updates head metrics, counters, postings, and
+// tombstones for deleted series, and neutralizes the series objects against
+// late accesses through stale references. The series must already have been
+// removed from the head's lookup maps.
+// Only used for WAL replay; must run on the replay processor that owns the
+// series, after any in-flight appends to them.
+func (h *Head) accountDeletedSeries(detached []*memSeries) {
+	var (
+		deleted            = map[storage.SeriesRef]struct{}{}
+		affected           = map[labels.Label]struct{}{}
+		staleSeriesDeleted = 0
+		chunksRemoved      = 0
+	)
+
+	for _, series := range detached {
 		if value.IsStaleNaN(series.lastValue) ||
 			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
 			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
