@@ -177,6 +177,11 @@ type HeadOptions struct {
 	// Represents 'xor2-encoding' feature flag.
 	EnableXOR2Encoding atomic.Bool
 
+	// EnableHistogramSTEncoding enables the ST-capable chunk encoding for
+	// integer and float histograms (EncHistogramST and EncFloatHistogramST).
+	// Represents the 'histograms-st-encoding' feature flag.
+	EnableHistogramSTEncoding atomic.Bool
+
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
 	ChunkDirRoot         string

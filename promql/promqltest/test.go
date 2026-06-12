@@ -162,6 +162,7 @@ func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 		return teststorage.New(t, func(opt *tsdb.Options) {
 			opt.EnableSTStorage = true
 			opt.EnableXOR2Encoding = true
+			opt.EnableHistogramSTEncoding = true
 		})
 	})
 }

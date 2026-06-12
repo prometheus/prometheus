@@ -34,6 +34,7 @@ func init() {
 		func(opts *tsdb.Options) {
 			opts.EnableSTStorage = true
 			opts.EnableXOR2Encoding = true
+			opts.EnableHistogramSTEncoding = true
 		},
 	}
 }

@@ -678,6 +678,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 		chunkRange:      h.chunkRange.Load(),
 		samplesPerChunk: h.opts.SamplesPerChunk,
 		useXOR2:         h.opts.EnableXOR2Encoding.Load(),
+		useHistogramST:  h.opts.EnableHistogramSTEncoding.Load(),
 	}
 
 	for in := range wp.input {
@@ -1131,6 +1132,7 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 		chunkRange:      h.chunkRange.Load(),
 		samplesPerChunk: h.opts.SamplesPerChunk,
 		useXOR2:         h.opts.EnableXOR2Encoding.Load(),
+		useHistogramST:  h.opts.EnableHistogramSTEncoding.Load(),
 	}
 	// We don't check for minValidTime for ooo samples.
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)

@@ -348,7 +348,7 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 		if typ != lastType || lastHadST != hasST || i >= seriesToChunkEncoderSplit {
 			// Create a new chunk if the sample type changed or too many samples in the current one.
 			chks = appendChunk(chks, mint, maxt, chk)
-			chk, err = typ.NewChunk(hasST)
+			chk, err = typ.NewChunk(hasST, hasST)
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
