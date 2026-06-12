@@ -81,7 +81,7 @@ export const durationExprNote = (expr: DurationNode): ReactNode => {
   return (
     <Text fz="sm" mt="sm">
       In the duration expression {exprCode}:
-      <List mt="xs" withPadding>
+      <List fz="sm" mt="xs" withPadding>
         {notes.map((note, i) => (
           <List.Item key={i}>{note}</List.Item>
         ))}
