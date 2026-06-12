@@ -251,22 +251,65 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 	// The records are always replayed from the oldest to the newest.
 	missingSeries := make(map[chunks.HeadSeriesRef]struct{})
+	// Series objects whose deletion has been dispatched to a processor but may
+	// not have been applied yet, keyed by their reference.
+	pendingDeletes := make(map[chunks.HeadSeriesRef]*memSeries)
 Outer:
 	for d := range decoded {
 		switch v := d.(type) {
 		case []record.RefSeries:
 			for _, walSeries := range v {
-				mSeries, created, err := h.getOrCreateWithOptionalID(walSeries.Ref, walSeries.Labels.Hash(), walSeries.Labels, false)
-				if err != nil {
-					seriesCreationErr = err
-					break Outer
+				hash := walSeries.Labels.Hash()
+				var (
+					mSeries *memSeries
+					created bool
+					err     error
+				)
+				for {
+					mSeries, created, err = h.getOrCreateWithOptionalID(walSeries.Ref, hash, walSeries.Labels, false)
+					if err != nil {
+						seriesCreationErr = err
+						break Outer
+					}
+					if created {
+						break
+					}
+					if pendingDeletes[mSeries.ref] != mSeries {
+						// A live series with these labels exists, so this
+						// record is a duplicate of it.
+						multiRef[walSeries.Ref] = mSeries.ref
+						break
+					}
+					// The series found by labels has a deletion queued behind
+					// earlier records of its replay processor. This record
+					// must re-create the series rather than become a
+					// duplicate of the doomed object (its samples would be
+					// dropped once the deletion is applied). Displace the
+					// object from the lookup maps and retry; its accounting
+					// is settled on the owning processor, after any of its
+					// appends still in flight. Samples of the displaced
+					// series still queued on that processor can no longer
+					// resolve it and are counted as unknown references; the
+					// series is deleted either way, so no data that should
+					// survive is lost.
+					if h.series.displaceIfUnchanged(mSeries, hash) {
+						processors[uint64(mSeries.ref)%uint64(concurrency)].input <- walSubsetProcessorInputItem{deletedSeries: mSeries}
+						delete(pendingDeletes, mSeries.ref)
+					} else if cur := h.series.getByID(mSeries.ref); cur != nil && cur != mSeries {
+						// The reference has been re-occupied by a different
+						// series object, which only a corrupt WAL can
+						// produce (references are not reused). Drop the
+						// stale pending entry so the retry settles on the
+						// duplicate path instead of spinning.
+						delete(pendingDeletes, mSeries.ref)
+					}
+					// Otherwise the owning processor is concurrently
+					// applying the deletion; retry until the lookup maps
+					// converge.
 				}
 
 				if chunks.HeadSeriesRef(h.lastSeriesID.Load()) < walSeries.Ref {
 					h.lastSeriesID.Store(uint64(walSeries.Ref))
-				}
-				if !created {
-					multiRef[walSeries.Ref] = mSeries.ref
 				}
 
 				idx := uint64(mSeries.ref) % uint64(concurrency)
@@ -317,11 +360,21 @@ Outer:
 			for _, s := range v {
 				if len(s.Intervals) == 1 && s.Intervals[0].Mint == math.MinInt64 && s.Intervals[0].Maxt == math.MaxInt64 {
 					// This series was fully deleted at this point. This record is only done for stale series at the moment.
+					// Remember the doomed series object: if a series record
+					// with the same labels arrives before the deletion has
+					// been applied, the series must be re-created rather
+					// than treated as a duplicate of the deleted one.
+					if obj := h.series.getByID(chunks.HeadSeriesRef(s.Ref)); obj != nil {
+						pendingDeletes[chunks.HeadSeriesRef(s.Ref)] = obj
+					}
 					mod := uint64(s.Ref) % uint64(concurrency)
 					deleteSeriesShards[mod] = append(deleteSeriesShards[mod], chunks.HeadSeriesRef(s.Ref))
 
 					// If the series is with a different reference, try deleting that.
 					if r, ok := multiRef[chunks.HeadSeriesRef(s.Ref)]; ok {
+						if obj := h.series.getByID(r); obj != nil {
+							pendingDeletes[r] = obj
+						}
 						mod := uint64(r) % uint64(concurrency)
 						deleteSeriesShards[mod] = append(deleteSeriesShards[mod], r)
 					}
@@ -602,6 +655,9 @@ type walSubsetProcessorInputItem struct {
 	existingSeries    *memSeries
 	walSeriesRef      chunks.HeadSeriesRef
 	deletedSeriesRefs []chunks.HeadSeriesRef
+	// deletedSeries is a series object already removed from the head's lookup
+	// maps, awaiting accounting on the processor that owns its reference.
+	deletedSeries *memSeries
 }
 
 func (wp *walSubsetProcessor) setup() {
@@ -692,6 +748,11 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if h.resetSeriesWithMMappedChunks(in.existingSeries, mmc, oooMmc, in.walSeriesRef) {
 				mmapOverlappingChunks++
 			}
+			continue
+		}
+
+		if in.deletedSeries != nil {
+			h.accountDeletedSeries([]*memSeries{in.deletedSeries})
 			continue
 		}
 

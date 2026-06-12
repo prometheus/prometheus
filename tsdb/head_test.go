@@ -1048,6 +1048,236 @@ func TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative(t *testing.T) {
 	require.GreaterOrEqual(t, chunksGauge, 0.0, "prometheus_tsdb_head_chunks gauge must not be negative after WAL replay")
 }
 
+// TestHead_WALReplay verifies WAL replay handling of full-deletion tombstones
+// interleaved with series records re-creating the deleted series.
+func TestHead_WALReplay(t *testing.T) {
+	// Verify that a series re-created after stale-series deletion keeps its
+	// new samples across a WAL replay.
+	//
+	// truncateStaleSeries writes a [MinInt64, MaxInt64] tombstone for the
+	// deleted series; re-creating the series under the same labels produces a
+	// new WAL ref. During replay, deletions are applied asynchronously on the
+	// sharded replay processors, while series records are resolved on the
+	// dispatch goroutine. If the dispatch goroutine reads the re-created
+	// series' record while the deletion is still queued, it used to map the
+	// new ref to the doomed series object, and every subsequent record for
+	// the new ref was then dropped as an unknown ref once the deletion
+	// landed: the resurrected series lost all its WAL data for that replay.
+	t.Run("stale series resurrection", func(t *testing.T) {
+		head, w := newTestHead(t, 1000, compression.None, false)
+		require.NoError(t, head.Init(0))
+
+		lset := labels.FromStrings("foo", "bar")
+
+		// Queue plenty of sample records for the first incarnation so its
+		// replay processor is still busy appending when the dispatch
+		// goroutine reads the re-created series' record. This biases the
+		// replay towards the race being tested; it cannot turn the test
+		// flaky, since with the fix the outcome is the same in either
+		// interleaving.
+		var ref1 storage.SeriesRef
+		ts := int64(0)
+		for range 5 {
+			app := head.Appender(context.Background())
+			for range 1000 {
+				ref, err := app.Append(0, lset, ts, float64(ts))
+				require.NoError(t, err)
+				ref1 = ref
+				ts++
+			}
+			require.NoError(t, app.Commit())
+		}
+
+		// Mark the series stale and delete it; this writes the full-range
+		// tombstone record to the WAL.
+		app := head.Appender(context.Background())
+		_, err := app.Append(0, lset, ts, math.Float64frombits(value.StaleNaN))
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.NoError(t, head.truncateStaleSeries([]storage.SeriesRef{ref1}, ts))
+
+		// Re-create the series under the same labels (new ref) with new samples.
+		app = head.Appender(context.Background())
+		ref2, err := app.Append(0, lset, 6000, 1)
+		require.NoError(t, err)
+		_, err = app.Append(0, lset, 6100, 2)
+		require.NoError(t, err)
+		_, err = app.Append(0, lset, 6200, 3)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.NotEqual(t, ref1, ref2, "refs must differ after stale truncation and recreation")
+
+		require.NoError(t, head.Close())
+
+		// Reopen the head to trigger WAL replay. The WAL contains (in order):
+		//   series(ref1) → samples(ref1) → tombstone(ref1) → series(ref2) → samples(ref2)
+		w, err = wlog.New(nil, nil, w.Dir(), compression.None)
+		require.NoError(t, err)
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 1000
+		opts.ChunkDirRoot = head.opts.ChunkDirRoot
+		head, err = NewHead(nil, nil, w, nil, opts, nil)
+		require.NoError(t, err)
+		require.NoError(t, head.Init(0))
+		defer func() {
+			require.NoError(t, head.Close())
+		}()
+
+		require.Equal(t, 1, int(head.NumSeries()), "the re-created series must survive WAL replay")
+
+		q, err := NewBlockQuerier(head, 5500, 7000)
+		require.NoError(t, err)
+		series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		require.Equal(t, map[string][]chunks.Sample{`{foo="bar"}`: {
+			sample{0, 6000, 1, nil, nil},
+			sample{0, 6100, 2, nil, nil},
+			sample{0, 6200, 3, nil, nil},
+		}}, series)
+
+		// The deleted incarnation's chunks must be fully accounted for in
+		// both interleavings, leaving exactly the re-created series' head
+		// chunk.
+		chunksGauge := prom_testutil.ToFloat64(head.metrics.chunks)
+		require.Equal(t, 1.0, chunksGauge, "prometheus_tsdb_head_chunks gauge must count only the re-created series' chunk after WAL replay")
+	})
+
+	// Replay raw WALs that interleave full-deletion tombstones with duplicate
+	// series records around a series deleted and re-created under the same
+	// labels, and verify that exactly the re-created incarnation with its
+	// samples survives the replay.
+	t.Run("stale series deletion variants", func(t *testing.T) {
+		lset := labels.FromStrings("foo", "bar")
+		fullTombstone := func(ref storage.SeriesRef) []tombstones.Stone {
+			return []tombstones.Stone{{Ref: ref, Intervals: tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}}}
+		}
+		cases := []struct {
+			name string
+			recs []any
+		}{
+			{
+				// The re-created series gets a duplicate series record of its
+				// own; its samples must resolve to the re-created series.
+				name: "duplicate series record after resurrection",
+				recs: []any{
+					[]record.RefSeries{{Ref: 1, Labels: lset}},
+					[]record.RefSample{{Ref: 1, T: 10, V: 1}, {Ref: 1, T: 20, V: 2}},
+					fullTombstone(1),
+					[]record.RefSeries{{Ref: 2, Labels: lset}},
+					[]record.RefSeries{{Ref: 3, Labels: lset}},
+					[]record.RefSample{{Ref: 3, T: 30, V: 3}},
+				},
+			},
+			{
+				// The tombstone references a duplicate of the deleted series;
+				// the deletion must follow the mapping to the actual object.
+				name: "tombstone for a duplicate series record",
+				recs: []any{
+					[]record.RefSeries{{Ref: 1, Labels: lset}},
+					[]record.RefSeries{{Ref: 2, Labels: lset}},
+					[]record.RefSample{{Ref: 2, T: 10, V: 1}},
+					fullTombstone(2),
+					[]record.RefSeries{{Ref: 3, Labels: lset}},
+					[]record.RefSample{{Ref: 3, T: 30, V: 3}},
+				},
+			},
+			{
+				name: "repeated full-deletion tombstones",
+				recs: []any{
+					[]record.RefSeries{{Ref: 1, Labels: lset}},
+					[]record.RefSample{{Ref: 1, T: 10, V: 1}},
+					fullTombstone(1),
+					fullTombstone(1),
+					[]record.RefSeries{{Ref: 2, Labels: lset}},
+					[]record.RefSample{{Ref: 2, T: 30, V: 3}},
+				},
+			},
+		}
+		concurrencies := []struct {
+			name string
+			n    int
+		}{
+			{name: "default concurrency", n: 0},
+			{name: "concurrency 1", n: 1},
+		}
+		for _, c := range cases {
+			t.Run(c.name, func(t *testing.T) {
+				for _, conc := range concurrencies {
+					t.Run(conc.name, func(t *testing.T) {
+						dir := t.TempDir()
+						w, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
+						require.NoError(t, err)
+						populateTestWL(t, w, c.recs, nil, false)
+
+						opts := DefaultHeadOptions()
+						opts.ChunkRange = 1000
+						opts.ChunkDirRoot = dir
+						if conc.n > 0 {
+							opts.WALReplayConcurrency = conc.n
+						}
+						head, err := NewHead(nil, nil, w, nil, opts, nil)
+						require.NoError(t, err)
+						defer func() {
+							require.NoError(t, head.Close())
+						}()
+						require.NoError(t, head.Init(0))
+
+						require.Equal(t, 1, int(head.NumSeries()), "exactly the re-created series must survive replay")
+						q, err := NewBlockQuerier(head, 0, 100)
+						require.NoError(t, err)
+						series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+						require.Equal(t, map[string][]chunks.Sample{`{foo="bar"}`: {
+							sample{0, 30, 3, nil, nil},
+						}}, series)
+					})
+				}
+			})
+		}
+	})
+}
+
+// TestStripeSeries_DisplaceIfUnchanged verifies that displaceIfUnchanged
+// removes a series from the lookup maps only while it is still the object
+// registered under its reference.
+func TestStripeSeries_DisplaceIfUnchanged(t *testing.T) {
+	h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+	require.NoError(t, h.Init(0))
+
+	lset := labels.FromStrings("foo", "bar")
+	hash := lset.Hash()
+	s1, created, err := h.getOrCreateWithOptionalID(0, hash, lset, false)
+	require.NoError(t, err)
+	require.True(t, created)
+
+	// Displacing a registered series removes it from both lookup maps.
+	require.True(t, h.series.displaceIfUnchanged(s1, hash))
+	require.Nil(t, h.series.getByID(s1.ref))
+	require.Nil(t, h.series.getByHash(hash, lset))
+
+	// Displacing an already removed series is a no-op.
+	require.False(t, h.series.displaceIfUnchanged(s1, hash))
+
+	// A series re-created under the same labels is a different object; the
+	// stale one must not displace it.
+	s2, created, err := h.getOrCreateWithOptionalID(0, hash, lset, false)
+	require.NoError(t, err)
+	require.True(t, created)
+	require.NotSame(t, s1, s2)
+	require.False(t, h.series.displaceIfUnchanged(s1, hash))
+	require.Same(t, s2, h.series.getByHash(hash, lset))
+
+	// Even with the stale object's reference slot re-occupied by another
+	// object, pointer identity prevents displacement.
+	stripe := h.series.refStripe(s1.ref)
+	h.series.locks[stripe].Lock()
+	h.series.series[stripe][s1.ref] = s2
+	h.series.locks[stripe].Unlock()
+	require.False(t, h.series.displaceIfUnchanged(s1, hash))
+	require.Same(t, s2, h.series.getByID(s1.ref))
+	h.series.locks[stripe].Lock()
+	delete(h.series.series[stripe], s1.ref)
+	h.series.locks[stripe].Unlock()
+}
+
 func TestHead_WALCheckpointMultiRef(t *testing.T) {
 	cases := []struct {
 		name               string
