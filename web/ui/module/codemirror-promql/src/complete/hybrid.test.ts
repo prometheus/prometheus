@@ -33,9 +33,6 @@ import { syntaxTree } from '@codemirror/language';
 import { newCompleteStrategy } from './index';
 import nock from 'nock';
 
-const durationExprOperandOptions = ([] as Completion[]).concat(durationTerms, durationExprTerms, durationExprOperatorTerms);
-const durationExprContinuationOptions = ([] as Completion[]).concat(durationExprTerms, durationExprOperatorTerms);
-
 describe('analyzeCompletion test', () => {
   const testCases = [
     {

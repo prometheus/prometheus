@@ -194,7 +194,11 @@ function dedupeCompletions(data: Completion[]): Completion[] {
   const deduped: Completion[] = [];
   for (const completion of data) {
     const infoKey = typeof completion.info === 'string' ? completion.info : '';
-    const key = `${completion.label}|${completion.type ?? ''}|${infoKey}`;
+    // Include `apply` in the key when it is a string (e.g. snippet insert text) so that two
+    // completions sharing the same label/type/info but inserting different text are not merged.
+    // Function `apply` values cannot be compared meaningfully, so they fall back to an empty key.
+    const applyKey = typeof completion.apply === 'string' ? completion.apply : '';
+    const key = `${completion.label}|${completion.type ?? ''}|${infoKey}|${applyKey}`;
     if (seen.has(key)) {
       continue;
     }
@@ -519,11 +523,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         result.push({ kind: ContextKind.LabelName, metricName: getMetricNameInVectorSelector(node, state) });
       } else if (node.parent?.type.id === 0) {
         const grandParent = node.parent.parent;
-        if (
-          grandParent?.type.id === MatrixSelector ||
-          grandParent?.type.id === OffsetExpr ||
-          grandParent?.type.id === SubqueryExpr
-        ) {
+        if (grandParent?.type.id === MatrixSelector || grandParent?.type.id === OffsetExpr || grandParent?.type.id === SubqueryExpr) {
           // LabelName typed after a complete duration in a duration slot (e.g. `foo[5mss]`).
           // Offer duration-expression functions so the user can complete `step()`, `range()`, etc.
           result.push({ kind: ContextKind.DurationExpr });
