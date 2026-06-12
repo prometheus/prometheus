@@ -48,7 +48,6 @@ import (
 const (
 	env                  = "query execution"
 	defaultLookbackDelta = 5 * time.Minute
-	defaultEpsilon       = 0.000001 // Relative error allowed for sample values.
 )
 
 func TestMain(m *testing.M) {
