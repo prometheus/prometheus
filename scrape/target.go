@@ -236,9 +236,14 @@ func (t *Target) URL() *url.URL {
 		}
 	})
 
+	host := t.labels.Get(model.AddressLabel)
+	if strings.Contains(host, "%25") {
+		host = strings.ReplaceAll(host, "%25", "%")
+	}
+
 	return &url.URL{
 		Scheme:   t.labels.Get(model.SchemeLabel),
-		Host:     t.labels.Get(model.AddressLabel),
+		Host:     host,
 		Path:     t.labels.Get(model.MetricsPathLabel),
 		RawQuery: params.Encode(),
 	}
