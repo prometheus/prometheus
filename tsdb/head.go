@@ -2293,9 +2293,14 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		if series.headChunkCount.Load() >= 2 {
 			h.series.decMmapReady(series.ref)
 		}
-		// Clear to prevent a double-subtraction from the chunksRemoved gauge if
-		// resetSeriesWithMMappedChunks is queued on the same WAL-replay processor
-		// after this deletion (it would otherwise subtract len(mmappedChunks) again).
+		// Zero the count to prevent a double decrement of the stripe's
+		// mmapReady counter if a duplicate series record for this series
+		// is replayed after the deletion.
+		series.headChunkCount.Store(0)
+		// Defense in depth: resetSeriesWithMMappedChunks is a no-op for
+		// deleted series, but clear the m-mapped chunks anyway so a stale
+		// reference to this object cannot double-subtract from the
+		// chunksRemoved gauge.
 		series.mmappedChunks = nil
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}

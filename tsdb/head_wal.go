@@ -515,7 +515,16 @@ Outer:
 }
 
 // resetSeriesWithMMappedChunks is only used during the WAL replay.
+// It is a no-op for series that have been deleted from the head.
 func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*mmappedChunk, walSeriesRef chunks.HeadSeriesRef) (overlapped bool) {
+	// The series may have been deleted by a deletion record replayed before
+	// this duplicate series record was processed. In that case leave the
+	// object untouched, so that head metrics and time ranges are not
+	// updated for a deleted series.
+	if h.series.getByID(mSeries.ref) != mSeries {
+		return false
+	}
+
 	if mSeries.ref != walSeriesRef {
 		// Checking if the new m-mapped chunks overlap with the already existing ones.
 		if len(mSeries.mmappedChunks) > 0 && len(mmc) > 0 {

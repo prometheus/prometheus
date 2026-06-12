@@ -9065,6 +9065,76 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		}
 	})
 
+	// Verify that replaying a duplicate series record for a series that has
+	// already been deleted leaves all head state untouched: the stripe's
+	// mmapReady counter must not be decremented a second time (a double
+	// decrement drives it negative and masks mmap-ready series in that
+	// stripe from mmapHeadChunks), no chunks may be attached to or counted
+	// for the deleted series, and the head time range must not widen.
+	t.Run("delete then duplicate series reset is a no-op", func(t *testing.T) {
+		h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+		require.NoError(t, h.Init(0))
+
+		mmapReadyTotal := func() int32 {
+			var n int32
+			for i := range h.series.size {
+				n += h.series.mmapReady[i].Load()
+			}
+			return n
+		}
+
+		// Build a series to headChunkCount >= 2 via the appender.
+		lbls := labels.FromStrings("__name__", "seriesToDelete")
+		ts := int64(0)
+		app := h.Appender(t.Context())
+		for range chunkCutIterations {
+			_, err := app.Append(0, lbls, ts, float64(ts))
+			require.NoError(t, err)
+			ts += interval
+		}
+		require.NoError(t, app.Commit())
+
+		s := h.series.getByHash(lbls.Hash(), lbls)
+		require.NotNil(t, s)
+		require.GreaterOrEqual(t, s.headChunkCount.Load(), uint32(2),
+			"series must be mmap-ready for this test to be meaningful")
+		require.Equal(t, int32(1), mmapReadyTotal())
+
+		// WAL replay sequence: a deletion record removes the series, then a
+		// duplicate series record resets the same memSeries object.
+		h.deleteSeriesByID([]chunks.HeadSeriesRef{s.ref})
+		require.Equal(t, int32(0), mmapReadyTotal(),
+			"deletion must release the ready count exactly once")
+		require.Equal(t, uint32(0), s.headChunkCount.Load(),
+			"deletion must leave the series not mmap-ready")
+
+		minTimeBefore, maxTimeBefore := h.MinTime(), h.MaxTime()
+		chunksBefore := prom_testutil.ToFloat64(h.metrics.chunks)
+		chunksCreatedBefore := prom_testutil.ToFloat64(h.metrics.chunksCreated)
+
+		// The duplicate series record carries its own ref and m-mapped
+		// chunks timestamped outside the appended range on both sides, so
+		// any state the reset leaks from them is detectable.
+		mmc := []*mmappedChunk{
+			{numSamples: 10, minTime: -1_000_000, maxTime: -999_000},
+			{numSamples: 10, minTime: ts + 1_000_000, maxTime: ts + 2_000_000},
+		}
+		h.resetSeriesWithMMappedChunks(s, mmc, nil, s.ref+1)
+
+		require.Equal(t, int32(0), mmapReadyTotal(),
+			"duplicate series reset must not decrement again")
+		require.Nil(t, s.mmappedChunks,
+			"reset must not attach chunks to a deleted series")
+		require.Equal(t, minTimeBefore, h.MinTime(),
+			"reset must not widen the head min time from a deleted series' chunks")
+		require.Equal(t, maxTimeBefore, h.MaxTime(),
+			"reset must not widen the head max time from a deleted series' chunks")
+		require.Equal(t, chunksBefore, prom_testutil.ToFloat64(h.metrics.chunks),
+			"reset must not count chunks for a deleted series")
+		require.Equal(t, chunksCreatedBefore, prom_testutil.ToFloat64(h.metrics.chunksCreated),
+			"reset must not count chunk creations for a deleted series")
+	})
+
 	// Verify the mmapReady per-stripe counter stays in sync with the actual
 	// number of series that have headChunkCount >= 2, across append, mmap,
 	// GC, and stale-series deletion.
