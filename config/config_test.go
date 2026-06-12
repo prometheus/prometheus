@@ -32,7 +32,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/aws"
@@ -1841,7 +1841,7 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		out, err := yaml.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, unmarshalYAMLStrict(out, &got))
 
 		require.False(t, got.OTLPConfig.PromoteAllResourceAttributes)
 		require.Empty(t, got.OTLPConfig.IgnoreResourceAttributes)
@@ -1855,7 +1855,7 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		out, err := yaml.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, unmarshalYAMLStrict(out, &got))
 
 		require.False(t, got.OTLPConfig.PromoteAllResourceAttributes)
 		require.Empty(t, got.OTLPConfig.IgnoreResourceAttributes)
@@ -1876,7 +1876,7 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		out, err := yaml.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, unmarshalYAMLStrict(out, &got))
 		require.True(t, got.OTLPConfig.PromoteAllResourceAttributes)
 		require.Empty(t, got.OTLPConfig.PromoteResourceAttributes)
 		require.Empty(t, got.OTLPConfig.IgnoreResourceAttributes)
@@ -1889,7 +1889,7 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		out, err := yaml.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, unmarshalYAMLStrict(out, &got))
 		require.True(t, got.OTLPConfig.PromoteAllResourceAttributes)
 		require.Empty(t, got.OTLPConfig.PromoteResourceAttributes)
 		require.Equal(t, []string{"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name"}, got.OTLPConfig.IgnoreResourceAttributes)
@@ -1921,7 +1921,7 @@ func TestOTLPAllowServiceNameInTargetInfo(t *testing.T) {
 		out, err := yaml.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, unmarshalYAMLStrict(out, &got))
 
 		require.True(t, got.OTLPConfig.KeepIdentifyingResourceAttributes)
 	})
@@ -1935,7 +1935,7 @@ func TestOTLPConvertHistogramsToNHCB(t *testing.T) {
 		out, err := yaml.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, unmarshalYAMLStrict(out, &got))
 
 		require.True(t, got.OTLPConfig.ConvertHistogramsToNHCB)
 	})
@@ -1949,7 +1949,7 @@ func TestOTLPPromoteScopeMetadata(t *testing.T) {
 		out, err := yaml.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, unmarshalYAMLStrict(out, &got))
 
 		require.True(t, got.OTLPConfig.PromoteScopeMetadata)
 	})
@@ -1972,7 +1972,7 @@ func TestOTLPLabelUnderscoreSanitization(t *testing.T) {
 		out, err := yaml.Marshal(conf)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, unmarshalYAMLStrict(out, &got))
 
 		require.True(t, got.OTLPConfig.LabelNameUnderscoreSanitization)
 		require.True(t, got.OTLPConfig.LabelNamePreserveMultipleUnderscores)
@@ -2775,7 +2775,7 @@ func TestBadStaticConfigsYML(t *testing.T) {
 	content, err := os.ReadFile("testdata/static_config.bad.yml")
 	require.NoError(t, err)
 	var tg targetgroup.Group
-	err = yaml.UnmarshalStrict(content, &tg)
+	err = unmarshalYAMLStrict(content, &tg)
 	require.Error(t, err)
 }
 
@@ -3339,7 +3339,7 @@ func TestScrapeConfigDisableCompression(t *testing.T) {
 
 	require.NoError(t, err)
 	got := &Config{}
-	require.NoError(t, yaml.UnmarshalStrict(out, got))
+	require.NoError(t, unmarshalYAMLStrict(out, got))
 
 	require.False(t, got.ScrapeConfigs[0].EnableCompression)
 }
@@ -3392,7 +3392,7 @@ func TestScrapeConfigNameValidationSettings(t *testing.T) {
 
 			require.NoError(t, err)
 			got := &Config{}
-			require.NoError(t, yaml.UnmarshalStrict(out, got))
+			require.NoError(t, unmarshalYAMLStrict(out, got))
 
 			require.Equal(t, tc.expectScheme, got.ScrapeConfigs[0].MetricNameValidationScheme)
 
@@ -3445,7 +3445,7 @@ func TestScrapeConfigNameEscapingSettings(t *testing.T) {
 
 			require.NoError(t, err)
 			got := &Config{}
-			require.NoError(t, yaml.UnmarshalStrict(out, got))
+			require.NoError(t, unmarshalYAMLStrict(out, got))
 
 			require.Equal(t, tc.expectValidationScheme, got.ScrapeConfigs[0].MetricNameValidationScheme)
 			require.Equal(t, tc.expectEscapingScheme, got.ScrapeConfigs[0].MetricNameEscapingScheme)

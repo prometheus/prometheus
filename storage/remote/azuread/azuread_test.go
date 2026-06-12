@@ -14,6 +14,7 @@
 package azuread
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"os"
@@ -29,7 +30,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v3"
 )
 
 const (
@@ -137,13 +138,19 @@ func (ad *AzureAdTestSuite) TestAzureAdRoundTripper() {
 	}
 }
 
+func unmarshalYAMLStrict(data []byte, v interface{}) error {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	return dec.Decode(v)
+}
+
 func loadAzureAdConfig(filename string) (*AzureADConfig, error) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
 	cfg := AzureADConfig{}
-	if err = yaml.UnmarshalStrict(content, &cfg); err != nil {
+	if err = unmarshalYAMLStrict(content, &cfg); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
