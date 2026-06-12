@@ -367,30 +367,44 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 	}
 }
 
-// TestOOOChunks_ToEncodedChunks_WithST tests ToEncodedChunks with useXOR2=true and useXOR2=false for float samples.
+// TestOOOChunks_ToEncodedChunks_WithST tests ToEncodedChunks with useXOR2=true and useXOR2=false.
 // When useXOR2=true, st values are preserved; when useXOR2=false, AtST() returns 0.
-// TODO(@krajorama): Add histogram test cases once ST storage is implemented for histograms.
 func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
+	h1 := tsdbutil.GenerateTestHistogram(1)
+	h2 := tsdbutil.GenerateTestHistogram(2)
+	h3 := tsdbutil.GenerateTestHistogram(3)
+	fh1 := tsdbutil.GenerateTestFloatHistogram(1)
+	fh2 := tsdbutil.GenerateTestFloatHistogram(2)
+	fh3 := tsdbutil.GenerateTestFloatHistogram(3)
+
 	testCases := map[string]struct {
-		samples []sample
+		samples         []sample
+		xor2Encoding    chunkenc.Encoding // Expected encoding when useXOR2=true.
+		regularEncoding chunkenc.Encoding // Expected encoding when useXOR2=false.
 	}{
 		"floats with st=0": {
 			samples: []sample{
 				{st: 0, t: 1000, f: 43.0},
 				{st: 0, t: 1100, f: 42.0},
 			},
+			xor2Encoding:    chunkenc.EncXOR2,
+			regularEncoding: chunkenc.EncXOR,
 		},
 		"floats with st=t": {
 			samples: []sample{
 				{st: 1000, t: 1000, f: 43.0},
 				{st: 1100, t: 1100, f: 42.0},
 			},
+			xor2Encoding:    chunkenc.EncXOR2,
+			regularEncoding: chunkenc.EncXOR,
 		},
 		"floats with st=t-100": {
 			samples: []sample{
 				{st: 900, t: 1000, f: 43.0},
 				{st: 1000, t: 1100, f: 42.0},
 			},
+			xor2Encoding:    chunkenc.EncXOR2,
+			regularEncoding: chunkenc.EncXOR,
 		},
 		"floats with varying st": {
 			samples: []sample{
@@ -398,16 +412,67 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 				{st: 1100, t: 1100, f: 42.0}, // st == t
 				{st: 0, t: 1200, f: 41.0},    // st == 0
 			},
+			xor2Encoding:    chunkenc.EncXOR2,
+			regularEncoding: chunkenc.EncXOR,
+		},
+		"histograms with st=0": {
+			samples: []sample{
+				{st: 0, t: 1000, h: h1},
+				{st: 0, t: 1100, h: h2},
+			},
+			xor2Encoding:    chunkenc.EncHistogramST,
+			regularEncoding: chunkenc.EncHistogram,
+		},
+		"histograms with st=t-100": {
+			samples: []sample{
+				{st: 900, t: 1000, h: h1},
+				{st: 1000, t: 1100, h: h2},
+			},
+			xor2Encoding:    chunkenc.EncHistogramST,
+			regularEncoding: chunkenc.EncHistogram,
+		},
+		"histograms with varying st": {
+			samples: []sample{
+				{st: 500, t: 1000, h: h1},
+				{st: 1100, t: 1100, h: h2},
+				{st: 0, t: 1200, h: h3},
+			},
+			xor2Encoding:    chunkenc.EncHistogramST,
+			regularEncoding: chunkenc.EncHistogram,
+		},
+		"float histograms with st=0": {
+			samples: []sample{
+				{st: 0, t: 1000, fh: fh1},
+				{st: 0, t: 1100, fh: fh2},
+			},
+			xor2Encoding:    chunkenc.EncFloatHistogramST,
+			regularEncoding: chunkenc.EncFloatHistogram,
+		},
+		"float histograms with st=t-100": {
+			samples: []sample{
+				{st: 900, t: 1000, fh: fh1},
+				{st: 1000, t: 1100, fh: fh2},
+			},
+			xor2Encoding:    chunkenc.EncFloatHistogramST,
+			regularEncoding: chunkenc.EncFloatHistogram,
+		},
+		"float histograms with varying st": {
+			samples: []sample{
+				{st: 500, t: 1000, fh: fh1},
+				{st: 1100, t: 1100, fh: fh2},
+				{st: 0, t: 1200, fh: fh3},
+			},
+			xor2Encoding:    chunkenc.EncFloatHistogramST,
+			regularEncoding: chunkenc.EncFloatHistogram,
 		},
 	}
 
 	storageScenarios := []struct {
-		name             string
-		useXOR2          bool
-		expectedEncoding chunkenc.Encoding
+		name    string
+		useXOR2 bool
 	}{
-		{"useXOR2=true", true, chunkenc.EncXOR2},
-		{"useXOR2=false", false, chunkenc.EncXOR},
+		{"useXOR2=true", true},
+		{"useXOR2=false", false},
 	}
 
 	for name, tc := range testCases {
@@ -415,7 +480,7 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 			t.Run(name+"/"+ss.name, func(t *testing.T) {
 				oooChunk := OOOChunk{}
 				for _, s := range tc.samples {
-					oooChunk.Insert(s.st, s.t, s.f, nil, nil)
+					oooChunk.Insert(s.st, s.t, s.f, s.h, s.fh)
 				}
 
 				chunks, err := oooChunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, ss.useXOR2)
@@ -423,28 +488,47 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 				require.Len(t, chunks, 1, "number of chunks")
 
 				c := chunks[0]
-				require.Equal(t, ss.expectedEncoding, c.chunk.Encoding(), "chunk encoding")
+				expectedEnc := tc.regularEncoding
+				if ss.useXOR2 {
+					expectedEnc = tc.xor2Encoding
+				}
+				require.Equal(t, expectedEnc, c.chunk.Encoding(), "chunk encoding")
 				require.Equal(t, tc.samples[0].t, c.minTime, "chunk minTime")
 				require.Equal(t, tc.samples[len(tc.samples)-1].t, c.maxTime, "chunk maxTime")
 
-				// Verify samples can be read back with correct st and t values.
+				// Verify samples can be read back.
 				it := c.chunk.Iterator(nil)
 				sampleIndex := 0
-				for it.Next() == chunkenc.ValFloat {
-					gotT, gotF := it.At()
-					gotST := it.AtST()
+				for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+					expSample := tc.samples[sampleIndex]
+					switch vt {
+					case chunkenc.ValFloat:
+						gotT, gotF := it.At()
+						require.Equal(t, expSample.t, gotT, "sample %d t", sampleIndex)
+						require.Equal(t, expSample.f, gotF, "sample %d f", sampleIndex)
+					case chunkenc.ValHistogram:
+						gotT, gotH := it.AtHistogram(nil)
+						require.Equal(t, expSample.t, gotT, "sample %d t", sampleIndex)
+						expH := expSample.h.Copy()
+						expH.CounterResetHint = gotH.CounterResetHint
+						require.Equal(t, expH, gotH.Compact(0), "sample %d h", sampleIndex)
+					case chunkenc.ValFloatHistogram:
+						gotT, gotFH := it.AtFloatHistogram(nil)
+						require.Equal(t, expSample.t, gotT, "sample %d t", sampleIndex)
+						expFH := expSample.fh.Copy()
+						expFH.CounterResetHint = gotFH.CounterResetHint
+						require.Equal(t, expFH, gotFH.Compact(0), "sample %d fh", sampleIndex)
+					}
 
+					gotST := it.AtST()
 					if ss.useXOR2 {
-						// When useXOR2=true, st values should be preserved.
-						require.Equal(t, tc.samples[sampleIndex].st, gotST, "sample %d st", sampleIndex)
+						require.Equal(t, expSample.st, gotST, "sample %d st", sampleIndex)
 					} else {
-						// When useXOR2=false, AtST() should return 0.
 						require.Equal(t, int64(0), gotST, "sample %d st should be 0 when useXOR2=false", sampleIndex)
 					}
-					require.Equal(t, tc.samples[sampleIndex].t, gotT, "sample %d t", sampleIndex)
-					require.Equal(t, tc.samples[sampleIndex].f, gotF, "sample %d f", sampleIndex)
 					sampleIndex++
 				}
+				require.NoError(t, it.Err())
 				require.Equal(t, len(tc.samples), sampleIndex, "number of samples")
 			})
 		}

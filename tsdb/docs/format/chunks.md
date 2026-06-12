@@ -36,7 +36,7 @@ in-file offset (lower 4 bytes) and segment sequence number (upper 4 bytes).
 Notes:
 
 * `len`: Chunk size in bytes. 1 to 5 bytes long using the [`<uvarint>` encoding](https://go.dev/src/encoding/binary/varint.go).
-* `encoding`: Currently either `XOR`, `histogram`, or `floathistogram`, see [code for numerical values](https://github.com/prometheus/prometheus/blob/02d0de9987ad99dee5de21853715954fadb3239f/tsdb/chunkenc/chunk.go#L28-L47).
+* `encoding`: Currently one of `XOR`, `XOR2`, `histogram`, `floathistogram`, `histogramST`, or `floathistogramST`, see [code for numerical values](https://github.com/prometheus/prometheus/blob/02d0de9987ad99dee5de21853715954fadb3239f/tsdb/chunkenc/chunk.go#L28-L47). The `XOR2`, `histogramST`, and `floathistogramST` encodings extend their non-ST counterparts with optional Start Timestamp (ST) data and are gated behind the experimental [`xor2-encoding` feature flag](../../../docs/feature_flags.md#xor2-chunk-encoding).
 * `data`: See below for each encoding.
 * `checksum`: Checksum of `encoding` and `data`. It's a [cyclic redundancy check](https://en.wikipedia.org/wiki/Cyclic_redundancy_check) with the Castagnoli polynomial, serialised as an unsigned 32 bits big endian number. Can be referred as a `CRC-32C`.
 
@@ -267,6 +267,68 @@ the encoding will therefore result in a short varbit representation. The upper
 bound of 33554430 is picked so that the varbit encoded value will take at most
 4 bytes.
 
+## Histogram ST chunk data
+
+The histogram ST chunk extends the histogram chunk format with optional Start
+Timestamp (ST) data, using the same ST encoding scheme as XOR2. The base
+histogram sample encoding is identical to the
+[histogram chunk](#histogram-chunk-data). The total header is 3 bytes — the
+same size as the histogram chunk header — but the counter-reset bits are
+relocated into the high 2 bits of the sample count byte so that byte 2 can
+hold the ST header. An optional ST field is appended after each sample's data.
+
+```
+┌────────────────────────┬───────────────────────┬────────────────────┬───────────────────────────────┬─────────────────────┬──────────────────┬──────────────────┬──────────────────────┬────────────────┬──────────────────┐
+│ counter_reset <2 bits> │ num_samples <14 bits> │ st_header <1 byte> │ zero_threshold <1 or 9 bytes> │ schema <varbit_int> │ pos_spans <data> │ neg_spans <data> │ custom_values <data> │ samples <data> │ padding <x bits> │
+└────────────────────────┴───────────────────────┴────────────────────┴───────────────────────────────┴─────────────────────┴──────────────────┴──────────────────┴──────────────────────┴────────────────┴──────────────────┘
+```
+
+### Start timestamp encoding
+
+The ST header is one byte:
+
+  ```
+  ┌───────────────────────┬───────────────────────┐
+  │ first_st_known<1 bit> │ st_changed_on<7 bits> │
+  └───────────────────────┴───────────────────────┘
+  ```
+
+where the highest bit `first_st_known` indicates if `st_0` is present or not.
+If the lower 7bits `st_changed_on` is 0, no `st_i (i>0)` is present.
+Otherwise `st_i (i>=st_changed_on)` is present, while
+`st_i (0<i<st_changed_on)` is not present.
+
+Once a chunk has at least 127 samples,
+`st_changed_on` is set to 127 (0x7F) and the 128th and further samples will
+have `st_i` present.
+
+* `st_0` is encoded as a `<varint>` if present.
+* `st_1` is encoded as a `<varbit_int>` delta from the timestamp of the
+  previous sample (or from 0 if not previously set).
+* `st_i` (i > 1) is encoded as a `<varbit_int>` "delta of delta" of the ST
+  difference from the previous sample.
+
+### Samples data:
+
+Each `sample_i <data>` payload uses the exact same encoding as the equivalent
+sample in the [histogram chunk](#histogram-chunk-data) (sample 0, sample 1, and
+sample 2-and-following), but with an optional ST field. If an ST payload is present, 
+it is appended immediately after the histogram sample payload.
+
+```
+┌─────────────────┬──────────────────────┐
+│ sample_0 <data> │ ?st_0 <varint>       │
+├─────────────────┼──────────────────────┤
+│ sample_1 <data> │ ?st_1 <varbit_int>   │
+├─────────────────┼──────────────────────┤
+│ sample_2 <data> │ ?st_2 <varbit_int>   │
+├─────────────────┼──────────────────────┤
+│       ...       │         ...          │
+├─────────────────┼──────────────────────┤
+│ sample_n <data> │ ?st_n <varbit_int>   │
+└─────────────────┴──────────────────────┘
+```
+
 ## Float histogram chunk data
 
 Float histograms have the same layout as histograms apart from the encoding of samples.
@@ -309,4 +371,41 @@ Float histograms have the same layout as histograms apart from the encoding of s
 ┌─────────────────────┬────────────────────────┬─────────────────────────────┬──────────────────────┬───────────────────────────────┬─────┬───────────────────────────────┬───────────────────────────────┬─────┬───────────────────────────────┐
 │ ts_dod <varbit_int> │ count_xor <varbit_xor> │ zero_count_xor <varbit_xor> │ sum_xor <varbit_xor> │ pos_bucket_0_xor <varbit_xor> │ ... │ pos_bucket_n_xor <varbit_xor> │ neg_bucket_0_xor <varbit_xor> │ ... │ neg_bucket_n_xor <varbit_xor> │
 └─────────────────────┴────────────────────────┴─────────────────────────────┴──────────────────────┴───────────────────────────────┴─────┴───────────────────────────────┴───────────────────────────────┴─────┴───────────────────────────────┘
+```
+
+## Float histogram ST chunk data
+
+The float histogram ST chunk extends the float histogram chunk format with
+optional Start Timestamp (ST) data, with the same ST encoding scheme as
+[Histogram ST](#histogram-st-chunk-data). The float histogram sample encoding
+is unchanged. The 3-byte chunk header layout is identical to the
+[Histogram ST header layout](#histogram-st-chunk-data)).
+
+```
+┌────────────────────────┬───────────────────────┬────────────────────┬───────────────────────────────┬─────────────────────┬──────────────────┬──────────────────┬──────────────────────┬────────────────┬──────────────────┐
+│ counter_reset <2 bits> │ num_samples <14 bits> │ st_header <1 byte> │ zero_threshold <1 or 9 bytes> │ schema <varbit_int> │ pos_spans <data> │ neg_spans <data> │ custom_values <data> │ samples <data> │ padding <x bits> │
+└────────────────────────┴───────────────────────┴────────────────────┴───────────────────────────────┴─────────────────────┴──────────────────┴──────────────────┴──────────────────────┴────────────────┴──────────────────┘
+```
+
+### Samples data:
+
+Each `sample_i <data>` payload uses the exact same encoding as the equivalent
+sample in the [float histogram chunk](#float-histogram-chunk-data) (sample 0,
+sample 1, and sample 2-and-following). The optional ST field and the
+`st_header` byte follow the same encoding rules as the
+[histogram ST chunk](#histogram-st-chunk-data) and
+[XOR2 start timestamp encoding](#start-timestamp-encoding).
+
+```
+┌─────────────────┬──────────────────────┐
+│ sample_0 <data> │ ?st_0 <varint>       │
+├─────────────────┼──────────────────────┤
+│ sample_1 <data> │ ?st_1 <varbit_int>   │
+├─────────────────┼──────────────────────┤
+│ sample_2 <data> │ ?st_2 <varbit_int>   │
+├─────────────────┼──────────────────────┤
+│       ...       │         ...          │
+├─────────────────┼──────────────────────┤
+│ sample_n <data> │ ?st_n <varbit_int>   │
+└─────────────────┴──────────────────────┘
 ```
