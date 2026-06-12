@@ -818,6 +818,9 @@ type ScrapeConfig struct {
 	// More than this label value length post metric-relabeling will cause the
 	// scrape to fail. 0 means no limit.
 	LabelValueLengthLimit uint `yaml:"label_value_length_limit,omitempty"`
+	// How often to close idle HTTP connections and force DNS re-resolution for
+	// targets using FQDNs. 0 disables periodic refresh (default).
+	DNSRefreshInterval model.Duration `yaml:"dns_refresh_interval,omitempty"`
 	// If there are more than this many buckets in a native histogram,
 	// buckets will be merged to stay within the limit.
 	NativeHistogramBucketLimit uint `yaml:"native_histogram_bucket_limit,omitempty"`
