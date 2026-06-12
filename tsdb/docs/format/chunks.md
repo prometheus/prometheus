@@ -36,7 +36,7 @@ in-file offset (lower 4 bytes) and segment sequence number (upper 4 bytes).
 Notes:
 
 * `len`: Chunk size in bytes. 1 to 5 bytes long using the [`<uvarint>` encoding](https://go.dev/src/encoding/binary/varint.go).
-* `encoding`: Currently one of `XOR`, `XOR2`, `histogram`, `floathistogram`, `histogramST`, or `floathistogramST`, see [code for numerical values](https://github.com/prometheus/prometheus/blob/02d0de9987ad99dee5de21853715954fadb3239f/tsdb/chunkenc/chunk.go#L28-L47). The `XOR2`, `histogramST`, and `floathistogramST` encodings extend their non-ST counterparts with optional Start Timestamp (ST) data and are gated behind the experimental [`xor2-encoding` feature flag](../../../docs/feature_flags.md#xor2-chunk-encoding).
+* `encoding`: Currently one of `XOR`, `XOR2`, `histogram`, `floathistogram`, `histogramST`, or `floathistogramST`, see [code for numerical values](https://github.com/prometheus/prometheus/blob/02d0de9987ad99dee5de21853715954fadb3239f/tsdb/chunkenc/chunk.go#L28-L47). The `XOR2`, `histogramST`, and `floathistogramST` encodings extend their non-ST counterparts with optional Start Timestamp (ST) data. `XOR2` is gated behind the experimental [`xor2-encoding` feature flag](../../../docs/feature_flags.md#xor2-chunk-encoding); `histogramST` and `floathistogramST` are gated behind the experimental [`histograms-st-encoding` feature flag](../../../docs/feature_flags.md#histogram-st-chunk-encoding).
 * `data`: See below for each encoding.
 * `checksum`: Checksum of `encoding` and `data`. It's a [cyclic redundancy check](https://en.wikipedia.org/wiki/Cyclic_redundancy_check) with the Castagnoli polynomial, serialised as an unsigned 32 bits big endian number. Can be referred as a `CRC-32C`.
 

@@ -3008,6 +3008,7 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableST
 	opts.OutOfOrderTimeWindow.Store(30 * time.Minute.Milliseconds())
 	opts.EnableSTStorage.Store(enableSTstorage)
 	opts.EnableXOR2Encoding.Store(enableSTstorage)
+	opts.EnableHistogramSTEncoding.Store(enableSTstorage)
 
 	h, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
 	require.NoError(t, err)
@@ -3059,7 +3060,7 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableST
 	require.False(t, ok)
 	require.NotNil(t, ms)
 
-	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, h.opts.EnableXOR2Encoding.Load())
+	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, h.opts.EnableXOR2Encoding.Load(), h.opts.EnableHistogramSTEncoding.Load())
 	require.NoError(t, err)
 	require.Len(t, chks, 1)
 
@@ -4982,6 +4983,7 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
 			opts.EnableSTStorage.Store(true)
 			opts.EnableXOR2Encoding.Store(true)
+			opts.EnableHistogramSTEncoding.Store(true)
 			h, _ := newTestHeadWithOptions(t, compression.None, opts)
 
 			lbls := labels.FromStrings("foo", "bar")

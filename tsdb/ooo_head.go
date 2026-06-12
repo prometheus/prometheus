@@ -71,9 +71,11 @@ func (o *OOOChunk) NumSamples() int {
 }
 
 // ToEncodedChunks returns chunks with the samples in the OOOChunk.
+// useXOR2 selects XOR2 encoding for float samples; useHistogramST selects the
+// ST-capable chunk encoding for integer and float histogram samples.
 //
 //nolint:revive
-func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2 bool) (chks []memChunk, err error) {
+func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2, useHistogramST bool) (chks []memChunk, err error) {
 	if len(o.samples) == 0 {
 		return nil, nil
 	}
@@ -93,12 +95,12 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2 bool) (chks []memCh
 		if s.t > maxt {
 			break
 		}
-		encoding := chunkenc.ValFloat.ChunkEncoding(useXOR2)
+		encoding := chunkenc.ValFloat.ChunkEncoding(useXOR2, useHistogramST)
 		switch {
 		case s.h != nil:
-			encoding = chunkenc.ValHistogram.ChunkEncoding(useXOR2)
+			encoding = chunkenc.ValHistogram.ChunkEncoding(useXOR2, useHistogramST)
 		case s.fh != nil:
-			encoding = chunkenc.ValFloatHistogram.ChunkEncoding(useXOR2)
+			encoding = chunkenc.ValFloatHistogram.ChunkEncoding(useXOR2, useHistogramST)
 		}
 
 		// prevApp is the appender for the previous sample.
