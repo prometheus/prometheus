@@ -16,7 +16,7 @@ import {
   maybeQuoteLabelName,
 } from "./utils";
 
-const serializeDurationNode = (node: DurationNode): string => {
+export const serializeDurationNode = (node: DurationNode): string => {
   if (node.type === "numberLiteral") {
     if (node.duration) {
       return formatPrometheusDuration(parseFloat(node.val) * 1000);
@@ -45,14 +45,17 @@ const labelNameList = (labels: string[]): string => {
 const serializeAtAndOffset = (
   timestamp: number | null,
   startOrEnd: StartOrEnd,
-  offset: number
+  offset: number,
+  offsetExpr?: DurationNode | null
 ): string =>
   `${timestamp !== null ? ` @ ${(timestamp / 1000).toFixed(3)}` : startOrEnd !== null ? ` @ ${startOrEnd}()` : ""}${
-    offset === 0
-      ? ""
-      : offset > 0
-        ? ` offset ${formatPrometheusDuration(offset)}`
-        : ` offset -${formatPrometheusDuration(-offset)}`
+    offsetExpr
+      ? ` offset ${serializeDurationNode(offsetExpr)}`
+      : offset === 0
+        ? ""
+        : offset > 0
+          ? ` offset ${formatPrometheusDuration(offset)}`
+          : ` offset -${formatPrometheusDuration(-offset)}`
   }`;
 
 const serializeSelector = (node: VectorSelector | MatrixSelector): string => {
@@ -77,8 +80,8 @@ const serializeSelector = (node: VectorSelector | MatrixSelector): string => {
 
   let range = "";
   if (node.type === nodeType.matrixSelector) {
-    if (node.rangeExpr && node.range === 0) {
-      range = `[max_of(${serializeDurationNode(node.rangeExpr)},1s)]`;
+    if (node.rangeExpr) {
+      range = `[${serializeDurationNode(node.rangeExpr)}]`;
     } else {
       range = `[${formatPrometheusDuration(node.range)}]`;
     }
@@ -91,7 +94,8 @@ const serializeSelector = (node: VectorSelector | MatrixSelector): string => {
   const atAndOffset = serializeAtAndOffset(
     node.timestamp,
     node.startOrEnd,
-    node.offset
+    node.offset,
+    node.offsetExpr
   );
 
   return `${!metricExtendedCharset ? metricName : ""}${matchers.length > 0 ? `{${matchers.join(",")}}` : ""}${range}${extendedAttribute}${atAndOffset}`;
@@ -125,9 +129,17 @@ const serializeNode = (
       }${serializeNode(node.expr, childIndent, pretty)}${childListSeparator}${ind})`;
 
     case nodeType.subquery:
-      return `${initialInd}${serializeNode(node.expr, indent, pretty)}[${formatPrometheusDuration(node.range)}:${
-        node.step !== 0 ? formatPrometheusDuration(node.step) : ""
-      }]${serializeAtAndOffset(node.timestamp, node.startOrEnd, node.offset)}`;
+      return `${initialInd}${serializeNode(node.expr, indent, pretty)}[${
+        node.rangeExpr
+          ? serializeDurationNode(node.rangeExpr)
+          : formatPrometheusDuration(node.range)
+      }:${
+        node.stepExpr
+          ? serializeDurationNode(node.stepExpr)
+          : node.step !== 0
+            ? formatPrometheusDuration(node.step)
+            : ""
+      }]${serializeAtAndOffset(node.timestamp, node.startOrEnd, node.offset, node.offsetExpr)}`;
 
     case nodeType.parenExpr:
       return `${initialInd}(${childListSeparator}${serializeNode(
