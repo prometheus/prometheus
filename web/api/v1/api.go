@@ -15,7 +15,7 @@ package v1
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -1740,7 +1740,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 	}
 
 	if maxGroups > 0 && nextToken != "" && !foundToken {
-		return invalidParamError(fmt.Errorf("invalid group_next_token '%v'. were rule groups changed?", nextToken), "group_next_token")
+		return invalidParamError(fmt.Errorf("invalid group_next_token %q; the pagination state may have been invalidated", nextToken), "group_next_token")
 	}
 
 	res.RuleGroups = rgs
@@ -1794,7 +1794,7 @@ func parseListRulesPaginationRequest(r *http.Request) (int64, string, *apiFuncRe
 }
 
 func getRuleGroupNextToken(file, group string) string {
-	h := sha1.New()
+	h := sha256.New()
 	h.Write([]byte(file + ";" + group))
 	return hex.EncodeToString(h.Sum(nil))
 }
