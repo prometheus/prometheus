@@ -43,7 +43,7 @@ func makeInstance(opts ...func(*core.Instance)) core.Instance {
 		CompartmentId:      strPtr("ocid1.compartment.oc1..comp001"),
 		LifecycleState:     core.InstanceLifecycleStateRunning,
 		FreeformTags:       map[string]string{},
-		DefinedTags:        map[string]map[string]interface{}{},
+		DefinedTags:        map[string]map[string]any{},
 	}
 	for _, o := range opts {
 		o(&inst)
@@ -74,8 +74,10 @@ func makeAttachment(instanceID, vnicID string) core.VnicAttachment {
 	}
 }
 
-const testCompartment = "ocid1.compartment.oc1..comp001"
-const testTenancy = "ocid1.tenancy.oc1..test001"
+const (
+	testCompartment = "ocid1.compartment.oc1..comp001"
+	testTenancy     = "ocid1.tenancy.oc1..test001"
+)
 
 // baseDiscovery returns a Discovery with no-op closure stubs.
 // Tests override specific closures. d.refresh() is called directly so
@@ -172,7 +174,7 @@ func TestHasTag(t *testing.T) {
 		{
 			name: "defined tag match",
 			inst: makeInstance(func(i *core.Instance) {
-				i.DefinedTags = map[string]map[string]interface{}{
+				i.DefinedTags = map[string]map[string]any{
 					"ops-ns": {"monitoring": "enabled"},
 				}
 			}),
@@ -181,7 +183,7 @@ func TestHasTag(t *testing.T) {
 		{
 			name: "defined tag value mismatch",
 			inst: makeInstance(func(i *core.Instance) {
-				i.DefinedTags = map[string]map[string]interface{}{
+				i.DefinedTags = map[string]map[string]any{
 					"ops-ns": {"monitoring": "disabled"},
 				}
 			}),
@@ -190,7 +192,7 @@ func TestHasTag(t *testing.T) {
 		{
 			name: "defined tag non-string value not matched",
 			inst: makeInstance(func(i *core.Instance) {
-				i.DefinedTags = map[string]map[string]interface{}{
+				i.DefinedTags = map[string]map[string]any{
 					"ops-ns": {"monitoring": 42},
 				}
 			}),
@@ -199,7 +201,7 @@ func TestHasTag(t *testing.T) {
 		{
 			name: "defined tag found in second namespace",
 			inst: makeInstance(func(i *core.Instance) {
-				i.DefinedTags = map[string]map[string]interface{}{
+				i.DefinedTags = map[string]map[string]any{
 					"ns1": {"other": "x"},
 					"ns2": {"monitoring": "enabled"},
 				}
@@ -210,7 +212,7 @@ func TestHasTag(t *testing.T) {
 			name: "freeform matches even when defined tag disagrees",
 			inst: makeInstance(func(i *core.Instance) {
 				i.FreeformTags = map[string]string{"monitoring": "enabled"}
-				i.DefinedTags = map[string]map[string]interface{}{
+				i.DefinedTags = map[string]map[string]any{
 					"ns": {"monitoring": "disabled"},
 				}
 			}),
@@ -288,7 +290,7 @@ func TestInstanceLabels_FreeformTagsSanitized(t *testing.T) {
 
 func TestInstanceLabels_DefinedTagsStringOnly(t *testing.T) {
 	inst := makeInstance(func(i *core.Instance) {
-		i.DefinedTags = map[string]map[string]interface{}{
+		i.DefinedTags = map[string]map[string]any{
 			"Oracle-Tags": {
 				"CreatedBy":  "user@example.com",
 				"CostCenter": "42",
@@ -313,7 +315,7 @@ func TestInstanceLabels_NilOptionalFields(t *testing.T) {
 	inst := core.Instance{
 		LifecycleState: core.InstanceLifecycleStateRunning,
 		FreeformTags:   map[string]string{},
-		DefinedTags:    map[string]map[string]interface{}{},
+		DefinedTags:    map[string]map[string]any{},
 	}
 	labels := instanceLabels(&inst, "10.0.0.1", "", "tenancy", 80)
 
@@ -326,7 +328,8 @@ func TestInstanceLabels_PortInAddress(t *testing.T) {
 	inst := makeInstance()
 	for _, port := range []int{80, 9100, 9182, 443} {
 		labels := instanceLabels(&inst, "10.0.0.1", "", "tenancy", port)
-		require.Equal(t,
+		require.Equal(
+			t,
 			model.LabelValue("10.0.0.1:"+strconv.Itoa(port)),
 			labels[model.AddressLabel],
 			"port %d", port,
@@ -596,7 +599,7 @@ func TestRefresh_NoTagFilter_AllInstancesReturned(t *testing.T) {
 func TestRefresh_DefinedTagFilterInclude(t *testing.T) {
 	tagged := makeInstance(func(i *core.Instance) {
 		i.Id = strPtr("ocid1.instance.oc1..tagged")
-		i.DefinedTags = map[string]map[string]interface{}{
+		i.DefinedTags = map[string]map[string]any{
 			"ops-ns": {"monitoring": "enabled"},
 		}
 	})
@@ -839,5 +842,5 @@ func TestSDConfig_SetDirectory_AbsolutePathUnchanged(t *testing.T) {
 func TestSDConfig_SetDirectory_EmptyKeyFile(t *testing.T) {
 	cfg := SDConfig{}
 	cfg.SetDirectory("/etc/prometheus")
-	require.Equal(t, "", cfg.KeyFile)
+	require.Empty(t, cfg.KeyFile)
 }
