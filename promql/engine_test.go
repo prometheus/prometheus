@@ -3032,7 +3032,7 @@ func TestQueryLogger_minDuration(t *testing.T) {
 	engine.SetQueryLogMinDuration(50 * time.Millisecond)
 	queryExecWithDelay(1 * time.Millisecond)
 	logLines := getLogLines(t, qlFile)
-	require.Len(t, logLines, 0)
+	require.Empty(t, logLines)
 
 	// Test 2: Log threshold is 5ms, query takes 50ms. Should log.
 	engine.SetQueryLogMinDuration(5 * time.Millisecond)
