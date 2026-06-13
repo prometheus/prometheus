@@ -308,3 +308,16 @@ eval range from 0 to 60s step 10s timestamp(abs(metric_missing @ 11))
  {} 0 10 20 30 40 50 60
 
 clear
+
+# Step-invariant subquery as matrix argument of a non-step-invariant call (#18610).
+load 30s
+  arg 0 0.5 1 0.75
+  metric 1 2 3 4 5
+
+eval range from 0 to 1m30s step 30s quantile_over_time(scalar(arg), metric[2m1s:30s] @ 2m)
+  {} 1 3 5 4
+
+eval instant at 0 quantile_over_time(scalar(arg), metric[2m1s:30s] @ 2m)
+  {} 1
+
+clear
