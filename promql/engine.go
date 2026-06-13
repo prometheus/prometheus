@@ -3105,8 +3105,12 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			}
 			matchedLabels := rs.Metric.MatchLabels(matching.On, matching.MatchingLabels...)
 			// Many-to-many matching not allowed.
+			// Sort the label sets before formatting to ensure deterministic error messages.
+			sortedMatched := sortLabels(matchedLabels)
+			sortedCurrent := sortLabels(rs.Metric)
+			sortedDupl := sortLabels(duplSample.Metric)
 			ev.errorf("found duplicate series for the match group %s on the %s hand-side of the operation: [%s, %s]"+
-				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, rs.Metric.String(), duplSample.Metric.String())
+				";many-to-many matching not allowed: matching labels must be unique on one side", sortedMatched, oneSide, sortedCurrent, sortedDupl)
 		}
 		rightSigs[sigOrd] = rs
 		rightSigsPresent[sigOrd] = true
@@ -4782,4 +4786,31 @@ func extendFloats(floats []FPoint, mint, maxt int64, smoothed bool) []FPoint {
 	out = append(out, FPoint{T: maxt, F: right})
 
 	return out
+}
+
+// sortLabels returns a deterministic string representation of Labels by sorting
+// the label names before formatting. This ensures error messages are consistent
+// across runs regardless of Go map iteration order.
+func sortLabels(l labels.Labels) string {
+	// Collect labels into a slice for sorting.
+	var sorted []labels.Label
+	l.Range(func(lb labels.Label) {
+		sorted = append(sorted, lb)
+	})
+	slices.SortFunc(sorted, func(a, b labels.Label) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	var buf strings.Builder
+	buf.WriteByte('{')
+	for i, lb := range sorted {
+		if i > 0 {
+			buf.WriteByte(',')
+			buf.WriteByte(' ')
+		}
+		buf.WriteString(lb.Name)
+		buf.WriteByte('=')
+		buf.WriteString(strconv.Quote(lb.Value))
+	}
+	buf.WriteByte('}')
+	return buf.String()
 }
