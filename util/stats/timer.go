@@ -50,6 +50,11 @@ func (t *Timer) Duration() float64 {
 	return t.duration.Seconds()
 }
 
+// TotalDuration returns the total duration value of the timer.
+func (t *Timer) TotalDuration() time.Duration {
+	return t.duration
+}
+
 // Return a string representation of the Timer.
 func (t *Timer) String() string {
 	return fmt.Sprintf("%s: %s", t.name, t.duration)

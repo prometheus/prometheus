@@ -2462,6 +2462,47 @@ func TestQueryLogger_error(t *testing.T) {
 	require.Contains(t, logLines[0], "params", map[string]any{"query": "test statement"})
 }
 
+func TestQueryLogger_minDuration(t *testing.T) {
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
+
+	queryExecWithDelay := func(delay time.Duration) {
+		ctx, cancelCtx := context.WithCancel(context.Background())
+		defer cancelCtx()
+		query := engine.NewTestQuery(func(ctx context.Context) error {
+			time.Sleep(delay)
+			return contextDone(ctx, "test statement execution")
+		})
+		res := query.Exec(ctx)
+		require.NoError(t, res.Err)
+	}
+
+	tmpDir := t.TempDir()
+	qlFile := filepath.Join(tmpDir, "query_duration.log")
+	f, err := logging.NewJSONFileLogger(qlFile)
+	require.NoError(t, err)
+	defer f.Close()
+
+	engine.SetQueryLogger(f)
+
+	// Test 1: Log threshold is 10m, query takes 1ms. Should NOT log.
+	engine.SetQueryLogMinDuration(10 * time.Minute)
+	queryExecWithDelay(1 * time.Millisecond)
+	logLines := getLogLines(t, qlFile)
+	require.Empty(t, logLines)
+
+	// Test 2: Log threshold is 1ms, query takes 100ms. Should log.
+	engine.SetQueryLogMinDuration(1 * time.Millisecond)
+	queryExecWithDelay(100 * time.Millisecond)
+	logLines = getLogLines(t, qlFile)
+	require.Len(t, logLines, 1)
+}
+
 func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 	startTime := time.Unix(1000, 0)
 	endTime := time.Unix(9999, 0)
