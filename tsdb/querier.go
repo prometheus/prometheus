@@ -318,9 +318,63 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 		return +1
 	})
 
+	// Matchers that can only be resolved by scanning all values of a label (a
+	// non-trivial regexp with no fast path) are grouped by label name and
+	// polarity, so that each label's values are scanned a single time instead
+	// of once per matcher. A series has exactly one value per label name, so for
+	// the same label intersecting scans combine with AND and subtracting scans
+	// combine with OR. See https://github.com/prometheus/prometheus/issues/14619.
+	//
+	// Building the groups is only worthwhile when at least two regexp matchers
+	// share a label name. The check below is allocation-free, so queries that
+	// can't benefit (the common case) keep their existing path untouched.
+	type scanKey struct {
+		name        string
+		subtracting bool
+	}
+	var (
+		scanGroups map[scanKey][]*labels.Matcher
+		scanOrder  []scanKey
+		combined   map[*labels.Matcher]struct{}
+	)
+	if sameLabelRegexpMatchers(ms) {
+		for _, m := range ms {
+			if !matcherScans(m) {
+				continue
+			}
+			// Allocate lazily: queries whose same-label matchers all use a fast
+			// path (e.g. many literal `!~` matchers) never reach this point, so
+			// they keep their existing allocation profile.
+			if scanGroups == nil {
+				scanGroups = make(map[scanKey][]*labels.Matcher)
+			}
+			k := scanKey{m.Name, isSubtractingMatcher(m)}
+			if _, ok := scanGroups[k]; !ok {
+				scanOrder = append(scanOrder, k)
+			}
+			scanGroups[k] = append(scanGroups[k], m)
+		}
+		// Only combine when a label has more than one scanning matcher of the
+		// same polarity.
+		for _, k := range scanOrder {
+			if len(scanGroups[k]) > 1 {
+				if combined == nil {
+					combined = make(map[*labels.Matcher]struct{})
+				}
+				for _, m := range scanGroups[k] {
+					combined[m] = struct{}{}
+				}
+			}
+		}
+	}
+
 	for _, m := range ms {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
+		}
+		if _, ok := combined[m]; ok {
+			// Handled below as a single combined scan for its label.
+			continue
 		}
 		switch {
 		case m.Name == "" && m.Value == "":
@@ -402,6 +456,47 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 		}
 	}
 
+	// Execute the combined same-label scans, scanning each label's values once.
+	for _, k := range scanOrder {
+		group := scanGroups[k]
+		if len(group) <= 1 {
+			continue
+		}
+		matchers := group
+		if k.subtracting {
+			// Subtract a value if any of the matchers would subtract it.
+			it := ix.PostingsForLabelMatching(ctx, k.name, func(v string) bool {
+				for _, m := range matchers {
+					if !m.Matches(v) {
+						return true
+					}
+				}
+				return false
+			})
+			if err := it.Err(); err != nil {
+				return nil, err
+			}
+			notIts = append(notIts, it)
+			continue
+		}
+		// Keep a value only if all of the matchers match it.
+		it := ix.PostingsForLabelMatching(ctx, k.name, func(v string) bool {
+			for _, m := range matchers {
+				if !m.Matches(v) {
+					return false
+				}
+			}
+			return true
+		})
+		if err := it.Err(); err != nil {
+			return nil, err
+		}
+		if index.IsEmptyPostingsType(it) {
+			return index.EmptyPostings(), nil
+		}
+		its = append(its, it)
+	}
+
 	it := index.Intersect(its...)
 
 	for _, n := range notIts {
@@ -409,6 +504,46 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 	}
 
 	return it, nil
+}
+
+// sameLabelRegexpMatchers reports whether ms contains at least two regexp-type
+// matchers (MatchRegexp or MatchNotRegexp) for the same label name. It is an
+// allocation-free gate for the scan-combining logic in PostingsForMatchers:
+// only such queries can benefit from it. The number of matchers is small, so
+// the quadratic comparison is cheaper than building a map.
+func sameLabelRegexpMatchers(ms []*labels.Matcher) bool {
+	isRegexp := func(m *labels.Matcher) bool {
+		return m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp
+	}
+	for i := range ms {
+		if !isRegexp(ms[i]) {
+			continue
+		}
+		for j := i + 1; j < len(ms); j++ {
+			if isRegexp(ms[j]) && ms[j].Name == ms[i].Name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// matcherScans reports whether resolving m requires scanning all values of its
+// label, i.e. it is a non-trivial regexp matcher with no fast path via direct
+// postings lookups. Such matchers for the same label name can be combined into
+// a single scan, see PostingsForMatchers.
+func matcherScans(m *labels.Matcher) bool {
+	if m.Type != labels.MatchRegexp && m.Type != labels.MatchNotRegexp {
+		return false
+	}
+	switch m.Value {
+	case "", ".*", ".+":
+		return false
+	}
+	// A regexp that reduces to a set of equality matches uses a direct postings
+	// lookup, not a values scan, so it must not be combined. HasSetMatches is
+	// allocation-free, unlike SetMatches.
+	return !m.HasSetMatches()
 }
 
 func postingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Matcher) (index.Postings, error) {

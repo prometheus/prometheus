@@ -335,6 +335,12 @@ func (m *FastRegexMatcher) SetMatches() []string {
 	return slices.Clone(m.setMatches)
 }
 
+// HasSetMatches reports whether the regex reduces to a non-empty set of
+// equality matches. It is the allocation-free counterpart of len(SetMatches()).
+func (m *FastRegexMatcher) HasSetMatches() bool {
+	return len(m.setMatches) > 0
+}
+
 func (m *FastRegexMatcher) GetRegexString() string {
 	return m.reString
 }
