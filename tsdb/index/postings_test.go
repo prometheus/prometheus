@@ -879,10 +879,8 @@ func TestCompositePostingsCloseClosesInputs(t *testing.T) {
 			},
 		},
 		{
-			name: "without",
-			build: func(a, b Postings) Postings {
-				return Without(a, b)
-			},
+			name:  "without",
+			build: Without,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -919,10 +917,8 @@ func TestCompositePostingsCloseJoinsErrors(t *testing.T) {
 			},
 		},
 		{
-			name: "without",
-			build: func(a, b Postings) Postings {
-				return Without(a, b)
-			},
+			name:  "without",
+			build: Without,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
