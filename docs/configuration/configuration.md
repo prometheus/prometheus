@@ -486,6 +486,10 @@ nerve_sd_configs:
 nomad_sd_configs:
   [ - <nomad_sd_config> ... ]
 
+# List of OCI service discovery configurations.
+oci_sd_configs:
+  [ - <oci_sd_config> ... ]
+
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
@@ -2936,6 +2940,98 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ <http_config> ]
 ```
 
+### `<oci_sd_config>`
+
+OCI SD configurations allow retrieving scrape targets from Oracle Cloud Infrastructure (OCI)
+compute instances. The private IP of the primary VNIC is used as the default address.
+Where no private IP is present (bare-metal instances without secondary VNIC assignment),
+the public IP is used instead.
+
+The following OCI IAM policies are required. For API key authentication (user credentials):
+
+```text
+Allow group <group-name> to read instances in tenancy
+Allow group <group-name> to read compartments in tenancy
+Allow group <group-name> to read vnic-attachments in tenancy
+Allow group <group-name> to read vnics in tenancy
+Allow group <group-name> to read tag-namespaces in tenancy
+```
+
+For instance principal authentication (Prometheus running on OCI compute):
+
+```text
+Allow dynamic-group <dynamic-group-name> to read instances in tenancy
+Allow dynamic-group <dynamic-group-name> to read compartments in tenancy
+Allow dynamic-group <dynamic-group-name> to read vnic-attachments in tenancy
+Allow dynamic-group <dynamic-group-name> to read vnics in tenancy
+Allow dynamic-group <dynamic-group-name> to read tag-namespaces in tenancy
+```
+
+The following meta labels are available on all targets during
+[relabeling](#relabel_config):
+
+* `__meta_oci_availability_domain`: the availability domain of the instance (e.g. `US-ASHBURN-AD-1`)
+* `__meta_oci_compartment_id`: the OCID of the compartment the instance belongs to
+* `__meta_oci_defined_tag_<namespace>_<key>`: each defined tag of the instance; string-typed values only
+* `__meta_oci_fault_domain`: the fault domain of the instance (e.g. `FAULT-DOMAIN-1`)
+* `__meta_oci_image_id`: the OCID of the image the instance was launched from
+* `__meta_oci_instance_id`: the OCID of the instance
+* `__meta_oci_instance_name`: the display name of the instance
+* `__meta_oci_instance_shape`: the shape of the instance (e.g. `VM.Standard.E4.Flex`)
+* `__meta_oci_instance_state`: the lifecycle state of the instance (always `RUNNING`)
+* `__meta_oci_private_ip`: the private IP address of the primary VNIC
+* `__meta_oci_public_ip`: the public IP address of the primary VNIC, if assigned
+* `__meta_oci_region`: the OCI region identifier (e.g. `us-ashburn-1`)
+* `__meta_oci_tag_<key>`: each freeform tag of the instance
+* `__meta_oci_tenancy_id`: the OCID of the tenancy the instance belongs to
+
+```yaml
+# Authentication method. Supported values: "api_key" (default), "instance_principal".
+# "instance_principal" uses IMDS-based credentials and requires no credential fields;
+# it is the recommended method when Prometheus runs on OCI compute.
+[ auth: <string> | default = "api_key" ]
+
+# API key auth fields. Required when auth is "api_key".
+[ tenancy: <string> ]
+[ user: <string> ]
+[ fingerprint: <string> ]
+[ key_file: <string> ]
+[ key_passphrase: <secret> ]
+
+# OCI region identifier. Required.
+region: <string>
+
+# Explicit list of compartment OCIDs to scan. When empty, all active
+# compartments reachable from the tenancy root are discovered automatically
+# via the OCI Identity API using a breadth-first walk. Compartments that
+# cannot be listed due to missing permissions are silently skipped.
+[ compartments:
+  [ - <string> ... ] ]
+
+# Optional display-name substring filter passed to the OCI ListInstances API.
+[ filter: <string> ]
+
+# Tag-based filtering. When tag_filter_key is set, only instances carrying
+# (include) or lacking (exclude) the given freeform or defined tag key=value
+# pair are returned. Freeform tags are checked before defined tags.
+# The filter is applied before VNIC resolution to avoid unnecessary API calls.
+[ tag_filter_key: <string> ]
+[ tag_filter_value: <string> ]
+# Controls whether matching instances are included or excluded.
+# Valid values: "include" (default), "exclude".
+[ tag_filter_action: <string> | default = "include" ]
+
+# Maximum number of OCI API calls per second across all operations
+# (ListCompartments, ListInstances, ListVnicAttachments, GetVnic).
+[ rate_limit_rps: <float> | default = 10.0 ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# The time after which the instances are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+```
+
 ### `<serverset_sd_config>`
 
 Serverset SD configurations allow retrieving scrape targets from [Serversets](https://github.com/twitter/finagle/tree/develop/finagle-serversets) which are
@@ -3677,6 +3773,10 @@ nerve_sd_configs:
 # List of Nomad service discovery configurations.
 nomad_sd_configs:
   [ - <nomad_sd_config> ... ]
+
+# List of OCI service discovery configurations.
+oci_sd_configs:
+  [ - <oci_sd_config> ... ]
 
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
