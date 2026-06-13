@@ -93,6 +93,7 @@ var expectedConf = &Config{
 		ScrapeTimeout:        DefaultGlobalConfig.ScrapeTimeout,
 		EvaluationInterval:   model.Duration(30 * time.Second),
 		QueryLogFile:         "testdata/query.log",
+		QueryLogMinDuration:  model.Duration(2 * time.Second),
 		ScrapeFailureLogFile: globScrapeFailureLogFile,
 
 		ExternalLabels: labels.FromStrings("foo", "bar", "monitor", "codelab"),
