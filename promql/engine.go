@@ -710,7 +710,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 	defer func() {
 		ng.queryLoggerLock.RLock()
 		if l := ng.queryLogger; l != nil {
-			execDuration := time.Duration(q.stats.GetTimer(stats.ExecTotalTime).Duration() * float64(time.Second))
+			execDuration := q.stats.GetTimer(stats.ExecTotalTime).TotalDuration()
 			if execDuration >= ng.queryLogMinDuration {
 				logger := slog.New(l)
 				f := make([]slog.Attr, 0, 16) // Probably enough up front to not need to reallocate on append.
