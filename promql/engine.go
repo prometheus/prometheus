@@ -303,6 +303,9 @@ type EngineOpts struct {
 	MaxSamples         int
 	Timeout            time.Duration
 	ActiveQueryTracker QueryTracker
+	// QueryLogMinDuration specifies the minimum execution duration a query must
+	// have to be logged.
+	QueryLogMinDuration time.Duration
 	// LookbackDelta determines the time since the last sample after which a time
 	// series is considered stale.
 	LookbackDelta time.Duration
@@ -354,6 +357,7 @@ type Engine struct {
 	activeQueryTracker       QueryTracker
 	queryLogger              QueryLogger
 	queryLoggerLock          sync.RWMutex
+	queryLogMinDuration      time.Duration
 	lookbackDelta            time.Duration
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	enableAtModifier         bool
@@ -491,6 +495,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		metrics:                  metrics,
 		maxSamplesPerQuery:       opts.MaxSamples,
 		activeQueryTracker:       opts.ActiveQueryTracker,
+		queryLogMinDuration:      opts.QueryLogMinDuration,
 		lookbackDelta:            opts.LookbackDelta,
 		noStepSubqueryIntervalFn: opts.NoStepSubqueryIntervalFn,
 		enableAtModifier:         opts.EnableAtModifier,
@@ -538,6 +543,14 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 	} else {
 		ng.metrics.queryLogEnabled.Set(0)
 	}
+}
+
+// SetQueryLogMinDuration sets the minimum query duration to be logged.
+func (ng *Engine) SetQueryLogMinDuration(d time.Duration) {
+	ng.queryLoggerLock.Lock()
+	defer ng.queryLoggerLock.Unlock()
+
+	ng.queryLogMinDuration = d
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
@@ -697,38 +710,41 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 	defer func() {
 		ng.queryLoggerLock.RLock()
 		if l := ng.queryLogger; l != nil {
-			logger := slog.New(l)
-			f := make([]slog.Attr, 0, 16) // Probably enough up front to not need to reallocate on append.
+			execDuration := time.Duration(q.stats.GetTimer(stats.ExecTotalTime).Duration() * float64(time.Second))
+			if execDuration >= ng.queryLogMinDuration {
+				logger := slog.New(l)
+				f := make([]slog.Attr, 0, 16) // Probably enough up front to not need to reallocate on append.
 
-			params := make(map[string]any, 4)
-			params["query"] = q.q
-			if eq, ok := q.Statement().(*parser.EvalStmt); ok {
-				params["start"] = formatDate(eq.Start)
-				params["end"] = formatDate(eq.End)
-				// The step provided by the user is in seconds.
-				params["step"] = int64(eq.Interval / (time.Second / time.Nanosecond))
-			}
-			f = append(f, slog.Any("params", params))
-			if err != nil {
-				f = append(f, slog.Any("error", err))
-			}
-			f = append(f, slog.Any("stats", stats.NewQueryStats(q.Stats())))
-			if span := trace.SpanFromContext(ctx); span != nil {
-				spanCtx := span.SpanContext()
-				f = append(f,
-					slog.Any("spanID", spanCtx.SpanID()),
-					slog.Any("traceID", spanCtx.TraceID()),
-				)
-			}
-			if origin := ctx.Value(QueryOrigin{}); origin != nil {
-				for k, v := range origin.(map[string]any) {
-					f = append(f, slog.Any(k, v))
+				params := make(map[string]any, 4)
+				params["query"] = q.q
+				if eq, ok := q.Statement().(*parser.EvalStmt); ok {
+					params["start"] = formatDate(eq.Start)
+					params["end"] = formatDate(eq.End)
+					// The step provided by the user is in seconds.
+					params["step"] = int64(eq.Interval / (time.Second / time.Nanosecond))
 				}
+				f = append(f, slog.Any("params", params))
+				if err != nil {
+					f = append(f, slog.Any("error", err))
+				}
+				f = append(f, slog.Any("stats", stats.NewQueryStats(q.Stats())))
+				if span := trace.SpanFromContext(ctx); span != nil {
+					spanCtx := span.SpanContext()
+					f = append(f,
+						slog.Any("spanID", spanCtx.SpanID()),
+						slog.Any("traceID", spanCtx.TraceID()),
+					)
+				}
+				if origin := ctx.Value(QueryOrigin{}); origin != nil {
+					for k, v := range origin.(map[string]any) {
+						f = append(f, slog.Any(k, v))
+					}
+				}
+				logger.LogAttrs(context.Background(), slog.LevelInfo, "promql query logged", f...)
+				// TODO: @tjhop -- do we still need this metric/error log if logger doesn't return errors?
+				// ng.metrics.queryLogFailures.Inc()
+				// ng.logger.Error("can't log query", "err", err)
 			}
-			logger.LogAttrs(context.Background(), slog.LevelInfo, "promql query logged", f...)
-			// TODO: @tjhop -- do we still need this metric/error log if logger doesn't return errors?
-			// ng.metrics.queryLogFailures.Inc()
-			// ng.logger.Error("can't log query", "err", err)
 		}
 		ng.queryLoggerLock.RUnlock()
 	}()

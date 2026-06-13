@@ -1124,6 +1124,7 @@ func main() {
 					return err
 				}
 				queryEngine.SetQueryLogger(l)
+				queryEngine.SetQueryLogMinDuration(time.Duration(cfg.GlobalConfig.QueryLogMinDuration))
 				return nil
 			},
 		}, {
