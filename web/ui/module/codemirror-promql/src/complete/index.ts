@@ -12,7 +12,7 @@
 // limitations under the License.
 
 import { HybridComplete } from './hybrid';
-import { CachedPrometheusClient, HTTPPrometheusClient, PrometheusClient, PrometheusConfig } from '../client/prometheus';
+import { CachedPrometheusClient, HTTPPrometheusClient, PrometheusClient, PrometheusConfig } from '../client';
 import { CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 
 // Complete is the interface that defines the simple method that returns a CompletionResult.
