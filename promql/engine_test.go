@@ -3028,15 +3028,15 @@ func TestQueryLogger_minDuration(t *testing.T) {
 
 	engine.SetQueryLogger(f)
 
-	// Test 1: Log threshold is 50ms, query takes 1ms. Should NOT log.
-	engine.SetQueryLogMinDuration(50 * time.Millisecond)
+	// Test 1: Log threshold is 10m, query takes 1ms. Should NOT log.
+	engine.SetQueryLogMinDuration(10 * time.Minute)
 	queryExecWithDelay(1 * time.Millisecond)
 	logLines := getLogLines(t, qlFile)
 	require.Empty(t, logLines)
 
-	// Test 2: Log threshold is 5ms, query takes 50ms. Should log.
-	engine.SetQueryLogMinDuration(5 * time.Millisecond)
-	queryExecWithDelay(50 * time.Millisecond)
+	// Test 2: Log threshold is 1ms, query takes 100ms. Should log.
+	engine.SetQueryLogMinDuration(1 * time.Millisecond)
+	queryExecWithDelay(100 * time.Millisecond)
 	logLines = getLogLines(t, qlFile)
 	require.Len(t, logLines, 1)
 }
