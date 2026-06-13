@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/util/junitxml"
@@ -162,7 +163,7 @@ func TestRulesUnitTest(t *testing.T) {
 	t.Run("Junit xml output ", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
-		if got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, parser.NewParser(parser.Options{}), nil, false, false, false, reuseFiles...); got != 1 {
+		if got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, parser.NewParser(parser.Options{}), nil, false, false, false, false, reuseFiles...); got != 1 {
 			t.Errorf("RulesUnitTestResults() = %v, want 1", got)
 		}
 		var test junitxml.JUnitXML
@@ -196,6 +197,152 @@ func TestRulesUnitTest(t *testing.T) {
 			t.Errorf("JUnit output had %d suites without test cases\n", total-cases)
 		}
 	})
+}
+
+func TestRulesUnitTestCoverage(t *testing.T) {
+	t.Parallel()
+
+	p := parser.NewParser(parser.Options{})
+
+	// End-to-end: run RulesUnitTestResult with coverage=true through the full test runner.
+	// Coverage summary is printed to stderr; we verify the return code here and the
+	// coverage logic through loadRuleEntries + ruleMatchesSelector tests below.
+	var buf bytes.Buffer
+	got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, p, nil, false, false, false, true, "./testdata/coverage_test.yml")
+	require.Equal(t, 0, got, "expected tests to pass with coverage enabled")
+
+	// Verify loadRuleEntries correctly discovers all rules from the test fixture.
+	entries := loadRuleEntries("./testdata/coverage_test.yml", p, false)
+	require.Len(t, entries, 5, "coverage_rules.yml has 3 alerts + 2 recording rules")
+
+	// Verify rule types.
+	alertCount := 0
+	recordCount := 0
+	for _, e := range entries {
+		switch e.rtype {
+		case "alert":
+			alertCount++
+		case "record":
+			recordCount++
+		}
+	}
+	require.Equal(t, 3, alertCount)
+	require.Equal(t, 2, recordCount)
+}
+
+func TestRuleMatchesSelector(t *testing.T) {
+	t.Parallel()
+
+	p := parser.NewParser(parser.Options{})
+
+	tests := []struct {
+		name    string
+		entry   ruleEntry
+		expr    string
+		matches bool
+	}{
+		{
+			name:    "direct recording rule match",
+			entry:   ruleEntry{name: "job:up:sum", rtype: "record"},
+			expr:    "job:up:sum",
+			matches: true,
+		},
+		{
+			name:    "recording rule with aggregation",
+			entry:   ruleEntry{name: "job:up:sum", rtype: "record"},
+			expr:    `sum by (job)(job:up:sum)`,
+			matches: true,
+		},
+		{
+			name:    "recording rule no match",
+			entry:   ruleEntry{name: "job:up:sum", rtype: "record"},
+			expr:    "other_metric",
+			matches: false,
+		},
+		{
+			name:    "ALERTS meta-metric with alertname",
+			entry:   ruleEntry{name: "InstanceDown", rtype: "alert"},
+			expr:    `count(ALERTS{alertname="InstanceDown"})`,
+			matches: true,
+		},
+		{
+			name:    "ALERTS meta-metric wrong alertname",
+			entry:   ruleEntry{name: "InstanceDown", rtype: "alert"},
+			expr:    `count(ALERTS{alertname="OtherAlert"})`,
+			matches: false,
+		},
+		{
+			name:    "ALERTS without alertname is indeterminate",
+			entry:   ruleEntry{name: "InstanceDown", rtype: "alert"},
+			expr:    `count(ALERTS)`,
+			matches: false,
+		},
+		{
+			name:    "wildcard selector without __name__ is indeterminate",
+			entry:   ruleEntry{name: "job:up:sum", rtype: "record"},
+			expr:    `{job="prometheus"}`,
+			matches: false,
+		},
+		{
+			name:    "label match with compatible static labels",
+			entry:   ruleEntry{name: "job:up:sum", rtype: "record", labels: labels.FromStrings("team", "infra")},
+			expr:    `job:up:sum{team="infra"}`,
+			matches: true,
+		},
+		{
+			name:    "label mismatch with incompatible static labels",
+			entry:   ruleEntry{name: "job:up:sum", rtype: "record", labels: labels.FromStrings("team", "infra")},
+			expr:    `job:up:sum{team="backend"}`,
+			matches: false,
+		},
+		{
+			name:    "label selector on label not in static labels is conservatively matched",
+			entry:   ruleEntry{name: "job:up:sum", rtype: "record"},
+			expr:    `job:up:sum{job="prometheus"}`,
+			matches: true,
+		},
+		{
+			name:    "ALERTS with compatible static labels",
+			entry:   ruleEntry{name: "InstanceDown", rtype: "alert", labels: labels.FromStrings("severity", "page")},
+			expr:    `count(ALERTS{alertname="InstanceDown", severity="page"})`,
+			matches: true,
+		},
+		{
+			name:    "ALERTS with incompatible static labels",
+			entry:   ruleEntry{name: "InstanceDown", rtype: "alert", labels: labels.FromStrings("severity", "page")},
+			expr:    `count(ALERTS{alertname="InstanceDown", severity="critical"})`,
+			matches: false,
+		},
+		{
+			name:    "alert rule not matched by direct __name__",
+			entry:   ruleEntry{name: "InstanceDown", rtype: "alert"},
+			expr:    `InstanceDown`,
+			matches: false,
+		},
+		{
+			name:    "scalar expression has no selectors",
+			entry:   ruleEntry{name: "job:up:sum", rtype: "record"},
+			expr:    "vector(1)",
+			matches: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			parsedExpr, err := p.ParseExpr(tc.expr)
+			require.NoError(t, err)
+			selectors := parser.ExtractSelectors(parsedExpr)
+			matched := false
+			for _, matchers := range selectors {
+				if ruleMatchesSelector(&tc.entry, matchers) {
+					matched = true
+					break
+				}
+			}
+			require.Equal(t, tc.matches, matched)
+		})
+	}
 }
 
 func TestRulesUnitTestRun(t *testing.T) {

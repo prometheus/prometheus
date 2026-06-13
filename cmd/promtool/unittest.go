@@ -37,6 +37,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -48,10 +49,12 @@ import (
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
 func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, p parser.Parser, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
-	return RulesUnitTestResult(io.Discard, queryOpts, p, runStrings, diffFlag, debug, ignoreUnknownFields, files...)
+	return RulesUnitTestResult(io.Discard, queryOpts, p, runStrings, diffFlag, debug, ignoreUnknownFields, false, files...)
 }
 
-func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
+// RulesUnitTestResult runs unit tests for rules and writes JUnit XML results to the
+// provided writer. If coverage is true, it reports which rules are covered by tests.
+func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, runStrings []string, diffFlag, debug, ignoreUnknownFields, coverage bool, files ...string) int {
 	failed := false
 	junit := &junitxml.JUnitXML{}
 
@@ -60,8 +63,13 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 		run = regexp.MustCompile(strings.Join(runStrings, "|"))
 	}
 
+	var allRuleEntries []ruleEntry
 	for _, f := range files {
-		if errs := ruleUnitTest(f, queryOpts, p, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f)); errs != nil {
+		var entries []ruleEntry
+		if coverage {
+			entries = loadRuleEntries(f, p, ignoreUnknownFields)
+		}
+		if errs := ruleUnitTest(f, queryOpts, p, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f), entries); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -72,10 +80,14 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 			fmt.Println("  SUCCESS")
 		}
 		fmt.Println()
+		allRuleEntries = append(allRuleEntries, entries...)
 	}
 	err := junit.WriteXML(results)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to write JUnit XML: %s\n", err)
+	}
+	if coverage && len(allRuleEntries) > 0 {
+		printCoverageSummary(allRuleEntries)
 	}
 	if failed {
 		return failureExitCode
@@ -83,7 +95,7 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite) []error {
+func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite, ruleEntries []ruleEntry) []error {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		ts.Abort(err)
@@ -133,7 +145,7 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser
 			t.Interval = unitTestInp.EvaluationInterval
 		}
 		t.parser = p
-		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, unitTestInp.FuzzyCompare, unitTestInp.RuleFiles...)
+		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, unitTestInp.FuzzyCompare, ruleEntries, unitTestInp.RuleFiles...)
 		if ers != nil {
 			for _, e := range ers {
 				tc.Fail(e.Error())
@@ -225,7 +237,7 @@ type testGroup struct {
 }
 
 // test performs the unit tests.
-func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag, debug, ignoreUnknownFields, fuzzyCompare bool, ruleFiles ...string) (outErr []error) {
+func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag, debug, ignoreUnknownFields, fuzzyCompare bool, ruleEntries []ruleEntry, ruleFiles ...string) (outErr []error) {
 	if debug {
 		testStart := time.Now()
 		fmt.Fprintf(os.Stderr, "DEBUG: Starting test %s\n", testname)
@@ -313,6 +325,21 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 		alertEvalTimes = append(alertEvalTimes, k)
 	}
 	slices.Sort(alertEvalTimes)
+
+	// Mark alert rules as covered by alert_rule_test cases.
+	if len(ruleEntries) > 0 {
+		testedAlertNames := make(map[string]struct{})
+		for _, alert := range tg.AlertRuleTests {
+			testedAlertNames[alert.Alertname] = struct{}{}
+		}
+		for i := range ruleEntries {
+			if ruleEntries[i].rtype == "alert" {
+				if _, ok := testedAlertNames[ruleEntries[i].name]; ok {
+					ruleEntries[i].covered = true
+				}
+			}
+		}
+	}
 
 	// Current index in alertEvalTimes what we are looking at.
 	curr := 0
@@ -461,6 +488,13 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 			}
 
 			curr++
+		}
+	}
+
+	// Mark recording rules as covered by promql_expr_test selectors.
+	if len(ruleEntries) > 0 {
+		for _, testCase := range tg.PromqlExprTests {
+			markCoveredByExpr(tg.parser, testCase.Expr, ruleEntries)
 		}
 	}
 
@@ -735,4 +769,211 @@ func (ps *parsedSample) String() string {
 		return ps.Labels.String() + " " + ps.Histogram
 	}
 	return ps.Labels.String() + " " + strconv.FormatFloat(ps.Value, 'E', -1, 64)
+}
+
+// ruleEntry tracks a single rule for coverage analysis.
+type ruleEntry struct {
+	name    string
+	group   string
+	file    string
+	rtype   string // "alert" or "record"
+	labels  labels.Labels
+	covered bool
+}
+
+// loadRuleEntries reads rule files referenced by a unit test file and returns
+// a ruleEntry for each alerting and recording rule found. Group-level labels
+// are merged with rule-level labels, matching the behaviour of rules.Manager.LoadGroups.
+func loadRuleEntries(testFile string, p parser.Parser, ignoreUnknownFields bool) []ruleEntry {
+	content, err := os.ReadFile(testFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: coverage: cannot read test file %q: %v\n", testFile, err)
+		return nil
+	}
+
+	var utf unitTestFile
+	if err := yaml.UnmarshalStrict(content, &utf); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: coverage: cannot parse test file %q: %v\n", testFile, err)
+		return nil
+	}
+	if err := resolveAndGlobFilepaths(filepath.Dir(testFile), &utf); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: coverage: cannot resolve rule files from %q: %v\n", testFile, err)
+		return nil
+	}
+
+	var entries []ruleEntry
+	for _, rf := range utf.RuleFiles {
+		rgs, errs := rulefmt.ParseFile(rf, ignoreUnknownFields, model.UTF8Validation, p)
+		if len(errs) > 0 {
+			fmt.Fprintf(os.Stderr, "warning: coverage: cannot parse rule file %q: %v\n", rf, errs)
+			continue
+		}
+		if rgs == nil {
+			continue
+		}
+		for _, group := range rgs.Groups {
+			for _, rule := range group.Rules {
+				var e ruleEntry
+				e.group = group.Name
+				e.file = rf
+				e.labels = rules.FromMaps(group.Labels, rule.Labels)
+				switch {
+				case rule.Alert != "":
+					e.name = rule.Alert
+					e.rtype = "alert"
+				case rule.Record != "":
+					e.name = rule.Record
+					e.rtype = "record"
+				default:
+					continue
+				}
+				entries = append(entries, e)
+			}
+		}
+	}
+	return entries
+}
+
+// markCoveredByExpr parses a PromQL expression and marks any rule entries whose
+// output matches one of the expression's selectors. This follows the same matching
+// pattern as buildDependencyMap in rules/group.go.
+func markCoveredByExpr(p parser.Parser, expr string, entries []ruleEntry) {
+	parsedExpr, err := p.ParseExpr(expr)
+	if err != nil {
+		return
+	}
+	selectors := parser.ExtractSelectors(parsedExpr)
+	for _, matchers := range selectors {
+		for i := range entries {
+			if ruleMatchesSelector(&entries[i], matchers) {
+				entries[i].covered = true
+			}
+		}
+	}
+}
+
+// ruleMatchesSelector reports whether the given label matchers could select the
+// output of the given rule. It checks __name__ against the rule name and handles
+// the ALERTS/ALERTS_FOR_STATE meta-metrics for alerting rules.
+func ruleMatchesSelector(entry *ruleEntry, matchers []*labels.Matcher) bool {
+	// Find the __name__ matcher.
+	var nameMatcher *labels.Matcher
+	for _, m := range matchers {
+		if m.Name == labels.MetricName {
+			nameMatcher = m
+			break
+		}
+	}
+	// Wildcard selectors without __name__ are indeterminate.
+	if nameMatcher == nil {
+		return false
+	}
+
+	// Check if the selector targets ALERTS or ALERTS_FOR_STATE meta-metrics.
+	if nameMatcher.Matches("ALERTS") || nameMatcher.Matches("ALERTS_FOR_STATE") {
+		if entry.rtype != "alert" {
+			return false
+		}
+		// Look for an alertname matcher.
+		var alertNameMatched bool
+		for _, m := range matchers {
+			if m.Name == labels.AlertName {
+				if !m.Matches(entry.name) {
+					return false
+				}
+				alertNameMatched = true
+				break
+			}
+		}
+		// No alertname matcher — indeterminate, don't mark as covered.
+		if !alertNameMatched {
+			return false
+		}
+		// Check remaining matchers against the alert rule's static labels.
+		for _, m := range matchers {
+			if m.Name == labels.MetricName || m.Name == labels.AlertName {
+				continue
+			}
+			if entry.labels.Has(m.Name) {
+				if !m.Matches(entry.labels.Get(m.Name)) {
+					return false
+				}
+			}
+		}
+		return true
+	}
+
+	// Alerting rules do not emit a metric named after the alert. They are only
+	// covered via ALERTS/ALERTS_FOR_STATE with an alertname matcher (above),
+	// or via alert_rule_test elsewhere.
+	if entry.rtype == "alert" {
+		return false
+	}
+
+	// Direct name match for recording rules.
+	if !nameMatcher.Matches(entry.name) {
+		return false
+	}
+
+	// Check remaining matchers against the rule's static labels.
+	// If a matcher references a label that exists on the rule, it must match.
+	// If the rule has no such label, we cannot determine compatibility (the rule's
+	// expression may produce it at runtime), so we conservatively assume it matches.
+	for _, m := range matchers {
+		if m.Name == labels.MetricName {
+			continue
+		}
+		if entry.labels.Has(m.Name) {
+			if !m.Matches(entry.labels.Get(m.Name)) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// printCoverageSummary prints a coverage report to stderr.
+func printCoverageSummary(entries []ruleEntry) {
+	total := len(entries)
+	covered := 0
+	for _, e := range entries {
+		if e.covered {
+			covered++
+		}
+	}
+
+	pct := 0.0
+	if total > 0 {
+		pct = float64(covered) / float64(total) * 100
+	}
+	fmt.Fprintf(os.Stderr, "Rule test coverage: %d/%d rules covered (%.1f%%)\n", covered, total, pct)
+
+	if covered == total {
+		return
+	}
+
+	fmt.Fprintln(os.Stderr, "  Untested rules:")
+	// Group untested rules by group name and file.
+	type groupKey struct {
+		group string
+		file  string
+	}
+	byGroup := make(map[groupKey][]ruleEntry)
+	var groupOrder []groupKey
+	for _, e := range entries {
+		if e.covered {
+			continue
+		}
+		k := groupKey{group: e.group, file: e.file}
+		if _, exists := byGroup[k]; !exists {
+			groupOrder = append(groupOrder, k)
+		}
+		byGroup[k] = append(byGroup[k], e)
+	}
+	for _, k := range groupOrder {
+		fmt.Fprintf(os.Stderr, "    group %q in %s:\n", k.group, filepath.Base(k.file))
+		for _, e := range byGroup[k] {
+			fmt.Fprintf(os.Stderr, "      - %s: %s\n", e.rtype, e.name)
+		}
+	}
 }
