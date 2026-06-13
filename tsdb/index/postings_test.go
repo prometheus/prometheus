@@ -291,6 +291,17 @@ func newListPostings(list ...storage.SeriesRef) *listPostings {
 	return &listPostings{list: list}
 }
 
+type closeTrackingPostings struct {
+	Postings
+	closeErr error
+	closes   int
+}
+
+func (p *closeTrackingPostings) Close() error {
+	p.closes++
+	return errors.Join(p.closeErr, p.Postings.Close())
+}
+
 // Create ListPostings for a benchmark, collecting the original sets of references
 // so they can be reset without additional memory allocations.
 func createPostings(lps *[]*listPostings, refs *[][]storage.SeriesRef, params ...storage.SeriesRef) {
@@ -809,6 +820,124 @@ func TestBigEndian(t *testing.T) {
 			require.NoError(t, bep.Err())
 		}
 	})
+}
+
+func TestPostingsCloseReleasesIterators(t *testing.T) {
+	t.Run("list postings", func(t *testing.T) {
+		p := NewListPostings([]storage.SeriesRef{10, 20}).(*listPostings)
+
+		require.True(t, p.Next())
+		require.NoError(t, p.Close())
+		require.Nil(t, p.list)
+		require.Zero(t, p.cur)
+	})
+
+	t.Run("big endian postings", func(t *testing.T) {
+		p := newBigEndianPostings([]byte{0, 0, 0, 10})
+
+		require.True(t, p.Next())
+		require.NoError(t, p.Close())
+		require.Nil(t, p.list)
+		require.Zero(t, p.cur)
+	})
+}
+
+func TestExpandPostingsClosesInput(t *testing.T) {
+	p := &closeTrackingPostings{Postings: newListPostings(1, 2)}
+
+	refs, err := ExpandPostings(p)
+	require.NoError(t, err)
+	require.Equal(t, []storage.SeriesRef{1, 2}, refs)
+	require.Equal(t, 1, p.closes)
+}
+
+func TestExpandPostingsReturnsCloseError(t *testing.T) {
+	closeErr := errors.New("close failed")
+	p := &closeTrackingPostings{Postings: newListPostings(1, 2), closeErr: closeErr}
+
+	refs, err := ExpandPostings(p)
+	require.ErrorIs(t, err, closeErr)
+	require.Equal(t, []storage.SeriesRef{1, 2}, refs)
+	require.Equal(t, 1, p.closes)
+}
+
+func TestCompositePostingsCloseClosesInputs(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		build func(a, b Postings) Postings
+	}{
+		{
+			name: "intersect",
+			build: func(a, b Postings) Postings {
+				return Intersect(a, b)
+			},
+		},
+		{
+			name: "merge",
+			build: func(a, b Postings) Postings {
+				return Merge(context.Background(), a, b)
+			},
+		},
+		{
+			name: "without",
+			build: func(a, b Postings) Postings {
+				return Without(a, b)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &closeTrackingPostings{Postings: newListPostings(1, 2)}
+			b := &closeTrackingPostings{Postings: newListPostings(2, 3)}
+			p := tc.build(a, b)
+
+			require.NoError(t, p.Close())
+			require.Equal(t, 1, a.closes)
+			require.Equal(t, 1, b.closes)
+
+			require.NoError(t, p.Close())
+			require.Equal(t, 1, a.closes)
+			require.Equal(t, 1, b.closes)
+		})
+	}
+}
+
+func TestCompositePostingsCloseJoinsErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		build func(a, b Postings) Postings
+	}{
+		{
+			name: "intersect",
+			build: func(a, b Postings) Postings {
+				return Intersect(a, b)
+			},
+		},
+		{
+			name: "merge",
+			build: func(a, b Postings) Postings {
+				return Merge(context.Background(), a, b)
+			},
+		},
+		{
+			name: "without",
+			build: func(a, b Postings) Postings {
+				return Without(a, b)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			errA := errors.New("close a")
+			errB := errors.New("close b")
+			a := &closeTrackingPostings{Postings: newListPostings(1, 2), closeErr: errA}
+			b := &closeTrackingPostings{Postings: newListPostings(2, 3), closeErr: errB}
+
+			err := tc.build(a, b).Close()
+			require.ErrorIs(t, err, errA)
+			require.ErrorIs(t, err, errB)
+			require.Equal(t, 1, a.closes)
+			require.Equal(t, 1, b.closes)
+		})
+	}
 }
 
 func TestIntersectWithMerge(t *testing.T) {

@@ -17,6 +17,7 @@ import (
 	"container/heap"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"maps"
 	"math"
@@ -536,6 +537,9 @@ func (p *MemPostings) PostingsForAllLabelValues(ctx context.Context, name string
 
 // ExpandPostings returns the postings expanded as a slice.
 func ExpandPostings(p Postings) (res []storage.SeriesRef, err error) {
+	defer func() {
+		err = errors.Join(err, p.Close())
+	}()
 	for p.Next() {
 		res = append(res, p.At())
 	}
@@ -557,6 +561,9 @@ type Postings interface {
 
 	// Err returns the last error of the iterator.
 	Err() error
+
+	// Close releases resources retained by the iterator.
+	Close() error
 }
 
 // errPostings is an empty iterator that always errors.
@@ -568,6 +575,7 @@ func (errPostings) Next() bool                  { return false }
 func (errPostings) Seek(storage.SeriesRef) bool { return false }
 func (errPostings) At() storage.SeriesRef       { return 0 }
 func (e errPostings) Err() error                { return e.err }
+func (errPostings) Close() error                { return nil }
 
 var emptyPostings = errPostings{}
 
@@ -609,6 +617,7 @@ func Intersect(its ...Postings) Postings {
 type intersectPostings struct {
 	postings []Postings        // These are the postings we will be intersecting.
 	current  storage.SeriesRef // The current intersection, if Seek() or Next() has returned true.
+	closed   bool
 }
 
 func newIntersectPostings(its ...Postings) *intersectPostings {
@@ -675,6 +684,16 @@ func (it *intersectPostings) Err() error {
 	return nil
 }
 
+func (it *intersectPostings) Close() error {
+	if it.closed {
+		return nil
+	}
+	it.closed = true
+	err := closePostings(it.postings...)
+	it.postings = nil
+	return err
+}
+
 // Merge returns a new iterator over the union of the input iterators.
 func Merge[T Postings](_ context.Context, its ...T) Postings {
 	if len(its) == 0 {
@@ -692,9 +711,10 @@ func Merge[T Postings](_ context.Context, its ...T) Postings {
 }
 
 type mergedPostings[T Postings] struct {
-	p   []T
-	h   *loser.Tree[storage.SeriesRef, T]
-	cur storage.SeriesRef
+	p      []T
+	h      *loser.Tree[storage.SeriesRef, T]
+	cur    storage.SeriesRef
+	closed bool
 }
 
 func newMergedPostings[T Postings](p []T) (m *mergedPostings[T], nonEmpty bool) {
@@ -742,6 +762,23 @@ func (it mergedPostings[T]) Err() error {
 	return nil
 }
 
+func (it *mergedPostings[T]) Close() error {
+	if it.closed {
+		return nil
+	}
+	it.closed = true
+
+	errs := make([]error, 0, len(it.p))
+	for _, p := range it.p {
+		if err := p.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	it.p = nil
+	it.h = nil
+	return errors.Join(errs...)
+}
+
 // Without returns a new postings list that contains all elements from the full list that
 // are not in the drop list.
 func Without(full, drop Postings) Postings {
@@ -762,6 +799,7 @@ type removedPostings struct {
 
 	initialized bool
 	fok, rok    bool
+	closed      bool
 }
 
 func newRemovedPostings(full, remove Postings) *removedPostings {
@@ -827,16 +865,37 @@ func (rp *removedPostings) Err() error {
 	return rp.remove.Err()
 }
 
+func (rp *removedPostings) Close() error {
+	if rp.closed {
+		return nil
+	}
+	rp.closed = true
+	err := closePostings(rp.full, rp.remove)
+	rp.full = nil
+	rp.remove = nil
+	return err
+}
+
 // listPostings implements the Postings interface over a plain list.
 type listPostings struct {
-	list []storage.SeriesRef
-	cur  storage.SeriesRef
+	list   []storage.SeriesRef
+	cur    storage.SeriesRef
+	closed bool
+	pooled bool
+}
+
+var listPostingsPool = sync.Pool{
+	New: func() any {
+		return &listPostings{}
+	},
 }
 
 // NewListPostings creates a Postings from the supplied SeriesRefs, which must be in order.
 // The list slice passed in is retained.
 func NewListPostings(list []storage.SeriesRef) Postings {
-	return &listPostings{list: list}
+	it := listPostingsPool.Get().(*listPostings)
+	*it = listPostings{list: list, pooled: true}
+	return it
 }
 
 func (it *listPostings) At() storage.SeriesRef {
@@ -879,6 +938,19 @@ func (*listPostings) Err() error {
 	return nil
 }
 
+func (it *listPostings) Close() error {
+	if it.closed {
+		return nil
+	}
+	it.list = nil
+	it.cur = 0
+	it.closed = true
+	if it.pooled {
+		listPostingsPool.Put(it)
+	}
+	return nil
+}
+
 // Len returns the remaining number of postings in the list.
 func (it *listPostings) Len() int {
 	return len(it.list)
@@ -889,6 +961,8 @@ func (it *listPostings) Len() int {
 type bigEndianPostings struct {
 	list []byte
 	cur  uint32
+	// closed makes Close idempotent.
+	closed bool
 }
 
 func newBigEndianPostings(list []byte) *bigEndianPostings {
@@ -930,6 +1004,29 @@ func (it *bigEndianPostings) Seek(x storage.SeriesRef) bool {
 
 func (*bigEndianPostings) Err() error {
 	return nil
+}
+
+func (it *bigEndianPostings) Close() error {
+	if it.closed {
+		return nil
+	}
+	it.list = nil
+	it.cur = 0
+	it.closed = true
+	return nil
+}
+
+func closePostings(postings ...Postings) error {
+	errs := make([]error, 0, len(postings))
+	for _, p := range postings {
+		if p == nil {
+			continue
+		}
+		if err := p.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // FindIntersectingPostings checks the intersection of p and candidates[i] for each i in candidates,
