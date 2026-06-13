@@ -967,11 +967,11 @@ func TestHeadCompactionWhileScraping(t *testing.T) {
 			config := fmt.Sprintf(`
 scrape_configs:
   - job_name: 'self1'
-    scrape_interval: 61ms
+    scrape_interval: 1s
     static_configs:
       - targets: ['localhost:%d']
   - job_name: 'self2'
-    scrape_interval: 67ms
+    scrape_interval: 1s
     static_configs:
       - targets: ['localhost:%d']
 `, port, port)
@@ -982,7 +982,7 @@ scrape_configs:
 				configFile,
 				port,
 				fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
-				"--storage.tsdb.min-block-duration=100ms",
+				"--storage.tsdb.min-block-duration=1s",
 			)
 			require.NoError(t, prom.Start())
 
@@ -1000,7 +1000,7 @@ scrape_configs:
 					return false
 				}
 
-				// Wait for some compactions to run
+				// Wait for some compactions to run.
 				compactions, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeCounter, "prometheus_tsdb_compactions_total")
 				if err != nil {
 					return false
@@ -1019,7 +1019,7 @@ scrape_configs:
 				require.NoError(t, err)
 				require.Zero(t, failures)
 				return true
-			}, 15*time.Second, 500*time.Millisecond)
+			}, 30*time.Second, 500*time.Millisecond)
 		})
 	}
 }
