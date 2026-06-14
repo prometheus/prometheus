@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 )
 
@@ -170,6 +171,9 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 				lbls := lb.Labels()
 
 				if _, err := app.Append(0, lbls, *ts, v); err != nil {
+					if errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
+						continue
+					}
 					return fmt.Errorf("add sample: %w", err)
 				}
 
