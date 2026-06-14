@@ -94,7 +94,7 @@ func createTestAgentDB(t testing.TB, reg prometheus.Registerer, opts *Options) *
 
 	dbDir := t.TempDir()
 
-	rs := remote.NewStorage(promslog.NewNopLogger(), reg, startTime, dbDir, time.Second*30, nil, false)
+	rs := remote.NewStorage(promslog.NewNopLogger(), reg, startTime, dbDir, time.Second*30, nil, false, false)
 	t.Cleanup(func() {
 		require.NoError(t, rs.Close())
 	})
@@ -798,7 +798,7 @@ func TestLockfile(t *testing.T) {
 	tsdbutil.TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*tsdbutil.DirLocker, testutil.Closer) {
 		logger := promslog.NewNopLogger()
 		reg := prometheus.NewRegistry()
-		rs := remote.NewStorage(logger, reg, startTime, data, time.Second*30, nil, false)
+		rs := remote.NewStorage(logger, reg, startTime, data, time.Second*30, nil, false, false)
 		t.Cleanup(func() {
 			require.NoError(t, rs.Close())
 		})
@@ -818,7 +818,7 @@ func TestLockfile(t *testing.T) {
 
 func Test_ExistingWAL_NextRef(t *testing.T) {
 	dbDir := t.TempDir()
-	rs := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
+	rs := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false, false)
 	defer func() {
 		require.NoError(t, rs.Close())
 	}()
@@ -1377,7 +1377,7 @@ func TestDBStartTimestampSamplesIngestion(t *testing.T) {
 func TestDuplicateSeriesRefsByHash(t *testing.T) {
 	dbDir := t.TempDir()
 	opts := DefaultOptions()
-	rs1 := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
+	rs1 := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false, false)
 	db, err := Open(promslog.NewNopLogger(), nil, rs1, dbDir, opts)
 	require.NoError(t, err)
 
@@ -1435,7 +1435,7 @@ func TestDuplicateSeriesRefsByHash(t *testing.T) {
 	require.NoError(t, db.Close())
 	require.NoError(t, rs1.Close())
 
-	rs2 := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
+	rs2 := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false, false)
 	t.Cleanup(func() { require.NoError(t, rs2.Close()) })
 	db, err = Open(promslog.NewNopLogger(), nil, rs2, dbDir, opts)
 	require.NoError(t, err)
