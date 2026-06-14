@@ -37,7 +37,7 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v1.0.0
 	github.com/google/go-cmp v0.7.0
-	github.com/google/pprof v0.0.0-20260507013755-92041b743c96
+	github.com/google/pprof v0.0.0-20260604005048-7023385849c0
 	github.com/google/uuid v1.6.0
 	github.com/gophercloud/gophercloud/v2 v2.12.0
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
