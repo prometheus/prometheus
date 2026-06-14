@@ -21,6 +21,7 @@ import (
 )
 
 func TestJunitOutput(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	var test JUnitXML
 	x := FakeTestSuites()

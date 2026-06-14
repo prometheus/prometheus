@@ -19,6 +19,7 @@ import (
 )
 
 func TestJaroWinklerMatcher(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		s1, s2 string
 		min    float64

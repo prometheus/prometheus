@@ -23,6 +23,7 @@ import (
 
 // TestNotificationLifecycle tests adding, modifying, and deleting notifications.
 func TestNotificationLifecycle(t *testing.T) {
+	t.Parallel()
 	notifs := NewNotifications(10, nil)
 
 	// Add a notification.
@@ -47,6 +48,7 @@ func TestNotificationLifecycle(t *testing.T) {
 
 // TestSubscriberReceivesNotifications tests that a subscriber receives notifications, including modifications and deletions.
 func TestSubscriberReceivesNotifications(t *testing.T) {
+	t.Parallel()
 	notifs := NewNotifications(10, nil)
 
 	// Subscribe to notifications.
@@ -104,6 +106,7 @@ func TestSubscriberReceivesNotifications(t *testing.T) {
 
 // TestMultipleSubscribers tests that multiple subscribers receive notifications independently.
 func TestMultipleSubscribers(t *testing.T) {
+	t.Parallel()
 	notifs := NewNotifications(10, nil)
 
 	// Subscribe two subscribers to notifications.
@@ -160,6 +163,7 @@ func TestMultipleSubscribers(t *testing.T) {
 
 // TestUnsubscribe tests that unsubscribing prevents further notifications from being received.
 func TestUnsubscribe(t *testing.T) {
+	t.Parallel()
 	notifs := NewNotifications(10, nil)
 
 	// Subscribe to notifications.
@@ -197,6 +201,7 @@ func TestUnsubscribe(t *testing.T) {
 
 // TestMaxSubscribers tests that exceeding the max subscribers limit prevents additional subscriptions.
 func TestMaxSubscribers(t *testing.T) {
+	t.Parallel()
 	maxSubscribers := 2
 	notifs := NewNotifications(maxSubscribers, nil)
 

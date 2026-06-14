@@ -23,6 +23,7 @@ import (
 )
 
 func TestNHCBConvert(t *testing.T) {
+	t.Parallel()
 	tests := map[string]struct {
 		setup       func() *TempHistogram
 		expectedErr error

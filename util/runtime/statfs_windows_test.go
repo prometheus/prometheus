@@ -23,6 +23,7 @@ import (
 )
 
 func TestFsType(t *testing.T) {
+	t.Parallel()
 	var fsType string
 
 	path, err := os.Getwd()
@@ -36,6 +37,7 @@ func TestFsType(t *testing.T) {
 }
 
 func TestFsSize(t *testing.T) {
+	t.Parallel()
 	var size uint64
 
 	size = FsSize("C:\\")

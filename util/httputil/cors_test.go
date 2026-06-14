@@ -31,6 +31,7 @@ func getCORSHandlerFunc() http.Handler {
 }
 
 func TestCORSHandler(t *testing.T) {
+	t.Parallel()
 	tearDown := setup()
 	defer tearDown()
 	client := &http.Client{}

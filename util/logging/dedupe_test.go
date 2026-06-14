@@ -27,6 +27,7 @@ import (
 )
 
 func TestDedupe(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	d := Dedupe(promslog.New(&promslog.Config{Writer: &buf}), 100*time.Millisecond)
 	dlog := slog.New(d)
@@ -60,6 +61,7 @@ func TestDedupe(t *testing.T) {
 }
 
 func TestDedupeConcurrent(t *testing.T) {
+	t.Parallel()
 	d := Dedupe(promslog.New(&promslog.Config{}), 250*time.Millisecond)
 	dlog := slog.New(d)
 	defer d.Stop()
@@ -92,6 +94,7 @@ func (fl *fakeWarningLogger) HandleWarningHeaderWithContext(_ context.Context, _
 }
 
 func TestDedupeDeprecationWarningLogger(t *testing.T) {
+	t.Parallel()
 	wl := DedupDeprecationWarningLogger{
 		logger: &fakeWarningLogger{},
 		logged: make(map[string]struct{}),

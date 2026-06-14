@@ -177,6 +177,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 }
 
 func TestParseAndPushMetricsTextAndFormat(t *testing.T) {
+	t.Parallel()
 	input := bytes.NewReader([]byte(`
 	# HELP http_request_duration_seconds A histogram of the request duration.
 	# TYPE http_request_duration_seconds histogram
@@ -211,6 +212,7 @@ func TestParseAndPushMetricsTextAndFormat(t *testing.T) {
 }
 
 func TestMetricTextToWriteRequestErrorParsingFloatValue(t *testing.T) {
+	t.Parallel()
 	input := bytes.NewReader([]byte(`
 	# HELP http_requests_total The total number of HTTP requests.
 	# TYPE http_requests_total counter
@@ -224,6 +226,7 @@ func TestMetricTextToWriteRequestErrorParsingFloatValue(t *testing.T) {
 }
 
 func TestMetricTextToWriteRequestErrorParsingMetricType(t *testing.T) {
+	t.Parallel()
 	input := bytes.NewReader([]byte(`
 	# HELP node_info node info summary.
 	# TYPE node_info info
@@ -236,6 +239,7 @@ func TestMetricTextToWriteRequestErrorParsingMetricType(t *testing.T) {
 }
 
 func TestMakeTimeseries_HistogramInfBucket(t *testing.T) {
+	t.Parallel()
 	tests := map[string]*dto.Histogram{
 		"Histogram missing +Inf bucket": {
 			Bucket: []*dto.Bucket{

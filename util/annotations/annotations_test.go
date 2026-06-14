@@ -24,6 +24,7 @@ import (
 )
 
 func TestAnnotations_AsStrings(t *testing.T) {
+	t.Parallel()
 	var annos Annotations
 	pos := posrange.PositionRange{Start: 3, End: 8}
 

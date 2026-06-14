@@ -41,6 +41,7 @@ ddddddddddsfpgjsdoadjgfpajdspfgjasfjapddddddddddaaaaaaaa145
 `
 
 func TestEncodeDecode(t *testing.T) {
+	t.Parallel()
 	for _, tcase := range []struct {
 		name string
 

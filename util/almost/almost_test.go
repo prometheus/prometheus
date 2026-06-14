@@ -22,6 +22,7 @@ import (
 )
 
 func TestEqual(t *testing.T) {
+	t.Parallel()
 	staleNaN := math.Float64frombits(value.StaleNaN)
 	tests := []struct {
 		a       float64
