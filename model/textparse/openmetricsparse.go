@@ -522,7 +522,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 			p.unit = string(p.text)
 			m := yoloString(p.l.b[p.offsets[0]:p.offsets[1]])
 			if p.unit != "" {
-				if !strings.HasSuffix(m, p.unit) || len(m) < len(p.unit)+1 || p.l.b[p.offsets[1]-len(p.unit)-1] != '_' {
+				if !strings.HasSuffix(m, p.unit) || len(m) <= len(p.unit) || p.l.b[p.offsets[1]-len(p.unit)-1] != '_' {
 					return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", p.unit, m)
 				}
 			}
