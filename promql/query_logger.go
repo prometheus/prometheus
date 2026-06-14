@@ -103,6 +103,33 @@ func (f *mmappedFile) Close() error {
 	return err
 }
 
+type syncWriter interface {
+	io.Writer
+	Sync() error
+}
+
+func allocateQueryLogFile(file syncWriter, filesize int) error {
+	zeroes := make([]byte, min(filesize, 32*1024))
+	remaining := filesize
+	for remaining > 0 {
+		writeBytes := zeroes
+		if remaining < len(writeBytes) {
+			writeBytes = writeBytes[:remaining]
+		}
+
+		n, err := file.Write(writeBytes)
+		if err != nil {
+			return err
+		}
+		if n != len(writeBytes) {
+			return io.ErrShortWrite
+		}
+		remaining -= n
+	}
+
+	return file.Sync()
+}
+
 func getMMappedFile(filename string, filesize int, logger *slog.Logger) ([]byte, io.Closer, error) {
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o666)
 	if err != nil {
@@ -114,10 +141,9 @@ func getMMappedFile(filename string, filesize int, logger *slog.Logger) ([]byte,
 		return nil, nil, err
 	}
 
-	err = file.Truncate(int64(filesize))
-	if err != nil {
+	if err := allocateQueryLogFile(file, filesize); err != nil {
 		file.Close()
-		logger.Error("Error setting filesize.", "filesize", filesize, "err", err)
+		logger.Error("Error allocating query log file.", "filesize", filesize, "err", err)
 		return nil, nil, err
 	}
 
@@ -131,10 +157,11 @@ func getMMappedFile(filename string, filesize int, logger *slog.Logger) ([]byte,
 	return fileAsBytes, &mmappedFile{f: file, m: fileAsBytes}, err
 }
 
-func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger *slog.Logger) *ActiveQueryTracker {
+func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger *slog.Logger) (*ActiveQueryTracker, error) {
 	err := os.MkdirAll(localStoragePath, 0o777)
 	if err != nil {
 		logger.Error("Failed to create directory for logging active queries")
+		return nil, fmt.Errorf("create active query log directory: %w", err)
 	}
 
 	filename, filesize := filepath.Join(localStoragePath, "queries.active"), 1+maxConcurrent*entrySize
@@ -142,7 +169,7 @@ func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger *s
 
 	fileAsBytes, closer, err := getMMappedFile(filename, filesize, logger)
 	if err != nil {
-		panic("Unable to create mmap-ed active query log")
+		return nil, fmt.Errorf("create mmap-ed active query log: %w", err)
 	}
 
 	copy(fileAsBytes, "[")
@@ -156,7 +183,7 @@ func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger *s
 
 	activeQueryTracker.generateIndices(maxConcurrent)
 
-	return &activeQueryTracker
+	return &activeQueryTracker, nil
 }
 
 func trimStringByBytes(str string, size int) string {
