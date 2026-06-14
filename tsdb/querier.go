@@ -427,6 +427,10 @@ func postingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Matcher) 
 		}
 	}
 
+	if pr, ok := ix.(*index.Reader); ok && m.Prefix() != "" {
+		it := pr.PostingsForLabelMatchingWithPrefix(ctx, m.Name, m.Prefix(), m.Matches)
+		return it, it.Err()
+	}
 	it := ix.PostingsForLabelMatching(ctx, m.Name, m.Matches)
 	return it, it.Err()
 }

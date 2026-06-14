@@ -23,6 +23,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -711,4 +712,106 @@ func createFileReader(ctx context.Context, tb testing.TB, input indexWriterSerie
 		require.NoError(tb, ir.Close())
 	})
 	return ir, fn, symbols
+}
+
+func TestPostingsForLabelMatchingWithPrefix(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	iw, err := NewWriter(ctx, filepath.Join(dir, "index"))
+	require.NoError(t, err)
+
+	allValues := []string{"alpha", "fooaaa", "foobar", "foobaz", "other", "xyz"}
+
+	allSymbols := append([]string{"job"}, allValues...)
+	sort.Strings(allSymbols)
+	for _, s := range allSymbols {
+		require.NoError(t, iw.AddSymbol(s))
+	}
+
+	for i, v := range allValues {
+		require.NoError(t, iw.AddSeries(storage.SeriesRef(i), labels.FromStrings("job", v)))
+	}
+	require.NoError(t, iw.Close())
+
+	ir, err := NewFileReader(filepath.Join(dir, "index"), DecodePostingsRaw)
+	require.NoError(t, err)
+	defer ir.Close()
+
+	p2 := ir.PostingsForLabelMatching(ctx, "job", func(v string) bool {
+		return strings.HasPrefix(v, "foo")
+	})
+	var expected []storage.SeriesRef
+	for p2.Next() {
+		expected = append(expected, p2.At())
+	}
+	require.NoError(t, p2.Err())
+	require.NotEmpty(t, expected, "plain matcher should find foo* values")
+
+	// Prefix version must return identical results.
+	p := ir.PostingsForLabelMatchingWithPrefix(ctx, "job", "foo", func(v string) bool {
+		return strings.HasPrefix(v, "foo")
+	})
+	var got []storage.SeriesRef
+	for p.Next() {
+		got = append(got, p.At())
+	}
+	require.NoError(t, p.Err())
+
+	require.Equal(t, expected, got)
+}
+
+func BenchmarkPostingsForLabelMatchingWithPrefix(b *testing.B) {
+	ctx := context.Background()
+	dir := b.TempDir()
+
+	iw, err := NewWriter(ctx, filepath.Join(dir, "index"))
+	require.NoError(b, err)
+
+	// 10_000 values total: only 100 match "prometheus_", 9900 are "zzz_" values
+	// This makes the skip optimization very visible
+	const matchCount = 100
+	const totalCount = 10_000
+	var allVals []string
+	for i := range matchCount {
+		allVals = append(allVals, fmt.Sprintf("prometheus_%05d", i))
+	}
+	for i := range totalCount - matchCount {
+		allVals = append(allVals, fmt.Sprintf("zzz_%05d", i)) // sorts after prometheus_
+	}
+	sort.Strings(allVals)
+
+	allSymbols := append([]string{"job"}, allVals...)
+	sort.Strings(allSymbols)
+	for _, s := range allSymbols {
+		require.NoError(b, iw.AddSymbol(s))
+	}
+	for i, v := range allVals {
+		require.NoError(b, iw.AddSeries(storage.SeriesRef(i), labels.FromStrings("job", v)))
+	}
+	require.NoError(b, iw.Close())
+
+	ir, err := NewFileReader(filepath.Join(dir, "index"), DecodePostingsRaw)
+	require.NoError(b, err)
+	defer ir.Close()
+
+	matchFn := func(v string) bool { return strings.HasPrefix(v, "prometheus_") }
+
+	b.Run("WithoutPrefix", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			p := ir.PostingsForLabelMatching(ctx, "job", matchFn)
+			for p.Next() {
+			} 
+			_ = p.Err()
+		}
+	})
+
+	b.Run("WithPrefix", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			p := ir.PostingsForLabelMatchingWithPrefix(ctx, "job", "prometheus_", matchFn)
+			for p.Next() {
+			} 
+			_ = p.Err()
+		}
+	})
 }
