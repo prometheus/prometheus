@@ -50,7 +50,16 @@ type writeHandler struct {
 	appendMetadata          bool
 }
 
-const maxAheadTime = 10 * time.Minute
+const (
+	maxAheadTime = 10 * time.Minute
+
+	// Keep the expanded labels accepted from a symbolized remote write 2.0
+	// request within the same envelope as the decoded request body accepted by
+	// the remote API.
+	maxRemoteWriteV2ExpandedLabelsBytes = 32 * 1024 * 1024
+
+	maxRemoteWriteErrMsgBytes = 4 * 1024
+)
 
 // NewWriteHandler creates a http.Handler that accepts remote write requests with
 // the given message in acceptedMsgs and writes them to the provided appendable.
@@ -308,13 +317,27 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 	var (
 		badRequestErrs                                   []error
 		outOfOrderExemplarErrs, samplesWithInvalidLabels int
+		expandedLabelsBytes                              uint64
+		expandedLabelsLimitReached                       bool
 
 		b = labels.NewScratchBuilder(0)
 	)
 	for _, ts := range req.Timeseries {
+		if expandedLabelsLimitReached {
+			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			continue
+		}
+
 		ls, err := ts.ToLabels(&b, req.Symbols)
 		if err != nil {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing labels for series %v: %w", ts.LabelsRefs, err))
+			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			continue
+		}
+		seriesLabelsBytes := labelsByteSize(ls)
+		if total, ok := addExpandedLabelsBytes(&expandedLabelsBytes, seriesLabelsBytes); !ok {
+			badRequestErrs = append(badRequestErrs, expandedLabelsLimitError(total))
+			expandedLabelsLimitReached = true
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
 			continue
 		}
@@ -474,8 +497,46 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 	if len(badRequestErrs) == 0 {
 		return samplesWithoutMetadata, 0, nil
 	}
-	// TODO(bwplotka): Better concat formatting? Perhaps add size limit?
-	return samplesWithoutMetadata, http.StatusBadRequest, errors.Join(badRequestErrs...)
+	return samplesWithoutMetadata, http.StatusBadRequest, joinErrorsWithLimit(badRequestErrs)
+}
+
+func addExpandedLabelsBytes(used *uint64, size uint64) (uint64, bool) {
+	if size > maxRemoteWriteV2ExpandedLabelsBytes {
+		return size, false
+	}
+	// The size check above keeps this subtraction from underflowing.
+	if *used > maxRemoteWriteV2ExpandedLabelsBytes-size {
+		return *used + size, false
+	}
+	*used += size
+	return *used, true
+}
+
+func labelsByteSize(ls labels.Labels) uint64 {
+	var size uint64
+	ls.Range(func(l labels.Label) {
+		size += uint64(len(l.Name) + len(l.Value))
+	})
+	return size
+}
+
+func expandedLabelsLimitError(total uint64) error {
+	return fmt.Errorf("expanded labels size exceeds remote write limit: total %d bytes, limit %d bytes", total, maxRemoteWriteV2ExpandedLabelsBytes)
+}
+
+func joinErrorsWithLimit(errs []error) error {
+	err := errors.Join(errs...)
+	if err == nil {
+		return nil
+	}
+
+	msg := err.Error()
+	if len(msg) <= maxRemoteWriteErrMsgBytes {
+		return err
+	}
+
+	const truncated = "\n... remote write error response truncated"
+	return errors.New(msg[:maxRemoteWriteErrMsgBytes-len(truncated)] + truncated)
 }
 
 // handleHistogramZeroSample appends ST as a zero-value sample with st value as the sample timestamp.
