@@ -24,6 +24,8 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
@@ -461,6 +463,43 @@ func TestStreamReadEndpoint(t *testing.T) {
 			QueryIndex: 2,
 		},
 	}, results)
+}
+
+func TestReadHandlerGateWaitDuration(t *testing.T) {
+	store := promqltest.LoadedStorage(t, `
+		load 1m
+			test_metric1{foo="bar"} 1
+	`)
+	defer store.Close()
+
+	reg := prometheus.NewRegistry()
+	h := NewReadHandler(nil, reg, store, func() config.Config {
+		return config.Config{}
+	}, 1e6, 1, 0)
+
+	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
+	require.NoError(t, err)
+
+	query, err := ToQuery(0, 1, []*labels.Matcher{matcher}, nil)
+	require.NoError(t, err)
+
+	req := &prompb.ReadRequest{Queries: []*prompb.Query{query}}
+	data, err := proto.Marshal(req)
+	require.NoError(t, err)
+
+	compressed := snappy.Encode(nil, data)
+	request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(compressed))
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, request)
+	require.Equal(t, 2, recorder.Code/100)
+
+	rh := h.(*readHandler)
+	m := &dto.Metric{}
+	require.NoError(t, rh.gateWaitDuration.Write(m))
+	require.Equal(t, uint64(1), m.Histogram.GetSampleCount())
+	require.GreaterOrEqual(t, m.Histogram.GetSampleSum(), 0.0)
 }
 
 func addNativeHistogramsToTestSuite(t *testing.T, storage *teststorage.TestStorage, n int) {
