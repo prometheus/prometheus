@@ -1774,30 +1774,34 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
 					{
-						DiscoveredLabels:   labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__param_target", "example.com", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
-						Labels:             labels.FromStrings("job", "blackbox"),
-						ScrapePool:         "blackbox",
-						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
-						GlobalURL:          "http://localhost:9115/probe?target=example.com",
-						Health:             "down",
-						LastError:          "failed: missing port in address",
-						LastScrape:         scrapeStart,
-						LastScrapeDuration: 0.1,
-						ScrapeInterval:     "20s",
-						ScrapeTimeout:      "10s",
+						DiscoveredLabels:    labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__param_target", "example.com", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
+						Labels:              labels.FromStrings("job", "blackbox"),
+						ScrapePool:          "blackbox",
+						ScrapeURL:           "http://localhost:9115/probe?target=example.com",
+						GlobalURL:           "http://localhost:9115/probe?target=example.com",
+						Health:              "down",
+						LastError:           "failed: missing port in address",
+						LastScrape:          scrapeStart,
+						LastScrapeDuration:  0.1,
+						ScrapeInterval:      "20s",
+						ScrapeTimeout:       "10s",
+						ScrapeTimeoutUsage:  0.01,
+						ConsecutiveFailures: 1,
 					},
 					{
-						DiscoveredLabels:   labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
-						Labels:             labels.FromStrings("job", "test"),
-						ScrapePool:         "test",
-						ScrapeURL:          "http://example.com:8080/metrics",
-						GlobalURL:          "http://example.com:8080/metrics",
-						Health:             "up",
-						LastError:          "",
-						LastScrape:         scrapeStart,
-						LastScrapeDuration: 0.07,
-						ScrapeInterval:     "15s",
-						ScrapeTimeout:      "5s",
+						DiscoveredLabels:    labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
+						Labels:              labels.FromStrings("job", "test"),
+						ScrapePool:          "test",
+						ScrapeURL:           "http://example.com:8080/metrics",
+						GlobalURL:           "http://example.com:8080/metrics",
+						Health:              "up",
+						LastError:           "",
+						LastScrape:          scrapeStart,
+						LastScrapeDuration:  0.07,
+						ScrapeInterval:      "15s",
+						ScrapeTimeout:       "5s",
+						ScrapeTimeoutUsage:  0.014000000000000002,
+						ConsecutiveFailures: 0,
 					},
 				},
 				DroppedTargets: []*DroppedTarget{
@@ -1825,30 +1829,34 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
 					{
-						DiscoveredLabels:   labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__param_target", "example.com", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
-						Labels:             labels.FromStrings("job", "blackbox"),
-						ScrapePool:         "blackbox",
-						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
-						GlobalURL:          "http://localhost:9115/probe?target=example.com",
-						Health:             "down",
-						LastError:          "failed: missing port in address",
-						LastScrape:         scrapeStart,
-						LastScrapeDuration: 0.1,
-						ScrapeInterval:     "20s",
-						ScrapeTimeout:      "10s",
+						DiscoveredLabels:    labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__param_target", "example.com", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
+						Labels:              labels.FromStrings("job", "blackbox"),
+						ScrapePool:          "blackbox",
+						ScrapeURL:           "http://localhost:9115/probe?target=example.com",
+						GlobalURL:           "http://localhost:9115/probe?target=example.com",
+						Health:              "down",
+						LastError:           "failed: missing port in address",
+						LastScrape:          scrapeStart,
+						LastScrapeDuration:  0.1,
+						ScrapeInterval:      "20s",
+						ScrapeTimeout:       "10s",
+						ScrapeTimeoutUsage:  0.01,
+						ConsecutiveFailures: 1,
 					},
 					{
-						DiscoveredLabels:   labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
-						Labels:             labels.FromStrings("job", "test"),
-						ScrapePool:         "test",
-						ScrapeURL:          "http://example.com:8080/metrics",
-						GlobalURL:          "http://example.com:8080/metrics",
-						Health:             "up",
-						LastError:          "",
-						LastScrape:         scrapeStart,
-						LastScrapeDuration: 0.07,
-						ScrapeInterval:     "15s",
-						ScrapeTimeout:      "5s",
+						DiscoveredLabels:    labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
+						Labels:              labels.FromStrings("job", "test"),
+						ScrapePool:          "test",
+						ScrapeURL:           "http://example.com:8080/metrics",
+						GlobalURL:           "http://example.com:8080/metrics",
+						Health:              "up",
+						LastError:           "",
+						LastScrape:          scrapeStart,
+						LastScrapeDuration:  0.07,
+						ScrapeInterval:      "15s",
+						ScrapeTimeout:       "5s",
+						ScrapeTimeoutUsage:  0.014000000000000002,
+						ConsecutiveFailures: 0,
 					},
 				},
 				DroppedTargets: []*DroppedTarget{
@@ -1876,30 +1884,34 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
 					{
-						DiscoveredLabels:   labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__param_target", "example.com", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
-						Labels:             labels.FromStrings("job", "blackbox"),
-						ScrapePool:         "blackbox",
-						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
-						GlobalURL:          "http://localhost:9115/probe?target=example.com",
-						Health:             "down",
-						LastError:          "failed: missing port in address",
-						LastScrape:         scrapeStart,
-						LastScrapeDuration: 0.1,
-						ScrapeInterval:     "20s",
-						ScrapeTimeout:      "10s",
+						DiscoveredLabels:    labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__param_target", "example.com", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
+						Labels:              labels.FromStrings("job", "blackbox"),
+						ScrapePool:          "blackbox",
+						ScrapeURL:           "http://localhost:9115/probe?target=example.com",
+						GlobalURL:           "http://localhost:9115/probe?target=example.com",
+						Health:              "down",
+						LastError:           "failed: missing port in address",
+						LastScrape:          scrapeStart,
+						LastScrapeDuration:  0.1,
+						ScrapeInterval:      "20s",
+						ScrapeTimeout:       "10s",
+						ScrapeTimeoutUsage:  0.01,
+						ConsecutiveFailures: 1,
 					},
 					{
-						DiscoveredLabels:   labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
-						Labels:             labels.FromStrings("job", "test"),
-						ScrapePool:         "test",
-						ScrapeURL:          "http://example.com:8080/metrics",
-						GlobalURL:          "http://example.com:8080/metrics",
-						Health:             "up",
-						LastError:          "",
-						LastScrape:         scrapeStart,
-						LastScrapeDuration: 0.07,
-						ScrapeInterval:     "15s",
-						ScrapeTimeout:      "5s",
+						DiscoveredLabels:    labels.FromStrings("__convert_classic_histograms_to_nhcb__", "false", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
+						Labels:              labels.FromStrings("job", "test"),
+						ScrapePool:          "test",
+						ScrapeURL:           "http://example.com:8080/metrics",
+						GlobalURL:           "http://example.com:8080/metrics",
+						Health:              "up",
+						LastError:           "",
+						LastScrape:          scrapeStart,
+						LastScrapeDuration:  0.07,
+						ScrapeInterval:      "15s",
+						ScrapeTimeout:       "5s",
+						ScrapeTimeoutUsage:  0.014000000000000002,
+						ConsecutiveFailures: 0,
 					},
 				},
 				DroppedTargets: []*DroppedTarget{},
@@ -4480,6 +4492,100 @@ func TestParseDuration(t *testing.T) {
 			continue
 		}
 		require.Error(t, err, "Expected error for %q but got none", test.input)
+	}
+}
+
+func TestScrapeTimeoutUsage(t *testing.T) {
+	tests := []struct {
+		name               string
+		lastScrapeDuration time.Duration
+		scrapeTimeout      string
+		expected           float64
+	}{
+		{
+			name:               "normal usage",
+			lastScrapeDuration: 100 * time.Millisecond,
+			scrapeTimeout:      "10s",
+			expected:           0.01,
+		},
+		{
+			name:               "different timeout",
+			lastScrapeDuration: 70 * time.Millisecond,
+			scrapeTimeout:      "5s",
+			expected:           0.014,
+		},
+		{
+			name:               "invalid timeout",
+			lastScrapeDuration: 100 * time.Millisecond,
+			scrapeTimeout:      "invalid",
+			expected:           0,
+		},
+		{
+			name:               "zero timeout",
+			lastScrapeDuration: 100 * time.Millisecond,
+			scrapeTimeout:      "0s",
+			expected:           0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.InDelta(t, tt.expected, scrapeTimeoutUsage(tt.lastScrapeDuration, tt.scrapeTimeout), 1e-9)
+		})
+	}
+}
+
+func TestConsecutiveFailures(t *testing.T) {
+	tests := []struct {
+		name     string
+		reports  []error
+		expected int
+	}{
+		{
+			name:     "no reports",
+			reports:  nil,
+			expected: 0,
+		},
+		{
+			name:     "single success",
+			reports:  []error{nil},
+			expected: 0,
+		},
+		{
+			name:     "single failure",
+			reports:  []error{errors.New("failed")},
+			expected: 1,
+		},
+		{
+			name:     "multiple consecutive failures",
+			reports:  []error{errors.New("first"), errors.New("second"), errors.New("third")},
+			expected: 3,
+		},
+		{
+			name:     "failure then success resets counter",
+			reports:  []error{errors.New("first"), errors.New("second"), nil},
+			expected: 0,
+		},
+		{
+			name:     "success then failures",
+			reports:  []error{nil, errors.New("first"), errors.New("second")},
+			expected: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := scrape.NewTarget(
+				labels.FromStrings("job", "test"),
+				&config.ScrapeConfig{},
+				model.LabelSet{},
+				nil,
+			)
+			for _, err := range tt.reports {
+				target.Report(time.Now(), 100*time.Millisecond, err)
+			}
+			require.Equal(t, tt.expected, target.ConsecutiveFailures())
+		})
 	}
 }
 

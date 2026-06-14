@@ -58,12 +58,13 @@ type Target struct {
 	// Target and TargetGroup labels used to create this target.
 	tLabels, tgLabels model.LabelSet
 
-	mtx                sync.RWMutex
-	lastError          error
-	lastScrape         time.Time
-	lastScrapeDuration time.Duration
-	health             TargetHealth
-	metadata           MetricMetadataStore
+	mtx                 sync.RWMutex
+	lastError           error
+	lastScrape          time.Time
+	lastScrapeDuration  time.Duration
+	health              TargetHealth
+	metadata            MetricMetadataStore
+	consecutiveFailures int
 }
 
 // NewTarget creates a reasonably configured target for querying.
@@ -251,8 +252,10 @@ func (t *Target) Report(start time.Time, dur time.Duration, err error) {
 
 	if err == nil {
 		t.health = HealthGood
+		t.consecutiveFailures = 0
 	} else {
 		t.health = HealthBad
+		t.consecutiveFailures++
 	}
 
 	t.lastError = err
@@ -290,6 +293,14 @@ func (t *Target) Health() TargetHealth {
 	defer t.mtx.RUnlock()
 
 	return t.health
+}
+
+// ConsecutiveFailures returns the number of consecutive scrape failures.
+func (t *Target) ConsecutiveFailures() int {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	return t.consecutiveFailures
 }
 
 // intervalAndTimeout returns the interval and timeout derived from
