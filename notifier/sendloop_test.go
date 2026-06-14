@@ -31,6 +31,7 @@ import (
 )
 
 func TestCustomDo(t *testing.T) {
+	t.Parallel()
 	const testURL = "http://testurl.com/"
 	const testBody = "testbody"
 
@@ -60,6 +61,7 @@ func TestCustomDo(t *testing.T) {
 }
 
 func TestHandlerNextBatch(t *testing.T) {
+	t.Parallel()
 	sendLoop := newSendLoop("http://mock", nil, &config.DefaultAlertmanagerConfig, &Options{MaxBatchSize: DefaultMaxBatchSize}, slog.New(slog.DiscardHandler), newAlertMetrics(prometheus.NewRegistry(), nil))
 
 	for i := range make([]struct{}, 2*DefaultMaxBatchSize+1) {
@@ -76,6 +78,7 @@ func TestHandlerNextBatch(t *testing.T) {
 }
 
 func TestAddAlertsToQueue(t *testing.T) {
+	t.Parallel()
 	alert1 := &Alert{Labels: labels.FromStrings("alertname", "existing1")}
 	alert2 := &Alert{Labels: labels.FromStrings("alertname", "existing2")}
 
@@ -97,6 +100,7 @@ func TestAddAlertsToQueue(t *testing.T) {
 }
 
 func TestAddAlertsToQueueExceedingCapacity(t *testing.T) {
+	t.Parallel()
 	alert1 := &Alert{Labels: labels.FromStrings("alertname", "alert1")}
 	alert2 := &Alert{Labels: labels.FromStrings("alertname", "alert2")}
 
@@ -115,6 +119,7 @@ func TestAddAlertsToQueueExceedingCapacity(t *testing.T) {
 }
 
 func TestAddAlertsToQueueExceedingTotalCapacity(t *testing.T) {
+	t.Parallel()
 	alert1 := &Alert{Labels: labels.FromStrings("alertname", "alert1")}
 	alert2 := &Alert{Labels: labels.FromStrings("alertname", "alert2")}
 
@@ -135,6 +140,7 @@ func TestAddAlertsToQueueExceedingTotalCapacity(t *testing.T) {
 }
 
 func TestNextBatchAlertsFromQueue(t *testing.T) {
+	t.Parallel()
 	s := newSendLoop("http://foo.bar/", nil, nil, &Options{QueueCapacity: 5, MaxBatchSize: 3}, slog.New(slog.DiscardHandler), newAlertMetrics(prometheus.NewRegistry(), nil))
 
 	alert1 := &Alert{Labels: labels.FromStrings("alertname", "alert1")}
@@ -156,6 +162,7 @@ func TestNextBatchAlertsFromQueue(t *testing.T) {
 }
 
 func TestMetrics(t *testing.T) {
+	t.Parallel()
 	const alertmanagerURL = "http://alertmanager:9093"
 
 	// Use a single registry throughout the test - this is critical to catch registry conflicts
