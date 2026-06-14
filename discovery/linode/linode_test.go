@@ -29,6 +29,7 @@ import (
 )
 
 func TestLinodeSDRefresh(t *testing.T) {
+	t.Parallel()
 	sdmock := NewSDMock(t)
 	sdmock.Setup()
 

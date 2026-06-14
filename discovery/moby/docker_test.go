@@ -29,6 +29,7 @@ import (
 )
 
 func TestDockerSDRefresh(t *testing.T) {
+	t.Parallel()
 	sdmock := NewSDMock(t, "dockerprom")
 	sdmock.Setup()
 
@@ -211,6 +212,7 @@ host: %s
 }
 
 func TestDockerSDRefreshMatchAllNetworks(t *testing.T) {
+	t.Parallel()
 	sdmock := NewSDMock(t, "dockerprom")
 	sdmock.Setup()
 
