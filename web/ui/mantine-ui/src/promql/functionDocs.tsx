@@ -1855,6 +1855,37 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  integral: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>integral(v range-vector, strategy=2 scalar)</code> calculates the integral of the time series over time in
+        seconds. The optional <code>strategy</code> controls which quadrature rule is used for each interval:{" "}
+        <code>0</code> for the left-point rectangle rule, <code>1</code> for the right-point rectangle rule, and{" "}
+        <code>2</code> for the trapezoidal rule using the average of the adjacent samples. The default is <code>2</code>
+        .
+      </p>
+
+      <p>
+        <code>integral</code> should only be used with gauges, most likely representing a rate in units per second.
+      </p>
+
+      <p>For example, to calculate the total nodes cost accumulated the last 7 days, given its hourly cost:</p>
+
+      <pre>
+        <code>
+          integral(hourly_cost{"{"}job=&quot;nodes&quot;{"}"}[7d]) / 3600
+        </code>
+      </pre>
+    </>
+  ),
   irate: (
     <>
       <p>

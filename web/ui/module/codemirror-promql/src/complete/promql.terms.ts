@@ -306,6 +306,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'integral',
+    detail: 'function',
+    info: 'Calculate the integral over time of input series using left-point rectangle, right-point rectangle, or trapezoidal approximation',
+    type: 'function',
+  },
+  {
     label: 'irate',
     detail: 'function',
     info: 'Calculate the per-second increase over the last two samples of a range vector (for counters)',
