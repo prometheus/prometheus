@@ -28,6 +28,7 @@ import (
 )
 
 func TestDockerSwarmSDServicesRefresh(t *testing.T) {
+	t.Parallel()
 	sdmock := NewSDMock(t, "swarmprom")
 	sdmock.Setup()
 
@@ -330,6 +331,7 @@ host: %s
 }
 
 func TestDockerSwarmSDServicesRefreshWithFilters(t *testing.T) {
+	t.Parallel()
 	sdmock := NewSDMock(t, "swarmprom")
 	sdmock.Setup()
 

@@ -60,6 +60,7 @@ func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, err
 }
 
 func TestEurekaSDHandleError(t *testing.T) {
+	t.Parallel()
 	var (
 		errTesting  = "non 2xx status '500' response during eureka service discovery"
 		respHandler = func(w http.ResponseWriter, _ *http.Request) {
@@ -75,6 +76,7 @@ func TestEurekaSDHandleError(t *testing.T) {
 }
 
 func TestEurekaSDEmptyList(t *testing.T) {
+	t.Parallel()
 	var (
 		appsXML = `<applications>
 <versions__delta>1</versions__delta>
@@ -92,6 +94,7 @@ func TestEurekaSDEmptyList(t *testing.T) {
 }
 
 func TestEurekaSDSendGroup(t *testing.T) {
+	t.Parallel()
 	var (
 		appsXML = `<applications>
   <versions__delta>1</versions__delta>
