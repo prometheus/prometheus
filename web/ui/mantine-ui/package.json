@@ -52,7 +52,7 @@
     "use-query-params": "^2.2.2"
   },
   "devDependencies": {
-    "@eslint/compat": "^1.4.1",
+    "@eslint/compat": "^2.0.0",
     "@eslint/eslintrc": "^3.3.5",
     "@eslint/js": "^9.39.4",
     "@types/react": "^19.2.14",
