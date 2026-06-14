@@ -2195,7 +2195,7 @@ func funcHistogramQuantiles(vectorVals []Vector, _ Matrix, args parser.Expressio
 					if enh.enableDelayedNameRemoval {
 						metricName = getMetricName(mb.metric)
 					}
-					annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(metricName, args[1].PositionRange(), enh.Ts, minBucket, maxBucket, maxDiff))
+					annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(metricName, args[0].PositionRange(), enh.Ts, minBucket, maxBucket, maxDiff))
 				}
 
 				if !enh.enableDelayedNameRemoval {
