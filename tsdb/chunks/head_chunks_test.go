@@ -14,8 +14,10 @@
 package chunks
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
+	"math"
 	"math/rand"
 	"os"
 	"strconv"
@@ -444,6 +446,77 @@ func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
 
 	// Truncation call should not return error after IterateAllChunks fails.
 	require.NoError(t, hrw.Truncate(2000))
+}
+
+// TestHeadReadWriter_IterateChunksCorruptLength checks that IterateAllChunks
+// reports corruption, rather than panicking, when a chunk's length field on
+// disk is malformed.
+func TestHeadReadWriter_IterateChunksCorruptLength(t *testing.T) {
+	t.Parallel()
+
+	// dataLenOffset is the byte offset of the chunk length field of the first
+	// chunk in a freshly cut head chunk file.
+	dataLenOffset := int64(HeadChunkFileHeaderSize + SeriesRefSize + 2*MintMaxtSize + ChunkEncodingSize)
+
+	// largeLen encodes a chunk length that points well past the end of the file.
+	largeLen := make([]byte, MaxChunkLengthFieldSize)
+	binary.PutUvarint(largeLen, math.MaxUint32)
+
+	for _, tc := range []struct {
+		name string
+		// corrupt is written over the chunk length field on disk.
+		corrupt []byte
+	}{
+		{
+			// A length field made entirely of continuation bytes cannot be
+			// decoded as a uvarint.
+			name:    "unreadable length",
+			corrupt: bytes.Repeat([]byte{0x80}, MaxChunkLengthFieldSize),
+		},
+		{
+			name:    "length past file end",
+			corrupt: largeLen,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			hrw := createChunkDiskMapper(t, "")
+
+			var err error
+			awaitCb := make(chan struct{})
+			hrw.WriteChunk(1, 0, 1000, randomChunk(t), false, func(cbErr error) {
+				err = cbErr
+				close(awaitCb)
+			})
+			<-awaitCb
+			require.NoError(t, err)
+
+			dir := hrw.dir.Name()
+			require.NoError(t, hrw.Close())
+
+			// Corrupt the length field of the chunk we just wrote.
+			f, err := os.OpenFile(segmentFile(dir, 1), os.O_WRONLY, 0o666)
+			require.NoError(t, err)
+			_, err = f.WriteAt(tc.corrupt, dataLenOffset)
+			require.NoError(t, err)
+			require.NoError(t, f.Close())
+
+			// Reopen directly (createChunkDiskMapper would fail iterating the
+			// corrupt file) and check that iteration reports corruption.
+			hrw, err = NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), DefaultWriteBufferSize, writeQueueSize)
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, hrw.Close())
+			}()
+
+			err = hrw.IterateAllChunks(func(HeadSeriesRef, ChunkDiskMapperRef, int64, int64, uint16, chunkenc.Encoding, bool) error {
+				return nil
+			})
+			var corruptErr *CorruptionErr
+			require.ErrorAs(t, err, &corruptErr)
+		})
+	}
 }
 
 func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
