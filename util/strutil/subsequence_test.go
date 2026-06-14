@@ -106,6 +106,7 @@ func BenchmarkSubsequenceScoreRunes(b *testing.B) {
 }
 
 func TestSubsequenceScore(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		pattern   string
@@ -276,6 +277,7 @@ func TestSubsequenceScore(t *testing.T) {
 }
 
 func TestSubsequenceScoreProperties(t *testing.T) {
+	t.Parallel()
 	// Prefix match scores below 1.0; only exact match scores 1.0.
 	// "pro" in "prometheus": intervals [0,2], trailing=7. raw = 9 - 7/20, normalized by 9.
 	require.InDelta(t, 173.0/180.0*0.999, NewSubsequenceMatcher("pro").Score("prometheus"), 1e-9)

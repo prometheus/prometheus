@@ -129,12 +129,14 @@ func testAppendableV2(t *testing.T, appTest *Appendable, a storage.AppendableV2)
 }
 
 func TestAppendable(t *testing.T) {
+	t.Parallel()
 	appTest := NewAppendable()
 	testAppendableV1(t, appTest, appTest)
 	testAppendableV2(t, appTest, appTest)
 }
 
 func TestAppendable_Then(t *testing.T) {
+	t.Parallel()
 	nextAppTest := NewAppendable()
 	app := NewAppendable().Then(nextAppTest)
 
@@ -146,6 +148,7 @@ func TestAppendable_Then(t *testing.T) {
 
 // TestSample_RequireEqual.
 func TestSample_RequireEqual(t *testing.T) {
+	t.Parallel()
 	a := []Sample{
 		{},
 		{L: labels.FromStrings(model.MetricNameLabel, "test_metric_total"), M: metadata.Metadata{Type: "counter", Unit: "metric", Help: "some help text"}},
@@ -232,6 +235,7 @@ func TestSample_RequireEqual(t *testing.T) {
 }
 
 func TestConcurrentAppender_ReturnsErrAppender(t *testing.T) {
+	t.Parallel()
 	a := NewAppendable()
 
 	// Non-concurrent multiple use if fine.
@@ -271,6 +275,7 @@ func TestConcurrentAppender_ReturnsErrAppender(t *testing.T) {
 }
 
 func TestConcurrentAppenderV2_ReturnsErrAppender(t *testing.T) {
+	t.Parallel()
 	a := NewAppendable()
 
 	// Non-concurrent multiple use if fine.
@@ -308,6 +313,7 @@ func TestConcurrentAppenderV2_ReturnsErrAppender(t *testing.T) {
 }
 
 func TestReorderExpectedForStaleness(t *testing.T) {
+	t.Parallel()
 	testcases := []struct {
 		name       string
 		inExpected []Sample
@@ -394,6 +400,7 @@ func TestReorderExpectedForStaleness(t *testing.T) {
 }
 
 func TestSampleIsStale(t *testing.T) {
+	t.Parallel()
 	s1 := Sample{V: 1}
 	require.False(t, s1.IsStale())
 	s2 := Sample{V: math.Float64frombits(value.StaleNaN)}

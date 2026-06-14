@@ -24,6 +24,7 @@ func makeFunc(size int) any {
 }
 
 func TestPool(t *testing.T) {
+	t.Parallel()
 	testPool := New(1, 8, 2, makeFunc)
 	cases := []struct {
 		size        int

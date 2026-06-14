@@ -21,6 +21,7 @@ import (
 )
 
 func TestIsInf(t *testing.T) {
+	t.Parallel()
 	for _, f := range []float64{
 		math.Inf(1),
 		math.Inf(-1),

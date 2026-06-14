@@ -37,6 +37,7 @@ func getLogLines(t *testing.T, name string) []string {
 }
 
 func TestJSONFileLogger_basic(t *testing.T) {
+	t.Parallel()
 	f, err := os.CreateTemp("", "logging")
 	require.NoError(t, err)
 	defer func() {
@@ -66,6 +67,7 @@ func TestJSONFileLogger_basic(t *testing.T) {
 }
 
 func TestJSONFileLogger_parallel(t *testing.T) {
+	t.Parallel()
 	f, err := os.CreateTemp("", "logging")
 	require.NoError(t, err)
 	defer func() {

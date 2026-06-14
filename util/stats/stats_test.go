@@ -26,6 +26,7 @@ import (
 )
 
 func TestTimerGroupNewTimer(t *testing.T) {
+	t.Parallel()
 	tg := NewTimerGroup()
 	timer := tg.GetTimer(ExecTotalTime)
 	duration := timer.Duration()
@@ -42,6 +43,7 @@ func TestTimerGroupNewTimer(t *testing.T) {
 }
 
 func TestQueryStatsWithTimersAndSamples(t *testing.T) {
+	t.Parallel()
 	qt := NewQueryTimers()
 	qs := NewQuerySamples(true)
 	qs.InitStepTracking(20001000, 25001000, 1000000)
@@ -65,6 +67,7 @@ func TestQueryStatsWithTimersAndSamples(t *testing.T) {
 }
 
 func TestQueryStatsWithSpanTimers(t *testing.T) {
+	t.Parallel()
 	qt := NewQueryTimers()
 	qs := NewQuerySamples(false)
 	ctx := &testutil.MockContext{DoneCh: make(chan struct{})}
@@ -81,6 +84,7 @@ func TestQueryStatsWithSpanTimers(t *testing.T) {
 }
 
 func TestTimerGroup(t *testing.T) {
+	t.Parallel()
 	tg := NewTimerGroup()
 	require.Equal(t, "Exec total time: 0s", tg.GetTimer(ExecTotalTime).String())
 

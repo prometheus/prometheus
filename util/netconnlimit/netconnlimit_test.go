@@ -23,6 +23,7 @@ import (
 )
 
 func TestSharedLimitListenerConcurrency(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name        string
 		semCapacity int
@@ -106,6 +107,7 @@ func TestSharedLimitListenerConcurrency(t *testing.T) {
 }
 
 func TestSharedLimitListenerClose(t *testing.T) {
+	t.Parallel()
 	sem := NewSharedSemaphore(2)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err, "failed to create listener")

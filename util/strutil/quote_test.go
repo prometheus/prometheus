@@ -144,6 +144,7 @@ var misquoted = []string{
 }
 
 func TestUnquote(t *testing.T) {
+	t.Parallel()
 	for _, tt := range unquotetests {
 		out, err := Unquote(tt.in)
 		if err != nil {

@@ -21,6 +21,7 @@ import (
 )
 
 func TestCheckNameValidationScheme(t *testing.T) {
+	t.Parallel()
 	require.NoError(t, CheckNameValidationScheme(model.UTF8Validation))
 	require.NoError(t, CheckNameValidationScheme(model.LegacyValidation))
 	require.EqualError(t, CheckNameValidationScheme(model.UnsetValidation), "unset nameValidationScheme")
