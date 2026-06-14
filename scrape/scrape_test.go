@@ -17,6 +17,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -33,6 +35,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"testing/synctest"
 	"text/template"
@@ -2577,6 +2580,175 @@ func BenchmarkScrapeLoopScrapeAndReport(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestScrapeLoopFailedScrapes(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testScrapeLoopFailedScrapes(t, appV2)
+	})
+}
+
+func testScrapeLoopFailedScrapes(t *testing.T, appV2 bool) {
+	tests := []struct {
+		name         string
+		scrapeErr    error
+		expectedArea string
+	}{
+		{
+			name:         "timeout",
+			scrapeErr:    context.DeadlineExceeded,
+			expectedArea: "timeout",
+		},
+		{
+			name:         "body_size_limit",
+			scrapeErr:    errBodySizeLimit,
+			expectedArea: "body_size_limit",
+		},
+		{
+			name:         "client_http_error",
+			scrapeErr:    &httpStatusError{StatusCode: 404, Status: "Not Found"},
+			expectedArea: "client_http_error",
+		},
+		{
+			name:         "server_http_error",
+			scrapeErr:    &httpStatusError{StatusCode: 500, Status: "Internal Server Error"},
+			expectedArea: "server_http_error",
+		},
+		{
+			name:         "dns_error",
+			scrapeErr:    &net.DNSError{Err: "no such host"},
+			expectedArea: "dns_error",
+		},
+		{
+			name:         "connection_refused",
+			scrapeErr:    syscall.ECONNREFUSED,
+			expectedArea: "connection_refused",
+		},
+		{
+			name:         "network_error",
+			scrapeErr:    &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("generic network error")},
+			expectedArea: "network_error",
+		},
+		{
+			name:         "tls_error",
+			scrapeErr:    &tls.RecordHeaderError{Msg: "oversized record received"},
+			expectedArea: "tls_error",
+		},
+		{
+			name:         "tls_hostname_error",
+			scrapeErr:    x509.HostnameError{Host: "badhost"},
+			expectedArea: "tls_error",
+		},
+		{
+			name:         "network_other",
+			scrapeErr:    errors.New("some other network error"),
+			expectedArea: "other",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			appTest := teststorage.NewAppendable()
+			sl, scraper := newTestScrapeLoop(t, withAppendable(appTest, appV2), func(sl *scrapeLoop) {
+				sl.reportExtraMetrics = true
+			})
+			scraper.scrapeFunc = func(context.Context, io.Writer) error {
+				return tc.scrapeErr
+			}
+
+			sl.scrapeAndReport(time.Time{}, time.Now(), nil)
+
+			samples := appTest.ResultSamples()
+
+			var found bool
+			for _, s := range samples {
+				if s.L.Get("__name__") == "scrapes_failed" {
+					found = true
+					require.Equal(t, tc.expectedArea, s.L.Get("area"), "bad area label")
+					require.Equal(t, 1.0, s.V, "bad value")
+				}
+			}
+			require.True(t, found, "scrapes_failed metric not found")
+		})
+	}
+}
+
+func TestScrapeLoopFailedScrapesStaleness(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testScrapeLoopFailedScrapesStaleness(t, appV2)
+	})
+}
+
+func testScrapeLoopFailedScrapesStaleness(t *testing.T, appV2 bool) {
+	appTest := teststorage.NewAppendable()
+	sl, scraper := newTestScrapeLoop(t, withAppendable(appTest, appV2), func(sl *scrapeLoop) {
+		sl.reportExtraMetrics = true
+	})
+
+	// 1. First scrape fails.
+	scraper.scrapeFunc = func(context.Context, io.Writer) error {
+		return context.DeadlineExceeded
+	}
+
+	sl.scrapeAndReport(time.Time{}, time.Now(), nil)
+
+	samples := appTest.ResultSamples()
+	var found bool
+	for _, s := range samples {
+		if s.L.Get("__name__") == "scrapes_failed" && s.L.Get("area") == "timeout" {
+			found = true
+			require.Equal(t, 1.0, s.V, "bad value")
+		}
+	}
+	require.True(t, found, "scrapes_failed metric not found in first scrape")
+
+	// Reset results for the next scrape.
+	appTest.ResultReset()
+
+	// 2. Second scrape fails with a different error (connection_refused).
+	scraper.scrapeFunc = func(context.Context, io.Writer) error {
+		return syscall.ECONNREFUSED
+	}
+
+	sl.scrapeAndReport(time.Time{}, time.Now(), nil)
+
+	samples = appTest.ResultSamples()
+	found = false
+	var timeoutStale bool
+	for _, s := range samples {
+		if s.L.Get("__name__") == "scrapes_failed" {
+			if s.L.Get("area") == "connection_refused" {
+				found = true
+				require.Equal(t, 1.0, s.V, "bad value for connection_refused")
+			}
+			if s.L.Get("area") == "timeout" {
+				timeoutStale = true
+				require.True(t, value.IsStaleNaN(s.V), "Wanted: stale NaN for timeout Got: %x", math.Float64bits(s.V))
+			}
+		}
+	}
+	require.True(t, found, "scrapes_failed metric with area=connection_refused not found")
+	require.True(t, timeoutStale, "stale marker for timeout not found")
+
+	// Reset results for the next scrape.
+	appTest.ResultReset()
+
+	// 3. Third scrape succeeds.
+	scraper.scrapeFunc = func(context.Context, io.Writer) error {
+		return nil
+	}
+
+	sl.scrapeAndReport(time.Time{}, time.Now(), nil)
+
+	samples = appTest.ResultSamples()
+	found = false
+	for _, s := range samples {
+		if s.L.Get("__name__") == "scrapes_failed" && s.L.Get("area") == "connection_refused" {
+			found = true
+			require.True(t, value.IsStaleNaN(s.V), "Wanted: stale NaN for connection_refused Got: %x", math.Float64bits(s.V))
+		}
+	}
+	require.True(t, found, "stale marker for connection_refused not found")
 }
 
 func TestSetOptionsHandlingStaleness(t *testing.T) {
