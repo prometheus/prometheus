@@ -6,13 +6,13 @@ load 1m
     cumulative{type="normalized_resets"}  _ _ 0 60 120 300 360 420 780 840 900 1440 1500 1560 2280 2340 2400
 
 eval range from 7m to 15m step 1m increase(cumulative[5m])
-    {type="no_st"}              300 300 300 300 300  300 300  300  300
-    {type="st_resets"}          420 780 675 675 1275 900 900 1725 1125
-    {type="normalized_resets"}  420 780 675 675 1275 900 900 1725 1125
+    {type="no_st"}              300 300 300 300 300   300 300  300  300
+    {type="st_resets"}          420 780 675 675 1275 1080 900 1725 1440
+    {type="normalized_resets"}  420 780 675 675 1275  900 900 1725 1125
 
 eval range from 7m to 15m step 1m rate(cumulative[5m])
     {type="no_st"}              1    1    1    1    1    1    1    1    1
-    {type="st_resets"}          1.40 2.60 2.25 2.25 4.25 3.00 3.00 5.75 3.75
+    {type="st_resets"}          1.40 2.60 2.25 2.25 4.25 3.60 3.00 5.75 4.8
     {type="normalized_resets"}  1.40 2.60 2.25 2.25 4.25 3.00 3.00 5.75 3.75
 
 eval range from 7m to 15m step 1m irate(cumulative[5m])
@@ -68,7 +68,7 @@ eval range from 10m to 15m step 1m increase(delta[5m])
     {type="otel"}               300x5
     {type="gcp"}                300x5
     {type="minimal_range"}      300x5
-    {type="empty_range"}        300x5
+    {type="empty_range"}          0x5
     {type="normalized_resets"}  300x5
 
 eval range from 10m to 15m step 1m rate(delta[5m])
@@ -76,7 +76,7 @@ eval range from 10m to 15m step 1m rate(delta[5m])
     {type="otel"}               1x5
     {type="gcp"}                1x5
     {type="minimal_range"}      1x5
-    {type="empty_range"}        1x5
+    {type="empty_range"}        0x5
     {type="normalized_resets"}  1x5
 
 eval range from 10m to 15m step 1m irate(delta[5m])
@@ -84,10 +84,10 @@ eval range from 10m to 15m step 1m irate(delta[5m])
     {type="otel"}               1x5
     {type="gcp"}                1x5
     {type="minimal_range"}      1x5
-    {type="empty_range"}        1x5
+    {type="empty_range"}        0x5
     {type="normalized_resets"}  1x5
 
-# Subqueries cuts the propagation of start timestamps
+# Subqueries cut the propagation of start timestamps
 eval range from 10m to 15m step 1m increase(delta[5m:1m])
     {type="no_st"}                0x5
     {type="otel"}                 0x5
@@ -98,23 +98,89 @@ eval range from 10m to 15m step 1m increase(delta[5m:1m])
 
 clear
 
+# Tests for when instead of extrapolating to the left we assume there to be zero-value datapoint
+# at the time of the ST of the first datapoint in range. It includes both positive (start timestamp is used
+# instead of extrapolating) and negative cases (start timestamp cannot be used, so falling back to
+# rate extrapolation).
+load 1m
+    series{type="no_st_extrapolate_left"}                       _ _ 1 2 3 4 5
+    series{type="st_outside_range"}@st                          _ _ -60s-1mx4
+    series{type="st_outside_range"}                             _ _ 1 2 3 4 5
+    series{type="st_inside_range"}@st                           _ _ -30s-1mx4
+    series{type="st_inside_range"}                              _ _ 1 2 3 4 5
+    series{type="st_at_t"}@st                                   _ _ 0-1mx4
+    series{type="st_at_t"}                                      _ _ 1 2 3 4 5
+    series{type="st_after_t"}@st                                _ _ 1ms-1mx4
+    series{type="st_after_t"}                                   _ _ 1 2 3 4 5
+    series{type="no_st_extrapolate_both"}                       _ _ 1 2 3 4   _
+    series{type="st_outside_extrapolate_both"}@st               _ _ -60s-1mx3 _
+    series{type="st_outside_extrapolate_both"}                  _ _ 1 2 3 4   _
+    series{type="st_inside_extrapolate_right"}@st               _ _ -30s-1mx3 _
+    series{type="st_inside_extrapolate_right"}                  _ _ 1 2 3 4   _
+    series{type="st_at_t_extrapolate_right"}@st                 _ _ 0-1mx3    _
+    series{type="st_at_t_extrapolate_right"}                    _ _ 1 2 3 4   _
+    series{type="st_after_t_extrapolate_both"}@st               _ _ 1ms-1mx3  _
+    series{type="st_after_t_extrapolate_both"}                  _ _ 1 2 3 4   _
+    series{type="no_st_extrapolate_both_limit_range"}           _ _ _ 2 3        _ _
+    series{type="st_outside_extrapolate_both_limit_range"}@st   _ _ _ -120s-1mx1 _ _
+    series{type="st_outside_extrapolate_both_limit_range"}      _ _ _ 2 3        _ _
+    series{type="st_inside_extrapolate_right_limit_range"}@st   _ _ _ -90s-1mx1  _ _
+    series{type="st_inside_extrapolate_right_limit_range"}      _ _ _ 2 3        _ _
+    series{type="st_at_t_extrapolate_right_limit_range"}@st     _ _ _ 0-1mx1     _ _
+    series{type="st_at_t_extrapolate_right_limit_range"}        _ _ _ 2 3        _ _
+    series{type="st_after_t_extrapolate_both_limit_range"}@st   _ _ _ 1ms-1mx1   _ _
+    series{type="st_after_t_extrapolate_both_limit_range"}      _ _ _ 2 3        _ _
+    series{type="no_st_single_datapoint"}                       _ _ _ _ 3     _ _
+    series{type="st_outside_single_datapoint"}@st               _ _ _ _ -180s _ _
+    series{type="st_outside_single_datapoint"}                  _ _ _ _ 3     _ _
+    series{type="st_inside_single_datapoint"}@st                _ _ _ _ -150s _ _
+    series{type="st_inside_single_datapoint"}                   _ _ _ _ 3     _ _
+    series{type="st_at_t_single_datapoint"}@st                  _ _ _ _ 0     _ _
+    series{type="st_at_t_single_datapoint"}                     _ _ _ _ 3     _ _
+    series{type="st_after_t_single_datapoint"}@st               _ _ _ _ 1ms   _ _
+    series{type="st_after_t_single_datapoint"}                  _ _ _ _ 3     _ _
+
+
+eval instant at 6m increase(series[5m])
+    {type="no_st_extrapolate_left"}                   5
+    {type="st_outside_range"}                         5
+    {type="st_inside_range"}                          5
+    {type="st_at_t"}                                  5
+    {type="st_after_t"}                               6
+    {type="no_st_extrapolate_both"}                   5
+    {type="st_outside_extrapolate_both"}              5
+    {type="st_inside_extrapolate_right"}              5.142857142857143
+    {type="st_at_t_extrapolate_right"}                5
+    {type="st_after_t_extrapolate_both"}              6.333333333333333
+    {type="no_st_extrapolate_both_limit_range"}       2
+    {type="st_outside_extrapolate_both_limit_range"}  2
+    {type="st_inside_extrapolate_right_limit_range"}  3.6
+    {type="st_at_t_extrapolate_right_limit_range"}    2
+    {type="st_after_t_extrapolate_both_limit_range"}  6
+    {type="st_inside_single_datapoint"}               3
+
+clear
+
 # Test for cumulative with unknow start timestamp, which is described in OTel spec. It is easy to incorrectly treat
 # second datapoint in such timeseries as delta, producing incorrect result. These can be distinguished by:
 #   * ST_curr == T_prev && ST_prev == 0  -> cumulative with unknown start, no reset
 #   * ST_curr == T_prev && ST_prev != 0  -> delta datapoint, treat as a reset
 #   * ST_curr == T_prev && ST_prev > T_prev (invalid) -> must not be mistaken for the delta case above
 load 1m
-    series{type="otel_cumulative_unknown_start"}@st  _ _    _ -1m
-    series{type="otel_cumulative_unknown_start"}     _ _    1   1
-    series{type="otel_delta"}@st                     _ _ -1m  -1m
-    series{type="otel_delta"}                        _ _    1    1
-    series{type="invalid_prev_st"}@st                _ _ +1m  -1m
-    series{type="invalid_prev_st"}                   _ _    1    1
+    series{type="otel_cumulative_unknown_start_ST=0"}@st  _ _   _ -1m
+    series{type="otel_cumulative_unknown_start_ST=0"}     _ _   1   1
+    series{type="otel_cumulative_unknown_start_ST=T"}@st  _ _   0 -1m
+    series{type="otel_cumulative_unknown_start_ST=T"}     _ _   1   1
+    series{type="otel_delta"}@st                          _ _ -1m -1m
+    series{type="otel_delta"}                             _ _   1   1
+    series{type="invalid_prev_st"}@st                     _ _ +1m -1m
+    series{type="invalid_prev_st"}                        _ _   1   1
 
 eval instant at 3m round(increase(series[1m1ms]))
-    {type="otel_cumulative_unknown_start"}  0
-    {type="otel_delta"}                     1
-    {type="invalid_prev_st"}                0
+    {type="otel_cumulative_unknown_start_ST=0"}  0
+    {type="otel_cumulative_unknown_start_ST=T"}  0
+    {type="otel_delta"}                          1
+    {type="invalid_prev_st"}                     0
 
 clear
 
