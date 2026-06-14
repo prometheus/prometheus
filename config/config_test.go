@@ -2459,6 +2459,10 @@ var expectedErrors = []struct {
 		errMsg:   `found multiple remote write configs with job name "queue1"`,
 	},
 	{
+		filename: "remote_write_auth_exclusive.bad.yml",
+		errMsg:   "at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured",
+	},
+	{
 		filename: "remote_write_queue_max_samples_per_send_zero.bad.yml",
 		errMsg:   `remote write queue max_samples_per_send must be positive`,
 	},
@@ -3517,4 +3521,79 @@ func TestGetScrapeConfigs_Loaded(t *testing.T) {
 		_, err = c.GetScrapeConfigs()
 		require.NoError(t, err)
 	})
+}
+
+func TestAlertmanagerConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name      string
+		config    *AlertmanagerConfig
+		scheme    model.ValidationScheme
+		expectErr bool
+	}{
+		{
+			name: "valid config",
+			config: &AlertmanagerConfig{
+				RelabelConfigs: []*relabel.Config{
+					{
+						SourceLabels: model.LabelNames{"foo"},
+						TargetLabel:  "bar",
+						Action:       relabel.Replace,
+					},
+				},
+			},
+			scheme:    model.LegacyValidation,
+			expectErr: false,
+		},
+		{
+			name: "invalid relabel config",
+			config: &AlertmanagerConfig{
+				RelabelConfigs: []*relabel.Config{
+					{
+						SourceLabels: model.LabelNames{"foo"},
+						TargetLabel:  "invalid-label-name",
+						Action:       relabel.Replace,
+					},
+				},
+			},
+			scheme:    model.LegacyValidation,
+			expectErr: true,
+		},
+		{
+			name: "invalid alert relabel config",
+			config: &AlertmanagerConfig{
+				AlertRelabelConfigs: []*relabel.Config{
+					{
+						SourceLabels: model.LabelNames{"foo"},
+						TargetLabel:  "invalid-label-name",
+						Action:       relabel.Replace,
+					},
+				},
+			},
+			scheme:    model.LegacyValidation,
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate(tt.scheme)
+			if tt.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestConfigString(t *testing.T) {
+	cfg, err := Load("global:\n  scrape_interval: 1m\n", promslog.NewNopLogger())
+	require.NoError(t, err)
+
+	str := cfg.String()
+	require.Contains(t, str, "scrape_interval: 1m")
+
+	// Verify it can be re-parsed
+	_, err = Load(str, promslog.NewNopLogger())
+	require.NoError(t, err)
 }
