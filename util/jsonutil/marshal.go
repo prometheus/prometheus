@@ -135,3 +135,113 @@ func MarshalHistogram(h *histogram.FloatHistogram, stream *jsoniter.Stream) {
 	}
 	stream.WriteObjectEnd()
 }
+
+// MarshalHistogramNative marshals a histogram in a format that mirrors the
+// native histogram data model closely. It is intended for callers that already
+// understand how buckets are organised given the schema (and, for custom-bucket
+// histograms, the bucket boundaries).
+//
+// The shape depends on the schema. For exponential schemas it looks like:
+//
+//	{
+//	    "count": "42",
+//	    "sum":   "34593.34",
+//	    "schema": 2,
+//	    "zero_threshold": "0.001",
+//	    "zero_count":     "12",
+//	    "negative_buckets": [ [ -1, "3" ], [ 0, "2" ] ],
+//	    "buckets":          [ [ 0, "5" ], [ 1, "8" ] ]
+//	}
+//
+// "zero_threshold" is always emitted for exponential schemas because it is
+// part of the schema definition. "zero_count" is only emitted when the zero
+// bucket has a non-zero count. "negative_buckets" and "buckets" are each
+// optional and only emitted when at least one bucket on that side has a
+// non-zero count. The bucket entries are [index, count] pairs where index is
+// the schema-defined bucket index.
+//
+// For custom-bucket histograms (schema -53) it looks like:
+//
+//	{
+//	    "count": "6",
+//	    "sum":   "7",
+//	    "schema": -53,
+//	    "boundaries": [ "0.5", "1", "2", "5" ],
+//	    "buckets":    [ [ 1, "2" ], [ 2, "3" ], [ 3, "1" ] ]
+//	}
+//
+// "boundaries" lists the bucket upper bounds. Each bucket entry is
+// [index, count] where index is the 0-based index into "boundaries"
+// identifying the bucket's upper bound.
+//
+// Counts are encoded as strings for NaN/Inf safety. Empty buckets are
+// skipped.
+func MarshalHistogramNative(h *histogram.FloatHistogram, stream *jsoniter.Stream) {
+	stream.WriteObjectStart()
+	stream.WriteObjectField(`count`)
+	MarshalFloat(h.Count, stream)
+	stream.WriteMore()
+	stream.WriteObjectField(`sum`)
+	MarshalFloat(h.Sum, stream)
+	stream.WriteMore()
+	stream.WriteObjectField(`schema`)
+	stream.WriteInt32(h.Schema)
+
+	if histogram.IsCustomBucketsSchema(h.Schema) {
+		stream.WriteMore()
+		stream.WriteObjectField(`boundaries`)
+		stream.WriteArrayStart()
+		for i, v := range h.CustomValues {
+			if i != 0 {
+				stream.WriteMore()
+			}
+			MarshalFloat(v, stream)
+		}
+		stream.WriteArrayEnd()
+
+		writeIndexedBuckets(stream, `buckets`, h.PositiveBucketIterator())
+		stream.WriteObjectEnd()
+		return
+	}
+
+	stream.WriteMore()
+	stream.WriteObjectField(`zero_threshold`)
+	MarshalFloat(h.ZeroThreshold, stream)
+	if h.ZeroCount != 0 {
+		stream.WriteMore()
+		stream.WriteObjectField(`zero_count`)
+		MarshalFloat(h.ZeroCount, stream)
+	}
+	writeIndexedBuckets(stream, `negative_buckets`, h.NegativeBucketIterator())
+	writeIndexedBuckets(stream, `buckets`, h.PositiveBucketIterator())
+	stream.WriteObjectEnd()
+}
+
+// writeIndexedBuckets writes a "<field>: [ [index, count], ... ]" entry from
+// the iterator, skipping empty buckets. If every bucket is empty, nothing is
+// written (so the field is omitted from the parent object).
+func writeIndexedBuckets(stream *jsoniter.Stream, field string, it histogram.BucketIterator[float64]) {
+	started := false
+	for it.Next() {
+		b := it.At()
+		if b.Count == 0 {
+			continue
+		}
+		if !started {
+			stream.WriteMore()
+			stream.WriteObjectField(field)
+			stream.WriteArrayStart()
+			started = true
+		} else {
+			stream.WriteMore()
+		}
+		stream.WriteArrayStart()
+		stream.WriteInt32(b.Index)
+		stream.WriteMore()
+		MarshalFloat(b.Count, stream)
+		stream.WriteArrayEnd()
+	}
+	if started {
+		stream.WriteArrayEnd()
+	}
+}

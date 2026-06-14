@@ -103,6 +103,53 @@ func TestJsonCodec_Encode(t *testing.T) {
 			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"foo"},"histograms":[[1,{"count":"10","sum":"20","buckets":[[1,"-1.6817928305074288","-1.414213562373095","1"],[1,"-1.414213562373095","-1.189207115002721","2"],[3,"-0.001","0.001","12"],[0,"1.414213562373095","1.6817928305074288","1"],[0,"1.6817928305074288","2","2"],[0,"2.378414230005442","2.82842712474619","2"],[0,"2.82842712474619","3.3635856610148576","1"],[0,"3.3635856610148576","4","1"]]}]]}]}}`,
 		},
 		{
+			response: &QueryData{
+				ResultType: parser.ValueTypeMatrix,
+				Result: nativeHistogramMatrix{
+					promql.Series{
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{
+							Schema:        2,
+							ZeroThreshold: 0.001,
+							ZeroCount:     12,
+							Count:         10,
+							Sum:           20,
+							PositiveSpans: []histogram.Span{
+								{Offset: 3, Length: 2},
+								{Offset: 1, Length: 3},
+							},
+							NegativeSpans: []histogram.Span{
+								{Offset: 2, Length: 2},
+							},
+							PositiveBuckets: []float64{1, 2, 2, 1, 1},
+							NegativeBuckets: []float64{2, 1},
+						}, T: 1000}},
+						Metric: labels.FromStrings("__name__", "foo"),
+					},
+				},
+			},
+			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"foo"},"histograms":[[1,{"count":"10","sum":"20","schema":2,"zero_threshold":"0.001","zero_count":"12","negative_buckets":[[2,"2"],[3,"1"]],"buckets":[[3,"1"],[4,"2"],[6,"2"],[7,"1"],[8,"1"]]}]]}]}}`,
+		},
+		{
+			response: &QueryData{
+				ResultType: parser.ValueTypeVector,
+				Result: nativeHistogramVector{
+					promql.Sample{
+						Metric: labels.FromStrings("__name__", "nhcb"),
+						T:      1000,
+						H: &histogram.FloatHistogram{
+							Schema:          histogram.CustomBucketsSchema,
+							Count:           6,
+							Sum:             7,
+							CustomValues:    []float64{0.5, 1, 2, 5},
+							PositiveSpans:   []histogram.Span{{Offset: 1, Length: 3}},
+							PositiveBuckets: []float64{2, 3, 1},
+						},
+					},
+				},
+			},
+			expected: `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"nhcb"},"histogram":[1,{"count":"6","sum":"7","schema":-53,"boundaries":["0.5","1","2","5"],"buckets":[[1,"2"],[2,"3"],[3,"1"]]}]}]}}`,
+		},
+		{
 			response: promql.FPoint{F: 0, T: 0},
 			expected: `{"status":"success","data":[0,"0"]}`,
 		},

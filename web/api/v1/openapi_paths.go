@@ -33,6 +33,7 @@ func (*OpenAPIBuilder) queryPath() *v3.PathItem {
 		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to and is capped by the value of the -query.timeout flag.", false, durationSchema(), []example{{"duration", "1m30s"}, {"number", "90"}}),
 		queryParamWithExample("lookback_delta", "Override the lookback period for this query. Optional.", false, durationSchema(), []example{{"duration", "5m"}, {"number", "300"}}),
 		queryParamWithExample("stats", "When provided, include query statistics in the response. The special value 'all' enables more comprehensive statistics.", false, stringSchema(), []example{{"example", "all"}}),
+		queryParamWithExample("histogram_format", "Request an alternative JSON representation for native histograms in the response. The only supported value is 'native', which emits raw bucket indices instead of bucket boundaries. Optional.", false, stringSchema(), []example{{"example", "native"}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -62,6 +63,7 @@ func (*OpenAPIBuilder) queryRangePath() *v3.PathItem {
 		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to and is capped by the value of the -query.timeout flag.", false, durationSchema(), []example{{"duration", "1m30s"}, {"number", "90"}}),
 		queryParamWithExample("lookback_delta", "Override the lookback period for this query. Optional.", false, durationSchema(), []example{{"duration", "5m"}, {"number", "300"}}),
 		queryParamWithExample("stats", "When provided, include query statistics in the response. The special value 'all' enables more comprehensive statistics.", false, stringSchema(), []example{{"example", "all"}}),
+		queryParamWithExample("histogram_format", "Request an alternative JSON representation for native histograms in the response. The only supported value is 'native', which emits raw bucket indices instead of bucket boundaries. Optional.", false, stringSchema(), []example{{"example", "native"}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{

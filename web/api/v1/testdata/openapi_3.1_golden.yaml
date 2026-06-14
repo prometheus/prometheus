@@ -104,6 +104,16 @@ paths:
                   examples:
                     example:
                         value: all
+                - name: histogram_format
+                  in: query
+                  description: Request an alternative JSON representation for native histograms in the response. The only supported value is 'native', which emits raw bucket indices instead of bucket boundaries. Optional.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: native
             responses:
                 "200":
                     description: Query executed successfully.
@@ -337,6 +347,16 @@ paths:
                   examples:
                     example:
                         value: all
+                - name: histogram_format
+                  in: query
+                  description: Request an alternative JSON representation for native histograms in the response. The only supported value is 'native', which emits raw bucket indices instead of bucket boundaries. Optional.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: native
             responses:
                 "200":
                     description: Range query executed successfully.
@@ -3469,6 +3489,10 @@ components:
                     type: string
                     description: 'Form field: When provided, include query statistics in the response (the special value ''all'' enables more comprehensive statistics).'
                     example: all
+                histogram_format:
+                    type: string
+                    description: 'Form field: Alternative JSON representation for native histograms. Set to ''native'' to emit raw bucket indices instead of bucket boundaries (optional).'
+                    example: native
             required:
                 - query
             additionalProperties: false
@@ -3509,6 +3533,10 @@ components:
                     type: string
                     description: 'Form field: When provided, include query statistics in the response (the special value ''all'' enables more comprehensive statistics).'
                     example: all
+                histogram_format:
+                    type: string
+                    description: 'Form field: Alternative JSON representation for native histograms. Set to ''native'' to emit raw bucket indices instead of bucket boundaries (optional).'
+                    example: native
             required:
                 - query
                 - start
@@ -3883,12 +3911,35 @@ components:
                             oneOf:
                                 - type: number
                                 - type: string
-                    description: Histogram buckets as [boundary_rule, lower, upper, count].
+                    description: Histogram buckets. The default representation uses [boundary_rule, lower, upper, count] entries; when histogram_format=native was requested each entry is [index, count] for the positive buckets only.
+                schema:
+                    type: integer
+                    description: Bucket schema number. Only present when histogram_format=native was requested.
+                zero_threshold:
+                    type: string
+                    description: Zero-bucket threshold for exponential-schema histograms. Always present when histogram_format=native was requested for an exponential-schema histogram, because it is part of the schema definition.
+                zero_count:
+                    type: string
+                    description: Observation count in the zero bucket for exponential-schema histograms. Only present when histogram_format=native was requested and the zero-bucket count is non-zero.
+                negative_buckets:
+                    type: array
+                    items:
+                        type: array
+                        items:
+                            oneOf:
+                                - type: number
+                                - type: string
+                    description: Negative buckets for exponential-schema histograms as [index, count] pairs. Only present when histogram_format=native was requested.
+                boundaries:
+                    type: array
+                    items:
+                        type: string
+                    description: Bucket upper bounds for custom-bucket histograms (schema -53). Only present when histogram_format=native was requested.
             required:
                 - count
                 - sum
             additionalProperties: false
-            description: Native histogram value representation.
+            description: Native histogram value representation. The default response uses [boundary_rule, lower, upper, count] bucket entries. With histogram_format=native exponential histograms expose zero_threshold, optional zero_count, and optional negative_buckets/buckets ([index, count] pairs); custom-bucket histograms (schema -53) expose boundaries plus buckets.
         LabelsOutputBody:
             type: object
             properties:

@@ -416,6 +416,92 @@ func TestAPIWithNativeHistograms(t *testing.T) {
 			RequireJSONArray("$.data").
 			RequireLenAtLeast("$.data", 1)
 	})
+
+	t.Run("GET /api/v1/query with histogram_format=native returns raw buckets", func(t *testing.T) {
+		testhelpers.GET(t, api, "/api/v1/query",
+			"query", "test_histogram",
+			"histogram_format", "native").
+			RequireSuccess().
+			ValidateOpenAPI().
+			RequireEquals("$.data.resultType", "vector").
+			RequireLenAtLeast("$.data.result", 1).
+			RequireSome("$.data.result", func(item any) bool {
+				sample, ok := item.(map[string]any)
+				if !ok {
+					return false
+				}
+				h, ok := sample["histogram"].([]any)
+				if !ok || len(h) != 2 {
+					return false
+				}
+				obj, ok := h[1].(map[string]any)
+				if !ok {
+					return false
+				}
+				return hasNativeHistogramShape(obj)
+			})
+	})
+
+	t.Run("GET /api/v1/query_range with histogram_format=native returns raw buckets", func(t *testing.T) {
+		// Use end=now+60 so the fixture's millisecond-precision timestamps
+		// (just after the integer-second boundary) reliably land before the
+		// last evaluation timestamp.
+		now := time.Now().Unix()
+		testhelpers.GET(t, api, "/api/v1/query_range",
+			"query", "test_histogram",
+			"start", strconv.FormatInt(now-60, 10),
+			"end", strconv.FormatInt(now+60, 10),
+			"step", "60",
+			"histogram_format", "native").
+			RequireSuccess().
+			ValidateOpenAPI().
+			RequireEquals("$.data.resultType", "matrix").
+			RequireSome("$.data.result", func(item any) bool {
+				series, ok := item.(map[string]any)
+				if !ok {
+					return false
+				}
+				hs, ok := series["histograms"].([]any)
+				if !ok || len(hs) == 0 {
+					return false
+				}
+				pair, ok := hs[0].([]any)
+				if !ok || len(pair) != 2 {
+					return false
+				}
+				obj, ok := pair[1].(map[string]any)
+				if !ok {
+					return false
+				}
+				return hasNativeHistogramShape(obj)
+			})
+	})
+}
+
+// hasNativeHistogramShape asserts that the given histogram object follows
+// the schema-aware native format for an exponential-schema histogram: it
+// must carry schema, zero_threshold, and at least one of the [index, count]
+// bucket arrays expected for the fixture data (negative_buckets, buckets).
+func hasNativeHistogramShape(obj map[string]any) bool {
+	if _, ok := obj["schema"]; !ok {
+		return false
+	}
+	if _, ok := obj["zero_threshold"]; !ok {
+		return false
+	}
+	if buckets, ok := obj["buckets"].([]any); ok && len(buckets) > 0 {
+		first, ok := buckets[0].([]any)
+		if !ok || len(first) != 2 {
+			return false
+		}
+	}
+	if neg, ok := obj["negative_buckets"].([]any); ok && len(neg) > 0 {
+		first, ok := neg[0].([]any)
+		if !ok || len(first) != 2 {
+			return false
+		}
+	}
+	return true
 }
 
 // TestAPIWithStats tests the API with the stats query parameter.
