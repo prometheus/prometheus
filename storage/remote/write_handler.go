@@ -52,6 +52,8 @@ type writeHandler struct {
 
 const maxAheadTime = 10 * time.Minute
 
+var errLabelsNotSorted = errors.New("labels are not sorted")
+
 // NewWriteHandler creates a http.Handler that accepts remote write requests with
 // the given message in acceptedMsgs and writes them to the provided appendable.
 //
@@ -112,6 +114,9 @@ func (h *writeHandler) Store(r *http.Request, msgType remoteapi.WriteMessageType
 		}
 		if err = h.write(r.Context(), &req); err != nil {
 			switch {
+			case errors.Is(err, errLabelsNotSorted):
+				wr.SetStatusCode(http.StatusBadRequest)
+				return wr, err
 			case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrOutOfBounds), errors.Is(err, storage.ErrDuplicateSampleForTimestamp), errors.Is(err, storage.ErrTooOldSample):
 				// Indicated an out-of-order sample is a bad request to prevent retries.
 				wr.SetStatusCode(http.StatusBadRequest)
@@ -169,6 +174,12 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 
 	b := labels.NewScratchBuilder(0)
 	for _, ts := range req.Timeseries {
+		if !labelProtosNamesSorted(ts.Labels) {
+			h.logger.Warn("Invalid labels for series.", "labels", ts.Labels, "err", errLabelsNotSorted)
+			h.samplesWithInvalidLabelsTotal.Inc()
+			return fmt.Errorf("%w for series %v", errLabelsNotSorted, ts.Labels)
+		}
+
 		ls := ts.ToLabels(&b, nil)
 
 		// TODO(bwplotka): Even as per 1.0 spec, this should be a 400 error, while other samples are
@@ -312,6 +323,12 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		b = labels.NewScratchBuilder(0)
 	)
 	for _, ts := range req.Timeseries {
+		if !labelRefsNamesSorted(ts.LabelsRefs, req.Symbols) {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("labels for series %v are not sorted", ts.LabelsRefs))
+			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			continue
+		}
+
 		ls, err := ts.ToLabels(&b, req.Symbols)
 		if err != nil {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing labels for series %v: %w", ts.LabelsRefs, err))
@@ -476,6 +493,34 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 	}
 	// TODO(bwplotka): Better concat formatting? Perhaps add size limit?
 	return samplesWithoutMetadata, http.StatusBadRequest, errors.Join(badRequestErrs...)
+}
+
+func labelProtosNamesSorted(labelPairs []prompb.Label) bool {
+	for i := 1; i < len(labelPairs); i++ {
+		if labelPairs[i-1].Name > labelPairs[i].Name {
+			return false
+		}
+	}
+	return true
+}
+
+func labelRefsNamesSorted(labelRefs []uint32, symbols []string) bool {
+	if len(labelRefs)%2 != 0 {
+		return true
+	}
+	var previousName string
+	for i := 0; i < len(labelRefs); i += 2 {
+		nameRef, valueRef := labelRefs[i], labelRefs[i+1]
+		if uint64(nameRef) >= uint64(len(symbols)) || uint64(valueRef) >= uint64(len(symbols)) {
+			return true
+		}
+		name := symbols[nameRef]
+		if i > 0 && previousName > name {
+			return false
+		}
+		previousName = name
+	}
+	return true
 }
 
 // handleHistogramZeroSample appends ST as a zero-value sample with st value as the sample timestamp.
