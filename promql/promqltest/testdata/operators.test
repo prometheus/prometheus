@@ -1017,3 +1017,19 @@ eval range from 0 to 20m step 10m -metric_a or -metric_b
     {} -1  -4
 
 clear
+
+# Regression test for non-deterministic error message ordering of the two
+# duplicate series reported by many-to-many binary operations. The two
+# Metric.String() values inside `[...]` must be sorted, otherwise different
+# evaluations of the same query can yield error strings differing only in
+# the order of the two series (because the underlying iteration uses a
+# Go map).
+load 5m
+  dup_metric{label="alpha"} 1
+  dup_metric{label="beta"}  2
+  scalar_metric{} 3
+
+eval instant at 0m scalar_metric > on() dup_metric
+  expect fail msg: found duplicate series for the match group {} on the right hand-side of the operation: [{__name__="dup_metric", label="alpha"}, {__name__="dup_metric", label="beta"}];many-to-many matching not allowed: matching labels must be unique on one side
+
+clear
