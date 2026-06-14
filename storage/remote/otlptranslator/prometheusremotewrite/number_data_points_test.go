@@ -34,6 +34,7 @@ import (
 )
 
 func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
+	t.Parallel()
 	scopeAttrs := pcommon.NewMap()
 	scopeAttrs.FromRaw(map[string]any{
 		"attr1": "value1",
@@ -141,6 +142,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 }
 
 func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
+	t.Parallel()
 	scopeAttrs := pcommon.NewMap()
 	scopeAttrs.FromRaw(map[string]any{
 		"attr1": "value1",

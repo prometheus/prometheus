@@ -38,6 +38,7 @@ import (
 )
 
 func TestFromMetrics(t *testing.T) {
+	t.Parallel()
 	t.Run("Successful", func(t *testing.T) {
 		for _, tc := range []struct {
 			name        string
@@ -711,6 +712,7 @@ func TestFromMetrics(t *testing.T) {
 }
 
 func TestTemporality(t *testing.T) {
+	t.Parallel()
 	ts := time.Unix(100, 0)
 
 	tests := []struct {
@@ -1149,6 +1151,7 @@ func createOtelEmptyType(name string) pmetric.Metric {
 }
 
 func TestTranslatorMetricFromOtelMetric(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		inputMetric    pmetric.Metric

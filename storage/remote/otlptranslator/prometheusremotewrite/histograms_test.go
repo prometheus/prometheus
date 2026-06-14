@@ -42,6 +42,7 @@ type expectedBucketLayout struct {
 }
 
 func TestConvertBucketsLayout(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		buckets    func() pmetric.ExponentialHistogramDataPointBuckets
@@ -420,6 +421,7 @@ func BenchmarkConvertBucketLayout(b *testing.B) {
 }
 
 func TestExponentialToNativeHistogram(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name            string
 		exponentialHist func() pmetric.ExponentialHistogramDataPoint
@@ -619,6 +621,7 @@ func validateNativeHistogramCount(t *testing.T, h *histogram.Histogram) {
 }
 
 func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
+	t.Parallel()
 	scopeAttrs := pcommon.NewMap()
 	scopeAttrs.FromRaw(map[string]any{
 		"attr1": "value1",
@@ -892,6 +895,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 }
 
 func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		buckets    []uint64
@@ -1026,6 +1030,7 @@ func BenchmarkConvertHistogramBucketsToNHCBLayout(b *testing.B) {
 }
 
 func TestHistogramToCustomBucketsHistogram(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		hist           func() pmetric.HistogramDataPoint
@@ -1097,6 +1102,7 @@ func TestHistogramToCustomBucketsHistogram(t *testing.T) {
 }
 
 func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
+	t.Parallel()
 	scopeAttrs := pcommon.NewMap()
 	scopeAttrs.FromRaw(map[string]any{
 		"attr1": "value1",

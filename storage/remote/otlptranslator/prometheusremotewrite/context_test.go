@@ -20,6 +20,7 @@ import (
 )
 
 func TestEveryNTimes(t *testing.T) {
+	t.Parallel()
 	const n = 128
 	ctx, cancel := context.WithCancel(context.Background())
 	e := &everyNTimes{

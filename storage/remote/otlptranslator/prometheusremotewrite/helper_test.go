@@ -42,6 +42,7 @@ import (
 type sample = teststorage.Sample
 
 func TestPrometheusConverter_createAttributes(t *testing.T) {
+	t.Parallel()
 	resourceAttrs := map[string]string{
 		"service.name":        "service name",
 		"service.instance.id": "service ID",
@@ -544,6 +545,7 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 }
 
 func Test_convertTimeStamp(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		arg  pcommon.Timestamp
@@ -562,6 +564,7 @@ func Test_convertTimeStamp(t *testing.T) {
 }
 
 func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
+	t.Parallel()
 	scopeAttrs := pcommon.NewMap()
 	scopeAttrs.FromRaw(map[string]any{
 		"attr1": "value1",
@@ -790,6 +793,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 }
 
 func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
+	t.Parallel()
 	scopeAttrs := pcommon.NewMap()
 	scopeAttrs.FromRaw(map[string]any{
 		"attr1": "value1",
@@ -960,6 +964,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 // exemplars from a previous data point don't leak into _sum/_count of the
 // next data point. Regression test for stale exemplar leak.
 func TestAddHistogramDataPoints_ExemplarLeakAcrossDataPoints(t *testing.T) {
+	t.Parallel()
 	ts := pcommon.Timestamp(time.Now().UnixNano())
 	exTs := pcommon.Timestamp(time.Now().Add(time.Second).UnixNano())
 
@@ -1072,6 +1077,7 @@ func TestAddHistogramDataPoints_ExemplarLeakAcrossDataPoints(t *testing.T) {
 }
 
 func TestGetPromExemplars(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
 
@@ -1107,6 +1113,7 @@ func TestGetPromExemplars(t *testing.T) {
 }
 
 func TestAddTypeAndUnitLabels(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name           string
 		inputLabels    []prompb.Label
