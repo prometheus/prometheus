@@ -88,7 +88,7 @@ type Config struct {
 	// with the configured separator in order.
 	SourceLabels model.LabelNames `yaml:"source_labels,flow,omitempty" json:"source_labels,omitempty"`
 	// Separator is the string between concatenated values from the source labels.
-	Separator string `yaml:"separator,omitempty" json:"separator,omitempty"`
+	Separator string `yaml:"separator" json:"separator"`
 	// Regex against which the concatenation is matched.
 	Regex Regexp `yaml:"regex,omitempty" json:"regex,omitempty"`
 	// Modulus to take of the hash of concatenated values from the source labels.
@@ -97,7 +97,7 @@ type Config struct {
 	// Regexp interpolation is allowed for the replace action.
 	TargetLabel string `yaml:"target_label,omitempty" json:"target_label,omitempty"`
 	// Replacement is the regex replacement pattern to be used.
-	Replacement string `yaml:"replacement,omitempty" json:"replacement,omitempty"`
+	Replacement string `yaml:"replacement" json:"replacement"`
 	// Action is the action to be performed for the relabeling.
 	Action Action `yaml:"action,omitempty" json:"action,omitempty"`
 	// NameValidationScheme to use when validating labels.

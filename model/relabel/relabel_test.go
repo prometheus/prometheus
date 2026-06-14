@@ -1109,6 +1109,19 @@ replacement: $1
 action: replace
 `,
 		},
+		{
+			// https://github.com/prometheus/prometheus/issues/18652:
+			// explicit empty separator/replacement must survive a YAML round-trip
+			// because they are distinct from the defaults (";" and "$1").
+			name: "Explicit empty separator and replacement",
+			inputYaml: `source_labels: [namespace, k8s_app]
+separator: ""
+regex: kube-systemcilium
+target_label: target_cluster
+replacement: ""
+action: replace
+`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1144,15 +1157,15 @@ func TestRegexp_JSONUnmarshalThenMarshal(t *testing.T) {
 	}{
 		{
 			name:  "Empty regex",
-			input: `{"regex":""}`,
+			input: `{"separator":"","regex":"","replacement":""}`,
 		},
 		{
 			name:  "string literal",
-			input: `{"regex":"foo"}`,
+			input: `{"separator":"","regex":"foo","replacement":""}`,
 		},
 		{
 			name:  "regex",
-			input: `{"regex":".*foo.*"}`,
+			input: `{"separator":"","regex":".*foo.*","replacement":""}`,
 		},
 	}
 	for _, test := range tests {
