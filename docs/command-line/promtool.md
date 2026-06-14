@@ -197,6 +197,8 @@ examples:
 
 $ cat metrics.prom | promtool check metrics
 
+$ cat metrics.om | promtool check metrics `--format`=openmetrics
+
 $ curl -s http://localhost:9090/metrics | promtool check metrics `--extended`
 
 $ curl -s http://localhost:9100/metrics | promtool check metrics `--extended` `--lint`=none
@@ -208,6 +210,7 @@ $ curl -s http://localhost:9100/metrics | promtool check metrics `--extended` `-
 | Flag | Description | Default |
 | --- | --- | --- |
 | <code class="text-nowrap">--extended</code> | Print extended information related to the cardinality of the metrics. |  |
+| <code class="text-nowrap">--format</code> | Metrics format to expect in standard input. | `prometheus` |
 | <code class="text-nowrap">--lint</code> | Linting checks to apply for metrics. Available options are: all, none. Use --lint=none to disable metrics linting. | `all` |
 
 

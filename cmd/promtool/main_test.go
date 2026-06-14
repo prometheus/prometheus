@@ -32,6 +32,7 @@ import (
 	"testing"
 	"time"
 
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -423,7 +424,10 @@ func TestCheckMetricsExtended(t *testing.T) {
 	require.NoError(t, err)
 	defer f.Close()
 
-	stats, total, err := checkMetricsExtended(f)
+	metricFamilies, err := parseMetricFamilies(f, metricsFormatPrometheus)
+	require.NoError(t, err)
+
+	stats, total, err := checkMetricsExtended(metricFamilies)
 	require.NoError(t, err)
 	require.Equal(t, 27, total)
 	require.Equal(t, []metricStat{
@@ -450,6 +454,138 @@ func TestCheckMetricsExtended(t *testing.T) {
 	}, stats)
 }
 
+func TestParseMetricFamiliesOpenMetrics(t *testing.T) {
+	t.Parallel()
+
+	const input = `# HELP requests Number of requests.
+# TYPE requests counter
+requests_total{code="200"} 2 123456
+requests_created{code="200"} 100.123
+# TYPE latency_seconds histogram
+latency_seconds_bucket{le="0.5"} 1
+latency_seconds_bucket{le="+Inf"} 2
+latency_seconds_sum 0.75
+latency_seconds_count 2
+# EOF
+`
+
+	metricFamilies, err := parseMetricFamilies(strings.NewReader(input), metricsFormatOpenMetrics)
+	require.NoError(t, err)
+	require.Len(t, metricFamilies, 2)
+
+	require.Equal(t, "latency_seconds", metricFamilies[0].GetName())
+	require.Equal(t, dto.MetricType_HISTOGRAM, metricFamilies[0].GetType())
+	require.Len(t, metricFamilies[0].Metric, 1)
+	require.Len(t, metricFamilies[0].Metric[0].GetHistogram().GetBucket(), 2)
+
+	require.Equal(t, "requests", metricFamilies[1].GetName())
+	require.Equal(t, dto.MetricType_COUNTER, metricFamilies[1].GetType())
+	require.Len(t, metricFamilies[1].Metric, 1)
+	require.EqualValues(t, 123456, metricFamilies[1].Metric[0].GetTimestampMs())
+	require.NotNil(t, metricFamilies[1].Metric[0].GetCounter().GetCreatedTimestamp())
+	require.EqualValues(t, 100123, metricFamilies[1].Metric[0].GetCounter().GetCreatedTimestamp().AsTime().UnixMilli())
+}
+
+func TestCheckMetricsExtendedOpenMetrics(t *testing.T) {
+	t.Parallel()
+
+	const input = `# HELP requests Number of requests.
+# TYPE requests counter
+requests_total{code="200"} 2
+# TYPE latency_seconds histogram
+latency_seconds_bucket{le="0.5"} 1
+latency_seconds_bucket{le="+Inf"} 2
+latency_seconds_sum 0.75
+latency_seconds_count 2
+# EOF
+`
+
+	metricFamilies, err := parseMetricFamilies(strings.NewReader(input), metricsFormatOpenMetrics)
+	require.NoError(t, err)
+
+	stats, total, err := checkMetricsExtended(metricFamilies)
+	require.NoError(t, err)
+	require.Equal(t, 5, total)
+	require.Equal(t, []metricStat{
+		{
+			name:        "latency_seconds",
+			cardinality: 4,
+			percentage:  float64(4) / float64(5),
+		},
+		{
+			name:        "requests",
+			cardinality: 1,
+			percentage:  float64(1) / float64(5),
+		},
+	}, stats)
+}
+
+func TestParseMetricFamiliesOpenMetricsInfoFamilyUsesBaseName(t *testing.T) {
+	t.Parallel()
+
+	const input = `# TYPE target info
+# HELP target Target metadata.
+target_info{service_name="service"} 1
+# EOF
+`
+
+	metricFamilies, err := parseMetricFamilies(strings.NewReader(input), metricsFormatOpenMetrics)
+	require.NoError(t, err)
+	require.Len(t, metricFamilies, 1)
+	require.Equal(t, "target", metricFamilies[0].GetName())
+	require.Equal(t, "Target metadata.", metricFamilies[0].GetHelp())
+	require.Equal(t, dto.MetricType_UNTYPED, metricFamilies[0].GetType())
+	require.Len(t, metricFamilies[0].Metric, 1)
+	require.Len(t, metricFamilies[0].Metric[0].GetLabel(), 1)
+	require.Equal(t, "service_name", metricFamilies[0].Metric[0].GetLabel()[0].GetName())
+}
+
+func TestCheckMetricsOpenMetricsNoFalsePositives(t *testing.T) {
+	const input = `# TYPE target info
+# HELP target Target metadata.
+target_info{service_name="service"} 1
+# HELP requests Number of requests.
+# TYPE requests counter
+requests_total 2
+# EOF
+`
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	_, err = w.WriteString(input)
+	require.NoError(t, err)
+	w.Close()
+
+	oldStdin := os.Stdin
+	os.Stdin = r
+	defer func() { os.Stdin = oldStdin }()
+
+	oldStdout := os.Stdout
+	oldStderr := os.Stderr
+	rOut, wOut, err := os.Pipe()
+	require.NoError(t, err)
+	rErr, wErr, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stdout = wOut
+	os.Stderr = wErr
+
+	code := CheckMetrics(metricsFormatOpenMetrics, false, lintOptionAll)
+
+	wOut.Close()
+	wErr.Close()
+	os.Stdout = oldStdout
+	os.Stderr = oldStderr
+
+	var outBuf, errBuf bytes.Buffer
+	_, _ = io.Copy(&outBuf, rOut)
+	_, _ = io.Copy(&errBuf, rErr)
+
+	require.Equal(t, successExitCode, code)
+	require.Empty(t, outBuf.String())
+	require.NotContains(t, errBuf.String(), `counter metrics should have "_total" suffix`)
+	require.NotContains(t, errBuf.String(), "no help text")
+}
+
 func TestCheckMetricsLintOptions(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Skipping on windows")
@@ -461,8 +597,17 @@ func TestCheckMetricsLintOptions(t *testing.T) {
 testMetric_CamelCase{label="value1"} 1
 `
 
+	const testOpenMetrics = `
+# HELP testMetric_CamelCase A test metric with camelCase
+# TYPE testMetric_CamelCase gauge
+testMetric_CamelCase{label="value1"} 1
+# EOF
+`
+
 	tests := []struct {
 		name        string
+		format      string
+		input       string
 		lint        string
 		extended    bool
 		wantErrCode int
@@ -471,6 +616,8 @@ testMetric_CamelCase{label="value1"} 1
 	}{
 		{
 			name:        "default_all_with_extended",
+			format:      metricsFormatPrometheus,
+			input:       testMetrics,
 			lint:        lintOptionAll,
 			extended:    true,
 			wantErrCode: lintErrExitCode,
@@ -479,6 +626,8 @@ testMetric_CamelCase{label="value1"} 1
 		},
 		{
 			name:        "lint_none_with_extended",
+			format:      metricsFormatPrometheus,
+			input:       testMetrics,
 			lint:        lintOptionNone,
 			extended:    true,
 			wantErrCode: successExitCode,
@@ -487,11 +636,23 @@ testMetric_CamelCase{label="value1"} 1
 		},
 		{
 			name:        "both_disabled_fails",
+			format:      metricsFormatPrometheus,
+			input:       testMetrics,
 			lint:        lintOptionNone,
 			extended:    false,
 			wantErrCode: failureExitCode,
 			wantLint:    false,
 			wantCard:    false,
+		},
+		{
+			name:        "openmetrics_with_extended",
+			format:      metricsFormatOpenMetrics,
+			input:       testOpenMetrics,
+			lint:        lintOptionAll,
+			extended:    true,
+			wantErrCode: lintErrExitCode,
+			wantLint:    true,
+			wantCard:    true,
 		},
 	}
 
@@ -499,7 +660,7 @@ testMetric_CamelCase{label="value1"} 1
 		t.Run(tt.name, func(t *testing.T) {
 			r, w, err := os.Pipe()
 			require.NoError(t, err)
-			_, err = w.WriteString(testMetrics)
+			_, err = w.WriteString(tt.input)
 			require.NoError(t, err)
 			w.Close()
 
@@ -516,7 +677,7 @@ testMetric_CamelCase{label="value1"} 1
 			os.Stdout = wOut
 			os.Stderr = wErr
 
-			code := CheckMetrics(tt.extended, tt.lint)
+			code := CheckMetrics(tt.format, tt.extended, tt.lint)
 
 			wOut.Close()
 			wErr.Close()
@@ -541,6 +702,33 @@ testMetric_CamelCase{label="value1"} 1
 			}
 		})
 	}
+}
+
+func TestCheckMetricsOpenMetricsFlag(t *testing.T) {
+	t.Parallel()
+
+	const testOpenMetrics = `
+# HELP testMetric_CamelCase A test metric with camelCase
+# TYPE testMetric_CamelCase gauge
+testMetric_CamelCase{label="value1"} 1
+# EOF
+`
+
+	cmd := exec.Command(promtoolPath, "-test.main", "check", "metrics", "--format=openmetrics", "--extended")
+	cmd.Stdin = strings.NewReader(testOpenMetrics)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	require.Error(t, err)
+
+	var exitError *exec.ExitError
+	require.ErrorAs(t, err, &exitError)
+	require.Equal(t, lintErrExitCode, exitError.ExitCode())
+	require.Contains(t, stdout.String(), "Cardinality")
+	require.Contains(t, stderr.String(), "testMetric_CamelCase")
 }
 
 func TestExitCodes(t *testing.T) {
