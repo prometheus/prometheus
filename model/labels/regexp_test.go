@@ -387,10 +387,10 @@ func TestNewFastRegexMatcher(t *testing.T) {
 		{"^foo$", &equalStringMatcher{s: "foo", caseSensitive: true}},
 		{"^(?i:foo)$", &equalStringMatcher{s: "FOO", caseSensitive: false}},
 		{"^((?i:foo)|(bar))$", orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO", caseSensitive: false}, &equalStringMatcher{s: "bar", caseSensitive: true}})},
-		{`(?i:((foo|bar)))`, orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO", caseSensitive: false}, &equalStringMatcher{s: "BAR", caseSensitive: false}})},
-		{`(?i:((foo1|foo2|bar)))`, orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO1", caseSensitive: false}, &equalStringMatcher{s: "FOO2", caseSensitive: false}}), &equalStringMatcher{s: "BAR", caseSensitive: false}})},
+		{`(?i:((foo|bar)))`, &equalMultiStringSliceMatcher{values: []string{"FOO", "BAR"}, lengthsMask: 0b1000, caseSensitive: false}},
+		{`(?i:((foo1|foo2|bar)))`, &equalMultiStringSliceMatcher{values: []string{"FOO1", "FOO2", "BAR"}, lengthsMask: 0b11000, caseSensitive: false}},
 		{"^((?i:foo|oo)|(bar))$", orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO", caseSensitive: false}, &equalStringMatcher{s: "OO", caseSensitive: false}, &equalStringMatcher{s: "bar", caseSensitive: true}})},
-		{"(?i:(foo1|foo2|bar))", orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO1", caseSensitive: false}, &equalStringMatcher{s: "FOO2", caseSensitive: false}}), &equalStringMatcher{s: "BAR", caseSensitive: false}})},
+		{"(?i:(foo1|foo2|bar))", &equalMultiStringSliceMatcher{values: []string{"FOO1", "FOO2", "BAR"}, lengthsMask: 0b11000, caseSensitive: false}},
 		{".*foo.*", trueMatcher{}},     // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
 		{"(.*)foo.*", trueMatcher{}},   // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
 		{"(.*)foo(.*)", trueMatcher{}}, // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
@@ -414,7 +414,7 @@ func TestNewFastRegexMatcher(t *testing.T) {
 		{"^(.*)((?i)foo|foobar)(.*)$", nil},
 		{"(api|rpc)_(v1|prom)_((?i)push|query)", nil},
 		{"[a-z][a-z]", nil},
-		{"[1^3]", nil},
+		{"[1^3]", &equalMultiStringSliceMatcher{values: []string{"1", "3", "^"}, lengthsMask: 0b10, caseSensitive: true}},
 		{".*foo.*bar.*", trueMatcher{}}, // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
 		{`\d*`, nil},
 		{".", nil},
