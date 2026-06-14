@@ -1256,8 +1256,6 @@ func (s lockStaticConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) {
 type lockStaticDiscoverer lockStaticConfig
 
 func (s lockStaticDiscoverer) Run(ctx context.Context, up chan<- []*targetgroup.Group) {
-	// TODO: existing implementation closes up chan, but documentation explicitly forbids it...?
-	defer close(up)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	select {
