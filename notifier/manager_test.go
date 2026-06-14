@@ -121,6 +121,7 @@ func newTestAlertmanagerSet(
 }
 
 func TestHandlerSendAll(t *testing.T) {
+	t.Parallel()
 	var (
 		errc                      = make(chan error, 1)
 		expected                  = make([]*Alert, 0)
@@ -236,6 +237,7 @@ func TestHandlerSendAll(t *testing.T) {
 }
 
 func TestHandlerSendAllRemapPerAm(t *testing.T) {
+	t.Parallel()
 	var (
 		errc      = make(chan error, 1)
 		expected1 = make([]*Alert, 0)
@@ -365,6 +367,7 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 }
 
 func TestExternalLabels(t *testing.T) {
+	t.Parallel()
 	reg := prometheus.NewRegistry()
 	h := NewManager(&Options{
 		QueueCapacity:  3 * DefaultMaxBatchSize,
@@ -408,6 +411,7 @@ func TestExternalLabels(t *testing.T) {
 }
 
 func TestHandlerRelabel(t *testing.T) {
+	t.Parallel()
 	reg := prometheus.NewRegistry()
 	h := NewManager(&Options{
 		QueueCapacity: 3 * DefaultMaxBatchSize,
@@ -454,6 +458,7 @@ func TestHandlerRelabel(t *testing.T) {
 }
 
 func TestHandlerQueuing(t *testing.T) {
+	t.Parallel()
 	var (
 		expectedc = make(chan []*Alert)
 		called    = make(chan struct{})
@@ -584,6 +589,7 @@ func (a alertmanagerMock) url() *url.URL {
 }
 
 func TestReload(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		in  *targetgroup.Group
 		out string
@@ -631,6 +637,7 @@ alerting:
 }
 
 func TestDroppedAlertmanagers(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		in  *targetgroup.Group
 		out string
@@ -701,6 +708,7 @@ func makeInputTargetGroup() *targetgroup.Group {
 // queued alerts. This test reproduces the issue described in https://github.com/prometheus/prometheus/issues/13676.
 // and https://github.com/prometheus/prometheus/issues/8768.
 func TestHangingNotifier(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		const (
 			batches     = 100
@@ -836,6 +844,7 @@ func TestHangingNotifier(t *testing.T) {
 }
 
 func TestStop_DrainingDisabled(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		const alertmanagerURL = "http://alertmanager:9093/api/v2/alerts"
 
@@ -907,6 +916,7 @@ func TestStop_DrainingDisabled(t *testing.T) {
 }
 
 func TestStop_DrainingEnabled(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		const alertmanagerURL = "http://alertmanager:9093/api/v2/alerts"
 
@@ -1024,6 +1034,7 @@ func TestQueuesDrainingOnApplyConfig(t *testing.T) {
 }
 
 func TestApplyConfig(t *testing.T) {
+	t.Parallel()
 	targetURL := "alertmanager:9093"
 	targetGroup := &targetgroup.Group{
 		Targets: []model.LabelSet{
@@ -1131,6 +1142,7 @@ alerting:
 // alertmanagerSet doesn't affect others.
 // See https://github.com/prometheus/prometheus/pull/17063.
 func TestAlerstRelabelingIsIsolated(t *testing.T) {
+	t.Parallel()
 	var (
 		errc      = make(chan error, 1)
 		expected1 = make([]*Alert, 0)
@@ -1212,6 +1224,7 @@ func TestAlerstRelabelingIsIsolated(t *testing.T) {
 // The alertmanager_config.timeout is set to infinite (1 year).
 // We check that the notifier does not hang and throughput is not affected.
 func TestNotifierQueueIndependentOfFailedAlertmanager(t *testing.T) {
+	t.Parallel()
 	stopBlackHole := make(chan struct{})
 	blackHoleAM := newBlackHoleAlertmanager(stopBlackHole)
 	defer func() {
@@ -1293,6 +1306,7 @@ func TestNotifierQueueIndependentOfFailedAlertmanager(t *testing.T) {
 //
 // This test verifies that when config keys change, sendLoops are correctly preserved.
 func TestApplyConfigSendLoopsNotStoppedOnKeyChange(t *testing.T) {
+	t.Parallel()
 	alertReceived := make(chan struct{}, 10)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1424,6 +1438,7 @@ alerting:
 //  5. When config-1's alertmanager is removed via sync(), it cleans up the shared
 //     sendLoops, breaking config-0's ability to send alerts
 func TestApplyConfigDuplicateHashSharesSendLoops(t *testing.T) {
+	t.Parallel()
 	n := NewManager(&Options{QueueCapacity: 10}, model.UTF8Validation, nil)
 	cfg := &config.Config{}
 
@@ -1497,6 +1512,7 @@ alerting:
 //  4. Cleanup only checks if key exists in amSets - it does, so no cleanup
 //  5. Old sendLoops goroutines continue running and are never stopped
 func TestApplyConfigHashChangeLeaksSendLoops(t *testing.T) {
+	t.Parallel()
 	n := NewManager(&Options{QueueCapacity: 10}, model.UTF8Validation, nil)
 	cfg := &config.Config{}
 

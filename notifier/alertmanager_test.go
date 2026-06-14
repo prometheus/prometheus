@@ -26,6 +26,7 @@ import (
 )
 
 func TestPostPath(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in, out string
 	}{
@@ -56,6 +57,7 @@ func TestPostPath(t *testing.T) {
 }
 
 func TestLabelSetNotReused(t *testing.T) {
+	t.Parallel()
 	tg := makeInputTargetGroup()
 	_, _, err := AlertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
 
@@ -71,6 +73,7 @@ func TestLabelSetNotReused(t *testing.T) {
 // - Does NOT stop sendloops that are still in use.
 // - Does NOT stop sendloops that were just created.
 func TestAlertmanagerSetSync(t *testing.T) {
+	t.Parallel()
 	reg := prometheus.NewRegistry()
 	alertmanagersDiscoveredFunc := func() float64 { return 0 }
 	metrics := newAlertMetrics(reg, alertmanagersDiscoveredFunc)
