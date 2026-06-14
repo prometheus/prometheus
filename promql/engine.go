@@ -1458,6 +1458,9 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 			}
 		} else { // "without"
 			names = append([]string{labels.MetricName}, names...)
+			if ev.enableTypeAndUnitLabels {
+				names = append(names, model.MetricTypeLabel, model.MetricUnitLabel)
+			}
 			slices.Sort(names)
 			sigf = func(lset labels.Labels) string {
 				return string(lset.BytesWithoutLabels(buf, names...))

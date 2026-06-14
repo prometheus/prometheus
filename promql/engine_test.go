@@ -3563,6 +3563,36 @@ histogram {{sum:4 count:4 buckets:[2 2]}} {{sum:6 count:6 buckets:[3 3]}} {{sum:
 	})
 }
 
+func TestTypeAndUnitLabelsBinaryVectorMatching(t *testing.T) {
+	input := `
+load 1m
+	metric_a{job="api-server", __type__="counter", __unit__="request"} 10
+	metric_b{job="api-server", __type__="counter", __unit__="request"} 4
+
+eval instant at 1m (metric_a - metric_b) / metric_a
+	{job="api-server"} 0.6
+`
+
+	for _, delayedNameRemoval := range []bool{false, true} {
+		t.Run(fmt.Sprintf("delayed_name_removal=%t", delayedNameRemoval), func(t *testing.T) {
+			engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+				Logger:                   nil,
+				Reg:                      nil,
+				MaxSamples:               promqltest.DefaultMaxSamplesPerQuery,
+				Timeout:                  100 * time.Second,
+				NoStepSubqueryIntervalFn: func(int64) int64 { return int64((1 * time.Minute / time.Millisecond / time.Nanosecond)) },
+				EnableAtModifier:         true,
+				EnableNegativeOffset:     true,
+				EnableDelayedNameRemoval: delayedNameRemoval,
+				EnableTypeAndUnitLabels:  true,
+				Parser:                   parser.NewParser(promqltest.TestParserOpts),
+			})
+
+			promqltest.RunTest(t, input, engine)
+		})
+	}
+}
+
 func TestRateAnnotations(t *testing.T) {
 	testCases := map[string]struct {
 		data                       string
