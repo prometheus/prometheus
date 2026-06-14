@@ -47,6 +47,7 @@ type EndpointSlice struct {
 	withNamespaceMetadata  bool
 	replicaSetInf          cache.SharedInformer
 	withDeploymentMetadata bool
+	withDaemonSetMetadata  bool
 	jobInf                 cache.SharedInformer
 	withJobMetadata        bool
 	withCronJobMetadata    bool
@@ -59,7 +60,7 @@ type EndpointSlice struct {
 }
 
 // NewEndpointSlice returns a new endpointslice discovery.
-func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node, namespace, rs, job cache.SharedInformer, withDeploymentMetadata, withJobMetadata, withCronJobMetadata bool, eventCount *prometheus.CounterVec) *EndpointSlice {
+func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node, namespace, rs, job cache.SharedInformer, withDeploymentMetadata, withDaemonSetMetadata, withJobMetadata, withCronJobMetadata bool, eventCount *prometheus.CounterVec) *EndpointSlice {
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
@@ -86,6 +87,7 @@ func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, n
 		withNamespaceMetadata:  namespace != nil,
 		replicaSetInf:          rs,
 		withDeploymentMetadata: withDeploymentMetadata,
+		withDaemonSetMetadata:  withDaemonSetMetadata,
 		jobInf:                 job,
 		withJobMetadata:        withJobMetadata,
 		withCronJobMetadata:    withCronJobMetadata,
@@ -416,7 +418,7 @@ func (e *EndpointSlice) buildEndpointSlice(eps v1.EndpointSlice) *targetgroup.Gr
 		}
 
 		// Attach standard pod labels.
-		target = target.Merge(podLabels(pod, e.replicaSetInf, e.jobInf, e.withDeploymentMetadata, e.withJobMetadata, e.withCronJobMetadata))
+		target = target.Merge(podLabels(pod, e.replicaSetInf, e.jobInf, e.withDeploymentMetadata, e.withDaemonSetMetadata, e.withJobMetadata, e.withCronJobMetadata))
 
 		// Attach potential container port labels matching the endpoint port.
 		containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
@@ -494,7 +496,7 @@ func (e *EndpointSlice) buildEndpointSlice(eps v1.EndpointSlice) *targetgroup.Gr
 					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
 					podContainerIsInit:            lv(strconv.FormatBool(isInit)),
 				}
-				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod, e.replicaSetInf, e.jobInf, e.withDeploymentMetadata, e.withJobMetadata, e.withCronJobMetadata)))
+				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod, e.replicaSetInf, e.jobInf, e.withDeploymentMetadata, e.withDaemonSetMetadata, e.withJobMetadata, e.withCronJobMetadata)))
 			}
 		}
 	}

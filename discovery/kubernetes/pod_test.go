@@ -729,6 +729,16 @@ func makeDeployment(name, namespace string) *appsv1.Deployment {
 	}
 }
 
+func makeDaemonSet(name, namespace string) *appsv1.DaemonSet {
+	return &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			UID:       types.UID("daemonset123"),
+		},
+	}
+}
+
 func makeJob(name, namespace, cronJobName string, cronJobUID types.UID) *batchv1.Job {
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -864,6 +874,57 @@ func makeJobOwnedPod(namespace, jobName string, jobUID types.UID) *v1.Pod {
 	}
 }
 
+func makeDaemonSetOwnedPod(namespace, daemonSetName string, daemonSetUID types.UID) *v1.Pod {
+	return &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testpod",
+			Namespace: namespace,
+			UID:       types.UID("pod123"),
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					Kind:       "DaemonSet",
+					Name:       daemonSetName,
+					UID:        daemonSetUID,
+					Controller: makeOptionalBool(true),
+				},
+			},
+		},
+		Spec: v1.PodSpec{
+			NodeName: "testnode",
+			Containers: []v1.Container{
+				{
+					Name:  "testcontainer",
+					Image: "testcontainer:latest",
+					Ports: []v1.ContainerPort{
+						{
+							Name:          "testport",
+							Protocol:      v1.ProtocolTCP,
+							ContainerPort: int32(9000),
+						},
+					},
+				},
+			},
+		},
+		Status: v1.PodStatus{
+			PodIP:  "1.2.3.4",
+			HostIP: "2.3.4.5",
+			Phase:  "Running",
+			Conditions: []v1.PodCondition{
+				{
+					Type:   v1.PodReady,
+					Status: v1.ConditionTrue,
+				},
+			},
+			ContainerStatuses: []v1.ContainerStatus{
+				{
+					Name:        "testcontainer",
+					ContainerID: "docker://a1b2c3d4e5f6",
+				},
+			},
+		},
+	}
+}
+
 func TestPodDiscoveryWithDeployment(t *testing.T) {
 	t.Parallel()
 
@@ -904,6 +965,52 @@ func TestPodDiscoveryWithDeployment(t *testing.T) {
 					"__meta_kubernetes_pod_controller_kind": "ReplicaSet",
 					"__meta_kubernetes_pod_controller_name": "testdeployment-rs-abc",
 					"__meta_kubernetes_pod_deployment_name": "testdeployment",
+				},
+				Source: "pod/default/testpod",
+			},
+		},
+	}.Run(t)
+}
+
+func TestPodDiscoveryWithDaemonSet(t *testing.T) {
+	t.Parallel()
+
+	daemonSet := makeDaemonSet("testdaemonset", "default")
+	pod := makeDaemonSetOwnedPod("default", daemonSet.Name, daemonSet.UID)
+
+	n, _ := makeDiscoveryWithMetadata(RolePod, NamespaceDiscovery{}, AttachMetadataConfig{
+		PodMetadataConfig: PodMetadataConfig{DaemonSet: true},
+	}, pod, daemonSet)
+
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"pod/default/testpod": {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                   "1.2.3.4:9000",
+						"__meta_kubernetes_pod_container_name":          "testcontainer",
+						"__meta_kubernetes_pod_container_image":         "testcontainer:latest",
+						"__meta_kubernetes_pod_container_port_name":     "testport",
+						"__meta_kubernetes_pod_container_port_number":   "9000",
+						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_init":          "false",
+						"__meta_kubernetes_pod_container_id":            "docker://a1b2c3d4e5f6",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_pod_name":            "testpod",
+					"__meta_kubernetes_namespace":           "default",
+					"__meta_kubernetes_pod_node_name":       "testnode",
+					"__meta_kubernetes_pod_ip":              "1.2.3.4",
+					"__meta_kubernetes_pod_host_ip":         "2.3.4.5",
+					"__meta_kubernetes_pod_ready":           "true",
+					"__meta_kubernetes_pod_phase":           "Running",
+					"__meta_kubernetes_pod_uid":             "pod123",
+					"__meta_kubernetes_pod_controller_kind": "DaemonSet",
+					"__meta_kubernetes_pod_controller_name": "testdaemonset",
+					"__meta_kubernetes_pod_daemonset_name":  "testdaemonset",
 				},
 				Source: "pod/default/testpod",
 			},
