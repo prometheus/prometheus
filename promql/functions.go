@@ -2446,6 +2446,56 @@ func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions)
 	return ev.mergeSeriesWithSameLabelset(matrix), ws
 }
 
+// labelmap function operates only on series; does not look at timestamps or values.
+func (ev *evaluator) evalLabelMap(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
+	var (
+		regexStr = stringFromArg(args[1])
+		repl     = stringFromArg(args[2])
+	)
+
+	regex, err := regexp.Compile("^(?s:" + regexStr + ")$")
+	if err != nil {
+		panic(fmt.Errorf("invalid regular expression in labelmap(): %s", regexStr))
+	}
+
+	val, ws := ev.eval(ctx, args[0])
+	matrix := val.(Matrix)
+	lb := labels.NewBuilder(labels.EmptyLabels())
+
+	for i, el := range matrix {
+		lb.Reset(el.Metric)
+		el.Metric.Range(func(l labels.Label) {
+			// Reserved labels (including __name__) are immutable.
+			if strings.HasPrefix(l.Name, "__") {
+				return
+			}
+			indexes := regex.FindStringSubmatchIndex(l.Name)
+			if indexes == nil {
+				return
+			}
+			newName := string(regex.ExpandString(nil, repl, l.Name, indexes))
+			if newName == l.Name {
+				return
+			}
+			if newName == "" {
+				// Empty replacement drops the label.
+				lb.Del(l.Name)
+				return
+			}
+			if !model.UTF8Validation.IsValidLabelName(newName) {
+				// Invalid replacement leaves the original label untouched.
+				return
+			}
+			lb.Del(l.Name)
+			lb.Set(newName, l.Value)
+		})
+		matrix[i].Metric = lb.Labels()
+		matrix[i].DropName = el.DropName
+	}
+
+	return ev.mergeSeriesWithSameLabelset(matrix), ws
+}
+
 // Common code for date related functions.
 func dateWrapper(vectorVals []Vector, enh *EvalNodeHelper, f func(time.Time) float64) Vector {
 	if len(vectorVals) == 0 {
@@ -2578,6 +2628,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"max_of":                       funcMaxOf,
 	"label_replace":                nil, // evalLabelReplace not called via this map.
 	"label_join":                   nil, // evalLabelJoin not called via this map.
+	"labelmap":                     nil, // evalLabelMap not called via this map.
 	"min_of":                       funcMinOf,
 	"ln":                           funcLn,
 	"log10":                        funcLog10,

@@ -95,6 +95,7 @@
     "irate": true,
     "label_join": true,
     "label_replace": true,
+    "labelmap": false,
     "last_over_time": true,
     "ln": true,
     "log10": true,
@@ -262,8 +263,8 @@
     "isolation": true,
     "native_histograms": true,
     "st_storage": false,
-    "xor2_encoding": false,
-    "use_uncached_io": false
+    "use_uncached_io": false,
+    "xor2_encoding": false
   },
   "ui": {
     "ui_v2": false,
