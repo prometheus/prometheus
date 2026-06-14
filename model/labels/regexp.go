@@ -426,6 +426,7 @@ func optimizeAlternatingSimpleContains(r *syntax.Regexp) *syntax.Regexp {
 func optimizeConcatRegex(r *syntax.Regexp) (caseInsensitivePrefix bool, prefix, suffix string, contains []string) {
 	sub := r.Sub
 	clearCapture(sub...)
+	sub = concatAdjacentCaseSensitiveLiterals(sub)
 
 	// We can safely remove begin and end text matchers respectively
 	// at the beginning and end of the regexp.
@@ -460,6 +461,31 @@ func optimizeConcatRegex(r *syntax.Regexp) (caseInsensitivePrefix bool, prefix, 
 	}
 
 	return caseInsensitivePrefix, prefix, suffix, contains
+}
+
+// concatAdjacentCaseSensitiveLiterals preserves the exact literal order when
+// capture removal leaves consecutive literal operations in a concat regexp.
+func concatAdjacentCaseSensitiveLiterals(sub []*syntax.Regexp) []*syntax.Regexp {
+	if len(sub) < 2 {
+		return sub
+	}
+
+	compacted := make([]*syntax.Regexp, 0, len(sub))
+	for _, re := range sub {
+		if len(compacted) > 0 && isCaseSensitiveLiteral(compacted[len(compacted)-1]) && isCaseSensitiveLiteral(re) {
+			compacted[len(compacted)-1].Rune = append(compacted[len(compacted)-1].Rune, re.Rune...)
+			continue
+		}
+
+		if isCaseSensitiveLiteral(re) {
+			reCopy := *re
+			reCopy.Rune = slices.Clone(re.Rune)
+			re = &reCopy
+		}
+		compacted = append(compacted, re)
+	}
+
+	return compacted
 }
 
 // StringMatcher is a matcher that matches a string in place of a regular expression.
