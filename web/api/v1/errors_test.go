@@ -149,6 +149,7 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overri
 		false, // Disable admin APIs.
 		false, // Disable search API.
 		0,     // Default search max-limit.
+		false, // Disable experimental PromQL functions.
 		promslog.NewNopLogger(),
 		func(context.Context) RulesRetriever { return &DummyRulesRetriever{} },
 		0, 0, 0, // Remote read samples and concurrency limit.
