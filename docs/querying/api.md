@@ -888,10 +888,12 @@ curl http://localhost:9090/api/v1/targets
       {
         "discoveredLabels": {
           "__address__": "127.0.0.1:9100",
+          "__always_scrape_classic_histograms__": "false",
           "__convert_classic_histograms_to_nhcb__": "false",
           "__metrics_path__": "/metrics",
           "__scheme__": "http",
           "__scrape_interval__": "1m",
+          "__scrape_native_histograms__": "false",
           "__scrape_timeout__": "10s",
           "job": "node"
         },

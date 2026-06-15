@@ -3431,7 +3431,8 @@ Initially, aside from the configured per-target labels, a target's `job`
 label is set to the `job_name` value of the respective scrape configuration.
 
 You can also use special labels like `__address__`, `__scheme__`, `__metrics_path__`,
-`__scrape_interval__`, `__scrape_timeout__`, `__convert_classic_histograms_to_nhcb__`
+`__scrape_interval__`, `__scrape_timeout__`, `__convert_classic_histograms_to_nhcb__`,
+`__always_scrape_classic_histograms__`, `__scrape_native_histograms__`
 to customize the defined targets. These will
 override the respective settings in the scrape configuration.
 
@@ -3454,6 +3455,19 @@ The `__convert_classic_histograms_to_nhcb__` label is set to the target's
 per target, whether classic histograms are converted to native histograms with
 custom buckets. Its value must parse as a boolean; a target with an invalid
 value is dropped.
+
+The `__always_scrape_classic_histograms__` label is set to the target's
+`always_scrape_classic_histograms` value, as specified in `scrape_config`
+(defaulting to the configured global). Setting it during relabeling overrides,
+per target, whether a classic histogram is also ingested when it is exposed as
+a native histogram. Its value must parse as a boolean; a target with an invalid
+value is dropped.
+
+The `__scrape_native_histograms__` label is set to the target's
+`scrape_native_histograms` value, as specified in `scrape_config` (defaulting to
+the configured global). Setting it during relabeling overrides, per target,
+whether native histograms are scraped. Its value must parse as a boolean; a
+target with an invalid value is dropped.
 
 Additional labels prefixed with `__meta_` may be available during the
 relabeling phase. They are set by the service discovery mechanism that provided
