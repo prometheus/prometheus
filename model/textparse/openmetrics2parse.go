@@ -1050,7 +1050,9 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 		tsPtr = &ts
 	}
 
-	var pending []pendingEntry
+	// p.pending has been reset to [:0] by Next() before any parsing begins,
+	// so we reuse its backing array across composite parses.
+	pending := p.pending
 
 	// _count
 	if cv, ok := kv["count"]; ok {
@@ -1084,13 +1086,12 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 
 	// _bucket entries
 	if bv, ok := kv["bucket"]; ok {
-		buckets, err := parseBuckets(bv)
-		if err != nil {
-			return nil, fmt.Errorf("invalid bucket: %w", err)
-		}
 		name := mfName + "_bucket"
 		bucketSeries := []byte(name)
-		for _, b := range buckets {
+		for b, err := range parseBuckets(bv) {
+			if err != nil {
+				return nil, fmt.Errorf("invalid bucket: %w", err)
+			}
 			pending = append(pending, pendingEntry{
 				series: bucketSeries,
 				lset:   p.buildPendingLabels(name, extraLabels, "le", b.le),
@@ -1118,7 +1119,9 @@ func (p *OpenMetrics2Parser) buildSummaryPending(
 		tsPtr = &ts
 	}
 
-	var pending []pendingEntry
+	// p.pending has been reset to [:0] by Next() before any parsing begins,
+	// so we reuse its backing array across composite parses.
+	pending := p.pending
 
 	if cv, ok := kv["count"]; ok {
 		v, err := strconv.ParseFloat(cv, 64)
@@ -1149,12 +1152,11 @@ func (p *OpenMetrics2Parser) buildSummaryPending(
 	}
 
 	if qv, ok := kv["quantile"]; ok {
-		quantiles, err := parseQuantiles(qv)
-		if err != nil {
-			return nil, fmt.Errorf("invalid quantile: %w", err)
-		}
 		quantileSeries := []byte(mfName)
-		for _, q := range quantiles {
+		for q, err := range parseQuantiles(qv) {
+			if err != nil {
+				return nil, fmt.Errorf("invalid quantile: %w", err)
+			}
 			pending = append(pending, pendingEntry{
 				series: quantileSeries,
 				lset:   p.buildPendingLabels(mfName, extraLabels, "quantile", q.q),
@@ -1257,40 +1259,44 @@ type bucketEntry struct {
 	count float64
 }
 
-// parseBuckets parses "[+Inf:12,1.0:3,2.0:7]" into bucket entries.
-func parseBuckets(s string) ([]bucketEntry, error) {
-	s = strings.TrimSpace(s)
-	if s == "" || s == "[]" {
-		return nil, nil
+// parseBuckets yields each entry from "[+Inf:12,1.0:3,2.0:7]" without
+// materialising an intermediate slice.
+func parseBuckets(s string) iter.Seq2[bucketEntry, error] {
+	return func(yield func(bucketEntry, error) bool) {
+		s = strings.TrimSpace(s)
+		if s == "" || s == "[]" {
+			return
+		}
+		if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
+			yield(bucketEntry{}, fmt.Errorf("bucket must be wrapped in []: %q", s))
+			return
+		}
+		inner := s[1 : len(s)-1]
+		for part := range strings.SplitSeq(inner, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			idx := strings.LastIndexByte(part, ':')
+			if idx < 0 {
+				yield(bucketEntry{}, fmt.Errorf("bucket missing ':': %q", part))
+				return
+			}
+			le := strings.TrimSpace(part[:idx])
+			count, err := strconv.ParseFloat(strings.TrimSpace(part[idx+1:]), 64)
+			if err != nil {
+				yield(bucketEntry{}, fmt.Errorf("invalid bucket count %q: %w", part[idx+1:], err))
+				return
+			}
+			// Normalise le to OpenMetrics float format.
+			if lef, err := strconv.ParseFloat(le, 64); err == nil {
+				le = labels.FormatOpenMetricsFloat(lef)
+			}
+			if !yield(bucketEntry{le: le, count: count}, nil) {
+				return
+			}
+		}
 	}
-	if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
-		return nil, fmt.Errorf("bucket must be wrapped in []: %q", s)
-	}
-	inner := s[1 : len(s)-1]
-	var buckets []bucketEntry
-	for part := range strings.SplitSeq(inner, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		// Use LastIndexByte to handle "+Inf" which contains no ':' ambiguity;
-		// but "+Inf" has no ':', so use IndexByte.
-		idx := strings.LastIndexByte(part, ':')
-		if idx < 0 {
-			return nil, fmt.Errorf("bucket missing ':': %q", part)
-		}
-		le := strings.TrimSpace(part[:idx])
-		count, err := strconv.ParseFloat(strings.TrimSpace(part[idx+1:]), 64)
-		if err != nil {
-			return nil, fmt.Errorf("invalid bucket count %q: %w", part[idx+1:], err)
-		}
-		// Normalise le to OpenMetrics float format.
-		if lef, err := strconv.ParseFloat(le, 64); err == nil {
-			le = labels.FormatOpenMetricsFloat(lef)
-		}
-		buckets = append(buckets, bucketEntry{le: le, count: count})
-	}
-	return buckets, nil
 }
 
 // quantileEntry holds one parsed summary quantile.
@@ -1299,36 +1305,42 @@ type quantileEntry struct {
 	val float64
 }
 
-// parseQuantiles parses "[0.5:1.0,0.9:2.0]" into quantile entries.
-func parseQuantiles(s string) ([]quantileEntry, error) {
-	s = strings.TrimSpace(s)
-	if s == "" || s == "[]" {
-		return nil, nil
+// parseQuantiles yields each entry from "[0.5:1.0,0.9:2.0]" without
+// materialising an intermediate slice.
+func parseQuantiles(s string) iter.Seq2[quantileEntry, error] {
+	return func(yield func(quantileEntry, error) bool) {
+		s = strings.TrimSpace(s)
+		if s == "" || s == "[]" {
+			return
+		}
+		if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
+			yield(quantileEntry{}, fmt.Errorf("quantile must be wrapped in []: %q", s))
+			return
+		}
+		inner := s[1 : len(s)-1]
+		for part := range strings.SplitSeq(inner, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			before, after, ok := strings.Cut(part, ":")
+			if !ok {
+				yield(quantileEntry{}, fmt.Errorf("quantile missing ':': %q", part))
+				return
+			}
+			q := strings.TrimSpace(before)
+			val, err := strconv.ParseFloat(strings.TrimSpace(after), 64)
+			if err != nil {
+				yield(quantileEntry{}, fmt.Errorf("invalid quantile value %q: %w", after, err))
+				return
+			}
+			// Normalise quantile label to OpenMetrics float format.
+			if qf, err := strconv.ParseFloat(q, 64); err == nil {
+				q = labels.FormatOpenMetricsFloat(qf)
+			}
+			if !yield(quantileEntry{q: q, val: val}, nil) {
+				return
+			}
+		}
 	}
-	if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
-		return nil, fmt.Errorf("quantile must be wrapped in []: %q", s)
-	}
-	inner := s[1 : len(s)-1]
-	var quantiles []quantileEntry
-	for part := range strings.SplitSeq(inner, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		before, after, ok := strings.Cut(part, ":")
-		if !ok {
-			return nil, fmt.Errorf("quantile missing ':': %q", part)
-		}
-		q := strings.TrimSpace(before)
-		val, err := strconv.ParseFloat(strings.TrimSpace(after), 64)
-		if err != nil {
-			return nil, fmt.Errorf("invalid quantile value %q: %w", after, err)
-		}
-		// Normalise quantile label to OpenMetrics float format.
-		if qf, err := strconv.ParseFloat(q, 64); err == nil {
-			q = labels.FormatOpenMetricsFloat(qf)
-		}
-		quantiles = append(quantiles, quantileEntry{q: q, val: val})
-	}
-	return quantiles, nil
 }
