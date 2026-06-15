@@ -89,6 +89,15 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 	attrsWithUnderscores.PutStr("_metric_private", "private metric")
 	attrsWithUnderscores.PutStr("metric___multi", "multi metric")
 
+	// Attribute names that collide after sanitization (`.` and `-` both map to `_`).
+	collidingAttrs := pcommon.NewMap()
+	collidingAttrs.PutStr("a.b", "1")
+	collidingAttrs.PutStr("a_b", "2")
+	tripleCollidingAttrs := pcommon.NewMap()
+	tripleCollidingAttrs.PutStr("a-b", "1")
+	tripleCollidingAttrs.PutStr("a.b", "2")
+	tripleCollidingAttrs.PutStr("a_b", "3")
+
 	testCases := []struct {
 		name                                 string
 		resource                             pcommon.Resource
@@ -102,6 +111,7 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 		labelNameUnderscoreSanitization      bool
 		labelNamePreserveMultipleUnderscores bool
 		expectedLabels                       labels.Labels
+		expectedCollisionWarnings            []string
 	}{
 		{
 			name:                      "Successful conversion without resource attribute promotion and without scope promotion",
@@ -404,6 +414,32 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 				"metric_attr_other", "metric value other",
 			),
 		},
+		{
+			name:  "Attributes colliding after sanitization are concatenated and recorded as a warning",
+			attrs: collidingAttrs,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"a_b", "1;2",
+				"instance", "service ID",
+				"job", "service name",
+			),
+			expectedCollisionWarnings: []string{
+				`OTLP data point attributes "a.b", "a_b" collide as label "a_b" after name sanitization, values are concatenated with ';'`,
+			},
+		},
+		{
+			name:  "Three colliding attributes report all names in concatenation order",
+			attrs: tripleCollidingAttrs,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"a_b", "1;2;3",
+				"instance", "service ID",
+				"job", "service name",
+			),
+			expectedCollisionWarnings: []string{
+				`OTLP data point attributes "a-b", "a.b", "a_b" collide as label "a_b" after name sanitization, values are concatenated with ';'`,
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -439,6 +475,7 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 			require.NoError(t, err)
 
 			testutil.RequireEqual(t, tc.expectedLabels, lbls)
+			require.ElementsMatch(t, tc.expectedCollisionWarnings, c.CollisionWarnings())
 		})
 	}
 

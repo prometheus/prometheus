@@ -308,6 +308,93 @@ func TestFromMetrics(t *testing.T) {
 		}, ws)
 	})
 
+	t.Run("attribute collision is surfaced as a warning and via CollisionWarnings", func(t *testing.T) {
+		request := pmetricotlp.NewExportRequest()
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+		m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		m.SetName("test_gauge")
+		dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+		dp.SetIntValue(1)
+		dp.Attributes().PutStr("a.b", "x")
+		dp.Attributes().PutStr("a_b", "y")
+
+		converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
+		annots, err := converter.FromMetrics(t.Context(), request.Metrics(), Settings{})
+		require.NoError(t, err)
+
+		want := []string{
+			`OTLP data point attributes "a.b", "a_b" collide as label "a_b" after name sanitization, values are concatenated with ';'`,
+		}
+		ws, infos := annots.AsStrings("", 0, 0)
+		require.Empty(t, infos)
+		require.Equal(t, want, ws)
+		require.Equal(t, want, converter.CollisionWarnings())
+	})
+
+	t.Run("resource attribute collision is surfaced as a warning", func(t *testing.T) {
+		request := pmetricotlp.NewExportRequest()
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+		rm.Resource().Attributes().PutStr("k8s.pod.name", "foo")
+		rm.Resource().Attributes().PutStr("k8s_pod_name", "bar")
+		m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		m.SetName("test_gauge")
+		dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+		dp.SetIntValue(1)
+
+		converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
+		annots, err := converter.FromMetrics(t.Context(), request.Metrics(), Settings{})
+		require.NoError(t, err)
+		ws, _ := annots.AsStrings("", 0, 0)
+		require.Contains(t, ws, `OTLP resource attributes "k8s.pod.name", "k8s_pod_name" collide as label "k8s_pod_name" after name sanitization, values are concatenated with ';'`)
+	})
+
+	t.Run("repeated collision across data points is recorded once", func(t *testing.T) {
+		request := pmetricotlp.NewExportRequest()
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+		m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		m.SetName("test_gauge")
+		g := m.SetEmptyGauge()
+		ts := pcommon.NewTimestampFromTime(time.Now())
+		// Two distinct series sharing the same colliding attribute names.
+		for i, v := range []string{"y", "z"} {
+			dp := g.DataPoints().AppendEmpty()
+			dp.SetTimestamp(ts)
+			dp.SetIntValue(int64(i))
+			dp.Attributes().PutStr("a.b", "x")
+			dp.Attributes().PutStr("a_b", v)
+		}
+
+		converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
+		annots, err := converter.FromMetrics(t.Context(), request.Metrics(), Settings{})
+		require.NoError(t, err)
+
+		ws, _ := annots.AsStrings("", 0, 0)
+		require.Equal(t, []string{
+			`OTLP data point attributes "a.b", "a_b" collide as label "a_b" after name sanitization, values are concatenated with ';'`,
+		}, ws)
+	})
+
+	t.Run("no collision warning when UTF-8 is allowed", func(t *testing.T) {
+		request := pmetricotlp.NewExportRequest()
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+		m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		m.SetName("test_gauge")
+		dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+		dp.SetIntValue(1)
+		dp.Attributes().PutStr("a.b", "x")
+		dp.Attributes().PutStr("a_b", "y")
+
+		converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
+		annots, err := converter.FromMetrics(t.Context(), request.Metrics(), Settings{AllowUTF8: true})
+		require.NoError(t, err)
+		require.Empty(t, converter.CollisionWarnings())
+		ws, _ := annots.AsStrings("", 0, 0)
+		require.Empty(t, ws)
+	})
+
 	t.Run("target_info's samples starts at the earliest metric sample timestamp and ends at the latest sample timestamp of the corresponding resource, with one sample every lookback delta/2 timestamps between", func(t *testing.T) {
 		request := pmetricotlp.NewExportRequest()
 		rm := request.Metrics().ResourceMetrics().AppendEmpty()
