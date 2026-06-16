@@ -21,7 +21,6 @@ import (
 	"sync"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/windows"
@@ -66,13 +65,23 @@ func TestRepairLastChunkFile_RetriesSharingViolation(t *testing.T) {
 	// test would pass trivially and no longer exercise the bug, so assert it.
 	require.ErrorIs(t, os.Remove(path), windows.ERROR_SHARING_VIOLATION)
 
-	// Release the blocking handle after a short delay, well below the 2s
-	// retry deadline, so the retry loop observes both the failure and the
-	// subsequent success.
+	trigger := make(chan struct{}, 1)
+	oldRemoveOS := removeOS
+	t.Cleanup(func() { removeOS = oldRemoveOS })
+	removeOS = func(name string) error {
+		select {
+		case trigger <- struct{}{}:
+		default:
+		}
+		return oldRemoveOS(name)
+	}
+
+	// Release the blocking handle as soon as the retry loop attempts its
+	// first deletion, to reliably exercise the retry behavior without timeouts.
 	released := make(chan struct{})
 	go func() {
 		defer close(released)
-		time.Sleep(100 * time.Millisecond)
+		<-trigger
 		closeHandle()
 	}()
 

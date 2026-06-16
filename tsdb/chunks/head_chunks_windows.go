@@ -25,6 +25,8 @@ import (
 // Windows needs pre-allocation to m-map the file.
 var HeadChunkFilePreallocationSize int64 = MaxHeadChunkFileSize
 
+var removeOS = os.Remove
+
 // removeChunkFile deletes a head chunk file, briefly retrying on transient
 // Windows errors caused by antivirus or file-indexing processes that open a
 // freshly created file without granting FILE_SHARE_DELETE. While such a handle
@@ -43,7 +45,7 @@ func removeChunkFile(path string) error {
 	backoff := initialBackoff
 	start := time.Now()
 	for {
-		err := os.Remove(path)
+		err := removeOS(path)
 		if err == nil || !isRetryableRemoveError(err) {
 			return err
 		}
