@@ -619,7 +619,6 @@ func Intersect(its ...Postings) Postings {
 type intersectPostings struct {
 	postings []Postings        // These are the postings we will be intersecting.
 	current  storage.SeriesRef // The current intersection, if Seek() or Next() has returned true.
-	closed   bool
 }
 
 func newIntersectPostings(its ...Postings) *intersectPostings {
@@ -687,10 +686,6 @@ func (it *intersectPostings) Err() error {
 }
 
 func (it *intersectPostings) Close() error {
-	if it.closed {
-		return nil
-	}
-	it.closed = true
 	err := closePostings(it.postings...)
 	it.postings = nil
 	return err
@@ -713,10 +708,9 @@ func Merge[T Postings](_ context.Context, its ...T) Postings {
 }
 
 type mergedPostings[T Postings] struct {
-	p      []T
-	h      *loser.Tree[storage.SeriesRef, T]
-	cur    storage.SeriesRef
-	closed bool
+	p   []T
+	h   *loser.Tree[storage.SeriesRef, T]
+	cur storage.SeriesRef
 }
 
 func newMergedPostings[T Postings](p []T) (m *mergedPostings[T], nonEmpty bool) {
@@ -765,11 +759,6 @@ func (it mergedPostings[T]) Err() error {
 }
 
 func (it *mergedPostings[T]) Close() error {
-	if it.closed {
-		return nil
-	}
-	it.closed = true
-
 	errs := make([]error, 0, len(it.p))
 	for _, p := range it.p {
 		if err := p.Close(); err != nil {
@@ -801,7 +790,6 @@ type removedPostings struct {
 
 	initialized bool
 	fok, rok    bool
-	closed      bool
 }
 
 func newRemovedPostings(full, remove Postings) *removedPostings {
@@ -868,10 +856,6 @@ func (rp *removedPostings) Err() error {
 }
 
 func (rp *removedPostings) Close() error {
-	if rp.closed {
-		return nil
-	}
-	rp.closed = true
 	err := closePostings(rp.full, rp.remove)
 	rp.full = nil
 	rp.remove = nil
@@ -959,8 +943,6 @@ func (it *listPostings) Len() int {
 type bigEndianPostings struct {
 	list []byte
 	cur  uint32
-	// closed makes Close idempotent.
-	closed bool
 }
 
 func newBigEndianPostings(list []byte) *bigEndianPostings {
@@ -1005,12 +987,8 @@ func (*bigEndianPostings) Err() error {
 }
 
 func (it *bigEndianPostings) Close() error {
-	if it.closed {
-		return nil
-	}
 	it.list = nil
 	it.cur = 0
-	it.closed = true
 	return nil
 }
 

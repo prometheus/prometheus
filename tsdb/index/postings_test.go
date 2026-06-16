@@ -891,10 +891,6 @@ func TestCompositePostingsCloseClosesInputs(t *testing.T) {
 			require.NoError(t, p.Close())
 			require.Equal(t, 1, a.closes)
 			require.Equal(t, 1, b.closes)
-
-			require.NoError(t, p.Close())
-			require.Equal(t, 1, a.closes)
-			require.Equal(t, 1, b.closes)
 		})
 	}
 }
