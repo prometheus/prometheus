@@ -20,9 +20,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (
@@ -63,15 +64,20 @@ const (
 
 	tagFilterActionInclude = "include"
 	tagFilterActionExclude = "exclude"
+
+	// rateLimitRPS caps OCI API calls per second across all operations
+	// (ListCompartments, ListInstances, ListVnicAttachments, GetVnic) to stay
+	// well below per-tenancy service limits.
+	rateLimitRPS = 10.0
 )
 
 // DefaultSDConfig is the default OCI service discovery configuration.
 var DefaultSDConfig = SDConfig{
-	Port:            80,
-	RefreshInterval: model.Duration(60 * time.Second),
-	Auth:            authAPIKey,
-	TagFilterAction: tagFilterActionInclude,
-	RateLimitRPS:    10.0,
+	Port:             80,
+	RefreshInterval:  model.Duration(60 * time.Second),
+	Auth:             authAPIKey,
+	TagFilterAction:  tagFilterActionInclude,
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
 }
 
 func init() {
@@ -110,9 +116,7 @@ type SDConfig struct {
 	TagFilterValue  string `yaml:"tag_filter_value,omitempty"`
 	TagFilterAction string `yaml:"tag_filter_action,omitempty"`
 
-	// RateLimitRPS caps the number of OCI API calls per second to avoid hitting
-	// per-tenancy service limits. Defaults to 10.
-	RateLimitRPS float64 `yaml:"rate_limit_rps,omitempty"`
+	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 
 	Port            int            `yaml:"port"`
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
@@ -133,9 +137,8 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 
 // SetDirectory joins any relative file paths with dir.
 func (c *SDConfig) SetDirectory(dir string) {
-	if c.KeyFile != "" && !strings.HasPrefix(c.KeyFile, "/") {
-		c.KeyFile = dir + "/" + c.KeyFile
-	}
+	c.HTTPClientConfig.SetDirectory(dir)
+	c.KeyFile = config.JoinDir(dir, c.KeyFile)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -194,11 +197,11 @@ func (c *SDConfig) validate() error {
 		}
 	}
 
-	if c.RateLimitRPS <= 0 {
-		return errors.New("OCI SD rate_limit_rps must be positive")
+	if c.RefreshInterval <= 0 {
+		return fmt.Errorf("OCI SD refresh_interval must be positive, got %s", c.RefreshInterval)
 	}
 
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 // compartmentLister returns the ordered list of compartment OCIDs to scan.
@@ -207,10 +210,10 @@ func (c *SDConfig) validate() error {
 // tenancy root via the OCI Identity API.
 type compartmentLister func(ctx context.Context) ([]string, error)
 
-// instancesLister lists RUNNING compute instances in a compartment, handling
-// pagination internally. The concrete ComputeClient is captured in the closure
-// so it is not reachable through reflection on the interface-boxed Discovery
-// struct, keeping dead-code elimination effective and the binary small.
+// instancesLister lists compute instances in a compartment, handling pagination
+// internally. The concrete ComputeClient is captured in the closure so it is
+// not reachable through reflection on the interface-boxed Discovery struct,
+// keeping dead-code elimination effective and the binary small.
 type instancesLister func(ctx context.Context, compartmentID string) ([]core.Instance, error)
 
 // vnicAttachmentLister lists VNIC attachments for an instance in a compartment.
@@ -242,7 +245,12 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery,
 		return nil, errors.New("invalid discovery metrics type")
 	}
 
-	provider, err := newConfigurationProvider(conf)
+	httpClient, err := config.NewClientFromConfig(conf.HTTPClientConfig, "oci_sd")
+	if err != nil {
+		return nil, fmt.Errorf("OCI SD failed to build HTTP client: %w", err)
+	}
+
+	provider, err := newConfigurationProvider(conf, httpClient)
 	if err != nil {
 		return nil, fmt.Errorf("OCI SD failed to build configuration provider: %w", err)
 	}
@@ -254,15 +262,15 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery,
 
 	// Rate limiter and retry policy are shared across all closures so every OCI
 	// API call counts against the same budget.
-	limiter := rate.NewLimiter(rate.Limit(conf.RateLimitRPS), max(1, int(conf.RateLimitRPS)))
+	limiter := rate.NewLimiter(rate.Limit(rateLimitRPS), max(1, int(rateLimitRPS)))
 	retryPolicy := common.DefaultRetryPolicy()
 
-	compLister, err := newCompartmentLister(provider, tenancy, conf.Compartments, limiter, &retryPolicy)
+	compLister, err := newCompartmentLister(provider, httpClient, tenancy, conf.Compartments, limiter, &retryPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("OCI SD failed to create compartment lister: %w", err)
 	}
 
-	lister, attachmentLister, fetcher, err := newOCIClients(provider, conf.Filter, limiter, &retryPolicy)
+	lister, attachmentLister, fetcher, err := newOCIClients(provider, httpClient, conf.Filter, limiter, &retryPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("OCI SD failed to create clients: %w", err)
 	}
@@ -293,10 +301,18 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery,
 }
 
 // newConfigurationProvider builds an OCI ConfigurationProvider for the given SDConfig.
-func newConfigurationProvider(conf *SDConfig) (common.ConfigurationProvider, error) {
+// httpClient is used by the instance-principal key provider so that the IMDS
+// metadata call honours the user-supplied Prometheus HTTP knobs (proxy, TLS,
+// custom CA). For API key auth the provider is purely local so the HTTP client
+// is unused here.
+func newConfigurationProvider(conf *SDConfig, httpClient *http.Client) (common.ConfigurationProvider, error) {
 	switch conf.Auth {
 	case authInstancePrincipal:
-		return auth.InstancePrincipalConfigurationProvider()
+		return auth.InstancePrincipalConfigurationProviderWithCustomClient(
+			func(common.HTTPRequestDispatcher) (common.HTTPRequestDispatcher, error) {
+				return httpClient, nil
+			},
+		)
 	default: // authAPIKey
 		keyPEM, err := os.ReadFile(conf.KeyFile)
 		if err != nil {
@@ -320,7 +336,7 @@ func newConfigurationProvider(conf *SDConfig) (common.ConfigurationProvider, err
 //
 // When compartments are explicitly configured no Identity client is created,
 // so the identity package methods are dropped by dead-code elimination.
-func newCompartmentLister(provider common.ConfigurationProvider, tenancy string, compartments []string, limiter *rate.Limiter, retryPolicy *common.RetryPolicy) (compartmentLister, error) {
+func newCompartmentLister(provider common.ConfigurationProvider, httpClient *http.Client, tenancy string, compartments []string, limiter *rate.Limiter, retryPolicy *common.RetryPolicy) (compartmentLister, error) {
 	if len(compartments) > 0 {
 		ids := make([]string, len(compartments))
 		copy(ids, compartments)
@@ -335,6 +351,7 @@ func newCompartmentLister(provider common.ConfigurationProvider, tenancy string,
 	if err != nil {
 		return nil, fmt.Errorf("creating OCI identity client: %w", err)
 	}
+	idClient.HTTPClient = httpClient
 
 	return func(ctx context.Context) ([]string, error) {
 		return listAllCompartments(ctx, &idClient, tenancy, limiter, retryPolicy)
@@ -393,22 +410,23 @@ func listAllCompartments(ctx context.Context, idClient *identity.IdentityClient,
 // clients. The concrete client values live only in the closure context so
 // reflection cannot reach them through the interface-boxed Discovery struct,
 // allowing the linker to drop unused SDK operations and keep the binary small.
-func newOCIClients(provider common.ConfigurationProvider, filter string, limiter *rate.Limiter, retryPolicy *common.RetryPolicy) (instancesLister, vnicAttachmentLister, vnicFetcher, error) {
+func newOCIClients(provider common.ConfigurationProvider, httpClient *http.Client, filter string, limiter *rate.Limiter, retryPolicy *common.RetryPolicy) (instancesLister, vnicAttachmentLister, vnicFetcher, error) {
 	computeClient, err := core.NewComputeClientWithConfigurationProvider(provider)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("creating OCI compute client: %w", err)
 	}
+	computeClient.HTTPClient = httpClient
 
 	vnetClient, err := core.NewVirtualNetworkClientWithConfigurationProvider(provider)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("creating OCI virtual network client: %w", err)
 	}
+	vnetClient.HTTPClient = httpClient
 
 	lister := func(ctx context.Context, compartmentID string) ([]core.Instance, error) {
 		var instances []core.Instance
 		req := core.ListInstancesRequest{
 			CompartmentId:   common.String(compartmentID),
-			LifecycleState:  core.InstanceLifecycleStateRunning,
 			Limit:           common.Int(100),
 			RequestMetadata: common.RequestMetadata{RetryPolicy: retryPolicy},
 		}
@@ -487,13 +505,22 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 		instances, err := d.listInstances(ctx, compartmentID)
 		if err != nil {
-			d.logger.Warn("OCI SD failed to list instances, skipping compartment",
+			d.logger.Warn("OCI SD failed to list instances, clearing compartment targets",
 				"compartment_id", compartmentID, "err", err)
+			// Emit the empty group so the discovery manager prunes any
+			// stale targets it still has for this compartment.
+			tgs = append(tgs, tg)
 			continue
 		}
 
 		for i := range instances {
 			inst := &instances[i]
+
+			if inst.Id == nil || inst.CompartmentId == nil {
+				d.logger.Warn("OCI SD skipping instance with missing OCID fields",
+					"compartment_id", compartmentID)
+				continue
+			}
 
 			// Tag filter is applied before VNIC resolution to avoid unnecessary API
 			// calls for instances that will be dropped anyway.
@@ -510,7 +537,13 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			privateIP, publicIP, err := d.primaryVnicIPs(ctx, inst)
 			if err != nil {
 				d.logger.Warn("OCI SD failed to resolve VNIC IPs, skipping instance",
-					"instance_id", stringVal(inst.Id), "err", err)
+					"instance_id", *inst.Id, "err", err)
+				continue
+			}
+
+			if privateIP == "" && publicIP == "" {
+				d.logger.Debug("OCI SD skipping instance with no usable IP address",
+					"instance_id", *inst.Id)
 				continue
 			}
 
@@ -524,11 +557,12 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 }
 
 // primaryVnicIPs returns the private and public IP of the primary VNIC for inst.
-// publicIP may be empty if no public IP is assigned.
+// publicIP may be empty if no public IP is assigned. Caller must guarantee
+// inst.Id and inst.CompartmentId are non-nil.
 func (d *Discovery) primaryVnicIPs(ctx context.Context, inst *core.Instance) (privateIP, publicIP string, err error) {
-	attachments, err := d.listVnicAttachments(ctx, *inst.CompartmentId, *inst.Id)
+	attachments, err := d.listVnicAttachments(ctx, stringVal(inst.CompartmentId), stringVal(inst.Id))
 	if err != nil {
-		return "", "", fmt.Errorf("listing VNIC attachments for instance %s: %w", *inst.Id, err)
+		return "", "", fmt.Errorf("listing VNIC attachments for instance %s: %w", stringVal(inst.Id), err)
 	}
 
 	for _, att := range attachments {
@@ -539,7 +573,7 @@ func (d *Discovery) primaryVnicIPs(ctx context.Context, inst *core.Instance) (pr
 		if err != nil {
 			return "", "", fmt.Errorf("fetching VNIC %s: %w", *att.VnicId, err)
 		}
-		if vnic.IsPrimary == nil || !*vnic.IsPrimary {
+		if vnic == nil || vnic.IsPrimary == nil || !*vnic.IsPrimary {
 			continue
 		}
 		if vnic.PrivateIp != nil {
@@ -595,7 +629,7 @@ func instanceLabels(inst *core.Instance, privateIP, publicIP, tenancy string, po
 	}
 
 	for k, v := range inst.FreeformTags {
-		labels[model.LabelName(ociLabelFreeformTagPrefix+sanitizeLabelName(k))] = model.LabelValue(v)
+		labels[model.LabelName(ociLabelFreeformTagPrefix+strutil.SanitizeLabelName(k))] = model.LabelValue(v)
 	}
 
 	// Only string-typed defined tag values are emitted; numeric and boolean
@@ -606,27 +640,12 @@ func instanceLabels(inst *core.Instance, privateIP, publicIP, tenancy string, po
 			if !ok {
 				continue
 			}
-			name := ociLabelDefinedTagPrefix + sanitizeLabelName(ns) + "_" + sanitizeLabelName(k)
+			name := ociLabelDefinedTagPrefix + strutil.SanitizeLabelName(ns) + "_" + strutil.SanitizeLabelName(k)
 			labels[model.LabelName(name)] = model.LabelValue(s)
 		}
 	}
 
 	return labels
-}
-
-// sanitizeLabelName replaces characters that are invalid in Prometheus label
-// names with underscores and lowercases the result.
-func sanitizeLabelName(s string) string {
-	s = strings.ToLower(s)
-	var b strings.Builder
-	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
-			b.WriteRune(r)
-		} else {
-			b.WriteRune('_')
-		}
-	}
-	return b.String()
 }
 
 // stringVal dereferences a *string, returning "" if nil.
