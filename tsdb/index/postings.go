@@ -562,7 +562,9 @@ type Postings interface {
 	// Err returns the last error of the iterator.
 	Err() error
 
-	// Close releases resources retained by the iterator.
+	// Close releases resources retained by the iterator. It must be called
+	// exactly once when the iterator is no longer needed. The iterator must not
+	// be used after Close returns, including any further Close calls.
 	Close() error
 }
 
@@ -878,9 +880,9 @@ func (rp *removedPostings) Close() error {
 
 // listPostings implements the Postings interface over a plain list.
 type listPostings struct {
-	list   []storage.SeriesRef
-	cur    storage.SeriesRef
-	closed bool
+	list []storage.SeriesRef
+	cur  storage.SeriesRef
+
 	pooled bool
 }
 
@@ -939,12 +941,8 @@ func (*listPostings) Err() error {
 }
 
 func (it *listPostings) Close() error {
-	if it.closed {
-		return nil
-	}
 	it.list = nil
 	it.cur = 0
-	it.closed = true
 	if it.pooled {
 		listPostingsPool.Put(it)
 	}
