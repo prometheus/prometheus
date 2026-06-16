@@ -5100,6 +5100,8 @@ func readWALHistogramSamples(t testing.TB, dir string) (intSamples []record.RefH
 // via AppenderV2.Append are written into the WAL for histogram and
 // float-histogram samples. The chunk encoder still drops histogram ST until
 // #18609 lands, so this test asserts at the WAL record layer.
+// TODO(krajorama,ywwg): Once histogram chunks preserve ST, simplify this test
+// to assert histogram ST through chunks or queries instead of WAL records.
 func TestHeadAppenderV2_Histogram_STInWAL(t *testing.T) {
 	type histSample struct {
 		st int64
