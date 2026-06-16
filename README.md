@@ -92,7 +92,7 @@ these assets to be found, you will have to run Prometheus from the root of the c
 repository. Note also that this directory does not include the React UI unless it has been
 built explicitly using `make assets` or `make build`.
 
-An example of the above configuration file can be found [here.](https://github.com/prometheus/prometheus/blob/main/documentation/examples/prometheus.yml)
+An example of the above configuration file can be found [here](https://github.com/prometheus/prometheus/blob/main/documentation/examples/prometheus.yml)
 
 You can also build using `make build`, which will compile in the web assets so that
 Prometheus can be run from anywhere:
@@ -145,7 +145,7 @@ always, be extra careful when loading third party code.
 
 ### Building the Docker image
 
-You can build a docker image locally with the following commands:
+You can build a Docker image locally with the following commands:
 
 ```bash
 make promu
@@ -184,7 +184,7 @@ This is experimental.
 ### Prometheus code base
 
 In order to comply with [go mod](https://go.dev/ref/mod#versions) rules,
-Prometheus release number do not exactly match Go module releases.
+Prometheus release numbers do not exactly match Go module releases.
 
 For the
 Prometheus v3.y.z releases, we are publishing equivalent v0.3y.z tags. The y in v0.3y.z is always padded to two digits, with a leading zero if needed.
