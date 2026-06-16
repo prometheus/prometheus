@@ -3193,8 +3193,13 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			}
 			matchedLabels := rs.Metric.MatchLabels(matching.On, matching.MatchingLabels...)
 			// Many-to-many matching not allowed.
+			// Sort the duplicate series strings for deterministic output.
+			dupl1, dupl2 := rs.Metric.String(), duplSample.Metric.String()
+			if dupl1 > dupl2 {
+				dupl1, dupl2 = dupl2, dupl1
+			}
 			ev.errorf("found duplicate series for the match group %s on the %s hand-side of the operation: [%s, %s]"+
-				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, rs.Metric.String(), duplSample.Metric.String())
+				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, dupl1, dupl2)
 		}
 		rightSigs[sigOrd] = rs
 		rightSigsPresent[sigOrd] = true
