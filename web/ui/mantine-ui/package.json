@@ -68,7 +68,7 @@
     "postcss": "^8.5.14",
     "postcss-preset-mantine": "^1.18.0",
     "postcss-simple-vars": "^7.0.1",
-    "vite": "^6.4.2",
+    "vite": "^6.4.3",
     "vitest": "^3.2.4"
   }
 }
