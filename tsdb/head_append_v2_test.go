@@ -5168,7 +5168,7 @@ func TestHeadAppenderV2_Histogram_STInWAL(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
 			opts.EnableSTStorage.Store(tc.enableSTStorage)
-			opts.EnableXOR2Encoding.Store(true)
+			opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
 			h, w := newTestHeadWithOptions(t, compression.None, opts)
 
 			lbls := labels.FromStrings("foo", "bar")
