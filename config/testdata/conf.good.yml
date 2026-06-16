@@ -346,6 +346,18 @@ scrape_configs:
       - host: http://127.0.0.1:2375
         role: nodes
 
+  - job_name: service-oci
+    oci_sd_configs:
+      - region: us-ashburn-1
+        tenancy: ocid1.tenancy.oc1..tenancy001
+        user: ocid1.user.oc1..user001
+        fingerprint: aa:bb:cc:dd:ee:ff
+        key_file: valid_key_file
+        compartments:
+          - ocid1.compartment.oc1..comp001
+        port: 9100
+        refresh_interval: 1m
+
   - job_name: service-openstack
     openstack_sd_configs:
       - role: instance
