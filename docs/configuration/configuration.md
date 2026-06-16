@@ -1341,14 +1341,10 @@ role: <string>
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
 
-# Filters can be used optionally to filter the instance list by other criteria (ec2 & rds role only).
+# Filters can be used optionally to filter the instance list by other criteria (ec2 role only).
 # Available filter criteria can be found here:
-# EC2:
-#  - https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
-#  - Filter API documentation: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Filter.html
-# RDS:
-#  - https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_DescribeDBInstances.html
-#  - Filter API documentation: https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_Filter.html
+# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
+# Filter API documentation: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Filter.html
 filters:
   [ - name: <string>
       values: <string>, [...] ]
@@ -3431,8 +3427,7 @@ Initially, aside from the configured per-target labels, a target's `job`
 label is set to the `job_name` value of the respective scrape configuration.
 
 You can also use special labels like `__address__`, `__scheme__`, `__metrics_path__`,
-`__scrape_interval__`, `__scrape_timeout__`, `__convert_classic_histograms_to_nhcb__`,
-`__always_scrape_classic_histograms__`, `__scrape_native_histograms__`
+`__scrape_interval__`, `__scrape_timeout__`, `__convert_classic_histograms_to_nhcb__`
 to customize the defined targets. These will
 override the respective settings in the scrape configuration.
 
@@ -3455,19 +3450,6 @@ The `__convert_classic_histograms_to_nhcb__` label is set to the target's
 per target, whether classic histograms are converted to native histograms with
 custom buckets. Its value must parse as a boolean; a target with an invalid
 value is dropped.
-
-The `__always_scrape_classic_histograms__` label is set to the target's
-`always_scrape_classic_histograms` value, as specified in `scrape_config`
-(defaulting to the configured global). Setting it during relabeling overrides,
-per target, whether a classic histogram is also ingested when it is exposed as
-a native histogram. Its value must parse as a boolean; a target with an invalid
-value is dropped.
-
-The `__scrape_native_histograms__` label is set to the target's
-`scrape_native_histograms` value, as specified in `scrape_config` (defaulting to
-the configured global). Setting it during relabeling overrides, per target,
-whether native histograms are scraped. Its value must parse as a boolean; a
-target with an invalid value is dropped.
 
 Additional labels prefixed with `__meta_` may be available during the
 relabeling phase. They are set by the service discovery mechanism that provided
@@ -4007,25 +3989,6 @@ with this feature.
 # This is an experimental feature, this behaviour could change or be removed in the future.
 [ stale_series_compaction_threshold: <float> | default = 0 ]
 
-# Configures the float chunk encoding to use for new chunks.
-# Valid values are 'xor' and 'xor2'. When absent, the encoding follows the
-# --enable-feature=xor2-encoding flag: 'xor2' if the flag is set, 'xor' otherwise.
-# Setting 'xor' forces standard XOR encoding even when --enable-feature=xor2-encoding is set.
-# Setting 'xor2' is only valid when --enable-feature=xor2-encoding is set;
-# Prometheus will refuse to reload if 'xor2' is set without the feature flag.
-# Setting 'xor' is incompatible with --enable-feature=st-storage (XOR chunks do not store
-# start timestamps); Prometheus will refuse to reload in that case too.
-# Omitting 'floats' (or the entire 'chunk_encoding' field) is equivalent; the encoding
-# follows the --enable-feature=xor2-encoding flag.
-# This field is runtime-reloadable.
-# When --enable-feature=st-storage is disabled, XOR and XOR2 are compatible
-# encodings and in-progress chunks are not cut on an encoding change; the new
-# encoding takes effect when the current chunk is next cut for any reason (size, time range, or sample count).
-# When --enable-feature=st-storage is enabled, XOR and XOR2 are not compatible
-# (XOR chunks do not store start timestamps), so an in-progress chunk is cut
-# on the next append after the encoding changes.
-[ chunk_encoding:
-  [ floats: <string> ] ]
 
 # Configures data retention settings for TSDB.
 #

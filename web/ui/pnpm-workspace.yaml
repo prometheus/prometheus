@@ -1,6 +1,0 @@
-packages:
-  - "mantine-ui"
-  - "module/*"
-allowBuilds:
-  esbuild: true
-  unrs-resolver: true

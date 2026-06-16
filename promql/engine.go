@@ -91,7 +91,6 @@ type engineMetrics struct {
 	queryResultSort           prometheus.Observer
 	queryResultSortHistogram  prometheus.Observer
 	querySamples              prometheus.Counter
-	querySamplesRead          prometheus.Counter
 }
 
 type (
@@ -423,13 +422,7 @@ func NewEngine(opts EngineOpts) *Engine {
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "query_samples_total",
-			Help:      "The total number of samples loaded by all queries (full window per step for range-vector).",
-		}),
-		querySamplesRead: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "query_samples_read_total",
-			Help:      "The total number of samples read by all queries (only new points per step for range-vector).",
+			Help:      "The total number of samples loaded by all queries.",
 		}),
 		queryQueueTime:            queryResultSummary.WithLabelValues("queue_time"),
 		queryQueueTimeHistogram:   queryResultHistogram.WithLabelValues("queue_time"),
@@ -465,7 +458,6 @@ func NewEngine(opts EngineOpts) *Engine {
 			metrics.queryLogEnabled,
 			metrics.queryLogFailures,
 			metrics.querySamples,
-			metrics.querySamplesRead,
 			queryResultSummary,
 			queryResultHistogram,
 		)
@@ -688,7 +680,6 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 	defer func() {
 		ng.metrics.currentQueries.Dec()
 		ng.metrics.querySamples.Add(float64(q.sampleStats.TotalSamples))
-		ng.metrics.querySamplesRead.Add(float64(q.sampleStats.SamplesRead))
 	}()
 
 	ctx, cancel := context.WithTimeout(ctx, ng.timeout)
@@ -1868,7 +1859,6 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 			if h == nil {
 				ev.currentSamples++
 				ev.samplesStats.IncrementSamplesAtStep(step, 1)
-				ev.samplesStats.IncrementSamplesReadAtStep(step, 1)
 				if ev.currentSamples > ev.maxSamples {
 					ev.error(ErrTooManySamples(env))
 				}
@@ -1891,7 +1881,6 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 				histSize := point.size()
 				ev.currentSamples += histSize
 				ev.samplesStats.IncrementSamplesAtStep(step, int64(histSize))
-				ev.samplesStats.IncrementSamplesReadAtStep(step, int64(histSize))
 				if ev.currentSamples > ev.maxSamples {
 					ev.error(ErrTooManySamples(env))
 				}
@@ -1911,95 +1900,16 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 	return mat
 }
 
-// numSteps returns the number of steps in the evaluator's range,
-// treating an instant query (interval == 0) as a single step.
-func (ev *evaluator) numSteps() int {
-	if ev.interval <= 0 {
-		return 1
-	}
-	return int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
-}
-
-// runSubquery evaluates the given SubqueryExpr in a fresh child evaluator
-// aligned to the subquery's own step grid and returns the result along with
-// the child's samples stats. The caller decides how to merge the child stats
-// into the parent: peak and samples-read are always safe to absorb, while
-// TotalSamples should only be absorbed when the caller does not later
-// re-count the materialized matrix (e.g. evalSubquery does not absorb it).
-func (ev *evaluator) runSubquery(ctx context.Context, e *parser.SubqueryExpr) (parser.Value, *stats.QuerySamples, annotations.Annotations) {
-	offsetMillis := durationMilliseconds(e.Offset)
-	rangeMillis := durationMilliseconds(e.Range)
-
-	// Align the parent end timestamp down to the parent's step grid before
-	// applying the subquery offset, so the subquery does not evaluate past
-	// the parent's last actual evaluation point when the caller supplied
-	// an end timestamp that is not step-aligned.
-	parentEnd := ev.endTimestamp
-	if ev.interval > 0 {
-		parentEnd = ev.startTimestamp + ((ev.endTimestamp-ev.startTimestamp)/ev.interval)*ev.interval
-	}
-	subqEnd := parentEnd - offsetMillis
-
-	var subqInterval int64
-	if e.Step != 0 {
-		subqInterval = durationMilliseconds(e.Step)
-	} else {
-		subqInterval = ev.noStepSubqueryIntervalFn(rangeMillis)
-	}
-	subqStart := subqInterval * ((ev.startTimestamp - offsetMillis - rangeMillis) / subqInterval)
-	if subqStart <= (ev.startTimestamp - offsetMillis - rangeMillis) {
-		subqStart += subqInterval
-	}
-
-	// Subquery children always track per-step samples-read (independent of
-	// the parent's per-step setting) so MergeSamplesReadFromSubquery can
-	// attribute each subquery iteration to a parent step and drop iterations
-	// that fall in gaps between parent windows. The arrays don't escape this
-	// call.
-	childStats := stats.NewChildWithStepTracking(subqStart, subqEnd, subqInterval)
-	newEv := &evaluator{
-		startTimestamp:           subqStart,
-		endTimestamp:             subqEnd,
-		interval:                 subqInterval,
-		currentSamples:           ev.currentSamples,
-		maxSamples:               ev.maxSamples,
-		logger:                   ev.logger,
-		lookbackDelta:            ev.lookbackDelta,
-		samplesStats:             childStats,
-		noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
-		enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
-		enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
-		useStartTimestamps:       ev.useStartTimestamps,
-		querier:                  ev.querier,
-	}
-
-	if subqStart != ev.startTimestamp {
-		// Adjust the offset of selectors based on the new start time of
-		// the evaluator since the calculation of the offset with @ happens
-		// w.r.t. the start time.
-		setOffsetForAtModifier(subqStart, e.Expr)
-	}
-
-	res, ws := newEv.eval(ctx, e.Expr)
-	ev.currentSamples = newEv.currentSamples
-	return res, childStats, ws
-}
-
 // evalSubquery evaluates given SubqueryExpr and returns an equivalent
 // evaluated MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
-// Only PeakSamples and SamplesRead from the subquery are merged into the
-// parent; TotalSamples is intentionally not merged because the call/range-vector
-// caller will count samples again from the materialized matrix.
-//
-// outerOffset is durationMilliseconds(subq.OriginalOffset) so the merge can
-// shift child timestamps to match the parent step that consumes them.
-// outerRange is the outer call's selRange so the merge can drop subquery
-// iterations whose timestamps fall in gaps between consecutive outer-step
-// windows (i.e. when the outer step is wider than the subquery range).
-func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr, outerOffset, outerRange int64) (*parser.MatrixSelector, int, annotations.Annotations) {
-	val, childStats, ws := ev.runSubquery(ctx, subq)
-	ev.samplesStats.UpdatePeakFromSubquery(childStats)
-	ev.samplesStats.MergeSamplesReadFromSubquery(childStats, ev.startTimestamp, ev.interval, ev.numSteps(), outerOffset, outerRange)
+func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr) (*parser.MatrixSelector, int, annotations.Annotations) {
+	samplesStats := ev.samplesStats
+	// Avoid double counting samples when running a subquery, those samples will be counted in later stage.
+	ev.samplesStats = ev.samplesStats.NewChild()
+	val, ws := ev.eval(ctx, subq)
+	// But do incorporate the peak from the subquery.
+	samplesStats.UpdatePeakFromSubquery(ev.samplesStats)
+	ev.samplesStats = samplesStats
 	mat := val.(Matrix)
 	vs := &parser.VectorSelector{
 		OriginalOffset: subq.OriginalOffset,
@@ -2115,10 +2025,9 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 		// Check if the function has a matrix argument.
 		var (
-			matrixArgIndex     int
-			matrixArg          bool
-			matrixFromSubquery bool
-			warnings           annotations.Annotations
+			matrixArgIndex int
+			matrixArg      bool
+			warnings       annotations.Annotations
 		)
 		for i := range e.Args {
 			a := e.Args[i]
@@ -2131,9 +2040,8 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			if subq, ok := a.(*parser.SubqueryExpr); ok {
 				matrixArgIndex = i
 				matrixArg = true
-				matrixFromSubquery = true
 				// Replacing parser.SubqueryExpr with parser.MatrixSelector.
-				val, totalSamples, ws := ev.evalSubquery(ctx, subq, durationMilliseconds(subq.OriginalOffset), durationMilliseconds(subq.Range))
+				val, totalSamples, ws := ev.evalSubquery(ctx, subq)
 				e.Args[i] = val
 				warnings.Merge(ws)
 				defer func() {
@@ -2299,13 +2207,11 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 						counter++
 					}
 				}
-				var maxt int64
 				// Evaluate the matrix selector for this series
 				// for this step, but only if this is the 1st
 				// iteration or no @ modifier has been used.
-				refetch := ts == ev.startTimestamp || selVS.Timestamp == nil
-				if refetch {
-					maxt = ts - offset
+				if ts == ev.startTimestamp || selVS.Timestamp == nil {
+					maxt := ts - offset
 					mint := maxt - selRange
 					switch {
 					case selVS.Anchored:
@@ -2319,25 +2225,6 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				if len(floats)+len(histograms) == 0 {
 					continue
 				}
-				// fullWindowCount reflects the matrix window consumed at this
-				// step. With an @ modifier the same window is reused across all
-				// steps, so floats/histograms persist from step 0; computing
-				// this after the conditional re-fetch handles both cases
-				// uniformly.
-				fullWindowCount := int64(len(floats) + totalHPointSize(histograms))
-				// For subquery-derived matrices, SamplesRead was already counted
-				// inside evalSubquery via MergeSamplesReadFromSubquery; skip here
-				// to avoid double-counting the storage I/O. On step 0 the full
-				// window is new; on later steps only points past the previous
-				// step's cutoff are new.
-				var samplesReadCount int64
-				if refetch && !matrixFromSubquery {
-					if step == 0 {
-						samplesReadCount = fullWindowCount
-					} else {
-						samplesReadCount = countSamplesAfter(floats, histograms, maxt-ev.interval)
-					}
-				}
 				inMatrix[0].Floats = floats
 				inMatrix[0].Histograms = histograms
 				enh.Ts = ts
@@ -2346,10 +2233,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				// Make the function call.
 				outVec, annos := call(vectorVals, inMatrix, e.Args, enh)
 				warnings.Merge(annos)
-				ev.samplesStats.IncrementSamplesAtStep(step, fullWindowCount)
-				if samplesReadCount > 0 {
-					ev.samplesStats.IncrementSamplesReadAtStep(step, samplesReadCount)
-				}
+				ev.samplesStats.IncrementSamplesAtStep(step, int64(len(floats)+totalHPointSize(histograms)))
 
 				enh.Out = outVec[:0]
 				if len(outVec) > 0 {
@@ -2549,14 +2433,46 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		return ev.matrixSelector(ctx, e)
 
 	case *parser.SubqueryExpr:
-		res, childStats, ws := ev.runSubquery(ctx, e)
-		ev.samplesStats.UpdatePeakFromSubquery(childStats)
-		// Attribute the subquery's TotalSamples to the parent's end step
-		// so they appear in the parent's TotalSamples stat.
-		ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, childStats.TotalSamples)
-		// outerOffset=0, outerRange=0: every subquery iteration becomes part of
-		// the parent's matrix output, so no shifting or gap filtering is needed.
-		ev.samplesStats.MergeSamplesReadFromSubquery(childStats, ev.startTimestamp, ev.interval, ev.numSteps(), 0, 0)
+		offsetMillis := durationMilliseconds(e.Offset)
+		rangeMillis := durationMilliseconds(e.Range)
+		newEv := &evaluator{
+			endTimestamp:             ev.endTimestamp - offsetMillis,
+			currentSamples:           ev.currentSamples,
+			maxSamples:               ev.maxSamples,
+			logger:                   ev.logger,
+			lookbackDelta:            ev.lookbackDelta,
+			samplesStats:             ev.samplesStats.NewChild(),
+			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
+			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
+			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
+			useStartTimestamps:       ev.useStartTimestamps,
+			querier:                  ev.querier,
+		}
+
+		if e.Step != 0 {
+			newEv.interval = durationMilliseconds(e.Step)
+		} else {
+			newEv.interval = ev.noStepSubqueryIntervalFn(rangeMillis)
+		}
+
+		// Start with the first timestamp after (ev.startTimestamp - offset - range)
+		// that is aligned with the step (multiple of 'newEv.interval').
+		newEv.startTimestamp = newEv.interval * ((ev.startTimestamp - offsetMillis - rangeMillis) / newEv.interval)
+		if newEv.startTimestamp <= (ev.startTimestamp - offsetMillis - rangeMillis) {
+			newEv.startTimestamp += newEv.interval
+		}
+
+		if newEv.startTimestamp != ev.startTimestamp {
+			// Adjust the offset of selectors based on the new
+			// start time of the evaluator since the calculation
+			// of the offset with @ happens w.r.t. the start time.
+			setOffsetForAtModifier(newEv.startTimestamp, e.Expr)
+		}
+
+		res, ws := newEv.eval(ctx, e.Expr)
+		ev.currentSamples = newEv.currentSamples
+		ev.samplesStats.UpdatePeakFromSubquery(newEv.samplesStats)
+		ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, newEv.samplesStats.TotalSamples)
 		return res, ws
 	case *parser.StepInvariantExpr:
 		newEv := &evaluator{
@@ -2581,8 +2497,6 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			step++
 			ev.samplesStats.IncrementSamplesAtStep(step, newEv.samplesStats.TotalSamples)
 		}
-		// Subquery ran once; add SamplesRead once at step 0 (not per outer step).
-		ev.samplesStats.IncrementSamplesReadAtStep(0, newEv.samplesStats.SamplesRead)
 		switch e.Expr.(type) {
 		case *parser.MatrixSelector, *parser.SubqueryExpr:
 			// We do not duplicate results for range selectors since result is a matrix
@@ -2688,7 +2602,6 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 
 			ev.currentSamples++
 			ev.samplesStats.IncrementSamplesAtTimestamp(enh.Ts, 1)
-			ev.samplesStats.IncrementSamplesReadAtTimestamp(enh.Ts, 1)
 			if ev.currentSamples > ev.maxSamples {
 				ev.error(ErrTooManySamples(env))
 			}
@@ -2857,7 +2770,6 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 		}
 		totalSize := int64(len(ss.Floats)) + int64(totalHPointSize(ss.Histograms))
 		ev.samplesStats.IncrementSamplesAtTimestamp(ev.startTimestamp, totalSize)
-		ev.samplesStats.IncrementSamplesReadAtTimestamp(ev.startTimestamp, totalSize)
 
 		if totalSize > 0 {
 			matrix = append(matrix, ss)
@@ -3193,8 +3105,13 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			}
 			matchedLabels := rs.Metric.MatchLabels(matching.On, matching.MatchingLabels...)
 			// Many-to-many matching not allowed.
+			// Sort the duplicate series strings for deterministic output.
+			dupl1, dupl2 := rs.Metric.String(), duplSample.Metric.String()
+			if dupl1 > dupl2 {
+				dupl1, dupl2 = dupl2, dupl1
+			}
 			ev.errorf("found duplicate series for the match group %s on the %s hand-side of the operation: [%s, %s]"+
-				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, rs.Metric.String(), duplSample.Metric.String())
+				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, dupl1, dupl2)
 		}
 		rightSigs[sigOrd] = rs
 		rightSigsPresent[sigOrd] = true

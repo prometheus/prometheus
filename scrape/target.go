@@ -39,15 +39,6 @@ import (
 // scraping a target.
 const convertClassicHistogramsToNHCBLabel = "__convert_classic_histograms_to_nhcb__"
 
-// alwaysScrapeClassicHistogramsLabel is the name of the label that holds whether
-// to always scrape a classic histogram even if it is also exposed as a native
-// histogram when scraping a target.
-const alwaysScrapeClassicHistogramsLabel = "__always_scrape_classic_histograms__"
-
-// scrapeNativeHistogramsLabel is the name of the label that holds whether to
-// scrape native histograms when scraping a target.
-const scrapeNativeHistogramsLabel = "__scrape_native_histograms__"
-
 // TargetHealth describes the health state of a target.
 type TargetHealth string
 
@@ -321,21 +312,22 @@ func (t *Target) intervalAndTimeout(defaultInterval, defaultDuration time.Durati
 	return time.Duration(interval), time.Duration(timeout), nil
 }
 
-// boolLabel returns the boolean value of the target label named name, falling
-// back to def when the label is unset or its value does not parse as a boolean.
-func (t *Target) boolLabel(name string, def bool) bool {
+// convertClassicHistogramsToNHCB returns whether classic histograms scraped from
+// the target should be converted to native histograms with custom buckets,
+// derived from the target's labels and falling back to def when unset or invalid.
+func (t *Target) convertClassicHistogramsToNHCB(def bool) bool {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
-	v := t.labels.Get(name)
+	v := t.labels.Get(convertClassicHistogramsToNHCBLabel)
 	if v == "" {
 		return def
 	}
-	b, err := strconv.ParseBool(v)
+	convert, err := strconv.ParseBool(v)
 	if err != nil {
 		return def
 	}
-	return b
+	return convert
 }
 
 // GetValue gets a label value from the entire label set.
@@ -606,8 +598,6 @@ func PopulateDiscoveredLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLab
 		{Name: model.MetricsPathLabel, Value: cfg.MetricsPath},
 		{Name: model.SchemeLabel, Value: cfg.Scheme},
 		{Name: convertClassicHistogramsToNHCBLabel, Value: strconv.FormatBool(cfg.ConvertClassicHistogramsToNHCBEnabled())},
-		{Name: alwaysScrapeClassicHistogramsLabel, Value: strconv.FormatBool(cfg.AlwaysScrapeClassicHistogramsEnabled())},
-		{Name: scrapeNativeHistogramsLabel, Value: strconv.FormatBool(cfg.ScrapeNativeHistogramsEnabled())},
 	}
 
 	for _, l := range scrapeLabels {
@@ -666,15 +656,9 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLabels, tgLab
 		return labels.EmptyLabels(), fmt.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
 	}
 
-	for _, l := range []struct{ name, desc string }{
-		{convertClassicHistogramsToNHCBLabel, "convert classic histograms to nhcb"},
-		{alwaysScrapeClassicHistogramsLabel, "always scrape classic histograms"},
-		{scrapeNativeHistogramsLabel, "scrape native histograms"},
-	} {
-		if v := lb.Get(l.name); v != "" {
-			if _, err := strconv.ParseBool(v); err != nil {
-				return labels.EmptyLabels(), fmt.Errorf("error parsing %s: %w", l.desc, err)
-			}
+	if convertNHCB := lb.Get(convertClassicHistogramsToNHCBLabel); convertNHCB != "" {
+		if _, err := strconv.ParseBool(convertNHCB); err != nil {
+			return labels.EmptyLabels(), fmt.Errorf("error parsing convert classic histograms to nhcb: %w", err)
 		}
 	}
 

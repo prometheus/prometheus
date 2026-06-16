@@ -1,8 +1,0 @@
-# The old React app has been separated from the npm workspaces setup to avoid
-# issues with conflicting dependencies. This is a temporary solution until the
-# new Mantine-based UI is fully integrated and the old app can be removed.
-packages: []
-allowBuilds:
-  '@parcel/watcher': true
-  core-js: true
-  core-js-pure: true

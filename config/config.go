@@ -1130,21 +1130,6 @@ func (t *TSDBRetentionConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	return nil
 }
 
-const (
-	// FloatChunkEncodingXOR selects standard XOR encoding for float chunks.
-	FloatChunkEncodingXOR = "xor"
-	// FloatChunkEncodingXOR2 selects XOR2 encoding for float chunks; requires --enable-feature=xor2-encoding.
-	FloatChunkEncodingXOR2 = "xor2"
-)
-
-// ChunkEncodingConfig configures per-chunk-type encoding overrides.
-type ChunkEncodingConfig struct {
-	// Floats selects the encoding used for float chunks.
-	// Valid values are "xor", "xor2", and "" (empty/absent). When empty, the encoding
-	// follows the --enable-feature=xor2-encoding flag. Setting "xor2" requires the flag to be enabled.
-	Floats string `yaml:"floats,omitempty"`
-}
-
 // TSDBConfig configures runtime reloadable configuration options.
 type TSDBConfig struct {
 	// OutOfOrderTimeWindow sets how long back in time an out-of-order sample can be inserted
@@ -1162,9 +1147,6 @@ type TSDBConfig struct {
 	// the in-memory Head block. If the % of stale series crosses this threshold, stale series compaction is run immediately.
 	StaleSeriesCompactionThreshold float64 `yaml:"stale_series_compaction_threshold,omitempty"`
 
-	// ChunkEncoding configures per-chunk-type encoding overrides.
-	ChunkEncoding ChunkEncodingConfig `yaml:"chunk_encoding,omitempty"`
-
 	Retention *TSDBRetentionConfig `yaml:"retention,omitempty"`
 }
 
@@ -1177,13 +1159,6 @@ func (t *TSDBConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 
 	t.OutOfOrderTimeWindow = time.Duration(t.OutOfOrderTimeWindowFlag).Milliseconds()
-
-	switch t.ChunkEncoding.Floats {
-	case "", FloatChunkEncodingXOR, FloatChunkEncodingXOR2:
-		// Valid; no action required.
-	default:
-		return fmt.Errorf("'storage.tsdb.chunk_encoding.floats' must be 'xor' or 'xor2', or the field must be omitted entirely, got %q", t.ChunkEncoding.Floats)
-	}
 
 	if t.Retention == nil {
 		retention := DefaultTSDBRetentionConfig

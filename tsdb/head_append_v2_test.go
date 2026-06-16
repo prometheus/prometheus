@@ -3007,11 +3007,7 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableST
 	opts.ChunkDirRoot = dir
 	opts.OutOfOrderTimeWindow.Store(30 * time.Minute.Milliseconds())
 	opts.EnableSTStorage.Store(enableSTstorage)
-	if enableSTstorage {
-		opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
-	} else {
-		opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR))
-	}
+	opts.EnableXOR2Encoding.Store(enableSTstorage)
 
 	h, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
 	require.NoError(t, err)
@@ -3063,7 +3059,7 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableST
 	require.False(t, ok)
 	require.NotNil(t, ms)
 
-	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, h.opts.UseXOR2FloatEncoding())
+	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, h.opts.EnableXOR2Encoding.Load())
 	require.NoError(t, err)
 	require.Len(t, chks, 1)
 
@@ -4985,7 +4981,7 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
 			opts.EnableSTStorage.Store(true)
-			opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+			opts.EnableXOR2Encoding.Store(true)
 			h, _ := newTestHeadWithOptions(t, compression.None, opts)
 
 			lbls := labels.FromStrings("foo", "bar")

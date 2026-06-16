@@ -40,7 +40,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/almost"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/convertnhcb"
@@ -162,7 +161,7 @@ func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 	RunBuiltinTestsWithStorage(t, engine, func(t testing.TB) storage.Storage {
 		return teststorage.New(t, func(opt *tsdb.Options) {
 			opt.EnableSTStorage = true
-			opt.FloatChunkEncoding = chunkenc.EncXOR2
+			opt.EnableXOR2Encoding = true
 		})
 	})
 }

@@ -42,13 +42,7 @@ When enabled, for each instance scrape, Prometheus stores a sample in the follow
 `--enable-feature=promql-per-step-stats`
 
 When enabled, passing `stats=all` in a query request returns per-step
-statistics. The following sample statistics are included:
-
-- **totalQueryableSamples** / **totalQueryableSamplesPerStep**: Total number of samples *loaded* during the query. For range-vector functions (e.g. `rate`, `sum_over_time`) evaluated over multiple steps, each step counts the full window (the same point may be counted in multiple steps).
-- **samplesRead** / **samplesReadPerStep**: Total number of samples *read* (I/O). For range-vector functions in range queries, only *new* points per step are counted (step 0: full window; later steps: points not seen in the previous step). For other query types, this equals totalQueryableSamples.
-- **peakSamples**: Peak number of samples in memory during evaluation (used for the `query.max-samples` limit).
-
-The Prometheus server exposes two counters for observability: `prometheus_engine_query_samples_total` (samples loaded, full window per step) and `prometheus_engine_query_samples_read_total` (samples read, delta per step for range-vector).
+statistics. Currently this is limited to totalQueryableSamples.
 
 When disabled in either the engine or the query, per-step statistics are not
 computed at all.
@@ -102,11 +96,8 @@ Besides enabling this feature in Prometheus, start timestamps need to be exposed
 
 > NOTE: This is an experimental feature with known limitations until fully implemented.
 > * It introduces new WAL record type (SamplesV2) that can only be replayed with Prometheus 3.11 or later versions.
-> * For persistent storage support (TSDB blocks), you need to manually opt-in for XOR2 chunk format ([`xor2-encoding` flag](#xor2-chunk-encoding)).
->   The float chunk encoding must resolve to XOR2 when `st-storage` is active, because XOR chunks do not store start timestamps.
->   If the resolved encoding is XOR (that is, `--enable-feature=xor2-encoding` is not set and `chunk_encoding.floats: xor2` is not configured), Prometheus refuses to start and fails the configuration validation with an error rather than continuing to run.
->   Likewise, explicitly setting `chunk_encoding.floats: xor` in the config file while `st-storage` is active is rejected at config reload.
->   This might change later once we finish experimentation phase with XOR2.
+> * For persistent storage support (TSDB blocks), you need to manually opt-in for XOR2 chunk format ([`xor2-encoding` flag](#xor2-chunk-encoding)). 
+> This might change later once we finish experimentation phase with XOR2.
 > * ST for native histograms and NHCBs are not yet implemented (see [#18315](https://github.com/prometheus/prometheus/issues/18315)).
 > * PromQL use of ST is out of scope of this feature.
 
@@ -355,17 +346,9 @@ For more details, see the [proposal](https://github.com/prometheus/proposals/pul
 > WARNING: This is highly experimental and risky setting:
 > * Chunks encoded with XOR2 **cannot be read by older Prometheus versions** that do not support the encoding. Once enabled and data is written, you need to **manually delete blocks from the disk**, otherwise Prometheus will return error on all queries.
 > * We are still experimenting on the final encoding. As of now this encoding can change in any Prometheus version. All your persistent block data will be lost between versions.
-> * This encoding is new, meaning downstream tools and LTS systems might not support it yet (e.g. Thanos sidecar uploaded blocks).
+> * This is encoding is new, meaning downstream tools and LTS systems might now support it yet (e.g. Thanos sidecar uploaded blocks).
 
-This setting enables the new XOR2 chunk encoding for float samples, which provides better disk compression than the default XOR encoding for typical Prometheus workloads. This format also allows storing Start Timestamp (ST).
-
-The encoding can also be controlled at each configuration reload via the `chunk_encoding.floats` field in the `storage.tsdb` section of the configuration file. Setting `chunk_encoding.floats: xor` forces standard XOR encoding even when `--enable-feature=xor2-encoding` is set; setting `chunk_encoding.floats: xor2` requires `--enable-feature=xor2-encoding` to be enabled.
-
-Without [`st-storage`](#start-timestamp-st-native-storage), XOR and XOR2 are compatible encodings, so an encoding change via `chunk_encoding.floats` does not cut the current chunk; the new encoding takes effect when the current chunk is next cut for any reason (size, time range, or sample count). When `st-storage` is also enabled, XOR and XOR2 are not compatible because XOR chunks do not store start timestamps, so the in-progress chunk is cut on the next append after the encoding changes.
-
-Note that `--enable-feature=st-storage` does not automatically enable XOR2 encoding.
-However, setting `chunk_encoding.floats: xor` while `st-storage` is active is rejected at
-config reload, because XOR chunks do not store start timestamps.
+This setting enables the new XOR2 chunk encoding for float samples, which provides better disk compression than the default XOR encoding for typical Prometheus workloads. This format also allow storing Start Timestamp (ST).
 
 ## Extended Range Selectors
 

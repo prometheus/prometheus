@@ -80,6 +80,12 @@ func init() {
 	discovery.RegisterConfig(&EC2SDConfig{})
 }
 
+// EC2Filter is the configuration for filtering EC2 instances.
+type EC2Filter struct {
+	Name   string   `yaml:"name"`
+	Values []string `yaml:"values"`
+}
+
 // EC2SDConfig is the configuration for EC2 based service discovery.
 type EC2SDConfig struct {
 	Endpoint        string         `yaml:"endpoint"`
@@ -91,7 +97,7 @@ type EC2SDConfig struct {
 	ExternalID      string         `yaml:"external_id,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
-	Filters         []*Filter      `yaml:"filters"`
+	Filters         []*EC2Filter   `yaml:"filters"`
 
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 }

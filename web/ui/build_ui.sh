@@ -26,13 +26,13 @@ assetsDir="./static"
 function buildModule() {
   for module in "${buildOrder[@]}"; do
     echo "build ${module}"
-    pnpm --filter "@prometheus-io/${module}" run build
+    npm run build -w "@prometheus-io/${module}"
   done
 }
 
 function buildReactApp() {
   echo "build react-app"
-  (cd react-app && pnpm run build)
+  (cd react-app && npm run build)
   mkdir -p ${assetsDir}
   rm -rf ${assetsDir}/react-app
   mv ./react-app/build ${assetsDir}/react-app
@@ -40,7 +40,7 @@ function buildReactApp() {
 
 function buildMantineUI() {
   echo "build mantine-ui"
-  pnpm --filter @prometheus-io/mantine-ui run build
+  npm run build -w @prometheus-io/mantine-ui
   mkdir -p ${assetsDir}
   rm -rf ${assetsDir}/mantine-ui
   mv ./mantine-ui/dist ${assetsDir}/mantine-ui

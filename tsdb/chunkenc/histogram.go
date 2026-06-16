@@ -217,11 +217,6 @@ func (a *HistogramAppender) NumSamples() int {
 	return int(binary.BigEndian.Uint16(a.b.bytes()))
 }
 
-// setNumSamples writes the histogram sample count into the chunk header.
-func (a *HistogramAppender) setNumSamples(num int) {
-	binary.BigEndian.PutUint16(a.b.bytes(), uint16(num))
-}
-
 // Append implements Appender. This implementation panics because normal float
 // samples must never be appended to a histogram chunk.
 func (*HistogramAppender) Append(int64, int64, float64) {
@@ -551,12 +546,9 @@ func (a *HistogramAppender) appendableGauge(h *histogram.Histogram) (
 // the histogram is properly structured, e.g. the number of buckets used
 // corresponds to the number conveyed by the span structures. First call
 // Appendable() and act accordingly!
-//
-// num is the current sample count in the chunk (as returned by NumSamples).
-// appendHistogram does not update the chunk header itself; it returns the new
-// sample count (num+1), which the caller must persist via setNumSamples.
-func (a *HistogramAppender) appendHistogram(num int, t int64, h *histogram.Histogram) int {
+func (a *HistogramAppender) appendHistogram(t int64, h *histogram.Histogram) {
 	var tDelta, cntDelta, zCntDelta int64
+	num := binary.BigEndian.Uint16(a.b.bytes())
 
 	if value.IsStaleNaN(h.Sum) {
 		// Emptying out other fields to write no buckets, and an empty
@@ -654,6 +646,8 @@ func (a *HistogramAppender) appendHistogram(num int, t int64, h *histogram.Histo
 		}
 	}
 
+	binary.BigEndian.PutUint16(a.b.bytes(), num+1)
+
 	a.t = t
 	a.cnt = h.Count
 	a.zCnt = h.ZeroCount
@@ -665,8 +659,6 @@ func (a *HistogramAppender) appendHistogram(num int, t int64, h *histogram.Histo
 	copy(a.nBuckets, h.NegativeBuckets)
 	// Note that the bucket deltas were already updated above.
 	a.sum = h.Sum
-
-	return num + 1
 }
 
 // recode converts the current chunk to accommodate an expansion of the set of
@@ -677,7 +669,7 @@ func (a *HistogramAppender) appendHistogram(num int, t int64, h *histogram.Histo
 func (a *HistogramAppender) recode(
 	positiveInserts, negativeInserts []Insert,
 	positiveSpans, negativeSpans []histogram.Span,
-) (Chunk, *HistogramAppender) {
+) (Chunk, Appender) {
 	// TODO(beorn7): This currently just decodes everything and then encodes
 	// it again with the new span layout. This can probably be done in-place
 	// by editing the chunk. But let's first see how expensive it is in the
@@ -692,7 +684,6 @@ func (a *HistogramAppender) recode(
 	happ := app.(*HistogramAppender)
 	numPositiveBuckets, numNegativeBuckets := countSpans(positiveSpans), countSpans(negativeSpans)
 
-	num := happ.NumSamples()
 	for it.Next() == ValHistogram {
 		tOld, hOld := it.AtHistogram(nil)
 
@@ -716,12 +707,11 @@ func (a *HistogramAppender) recode(
 		if len(negativeInserts) > 0 {
 			hOld.NegativeBuckets = insert(hOld.NegativeBuckets, negativeBuckets, negativeInserts, true)
 		}
-		num = happ.appendHistogram(num, tOld, hOld)
+		happ.appendHistogram(tOld, hOld)
 	}
-	happ.setNumSamples(num)
 
 	happ.setCounterResetHeader(CounterResetHeader(byts[histogramFlagPos] & CounterResetHeaderMask))
-	return hc, happ
+	return hc, app
 }
 
 // recodeHistogram converts the current histogram (in-place) to accommodate an
@@ -744,11 +734,11 @@ func (a *HistogramAppender) writeSumDelta(v float64) {
 	xorWrite(a.b, v, a.sum, &a.leading, &a.trailing)
 }
 
-func (*HistogramAppender) AppendFloatHistogram(Appender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
+func (*HistogramAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a float histogram sample to a histogram chunk")
 }
 
-func (a *HistogramAppender) AppendHistogram(prev Appender, _, t int64, h *histogram.Histogram, appendOnly bool) (Chunk, bool, Appender, error) {
+func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, _, t int64, h *histogram.Histogram, appendOnly bool) (Chunk, bool, Appender, error) {
 	numSamples := a.NumSamples()
 
 	if numSamples == math.MaxUint16 {
@@ -756,7 +746,7 @@ func (a *HistogramAppender) AppendHistogram(prev Appender, _, t int64, h *histog
 	}
 
 	if numSamples == 0 {
-		a.setNumSamples(a.appendHistogram(numSamples, t, h))
+		a.appendHistogram(t, h)
 		if h.CounterResetHint == histogram.GaugeType {
 			a.setCounterResetHeader(GaugeType)
 			return nil, false, a, nil
@@ -767,18 +757,9 @@ func (a *HistogramAppender) AppendHistogram(prev Appender, _, t int64, h *histog
 			// Always honor the explicit counter reset hint.
 			a.setCounterResetHeader(CounterReset)
 		case prev != nil:
-			// This is a new chunk, but continued from a previous one. We need
-			// to calculate the reset header unless already set. We only need
-			// the prev appender's appendable() method, so we type-assert here
-			// rather than at the interface boundary; this lets callers pass
-			// any Appender (xor, xor2, histogram, histogramST, ...) and we
-			// silently ignore prev when it isn't an integer-histogram appender
-			// (e.g. a transition from a float chunk, where there is no counter
-			// to reset against).
-			if p, ok := prev.(histogramAppendable); ok {
-				_, _, _, _, _, counterReset := p.appendable(h)
-				a.setCounterResetHeader(counterReset)
-			}
+			// This is a new chunk, but continued from a previous one. We need to calculate the reset header unless already set.
+			_, _, _, _, _, counterReset := prev.appendable(h)
+			a.setCounterResetHeader(counterReset)
 		}
 		return nil, false, a, nil
 	}
@@ -800,7 +781,7 @@ func (a *HistogramAppender) AppendHistogram(prev Appender, _, t int64, h *histog
 			}
 			happ := app.(*HistogramAppender)
 			happ.setCounterResetHeader(counterResetHint)
-			happ.setNumSamples(happ.appendHistogram(0, t, h))
+			happ.appendHistogram(t, h)
 			return newChunk, false, app, nil
 		}
 		if len(pBackwardInserts) > 0 || len(nBackwardInserts) > 0 {
@@ -824,14 +805,14 @@ func (a *HistogramAppender) AppendHistogram(prev Appender, _, t int64, h *histog
 			if appendOnly {
 				return nil, false, a, fmt.Errorf("histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 			}
-			chk, happ := a.recode(
+			chk, app := a.recode(
 				pForwardInserts, nForwardInserts,
 				h.PositiveSpans, h.NegativeSpans,
 			)
-			happ.setNumSamples(happ.appendHistogram(happ.NumSamples(), t, h))
-			return chk, true, happ, nil
+			app.(*HistogramAppender).appendHistogram(t, h)
+			return chk, true, app, nil
 		}
-		a.setNumSamples(a.appendHistogram(numSamples, t, h))
+		a.appendHistogram(t, h)
 		return nil, false, a, nil
 	}
 	// Adding gauge histogram.
@@ -847,7 +828,7 @@ func (a *HistogramAppender) AppendHistogram(prev Appender, _, t int64, h *histog
 		}
 		happ := app.(*HistogramAppender)
 		happ.setCounterResetHeader(GaugeType)
-		happ.setNumSamples(happ.appendHistogram(0, t, h))
+		happ.appendHistogram(t, h)
 		return newChunk, false, app, nil
 	}
 
@@ -864,15 +845,15 @@ func (a *HistogramAppender) AppendHistogram(prev Appender, _, t int64, h *histog
 		if appendOnly {
 			return nil, false, a, fmt.Errorf("gauge histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
 		}
-		chk, happ := a.recode(
+		chk, app := a.recode(
 			pForwardInserts, nForwardInserts,
 			h.PositiveSpans, h.NegativeSpans,
 		)
-		happ.setNumSamples(happ.appendHistogram(happ.NumSamples(), t, h))
-		return chk, true, happ, nil
+		app.(*HistogramAppender).appendHistogram(t, h)
+		return chk, true, app, nil
 	}
 
-	a.setNumSamples(a.appendHistogram(numSamples, t, h))
+	a.appendHistogram(t, h)
 	return nil, false, a, nil
 }
 

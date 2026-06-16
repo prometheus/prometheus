@@ -17,7 +17,6 @@ import { PrometheusClient } from '../client';
 import {
   Add,
   AggregateExpr,
-  AggregateModifier,
   And,
   BinaryExpr,
   BoolModifier,
@@ -176,21 +175,13 @@ function escapePromQLString(str: string): string {
   return str.replace(/([\\"])/g, '\\$1');
 }
 
-function isAfterClosedFunctionCallBody(state: EditorState, node: SyntaxNode, pos: number): boolean {
-  return node.type.id === FunctionCallBody && pos >= node.to && node.from < node.to && state.sliceDoc(node.to - 1, node.to) === ')';
-}
-
 // computeEndCompletePosition calculates the end position for autocompletion replacement.
 // When the cursor is in the middle of a token, this ensures the entire token is replaced,
 // not just the portion before the cursor. This fixes issue #15839.
 // Note: this method is exported only for testing purpose.
-export function computeEndCompletePosition(state: EditorState, node: SyntaxNode, pos: number): number {
+export function computeEndCompletePosition(node: SyntaxNode, pos: number): number {
   // For error nodes, use the cursor position as the end position
   if (node.type.id === 0) {
-    return pos;
-  }
-
-  if (isAfterClosedFunctionCallBody(state, node, pos)) {
     return pos;
   }
 
@@ -249,9 +240,7 @@ function computeStartCompleteLabelPositionInLabelMatcherOrInGroupingLabel(node: 
 export function computeStartCompletePosition(state: EditorState, node: SyntaxNode, pos: number): number {
   const currentText = state.doc.slice(node.from, pos).toString();
   let start = node.from;
-  if (isAfterClosedFunctionCallBody(state, node, pos)) {
-    start = pos;
-  } else if (node.type.id === LabelMatchers || node.type.id === GroupingLabels) {
+  if (node.type.id === LabelMatchers || node.type.id === GroupingLabels) {
     start = computeStartCompleteLabelPositionInLabelMatcherOrInGroupingLabel(node, pos);
   } else if (
     (node.type.id === FunctionCallBody && node.firstChild === null) ||
@@ -556,13 +545,6 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       result.push({ kind: ContextKind.Duration });
       break;
     case FunctionCallBody:
-      if (isAfterClosedFunctionCallBody(state, node, pos)) {
-        if (node.parent?.type.id === AggregateExpr && !containsAtLeastOneChild(node.parent, AggregateModifier)) {
-          result.push({ kind: ContextKind.AggregateOpModifier });
-        }
-        result.push({ kind: ContextKind.BinOp });
-        break;
-      }
       // For aggregation function such as Topk, the first parameter is a number.
       // The second one is an expression.
       // When moving to the second parameter, the node is an error node.
@@ -729,7 +711,7 @@ export class HybridComplete implements CompleteStrategy {
       return arrayToCompletionResult(
         result,
         computeStartCompletePosition(state, tree, pos),
-        computeEndCompletePosition(state, tree, pos),
+        computeEndCompletePosition(tree, pos),
         completeSnippet,
         span
       );

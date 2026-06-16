@@ -229,7 +229,6 @@ type RDSSDConfig struct {
 	Clusters        []string       `yaml:"clusters,omitempty"`
 	Port            int            `yaml:"port"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
-	Filters         []*Filter      `yaml:"filters"`
 
 	RequestConcurrency int                     `yaml:"request_concurrency,omitempty"`
 	HTTPClientConfig   config.HTTPClientConfig `yaml:",inline"`
@@ -468,26 +467,19 @@ func (d *RDSDiscovery) describeDBClusters(ctx context.Context, dbClusterARNS []s
 }
 
 func (d *RDSDiscovery) describeDBInstances(ctx context.Context, dbClusterARN string) ([]types.DBInstance, error) {
+	mu := &sync.Mutex{}
+	errg, ectx := errgroup.WithContext(ctx)
+	errg.SetLimit(d.cfg.RequestConcurrency)
 	dbInstances := []types.DBInstance{}
 	var nextToken *string
-
-	filters := []types.Filter{
-		{
-			Name:   aws.String("db-cluster-id"),
-			Values: []string{dbClusterARN},
-		},
-	}
-
-	for _, f := range d.cfg.Filters {
-		filters = append(filters, types.Filter{
-			Name:   aws.String(f.Name),
-			Values: f.Values,
-		})
-	}
-
 	for {
-		output, err := d.rds.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
-			Filters:    filters,
+		output, err := d.rds.DescribeDBInstances(ectx, &rds.DescribeDBInstancesInput{
+			Filters: []types.Filter{
+				{
+					Name:   aws.String("db-cluster-id"),
+					Values: []string{dbClusterARN},
+				},
+			},
 			Marker:     nextToken,
 			MaxRecords: aws.Int32(100),
 		})
@@ -495,14 +487,17 @@ func (d *RDSDiscovery) describeDBInstances(ctx context.Context, dbClusterARN str
 			return nil, fmt.Errorf("failed to describe DB instances for cluster ARN %s: %w", dbClusterARN, err)
 		}
 
-		dbInstances = append(dbInstances, output.DBInstances...)
-
+		for _, dbInstance := range output.DBInstances {
+			mu.Lock()
+			dbInstances = append(dbInstances, dbInstance)
+			mu.Unlock()
+		}
 		if output.Marker == nil {
 			break
 		}
 		nextToken = output.Marker
 	}
-	return dbInstances, nil
+	return dbInstances, errg.Wait()
 }
 
 func (d *RDSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {

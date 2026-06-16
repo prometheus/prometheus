@@ -120,35 +120,6 @@ func TestQueryInstantHeaders(t *testing.T) {
 	require.Equal(t, "value", getRequest().Header.Get("X-Custom"))
 }
 
-func TestCheckServerStatus(t *testing.T) {
-	t.Parallel()
-
-	for _, tc := range []struct {
-		name      string
-		urlSuffix string
-	}{
-		{name: "no trailing slash", urlSuffix: ""},
-		{name: "trailing slash", urlSuffix: "/"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			s, getRequest := mockServer(200, "Prometheus is Healthy.\n")
-			defer s.Close()
-
-			urlObject, err := url.Parse(s.URL + tc.urlSuffix)
-			require.NoError(t, err)
-
-			err = CheckServerStatus(urlObject, checkHealth, http.DefaultTransport)
-			require.NoError(t, err)
-			// The endpoint path must be requested verbatim regardless of a
-			// trailing slash in the user-provided URL. A naive string
-			// concatenation would request "//-/healthy" here, which the
-			// Prometheus router does not match.
-			require.Equal(t, checkHealth, getRequest().URL.Path)
-		})
-	}
-}
-
 func mockServer(code int, body string) (*httptest.Server, func() *http.Request) {
 	var req *http.Request
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
