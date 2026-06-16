@@ -90,6 +90,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 				"custom":                            "value",
 			}),
 			resOrig: labels.FromMap(map[string]string{
@@ -101,6 +103,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 		},
 		// Pre-define/overwrite scrape config labels.
@@ -130,6 +134,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "2s",
 				model.ScrapeTimeoutLabel:            "2s",
 				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 			resOrig: labels.FromMap(map[string]string{
 				model.AddressLabel:                  "1.2.3.4",
@@ -139,6 +145,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "2s",
 				model.ScrapeTimeoutLabel:            "2s",
 				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 		},
 		// Provide instance label. HTTPS port default for IPv6.
@@ -163,6 +171,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 			resOrig: labels.FromMap(map[string]string{
 				model.AddressLabel:                  "[::1]",
@@ -173,6 +183,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 		},
 		// Address label missing.
@@ -218,6 +230,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 				"custom":                            "host:1234",
 			}),
 			resOrig: labels.FromMap(map[string]string{
@@ -227,6 +241,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 				"custom":                            "host:1234",
 			}),
 		},
@@ -259,6 +275,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 				"custom":                            "host:1234",
 			}),
 			resOrig: labels.FromMap(map[string]string{
@@ -268,6 +286,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 				"custom":                            "host:1234",
 			}),
 		},
@@ -395,6 +415,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 			resOrig: labels.FromMap(map[string]string{
 				model.AddressLabel:                  "1.2.3.4",
@@ -404,6 +426,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 		},
 		// verify that the default port is not removed (http).
@@ -427,6 +451,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 			resOrig: labels.FromMap(map[string]string{
 				model.AddressLabel:                  "1.2.3.4:80",
@@ -436,6 +462,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 		},
 		// verify that the default port is not removed (https).
@@ -459,6 +487,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 			resOrig: labels.FromMap(map[string]string{
 				model.AddressLabel:                  "1.2.3.4:443",
@@ -468,6 +498,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 		},
 		// convert_classic_histograms_to_nhcb seeded from the config default.
@@ -492,6 +524,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "true",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 			resOrig: labels.FromMap(map[string]string{
 				model.AddressLabel:                  "1.2.3.4:1000",
@@ -501,6 +535,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "true",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 		},
 		// convert_classic_histograms_to_nhcb overridden via relabeling.
@@ -534,6 +570,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "true",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 			resOrig: labels.FromMap(map[string]string{
 				model.AddressLabel:                  "1.2.3.4:1000",
@@ -543,6 +581,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeIntervalLabel:           "1s",
 				model.ScrapeTimeoutLabel:            "1s",
 				convertClassicHistogramsToNHCBLabel: "false",
+				alwaysScrapeClassicHistogramsLabel:  "false",
+				scrapeNativeHistogramsLabel:         "false",
 			}),
 		},
 		// Invalid boolean in convert_classic_histograms_to_nhcb label.
