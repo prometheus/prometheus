@@ -131,6 +131,10 @@ func TestExprString(t *testing.T) {
 			out: `a + fill_left (-23) fill_right (42) b`,
 		},
 		{
+			in:  `a + fill_left(5) fill_right(5) b`,
+			out: `a + fill (5) b`,
+		},
+		{
 			in:  `a + on(b) group_left fill(-23) c`,
 			out: `a + on (b) group_left () fill (-23) c`,
 		},

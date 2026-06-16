@@ -119,12 +119,9 @@ func newTestDB(t testing.TB, opts ...testDBOpt) (db *DB) {
 	}
 
 	var err error
-	if len(o.rngs) == 0 {
-		db, err = Open(o.dir, nil, nil, o.opts, nil)
-	} else {
-		o.opts, o.rngs = validateOpts(o.opts, o.rngs)
-		db, err = open(o.dir, nil, nil, o.opts, o.rngs, nil)
-	}
+	o.opts, o.rngs, err = validateOpts(o.opts, o.rngs)
+	require.NoError(t, err)
+	db, err = open(o.dir, nil, nil, o.opts, o.rngs, nil)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -1800,6 +1797,131 @@ func TestApplyConfigRetentionDurationMetricUnit(t *testing.T) {
 	gotSeconds := prom_testutil.ToFloat64(db.metrics.retentionDuration)
 	wantSeconds := time.Hour.Seconds()
 	require.Equal(t, wantSeconds, gotSeconds)
+}
+
+// TestDBApplyConfigChunkEncoding verifies that ApplyConfig correctly
+// handles the chunk_encoding setting.
+func TestDBApplyConfigChunkEncoding(t *testing.T) {
+	xorCfg := func(floats string) *config.Config {
+		return &config.Config{StorageConfig: config.StorageConfig{
+			TSDBConfig: &config.TSDBConfig{ChunkEncoding: config.ChunkEncodingConfig{Floats: floats}},
+		}}
+	}
+
+	t.Run("xor2_without_option_returns_error", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.FloatChunkEncoding = chunkenc.EncXOR
+		db := newTestDB(t, withOpts(opts))
+		require.ErrorContains(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR2)),
+			"'storage.tsdb.chunk_encoding.floats: xor2' requires the xor2-encoding feature flag")
+	})
+
+	t.Run("explicit_xor_overrides_xor2_option", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.FloatChunkEncoding = chunkenc.EncXOR2
+		db := newTestDB(t, withOpts(opts))
+		require.NoError(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR)))
+		require.False(t, db.head.opts.UseXOR2FloatEncoding())
+		require.Equal(t, chunkenc.EncXOR2, db.opts.FloatChunkEncoding, "startup option must not be mutated")
+	})
+
+	t.Run("xor2_with_option_succeeds", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.FloatChunkEncoding = chunkenc.EncXOR2
+		db := newTestDB(t, withOpts(opts))
+		require.NoError(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR2)))
+		require.True(t, db.head.opts.UseXOR2FloatEncoding())
+	})
+
+	t.Run("empty_encoding_uses_startup_option", func(t *testing.T) {
+		for _, enc := range []chunkenc.Encoding{chunkenc.EncXOR2, chunkenc.EncXOR} {
+			t.Run(enc.String(), func(t *testing.T) {
+				opts := DefaultOptions()
+				opts.FloatChunkEncoding = enc
+				db := newTestDB(t, withOpts(opts))
+				require.NoError(t, db.ApplyConfig(xorCfg("")))
+				require.Equal(t, enc == chunkenc.EncXOR2, db.head.opts.UseXOR2FloatEncoding())
+			})
+		}
+	})
+
+	t.Run("sequential_reload_reverts_to_startup_option", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.FloatChunkEncoding = chunkenc.EncXOR2
+		db := newTestDB(t, withOpts(opts))
+
+		require.NoError(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR)))
+		require.False(t, db.head.opts.UseXOR2FloatEncoding())
+
+		require.NoError(t, db.ApplyConfig(xorCfg("")))
+		require.True(t, db.head.opts.UseXOR2FloatEncoding(), "empty encoding must revert to startup option")
+	})
+
+	t.Run("nil_TSDBConfig_resets_to_startup_option", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.FloatChunkEncoding = chunkenc.EncXOR2
+		db := newTestDB(t, withOpts(opts))
+
+		require.NoError(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR)))
+		require.False(t, db.head.opts.UseXOR2FloatEncoding())
+
+		require.NoError(t, db.ApplyConfig(&config.Config{}))
+		require.True(t, db.head.opts.UseXOR2FloatEncoding(), "nil TSDBConfig must revert to startup option")
+	})
+
+	t.Run("xor_with_st_storage_returns_error", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.FloatChunkEncoding = chunkenc.EncXOR2
+		opts.EnableSTStorage = true
+		db := newTestDB(t, withOpts(opts))
+		require.ErrorContains(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR)),
+			"incompatible with st-storage")
+	})
+}
+
+func TestHeadOptionsUseXOR2FloatEncoding(t *testing.T) {
+	t.Parallel()
+
+	opts := DefaultHeadOptions()
+	require.False(t, opts.UseXOR2FloatEncoding(), "default must be XOR, not XOR2")
+
+	opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+	require.True(t, opts.UseXOR2FloatEncoding())
+
+	opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR))
+	require.False(t, opts.UseXOR2FloatEncoding())
+
+	// EncNone (zero value) must not be treated as XOR2.
+	opts.FloatChunkEncoding.Store(uint32(chunkenc.EncNone))
+	require.False(t, opts.UseXOR2FloatEncoding(), "EncNone must not be treated as XOR2")
+}
+
+func TestDefaultOptionsFloatChunkEncoding(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, chunkenc.EncXOR, DefaultOptions().FloatChunkEncoding,
+		"DefaultOptions must use EncXOR as the float chunk encoding")
+}
+
+func TestValidateOptsInvalidFloatChunkEncoding(t *testing.T) {
+	t.Parallel()
+	opts := DefaultOptions()
+	opts.FloatChunkEncoding = chunkenc.EncHistogram
+	_, _, err := validateOpts(opts, nil)
+	require.ErrorContains(t, err, "unsupported float chunk encoding")
+}
+
+func TestValidateOptsSTStorageRequiresXOR2(t *testing.T) {
+	t.Parallel()
+	opts := DefaultOptions()
+	opts.EnableSTStorage = true
+	// Default encoding is EncXOR; combining it with EnableSTStorage must be rejected.
+	_, _, err := validateOpts(opts, nil)
+	require.ErrorContains(t, err, "is incompatible with start-timestamp storage")
+
+	// EncXOR2 + st-storage must be accepted.
+	opts.FloatChunkEncoding = chunkenc.EncXOR2
+	_, _, err = validateOpts(opts, nil)
+	require.NoError(t, err)
 }
 
 func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
@@ -9651,6 +9773,131 @@ func TestStaleSeriesCompactionWithZeroSeries(t *testing.T) {
 
 	// Should still have no blocks since there was nothing to compact.
 	require.Empty(t, db.Blocks())
+}
+
+// TestCompactStaleHead_EvictedSeriesRecordKeptInCheckpoint verifies that after
+// CompactStaleHead evicts a stale series, the series's label record is retained
+// in the next WAL checkpoint while the WAL still holds sample records
+// referencing its ref. The test forces a checkpoint via truncateWAL with a
+// mint between head.MinTime and head.MaxTime, then reads the checkpoint and
+// asserts that the evicted series's record is present.
+func TestCompactStaleHead_EvictedSeriesRecordKeptInCheckpoint(t *testing.T) {
+	const chunkRange = 1000
+	opts := DefaultOptions()
+	opts.MinBlockDuration = chunkRange
+	opts.MaxBlockDuration = chunkRange
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	staleV := math.Float64frombits(value.StaleNaN)
+
+	sel := labels.FromStrings("name", "selected")
+	app := db.Appender(context.Background())
+	selRef, err := app.Append(0, sel, 100, 1.0)
+	require.NoError(t, err)
+	_, err = app.Append(selRef, sel, 200, staleV) // marks sel as stale
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, uint64(1), db.Head().NumStaleSeries(),
+		"sel must be the only stale series")
+
+	// Evict sel via gcStaleSeries → sets walExpiries[selRef] = head.MaxTime() (200).
+	require.NoError(t, db.CompactStaleHead())
+	_, ok := db.Head().getWALExpiry(chunks.HeadSeriesRef(selRef))
+	require.True(t, ok, "walExpiry must be recorded for the evicted ref")
+
+	// truncateMint sits between the two head bounds: > head.MinTime so the
+	// checkpoint can run, and <= head.MaxTime so the walExpiry (200) is
+	// considered still in effect and the series record must be kept.
+	truncateMint := int64(150)
+
+	// Each truncateWAL call rolls to a new WAL segment; truncateWAL is a no-op
+	// until there are enough segments to checkpoint, so loop until a checkpoint
+	// is actually produced.
+	for range 10 {
+		db.head.lastWALTruncationTime.Store(0) // force re-truncation each iteration
+		require.NoError(t, db.head.truncateWAL(truncateMint))
+		if _, _, err := wlog.LastCheckpoint(db.head.wal.Dir()); err == nil {
+			break
+		}
+	}
+
+	checkpointDir, _, err := wlog.LastCheckpoint(db.head.wal.Dir())
+	require.NoError(t, err, "a checkpoint must have been produced")
+
+	records := readTestWAL(t, checkpointDir)
+	selRefPresent := false
+	for _, rec := range records {
+		seriesRecs, ok := rec.([]record.RefSeries)
+		if !ok {
+			continue
+		}
+		for _, s := range seriesRecs {
+			if storage.SeriesRef(s.Ref) == selRef {
+				selRefPresent = true
+			}
+		}
+	}
+	require.True(t, selRefPresent,
+		"the evicted stale series's record must remain in the checkpoint while the WAL "+
+			"still holds sample records referencing this ref")
+}
+
+// TestCompactStaleHead_ChunkBoundarySampleNotLost verifies that CompactStaleHead
+// preserves a sample whose timestamp lands exactly on a chunk-range boundary.
+//
+// CompactStaleHead walks the head's time range one fixed-width slice
+// (chunkRange) at a time, writes one on-disk block per slice for the stale
+// series, then removes those series from memory. A sample sitting exactly on
+// the upper boundary must still be captured by a block before the in-memory
+// copy is removed.
+//
+// The test plants a stale series with samples at t=500 (regular value) and at
+// t=chunkRange (=1000, stale-NaN marker). The stale-NaN at the boundary is
+// what makes sel stale and a candidate for CompactStaleHead; the earlier
+// regular sample keeps the head's lower bound below the boundary so the
+// removal step runs end to end and the boundary slice is exercised. After
+// CompactStaleHead completes, both samples must still be queryable.
+func TestCompactStaleHead_ChunkBoundarySampleNotLost(t *testing.T) {
+	const chunkRange = 1000
+	opts := DefaultOptions()
+	opts.MinBlockDuration = chunkRange
+	opts.MaxBlockDuration = chunkRange
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	staleV := math.Float64frombits(value.StaleNaN)
+
+	sel := labels.FromStrings("name", "selected")
+	app := db.Appender(context.Background())
+	selRef, err := app.Append(0, sel, 500, 1.0)
+	require.NoError(t, err)
+	_, err = app.Append(selRef, sel, chunkRange, staleV) // T == chunkRange, marks sel stale
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.Equal(t, int64(500), db.Head().MinTime(), "test precondition")
+	require.Equal(t, int64(chunkRange), db.Head().MaxTime(), "test precondition")
+	require.Equal(t, uint64(1), db.Head().NumStaleSeries(),
+		"sel must be the only stale series")
+
+	require.NoError(t, db.CompactStaleHead())
+
+	q, err := db.Querier(0, 2*chunkRange)
+	require.NoError(t, err)
+	// Use the no-replacement variant so the stale-NaN bit pattern survives into the result.
+	seriesSet := queryWithoutReplacingNaNs(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+	actual := seriesSet[`{name="selected"}`]
+
+	require.Len(t, actual, 2,
+		"both samples must remain queryable; if the boundary sample is missing the "+
+			"loop in compactHeadViewLocked exited one iteration too early and the slice "+
+			"covering [chunkRange, 2*chunkRange-1] was never produced as a block")
+	require.Equal(t, int64(500), actual[0].T(), "first sample timestamp")
+	require.Equal(t, 1.0, actual[0].F(), "first sample value")
+	require.Equal(t, int64(chunkRange), actual[1].T(), "boundary sample timestamp")
+	require.True(t, value.IsStaleNaN(actual[1].F()),
+		"boundary sample must remain the stale-NaN marker")
 }
 
 func TestBeyondSizeRetentionWithPercentage(t *testing.T) {

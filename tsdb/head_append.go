@@ -191,7 +191,7 @@ func (h *Head) appender() *headAppender {
 			appendID:              appendID,
 			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
 			storeST:               h.opts.EnableSTStorage.Load(),
-			useXOR2:               h.opts.EnableXOR2Encoding.Load(),
+			useXOR2:               h.opts.UseXOR2FloatEncoding(),
 		},
 	}
 }
@@ -419,8 +419,8 @@ type headAppenderBase struct {
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
-	storeST                         bool
-	useXOR2                         bool
+	storeST                         bool // Whether start-timestamp storage is enabled for this append.
+	useXOR2                         bool // Whether XOR2 encoding is used for float chunks in this append.
 }
 type headAppender struct {
 	headAppenderBase
@@ -848,7 +848,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
 		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow)
-		if err != nil {
+		if err == nil {
 			s.pendingCommit = true
 		}
 		s.Unlock()
@@ -1751,6 +1751,7 @@ func (a *headAppenderBase) Commit() (err error) {
 			chunkRange:      h.chunkRange.Load(),
 			samplesPerChunk: h.opts.SamplesPerChunk,
 			useXOR2:         a.useXOR2,
+			storeST:         a.storeST,
 		},
 		oooEnc: record.Encoder{
 			EnableSTStorage: a.storeST,
@@ -1838,6 +1839,7 @@ type chunkOpts struct {
 	chunkRange      int64
 	samplesPerChunk int
 	useXOR2         bool // Selects XOR2 encoding for float chunks.
+	storeST         bool // Whether start-timestamp storage is enabled.
 }
 
 // append adds the sample (t, v) to the series. The caller also has to provide
@@ -1873,8 +1875,7 @@ func (s *memSeries) appendHistogram(st, t int64, h *histogram.Histogram, appendI
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
-	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
-	prevApp, _ := s.app.(*chunkenc.HistogramAppender)
+	prevApp := s.app
 
 	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValHistogram.ChunkEncoding(o.useXOR2), o)
 	if !sampleInOrder {
@@ -1931,8 +1932,7 @@ func (s *memSeries) appendFloatHistogram(st, t int64, fh *histogram.FloatHistogr
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
-	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
-	prevApp, _ := s.app.(*chunkenc.FloatHistogramAppender)
+	prevApp := s.app
 
 	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValFloatHistogram.ChunkEncoding(o.useXOR2), o)
 	if !sampleInOrder {
@@ -2008,9 +2008,12 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 		chunkCreated = true
 	}
 
-	if c.chunk.Encoding() != e {
-		// The chunk encoding expected by this append is different than the head chunk's
-		// encoding. So we cut a new chunk with the expected encoding.
+	// XOR and XOR2 are compatible float encodings when ST storage is disabled:
+	// switching between them does not require cutting the current chunk. When ST
+	// storage is enabled the two encodings differ in their start-timestamp support
+	// and must not be mixed within a single chunk; the o.storeST override forces
+	// an immediate cut that CompatibleValues would otherwise allow to skip.
+	if c.chunk.Encoding() != e && (!chunkenc.CompatibleValues(c.chunk.Encoding(), e) || o.storeST) {
 		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
 	}

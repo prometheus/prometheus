@@ -174,7 +174,7 @@ func (node *BinaryExpr) getMatchingStr() string {
 		}
 
 		if vm.FillValues.LHS != nil || vm.FillValues.RHS != nil {
-			if vm.FillValues.LHS == vm.FillValues.RHS {
+			if vm.FillValues.LHS != nil && vm.FillValues.RHS != nil && *vm.FillValues.LHS == *vm.FillValues.RHS {
 				matching += fmt.Sprintf(" fill (%v)", *vm.FillValues.LHS)
 			} else {
 				if vm.FillValues.LHS != nil {

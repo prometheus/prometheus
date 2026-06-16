@@ -173,9 +173,11 @@ type HeadOptions struct {
 	// Represents 'st-storage' feature flag.
 	EnableSTStorage atomic.Bool
 
-	// EnableXOR2Encoding enables XOR2 chunk encoding for float samples.
-	// Represents 'xor2-encoding' feature flag.
-	EnableXOR2Encoding atomic.Bool
+	// FloatChunkEncoding is the encoding applied to new float chunks.
+	// Updated atomically on config reload. Always initialise via DefaultHeadOptions();
+	// the zero value (EncNone) is not a valid sentinel.
+	// Store and load using uint32(chunkenc.Encoding) / chunkenc.Encoding(Load()).
+	FloatChunkEncoding atomic.Uint32
 
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
@@ -243,7 +245,13 @@ func DefaultHeadOptions() *HeadOptions {
 		WALReplayConcurrency: defaultWALReplayConcurrency,
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
+	ho.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR))
 	return ho
+}
+
+// UseXOR2FloatEncoding reports whether new float chunks should use XOR2 encoding.
+func (o *HeadOptions) UseXOR2FloatEncoding() bool {
+	return chunkenc.Encoding(o.FloatChunkEncoding.Load()) == chunkenc.EncXOR2
 }
 
 // SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
@@ -1646,11 +1654,11 @@ func (h *RangeHead) String() string {
 // Used only for compactions.
 type StaleHead struct {
 	RangeHead
-	staleSeriesRefs []storage.SeriesRef
+	staleSeriesRefs staleSeriesRefs
 }
 
 // NewStaleHead returns a *StaleHead.
-func NewStaleHead(head *Head, mint, maxt int64, staleSeriesRefs []storage.SeriesRef) *StaleHead {
+func NewStaleHead(head *Head, mint, maxt int64, staleSeriesRefs staleSeriesRefs) *StaleHead {
 	return &StaleHead{
 		RangeHead: RangeHead{
 			head: head,
@@ -2226,16 +2234,15 @@ func (h *Head) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) map[sto
 	h.tombstones.DeleteTombstones(deleted)
 
 	if h.wal != nil {
-		_, last, _ := wlog.Segments(h.wal.Dir())
 		h.walExpiriesMtx.Lock()
-		// Keep series records until we're past segment 'last'
+		// Keep series records until we're past timestamp maxt
 		// because the WAL will still have samples records with
 		// this ref ID. If we didn't keep these series records then
 		// on start up when we replay the WAL, or any other code
 		// that reads the WAL, wouldn't be able to use those
 		// samples since we would have no labels for that ref ID.
 		for ref := range deleted {
-			h.walExpiries[chunks.HeadSeriesRef(ref)] = int64(last)
+			h.walExpiries[chunks.HeadSeriesRef(ref)] = maxt
 		}
 		h.walExpiriesMtx.Unlock()
 	}

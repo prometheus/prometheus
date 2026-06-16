@@ -569,8 +569,11 @@ func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper ht
 		serverURL.Scheme = "http"
 	}
 
+	// Join the endpoint onto the server URL path so that a trailing slash in
+	// the user-provided URL does not result in a doubled slash (e.g.
+	// "//-/healthy"), which the Prometheus router does not match.
 	config := api.Config{
-		Address:      serverURL.String() + checkEndpoint,
+		Address:      serverURL.JoinPath(checkEndpoint).String(),
 		RoundTripper: roundTripper,
 	}
 

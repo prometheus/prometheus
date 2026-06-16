@@ -671,11 +671,16 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 
 	minValidTime := h.minValidTime.Load()
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
+	// storeST must be passed here so that appendPreprocessor cuts an in-progress
+	// XOR chunk immediately when replaying into a head with ST storage enabled.
+	// XOR chunks cannot store start timestamps and must not be continued with
+	// XOR2 appends when ST storage is active.
 	appendChunkOpts := chunkOpts{
 		chunkDiskMapper: h.chunkDiskMapper,
 		chunkRange:      h.chunkRange.Load(),
 		samplesPerChunk: h.opts.SamplesPerChunk,
-		useXOR2:         h.opts.EnableXOR2Encoding.Load(),
+		useXOR2:         h.opts.UseXOR2FloatEncoding(),
+		storeST:         h.opts.EnableSTStorage.Load(),
 	}
 
 	for in := range wp.input {
@@ -1120,11 +1125,15 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 	var unknownSampleRefs, unknownHistogramRefs uint64
 
 	oooCapMax := h.opts.OutOfOrderCapMax.Load()
+	// storeST must be passed here for the same reason as in processWALSamples: so
+	// that appendPreprocessor forces an immediate chunk cut when an XOR chunk is
+	// encountered during replay into a head with ST storage enabled.
 	appendChunkOpts := chunkOpts{
 		chunkDiskMapper: h.chunkDiskMapper,
 		chunkRange:      h.chunkRange.Load(),
 		samplesPerChunk: h.opts.SamplesPerChunk,
-		useXOR2:         h.opts.EnableXOR2Encoding.Load(),
+		useXOR2:         h.opts.UseXOR2FloatEncoding(),
+		storeST:         h.opts.EnableSTStorage.Load(),
 	}
 	// We don't check for minValidTime for ooo samples.
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
@@ -1844,7 +1853,7 @@ Outer:
 // Name of the file used to store the state.
 const seriesStateFilename = "series_state.json"
 
-// SeriesLifecycleState descibes the information we record in the series_state.json file.
+// SeriesLifecycleState describes the information we record in the series_state.json file.
 type SeriesLifecycleState struct {
 	LastSeriesID   uint64 `json:"last_series_id"`
 	LastWALSegment int    `json:"last_wal_segment"`
