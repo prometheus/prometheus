@@ -14,6 +14,7 @@
 package outscale
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -21,7 +22,8 @@ import (
 	"strings"
 	"time"
 
-	osc "github.com/outscale/osc-sdk-go/v2"
+	"github.com/outscale/osc-sdk-go/v3/pkg/middleware/auth"
+	"github.com/outscale/osc-sdk-go/v3/pkg/osc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -146,26 +148,49 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*refresh.Di
 	), nil
 }
 
+type outscaleClient struct {
+	endpoint     string
+	roundTripper http.RoundTripper
+	timeout      time.Duration
+}
+
+func (c *outscaleClient) ReadVms(ctx context.Context, body osc.ReadVmsRequest, accessKey, secretKey string) (*osc.ReadVmsResponse, error) {
+	req, err := osc.NewReadVmsRequest(c.endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	req.Header.Set("User-Agent", version.PrometheusUserAgent())
+
+	securityProvider, err := auth.NewSecurityProviderAWSv4(accessKey, secretKey, "", "", "")
+	if err != nil {
+		return nil, err
+	}
+	httpClient := &http.Client{
+		Transport: securityProvider.Decorate(c.roundTripper),
+		Timeout:   c.timeout,
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := osc.ParseReadVmsResp(resp)
+	if err != nil {
+		return nil, err
+	}
+	return parsed.Expect()
+}
+
 // loadClient builds an Outscale API client from SDConfig using the official osc-sdk-go (OAPI).
-func loadClient(conf *SDConfig) (*osc.APIClient, error) {
+func loadClient(conf *SDConfig) (*outscaleClient, error) {
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "outscale_sd")
 	if err != nil {
 		return nil, fmt.Errorf("outscale SD client config: %w", err)
 	}
 
-	httpClient := &http.Client{
-		Transport: rt,
-		Timeout:   time.Duration(conf.RefreshInterval),
-	}
-
-	cfg := osc.NewConfiguration()
-	cfg.HTTPClient = httpClient
-	cfg.UserAgent = version.PrometheusUserAgent()
-	// Use a single server URL (custom endpoint or default per-region).
-	cfg.Servers = osc.ServerConfigurations{
-		osc.ServerConfiguration{URL: conf.Endpoint, Description: "Outscale API"},
-	}
-
-	client := osc.NewAPIClient(cfg)
-	return client, nil
+	return &outscaleClient{
+		endpoint:     strings.TrimRight(conf.Endpoint, "/") + "/",
+		roundTripper: rt,
+		timeout:      time.Duration(conf.RefreshInterval),
+	}, nil
 }

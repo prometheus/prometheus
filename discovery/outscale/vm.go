@@ -19,7 +19,7 @@ import (
 	"net"
 	"strconv"
 
-	osc "github.com/outscale/osc-sdk-go/v2"
+	"github.com/outscale/osc-sdk-go/v3/pkg/osc"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -38,7 +38,7 @@ const (
 )
 
 type vmDiscovery struct {
-	client *osc.APIClient
+	client *outscaleClient
 	cfg    *SDConfig
 }
 
@@ -59,19 +59,13 @@ func (d *vmDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error)
 		return nil, err
 	}
 
-	// Merge request context with auth context so the SDK signs requests.
-	ctx = context.WithValue(ctx, osc.ContextAWSv4, osc.AWSv4{
-		AccessKey: d.cfg.AccessKey,
-		SecretKey: string(secretKey),
-	})
-
 	tg := &targetgroup.Group{Source: d.cfg.Region}
 
 	var allVms []osc.Vm
-	req := d.client.VmApi.ReadVms(ctx).ReadVmsRequest(osc.ReadVmsRequest{})
+	req := osc.ReadVmsRequest{}
 
 	for {
-		resp, _, err := req.Execute()
+		resp, err := d.client.ReadVms(ctx, req, d.cfg.AccessKey, string(secretKey))
 		if err != nil {
 			return nil, fmt.Errorf("outscale ReadVms: %w", err)
 		}
@@ -81,7 +75,7 @@ func (d *vmDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error)
 		if resp.NextPageToken == nil || *resp.NextPageToken == "" {
 			break
 		}
-		req = d.client.VmApi.ReadVms(ctx).ReadVmsRequest(osc.ReadVmsRequest{NextPageToken: resp.NextPageToken})
+		req = osc.ReadVmsRequest{NextPageToken: resp.NextPageToken}
 	}
 
 	tg.Targets = vmsToLabelSets(allVms, d.cfg)
@@ -94,48 +88,37 @@ func vmsToLabelSets(vms []osc.Vm, cfg *SDConfig) []model.LabelSet {
 	for _, vm := range vms {
 		var addr string
 		switch {
-		case vm.PrivateIp != nil && *vm.PrivateIp != "":
-			addr = net.JoinHostPort(*vm.PrivateIp, strconv.Itoa(cfg.Port))
+		case vm.PrivateIp != "":
+			addr = net.JoinHostPort(vm.PrivateIp, strconv.Itoa(cfg.Port))
 		case vm.PublicIp != nil && *vm.PublicIp != "":
 			addr = net.JoinHostPort(*vm.PublicIp, strconv.Itoa(cfg.Port))
 		default:
 			continue
 		}
 
-		vmID := ""
-		if vm.VmId != nil {
-			vmID = *vm.VmId
-		}
-		state := ""
-		if vm.State != nil {
-			state = *vm.State
-		}
-
 		labels := model.LabelSet{
 			model.AddressLabel: model.LabelValue(addr),
-			vmLabelInstanceID:  model.LabelValue(vmID),
+			vmLabelInstanceID:  model.LabelValue(vm.VmId),
 			vmLabelRegion:      model.LabelValue(cfg.Region),
-			vmLabelState:       model.LabelValue(state),
+			vmLabelState:       model.LabelValue(vm.State),
 		}
 
-		if vm.Placement != nil && vm.Placement.SubregionName != nil {
-			labels[vmLabelSubregion] = model.LabelValue(*vm.Placement.SubregionName)
+		if vm.Placement.SubregionName != "" {
+			labels[vmLabelSubregion] = model.LabelValue(vm.Placement.SubregionName)
 		}
-		if vm.PrivateIp != nil {
-			labels[vmLabelPrivateIP] = model.LabelValue(*vm.PrivateIp)
+		if vm.PrivateIp != "" {
+			labels[vmLabelPrivateIP] = model.LabelValue(vm.PrivateIp)
 		}
 		if vm.PublicIp != nil {
 			labels[vmLabelPublicIP] = model.LabelValue(*vm.PublicIp)
 		}
 
-		if vm.Tags != nil {
-			for _, t := range *vm.Tags {
-				if t.Key == "" || t.Value == "" {
-					continue
-				}
-				name := strutil.SanitizeLabelName(t.Key)
-				labels[vmLabelTag+model.LabelName(name)] = model.LabelValue(t.Value)
+		for _, t := range vm.Tags {
+			if t.Key == "" || t.Value == "" {
+				continue
 			}
+			name := strutil.SanitizeLabelName(t.Key)
+			labels[vmLabelTag+model.LabelName(name)] = model.LabelValue(t.Value)
 		}
 
 		out = append(out, labels)

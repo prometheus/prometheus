@@ -16,12 +16,13 @@ package outscale
 import (
 	"testing"
 
-	osc "github.com/outscale/osc-sdk-go/v2"
+	"github.com/outscale/osc-sdk-go/v3/pkg/osc"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 )
 
-func strptr(s string) *string { return &s }
+func strptr(s string) *string      { return &s }
+func vmState(s string) osc.VmState { return osc.VmState(s) }
 
 func TestVmsToLabelSets(t *testing.T) {
 	cfg := &SDConfig{
@@ -38,7 +39,7 @@ func TestVmsToLabelSets(t *testing.T) {
 
 	t.Run("skip_no_ip", func(t *testing.T) {
 		vms := []osc.Vm{
-			{VmId: strptr("i-1"), State: strptr("running")}, // no PrivateIp nor PublicIp
+			{VmId: "i-1", State: vmState("running")}, // no PrivateIp nor PublicIp
 		}
 		out := vmsToLabelSets(vms, cfg)
 		require.Empty(t, out)
@@ -47,9 +48,9 @@ func TestVmsToLabelSets(t *testing.T) {
 	t.Run("private_ip_preferred", func(t *testing.T) {
 		vms := []osc.Vm{
 			{
-				VmId:      strptr("i-abc"),
-				State:     strptr("running"),
-				PrivateIp: strptr("10.1.2.3"),
+				VmId:      "i-abc",
+				State:     vmState("running"),
+				PrivateIp: "10.1.2.3",
 				PublicIp:  strptr("1.2.3.4"),
 			},
 		}
@@ -66,8 +67,8 @@ func TestVmsToLabelSets(t *testing.T) {
 	t.Run("public_ip_fallback", func(t *testing.T) {
 		vms := []osc.Vm{
 			{
-				VmId:     strptr("i-pub"),
-				State:    strptr("running"),
+				VmId:     "i-pub",
+				State:    vmState("running"),
 				PublicIp: strptr("203.0.113.10"),
 			},
 		}
@@ -83,11 +84,11 @@ func TestVmsToLabelSets(t *testing.T) {
 		subregion := "eu-west-2a"
 		vms := []osc.Vm{
 			{
-				VmId:      strptr("i-tagged"),
-				State:     strptr("stopped"),
-				PrivateIp: strptr("10.0.0.5"),
-				Placement: &osc.Placement{SubregionName: &subregion},
-				Tags: &[]osc.ResourceTag{
+				VmId:      "i-tagged",
+				State:     vmState("stopped"),
+				PrivateIp: "10.0.0.5",
+				Placement: osc.Placement{SubregionName: subregion},
+				Tags: []osc.ResourceTag{
 					{Key: "Name", Value: "my-vm"},
 					{Key: "env", Value: "prod"},
 				},
@@ -103,9 +104,9 @@ func TestVmsToLabelSets(t *testing.T) {
 	t.Run("skips_empty_tag_key_or_value", func(t *testing.T) {
 		vms := []osc.Vm{
 			{
-				VmId:      strptr("i-tags"),
-				PrivateIp: strptr("10.0.0.1"),
-				Tags: &[]osc.ResourceTag{
+				VmId:      "i-tags",
+				PrivateIp: "10.0.0.1",
+				Tags: []osc.ResourceTag{
 					{Key: "Good", Value: "yes"},
 					{Key: "", Value: "skip"},
 					{Key: "EmptyVal", Value: ""},
