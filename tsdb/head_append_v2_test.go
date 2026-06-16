@@ -5063,9 +5063,7 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 
 // readWALHistogramSamples reads the WAL at dir and returns the decoded
 // integer-histogram samples, float-histogram samples, and the record types
-// observed for each. It is the histogram analogue of readTestWAL, but
-// preserves the V1-vs-V2 record-type distinction so tests can lock in the
-// EnableSTStorage gating.
+// observed for each.
 func readWALHistogramSamples(t testing.TB, dir string) (intSamples []record.RefHistogramSample, intTypes []record.Type, floatSamples []record.RefFloatHistogramSample, floatTypes []record.Type) {
 	sr, err := wlog.NewSegmentsReader(dir)
 	require.NoError(t, err)
@@ -5098,11 +5096,10 @@ func readWALHistogramSamples(t testing.TB, dir string) (intSamples []record.RefH
 	return intSamples, intTypes, floatSamples, floatTypes
 }
 
-// TestHeadAppenderV2_Histogram_STInWAL verifies that start timestamps
-// supplied via AppenderV2.Append are written into the WAL for histogram
-// and float-histogram samples, matching the behaviour PR #18221 wired up
-// for counters. The chunk encoder still drops histogram ST until #18609
-// lands, so this test asserts at the WAL record layer.
+// TestHeadAppenderV2_Histogram_STInWAL verifies that start timestamps supplied
+// via AppenderV2.Append are written into the WAL for histogram and
+// float-histogram samples. The chunk encoder still drops histogram ST until
+// #18609 lands, so this test asserts at the WAL record layer.
 func TestHeadAppenderV2_Histogram_STInWAL(t *testing.T) {
 	type histSample struct {
 		st int64
@@ -5127,37 +5124,35 @@ func TestHeadAppenderV2_Histogram_STInWAL(t *testing.T) {
 		enableSTStorage bool
 		samples         []histSample
 		expectedSTs     []int64
-		// expectedRecordType is the wire-format record type expected for all
-		// histogram or float-histogram records emitted by this test case.
 		expectedRecordType record.Type
 		isFloatHistogram   bool
 	}{
 		{
 			name:               "Integer histograms with ST enabled",
 			enableSTStorage:    true,
-			samples:            []histSample{{st: 10, ts: 100, h: intHist(1)}, {st: 20, ts: 200, h: intHist(2)}, {st: 30, ts: 300, h: intHist(3)}},
-			expectedSTs:        []int64{10, 20, 30},
+			samples:            []histSample{{st: 10, ts: 100, h: intHist(1)}, {st: 100, ts: 200, h: intHist(2)}, {st: 200, ts: 300, h: intHist(3)}},
+			expectedSTs:        []int64{10, 100, 200},
 			expectedRecordType: record.HistogramSamplesV2,
 		},
 		{
 			name:               "Float histograms with ST enabled",
 			enableSTStorage:    true,
-			samples:            []histSample{{st: 11, ts: 101, fh: floatHist(1)}, {st: 22, ts: 202, fh: floatHist(2)}, {st: 33, ts: 303, fh: floatHist(3)}},
-			expectedSTs:        []int64{11, 22, 33},
+			samples:            []histSample{{st: 11, ts: 101, fh: floatHist(1)}, {st: 101, ts: 202, fh: floatHist(2)}, {st: 202, ts: 303, fh: floatHist(3)}},
+			expectedSTs:        []int64{11, 101, 202},
 			expectedRecordType: record.FloatHistogramSamplesV2,
 			isFloatHistogram:   true,
 		},
 		{
 			name:               "Integer histograms with ST disabled emit V1 records and ST=0",
 			enableSTStorage:    false,
-			samples:            []histSample{{st: 10, ts: 100, h: intHist(1)}, {st: 20, ts: 200, h: intHist(2)}},
+			samples:            []histSample{{st: 10, ts: 100, h: intHist(1)}, {st: 100, ts: 200, h: intHist(2)}},
 			expectedSTs:        []int64{0, 0},
 			expectedRecordType: record.HistogramSamples,
 		},
 		{
 			name:               "Float histograms with ST disabled emit V1 records and ST=0",
 			enableSTStorage:    false,
-			samples:            []histSample{{st: 11, ts: 101, fh: floatHist(1)}, {st: 22, ts: 202, fh: floatHist(2)}},
+			samples:            []histSample{{st: 11, ts: 101, fh: floatHist(1)}, {st: 101, ts: 202, fh: floatHist(2)}},
 			expectedSTs:        []int64{0, 0},
 			expectedRecordType: record.FloatHistogramSamples,
 			isFloatHistogram:   true,
