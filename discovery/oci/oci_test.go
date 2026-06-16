@@ -19,8 +19,10 @@ import (
 	"log/slog"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/core"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 )
@@ -111,35 +113,6 @@ func singleInstanceDiscovery(inst core.Instance, vnic *core.Vnic) *Discovery {
 		return vnic, nil
 	}
 	return d
-}
-
-// ---- sanitizeLabelName ------------------------------------------------------
-
-func TestSanitizeLabelName(t *testing.T) {
-	cases := []struct {
-		input string
-		want  string
-	}{
-		{"monitoring", "monitoring"},
-		{"Monitoring", "monitoring"},
-		{"my-tag", "my_tag"},
-		{"my.tag.key", "my_tag_key"},
-		{"My-Tag.Key", "my_tag_key"},
-		{"tag with spaces", "tag_with_spaces"},
-		{"tag123", "tag123"},
-		{"123numeric", "123numeric"},
-		{"", ""},
-		{"CamelCase", "camelcase"},
-		{"mixed-UPPER_lower.dot", "mixed_upper_lower_dot"},
-		{"Oracle-Tags", "oracle_tags"},
-		{"__reserved__", "__reserved__"},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.input, func(t *testing.T) {
-			require.Equal(t, tc.want, sanitizeLabelName(tc.input))
-		})
-	}
 }
 
 // ---- hasTag -----------------------------------------------------------------
@@ -274,18 +247,24 @@ func TestInstanceLabels_AddressFallsBackToPublicIP(t *testing.T) {
 }
 
 func TestInstanceLabels_FreeformTagsSanitized(t *testing.T) {
+	// Sanitization replaces invalid characters with underscores but preserves
+	// case so that case-sensitive OCI tag keys do not collide (e.g. Env vs env).
 	inst := makeInstance(func(i *core.Instance) {
 		i.FreeformTags = map[string]string{
 			"environment": "production",
 			"My-Tag.Key":  "value",
 			"123numeric":  "v",
+			"Env":         "upper",
+			"env":         "lower",
 		}
 	})
 	labels := instanceLabels(&inst, "10.0.0.1", "", "tenancy", 80)
 
 	require.Equal(t, model.LabelValue("production"), labels[ociLabelFreeformTagPrefix+"environment"])
-	require.Equal(t, model.LabelValue("value"), labels[ociLabelFreeformTagPrefix+"my_tag_key"])
+	require.Equal(t, model.LabelValue("value"), labels[ociLabelFreeformTagPrefix+"My_Tag_Key"])
 	require.Equal(t, model.LabelValue("v"), labels[ociLabelFreeformTagPrefix+"123numeric"])
+	require.Equal(t, model.LabelValue("upper"), labels[ociLabelFreeformTagPrefix+"Env"])
+	require.Equal(t, model.LabelValue("lower"), labels[ociLabelFreeformTagPrefix+"env"])
 }
 
 func TestInstanceLabels_DefinedTagsStringOnly(t *testing.T) {
@@ -301,13 +280,13 @@ func TestInstanceLabels_DefinedTagsStringOnly(t *testing.T) {
 	})
 	labels := instanceLabels(&inst, "10.0.0.1", "", "tenancy", 80)
 
-	require.Equal(t, model.LabelValue("user@example.com"), labels[ociLabelDefinedTagPrefix+"oracle_tags_createdby"])
-	require.Equal(t, model.LabelValue("42"), labels[ociLabelDefinedTagPrefix+"oracle_tags_costcenter"])
+	require.Equal(t, model.LabelValue("user@example.com"), labels[ociLabelDefinedTagPrefix+"Oracle_Tags_CreatedBy"])
+	require.Equal(t, model.LabelValue("42"), labels[ociLabelDefinedTagPrefix+"Oracle_Tags_CostCenter"])
 
-	_, hasInt := labels[ociLabelDefinedTagPrefix+"oracle_tags_intvalue"]
+	_, hasInt := labels[ociLabelDefinedTagPrefix+"Oracle_Tags_IntValue"]
 	require.False(t, hasInt, "integer defined tag must not be emitted")
 
-	_, hasBool := labels[ociLabelDefinedTagPrefix+"oracle_tags_boolvalue"]
+	_, hasBool := labels[ociLabelDefinedTagPrefix+"Oracle_Tags_BoolValue"]
 	require.False(t, hasBool, "boolean defined tag must not be emitted")
 }
 
@@ -417,8 +396,10 @@ func TestRefresh_CompartmentListError_Propagates(t *testing.T) {
 	require.ErrorIs(t, err, sentinel)
 }
 
-func TestRefresh_ListInstancesError_CompartmentSkipped(t *testing.T) {
-	// listInstances error → compartment is logged and skipped, no target group returned.
+func TestRefresh_ListInstancesError_EmptyGroupReturned(t *testing.T) {
+	// listInstances error → compartment is logged and an empty group is
+	// returned so the discovery manager prunes any stale targets it still
+	// has for this source.
 	sentinel := errors.New("OCI API unavailable")
 	d := baseDiscovery()
 	d.listInstances = func(_ context.Context, _ string) ([]core.Instance, error) {
@@ -427,7 +408,9 @@ func TestRefresh_ListInstancesError_CompartmentSkipped(t *testing.T) {
 
 	tgs, err := d.refresh(context.Background())
 	require.NoError(t, err)
-	require.Empty(t, tgs, "failed compartment should be skipped, not returned")
+	require.Len(t, tgs, 1, "failed compartment must still return an (empty) group")
+	require.Equal(t, "OCI_"+testCompartment, tgs[0].Source)
+	require.Empty(t, tgs[0].Targets)
 }
 
 func TestRefresh_EmptyCompartment(t *testing.T) {
@@ -628,7 +611,9 @@ func TestRefresh_DefinedTagFilterInclude(t *testing.T) {
 	require.Equal(t, model.LabelValue("ocid1.instance.oc1..tagged"), tgs[0].Targets[0][ociLabelInstanceID])
 }
 
-func TestRefresh_NoPrimaryVnic_EmptyIPs(t *testing.T) {
+func TestRefresh_NoPrimaryVnic_InstanceDropped(t *testing.T) {
+	// An instance with no resolvable primary VNIC has no usable IP, so the
+	// SD drops it rather than emit an unscrapeable :port target.
 	inst := makeInstance()
 	nonPrimary := &core.Vnic{
 		Id:        strPtr("ocid1.vnic.oc1..v001"),
@@ -648,8 +633,32 @@ func TestRefresh_NoPrimaryVnic_EmptyIPs(t *testing.T) {
 
 	tgs, err := d.refresh(context.Background())
 	require.NoError(t, err)
-	require.Len(t, tgs[0].Targets, 1)
-	require.Equal(t, model.LabelValue(""), tgs[0].Targets[0][ociLabelPrivateIP])
+	require.Len(t, tgs, 1)
+	require.Empty(t, tgs[0].Targets, "instance with no usable IP must be dropped")
+}
+
+func TestRefresh_InstanceWithNilIDDropped(t *testing.T) {
+	// Defensive: an instance with a nil OCID would panic on dereference;
+	// it must be skipped with a warning.
+	inst := makeInstance(func(i *core.Instance) {
+		i.Id = nil
+	})
+
+	vnicCalls := 0
+	d := baseDiscovery()
+	d.listInstances = func(_ context.Context, _ string) ([]core.Instance, error) {
+		return []core.Instance{inst}, nil
+	}
+	d.listVnicAttachments = func(_ context.Context, _, _ string) ([]core.VnicAttachment, error) {
+		vnicCalls++
+		return nil, nil
+	}
+
+	tgs, err := d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 1)
+	require.Empty(t, tgs[0].Targets)
+	require.Zero(t, vnicCalls, "instance with nil Id must not reach VNIC lookup")
 }
 
 func TestRefresh_ContextCanceled(t *testing.T) {
@@ -669,14 +678,15 @@ func TestRefresh_ContextCanceled(t *testing.T) {
 
 func TestSDConfig_Validation(t *testing.T) {
 	validAPIKey := SDConfig{
-		Auth:            authAPIKey,
-		Region:          "us-ashburn-1",
-		Tenancy:         "ocid1.tenancy.oc1..t001",
-		User:            "ocid1.user.oc1..u001",
-		Fingerprint:     "aa:bb:cc",
-		KeyFile:         "/etc/oci/key.pem",
-		TagFilterAction: tagFilterActionInclude,
-		RateLimitRPS:    10,
+		Auth:             authAPIKey,
+		Region:           "us-ashburn-1",
+		Tenancy:          "ocid1.tenancy.oc1..t001",
+		User:             "ocid1.user.oc1..u001",
+		Fingerprint:      "aa:bb:cc",
+		KeyFile:          "/etc/oci/key.pem",
+		TagFilterAction:  tagFilterActionInclude,
+		RefreshInterval:  model.Duration(60 * time.Second),
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 
 	cases := []struct {
@@ -747,14 +757,14 @@ func TestSDConfig_Validation(t *testing.T) {
 			wantErr: "tag_filter_action must be",
 		},
 		{
-			name:    "rate_limit_rps zero",
-			mutate:  func(c *SDConfig) { c.RateLimitRPS = 0 },
-			wantErr: "rate_limit_rps must be positive",
+			name:    "refresh_interval zero",
+			mutate:  func(c *SDConfig) { c.RefreshInterval = 0 },
+			wantErr: "refresh_interval must be positive",
 		},
 		{
-			name:    "rate_limit_rps negative",
-			mutate:  func(c *SDConfig) { c.RateLimitRPS = -1 },
-			wantErr: "rate_limit_rps must be positive",
+			name:    "refresh_interval negative",
+			mutate:  func(c *SDConfig) { c.RefreshInterval = model.Duration(-1 * time.Second) },
+			wantErr: "refresh_interval must be positive",
 		},
 	}
 
@@ -771,25 +781,27 @@ func TestSDConfig_Validation(t *testing.T) {
 
 func TestSDConfig_ValidInstancePrincipal(t *testing.T) {
 	cfg := SDConfig{
-		Auth:            authInstancePrincipal,
-		Region:          "us-ashburn-1",
-		RateLimitRPS:    10,
-		TagFilterAction: tagFilterActionInclude,
+		Auth:             authInstancePrincipal,
+		Region:           "us-ashburn-1",
+		TagFilterAction:  tagFilterActionInclude,
+		RefreshInterval:  model.Duration(60 * time.Second),
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 	require.NoError(t, cfg.validate())
 }
 
 func TestSDConfig_ValidWithExplicitCompartments(t *testing.T) {
 	cfg := SDConfig{
-		Auth:            authAPIKey,
-		Region:          "us-ashburn-1",
-		Tenancy:         "ocid1.tenancy.oc1..t001",
-		User:            "ocid1.user.oc1..u001",
-		Fingerprint:     "aa:bb:cc",
-		KeyFile:         "/etc/oci/key.pem",
-		Compartments:    []string{"ocid1.compartment.oc1..c001", "ocid1.compartment.oc1..c002"},
-		TagFilterAction: tagFilterActionInclude,
-		RateLimitRPS:    10,
+		Auth:             authAPIKey,
+		Region:           "us-ashburn-1",
+		Tenancy:          "ocid1.tenancy.oc1..t001",
+		User:             "ocid1.user.oc1..u001",
+		Fingerprint:      "aa:bb:cc",
+		KeyFile:          "/etc/oci/key.pem",
+		Compartments:     []string{"ocid1.compartment.oc1..c001", "ocid1.compartment.oc1..c002"},
+		TagFilterAction:  tagFilterActionInclude,
+		RefreshInterval:  model.Duration(60 * time.Second),
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 	require.NoError(t, cfg.validate())
 }
@@ -797,30 +809,32 @@ func TestSDConfig_ValidWithExplicitCompartments(t *testing.T) {
 func TestSDConfig_ValidAutoDiscovery(t *testing.T) {
 	// Compartments empty → auto-discover. Should be valid.
 	cfg := SDConfig{
-		Auth:            authAPIKey,
-		Region:          "us-ashburn-1",
-		Tenancy:         "ocid1.tenancy.oc1..t001",
-		User:            "ocid1.user.oc1..u001",
-		Fingerprint:     "aa:bb:cc",
-		KeyFile:         "/etc/oci/key.pem",
-		TagFilterAction: tagFilterActionInclude,
-		RateLimitRPS:    10,
+		Auth:             authAPIKey,
+		Region:           "us-ashburn-1",
+		Tenancy:          "ocid1.tenancy.oc1..t001",
+		User:             "ocid1.user.oc1..u001",
+		Fingerprint:      "aa:bb:cc",
+		KeyFile:          "/etc/oci/key.pem",
+		TagFilterAction:  tagFilterActionInclude,
+		RefreshInterval:  model.Duration(60 * time.Second),
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 	require.NoError(t, cfg.validate())
 }
 
 func TestSDConfig_ValidExcludeFilter(t *testing.T) {
 	cfg := SDConfig{
-		Auth:            authAPIKey,
-		Region:          "us-ashburn-1",
-		Tenancy:         "ocid1.tenancy.oc1..t001",
-		User:            "ocid1.user.oc1..u001",
-		Fingerprint:     "aa:bb:cc",
-		KeyFile:         "/etc/oci/key.pem",
-		TagFilterKey:    "monitoring",
-		TagFilterValue:  "disabled",
-		TagFilterAction: tagFilterActionExclude,
-		RateLimitRPS:    10,
+		Auth:             authAPIKey,
+		Region:           "us-ashburn-1",
+		Tenancy:          "ocid1.tenancy.oc1..t001",
+		User:             "ocid1.user.oc1..u001",
+		Fingerprint:      "aa:bb:cc",
+		KeyFile:          "/etc/oci/key.pem",
+		TagFilterKey:     "monitoring",
+		TagFilterValue:   "disabled",
+		TagFilterAction:  tagFilterActionExclude,
+		RefreshInterval:  model.Duration(60 * time.Second),
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 	require.NoError(t, cfg.validate())
 }
