@@ -3054,6 +3054,42 @@ func TestQueryLogger_minDuration(t *testing.T) {
 	queryExec(100 * time.Millisecond)
 	logLines = getLogLines(t, qlFile)
 	require.Len(t, logLines, 1)
+
+	// Test 3: Log threshold is 10m, query takes 1ms but returns a generic error. Should log with error_type="other".
+	queryExecWithError := func(delay time.Duration, testErr error) {
+		ctx, cancelCtx := context.WithCancel(context.Background())
+		defer cancelCtx()
+		query := engine.NewTestQuery(func(_ context.Context) error {
+			time.Sleep(delay)
+			return testErr
+		})
+		res := query.Exec(ctx)
+		require.Error(t, res.Err)
+	}
+
+	engine.SetQueryLogMinDuration(10 * time.Minute)
+	queryExecWithError(1*time.Millisecond, errors.New("failing query error"))
+	logLines = getLogLines(t, qlFile)
+	require.Len(t, logLines, 2)
+	require.Contains(t, logLines[1], "failing query error")
+	require.Contains(t, logLines[1], `"error_type":"other"`)
+
+	// Test 4: Log threshold is 10m, query is canceled. Canceled queries should NOT be logged if below threshold.
+	queryExecWithError(1*time.Millisecond, promql.ErrQueryCanceled("canceled"))
+	logLines = getLogLines(t, qlFile)
+	require.Len(t, logLines, 2) // Length should still be 2 (no new log line).
+
+	// Test 5: Log threshold is 10m, query times out. Should log with error_type="timeout".
+	queryExecWithError(1*time.Millisecond, promql.ErrQueryTimeout("timeout"))
+	logLines = getLogLines(t, qlFile)
+	require.Len(t, logLines, 3)
+	require.Contains(t, logLines[2], `"error_type":"timeout"`)
+
+	// Test 6: Log threshold is 10m, query hits sample limit. Should log with error_type="limit".
+	queryExecWithError(1*time.Millisecond, promql.ErrTooManySamples("limit"))
+	logLines = getLogLines(t, qlFile)
+	require.Len(t, logLines, 4)
+	require.Contains(t, logLines[3], `"error_type":"limit"`)
 }
 
 func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {

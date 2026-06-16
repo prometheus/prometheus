@@ -710,8 +710,10 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 	defer func() {
 		ng.queryLoggerLock.RLock()
 		if l := ng.queryLogger; l != nil {
+			var eqc ErrQueryCanceled
+			isCanceled := errors.Is(err, context.Canceled) || errors.As(err, &eqc)
 			execDuration := time.Duration(q.stats.GetTimer(stats.ExecTotalTime).Duration() * float64(time.Second))
-			if execDuration >= ng.queryLogMinDuration {
+			if (err != nil && !isCanceled) || execDuration >= ng.queryLogMinDuration {
 				logger := slog.New(l)
 				f := make([]slog.Attr, 0, 16) // Probably enough up front to not need to reallocate on append.
 
@@ -726,6 +728,23 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 				f = append(f, slog.Any("params", params))
 				if err != nil {
 					f = append(f, slog.Any("error", err))
+					var errorType string
+					var eqt ErrQueryTimeout
+					var ets ErrTooManySamples
+					var eqs ErrStorage
+					switch {
+					case isCanceled:
+						errorType = "canceled"
+					case errors.As(err, &eqt) || errors.Is(err, context.DeadlineExceeded):
+						errorType = "timeout"
+					case errors.As(err, &ets):
+						errorType = "limit"
+					case errors.As(err, &eqs):
+						errorType = "storage"
+					default:
+						errorType = "other"
+					}
+					f = append(f, slog.String("error_type", errorType))
 				}
 				f = append(f, slog.Any("stats", stats.NewQueryStats(q.Stats())))
 				if span := trace.SpanFromContext(ctx); span != nil {
