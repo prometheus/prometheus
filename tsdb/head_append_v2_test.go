@@ -5120,10 +5120,10 @@ func TestHeadAppenderV2_Histogram_STInWAL(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name            string
-		enableSTStorage bool
-		samples         []histSample
-		expectedSTs     []int64
+		name               string
+		enableSTStorage    bool
+		samples            []histSample
+		expectedSTs        []int64
 		expectedRecordType record.Type
 		isFloatHistogram   bool
 	}{
