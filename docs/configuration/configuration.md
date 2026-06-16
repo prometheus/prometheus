@@ -2978,12 +2978,23 @@ The following meta labels are available on all targets during
 * `__meta_oci_instance_id`: the OCID of the instance
 * `__meta_oci_instance_name`: the display name of the instance
 * `__meta_oci_instance_shape`: the shape of the instance (e.g. `VM.Standard.E4.Flex`)
-* `__meta_oci_instance_state`: the lifecycle state of the instance (always `RUNNING`)
+* `__meta_oci_instance_state`: the lifecycle state of the instance (e.g. `RUNNING`, `STOPPED`, `TERMINATED`). Use relabeling to restrict scraping to states you care about.
 * `__meta_oci_private_ip`: the private IP address of the primary VNIC
 * `__meta_oci_public_ip`: the public IP address of the primary VNIC, if assigned
 * `__meta_oci_region`: the OCI region identifier (e.g. `us-ashburn-1`)
 * `__meta_oci_tag_<key>`: each freeform tag of the instance
 * `__meta_oci_tenancy_id`: the OCID of the tenancy the instance belongs to
+
+In tag and namespace names, any character outside `[a-zA-Z0-9_]` is replaced
+with an underscore; case is preserved. For example, a freeform tag named
+`appOwner` is exposed as `__meta_oci_tag_appOwner`, and a defined tag in
+namespace `Operations` with key `Cost Center` is exposed as
+`__meta_oci_defined_tag_Operations_Cost_Center`. Because case is preserved,
+tag keys that differ only in case (`Env` and `env`) produce distinct labels.
+
+Targets with no resolvable primary-VNIC IP (neither private nor public) are
+dropped to avoid emitting unscrapeable `:<port>` addresses. The address used
+is the private IP when available, falling back to the public IP.
 
 ```yaml
 # Authentication method. Supported values: "api_key" (default), "instance_principal".
@@ -3021,9 +3032,40 @@ region: <string>
 # Valid values: "include" (default), "exclude".
 [ tag_filter_action: <string> | default = "include" ]
 
-# Maximum number of OCI API calls per second across all operations
-# (ListCompartments, ListInstances, ListVnicAttachments, GetVnic).
-[ rate_limit_rps: <float> | default = 10.0 ]
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth`, `authorization`, and `oauth2` options are
+# mutually exclusive. `password` and `password_file` are mutually exclusive.
+# It is mostly useful to configure `proxy_url`, `tls_config`, and the
+# underlying HTTP transport when targeting OCI through a corporate proxy
+# or with a custom CA bundle.
+# Optional HTTP basic authentication information, currently not supported by OCI.
+[ basic_auth: <basic_auth> ]
+# Optional `Authorization` header configuration, currently not supported by OCI.
+[ authorization: <authorization> ]
+# Optional OAuth 2.0 configuration, currently not supported by OCI.
+[ oauth2: <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+
+# Configures the TLS settings.
+tls_config:
+  [ <tls_config> ]
 
 # The port to scrape metrics from.
 [ port: <int> | default = 80 ]
