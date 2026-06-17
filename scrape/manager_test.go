@@ -1012,7 +1012,7 @@ func prepareTestEncodedCounter(t *testing.T, format config.ScrapeProtocol, mName
 		return protoMarshalDelimited(t, inputMetric)
 	case config.OpenMetricsText1_0_0:
 		buf := &bytes.Buffer{}
-		require.NoError(t, expfmt.NewEncoder(buf, expfmt.NewFormat(expfmt.TypeOpenMetrics), expfmt.WithCreatedLines(), expfmt.WithUnit()).Encode(inputMetric))
+		require.NoError(t, expfmt.NewEncoder(buf, expfmt.NewFormat(expfmt.TypeOpenMetrics), expfmt.WithCreatedLines()).Encode(inputMetric))
 		_, _ = buf.WriteString("# EOF")
 
 		t.Log("produced OM text to expose:", buf.String())
