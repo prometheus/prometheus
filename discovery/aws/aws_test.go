@@ -178,6 +178,24 @@ port: 9300`,
 				require.Equal(t, 9300, cfg.LightsailSDConfig.Port)
 			},
 		},
+		{
+			name: "RDSWithFlatFields",
+			yaml: `role: rds
+region: us-east-1
+port: 9400
+filters:
+  - name: engine
+    values: [aurora-postgresql]`,
+			validateFunc: func(t *testing.T, cfg *SDConfig) {
+				require.Equal(t, RoleRDS, cfg.Role)
+				require.NotNil(t, cfg.RDSSDConfig)
+				require.Equal(t, "us-east-1", cfg.RDSSDConfig.Region)
+				require.Equal(t, 9400, cfg.RDSSDConfig.Port)
+				require.Len(t, cfg.RDSSDConfig.Filters, 1)
+				require.Equal(t, "engine", cfg.RDSSDConfig.Filters[0].Name)
+				require.Equal(t, []string{"aurora-postgresql"}, cfg.RDSSDConfig.Filters[0].Values)
+			},
+		},
 	}
 
 	for _, tt := range tests {

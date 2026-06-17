@@ -56,40 +56,41 @@ upgrade-npm-deps:
 .PHONY: ui-bump-version
 ui-bump-version:
 	version=$$(./scripts/get_module_version.sh) && ./scripts/ui_release.sh --bump-version "$${version}"
-	cd web/ui && npm install
-	git add "./web/ui/package-lock.json" "./**/package.json"
+	cd web/ui && pnpm install
+	cd web/ui/react-app && pnpm install
+	git add "./web/ui/pnpm-lock.yaml" "./web/ui/react-app/pnpm-lock.yaml" "./**/package.json"
 
 .PHONY: ui-install
 ui-install:
-	cd $(UI_PATH) && npm install
+	cd $(UI_PATH) && pnpm install
 	# The old React app has been separated from the npm workspaces setup to avoid
 	# issues with conflicting dependencies. This is a temporary solution until the
 	# new Mantine-based UI is fully integrated and the old app can be removed.
-	cd $(UI_PATH)/react-app && npm install
+	cd $(UI_PATH)/react-app && pnpm install
 
 .PHONY: ui-build
 ui-build:
 ifeq ($(BUILD_UI),mantine)
-	cd $(UI_PATH) && CI="" npm run build:mantine-ui
+	cd $(UI_PATH) && CI="" pnpm run build:mantine-ui
 else
-	cd $(UI_PATH) && CI="" npm run build
+	cd $(UI_PATH) && CI="" pnpm run build
 endif
 
 .PHONY: ui-build-module
 ui-build-module:
-	cd $(UI_PATH) && npm run build:module
+	cd $(UI_PATH) && pnpm run build:module
 
 .PHONY: ui-test
 ui-test:
-	cd $(UI_PATH) && CI=true npm run test
+	cd $(UI_PATH) && CI=true pnpm run test
 
 .PHONY: ui-lint
 ui-lint:
-	cd $(UI_PATH) && npm run lint
+	cd $(UI_PATH) && pnpm run lint
 	# The old React app has been separated from the npm workspaces setup to avoid
 	# issues with conflicting dependencies. This is a temporary solution until the
 	# new Mantine-based UI is fully integrated and the old app can be removed.
-	cd $(UI_PATH)/react-app && npm run lint
+	cd $(UI_PATH)/react-app && pnpm run lint
 
 .PHONY: generate-promql-functions
 generate-promql-functions: ui-install
@@ -98,7 +99,7 @@ generate-promql-functions: ui-install
 	@echo ">> generating PromQL function documentation"
 	@cd $(UI_PATH)/mantine-ui/src/promql/tools && $(GO) run ./gen_functions_docs $(CURDIR)/docs/querying/functions.md > ../functionDocs.tsx
 	@echo ">> formatting generated files"
-	@cd $(UI_PATH)/mantine-ui && npx prettier --write --print-width 120 src/promql/functionSignatures.ts src/promql/functionDocs.tsx
+	@cd $(UI_PATH)/mantine-ui && pnpm exec prettier --write --print-width 120 src/promql/functionSignatures.ts src/promql/functionDocs.tsx
 
 .PHONY: check-generated-promql-functions
 check-generated-promql-functions: generate-promql-functions

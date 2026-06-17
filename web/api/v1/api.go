@@ -15,7 +15,7 @@ package v1
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -1794,7 +1794,7 @@ func parseListRulesPaginationRequest(r *http.Request) (int64, string, *apiFuncRe
 }
 
 func getRuleGroupNextToken(file, group string) string {
-	h := sha1.New()
+	h := sha256.New()
 	h.Write([]byte(file + ";" + group))
 	return hex.EncodeToString(h.Sum(nil))
 }

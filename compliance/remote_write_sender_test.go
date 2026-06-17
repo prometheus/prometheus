@@ -80,12 +80,15 @@ func (p internalPrometheus) Run(ctx context.Context, opts sender.Options) error 
 		"run", ".",
 		"--web.listen-address=0.0.0.0:0",
 		fmt.Sprintf("--config.file=%s", configFile),
-		// Set important flags for the full remote write compliance:
-		"--enable-feature=st-storage",
 	}
 	if p.agentMode {
+		// Agent mode: st-storage only (agent WAL does not use XOR2 chunks).
+		args = append(args, "--enable-feature=st-storage")
 		args = append(args, fmt.Sprintf("--storage.agent.path=%v", dir), "--agent")
 	} else {
+		// Server mode: st-storage requires XOR2 chunk encoding so that start
+		// timestamps can be stored in float chunks.
+		args = append(args, "--enable-feature=st-storage,xor2-encoding")
 		args = append(args, fmt.Sprintf("--storage.tsdb.path=%v", dir))
 	}
 	return sender.RunCommand(ctx, "../cmd/prometheus", nil, "go", args...)
