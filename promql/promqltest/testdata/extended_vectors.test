@@ -767,3 +767,6 @@ eval instant at 3m changes(htofmixed[1m] anchored)
 
 eval instant at 3m changes(honlywithreset[1m] anchored)
     {} 1
+
+eval instant at 3m changes(hhffmixed[1m] anchored)
+    {} 1
