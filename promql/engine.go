@@ -1830,7 +1830,9 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration,
 			}
 		}
 
-		mat = append(mat, ss)
+		if len(ss.Floats)+len(ss.Histograms) > 0 {
+			mat = append(mat, ss)
+		}
 	}
 
 	return mat, annos

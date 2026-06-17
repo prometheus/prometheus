@@ -692,6 +692,9 @@ clear
 load 30s
   mixed_types 1 2 {{schema:0 sum:3 count:3 buckets:[3]}} {{schema:0 sum:4 count:4 buckets:[4]}}
 
+eval instant at 45s mixed_types smoothed
+    expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_types"
+
 eval instant at 45s sort(mixed_types smoothed)
     expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_types"
 
