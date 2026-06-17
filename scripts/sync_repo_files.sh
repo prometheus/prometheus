@@ -137,7 +137,7 @@ post_pull_request() {
   local pr_token="$5"
   local checkout_hint="To check out this branch locally and push changes back:\\n\`\`\`\\ngit remote add ${fork_owner} https://github.com/${fork_org_repo}.git\\ngit fetch ${fork_owner} ${branch}\\ngit checkout -b ${branch} ${fork_owner}/${branch}\\n\`\`\`"
   local post_json
-  post_json="$(printf '{"title":"%s","base":"%s","head":"%s:%s","body":"%s"}' "${pr_title}" "${default_branch}" "${fork_owner}" "${branch}" "${pr_msg}\\n\\n${checkout_hint}")"
+  post_json="$(printf '{"title":"%s","base":"%s","head":"%s:%s","body":"%s","maintainer_can_modify":true}' "${pr_title}" "${default_branch}" "${fork_owner}" "${branch}" "${pr_msg}\\n\\n${checkout_hint}")"
   echo "Posting PR to ${default_branch} on ${repo}"
   curl --retry 5 --silent --fail --show-error \
     -u "${git_user}:${!pr_token}" \
