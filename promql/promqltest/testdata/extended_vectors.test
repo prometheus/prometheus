@@ -733,6 +733,7 @@ load 1m
   floats 2 1 2 1 2 1
   histograms {{schema:0 sum:5 count:2}} {{schema:0 sum:5 count:1}} {{schema:0 sum:5 count:2}} {{schema:0 sum:5 count:1}} {{schema:0 sum:5 count:2}}
   honlywithreset {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2]}} {{schema:0 sum:3 count:3 buckets:[3]}} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:reset}}
+  hhffmixed {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2]}} 5 2 3
 
 
 eval instant at 3m resets(ftohmixed[1m] anchored)
@@ -752,6 +753,9 @@ eval instant at 3m resets(honlywithreset[1m] anchored)
 
 eval instant at 3m resets(hhffmixed[1m] anchored)
     {} 1
+
+eval instant at 4m resets(hhffmixed[1m] anchored)
+    {} 0
 
 eval instant at 3m changes(ftohmixed[1m] anchored)
     {} 1
