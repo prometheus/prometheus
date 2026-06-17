@@ -724,6 +724,9 @@ clear
 #   floats:         all floats
 #   histograms:     all histograms
 #   honlywithreset: all histograms, with a counter reset hint
+#   hhffmixed:      histograms before a float anchor; the pre-anchor histograms
+#                   at t=0 and t=1m must be skipped, so only the t=2m -> t=3m
+#                   float transition is counted.
 load 1m
   ftohmixed 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 4 5 6 7+1x60
   htofmixed {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2]}} {{schema:0 sum:3 count:3 buckets:[3]}} 5
