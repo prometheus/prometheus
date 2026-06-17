@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -842,15 +843,17 @@ func TestSDConfig_ValidExcludeFilter(t *testing.T) {
 // ---- SetDirectory -----------------------------------------------------------
 
 func TestSDConfig_SetDirectory_RelativePath(t *testing.T) {
-	cfg := SDConfig{KeyFile: "keys/oci.pem"}
-	cfg.SetDirectory("/etc/prometheus")
-	require.Equal(t, "/etc/prometheus/keys/oci.pem", cfg.KeyFile)
+	dir := filepath.FromSlash("/etc/prometheus")
+	cfg := SDConfig{KeyFile: filepath.FromSlash("keys/oci.pem")}
+	cfg.SetDirectory(dir)
+	require.Equal(t, filepath.Join(dir, "keys", "oci.pem"), cfg.KeyFile)
 }
 
 func TestSDConfig_SetDirectory_AbsolutePathUnchanged(t *testing.T) {
-	cfg := SDConfig{KeyFile: "/absolute/path/oci.pem"}
-	cfg.SetDirectory("/etc/prometheus")
-	require.Equal(t, "/absolute/path/oci.pem", cfg.KeyFile)
+	abs := filepath.Join(t.TempDir(), "oci.pem")
+	cfg := SDConfig{KeyFile: abs}
+	cfg.SetDirectory(filepath.FromSlash("/etc/prometheus"))
+	require.Equal(t, abs, cfg.KeyFile)
 }
 
 func TestSDConfig_SetDirectory_EmptyKeyFile(t *testing.T) {
