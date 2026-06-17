@@ -40,7 +40,8 @@ import (
 
 const prometheusDocsLTSConfigURL = "https://raw.githubusercontent.com/prometheus/docs/main/docs-config.ts"
 
-// fetchLTSPrefix fetches the single LTS version prefix (e.g. "3.5") from the docs config.
+// fetchLTSPrefix fetches the oldest LTS version prefix (e.g. "3.5") from the docs config.
+// The config may list several LTS versions; the first entry is the oldest released LTS.
 func fetchLTSPrefix(t *testing.T) string {
 	t.Helper()
 
@@ -52,11 +53,12 @@ func fetchLTSPrefix(t *testing.T) string {
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 
-	// Extracts "X.Y" from the ltsVersions block:
+	// Extracts the first "X.Y" from the ltsVersions block, which may list
+	// several LTS versions (the first entry being the oldest released LTS):
 	//   ltsVersions: {
-	//     prometheus: ["X.Y"],
+	//     prometheus: ["X.Y", "X.Z"],
 	//   },
-	matches := regexp.MustCompile(`ltsVersions:\s*{\s*prometheus:\s*\["(\d+\.\d+)"]`).FindSubmatch(body)
+	matches := regexp.MustCompile(`ltsVersions:\s*{\s*prometheus:\s*\["(\d+\.\d+)"`).FindSubmatch(body)
 	require.NotEmpty(t, matches)
 	return string(matches[1])
 }
