@@ -283,6 +283,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.tsdb.XOR2EncodingAllowed = true
 				c.tsdb.FloatChunkEncoding = chunkenc.EncXOR2
 				logger.Info("Experimental XOR2 chunk encoding enabled.")
+			case "histograms-st-encoding":
+				c.tsdb.EnableHistogramSTEncoding = true
+				logger.Info("Experimental ST-capable histogram chunk encoding enabled.")
 			case "st-synthesis":
 				// TODO(ridwanmsharif): Move this to scrape configuration once stable.
 				c.scrape.SynthesizeST = true
@@ -639,7 +642,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -2098,6 +2101,7 @@ type tsdbOptions struct {
 	BlockReloadInterval            model.Duration
 	EnableSTAsZeroSample           bool
 	EnableSTStorage                bool
+	EnableHistogramSTEncoding      bool
 	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
 	FloatChunkEncoding             chunkenc.Encoding
@@ -2131,6 +2135,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		FeatureRegistry:                features.DefaultRegistry,
 		EnableSTAsZeroSample:           opts.EnableSTAsZeroSample,
 		EnableSTStorage:                opts.EnableSTStorage,
+		EnableHistogramSTEncoding:      opts.EnableHistogramSTEncoding,
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
 		FloatChunkEncoding:             opts.FloatChunkEncoding,

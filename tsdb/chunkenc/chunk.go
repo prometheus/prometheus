@@ -207,7 +207,13 @@ func (v ValueType) String() string {
 	}
 }
 
-func (v ValueType) ChunkEncoding(useXOR2 bool) Encoding {
+// ChunkEncoding returns the chunk encoding to use for new chunks of this value type.
+// The useXOR2 flag selects EncXOR2 over EncXOR for ValFloat. The useHistogramST flag
+// selects EncHistogramST over EncHistogram for ValHistogram and EncFloatHistogramST
+// over EncFloatHistogram for ValFloatHistogram. The two flags are independent;
+// callers gating purely on whether ST is present in the data should pass the same
+// value for both.
+func (v ValueType) ChunkEncoding(useXOR2, useHistogramST bool) Encoding {
 	switch v {
 	case ValFloat:
 		if useXOR2 {
@@ -215,12 +221,12 @@ func (v ValueType) ChunkEncoding(useXOR2 bool) Encoding {
 		}
 		return EncXOR
 	case ValHistogram:
-		if useXOR2 {
+		if useHistogramST {
 			return EncHistogramST
 		}
 		return EncHistogram
 	case ValFloatHistogram:
-		if useXOR2 {
+		if useHistogramST {
 			return EncFloatHistogramST
 		}
 		return EncFloatHistogram
@@ -230,8 +236,9 @@ func (v ValueType) ChunkEncoding(useXOR2 bool) Encoding {
 }
 
 // NewChunk returns a new empty chunk for the given value type.
-func (v ValueType) NewChunk(useXOR2 bool) (Chunk, error) {
-	return NewEmptyChunk(v.ChunkEncoding(useXOR2))
+// See ChunkEncoding for the meaning of useXOR2 and useHistogramST.
+func (v ValueType) NewChunk(useXOR2, useHistogramST bool) (Chunk, error) {
+	return NewEmptyChunk(v.ChunkEncoding(useXOR2, useHistogramST))
 }
 
 // CompatibleValues reports whether two encodings are mutually compatible with

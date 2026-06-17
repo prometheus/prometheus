@@ -7510,14 +7510,15 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 	t.Parallel()
 
 	opts := &Options{
-		RetentionDuration:   int64(time.Hour * 24 * 15 / time.Millisecond),
-		NoLockfile:          true,
-		MinBlockDuration:    int64(time.Hour * 2 / time.Millisecond),
-		MaxBlockDuration:    int64(time.Hour * 2 / time.Millisecond),
-		WALCompression:      compression.Snappy,
-		EnableSTStorage:     true,
-		XOR2EncodingAllowed: true,
-		FloatChunkEncoding:  chunkenc.EncXOR2,
+		RetentionDuration:         int64(time.Hour * 24 * 15 / time.Millisecond),
+		NoLockfile:                true,
+		MinBlockDuration:          int64(time.Hour * 2 / time.Millisecond),
+		MaxBlockDuration:          int64(time.Hour * 2 / time.Millisecond),
+		WALCompression:            compression.Snappy,
+		EnableSTStorage:           true,
+		XOR2EncodingAllowed:       true,
+		FloatChunkEncoding:        chunkenc.EncXOR2,
+		EnableHistogramSTEncoding: true,
 	}
 	db := newTestDB(t, withOpts(opts))
 	ctx := context.Background()
@@ -7658,6 +7659,7 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 			opts.EnableSTStorage = true
 			opts.XOR2EncodingAllowed = true
 			opts.FloatChunkEncoding = chunkenc.EncXOR2
+			opts.EnableHistogramSTEncoding = true
 			db := newTestDB(t, withOpts(opts))
 			db.DisableCompactions()
 

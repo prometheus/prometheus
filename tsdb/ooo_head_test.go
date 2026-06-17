@@ -320,7 +320,7 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 				}
 			}
 
-			chunks, err := oooChunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, false)
+			chunks, err := oooChunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, false, false)
 			require.NoError(t, err)
 			require.Len(t, chunks, len(tc.expectedChunks), "number of chunks")
 			sampleIndex := 0
@@ -469,10 +469,10 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 
 	storageScenarios := []struct {
 		name    string
-		useXOR2 bool
+		storeST bool
 	}{
-		{"useXOR2=true", true},
-		{"useXOR2=false", false},
+		{"storeST=true", true},
+		{"storeST=false", false},
 	}
 
 	for name, tc := range testCases {
@@ -483,13 +483,13 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 					oooChunk.Insert(s.st, s.t, s.f, s.h, s.fh)
 				}
 
-				chunks, err := oooChunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, ss.useXOR2)
+				chunks, err := oooChunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, ss.storeST, ss.storeST)
 				require.NoError(t, err)
 				require.Len(t, chunks, 1, "number of chunks")
 
 				c := chunks[0]
 				expectedEnc := tc.regularEncoding
-				if ss.useXOR2 {
+				if ss.storeST {
 					expectedEnc = tc.xor2Encoding
 				}
 				require.Equal(t, expectedEnc, c.chunk.Encoding(), "chunk encoding")
@@ -521,7 +521,7 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 					}
 
 					gotST := it.AtST()
-					if ss.useXOR2 {
+					if ss.storeST {
 						require.Equal(t, expSample.st, gotST, "sample %d st", sampleIndex)
 					} else {
 						require.Equal(t, int64(0), gotST, "sample %d st should be 0 when useXOR2=false", sampleIndex)
