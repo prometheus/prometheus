@@ -329,8 +329,8 @@ github.com/hashicorp/mdns v1.0.4/go.mod h1:mtBihi+LeNXGtG8L9dX59gAEa12BDtBQSp4v/
 github.com/hashicorp/memberlist v0.5.0/go.mod h1:yvyXLpo0QaGE59Y7hDTsTzDD25JYBZ4mHgHUZ8lrOI0=
 github.com/hashicorp/memberlist v0.5.4 h1:40YY+3qq2tAUhZIMEK8kqusKZBBjdwJ3NUjvYkcxh74=
 github.com/hashicorp/memberlist v0.5.4/go.mod h1:OgN6xiIo6RlHUWk+ALjP9e32xWCoQrsOCmHrWCm2MWA=
-github.com/hashicorp/nomad/api v0.0.0-20260616141923-3999fda4f76f h1:TUAATea5eKfIy0PeQ0+hGj86F2QpXi33Tt9a0X+M4Zk=
-github.com/hashicorp/nomad/api v0.0.0-20260616141923-3999fda4f76f/go.mod h1:Kr8imJwigbQ/50BqVae2+JL+AyX+FnzbnuCoIFb6iYg=
+github.com/hashicorp/nomad/api v0.0.0-20260616181215-ea1ca2d932bf h1:pU9wD+K2z1mY8ypEmMlfnuxPURG6Vf/OCZsyuWP/3AE=
+github.com/hashicorp/nomad/api v0.0.0-20260616181215-ea1ca2d932bf/go.mod h1:Kr8imJwigbQ/50BqVae2+JL+AyX+FnzbnuCoIFb6iYg=
 github.com/hashicorp/serf v0.10.1 h1:Z1H2J60yRKvfDYAOZLd2MU0ND4AH/WDz7xYHDWQsIPY=
 github.com/hashicorp/serf v0.10.1/go.mod h1:yL2t6BqATOLGc5HF7qbFkTfXoPIY0WZdWHfEvMqbG+4=
 github.com/hetznercloud/hcloud-go/v2 v2.43.0 h1:soqEUxJJqbf8UICQmDXfUwY/khfROAk0fi1s0bnBtd8=
@@ -507,8 +507,8 @@ github.com/prometheus/client_model v0.6.2 h1:oBsgwpGs7iVziMvrGhE53c/GrLUsZdHnqNw
 github.com/prometheus/client_model v0.6.2/go.mod h1:y3m2F6Gdpfy6Ut/GBsUqTWZqCUvMVzSfMLjcu6wAwpE=
 github.com/prometheus/common v0.4.1/go.mod h1:TNfzLD0ON7rHzMJeJkieUDPYmFC7Snx/y86RQel1bk4=
 github.com/prometheus/common v0.9.1/go.mod h1:yhUN8i9wzaXS3w1O07YhxHEBxD+W35wd8bs7vj7HSQ4=
-github.com/prometheus/common v0.68.1 h1:omjRRl4QP4komogpXuhfeOiisQg7xdy8VM1UY+pStaY=
-github.com/prometheus/common v0.68.1/go.mod h1:ZzL3f6u94qUxh9p+tJTrF+FvBS1XXbbRAZCQkytAL0Y=
+github.com/prometheus/common v0.69.0 h1:OA85nJQS/T/MaYh/Q2CcgDKSGWqNIgrBDvDH85CuiNk=
+github.com/prometheus/common v0.69.0/go.mod h1:ZzL3f6u94qUxh9p+tJTrF+FvBS1XXbbRAZCQkytAL0Y=
 github.com/prometheus/common/assets v0.2.0 h1:0P5OrzoHrYBOSM1OigWL3mY8ZvV2N4zIE/5AahrSrfM=
 github.com/prometheus/common/assets v0.2.0/go.mod h1:D17UVUE12bHbim7HzwUvtqm6gwBEaDQ0F+hIGbFbccI=
 github.com/prometheus/exporter-toolkit v0.16.0 h1:xT/j7L2XKF+VJd6B4fpUw6xWabHrSmsUf6mYmFqyu0s=
