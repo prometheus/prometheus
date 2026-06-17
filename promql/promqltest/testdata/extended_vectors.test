@@ -750,6 +750,9 @@ eval instant at 3m resets(htofmixed[1m] anchored)
 eval instant at 3m resets(honlywithreset[1m] anchored)
     {} 1
 
+eval instant at 3m resets(hhffmixed[1m] anchored)
+    {} 1
+
 eval instant at 3m changes(ftohmixed[1m] anchored)
     {} 1
 
