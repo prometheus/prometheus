@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -40,7 +41,28 @@ import (
 
 const prometheusDocsLTSConfigURL = "https://raw.githubusercontent.com/prometheus/docs/main/docs-config.ts"
 
-// fetchLTSPrefix fetches the single LTS version prefix (e.g. "3.5") from the docs config.
+// ltsPrefixRegexp matches the first "X.Y" entry of the prometheus list in the
+// docs ltsVersions block, tolerating additional entries:
+//
+//	ltsVersions: {
+//	  prometheus: ["X.Y", ...],
+//	},
+var ltsPrefixRegexp = regexp.MustCompile(`ltsVersions:\s*{\s*prometheus:\s*\[\s*"(\d+\.\d+)"`)
+
+// parseLTSPrefix extracts the LTS version prefix (e.g. "3.5") from the docs
+// config body. The prometheus list may hold several LTS lines, e.g.
+// ["3.5", "3.13"]; the first entry is the oldest still-supported LTS and is
+// therefore guaranteed to have a published release to download, while a newer
+// announced LTS line might not be released yet.
+func parseLTSPrefix(body []byte) (string, error) {
+	matches := ltsPrefixRegexp.FindSubmatch(body)
+	if len(matches) < 2 {
+		return "", errors.New("could not find an LTS version prefix in docs config")
+	}
+	return string(matches[1]), nil
+}
+
+// fetchLTSPrefix fetches the LTS version prefix (e.g. "3.5") from the docs config.
 func fetchLTSPrefix(t *testing.T) string {
 	t.Helper()
 
@@ -52,13 +74,55 @@ func fetchLTSPrefix(t *testing.T) string {
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 
-	// Extracts "X.Y" from the ltsVersions block:
-	//   ltsVersions: {
-	//     prometheus: ["X.Y"],
-	//   },
-	matches := regexp.MustCompile(`ltsVersions:\s*{\s*prometheus:\s*\["(\d+\.\d+)"]`).FindSubmatch(body)
-	require.NotEmpty(t, matches)
-	return string(matches[1])
+	prefix, err := parseLTSPrefix(body)
+	require.NoError(t, err)
+	return prefix
+}
+
+func TestParseLTSPrefix(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		body      string
+		want      string
+		wantError bool
+	}{
+		{
+			name: "single LTS version",
+			body: `ltsVersions: {
+    prometheus: ["3.5"],
+  },`,
+			want: "3.5",
+		},
+		{
+			name: "multiple LTS versions returns the first",
+			body: `ltsVersions: {
+    prometheus: ["3.5", "3.13"],
+  },`,
+			want: "3.5",
+		},
+		{
+			name: "empty list",
+			body: `ltsVersions: {
+    prometheus: [],
+  },`,
+			wantError: true,
+		},
+		{
+			name:      "no ltsVersions block",
+			body:      `versions: ["3.5"]`,
+			wantError: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseLTSPrefix([]byte(tc.body))
+			if tc.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func fetchLatestLTSRelease(t *testing.T, prefix string) (version, assetURL string) {
