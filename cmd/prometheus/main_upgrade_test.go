@@ -54,9 +54,9 @@ func fetchLTSPrefix(t *testing.T) string {
 
 	// Extracts "X.Y" from the ltsVersions block:
 	//   ltsVersions: {
-	//     prometheus: ["X.Y"],
+	//     prometheus: ["X.Y", ...],
 	//   },
-	matches := regexp.MustCompile(`ltsVersions:\s*{\s*prometheus:\s*\["(\d+\.\d+)"]`).FindSubmatch(body)
+	matches := regexp.MustCompile(`ltsVersions:\s*{\s*prometheus:\s*\[\s*"(\d+\.\d+)"`).FindSubmatch(body)
 	require.NotEmpty(t, matches)
 	return string(matches[1])
 }
