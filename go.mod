@@ -42,7 +42,7 @@ require (
 	github.com/gophercloud/gophercloud/v2 v2.12.0
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
 	github.com/hashicorp/consul/api v1.32.1
-	github.com/hashicorp/nomad/api v0.0.0-20260616141923-3999fda4f76f
+	github.com/hashicorp/nomad/api v0.0.0-20260616181215-ea1ca2d932bf
 	github.com/hetznercloud/hcloud-go/v2 v2.43.0
 	github.com/ionos-cloud/sdk-go/v6 v6.3.8
 	github.com/json-iterator/go v1.1.12
@@ -66,7 +66,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_golang/exp v0.0.0-20260602051030-3537b20ac86b
 	github.com/prometheus/client_model v0.6.2
-	github.com/prometheus/common v0.68.1
+	github.com/prometheus/common v0.69.0
 	github.com/prometheus/common/assets v0.2.0
 	github.com/prometheus/exporter-toolkit v0.16.0
 	github.com/prometheus/sigv4 v0.4.1
