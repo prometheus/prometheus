@@ -27,9 +27,13 @@ import (
 )
 
 // embeddedRegistry holds the bundled semconv and OTel schema files served as
-// the only source from which __semconv_url__ and __schema_url__ values may be
-// resolved. Accepting arbitrary HTTP URLs or local filesystem paths would
-// expose a server-side fetch primitive to anyone able to issue a PromQL query.
+// the default source from which __semconv_url__ and __schema_url__ values are
+// resolved. Operators may replace it with their own registry via configuration
+// (see AwareStorageWithRegistry); either way, queries can only ever name files
+// inside the registry namespace. Accepting arbitrary HTTP URLs or local
+// filesystem paths from the matchers themselves would expose a server-side
+// fetch primitive to anyone able to issue a PromQL query, which is why the
+// matcher values are gated by registryURLRe rather than treated as locations.
 //
 //go:embed registry/*
 var embeddedRegistry embed.FS
@@ -217,10 +221,10 @@ func (c *staticCache[T]) set(url string, value T) {
 	c.m.Store(url, value)
 }
 
-// fetchOTelSchema reads an OTel schema file from the embedded registry and
-// parses it. The URL must satisfy registryURLRe.
-func fetchOTelSchema(url string) (otelSchema, error) {
-	b, err := readRegistryFile(url)
+// fetchOTelSchema reads an OTel schema file from the engine's registry source
+// and parses it. The URL must satisfy registryURLRe.
+func (e *schemaEngine) fetchOTelSchema(url string) (otelSchema, error) {
+	b, err := e.readRegistryFile(url)
 	if err != nil {
 		return otelSchema{}, fmt.Errorf("fetch OTel schema %q: %w", url, err)
 	}
@@ -281,11 +285,11 @@ func compareSemver(a, b string) int {
 	return 0
 }
 
-// fetchSemconv reads a semconv file from the embedded registry and parses it.
-// The version is derived from the last path segment of url; the URL must
+// fetchSemconv reads a semconv file from the engine's registry source and parses
+// it. The version is derived from the last path segment of url; the URL must
 // satisfy registryURLRe and the derived version must satisfy validateSemver.
-func fetchSemconv(url string) (semconv, error) {
-	b, err := readRegistryFile(url)
+func (e *schemaEngine) fetchSemconv(url string) (semconv, error) {
+	b, err := e.readRegistryFile(url)
 	if err != nil {
 		return semconv{}, fmt.Errorf("fetch semconv %q: %w", url, err)
 	}
@@ -323,17 +327,17 @@ func loadSemconv(b []byte, version string) (semconv, error) {
 	return s, nil
 }
 
-// readRegistryFile reads a file from the embedded registry. The path must
+// readRegistryFile reads a file from the engine's registry source. The path must
 // satisfy registryURLRe — HTTP URLs and arbitrary local files are rejected to
-// keep the __semconv_url__/__schema_url__ matchers from acting as a
-// server-side fetch primitive.
-func readRegistryFile(url string) ([]byte, error) {
+// keep the __semconv_url__/__schema_url__ matchers from acting as a server-side
+// fetch primitive. The gate applies to every source, embedded or operator-provided.
+func (e *schemaEngine) readRegistryFile(url string) ([]byte, error) {
 	if !registryURLRe.MatchString(url) {
-		return nil, fmt.Errorf("invalid registry URL %q: only embedded registry paths (registry/<name>) are accepted", url)
+		return nil, fmt.Errorf("invalid registry URL %q: only registry paths (registry/<name>) are accepted", url)
 	}
-	b, err := embeddedRegistry.ReadFile(url)
+	b, err := e.registry.ReadFile(url)
 	if err != nil {
-		return nil, fmt.Errorf("read embedded %s: %w", url, err)
+		return nil, fmt.Errorf("read registry file %s: %w", url, err)
 	}
 	return b, nil
 }

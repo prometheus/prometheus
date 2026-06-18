@@ -351,9 +351,12 @@ recognised inside instant vector selectors:
   schema-version boundaries, matching the metric's historical names and
   rendering the merged results under the queried version's name.
 
-`__schema_url__` requires `__semconv_url__`. All values are resolved
-exclusively against an embedded registry shipped with the binary; arbitrary
-HTTP or filesystem paths are rejected. See
+`__schema_url__` requires `__semconv_url__`. Both values are resolved
+against the active registry under the `registry/` namespace. Prometheus uses
+the registry embedded in the binary by default, but operators can configure a
+local-files or remote-archive registry via the `semconv` block, which fully
+replaces the embedded registry. The matcher values are registry paths, not
+locations; arbitrary HTTP URLs and filesystem paths are rejected. See
 [Semconv Versioned Read](../feature_flags.md#semconv-versioned-read) for
 the supported registry layout, examples, and the limitations of the
 fan-out.

@@ -24,13 +24,23 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+// registrySource provides the raw bytes of registry files addressed by their
+// registry/<name> path. The embedded registry (embed.FS) satisfies it directly;
+// an operator-provided registry is adapted to it via newRegistrySource.
+type registrySource interface {
+	ReadFile(name string) ([]byte, error)
+}
+
 type schemaEngine struct {
+	registry registrySource
+
 	otelSchemaCache *staticCache[otelSchema]
 	semconvCache    *staticCache[semconv]
 }
 
-func newSchemaEngine() *schemaEngine {
+func newSchemaEngine(registry registrySource) *schemaEngine {
 	return &schemaEngine{
+		registry:        registry,
 		otelSchemaCache: newStaticCache[otelSchema](),
 		semconvCache:    newStaticCache[semconv](),
 	}
@@ -245,7 +255,7 @@ func (e *schemaEngine) getSemconv(url string) (semconv, error) {
 	if sc, ok := e.semconvCache.get(url); ok {
 		return sc, nil
 	}
-	sc, err := fetchSemconv(url)
+	sc, err := e.fetchSemconv(url)
 	if err != nil {
 		return semconv{}, err
 	}
@@ -259,7 +269,7 @@ func (e *schemaEngine) getOTelSchema(url string) (otelSchema, error) {
 	if s, ok := e.otelSchemaCache.get(url); ok {
 		return s, nil
 	}
-	s, err := fetchOTelSchema(url)
+	s, err := e.fetchOTelSchema(url)
 	if err != nil {
 		return otelSchema{}, err
 	}

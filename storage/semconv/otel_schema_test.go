@@ -24,6 +24,12 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+// testEngine returns a schemaEngine backed by the embedded registry, for tests
+// that exercise the engine's fetch/read methods directly.
+func testEngine() *schemaEngine {
+	return newSchemaEngine(embeddedRegistry)
+}
+
 // loadOTelSchemaFile is a test helper that reads a YAML fixture from disk and
 // parses it via the same code path fetchOTelSchema uses. Tests use this rather
 // than fetchOTelSchema directly because fetch* is restricted to the embedded
@@ -131,12 +137,13 @@ func TestValidateSemver(t *testing.T) {
 
 func TestFetchSemconv(t *testing.T) {
 	t.Run("registry: loads embedded version file", func(t *testing.T) {
-		sc, err := fetchSemconv("registry/1.0.0")
+		sc, err := testEngine().fetchSemconv("registry/1.0.0")
 		require.NoError(t, err)
 		require.Equal(t, "1.0.0", sc.version)
 	})
 
 	t.Run("registry: rejects path traversal", func(t *testing.T) {
+		e := testEngine()
 		for _, url := range []string{
 			"registry/../etc/passwd",
 			"registry/..",
@@ -148,7 +155,7 @@ func TestFetchSemconv(t *testing.T) {
 			"registry/",
 			"",
 		} {
-			_, err := fetchSemconv(url)
+			_, err := e.fetchSemconv(url)
 			require.Errorf(t, err, "expected %q to be rejected", url)
 		}
 	})
@@ -156,7 +163,7 @@ func TestFetchSemconv(t *testing.T) {
 	t.Run("registry: rejects non-semver version segment", func(t *testing.T) {
 		// registry.yaml passes the URL regex but is not a semver-named file,
 		// so version derivation fails.
-		_, err := fetchSemconv("registry/registry.yaml")
+		_, err := testEngine().fetchSemconv("registry/registry.yaml")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid semver")
 	})
@@ -210,12 +217,13 @@ func TestTransformOTelSchemaLabels(t *testing.T) {
 
 func TestReadRegistryFile(t *testing.T) {
 	t.Run("loads embedded registry entry", func(t *testing.T) {
-		b, err := readRegistryFile("registry/1.0.0")
+		b, err := testEngine().readRegistryFile("registry/1.0.0")
 		require.NoError(t, err)
 		require.NotEmpty(t, b)
 	})
 
 	t.Run("rejects HTTP, absolute paths, traversal, and non-registry paths", func(t *testing.T) {
+		e := testEngine()
 		for _, url := range []string{
 			"http://example.com/x.yaml",
 			"/etc/passwd",
@@ -224,7 +232,7 @@ func TestReadRegistryFile(t *testing.T) {
 			"./testdata/otel.yaml",
 			"registry/",
 		} {
-			_, err := readRegistryFile(url)
+			_, err := e.readRegistryFile(url)
 			require.Errorf(t, err, "expected %q to be rejected", url)
 		}
 	})
