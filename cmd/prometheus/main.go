@@ -1115,7 +1115,7 @@ func main() {
 				}
 
 				if cfg.GlobalConfig.QueryLogFile == "" {
-					queryEngine.SetQueryLogger(nil)
+					queryEngine.SetQueryLogger(nil, 0)
 					return nil
 				}
 
@@ -1123,8 +1123,7 @@ func main() {
 				if err != nil {
 					return err
 				}
-				queryEngine.SetQueryLogger(l)
-				queryEngine.SetQueryLogMinDuration(time.Duration(cfg.GlobalConfig.QueryLogMinDuration))
+				queryEngine.SetQueryLogger(l, time.Duration(cfg.GlobalConfig.QueryLogMinDuration))
 				return nil
 			},
 		}, {

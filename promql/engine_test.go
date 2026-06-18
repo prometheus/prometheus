@@ -20,13 +20,11 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-	"unsafe"
 
 	"github.com/stretchr/testify/require"
 
@@ -2360,7 +2358,7 @@ func TestQueryLogger_basic(t *testing.T) {
 	f1, err := logging.NewJSONFileLogger(ql1File)
 	require.NoError(t, err)
 
-	engine.SetQueryLogger(f1)
+	engine.SetQueryLogger(f1, 0)
 	queryExec()
 	logLines := getLogLines(t, ql1File)
 	require.Contains(t, logLines[0], "params", map[string]any{"query": "test statement"})
@@ -2374,7 +2372,7 @@ func TestQueryLogger_basic(t *testing.T) {
 
 	// Test that we close the query logger when unsetting it. The following
 	// attempt to close the file should error.
-	engine.SetQueryLogger(nil)
+	engine.SetQueryLogger(nil, 0)
 	err = f1.Close()
 	require.ErrorContains(t, err, "file already closed", "expected f1 to be closed, got open")
 	queryExec()
@@ -2386,9 +2384,9 @@ func TestQueryLogger_basic(t *testing.T) {
 	ql3File := filepath.Join(tmpDir, "query3.log")
 	f3, err := logging.NewJSONFileLogger(ql3File)
 	require.NoError(t, err)
-	engine.SetQueryLogger(f2)
+	engine.SetQueryLogger(f2, 0)
 	queryExec()
-	engine.SetQueryLogger(f3)
+	engine.SetQueryLogger(f3, 0)
 	err = f2.Close()
 	require.ErrorContains(t, err, "file already closed", "expected f2 to be closed, got open")
 	queryExec()
@@ -2413,7 +2411,7 @@ func TestQueryLogger_fields(t *testing.T) {
 		require.NoError(t, f1.Close())
 	})
 
-	engine.SetQueryLogger(f1)
+	engine.SetQueryLogger(f1, 0)
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	ctx = promql.NewOriginContext(ctx, map[string]any{"foo": "bar"})
@@ -2446,7 +2444,7 @@ func TestQueryLogger_error(t *testing.T) {
 		require.NoError(t, f1.Close())
 	})
 
-	engine.SetQueryLogger(f1)
+	engine.SetQueryLogger(f1, 0)
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	ctx = promql.NewOriginContext(ctx, map[string]any{"foo": "bar"})
@@ -2479,17 +2477,7 @@ func TestQueryLogger_minDuration(t *testing.T) {
 		var qry promql.Query
 		qry = engine.NewTestQuery(func(ctx context.Context) error {
 			if mockDuration > 0 {
-				val := reflect.ValueOf(qry).Elem()
-				statsField := val.FieldByName("stats")
-				ptrToQueryTimersPtr := unsafe.Pointer(statsField.UnsafeAddr())
-				queryTimers := *(* *stats.QueryTimers)(ptrToQueryTimersPtr)
-				timerGroup := queryTimers.TimerGroup
-
-				timer := timerGroup.GetTimer(stats.ExecTotalTime)
-				timerVal := reflect.ValueOf(timer).Elem()
-				field := timerVal.FieldByName("start")
-				ptr := unsafe.Pointer(field.UnsafeAddr())
-				*(*time.Time)(ptr) = time.Now().Add(-mockDuration)
+				qry.Stats().Timers.GetTimer(stats.ExecTotalTime).SetDuration(mockDuration)
 			}
 			return contextDone(ctx, "test statement execution")
 		})
@@ -2503,17 +2491,15 @@ func TestQueryLogger_minDuration(t *testing.T) {
 	require.NoError(t, err)
 	defer f.Close()
 
-	engine.SetQueryLogger(f)
-
 	// Test 1: Log threshold is 10m, query takes 1ms. Should NOT log.
-	engine.SetQueryLogMinDuration(10 * time.Minute)
+	engine.SetQueryLogger(f, 10*time.Minute)
 	queryExec(1 * time.Millisecond)
 	logLines := getLogLines(t, qlFile)
 	require.Empty(t, logLines)
 
-	// Test 2: Log threshold is 1ms, query takes 100ms. Should log.
-	engine.SetQueryLogMinDuration(1 * time.Millisecond)
-	queryExec(100 * time.Millisecond)
+	// Test 2: Log threshold is 1ms, query takes 20ms. Should log.
+	engine.SetQueryLogger(f, 1*time.Millisecond)
+	queryExec(20 * time.Millisecond)
 	logLines = getLogLines(t, qlFile)
 	require.Len(t, logLines, 1)
 }
