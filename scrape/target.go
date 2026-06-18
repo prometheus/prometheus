@@ -61,7 +61,8 @@ const (
 // Target refers to a singular HTTP or HTTPS endpoint.
 type Target struct {
 	// Any labels that are added to this target and its metrics.
-	labels labels.Labels
+	lset     labels.Labels
+	proxyURL *url.URL // Added
 	// ScrapeConfig used to create this target.
 	scrapeConfig *config.ScrapeConfig
 	// Target and TargetGroup labels used to create this target.
@@ -76,9 +77,25 @@ type Target struct {
 }
 
 // NewTarget creates a reasonably configured target for querying.
-func NewTarget(labels labels.Labels, scrapeConfig *config.ScrapeConfig, tLabels, tgLabels model.LabelSet) *Target {
+func NewTarget(lset labels.Labels, scrapeConfig *config.ScrapeConfig, tLabels, tgLabels model.LabelSet) *Target {
+	//ADDED stp 2//
+	var proxyURL *url.URL
+
+	// 1. HARVEST: Check for the magic label
+	if p := lset.Get("__proxy_url__"); p != "" {
+		u, err := url.Parse(p)
+		// 2. VALIDATE: Only allow http/https
+		if err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
+			proxyURL = u
+		}
+	}
+	// 2. ATOMIC REDACTION: Remove secret from labels immediately
+	lb := labels.NewBuilder(lset)
+	lb.Del("__proxy_url__")
+	lset = lb.Labels()
+
 	return &Target{
-		labels:       labels,
+		lset:         lset,
 		tLabels:      tLabels,
 		tgLabels:     tgLabels,
 		scrapeConfig: scrapeConfig,
@@ -96,6 +113,14 @@ type MetricMetadataStore interface {
 	GetMetadata(mfName string) (MetricMetadata, bool)
 	SizeMetadata() int
 	LengthMetadata() int
+}
+
+// --- STEP 3 IS HERE ---
+// ProxyURL returns the per-target proxy URL, if any.
+func (t *Target) ProxyURL() *url.URL {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+	return t.proxyURL
 }
 
 // MetricMetadata is a piece of metadata for a metric family.
@@ -159,8 +184,13 @@ func (t *Target) SetMetadataStore(s MetricMetadataStore) {
 func (t *Target) hash() uint64 {
 	h := fnv.New64a()
 
-	fmt.Fprintf(h, "%016d", t.labels.Hash())
+	fmt.Fprintf(h, "%016d", t.lset.Hash())
 	h.Write([]byte(t.URL().String()))
+	// ADDED THIS stp 4: Ensure di
+	// ferent proxies result in different hashes
+	if t.proxyURL != nil {
+		h.Write([]byte(t.proxyURL.String()))
+	}
 
 	return h.Sum64()
 }
@@ -186,7 +216,7 @@ func (t *Target) offset(interval time.Duration, offsetSeed uint64) time.Duration
 // Labels returns a copy of the set of all public labels of the target.
 func (t *Target) Labels(b *labels.Builder) labels.Labels {
 	b.Reset(labels.EmptyLabels())
-	t.labels.Range(func(l labels.Label) {
+	t.lset.Range(func(l labels.Label) {
 		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
 			b.Set(l.Name, l.Value)
 		}
@@ -196,7 +226,7 @@ func (t *Target) Labels(b *labels.Builder) labels.Labels {
 
 // LabelsRange calls f on each public label of the target.
 func (t *Target) LabelsRange(f func(l labels.Label)) {
-	t.labels.Range(func(l labels.Label) {
+	t.lset.Range(func(l labels.Label) {
 		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
 			f(l)
 		}
@@ -232,7 +262,7 @@ func (t *Target) URL() *url.URL {
 		params[k] = make([]string, len(v))
 		copy(params[k], v)
 	}
-	t.labels.Range(func(l labels.Label) {
+	t.lset.Range(func(l labels.Label) {
 		if !strings.HasPrefix(l.Name, model.ParamLabelPrefix) {
 			return
 		}
@@ -246,9 +276,9 @@ func (t *Target) URL() *url.URL {
 	})
 
 	return &url.URL{
-		Scheme:   t.labels.Get(model.SchemeLabel),
-		Host:     t.labels.Get(model.AddressLabel),
-		Path:     t.labels.Get(model.MetricsPathLabel),
+		Scheme:   t.lset.Get(model.SchemeLabel),
+		Host:     t.lset.Get(model.AddressLabel),
+		Path:     t.lset.Get(model.MetricsPathLabel),
 		RawQuery: params.Encode(),
 	}
 }
@@ -307,12 +337,12 @@ func (t *Target) intervalAndTimeout(defaultInterval, defaultDuration time.Durati
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
-	intervalLabel := t.labels.Get(model.ScrapeIntervalLabel)
+	intervalLabel := t.lset.Get(model.ScrapeIntervalLabel)
 	interval, err := model.ParseDuration(intervalLabel)
 	if err != nil {
 		return defaultInterval, defaultDuration, fmt.Errorf("error parsing interval label %q: %w", intervalLabel, err)
 	}
-	timeoutLabel := t.labels.Get(model.ScrapeTimeoutLabel)
+	timeoutLabel := t.lset.Get(model.ScrapeTimeoutLabel)
 	timeout, err := model.ParseDuration(timeoutLabel)
 	if err != nil {
 		return defaultInterval, defaultDuration, fmt.Errorf("error parsing timeout label %q: %w", timeoutLabel, err)
@@ -340,7 +370,7 @@ func (t *Target) boolLabel(name string, def bool) bool {
 
 // GetValue gets a label value from the entire label set.
 func (t *Target) GetValue(name string) string {
-	return t.labels.Get(name)
+	return t.lset.Get(name)
 }
 
 // Targets is a sortable list of targets.
