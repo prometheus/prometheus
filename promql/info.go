@@ -275,7 +275,8 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 	baseVector := make(Vector, 0, len(mat))
 	infoVector := make(Vector, 0, len(infoMat))
 	enh := &EvalNodeHelper{
-		Out: make(Vector, 0, biggestLen),
+		Out:           make(Vector, 0, biggestLen),
+		LookbackDelta: ev.lookbackDelta,
 	}
 	type seriesAndTimestamp struct {
 		Series
