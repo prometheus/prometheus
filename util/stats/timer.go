@@ -50,7 +50,6 @@ func (t *Timer) Duration() float64 {
 	return t.duration.Seconds()
 }
 
-
 // Return a string representation of the Timer.
 func (t *Timer) String() string {
 	return fmt.Sprintf("%s: %s", t.name, t.duration)

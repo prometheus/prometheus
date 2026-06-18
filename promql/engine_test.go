@@ -3020,7 +3020,7 @@ func TestQueryLogger_minDuration(t *testing.T) {
 				val := reflect.ValueOf(qry).Elem()
 				statsField := val.FieldByName("stats")
 				ptrToQueryTimersPtr := unsafe.Pointer(statsField.UnsafeAddr())
-				queryTimers := *(* *stats.QueryTimers)(ptrToQueryTimersPtr)
+				queryTimers := *(**stats.QueryTimers)(ptrToQueryTimersPtr)
 				timerGroup := queryTimers.TimerGroup
 
 				timer := timerGroup.GetTimer(stats.ExecTotalTime)

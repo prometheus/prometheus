@@ -750,7 +750,7 @@ func (ng *Engine) logQuery(ctx context.Context, q *query, err error) {
 	}
 	var eqc ErrQueryCanceled
 	isCanceled := errors.Is(err, context.Canceled) || errors.As(err, &eqc)
-	execDuration := q.stats.GetTimer(stats.ExecTotalTime).TotalDuration()
+	execDuration := time.Duration(q.stats.GetTimer(stats.ExecTotalTime).Duration() * float64(time.Second))
 	if (err != nil && !isCanceled) || execDuration >= ng.queryLogMinDuration {
 		logger := slog.New(l)
 		f := make([]slog.Attr, 0, 16) // Probably enough up front to not need to reallocate on append.
