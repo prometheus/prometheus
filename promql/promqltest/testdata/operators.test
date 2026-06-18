@@ -1017,3 +1017,18 @@ eval range from 0 to 20m step 10m -metric_a or -metric_b
     {} -1  -4
 
 clear
+
+# Regression: the two duplicate-series label strings in the many-to-many error must
+# be sorted so the error message is deterministic regardless of evaluation order.
+load 5m
+  dup_metric{label="alpha"} 1
+  dup_metric{label="beta"}  2
+  scalar_metric{} 3
+
+eval instant at 0m scalar_metric > on() dup_metric
+  expect fail msg: found duplicate series for the match group {} on the right hand-side of the operation: [{__name__="dup_metric", label="alpha"}, {__name__="dup_metric", label="beta"}];many-to-many matching not allowed: matching labels must be unique on one side
+
+eval instant at 0m dup_metric > on() group_right() scalar_metric
+  expect fail msg: found duplicate series for the match group {} on the left hand-side of the operation: [{__name__="dup_metric", label="alpha"}, {__name__="dup_metric", label="beta"}];many-to-many matching not allowed: matching labels must be unique on one side
+
+clear

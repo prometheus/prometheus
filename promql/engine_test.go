@@ -275,6 +275,51 @@ func TestQueryError(t *testing.T) {
 	require.ErrorIs(t, res.Err, errStorage, "expected error doesn't match")
 }
 
+// TestManyToManyErrorDeterministic pins the format of the "found duplicate series"
+// error. The two label strings are sorted lexicographically before formatting so the
+// message is stable regardless of the internal iteration order, which is randomised
+// per process start.
+func TestManyToManyErrorDeterministic(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 5m
+			dup_metric{label="alpha"} 1
+			dup_metric{label="beta"}  2
+			scalar_metric{}           3
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	engine := newTestEngine(t)
+	ctx := t.Context()
+
+	for _, tc := range []struct {
+		expr    string
+		wantErr string
+	}{
+		{
+			// CardManyToOne: duplicates are on the right-hand side.
+			expr: `scalar_metric > on() dup_metric`,
+			wantErr: `found duplicate series for the match group {} on the right hand-side of the operation: ` +
+				`[{__name__="dup_metric", label="alpha"}, {__name__="dup_metric", label="beta"}];` +
+				`many-to-many matching not allowed: matching labels must be unique on one side`,
+		},
+		{
+			// CardOneToMany: duplicates are on the left-hand side.
+			expr: `dup_metric > on() group_right() scalar_metric`,
+			wantErr: `found duplicate series for the match group {} on the left hand-side of the operation: ` +
+				`[{__name__="dup_metric", label="alpha"}, {__name__="dup_metric", label="beta"}];` +
+				`many-to-many matching not allowed: matching labels must be unique on one side`,
+		},
+	} {
+		t.Run(tc.expr, func(t *testing.T) {
+			q, err := engine.NewInstantQuery(ctx, storage, nil, tc.expr, time.Unix(0, 0))
+			require.NoError(t, err)
+			res := q.Exec(ctx)
+			q.Close()
+			require.EqualError(t, res.Err, tc.wantErr)
+		})
+	}
+}
+
 type noopHintRecordingQueryable struct {
 	hints []*storage.SelectHints
 }
