@@ -699,7 +699,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 			return
 		}
 		execDuration := time.Duration(q.stats.GetTimer(stats.ExecTotalTime).Duration() * float64(time.Second))
-		if execDuration < ng.queryLogMinDuration {
+		if err == nil && execDuration < ng.queryLogMinDuration {
 			return
 		}
 		logger := slog.New(l)

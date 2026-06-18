@@ -55,7 +55,6 @@ func (t *Timer) SetDuration(d time.Duration) {
 	t.duration = d
 }
 
-
 // Return a string representation of the Timer.
 func (t *Timer) String() string {
 	return fmt.Sprintf("%s: %s", t.name, t.duration)

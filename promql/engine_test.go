@@ -2502,6 +2502,26 @@ func TestQueryLogger_minDuration(t *testing.T) {
 	queryExec(20 * time.Millisecond)
 	logLines = getLogLines(t, qlFile)
 	require.Len(t, logLines, 1)
+
+	// Test 3: Log threshold is 10m, query takes 1ms, but errors. Should log.
+	engine.SetQueryLogger(f, 10*time.Minute)
+	queryExecError := func(mockDuration time.Duration) {
+		ctx, cancelCtx := context.WithCancel(context.Background())
+		defer cancelCtx()
+		var qry promql.Query
+		qry = engine.NewTestQuery(func(_ context.Context) error {
+			if mockDuration > 0 {
+				qry.Stats().Timers.GetTimer(stats.ExecTotalTime).SetDuration(mockDuration)
+			}
+			return errors.New("query execution error")
+		})
+		res := qry.Exec(ctx)
+		require.Error(t, res.Err)
+	}
+	queryExecError(1 * time.Millisecond)
+	logLines = getLogLines(t, qlFile)
+	require.Len(t, logLines, 2)
+	require.Contains(t, logLines[1], "error", "query execution error")
 }
 
 func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
