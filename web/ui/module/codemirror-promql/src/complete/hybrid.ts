@@ -335,9 +335,21 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         node.parent?.type.id === MatrixSelector ||
         (node.parent?.type.id === SubqueryExpr && node.parent.getChild('DurationExpr') !== null)
       ) {
-        // Empty duration slot: nothing typed yet, so offer no suggestions.
-        // Units appear once the user types a digit (NumberDurationLiteralInDurationContext).
-        // Functions appear once the user types a letter (Identifier/LabelName handler).
+        // We are in a duration slot. Two situations land here with an error node:
+        //   1. `go[]`  -> the error node text is empty: nothing typed yet, so offer
+        //      no suggestions (units appear once the user starts a duration, and
+        //      functions appear once the user types a letter via the Identifier/LabelName handler).
+        //   2. `go[5d1]` or `go[5d:5d4]` -> a dangling digit follows a complete duration,
+        //      so the error node text is a non-empty number. The user is building a
+        //      compound duration (e.g. `5d1h`), so we keep offering duration units.
+        const errorText = state.sliceDoc(node.from, node.to);
+        if (errorText.length > 0) {
+          // TODO: Ideally we should restrict the offered units to those strictly smaller than
+          // the last unit already typed, because compound durations must be written in strictly
+          // descending unit order (y w d h m s ms). For example, after `5d` only `h/m/s/ms` are
+          // valid, so suggesting `5d1d` or `5d1y` is wrong. For now we over-offer the full set.
+          result.push({ kind: ContextKind.Duration });
+        }
         break;
       }
       if (node.parent?.type.id === UnquotedLabelMatcher || node.parent?.type.id === QuotedLabelMatcher) {
