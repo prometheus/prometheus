@@ -708,64 +708,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 	q.cancel = cancel
 
 	defer func() {
-		ng.queryLoggerLock.RLock()
-		if l := ng.queryLogger; l != nil {
-			var eqc ErrQueryCanceled
-			isCanceled := errors.Is(err, context.Canceled) || errors.As(err, &eqc)
-			execDuration := time.Duration(q.stats.GetTimer(stats.ExecTotalTime).Duration() * float64(time.Second))
-			if (err != nil && !isCanceled) || execDuration >= ng.queryLogMinDuration {
-				logger := slog.New(l)
-				f := make([]slog.Attr, 0, 16) // Probably enough up front to not need to reallocate on append.
-
-				params := make(map[string]any, 4)
-				params["query"] = q.q
-				if eq, ok := q.Statement().(*parser.EvalStmt); ok {
-					params["start"] = formatDate(eq.Start)
-					params["end"] = formatDate(eq.End)
-					// The step provided by the user is in seconds.
-					params["step"] = int64(eq.Interval / (time.Second / time.Nanosecond))
-				}
-				f = append(f, slog.Any("params", params))
-				if err != nil {
-					f = append(f, slog.Any("error", err))
-					var errorType string
-					var eqt ErrQueryTimeout
-					var ets ErrTooManySamples
-					var eqs ErrStorage
-					switch {
-					case isCanceled:
-						errorType = "canceled"
-					case errors.As(err, &eqt) || errors.Is(err, context.DeadlineExceeded):
-						errorType = "timeout"
-					case errors.As(err, &ets):
-						errorType = "limit"
-					case errors.As(err, &eqs):
-						errorType = "storage"
-					default:
-						errorType = "other"
-					}
-					f = append(f, slog.String("error_type", errorType))
-				}
-				f = append(f, slog.Any("stats", stats.NewQueryStats(q.Stats())))
-				if span := trace.SpanFromContext(ctx); span != nil {
-					spanCtx := span.SpanContext()
-					f = append(f,
-						slog.Any("spanID", spanCtx.SpanID()),
-						slog.Any("traceID", spanCtx.TraceID()),
-					)
-				}
-				if origin := ctx.Value(QueryOrigin{}); origin != nil {
-					for k, v := range origin.(map[string]any) {
-						f = append(f, slog.Any(k, v))
-					}
-				}
-				logger.LogAttrs(context.Background(), slog.LevelInfo, "promql query logged", f...)
-				// TODO: @tjhop -- do we still need this metric/error log if logger doesn't return errors?
-				// ng.metrics.queryLogFailures.Inc()
-				// ng.logger.Error("can't log query", "err", err)
-			}
-		}
-		ng.queryLoggerLock.RUnlock()
+		ng.logQuery(ctx, q, err)
 	}()
 
 	execSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.ExecTotalTime)
@@ -796,6 +739,66 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 	}
 
 	panic(fmt.Errorf("promql.Engine.exec: unhandled statement of type %T", q.Statement()))
+}
+
+func (ng *Engine) logQuery(ctx context.Context, q *query, err error) {
+	ng.queryLoggerLock.RLock()
+	defer ng.queryLoggerLock.RUnlock()
+	l := ng.queryLogger
+	if l == nil {
+		return
+	}
+	var eqc ErrQueryCanceled
+	isCanceled := errors.Is(err, context.Canceled) || errors.As(err, &eqc)
+	execDuration := q.stats.GetTimer(stats.ExecTotalTime).TotalDuration()
+	if (err != nil && !isCanceled) || execDuration >= ng.queryLogMinDuration {
+		logger := slog.New(l)
+		f := make([]slog.Attr, 0, 16) // Probably enough up front to not need to reallocate on append.
+
+		params := make(map[string]any, 4)
+		params["query"] = q.q
+		if eq, ok := q.Statement().(*parser.EvalStmt); ok {
+			params["start"] = formatDate(eq.Start)
+			params["end"] = formatDate(eq.End)
+			// The step provided by the user is in seconds.
+			params["step"] = int64(eq.Interval / (time.Second / time.Nanosecond))
+		}
+		f = append(f, slog.Any("params", params))
+		if err != nil {
+			f = append(f, slog.Any("error", err))
+			var errorType string
+			var eqt ErrQueryTimeout
+			var ets ErrTooManySamples
+			var eqs ErrStorage
+			switch {
+			case isCanceled:
+				errorType = "canceled"
+			case errors.As(err, &eqt) || errors.Is(err, context.DeadlineExceeded):
+				errorType = "timeout"
+			case errors.As(err, &ets):
+				errorType = "limit"
+			case errors.As(err, &eqs):
+				errorType = "storage"
+			default:
+				errorType = "other"
+			}
+			f = append(f, slog.String("error_type", errorType))
+		}
+		f = append(f, slog.Any("stats", stats.NewQueryStats(q.Stats())))
+		if span := trace.SpanFromContext(ctx); span != nil {
+			spanCtx := span.SpanContext()
+			f = append(f,
+				slog.Any("spanID", spanCtx.SpanID()),
+				slog.Any("traceID", spanCtx.TraceID()),
+			)
+		}
+		if origin := ctx.Value(QueryOrigin{}); origin != nil {
+			for k, v := range origin.(map[string]any) {
+				f = append(f, slog.Any(k, v))
+			}
+		}
+		logger.LogAttrs(context.Background(), slog.LevelInfo, "promql query logged", f...)
+	}
 }
 
 // Log query in active log. The active log guarantees that we don't run over
