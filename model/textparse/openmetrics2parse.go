@@ -846,13 +846,17 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 		return nil, nil, fmt.Errorf("invalid schema: %w", err)
 	}
 
-	count, _, err := getFloat("count")
-	if err != nil {
-		return nil, nil, fmt.Errorf("invalid count: %w", err)
+	countKey, sumKey := "count", "sum"
+	if isGauge {
+		countKey, sumKey = "gcount", "gsum"
 	}
-	sum, _, err := getFloat("sum")
+	count, _, err := getFloat(countKey)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid sum: %w", err)
+		return nil, nil, fmt.Errorf("invalid %s: %w", countKey, err)
+	}
+	sum, _, err := getFloat(sumKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid %s: %w", sumKey, err)
 	}
 	zeroThreshold, _, err := getFloat("zero_threshold")
 	if err != nil {
@@ -902,6 +906,9 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 		if isGauge {
 			fh.CounterResetHint = histogram.GaugeType
 		}
+		if err := fh.Validate(); err != nil {
+			return nil, nil, fmt.Errorf("invalid float histogram: %w", err)
+		}
 		return nil, fh, nil
 	}
 
@@ -913,6 +920,8 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid negative_buckets: %w", err)
 	}
+	absoluteToIntDeltas(posBuckets)
+	absoluteToIntDeltas(negBuckets)
 	h := &histogram.Histogram{
 		Schema:          int32(schema64),
 		ZeroThreshold:   zeroThreshold,
@@ -927,7 +936,19 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 	if isGauge {
 		h.CounterResetHint = histogram.GaugeType
 	}
+	if err := h.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("invalid histogram: %w", err)
+	}
 	return h, nil, nil
+}
+
+// absoluteToIntDeltas converts a slice of absolute bucket counts (OM2 format)
+// to the delta-encoded form expected by Prometheus internally. Operates in-place
+// back-to-front to avoid overwriting values still needed.
+func absoluteToIntDeltas(abs []int64) {
+	for i := len(abs) - 1; i > 0; i-- {
+		abs[i] -= abs[i-1]
+	}
 }
 
 // parseSpans parses "[offset:length,...]" into a []histogram.Span.

@@ -25,14 +25,14 @@ request_duration{route="/api/v1/query"} {count:12,sum:3.2,bucket:[+Inf:12,0.1:2,
 # HELP latency_seconds Service latency (native histogram).
 # TYPE latency_seconds histogram
 # UNIT latency_seconds seconds
-latency_seconds {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:3],positive_buckets:[1,1,-1]}
+latency_seconds {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:3],positive_buckets:[1,1,1]}
 # HELP payload_size Payload size (float native histogram).
 # TYPE payload_size histogram
 payload_size {count:5.5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2.5,positive_spans:[0:2],positive_buckets:[2.0,1.0]}
 # HELP request_size Request size distribution (gauge histogram).
 # TYPE request_size gaugehistogram
 # UNIT request_size bytes
-request_size {count:10,sum:100.0,schema:0,zero_threshold:0.001,zero_count:1,positive_spans:[0:2],positive_buckets:[3,2]}
+request_size {gcount:6,gsum:100.0,schema:0,zero_threshold:0.001,zero_count:1,positive_spans:[0:2],positive_buckets:[3,2]}
 # HELP build_info Build information.
 # TYPE build_info info
 build_info{version="1.0.0",revision="abc123"} 1.0

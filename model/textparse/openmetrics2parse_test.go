@@ -340,7 +340,7 @@ func TestOpenMetrics2ParseCompositeNativeAndClassicHistogram(t *testing.T) {
 	// when on, classic _count/_sum/_bucket flat series are also emitted.
 	input := `# HELP req_duration Request duration histogram with both representations.
 # TYPE req_duration histogram
-req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positive_spans:[0:2],positive_buckets:[1,1],bucket:[+Inf:3,0.1:1,1.0:2]}
+req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positive_spans:[0:2],positive_buckets:[1,2],bucket:[+Inf:3,0.1:1,1.0:2]}
 # EOF
 `
 	header := []parsedEntry{
@@ -395,7 +395,7 @@ req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positiv
 func TestOpenMetrics2ParseNativeHistogram(t *testing.T) {
 	input := `# HELP test_histogram Native histogram.
 # TYPE test_histogram histogram
-test_histogram {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:3],positive_buckets:[1,1,-1],negative_spans:[],negative_buckets:[]}
+test_histogram {count:6,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:3],positive_buckets:[1,2,1],negative_spans:[],negative_buckets:[]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -408,7 +408,7 @@ test_histogram {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,posi
 				Schema:          0,
 				ZeroThreshold:   0.001,
 				ZeroCount:       2,
-				Count:           5,
+				Count:           6,
 				Sum:             12.1,
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
 				PositiveBuckets: []int64{1, 1, -1},
@@ -425,7 +425,7 @@ func TestOpenMetrics2ParseNativeHistogramOmittedEmptyFields(t *testing.T) {
 	// The OM2 spec says empty spans/buckets SHOULD be omitted; verify the
 	// parser treats absent keys identically to explicit empty lists.
 	input := `# TYPE test_histogram histogram
-test_histogram {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:3],positive_buckets:[1,1,-1]}
+test_histogram {count:6,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:3],positive_buckets:[1,2,1]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -437,7 +437,7 @@ test_histogram {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,posi
 				Schema:          0,
 				ZeroThreshold:   0.001,
 				ZeroCount:       2,
-				Count:           5,
+				Count:           6,
 				Sum:             12.1,
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
 				PositiveBuckets: []int64{1, 1, -1},
@@ -453,7 +453,7 @@ test_histogram {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,posi
 func TestOpenMetrics2ParseNativeHistogramOmittedPositiveFields(t *testing.T) {
 	// Histogram with only negative buckets; positive_spans and positive_buckets are omitted.
 	input := `# TYPE test_histogram histogram
-test_histogram {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,negative_spans:[0:3],negative_buckets:[1,1,-1]}
+test_histogram {count:6,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,negative_spans:[0:3],negative_buckets:[1,2,1]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -465,7 +465,7 @@ test_histogram {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,nega
 				Schema:          0,
 				ZeroThreshold:   0.001,
 				ZeroCount:       2,
-				Count:           5,
+				Count:           6,
 				Sum:             12.1,
 				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 3}},
 				NegativeBuckets: []int64{1, 1, -1},
@@ -758,7 +758,7 @@ func TestOpenMetrics2ParseNativeHistogramIntVsFloatDiscriminator(t *testing.T) {
 			shs: &histogram.Histogram{
 				Schema: 0, ZeroThreshold: 0.001, ZeroCount: 2, Count: 5, Sum: 12.1,
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
-				PositiveBuckets: []int64{2, 1},
+				PositiveBuckets: []int64{2, -1},
 			},
 		},
 		{
@@ -812,7 +812,7 @@ func TestOpenMetrics2ParseNativeHistogramIntVsFloatDiscriminator(t *testing.T) {
 			shs: &histogram.Histogram{
 				Schema: 0, ZeroThreshold: 0.001, ZeroCount: 2, Count: 5, Sum: 12.5,
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
-				PositiveBuckets: []int64{2, 1},
+				PositiveBuckets: []int64{2, -1},
 			},
 		},
 	} {
@@ -836,7 +836,7 @@ func TestOpenMetrics2ParseNativeHistogramIntVsFloatDiscriminator(t *testing.T) {
 
 func TestOpenMetrics2ParseCompositeGaugeHistogram(t *testing.T) {
 	input := `# TYPE req_size gaugehistogram
-req_size {count:10,sum:100.0,schema:0,zero_threshold:0.001,zero_count:1,positive_spans:[0:2],positive_buckets:[3,2],negative_spans:[],negative_buckets:[]}
+req_size {gcount:6,gsum:100.0,schema:0,zero_threshold:0.001,zero_count:1,positive_spans:[0:2],positive_buckets:[3,2],negative_spans:[],negative_buckets:[]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -848,10 +848,10 @@ req_size {count:10,sum:100.0,schema:0,zero_threshold:0.001,zero_count:1,positive
 				Schema:           0,
 				ZeroThreshold:    0.001,
 				ZeroCount:        1,
-				Count:            10,
+				Count:            6,
 				Sum:              100.0,
 				PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}},
-				PositiveBuckets:  []int64{3, 2},
+				PositiveBuckets:  []int64{3, -1},
 				CounterResetHint: histogram.GaugeType,
 			},
 		},
