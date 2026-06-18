@@ -486,8 +486,7 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 	}
 
 	// To calculate a rate, we normally need at least two float or two histogram samples. However,
-	// we can calculate a rate with a single sample as long as it has a known start timestamps and
-	// the latter also points inside this rate window.
+	// we can calculate rate with a single sample as long as there's a start timestamp reset inside the window.
 	switch {
 	case len(samples.Histograms) > 0:
 		numSamplesMinusOne = len(samples.Histograms) - 1
@@ -538,25 +537,23 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 	}
 	extrapolationThreshold := averageDurationBetweenSamples * 1.1
 
-	if sts := startTimestamps; len(sts) > 0 && sts[0] != 0 && sts[0] > rangeStart && sts[0] < firstT {
+	if sts := startTimestamps; isCounter && len(sts) > 0 && sts[0] != 0 && sts[0] > rangeStart && sts[0] < firstT {
 		// Take the first sample in the range and check whether its ST points inside the range
 		// (while also having a sensible value). If yes, we assume that there is a zero-value sample
 		// at the time of ST, and use that instead of extrapolating towards left side.
 		//
 		// Note that the rangeStart is exclusive, thus ST=rangeStart would be outside the range.
+		//
+		// Also note that when there's a single sample, we lose extrapolation to the right, because
+		// we need at least two samples to calculate average duration between samples, which leads
+		// to extrapolation threshold being 0.
 		durationToStart = 0
 		sampledInterval = float64(lastT-sts[0]) / 1000
 		if len(samples.Floats) > 0 {
 			resultFloat += samples.Floats[0].F
 		} else if resultHistogram != nil && len(samples.Histograms) > 0 {
-			_, _, nhcbBoundsReconciled, err := resultHistogram.Add(samples.Histograms[0].H)
-			if err != nil {
-				if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
-					return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(getMetricName(samples.Metric), args[0].PositionRange()))
-				}
-			}
-			if nhcbBoundsReconciled {
-				annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(args[0].PositionRange(), annotations.HistogramAdd))
+			if !addHistogramWithAnnotations(resultHistogram, samples.Histograms[0].H, &annos, getMetricName(samples.Metric), args[0].PositionRange()) {
+				return enh.Out, annos
 			}
 		}
 	} else if numSamplesMinusOne == 0 {
