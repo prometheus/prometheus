@@ -60,7 +60,20 @@ func schemaWarning(msg string) error {
 // canonical naming. Queries without those matchers are passed through
 // unchanged.
 func AwareStorage(s storage.Storage) storage.Storage {
-	return &awareStorage{Storage: s, engine: newSchemaEngine()}
+	return &awareStorage{Storage: s, engine: newSchemaEngine(embeddedRegistry)}
+}
+
+// AwareStorageWithRegistry behaves like AwareStorage but resolves __semconv_url__
+// and __schema_url__ matchers against an operator-provided registry instead of
+// the embedded one, which it fully replaces. files holds the registry-root files
+// keyed by base name (e.g. "registry.yaml", "1.0.0"). It returns an error if
+// files is not a valid registry (empty, or a file fails to parse as the semconv
+// or OTel schema its name implies), so callers can fail fast at startup.
+func AwareStorageWithRegistry(s storage.Storage, files map[string][]byte) (storage.Storage, error) {
+	if err := validateRegistryFiles(files); err != nil {
+		return nil, err
+	}
+	return &awareStorage{Storage: s, engine: newSchemaEngine(newRegistrySource(files))}, nil
 }
 
 type awareStorage struct {
