@@ -22,7 +22,7 @@ import (
 )
 
 func TestFindMatcherVariants_RequiresSemconvURL(t *testing.T) {
-	e := newSchemaEngine()
+	e := newSchemaEngine(embeddedRegistry)
 
 	matchers := []*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "http.server.duration"),
