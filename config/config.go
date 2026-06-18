@@ -302,6 +302,7 @@ type Config struct {
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
 	OTLPConfig         OTLPConfig           `yaml:"otlp,omitempty"`
+	Semconv            *SemconvConfig       `yaml:"semconv,omitempty"`
 
 	loaded bool // Certain methods require configuration to use Load validation.
 }
@@ -327,6 +328,9 @@ func (c *Config) SetDirectory(dir string) {
 	for _, c := range c.RemoteReadConfigs {
 		c.SetDirectory(dir)
 	}
+	if c.Semconv != nil {
+		c.Semconv.SetDirectory(dir)
+	}
 }
 
 func (c Config) String() string {
@@ -335,6 +339,93 @@ func (c Config) String() string {
 		return fmt.Sprintf("<error creating config string: %s>", err)
 	}
 	return string(b)
+}
+
+// SemconvConfig configures the OTel semantic-conventions versioned-read feature.
+// It only takes effect when the feature is enabled with
+// --enable-feature=semconv-versioned-read; otherwise it is ignored.
+type SemconvConfig struct {
+	// Registry selects the semantic-conventions registry queries are resolved
+	// against, replacing the registry embedded in the binary.
+	Registry SemconvRegistryConfig `yaml:"registry,omitempty"`
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *SemconvConfig) SetDirectory(dir string) {
+	c.Registry.SetDirectory(dir)
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *SemconvConfig) UnmarshalYAML(unmarshal func(any) error) error {
+	type plain SemconvConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+	if !c.Registry.Configured() {
+		return errors.New("semconv: `registry` must be configured")
+	}
+	return nil
+}
+
+// SemconvRegistryConfig selects an operator-provided semantic-conventions
+// registry for the versioned-read feature, replacing the embedded one. A
+// registry is the set of files addressed by registry/<name> matchers: the
+// registry.yaml OTel schema index plus the per-version semconv files. Exactly
+// one of Files or URL must be set. The registry is loaded once at startup;
+// changing it requires a restart.
+type SemconvRegistryConfig struct {
+	// Files are paths or single-level globs of the registry-root files,
+	// resolved relative to the config file (like rule_files).
+	Files []string `yaml:"files,omitempty"`
+	// URL is an http(s) URL of a .tar.gz archive of the registry root, fetched
+	// once at startup.
+	URL string `yaml:"url,omitempty"`
+	// HTTPClientConfig configures the client used to fetch URL. It is ignored
+	// when Files is set.
+	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
+}
+
+// Configured reports whether a registry source has been specified.
+func (c *SemconvRegistryConfig) Configured() bool {
+	return len(c.Files) > 0 || c.URL != ""
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *SemconvRegistryConfig) SetDirectory(dir string) {
+	for i, f := range c.Files {
+		c.Files[i] = config.JoinDir(dir, f)
+	}
+	c.HTTPClientConfig.SetDirectory(dir)
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *SemconvRegistryConfig) UnmarshalYAML(unmarshal func(any) error) error {
+	c.HTTPClientConfig = config.DefaultHTTPClientConfig
+	type plain SemconvRegistryConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+	switch {
+	case len(c.Files) == 0 && c.URL == "":
+		return errors.New("semconv registry: one of `files` or `url` must be set")
+	case len(c.Files) > 0 && c.URL != "":
+		return errors.New("semconv registry: `files` and `url` are mutually exclusive")
+	}
+	for _, f := range c.Files {
+		if !patRulePath.MatchString(f) {
+			return fmt.Errorf("semconv registry: invalid file path %q", f)
+		}
+	}
+	if c.URL != "" {
+		u, err := url.Parse(c.URL)
+		if err != nil {
+			return fmt.Errorf("semconv registry: invalid url: %w", err)
+		}
+		if u.Scheme != "http" && u.Scheme != "https" {
+			return fmt.Errorf("semconv registry: url scheme must be http or https, got %q", u.Scheme)
+		}
+	}
+	return c.HTTPClientConfig.Validate()
 }
 
 // GetScrapeConfigs returns the read-only, validated scrape configurations including

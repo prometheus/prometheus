@@ -48,6 +48,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
+	commonconfig "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	promslogflag "github.com/prometheus/common/promslog/flag"
@@ -937,12 +938,34 @@ func main() {
 	// manager, the federation endpoint, and the remote-read responder.
 	// In agent mode there are no query consumers; skip the wrap so the
 	// engine and caches aren't constructed for no purpose.
-	if cfg.enableSemconvVersionedRead {
-		if agentMode {
-			logger.Warn("semconv-versioned-read has no effect in agent mode; ignoring")
-		} else {
-			fanoutStorage = semconv.AwareStorage(fanoutStorage)
+	registryConfigured := cfgFile.Semconv != nil && cfgFile.Semconv.Registry.Configured()
+	switch action := decideSemconvAction(cfg.enableSemconvVersionedRead, agentMode, registryConfigured); action {
+	case semconvAgentSkip:
+		logger.Warn("semconv-versioned-read has no effect in agent mode; ignoring")
+	case semconvDisabledWarn:
+		logger.Warn("semconv registry configured but --enable-feature=semconv-versioned-read is not set; ignoring")
+	case semconvEmbeddedRegistry:
+		fanoutStorage = semconv.AwareStorage(fanoutStorage)
+	case semconvOperatorRegistry:
+		// An operator-provided registry replaces the embedded one. It is loaded
+		// and validated once here so a bad or unreachable registry fails startup
+		// rather than surfacing only at query time; changing it requires a restart.
+		files, err := loadConfiguredSemconvRegistry(cfgFile.Semconv.Registry)
+		if err != nil {
+			logger.Error("Failed to load configured semconv registry", "err", err)
+			os.Exit(1)
 		}
+		ws, err := semconv.AwareStorageWithRegistry(fanoutStorage, files)
+		if err != nil {
+			logger.Error("Configured semconv registry is invalid", "err", err)
+			os.Exit(1)
+		}
+		fanoutStorage = ws
+		logger.Info("Using configured semconv registry; embedded registry replaced")
+	case semconvNoop:
+		// Feature disabled and no registry configured: nothing to do.
+	default:
+		panic(fmt.Sprintf("unhandled semconv action %d", action))
 	}
 
 	var (
@@ -1641,6 +1664,53 @@ func main() {
 		}
 	}()
 	logger.Info("See you next time!")
+}
+
+// semconvAction is how startup should treat the semconv-versioned-read feature,
+// decided from the feature flag, agent mode, and whether a registry is configured.
+type semconvAction int
+
+const (
+	semconvNoop             semconvAction = iota // Feature off and no registry configured.
+	semconvEmbeddedRegistry                      // Wrap storage with the embedded registry.
+	semconvOperatorRegistry                      // Wrap storage with the operator-configured registry.
+	semconvAgentSkip                             // Feature on in agent mode: skip with a warning.
+	semconvDisabledWarn                          // Registry configured but the feature flag is off: warn.
+)
+
+// decideSemconvAction maps the startup inputs to the action to take. It is pure so
+// the interaction matrix can be tested without the surrounding I/O and os.Exit.
+func decideSemconvAction(featureEnabled, agentMode, registryConfigured bool) semconvAction {
+	if !featureEnabled {
+		if registryConfigured {
+			return semconvDisabledWarn
+		}
+		return semconvNoop
+	}
+	if agentMode {
+		return semconvAgentSkip
+	}
+	if registryConfigured {
+		return semconvOperatorRegistry
+	}
+	return semconvEmbeddedRegistry
+}
+
+// loadConfiguredSemconvRegistry loads the operator-provided registry described by
+// reg into files keyed by registry-root base name (e.g. "registry.yaml",
+// "1.0.0"), from either local globs or a remote .tar.gz fetched at startup. The
+// fetch and unpacking, including size bounding, live in the semconv package.
+func loadConfiguredSemconvRegistry(reg config.SemconvRegistryConfig) (map[string][]byte, error) {
+	if reg.URL == "" {
+		return semconv.LoadRegistryFiles(reg.Files)
+	}
+	client, err := commonconfig.NewClientFromConfig(reg.HTTPClientConfig, "semconv_registry")
+	if err != nil {
+		return nil, fmt.Errorf("build registry HTTP client: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	return semconv.FetchRegistry(ctx, client, reg.URL)
 }
 
 func openDBWithMetrics(dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, stats *tsdb.DBStats) (*tsdb.DB, error) {

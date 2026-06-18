@@ -286,6 +286,23 @@ otlp:
   # consecutive underscores are preserved during label name sanitization.
   [ label_name_preserve_multiple_underscores: <boolean> | default = true ]
 
+# Settings for the experimental OTel semantic-conventions versioned-read feature.
+# Requires --enable-feature=semconv-versioned-read; ignored otherwise. See
+# https://prometheus.io/docs/prometheus/latest/feature_flags/#semconv-versioned-read.
+semconv:
+  # Selects the semantic-conventions registry queries resolve against, replacing
+  # the registry embedded in the binary. Loaded and validated once at startup;
+  # changing it requires a restart.
+  registry:
+    # Globs of the registry-root files: at least one OTel schema file (e.g.
+    # registry.yaml) plus the per-version semconv files you query, resolved
+    # relative to the config file. Exactly one of `files` or `url` must be set.
+    [ files: [ <filepath_glob>, ... ] ]
+    # URL of a .tar.gz archive of the registry root, fetched once at startup.
+    [ url: <string> ]
+    # HTTP client settings for fetching `url`; ignored when `files` is set.
+    [ <http_config> ]
+
 # Settings related to the remote read feature.
 remote_read:
   [ - <remote_read> ... ]
