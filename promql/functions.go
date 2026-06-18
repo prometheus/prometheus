@@ -496,12 +496,14 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 		if enh.StartTimestamps != nil {
 			startTimestamps = enh.StartTimestamps.Histograms
 		}
-		resultHistogram, newAnnos = histogramRate(samples.Histograms, startTimestamps, isCounter,
-			samples.Metric, args[0].PositionRange())
-		annos.Merge(newAnnos)
-		if resultHistogram == nil {
-			// The histograms are not compatible with each other.
-			return enh.Out, annos
+		if len(samples.Histograms) > 1 {
+			resultHistogram, newAnnos = histogramRate(samples.Histograms, startTimestamps, isCounter,
+				samples.Metric, args[0].PositionRange())
+			annos.Merge(newAnnos)
+			if resultHistogram == nil {
+				// The histograms are not compatible with each other.
+				return enh.Out, annos
+			}
 		}
 	case len(samples.Floats) > 0:
 		numSamplesMinusOne = len(samples.Floats) - 1
@@ -551,8 +553,10 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 		sampledInterval = float64(lastT-sts[0]) / 1000
 		if len(samples.Floats) > 0 {
 			resultFloat += samples.Floats[0].F
-		} else if resultHistogram != nil && len(samples.Histograms) > 0 {
-			if !addHistogramWithAnnotations(resultHistogram, samples.Histograms[0].H, &annos, getMetricName(samples.Metric), args[0].PositionRange()) {
+		} else if len(samples.Histograms) > 0 {
+			if resultHistogram == nil {
+				resultHistogram = samples.Histograms[0].H.Copy()
+			} else if !addHistogramWithAnnotations(resultHistogram, samples.Histograms[0].H, &annos, getMetricName(samples.Metric), args[0].PositionRange()) {
 				return enh.Out, annos
 			}
 		}
@@ -651,20 +655,6 @@ func histogramRate(
 		// thus we should not be returning the following warning. When addressing this, also check
 		// other places where this warning is being emitted.
 		annos.Add(annotations.NewNativeHistogramNotCounterWarning(getMetricName(labels), pos))
-	}
-
-	if len(points) == 1 {
-		// Single point: no rate can be computed from one sample. Returning nil histogram would signify
-		// for the caller that there are some incompatibilities in the input. Thus, we're returning a zero
-		// histogram, so that the caller could still try to calculate a rate with the help of start timestamps.
-		if !isCounter && prev.CounterResetHint != histogram.GaugeType {
-			annos.Add(annotations.NewNativeHistogramNotGaugeWarning(getMetricName(labels), pos))
-		}
-		return &histogram.FloatHistogram{
-			Schema:           prev.Schema,
-			CustomValues:     prev.CustomValues,
-			CounterResetHint: histogram.GaugeType,
-		}, annos
 	}
 
 	// Null out the 1st sample if there is a counter reset between the 1st
