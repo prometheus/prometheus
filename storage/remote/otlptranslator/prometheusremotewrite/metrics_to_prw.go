@@ -146,18 +146,6 @@ func NewPrometheusConverter(appender storage.AppenderV2) *PrometheusConverter {
 	}
 }
 
-// CollisionWarnings returns the label name collision warnings recorded during
-// the last FromMetrics call, as strings. The same warnings are merged into the
-// annotations returned by FromMetrics; this accessor lets embedders treat them
-// separately from other translation annotations.
-func (c *PrometheusConverter) CollisionWarnings() []string {
-	if len(c.collisionAnnots) == 0 {
-		return nil
-	}
-	warnings, _ := c.collisionAnnots.AsStrings("", 0, 0)
-	return warnings
-}
-
 // buildLabelName returns a sanitized label name, using the cache to avoid repeated allocations.
 func (c *PrometheusConverter) buildLabelName(label string) (string, error) {
 	if sanitized, ok := c.sanitizedLabels[label]; ok {
@@ -226,6 +214,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 	c.seenTargetInfo = make(map[targetInfoKey]struct{})
 	c.collisionAnnots = nil
 	c.recordedCollisions = nil
+	c.collisionSource = collisionFromDataPoint
 	defer func() { annots.Merge(c.collisionAnnots) }()
 	resourceMetricsSlice := md.ResourceMetrics()
 

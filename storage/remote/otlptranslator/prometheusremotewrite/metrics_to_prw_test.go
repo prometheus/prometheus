@@ -308,7 +308,7 @@ func TestFromMetrics(t *testing.T) {
 		}, ws)
 	})
 
-	t.Run("attribute collision is surfaced as a warning and via CollisionWarnings", func(t *testing.T) {
+	t.Run("attribute collision is surfaced as a warning", func(t *testing.T) {
 		request := pmetricotlp.NewExportRequest()
 		rm := request.Metrics().ResourceMetrics().AppendEmpty()
 		m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
@@ -329,7 +329,7 @@ func TestFromMetrics(t *testing.T) {
 		ws, infos := annots.AsStrings("", 0, 0)
 		require.Empty(t, infos)
 		require.Equal(t, want, ws)
-		require.Equal(t, want, converter.CollisionWarnings())
+		require.Equal(t, want, collisionWarnings(annots))
 	})
 
 	t.Run("resource attribute collision is surfaced as a warning", func(t *testing.T) {
@@ -390,7 +390,7 @@ func TestFromMetrics(t *testing.T) {
 		converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
 		annots, err := converter.FromMetrics(t.Context(), request.Metrics(), Settings{AllowUTF8: true})
 		require.NoError(t, err)
-		require.Empty(t, converter.CollisionWarnings())
+		require.Empty(t, collisionWarnings(annots))
 		ws, _ := annots.AsStrings("", 0, 0)
 		require.Empty(t, ws)
 	})
