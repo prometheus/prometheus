@@ -77,14 +77,11 @@ function bumpVersion() {
   fi
   # increase the version on all packages in the pnpm workspace
   pnpm -r --include-workspace-root version "${version}" --no-git-tag-version --git-checks=false
-  # bump react-app version and update pinned @prometheus-io/* dependencies
+  # bump the react-app version. its @prometheus-io/* dependencies use the
+  # "link:" protocol to consume the locally built workspace packages, so they
+  # carry no version to rewrite and must be left untouched.
   cd react-app
   pnpm version "${version}" --no-git-tag-version --git-checks=false
-  if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -E -i "" "s|(\"@prometheus-io/.+\": )\".+\"|\1\"${version}\"|" package.json
-  else
-    sed -E -i "s|(\"@prometheus-io/.+\": )\".+\"|\1\"${version}\"|" package.json
-  fi
   cd "${root_ui_folder}"
 }
 
