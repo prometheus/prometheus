@@ -198,6 +198,9 @@ importers:
       prettier:
         specifier: ^3.8.4
         version: 3.8.4
+      react-app-rewired:
+        specifier: ^2.2.1
+        version: 2.2.1(react-scripts@5.0.1(@babel/plugin-syntax-flow@7.29.7(@babel/core@7.29.7))(@babel/plugin-transform-react-jsx@7.29.7(@babel/core@7.29.7))(@types/babel__core@7.20.5)(eslint@8.57.1)(react@17.0.2)(sass@1.101.0)(type-fest@4.41.0)(typescript@4.9.5))
       react-scripts:
         specifier: ^5.0.1
         version: 5.0.1(@babel/plugin-syntax-flow@7.29.7(@babel/core@7.29.7))(@babel/plugin-transform-react-jsx@7.29.7(@babel/core@7.29.7))(@types/babel__core@7.20.5)(eslint@8.57.1)(react@17.0.2)(sass@1.101.0)(type-fest@4.41.0)(typescript@4.9.5)
@@ -5105,6 +5108,12 @@ packages:
     resolution: {integrity: sha512-sZ41cxiU5llIB003yxxQBYrARBqe0repqPTTYBTmMqTz9szeBbE37BehCE891NZsmdZqqP+xWKdT3eo3vOzN8w==}
     engines: {node: '>=14'}
 
+  react-app-rewired@2.2.1:
+    resolution: {integrity: sha512-uFQWTErXeLDrMzOJHKp0h8P1z0LV9HzPGsJ6adOtGlA/B9WfT6Shh4j2tLTTGlXOfiVx6w6iWpp7SOC5pvk+gA==}
+    hasBin: true
+    peerDependencies:
+      react-scripts: '>=2.1.3'
+
   react-copy-to-clipboard@5.1.1:
     resolution: {integrity: sha512-s+HrzLyJBxrpGTYXF15dTgMjAJpEPZT/Yp6NytAtZMRngejxt6Pt5WrfFxLAcsqUDU6sY1Jz6tyHwIicE1U2Xg==}
     peerDependencies:
@@ -5448,6 +5457,10 @@ packages:
   selfsigned@2.4.1:
     resolution: {integrity: sha512-th5B4L2U+eGLq1TVh7zNRGBapioSORUeymIydxgFpwww9d2qyKvtuPU2jJuHvYAwwqi2Y596QBL3eEqcPEYL8Q==}
     engines: {node: '>=10'}
+
+  semver@5.7.2:
+    resolution: {integrity: sha512-cBznnQ9KjJqU67B52RMC65CMarK2600WFnbkcaiwWq3xy/5haFJlshgnpjovMVJ+Hff49d8GEn0b87C5pDQ10g==}
+    hasBin: true
 
   semver@6.3.1:
     resolution: {integrity: sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA==}
@@ -12245,6 +12258,11 @@ snapshots:
       regenerator-runtime: 0.13.11
       whatwg-fetch: 3.6.20
 
+  react-app-rewired@2.2.1(react-scripts@5.0.1(@babel/plugin-syntax-flow@7.29.7(@babel/core@7.29.7))(@babel/plugin-transform-react-jsx@7.29.7(@babel/core@7.29.7))(@types/babel__core@7.20.5)(eslint@8.57.1)(react@17.0.2)(sass@1.101.0)(type-fest@4.41.0)(typescript@4.9.5)):
+    dependencies:
+      react-scripts: 5.0.1(@babel/plugin-syntax-flow@7.29.7(@babel/core@7.29.7))(@babel/plugin-transform-react-jsx@7.29.7(@babel/core@7.29.7))(@types/babel__core@7.20.5)(eslint@8.57.1)(react@17.0.2)(sass@1.101.0)(type-fest@4.41.0)(typescript@4.9.5)
+      semver: 5.7.2
+
   react-copy-to-clipboard@5.1.1(react@17.0.2):
     dependencies:
       copy-to-clipboard: 3.3.3
@@ -12743,6 +12761,8 @@ snapshots:
     dependencies:
       '@types/node-forge': 1.3.14
       node-forge: 1.4.0
+
+  semver@5.7.2: {}
 
   semver@6.3.1: {}
 

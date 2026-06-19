@@ -44,15 +44,15 @@
     "tempusdominus-core": "^5.19.3"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test --runInBand --resetMocks=false",
-    "test:coverage": "react-scripts test --runInBand --resetMocks=false --no-watch --coverage",
-    "test:debug": "react-scripts --inspect-brk test --runInBand --no-cache",
+    "start": "react-app-rewired start",
+    "build": "react-app-rewired build",
+    "test": "react-app-rewired test --runInBand --resetMocks=false",
+    "test:coverage": "react-app-rewired test --runInBand --resetMocks=false --no-watch --coverage",
+    "test:debug": "react-app-rewired --inspect-brk test --runInBand --no-cache",
     "eject": "react-scripts eject",
     "lint:ci": "eslint --quiet \"src/**/*.{ts,tsx}\"",
     "lint": "eslint --fix \"src/**/*.{ts,tsx}\"",
-    "snapshot": "react-scripts test --updateSnapshot"
+    "snapshot": "react-app-rewired test --updateSnapshot"
   },
   "prettier": {
     "singleQuote": true,
@@ -90,6 +90,7 @@
     "jest-fetch-mock": "^3.0.3",
     "mutationobserver-shim": "^0.3.7",
     "prettier": "^3.8.4",
+    "react-app-rewired": "^2.2.1",
     "react-scripts": "^5.0.1",
     "sinon": "^19.0.5",
     "ts-jest": "^29.4.11"
