@@ -206,6 +206,8 @@ type flagConfig struct {
 	enableAutoReload   bool
 	autoReloadInterval model.Duration
 
+	expandRelabelEnv bool
+
 	maxprocsEnable          bool
 	memlimitEnable          bool
 	memlimitRatio           float64
@@ -342,6 +344,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "fast-startup":
 				c.tsdb.EnableFastStartup = true
 				logger.Info("Experimental fast startup is enabled.")
+			case "expand-relabel-env-vars":
+				c.expandRelabelEnv = true
+				logger.Info("Environment variable expansion in relabel_configs enabled.")
 			case "search-api":
 				c.web.EnableSearch = true
 				logger.Info("Experimental search API enabled.")
@@ -645,7 +650,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, expand-relabel-env-vars, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -746,7 +751,7 @@ func main() {
 
 	// Throw error for invalid config before starting other components.
 	var cfgFile *config.Config
-	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, promslog.NewNopLogger()); err != nil {
+	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, promslog.NewNopLogger(), config.LoadOptions{ExpandRelabelEnv: cfg.expandRelabelEnv}); err != nil {
 		absPath, pathErr := filepath.Abs(cfg.configFile)
 		if pathErr != nil {
 			absPath = cfg.configFile
@@ -1380,7 +1385,7 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.expandRelabelEnv, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else if cfg.enableAutoReload {
 							checksum, err = config.GenerateChecksum(cfg.configFile)
@@ -1389,7 +1394,7 @@ func main() {
 							}
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.expandRelabelEnv, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -1414,7 +1419,7 @@ func main() {
 						}
 						logger.Info("Configuration file change detected, reloading the configuration.")
 
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.expandRelabelEnv, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else {
 							checksum = currentChecksum
@@ -1446,7 +1451,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, func(bool) {}, reloaders...); err != nil {
+				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.expandRelabelEnv, logger, noStepSubqueryInterval, func(bool) {}, reloaders...); err != nil {
 					return fmt.Errorf("error loading config from %q: %w", cfg.configFile, err)
 				}
 
@@ -1688,7 +1693,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logger, noStepSubqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
+func reloadConfig(filename string, enableExemplarStorage, expandRelabelEnv bool, logger *slog.Logger, noStepSubqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
 	start := time.Now()
 	timingsLogger := logger
 	logger.Info("Loading configuration file", "filename", filename)
@@ -1704,7 +1709,7 @@ func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logg
 		}
 	}()
 
-	conf, err := config.LoadFile(filename, agentMode, logger)
+	conf, err := config.LoadFile(filename, agentMode, logger, config.LoadOptions{ExpandRelabelEnv: expandRelabelEnv})
 	if err != nil {
 		return fmt.Errorf("couldn't load configuration (--config.file=%q): %w", filename, err)
 	}
