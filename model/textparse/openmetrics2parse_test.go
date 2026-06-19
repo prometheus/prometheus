@@ -1030,6 +1030,59 @@ response_size_bytes {count:4,sum:1024.0,bucket:[+Inf:4,100:1,500:3]}
 	requireEntries(t, exp, got)
 }
 
+// TestOpenMetrics2ParseUnsortedClassicBuckets verifies that the parser accepts
+// classic histogram buckets in any order — a known edge case we allow since
+// consumers can reconstruct the correct order from the le labels.  Native
+// histograms are unaffected as they have no explicit le bounds.
+func TestOpenMetrics2ParseUnsortedClassicBuckets(t *testing.T) {
+	input := `# TYPE req_duration histogram
+req_duration {count:144,sum:53.4,bucket:[+Inf:144,0.1:24,0.2:33,0.4:100,1.0:144]}
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "req_duration", typ: model.MetricTypeHistogram},
+		{
+			m:    "req_duration_count",
+			v:    144,
+			lset: labels.FromStrings("__name__", "req_duration_count"),
+		},
+		{
+			m:    "req_duration_sum",
+			v:    53.4,
+			lset: labels.FromStrings("__name__", "req_duration_sum"),
+		},
+		{
+			m:    "req_duration_bucket",
+			v:    144,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
+		},
+		{
+			m:    "req_duration_bucket",
+			v:    24,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.1"),
+		},
+		{
+			m:    "req_duration_bucket",
+			v:    33,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.2"),
+		},
+		{
+			m:    "req_duration_bucket",
+			v:    100,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.4"),
+		},
+		{
+			m:    "req_duration_bucket",
+			v:    144,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0"),
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
 func TestOpenMetrics2ParseExemplarOnCompositeLine(t *testing.T) {
 	input := `# TYPE req_duration histogram
 req_duration {count:2,sum:4.0,bucket:[+Inf:2,1.0:1]} # {id="req-1"} 3.8 9999999.0

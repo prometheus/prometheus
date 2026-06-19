@@ -20,8 +20,8 @@ up{job="api",instance="api-2:9090"} 0.0 1395066363.5
 # HELP request_duration Request duration (classic histogram exposition).
 # TYPE request_duration histogram
 # UNIT request_duration seconds
-request_duration {count:144,sum:53.4,bucket:[+Inf:144,0.1:24,0.2:33,0.4:100,1.0:144]} # {trace_id="slow-req"} 0.95 1395066362.7
-request_duration{route="/api/v1/query"} {count:12,sum:3.2,bucket:[+Inf:12,0.1:2,1.0:12]}
+request_duration {count:144,sum:53.4,bucket:[0.1:24,0.2:33,0.4:100,1.0:144,+Inf:144]} # {trace_id="slow-req"} 0.95 1395066362.7
+request_duration{route="/api/v1/query"} {count:12,sum:3.2,bucket:[0.1:2,1.0:12,+Inf:12]}
 # HELP latency_seconds Service latency (native histogram).
 # TYPE latency_seconds histogram
 # UNIT latency_seconds seconds
