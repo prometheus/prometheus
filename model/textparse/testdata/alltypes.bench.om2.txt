@@ -1,6 +1,6 @@
-# HELP http_requests Total number of HTTP requests.
-# TYPE http_requests counter
-# UNIT http_requests requests
+# HELP http_requests_total Total number of HTTP requests.
+# TYPE http_requests_total counter
+# UNIT http_requests_total requests
 http_requests_total{method="GET",status="200"} 12034.0 1710000000.0 # {trace_id="t-001"} 1.0 1709999999.5
 http_requests_total{method="GET",status="404"} 87.0 1710000000.0
 http_requests_total{method="GET",status="500"} 12.0 1710000000.0
