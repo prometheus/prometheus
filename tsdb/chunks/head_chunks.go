@@ -464,14 +464,14 @@ func repairLastChunkFile(files map[int]string, readOnly bool) (_ map[int]string,
 	// for proper repair mechanism to happen in the Head.
 	if size < MagicChunksSize || binary.BigEndian.Uint32(buf) == 0 {
 		// Corrupt file, hence remove it.
-		if err := os.RemoveAll(files[lastFile]); err != nil {
+		if err := removeChunkFile(files[lastFile]); err != nil {
 			if !readOnly {
 				return files, fmt.Errorf("delete corrupted, empty head chunk file during last file repair: %w", err)
 			}
 			// In read-only mode the mapper works on sandbox hardlinks, so deletion
-			// may fail on Windows due to transient file-handle semantics. Exclude
-			// the file from the map so it won't be mmapped; it will be cleaned up
-			// when the sandbox directory is removed.
+			// may fail on Windows if the retry deadline is exceeded. Exclude the
+			// file from the map so it will never be mmapped; it is cleaned up when
+			// the sandbox directory is removed.
 		}
 		delete(files, lastFile)
 	}
