@@ -81,9 +81,9 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 	case fh != nil:
 		isStale = value.IsStaleNaN(fh.Sum)
 		// NOTE: always modify pendingFloatHistograms and floatHistogramSeries together
-		// TODO(krajorama,ywwg,bwplotka): Pass ST when available in WAL.
 		a.pendingFloatHistograms = append(a.pendingFloatHistograms, record.RefFloatHistogramSample{
 			Ref: s.ref,
+			ST:  st,
 			T:   t,
 			FH:  fh,
 		})
@@ -91,9 +91,9 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 	case h != nil:
 		isStale = value.IsStaleNaN(h.Sum)
 		// NOTE: always modify pendingHistograms and histogramSeries together
-		// TODO(krajorama,ywwg,bwplotka): Pass ST when available in WAL.
 		a.pendingHistograms = append(a.pendingHistograms, record.RefHistogramSample{
 			Ref: s.ref,
+			ST:  st,
 			T:   t,
 			H:   h,
 		})
