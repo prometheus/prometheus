@@ -77,12 +77,6 @@ function bumpVersion() {
   fi
   # increase the version on all packages in the pnpm workspace
   pnpm -r --include-workspace-root version "${version}" --no-git-tag-version --git-checks=false
-  # bump the react-app version. its @prometheus-io/* dependencies use the
-  # "link:" protocol to consume the locally built workspace packages, so they
-  # carry no version to rewrite and must be left untouched.
-  cd react-app
-  pnpm version "${version}" --no-git-tag-version --git-checks=false
-  cd "${root_ui_folder}"
 }
 
 if [[ "$1" == "--copy" ]]; then
