@@ -161,6 +161,16 @@ eval instant at 6m increase(series[5m])
 
 clear
 
+# A test with various counter resets before the first sample in the range and between them.
+load 1m
+    series@st  _ _ -1m -1s   _   _
+    series     _ _   5   5   2   _
+
+ eval instant at 5m increase(series[5m])
+    {}  16
+
+clear
+
 # Test for cumulative with unknow start timestamp, which is described in OTel spec. It is easy to incorrectly treat
 # second datapoint in such timeseries as delta, producing incorrect result. These can be distinguished by:
 #   * ST_curr == T_prev && ST_prev == 0  -> cumulative with unknown start, no reset
