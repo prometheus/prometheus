@@ -1862,6 +1862,7 @@ load 10s
   metric 1+1x100
   bigmetric{a="1"} 1+1x100
   bigmetric{a="2"} 1+1x100
+  metricWith1HistogramEvery10Seconds {{schema:1 count:5 sum:20 buckets:[1 2 1 1]}}+{{schema:1 count:10 sum:5 buckets:[1 2 3 4]}}x100
 `)
 
 	// These test cases should be touching the limit exactly (hence no exceeding).
@@ -1997,6 +1998,11 @@ load 10s
 			Query:      `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[17s:1s] @ 2000`,
 			MaxSamples: 34,
 			Start:      time.Unix(10, 0),
+		},
+		{
+			Query:      "max_over_time(metricWith1HistogramEvery10Seconds[61s])[20s:5s]",
+			MaxSamples: 91,
+			Start:      time.Unix(201, 0),
 		},
 	}
 
