@@ -2253,21 +2253,44 @@ func funcHistogramQuantiles(vectorVals []Vector, _ Matrix, args parser.Expressio
 	return enh.Out, annos
 }
 
-// pickFirstSampleIndex returns the index of the last sample before
-// or at the range start, or 0 if none exist before the range start.
-// If the vector selector is not anchored, it always returns 0, true.
-// The second return value is false if there are no samples in range (for anchored selectors).
-func pickFirstSampleIndex(floats []FPoint, args parser.Expressions, enh *EvalNodeHelper) (int, bool) {
+// pickFirstSampleIndices returns the start indices into the floats and
+// histograms slices for anchored range processing. The anchor is the single
+// most recent sample at or before the range start, regardless of type; it is
+// retained as the baseline together with every sample after the range start,
+// while earlier samples of either type are skipped.
+// If the vector selector is not anchored, it always returns 0, 0, true.
+// found is false when no sample lies strictly after the range start, in which
+// case there is nothing to measure.
+func pickFirstSampleIndices(floats []FPoint, histograms []HPoint, args parser.Expressions, enh *EvalNodeHelper) (firstFloat, firstHistogram int, found bool) {
 	ms := args[0].(*parser.MatrixSelector)
 	vs := ms.VectorSelector.(*parser.VectorSelector)
 	if !vs.Anchored {
-		return 0, true
+		return 0, 0, true
 	}
 	rangeStart := enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
-	if len(floats) == 0 || floats[len(floats)-1].T <= rangeStart {
-		return 0, false
+
+	// Index of the last float / histogram at or before the range start, or -1.
+	lastFloatLE := sort.Search(len(floats), func(i int) bool { return floats[i].T > rangeStart }) - 1
+	lastHistLE := sort.Search(len(histograms), func(i int) bool { return histograms[i].T > rangeStart }) - 1
+
+	// Without a sample strictly after the range start there is nothing to measure.
+	if lastFloatLE+1 >= len(floats) && lastHistLE+1 >= len(histograms) {
+		return 0, 0, false
 	}
-	return max(0, sort.Search(len(floats)-1, func(i int) bool { return floats[i].T > rangeStart })-1), true
+
+	switch {
+	case lastFloatLE < 0 && lastHistLE < 0:
+		// No anchor; every sample is after the range start, so include all.
+		return 0, 0, true
+	case lastHistLE < 0 || (lastFloatLE >= 0 && floats[lastFloatLE].T >= histograms[lastHistLE].T):
+		// The anchor is a float; histograms at or before the range start precede
+		// it and are skipped.
+		return lastFloatLE, lastHistLE + 1, true
+	default:
+		// The anchor is a histogram; floats at or before the range start precede
+		// it and are skipped.
+		return lastFloatLE + 1, lastHistLE, true
+	}
 }
 
 // === resets(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
@@ -2291,11 +2314,11 @@ func funcResets(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eval
 		floatSTs = sts.Floats
 		histogramSTs = sts.Histograms
 	}
-	firstSampleIndex, found := pickFirstSampleIndex(floats, args, enh)
+	firstFloat, firstHistogram, found := pickFirstSampleIndices(floats, histograms, args, enh)
 	if !found {
 		return enh.Out, nil
 	}
-	for iFloat, iHistogram := firstSampleIndex, 0; iFloat < len(floats) || iHistogram < len(histograms); {
+	for iFloat, iHistogram := firstFloat, firstHistogram; iFloat < len(floats) || iHistogram < len(histograms); {
 		var curST int64
 		switch {
 		// Process a float sample if no histogram sample remains or its timestamp is earlier.
@@ -2317,7 +2340,7 @@ func funcResets(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eval
 			iHistogram++
 		}
 		// Skip the comparison for the first sample, just initialize prevSample.
-		if iFloat+iHistogram == 1+firstSampleIndex {
+		if iFloat+iHistogram == 1+firstFloat+firstHistogram {
 			prevSample = curSample
 			prevST = curST
 			continue
@@ -2355,11 +2378,11 @@ func funcChanges(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eva
 	}
 
 	var prevSample, curSample Sample
-	firstSampleIndex, found := pickFirstSampleIndex(floats, args, enh)
+	firstFloat, firstHistogram, found := pickFirstSampleIndices(floats, histograms, args, enh)
 	if !found {
 		return enh.Out, nil
 	}
-	for iFloat, iHistogram := firstSampleIndex, 0; iFloat < len(floats) || iHistogram < len(histograms); {
+	for iFloat, iHistogram := firstFloat, firstHistogram; iFloat < len(floats) || iHistogram < len(histograms); {
 		switch {
 		// Process a float sample if no histogram sample remains or its timestamp is earlier.
 		// Process a histogram sample if no float sample remains or its timestamp is earlier.
@@ -2372,7 +2395,7 @@ func funcChanges(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eva
 			iHistogram++
 		}
 		// Skip the comparison for the first sample, just initialize prevSample.
-		if iFloat+iHistogram == 1+firstSampleIndex {
+		if iFloat+iHistogram == 1+firstFloat+firstHistogram {
 			prevSample = curSample
 			continue
 		}

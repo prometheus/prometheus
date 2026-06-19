@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
@@ -5056,6 +5057,148 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 			require.NoError(t, seriesIt.Err())
 
 			require.Equal(t, tc.expectedSTs, queriedSTs, "Querier should return same ST values as chunk iterator")
+		})
+	}
+}
+
+// readWALHistogramSamples reads the WAL at dir and returns the decoded
+// integer-histogram samples, float-histogram samples, and the record types
+// observed for each.
+func readWALHistogramSamples(t testing.TB, dir string) (intSamples []record.RefHistogramSample, intTypes []record.Type, floatSamples []record.RefFloatHistogramSample, floatTypes []record.Type) {
+	sr, err := wlog.NewSegmentsReader(dir)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, sr.Close())
+	}()
+
+	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+	r := wlog.NewReader(sr)
+	for r.Next() {
+		rec := r.Record()
+		switch typ := dec.Type(rec); typ {
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
+			samples, err := dec.HistogramSamples(rec, nil)
+			require.NoError(t, err)
+			intSamples = append(intSamples, samples...)
+			for range samples {
+				intTypes = append(intTypes, typ)
+			}
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
+			samples, err := dec.FloatHistogramSamples(rec, nil)
+			require.NoError(t, err)
+			floatSamples = append(floatSamples, samples...)
+			for range samples {
+				floatTypes = append(floatTypes, typ)
+			}
+		}
+	}
+	require.NoError(t, r.Err())
+	return intSamples, intTypes, floatSamples, floatTypes
+}
+
+// TestHeadAppenderV2_Histogram_STInWAL verifies that start timestamps supplied
+// via AppenderV2.Append are written into the WAL for histogram and
+// float-histogram samples. The chunk encoder still drops histogram ST until
+// #18609 lands, so this test asserts at the WAL record layer.
+// TODO(krajorama,ywwg): Once histogram chunks preserve ST, simplify this test
+// to assert histogram ST through chunks or queries instead of WAL records.
+func TestHeadAppenderV2_Histogram_STInWAL(t *testing.T) {
+	type histSample struct {
+		st int64
+		ts int64
+		h  *histogram.Histogram
+		fh *histogram.FloatHistogram
+	}
+
+	intHist := func(i int64) *histogram.Histogram {
+		hh := tsdbutil.GenerateTestHistogram(i)
+		hh.CounterResetHint = histogram.NotCounterReset
+		return hh
+	}
+	floatHist := func(i int64) *histogram.FloatHistogram {
+		fh := tsdbutil.GenerateTestFloatHistogram(i)
+		fh.CounterResetHint = histogram.NotCounterReset
+		return fh
+	}
+
+	testCases := []struct {
+		name               string
+		enableSTStorage    bool
+		samples            []histSample
+		expectedSTs        []int64
+		expectedRecordType record.Type
+		isFloatHistogram   bool
+	}{
+		{
+			name:               "Integer histograms with ST enabled",
+			enableSTStorage:    true,
+			samples:            []histSample{{st: 10, ts: 100, h: intHist(1)}, {st: 100, ts: 200, h: intHist(2)}, {st: 200, ts: 300, h: intHist(3)}},
+			expectedSTs:        []int64{10, 100, 200},
+			expectedRecordType: record.HistogramSamplesV2,
+		},
+		{
+			name:               "Float histograms with ST enabled",
+			enableSTStorage:    true,
+			samples:            []histSample{{st: 11, ts: 101, fh: floatHist(1)}, {st: 101, ts: 202, fh: floatHist(2)}, {st: 202, ts: 303, fh: floatHist(3)}},
+			expectedSTs:        []int64{11, 101, 202},
+			expectedRecordType: record.FloatHistogramSamplesV2,
+			isFloatHistogram:   true,
+		},
+		{
+			name:               "Integer histograms with ST disabled emit V1 records and ST=0",
+			enableSTStorage:    false,
+			samples:            []histSample{{st: 10, ts: 100, h: intHist(1)}, {st: 100, ts: 200, h: intHist(2)}},
+			expectedSTs:        []int64{0, 0},
+			expectedRecordType: record.HistogramSamples,
+		},
+		{
+			name:               "Float histograms with ST disabled emit V1 records and ST=0",
+			enableSTStorage:    false,
+			samples:            []histSample{{st: 11, ts: 101, fh: floatHist(1)}, {st: 101, ts: 202, fh: floatHist(2)}},
+			expectedSTs:        []int64{0, 0},
+			expectedRecordType: record.FloatHistogramSamples,
+			isFloatHistogram:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
+			opts.EnableSTStorage.Store(tc.enableSTStorage)
+			opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+			h, w := newTestHeadWithOptions(t, compression.None, opts)
+
+			lbls := labels.FromStrings("foo", "bar")
+
+			a := h.AppenderV2(context.Background())
+			for _, s := range tc.samples {
+				_, err := a.Append(0, lbls, s.st, s.ts, 0, s.h, s.fh, storage.AOptions{})
+				require.NoError(t, err)
+			}
+			require.NoError(t, a.Commit())
+			require.NoError(t, h.Close())
+
+			intSamples, intTypes, floatSamples, floatTypes := readWALHistogramSamples(t, w.Dir())
+
+			if tc.isFloatHistogram {
+				require.Empty(t, intSamples, "no integer-histogram records expected")
+				require.Len(t, floatSamples, len(tc.samples))
+				var gotSTs []int64
+				for i, s := range floatSamples {
+					gotSTs = append(gotSTs, s.ST)
+					require.Equal(t, tc.expectedRecordType, floatTypes[i], "unexpected float-histogram record type")
+				}
+				require.Equal(t, tc.expectedSTs, gotSTs)
+			} else {
+				require.Empty(t, floatSamples, "no float-histogram records expected")
+				require.Len(t, intSamples, len(tc.samples))
+				var gotSTs []int64
+				for i, s := range intSamples {
+					gotSTs = append(gotSTs, s.ST)
+					require.Equal(t, tc.expectedRecordType, intTypes[i], "unexpected integer-histogram record type")
+				}
+				require.Equal(t, tc.expectedSTs, gotSTs)
+			}
 		})
 	}
 }
