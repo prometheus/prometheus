@@ -1809,6 +1809,8 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration,
 				// Binary search for the first index with T >= dataTS.
 				i := sort.Search(len(floats), func(i int) bool { return floats[i].T >= dataTS })
 
+				// TODO: for counters, detect start timestamp resets and adjust interpolation accordingly.
+
 				switch {
 				case i < len(floats) && floats[i].T == dataTS:
 					// Exact match.
