@@ -21,8 +21,8 @@ cache_hits_total 921830.0 1710000000.0
 # HELP cache_misses_total Total number of cache misses.
 # TYPE cache_misses_total counter
 cache_misses_total 32198.0 1710000000.0
-# HELP errors Total number of errors by code.
-# TYPE errors counter
+# HELP errors_total Total number of errors by code.
+# TYPE errors_total counter
 errors_total{code="EINVAL"} 23.0 1710000000.0
 errors_total{code="ETIMEDOUT"} 7.0 1710000000.0
 errors_total{code="ECONNRESET"} 14.0 1710000000.0
