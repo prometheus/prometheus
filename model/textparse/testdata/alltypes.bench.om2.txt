@@ -7,8 +7,8 @@ http_requests_total{method="GET",status="500"} 12.0 1710000000.0
 http_requests_total{method="POST",status="200"} 4521.0 1710000000.0 # {trace_id="t-002"} 1.0 1709999999.7
 http_requests_total{method="POST",status="404"} 9.0 1710000000.0
 http_requests_total{method="POST",status="500"} 31.0 1710000000.0
-# HELP grpc_calls Total number of gRPC calls.
-# TYPE grpc_calls counter
+# HELP grpc_calls_total Total number of gRPC calls.
+# TYPE grpc_calls_total counter
 grpc_calls_total{service="catalog"} 19234.0 1710000000.0
 grpc_calls_total{service="orders"} 8231.0 1710000000.0
 grpc_calls_total{service="payments"} 5612.0 1710000000.0
