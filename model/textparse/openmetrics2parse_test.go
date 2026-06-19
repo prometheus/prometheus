@@ -881,22 +881,147 @@ rpc_duration_seconds {count:10,sum:5.0,quantile:[0.5:1.0]}
 		},
 		{m: "rpc_duration_seconds", typ: model.MetricTypeSummary},
 		{m: "rpc_duration_seconds", unit: "seconds"},
-		// Composite (pending) entries do not currently receive __type__/__unit__ injection
-		// because buildPendingLabels bypasses schema.Metadata — see review issue #3.
 		{
 			m:    "rpc_duration_seconds_count",
 			v:    10,
-			lset: labels.FromStrings("__name__", "rpc_duration_seconds_count"),
+			lset: labels.FromStrings("__name__", "rpc_duration_seconds_count", "__type__", "summary", "__unit__", "seconds"),
 		},
 		{
 			m:    "rpc_duration_seconds_sum",
 			v:    5.0,
-			lset: labels.FromStrings("__name__", "rpc_duration_seconds_sum"),
+			lset: labels.FromStrings("__name__", "rpc_duration_seconds_sum", "__type__", "summary", "__unit__", "seconds"),
 		},
 		{
 			m:    "rpc_duration_seconds",
 			v:    1.0,
-			lset: labels.FromStrings("__name__", "rpc_duration_seconds", "quantile", "0.5"),
+			lset: labels.FromStrings("__name__", "rpc_duration_seconds", "__type__", "summary", "__unit__", "seconds", "quantile", "0.5"),
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), WithOM2TypeAndUnitLabels())
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
+func TestOpenMetrics2ParseTypeAndUnitLabelsScalarTypes(t *testing.T) {
+	input := `# TYPE http_requests_total counter
+# UNIT http_requests_total requests
+http_requests_total{method="get"} 5.0
+# TYPE build_info info
+build_info{version="1.0"} 1.0
+# TYPE subsystem_enabled stateset
+subsystem_enabled{subsystem_enabled="auth"} 0.0
+# TYPE unknown_metric unknown
+unknown_metric 42.0
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "http_requests_total", typ: model.MetricTypeCounter},
+		{m: "http_requests_total", unit: "requests"},
+		{
+			m:    `http_requests_total{method="get"}`,
+			v:    5.0,
+			lset: labels.FromStrings("__name__", "http_requests_total", "__type__", "counter", "__unit__", "requests", "method", "get"),
+		},
+		{m: "build_info", typ: model.MetricTypeInfo},
+		{
+			m:    `build_info{version="1.0"}`,
+			v:    1.0,
+			lset: labels.FromStrings("__name__", "build_info", "__type__", "info", "version", "1.0"),
+		},
+		{m: "subsystem_enabled", typ: model.MetricTypeStateset},
+		{
+			m:    `subsystem_enabled{subsystem_enabled="auth"}`,
+			v:    0.0,
+			lset: labels.FromStrings("__name__", "subsystem_enabled", "__type__", "stateset", "subsystem_enabled", "auth"),
+		},
+		{m: "unknown_metric", typ: model.MetricTypeUnknown},
+		{
+			m:    "unknown_metric",
+			v:    42.0,
+			lset: labels.FromStrings("__name__", "unknown_metric"),
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), WithOM2TypeAndUnitLabels())
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
+func TestOpenMetrics2ParseTypeAndUnitLabelsClassicHistogram(t *testing.T) {
+	input := `# TYPE http_request_duration_seconds histogram
+# UNIT http_request_duration_seconds seconds
+http_request_duration_seconds {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,0.5:2]}
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "http_request_duration_seconds", typ: model.MetricTypeHistogram},
+		{m: "http_request_duration_seconds", unit: "seconds"},
+		{
+			m:    "http_request_duration_seconds_count",
+			v:    3,
+			lset: labels.FromStrings("__name__", "http_request_duration_seconds_count", "__type__", "histogram", "__unit__", "seconds"),
+		},
+		{
+			m:    "http_request_duration_seconds_sum",
+			v:    6.0,
+			lset: labels.FromStrings("__name__", "http_request_duration_seconds_sum", "__type__", "histogram", "__unit__", "seconds"),
+		},
+		{
+			m:    "http_request_duration_seconds_bucket",
+			v:    3,
+			lset: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "__type__", "histogram", "__unit__", "seconds", "le", "+Inf"),
+		},
+		{
+			m:    "http_request_duration_seconds_bucket",
+			v:    1,
+			lset: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "__type__", "histogram", "__unit__", "seconds", "le", "0.1"),
+		},
+		{
+			m:    "http_request_duration_seconds_bucket",
+			v:    2,
+			lset: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "__type__", "histogram", "__unit__", "seconds", "le", "0.5"),
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), WithOM2TypeAndUnitLabels())
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
+func TestOpenMetrics2ParseTypeAndUnitLabelsGaugeHistogram(t *testing.T) {
+	input := `# TYPE response_size_bytes gaugehistogram
+# UNIT response_size_bytes bytes
+response_size_bytes {count:4,sum:1024.0,bucket:[+Inf:4,100:1,500:3]}
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "response_size_bytes", typ: model.MetricTypeGaugeHistogram},
+		{m: "response_size_bytes", unit: "bytes"},
+		{
+			m:    "response_size_bytes_count",
+			v:    4,
+			lset: labels.FromStrings("__name__", "response_size_bytes_count", "__type__", "gaugehistogram", "__unit__", "bytes"),
+		},
+		{
+			m:    "response_size_bytes_sum",
+			v:    1024.0,
+			lset: labels.FromStrings("__name__", "response_size_bytes_sum", "__type__", "gaugehistogram", "__unit__", "bytes"),
+		},
+		{
+			m:    "response_size_bytes_bucket",
+			v:    4,
+			lset: labels.FromStrings("__name__", "response_size_bytes_bucket", "__type__", "gaugehistogram", "__unit__", "bytes", "le", "+Inf"),
+		},
+		{
+			m:    "response_size_bytes_bucket",
+			v:    1,
+			lset: labels.FromStrings("__name__", "response_size_bytes_bucket", "__type__", "gaugehistogram", "__unit__", "bytes", "le", "100.0"),
+		},
+		{
+			m:    "response_size_bytes_bucket",
+			v:    3,
+			lset: labels.FromStrings("__name__", "response_size_bytes_bucket", "__type__", "gaugehistogram", "__unit__", "bytes", "le", "500.0"),
 		},
 	}
 

@@ -359,6 +359,7 @@ func (p *OpenMetrics2Parser) Next() (Entry, error) {
 		}
 		switch t {
 		case tType:
+			p.unit = ""
 			switch s := yoloString(p.text); s {
 			case "counter":
 				p.mtype = model.MetricTypeCounter
@@ -380,6 +381,8 @@ func (p *OpenMetrics2Parser) Next() (Entry, error) {
 				return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
 			}
 		case tHelp:
+			p.mtype = model.MetricTypeUnknown
+			p.unit = ""
 			if !utf8.Valid(p.text) {
 				return EntryInvalid, fmt.Errorf("help text %q is not a valid utf8 string", p.text)
 			}
@@ -1296,8 +1299,16 @@ func extractExtraLabels(series []byte, mfNameLen int) []labels.Label {
 // have already been materialised into their own labels.Labels values).
 func (p *OpenMetrics2Parser) buildPendingLabels(name string, extra []labels.Label, injectKey, injectVal string) labels.Labels {
 	p.builder.Reset()
-	p.builder.Add(model.MetricNameLabel, name)
+	m := schema.Metadata{Name: name, Type: p.mtype, Unit: p.unit}
+	if p.enableTypeAndUnitLabels {
+		m.AddToLabels(&p.builder)
+	} else {
+		p.builder.Add(model.MetricNameLabel, name)
+	}
 	for _, l := range extra {
+		if p.enableTypeAndUnitLabels && !m.IsEmptyFor(l.Name) {
+			continue
+		}
 		p.builder.Add(l.Name, l.Value)
 	}
 	if injectKey != "" {
