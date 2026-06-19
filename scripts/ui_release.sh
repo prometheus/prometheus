@@ -47,7 +47,7 @@ function checkPackage() {
   fi
   for workspace in ${workspaces}; do
     cd "${workspace}"
-    package_version=$(pnpm run env | grep npm_package_version | cut -d= -f2-)
+    package_version=$(pnpm pkg get version | tr -d '"')
     if [ "${version}" != "${package_version}" ]; then
       echo "version of ${workspace} is not the correct one"
       echo "expected one: ${version}"
