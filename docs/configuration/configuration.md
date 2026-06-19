@@ -1690,7 +1690,7 @@ created using the `port` parameter defined in the SD configuration.
 
 Available meta labels:
 
-* `__meta_dockerswarm_container_label_<labelname>`: each label of the container, with any unsupported characters converted to an underscore
+* `__meta_dockerswarm_container_label_<labelname>`: each label from the Swarm task's container spec, with any unsupported characters converted to an underscore
 * `__meta_dockerswarm_task_id`: the id of the task
 * `__meta_dockerswarm_task_container_id`: the container id of the task
 * `__meta_dockerswarm_task_desired_state`: the desired state of the task
