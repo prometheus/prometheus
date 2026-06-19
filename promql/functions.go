@@ -123,15 +123,16 @@ func pickOrInterpolateLeft(
 		nextST = stOrDefault(startTimestamps, first+1, 0)
 	)
 
-	if !isCounter {
-		// No adjustments due to ST.
-	} else if isStartTimestampResetAfter(rangeStart, nextST, nextDP.T) {
+	switch {
+	case !isCounter:
+		// No adjustments.
+	case isStartTimestampResetAfter(rangeStart, nextST, nextDP.T):
 		// If there is a ST reset with 'nextST' > 'rangeStart', we adjust nextDP.
 		nextDP = FPoint{
 			T: nextST,
 			F: 0,
 		}
-	} else if isStartTimestampReset(firstST, firstDP.T, nextST, nextDP.T) {
+	case isStartTimestampReset(firstST, firstDP.T, nextST, nextDP.T):
 		// Otherwise if there is ST reset between '(firstDP.T, rangeStart]', we adjust firstDP.
 		firstDP = FPoint{
 			T: nextST,
@@ -200,16 +201,17 @@ func pickOrInterpolateRight(
 		prevST = stOrDefault(startTimestamps, last-1, 0)
 	)
 
-	if !isCounter {
-		// No adjustments due to ST.
-	} else if isStartTimestampResetAfter(rangeEnd, lastST, lastDP.T) {
+	switch {
+	case !isCounter:
+		// No adjustments.
+	case isStartTimestampResetAfter(rangeEnd, lastST, lastDP.T):
 		// If there is a ST reset with 'lastST' > 'rangeEnd', we adjust lastDP.
 		lastDP = FPoint{
 			T: lastST,
 			F: 0,
 		}
 		returnedST = prevST
-	} else if isStartTimestampReset(prevST, prevDP.T, lastST, lastDP.T) {
+	case isStartTimestampReset(prevST, prevDP.T, lastST, lastDP.T):
 		// Otherwise if there is ST reset between '(prevDP.T, rangeEnd]', we adjust prevDP.
 		prevDP = FPoint{
 			T: lastST,
