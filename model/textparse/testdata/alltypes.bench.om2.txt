@@ -12,8 +12,8 @@ http_requests_total{method="POST",status="500"} 31.0 1710000000.0
 grpc_calls_total{service="catalog"} 19234.0 1710000000.0
 grpc_calls_total{service="orders"} 8231.0 1710000000.0
 grpc_calls_total{service="payments"} 5612.0 1710000000.0
-# HELP db_queries Total number of database queries.
-# TYPE db_queries counter
+# HELP db_queries_total Total number of database queries.
+# TYPE db_queries_total counter
 db_queries_total 482910.0 1710000000.0
 # HELP cache_hits Total number of cache hits.
 # TYPE cache_hits counter
