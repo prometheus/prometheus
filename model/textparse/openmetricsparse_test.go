@@ -903,7 +903,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		},
 		{
 			input: "a 1 1z\n#EOF\n",
-			err:   "strconv.ParseFloat: parsing \"1z\": invalid syntax while parsing: \"a 1 1z\"",
+			err:   "parse seconds: strconv.Atoi: parsing \"1z\": invalid syntax while parsing: \"a 1 1z\"",
 		},
 		{
 			input: " # EOF\n",
@@ -1003,7 +1003,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		},
 		{
 			input: "foo 0 1_2\n\n# EOF\n",
-			err:   "unsupported character in float while parsing: \"foo 0 1_2\"",
+			err:   "parse seconds: strconv.Atoi: parsing \"1_2\": invalid syntax while parsing: \"foo 0 1_2\"",
 		},
 		{
 			input: "custom_metric_total 1 # {aa=bb}\n# EOF\n",
@@ -1055,23 +1055,23 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		},
 		{
 			input: `a 1 NaN`,
-			err:   `invalid timestamp NaN`,
+			err:   `parse seconds: strconv.Atoi: parsing "NaN": invalid syntax while parsing: "a 1 NaN"`,
 		},
 		{
 			input: `a 1 -Inf`,
-			err:   `invalid timestamp -Inf`,
+			err:   `parse seconds: strconv.Atoi: parsing "-Inf": invalid syntax while parsing: "a 1 -Inf"`,
 		},
 		{
 			input: `a 1 Inf`,
-			err:   `invalid timestamp +Inf`,
+			err:   `parse seconds: strconv.Atoi: parsing "Inf": invalid syntax while parsing: "a 1 Inf"`,
 		},
 		{
 			input: "# TYPE hhh histogram\nhhh_bucket{le=\"+Inf\"} 1 # {aa=\"bb\"} 4 NaN",
-			err:   `invalid exemplar timestamp NaN`,
+			err:   `parse seconds: strconv.Atoi: parsing "NaN": invalid syntax while parsing: "hhh_bucket{le=\"+Inf\"} 1 # {aa=\"bb\"} 4 NaN"`,
 		},
 		{
 			input: "# TYPE hhh histogram\nhhh_bucket{le=\"+Inf\"} 1 # {aa=\"bb\"} 4 -Inf",
-			err:   `invalid exemplar timestamp -Inf`,
+			err:   `parse seconds: strconv.Atoi: parsing "-Inf": invalid syntax while parsing: "hhh_bucket{le=\"+Inf\"} 1 # {aa=\"bb\"} 4 -Inf"`,
 		},
 	}
 
