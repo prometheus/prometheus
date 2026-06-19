@@ -18,8 +18,8 @@ db_queries_total 482910.0 1710000000.0
 # HELP cache_hits Total number of cache hits.
 # TYPE cache_hits counter
 cache_hits_total 921830.0 1710000000.0
-# HELP cache_misses Total number of cache misses.
-# TYPE cache_misses counter
+# HELP cache_misses_total Total number of cache misses.
+# TYPE cache_misses_total counter
 cache_misses_total 32198.0 1710000000.0
 # HELP errors Total number of errors by code.
 # TYPE errors counter
