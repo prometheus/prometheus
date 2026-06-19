@@ -36,6 +36,39 @@ import (
 	"github.com/prometheus/prometheus/schema"
 )
 
+// openMetrics2Lexer is the lexer for the OpenMetrics 2.0 text format.
+type openMetrics2Lexer struct {
+	b     []byte
+	i     int
+	start int
+	err   error
+	state int
+}
+
+// buf returns the bytes of the current token.
+func (l *openMetrics2Lexer) buf() []byte {
+	return l.b[l.start:l.i]
+}
+
+// next advances the openMetrics2Lexer to the next character and returns it.
+func (l *openMetrics2Lexer) next() byte {
+	l.i++
+	if l.i >= len(l.b) {
+		l.err = io.EOF
+		return byte(tEOF)
+	}
+	// Lex struggles with null bytes. If we are in a label value or help
+	// string, where they are allowed, consume them here immediately.
+	for l.b[l.i] == 0 && (l.state == sLValue || l.state == sMeta2 || l.state == sComment) {
+		l.i++
+		if l.i >= len(l.b) {
+			l.err = io.EOF
+			return byte(tEOF)
+		}
+	}
+	return l.b[l.i]
+}
+
 // Error satisfies the golex interface for openMetrics2Lexer.
 func (l *openMetrics2Lexer) Error(es string) {
 	l.err = errors.New(es)
