@@ -250,3 +250,17 @@ eval range from 10m to 15m step 1m irate(delta[5m])
     {type="empty_range"}     {{schema:0 sum:0 count:0}}x5
 
 clear
+
+
+# Tests for histogram rate where rate extrapolation is substituted with assuming 0 sample at start timestamps.
+#
+# TODO: this doesn't yet produce expected results, because tsdb doesn't yet support start timestamps
+# for histograms. Expand test coverage when tsdb support is implemented.
+load 1m
+    series@st  _ _ -1m
+    series     _ _ {{schema:0 sum:60 count:60}}
+
+eval instant at 3m rate(series[5m])
+    # No series, since single sample can only produce a rate when there's a valid and suitable ST.
+
+clear
