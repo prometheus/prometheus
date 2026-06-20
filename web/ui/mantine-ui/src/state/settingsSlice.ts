@@ -57,6 +57,7 @@ const getPathPrefix = (path: string) => {
     "/tsdb-status",
     "/flags",
     "/config",
+    "/configuration-assistant",
     "/alertmanager-discovery",
     "/agent",
   ];
@@ -126,7 +127,7 @@ export const settingsSlice = createSlice({
   name: "settings",
   initialState,
   reducers: {
-    updateSettings: (state, { payload }: PayloadAction<Partial<Settings>>) => {
+    updateSettings: (state: Settings, { payload }: PayloadAction<Partial<Settings>>) => {
       Object.assign(state, payload);
     },
   },

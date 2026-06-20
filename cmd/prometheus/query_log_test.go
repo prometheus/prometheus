@@ -447,6 +447,7 @@ func readQueryLog(t *testing.T, path string) []queryLogLine {
 		require.NoError(t, json.Unmarshal(scanner.Bytes(), &q))
 		ql = append(ql, q)
 	}
+	require.NoError(t, scanner.Err())
 	return ql
 }
 

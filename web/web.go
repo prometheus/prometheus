@@ -284,6 +284,8 @@ type Options struct {
 	NotificationsGetter   func() []notifications.Notification
 	NotificationsSub      func() (<-chan notifications.Notification, func(), bool)
 	Flags                 map[string]string
+	// ConfigFile is the path to the Prometheus configuration file.
+	ConfigFile            string
 
 	ListenAddresses            []string
 	CORSOrigin                 *regexp.Regexp
@@ -583,6 +585,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		router.Put("/-/quit", h.quit)
 		router.Post("/-/reload", h.reload)
 		router.Put("/-/reload", h.reload)
+		router.Post("/-/config-assistant/apply", h.configAssistantApply)
 	} else {
 		forbiddenAPINotEnabled := func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusForbidden)
@@ -592,6 +595,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		router.Put("/-/quit", forbiddenAPINotEnabled)
 		router.Post("/-/reload", forbiddenAPINotEnabled)
 		router.Put("/-/reload", forbiddenAPINotEnabled)
+		router.Post("/-/config-assistant/apply", forbiddenAPINotEnabled)
 	}
 	router.Get("/-/quit", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -964,6 +968,127 @@ func (h *Handler) reload(w http.ResponseWriter, _ *http.Request) {
 	h.reloadCh <- rc
 	if err := <-rc; err != nil {
 		http.Error(w, fmt.Sprintf("failed to reload config: %s", err), http.StatusInternalServerError)
+	}
+}
+
+// configAssistantRequest represents the request body for the configuration assistant apply endpoint.
+type configAssistantRequest struct {
+	YAML string `json:"yaml"`
+}
+
+// configAssistantResponse represents the JSON response returned by the configuration assistant.
+type configAssistantResponse struct {
+	Status      string   `json:"status"`
+	Message     string   `json:"message"`
+	BackupFile  string   `json:"backupFile,omitempty"`
+	Suggestions []string `json:"suggestions,omitempty"`
+}
+
+// configAssistantApply handles the request to apply and reload a new configuration.
+func (h *Handler) configAssistantApply(w http.ResponseWriter, r *http.Request) {
+	var req configAssistantRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request body: %s", err), http.StatusBadRequest)
+		return
+	}
+
+	if strings.TrimSpace(req.YAML) == "" {
+		writeConfigAssistantJSON(w, http.StatusBadRequest, configAssistantResponse{
+			Status:  "error",
+			Message: "Configuration is empty.",
+			Suggestions: []string{
+				"Paste a prometheus.yml configuration before applying changes.",
+			},
+		})
+		return
+	}
+
+	if h.options.ConfigFile == "" {
+		writeConfigAssistantJSON(w, http.StatusInternalServerError, configAssistantResponse{
+			Status:  "error",
+			Message: "Prometheus config file path is not available.",
+		})
+		return
+	}
+
+	if _, err := config.Load(req.YAML, h.logger); err != nil {
+		writeConfigAssistantJSON(w, http.StatusBadRequest, configAssistantResponse{
+			Status:  "error",
+			Message: fmt.Sprintf("Configuration validation failed: %s", err),
+			Suggestions: []string{
+				"Check YAML syntax, indentation, and Prometheus configuration field names.",
+			},
+		})
+		return
+	}
+
+	backupFile := h.options.ConfigFile + ".bak"
+
+	previousConfig, err := os.ReadFile(h.options.ConfigFile)
+	if err != nil {
+		writeConfigAssistantJSON(w, http.StatusInternalServerError, configAssistantResponse{
+			Status:  "error",
+			Message: fmt.Sprintf("Failed to read current configuration file: %s", err),
+		})
+		return
+	}
+
+	if err := os.WriteFile(backupFile, previousConfig, 0o644); err != nil {
+		writeConfigAssistantJSON(w, http.StatusInternalServerError, configAssistantResponse{
+			Status:  "error",
+			Message: fmt.Sprintf("Failed to create configuration backup: %s", err),
+		})
+		return
+	}
+
+	tempFile := h.options.ConfigFile + ".tmp"
+	if err := os.WriteFile(tempFile, []byte(req.YAML), 0o644); err != nil {
+		writeConfigAssistantJSON(w, http.StatusInternalServerError, configAssistantResponse{
+			Status:  "error",
+			Message: fmt.Sprintf("Failed to write temporary configuration file: %s", err),
+		})
+		return
+	}
+
+	if err := os.Rename(tempFile, h.options.ConfigFile); err != nil {
+		writeConfigAssistantJSON(w, http.StatusInternalServerError, configAssistantResponse{
+			Status:  "error",
+			Message: fmt.Sprintf("Failed to replace configuration file: %s", err),
+		})
+		return
+	}
+
+	rc := make(chan error)
+	h.reloadCh <- rc
+	if err := <-rc; err != nil {
+		_ = os.WriteFile(h.options.ConfigFile, previousConfig, 0o644)
+
+		writeConfigAssistantJSON(w, http.StatusInternalServerError, configAssistantResponse{
+			Status:     "error",
+			Message:    fmt.Sprintf("Configuration was written but reload failed. Previous configuration was restored: %s", err),
+			BackupFile: backupFile,
+			Suggestions: []string{
+				"Review the error message and try applying the configuration again.",
+			},
+		})
+		return
+	}
+
+	writeConfigAssistantJSON(w, http.StatusOK, configAssistantResponse{
+		Status:     "success",
+		Message:    "Configuration applied and reloaded successfully.",
+		BackupFile: backupFile,
+	})
+}
+
+// writeConfigAssistantJSON encodes the config assistant response into JSON and writes it to the response writer.
+func writeConfigAssistantJSON(w http.ResponseWriter, statusCode int, resp configAssistantResponse) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		http.Error(w, fmt.Sprintf("failed to encode response: %s", err), http.StatusInternalServerError)
 	}
 }
 
