@@ -2982,8 +2982,11 @@ The following meta labels are available on all targets during
 * `__meta_oci_private_ip`: the private IP address of the primary VNIC
 * `__meta_oci_public_ip`: the public IP address of the primary VNIC, if assigned
 * `__meta_oci_region`: the OCI region identifier (e.g. `us-ashburn-1`)
+* `__meta_oci_secondary_private_ips`: comma-separated list (surrounded by commas) of private IPs assigned to any attached non-primary VNICs
+* `__meta_oci_secondary_public_ips`: comma-separated list (surrounded by commas) of public IPs assigned to any attached non-primary VNICs
 * `__meta_oci_tag_<key>`: each freeform tag of the instance
 * `__meta_oci_tenancy_id`: the OCID of the tenancy the instance belongs to
+* `__meta_oci_vnic_id`: the OCID of the primary VNIC
 
 In tag and namespace names, any character outside `[a-zA-Z0-9_]` is replaced
 with an underscore; case is preserved. For example, a freeform tag named
@@ -2991,6 +2994,10 @@ with an underscore; case is preserved. For example, a freeform tag named
 namespace `Operations` with key `Cost Center` is exposed as
 `__meta_oci_defined_tag_Operations_Cost_Center`. Because case is preserved,
 tag keys that differ only in case (`Env` and `env`) produce distinct labels.
+
+To restrict targets to instances carrying a specific tag, use
+[`relabel_configs`](#relabel_config) with `keep` or `drop` actions matching the
+relevant `__meta_oci_tag_*` or `__meta_oci_defined_tag_*` label.
 
 Targets with no resolvable primary-VNIC IP (neither private nor public) are
 dropped to avoid emitting unscrapeable `:<port>` addresses. The address used
@@ -3007,7 +3014,12 @@ is the private IP when available, falling back to the public IP.
 [ user: <string> ]
 [ fingerprint: <string> ]
 [ key_file: <string> ]
+# Passphrase for the private key. Mutually exclusive with key_passphrase_file.
 [ key_passphrase: <secret> ]
+# Path to a file containing the passphrase for the private key. Mutually
+# exclusive with key_passphrase. The file is read at configuration load
+# time; rotating the file requires reloading Prometheus.
+[ key_passphrase_file: <string> ]
 
 # OCI region identifier. Required.
 region: <string>
@@ -3015,22 +3027,13 @@ region: <string>
 # Explicit list of compartment OCIDs to scan. When empty, all active
 # compartments reachable from the tenancy root are discovered automatically
 # via the OCI Identity API using a breadth-first walk. Compartments that
-# cannot be listed due to missing permissions are silently skipped.
+# cannot be listed due to missing permissions are skipped with a warning so
+# that a single permission gap does not abort the walk.
 [ compartments:
   [ - <string> ... ] ]
 
 # Optional display-name substring filter passed to the OCI ListInstances API.
 [ filter: <string> ]
-
-# Tag-based filtering. When tag_filter_key is set, only instances carrying
-# (include) or lacking (exclude) the given freeform or defined tag key=value
-# pair are returned. Freeform tags are checked before defined tags.
-# The filter is applied before VNIC resolution to avoid unnecessary API calls.
-[ tag_filter_key: <string> ]
-[ tag_filter_value: <string> ]
-# Controls whether matching instances are included or excluded.
-# Valid values: "include" (default), "exclude".
-[ tag_filter_action: <string> | default = "include" ]
 
 # Authentication information used to authenticate to the API server.
 # Note that `basic_auth`, `authorization`, and `oauth2` options are
