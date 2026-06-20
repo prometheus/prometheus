@@ -610,14 +610,14 @@ func (*OpenAPIBuilder) adminCleanTombstonesPath() *v3.PathItem {
 		Post: &v3.Operation{
 			OperationId: "cleanTombstonesPost",
 			Summary:     "Clean tombstones in the TSDB",
-			Description: "Removes deleted data from disk and cleans up existing tombstones.",
+			Description: "Removes deleted data from disk and cleans up existing tombstones. **Requires `--web.enable-admin-api` flag. Protect this endpoint by configuring authentication via `--web.config.file`.**",
 			Tags:        []string{"admin"},
 			Responses:   responsesWithErrorExamples("CleanTombstonesOutputBody", cleanTombstonesResponseExamples(), errorResponseExamples(), "Tombstones cleaned successfully.", "Error cleaning tombstones."),
 		},
 		Put: &v3.Operation{
 			OperationId: "cleanTombstonesPut",
 			Summary:     "Clean tombstones in the TSDB via PUT",
-			Description: "Removes deleted data from disk and cleans up existing tombstones using PUT method.",
+			Description: "Removes deleted data from disk and cleans up existing tombstones using PUT method. **Requires `--web.enable-admin-api` flag. Protect this endpoint by configuring authentication via `--web.config.file`.**",
 			Tags:        []string{"admin"},
 			Responses:   responsesWithErrorExamples("CleanTombstonesOutputBody", cleanTombstonesResponseExamples(), errorResponseExamples(), "Tombstones cleaned successfully via PUT.", "Error cleaning tombstones via PUT."),
 		},
