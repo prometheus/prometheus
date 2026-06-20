@@ -353,6 +353,7 @@ scrape_configs:
         user: ocid1.user.oc1..user001
         fingerprint: aa:bb:cc:dd:ee:ff
         key_file: valid_key_file
+        key_passphrase: mysecret
         compartments:
           - ocid1.compartment.oc1..comp001
         port: 9100

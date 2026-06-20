@@ -1267,8 +1267,8 @@ var expectedConf = &Config{
 					User:             "ocid1.user.oc1..user001",
 					Fingerprint:      "aa:bb:cc:dd:ee:ff",
 					KeyFile:          "testdata/valid_key_file",
+					KeyPassphrase:    "mysecret",
 					Compartments:     []string{"ocid1.compartment.oc1..comp001"},
-					TagFilterAction:  "include",
 					Port:             9100,
 					RefreshInterval:  model.Duration(60 * time.Second),
 					HTTPClientConfig: config.DefaultHTTPClientConfig,
@@ -2202,7 +2202,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Len(t, matches, 28, "wrong number of secret matches found")
+	require.Len(t, matches, 29, "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
@@ -2564,6 +2564,10 @@ var expectedErrors = []struct {
 	{
 		filename: "azure_authentication_method.bad.yml",
 		errMsg:   "unknown authentication_type \"invalid\". Supported types are \"OAuth\", \"ManagedIdentity\", \"SDK\" or \"WorkloadIdentity\"",
+	},
+	{
+		filename: "oci_authentication_method.bad.yml",
+		errMsg:   `OCI SD unknown auth method "invalid", expected "api_key" or "instance_principal"`,
 	},
 	{
 		filename: "azure_bearertoken_basicauth.bad.yml",
