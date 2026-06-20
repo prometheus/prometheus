@@ -148,7 +148,7 @@ func putZeroThreshold(b *bstream, threshold float64) {
 	frac, exp := math.Frexp(threshold)
 	if frac != 0.5 || exp < -242 || exp > 11 {
 		b.writeByte(255)
-		b.writeBits(math.Float64bits(threshold), 64)
+		b.writeBitsFast(math.Float64bits(threshold), 64)
 		return
 	}
 	b.writeByte(byte(exp + 243))
@@ -203,7 +203,7 @@ func putCustomBound(b *bstream, f float64) {
 	// bytes, other values are stored in 8 bytes anyway.
 	if tf < 0 || tf > 33554430 || !isWholeWhenMultiplied(f) {
 		b.writeBit(zero)
-		b.writeBits(math.Float64bits(f), 64)
+		b.writeBitsFast(math.Float64bits(f), 64)
 		return
 	}
 	putVarbitUint(b, uint64(math.Round(tf))+1)

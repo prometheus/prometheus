@@ -1912,6 +1912,7 @@ func (s *memSeries) appendHistogram(st, t int64, h *histogram.Histogram, appendI
 		return true, false
 	}
 
+	c.chunk.Compact()
 	s.headChunks = &memChunk{
 		chunk:   newChunk,
 		minTime: t,
@@ -1969,6 +1970,7 @@ func (s *memSeries) appendFloatHistogram(st, t int64, fh *histogram.FloatHistogr
 		return true, false
 	}
 
+	c.chunk.Compact()
 	s.headChunks = &memChunk{
 		chunk:   newChunk,
 		minTime: t,
@@ -2142,6 +2144,10 @@ func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange 
 	// pointing at the current .headChunks, so it forms a linked list.
 	// All but first headChunks list elements will be m-mapped as soon as possible
 	// so this is a single element list most of the time.
+	if s.headChunks != nil {
+		s.headChunks.chunk.Compact()
+	}
+
 	s.headChunks = &memChunk{
 		minTime: mint,
 		maxTime: math.MinInt64,
@@ -2227,6 +2233,7 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 	// then we need to write chunks t0 to t3, but skip s.headChunks.
 	for i := s.headChunks.len() - 1; i > 0; i-- {
 		chk := s.headChunks.atOffset(i)
+		chk.chunk.Compact()
 		chunkRef := chunkDiskMapper.WriteChunk(s.ref, chk.minTime, chk.maxTime, chk.chunk, false, handleChunkWriteError)
 		s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
 			ref:        chunkRef,

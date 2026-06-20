@@ -41,7 +41,7 @@ type FloatHistogramChunk struct {
 
 // NewFloatHistogramChunk returns a new chunk with float histogram encoding.
 func NewFloatHistogramChunk() *FloatHistogramChunk {
-	b := make([]byte, histogramHeaderSize, chunkAllocationSize)
+	b := make([]byte, histogramHeaderSize)
 	return &FloatHistogramChunk{b: bstream{stream: b, count: 0}}
 }
 
@@ -579,17 +579,17 @@ func (a *FloatHistogramAppender) appendFloatHistogram(num int, t int64, h *histo
 
 		// Now store the actual data.
 		putVarbitInt(a.b, t)
-		a.b.writeBits(math.Float64bits(h.Count), 64)
-		a.b.writeBits(math.Float64bits(h.ZeroCount), 64)
-		a.b.writeBits(math.Float64bits(h.Sum), 64)
+		a.b.writeBitsFast(math.Float64bits(h.Count), 64)
+		a.b.writeBitsFast(math.Float64bits(h.ZeroCount), 64)
+		a.b.writeBitsFast(math.Float64bits(h.Sum), 64)
 		a.cnt.value = h.Count
 		a.zCnt.value = h.ZeroCount
 		a.sum.value = h.Sum
 		for _, b := range h.PositiveBuckets {
-			a.b.writeBits(math.Float64bits(b), 64)
+			a.b.writeBitsFast(math.Float64bits(b), 64)
 		}
 		for _, b := range h.NegativeBuckets {
-			a.b.writeBits(math.Float64bits(b), 64)
+			a.b.writeBitsFast(math.Float64bits(b), 64)
 		}
 	} else {
 		// The case for the 2nd sample with single deltas is implicitly handled correctly with the double delta code,
