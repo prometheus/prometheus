@@ -17,16 +17,23 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/core"
+	"github.com/oracle/oci-go-sdk/v65/identity"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 )
+
+func writeFile(path, content string) error {
+	return os.WriteFile(path, []byte(content), 0o600)
+}
 
 // ---- test helpers -----------------------------------------------------------
 
@@ -77,6 +84,14 @@ func makeAttachment(instanceID, vnicID string) core.VnicAttachment {
 	}
 }
 
+// primaryOnly is a convenience for tests that only care about the primary VNIC.
+func primaryOnly(id, privateIP, publicIP string) instanceVnics {
+	return instanceVnics{
+		primary:    vnicInfo{id: id, privateIP: privateIP, publicIP: publicIP},
+		hasPrimary: true,
+	}
+}
+
 const (
 	testCompartment = "ocid1.compartment.oc1..comp001"
 	testTenancy     = "ocid1.tenancy.oc1..test001"
@@ -87,10 +102,9 @@ const (
 // d.Discovery (the refresh framework) is left nil.
 func baseDiscovery() *Discovery {
 	return &Discovery{
-		tenancy:         testTenancy,
-		tagFilterAction: tagFilterActionInclude,
-		port:            9100,
-		logger:          slog.Default(),
+		tenancy: testTenancy,
+		port:    9100,
+		logger:  slog.Default(),
 		listCompartments: func(_ context.Context) ([]string, error) {
 			return []string{testCompartment}, nil
 		},
@@ -116,104 +130,11 @@ func singleInstanceDiscovery(inst core.Instance, vnic *core.Vnic) *Discovery {
 	return d
 }
 
-// ---- hasTag -----------------------------------------------------------------
-
-func TestHasTag(t *testing.T) {
-	cases := []struct {
-		name  string
-		inst  core.Instance
-		key   string
-		value string
-		want  bool
-	}{
-		{
-			name: "freeform match",
-			inst: makeInstance(func(i *core.Instance) {
-				i.FreeformTags = map[string]string{"monitoring": "enabled"}
-			}),
-			key: "monitoring", value: "enabled", want: true,
-		},
-		{
-			name: "freeform value mismatch",
-			inst: makeInstance(func(i *core.Instance) {
-				i.FreeformTags = map[string]string{"monitoring": "disabled"}
-			}),
-			key: "monitoring", value: "enabled", want: false,
-		},
-		{
-			name: "freeform key absent",
-			inst: makeInstance(),
-			key:  "monitoring", value: "enabled", want: false,
-		},
-		{
-			name: "defined tag match",
-			inst: makeInstance(func(i *core.Instance) {
-				i.DefinedTags = map[string]map[string]any{
-					"ops-ns": {"monitoring": "enabled"},
-				}
-			}),
-			key: "monitoring", value: "enabled", want: true,
-		},
-		{
-			name: "defined tag value mismatch",
-			inst: makeInstance(func(i *core.Instance) {
-				i.DefinedTags = map[string]map[string]any{
-					"ops-ns": {"monitoring": "disabled"},
-				}
-			}),
-			key: "monitoring", value: "enabled", want: false,
-		},
-		{
-			name: "defined tag non-string value not matched",
-			inst: makeInstance(func(i *core.Instance) {
-				i.DefinedTags = map[string]map[string]any{
-					"ops-ns": {"monitoring": 42},
-				}
-			}),
-			key: "monitoring", value: "42", want: false,
-		},
-		{
-			name: "defined tag found in second namespace",
-			inst: makeInstance(func(i *core.Instance) {
-				i.DefinedTags = map[string]map[string]any{
-					"ns1": {"other": "x"},
-					"ns2": {"monitoring": "enabled"},
-				}
-			}),
-			key: "monitoring", value: "enabled", want: true,
-		},
-		{
-			name: "freeform matches even when defined tag disagrees",
-			inst: makeInstance(func(i *core.Instance) {
-				i.FreeformTags = map[string]string{"monitoring": "enabled"}
-				i.DefinedTags = map[string]map[string]any{
-					"ns": {"monitoring": "disabled"},
-				}
-			}),
-			key: "monitoring", value: "enabled", want: true,
-		},
-		{
-			name: "nil freeform and nil defined - no panic",
-			inst: makeInstance(func(i *core.Instance) {
-				i.FreeformTags = nil
-				i.DefinedTags = nil
-			}),
-			key: "monitoring", value: "enabled", want: false,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, hasTag(&tc.inst, tc.key, tc.value))
-		})
-	}
-}
-
 // ---- instanceLabels ---------------------------------------------------------
 
 func TestInstanceLabels_CoreLabels(t *testing.T) {
 	inst := makeInstance()
-	labels := instanceLabels(&inst, "10.0.0.5", "203.0.113.1", testTenancy, 9100)
+	labels := instanceLabels(&inst, primaryOnly("ocid1.vnic.oc1..v001", "10.0.0.5", "203.0.113.1"), testTenancy, 9100)
 
 	expected := model.LabelSet{
 		model.AddressLabel:         "10.0.0.5:9100",
@@ -227,6 +148,7 @@ func TestInstanceLabels_CoreLabels(t *testing.T) {
 		ociLabelTenancyID:          testTenancy,
 		ociLabelCompartmentID:      "ocid1.compartment.oc1..comp001",
 		ociLabelImageID:            "ocid1.image.oc1.iad.img001",
+		ociLabelVnicID:             "ocid1.vnic.oc1..v001",
 		ociLabelPrivateIP:          "10.0.0.5",
 		ociLabelPublicIP:           "203.0.113.1",
 	}
@@ -237,14 +159,40 @@ func TestInstanceLabels_CoreLabels(t *testing.T) {
 
 func TestInstanceLabels_AddressIsPrivateIPWhenBothPresent(t *testing.T) {
 	inst := makeInstance()
-	labels := instanceLabels(&inst, "10.0.0.5", "203.0.113.1", "tenancy", 80)
+	labels := instanceLabels(&inst, primaryOnly("v", "10.0.0.5", "203.0.113.1"), "tenancy", 80)
 	require.Equal(t, model.LabelValue("10.0.0.5:80"), labels[model.AddressLabel])
 }
 
 func TestInstanceLabels_AddressFallsBackToPublicIP(t *testing.T) {
 	inst := makeInstance()
-	labels := instanceLabels(&inst, "", "203.0.113.1", "tenancy", 80)
+	labels := instanceLabels(&inst, primaryOnly("v", "", "203.0.113.1"), "tenancy", 80)
 	require.Equal(t, model.LabelValue("203.0.113.1:80"), labels[model.AddressLabel])
+}
+
+func TestInstanceLabels_SecondaryVnicIPsExposed(t *testing.T) {
+	inst := makeInstance()
+	vnics := instanceVnics{
+		primary:    vnicInfo{id: "ocid1.vnic.oc1..p", privateIP: "10.0.0.1", publicIP: ""},
+		hasPrimary: true,
+		secondary: []vnicInfo{
+			{id: "ocid1.vnic.oc1..s1", privateIP: "10.0.0.2", publicIP: "203.0.113.2"},
+			{id: "ocid1.vnic.oc1..s2", privateIP: "10.0.0.3"},
+		},
+	}
+	labels := instanceLabels(&inst, vnics, "tenancy", 80)
+
+	require.Equal(t, model.LabelValue(",10.0.0.2,10.0.0.3,"), labels[ociLabelSecondaryPrivateIPs])
+	require.Equal(t, model.LabelValue(",203.0.113.2,"), labels[ociLabelSecondaryPublicIPs])
+}
+
+func TestInstanceLabels_NoSecondaryVnicLabelsWhenAbsent(t *testing.T) {
+	inst := makeInstance()
+	labels := instanceLabels(&inst, primaryOnly("v", "10.0.0.1", ""), "tenancy", 80)
+
+	_, hasPrivates := labels[ociLabelSecondaryPrivateIPs]
+	require.False(t, hasPrivates, "secondary private IPs label must not be set when there are no secondaries")
+	_, hasPublics := labels[ociLabelSecondaryPublicIPs]
+	require.False(t, hasPublics, "secondary public IPs label must not be set when there are no secondaries")
 }
 
 func TestInstanceLabels_FreeformTagsSanitized(t *testing.T) {
@@ -259,7 +207,7 @@ func TestInstanceLabels_FreeformTagsSanitized(t *testing.T) {
 			"env":         "lower",
 		}
 	})
-	labels := instanceLabels(&inst, "10.0.0.1", "", "tenancy", 80)
+	labels := instanceLabels(&inst, primaryOnly("v", "10.0.0.1", ""), "tenancy", 80)
 
 	require.Equal(t, model.LabelValue("production"), labels[ociLabelFreeformTagPrefix+"environment"])
 	require.Equal(t, model.LabelValue("value"), labels[ociLabelFreeformTagPrefix+"My_Tag_Key"])
@@ -274,12 +222,12 @@ func TestInstanceLabels_DefinedTagsStringOnly(t *testing.T) {
 			"Oracle-Tags": {
 				"CreatedBy":  "user@example.com",
 				"CostCenter": "42",
-				"IntValue":   100,  // must be skipped
-				"BoolValue":  true, // must be skipped
+				"IntValue":   100,  // Must be skipped.
+				"BoolValue":  true, // Must be skipped.
 			},
 		}
 	})
-	labels := instanceLabels(&inst, "10.0.0.1", "", "tenancy", 80)
+	labels := instanceLabels(&inst, primaryOnly("v", "10.0.0.1", ""), "tenancy", 80)
 
 	require.Equal(t, model.LabelValue("user@example.com"), labels[ociLabelDefinedTagPrefix+"Oracle_Tags_CreatedBy"])
 	require.Equal(t, model.LabelValue("42"), labels[ociLabelDefinedTagPrefix+"Oracle_Tags_CostCenter"])
@@ -297,7 +245,7 @@ func TestInstanceLabels_NilOptionalFields(t *testing.T) {
 		FreeformTags:   map[string]string{},
 		DefinedTags:    map[string]map[string]any{},
 	}
-	labels := instanceLabels(&inst, "10.0.0.1", "", "tenancy", 80)
+	labels := instanceLabels(&inst, primaryOnly("", "10.0.0.1", ""), "tenancy", 80)
 
 	require.Equal(t, model.LabelValue("10.0.0.1:80"), labels[model.AddressLabel])
 	require.Equal(t, model.LabelValue(""), labels[ociLabelInstanceID])
@@ -307,7 +255,7 @@ func TestInstanceLabels_NilOptionalFields(t *testing.T) {
 func TestInstanceLabels_PortInAddress(t *testing.T) {
 	inst := makeInstance()
 	for _, port := range []int{80, 9100, 9182, 443} {
-		labels := instanceLabels(&inst, "10.0.0.1", "", "tenancy", port)
+		labels := instanceLabels(&inst, primaryOnly("v", "10.0.0.1", ""), "tenancy", port)
 		require.Equal(
 			t,
 			model.LabelValue("10.0.0.1:"+strconv.Itoa(port)),
@@ -333,9 +281,55 @@ func TestRefresh_SingleInstance(t *testing.T) {
 	labels := tgs[0].Targets[0]
 	require.Equal(t, model.LabelValue("10.0.0.5:9100"), labels[model.AddressLabel])
 	require.Equal(t, model.LabelValue("ocid1.instance.oc1.iad.aaa001"), labels[ociLabelInstanceID])
+	require.Equal(t, model.LabelValue("ocid1.vnic.oc1..v001"), labels[ociLabelVnicID])
 	require.Equal(t, model.LabelValue("10.0.0.5"), labels[ociLabelPrivateIP])
 	require.Equal(t, model.LabelValue("203.0.113.10"), labels[ociLabelPublicIP])
 	require.Equal(t, model.LabelValue(testTenancy), labels[ociLabelTenancyID])
+}
+
+func TestRefresh_SecondaryVnicsExposedAsListLabels(t *testing.T) {
+	inst := makeInstance()
+	primary := &core.Vnic{
+		Id:        strPtr("ocid1.vnic.oc1..p"),
+		IsPrimary: boolPtr(true),
+		PrivateIp: strPtr("10.0.0.1"),
+	}
+	secondary := &core.Vnic{
+		Id:        strPtr("ocid1.vnic.oc1..s"),
+		IsPrimary: boolPtr(false),
+		PrivateIp: strPtr("10.0.0.2"),
+		PublicIp:  strPtr("203.0.113.2"),
+	}
+
+	d := baseDiscovery()
+	d.listInstances = func(_ context.Context, _ string) ([]core.Instance, error) {
+		return []core.Instance{inst}, nil
+	}
+	d.listVnicAttachments = func(_ context.Context, _, _ string) ([]core.VnicAttachment, error) {
+		return []core.VnicAttachment{
+			makeAttachment(stringVal(inst.Id), stringVal(primary.Id)),
+			makeAttachment(stringVal(inst.Id), stringVal(secondary.Id)),
+		}, nil
+	}
+	d.getVnic = func(_ context.Context, vnicID string) (*core.Vnic, error) {
+		switch vnicID {
+		case stringVal(primary.Id):
+			return primary, nil
+		case stringVal(secondary.Id):
+			return secondary, nil
+		}
+		return nil, errors.New("unexpected VNIC ID")
+	}
+
+	tgs, err := d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 1)
+	require.Len(t, tgs[0].Targets, 1)
+
+	labels := tgs[0].Targets[0]
+	require.Equal(t, model.LabelValue("ocid1.vnic.oc1..p"), labels[ociLabelVnicID])
+	require.Equal(t, model.LabelValue(",10.0.0.2,"), labels[ociLabelSecondaryPrivateIPs])
+	require.Equal(t, model.LabelValue(",203.0.113.2,"), labels[ociLabelSecondaryPublicIPs])
 }
 
 func TestRefresh_MultipleCompartments(t *testing.T) {
@@ -398,7 +392,7 @@ func TestRefresh_CompartmentListError_Propagates(t *testing.T) {
 }
 
 func TestRefresh_ListInstancesError_EmptyGroupReturned(t *testing.T) {
-	// listInstances error → compartment is logged and an empty group is
+	// listInstances error -> compartment is logged and an empty group is
 	// returned so the discovery manager prunes any stale targets it still
 	// has for this source.
 	sentinel := errors.New("OCI API unavailable")
@@ -464,154 +458,6 @@ func TestRefresh_GetVnicError_InstanceSkipped(t *testing.T) {
 	require.Empty(t, tgs[0].Targets)
 }
 
-func TestRefresh_TagFilterInclude_OnlyTaggedInstanceReturned(t *testing.T) {
-	tagged := makeInstance(func(i *core.Instance) {
-		i.Id = strPtr("ocid1.instance.oc1..tagged")
-		i.FreeformTags = map[string]string{"monitoring": "enabled"}
-	})
-	untagged := makeInstance(func(i *core.Instance) {
-		i.Id = strPtr("ocid1.instance.oc1..untagged")
-	})
-
-	vnic := makeVnic("ocid1.vnic.oc1..v001", "10.0.0.1", "")
-	att := makeAttachment("ocid1.instance.oc1..tagged", stringVal(vnic.Id))
-
-	d := baseDiscovery()
-	d.tagFilterKey = "monitoring"
-	d.tagFilterValue = "enabled"
-	d.tagFilterAction = tagFilterActionInclude
-	d.listInstances = func(_ context.Context, _ string) ([]core.Instance, error) {
-		return []core.Instance{tagged, untagged}, nil
-	}
-	d.listVnicAttachments = func(_ context.Context, _, _ string) ([]core.VnicAttachment, error) {
-		return []core.VnicAttachment{att}, nil
-	}
-	d.getVnic = func(_ context.Context, _ string) (*core.Vnic, error) { return vnic, nil }
-
-	tgs, err := d.refresh(context.Background())
-	require.NoError(t, err)
-	require.Len(t, tgs[0].Targets, 1)
-	require.Equal(t, model.LabelValue("ocid1.instance.oc1..tagged"), tgs[0].Targets[0][ociLabelInstanceID])
-}
-
-func TestRefresh_TagFilterExclude_TaggedInstanceDropped(t *testing.T) {
-	disabled := makeInstance(func(i *core.Instance) {
-		i.Id = strPtr("ocid1.instance.oc1..disabled")
-		i.FreeformTags = map[string]string{"monitoring": "disabled"}
-	})
-	active := makeInstance(func(i *core.Instance) {
-		i.Id = strPtr("ocid1.instance.oc1..active")
-	})
-
-	vnic := makeVnic("ocid1.vnic.oc1..v001", "10.0.0.2", "")
-	att := makeAttachment("ocid1.instance.oc1..active", stringVal(vnic.Id))
-
-	d := baseDiscovery()
-	d.tagFilterKey = "monitoring"
-	d.tagFilterValue = "disabled"
-	d.tagFilterAction = tagFilterActionExclude
-	d.listInstances = func(_ context.Context, _ string) ([]core.Instance, error) {
-		return []core.Instance{disabled, active}, nil
-	}
-	d.listVnicAttachments = func(_ context.Context, _, _ string) ([]core.VnicAttachment, error) {
-		return []core.VnicAttachment{att}, nil
-	}
-	d.getVnic = func(_ context.Context, _ string) (*core.Vnic, error) { return vnic, nil }
-
-	tgs, err := d.refresh(context.Background())
-	require.NoError(t, err)
-	require.Len(t, tgs[0].Targets, 1)
-	require.Equal(t, model.LabelValue("ocid1.instance.oc1..active"), tgs[0].Targets[0][ociLabelInstanceID])
-}
-
-func TestRefresh_TagFilter_VnicNotCalledForFilteredInstances(t *testing.T) {
-	inst1 := makeInstance(func(i *core.Instance) {
-		i.Id = strPtr("ocid1.instance.oc1..inst1")
-		i.FreeformTags = map[string]string{"monitoring": "disabled"}
-	})
-	inst2 := makeInstance(func(i *core.Instance) {
-		i.Id = strPtr("ocid1.instance.oc1..inst2")
-		i.FreeformTags = map[string]string{"monitoring": "disabled"}
-	})
-
-	vnicCalls := 0
-	d := baseDiscovery()
-	d.tagFilterKey = "monitoring"
-	d.tagFilterValue = "disabled"
-	d.tagFilterAction = tagFilterActionExclude
-	d.listInstances = func(_ context.Context, _ string) ([]core.Instance, error) {
-		return []core.Instance{inst1, inst2}, nil
-	}
-	d.listVnicAttachments = func(_ context.Context, _, _ string) ([]core.VnicAttachment, error) {
-		vnicCalls++
-		return nil, nil
-	}
-	d.getVnic = func(_ context.Context, _ string) (*core.Vnic, error) {
-		vnicCalls++
-		return nil, nil
-	}
-
-	tgs, err := d.refresh(context.Background())
-	require.NoError(t, err)
-	require.Empty(t, tgs[0].Targets)
-	require.Zero(t, vnicCalls, "VNIC API must not be called for filtered-out instances")
-}
-
-func TestRefresh_NoTagFilter_AllInstancesReturned(t *testing.T) {
-	instances := []core.Instance{
-		makeInstance(func(i *core.Instance) { i.Id = strPtr("ocid1.instance.oc1..i1") }),
-		makeInstance(func(i *core.Instance) { i.Id = strPtr("ocid1.instance.oc1..i2") }),
-		makeInstance(func(i *core.Instance) { i.Id = strPtr("ocid1.instance.oc1..i3") }),
-	}
-	vnic := makeVnic("ocid1.vnic.oc1..v001", "10.0.0.1", "")
-	att := makeAttachment("", stringVal(vnic.Id))
-
-	d := baseDiscovery()
-	d.listInstances = func(_ context.Context, _ string) ([]core.Instance, error) {
-		return instances, nil
-	}
-	d.listVnicAttachments = func(_ context.Context, _, _ string) ([]core.VnicAttachment, error) {
-		return []core.VnicAttachment{att}, nil
-	}
-	d.getVnic = func(_ context.Context, _ string) (*core.Vnic, error) { return vnic, nil }
-
-	tgs, err := d.refresh(context.Background())
-	require.NoError(t, err)
-	require.Len(t, tgs[0].Targets, 3)
-}
-
-func TestRefresh_DefinedTagFilterInclude(t *testing.T) {
-	tagged := makeInstance(func(i *core.Instance) {
-		i.Id = strPtr("ocid1.instance.oc1..tagged")
-		i.DefinedTags = map[string]map[string]any{
-			"ops-ns": {"monitoring": "enabled"},
-		}
-	})
-	untagged := makeInstance(func(i *core.Instance) {
-		i.Id = strPtr("ocid1.instance.oc1..untagged")
-	})
-
-	vnic := makeVnic("ocid1.vnic.oc1..v001", "10.0.0.5", "")
-	att := makeAttachment("ocid1.instance.oc1..tagged", stringVal(vnic.Id))
-
-	d := baseDiscovery()
-	d.tagFilterKey = "monitoring"
-	d.tagFilterValue = "enabled"
-	d.tagFilterAction = tagFilterActionInclude
-	d.listInstances = func(_ context.Context, _ string) ([]core.Instance, error) {
-		return []core.Instance{tagged, untagged}, nil
-	}
-	d.listVnicAttachments = func(_ context.Context, _, _ string) ([]core.VnicAttachment, error) {
-		return []core.VnicAttachment{att}, nil
-	}
-	d.getVnic = func(_ context.Context, _ string) (*core.Vnic, error) { return vnic, nil }
-
-	tgs, err := d.refresh(context.Background())
-	require.NoError(t, err)
-	require.Len(t, tgs[0].Targets, 1)
-	require.Equal(t, model.LabelValue("ocid1.instance.oc1..tagged"), tgs[0].Targets[0][ociLabelInstanceID])
-}
-
 func TestRefresh_NoPrimaryVnic_InstanceDropped(t *testing.T) {
 	// An instance with no resolvable primary VNIC has no usable IP, so the
 	// SD drops it rather than emit an unscrapeable :port target.
@@ -675,6 +521,151 @@ func TestRefresh_ContextCanceled(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
+// ---- listAllCompartments ----------------------------------------------------
+
+// fakeCompartmentTree drives listAllCompartments via a compartmentPaginator
+// stub. Each node has a list of pages, each page a list of (id, active,
+// hasNext) tuples. Setting failChildrenOf to a node ID makes paginate return
+// an error when that node is queried, simulating a permission gap.
+type fakeCompartmentTree struct {
+	// children maps parent compartment ID -> ordered direct children.
+	children map[string][]identity.Compartment
+	// pageSize bins children into pages of this size to exercise pagination.
+	pageSize int
+	// permissionDenied is the set of parent IDs whose list call should fail.
+	permissionDenied map[string]bool
+	// errOnce records first call so cancelled-context tests can observe it.
+	calls map[string]int
+}
+
+func (f *fakeCompartmentTree) paginate(ctx context.Context, parentID string, page *string) ([]identity.Compartment, *string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	if f.calls == nil {
+		f.calls = map[string]int{}
+	}
+	f.calls[parentID]++
+
+	if f.permissionDenied[parentID] {
+		return nil, nil, errors.New("permission denied")
+	}
+
+	all := f.children[parentID]
+	if f.pageSize <= 0 || f.pageSize >= len(all) {
+		return all, nil, nil
+	}
+
+	start := 0
+	if page != nil {
+		// Page tokens are 1-based indices into the slice.
+		idx, err := strconv.Atoi(*page)
+		if err != nil {
+			return nil, nil, err
+		}
+		start = idx
+	}
+	end := start + f.pageSize
+	if end >= len(all) {
+		return all[start:], nil, nil
+	}
+	next := strconv.Itoa(end)
+	return all[start:end], &next, nil
+}
+
+func activeComp(id string) identity.Compartment {
+	return identity.Compartment{Id: strPtr(id), LifecycleState: identity.CompartmentLifecycleStateActive}
+}
+
+func inactiveComp(id string) identity.Compartment {
+	return identity.Compartment{Id: strPtr(id), LifecycleState: identity.CompartmentLifecycleStateInactive}
+}
+
+func TestListAllCompartments_BFSIncludesRoot(t *testing.T) {
+	tree := &fakeCompartmentTree{
+		children: map[string][]identity.Compartment{
+			"root": {activeComp("c1"), activeComp("c2")},
+			"c1":   {activeComp("c1a")},
+		},
+	}
+
+	got, err := listAllCompartments(context.Background(), tree.paginate, "root", promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"root", "c1", "c2", "c1a"}, got)
+}
+
+func TestListAllCompartments_PagedResults(t *testing.T) {
+	tree := &fakeCompartmentTree{
+		children: map[string][]identity.Compartment{
+			"root": {activeComp("c1"), activeComp("c2"), activeComp("c3"), activeComp("c4"), activeComp("c5")},
+		},
+		pageSize: 2,
+	}
+
+	got, err := listAllCompartments(context.Background(), tree.paginate, "root", promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"root", "c1", "c2", "c3", "c4", "c5"}, got)
+	require.Equal(t, 3, tree.calls["root"], "5 children with page size 2 must take 3 calls")
+}
+
+func TestListAllCompartments_InactiveCompartmentSkipped(t *testing.T) {
+	tree := &fakeCompartmentTree{
+		children: map[string][]identity.Compartment{
+			"root": {activeComp("c1"), inactiveComp("c2-dead"), activeComp("c3")},
+		},
+	}
+
+	got, err := listAllCompartments(context.Background(), tree.paginate, "root", promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"root", "c1", "c3"}, got)
+}
+
+func TestListAllCompartments_CycleVisitedOnce(t *testing.T) {
+	// A child that references back to root must not cause an infinite loop.
+	tree := &fakeCompartmentTree{
+		children: map[string][]identity.Compartment{
+			"root": {activeComp("c1")},
+			"c1":   {activeComp("root")}, // Cycle.
+		},
+	}
+
+	got, err := listAllCompartments(context.Background(), tree.paginate, "root", promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"root", "c1"}, got)
+	require.Equal(t, 1, tree.calls["root"], "root must be listed only once even when referenced as a child")
+}
+
+func TestListAllCompartments_PermissionErrorSkipsSubtree(t *testing.T) {
+	tree := &fakeCompartmentTree{
+		children: map[string][]identity.Compartment{
+			"root": {activeComp("c1"), activeComp("c2")},
+			"c1":   {activeComp("c1a")},
+			// c2 denied; its subtree must not abort the walk.
+		},
+		permissionDenied: map[string]bool{"c2": true},
+	}
+
+	got, err := listAllCompartments(context.Background(), tree.paginate, "root", promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"root", "c1", "c2", "c1a"}, got)
+}
+
+func TestListAllCompartments_CanceledContextAborts(t *testing.T) {
+	// A cancelled context must abort the walk immediately rather than be
+	// silently treated as a permission gap.
+	tree := &fakeCompartmentTree{
+		children: map[string][]identity.Compartment{
+			"root": {activeComp("c1")},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := listAllCompartments(ctx, tree.paginate, "root", promslog.NewNopLogger())
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 // ---- SDConfig validation ----------------------------------------------------
 
 func TestSDConfig_Validation(t *testing.T) {
@@ -685,7 +676,6 @@ func TestSDConfig_Validation(t *testing.T) {
 		User:             "ocid1.user.oc1..u001",
 		Fingerprint:      "aa:bb:cc",
 		KeyFile:          "/etc/oci/key.pem",
-		TagFilterAction:  tagFilterActionInclude,
 		RefreshInterval:  model.Duration(60 * time.Second),
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
@@ -721,12 +711,32 @@ func TestSDConfig_Validation(t *testing.T) {
 			wantErr: "requires key_file",
 		},
 		{
+			name: "api_key with both key_passphrase and key_passphrase_file",
+			mutate: func(c *SDConfig) {
+				c.KeyPassphrase = "secret"
+				c.KeyPassphraseFile = "/etc/oci/passphrase"
+			},
+			wantErr: "at most one of key_passphrase and key_passphrase_file",
+		},
+		{
 			name: "instance_principal with api_key fields",
 			mutate: func(c *SDConfig) {
 				c.Auth = authInstancePrincipal
 				// Tenancy still set from validAPIKey.
 			},
 			wantErr: "must not have tenancy",
+		},
+		{
+			name: "instance_principal with key_passphrase_file",
+			mutate: func(c *SDConfig) {
+				c.Auth = authInstancePrincipal
+				c.Tenancy = ""
+				c.User = ""
+				c.Fingerprint = ""
+				c.KeyFile = ""
+				c.KeyPassphraseFile = "/etc/oci/passphrase"
+			},
+			wantErr: "must not have",
 		},
 		{
 			name:    "unknown auth method",
@@ -739,23 +749,6 @@ func TestSDConfig_Validation(t *testing.T) {
 				c.Compartments = []string{"ocid1.compartment.oc1..good", ""}
 			},
 			wantErr: "compartments[1] must not be empty",
-		},
-		{
-			name: "tag_filter_key without tag_filter_value",
-			mutate: func(c *SDConfig) {
-				c.TagFilterKey = "monitoring"
-				c.TagFilterValue = ""
-			},
-			wantErr: "requires tag_filter_value",
-		},
-		{
-			name: "tag_filter_action invalid",
-			mutate: func(c *SDConfig) {
-				c.TagFilterKey = "k"
-				c.TagFilterValue = "v"
-				c.TagFilterAction = "allowlist"
-			},
-			wantErr: "tag_filter_action must be",
 		},
 		{
 			name:    "refresh_interval zero",
@@ -784,7 +777,6 @@ func TestSDConfig_ValidInstancePrincipal(t *testing.T) {
 	cfg := SDConfig{
 		Auth:             authInstancePrincipal,
 		Region:           "us-ashburn-1",
-		TagFilterAction:  tagFilterActionInclude,
 		RefreshInterval:  model.Duration(60 * time.Second),
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
@@ -800,7 +792,6 @@ func TestSDConfig_ValidWithExplicitCompartments(t *testing.T) {
 		Fingerprint:      "aa:bb:cc",
 		KeyFile:          "/etc/oci/key.pem",
 		Compartments:     []string{"ocid1.compartment.oc1..c001", "ocid1.compartment.oc1..c002"},
-		TagFilterAction:  tagFilterActionInclude,
 		RefreshInterval:  model.Duration(60 * time.Second),
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
@@ -808,7 +799,7 @@ func TestSDConfig_ValidWithExplicitCompartments(t *testing.T) {
 }
 
 func TestSDConfig_ValidAutoDiscovery(t *testing.T) {
-	// Compartments empty → auto-discover. Should be valid.
+	// Compartments empty -> auto-discover. Should be valid.
 	cfg := SDConfig{
 		Auth:             authAPIKey,
 		Region:           "us-ashburn-1",
@@ -816,28 +807,47 @@ func TestSDConfig_ValidAutoDiscovery(t *testing.T) {
 		User:             "ocid1.user.oc1..u001",
 		Fingerprint:      "aa:bb:cc",
 		KeyFile:          "/etc/oci/key.pem",
-		TagFilterAction:  tagFilterActionInclude,
 		RefreshInterval:  model.Duration(60 * time.Second),
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 	require.NoError(t, cfg.validate())
 }
 
-func TestSDConfig_ValidExcludeFilter(t *testing.T) {
+func TestSDConfig_ValidWithKeyPassphraseFile(t *testing.T) {
 	cfg := SDConfig{
-		Auth:             authAPIKey,
-		Region:           "us-ashburn-1",
-		Tenancy:          "ocid1.tenancy.oc1..t001",
-		User:             "ocid1.user.oc1..u001",
-		Fingerprint:      "aa:bb:cc",
-		KeyFile:          "/etc/oci/key.pem",
-		TagFilterKey:     "monitoring",
-		TagFilterValue:   "disabled",
-		TagFilterAction:  tagFilterActionExclude,
-		RefreshInterval:  model.Duration(60 * time.Second),
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		Auth:              authAPIKey,
+		Region:            "us-ashburn-1",
+		Tenancy:           "ocid1.tenancy.oc1..t001",
+		User:              "ocid1.user.oc1..u001",
+		Fingerprint:       "aa:bb:cc",
+		KeyFile:           "/etc/oci/key.pem",
+		KeyPassphraseFile: "/etc/oci/passphrase",
+		RefreshInterval:   model.Duration(60 * time.Second),
+		HTTPClientConfig:  config.DefaultHTTPClientConfig,
 	}
 	require.NoError(t, cfg.validate())
+}
+
+// ---- resolveKeyPassphrase ---------------------------------------------------
+
+func TestResolveKeyPassphrase_InlinePreferredWhenSetAlone(t *testing.T) {
+	got, err := resolveKeyPassphrase(&SDConfig{KeyPassphrase: "topsecret"})
+	require.NoError(t, err)
+	require.Equal(t, "topsecret", got)
+}
+
+func TestResolveKeyPassphrase_FileTrimsTrailingNewline(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pass")
+	require.NoError(t, writeFile(path, "topsecret\n"))
+
+	got, err := resolveKeyPassphrase(&SDConfig{KeyPassphraseFile: path})
+	require.NoError(t, err)
+	require.Equal(t, "topsecret", got)
+}
+
+func TestResolveKeyPassphrase_FileMissing(t *testing.T) {
+	_, err := resolveKeyPassphrase(&SDConfig{KeyPassphraseFile: filepath.Join(t.TempDir(), "nope")})
+	require.Error(t, err)
 }
 
 // ---- SetDirectory -----------------------------------------------------------
@@ -860,4 +870,11 @@ func TestSDConfig_SetDirectory_EmptyKeyFile(t *testing.T) {
 	cfg := SDConfig{}
 	cfg.SetDirectory("/etc/prometheus")
 	require.Empty(t, cfg.KeyFile)
+}
+
+func TestSDConfig_SetDirectory_KeyPassphraseFileJoined(t *testing.T) {
+	dir := filepath.FromSlash("/etc/prometheus")
+	cfg := SDConfig{KeyPassphraseFile: filepath.FromSlash("keys/oci.pass")}
+	cfg.SetDirectory(dir)
+	require.Equal(t, filepath.Join(dir, "keys", "oci.pass"), cfg.KeyPassphraseFile)
 }

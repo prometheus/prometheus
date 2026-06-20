@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
@@ -32,6 +33,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/common/version"
 	"golang.org/x/time/rate"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -41,29 +44,34 @@ import (
 )
 
 const (
-	ociLabel                   = model.MetaLabelPrefix + "oci_"
-	ociLabelInstanceID         = ociLabel + "instance_id"
-	ociLabelInstanceName       = ociLabel + "instance_name"
-	ociLabelInstanceState      = ociLabel + "instance_state"
-	ociLabelInstanceShape      = ociLabel + "instance_shape"
-	ociLabelAvailabilityDomain = ociLabel + "availability_domain"
-	ociLabelFaultDomain        = ociLabel + "fault_domain"
-	ociLabelRegion             = ociLabel + "region"
-	ociLabelTenancyID          = ociLabel + "tenancy_id"
-	ociLabelCompartmentID      = ociLabel + "compartment_id"
-	ociLabelImageID            = ociLabel + "image_id"
-	ociLabelPrivateIP          = ociLabel + "private_ip"
-	ociLabelPublicIP           = ociLabel + "public_ip"
-	ociLabelFreeformTagPrefix  = ociLabel + "tag_"
-	ociLabelDefinedTagPrefix   = ociLabel + "defined_tag_"
+	ociLabel                    = model.MetaLabelPrefix + "oci_"
+	ociLabelInstanceID          = ociLabel + "instance_id"
+	ociLabelInstanceName        = ociLabel + "instance_name"
+	ociLabelInstanceState       = ociLabel + "instance_state"
+	ociLabelInstanceShape       = ociLabel + "instance_shape"
+	ociLabelAvailabilityDomain  = ociLabel + "availability_domain"
+	ociLabelFaultDomain         = ociLabel + "fault_domain"
+	ociLabelRegion              = ociLabel + "region"
+	ociLabelTenancyID           = ociLabel + "tenancy_id"
+	ociLabelCompartmentID       = ociLabel + "compartment_id"
+	ociLabelImageID             = ociLabel + "image_id"
+	ociLabelVnicID              = ociLabel + "vnic_id"
+	ociLabelPrivateIP           = ociLabel + "private_ip"
+	ociLabelPublicIP            = ociLabel + "public_ip"
+	ociLabelSecondaryPrivateIPs = ociLabel + "secondary_private_ips"
+	ociLabelSecondaryPublicIPs  = ociLabel + "secondary_public_ips"
+	ociLabelFreeformTagPrefix   = ociLabel + "tag_"
+	ociLabelDefinedTagPrefix    = ociLabel + "defined_tag_"
+
+	// ociLabelSeparator surrounds and separates values in list-valued labels
+	// (e.g. ociLabelSecondaryPrivateIPs) so users can match individual values
+	// with anchored relabel regexes without ambiguity at the boundaries.
+	ociLabelSeparator = ","
 )
 
 const (
 	authAPIKey            = "api_key"
 	authInstancePrincipal = "instance_principal"
-
-	tagFilterActionInclude = "include"
-	tagFilterActionExclude = "exclude"
 
 	// rateLimitRPS caps OCI API calls per second across all operations
 	// (ListCompartments, ListInstances, ListVnicAttachments, GetVnic) to stay
@@ -76,7 +84,6 @@ var DefaultSDConfig = SDConfig{
 	Port:             80,
 	RefreshInterval:  model.Duration(60 * time.Second),
 	Auth:             authAPIKey,
-	TagFilterAction:  tagFilterActionInclude,
 	HTTPClientConfig: config.DefaultHTTPClientConfig,
 }
 
@@ -91,11 +98,20 @@ type SDConfig struct {
 	Auth string `yaml:"auth,omitempty"`
 
 	// API key auth fields. Required when Auth is "api_key".
-	Tenancy       string        `yaml:"tenancy,omitempty"`
-	User          string        `yaml:"user,omitempty"`
-	Fingerprint   string        `yaml:"fingerprint,omitempty"`
-	KeyFile       string        `yaml:"key_file,omitempty"`
+	Tenancy     string `yaml:"tenancy,omitempty"`
+	User        string `yaml:"user,omitempty"`
+	Fingerprint string `yaml:"fingerprint,omitempty"`
+	KeyFile     string `yaml:"key_file,omitempty"`
+	// KeyPassphrase is the passphrase used to decrypt KeyFile, if any.
+	// Mutually exclusive with KeyPassphraseFile.
 	KeyPassphrase config.Secret `yaml:"key_passphrase,omitempty"`
+	// KeyPassphraseFile is a path to a file containing the passphrase used to
+	// decrypt KeyFile. Mutually exclusive with KeyPassphrase.
+	//
+	// TODO: read this lazily via a custom common.ConfigurationProvider so
+	// rotating the passphrase on disk takes effect without restarting
+	// Prometheus, matching the runtime-reloadable semantics of password_file.
+	KeyPassphraseFile string `yaml:"key_passphrase_file,omitempty"`
 
 	// Region is required for all auth methods.
 	Region string `yaml:"region"`
@@ -107,14 +123,6 @@ type SDConfig struct {
 
 	// Filter is an optional OCI display-name substring filter for ListInstances.
 	Filter string `yaml:"filter,omitempty"`
-
-	// TagFilterKey and TagFilterValue together select instances by a freeform or
-	// defined tag. TagFilterAction controls whether matching instances are included
-	// (default: "include") or excluded ("exclude"). When TagFilterKey is empty all
-	// instances are returned regardless of TagFilterValue and TagFilterAction.
-	TagFilterKey    string `yaml:"tag_filter_key,omitempty"`
-	TagFilterValue  string `yaml:"tag_filter_value,omitempty"`
-	TagFilterAction string `yaml:"tag_filter_action,omitempty"`
 
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 
@@ -139,6 +147,7 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 func (c *SDConfig) SetDirectory(dir string) {
 	c.HTTPClientConfig.SetDirectory(dir)
 	c.KeyFile = config.JoinDir(dir, c.KeyFile)
+	c.KeyPassphraseFile = config.JoinDir(dir, c.KeyPassphraseFile)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -172,9 +181,12 @@ func (c *SDConfig) validate() error {
 		if c.KeyFile == "" {
 			return errors.New("OCI SD api_key auth requires key_file")
 		}
+		if c.KeyPassphrase != "" && c.KeyPassphraseFile != "" {
+			return errors.New("OCI SD at most one of key_passphrase and key_passphrase_file must be configured")
+		}
 	case authInstancePrincipal:
-		if c.Tenancy != "" || c.User != "" || c.Fingerprint != "" || c.KeyFile != "" {
-			return errors.New("OCI SD instance_principal auth must not have tenancy, user, fingerprint, or key_file set")
+		if c.Tenancy != "" || c.User != "" || c.Fingerprint != "" || c.KeyFile != "" || c.KeyPassphrase != "" || c.KeyPassphraseFile != "" {
+			return errors.New("OCI SD instance_principal auth must not have tenancy, user, fingerprint, key_file, key_passphrase, or key_passphrase_file set")
 		}
 	default:
 		return fmt.Errorf("OCI SD unknown auth method %q, expected %q or %q", c.Auth, authAPIKey, authInstancePrincipal)
@@ -183,17 +195,6 @@ func (c *SDConfig) validate() error {
 	for i, cid := range c.Compartments {
 		if cid == "" {
 			return fmt.Errorf("OCI SD compartments[%d] must not be empty", i)
-		}
-	}
-
-	if c.TagFilterKey != "" {
-		if c.TagFilterValue == "" {
-			return errors.New("OCI SD tag_filter_key requires tag_filter_value")
-		}
-		switch c.TagFilterAction {
-		case tagFilterActionInclude, tagFilterActionExclude:
-		default:
-			return fmt.Errorf("OCI SD tag_filter_action must be %q or %q, got %q", tagFilterActionInclude, tagFilterActionExclude, c.TagFilterAction)
 		}
 	}
 
@@ -231,9 +232,6 @@ type Discovery struct {
 	listVnicAttachments vnicAttachmentLister
 	getVnic             vnicFetcher
 	tenancy             string
-	tagFilterKey        string
-	tagFilterValue      string
-	tagFilterAction     string
 	port                int
 	logger              *slog.Logger
 }
@@ -243,6 +241,10 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery,
 	m, ok := opts.Metrics.(*ociMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
+	}
+
+	if opts.Logger == nil {
+		opts.Logger = promslog.NewNopLogger()
 	}
 
 	httpClient, err := config.NewClientFromConfig(conf.HTTPClientConfig, "oci_sd")
@@ -265,7 +267,7 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery,
 	limiter := rate.NewLimiter(rate.Limit(rateLimitRPS), max(1, int(rateLimitRPS)))
 	retryPolicy := common.DefaultRetryPolicy()
 
-	compLister, err := newCompartmentLister(provider, httpClient, tenancy, conf.Compartments, limiter, &retryPolicy)
+	compLister, err := newCompartmentLister(provider, httpClient, tenancy, conf.Compartments, limiter, &retryPolicy, opts.Logger)
 	if err != nil {
 		return nil, fmt.Errorf("OCI SD failed to create compartment lister: %w", err)
 	}
@@ -281,9 +283,6 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery,
 		listVnicAttachments: attachmentLister,
 		getVnic:             fetcher,
 		tenancy:             tenancy,
-		tagFilterKey:        conf.TagFilterKey,
-		tagFilterValue:      conf.TagFilterValue,
-		tagFilterAction:     conf.TagFilterAction,
 		port:                conf.Port,
 		logger:              opts.Logger,
 	}
@@ -318,7 +317,10 @@ func newConfigurationProvider(conf *SDConfig, httpClient *http.Client) (common.C
 		if err != nil {
 			return nil, fmt.Errorf("reading OCI key file %q: %w", conf.KeyFile, err)
 		}
-		passphrase := string(conf.KeyPassphrase)
+		passphrase, err := resolveKeyPassphrase(conf)
+		if err != nil {
+			return nil, err
+		}
 		var passphrasePtr *string
 		if passphrase != "" {
 			passphrasePtr = &passphrase
@@ -330,13 +332,32 @@ func newConfigurationProvider(conf *SDConfig, httpClient *http.Client) (common.C
 	}
 }
 
+// resolveKeyPassphrase reads the inline KeyPassphrase or the contents of
+// KeyPassphraseFile. The file is read eagerly at construction time; rotation
+// at runtime is not yet supported (see TODO on SDConfig.KeyPassphraseFile).
+func resolveKeyPassphrase(conf *SDConfig) (string, error) {
+	if conf.KeyPassphraseFile != "" {
+		b, err := os.ReadFile(conf.KeyPassphraseFile)
+		if err != nil {
+			return "", fmt.Errorf("reading OCI key passphrase file %q: %w", conf.KeyPassphraseFile, err)
+		}
+		return strings.TrimRight(string(b), "\r\n"), nil
+	}
+	return string(conf.KeyPassphrase), nil
+}
+
+// compartmentPaginator lists the direct child compartments of parentID one
+// page at a time. It is the smallest surface listAllCompartments needs from
+// the OCI Identity API, which keeps the walk easy to test with a fake.
+type compartmentPaginator func(ctx context.Context, parentID string, page *string) ([]identity.Compartment, *string, error)
+
 // newCompartmentLister returns a compartmentLister that either returns the
 // explicit list from the config directly, or auto-discovers all active
 // compartments under the tenancy root via the OCI Identity API.
 //
 // When compartments are explicitly configured no Identity client is created,
 // so the identity package methods are dropped by dead-code elimination.
-func newCompartmentLister(provider common.ConfigurationProvider, httpClient *http.Client, tenancy string, compartments []string, limiter *rate.Limiter, retryPolicy *common.RetryPolicy) (compartmentLister, error) {
+func newCompartmentLister(provider common.ConfigurationProvider, httpClient *http.Client, tenancy string, compartments []string, limiter *rate.Limiter, retryPolicy *common.RetryPolicy, logger *slog.Logger) (compartmentLister, error) {
 	if len(compartments) > 0 {
 		ids := make([]string, len(compartments))
 		copy(ids, compartments)
@@ -352,16 +373,37 @@ func newCompartmentLister(provider common.ConfigurationProvider, httpClient *htt
 		return nil, fmt.Errorf("creating OCI identity client: %w", err)
 	}
 	idClient.HTTPClient = httpClient
+	idClient.UserAgent = version.PrometheusUserAgent()
+
+	paginate := func(ctx context.Context, parentID string, page *string) ([]identity.Compartment, *string, error) {
+		if err := limiter.Wait(ctx); err != nil {
+			return nil, nil, err
+		}
+		resp, err := idClient.ListCompartments(ctx, identity.ListCompartmentsRequest{
+			CompartmentId:          common.String(parentID),
+			AccessLevel:            identity.ListCompartmentsAccessLevelAccessible,
+			CompartmentIdInSubtree: common.Bool(false), // Direct children only.
+			Limit:                  common.Int(100),
+			Page:                   page,
+			RequestMetadata:        common.RequestMetadata{RetryPolicy: retryPolicy},
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		return resp.Items, resp.OpcNextPage, nil
+	}
 
 	return func(ctx context.Context) ([]string, error) {
-		return listAllCompartments(ctx, &idClient, tenancy, limiter, retryPolicy)
+		return listAllCompartments(ctx, paginate, tenancy, logger)
 	}, nil
 }
 
 // listAllCompartments recursively discovers all active compartments reachable
 // from root using a BFS queue, including root itself. Child compartments that
-// fail to list are skipped so a single permission gap does not abort the walk.
-func listAllCompartments(ctx context.Context, idClient *identity.IdentityClient, root string, limiter *rate.Limiter, retryPolicy *common.RetryPolicy) ([]string, error) {
+// fail to list (typically a permission gap) are logged and skipped so a single
+// gap does not abort the walk. Context cancellation aborts the walk immediately
+// rather than being treated as a permission gap.
+func listAllCompartments(ctx context.Context, paginate compartmentPaginator, root string, logger *slog.Logger) ([]string, error) {
 	var all []string
 	visited := make(map[string]bool)
 	queue := []string{root}
@@ -377,30 +419,24 @@ func listAllCompartments(ctx context.Context, idClient *identity.IdentityClient,
 
 		var page *string
 		for {
-			if err := limiter.Wait(ctx); err != nil {
-				return nil, err
-			}
-			resp, err := idClient.ListCompartments(ctx, identity.ListCompartmentsRequest{
-				CompartmentId:          common.String(current),
-				AccessLevel:            identity.ListCompartmentsAccessLevelAccessible,
-				CompartmentIdInSubtree: common.Bool(false), // direct children only
-				Limit:                  common.Int(100),
-				Page:                   page,
-				RequestMetadata:        common.RequestMetadata{RetryPolicy: retryPolicy},
-			})
+			items, next, err := paginate(ctx, current, page)
 			if err != nil {
-				// Permission gap on this compartment - skip its children.
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				logger.Warn("OCI SD failed to list child compartments, skipping subtree",
+					"compartment_id", current, "err", err)
 				break
 			}
-			for _, comp := range resp.Items {
+			for _, comp := range items {
 				if comp.Id != nil && comp.LifecycleState == identity.CompartmentLifecycleStateActive && !visited[*comp.Id] {
 					queue = append(queue, *comp.Id)
 				}
 			}
-			if resp.OpcNextPage == nil {
+			if next == nil {
 				break
 			}
-			page = resp.OpcNextPage
+			page = next
 		}
 	}
 	return all, nil
@@ -416,12 +452,14 @@ func newOCIClients(provider common.ConfigurationProvider, httpClient *http.Clien
 		return nil, nil, nil, fmt.Errorf("creating OCI compute client: %w", err)
 	}
 	computeClient.HTTPClient = httpClient
+	computeClient.UserAgent = version.PrometheusUserAgent()
 
 	vnetClient, err := core.NewVirtualNetworkClientWithConfigurationProvider(provider)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("creating OCI virtual network client: %w", err)
 	}
 	vnetClient.HTTPClient = httpClient
+	vnetClient.UserAgent = version.PrometheusUserAgent()
 
 	lister := func(ctx context.Context, compartmentID string) ([]core.Instance, error) {
 		var instances []core.Instance
@@ -522,32 +560,20 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 				continue
 			}
 
-			// Tag filter is applied before VNIC resolution to avoid unnecessary API
-			// calls for instances that will be dropped anyway.
-			if d.tagFilterKey != "" {
-				match := hasTag(inst, d.tagFilterKey, d.tagFilterValue)
-				if d.tagFilterAction == tagFilterActionInclude && !match {
-					continue
-				}
-				if d.tagFilterAction == tagFilterActionExclude && match {
-					continue
-				}
-			}
-
-			privateIP, publicIP, err := d.primaryVnicIPs(ctx, inst)
+			vnics, err := d.resolveVnics(ctx, inst)
 			if err != nil {
 				d.logger.Warn("OCI SD failed to resolve VNIC IPs, skipping instance",
 					"instance_id", *inst.Id, "err", err)
 				continue
 			}
 
-			if privateIP == "" && publicIP == "" {
+			if vnics.primary.privateIP == "" && vnics.primary.publicIP == "" {
 				d.logger.Debug("OCI SD skipping instance with no usable IP address",
 					"instance_id", *inst.Id)
 				continue
 			}
 
-			tg.Targets = append(tg.Targets, instanceLabels(inst, privateIP, publicIP, d.tenancy, d.port))
+			tg.Targets = append(tg.Targets, instanceLabels(inst, vnics, d.tenancy, d.port))
 		}
 
 		tgs = append(tgs, tg)
@@ -556,60 +582,66 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	return tgs, nil
 }
 
-// primaryVnicIPs returns the private and public IP of the primary VNIC for inst.
-// publicIP may be empty if no public IP is assigned. Caller must guarantee
-// inst.Id and inst.CompartmentId are non-nil.
-func (d *Discovery) primaryVnicIPs(ctx context.Context, inst *core.Instance) (privateIP, publicIP string, err error) {
+// vnicInfo is the subset of a single OCI VNIC that the SD exposes through
+// meta labels.
+type vnicInfo struct {
+	id        string
+	privateIP string
+	publicIP  string
+}
+
+// instanceVnics holds the resolved VNICs for one compute instance: the
+// primary VNIC supplies the scrape address and the indexed primary labels,
+// and any additional attached VNICs are emitted as secondary IP lists for
+// relabeling.
+type instanceVnics struct {
+	primary    vnicInfo
+	secondary  []vnicInfo
+	hasPrimary bool
+}
+
+// resolveVnics returns all attached VNICs for inst, with the primary VNIC
+// (if any) singled out. Caller must guarantee inst.Id and inst.CompartmentId
+// are non-nil.
+func (d *Discovery) resolveVnics(ctx context.Context, inst *core.Instance) (instanceVnics, error) {
 	attachments, err := d.listVnicAttachments(ctx, stringVal(inst.CompartmentId), stringVal(inst.Id))
 	if err != nil {
-		return "", "", fmt.Errorf("listing VNIC attachments for instance %s: %w", stringVal(inst.Id), err)
+		return instanceVnics{}, fmt.Errorf("listing VNIC attachments for instance %s: %w", stringVal(inst.Id), err)
 	}
 
+	var out instanceVnics
 	for _, att := range attachments {
 		if att.VnicId == nil || att.LifecycleState != core.VnicAttachmentLifecycleStateAttached {
 			continue
 		}
 		vnic, err := d.getVnic(ctx, *att.VnicId)
 		if err != nil {
-			return "", "", fmt.Errorf("fetching VNIC %s: %w", *att.VnicId, err)
+			return instanceVnics{}, fmt.Errorf("fetching VNIC %s: %w", *att.VnicId, err)
 		}
-		if vnic == nil || vnic.IsPrimary == nil || !*vnic.IsPrimary {
+		if vnic == nil {
 			continue
 		}
-		if vnic.PrivateIp != nil {
-			privateIP = *vnic.PrivateIp
+		info := vnicInfo{
+			id:        stringVal(vnic.Id),
+			privateIP: stringVal(vnic.PrivateIp),
+			publicIP:  stringVal(vnic.PublicIp),
 		}
-		if vnic.PublicIp != nil {
-			publicIP = *vnic.PublicIp
+		if vnic.IsPrimary != nil && *vnic.IsPrimary && !out.hasPrimary {
+			out.primary = info
+			out.hasPrimary = true
+			continue
 		}
-		return privateIP, publicIP, nil
+		out.secondary = append(out.secondary, info)
 	}
 
-	return "", "", nil
-}
-
-// hasTag reports whether inst carries a freeform or defined tag with the given
-// key and value. Freeform tags are checked first; defined tags are checked
-// across all namespaces. Only string-typed defined tag values are compared.
-func hasTag(inst *core.Instance, key, value string) bool {
-	if v, ok := inst.FreeformTags[key]; ok && v == value {
-		return true
-	}
-	for _, nsMap := range inst.DefinedTags {
-		if v, ok := nsMap[key]; ok {
-			if s, ok := v.(string); ok && s == value {
-				return true
-			}
-		}
-	}
-	return false
+	return out, nil
 }
 
 // instanceLabels builds the label set for one OCI compute instance.
-func instanceLabels(inst *core.Instance, privateIP, publicIP, tenancy string, port int) model.LabelSet {
-	addr := privateIP
+func instanceLabels(inst *core.Instance, vnics instanceVnics, tenancy string, port int) model.LabelSet {
+	addr := vnics.primary.privateIP
 	if addr == "" {
-		addr = publicIP
+		addr = vnics.primary.publicIP
 	}
 
 	labels := model.LabelSet{
@@ -624,8 +656,27 @@ func instanceLabels(inst *core.Instance, privateIP, publicIP, tenancy string, po
 		ociLabelTenancyID:          model.LabelValue(tenancy),
 		ociLabelCompartmentID:      model.LabelValue(stringVal(inst.CompartmentId)),
 		ociLabelImageID:            model.LabelValue(stringVal(inst.ImageId)),
-		ociLabelPrivateIP:          model.LabelValue(privateIP),
-		ociLabelPublicIP:           model.LabelValue(publicIP),
+		ociLabelVnicID:             model.LabelValue(vnics.primary.id),
+		ociLabelPrivateIP:          model.LabelValue(vnics.primary.privateIP),
+		ociLabelPublicIP:           model.LabelValue(vnics.primary.publicIP),
+	}
+
+	if len(vnics.secondary) > 0 {
+		var privates, publics []string
+		for _, v := range vnics.secondary {
+			if v.privateIP != "" {
+				privates = append(privates, v.privateIP)
+			}
+			if v.publicIP != "" {
+				publics = append(publics, v.publicIP)
+			}
+		}
+		if len(privates) > 0 {
+			labels[ociLabelSecondaryPrivateIPs] = model.LabelValue(joinList(privates))
+		}
+		if len(publics) > 0 {
+			labels[ociLabelSecondaryPublicIPs] = model.LabelValue(joinList(publics))
+		}
 	}
 
 	for k, v := range inst.FreeformTags {
@@ -646,6 +697,13 @@ func instanceLabels(inst *core.Instance, privateIP, publicIP, tenancy string, po
 	}
 
 	return labels
+}
+
+// joinList renders values as a separator-wrapped list (",a,b,c,") so users can
+// match individual elements with anchored relabel regexes. Matches the EC2 SD
+// subnet_id convention.
+func joinList(values []string) string {
+	return ociLabelSeparator + strings.Join(values, ociLabelSeparator) + ociLabelSeparator
 }
 
 // stringVal dereferences a *string, returning "" if nil.
