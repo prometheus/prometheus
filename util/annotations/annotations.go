@@ -157,6 +157,10 @@ var (
 	InvalidCorrelationMethodWarning         = fmt.Errorf("%w: correlation method must be 0 (Pearson), 1 (Spearman) or 2 (Kendall)", PromQLWarning)
 	AmbiguousCorrelationPairWarning         = fmt.Errorf("%w: correlation_over_time: multiple series in the second range vector match the same label signature; pairing is non-deterministic", PromQLWarning)
 	LargeKendallCorrelationRangeInfo        = fmt.Errorf("%w: correlation_over_time: Kendall correlation is O(n²) and this range has many paired samples", PromQLInfo)
+	InvalidRegressionOutputWarning          = fmt.Errorf("%w: regression_over_time output must be 0 (slope), 1 (intercept), 2 (prediction) or 3 (r2)", PromQLWarning)
+	InvalidRegressionLinkWarning            = fmt.Errorf("%w: regression_over_time link must be 0 (identity) or 1 (log)", PromQLWarning)
+	AmbiguousRegressionPairWarning          = fmt.Errorf("%w: regression_over_time: multiple series in the second range vector match the same label signature; pairing is non-deterministic", PromQLWarning)
+	NonPositiveRegressionLogValueInfo       = fmt.Errorf("%w: regression_over_time: log link dropped samples with non-positive dependent values", PromQLInfo)
 	SortInRangeQueryWarning                 = fmt.Errorf("%w: sort is ineffective for range queries since results are always ordered by labels", PromQLWarning)
 
 	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count/_bucket:", PromQLInfo)
@@ -266,6 +270,45 @@ func NewLargeKendallCorrelationRangeInfo(pairs int, pos posrange.PositionRange) 
 	return &annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w: %d pairs", LargeKendallCorrelationRangeInfo, pairs),
+	}
+}
+
+// NewInvalidRegressionOutputWarning is used when the user specifies an invalid
+// output selector value for regression_over_time.
+func NewInvalidRegressionOutputWarning(output float64, pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w, got %g", InvalidRegressionOutputWarning, output),
+	}
+}
+
+// NewInvalidRegressionLinkWarning is used when the user specifies an invalid
+// link function value for regression_over_time.
+func NewInvalidRegressionLinkWarning(link float64, pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w, got %g", InvalidRegressionLinkWarning, link),
+	}
+}
+
+// NewAmbiguousRegressionPairWarning is used when more than one series in the
+// second range vector of regression_over_time matches the same label signature
+// (all labels except __name__) as a series from the first range vector, so the
+// pairing is non-deterministic.
+func NewAmbiguousRegressionPairWarning(labels string, pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w: %s", AmbiguousRegressionPairWarning, labels),
+	}
+}
+
+// NewNonPositiveRegressionLogValueInfo is used when regression_over_time with a
+// log link encounters dependent-variable samples that are not strictly positive
+// and therefore cannot be log-transformed; those pairs are dropped.
+func NewNonPositiveRegressionLogValueInfo(pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           NonPositiveRegressionLogValueInfo,
 	}
 }
 

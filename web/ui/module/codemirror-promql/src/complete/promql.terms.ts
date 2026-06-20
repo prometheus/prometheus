@@ -484,6 +484,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'regression_over_time',
+    detail: 'function',
+    info: 'Fit a least-squares regression of one range vector on another over time',
+    type: 'function',
+  },
+  {
     label: 'resets',
     detail: 'function',
     info: 'Return number of value decreases (resets) in input series of time',

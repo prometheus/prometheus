@@ -118,6 +118,7 @@
     "rad": true,
     "range": false,
     "rate": true,
+    "regression_over_time": false,
     "resets": true,
     "round": true,
     "scalar": true,

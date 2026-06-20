@@ -888,6 +888,64 @@ or a function aggregating over time (any function ending in `_over_time`),
 always take a `rate()` first, then aggregate. Otherwise `rate()` cannot detect
 counter resets when your target restarts.
 
+## `regression_over_time()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`regression_over_time(y range-vector, x range-vector, output=0 scalar, link=0 scalar)`
+fits a least-squares regression of the dependent series `y` on the independent
+series `x` over the given range, per matched series pair, and returns the
+selected scalar. Series across the two selectors are paired by exact match on
+all labels except `__name__`; unpaired series are silently dropped. At each
+evaluation step, only samples whose timestamps appear in both range windows are
+used.
+
+This generalises [`correlation_over_time()`](#correlation_over_time): where
+correlation returns the unitless association coefficient `r`, regression returns
+the predictive line itself (`slope = r · σy/σx`) and, optionally, a forecast.
+It is the closed-form, Gaussian-family special case of a count time-series GLM
+(see the [`tscount` package](https://cran.r-project.org/package=tscount)); the
+iterative maximum-likelihood fit of the full GLM is intentionally not
+implemented.
+
+The optional `output` scalar selects what is returned:
+
+| `output` | meaning                                                  |
+|----------|----------------------------------------------------------|
+| `0`      | slope `β₁` (default)                                     |
+| `1`      | intercept `β₀`                                           |
+| `2`      | prediction `ŷ` at the most recent `x` in the window     |
+| `3`      | coefficient of determination `r²`                       |
+
+The optional `link` scalar selects the link function:
+
+| `link` | meaning                                                              |
+|--------|----------------------------------------------------------------------|
+| `0`    | identity (default): fits `y ≈ β₀ + β₁·x`                             |
+| `1`    | log: fits `ln(y) ≈ β₀ + β₁·x`, i.e. `y ≈ exp(β₀)·exp(β₁·x)`          |
+
+The log link suits non-negative, count-like series. Its slope, intercept and
+`r²` are reported on the natural-log scale, while the prediction is
+back-transformed with `exp`. Samples with non-positive `y` cannot be
+log-transformed and are dropped, with a PromQL info annotation.
+
+Returns `NaN` for a step when the paired window has fewer than 2 samples, when
+`x` has zero variance, or when `output`/`link` is out of range — in the last
+case a PromQL warning annotation is also emitted. Histogram samples are skipped
+and do not contribute.
+
+For example, to estimate how much CPU each unit of request rate costs, fitted
+over the past hour:
+
+```
+regression_over_time(
+  rate(process_cpu_seconds_total[1m])[1h:1m],
+  rate(http_requests_total[1m])[1h:1m]
+)
+```
+
 ## `resets()`
 
 For each input time series, `resets(v range-vector)` returns the number of

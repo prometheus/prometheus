@@ -3091,6 +3091,95 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  regression_over_time: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>regression_over_time(y range-vector, x range-vector, output=0 scalar, link=0 scalar)</code>
+        fits a least-squares regression of the dependent series <code>y</code> on the independent series <code>x</code>{" "}
+        over the given range, per matched series pair, and returns the selected scalar. Series across the two selectors
+        are paired by exact match on all labels except <code>__name__</code>; unpaired series are silently dropped. At
+        each evaluation step, only samples whose timestamps appear in both range windows are used.
+      </p>
+
+      <p>
+        This generalises <code>correlation_over_time</code>: where correlation returns the unitless association
+        coefficient <code>r</code>, regression returns the predictive line itself (<code>slope = r · σy/σx</code>) and,
+        optionally, a forecast. It is the closed-form, Gaussian-family special case of a count time-series GLM.
+      </p>
+
+      <p>
+        The optional <code>output</code> scalar selects what is returned:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>
+              <code>output</code>
+            </th>
+            <th>meaning</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr>
+            <td>
+              <code>0</code>
+            </td>
+            <td>slope β₁ (default)</td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>1</code>
+            </td>
+            <td>intercept β₀</td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>2</code>
+            </td>
+            <td>prediction ŷ at the most recent x in the window</td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>3</code>
+            </td>
+            <td>coefficient of determination r²</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>
+        The optional <code>link</code> scalar selects the link function: <code>0</code> (identity, default) fits{" "}
+        <code>y ≈ β₀ + β₁·x</code>; <code>1</code> (log) fits <code>ln(y) ≈ β₀ + β₁·x</code>, suiting non-negative
+        count-like series. Under the log link the prediction is back-transformed with <code>exp</code>, and samples with
+        non-positive <code>y</code> are dropped with a PromQL info annotation.
+      </p>
+
+      <p>
+        Returns <code>NaN</code> for a step when the paired window has fewer than 2 samples, when <code>x</code> has zero
+        variance, or when <code>output</code>/<code>link</code> is out of range — in the last case a PromQL warning
+        annotation is also emitted. Histogram samples are skipped and do not contribute.
+      </p>
+
+      <pre>
+        <code>
+          regression_over_time( rate(process_cpu_seconds_total[1m])[1h:1m], rate(http_requests_total[1m])[1h:1m] )
+        </code>
+      </pre>
+    </>
+  ),
   resets: (
     <>
       <p>

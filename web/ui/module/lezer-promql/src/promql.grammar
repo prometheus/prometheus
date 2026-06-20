@@ -206,6 +206,7 @@ FunctionIdentifier {
   QuantileOverTime |
   Rad |
   Rate |
+  RegressionOverTime |
   Resets |
   Round |
   Scalar |
@@ -514,6 +515,7 @@ durationPrimary[@inline] {
   QuantileOverTime { condFn<"quantile_over_time"> }
   Rad { condFn<"rad"> }
   Rate { condFn<"rate"> }
+  RegressionOverTime { condFn<"regression_over_time"> }
   Resets { condFn<"resets"> }
   Round { condFn<"round"> }
   Scalar { condFn<"scalar"> }

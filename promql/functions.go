@@ -2987,6 +2987,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"idelta":                       funcIdelta,
 	"increase":                     funcIncrease,
 	"correlation_over_time":        nil, // evalCorrelationOverTime not called via this map.
+	"regression_over_time":         nil, // evalRegressionOverTime not called via this map.
 	"info":                         nil,
 	"integral":                     funcIntegral,
 	"irate":                        funcIrate,

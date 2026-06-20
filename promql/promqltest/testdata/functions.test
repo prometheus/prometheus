@@ -2929,3 +2929,108 @@ eval instant at 5m correlation_over_time(corr_sub_a{job="test"}[5m], last_over_t
   {job="test"} 1
 
 clear
+
+# Tests for regression_over_time.
+# Dependent y = 0.2*x: slope=0.2, intercept=0, prediction at x_latest=50 is 10,
+# r2=1 (perfect linear fit). y is the first range vector, x the second.
+clear
+
+load 1m
+  reg_y{job="test"} 2 4 6 8 10
+  reg_x{job="test"} 10 20 30 40 50
+
+# Default output (0) is the slope.
+eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m])
+  {job="test"} 0.2
+
+eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], 0)
+  {job="test"} 0.2
+
+# Intercept (output 1).
+eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], 1)
+  {job="test"} 0
+
+# Prediction (output 2) at the most recent x in the window.
+eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], 2)
+  {job="test"} 10
+
+# r2 (output 3).
+eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], 3)
+  {job="test"} 1
+
+clear
+
+# Log link (link 1): exponential y doubling against a linear x. The fit is on
+# ln(y), so the slope is ln(2) and the back-transformed prediction recovers y.
+load 1m
+  reg_orders{job="test"} 10 20 40 80 160
+  reg_promo{job="test"}  0  1  2  3  4
+
+eval instant at 5m regression_over_time(reg_orders{job="test"}[5m], reg_promo{job="test"}[5m], 0, 1)
+  {job="test"} 0.6931471805599453
+
+eval instant at 5m regression_over_time(reg_orders{job="test"}[5m], reg_promo{job="test"}[5m], 2, 1)
+  {job="test"} 160
+
+clear
+
+# Log link drops non-positive dependent samples and emits an info annotation.
+# The 5m window at 5m is (0m,5m], so it covers the samples at 1m..5m: the first
+# of those is 0 (dropped); the remaining four still double, slope ln(2). The
+# samples at 0m are outside the window.
+load 1m
+  reg_zero_y{job="test"} 99 0 20 40 80 160
+  reg_zero_x{job="test"} 99 0  1  2  3  4
+
+eval instant at 5m regression_over_time(reg_zero_y{job="test"}[5m], reg_zero_x{job="test"}[5m], 0, 1)
+  expect info
+  {job="test"} 0.6931471805599453
+
+clear
+
+# Invalid output selector => NaN per step + warning annotation.
+load 1m
+  reg_y{job="test"} 2 4 6 8 10
+  reg_x{job="test"} 10 20 30 40 50
+
+eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], 99)
+  expect warn
+  {job="test"} NaN
+
+# Invalid link => NaN per step + warning annotation.
+eval instant at 5m regression_over_time(reg_y{job="test"}[5m], reg_x{job="test"}[5m], 0, 5)
+  expect warn
+  {job="test"} NaN
+
+clear
+
+# Zero variance in the independent variable x => slope undefined => NaN.
+load 1m
+  reg_flat_x{job="test"} 5 5 5 5 5
+  reg_ramp_y{job="test"} 1 2 3 4 5
+
+eval instant at 5m regression_over_time(reg_ramp_y{job="test"}[5m], reg_flat_x{job="test"}[5m])
+  {job="test"} NaN
+
+clear
+
+# Fewer than 2 paired samples => NaN.
+load 1m
+  reg_one_y{job="test"} 42
+  reg_one_x{job="test"} 99
+
+eval instant at 1m regression_over_time(reg_one_y{job="test"}[2m], reg_one_x{job="test"}[2m])
+  {job="test"} NaN
+
+clear
+
+# Range-query mode: the regression slope is computed at each step as the 5m
+# window slides over a perfectly linear pair (y = 0.2*x), so slope=0.2 each step.
+load 1m
+  reg_range_y{job="test"} 2 4 6 8 10 12 14 16 18 20
+  reg_range_x{job="test"} 10 20 30 40 50 60 70 80 90 100
+
+eval range from 2m to 9m step 1m regression_over_time(reg_range_y{job="test"}[5m], reg_range_x{job="test"}[5m])
+  {job="test"} 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2
+
+clear
