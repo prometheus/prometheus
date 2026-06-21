@@ -1,0 +1,500 @@
+# TYPE disk_usage_bytes gauge
+disk_usage_bytes 922
+orphan_metric_2 724
+disk_usage_bytes 720
+disk_usage_bytes 761
+orphan_metric_5 355
+# TYPE api_calls_total counter
+api_calls_total 731
+orphan_metric_8 675
+requests_total 305
+requests_total 738
+requests_total 515
+orphan_metric_12 153
+requests_total 274
+requests_total 407
+requests_total 461
+orphan_metric_16 81
+temperature_celsius 670
+temperature_celsius 838
+temperature_celsius 370
+orphan_metric_20 990
+api_calls_total 571
+orphan_metric_22 376
+# TYPE disk_usage_bytes gauge
+disk_usage_bytes 459
+orphan_metric_25 338
+# TYPE disk_usage_bytes gauge
+disk_usage_bytes 259
+disk_usage_bytes 896
+orphan_metric_29 672
+latency_seconds{quantile="0.0"} 0.701891
+latency_seconds{quantile="0.1"} 0.724816
+orphan_metric_32 787
+# TYPE requests_total counter
+requests_total 21
+requests_total 67
+orphan_metric_36 248
+temperature_celsius 768
+temperature_celsius 886
+orphan_metric_39 424
+temperature_celsius 918
+orphan_metric_41 759
+latency_seconds{quantile="0.0"} 0.506482
+latency_seconds{quantile="0.1"} 0.139526
+latency_seconds{quantile="0.2"} 0.602424
+orphan_metric_45 951
+requests_total 387
+requests_total 349
+orphan_metric_48 600
+api_calls_total 921
+api_calls_total 379
+orphan_metric_51 492
+temperature_celsius 739
+temperature_celsius 921
+temperature_celsius 757
+orphan_metric_55 321
+requests_total 617
+requests_total 124
+orphan_metric_58 866
+# TYPE requests_total counter
+requests_total 848
+orphan_metric_61 420
+requests_total 631
+requests_total 768
+requests_total 503
+orphan_metric_65 766
+# TYPE api_calls_total counter
+api_calls_total 609
+api_calls_total 157
+api_calls_total 38
+orphan_metric_70 524
+# TYPE latency_seconds summary
+latency_seconds{quantile="0.0"} 0.408322
+latency_seconds{quantile="0.1"} 0.366230
+orphan_metric_74 921
+api_calls_total 247
+api_calls_total 568
+api_calls_total 42
+orphan_metric_78 530
+# TYPE api_calls_total counter
+api_calls_total 586
+orphan_metric_81 61
+# TYPE requests_total counter
+requests_total 885
+requests_total 906
+requests_total 36
+orphan_metric_86 227
+# TYPE temperature_celsius gauge
+temperature_celsius 36
+temperature_celsius 664
+temperature_celsius 349
+orphan_metric_91 110
+temperature_celsius 634
+temperature_celsius 47
+temperature_celsius 852
+orphan_metric_95 190
+requests_total 589
+orphan_metric_97 39
+temperature_celsius 894
+orphan_metric_99 12
+disk_usage_bytes 447
+disk_usage_bytes 8
+disk_usage_bytes 918
+orphan_metric_103 681
+latency_seconds{quantile="0.0"} 0.045386
+latency_seconds{quantile="0.1"} 0.757237
+orphan_metric_106 175
+# TYPE requests_total counter
+requests_total 381
+requests_total 347
+requests_total 828
+orphan_metric_111 33
+disk_usage_bytes 979
+disk_usage_bytes 681
+disk_usage_bytes 492
+orphan_metric_115 658
+# TYPE latency_seconds summary
+latency_seconds{quantile="0.0"} 0.786222
+latency_seconds{quantile="0.1"} 0.485802
+latency_seconds{quantile="0.2"} 0.685766
+orphan_metric_120 840
+latency_seconds{quantile="0.0"} 0.360953
+latency_seconds{quantile="0.1"} 0.408415
+orphan_metric_123 258
+requests_total 788
+requests_total 333
+orphan_metric_126 784
+disk_usage_bytes 227
+disk_usage_bytes 966
+disk_usage_bytes 641
+orphan_metric_130 466
+latency_seconds{quantile="0.0"} 0.608963
+latency_seconds{quantile="0.1"} 0.757197
+orphan_metric_133 70
+# TYPE api_calls_total counter
+api_calls_total 505
+api_calls_total 959
+orphan_metric_137 387
+# TYPE requests_total counter
+requests_total 910
+requests_total 624
+orphan_metric_141 976
+api_calls_total 253
+api_calls_total 759
+orphan_metric_144 329
+# TYPE temperature_celsius gauge
+temperature_celsius 895
+orphan_metric_147 3
+disk_usage_bytes 459
+disk_usage_bytes 321
+orphan_metric_150 558
+# TYPE api_calls_total counter
+api_calls_total 718
+api_calls_total 530
+orphan_metric_154 72
+# TYPE requests_total counter
+requests_total 602
+requests_total 579
+orphan_metric_158 85
+# TYPE requests_total counter
+requests_total 85
+requests_total 166
+requests_total 950
+orphan_metric_163 260
+# TYPE temperature_celsius gauge
+temperature_celsius 812
+orphan_metric_166 301
+# TYPE latency_seconds summary
+latency_seconds{quantile="0.0"} 0.836443
+latency_seconds{quantile="0.1"} 0.975264
+latency_seconds{quantile="0.2"} 0.161651
+orphan_metric_171 974
+# TYPE latency_seconds summary
+latency_seconds{quantile="0.0"} 0.978951
+latency_seconds{quantile="0.1"} 0.696970
+latency_seconds{quantile="0.2"} 0.517209
+orphan_metric_176 171
+# TYPE temperature_celsius gauge
+temperature_celsius 741
+orphan_metric_179 767
+requests_total 520
+requests_total 296
+orphan_metric_182 842
+# TYPE latency_seconds summary
+latency_seconds{quantile="0.0"} 0.003438
+latency_seconds{quantile="0.1"} 0.557519
+latency_seconds{quantile="0.2"} 0.846280
+orphan_metric_187 510
+disk_usage_bytes 934
+disk_usage_bytes 790
+orphan_metric_190 929
+# TYPE temperature_celsius gauge
+temperature_celsius 167
+temperature_celsius 954
+temperature_celsius 472
+orphan_metric_195 658
+# TYPE disk_usage_bytes gauge
+disk_usage_bytes 612
+disk_usage_bytes 681
+disk_usage_bytes 830
+orphan_metric_200 960
+api_calls_total 685
+api_calls_total 55
+api_calls_total 410
+orphan_metric_204 129
+requests_total 377
+orphan_metric_206 818
+# TYPE latency_seconds summary
+latency_seconds{quantile="0.0"} 0.070912
+orphan_metric_209 115
+# TYPE temperature_celsius gauge
+temperature_celsius 774
+orphan_metric_212 373
+requests_total 301
+requests_total 332
+orphan_metric_215 113
+# TYPE latency_seconds summary
+latency_seconds{quantile="0.0"} 0.853944
+latency_seconds{quantile="0.1"} 0.361435
+orphan_metric_219 674
+requests_total 669
+orphan_metric_221 90
+# TYPE temperature_celsius gauge
+temperature_celsius 231
+temperature_celsius 217
+temperature_celsius 366
+orphan_metric_226 563
+latency_seconds{quantile="0.0"} 0.133459
+orphan_metric_228 107
+latency_seconds{quantile="0.0"} 0.838563
+latency_seconds{quantile="0.1"} 0.263119
+latency_seconds{quantile="0.2"} 0.666160
+orphan_metric_232 544
+api_calls_total 888
+api_calls_total 610
+api_calls_total 886
+orphan_metric_236 252
+# TYPE temperature_celsius gauge
+temperature_celsius 258
+orphan_metric_239 885
+# TYPE requests_total counter
+requests_total 855
+orphan_metric_242 262
+# TYPE disk_usage_bytes gauge
+disk_usage_bytes 433
+orphan_metric_245 694
+# TYPE latency_seconds summary
+latency_seconds{quantile="0.0"} 0.994386
+latency_seconds{quantile="0.1"} 0.640275
+latency_seconds{quantile="0.2"} 0.066990
+orphan_metric_250 164
+# TYPE disk_usage_bytes gauge
+disk_usage_bytes 192
+disk_usage_bytes 983
+orphan_metric_254 256
+disk_usage_bytes 725
+disk_usage_bytes 39
+orphan_metric_257 886
+latency_seconds{quantile="0.0"} 0.575163
+latency_seconds{quantile="0.1"} 0.213184
+latency_seconds{quantile="0.2"} 0.000355
+orphan_metric_261 771
+# TYPE latency_seconds summary
+latency_seconds{quantile="0.0"} 0.338744
+latency_seconds{quantile="0.1"} 0.177689
+orphan_metric_265 547
+# TYPE latency_seconds summary
+latency_seconds{quantile="0.0"} 0.553684
+orphan_metric_268 985
+# TYPE api_calls_total counter
+api_calls_total 289
+orphan_metric_271 894
+# TYPE requests_total counter
+requests_total 146
+requests_total 473
+requests_total 864
+orphan_metric_276 801
+# TYPE disk_usage_bytes gauge
+disk_usage_bytes 660
+disk_usage_bytes 254
+orphan_metric_280 733
+# TYPE disk_usage_bytes gauge
+disk_usage_bytes 240
+orphan_metric_283 517
+# TYPE disk_usage_bytes gauge
+disk_usage_bytes 63
+orphan_metric_286 396
+# TYPE disk_usage_bytes gauge
+disk_usage_bytes 213
+disk_usage_bytes 285
+orphan_metric_290 265
+api_calls_total 927
+api_calls_total 425
+orphan_metric_293 427
+# TYPE requests_total counter
+requests_total 957
+requests_total 448
+requests_total 418
+orphan_metric_298 716
+# TYPE disk_usage_bytes gauge
+disk_usage_bytes 486
+disk_usage_bytes 504
+disk_usage_bytes 593
+orphan_metric_303 255
+# TYPE api_calls_total counter
+api_calls_total 244
+orphan_metric_306 552
+requests_total 355
+orphan_metric_308 713
+# TYPE disk_usage_bytes gauge
+disk_usage_bytes 818
+disk_usage_bytes 121
+orphan_metric_312 504
+temperature_celsius 556
+temperature_celsius 673
+orphan_metric_315 771
+# TYPE temperature_celsius gauge
+temperature_celsius 98
+temperature_celsius 772
+orphan_metric_319 141
+requests_total 543
+requests_total 434
+requests_total 994
+orphan_metric_323 632
+# TYPE api_calls_total counter
+api_calls_total 0
+orphan_metric_326 796
+requests_total 279
+requests_total 994
+requests_total 492
+orphan_metric_330 24
+# TYPE temperature_celsius gauge
+temperature_celsius 703
+orphan_metric_333 772
+requests_total 35
+orphan_metric_335 169
+# TYPE latency_seconds summary
+latency_seconds{quantile="0.0"} 0.629452
+latency_seconds{quantile="0.1"} 0.682735
+orphan_metric_339 855
+temperature_celsius 935
+temperature_celsius 649
+orphan_metric_342 531
+temperature_celsius 624
+temperature_celsius 209
+orphan_metric_345 855
+requests_total 196
+orphan_metric_347 889
+requests_total 245
+orphan_metric_349 774
+api_calls_total 735
+api_calls_total 211
+orphan_metric_352 597
+# TYPE requests_total counter
+requests_total 520
+orphan_metric_355 186
+api_calls_total 765
+orphan_metric_357 398
+api_calls_total 453
+orphan_metric_359 48
+disk_usage_bytes 103
+disk_usage_bytes 562
+disk_usage_bytes 908
+orphan_metric_363 731
+# TYPE temperature_celsius gauge
+temperature_celsius 679
+temperature_celsius 532
+temperature_celsius 715
+orphan_metric_368 236
+disk_usage_bytes 964
+disk_usage_bytes 550
+orphan_metric_371 927
+temperature_celsius 465
+temperature_celsius 43
+orphan_metric_374 810
+api_calls_total 120
+api_calls_total 551
+orphan_metric_377 519
+# TYPE api_calls_total counter
+api_calls_total 320
+api_calls_total 699
+orphan_metric_381 367
+# TYPE disk_usage_bytes gauge
+disk_usage_bytes 25
+orphan_metric_384 465
+# TYPE latency_seconds summary
+latency_seconds{quantile="0.0"} 0.800640
+latency_seconds{quantile="0.1"} 0.539618
+orphan_metric_388 370
+requests_total 807
+orphan_metric_390 918
+# TYPE api_calls_total counter
+api_calls_total 679
+api_calls_total 905
+api_calls_total 798
+orphan_metric_395 896
+disk_usage_bytes 678
+orphan_metric_397 920
+latency_seconds{quantile="0.0"} 0.139235
+latency_seconds{quantile="0.1"} 0.110727
+latency_seconds{quantile="0.2"} 0.431868
+orphan_metric_401 662
+latency_seconds{quantile="0.0"} 0.197591
+latency_seconds{quantile="0.1"} 0.181286
+latency_seconds{quantile="0.2"} 0.183200
+orphan_metric_405 671
+# TYPE temperature_celsius gauge
+temperature_celsius 504
+temperature_celsius 887
+orphan_metric_409 980
+# TYPE requests_total counter
+requests_total 358
+requests_total 611
+requests_total 340
+orphan_metric_414 921
+# TYPE latency_seconds summary
+latency_seconds{quantile="0.0"} 0.534403
+latency_seconds{quantile="0.1"} 0.707071
+orphan_metric_418 7
+disk_usage_bytes 86
+orphan_metric_420 386
+# TYPE temperature_celsius gauge
+temperature_celsius 77
+orphan_metric_423 485
+temperature_celsius 350
+temperature_celsius 108
+temperature_celsius 18
+orphan_metric_427 900
+# TYPE requests_total counter
+requests_total 818
+orphan_metric_430 472
+disk_usage_bytes 361
+disk_usage_bytes 92
+disk_usage_bytes 899
+orphan_metric_434 952
+latency_seconds{quantile="0.0"} 0.657303
+orphan_metric_436 756
+# TYPE disk_usage_bytes gauge
+disk_usage_bytes 714
+disk_usage_bytes 927
+orphan_metric_440 487
+api_calls_total 310
+orphan_metric_442 640
+# TYPE temperature_celsius gauge
+temperature_celsius 622
+temperature_celsius 220
+orphan_metric_446 635
+api_calls_total 340
+api_calls_total 135
+orphan_metric_449 486
+# TYPE requests_total counter
+requests_total 459
+requests_total 911
+requests_total 846
+orphan_metric_454 545
+# TYPE temperature_celsius gauge
+temperature_celsius 411
+temperature_celsius 185
+orphan_metric_458 797
+# TYPE requests_total counter
+requests_total 853
+requests_total 522
+orphan_metric_462 391
+disk_usage_bytes 70
+disk_usage_bytes 394
+orphan_metric_465 367
+# TYPE api_calls_total counter
+api_calls_total 700
+api_calls_total 546
+api_calls_total 449
+orphan_metric_470 168
+requests_total 426
+orphan_metric_472 569
+# TYPE temperature_celsius gauge
+temperature_celsius 518
+temperature_celsius 797
+temperature_celsius 647
+orphan_metric_477 38
+# TYPE latency_seconds summary
+latency_seconds{quantile="0.0"} 0.091951
+orphan_metric_480 286
+requests_total 782
+requests_total 313
+orphan_metric_483 72
+api_calls_total 179
+api_calls_total 9
+api_calls_total 421
+orphan_metric_487 240
+# TYPE requests_total counter
+requests_total 255
+requests_total 474
+requests_total 526
+orphan_metric_492 685
+requests_total 46
+orphan_metric_494 145
+# TYPE requests_total counter
+requests_total 624
+requests_total 790
+requests_total 926
+orphan_metric_499 662
