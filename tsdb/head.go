@@ -1329,12 +1329,14 @@ func hasAppendIDAbove(s *memSeries, watermark uint64) bool {
 // tombstones so the deleted series are ignored on replay. shouldEvict is the per-series
 // predicate that decides whether each ref is evicted; series that received fresh samples since
 // the caller collected the ref list are skipped before the predicate is consulted.
+// maxt is inclusive: it matches the highest sample timestamp that the caller has just persisted
+// to a block, so a head whose MinTime equals maxt still has data eligible for eviction.
 // It returns the number of series that were actually evicted.
 func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (int, error) {
 	h.chunkSnapshotMtx.Lock()
 	defer h.chunkSnapshotMtx.Unlock()
 
-	if h.MinTime() >= maxt {
+	if h.MinTime() > maxt {
 		return 0, nil
 	}
 

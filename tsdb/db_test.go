@@ -9900,6 +9900,36 @@ func TestCompactStaleHead_ChunkBoundarySampleNotLost(t *testing.T) {
 		"boundary sample must remain the stale-NaN marker")
 }
 
+// TestCompactSelectedSeries_SingleTimestampHeadIsEvicted exercises the case where the head
+// holds a single timestamp, i.e., MinTime == MaxTime. compactHeadViewLocked's inclusive
+// loop still writes a block for that slice, and the eviction step must remove the persisted
+// series rather than leaving them behind to overlap the freshly written block.
+func TestCompactSelectedSeries_SingleTimestampHeadIsEvicted(t *testing.T) {
+	const chunkRange = 1000
+	opts := DefaultOptions()
+	opts.MinBlockDuration = chunkRange
+	opts.MaxBlockDuration = chunkRange
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	sel := labels.FromStrings("name", "single")
+	app := db.Appender(context.Background())
+	ref, err := app.Append(0, sel, chunkRange, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.Equal(t, int64(chunkRange), db.Head().MinTime(), "test precondition: single-timestamp head")
+	require.Equal(t, int64(chunkRange), db.Head().MaxTime(), "test precondition: single-timestamp head")
+	require.Equal(t, uint64(1), db.Head().NumSeries())
+
+	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+
+	require.Equal(t, uint64(0), db.Head().NumSeries(),
+		"single-timestamp series must be evicted after its sample is persisted to a block")
+	require.Len(t, db.Blocks(), 1, "exactly one block should be produced for the single chunk-range slice")
+}
+
 // TestCompactSelectedSeries verifies the happy path of CompactSelectedSeries:
 //   - Non-stale series in the ref list are evicted, even though their lastValue is not a
 //     stale-NaN (the key behavioural difference vs. CompactStaleHead).
@@ -9951,6 +9981,47 @@ func TestCompactSelectedSeries(t *testing.T) {
 	// Selected-series compaction metrics should reflect one successful run.
 	require.Equal(t, float64(1), prom_testutil.ToFloat64(db.metrics.selectedSeriesCompactionsTriggered))
 	require.Equal(t, float64(0), prom_testutil.ToFloat64(db.metrics.selectedSeriesCompactionsFailed))
+}
+
+// TestCompactSelectedSeries_UnsortedDuplicateRefs verifies that CompactSelectedSeries
+// tolerates an input slice that is unsorted and contains duplicate refs:
+//   - The postings list backing the selected-series view must observe sorted, unique refs,
+//     since index.NewListPostings retains the slice and relies on it being sorted.
+//   - The block populator must not see the same series twice, otherwise it fails with
+//     "out-of-order series added" and the whole compaction errors out.
+//
+// Each series in the deduplicated input must be evicted exactly once.
+func TestCompactSelectedSeries_UnsortedDuplicateRefs(t *testing.T) {
+	opts := DefaultOptions()
+	opts.MinBlockDuration = 1000
+	opts.MaxBlockDuration = 1000
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	s1Labels := labels.FromStrings("name", "selected1")
+	s2Labels := labels.FromStrings("name", "selected2")
+	s3Labels := labels.FromStrings("name", "selected3")
+
+	app := db.Appender(context.Background())
+	s1, err := app.Append(0, s1Labels, 100, 1.0)
+	require.NoError(t, err)
+	s2, err := app.Append(0, s2Labels, 200, 2.0)
+	require.NoError(t, err)
+	s3, err := app.Append(0, s3Labels, 300, 3.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, uint64(3), db.Head().NumSeries())
+
+	// Refs are allocated monotonically, so reversing the natural order guarantees
+	// the input is unsorted; inserting each ref twice exercises de-duplication.
+	refs := []storage.SeriesRef{s3, s1, s2, s1, s3, s2}
+	require.NoError(t, db.CompactSelectedSeries(refs),
+		"compaction must succeed even when the caller passes unsorted, duplicate refs")
+
+	require.Equal(t, uint64(0), db.Head().NumSeries(),
+		"each deduplicated series must be evicted exactly once")
+	require.Len(t, db.Blocks(), 1, "duplicates must not produce extra blocks")
 }
 
 // TestCompactSelectedSeries_EmptyRefs verifies that passing nil or an empty slice is a no-op

@@ -1890,11 +1890,20 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 	db.metrics.selectedSeriesCompactionsTriggered.Inc()
 	start := time.Now()
 
+	// index.NewListPostings expects sorted, duplicate-free refs. Normalize
+	// the caller's slice in place by sorting and removing duplicates before
+	// constructing the postings. This avoids "out-of-order series added"
+	// errors during compaction.
+	if !slices.IsSorted(seriesRefs) {
+		slices.Sort(seriesRefs)
+	}
+	seriesRefs = slices.Compact(seriesRefs)
+	postings := index.NewListPostings(seriesRefs)
 	totalSeries := len(seriesRefs)
 	// Skip series with out-of-order data: the ref-list pipeline writes only in-order chunks,
 	// so a series whose OOO state is non-empty would have its OOO chunks orphaned upon
 	// eviction. Such series stay in the head and are picked up on a later cycle.
-	selectedSeriesRefs, err := db.head.filterSeriesAndSortPostings(index.NewListPostings(seriesRefs), isSeriesWithoutOOO)
+	selectedSeriesRefs, err := db.head.filterSeriesAndSortPostings(postings, isSeriesWithoutOOO)
 	if err != nil {
 		return err
 	}
