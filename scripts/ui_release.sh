@@ -47,7 +47,7 @@ function checkPackage() {
   fi
   for workspace in ${workspaces}; do
     cd "${workspace}"
-    package_version=$(pnpm run env | grep npm_package_version | cut -d= -f2-)
+    package_version=$(pnpm pkg get version | tr -d '"')
     if [ "${version}" != "${package_version}" ]; then
       echo "version of ${workspace} is not the correct one"
       echo "expected one: ${version}"
@@ -77,15 +77,6 @@ function bumpVersion() {
   fi
   # increase the version on all packages in the pnpm workspace
   pnpm -r --include-workspace-root version "${version}" --no-git-tag-version --git-checks=false
-  # bump react-app version and update pinned @prometheus-io/* dependencies
-  cd react-app
-  pnpm version "${version}" --no-git-tag-version --git-checks=false
-  if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -E -i "" "s|(\"@prometheus-io/.+\": )\".+\"|\1\"${version}\"|" package.json
-  else
-    sed -E -i "s|(\"@prometheus-io/.+\": )\".+\"|\1\"${version}\"|" package.json
-  fi
-  cd "${root_ui_folder}"
 }
 
 if [[ "$1" == "--copy" ]]; then
