@@ -363,6 +363,10 @@ jobs:
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-
+      # npm OIDC trusted publishing requires npm >= 11.5.1, newer than the npm
+      # bundled with Node 22.
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install --global npm@latest
       - name: Check libraries version
         if: |
           (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))

@@ -25,19 +25,24 @@ function copy() {
 
 function publish() {
   dry_run="${1}"
-  cmd="pnpm publish --access public --no-git-checks"
-  if [[ "${dry_run}" == "dry-run" ]]; then
-    cmd+=" --dry-run"
-  fi
   for workspace in ${workspaces}; do
     # package "mantine-ui" is private so we shouldn't try to publish it.
     if [[ "${workspace}" != "mantine-ui" ]]; then
       cd "${workspace}"
-      eval "${cmd}"
+      # Build the tarball with pnpm so the "workspace:" protocol dependencies are
+      # rewritten to real versions, then publish it with npm. npm supports OIDC
+      # trusted publishing while pnpm's own publish does not yet
+      # (https://github.com/pnpm/pnpm/issues/11513).
+      tarball="$(pnpm pack | tail -n 1)"
+      if [[ "${dry_run}" == "dry-run" ]]; then
+        npm publish "${tarball}" --access public --dry-run
+      else
+        npm publish "${tarball}" --access public
+      fi
+      rm -f "${tarball}"
       cd "${root_ui_folder}"
     fi
   done
-
 }
 
 function checkPackage() {
