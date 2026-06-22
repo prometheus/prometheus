@@ -191,7 +191,7 @@ func (h *Head) appender() *headAppender {
 			appendID:              appendID,
 			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
 			storeST:               h.opts.EnableSTStorage.Load(),
-			useXOR2:               h.opts.EnableXOR2Encoding.Load(),
+			useXOR2:               h.opts.UseXOR2FloatEncoding(),
 		},
 	}
 }
@@ -419,8 +419,8 @@ type headAppenderBase struct {
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
-	storeST                         bool
-	useXOR2                         bool
+	storeST                         bool // Whether start-timestamp storage is enabled for this append.
+	useXOR2                         bool // Whether XOR2 encoding is used for float chunks in this append.
 }
 type headAppender struct {
 	headAppenderBase
@@ -1502,8 +1502,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRefs []chunks.ChunkDiskMapperRef
-			// TODO(krajorama,ywwg): Pass ST when available in WAL.
-			ok, chunkCreated, mmapRefs = series.insert(0, s.T, 0, s.H, nil, acc.appendChunkOpts, acc.oooCapMax, a.head.logger)
+			ok, chunkCreated, mmapRefs = series.insert(s.ST, s.T, 0, s.H, nil, acc.appendChunkOpts, acc.oooCapMax, a.head.logger)
 			if chunkCreated {
 				r, ok := acc.oooMmapMarkers[series.ref]
 				if !ok || r != nil {
@@ -1551,8 +1550,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				newlyStale = newlyStale && !value.IsStaleNaN(series.lastHistogramValue.Sum)
 				staleToNonStale = value.IsStaleNaN(series.lastHistogramValue.Sum) && !value.IsStaleNaN(s.H.Sum)
 			}
-			// TODO(krajorama,ywwg): pass ST when available in WAL.
-			ok, chunkCreated = series.appendHistogram(0, s.T, s.H, a.appendID, acc.appendChunkOpts)
+			ok, chunkCreated = series.appendHistogram(s.ST, s.T, s.H, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1613,8 +1611,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRefs []chunks.ChunkDiskMapperRef
-			// TODO(krajorama,ywwg): Pass ST when available in WAL.
-			ok, chunkCreated, mmapRefs = series.insert(0, s.T, 0, nil, s.FH, acc.appendChunkOpts, acc.oooCapMax, a.head.logger)
+			ok, chunkCreated, mmapRefs = series.insert(s.ST, s.T, 0, nil, s.FH, acc.appendChunkOpts, acc.oooCapMax, a.head.logger)
 			if chunkCreated {
 				r, ok := acc.oooMmapMarkers[series.ref]
 				if !ok || r != nil {
@@ -1662,8 +1659,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				newlyStale = newlyStale && !value.IsStaleNaN(series.lastFloatHistogramValue.Sum)
 				staleToNonStale = value.IsStaleNaN(series.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.FH.Sum)
 			}
-			// TODO(krajorama,ywwg): pass ST when available in WAL.
-			ok, chunkCreated = series.appendFloatHistogram(0, s.T, s.FH, a.appendID, acc.appendChunkOpts)
+			ok, chunkCreated = series.appendFloatHistogram(s.ST, s.T, s.FH, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1755,6 +1751,7 @@ func (a *headAppenderBase) Commit() (err error) {
 			chunkRange:      h.chunkRange.Load(),
 			samplesPerChunk: h.opts.SamplesPerChunk,
 			useXOR2:         a.useXOR2,
+			storeST:         a.storeST,
 		},
 		oooEnc: record.Encoder{
 			EnableSTStorage: a.storeST,
@@ -1842,6 +1839,7 @@ type chunkOpts struct {
 	chunkRange      int64
 	samplesPerChunk int
 	useXOR2         bool // Selects XOR2 encoding for float chunks.
+	storeST         bool // Whether start-timestamp storage is enabled.
 }
 
 // append adds the sample (t, v) to the series. The caller also has to provide
@@ -2010,9 +2008,12 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 		chunkCreated = true
 	}
 
-	if c.chunk.Encoding() != e {
-		// The chunk encoding expected by this append is different than the head chunk's
-		// encoding. So we cut a new chunk with the expected encoding.
+	// XOR and XOR2 are compatible float encodings when ST storage is disabled:
+	// switching between them does not require cutting the current chunk. When ST
+	// storage is enabled the two encodings differ in their start-timestamp support
+	// and must not be mixed within a single chunk; the o.storeST override forces
+	// an immediate cut that CompatibleValues would otherwise allow to skip.
+	if c.chunk.Encoding() != e && (!chunkenc.CompatibleValues(c.chunk.Encoding(), e) || o.storeST) {
 		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
 	}

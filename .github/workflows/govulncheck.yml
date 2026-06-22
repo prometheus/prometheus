@@ -20,7 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     name: Run govulncheck
     steps:
+      - name: Install snmp_exporter/generator dependencies
+        id: snmp-deps
+        run: sudo apt-get update && sudo apt-get -y install libsnmp-dev
+        if: github.repository == 'prometheus/snmp_exporter'
       - id: govulncheck
-        uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1.0.4
+        uses: golang/govulncheck-action@3fa7bd9cee2cfdf3499a8803b226e43de7b7cdb4 # master
         env:
           GOOS: ${{ contains(github.repository, 'windows_exporter') && 'windows' || '' }}

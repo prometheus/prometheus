@@ -25,7 +25,7 @@ function copy() {
 
 function publish() {
   dry_run="${1}"
-  cmd="npm publish --access public"
+  cmd="pnpm publish --access public --no-git-checks"
   if [[ "${dry_run}" == "dry-run" ]]; then
     cmd+=" --dry-run"
   fi
@@ -47,7 +47,7 @@ function checkPackage() {
   fi
   for workspace in ${workspaces}; do
     cd "${workspace}"
-    package_version=$(npm run env | grep npm_package_version | cut -d= -f2-)
+    package_version=$(pnpm run env | grep npm_package_version | cut -d= -f2-)
     if [ "${version}" != "${package_version}" ]; then
       echo "version of ${workspace} is not the correct one"
       echo "expected one: ${version}"
@@ -75,17 +75,17 @@ function bumpVersion() {
   if [[ "${version}" == v* ]]; then
     version="${version:1}"
   fi
-  # upgrade the @prometheus-io/* dependencies on all packages
-  for workspace in ${workspaces}; do
-    # sed -i syntax is different on mac and linux
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-      sed -E -i "" "s|(\"@prometheus-io/.+\": )\".+\"|\1\"${version}\"|" "${workspace}"/package.json
-    else
-      sed -E -i "s|(\"@prometheus-io/.+\": )\".+\"|\1\"${version}\"|" "${workspace}"/package.json
-    fi
-  done
-  # increase the version on all packages
-  npm version "${version}" --workspaces  --include-workspace-root
+  # increase the version on all packages in the pnpm workspace
+  pnpm -r --include-workspace-root version "${version}" --no-git-tag-version --git-checks=false
+  # bump react-app version and update pinned @prometheus-io/* dependencies
+  cd react-app
+  pnpm version "${version}" --no-git-tag-version --git-checks=false
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -E -i "" "s|(\"@prometheus-io/.+\": )\".+\"|\1\"${version}\"|" package.json
+  else
+    sed -E -i "s|(\"@prometheus-io/.+\": )\".+\"|\1\"${version}\"|" package.json
+  fi
+  cd "${root_ui_folder}"
 }
 
 if [[ "$1" == "--copy" ]]; then
