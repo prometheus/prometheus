@@ -169,6 +169,9 @@ jobs:
   build:
     name: Build Prometheus for common architectures
     runs-on: ubuntu-latest
+    # Reuse the web UI built and tested by test_ui instead of rebuilding it in
+    # every crossbuild container.
+    needs: [test_ui]
     if: |
       !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
       &&
@@ -181,14 +184,28 @@ jobs:
       matrix:
         thread: [ 0, 1, 2 ]
     steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: prometheus/promci-artifacts/restore@f9a587dbc0b2c78a0c54f8ad1cde71ea29a4b76f # v0.1.0
+      - name: Extract pre-built UI assets
+        run: |
+          mkdir -p .prebuilt-ui
+          tar -xzf .tarballs/prometheus-web-ui-*.tar.gz -C .prebuilt-ui
       - uses: prometheus/promci/build@c7d527128ffb38ad3d7934795da35b252c7d51dd # v0.8.3
         with:
-          promu_opts: "-p linux/amd64 -p windows/amd64 -p linux/arm64 -p darwin/amd64 -p darwin/arm64 -p linux/386"
+          checkout: false
+          # Feed the restored UI assets into the crossbuild containers so make
+          # skips the UI build (see PREBUILT_ASSETS_STATIC_DIR in the Makefile).
+          promu_opts: "-p linux/amd64 -p windows/amd64 -p linux/arm64 -p darwin/amd64 -p darwin/arm64 -p linux/386 --env PREBUILT_ASSETS_STATIC_DIR=.prebuilt-ui/static"
           parallelism: 3
           thread: ${{ matrix.thread }}
   build_all:
     name: Build Prometheus for all architectures
     runs-on: ubuntu-latest
+    # Reuse the web UI built and tested by test_ui instead of rebuilding it in
+    # every crossbuild container.
+    needs: [test_ui]
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
       ||
@@ -204,10 +221,22 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: prometheus/promci-artifacts/restore@f9a587dbc0b2c78a0c54f8ad1cde71ea29a4b76f # v0.1.0
+      - name: Extract pre-built UI assets
+        run: |
+          mkdir -p .prebuilt-ui
+          tar -xzf .tarballs/prometheus-web-ui-*.tar.gz -C .prebuilt-ui
       - uses: prometheus/promci/build@c7d527128ffb38ad3d7934795da35b252c7d51dd # v0.8.3
         with:
+          checkout: false
           parallelism: 12
           thread: ${{ matrix.thread }}
+          # Feed the restored UI assets into the crossbuild containers so make
+          # skips the UI build (see PREBUILT_ASSETS_STATIC_DIR in the Makefile).
+          promu_opts: --env PREBUILT_ASSETS_STATIC_DIR=.prebuilt-ui/static
   build_all_status:
     # This status check aggregates the individual matrix jobs of the "Build
     # Prometheus for all architectures" step into a final status. Fails if a
