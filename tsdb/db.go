@@ -1766,18 +1766,22 @@ type headSeriesEvictor func(maxt int64, appendIDWatermark uint64) error
 // The caller must hold db.cmtx.
 func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSeriesEvictor, configure func(*BlockMeta)) error {
 	mint, maxt := db.head.opts.ChunkRange*(db.head.MinTime()/db.head.opts.ChunkRange), db.head.MaxTime()
-	// Capture the head's current append-ID as an eviction watermark before
-	// writing any blocks.
+	// Capture the highest guaranteed-committed appendID as an eviction watermark
+	// before writing any blocks.
 	//
-	// The generated blocks are guaranteed to contain all samples with
-	// appendID <= watermark. Samples appended later (appendID > watermark)
-	// may or may not be present, depending on when each block writer takes
-	// its isolation snapshot.
+	// Samples with appendID <= watermark are guaranteed to be present in some
+	// generated block. Samples with higher IDs may or may not be present,
+	// depending on block-writer snapshot timing.
 	//
-	// Eviction uses the watermark as a safety guard: a series is removed
-	// only if it has not received any samples with appendID > watermark
-	// since compaction began.
-	appendIDWatermark := db.head.iso.lastAppendID()
+	// The watermark is used during eviction: a series is removed only if it has
+	// not received any samples with appendID > watermark since compaction began.
+	//
+	// We use committedAppendID instead of lastAppendID because open appenders are
+	// excluded from all block snapshots via incompleteAppends. If one of those
+	// appenders commits between the write and evict phases, using lastAppendID
+	// could evict a series whose newest sample is present in neither the block nor
+	// the head, causing that sample to be lost on WAL replay.
+	appendIDWatermark := db.head.iso.committedAppendID()
 	// The bound is inclusive so that a sample sitting exactly on a chunk-range boundary
 	// (mint == maxt) still gets a block written before its series is evicted.
 	for ; mint <= maxt; mint += db.head.chunkRange.Load() {

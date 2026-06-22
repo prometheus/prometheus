@@ -10356,6 +10356,99 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 		"visible samples after restart must match the expected watermark-guard outcome")
 }
 
+// TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction verifies
+// that a sample committed while compaction is in progress is not lost.
+//
+// The test covers the case where a write starts before compaction begins but
+// only commits after block generation and before eviction. Such a sample may
+// not be included in the generated blocks, so compaction must ensure the
+// corresponding series is retained in the head.
+//
+// The test verifies that the sample remains queryable both immediately after
+// compaction and after a restart.
+func TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("watermark guard relies on per-sample append-IDs that s.txs only tracks when isolation is enabled")
+	}
+
+	const chunkRange = 1000
+	opts := DefaultOptions()
+	opts.MinBlockDuration = chunkRange
+	opts.MaxBlockDuration = chunkRange
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	// Filler series keeps head.MaxTime at 700, ensuring the late append at
+	// t=400 remains within appendableMinValidTime() = max(700-500, 0) = 200.
+	filler := labels.FromStrings("name", "filler")
+	sel := labels.FromStrings("name", "selected")
+
+	baseline := db.Appender(context.Background())
+	_, err := baseline.Append(0, filler, 100, 0.1)
+	require.NoError(t, err)
+	_, err = baseline.Append(0, filler, 700, 0.7)
+	require.NoError(t, err)
+	selRef, err := baseline.Append(0, sel, 100, 10.0)
+	require.NoError(t, err)
+	_, err = baseline.Append(selRef, sel, 200, 20.0)
+	require.NoError(t, err)
+	require.NoError(t, baseline.Commit())
+
+	require.Equal(t, int64(700), db.Head().MaxTime())
+
+	const (
+		lateT = int64(400)
+		lateV = 40.0
+	)
+
+	// Open the appender BEFORE CompactSelectedSeries: this is the key
+	// difference from TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart,
+	// where the appender is opened inside the hook (and so gets an appendID
+	// strictly greater than the captured watermark). Here, the appender's ID
+	// is issued before the watermark capture, so a watermark based on
+	// lastAppendID() would incorrectly cover it.
+	late := db.Appender(context.Background())
+	_, err = late.Append(selRef, sel, lateT, lateV)
+	require.NoError(t, err)
+
+	// Commit the pre-opened appender after the block is written but before
+	// eviction runs, so the late sample exists only in the head when the
+	// evictor consults shouldEvict.
+	var hookErr error
+	compactHeadViewBeforeEvictTestingCallback = func() {
+		hookErr = late.Commit()
+	}
+	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+
+	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{selRef}))
+	require.NoError(t, hookErr, "the late commit inside the hook must itself succeed")
+
+	require.Len(t, db.Blocks(), 1)
+	require.Equal(t, uint64(2), db.Head().NumSeries(),
+		"sel must survive eviction because its late commit has an appendID > watermark")
+
+	expected := []chunks.Sample{
+		sample{t: 100, f: 10.0},
+		sample{t: 200, f: 20.0},
+		sample{t: lateT, f: lateV},
+	}
+	querySelected := func(d *DB) []chunks.Sample {
+		q, err := d.Querier(0, chunkRange)
+		require.NoError(t, err)
+		seriesSet := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+		return seriesSet[`{name="selected"}`]
+	}
+	require.Equal(t, expected, querySelected(db),
+		"all three samples must be visible: the block holds t=100,200 and the head retains the late t=400")
+
+	require.NoError(t, db.Close())
+	db, err = Open(db.Dir(), nil, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	require.Equal(t, expected, querySelected(db),
+		"the late sample must survive restart, proving no tombstone was written for sel")
+}
+
 // TestCompactSelectedSeries_ChunkBoundarySampleNotLost verifies that
 // CompactSelectedSeries preserves a sample whose timestamp lands exactly on
 // a chunk-range boundary.

@@ -70,6 +70,88 @@ func TestIsolation(t *testing.T) {
 	require.Equal(t, int64(math.MaxInt64), iso.lowestAppendTime())
 }
 
+// TestCommittedAppendID pins the contract of (*isolation).committedAppendID:
+// it returns the highest appendID that is guaranteed to be committed, i.e. the
+// highest ID a block writer cannot see in incompleteAppends. Callers in the
+// compaction path use it to decide whether a series can be safely evicted, so
+// regressions here can cause silent data loss.
+func TestCommittedAppendID(t *testing.T) {
+	t.Run("disabled isolation always returns 0", func(t *testing.T) {
+		iso := newIsolation(true)
+		require.Equal(t, uint64(0), iso.committedAppendID())
+
+		// Even after issuing an ID (which is a no-op when disabled), the result
+		// must stay 0 because no per-sample append-IDs are tracked.
+		_, _ = iso.newAppendID(0)
+		require.Equal(t, uint64(0), iso.committedAppendID())
+	})
+
+	t.Run("no appenders ever opened", func(t *testing.T) {
+		iso := newIsolation(false)
+		require.Equal(t, uint64(0), iso.committedAppendID(),
+			"with no appenders the sentinel's appendID is 0, which is also the last issued ID")
+	})
+
+	t.Run("all issued IDs closed returns lastAppendID", func(t *testing.T) {
+		iso := newIsolation(false)
+		idA, _ := iso.newAppendID(0)
+		idB, _ := iso.newAppendID(0)
+		iso.closeAppend(idA)
+		iso.closeAppend(idB)
+		require.Equal(t, idB, iso.committedAppendID(),
+			"with no open appenders, committed must equal lastAppendID")
+		require.Equal(t, iso.lastAppendID(), iso.committedAppendID())
+	})
+
+	t.Run("single open appender caps committed at id-1", func(t *testing.T) {
+		iso := newIsolation(false)
+		id, _ := iso.newAppendID(0)
+		require.Equal(t, id-1, iso.committedAppendID(),
+			"the only open appender is in flight, so committed is one below its id")
+	})
+
+	t.Run("multiple open appenders track the lowest", func(t *testing.T) {
+		iso := newIsolation(false)
+		idA, _ := iso.newAppendID(0) // 1
+		idB, _ := iso.newAppendID(0) // 2
+		idC, _ := iso.newAppendID(0) // 3
+		require.Equal(t, idA-1, iso.committedAppendID(),
+			"with A,B,C open the lowest open is A, so committed is A-1")
+
+		// Closing the highest open ID must not change committed: A is still in
+		// flight, so anything >= A is still uncovered by the block.
+		iso.closeAppend(idC)
+		require.Equal(t, idA-1, iso.committedAppendID(),
+			"closing the highest open appender does not advance committed")
+
+		// Closing the lowest open ID raises committed to (next lowest)-1.
+		iso.closeAppend(idA)
+		require.Equal(t, idB-1, iso.committedAppendID(),
+			"closing the lowest open appender raises committed to (new lowest)-1")
+
+		// Closing the last open appender returns committed to lastAppendID.
+		iso.closeAppend(idB)
+		require.Equal(t, idC, iso.committedAppendID(),
+			"once every issued ID is closed, committed equals lastAppendID")
+	})
+
+	t.Run("open reads do not influence committed", func(t *testing.T) {
+		// committedAppendID is independent of readsOpen: a stale read snapshot
+		// captured at a lower watermark must not pull committed back, otherwise
+		// long-running queries would unnecessarily block eviction.
+		iso := newIsolation(false)
+		idA, _ := iso.newAppendID(0)
+		state := iso.State(0, math.MaxInt64)
+		iso.closeAppend(idA)
+
+		require.Equal(t, idA, iso.committedAppendID(),
+			"with no open appenders, committed must equal lastAppendID even while a read is open")
+
+		state.Close()
+		require.Equal(t, idA, iso.committedAppendID())
+	})
+}
+
 func countOpenReads(iso *isolation) int {
 	count := 0
 	iso.TraverseOpenReads(func(*isolationState) bool {
