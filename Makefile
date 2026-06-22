@@ -115,7 +115,7 @@ npm_licenses: ui-install
 	@echo ">> bundling npm licenses"
 	rm -f $(REACT_APP_NPM_LICENSES_TARBALL) npm_licenses
 	ln -s . npm_licenses
-	find npm_licenses/$(UI_NODE_MODULES_PATH) -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --files-from=-
+	find npm_licenses/$(UI_NODE_MODULES_PATH) npm_licenses/$(UI_PATH)/react-app/node_modules -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --files-from=-
 	rm -f npm_licenses
 else
 assets:
