@@ -192,7 +192,7 @@ jobs:
         run: |
           mkdir -p .prebuilt-ui
           tar -xzvf .tarballs/prometheus-web-ui-*.tar.gz -C .prebuilt-ui
-      - uses: prometheus/promci/build@c7d527128ffb38ad3d7934795da35b252c7d51dd # v0.8.3
+      - uses: prometheus/promci/build@9c0e5048a10565e63cbf7c94527ba81ce9be0bea # v0.8.4
         with:
           checkout: false
           # Feed the restored UI assets into the crossbuild containers so make
@@ -229,7 +229,7 @@ jobs:
         run: |
           mkdir -p .prebuilt-ui
           tar -xzvf .tarballs/prometheus-web-ui-*.tar.gz -C .prebuilt-ui
-      - uses: prometheus/promci/build@c7d527128ffb38ad3d7934795da35b252c7d51dd # v0.8.3
+      - uses: prometheus/promci/build@9c0e5048a10565e63cbf7c94527ba81ce9be0bea # v0.8.4
         with:
           checkout: false
           parallelism: 12
@@ -338,7 +338,7 @@ jobs:
     needs: [test_ui, test_go, test_go_more, test_go_oldest, test_windows, golangci, codeql, build_all]
     if: github.event_name == 'push' && github.event.ref == 'refs/heads/main'
     steps:
-      - uses: prometheus/promci/publish_main@c7d527128ffb38ad3d7934795da35b252c7d51dd # v0.8.3
+      - uses: prometheus/promci/publish_main@9c0e5048a10565e63cbf7c94527ba81ce9be0bea # v0.8.4
         with:
           docker_hub_login: ${{ secrets.docker_hub_login }}
           docker_hub_password: ${{ secrets.docker_hub_password }}
@@ -357,7 +357,7 @@ jobs:
       ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
     steps:
-      - uses: prometheus/promci/publish_release@c7d527128ffb38ad3d7934795da35b252c7d51dd # v0.8.3
+      - uses: prometheus/promci/publish_release@9c0e5048a10565e63cbf7c94527ba81ce9be0bea # v0.8.4
         with:
           docker_hub_login: ${{ secrets.docker_hub_login }}
           docker_hub_password: ${{ secrets.docker_hub_password }}
