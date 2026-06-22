@@ -161,6 +161,15 @@ var (
 	InvalidRegressionLinkWarning            = fmt.Errorf("%w: regression_over_time link must be 0 (identity) or 1 (log)", PromQLWarning)
 	AmbiguousRegressionPairWarning          = fmt.Errorf("%w: regression_over_time: multiple series in the second range vector match the same label signature; pairing is non-deterministic", PromQLWarning)
 	NonPositiveRegressionLogValueInfo       = fmt.Errorf("%w: regression_over_time: log link dropped samples with non-positive dependent values", PromQLInfo)
+	InvalidLMMethodWarning                  = fmt.Errorf("%w: lm_over_time method must be \"lm\" or \"ridge\"", PromQLWarning)
+	InvalidRidgeLambdaWarning               = fmt.Errorf("%w: lm_over_time: ridge method requires a lambda > 0", PromQLWarning)
+	AmbiguousLMResponseWarning              = fmt.Errorf("%w: lm_over_time: multiple response series match the same predictor group; pairing is non-deterministic", PromQLWarning)
+	ReservedLMInterceptLabelWarning         = fmt.Errorf("%w: lm_over_time: a predictor label value collides with the reserved \"(intercept)\" value; group skipped", PromQLWarning)
+	TooManyLMPredictorsWarning              = fmt.Errorf("%w: lm_over_time: predictor cardinality exceeds the supported maximum; group skipped", PromQLWarning)
+	RankDeficientLMDesignInfo               = fmt.Errorf("%w: lm_over_time: design matrix is rank deficient (collinear predictors or too few samples); coefficients are NaN", PromQLInfo)
+	DroppedLMPredictorsInfo                 = fmt.Errorf("%w: lm_over_time: dropped rank-deficient predictor(s) from the fit; their coefficients are NaN while the remaining predictors were solved", PromQLInfo)
+	InvalidWLSHalflifeWarning               = fmt.Errorf("%w: lm_over_time: the \"wls\" flag requires a half-life scalar > 0; fitting without time-decay weights", PromQLWarning)
+	WLSRequiresPivotWarning                 = fmt.Errorf("%w: lm_over_time: the \"wls\" flag applies only with a pivot label; ignored for the bivariate (empty labelName) case", PromQLWarning)
 	SortInRangeQueryWarning                 = fmt.Errorf("%w: sort is ineffective for range queries since results are always ordered by labels", PromQLWarning)
 
 	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count/_bucket:", PromQLInfo)
@@ -309,6 +318,90 @@ func NewNonPositiveRegressionLogValueInfo(pos posrange.PositionRange) error {
 	return &annoErr{
 		PositionRange: pos,
 		Err:           NonPositiveRegressionLogValueInfo,
+	}
+}
+
+// NewInvalidLMMethodWarning is used when the user specifies an invalid method
+// for lm_over_time.
+func NewInvalidLMMethodWarning(method string, pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w, got %q", InvalidLMMethodWarning, method),
+	}
+}
+
+// NewInvalidRidgeLambdaWarning is used when lm_over_time is called with method
+// "ridge" but a non-positive lambda.
+func NewInvalidRidgeLambdaWarning(lambda float64, pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w, got %g", InvalidRidgeLambdaWarning, lambda),
+	}
+}
+
+// NewAmbiguousLMResponseWarning is used when more than one response series in
+// lm_over_time's first range vector matches the same predictor group signature.
+func NewAmbiguousLMResponseWarning(labels string, pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w: %s", AmbiguousLMResponseWarning, labels),
+	}
+}
+
+// NewReservedLMInterceptLabelWarning is used when a predictor's pivot label
+// value collides with the reserved "(intercept)" value.
+func NewReservedLMInterceptLabelWarning(labelName string, pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w: %s", ReservedLMInterceptLabelWarning, labelName),
+	}
+}
+
+// NewTooManyLMPredictorsWarning is used when an lm_over_time predictor group has
+// more distinct pivot-label values than the implementation supports.
+func NewTooManyLMPredictorsWarning(count, maxCount int, pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w: %d > %d", TooManyLMPredictorsWarning, count, maxCount),
+	}
+}
+
+// NewRankDeficientLMDesignInfo is used when lm_over_time cannot solve a step
+// because the design matrix is rank deficient.
+func NewRankDeficientLMDesignInfo(pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           RankDeficientLMDesignInfo,
+	}
+}
+
+// NewDroppedLMPredictorsInfo is used when lm_over_time drops one or more
+// rank-deficient (collinear or near-constant) predictors from the fit but still
+// solves for the remaining ones. predictors is a human-readable list of the
+// dropped pivot-label values.
+func NewDroppedLMPredictorsInfo(predictors string, pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w: %s", DroppedLMPredictorsInfo, predictors),
+	}
+}
+
+// NewInvalidWLSHalflifeWarning is used when the lm_over_time "wls" flag is set
+// but the half-life scalar is missing or not > 0.
+func NewInvalidWLSHalflifeWarning(halflife float64, pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w: got %g", InvalidWLSHalflifeWarning, halflife),
+	}
+}
+
+// NewWLSRequiresPivotWarning is used when the lm_over_time "wls" flag is set on
+// the bivariate (empty labelName) path, where time-decay weighting is not
+// applied.
+func NewWLSRequiresPivotWarning(pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           WLSRequiresPivotWarning,
 	}
 }
 

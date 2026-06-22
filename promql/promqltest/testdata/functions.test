@@ -3034,3 +3034,154 @@ eval range from 2m to 9m step 1m regression_over_time(reg_range_y{job="test"}[5m
   {job="test"} 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2
 
 clear
+
+# Tests for lm_over_time (multiple linear regression with a pivot label).
+clear
+
+# Exact fit: y = 1 + 2*x_a + 3*x_b. Predictors pivot on label "p".
+# Expect coefficient per predictor value plus the reserved (intercept).
+load 1m
+  lm_y{job="test"}          6 5 13 12 20
+  lm_x{job="test", p="a"}   1 2  3  4  5
+  lm_x{job="test", p="b"}   1 0  2  1  3
+
+eval instant at 5m lm_over_time("lm", lm_y{job="test"}[5m], lm_x{job="test"}[5m], "p")
+  {job="test", p="a"} 2
+  {job="test", p="b"} 3
+  {job="test", p="(intercept)"} 1
+  {job="test", p="(r2)"} 1
+
+clear
+
+# No pivot label: degenerates to the bivariate slope (regression_over_time).
+load 1m
+  lm_uni_y{job="test"} 2 4 6 8 10
+  lm_uni_x{job="test"} 10 20 30 40 50
+
+eval instant at 5m lm_over_time("lm", lm_uni_y{job="test"}[5m], lm_uni_x{job="test"}[5m], "")
+  {job="test"} 0.2
+
+clear
+
+# Collinear predictors (x_b = 2*x_a) make the design rank deficient. The
+# rank-revealing solver drops the dependent column (x_a, the smaller-norm of the
+# collinear pair) rather than failing the whole fit: x_b is solved (y = 0.5*x_b),
+# the intercept is 0, r²=1, and an info annotation names the dropped predictor.
+load 1m
+  lmc_y{job="test"}         1 2 3 4 5
+  lmc_x{job="test", p="a"}  1 2 3 4 5
+  lmc_x{job="test", p="b"}  2 4 6 8 10
+
+eval instant at 5m lm_over_time("lm", lmc_y{job="test"}[5m], lmc_x{job="test"}[5m], "p")
+  expect info
+  {job="test", p="a"} NaN
+  {job="test", p="b"} 0.5
+  {job="test", p="(intercept)"} 0
+  {job="test", p="(r2)"} 1
+
+clear
+
+# Graceful degradation: a redundant predictor (d = 2*a) alongside GOOD predictors
+# (a, b) is dropped, but the good predictors keep their correct coefficients
+# instead of the whole model going NaN. y = 1 + 2*a + 3*b; d=2*a is dropped, its
+# role absorbed by the retained larger-norm column (d, coeff 1), b stays 3,
+# intercept 1, r²=1.
+load 1m
+  lmg_y{job="test"}         6 5 13 12 20
+  lmg_x{job="test", p="a"}  1 2  3  4  5
+  lmg_x{job="test", p="b"}  1 0  2  1  3
+  lmg_x{job="test", p="d"}  2 4  6  8 10
+
+eval instant at 5m lm_over_time("lm", lmg_y{job="test"}[5m], lmg_x{job="test"}[5m], "p")
+  expect info
+  {job="test", p="a"} NaN
+  {job="test", p="b"} 3
+  {job="test", p="d"} 1
+  {job="test", p="(intercept)"} 1
+  {job="test", p="(r2)"} 1
+
+clear
+
+# Invalid method => empty result plus a warning annotation.
+load 1m
+  lmm_y{job="test"}        1 2 3 4 5
+  lmm_x{job="test", p="a"} 1 2 3 4 5
+
+eval instant at 5m lm_over_time("lme4", lmm_y{job="test"}[5m], lmm_x{job="test"}[5m], "p")
+  expect warn
+
+clear
+
+# A predictor whose pivot value collides with the reserved "(intercept)"
+# string skips the whole group with a warning.
+load 1m
+  lmr_y{job="test"}                  1 2 3 4 5
+  lmr_x{job="test", p="a"}           1 2 3 4 5
+  lmr_x{job="test", p="(intercept)"} 1 0 2 1 3
+
+eval instant at 5m lm_over_time("lm", lmr_y{job="test"}[5m], lmr_x{job="test"}[5m], "p")
+  expect warn
+
+clear
+
+# The ",diff" flag fits on first differences (Δ-on-Δ). Here y and x share a
+# rising level but Δy = 1 + 2·Δx exactly, so the differenced fit recovers slope
+# 2, drift (intercept) 1 and r²=1 regardless of the common trend.
+load 1m
+  lmd_y{job="test"}        100 105 112 121 132
+  lmd_x{job="test", p="a"}   1   3   6  10  15
+
+eval instant at 5m lm_over_time("lm,diff", lmd_y{job="test"}[5m], lmd_x{job="test"}[5m], "p")
+  {job="test", p="a"} 2
+  {job="test", p="(intercept)"} 1
+  {job="test", p="(r2)"} 1
+
+clear
+
+# ",diff" on the no-pivot (bivariate) path differences both series before the
+# slope fit: Δy = 2·Δx, so the emitted slope is 2.
+load 1m
+  lmd_uni_y{job="test"} 100 105 112 121 132
+  lmd_uni_x{job="test"}   1   3   6  10  15
+
+eval instant at 5m lm_over_time("lm,diff", lmd_uni_y{job="test"}[5m], lmd_uni_x{job="test"}[5m], "")
+  {job="test"} 2
+
+clear
+
+# The ",wls" flag applies exponential time-decay weights (recent samples count
+# more), with the half-life as the last scalar (seconds). On an exact linear fit
+# residuals are zero, so any weighting recovers the same coefficients — this
+# checks ,wls integrates cleanly. Args: method, y, X, labelName, lambda, halflife.
+load 1m
+  lmw_y{job="test"}          6 5 13 12 20
+  lmw_x{job="test", p="a"}   1 2  3  4  5
+  lmw_x{job="test", p="b"}   1 0  2  1  3
+
+eval instant at 5m lm_over_time("lm,wls", lmw_y{job="test"}[5m], lmw_x{job="test"}[5m], "p", 0, 120)
+  {job="test", p="a"} 2
+  {job="test", p="b"} 3
+  {job="test", p="(intercept)"} 1
+  {job="test", p="(r2)"} 1
+
+# A non-positive half-life warns and falls back to an unweighted fit.
+eval instant at 5m lm_over_time("lm,wls", lmw_y{job="test"}[5m], lmw_x{job="test"}[5m], "p", 0, 0)
+  expect warn
+  {job="test", p="a"} 2
+  {job="test", p="b"} 3
+  {job="test", p="(intercept)"} 1
+  {job="test", p="(r2)"} 1
+
+clear
+
+# ",wls" on the no-pivot (bivariate) path is not applied; it warns and fits
+# unweighted (slope 0.2).
+load 1m
+  lmwb_y{job="test"} 2 4 6 8 10
+  lmwb_x{job="test"} 10 20 30 40 50
+
+eval instant at 5m lm_over_time("lm,wls", lmwb_y{job="test"}[5m], lmwb_x{job="test"}[5m], "", 0, 60)
+  expect warn
+  {job="test"} 0.2
+
+clear

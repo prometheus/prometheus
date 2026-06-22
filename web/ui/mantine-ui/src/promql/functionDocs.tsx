@@ -2231,6 +2231,128 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  lm_over_time: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>
+          lm_over_time(method string, y range-vector, X range-vector, labelName string, lambda=0 scalar, halflife=0
+          scalar)
+        </code>
+        fits a multiple linear regression of the response series <code>y</code> on the predictor series <code>X</code>{" "}
+        at each evaluation step, and returns the fitted coefficients. It is the multivariate generalization of
+        <a href="#regression_over_time">
+          <code>regression_over_time()</code>
+        </a>
+        : <code>labelName</code> is the pivot that reshapes <code>X</code> into a design matrix whose columns are the
+        distinct values of that label.
+      </p>
+
+      <p>
+        <code>method</code> selects the estimator:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>
+              <code>method</code>
+            </th>
+            <th>meaning</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr>
+            <td>
+              <code>&quot;lm&quot;</code>
+            </td>
+            <td>ordinary least squares</td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>&quot;ridge&quot;</code>
+            </td>
+            <td>
+              L2-penalized least squares; requires <code>lambda &gt; 0</code> (intercept unpenalized)
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        The base method may be followed by one or more comma-separated flags, which compose (for example{" "}
+        <code>&quot;ridge,diff,wls&quot;</code>):
+      </p>
+
+      <ul>
+        <li>
+          <code>,diff</code> — fit on the <strong>first differences</strong> (Δ-on-Δ) of <code>y</code> and{" "}
+          <code>X</code> instead of their levels. Differencing removes a shared time trend, so the coefficients and{" "}
+          <code>(r2)</code> reflect step-to-step co-movement rather than a common drift — use it when both series trend
+          together and a levels fit would report a spuriously strong relationship.
+        </li>
+        <li>
+          <code>,wls</code> — <strong>weighted least squares</strong> with exponential time-decay weights, so recent
+          samples influence the fit more than old ones (a better fit for monitoring, where the current relationship
+          matters most). The decay <code>halflife</code>
+          is given as the last scalar argument, in seconds; a sample of age <code>t</code> gets weight{" "}
+          <code>0.5^(t/halflife)</code>. The half-life must be <code>&gt; 0</code>, otherwise the fit falls back to
+          unweighted with a warning. <code>,wls</code> currently applies only when a<code>labelName</code> pivot is
+          given (not the bivariate case). The reported <code>(r2)</code> is measured against the unweighted
+          observations.
+        </li>
+      </ul>
+
+      <p>
+        Predictor series are grouped by all labels except <code>__name__</code> and <code>labelName</code>; each group
+        is one independent regression, and its distinct <code>labelName</code> values become the design-matrix columns.
+        The response series is matched to a group by those same grouping labels. Each emitted series carries the
+        group&rsquo;s labels with
+        <code>labelName</code> set to the predictor&rsquo;s value — or to the reserved value
+        <code>(intercept)</code> for the intercept term — and its value is the fitted coefficient. Each group also emits
+        a <code>(r2)</code> series carrying the coefficient of determination (the fraction of the response variance
+        explained), so a meaningful fit can be told apart from a spurious one that the coefficients alone would hide; it
+        is
+        <code>NaN</code> when the fit is undefined.
+      </p>
+
+      <p>
+        When <code>labelName</code> is empty, the function degenerates to the bivariate case and returns the regression
+        slope per matched pair, matching <code>regression_over_time</code>
+        with its default (slope) output.
+      </p>
+
+      <p>
+        The <code>&quot;lm&quot;</code> fit is solved with a <strong>rank-revealing</strong> column-pivoted Householder
+        QR decomposition, which is numerically stable for the near-collinear predictors common in metrics (for example
+        CPU modes). When the design is rank deficient — a collinear or near-constant predictor, such as a request verb
+        sitting at 0 req/s — the solver drops only the offending column (its coefficient is <code>NaN</code>) and still
+        solves for the remaining predictors, emitting a PromQL info annotation that names what was dropped. This means
+        one degenerate predictor no longer turns the whole model into <code>NaN</code>; the good predictors keep their
+        coefficients. A step returns all-<code>NaN</code> coefficients only when there are fewer samples than columns.
+        (The <code>&quot;ridge&quot;</code> method is full rank by construction and always solves every column.) Groups
+        whose predictor cardinality exceeds the supported maximum, or that contain a predictor whose pivot value
+        collides with <code>(intercept)</code>, are skipped with a warning. Histogram samples are ignored.
+      </p>
+
+      <p>For example, to estimate how much each non-idle CPU mode contributes to request latency over the past hour:</p>
+
+      <pre>
+        <code>
+          lm_over_time( &quot;lm&quot;, request_latency_p99[1h:1m], rate(node_cpu_seconds_total{"{"}
+          mode!=&quot;idle&quot;{"}"}[1m])[1h:1m], &quot;mode&quot; )
+        </code>
+      </pre>
+    </>
+  ),
   ln: (
     <>
       <p>
@@ -3110,9 +3232,17 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
 
       <p>
-        This generalises <code>correlation_over_time</code>: where correlation returns the unitless association
-        coefficient <code>r</code>, regression returns the predictive line itself (<code>slope = r · σy/σx</code>) and,
-        optionally, a forecast. It is the closed-form, Gaussian-family special case of a count time-series GLM.
+        This generalises{" "}
+        <a href="#correlation_over_time">
+          <code>correlation_over_time()</code>
+        </a>
+        : where correlation returns the unitless association coefficient <code>r</code>, regression returns the
+        predictive line itself (<code>slope = r · σy/σx</code>) and, optionally, a forecast. It is the closed-form,
+        Gaussian-family special case of a count time-series GLM (see the{" "}
+        <a href="https://cran.r-project.org/package=tscount">
+          <code>tscount</code> package
+        </a>
+        ); the iterative maximum-likelihood fit of the full GLM is intentionally not implemented.
       </p>
 
       <p>
@@ -3134,44 +3264,87 @@ const funcDocs: Record<string, React.ReactNode> = {
             <td>
               <code>0</code>
             </td>
-            <td>slope β₁ (default)</td>
+            <td>
+              slope <code>β₁</code> (default)
+            </td>
           </tr>
 
           <tr>
             <td>
               <code>1</code>
             </td>
-            <td>intercept β₀</td>
+            <td>
+              intercept <code>β₀</code>
+            </td>
           </tr>
 
           <tr>
             <td>
               <code>2</code>
             </td>
-            <td>prediction ŷ at the most recent x in the window</td>
+            <td>
+              prediction <code>ŷ</code> at the most recent <code>x</code> in the window
+            </td>
           </tr>
 
           <tr>
             <td>
               <code>3</code>
             </td>
-            <td>coefficient of determination r²</td>
+            <td>
+              coefficient of determination <code>r²</code>
+            </td>
           </tr>
         </tbody>
       </table>
-
       <p>
-        The optional <code>link</code> scalar selects the link function: <code>0</code> (identity, default) fits{" "}
-        <code>y ≈ β₀ + β₁·x</code>; <code>1</code> (log) fits <code>ln(y) ≈ β₀ + β₁·x</code>, suiting non-negative
-        count-like series. Under the log link the prediction is back-transformed with <code>exp</code>, and samples with
-        non-positive <code>y</code> are dropped with a PromQL info annotation.
+        The optional <code>link</code> scalar selects the link function:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>
+              <code>link</code>
+            </th>
+            <th>meaning</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr>
+            <td>
+              <code>0</code>
+            </td>
+            <td>
+              identity (default): fits <code>y ≈ β₀ + β₁·x</code>
+            </td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>1</code>
+            </td>
+            <td>
+              log: fits <code>ln(y) ≈ β₀ + β₁·x</code>, i.e. <code>y ≈ exp(β₀)·exp(β₁·x)</code>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        The log link suits non-negative, count-like series. Its slope, intercept and
+        <code>r²</code> are reported on the natural-log scale, while the prediction is back-transformed with{" "}
+        <code>exp</code>. Samples with non-positive <code>y</code> cannot be log-transformed and are dropped, with a
+        PromQL info annotation.
       </p>
 
       <p>
-        Returns <code>NaN</code> for a step when the paired window has fewer than 2 samples, when <code>x</code> has zero
-        variance, or when <code>output</code>/<code>link</code> is out of range — in the last case a PromQL warning
-        annotation is also emitted. Histogram samples are skipped and do not contribute.
+        Returns <code>NaN</code> for a step when the paired window has fewer than 2 samples, when
+        <code>x</code> has zero variance, or when <code>output</code>/<code>link</code> is out of range — in the last
+        case a PromQL warning annotation is also emitted. Histogram samples are skipped and do not contribute.
       </p>
+
+      <p>For example, to estimate how much CPU each unit of request rate costs, fitted over the past hour:</p>
 
       <pre>
         <code>

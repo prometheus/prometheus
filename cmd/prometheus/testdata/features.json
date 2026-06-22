@@ -101,6 +101,7 @@
     "label_join": true,
     "label_replace": true,
     "last_over_time": true,
+    "lm_over_time": false,
     "ln": true,
     "log10": true,
     "log2": true,

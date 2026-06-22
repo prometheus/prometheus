@@ -2782,6 +2782,8 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			return ev.evalCorrelationOverTime(ctx, e)
 		case "regression_over_time":
 			return ev.evalRegressionOverTime(ctx, e)
+		case "lm_over_time":
+			return ev.evalLMOverTime(ctx, e)
 		}
 
 		// Functions with nil entries in FunctionCalls should have been handled before reaching this point.

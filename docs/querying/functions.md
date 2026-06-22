@@ -777,6 +777,85 @@ This second example has the same effect than the first example, and illustrates 
 label_replace(up{job="api-server",service="a:c"}, "foo", "$name", "service", "(?P<name>.*):(?P<version>.*)")
 ```
 
+## `lm_over_time()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`lm_over_time(method string, y range-vector, X range-vector, labelName string, lambda=0 scalar, halflife=0 scalar)`
+fits a multiple linear regression of the response series `y` on the predictor
+series `X` at each evaluation step, and returns the fitted coefficients. It is
+the multivariate generalization of
+[`regression_over_time()`](#regression_over_time): `labelName` is the pivot that
+reshapes `X` into a design matrix whose columns are the distinct values of that
+label.
+
+`method` selects the estimator:
+
+| `method`  | meaning                                                              |
+|-----------|----------------------------------------------------------------------|
+| `"lm"`    | ordinary least squares                                               |
+| `"ridge"` | L2-penalized least squares; requires `lambda > 0` (intercept unpenalized) |
+
+The base method may be followed by one or more comma-separated flags, which
+compose (for example `"ridge,diff,wls"`):
+
+* `,diff` — fit on the **first differences** (Δ-on-Δ) of `y` and `X` instead of
+  their levels. Differencing removes a shared time trend, so the coefficients
+  and `(r2)` reflect step-to-step co-movement rather than a common drift — use
+  it when both series trend together and a levels fit would report a spuriously
+  strong relationship.
+* `,wls` — **weighted least squares** with exponential time-decay weights, so
+  recent samples influence the fit more than old ones (a better fit for
+  monitoring, where the current relationship matters most). The decay `halflife`
+  is given as the last scalar argument, in seconds; a sample of age `t` gets
+  weight `0.5^(t/halflife)`. The half-life must be `> 0`, otherwise the fit
+  falls back to unweighted with a warning. `,wls` currently applies only when a
+  `labelName` pivot is given (not the bivariate case). The reported `(r2)` is
+  measured against the unweighted observations.
+
+Predictor series are grouped by all labels except `__name__` and `labelName`;
+each group is one independent regression, and its distinct `labelName` values
+become the design-matrix columns. The response series is matched to a group by
+those same grouping labels. Each emitted series carries the group's labels with
+`labelName` set to the predictor's value — or to the reserved value
+`(intercept)` for the intercept term — and its value is the fitted coefficient.
+Each group also emits a `(r2)` series carrying the coefficient of determination
+(the fraction of the response variance explained), so a meaningful fit can be
+told apart from a spurious one that the coefficients alone would hide; it is
+`NaN` when the fit is undefined.
+
+When `labelName` is empty, the function degenerates to the bivariate case and
+returns the regression slope per matched pair, matching `regression_over_time`
+with its default (slope) output.
+
+The `"lm"` fit is solved with a **rank-revealing** column-pivoted Householder QR
+decomposition, which is numerically stable for the near-collinear predictors
+common in metrics (for example CPU modes). When the design is rank deficient —
+a collinear or near-constant predictor, such as a request verb sitting at 0
+req/s — the solver drops only the offending column (its coefficient is `NaN`)
+and still solves for the remaining predictors, emitting a PromQL info annotation
+that names what was dropped. This means one degenerate predictor no longer turns
+the whole model into `NaN`; the good predictors keep their coefficients. A step
+returns all-`NaN` coefficients only when there are fewer samples than columns.
+(The `"ridge"` method is full rank by construction and always solves every
+column.) Groups whose predictor cardinality exceeds the supported maximum, or
+that contain a predictor whose pivot value collides with `(intercept)`, are
+skipped with a warning. Histogram samples are ignored.
+
+For example, to estimate how much each non-idle CPU mode contributes to request
+latency over the past hour:
+
+```
+lm_over_time(
+  "lm",
+  request_latency_p99[1h:1m],
+  rate(node_cpu_seconds_total{mode!="idle"}[1m])[1h:1m],
+  "mode"
+)
+```
+
 ## `max_of()`
 
 **This function has to be enabled via the [feature

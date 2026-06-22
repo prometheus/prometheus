@@ -368,6 +368,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'lm_over_time',
+    detail: 'function',
+    info: 'Fit a multiple linear regression of one range vector on another, pivoted by a label',
+    type: 'function',
+  },
+  {
     label: 'ln',
     detail: 'function',
     info: 'Calculate natural logarithm of input series',
