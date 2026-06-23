@@ -78,7 +78,7 @@ func (e *stEncoder) encode(b *bstream, num uint16, curT, prevT, st int64) {
 		}
 	default:
 		// Fast path: no ST data to write.
-		if st == 0 && num-1 != maxFirstSTChangeOn && e.firstSTChangeOn == 0 && !e.firstSTKnown {
+		if e.firstSTChangeOn == 0 && st == e.st && num-1 != maxFirstSTChangeOn {
 			break
 		}
 		if e.firstSTChangeOn == 0 {
@@ -100,7 +100,7 @@ func (e *stEncoder) encode(b *bstream, num uint16, curT, prevT, st int64) {
 
 // decode reads the start timestamp data for the current histogram or float histogram and updates the decoder state.
 // numRead is the number of samples read so far (>= 1, already incremented by the parent iterator).
-// prevT is the current is the timestamp of the previous sample.
+// curT is the current timestamp and prevT is the timestamp of the previous sample.
 func (d *stDecoder) decode(br *bstreamReader, numRead uint16, curT, prevT int64) error {
 	switch numRead {
 	case 1:

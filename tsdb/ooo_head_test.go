@@ -379,7 +379,7 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 
 	testCases := map[string]struct {
 		samples         []sample
-		xor2Encoding    chunkenc.Encoding // Expected encoding when useXOR2=true.
+		stEncoding      chunkenc.Encoding // Expected encoding when useXOR2=true.
 		regularEncoding chunkenc.Encoding // Expected encoding when useXOR2=false.
 	}{
 		"floats with st=0": {
@@ -387,7 +387,7 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 				{st: 0, t: 1000, f: 43.0},
 				{st: 0, t: 1100, f: 42.0},
 			},
-			xor2Encoding:    chunkenc.EncXOR2,
+			stEncoding:      chunkenc.EncXOR2,
 			regularEncoding: chunkenc.EncXOR,
 		},
 		"floats with st=t": {
@@ -395,7 +395,7 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 				{st: 1000, t: 1000, f: 43.0},
 				{st: 1100, t: 1100, f: 42.0},
 			},
-			xor2Encoding:    chunkenc.EncXOR2,
+			stEncoding:      chunkenc.EncXOR2,
 			regularEncoding: chunkenc.EncXOR,
 		},
 		"floats with st=t-100": {
@@ -403,7 +403,7 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 				{st: 900, t: 1000, f: 43.0},
 				{st: 1000, t: 1100, f: 42.0},
 			},
-			xor2Encoding:    chunkenc.EncXOR2,
+			stEncoding:      chunkenc.EncXOR2,
 			regularEncoding: chunkenc.EncXOR,
 		},
 		"floats with varying st": {
@@ -412,7 +412,7 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 				{st: 1100, t: 1100, f: 42.0}, // st == t
 				{st: 0, t: 1200, f: 41.0},    // st == 0
 			},
-			xor2Encoding:    chunkenc.EncXOR2,
+			stEncoding:      chunkenc.EncXOR2,
 			regularEncoding: chunkenc.EncXOR,
 		},
 		"histograms with st=0": {
@@ -420,7 +420,7 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 				{st: 0, t: 1000, h: h1},
 				{st: 0, t: 1100, h: h2},
 			},
-			xor2Encoding:    chunkenc.EncHistogramST,
+			stEncoding:      chunkenc.EncHistogramST,
 			regularEncoding: chunkenc.EncHistogram,
 		},
 		"histograms with st=t-100": {
@@ -428,7 +428,7 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 				{st: 900, t: 1000, h: h1},
 				{st: 1000, t: 1100, h: h2},
 			},
-			xor2Encoding:    chunkenc.EncHistogramST,
+			stEncoding:      chunkenc.EncHistogramST,
 			regularEncoding: chunkenc.EncHistogram,
 		},
 		"histograms with varying st": {
@@ -437,7 +437,7 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 				{st: 1100, t: 1100, h: h2},
 				{st: 0, t: 1200, h: h3},
 			},
-			xor2Encoding:    chunkenc.EncHistogramST,
+			stEncoding:      chunkenc.EncHistogramST,
 			regularEncoding: chunkenc.EncHistogram,
 		},
 		"float histograms with st=0": {
@@ -445,7 +445,7 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 				{st: 0, t: 1000, fh: fh1},
 				{st: 0, t: 1100, fh: fh2},
 			},
-			xor2Encoding:    chunkenc.EncFloatHistogramST,
+			stEncoding:      chunkenc.EncFloatHistogramST,
 			regularEncoding: chunkenc.EncFloatHistogram,
 		},
 		"float histograms with st=t-100": {
@@ -453,7 +453,7 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 				{st: 900, t: 1000, fh: fh1},
 				{st: 1000, t: 1100, fh: fh2},
 			},
-			xor2Encoding:    chunkenc.EncFloatHistogramST,
+			stEncoding:      chunkenc.EncFloatHistogramST,
 			regularEncoding: chunkenc.EncFloatHistogram,
 		},
 		"float histograms with varying st": {
@@ -462,7 +462,7 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 				{st: 1100, t: 1100, fh: fh2},
 				{st: 0, t: 1200, fh: fh3},
 			},
-			xor2Encoding:    chunkenc.EncFloatHistogramST,
+			stEncoding:      chunkenc.EncFloatHistogramST,
 			regularEncoding: chunkenc.EncFloatHistogram,
 		},
 	}
@@ -490,7 +490,7 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 				c := chunks[0]
 				expectedEnc := tc.regularEncoding
 				if ss.storeST {
-					expectedEnc = tc.xor2Encoding
+					expectedEnc = tc.stEncoding
 				}
 				require.Equal(t, expectedEnc, c.chunk.Encoding(), "chunk encoding")
 				require.Equal(t, tc.samples[0].t, c.minTime, "chunk minTime")
