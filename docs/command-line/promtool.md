@@ -594,7 +594,7 @@ Dump data (series+samples or optionally just series) from a TSDB.
 | <code class="text-nowrap">--min-time</code> | Minimum timestamp to dump, in milliseconds since the Unix epoch. | `-9223372036854775808` |
 | <code class="text-nowrap">--max-time</code> | Maximum timestamp to dump, in milliseconds since the Unix epoch. | `9223372036854775807` |
 | <code class="text-nowrap">--match</code> <code class="text-nowrap">...</code> | Series selector. Can be specified multiple times. | `{__name__=~'(?s:.*)'}` |
-| <code class="text-nowrap">--format</code> | Output format of the dump (prom (default) or seriesjson). | `prom` |
+| <code class="text-nowrap">--format</code> | Output format of the dump (prom (default), seriesjson or protobuf). | `prom` |
 
 
 
@@ -654,6 +654,31 @@ Dump data (series+samples or optionally just series) from a TSDB.
 ##### `promtool tsdb create-blocks-from openmetrics`
 
 Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.
+
+
+
+###### Flags
+
+| Flag | Description |
+| --- | --- |
+| <code class="text-nowrap">--label</code> | Label to attach to metrics. Can be specified multiple times. Example --label=label_name=label_value |
+
+
+
+
+###### Arguments
+
+| Argument | Description | Default | Required |
+| --- | --- | --- | --- |
+| input file | OpenMetrics file to read samples from. |  | Yes |
+| output directory | Output directory for generated blocks. | `data/` |  |
+
+
+
+
+##### `promtool tsdb create-blocks-from protobuf`
+
+Import samples from Protobuf input and produce TSDB blocks. Please refer to the storage docs for more details.
 
 
 

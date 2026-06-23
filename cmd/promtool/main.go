@@ -273,7 +273,7 @@ func main() {
 	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump, in milliseconds since the Unix epoch.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
 	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump, in milliseconds since the Unix epoch.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
 	dumpMatch := tsdbDumpCmd.Flag("match", "Series selector. Can be specified multiple times.").Default("{__name__=~'(?s:.*)'}").Strings()
-	dumpFormat := tsdbDumpCmd.Flag("format", "Output format of the dump (prom (default) or seriesjson).").Default("prom").Enum("prom", "seriesjson")
+	dumpFormat := tsdbDumpCmd.Flag("format", "Output format of the dump (prom (default), seriesjson or protobuf).").Default("prom").Enum("prom", "seriesjson", "protobuf")
 
 	tsdbDumpOpenMetricsCmd := tsdbCmd.Command("dump-openmetrics", "[Experimental] Dump samples from a TSDB into OpenMetrics text format, excluding native histograms and staleness markers, which are not representable in OpenMetrics.")
 	dumpOpenMetricsPath := tsdbDumpOpenMetricsCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
@@ -290,6 +290,10 @@ func main() {
 	openMetricsLabels := openMetricsImportCmd.Flag("label", "Label to attach to metrics. Can be specified multiple times. Example --label=label_name=label_value").StringMap()
 	importFilePath := openMetricsImportCmd.Arg("input file", "OpenMetrics file to read samples from.").Required().String()
 	importDBPath := openMetricsImportCmd.Arg("output directory", "Output directory for generated blocks.").Default(defaultDBPath).String()
+	importProtobufCmd := importCmd.Command("protobuf", "Import samples from Protobuf input and produce TSDB blocks. Please refer to the storage docs for more details.")
+	importProtobufLabels := importProtobufCmd.Flag("label", "Label to attach to metrics. Can be specified multiple times. Example --label=label_name=label_value").StringMap()
+	importProtobufFilePath := importProtobufCmd.Arg("input file", "OpenMetrics file to read samples from.").Required().String()
+	importProtobufDBPath := importProtobufCmd.Arg("output directory", "Output directory for generated blocks.").Default(defaultDBPath).String()
 	importRulesCmd := importCmd.Command("rules", "Create blocks of data for new recording rules.")
 	importRulesCmd.Flag("http.config.file", httpConfigFileDescription).PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 	importRulesCmd.Flag("url", "The URL for the Prometheus API with the data where the rule will be backfilled from.").Default("http://localhost:9090").URLVar(&serverURL)
@@ -446,8 +450,11 @@ func main() {
 
 	case tsdbDumpCmd.FullCommand():
 		format := formatSeriesSet
-		if *dumpFormat == "seriesjson" {
+		switch *dumpFormat {
+		case "seriesjson":
 			format = formatSeriesSetLabelsToJSON
+		case "protobuf":
+			format = formatSeriesSetProtobuf
 		}
 		os.Exit(checkErr(dumpTSDBData(ctx, *dumpPath, *dumpSandboxDirRoot, *dumpMinTime, *dumpMaxTime, *dumpMatch, format, promtoolParser)))
 
@@ -455,7 +462,9 @@ func main() {
 		os.Exit(checkErr(dumpTSDBData(ctx, *dumpOpenMetricsPath, *dumpOpenMetricsSandboxDirRoot, *dumpOpenMetricsMinTime, *dumpOpenMetricsMaxTime, *dumpOpenMetricsMatch, formatSeriesSetOpenMetrics, promtoolParser)))
 	// TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
-		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration, *openMetricsLabels))
+		os.Exit(backfillFromFile(*importFilePath, *importDBPath, openMetricsParserBuilder, *importHumanReadable, *importQuiet, *maxBlockDuration, *openMetricsLabels))
+	case importProtobufCmd.FullCommand():
+		os.Exit(backfillFromFile(*importProtobufFilePath, *importProtobufDBPath, protobufParserBuilder, *importHumanReadable, *importQuiet, *maxBlockDuration, *importProtobufLabels))
 
 	case importRulesCmd.FullCommand():
 		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, model.UTF8Validation, *importRulesFiles...)))

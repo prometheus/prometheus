@@ -34,12 +34,14 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
+	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/common/promslog"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -815,6 +817,22 @@ func formatSeriesSetLabelsToJSON(ss storage.SeriesSet) error {
 	return nil
 }
 
+func formatSeriesSetProtobuf(ss storage.SeriesSet) error {
+	result, _, err := remote.ToQueryResult(ss, -1)
+	if err != nil {
+		return err
+	}
+	buf, err := proto.Marshal(result)
+	if err != nil {
+		return err
+	}
+	_, err = os.Stdout.Write(buf)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func formatSeriesSetOpenMetrics(ss storage.SeriesSet) error {
 	for ss.Next() {
 		series := ss.At()
@@ -842,7 +860,7 @@ func checkErr(err error) int {
 	return 0
 }
 
-func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration, customLabels map[string]string) int {
+func backfillFromFile(path, outputDir string, parserBuilder parserBuilder, humanReadable, quiet bool, maxBlockDuration time.Duration, customLabels map[string]string) int {
 	var buf []byte
 	info, err := os.Stat(path)
 	if err != nil {
@@ -867,7 +885,7 @@ func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxB
 		return checkErr(fmt.Errorf("create output dir: %w", err))
 	}
 
-	return checkErr(backfill(5000, buf, outputDir, humanReadable, quiet, maxBlockDuration, customLabels))
+	return checkErr(backfill(5000, buf, outputDir, parserBuilder, humanReadable, quiet, maxBlockDuration, customLabels))
 }
 
 func displayHistogram(dataType string, datas []int, total int) {
