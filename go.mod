@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus
 
-go 1.25.0
+go 1.25.7
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0
@@ -14,10 +14,10 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.42.0
 	github.com/aws/aws-sdk-go-v2/config v1.32.25
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.24
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.307.0
-	github.com/aws/aws-sdk-go-v2/service/ecs v1.83.0
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.308.0
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.85.0
 	github.com/aws/aws-sdk-go-v2/service/elasticache v1.54.3
-	github.com/aws/aws-sdk-go-v2/service/kafka v1.52.6
+	github.com/aws/aws-sdk-go-v2/service/kafka v1.54.0
 	github.com/aws/aws-sdk-go-v2/service/lightsail v1.56.1
 	github.com/aws/aws-sdk-go-v2/service/rds v1.119.3
 	github.com/aws/aws-sdk-go-v2/service/sts v1.43.3
@@ -42,7 +42,7 @@ require (
 	github.com/gophercloud/gophercloud/v2 v2.12.0
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
 	github.com/hashicorp/consul/api v1.32.1
-	github.com/hashicorp/nomad/api v0.0.0-20260616181215-ea1ca2d932bf
+	github.com/hashicorp/nomad/api v0.0.0-20260622150140-ec332d2cba1c
 	github.com/hetznercloud/hcloud-go/v2 v2.43.0
 	github.com/ionos-cloud/sdk-go/v6 v6.3.8
 	github.com/json-iterator/go v1.1.12
@@ -60,11 +60,11 @@ require (
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor v0.154.0
 	github.com/outscale/osc-sdk-go/v2 v2.34.0
 	github.com/ovh/go-ovh v1.9.0
-	github.com/pb33f/libopenapi v0.37.2
-	github.com/pb33f/libopenapi-validator v0.13.8
+	github.com/pb33f/libopenapi v0.38.1
+	github.com/pb33f/libopenapi-validator v0.13.11
 	github.com/prometheus/alertmanager v0.33.0
 	github.com/prometheus/client_golang v1.23.2
-	github.com/prometheus/client_golang/exp v0.0.0-20260602051030-3537b20ac86b
+	github.com/prometheus/client_golang/exp v0.0.0-20260621222812-74560058a7af
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.69.0
 	github.com/prometheus/common/assets v0.2.0
@@ -168,7 +168,7 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/emicklei/go-restful/v3 v3.12.2 // indirect
 	github.com/fatih/color v1.18.0 // indirect
-	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

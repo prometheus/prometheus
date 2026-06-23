@@ -1,7 +1,7 @@
 {
   "name": "@prometheus-io/mantine-ui",
   "private": true,
-  "version": "0.312.0",
+  "version": "0.313.0-rc.1",
   "type": "module",
   "scripts": {
     "start": "vite",
@@ -70,6 +70,7 @@
     "postcss": "^8.5.15",
     "postcss-preset-mantine": "^1.18.0",
     "postcss-simple-vars": "^7.0.1",
+    "rollup-plugin-license": "^3.7.1",
     "vite": "^6.4.3",
     "vitest": "^3.2.6"
   }

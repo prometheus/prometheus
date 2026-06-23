@@ -119,6 +119,7 @@ func (c *PrometheusConverter) createAttributes(
 				return
 			}
 			if existingValue := c.builder.Get(finalKey); existingValue != "" {
+				c.recordLabelCollision(sortedLabels, finalKey)
 				c.builder.Set(finalKey, existingValue+";"+l.Value)
 			} else {
 				c.builder.Set(finalKey, l.Value)
@@ -192,6 +193,40 @@ func (c *PrometheusConverter) createAttributes(
 	}
 
 	return c.builder.Labels(), nil
+}
+
+// recordLabelCollision adds a warning annotation naming the original attribute
+// keys that map to the same label name finalKey after sanitization, so that
+// callers of FromMetrics can surface which attributes produced a concatenated
+// label value. Name lookups hit the sanitizedLabels cache.
+//
+// Each finalKey is recorded at most once per FromMetrics call.
+// Accepted limitation: if different attribute sets
+// collide as the same finalKey within one call, only the first set is recorded.
+func (c *PrometheusConverter) recordLabelCollision(sortedLabels labels.Labels, finalKey string) {
+	if _, ok := c.recordedCollisions[finalKey]; ok {
+		return
+	}
+
+	var keys strings.Builder
+	sortedLabels.Range(func(l labels.Label) {
+		// No need to handle errors here.
+		if name, err := c.buildLabelName(l.Name); err != nil || name != finalKey {
+			return
+		}
+		if keys.Len() > 0 {
+			keys.WriteString(", ")
+		}
+		fmt.Fprintf(&keys, "%q", l.Name)
+	})
+	c.collisionAnnots.Add(newCategorizedWarningf(WarningCategoryLabelNameCollision,
+		"OTLP %s attributes %s collide as label %q after name sanitization, values are concatenated with ';'",
+		c.collisionSource.String(), keys.String(), finalKey))
+
+	if c.recordedCollisions == nil {
+		c.recordedCollisions = make(map[string]struct{}, 4)
+	}
+	c.recordedCollisions[finalKey] = struct{}{}
 }
 
 func aggregationTemporality(metric pmetric.Metric) (pmetric.AggregationTemporality, bool, error) {
@@ -540,7 +575,9 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 	// Temporarily clear scope labels for this call.
 	savedScopeLabels := c.scopeLabels
 	c.scopeLabels = nil
+	c.collisionSource = collisionFromResource
 	lbls, err := c.createAttributes(attributes, settings, identifyingAttrs, false, metadata.Metadata{}, model.MetricNameLabel, name)
+	c.collisionSource = collisionFromDataPoint
 	c.scopeLabels = savedScopeLabels
 	if err != nil {
 		return err
