@@ -14,10 +14,10 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.42.0
 	github.com/aws/aws-sdk-go-v2/config v1.32.25
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.24
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.307.0
-	github.com/aws/aws-sdk-go-v2/service/ecs v1.83.0
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.308.0
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.85.0
 	github.com/aws/aws-sdk-go-v2/service/elasticache v1.54.3
-	github.com/aws/aws-sdk-go-v2/service/kafka v1.52.6
+	github.com/aws/aws-sdk-go-v2/service/kafka v1.54.0
 	github.com/aws/aws-sdk-go-v2/service/lightsail v1.56.1
 	github.com/aws/aws-sdk-go-v2/service/rds v1.119.3
 	github.com/aws/aws-sdk-go-v2/service/sts v1.43.3
