@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus
 
-go 1.25.0
+go 1.25.10
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0
