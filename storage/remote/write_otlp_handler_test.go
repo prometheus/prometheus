@@ -256,6 +256,53 @@ func TestOTLPWriteHandler(t *testing.T) {
 			teststorage.RequireEqual(t, expectedSamples, appendable.ResultSamples())
 		})
 	}
+
+	t.Run("translation warnings metric", func(t *testing.T) {
+		newExporter := func() *rwExporter {
+			log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+			handler := NewOTLPWriteHandler(log, prometheus.NewRegistry(), teststorage.NewAppendable(), func() config.Config {
+				return config.Config{OTLPConfig: config.OTLPConfig{TranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes}}
+			}, OTLPOptions{})
+			return handler.(*otlpWriteHandler).defaultConsumer.(*rwExporter)
+		}
+
+		t.Run("label name collision", func(t *testing.T) {
+			// Two attributes that collide after sanitization (`a.b` and `a_b` both
+			// map to `a_b`) produce one collision warning. Escaping must be enabled
+			// for the collision to occur, hence UnderscoreEscapingWithSuffixes.
+			request := pmetricotlp.NewExportRequest()
+			m := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			m.SetName("test_gauge")
+			dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+			dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+			dp.SetIntValue(1)
+			dp.Attributes().PutStr("a.b", "x")
+			dp.Attributes().PutStr("a_b", "y")
+
+			ex := newExporter()
+			require.Equal(t, 0.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("label_name_collision")))
+			require.NoError(t, ex.ConsumeMetrics(t.Context(), request.Metrics()))
+			require.Equal(t, 1.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("label_name_collision")))
+		})
+
+		t.Run("histogram zero count non-zero sum", func(t *testing.T) {
+			// An exponential histogram data point with zero count but a non-zero sum
+			// produces one warning in the histogram_zero_count_non_zero_sum category.
+			request := pmetricotlp.NewExportRequest()
+			m := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			m.SetName("test_exponential_histogram")
+			m.SetEmptyExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+			h := m.ExponentialHistogram().DataPoints().AppendEmpty()
+			h.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+			h.SetCount(0)
+			h.SetSum(155)
+
+			ex := newExporter()
+			require.Equal(t, 0.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("histogram_zero_count_non_zero_sum")))
+			require.NoError(t, ex.ConsumeMetrics(t.Context(), request.Metrics()))
+			require.Equal(t, 1.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("histogram_zero_count_non_zero_sum")))
+		})
+	})
 }
 
 func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg config.OTLPConfig, otlpOpts OTLPOptions) *teststorage.Appendable {
