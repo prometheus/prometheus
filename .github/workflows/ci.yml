@@ -21,9 +21,10 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@5af30ba8c199a91d6c04ebdc3c48e630e355f62d # v0.1.0
+      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
         with:
           enable_npm: true
+          cache_key_suffix: race
       - run: make GO_ONLY=1 SKIP_GOLANGCI_LINT=1
       - run: go test ./tsdb/ -test.tsdb-isolation=false
       - run: make -C documentation/examples/remote_storage
@@ -38,7 +39,9 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@5af30ba8c199a91d6c04ebdc3c48e630e355f62d # v0.1.0
+      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+        with:
+          cache_key_suffix: more
       - run: go test --tags=dedupelabels ./...
       - run: go test --tags=slicelabels -race ./cmd/prometheus ./model/textparse ./prompb/...
       - run: go test --tags=forcedirectio -race ./tsdb/
@@ -55,7 +58,9 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@5af30ba8c199a91d6c04ebdc3c48e630e355f62d # v0.1.0
+      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+        with:
+          cache_key_suffix: "386"
       # NOTE(bwplotka): We limit concurrency to avoid issues around too many concurrent mmaps
       # caused by parallel tests. See context: https://github.com/prometheus/prometheus/pull/18709
       # Alternatively we could adjust each relevant test to have 386 aware parallelization setting.
@@ -70,7 +75,9 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@5af30ba8c199a91d6c04ebdc3c48e630e355f62d # v0.1.0
+      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+        with:
+          cache_key_suffix: upgrade
       - run: go test -v --race ./cmd/prometheus/ --test.version-upgrade=true -run TestVersionUpgrade
 
   test_go_oldest:
@@ -86,6 +93,10 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
+      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+        with:
+          enable_npm: false
+          cache_key_suffix: oldest
       - run: make build
       # Don't run NPM build; don't run race-detector.
       - run: make test GO_ONLY=1 test-flags=""
@@ -102,7 +113,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@5af30ba8c199a91d6c04ebdc3c48e630e355f62d # v0.1.0
+      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
         with:
           enable_go: false
           enable_npm: true
@@ -159,9 +170,10 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@5af30ba8c199a91d6c04ebdc3c48e630e355f62d # v0.1.0
+      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
         with:
           enable_npm: false
+          cache_key_suffix: compliance
       # NOTE: Those tests are based on https://github.com/prometheus/compliance and
       # are executed against the ./cmd/prometheus main package.
       - run: go test -v --tags=compliance ./compliance/...
@@ -271,9 +283,10 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@5af30ba8c199a91d6c04ebdc3c48e630e355f62d # v0.1.0
+      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
         with:
           enable_npm: true
+          cache_key_suffix: parser
       - run: make install-goyacc check-generated-parser
       - run: make check-generated-promql-functions
   golangci:
