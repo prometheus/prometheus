@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"strconv"
 	"strings"
@@ -1398,6 +1399,55 @@ func BenchmarkStoreSeries(b *testing.B) {
 
 				m.StoreSeries(recs.Series, 0)
 			}
+		})
+	}
+}
+
+// BenchmarkSeriesMetadataMemory measures the heap retained by a QueueManager's
+// seriesMetadata map for many series sharing metadata per family.
+func BenchmarkSeriesMetadataMemory(b *testing.B) {
+	const numSeries = 1_000_000
+
+	// Each record gets fresh Help/Unit strings, as decoding WAL records would.
+	genRecords := func(seriesPerFamily int) []record.RefMetadata {
+		recs := make([]record.RefMetadata, numSeries)
+		for i := range recs {
+			family := i / seriesPerFamily
+			recs[i] = record.RefMetadata{
+				Ref:  chunks.HeadSeriesRef(i),
+				Type: uint8(record.Gauge),
+				Unit: fmt.Sprintf("unit_for_family_%d", family),
+				Help: fmt.Sprintf("Help text describing metric family number %d, generated for the remote write metadata interning benchmark.", family),
+			}
+		}
+		return recs
+	}
+
+	for _, seriesPerFamily := range []int{1, 5, 10, 100} {
+		b.Run(fmt.Sprintf("seriesPerFamily=%d", seriesPerFamily), func(b *testing.B) {
+	var retained uint64
+	for b.Loop() {
+		_, m := newTestClientAndQueueManager(b, defaultFlushDeadline, remoteapi.WriteV2MessageType)
+
+		// Snapshot the empty manager so the delta isolates seriesMetadata. Two GCs:
+		// one runs the unique package's cleanup, the second frees what it released.
+		runtime.GC()
+		runtime.GC()
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+
+				recs := genRecords(seriesPerFamily)
+		m.StoreMetadata(recs)
+		recs = nil // Drop sources so only the map's retention is measured.
+
+		runtime.GC()
+		runtime.GC()
+		runtime.ReadMemStats(&after)
+		runtime.KeepAlive(m)
+		retained = after.HeapAlloc - before.HeapAlloc
+	}
+	b.ReportMetric(float64(retained), "retainedBytes")
+	b.ReportMetric(float64(retained)/numSeries, "retainedBytes/series")
 		})
 	}
 }
