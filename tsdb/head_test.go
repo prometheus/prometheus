@@ -9406,3 +9406,33 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		requireCounterConsistent("final state")
 	})
 }
+
+// TestHeadAppenderV2_ConflictingSampleCounted verifies that when two samples for
+// the same series carry the same timestamp but different values within one
+// AppenderV2 batch, the second is rejected at commit and counted by the
+// conflicting-samples metric rather than dropped silently. This is the
+// observability gap reported in https://github.com/prometheus/prometheus/issues/11725
+// (a relabel collision collapses two series onto one and the loser vanished
+// without any counter or log).
+func TestHeadAppenderV2_ConflictingSampleCounted(t *testing.T) {
+	head, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+	defer func() { require.NoError(t, head.Close()) }()
+	require.NoError(t, head.Init(0))
+
+	conflicting := head.metrics.conflictingSamples.WithLabelValues(sampleMetricTypeFloat)
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(conflicting))
+
+	lbls := labels.FromStrings("foo", "bar")
+	app := head.AppenderV2(t.Context())
+	// Both appends pass: within one uncommitted batch the series maxTime is
+	// stale, so the conflict is only detected when commit re-runs appendable.
+	_, err := app.Append(0, lbls, 0, 100, 1.0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	_, err = app.Append(0, lbls, 0, 100, 2.0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	// Commit does not surface the conflict as an error (the loser is dropped),
+	// so the counter is the only signal that a sample was lost.
+	require.NoError(t, app.Commit())
+
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(conflicting))
+}

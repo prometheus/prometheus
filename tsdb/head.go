@@ -416,6 +416,7 @@ type headMetrics struct {
 	outOfBoundSamples         *prometheus.CounterVec
 	outOfOrderSamples         *prometheus.CounterVec
 	tooOldSamples             *prometheus.CounterVec
+	conflictingSamples        *prometheus.CounterVec
 	walTruncateDuration       prometheus.Summary
 	walCorruptionsTotal       prometheus.Counter
 	dataTotalReplayDuration   prometheus.Gauge
@@ -516,6 +517,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_too_old_samples_total",
 			Help: "Total number of out of order samples ingestion failed attempts with out of support enabled, but sample outside of time window.",
 		}, []string{"type"}),
+		conflictingSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_conflicting_samples_total",
+			Help: "Total number of samples rejected at commit because another sample with the same timestamp but a different value already existed for the series (series collision, e.g. from metric relabeling).",
+		}, []string{"type"}),
 		headTruncateFail: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_truncations_failed_total",
 			Help: "Total number of head truncations that failed.",
@@ -598,6 +603,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.outOfBoundSamples,
 			m.outOfOrderSamples,
 			m.tooOldSamples,
+			m.conflictingSamples,
 			m.headTruncateFail,
 			m.headTruncateTotal,
 			m.checkpointDeleteFail,

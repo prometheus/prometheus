@@ -1172,6 +1172,9 @@ type appenderCommitContext struct {
 	// Number of samples rejected due to: out of order but too old (OOO support enabled, but outside time window).
 	floatTooOldRejected int
 	histoTooOldRejected int
+	// Number of samples rejected at commit due to: a sample with the same timestamp but a different value already exists for the series (series collision, e.g. from metric relabeling).
+	floatConflictRejected int
+	histoConflictRejected int
 	// Number of samples rejected due to: out of bounds: with t < minValidTime (OOO support disabled).
 	floatOOBRejected    int
 	histoOOBRejected    int
@@ -1272,6 +1275,11 @@ func (acc *appenderCommitContext) collectOOORecords(a *headAppenderBase) {
 	acc.oooMmapMarkers = nil
 }
 
+// errConflictingSample is storage.ErrDuplicateSampleForTimestamp boxed once into an error
+// interface. That sentinel is a value-typed struct, so passing it directly to errors.Is in the
+// per-sample commit path would box it onto the heap on every call; the pre-boxed copy avoids that.
+var errConflictingSample error = storage.ErrDuplicateSampleForTimestamp
+
 // handleAppendableError processes errors encountered during sample appending and updates
 // the provided counters accordingly.
 //
@@ -1281,7 +1289,8 @@ func (acc *appenderCommitContext) collectOOORecords(a *headAppenderBase) {
 // - oooRejected: Pointer to the counter tracking the number of out-of-order samples rejected.
 // - oobRejected: Pointer to the counter tracking the number of out-of-bounds samples rejected.
 // - tooOldRejected: Pointer to the counter tracking the number of too-old samples rejected.
-func handleAppendableError(err error, appended, oooRejected, oobRejected, tooOldRejected *int) {
+// - conflictRejected: Pointer to the counter tracking the number of same-timestamp different-value samples rejected.
+func handleAppendableError(err error, appended, oooRejected, oobRejected, tooOldRejected, conflictRejected *int) {
 	switch {
 	case errors.Is(err, storage.ErrOutOfOrderSample):
 		*appended--
@@ -1292,6 +1301,9 @@ func handleAppendableError(err error, appended, oooRejected, oobRejected, tooOld
 	case errors.Is(err, storage.ErrTooOldSample):
 		*appended--
 		*tooOldRejected++
+	case errors.Is(err, errConflictingSample):
+		*appended--
+		*conflictRejected++
 	default:
 		*appended--
 	}
@@ -1386,7 +1398,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 		}
 		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
-			handleAppendableError(err, &acc.floatsAppended, &acc.floatOOORejected, &acc.floatOOBRejected, &acc.floatTooOldRejected)
+			handleAppendableError(err, &acc.floatsAppended, &acc.floatOOORejected, &acc.floatOOBRejected, &acc.floatTooOldRejected, &acc.floatConflictRejected)
 		}
 
 		prevHeadChunkCount := series.headChunkCount.Load()
@@ -1491,7 +1503,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 
 		oooSample, _, err := series.appendableHistogram(s.T, s.H, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
-			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
+			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected, &acc.histoConflictRejected)
 		}
 
 		prevHeadChunkCount := series.headChunkCount.Load()
@@ -1600,7 +1612,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 
 		oooSample, _, err := series.appendableFloatHistogram(s.T, s.FH, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
-			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
+			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected, &acc.histoConflictRejected)
 		}
 
 		prevHeadChunkCount := series.headChunkCount.Load()
@@ -1789,6 +1801,8 @@ func (a *headAppenderBase) Commit() (err error) {
 	h.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histoOOORejected))
 	h.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatOOBRejected))
 	h.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatTooOldRejected))
+	h.metrics.conflictingSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatConflictRejected))
+	h.metrics.conflictingSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histoConflictRejected))
 	h.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatsAppended))
 	h.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histogramsAppended))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.oooFloatsAccepted))
