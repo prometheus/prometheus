@@ -1010,11 +1010,6 @@ func (t *QueueManager) Stop() {
 	t.metrics.unregister()
 }
 
-// CurrentSegment returns the WAL segment currently being processed by this queue's watcher.
-func (t *QueueManager) CurrentSegment() int {
-	return t.watcher.CurrentSegment()
-}
-
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
 func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 	t.seriesMtx.Lock()
