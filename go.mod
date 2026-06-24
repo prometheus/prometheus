@@ -44,7 +44,7 @@ require (
 	github.com/hashicorp/consul/api v1.32.1
 	github.com/hashicorp/nomad/api v0.0.0-20260622150140-ec332d2cba1c
 	github.com/hetznercloud/hcloud-go/v2 v2.43.0
-	github.com/ionos-cloud/sdk-go/v6 v6.3.8
+	github.com/ionos-cloud/sdk-go/v6 v6.3.9
 	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.18.6
 	github.com/kolo/xmlrpc v0.0.0-20220921171641-a4b6fa1dd06b
