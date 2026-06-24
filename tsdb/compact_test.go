@@ -2039,6 +2039,37 @@ func TestCompactBlockMetas(t *testing.T) {
 	require.Equal(t, expected, output)
 }
 
+// TestCompactBlockMetasHints verifies that CompactBlockMetas propagates the
+// from-stale-series hint to the merged block when any source carries it (the
+// planner only ever groups stale blocks with stale blocks). Dropping the hint
+// would wrongly advance inOrderBlocksMaxTime. See #18379.
+func TestCompactBlockMetasHints(t *testing.T) {
+	parent1 := ulid.MustNew(100, nil)
+	parent2 := ulid.MustNew(200, nil)
+	outUlid := ulid.MustNew(1000, nil)
+
+	staleMeta := func(u ulid.ULID) *BlockMeta {
+		m := &BlockMeta{ULID: u, MinTime: 0, MaxTime: 1000, Compaction: BlockMetaCompaction{Level: 1}}
+		m.Compaction.SetStaleSeries()
+		return m
+	}
+	plainMeta := func(u ulid.ULID) *BlockMeta {
+		return &BlockMeta{ULID: u, MinTime: 0, MaxTime: 1000, Compaction: BlockMetaCompaction{Level: 1}}
+	}
+
+	t.Run("stale hint is preserved when a source is stale", func(t *testing.T) {
+		out := CompactBlockMetas(outUlid, staleMeta(parent1), staleMeta(parent2))
+		require.True(t, out.Compaction.FromStaleSeries(), "merged block must keep the from-stale-series hint")
+		require.False(t, out.Compaction.FromOutOfOrder())
+	})
+
+	t.Run("no hint when no source carries one", func(t *testing.T) {
+		out := CompactBlockMetas(outUlid, plainMeta(parent1), plainMeta(parent2))
+		require.False(t, out.Compaction.FromStaleSeries())
+		require.False(t, out.Compaction.FromOutOfOrder())
+	})
+}
+
 func TestCompactEmptyResultBlockWithTombstone(t *testing.T) {
 	ctx := context.Background()
 	tmpdir := t.TempDir()

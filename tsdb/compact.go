@@ -289,6 +289,12 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 	// merged with other stale blocks. We therefore plan each class independently
 	// and prefer the non-stale result so regular compaction is not starved.
 	// See https://github.com/prometheus/prometheus/issues/18379.
+	//
+	// Note: with EnableOverlappingCompaction this means a stale block that
+	// overlaps a non-stale block is never co-compacted with it and so is retained
+	// on disk separately until it ages out through normal retention; the two are
+	// never merged. This is intentional: merging would drop the hint and
+	// reintroduce #18379.
 	var stale, nonStale []dirMeta
 	for _, dm := range dms {
 		if dm.meta.Compaction.FromStaleSeries() {

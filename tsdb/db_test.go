@@ -9812,6 +9812,75 @@ func TestLifecycleCallbackInvariantAfterWALReplayWithFullTombstones(t *testing.T
 	require.Equal(t, int64(db.Head().NumSeries()), replayCallback.created.Load()-replayCallback.deleted.Load())
 }
 
+// TestStaleBlockNotMergedWithNonStaleBlock reproduces the #18379 data-loss path
+// end to end: a from-stale-series block and a non-stale block share a time range,
+// a block merge runs, and the DB reloads. Before the fix the planner merged the
+// two blocks into an untagged block, which then counted towards
+// inOrderBlocksMaxTime, advancing the WAL-replay cutoff past WAL-only in-order
+// data and silently dropping it. After the fix the stale block is never merged
+// with the non-stale block, the cutoff is not advanced, and the WAL-only sample
+// survives the reload.
+//
+// This test FAILS on the pre-fix code and PASSES on the fixed code.
+func TestStaleBlockNotMergedWithNonStaleBlock(t *testing.T) {
+	opts := DefaultOptions()
+	opts.MinBlockDuration = 1000
+	opts.MaxBlockDuration = 1000
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	// WAL-only in-order sample at t=700. There is no in-order block covering
+	// t=700; it lives only in the head/WAL. If inOrderBlocksMaxTime advances past
+	// 700, reload() truncates the head and this sample is lost.
+	walSeries := labels.FromStrings("name", "wal_only")
+	app := db.Appender(context.Background())
+	_, err := app.Append(0, walSeries, 700, 42.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Two on-disk blocks sharing time range [0,1000) so the planner sees them as
+	// overlapping: one non-stale (maxt 500) and one stale (maxt 1000). The stale
+	// block extends past the WAL-only sample at t=700.
+	createBlock(t, db.dir, []storage.Series{
+		storage.NewListSeries(labels.FromStrings("name", "non_stale"),
+			[]chunks.Sample{sample{t: 0, f: 1}, sample{t: 499, f: 1}}),
+	})
+	staleDir := createBlock(t, db.dir, []storage.Series{
+		storage.NewListSeries(labels.FromStrings("name", "stale"),
+			[]chunks.Sample{sample{t: 0, f: 1}, sample{t: 999, f: 1}}),
+	})
+
+	// Tag the stale block with the from-stale-series hint, as CompactStaleHead does.
+	staleMeta, _, err := readMetaFile(staleDir)
+	require.NoError(t, err)
+	staleMeta.Compaction.SetStaleSeries()
+	_, err = writeMetaFile(db.logger, staleDir, staleMeta)
+	require.NoError(t, err)
+	require.Equal(t, int64(1000), staleMeta.MaxTime)
+
+	// Merge blocks the same way the background compactor does, then reload (which
+	// truncates the head based on inOrderBlocksMaxTime).
+	require.NoError(t, db.reloadBlocks())
+	require.NoError(t, db.compactBlocks())
+	require.NoError(t, db.reload())
+
+	// The stale block must not have advanced the WAL-replay cutoff past the
+	// WAL-only sample at t=700. Pre-fix the merged untagged block has maxt 1000.
+	maxt, ok := db.inOrderBlocksMaxTime()
+	require.True(t, ok)
+	require.Lessf(t, maxt, int64(700),
+		"inOrderBlocksMaxTime advanced past the WAL-only sample; a stale block was merged with a non-stale block")
+
+	// The WAL-only in-order sample must survive the reload.
+	querier, err := NewBlockQuerier(NewRangeHead(db.head, 0, 1000), 0, 1000)
+	require.NoError(t, err)
+	t.Cleanup(func() { querier.Close() })
+	got := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "name", "wal_only"))
+	require.Equal(t, map[string][]chunks.Sample{
+		`{name="wal_only"}`: {sample{t: 700, f: 42.0}},
+	}, got)
+}
+
 // TestStaleSeriesCompactionWithZeroSeries verifies that CompactStaleHead handles
 // an empty head (0 series) gracefully without division by zero or incorrectly
 // triggering compaction. This is a regression test for issue #17949.
