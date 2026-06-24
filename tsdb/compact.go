@@ -281,6 +281,42 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 		return nil, nil
 	}
 
+	// Blocks created from stale series carry the from-stale-series hint, which
+	// must survive compaction: a block that is fully made of stale series must
+	// keep the hint, otherwise it would wrongly count towards inOrderBlocksMaxTime
+	// and advance the WAL-replay cutoff past WAL-only data. To preserve the hint
+	// we never mix the two classes during compaction: stale blocks are only ever
+	// merged with other stale blocks. We therefore plan each class independently
+	// and prefer the non-stale result so regular compaction is not starved.
+	// See https://github.com/prometheus/prometheus/issues/18379.
+	var stale, nonStale []dirMeta
+	for _, dm := range dms {
+		if dm.meta.Compaction.FromStaleSeries() {
+			stale = append(stale, dm)
+		} else {
+			nonStale = append(nonStale, dm)
+		}
+	}
+	if len(stale) > 0 && len(nonStale) > 0 {
+		res, err := c.planClass(nonStale)
+		if err != nil || len(res) > 0 {
+			return res, err
+		}
+		return c.planClass(stale)
+	}
+
+	return c.planClass(dms)
+}
+
+// planClass plans compaction for a single class of blocks: either all blocks
+// carry the from-stale-series hint or none do. It must not be called with a mix
+// of the two classes, so that the from-stale-series hint is preserved through
+// compaction (see plan).
+func (c *LeveledCompactor) planClass(dms []dirMeta) ([]string, error) {
+	if len(dms) == 0 {
+		return nil, nil
+	}
+
 	slices.SortFunc(dms, func(a, b dirMeta) int {
 		switch {
 		case a.meta.MinTime < b.meta.MinTime:
@@ -459,6 +495,13 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 		}
 		for _, s := range b.Compaction.Sources {
 			sources[s] = struct{}{}
+		}
+		// Preserve the from-stale-series hint when merging. The planner only ever
+		// groups stale blocks with other stale blocks (see plan), so the resulting
+		// block is fully made of stale series and must keep the hint, otherwise it
+		// would wrongly count towards inOrderBlocksMaxTime. See #18379.
+		if b.Compaction.FromStaleSeries() {
+			res.Compaction.SetStaleSeries()
 		}
 		res.Compaction.Parents = append(res.Compaction.Parents, BlockDesc{
 			ULID:    b.ULID,
