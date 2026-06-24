@@ -9881,6 +9881,91 @@ func TestStaleBlockNotMergedWithNonStaleBlock(t *testing.T) {
 	}, got)
 }
 
+// TestOutOfOrderBlockMergePreservesHint drives the from-out-of-order analogue of
+// TestStaleBlockNotMergedWithNonStaleBlock end to end. Two overlapping on-disk
+// blocks, both tagged from-out-of-order, are co-compacted by a real block merge
+// and the DB reloads. Unlike stale blocks, out-of-order blocks are deliberately
+// NOT segregated by the planner, so the merge runs; the all-out-of-order result
+// must keep the from-out-of-order hint (CompactBlockMetas only propagates it when
+// every source carries it). Were the hint dropped the merged block would count
+// towards inOrderBlocksMaxTime, advancing the WAL-replay cutoff past WAL-only
+// in-order data and silently dropping it.
+//
+// This test FAILS on the pre-fix code (where CompactBlockMetas drops the hint)
+// and PASSES on the fixed code.
+func TestOutOfOrderBlockMergePreservesHint(t *testing.T) {
+	opts := DefaultOptions()
+	opts.MinBlockDuration = 1000
+	opts.MaxBlockDuration = 1000
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	// WAL-only in-order sample at t=700. There is no in-order block covering
+	// t=700; it lives only in the head/WAL. If inOrderBlocksMaxTime advances past
+	// 700, reload() truncates the head and this sample is lost.
+	walSeries := labels.FromStrings("name", "wal_only")
+	app := db.Appender(context.Background())
+	_, err := app.Append(0, walSeries, 700, 42.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Two on-disk blocks sharing time range [0,1000) so the planner sees them as
+	// overlapping and co-compacts them. Both are tagged from-out-of-order, so the
+	// merged block is entirely out-of-order. The blocks extend past the WAL-only
+	// sample at t=700.
+	oooDir1 := createBlock(t, db.dir, []storage.Series{
+		storage.NewListSeries(labels.FromStrings("name", "ooo_a"),
+			[]chunks.Sample{sample{t: 0, f: 1}, sample{t: 499, f: 1}}),
+	})
+	oooDir2 := createBlock(t, db.dir, []storage.Series{
+		storage.NewListSeries(labels.FromStrings("name", "ooo_b"),
+			[]chunks.Sample{sample{t: 0, f: 1}, sample{t: 999, f: 1}}),
+	})
+
+	// Tag both blocks with the from-out-of-order hint, as out-of-order head
+	// compaction does.
+	for _, dir := range []string{oooDir1, oooDir2} {
+		meta, _, err := readMetaFile(dir)
+		require.NoError(t, err)
+		meta.Compaction.SetOutOfOrder()
+		_, err = writeMetaFile(db.logger, dir, meta)
+		require.NoError(t, err)
+	}
+
+	// Merge blocks the same way the background compactor does, then reload (which
+	// truncates the head based on inOrderBlocksMaxTime).
+	require.NoError(t, db.reloadBlocks())
+	require.NoError(t, db.compactBlocks())
+	require.NoError(t, db.reload())
+
+	// The two source blocks must have been merged into a single block.
+	blocks := db.Blocks()
+	require.Len(t, blocks, 1, "the two overlapping out-of-order blocks must be merged into one")
+
+	// (a) The merged all-out-of-order block must keep the from-out-of-order hint.
+	merged := blocks[0]
+	require.True(t, merged.meta.Compaction.FromOutOfOrder(),
+		"merged all-out-of-order block must keep the from-out-of-order hint")
+	require.Equal(t, int64(1000), merged.meta.MaxTime,
+		"merged block must cover the full out-of-order range")
+
+	// (b) inOrderBlocksMaxTime must NOT be advanced by the out-of-order-only
+	// block: there is no in-order block, so it must report ok == false. Pre-fix
+	// the merged untagged block has maxt 1000 and would wrongly report 1000.
+	maxt, ok := db.inOrderBlocksMaxTime()
+	require.Falsef(t, ok,
+		"out-of-order-only data must not advance inOrderBlocksMaxTime, got maxt=%d", maxt)
+
+	// The WAL-only in-order sample must survive the reload.
+	querier, err := NewBlockQuerier(NewRangeHead(db.head, 0, 1000), 0, 1000)
+	require.NoError(t, err)
+	t.Cleanup(func() { querier.Close() })
+	got := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "name", "wal_only"))
+	require.Equal(t, map[string][]chunks.Sample{
+		`{name="wal_only"}`: {sample{t: 700, f: 42.0}},
+	}, got)
+}
+
 // TestStaleSeriesCompactionWithZeroSeries verifies that CompactStaleHead handles
 // an empty head (0 series) gracefully without division by zero or incorrectly
 // triggering compaction. This is a regression test for issue #17949.

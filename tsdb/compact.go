@@ -290,6 +290,12 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 	// and prefer the non-stale result so regular compaction is not starved.
 	// See https://github.com/prometheus/prometheus/issues/18379.
 	//
+	// Out-of-order blocks (the from-out-of-order hint) are deliberately NOT
+	// segregated here: they must be co-compacted with overlapping in-order blocks
+	// to resolve overlaps, so the resulting block legitimately contains in-order
+	// data. Their hint is instead propagated by CompactBlockMetas only when every
+	// source block is out-of-order; a mixed merge correctly drops the hint.
+	//
 	// Note: with EnableOverlappingCompaction this means a stale block that
 	// overlaps a non-stale block is never co-compacted with it and so is retained
 	// on disk separately until it ages out through normal retention; the two are
@@ -489,6 +495,17 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 	mint := blocks[0].MinTime
 	maxt := blocks[0].MaxTime
 
+	// inOrderBlocksMaxTime ignores blocks that are *totally* made of out-of-order
+	// data, so the from-out-of-order hint must be propagated to the merged block
+	// only when every source block carries it. Both hints, if dropped, would let
+	// the merged block wrongly advance the WAL-replay cutoff (see #18379), but the
+	// segregation rules differ: stale blocks are never mixed with non-stale blocks
+	// by the planner (see plan), whereas out-of-order blocks are deliberately
+	// co-compacted with overlapping in-order blocks to resolve overlaps. A merged
+	// block that mixes out-of-order and in-order data therefore does contain
+	// in-order data and must NOT keep the out-of-order hint.
+	allOutOfOrder := true
+
 	for _, b := range blocks {
 		if b.MinTime < mint {
 			mint = b.MinTime
@@ -509,11 +526,17 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 		if b.Compaction.FromStaleSeries() {
 			res.Compaction.SetStaleSeries()
 		}
+		if !b.Compaction.FromOutOfOrder() {
+			allOutOfOrder = false
+		}
 		res.Compaction.Parents = append(res.Compaction.Parents, BlockDesc{
 			ULID:    b.ULID,
 			MinTime: b.MinTime,
 			MaxTime: b.MaxTime,
 		})
+	}
+	if allOutOfOrder {
+		res.Compaction.SetOutOfOrder()
 	}
 	res.Compaction.Level++
 

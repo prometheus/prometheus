@@ -2040,9 +2040,11 @@ func TestCompactBlockMetas(t *testing.T) {
 }
 
 // TestCompactBlockMetasHints verifies that CompactBlockMetas propagates the
-// from-stale-series hint to the merged block when any source carries it (the
-// planner only ever groups stale blocks with stale blocks). Dropping the hint
-// would wrongly advance inOrderBlocksMaxTime. See #18379.
+// compaction hints to the merged block: the from-stale-series hint is kept when
+// any source carries it (the planner only ever groups stale with stale), and the
+// from-out-of-order hint is kept only when every source carries it (out-of-order
+// blocks may be co-compacted with in-order blocks). Dropping either hint would
+// wrongly advance inOrderBlocksMaxTime. See #18379.
 func TestCompactBlockMetasHints(t *testing.T) {
 	parent1 := ulid.MustNew(100, nil)
 	parent2 := ulid.MustNew(200, nil)
@@ -2053,6 +2055,11 @@ func TestCompactBlockMetasHints(t *testing.T) {
 		m.Compaction.SetStaleSeries()
 		return m
 	}
+	oooMeta := func(u ulid.ULID) *BlockMeta {
+		m := &BlockMeta{ULID: u, MinTime: 0, MaxTime: 1000, Compaction: BlockMetaCompaction{Level: 1}}
+		m.Compaction.SetOutOfOrder()
+		return m
+	}
 	plainMeta := func(u ulid.ULID) *BlockMeta {
 		return &BlockMeta{ULID: u, MinTime: 0, MaxTime: 1000, Compaction: BlockMetaCompaction{Level: 1}}
 	}
@@ -2061,6 +2068,26 @@ func TestCompactBlockMetasHints(t *testing.T) {
 		out := CompactBlockMetas(outUlid, staleMeta(parent1), staleMeta(parent2))
 		require.True(t, out.Compaction.FromStaleSeries(), "merged block must keep the from-stale-series hint")
 		require.False(t, out.Compaction.FromOutOfOrder())
+	})
+
+	t.Run("out-of-order hint is preserved when all sources are out-of-order", func(t *testing.T) {
+		out := CompactBlockMetas(outUlid, oooMeta(parent1), oooMeta(parent2))
+		require.True(t, out.Compaction.FromOutOfOrder(), "merged block must keep the from-out-of-order hint when all sources are out-of-order")
+		require.False(t, out.Compaction.FromStaleSeries())
+	})
+
+	t.Run("out-of-order hint is dropped when mixed with in-order", func(t *testing.T) {
+		out := CompactBlockMetas(outUlid, oooMeta(parent1), plainMeta(parent2))
+		require.False(t, out.Compaction.FromOutOfOrder(), "merged block must drop the from-out-of-order hint when it also contains in-order data")
+	})
+
+	t.Run("stale kept and out-of-order dropped when sources mix stale and out-of-order", func(t *testing.T) {
+		// Stale uses any-source semantics, so the stale hint survives; out-of-order
+		// uses all-sources semantics, so a mix of stale and out-of-order is not all
+		// out-of-order and the out-of-order hint is dropped.
+		out := CompactBlockMetas(outUlid, staleMeta(parent1), oooMeta(parent2))
+		require.True(t, out.Compaction.FromStaleSeries(), "merged block must keep the from-stale-series hint when any source is stale")
+		require.False(t, out.Compaction.FromOutOfOrder(), "merged block must drop the from-out-of-order hint when not every source is out-of-order")
 	})
 
 	t.Run("no hint when no source carries one", func(t *testing.T) {
