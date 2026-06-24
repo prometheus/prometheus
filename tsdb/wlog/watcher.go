@@ -343,12 +343,15 @@ func (w *Watcher) Run() error {
 	w.logger.Debug("Tailing WAL", "lastCheckpoint", lastCheckpoint, "checkpointIndex", checkpointIndex, "currentSegment", currentSegment, "lastSegment", lastSegment)
 	for !isClosed(w.quit) {
 		w.currentSegmentMetric.Set(float64(currentSegment))
-		w.segment.Store(int64(currentSegment))
+		if int64(currentSegment) > w.segment.Load() {
+			w.segment.Store(int64(currentSegment))
+		}
 
 		// On start, after reading the existing WAL for series records, we have a pointer to what is the latest segment.
 		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
 		w.logger.Debug("Processing segment", "currentSegment", currentSegment)
-		if err := w.watch(currentSegment, currentSegment < lastSegment); err != nil && !errors.Is(err, ErrIgnorable) {
+		err := w.watch(currentSegment, currentSegment < lastSegment)
+		if err != nil && !errors.Is(err, ErrIgnorable) {
 			return err
 		}
 
