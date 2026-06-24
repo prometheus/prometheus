@@ -160,7 +160,7 @@ This must be used if you would like to send metadata using the new remote write 
 
 `--enable-feature=remote-write-savepoint`
 
-When enabled, Prometheus periodically persists the current WAL segment position for each remote write queue to disk. On restart or config reload, remote write resumes data delivery from the last saved segment rather than starting from `time.Now()`, preventing loss of samples that were written to the WAL but not yet sent to the remote destination.
+When enabled, Prometheus periodically persists the current WAL segment position for the WAL watcher. On restart or config reload, remote write resumes reading from the last saved segment rather than starting from `time.Now()`, preventing loss of samples that were written to the WAL but not yet sent to the remote destination.
 
 Since replay starts at a segment boundary, some already-delivered samples may be re-sent. The remote write destination must handle duplicate or out-of-order samples gracefully.
 

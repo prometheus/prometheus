@@ -198,7 +198,7 @@ func (rws *WriteStorage) snapshotSavepoint() Savepoint {
 	sp := make(Savepoint, len(rws.queues))
 	for hash, q := range rws.queues {
 		sp[hash] = SavepointEntry{
-			Segment: q.CurrentSegment(),
+			Segment: q.watcher.LastProcessedSegment(),
 		}
 	}
 	return sp
@@ -430,7 +430,7 @@ func (rws *WriteStorage) Close() error {
 	}
 	close(rws.quit)
 
-	// Persist final savepoint after queues have stopped so CurrentSegment
+	// Persist final savepoint after queues have stopped so LastProcessedSegment
 	// reflects the final, drained position of each watcher.
 	if rws.enableSavepoint {
 		if sp := rws.snapshotSavepoint(); len(sp) > 0 {

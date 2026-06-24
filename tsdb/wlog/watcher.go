@@ -316,6 +316,15 @@ func (w *Watcher) Run() error {
 		return fmt.Errorf("Segments: %w", err)
 	}
 
+	// On retry, resume from the furthest segment reached rather than re-replaying the whole savepoint range.
+	// The override is never cleared: reverting to time.Now() filtering mid-replay would drop unsent samples.
+	startForThisRun := int64(w.startSegment)
+	if current := w.segment.Load(); current > startForThisRun {
+		startForThisRun = current
+	}
+	w.startSegment = int(startForThisRun)
+	w.segment.Store(startForThisRun)
+
 	// We want to ensure this is false across iterations since
 	// Run will be called again if there was a failure to read the WAL.
 	w.sendSamples = false
@@ -363,8 +372,6 @@ func (w *Watcher) Run() error {
 		currentSegment++
 	}
 
-	// Disable override for subsequent retries in loop().
-	w.startSegment = -1
 	return nil
 }
 
@@ -740,9 +747,10 @@ func (w *Watcher) SetStartSegment(segment int) {
 	w.startSegment = segment
 }
 
-// CurrentSegment returns the WAL segment the watcher is currently processing.
-// Returns -1 if the watcher has not started processing yet.
-func (w *Watcher) CurrentSegment() int {
+// LastProcessedSegment returns the highest WAL segment the watcher has begun
+// processing. The value is monotonic and never regresses. Returns -1 before the
+// watcher starts.
+func (w *Watcher) LastProcessedSegment() int {
 	return int(w.segment.Load())
 }
 
