@@ -4292,7 +4292,7 @@ func TestQuerierDoesNotBlockHeadTruncation(t *testing.T) {
 	for _, withOOO := range []bool{false, true} {
 		name := "in-order"
 		if withOOO {
-			name = "head+OOO"
+			name = "in-order+OOO"
 		}
 		t.Run(name, func(t *testing.T) {
 			db := newDB(t, withOOO)
