@@ -1920,6 +1920,51 @@ func TestDefaultOptionsFloatChunkEncoding(t *testing.T) {
 		"DefaultOptions must use EncXOR as the float chunk encoding")
 }
 
+func TestDBShardedPostingsBuckets(t *testing.T) {
+	t.Run("explicit zero uses default buckets", func(t *testing.T) {
+		t.Parallel()
+		opts := DefaultOptions()
+		opts.EnableSharding = true
+		opts.ShardedPostingsBuckets = 0
+
+		db := newTestDB(t, withOpts(opts))
+		require.NotNil(t, db.head.shardBuckets)
+		require.Len(t, db.head.shardBuckets.buckets, DefaultShardedPostingsBuckets)
+	})
+
+	t.Run("explicit bucket count is passed to head", func(t *testing.T) {
+		t.Parallel()
+		opts := DefaultOptions()
+		opts.EnableSharding = true
+		opts.ShardedPostingsBuckets = 64
+
+		db := newTestDB(t, withOpts(opts))
+		require.NotNil(t, db.head.shardBuckets)
+		require.Len(t, db.head.shardBuckets.buckets, 64)
+	})
+
+	t.Run("negative disables bucket index", func(t *testing.T) {
+		t.Parallel()
+		opts := DefaultOptions()
+		opts.EnableSharding = true
+		opts.ShardedPostingsBuckets = -1
+
+		db := newTestDB(t, withOpts(opts))
+		require.Nil(t, db.head.shardBuckets)
+	})
+
+	t.Run("invalid bucket count fails open", func(t *testing.T) {
+		t.Parallel()
+		opts := DefaultOptions()
+		opts.EnableSharding = true
+		opts.ShardedPostingsBuckets = 3
+
+		db, err := Open(t.TempDir(), nil, nil, opts, nil)
+		require.ErrorContains(t, err, "invalid sharded postings bucket count 3, must be a power of two")
+		require.Nil(t, db)
+	})
+}
+
 func TestValidateOptsInvalidFloatChunkEncoding(t *testing.T) {
 	t.Parallel()
 	opts := DefaultOptions()

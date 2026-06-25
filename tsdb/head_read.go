@@ -171,42 +171,51 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 		// Every series belongs to shard 0 of 1.
 		return p
 	}
-
-	// Fast path: a shard is the union of the shard hash buckets congruent to
-	// the shard index, so filtering tests membership against sorted ref
-	// lists instead of looking up every series. The input postings are
-	// drained sequentially, never seeked: the input may be an expensive
-	// postings tree, while the bucket side seeks cheaply. The returned
-	// postings may include refs of series deleted since p was built; readers
-	// resolve those like any other stale postings entry.
-	if lists, ok := h.head.shardBuckets.postingsFor(shardIndex, shardCount); ok {
-		return newShardFilterPostings(p, index.Merge(context.Background(), lists...))
+	if h.head.shardBuckets == nil || !isPowerOfTwo(shardCount) {
+		return h.shardedPostingsViaSeriesLookup(p, shardIndex, shardCount)
 	}
 
-	// The shard count does not divide the bucket count: filter by looking up
-	// every series instead.
+	return h.shardedPostingsViaBuckets(p, shardIndex, shardCount)
+}
+
+// shardedPostingsViaBuckets serves a shard from the shard hash buckets:
+// candidate buckets congruent to the shard index, sub-filtered by shard hash
+// when the power-of-two shard count exceeds the bucket count, intersected with
+// the input postings. Membership is tested against sorted ref lists instead of
+// looking up every series. The hot Next path drains the input sequentially
+// because it may be an expensive postings tree, while the bucket side seeks
+// cheaply; explicit Seek may seek both sides to skip ahead. The returned
+// postings may include refs of series deleted since p was built; readers resolve
+// those like any other stale postings entry.
+func (h *headIndexReader) shardedPostingsViaBuckets(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+	lists, subFiltered := h.head.shardBuckets.postingsFor(shardIndex, shardCount)
+	if subFiltered {
+		h.head.metrics.shardedPostingsSubfiltered.Inc()
+	}
+	return newShardFilterPostings(p, index.Merge(context.Background(), lists...))
+}
+
+// shardedPostingsViaSeriesLookup serves arbitrary shard counts or disabled
+// bucket indexes by looking up every input series and testing its shard hash. It
+// preserves the IndexReader modulo-sharding contract for embedders that enabled
+// head sharding before the shard bucket optimization started assuming
+// power-of-two shard counts.
+func (h *headIndexReader) shardedPostingsViaSeriesLookup(p index.Postings, shardIndex, shardCount uint64) index.Postings {
 	h.head.metrics.shardedPostingsFallback.Inc()
 	out := make([]storage.SeriesRef, 0, 128)
-	notFoundSeriesCount := 0
-
 	for p.Next() {
 		s := h.head.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if s == nil {
-			notFoundSeriesCount++
 			continue
 		}
-
-		// Check if the series belong to the shard.
 		if s.shardHash%shardCount != shardIndex {
 			continue
 		}
-
 		out = append(out, storage.SeriesRef(s.ref))
 	}
-	if notFoundSeriesCount > 0 {
-		h.head.logger.Debug("Looked up series not found", "count", notFoundSeriesCount)
+	if err := p.Err(); err != nil {
+		return index.ErrPostings(err)
 	}
-
 	return index.NewListPostings(out)
 }
 
