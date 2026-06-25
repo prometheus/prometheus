@@ -46,7 +46,7 @@ const serializeAtAndOffset = (
   timestamp: number | null,
   startOrEnd: StartOrEnd,
   offset: number,
-  offsetExpr?: DurationNode | null
+  offsetExpr: DurationNode | null
 ): string =>
   `${timestamp !== null ? ` @ ${(timestamp / 1000).toFixed(3)}` : startOrEnd !== null ? ` @ ${startOrEnd}()` : ""}${
     offsetExpr

@@ -98,7 +98,7 @@ const formatAtAndOffset = (
   timestamp: number | null,
   startOrEnd: StartOrEnd,
   offset: number,
-  offsetExpr?: DurationNode | null
+  offsetExpr: DurationNode | null
 ): ReactNode => (
   <>
     {timestamp !== null ? (

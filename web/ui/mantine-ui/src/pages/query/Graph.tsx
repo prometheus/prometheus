@@ -56,6 +56,7 @@ const Graph: FC<GraphProps> = ({
                 name: node.name,
                 matchers: node.matchers,
                 offset: node.offset,
+                offsetExpr: node.offsetExpr,
                 timestamp: node.timestamp,
                 startOrEnd: node.startOrEnd,
                 anchored: node.anchored,

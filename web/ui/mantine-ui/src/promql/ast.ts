@@ -170,9 +170,9 @@ export interface MatrixSelector {
   name: string;
   matchers: LabelMatcher[];
   range: number;
-  rangeExpr?: DurationNode | null;
+  rangeExpr: DurationNode | null;
   offset: number;
-  offsetExpr?: DurationNode | null;
+  offsetExpr: DurationNode | null;
   timestamp: number | null;
   startOrEnd: StartOrEnd;
   anchored: boolean;
@@ -183,11 +183,11 @@ export interface Subquery {
   type: nodeType.subquery;
   expr: ASTNode;
   range: number;
-  rangeExpr?: DurationNode | null;
+  rangeExpr: DurationNode | null;
   offset: number;
-  offsetExpr?: DurationNode | null;
+  offsetExpr: DurationNode | null;
   step: number;
-  stepExpr?: DurationNode | null;
+  stepExpr: DurationNode | null;
   timestamp: number | null;
   startOrEnd: StartOrEnd;
 }
@@ -218,7 +218,7 @@ export interface VectorSelector {
   name: string;
   matchers: LabelMatcher[];
   offset: number;
-  offsetExpr?: DurationNode | null;
+  offsetExpr: DurationNode | null;
   timestamp: number | null;
   startOrEnd: StartOrEnd;
   anchored: boolean;
