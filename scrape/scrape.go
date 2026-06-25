@@ -55,7 +55,6 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/logging"
-	"github.com/prometheus/prometheus/util/namevalidationutil"
 	"github.com/prometheus/prometheus/util/pool"
 )
 
@@ -159,10 +158,7 @@ func newScrapePool(
 
 	// Validate scheme so we don't need to do it later.
 	// We also do it on scrapePool.reload(...)
-	// TODO(bwplotka): Can we move it to scrape config validation?
-	if err := namevalidationutil.CheckNameValidationScheme(cfg.MetricNameValidationScheme); err != nil {
-		return nil, errors.New("newScrapePool: MetricNameValidationScheme must be set in scrape configuration")
-	}
+
 	if _, err = config.ToEscapingScheme(cfg.MetricNameEscapingScheme, cfg.MetricNameValidationScheme); err != nil {
 		return nil, fmt.Errorf("invalid metric name escaping scheme, %w", err)
 	}
@@ -295,9 +291,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.client = client
 
 	// Validate scheme so we don't need to do it later.
-	if err := namevalidationutil.CheckNameValidationScheme(cfg.MetricNameValidationScheme); err != nil {
-		return errors.New("scrapePool.reload: MetricNameValidationScheme must be set in scrape configuration")
-	}
+
 	if _, err = config.ToEscapingScheme(cfg.MetricNameEscapingScheme, cfg.MetricNameValidationScheme); err != nil {
 		return fmt.Errorf("scrapePool.reload: invalid metric name escaping scheme, %w", err)
 	}

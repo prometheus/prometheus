@@ -1,5 +1,52 @@
 # Changelog
 
+## 3.13.0-rc.1 / 2026-06-22
+
+The 3.13.0-rc.0 release was only partially successful, so most of the changes in this release candidate are CI/build-related. The only user-facing change is:
+
+- [CHANGE] UI: Third-party npm dependency licenses are now embedded in the Prometheus binary and served at `/assets/third-party-licenses.txt`, replacing the `npm_licenses.tar.bz2` archive previously shipped in release tarballs and container images. #18997
+
+## 3.13.0-rc.0 / 2026-06-18
+
+- [SECURITY] UI: Bump `sanitize-html` to fix a cross-site scripting vulnerability (CVE-2026-44990). #18697
+- [CHANGE] API: Use SHA-256 instead of SHA-1 to generate rule group pagination tokens. #18927
+- [CHANGE] HTTP clients: Credentials (Authorization header, basic auth, bearer token, OAuth2, configured headers) are no longer forwarded when following a redirect to a different host; affects scraping, remote read/write, alerting, and service discovery. Via prometheus/common v0.69.0 (CVE-2025-4673 CVE-2023-45289). #18949
+- [CHANGE] promtool: Relative file paths in the file passed to `--http.config.file` are now resolved relative to that config file's directory instead of its parent directory. Via prometheus/common v0.69.0. #18949
+- [CHANGE] PromQL: Rename the `min()` and `max()` duration-expression functions (experimental feature flag `experimental-duration-expr`) to `min_of()` and `max_of()` to avoid confusion with the `min` and `max` aggregate operators. #18687
+- [FEATURE] API: Add experimental search endpoints to search metric names, label names, and label values. #18573
+- [FEATURE] Discovery/AWS: Add ability to filter RDS instances. #18859
+- [FEATURE] PromQL: Add `min_of(a, b)` and `max_of(a, b)` scalar experimental functions, returning the smaller or larger of two scalar values. #18687
+- [FEATURE] PromQL: Add support for smoothed/anchored rate with native histograms. #18564
+- [FEATURE] PromQL: Expose per-query `samplesRead` (and `samplesReadPerStep` with `stats=all` and the `promql-per-step-stats` feature flag) in the query stats response, and add the `prometheus_engine_query_samples_read_total` engine counter. `samplesRead` reflects storage I/O distinct from `totalQueryableSamples`, which counts samples loaded into the evaluator (and so over-counts when a sample is reused across multiple range-vector windows). #18081
+- [FEATURE] Scrape: Add `__convert_classic_histograms_to_nhcb__` internal label to allow per-target override of `convert_classic_histograms_to_nhcb` scrape configuration via relabeling. #18840
+- [FEATURE] TSDB: Add `storage.tsdb.chunk_encoding.floats` configuration field to select float chunk encoding (`xor` or `xor2`) at runtime, independently of the `--enable-feature=xor2-encoding` flag. #18769
+- [FEATURE] remote_write: Add Certificate support for ingesting data into an Azure Monitor Workspace. #18217
+- [FEATURE] Scrape: Add `__always_scrape_classic_histograms__` and `__scrape_native_histograms__` internal labels to allow per-target override of the `always_scrape_classic_histograms` and `scrape_native_histograms` scrape configuration via relabeling. #18929
+- [ENHANCEMENT] Release: Container images are now also published to the GitHub Container Registry (ghcr.io). #18791
+- [ENHANCEMENT] PromQL: Prettify `fill_left(x) fill_right(x)` as `fill(x)` when both fill values are equal. #18851
+- [ENHANCEMENT] UI: Improve autocompletion after closing a function bracket. #18894
+- [PERF] Labels: Add case-insensitive prefix matching to speed up evaluation of long case-insensitive regular expressions (up to ~2x faster). #18540
+- [PERF] TSDB: Reduce per-sample overhead in chunk population, speeding up affected queries by ~12-15% in benchmarks. #18699
+- [PERF] TSDB: Eliminate unnecessary heap allocations in the V2 histogram WAL decoder, reducing allocations by up to 50% and memory by up to 10% for deployments using native histograms with created-timestamp storage enabled (`--enable-feature=created-timestamp-zero-ingestion`). #18813
+- [BUGFIX] Discovery/AWS: Fix failure when processing an AWS RDS cluster without instances. #18845
+- [BUGFIX] Fix race condition in initTime that could cause ErrOutOfBounds. #18629
+- [BUGFIX] PromQL: A range query whose `end` was not aligned to `step` caused subqueries inside it to evaluate past the parent's last actual step, inflating `peakSamples` in the query stats and against the `query.max-samples` limit, and wasting storage I/O reading samples that were never used in the result. #18081
+- [BUGFIX] PromQL: A range query containing an at-modifier-unsafe function over a range-vector with an `@` modifier (e.g. `predict_linear(metric[60s] @ T, X)`) silently under-counted `totalQueryableSamples` for steps after step 0. #18081
+- [BUGFIX] PromQL: Fix `fill_left`/`fill_right` producing missing samples in range queries when using `group_left`/`group_right`. #18850
+- [BUGFIX] PromQL: Fix for resets() and changes() in anchored range extenders with histograms. #18906
+- [BUGFIX] PromQL: Fix panic on `1[5m] smoothed` and similar expressions when extended range selectors are enabled. #18764
+- [BUGFIX] PromQL: Fix panic when a `smoothed` instant vector selector produces no samples for a series. #18943
+- [BUGFIX] PromQL: Fix panic when using a parenthesised plain number as an offset (e.g. `foo offset -(5)`). #18768
+- [BUGFIX] promtool: Fix panic when parsing exposition text containing empty braces `{}`. Via prometheus/common v0.69.0. #18949
+- [BUGFIX] Promtool: Fix `check healthy` and `check ready` when `--url` ends with a trailing slash. #18854
+- [BUGFIX] Rules: Close PromQL query after each rule evaluation to ensure resources are released. #18733
+- [BUGFIX] Scaleway SD: Resolve VPC/IPAM-only instances that have no legacy `private_ip` or `public_ip` field, but do have private NICs attached. #18772
+- [BUGFIX] TSDB: Do not leak head series when an integer histogram append is rejected (e.g. out-of-order). #18838
+- [BUGFIX] UI: Escape label values offered by PromQL autocomplete. #18658
+- [BUGFIX] TSDB: Fix chunk snapshot encoding for EncXOR2 chunks, preventing corruption on TSDB restart when EncXOR2-encoded series were present. #18739
+- [BUGFIX] TSDB: Store a millisecond timestamp (not a WAL segment number) in walExpiries when a series is evicted via CompactStaleHead/CompactSelectedSeries, so the series's label record is correctly retained in the next WAL checkpoint and replays cleanly. #18847
+- [BUGFIX] TSDB: Prevent loss of samples at the chunk-range boundary when CompactSelectedSeries (and CompactStaleHead) evict the series — the per-slice compaction loop now runs one more iteration so the boundary timestamp is captured in a block before the in-memory copy is removed. #18849
+
 ## 3.12.0 / 2026-05-28
 
 - [SECURITY] Remote-write: Reject snappy-compressed requests whose declared decoded length exceeds the 32MB. Thanks to @hibrian827 for reporting it. #18642

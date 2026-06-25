@@ -98,7 +98,7 @@ eval range from 10m to 15m step 1m increase(delta[5m:1m])
 
 clear
 
-# Test for cumulative with unknow start timestamp, which is described in OTel spec. It is easy to incorrectly treat
+# Test for cumulative with unknown start timestamp, which is described in OTel spec. It is easy to incorrectly treat
 # second datapoint in such timeseries as delta, producing incorrect result. These can be distinguished by:
 #   * ST_curr == T_prev && ST_prev == 0  -> cumulative with unknown start, no reset
 #   * ST_curr == T_prev && ST_prev != 0  -> delta datapoint, treat as a reset

@@ -67,6 +67,12 @@ func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appenda
 		allowDeltaTemporality:   opts.NativeDelta,
 		lookbackDelta:           opts.LookbackDelta,
 		enableTypeAndUnitLabels: opts.EnableTypeAndUnitLabels,
+		translationWarnings: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "prometheus",
+			Subsystem: "api",
+			Name:      "otlp_translation_warnings_total",
+			Help:      "The total number of warnings produced while translating OTLP metrics to the Prometheus model, by category.",
+		}, []string{"category"}),
 	}
 
 	wh := &otlpWriteHandler{logger: logger, defaultConsumer: ex}
@@ -106,6 +112,7 @@ type rwExporter struct {
 	allowDeltaTemporality   bool
 	lookbackDelta           time.Duration
 	enableTypeAndUnitLabels bool
+	translationWarnings     *prometheus.CounterVec
 }
 
 func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
@@ -138,6 +145,9 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 	}()
 	ws, _ := annots.AsStrings("", 0, 0)
 	if len(ws) > 0 {
+		for category, count := range otlptranslator.CountWarningsByCategory(annots) {
+			rw.translationWarnings.WithLabelValues(string(category)).Add(float64(count))
+		}
 		rw.logger.Warn("Warnings translating OTLP metrics to Prometheus write request", "warnings", ws)
 	}
 	return err
