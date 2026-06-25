@@ -2050,6 +2050,67 @@ func TestDefaultOptionsFloatChunkEncoding(t *testing.T) {
 		"DefaultOptions must use EncXOR as the float chunk encoding")
 }
 
+func TestOptions_ShardedPostingsBuckets(t *testing.T) {
+	tests := []struct {
+		name            string
+		buckets         int
+		wantIndex       bool
+		wantBucketCount int
+		wantErr         string
+	}{
+		{
+			name:            "explicit zero uses default buckets",
+			buckets:         0,
+			wantIndex:       true,
+			wantBucketCount: DefaultShardedPostingsBuckets,
+		},
+		{
+			name:            "explicit bucket count is passed to head",
+			buckets:         64,
+			wantIndex:       true,
+			wantBucketCount: 64,
+		},
+		{
+			name:      "negative disables bucket index",
+			buckets:   -1,
+			wantIndex: false,
+		},
+		{
+			name:    "invalid bucket count fails open",
+			buckets: 3,
+			wantErr: "invalid sharded postings bucket count 3, must be a power of two",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			opts := DefaultOptions()
+			opts.EnableSharding = true
+			opts.ShardedPostingsBuckets = tc.buckets
+
+			db, err := Open(t.TempDir(), nil, nil, opts, nil)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				require.Nil(t, db)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, db)
+			t.Cleanup(func() {
+				require.NoError(t, db.Close())
+			})
+
+			if !tc.wantIndex {
+				require.Nil(t, db.head.shardBuckets)
+				return
+			}
+			require.NotNil(t, db.head.shardBuckets)
+			require.Len(t, db.head.shardBuckets.buckets, tc.wantBucketCount)
+		})
+	}
+}
+
 func TestValidateOptsInvalidFloatChunkEncoding(t *testing.T) {
 	t.Parallel()
 	opts := DefaultOptions()

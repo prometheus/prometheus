@@ -22,104 +22,196 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
-// DefaultShardedPostingsBuckets is the default number of shard hash buckets
-// the head indexes series into when sharding is enabled.
-const DefaultShardedPostingsBuckets = 64
+// DefaultShardedPostingsBuckets is the default shard hash bucket count, chosen
+// so common power-of-two shard counts use exact bucket routing.
+const DefaultShardedPostingsBuckets = 128
 
-// shardBucketPostings holds one sorted list of series refs per shard hash
-// bucket, so that postings can be filtered by shard through sorted-list
-// intersection instead of a per-series lookup. Memory is proportional to the
-// number of series held: one ref per series.
-//
-// A series is added to the list of bucket shardHash % len(buckets) when it is
-// created, before it becomes visible in the head postings index, and refs are
-// removed after deleted series have been removed from the postings index.
-// Together this guarantees the invariant readers depend on: every ref
-// readable from the postings index is present in its bucket list. Refs of
-// deleted series may linger until the next removal and are resolved by
-// readers like any other stale postings entry.
-//
-// Refs increase monotonically, so adds normally append in sorted position;
-// out-of-order adds (concurrent creations racing, snapshot replay) mark the
-// bucket dirty and it is re-sorted into a fresh slice the next time it is
-// read. List contents visible to a reader are never mutated in place, so
-// returned postings remain valid after the lock is released.
-type shardBucketPostings struct {
-	mtx     sync.RWMutex
-	buckets [][]storage.SeriesRef
-	dirty   []bool // Buckets appended out of order; re-sorted on next read.
+func isPowerOfTwo(v uint64) bool {
+	return v != 0 && v&(v-1) == 0
 }
 
+// shardBucketPostings indexes Head series refs by shard hash bucket and returns
+// sorted bucket postings, allowing ShardedPostings to intersect candidates
+// without per-series lookups. Series are added before becoming visible in Head
+// postings and removed afterward, so every visible ref is present; stale refs
+// may remain until removal and are skipped by readers.
+//
+// Bucket slices are replaced rather than mutated within their existing length,
+// so read snapshots remain valid after locks are released.
+type shardBucketPostings struct {
+	buckets []shardBucket
+}
+
+// shardBucket holds one bucket's refs and must not be copied after initialization.
+type shardBucket struct {
+	mtx   sync.RWMutex
+	refs  []storage.SeriesRef
+	dirty int // Earliest out-of-order suffix index, or cleanShardBucket when clean.
+}
+
+const cleanShardBucket = -1
+
 func newShardBucketPostings(buckets int) *shardBucketPostings {
+	shardBuckets := make([]shardBucket, buckets)
+	for i := range shardBuckets {
+		shardBuckets[i].dirty = cleanShardBucket
+	}
 	return &shardBucketPostings{
-		buckets: make([][]storage.SeriesRef, buckets),
-		dirty:   make([]bool, buckets),
+		buckets: shardBuckets,
 	}
 }
 
 // add records a newly created series in its shard hash bucket.
 func (s *shardBucketPostings) add(ref chunks.HeadSeriesRef, shardHash uint64) {
-	b := shardHash % uint64(len(s.buckets))
-	s.mtx.Lock()
-	list := s.buckets[b]
-	if n := len(list); n > 0 && list[n-1] >= storage.SeriesRef(ref) {
-		s.dirty[b] = true
-	}
-	s.buckets[b] = append(list, storage.SeriesRef(ref))
-	s.mtx.Unlock()
-}
-
-// remove drops the given deleted series refs from the bucket lists. Buckets
-// containing any deleted ref are replaced with filtered copies, so reader
-// snapshots stay intact. A nil receiver (sharding disabled) is a no-op.
-func (s *shardBucketPostings) remove(deleted map[storage.SeriesRef]struct{}) {
-	if s == nil || len(deleted) == 0 {
+	if s == nil || len(s.buckets) == 0 {
 		return
 	}
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-	for b, list := range s.buckets {
+	// len(s.buckets) is validated to be a power of two, so this is
+	// shardHash % len(s.buckets) without runtime division.
+	b := shardHash & uint64(len(s.buckets)-1)
+	bucket := &s.buckets[b]
+	bucket.mtx.Lock()
+	if n := len(bucket.refs); n > 0 && bucket.refs[n-1] >= storage.SeriesRef(ref) {
+		if bucket.dirty == cleanShardBucket {
+			bucket.dirty = n
+		}
+	}
+	bucket.refs = append(bucket.refs, storage.SeriesRef(ref))
+	bucket.mtx.Unlock()
+}
+
+// remove drops deleted series refs from the bucket lists. The map is keyed by
+// deleted ref with the ref's shard hash as value, allowing removal to rebuild
+// only affected buckets. Rebuilt buckets replace refs with fresh slices, so
+// reader snapshots stay intact. A nil receiver or empty deleted map is a no-op.
+func (s *shardBucketPostings) remove(deleted map[storage.SeriesRef]uint64) {
+	if s == nil || len(s.buckets) == 0 || len(deleted) == 0 {
+		return
+	}
+
+	deletedByBucket := make(map[uint64]map[storage.SeriesRef]struct{}, min(len(deleted), len(s.buckets)))
+	for ref, shardHash := range deleted {
+		// len(s.buckets) is validated to be a power of two, so this is
+		// shardHash % len(s.buckets) without runtime division.
+		b := shardHash & uint64(len(s.buckets)-1)
+		refs := deletedByBucket[b]
+		if refs == nil {
+			refs = map[storage.SeriesRef]struct{}{}
+			deletedByBucket[b] = refs
+		}
+		refs[ref] = struct{}{}
+	}
+
+	for b, deletedRefs := range deletedByBucket {
+		bucket := &s.buckets[b]
+		bucket.mtx.Lock()
+		list := bucket.refs
 		first := -1
 		for i, ref := range list {
-			if _, ok := deleted[ref]; ok {
+			if _, ok := deletedRefs[ref]; ok {
 				first = i
 				break
 			}
 		}
-		if first < 0 {
-			continue
-		}
-		repl := make([]storage.SeriesRef, first, len(list)-1)
-		copy(repl, list[:first])
-		for _, ref := range list[first+1:] {
-			if _, ok := deleted[ref]; !ok {
-				repl = append(repl, ref)
+		if first >= 0 {
+			// Size the rebuilt slices to the surviving count, not the pre-removal
+			// length: keeping cap at len(list)-1 leaves the dropped refs' capacity
+			// resident until the next rebuild, which under series churn keeps the
+			// index several times larger than the live series it holds.
+			survivors := first
+			for i := first + 1; i < len(list); i++ {
+				if _, ok := deletedRefs[list[i]]; !ok {
+					survivors++
+				}
+			}
+			survivingRefs := make([]storage.SeriesRef, first, survivors)
+			copy(survivingRefs, list[:first])
+			for i := first + 1; i < len(list); i++ {
+				if _, ok := deletedRefs[list[i]]; !ok {
+					survivingRefs = append(survivingRefs, list[i])
+				}
+			}
+			bucket.refs = survivingRefs
+			if bucket.dirty != cleanShardBucket {
+				if len(survivingRefs) == 0 {
+					bucket.dirty = cleanShardBucket
+				} else {
+					bucket.dirty = 0
+				}
 			}
 		}
-		s.buckets[b] = repl
+		bucket.mtx.Unlock()
 	}
 }
 
-// postingsFor returns one sorted postings list per bucket belonging to the
-// given shard, or ok == false when the shard count does not divide the
-// bucket count, in which case the caller must filter per series. A nil
-// receiver (sharding disabled) always returns false.
-func (s *shardBucketPostings) postingsFor(shardIndex, shardCount uint64) ([]index.Postings, bool) {
-	if s == nil || shardCount == 0 || uint64(len(s.buckets))%shardCount != 0 {
+// postingsFor returns sorted candidate bucket postings for one shard. Bucket
+// and shard counts must be powers of two. With B buckets and N shards, N <= B
+// uses buckets shardIndex, shardIndex+N, ... without sub-filtering; N > B uses
+// bucket shardIndex%B and requests shard hash sub-filtering.
+//
+// A nil receiver (sharding disabled) or a zero shard count returns no lists.
+// Candidate buckets are snapshotted under lock as one consistent view.
+func (s *shardBucketPostings) postingsFor(shardIndex, shardCount uint64) (lists []index.Postings, needsShardHashFilter bool) {
+	if s == nil || shardCount == 0 {
 		return nil, false
 	}
-	s.mtx.RLock()
-	for s.anyDirtyLocked(shardIndex, shardCount) {
-		s.mtx.RUnlock()
-		s.sortDirty()
-		s.mtx.RLock()
+	bucketCount := uint64(len(s.buckets))
+	if bucketCount == 0 {
+		return nil, false
 	}
-	lists := make([]index.Postings, 0, uint64(len(s.buckets))/shardCount)
-	for b := shardIndex; b < uint64(len(s.buckets)); b += shardCount {
-		lists = append(lists, index.NewListPostings(s.buckets[b]))
+
+	base := shardIndex
+	step := shardCount
+	if shardCount > bucketCount {
+		// bucketCount is a power of two here, so this is
+		// shardIndex % bucketCount without runtime division.
+		base = shardIndex & (bucketCount - 1)
+		step = bucketCount
+		needsShardHashFilter = true
 	}
-	s.mtx.RUnlock()
-	return lists, true
+
+	writeLocked := s.lockCandidateBuckets(base, step)
+	lists = make([]index.Postings, 0, bucketCount/step)
+	for b := base; b < bucketCount; b += step {
+		bucket := &s.buckets[b]
+		lists = append(lists, index.NewListPostings(bucket.refs))
+	}
+	s.unlockCandidateBuckets(base, step, writeLocked)
+	return lists, needsShardHashFilter
+}
+
+func (s *shardBucketPostings) lockCandidateBuckets(base, step uint64) []uint64 {
+	var writeLocked []uint64
+	for b := base; b < uint64(len(s.buckets)); b += step {
+		bucket := &s.buckets[b]
+		bucket.mtx.RLock()
+		if bucket.dirty == cleanShardBucket {
+			continue
+		}
+		bucket.mtx.RUnlock()
+		bucket.mtx.Lock()
+		sortDirtyBucketLocked(bucket)
+		writeLocked = append(writeLocked, b)
+	}
+	return writeLocked
+}
+
+func (s *shardBucketPostings) unlockCandidateBuckets(base, step uint64, writeLocked []uint64) {
+	if len(writeLocked) == 0 {
+		for b := base; b < uint64(len(s.buckets)); b += step {
+			s.buckets[b].mtx.RUnlock()
+		}
+		return
+	}
+	nextWriteLocked := 0
+	for b := base; b < uint64(len(s.buckets)); b += step {
+		if nextWriteLocked < len(writeLocked) && writeLocked[nextWriteLocked] == b {
+			s.buckets[b].mtx.Unlock()
+			nextWriteLocked++
+			continue
+		}
+		s.buckets[b].mtx.RUnlock()
+	}
 }
 
 // numSeries returns the total number of refs held, including refs of deleted
@@ -128,96 +220,53 @@ func (s *shardBucketPostings) numSeries() int {
 	if s == nil {
 		return 0
 	}
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
 	n := 0
-	for _, list := range s.buckets {
-		n += len(list)
+	for b := range s.buckets {
+		bucket := &s.buckets[b]
+		bucket.mtx.RLock()
+		n += len(bucket.refs)
+		bucket.mtx.RUnlock()
 	}
 	return n
 }
 
-// anyDirtyLocked reports whether any bucket of the given shard needs
-// re-sorting. The caller must hold the read lock.
-func (s *shardBucketPostings) anyDirtyLocked(shardIndex, shardCount uint64) bool {
-	for b := shardIndex; b < uint64(len(s.buckets)); b += shardCount {
-		if s.dirty[b] {
-			return true
-		}
+// sortDirtyBucketLocked replaces a dirty bucket with a sorted copy. The caller
+// must hold bucket.mtx for writing.
+func sortDirtyBucketLocked(bucket *shardBucket) {
+	dirtyStart := bucket.dirty
+	if dirtyStart == cleanShardBucket {
+		return
 	}
-	return false
-}
-
-// sortDirty replaces dirty buckets with sorted copies.
-func (s *shardBucketPostings) sortDirty() {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-	for b, d := range s.dirty {
-		if !d {
-			continue
-		}
-		sorted := slices.Clone(s.buckets[b])
-		slices.Sort(sorted)
-		s.buckets[b] = sorted
-		s.dirty[b] = false
+	refs := bucket.refs
+	if dirtyStart < len(refs)/2 {
+		bucket.refs = sortRefsFull(refs)
+	} else {
+		bucket.refs = sortRefsSuffix(refs, dirtyStart)
 	}
+	bucket.dirty = cleanShardBucket
 }
 
-// shardFilterPostings filters the input postings to the refs present in the
-// shard's bucket postings. The input is advanced strictly sequentially —
-// never seeked — because it may be an arbitrarily complex postings tree
-// whose Seek is expensive; the bucket side consists of flat sorted lists
-// whose forward Seek is cheap.
-type shardFilterPostings struct {
-	input, buckets index.Postings
-	cur            storage.SeriesRef
+func sortRefsFull(refs []storage.SeriesRef) []storage.SeriesRef {
+	sortedRefs := slices.Clone(refs)
+	slices.Sort(sortedRefs)
+	return sortedRefs
 }
 
-func newShardFilterPostings(input, buckets index.Postings) *shardFilterPostings {
-	return &shardFilterPostings{input: input, buckets: buckets}
-}
-
-func (f *shardFilterPostings) Next() bool {
-	for f.input.Next() {
-		ref := f.input.At()
-		if !f.buckets.Seek(ref) {
-			// The buckets are exhausted: no later input ref can belong to
-			// the shard either.
-			return false
-		}
-		if f.buckets.At() == ref {
-			f.cur = ref
-			return true
-		}
-		// ref is not in the shard. Input refs below the buckets' position
-		// make the Seek above a no-op, so this loop never seeks backward.
+func sortRefsSuffix(refs []storage.SeriesRef, dirtyStart int) []storage.SeriesRef {
+	sortedRefs := slices.Clone(refs)
+	if dirtyStart <= 0 {
+		slices.Sort(sortedRefs)
+		return sortedRefs
 	}
-	return false
-}
-
-// Seek advances sequentially: callers of sharded postings drain them with
-// Next, so an input-preserving linear Seek is preferred over seeking the
-// (potentially expensive) input.
-func (f *shardFilterPostings) Seek(v storage.SeriesRef) bool {
-	// cur == 0 means no successful Next yet: 0 is never a valid series ref.
-	if f.cur != 0 && f.cur >= v {
-		return true
+	if dirtyStart >= len(sortedRefs) {
+		return sortedRefs
 	}
-	for f.Next() {
-		if f.cur >= v {
-			return true
-		}
-	}
-	return false
-}
 
-func (f *shardFilterPostings) At() storage.SeriesRef {
-	return f.cur
-}
-
-func (f *shardFilterPostings) Err() error {
-	if err := f.input.Err(); err != nil {
-		return err
+	minDirtyRef := slices.Min(sortedRefs[dirtyStart:])
+	suffixStart, _ := slices.BinarySearch(sortedRefs[:dirtyStart], minDirtyRef)
+	if suffixStart >= len(sortedRefs)-1 {
+		return sortedRefs
 	}
-	return f.buckets.Err()
+	slices.Sort(sortedRefs[suffixStart:])
+	return sortedRefs
 }
