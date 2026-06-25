@@ -551,8 +551,8 @@ func (p *OpenMetrics2Parser) parseExemplars() error {
 func (p *OpenMetrics2Parser) parseSingleExemplar() (done bool, err error) {
 	var ex om2Exemplar
 
-	// Parse exemplar label set (the "{..." was opened by tComment).
-	eStart, eOffsets, err := p.parseExemplarLVals()
+	// Parse exemplar label set (the "{" was opened by the tComment token).
+	eOffsets, err := p.parseLVals(nil, true)
 	if err != nil {
 		return false, err
 	}
@@ -576,7 +576,6 @@ func (p *OpenMetrics2Parser) parseSingleExemplar() (done bool, err error) {
 		b := eOffsets[i+1]
 		c := eOffsets[i+2]
 		d := eOffsets[i+3]
-		_ = eStart
 		p.builder.Add(string(p.l.b[a:b]), unreplace(string(p.l.b[c:d])))
 	}
 	p.builder.Sort()
@@ -613,43 +612,6 @@ func (p *OpenMetrics2Parser) parseSingleExemplar() (done bool, err error) {
 		}
 	default:
 		return false, p.parseError("expected exemplar timestamp", t2)
-	}
-}
-
-// parseExemplarLVals parses the label set of an exemplar (the "{...}" part
-// after tComment).  Returns the start offset and a flat list of
-// [lName_start, lName_end, lValue_start, lValue_end, ...] offsets into p.l.b.
-func (p *OpenMetrics2Parser) parseExemplarLVals() (int, []int, error) {
-	eStart := p.l.i
-	var offsets []int
-	t := p.nextToken()
-	for {
-		switch t {
-		case tBraceClose:
-			return eStart, offsets, nil
-		case tLName:
-		default:
-			return 0, nil, p.parseError("expected exemplar label name", t)
-		}
-		lStart := p.l.start
-		lEnd := p.l.i
-		if t = p.nextToken(); t != tEqual {
-			return 0, nil, p.parseError("expected '=' in exemplar label", t)
-		}
-		if t = p.nextToken(); t != tLValue {
-			return 0, nil, p.parseError("expected exemplar label value", t)
-		}
-		if !utf8.Valid(p.l.buf()) {
-			return 0, nil, fmt.Errorf("invalid UTF-8 exemplar label value: %q", p.l.buf())
-		}
-		// Strip surrounding quotes from the value.
-		offsets = append(offsets, lStart, lEnd, p.l.start+1, p.l.i-1)
-		t = p.nextToken()
-		if t == tComma {
-			t = p.nextToken()
-		} else if t != tBraceClose {
-			return 0, nil, p.parseError("expected ',' or '}' in exemplar labels", t)
-		}
 	}
 }
 

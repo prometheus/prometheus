@@ -248,6 +248,29 @@ foo_total 1.0 # {data="` + longValue + `"} 1.0 1234567.0
 	requireEntries(t, exp, got)
 }
 
+func TestOpenMetrics2ParseExemplarQuotedUTF8LabelKey(t *testing.T) {
+	// OM2 label-key allows DQUOTE escaped-string-non-empty DQUOTE, permitting
+	// label names that contain characters invalid in plain identifiers (e.g. ".").
+	// parseExemplarLVals only accepted tLName; replacing it with parseLVals
+	// (isExemplar=true) adds tQString support.
+	input := `# TYPE hits gauge
+hits 17.0 # {"my.id"="abc"} 5 1520879600.789
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "hits", typ: model.MetricTypeGauge},
+		{
+			m:    "hits",
+			v:    17.0,
+			lset: labels.FromStrings("__name__", "hits"),
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("my.id", "abc"), Value: 5, HasTs: true, Ts: 1520879600789}},
+		},
+	}
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
 func TestOpenMetrics2ParseCompositeSummary(t *testing.T) {
 	input := `# HELP rpc_duration_seconds RPC duration.
 # TYPE rpc_duration_seconds summary
