@@ -1439,7 +1439,7 @@ eval instant at 10m avg(histogram_sum)
 
 clear
 
-# Test native histograms with incremental avg calulation.
+# Test native histograms with incremental avg calculation.
 # Very large floats involved trigger incremental avg calculation, as direct avg calculation would overflow float64.
 load 10m
     histogram_avg_incremental{idx="0"} {{schema:0 count:1.7976931348623157e+308 sum:5.30921651659898 z_bucket:1.78264e50 z_bucket_w:0.001 buckets:[1.78264E+50 1.78264E+215 1.78264E+219 3363.5121756487] n_buckets:[1178.20696291113 731.697776280323 715.201503759399 1386.11378876781 855.572553278132]}}x1

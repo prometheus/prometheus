@@ -31,65 +31,65 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-const prometheusDocsLTSConfigURL = "https://raw.githubusercontent.com/prometheus/docs/main/docs-config.ts"
+const prometheusDownloadManifestURL = "https://prometheus.io/download.json"
 
-// fetchLTSPrefix fetches the single LTS version prefix (e.g. "3.5") from the docs config.
-func fetchLTSPrefix(t *testing.T) string {
-	t.Helper()
-
-	resp, err := http.Get(prometheusDocsLTSConfigURL)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-
-	// Extracts "X.Y" from the ltsVersions block:
-	//   ltsVersions: {
-	//     prometheus: ["X.Y"],
-	//   },
-	matches := regexp.MustCompile(`ltsVersions:\s*{\s*prometheus:\s*\["(\d+\.\d+)"]`).FindSubmatch(body)
-	require.NotEmpty(t, matches)
-	return string(matches[1])
+// ltsRelease identifies an LTS release and where to download it for the current OS/arch.
+type ltsRelease struct {
+	version  string
+	assetURL string
 }
 
-func fetchLatestLTSRelease(t *testing.T, prefix string) (version, assetURL string) {
+// fetchLTSReleases fetches all current LTS releases and their download URLs for the
+// current OS/arch from the Prometheus download manifest. There may be more than one
+// LTS release active at the same time.
+func fetchLTSReleases(t *testing.T) []ltsRelease {
 	t.Helper()
 
-	resp, err := http.Get("https://api.github.com/repos/prometheus/prometheus/releases?per_page=100")
+	resp, err := http.Get(prometheusDownloadManifestURL)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	var releases []struct {
-		TagName    string `json:"tag_name"`
-		Draft      bool   `json:"draft"`
-		Prerelease bool   `json:"prerelease"`
+	var manifest struct {
+		Prometheus []struct {
+			Version string `json:"version"`
+			LTS     bool   `json:"lts"`
+			Files   []struct {
+				URL  string `json:"url"`
+				OS   string `json:"os"`
+				Arch string `json:"arch"`
+				Kind string `json:"kind"`
+			} `json:"files"`
+		} `json:"prometheus"`
 	}
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&releases))
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&manifest))
 
-	// Releases are assumed sorted by publish date (newest first).
-	for _, r := range releases {
-		if r.Draft || r.Prerelease || !strings.HasPrefix(r.TagName, fmt.Sprintf("v%s.", prefix)) {
+	var releases []ltsRelease
+	for _, r := range manifest.Prometheus {
+		if !r.LTS {
 			continue
 		}
-		version = strings.TrimPrefix(r.TagName, "v")
-		assetURL = fmt.Sprintf(
-			"https://github.com/prometheus/prometheus/releases/download/%s/prometheus-%s.%s-%s.tar.gz",
-			r.TagName, version, runtime.GOOS, runtime.GOARCH,
-		)
-		return version, assetURL
+		var found bool
+		for _, f := range r.Files {
+			if f.Kind == "archive" && f.OS == runtime.GOOS && f.Arch == runtime.GOARCH {
+				releases = append(releases, ltsRelease{
+					version:  strings.TrimPrefix(r.Version, "v"),
+					assetURL: f.URL,
+				})
+				found = true
+				break
+			}
+		}
+		require.True(t, found, "no archive found for current OS/arch in LTS release %s (os=%s arch=%s)", r.Version, runtime.GOOS, runtime.GOARCH)
 	}
-	require.FailNow(t, "no release found matching LTS", "prefix", prefix)
-	return "", ""
+	require.NotEmpty(t, releases, "no LTS release found in download manifest %s", prometheusDownloadManifestURL)
+	return releases
 }
 
 func getPrometheusMetricValue(t *testing.T, port int, metricType model.MetricType, metricName string) (float64, error) {
@@ -301,8 +301,9 @@ func ensureHealthyLogs(t *testing.T, r io.Reader) {
 var testVersionUpgrade = flag.Bool("test.version-upgrade", false, "run resource-intensive and probably slow version upgrade tests")
 
 // TestVersionUpgrade_UpgradeDowngradeLatestLTS verifies that Prometheus can
-// upgrade from the latest LTS release to the current build and then downgrade
-// back without errors (data loss, corruption, etc.).
+// upgrade from each current LTS release to the current build and then downgrade
+// back without errors (data loss, corruption, etc.). There may be more than one
+// active LTS release, in which case each is tested independently.
 //
 // NOTE: If this test is renamed, update the corresponding invocation in CI.
 func TestVersionUpgrade_UpgradeDowngradeLatestLTS(t *testing.T) {
@@ -311,12 +312,21 @@ func TestVersionUpgrade_UpgradeDowngradeLatestLTS(t *testing.T) {
 	}
 
 	start := time.Now()
+
+	ltsReleases := fetchLTSReleases(t)
+	t.Logf("[%s] found %d LTS release(s) from %s", time.Since(start), len(ltsReleases), prometheusDownloadManifestURL)
+
+	for _, lts := range ltsReleases {
+		t.Run(lts.version, func(t *testing.T) {
+			testUpgradeDowngradeLTS(t, start, lts)
+		})
+	}
+}
+
+func testUpgradeDowngradeLTS(t *testing.T, start time.Time, lts ltsRelease) {
 	rootDir := t.TempDir()
 
-	ltsPrefix := fetchLTSPrefix(t)
-	t.Logf("[%s] current LTS major.minor is %s from %s", time.Since(start), ltsPrefix, prometheusDocsLTSConfigURL)
-	ltsVersion, ltsAssetURL := fetchLatestLTSRelease(t, ltsPrefix)
-	t.Logf("[%s] using LTS tag %s from %s", time.Since(start), ltsVersion, ltsAssetURL)
+	t.Logf("[%s] using LTS %s from %s", time.Since(start), lts.version, lts.assetURL)
 
 	rwServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	t.Cleanup(rwServer.Close)
@@ -324,9 +334,9 @@ func TestVersionUpgrade_UpgradeDowngradeLatestLTS(t *testing.T) {
 	c := versionChangeTest{
 		start: start,
 
-		ltsAssetURL: ltsAssetURL,
+		ltsAssetURL: lts.assetURL,
 
-		ltsVersionBinPath: filepath.Join(rootDir, fmt.Sprintf("prometheus-%s", ltsVersion)),
+		ltsVersionBinPath: filepath.Join(rootDir, fmt.Sprintf("prometheus-%s", lts.version)),
 
 		prometheusPort:           testutil.RandomUnprivilegedPort(t),
 		prometheusDataPath:       filepath.Join(rootDir, "data"),
@@ -335,10 +345,10 @@ func TestVersionUpgrade_UpgradeDowngradeLatestLTS(t *testing.T) {
 		remoteWriteURL:           rwServer.URL,
 	}
 
-	t.Logf("[%s] downloading and preparing LTS %s", time.Since(start), ltsVersion)
+	t.Logf("[%s] downloading and preparing LTS %s", time.Since(start), lts.version)
 	// TODO: Cache if downloads are expensive in CI.
 	c.downloadAndExtractLatestLTS(t)
-	t.Logf("[%s] downloaded and prepared LTS %s at %s", time.Since(start), ltsVersion, c.ltsVersionBinPath)
+	t.Logf("[%s] downloaded and prepared LTS %s at %s", time.Since(start), lts.version, c.ltsVersionBinPath)
 
 	c.generatePrometheusConfig(t)
 
@@ -385,13 +395,4 @@ func TestVersionUpgrade_UpgradeDowngradeLatestLTS(t *testing.T) {
 		c.ensureHealthyMetrics(t)
 		require.Equal(t, queryRangeBaseline, c.snapshotQueryRange(t, queryRangeSnapshotEnd))
 	})
-}
-
-// TestVersionUpgrade_fetchLTSPrefix sanity-checks that the docs config reports the right LTS prefix.
-func TestVersionUpgrade_fetchLTSPrefix(t *testing.T) {
-	if !*testVersionUpgrade {
-		t.Skip("test can be slow, resource-intensive or requires internet access")
-	}
-	// Update this when the LTS changes which happens at most once a year.
-	require.Equal(t, "3.5", fetchLTSPrefix(t))
 }

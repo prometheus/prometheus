@@ -391,7 +391,7 @@ func testDroppedTargetsList(t *testing.T, appV2 bool) {
 		}
 		sa                     = selectAppendable(app, appV2)
 		sp, _                  = newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
-		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __convert_classic_histograms_to_nhcb__=\"false\", __scrape_interval__=\"0s\", __scrape_timeout__=\"0s\", job=\"dropMe\"}"
+		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __always_scrape_classic_histograms__=\"false\", __convert_classic_histograms_to_nhcb__=\"false\", __scrape_interval__=\"0s\", __scrape_native_histograms__=\"false\", __scrape_timeout__=\"0s\", job=\"dropMe\"}"
 		expectedLength         = 2
 	)
 	sp.Sync(tgs)

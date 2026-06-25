@@ -2734,6 +2734,10 @@ var expectedErrors = []struct {
 		filename: "tsdb_chunk_encoding_floats_wrong_case_xor2.bad.yml",
 		errMsg:   `'storage.tsdb.chunk_encoding.floats' must be 'xor' or 'xor2', or the field must be omitted entirely, got "XOR2"`,
 	},
+	{
+		filename: "metric_name_validation_scheme.bad.yml",
+		errMsg:   "unrecognized ValidationScheme: \"invalid_scheme\"",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
