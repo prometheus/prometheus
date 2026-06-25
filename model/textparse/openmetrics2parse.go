@@ -738,7 +738,8 @@ func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 
 	isNative := false
 	for _, k := range []string{
-		"schema", "positive_spans", "positive_buckets",
+		"schema", "zero_threshold", "zero_count",
+		"positive_spans", "positive_buckets",
 		"negative_spans", "negative_buckets",
 	} {
 		if _, ok := kv[k]; ok {
@@ -820,30 +821,45 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 		return n, true, err
 	}
 
-	schema64, _, err := getInt("schema")
+	schema64, ok, err := getInt("schema")
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid schema: %w", err)
+	}
+	if !ok {
+		return nil, nil, errors.New("missing required field: schema")
 	}
 
 	countKey, sumKey := "count", "sum"
 	if isGauge {
 		countKey, sumKey = "gcount", "gsum"
 	}
-	count, _, err := getFloat(countKey)
+	count, ok, err := getFloat(countKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid %s: %w", countKey, err)
 	}
-	sum, _, err := getFloat(sumKey)
+	if !ok {
+		return nil, nil, fmt.Errorf("missing required field: %s", countKey)
+	}
+	sum, ok, err := getFloat(sumKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid %s: %w", sumKey, err)
 	}
-	zeroThreshold, _, err := getFloat("zero_threshold")
+	if !ok {
+		return nil, nil, fmt.Errorf("missing required field: %s", sumKey)
+	}
+	zeroThreshold, ok, err := getFloat("zero_threshold")
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid zero_threshold: %w", err)
 	}
-	zeroCount, _, err := getFloat("zero_count")
+	if !ok {
+		return nil, nil, errors.New("missing required field: zero_threshold")
+	}
+	zeroCount, ok, err := getFloat("zero_count")
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid zero_count: %w", err)
+	}
+	if !ok {
+		return nil, nil, errors.New("missing required field: zero_count")
 	}
 
 	// Treat as FloatHistogram if count, zero_count, or any bucket value is non-integer.

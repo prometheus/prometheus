@@ -609,6 +609,26 @@ foo_total 1.0 # {id="x"} 1.0
 `,
 			err: "expected exemplar timestamp",
 		},
+		{
+			input: "# TYPE foo histogram\nfoo {sum:1.0,schema:0,zero_threshold:0,zero_count:0}\n# EOF\n",
+			err:   "missing required field: count",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:1,schema:0,zero_threshold:0,zero_count:0}\n# EOF\n",
+			err:   "missing required field: sum",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:1,sum:1.0,zero_threshold:0,zero_count:0}\n# EOF\n",
+			err:   "missing required field: schema",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:1,sum:1.0,schema:0,zero_count:0}\n# EOF\n",
+			err:   "missing required field: zero_threshold",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:1,sum:1.0,schema:0,zero_threshold:0}\n# EOF\n",
+			err:   "missing required field: zero_count",
+		},
 	} {
 		t.Run(tc.err, func(t *testing.T) {
 			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{})
