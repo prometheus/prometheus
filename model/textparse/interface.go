@@ -181,14 +181,7 @@ func New(b []byte, contentType string, st *labels.SymbolTable, opts ParserOption
 			version = params["version"]
 		}
 		if version == "2.0.0" {
-			var om2Opts []OpenMetrics2Option
-			if opts.EnableTypeAndUnitLabels {
-				om2Opts = append(om2Opts, WithOM2TypeAndUnitLabels())
-			}
-			if opts.KeepClassicOnClassicAndNativeHistograms {
-				om2Opts = append(om2Opts, WithOM2KeepClassicOnNativeHistogram())
-			}
-			baseParser = NewOpenMetrics2Parser(b, st, om2Opts...)
+			baseParser = NewOpenMetrics2Parser(b, st, opts)
 		} else {
 			baseParser = NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
 				o.skipSTSeries = opts.OpenMetricsSkipSTSeries

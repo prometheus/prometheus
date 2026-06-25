@@ -151,44 +151,14 @@ type OpenMetrics2Parser struct {
 	keepClassicOnNativeHist bool
 }
 
-type openMetrics2ParserOptions struct {
-	enableTypeAndUnitLabels bool
-	keepClassicOnNativeHist bool
-}
-
-// OpenMetrics2Option is a functional option for OpenMetrics2Parser.
-type OpenMetrics2Option func(*openMetrics2ParserOptions)
-
-// WithOM2TypeAndUnitLabels enables injection of __type__ and __unit__ labels
-// into parsed series.
-func WithOM2TypeAndUnitLabels() OpenMetrics2Option {
-	return func(o *openMetrics2ParserOptions) {
-		o.enableTypeAndUnitLabels = true
-	}
-}
-
-// WithOM2KeepClassicOnNativeHistogram causes a composite histogram that
-// exposes both native and classic representations in the same composite value
-// to emit the native histogram and the classic _count/_sum/_bucket flat
-// series. By default only the native histogram is emitted.
-func WithOM2KeepClassicOnNativeHistogram() OpenMetrics2Option {
-	return func(o *openMetrics2ParserOptions) {
-		o.keepClassicOnNativeHist = true
-	}
-}
-
 // NewOpenMetrics2Parser returns a new parser for the OpenMetrics 2.0 text
 // format.
-func NewOpenMetrics2Parser(b []byte, st *labels.SymbolTable, opts ...OpenMetrics2Option) Parser {
-	options := &openMetrics2ParserOptions{}
-	for _, opt := range opts {
-		opt(options)
-	}
+func NewOpenMetrics2Parser(b []byte, st *labels.SymbolTable, opts ParserOptions) Parser {
 	return &OpenMetrics2Parser{
 		l:                       &openMetrics2Lexer{b: b},
 		builder:                 labels.NewScratchBuilderWithSymbolTable(st, 16),
-		enableTypeAndUnitLabels: options.enableTypeAndUnitLabels,
-		keepClassicOnNativeHist: options.keepClassicOnNativeHist,
+		enableTypeAndUnitLabels: opts.EnableTypeAndUnitLabels,
+		keepClassicOnNativeHist: opts.KeepClassicOnClassicAndNativeHistograms,
 	}
 }
 

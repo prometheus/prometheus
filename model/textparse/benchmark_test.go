@@ -245,7 +245,7 @@ func benchParse(b *testing.B, data []byte, parser string) {
 		}
 	case "om2text":
 		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
-			return NewOpenMetrics2Parser(b, st)
+			return NewOpenMetrics2Parser(b, st, ParserOptions{})
 		}
 	default:
 		b.Fatal("unknown parser", parser)
@@ -458,7 +458,7 @@ func collectSeries(t *testing.T, data []byte, parser string) []string {
 	case "omtext":
 		p = NewOpenMetricsParser(data, st, WithOMParserSTSeriesSkipped())
 	case "om2text":
-		p = NewOpenMetrics2Parser(data, st)
+		p = NewOpenMetrics2Parser(data, st, ParserOptions{})
 	default:
 		t.Fatalf("unknown parser %q", parser)
 	}

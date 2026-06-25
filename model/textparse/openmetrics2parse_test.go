@@ -120,7 +120,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5 1520879600.789
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -141,7 +141,7 @@ requests_total 42.0 1000000.0 st@500000.0
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -161,7 +161,7 @@ requests_total 42.0 st@500000.0
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -184,7 +184,7 @@ foo_total 17.0 # {id="a"} 1.0 1234566.0 # {id="b"} 2.0 1234567.0
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -212,7 +212,7 @@ http_requests_total 1027 1710000000.0 # {trace_id="abc123",span_id="def456"} 1.0
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -243,7 +243,7 @@ foo_total 1.0 # {data="` + longValue + `"} 1.0 1234567.0
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -266,7 +266,7 @@ hits 17.0 # {"my.id"="abc"} 5 1520879600.789
 			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("my.id", "abc"), Value: 5, HasTs: true, Ts: 1520879600789}},
 		},
 	}
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -308,7 +308,7 @@ rpc_duration_seconds {count:100,sum:30000.0,quantile:[0.5:100.0,0.9:200.0,0.99:3
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -349,7 +349,7 @@ req_duration {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,1.0:2]}
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -393,22 +393,21 @@ req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positiv
 
 	for _, tc := range []struct {
 		name string
-		opts []OpenMetrics2Option
+		opts ParserOptions
 		exp  []parsedEntry
 	}{
 		{
 			name: "keep_classic_off",
-			opts: nil,
 			exp:  append(append([]parsedEntry{}, header...), nativeEntry),
 		},
 		{
 			name: "keep_classic_on",
-			opts: []OpenMetrics2Option{WithOM2KeepClassicOnNativeHistogram()},
+			opts: ParserOptions{KeepClassicOnClassicAndNativeHistograms: true},
 			exp:  append(append(append([]parsedEntry{}, header...), nativeEntry), classicSeries...),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), tc.opts...)
+			p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), tc.opts)
 			got := testParse(t, p)
 			requireEntries(t, tc.exp, got)
 		})
@@ -439,7 +438,7 @@ test_histogram {count:6,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,posi
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -468,7 +467,7 @@ test_histogram {count:6,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,posi
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -496,7 +495,7 @@ test_histogram {count:6,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,nega
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -515,7 +514,7 @@ func TestOpenMetrics2ParseUTF8MetricName(t *testing.T) {
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -575,7 +574,7 @@ un_seconds 1.5
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable())
+			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{})
 			got := testParse(t, p)
 			requireEntries(t, tc.exp, got)
 		})
@@ -612,7 +611,7 @@ foo_total 1.0 # {id="x"} 1.0
 		},
 	} {
 		t.Run(tc.err, func(t *testing.T) {
-			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable())
+			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{})
 			var gotErr error
 			for {
 				_, err := p.Next()
@@ -629,7 +628,7 @@ foo_total 1.0 # {id="x"} 1.0
 // TestOpenMetrics2ParseEOFHandling verifies that the parser returns io.EOF
 // correctly when the input ends with "# EOF\n".
 func TestOpenMetrics2ParseEOFHandling(t *testing.T) {
-	p := NewOpenMetrics2Parser([]byte("# EOF\n"), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte("# EOF\n"), labels.NewSymbolTable(), ParserOptions{})
 	et, err := p.Next()
 	require.Equal(t, EntryInvalid, et)
 	require.ErrorIs(t, err, io.EOF)
@@ -664,7 +663,7 @@ func TestOpenMetrics2ParseCompositeExtraLabelsUTF8(t *testing.T) {
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -703,7 +702,7 @@ req_duration{job="api",env="prod"} {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,1.0:2]}
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -731,7 +730,7 @@ req_duration {count:2,sum:4.0} 1234567.0 st@1000.0
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -758,7 +757,7 @@ test_histogram {count:5.5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2.5,
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -850,7 +849,7 @@ func TestOpenMetrics2ParseNativeHistogramIntVsFloatDiscriminator(t *testing.T) {
 					fhs:  tc.fhs,
 				},
 			}
-			p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+			p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 			got := testParse(t, p)
 			requireEntries(t, exp, got)
 		})
@@ -880,7 +879,7 @@ req_size {gcount:6,gsum:100.0,schema:0,zero_threshold:0.001,zero_count:1,positiv
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -921,7 +920,7 @@ rpc_duration_seconds {count:10,sum:5.0,quantile:[0.5:1.0]}
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), WithOM2TypeAndUnitLabels())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{EnableTypeAndUnitLabels: true})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -966,7 +965,7 @@ unknown_metric 42.0
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), WithOM2TypeAndUnitLabels())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{EnableTypeAndUnitLabels: true})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -1007,7 +1006,7 @@ http_request_duration_seconds {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,0.5:2]}
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), WithOM2TypeAndUnitLabels())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{EnableTypeAndUnitLabels: true})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -1048,7 +1047,7 @@ response_size_bytes {count:4,sum:1024.0,bucket:[+Inf:4,100:1,500:3]}
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), WithOM2TypeAndUnitLabels())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{EnableTypeAndUnitLabels: true})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -1101,7 +1100,7 @@ req_duration {count:144,sum:53.4,bucket:[+Inf:144,0.1:24,0.2:33,0.4:100,1.0:144]
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -1137,7 +1136,7 @@ req_duration {count:2,sum:4.0,bucket:[+Inf:2,1.0:1]} # {id="req-1"} 3.8 9999999.
 		},
 	}
 
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -1160,7 +1159,7 @@ open_fds 8.0
 			lset: labels.FromStrings("__name__", "open_fds", "__type__", "gauge", "__unit__", "fds"),
 		},
 	}
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), WithOM2TypeAndUnitLabels())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{EnableTypeAndUnitLabels: true})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -1181,7 +1180,7 @@ http_requests 1.0
 			lset: labels.FromStrings("__name__", "http_requests", "__type__", "counter", "__unit__", "requests"),
 		},
 	}
-	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), WithOM2TypeAndUnitLabels())
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{EnableTypeAndUnitLabels: true})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
