@@ -1335,7 +1335,7 @@ func (h *Head) WaitForAppendersOverlapping(maxt int64) {
 }
 
 // IsQuerierCollidingWithTruncation returns if the current querier needs to be closed and if a new querier
-// has to be created. Whenever shouldClose or getNew is true, newMint is the lowest time the querier may
+// has to be created. Whenever shouldClose is true, newMint is the lowest time the querier may
 // safely read from the in-order head (the truncation point): in-order data below it has been moved to a
 // block. This methods helps preventing races with the truncation of in-memory data.
 //
