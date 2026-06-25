@@ -1118,3 +1118,47 @@ req_duration {count:2,sum:4.0,bucket:[+Inf:2,1.0:1]} # {id="req-1"} 3.8 9999999.
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
+
+func TestOpenMetrics2ParseDescriptorOrderTypeBeforeHelp(t *testing.T) {
+	// TYPE before HELP (and UNIT after HELP) must not corrupt the parsed type or unit.
+	input := `# TYPE open_fds gauge
+# HELP open_fds Number of open file descriptors.
+# UNIT open_fds fds
+open_fds 8.0
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "open_fds", typ: model.MetricTypeGauge},
+		{m: "open_fds", help: "Number of open file descriptors."},
+		{m: "open_fds", unit: "fds"},
+		{
+			m:    "open_fds",
+			v:    8.0,
+			lset: labels.FromStrings("__name__", "open_fds", "__type__", "gauge", "__unit__", "fds"),
+		},
+	}
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), WithOM2TypeAndUnitLabels())
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
+func TestOpenMetrics2ParseDescriptorOrderUnitBeforeType(t *testing.T) {
+	// UNIT before TYPE: p.unit must not be erased by the p.unit="" reset in tType.
+	input := `# UNIT http_requests requests
+# TYPE http_requests counter
+http_requests 1.0
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "http_requests", unit: "requests"},
+		{m: "http_requests", typ: model.MetricTypeCounter},
+		{
+			m:    "http_requests",
+			v:    1.0,
+			lset: labels.FromStrings("__name__", "http_requests", "__type__", "counter", "__unit__", "requests"),
+		},
+	}
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), WithOM2TypeAndUnitLabels())
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}

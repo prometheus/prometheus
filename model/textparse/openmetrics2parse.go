@@ -96,9 +96,9 @@ type OpenMetrics2Parser struct {
 	l       *openMetrics2Lexer
 	builder labels.ScratchBuilder
 
-	// Metadata for the current metric family.  These fields are set once per
-	// # TYPE / # UNIT line and intentionally persist across every series line
-	// in the same family — they are NOT reset between series entries.
+	// Metadata for the current metric family.  These fields persist across
+	// every series line in the same family and are reset only when a descriptor
+	// line (# TYPE / # HELP / # UNIT) for a new metric family name is seen.
 	mtype model.MetricType
 	unit  string
 	text  []byte
@@ -106,6 +106,12 @@ type OpenMetrics2Parser struct {
 	// Current sample position in the input.
 	series    []byte
 	mfNameLen int // byte length of metric family name within series
+
+	// curFamilyName is a slice into l.b pointing at the metric family name of
+	// the last seen descriptor line (# TYPE / # HELP / # UNIT). Used to detect family
+	// transitions and reset mtype/unit accordingly.
+	curFamilyName []byte
+
 	// offsets encodes the metric name and label positions as absolute byte
 	// offsets into l.b.  Layout: [nameStart, nameEnd, k1Start, k1End,
 	// v1Start, v1End, k2Start, k2End, v2Start, v2End, ...].  Labels() uses
@@ -344,6 +350,14 @@ func (p *OpenMetrics2Parser) Next() (Entry, error) {
 			}
 			p.mfNameLen = mEnd - mStart
 			p.offsets = append(p.offsets, mStart, mEnd)
+			// Reset family state when the metric name changes.  The OM2
+			// places no ordering constraint on TYPE/HELP/UNIT
+			newFamily := p.l.b[mStart:mEnd]
+			if !bytes.Equal(newFamily, p.curFamilyName) {
+				p.mtype = model.MetricTypeUnknown
+				p.unit = ""
+				p.curFamilyName = newFamily
+			}
 		default:
 			return EntryInvalid, p.parseError("expected metric name after "+t.String(), t2)
 		}
@@ -359,7 +373,6 @@ func (p *OpenMetrics2Parser) Next() (Entry, error) {
 		}
 		switch t {
 		case tType:
-			p.unit = ""
 			switch s := yoloString(p.text); s {
 			case "counter":
 				p.mtype = model.MetricTypeCounter
@@ -381,8 +394,6 @@ func (p *OpenMetrics2Parser) Next() (Entry, error) {
 				return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
 			}
 		case tHelp:
-			p.mtype = model.MetricTypeUnknown
-			p.unit = ""
 			if !utf8.Valid(p.text) {
 				return EntryInvalid, fmt.Errorf("help text %q is not a valid utf8 string", p.text)
 			}
