@@ -49,7 +49,7 @@ export const collectNotes = (
       seen.add(key);
       notes.push(
         <>
-          <span className="promql-code promql-keyword">{node.op}()</span> returns
+          <span className="promql-code">{formatDurationNode(node)}</span> returns
           the {node.op === "min_of" ? "smaller" : "larger"} of{" "}
           <span className="promql-code">{formatDurationNode(node.lhs)}</span> and{" "}
           <span className="promql-code">{formatDurationNode(node.rhs)}</span>.
