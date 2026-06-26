@@ -74,21 +74,20 @@ const (
 	authAPIKey            = "api_key"
 	authInstancePrincipal = "instance_principal"
 
-	// defaultRateLimitRPS is the default cap on OCI API calls per second
-	// across all operations (ListCompartments, ListInstances,
-	// ListVnicAttachments, GetVnic). The OCI Go SDK's DefaultRetryPolicy
-	// already backs off on 429 (TooManyRequests) and 5xx responses, so the
-	// client cap is intentionally generous: discovery of a tenancy with a
-	// few thousand instances issues two paginated calls per VNIC plus one
-	// list call per compartment, and the 60s default refresh interval gives
-	// little headroom at low rates. Operators can lower this through the
-	// rate_limit_rps configuration field if their tenancy enforces a
-	// stricter quota.
-	defaultRateLimitRPS = 500.0
+	// rateLimitRPS caps OCI API calls per second across all operations
+	// (ListCompartments, ListInstances, ListVnicAttachments, GetVnic).
+	// The OCI Go SDK's DefaultRetryPolicy already backs off on 429
+	// (TooManyRequests) and 5xx responses, so this is mainly a safety net
+	// against runaway refreshes rather than a quota guard. Discovering a
+	// tenancy with a few thousand instances issues two paginated calls per
+	// VNIC plus one list call per compartment, and the 60s default refresh
+	// interval gives little headroom at low rates, so the value is set
+	// well above what any healthy tenancy needs.
+	rateLimitRPS = 500.0
 
 	// rateLimitBurst caps how many requests can be released back-to-back
 	// before the limiter throttles. Kept small so a cold refresh does not
-	// fire defaultRateLimitRPS requests at once.
+	// fire rateLimitRPS requests at once.
 	rateLimitBurst = 50
 )
 
@@ -97,7 +96,6 @@ var DefaultSDConfig = SDConfig{
 	Port:             80,
 	RefreshInterval:  model.Duration(60 * time.Second),
 	Auth:             authAPIKey,
-	RateLimitRPS:     defaultRateLimitRPS,
 	HTTPClientConfig: config.DefaultHTTPClientConfig,
 }
 
@@ -134,12 +132,6 @@ type SDConfig struct {
 	// all active compartments reachable from the tenancy root are discovered
 	// automatically via the OCI Identity API.
 	Compartments []string `yaml:"compartments,omitempty"`
-
-	// RateLimitRPS caps OCI API calls per second across all operations
-	// (ListCompartments, ListInstances, ListVnicAttachments, GetVnic). The
-	// SDK's default retry policy already backs off on 429 and 5xx responses,
-	// so this is primarily useful for tenancies enforcing a stricter quota.
-	RateLimitRPS float64 `yaml:"rate_limit_rps,omitempty"`
 
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 
@@ -219,10 +211,6 @@ func (c *SDConfig) validate() error {
 		return fmt.Errorf("OCI SD refresh_interval must be positive, got %s", c.RefreshInterval)
 	}
 
-	if c.RateLimitRPS <= 0 {
-		return fmt.Errorf("OCI SD rate_limit_rps must be positive, got %v", c.RateLimitRPS)
-	}
-
 	return c.HTTPClientConfig.Validate()
 }
 
@@ -286,11 +274,7 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery,
 	// Rate limiter and retry policy are shared across all closures so every OCI
 	// API call counts against the same budget. The burst is kept small so a
 	// cold refresh does not fire a full second's worth of calls at once.
-	burst := rateLimitBurst
-	if rps := int(conf.RateLimitRPS); rps > 0 && rps < burst {
-		burst = rps
-	}
-	limiter := rate.NewLimiter(rate.Limit(conf.RateLimitRPS), burst)
+	limiter := rate.NewLimiter(rate.Limit(rateLimitRPS), rateLimitBurst)
 	retryPolicy := common.DefaultRetryPolicy()
 
 	compLister, err := newCompartmentLister(provider, httpClient, tenancy, conf.Compartments, limiter, &retryPolicy, opts.Logger)

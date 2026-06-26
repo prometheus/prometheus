@@ -3032,13 +3032,6 @@ region: <string>
 [ compartments:
   [ - <string> ... ] ]
 
-# Cap on OCI API calls per second across all SD operations
-# (ListCompartments, ListInstances, ListVnicAttachments, GetVnic). The OCI
-# Go SDK's default retry policy already backs off on 429 (TooManyRequests)
-# and 5xx responses, so this is primarily useful for tenancies that enforce
-# a stricter quota. Must be positive.
-[ rate_limit_rps: <float> | default = 500 ]
-
 # Authentication information used to authenticate to the API server.
 # Note that `basic_auth`, `authorization`, and `oauth2` options are
 # mutually exclusive. `password` and `password_file` are mutually exclusive.

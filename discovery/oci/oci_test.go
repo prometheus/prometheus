@@ -737,7 +737,6 @@ func TestSDConfig_Validation(t *testing.T) {
 		Fingerprint:      "aa:bb:cc",
 		KeyFile:          "/etc/oci/key.pem",
 		RefreshInterval:  model.Duration(60 * time.Second),
-		RateLimitRPS:     defaultRateLimitRPS,
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 
@@ -821,16 +820,6 @@ func TestSDConfig_Validation(t *testing.T) {
 			mutate:  func(c *SDConfig) { c.RefreshInterval = model.Duration(-1 * time.Second) },
 			wantErr: "refresh_interval must be positive",
 		},
-		{
-			name:    "rate_limit_rps zero",
-			mutate:  func(c *SDConfig) { c.RateLimitRPS = 0 },
-			wantErr: "rate_limit_rps must be positive",
-		},
-		{
-			name:    "rate_limit_rps negative",
-			mutate:  func(c *SDConfig) { c.RateLimitRPS = -1 },
-			wantErr: "rate_limit_rps must be positive",
-		},
 	}
 
 	for _, tc := range cases {
@@ -849,7 +838,6 @@ func TestSDConfig_ValidInstancePrincipal(t *testing.T) {
 		Auth:             authInstancePrincipal,
 		Region:           "us-ashburn-1",
 		RefreshInterval:  model.Duration(60 * time.Second),
-		RateLimitRPS:     defaultRateLimitRPS,
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 	require.NoError(t, cfg.validate())
@@ -865,7 +853,6 @@ func TestSDConfig_ValidWithExplicitCompartments(t *testing.T) {
 		KeyFile:          "/etc/oci/key.pem",
 		Compartments:     []string{"ocid1.compartment.oc1..c001", "ocid1.compartment.oc1..c002"},
 		RefreshInterval:  model.Duration(60 * time.Second),
-		RateLimitRPS:     defaultRateLimitRPS,
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 	require.NoError(t, cfg.validate())
@@ -881,7 +868,6 @@ func TestSDConfig_ValidAutoDiscovery(t *testing.T) {
 		Fingerprint:      "aa:bb:cc",
 		KeyFile:          "/etc/oci/key.pem",
 		RefreshInterval:  model.Duration(60 * time.Second),
-		RateLimitRPS:     defaultRateLimitRPS,
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 	require.NoError(t, cfg.validate())
@@ -897,7 +883,6 @@ func TestSDConfig_ValidWithKeyPassphraseFile(t *testing.T) {
 		KeyFile:           "/etc/oci/key.pem",
 		KeyPassphraseFile: "/etc/oci/passphrase",
 		RefreshInterval:   model.Duration(60 * time.Second),
-		RateLimitRPS:      defaultRateLimitRPS,
 		HTTPClientConfig:  config.DefaultHTTPClientConfig,
 	}
 	require.NoError(t, cfg.validate())
