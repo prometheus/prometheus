@@ -2972,7 +2972,7 @@ The following meta labels are available on all targets during
 
 * `__meta_oci_availability_domain`: the availability domain of the instance (e.g. `US-ASHBURN-AD-1`)
 * `__meta_oci_compartment_id`: the OCID of the compartment the instance belongs to
-* `__meta_oci_defined_tag_<namespace>_<key>`: each defined tag of the instance; string-typed values only
+* `__meta_oci_defined_tag_<namespace>_<key>`: each defined tag of the instance. Scalar values (strings, numbers, booleans) are stringified; non-scalar values are dropped
 * `__meta_oci_fault_domain`: the fault domain of the instance (e.g. `FAULT-DOMAIN-1`)
 * `__meta_oci_image_id`: the OCID of the image the instance was launched from
 * `__meta_oci_instance_id`: the OCID of the instance
@@ -2982,8 +2982,8 @@ The following meta labels are available on all targets during
 * `__meta_oci_private_ip`: the private IP address of the primary VNIC
 * `__meta_oci_public_ip`: the public IP address of the primary VNIC, if assigned
 * `__meta_oci_region`: the OCI region identifier (e.g. `us-ashburn-1`)
-* `__meta_oci_secondary_private_ips`: comma-separated list (surrounded by commas) of private IPs assigned to any attached non-primary VNICs
-* `__meta_oci_secondary_public_ips`: comma-separated list (surrounded by commas) of public IPs assigned to any attached non-primary VNICs
+* `__meta_oci_secondary_private_ips`: sorted comma-separated list (surrounded by commas) of private IPs assigned to any attached non-primary VNICs
+* `__meta_oci_secondary_public_ips`: sorted comma-separated list (surrounded by commas) of public IPs assigned to any attached non-primary VNICs
 * `__meta_oci_tag_<key>`: each freeform tag of the instance
 * `__meta_oci_tenancy_id`: the OCID of the tenancy the instance belongs to
 * `__meta_oci_vnic_id`: the OCID of the primary VNIC
@@ -3032,8 +3032,12 @@ region: <string>
 [ compartments:
   [ - <string> ... ] ]
 
-# Optional display-name substring filter passed to the OCI ListInstances API.
-[ filter: <string> ]
+# Cap on OCI API calls per second across all SD operations
+# (ListCompartments, ListInstances, ListVnicAttachments, GetVnic). The OCI
+# Go SDK's default retry policy already backs off on 429 (TooManyRequests)
+# and 5xx responses, so this is primarily useful for tenancies that enforce
+# a stricter quota. Must be positive.
+[ rate_limit_rps: <float> | default = 500 ]
 
 # Authentication information used to authenticate to the API server.
 # Note that `basic_auth`, `authorization`, and `oauth2` options are
