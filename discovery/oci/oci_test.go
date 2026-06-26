@@ -185,6 +185,27 @@ func TestInstanceLabels_SecondaryVnicIPsExposed(t *testing.T) {
 	require.Equal(t, model.LabelValue(",203.0.113.2,"), labels[ociLabelSecondaryPublicIPs])
 }
 
+func TestInstanceLabels_SecondaryVnicIPsSortedDeterministically(t *testing.T) {
+	// OCI does not guarantee a stable attachment order between calls. The
+	// joined label value must be sorted so secondary IPs do not churn
+	// between refreshes when ListVnicAttachments returns the same IPs in a
+	// different order.
+	inst := makeInstance()
+	vnics := instanceVnics{
+		primary:    vnicInfo{id: "ocid1.vnic.oc1..p", privateIP: "10.0.0.1"},
+		hasPrimary: true,
+		secondary: []vnicInfo{
+			{id: "s3", privateIP: "10.0.0.30", publicIP: "203.0.113.30"},
+			{id: "s1", privateIP: "10.0.0.10", publicIP: "203.0.113.10"},
+			{id: "s2", privateIP: "10.0.0.20"},
+		},
+	}
+	labels := instanceLabels(&inst, vnics, "tenancy", 80)
+
+	require.Equal(t, model.LabelValue(",10.0.0.10,10.0.0.20,10.0.0.30,"), labels[ociLabelSecondaryPrivateIPs])
+	require.Equal(t, model.LabelValue(",203.0.113.10,203.0.113.30,"), labels[ociLabelSecondaryPublicIPs])
+}
+
 func TestInstanceLabels_NoSecondaryVnicLabelsWhenAbsent(t *testing.T) {
 	inst := makeInstance()
 	labels := instanceLabels(&inst, primaryOnly("v", "10.0.0.1", ""), "tenancy", 80)
@@ -216,14 +237,21 @@ func TestInstanceLabels_FreeformTagsSanitized(t *testing.T) {
 	require.Equal(t, model.LabelValue("lower"), labels[ociLabelFreeformTagPrefix+"env"])
 }
 
-func TestInstanceLabels_DefinedTagsStringOnly(t *testing.T) {
+func TestInstanceLabels_DefinedTagsStringifyScalars(t *testing.T) {
+	// OCI defined tag values may be strings, numbers, or booleans. The SDK
+	// decodes JSON numbers as float64. All scalars are stringified so that
+	// keep/drop relabel rules on numeric or boolean tags match correctly.
 	inst := makeInstance(func(i *core.Instance) {
 		i.DefinedTags = map[string]map[string]any{
 			"Oracle-Tags": {
-				"CreatedBy":  "user@example.com",
-				"CostCenter": "42",
-				"IntValue":   100,  // Must be skipped.
-				"BoolValue":  true, // Must be skipped.
+				"CreatedBy":   "user@example.com",
+				"CostCenter":  "42",
+				"FloatValue":  float64(100),
+				"DecimalRate": float64(0.5),
+				"BoolValue":   true,
+				"IntValue":    int(7),
+				"NilValue":    nil,
+				"SliceValue":  []any{"a"},
 			},
 		}
 	})
@@ -231,12 +259,46 @@ func TestInstanceLabels_DefinedTagsStringOnly(t *testing.T) {
 
 	require.Equal(t, model.LabelValue("user@example.com"), labels[ociLabelDefinedTagPrefix+"Oracle_Tags_CreatedBy"])
 	require.Equal(t, model.LabelValue("42"), labels[ociLabelDefinedTagPrefix+"Oracle_Tags_CostCenter"])
+	require.Equal(t, model.LabelValue("100"), labels[ociLabelDefinedTagPrefix+"Oracle_Tags_FloatValue"])
+	require.Equal(t, model.LabelValue("0.5"), labels[ociLabelDefinedTagPrefix+"Oracle_Tags_DecimalRate"])
+	require.Equal(t, model.LabelValue("true"), labels[ociLabelDefinedTagPrefix+"Oracle_Tags_BoolValue"])
+	require.Equal(t, model.LabelValue("7"), labels[ociLabelDefinedTagPrefix+"Oracle_Tags_IntValue"])
 
-	_, hasInt := labels[ociLabelDefinedTagPrefix+"Oracle_Tags_IntValue"]
-	require.False(t, hasInt, "integer defined tag must not be emitted")
+	_, hasNil := labels[ociLabelDefinedTagPrefix+"Oracle_Tags_NilValue"]
+	require.False(t, hasNil, "nil defined tag must not be emitted")
 
-	_, hasBool := labels[ociLabelDefinedTagPrefix+"Oracle_Tags_BoolValue"]
-	require.False(t, hasBool, "boolean defined tag must not be emitted")
+	_, hasSlice := labels[ociLabelDefinedTagPrefix+"Oracle_Tags_SliceValue"]
+	require.False(t, hasSlice, "non-scalar defined tag must not be emitted")
+}
+
+func TestStringifyDefinedTag(t *testing.T) {
+	cases := []struct {
+		name string
+		in   any
+		want string
+		ok   bool
+	}{
+		{"string", "abc", "abc", true},
+		{"empty string", "", "", true},
+		{"bool true", true, "true", true},
+		{"bool false", false, "false", true},
+		{"float64 whole", float64(42), "42", true},
+		{"float64 fraction", float64(3.14), "3.14", true},
+		{"float32", float32(1.5), "1.5", true},
+		{"int", int(7), "7", true},
+		{"int64", int64(-9), "-9", true},
+		{"int32", int32(3), "3", true},
+		{"nil", nil, "", false},
+		{"slice", []any{"a"}, "", false},
+		{"map", map[string]any{"a": 1}, "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := stringifyDefinedTag(tc.in)
+			require.Equal(t, tc.ok, ok)
+			require.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestInstanceLabels_NilOptionalFields(t *testing.T) {
@@ -391,10 +453,10 @@ func TestRefresh_CompartmentListError_Propagates(t *testing.T) {
 	require.ErrorIs(t, err, sentinel)
 }
 
-func TestRefresh_ListInstancesError_EmptyGroupReturned(t *testing.T) {
-	// listInstances error -> compartment is logged and an empty group is
-	// returned so the discovery manager prunes any stale targets it still
-	// has for this source.
+func TestRefresh_ListInstancesError_PropagatesError(t *testing.T) {
+	// listInstances error -> the refresh fails as a whole so the refresh
+	// framework keeps the last known good targets rather than flapping the
+	// compartment's targets down for a cycle.
 	sentinel := errors.New("OCI API unavailable")
 	d := baseDiscovery()
 	d.listInstances = func(_ context.Context, _ string) ([]core.Instance, error) {
@@ -402,10 +464,8 @@ func TestRefresh_ListInstancesError_EmptyGroupReturned(t *testing.T) {
 	}
 
 	tgs, err := d.refresh(context.Background())
-	require.NoError(t, err)
-	require.Len(t, tgs, 1, "failed compartment must still return an (empty) group")
-	require.Equal(t, "OCI_"+testCompartment, tgs[0].Source)
-	require.Empty(t, tgs[0].Targets)
+	require.ErrorIs(t, err, sentinel)
+	require.Nil(t, tgs, "no target groups must be returned when listInstances fails")
 }
 
 func TestRefresh_EmptyCompartment(t *testing.T) {
@@ -677,6 +737,7 @@ func TestSDConfig_Validation(t *testing.T) {
 		Fingerprint:      "aa:bb:cc",
 		KeyFile:          "/etc/oci/key.pem",
 		RefreshInterval:  model.Duration(60 * time.Second),
+		RateLimitRPS:     defaultRateLimitRPS,
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 
@@ -760,6 +821,16 @@ func TestSDConfig_Validation(t *testing.T) {
 			mutate:  func(c *SDConfig) { c.RefreshInterval = model.Duration(-1 * time.Second) },
 			wantErr: "refresh_interval must be positive",
 		},
+		{
+			name:    "rate_limit_rps zero",
+			mutate:  func(c *SDConfig) { c.RateLimitRPS = 0 },
+			wantErr: "rate_limit_rps must be positive",
+		},
+		{
+			name:    "rate_limit_rps negative",
+			mutate:  func(c *SDConfig) { c.RateLimitRPS = -1 },
+			wantErr: "rate_limit_rps must be positive",
+		},
 	}
 
 	for _, tc := range cases {
@@ -778,6 +849,7 @@ func TestSDConfig_ValidInstancePrincipal(t *testing.T) {
 		Auth:             authInstancePrincipal,
 		Region:           "us-ashburn-1",
 		RefreshInterval:  model.Duration(60 * time.Second),
+		RateLimitRPS:     defaultRateLimitRPS,
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 	require.NoError(t, cfg.validate())
@@ -793,6 +865,7 @@ func TestSDConfig_ValidWithExplicitCompartments(t *testing.T) {
 		KeyFile:          "/etc/oci/key.pem",
 		Compartments:     []string{"ocid1.compartment.oc1..c001", "ocid1.compartment.oc1..c002"},
 		RefreshInterval:  model.Duration(60 * time.Second),
+		RateLimitRPS:     defaultRateLimitRPS,
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 	require.NoError(t, cfg.validate())
@@ -808,6 +881,7 @@ func TestSDConfig_ValidAutoDiscovery(t *testing.T) {
 		Fingerprint:      "aa:bb:cc",
 		KeyFile:          "/etc/oci/key.pem",
 		RefreshInterval:  model.Duration(60 * time.Second),
+		RateLimitRPS:     defaultRateLimitRPS,
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 	require.NoError(t, cfg.validate())
@@ -823,6 +897,7 @@ func TestSDConfig_ValidWithKeyPassphraseFile(t *testing.T) {
 		KeyFile:           "/etc/oci/key.pem",
 		KeyPassphraseFile: "/etc/oci/passphrase",
 		RefreshInterval:   model.Duration(60 * time.Second),
+		RateLimitRPS:      defaultRateLimitRPS,
 		HTTPClientConfig:  config.DefaultHTTPClientConfig,
 	}
 	require.NoError(t, cfg.validate())

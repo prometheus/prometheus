@@ -1271,6 +1271,7 @@ var expectedConf = &Config{
 					Compartments:     []string{"ocid1.compartment.oc1..comp001"},
 					Port:             9100,
 					RefreshInterval:  model.Duration(60 * time.Second),
+					RateLimitRPS:     500,
 					HTTPClientConfig: config.DefaultHTTPClientConfig,
 				},
 			},

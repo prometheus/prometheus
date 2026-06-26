@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -73,10 +74,22 @@ const (
 	authAPIKey            = "api_key"
 	authInstancePrincipal = "instance_principal"
 
-	// rateLimitRPS caps OCI API calls per second across all operations
-	// (ListCompartments, ListInstances, ListVnicAttachments, GetVnic) to stay
-	// well below per-tenancy service limits.
-	rateLimitRPS = 10.0
+	// defaultRateLimitRPS is the default cap on OCI API calls per second
+	// across all operations (ListCompartments, ListInstances,
+	// ListVnicAttachments, GetVnic). The OCI Go SDK's DefaultRetryPolicy
+	// already backs off on 429 (TooManyRequests) and 5xx responses, so the
+	// client cap is intentionally generous: discovery of a tenancy with a
+	// few thousand instances issues two paginated calls per VNIC plus one
+	// list call per compartment, and the 60s default refresh interval gives
+	// little headroom at low rates. Operators can lower this through the
+	// rate_limit_rps configuration field if their tenancy enforces a
+	// stricter quota.
+	defaultRateLimitRPS = 500.0
+
+	// rateLimitBurst caps how many requests can be released back-to-back
+	// before the limiter throttles. Kept small so a cold refresh does not
+	// fire defaultRateLimitRPS requests at once.
+	rateLimitBurst = 50
 )
 
 // DefaultSDConfig is the default OCI service discovery configuration.
@@ -84,6 +97,7 @@ var DefaultSDConfig = SDConfig{
 	Port:             80,
 	RefreshInterval:  model.Duration(60 * time.Second),
 	Auth:             authAPIKey,
+	RateLimitRPS:     defaultRateLimitRPS,
 	HTTPClientConfig: config.DefaultHTTPClientConfig,
 }
 
@@ -121,8 +135,11 @@ type SDConfig struct {
 	// automatically via the OCI Identity API.
 	Compartments []string `yaml:"compartments,omitempty"`
 
-	// Filter is an optional OCI display-name substring filter for ListInstances.
-	Filter string `yaml:"filter,omitempty"`
+	// RateLimitRPS caps OCI API calls per second across all operations
+	// (ListCompartments, ListInstances, ListVnicAttachments, GetVnic). The
+	// SDK's default retry policy already backs off on 429 and 5xx responses,
+	// so this is primarily useful for tenancies enforcing a stricter quota.
+	RateLimitRPS float64 `yaml:"rate_limit_rps,omitempty"`
 
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 
@@ -202,6 +219,10 @@ func (c *SDConfig) validate() error {
 		return fmt.Errorf("OCI SD refresh_interval must be positive, got %s", c.RefreshInterval)
 	}
 
+	if c.RateLimitRPS <= 0 {
+		return fmt.Errorf("OCI SD rate_limit_rps must be positive, got %v", c.RateLimitRPS)
+	}
+
 	return c.HTTPClientConfig.Validate()
 }
 
@@ -263,8 +284,13 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery,
 	}
 
 	// Rate limiter and retry policy are shared across all closures so every OCI
-	// API call counts against the same budget.
-	limiter := rate.NewLimiter(rate.Limit(rateLimitRPS), max(1, int(rateLimitRPS)))
+	// API call counts against the same budget. The burst is kept small so a
+	// cold refresh does not fire a full second's worth of calls at once.
+	burst := rateLimitBurst
+	if rps := int(conf.RateLimitRPS); rps > 0 && rps < burst {
+		burst = rps
+	}
+	limiter := rate.NewLimiter(rate.Limit(conf.RateLimitRPS), burst)
 	retryPolicy := common.DefaultRetryPolicy()
 
 	compLister, err := newCompartmentLister(provider, httpClient, tenancy, conf.Compartments, limiter, &retryPolicy, opts.Logger)
@@ -272,7 +298,7 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery,
 		return nil, fmt.Errorf("OCI SD failed to create compartment lister: %w", err)
 	}
 
-	lister, attachmentLister, fetcher, err := newOCIClients(provider, httpClient, conf.Filter, limiter, &retryPolicy)
+	lister, attachmentLister, fetcher, err := newOCIClients(provider, httpClient, limiter, &retryPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("OCI SD failed to create clients: %w", err)
 	}
@@ -446,7 +472,7 @@ func listAllCompartments(ctx context.Context, paginate compartmentPaginator, roo
 // clients. The concrete client values live only in the closure context so
 // reflection cannot reach them through the interface-boxed Discovery struct,
 // allowing the linker to drop unused SDK operations and keep the binary small.
-func newOCIClients(provider common.ConfigurationProvider, httpClient *http.Client, filter string, limiter *rate.Limiter, retryPolicy *common.RetryPolicy) (instancesLister, vnicAttachmentLister, vnicFetcher, error) {
+func newOCIClients(provider common.ConfigurationProvider, httpClient *http.Client, limiter *rate.Limiter, retryPolicy *common.RetryPolicy) (instancesLister, vnicAttachmentLister, vnicFetcher, error) {
 	computeClient, err := core.NewComputeClientWithConfigurationProvider(provider)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("creating OCI compute client: %w", err)
@@ -467,9 +493,6 @@ func newOCIClients(provider common.ConfigurationProvider, httpClient *http.Clien
 			CompartmentId:   common.String(compartmentID),
 			Limit:           common.Int(100),
 			RequestMetadata: common.RequestMetadata{RetryPolicy: retryPolicy},
-		}
-		if filter != "" {
-			req.DisplayName = common.String(filter)
 		}
 		for {
 			if err := limiter.Wait(ctx); err != nil {
@@ -543,12 +566,10 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 		instances, err := d.listInstances(ctx, compartmentID)
 		if err != nil {
-			d.logger.Warn("OCI SD failed to list instances, clearing compartment targets",
-				"compartment_id", compartmentID, "err", err)
-			// Emit the empty group so the discovery manager prunes any
-			// stale targets it still has for this compartment.
-			tgs = append(tgs, tg)
-			continue
+			// Return the error rather than emitting an empty group: the
+			// refresh framework will keep the last known good targets for
+			// this source, avoiding a flap on a transient OCI API failure.
+			return nil, fmt.Errorf("listing OCI instances in compartment %s: %w", compartmentID, err)
 		}
 
 		for i := range instances {
@@ -671,6 +692,11 @@ func instanceLabels(inst *core.Instance, vnics instanceVnics, tenancy string, po
 				publics = append(publics, v.publicIP)
 			}
 		}
+		// OCI does not guarantee a stable attachment order across
+		// ListVnicAttachments calls, so sort to keep the joined label
+		// value deterministic between refreshes.
+		slices.Sort(privates)
+		slices.Sort(publics)
 		if len(privates) > 0 {
 			labels[ociLabelSecondaryPrivateIPs] = model.LabelValue(joinList(privates))
 		}
@@ -683,11 +709,14 @@ func instanceLabels(inst *core.Instance, vnics instanceVnics, tenancy string, po
 		labels[model.LabelName(ociLabelFreeformTagPrefix+strutil.SanitizeLabelName(k))] = model.LabelValue(v)
 	}
 
-	// Only string-typed defined tag values are emitted; numeric and boolean
-	// values from OCI's typed tag system are skipped to avoid label churn.
+	// OCI's typed tag system allows string, integer, and boolean values for
+	// defined tags. Stringify scalar values so a keep/drop relabel on a
+	// numeric or boolean tag does not silently match nothing. Non-scalar
+	// values (slices, maps) cannot be safely represented as a single label
+	// value and are skipped.
 	for ns, tags := range inst.DefinedTags {
 		for k, v := range tags {
-			s, ok := v.(string)
+			s, ok := stringifyDefinedTag(v)
 			if !ok {
 				continue
 			}
@@ -697,6 +726,34 @@ func instanceLabels(inst *core.Instance, vnics instanceVnics, tenancy string, po
 	}
 
 	return labels
+}
+
+// stringifyDefinedTag converts a scalar OCI defined-tag value to a string.
+// The SDK decodes defined tags as map[string]any: JSON numbers arrive as
+// float64, booleans as bool, and strings as string. Integer fields are kept
+// (some callers may construct DefinedTags in Go directly). Non-scalar
+// values cannot be safely flattened to a label and are reported as not OK.
+func stringifyDefinedTag(v any) (string, bool) {
+	switch t := v.(type) {
+	case nil:
+		return "", false
+	case string:
+		return t, true
+	case bool:
+		return strconv.FormatBool(t), true
+	case float64:
+		return strconv.FormatFloat(t, 'f', -1, 64), true
+	case float32:
+		return strconv.FormatFloat(float64(t), 'f', -1, 32), true
+	case int:
+		return strconv.FormatInt(int64(t), 10), true
+	case int64:
+		return strconv.FormatInt(t, 10), true
+	case int32:
+		return strconv.FormatInt(int64(t), 10), true
+	default:
+		return "", false
+	}
 }
 
 // joinList renders values as a separator-wrapped list (",a,b,c,") so users can
