@@ -251,6 +251,7 @@ export default function RulesPage() {
                       }}
                     >
                       <Accordion.Control
+                        className={classes.ruleControl}
                         styles={{ label: { paddingBlock: rem(10) } }}
                       >
                         <Group justify="space-between" mr="lg">
@@ -272,8 +273,9 @@ export default function RulesPage() {
                             <CopyButton value={r.name}>
                               {({ copied, copy }) => (
                                 <ActionIcon
+                                  className={classes.copyRuleNameButton}
                                   variant="subtle"
-                                  color={copied ? 'teal' : 'gray'}
+                                  color="gray"
                                   onClick={(e) => {
                                     e.stopPropagation(); copy();
                                   }}
