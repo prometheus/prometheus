@@ -2567,7 +2567,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "oci_authentication_method.bad.yml",
-		errMsg:   `OCI SD unknown auth method "invalid", expected "api_key" or "instance_principal"`,
+		errMsg:   `oci_sd: unknown auth method "invalid", expected "api_key" or "instance_principal"`,
 	},
 	{
 		filename: "azure_bearertoken_basicauth.bad.yml",

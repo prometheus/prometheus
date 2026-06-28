@@ -2944,8 +2944,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 OCI SD configurations allow retrieving scrape targets from Oracle Cloud Infrastructure (OCI)
 compute instances. The private IP of the primary VNIC is used as the default address.
-Where no private IP is present (bare-metal instances without secondary VNIC assignment),
-the public IP is used instead.
+Where no private IP is present, the public IP is used instead.
 
 The following OCI IAM policies are required. For API key authentication (user credentials):
 
@@ -2954,7 +2953,6 @@ Allow group <group-name> to read instances in tenancy
 Allow group <group-name> to read compartments in tenancy
 Allow group <group-name> to read vnic-attachments in tenancy
 Allow group <group-name> to read vnics in tenancy
-Allow group <group-name> to read tag-namespaces in tenancy
 ```
 
 For instance principal authentication (Prometheus running on OCI compute):
@@ -2964,7 +2962,6 @@ Allow dynamic-group <dynamic-group-name> to read instances in tenancy
 Allow dynamic-group <dynamic-group-name> to read compartments in tenancy
 Allow dynamic-group <dynamic-group-name> to read vnic-attachments in tenancy
 Allow dynamic-group <dynamic-group-name> to read vnics in tenancy
-Allow dynamic-group <dynamic-group-name> to read tag-namespaces in tenancy
 ```
 
 The following meta labels are available on all targets during
@@ -2982,8 +2979,6 @@ The following meta labels are available on all targets during
 * `__meta_oci_private_ip`: the private IP address of the primary VNIC
 * `__meta_oci_public_ip`: the public IP address of the primary VNIC, if assigned
 * `__meta_oci_region`: the OCI region identifier (e.g. `us-ashburn-1`)
-* `__meta_oci_secondary_private_ips`: sorted comma-separated list (surrounded by commas) of private IPs assigned to any attached non-primary VNICs
-* `__meta_oci_secondary_public_ips`: sorted comma-separated list (surrounded by commas) of public IPs assigned to any attached non-primary VNICs
 * `__meta_oci_tag_<key>`: each freeform tag of the instance
 * `__meta_oci_tenancy_id`: the OCID of the tenancy the instance belongs to
 * `__meta_oci_vnic_id`: the OCID of the primary VNIC

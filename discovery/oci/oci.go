@@ -22,7 +22,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -45,29 +44,22 @@ import (
 )
 
 const (
-	ociLabel                    = model.MetaLabelPrefix + "oci_"
-	ociLabelInstanceID          = ociLabel + "instance_id"
-	ociLabelInstanceName        = ociLabel + "instance_name"
-	ociLabelInstanceState       = ociLabel + "instance_state"
-	ociLabelInstanceShape       = ociLabel + "instance_shape"
-	ociLabelAvailabilityDomain  = ociLabel + "availability_domain"
-	ociLabelFaultDomain         = ociLabel + "fault_domain"
-	ociLabelRegion              = ociLabel + "region"
-	ociLabelTenancyID           = ociLabel + "tenancy_id"
-	ociLabelCompartmentID       = ociLabel + "compartment_id"
-	ociLabelImageID             = ociLabel + "image_id"
-	ociLabelVnicID              = ociLabel + "vnic_id"
-	ociLabelPrivateIP           = ociLabel + "private_ip"
-	ociLabelPublicIP            = ociLabel + "public_ip"
-	ociLabelSecondaryPrivateIPs = ociLabel + "secondary_private_ips"
-	ociLabelSecondaryPublicIPs  = ociLabel + "secondary_public_ips"
-	ociLabelFreeformTagPrefix   = ociLabel + "tag_"
-	ociLabelDefinedTagPrefix    = ociLabel + "defined_tag_"
-
-	// ociLabelSeparator surrounds and separates values in list-valued labels
-	// (e.g. ociLabelSecondaryPrivateIPs) so users can match individual values
-	// with anchored relabel regexes without ambiguity at the boundaries.
-	ociLabelSeparator = ","
+	ociLabel                   = model.MetaLabelPrefix + "oci_"
+	ociLabelInstanceID         = ociLabel + "instance_id"
+	ociLabelInstanceName       = ociLabel + "instance_name"
+	ociLabelInstanceState      = ociLabel + "instance_state"
+	ociLabelInstanceShape      = ociLabel + "instance_shape"
+	ociLabelAvailabilityDomain = ociLabel + "availability_domain"
+	ociLabelFaultDomain        = ociLabel + "fault_domain"
+	ociLabelRegion             = ociLabel + "region"
+	ociLabelTenancyID          = ociLabel + "tenancy_id"
+	ociLabelCompartmentID      = ociLabel + "compartment_id"
+	ociLabelImageID            = ociLabel + "image_id"
+	ociLabelVnicID             = ociLabel + "vnic_id"
+	ociLabelPrivateIP          = ociLabel + "private_ip"
+	ociLabelPublicIP           = ociLabel + "public_ip"
+	ociLabelFreeformTagPrefix  = ociLabel + "tag_"
+	ociLabelDefinedTagPrefix   = ociLabel + "defined_tag_"
 )
 
 const (
@@ -75,19 +67,17 @@ const (
 	authInstancePrincipal = "instance_principal"
 
 	// rateLimitRPS caps OCI API calls per second across all operations
-	// (ListCompartments, ListInstances, ListVnicAttachments, GetVnic).
-	// The OCI Go SDK's DefaultRetryPolicy already backs off on 429
-	// (TooManyRequests) and 5xx responses, so this is mainly a safety net
-	// against runaway refreshes rather than a quota guard. Discovering a
-	// tenancy with a few thousand instances issues two paginated calls per
-	// VNIC plus one list call per compartment, and the 60s default refresh
-	// interval gives little headroom at low rates, so the value is set
-	// well above what any healthy tenancy needs.
-	rateLimitRPS = 500.0
+	// (ListCompartments, ListInstances, ListVnicAttachments, GetVnic). OCI
+	// throttles IAM read/list operations at 20/s on a free domain, and
+	// ListCompartments is an IAM call, so the cap is kept below that ceiling
+	// to avoid 429s. The OCI Go SDK's DefaultRetryPolicy already backs off on
+	// 429 (TooManyRequests) and 5xx responses, so this is mainly a safety net
+	// against runaway refreshes rather than a quota guard.
+	// See https://docs.oracle.com/en-us/iaas/Content/Identity/sku/api-rate-limiting.htm.
+	rateLimitRPS = 10.0
 
-	// rateLimitBurst caps how many requests can be released back-to-back
-	// before the limiter throttles. Kept small so a cold refresh does not
-	// fire rateLimitRPS requests at once.
+	// rateLimitBurst is the token-bucket burst size: the limiter releases up
+	// to this many requests back-to-back before throttling to rateLimitRPS.
 	rateLimitBurst = 50
 )
 
@@ -173,42 +163,42 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 // UnmarshalYAML and is also used directly in tests.
 func (c *SDConfig) validate() error {
 	if c.Region == "" {
-		return errors.New("OCI SD configuration requires a region")
+		return errors.New("oci_sd: region is required")
 	}
 
 	switch c.Auth {
 	case authAPIKey:
 		if c.Tenancy == "" {
-			return errors.New("OCI SD api_key auth requires tenancy")
+			return errors.New("oci_sd: api_key auth requires tenancy")
 		}
 		if c.User == "" {
-			return errors.New("OCI SD api_key auth requires user")
+			return errors.New("oci_sd: api_key auth requires user")
 		}
 		if c.Fingerprint == "" {
-			return errors.New("OCI SD api_key auth requires fingerprint")
+			return errors.New("oci_sd: api_key auth requires fingerprint")
 		}
 		if c.KeyFile == "" {
-			return errors.New("OCI SD api_key auth requires key_file")
+			return errors.New("oci_sd: api_key auth requires key_file")
 		}
 		if c.KeyPassphrase != "" && c.KeyPassphraseFile != "" {
-			return errors.New("OCI SD at most one of key_passphrase and key_passphrase_file must be configured")
+			return errors.New("oci_sd: at most one of key_passphrase and key_passphrase_file must be configured")
 		}
 	case authInstancePrincipal:
 		if c.Tenancy != "" || c.User != "" || c.Fingerprint != "" || c.KeyFile != "" || c.KeyPassphrase != "" || c.KeyPassphraseFile != "" {
-			return errors.New("OCI SD instance_principal auth must not have tenancy, user, fingerprint, key_file, key_passphrase, or key_passphrase_file set")
+			return errors.New("oci_sd: instance_principal auth must not have tenancy, user, fingerprint, key_file, key_passphrase, or key_passphrase_file set")
 		}
 	default:
-		return fmt.Errorf("OCI SD unknown auth method %q, expected %q or %q", c.Auth, authAPIKey, authInstancePrincipal)
+		return fmt.Errorf("oci_sd: unknown auth method %q, expected %q or %q", c.Auth, authAPIKey, authInstancePrincipal)
 	}
 
 	for i, cid := range c.Compartments {
 		if cid == "" {
-			return fmt.Errorf("OCI SD compartments[%d] must not be empty", i)
+			return fmt.Errorf("oci_sd: compartments[%d] must not be empty", i)
 		}
 	}
 
 	if c.RefreshInterval <= 0 {
-		return fmt.Errorf("OCI SD refresh_interval must be positive, got %s", c.RefreshInterval)
+		return fmt.Errorf("oci_sd: refresh_interval must be positive, got %s", c.RefreshInterval)
 	}
 
 	return c.HTTPClientConfig.Validate()
@@ -258,17 +248,17 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery,
 
 	httpClient, err := config.NewClientFromConfig(conf.HTTPClientConfig, "oci_sd")
 	if err != nil {
-		return nil, fmt.Errorf("OCI SD failed to build HTTP client: %w", err)
+		return nil, fmt.Errorf("oci_sd: failed to build HTTP client: %w", err)
 	}
 
 	provider, err := newConfigurationProvider(conf, httpClient)
 	if err != nil {
-		return nil, fmt.Errorf("OCI SD failed to build configuration provider: %w", err)
+		return nil, fmt.Errorf("oci_sd: failed to build configuration provider: %w", err)
 	}
 
 	tenancy, err := provider.TenancyOCID()
 	if err != nil {
-		return nil, fmt.Errorf("OCI SD failed to determine tenancy OCID: %w", err)
+		return nil, fmt.Errorf("oci_sd: failed to determine tenancy OCID: %w", err)
 	}
 
 	// Rate limiter and retry policy are shared across all closures so every OCI
@@ -279,12 +269,12 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery,
 
 	compLister, err := newCompartmentLister(provider, httpClient, tenancy, conf.Compartments, limiter, &retryPolicy, opts.Logger)
 	if err != nil {
-		return nil, fmt.Errorf("OCI SD failed to create compartment lister: %w", err)
+		return nil, fmt.Errorf("oci_sd: failed to create compartment lister: %w", err)
 	}
 
 	lister, attachmentLister, fetcher, err := newOCIClients(provider, httpClient, limiter, &retryPolicy)
 	if err != nil {
-		return nil, fmt.Errorf("OCI SD failed to create clients: %w", err)
+		return nil, fmt.Errorf("oci_sd: failed to create clients: %w", err)
 	}
 
 	d := &Discovery{
@@ -540,7 +530,7 @@ func newOCIClients(provider common.ConfigurationProvider, httpClient *http.Clien
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	compartments, err := d.listCompartments(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("OCI SD failed to list compartments: %w", err)
+		return nil, fmt.Errorf("oci_sd: failed to list compartments: %w", err)
 	}
 
 	var tgs []*targetgroup.Group
@@ -595,19 +585,16 @@ type vnicInfo struct {
 	publicIP  string
 }
 
-// instanceVnics holds the resolved VNICs for one compute instance: the
-// primary VNIC supplies the scrape address and the indexed primary labels,
-// and any additional attached VNICs are emitted as secondary IP lists for
-// relabeling.
+// instanceVnics holds the primary VNIC resolved for one compute instance. The
+// primary VNIC supplies the scrape address and the VNIC meta labels.
 type instanceVnics struct {
-	primary    vnicInfo
-	secondary  []vnicInfo
-	hasPrimary bool
+	primary vnicInfo
 }
 
-// resolveVnics returns all attached VNICs for inst, with the primary VNIC
-// (if any) singled out. Caller must guarantee inst.Id and inst.CompartmentId
-// are non-nil.
+// resolveVnics returns the primary VNIC for inst. Each attachment costs one
+// GetVnic call and OCI offers no batch VNIC fetch, so the walk stops as soon
+// as the primary VNIC is found rather than fanning out a call per attachment.
+// Caller must guarantee inst.Id and inst.CompartmentId are non-nil.
 func (d *Discovery) resolveVnics(ctx context.Context, inst *core.Instance) (instanceVnics, error) {
 	attachments, err := d.listVnicAttachments(ctx, stringVal(inst.CompartmentId), stringVal(inst.Id))
 	if err != nil {
@@ -626,17 +613,14 @@ func (d *Discovery) resolveVnics(ctx context.Context, inst *core.Instance) (inst
 		if vnic == nil {
 			continue
 		}
-		info := vnicInfo{
-			id:        stringVal(vnic.Id),
-			privateIP: stringVal(vnic.PrivateIp),
-			publicIP:  stringVal(vnic.PublicIp),
+		if vnic.IsPrimary != nil && *vnic.IsPrimary {
+			out.primary = vnicInfo{
+				id:        stringVal(vnic.Id),
+				privateIP: stringVal(vnic.PrivateIp),
+				publicIP:  stringVal(vnic.PublicIp),
+			}
+			break
 		}
-		if vnic.IsPrimary != nil && *vnic.IsPrimary && !out.hasPrimary {
-			out.primary = info
-			out.hasPrimary = true
-			continue
-		}
-		out.secondary = append(out.secondary, info)
 	}
 
 	return out, nil
@@ -664,29 +648,6 @@ func instanceLabels(inst *core.Instance, vnics instanceVnics, tenancy string, po
 		ociLabelVnicID:             model.LabelValue(vnics.primary.id),
 		ociLabelPrivateIP:          model.LabelValue(vnics.primary.privateIP),
 		ociLabelPublicIP:           model.LabelValue(vnics.primary.publicIP),
-	}
-
-	if len(vnics.secondary) > 0 {
-		var privates, publics []string
-		for _, v := range vnics.secondary {
-			if v.privateIP != "" {
-				privates = append(privates, v.privateIP)
-			}
-			if v.publicIP != "" {
-				publics = append(publics, v.publicIP)
-			}
-		}
-		// OCI does not guarantee a stable attachment order across
-		// ListVnicAttachments calls, so sort to keep the joined label
-		// value deterministic between refreshes.
-		slices.Sort(privates)
-		slices.Sort(publics)
-		if len(privates) > 0 {
-			labels[ociLabelSecondaryPrivateIPs] = model.LabelValue(joinList(privates))
-		}
-		if len(publics) > 0 {
-			labels[ociLabelSecondaryPublicIPs] = model.LabelValue(joinList(publics))
-		}
 	}
 
 	for k, v := range inst.FreeformTags {
@@ -738,13 +699,6 @@ func stringifyDefinedTag(v any) (string, bool) {
 	default:
 		return "", false
 	}
-}
-
-// joinList renders values as a separator-wrapped list (",a,b,c,") so users can
-// match individual elements with anchored relabel regexes. Matches the EC2 SD
-// subnet_id convention.
-func joinList(values []string) string {
-	return ociLabelSeparator + strings.Join(values, ociLabelSeparator) + ociLabelSeparator
 }
 
 // stringVal dereferences a *string, returning "" if nil.

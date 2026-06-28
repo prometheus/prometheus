@@ -87,8 +87,7 @@ func makeAttachment(instanceID, vnicID string) core.VnicAttachment {
 // primaryOnly is a convenience for tests that only care about the primary VNIC.
 func primaryOnly(id, privateIP, publicIP string) instanceVnics {
 	return instanceVnics{
-		primary:    vnicInfo{id: id, privateIP: privateIP, publicIP: publicIP},
-		hasPrimary: true,
+		primary: vnicInfo{id: id, privateIP: privateIP, publicIP: publicIP},
 	}
 }
 
@@ -167,53 +166,6 @@ func TestInstanceLabels_AddressFallsBackToPublicIP(t *testing.T) {
 	inst := makeInstance()
 	labels := instanceLabels(&inst, primaryOnly("v", "", "203.0.113.1"), "tenancy", 80)
 	require.Equal(t, model.LabelValue("203.0.113.1:80"), labels[model.AddressLabel])
-}
-
-func TestInstanceLabels_SecondaryVnicIPsExposed(t *testing.T) {
-	inst := makeInstance()
-	vnics := instanceVnics{
-		primary:    vnicInfo{id: "ocid1.vnic.oc1..p", privateIP: "10.0.0.1", publicIP: ""},
-		hasPrimary: true,
-		secondary: []vnicInfo{
-			{id: "ocid1.vnic.oc1..s1", privateIP: "10.0.0.2", publicIP: "203.0.113.2"},
-			{id: "ocid1.vnic.oc1..s2", privateIP: "10.0.0.3"},
-		},
-	}
-	labels := instanceLabels(&inst, vnics, "tenancy", 80)
-
-	require.Equal(t, model.LabelValue(",10.0.0.2,10.0.0.3,"), labels[ociLabelSecondaryPrivateIPs])
-	require.Equal(t, model.LabelValue(",203.0.113.2,"), labels[ociLabelSecondaryPublicIPs])
-}
-
-func TestInstanceLabels_SecondaryVnicIPsSortedDeterministically(t *testing.T) {
-	// OCI does not guarantee a stable attachment order between calls. The
-	// joined label value must be sorted so secondary IPs do not churn
-	// between refreshes when ListVnicAttachments returns the same IPs in a
-	// different order.
-	inst := makeInstance()
-	vnics := instanceVnics{
-		primary:    vnicInfo{id: "ocid1.vnic.oc1..p", privateIP: "10.0.0.1"},
-		hasPrimary: true,
-		secondary: []vnicInfo{
-			{id: "s3", privateIP: "10.0.0.30", publicIP: "203.0.113.30"},
-			{id: "s1", privateIP: "10.0.0.10", publicIP: "203.0.113.10"},
-			{id: "s2", privateIP: "10.0.0.20"},
-		},
-	}
-	labels := instanceLabels(&inst, vnics, "tenancy", 80)
-
-	require.Equal(t, model.LabelValue(",10.0.0.10,10.0.0.20,10.0.0.30,"), labels[ociLabelSecondaryPrivateIPs])
-	require.Equal(t, model.LabelValue(",203.0.113.10,203.0.113.30,"), labels[ociLabelSecondaryPublicIPs])
-}
-
-func TestInstanceLabels_NoSecondaryVnicLabelsWhenAbsent(t *testing.T) {
-	inst := makeInstance()
-	labels := instanceLabels(&inst, primaryOnly("v", "10.0.0.1", ""), "tenancy", 80)
-
-	_, hasPrivates := labels[ociLabelSecondaryPrivateIPs]
-	require.False(t, hasPrivates, "secondary private IPs label must not be set when there are no secondaries")
-	_, hasPublics := labels[ociLabelSecondaryPublicIPs]
-	require.False(t, hasPublics, "secondary public IPs label must not be set when there are no secondaries")
 }
 
 func TestInstanceLabels_FreeformTagsSanitized(t *testing.T) {
@@ -349,12 +301,17 @@ func TestRefresh_SingleInstance(t *testing.T) {
 	require.Equal(t, model.LabelValue(testTenancy), labels[ociLabelTenancyID])
 }
 
-func TestRefresh_SecondaryVnicsExposedAsListLabels(t *testing.T) {
+func TestRefresh_ResolvesPrimaryVnicAndStops(t *testing.T) {
+	// Only the primary VNIC is resolved: once it is found the walk stops so a
+	// multi-VNIC instance does not fan out a GetVnic call per attachment. The
+	// primary supplies the address and the VNIC labels; the secondary is never
+	// fetched.
 	inst := makeInstance()
 	primary := &core.Vnic{
 		Id:        strPtr("ocid1.vnic.oc1..p"),
 		IsPrimary: boolPtr(true),
 		PrivateIp: strPtr("10.0.0.1"),
+		PublicIp:  strPtr("203.0.113.1"),
 	}
 	secondary := &core.Vnic{
 		Id:        strPtr("ocid1.vnic.oc1..s"),
@@ -363,6 +320,7 @@ func TestRefresh_SecondaryVnicsExposedAsListLabels(t *testing.T) {
 		PublicIp:  strPtr("203.0.113.2"),
 	}
 
+	getVnicCalls := 0
 	d := baseDiscovery()
 	d.listInstances = func(_ context.Context, _ string) ([]core.Instance, error) {
 		return []core.Instance{inst}, nil
@@ -374,6 +332,7 @@ func TestRefresh_SecondaryVnicsExposedAsListLabels(t *testing.T) {
 		}, nil
 	}
 	d.getVnic = func(_ context.Context, vnicID string) (*core.Vnic, error) {
+		getVnicCalls++
 		switch vnicID {
 		case stringVal(primary.Id):
 			return primary, nil
@@ -389,9 +348,11 @@ func TestRefresh_SecondaryVnicsExposedAsListLabels(t *testing.T) {
 	require.Len(t, tgs[0].Targets, 1)
 
 	labels := tgs[0].Targets[0]
+	require.Equal(t, model.LabelValue("10.0.0.1:9100"), labels[model.AddressLabel])
 	require.Equal(t, model.LabelValue("ocid1.vnic.oc1..p"), labels[ociLabelVnicID])
-	require.Equal(t, model.LabelValue(",10.0.0.2,"), labels[ociLabelSecondaryPrivateIPs])
-	require.Equal(t, model.LabelValue(",203.0.113.2,"), labels[ociLabelSecondaryPublicIPs])
+	require.Equal(t, model.LabelValue("10.0.0.1"), labels[ociLabelPrivateIP])
+	require.Equal(t, model.LabelValue("203.0.113.1"), labels[ociLabelPublicIP])
+	require.Equal(t, 1, getVnicCalls, "must stop after resolving the primary VNIC")
 }
 
 func TestRefresh_MultipleCompartments(t *testing.T) {
@@ -748,7 +709,7 @@ func TestSDConfig_Validation(t *testing.T) {
 		{
 			name:    "missing region",
 			mutate:  func(c *SDConfig) { c.Region = "" },
-			wantErr: "requires a region",
+			wantErr: "region is required",
 		},
 		{
 			name:    "api_key missing tenancy",
