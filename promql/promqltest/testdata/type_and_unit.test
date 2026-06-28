@@ -217,7 +217,7 @@ eval instant at 50m rate(http_requests_total[25m]) * 25 * 60
 
 eval instant at 50m http_requests_total{group="canary"} and http_requests_total{instance="0"}
 	http_requests_total{__type__="gauge", __unit__="not-request", group="canary", instance="0", job="api-server"} 300
-	http_requests_total{__type__="counter", __unit__="", group="canary", instance="0", job="app-server"} 700
+	http_requests_total{__type__="counter", group="canary", instance="0", job="app-server"} 700
 
 eval instant at 50m (http_requests_total{group="canary"} + 1) and http_requests_total{instance="0"}
 	{group="canary", instance="0", job="api-server"} 301
@@ -225,7 +225,7 @@ eval instant at 50m (http_requests_total{group="canary"} + 1) and http_requests_
 
 eval instant at 50m http_requests_total{group="canary"} or http_requests_total{group="production"}
 	http_requests_total{__type__="gauge", __unit__="not-request", group="canary", instance="0", job="api-server"} 300
-	http_requests_total{__type__="counter", __unit__="", group="canary", instance="0", job="app-server"} 700
+	http_requests_total{__type__="counter", group="canary", instance="0", job="app-server"} 700
 	http_requests_total{__type__="counter", __unit__="not-request", group="canary", instance="1", job="api-server"} 400
 	http_requests_total{group="canary", instance="1", job="app-server"} 800
 	http_requests_total{__type__="counter", __unit__="request", group="production", instance="0", job="api-server"} 100
