@@ -742,9 +742,9 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 		req.Header.Set("X-Prometheus-Scrape-Timeout-Seconds", strconv.FormatFloat(s.timeout.Seconds(), 'f', -1, 64))
 
 		s.req = req
-	if _, err := netip.ParseAddr(s.req.URL.Hostname()); err != nil {
-		s.req.Close = true
-	}
+		if _, err := netip.ParseAddr(s.req.URL.Hostname()); err != nil {
+			s.req.Close = true
+		}
 	}
 	ctx, span := otel.Tracer("").Start(ctx, "Scrape", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
