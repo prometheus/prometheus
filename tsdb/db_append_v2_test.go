@@ -7630,11 +7630,10 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 				newSample(10, 100, 0, testHistogram, nil), // Append first sample second (OOO).
 				newSample(20, 200, 0, testHistogram, nil), // Append second sample last (OOO).
 			},
-			// Histograms don't support ST storage yet, should return 0 for ST.
 			expectedSamples: []chunks.Sample{
-				newSample(0, 100, 0, testHistogram, nil),
-				newSample(0, 200, 0, testHistogram, nil),
-				newSample(0, 300, 0, testHistogram, nil),
+				newSample(10, 100, 0, testHistogram, nil),
+				newSample(20, 200, 0, testHistogram, nil),
+				newSample(30, 300, 0, testHistogram, nil),
 			},
 		},
 		{

@@ -4952,7 +4952,6 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 		name        string
 		samples     []sampleData
 		expectedSTs []int64
-		isHistogram bool
 	}{
 		{
 			name: "Float samples with ST",
@@ -4962,7 +4961,6 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 				{st: 30, ts: 300, fSample: 3.0},
 			},
 			expectedSTs: []int64{10, 20, 30},
-			isHistogram: false,
 		},
 		{
 			name: "Float samples with varying ST",
@@ -4972,7 +4970,6 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 				{st: 150, ts: 300, fSample: 3.0},
 			},
 			expectedSTs: []int64{5, 5, 150},
-			isHistogram: false,
 		},
 		{
 			name: "Histogram samples",
@@ -4981,9 +4978,7 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 				{st: 20, ts: 200, h: testHistogram},
 				{st: 30, ts: 300, h: testHistogram},
 			},
-			// Histograms don't support ST storage yet, should return 0.
-			expectedSTs: []int64{0, 0, 0},
-			isHistogram: true,
+			expectedSTs: []int64{10, 20, 30},
 		},
 	}
 
@@ -5038,11 +5033,7 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 				require.NoError(t, it.Err())
 			}
 
-			if tc.isHistogram {
-				require.Equal(t, tc.expectedSTs, actualSTs, "Histogram samples should return 0 for ST")
-			} else {
-				require.Equal(t, tc.expectedSTs, actualSTs, "Float samples should have ST stored")
-			}
+			require.Equal(t, tc.expectedSTs, actualSTs, "ST values should round-trip through chunks")
 
 			// Also verify via querier.
 			q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
