@@ -69,21 +69,161 @@ func funcTime(_ []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (
 // pickOrInterpolateLeft returns the value at the left boundary of the range.
 // If interpolation is needed (when smoothed is true and the first sample is before the range start),
 // it returns the interpolated value at the left boundary; otherwise, it returns the first sample's value.
-func pickOrInterpolateLeft(floats []FPoint, first int, rangeStart int64, smoothed, isCounter bool) float64 {
-	if smoothed && floats[first].T < rangeStart {
-		return interpolate(floats[first], floats[first+1], rangeStart, isCounter)
+// 'first' is expected to point to a most recent sample which is before or at 'rangeStart', or if no samples
+// satisfy this condition – first sample in the slice.
+func pickOrInterpolateLeft(
+	floats []FPoint,
+	startTimestamps []int64,
+	first int,
+	rangeStart int64,
+	lookbackStart int64,
+	smoothed, isCounter bool,
+) (float64, int64) {
+	var (
+		firstDP = floats[first]
+		firstST = stOrDefault(startTimestamps, first, 0)
+
+		returnedST = firstST
+	)
+	if returnedST > rangeStart {
+		returnedST = 0
 	}
-	return floats[first].F
+
+	if firstDP.T == rangeStart {
+		return firstDP.F, firstST
+	}
+
+	if firstDP.T > rangeStart {
+		// 'first' is meant to be the index of the most recent sample with T <= rangeStart.
+		// If the latter is not true, then there are no other samples before it.
+
+		if !isCounter {
+			return firstDP.F, returnedST
+		}
+
+		if !isStartTimestampResetAfter(lookbackStart, firstST, firstDP.T) {
+			// Check if there's a ST reset in the visible lookback.
+			return firstDP.F, returnedST
+		}
+
+		if isStartTimestampResetAfter(rangeStart, firstST, firstDP.T) {
+			// Check if there's a ST reset since the range start.
+			return 0, returnedST
+		}
+
+		if smoothed {
+			return interpolate(FPoint{T: firstST, F: 0}, firstDP, rangeStart, isCounter), returnedST
+		}
+
+		return 0, returnedST
+	}
+
+	var (
+		nextDP = floats[first+1]
+		nextST = stOrDefault(startTimestamps, first+1, 0)
+	)
+
+	switch {
+	case !isCounter:
+		// No adjustments.
+	case isStartTimestampResetAfter(rangeStart, nextST, nextDP.T):
+		// If there is a ST reset with 'nextST' > 'rangeStart', we adjust nextDP.
+		nextDP = FPoint{
+			T: nextST,
+			F: 0,
+		}
+	case isStartTimestampReset(firstST, firstDP.T, nextST, nextDP.T):
+		// Otherwise if there is ST reset between '(firstDP.T, rangeStart]', we adjust firstDP.
+		firstDP = FPoint{
+			T: nextST,
+			F: 0,
+		}
+		returnedST = nextST
+	}
+
+	if smoothed {
+		return interpolate(firstDP, nextDP, rangeStart, isCounter), returnedST
+	}
+
+	return firstDP.F, returnedST
 }
 
 // pickOrInterpolateRight returns the value at the right boundary of the range.
 // If interpolation is needed (when smoothed is true and the last sample is after the range end),
 // it returns the interpolated value at the right boundary; otherwise, it returns the last sample's value.
-func pickOrInterpolateRight(floats []FPoint, last int, rangeEnd int64, smoothed, isCounter bool) float64 {
-	if smoothed && last > 0 && floats[last].T > rangeEnd {
-		return interpolate(floats[last-1], floats[last], rangeEnd, isCounter)
+func pickOrInterpolateRight(
+	floats []FPoint,
+	startTimestamps []int64,
+	last int,
+	rangeEnd int64,
+	lookbackStart int64,
+	smoothed, isCounter bool,
+) (float64, int64) {
+	var (
+		lastDP = floats[last]
+		lastST = stOrDefault(startTimestamps, last, 0)
+
+		returnedST = lastST
+	)
+	if returnedST > rangeEnd {
+		returnedST = 0
 	}
-	return floats[last].F
+
+	if lastDP.T <= rangeEnd {
+		return lastDP.F, returnedST
+	}
+
+	if last == 0 {
+		if !isCounter {
+			return lastDP.F, returnedST
+		}
+
+		if !isStartTimestampResetAfter(lookbackStart, lastST, lastDP.T) {
+			// Check if there's a ST reset in the visible lookback
+			return lastDP.F, returnedST
+		}
+
+		if isStartTimestampResetAfter(rangeEnd, lastST, lastDP.T) {
+			// Check if there's a ST reset since the range end.
+			return 0, returnedST
+		}
+
+		if smoothed {
+			v := interpolate(FPoint{T: lastST, F: 0}, lastDP, rangeEnd, isCounter)
+			return v, returnedST
+		}
+
+		return 0, returnedST
+	}
+
+	var (
+		prevDP = floats[last-1]
+		prevST = stOrDefault(startTimestamps, last-1, 0)
+	)
+
+	switch {
+	case !isCounter:
+		// No adjustments.
+	case isStartTimestampResetAfter(rangeEnd, lastST, lastDP.T):
+		// If there is a ST reset with 'lastST' > 'rangeEnd', we adjust lastDP.
+		lastDP = FPoint{
+			T: lastST,
+			F: 0,
+		}
+		returnedST = prevST
+	case isStartTimestampReset(prevST, prevDP.T, lastST, lastDP.T):
+		// Otherwise if there is ST reset between '(prevDP.T, rangeEnd]', we adjust prevDP.
+		prevDP = FPoint{
+			T: lastST,
+			F: 0,
+		}
+	}
+
+	if smoothed {
+		return interpolate(prevDP, lastDP, rangeEnd, isCounter), returnedST
+	}
+
+	return prevDP.F, returnedST
 }
 
 // interpolate performs linear interpolation between two points.
@@ -162,16 +302,29 @@ func pickOrInterpolateRightHistogram(hists []HPoint, last int, rangeEnd int64, s
 
 // correctForCounterResets calculates the correction for counter resets.
 // This function is only used for extendedRate functions with smoothed or anchored rates.
-func correctForCounterResets(left, right float64, points []FPoint) float64 {
+func correctForCounterResets(
+	left, right float64,
+	leftT, rightT int64,
+	leftST, rightST int64,
+	points []FPoint,
+	startTimestamps []int64,
+) float64 {
 	var correction float64
-	prev := left
-	for _, p := range points {
-		if p.F < prev {
+	var (
+		prev   = left
+		prevT  = leftT
+		prevST = leftST
+	)
+	for i, p := range points {
+		st := stOrDefault(startTimestamps, i, 0)
+		if p.F < prev || isStartTimestampReset(prevST, prevT, st, p.T) {
 			correction += prev
 		}
 		prev = p.F
+		prevT = p.T
+		prevST = st
 	}
-	if right < prev {
+	if right < prev || isStartTimestampReset(prevST, prevT, rightST, rightT) {
 		correction += prev
 	}
 	return correction
@@ -315,9 +468,15 @@ func extendedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isC
 		lastSampleIndex = len(f) - 1
 		rangeStart      = enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
 		rangeEnd        = enh.Ts - durationMilliseconds(vs.Offset)
+		lookbackStart   = rangeStart - durationMilliseconds(enh.LookbackDelta)
 		annos           annotations.Annotations
 		smoothed        = vs.Smoothed
+		startTimestamps []int64
 	)
+
+	if sts := enh.StartTimestamps; sts != nil {
+		startTimestamps = sts.Floats
+	}
 
 	firstSampleIndex := max(0, sort.Search(lastSampleIndex, func(i int) bool { return f[i].T > rangeStart })-1)
 	if smoothed {
@@ -327,12 +486,17 @@ func extendedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isC
 	if f[lastSampleIndex].T <= rangeStart {
 		return enh.Out, annos
 	}
-	if smoothed && f[firstSampleIndex].T > rangeEnd {
-		return enh.Out, annos
+	if firstT := f[firstSampleIndex].T; smoothed && firstT > rangeEnd {
+		firstST := stOrDefault(startTimestamps, firstSampleIndex, 0)
+		if !isCounter || !isStartTimestampReset(lookbackStart, lookbackStart, firstST, firstT) || isStartTimestampReset(rangeEnd, rangeEnd, firstST, firstT) {
+			// We cannot calculate a rate if there's no ST reset in inside lookback range, or if the reset is after
+			// range end.
+			return enh.Out, annos
+		}
 	}
 
-	left := pickOrInterpolateLeft(f, firstSampleIndex, rangeStart, smoothed, isCounter)
-	right := pickOrInterpolateRight(f, lastSampleIndex, rangeEnd, smoothed, isCounter)
+	left, leftST := pickOrInterpolateLeft(f, startTimestamps, firstSampleIndex, rangeStart, lookbackStart, smoothed, isCounter)
+	right, rightST := pickOrInterpolateRight(f, startTimestamps, lastSampleIndex, rangeEnd, lookbackStart, smoothed, isCounter)
 
 	resultFloat := right - left
 
@@ -347,7 +511,9 @@ func extendedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isC
 			lastSampleIndex--
 		}
 
-		resultFloat += correctForCounterResets(left, right, f[firstSampleIndex:lastSampleIndex+1])
+		stLen := len(startTimestamps)
+		sts := startTimestamps[min(stLen, firstSampleIndex):min(stLen, lastSampleIndex+1)]
+		resultFloat += correctForCounterResets(left, right, rangeStart, rangeEnd, leftST, rightST, f[firstSampleIndex:lastSampleIndex+1], sts)
 	}
 	if isRate {
 		resultFloat /= ms.Range.Seconds()
@@ -702,8 +868,9 @@ func histogramRate(
 
 // isStartTimestampReset tells whether there was a counter reset by checking the start timestamp value.
 func isStartTimestampReset(prevStartTimestamp, prevTimestamp, currStartTimestamp, currTimestamp int64) bool {
-	if currStartTimestamp == 0 || currStartTimestamp > currTimestamp {
-		// No reset if start timestamp is not set (value is 0), or if it is clearly invalid.
+	if currStartTimestamp == 0 || currStartTimestamp >= currTimestamp {
+		// No reset if start timestamp is not set (value is 0), if it is clearly invalid
+		// (ST > T), or if it is OTel's unknown start time (ST == T).
 		return false
 	}
 
@@ -729,7 +896,18 @@ func isStartTimestampReset(prevStartTimestamp, prevTimestamp, currStartTimestamp
 	if prevStartTimestamp > prevTimestamp {
 		return false
 	}
-	return prevStartTimestamp != 0
+	return prevStartTimestamp != 0 && prevStartTimestamp != prevTimestamp
+}
+
+func isStartTimestampResetAfter(t, startTimestamps, timestamp int64) bool {
+	if startTimestamps <= t || timestamp <= t {
+		return false
+	}
+	// To check whether there is a start timestamps reset after a time t, we use the same function
+	// which checks for resets between two datapoints. However, for previous datapoint we pass an imaginary
+	// datapoints with T=t and ST=t. This creates and unknown start timestamp datapoint (ST==T),
+	// which only allows resets if following datapoint ST is after it.
+	return isStartTimestampReset(t, t, startTimestamps, timestamp)
 }
 
 // === delta(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
@@ -2789,4 +2967,11 @@ func stringSliceFromArgs(args parser.Expressions) []string {
 
 func getMetricName(metric labels.Labels) string {
 	return metric.Get(model.MetricNameLabel)
+}
+
+func stOrDefault(startTimestamps []int64, idx int, def int64) int64 {
+	if idx < len(startTimestamps) {
+		return startTimestamps[idx]
+	}
+	return def
 }

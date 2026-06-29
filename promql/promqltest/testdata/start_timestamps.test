@@ -26,11 +26,16 @@ eval range from 7m to 15m step 1m round(increase(cumulative[5m1ms]))
     {type="st_resets"}          420 720 720 600 1080 1080 780 1440 1440
     {type="normalized_resets"}  420 720 720 600 1080 1080 780 1440 1440
 
-# TODO actual anchored
-# eval range from 7m to 15m step 1m increase(cumulative[5m] anchored)
-#    {type="no_st"}              300 300 300 300  300  300 300  300  300
-#    {type="st_resets"}          420 720 720 600 1080 1080 780 1440 1440
-#    {type="normalized_resets"}  420 720 720 600 1080 1080 780 1440 1440
+eval range from 7m to 15m step 1m increase(cumulative[5m] anchored)
+    {type="no_st"}              300 300 300 300  300  300 300  300  300
+    {type="st_resets"}          420 720 720 600 1080 1080 780 1440 1440
+    {type="normalized_resets"}  420 720 720 600 1080 1080 780 1440 1440
+
+eval range from 7m to 15m step 1m increase(cumulative[5m] smoothed)
+    {type="no_st"}              300 300 300 300  300  300 300  300  300
+    {type="st_resets"}          420 720 720 600 1080 1080 780 1440 1440
+    {type="normalized_resets"}  420 720 720 600 1080 1080 780 1440 1440
+
 
 # Subqueries cut the propagation of start timestamps.
 eval range from 7m to 15m step 1m increase(cumulative[5m:1m])
@@ -68,7 +73,7 @@ eval range from 10m to 15m step 1m increase(delta[5m])
     {type="otel"}               300x5
     {type="gcp"}                300x5
     {type="minimal_range"}      300x5
-    {type="empty_range"}        300x5
+    {type="empty_range"}          0x5
     {type="normalized_resets"}  300x5
 
 eval range from 10m to 15m step 1m rate(delta[5m])
@@ -76,7 +81,7 @@ eval range from 10m to 15m step 1m rate(delta[5m])
     {type="otel"}               1x5
     {type="gcp"}                1x5
     {type="minimal_range"}      1x5
-    {type="empty_range"}        1x5
+    {type="empty_range"}        0x5
     {type="normalized_resets"}  1x5
 
 eval range from 10m to 15m step 1m irate(delta[5m])
@@ -84,7 +89,7 @@ eval range from 10m to 15m step 1m irate(delta[5m])
     {type="otel"}               1x5
     {type="gcp"}                1x5
     {type="minimal_range"}      1x5
-    {type="empty_range"}        1x5
+    {type="empty_range"}        0x5
     {type="normalized_resets"}  1x5
 
 # Subqueries cuts the propagation of start timestamps
@@ -115,6 +120,232 @@ eval instant at 3m round(increase(series[1m1ms]))
     {type="otel_cumulative_unknown_start"}  0
     {type="otel_delta"}                     1
     {type="invalid_prev_st"}                0
+
+clear
+
+# Tests for extended range selectors (`anchored`, `smoothed`).
+load 1m
+    series{type="1_dp_before/st_outside_lookback"}@st                 _x100 -10m    _    _    _
+    series{type="1_dp_before/st_outside_lookback"}                    _x100   60    _    _    _
+    series{type="1_dp_before/st_outside_range"}@st                    _x100  -3m    _    _    _
+    series{type="1_dp_before/st_outside_range"}                       _x100   60    _    _    _
+    series{type="1_dp_before/st_at_range_edge"}@st                    _x100  -1m    _    _    _
+    series{type="1_dp_before/st_at_range_edge"}                       _x100   60    _    _    _
+    series{type="1_dp_before/st_inside"}@st                           _x100 -30s    _    _    _
+    series{type="1_dp_before/st_inside"}                              _x100   60    _    _    _
+    series{type="1_dp_at/st_outside_range"}@st                        _x100    _ -10m    _    _
+    series{type="1_dp_at/st_outside_range"}                           _x100    _   60    _    _
+    series{type="1_dp_at/st_outside_range"}@st                        _x100    _  -3m    _    _
+    series{type="1_dp_at/st_outside_range"}                           _x100    _   60    _    _
+    series{type="1_dp_at/st_at_range_edge"}@st                        _x100    _  -2m    _    _
+    series{type="1_dp_at/st_at_range_edge"}                           _x100    _   60    _    _
+    series{type="1_dp_at/st_inside_range"}@st                         _x100    _  -1m    _    _
+    series{type="1_dp_at/st_inside_range"}                            _x100    _   60    _    _
+    series{type="1_dp_after/st_outside_lookback"}@st                  _x100    _    _ -10m    _
+    series{type="1_dp_after/st_outside_lookback"}                     _x100    _    _   60    _
+    series{type="1_dp_after/st_outside_range"}@st                     _x100    _    _  -5m    _
+    series{type="1_dp_after/st_outside_range"}                        _x100    _    _   60    _
+    series{type="1_dp_after/st_at_range_edge"}@st                     _x100    _    _  -3m    _
+    series{type="1_dp_after/st_at_range_edge"}                        _x100    _    _   60    _
+    series{type="1_dp_after/st_close"}@st                             _x100    _    _  -2m    _
+    series{type="1_dp_after/st_close"}                                _x100    _    _   60    _
+    series{type="1_dp_after/st_closer"}@st                            _x100    _    _  -1m    _
+    series{type="1_dp_after/st_closer"}                               _x100    _    _   60    _
+    series{type="1_dp_after/st_closest"}@st                           _x100    _    _ -30s    _
+    series{type="1_dp_after/st_closest"}                              _x100    _    _   60    _
+    series{type="2_dp_before/st_no_reset"}@st                         _x100  -1m  -2m    _    _
+    series{type="2_dp_before/st_no_reset"}                            _x100   60  120    _    _
+    series{type="2_dp_before/st_delta_reset"}@st                      _x100  -1m  -1m    _    _
+    series{type="2_dp_before/st_delta_reset"}                         _x100   60   60    _    _
+    series{type="2_dp_before/st_reset_inside"}@st                     _x100  -1m -30s    _    _
+    series{type="2_dp_before/st_reset_inside"}                        _x100   60   60    _    _
+    series{type="2_dp_before/st_unknown"}@st                          _x100    0  -1m    _    _
+    series{type="2_dp_before/st_unknown"}                             _x100   60  120    _    _
+    series{type="2_dp_straddle/st_no_reset"}@st                       _x100  -1m    _  -3m    _
+    series{type="2_dp_straddle/st_no_reset"}                          _x100   60    _  120    _
+    series{type="2_dp_straddle/st_delta_reset"}@st                    _x100  -1m    _  -2m    _
+    series{type="2_dp_straddle/st_delta_reset"}                       _x100   60    _   60    _
+    series{type="2_dp_straddle/st_reset_inside"}@st                   _x100  -1m    _ -90s    _
+    series{type="2_dp_straddle/st_reset_inside"}                      _x100   60    _   60    _
+    series{type="2_dp_straddle/st_reset_inside_closer"}@st            _x100  -1m    _ -30s    _
+    series{type="2_dp_straddle/st_reset_inside_closer"}               _x100   60    _   60    _
+    series{type="2_dp_straddle/st_unknown"}@st                        _x100    0    _  -2m    _
+    series{type="2_dp_straddle/st_unknown"}                           _x100   60    _  120    _
+    series{type="2_dp_after/st_no_reset"}@st                          _x100    _  -1m  -2m    _
+    series{type="2_dp_after/st_no_reset"}                             _x100    _   60  120    _
+    series{type="2_dp_after/st_delta_reset"}@st                       _x100    _  -1m  -1m    _
+    series{type="2_dp_after/st_delta_reset"}                          _x100    _   60   60    _
+    series{type="2_dp_after/st_reset_inside"}@st                      _x100    _  -1m -30s    _
+    series{type="2_dp_after/st_reset_inside"}                         _x100    _   60   60    _
+    series{type="2_dp_after/st_unknown"}@st                           _x100    _    0  -1m    _
+    series{type="2_dp_after/st_unknown"}                              _x100    _   60  120    _
+
+eval instant at 101m increase(series[2m] anchored)
+    {type="1_dp_before/st_outside_lookback"}               0
+    {type="1_dp_before/st_outside_range"}                 60
+    {type="1_dp_before/st_at_range_edge"}                 60
+    {type="1_dp_before/st_inside"}                        60
+    {type="1_dp_at/st_outside_range"}                     60
+    {type="1_dp_at/st_outside_range"}                     60
+    {type="1_dp_at/st_at_range_edge"}                     60
+    {type="1_dp_at/st_inside_range"}                      60
+    {type="2_dp_before/st_no_reset"}                     120
+    {type="2_dp_before/st_delta_reset"}                  120
+    {type="2_dp_before/st_reset_inside"}                 120
+    {type="2_dp_before/st_unknown"}                       60
+    {type="2_dp_straddle/st_no_reset"}                    60
+    {type="2_dp_straddle/st_delta_reset"}                 60
+    {type="2_dp_straddle/st_reset_inside"}                60
+    {type="2_dp_straddle/st_reset_inside_closer"}         60
+    {type="2_dp_straddle/st_unknown"}                      0
+    {type="2_dp_after/st_no_reset"}                       60
+    {type="2_dp_after/st_delta_reset"}                    60
+    {type="2_dp_after/st_reset_inside"}                   60
+    {type="2_dp_after/st_unknown"}                         0
+
+eval instant at 103m increase(series[2m] anchored)
+    {type="1_dp_after/st_outside_lookback"}                0
+    {type="1_dp_after/st_outside_range"}                  60
+    {type="1_dp_after/st_at_range_edge"}                  60
+    {type="1_dp_after/st_close"}                          60
+    {type="1_dp_after/st_closer"}                         60
+    {type="1_dp_after/st_closest"}                        60
+    {type="2_dp_straddle/st_no_reset"}                    60
+    {type="2_dp_straddle/st_delta_reset"}                 60
+    {type="2_dp_straddle/st_reset_inside"}                60
+    {type="2_dp_straddle/st_reset_inside_closer"}         60
+    {type="2_dp_straddle/st_unknown"}                     60
+    {type="2_dp_after/st_no_reset"}                       60
+    {type="2_dp_after/st_delta_reset"}                    60
+    {type="2_dp_after/st_reset_inside"}                   60
+    {type="2_dp_after/st_unknown"}                        60
+
+eval instant at 101m rate(series[2m] smoothed)
+    {type="1_dp_before/st_outside_lookback"}              0
+    {type="1_dp_before/st_outside_range"}                 0.1666666666666667
+    {type="1_dp_before/st_at_range_edge"}                 0.5
+    {type="1_dp_before/st_inside"}                        0.5
+    {type="1_dp_at/st_outside_range"}                     0.3333333333333333
+    {type="1_dp_at/st_at_range_edge"}                     0.5
+    {type="1_dp_at/st_inside_range"}                      0.5
+    {type="1_dp_after/st_outside_range"}                  0.2
+    {type="1_dp_after/st_at_range_edge"}                  0.3333333333333333
+    {type="1_dp_after/st_close"}                          0.25
+    {type="1_dp_after/st_closer"}                         0
+    {type="2_dp_before/st_no_reset"}                      1
+    {type="2_dp_before/st_delta_reset"}                   1
+    {type="2_dp_before/st_reset_inside"}                  1
+    {type="2_dp_before/st_unknown"}                       0.5
+    {type="2_dp_straddle/st_no_reset"}                    0.75
+    {type="2_dp_straddle/st_delta_reset"}                 0.75
+    {type="2_dp_straddle/st_reset_inside"}                0.6666666666666667
+    {type="2_dp_straddle/st_reset_inside_closer"}         0.5
+    {type="2_dp_straddle/st_unknown"}                     0.25
+    {type="2_dp_after/st_no_reset"}                       0.5
+    {type="2_dp_after/st_delta_reset"}                    0.5
+    {type="2_dp_after/st_reset_inside"}                   0.5
+    {type="2_dp_after/st_unknown"}                        0
+
+eval instant at 103m rate(series[2m] smoothed)
+    {type="1_dp_after/st_outside_lookback"}               0
+    {type="1_dp_after/st_outside_range"}                  0.1
+    {type="1_dp_after/st_at_range_edge"}                  0.16666666666666667
+    {type="1_dp_after/st_close"}                          0.25
+    {type="1_dp_after/st_closer"}                         0.5
+    {type="1_dp_after/st_closest"}                        0.5
+    {type="2_dp_straddle/st_no_reset"}                    0.25
+    {type="2_dp_straddle/st_delta_reset"}                 0.25
+    {type="2_dp_straddle/st_reset_inside"}                0.3333333333333333
+    {type="2_dp_straddle/st_reset_inside_closer"}         0.5
+    {type="2_dp_straddle/st_unknown"}                     0.25
+    {type="2_dp_after/st_no_reset"}                       0.5
+    {type="2_dp_after/st_delta_reset"}                    0.5
+    {type="2_dp_after/st_reset_inside"}                   0.5
+    {type="2_dp_after/st_unknown"}                        0.5
+
+clear
+
+
+load 1m
+    series{type="st_no_reset"}@st                       _x100  -1m    _  -3m    _  -5m
+    series{type="st_no_reset"}                          _x100   60    _  120    _  180
+    series{type="st_delta_reset"}@st                    _x100  -1m    _  -2m    _  -2m
+    series{type="st_delta_reset"}                       _x100   60    _   60    _   60
+    series{type="st_reset_inside"}@st                   _x100  -1m    _ -90s    _ -90s
+    series{type="st_reset_inside"}                      _x100   60    _   60    _   60
+    series{type="st_reset_inside_closer"}@st            _x100  -1m    _ -30s    _ -30s
+    series{type="st_reset_inside_closer"}               _x100   60    _   60    _   60
+    series{type="st_unknown"}@st                        _x100    0    _  -2m    _  -5m
+    series{type="st_unknown"}                           _x100   60    _  120    _  180
+
+# A few tests with selected timeseries to validate that delta() function ignores start timestamps.
+eval instant at 101m delta(series[2m] smoothed)
+    {type="st_no_reset"}             30
+    {type="st_delta_reset"}           0
+    {type="st_reset_inside"}          0
+    {type="st_reset_inside_closer"}   0
+    {type="st_unknown"}              30
+
+eval instant at 103m delta(series[2m] anchored)
+    {type="st_no_reset"}             60
+    {type="st_delta_reset"}           0
+    {type="st_reset_inside"}          0
+    {type="st_reset_inside_closer"}   0
+    {type="st_unknown"}              60
+
+# A few tests for raw sample anchoring / smoothing.
+# TODO: the code currently treats these series not as counters, so STs are ignored.
+eval instant at 101m series smoothed
+    series{type="st_no_reset"}             90
+    series{type="st_delta_reset"}          60
+    series{type="st_reset_inside"}         60
+    series{type="st_reset_inside_closer"}  60
+    series{type="st_unknown"}              90
+
+eval instant at 101m series anchored
+    series{type="st_no_reset"}             60
+    series{type="st_delta_reset"}          60
+    series{type="st_reset_inside"}         60
+    series{type="st_reset_inside_closer"}  60
+    series{type="st_unknown"}              60
+
+eval instant at 103m series[2m] smoothed
+    expect range vector from 101m to 103m step 1m
+    series{type="st_no_reset"}             90 120 150
+    series{type="st_delta_reset"}          60  60  60
+    series{type="st_reset_inside"}         60  60  60
+    series{type="st_reset_inside_closer"}  60  60  60
+    series{type="st_unknown"}              90 120 150
+
+eval instant at 103m series[2m] anchored
+    expect range vector from 101m to 103m step 1m
+    series{type="st_no_reset"}             60 120 120
+    series{type="st_delta_reset"}          60  60  60
+    series{type="st_reset_inside"}         60  60  60
+    series{type="st_reset_inside_closer"}  60  60  60
+    series{type="st_unknown"}              60 120 120
+
+clear
+
+
+# Special case for to check that counter resets don't get lost when `pickOrInterpolate*()` functions
+# project/interpolate samples at range start. This might happen if there was a sample the ST of which
+# was pointing to range start. If there were no samples at range start, then this means a counter reset.
+# However, once we project/interpolate a sample at range start, with particular ST values this might
+# become unknown ST, losing the reset.
+load 1m
+    series{type="potentially_unknown_ST=0"}@st     _x100    _    _  -1m    _
+    series{type="potentially_unknown_ST=0"}        _x100   60    _   60    _
+    series{type="potentially_unknown_ST=T"}@st     _x100   1m    _  -1m    _
+    series{type="potentially_unknown_ST=T"}        _x100   60    _   60    _
+
+eval instant at 103m increase(series[2m] anchored)
+    {type="potentially_unknown_ST=0"}       60
+    {type="potentially_unknown_ST=T"}       60
+
+eval instant at 103m rate(series[2m] smoothed)
+    {type="potentially_unknown_ST=0"}       0.5
+    {type="potentially_unknown_ST=T"}       0.5
 
 clear
 
