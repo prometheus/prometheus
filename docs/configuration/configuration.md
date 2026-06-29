@@ -2944,7 +2944,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 OCI SD configurations allow retrieving scrape targets from Oracle Cloud Infrastructure (OCI)
 compute instances. The private IP of the primary VNIC is used as the default address.
-Where no private IP is present, the public IP is used instead.
+Where no private IP is present, the public IP is used instead, and where neither is
+present the first IPv6 address of the primary VNIC is used.
 
 The following OCI IAM policies are required. For API key authentication (user credentials):
 
@@ -2971,11 +2972,13 @@ The following meta labels are available on all targets during
 * `__meta_oci_compartment_id`: the OCID of the compartment the instance belongs to
 * `__meta_oci_defined_tag_<namespace>_<key>`: each defined tag of the instance. Scalar values (strings, numbers, booleans) are stringified; non-scalar values are dropped
 * `__meta_oci_fault_domain`: the fault domain of the instance (e.g. `FAULT-DOMAIN-1`)
+* `__meta_oci_hostname_label`: the hostname label of the primary VNIC, if assigned
 * `__meta_oci_image_id`: the OCID of the image the instance was launched from
 * `__meta_oci_instance_id`: the OCID of the instance
 * `__meta_oci_instance_name`: the display name of the instance
 * `__meta_oci_instance_shape`: the shape of the instance (e.g. `VM.Standard.E4.Flex`)
 * `__meta_oci_instance_state`: the lifecycle state of the instance (e.g. `RUNNING`, `STOPPED`, `TERMINATED`). Use relabeling to restrict scraping to states you care about.
+* `__meta_oci_ipv6_addresses`: the IPv6 addresses of the primary VNIC, comma-separated and surrounded by commas (e.g. `,2001:db8::1,2001:db8::2,`); empty when none are assigned
 * `__meta_oci_private_ip`: the private IP address of the primary VNIC
 * `__meta_oci_public_ip`: the public IP address of the primary VNIC, if assigned
 * `__meta_oci_region`: the OCI region identifier (e.g. `us-ashburn-1`)

@@ -279,6 +279,60 @@ func TestInstanceLabels_PortInAddress(t *testing.T) {
 	}
 }
 
+func TestInstanceLabels_IPv6AndHostname(t *testing.T) {
+	inst := makeInstance()
+	vnics := instanceVnics{primary: vnicInfo{
+		id:            "ocid1.vnic.oc1..v001",
+		privateIP:     "10.0.0.5",
+		ipv6Addresses: []string{"2001:db8::1", "2001:db8::2"},
+		hostnameLabel: "web-1",
+	}}
+	labels := instanceLabels(&inst, vnics, testTenancy, 9100)
+
+	require.Equal(t, model.LabelValue(",2001:db8::1,2001:db8::2,"), labels[ociLabelIPv6Addresses])
+	require.Equal(t, model.LabelValue("web-1"), labels[ociLabelHostnameLabel])
+}
+
+func TestInstanceLabels_IPv6AndHostnameEmptyWhenAbsent(t *testing.T) {
+	// Both labels are set unconditionally, empty when the VNIC has no IPv6
+	// address or hostname label.
+	inst := makeInstance()
+	labels := instanceLabels(&inst, primaryOnly("v", "10.0.0.1", ""), "tenancy", 80)
+
+	require.Equal(t, model.LabelValue(""), labels[ociLabelIPv6Addresses])
+	require.Equal(t, model.LabelValue(""), labels[ociLabelHostnameLabel])
+}
+
+func TestJoinIPv6(t *testing.T) {
+	require.Empty(t, joinIPv6(nil))
+	require.Empty(t, joinIPv6([]string{}))
+	require.Equal(t, ",2001:db8::1,", joinIPv6([]string{"2001:db8::1"}))
+	require.Equal(t, ",2001:db8::1,2001:db8::2,", joinIPv6([]string{"2001:db8::1", "2001:db8::2"}))
+}
+
+func TestJoinIPv6_MatchableByRegex(t *testing.T) {
+	// The list is comma-wrapped so a relabel regex can match a whole address
+	// with `.*,addr,.*`, including the first and last entries.
+	value := joinIPv6([]string{"2001:db8::1", "2001:db8::2"})
+	for _, addr := range []string{"2001:db8::1", "2001:db8::2"} {
+		require.Regexp(t, ".*,"+addr+",.*", value)
+	}
+	require.NotRegexp(t, ".*,2001:db8::3,.*", value)
+}
+
+func TestInstanceLabels_IPv6OnlyAddress(t *testing.T) {
+	// With no IPv4 address the target falls back to the first (sorted) IPv6
+	// address, bracketed by net.JoinHostPort.
+	inst := makeInstance()
+	vnics := instanceVnics{primary: vnicInfo{
+		id:            "ocid1.vnic.oc1..v001",
+		ipv6Addresses: []string{"2001:db8::1", "2001:db8::2"},
+	}}
+	labels := instanceLabels(&inst, vnics, testTenancy, 9100)
+
+	require.Equal(t, model.LabelValue("[2001:db8::1]:9100"), labels[model.AddressLabel])
+}
+
 // ---- refresh ----------------------------------------------------------------
 
 func TestRefresh_SingleInstance(t *testing.T) {
@@ -299,6 +353,68 @@ func TestRefresh_SingleInstance(t *testing.T) {
 	require.Equal(t, model.LabelValue("10.0.0.5"), labels[ociLabelPrivateIP])
 	require.Equal(t, model.LabelValue("203.0.113.10"), labels[ociLabelPublicIP])
 	require.Equal(t, model.LabelValue(testTenancy), labels[ociLabelTenancyID])
+}
+
+func TestRefresh_PrimaryVnicIPv6SortedAndHostname(t *testing.T) {
+	// The primary VNIC's IPv6 addresses are exposed sorted for deterministic
+	// output even though OCI returns them in an unspecified order.
+	inst := makeInstance()
+	vnic := &core.Vnic{
+		Id:            strPtr("ocid1.vnic.oc1..v001"),
+		IsPrimary:     boolPtr(true),
+		PrivateIp:     strPtr("10.0.0.5"),
+		Ipv6Addresses: []string{"2001:db8::2", "2001:db8::1"},
+		HostnameLabel: strPtr("web-1"),
+	}
+	d := singleInstanceDiscovery(inst, vnic)
+
+	tgs, err := d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 1)
+	require.Len(t, tgs[0].Targets, 1)
+
+	labels := tgs[0].Targets[0]
+	require.Equal(t, model.LabelValue(",2001:db8::1,2001:db8::2,"), labels[ociLabelIPv6Addresses])
+	require.Equal(t, model.LabelValue("web-1"), labels[ociLabelHostnameLabel])
+}
+
+func TestRefresh_IPv6OnlyInstanceNotSkipped(t *testing.T) {
+	// An IPv6-only primary VNIC (no IPv4 private or public IP) is still
+	// discovered, with its first IPv6 address used as the target address.
+	inst := makeInstance()
+	vnic := &core.Vnic{
+		Id:            strPtr("ocid1.vnic.oc1..v001"),
+		IsPrimary:     boolPtr(true),
+		Ipv6Addresses: []string{"2001:db8::2", "2001:db8::1"},
+	}
+	d := singleInstanceDiscovery(inst, vnic)
+
+	tgs, err := d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 1)
+	require.Len(t, tgs[0].Targets, 1)
+
+	labels := tgs[0].Targets[0]
+	require.Equal(t, model.LabelValue("[2001:db8::1]:9100"), labels[model.AddressLabel])
+	require.Equal(t, model.LabelValue(",2001:db8::1,2001:db8::2,"), labels[ociLabelIPv6Addresses])
+}
+
+func TestResolveVnics_DoesNotMutateSDKSlice(t *testing.T) {
+	// resolveVnics sorts a copy of the VNIC's IPv6 addresses, so the slice
+	// owned by the SDK response is left untouched.
+	inst := makeInstance()
+	orig := []string{"2001:db8::2", "2001:db8::1"}
+	vnic := &core.Vnic{
+		Id:            strPtr("ocid1.vnic.oc1..v001"),
+		IsPrimary:     boolPtr(true),
+		PrivateIp:     strPtr("10.0.0.5"),
+		Ipv6Addresses: orig,
+	}
+	d := singleInstanceDiscovery(inst, vnic)
+
+	_, err := d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []string{"2001:db8::2", "2001:db8::1"}, orig)
 }
 
 func TestRefresh_ResolvesPrimaryVnicAndStops(t *testing.T) {

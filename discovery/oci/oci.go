@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -58,6 +59,8 @@ const (
 	ociLabelVnicID             = ociLabel + "vnic_id"
 	ociLabelPrivateIP          = ociLabel + "private_ip"
 	ociLabelPublicIP           = ociLabel + "public_ip"
+	ociLabelIPv6Addresses      = ociLabel + "ipv6_addresses"
+	ociLabelHostnameLabel      = ociLabel + "hostname_label"
 	ociLabelFreeformTagPrefix  = ociLabel + "tag_"
 	ociLabelDefinedTagPrefix   = ociLabel + "defined_tag_"
 )
@@ -562,7 +565,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 				continue
 			}
 
-			if vnics.primary.privateIP == "" && vnics.primary.publicIP == "" {
+			if vnics.primary.privateIP == "" && vnics.primary.publicIP == "" && len(vnics.primary.ipv6Addresses) == 0 {
 				d.logger.Debug("OCI SD skipping instance with no usable IP address",
 					"instance_id", *inst.Id)
 				continue
@@ -580,9 +583,11 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 // vnicInfo is the subset of a single OCI VNIC that the SD exposes through
 // meta labels.
 type vnicInfo struct {
-	id        string
-	privateIP string
-	publicIP  string
+	id            string
+	privateIP     string
+	publicIP      string
+	ipv6Addresses []string
+	hostnameLabel string
 }
 
 // instanceVnics holds the primary VNIC resolved for one compute instance. The
@@ -614,10 +619,16 @@ func (d *Discovery) resolveVnics(ctx context.Context, inst *core.Instance) (inst
 			continue
 		}
 		if vnic.IsPrimary != nil && *vnic.IsPrimary {
+			// OCI does not guarantee a stable order for Ipv6Addresses, so sort
+			// a copy to keep the emitted label deterministic across refreshes.
+			ipv6 := append([]string(nil), vnic.Ipv6Addresses...)
+			sort.Strings(ipv6)
 			out.primary = vnicInfo{
-				id:        stringVal(vnic.Id),
-				privateIP: stringVal(vnic.PrivateIp),
-				publicIP:  stringVal(vnic.PublicIp),
+				id:            stringVal(vnic.Id),
+				privateIP:     stringVal(vnic.PrivateIp),
+				publicIP:      stringVal(vnic.PublicIp),
+				ipv6Addresses: ipv6,
+				hostnameLabel: stringVal(vnic.HostnameLabel),
 			}
 			break
 		}
@@ -631,6 +642,12 @@ func instanceLabels(inst *core.Instance, vnics instanceVnics, tenancy string, po
 	addr := vnics.primary.privateIP
 	if addr == "" {
 		addr = vnics.primary.publicIP
+	}
+	// Fall back to the primary VNIC's first IPv6 address so IPv6-only
+	// instances get a usable target. The list is sorted, so the choice is
+	// deterministic, and net.JoinHostPort brackets the address.
+	if addr == "" && len(vnics.primary.ipv6Addresses) > 0 {
+		addr = vnics.primary.ipv6Addresses[0]
 	}
 
 	labels := model.LabelSet{
@@ -648,6 +665,8 @@ func instanceLabels(inst *core.Instance, vnics instanceVnics, tenancy string, po
 		ociLabelVnicID:             model.LabelValue(vnics.primary.id),
 		ociLabelPrivateIP:          model.LabelValue(vnics.primary.privateIP),
 		ociLabelPublicIP:           model.LabelValue(vnics.primary.publicIP),
+		ociLabelHostnameLabel:      model.LabelValue(vnics.primary.hostnameLabel),
+		ociLabelIPv6Addresses:      model.LabelValue(joinIPv6(vnics.primary.ipv6Addresses)),
 	}
 
 	for k, v := range inst.FreeformTags {
@@ -699,6 +718,17 @@ func stringifyDefinedTag(v any) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+// joinIPv6 renders the primary VNIC's IPv6 addresses as a single label value,
+// wrapping the list with commas so a relabel regex can match a whole address
+// with `.*,addr,.*`. A comma cannot appear in an IPv6 address, so it is a safe
+// separator. An empty list yields an empty label value.
+func joinIPv6(addrs []string) string {
+	if len(addrs) == 0 {
+		return ""
+	}
+	return "," + strings.Join(addrs, ",") + ","
 }
 
 // stringVal dereferences a *string, returning "" if nil.
