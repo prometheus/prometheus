@@ -533,16 +533,16 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil, fmt.Errorf("oci_sd: failed to list compartments: %w", err)
 	}
 
-	var tgs []*targetgroup.Group
+	// Merge all compartments into a single target group so the manager
+	// replaces the whole target set every refresh.
+	tg := &targetgroup.Group{Source: "OCI"}
 
 	for _, compartmentID := range compartments {
-		tg := &targetgroup.Group{Source: "OCI_" + compartmentID}
-
 		instances, err := d.listInstances(ctx, compartmentID)
 		if err != nil {
-			// Return the error rather than emitting an empty group: the
-			// refresh framework will keep the last known good targets for
-			// this source, avoiding a flap on a transient OCI API failure.
+			// Return the error rather than emitting a partial group, so the
+			// refresh framework keeps the last known good targets on a
+			// transient OCI API failure.
 			return nil, fmt.Errorf("listing OCI instances in compartment %s: %w", compartmentID, err)
 		}
 
@@ -570,11 +570,9 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 			tg.Targets = append(tg.Targets, instanceLabels(inst, vnics, d.tenancy, d.port))
 		}
-
-		tgs = append(tgs, tg)
 	}
 
-	return tgs, nil
+	return []*targetgroup.Group{tg}, nil
 }
 
 // vnicInfo is the subset of a single OCI VNIC that the SD exposes through

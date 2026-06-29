@@ -289,7 +289,7 @@ func TestRefresh_SingleInstance(t *testing.T) {
 	tgs, err := d.refresh(context.Background())
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
-	require.Equal(t, "OCI_"+testCompartment, tgs[0].Source)
+	require.Equal(t, "OCI", tgs[0].Source)
 	require.Len(t, tgs[0].Targets, 1)
 
 	labels := tgs[0].Targets[0]
@@ -393,14 +393,69 @@ func TestRefresh_MultipleCompartments(t *testing.T) {
 
 	tgs, err := d.refresh(context.Background())
 	require.NoError(t, err)
-	// One group per compartment, including the empty one.
-	require.Len(t, tgs, 3)
-	require.Equal(t, "OCI_"+comp1, tgs[0].Source)
+	// All compartments are merged into a single group; the empty comp3
+	// contributes no targets.
+	require.Len(t, tgs, 1)
+	require.Equal(t, "OCI", tgs[0].Source)
+	require.Len(t, tgs[0].Targets, 2)
+
+	compartments := map[model.LabelValue]struct{}{}
+	for _, target := range tgs[0].Targets {
+		compartments[target[ociLabelCompartmentID]] = struct{}{}
+	}
+	require.Equal(t, map[model.LabelValue]struct{}{
+		model.LabelValue(comp1): {},
+		model.LabelValue(comp2): {},
+	}, compartments)
+}
+
+func TestRefresh_DisappearingCompartmentCleared(t *testing.T) {
+	comp1 := "ocid1.compartment.oc1..c001"
+	comp2 := "ocid1.compartment.oc1..c002"
+	vnic := makeVnic("ocid1.vnic.oc1..v001", "10.0.0.1", "")
+
+	compartments := []string{comp1, comp2}
+
+	d := baseDiscovery()
+	d.listCompartments = func(_ context.Context) ([]string, error) { return compartments, nil }
+	d.listInstances = func(_ context.Context, compartmentID string) ([]core.Instance, error) {
+		inst := makeInstance(func(i *core.Instance) {
+			i.Id = strPtr("ocid1.instance.oc1.." + compartmentID)
+			i.CompartmentId = strPtr(compartmentID)
+		})
+		return []core.Instance{inst}, nil
+	}
+	d.listVnicAttachments = func(_ context.Context, _, instanceID string) ([]core.VnicAttachment, error) {
+		return []core.VnicAttachment{makeAttachment(instanceID, stringVal(vnic.Id))}, nil
+	}
+	d.getVnic = func(_ context.Context, _ string) (*core.Vnic, error) { return vnic, nil }
+
+	// First refresh: both compartments yield a target in the single group.
+	tgs, err := d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 1)
+	require.Equal(t, "OCI", tgs[0].Source)
+	require.Len(t, tgs[0].Targets, 2)
+
+	// comp2 disappears: only comp1's target remains, comp2's is gone.
+	compartments = []string{comp1}
+
+	tgs, err = d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 1)
+	require.Equal(t, "OCI", tgs[0].Source)
 	require.Len(t, tgs[0].Targets, 1)
-	require.Equal(t, "OCI_"+comp2, tgs[1].Source)
-	require.Len(t, tgs[1].Targets, 1)
-	require.Equal(t, "OCI_"+comp3, tgs[2].Source)
-	require.Empty(t, tgs[2].Targets)
+	require.Equal(t, model.LabelValue(comp1), tgs[0].Targets[0][ociLabelCompartmentID])
+
+	// Every compartment disappears: the group is emitted empty so the manager
+	// clears the remaining targets.
+	compartments = nil
+
+	tgs, err = d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 1)
+	require.Equal(t, "OCI", tgs[0].Source)
+	require.Empty(t, tgs[0].Targets)
 }
 
 func TestRefresh_CompartmentListError_Propagates(t *testing.T) {
