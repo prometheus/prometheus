@@ -1399,8 +1399,9 @@ func (h *Head) WaitForAppendersOverlapping(maxt int64) {
 }
 
 // IsQuerierCollidingWithTruncation returns if the current querier needs to be closed and if a new querier
-// has to be created. In the latter case, the method also returns the new mint to be used for creating the
-// new range head and the new querier. This methods helps preventing races with the truncation of in-memory data.
+// has to be created. Whenever shouldClose is true, newMint is the lowest time the querier may
+// safely read from the in-order head (the truncation point): in-order data below it has been moved to a
+// block. This methods helps preventing races with the truncation of in-memory data.
 //
 // NOTE: The querier should already be taken before calling this.
 func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) (shouldClose, getNew bool, newMint int64) {
@@ -1421,7 +1422,7 @@ func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) 
 		//   |---query---|
 		// 2.     |------truncation------|
 		//              |---query---|
-		return true, false, 0
+		return true, false, memTruncTime
 	}
 	if querierMint < memTruncTime {
 		// The truncation time is not same as head mint that we saw above but the
