@@ -162,7 +162,7 @@ export class Parser {
         // Specially the one checking if the timestamp after the `@` is ok: https://github.com/prometheus/prometheus/blob/ad5ed416ba635834370bfa06139258b31f8c33f9/promql/parser/parse.go#L722-L725
         // Since Javascript is managing the number as a float64 and so on 53 bits, we cannot validate that the maxInt64 number is a valid value.
         // So, to manage properly this issue, we would need to use the BigInt which is possible or by using ES2020.BigInt, or by using the lib: https://github.com/GoogleChromeLabs/jsbi.
-        //   * Introducing a lib just for theses checks is quite overkilled
+        //   * Introducing a lib just for these checks is quite overkilled
         //   * Using ES2020 would be the way to go. Unfortunately moving to ES2020 is breaking the build of the lib.
         //     So far I didn't find the way to fix it. I think it's likely due to the fact we are building an ESM package which is now something stable in nodeJS/javascript but still experimental in typescript.
         // For the above reason, we decided to drop these checks.

@@ -158,6 +158,36 @@ type mskClient interface {
 	ListNodes(context.Context, *kafka.ListNodesInput, ...func(*kafka.Options)) (*kafka.ListNodesOutput, error)
 }
 
+// mskClientAdapter captures only the MSK (Kafka) API calls AWS discovery uses
+// as method-value closures, keeping the concrete *kafka.Client out of any
+// interface-boxed struct field. See ec2ClientAdapter for the full rationale:
+// this stops the linker from retaining the entire MSK API surface (~1.4 MB).
+type mskClientAdapter struct {
+	describeClusterV2 func(context.Context, *kafka.DescribeClusterV2Input, ...func(*kafka.Options)) (*kafka.DescribeClusterV2Output, error)
+	listClustersV2    func(context.Context, *kafka.ListClustersV2Input, ...func(*kafka.Options)) (*kafka.ListClustersV2Output, error)
+	listNodes         func(context.Context, *kafka.ListNodesInput, ...func(*kafka.Options)) (*kafka.ListNodesOutput, error)
+}
+
+func newMSKClientAdapter(c *kafka.Client) mskClientAdapter {
+	return mskClientAdapter{
+		describeClusterV2: c.DescribeClusterV2,
+		listClustersV2:    c.ListClustersV2,
+		listNodes:         c.ListNodes,
+	}
+}
+
+func (a mskClientAdapter) DescribeClusterV2(ctx context.Context, params *kafka.DescribeClusterV2Input, optFns ...func(*kafka.Options)) (*kafka.DescribeClusterV2Output, error) {
+	return a.describeClusterV2(ctx, params, optFns...)
+}
+
+func (a mskClientAdapter) ListClustersV2(ctx context.Context, params *kafka.ListClustersV2Input, optFns ...func(*kafka.Options)) (*kafka.ListClustersV2Output, error) {
+	return a.listClustersV2(ctx, params, optFns...)
+}
+
+func (a mskClientAdapter) ListNodes(ctx context.Context, params *kafka.ListNodesInput, optFns ...func(*kafka.Options)) (*kafka.ListNodesOutput, error) {
+	return a.listNodes(ctx, params, optFns...)
+}
+
 // MSKDiscovery periodically performs MSK-SD requests. It implements
 // the Discoverer interface.
 type MSKDiscovery struct {
@@ -240,12 +270,12 @@ func (d *MSKDiscovery) initMskClient(ctx context.Context) error {
 		cfg.Credentials = aws.NewCredentialsCache(assumeProvider)
 	}
 
-	d.msk = kafka.NewFromConfig(cfg, func(options *kafka.Options) {
+	d.msk = newMSKClientAdapter(kafka.NewFromConfig(cfg, func(options *kafka.Options) {
 		if d.cfg.Endpoint != "" {
 			options.BaseEndpoint = &d.cfg.Endpoint
 		}
 		options.HTTPClient = client
-	})
+	}))
 
 	// Test credentials by making a simple API call
 	testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)

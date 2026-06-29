@@ -78,6 +78,7 @@ import (
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/documentcli"
@@ -280,7 +281,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				logger.Info("Experimental start timestamp zero ingestion enabled. OpenMetrics 1.0 parsing will parse <metric>_created metrics as ST instead of normal sample. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "xor2-encoding":
-				c.tsdb.EnableXOR2Encoding = true
+				c.tsdb.FloatChunkEncoding = chunkenc.EncXOR2
 				logger.Info("Experimental XOR2 chunk encoding enabled.")
 			case "st-synthesis":
 				// TODO(ridwanmsharif): Move this to scrape configuration once stable.
@@ -337,6 +338,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "fast-startup":
 				c.tsdb.EnableFastStartup = true
 				logger.Info("Experimental fast startup is enabled.")
+			case "search-api":
+				c.web.EnableSearch = true
+				logger.Info("Experimental search API enabled.")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -389,6 +393,10 @@ func main() {
 		promslogConfig: promslog.Config{},
 		scrape: scrape.Options{
 			FeatureRegistry: features.DefaultRegistry,
+		},
+		tsdb: tsdbOptions{
+			// Default to XOR encoding; xor2-encoding feature flag overrides this to EncXOR2.
+			FloatChunkEncoding: chunkenc.EncXOR,
 		},
 	}
 
@@ -583,6 +591,9 @@ func main() {
 	serverOnlyFlag(a, "storage.remote.read-max-bytes-in-frame", "Maximum number of bytes in a single frame for streaming remote read response types before marshalling. Note that client might have limit on frame size as well. 1MB as recommended by protobuf by default.").
 		Default("1048576").IntVar(&cfg.web.RemoteReadBytesInFrame)
 
+	serverOnlyFlag(a, "web.search.max-limit", "Hard upper bound on the \"limit\" query parameter accepted by the experimental search API (--enable-feature=search-api). Requests with a higher limit are rejected with HTTP 400. 0 disables the cap.").
+		Default("10000").IntVar(&cfg.web.MaxSearchLimit)
+
 	serverOnlyFlag(a, "rules.alert.for-outage-tolerance", "Max time to tolerate prometheus outage for restoring \"for\" state of alert.").
 		Default("1h").SetValue(&cfg.outageTolerance)
 
@@ -625,7 +636,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-duration-expr, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-duration-expr, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -666,6 +677,11 @@ func main() {
 			cfg.autoReloadInterval, _ = model.ParseDuration("1s")
 		}
 		logger.Info("Automatic configuration file reloading enabled", "interval", cfg.autoReloadInterval)
+	}
+
+	if cfg.web.MaxSearchLimit < 0 {
+		fmt.Fprintf(os.Stderr, "--web.search.max-limit must be non-negative; got %d (use 0 to disable the cap)\n", cfg.web.MaxSearchLimit)
+		os.Exit(1)
 	}
 
 	promqlParser := parser.NewParser(cfg.parserOpts)
@@ -2079,9 +2095,9 @@ type tsdbOptions struct {
 	BlockReloadInterval            model.Duration
 	EnableSTAsZeroSample           bool
 	EnableSTStorage                bool
-	EnableXOR2Encoding             bool
 	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
+	FloatChunkEncoding             chunkenc.Encoding
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -2111,9 +2127,9 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		FeatureRegistry:                features.DefaultRegistry,
 		EnableSTAsZeroSample:           opts.EnableSTAsZeroSample,
 		EnableSTStorage:                opts.EnableSTStorage,
-		EnableXOR2Encoding:             opts.EnableXOR2Encoding,
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
+		FloatChunkEncoding:             opts.FloatChunkEncoding,
 	}
 }
 

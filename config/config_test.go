@@ -801,7 +801,7 @@ var expectedConf = &Config{
 					Profile:         "profile",
 					RefreshInterval: model.Duration(60 * time.Second),
 					Port:            80,
-					Filters: []*aws.EC2Filter{
+					Filters: []*aws.Filter{
 						{
 							Name:   "tag:environment",
 							Values: []string{"prod"},
@@ -2722,6 +2722,22 @@ var expectedErrors = []struct {
 		filename: "tsdb_retention_percentage_negative.bad.yml",
 		errMsg:   "'storage.tsdb.retention.percentage' must be in the range [0, 100]",
 	},
+	{
+		filename: "tsdb_chunk_encoding_floats.bad.yml",
+		errMsg:   `'storage.tsdb.chunk_encoding.floats' must be 'xor' or 'xor2', or the field must be omitted entirely, got "xor3"`,
+	},
+	{
+		filename: "tsdb_chunk_encoding_floats_wrong_case.bad.yml",
+		errMsg:   `'storage.tsdb.chunk_encoding.floats' must be 'xor' or 'xor2', or the field must be omitted entirely, got "XOR"`,
+	},
+	{
+		filename: "tsdb_chunk_encoding_floats_wrong_case_xor2.bad.yml",
+		errMsg:   `'storage.tsdb.chunk_encoding.floats' must be 'xor' or 'xor2', or the field must be omitted entirely, got "XOR2"`,
+	},
+	{
+		filename: "metric_name_validation_scheme.bad.yml",
+		errMsg:   "unrecognized ValidationScheme: \"invalid_scheme\"",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
@@ -2736,6 +2752,27 @@ func TestTSDBRetentionPercentageFloat(t *testing.T) {
 	c, err := LoadFile("testdata/tsdb_retention_percentage_float.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, 0.5, c.StorageConfig.TSDBConfig.Retention.Percentage)
+}
+
+func TestTSDBChunkEncoding(t *testing.T) {
+	for _, tc := range []struct {
+		filename string
+		encoding string
+	}{
+		{filename: "tsdb_chunk_encoding_floats_xor.good.yml", encoding: FloatChunkEncodingXOR},
+		{filename: "tsdb_chunk_encoding_floats_xor2.good.yml", encoding: FloatChunkEncodingXOR2},
+	} {
+		t.Run(tc.encoding, func(t *testing.T) {
+			c, err := LoadFile("testdata/"+tc.filename, false, promslog.NewNopLogger())
+			require.NoError(t, err)
+			require.Equal(t, tc.encoding, c.StorageConfig.TSDBConfig.ChunkEncoding.Floats)
+		})
+	}
+
+	// Empty/absent value is also valid.
+	c, err := Load("", promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Empty(t, c.StorageConfig.TSDBConfig.ChunkEncoding.Floats)
 }
 
 func TestBadStaticConfigsYML(t *testing.T) {

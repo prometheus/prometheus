@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
@@ -1155,6 +1156,53 @@ func testHeadAppenderV2OutOfOrderSamplesMetric(t *testing.T, scenario sampleType
 	require.NoError(t, app.Commit())
 }
 
+// TestHeadAppenderV2_HistogramErrorDoesNotSetPendingCommit is the V2
+// counterpart of TestAppendHistogramErrorDoesNotSetPendingCommit. The V2
+// histogram paths in head_append_v2.go already set pendingCommit only on
+// success, so this test is here to lock that property in.
+func TestHeadAppenderV2_HistogramErrorDoesNotSetPendingCommit(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		h    *histogram.Histogram
+		fh   *histogram.FloatHistogram
+	}{
+		{name: "integer", h: tsdbutil.GenerateTestHistogram(0)},
+		{name: "float", fh: tsdbutil.GenerateTestFloatHistogram(0)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			head, _ := newTestHead(t, 1000, compression.None, false)
+			require.NoError(t, head.Init(0))
+
+			lbls := labels.FromStrings("a", "b")
+			ctx := context.Background()
+
+			app := head.AppenderV2(ctx)
+			_, err := app.Append(0, lbls, 0, 200, 0, tc.h, tc.fh, storage.AOptions{})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			ms, _, err := head.getOrCreate(lbls.Hash(), lbls, false)
+			require.NoError(t, err)
+			require.NotNil(t, ms)
+			ms.Lock()
+			pc := ms.pendingCommit
+			ms.Unlock()
+			require.False(t, pc, "pendingCommit should be cleared after a successful commit")
+
+			// Out-of-order append for the same series, OOO window disabled.
+			app = head.AppenderV2(ctx)
+			_, err = app.Append(0, lbls, 0, 100, 0, tc.h, tc.fh, storage.AOptions{})
+			require.ErrorIs(t, err, storage.ErrOutOfOrderSample)
+			require.NoError(t, app.Rollback())
+
+			ms.Lock()
+			pc = ms.pendingCommit
+			ms.Unlock()
+			require.False(t, pc, "pendingCommit should remain false after a failed AppenderV2.Append")
+		})
+	}
+}
+
 func TestHeadLabelNamesValuesWithMinMaxRange_AppenderV2(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
 	defer func() {
@@ -1387,10 +1435,14 @@ func TestIsQuerierCollidingWithTruncation_AppenderV2(t *testing.T) {
 		expShouldClose, expGetNew bool
 		expNewMint                int64
 	}{
-		{-200, -100, true, false, 0},
-		{-200, 300, true, false, 0},
-		{100, 1900, true, false, 0},
+		// Entirely below the truncation point: close without reopening, but newMint is still
+		// the truncation point so callers (e.g. the OOO wrapper) clamp their in-order read to it.
+		{-200, -100, true, false, 2000},
+		{-200, 300, true, false, 2000},
+		{100, 1900, true, false, 2000},
+		// Straddles the truncation point: close and reopen at the truncation point.
 		{1900, 2200, true, true, 2000},
+		// At/above the truncation point: no collision.
 		{2000, 2500, false, false, 0},
 	}
 
@@ -1399,7 +1451,7 @@ func TestIsQuerierCollidingWithTruncation_AppenderV2(t *testing.T) {
 			shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(c.mint, c.maxt)
 			require.Equal(t, c.expShouldClose, shouldClose)
 			require.Equal(t, c.expGetNew, getNew)
-			if getNew {
+			if shouldClose || getNew {
 				require.Equal(t, c.expNewMint, newMint)
 			}
 		})
@@ -2485,7 +2537,7 @@ func testHeadAppenderV2AppendStaleHistogram(t *testing.T, floatHistogram bool) {
 }
 
 func TestHeadAppenderV2_Append_CounterResetHeader(t *testing.T) {
-	for _, floatHisto := range []bool{true} { // FIXME
+	for _, floatHisto := range []bool{true, false} {
 		t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
 			l := labels.FromStrings("a", "b")
 			head, _ := newTestHead(t, 1000, compression.None, false)
@@ -2536,32 +2588,31 @@ func TestHeadAppenderV2_Append_CounterResetHeader(t *testing.T) {
 			h := tsdbutil.GenerateTestHistograms(1)[0]
 			h.PositiveBuckets = []int64{100, 1, 1, 1}
 			h.NegativeBuckets = []int64{100, 1, 1, 1}
-			h.Count = 1000
+			// Count = positive delta-decoded (100+101+102+103=406) + negative (406) + ZeroCount (2) = 814.
+			h.Count = 814
 
 			// First histogram is UnknownCounterReset.
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.UnknownCounterReset)
 
-			// Another normal histogram.
-			h.Count++
+			// Another normal histogram: increment a bucket and Count consistently.
+			h.PositiveBuckets[len(h.PositiveBuckets)-1]++
+			h.Count++ // Count = 815.
 			appendHistogram(h)
 			checkExpCounterResetHeader()
 
-			// Counter reset via Count.
-			h.Count--
+			// Counter reset: decrement the same bucket and Count.
+			h.PositiveBuckets[len(h.PositiveBuckets)-1]--
+			h.Count-- // Count = 814.
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
-			// Add 2 non-counter reset histogram chunks (each chunk targets 1024 bytes which contains ~500 int histogram
-			// samples or ~1000 float histogram samples).
-			numAppend := 2000
-			if floatHisto {
-				numAppend = 1000
-			}
-			for i := 0; i < numAppend; i++ {
+			// Add 2 non-counter reset histogram chunks.
+			ms, _, err := head.getOrCreate(l.Hash(), l, false)
+			require.NoError(t, err)
+			for ms.headChunkCount.Load() < 3 {
 				appendHistogram(h)
 			}
-
 			checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
 
 			// Changing schema will cut a new chunk with unknown counter reset.
@@ -2577,28 +2628,36 @@ func TestHeadAppenderV2_Append_CounterResetHeader(t *testing.T) {
 			// Counter reset by removing a positive bucket.
 			h.PositiveSpans[1].Length--
 			h.PositiveBuckets = h.PositiveBuckets[1:]
+			// After removal: positive delta-decoded (1+2+3=6) + negative (406) + ZeroCount (2) = 414.
+			h.Count = 414
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Counter reset by removing a negative bucket.
 			h.NegativeSpans[1].Length--
 			h.NegativeBuckets = h.NegativeBuckets[1:]
+			// After removal: positive (6) + negative delta-decoded (1+2+3=6) + ZeroCount (2) = 14.
+			h.Count = 14
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Add 2 non-counter reset histogram chunks. Just to have some non-counter reset chunks in between.
-			for range 2000 {
+			for ms.headChunkCount.Load() < 3 {
 				appendHistogram(h)
 			}
 			checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
 
 			// Counter reset with counter reset in a positive bucket.
 			h.PositiveBuckets[len(h.PositiveBuckets)-1]--
+			// After: positive delta-decoded (1+2+2=5) + negative (6) + ZeroCount (2) = 13.
+			h.Count = 13
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Counter reset with counter reset in a negative bucket.
 			h.NegativeBuckets[len(h.NegativeBuckets)-1]--
+			// After: positive (5) + negative delta-decoded (1+2+2=5) + ZeroCount (2) = 12.
+			h.Count = 12
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 		})
@@ -2953,7 +3012,11 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableST
 	opts.ChunkDirRoot = dir
 	opts.OutOfOrderTimeWindow.Store(30 * time.Minute.Milliseconds())
 	opts.EnableSTStorage.Store(enableSTstorage)
-	opts.EnableXOR2Encoding.Store(enableSTstorage)
+	if enableSTstorage {
+		opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+	} else {
+		opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR))
+	}
 
 	h, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
 	require.NoError(t, err)
@@ -3005,7 +3068,7 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableST
 	require.False(t, ok)
 	require.NotNil(t, ms)
 
-	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, h.opts.EnableXOR2Encoding.Load())
+	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, h.opts.UseXOR2FloatEncoding())
 	require.NoError(t, err)
 	require.Len(t, chks, 1)
 
@@ -4927,7 +4990,7 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
 			opts.EnableSTStorage.Store(true)
-			opts.EnableXOR2Encoding.Store(true)
+			opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
 			h, _ := newTestHeadWithOptions(t, compression.None, opts)
 
 			lbls := labels.FromStrings("foo", "bar")
@@ -4998,6 +5061,148 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 			require.NoError(t, seriesIt.Err())
 
 			require.Equal(t, tc.expectedSTs, queriedSTs, "Querier should return same ST values as chunk iterator")
+		})
+	}
+}
+
+// readWALHistogramSamples reads the WAL at dir and returns the decoded
+// integer-histogram samples, float-histogram samples, and the record types
+// observed for each.
+func readWALHistogramSamples(t testing.TB, dir string) (intSamples []record.RefHistogramSample, intTypes []record.Type, floatSamples []record.RefFloatHistogramSample, floatTypes []record.Type) {
+	sr, err := wlog.NewSegmentsReader(dir)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, sr.Close())
+	}()
+
+	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+	r := wlog.NewReader(sr)
+	for r.Next() {
+		rec := r.Record()
+		switch typ := dec.Type(rec); typ {
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
+			samples, err := dec.HistogramSamples(rec, nil)
+			require.NoError(t, err)
+			intSamples = append(intSamples, samples...)
+			for range samples {
+				intTypes = append(intTypes, typ)
+			}
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
+			samples, err := dec.FloatHistogramSamples(rec, nil)
+			require.NoError(t, err)
+			floatSamples = append(floatSamples, samples...)
+			for range samples {
+				floatTypes = append(floatTypes, typ)
+			}
+		}
+	}
+	require.NoError(t, r.Err())
+	return intSamples, intTypes, floatSamples, floatTypes
+}
+
+// TestHeadAppenderV2_Histogram_STInWAL verifies that start timestamps supplied
+// via AppenderV2.Append are written into the WAL for histogram and
+// float-histogram samples. The chunk encoder still drops histogram ST until
+// #18609 lands, so this test asserts at the WAL record layer.
+// TODO(krajorama,ywwg): Once histogram chunks preserve ST, simplify this test
+// to assert histogram ST through chunks or queries instead of WAL records.
+func TestHeadAppenderV2_Histogram_STInWAL(t *testing.T) {
+	type histSample struct {
+		st int64
+		ts int64
+		h  *histogram.Histogram
+		fh *histogram.FloatHistogram
+	}
+
+	intHist := func(i int64) *histogram.Histogram {
+		hh := tsdbutil.GenerateTestHistogram(i)
+		hh.CounterResetHint = histogram.NotCounterReset
+		return hh
+	}
+	floatHist := func(i int64) *histogram.FloatHistogram {
+		fh := tsdbutil.GenerateTestFloatHistogram(i)
+		fh.CounterResetHint = histogram.NotCounterReset
+		return fh
+	}
+
+	testCases := []struct {
+		name               string
+		enableSTStorage    bool
+		samples            []histSample
+		expectedSTs        []int64
+		expectedRecordType record.Type
+		isFloatHistogram   bool
+	}{
+		{
+			name:               "Integer histograms with ST enabled",
+			enableSTStorage:    true,
+			samples:            []histSample{{st: 10, ts: 100, h: intHist(1)}, {st: 100, ts: 200, h: intHist(2)}, {st: 200, ts: 300, h: intHist(3)}},
+			expectedSTs:        []int64{10, 100, 200},
+			expectedRecordType: record.HistogramSamplesV2,
+		},
+		{
+			name:               "Float histograms with ST enabled",
+			enableSTStorage:    true,
+			samples:            []histSample{{st: 11, ts: 101, fh: floatHist(1)}, {st: 101, ts: 202, fh: floatHist(2)}, {st: 202, ts: 303, fh: floatHist(3)}},
+			expectedSTs:        []int64{11, 101, 202},
+			expectedRecordType: record.FloatHistogramSamplesV2,
+			isFloatHistogram:   true,
+		},
+		{
+			name:               "Integer histograms with ST disabled emit V1 records and ST=0",
+			enableSTStorage:    false,
+			samples:            []histSample{{st: 10, ts: 100, h: intHist(1)}, {st: 100, ts: 200, h: intHist(2)}},
+			expectedSTs:        []int64{0, 0},
+			expectedRecordType: record.HistogramSamples,
+		},
+		{
+			name:               "Float histograms with ST disabled emit V1 records and ST=0",
+			enableSTStorage:    false,
+			samples:            []histSample{{st: 11, ts: 101, fh: floatHist(1)}, {st: 101, ts: 202, fh: floatHist(2)}},
+			expectedSTs:        []int64{0, 0},
+			expectedRecordType: record.FloatHistogramSamples,
+			isFloatHistogram:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
+			opts.EnableSTStorage.Store(tc.enableSTStorage)
+			opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+			h, w := newTestHeadWithOptions(t, compression.None, opts)
+
+			lbls := labels.FromStrings("foo", "bar")
+
+			a := h.AppenderV2(context.Background())
+			for _, s := range tc.samples {
+				_, err := a.Append(0, lbls, s.st, s.ts, 0, s.h, s.fh, storage.AOptions{})
+				require.NoError(t, err)
+			}
+			require.NoError(t, a.Commit())
+			require.NoError(t, h.Close())
+
+			intSamples, intTypes, floatSamples, floatTypes := readWALHistogramSamples(t, w.Dir())
+
+			if tc.isFloatHistogram {
+				require.Empty(t, intSamples, "no integer-histogram records expected")
+				require.Len(t, floatSamples, len(tc.samples))
+				var gotSTs []int64
+				for i, s := range floatSamples {
+					gotSTs = append(gotSTs, s.ST)
+					require.Equal(t, tc.expectedRecordType, floatTypes[i], "unexpected float-histogram record type")
+				}
+				require.Equal(t, tc.expectedSTs, gotSTs)
+			} else {
+				require.Empty(t, floatSamples, "no float-histogram records expected")
+				require.Len(t, intSamples, len(tc.samples))
+				var gotSTs []int64
+				for i, s := range intSamples {
+					gotSTs = append(gotSTs, s.ST)
+					require.Equal(t, tc.expectedRecordType, intTypes[i], "unexpected integer-histogram record type")
+				}
+				require.Equal(t, tc.expectedSTs, gotSTs)
+			}
 		})
 	}
 }

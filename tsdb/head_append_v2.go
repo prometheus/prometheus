@@ -96,7 +96,7 @@ func (h *Head) appenderV2() *headAppenderV2 {
 			appendID:              appendID,
 			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
 			storeST:               h.opts.EnableSTStorage.Load(),
-			useXOR2:               h.opts.EnableXOR2Encoding.Load(),
+			useXOR2:               h.opts.UseXOR2FloatEncoding(),
 		},
 	}
 }
@@ -149,10 +149,10 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	switch {
 	case fh != nil:
 		isStale = value.IsStaleNaN(fh.Sum)
-		appErr = a.appendFloatHistogram(s, t, fh, opts.RejectOutOfOrder)
+		appErr = a.appendFloatHistogram(s, st, t, fh, opts.RejectOutOfOrder)
 	case h != nil:
 		isStale = value.IsStaleNaN(h.Sum)
-		appErr = a.appendHistogram(s, t, h, opts.RejectOutOfOrder)
+		appErr = a.appendHistogram(s, st, t, h, opts.RejectOutOfOrder)
 	default:
 		isStale = value.IsStaleNaN(v)
 		if isStale {
@@ -245,7 +245,7 @@ func (a *headAppenderV2) appendFloat(s *memSeries, st, t int64, v float64, fastR
 	return nil
 }
 
-func (a *headAppenderV2) appendHistogram(s *memSeries, t int64, h *histogram.Histogram, fastRejectOOO bool) error {
+func (a *headAppenderV2) appendHistogram(s *memSeries, st, t int64, h *histogram.Histogram, fastRejectOOO bool) error {
 	s.Lock()
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
@@ -264,17 +264,17 @@ func (a *headAppenderV2) appendHistogram(s *memSeries, t int64, h *histogram.His
 	if err != nil {
 		return err
 	}
-	st := stHistogram
+	sTyp := stHistogram
 	if h.UsesCustomBuckets() {
-		st = stCustomBucketHistogram
+		sTyp = stCustomBucketHistogram
 	}
-	b := a.getCurrentBatch(st, s.ref)
-	b.histograms = append(b.histograms, record.RefHistogramSample{Ref: s.ref, T: t, H: h})
+	b := a.getCurrentBatch(sTyp, s.ref)
+	b.histograms = append(b.histograms, record.RefHistogramSample{Ref: s.ref, ST: st, T: t, H: h})
 	b.histogramSeries = append(b.histogramSeries, s)
 	return nil
 }
 
-func (a *headAppenderV2) appendFloatHistogram(s *memSeries, t int64, fh *histogram.FloatHistogram, fastRejectOOO bool) error {
+func (a *headAppenderV2) appendFloatHistogram(s *memSeries, st, t int64, fh *histogram.FloatHistogram, fastRejectOOO bool) error {
 	s.Lock()
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
@@ -293,12 +293,12 @@ func (a *headAppenderV2) appendFloatHistogram(s *memSeries, t int64, fh *histogr
 	if err != nil {
 		return err
 	}
-	st := stFloatHistogram
+	sTyp := stFloatHistogram
 	if fh.UsesCustomBuckets() {
-		st = stCustomBucketFloatHistogram
+		sTyp = stCustomBucketFloatHistogram
 	}
-	b := a.getCurrentBatch(st, s.ref)
-	b.floatHistograms = append(b.floatHistograms, record.RefFloatHistogramSample{Ref: s.ref, T: t, FH: fh})
+	b := a.getCurrentBatch(sTyp, s.ref)
+	b.floatHistograms = append(b.floatHistograms, record.RefFloatHistogramSample{Ref: s.ref, ST: st, T: t, FH: fh})
 	b.floatHistogramSeries = append(b.floatHistogramSeries, s)
 	return nil
 }
@@ -355,7 +355,7 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 			ZeroThreshold: fh.ZeroThreshold,
 			CustomValues:  fh.CustomValues,
 		}
-		err = a.appendFloatHistogram(s, st, zeroFloatHistogram, true)
+		err = a.appendFloatHistogram(s, 0, st, zeroFloatHistogram, true)
 	case h != nil:
 		zeroHistogram := &histogram.Histogram{
 			// The STZeroSample represents a counter reset by definition.
@@ -365,7 +365,7 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 			ZeroThreshold: h.ZeroThreshold,
 			CustomValues:  h.CustomValues,
 		}
-		err = a.appendHistogram(s, st, zeroHistogram, true)
+		err = a.appendHistogram(s, 0, st, zeroHistogram, true)
 	default:
 		err = a.appendFloat(s, 0, st, 0, true)
 	}

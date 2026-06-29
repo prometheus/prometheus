@@ -572,7 +572,7 @@ func (c *concreteSeriesIterator) AtT() int64 {
 	return c.series.floats[c.floatsCur].Timestamp
 }
 
-// TODO(krajorama): implement AtST. Maybe. concreteSeriesIterator is used
+// TODO(krajorama,ywwg): implement AtST. Maybe. concreteSeriesIterator is used
 // for turning query results into an iterable, but query results do not have ST.
 func (*concreteSeriesIterator) AtST() int64 {
 	return 0
@@ -846,7 +846,7 @@ func (it *chunkedSeriesIterator) AtT() int64 {
 	return it.cur.AtT()
 }
 
-// TODO(krajorama): test AtST once we have a chunk format that provides ST.
+// TODO(krajorama,ywwg): test AtST once we have a chunk format that provides ST.
 func (it *chunkedSeriesIterator) AtST() int64 {
 	return it.cur.AtST()
 }

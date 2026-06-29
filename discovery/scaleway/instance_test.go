@@ -187,6 +187,95 @@ func mockScalewayInstance(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func TestScalewayInstanceRefreshIPAMPrivateNIC(t *testing.T) {
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Auth-Token") != testSecretKey {
+			http.Error(w, "bad token id", http.StatusUnauthorized)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/instance/v1/zones/fr-par-1/servers":
+			_, err := w.Write([]byte(`{
+				"servers": [
+					{
+						"id": "78d6aa69-6a5f-47bd-9f1a-3cdde6973d96",
+						"name": "ipam-only",
+						"organization": "cb334986-b054-4725-9d3a-40850fdc6015",
+						"project": "cb334986-b054-4725-9d5a-30850fdc6015",
+						"commercial_type": "DEV1-S",
+						"hostname": "ipam-only",
+						"state": "running",
+						"boot_type": "local",
+						"routed_ip_enabled": true,
+						"public_ip": null,
+						"public_ips": [],
+						"private_ip": null,
+						"private_nics": [
+							{
+								"id": "2d17a5a0-f8e5-4e7f-a029-f7c8d182af53",
+								"server_id": "78d6aa69-6a5f-47bd-9f1a-3cdde6973d96",
+								"private_network_id": "18ba4ed4-d194-4b5d-9083-447325234a71",
+								"mac_address": "02:00:00:00:31:90",
+								"state": "available",
+								"zone": "fr-par-1"
+							}
+						],
+						"zone": "fr-par-1"
+					}
+				]
+			}`))
+			require.NoError(t, err)
+		case "/ipam/v1/regions/fr-par/ips":
+			require.Equal(t, "2d17a5a0-f8e5-4e7f-a029-f7c8d182af53", r.URL.Query().Get("resource_ids"))
+			require.Equal(t, "instance_private_nic", r.URL.Query().Get("resource_types"))
+			_, err := w.Write([]byte(`{
+				"ips": [
+					{
+						"id": "b50244c4-b0b1-4cc9-a78c-26034b4967d3",
+						"address": "10.0.0.7/32",
+						"project_id": "cb334986-b054-4725-9d5a-30850fdc6015",
+						"is_ipv6": false,
+						"resource": {
+							"type": "instance_private_nic",
+							"id": "2d17a5a0-f8e5-4e7f-a029-f7c8d182af53"
+						},
+						"region": "fr-par"
+					}
+				],
+				"total_count": 1
+			}`))
+			require.NoError(t, err)
+		default:
+			http.Error(w, "bad url", http.StatusNotFound)
+		}
+	}))
+	defer mock.Close()
+
+	cfgString := fmt.Sprintf(`
+---
+role: instance
+project_id: %s
+secret_key: %s
+access_key: %s
+api_url: %s
+`, testProjectID, testSecretKey, testAccessKey, mock.URL)
+	var cfg SDConfig
+	require.NoError(t, yaml.UnmarshalStrict([]byte(cfgString), &cfg))
+
+	d, err := newRefresher(&cfg)
+	require.NoError(t, err)
+
+	tgs, err := d.refresh(context.Background())
+	require.NoError(t, err)
+
+	require.Len(t, tgs, 1)
+	require.Len(t, tgs[0].Targets, 1)
+	require.Equal(t, model.LabelValue("10.0.0.7:80"), tgs[0].Targets[0][model.AddressLabel])
+	require.Equal(t, model.LabelValue("10.0.0.7"), tgs[0].Targets[0][instancePrivateIPv4Label])
+}
+
 func TestScalewayInstanceAuthToken(t *testing.T) {
 	mock := httptest.NewServer(http.HandlerFunc(mockScalewayInstance))
 	defer mock.Close()

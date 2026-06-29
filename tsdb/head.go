@@ -173,9 +173,11 @@ type HeadOptions struct {
 	// Represents 'st-storage' feature flag.
 	EnableSTStorage atomic.Bool
 
-	// EnableXOR2Encoding enables XOR2 chunk encoding for float samples.
-	// Represents 'xor2-encoding' feature flag.
-	EnableXOR2Encoding atomic.Bool
+	// FloatChunkEncoding is the encoding applied to new float chunks.
+	// Updated atomically on config reload. Always initialise via DefaultHeadOptions();
+	// the zero value (EncNone) is not a valid sentinel.
+	// Store and load using uint32(chunkenc.Encoding) / chunkenc.Encoding(Load()).
+	FloatChunkEncoding atomic.Uint32
 
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
@@ -243,7 +245,13 @@ func DefaultHeadOptions() *HeadOptions {
 		WALReplayConcurrency: defaultWALReplayConcurrency,
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
+	ho.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR))
 	return ho
+}
+
+// UseXOR2FloatEncoding reports whether new float chunks should use XOR2 encoding.
+func (o *HeadOptions) UseXOR2FloatEncoding() bool {
+	return chunkenc.Encoding(o.FloatChunkEncoding.Load()) == chunkenc.EncXOR2
 }
 
 // SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
@@ -1327,8 +1335,9 @@ func (h *Head) WaitForAppendersOverlapping(maxt int64) {
 }
 
 // IsQuerierCollidingWithTruncation returns if the current querier needs to be closed and if a new querier
-// has to be created. In the latter case, the method also returns the new mint to be used for creating the
-// new range head and the new querier. This methods helps preventing races with the truncation of in-memory data.
+// has to be created. Whenever shouldClose is true, newMint is the lowest time the querier may
+// safely read from the in-order head (the truncation point): in-order data below it has been moved to a
+// block. This methods helps preventing races with the truncation of in-memory data.
 //
 // NOTE: The querier should already be taken before calling this.
 func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) (shouldClose, getNew bool, newMint int64) {
@@ -1349,7 +1358,7 @@ func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) 
 		//   |---query---|
 		// 2.     |------truncation------|
 		//              |---query---|
-		return true, false, 0
+		return true, false, memTruncTime
 	}
 	if querierMint < memTruncTime {
 		// The truncation time is not same as head mint that we saw above but the
@@ -1646,11 +1655,11 @@ func (h *RangeHead) String() string {
 // Used only for compactions.
 type StaleHead struct {
 	RangeHead
-	staleSeriesRefs []storage.SeriesRef
+	staleSeriesRefs staleSeriesRefs
 }
 
 // NewStaleHead returns a *StaleHead.
-func NewStaleHead(head *Head, mint, maxt int64, staleSeriesRefs []storage.SeriesRef) *StaleHead {
+func NewStaleHead(head *Head, mint, maxt int64, staleSeriesRefs staleSeriesRefs) *StaleHead {
 	return &StaleHead{
 		RangeHead: RangeHead{
 			head: head,
@@ -2226,16 +2235,15 @@ func (h *Head) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) map[sto
 	h.tombstones.DeleteTombstones(deleted)
 
 	if h.wal != nil {
-		_, last, _ := wlog.Segments(h.wal.Dir())
 		h.walExpiriesMtx.Lock()
-		// Keep series records until we're past segment 'last'
+		// Keep series records until we're past timestamp maxt
 		// because the WAL will still have samples records with
 		// this ref ID. If we didn't keep these series records then
 		// on start up when we replay the WAL, or any other code
 		// that reads the WAL, wouldn't be able to use those
 		// samples since we would have no labels for that ref ID.
 		for ref := range deleted {
-			h.walExpiries[chunks.HeadSeriesRef(ref)] = int64(last)
+			h.walExpiries[chunks.HeadSeriesRef(ref)] = maxt
 		}
 		h.walExpiriesMtx.Unlock()
 	}
@@ -2248,6 +2256,7 @@ func (h *Head) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) map[sto
 func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	var (
 		deleted            = map[storage.SeriesRef]struct{}{}
+		deletedForCallback = map[chunks.HeadSeriesRef]labels.Labels{}
 		affected           = map[labels.Label]struct{}{}
 		staleSeriesDeleted = 0
 		chunksRemoved      = 0
@@ -2292,6 +2301,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		series.mmappedChunks = nil
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		deletedForCallback[series.ref] = series.lset
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 	}
 
@@ -2306,6 +2316,10 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
+
+	if len(deletedForCallback) > 0 {
+		h.series.seriesLifecycleCallback.PostDeletion(deletedForCallback)
+	}
 }
 
 // gcStaleSeries removes all the stale series provided that they are still stale

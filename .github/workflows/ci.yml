@@ -18,12 +18,13 @@ jobs:
       # should also be updated.
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@5af30ba8c199a91d6c04ebdc3c48e630e355f62d # v0.1.0
+      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
         with:
           enable_npm: true
+          cache_key_suffix: race
       - run: make GO_ONLY=1 SKIP_GOLANGCI_LINT=1
       - run: go test ./tsdb/ -test.tsdb-isolation=false
       - run: make -C documentation/examples/remote_storage
@@ -35,10 +36,12 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@5af30ba8c199a91d6c04ebdc3c48e630e355f62d # v0.1.0
+      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+        with:
+          cache_key_suffix: more
       - run: go test --tags=dedupelabels ./...
       - run: go test --tags=slicelabels -race ./cmd/prometheus ./model/textparse ./prompb/...
       - run: go test --tags=forcedirectio -race ./tsdb/
@@ -52,10 +55,12 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@5af30ba8c199a91d6c04ebdc3c48e630e355f62d # v0.1.0
+      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+        with:
+          cache_key_suffix: "386"
       # NOTE(bwplotka): We limit concurrency to avoid issues around too many concurrent mmaps
       # caused by parallel tests. See context: https://github.com/prometheus/prometheus/pull/18709
       # Alternatively we could adjust each relevant test to have 386 aware parallelization setting.
@@ -67,10 +72,12 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@5af30ba8c199a91d6c04ebdc3c48e630e355f62d # v0.1.0
+      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+        with:
+          cache_key_suffix: upgrade
       - run: go test -v --race ./cmd/prometheus/ --test.version-upgrade=true -run TestVersionUpgrade
 
   test_go_oldest:
@@ -83,9 +90,13 @@ jobs:
       # The go version in this image should be N-1 wrt test_go.
       image: quay.io/prometheus/golang-builder:1.25-base
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
+      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+        with:
+          enable_npm: false
+          cache_key_suffix: oldest
       - run: make build
       # Don't run NPM build; don't run race-detector.
       - run: make test GO_ONLY=1 test-flags=""
@@ -99,10 +110,10 @@ jobs:
       image: quay.io/prometheus/golang-builder:1.26-base
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@5af30ba8c199a91d6c04ebdc3c48e630e355f62d # v0.1.0
+      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
         with:
           enable_go: false
           enable_npm: true
@@ -117,7 +128,7 @@ jobs:
     name: Go tests on Windows
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
@@ -136,7 +147,7 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - run: go install ./cmd/promtool/.
@@ -154,14 +165,15 @@ jobs:
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
-      image: quay.io/prometheus/golang-builder:1.25-base
+      image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@5af30ba8c199a91d6c04ebdc3c48e630e355f62d # v0.1.0
+      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
         with:
           enable_npm: false
+          cache_key_suffix: compliance
       # NOTE: Those tests are based on https://github.com/prometheus/compliance and
       # are executed against the ./cmd/prometheus main package.
       - run: go test -v --tags=compliance ./compliance/...
@@ -169,6 +181,9 @@ jobs:
   build:
     name: Build Prometheus for common architectures
     runs-on: ubuntu-latest
+    # Reuse the web UI built and tested by test_ui instead of rebuilding it in
+    # every crossbuild container.
+    needs: [test_ui]
     if: |
       !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
       &&
@@ -181,17 +196,28 @@ jobs:
       matrix:
         thread: [ 0, 1, 2 ]
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci/build@769ee18070cd21cfc2a24fa912349fd3e48dee58 # v0.6.0
+      - uses: prometheus/promci-artifacts/restore@f9a587dbc0b2c78a0c54f8ad1cde71ea29a4b76f # v0.1.0
+      - name: Extract pre-built UI assets
+        run: |
+          mkdir -p .prebuilt-ui
+          tar -xzvf .tarballs/prometheus-web-ui-*.tar.gz -C .prebuilt-ui
+      - uses: prometheus/promci/build@9c0e5048a10565e63cbf7c94527ba81ce9be0bea # v0.8.4
         with:
-          promu_opts: "-p linux/amd64 -p windows/amd64 -p linux/arm64 -p darwin/amd64 -p darwin/arm64 -p linux/386"
+          checkout: false
+          # Feed the restored UI assets into the crossbuild containers so make
+          # skips the UI build (see PREBUILT_ASSETS_STATIC_DIR in the Makefile).
+          promu_opts: "-p linux/amd64 -p windows/amd64 -p linux/arm64 -p darwin/amd64 -p darwin/arm64 -p linux/386 --env PREBUILT_ASSETS_STATIC_DIR=.prebuilt-ui/static"
           parallelism: 3
           thread: ${{ matrix.thread }}
   build_all:
     name: Build Prometheus for all architectures
     runs-on: ubuntu-latest
+    # Reuse the web UI built and tested by test_ui instead of rebuilding it in
+    # every crossbuild container.
+    needs: [test_ui]
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
       ||
@@ -207,13 +233,22 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci/build@769ee18070cd21cfc2a24fa912349fd3e48dee58 # v0.6.0
+      - uses: prometheus/promci-artifacts/restore@f9a587dbc0b2c78a0c54f8ad1cde71ea29a4b76f # v0.1.0
+      - name: Extract pre-built UI assets
+        run: |
+          mkdir -p .prebuilt-ui
+          tar -xzvf .tarballs/prometheus-web-ui-*.tar.gz -C .prebuilt-ui
+      - uses: prometheus/promci/build@9c0e5048a10565e63cbf7c94527ba81ce9be0bea # v0.8.4
         with:
+          checkout: false
           parallelism: 12
           thread: ${{ matrix.thread }}
+          # Feed the restored UI assets into the crossbuild containers so make
+          # skips the UI build (see PREBUILT_ASSETS_STATIC_DIR in the Makefile).
+          promu_opts: --env PREBUILT_ASSETS_STATIC_DIR=.prebuilt-ui/static
   build_all_status:
     # This status check aggregates the individual matrix jobs of the "Build
     # Prometheus for all architectures" step into a final status. Fails if a
@@ -245,12 +280,13 @@ jobs:
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@5af30ba8c199a91d6c04ebdc3c48e630e355f62d # v0.1.0
+      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
         with:
           enable_npm: true
+          cache_key_suffix: parser
       - run: make install-goyacc check-generated-parser
       - run: make check-generated-promql-functions
   golangci:
@@ -258,7 +294,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - name: Install Go
@@ -272,28 +308,28 @@ jobs:
         id: golangci-lint-version
         run: echo "version=$(make print-golangci-lint-version)" >> $GITHUB_OUTPUT
       - name: Lint
-        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
+        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
         with:
           args: --verbose
           version: ${{ steps.golangci-lint-version.outputs.version }}
       - name: Lint with slicelabels
-        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
+        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
         with:
           args: --verbose --build-tags=slicelabels
           version: ${{ steps.golangci-lint-version.outputs.version }}
       - name: Lint with dedupelabels
-        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
+        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
         with:
           args: --verbose --build-tags=dedupelabels
           version: ${{ steps.golangci-lint-version.outputs.version }}
       - name: Lint in compliance
-        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
+        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
         with:
           args: --verbose
           working-directory: compliance
           version: ${{ steps.golangci-lint-version.outputs.version }}
       - name: Lint in documentation/examples/remote_storage
-        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
+        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
         with:
           args: --verbose
           working-directory: documentation/examples/remote_storage
@@ -310,44 +346,49 @@ jobs:
   publish_main:
     name: Publish main branch artifacts
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
     needs: [test_ui, test_go, test_go_more, test_go_oldest, test_windows, golangci, codeql, build_all]
     if: github.event_name == 'push' && github.event.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-      - uses: prometheus/promci/publish_main@769ee18070cd21cfc2a24fa912349fd3e48dee58 # v0.6.0
+      - uses: prometheus/promci/publish_main@9c0e5048a10565e63cbf7c94527ba81ce9be0bea # v0.8.4
         with:
           docker_hub_login: ${{ secrets.docker_hub_login }}
           docker_hub_password: ${{ secrets.docker_hub_password }}
+          ghcr_io_password: ${{ github.token }}
           quay_io_login: ${{ secrets.quay_io_login }}
           quay_io_password: ${{ secrets.quay_io_password }}
   publish_release:
     name: Publish release artefacts
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     needs: [test_ui, test_go, test_go_more, test_go_oldest, test_windows, golangci, codeql, build_all]
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
       ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-      - uses: prometheus/promci/publish_release@769ee18070cd21cfc2a24fa912349fd3e48dee58 # v0.6.0
+      - uses: prometheus/promci/publish_release@9c0e5048a10565e63cbf7c94527ba81ce9be0bea # v0.8.4
         with:
           docker_hub_login: ${{ secrets.docker_hub_login }}
           docker_hub_password: ${{ secrets.docker_hub_password }}
+          ghcr_io_password: ${{ github.token }}
           quay_io_login: ${{ secrets.quay_io_login }}
           quay_io_password: ${{ secrets.quay_io_password }}
-          github_token: ${{ secrets.PROMBOT_GITHUB_TOKEN }}
+          github_token: ${{ github.token }}
   publish_ui_release:
     name: Publish UI on npm Registry
     runs-on: ubuntu-latest
     needs: [test_ui, codeql]
+    permissions:
+      contents: read
+      # Required for npm trusted publishing via OIDC.
+      id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - name: Install nodejs
@@ -355,12 +396,15 @@ jobs:
         with:
           node-version-file: "web/ui/.nvmrc"
           registry-url: "https://registry.npmjs.org"
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 11
       - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-node-
+            ${{ runner.os }}-pnpm-
       - name: Check libraries version
         if: |
           (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
@@ -385,7 +429,3 @@ jobs:
           ||
           (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
         run: ./scripts/ui_release.sh --publish
-        env:
-          # The setup-node action writes an .npmrc file with this env variable
-          # as the placeholder for the auth token
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -3337,7 +3337,7 @@ func TestDBPanicOnMmappingHeadChunk_AppendV2(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
-	// Ingest samples upto 2h50m to make the head "about to compact".
+	// Ingest samples up to 2h50m to make the head "about to compact".
 	numSamples := int(170*time.Minute/time.Millisecond) / int(itvl)
 	addSamples(numSamples)
 
@@ -3351,7 +3351,7 @@ func TestDBPanicOnMmappingHeadChunk_AppendV2(t *testing.T) {
 	db = newTestDB(t, withDir(db.Dir()))
 	db.DisableCompactions()
 
-	// Ingest samples upto 20m more to make the head compact.
+	// Ingest samples up to 20m more to make the head compact.
 	numSamples = int(20*time.Minute/time.Millisecond) / int(itvl)
 	addSamples(numSamples)
 
@@ -5720,7 +5720,7 @@ func testWBLAndMmapReplayAppendV2(t *testing.T, scenario sampleTypeScenario) {
 	})
 
 	t.Run("Restart DB with WBL+Mmap while having no m-map markers in WBL", func(t *testing.T) {
-		resetMmapToOriginal() // We neet to reset because new duplicate chunks can be written above.
+		resetMmapToOriginal() // We need to reset because new duplicate chunks can be written above.
 
 		// Removing m-map markers in WBL by rewriting it.
 		newWbl, err := wlog.New(promslog.NewNopLogger(), nil, filepath.Join(t.TempDir(), "new_wbl"), compression.None)
@@ -6692,7 +6692,7 @@ func testOutOfOrderRuntimeConfigAppendV2(t *testing.T, scenario sampleTypeScenar
 		// In-order.
 		allSamples = addSamples(t, db, 300, 310, true, allSamples)
 
-		// OOO upto 30m old is success.
+		// OOO up to 30m old is success.
 		allSamples = addSamples(t, db, 281, 290, true, allSamples)
 
 		// OOO of 59m old fails.
@@ -6722,7 +6722,7 @@ func testOutOfOrderRuntimeConfigAppendV2(t *testing.T, scenario sampleTypeScenar
 		// In-order.
 		allSamples = addSamples(t, db, 300, 310, true, allSamples)
 
-		// OOO upto 59m old is success.
+		// OOO up to 59m old is success.
 		allSamples = addSamples(t, db, 251, 260, true, allSamples)
 
 		oldWblPtr := fmt.Sprintf("%p", db.head.wbl)
@@ -6790,7 +6790,7 @@ func testOutOfOrderRuntimeConfigAppendV2(t *testing.T, scenario sampleTypeScenar
 		// In-order.
 		allSamples = addSamples(t, db, 300, 310, true, allSamples)
 
-		// OOO upto 59m old is success.
+		// OOO up to 59m old is success.
 		allSamples = addSamples(t, db, 251, 260, true, allSamples)
 
 		oldWblPtr := fmt.Sprintf("%p", db.head.wbl)
@@ -7516,7 +7516,7 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 		MaxBlockDuration:   int64(time.Hour * 2 / time.Millisecond),
 		WALCompression:     compression.Snappy,
 		EnableSTStorage:    true,
-		EnableXOR2Encoding: true,
+		FloatChunkEncoding: chunkenc.EncXOR2,
 	}
 	db := newTestDB(t, withOpts(opts))
 	ctx := context.Background()
@@ -7655,7 +7655,7 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 			opts := DefaultOptions()
 			opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 			opts.EnableSTStorage = true
-			opts.EnableXOR2Encoding = true
+			opts.FloatChunkEncoding = chunkenc.EncXOR2
 			db := newTestDB(t, withOpts(opts))
 			db.DisableCompactions()
 

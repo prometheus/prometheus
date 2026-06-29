@@ -1714,6 +1714,28 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: "foo offset +(5)",
+		expected: &VectorSelector{
+			Name:           "foo",
+			OriginalOffset: 5 * time.Second,
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 15},
+		},
+	},
+	{
+		input: "foo offset -(5)",
+		expected: &VectorSelector{
+			Name:           "foo",
+			OriginalOffset: -5 * time.Second,
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 15},
+		},
+	},
+	{
 		input: `http_requests{group="production"} + on(instance) group_left(job,instance) cpu_count{type="smp"}`,
 		fail:  true,
 		errors: ParseErrors{
@@ -4610,7 +4632,7 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: `foo[max(step(),5s)]`,
+		input: `foo[max_of(step(),5s)]`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
 				Name: "foo",
@@ -4620,83 +4642,83 @@ var testExpr = []struct {
 				PosRange: posrange.PositionRange{Start: 0, End: 3},
 			},
 			RangeExpr: &DurationExpr{
-				Op: MAX,
+				Op: MAX_OF,
 				LHS: &DurationExpr{
 					Op:       STEP,
-					StartPos: 8,
-					EndPos:   14,
+					StartPos: 11,
+					EndPos:   17,
 				},
 				RHS: &NumberLiteral{
 					Val:      5,
 					Duration: true,
-					PosRange: posrange.PositionRange{Start: 15, End: 17},
+					PosRange: posrange.PositionRange{Start: 18, End: 20},
 				},
 				StartPos: 4,
-				EndPos:   18,
+				EndPos:   21,
 			},
-			EndPos: 19,
+			EndPos: 22,
 		},
 	},
 	{
-		input: `foo offset max(step(),5s)`,
+		input: `foo offset max_of(step(),5s)`,
 		expected: &VectorSelector{
 			Name: "foo",
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
 			},
-			PosRange: posrange.PositionRange{Start: 0, End: 25},
+			PosRange: posrange.PositionRange{Start: 0, End: 28},
 			OriginalOffsetExpr: &DurationExpr{
-				Op: MAX,
+				Op: MAX_OF,
 				LHS: &DurationExpr{
 					Op:       STEP,
-					StartPos: 15,
-					EndPos:   21,
+					StartPos: 18,
+					EndPos:   24,
 				},
 				RHS: &NumberLiteral{
 					Val:      5,
 					Duration: true,
-					PosRange: posrange.PositionRange{Start: 22, End: 24},
+					PosRange: posrange.PositionRange{Start: 25, End: 27},
 				},
 				StartPos: 11,
-				EndPos:   25,
+				EndPos:   28,
 			},
 		},
 	},
 	{
-		input: `foo offset -min(5s,step()+8s)`,
+		input: `foo offset -min_of(5s,step()+8s)`,
 		expected: &VectorSelector{
 			Name: "foo",
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
 			},
-			PosRange: posrange.PositionRange{Start: 0, End: 29},
+			PosRange: posrange.PositionRange{Start: 0, End: 32},
 			OriginalOffsetExpr: &DurationExpr{
 				Op: SUB,
 				RHS: &DurationExpr{
-					Op: MIN,
+					Op: MIN_OF,
 					LHS: &NumberLiteral{
 						Val:      5,
 						Duration: true,
-						PosRange: posrange.PositionRange{Start: 16, End: 18},
+						PosRange: posrange.PositionRange{Start: 19, End: 21},
 					},
 					RHS: &DurationExpr{
 						Op: ADD,
 						LHS: &DurationExpr{
 							Op:       STEP,
-							StartPos: 19,
-							EndPos:   25,
+							StartPos: 22,
+							EndPos:   28,
 						},
 						RHS: &NumberLiteral{
 							Val:      8,
 							Duration: true,
-							PosRange: posrange.PositionRange{Start: 26, End: 28},
+							PosRange: posrange.PositionRange{Start: 29, End: 31},
 						},
 					},
 					StartPos: 12,
-					EndPos:   28,
+					EndPos:   31,
 				},
 				StartPos: 11,
-				EndPos:   28,
+				EndPos:   31,
 			},
 		},
 	},
@@ -4793,7 +4815,7 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: `foo[max(range(),5s)]`,
+		input: `foo[max_of(range(),5s)]`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
 				Name: "foo",
@@ -4803,21 +4825,21 @@ var testExpr = []struct {
 				PosRange: posrange.PositionRange{Start: 0, End: 3},
 			},
 			RangeExpr: &DurationExpr{
-				Op: MAX,
+				Op: MAX_OF,
 				LHS: &DurationExpr{
 					Op:       RANGE,
-					StartPos: 8,
-					EndPos:   15,
+					StartPos: 11,
+					EndPos:   18,
 				},
 				RHS: &NumberLiteral{
 					Val:      5,
 					Duration: true,
-					PosRange: posrange.PositionRange{Start: 16, End: 18},
+					PosRange: posrange.PositionRange{Start: 19, End: 21},
 				},
 				StartPos: 4,
-				EndPos:   19,
+				EndPos:   22,
 			},
-			EndPos: 20,
+			EndPos: 23,
 		},
 	},
 	{
@@ -5308,6 +5330,29 @@ var testExpr = []struct {
 			},
 		},
 	},
+	// Anchored/smoothed on non-selector range must not panic.
+	{
+		input: "1[5m] smoothed",
+		fail:  true,
+		errors: ParseErrors{
+			{
+				PositionRange: posrange.PositionRange{Start: 1, End: 5},
+				Err:           errors.New("ranges only allowed for vector selectors"),
+				Query:         "1[5m] smoothed",
+			},
+		},
+	},
+	{
+		input: "1[5m] anchored",
+		fail:  true,
+		errors: ParseErrors{
+			{
+				PositionRange: posrange.PositionRange{Start: 1, End: 5},
+				Err:           errors.New("ranges only allowed for vector selectors"),
+				Query:         "1[5m] anchored",
+			},
+		},
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {
@@ -5326,8 +5371,9 @@ func readable(s string) string {
 
 func TestParseExpressions(t *testing.T) {
 	optsParser := NewParser(Options{
-		EnableExperimentalFunctions: true,
-		ExperimentalDurationExpr:    true,
+		EnableExperimentalFunctions:  true,
+		ExperimentalDurationExpr:     true,
+		EnableExtendedRangeSelectors: true,
 	})
 
 	for _, test := range testExpr {
@@ -5335,7 +5381,7 @@ func TestParseExpressions(t *testing.T) {
 			expr, err := optsParser.ParseExpr(test.input)
 
 			// Unexpected errors are always caused by a bug.
-			require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
+			require.NotEqual(t, err, ErrUnexpected, "unexpected error occurred")
 
 			if !test.fail {
 				require.NoError(t, err)
@@ -5989,7 +6035,7 @@ func TestParseSeries(t *testing.T) {
 		metric, vals, err := testParser.ParseSeriesDesc(test.input)
 
 		// Unexpected errors are always caused by a bug.
-		require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
+		require.NotEqual(t, err, ErrUnexpected, "unexpected error occurred")
 
 		if !test.fail {
 			require.NoError(t, err)
@@ -6006,7 +6052,7 @@ func TestRecoverParserRuntime(t *testing.T) {
 	var err error
 
 	defer func() {
-		require.Equal(t, errUnexpected, err)
+		require.Equal(t, ErrUnexpected, err)
 	}()
 	defer p.recover(&err)
 	// Cause a runtime panic.

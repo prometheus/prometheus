@@ -246,6 +246,37 @@ type elasticacheClient interface {
 	ListTagsForResource(ctx context.Context, params *elasticache.ListTagsForResourceInput, optFns ...func(*elasticache.Options)) (*elasticache.ListTagsForResourceOutput, error)
 }
 
+// elasticacheClientAdapter captures only the ElastiCache API calls AWS
+// discovery uses as method-value closures, keeping the concrete
+// *elasticache.Client out of any interface-boxed struct field. See
+// ec2ClientAdapter for the full rationale: this stops the linker from retaining
+// the entire ElastiCache API surface (~2.5 MB).
+type elasticacheClientAdapter struct {
+	describeServerlessCaches func(ctx context.Context, params *elasticache.DescribeServerlessCachesInput, optFns ...func(*elasticache.Options)) (*elasticache.DescribeServerlessCachesOutput, error)
+	describeCacheClusters    func(ctx context.Context, params *elasticache.DescribeCacheClustersInput, optFns ...func(*elasticache.Options)) (*elasticache.DescribeCacheClustersOutput, error)
+	listTagsForResource      func(ctx context.Context, params *elasticache.ListTagsForResourceInput, optFns ...func(*elasticache.Options)) (*elasticache.ListTagsForResourceOutput, error)
+}
+
+func newElastiCacheClientAdapter(c *elasticache.Client) elasticacheClientAdapter {
+	return elasticacheClientAdapter{
+		describeServerlessCaches: c.DescribeServerlessCaches,
+		describeCacheClusters:    c.DescribeCacheClusters,
+		listTagsForResource:      c.ListTagsForResource,
+	}
+}
+
+func (a elasticacheClientAdapter) DescribeServerlessCaches(ctx context.Context, params *elasticache.DescribeServerlessCachesInput, optFns ...func(*elasticache.Options)) (*elasticache.DescribeServerlessCachesOutput, error) {
+	return a.describeServerlessCaches(ctx, params, optFns...)
+}
+
+func (a elasticacheClientAdapter) DescribeCacheClusters(ctx context.Context, params *elasticache.DescribeCacheClustersInput, optFns ...func(*elasticache.Options)) (*elasticache.DescribeCacheClustersOutput, error) {
+	return a.describeCacheClusters(ctx, params, optFns...)
+}
+
+func (a elasticacheClientAdapter) ListTagsForResource(ctx context.Context, params *elasticache.ListTagsForResourceInput, optFns ...func(*elasticache.Options)) (*elasticache.ListTagsForResourceOutput, error) {
+	return a.listTagsForResource(ctx, params, optFns...)
+}
+
 // ElasticacheDiscovery periodically performs Elasticache-SD requests.
 // It implements the Discoverer interface.
 type ElasticacheDiscovery struct {
@@ -328,12 +359,12 @@ func (d *ElasticacheDiscovery) initElasticacheClient(ctx context.Context) error 
 		cfg.Credentials = aws.NewCredentialsCache(assumeProvider)
 	}
 
-	d.elasticacheClient = elasticache.NewFromConfig(cfg, func(options *elasticache.Options) {
+	d.elasticacheClient = newElastiCacheClientAdapter(elasticache.NewFromConfig(cfg, func(options *elasticache.Options) {
 		if d.cfg.Endpoint != "" {
 			options.BaseEndpoint = &d.cfg.Endpoint
 		}
 		options.HTTPClient = client
-	})
+	}))
 
 	// Test credentials by making a simple API call
 	testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
