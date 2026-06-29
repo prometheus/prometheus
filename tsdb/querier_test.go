@@ -3992,6 +3992,7 @@ func testChunkQuerierOverlappingInOrderAndOOOChunks(t *testing.T, valType chunke
 	opts.EnableSTStorage = storeST
 	if storeST {
 		opts.FloatChunkEncoding = chunkenc.EncXOR2
+		opts.EnabledFloatChunkEncodings = []chunkenc.Encoding{chunkenc.EncXOR2}
 	}
 	db := newTestDB(t, withOpts(opts))
 	db.DisableCompactions()

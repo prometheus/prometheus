@@ -282,6 +282,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Experimental start timestamp zero ingestion enabled. OpenMetrics 1.0 parsing will parse <metric>_created metrics as ST instead of normal sample. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "xor2-encoding":
 				c.tsdb.FloatChunkEncoding = chunkenc.EncXOR2
+				c.tsdb.EnabledFloatChunkEncodings = append(c.tsdb.EnabledFloatChunkEncodings, chunkenc.EncXOR2)
 				logger.Info("Experimental XOR2 chunk encoding enabled.")
 			case "st-synthesis":
 				// TODO(ridwanmsharif): Move this to scrape configuration once stable.
@@ -396,7 +397,8 @@ func main() {
 		},
 		tsdb: tsdbOptions{
 			// Default to XOR encoding; xor2-encoding feature flag overrides this to EncXOR2.
-			FloatChunkEncoding: chunkenc.EncXOR,
+			FloatChunkEncoding:         chunkenc.EncXOR,
+			EnabledFloatChunkEncodings: []chunkenc.Encoding{chunkenc.EncXOR},
 		},
 	}
 
@@ -2098,6 +2100,7 @@ type tsdbOptions struct {
 	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
 	FloatChunkEncoding             chunkenc.Encoding
+	EnabledFloatChunkEncodings     []chunkenc.Encoding
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -2130,6 +2133,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
 		FloatChunkEncoding:             opts.FloatChunkEncoding,
+		EnabledFloatChunkEncodings:     opts.EnabledFloatChunkEncodings,
 	}
 }
 

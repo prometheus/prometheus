@@ -89,8 +89,10 @@ func benchmarkWrite(outPath, samplesFile string, numMetrics, numScrapes int) err
 	dir := filepath.Join(b.outPath, "storage")
 
 	st, err := tsdb.Open(dir, b.logger, nil, &tsdb.Options{
-		RetentionDuration: int64(15 * 24 * time.Hour / time.Millisecond),
-		MinBlockDuration:  int64(2 * time.Hour / time.Millisecond),
+		RetentionDuration:          int64(15 * 24 * time.Hour / time.Millisecond),
+		MinBlockDuration:           int64(2 * time.Hour / time.Millisecond),
+		FloatChunkEncoding:         chunkenc.EncXOR,
+		EnabledFloatChunkEncodings: []chunkenc.Encoding{chunkenc.EncXOR},
 	}, tsdb.NewDBStats())
 	if err != nil {
 		return err

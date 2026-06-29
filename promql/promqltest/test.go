@@ -163,6 +163,7 @@ func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 		return teststorage.New(t, func(opt *tsdb.Options) {
 			opt.EnableSTStorage = true
 			opt.FloatChunkEncoding = chunkenc.EncXOR2
+			opt.EnabledFloatChunkEncodings = []chunkenc.Encoding{chunkenc.EncXOR2}
 		})
 	})
 }
