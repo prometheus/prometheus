@@ -228,10 +228,10 @@ func (re *Regexp) UnmarshalYAML(unmarshal func(any) error) error {
 
 // MarshalYAML implements the yaml.Marshaler interface.
 func (re Regexp) MarshalYAML() (any, error) {
-	if re.String() != "" {
-		return re.String(), nil
+	if re.Regexp == nil {
+		return nil, nil
 	}
-	return nil, nil
+	return re.String(), nil
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface.

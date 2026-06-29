@@ -1111,12 +1111,12 @@ action: replace
 		},
 		{
 			// https://github.com/prometheus/prometheus/issues/18652:
-			// explicit empty separator/replacement must survive a YAML round-trip
-			// because they are distinct from the defaults (";" and "$1").
+			// explicit empty separator/replacement/regex must survive a YAML round-trip
+			// because they are distinct from the defaults (";", "$1", "(.*)").
 			name: "Explicit empty separator and replacement",
 			inputYaml: `source_labels: [namespace, k8s_app]
 separator: ""
-regex: kube-systemcilium
+regex: ""
 target_label: target_cluster
 replacement: ""
 action: replace
