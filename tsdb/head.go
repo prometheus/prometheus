@@ -1126,6 +1126,11 @@ func (h *Head) SetOutOfOrderTimeWindow(oooTimeWindow int64, wbl *wlog.WL) {
 	h.opts.OutOfOrderTimeWindow.Store(oooTimeWindow)
 }
 
+// SetFloatChunkEncoding updates the encoding applied to new float chunks.
+func (h *Head) SetFloatChunkEncoding(enc chunkenc.Encoding) {
+	h.opts.FloatChunkEncoding.Store(uint32(enc))
+}
+
 // PostingsCardinalityStats returns highest cardinality stats by label and value names.
 func (h *Head) PostingsCardinalityStats(statsByLabelName string, limit int) *index.PostingsStats {
 	cacheKey := statsByLabelName + ";" + strconv.Itoa(limit)
