@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"net"
 	"strconv"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -189,13 +190,15 @@ func serviceSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
-	servicePortNameLabel     = metaLabelPrefix + "service_port_name"
-	servicePortNumberLabel   = metaLabelPrefix + "service_port_number"
-	servicePortProtocolLabel = metaLabelPrefix + "service_port_protocol"
-	serviceClusterIPLabel    = metaLabelPrefix + "service_cluster_ip"
-	serviceLoadBalancerIP    = metaLabelPrefix + "service_loadbalancer_ip"
-	serviceExternalNameLabel = metaLabelPrefix + "service_external_name"
-	serviceType              = metaLabelPrefix + "service_type"
+	servicePortNameLabel         = metaLabelPrefix + "service_port_name"
+	servicePortNumberLabel       = metaLabelPrefix + "service_port_number"
+	servicePortProtocolLabel     = metaLabelPrefix + "service_port_protocol"
+	serviceClusterIPLabel        = metaLabelPrefix + "service_cluster_ip"
+	serviceLoadBalancerIP        = metaLabelPrefix + "service_loadbalancer_ip"
+	serviceExternalNameLabel     = metaLabelPrefix + "service_external_name"
+	serviceType                  = metaLabelPrefix + "service_type"
+	serviceLoadBalancerIPs       = metaLabelPrefix + "service_loadbalancer_ips"
+	serviceLoadBalancerHostnames = metaLabelPrefix + "service_loadbalancer_hostnames"
 )
 
 func serviceLabels(svc *apiv1.Service) model.LabelSet {
@@ -234,7 +237,26 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 		}
 
 		if svc.Spec.Type == apiv1.ServiceTypeLoadBalancer {
-			labelSet[serviceLoadBalancerIP] = lv(svc.Spec.LoadBalancerIP)
+			if svc.Spec.LoadBalancerIP != "" {
+				labelSet[serviceLoadBalancerIP] = lv(svc.Spec.LoadBalancerIP)
+			}
+
+			ips := make([]string, 0, len(svc.Status.LoadBalancer.Ingress))
+			hostnames := make([]string, 0, len(svc.Status.LoadBalancer.Ingress))
+			for _, ing := range svc.Status.LoadBalancer.Ingress {
+				if ing.IP != "" {
+					ips = append(ips, ing.IP)
+				}
+				if ing.Hostname != "" {
+					hostnames = append(hostnames, ing.Hostname)
+				}
+			}
+			if len(ips) > 0 {
+				labelSet[serviceLoadBalancerIPs] = lv(strings.Join(ips, ","))
+			}
+			if len(hostnames) > 0 {
+				labelSet[serviceLoadBalancerHostnames] = lv(strings.Join(hostnames, ","))
+			}
 		}
 
 		tg.Targets = append(tg.Targets, labelSet)
