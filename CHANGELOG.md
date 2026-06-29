@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- [BUGFIX] Discovery/AWS: Defer region resolution in EC2, ECS, RDS, MSK, ElastiCache, and Lightsail service discovery configs from YAML unmarshaling to SD init time. `promtool check config` and other config-only operations no longer make network calls to the EC2 instance metadata service (IMDS) when the region is omitted, which is supported by the documented configuration. Region resolution errors now surface at the discovery's first refresh instead of failing config validation. #6092
+
 ## 3.13.0-rc.1 / 2026-06-22
 
 The 3.13.0-rc.0 release was only partially successful, so most of the changes in this release candidate are CI/build-related. The only user-facing change is:

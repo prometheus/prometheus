@@ -224,17 +224,13 @@ func (c *ElasticacheSDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the Elasticache Config.
+// Region resolution is deferred to initElasticacheClient; see resolveRegion.
 func (c *ElasticacheSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultElasticacheSDConfig
 	type plain ElasticacheSDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
-	}
-
-	c.Region, err = loadRegion(context.Background(), c.Region)
-	if err != nil {
-		return fmt.Errorf("could not determine AWS region: %w", err)
 	}
 
 	return c.HTTPClientConfig.Validate()
@@ -284,6 +280,10 @@ type ElasticacheDiscovery struct {
 	logger            *slog.Logger
 	cfg               *ElasticacheSDConfig
 	elasticacheClient elasticacheClient
+
+	// region is the resolved region used for the AWS client and for the
+	// Source label. Lazily populated by initElasticacheClient.
+	region string
 }
 
 // NewElasticacheDiscovery returns a new ElasticacheDiscovery which periodically refreshes its targets.
@@ -317,19 +317,21 @@ func (d *ElasticacheDiscovery) initElasticacheClient(ctx context.Context) error 
 		return nil
 	}
 
-	if d.cfg.Region == "" {
-		return errors.New("region must be set for Elasticache service discovery")
-	}
-
 	// Build the HTTP client from the provided HTTPClientConfig.
 	client, err := config.NewClientFromConfig(d.cfg.HTTPClientConfig, "elasticache_sd")
 	if err != nil {
 		return err
 	}
 
-	// Build the AWS config with the provided region.
+	// Resolve the region lazily. See ElasticacheSDConfig.UnmarshalYAML.
+	d.region, err = resolveRegion(ctx, d.cfg.Region)
+	if err != nil {
+		return err
+	}
+
+	// Build the AWS config with the resolved region.
 	var configOptions []func(*awsConfig.LoadOptions) error
-	configOptions = append(configOptions, awsConfig.WithRegion(d.cfg.Region))
+	configOptions = append(configOptions, awsConfig.WithRegion(d.region))
 	configOptions = append(configOptions, awsConfig.WithHTTPClient(client))
 
 	// Only set static credentials if both access key and secret key are provided
@@ -556,7 +558,7 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 	}
 
 	tg := &targetgroup.Group{
-		Source: d.cfg.Region,
+		Source: d.region,
 	}
 
 	errg, ectx := errgroup.WithContext(ctx)

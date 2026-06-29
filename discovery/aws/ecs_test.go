@@ -1512,6 +1512,7 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 					Port:               80,
 					RequestConcurrency: 1,
 				},
+				region: tt.ecsData.region,
 			}
 
 			groups, err := d.refresh(ctx)
