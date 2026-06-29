@@ -304,7 +304,7 @@ export function computeStartCompletePosition(state: EditorState, node: SyntaxNod
     (node.type.id === 0 &&
       (node.parent?.type.id === OffsetExpr ||
         node.parent?.type.id === MatrixSelector ||
-        (node.parent?.type.id === SubqueryExpr && node.parent.getChild('DurationExpr') !== null)))
+        (node.parent?.type.id === SubqueryExpr && node.parent.getChild(DurationExpr) !== null)))
   ) {
     start = pos;
   }
@@ -333,7 +333,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       if (
         node.parent?.type.id === OffsetExpr ||
         node.parent?.type.id === MatrixSelector ||
-        (node.parent?.type.id === SubqueryExpr && node.parent.getChild('DurationExpr') !== null)
+        (node.parent?.type.id === SubqueryExpr && node.parent.getChild(DurationExpr) !== null)
       ) {
         // We are in a duration slot. Two situations land here with an error node:
         //   1. `go[]`  -> the error node text is empty: nothing typed yet, so offer
