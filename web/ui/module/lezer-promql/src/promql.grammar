@@ -236,16 +236,16 @@ ParenExpr {
 }
 
 OffsetExpr {
-  expr Offset NumberDurationLiteralInDurationContext
+  expr Offset OffsetDurationExpr
 }
 
 MatrixSelector {
   // TODO: Can this not be more specific than "expr"?
-  expr "[" NumberDurationLiteralInDurationContext "]"
+  expr "[" DurationExpr "]"
 }
 
 SubqueryExpr {
-  expr "[" NumberDurationLiteralInDurationContext ":" ("" | NumberDurationLiteralInDurationContext) "]"
+  expr "[" DurationExpr ":" ("" | DurationExpr) "]"
 }
 
 UnaryExpr {
@@ -299,7 +299,32 @@ NumberDurationLiteral  {
 }
 
 NumberDurationLiteralInDurationContext {
- ("-"|"+")?~signed (number | inf | nan)
+  number | inf | nan
+}
+
+DurationExpr {
+  DurationExpr !pow Pow DurationExpr |
+  DurationExpr !mul Mul DurationExpr |
+  DurationExpr !mul Div DurationExpr |
+  DurationExpr !mul Mod DurationExpr |
+  DurationExpr !add Add DurationExpr |
+  DurationExpr !add Sub DurationExpr |
+  !mul UnaryOp~signed DurationExpr |
+  durationPrimary
+}
+
+OffsetDurationExpr {
+  !mul UnaryOp~signed OffsetDurationExpr |
+  durationPrimary
+}
+
+durationPrimary[@inline] {
+  DurationStep "(" ")" |
+  DurationRange "(" ")" |
+  DurationMinOf "(" DurationExpr "," DurationExpr ")" |
+  DurationMaxOf "(" DurationExpr "," DurationExpr ")" |
+  "(" DurationExpr ")" |
+  NumberDurationLiteralInDurationContext
 }
 
 @skip { whitespace | LineComment }
@@ -494,3 +519,7 @@ NumberDurationLiteralInDurationContext {
 
 // Conditional function names (only parsed as function names when used as such).
 condFn<term> { @extend<Identifier, term> }
+DurationStep { condFn<"step"> }
+DurationRange { condFn<"range"> }
+DurationMinOf { condFn<"min_of"> }
+DurationMaxOf { condFn<"max_of"> }
