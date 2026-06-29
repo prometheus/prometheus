@@ -536,6 +536,11 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 		for _, s := range b.Compaction.Sources {
 			sources[s] = struct{}{}
 		}
+		// Preserve the from-stale-series and from-selected-series hints when merging.
+		// The planner only ever groups stale/selected blocks with other stale/selected
+		// blocks (see plan), so the resulting block is fully made of stale/selected
+		// series and must keep the hint, otherwise it would wrongly count towards
+		// inOrderBlocksMaxTime. See #18379.
 		if b.Compaction.FromStaleSeries() {
 			res.Compaction.SetStaleSeries()
 		}

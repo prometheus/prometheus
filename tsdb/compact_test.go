@@ -175,6 +175,78 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 	c.plan(metas)
 }
 
+// staleMetaRange is like metaRange but tags the block with the from-stale-series hint.
+func staleMetaRange(name string, mint, maxt int64) dirMeta {
+	dm := metaRange(name, mint, maxt, nil)
+	dm.meta.Compaction.SetStaleSeries()
+	return dm
+}
+
+// TestPlanDoesNotMergeStaleAndNonStaleBlocks verifies that the planner never
+// groups a from-stale-series block with non-stale blocks. Mixing them would
+// drop the hint on the merged block, which would then wrongly count towards
+// inOrderBlocksMaxTime and advance the WAL-replay cutoff past WAL-only data.
+// See https://github.com/prometheus/prometheus/issues/18379.
+func TestPlanDoesNotMergeStaleAndNonStaleBlocks(t *testing.T) {
+	compactor, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{
+		20,
+		60,
+		180,
+	}, nil, nil)
+	require.NoError(t, err)
+
+	t.Run("stale and non-stale in the same range are not merged", func(t *testing.T) {
+		// Two non-stale blocks and one stale block all fall into the same 60-wide
+		// range [0,60). Without segregation the planner would return all three;
+		// with segregation it must only return the two non-stale blocks.
+		metas := []dirMeta{
+			metaRange("1", 0, 20, nil),
+			staleMetaRange("stale", 0, 20),
+			metaRange("2", 20, 40, nil),
+			metaRange("3", 40, 60, nil),
+			// A fresh block so the last (most recent) block is excluded as usual.
+			metaRange("fresh", 60, 80, nil),
+		}
+
+		res, err := compactor.plan(metas)
+		require.NoError(t, err)
+		require.NotContains(t, res, "stale", "stale block must not be merged with non-stale blocks")
+		require.Equal(t, []string{"1", "2", "3"}, res)
+	})
+
+	t.Run("stale blocks are merged together", func(t *testing.T) {
+		// Three stale blocks fill the 60-wide range [0,60) and a fourth stale block
+		// makes that range no longer the most recent, so the three are compacted
+		// together: stale data still gets compacted, just never mixed with non-stale.
+		metas := []dirMeta{
+			staleMetaRange("s1", 0, 20),
+			staleMetaRange("s2", 20, 40),
+			staleMetaRange("s3", 40, 60),
+			staleMetaRange("s4", 60, 80),
+		}
+
+		res, err := compactor.plan(metas)
+		require.NoError(t, err)
+		require.Equal(t, []string{"s1", "s2", "s3"}, res)
+	})
+
+	t.Run("stale blocks are planned when there is nothing to do for non-stale", func(t *testing.T) {
+		// A single non-stale block (nothing to merge) plus a full stale range.
+		// The non-stale class yields nothing, so the stale class must be planned.
+		metas := []dirMeta{
+			metaRange("1", 0, 20, nil),
+			staleMetaRange("s1", 0, 20),
+			staleMetaRange("s2", 20, 40),
+			staleMetaRange("s3", 40, 60),
+			staleMetaRange("s4", 60, 80),
+		}
+
+		res, err := compactor.plan(metas)
+		require.NoError(t, err)
+		require.Equal(t, []string{"s1", "s2", "s3"}, res)
+	})
+}
+
 func TestLeveledCompactor(t *testing.T) {
 	// Tests for the private plan() method.
 	t.Run("plan", func(t *testing.T) {
@@ -2109,6 +2181,98 @@ func TestCompactBlockMetas(t *testing.T) {
 		},
 	}
 	require.Equal(t, expected, output)
+}
+
+// TestCompactBlockMetasHints verifies that CompactBlockMetas propagates the
+// compaction hints to the merged block: the from-stale-series hint is kept when
+// any source carries it (the planner only ever groups stale with stale), and the
+// from-out-of-order hint is kept only when every source carries it (out-of-order
+// blocks may be co-compacted with in-order blocks). Dropping either hint would
+// wrongly advance inOrderBlocksMaxTime. See #18379.
+func TestCompactBlockMetasHints(t *testing.T) {
+	parent1 := ulid.MustNew(100, nil)
+	parent2 := ulid.MustNew(200, nil)
+	outUlid := ulid.MustNew(1000, nil)
+
+	staleMeta := func(u ulid.ULID) *BlockMeta {
+		m := &BlockMeta{ULID: u, MinTime: 0, MaxTime: 1000, Compaction: BlockMetaCompaction{Level: 1}}
+		m.Compaction.SetStaleSeries()
+		return m
+	}
+	oooMeta := func(u ulid.ULID) *BlockMeta {
+		m := &BlockMeta{ULID: u, MinTime: 0, MaxTime: 1000, Compaction: BlockMetaCompaction{Level: 1}}
+		m.Compaction.SetOutOfOrder()
+		return m
+	}
+	plainMeta := func(u ulid.ULID) *BlockMeta {
+		return &BlockMeta{ULID: u, MinTime: 0, MaxTime: 1000, Compaction: BlockMetaCompaction{Level: 1}}
+	}
+
+	// staleOOOMeta is a single source carrying BOTH the from-stale-series and the
+	// from-out-of-order hints at once.
+	staleOOOMeta := func(u ulid.ULID) *BlockMeta {
+		m := &BlockMeta{ULID: u, MinTime: 0, MaxTime: 1000, Compaction: BlockMetaCompaction{Level: 1}}
+		m.Compaction.SetStaleSeries()
+		m.Compaction.SetOutOfOrder()
+		return m
+	}
+
+	t.Run("single source carrying both hints keeps both", func(t *testing.T) {
+		// One source with both hints: stale survives by any-source semantics, and
+		// out-of-order survives because the single (only) source is out-of-order, so
+		// every source is out-of-order.
+		out := CompactBlockMetas(outUlid, staleOOOMeta(parent1))
+		require.True(t, out.Compaction.FromStaleSeries(), "merged block must keep the from-stale-series hint")
+		require.True(t, out.Compaction.FromOutOfOrder(), "merged block must keep the from-out-of-order hint when the only source is out-of-order")
+	})
+
+	t.Run("stale+ooo source with an ooo-only source keeps both", func(t *testing.T) {
+		// Stale survives by any-source semantics; out-of-order survives because
+		// every source (one stale+ooo, one ooo-only) is out-of-order.
+		out := CompactBlockMetas(outUlid, staleOOOMeta(parent1), oooMeta(parent2))
+		require.True(t, out.Compaction.FromStaleSeries(), "merged block must keep the from-stale-series hint when any source is stale")
+		require.True(t, out.Compaction.FromOutOfOrder(), "merged block must keep the from-out-of-order hint when every source is out-of-order")
+	})
+
+	t.Run("stale+ooo source with a plain source keeps stale and drops ooo", func(t *testing.T) {
+		// Stale survives by any-source semantics; out-of-order is dropped because the
+		// plain source is in-order, so not every source is out-of-order.
+		out := CompactBlockMetas(outUlid, staleOOOMeta(parent1), plainMeta(parent2))
+		require.True(t, out.Compaction.FromStaleSeries(), "merged block must keep the from-stale-series hint when any source is stale")
+		require.False(t, out.Compaction.FromOutOfOrder(), "merged block must drop the from-out-of-order hint when a source is in-order")
+	})
+
+	t.Run("stale hint is preserved when a source is stale", func(t *testing.T) {
+		out := CompactBlockMetas(outUlid, staleMeta(parent1), staleMeta(parent2))
+		require.True(t, out.Compaction.FromStaleSeries(), "merged block must keep the from-stale-series hint")
+		require.False(t, out.Compaction.FromOutOfOrder())
+	})
+
+	t.Run("out-of-order hint is preserved when all sources are out-of-order", func(t *testing.T) {
+		out := CompactBlockMetas(outUlid, oooMeta(parent1), oooMeta(parent2))
+		require.True(t, out.Compaction.FromOutOfOrder(), "merged block must keep the from-out-of-order hint when all sources are out-of-order")
+		require.False(t, out.Compaction.FromStaleSeries())
+	})
+
+	t.Run("out-of-order hint is dropped when mixed with in-order", func(t *testing.T) {
+		out := CompactBlockMetas(outUlid, oooMeta(parent1), plainMeta(parent2))
+		require.False(t, out.Compaction.FromOutOfOrder(), "merged block must drop the from-out-of-order hint when it also contains in-order data")
+	})
+
+	t.Run("stale kept and out-of-order dropped when sources mix stale and out-of-order", func(t *testing.T) {
+		// Stale uses any-source semantics, so the stale hint survives; out-of-order
+		// uses all-sources semantics, so a mix of stale and out-of-order is not all
+		// out-of-order and the out-of-order hint is dropped.
+		out := CompactBlockMetas(outUlid, staleMeta(parent1), oooMeta(parent2))
+		require.True(t, out.Compaction.FromStaleSeries(), "merged block must keep the from-stale-series hint when any source is stale")
+		require.False(t, out.Compaction.FromOutOfOrder(), "merged block must drop the from-out-of-order hint when not every source is out-of-order")
+	})
+
+	t.Run("no hint when no source carries one", func(t *testing.T) {
+		out := CompactBlockMetas(outUlid, plainMeta(parent1), plainMeta(parent2))
+		require.False(t, out.Compaction.FromStaleSeries())
+		require.False(t, out.Compaction.FromOutOfOrder())
+	})
 }
 
 func TestCompactEmptyResultBlockWithTombstone(t *testing.T) {
