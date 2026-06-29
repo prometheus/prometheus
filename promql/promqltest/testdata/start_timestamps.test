@@ -205,10 +205,10 @@ load 1m
     cumulative      _ _ {{schema:0 sum:0 count:0}}+{{schema:0 sum:60 count:60}}x14
 
 eval range from 7m to 15m step 1m increase(cumulative[5m])
-    {} {{count:420 sum:420}} {{count:780 sum:780}} {{count:675 sum:675}} {{count:675 sum:675}} {{count:1275 sum:1275}} {{count:900 sum:900}} {{count:900 sum:900}} {{count:1725 sum:1725}} {{count:1125 sum:1125}}
+    {} {{count:420 sum:420}} {{count:780 sum:780}} {{count:675 sum:675}} {{count:675 sum:675}} {{count:1275 sum:1275}} {{count:1080 sum:1080}} {{count:900 sum:900}} {{count:1725 sum:1725}} {{count:1440 sum:1440}}
 
 eval range from 7m to 15m step 1m rate(cumulative[5m])
-    {} {{count:1.4 sum:1.4}} {{count:2.6 sum:2.6}} {{count:2.25 sum:2.25}} {{count:2.25 sum:2.25}} {{count:4.25 sum:4.25}} {{count:3 sum:3}} {{count:3 sum:3}} {{count:5.75 sum:5.75}} {{count:3.75 sum:3.75}}
+    {} {{count:1.4 sum:1.4}} {{count:2.6 sum:2.6}} {{count:2.25 sum:2.25}} {{count:2.25 sum:2.25}} {{count:4.25 sum:4.25}} {{count:3.6 sum:3.6}} {{count:3 sum:3}} {{count:5.75 sum:5.75}} {{count:4.8 sum:4.8}}
 
 eval range from 7m to 15m step 1m irate(cumulative[5m])
     {} {{count:1 sum:1}} {{count:6 sum:6}} {{count:1 sum:1}} {{count:1 sum:1}} {{count:9 sum:9}} {{count:1 sum:1}} {{count:1 sum:1}} {{count:12 sum:12}} {{count:1 sum:1}}
@@ -235,32 +235,29 @@ eval range from 10m to 15m step 1m increase(delta[5m])
     {type="otel"}            {{count:300 sum:300}}x5
     {type="gcp"}             {{count:300 sum:300}}x5
     {type="minimal_range"}   {{count:300 sum:300}}x5
-    {type="empty_range"}     {{count:300 sum:300}}x5
+    {type="empty_range"}     {{}}x5
 
 eval range from 10m to 15m step 1m rate(delta[5m])
     {type="otel"}            {{count:1 sum:1}}x5
     {type="gcp"}             {{count:1 sum:1}}x5
     {type="minimal_range"}   {{count:1 sum:1}}x5
-    {type="empty_range"}     {{count:1 sum:1}}x5
+    {type="empty_range"}     {{}}x5
 
 eval range from 10m to 15m step 1m irate(delta[5m])
     {type="otel"}            {{count:1 sum:1}}x5
     {type="gcp"}             {{count:1 sum:1}}x5
     {type="minimal_range"}   {{count:1 sum:1}}x5
-    {type="empty_range"}     {{count:1 sum:1}}x5
+    {type="empty_range"}     {{}}x5
 
 clear
 
 
 # Tests for histogram rate where rate extrapolation is substituted with assuming 0 sample at start timestamps.
-#
-# TODO: this doesn't yet produce expected results, because tsdb doesn't yet support start timestamps
-# for histograms. Expand test coverage when tsdb support is implemented.
 load 1m
     series@st  _ _ -1m
     series     _ _ {{schema:0 sum:60 count:60}}
 
 eval instant at 3m rate(series[5m])
-    # No series, since single sample can only produce a rate when there's a valid and suitable ST.
+    {} {{count:0.2 sum:0.2}}
 
 clear
