@@ -24,6 +24,7 @@ import {
   CountValues,
   Delta,
   DurationExpr,
+  DurationRange,
   Eql,
   EqlSingle,
   FunctionCall,
@@ -456,12 +457,7 @@ export class Parser {
   // step `DurationExpr`. Nested uses (e.g. inside `min_of`/`max_of` or
   // arithmetic) are represented by deeper nodes and must not trigger the warning.
   private isTopLevelDurationRangeExpr(node: SyntaxNode): boolean {
-    for (let child = node.firstChild; child; child = child.nextSibling) {
-      if (child.type.name === 'DurationRange') {
-        return true;
-      }
-    }
-    return false;
+    return node.getChild(DurationRange) !== null;
   }
 
   /**
