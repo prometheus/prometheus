@@ -403,6 +403,159 @@ func TestRefresh_MultipleCompartments(t *testing.T) {
 	require.Empty(t, tgs[2].Targets)
 }
 
+func TestRefresh_DisappearingCompartmentCleared(t *testing.T) {
+	// The discovery manager only drops a source when an empty group is sent for
+	// it. When a compartment disappears between refreshes (deleted, or no longer
+	// listable) the SD must re-emit its source as an empty group so the stale
+	// targets are cleared, but only once.
+	comp1 := "ocid1.compartment.oc1..c001"
+	comp2 := "ocid1.compartment.oc1..c002"
+	vnic := makeVnic("ocid1.vnic.oc1..v001", "10.0.0.1", "")
+
+	compartments := []string{comp1, comp2}
+
+	d := baseDiscovery()
+	d.listCompartments = func(_ context.Context) ([]string, error) { return compartments, nil }
+	d.listInstances = func(_ context.Context, compartmentID string) ([]core.Instance, error) {
+		inst := makeInstance(func(i *core.Instance) {
+			i.Id = strPtr("ocid1.instance.oc1.." + compartmentID)
+			i.CompartmentId = strPtr(compartmentID)
+		})
+		return []core.Instance{inst}, nil
+	}
+	d.listVnicAttachments = func(_ context.Context, _, instanceID string) ([]core.VnicAttachment, error) {
+		return []core.VnicAttachment{makeAttachment(instanceID, stringVal(vnic.Id))}, nil
+	}
+	d.getVnic = func(_ context.Context, _ string) (*core.Vnic, error) { return vnic, nil }
+
+	// First refresh: both compartments yield a target.
+	tgs, err := d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 2)
+
+	// comp2 disappears.
+	compartments = []string{comp1}
+
+	tgs, err = d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 2, "comp1 plus an empty group re-emitted for the vanished comp2")
+
+	targetsBySource := map[string]int{}
+	for _, tg := range tgs {
+		targetsBySource[tg.Source] = len(tg.Targets)
+	}
+	require.Equal(t, 1, targetsBySource["OCI_"+comp1])
+	require.Contains(t, targetsBySource, "OCI_"+comp2, "vanished compartment must be re-emitted")
+	require.Zero(t, targetsBySource["OCI_"+comp2], "vanished compartment must be re-emitted empty to clear its stale targets")
+
+	// Third refresh: comp2 was already cleared and must not be re-emitted again.
+	tgs, err = d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 1, "already-cleared compartment must not be re-emitted")
+	require.Equal(t, "OCI_"+comp1, tgs[0].Source)
+}
+
+func TestRefresh_ErrorPathPreservesLastSources(t *testing.T) {
+	// A failed refresh must not mutate lastSources: it returns early and the
+	// refresh framework keeps the last known good targets. A compartment that
+	// vanishes during the outage must still be cleared on the next successful
+	// refresh, proving lastSources survived the error.
+	comp1 := "ocid1.compartment.oc1..c001"
+	comp2 := "ocid1.compartment.oc1..c002"
+	vnic := makeVnic("ocid1.vnic.oc1..v001", "10.0.0.1", "")
+
+	compartments := []string{comp1, comp2}
+	var failInstances bool
+
+	d := baseDiscovery()
+	d.listCompartments = func(_ context.Context) ([]string, error) { return compartments, nil }
+	d.listInstances = func(_ context.Context, compartmentID string) ([]core.Instance, error) {
+		if failInstances {
+			return nil, errors.New("OCI API unavailable")
+		}
+		inst := makeInstance(func(i *core.Instance) {
+			i.Id = strPtr("ocid1.instance.oc1.." + compartmentID)
+			i.CompartmentId = strPtr(compartmentID)
+		})
+		return []core.Instance{inst}, nil
+	}
+	d.listVnicAttachments = func(_ context.Context, _, instanceID string) ([]core.VnicAttachment, error) {
+		return []core.VnicAttachment{makeAttachment(instanceID, stringVal(vnic.Id))}, nil
+	}
+	d.getVnic = func(_ context.Context, _ string) (*core.Vnic, error) { return vnic, nil }
+
+	// First refresh: both compartments yield a target.
+	tgs, err := d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 2)
+
+	// A transient API failure aborts the whole refresh.
+	failInstances = true
+	_, err = d.refresh(context.Background())
+	require.Error(t, err)
+
+	// The API recovers but comp2 has vanished in the meantime. comp2 must still
+	// be re-emitted empty, which is only possible if lastSources kept it across
+	// the failed refresh.
+	failInstances = false
+	compartments = []string{comp1}
+
+	tgs, err = d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 2, "comp1 plus an empty group re-emitted for the vanished comp2")
+
+	targetsBySource := map[string]int{}
+	for _, tg := range tgs {
+		targetsBySource[tg.Source] = len(tg.Targets)
+	}
+	require.Equal(t, 1, targetsBySource["OCI_"+comp1])
+	require.Contains(t, targetsBySource, "OCI_"+comp2, "vanished compartment must be re-emitted")
+	require.Zero(t, targetsBySource["OCI_"+comp2], "vanished compartment must be re-emitted empty")
+}
+
+func TestRefresh_AllCompartmentsVanish(t *testing.T) {
+	// When every compartment vanishes at once, each previously emitted source
+	// must be re-emitted as an empty group so all stale targets are cleared.
+	comp1 := "ocid1.compartment.oc1..c001"
+	comp2 := "ocid1.compartment.oc1..c002"
+	vnic := makeVnic("ocid1.vnic.oc1..v001", "10.0.0.1", "")
+
+	compartments := []string{comp1, comp2}
+
+	d := baseDiscovery()
+	d.listCompartments = func(_ context.Context) ([]string, error) { return compartments, nil }
+	d.listInstances = func(_ context.Context, compartmentID string) ([]core.Instance, error) {
+		inst := makeInstance(func(i *core.Instance) {
+			i.Id = strPtr("ocid1.instance.oc1.." + compartmentID)
+			i.CompartmentId = strPtr(compartmentID)
+		})
+		return []core.Instance{inst}, nil
+	}
+	d.listVnicAttachments = func(_ context.Context, _, instanceID string) ([]core.VnicAttachment, error) {
+		return []core.VnicAttachment{makeAttachment(instanceID, stringVal(vnic.Id))}, nil
+	}
+	d.getVnic = func(_ context.Context, _ string) (*core.Vnic, error) { return vnic, nil }
+
+	tgs, err := d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 2)
+
+	// Every compartment disappears.
+	compartments = nil
+
+	tgs, err = d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 2, "an empty group must be re-emitted for each vanished compartment")
+	for _, tg := range tgs {
+		require.Empty(t, tg.Targets, "vanished compartment must be re-emitted empty")
+	}
+
+	// Once cleared, nothing is re-emitted again.
+	tgs, err = d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, tgs, "already-cleared compartments must not be re-emitted")
+}
+
 func TestRefresh_CompartmentListError_Propagates(t *testing.T) {
 	sentinel := errors.New("identity API unavailable")
 	d := baseDiscovery()

@@ -233,6 +233,14 @@ type Discovery struct {
 	tenancy             string
 	port                int
 	logger              *slog.Logger
+	// lastSources holds the live target-group sources of the previous refresh,
+	// i.e. the compartments returned by compartment listing (excluding the
+	// empty groups re-emitted for vanished sources). The discovery manager only
+	// drops a source when an empty group is sent for it, so when a compartment
+	// is no longer returned by compartment listing (deleted, or filtered out)
+	// its source must be re-emitted empty to clear its stale targets.
+	// refresh is called serially by refresh.Discovery, so no lock is needed.
+	lastSources map[string]struct{}
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
@@ -573,6 +581,22 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 		tgs = append(tgs, tg)
 	}
+
+	// Re-emit an empty group for every source seen last refresh that is no
+	// longer present, so the discovery manager drops the stale targets of
+	// compartments that are no longer returned by compartment listing. A
+	// compartment whose instance listing fails is not cleared here: refresh
+	// returns early on that error, keeping its last known good targets.
+	current := make(map[string]struct{}, len(tgs))
+	for _, tg := range tgs {
+		current[tg.Source] = struct{}{}
+	}
+	for src := range d.lastSources {
+		if _, ok := current[src]; !ok {
+			tgs = append(tgs, &targetgroup.Group{Source: src})
+		}
+	}
+	d.lastSources = current
 
 	return tgs, nil
 }
