@@ -211,6 +211,7 @@ func NewWatcher(
 	dir string,
 	sendExemplars, sendHistograms, sendMetadata bool,
 	recordBuf *record.BuffersPool,
+	startSegment int,
 ) *Watcher {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -234,7 +235,7 @@ func NewWatcher(
 		quit:       make(chan struct{}),
 		done:       make(chan struct{}),
 
-		startSegment: -1,
+		startSegment: startSegment,
 		MaxSegment:   -1,
 	}
 	w.segment.Store(-1)
@@ -736,15 +737,6 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error 
 func (w *Watcher) SetStartTime(t time.Time) {
 	w.startTime = t
 	w.startTimestamp = timestamp.FromTime(t)
-}
-
-// SetStartSegment configures the watcher to replay the WAL from the given
-// segment number on the next call to Run. Samples in replayed segments
-// are sent to the WriteTo consumer regardless of their timestamp.
-// A value of -1 (the default) disables the override.
-// Must be called before Start.
-func (w *Watcher) SetStartSegment(segment int) {
-	w.startSegment = segment
 }
 
 // LastProcessedSegment returns the highest WAL segment the watcher has begun
