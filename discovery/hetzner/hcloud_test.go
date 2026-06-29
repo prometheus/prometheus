@@ -36,6 +36,7 @@ func (s *hcloudSDTestSuite) SetupTest(t *testing.T) {
 }
 
 func TestHCloudSDRefresh(t *testing.T) {
+	t.Parallel()
 	suite := &hcloudSDTestSuite{}
 	suite.SetupTest(t)
 
@@ -130,6 +131,7 @@ func TestHCloudSDRefresh(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, labelSet, targetGroup.Targets[i])
 		})
 	}
