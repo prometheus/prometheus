@@ -486,6 +486,10 @@ nerve_sd_configs:
 nomad_sd_configs:
   [ - <nomad_sd_config> ... ]
 
+# List of OCI service discovery configurations.
+oci_sd_configs:
+  [ - <oci_sd_config> ... ]
+
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
@@ -2936,6 +2940,135 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ <http_config> ]
 ```
 
+### `<oci_sd_config>`
+
+OCI SD configurations allow retrieving scrape targets from Oracle Cloud Infrastructure (OCI)
+compute instances. The private IP of the primary VNIC is used as the default address.
+Where no private IP is present, the public IP is used instead.
+
+The following OCI IAM policies are required. For API key authentication (user credentials):
+
+```text
+Allow group <group-name> to read instances in tenancy
+Allow group <group-name> to read compartments in tenancy
+Allow group <group-name> to read vnic-attachments in tenancy
+Allow group <group-name> to read vnics in tenancy
+```
+
+For instance principal authentication (Prometheus running on OCI compute):
+
+```text
+Allow dynamic-group <dynamic-group-name> to read instances in tenancy
+Allow dynamic-group <dynamic-group-name> to read compartments in tenancy
+Allow dynamic-group <dynamic-group-name> to read vnic-attachments in tenancy
+Allow dynamic-group <dynamic-group-name> to read vnics in tenancy
+```
+
+The following meta labels are available on all targets during
+[relabeling](#relabel_config):
+
+* `__meta_oci_availability_domain`: the availability domain of the instance (e.g. `US-ASHBURN-AD-1`)
+* `__meta_oci_compartment_id`: the OCID of the compartment the instance belongs to
+* `__meta_oci_defined_tag_<namespace>_<key>`: each defined tag of the instance. Scalar values (strings, numbers, booleans) are stringified; non-scalar values are dropped
+* `__meta_oci_fault_domain`: the fault domain of the instance (e.g. `FAULT-DOMAIN-1`)
+* `__meta_oci_image_id`: the OCID of the image the instance was launched from
+* `__meta_oci_instance_id`: the OCID of the instance
+* `__meta_oci_instance_name`: the display name of the instance
+* `__meta_oci_instance_shape`: the shape of the instance (e.g. `VM.Standard.E4.Flex`)
+* `__meta_oci_instance_state`: the lifecycle state of the instance (e.g. `RUNNING`, `STOPPED`, `TERMINATED`). Use relabeling to restrict scraping to states you care about.
+* `__meta_oci_private_ip`: the private IP address of the primary VNIC
+* `__meta_oci_public_ip`: the public IP address of the primary VNIC, if assigned
+* `__meta_oci_region`: the OCI region identifier (e.g. `us-ashburn-1`)
+* `__meta_oci_tag_<key>`: each freeform tag of the instance
+* `__meta_oci_tenancy_id`: the OCID of the tenancy the instance belongs to
+* `__meta_oci_vnic_id`: the OCID of the primary VNIC
+
+In tag and namespace names, any character outside `[a-zA-Z0-9_]` is replaced
+with an underscore; case is preserved. For example, a freeform tag named
+`appOwner` is exposed as `__meta_oci_tag_appOwner`, and a defined tag in
+namespace `Operations` with key `Cost Center` is exposed as
+`__meta_oci_defined_tag_Operations_Cost_Center`. Because case is preserved,
+tag keys that differ only in case (`Env` and `env`) produce distinct labels.
+
+To restrict targets to instances carrying a specific tag, use
+[`relabel_configs`](#relabel_config) with `keep` or `drop` actions matching the
+relevant `__meta_oci_tag_*` or `__meta_oci_defined_tag_*` label.
+
+Targets with no resolvable primary-VNIC IP (neither private nor public) are
+dropped to avoid emitting unscrapeable `:<port>` addresses. The address used
+is the private IP when available, falling back to the public IP.
+
+```yaml
+# Authentication method. Supported values: "api_key" (default), "instance_principal".
+# "instance_principal" uses IMDS-based credentials and requires no credential fields;
+# it is the recommended method when Prometheus runs on OCI compute.
+[ auth: <string> | default = "api_key" ]
+
+# API key auth fields. Required when auth is "api_key".
+[ tenancy: <string> ]
+[ user: <string> ]
+[ fingerprint: <string> ]
+[ key_file: <string> ]
+# Passphrase for the private key. Mutually exclusive with key_passphrase_file.
+[ key_passphrase: <secret> ]
+# Path to a file containing the passphrase for the private key. Mutually
+# exclusive with key_passphrase. The file is read at configuration load
+# time; rotating the file requires reloading Prometheus.
+[ key_passphrase_file: <string> ]
+
+# OCI region identifier. Required.
+region: <string>
+
+# Explicit list of compartment OCIDs to scan. When empty, all active
+# compartments reachable from the tenancy root are discovered automatically
+# via the OCI Identity API using a breadth-first walk. Compartments that
+# cannot be listed due to missing permissions are skipped with a warning so
+# that a single permission gap does not abort the walk.
+[ compartments:
+  [ - <string> ... ] ]
+
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth`, `authorization`, and `oauth2` options are
+# mutually exclusive. `password` and `password_file` are mutually exclusive.
+# It is mostly useful to configure `proxy_url`, `tls_config`, and the
+# underlying HTTP transport when targeting OCI through a corporate proxy
+# or with a custom CA bundle.
+# Optional HTTP basic authentication information, currently not supported by OCI.
+[ basic_auth: <basic_auth> ]
+# Optional `Authorization` header configuration, currently not supported by OCI.
+[ authorization: <authorization> ]
+# Optional OAuth 2.0 configuration, currently not supported by OCI.
+[ oauth2: <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+
+# Configures the TLS settings.
+tls_config:
+  [ <tls_config> ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# The time after which the instances are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+```
+
 ### `<serverset_sd_config>`
 
 Serverset SD configurations allow retrieving scrape targets from [Serversets](https://github.com/twitter/finagle/tree/develop/finagle-serversets) which are
@@ -3691,6 +3824,10 @@ nerve_sd_configs:
 # List of Nomad service discovery configurations.
 nomad_sd_configs:
   [ - <nomad_sd_config> ... ]
+
+# List of OCI service discovery configurations.
+oci_sd_configs:
+  [ - <oci_sd_config> ... ]
 
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
