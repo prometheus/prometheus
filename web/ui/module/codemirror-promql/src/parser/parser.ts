@@ -23,6 +23,7 @@ import {
   Changes,
   CountValues,
   Delta,
+  DurationExpr,
   Eql,
   EqlSingle,
   FunctionCall,
@@ -38,6 +39,7 @@ import {
   Lte,
   MatrixSelector,
   Neq,
+  OffsetDurationExpr,
   OffsetExpr,
   Or,
   ParenExpr,
@@ -173,7 +175,7 @@ export class Parser {
         // `checkAST` only recurses for explicit node kinds; there is no default
         // branch that walks all children, so we must visit the vector operand.
         this.checkAST(node.getChild('Expr'));
-        if (!node.getChild('OffsetDurationExpr')) {
+        if (!node.getChild(OffsetDurationExpr)) {
           // Always emit this message (do not gate on `OffsetExpr.to === topNode.to`:
           // the query box often has trailing space, so that check never matched in the UI).
           // `diagnoseAllErrorNodes` skips direct `OffsetExpr` error children so we do not
@@ -470,7 +472,7 @@ export class Parser {
    * colons inside label matchers with the subquery colon.
    */
   private getSubqueryStepDurationExpr(node: SyntaxNode): SyntaxNode | null {
-    const durationExprs = node.getChildren('DurationExpr');
+    const durationExprs = node.getChildren(DurationExpr);
     if (durationExprs.length < 2) {
       return null;
     }
