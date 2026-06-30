@@ -164,6 +164,7 @@ func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 			opt.EnableSTStorage = true
 			opt.XOR2EncodingAllowed = true
 			opt.FloatChunkEncoding = chunkenc.EncXOR2
+			opt.EnableHistogramSTEncoding = true
 		})
 	})
 }

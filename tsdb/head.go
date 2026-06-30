@@ -179,6 +179,11 @@ type HeadOptions struct {
 	// Store and load using uint32(chunkenc.Encoding) / chunkenc.Encoding(Load()).
 	FloatChunkEncoding atomic.Uint32
 
+	// EnableHistogramSTEncoding enables the ST-capable chunk encoding for
+	// integer and float histograms (EncHistogramST and EncFloatHistogramST).
+	// Represents the 'histograms-st-encoding' feature flag.
+	EnableHistogramSTEncoding atomic.Bool
+
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
 	ChunkDirRoot         string

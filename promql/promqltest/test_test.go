@@ -35,6 +35,7 @@ func init() {
 			opts.EnableSTStorage = true
 			opts.XOR2EncodingAllowed = true
 			opts.FloatChunkEncoding = chunkenc.EncXOR2
+			opts.EnableHistogramSTEncoding = true
 		},
 	}
 }

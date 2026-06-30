@@ -260,6 +260,7 @@
   "tsdb": {
     "delayed_compaction": false,
     "exemplar_storage": false,
+    "histograms_st_encoding": false,
     "isolation": true,
     "native_histograms": true,
     "st_storage": false,

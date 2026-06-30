@@ -102,12 +102,12 @@ Besides enabling this feature in Prometheus, start timestamps need to be exposed
 
 > NOTE: This is an experimental feature with known limitations until fully implemented.
 > * It introduces new WAL record type (SamplesV2) that can only be replayed with Prometheus 3.11 or later versions.
-> * For persistent storage support (TSDB blocks), you need to manually opt-in for XOR2 chunk format ([`xor2-encoding` flag](#xor2-chunk-encoding)).
+> * For persistent storage support (TSDB blocks), you need to manually opt-in for the XOR2 chunk format for floats ([`xor2-encoding` flag](#xor2-chunk-encoding)) and the histogram ST chunk format for native histograms ([`histograms-st-encoding` flag](#histogram-st-chunk-encoding)).
 >   The float chunk encoding must resolve to XOR2 when `st-storage` is active, because XOR chunks do not store start timestamps.
 >   If the resolved encoding is XOR (that is, `--enable-feature=xor2-encoding` is not set and `chunk_encoding.floats: xor2` is not configured), Prometheus refuses to start and fails the configuration validation with an error rather than continuing to run.
 >   Likewise, explicitly setting `chunk_encoding.floats: xor` in the config file while `st-storage` is active is rejected at config reload.
->   This might change later once we finish experimentation phase with XOR2.
-> * ST for native histograms and NHCBs are not yet implemented (see [#18315](https://github.com/prometheus/prometheus/issues/18315)).
+>   These constraints might change later once we finish the experimentation phase.
+> * Other areas of ST support for native histograms and NHCBs are still in progress (see [#18315](https://github.com/prometheus/prometheus/issues/18315)).
 > * PromQL use of ST is out of scope of this feature.
 
 ## Start timestamp (ST) usage in PromQL functions
@@ -298,6 +298,19 @@ For more details, see the [proposal](https://github.com/prometheus/proposals/pul
 > * This encoding is new, meaning downstream tools and LTS systems might not support it yet (e.g. Thanos sidecar uploaded blocks).
 
 This setting enables the new XOR2 chunk encoding for float samples, which provides better disk compression than the default XOR encoding for typical Prometheus workloads. This format also allows storing Start Timestamp (ST).
+
+For the equivalent ST-capable chunk encoding for native histograms and float histograms, see the [`histograms-st-encoding`](#histogram-st-chunk-encoding) flag. The two flags are independent.
+
+## Histogram ST chunk encoding
+
+`--enable-feature=histograms-st-encoding`
+
+> WARNING: This is highly experimental and risky setting:
+> * Chunks encoded with `histogramST` and `floathistogramST` **cannot be read by older Prometheus versions** that do not support the encoding. Once enabled and data is written, you need to **manually delete blocks from the disk**, otherwise Prometheus will return error on all queries.
+> * We are still experimenting on the final encoding. As of now this encoding can change in any Prometheus version. All your persistent block data will be lost between versions.
+> * This encoding is new, meaning downstream tools and LTS systems might not support it yet (e.g. Thanos sidecar uploaded blocks).
+
+This setting enables the new `histogramST` and `floathistogramST` chunk encodings for native histogram and float histogram samples. These encodings extend the corresponding histogram chunk formats with a Start Timestamp (ST) header and per-sample ST encoding, equivalent to what `xor2-encoding` does for float chunks. The flag does not affect float chunks.
 
 The encoding can also be controlled at each configuration reload via the `chunk_encoding.floats` field in the `storage.tsdb` section of the configuration file. Setting `chunk_encoding.floats: xor` forces standard XOR encoding even when `--enable-feature=xor2-encoding` is set; setting `chunk_encoding.floats: xor2` requires `--enable-feature=xor2-encoding` to be enabled.
 

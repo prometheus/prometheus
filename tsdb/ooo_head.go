@@ -71,9 +71,11 @@ func (o *OOOChunk) NumSamples() int {
 }
 
 // ToEncodedChunks returns chunks with the samples in the OOOChunk.
+// useXOR2 selects XOR2 encoding for float samples; useHistogramST selects the
+// ST-capable chunk encoding for integer and float histogram samples.
 //
 //nolint:revive
-func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2 bool) (chks []memChunk, err error) {
+func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2, useHistogramST bool) (chks []memChunk, err error) {
 	if len(o.samples) == 0 {
 		return nil, nil
 	}
@@ -93,14 +95,12 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2 bool) (chks []memCh
 		if s.t > maxt {
 			break
 		}
-		encoding := chunkenc.ValFloat.ChunkEncoding(useXOR2)
+		encoding := chunkenc.ValFloat.ChunkEncoding(useXOR2, useHistogramST)
 		switch {
 		case s.h != nil:
-			// TODO(krajorama,ywwg): use ST capable histogram chunk.
-			encoding = chunkenc.EncHistogram
+			encoding = chunkenc.ValHistogram.ChunkEncoding(useXOR2, useHistogramST)
 		case s.fh != nil:
-			// TODO(krajorama,ywwg): use ST capable float histogram chunk.
-			encoding = chunkenc.EncFloatHistogram
+			encoding = chunkenc.ValFloatHistogram.ChunkEncoding(useXOR2, useHistogramST)
 		}
 
 		// prevApp is the appender for the previous sample.
@@ -125,8 +125,7 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2 bool) (chks []memCh
 		switch encoding {
 		case chunkenc.EncXOR, chunkenc.EncXOR2:
 			app.Append(s.st, s.t, s.f)
-		case chunkenc.EncHistogram:
-			// TODO(krajorama,ywwg): handle ST capable histogram chunk.
+		case chunkenc.EncHistogram, chunkenc.EncHistogramST:
 			var (
 				newChunk chunkenc.Chunk
 				recoded  bool
@@ -139,8 +138,7 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2 bool) (chks []memCh
 				}
 				chunk = newChunk
 			}
-		case chunkenc.EncFloatHistogram:
-			// TODO(krajorama,ywwg): handle ST capable float histogram chunk.
+		case chunkenc.EncFloatHistogram, chunkenc.EncFloatHistogramST:
 			var (
 				newChunk chunkenc.Chunk
 				recoded  bool

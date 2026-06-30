@@ -5539,6 +5539,64 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 	}
 }
 
+func TestHistogramSTCounterResetHeaderOnChunkCut(t *testing.T) {
+	for _, floatHisto := range []bool{false, true} {
+		t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
+			l := labels.FromStrings("a", "b")
+			opts := newTestHeadDefaultOptions(2, false)
+			opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+			opts.EnableHistogramSTEncoding.Store(true)
+			head, _ := newTestHeadWithOptions(t, compression.None, opts)
+			t.Cleanup(func() {
+				require.NoError(t, head.Close())
+			})
+			require.NoError(t, head.Init(0))
+
+			appendHistogram := func(ts int64, h *histogram.Histogram) {
+				app := head.Appender(context.Background())
+				var err error
+				if floatHisto {
+					_, err = app.AppendHistogram(0, l, ts, nil, h.ToFloat(nil))
+				} else {
+					_, err = app.AppendHistogram(0, l, ts, h.Copy(), nil)
+				}
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+			}
+
+			h1 := tsdbutil.GenerateTestHistogram(0)
+			h2 := tsdbutil.GenerateTestHistogram(1)
+
+			// Chunk range is 2, so appending at t=1 and t=2 cuts a new chunk on the second append.
+			appendHistogram(1, h1)
+			appendHistogram(2, h2)
+
+			ms, _, err := head.getOrCreate(l.Hash(), l, false)
+			require.NoError(t, err)
+			require.NotNil(t, ms.headChunks)
+			require.NotNil(t, ms.headChunks.prev)
+
+			if floatHisto {
+				prevChunk, ok := ms.headChunks.prev.chunk.(*chunkenc.FloatHistogramSTChunk)
+				require.True(t, ok)
+				require.Equal(t, chunkenc.UnknownCounterReset, prevChunk.GetCounterResetHeader())
+
+				headChunk, ok := ms.headChunks.chunk.(*chunkenc.FloatHistogramSTChunk)
+				require.True(t, ok)
+				require.Equal(t, chunkenc.NotCounterReset, headChunk.GetCounterResetHeader())
+			} else {
+				prevChunk, ok := ms.headChunks.prev.chunk.(*chunkenc.HistogramSTChunk)
+				require.True(t, ok)
+				require.Equal(t, chunkenc.UnknownCounterReset, prevChunk.GetCounterResetHeader())
+
+				headChunk, ok := ms.headChunks.chunk.(*chunkenc.HistogramSTChunk)
+				require.True(t, ok)
+				require.Equal(t, chunkenc.NotCounterReset, headChunk.GetCounterResetHeader())
+			}
+		})
+	}
+}
+
 func TestOOOHistogramCounterResetHeaders(t *testing.T) {
 	for _, floatHisto := range []bool{true, false} {
 		t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
@@ -6059,7 +6117,7 @@ func testWBLReplay(t *testing.T, scenario sampleTypeScenario) {
 	require.False(t, ok)
 	require.NotNil(t, ms)
 
-	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, false)
+	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, false, false)
 	require.NoError(t, err)
 	require.Len(t, chks, 1)
 
@@ -7976,6 +8034,7 @@ func TestHeadAppender_WALEncoder_EnableSTStorage(t *testing.T) {
 			} else {
 				opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR))
 			}
+			opts.EnableHistogramSTEncoding.Store(enableST)
 			h, w := newTestHeadWithOptions(t, compression.None, opts)
 
 			lbls := labels.FromStrings("foo", "bar")
@@ -8036,6 +8095,7 @@ func TestHeadAppender_WBLEncoder_EnableSTStorage(t *testing.T) {
 			} else {
 				opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR))
 			}
+			opts.EnableHistogramSTEncoding.Store(enableST)
 
 			h, err := NewHead(nil, nil, wal, wbl, opts, nil)
 			require.NoError(t, err)
@@ -8147,19 +8207,15 @@ func TestHeadAppender_STStorage_Disabled(t *testing.T) {
 	}
 }
 
-// TestHeadAppender_STStorage_WALReplay verifies that float ST values are
-// preserved across a WAL replay when EnableSTStorage is true, and that
-// histogram ST values are written into the WAL records consumed by replay.
-// The bug was that Commit() hardcoded EnableSTStorage=false in the WAL encoder,
-// so ST values were written as V1 records (without ST) and lost on replay.
+// TestHeadAppender_STStorage_WALReplay verifies that ST values are preserved
+// across a WAL replay for floats, histograms, and float histograms when
+// EnableSTStorage and EnableHistogramSTEncoding are true. The original bug was
+// that Commit() hardcoded EnableSTStorage=false in the WAL encoder, so ST
+// values were written as V1 records (without ST) and lost on replay.
 func TestHeadAppender_STStorage_WALReplay(t *testing.T) {
 	type sampleCase struct {
 		name   string
 		append func(storage.AppenderV2, labels.Labels, int64, int64) (chunks.Sample, error)
-		// TODO(krajorama,ywwg): Once histogram chunks preserve ST, remove this
-		// record-layer assertion and assert histogram ST through replayed chunks.
-		assertSTInWAL func(testing.TB, string, []int64)
-		assertReplay  func(*testing.T, map[string][]chunks.Sample, map[string][]chunks.Sample)
 	}
 
 	const st = int64(50)
@@ -8170,9 +8226,6 @@ func TestHeadAppender_STStorage_WALReplay(t *testing.T) {
 				_, err := app.Append(0, lbls, st, ts, float64(ts), nil, nil, storage.AOptions{})
 				return sample{st: st, t: ts, f: float64(ts)}, err
 			},
-			assertReplay: func(t *testing.T, expected, got map[string][]chunks.Sample) {
-				require.Equal(t, expected, got)
-			},
 		},
 		{
 			name: "histogram",
@@ -8180,18 +8233,7 @@ func TestHeadAppender_STStorage_WALReplay(t *testing.T) {
 				h := tsdbutil.GenerateTestHistogram(ts)
 				h.CounterResetHint = histogram.NotCounterReset
 				_, err := app.Append(0, lbls, st, ts, 0, h, nil, storage.AOptions{})
-				return sample{t: ts, h: h}, err
-			},
-			assertSTInWAL: func(t testing.TB, dir string, expectedSTs []int64) {
-				intSamples, _, floatSamples, _ := readWALHistogramSamples(t, dir)
-				require.Empty(t, floatSamples)
-				require.Len(t, intSamples, len(expectedSTs))
-				for i, s := range intSamples {
-					require.Equal(t, expectedSTs[i], s.ST)
-				}
-			},
-			assertReplay: func(t *testing.T, expected, got map[string][]chunks.Sample) {
-				requireEqualSeries(t, expected, got, true)
+				return sample{st: st, t: ts, h: h}, err
 			},
 		},
 		{
@@ -8200,18 +8242,7 @@ func TestHeadAppender_STStorage_WALReplay(t *testing.T) {
 				fh := tsdbutil.GenerateTestFloatHistogram(ts)
 				fh.CounterResetHint = histogram.NotCounterReset
 				_, err := app.Append(0, lbls, st, ts, 0, nil, fh, storage.AOptions{})
-				return sample{t: ts, fh: fh}, err
-			},
-			assertSTInWAL: func(t testing.TB, dir string, expectedSTs []int64) {
-				intSamples, _, floatSamples, _ := readWALHistogramSamples(t, dir)
-				require.Empty(t, intSamples)
-				require.Len(t, floatSamples, len(expectedSTs))
-				for i, s := range floatSamples {
-					require.Equal(t, expectedSTs[i], s.ST)
-				}
-			},
-			assertReplay: func(t *testing.T, expected, got map[string][]chunks.Sample) {
-				requireEqualSeries(t, expected, got, true)
+				return sample{st: st, t: ts, fh: fh}, err
 			},
 		},
 	} {
@@ -8219,25 +8250,20 @@ func TestHeadAppender_STStorage_WALReplay(t *testing.T) {
 			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
 			opts.EnableSTStorage.Store(true)
 			opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+			opts.EnableHistogramSTEncoding.Store(true)
 			h, w := newTestHeadWithOptions(t, compression.None, opts)
 
 			lbls := labels.FromStrings("foo", "bar")
 
 			a := h.AppenderV2(context.Background())
 			var expected []chunks.Sample
-			var expectedSTs []int64
 			for ts := int64(100); ts < 200; ts++ {
 				s, err := tc.append(a, lbls, st, ts)
 				require.NoError(t, err)
 				expected = append(expected, s)
-				expectedSTs = append(expectedSTs, st)
 			}
 			require.NoError(t, a.Commit())
 			require.NoError(t, h.Close())
-
-			if tc.assertSTInWAL != nil {
-				tc.assertSTInWAL(t, w.Dir(), expectedSTs)
-			}
 
 			// Reopen the head, triggering WAL replay.
 			w, err := wlog.New(nil, nil, w.Dir(), compression.None)
@@ -8248,14 +8274,14 @@ func TestHeadAppender_STStorage_WALReplay(t *testing.T) {
 			t.Cleanup(func() { _ = h2.Close() })
 			require.NoError(t, h2.Init(0))
 
-			// Query and verify samples survived the WAL replay. Histogram chunks
-			// currently return AtST() == 0, so histogram ST is asserted at the WAL layer.
-			// TODO(krajorama,ywwg): Once histogram chunks preserve ST, simplify
-			// this test to assert all sample types through the query result.
 			q, err := NewBlockQuerier(h2, 100, 199)
 			require.NoError(t, err)
+			key := `{foo="bar"}`
 			got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-			tc.assertReplay(t, map[string][]chunks.Sample{`{foo="bar"}`: expected}, got)
+			requireEqualSeries(t, map[string][]chunks.Sample{`{foo="bar"}`: expected}, got, true)
+			for i, e := range expected {
+				require.Equal(t, e.ST(), got[key][i].ST(), "ST mismatch at [%d]", i)
+			}
 		})
 	}
 }
@@ -8313,21 +8339,17 @@ func TestWALReplayStoreSTPassed(t *testing.T) {
 		"active chunk after WAL replay into EncXOR2+STStorage head must use EncXOR2")
 }
 
-// TestHeadAppender_STStorage_WBLReplay verifies that float ST values are
-// preserved across a WBL replay for out-of-order samples when EnableSTStorage
-// is true, and that histogram ST values are written into the WBL records
-// consumed by replay. The bug was that collectOOORecords() hardcoded
-// EnableSTStorage=false in the WBL encoder (acc.enc), so OOO sample ST values
-// were written as V1 records (without ST) and lost on WBL replay.
+// TestHeadAppender_STStorage_WBLReplay verifies that ST values are preserved
+// across a WBL replay for out-of-order floats, histograms, and float
+// histograms when EnableSTStorage and EnableHistogramSTEncoding are true. The
+// original bug was that collectOOORecords() hardcoded EnableSTStorage=false in
+// the WBL encoder (acc.enc), so OOO sample ST values were written as V1
+// records (without ST) and lost on WBL replay.
 func TestHeadAppender_STStorage_WBLReplay(t *testing.T) {
 	type sampleCase struct {
 		name      string
 		append    func(storage.AppenderV2, labels.Labels, int64, int64) (chunks.Sample, error)
 		expandOOO func(chunkenc.Iterator) ([]chunks.Sample, error)
-		// TODO(krajorama,ywwg): Once histogram chunks preserve ST, remove this
-		// record-layer assertion and assert histogram ST through replayed OOO chunks.
-		assertSTInWBL func(testing.TB, string, []int64)
-		assertReplay  func(*testing.T, []chunks.Sample, []chunks.Sample)
 	}
 
 	const st = int64(50)
@@ -8346,9 +8368,6 @@ func TestHeadAppender_STStorage_WBLReplay(t *testing.T) {
 				}
 				return got, it.Err()
 			},
-			assertReplay: func(t *testing.T, expected, got []chunks.Sample) {
-				require.Equal(t, expected, got)
-			},
 		},
 		{
 			name: "histogram",
@@ -8356,26 +8375,15 @@ func TestHeadAppender_STStorage_WBLReplay(t *testing.T) {
 				h := tsdbutil.GenerateTestHistogram(ts)
 				h.CounterResetHint = histogram.NotCounterReset
 				_, err := app.Append(0, lbls, st, ts, 0, h, nil, storage.AOptions{})
-				return sample{t: ts, h: h}, err
+				return sample{st: st, t: ts, h: h}, err
 			},
 			expandOOO: func(it chunkenc.Iterator) ([]chunks.Sample, error) {
 				var got []chunks.Sample
 				for it.Next() != chunkenc.ValNone {
 					t, h := it.AtHistogram(nil)
-					got = append(got, sample{t: t, h: h})
+					got = append(got, sample{st: it.AtST(), t: t, h: h})
 				}
 				return got, it.Err()
-			},
-			assertSTInWBL: func(t testing.TB, dir string, expectedSTs []int64) {
-				intSamples, _, floatSamples, _ := readWALHistogramSamples(t, dir)
-				require.Empty(t, floatSamples)
-				require.Len(t, intSamples, len(expectedSTs))
-				for i, s := range intSamples {
-					require.Equal(t, expectedSTs[i], s.ST)
-				}
-			},
-			assertReplay: func(t *testing.T, expected, got []chunks.Sample) {
-				requireEqualSamples(t, "ooo", expected, got, requireEqualSamplesIgnoreCounterResets)
 			},
 		},
 		{
@@ -8384,26 +8392,15 @@ func TestHeadAppender_STStorage_WBLReplay(t *testing.T) {
 				fh := tsdbutil.GenerateTestFloatHistogram(ts)
 				fh.CounterResetHint = histogram.NotCounterReset
 				_, err := app.Append(0, lbls, st, ts, 0, nil, fh, storage.AOptions{})
-				return sample{t: ts, fh: fh}, err
+				return sample{st: st, t: ts, fh: fh}, err
 			},
 			expandOOO: func(it chunkenc.Iterator) ([]chunks.Sample, error) {
 				var got []chunks.Sample
 				for it.Next() != chunkenc.ValNone {
 					t, fh := it.AtFloatHistogram(nil)
-					got = append(got, sample{t: t, fh: fh})
+					got = append(got, sample{st: it.AtST(), t: t, fh: fh})
 				}
 				return got, it.Err()
-			},
-			assertSTInWBL: func(t testing.TB, dir string, expectedSTs []int64) {
-				intSamples, _, floatSamples, _ := readWALHistogramSamples(t, dir)
-				require.Empty(t, intSamples)
-				require.Len(t, floatSamples, len(expectedSTs))
-				for i, s := range floatSamples {
-					require.Equal(t, expectedSTs[i], s.ST)
-				}
-			},
-			assertReplay: func(t *testing.T, expected, got []chunks.Sample) {
-				requireEqualSamples(t, "ooo", expected, got, requireEqualSamplesIgnoreCounterResets)
 			},
 		},
 	} {
@@ -8420,6 +8417,7 @@ func TestHeadAppender_STStorage_WBLReplay(t *testing.T) {
 			opts.OutOfOrderTimeWindow.Store(60 * time.Minute.Milliseconds())
 			opts.EnableSTStorage.Store(true)
 			opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+			opts.EnableHistogramSTEncoding.Store(true)
 
 			h, err := NewHead(nil, nil, wal, wbl, opts, nil)
 			require.NoError(t, err)
@@ -8438,19 +8436,13 @@ func TestHeadAppender_STStorage_WBLReplay(t *testing.T) {
 			// OOO head chunk (not mmap'd) and are exclusively recovered via WBL replay.
 			app = h.AppenderV2(context.Background())
 			var expected []chunks.Sample
-			var expectedSTs []int64
 			for ts := int64(100); ts < 120; ts++ {
 				s, err := tc.append(app, lbls, st, ts)
 				require.NoError(t, err)
 				expected = append(expected, s)
-				expectedSTs = append(expectedSTs, st)
 			}
 			require.NoError(t, app.Commit())
 			require.NoError(t, h.Close())
-
-			if tc.assertSTInWBL != nil {
-				tc.assertSTInWBL(t, filepath.Join(dir, wlog.WblDirName), expectedSTs)
-			}
 
 			// Reopen the head, triggering WBL replay.
 			wal, err = wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
@@ -8469,13 +8461,16 @@ func TestHeadAppender_STStorage_WBLReplay(t *testing.T) {
 			require.NotNil(t, ms.ooo)
 			require.NotNil(t, ms.ooo.oooHeadChunk)
 
-			chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, true)
+			chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, true, true)
 			require.NoError(t, err)
 			require.Len(t, chks, 1)
 
 			got, err := tc.expandOOO(chks[0].chunk.Iterator(nil))
 			require.NoError(t, err)
-			tc.assertReplay(t, expected, got)
+			requireEqualSamples(t, "ooo", expected, got, requireEqualSamplesIgnoreCounterResets)
+			for i, e := range expected {
+				require.Equal(t, e.ST(), got[i].ST(), "ST mismatch at [%d]", i)
+			}
 		})
 	}
 }
@@ -8593,71 +8588,122 @@ func TestHeadAppender_STStorage_WALReplay_CrossEncoding_Reverse(t *testing.T) {
 // TestHeadAppender_STStorage_ChunkEncoding verifies that the correct chunk encoding
 // is used based on EnableSTStorage setting.
 func TestHeadAppender_STStorage_ChunkEncoding(t *testing.T) {
-	samples := []struct {
+	testHistogram := tsdbutil.GenerateTestHistogram(1)
+	testFloatHistogram := tsdbutil.GenerateTestFloatHistogram(1)
+
+	type appendableSample struct {
 		st      int64
 		ts      int64
 		fSample float64
-	}{
-		{st: 10, ts: 100, fSample: 1.0},
-		{st: 20, ts: 200, fSample: 2.0},
+		h       *histogram.Histogram
+		fh      *histogram.FloatHistogram
 	}
 
-	for _, enableST := range []bool{false, true} {
-		t.Run(fmt.Sprintf("EnableSTStorage=%t", enableST), func(t *testing.T) {
-			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
-			opts.EnableSTStorage.Store(enableST)
-			if enableST {
-				opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
-			} else {
-				opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR))
-			}
-			h, _ := newTestHeadWithOptions(t, compression.None, opts)
-
-			lbls := labels.FromStrings("foo", "bar")
-			a := h.Appender(context.Background())
-			for _, s := range samples {
-				_, err := a.AppendSTZeroSample(0, lbls, s.ts, s.st)
-				require.NoError(t, err)
-				_, err = a.Append(0, lbls, s.ts, s.fSample)
-				require.NoError(t, err)
-			}
-			require.NoError(t, a.Commit())
-
-			ctx := context.Background()
-			idxReader, err := h.Index()
-			require.NoError(t, err)
-			defer idxReader.Close()
-
-			chkReader, err := h.Chunks()
-			require.NoError(t, err)
-			defer chkReader.Close()
-
-			p, err := idxReader.Postings(ctx, "foo", "bar")
-			require.NoError(t, err)
-
-			var lblBuilder labels.ScratchBuilder
-			require.True(t, p.Next())
-			sRef := p.At()
-
-			var chkMetas []chunks.Meta
-			require.NoError(t, idxReader.Series(sRef, &lblBuilder, &chkMetas))
-			require.NotEmpty(t, chkMetas)
-
-			for _, meta := range chkMetas {
-				chk, iterable, err := chkReader.ChunkOrIterable(meta)
-				require.NoError(t, err)
-				require.Nil(t, iterable)
-
-				encoding := chk.Encoding()
+	for _, tc := range []struct {
+		name            string
+		samples         []appendableSample
+		stEncoding      chunkenc.Encoding
+		regularEncoding chunkenc.Encoding
+	}{
+		{
+			name: "float samples",
+			samples: []appendableSample{
+				{st: 10, ts: 100, fSample: 1.0},
+				{st: 20, ts: 200, fSample: 2.0},
+			},
+			stEncoding:      chunkenc.EncXOR2,
+			regularEncoding: chunkenc.EncXOR,
+		},
+		{
+			name: "histogram samples",
+			samples: []appendableSample{
+				{st: 10, ts: 100, h: testHistogram},
+				{st: 20, ts: 200, h: testHistogram},
+			},
+			stEncoding:      chunkenc.EncHistogramST,
+			regularEncoding: chunkenc.EncHistogram,
+		},
+		{
+			name: "float histogram samples",
+			samples: []appendableSample{
+				{st: 10, ts: 100, fh: testFloatHistogram},
+				{st: 20, ts: 200, fh: testFloatHistogram},
+			},
+			stEncoding:      chunkenc.EncFloatHistogramST,
+			regularEncoding: chunkenc.EncFloatHistogram,
+		},
+	} {
+		for _, enableST := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/EnableSTStorage=%t", tc.name, enableST), func(t *testing.T) {
+				opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
+				opts.EnableSTStorage.Store(enableST)
 				if enableST {
-					require.Equal(t, chunkenc.EncXOR2, encoding,
-						"Expected ST-capable encoding when EnableSTStorage is true")
+					opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
 				} else {
-					require.Equal(t, chunkenc.EncXOR, encoding,
-						"Expected regular XOR encoding when EnableSTStorage is false")
+					opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR))
 				}
-			}
-		})
+				opts.EnableHistogramSTEncoding.Store(enableST)
+				h, _ := newTestHeadWithOptions(t, compression.None, opts)
+
+				lbls := labels.FromStrings("foo", "bar")
+				a := h.Appender(context.Background())
+				for _, s := range tc.samples {
+					switch {
+					case s.h != nil:
+						_, err := a.AppendHistogramSTZeroSample(0, lbls, s.ts, s.st, s.h, nil)
+						require.NoError(t, err)
+						_, err = a.AppendHistogram(0, lbls, s.ts, s.h, nil)
+						require.NoError(t, err)
+					case s.fh != nil:
+						_, err := a.AppendHistogramSTZeroSample(0, lbls, s.ts, s.st, nil, s.fh)
+						require.NoError(t, err)
+						_, err = a.AppendHistogram(0, lbls, s.ts, nil, s.fh)
+						require.NoError(t, err)
+					default:
+						_, err := a.AppendSTZeroSample(0, lbls, s.ts, s.st)
+						require.NoError(t, err)
+						_, err = a.Append(0, lbls, s.ts, s.fSample)
+						require.NoError(t, err)
+					}
+				}
+				require.NoError(t, a.Commit())
+
+				ctx := context.Background()
+				idxReader, err := h.Index()
+				require.NoError(t, err)
+				defer idxReader.Close()
+
+				chkReader, err := h.Chunks()
+				require.NoError(t, err)
+				defer chkReader.Close()
+
+				p, err := idxReader.Postings(ctx, "foo", "bar")
+				require.NoError(t, err)
+
+				var lblBuilder labels.ScratchBuilder
+				require.True(t, p.Next())
+				sRef := p.At()
+
+				var chkMetas []chunks.Meta
+				require.NoError(t, idxReader.Series(sRef, &lblBuilder, &chkMetas))
+				require.NotEmpty(t, chkMetas)
+
+				for _, meta := range chkMetas {
+					chk, iterable, err := chkReader.ChunkOrIterable(meta)
+					require.NoError(t, err)
+					require.Nil(t, iterable)
+
+					encoding := chk.Encoding()
+					if enableST {
+						require.Equal(t, tc.stEncoding, encoding,
+							"Expected ST-capable encoding when EnableSTStorage is true")
+					} else {
+						require.Equal(t, tc.regularEncoding, encoding,
+							"Expected regular encoding when EnableSTStorage is false")
+					}
+				}
+			})
+		}
 	}
 }
 

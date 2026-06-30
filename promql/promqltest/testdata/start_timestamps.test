@@ -199,28 +199,28 @@ clear
 # * ST_curr = T_prev (GCP)
 # * ST = T - 1ms
 # * ST = T
-# TODO: start timestamps doesn't work for histograms yet, because the tsdb support is missing.
+# TODO(ywwg): confirm the expected values for histograms and float histograms are correct
 load 1m
     cumulative@st   _ _ -30s-1mx2 -1m-1mx2 -59999ms-1mx2 -1s-1mx2 -1ms-1mx2
     cumulative      _ _ {{schema:0 sum:0 count:0}}+{{schema:0 sum:60 count:60}}x14
 
 eval range from 7m to 15m step 1m increase(cumulative[5m])
-    {} {{count:300 sum:300}}x8
+    {} {{count:420 sum:420}} {{count:780 sum:780}} {{count:675 sum:675}} {{count:675 sum:675}} {{count:1275 sum:1275}} {{count:1080 sum:1080}} {{count:900 sum:900}} {{count:1725 sum:1725}} {{count:1440 sum:1440}}
 
 eval range from 7m to 15m step 1m rate(cumulative[5m])
-    {} {{count:1 sum:1}}x8
+    {} {{count:1.4 sum:1.4}} {{count:2.6 sum:2.6}} {{count:2.25 sum:2.25}} {{count:2.25 sum:2.25}} {{count:4.25 sum:4.25}} {{count:3.6 sum:3.6}} {{count:3 sum:3}} {{count:5.75 sum:5.75}} {{count:4.8 sum:4.8}}
 
 eval range from 7m to 15m step 1m irate(cumulative[5m])
-    {} {{count:1 sum:1}}x8
+    {} {{count:1 sum:1}} {{count:6 sum:6}} {{count:1 sum:1}} {{count:1 sum:1}} {{count:9 sum:9}} {{count:1 sum:1}} {{count:1 sum:1}} {{count:12 sum:12}} {{count:1 sum:1}}
 
 # Resets function also considers start timestamp resets.
 eval range from 7m to 15m step 1m resets(cumulative[5m])
-    {} 0x8
+    {} 1 2 1 1 2 1 1 2 1
 
 clear
 
 # Tests for rate(), irate() and increase() on delta histograms.
-# TODO: start timestamps doesn't work for histograms yet, because the tsdb support is missing.
+# TODO(ywwg): confirm the expected values for histograms and float histograms are correct
 load 1m
     delta{type="otel"}@st             _ _ -1mx15
     delta{type="otel"}                _ _ {{schema:0 sum:60 count:60}}x15
@@ -232,35 +232,32 @@ load 1m
     delta{type="empty_range"}         _ _ {{schema:0 sum:60 count:60}}x15
 
 eval range from 10m to 15m step 1m increase(delta[5m])
-    {type="otel"}            {{sum:0 count:0}}x5
-    {type="gcp"}             {{sum:0 count:0}}x5
-    {type="minimal_range"}   {{sum:0 count:0}}x5
-    {type="empty_range"}     {{sum:0 count:0}}x5
+    {type="otel"}            {{count:300 sum:300}}x5
+    {type="gcp"}             {{count:300 sum:300}}x5
+    {type="minimal_range"}   {{count:300 sum:300}}x5
+    {type="empty_range"}     {{}}x5
 
 eval range from 10m to 15m step 1m rate(delta[5m])
-    {type="otel"}            {{schema:0 sum:0 count:0}}x5
-    {type="gcp"}             {{schema:0 sum:0 count:0}}x5
-    {type="minimal_range"}   {{schema:0 sum:0 count:0}}x5
-    {type="empty_range"}     {{schema:0 sum:0 count:0}}x5
+    {type="otel"}            {{count:1 sum:1}}x5
+    {type="gcp"}             {{count:1 sum:1}}x5
+    {type="minimal_range"}   {{count:1 sum:1}}x5
+    {type="empty_range"}     {{}}x5
 
 eval range from 10m to 15m step 1m irate(delta[5m])
-    {type="otel"}            {{schema:0 sum:0 count:0}}x5
-    {type="gcp"}             {{schema:0 sum:0 count:0}}x5
-    {type="minimal_range"}   {{schema:0 sum:0 count:0}}x5
-    {type="empty_range"}     {{schema:0 sum:0 count:0}}x5
+    {type="otel"}            {{count:1 sum:1}}x5
+    {type="gcp"}             {{count:1 sum:1}}x5
+    {type="minimal_range"}   {{count:1 sum:1}}x5
+    {type="empty_range"}     {{}}x5
 
 clear
 
 
 # Tests for histogram rate where rate extrapolation is substituted with assuming 0 sample at start timestamps.
-#
-# TODO: this doesn't yet produce expected results, because tsdb doesn't yet support start timestamps
-# for histograms. Expand test coverage when tsdb support is implemented.
 load 1m
     series@st  _ _ -1m
     series     _ _ {{schema:0 sum:60 count:60}}
 
 eval instant at 3m rate(series[5m])
-    # No series, since single sample can only produce a rate when there's a valid and suitable ST.
+    {} {{count:0.2 sum:0.2}}
 
 clear
