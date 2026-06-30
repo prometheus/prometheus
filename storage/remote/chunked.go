@@ -44,11 +44,13 @@ type ChunkedWriter struct {
 	crc32 hash.Hash32
 }
 
-// NewChunkedWriter constructs a ChunkedWriter.
+// NewChunkedWriter constructs a ChunkedWriter. After using the ChunkWriter,
+// Close() needs to be called.
 func NewChunkedWriter(w io.Writer, f http.Flusher) *ChunkedWriter {
 	return &ChunkedWriter{writer: w, flusher: f, crc32: crc32.New(castagnoliTable)}
 }
 
+// Close ensures that all data ends up on the wire.
 func (w *ChunkedWriter) Close() {
 	w.flusher.Flush()
 }
