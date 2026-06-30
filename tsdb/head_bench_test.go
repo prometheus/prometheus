@@ -19,6 +19,7 @@ import (
 	"math"
 	"math/rand"
 	"runtime"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -422,6 +423,31 @@ func benchmarkHeadShardedPostings(b *testing.B, h *Head, refs []storage.SeriesRe
 	b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(len(refs)), "ns/series")
 }
 
+func benchmarkHeadShardedPostingsTreeInput(b *testing.B, h *Head, refs []storage.SeriesRef, shardCount uint64) {
+	const subLists = 64
+
+	lists := make([][]storage.SeriesRef, subLists)
+	for i, ref := range refs {
+		lists[i%subLists] = append(lists[i%subLists], ref)
+	}
+
+	ir := h.indexRange(math.MinInt64, math.MaxInt64)
+	b.ReportAllocs()
+	shard := uint64(0)
+	for b.Loop() {
+		sub := make([]index.Postings, 0, subLists)
+		for _, l := range lists {
+			sub = append(sub, index.NewListPostings(l))
+		}
+		sp := ir.ShardedPostings(index.Merge(b.Context(), sub...), shard%shardCount, shardCount)
+		for sp.Next() {
+		}
+		require.NoError(b, sp.Err())
+		shard++
+	}
+	b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(len(refs)), "ns/series")
+}
+
 func BenchmarkHeadShardedPostings(b *testing.B) {
 	for _, tc := range []struct {
 		numSeries  int
@@ -501,35 +527,18 @@ func BenchmarkHeadShardedPostings(b *testing.B) {
 	// shape multi-matcher queries produce. Exercises implementations whose
 	// cost depends on the input's Seek cost, unlike a flat list input.
 	b.Run("series=100000/shardCount=16/treeInput", func(b *testing.B) {
-		const (
-			numSeries = 100_000
-			subLists  = 64
-		)
+		const numSeries = 100_000
 		h, refs := setupHeadWithSeriesForSharding(b, numSeries)
-
-		// Interleave the refs across sub-lists; their merge enumerates
-		// exactly the original refs.
-		lists := make([][]storage.SeriesRef, subLists)
-		for i, ref := range refs {
-			lists[i%subLists] = append(lists[i%subLists], ref)
-		}
-
-		ir := h.indexRange(math.MinInt64, math.MaxInt64)
-		b.ReportAllocs()
-		shard := uint64(0)
-		for b.Loop() {
-			sub := make([]index.Postings, 0, subLists)
-			for _, l := range lists {
-				sub = append(sub, index.NewListPostings(l))
-			}
-			sp := ir.ShardedPostings(index.Merge(b.Context(), sub...), shard%16, 16)
-			for sp.Next() {
-			}
-			require.NoError(b, sp.Err())
-			shard++
-		}
-		b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(len(refs)), "ns/series")
+		benchmarkHeadShardedPostingsTreeInput(b, h, refs, 16)
 	})
+
+	for _, shardCount := range []uint64{16, 64, 128, 256} {
+		b.Run(fmt.Sprintf("series=1000000/treeInput/shardCount=%d", shardCount), func(b *testing.B) {
+			const numSeries = 1_000_000
+			h, refs := setupHeadWithSeriesForSharding(b, numSeries)
+			benchmarkHeadShardedPostingsTreeInput(b, h, refs, shardCount)
+		})
+	}
 }
 
 func BenchmarkHeadSortedPostings(b *testing.B) {
@@ -624,22 +633,58 @@ func setupHeadWithRealisticSeries(b testing.TB, numSeries int) (*Head, []storage
 	return h, refs
 }
 
-// shardedAllPostingsViaFullScan reproduces the pre-optimization active-series
-// path (the removed Head.ForEachShardHash): scan every series in the head and
-// keep the refs whose shard hash maps to the requested shard. It is the vanilla
-// baseline that Head.ShardedAllPostings' bucket index replaced, used by
-// BenchmarkHeadShardedAllPostings to find where the bucket sub-filter wins or
-// loses against a full scan.
-func shardedAllPostingsViaFullScan(h *Head, shardIndex, shardCount uint64) index.Postings {
-	return h.shardedAllPostingsViaSeriesScan(shardIndex, shardCount)
+// shardedAllPostingsViaStripeScanForBenchmark scans every series stripe and
+// keeps the refs whose shard hash maps to the requested shard. It is a
+// metric-free benchmark-only implementation used for active-series full-scan and
+// non-power-of-two fallback comparisons.
+func shardedAllPostingsViaStripeScanForBenchmark(h *Head, shardIndex, shardCount uint64) index.Postings {
+	capacity := h.NumSeries() / shardCount
+	capacity = min(capacity, uint64(math.MaxInt))
+	out := make([]storage.SeriesRef, 0, int(capacity))
+	for i := range h.series.size {
+		h.series.locks[i].RLock()
+		for _, s := range h.series.hashes[i].unique {
+			if s.shardHash%shardCount == shardIndex {
+				out = append(out, storage.SeriesRef(s.ref))
+			}
+		}
+		for _, all := range h.series.hashes[i].conflicts {
+			for _, s := range all {
+				if s.shardHash%shardCount == shardIndex {
+					out = append(out, storage.SeriesRef(s.ref))
+				}
+			}
+		}
+		h.series.locks[i].RUnlock()
+	}
+	slices.Sort(out)
+	return index.NewListPostings(out)
 }
 
-// BenchmarkHeadShardedAllPostings compares the two ways to enumerate all series
-// of one shard (the active-series path, which has no input postings): the
-// shard-bucket sub-filter (Head.ShardedAllPostings) vs a full series scan
-// (shardedAllPostingsViaFullScan). Shard counts cover exact multi-bucket
-// routing (16), exact single-bucket routing (128), and one-bucket hash
-// sub-filtering (256).
+func shardedAllPostingsViaAllPostingsLookup(h *Head, shardIndex, shardCount uint64) index.Postings {
+	capacity := h.NumSeries() / shardCount
+	capacity = min(capacity, uint64(math.MaxInt))
+	out := make([]storage.SeriesRef, 0, int(capacity))
+	p := h.postings.All()
+	for p.Next() {
+		s := h.series.getByID(chunks.HeadSeriesRef(p.At()))
+		if s == nil {
+			continue
+		}
+		if s.shardHash%shardCount == shardIndex {
+			out = append(out, storage.SeriesRef(s.ref))
+		}
+	}
+	if err := p.Err(); err != nil {
+		return index.ErrPostings(err)
+	}
+	return index.NewListPostings(out)
+}
+
+// BenchmarkHeadShardedAllPostings covers the active-series path, which has no
+// input postings. Power-of-two shard counts compare the shard-bucket path
+// against a full series scan. The non-power-of-two fallback compares the current
+// stripe scan against all-postings plus per-series lookup.
 func BenchmarkHeadShardedAllPostings(b *testing.B) {
 	const numSeries = 1_000_000
 	h, _ := setupHeadWithSeriesForSharding(b, numSeries)
@@ -654,7 +699,7 @@ func BenchmarkHeadShardedAllPostings(b *testing.B) {
 			fn   func(shardIndex, shardCount uint64) index.Postings
 		}{
 			{"subfilter", h.ShardedAllPostings},
-			{"fullscan", func(i, n uint64) index.Postings { return shardedAllPostingsViaFullScan(h, i, n) }},
+			{"fullscan", func(i, n uint64) index.Postings { return shardedAllPostingsViaStripeScanForBenchmark(h, i, n) }},
 		}
 		for _, s := range strategies {
 			b.Run(fmt.Sprintf("shardCount=%03d/buckets=%03d/%s", shardCount, candidateBuckets, s.name), func(b *testing.B) {
@@ -671,6 +716,35 @@ func BenchmarkHeadShardedAllPostings(b *testing.B) {
 			})
 		}
 	}
+
+	b.Run("fallback", func(b *testing.B) {
+		const shardCount = 127
+		strategies := []struct {
+			name string
+			fn   func(shardIndex, shardCount uint64) index.Postings
+		}{
+			{"stripe-scan", func(i, n uint64) index.Postings {
+				return shardedAllPostingsViaStripeScanForBenchmark(h, i, n)
+			}},
+			{"all-postings-lookup", func(i, n uint64) index.Postings {
+				return shardedAllPostingsViaAllPostingsLookup(h, i, n)
+			}},
+		}
+		for _, s := range strategies {
+			b.Run(s.name, func(b *testing.B) {
+				b.ReportAllocs()
+				shard := uint64(0)
+				for b.Loop() {
+					p := s.fn(shard%shardCount, shardCount)
+					for p.Next() {
+					}
+					require.NoError(b, p.Err())
+					shard++
+				}
+				b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(numSeries), "ns/series")
+			})
+		}
+	})
 }
 
 func BenchmarkStripeSeriesShardHashLookup(b *testing.B) {
