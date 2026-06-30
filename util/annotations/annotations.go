@@ -519,7 +519,7 @@ func (e *startTimeOverlapErr) SetQuery(query string) {
 }
 
 func (e *startTimeOverlapErr) Merge(other error) error {
-	o := &startTimeOverlapErr{}
+	var o *startTimeOverlapErr
 	ok := errors.As(other, &o)
 	if !ok {
 		return e
