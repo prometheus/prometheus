@@ -1816,8 +1816,21 @@ func TestDBApplyConfigChunkEncoding(t *testing.T) {
 			"'storage.tsdb.chunk_encoding.floats: xor2' requires the xor2-encoding feature flag")
 	})
 
+	t.Run("xor2_allowed_with_xor_default_accepts_config_xor2", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.XOR2EncodingAllowed = true
+		opts.FloatChunkEncoding = chunkenc.EncXOR
+		db := newTestDB(t, withOpts(opts))
+		// With XOR2 allowed but the default kept at XOR, an explicit xor2 in the
+		// config must be accepted because the feature is enabled. This is the
+		// multi-tenant case where the encoding is opted in per reload.
+		require.NoError(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR2)))
+		require.True(t, db.head.opts.UseXOR2FloatEncoding())
+	})
+
 	t.Run("explicit_xor_overrides_xor2_option", func(t *testing.T) {
 		opts := DefaultOptions()
+		opts.XOR2EncodingAllowed = true
 		opts.FloatChunkEncoding = chunkenc.EncXOR2
 		db := newTestDB(t, withOpts(opts))
 		require.NoError(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR)))
@@ -1827,6 +1840,7 @@ func TestDBApplyConfigChunkEncoding(t *testing.T) {
 
 	t.Run("xor2_with_option_succeeds", func(t *testing.T) {
 		opts := DefaultOptions()
+		opts.XOR2EncodingAllowed = true
 		opts.FloatChunkEncoding = chunkenc.EncXOR2
 		db := newTestDB(t, withOpts(opts))
 		require.NoError(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR2)))
@@ -1837,6 +1851,7 @@ func TestDBApplyConfigChunkEncoding(t *testing.T) {
 		for _, enc := range []chunkenc.Encoding{chunkenc.EncXOR2, chunkenc.EncXOR} {
 			t.Run(enc.String(), func(t *testing.T) {
 				opts := DefaultOptions()
+				opts.XOR2EncodingAllowed = true
 				opts.FloatChunkEncoding = enc
 				db := newTestDB(t, withOpts(opts))
 				require.NoError(t, db.ApplyConfig(xorCfg("")))
@@ -1847,6 +1862,7 @@ func TestDBApplyConfigChunkEncoding(t *testing.T) {
 
 	t.Run("sequential_reload_reverts_to_startup_option", func(t *testing.T) {
 		opts := DefaultOptions()
+		opts.XOR2EncodingAllowed = true
 		opts.FloatChunkEncoding = chunkenc.EncXOR2
 		db := newTestDB(t, withOpts(opts))
 
@@ -1859,6 +1875,7 @@ func TestDBApplyConfigChunkEncoding(t *testing.T) {
 
 	t.Run("nil_TSDBConfig_resets_to_startup_option", func(t *testing.T) {
 		opts := DefaultOptions()
+		opts.XOR2EncodingAllowed = true
 		opts.FloatChunkEncoding = chunkenc.EncXOR2
 		db := newTestDB(t, withOpts(opts))
 
@@ -1871,6 +1888,7 @@ func TestDBApplyConfigChunkEncoding(t *testing.T) {
 
 	t.Run("xor_with_st_storage_returns_error", func(t *testing.T) {
 		opts := DefaultOptions()
+		opts.XOR2EncodingAllowed = true
 		opts.FloatChunkEncoding = chunkenc.EncXOR2
 		opts.EnableSTStorage = true
 		db := newTestDB(t, withOpts(opts))
@@ -1918,8 +1936,22 @@ func TestValidateOptsSTStorageRequiresXOR2(t *testing.T) {
 	_, _, err := validateOpts(opts, nil)
 	require.ErrorContains(t, err, "is incompatible with start-timestamp storage")
 
-	// EncXOR2 + st-storage must be accepted.
+	// EncXOR2 + st-storage must be accepted when XOR2 is allowed.
+	opts.XOR2EncodingAllowed = true
 	opts.FloatChunkEncoding = chunkenc.EncXOR2
+	_, _, err = validateOpts(opts, nil)
+	require.NoError(t, err)
+}
+
+func TestValidateOptsXOR2RequiresAllowed(t *testing.T) {
+	t.Parallel()
+	opts := DefaultOptions()
+	opts.FloatChunkEncoding = chunkenc.EncXOR2
+	// XOR2 as the default encoding requires the feature to be enabled.
+	_, _, err := validateOpts(opts, nil)
+	require.ErrorContains(t, err, "is not enabled")
+
+	opts.XOR2EncodingAllowed = true
 	_, _, err = validateOpts(opts, nil)
 	require.NoError(t, err)
 }

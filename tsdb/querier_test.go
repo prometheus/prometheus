@@ -3991,6 +3991,7 @@ func testChunkQuerierOverlappingInOrderAndOOOChunks(t *testing.T, valType chunke
 	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
 	opts.EnableSTStorage = storeST
 	if storeST {
+		opts.XOR2EncodingAllowed = true
 		opts.FloatChunkEncoding = chunkenc.EncXOR2
 	}
 	db := newTestDB(t, withOpts(opts))

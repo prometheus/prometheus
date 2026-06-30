@@ -280,6 +280,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				logger.Info("Experimental start timestamp zero ingestion enabled. OpenMetrics 1.0 parsing will parse <metric>_created metrics as ST instead of normal sample. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "xor2-encoding":
+				c.tsdb.XOR2EncodingAllowed = true
 				c.tsdb.FloatChunkEncoding = chunkenc.EncXOR2
 				logger.Info("Experimental XOR2 chunk encoding enabled.")
 			case "st-synthesis":
@@ -2100,6 +2101,7 @@ type tsdbOptions struct {
 	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
 	FloatChunkEncoding             chunkenc.Encoding
+	XOR2EncodingAllowed            bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -2132,6 +2134,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
 		FloatChunkEncoding:             opts.FloatChunkEncoding,
+		XOR2EncodingAllowed:            opts.XOR2EncodingAllowed,
 	}
 }
 
