@@ -268,7 +268,7 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 		return h
 	}
 
-	// With sharding enabled, series creation additionally maintains shard hashes.
+	// With sharding enabled, series creation additionally maintains shard buckets.
 	for _, sharding := range []bool{false, true} {
 		b.Run(fmt.Sprintf("sharding=%t", sharding), func(b *testing.B) {
 			b.Run("serial", func(b *testing.B) {
@@ -698,7 +698,7 @@ func BenchmarkHeadShardedAllPostings(b *testing.B) {
 			name string
 			fn   func(shardIndex, shardCount uint64) index.Postings
 		}{
-			{"subfilter", h.ShardedAllPostings},
+			{"bucket-index", h.ShardedAllPostings},
 			{"fullscan", func(i, n uint64) index.Postings { return shardedAllPostingsViaStripeScanForBenchmark(h, i, n) }},
 		}
 		for _, s := range strategies {

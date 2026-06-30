@@ -64,11 +64,9 @@ func identityDeletedShardHashes(refs ...storage.SeriesRef) map[storage.SeriesRef
 }
 
 type shardBucketSnapshot struct {
-	refsPtr   *storage.SeriesRef
-	hashesPtr *uint64
-	refsLen   int
-	hashesLen int
-	dirty     int
+	refsPtr *storage.SeriesRef
+	refsLen int
+	dirty   int
 }
 
 func snapshotShardBuckets(s *shardBucketPostings) []shardBucketSnapshot {
@@ -76,11 +74,9 @@ func snapshotShardBuckets(s *shardBucketPostings) []shardBucketSnapshot {
 	for i := range s.buckets {
 		bucket := &s.buckets[i]
 		out[i] = shardBucketSnapshot{
-			refsPtr:   unsafe.SliceData(bucket.refs),
-			hashesPtr: unsafe.SliceData(bucket.hashes),
-			refsLen:   len(bucket.refs),
-			hashesLen: len(bucket.hashes),
-			dirty:     bucket.dirty,
+			refsPtr: unsafe.SliceData(bucket.refs),
+			refsLen: len(bucket.refs),
+			dirty:   bucket.dirty,
 		}
 	}
 	return out
@@ -110,13 +106,10 @@ func TestShardBucketPostings(t *testing.T) {
 		require.Equal(t, numRefs, total)
 	})
 
-	t.Run("shards partition refs across bucket and shard counts", func(t *testing.T) {
+	t.Run("exact shard counts partition refs across bucket counts", func(t *testing.T) {
 		t.Parallel()
-		// Every supported power-of-two shard count is served: shardCount <=
-		// bucketCount via whole buckets, and shardCount > bucketCount by
-		// sub-filtering the single candidate bucket on the shard hash. Both must
-		// equal the brute-force shard membership and partition the full ref set
-		// exactly.
+		// Power-of-two shard counts up to the bucket count are served exactly by
+		// whole buckets and must equal brute-force shard membership.
 		const numRefs = 5000
 		rng := rand.New(rand.NewSource(7))
 		for _, bucketCount := range []int{64, 128} {
@@ -128,7 +121,7 @@ func TestShardBucketPostings(t *testing.T) {
 				refHashes[storage.SeriesRef(ref)] = h
 			}
 
-			for _, shardCount := range []uint64{2, 4, 64, 128, 256} {
+			for _, shardCount := range []uint64{2, 4, 64, uint64(bucketCount)} {
 				want := map[uint64][]storage.SeriesRef{}
 				for ref := storage.SeriesRef(1); ref <= numRefs; ref++ {
 					sh := refHashes[ref] % shardCount
@@ -153,7 +146,7 @@ func TestShardBucketPostings(t *testing.T) {
 		}
 	})
 
-	t.Run("sub-filters when the shard count exceeds the bucket count", func(t *testing.T) {
+	t.Run("reports when shard hash filtering is needed", func(t *testing.T) {
 		t.Parallel()
 		s := newShardBucketPostings(64)
 		s.add(1, 42)
@@ -163,24 +156,24 @@ func TestShardBucketPostings(t *testing.T) {
 		require.Nil(t, lists)
 		require.False(t, subFiltered)
 
-		// Power-of-two counts above 64 are served by sub-filtering their single
-		// candidate bucket.
+		// Power-of-two counts above 64 need final shard-hash filtering of their
+		// single candidate bucket.
 		for _, shardCount := range []uint64{128, 256} {
-			_, subFiltered := s.postingsFor(0, shardCount)
-			require.True(t, subFiltered, "shardCount %d", shardCount)
+			_, needsShardHashFilter := s.postingsFor(0, shardCount)
+			require.True(t, needsShardHashFilter, "shardCount %d", shardCount)
 		}
-		// Power-of-two counts up to 64 use the exact (non-sub-filtered) path.
+		// Power-of-two counts up to 64 use the exact path.
 		for _, shardCount := range []uint64{1, 2, 4, 8, 16, 32, 64} {
-			_, subFiltered := s.postingsFor(0, shardCount)
-			require.False(t, subFiltered, "shardCount %d", shardCount)
+			_, needsShardHashFilter := s.postingsFor(0, shardCount)
+			require.False(t, needsShardHashFilter, "shardCount %d", shardCount)
 		}
 	})
 
-	t.Run("sub-filter stays aligned through resort and remove", func(t *testing.T) {
+	t.Run("over-bucket candidates stay sorted through resort and remove", func(t *testing.T) {
 		t.Parallel()
 		// Regression guard: out-of-order adds mark buckets dirty (re-sorted on
-		// read) and remove rebuilds buckets; both must keep each ref's hash
-		// aligned, or the sub-filter would route refs to the wrong shard.
+		// read) and remove rebuilds buckets. The bucket layer returns sorted
+		// candidate refs; the head layer performs final over-bucket filtering.
 		s := newShardBucketPostings(64)
 		refHashes := map[storage.SeriesRef]uint64{}
 		rng := rand.New(rand.NewSource(99))
@@ -195,17 +188,19 @@ func TestShardBucketPostings(t *testing.T) {
 			delete(refHashes, ref)
 		}
 
-		const shardCount = uint64(128) // Exceeds 64 buckets => sub-filter reads hashes.
-		seen := map[storage.SeriesRef]struct{}{}
+		const shardCount = uint64(128) // Exceeds 64 buckets => candidate refs need final filtering.
 		for shardIndex := range shardCount {
 			got := expandShard(t, s, shardIndex, shardCount)
 			require.True(t, slices.IsSorted(got))
-			for _, ref := range got {
-				require.Equal(t, shardIndex, refHashes[ref]%shardCount, "ref %d returned for the wrong shard", ref)
-				seen[ref] = struct{}{}
+			var want []storage.SeriesRef
+			for ref, h := range refHashes {
+				if h%64 == shardIndex%64 {
+					want = append(want, ref)
+				}
 			}
+			slices.Sort(want)
+			require.Equal(t, want, got)
 		}
-		require.Len(t, seen, len(refHashes))
 	})
 
 	t.Run("nil means disabled", func(t *testing.T) {
@@ -405,7 +400,7 @@ func TestShardBucketPostings(t *testing.T) {
 		for range 2 {
 			wg.Go(func() {
 				for range 200 {
-					for _, shardCount := range []uint64{4, 16} {
+					for _, shardCount := range []uint64{4, 8} {
 						for shardIndex := range shardCount {
 							lists, _ := s.postingsFor(shardIndex, shardCount)
 							refs, err := index.ExpandPostings(index.Merge(t.Context(), lists...))
@@ -505,76 +500,48 @@ func TestShardBucketPostings(t *testing.T) {
 		readersWG.Wait()
 		require.NoError(t, firstErr())
 	})
-
-	t.Run("shard hash filter yields and seeks matching refs", func(t *testing.T) {
-		t.Parallel()
-		// refs sorted, hashes aligned. shard 1 of 4 keeps hash%4 == 1.
-		refs := []storage.SeriesRef{2, 4, 6, 8, 10, 12}
-		hashes := []uint64{1, 5, 2, 9, 13, 3} // %4: 1,1,2,1,1,3 => keep refs 2,4,8,10.
-
-		got, err := index.ExpandPostings(newShardHashFilterPostings(refs, hashes, 1, 4))
-		require.NoError(t, err)
-		require.Equal(t, []storage.SeriesRef{2, 4, 8, 10}, got)
-
-		f := newShardHashFilterPostings(refs, hashes, 1, 4)
-		require.True(t, f.Seek(0)) // Before any Next: position at first match.
-		require.Equal(t, storage.SeriesRef(2), f.At())
-		require.True(t, f.Seek(5)) // Skip non-matching 6; first match >= 5 is 8.
-		require.Equal(t, storage.SeriesRef(8), f.At())
-		require.True(t, f.Seek(8)) // Already at or past v: no movement.
-		require.Equal(t, storage.SeriesRef(8), f.At())
-		require.False(t, f.Seek(11)) // 12 is not in the shard: exhausted.
-		require.NoError(t, f.Err())
-	})
 }
 
-func benchmarkSortRefHashesFull(refs []storage.SeriesRef, hashes []uint64, _ int) {
-	sortedRefs, sortedHashes := sortRefHashesFull(refs, hashes)
+func benchmarkSortRefsFull(refs []storage.SeriesRef, _ int) {
+	sortedRefs := sortRefsFull(refs)
 	copy(refs, sortedRefs)
-	copy(hashes, sortedHashes)
 }
 
-func benchmarkSortRefHashesSuffix(refs []storage.SeriesRef, hashes []uint64, dirtyStart int) {
-	sortedRefs, sortedHashes := sortRefHashesSuffix(refs, hashes, dirtyStart)
+func benchmarkSortRefsSuffix(refs []storage.SeriesRef, dirtyStart int) {
+	sortedRefs := sortRefsSuffix(refs, dirtyStart)
 	copy(refs, sortedRefs)
-	copy(hashes, sortedHashes)
 }
 
-func benchmarkSortRefHashesAdaptiveSuffix(refs []storage.SeriesRef, hashes []uint64, dirtyStart int) {
+func benchmarkSortRefsAdaptiveSuffix(refs []storage.SeriesRef, dirtyStart int) {
 	if dirtyStart < len(refs)/2 {
-		benchmarkSortRefHashesFull(refs, hashes, dirtyStart)
+		benchmarkSortRefsFull(refs, dirtyStart)
 		return
 	}
-	benchmarkSortRefHashesSuffix(refs, hashes, dirtyStart)
+	benchmarkSortRefsSuffix(refs, dirtyStart)
 }
 
-func dirtySortInput(n, dirtyTail int, interleaved bool) ([]storage.SeriesRef, []uint64, int) {
+func dirtySortInput(n, dirtyTail int, interleaved bool) ([]storage.SeriesRef, int) {
 	refs := make([]storage.SeriesRef, 0, n)
-	hashes := make([]uint64, 0, n)
 	if interleaved {
 		for i := 0; len(refs) < n; i++ {
 			refs = append(refs, storage.SeriesRef(i+1))
-			hashes = append(hashes, uint64(i+1))
 			if len(refs) == n {
 				break
 			}
 			refs = append(refs, storage.SeriesRef(n+i+1))
-			hashes = append(hashes, uint64(n+i+1))
 		}
-		return refs, hashes, 1
+		return refs, 1
 	}
 
 	sorted := n - dirtyTail
 	for i := 1; i <= sorted; i++ {
 		refs = append(refs, storage.SeriesRef(i))
-		hashes = append(hashes, uint64(i))
 	}
 	for i := range dirtyTail {
 		ref := storage.SeriesRef(sorted/2 + i*2 + 1)
 		refs = append(refs, ref)
-		hashes = append(hashes, uint64(ref))
 	}
-	return refs, hashes, sorted
+	return refs, sorted
 }
 
 func BenchmarkShardBucketDirtySort(b *testing.B) {
@@ -587,21 +554,20 @@ func BenchmarkShardBucketDirtySort(b *testing.B) {
 		{name: "mostly-sorted-tail", n: 65_536, dirtyTail: 64},
 		{name: "interleaved", n: 65_536, interleaved: true},
 	} {
-		baseRefs, baseHashes, dirtyStart := dirtySortInput(tc.n, tc.dirtyTail, tc.interleaved)
+		baseRefs, dirtyStart := dirtySortInput(tc.n, tc.dirtyTail, tc.interleaved)
 		for _, alg := range []struct {
 			name string
-			fn   func([]storage.SeriesRef, []uint64, int)
+			fn   func([]storage.SeriesRef, int)
 		}{
-			{name: "full", fn: benchmarkSortRefHashesFull},
-			{name: "suffix", fn: benchmarkSortRefHashesSuffix},
-			{name: "adaptive-suffix", fn: benchmarkSortRefHashesAdaptiveSuffix},
+			{name: "full", fn: benchmarkSortRefsFull},
+			{name: "suffix", fn: benchmarkSortRefsSuffix},
+			{name: "adaptive-suffix", fn: benchmarkSortRefsAdaptiveSuffix},
 		} {
 			b.Run(fmt.Sprintf("%s/%s", tc.name, alg.name), func(b *testing.B) {
 				b.ReportAllocs()
 				for b.Loop() {
 					refs := slices.Clone(baseRefs)
-					hashes := slices.Clone(baseHashes)
-					alg.fn(refs, hashes, dirtyStart)
+					alg.fn(refs, dirtyStart)
 					shardBucketDirtySortSink = refs[len(refs)/2]
 				}
 			})
@@ -612,11 +578,10 @@ func BenchmarkShardBucketDirtySort(b *testing.B) {
 // BenchmarkShardBucketPostingsFootprint measures the resident size of the index
 // relative to the live series it holds, after churn — new series created and an
 // equal number removed, as the head turns over between GCs. It reports the slice
-// capacity (refs plus the aligned hashes) as bytes per live series and the
-// cap/len ratio, so a regression in the index's memory amplification is visible:
-// cap/len above ~1 means remove retained the dropped refs' capacity. It also
-// reports approximate fixed bucket struct and mutex overhead as a candidate-side
-// diagnostic.
+// capacity as bytes per live series and the cap/len ratio, so a regression in
+// the index's memory amplification is visible: cap/len above ~1 means remove
+// retained the dropped refs' capacity. It also reports approximate fixed bucket
+// struct and mutex overhead as a candidate-side diagnostic.
 func BenchmarkShardBucketPostingsFootprint(b *testing.B) {
 	const live = 100_000
 	for _, churn := range []int{0, 1, 2} {
@@ -647,8 +612,8 @@ func BenchmarkShardBucketPostingsFootprint(b *testing.B) {
 					capEntries += cap(bucket.refs)
 				}
 			}
-			// Each entry costs a storage.SeriesRef (8B) plus an aligned shard hash (8B).
-			b.ReportMetric(float64(capEntries)*16/float64(live), "capbytes/live")
+			// Each entry costs one storage.SeriesRef.
+			b.ReportMetric(float64(capEntries)*float64(unsafe.Sizeof(storage.SeriesRef(0)))/float64(live), "capbytes/live")
 			b.ReportMetric(float64(capEntries)/float64(entries), "cap/len")
 			b.ReportMetric(float64(fixedBytes)/float64(live), "fixedbytes/live")
 		})
@@ -1032,10 +997,11 @@ func BenchmarkShardBucketPostings(b *testing.B) {
 	})
 
 	// shardPostings is the read path: gather one list per candidate bucket
-	// (whole buckets when shardCount <= bucketCount, else hash-sub-filtered),
-	// then drain the shard. populate leaves buckets sorted, so this measures
-	// the steady-state read, not the one-off sort. 256 exercises the sub-filter;
-	// 128 is the exact single-bucket case.
+	// (whole buckets when shardCount <= bucketCount, else the single candidate
+	// bucket that the head layer sub-filters), then drain the candidates.
+	// populate leaves buckets sorted, so this measures the steady-state read,
+	// not the one-off sort. 256 exercises the over-bucket candidate path; 128
+	// is the exact single-bucket case.
 	b.Run("shardPostings", func(b *testing.B) {
 		const numSeries = 1_000_000
 		for _, shardCount := range []uint64{16, 64, 128, 256} {

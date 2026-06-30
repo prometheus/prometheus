@@ -2995,10 +2995,12 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 // hash bucket index when it is enabled; other shard counts and disabled bucket
 // indexes fall back to a full series scan. The returned postings are sorted by
 // ref and may include refs of series deleted since the call began, which callers
-// resolve like any other stale postings entry. Bucket-indexed results capture
-// candidate buckets while all candidate buckets are locked, so multi-bucket
-// results are internally consistent. It returns empty postings when sharding is
-// disabled or the shard index is out of range.
+// resolve like any other stale postings entry. For shard counts larger than the
+// bucket count, the single candidate bucket is lazily sub-filtered by resolving
+// candidate refs' shard hashes. Bucket-indexed results capture candidate buckets
+// while all candidate buckets are locked, so multi-bucket results are internally
+// consistent. It returns empty postings when sharding is disabled or the shard
+// index is out of range.
 func (h *Head) ShardedAllPostings(shardIndex, shardCount uint64) index.Postings {
 	if !h.opts.EnableSharding || shardIndex >= shardCount {
 		return index.EmptyPostings()
@@ -3006,8 +3008,12 @@ func (h *Head) ShardedAllPostings(shardIndex, shardCount uint64) index.Postings 
 	if h.shardBuckets == nil || !isPowerOfTwo(shardCount) {
 		return h.shardedAllPostingsViaSeriesScan(shardIndex, shardCount)
 	}
-	lists, _ := h.shardBuckets.postingsFor(shardIndex, shardCount)
-	return index.Merge(context.Background(), lists...)
+	lists, needsShardHashFilter := h.shardBuckets.postingsFor(shardIndex, shardCount)
+	p := index.Merge(context.Background(), lists...)
+	if needsShardHashFilter {
+		return newShardHashLookupFilterPostings(p, h.series, shardIndex, shardCount)
+	}
+	return p
 }
 
 func (h *Head) shardedAllPostingsViaSeriesScan(shardIndex, shardCount uint64) index.Postings {

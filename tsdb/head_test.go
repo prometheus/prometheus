@@ -3798,6 +3798,66 @@ func TestHeadShardedPostings(t *testing.T) {
 		}
 	})
 
+	t.Run("over-bucket filter seeks and skips stale candidates", func(t *testing.T) {
+		t.Parallel()
+		head := newShardingHead(t, nil)
+		const (
+			numSeries  = 2000
+			shardCount = uint64(DefaultShardedPostingsBuckets * 2)
+		)
+
+		allRefs := make([]storage.SeriesRef, 0, numSeries)
+		refsByShard := map[uint64][]storage.SeriesRef{}
+		for i := range numSeries {
+			lset := labels.FromStrings("const", "1", "unique", strconv.Itoa(i))
+			s, _, err := head.getOrCreate(lset.Hash(), lset, false)
+			require.NoError(t, err)
+			ref := storage.SeriesRef(s.ref)
+			allRefs = append(allRefs, ref)
+			refsByShard[s.shardHash%shardCount] = append(refsByShard[s.shardHash%shardCount], ref)
+		}
+
+		var shardIndex uint64
+		var expected []storage.SeriesRef
+		for candidateShard, refs := range refsByShard {
+			if len(refs) < 3 {
+				continue
+			}
+			shardIndex = candidateShard
+			expected = slices.Clone(refs)
+			break
+		}
+		require.NotEmpty(t, expected)
+
+		// Leave the ref in the shard bucket but remove it from the series map:
+		// this models a bucket snapshot racing with deletion, and verifies the
+		// lazy over-bucket filter skips stale candidates.
+		deletedRef := chunks.HeadSeriesRef(expected[0])
+		stripe := head.series.refStripe(deletedRef)
+		head.series.locks[stripe].Lock()
+		delete(head.series.series[stripe], deletedRef)
+		head.series.locks[stripe].Unlock()
+		expected = expected[1:]
+
+		ir := head.indexRange(math.MinInt64, math.MaxInt64)
+		p := ir.ShardedPostings(index.NewListPostings(allRefs), shardIndex, shardCount)
+		got, err := index.ExpandPostings(p)
+		require.NoError(t, err)
+		require.Equal(t, expected, got)
+
+		p = ir.ShardedPostings(index.NewListPostings(allRefs), shardIndex, shardCount)
+		require.True(t, p.Seek(expected[1]))
+		require.Equal(t, expected[1], p.At())
+		require.True(t, p.Seek(expected[1]-1))
+		require.Equal(t, expected[1], p.At())
+		require.False(t, p.Seek(expected[len(expected)-1]+1))
+		require.NoError(t, p.Err())
+
+		got, err = index.ExpandPostings(head.ShardedAllPostings(shardIndex, shardCount))
+		require.NoError(t, err)
+		require.Equal(t, expected, got)
+	})
+
 	t.Run("fallback for non-power-of-two shard count", func(t *testing.T) {
 		t.Parallel()
 		head := newShardingHead(t, nil)
