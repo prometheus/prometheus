@@ -216,6 +216,7 @@ type flagConfig struct {
 	enablePerStepStats       bool
 	enableConcurrentRuleEval bool
 	useStartTimestamps       bool
+	enableScrapeResolve      bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -341,6 +342,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "search-api":
 				c.web.EnableSearch = true
 				logger.Info("Experimental search API enabled.")
+			case "scrape-resolve":
+				c.enableScrapeResolve = true
+				logger.Info("Experimental scrape address resolution (resolve_addresses) enabled.")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -636,7 +640,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-duration-expr, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-duration-expr, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, scrape-resolve, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -1133,14 +1137,26 @@ func main() {
 			reloader: scrapeManager.ApplyConfig,
 		}, {
 			name: "scrape_sd",
-			reloader: func(cfg *config.Config) error {
+			reloader: func(cfgFile *config.Config) error {
 				c := make(map[string]discovery.Configs)
-				scfgs, err := cfg.GetScrapeConfigs()
+				scfgs, err := cfgFile.GetScrapeConfigs()
 				if err != nil {
 					return err
 				}
-				for _, v := range scfgs {
-					c[v.JobName] = v.ServiceDiscoveryConfigs
+				if cfg.enableScrapeResolve {
+					rc := make(map[string]*discovery.ResolveAddressesConfig)
+					for _, v := range scfgs {
+						c[v.JobName] = v.ServiceDiscoveryConfigs
+						rc[v.JobName] = v.ResolveAddresses
+					}
+					discoveryManagerScrape.ApplyResolveConfigs(rc)
+				} else {
+					for _, v := range scfgs {
+						c[v.JobName] = v.ServiceDiscoveryConfigs
+						if v.ResolveAddresses != nil && v.ResolveAddresses.Enabled {
+							return errors.New("resolve_addresses requires --enable-feature=scrape-resolve")
+						}
+					}
 				}
 				return discoveryManagerScrape.ApplyConfig(c)
 			},
@@ -1149,10 +1165,23 @@ func main() {
 			reloader: notifierManager.ApplyConfig,
 		}, {
 			name: "notify_sd",
-			reloader: func(cfg *config.Config) error {
+			reloader: func(cfgFile *config.Config) error {
 				c := make(map[string]discovery.Configs)
-				for k, v := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
-					c[k] = v.ServiceDiscoveryConfigs
+				amCfgs := cfgFile.AlertingConfig.AlertmanagerConfigs.ToMap()
+				if cfg.enableScrapeResolve {
+					rc := make(map[string]*discovery.ResolveAddressesConfig)
+					for k, v := range amCfgs {
+						c[k] = v.ServiceDiscoveryConfigs
+						rc[k] = v.ResolveAddresses
+					}
+					discoveryManagerNotify.ApplyResolveConfigs(rc)
+				} else {
+					for k, v := range amCfgs {
+						c[k] = v.ServiceDiscoveryConfigs
+						if v.ResolveAddresses != nil && v.ResolveAddresses.Enabled {
+							return errors.New("resolve_addresses requires --enable-feature=scrape-resolve")
+						}
+					}
 				}
 				return discoveryManagerNotify.ApplyConfig(c)
 			},

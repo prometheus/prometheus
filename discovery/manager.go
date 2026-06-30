@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"net/netip"
 	"reflect"
 	"sync"
 	"time"
@@ -194,6 +195,14 @@ type Manager struct {
 	// lastProvider counts providers registered during Manager's lifetime.
 	lastProvider uint
 
+	// expanders holds the running address expander for each enabled set. It is
+	// guarded by mtx.
+	expanders map[string]*addressExpander
+
+	// resolveLookupFn overrides the resolver used by address expanders. It is
+	// only set in tests; a nil value uses the system resolver.
+	resolveLookupFn ipLookupFunc
+
 	// A registerer for all service discovery metrics.
 	registerer prometheus.Registerer
 
@@ -330,6 +339,87 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	wg.Wait()
 
 	return nil
+}
+
+// ApplyResolveConfigs reconciles the address expanders against the supplied
+// per-set resolve_addresses configuration. Expanders are started for newly
+// enabled sets, stopped for removed or disabled sets, and restarted when the
+// type or refresh interval changes. It then triggers a resend so consumers pick
+// up the new configuration promptly.
+func (m *Manager) ApplyResolveConfigs(rc map[string]*ResolveAddressesConfig) {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	if m.expanders == nil {
+		m.expanders = map[string]*addressExpander{}
+	}
+
+	// Determine the desired set of enabled expanders.
+	desired := map[string]*ResolveAddressesConfig{}
+	for set, cfg := range rc {
+		if cfg != nil && cfg.Enabled {
+			desired[set] = cfg
+		}
+	}
+
+	// carried holds the resolution state captured from expanders that are being
+	// restarted for a config-only change, so the replacement can be seeded with
+	// it and avoid flapping targets back to their FQDN form.
+	carried := map[string]struct {
+		cache map[string][]netip.Addr
+		seen  map[string]struct{}
+	}{}
+
+	// Stop expanders that are no longer desired or whose config changed.
+	for set, e := range m.expanders {
+		cfg, ok := desired[set]
+		if ok && e.matchesConfig(cfg) {
+			continue
+		}
+		if ok {
+			// Still desired but the config changed: capture state to carry it
+			// across the restart and preserve counters.
+			cache, seen := e.snapshot()
+			carried[set] = struct {
+				cache map[string][]netip.Addr
+				seen  map[string]struct{}
+			}{cache: cache, seen: seen}
+		}
+		e.stop()
+		delete(m.expanders, set)
+		if !ok {
+			// No longer desired (removed or disabled): clean up its metric
+			// label values.
+			m.deleteResolveMetrics(set)
+		}
+	}
+
+	// Start expanders for newly desired sets.
+	for set, cfg := range desired {
+		if _, ok := m.expanders[set]; ok {
+			continue
+		}
+		e := newAddressExpander(set, cfg, m.metrics, m.logger.With("component", "resolve_addresses", "config", set), m.triggerSend, m.resolveLookupFn)
+		if c, ok := carried[set]; ok {
+			e.seed(c.cache, c.seen)
+		}
+		e.start(m.ctx)
+		m.expanders[set] = e
+	}
+
+	select {
+	case m.triggerSend <- struct{}{}:
+	default:
+	}
+}
+
+// deleteResolveMetrics removes the per-set label values of the resolve_addresses
+// metrics. It is called when a set is no longer desired.
+func (m *Manager) deleteResolveMetrics(set string) {
+	m.metrics.ResolveLookups.DeleteLabelValues(set)
+	m.metrics.ResolveLookupFailures.DeleteLabelValues(set)
+	m.metrics.ResolveResolvedTargets.DeleteLabelValues(set)
+	m.metrics.ResolveAddressTruncations.DeleteLabelValues(set)
 }
 
 // StartCustomProvider is used for sdtool. Only use this if you know what you're doing.
@@ -488,6 +578,18 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	tSets := map[string][]*targetgroup.Group{}
 	n := map[string]int{}
+	// resolved counts the targets emitted after address expansion, per set.
+	resolved := map[string]int{}
+
+	// touched collects the expanders exercised during this pass so each can be
+	// told the cycle has ended (mark-and-sweep of seen/cache). One allGroups
+	// pass equals one cycle. An expander is only added once at least one target
+	// group was actually iterated for its set: a pass that sees a subscribed
+	// provider with no target groups (e.g. immediately after ApplyConfig
+	// rebuilds the providers and triggers a send before the new discoverer has
+	// emitted its first batch) must not prune the expander's seen/cache, or all
+	// still-configured targets would flap back to their FQDN form.
+	touched := map[string]*addressExpander{}
 
 	m.mtx.RLock()
 	for _, p := range m.providers {
@@ -500,10 +602,23 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 				tSets[s] = []*targetgroup.Group{}
 				n[s] = 0
 			}
+			expander := m.expanders[s]
+			if expander != nil {
+				if _, ok := resolved[s]; !ok {
+					resolved[s] = 0
+				}
+			}
 			if tsets, ok := m.targets[poolKey{s, p.name}]; ok {
 				for _, tg := range tsets {
-					tSets[s] = append(tSets[s], tg)
 					n[s] += len(tg.Targets)
+					if expander != nil {
+						// At least one target group was observed for this set,
+						// so the expander may safely run its mark-and-sweep.
+						touched[s] = expander
+						tg = expander.expandGroup(tg)
+						resolved[s] += len(tg.Targets)
+					}
+					tSets[s] = append(tSets[s], tg)
 				}
 			}
 		}
@@ -512,9 +627,18 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	}
 	m.mtx.RUnlock()
 
+	// Close the cycle for every expander exercised in this pass. endCycle uses
+	// the expander's own mutex and is independent of m.mtx.
+	for _, e := range touched {
+		e.endCycle()
+	}
+
 	for setName, v := range n {
 		m.metrics.DiscoveredTargets.WithLabelValues(setName).Set(float64(v))
 		m.metrics.LastUpdated.WithLabelValues(setName).SetToCurrentTime()
+	}
+	for setName, v := range resolved {
+		m.metrics.ResolveResolvedTargets.WithLabelValues(setName).Set(float64(v))
 	}
 
 	return tSets

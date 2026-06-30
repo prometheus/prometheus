@@ -1234,3 +1234,70 @@ func TestFeatureFlagsDocumented(t *testing.T) {
 	require.True(t, slices.IsSorted(helpFlags))
 	require.ElementsMatch(t, helpFlags, docFlags)
 }
+
+// resolveAddressesConfig is a minimal config enabling resolve_addresses on a
+// scrape job, used by the feature-gate startup tests.
+const resolveAddressesConfig = `
+scrape_configs:
+  - job_name: resolved
+    resolve_addresses:
+      enabled: true
+    static_configs:
+      - targets: ["localhost:9090"]
+`
+
+// TestScrapeResolveFeatureGateDisabled verifies that a config enabling
+// resolve_addresses fails to start when --enable-feature=scrape-resolve is off.
+func TestScrapeResolveFeatureGateDisabled(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "prometheus.yml")
+	require.NoError(t, os.WriteFile(configFile, []byte(resolveAddressesConfig), 0o644))
+
+	port := testutil.RandomUnprivilegedPort(t)
+	prom := exec.Command(promPath, "-test.main",
+		"--config.file="+configFile,
+		"--web.listen-address=0.0.0.0:"+strconv.Itoa(port),
+		"--storage.tsdb.path="+filepath.Join(tmpDir, "data"),
+	)
+	err := prom.Run()
+	require.Error(t, err, "startup must fail when resolve_addresses is enabled without the feature flag")
+	var exitError *exec.ExitError
+	require.ErrorAs(t, err, &exitError)
+}
+
+// TestScrapeResolveFeatureGateEnabled verifies that the same config starts
+// successfully when --enable-feature=scrape-resolve is provided.
+func TestScrapeResolveFeatureGateEnabled(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "prometheus.yml")
+	require.NoError(t, os.WriteFile(configFile, []byte(resolveAddressesConfig), 0o644))
+
+	port := testutil.RandomUnprivilegedPort(t)
+	prom := prometheusCommandWithLogging(
+		t,
+		configFile,
+		port,
+		"--storage.tsdb.path="+filepath.Join(tmpDir, "data"),
+		"--enable-feature=scrape-resolve",
+	)
+	require.NoError(t, prom.Start())
+
+	require.Eventually(t, func() bool {
+		r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/-/ready", port))
+		if err != nil {
+			return false
+		}
+		defer r.Body.Close()
+		return r.StatusCode == http.StatusOK
+	}, startupTime, 100*time.Millisecond)
+}

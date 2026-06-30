@@ -27,6 +27,12 @@ type Metrics struct {
 	DelayedUpdates    prometheus.Counter
 	SentUpdates       prometheus.Counter
 	LastUpdated       *prometheus.GaugeVec
+
+	// Metrics for the resolve_addresses address expansion feature.
+	ResolveLookups            *prometheus.CounterVec
+	ResolveLookupFailures     *prometheus.CounterVec
+	ResolveResolvedTargets    *prometheus.GaugeVec
+	ResolveAddressTruncations *prometheus.CounterVec
 }
 
 func NewManagerMetrics(registerer prometheus.Registerer, sdManagerName string) (*Metrics, error) {
@@ -82,6 +88,42 @@ func NewManagerMetrics(registerer prometheus.Registerer, sdManagerName string) (
 		[]string{"config"},
 	)
 
+	m.ResolveLookups = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name:        "prometheus_sd_resolve_address_lookups_total",
+			Help:        "Total number of address resolution lookups performed by the resolve_addresses feature.",
+			ConstLabels: prometheus.Labels{"name": sdManagerName},
+		},
+		[]string{"config"},
+	)
+
+	m.ResolveLookupFailures = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name:        "prometheus_sd_resolve_address_lookup_failures_total",
+			Help:        "Total number of failed address resolution lookups performed by the resolve_addresses feature.",
+			ConstLabels: prometheus.Labels{"name": sdManagerName},
+		},
+		[]string{"config"},
+	)
+
+	m.ResolveResolvedTargets = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:        "prometheus_sd_resolve_address_resolved_targets",
+			Help:        "Current number of targets emitted by the resolve_addresses feature after address expansion.",
+			ConstLabels: prometheus.Labels{"name": sdManagerName},
+		},
+		[]string{"config"},
+	)
+
+	m.ResolveAddressTruncations = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name:        "prometheus_sd_resolve_address_truncations_total",
+			Help:        "Total number of times the resolve_addresses feature truncated a host's resolved addresses to max_resolved_addresses.",
+			ConstLabels: prometheus.Labels{"name": sdManagerName},
+		},
+		[]string{"config"},
+	)
+
 	metrics := []prometheus.Collector{
 		m.FailedConfigs,
 		m.DiscoveredTargets,
@@ -89,6 +131,10 @@ func NewManagerMetrics(registerer prometheus.Registerer, sdManagerName string) (
 		m.DelayedUpdates,
 		m.SentUpdates,
 		m.LastUpdated,
+		m.ResolveLookups,
+		m.ResolveLookupFailures,
+		m.ResolveResolvedTargets,
+		m.ResolveAddressTruncations,
 	}
 
 	for _, collector := range metrics {
@@ -109,4 +155,8 @@ func (m *Metrics) Unregister(registerer prometheus.Registerer) {
 	registerer.Unregister(m.DelayedUpdates)
 	registerer.Unregister(m.SentUpdates)
 	registerer.Unregister(m.LastUpdated)
+	registerer.Unregister(m.ResolveLookups)
+	registerer.Unregister(m.ResolveLookupFailures)
+	registerer.Unregister(m.ResolveResolvedTargets)
+	registerer.Unregister(m.ResolveAddressTruncations)
 }

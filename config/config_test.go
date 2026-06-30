@@ -3522,3 +3522,101 @@ func TestGetScrapeConfigs_Loaded(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
+
+func TestResolveAddressesScrapeConfig(t *testing.T) {
+	in := `
+scrape_configs:
+  - job_name: resolved
+    resolve_addresses:
+      enabled: true
+      type: A
+    static_configs:
+      - targets: ["host.example.com:9090"]
+  - job_name: plain
+    static_configs:
+      - targets: ["host.example.com:9090"]
+`
+	c, err := Load(in, promslog.NewNopLogger())
+	require.NoError(t, err)
+
+	resolved := c.ScrapeConfigs[0]
+	require.NotNil(t, resolved.ResolveAddresses)
+	require.True(t, resolved.ResolveAddresses.Enabled)
+	require.Equal(t, "A", resolved.ResolveAddresses.Type)
+	// Defaults are applied for fields left unset.
+	require.Equal(t, model.Duration(30*time.Second), resolved.ResolveAddresses.RefreshInterval)
+
+	require.Nil(t, c.ScrapeConfigs[1].ResolveAddresses)
+}
+
+func TestResolveAddressesInvalidType(t *testing.T) {
+	in := `
+scrape_configs:
+  - job_name: bad
+    resolve_addresses:
+      enabled: true
+      type: CNAME
+    static_configs:
+      - targets: ["host.example.com:9090"]
+`
+	_, err := Load(in, promslog.NewNopLogger())
+	require.ErrorContains(t, err, "invalid resolve_addresses type")
+}
+
+func TestResolveAddressesScrapeMaxResolvedAddresses(t *testing.T) {
+	in := `
+scrape_configs:
+  - job_name: capped
+    resolve_addresses:
+      enabled: true
+      max_resolved_addresses: 4
+    static_configs:
+      - targets: ["host.example.com:9090"]
+`
+	c, err := Load(in, promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.NotNil(t, c.ScrapeConfigs[0].ResolveAddresses)
+	require.Equal(t, 4, c.ScrapeConfigs[0].ResolveAddresses.MaxResolvedAddresses)
+}
+
+func TestResolveAddressesScrapeNegativeMaxResolvedAddresses(t *testing.T) {
+	in := `
+scrape_configs:
+  - job_name: bad
+    resolve_addresses:
+      enabled: true
+      max_resolved_addresses: -1
+    static_configs:
+      - targets: ["host.example.com:9090"]
+`
+	_, err := Load(in, promslog.NewNopLogger())
+	require.ErrorContains(t, err, "max_resolved_addresses must not be negative")
+}
+
+func TestResolveAddressesAlertmanagerConfig(t *testing.T) {
+	in := `
+alerting:
+  alertmanagers:
+    - resolve_addresses:
+        enabled: true
+        type: AAAA
+        max_resolved_addresses: 8
+      static_configs:
+        - targets: ["alertmanager.example.com:9093"]
+    - static_configs:
+        - targets: ["plain.example.com:9093"]
+`
+	c, err := Load(in, promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Len(t, c.AlertingConfig.AlertmanagerConfigs, 2)
+
+	resolved := c.AlertingConfig.AlertmanagerConfigs[0]
+	require.NotNil(t, resolved.ResolveAddresses)
+	require.True(t, resolved.ResolveAddresses.Enabled)
+	require.Equal(t, "AAAA", resolved.ResolveAddresses.Type)
+	require.Equal(t, 8, resolved.ResolveAddresses.MaxResolvedAddresses)
+	// Defaults are applied for fields left unset.
+	require.Equal(t, model.Duration(30*time.Second), resolved.ResolveAddresses.RefreshInterval)
+
+	require.Nil(t, c.AlertingConfig.AlertmanagerConfigs[1].ResolveAddresses)
+}

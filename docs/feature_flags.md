@@ -439,3 +439,18 @@ to this maximum, so an operator setting a smaller cap does not break
 no-`limit` requests. Setting the flag to `0` disables the cap entirely; this
 is **not recommended** for endpoints exposed beyond a trusted network because a
 single client can then request the entire index in one response.
+
+## Scrape address resolution
+
+`--enable-feature=scrape-resolve`
+
+Enables the experimental `resolve_addresses` setting on scrape and Alertmanager
+configurations. When enabled and configured, the discovery manager resolves the
+FQDN in each target's `__address__` label into one or more IP addresses,
+expanding a single target into one target per resolved IP before relabeling.
+
+If a scrape config or Alertmanager config sets `resolve_addresses` with
+`enabled: true` while this feature flag is off, Prometheus fails to load the
+configuration. See the
+[`resolve_addresses` documentation](configuration/configuration.md#resolve_addresses)
+for the security implications of trusting DNS answers as scrape destinations.

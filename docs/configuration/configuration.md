@@ -534,6 +534,59 @@ relabel_configs:
 metric_relabel_configs:
   [ - <relabel_config> ... ]
 
+# Resolve the FQDN in each target's `__address__` label into one target per
+# resolved IP address, before relabeling. This applies to targets from every
+# service discovery mechanism of this job, including `static_configs`. Targets
+# whose `__address__` is already a literal IP are left untouched. Unlike
+# `dns_sd_config`, which discovers targets from DNS record names,
+# `resolve_addresses` post-processes addresses produced by any SD mechanism.
+# This is an experimental feature gated behind
+# `--enable-feature=scrape-resolve`; if it is configured with `enabled: true`
+# while the feature flag is off, Prometheus fails to load the configuration.
+#
+# Each expanded target gains the following meta labels:
+#   * `__meta_resolve_address_fqdn`:   the original FQDN that was resolved.
+#   * `__meta_resolve_address_ip`:     the resolved IP for this target.
+#   * `__meta_resolve_address_family`: "4" for IPv4 or "6" for IPv6.
+#
+# On a transient resolution failure (timeout, SERVFAIL, etc.) the last
+# successful answer is kept so a blip does not flap existing targets. A
+# definitive negative answer (an empty result or NXDOMAIN/"no such host"), such
+# as a deliberately removed record, evicts the cached addresses and the target
+# reverts to its FQDN form (scraped by name) until the name resolves again.
+# Until a name resolves for the first time, its original FQDN target is scraped
+# as-is. Cache and resolution state for a host are pruned once the host
+# disappears from the target set entirely.
+#
+# Two FQDNs that resolve to the same IP produce two distinct targets, because
+# they differ by their `__meta_resolve_address_fqdn` label. Relabeling must
+# preserve this per-IP, per-FQDN distinction (for example, do not drop the FQDN
+# meta label before deduplication) to avoid collapsing the expanded targets back
+# into a single duplicate target.
+#
+# SECURITY: enabling `resolve_addresses` turns the DNS answer for a name into a
+# trusted scrape destination. This is an SSRF/DNS-rebinding trust boundary:
+# whoever controls the resolved records controls where Prometheus connects, and
+# it bypasses name-based egress controls that operate on hostnames rather than
+# IPs. Only enable it for names served by DNS you trust, and use
+# `max_resolved_addresses` to bound the fan-out from a single untrusted answer.
+#
+# Note: `prometheus_sd_discovered_targets` reflects the pre-expansion target
+# count (one per FQDN), while `prometheus_sd_resolve_address_resolved_targets`
+# reflects the post-expansion count (one per resolved IP).
+resolve_addresses:
+  # Whether to resolve and expand addresses for this job.
+  [ enabled: <boolean> | default = false ]
+  # How often to re-resolve the observed FQDNs.
+  [ refresh_interval: <duration> | default = 30s ]
+  # Which records to resolve: A (IPv4), AAAA (IPv6) or auto (both).
+  [ type: <string> | default = auto ]
+  # Maximum number of addresses a single host may expand into. The resolved
+  # addresses are sorted deterministically and truncated to this cap, bounding
+  # the fan-out from an untrusted DNS answer. 0 means use the default; negative
+  # values are rejected.
+  [ max_resolved_addresses: <int> | default = 64 ]
+
 # An uncompressed response body larger than this many bytes will cause the
 # scrape to fail. 0 means no limit. Example: 100MB.
 # This is an experimental feature, this behaviour could
@@ -3743,6 +3796,16 @@ relabel_configs:
 # List of alert relabel configurations.
 alert_relabel_configs:
   [ - <relabel_config> ... ]
+
+# Resolve the FQDN in each Alertmanager's `__address__` label into one target
+# per resolved IP address, before relabeling. Behaves like the scrape config
+# `resolve_addresses` block documented above, including the
+# `--enable-feature=scrape-resolve` gate and the same SECURITY trust boundary.
+resolve_addresses:
+  [ enabled: <boolean> | default = false ]
+  [ refresh_interval: <duration> | default = 30s ]
+  [ type: <string> | default = auto ]
+  [ max_resolved_addresses: <int> | default = 64 ]
 ```
 
 ### `<remote_write>`

@@ -850,6 +850,10 @@ type ScrapeConfig struct {
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
 	// List of metric relabel configurations.
 	MetricRelabelConfigs []*relabel.Config `yaml:"metric_relabel_configs,omitempty"`
+
+	// ResolveAddresses, when enabled, makes the discovery manager resolve the
+	// FQDN in each target's __address__ into one target per IP before relabeling.
+	ResolveAddresses *discovery.ResolveAddressesConfig `yaml:"resolve_addresses,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -1382,6 +1386,11 @@ type AlertmanagerConfig struct {
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
 	// Relabel alerts before sending to the specific alertmanager.
 	AlertRelabelConfigs []*relabel.Config `yaml:"alert_relabel_configs,omitempty"`
+
+	// ResolveAddresses, when enabled, makes the discovery manager resolve the
+	// FQDN in each Alertmanager's __address__ into one target per IP before
+	// relabeling.
+	ResolveAddresses *discovery.ResolveAddressesConfig `yaml:"resolve_addresses,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.

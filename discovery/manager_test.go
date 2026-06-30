@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"sort"
 	"strconv"
 	"sync"
@@ -898,6 +899,363 @@ func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
 	require.Len(t, syncedTargets, 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
 	require.Len(t, syncedTargets["prometheus"], 1)
+}
+
+// syncedAddresses returns the __address__ values present for a target set.
+func syncedAddresses(tGroups map[string][]*targetgroup.Group, key string) []string {
+	var addrs []string
+	for _, tg := range tGroups[key] {
+		for _, t := range tg.Targets {
+			addrs = append(addrs, string(t[model.AddressLabel]))
+		}
+	}
+	return addrs
+}
+
+func TestResolveAddressesExpandsFQDN(t *testing.T) {
+	ctx := t.Context()
+
+	reg := prometheus.NewRegistry()
+	sdMetrics := NewTestMetrics(t, reg)
+
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
+	require.NotNil(t, discoveryManager)
+	discoveryManager.updatert = 100 * time.Millisecond
+	// Inject a deterministic resolver before any expander is created.
+	discoveryManager.resolveLookupFn = func(_ context.Context, host string) ([]netip.Addr, error) {
+		require.Equal(t, "web.example.com", host)
+		return []netip.Addr{
+			netip.MustParseAddr("192.0.2.1"),
+			netip.MustParseAddr("192.0.2.2"),
+		}, nil
+	}
+	go discoveryManager.Run()
+
+	discoveryManager.ApplyResolveConfigs(map[string]*ResolveAddressesConfig{
+		"prometheus": {Enabled: true, RefreshInterval: model.Duration(time.Hour), Type: resolveTypeAuto},
+	})
+	discoveryManager.ApplyConfig(map[string]Configs{
+		"prometheus": {staticConfig("web.example.com:9090")},
+	})
+
+	// The FQDN is resolved asynchronously, so wait until the expanded targets
+	// appear on the sync channel.
+	deadline := time.After(5 * time.Second)
+	var addrs []string
+	for {
+		select {
+		case synced := <-discoveryManager.SyncCh():
+			addrs = syncedAddresses(synced, "prometheus")
+			if len(addrs) == 2 {
+				require.ElementsMatch(t, []string{"192.0.2.1:9090", "192.0.2.2:9090"}, addrs)
+				return
+			}
+		case <-deadline:
+			t.Fatalf("FQDN was not expanded, last addresses: %v", addrs)
+		}
+	}
+}
+
+// resolveMetricLabelCount counts how many series exist for a resolve metric.
+// It is used to assert that per-set label values are deleted on reconciliation.
+func resolveMetricLabelCount(t *testing.T, c prometheus.Collector) int {
+	t.Helper()
+	return client_testutil.CollectAndCount(c)
+}
+
+// TestApplyResolveConfigsReconciliation exercises the full reconciliation
+// matrix: enable, type/interval change (restart preserving cache and counters),
+// disable (expander stopped and metric label values deleted) and full removal.
+func TestApplyResolveConfigsReconciliation(t *testing.T) {
+	ctx := t.Context()
+
+	reg := prometheus.NewRegistry()
+	sdMetrics := NewTestMetrics(t, reg)
+	m := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
+	require.NotNil(t, m)
+	// A blocking lookup avoids racing background resolution against assertions.
+	m.resolveLookupFn = func(ctx context.Context, _ string) ([]netip.Addr, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+
+	// Enable.
+	m.ApplyResolveConfigs(map[string]*ResolveAddressesConfig{
+		"prometheus": {Enabled: true, RefreshInterval: model.Duration(time.Hour), Type: resolveTypeAuto},
+	})
+	m.mtx.RLock()
+	e1 := m.expanders["prometheus"]
+	m.mtx.RUnlock()
+	require.NotNil(t, e1, "expander must be created when enabled")
+
+	// Seed resolution state directly (the blocking lookup never lands an answer)
+	// and bump a counter so we can prove preservation across the restart. Use
+	// the failures counter, which the background loop does not touch for a
+	// context-cancelled lookup.
+	e1.seed(map[string][]netip.Addr{"host.example.com": {netip.MustParseAddr("192.0.2.1")}}, map[string]struct{}{"host.example.com": {}})
+	m.metrics.ResolveLookupFailures.WithLabelValues("prometheus").Add(3)
+	require.Equal(t, 3.0, client_testutil.ToFloat64(m.metrics.ResolveLookupFailures.WithLabelValues("prometheus")))
+
+	// Config change (interval): restart, preserving cache and counters.
+	m.ApplyResolveConfigs(map[string]*ResolveAddressesConfig{
+		"prometheus": {Enabled: true, RefreshInterval: model.Duration(2 * time.Hour), Type: resolveTypeAuto},
+	})
+	m.mtx.RLock()
+	e2 := m.expanders["prometheus"]
+	m.mtx.RUnlock()
+	require.NotNil(t, e2)
+	require.NotSame(t, e1, e2, "config change must replace the expander")
+	got, ok := e2.lookupCached("host.example.com")
+	require.True(t, ok, "cache must survive a config-change restart")
+	require.Equal(t, []netip.Addr{netip.MustParseAddr("192.0.2.1")}, got)
+	// The counter must not be reset on a config-change restart.
+	require.Equal(t, 3.0, client_testutil.ToFloat64(m.metrics.ResolveLookupFailures.WithLabelValues("prometheus")),
+		"counters must be preserved across a config-change restart")
+
+	// Disable: expander stopped and metric label values deleted (L3).
+	m.ApplyResolveConfigs(map[string]*ResolveAddressesConfig{
+		"prometheus": {Enabled: false, RefreshInterval: model.Duration(time.Hour), Type: resolveTypeAuto},
+	})
+	m.mtx.RLock()
+	_, present := m.expanders["prometheus"]
+	m.mtx.RUnlock()
+	require.False(t, present, "disabled set must have its expander stopped and removed")
+	require.Equal(t, 0, resolveMetricLabelCount(t, m.metrics.ResolveLookups),
+		"metric label values must be deleted when a set is disabled")
+
+	// Full removal of an already-disabled set is a no-op.
+	m.ApplyResolveConfigs(map[string]*ResolveAddressesConfig{})
+	m.mtx.RLock()
+	require.Empty(t, m.expanders)
+	m.mtx.RUnlock()
+}
+
+// TestApplyResolveConfigsConfigChangePreservesTargets proves M1 end-to-end: an
+// interval change does not flap an already-expanded target back to its FQDN.
+func TestApplyResolveConfigsConfigChangePreservesTargets(t *testing.T) {
+	ctx := t.Context()
+
+	reg := prometheus.NewRegistry()
+	sdMetrics := NewTestMetrics(t, reg)
+	m := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
+	require.NotNil(t, m)
+	m.updatert = 100 * time.Millisecond
+	m.resolveLookupFn = func(_ context.Context, _ string) ([]netip.Addr, error) {
+		return []netip.Addr{netip.MustParseAddr("192.0.2.1")}, nil
+	}
+	go m.Run()
+
+	m.ApplyResolveConfigs(map[string]*ResolveAddressesConfig{
+		"prometheus": {Enabled: true, RefreshInterval: model.Duration(time.Hour), Type: resolveTypeAuto},
+	})
+	m.ApplyConfig(map[string]Configs{
+		"prometheus": {staticConfig("web.example.com:9090")},
+	})
+
+	// Wait until the FQDN is expanded to its IP.
+	deadline := time.After(5 * time.Second)
+	for {
+		done := false
+		select {
+		case synced := <-m.SyncCh():
+			addrs := syncedAddresses(synced, "prometheus")
+			if len(addrs) == 1 && addrs[0] == "192.0.2.1:9090" {
+				done = true
+			}
+		case <-deadline:
+			t.Fatal("FQDN was not expanded before config change")
+		}
+		if done {
+			break
+		}
+	}
+
+	// Change only the interval. The target must not flap back to the FQDN.
+	m.ApplyResolveConfigs(map[string]*ResolveAddressesConfig{
+		"prometheus": {Enabled: true, RefreshInterval: model.Duration(2 * time.Hour), Type: resolveTypeAuto},
+	})
+
+	deadline = time.After(5 * time.Second)
+	for {
+		select {
+		case synced := <-m.SyncCh():
+			addrs := syncedAddresses(synced, "prometheus")
+			require.NotContains(t, addrs, "web.example.com:9090",
+				"target must not flap back to FQDN on a config-only change")
+			if len(addrs) == 1 && addrs[0] == "192.0.2.1:9090" {
+				return
+			}
+		case <-deadline:
+			return
+		}
+	}
+}
+
+// TestAllGroupsExpanderOffLeavesGroupsUntouched is a regression guard: with no
+// expander configured for a set, allGroups returns the original group pointers.
+func TestAllGroupsExpanderOffLeavesGroupsUntouched(t *testing.T) {
+	ctx := t.Context()
+
+	reg := prometheus.NewRegistry()
+	sdMetrics := NewTestMetrics(t, reg)
+	m := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
+	require.NotNil(t, m)
+
+	orig := &targetgroup.Group{
+		Source:  "0",
+		Targets: []model.LabelSet{{model.AddressLabel: "web.example.com:9090"}},
+	}
+	p := &Provider{
+		name:   "static/0",
+		config: StaticConfig{orig},
+		subs:   map[string]struct{}{"prometheus": {}},
+	}
+	m.providers = []*Provider{p}
+	m.targetsMtx.Lock()
+	m.targets[poolKey{"prometheus", "static/0"}] = map[string]*targetgroup.Group{"0": orig}
+	m.targetsMtx.Unlock()
+
+	got := m.allGroups()
+	require.Len(t, got["prometheus"], 1)
+	require.Same(t, orig, got["prometheus"][0], "no expander must leave the group pointer untouched")
+}
+
+// TestAllGroupsTransientEmptyProviderDoesNotPrune is a regression guard for an
+// over-pruning bug: an allGroups pass that sees a still-subscribed provider with
+// no target groups (e.g. immediately after ApplyConfig rebuilds the providers
+// and triggers a send before the new discoverer has emitted its first batch)
+// must not run the expander mark-and-sweep, or the resolved seen/cache state
+// would be wiped and every still-configured target would flap back to its FQDN
+// form until the next resolution lands.
+func TestAllGroupsTransientEmptyProviderDoesNotPrune(t *testing.T) {
+	ctx := t.Context()
+
+	reg := prometheus.NewRegistry()
+	sdMetrics := NewTestMetrics(t, reg)
+	m := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
+	require.NotNil(t, m)
+
+	const host = "web.example.com"
+	cfg := &ResolveAddressesConfig{Enabled: true, RefreshInterval: model.Duration(time.Hour), Type: resolveTypeAuto}
+	e := newAddressExpander("prometheus", cfg, m.metrics, promslog.NewNopLogger(), m.triggerSend, nil)
+	m.expanders = map[string]*addressExpander{"prometheus": e}
+
+	// Seed a steady state: the host has been seen and resolved.
+	e.observe(host)
+	require.True(t, e.merge(map[string][]netip.Addr{host: {netip.MustParseAddr("192.0.2.1")}}))
+	e.endCycle()
+
+	// Sanity check the seeded state.
+	addrs, ok := e.lookupCached(host)
+	require.True(t, ok)
+	require.Equal(t, []netip.Addr{netip.MustParseAddr("192.0.2.1")}, addrs)
+	require.Contains(t, e.seen, host)
+
+	// The provider is still subscribed but has produced no target groups yet
+	// (m.targets is empty for its pool key), as happens transiently right after
+	// an ApplyConfig that rebuilds the provider.
+	p := &Provider{
+		name:   "static/0",
+		config: StaticConfig{},
+		subs:   map[string]struct{}{"prometheus": {}},
+	}
+	m.providers = []*Provider{p}
+
+	_ = m.allGroups()
+
+	// The transient empty pass must not have pruned the resolved state.
+	addrs, ok = e.lookupCached(host)
+	require.True(t, ok, "cache entry must survive a transient empty provider pass")
+	require.Equal(t, []netip.Addr{netip.MustParseAddr("192.0.2.1")}, addrs)
+	require.Contains(t, e.seen, host, "seen entry must survive a transient empty provider pass")
+}
+
+// TestResolveAddressesNotifyPath exercises the Alertmanager/notify reconcile
+// path end-to-end: ApplyResolveConfigs + ApplyConfig on a separate manager
+// expands an Alertmanager FQDN into per-IP targets.
+func TestResolveAddressesNotifyPath(t *testing.T) {
+	ctx := t.Context()
+
+	reg := prometheus.NewRegistry()
+	sdMetrics := NewTestMetrics(t, reg)
+	m := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics, Name("notify"))
+	require.NotNil(t, m)
+	m.updatert = 100 * time.Millisecond
+	m.resolveLookupFn = func(_ context.Context, _ string) ([]netip.Addr, error) {
+		return []netip.Addr{
+			netip.MustParseAddr("192.0.2.1"),
+			netip.MustParseAddr("192.0.2.2"),
+		}, nil
+	}
+	go m.Run()
+
+	m.ApplyResolveConfigs(map[string]*ResolveAddressesConfig{
+		"config-0": {Enabled: true, RefreshInterval: model.Duration(time.Hour), Type: resolveTypeAuto},
+	})
+	m.ApplyConfig(map[string]Configs{
+		"config-0": {staticConfig("alertmanager.example.com:9093")},
+	})
+
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case synced := <-m.SyncCh():
+			addrs := syncedAddresses(synced, "config-0")
+			if len(addrs) == 2 {
+				require.ElementsMatch(t, []string{"192.0.2.1:9093", "192.0.2.2:9093"}, addrs)
+				return
+			}
+		case <-deadline:
+			t.Fatal("Alertmanager FQDN was not expanded")
+		}
+	}
+}
+
+// BenchmarkAllGroupsExpansion measures the allGroups expansion hot path with a
+// configured expander resolving a set of FQDNs to multiple IPs.
+func BenchmarkAllGroupsExpansion(b *testing.B) {
+	ctx := b.Context()
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := NewRefreshMetrics(reg)
+	mechanismMetrics, err := RegisterSDMetrics(reg, refreshMetrics)
+	require.NoError(b, err)
+	sdMetrics := &SDMetrics{MechanismMetrics: mechanismMetrics, RefreshManager: refreshMetrics}
+
+	m := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
+	require.NotNil(b, m)
+
+	const nGroups = 200
+	cfg := &ResolveAddressesConfig{Enabled: true, RefreshInterval: model.Duration(time.Hour), Type: resolveTypeAuto}
+	e := newAddressExpander("prometheus", cfg, m.metrics, promslog.NewNopLogger(), m.triggerSend, nil)
+	m.expanders = map[string]*addressExpander{"prometheus": e}
+
+	cache := map[string][]netip.Addr{}
+	targetsByPool := map[string]*targetgroup.Group{}
+	for i := range nGroups {
+		host := fmt.Sprintf("host-%d.example.com", i)
+		cache[host] = []netip.Addr{
+			netip.MustParseAddr("192.0.2.1"),
+			netip.MustParseAddr("192.0.2.2"),
+			netip.MustParseAddr("2001:db8::1"),
+		}
+		src := strconv.Itoa(i)
+		targetsByPool[src] = &targetgroup.Group{
+			Source:  src,
+			Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(host + ":9090")}},
+		}
+	}
+	e.seed(cache, nil)
+
+	p := &Provider{name: "static/0", config: StaticConfig{}, subs: map[string]struct{}{"prometheus": {}}}
+	m.providers = []*Provider{p}
+	m.targets[poolKey{"prometheus", "static/0"}] = targetsByPool
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		_ = m.allGroups()
+	}
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
