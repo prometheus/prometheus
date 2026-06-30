@@ -307,6 +307,7 @@ export default function AlertsPage() {
                         }
                       >
                         <Accordion.Control
+                          className={classes.ruleControl}
                           styles={{ label: { paddingBlock: rem(10) } }}
                         >
                           <Group wrap="nowrap" justify="space-between" mr="lg">
@@ -315,8 +316,9 @@ export default function AlertsPage() {
                               <CopyButton value={r.rule.name}>
                                 {({ copied, copy }) => (
                                   <ActionIcon
+                                    className={classes.copyAlertNameButton}
                                     variant="subtle"
-                                    color={copied ? 'teal' : 'gray'}
+                                    color="gray"
                                     onClick={(e) => {
                                       e.stopPropagation(); copy();
                                     }}
