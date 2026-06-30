@@ -70,8 +70,65 @@ var (
 	}
 )
 
-// Load parses the YAML input s into a Config.
-func Load(s string, logger *slog.Logger) (*Config, error) {
+// expandEnvVars expands environment variables in a string using os.Expand.
+// Variables are referenced as $VAR or ${VAR}. Escaping is done with $$.
+// Digit-only keys such as $1 are treated as regex back-references and left unchanged.
+// Empty environment variables are logged as warnings and expanded to empty string.
+func expandEnvVars(s string, logger *slog.Logger) string {
+	return os.Expand(s, func(key string) string {
+		if key == "$" {
+			return "$"
+		}
+		if isAllDigits(key) {
+			return "$" + key
+		}
+		if v := os.Getenv(key); v != "" {
+			return v
+		}
+		logger.Warn("Empty environment variable", "name", key)
+		return ""
+	})
+}
+
+// expandRelabelConfigs expands environment variables in replacement and target_label fields.
+// Regex back-references like $1 are preserved unchanged.
+func expandRelabelConfigs(relabelConfigs []*relabel.Config, logger *slog.Logger) {
+	for _, relabelConfig := range relabelConfigs {
+		if relabelConfig == nil {
+			continue
+		}
+		if newReplacement := expandEnvVars(relabelConfig.Replacement, logger); newReplacement != relabelConfig.Replacement {
+			logger.Debug("Relabel replacement expanded", "input", relabelConfig.Replacement, "output", newReplacement)
+			relabelConfig.Replacement = newReplacement
+		}
+		if newTargetLabel := expandEnvVars(relabelConfig.TargetLabel, logger); newTargetLabel != relabelConfig.TargetLabel {
+			logger.Debug("Relabel target_label expanded", "input", relabelConfig.TargetLabel, "output", newTargetLabel)
+			relabelConfig.TargetLabel = newTargetLabel
+		}
+	}
+}
+
+// isAllDigits reports whether s consists entirely of ASCII digits and is non-empty.
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// LoadOptions configures optional behaviour for Load and LoadFile.
+type LoadOptions struct {
+	// ExpandRelabelEnv, when true, expands environment variables in relabel_configs
+	// replacement and target_label fields (opt-in via --enable-feature=expand-relabel-env-vars).
+	ExpandRelabelEnv bool
+}
+
+func Load(s string, logger *slog.Logger, opts LoadOptions) (*Config, error) {
 	cfg := &Config{}
 	// If the entire config body is empty the UnmarshalYAML method is
 	// never called. We thus have to set the DefaultConfig at the entry
@@ -92,16 +149,7 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 
 	b := labels.NewScratchBuilder(0)
 	cfg.GlobalConfig.ExternalLabels.Range(func(v labels.Label) {
-		newV := os.Expand(v.Value, func(s string) string {
-			if s == "$" {
-				return "$"
-			}
-			if v := os.Getenv(s); v != "" {
-				return v
-			}
-			logger.Warn("Empty environment variable", "name", s)
-			return ""
-		})
+		newV := expandEnvVars(v.Value, logger)
 		if newV != v.Value {
 			logger.Debug("External label replaced", "label", v.Name, "input", v.Value, "output", newV)
 		}
@@ -110,6 +158,27 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 	})
 	if !b.Labels().IsEmpty() {
 		cfg.GlobalConfig.ExternalLabels = b.Labels()
+	}
+
+	if opts.ExpandRelabelEnv {
+		// Expand environment variables in relabel_configs (opt-in via
+		// --enable-feature=expand-relabel-env-vars).
+		for _, scrapeConfig := range cfg.ScrapeConfigs {
+			expandRelabelConfigs(scrapeConfig.RelabelConfigs, logger)
+			expandRelabelConfigs(scrapeConfig.MetricRelabelConfigs, logger)
+		}
+
+		// Expand environment variables in alerting relabel configs.
+		expandRelabelConfigs(cfg.AlertingConfig.AlertRelabelConfigs, logger)
+		for _, amConfig := range cfg.AlertingConfig.AlertmanagerConfigs {
+			expandRelabelConfigs(amConfig.RelabelConfigs, logger)
+			expandRelabelConfigs(amConfig.AlertRelabelConfigs, logger)
+		}
+
+		// Expand environment variables in remote write relabel configs.
+		for _, remoteWriteConfig := range cfg.RemoteWriteConfigs {
+			expandRelabelConfigs(remoteWriteConfig.WriteRelabelConfigs, logger)
+		}
 	}
 
 	switch cfg.OTLPConfig.TranslationStrategy {
@@ -128,12 +197,12 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 
 // LoadFile parses and validates the given YAML file into a read-only Config.
 // Callers should never write to or shallow copy the returned Config.
-func LoadFile(filename string, agentMode bool, logger *slog.Logger) (*Config, error) {
+func LoadFile(filename string, agentMode bool, logger *slog.Logger, opts LoadOptions) (*Config, error) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := Load(string(content), logger)
+	cfg, err := Load(string(content), logger, opts)
 	if err != nil {
 		return nil, fmt.Errorf("parsing YAML file %s: %w", filename, err)
 	}
