@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minimum Go version is met.
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
@@ -356,24 +357,27 @@ type DB struct {
 }
 
 type dbMetrics struct {
-	loadedBlocks                    prometheus.GaugeFunc
-	symbolTableSize                 prometheus.GaugeFunc
-	reloads                         prometheus.Counter
-	reloadsFailed                   prometheus.Counter
-	compactionsFailed               prometheus.Counter
-	compactionsTriggered            prometheus.Counter
-	compactionsSkipped              prometheus.Counter
-	sizeRetentionCount              prometheus.Counter
-	timeRetentionCount              prometheus.Counter
-	startTime                       prometheus.GaugeFunc
-	tombCleanTimer                  prometheus.Histogram
-	blocksBytes                     prometheus.Gauge
-	maxBytes                        prometheus.Gauge
-	maxPercentage                   prometheus.Gauge
-	retentionDuration               prometheus.Gauge
-	staleSeriesCompactionsTriggered prometheus.Counter
-	staleSeriesCompactionsFailed    prometheus.Counter
-	staleSeriesCompactionDuration   prometheus.Histogram
+	loadedBlocks                       prometheus.GaugeFunc
+	symbolTableSize                    prometheus.GaugeFunc
+	reloads                            prometheus.Counter
+	reloadsFailed                      prometheus.Counter
+	compactionsFailed                  prometheus.Counter
+	compactionsTriggered               prometheus.Counter
+	compactionsSkipped                 prometheus.Counter
+	sizeRetentionCount                 prometheus.Counter
+	timeRetentionCount                 prometheus.Counter
+	startTime                          prometheus.GaugeFunc
+	tombCleanTimer                     prometheus.Histogram
+	blocksBytes                        prometheus.Gauge
+	maxBytes                           prometheus.Gauge
+	maxPercentage                      prometheus.Gauge
+	retentionDuration                  prometheus.Gauge
+	staleSeriesCompactionsTriggered    prometheus.Counter
+	staleSeriesCompactionsFailed       prometheus.Counter
+	staleSeriesCompactionDuration      prometheus.Histogram
+	selectedSeriesCompactionsTriggered prometheus.Counter
+	selectedSeriesCompactionsFailed    prometheus.Counter
+	selectedSeriesCompactionDuration   prometheus.Histogram
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -478,6 +482,22 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
+	m.selectedSeriesCompactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_selected_series_compactions_triggered_total",
+		Help: "Total number of compactions triggered for an explicit caller-provided list of series references.",
+	})
+	m.selectedSeriesCompactionsFailed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_selected_series_compactions_failed_total",
+		Help: "Total number of compactions triggered for an explicit caller-provided list of series references that failed.",
+	})
+	m.selectedSeriesCompactionDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:                            "prometheus_tsdb_selected_series_compaction_duration_seconds",
+		Help:                            "Duration of compactions triggered for an explicit caller-provided list of series references.",
+		Buckets:                         prometheus.ExponentialBuckets(1, 2, 14),
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+	})
 
 	if r != nil {
 		r.MustRegister(
@@ -499,6 +519,9 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.staleSeriesCompactionsTriggered,
 			m.staleSeriesCompactionsFailed,
 			m.staleSeriesCompactionDuration,
+			m.selectedSeriesCompactionsTriggered,
+			m.selectedSeriesCompactionsFailed,
+			m.selectedSeriesCompactionDuration,
 		)
 	}
 	return m
@@ -1573,6 +1596,12 @@ func (db *DB) CompactOOOHead(ctx context.Context) error {
 // Callback for testing.
 var compactOOOHeadTestingCallback func()
 
+// Callback for testing. Invoked by compactHeadViewLocked after all blocks for
+// the head view have been written and reloaded, but before the per-series
+// evictor is called. Allows tests to interleave appends or other side effects
+// in that window.
+var compactHeadViewBeforeEvictTestingCallback func()
+
 // The db.cmtx mutex should be held before calling this method.
 func (db *DB) compactOOOHead(ctx context.Context) error {
 	if !db.oooWasEnabled.Load() {
@@ -1703,6 +1732,103 @@ func (db *DB) compactHead(head *RangeHead) error {
 	return nil
 }
 
+// headViewFactory builds a restricted BlockReader view of a portion of the head, covering the
+// closed time range [mint, maxt]. Implementations decide which subset of series the view exposes
+// (for example, by filtering on a list of series refs). The factory is invoked once per
+// chunk-range slice during compaction.
+type headViewFactory func(head *Head, mint, maxt int64) BlockReader
+
+// headSeriesEvictor removes from the head the series that were just
+// written to blocks without advancing HeadMinTime.
+//
+// The evictor must preserve any series that may have received samples
+// after compaction began, as those samples might not be present in the
+// generated blocks.
+//
+// maxt is the head's MaxTime at compaction start and is used to detect
+// obvious late writes via sample timestamps.
+//
+// appendIDWatermark is the head's append-ID counter at compaction
+// start. A series containing samples with appendID >
+// appendIDWatermark must not be evicted, as those samples were appended
+// after compaction began and may not be present in any block.
+//
+// When isolation is disabled, appendIDWatermark is always 0 and the
+// append-ID check becomes a no-op. In that mode, the caller must ensure
+// that no concurrent writes target the selected series.
+type headSeriesEvictor func(maxt int64, appendIDWatermark uint64) error
+
+// compactHeadViewLocked writes a block (or sequence of blocks, one per chunk range) for the
+// restricted head view produced by viewFactory, then runs evictor to remove those series from the
+// head. HeadMinTime is not advanced; series outside the view are unaffected. configure, if
+// non-nil, is called on the freshly created BlockMeta before each write to set compaction hints
+// or other optional fields.
+// The caller must hold db.cmtx.
+func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSeriesEvictor, configure func(*BlockMeta)) error {
+	mint, maxt := db.head.opts.ChunkRange*(db.head.MinTime()/db.head.opts.ChunkRange), db.head.MaxTime()
+	// Capture the highest guaranteed-committed appendID as an eviction watermark
+	// before writing any blocks.
+	//
+	// Samples with appendID <= watermark are guaranteed to be present in some
+	// generated block. Samples with higher IDs may or may not be present,
+	// depending on block-writer snapshot timing.
+	//
+	// The watermark is used during eviction: a series is removed only if it has
+	// not received any samples with appendID > watermark since compaction began.
+	//
+	// We use committedAppendID instead of lastAppendID because open appenders are
+	// excluded from all block snapshots via incompleteAppends. If one of those
+	// appenders commits between the write and evict phases, using lastAppendID
+	// could evict a series whose newest sample is present in neither the block nor
+	// the head, causing that sample to be lost on WAL replay.
+	appendIDWatermark := db.head.iso.committedAppendID()
+	// The bound is inclusive so that a sample sitting exactly on a chunk-range boundary
+	// (mint == maxt) still gets a block written before its series is evicted.
+	for ; mint <= maxt; mint += db.head.chunkRange.Load() {
+		view := viewFactory(db.head, mint, mint+db.head.chunkRange.Load()-1)
+
+		meta := &BlockMeta{}
+		if configure != nil {
+			configure(meta)
+		}
+		uids, err := db.compactor.Write(db.dir, view, view.Meta().MinTime, view.Meta().MaxTime+1, meta)
+		if err != nil {
+			return fmt.Errorf("persist head portion: %w", err)
+		}
+
+		// compactor.Write returns no UIDs when the view contained no chunks, which happens
+		// on a chunk-range slice that holds no data for the selected series. There is nothing
+		// to reload or log in that case.
+		if len(uids) == 0 {
+			continue
+		}
+
+		db.logger.Info("Head portion block created", "ulids", fmt.Sprintf("%v", uids), "min_time", mint, "max_time", mint+db.head.chunkRange.Load()-1)
+
+		if err := db.reloadBlocks(); err != nil {
+			errs := []error{fmt.Errorf("reloadBlocks blocks: %w", err)}
+			for _, uid := range uids {
+				if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
+					errs = append(errs, fmt.Errorf("delete persisted head portion block after failed db reloadBlocks:%s: %w", uid, errRemoveAll))
+				}
+			}
+			return errors.Join(errs...)
+		}
+	}
+
+	if compactHeadViewBeforeEvictTestingCallback != nil {
+		compactHeadViewBeforeEvictTestingCallback()
+		compactHeadViewBeforeEvictTestingCallback = nil
+	}
+
+	if err := evict(maxt, appendIDWatermark); err != nil {
+		return fmt.Errorf("head truncate: %w", err)
+	}
+	db.head.RebuildSymbolTable(db.logger)
+
+	return nil
+}
+
 func (db *DB) CompactStaleHead() (err error) {
 	db.cmtx.Lock()
 	defer func() {
@@ -1723,38 +1849,104 @@ func (db *DB) CompactStaleHead() (err error) {
 	if err != nil {
 		return err
 	}
-	meta := &BlockMeta{}
-	meta.Compaction.SetStaleSeries()
-	mint, maxt := db.head.opts.ChunkRange*(db.head.MinTime()/db.head.opts.ChunkRange), db.head.MaxTime()
-	for ; mint <= maxt; mint += db.head.chunkRange.Load() {
-		staleHead := NewStaleHead(db.Head(), mint, mint+db.head.chunkRange.Load()-1, staleSeriesRefs)
-
-		uids, err := db.compactor.Write(db.dir, staleHead, staleHead.MinTime(), staleHead.BlockMaxTime(), meta)
-		if err != nil {
-			return fmt.Errorf("persist stale head: %w", err)
-		}
-
-		db.logger.Info("Stale series block created", "ulids", fmt.Sprintf("%v", uids), "min_time", mint, "max_time", maxt)
-
-		if err := db.reloadBlocks(); err != nil {
-			errs := []error{fmt.Errorf("reloadBlocks blocks: %w", err)}
-			for _, uid := range uids {
-				if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
-					errs = append(errs, fmt.Errorf("delete persisted stale head block after failed db reloadBlocks:%s: %w", uid, errRemoveAll))
-				}
-			}
-			return errors.Join(errs...)
-		}
+	if err := db.compactHeadViewLocked(
+		func(h *Head, mint, maxt int64) BlockReader {
+			return NewSelectedSeriesHead(h, mint, maxt, staleSeriesRefs)
+		},
+		func(maxt int64, appendIDWatermark uint64) error {
+			return db.head.truncateStaleSeries(staleSeriesRefs.sortedByRef, maxt, appendIDWatermark)
+		},
+		func(meta *BlockMeta) { meta.Compaction.SetStaleSeries() },
+	); err != nil {
+		return err
 	}
-
-	if err := db.head.truncateStaleSeries(staleSeriesRefs.sortedByRef, maxt); err != nil {
-		return fmt.Errorf("head truncate: %w", err)
-	}
-	db.head.RebuildSymbolTable(db.logger)
 
 	elapsed := time.Since(start)
 	db.metrics.staleSeriesCompactionDuration.Observe(elapsed.Seconds())
 	db.logger.Info("Ending stale series compaction", "num_series", len(staleSeriesRefs.sortedByRef), "duration", elapsed)
+	return nil
+}
+
+// CompactSelectedSeries writes the provided series into one or more blocks (one per chunk range)
+// and evicts them from the head without advancing HeadMinTime. The caller is responsible for
+// ensuring that the provided refs identify series eligible for removal.
+//
+// This method lets callers persist and evict a chosen subset of head series ahead of the normal,
+// time-window-based head compaction. It is useful when an external process can identify series
+// that are no longer expected to receive samples and wants to reclaim head memory eagerly rather
+// than waiting for the next regular compaction cycle. For example, a Mimir ingester that detects,
+// after a resharding event, that some series it used to own no longer belong to it can collect
+// their refs and pass them here to flush just those series to disk and evict them, while leaving
+// the rest of the head untouched.
+//
+// This method is not used by Prometheus itself; its primary consumer is Mimir.
+//
+// Series that received new samples after the ref list was collected are skipped during eviction
+// and remain in the head. They may be reconsidered during a subsequent compaction cycle.
+//
+// This operation persists only in-order chunks. Series with non-empty out-of-order state at the
+// time of compaction are therefore skipped as well, since evicting them would orphan their
+// out-of-order chunks in memory-mapped files. Such series remain in the head until their
+// out-of-order data has been flushed by an out-of-order compaction.
+func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) {
+	if len(seriesRefs) == 0 {
+		return nil
+	}
+
+	db.cmtx.Lock()
+	defer func() {
+		db.cmtx.Unlock()
+		if err != nil {
+			db.metrics.selectedSeriesCompactionsFailed.Inc()
+		}
+	}()
+
+	db.metrics.selectedSeriesCompactionsTriggered.Inc()
+	start := time.Now()
+
+	// index.NewListPostings expects sorted, duplicate-free refs. Normalize
+	// the caller's slice in place by sorting and removing duplicates before
+	// constructing the postings. This avoids "out-of-order series added"
+	// errors during compaction.
+	refs := slices.Clone(seriesRefs)
+	if !slices.IsSorted(refs) {
+		slices.Sort(refs)
+	}
+	refs = slices.Compact(refs)
+	postings := index.NewListPostings(refs)
+	totalSeries := len(refs)
+	// Skip series with out-of-order data: the ref-list pipeline writes only in-order chunks,
+	// so a series whose OOO state is non-empty would have its OOO chunks orphaned upon
+	// eviction. Such series stay in the head and are picked up on a later cycle.
+	selectedSeriesRefs, err := db.head.filterSeriesAndSortPostings(postings, isSeriesWithoutOOO)
+	if err != nil {
+		return err
+	}
+	skippedSeries := totalSeries - len(selectedSeriesRefs.sortedByRef)
+	db.logger.Info("Starting selected series compaction", "num_series", len(selectedSeriesRefs.sortedByRef), "num_skipped_ooo", skippedSeries, "isolation_disabled", db.head.opts.IsolationDisabled)
+
+	if len(selectedSeriesRefs.sortedByRef) == 0 {
+		elapsed := time.Since(start)
+		db.metrics.selectedSeriesCompactionDuration.Observe(elapsed.Seconds())
+		db.logger.Info("Ending selected series compaction", "num_series", 0, "num_skipped_ooo", skippedSeries, "duration", elapsed)
+		return nil
+	}
+
+	if err := db.compactHeadViewLocked(
+		func(h *Head, mint, maxt int64) BlockReader {
+			return NewSelectedSeriesHead(h, mint, maxt, selectedSeriesRefs)
+		},
+		func(maxt int64, appendIDWatermark uint64) error {
+			return db.head.truncateSelectedSeries(selectedSeriesRefs.sortedByRef, maxt, appendIDWatermark)
+		},
+		func(meta *BlockMeta) { meta.Compaction.SetSelectedSeries() },
+	); err != nil {
+		return err
+	}
+
+	elapsed := time.Since(start)
+	db.metrics.selectedSeriesCompactionDuration.Observe(elapsed.Seconds())
+	db.logger.Info("Ending selected series compaction", "num_series", len(selectedSeriesRefs.sortedByRef), "num_skipped_ooo", skippedSeries, "duration", elapsed)
 	return nil
 }
 
@@ -2233,7 +2425,7 @@ func (db *DB) inOrderBlocksMaxTime() (maxt int64, ok bool) {
 	maxt, ok = int64(math.MinInt64), false
 	// If blocks are overlapping, last block might not have the max time. So check all blocks.
 	for _, b := range db.Blocks() {
-		if !b.meta.Compaction.FromOutOfOrder() && !b.meta.Compaction.FromStaleSeries() && b.meta.MaxTime > maxt {
+		if !b.meta.Compaction.FromOutOfOrder() && !b.meta.Compaction.FromStaleSeries() && !b.meta.Compaction.FromSelectedSeries() && b.meta.MaxTime > maxt {
 			ok = true
 			maxt = b.meta.MaxTime
 		}
