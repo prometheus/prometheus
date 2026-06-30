@@ -1118,6 +1118,13 @@ eval instant at 1m30s rate(some_metric[1m30s])
     expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "some_metric"
     # Should produce no results.
 
+# histogram_count(rate()) must also warn when the schema mix falls inside the stats-only
+# path (HistogramStatsIterator). Without Schema being set in that iterator, all histograms
+# appear as Schema=0 and the custom-bucket mismatch is silently missed.
+eval instant at 1m histogram_count(rate(some_metric[1m30s]))
+    expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "some_metric"
+    # Should produce no results.
+
 # Start with custom, end with exponential. Return the exponential histogram divided by 48.
 # (The 1st sample is the NHCB with count:1. It is mostly ignored with the exception of the
 # count, which means the rate calculation extrapolates until the count hits 0.)
@@ -1432,7 +1439,7 @@ eval instant at 10m avg(histogram_sum)
 
 clear
 
-# Test native histograms with incremental avg calulation.
+# Test native histograms with incremental avg calculation.
 # Very large floats involved trigger incremental avg calculation, as direct avg calculation would overflow float64.
 load 10m
     histogram_avg_incremental{idx="0"} {{schema:0 count:1.7976931348623157e+308 sum:5.30921651659898 z_bucket:1.78264e50 z_bucket_w:0.001 buckets:[1.78264E+50 1.78264E+215 1.78264E+219 3363.5121756487] n_buckets:[1178.20696291113 731.697776280323 715.201503759399 1386.11378876781 855.572553278132]}}x1

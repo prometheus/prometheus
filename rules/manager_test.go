@@ -43,11 +43,13 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 	prom_testutil "github.com/prometheus/prometheus/util/testutil"
 )
@@ -809,7 +811,7 @@ func TestUpdate(t *testing.T) {
 	}
 
 	// Groups will be recreated if updated.
-	rgs, errs := rulefmt.ParseFile("fixtures/rules.yaml", false, model.UTF8Validation, testParser)
+	rgs, errs := rulefmt.ParseFile("fixtures/rules.yaml", false, model.UTF8Validation, testParser, promslog.NewNopLogger())
 	require.Empty(t, errs, "file parsing failures")
 
 	tmpFile, err := os.CreateTemp("", "rules.test.*.yaml")
@@ -1946,10 +1948,16 @@ func TestDependentRulesWithNonMetricExpression(t *testing.T) {
 }
 
 func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
+	storage := teststorage.New(t)
+	engine := testEngine(t)
+
 	files := []string{"fixtures/rules.yaml"}
 	ruleManager := NewManager(&ManagerOptions{
-		Context: context.Background(),
-		Logger:  promslog.NewNopLogger(),
+		Appendable: storage,
+		Queryable:  storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Context:    context.Background(),
+		Logger:     promslog.NewNopLogger(),
 	})
 
 	ruleManager.start()
@@ -2594,11 +2602,11 @@ func TestLabels_FromMaps(t *testing.T) {
 
 func TestParseFiles(t *testing.T) {
 	t.Run("good files", func(t *testing.T) {
-		err := ParseFiles([]string{filepath.Join("fixtures", "rules.y*ml")}, model.UTF8Validation, testParser)
+		err := ParseFiles([]string{filepath.Join("fixtures", "rules.y*ml")}, model.UTF8Validation, testParser, promslog.NewNopLogger())
 		require.NoError(t, err)
 	})
 	t.Run("bad files", func(t *testing.T) {
-		err := ParseFiles([]string{filepath.Join("fixtures", "invalid_rules.y*ml")}, model.UTF8Validation, testParser)
+		err := ParseFiles([]string{filepath.Join("fixtures", "invalid_rules.y*ml")}, model.UTF8Validation, testParser, promslog.NewNopLogger())
 		require.ErrorContains(t, err, "field unexpected_field not found in type rulefmt.Rule")
 	})
 }
@@ -2767,3 +2775,35 @@ func BenchmarkRuleDependencyController_AnalyseRules(b *testing.B) {
 		}
 	}
 }
+
+// TestEngineQueryFunc_ClosesQuery verifies EngineQueryFunc Close()s the
+// promql.Query it creates after every evaluation.
+func TestEngineQueryFunc_ClosesQuery(t *testing.T) {
+	eng := &closeCountingEngine{}
+	qf := EngineQueryFunc(eng, nil)
+
+	_, err := qf(context.Background(), "vector(0)", time.Unix(0, 0))
+	require.NoError(t, err)
+	require.Equal(t, 1, eng.q.closeCalls, "Close must be called exactly once")
+}
+
+type closeCountingEngine struct{ q closeCountingQuery }
+
+func (e *closeCountingEngine) NewInstantQuery(context.Context, storage.Queryable, promql.QueryOpts, string, time.Time) (promql.Query, error) {
+	return &e.q, nil
+}
+
+func (e *closeCountingEngine) NewRangeQuery(context.Context, storage.Queryable, promql.QueryOpts, string, time.Time, time.Time, time.Duration) (promql.Query, error) {
+	return &e.q, nil
+}
+
+type closeCountingQuery struct{ closeCalls int }
+
+func (*closeCountingQuery) Exec(context.Context) *promql.Result {
+	return &promql.Result{Value: promql.Vector{}}
+}
+func (q *closeCountingQuery) Close()                    { q.closeCalls++ }
+func (*closeCountingQuery) Statement() parser.Statement { return nil }
+func (*closeCountingQuery) Stats() *stats.Statistics    { return nil }
+func (*closeCountingQuery) Cancel()                     {}
+func (*closeCountingQuery) String() string              { return "" }

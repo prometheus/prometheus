@@ -225,9 +225,11 @@ type RDSSDConfig struct {
 	SecretKey       config.Secret  `yaml:"secret_key,omitempty"`
 	Profile         string         `yaml:"profile,omitempty"`
 	RoleARN         string         `yaml:"role_arn,omitempty"`
+	ExternalID      string         `yaml:"external_id,omitempty"`
 	Clusters        []string       `yaml:"clusters,omitempty"`
 	Port            int            `yaml:"port"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	Filters         []*Filter      `yaml:"filters"`
 
 	RequestConcurrency int                     `yaml:"request_concurrency,omitempty"`
 	HTTPClientConfig   config.HTTPClientConfig `yaml:",inline"`
@@ -246,6 +248,11 @@ func (*RDSSDConfig) Name() string { return "rds" }
 // NewDiscoverer returns a Discoverer for the RDS Config.
 func (c *RDSSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	return NewRDSDiscovery(c, opts)
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *RDSSDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the RDS Config.
@@ -268,6 +275,30 @@ func (c *RDSSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 type rdsClient interface {
 	DescribeDBClusters(context.Context, *rds.DescribeDBClustersInput, ...func(*rds.Options)) (*rds.DescribeDBClustersOutput, error)
 	DescribeDBInstances(context.Context, *rds.DescribeDBInstancesInput, ...func(*rds.Options)) (*rds.DescribeDBInstancesOutput, error)
+}
+
+// rdsClientAdapter captures only the RDS API calls AWS discovery uses as
+// method-value closures, keeping the concrete *rds.Client out of any
+// interface-boxed struct field. See ec2ClientAdapter for the full rationale:
+// this stops the linker from retaining the entire RDS API surface (~5 MB).
+type rdsClientAdapter struct {
+	describeDBClusters  func(context.Context, *rds.DescribeDBClustersInput, ...func(*rds.Options)) (*rds.DescribeDBClustersOutput, error)
+	describeDBInstances func(context.Context, *rds.DescribeDBInstancesInput, ...func(*rds.Options)) (*rds.DescribeDBInstancesOutput, error)
+}
+
+func newRDSClientAdapter(c *rds.Client) rdsClientAdapter {
+	return rdsClientAdapter{
+		describeDBClusters:  c.DescribeDBClusters,
+		describeDBInstances: c.DescribeDBInstances,
+	}
+}
+
+func (a rdsClientAdapter) DescribeDBClusters(ctx context.Context, params *rds.DescribeDBClustersInput, optFns ...func(*rds.Options)) (*rds.DescribeDBClustersOutput, error) {
+	return a.describeDBClusters(ctx, params, optFns...)
+}
+
+func (a rdsClientAdapter) DescribeDBInstances(ctx context.Context, params *rds.DescribeDBInstancesInput, optFns ...func(*rds.Options)) (*rds.DescribeDBInstancesOutput, error) {
+	return a.describeDBInstances(ctx, params, optFns...)
 }
 
 // RDSDiscovery periodically performs RDS-SD requests. It implements
@@ -344,16 +375,20 @@ func (d *RDSDiscovery) initRdsClient(ctx context.Context) error {
 
 	// If the role ARN is set, assume the role to get credentials and set the credentials provider in the config.
 	if d.cfg.RoleARN != "" {
-		assumeProvider := stscreds.NewAssumeRoleProvider(sts.NewFromConfig(cfg), d.cfg.RoleARN)
+		assumeProvider := stscreds.NewAssumeRoleProvider(sts.NewFromConfig(cfg), d.cfg.RoleARN, func(o *stscreds.AssumeRoleOptions) {
+			if d.cfg.ExternalID != "" {
+				o.ExternalID = aws.String(d.cfg.ExternalID)
+			}
+		})
 		cfg.Credentials = aws.NewCredentialsCache(assumeProvider)
 	}
 
-	d.rds = rds.NewFromConfig(cfg, func(options *rds.Options) {
+	d.rds = newRDSClientAdapter(rds.NewFromConfig(cfg, func(options *rds.Options) {
 		if d.cfg.Endpoint != "" {
 			options.BaseEndpoint = &d.cfg.Endpoint
 		}
 		options.HTTPClient = client
-	})
+	}))
 
 	// Test credentials by making a simple API call
 	testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -433,40 +468,41 @@ func (d *RDSDiscovery) describeDBClusters(ctx context.Context, dbClusterARNS []s
 }
 
 func (d *RDSDiscovery) describeDBInstances(ctx context.Context, dbClusterARN string) ([]types.DBInstance, error) {
-	mu := &sync.Mutex{}
-	errg, ectx := errgroup.WithContext(ctx)
-	errg.SetLimit(d.cfg.RequestConcurrency)
 	dbInstances := []types.DBInstance{}
 	var nextToken *string
+
+	filters := []types.Filter{
+		{
+			Name:   aws.String("db-cluster-id"),
+			Values: []string{dbClusterARN},
+		},
+	}
+
+	for _, f := range d.cfg.Filters {
+		filters = append(filters, types.Filter{
+			Name:   aws.String(f.Name),
+			Values: f.Values,
+		})
+	}
+
 	for {
-		output, err := d.rds.DescribeDBInstances(ectx, &rds.DescribeDBInstancesInput{
-			Filters: []types.Filter{
-				{
-					Name:   aws.String("db-cluster-id"),
-					Values: []string{dbClusterARN},
-				},
-			},
+		output, err := d.rds.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
+			Filters:    filters,
 			Marker:     nextToken,
 			MaxRecords: aws.Int32(100),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to describe DB instances for cluster ARN %s: %w", dbClusterARN, err)
 		}
-		if len(output.DBInstances) == 0 {
-			return nil, fmt.Errorf("no DB instances found for cluster ARN %s", dbClusterARN)
-		}
 
-		for _, dbInstance := range output.DBInstances {
-			mu.Lock()
-			dbInstances = append(dbInstances, dbInstance)
-			mu.Unlock()
-		}
+		dbInstances = append(dbInstances, output.DBInstances...)
+
 		if output.Marker == nil {
 			break
 		}
 		nextToken = output.Marker
 	}
-	return dbInstances, errg.Wait()
+	return dbInstances, nil
 }
 
 func (d *RDSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {

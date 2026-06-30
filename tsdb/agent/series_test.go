@@ -40,7 +40,7 @@ func TestNoDeadlock(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-started
-			_ = stripeSeries.GC(math.MaxInt64)
+			_ = stripeSeries.GC(math.MaxInt64, false)
 		}()
 	}
 
@@ -224,7 +224,7 @@ func TestSetUnlessAlreadySetConcurrentGC(t *testing.T) {
 			case <-done:
 				return
 			default:
-				ss.GC(1) // removes series with lastTs < 1, i.e. lastTs==0
+				ss.GC(1, false) // removes series with lastTs < 1, i.e. lastTs==0
 			}
 		}
 	}()
@@ -248,7 +248,7 @@ func TestSetUnlessAlreadySetConcurrentGC(t *testing.T) {
 
 	// A final synchronous GC pass ensures all eligible series are fully removed,
 	// then verify they are unreachable via both lookup paths.
-	ss.GC(1)
+	ss.GC(1, false)
 	for _, s := range eligible {
 		require.Nil(t, ss.GetByID(s.ref))
 		require.Nil(t, ss.GetByHash(s.lset.Hash(), s.lset))
@@ -259,7 +259,7 @@ func TestStripeSeries_gc(t *testing.T) {
 	s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
 	hash := ms1.lset.Hash()
 
-	s.GC(1)
+	s.GC(1, false)
 
 	// Verify that we can get neither ms1 nor ms2 after gc-ing corresponding series
 	got := s.GetByHash(hash, ms1.lset)

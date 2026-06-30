@@ -332,14 +332,14 @@ func TestCheckpoint(t *testing.T) {
 							require.GreaterOrEqual(t, s.T, last/2, "sample with wrong timestamp")
 						}
 						samplesInCheckpoint += len(samples)
-					case record.HistogramSamples, record.CustomBucketsHistogramSamples:
+					case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
 						histograms, err := dec.HistogramSamples(rec, nil)
 						require.NoError(t, err)
 						for _, h := range histograms {
 							require.GreaterOrEqual(t, h.T, last/2, "histogram with wrong timestamp")
 						}
 						histogramsInCheckpoint += len(histograms)
-					case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
+					case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
 						floatHistograms, err := dec.FloatHistogramSamples(rec, nil)
 						require.NoError(t, err)
 						for _, h := range floatHistograms {
@@ -382,6 +382,140 @@ func TestCheckpoint(t *testing.T) {
 				require.Equal(t, expectedRefMetadata, metadata)
 			})
 		}
+	}
+}
+
+// TestCheckpointV2HistogramsToV1 verifies that when a WAL contains V2 histogram
+// records (where exponential and custom-bucket histograms are interleaved in a
+// single record) and Checkpoint is asked to re-encode them using the V1 encoder,
+// the custom-bucket histograms returned as leftover by the V1 encoder are not
+// dropped. They must be re-encoded as a separate CustomBuckets(Float)Histogram
+// record in the checkpoint.
+func TestCheckpointV2HistogramsToV1(t *testing.T) {
+	t.Parallel()
+
+	expH := &histogram.Histogram{
+		Count: 5, ZeroCount: 2, ZeroThreshold: 0.001, Sum: 18.4, Schema: 1,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		PositiveBuckets: []int64{1, 1, -1, 0},
+	}
+	cbH := &histogram.Histogram{
+		Count: 5, ZeroCount: 2, ZeroThreshold: 0.001, Sum: 18.4, Schema: histogram.CustomBucketsSchema,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		PositiveBuckets: []int64{1, 1, -1, 0},
+		CustomValues:    []float64{0, 1, 2, 3, 4},
+	}
+
+	dir := t.TempDir()
+
+	encV2 := record.Encoder{EnableSTStorage: true}
+	w, err := NewSize(nil, nil, dir, 128*1024, compression.None)
+	require.NoError(t, err)
+
+	require.NoError(t, w.Log(encV2.Series([]record.RefSeries{
+		{Ref: 0, Labels: labels.FromStrings("a", "b", "c", "exp0")},
+		{Ref: 1, Labels: labels.FromStrings("a", "b", "c", "cb1")},
+		{Ref: 2, Labels: labels.FromStrings("a", "b", "c", "exp2")},
+		{Ref: 3, Labels: labels.FromStrings("a", "b", "c", "cb3")},
+	}, nil)))
+
+	// V2 encoder writes exp and custom-bucket histograms into a single
+	// HistogramSamplesV2 record (interleaved). Verify there is no leftover.
+	histSamples := []record.RefHistogramSample{
+		{Ref: 0, T: 1000, H: expH},
+		{Ref: 1, T: 1000, H: cbH},
+		{Ref: 0, T: 2000, H: expH},
+		{Ref: 1, T: 2000, H: cbH},
+	}
+	histRec, leftover := encV2.HistogramSamples(histSamples, nil)
+	require.Empty(t, leftover, "v2 encoder must not return leftover")
+	require.NoError(t, w.Log(histRec))
+
+	floatHistSamples := make([]record.RefFloatHistogramSample, len(histSamples))
+	for i, h := range histSamples {
+		floatHistSamples[i] = record.RefFloatHistogramSample{
+			Ref: h.Ref + 2, // float series live at refs 2 and 3.
+			T:   h.T,
+			FH:  h.H.ToFloat(nil),
+		}
+	}
+	floatHistRec, floatLeftover := encV2.FloatHistogramSamples(floatHistSamples, nil)
+	require.Empty(t, floatLeftover, "v2 encoder must not return leftover")
+	require.NoError(t, w.Log(floatHistRec))
+
+	require.NoError(t, w.Close())
+
+	_, last, err := Segments(w.Dir())
+	require.NoError(t, err)
+
+	// Re-open so Checkpoint can take a read lock on the directory.
+	w, err = NewSize(nil, nil, dir, 128*1024, compression.None)
+	require.NoError(t, err)
+	t.Cleanup(func() { w.Close() })
+
+	// Run Checkpoint with V1 encoding (enableSTStorage=false) to force the
+	// V1 leftover path in checkpoint.go.
+	stats, err := Checkpoint(promslog.NewNopLogger(), w, 0, last, func(_ chunks.HeadSeriesRef) bool { return true }, 0, false)
+	require.NoError(t, err)
+	require.Equal(t, len(histSamples)+len(floatHistSamples), stats.TotalSamples)
+	require.Zero(t, stats.DroppedSamples, "no histogram samples should be dropped")
+
+	cpDir := CheckpointDir(w.Dir(), last)
+	sr, err := NewSegmentsReader(cpDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { sr.Close() })
+
+	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+	r := NewReader(sr)
+
+	// For each V1 record type we expect to see exactly 2 samples for a
+	// specific series ref, with the matching UsesCustomBuckets flag.
+	type expectation struct {
+		ref           chunks.HeadSeriesRef
+		usesCB        bool
+		seen, samples int
+	}
+	expects := map[record.Type]*expectation{
+		record.HistogramSamples:                   {ref: 0, usesCB: false},
+		record.CustomBucketsHistogramSamples:      {ref: 1, usesCB: true},
+		record.FloatHistogramSamples:              {ref: 2, usesCB: false},
+		record.CustomBucketsFloatHistogramSamples: {ref: 3, usesCB: true},
+	}
+
+	for r.Next() {
+		rec := r.Record()
+		typ := dec.Type(rec)
+		exp, ok := expects[typ]
+		switch typ {
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
+			hs, err := dec.HistogramSamples(rec, nil)
+			require.NoError(t, err)
+			exp.seen++
+			exp.samples += len(hs)
+			for _, h := range hs {
+				require.Equal(t, exp.ref, h.Ref)
+				require.Equal(t, exp.usesCB, h.H.UsesCustomBuckets())
+			}
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
+			fhs, err := dec.FloatHistogramSamples(rec, nil)
+			require.NoError(t, err)
+			exp.seen++
+			exp.samples += len(fhs)
+			for _, h := range fhs {
+				require.Equal(t, exp.ref, h.Ref)
+				require.Equal(t, exp.usesCB, h.FH.UsesCustomBuckets())
+			}
+		case record.HistogramSamplesV2, record.FloatHistogramSamplesV2:
+			t.Fatalf("unexpected V2 record in V1 checkpoint: %v", typ)
+		default:
+			require.False(t, ok, "unhandled expected type %v", typ)
+		}
+	}
+	require.NoError(t, r.Err())
+
+	for typ, exp := range expects {
+		require.Positive(t, exp.seen, "expected record type %v in checkpoint", typ)
+		require.Equal(t, 2, exp.samples, "expected 2 samples in record type %v", typ)
 	}
 }
 

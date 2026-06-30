@@ -40,3 +40,7 @@ func BenchmarkXorRead(b *testing.B) {
 		_, _ = ts, v
 	}
 }
+
+func TestXORChunkOverFlowPanics(t *testing.T) {
+	testChunkOverFlowPanics(t, EncXOR, ValFloat)
+}

@@ -81,8 +81,6 @@ func (e *BinaryExpr) Pretty(level int) string {
 
 func (e *DurationExpr) Pretty(int) string {
 	var s string
-	fmt.Println("e.LHS", e.LHS)
-	fmt.Println("e.RHS", e.RHS)
 	if e.LHS == nil {
 		// This is a unary duration expression.
 		s = fmt.Sprintf("%s%s", e.Op, e.RHS.Pretty(0))
@@ -111,11 +109,16 @@ func (e *EvalStmt) Pretty(int) string {
 
 func (e Expressions) Pretty(level int) string {
 	// Do not prefix the indent since respective nodes will indent itself.
-	s := ""
-	for i := range e {
-		s += fmt.Sprintf("%s,\n", e[i].Pretty(level))
+	if len(e) == 0 {
+		return ""
 	}
-	return s[:len(s)-2]
+
+	parts := make([]string, len(e))
+	for i := range e {
+		parts[i] = e[i].Pretty(level)
+	}
+
+	return strings.Join(parts, ",\n")
 }
 
 func (e *ParenExpr) Pretty(level int) string {

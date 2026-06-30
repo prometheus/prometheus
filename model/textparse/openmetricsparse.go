@@ -763,7 +763,7 @@ func (p *OpenMetricsParser) getFloatValue(t token, after string) (float64, error
 		return 0, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
 	}
 	// Ensure canonical NaN value.
-	if math.IsNaN(p.exemplarVal) {
+	if math.IsNaN(val) {
 		val = math.Float64frombits(value.NormalNaN)
 	}
 	return val, nil

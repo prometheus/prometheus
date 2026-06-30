@@ -486,6 +486,10 @@ nerve_sd_configs:
 nomad_sd_configs:
   [ - <nomad_sd_config> ... ]
 
+# List of OCI service discovery configurations.
+oci_sd_configs:
+  [ - <oci_sd_config> ... ]
+
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
@@ -902,6 +906,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
 * `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
 * `__meta_ec2_platform`: the Operating System platform, set to 'windows' on Windows servers, absent otherwise
+* `__meta_ec2_default_ipv6_address`: the first primary IPv6 address found if present, otherwise first non-primary IPv6 address, if present
 * `__meta_ec2_primary_ipv6_addresses`: comma separated list of the Primary IPv6 addresses of the instance, if present. The list is ordered based on the position of each corresponding network interface in the attachment order.
 * `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
 * `__meta_ec2_private_dns_name`: the private DNS name of the instance, if available
@@ -1330,6 +1335,9 @@ role: <string>
 # AWS Role ARN, an alternative to using AWS API keys.
 [ role_arn: <string> ]
 
+# Optional External ID that can go along with role_arn.
+[ external_id: <string> ]
+
 # Refresh interval to re-read the targets list.
 [ refresh_interval: <duration> | default = 60s ]
 
@@ -1337,10 +1345,14 @@ role: <string>
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
 
-# Filters can be used optionally to filter the instance list by other criteria (ec2 role only).
+# Filters can be used optionally to filter the instance list by other criteria (ec2 & rds role only).
 # Available filter criteria can be found here:
-# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
-# Filter API documentation: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Filter.html
+# EC2:
+#  - https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
+#  - Filter API documentation: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Filter.html
+# RDS:
+#  - https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_DescribeDBInstances.html
+#  - Filter API documentation: https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_Filter.html
 filters:
   [ - name: <string>
       values: <string>, [...] ]
@@ -1377,7 +1389,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_azure_machine_public_ip`: the machine's public IP if it exists
 * `__meta_azure_machine_resource_group`: the machine's resource group
 * `__meta_azure_machine_tag_<tagname>`: each tag value of the machine
-* `__meta_azure_machine_scale_set`: the name of the scale set which the vm is part of (this value is only set if you are using a [scale set](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/))
+* `__meta_azure_machine_scale_set`: the name of the scale set which the vm is part of (this value is only set if you are using a [scale set](https://learn.microsoft.com/en-us/azure/virtual-machine-scale-sets/))
 * `__meta_azure_machine_size`: the machine size
 * `__meta_azure_subscription_id`: the subscription ID
 * `__meta_azure_tenant_id`: the tenant ID
@@ -1390,7 +1402,7 @@ See below for the configuration options for Azure discovery:
 [ environment: <string> | default = AzurePublicCloud ]
 
 # The authentication method, either OAuth, ManagedIdentity or SDK.
-# See https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview
+# See https://learn.microsoft.com/en-us/entra/identity/managed-identities-azure-resources/overview
 # SDK authentication method uses environment variables by default.
 # See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
 [ authentication_method: <string> | default = OAuth]
@@ -1421,7 +1433,17 @@ subscription_id: <string>
 ### `<consul_sd_config>`
 
 Consul SD configurations allow retrieving scrape targets from [Consul's](https://www.consul.io)
-Catalog API.
+service catalog. Discovery uses two Consul API endpoints:
+
+1. The [Catalog API](https://developer.hashicorp.com/consul/api-docs/catalog) to list services
+   (used when `services` is empty, or when `tags` or `filter` are set).
+2. The [Health API](https://developer.hashicorp.com/consul/api-docs/health) to retrieve service
+   instances and their health status.
+
+Because these two APIs have different filtering field schemas, Prometheus exposes separate filter
+options for each: `filter` applies to the Catalog API and `health_filter` applies to the Health API.
+For example, tags are exposed as `ServiceTags` in the Catalog API but as `Service.Tags` in the
+Health API.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
@@ -1461,24 +1483,25 @@ The following meta labels are available on targets during [relabeling](#relabel_
 services:
   [ - <string> ]
 
-# A Consul Filter expression used to filter the catalog results
-# See https://www.consul.io/api-docs/catalog#list-services to know more
-# about the filter expressions that can be used.
+# Filter expression for the Catalog API. See https://developer.hashicorp.com/consul/api-docs/catalog#filtering for syntax.
 [ filter: <string> ]
 
-# The `tags` and `node_meta` fields are deprecated in Consul in favor of `filter`.
+# Filter expression for the Health API. See https://developer.hashicorp.com/consul/api-docs/health#filtering for syntax.
+[ health_filter: <string> ]
+
+# The `tags` and `node_meta` fields are deprecated in favor of `filter` and `health_filter`.
 # An optional list of tags used to filter nodes for a given service. Services must contain all tags in the list.
 tags:
   [ - <string> ]
 
-# Node metadata key/value pairs to filter nodes for a given service. As of Consul 1.14, consider `filter` instead.
+# Node metadata key/value pairs to filter nodes for a given service. As of Consul 1.14, consider `filter` or `health_filter` instead.
 [ node_meta:
   [ <string>: <string> ... ] ]
 
 # The string by which Consul tags are joined into the tag label.
 [ tag_separator: <string> | default = , ]
 
-# Allow stale Consul results (see https://www.consul.io/api/features/consistency.html). Will reduce load on Consul.
+# Allow stale Consul results (see https://developer.hashicorp.com/consul/api-docs/features/consistency). Will reduce load on Consul.
 [ allow_stale: <boolean> | default = true ]
 
 # The time after which the provided names are refreshed.
@@ -1818,6 +1841,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
 * `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
 * `__meta_ec2_platform`: the Operating System platform, set to 'windows' on Windows servers, absent otherwise
+* `__meta_ec2_default_ipv6_address`: the first primary IPv6 address found if present, otherwise first non-primary IPv6 address, if present
 * `__meta_ec2_primary_ipv6_addresses`: comma separated list of the Primary IPv6 addresses of the instance, if present. The list is ordered based on the position of each corresponding network interface in the attachment order.
 * `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
 * `__meta_ec2_private_dns_name`: the private DNS name of the instance, if available
@@ -1849,6 +1873,9 @@ See below for the configuration options for EC2 discovery:
 
 # AWS Role ARN, an alternative to using AWS API keys.
 [ role_arn: <string> ]
+
+# Optional External ID that can go along with role_arn.
+[ external_id: <string> ]
 
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 60s ]
@@ -2535,7 +2562,7 @@ The role requires the `discovery.k8s.io/v1` API version (available since Kuberne
 
 Available meta labels:
 
-* `__meta_kubernetes_namespace`: The namespace of the endpoints object.
+* `__meta_kubernetes_namespace`: The namespace of the endpointslice object.
 * `__meta_kubernetes_endpointslice_name`: The name of endpointslice object.
 * `__meta_kubernetes_endpointslice_label_<labelname>`: Each label from the endpointslice object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_endpointslice_labelpresent_<labelname>`: `true` for each label from the endpointslice object, with any unsupported characters converted to an underscore.
@@ -2736,6 +2763,9 @@ See below for the configuration options for Lightsail discovery:
 # AWS Role ARN, an alternative to using AWS API keys.
 [ role_arn: <string> ]
 
+# Optional External ID that can go along with role_arn.
+[ external_id: <string> ]
+
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 60s ]
 
@@ -2908,6 +2938,138 @@ The following meta labels are available on targets during [relabeling](#relabel_
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
 [ <http_config> ]
+```
+
+### `<oci_sd_config>`
+
+OCI SD configurations allow retrieving scrape targets from Oracle Cloud Infrastructure (OCI)
+compute instances. The private IP of the primary VNIC is used as the default address.
+Where no private IP is present, the public IP is used instead, and where neither is
+present the first IPv6 address of the primary VNIC is used.
+
+The following OCI IAM policies are required. For API key authentication (user credentials):
+
+```text
+Allow group <group-name> to read instances in tenancy
+Allow group <group-name> to read compartments in tenancy
+Allow group <group-name> to read vnic-attachments in tenancy
+Allow group <group-name> to read vnics in tenancy
+```
+
+For instance principal authentication (Prometheus running on OCI compute):
+
+```text
+Allow dynamic-group <dynamic-group-name> to read instances in tenancy
+Allow dynamic-group <dynamic-group-name> to read compartments in tenancy
+Allow dynamic-group <dynamic-group-name> to read vnic-attachments in tenancy
+Allow dynamic-group <dynamic-group-name> to read vnics in tenancy
+```
+
+The following meta labels are available on all targets during
+[relabeling](#relabel_config):
+
+* `__meta_oci_availability_domain`: the availability domain of the instance (e.g. `US-ASHBURN-AD-1`)
+* `__meta_oci_compartment_id`: the OCID of the compartment the instance belongs to
+* `__meta_oci_defined_tag_<namespace>_<key>`: each defined tag of the instance. Scalar values (strings, numbers, booleans) are stringified; non-scalar values are dropped
+* `__meta_oci_fault_domain`: the fault domain of the instance (e.g. `FAULT-DOMAIN-1`)
+* `__meta_oci_hostname_label`: the hostname label of the primary VNIC, if assigned
+* `__meta_oci_image_id`: the OCID of the image the instance was launched from
+* `__meta_oci_instance_id`: the OCID of the instance
+* `__meta_oci_instance_name`: the display name of the instance
+* `__meta_oci_instance_shape`: the shape of the instance (e.g. `VM.Standard.E4.Flex`)
+* `__meta_oci_instance_state`: the lifecycle state of the instance (e.g. `RUNNING`, `STOPPED`, `TERMINATED`). Use relabeling to restrict scraping to states you care about.
+* `__meta_oci_ipv6_addresses`: the IPv6 addresses of the primary VNIC, comma-separated and surrounded by commas (e.g. `,2001:db8::1,2001:db8::2,`); empty when none are assigned
+* `__meta_oci_private_ip`: the private IP address of the primary VNIC
+* `__meta_oci_public_ip`: the public IP address of the primary VNIC, if assigned
+* `__meta_oci_region`: the OCI region identifier (e.g. `us-ashburn-1`)
+* `__meta_oci_tag_<key>`: each freeform tag of the instance
+* `__meta_oci_tenancy_id`: the OCID of the tenancy the instance belongs to
+* `__meta_oci_vnic_id`: the OCID of the primary VNIC
+
+In tag and namespace names, any character outside `[a-zA-Z0-9_]` is replaced
+with an underscore; case is preserved. For example, a freeform tag named
+`appOwner` is exposed as `__meta_oci_tag_appOwner`, and a defined tag in
+namespace `Operations` with key `Cost Center` is exposed as
+`__meta_oci_defined_tag_Operations_Cost_Center`. Because case is preserved,
+tag keys that differ only in case (`Env` and `env`) produce distinct labels.
+
+To restrict targets to instances carrying a specific tag, use
+[`relabel_configs`](#relabel_config) with `keep` or `drop` actions matching the
+relevant `__meta_oci_tag_*` or `__meta_oci_defined_tag_*` label.
+
+Targets with no resolvable primary-VNIC IP (neither private nor public) are
+dropped to avoid emitting unscrapeable `:<port>` addresses. The address used
+is the private IP when available, falling back to the public IP.
+
+```yaml
+# Authentication method. Supported values: "api_key" (default), "instance_principal".
+# "instance_principal" uses IMDS-based credentials and requires no credential fields;
+# it is the recommended method when Prometheus runs on OCI compute.
+[ auth: <string> | default = "api_key" ]
+
+# API key auth fields. Required when auth is "api_key".
+[ tenancy: <string> ]
+[ user: <string> ]
+[ fingerprint: <string> ]
+[ key_file: <string> ]
+# Passphrase for the private key. Mutually exclusive with key_passphrase_file.
+[ key_passphrase: <secret> ]
+# Path to a file containing the passphrase for the private key. Mutually
+# exclusive with key_passphrase. The file is read at configuration load
+# time; rotating the file requires reloading Prometheus.
+[ key_passphrase_file: <string> ]
+
+# OCI region identifier. Required.
+region: <string>
+
+# Explicit list of compartment OCIDs to scan. When empty, all active
+# compartments reachable from the tenancy root are discovered automatically
+# via the OCI Identity API using a breadth-first walk. Compartments that
+# cannot be listed due to missing permissions are skipped with a warning so
+# that a single permission gap does not abort the walk.
+[ compartments:
+  [ - <string> ... ] ]
+
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth`, `authorization`, and `oauth2` options are
+# mutually exclusive. `password` and `password_file` are mutually exclusive.
+# It is mostly useful to configure `proxy_url`, `tls_config`, and the
+# underlying HTTP transport when targeting OCI through a corporate proxy
+# or with a custom CA bundle.
+# Optional HTTP basic authentication information, currently not supported by OCI.
+[ basic_auth: <basic_auth> ]
+# Optional `Authorization` header configuration, currently not supported by OCI.
+[ authorization: <authorization> ]
+# Optional OAuth 2.0 configuration, currently not supported by OCI.
+[ oauth2: <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+
+# Configures the TLS settings.
+tls_config:
+  [ <tls_config> ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# The time after which the instances are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
 ```
 
 ### `<serverset_sd_config>`
@@ -3405,7 +3567,9 @@ Initially, aside from the configured per-target labels, a target's `job`
 label is set to the `job_name` value of the respective scrape configuration.
 
 You can also use special labels like `__address__`, `__scheme__`, `__metrics_path__`,
-`__scrape_interval__`, `__scrape_timeout__` to customize the defined targets. These will
+`__scrape_interval__`, `__scrape_timeout__`, `__convert_classic_histograms_to_nhcb__`,
+`__always_scrape_classic_histograms__`, `__scrape_native_histograms__`
+to customize the defined targets. These will
 override the respective settings in the scrape configuration.
 
 The `__address__` label is set to the `<host>:<port>` address of the target.
@@ -3420,6 +3584,26 @@ label is set to the value of the first passed URL parameter called `<name>`, as 
 
 The `__scrape_interval__` and `__scrape_timeout__` labels are set to the target's
 interval and timeout, as specified in `scrape_config`.
+
+The `__convert_classic_histograms_to_nhcb__` label is set to the target's
+`convert_classic_histograms_to_nhcb` value, as specified in `scrape_config`
+(defaulting to the configured global). Setting it during relabeling overrides,
+per target, whether classic histograms are converted to native histograms with
+custom buckets. Its value must parse as a boolean; a target with an invalid
+value is dropped.
+
+The `__always_scrape_classic_histograms__` label is set to the target's
+`always_scrape_classic_histograms` value, as specified in `scrape_config`
+(defaulting to the configured global). Setting it during relabeling overrides,
+per target, whether a classic histogram is also ingested when it is exposed as
+a native histogram. Its value must parse as a boolean; a target with an invalid
+value is dropped.
+
+The `__scrape_native_histograms__` label is set to the target's
+`scrape_native_histograms` value, as specified in `scrape_config` (defaulting to
+the configured global). Setting it during relabeling overrides, per target,
+whether native histograms are scraped. Its value must parse as a boolean; a
+target with an invalid value is dropped.
 
 Additional labels prefixed with `__meta_` may be available during the
 relabeling phase. They are set by the service discovery mechanism that provided
@@ -3644,6 +3828,10 @@ nerve_sd_configs:
 nomad_sd_configs:
   [ - <nomad_sd_config> ... ]
 
+# List of OCI service discovery configurations.
+oci_sd_configs:
+  [ - <oci_sd_config> ... ]
+
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
@@ -3801,6 +3989,18 @@ azuread:
       [ client_secret: <string> ]
       [ tenant_id: <string> ] ]
 
+  # Azure Certificate-based authentication.
+  [ certificate:
+      client_id: <string>
+      tenant_id: <string>
+      certificate_path: <file_name>
+      # Optional path to private key file if separate from certificate
+      [ certificate_key_path: <file_name> ]
+      # Optional password for password-protected certificate files (PFX/PKCS12)
+      [ certificate_password: <secret> ]
+      # Whether to send the certificate chain in the x5c header
+      [ send_certificate_chain: <boolean> | default = false ] ]
+
   # Azure SDK auth.
   # See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
   [ sdk:
@@ -3947,6 +4147,25 @@ with this feature.
 # This is an experimental feature, this behaviour could change or be removed in the future.
 [ stale_series_compaction_threshold: <float> | default = 0 ]
 
+# Configures the float chunk encoding to use for new chunks.
+# Valid values are 'xor' and 'xor2'. When absent, the encoding follows the
+# --enable-feature=xor2-encoding flag: 'xor2' if the flag is set, 'xor' otherwise.
+# Setting 'xor' forces standard XOR encoding even when --enable-feature=xor2-encoding is set.
+# Setting 'xor2' is only valid when --enable-feature=xor2-encoding is set;
+# Prometheus will refuse to reload if 'xor2' is set without the feature flag.
+# Setting 'xor' is incompatible with --enable-feature=st-storage (XOR chunks do not store
+# start timestamps); Prometheus will refuse to reload in that case too.
+# Omitting 'floats' (or the entire 'chunk_encoding' field) is equivalent; the encoding
+# follows the --enable-feature=xor2-encoding flag.
+# This field is runtime-reloadable.
+# When --enable-feature=st-storage is disabled, XOR and XOR2 are compatible
+# encodings and in-progress chunks are not cut on an encoding change; the new
+# encoding takes effect when the current chunk is next cut for any reason (size, time range, or sample count).
+# When --enable-feature=st-storage is enabled, XOR and XOR2 are not compatible
+# (XOR chunks do not store start timestamps), so an in-progress chunk is cut
+# on the next append after the encoding changes.
+[ chunk_encoding:
+  [ floats: <string> ] ]
 
 # Configures data retention settings for TSDB.
 #

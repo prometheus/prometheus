@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"math/rand"
 	"os"
@@ -29,6 +30,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -171,6 +173,78 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 	require.NoError(t, err)
 
 	c.plan(metas)
+}
+
+// staleMetaRange is like metaRange but tags the block with the from-stale-series hint.
+func staleMetaRange(name string, mint, maxt int64) dirMeta {
+	dm := metaRange(name, mint, maxt, nil)
+	dm.meta.Compaction.SetStaleSeries()
+	return dm
+}
+
+// TestPlanDoesNotMergeStaleAndNonStaleBlocks verifies that the planner never
+// groups a from-stale-series block with non-stale blocks. Mixing them would
+// drop the hint on the merged block, which would then wrongly count towards
+// inOrderBlocksMaxTime and advance the WAL-replay cutoff past WAL-only data.
+// See https://github.com/prometheus/prometheus/issues/18379.
+func TestPlanDoesNotMergeStaleAndNonStaleBlocks(t *testing.T) {
+	compactor, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{
+		20,
+		60,
+		180,
+	}, nil, nil)
+	require.NoError(t, err)
+
+	t.Run("stale and non-stale in the same range are not merged", func(t *testing.T) {
+		// Two non-stale blocks and one stale block all fall into the same 60-wide
+		// range [0,60). Without segregation the planner would return all three;
+		// with segregation it must only return the two non-stale blocks.
+		metas := []dirMeta{
+			metaRange("1", 0, 20, nil),
+			staleMetaRange("stale", 0, 20),
+			metaRange("2", 20, 40, nil),
+			metaRange("3", 40, 60, nil),
+			// A fresh block so the last (most recent) block is excluded as usual.
+			metaRange("fresh", 60, 80, nil),
+		}
+
+		res, err := compactor.plan(metas)
+		require.NoError(t, err)
+		require.NotContains(t, res, "stale", "stale block must not be merged with non-stale blocks")
+		require.Equal(t, []string{"1", "2", "3"}, res)
+	})
+
+	t.Run("stale blocks are merged together", func(t *testing.T) {
+		// Three stale blocks fill the 60-wide range [0,60) and a fourth stale block
+		// makes that range no longer the most recent, so the three are compacted
+		// together: stale data still gets compacted, just never mixed with non-stale.
+		metas := []dirMeta{
+			staleMetaRange("s1", 0, 20),
+			staleMetaRange("s2", 20, 40),
+			staleMetaRange("s3", 40, 60),
+			staleMetaRange("s4", 60, 80),
+		}
+
+		res, err := compactor.plan(metas)
+		require.NoError(t, err)
+		require.Equal(t, []string{"s1", "s2", "s3"}, res)
+	})
+
+	t.Run("stale blocks are planned when there is nothing to do for non-stale", func(t *testing.T) {
+		// A single non-stale block (nothing to merge) plus a full stale range.
+		// The non-stale class yields nothing, so the stale class must be planned.
+		metas := []dirMeta{
+			metaRange("1", 0, 20, nil),
+			staleMetaRange("s1", 0, 20),
+			staleMetaRange("s2", 20, 40),
+			staleMetaRange("s3", 40, 60),
+			staleMetaRange("s4", 60, 80),
+		}
+
+		res, err := compactor.plan(metas)
+		require.NoError(t, err)
+		require.Equal(t, []string{"s1", "s2", "s3"}, res)
+	})
 }
 
 func TestLeveledCompactor(t *testing.T) {
@@ -1312,6 +1386,150 @@ func BenchmarkCompactionFromOOOHead(b *testing.B) {
 	}
 }
 
+// setupDBForSelectedSeriesBenchmark opens a fresh DB whose head contains
+// totalSeries series, each with samplesPerSeries in-order samples confined to
+// a single 1s head chunk range. It returns the DB and the head series
+// refs in append order.
+//
+// Auto-compaction is disabled so the benchmark observes exactly the state
+// produced by this helper. The caller owns the returned DB and must close it.
+//
+// The helper is shared by BenchmarkCompactSelectedSeries and the upcoming
+// filterSeriesAndSortPostings benchmark, so it does not assume which entry
+// point will use the setup.
+func setupDBForSelectedSeriesBenchmark(tb testing.TB, totalSeries, samplesPerSeries int) (*DB, []storage.SeriesRef) {
+	require.Positive(tb, samplesPerSeries, "samplesPerSeries must be > 0")
+	require.LessOrEqual(tb, samplesPerSeries, 1000, "samples must fit one head chunk range (1000 ms)")
+
+	opts := DefaultOptions()
+	opts.MinBlockDuration = 1000
+	opts.MaxBlockDuration = 1000
+	db, err := Open(tb.TempDir(), nil, nil, opts, nil)
+	require.NoError(tb, err)
+	db.DisableCompactions()
+
+	const appendBatch = 10_000
+	refs := make([]storage.SeriesRef, 0, totalSeries)
+	app := db.Appender(context.Background())
+	for i := range totalSeries {
+		lbls := labels.FromStrings("__name__", "metric", "instance", strconv.Itoa(i))
+		var ref storage.SeriesRef
+		for ts := int64(0); ts < int64(samplesPerSeries); ts++ {
+			ref, err = app.Append(ref, lbls, ts, float64(ts))
+			require.NoError(tb, err)
+		}
+		refs = append(refs, ref)
+		if (i+1)%appendBatch == 0 {
+			require.NoError(tb, app.Commit())
+			app = db.Appender(context.Background())
+		}
+	}
+	require.NoError(tb, app.Commit())
+	return db, refs
+}
+
+// pickRefsEvenly returns count refs sampled at approximately even intervals
+// across refs. This distributes the selected refs over the full input range
+// rather than clustering them, which is useful for benchmarks that want
+// postings intersections to scan most of the postings list.
+func pickRefsEvenly(refs []storage.SeriesRef, count int) []storage.SeriesRef {
+	if count >= len(refs) {
+		out := make([]storage.SeriesRef, len(refs))
+		copy(out, refs)
+		return out
+	}
+	out := make([]storage.SeriesRef, 0, count)
+	step := float64(len(refs)) / float64(count)
+	for i := range count {
+		out = append(out, refs[int(float64(i)*step)])
+	}
+	return out
+}
+
+// BenchmarkCompactSelectedSeries measures the end-to-end cost of compacting a
+// selected subset of head series into blocks and evicting them from the head.
+//
+// The benchmark keeps the head size fixed and varies the selected fraction
+// (100%, 50%, 30%, 10%, 1%, and 0.1%). A 100% selection approximates the
+// workload of CompactStaleHead, while smaller fractions measure how much work
+// is avoided when SelectedSeriesHead restricts compaction to a small subset of
+// series.
+//
+// Each iteration rebuilds the DB because CompactSelectedSeries is destructive:
+// selected series are evicted from the head and cannot be reused by subsequent
+// iterations.
+//
+// Each series contains DefaultSamplesPerChunk samples, matching the TSDB's
+// target chunk size so chunk-writing costs are representative of production
+// workloads rather than degenerate single-sample chunks.
+func BenchmarkCompactSelectedSeries(b *testing.B) {
+	const (
+		totalSeries      = 100_000
+		samplesPerSeries = DefaultSamplesPerChunk
+	)
+	fractions := []float64{1.0, 0.5, 0.3, 0.1, 0.01, 0.001}
+
+	for _, fraction := range fractions {
+		selectedCount := max(1, int(float64(totalSeries)*fraction))
+		b.Run(fmt.Sprintf("totalSeries=%d/selectedSeries=%d", totalSeries, selectedCount), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				b.StopTimer()
+				db, allRefs := setupDBForSelectedSeriesBenchmark(b, totalSeries, samplesPerSeries)
+				selectedRefs := pickRefsEvenly(allRefs, selectedCount)
+				b.StartTimer()
+
+				require.NoError(b, db.CompactSelectedSeries(selectedRefs))
+
+				b.StopTimer()
+				require.NoError(b, db.Close())
+				b.StartTimer()
+			}
+		})
+	}
+}
+
+// BenchmarkFilterSeriesAndSortPostings measures the cost of
+// Head.filterSeriesAndSortPostings under the isSeriesWithoutOOO predicate.
+// This is the filtering step performed by CompactSelectedSeries while holding
+// db.cmtx, before invoking compactHeadViewLocked.
+//
+// The operation is O(N log N) in the number of candidate refs and is a likely
+// contributor to the fixed-cost floor observed at low selectivity in
+// BenchmarkCompactSelectedSeries.
+//
+// The benchmark varies the input size as a fraction of a fixed head size,
+// mirroring BenchmarkCompactSelectedSeries so the results can be compared
+// directly. The head is built once per sub-benchmark because the function is
+// non-destructive.
+//
+// samplesPerSeries matches BenchmarkCompactSelectedSeries for setup
+// consistency, although the filter only examines series-level state and is
+// insensitive to its value.
+func BenchmarkFilterSeriesAndSortPostings(b *testing.B) {
+	const (
+		totalSeries      = 100_000
+		samplesPerSeries = DefaultSamplesPerChunk
+	)
+	fractions := []float64{1.0, 0.5, 0.3, 0.1, 0.01, 0.001}
+
+	for _, fraction := range fractions {
+		inputCount := max(1, int(float64(totalSeries)*fraction))
+		b.Run(fmt.Sprintf("totalSeries=%d/inputSeries=%d", totalSeries, inputCount), func(b *testing.B) {
+			db, allRefs := setupDBForSelectedSeriesBenchmark(b, totalSeries, samplesPerSeries)
+			b.Cleanup(func() { require.NoError(b, db.Close()) })
+			inputRefs := pickRefsEvenly(allRefs, inputCount)
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for b.Loop() {
+				_, err := db.head.filterSeriesAndSortPostings(index.NewListPostings(inputRefs), isSeriesWithoutOOO)
+				require.NoError(b, err)
+			}
+		})
+	}
+}
+
 // TestDisableAutoCompactions checks that we can
 // disable and enable the auto compaction.
 // This is needed for unit tests that rely on
@@ -1367,69 +1585,76 @@ func TestDisableAutoCompactions(t *testing.T) {
 // TestCancelCompactions ensures that when the db is closed
 // any running compaction is cancelled to unblock closing the db.
 func TestCancelCompactions(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		compactionStarted := make(chan struct{})
+		compactionCanceled := make(chan struct{})
+
+		opts := DefaultOptions()
+		opts.NewCompactorFunc = func(ctx context.Context, _ prometheus.Registerer, _ *slog.Logger, _ []int64, _ chunkenc.Pool, _ *Options) (Compactor, error) {
+			return &mockCompactorFn{
+				planFn: func() ([]string, error) {
+					return []string{"block-a", "block-b"}, nil
+				},
+				compactFn: func() ([]ulid.ULID, error) {
+					close(compactionStarted)
+					<-ctx.Done()
+					close(compactionCanceled)
+					return nil, ctx.Err()
+				},
+				// writeFn is unused: this test never reaches the head, OOO,
+				// or stale-series compaction paths that would call Write.
+				writeFn: func() ([]ulid.ULID, error) {
+					return nil, nil
+				},
+			}, nil
+		}
+		db := newTestDB(t, withOpts(opts))
+
+		db.compactc <- struct{}{}
+		<-compactionStarted
+
+		require.NoError(t, db.Close())
+		<-compactionCanceled
+
+		// Wrapped context.Canceled must not be counted as a real compaction
+		// failure (verifies errors.Is at every level of the chain).
+		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed))
+	})
+}
+
+type blockPopulatorFunc func(context.Context, *CompactorMetrics, *slog.Logger, chunkenc.Pool, storage.VerticalChunkSeriesMergeFunc, []BlockReader, *BlockMeta, IndexWriter, ChunkWriter, IndexReaderPostingsFunc) error
+
+func (f blockPopulatorFunc) PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger *slog.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter, postingsFunc IndexReaderPostingsFunc) error {
+	return f(ctx, metrics, logger, chunkPool, mergeFunc, blocks, meta, indexw, chunkw, postingsFunc)
+}
+
+// TestCanceledCompactionDoesNotMarkBlocksFailed ensures that a compaction
+// aborted via context cancellation does not mark its source blocks as
+// Compaction.Failed. The context.Canceled error must be detected with
+// errors.Is so wrapped values are still recognized at every level.
+func TestCanceledCompactionDoesNotMarkBlocksFailed(t *testing.T) {
 	t.Parallel()
+
 	tmpdir := t.TempDir()
+	blockDirs := []string{
+		createBlock(t, tmpdir, genSeries(1, 1, 0, 100)),
+		createBlock(t, tmpdir, genSeries(1, 1, 100, 200)),
+	}
 
-	// Create some blocks to fall within the compaction range.
-	createBlock(t, tmpdir, genSeries(1, 10000, 0, 1000))
-	createBlock(t, tmpdir, genSeries(1, 10000, 1000, 2000))
-	createBlock(t, tmpdir, genSeries(1, 1, 2000, 2001)) // The most recent block is ignored so can be e small one.
-
-	// Copy the db so we have an exact copy to compare compaction times.
-	tmpdirCopy := t.TempDir()
-	err := fileutil.CopyDirs(tmpdir, tmpdirCopy)
+	compactor, err := NewLeveledCompactor(t.Context(), nil, promslog.NewNopLogger(), []int64{200}, nil, nil)
 	require.NoError(t, err)
 
-	// Measure the compaction time without interrupting it.
-	var timeCompactionUninterrupted time.Duration
-	{
-		db, err := open(tmpdir, promslog.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
+	_, err = compactor.CompactWithBlockPopulator(tmpdir, blockDirs, nil, blockPopulatorFunc(
+		func(context.Context, *CompactorMetrics, *slog.Logger, chunkenc.Pool, storage.VerticalChunkSeriesMergeFunc, []BlockReader, *BlockMeta, IndexWriter, ChunkWriter, IndexReaderPostingsFunc) error {
+			return context.Canceled
+		},
+	))
+	require.ErrorIs(t, err, context.Canceled)
+
+	for _, dir := range blockDirs {
+		meta, _, err := readMetaFile(dir)
 		require.NoError(t, err)
-		require.Len(t, db.Blocks(), 3, "initial block count mismatch")
-		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial compaction counter mismatch")
-		db.compactc <- struct{}{} // Trigger a compaction.
-		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.PopulatingBlocks) <= 0 {
-			time.Sleep(3 * time.Millisecond)
-		}
-
-		start := time.Now()
-		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran) != 1 {
-			time.Sleep(3 * time.Millisecond)
-		}
-		timeCompactionUninterrupted = time.Since(start)
-
-		require.NoError(t, db.Close())
-	}
-	// Measure the compaction time when closing the db in the middle of compaction.
-	{
-		db, err := open(tmpdirCopy, promslog.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
-		require.NoError(t, err)
-		require.Len(t, db.Blocks(), 3, "initial block count mismatch")
-		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial compaction counter mismatch")
-		db.compactc <- struct{}{} // Trigger a compaction.
-
-		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.PopulatingBlocks) <= 0 {
-			time.Sleep(3 * time.Millisecond)
-		}
-
-		start := time.Now()
-		require.NoError(t, db.Close())
-		actT := time.Since(start)
-
-		expT := timeCompactionUninterrupted / 2 // Closing the db in the middle of compaction should less than half the time.
-		require.Less(t, actT, expT, "closing the db took more than expected. exp: <%v, act: %v", expT, actT)
-
-		// Make sure that no blocks were marked as compaction failed.
-		// This checks that the `context.Canceled` error is properly checked at all levels:
-		// - callers should check with errors.Is() instead of ==.
-		readOnlyDB, err := OpenDBReadOnly(tmpdirCopy, "", promslog.NewNopLogger())
-		require.NoError(t, err)
-		blocks, err := readOnlyDB.Blocks()
-		require.NoError(t, err)
-		for i, b := range blocks {
-			require.Falsef(t, b.Meta().Compaction.Failed, "block %d (%s) should not be marked as compaction failed", i, b.Meta().ULID)
-		}
-		require.NoError(t, readOnlyDB.Close())
+		require.Falsef(t, meta.Compaction.Failed, "block %s should not be marked as compaction failed", meta.ULID)
 	}
 }
 
@@ -1956,6 +2181,98 @@ func TestCompactBlockMetas(t *testing.T) {
 		},
 	}
 	require.Equal(t, expected, output)
+}
+
+// TestCompactBlockMetasHints verifies that CompactBlockMetas propagates the
+// compaction hints to the merged block: the from-stale-series hint is kept when
+// any source carries it (the planner only ever groups stale with stale), and the
+// from-out-of-order hint is kept only when every source carries it (out-of-order
+// blocks may be co-compacted with in-order blocks). Dropping either hint would
+// wrongly advance inOrderBlocksMaxTime. See #18379.
+func TestCompactBlockMetasHints(t *testing.T) {
+	parent1 := ulid.MustNew(100, nil)
+	parent2 := ulid.MustNew(200, nil)
+	outUlid := ulid.MustNew(1000, nil)
+
+	staleMeta := func(u ulid.ULID) *BlockMeta {
+		m := &BlockMeta{ULID: u, MinTime: 0, MaxTime: 1000, Compaction: BlockMetaCompaction{Level: 1}}
+		m.Compaction.SetStaleSeries()
+		return m
+	}
+	oooMeta := func(u ulid.ULID) *BlockMeta {
+		m := &BlockMeta{ULID: u, MinTime: 0, MaxTime: 1000, Compaction: BlockMetaCompaction{Level: 1}}
+		m.Compaction.SetOutOfOrder()
+		return m
+	}
+	plainMeta := func(u ulid.ULID) *BlockMeta {
+		return &BlockMeta{ULID: u, MinTime: 0, MaxTime: 1000, Compaction: BlockMetaCompaction{Level: 1}}
+	}
+
+	// staleOOOMeta is a single source carrying BOTH the from-stale-series and the
+	// from-out-of-order hints at once.
+	staleOOOMeta := func(u ulid.ULID) *BlockMeta {
+		m := &BlockMeta{ULID: u, MinTime: 0, MaxTime: 1000, Compaction: BlockMetaCompaction{Level: 1}}
+		m.Compaction.SetStaleSeries()
+		m.Compaction.SetOutOfOrder()
+		return m
+	}
+
+	t.Run("single source carrying both hints keeps both", func(t *testing.T) {
+		// One source with both hints: stale survives by any-source semantics, and
+		// out-of-order survives because the single (only) source is out-of-order, so
+		// every source is out-of-order.
+		out := CompactBlockMetas(outUlid, staleOOOMeta(parent1))
+		require.True(t, out.Compaction.FromStaleSeries(), "merged block must keep the from-stale-series hint")
+		require.True(t, out.Compaction.FromOutOfOrder(), "merged block must keep the from-out-of-order hint when the only source is out-of-order")
+	})
+
+	t.Run("stale+ooo source with an ooo-only source keeps both", func(t *testing.T) {
+		// Stale survives by any-source semantics; out-of-order survives because
+		// every source (one stale+ooo, one ooo-only) is out-of-order.
+		out := CompactBlockMetas(outUlid, staleOOOMeta(parent1), oooMeta(parent2))
+		require.True(t, out.Compaction.FromStaleSeries(), "merged block must keep the from-stale-series hint when any source is stale")
+		require.True(t, out.Compaction.FromOutOfOrder(), "merged block must keep the from-out-of-order hint when every source is out-of-order")
+	})
+
+	t.Run("stale+ooo source with a plain source keeps stale and drops ooo", func(t *testing.T) {
+		// Stale survives by any-source semantics; out-of-order is dropped because the
+		// plain source is in-order, so not every source is out-of-order.
+		out := CompactBlockMetas(outUlid, staleOOOMeta(parent1), plainMeta(parent2))
+		require.True(t, out.Compaction.FromStaleSeries(), "merged block must keep the from-stale-series hint when any source is stale")
+		require.False(t, out.Compaction.FromOutOfOrder(), "merged block must drop the from-out-of-order hint when a source is in-order")
+	})
+
+	t.Run("stale hint is preserved when a source is stale", func(t *testing.T) {
+		out := CompactBlockMetas(outUlid, staleMeta(parent1), staleMeta(parent2))
+		require.True(t, out.Compaction.FromStaleSeries(), "merged block must keep the from-stale-series hint")
+		require.False(t, out.Compaction.FromOutOfOrder())
+	})
+
+	t.Run("out-of-order hint is preserved when all sources are out-of-order", func(t *testing.T) {
+		out := CompactBlockMetas(outUlid, oooMeta(parent1), oooMeta(parent2))
+		require.True(t, out.Compaction.FromOutOfOrder(), "merged block must keep the from-out-of-order hint when all sources are out-of-order")
+		require.False(t, out.Compaction.FromStaleSeries())
+	})
+
+	t.Run("out-of-order hint is dropped when mixed with in-order", func(t *testing.T) {
+		out := CompactBlockMetas(outUlid, oooMeta(parent1), plainMeta(parent2))
+		require.False(t, out.Compaction.FromOutOfOrder(), "merged block must drop the from-out-of-order hint when it also contains in-order data")
+	})
+
+	t.Run("stale kept and out-of-order dropped when sources mix stale and out-of-order", func(t *testing.T) {
+		// Stale uses any-source semantics, so the stale hint survives; out-of-order
+		// uses all-sources semantics, so a mix of stale and out-of-order is not all
+		// out-of-order and the out-of-order hint is dropped.
+		out := CompactBlockMetas(outUlid, staleMeta(parent1), oooMeta(parent2))
+		require.True(t, out.Compaction.FromStaleSeries(), "merged block must keep the from-stale-series hint when any source is stale")
+		require.False(t, out.Compaction.FromOutOfOrder(), "merged block must drop the from-out-of-order hint when not every source is out-of-order")
+	})
+
+	t.Run("no hint when no source carries one", func(t *testing.T) {
+		out := CompactBlockMetas(outUlid, plainMeta(parent1), plainMeta(parent2))
+		require.False(t, out.Compaction.FromStaleSeries())
+		require.False(t, out.Compaction.FromOutOfOrder())
+	})
 }
 
 func TestCompactEmptyResultBlockWithTombstone(t *testing.T) {

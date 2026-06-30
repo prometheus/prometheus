@@ -55,6 +55,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestEC2DiscoveryRefreshAZIDs(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// iterate through the test cases
@@ -99,16 +100,18 @@ func TestEC2DiscoveryRefreshAZIDs(t *testing.T) {
 }
 
 func TestEC2DiscoveryRefresh(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// iterate through the test cases
 	for _, tt := range []struct {
 		name     string
 		ec2Data  *ec2DataStore
+		filters  []*Filter
 		expected []*targetgroup.Group
 	}{
 		{
-			name: "NoPrivateIp",
+			name: "NoPrivateIpOrIpv6",
 			ec2Data: &ec2DataStore{
 				region: "region-noprivateip",
 				azToAZID: map[string]string{
@@ -351,6 +354,7 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 							"__meta_ec2_instance_type":          model.LabelValue("instance-type-ipv6"),
 							"__meta_ec2_ipv6_addresses":         model.LabelValue(",2001:db8:2::1:1,2001:db8:2::2:1,2001:db8:2::2:2,2001:db8:2::3:1,"),
 							"__meta_ec2_owner_id":               model.LabelValue(""),
+							"__meta_ec2_default_ipv6_address":   model.LabelValue("2001:db8:2::2:2"),
 							"__meta_ec2_primary_ipv6_addresses": model.LabelValue(",,2001:db8:2::2:2,,2001:db8:2::3:1,"),
 							"__meta_ec2_primary_subnet_id":      model.LabelValue("azid-2"),
 							"__meta_ec2_private_ip":             model.LabelValue("9.10.11.12"),
@@ -362,6 +366,145 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "Ipv6-Only",
+			ec2Data: &ec2DataStore{
+				region: "region-ipv6-only",
+				azToAZID: map[string]string{
+					"azname-a": "azid-1",
+					"azname-b": "azid-2",
+					"azname-c": "azid-3",
+				},
+
+				instances: []ec2Types.Instance{
+					{
+						// just the minimum needed for the refresh work
+						ImageId:      strptr("ami-ipv6-only"),
+						InstanceId:   strptr("instance-id-ipv6-only"),
+						InstanceType: "instance-type-ipv6-only",
+						Placement:    &ec2Types.Placement{AvailabilityZone: strptr("azname-b")},
+						State:        &ec2Types.InstanceState{Name: "running"},
+						SubnetId:     strptr("azid-2"),
+						VpcId:        strptr("vpc-ipv6-only"),
+						// network interfaces
+						NetworkInterfaces: []ec2Types.InstanceNetworkInterface{
+							// interface without primary IPv6, index 0
+							{
+								Attachment: &ec2Types.InstanceNetworkInterfaceAttachment{
+									DeviceIndex: aws.Int32(0),
+								},
+								Ipv6Addresses: []ec2Types.InstanceIpv6Address{
+									{
+										Ipv6Address:   strptr("2001:db8:2::1:1"),
+										IsPrimaryIpv6: boolptr(false),
+									},
+								},
+								SubnetId: strptr("azid-2"),
+							},
+						},
+					},
+				},
+			},
+			expected: []*targetgroup.Group{
+				{
+					Source: "region-ipv6-only",
+					Targets: []model.LabelSet{
+						{
+							"__address__":                     model.LabelValue("[2001:db8:2::1:1]:4242"),
+							"__meta_ec2_ami":                  model.LabelValue("ami-ipv6-only"),
+							"__meta_ec2_availability_zone":    model.LabelValue("azname-b"),
+							"__meta_ec2_availability_zone_id": model.LabelValue("azid-2"),
+							"__meta_ec2_instance_id":          model.LabelValue("instance-id-ipv6-only"),
+							"__meta_ec2_instance_state":       model.LabelValue("running"),
+							"__meta_ec2_instance_type":        model.LabelValue("instance-type-ipv6-only"),
+							"__meta_ec2_ipv6_addresses":       model.LabelValue(",2001:db8:2::1:1,"),
+							"__meta_ec2_owner_id":             model.LabelValue(""),
+							"__meta_ec2_default_ipv6_address": model.LabelValue("2001:db8:2::1:1"),
+							"__meta_ec2_primary_subnet_id":    model.LabelValue("azid-2"),
+							"__meta_ec2_region":               model.LabelValue("region-ipv6-only"),
+							"__meta_ec2_subnet_id":            model.LabelValue(",azid-2,"),
+							"__meta_ec2_vpc_id":               model.LabelValue("vpc-ipv6-only"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "FiltersMatchSingleInstance",
+			ec2Data: &ec2DataStore{
+				region: "region-filter-match",
+				azToAZID: map[string]string{
+					"azname-a": "azid-1",
+				},
+				instances: []ec2Types.Instance{
+					{
+						ImageId:          strptr("ami-filter-1"),
+						InstanceId:       strptr("instance-filter-1"),
+						InstanceType:     "instance-type-filter",
+						Placement:        &ec2Types.Placement{AvailabilityZone: strptr("azname-a")},
+						PrivateIpAddress: strptr("10.0.0.1"),
+						State:            &ec2Types.InstanceState{Name: "running"},
+					},
+					{
+						ImageId:          strptr("ami-filter-2"),
+						InstanceId:       strptr("instance-filter-2"),
+						InstanceType:     "instance-type-filter",
+						Placement:        &ec2Types.Placement{AvailabilityZone: strptr("azname-a")},
+						PrivateIpAddress: strptr("10.0.0.2"),
+						State:            &ec2Types.InstanceState{Name: "stopped"},
+					},
+				},
+			},
+			filters: []*Filter{{Name: "instance-state-name", Values: []string{"running"}}},
+			expected: []*targetgroup.Group{
+				{
+					Source: "region-filter-match",
+					Targets: []model.LabelSet{
+						{
+							"__address__":                     model.LabelValue("10.0.0.1:4242"),
+							"__meta_ec2_ami":                  model.LabelValue("ami-filter-1"),
+							"__meta_ec2_availability_zone":    model.LabelValue("azname-a"),
+							"__meta_ec2_availability_zone_id": model.LabelValue("azid-1"),
+							"__meta_ec2_instance_id":          model.LabelValue("instance-filter-1"),
+							"__meta_ec2_instance_state":       model.LabelValue("running"),
+							"__meta_ec2_instance_type":        model.LabelValue("instance-type-filter"),
+							"__meta_ec2_owner_id":             model.LabelValue(""),
+							"__meta_ec2_private_ip":           model.LabelValue("10.0.0.1"),
+							"__meta_ec2_region":               model.LabelValue("region-filter-match"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "FiltersMatchNoInstances",
+			ec2Data: &ec2DataStore{
+				region: "region-filter-none",
+				azToAZID: map[string]string{
+					"azname-a": "azid-1",
+				},
+				instances: []ec2Types.Instance{
+					{
+						ImageId:          strptr("ami-filter-1"),
+						InstanceId:       strptr("instance-filter-1"),
+						InstanceType:     "instance-type-filter",
+						Placement:        &ec2Types.Placement{AvailabilityZone: strptr("azname-a")},
+						PrivateIpAddress: strptr("10.0.1.1"),
+						State:            &ec2Types.InstanceState{Name: "running"},
+					},
+					{
+						ImageId:          strptr("ami-filter-2"),
+						InstanceId:       strptr("instance-filter-2"),
+						InstanceType:     "instance-type-filter",
+						Placement:        &ec2Types.Placement{AvailabilityZone: strptr("azname-a")},
+						PrivateIpAddress: strptr("10.0.1.2"),
+						State:            &ec2Types.InstanceState{Name: "stopped"},
+					},
+				},
+			},
+			filters:  []*Filter{{Name: "instance-state-name", Values: []string{"terminated"}}},
+			expected: []*targetgroup.Group{{Source: "region-filter-none"}},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			client := newMockEC2Client(tt.ec2Data)
@@ -369,8 +512,9 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 			d := &EC2Discovery{
 				ec2: client,
 				cfg: &EC2SDConfig{
-					Port:   4242,
-					Region: client.ec2Data.region,
+					Port:    4242,
+					Region:  client.ec2Data.region,
+					Filters: tt.filters,
 				},
 			}
 
@@ -414,9 +558,31 @@ func (m *mockEC2Client) DescribeAvailabilityZones(context.Context, *ec2.Describe
 	}, nil
 }
 
-func (m *mockEC2Client) DescribeInstances(_ context.Context, _ *ec2.DescribeInstancesInput, _ ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+func (m *mockEC2Client) DescribeInstances(_ context.Context, input *ec2.DescribeInstancesInput, _ ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+	allowedStates := map[string]struct{}{}
+	hasStateFilter := false
+	for _, f := range input.Filters {
+		if f.Name == nil || *f.Name != "instance-state-name" {
+			continue
+		}
+		hasStateFilter = true
+		for _, v := range f.Values {
+			allowedStates[v] = struct{}{}
+		}
+	}
+
 	r := ec2Types.Reservation{}
-	r.Instances = append(r.Instances, m.ec2Data.instances...)
+	for _, inst := range m.ec2Data.instances {
+		if hasStateFilter {
+			if inst.State == nil {
+				continue
+			}
+			if _, ok := allowedStates[string(inst.State.Name)]; !ok {
+				continue
+			}
+		}
+		r.Instances = append(r.Instances, inst)
+	}
 	r.OwnerId = aws.String(m.ec2Data.ownerID)
 
 	o := ec2.DescribeInstancesOutput{}

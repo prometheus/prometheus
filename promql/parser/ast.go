@@ -487,7 +487,7 @@ func (e *BinaryExpr) PositionRange() posrange.PositionRange {
 }
 
 func (e *DurationExpr) PositionRange() posrange.PositionRange {
-	if e.Op == STEP || e.Op == RANGE {
+	if e.RHS == nil && e.LHS == nil {
 		return posrange.PositionRange{
 			Start: e.StartPos,
 			End:   e.EndPos,
@@ -496,7 +496,7 @@ func (e *DurationExpr) PositionRange() posrange.PositionRange {
 	if e.RHS == nil {
 		return posrange.PositionRange{
 			Start: e.StartPos,
-			End:   e.RHS.PositionRange().End,
+			End:   e.LHS.PositionRange().End,
 		}
 	}
 	if e.LHS == nil {

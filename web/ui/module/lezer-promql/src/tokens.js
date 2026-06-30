@@ -20,7 +20,6 @@ import {
   By,
   Count,
   CountValues,
-  End,
   Group,
   GroupLeft,
   GroupRight,
@@ -35,13 +34,16 @@ import {
   Quantile,
   LimitK,
   LimitRatio,
-  Start,
+  StartFn,
+  EndFn,
   Stddev,
   Stdvar,
   Sum,
   Topk,
   Unless,
   Without,
+  AtEnd,
+  AtStart,
   Smoothed,
   Anchored,
   Fill,
@@ -85,8 +87,6 @@ const contextualKeywordTokens = {
   and: And,
   or: Or,
   unless: Unless,
-  start: Start,
-  end: End,
   smoothed: Smoothed,
   anchored: Anchored,
   fill: Fill,
@@ -95,5 +95,23 @@ const contextualKeywordTokens = {
 };
 
 export const extendIdentifier = (value, stack) => {
-  return contextualKeywordTokens[value.toLowerCase()] || -1;
+  if (value === "start" && stack.canShift(StartFn)) {
+    return StartFn;
+  }
+  if (value === "end" && stack.canShift(EndFn)) {
+    return EndFn;
+  }
+  if (value.toLowerCase() === "start" && stack.canShift(AtStart)) {
+    return AtStart;
+  }
+  if (value.toLowerCase() === "end" && stack.canShift(AtEnd)) {
+    return AtEnd;
+  }
+
+  const token = contextualKeywordTokens[value.toLowerCase()];
+  if (token !== undefined && stack.canShift(token)) {
+    return token;
+  }
+
+  return -1;
 };

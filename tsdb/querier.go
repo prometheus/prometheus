@@ -46,6 +46,8 @@ type blockBaseQuerier struct {
 	mint, maxt int64
 }
 
+var _ storage.Searcher = &blockBaseQuerier{}
+
 func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, error) {
 	indexr, err := b.Index()
 	if err != nil {
@@ -81,9 +83,60 @@ func (q *blockBaseQuerier) LabelValues(ctx context.Context, name string, hints *
 	return res, nil, err
 }
 
-func (q *blockBaseQuerier) LabelNames(ctx context.Context, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *blockBaseQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	res, err := q.index.LabelNames(ctx, matchers...)
-	return res, nil, err
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if hints != nil && hints.Limit > 0 && len(res) > hints.Limit {
+		res = res[:hints.Limit]
+	}
+
+	return res, nil, nil
+}
+
+// SearchLabelNames implements storage.Searcher.
+func (q *blockBaseQuerier) SearchLabelNames(ctx context.Context, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	names, err := q.index.LabelNames(ctx, matchers...)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+
+	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(names, hints), nil)
+}
+
+// SearchLabelValues implements storage.Searcher.
+func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	if hints == nil {
+		hints = &storage.SearchHints{}
+	}
+
+	// Limit pushdown is only correct when natural (ascending) index order
+	// is preserved all the way to the output and no filtering discards
+	// values ahead of the limit.
+	labelHints := &storage.LabelHints{}
+	if hints.OrderBy == storage.OrderByValueAsc && hints.Filter == nil {
+		labelHints.Limit = hints.Limit
+	}
+
+	var (
+		values []string
+		err    error
+	)
+	switch hints.OrderBy {
+	case storage.OrderByScoreDesc:
+		// Score-based sorting happens in ApplySearchHints; avoid the
+		// index-level sort.
+		values, err = q.index.LabelValues(ctx, name, labelHints, matchers...)
+	default:
+		values, err = q.index.SortedLabelValues(ctx, name, labelHints, matchers...)
+	}
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+
+	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(values, hints), nil)
 }
 
 func (q *blockBaseQuerier) Close() error {
@@ -117,11 +170,24 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 	return selectSeriesSet(ctx, sortSeries, hints, ms, q.index, q.chunks, q.tombstones, q.mint, q.maxt)
 }
 
+// chunkCacheToggler is an optional interface implemented by chunk readers that
+// support an in-memory head-chunk cache. The cache is only beneficial for range
+// queries (Step > 0) where every chunk of a series is accessed.
+type chunkCacheToggler interface {
+	EnableChunkCache()
+}
+
 func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms []*labels.Matcher,
 	index IndexReader, chunks ChunkReader, tombstones tombstones.Reader, mint, maxt int64,
 ) storage.SeriesSet {
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
+
+	if hints != nil && hints.Step > 0 {
+		if toggler, ok := chunks.(chunkCacheToggler); ok {
+			toggler.EnableChunkCache()
+		}
+	}
 
 	p, err := PostingsForMatchers(ctx, index, ms...)
 	if err != nil {
@@ -170,6 +236,12 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 ) storage.ChunkSeriesSet {
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
+
+	if hints != nil && hints.Step > 0 {
+		if toggler, ok := chunks.(chunkCacheToggler); ok {
+			toggler.EnableChunkCache()
+		}
+	}
 
 	if hints != nil {
 		mint = hints.Start
@@ -787,7 +859,7 @@ func (p *populateWithDelSeriesIterator) AtT() int64 {
 	return p.curr.AtT()
 }
 
-// AtST TODO(krajorama): test AtST() when chunks support it.
+// AtST TODO(krajorama,ywwg): test AtST() when chunks support it.
 func (p *populateWithDelSeriesIterator) AtST() int64 {
 	return p.curr.AtST()
 }
@@ -986,7 +1058,25 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 		// not capable.
 		st = p.currDelIter.AtST()
 		needTS := st != 0
-		if currentValueType != prevValueType || !hasTS && needTS {
+		// Decide whether to cut a new chunk. The size check inside `if !cutNewChunk`
+		// is reachable only when currentValueType == prevValueType, which excludes
+		// the first iteration (prevValueType == ValNone forces cutNewChunk true),
+		// so currentChunk is non-nil there.
+		cutNewChunk := currentValueType != prevValueType || (!hasTS && needTS)
+		if !cutNewChunk {
+			chunkBytes := len(currentChunk.Bytes())
+			switch currentValueType {
+			case chunkenc.ValFloat:
+				// In the TSDB head we also take into account the number of samples, but here we want to keep it
+				// simple and consistent with histograms. Also the size limit is checked before sample limit in
+				// the head as well.
+				cutNewChunk = chunkBytes > chunkenc.MaxBytesPerXORChunkBeforeAppend
+			case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+				cutNewChunk = chunkBytes > chunkenc.TargetBytesPerHistogramChunk &&
+					currentChunk.NumSamples() > chunkenc.MinSamplesPerHistogramChunk
+			}
+		}
+		if cutNewChunk {
 			if prevValueType != chunkenc.ValNone {
 				p.chunksFromIterable = append(p.chunksFromIterable, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
 			}
@@ -1203,7 +1293,7 @@ func (it *DeletedIterator) AtT() int64 {
 	return it.Iter.AtT()
 }
 
-// AtST TODO(krajorama): test AtST() when chunks support it.
+// AtST TODO(krajorama,ywwg): test AtST() when chunks support it.
 func (it *DeletedIterator) AtST() int64 {
 	return it.Iter.AtST()
 }

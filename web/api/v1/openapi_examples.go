@@ -163,6 +163,58 @@ func labelsPostExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
+// searchMetricNamesPostExamples returns examples for POST /search/metric_names endpoint.
+func searchMetricNamesPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("metricAutocomplete", &base.Example{
+		Summary: "Search metric names for autocomplete",
+		Value: createYAMLNode(map[string]any{
+			"search[]":         []string{"http_req"},
+			"include_metadata": true,
+			"sort_by":          "score",
+			"limit":            20,
+		}),
+	})
+
+	return examples
+}
+
+// searchLabelNamesPostExamples returns examples for POST /search/label_names endpoint.
+func searchLabelNamesPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("labelsForMetric", &base.Example{
+		Summary: "Search label names for a metric",
+		Value: createYAMLNode(map[string]any{
+			"match[]":  []string{"{__name__=\"http_requests_total\"}"},
+			"search[]": []string{"sta"},
+			"sort_by":  "score",
+			"limit":    20,
+		}),
+	})
+
+	return examples
+}
+
+// searchLabelValuesPostExamples returns examples for POST /search/label_values endpoint.
+func searchLabelValuesPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("valuesForLabel", &base.Example{
+		Summary: "Search values for a label",
+		Value: createYAMLNode(map[string]any{
+			"label":    "instance",
+			"match[]":  []string{"up"},
+			"search[]": []string{"909"},
+			"sort_by":  "score",
+			"limit":    10,
+		}),
+	})
+
+	return examples
+}
+
 // seriesPostExamples returns examples for POST /series endpoint.
 func seriesPostExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
@@ -886,6 +938,55 @@ func statusWALReplayResponseExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
+// statusSelfMetricsResponseExamples returns examples for /status/self_metrics response.
+func statusSelfMetricsResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("selfMetrics", &base.Example{
+		Summary: "Prometheus self-instrumentation metrics in ProtoJSON format",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": []map[string]any{
+				{
+					"name": "prometheus_build_info",
+					"help": "A metric with a constant '1' value labeled by version, revision, branch, goversion from which prometheus was built, and the goos and goarch for the build.",
+					"type": "GAUGE",
+					"metric": []map[string]any{
+						{
+							"label": []map[string]string{
+								{"name": "branch", "value": "HEAD"},
+								{"name": "goarch", "value": "amd64"},
+								{"name": "goos", "value": "linux"},
+								{"name": "goversion", "value": "go1.23.0"},
+								{"name": "revision", "value": "abc1234"},
+								{"name": "tags", "value": "netgo,builtinassets,stringlabels"},
+								{"name": "version", "value": "3.0.0"},
+							},
+							"gauge": map[string]any{
+								"value": 1,
+							},
+						},
+					},
+				},
+				{
+					"name": "prometheus_tsdb_head_chunks",
+					"help": "Total number of chunks in the head block.",
+					"type": "GAUGE",
+					"metric": []map[string]any{
+						{
+							"gauge": map[string]any{
+								"value": 1024,
+							},
+						},
+					},
+				},
+			},
+		}),
+	})
+
+	return examples
+}
+
 // deleteSeriesResponseExamples returns examples for /admin/tsdb/delete_series response.
 func deleteSeriesResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
@@ -906,20 +1007,6 @@ func cleanTombstonesResponseExamples() *orderedmap.Map[string, *base.Example] {
 
 	examples.Set("tombstonesCleaned", &base.Example{
 		Summary: "Tombstones cleaned successfully",
-		Value: createYAMLNode(map[string]any{
-			"status": "success",
-		}),
-	})
-
-	return examples
-}
-
-// seriesDeleteResponseExamples returns examples for DELETE /series response.
-func seriesDeleteResponseExamples() *orderedmap.Map[string, *base.Example] {
-	examples := orderedmap.New[string, *base.Example]()
-
-	examples.Set("seriesDeleted", &base.Example{
-		Summary: "Series marked for deletion",
 		Value: createYAMLNode(map[string]any{
 			"status": "success",
 		}),
@@ -991,6 +1078,42 @@ func featuresResponseExamples() *orderedmap.Map[string, *base.Example] {
 			"status": "success",
 			"data":   []string{"exemplar-storage", "remote-write-receiver"},
 		}),
+	})
+
+	return examples
+}
+
+// searchMetricNamesResponseExamples returns examples for /search/metric_names response.
+func searchMetricNamesResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("metricNamesStream", &base.Example{
+		Summary: "NDJSON stream of metric names",
+		Value:   createYAMLNode("{\"results\":[{\"name\":\"http_requests_total\",\"type\":\"counter\",\"help\":\"Total HTTP requests.\"}]}\n{\"status\":\"success\",\"has_more\":false}\n"),
+	})
+
+	return examples
+}
+
+// searchLabelNamesResponseExamples returns examples for /search/label_names response.
+func searchLabelNamesResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("labelNamesStream", &base.Example{
+		Summary: "NDJSON stream of label names",
+		Value:   createYAMLNode("{\"results\":[{\"name\":\"instance\"},{\"name\":\"job\"}]}\n{\"status\":\"success\",\"has_more\":false}\n"),
+	})
+
+	return examples
+}
+
+// searchLabelValuesResponseExamples returns examples for /search/label_values response.
+func searchLabelValuesResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("labelValuesStream", &base.Example{
+		Summary: "NDJSON stream of label values",
+		Value:   createYAMLNode("{\"results\":[{\"value\":\"localhost:9090\"},{\"value\":\"localhost:9091\"}]}\n{\"status\":\"success\",\"has_more\":true}\n"),
 	})
 
 	return examples

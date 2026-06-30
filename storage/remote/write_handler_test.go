@@ -423,6 +423,36 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedRespBody: "parsing labels for series [1 999]: labelRefs 1 (name) = 999 (value) outside of symbols table (size 18)\n",
 		},
 		{
+			desc: "Partial write; first series with out-of-bounds metadata unit ref",
+			input: append(
+				[]writev2.TimeSeries{{
+					LabelsRefs: []uint32{1, 2},
+					Metadata: writev2.Metadata{
+						Type:    writev2.Metadata_METRIC_TYPE_GAUGE,
+						UnitRef: 999,
+					},
+					Samples: []writev2.Sample{{Value: 1, Timestamp: 1}},
+				}},
+				writeV2RequestFixture.Timeseries...),
+			expectedCode:     http.StatusBadRequest,
+			expectedRespBody: "parsing metadata for series [1 2]: metadata unit_ref 999 outside of symbols table (size 18)\n",
+		},
+		{
+			desc: "Partial write; first series with out-of-bounds metadata help ref",
+			input: append(
+				[]writev2.TimeSeries{{
+					LabelsRefs: []uint32{1, 2},
+					Metadata: writev2.Metadata{
+						Type:    writev2.Metadata_METRIC_TYPE_GAUGE,
+						HelpRef: 999,
+					},
+					Samples: []writev2.Sample{{Value: 1, Timestamp: 1}},
+				}},
+				writeV2RequestFixture.Timeseries...),
+			expectedCode:     http.StatusBadRequest,
+			expectedRespBody: "parsing metadata for series [1 2]: metadata help_ref 999 outside of symbols table (size 18)\n",
+		},
+		{
 			desc: "Partial write; TimeSeries with only exemplars (no samples or histograms)",
 			input: append(
 				// Series with only exemplars, no samples or histograms.
@@ -791,7 +821,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 					}
 				}
 				if tc.appendMetadata && tc.updateMetadataErr == nil {
-					expectedMeta := ts.ToMetadata(writeV2RequestFixture.Symbols)
+					expectedMeta, err := ts.ToMetadata(writeV2RequestFixture.Symbols)
+					require.NoError(t, err)
 					requireEqual(t, mockMetadata{ls, expectedMeta}, appendable.metadata[m])
 					m++
 				}

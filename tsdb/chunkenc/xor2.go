@@ -251,6 +251,9 @@ func (a *xor2Appender) Append(st, t int64, v float64) {
 			putVarbitIntFast(a.b, stDiff)
 		}
 
+	case math.MaxUint16:
+		panic("chunk capacity exceeded")
+
 	default:
 		tDelta = uint64(t - a.t)
 		dod := int64(tDelta - a.tDelta)
@@ -500,11 +503,11 @@ func (a *xor2Appender) writeVDeltaKnownNonZero(delta uint64) {
 	a.b.writeBitsFast(delta>>newTrailing, int(sigbits))
 }
 
-func (*xor2Appender) AppendHistogram(*HistogramAppender, int64, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
+func (*xor2Appender) AppendHistogram(Appender, int64, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float chunk")
 }
 
-func (*xor2Appender) AppendFloatHistogram(*FloatHistogramAppender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
+func (*xor2Appender) AppendFloatHistogram(Appender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a float histogram sample to a float chunk")
 }
 

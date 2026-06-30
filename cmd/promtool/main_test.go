@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -95,12 +96,57 @@ func TestQueryInstant(t *testing.T) {
 	require.NoError(t, err)
 
 	p := &promqlPrinter{}
-	exitCode := QueryInstant(urlObject, http.DefaultTransport, "up", "300", p)
+	exitCode := QueryInstant(urlObject, http.DefaultTransport, map[string]string{}, "up", "300", p)
 	require.Equal(t, "/api/v1/query", getRequest().URL.Path)
 	form := getRequest().Form
 	require.Equal(t, "up", form.Get("query"))
 	require.Equal(t, "300", form.Get("time"))
 	require.Equal(t, 0, exitCode)
+}
+
+func TestQueryInstantHeaders(t *testing.T) {
+	t.Parallel()
+	s, getRequest := mockServer(200, `{"status": "success", "data": {"resultType": "vector", "result": []}}`)
+	defer s.Close()
+
+	urlObject, err := url.Parse(s.URL)
+	require.NoError(t, err)
+
+	p := &promqlPrinter{}
+	headers := map[string]string{"X-Scope-OrgID": "prom", "X-Custom": "value"}
+	exitCode := QueryInstant(urlObject, http.DefaultTransport, headers, "up", "300", p)
+	require.Equal(t, 0, exitCode)
+	require.Equal(t, "prom", getRequest().Header.Get("X-Scope-OrgID"))
+	require.Equal(t, "value", getRequest().Header.Get("X-Custom"))
+}
+
+func TestCheckServerStatus(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name      string
+		urlSuffix string
+	}{
+		{name: "no trailing slash", urlSuffix: ""},
+		{name: "trailing slash", urlSuffix: "/"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s, getRequest := mockServer(200, "Prometheus is Healthy.\n")
+			defer s.Close()
+
+			urlObject, err := url.Parse(s.URL + tc.urlSuffix)
+			require.NoError(t, err)
+
+			err = CheckServerStatus(urlObject, checkHealth, http.DefaultTransport)
+			require.NoError(t, err)
+			// The endpoint path must be requested verbatim regardless of a
+			// trailing slash in the user-provided URL. A naive string
+			// concatenation would request "//-/healthy" here, which the
+			// Prometheus router does not match.
+			require.Equal(t, checkHealth, getRequest().URL.Path)
+		})
+	}
 }
 
 func mockServer(code int, body string) (*httptest.Server, func() *http.Request) {
@@ -188,7 +234,7 @@ func TestCheckDuplicates(t *testing.T) {
 		c := test
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			rgs, err := rulefmt.ParseFile(c.ruleFile, false, model.UTF8Validation, parser.NewParser(parser.Options{}))
+			rgs, err := rulefmt.ParseFile(c.ruleFile, false, model.UTF8Validation, parser.NewParser(parser.Options{}), promslog.NewNopLogger())
 			require.Empty(t, err)
 			dups := checkDuplicates(rgs.Groups)
 			require.Equal(t, c.expectedDups, dups)
@@ -197,7 +243,7 @@ func TestCheckDuplicates(t *testing.T) {
 }
 
 func BenchmarkCheckDuplicates(b *testing.B) {
-	rgs, err := rulefmt.ParseFile("./testdata/rules_large.yml", false, model.UTF8Validation, parser.NewParser(parser.Options{}))
+	rgs, err := rulefmt.ParseFile("./testdata/rules_large.yml", false, model.UTF8Validation, parser.NewParser(parser.Options{}), promslog.NewNopLogger())
 	require.Empty(b, err)
 
 	for b.Loop() {
@@ -656,7 +702,7 @@ func TestCheckRulesWithFeatureFlag(t *testing.T) {
 	// As opposed to TestCheckRules calling CheckRules directly we run promtool
 	// so the feature flag parsing can be tested.
 
-	args := []string{"-test.main", "--enable-feature=promql-experimental-functions", "--enable-feature=promql-duration-expr", "--enable-feature=promql-extended-range-selectors", "check", "rules", "testdata/features.yml"}
+	args := []string{"-test.main", "--enable-feature=promql-experimental-functions", "--enable-feature=promql-extended-range-selectors", "check", "rules", "testdata/features.yml"}
 	tool := exec.Command(promtoolPath, args...)
 	err := tool.Run()
 	require.NoError(t, err)

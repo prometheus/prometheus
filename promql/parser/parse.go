@@ -337,7 +337,8 @@ func (p *parser) unexpected(context, expected string) {
 	p.addParseErr(p.yyParser.lval.item.PositionRange(), errors.New(errMsg.String()))
 }
 
-var errUnexpected = errors.New("unexpected error")
+// ErrUnexpected is returned when the parser recovers from a runtime panic.
+var ErrUnexpected = errors.New("unexpected error")
 
 // recover is the handler that turns panics into returns from the top level of Parse.
 func (*parser) recover(errp *error) {
@@ -349,7 +350,7 @@ func (*parser) recover(errp *error) {
 		buf = buf[:runtime.Stack(buf, false)]
 
 		fmt.Fprintf(os.Stderr, "parser panic: %v\n%s", e, buf)
-		*errp = errUnexpected
+		*errp = ErrUnexpected
 	case e != nil:
 		*errp = e.(error)
 	}
@@ -1086,8 +1087,12 @@ func (p *parser) setAnchored(e Node) {
 			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
 		}
 	case *MatrixSelector:
-		s.VectorSelector.(*VectorSelector).Anchored = true
-		if s.VectorSelector.(*VectorSelector).Smoothed {
+		vs, ok := s.VectorSelector.(*VectorSelector)
+		if !ok {
+			return
+		}
+		vs.Anchored = true
+		if vs.Smoothed {
 			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
 		}
 	case *SubqueryExpr:
@@ -1109,8 +1114,12 @@ func (p *parser) setSmoothed(e Node) {
 			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
 		}
 	case *MatrixSelector:
-		s.VectorSelector.(*VectorSelector).Smoothed = true
-		if s.VectorSelector.(*VectorSelector).Anchored {
+		vs, ok := s.VectorSelector.(*VectorSelector)
+		if !ok {
+			return
+		}
+		vs.Smoothed = true
+		if vs.Anchored {
 			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
 		}
 	case *SubqueryExpr:
@@ -1193,9 +1202,48 @@ func (p *parser) getAtModifierVars(e Node) (**int64, *ItemType, *posrange.Pos, b
 	return timestampp, preprocp, endPosp, true
 }
 
+// durationLiteralOutOfRange reports whether val, interpreted as seconds, would
+// overflow a time.Duration (int64 nanoseconds).
+func durationLiteralOutOfRange(val float64) bool {
+	return val > 1<<63/1e9 || val < -(1<<63)/1e9
+}
+
 func (p *parser) experimentalDurationExpr(e Expr) {
 	if !p.options.ExperimentalDurationExpr {
 		p.addParseErrf(e.PositionRange(), "experimental duration expression is not enabled")
+	}
+}
+
+// applyUnaryOpToDurationExpr applies a unary operator to a duration expression
+// node, which may be a *DurationExpr or a *NumberLiteral. When wrapped is true
+// (parenthesised form), the Wrapped flag is set on *DurationExpr nodes.
+func (p *parser) applyUnaryOpToDurationExpr(op Item, expr Node, wrapped bool) Node {
+	switch e := expr.(type) {
+	case *DurationExpr:
+		if wrapped {
+			e.Wrapped = true
+		}
+		if op.Typ == SUB {
+			return &DurationExpr{
+				Op:       SUB,
+				RHS:      e,
+				StartPos: op.Pos,
+			}
+		}
+		return e
+	case *NumberLiteral:
+		if op.Typ == SUB {
+			e.Val *= -1
+		}
+		if durationLiteralOutOfRange(e.Val) {
+			p.addParseErrf(op.PositionRange(), "duration out of range")
+			return &NumberLiteral{Val: 0}
+		}
+		e.PosRange.Start = op.Pos
+		return e
+	default:
+		p.addParseErrf(op.PositionRange(), "expected number literal or duration expression")
+		return &NumberLiteral{Val: 0}
 	}
 }
 

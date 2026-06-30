@@ -82,8 +82,8 @@ func DeleteCheckpoints(dir string, maxIndex int) error {
 	return errors.Join(errs...)
 }
 
-// checkpointTempFileSuffix is the suffix used when creating temporary checkpoint files.
-const checkpointTempFileSuffix = ".tmp"
+// CheckpointTempFileSuffix is the suffix used when creating temporary checkpoint files.
+const CheckpointTempFileSuffix = ".tmp"
 
 // DeleteTempCheckpoints deletes all temporary checkpoint directories in the given directory.
 func DeleteTempCheckpoints(logger *slog.Logger, dir string) error {
@@ -137,8 +137,8 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		return nil, err
 	}
 
-	cpdir := checkpointDir(w.Dir(), to)
-	cpdirtmp := cpdir + checkpointTempFileSuffix
+	cpdir := CheckpointDir(w.Dir(), to)
+	cpdirtmp := cpdir + CheckpointTempFileSuffix
 
 	if err := os.MkdirAll(cpdirtmp, 0o777); err != nil {
 		return nil, fmt.Errorf("create checkpoint dir: %w", err)
@@ -218,7 +218,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			stats.TotalSamples += len(samples)
 			stats.DroppedSamples += len(samples) - len(repl)
 
-		case record.HistogramSamples:
+		case record.HistogramSamples, record.HistogramSamplesV2:
 			histogramSamples, err = dec.HistogramSamples(rec, histogramSamples)
 			if err != nil {
 				return nil, fmt.Errorf("decode histogram samples: %w", err)
@@ -231,7 +231,18 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 				}
 			}
 			if len(repl) > 0 {
-				buf, _ = enc.HistogramSamples(repl, buf)
+				var leftover []record.RefHistogramSample
+				buf, leftover = enc.HistogramSamples(repl, buf)
+				if len(leftover) > 0 {
+					// Flush the exponential-histogram record before
+					// appending the custom-bucket record so they are
+					// written as two separate WAL records.
+					if expEnd := len(buf); expEnd > start {
+						recs = append(recs, buf[start:expEnd])
+						start = expEnd
+					}
+					buf = enc.CustomBucketsHistogramSamples(leftover, buf)
+				}
 			}
 			stats.TotalSamples += len(histogramSamples)
 			stats.DroppedSamples += len(histogramSamples) - len(repl)
@@ -252,7 +263,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			}
 			stats.TotalSamples += len(histogramSamples)
 			stats.DroppedSamples += len(histogramSamples) - len(repl)
-		case record.FloatHistogramSamples:
+		case record.FloatHistogramSamples, record.FloatHistogramSamplesV2:
 			floatHistogramSamples, err = dec.FloatHistogramSamples(rec, floatHistogramSamples)
 			if err != nil {
 				return nil, fmt.Errorf("decode float histogram samples: %w", err)
@@ -265,7 +276,18 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 				}
 			}
 			if len(repl) > 0 {
-				buf, _ = enc.FloatHistogramSamples(repl, buf)
+				var floatLeftover []record.RefFloatHistogramSample
+				buf, floatLeftover = enc.FloatHistogramSamples(repl, buf)
+				if len(floatLeftover) > 0 {
+					// Flush the exponential-float-histogram record before
+					// appending the custom-bucket record so they are
+					// written as two separate WAL records.
+					if expEnd := len(buf); expEnd > start {
+						recs = append(recs, buf[start:expEnd])
+						start = expEnd
+					}
+					buf = enc.CustomBucketsFloatHistogramSamples(floatLeftover, buf)
+				}
 			}
 			stats.TotalSamples += len(floatHistogramSamples)
 			stats.DroppedSamples += len(floatHistogramSamples) - len(repl)
@@ -407,7 +429,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 // checkpointPrefix is the prefix used for checkpoint files.
 const checkpointPrefix = "checkpoint."
 
-func checkpointDir(dir string, i int) string {
+func CheckpointDir(dir string, i int) string {
 	return filepath.Join(dir, fmt.Sprintf(checkpointPrefix+"%08d", i))
 }
 
@@ -446,5 +468,5 @@ func listCheckpoints(dir string) (refs []checkpointRef, err error) {
 }
 
 func isTempDir(fi fs.DirEntry) bool {
-	return strings.HasPrefix(fi.Name(), checkpointPrefix) && strings.HasSuffix(fi.Name(), checkpointTempFileSuffix)
+	return strings.HasPrefix(fi.Name(), checkpointPrefix) && strings.HasSuffix(fi.Name(), CheckpointTempFileSuffix)
 }

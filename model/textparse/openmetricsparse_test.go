@@ -16,6 +16,7 @@ package textparse
 import (
 	"fmt"
 	"io"
+	"math"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 )
 
 func int64p(x int64) *int64 { return &x }
@@ -113,7 +115,13 @@ foobar_count 21
 foobar_created 1520430004
 foobar_sum 324789.6
 foobar{quantile="0.95"} 123.8
-foobar{quantile="0.99"} 150.1`
+foobar{quantile="0.99"} 150.1
+# HELP nansum Summary with NaN value
+# TYPE nansum summary
+nansum_count 0
+nansum_sum 0.0
+nansum{quantile="0.95"} nan
+nansum{quantile="0.99"} NaN`
 
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
@@ -631,6 +639,42 @@ foobar{quantile="0.99"} 150.1`
 						labels.FromStrings("__name__", "foobar", "quantile", "0.99"),
 					),
 					st: 1520430004000,
+				}, {
+					m:    "nansum",
+					help: "Summary with NaN value",
+				}, {
+					m:   "nansum",
+					typ: model.MetricTypeSummary,
+				}, {
+					m: "nansum_count",
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "nansum_count", "__type__", string(model.MetricTypeSummary)),
+						labels.FromStrings("__name__", "nansum_count"),
+					),
+				}, {
+					m: "nansum_sum",
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "nansum_sum", "__type__", string(model.MetricTypeSummary)),
+						labels.FromStrings("__name__", "nansum_sum"),
+					),
+				}, {
+					m: `nansum{quantile="0.95"}`,
+					v: math.Float64frombits(value.NormalNaN),
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "nansum", "__type__", string(model.MetricTypeSummary), "quantile", "0.95"),
+						labels.FromStrings("__name__", "nansum", "quantile", "0.95"),
+					),
+				}, {
+					m: `nansum{quantile="0.99"}`,
+					v: math.Float64frombits(value.NormalNaN),
+					lset: typeAndUnitLabels(
+						typeAndUnitEnabled,
+						labels.FromStrings("__name__", "nansum", "__type__", string(model.MetricTypeSummary), "quantile", "0.99"),
+						labels.FromStrings("__name__", "nansum", "quantile", "0.99"),
+					),
 				}, {
 					m:    "metric",
 					help: "foo\x00bar",

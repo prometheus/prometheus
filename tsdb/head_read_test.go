@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -388,7 +389,7 @@ func TestMemSeries_chunk(t *testing.T) {
 				tc.setup(t, series, chunkDiskMapper)
 			}
 
-			chk, headChunk, isOpen, err := series.chunk(tc.inputID, chunkDiskMapper, memChunkPool)
+			chk, headChunk, isOpen, err := series.chunk(tc.inputID, chunkDiskMapper, memChunkPool, nil)
 			switch tc.expected {
 			case outOpenHeadChunk:
 				require.NoError(t, err, "unexpected error")
@@ -406,6 +407,71 @@ func TestMemSeries_chunk(t *testing.T) {
 				require.Error(t, err)
 			}
 		})
+	}
+}
+
+// TestMemSeries_chunk_FastPath verifies that the O(1) indexed lookup via a
+// pre-collected headChunks slice returns identical results to the linked-list
+// fallback (headChunks=nil) for every chunk in a series with mixed mmapped
+// and head chunks.
+func TestMemSeries_chunk_FastPath(t *testing.T) {
+	const chunkRange int64 = 100
+	const chunkStep int64 = 5
+	appendSamples := func(t *testing.T, s *memSeries, start, end int64, cdm *chunks.ChunkDiskMapper) {
+		for i := start; i < end; i += chunkStep {
+			ok, _ := s.append(0, i, float64(i), 0, chunkOpts{
+				chunkDiskMapper: cdm,
+				chunkRange:      chunkRange,
+				samplesPerChunk: DefaultSamplesPerChunk,
+			})
+			require.True(t, ok, "sample append failed")
+		}
+	}
+
+	dir := t.TempDir()
+	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, chunkDiskMapper.Close())
+	}()
+	memChunkPool := &sync.Pool{New: func() any { return &memChunk{} }}
+
+	series := newMemSeries(labels.EmptyLabels(), 1, 0, true, false)
+
+	// Build 3 mmapped + 3 head chunks.
+	appendSamples(t, series, 0, chunkRange*4, chunkDiskMapper)
+	series.mmapChunks(chunkDiskMapper)
+	require.Len(t, series.mmappedChunks, 3)
+	require.Equal(t, 1, series.headChunks.len())
+	appendSamples(t, series, chunkRange*4, chunkRange*6, chunkDiskMapper)
+	require.Equal(t, 3, series.headChunks.len())
+	require.Len(t, series.mmappedChunks, 3)
+
+	hc := collectHeadChunks(series.headChunks, nil)
+
+	headChunkCount := int(series.headChunkCount.Load())
+	require.Equal(t, 3, headChunkCount, "expected 3 head chunks")
+	totalChunks := len(series.mmappedChunks) + headChunkCount
+	for ix := range totalChunks {
+		id := chunks.HeadChunkID(ix)
+
+		// Linked-list fallback.
+		chkLL, headChunkLL, isOpenLL, errLL := series.chunk(id, chunkDiskMapper, memChunkPool, nil)
+		// Fast path with pre-collected slice.
+		chkFP, headChunkFP, isOpenFP, errFP := series.chunk(id, chunkDiskMapper, memChunkPool, hc)
+
+		require.Equal(t, errLL, errFP, "ix=%d: error mismatch", ix)
+		require.Equal(t, headChunkLL, headChunkFP, "ix=%d: headChunk mismatch", ix)
+		require.Equal(t, isOpenLL, isOpenFP, "ix=%d: isOpen mismatch", ix)
+		if ix < len(series.mmappedChunks) {
+			// Mmapped chunks are loaded from disk into fresh memChunks, so
+			// pointer equality is not expected — compare the time range instead.
+			require.Equal(t, chkLL.minTime, chkFP.minTime, "ix=%d: minTime mismatch", ix)
+			require.Equal(t, chkLL.maxTime, chkFP.maxTime, "ix=%d: maxTime mismatch", ix)
+		} else {
+			// Head chunks should be pointer-identical.
+			require.Same(t, chkLL, chkFP, "ix=%d: head chunk pointer mismatch", ix)
+		}
 	}
 }
 
@@ -429,4 +495,240 @@ func TestHeadIndexReader_PostingsForLabelMatching(t *testing.T) {
 		require.NoError(t, err)
 		return ir
 	})
+}
+
+func TestHeadChunkReaderCache(t *testing.T) {
+	t.Run("cache_hit", func(t *testing.T) {
+		// Verify that a second chunk lookup for the same (unchanged) series
+		// returns the cached head-chunks slice without re-collecting.
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 100
+		opts.ChunkDirRoot = t.TempDir()
+		h, err := NewHead(nil, nil, nil, nil, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, h.Close()) })
+
+		app := h.Appender(t.Context())
+		lbls := labels.FromStrings("__name__", "test")
+		for i := int64(0); i < 500; i += 5 {
+			_, err := app.Append(0, lbls, i, float64(i))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+
+		s := h.series.getByID(1)
+		require.NotNil(t, s)
+		s.Lock()
+		require.Greater(t, s.headChunks.len(), 1, "need multiple head chunks for the test")
+		newestCID := s.firstChunkID + chunks.HeadChunkID(len(s.mmappedChunks)) + chunks.HeadChunkID(s.headChunks.len()) - 1
+		newestRef := chunks.NewHeadChunkRef(s.ref, newestCID)
+		s.Unlock()
+
+		cr, err := h.chunksRange(0, 10000, nil)
+		require.NoError(t, err)
+		cr.enableCache = true
+
+		// First call: populates the cache.
+		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
+		require.NoError(t, err)
+		require.NotNil(t, cr.cachedHeadChunks)
+		cachedSlice := cr.cachedHeadChunks
+
+		// Second call (same series, no changes): must reuse the cached slice.
+		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
+		require.NoError(t, err)
+		require.Same(t, &cachedSlice[0], &cr.cachedHeadChunks[0], "expected cache hit — slice backing array should be identical")
+	})
+
+	t.Run("invalidated_after_mmap", func(t *testing.T) {
+		// Regression test: after mmapChunks(), the head-chunks cache must be
+		// invalidated even though s.headChunks (the pointer) doesn't change.
+		// mmapChunks severs the linked list (prev=nil, len=1) but
+		// keeps the same head pointer, so a pointer-only check would return
+		// a stale cache with chunks that have been mmapped.
+
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 100
+		opts.ChunkDirRoot = t.TempDir()
+		h, err := NewHead(nil, nil, nil, nil, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, h.Close()) })
+
+		// Append enough samples to create multiple head chunks.
+		// With ChunkRange=100 and DefaultSamplesPerChunk=120, each chunk
+		// holds ~20 samples (range/step = 100/5). We want >=3 head chunks.
+		app := h.Appender(t.Context())
+		lbls := labels.FromStrings("__name__", "test")
+		for i := int64(0); i < 500; i += 5 {
+			_, err := app.Append(0, lbls, i, float64(i))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+
+		// Look up the series and verify we have multiple head chunks.
+		s := h.series.getByID(1)
+		require.NotNil(t, s)
+		s.Lock()
+		require.Greater(t, s.headChunks.len(), 1, "need multiple head chunks for the test")
+		headChunksLenBefore := s.headChunks.len()
+		newestChunkMinTime := s.headChunks.minTime
+		// The chunk ID for the newest head chunk:
+		// firstChunkID + len(mmapped) + headChunksLen - 1
+		newestCID := s.firstChunkID + chunks.HeadChunkID(len(s.mmappedChunks)) + chunks.HeadChunkID(s.headChunks.len()) - 1
+		newestRef := chunks.NewHeadChunkRef(s.ref, newestCID)
+		s.Unlock()
+
+		// Create a headChunkReader with cache enabled and query the newest head chunk to populate the cache.
+		cr, err := h.chunksRange(0, 10000, nil)
+		require.NoError(t, err)
+		cr.enableCache = true
+
+		chk1, _, err := cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
+		require.NoError(t, err)
+		require.NotNil(t, chk1)
+
+		// Verify cache is populated.
+		require.NotNil(t, cr.cachedHeadChunks)
+		require.Len(t, cr.cachedHeadChunks, headChunksLenBefore)
+
+		// Now mmap all but the newest head chunk — this severs the linked list.
+		s.Lock()
+		headPtrBefore := s.headChunks
+		s.mmapChunks(h.chunkDiskMapper)
+		require.Equal(t, 1, s.headChunks.len(), "after mmap, should have exactly 1 head chunk")
+		require.Same(t, headPtrBefore, s.headChunks, "head pointer should not change (the bug scenario)")
+		require.Equal(t, newestChunkMinTime, s.headChunks.minTime, "newest chunk should be the remaining head chunk")
+
+		// Recompute the newest chunk ID after mmap: more mmapped chunks now.
+		newestCID = s.firstChunkID + chunks.HeadChunkID(len(s.mmappedChunks)) + chunks.HeadChunkID(s.headChunks.len()) - 1
+		newestRef = chunks.NewHeadChunkRef(s.ref, newestCID)
+		s.Unlock()
+
+		// Query the newest head chunk again. With the bug, the stale cache
+		// would be used and return a wrong (mmapped) chunk.
+		chk2, _, err := cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
+		require.NoError(t, err)
+		require.NotNil(t, chk2)
+
+		// After mmap, only 1 head chunk remains. The prev==nil guard skips
+		// the cache entirely, so the stale slice is preserved but not consulted.
+		require.Len(t, cr.cachedHeadChunks, headChunksLenBefore, "stale cache not cleared, but also not used")
+
+		// Verify the returned chunk is actually the newest head chunk, not a stale cached entry.
+		it := chk2.Iterator(nil)
+		require.Equal(t, chunkenc.ValFloat, it.Next())
+		ts, _ := it.At()
+		require.Equal(t, newestChunkMinTime, ts, "returned chunk should be the newest head chunk, not a stale cached entry")
+	})
+
+	t.Run("buffer_cap_release", func(t *testing.T) {
+		// Test that headChunksBuf is released when its capacity exceeds
+		// headChunksBufMaxCap, preventing unbounded memory retention.
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 1
+		opts.ChunkDirRoot = t.TempDir()
+		h, err := NewHead(nil, nil, nil, nil, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, h.Close()) })
+
+		// Append enough samples to create >headChunksBufMaxCap head chunks.
+		// With ChunkRange=1, each sample goes to a new chunk.
+		app := h.Appender(t.Context())
+		lbls := labels.FromStrings("__name__", "cap_test")
+		for i := range int64(headChunksBufMaxCap) + 10 {
+			_, err := app.Append(0, lbls, i, float64(i))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+
+		s := h.series.getByID(1)
+		require.NotNil(t, s)
+		s.Lock()
+		require.Greater(t, s.headChunks.len(), headChunksBufMaxCap, "need >%d head chunks", headChunksBufMaxCap)
+		s.Unlock()
+
+		// Call Series() via headIndexReader — this populates headChunksBuf.
+		ir := h.indexRange(0, int64(headChunksBufMaxCap)+10)
+		var builder labels.ScratchBuilder
+		var chks []chunks.Meta
+		require.NoError(t, ir.Series(1, &builder, &chks))
+		require.Greater(t, len(chks), headChunksBufMaxCap)
+
+		// Buffer should have been released because cap exceeded threshold.
+		require.Nil(t, ir.headChunksBuf, "headChunksBuf should be released when cap > headChunksBufMaxCap")
+	})
+
+	t.Run("buffer_cap_release_ooo_index_reader", func(t *testing.T) {
+		// Same as buffer_cap_release but exercises HeadAndOOOIndexReader.Series,
+		// which has its own headChunksBufMaxCap check.
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 1
+		opts.ChunkDirRoot = t.TempDir()
+		h, err := NewHead(nil, nil, nil, nil, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, h.Close()) })
+
+		app := h.Appender(t.Context())
+		lbls := labels.FromStrings("__name__", "cap_test_ooo")
+		for i := range int64(headChunksBufMaxCap) + 10 {
+			_, err := app.Append(0, lbls, i, float64(i))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+
+		s := h.series.getByID(1)
+		require.NotNil(t, s)
+		s.Lock()
+		require.Greater(t, s.headChunks.len(), headChunksBufMaxCap, "need >%d head chunks", headChunksBufMaxCap)
+		s.Unlock()
+
+		// Call Series() via HeadAndOOOIndexReader (non-OOO series, so the else branch is taken).
+		maxt := int64(headChunksBufMaxCap) + 10
+		ir := NewHeadAndOOOIndexReader(h, 0, 0, maxt, 0)
+		var builder labels.ScratchBuilder
+		var chks []chunks.Meta
+		require.NoError(t, ir.Series(1, &builder, &chks))
+		require.Greater(t, len(chks), headChunksBufMaxCap)
+
+		// Buffer should have been released because cap exceeded threshold.
+		require.Nil(t, ir.headChunksBuf, "headChunksBuf should be released when cap > headChunksBufMaxCap")
+	})
+}
+
+var benchSink *memChunk
+
+// BenchmarkSeriesChunkIteration measures iterating all N head chunks of a series
+// oldest-to-newest (the real query pattern) using the cached head-chunks slice.
+func BenchmarkSeriesChunkIteration(b *testing.B) {
+	for _, n := range []int{1, 4, 16, 64, 256} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			s := &memSeries{
+				ref:          1,
+				firstChunkID: 0,
+				headChunks:   buildHeadChunksLight(n),
+			}
+			hc := collectHeadChunks(s.headChunks, nil)
+			b.ReportAllocs()
+			for b.Loop() {
+				for i := range n {
+					benchSink, _, _, _ = s.chunk(chunks.HeadChunkID(i), nil, nil, hc)
+				}
+			}
+		})
+	}
+}
+
+// buildHeadChunksLight creates a memChunk linked list without allocating chunk
+// encodings. Suitable for benchmarks that only need the linked-list structure
+// and time ranges.
+func buildHeadChunksLight(n int) *memChunk {
+	var head *memChunk
+	for i := range n {
+		head = &memChunk{
+			minTime: int64(i) * 1000,
+			maxTime: int64(i)*1000 + 999,
+			prev:    head,
+		}
+	}
+	return head
 }

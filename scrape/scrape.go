@@ -55,7 +55,6 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/logging"
-	"github.com/prometheus/prometheus/util/namevalidationutil"
 	"github.com/prometheus/prometheus/util/pool"
 )
 
@@ -159,10 +158,7 @@ func newScrapePool(
 
 	// Validate scheme so we don't need to do it later.
 	// We also do it on scrapePool.reload(...)
-	// TODO(bwplotka): Can we move it to scrape config validation?
-	if err := namevalidationutil.CheckNameValidationScheme(cfg.MetricNameValidationScheme); err != nil {
-		return nil, errors.New("newScrapePool: MetricNameValidationScheme must be set in scrape configuration")
-	}
+
 	if _, err = config.ToEscapingScheme(cfg.MetricNameEscapingScheme, cfg.MetricNameValidationScheme); err != nil {
 		return nil, fmt.Errorf("invalid metric name escaping scheme, %w", err)
 	}
@@ -295,9 +291,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.client = client
 
 	// Validate scheme so we don't need to do it later.
-	if err := namevalidationutil.CheckNameValidationScheme(cfg.MetricNameValidationScheme); err != nil {
-		return errors.New("scrapePool.reload: MetricNameValidationScheme must be set in scrape configuration")
-	}
+
 	if _, err = config.ToEscapingScheme(cfg.MetricNameEscapingScheme, cfg.MetricNameValidationScheme); err != nil {
 		return fmt.Errorf("scrapePool.reload: invalid metric name escaping scheme, %w", err)
 	}
@@ -820,6 +814,9 @@ type cacheEntry struct {
 	lastIter uint64
 	hash     uint64
 	lset     labels.Labels
+
+	// st is an optional state for ST synthesis.
+	st *stCache
 }
 
 type scrapeLoop struct {
@@ -848,6 +845,8 @@ type scrapeLoop struct {
 	appendable   storage.Appendable
 	appendableV2 storage.AppendableV2
 	buffers      *pool.Pool
+
+	synthesizeST bool
 	offsetSeed   uint64
 	symbolTable  *labels.SymbolTable
 	metrics      *scrapeMetrics
@@ -1005,9 +1004,6 @@ func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
 }
 
 func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels, hash uint64) (ce *cacheEntry) {
-	if ref == 0 {
-		return nil
-	}
 	ce = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
 	c.series[string(met)] = ce
 	return ce
@@ -1215,9 +1211,9 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		honorLabels:                   opts.sp.config.HonorLabels,
 		honorTimestamps:               opts.sp.config.HonorTimestamps,
 		trackTimestampsStaleness:      opts.sp.config.TrackTimestampsStaleness,
-		enableNativeHistogramScraping: opts.sp.config.ScrapeNativeHistogramsEnabled(),
-		alwaysScrapeClassicHist:       opts.sp.config.AlwaysScrapeClassicHistogramsEnabled(),
-		convertClassicHistToNHCB:      opts.sp.config.ConvertClassicHistogramsToNHCBEnabled(),
+		enableNativeHistogramScraping: opts.target.boolLabel(scrapeNativeHistogramsLabel, opts.sp.config.ScrapeNativeHistogramsEnabled()),
+		alwaysScrapeClassicHist:       opts.target.boolLabel(alwaysScrapeClassicHistogramsLabel, opts.sp.config.AlwaysScrapeClassicHistogramsEnabled()),
+		convertClassicHistToNHCB:      opts.target.boolLabel(convertClassicHistogramsToNHCBLabel, opts.sp.config.ConvertClassicHistogramsToNHCBEnabled()),
 		fallbackScrapeProtocol:        opts.sp.config.ScrapeFallbackProtocol.HeaderMediaType(),
 		enableCompression:             opts.sp.config.EnableCompression,
 		mrc:                           opts.sp.config.MetricRelabelConfigs,
@@ -1231,6 +1227,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		// manager, we ensure appenderV2 parseST is set on EnableStartTimestampZeroIngestion
 		// This will be removed when EnableStartTimestampZeroIngestion is removed.
 		parseST:                 opts.sp.options.ParseST || opts.sp.options.EnableStartTimestampZeroIngestion,
+		synthesizeST:            opts.sp.options.SynthesizeST,
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
@@ -1776,7 +1773,7 @@ loop:
 		}
 
 		if err == nil {
-			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil {
+			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil && ce.ref != 0 {
 				sl.cache.trackStaleness(ce.ref, ce)
 			}
 		}
@@ -1795,7 +1792,7 @@ loop:
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
 			ce = sl.cache.addRef(met, ref, lset, hash)
-			if ce != nil && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
+			if ce != nil && ce.ref != 0 && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
 				// Bypass staleness logic if there is an explicit timestamp.
 				// But make sure we only do this if we have a cache entry (ce) for our series.
 				sl.cache.trackStaleness(ref, ce)

@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
@@ -63,7 +64,10 @@ import (
 
 var (
 	promqlEnableDelayedNameRemoval = false
-	promtoolParserOpts             parser.Options
+	// Duration expressions are enabled by default; the promql-duration-expr
+	// feature flag is now a no-op.
+	promtoolParserOpts = parser.Options{ExperimentalDurationExpr: true}
+	logger             = promslog.New(&promslog.Config{})
 )
 
 func init() {
@@ -180,6 +184,7 @@ func main() {
 	queryInstantCmd.Arg("server", "Prometheus server to query.").Required().URLVar(&serverURL)
 	queryInstantExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
 	queryInstantTime := queryInstantCmd.Flag("time", "Query evaluation time (RFC3339 or Unix timestamp).").String()
+	queryInstantHeaders := queryInstantCmd.Flag("header", "Extra headers to send to server.").StringMap()
 
 	queryRangeCmd := queryCmd.Command("range", "Run range query.")
 	queryRangeCmd.Arg("server", "Prometheus server to query.").Required().URLVar(&serverURL)
@@ -317,7 +322,7 @@ func main() {
 	promQLLabelsDeleteQuery := promQLLabelsDeleteCmd.Arg("query", "PromQL query.").Required().String()
 	promQLLabelsDeleteName := promQLLabelsDeleteCmd.Arg("name", "Name of the label to delete.").Required().String()
 
-	featureList := app.Flag("enable-feature", "Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal, promql-duration-expr, promql-extended-range-selectors. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details").Default("").Strings()
+	featureList := app.Flag("enable-feature", "Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal, promql-extended-range-selectors. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details").Default("").Strings()
 
 	documentationCmd := app.Command("write-documentation", "Generate command line documentation. Internal use.").Hidden()
 
@@ -355,7 +360,7 @@ func main() {
 			case "promql-delayed-name-removal":
 				promqlEnableDelayedNameRemoval = true
 			case "promql-duration-expr":
-				promtoolParserOpts.ExperimentalDurationExpr = true
+				// This feature is now permanently enabled and therefore a no-op.
 			case "promql-extended-range-selectors":
 				promtoolParserOpts.EnableExtendedRangeSelectors = true
 			case "":
@@ -393,7 +398,7 @@ func main() {
 		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsProtoMsg, *pushMetricsLabels, *metricFiles...))
 
 	case queryInstantCmd.FullCommand():
-		os.Exit(QueryInstant(serverURL, httpRoundTripper, *queryInstantExpr, *queryInstantTime, p))
+		os.Exit(QueryInstant(serverURL, httpRoundTripper, *queryInstantHeaders, *queryInstantExpr, *queryInstantTime, p))
 
 	case queryRangeCmd.FullCommand():
 		os.Exit(QueryRange(serverURL, httpRoundTripper, *queryRangeHeaders, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, p))
@@ -566,8 +571,11 @@ func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper ht
 		serverURL.Scheme = "http"
 	}
 
+	// Join the endpoint onto the server URL path so that a trailing slash in
+	// the user-provided URL does not result in a doubled slash (e.g.
+	// "//-/healthy"), which the Prometheus router does not match.
 	config := api.Config{
-		Address:      serverURL.String() + checkEndpoint,
+		Address:      serverURL.JoinPath(checkEndpoint).String(),
 		RoundTripper: roundTripper,
 	}
 
@@ -619,7 +627,7 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig,
 		if !checkSyntaxOnly {
 			scrapeConfigsFailed := lintScrapeConfigs(scrapeConfigs, lintSettings)
 			failed = failed || scrapeConfigsFailed
-			rulesFailed, rulesHaveErrors := checkRules(ruleFiles, lintSettings.rulesLintConfig, p)
+			rulesFailed, rulesHaveErrors := checkRules(ruleFiles, lintSettings.rulesLintConfig, p, logger)
 			failed = failed || rulesFailed
 			hasErrors = hasErrors || rulesHaveErrors
 		}
@@ -663,7 +671,7 @@ func checkFileExists(fn string) error {
 func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]string, []*config.ScrapeConfig, error) {
 	fmt.Println("Checking", filename)
 
-	cfg, err := config.LoadFile(filename, agentMode, promslog.NewNopLogger())
+	cfg, err := config.LoadFile(filename, agentMode, logger)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -850,9 +858,9 @@ func CheckRules(ls rulesLintConfig, p parser.Parser, files ...string) int {
 	failed := false
 	hasErrors := false
 	if len(files) == 0 {
-		failed, hasErrors = checkRulesFromStdin(ls, p)
+		failed, hasErrors = checkRulesFromStdin(ls, p, logger)
 	} else {
-		failed, hasErrors = checkRules(files, ls, p)
+		failed, hasErrors = checkRules(files, ls, p, logger)
 	}
 
 	if failed && hasErrors {
@@ -866,7 +874,7 @@ func CheckRules(ls rulesLintConfig, p parser.Parser, files ...string) int {
 }
 
 // checkRulesFromStdin validates rule from stdin.
-func checkRulesFromStdin(ls rulesLintConfig, p parser.Parser) (bool, bool) {
+func checkRulesFromStdin(ls rulesLintConfig, p parser.Parser, logger *slog.Logger) (bool, bool) {
 	failed := false
 	hasErrors := false
 	fmt.Println("Checking standard input")
@@ -875,7 +883,7 @@ func checkRulesFromStdin(ls rulesLintConfig, p parser.Parser) (bool, bool) {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return true, true
 	}
-	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme, p)
+	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme, p, logger)
 	if errs != nil {
 		failed = true
 		fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -904,12 +912,12 @@ func checkRulesFromStdin(ls rulesLintConfig, p parser.Parser) (bool, bool) {
 }
 
 // checkRules validates rule files.
-func checkRules(files []string, ls rulesLintConfig, p parser.Parser) (bool, bool) {
+func checkRules(files []string, ls rulesLintConfig, p parser.Parser, logger *slog.Logger) (bool, bool) {
 	failed := false
 	hasErrors := false
 	for _, f := range files {
 		fmt.Println("Checking", f)
-		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme, p)
+		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme, p, logger)
 		if errs != nil {
 			failed = true
 			fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -1306,7 +1314,7 @@ func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outpu
 		return fmt.Errorf("new api client error: %w", err)
 	}
 
-	ruleImporter := newRuleImporter(promslog.New(&promslog.Config{}), cfg, api)
+	ruleImporter := newRuleImporter(logger, cfg, api)
 	errs := ruleImporter.loadGroups(ctx, files)
 	for _, err := range errs {
 		if err != nil {

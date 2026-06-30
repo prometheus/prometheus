@@ -189,6 +189,26 @@ func totalHPointSize(histograms []HPoint) int {
 	return total
 }
 
+// countSamplesAfter returns the number of sample equivalents in floats and histograms
+// with timestamp strictly after cutoff. Float samples count as 1; histogram samples
+// count via HPoint.size. Used for range-vector sample stats to count only new points per step.
+//
+// Both slices are sorted by timestamp ascending. We scan backwards from the end
+// because the call site uses cutoff = maxt - interval, which is typically close
+// to the end of the window, so only the last one or two points satisfy the
+// predicate. Backwards linear scan is O(k) for k matches and avoids the closure
+// overhead that sort.Search imposes on these very small slices.
+func countSamplesAfter(floats []FPoint, histograms []HPoint, cutoff int64) int64 {
+	var n int64
+	for i := len(floats) - 1; i >= 0 && floats[i].T > cutoff; i-- {
+		n++
+	}
+	for i := len(histograms) - 1; i >= 0 && histograms[i].T > cutoff; i-- {
+		n += int64(histograms[i].size())
+	}
+	return n
+}
+
 // Sample is a single sample belonging to a metric. It represents either a float
 // sample or a histogram sample. If H is nil, it is a float sample. Otherwise,
 // it is a histogram sample.
@@ -397,6 +417,24 @@ func (r *Result) String() string {
 	return r.Value.String()
 }
 
+// StartTimestamps stores sample start timestamps aligned with points.
+type StartTimestamps struct {
+	// Floats stores start timestamps for float samples.
+	Floats []int64
+	// Histograms stores start timestamps for histogram samples.
+	Histograms []int64
+}
+
+// Reset clears the start timestamps while keeping the slice capacity for reuse.
+func (st *StartTimestamps) Reset() {
+	if st.Floats != nil {
+		st.Floats = st.Floats[:0]
+	}
+	if st.Histograms != nil {
+		st.Histograms = st.Histograms[:0]
+	}
+}
+
 // StorageSeries simulates promql.Series as storage.Series.
 type StorageSeries struct {
 	series Series
@@ -487,7 +525,7 @@ func (ssi *storageSeriesIterator) AtT() int64 {
 	return ssi.currT
 }
 
-// TODO(krajorama): implement AtST.
+// TODO(krajorama,ywwg): implement AtST.
 func (*storageSeriesIterator) AtST() int64 {
 	return 0
 }

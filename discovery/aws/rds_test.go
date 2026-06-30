@@ -16,6 +16,7 @@ package aws
 import (
 	"context"
 	"net"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -76,18 +77,37 @@ func (m *mockRDSClient) DescribeDBInstances(_ context.Context, input *rds.Descri
 		}
 	}
 
+	for _, filter := range input.Filters {
+		if filter.Name == nil || *filter.Name != "engine" {
+			continue
+		}
+
+		var filtered []types.DBInstance
+		for _, inst := range instances {
+			if inst.Engine == nil {
+				continue
+			}
+			if slices.Contains(filter.Values, *inst.Engine) {
+				filtered = append(filtered, inst)
+			}
+		}
+		instances = filtered
+	}
+
 	return &rds.DescribeDBInstancesOutput{
 		DBInstances: instances,
 	}, nil
 }
 
 func TestRDSDiscoveryRefresh(t *testing.T) {
+	t.Parallel()
 	testTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	tests := []struct {
 		name           string
 		clusters       map[string]types.DBCluster
 		instances      map[string][]types.DBInstance
+		filters        []*Filter
 		expectedLabels []model.LabelSet
 	}{
 		{
@@ -249,6 +269,93 @@ func TestRDSDiscoveryRefresh(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "NoInstancesInCluster",
+			clusters: map[string]types.DBCluster{
+				"arn:aws:rds:us-west-2:123456789012:cluster:prod-cluster": {
+					DBClusterArn:        aws.String("arn:aws:rds:us-west-2:123456789012:cluster:prod-cluster"),
+					DBClusterIdentifier: aws.String("prod-cluster"),
+					Engine:              aws.String("aurora-mysql"),
+					EngineVersion:       aws.String("8.0.mysql_aurora.3.04.0"),
+					Status:              aws.String("available"),
+					DBClusterMembers:    []types.DBClusterMember{},
+				},
+			},
+			instances:      map[string][]types.DBInstance{},
+			expectedLabels: []model.LabelSet{},
+		},
+		{
+			name: "FiltersMatchSingleInstance",
+			clusters: map[string]types.DBCluster{
+				"arn:aws:rds:us-east-1:123456789012:cluster:filter-cluster": {
+					DBClusterArn:        aws.String("arn:aws:rds:us-east-1:123456789012:cluster:filter-cluster"),
+					DBClusterIdentifier: aws.String("filter-cluster"),
+					Engine:              aws.String("aurora-postgresql"),
+					Status:              aws.String("available"),
+					DBClusterMembers: []types.DBClusterMember{
+						{DBInstanceIdentifier: aws.String("filter-instance-1"), IsClusterWriter: aws.Bool(true)},
+						{DBInstanceIdentifier: aws.String("filter-instance-2"), IsClusterWriter: aws.Bool(false)},
+					},
+				},
+			},
+			instances: map[string][]types.DBInstance{
+				"arn:aws:rds:us-east-1:123456789012:cluster:filter-cluster": {
+					{
+						DBInstanceArn:        aws.String("arn:aws:rds:us-east-1:123456789012:db:filter-instance-1"),
+						DBInstanceIdentifier: aws.String("filter-instance-1"),
+						DBInstanceClass:      aws.String("db.r6g.large"),
+						DBInstanceStatus:     aws.String("available"),
+						Engine:               aws.String("aurora-postgresql"),
+						Endpoint:             &types.Endpoint{Address: aws.String("filter-instance-1.rds.amazonaws.com"), Port: aws.Int32(5432)},
+					},
+					{
+						DBInstanceArn:        aws.String("arn:aws:rds:us-east-1:123456789012:db:filter-instance-2"),
+						DBInstanceIdentifier: aws.String("filter-instance-2"),
+						DBInstanceClass:      aws.String("db.r6g.large"),
+						DBInstanceStatus:     aws.String("available"),
+						Engine:               aws.String("mysql"),
+						Endpoint:             &types.Endpoint{Address: aws.String("filter-instance-2.rds.amazonaws.com"), Port: aws.Int32(3306)},
+					},
+				},
+			},
+			filters: []*Filter{{Name: "engine", Values: []string{"aurora-postgresql"}}},
+			expectedLabels: []model.LabelSet{
+				{
+					model.AddressLabel:                   model.LabelValue("filter-instance-1.rds.amazonaws.com:5432"),
+					rdsLabelClusterDBClusterArn:          model.LabelValue("arn:aws:rds:us-east-1:123456789012:cluster:filter-cluster"),
+					rdsLabelClusterDBClusterIdentifier:   model.LabelValue("filter-cluster"),
+					rdsLabelClusterEngine:                model.LabelValue("aurora-postgresql"),
+					rdsLabelClusterStatus:                model.LabelValue("available"),
+					rdsLabelInstanceDBInstanceArn:        model.LabelValue("arn:aws:rds:us-east-1:123456789012:db:filter-instance-1"),
+					rdsLabelInstanceDBInstanceIdentifier: model.LabelValue("filter-instance-1"),
+					rdsLabelInstanceIsClusterWriter:      model.LabelValue("true"),
+					rdsLabelInstanceDBInstanceClass:      model.LabelValue("db.r6g.large"),
+					rdsLabelInstanceDBInstanceStatus:     model.LabelValue("available"),
+					rdsLabelInstanceEngine:               model.LabelValue("aurora-postgresql"),
+					rdsLabelInstanceEndpointAddress:      model.LabelValue("filter-instance-1.rds.amazonaws.com"),
+					rdsLabelInstanceEndpointPort:         model.LabelValue("5432"),
+				},
+			},
+		},
+		{
+			name: "FiltersMatchNoInstances",
+			clusters: map[string]types.DBCluster{
+				"arn:aws:rds:us-east-1:123456789012:cluster:filter-cluster": {
+					DBClusterArn:        aws.String("arn:aws:rds:us-east-1:123456789012:cluster:filter-cluster"),
+					DBClusterIdentifier: aws.String("filter-cluster"),
+					Engine:              aws.String("aurora-postgresql"),
+					Status:              aws.String("available"),
+				},
+			},
+			instances: map[string][]types.DBInstance{
+				"arn:aws:rds:us-east-1:123456789012:cluster:filter-cluster": {
+					{DBInstanceIdentifier: aws.String("filter-instance-1"), Engine: aws.String("aurora-postgresql")},
+					{DBInstanceIdentifier: aws.String("filter-instance-2"), Engine: aws.String("mysql")},
+				},
+			},
+			filters:        []*Filter{{Name: "engine", Values: []string{"sqlserver-ee"}}},
+			expectedLabels: []model.LabelSet{},
+		},
 	}
 
 	for _, tt := range tests {
@@ -263,6 +370,7 @@ func TestRDSDiscoveryRefresh(t *testing.T) {
 				cfg: &RDSSDConfig{
 					Region:             "us-east-1",
 					RequestConcurrency: 10,
+					Filters:            tt.filters,
 				},
 			}
 
@@ -421,6 +529,7 @@ func TestRDSDiscoveryRefresh(t *testing.T) {
 }
 
 func TestDescribeAllDBClusters(t *testing.T) {
+	t.Parallel()
 	mockClient := &mockRDSClient{
 		clusters: map[string]types.DBCluster{
 			"arn:aws:rds:us-east-1:123456789012:cluster:cluster-1": {

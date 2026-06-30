@@ -228,7 +228,7 @@ func TestCalculateDuration(t *testing.T) {
 			expected: 150 * time.Second,
 		},
 		{
-			name: "max of step and range",
+			name: "max_of of step and range",
 			expr: &parser.DurationExpr{
 				LHS: &parser.DurationExpr{
 					Op: parser.STEP,
@@ -236,7 +236,7 @@ func TestCalculateDuration(t *testing.T) {
 				RHS: &parser.DurationExpr{
 					Op: parser.RANGE,
 				},
-				Op: parser.MAX,
+				Op: parser.MAX_OF,
 			},
 			expected: 5 * time.Minute,
 		},
@@ -265,6 +265,37 @@ func TestCalculateDuration(t *testing.T) {
 				Op: parser.MOD,
 			},
 			errorMessage: "modulo by zero",
+		},
+		{
+			name: "NaN from negative base raised to fractional power",
+			expr: &parser.DurationExpr{
+				LHS: &parser.NumberLiteral{Val: -1},
+				RHS: &parser.NumberLiteral{Val: 0.5},
+				Op:  parser.POW,
+			},
+			errorMessage:    "duration is NaN or infinite",
+			allowedNegative: true,
+		},
+		{
+			name: "infinity from huge power",
+			expr: &parser.DurationExpr{
+				LHS: &parser.NumberLiteral{Val: 2},
+				RHS: &parser.NumberLiteral{Val: 1e10},
+				Op:  parser.POW,
+			},
+			errorMessage: "duration is NaN or infinite",
+		},
+		{
+			name:         "duration exceeds time.Duration range",
+			expr:         &parser.NumberLiteral{Val: 1e10},
+			errorMessage: "duration is out of range",
+		},
+		{
+			name: "duration just below the upper bound is accepted",
+			expr: &parser.NumberLiteral{Val: 1e9},
+			// 1e9 seconds is below 1<<63/1e9 seconds (~9.22e9), so it is
+			// representable as a time.Duration. The exact value is preserved.
+			expected: time.Duration(1e9) * time.Second,
 		},
 	}
 

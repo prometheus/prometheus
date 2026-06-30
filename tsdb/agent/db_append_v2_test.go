@@ -108,10 +108,22 @@ func TestCommit_AppendV2(t *testing.T) {
 			var (
 				expectedSampleSTs []int64
 				gotSampleSTs      []int64
+
+				expectedHistogramSTs []int64
+				gotHistogramSTs      []int64
+
+				expectedFloatHistogramSTs []int64
+				gotFloatHistogramSTs      []int64
 			)
 			if enableSTStorage {
 				expectedSampleSTs = make([]int64, 0, numSeries*numDatapoints)
 				gotSampleSTs = make([]int64, 0, numSeries*numDatapoints)
+
+				expectedHistogramSTs = make([]int64, 0, numSeries*numHistograms*2)
+				gotHistogramSTs = make([]int64, 0, numSeries*numHistograms*2)
+
+				expectedFloatHistogramSTs = make([]int64, 0, numSeries*numHistograms*2)
+				gotFloatHistogramSTs = make([]int64, 0, numSeries*numHistograms*2)
 			}
 
 			app := s.AppenderV2(t.Context())
@@ -144,8 +156,12 @@ func TestCommit_AppendV2(t *testing.T) {
 				histograms := tsdbutil.GenerateTestHistograms(numHistograms)
 
 				for i := range numHistograms {
-					_, err := app.Append(0, lset, int64(i+2234), int64(i+2000), 0, histograms[i], nil, storage.AOptions{})
+					st := int64(i + 2234)
+					_, err := app.Append(0, lset, st, int64(i+2000), 0, histograms[i], nil, storage.AOptions{})
 					require.NoError(t, err)
+					if enableSTStorage {
+						expectedHistogramSTs = append(expectedHistogramSTs, st)
+					}
 				}
 			}
 
@@ -156,8 +172,12 @@ func TestCommit_AppendV2(t *testing.T) {
 				customBucketHistograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
 
 				for i := range numHistograms {
-					_, err := app.Append(0, lset, int64(i+3234), int64(i+2000), 0, customBucketHistograms[i], nil, storage.AOptions{})
+					st := int64(i + 3234)
+					_, err := app.Append(0, lset, st, int64(i+2000), 0, customBucketHistograms[i], nil, storage.AOptions{})
 					require.NoError(t, err)
+					if enableSTStorage {
+						expectedHistogramSTs = append(expectedHistogramSTs, st)
+					}
 				}
 			}
 
@@ -168,8 +188,12 @@ func TestCommit_AppendV2(t *testing.T) {
 				floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
 
 				for i := range numHistograms {
-					_, err := app.Append(0, lset, int64(i+4234), int64(i+2000), 0, nil, floatHistograms[i], storage.AOptions{})
+					st := int64(i + 4234)
+					_, err := app.Append(0, lset, st, int64(i+2000), 0, nil, floatHistograms[i], storage.AOptions{})
 					require.NoError(t, err)
+					if enableSTStorage {
+						expectedFloatHistogramSTs = append(expectedFloatHistogramSTs, st)
+					}
 				}
 			}
 
@@ -180,8 +204,12 @@ func TestCommit_AppendV2(t *testing.T) {
 				customBucketFloatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
 
 				for i := range numHistograms {
-					_, err := app.Append(0, lset, int64(i+5234), int64(i+2000), 0, nil, customBucketFloatHistograms[i], storage.AOptions{})
+					st := int64(i + 5234)
+					_, err := app.Append(0, lset, st, int64(i+2000), 0, nil, customBucketFloatHistograms[i], storage.AOptions{})
 					require.NoError(t, err)
+					if enableSTStorage {
+						expectedFloatHistogramSTs = append(expectedFloatHistogramSTs, st)
+					}
 				}
 			}
 
@@ -232,15 +260,45 @@ func TestCommit_AppendV2(t *testing.T) {
 					walSamplesCount += len(samples)
 
 				case record.HistogramSamples, record.CustomBucketsHistogramSamples:
+					if enableSTStorage {
+						t.Errorf("Got V1 Samples when ST enabled")
+					}
 					var histograms []record.RefHistogramSample
 					histograms, err = dec.HistogramSamples(rec, histograms)
 					require.NoError(t, err)
 					walHistogramCount += len(histograms)
 
+				case record.HistogramSamplesV2:
+					if !enableSTStorage {
+						t.Errorf("Got V2 Samples when ST disabled")
+					}
+					var histograms []record.RefHistogramSample
+					histograms, err = dec.HistogramSamples(rec, histograms)
+					require.NoError(t, err)
+					for _, h := range histograms {
+						gotHistogramSTs = append(gotHistogramSTs, h.ST)
+					}
+					walHistogramCount += len(histograms)
+
 				case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
+					if enableSTStorage {
+						t.Errorf("Got V1 Samples when ST enabled")
+					}
 					var floatHistograms []record.RefFloatHistogramSample
 					floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
 					require.NoError(t, err)
+					walFloatHistogramCount += len(floatHistograms)
+
+				case record.FloatHistogramSamplesV2:
+					if !enableSTStorage {
+						t.Errorf("Got V2 Samples when ST disabled")
+					}
+					var floatHistograms []record.RefFloatHistogramSample
+					floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
+					require.NoError(t, err)
+					for _, h := range floatHistograms {
+						gotFloatHistogramSTs = append(gotFloatHistogramSTs, h.ST)
+					}
 					walFloatHistogramCount += len(floatHistograms)
 
 				case record.Exemplars:
@@ -260,6 +318,8 @@ func TestCommit_AppendV2(t *testing.T) {
 			require.Equal(t, numSeries*numDatapoints, walExemplarsCount, "unexpected number of exemplars")
 			require.Equal(t, numSeries*numHistograms*2, walHistogramCount, "unexpected number of histograms")
 			require.Equal(t, numSeries*numHistograms*2, walFloatHistogramCount, "unexpected number of float histograms")
+			require.Equal(t, expectedHistogramSTs, gotHistogramSTs, "unexpected histogram STs received")
+			require.Equal(t, expectedFloatHistogramSTs, gotFloatHistogramSTs, "unexpected float histogram STs received")
 
 			// Check that we can still create both kinds of Appender.
 			// Regression test against https://github.com/prometheus/prometheus/issues/17800.
@@ -375,7 +435,7 @@ func TestRollbackAppendV2(t *testing.T) {
 			case record.Exemplars:
 				t.Errorf("should not have found exemplars")
 
-			case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
+			case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.HistogramSamplesV2, record.FloatHistogramSamplesV2:
 				t.Errorf("should not have found histograms")
 
 			default:

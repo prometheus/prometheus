@@ -221,6 +221,27 @@ func newRefresher(conf *SDConfig) (refresher, error) {
 	return nil, errors.New("unknown Scaleway discovery role")
 }
 
+// newScalewayHTTPClient creates an HTTP client from the SD config, optionally
+// wrapping the transport with token-file authentication.
+func newScalewayHTTPClient(conf *SDConfig) (*http.Client, error) {
+	client, err := config.NewClientFromConfig(conf.HTTPClientConfig, "scaleway_sd")
+	if err != nil {
+		return nil, err
+	}
+
+	client.Timeout = time.Duration(conf.RefreshInterval)
+
+	if conf.SecretKeyFile != "" {
+		rt, err := newAuthTokenFileRoundTripper(conf.SecretKeyFile, client.Transport)
+		if err != nil {
+			return nil, err
+		}
+		client.Transport = rt
+	}
+
+	return client, nil
+}
+
 func loadProfile(sdConfig *SDConfig) (*scw.Profile, error) {
 	// Profile coming from Prometheus Configuration file
 	prometheusConfigProfile := &scw.Profile{

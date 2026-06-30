@@ -73,7 +73,7 @@ PromQL(
                             VectorSelector(
                                 Identifier
                             ),
-                          NumberDurationLiteralInDurationContext
+                          DurationExpr(NumberDurationLiteralInDurationContext)
                         )
                   )
                 )
@@ -103,7 +103,7 @@ PromQL(
                             VectorSelector(
                                 Identifier
                             ),
-                          NumberDurationLiteralInDurationContext
+                          DurationExpr(NumberDurationLiteralInDurationContext)
                       )
                   )
               )
@@ -246,7 +246,119 @@ foo[1y2w3d4h5m6s7ms]
 
 ==>
 
-PromQL(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext))
+PromQL(MatrixSelector(VectorSelector(Identifier),DurationExpr(NumberDurationLiteralInDurationContext)))
+
+# Duration expression step()
+
+foo[step()]
+
+==>
+
+PromQL(MatrixSelector(VectorSelector(Identifier),DurationExpr(DurationStep)))
+
+# Duration expression with arithmetic
+
+foo[11s+10s-5*2^2]
+
+==>
+
+PromQL(MatrixSelector(VectorSelector(Identifier),DurationExpr(DurationExpr(DurationExpr(NumberDurationLiteralInDurationContext),Add,DurationExpr(NumberDurationLiteralInDurationContext)),Sub,DurationExpr(DurationExpr(NumberDurationLiteralInDurationContext),Mul,DurationExpr(DurationExpr(NumberDurationLiteralInDurationContext),Pow,DurationExpr(NumberDurationLiteralInDurationContext))))))
+
+# Duration expression with unary arithmetic
+
+foo[-(10s-5s)+20s]
+
+==>
+
+PromQL(MatrixSelector(VectorSelector(Identifier),DurationExpr(DurationExpr(UnaryOp,DurationExpr(DurationExpr(DurationExpr(NumberDurationLiteralInDurationContext),Sub,DurationExpr(NumberDurationLiteralInDurationContext)))),Add,DurationExpr(NumberDurationLiteralInDurationContext))))
+
+# Duration expression power binds tighter than unary
+
+foo[-2^2]
+
+==>
+
+PromQL(MatrixSelector(VectorSelector(Identifier),DurationExpr(UnaryOp,DurationExpr(DurationExpr(NumberDurationLiteralInDurationContext),Pow,DurationExpr(NumberDurationLiteralInDurationContext)))))
+
+# Duration expression with min_of(...) and range()
+
+rate(foo[min_of(5m, range())])
+
+==>
+
+PromQL(FunctionCall(FunctionIdentifier(Rate),FunctionCallBody(MatrixSelector(VectorSelector(Identifier),DurationExpr(DurationMinOf,DurationExpr(NumberDurationLiteralInDurationContext),DurationExpr(DurationRange))))))
+
+# Duration expression with max_of(...) and step()
+
+avg_over_time(foo[max_of(step(), 1m)])
+
+==>
+
+PromQL(FunctionCall(FunctionIdentifier(AvgOverTime),FunctionCallBody(MatrixSelector(VectorSelector(Identifier),DurationExpr(DurationMaxOf,DurationExpr(DurationStep),DurationExpr(NumberDurationLiteralInDurationContext))))))
+
+# Duration expression in subquery step
+
+foo[1h:step()]
+
+==>
+
+PromQL(SubqueryExpr(VectorSelector(Identifier),DurationExpr(NumberDurationLiteralInDurationContext),DurationExpr(DurationStep)))
+
+# Range as a label name should not be treated as duration pseudo-function
+
+foo{range="5m"}
+
+==>
+
+PromQL(VectorSelector(Identifier,LabelMatchers(UnquotedLabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral))))
+
+# Range in metric identifiers should parse as regular identifier content
+
+some_range_metric[5m]
+
+==>
+
+PromQL(MatrixSelector(VectorSelector(Identifier),DurationExpr(NumberDurationLiteralInDurationContext)))
+
+# step() in offset durations
+
+foo offset step()
+
+==>
+
+PromQL(OffsetExpr(VectorSelector(Identifier),Offset,OffsetDurationExpr(DurationStep)))
+
+# range() in offset durations
+
+foo offset range()
+
+==>
+
+PromQL(OffsetExpr(VectorSelector(Identifier),Offset,OffsetDurationExpr(DurationRange)))
+
+# Parenthesized duration expression in offset durations
+
+foo offset (1h / 2)
+
+==>
+
+PromQL(OffsetExpr(VectorSelector(Identifier),Offset,OffsetDurationExpr(DurationExpr(DurationExpr(NumberDurationLiteralInDurationContext),Div,DurationExpr(NumberDurationLiteralInDurationContext)))))
+
+# Parenthesized nested duration expression in offset durations
+
+foo offset ((2 ^ 3) * 1m)
+
+==>
+
+PromQL(OffsetExpr(VectorSelector(Identifier),Offset,OffsetDurationExpr(DurationExpr(DurationExpr(DurationExpr(DurationExpr(NumberDurationLiteralInDurationContext),Pow,DurationExpr(NumberDurationLiteralInDurationContext))),Mul,DurationExpr(NumberDurationLiteralInDurationContext)))))
+
+# Unparenthesized offset arithmetic remains a PromQL binary expression
+
+foo offset 5s-8
+
+==>
+
+PromQL(BinaryExpr(OffsetExpr(VectorSelector(Identifier),Offset,OffsetDurationExpr(NumberDurationLiteralInDurationContext)),Sub,NumberDurationLiteral))
 
 # Incorrectly ordered NumberDurationLiteralInDurationContext units
 
@@ -254,7 +366,7 @@ foo[1m2h]
 
 ==>
 
-PromQL(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext,⚠))
+PromQL(MatrixSelector(VectorSelector(Identifier),DurationExpr(NumberDurationLiteralInDurationContext),⚠))
 
 # Using a function name as a metric name
 
@@ -357,7 +469,7 @@ PromQL(
                 VectorSelector(
                     Identifier
                 ),
-              NumberDurationLiteralInDurationContext
+              DurationExpr(NumberDurationLiteralInDurationContext)
             )
       )
     )
@@ -376,7 +488,7 @@ PromQL(
                 VectorSelector(
                     Identifier
                 ),
-              NumberDurationLiteralInDurationContext
+              DurationExpr(NumberDurationLiteralInDurationContext)
             )
       )
     )
@@ -428,6 +540,54 @@ end
 ==>
 PromQL(VectorSelector(Identifier))
 
+# Lowercase start function.
+
+start()
+
+==>
+PromQL(
+    FunctionCall(
+      FunctionIdentifier(StartFn),
+      FunctionCallBody
+    )
+)
+
+# Lowercase end function.
+
+end()
+
+==>
+PromQL(
+    FunctionCall(
+      FunctionIdentifier(EndFn),
+      FunctionCallBody
+    )
+)
+
+# Lowercase range function.
+
+range()
+
+==>
+PromQL(
+    FunctionCall(
+      FunctionIdentifier(Range),
+      FunctionCallBody
+    )
+)
+
+# Lowercase step function.
+
+step()
+
+==>
+PromQL(
+    FunctionCall(
+      FunctionIdentifier(Step),
+      FunctionCallBody
+    )
+)
+
 # Simple At start
 
 foo @ start()
@@ -439,7 +599,7 @@ PromQL(
             Identifier
         ),
       At,
-      AtModifierPreprocessors(Start),
+      AtModifierPreprocessors(AtStart),
     )
 )
 
@@ -454,7 +614,7 @@ PromQL(
             Identifier
         ),
       At,
-      AtModifierPreprocessors(End),
+      AtModifierPreprocessors(AtEnd),
     )
 )
 
@@ -484,7 +644,7 @@ PromQL(
             Identifier
         ),
       At,
-      AtModifierPreprocessors(Start),
+      AtModifierPreprocessors(AtStart),
     )
 )
 
@@ -502,7 +662,7 @@ PromQL(
           FunctionCallBody(
                 MatrixSelector(
                   VectorSelector(Identifier),
-                  NumberDurationLiteralInDurationContext
+                  DurationExpr(NumberDurationLiteralInDurationContext)
                 )
           )
         ),
@@ -515,7 +675,7 @@ PromQL(
               FunctionIdentifier(Rate),
               FunctionCallBody(
                 StepInvariantExpr(
-                  MatrixSelector(VectorSelector(Identifier), NumberDurationLiteralInDurationContext),
+                  MatrixSelector(VectorSelector(Identifier), DurationExpr(NumberDurationLiteralInDurationContext)),
                   At,
                   NumberDurationLiteral
                 )
@@ -652,21 +812,21 @@ PromQL(BinaryExpr(NumberDurationLiteral,⚠,VectorSelector(LabelMatchers(Unquote
 foo offset -5d
 
 ==>
-PromQL(OffsetExpr(VectorSelector(Identifier), Offset, NumberDurationLiteralInDurationContext))
+PromQL(OffsetExpr(VectorSelector(Identifier), Offset, OffsetDurationExpr(UnaryOp, OffsetDurationExpr(NumberDurationLiteralInDurationContext))))
 
 # Negative offset with space
 
 foo offset - 5d
 
 ==>
-PromQL(OffsetExpr(VectorSelector(Identifier), Offset, NumberDurationLiteralInDurationContext))
+PromQL(OffsetExpr(VectorSelector(Identifier), Offset, OffsetDurationExpr(UnaryOp, OffsetDurationExpr(NumberDurationLiteralInDurationContext))))
 
 # Positive offset
 
 foo offset 5d
 
 ==>
-PromQL(OffsetExpr(VectorSelector(Identifier), Offset, NumberDurationLiteralInDurationContext))
+PromQL(OffsetExpr(VectorSelector(Identifier), Offset, OffsetDurationExpr(NumberDurationLiteralInDurationContext)))
 
 # Parsing only metric names with alternative @top { "top": "MetricName" }
 
@@ -708,14 +868,14 @@ PromQL(VectorSelector(LabelMatchers(QuotedLabelName(StringLiteral), QuotedLabelM
 increase(caddy_http_requests_total[5m] anchored)
 
 ==>
-PromQL(FunctionCall(FunctionIdentifier(Increase),FunctionCallBody(AnchoredExpr(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext),Anchored))))
+PromQL(FunctionCall(FunctionIdentifier(Increase),FunctionCallBody(AnchoredExpr(MatrixSelector(VectorSelector(Identifier),DurationExpr(NumberDurationLiteralInDurationContext)),Anchored))))
 
 # Testing smoothed keyword
 
 rate(caddy_http_requests_total[5m] smoothed)
 
 ==>
-PromQL(FunctionCall(FunctionIdentifier(Rate),FunctionCallBody(SmoothedExpr(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext),Smoothed))))
+PromQL(FunctionCall(FunctionIdentifier(Rate),FunctionCallBody(SmoothedExpr(MatrixSelector(VectorSelector(Identifier),DurationExpr(NumberDurationLiteralInDurationContext)),Smoothed))))
 
 # TrimUpper binary operator
 

@@ -33,7 +33,8 @@ func init() {
 	testStorageOptions = []teststorage.Option{
 		func(opts *tsdb.Options) {
 			opts.EnableSTStorage = true
-			opts.EnableXOR2Encoding = true
+			opts.XOR2EncodingAllowed = true
+			opts.FloatChunkEncoding = chunkenc.EncXOR2
 		},
 	}
 }

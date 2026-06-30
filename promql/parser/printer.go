@@ -174,7 +174,7 @@ func (node *BinaryExpr) getMatchingStr() string {
 		}
 
 		if vm.FillValues.LHS != nil || vm.FillValues.RHS != nil {
-			if vm.FillValues.LHS == vm.FillValues.RHS {
+			if vm.FillValues.LHS != nil && vm.FillValues.RHS != nil && *vm.FillValues.LHS == *vm.FillValues.RHS {
 				matching += fmt.Sprintf(" fill (%v)", *vm.FillValues.LHS)
 			} else {
 				if vm.FillValues.LHS != nil {
@@ -205,14 +205,14 @@ func (node *DurationExpr) writeTo(b *bytes.Buffer) {
 		b.WriteString("step()")
 	case node.Op == RANGE:
 		b.WriteString("range()")
-	case node.Op == MIN:
-		b.WriteString("min(")
+	case node.Op == MIN_OF:
+		b.WriteString("min_of(")
 		b.WriteString(node.LHS.String())
 		b.WriteString(", ")
 		b.WriteString(node.RHS.String())
 		b.WriteByte(')')
-	case node.Op == MAX:
-		b.WriteString("max(")
+	case node.Op == MAX_OF:
+		b.WriteString("max_of(")
 		b.WriteString(node.LHS.String())
 		b.WriteString(", ")
 		b.WriteString(node.RHS.String())
