@@ -389,6 +389,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'st_of_last_over_time',
+    detail: 'function',
+    info: 'Return the start timestamp of the last value over time for input series',
+    type: 'function',
+  },
+  {
     label: 'ts_of_max_over_time',
     detail: 'function',
     info: 'Return the timestamp of the maximum value over time for input series',

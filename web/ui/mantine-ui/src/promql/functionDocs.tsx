@@ -541,6 +541,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           interval.
         </li>
         <li>
+          <code>st_of_last_over_time(range-vector)</code>: the start timestamp of last sample in the specified interval.
+        </li>
+        <li>
           <code>ts_of_min_over_time(range-vector)</code>: the timestamp of the last float sample that has the minimum
           value of all float samples in the specified interval.
         </li>
@@ -858,6 +861,9 @@ const funcDocs: Record<string, React.ReactNode> = {
         <li>
           <code>mad_over_time(range-vector)</code>: the median absolute deviation of all float samples in the specified
           interval.
+        </li>
+        <li>
+          <code>st_of_last_over_time(range-vector)</code>: the start timestamp of last sample in the specified interval.
         </li>
         <li>
           <code>ts_of_min_over_time(range-vector)</code>: the timestamp of the last float sample that has the minimum
@@ -1188,6 +1194,9 @@ const funcDocs: Record<string, React.ReactNode> = {
         <li>
           <code>mad_over_time(range-vector)</code>: the median absolute deviation of all float samples in the specified
           interval.
+        </li>
+        <li>
+          <code>st_of_last_over_time(range-vector)</code>: the start timestamp of last sample in the specified interval.
         </li>
         <li>
           <code>ts_of_min_over_time(range-vector)</code>: the timestamp of the last float sample that has the minimum
@@ -2021,6 +2030,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           interval.
         </li>
         <li>
+          <code>st_of_last_over_time(range-vector)</code>: the start timestamp of last sample in the specified interval.
+        </li>
+        <li>
           <code>ts_of_min_over_time(range-vector)</code>: the timestamp of the last float sample that has the minimum
           value of all float samples in the specified interval.
         </li>
@@ -2171,6 +2183,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           interval.
         </li>
         <li>
+          <code>st_of_last_over_time(range-vector)</code>: the start timestamp of last sample in the specified interval.
+        </li>
+        <li>
           <code>ts_of_min_over_time(range-vector)</code>: the timestamp of the last float sample that has the minimum
           value of all float samples in the specified interval.
         </li>
@@ -2296,6 +2311,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           interval.
         </li>
         <li>
+          <code>st_of_last_over_time(range-vector)</code>: the start timestamp of last sample in the specified interval.
+        </li>
+        <li>
           <code>ts_of_min_over_time(range-vector)</code>: the timestamp of the last float sample that has the minimum
           value of all float samples in the specified interval.
         </li>
@@ -2419,6 +2437,9 @@ const funcDocs: Record<string, React.ReactNode> = {
         <li>
           <code>mad_over_time(range-vector)</code>: the median absolute deviation of all float samples in the specified
           interval.
+        </li>
+        <li>
+          <code>st_of_last_over_time(range-vector)</code>: the start timestamp of last sample in the specified interval.
         </li>
         <li>
           <code>ts_of_min_over_time(range-vector)</code>: the timestamp of the last float sample that has the minimum
@@ -2636,6 +2657,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           interval.
         </li>
         <li>
+          <code>st_of_last_over_time(range-vector)</code>: the start timestamp of last sample in the specified interval.
+        </li>
+        <li>
           <code>ts_of_min_over_time(range-vector)</code>: the timestamp of the last float sample that has the minimum
           value of all float samples in the specified interval.
         </li>
@@ -2743,6 +2767,9 @@ const funcDocs: Record<string, React.ReactNode> = {
         <li>
           <code>mad_over_time(range-vector)</code>: the median absolute deviation of all float samples in the specified
           interval.
+        </li>
+        <li>
+          <code>st_of_last_over_time(range-vector)</code>: the start timestamp of last sample in the specified interval.
         </li>
         <li>
           <code>ts_of_min_over_time(range-vector)</code>: the timestamp of the last float sample that has the minimum
@@ -3185,6 +3212,118 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  st_of_last_over_time: (
+    <>
+      <p>
+        The following functions allow aggregating each series of a given range vector over time and return an instant
+        vector with per-series aggregation results:
+      </p>
+
+      <ul>
+        <li>
+          <code>avg_over_time(range-vector)</code>: the average value of all float or histogram samples in the specified
+          interval (see details below).
+        </li>
+        <li>
+          <code>min_over_time(range-vector)</code>: the minimum value of all float samples in the specified interval.
+        </li>
+        <li>
+          <code>max_over_time(range-vector)</code>: the maximum value of all float samples in the specified interval.
+        </li>
+        <li>
+          <code>sum_over_time(range-vector)</code>: the sum of all float or histogram samples in the specified interval
+          (see details below).
+        </li>
+        <li>
+          <code>count_over_time(range-vector)</code>: the count of all samples in the specified interval.
+        </li>
+        <li>
+          <code>quantile_over_time(scalar, range-vector)</code>: the φ-quantile (0 ≤ φ ≤ 1) of all float samples in the
+          specified interval.
+        </li>
+        <li>
+          <code>stddev_over_time(range-vector)</code>: the population standard deviation of all float samples in the
+          specified interval.
+        </li>
+        <li>
+          <code>stdvar_over_time(range-vector)</code>: the population variance of all float samples in the specified
+          interval.
+        </li>
+        <li>
+          <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
+        </li>
+        <li>
+          <code>present_over_time(range-vector)</code>: the value 1 for any series in the specified interval.
+        </li>
+      </ul>
+
+      <p>
+        If the <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+        <code>--enable-feature=promql-experimental-functions</code> is set, the following additional functions are
+        available:
+      </p>
+
+      <ul>
+        <li>
+          <code>mad_over_time(range-vector)</code>: the median absolute deviation of all float samples in the specified
+          interval.
+        </li>
+        <li>
+          <code>st_of_last_over_time(range-vector)</code>: the start timestamp of last sample in the specified interval.
+        </li>
+        <li>
+          <code>ts_of_min_over_time(range-vector)</code>: the timestamp of the last float sample that has the minimum
+          value of all float samples in the specified interval.
+        </li>
+        <li>
+          <code>ts_of_max_over_time(range-vector)</code>: the timestamp of the last float sample that has the maximum
+          value of all float samples in the specified interval.
+        </li>
+        <li>
+          <code>ts_of_last_over_time(range-vector)</code>: the timestamp of last sample in the specified interval.
+        </li>
+        <li>
+          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
+        </li>
+        <li>
+          <code>ts_of_first_over_time(range-vector)</code>: the timestamp of earliest sample in the specified interval.
+        </li>
+      </ul>
+
+      <p>
+        Note that all values in the specified interval have the same weight in the aggregation even if the values are
+        not equally spaced throughout the interval.
+      </p>
+
+      <p>These functions act on histograms in the following way:</p>
+
+      <ul>
+        <li>
+          <code>count_over_time</code>, <code>first_over_time</code>, <code>last_over_time</code>, and
+          <code>present_over_time()</code> act on float and histogram samples in the same way.
+        </li>
+        <li>
+          <code>avg_over_time()</code> and <code>sum_over_time()</code> act on histogram samples in a way that
+          corresponds to the respective aggregation operators. If a series contains a mix of float samples and histogram
+          samples within the range, the corresponding result is removed entirely from the output vector. Such a removal
+          is flagged by a warn-level annotation.
+        </li>
+        <li>
+          All other functions ignore histogram samples in the following way: Input ranges containing only histogram
+          samples are silently removed from the output. For ranges with a mix of histogram and float samples, only the
+          float samples are processed and the omission of the histogram samples is flagged by an info-level annotation.
+        </li>
+      </ul>
+
+      <p>
+        <code>first_over_time(m[1m])</code> differs from <code>m offset 1m</code> in that the former will select the
+        first sample of <code>m</code> <em>within</em> the 1m range, where <code>m offset 1m</code> will select the most
+        recent sample within the lookback interval <em>outside and prior to</em> the 1m offset. This is particularly
+        useful with <code>first_over_time(m[step()])</code>
+        in range queries to ensure that the sample selected is within the range step.
+      </p>
+    </>
+  ),
   start: (
     <>
       <p>
@@ -3256,6 +3395,9 @@ const funcDocs: Record<string, React.ReactNode> = {
         <li>
           <code>mad_over_time(range-vector)</code>: the median absolute deviation of all float samples in the specified
           interval.
+        </li>
+        <li>
+          <code>st_of_last_over_time(range-vector)</code>: the start timestamp of last sample in the specified interval.
         </li>
         <li>
           <code>ts_of_min_over_time(range-vector)</code>: the timestamp of the last float sample that has the minimum
@@ -3365,6 +3507,9 @@ const funcDocs: Record<string, React.ReactNode> = {
         <li>
           <code>mad_over_time(range-vector)</code>: the median absolute deviation of all float samples in the specified
           interval.
+        </li>
+        <li>
+          <code>st_of_last_over_time(range-vector)</code>: the start timestamp of last sample in the specified interval.
         </li>
         <li>
           <code>ts_of_min_over_time(range-vector)</code>: the timestamp of the last float sample that has the minimum
@@ -3490,6 +3635,9 @@ const funcDocs: Record<string, React.ReactNode> = {
         <li>
           <code>mad_over_time(range-vector)</code>: the median absolute deviation of all float samples in the specified
           interval.
+        </li>
+        <li>
+          <code>st_of_last_over_time(range-vector)</code>: the start timestamp of last sample in the specified interval.
         </li>
         <li>
           <code>ts_of_min_over_time(range-vector)</code>: the timestamp of the last float sample that has the minimum
@@ -3757,6 +3905,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           interval.
         </li>
         <li>
+          <code>st_of_last_over_time(range-vector)</code>: the start timestamp of last sample in the specified interval.
+        </li>
+        <li>
           <code>ts_of_min_over_time(range-vector)</code>: the timestamp of the last float sample that has the minimum
           value of all float samples in the specified interval.
         </li>
@@ -3864,6 +4015,9 @@ const funcDocs: Record<string, React.ReactNode> = {
         <li>
           <code>mad_over_time(range-vector)</code>: the median absolute deviation of all float samples in the specified
           interval.
+        </li>
+        <li>
+          <code>st_of_last_over_time(range-vector)</code>: the start timestamp of last sample in the specified interval.
         </li>
         <li>
           <code>ts_of_min_over_time(range-vector)</code>: the timestamp of the last float sample that has the minimum
@@ -3975,6 +4129,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           interval.
         </li>
         <li>
+          <code>st_of_last_over_time(range-vector)</code>: the start timestamp of last sample in the specified interval.
+        </li>
+        <li>
           <code>ts_of_min_over_time(range-vector)</code>: the timestamp of the last float sample that has the minimum
           value of all float samples in the specified interval.
         </li>
@@ -4082,6 +4239,9 @@ const funcDocs: Record<string, React.ReactNode> = {
         <li>
           <code>mad_over_time(range-vector)</code>: the median absolute deviation of all float samples in the specified
           interval.
+        </li>
+        <li>
+          <code>st_of_last_over_time(range-vector)</code>: the start timestamp of last sample in the specified interval.
         </li>
         <li>
           <code>ts_of_min_over_time(range-vector)</code>: the timestamp of the last float sample that has the minimum

@@ -947,6 +947,8 @@ additional functions are available:
 
 * `mad_over_time(range-vector)`: the median absolute deviation of all float
   samples in the specified interval.
+* `st_of_last_over_time(range-vector)`: the start timestamp of last sample in the
+  specified interval.
 * `ts_of_min_over_time(range-vector)`: the timestamp of the last float sample
   that has the minimum value of all float samples in the specified interval.
 * `ts_of_max_over_time(range-vector)`: the timestamp of the last float sample

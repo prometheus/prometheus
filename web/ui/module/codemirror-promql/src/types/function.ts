@@ -64,6 +64,7 @@ import {
   MadOverTime,
   MaxOverTime,
   MinOverTime,
+  STOfLastOverTime,
   TsOfFirstOverTime,
   TsOfMaxOverTime,
   TsOfMinOverTime,
@@ -427,6 +428,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   },
   [MinOverTime]: {
     name: 'min_over_time',
+    argTypes: [ValueType.matrix],
+    variadic: 0,
+    returnType: ValueType.vector,
+  },
+  [STOfLastOverTime]: {
+    name: 'st_of_last_over_time',
     argTypes: [ValueType.matrix],
     variadic: 0,
     returnType: ValueType.vector,

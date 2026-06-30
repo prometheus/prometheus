@@ -189,6 +189,7 @@ FunctionIdentifier {
   MadOverTime |
   MaxOverTime |
   MinOverTime |
+  STOfLastOverTime |
   TsOfFirstOverTime |
   TsOfMaxOverTime |
   TsOfMinOverTime |
@@ -481,6 +482,7 @@ durationPrimary[@inline] {
   MadOverTime { condFn<"mad_over_time"> }
   MaxOverTime { condFn<"max_over_time"> }
   MinOverTime { condFn<"min_over_time"> }
+  STOfLastOverTime { condFn<"st_of_last_over_time"> }
   TsOfFirstOverTime { condFn<"ts_of_first_over_time"> }
   TsOfMaxFirstTime { condFn<"ts_of_first_over_time"> }
   TsOfMaxOverTime { condFn<"ts_of_max_over_time"> }

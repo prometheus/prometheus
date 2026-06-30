@@ -1430,6 +1430,40 @@ func funcMadOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 	}), annos
 }
 
+// === st_of_last_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
+func funcSTOfLastOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
+	el := matrixVal[0]
+
+	var tf, stf int64
+	if n := len(el.Floats); n > 0 {
+		tf = el.Floats[n-1].T
+		if sts := enh.StartTimestamps; sts != nil {
+			stf = stOrDefault(sts.Floats, n-1, 0)
+		}
+	}
+
+	var th, sth int64
+	if n := len(el.Histograms); n > 0 {
+		th = el.Histograms[n-1].T
+		if sts := enh.StartTimestamps; sts != nil {
+			sth = stOrDefault(sts.Histograms, n-1, 0)
+		}
+	}
+
+	st := stf
+	if tf < th {
+		st = sth
+	}
+
+	return append(enh.Out, Sample{
+		Metric: el.Metric,
+		F:      float64(st) / 1000,
+	}), nil
+}
+
 // === ts_of_first_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
 func funcTsOfFirstOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	if len(matrixVal) == 0 {
@@ -2648,6 +2682,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"mad_over_time":                funcMadOverTime,
 	"max_over_time":                funcMaxOverTime,
 	"min_over_time":                funcMinOverTime,
+	"st_of_last_over_time":         funcSTOfLastOverTime,
 	"ts_of_first_over_time":        funcTsOfFirstOverTime,
 	"ts_of_last_over_time":         funcTsOfLastOverTime,
 	"ts_of_max_over_time":          funcTsOfMaxOverTime,
@@ -2828,4 +2863,11 @@ func stringSliceFromArgs(args parser.Expressions) []string {
 
 func getMetricName(metric labels.Labels) string {
 	return metric.Get(model.MetricNameLabel)
+}
+
+func stOrDefault(startTimestamps []int64, idx int, def int64) int64 {
+	if idx < len(startTimestamps) {
+		return startTimestamps[idx]
+	}
+	return def
 }

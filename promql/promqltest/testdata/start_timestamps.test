@@ -251,7 +251,6 @@ eval range from 10m to 15m step 1m irate(delta[5m])
 
 clear
 
-
 # Tests for histogram rate where rate extrapolation is substituted with assuming 0 sample at start timestamps.
 #
 # TODO: this doesn't yet produce expected results, because tsdb doesn't yet support start timestamps
@@ -264,3 +263,16 @@ eval instant at 3m rate(series[5m])
     # No series, since single sample can only produce a rate when there's a valid and suitable ST.
 
 clear
+
+# Tests for st_of_last_over_time().
+#
+# TODO: this doesn't yet produce expected results, because tsdb doesn't yet support start timestamps
+# for histograms.
+load 10s
+    series@st  _  1ms   _   0  -1ms       -10ms       -100ms  -999ms  -1s       -10s        -20s  -30s
+    series     _   10  20  30    40  {{sum:50}}   {{sum:60}}      70   80 {{sum:90}} {{sum:100}}   110
+
+eval range from 0s to 110s step 5s st_of_last_over_time(series[20s])
+    {}  _  _  10.001  10.001  0  0  30  30  39.999  39.999  0  0  0  0  69.001 69.001 79  79  0  0  0  0  80
+    # Expected once histogram ST storage is implemented:
+    # {}  _  _  10.001  10.001  0  0  30  30  39.999  39.999  49.99  49.99  59.9  59.9  69.001 69.001 79  79  80  80  80  80  80
