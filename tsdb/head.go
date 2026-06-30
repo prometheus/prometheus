@@ -1893,7 +1893,7 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, affected, chunksRemoved, staleSeriesDeleted, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
+	deleted, deletedShardHashes, affected, chunksRemoved, staleSeriesDeleted, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -1903,7 +1903,7 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	h.numStaleSeries.Sub(uint64(staleSeriesDeleted))
 
 	// Remove deleted series IDs from the postings indexes.
-	h.deletePostingsForSeries(deleted, affected)
+	h.deletePostingsForSeries(deleted, deletedShardHashes, affected)
 
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
@@ -1925,9 +1925,9 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 }
 
 // deletePostingsForSeries removes deleted series from both head postings indexes.
-func (h *Head) deletePostingsForSeries(deleted map[storage.SeriesRef]struct{}, affected map[labels.Label]struct{}) {
+func (h *Head) deletePostingsForSeries(deleted map[storage.SeriesRef]struct{}, deletedShardHashes map[storage.SeriesRef]uint64, affected map[labels.Label]struct{}) {
 	h.postings.Delete(deleted, affected)
-	h.shardBuckets.remove(deleted)
+	h.shardBuckets.remove(deletedShardHashes)
 }
 
 // addPostingsForSeries adds a series to both head postings indexes.
@@ -2269,9 +2269,10 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 // but the returned map goes into Head.deletePostingsForSeries() which expects a map[storage.SeriesRef]struct
 // and there's no easy way to cast maps.
 // minMmapFile is the min mmap file number seen in the series (in-order and out-of-order) after gc'ing the series.
-func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _ int, _, _ int64, minMmapFile int) {
+func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ map[storage.SeriesRef]uint64, _ map[labels.Label]struct{}, _, _ int, _, _ int64, minMmapFile int) {
 	var (
 		deleted                  = map[storage.SeriesRef]struct{}{}
+		deletedShardHashes       = map[storage.SeriesRef]uint64{}
 		affected                 = map[labels.Label]struct{}{}
 		rmChunks                 = 0
 		staleSeriesDeleted       = 0
@@ -2338,7 +2339,9 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			staleSeriesDeleted++
 		}
 
-		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		ref := storage.SeriesRef(series.ref)
+		deleted[ref] = struct{}{}
+		deletedShardHashes[ref] = series.shardHash
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
 		delete(s.series[stripe], series.ref)
@@ -2351,7 +2354,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		actualMint = mint
 	}
 
-	return deleted, affected, rmChunks, staleSeriesDeleted, actualMint, minOOOTime, minMmapFile
+	return deleted, deletedShardHashes, affected, rmChunks, staleSeriesDeleted, actualMint, minOOOTime, minMmapFile
 }
 
 // gcSeries removes the provided series from the head index and updates head metrics,
@@ -2363,7 +2366,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) map[storage.SeriesRef]struct{} {
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, affected, chunksRemoved, staleSeriesDeleted := h.series.gcSeries(seriesRefs, maxt, shouldEvict)
+	deleted, deletedShardHashes, affected, chunksRemoved, staleSeriesDeleted := h.series.gcSeries(seriesRefs, maxt, shouldEvict)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -2373,7 +2376,7 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 	h.numStaleSeries.Sub(uint64(staleSeriesDeleted))
 
 	// Remove deleted series IDs from the postings indexes.
-	h.deletePostingsForSeries(deleted, affected)
+	h.deletePostingsForSeries(deleted, deletedShardHashes, affected)
 
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
@@ -2400,6 +2403,7 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	var (
 		deleted            = map[storage.SeriesRef]struct{}{}
+		deletedShardHashes = map[storage.SeriesRef]uint64{}
 		deletedForCallback = map[chunks.HeadSeriesRef]labels.Labels{}
 		affected           = map[labels.Label]struct{}{}
 		staleSeriesDeleted = 0
@@ -2444,7 +2448,9 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		// after this deletion (it would otherwise subtract len(mmappedChunks) again).
 		series.mmappedChunks = nil
 
-		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		deletedRef := storage.SeriesRef(series.ref)
+		deleted[deletedRef] = struct{}{}
+		deletedShardHashes[deletedRef] = series.shardHash
 		deletedForCallback[series.ref] = series.lset
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 	}
@@ -2456,7 +2462,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	h.numStaleSeries.Sub(uint64(staleSeriesDeleted))
 
 	// Remove deleted series IDs from the postings indexes.
-	h.deletePostingsForSeries(deleted, affected)
+	h.deletePostingsForSeries(deleted, deletedShardHashes, affected)
 
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
@@ -2468,11 +2474,13 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 
 // gcSeries walks all series and removes those whose ref is in seriesRefs, whose maxTime is
 // <= maxt, and for which shouldEvict returns true. Returns the set of deleted refs, the set
-// of label-name/value pairs whose postings are affected, the count of removed chunks, and
-// the number of deleted series that carried a stale-NaN last value.
-func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _ int) {
+// of deleted refs' shard hashes, the set of label-name/value pairs whose
+// postings are affected, the count of removed chunks, and the number of deleted
+// series that carried a stale-NaN last value.
+func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[storage.SeriesRef]uint64, _ map[labels.Label]struct{}, _, _ int) {
 	var (
 		deleted            = map[storage.SeriesRef]struct{}{}
+		deletedShardHashes = map[storage.SeriesRef]uint64{}
 		affected           = map[labels.Label]struct{}{}
 		rmChunks           = 0
 		staleSeriesDeleted = 0
@@ -2519,7 +2527,9 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 			defer s.locks[stripe].Unlock()
 		}
 
-		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		ref := storage.SeriesRef(series.ref)
+		deleted[ref] = struct{}{}
+		deletedShardHashes[ref] = series.shardHash
 		if isStaleSeries(series) {
 			staleSeriesDeleted++
 		}
@@ -2531,7 +2541,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 
 	s.iterForDeletion(check)
 
-	return deleted, affected, rmChunks, staleSeriesDeleted
+	return deleted, deletedShardHashes, affected, rmChunks, staleSeriesDeleted
 }
 
 // The iterForDeletion function iterates through all series, invoking the checkDeletedFunc for each.
@@ -2985,8 +2995,10 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 // hash bucket index when it is enabled; other shard counts and disabled bucket
 // indexes fall back to a full series scan. The returned postings are sorted by
 // ref and may include refs of series deleted since the call began, which callers
-// resolve like any other stale postings entry. It returns empty postings when
-// sharding is disabled or the shard index is out of range.
+// resolve like any other stale postings entry. Bucket-indexed results capture
+// candidate buckets while all candidate buckets are locked, so multi-bucket
+// results are internally consistent. It returns empty postings when sharding is
+// disabled or the shard index is out of range.
 func (h *Head) ShardedAllPostings(shardIndex, shardCount uint64) index.Postings {
 	if !h.opts.EnableSharding || shardIndex >= shardCount {
 		return index.EmptyPostings()
@@ -3002,6 +3014,8 @@ func (h *Head) shardedAllPostingsViaSeriesScan(shardIndex, shardCount uint64) in
 	h.metrics.shardedAllPostingsFallback.Inc()
 
 	capacity := h.NumSeries() / shardCount
+	// Clamp before converting to int so 32-bit builds cannot overflow the
+	// slice preallocation size.
 	capacity = min(capacity, uint64(math.MaxInt))
 	out := make([]storage.SeriesRef, 0, int(capacity))
 	for i := range h.series.size {

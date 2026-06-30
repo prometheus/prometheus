@@ -17,9 +17,12 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"runtime"
 	"slices"
 	"sync"
 	"testing"
+	"time"
+	"unsafe"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -29,10 +32,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
-var (
-	shardBucketDirtySortSink storage.SeriesRef
-	shardFilterSeekSink      storage.SeriesRef
-)
+var shardBucketDirtySortSink storage.SeriesRef
 
 // expandShard drains the bucket lists of one shard into a sorted ref slice.
 func expandShard(t *testing.T, s *shardBucketPostings, shardIndex, shardCount uint64) []storage.SeriesRef {
@@ -41,6 +41,49 @@ func expandShard(t *testing.T, s *shardBucketPostings, shardIndex, shardCount ui
 	refs, err := index.ExpandPostings(index.Merge(t.Context(), lists...))
 	require.NoError(t, err)
 	return refs
+}
+
+func deletedShardHashMap(tb testing.TB, deleted map[storage.SeriesRef]struct{}, refHashes map[storage.SeriesRef]uint64) map[storage.SeriesRef]uint64 {
+	tb.Helper()
+	out := make(map[storage.SeriesRef]uint64, len(deleted))
+	for ref := range deleted {
+		hash, ok := refHashes[ref]
+		require.True(tb, ok, "missing shard hash for deleted ref %d", ref)
+		out[ref] = hash
+	}
+	require.Len(tb, out, len(deleted))
+	return out
+}
+
+func identityDeletedShardHashes(refs ...storage.SeriesRef) map[storage.SeriesRef]uint64 {
+	out := make(map[storage.SeriesRef]uint64, len(refs))
+	for _, ref := range refs {
+		out[ref] = uint64(ref)
+	}
+	return out
+}
+
+type shardBucketSnapshot struct {
+	refsPtr   *storage.SeriesRef
+	hashesPtr *uint64
+	refsLen   int
+	hashesLen int
+	dirty     int
+}
+
+func snapshotShardBuckets(s *shardBucketPostings) []shardBucketSnapshot {
+	out := make([]shardBucketSnapshot, len(s.buckets))
+	for i := range s.buckets {
+		bucket := &s.buckets[i]
+		out[i] = shardBucketSnapshot{
+			refsPtr:   unsafe.SliceData(bucket.refs),
+			hashesPtr: unsafe.SliceData(bucket.hashes),
+			refsLen:   len(bucket.refs),
+			hashesLen: len(bucket.hashes),
+			dirty:     bucket.dirty,
+		}
+	}
+	return out
 }
 
 func TestShardBucketPostings(t *testing.T) {
@@ -147,7 +190,7 @@ func TestShardBucketPostings(t *testing.T) {
 			refHashes[storage.SeriesRef(ref)] = h
 		}
 		deleted := map[storage.SeriesRef]struct{}{10: {}, 70: {}, 95: {}, 25: {}}
-		s.remove(deleted)
+		s.remove(deletedShardHashMap(t, deleted, refHashes))
 		for ref := range deleted {
 			delete(refHashes, ref)
 		}
@@ -173,8 +216,8 @@ func TestShardBucketPostings(t *testing.T) {
 		require.Nil(t, lists)
 		require.False(t, subFiltered)
 		require.Zero(t, s.numSeries())
-		s.add(1, 1)                                     // Must not panic.
-		s.remove(map[storage.SeriesRef]struct{}{1: {}}) // Must not panic.
+		s.add(1, 1)                             // Must not panic.
+		s.remove(identityDeletedShardHashes(1)) // Must not panic.
 	})
 
 	t.Run("remove drops deleted refs and keeps reader snapshots intact", func(t *testing.T) {
@@ -188,7 +231,11 @@ func TestShardBucketPostings(t *testing.T) {
 		before := expandShard(t, s, 0, 2)
 
 		deleted := map[storage.SeriesRef]struct{}{2: {}, 4: {}, 7: {}}
-		s.remove(deleted)
+		s.remove(deletedShardHashMap(t, deleted, map[storage.SeriesRef]uint64{
+			2: 2,
+			4: 4,
+			7: 7,
+		}))
 		require.Equal(t, 7, s.numSeries())
 
 		after := expandShard(t, s, 0, 2)
@@ -197,6 +244,35 @@ func TestShardBucketPostings(t *testing.T) {
 		}
 		// The pre-removal snapshot still contains the original refs.
 		require.Contains(t, before, storage.SeriesRef(2))
+	})
+
+	t.Run("remove rebuilds only touched buckets", func(t *testing.T) {
+		t.Parallel()
+		s := newShardBucketPostings(8)
+		refHashes := map[storage.SeriesRef]uint64{}
+		for ref := storage.SeriesRef(1); ref <= 64; ref++ {
+			refHashes[ref] = uint64(ref)
+			s.add(chunks.HeadSeriesRef(ref), uint64(ref))
+		}
+
+		before := snapshotShardBuckets(s)
+		deleted := map[storage.SeriesRef]struct{}{
+			1:  {},
+			9:  {},
+			5:  {},
+			13: {},
+		}
+		s.remove(deletedShardHashMap(t, deleted, refHashes))
+
+		after := snapshotShardBuckets(s)
+		expectedTouched := map[int]struct{}{1: {}, 5: {}}
+		for i := range s.buckets {
+			if _, ok := expectedTouched[i]; ok {
+				require.Less(t, after[i].refsLen, before[i].refsLen, "bucket %d should be rebuilt", i)
+				continue
+			}
+			require.Equal(t, before[i], after[i], "bucket %d should not be rebuilt", i)
+		}
 	})
 
 	t.Run("out-of-order adds are served sorted", func(t *testing.T) {
@@ -224,18 +300,83 @@ func TestShardBucketPostings(t *testing.T) {
 		} {
 			s.add(tc.ref, tc.hash)
 		}
-		require.NotEqual(t, cleanShardBucket, s.dirty[0])
-		require.NotEqual(t, cleanShardBucket, s.dirty[1])
+		require.NotEqual(t, cleanShardBucket, s.buckets[0].dirty)
+		require.NotEqual(t, cleanShardBucket, s.buckets[1].dirty)
 
 		require.Equal(t, []storage.SeriesRef{2, 10}, expandShard(t, s, 0, 4))
-		require.Equal(t, cleanShardBucket, s.dirty[0])
-		require.NotEqual(t, cleanShardBucket, s.dirty[1])
+		require.Equal(t, cleanShardBucket, s.buckets[0].dirty)
+		require.NotEqual(t, cleanShardBucket, s.buckets[1].dirty)
 
 		require.Equal(t, []storage.SeriesRef{3, 11}, expandShard(t, s, 1, 4))
-		require.Equal(t, cleanShardBucket, s.dirty[1])
+		require.Equal(t, cleanShardBucket, s.buckets[1].dirty)
 	})
 
-	t.Run("concurrent adds, removes and reads", func(t *testing.T) {
+	t.Run("multi-bucket read holds earlier candidate bucket while waiting for later bucket", func(t *testing.T) {
+		s := newShardBucketPostings(4)
+		s.add(1, 0)
+		s.add(3, 2)
+		require.Equal(t, []storage.SeriesRef{1, 3}, expandShard(t, s, 0, 2))
+
+		later := &s.buckets[2]
+		later.mtx.Lock()
+		laterLocked := true
+		defer func() {
+			if laterLocked {
+				later.mtx.Unlock()
+			}
+		}()
+
+		type readResult struct {
+			refs []storage.SeriesRef
+			err  error
+		}
+		readDone := make(chan readResult, 1)
+		go func() {
+			lists, _ := s.postingsFor(0, 2)
+			refs, err := index.ExpandPostings(index.Merge(t.Context(), lists...))
+			readDone <- readResult{refs: refs, err: err}
+		}()
+
+		require.Eventually(t, func() bool {
+			if s.buckets[0].mtx.TryLock() {
+				s.buckets[0].mtx.Unlock()
+				return false
+			}
+			return true
+		}, time.Second, time.Millisecond)
+
+		addDone := make(chan struct{})
+		go func() {
+			s.add(5, 4)
+			close(addDone)
+		}()
+
+		select {
+		case <-addDone:
+			t.Fatal("add to earlier candidate bucket completed while multi-bucket read was blocked on later bucket")
+		case <-time.After(50 * time.Millisecond):
+		}
+
+		later.mtx.Unlock()
+		laterLocked = false
+
+		select {
+		case result := <-readDone:
+			require.NoError(t, result.err)
+			require.Equal(t, []storage.SeriesRef{1, 3}, result.refs)
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for multi-bucket read")
+		}
+
+		select {
+		case <-addDone:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for blocked add")
+		}
+		require.Equal(t, []storage.SeriesRef{1, 3, 5}, expandShard(t, s, 0, 2))
+	})
+
+	t.Run("Concurrent adds, removes and reads", func(t *testing.T) {
 		t.Parallel()
 		s := newShardBucketPostings(8)
 
@@ -253,14 +394,14 @@ func TestShardBucketPostings(t *testing.T) {
 					ref := chunks.HeadSeriesRef(i*writers + w + 1)
 					s.add(ref, uint64(ref))
 					if i%2 == 0 {
-						s.remove(map[storage.SeriesRef]struct{}{storage.SeriesRef(ref): {}})
+						s.remove(identityDeletedShardHashes(storage.SeriesRef(ref)))
 					}
 				}
 			})
 		}
-		// Readers verify every captured shard list is sorted, across an exact
-		// (4 <= 8) and a sub-filtered (16 > 8) shard count, so the sub-filter's
-		// concurrent (ref, hash) header capture is race-checked.
+		// Readers verify every captured shard list is sorted and every returned
+		// ref belongs to the requested shard. Since the test adds ref == hash,
+		// shard membership remains checkable even while remove and add race.
 		for range 2 {
 			wg.Go(func() {
 				for range 200 {
@@ -273,6 +414,11 @@ func TestShardBucketPostings(t *testing.T) {
 							}
 							if !slices.IsSorted(refs) {
 								panic("shard list not sorted")
+							}
+							for _, ref := range refs {
+								if uint64(ref)%shardCount != shardIndex {
+									panic(fmt.Sprintf("ref %d returned for shard %d of %d", ref, shardIndex, shardCount))
+								}
 							}
 						}
 					}
@@ -290,42 +436,74 @@ func TestShardBucketPostings(t *testing.T) {
 		require.Len(t, got, writers*refsPerWriter/2)
 	})
 
-	t.Run("filter matches intersect output", func(t *testing.T) {
+	t.Run("Concurrent multi-bucket reads with remove and dirty sort", func(t *testing.T) {
 		t.Parallel()
-		s := newShardBucketPostings(8)
-		rng := rand.New(rand.NewSource(42))
-		all := make([]storage.SeriesRef, 0, 5000)
-		for ref := chunks.HeadSeriesRef(1); ref <= 5000; ref++ {
-			s.add(ref, rng.Uint64())
-			all = append(all, storage.SeriesRef(ref))
-		}
-		// Input: every third ref, split into a merge tree of two
-		// interleaved sub-lists.
-		var inA, inB []storage.SeriesRef
-		for i, ref := range all {
-			if i%3 != 0 {
-				continue
-			}
-			if i%2 == 0 {
-				inA = append(inA, ref)
-			} else {
-				inB = append(inB, ref)
-			}
-		}
-		treeInput := func() index.Postings {
-			return index.Merge(t.Context(), index.NewListPostings(inA), index.NewListPostings(inB))
+		s := newShardBucketPostings(16)
+
+		const (
+			numSeed    = 4000
+			writers    = 2
+			iterations = 3000
+			shardCount = uint64(4)
+		)
+		for ref := chunks.HeadSeriesRef(1); ref <= numSeed; ref++ {
+			s.add(ref, uint64(ref))
 		}
 
-		for shardIndex := range uint64(4) {
-			lists, _ := s.postingsFor(shardIndex, 4)
-			got, err := index.ExpandPostings(newShardFilterPostings(treeInput(), index.Merge(t.Context(), lists...)))
-			require.NoError(t, err)
+		recordErr, firstErr := shardBucketFirstError()
+		done := make(chan struct{})
+		var readersWG, writersWG sync.WaitGroup
 
-			lists, _ = s.postingsFor(shardIndex, 4)
-			want, err := index.ExpandPostings(index.Intersect(treeInput(), index.Merge(t.Context(), lists...)))
-			require.NoError(t, err)
-			require.Equal(t, want, got, "shard %d", shardIndex)
+		for r := range 4 {
+			readersWG.Go(func() {
+				shard := uint64(r) % shardCount
+				for {
+					select {
+					case <-done:
+						return
+					default:
+					}
+
+					lists, _ := s.postingsFor(shard, shardCount)
+					refs, err := index.ExpandPostings(index.Merge(t.Context(), lists...))
+					if err != nil {
+						recordErr(err)
+						return
+					}
+					if !slices.IsSorted(refs) {
+						recordErr(fmt.Errorf("shard %d refs are not sorted", shard))
+						return
+					}
+					for _, ref := range refs {
+						if uint64(ref)%shardCount != shard {
+							recordErr(fmt.Errorf("ref %d returned for shard %d of %d", ref, shard, shardCount))
+							return
+						}
+					}
+					shard = (shard + 1) % shardCount
+				}
+			})
 		}
+
+		for w := range writers {
+			writersWG.Go(func() {
+				for i := range iterations {
+					bucket := chunks.HeadSeriesRef((i + w) % 16)
+					high := chunks.HeadSeriesRef(1_000_000 + (w*iterations+i)*32 + int(bucket))
+					low := high - 16
+					s.add(high, uint64(high))
+					s.add(low, uint64(low))
+					if i%3 == 0 {
+						s.remove(identityDeletedShardHashes(storage.SeriesRef(low)))
+					}
+				}
+			})
+		}
+
+		writersWG.Wait()
+		close(done)
+		readersWG.Wait()
+		require.NoError(t, firstErr())
 	})
 
 	t.Run("shard hash filter yields and seeks matching refs", func(t *testing.T) {
@@ -346,40 +524,6 @@ func TestShardBucketPostings(t *testing.T) {
 		require.True(t, f.Seek(8)) // Already at or past v: no movement.
 		require.Equal(t, storage.SeriesRef(8), f.At())
 		require.False(t, f.Seek(11)) // 12 is not in the shard: exhausted.
-		require.NoError(t, f.Err())
-	})
-
-	t.Run("filter stops when buckets are exhausted", func(t *testing.T) {
-		t.Parallel()
-		buckets := index.NewListPostings([]storage.SeriesRef{2, 4})
-		input := index.NewListPostings([]storage.SeriesRef{1, 2, 3, 4, 5, 1000})
-
-		f := newShardFilterPostings(input, buckets)
-		require.True(t, f.Next())
-		require.Equal(t, storage.SeriesRef(2), f.At())
-		require.True(t, f.Next())
-		require.Equal(t, storage.SeriesRef(4), f.At())
-		require.False(t, f.Next())
-		require.NoError(t, f.Err())
-	})
-
-	t.Run("filter seek is monotone", func(t *testing.T) {
-		t.Parallel()
-		buckets := index.NewListPostings([]storage.SeriesRef{1, 3, 5, 7, 9})
-		input := index.NewListPostings([]storage.SeriesRef{1, 2, 3, 4, 5, 6, 7, 8, 9})
-
-		f := newShardFilterPostings(input, buckets)
-		// Seek before any Next must position at the first member, even for
-		// v == 0 (no phantom zero ref).
-		require.True(t, f.Seek(0))
-		require.Equal(t, storage.SeriesRef(1), f.At())
-		require.True(t, f.Seek(4))
-		require.Equal(t, storage.SeriesRef(5), f.At())
-		require.True(t, f.Seek(5)) // Already at or past v: no movement.
-		require.Equal(t, storage.SeriesRef(5), f.At())
-		require.True(t, f.Seek(8))
-		require.Equal(t, storage.SeriesRef(9), f.At())
-		require.False(t, f.Seek(10))
 		require.NoError(t, f.Err())
 	})
 }
@@ -465,191 +609,378 @@ func BenchmarkShardBucketDirtySort(b *testing.B) {
 	}
 }
 
-type linearShardFilterPostings struct {
-	input, buckets index.Postings
-	cur            storage.SeriesRef
-}
-
-func newLinearShardFilterPostings(input, buckets index.Postings) *linearShardFilterPostings {
-	return &linearShardFilterPostings{input: input, buckets: buckets}
-}
-
-func (f *linearShardFilterPostings) Next() bool {
-	for f.input.Next() {
-		ref := f.input.At()
-		if !f.buckets.Seek(ref) {
-			return false
-		}
-		if f.buckets.At() == ref {
-			f.cur = ref
-			return true
-		}
-	}
-	return false
-}
-
-func (f *linearShardFilterPostings) Seek(v storage.SeriesRef) bool {
-	if f.cur != 0 && f.cur >= v {
-		return true
-	}
-	for f.Next() {
-		if f.cur >= v {
-			return true
-		}
-	}
-	return false
-}
-
-func (f *linearShardFilterPostings) At() storage.SeriesRef {
-	return f.cur
-}
-
-func (f *linearShardFilterPostings) Err() error {
-	if err := f.input.Err(); err != nil {
-		return err
-	}
-	return f.buckets.Err()
-}
-
-func benchmarkInputPostings(ctx context.Context, kind string, refs []storage.SeriesRef) index.Postings {
-	if kind == "flat" {
-		return index.NewListPostings(refs)
-	}
-	parts := make([]index.Postings, 0, 8)
-	for start := range 8 {
-		part := make([]storage.SeriesRef, 0, len(refs)/8+1)
-		for i := start; i < len(refs); i += 8 {
-			part = append(part, refs[i])
-		}
-		parts = append(parts, index.NewListPostings(part))
-	}
-	return index.Merge(ctx, parts...)
-}
-
-func benchmarkFilterPostings(ctx context.Context, strategy, inputKind string, inputRefs, bucketRefs []storage.SeriesRef) index.Postings {
-	input := benchmarkInputPostings(ctx, inputKind, inputRefs)
-	buckets := index.NewListPostings(bucketRefs)
-	switch strategy {
-	case "linear":
-		return newLinearShardFilterPostings(input, buckets)
-	case "seekful":
-		return newShardFilterPostings(input, buckets)
-	case "intersect":
-		return index.Intersect(input, buckets)
-	default:
-		panic("unknown strategy")
-	}
-}
-
-func filterBenchmarkRefs(numRefs, bucketEvery int) ([]storage.SeriesRef, []storage.SeriesRef) {
-	inputRefs := make([]storage.SeriesRef, numRefs)
-	bucketRefs := make([]storage.SeriesRef, 0, numRefs/bucketEvery)
-	for i := range numRefs {
-		ref := storage.SeriesRef(i + 1)
-		inputRefs[i] = ref
-		if (i+1)%bucketEvery == 0 {
-			bucketRefs = append(bucketRefs, ref)
-		}
-	}
-	return inputRefs, bucketRefs
-}
-
-func filterBenchmarkSeekTargets(numRefs int) []storage.SeriesRef {
-	targets := make([]storage.SeriesRef, 0, 2048)
-	for target := 1; target <= numRefs; target += 47 {
-		targets = append(targets, storage.SeriesRef(target))
-		if len(targets) == 2048 {
-			break
-		}
-	}
-	return targets
-}
-
-func BenchmarkShardFilterPostingsSeek(b *testing.B) {
-	const numRefs = 100_000
-	for _, membership := range []struct {
-		name        string
-		bucketEvery int
-	}{
-		{name: "dense", bucketEvery: 2},
-		{name: "sparse", bucketEvery: 64},
-	} {
-		inputRefs, bucketRefs := filterBenchmarkRefs(numRefs, membership.bucketEvery)
-		targets := filterBenchmarkSeekTargets(numRefs)
-		for _, inputKind := range []string{"flat", "merge-tree"} {
-			for _, strategy := range []string{"linear", "seekful", "intersect"} {
-				b.Run(fmt.Sprintf("next/%s/%s/%s", inputKind, membership.name, strategy), func(b *testing.B) {
-					b.ReportAllocs()
-					for b.Loop() {
-						p := benchmarkFilterPostings(b.Context(), strategy, inputKind, inputRefs, bucketRefs)
-						for p.Next() {
-							shardFilterSeekSink = p.At()
-						}
-						if err := p.Err(); err != nil {
-							b.Fatal(err)
-						}
-					}
-				})
-				b.Run(fmt.Sprintf("seek/%s/%s/%s", inputKind, membership.name, strategy), func(b *testing.B) {
-					b.ReportAllocs()
-					for b.Loop() {
-						p := benchmarkFilterPostings(b.Context(), strategy, inputKind, inputRefs, bucketRefs)
-						for _, target := range targets {
-							if p.Seek(target) {
-								shardFilterSeekSink = p.At()
-							}
-						}
-						if err := p.Err(); err != nil {
-							b.Fatal(err)
-						}
-					}
-				})
-			}
-		}
-	}
-}
-
 // BenchmarkShardBucketPostingsFootprint measures the resident size of the index
 // relative to the live series it holds, after churn — new series created and an
 // equal number removed, as the head turns over between GCs. It reports the slice
 // capacity (refs plus the aligned hashes) as bytes per live series and the
 // cap/len ratio, so a regression in the index's memory amplification is visible:
-// cap/len above ~1 means remove retained the dropped refs' capacity.
+// cap/len above ~1 means remove retained the dropped refs' capacity. It also
+// reports approximate fixed bucket struct and mutex overhead as a candidate-side
+// diagnostic.
 func BenchmarkShardBucketPostingsFootprint(b *testing.B) {
 	const live = 100_000
 	for _, churn := range []int{0, 1, 2} {
 		b.Run(fmt.Sprintf("churn=%dx", churn), func(b *testing.B) {
 			var capEntries, entries int
+			var fixedBytes uintptr
 			for b.Loop() {
 				s := newShardBucketPostings(DefaultShardedPostingsBuckets)
 				rng := rand.New(rand.NewSource(1))
 				total := (1 + churn) * live
+				refHashes := make(map[storage.SeriesRef]uint64, total)
 				for ref := 1; ref <= total; ref++ {
-					s.add(chunks.HeadSeriesRef(ref), rng.Uint64())
+					hash := rng.Uint64()
+					refHashes[storage.SeriesRef(ref)] = hash
+					s.add(chunks.HeadSeriesRef(ref), hash)
 				}
 				// Remove churn*live of them, leaving `live` live.
-				deleted := make(map[storage.SeriesRef]struct{}, churn*live)
+				deleted := make(map[storage.SeriesRef]uint64, churn*live)
 				for ref := 1; ref <= churn*live; ref++ {
-					deleted[storage.SeriesRef(ref)] = struct{}{}
+					deleted[storage.SeriesRef(ref)] = refHashes[storage.SeriesRef(ref)]
 				}
 				s.remove(deleted)
 
 				capEntries, entries = 0, s.numSeries()
-				for _, bk := range s.buckets {
-					capEntries += cap(bk)
+				fixedBytes = unsafe.Sizeof(shardBucket{}) * uintptr(len(s.buckets))
+				for i := range s.buckets {
+					bucket := &s.buckets[i]
+					capEntries += cap(bucket.refs)
 				}
 			}
 			// Each entry costs a storage.SeriesRef (8B) plus an aligned shard hash (8B).
 			b.ReportMetric(float64(capEntries)*16/float64(live), "capbytes/live")
 			b.ReportMetric(float64(capEntries)/float64(entries), "cap/len")
+			b.ReportMetric(float64(fixedBytes)/float64(live), "fixedbytes/live")
 		})
 	}
 }
 
+type shardBucketDeletePattern struct {
+	name          string
+	every         int
+	sparseBuckets []uint64
+}
+
+var shardBucketSparseBenchmarkBuckets = []uint64{0, 32, 64, 96}
+
+func shardBucketDeletePatterns() []shardBucketDeletePattern {
+	return []shardBucketDeletePattern{
+		{name: "dense/churn=1/2", every: 2},
+		{name: "dense/churn=1/8", every: 8},
+		{name: "sparse/spread4/churn=1/8", every: 8, sparseBuckets: shardBucketSparseBenchmarkBuckets},
+	}
+}
+
+func shardBucketBenchmarkHash(hashes []uint64, ref storage.SeriesRef) uint64 {
+	return hashes[(int(ref)-1)%len(hashes)]
+}
+
+func shardBucketBenchmarkBucket(hashes []uint64, ref storage.SeriesRef) uint64 {
+	return shardBucketBenchmarkHash(hashes, ref) & uint64(DefaultShardedPostingsBuckets-1)
+}
+
+func shardBucketDeletedRefs(tb testing.TB, numSeries int, hashes []uint64, pattern shardBucketDeletePattern) (map[storage.SeriesRef]uint64, map[uint64]struct{}) {
+	tb.Helper()
+
+	var deleted map[storage.SeriesRef]uint64
+	touched := map[uint64]struct{}{}
+	if len(pattern.sparseBuckets) == 0 {
+		deleted = make(map[storage.SeriesRef]uint64, numSeries/pattern.every)
+		for ref := storage.SeriesRef(1); ref <= storage.SeriesRef(numSeries); ref++ {
+			if int(ref)%pattern.every != 0 {
+				continue
+			}
+			deleted[ref] = shardBucketBenchmarkHash(hashes, ref)
+			touched[shardBucketBenchmarkBucket(hashes, ref)] = struct{}{}
+		}
+		validateShardBucketDeletedRefs(tb, deleted, touched, allShardBucketIDs())
+		return deleted, touched
+	}
+
+	selectedBuckets := make(map[uint64]struct{}, len(pattern.sparseBuckets))
+	for _, b := range pattern.sparseBuckets {
+		selectedBuckets[b] = struct{}{}
+	}
+	counters := make(map[uint64]int, len(pattern.sparseBuckets))
+	deleted = make(map[storage.SeriesRef]uint64, numSeries*len(pattern.sparseBuckets)/DefaultShardedPostingsBuckets/pattern.every)
+	for ref := storage.SeriesRef(1); ref <= storage.SeriesRef(numSeries); ref++ {
+		bucket := shardBucketBenchmarkBucket(hashes, ref)
+		if _, ok := selectedBuckets[bucket]; !ok {
+			continue
+		}
+		counters[bucket]++
+		if counters[bucket]%pattern.every != 0 {
+			continue
+		}
+		deleted[ref] = shardBucketBenchmarkHash(hashes, ref)
+		touched[bucket] = struct{}{}
+	}
+	validateShardBucketDeletedRefs(tb, deleted, touched, pattern.sparseBuckets)
+	return deleted, touched
+}
+
+func allShardBucketIDs() []uint64 {
+	ids := make([]uint64, DefaultShardedPostingsBuckets)
+	for i := range ids {
+		ids[i] = uint64(i)
+	}
+	return ids
+}
+
+func validateShardBucketDeletedRefs(tb testing.TB, deleted map[storage.SeriesRef]uint64, touched map[uint64]struct{}, expected []uint64) {
+	tb.Helper()
+	require.NotEmpty(tb, deleted)
+
+	got := make([]uint64, 0, len(touched))
+	for b := range touched {
+		got = append(got, b)
+	}
+	slices.Sort(got)
+	require.Equal(tb, expected, got)
+}
+
+type shardBucketReadSample struct {
+	snapshotNS int64
+	readNS     int64
+}
+
+func benchmarkShardBucketRead(ctx context.Context, s *shardBucketPostings, shardIndex, shardCount uint64) (shardBucketReadSample, error) {
+	start := time.Now()
+	lists, _ := s.postingsFor(shardIndex, shardCount)
+	snapshotNS := time.Since(start).Nanoseconds()
+	p := index.Merge(ctx, lists...)
+	for p.Next() {
+	}
+	if err := p.Err(); err != nil {
+		return shardBucketReadSample{}, err
+	}
+	return shardBucketReadSample{
+		snapshotNS: snapshotNS,
+		readNS:     time.Since(start).Nanoseconds(),
+	}, nil
+}
+
+func collectShardBucketBaselineSamples(b *testing.B, s *shardBucketPostings, shardCount uint64, readers int) []shardBucketReadSample {
+	const baselineSamples = 256
+
+	samples := make([]shardBucketReadSample, baselineSamples)
+	var next atomic.Int64
+	recordErr, firstErr := shardBucketFirstError()
+	var wg sync.WaitGroup
+	for r := range readers {
+		wg.Go(func() {
+			shard := uint64(r) % shardCount
+			for {
+				i := int(next.Inc() - 1)
+				if i >= len(samples) {
+					return
+				}
+				sample, err := benchmarkShardBucketRead(b.Context(), s, shard, shardCount)
+				if err != nil {
+					recordErr(err)
+					return
+				}
+				samples[i] = sample
+				shard = (shard + uint64(readers)) % shardCount
+			}
+		})
+	}
+	wg.Wait()
+	if err := firstErr(); err != nil {
+		b.Fatal(err)
+	}
+	return samples
+}
+
+func shardBucketFirstError() (func(error), func() error) {
+	var mu sync.Mutex
+	var firstErr error
+	recordErr := func(err error) {
+		if err == nil {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+	return recordErr, func() error {
+		mu.Lock()
+		defer mu.Unlock()
+		return firstErr
+	}
+}
+
+func shardBucketReadSampleDurations(samples []shardBucketReadSample) ([]int64, []int64) {
+	snapshots := make([]int64, len(samples))
+	reads := make([]int64, len(samples))
+	for i, sample := range samples {
+		snapshots[i] = sample.snapshotNS
+		reads[i] = sample.readNS
+	}
+	slices.Sort(snapshots)
+	slices.Sort(reads)
+	return snapshots, reads
+}
+
+func shardBucketPercentile(sorted []int64, numerator, denominator int) int64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	i := (len(sorted)*numerator + denominator - 1) / denominator
+	if i <= 0 {
+		return sorted[0]
+	}
+	if i > len(sorted) {
+		return sorted[len(sorted)-1]
+	}
+	return sorted[i-1]
+}
+
+func reportShardBucketReadMetrics(b *testing.B, baseline, samples []shardBucketReadSample, readers int) {
+	if len(samples) == 0 {
+		b.Fatal("no concurrent remove/read samples collected")
+	}
+
+	baselineSnapshots, baselineReads := shardBucketReadSampleDurations(baseline)
+	snapshots, reads := shardBucketReadSampleDurations(samples)
+	baselineSnapshotP99 := shardBucketPercentile(baselineSnapshots, 99, 100)
+	baselineReadP99 := shardBucketPercentile(baselineReads, 99, 100)
+	snapshotP99 := shardBucketPercentile(snapshots, 99, 100)
+	readP99 := shardBucketPercentile(reads, 99, 100)
+
+	b.ReportMetric(float64(baselineSnapshotP99), "baseline-snapshot-p99-ns")
+	b.ReportMetric(float64(baselineReadP99), "baseline-read-p99-ns")
+	b.ReportMetric(float64(shardBucketPercentile(snapshots, 50, 100)), "snapshot-p50-ns")
+	b.ReportMetric(float64(snapshotP99), "snapshot-p99-ns")
+	b.ReportMetric(float64(snapshots[len(snapshots)-1]), "snapshot-max-ns")
+	if baselineSnapshotP99 > 0 {
+		b.ReportMetric(float64(snapshotP99)/float64(baselineSnapshotP99), "snapshot-p99-over-baseline-ratio")
+	}
+	b.ReportMetric(float64(shardBucketPercentile(reads, 50, 100)), "read-p50-ns")
+	b.ReportMetric(float64(readP99), "read-p99-ns")
+	b.ReportMetric(float64(reads[len(reads)-1]), "read-max-ns")
+	if baselineReadP99 > 0 {
+		b.ReportMetric(float64(readP99)/float64(baselineReadP99), "read-p99-over-baseline-ratio")
+	}
+	b.ReportMetric(float64(len(samples))/float64(b.N), "samples/remove")
+	b.ReportMetric(float64(len(samples)), "samples-total")
+	b.ReportMetric(float64(readers), "reader-goroutines")
+}
+
+func benchmarkShardBucketConcurrentRemoveRead(b *testing.B, s *shardBucketPostings, deleted map[storage.SeriesRef]uint64, shardCount uint64, readers int) []shardBucketReadSample {
+	const samplesPerReader = 32_768
+
+	readerSamples := make([][]shardBucketReadSample, readers)
+	for i := range readerSamples {
+		readerSamples[i] = make([]shardBucketReadSample, 0, samplesPerReader)
+	}
+
+	var measuring atomic.Bool
+	var overflow atomic.Bool
+	done := make(chan struct{})
+	steadyStart := make(chan struct{})
+	recordErr, firstErr := shardBucketFirstError()
+	var wg, warmup, steadyReady sync.WaitGroup
+	for r := range readers {
+		wg.Add(1)
+		warmup.Add(1)
+		steadyReady.Add(1)
+		go func() {
+			defer wg.Done()
+			shard := uint64(r) % shardCount
+			if _, err := benchmarkShardBucketRead(b.Context(), s, shard, shardCount); err != nil {
+				recordErr(err)
+				warmup.Done()
+				steadyReady.Done()
+				return
+			}
+			warmup.Done()
+
+			select {
+			case <-steadyStart:
+			case <-done:
+				steadyReady.Done()
+				return
+			}
+
+			ready := false
+			for {
+				select {
+				case <-done:
+					if !ready {
+						steadyReady.Done()
+					}
+					return
+				default:
+				}
+
+				measured := measuring.Load()
+				sample, err := benchmarkShardBucketRead(b.Context(), s, shard, shardCount)
+				if err != nil {
+					recordErr(err)
+					if !ready {
+						steadyReady.Done()
+					}
+					return
+				}
+				if measured {
+					if len(readerSamples[r]) == cap(readerSamples[r]) {
+						overflow.Store(true)
+					} else {
+						readerSamples[r] = append(readerSamples[r], sample)
+					}
+				}
+				if !ready {
+					ready = true
+					steadyReady.Done()
+				}
+				shard = (shard + uint64(readers)) % shardCount
+			}
+		}()
+	}
+
+	warmup.Wait()
+	if err := firstErr(); err != nil {
+		close(done)
+		close(steadyStart)
+		wg.Wait()
+		b.Fatal(err)
+	}
+	close(steadyStart)
+	steadyReady.Wait()
+	if err := firstErr(); err != nil {
+		close(done)
+		wg.Wait()
+		b.Fatal(err)
+	}
+
+	b.StartTimer()
+	measuring.Store(true)
+	s.remove(deleted)
+	b.StopTimer()
+	measuring.Store(false)
+	close(done)
+	wg.Wait()
+	if err := firstErr(); err != nil {
+		b.Fatal(err)
+	}
+	if overflow.Load() {
+		b.Fatalf("concurrent remove/read sample buffer overflowed with capacity %d per reader", samplesPerReader)
+	}
+
+	var samples []shardBucketReadSample
+	for _, reader := range readerSamples {
+		samples = append(samples, reader...)
+	}
+	return samples
+}
+
 func BenchmarkShardBucketPostings(b *testing.B) {
 	// Precompute random shard hashes once so the hot loop measures the
-	// structure (lock + append), not StableHash. Random spread mimics how
-	// StableHash scatters series across all buckets.
+	// structure (lock + append), not StableHash. StableHash is not correlated
+	// with increasing series refs, so the random order is intentional.
 	const numHashes = 1 << 16
 	hashes := make([]uint64, numHashes)
 	rng := rand.New(rand.NewSource(1))
@@ -667,7 +998,7 @@ func BenchmarkShardBucketPostings(b *testing.B) {
 		return s
 	}
 
-	// add is the write path: one global-mutex acquire + append per series.
+	// add is the write path: one bucket-mutex acquire + append per series.
 	b.Run("add", func(b *testing.B) {
 		b.Run("serial", func(b *testing.B) {
 			s := newShardBucketPostings(DefaultShardedPostingsBuckets)
@@ -677,9 +1008,9 @@ func BenchmarkShardBucketPostings(b *testing.B) {
 			}
 		})
 
-		// parallel exposes contention on the single shardBucketPostings mutex —
-		// the per-creation cost finding #1 is about. Run with -cpu 1,4,8,18 to
-		// see how add scales with concurrent creators.
+		// Parallel exposes contention on the shardBucketPostings bucket mutexes
+		// during concurrent series creation. Run with -cpu 1,4,8,18 to see how
+		// add scales with concurrent creators.
 		b.Run("parallel", func(b *testing.B) {
 			s := newShardBucketPostings(DefaultShardedPostingsBuckets)
 			var goroutine atomic.Int64
@@ -688,8 +1019,9 @@ func BenchmarkShardBucketPostings(b *testing.B) {
 				// Each goroutine owns a disjoint, monotonic ref range, so only
 				// cross-goroutine interleaving (not self) drives bucket churn —
 				// matching globally increasing series IDs in production.
-				ref := chunks.HeadSeriesRef(goroutine.Inc() << 40)
-				i := 0
+				worker := goroutine.Inc() - 1
+				ref := chunks.HeadSeriesRef((worker + 1) << 40)
+				i := int(worker*9973) % numHashes
 				for pb.Next() {
 					s.add(ref, hashes[i%numHashes])
 					ref++
@@ -720,20 +1052,63 @@ func BenchmarkShardBucketPostings(b *testing.B) {
 		}
 	})
 
-	// remove is the GC path: scan all buckets, rebuild those holding a deleted
-	// ref. It mutates, so re-populate per iteration (untimed). remove is fast
-	// relative to populate, so run this sub-benchmark with -benchtime=200x.
+	// Remove is the GC path: group deleted refs by bucket and rebuild only
+	// touched buckets. It mutates, so re-populate per iteration (untimed).
+	// The 2M-series cases are intentionally large enough to expose lock-hold
+	// behavior. Dense cases cover broad deletes, while sparse spread coverage
+	// verifies targeted removal avoids full-bucket traversal.
 	b.Run("remove", func(b *testing.B) {
-		const numSeries = 100_000
-		for b.Loop() {
-			b.StopTimer()
-			s := populate(numSeries)
-			deleted := make(map[storage.SeriesRef]struct{}, numSeries/8)
-			for i := 1; i <= numSeries; i += 8 { // ~1/8 churn slice, like a head GC.
-				deleted[storage.SeriesRef(i)] = struct{}{}
+		const numSeries = 2_000_000
+		for _, pattern := range shardBucketDeletePatterns() {
+			b.Run(pattern.name, func(b *testing.B) {
+				deleted, touched := shardBucketDeletedRefs(b, numSeries, hashes, pattern)
+				b.ReportMetric(float64(len(touched)), "touched_buckets")
+				for b.Loop() {
+					b.StopTimer()
+					s := populate(numSeries)
+					b.StartTimer()
+					s.remove(deleted)
+				}
+			})
+		}
+	})
+
+	// concurrentRemoveRead is a diagnostic workload for reader stalls during
+	// remove. Its allocation metrics include concurrent readers; the remove
+	// benchmark above remains the pure remove allocation signal.
+	b.Run("concurrentRemoveRead", func(b *testing.B) {
+		const numSeries = 2_000_000
+		readers := runtime.GOMAXPROCS(0)
+		for _, pattern := range shardBucketDeletePatterns() {
+			deleted, touched := shardBucketDeletedRefs(b, numSeries, hashes, pattern)
+			for _, shardCount := range []uint64{16, 64, 128, 256} {
+				b.Run(fmt.Sprintf("%s/shardCount=%d", pattern.name, shardCount), func(b *testing.B) {
+					baseline := collectShardBucketBaselineSamples(b, populate(numSeries), shardCount, readers)
+					samples := make([]shardBucketReadSample, 0, readers*128)
+					var sampledRemoves, zeroSampleRemoves int
+					b.ReportMetric(float64(len(touched)), "touched_buckets")
+					b.ReportAllocs()
+					for b.Loop() {
+						b.StopTimer()
+						s := populate(numSeries)
+						iterSamples := benchmarkShardBucketConcurrentRemoveRead(b, s, deleted, shardCount, readers)
+						if len(iterSamples) == 0 {
+							zeroSampleRemoves++
+						} else {
+							sampledRemoves++
+						}
+						samples = append(samples, iterSamples...)
+						b.StartTimer()
+					}
+					b.StopTimer()
+					// Fast sparse removals can finish before a reader completes
+					// during one iteration; keep that visible without failing the
+					// whole benchmark row unless every iteration produced no samples.
+					b.ReportMetric(float64(sampledRemoves), "sampled-removes")
+					b.ReportMetric(float64(zeroSampleRemoves), "zero-sample-removes")
+					reportShardBucketReadMetrics(b, baseline, samples, readers)
+				})
 			}
-			b.StartTimer()
-			s.remove(deleted)
 		}
 	})
 }
