@@ -72,6 +72,7 @@ type WriteStorage struct {
 	interner          *pool
 	scraper           ReadyScrapeManager
 	quit              chan struct{}
+	done              chan struct{}
 
 	recordBuf *record.BuffersPool
 
@@ -107,6 +108,7 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 		interner:          newPool(),
 		scraper:           sm,
 		quit:              make(chan struct{}),
+		done:              make(chan struct{}),
 		highestTimestamp: &maxTimestamp{
 			Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -174,6 +176,8 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 }
 
 func (rws *WriteStorage) run() {
+	defer close(rws.done)
+
 	shardTicker := time.NewTicker(shardUpdateDuration)
 	defer shardTicker.Stop()
 
@@ -426,13 +430,19 @@ func (rws *WriteStorage) LowestSentTimestamp() int64 {
 
 // Close closes the WriteStorage.
 func (rws *WriteStorage) Close() error {
+	// Stop the run() goroutine and wait for it to exit before taking the lock.
+	// run() may otherwise fire a concurrent persistSavepoint on its ticker, and
+	// persistSavepoint itself acquires rws.mtx — so waiting for done while holding
+	// the lock would deadlock.
+	close(rws.quit)
+	<-rws.done
+
 	rws.mtx.Lock()
 	defer rws.mtx.Unlock()
 
 	for _, q := range rws.queues {
 		q.Stop()
 	}
-	close(rws.quit)
 
 	// Persist final savepoint after queues have stopped so LastProcessedSegment
 	// reflects the final, drained position of each watcher.
