@@ -1268,3 +1268,100 @@ metric: <
 		})
 	}
 }
+
+// TestNHCBUngroupedHistogramSeries shows that ungrouped classic histogram series in text format
+// will not be converted into a single histogram per label set by NHCBParser (specifically around
+// processClassicHistogramSeries, see <https://github.com/prometheus/prometheus/blob/main/model/textparse/nhcbparse.go>).
+//
+// Technically, such ungrouped ordering across label sets is allowed in the Prometheus text format
+// (<https://prometheus.io/docs/instrumenting/exposition_formats/#grouping-and-sorting> only requires
+// all lines for a given metric family to be provided as one single group and buckets to be in
+// increasing numerical "le" order), whereas OpenMetrics 1.0 explicitly forbids interleaving
+// Metrics and MetricPoints within a MetricFamily (<https://prometheus.io/docs/specs/om/open_metrics_spec/#metric-1>
+// and <https://prometheus.io/docs/specs/om/open_metrics_spec/#metricpoint-1>).
+//
+// Because NHCBParser is streaming and expects all classic histogram series (_bucket, _count, _sum)
+// for a single label set to appear contiguously, alphabetically sorted or ungrouped metric outputs
+// cause it to prematurely emit incomplete NHCB histograms whenever the label set changes.
+func TestNHCBUngroupedHistogramSeries(t *testing.T) {
+	input := `# TYPE test_histogram histogram
+test_histogram_bucket{a="1",le="1"} 1
+test_histogram_bucket{a="1",le="+Inf"} 1
+test_histogram_bucket{a="2",le="1"} 1
+test_histogram_bucket{a="2",le="+Inf"} 2
+test_histogram_count{a="1"} 1
+test_histogram_count{a="2"} 2
+test_histogram_sum{a="1"} 1.5
+test_histogram_sum{a="2"} 2.5
+`
+	p, err := New([]byte(input), "text/plain", labels.NewSymbolTable(), ParserOptions{ConvertClassicHistogramsToNHCB: true})
+	require.NoError(t, err)
+	require.NotNil(t, p)
+
+	got := testParse(t, p)
+	// Ideally, this input represents 2 complete histograms:
+	// - test_histogram{a="1"} with Count: 1, Sum: 1.5, CustomValues: [1], PositiveBuckets: [1]
+	// - test_histogram{a="2"} with Count: 2, Sum: 2.5, CustomValues: [1], PositiveBuckets: [1, 0]
+	// Instead, NHCBParser emits 4 incomplete duplicate-labelset histograms and drops the sums:
+	exp := []parsedEntry{
+		{
+			m:   "test_histogram",
+			typ: model.MetricTypeHistogram,
+		},
+		// Discrepancy 1: Emitted prematurely from _bucket lines only; Count is inferred from +Inf,
+		// but Sum is 0 (expected 1.5 and 2.5 respectively).
+		{
+			m: `test_histogram{a="1"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           1,
+				Sum:             0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+				CustomValues:    []float64{1},
+			},
+			lset: labels.FromStrings("__name__", "test_histogram", "a", "1"),
+		},
+		{
+			m: `test_histogram{a="2"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           2,
+				Sum:             0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []int64{1, 0},
+				CustomValues:    []float64{1},
+			},
+			lset: labels.FromStrings("__name__", "test_histogram", "a", "2"),
+		},
+		// Discrepancy 2: Duplicate series emitted from _count lines only; CustomValues is empty
+		// (all observations placed in +Inf) and Sum is 0.
+		{
+			m: `test_histogram{a="1"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           1,
+				Sum:             0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+				CustomValues:    []float64{},
+			},
+			lset: labels.FromStrings("__name__", "test_histogram", "a", "1"),
+		},
+		{
+			m: `test_histogram{a="2"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           2,
+				Sum:             0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{2},
+				CustomValues:    []float64{},
+			},
+			lset: labels.FromStrings("__name__", "test_histogram", "a", "2"),
+		},
+		// Discrepancy 3: The trailing _sum lines (1.5 and 2.5) are flushing as sum-only histograms
+		// without count or buckets, which TempHistogram.Convert rejects and drops completely.
+	}
+	requireEntries(t, exp, got)
+}
