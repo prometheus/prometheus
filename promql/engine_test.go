@@ -1823,7 +1823,7 @@ load 10s
 	for _, c := range cases {
 		t.Run(c.Query, func(t *testing.T) {
 			t.Run("perStepEnabled", func(t *testing.T) {
-				opts := promql.NewPrometheusQueryOpts(true, 0)
+				opts := promql.NewPrometheusQueryOpts(true, 0, nil)
 				engine := promqltest.NewTestEngine(t, true, 0, promqltest.DefaultMaxSamplesPerQuery)
 
 				stats := runQuery(t, engine, opts, c, nil)
@@ -1843,7 +1843,7 @@ load 10s
 			})
 
 			t.Run("perStepDisabled", func(t *testing.T) {
-				opts := promql.NewPrometheusQueryOpts(false, 0)
+				opts := promql.NewPrometheusQueryOpts(false, 0, nil)
 				engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
 
 				stats := runQuery(t, engine, opts, c, nil)
@@ -4019,7 +4019,7 @@ metric 0 1 2
 			engine := promqltest.NewTestEngine(t, false, c.engineLookback, promqltest.DefaultMaxSamplesPerQuery)
 			storage := promqltest.LoadedStorage(t, load)
 
-			opts := promql.NewPrometheusQueryOpts(false, c.queryLookback)
+			opts := promql.NewPrometheusQueryOpts(false, c.queryLookback, nil)
 			qry, err := engine.NewInstantQuery(context.Background(), storage, opts, query, c.ts)
 			require.NoError(t, err)
 

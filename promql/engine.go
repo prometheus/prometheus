@@ -161,14 +161,17 @@ type PrometheusQueryOpts struct {
 	enablePerStepStats bool
 	// Lookback delta duration for this query.
 	lookbackDelta time.Duration
+	// Enables start timestamp usage in functions such as rate().
+	useStartTimestamps *bool
 }
 
 var _ QueryOpts = &PrometheusQueryOpts{}
 
-func NewPrometheusQueryOpts(enablePerStepStats bool, lookbackDelta time.Duration) QueryOpts {
+func NewPrometheusQueryOpts(enablePerStepStats bool, lookbackDelta time.Duration, useStartTimestamps *bool) QueryOpts {
 	return &PrometheusQueryOpts{
 		enablePerStepStats: enablePerStepStats,
 		lookbackDelta:      lookbackDelta,
+		useStartTimestamps: useStartTimestamps,
 	}
 }
 
@@ -180,11 +183,17 @@ func (p *PrometheusQueryOpts) LookbackDelta() time.Duration {
 	return p.lookbackDelta
 }
 
+func (p *PrometheusQueryOpts) UseStartTimestamps() *bool {
+	return p.useStartTimestamps
+}
+
 type QueryOpts interface {
 	// Enables recording per-step statistics if the engine has it enabled as well. Disabled by default.
 	EnablePerStepStats() bool
 	// Lookback delta duration for this query.
 	LookbackDelta() time.Duration
+	// Enables start timestamp usage in functions such as rate().
+	UseStartTimestamps() *bool
 }
 
 // query implements the Query interface.
@@ -206,6 +215,9 @@ type query struct {
 
 	// The engine against which the query is executed.
 	ng *Engine
+
+	// useStartTimestamps enables start timestamp usage in functions such as rate().
+	useStartTimestamps bool
 }
 
 type QueryOrigin struct{}
@@ -586,12 +598,17 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 
 func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start, end time.Time, interval time.Duration) (*parser.Expr, *query) {
 	if opts == nil {
-		opts = NewPrometheusQueryOpts(false, 0)
+		opts = NewPrometheusQueryOpts(false, 0, nil)
 	}
 
 	lookbackDelta := opts.LookbackDelta()
 	if lookbackDelta <= 0 {
 		lookbackDelta = ng.lookbackDelta
+	}
+
+	useStartTimestamps := ng.useStartTimestamps
+	if opts.UseStartTimestamps() != nil {
+		useStartTimestamps = *opts.UseStartTimestamps()
 	}
 
 	es := &parser.EvalStmt{
@@ -601,12 +618,13 @@ func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start
 		LookbackDelta: lookbackDelta,
 	}
 	qry := &query{
-		q:           qs,
-		stmt:        es,
-		ng:          ng,
-		stats:       stats.NewQueryTimers(),
-		sampleStats: stats.NewQuerySamples(ng.enablePerStepStats && opts.EnablePerStepStats()),
-		queryable:   q,
+		q:                  qs,
+		stmt:               es,
+		ng:                 ng,
+		stats:              stats.NewQueryTimers(),
+		sampleStats:        stats.NewQuerySamples(ng.enablePerStepStats && opts.EnablePerStepStats()),
+		queryable:          q,
+		useStartTimestamps: useStartTimestamps,
 	}
 	return &es.Expr, qry
 }
@@ -815,7 +833,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
-			useStartTimestamps:       ng.useStartTimestamps,
+			useStartTimestamps:       query.useStartTimestamps,
 			querier:                  querier,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
@@ -876,7 +894,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 		enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 		enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
-		useStartTimestamps:       ng.useStartTimestamps,
+		useStartTimestamps:       query.useStartTimestamps,
 		querier:                  querier,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
