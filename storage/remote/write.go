@@ -35,6 +35,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
+// savepointPersistDuration is the interval at which run() persists the savepoint.
+const savepointPersistDuration = 30 * time.Second
+
 var (
 	samplesIn = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
