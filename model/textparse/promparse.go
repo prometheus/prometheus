@@ -533,3 +533,40 @@ func parseFloat(s string) (float64, error) {
 	}
 	return strconv.ParseFloat(s, 64)
 }
+
+// parseTimestamp parses Unix second timestamps with optional decimal values.
+// It returns the parsed timestamp as milliseconds since the Unix epoch.
+// It is more optimised than parseFloat for this specific use case.
+func parseTimestamp(s string) (int64, error) {
+	if !strings.ContainsRune(s, 'e') {
+		// Fast path for timestamps that do not use scientific notation.
+		secs, decis, found := strings.Cut(s, ".")
+		sec, err := strconv.Atoi(secs)
+		if err != nil {
+			return 0, fmt.Errorf("parse seconds: %w", err)
+		}
+		ts := int64(sec) * 1000
+		if found {
+			exp := [4]int64{0, 100, 10, 1}
+			if len(decis) > 3 {
+				decis = decis[:3]
+			}
+			deci, err := strconv.Atoi(decis)
+			if err != nil {
+				return 0, fmt.Errorf("parse decimals: %w", err)
+			}
+			ts += int64(deci) * exp[len(decis)]
+		}
+		return ts, nil
+	}
+	var ts float64
+	var err error
+	// A float is enough to hold what we need for millisecond resolution.
+	if ts, err = parseFloat(s); err != nil {
+		return 0, err
+	}
+	if math.IsNaN(ts) || math.IsInf(ts, 0) {
+		return 0, fmt.Errorf("invalid timestamp %f", ts)
+	}
+	return int64(ts * 1000), nil
+}

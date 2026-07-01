@@ -609,15 +609,9 @@ func (p *OpenMetricsParser) parseComment() error {
 		break
 	case tTimestamp:
 		p.hasExemplarTs = true
-		var ts float64
-		// A float is enough to hold what we need for millisecond resolution.
-		if ts, err = parseFloat(yoloString(p.l.buf()[1:])); err != nil {
+		if p.exemplarTs, err = parseTimestamp(yoloString(p.l.buf()[1:])); err != nil {
 			return fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
 		}
-		if math.IsNaN(ts) || math.IsInf(ts, 0) {
-			return fmt.Errorf("invalid exemplar timestamp %f", ts)
-		}
-		p.exemplarTs = int64(ts * 1000)
 		switch t3 := p.nextToken(); t3 {
 		case tLinebreak:
 		default:
@@ -731,15 +725,9 @@ func (p *OpenMetricsParser) parseSeriesEndOfLine(t token) error {
 		}
 	case tTimestamp:
 		p.hasTS = true
-		var ts float64
-		// A float is enough to hold what we need for millisecond resolution.
-		if ts, err = parseFloat(yoloString(p.l.buf()[1:])); err != nil {
+		if p.ts, err = parseTimestamp(yoloString(p.l.buf()[1:])); err != nil {
 			return fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
 		}
-		if math.IsNaN(ts) || math.IsInf(ts, 0) {
-			return fmt.Errorf("invalid timestamp %f", ts)
-		}
-		p.ts = int64(ts * 1000)
 		switch t3 := p.nextToken(); t3 {
 		case tLinebreak:
 		case tComment:
