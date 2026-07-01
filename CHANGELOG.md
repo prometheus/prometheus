@@ -1,14 +1,9 @@
 # Changelog
 
-## 3.13.0-rc.1 / 2026-06-22
-
-The 3.13.0-rc.0 release was only partially successful, so most of the changes in this release candidate are CI/build-related. The only user-facing change is:
-
-- [CHANGE] UI: Third-party npm dependency licenses are now embedded in the Prometheus binary and served at `/assets/third-party-licenses.txt`, replacing the `npm_licenses.tar.bz2` archive previously shipped in release tarballs and container images. #18997
-
-## 3.13.0-rc.0 / 2026-06-18
+## 3.13.0 / 2026-07-01
 
 - [SECURITY] UI: Bump `sanitize-html` to fix a cross-site scripting vulnerability (CVE-2026-44990). #18697
+- [CHANGE] UI: Third-party npm dependency licenses are now embedded in the Prometheus binary and served at `/assets/third-party-licenses.txt`, replacing the `npm_licenses.tar.bz2` archive previously shipped in release tarballs and container images. #18997
 - [CHANGE] API: Use SHA-256 instead of SHA-1 to generate rule group pagination tokens. #18927
 - [CHANGE] HTTP clients: Credentials (Authorization header, basic auth, bearer token, OAuth2, configured headers) are no longer forwarded when following a redirect to a different host; affects scraping, remote read/write, alerting, and service discovery. Via prometheus/common v0.69.0 (CVE-2025-4673 CVE-2023-45289). #18949
 - [CHANGE] promtool: Relative file paths in the file passed to `--http.config.file` are now resolved relative to that config file's directory instead of its parent directory. Via prometheus/common v0.69.0. #18949
