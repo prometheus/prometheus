@@ -393,7 +393,8 @@ func (w *Watcher) findSegmentForIndex(index int) (int, error) {
 }
 
 func (w *Watcher) readAndHandleError(r *LiveReader, segmentNum int, onlySeries bool, size int64) error {
-	err := w.readSegment(r, segmentNum, onlySeries)
+	// only runs while tailing live WAL segments, never checkpoints.
+	err := w.readSegment(r, segmentNum, onlySeries, false)
 
 	// Ignore all errors reading to end of segment whilst replaying the WAL.
 	if onlySeries {
@@ -537,11 +538,14 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 
 // Read from a segment and pass the details to w.writer.
 // Also used with readCheckpoint - implements segmentReadFn.
-func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries bool) error {
-	// When replaying from a savepoint, send samples from the savepoint segment
-	// onwards. Segments before the savepoint are read in "series only" mode to
-	// populate the QueueManager's series cache.
-	fromSavepoint := w.startSegment >= 0 && segmentNum >= w.startSegment
+func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries, isCheckpoint bool) error {
+	// When replaying from a savepoint: send samples from the savepoint segment onwards.
+	// Segments before the savepoint are read in "series only" mode to populate the QueueManager's series cache.
+	//
+	// Checkpoint content is excluded: a checkpoint is series-only by design and
+	// its index lives in the same number space as WAL segments, so a savepoint at
+	// or behind the checkpoint would otherwise replay the entire compacted payload.
+	fromSavepoint := !isCheckpoint && w.startSegment >= 0 && segmentNum >= w.startSegment
 	series := w.recordBuf.GetRefSeries(512)
 	samples := w.recordBuf.GetSamples(512)
 	exemplars := w.recordBuf.GetExemplars(512)
@@ -703,7 +707,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries bool) er
 
 // Go through all series in a segment updating the segmentNum, so we can delete older series.
 // Used with readCheckpoint - implements segmentReadFn.
-func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error {
+func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _, _ bool) error {
 	series := w.recordBuf.GetRefSeries(512)
 	defer w.recordBuf.PutRefSeries(series)
 
@@ -746,7 +750,7 @@ func (w *Watcher) LastProcessedSegment() int {
 	return int(w.segment.Load())
 }
 
-type segmentReadFn func(w *Watcher, r *LiveReader, segmentNum int, onlySeries bool) error
+type segmentReadFn func(w *Watcher, r *LiveReader, segmentNum int, onlySeries, isCheckpoint bool) error
 
 // Read all the series records from a Checkpoint directory.
 func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) error {
@@ -773,7 +777,7 @@ func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) err
 		}
 
 		r := NewLiveReader(w.logger, w.readerMetrics, sr)
-		err = readFn(w, r, index, true)
+		err = readFn(w, r, index, true, true)
 		sr.Close()
 		if err != nil && !errors.Is(err, io.EOF) {
 			return fmt.Errorf("readSegment %d: %w", index, err)

@@ -15,6 +15,7 @@ package remote
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -62,6 +63,11 @@ func TestWriteStorageSavepointDisabled(t *testing.T) {
 	// Savepoint should not be loaded when disabled.
 	require.Empty(t, s.savepoint)
 
+	// A stale savepoint file is removed on startup so it cannot be acted upon
+	// if the feature is later re-enabled.
+	_, statErr := os.Stat(savepointFilePath(dir))
+	require.ErrorIs(t, statErr, fs.ErrNotExist, "stale savepoint file should be deleted when feature is disabled")
+
 	// Apply a config so there's a queue.
 	cfg := testRemoteWriteConfigForHost("http://disabled-test.com")
 	require.NoError(t, s.ApplyConfig(&config.Config{
@@ -71,9 +77,10 @@ func TestWriteStorageSavepointDisabled(t *testing.T) {
 
 	require.NoError(t, s.Close())
 
+	// No savepoint file is written on close when the feature is disabled.
 	loaded, err := LoadSavepoint(dir)
 	require.NoError(t, err)
-	require.Equal(t, Savepoint{"abc123": {Segment: 5}}, loaded, "savepoint file should remain unchanged when feature is disabled")
+	require.Empty(t, loaded, "no savepoint file should be written when feature is disabled")
 }
 
 func TestWriteStorageSavepointPersistOnClose(t *testing.T) {
