@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           enable_npm: true
           cache_key_suffix: race
@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           cache_key_suffix: more
       - run: go test --tags=dedupelabels ./...
@@ -58,7 +58,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           cache_key_suffix: "386"
       # NOTE(bwplotka): We limit concurrency to avoid issues around too many concurrent mmaps
@@ -75,7 +75,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           cache_key_suffix: upgrade
       - run: go test -v --race ./cmd/prometheus/ --test.version-upgrade=true -run TestVersionUpgrade
@@ -93,7 +93,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           enable_npm: false
           cache_key_suffix: oldest
@@ -113,7 +113,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           enable_go: false
           enable_npm: true
@@ -170,7 +170,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           enable_npm: false
           cache_key_suffix: compliance
@@ -283,7 +283,7 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           enable_npm: true
           cache_key_suffix: parser
