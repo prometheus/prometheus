@@ -18,7 +18,7 @@ jobs:
       # should also be updated.
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
@@ -36,7 +36,7 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
@@ -55,7 +55,7 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
@@ -72,7 +72,7 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
@@ -90,7 +90,7 @@ jobs:
       # The go version in this image should be N-1 wrt test_go.
       image: quay.io/prometheus/golang-builder:1.25-base
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
@@ -110,7 +110,7 @@ jobs:
       image: quay.io/prometheus/golang-builder:1.26-base
 
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
@@ -128,7 +128,7 @@ jobs:
     name: Go tests on Windows
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -147,7 +147,7 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - run: go install ./cmd/promtool/.
@@ -167,7 +167,7 @@ jobs:
       # should also be updated.
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
@@ -196,7 +196,7 @@ jobs:
       matrix:
         thread: [ 0, 1, 2 ]
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: prometheus/promci-artifacts/restore@f9a587dbc0b2c78a0c54f8ad1cde71ea29a4b76f # v0.1.0
@@ -233,7 +233,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: prometheus/promci-artifacts/restore@f9a587dbc0b2c78a0c54f8ad1cde71ea29a4b76f # v0.1.0
@@ -280,7 +280,7 @@ jobs:
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
@@ -294,7 +294,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - name: Install Go
@@ -388,7 +388,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - name: Install nodejs
