@@ -1038,3 +1038,100 @@ func TestWatcher_StartSegment(t *testing.T) {
 		})
 	}
 }
+
+// TestWatcher_StartSegment_CheckpointNotReplayed verifies that a savepoint at or
+// behind the checkpoint index doesn't cause the compacted checkpoint payload to be replayed.
+// The checkpoint is series-only by design; only live WAL segments at
+// or after the savepoint deliver samples.
+func TestWatcher_StartSegment_CheckpointNotReplayed(t *testing.T) {
+	const seriesCount = 10
+
+	makeSeries := func(n int) []record.RefSeries {
+		s := make([]record.RefSeries, n)
+		for i := range n {
+			s[i] = record.RefSeries{
+				Ref:    chunks.HeadSeriesRef(i),
+				Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i), "job", "test"),
+			}
+		}
+		return s
+	}
+	makeSamples := func(refs []record.RefSeries, ts int64, val float64) []record.RefSample {
+		s := make([]record.RefSample, len(refs))
+		for i, r := range refs {
+			s[i] = record.RefSample{Ref: r.Ref, T: ts, V: val}
+		}
+		return s
+	}
+
+	series := makeSeries(seriesCount)
+	// Samples per segment, identified by value. Segments 0 and 1 are checkpointed.
+	seg0 := makeSamples(series, 1000, 0)
+	seg1 := makeSamples(series, 2000, 1)
+	seg2 := makeSamples(series, 3000, 2)
+	seg3 := makeSamples(series, 4000, 3) // Tail; not read (MaxSegment stops before it).
+
+	dir := t.TempDir()
+	wdir := path.Join(dir, "wal")
+	require.NoError(t, os.Mkdir(wdir, 0o777))
+
+	w, err := NewSize(nil, nil, wdir, 32*1024, compression.None)
+	require.NoError(t, err)
+
+	var enc record.Encoder
+	// Segment 0: series + samples.
+	require.NoError(t, w.Log(enc.Series(series, nil)))
+	require.NoError(t, w.Log(enc.Samples(seg0, nil)))
+	_, err = w.NextSegment() // -> segment 1
+	require.NoError(t, err)
+	// Segment 1: samples.
+	require.NoError(t, w.Log(enc.Samples(seg1, nil)))
+	_, err = w.NextSegment() // -> segment 2
+	require.NoError(t, err)
+
+	// Checkpoint segments 0..1 (retaining all samples), then drop them from the WAL.
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, func(chunks.HeadSeriesRef) bool { return true }, 0, false)
+	require.NoError(t, err)
+	require.NoError(t, w.Truncate(2))
+
+	// Segment 2: samples.
+	require.NoError(t, w.Log(enc.Samples(seg2, nil)))
+	_, err = w.NextSegment() // -> segment 3
+	require.NoError(t, err)
+	// Segment 3 (tail): samples.
+	require.NoError(t, w.Log(enc.Samples(seg3, nil)))
+	require.NoError(t, w.Close())
+
+	// Confirm the checkpoint is at index 1 — at or ahead of the savepoint below.
+	_, cpIndex, err := LastCheckpoint(wdir)
+	require.NoError(t, err)
+	require.Equal(t, 1, cpIndex)
+
+	// Savepoint behind the checkpoint index. Pre-fix this caused the checkpoint's
+	// samples (seg0, seg1) to be replayed.
+	const startSegment = 1
+
+	wt := newWriteToMock(0)
+	watcher := NewWatcher(wMetrics, nil, promslog.NewNopLogger(), "test", wt, dir, false, false, false, nil, startSegment)
+	watcher.MaxSegment = 2 // Stop after segment 2, before the blocking tail.
+	watcher.SetMetrics()
+
+	require.NoError(t, watcher.Run())
+
+	wt.mu.Lock()
+	defer wt.mu.Unlock()
+
+	// Series from the checkpoint still resolve.
+	require.Len(t, wt.seriesStored, seriesCount, "series count mismatch")
+
+	// Only segment 2 samples are delivered. Checkpoint samples (seg0, seg1) are NOT.
+	gotVals := make([]float64, len(wt.samplesAppended))
+	for i, s := range wt.samplesAppended {
+		gotVals[i] = s.V
+	}
+	wantVals := make([]float64, seriesCount)
+	for i := range wantVals {
+		wantVals[i] = 2
+	}
+	require.Equal(t, wantVals, gotVals, "expected only segment 2 samples, no checkpoint replay")
+}

@@ -55,6 +55,18 @@ func LoadSavepoint(dir string) (Savepoint, error) {
 	return sp, nil
 }
 
+// removeSavepoint deletes the savepoint file from dir.
+// It is a no-op if the file does not exist.
+//
+// Used to drop a stale file when the feature is disabled,
+// so it cannot be acted upon if the feature is later re-enabled.
+func removeSavepoint(dir string) error {
+	if err := os.Remove(savepointFilePath(dir)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("remove savepoint: %w", err)
+	}
+	return nil
+}
+
 // Save writes the savepoint to dir. It writes to a temporary file first
 // and renames it to avoid partial writes on crash.
 func (s Savepoint) Save(dir string) error {

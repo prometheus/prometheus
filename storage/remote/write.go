@@ -160,6 +160,10 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 			sp = make(Savepoint)
 		}
 		rws.savepoint = sp
+	} else if err := removeSavepoint(dir); err != nil {
+		// Drop any stale savepoint left over from a previous run with the feature
+		// enabled, so it cannot be acted upon if the feature is re-enabled later.
+		logger.Warn("Failed to remove stale remote write savepoint", "err", err)
 	}
 
 	if reg != nil {
