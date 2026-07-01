@@ -3570,7 +3570,8 @@ You can also use special labels like `__address__`, `__scheme__`, `__metrics_pat
 `__scrape_interval__`, `__scrape_timeout__`, `__convert_classic_histograms_to_nhcb__`,
 `__always_scrape_classic_histograms__`, `__scrape_native_histograms__`,
 `__unix_socket__` to customize the defined targets. These will
-override the respective settings in the scrape configuration.
+override the respective settings in the scrape
+configuration.
 
 The `__address__` label is set to the `<host>:<port>` address of the target.
 After relabeling, the `instance` label is set to the value of `__address__` by default if

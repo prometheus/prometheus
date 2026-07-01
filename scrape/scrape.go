@@ -2341,9 +2341,9 @@ func (t *unixRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 		return t.rt.RoundTrip(req)
 	}
 
-	socketPath := req.URL.Query().Get("__unix_socket__")
+	socketPath := req.URL.Query().Get(UnixSocketLabel)
 	if socketPath == "" {
-		return nil, errors.New("unix scheme used but __unix_socket__ query param missing")
+		return nil, fmt.Errorf("unix scheme used but %s query param missing", UnixSocketLabel)
 	}
 
 	newReq := req.Clone(req.Context())
@@ -2352,7 +2352,7 @@ func (t *unixRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	if scheme == "" {
 		scheme = "http"
 	}
-	q.Del("__unix_socket__")
+	q.Del(UnixSocketLabel)
 	q.Del("__unix_scheme__")
 	newReq.URL.RawQuery = q.Encode()
 
