@@ -2286,6 +2286,11 @@ func pickSchema(bucketFactor float64) int32 {
 	}
 }
 
+// UnixSocketLabel is the name of the label that holds the unix socket path
+// to connect to for scraping. When set, the scrape client will connect via
+// the specified Unix domain socket instead of the target's __address__.
+const UnixSocketLabel = "__unix_socket__"
+
 // unixRoundTripperPrefix is used to mark hosts that should be routed
 // through the custom unixRoundTripper, which then forwards them to a
 // Unix domain socket. The prefix uses "_" because underscores aren't

@@ -3543,8 +3543,6 @@ configuration.
 
 ```yaml
 # The targets specified by the static config.
-# If the target is a unix socket, it must be prefixed with "unix:".
-# E.g. "unix:///var/run/mysocket.sock".
 targets:
   [ - '<host>' ]
 
@@ -3570,8 +3568,8 @@ label is set to the `job_name` value of the respective scrape configuration.
 
 You can also use special labels like `__address__`, `__scheme__`, `__metrics_path__`,
 `__scrape_interval__`, `__scrape_timeout__`, `__convert_classic_histograms_to_nhcb__`,
-`__always_scrape_classic_histograms__`, `__scrape_native_histograms__`
-to customize the defined targets. These will
+`__always_scrape_classic_histograms__`, `__scrape_native_histograms__`,
+`__unix_socket__` to customize the defined targets. These will
 override the respective settings in the scrape configuration.
 
 The `__address__` label is set to the `<host>:<port>` address of the target.
@@ -3606,6 +3604,11 @@ The `__scrape_native_histograms__` label is set to the target's
 the configured global). Setting it during relabeling overrides, per target,
 whether native histograms are scraped. Its value must parse as a boolean; a
 target with an invalid value is dropped.
+
+The `__unix_socket__` label, when set, causes the scrape client to connect via
+the specified Unix domain socket path instead of the target's `__address__`.
+The `__scheme__` label may be set to `unix+http` or `unix+https` to specify the
+protocol used over the socket (defaults to `http`).
 
 Additional labels prefixed with `__meta_` may be available during the
 relabeling phase. They are set by the service discovery mechanism that provided

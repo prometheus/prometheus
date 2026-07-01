@@ -141,15 +141,17 @@ func TestTargetURL(t *testing.T) {
 func TestTargetURL_Unix(t *testing.T) {
 	scrapeConfig := &config.ScrapeConfig{}
 	labels := labels.FromMap(map[string]string{
-		model.AddressLabel:     "unix:///tmp/sock",
-		model.SchemeLabel:      "http",
+		model.AddressLabel:     "example.com:1234",
+		model.SchemeLabel:      "unix+http",
 		model.MetricsPathLabel: "/metrics",
+		UnixSocketLabel:        "/tmp/sock",
 	})
 	target := NewTarget(labels, scrapeConfig, nil, nil)
 
-	// unix:///tmp/sock -> /tmp/sock
-	// scheme -> unix
-	// params -> __unix_socket__=/tmp/sock, __unix_scheme__=http
+	// __unix_socket__=/tmp/sock triggers unix socket handling
+	// __scheme__ "unix+http" -> strip "unix+" -> __unix_scheme__="http"
+	// URL scheme set to "unix" to trigger the custom RoundTripper
+	// host set to "localhost" as placeholder
 
 	expectedURL := &url.URL{
 		Scheme:   "unix",
@@ -161,24 +163,42 @@ func TestTargetURL_Unix(t *testing.T) {
 	require.Equal(t, expectedURL, target.URL())
 }
 
-func TestTargetURL_UnixNoSlashes(t *testing.T) {
+func TestTargetURL_UnixDefaultScheme(t *testing.T) {
 	scrapeConfig := &config.ScrapeConfig{}
 	labels := labels.FromMap(map[string]string{
-		model.AddressLabel:     "unix:/tmp/sock",
-		model.SchemeLabel:      "http",
+		model.AddressLabel:     "example.com:1234",
 		model.MetricsPathLabel: "/metrics",
+		UnixSocketLabel:        "/tmp/sock",
+		// No __scheme__ set — defaults to "http".
 	})
 	target := NewTarget(labels, scrapeConfig, nil, nil)
-
-	// unix:/tmp/sock -> /tmp/sock
-	// scheme -> unix
-	// params -> __unix_socket__=/tmp/sock, __unix_scheme__=http
 
 	expectedURL := &url.URL{
 		Scheme:   "unix",
 		Host:     "localhost",
 		Path:     "/metrics",
 		RawQuery: "__unix_scheme__=http&__unix_socket__=%2Ftmp%2Fsock",
+	}
+
+	require.Equal(t, expectedURL, target.URL())
+}
+
+func TestTargetURL_UnixHTTPS(t *testing.T) {
+	scrapeConfig := &config.ScrapeConfig{}
+	labels := labels.FromMap(map[string]string{
+		model.AddressLabel:     "example.com:1234",
+		model.SchemeLabel:      "unix+https",
+		model.MetricsPathLabel: "/metrics",
+		UnixSocketLabel:        "/tmp/sock",
+	})
+	target := NewTarget(labels, scrapeConfig, nil, nil)
+
+	// __scheme__ "unix+https" -> strip "unix+" -> __unix_scheme__="https"
+	expectedURL := &url.URL{
+		Scheme:   "unix",
+		Host:     "localhost",
+		Path:     "/metrics",
+		RawQuery: "__unix_scheme__=https&__unix_socket__=%2Ftmp%2Fsock",
 	}
 
 	require.Equal(t, expectedURL, target.URL())
