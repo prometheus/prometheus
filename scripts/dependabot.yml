@@ -1,0 +1,37 @@
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      aws:
+        patterns:
+          - "github.com/aws/*"
+      go.opentelemetry.io:
+        patterns:
+          - "go.opentelemetry.io/*"
+      golang.org-x:
+        patterns:
+          - "golang.org/x/*"
+      k8s.io:
+        patterns:
+          - "k8s.io/*"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      promci:
+        patterns:
+          - "prometheus/promci*"
+      codeql:
+        patterns:
+          - "github/codeql-action*"
+    # Exclude configs synced from upstream prometheus/prometheus.
+    exclude-paths:
+      - .github/workflows/container_description.yml
+      - .github/workflows/golangci-lint.yml
+      - .github/workflows/govulncheck.yml
+      - .github/workflows/scorecards.yml
+      - .github/workflows/stale.yml
