@@ -252,7 +252,7 @@ func (t *Target) URL() *url.URL {
 		// Handle Unix domain socket scraping.
 		// We move the socket path to a query parameter to avoid issues with slashes in the URL host.
 		// The scheme is set to "unix" to trigger the custom RoundTripper.
-		params.Set("__unix_socket__", socketPath)
+		params.Set(UnixSocketLabel, socketPath)
 		protocol := strings.TrimPrefix(scheme, "unix+")
 		if protocol == "" || protocol == scheme {
 			protocol = "http"
