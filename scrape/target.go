@@ -248,13 +248,16 @@ func (t *Target) URL() *url.URL {
 	host := t.labels.Get(model.AddressLabel)
 	scheme := t.labels.Get(model.SchemeLabel)
 
-	if path, ok := strings.CutPrefix(host, "unix:"); ok {
-		// Handle unix socket address.
-		path, _ = strings.CutPrefix(path, "//")
-		// We move the socket path to a query parameter to avoid issues with slashes in the host.
+	if socketPath := t.labels.Get(UnixSocketLabel); socketPath != "" {
+		// Handle Unix domain socket scraping.
+		// We move the socket path to a query parameter to avoid issues with slashes in the URL host.
 		// The scheme is set to "unix" to trigger the custom RoundTripper.
-		params.Set("__unix_socket__", path)
-		params.Set("__unix_scheme__", scheme)
+		params.Set("__unix_socket__", socketPath)
+		protocol := strings.TrimPrefix(scheme, "unix+")
+		if protocol == "" || protocol == scheme {
+			protocol = "http"
+		}
+		params.Set("__unix_scheme__", protocol)
 		scheme = "unix"
 		host = "localhost"
 	}
