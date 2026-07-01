@@ -2291,6 +2291,11 @@ func pickSchema(bucketFactor float64) int32 {
 // the specified Unix domain socket instead of the target's __address__.
 const UnixSocketLabel = "__unix_socket__"
 
+// unixSchemeParam is the query parameter used internally to pass the
+// original scheme (e.g. "http", "https") through to the custom
+// RoundTripper, which restores it before forwarding the request.
+const unixSchemeParam = "__unix_scheme__"
+
 // unixRoundTripperPrefix is used to mark hosts that should be routed
 // through the custom unixRoundTripper, which then forwards them to a
 // Unix domain socket. The prefix uses "_" because underscores aren't
@@ -2348,12 +2353,12 @@ func (t *unixRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 
 	newReq := req.Clone(req.Context())
 	q := newReq.URL.Query()
-	scheme := q.Get("__unix_scheme__")
+	scheme := q.Get(unixSchemeParam)
 	if scheme == "" {
 		scheme = "http"
 	}
 	q.Del(UnixSocketLabel)
-	q.Del("__unix_scheme__")
+	q.Del(unixSchemeParam)
 	newReq.URL.RawQuery = q.Encode()
 
 	newReq.URL.Scheme = scheme

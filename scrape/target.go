@@ -257,7 +257,7 @@ func (t *Target) URL() *url.URL {
 		if protocol == "" || protocol == scheme {
 			protocol = "http"
 		}
-		params.Set("__unix_scheme__", protocol)
+		params.Set(unixSchemeParam, protocol)
 		scheme = "unix"
 		host = "localhost"
 	}
