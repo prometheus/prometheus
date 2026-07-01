@@ -1,0 +1,19 @@
+# Two groups define rules that share a name. The alerting rules are identical in
+# name; the recording rules share a name but carry distinguishing static labels.
+groups:
+  - name: groupA
+    rules:
+      - alert: SameName
+        expr: up == 0
+      - record: dup:metric
+        expr: up
+        labels:
+          tier: a
+  - name: groupB
+    rules:
+      - alert: SameName
+        expr: up == 2
+      - record: dup:metric
+        expr: up
+        labels:
+          tier: b
