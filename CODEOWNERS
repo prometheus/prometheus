@@ -10,7 +10,7 @@
 /Makefile                       @prometheus/default-maintainers @simonpasquier @SuperQ
 /cmd/promtool                   @prometheus/default-maintainers @dgl
 /documentation/prometheus-mixin @prometheus/default-maintainers @metalmatze
-/model/histogram                @prometheus/default-maintainers @beorn7 @krajorama
+/model/histogram                @prometheus/default-maintainers @krajorama
 /web/ui                         @prometheus/default-maintainers @juliusv
 /web/ui/module                  @prometheus/default-maintainers @juliusv @nexucis
 /promql                         @prometheus/default-maintainers @roidelapluie @vpranckaitis
