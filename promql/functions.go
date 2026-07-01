@@ -1419,12 +1419,16 @@ func funcMadOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 	return aggrOverTime(matrixVal, enh, func(s Series) float64 {
 		values := make(vectorByValueHeap, 0, len(s.Floats))
 		for _, f := range s.Floats {
+			// A NaN sample makes the median, and therefore the deviation,
+			// undefined, so propagate NaN rather than silently dropping it.
+			if math.IsNaN(f.F) {
+				return math.NaN()
+			}
 			values = append(values, Sample{F: f.F})
 		}
 		median := quantile(0.5, values)
-		values = make(vectorByValueHeap, 0, len(s.Floats))
-		for _, f := range s.Floats {
-			values = append(values, Sample{F: math.Abs(f.F - median)})
+		for i := range values {
+			values[i].F = math.Abs(values[i].F - median)
 		}
 		return quantile(0.5, values)
 	}), annos
