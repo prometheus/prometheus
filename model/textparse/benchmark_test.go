@@ -20,6 +20,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -108,6 +109,87 @@ func BenchmarkParseOMText(b *testing.B) {
 
 /*
 	export bench=v1 && go test ./model/textparse/... \
+		 -run '^$' -bench '^BenchmarkParseOM2Text' \
+		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+	 | tee ${bench}.txt
+*/
+func BenchmarkParseOM2Text(b *testing.B) {
+	data := readTestdataFile(b, "alltypes.om2.txt")
+	benchParse(b, data, "om2text")
+}
+
+// BenchmarkParseOM1VsOM2_AllTypes compares OM1 and OM2 parsing on a realistic
+// scrape-shaped dataset (~30 metric families) where both files expose the same
+// metrics. OM2 is more compact because classic histograms and summaries use a
+// single-line composite form, while OM1 expands them to one line per
+// bucket/quantile plus _sum/_count.
+//
+//	export bench=v1 && go test ./model/textparse/... \
+//		 -run '^$' -bench '^BenchmarkParseOM1VsOM2_AllTypes' \
+//		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+//	 | tee ${bench}.txt
+func BenchmarkParseOM1VsOM2_AllTypes(b *testing.B) {
+	for _, tc := range []struct {
+		parser string
+		file   string
+	}{
+		{"omtext", "alltypes.bench.om.txt"},
+		{"om2text", "alltypes.bench.om2.txt"},
+	} {
+		b.Run(fmt.Sprintf("parser=%v", tc.parser), func(b *testing.B) {
+			benchParse(b, readTestdataFile(b, tc.file), tc.parser)
+		})
+	}
+}
+
+// BenchmarkParseOM1VsOM2_CT compares OM1 and OM2 on metrics with created
+// timestamps. OM1 carries CT on separate _created series, which forces
+// StartTimestamp() to perform a parser deep-copy peek-ahead. OM2 carries CT
+// inline (st@<ts>) and resolves StartTimestamp() in O(1).
+//
+//	export bench=v1 && go test ./model/textparse/... \
+//		 -run '^$' -bench '^BenchmarkParseOM1VsOM2_CT' \
+//		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+//	 | tee ${bench}.txt
+func BenchmarkParseOM1VsOM2_CT(b *testing.B) {
+	for _, tc := range []struct {
+		parser string
+		file   string
+	}{
+		{"omtext", "ct.bench.om.txt"},
+		{"om2text", "ct.bench.om2.txt"},
+	} {
+		b.Run(fmt.Sprintf("parser=%v", tc.parser), func(b *testing.B) {
+			benchParse(b, readTestdataFile(b, tc.file), tc.parser)
+		})
+	}
+}
+
+// BenchmarkParseOM1VsOM2_Histograms isolates classic histogram and summary
+// parsing. OM1 emits one series per bucket/quantile plus _sum/_count; OM2 uses
+// a single-line composite that the parser explodes into the same logical
+// series.
+//
+//	export bench=v1 && go test ./model/textparse/... \
+//		 -run '^$' -bench '^BenchmarkParseOM1VsOM2_Histograms' \
+//		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+//	 | tee ${bench}.txt
+func BenchmarkParseOM1VsOM2_Histograms(b *testing.B) {
+	for _, tc := range []struct {
+		parser string
+		file   string
+	}{
+		{"omtext", "histograms.bench.om.txt"},
+		{"om2text", "histograms.bench.om2.txt"},
+	} {
+		b.Run(fmt.Sprintf("parser=%v", tc.parser), func(b *testing.B) {
+			benchParse(b, readTestdataFile(b, tc.file), tc.parser)
+		})
+	}
+}
+
+/*
+	export bench=v1 && go test ./model/textparse/... \
 		 -run '^$' -bench '^BenchmarkParsePromProto' \
 		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
 	 | tee ${bench}.txt
@@ -160,6 +242,10 @@ func benchParse(b *testing.B, data []byte, parser string) {
 			p, err := New(buf, "application/openmetrics-text", st, ParserOptions{ConvertClassicHistogramsToNHCB: true})
 			require.NoError(b, err)
 			return p
+		}
+	case "om2text":
+		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
+			return NewOpenMetrics2Parser(b, st, ParserOptions{})
 		}
 	default:
 		b.Fatal("unknown parser", parser)
@@ -336,4 +422,67 @@ Inner2:
 			}
 		}
 	})
+}
+
+// TODO(rbizos): Once an OM2 text formatter is available, replace the
+// hand-written *.bench.{om,om2}.txt pairs with files generated from a single
+
+// TestOM1OM2BenchPairsEquivalent verifies that each matched pair of benchmark
+// testdata files (OM1 + OM2) parses to the same set of series.
+func TestOM1OM2BenchPairsEquivalent(t *testing.T) {
+	for _, pair := range []struct {
+		name string
+		om1  string
+		om2  string
+	}{
+		{"alltypes", "alltypes.bench.om.txt", "alltypes.bench.om2.txt"},
+		{"ct", "ct.bench.om.txt", "ct.bench.om2.txt"},
+		{"histograms", "histograms.bench.om.txt", "histograms.bench.om2.txt"},
+	} {
+		t.Run(pair.name, func(t *testing.T) {
+			om1Series := collectSeries(t, readTestdataFile(t, pair.om1), "omtext")
+			om2Series := collectSeries(t, readTestdataFile(t, pair.om2), "om2text")
+			require.Equal(t, om1Series, om2Series,
+				"OM1 and OM2 benchmark files must produce the same series multiset")
+		})
+	}
+}
+
+// collectSeries parses data and returns a sorted multiset of "labels => value"
+// strings, a bit naive but is good enough to compare if we got the same metrics.
+func collectSeries(t *testing.T, data []byte, parser string) []string {
+	t.Helper()
+	var p Parser
+	st := labels.NewSymbolTable()
+	switch parser {
+	case "omtext":
+		p = NewOpenMetricsParser(data, st, WithOMParserSTSeriesSkipped())
+	case "om2text":
+		p = NewOpenMetrics2Parser(data, st, ParserOptions{})
+	default:
+		t.Fatalf("unknown parser %q", parser)
+	}
+
+	var (
+		out []string
+		ls  labels.Labels
+	)
+	for {
+		entry, err := p.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+		switch entry {
+		case EntrySeries:
+			_, _, v := p.Series()
+			p.Labels(&ls)
+			out = append(out, fmt.Sprintf("%s => %g", ls.String(), v))
+		case EntryHistogram:
+			p.Labels(&ls)
+			out = append(out, fmt.Sprintf("%s => <histogram>", ls.String()))
+		}
+	}
+	sort.Strings(out)
+	return out
 }
