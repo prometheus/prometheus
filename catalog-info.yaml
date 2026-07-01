@@ -1,0 +1,17 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: prometheus
+  title: prometheus
+  description: "The Prometheus monitoring system and time series database."
+  tags:
+    - go
+  annotations:
+    backstage.io/source-location: url:https://github.com/Invoca/prometheus/
+    github.com/project-slug: Invoca/prometheus
+    buildkite.com/project-slug: invoca/prometheus
+spec:
+  type: tool
+  lifecycle: production
+  owner: sre-core
+  system: platform-observability
