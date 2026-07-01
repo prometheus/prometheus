@@ -18,10 +18,10 @@ jobs:
       # should also be updated.
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           enable_npm: true
           cache_key_suffix: race
@@ -36,10 +36,10 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           cache_key_suffix: more
       - run: go test --tags=dedupelabels ./...
@@ -55,10 +55,10 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           cache_key_suffix: "386"
       # NOTE(bwplotka): We limit concurrency to avoid issues around too many concurrent mmaps
@@ -72,10 +72,10 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           cache_key_suffix: upgrade
       - run: go test -v --race ./cmd/prometheus/ --test.version-upgrade=true -run TestVersionUpgrade
@@ -90,10 +90,10 @@ jobs:
       # The go version in this image should be N-1 wrt test_go.
       image: quay.io/prometheus/golang-builder:1.25-base
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           enable_npm: false
           cache_key_suffix: oldest
@@ -110,10 +110,10 @@ jobs:
       image: quay.io/prometheus/golang-builder:1.26-base
 
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           enable_go: false
           enable_npm: true
@@ -128,10 +128,10 @@ jobs:
     name: Go tests on Windows
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: 1.26.x
       - run: |
@@ -147,7 +147,7 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - run: go install ./cmd/promtool/.
@@ -167,10 +167,10 @@ jobs:
       # should also be updated.
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           enable_npm: false
           cache_key_suffix: compliance
@@ -196,7 +196,7 @@ jobs:
       matrix:
         thread: [ 0, 1, 2 ]
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: prometheus/promci-artifacts/restore@f9a587dbc0b2c78a0c54f8ad1cde71ea29a4b76f # v0.1.0
@@ -204,7 +204,7 @@ jobs:
         run: |
           mkdir -p .prebuilt-ui
           tar -xzvf .tarballs/prometheus-web-ui-*.tar.gz -C .prebuilt-ui
-      - uses: prometheus/promci/build@9c0e5048a10565e63cbf7c94527ba81ce9be0bea # v0.8.4
+      - uses: prometheus/promci/build@13941414d409d227afd67544e5d306827db5a1a2 # v0.8.5
         with:
           checkout: false
           # Feed the restored UI assets into the crossbuild containers so make
@@ -233,7 +233,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: prometheus/promci-artifacts/restore@f9a587dbc0b2c78a0c54f8ad1cde71ea29a4b76f # v0.1.0
@@ -241,7 +241,7 @@ jobs:
         run: |
           mkdir -p .prebuilt-ui
           tar -xzvf .tarballs/prometheus-web-ui-*.tar.gz -C .prebuilt-ui
-      - uses: prometheus/promci/build@9c0e5048a10565e63cbf7c94527ba81ce9be0bea # v0.8.4
+      - uses: prometheus/promci/build@13941414d409d227afd67544e5d306827db5a1a2 # v0.8.5
         with:
           checkout: false
           parallelism: 12
@@ -280,10 +280,10 @@ jobs:
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
+      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           enable_npm: true
           cache_key_suffix: parser
@@ -294,11 +294,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - name: Install Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: 1.26.x
       - name: Install snmp_exporter/generator dependencies
@@ -308,28 +308,28 @@ jobs:
         id: golangci-lint-version
         run: echo "version=$(make print-golangci-lint-version)" >> $GITHUB_OUTPUT
       - name: Lint
-        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           args: --verbose
           version: ${{ steps.golangci-lint-version.outputs.version }}
       - name: Lint with slicelabels
-        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           args: --verbose --build-tags=slicelabels
           version: ${{ steps.golangci-lint-version.outputs.version }}
       - name: Lint with dedupelabels
-        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           args: --verbose --build-tags=dedupelabels
           version: ${{ steps.golangci-lint-version.outputs.version }}
       - name: Lint in compliance
-        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           args: --verbose
           working-directory: compliance
           version: ${{ steps.golangci-lint-version.outputs.version }}
       - name: Lint in documentation/examples/remote_storage
-        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           args: --verbose
           working-directory: documentation/examples/remote_storage
@@ -351,7 +351,7 @@ jobs:
     needs: [test_ui, test_go, test_go_more, test_go_oldest, test_windows, golangci, codeql, build_all]
     if: github.event_name == 'push' && github.event.ref == 'refs/heads/main'
     steps:
-      - uses: prometheus/promci/publish_main@9c0e5048a10565e63cbf7c94527ba81ce9be0bea # v0.8.4
+      - uses: prometheus/promci/publish_main@13941414d409d227afd67544e5d306827db5a1a2 # v0.8.5
         with:
           docker_hub_login: ${{ secrets.docker_hub_login }}
           docker_hub_password: ${{ secrets.docker_hub_password }}
@@ -370,7 +370,7 @@ jobs:
       ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
     steps:
-      - uses: prometheus/promci/publish_release@9c0e5048a10565e63cbf7c94527ba81ce9be0bea # v0.8.4
+      - uses: prometheus/promci/publish_release@13941414d409d227afd67544e5d306827db5a1a2 # v0.8.5
         with:
           docker_hub_login: ${{ secrets.docker_hub_login }}
           docker_hub_password: ${{ secrets.docker_hub_password }}
@@ -388,7 +388,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - name: Install nodejs
@@ -399,7 +399,7 @@ jobs:
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           version: 11
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/share/pnpm/store
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}

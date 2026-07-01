@@ -1,9 +1,11 @@
 import {
   Accordion,
+  ActionIcon,
   Alert,
   Anchor,
   Badge,
   Card,
+  CopyButton,
   Group,
   Pagination,
   rem,
@@ -20,6 +22,8 @@ import {
 import {
   IconAlertTriangle,
   IconBell,
+  IconCheck,
+  IconCopy,
   IconHourglass,
   IconInfoCircle,
   IconRefresh,
@@ -247,6 +251,7 @@ export default function RulesPage() {
                       }}
                     >
                       <Accordion.Control
+                        className={classes.ruleControl}
                         styles={{ label: { paddingBlock: rem(10) } }}
                       >
                         <Group justify="space-between" mr="lg">
@@ -265,6 +270,21 @@ export default function RulesPage() {
                               </Tooltip>
                             )}
                             <Text>{r.name}</Text>
+                            <CopyButton value={r.name}>
+                              {({ copied, copy }) => (
+                                <ActionIcon
+                                  className={classes.copyRuleNameButton}
+                                  variant="subtle"
+                                  color="gray"
+                                  onClick={(e) => {
+                                    e.stopPropagation(); copy();
+                                  }}
+                                  size="xs"
+                                >
+                                  {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
+                                </ActionIcon>
+                              )}
+                            </CopyButton>
                           </Group>
                           <Group gap="xs">
                             <Group gap="xs" wrap="wrap">

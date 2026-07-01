@@ -64,7 +64,7 @@ for org in ${orgs}; do
 done
 
 # List of files that should be synced.
-SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .dockerignore .yamllint scripts/golangci-lint.yml .github/workflows/govulncheck.yml .github/workflows/scorecards.yml .github/workflows/container_description.yml .github/workflows/stale.yml"
+SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .dockerignore .yamllint scripts/dependabot.yml scripts/golangci-lint.yml .github/workflows/govulncheck.yml .github/workflows/scorecards.yml .github/workflows/container_description.yml .github/workflows/stale.yml"
 
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)" || exit 1
@@ -151,6 +151,10 @@ check_license() {
   echo "$1" | grep --quiet --no-messages --ignore-case 'Apache License'
 }
 
+check_no_sync() {
+  grep --quiet --no-messages 'no_prometheus_repo_sync' "${1}"
+}
+
 check_go() {
   local org_repo
   local default_branch
@@ -208,6 +212,9 @@ process_repo() {
       fi
     fi
     target_filename="${source_file}"
+    if [[ "${source_file}" == 'scripts/dependabot.yml' ]] ; then
+      target_filename=".github/dependabot.yml"
+    fi
     if [[ "${source_file}" == 'scripts/golangci-lint.yml' ]] ; then
       target_filename=".github/workflows/golangci-lint.yml"
     fi
@@ -222,12 +229,16 @@ process_repo() {
       esac
       continue
     fi
+    if check_no_sync "${target_file}" ; then
+      repo_log "${target_file} is marked as do not sync, skipping."
+      continue
+    fi
     if [[ "${source_file}" == 'LICENSE' ]] && ! check_license "${target_file}" ; then
       repo_log "LICENSE in ${org_repo} is not apache, skipping."
       continue
     fi
     target_checksum="$(echo "${target_file}" | sha256sum | cut -d' ' -f1)"
-    if [ "${source_checksum}" == "${target_checksum}" ]; then
+    if [[ "${source_checksum}" == "${target_checksum}" ]] ; then
       repo_log "${source_file} is already in sync."
       continue
     fi

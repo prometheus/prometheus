@@ -1127,7 +1127,7 @@ func testScrapeLoopStop(t *testing.T, appV2 bool) {
 		case i%6 == 0:
 			ts = s.T
 		case s.T != ts:
-			t.Fatalf("Unexpected multiple timestamps within single scrape")
+			t.Fatal("Unexpected multiple timestamps within single scrape")
 		}
 	}
 	// All samples from the last scrape must be stale markers.
@@ -2630,7 +2630,7 @@ func testSetOptionsHandlingStaleness(t *testing.T, appV2 bool) {
 	select {
 	case <-signal:
 	case <-time.After(10 * time.Second):
-		t.Fatalf("Scrape wasn't stopped.")
+		t.Fatal("Scrape wasn't stopped.")
 	}
 
 	ctx1, cancel := context.WithCancel(t.Context())
@@ -5399,7 +5399,7 @@ func testScrapeReportLimit(t *testing.T, appV2 bool) {
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("target was not scraped twice")
+		t.Fatal("target was not scraped twice")
 	case <-scrapedTwice:
 		// If the target has been scraped twice, report samples from the first
 		// scrape have been inserted in the database.
@@ -5459,7 +5459,7 @@ func testScrapeUTF8(t *testing.T, appV2 bool) {
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("target was not scraped twice")
+		t.Fatal("target was not scraped twice")
 	case <-scrapedTwice:
 		// If the target has been scraped twice, report samples from the first
 		// scrape have been inserted in the database.
@@ -5760,7 +5760,7 @@ test_summary_count 199
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("target was not scraped")
+		t.Fatal("target was not scraped")
 	case <-scrapedTwice:
 	}
 
@@ -6351,7 +6351,7 @@ disk_usage_bytes 456
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("target was not scraped")
+		t.Fatal("target was not scraped")
 	case <-scrapedTwice:
 	}
 
@@ -6413,7 +6413,7 @@ func testScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *
 	select {
 	case <-signal:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Scrape wasn't stopped.")
+		t.Fatal("Scrape wasn't stopped.")
 	}
 
 	got := appTest.ResultSamples()
@@ -6486,7 +6486,7 @@ func testScrapeLoopCompression(t *testing.T, appV2 bool) {
 
 			select {
 			case <-time.After(5 * time.Second):
-				t.Fatalf("target was not scraped")
+				t.Fatal("target was not scraped")
 			case <-scraped:
 			}
 		})
