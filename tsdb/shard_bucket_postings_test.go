@@ -631,6 +631,7 @@ var shardBucketSparseBenchmarkBuckets = []uint64{0, 32, 64, 96}
 func shardBucketDeletePatterns() []shardBucketDeletePattern {
 	return []shardBucketDeletePattern{
 		{name: "dense/churn=1/2", every: 2},
+		{name: "dense/churn=1/3", every: 3},
 		{name: "dense/churn=1/8", every: 8},
 		{name: "sparse/spread4/churn=1/8", every: 8, sparseBuckets: shardBucketSparseBenchmarkBuckets},
 	}
