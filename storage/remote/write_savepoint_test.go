@@ -324,6 +324,16 @@ func appendToWAL(t *testing.T, dir string, seg walSegmentData) {
 	require.NoError(t, w.Close())
 }
 
+// TestWriteStorageSavepointE2E verifies the composition of the full
+// WriteStorage -> QueueManager -> wlog.Watcher stack:
+//   - A loaded savepoint reaches the watcher as its start segment.
+//   - Replayed samples are delivered end-to-end to the remote client.
+//   - Live samples appended after startup are delivered via the notify path.
+//   - The savepoint is persisted on close.
+//
+// The per-segment replay matrix (which segments emit samples for a given savepoint/checkpoint position)
+// is owned by watcher tests:
+// TestWatcher_StartSegment and TestWatcher_StartSegment_CheckpointNotReplayed.
 func TestWriteStorageSavepointE2E(t *testing.T) {
 	const (
 		noStartupSamplesAssertDuration = 500 * time.Millisecond
@@ -348,6 +358,7 @@ func TestWriteStorageSavepointE2E(t *testing.T) {
 		appendAfterStart   bool
 	}{
 		{
+			// No savepoint: nothing replayed, and the live notify path delivers newly appended samples end-to-end.
 			name:               "empty wal without savepoint then notify sends new samples",
 			segments:           nil,
 			savepointSegment:   nil,
@@ -355,24 +366,8 @@ func TestWriteStorageSavepointE2E(t *testing.T) {
 			appendAfterStart:   true,
 		},
 		{
-			name:               "historical wal without savepoint does not replay old samples",
-			segments:           oldSegments,
-			savepointSegment:   nil,
-			wantStartupSamples: nil,
-		},
-		{
-			name:               "savepoint lags behind and replays from lagging segment",
-			segments:           oldSegments,
-			savepointSegment:   ptrInt(1),
-			wantStartupSamples: slices.Concat(seg1Samples, seg2Samples),
-		},
-		{
-			name:               "savepoint at latest segment replays only latest segment",
-			segments:           oldSegments,
-			savepointSegment:   ptrInt(2),
-			wantStartupSamples: slices.Clone(seg2Samples),
-		},
-		{
+			// Savepoint loaded -> reaches watcher -> replayed samples delivered end-to-end,
+			// then the live notify path delivers newly appended samples.
 			name:               "savepoint replay then notify sends new samples",
 			segments:           oldSegments,
 			savepointSegment:   ptrInt(1),
