@@ -21,6 +21,7 @@ Maintainers for specific parts of the codebase:
   * `scaleway`: Rémy Léone (rleone@scaleway.com / @remyleone)
 * `documentation`
   * `prometheus-mixin`: Matthias Loibl (<mail@matthiasloibl.com> / @metalmatze)
+* `promql`: Vilius Pranckaitis (<vpranckaitis@gmail.com> / @vpranckaitis)
 * `storage`
   * `remote`: Callum Styan (<callumstyan@gmail.com> / @cstyan), Tom Wilkie (tom.wilkie@gmail.com / @tomwilkie), Alex Greenbank (<alexgreenbank@yahoo.com> / @alexgreenbank)
     * `otlptranslator`: Arthur Silva Sens (<arthursens2005@gmail.com> / @ArthurSens, Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)

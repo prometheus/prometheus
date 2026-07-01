@@ -13,7 +13,7 @@
 /model/histogram                @prometheus/default-maintainers @beorn7 @krajorama
 /web/ui                         @prometheus/default-maintainers @juliusv
 /web/ui/module                  @prometheus/default-maintainers @juliusv @nexucis
-/promql                         @prometheus/default-maintainers @roidelapluie
+/promql                         @prometheus/default-maintainers @roidelapluie @vpranckaitis
 /storage/remote                 @prometheus/default-maintainers @cstyan @bwplotka @tomwilkie @alexgreenbank
 /storage/remote/otlptranslator  @prometheus/default-maintainers @aknuds1 @jesusvazquez @ArthurSens
 /tsdb                           @prometheus/default-maintainers @jesusvazquez @codesome @bwplotka @krajorama
