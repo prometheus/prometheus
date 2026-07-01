@@ -1976,23 +1976,34 @@ func (h *Head) mmapHeadChunks() {
 			continue // No series in this stripe need mmapping.
 		}
 
-		h.series.locks[i].RLock()
-		for _, series := range h.series.series[i] {
-			if series.headChunkCount.Load() < 2 { // < 2 means 0 or 1 head chunks, nothing to mmap.
-				continue
-			}
-
-			series.Lock()
-			n := series.mmapChunks(h.chunkDiskMapper)
-			series.Unlock()
-			if n > 0 {
-				count += n
-				h.series.decMmapReady(series.ref)
-			}
-		}
-		h.series.locks[i].RUnlock()
+		count += h.mmapHeadChunksInStripe(i)
 	}
 	h.metrics.mmapChunksTotal.Add(float64(count))
+}
+
+func (h *Head) mmapHeadChunksInStripe(i int) int {
+	h.series.locks[i].RLock()
+	defer h.series.locks[i].RUnlock()
+
+	var count int
+	for _, series := range h.series.series[i] {
+		if series.headChunkCount.Load() < 2 { // < 2 means 0 or 1 head chunks, nothing to mmap.
+			continue
+		}
+
+		if n := h.mmapSeriesChunks(series); n > 0 {
+			count += n
+			h.series.decMmapReady(series.ref)
+		}
+	}
+	return count
+}
+
+func (h *Head) mmapSeriesChunks(series *memSeries) int {
+	series.Lock()
+	defer series.Unlock()
+
+	return series.mmapChunks(h.chunkDiskMapper)
 }
 
 // seriesHashmap lets TSDB find a memSeries by its label set, via a 64-bit hash.
