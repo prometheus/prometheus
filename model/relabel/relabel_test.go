@@ -14,17 +14,24 @@
 package relabel
 
 import (
+	"bytes"
 	"encoding/json"
 	"strconv"
 	"testing"
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func unmarshalYAMLStrict(data []byte, v interface{}) error {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	return dec.Decode(v)
+}
 
 func TestRelabel(t *testing.T) {
 	tests := []struct {
@@ -1061,7 +1068,7 @@ func BenchmarkRelabel(b *testing.B) {
 		},
 	}
 	for i := range tests {
-		err := yaml.UnmarshalStrict([]byte(tests[i].config), &tests[i].cfgs)
+		err := unmarshalYAMLStrict([]byte(tests[i].config), &tests[i].cfgs)
 		require.NoError(b, err)
 	}
 	for _, tt := range tests {

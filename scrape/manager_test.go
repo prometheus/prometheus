@@ -38,7 +38,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/prometheus/prometheus/config"
@@ -58,6 +58,12 @@ import (
 
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+func unmarshalYAMLStrict(data []byte, v interface{}) error {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	return dec.Decode(v)
 }
 
 func TestPopulateLabels(t *testing.T) {
@@ -776,7 +782,7 @@ global:
 `
 
 		cfg := &config.Config{}
-		err := yaml.UnmarshalStrict([]byte(cfgText), cfg)
+		err := unmarshalYAMLStrict([]byte(cfgText), cfg)
 		require.NoError(t, err, "Unable to load YAML config cfgYaml.")
 
 		return cfg
