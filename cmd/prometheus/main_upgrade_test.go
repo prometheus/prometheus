@@ -298,7 +298,10 @@ func ensureHealthyLogs(t *testing.T, r io.Reader) {
 	require.NoError(t, scanner.Err())
 }
 
-var testVersionUpgrade = flag.Bool("test.version-upgrade", false, "run resource-intensive and probably slow version upgrade tests")
+var (
+	testVersionUpgrade = flag.Bool("test.version-upgrade", false, "run resource-intensive and probably slow version upgrade tests")
+	testLTSVersion     = flag.String("test.lts-version", "", "restrict the version upgrade test to a single LTS version (e.g. 3.5.0); if empty, all active LTS releases are tested")
+)
 
 // TestVersionUpgrade_UpgradeDowngradeLatestLTS verifies that Prometheus can
 // upgrade from each current LTS release to the current build and then downgrade
@@ -315,6 +318,18 @@ func TestVersionUpgrade_UpgradeDowngradeLatestLTS(t *testing.T) {
 
 	ltsReleases := fetchLTSReleases(t)
 	t.Logf("[%s] found %d LTS release(s) from %s", time.Since(start), len(ltsReleases), prometheusDownloadManifestURL)
+
+	if *testLTSVersion != "" {
+		want := strings.TrimPrefix(*testLTSVersion, "v")
+		filtered := ltsReleases[:0]
+		for _, lts := range ltsReleases {
+			if lts.version == want {
+				filtered = append(filtered, lts)
+			}
+		}
+		require.NotEmpty(t, filtered, "LTS version %q not found among active LTS releases in %s", want, prometheusDownloadManifestURL)
+		ltsReleases = filtered
+	}
 
 	for _, lts := range ltsReleases {
 		t.Run(lts.version, func(t *testing.T) {
