@@ -78,7 +78,7 @@ jobs:
       - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           cache_key_suffix: upgrade
-      - run: go test -v --race ./cmd/prometheus/ --test.version-upgrade=true -run TestVersionUpgrade
+      - run: go test -v -timeout 15m --race ./cmd/prometheus/ --test.version-upgrade=true -run TestVersionUpgrade
 
   test_go_oldest:
     name: Go tests with previous Go version

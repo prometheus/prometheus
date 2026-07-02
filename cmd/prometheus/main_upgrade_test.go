@@ -324,6 +324,7 @@ func TestVersionUpgrade_UpgradeDowngradeLatestLTS(t *testing.T) {
 }
 
 func testUpgradeDowngradeLTS(t *testing.T, start time.Time, lts ltsRelease) {
+	t.Parallel()
 	rootDir := t.TempDir()
 
 	t.Logf("[%s] using LTS %s from %s", time.Since(start), lts.version, lts.assetURL)
