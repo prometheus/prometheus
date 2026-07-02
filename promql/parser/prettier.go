@@ -83,7 +83,11 @@ func (e *DurationExpr) Pretty(int) string {
 	var s string
 	if e.LHS == nil {
 		// This is a unary duration expression.
-		s = fmt.Sprintf("%s%s", e.Op, e.RHS.Pretty(0))
+		if e.Op == ADD {
+			s = e.RHS.Pretty(0)
+		} else {
+			s = fmt.Sprintf("%s%s", e.Op, e.RHS.Pretty(0))
+		}
 	} else {
 		s = fmt.Sprintf("%s %s %s", e.LHS.Pretty(0), e.Op, e.RHS.Pretty(0))
 	}

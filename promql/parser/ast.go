@@ -110,7 +110,7 @@ type BinaryExpr struct {
 	ReturnBool bool
 }
 
-// DurationExpr represents a binary expression between two duration expressions.
+// DurationExpr represents an arithmetic duration expression.
 type DurationExpr struct {
 	Op       ItemType // The operation of the expression.
 	LHS, RHS Expr     // The operands on the respective sides of the operator.
