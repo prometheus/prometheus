@@ -78,6 +78,37 @@ Example:
 
 ---
 
+## Concurrency and Time in Tests
+
+Tests that exercise goroutines or time should use the standard library
+[`testing/synctest`](https://pkg.go.dev/testing/synctest) package rather
+than relying on wall-clock timing. The project requires Go ≥ 1.25, so
+`testing/synctest` is always available — there is no build tag or shim to
+worry about.
+
+- Prefer `synctest.Test(t, func(t *testing.T) { ... })` over `time.Sleep`
+  polling, ad-hoc `time.After` timeouts, or `require.Eventually` when the goal
+  is to wait for goroutines to reach a known state.
+- Inside a synctest bubble, time advances virtually: once every bubbled
+  goroutine is durably blocked, the clock jumps forward, so `time.Sleep`
+  returns, timers fire, and tickers tick without slowing the test down. Use
+  `synctest.Wait()` to synchronise with background work instead of sleeps or
+  polling.
+- Start every goroutine the test needs to observe inside the
+  `synctest.Test` callback so it joins the bubble. Goroutines started from
+  `init`, package-level singletons, or before the bubble opens are not
+  controlled by it.
+- When fixing a flaky timing-dependent test, prefer migrating it to
+  `synctest` over adding sleeps, retries, or larger timeouts. Existing
+  examples to copy from: `TestHangingNotifier`, `TestStop_DrainingEnabled`,
+  `TestCancelCompactions`, `TestDelayedCompaction`.
+- `synctest` does not model real I/O. Network round-trips, disk fsync, and
+  OS scheduling do not register as "durably blocked", so virtual time cannot
+  advance while such operations are in flight. Keep deterministic fakes at
+  the boundary and use `synctest` for the in-process portion only.
+
+---
+
 ## Performance Work
 
 Maintainers take performance seriously. For any PERF PR:
