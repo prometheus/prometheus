@@ -117,18 +117,13 @@ func (c *EC2SDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the EC2 Config.
+// Region resolution is deferred to ec2Client; see resolveRegion.
 func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultEC2SDConfig
 	type plain EC2SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
-	}
-
-	// Check if the region is set, if not attempt to load it from the AWS SDK.
-	c.Region, err = loadRegion(context.Background(), c.Region)
-	if err != nil {
-		return fmt.Errorf("could not determine AWS region: %w", err)
 	}
 
 	for _, f := range c.Filters {
@@ -193,6 +188,10 @@ type EC2Discovery struct {
 	cfg    *EC2SDConfig
 	ec2    ec2Client
 
+	// region is the resolved region used for the AWS client and for the
+	// Source / __meta_ec2_region labels. Lazily populated by ec2Client.
+	region string
+
 	// azToAZID maps this account's availability zones to their underlying AZ
 	// ID, e.g. eu-west-2a -> euw2-az2. Refreshes are performed sequentially, so
 	// no locking is required.
@@ -237,9 +236,15 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (ec2Client, error) {
 		return nil, err
 	}
 
-	// Build the AWS config with the provided region.
+	// Resolve the region lazily. See EC2SDConfig.UnmarshalYAML.
+	d.region, err = resolveRegion(ctx, d.cfg.Region)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build the AWS config with the resolved region.
 	configOptions := []func(*awsConfig.LoadOptions) error{
-		awsConfig.WithRegion(d.cfg.Region),
+		awsConfig.WithRegion(d.region),
 		awsConfig.WithHTTPClient(httpClient),
 	}
 
@@ -306,7 +311,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	}
 
 	tg := &targetgroup.Group{
-		Source: d.cfg.Region,
+		Source: d.region,
 	}
 
 	var filters []ec2Types.Filter
@@ -350,7 +355,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 
 				labels := model.LabelSet{
 					ec2LabelInstanceID: model.LabelValue(*inst.InstanceId),
-					ec2LabelRegion:     model.LabelValue(d.cfg.Region),
+					ec2LabelRegion:     model.LabelValue(d.region),
 				}
 
 				if r.OwnerId != nil {

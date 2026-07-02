@@ -104,6 +104,8 @@ type SDConfig struct {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for SDConfig.
+// Region resolution is deferred to each concrete discovery's xxxClient
+// method; see resolveRegion.
 func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	// Alias to avoid recursion
 	type plain SDConfig
@@ -113,12 +115,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 	*c = SDConfig(aux)
-
-	var err error
-	c.Region, err = loadRegion(context.Background(), c.Region)
-	if err != nil {
-		return fmt.Errorf("could not determine AWS region: %w", err)
-	}
 
 	switch c.Role {
 	case RoleEC2:
@@ -427,4 +423,16 @@ func loadRegion(ctx context.Context, specifiedRegion string) (string, error) {
 	}
 
 	return region.Region, nil
+}
+
+// resolveRegion returns the configured region, or falls back to loadRegion
+// (AWS config/env vars -> IMDS) when empty. Region resolution is intentionally
+// deferred to SD init so config-only operations (e.g. `promtool check config`)
+// stay free of network I/O. See the UnmarshalYAML docstrings in this package.
+func resolveRegion(ctx context.Context, configuredRegion string) (string, error) {
+	region, err := loadRegion(ctx, configuredRegion)
+	if err != nil {
+		return "", fmt.Errorf("could not determine AWS region: %w", err)
+	}
+	return region, nil
 }

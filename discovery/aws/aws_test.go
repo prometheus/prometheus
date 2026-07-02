@@ -512,6 +512,38 @@ region = ` + randomRegion + `
 	})
 }
 
+// Regression test for issue #6092: parsing an AWS SD config must not call
+// IMDS even when the region is omitted.
+func TestAWSSDConfigUnmarshalYAML_NoRegionResolution(t *testing.T) {
+	// Point IMDS at a black hole and wipe every other region source so any
+	// accidental loadRegion call fails fast instead of waiting on IMDS.
+	t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", "http://127.0.0.1:1")
+	t.Setenv("AWS_REGION", "")
+	t.Setenv("AWS_DEFAULT_REGION", "")
+	t.Setenv("AWS_CONFIG_FILE", "")
+	t.Setenv("AWS_PROFILE", "")
+
+	yamls := map[string]string{
+		"ec2":         `region: ""`,
+		"ecs":         `region: ""`,
+		"rds":         `region: ""`,
+		"msk":         `region: ""`,
+		"elasticache": `region: ""`,
+		"lightsail":   `region: ""`,
+	}
+
+	for role, body := range yamls {
+		t.Run(role, func(t *testing.T) {
+			t.Parallel()
+			yamlStr := "role: " + role + "\n" + body + "\n"
+			cfg := SDConfig{}
+			err := yaml.Unmarshal([]byte(yamlStr), &cfg)
+			require.NoError(t, err, "config parsing must not make network calls")
+			require.Empty(t, cfg.Region, "region must remain empty after parse; resolution is deferred to SD init")
+		})
+	}
+}
+
 func TestSDConfigSetDirectory(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()

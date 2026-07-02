@@ -136,17 +136,13 @@ func (c *MSKSDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the MSK Config.
+// Region resolution is deferred to initMskClient; see resolveRegion.
 func (c *MSKSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultMSKSDConfig
 	type plain MSKSDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
-	}
-
-	c.Region, err = loadRegion(context.Background(), c.Region)
-	if err != nil {
-		return fmt.Errorf("could not determine AWS region: %w", err)
 	}
 
 	return c.HTTPClientConfig.Validate()
@@ -195,6 +191,10 @@ type MSKDiscovery struct {
 	logger *slog.Logger
 	cfg    *MSKSDConfig
 	msk    mskClient
+
+	// region is the resolved region used for the AWS client and for the
+	// Source label. Lazily populated by initMskClient.
+	region string
 }
 
 // NewMSKDiscovery returns a new MSKDiscovery which periodically refreshes its targets.
@@ -228,19 +228,21 @@ func (d *MSKDiscovery) initMskClient(ctx context.Context) error {
 		return nil
 	}
 
-	if d.cfg.Region == "" {
-		return errors.New("region must be set for MSK service discovery")
-	}
-
 	// Build the HTTP client from the provided HTTPClientConfig.
 	client, err := config.NewClientFromConfig(d.cfg.HTTPClientConfig, "msk_sd")
 	if err != nil {
 		return err
 	}
 
-	// Build the AWS config with the provided region.
+	// Resolve the region lazily. See MSKSDConfig.UnmarshalYAML.
+	d.region, err = resolveRegion(ctx, d.cfg.Region)
+	if err != nil {
+		return err
+	}
+
+	// Build the AWS config with the resolved region.
 	var configOptions []func(*awsConfig.LoadOptions) error
-	configOptions = append(configOptions, awsConfig.WithRegion(d.cfg.Region))
+	configOptions = append(configOptions, awsConfig.WithRegion(d.region))
 	configOptions = append(configOptions, awsConfig.WithHTTPClient(client))
 
 	// Only set static credentials if both access key and secret key are provided
@@ -389,7 +391,7 @@ func (d *MSKDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	}
 
 	tg := &targetgroup.Group{
-		Source: d.cfg.Region,
+		Source: d.region,
 	}
 
 	var clusters []types.Cluster

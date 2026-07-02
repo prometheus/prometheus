@@ -136,17 +136,13 @@ func (c *ECSSDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the ECS Config.
+// Region resolution is deferred to initEcsClient; see resolveRegion.
 func (c *ECSSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultECSSDConfig
 	type plain ECSSDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
-	}
-
-	c.Region, err = loadRegion(context.Background(), c.Region)
-	if err != nil {
-		return fmt.Errorf("could not determine AWS region: %w", err)
 	}
 
 	return c.HTTPClientConfig.Validate()
@@ -229,6 +225,10 @@ type ECSDiscovery struct {
 	cfg    *ECSSDConfig
 	ecs    ecsClient
 	ec2    ecsEC2Client
+
+	// region is the resolved region used for the AWS client and for the
+	// Source / __meta_ecs_region labels. Lazily populated by initEcsClient.
+	region string
 }
 
 // NewECSDiscovery returns a new ECSDiscovery which periodically refreshes its targets.
@@ -262,19 +262,21 @@ func (d *ECSDiscovery) initEcsClient(ctx context.Context) error {
 		return nil
 	}
 
-	if d.cfg.Region == "" {
-		return errors.New("region must be set for ECS service discovery")
-	}
-
 	// Build the HTTP client from the provided HTTPClientConfig.
 	client, err := config.NewClientFromConfig(d.cfg.HTTPClientConfig, "ecs_sd")
 	if err != nil {
 		return err
 	}
 
-	// Build the AWS config with the provided region.
+	// Resolve the region lazily. See ECSSDConfig.UnmarshalYAML.
+	d.region, err = resolveRegion(ctx, d.cfg.Region)
+	if err != nil {
+		return err
+	}
+
+	// Build the AWS config with the resolved region.
 	var configOptions []func(*awsConfig.LoadOptions) error
-	configOptions = append(configOptions, awsConfig.WithRegion(d.cfg.Region))
+	configOptions = append(configOptions, awsConfig.WithRegion(d.region))
 	configOptions = append(configOptions, awsConfig.WithHTTPClient(client))
 
 	// Only set static credentials if both access key and secret key are provided
@@ -713,13 +715,13 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	if len(clusters) == 0 {
 		return []*targetgroup.Group{
 			{
-				Source: d.cfg.Region,
+				Source: d.region,
 			},
 		}, nil
 	}
 
 	tg := &targetgroup.Group{
-		Source: d.cfg.Region,
+		Source: d.region,
 	}
 
 	// Fetch cluster details, service ARNs, and task ARNs in parallel
@@ -936,7 +938,7 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 						ecsLabelTaskARN:          model.LabelValue(*task.TaskArn),
 						ecsLabelTaskDefinition:   model.LabelValue(*task.TaskDefinitionArn),
 						ecsLabelIPAddress:        model.LabelValue(ipAddress),
-						ecsLabelRegion:           model.LabelValue(d.cfg.Region),
+						ecsLabelRegion:           model.LabelValue(d.region),
 						ecsLabelLaunchType:       model.LabelValue(task.LaunchType),
 						ecsLabelAvailabilityZone: model.LabelValue(*task.AvailabilityZone),
 						ecsLabelDesiredStatus:    model.LabelValue(*task.DesiredStatus),
