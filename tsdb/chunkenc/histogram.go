@@ -42,7 +42,7 @@ type HistogramChunk struct {
 // NewHistogramChunk returns a new chunk with histogram encoding of the given
 // size.
 func NewHistogramChunk() *HistogramChunk {
-	b := make([]byte, histogramHeaderSize, chunkAllocationSize)
+	b := make([]byte, histogramHeaderSize)
 	return &HistogramChunk{b: bstream{stream: b, count: 0}}
 }
 
@@ -610,7 +610,7 @@ func (a *HistogramAppender) appendHistogram(num int, t int64, h *histogram.Histo
 		putVarbitInt(a.b, t)
 		putVarbitUint(a.b, h.Count)
 		putVarbitUint(a.b, h.ZeroCount)
-		a.b.writeBits(math.Float64bits(h.Sum), 64)
+		a.b.writeBitsFast(math.Float64bits(h.Sum), 64)
 		for _, b := range h.PositiveBuckets {
 			putVarbitInt(a.b, b)
 		}

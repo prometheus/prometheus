@@ -76,7 +76,7 @@ type XOR2Chunk struct {
 
 // NewXOR2Chunk returns a new chunk with XOR2 encoding.
 func NewXOR2Chunk() *XOR2Chunk {
-	b := make([]byte, chunkHeaderSize+chunkSTHeaderSize, chunkAllocationSize)
+	b := make([]byte, chunkHeaderSize+chunkSTHeaderSize)
 	return &XOR2Chunk{b: bstream{stream: b, count: 0}}
 }
 
