@@ -518,3 +518,57 @@ func TestCustomScopeSupport(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkloadIdentityTokenFilePath(t *testing.T) {
+	const envTokenPath = "/var/run/secrets/azure/wi/token/azure-identity-token"
+
+	cases := []struct {
+		name              string
+		envValue          string
+		envSet            bool
+		configTokenPath   string
+		expectedTokenPath string
+	}{
+		{
+			name:              "AZURE_FEDERATED_TOKEN_FILE is honored when token_file_path is unset",
+			envValue:          envTokenPath,
+			envSet:            true,
+			expectedTokenPath: envTokenPath,
+		},
+		{
+			name:              "falls back to the default path when the environment variable is unset",
+			envSet:            false,
+			expectedTokenPath: DefaultWorkloadIdentityTokenPath,
+		},
+		{
+			name:              "an explicit token_file_path takes precedence over the environment variable",
+			envValue:          envTokenPath,
+			envSet:            true,
+			configTokenPath:   "/custom/token/path",
+			expectedTokenPath: "/custom/token/path",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if c.envSet {
+				t.Setenv(AzureFederatedTokenFileEnvVar, c.envValue)
+			} else {
+				// t.Setenv with an empty value still sets the variable, so unset it explicitly.
+				require.NoError(t, os.Unsetenv(AzureFederatedTokenFileEnvVar))
+			}
+
+			cfg := &AzureADConfig{
+				Cloud: "AzurePublic",
+				WorkloadIdentity: &WorkloadIdentityConfig{
+					ClientID:      dummyClientID,
+					TenantID:      dummyTenantID,
+					TokenFilePath: c.configTokenPath,
+				},
+			}
+
+			require.NoError(t, cfg.Validate())
+			require.Equal(t, c.expectedTokenPath, cfg.WorkloadIdentity.TokenFilePath)
+		})
+	}
+}
