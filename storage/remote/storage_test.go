@@ -190,3 +190,11 @@ func TestWriteStorageApplyConfigsDuringCommit(t *testing.T) {
 	close(start)
 	wg.Wait()
 }
+
+func TestToHash(t *testing.T) {
+	data := "test-data"
+	expected := "183145e836ff4ddf03de4cc2cfc994b2ade87ca8c91e75249f6c3c9764651af9"
+	actual, err := toHash(data)
+	require.NoError(t, err)
+	require.Equal(t, expected, actual)
+}
