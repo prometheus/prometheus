@@ -262,6 +262,9 @@ process_repo() {
   # Update the files in target repo by one from prometheus/prometheus.
   for source_file in "${needs_update[@]}"; do
     target_filename="${source_file}"
+    if [[ "${source_file}" == 'scripts/dependabot.yml' ]] ; then
+      target_filename=".github/dependabot.yml"
+    fi
     if [[ "${source_file}" == 'scripts/golangci-lint.yml' ]] ; then
       target_filename=".github/workflows/golangci-lint.yml"
     fi
