@@ -57,6 +57,7 @@ const getPathPrefix = (path: string) => {
     "/tsdb-status",
     "/flags",
     "/config",
+    "/configuration-assistant",
     "/alertmanager-discovery",
     "/agent",
   ];
