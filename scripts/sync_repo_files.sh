@@ -109,17 +109,28 @@ fork_repo() {
 push_branch() {
   local git_url
   local safe_url
+  local force_push
   git_url="https://${git_user}:${GITHUB_TOKEN}@github.com/${1}"
   safe_url="https://${git_user}:***@github.com/${1}"
+  # When set, force-update the existing PR branch in place instead of
+  # deleting it first.
+  force_push="${2:-}"
   # stdout and stderr are redirected to /dev/null otherwise git-push could leak
   # the token in the logs.
-  # Delete the remote branch in case it was merged but not deleted.
-  git push --quiet "${git_url}" ":${branch}" 1>/dev/null 2>&1
+  local push_args=(--set-upstream)
+  if [[ -n "${force_push}" ]]; then
+    # An open PR points at this branch. Deleting it would close the PR, so
+    # force-push over it instead.
+    push_args+=(--force)
+  else
+    # Delete the remote branch in case it was merged but not deleted.
+    git push --quiet "${git_url}" ":${branch}" 1>/dev/null 2>&1
+  fi
   # Forking is asynchronous; retry for up to 5 minutes until the git objects
   # are available before giving up.
   local deadline=$(( $(date +%s) + 300 ))
   local push_output
-  until push_output="$(git push "${git_url}" --set-upstream "${branch}" 2>&1)"; do
+  until push_output="$(git push "${git_url}" "${push_args[@]}" "${branch}" 2>&1)"; do
     if [[ $(date +%s) -ge ${deadline} ]]; then
       repo_log_red "push to ${safe_url} failed: $(echo "${push_output}" | sed "s|${GITHUB_TOKEN}|***|g")"
       return 1
@@ -311,7 +322,7 @@ process_repo() {
     else
       fork_org_repo="$(fork_repo "${org_repo}")" || { repo_log_red "Forking ${org_repo} failed"; return 1; }
     fi
-    if push_branch "${fork_org_repo}"; then
+    if push_branch "${fork_org_repo}" "${force_fork}"; then
       if [[ -n "${force_fork}" ]]; then
         repo_log_green "Force-updated existing PR branch on ${fork_org_repo}"
       elif ! post_pull_request "${org_repo}" "${default_branch}" "${git_user}" "${fork_org_repo}" "${pr_token}"; then
