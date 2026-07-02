@@ -40,6 +40,12 @@ func isPowerOfTwo(v uint64) bool {
 // so read snapshots remain valid after locks are released.
 type shardBucketPostings struct {
 	buckets []shardBucket
+
+	// removeUnlockedHook, when non-nil, runs after a removal's unlocked
+	// survivor rebuild and before the bucket is re-locked. Tests use it to
+	// interleave appends and re-sorts into that window; it is nil in
+	// production.
+	removeUnlockedHook func()
 }
 
 // shardBucket holds one bucket's refs and must not be copied after initialization.
@@ -47,6 +53,11 @@ type shardBucket struct {
 	mtx   sync.RWMutex
 	refs  []storage.SeriesRef
 	dirty int // Earliest out-of-order suffix index, or cleanShardBucket when clean.
+	// gen counts replacements of refs (re-sorts and removals). Appends do not
+	// change it: they only extend refs, and refs within a previously observed
+	// length are never mutated in place. Removal uses it to detect whether a
+	// snapshot's prefix is still current after rebuilding survivors unlocked.
+	gen uint64
 }
 
 const cleanShardBucket = -1
@@ -80,10 +91,13 @@ func (s *shardBucketPostings) add(ref chunks.HeadSeriesRef, shardHash uint64) {
 	bucket.mtx.Unlock()
 }
 
-// remove drops deleted series refs from the bucket lists. The map is keyed by
-// deleted ref with the ref's shard hash as value, allowing removal to rebuild
-// only affected buckets. Rebuilt buckets replace refs with fresh slices, so
-// reader snapshots stay intact. A nil receiver or empty deleted map is a no-op.
+// removeTailHeadroom reserves capacity for refs appended during an unlocked
+// removal rebuild, usually avoiding reallocation when they are carried over.
+const removeTailHeadroom = 16
+
+// remove drops deleted refs from their shard hash buckets. Survivors are rebuilt
+// outside bucket locks and swapped in without invalidating reader snapshots. A
+// nil receiver or empty deleted map is a no-op.
 func (s *shardBucketPostings) remove(deleted map[storage.SeriesRef]uint64) {
 	if s == nil || len(s.buckets) == 0 || len(deleted) == 0 {
 		return
@@ -103,45 +117,85 @@ func (s *shardBucketPostings) remove(deleted map[storage.SeriesRef]uint64) {
 	}
 
 	for b, deletedRefs := range deletedByBucket {
-		bucket := &s.buckets[b]
-		bucket.mtx.Lock()
-		list := bucket.refs
-		first := -1
-		for i, ref := range list {
-			if _, ok := deletedRefs[ref]; ok {
-				first = i
-				break
-			}
-		}
-		if first >= 0 {
-			// Size the rebuilt slices to the surviving count, not the pre-removal
-			// length: keeping cap at len(list)-1 leaves the dropped refs' capacity
-			// resident until the next rebuild, which under series churn keeps the
-			// index several times larger than the live series it holds.
-			survivors := first
-			for i := first + 1; i < len(list); i++ {
-				if _, ok := deletedRefs[list[i]]; !ok {
-					survivors++
-				}
-			}
-			survivingRefs := make([]storage.SeriesRef, first, survivors)
-			copy(survivingRefs, list[:first])
-			for i := first + 1; i < len(list); i++ {
-				if _, ok := deletedRefs[list[i]]; !ok {
-					survivingRefs = append(survivingRefs, list[i])
-				}
-			}
-			bucket.refs = survivingRefs
-			if bucket.dirty != cleanShardBucket {
-				if len(survivingRefs) == 0 {
-					bucket.dirty = cleanShardBucket
-				} else {
-					bucket.dirty = 0
-				}
-			}
-		}
-		bucket.mtx.Unlock()
+		s.removeFromBucket(&s.buckets[b], deletedRefs)
 	}
+}
+
+// removeFromBucket rebuilds survivors from an unlocked snapshot. Later appends
+// are carried over; a concurrent slice replacement triggers a locked rebuild.
+func (s *shardBucketPostings) removeFromBucket(bucket *shardBucket, deletedRefs map[storage.SeriesRef]struct{}) {
+	bucket.mtx.RLock()
+	snap := bucket.refs
+	snapGen := bucket.gen
+	bucket.mtx.RUnlock()
+
+	survivors, found := survivingRefs(snap, deletedRefs)
+	if !found {
+		// No deleted ref is in this bucket, and refs appended after the
+		// snapshot cannot be deleted ones either: nothing to rebuild.
+		return
+	}
+
+	if h := s.removeUnlockedHook; h != nil {
+		h()
+	}
+
+	bucket.mtx.Lock()
+	defer bucket.mtx.Unlock()
+
+	if bucket.gen == snapGen {
+		// The snapshot prefix is still current: carry over refs appended
+		// during the unlocked rebuild and swap.
+		bucket.refs = append(survivors, bucket.refs[len(snap):]...)
+	} else {
+		// The refs were replaced while unlocked, so the snapshot-derived
+		// survivors are stale. Replacements are rare (concurrent re-sorts and
+		// removals), so rebuilding under the lock keeps the previous behavior
+		// as the worst case.
+		replacement, found := survivingRefs(bucket.refs, deletedRefs)
+		if !found {
+			return
+		}
+		bucket.refs = replacement
+	}
+	bucket.gen++
+	if bucket.dirty != cleanShardBucket {
+		// The recorded dirty suffix index does not survive the rebuild.
+		if len(bucket.refs) == 0 {
+			bucket.dirty = cleanShardBucket
+		} else {
+			bucket.dirty = 0
+		}
+	}
+}
+
+// survivingRefs returns a fresh slice without deletedRefs and reports whether
+// any ref was removed. The result reserves removeTailHeadroom for later appends.
+func survivingRefs(refs []storage.SeriesRef, deletedRefs map[storage.SeriesRef]struct{}) ([]storage.SeriesRef, bool) {
+	first := -1
+	for i, ref := range refs {
+		if _, ok := deletedRefs[ref]; ok {
+			first = i
+			break
+		}
+	}
+	if first < 0 {
+		return nil, false
+	}
+	surviving := first
+	for i := first + 1; i < len(refs); i++ {
+		if _, ok := deletedRefs[refs[i]]; !ok {
+			surviving++
+		}
+	}
+	out := make([]storage.SeriesRef, first, surviving+removeTailHeadroom)
+	copy(out, refs[:first])
+	for i := first + 1; i < len(refs); i++ {
+		if _, ok := deletedRefs[refs[i]]; !ok {
+			out = append(out, refs[i])
+		}
+	}
+	return out, true
 }
 
 // postingsFor returns sorted candidate bucket postings for one shard. Bucket
@@ -243,6 +297,7 @@ func sortDirtyBucketLocked(bucket *shardBucket) {
 	} else {
 		bucket.refs = sortRefsSuffix(refs, dirtyStart)
 	}
+	bucket.gen++
 	bucket.dirty = cleanShardBucket
 }
 
