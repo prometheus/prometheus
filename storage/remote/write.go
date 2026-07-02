@@ -35,6 +35,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
+// savepointPersistDuration is the interval at which run() persists the savepoint.
+const savepointPersistDuration = 30 * time.Second
+
 var (
 	samplesIn = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
@@ -72,16 +75,27 @@ type WriteStorage struct {
 	interner          *pool
 	scraper           ReadyScrapeManager
 	quit              chan struct{}
+	done              chan struct{}
 
 	recordBuf *record.BuffersPool
 
+	savepoint Savepoint
+
 	// For timestampTracker.
-	highestTimestamp        *maxTimestamp
+	highestTimestamp *maxTimestamp
+
+	// Savepoint observability metrics. Non-nil only when enableSavepoint is true.
+	savepointPersistTotal    prometheus.Counter
+	savepointPersistFailed   prometheus.Counter
+	savepointLastPersistTime prometheus.Gauge
+	savepointEntries         prometheus.Gauge
+
 	enableTypeAndUnitLabels bool
+	enableSavepoint         bool
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels bool) *WriteStorage {
+func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels, enableSavepoint bool) *WriteStorage {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
@@ -97,6 +111,7 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 		interner:          newPool(),
 		scraper:           sm,
 		quit:              make(chan struct{}),
+		done:              make(chan struct{}),
 		highestTimestamp: &maxTimestamp{
 			Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -107,7 +122,55 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 		},
 		recordBuf:               record.NewBuffersPool(),
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
+		enableSavepoint:         enableSavepoint,
 	}
+
+	if enableSavepoint {
+		rws.savepointPersistTotal = prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "savepoint_persist_total",
+			Help:      "Total number of remote write savepoint persist attempts.",
+		})
+		rws.savepointPersistFailed = prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "savepoint_persist_failed_total",
+			Help:      "Total number of remote write savepoint persist attempts that failed.",
+		})
+		rws.savepointLastPersistTime = prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "savepoint_last_persist_timestamp_seconds",
+			Help:      "Unix timestamp of the last successful remote write savepoint persist.",
+		})
+		rws.savepointEntries = prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "savepoint_entries",
+			Help:      "Number of queue entries in the most recent persisted remote write savepoint.",
+		})
+		if reg != nil {
+			reg.MustRegister(
+				rws.savepointPersistTotal,
+				rws.savepointPersistFailed,
+				rws.savepointLastPersistTime,
+				rws.savepointEntries,
+			)
+		}
+
+		sp, err := LoadSavepoint(dir)
+		if err != nil {
+			logger.Warn("Failed to load remote write savepoint, starting from current position", "err", err)
+			sp = make(Savepoint)
+		}
+		rws.savepoint = sp
+	} else if err := removeSavepoint(dir); err != nil {
+		// Drop any stale savepoint left over from a previous run with the feature
+		// enabled, so it cannot be acted upon if the feature is re-enabled later.
+		logger.Warn("Failed to remove stale remote write savepoint", "err", err)
+	}
+
 	if reg != nil {
 		reg.MustRegister(rws.highestTimestamp)
 	}
@@ -116,16 +179,65 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 }
 
 func (rws *WriteStorage) run() {
-	ticker := time.NewTicker(shardUpdateDuration)
-	defer ticker.Stop()
+	defer close(rws.done)
+
+	shardTicker := time.NewTicker(shardUpdateDuration)
+	defer shardTicker.Stop()
+
+	var savepointC <-chan time.Time
+	if rws.enableSavepoint {
+		savepointTicker := time.NewTicker(savepointPersistDuration)
+		defer savepointTicker.Stop()
+		savepointC = savepointTicker.C
+	}
+
 	for {
 		select {
-		case <-ticker.C:
+		case <-shardTicker.C:
 			rws.samplesIn.tick()
+		case <-savepointC:
+			rws.persistSavepoint()
 		case <-rws.quit:
 			return
 		}
 	}
+}
+
+// snapshotSavepoint builds a Savepoint from current queue positions.
+// Must be called with rws.mtx held.
+func (rws *WriteStorage) snapshotSavepoint() Savepoint {
+	sp := make(Savepoint, len(rws.queues))
+	for hash, q := range rws.queues {
+		sp[hash] = SavepointEntry{
+			Segment: q.watcher.LastProcessedSegment(),
+		}
+	}
+	return sp
+}
+
+func (rws *WriteStorage) persistSavepoint() {
+	rws.mtx.Lock()
+	sp := rws.snapshotSavepoint()
+	rws.savepoint = sp
+	rws.mtx.Unlock()
+
+	err := sp.Save(rws.dir)
+	if err != nil {
+		rws.logger.Error("Failed to persist remote write savepoint", "err", err)
+	}
+	rws.recordPersistResult(sp, err == nil)
+}
+
+// recordPersistResult updates the savepoint metrics after an attempt to Save.
+// Precondition: rws.enableSavepoint is true, so the metric fields are non-nil.
+func (rws *WriteStorage) recordPersistResult(sp Savepoint, success bool) {
+	rws.savepointPersistTotal.Inc()
+	rws.savepointEntries.Set(float64(len(sp)))
+	if !success {
+		rws.savepointPersistFailed.Inc()
+		return
+	}
+	rws.savepointLastPersistTime.SetToCurrentTime()
 }
 
 func (rws *WriteStorage) Notify() {
@@ -138,11 +250,32 @@ func (rws *WriteStorage) Notify() {
 	}
 }
 
+type applyConfigOpts struct {
+	writeClientFactory func(name string, cfg *ClientConfig) (WriteClient, error)
+}
+
+// ApplyConfigOption modifies WriteStorage.ApplyConfig behavior.
+type ApplyConfigOption func(*applyConfigOpts)
+
+// WithWriteClientFactory sets a factory to provide a custom write client.
+func WithWriteClientFactory(factory func(name string, cfg *ClientConfig) (WriteClient, error)) ApplyConfigOption {
+	return func(opts *applyConfigOpts) {
+		opts.writeClientFactory = factory
+	}
+}
+
 // ApplyConfig updates the state as the new config requires.
 // Only stop & create queues which have changes.
-func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
+func (rws *WriteStorage) ApplyConfig(conf *config.Config, options ...ApplyConfigOption) error {
 	rws.mtx.Lock()
 	defer rws.mtx.Unlock()
+
+	opts := applyConfigOpts{
+		writeClientFactory: NewWriteClient,
+	}
+	for _, option := range options {
+		option(&opts)
+	}
 
 	// Remote write queues only need to change if the remote write config or
 	// external labels change.
@@ -170,7 +303,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			name = rwConf.Name
 		}
 
-		c, err := NewWriteClient(name, &ClientConfig{
+		c, err := opts.writeClientFactory(name, &ClientConfig{
 			URL:              rwConf.URL,
 			WriteProtoMsg:    rwConf.ProtobufMessage,
 			Timeout:          rwConf.RemoteTimeout,
@@ -199,6 +332,14 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 		// technically accepted but not recommended) since this is
 		// only used for metric labels.
 		endpoint := rwConf.URL.Redacted()
+
+		startSegment := -1
+		if rws.enableSavepoint {
+			if entry, ok := rws.savepoint[hash]; ok {
+				startSegment = entry.Segment
+			}
+		}
+
 		newQueues[hash] = NewQueueManager(
 			newQueueManagerMetrics(rws.reg, name, endpoint),
 			rws.watcherMetrics,
@@ -220,6 +361,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.enableTypeAndUnitLabels,
 			rwConf.ProtobufMessage,
 			rws.recordBuf,
+			startSegment,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
@@ -236,6 +378,15 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	}
 
 	rws.queues = newQueues
+
+	// Remove savepoint entries for queues that no longer exist.
+	if rws.enableSavepoint {
+		for hash := range rws.savepoint {
+			if _, ok := newQueues[hash]; !ok {
+				delete(rws.savepoint, hash)
+			}
+		}
+	}
 
 	return nil
 }
@@ -282,18 +433,43 @@ func (rws *WriteStorage) LowestSentTimestamp() int64 {
 
 // Close closes the WriteStorage.
 func (rws *WriteStorage) Close() error {
+	// Stop the run() goroutine and wait for it to exit before taking the lock.
+	// run() may otherwise fire a concurrent persistSavepoint on its ticker, and
+	// persistSavepoint itself acquires rws.mtx — so waiting for done while holding
+	// the lock would deadlock.
+	close(rws.quit)
+	<-rws.done
+
 	rws.mtx.Lock()
 	defer rws.mtx.Unlock()
+
 	for _, q := range rws.queues {
 		q.Stop()
 	}
-	close(rws.quit)
+
+	// Persist final savepoint after queues have stopped so LastProcessedSegment
+	// reflects the final, drained position of each watcher.
+	if rws.enableSavepoint {
+		if sp := rws.snapshotSavepoint(); len(sp) > 0 {
+			err := sp.Save(rws.dir)
+			if err != nil {
+				rws.logger.Error("Failed to persist remote write savepoint", "err", err)
+			}
+			rws.recordPersistResult(sp, err == nil)
+		}
+	}
 
 	rws.watcherMetrics.Unregister()
 	rws.liveReaderMetrics.Unregister()
 
 	if rws.reg != nil {
 		rws.reg.Unregister(rws.highestTimestamp.Gauge)
+		if rws.enableSavepoint {
+			rws.reg.Unregister(rws.savepointPersistTotal)
+			rws.reg.Unregister(rws.savepointPersistFailed)
+			rws.reg.Unregister(rws.savepointLastPersistTime)
+			rws.reg.Unregister(rws.savepointEntries)
+		}
 	}
 
 	return nil
