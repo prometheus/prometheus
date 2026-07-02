@@ -14,8 +14,11 @@
 package discovery
 
 import (
+	"context"
 	"testing"
+	"time"
 
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v2"
 )
@@ -33,4 +36,30 @@ func TestConfigsCustomUnMarshalMarshal(t *testing.T) {
 	output, err := yaml.Marshal(cfg)
 	require.NoError(t, err)
 	require.Equal(t, input, string(output))
+}
+
+func TestStaticDiscovererDoesNotCloseUpdates(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	up := make(chan []*targetgroup.Group, 1)
+	done := make(chan struct{})
+	go func() {
+		staticDiscoverer{{Source: "0"}}.Run(ctx, up)
+		close(done)
+	}()
+
+	require.Equal(t, []*targetgroup.Group{{Source: "0"}}, <-up)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("static discoverer did not return after sending targets")
+	}
+
+	select {
+	case _, ok := <-up:
+		require.True(t, ok, "static discoverer closed the update channel")
+	default:
+	}
 }
