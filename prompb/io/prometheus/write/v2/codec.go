@@ -31,6 +31,12 @@ func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, symbols []string) (labels
 	return desymbolizeLabels(b, m.GetLabelsRefs(), symbols)
 }
 
+// ToLabelsWithLimits returns model labels.Labels from timeseries' remote labels,
+// with validation of label name and value length.
+func (m TimeSeries) ToLabelsWithLimits(b *labels.ScratchBuilder, symbols []string, maxLabelValueLength int) (labels.Labels, error) {
+	return desymbolizeLabelsWithLimits(b, m.GetLabelsRefs(), symbols, maxLabelValueLength)
+}
+
 // ToMetadata returns model metadata from timeseries' remote metadata.
 func (m TimeSeries) ToMetadata(symbols []string) (metadata.Metadata, error) {
 	typ := model.MetricTypeUnknown
@@ -219,6 +225,24 @@ func (m Exemplar) ToExemplar(b *labels.ScratchBuilder, symbols []string) (exempl
 	timestamp := m.Timestamp
 
 	lbls, err := desymbolizeLabels(b, m.LabelsRefs, symbols)
+	if err != nil {
+		return exemplar.Exemplar{}, err
+	}
+
+	return exemplar.Exemplar{
+		Labels: lbls,
+		Value:  m.Value,
+		Ts:     timestamp,
+		HasTs:  timestamp != 0,
+	}, nil
+}
+
+// ToExemplarWithLimits converts remote exemplar to model exemplar,
+// with validation of label name and value length.
+func (m Exemplar) ToExemplarWithLimits(b *labels.ScratchBuilder, symbols []string, maxLabelValueLength int) (exemplar.Exemplar, error) {
+	timestamp := m.Timestamp
+
+	lbls, err := desymbolizeLabelsWithLimits(b, m.LabelsRefs, symbols, maxLabelValueLength)
 	if err != nil {
 		return exemplar.Exemplar{}, err
 	}
