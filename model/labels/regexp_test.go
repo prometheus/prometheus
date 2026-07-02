@@ -148,6 +148,27 @@ func TestFastRegexMatcher_MatchString(t *testing.T) {
 	}
 }
 
+func TestFastRegexMatcher_CapturingGroupBetweenLiterals(t *testing.T) {
+	for _, c := range []struct {
+		pattern string
+		value   string
+	}{
+		{`.*\|(foo)\|.*`, "|foo-bar|"},
+		{`.*\|(?:foo)\|.*`, "|foo-bar|"},
+		{`.*\|(foo)\|.*`, "x|foo|y"},
+		{`.*-(ab)-.*`, "x-abc-y"},
+		{`.*-(ab)-.*`, "x-ab-y"},
+	} {
+		t.Run(c.pattern+" on "+c.value, func(t *testing.T) {
+			m, err := NewFastRegexMatcher(c.pattern)
+			require.NoError(t, err)
+
+			re := regexp.MustCompile("^(?s:" + c.pattern + ")$")
+			require.Equal(t, re.MatchString(c.value), m.MatchString(c.value))
+		})
+	}
+}
+
 func readable(s string) string {
 	const maxReadableStringLen = 40
 	if len(s) < maxReadableStringLen {
@@ -186,6 +207,9 @@ func TestOptimizeConcatRegex(t *testing.T) {
 		{regex: "^release.*", prefix: "release", suffix: "", contains: nil},
 		{regex: "^env-[0-9]+laio[1]?[^0-9].*", prefix: "env-", suffix: "", contains: []string{"laio"}},
 		{regex: ".*-.*-.*-.*-.*", prefix: "", suffix: "", contains: []string{"-", "-", "-", "-"}},
+		{regex: `.*\|(foo)\|.*`, prefix: "", suffix: "", contains: []string{"|foo|"}},
+		{regex: `.*-(ab)-.*`, prefix: "", suffix: "", contains: []string{"-ab-"}},
+		{regex: `^foo(bar).*`, prefix: "foobar", suffix: "", contains: nil},
 	}
 
 	for _, c := range cases {
