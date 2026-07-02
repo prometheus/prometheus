@@ -270,6 +270,67 @@ func TestShardBucketPostings(t *testing.T) {
 		}
 	})
 
+	t.Run("remove skips buckets without deleted refs", func(t *testing.T) {
+		t.Parallel()
+		s := newShardBucketPostings(2)
+		for ref := storage.SeriesRef(1); ref <= 8; ref++ {
+			s.add(chunks.HeadSeriesRef(ref), uint64(ref))
+		}
+
+		genBefore := s.buckets[0].gen
+		// The deleted refs map to bucket 0 by shard hash but are not present
+		// in it: removal must leave the bucket untouched, without taking its
+		// write lock (observable through the unchanged generation).
+		s.remove(map[storage.SeriesRef]uint64{1000: 0, 1002: 2})
+		require.Equal(t, genBefore, s.buckets[0].gen)
+		require.Equal(t, []storage.SeriesRef{2, 4, 6, 8}, expandShardCandidates(t, s, 0, 2))
+	})
+
+	t.Run("remove carries over refs appended during the unlocked rebuild", func(t *testing.T) {
+		t.Parallel()
+		s := newShardBucketPostings(1)
+		for ref := storage.SeriesRef(1); ref <= 6; ref++ {
+			s.add(chunks.HeadSeriesRef(ref), 0)
+		}
+
+		hookRuns := 0
+		s.removeUnlockedHook = func() {
+			// Appends landing between the survivor rebuild and the bucket
+			// re-lock must be carried over, and can never be deleted refs.
+			s.add(7, 0)
+			s.add(8, 0)
+			hookRuns++
+		}
+		s.remove(map[storage.SeriesRef]uint64{2: 0, 4: 0})
+		s.removeUnlockedHook = nil
+
+		require.Equal(t, 1, hookRuns)
+		require.Equal(t, []storage.SeriesRef{1, 3, 5, 6, 7, 8}, expandShardCandidates(t, s, 0, 1))
+	})
+
+	t.Run("remove falls back when the bucket is replaced during the unlocked rebuild", func(t *testing.T) {
+		t.Parallel()
+		s := newShardBucketPostings(1)
+		// Out-of-order adds leave the bucket dirty, so a read during the
+		// unlocked rebuild re-sorts it and replaces the refs slice.
+		for _, ref := range []chunks.HeadSeriesRef{2, 6, 4, 8} {
+			s.add(ref, 0)
+		}
+		require.NotEqual(t, cleanShardBucket, s.buckets[0].dirty)
+
+		genBefore := s.buckets[0].gen
+		s.removeUnlockedHook = func() {
+			// Sorts the dirty bucket, bumping the generation.
+			expandShardCandidates(t, s, 0, 1)
+		}
+		s.remove(map[storage.SeriesRef]uint64{4: 0})
+		s.removeUnlockedHook = nil
+
+		// One bump from the re-sort, one from the fallback rebuild.
+		require.Equal(t, genBefore+2, s.buckets[0].gen)
+		require.Equal(t, []storage.SeriesRef{2, 6, 8}, expandShardCandidates(t, s, 0, 1))
+	})
+
 	t.Run("out-of-order adds are served sorted", func(t *testing.T) {
 		t.Parallel()
 		s := newShardBucketPostings(1)
@@ -631,6 +692,7 @@ var shardBucketSparseBenchmarkBuckets = []uint64{0, 32, 64, 96}
 func shardBucketDeletePatterns() []shardBucketDeletePattern {
 	return []shardBucketDeletePattern{
 		{name: "dense/churn=1/2", every: 2},
+		{name: "dense/churn=1/3", every: 3},
 		{name: "dense/churn=1/8", every: 8},
 		{name: "sparse/spread4/churn=1/8", every: 8, sparseBuckets: shardBucketSparseBenchmarkBuckets},
 	}
