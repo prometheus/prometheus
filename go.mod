@@ -60,8 +60,8 @@ require (
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor v0.154.0
 	github.com/outscale/osc-sdk-go/v2 v2.34.0
 	github.com/ovh/go-ovh v1.9.0
-	github.com/pb33f/libopenapi v0.38.1
-	github.com/pb33f/libopenapi-validator v0.13.11
+	github.com/pb33f/libopenapi v0.38.3
+	github.com/pb33f/libopenapi-validator v0.13.13
 	github.com/prometheus/alertmanager v0.33.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_golang/exp v0.0.0-20260621222812-74560058a7af
@@ -93,7 +93,7 @@ require (
 	go.uber.org/goleak v1.3.0
 	go.yaml.in/yaml/v2 v2.4.4
 	go.yaml.in/yaml/v3 v3.0.4
-	go.yaml.in/yaml/v4 v4.0.0-rc.5
+	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.21.0
 	golang.org/x/sys v0.46.0
