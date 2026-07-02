@@ -239,6 +239,66 @@ func (p *MemPostings) Stats(label string, limit int, labelSizeFunc func(string, 
 	}
 }
 
+// StatsForMatchedSeries calculates cardinality statistics from postings,
+// considering only the series whose refs are present in matchedSeries.
+// Caller can pass in a function which computes the space required for n series with a given label.
+func (p *MemPostings) StatsForMatchedSeries(label string, limit int, labelSizeFunc func(string, string, uint64) uint64, matchedSeries map[storage.SeriesRef]struct{}) *PostingsStats {
+	var size uint64
+	p.mtx.RLock()
+
+	metrics := &maxHeap{}
+	lbls := &maxHeap{}
+	labelValueLength := &maxHeap{}
+	labelValuePairs := &maxHeap{}
+	numLabelPairs := 0
+
+	metrics.init(limit)
+	lbls.init(limit)
+	labelValueLength.init(limit)
+	labelValuePairs.init(limit)
+
+	for n, e := range p.m {
+		if n == "" {
+			continue
+		}
+		size = 0
+		labelValueCount := 0
+		for name, values := range e {
+			var filteredCount uint64
+			for _, ref := range values {
+				if _, ok := matchedSeries[ref]; ok {
+					filteredCount++
+				}
+			}
+			if filteredCount == 0 {
+				continue
+			}
+			labelValueCount++
+			numLabelPairs++
+			if n == label {
+				metrics.push(Stat{Name: name, Count: filteredCount})
+			}
+			labelValuePairs.push(Stat{Name: n + "=" + name, Count: filteredCount})
+			size += labelSizeFunc(n, name, filteredCount)
+		}
+		if labelValueCount == 0 {
+			continue
+		}
+		lbls.push(Stat{Name: n, Count: uint64(labelValueCount)})
+		labelValueLength.push(Stat{Name: n, Count: size})
+	}
+
+	p.mtx.RUnlock()
+
+	return &PostingsStats{
+		CardinalityMetricsStats: metrics.get(),
+		CardinalityLabelStats:   lbls.get(),
+		LabelValueStats:         labelValueLength.get(),
+		LabelValuePairsStats:    labelValuePairs.get(),
+		NumLabelPairs:           numLabelPairs,
+	}
+}
+
 // All returns a postings list over all documents ever added.
 func (p *MemPostings) All() Postings {
 	return p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
