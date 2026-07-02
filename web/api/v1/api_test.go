@@ -4855,9 +4855,13 @@ func (t *testCodec) Encode(*Response) ([]byte, error) {
 }
 
 func TestExtractQueryOpts(t *testing.T) {
+	trueVal := true
+	falseVal := false
+
 	tests := []struct {
 		name   string
 		form   url.Values
+		header http.Header
 		expect promql.QueryOpts
 		err    error
 	}{
@@ -4866,7 +4870,7 @@ func TestExtractQueryOpts(t *testing.T) {
 			form: url.Values{
 				"stats": []string{"all"},
 			},
-			expect: promql.NewPrometheusQueryOpts(true, 0),
+			expect: promql.NewPrometheusQueryOpts(true, 0, nil),
 
 			err: nil,
 		},
@@ -4875,7 +4879,7 @@ func TestExtractQueryOpts(t *testing.T) {
 			form: url.Values{
 				"stats": []string{"none"},
 			},
-			expect: promql.NewPrometheusQueryOpts(false, 0),
+			expect: promql.NewPrometheusQueryOpts(false, 0, nil),
 			err:    nil,
 		},
 		{
@@ -4884,8 +4888,67 @@ func TestExtractQueryOpts(t *testing.T) {
 				"stats":          []string{"all"},
 				"lookback_delta": []string{"30s"},
 			},
-			expect: promql.NewPrometheusQueryOpts(true, 30*time.Second),
+			expect: promql.NewPrometheusQueryOpts(true, 30*time.Second, nil),
 			err:    nil,
+		},
+		{
+			name: "with start_timestamps true",
+			form: url.Values{
+				"start_timestamps": []string{"true"},
+			},
+			expect: promql.NewPrometheusQueryOpts(false, 0, &trueVal),
+			err:    nil,
+		},
+		{
+			name: "with start_timestamps false",
+			form: url.Values{
+				"start_timestamps": []string{"false"},
+			},
+			expect: promql.NewPrometheusQueryOpts(false, 0, &falseVal),
+			err:    nil,
+		},
+		{
+			name: "with X-Prometheus-Start-Timestamps header true",
+			header: http.Header{
+				"X-Prometheus-Start-Timestamps": []string{"true"},
+			},
+			expect: promql.NewPrometheusQueryOpts(false, 0, &trueVal),
+			err:    nil,
+		},
+		{
+			name: "with X-Prometheus-Start-Timestamps header false",
+			header: http.Header{
+				"X-Prometheus-Start-Timestamps": []string{"false"},
+			},
+			expect: promql.NewPrometheusQueryOpts(false, 0, &falseVal),
+			err:    nil,
+		},
+		{
+			name: "with X-Prometheus-Start-Timestamps header and start_timestamps parameter (header wins)",
+			form: url.Values{
+				"start_timestamps": []string{"false"},
+			},
+			header: http.Header{
+				"X-Prometheus-Start-Timestamps": []string{"true"},
+			},
+			expect: promql.NewPrometheusQueryOpts(false, 0, &trueVal),
+			err:    nil,
+		},
+		{
+			name: "with invalid X-Prometheus-Start-Timestamps header",
+			header: http.Header{
+				"X-Prometheus-Start-Timestamps": []string{"invalid"},
+			},
+			expect: nil,
+			err:    errors.New(`error parsing X-Prometheus-Start-Timestamps header: strconv.ParseBool: parsing "invalid": invalid syntax`),
+		},
+		{
+			name: "with invalid start_timestamps",
+			form: url.Values{
+				"start_timestamps": []string{"invalid"},
+			},
+			expect: nil,
+			err:    errors.New(`error parsing start_timestamps parameter: strconv.ParseBool: parsing "invalid": invalid syntax`),
 		},
 		{
 			name: "with invalid lookback delta",
@@ -4899,7 +4962,10 @@ func TestExtractQueryOpts(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			req := &http.Request{Form: test.form}
+			req := &http.Request{Form: test.form, Header: test.header}
+			if req.Header == nil {
+				req.Header = make(http.Header)
+			}
 			opts, err := extractQueryOpts(req)
 			require.Equal(t, test.expect, opts)
 			if test.err == nil {

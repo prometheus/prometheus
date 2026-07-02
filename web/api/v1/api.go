@@ -218,6 +218,7 @@ type TSDBAdminStats interface {
 type QueryOpts interface {
 	EnablePerStepStats() bool
 	LookbackDelta() time.Duration
+	UseStartTimestamps() *bool
 }
 
 // API can register a set of endpoints in a router and handle
@@ -614,7 +615,22 @@ func extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
 		duration = parsedDuration
 	}
 
-	return promql.NewPrometheusQueryOpts(r.FormValue("stats") == "all", duration), nil
+	var useStartTimestamps *bool
+	if val := r.Header.Get("X-Prometheus-Start-Timestamps"); val != "" {
+		b, err := strconv.ParseBool(val)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing X-Prometheus-Start-Timestamps header: %w", err)
+		}
+		useStartTimestamps = &b
+	} else if val := r.FormValue("start_timestamps"); val != "" {
+		b, err := strconv.ParseBool(val)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing start_timestamps parameter: %w", err)
+		}
+		useStartTimestamps = &b
+	}
+
+	return promql.NewPrometheusQueryOpts(r.FormValue("stats") == "all", duration, useStartTimestamps), nil
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {

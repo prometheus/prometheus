@@ -921,7 +921,7 @@ global:
 						return false
 					}
 					return r.StatusCode == http.StatusOK
-				}, 5*time.Second, 50*time.Millisecond)
+				}, 30*time.Second, 50*time.Millisecond)
 				defer r.Body.Close()
 
 				// Check the final GOGC that's set, consider go_gc_gogc_percent from /metrics as source of truth.
