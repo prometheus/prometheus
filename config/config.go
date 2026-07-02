@@ -14,8 +14,10 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"mime"
 	"net/url"
@@ -34,7 +36,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/sigv4"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
@@ -78,8 +80,9 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 	// point as well.
 	*cfg = DefaultConfig
 
-	err := yaml.UnmarshalStrict([]byte(s), cfg)
-	if err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader([]byte(s)))
+	dec.KnownFields(true)
+	if err := dec.Decode(cfg); err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
 
@@ -369,8 +372,9 @@ func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 			if err != nil {
 				return nil, fileErr(filename, err)
 			}
-			err = yaml.UnmarshalStrict(content, &cfg)
-			if err != nil {
+			dec := yaml.NewDecoder(bytes.NewReader(content))
+			dec.KnownFields(true)
+			if err = dec.Decode(&cfg); err != nil {
 				return nil, fileErr(filename, err)
 			}
 			for _, scfg := range cfg.ScrapeConfigs {
