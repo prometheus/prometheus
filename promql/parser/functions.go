@@ -311,6 +311,12 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"st_of_last_over_time": {
+		Name:         "st_of_last_over_time",
+		ArgTypes:     []ValueType{ValueTypeMatrix},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"ts_of_first_over_time": {
 		Name:         "ts_of_first_over_time",
 		ArgTypes:     []ValueType{ValueTypeMatrix},
