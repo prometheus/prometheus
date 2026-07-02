@@ -14,7 +14,7 @@
 package notifier
 
 import (
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -127,7 +127,7 @@ func (s *alertmanagerSet) configHash() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	hash := md5.Sum(b)
+	hash := sha256.Sum256(b)
 	return hex.EncodeToString(hash[:]), nil
 }
 
