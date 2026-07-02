@@ -3268,6 +3268,34 @@ func TestPostingsForMatchers(t *testing.T) {
 				labels.FromStrings("n", "2.5"),
 			},
 		},
+		// Multiple subtracting regexp matchers on the same label name are
+		// combined into a single scan; the result must subtract the union.
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "1"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", "a.*"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", "b.*")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "\n"),
+			},
+		},
+		// Same as above but without a non-subtracting matcher, so the base is
+		// all postings.
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "i", "a.*"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", "b.*")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "\n"),
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		// Multiple intersecting regexp matchers on the same label name are
+		// combined into a single scan; the result must intersect them.
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "a.*"), labels.MustNewMatcher(labels.MatchRegexp, "i", ".*a")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+			},
+		},
 	}
 
 	ir, err := h.Index()

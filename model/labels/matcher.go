@@ -152,6 +152,14 @@ func (m *Matcher) SetMatches() []string {
 	return m.re.SetMatches()
 }
 
+// HasSetMatches reports whether the matcher is a regex matcher that can be
+// reduced to a set of equality matchers (see SetMatches). Unlike SetMatches it
+// does not allocate, so it is suitable for use on hot paths that only need to
+// know whether the fast set-matching path applies.
+func (m *Matcher) HasSetMatches() bool {
+	return m.re != nil && m.re.HasSetMatches()
+}
+
 // Prefix returns the required prefix of the value to match, if possible.
 // It will be empty if it's an equality matcher or if the prefix can't be determined.
 func (m *Matcher) Prefix() string {
