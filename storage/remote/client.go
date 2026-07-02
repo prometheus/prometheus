@@ -24,6 +24,7 @@ import (
 	"net/http/httptrace"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -63,47 +64,13 @@ var (
 		remoteapi.WriteV2MessageType: appProtoContentType + ";proto=io.prometheus.write.v2.Request",
 	}
 
+	remoteReadMetricCache sync.Map // key: remoteName+url, value: *readClientMetrics
+
 	AcceptedResponseTypes = []prompb.ReadRequest_ResponseType{
 		prompb.ReadRequest_STREAMED_XOR_CHUNKS,
 		prompb.ReadRequest_SAMPLES,
 	}
-
-	remoteReadQueriesTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: "remote_read_client",
-			Name:      "queries_total",
-			Help:      "The total number of remote read queries.",
-		},
-		[]string{remoteName, endpoint, "response_type", "code"},
-	)
-	remoteReadQueries = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: "remote_read_client",
-			Name:      "queries",
-			Help:      "The number of in-flight remote read queries.",
-		},
-		[]string{remoteName, endpoint},
-	)
-	remoteReadQueryDuration = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Namespace:                       namespace,
-			Subsystem:                       "remote_read_client",
-			Name:                            "request_duration_seconds",
-			Help:                            "Histogram of the latency for remote read requests. Note that for streamed responses this is only the duration of the initial call and does not include the processing of the stream.",
-			Buckets:                         append(prometheus.DefBuckets, 25, 60),
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
-		},
-		[]string{remoteName, endpoint, "response_type"},
-	)
 )
-
-func init() {
-	prometheus.MustRegister(remoteReadQueriesTotal, remoteReadQueries, remoteReadQueryDuration)
-}
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
@@ -147,8 +114,111 @@ type ReadClient interface {
 	ReadMultiple(ctx context.Context, queries []*prompb.Query, sortSeries bool) (storage.SeriesSet, error)
 }
 
+type readClientMetrics struct {
+	readQueries          prometheus.Gauge
+	readQueriesTotalVec  *prometheus.CounterVec
+	readQueryDurationVec prometheus.ObserverVec
+	reg                  prometheus.Registerer
+}
+
+func newRemoteReadMetrics(
+	name string,
+	url string,
+	reg prometheus.Registerer,
+) (
+	prometheus.Gauge,
+	*prometheus.CounterVec,
+	prometheus.ObserverVec,
+) {
+	key := name + "|" + url
+
+	// Reuse existing collectors (no unregister, no reset) if we've already created them.
+	if oldVal, ok := remoteReadMetricCache.Load(key); ok {
+		if old, ok := oldVal.(*readClientMetrics); ok {
+			return old.readQueries, old.readQueriesTotalVec, old.readQueryDurationVec
+		}
+	}
+
+	readQueries := prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: "remote_read_client",
+		Name:      "queries",
+		Help:      "The number of in-flight remote read queries.",
+	})
+
+	readQueriesTotalVec := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: namespace,
+		Subsystem: "remote_read_client",
+		Name:      "queries_total",
+		Help:      "The total number of remote read queries.",
+	}, []string{"response_type", "code"})
+
+	readQueryDurationVec := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace:                       namespace,
+		Subsystem:                       "remote_read_client",
+		Name:                            "request_duration_seconds",
+		Help:                            "Histogram of the latency for remote read requests. For streamed responses, this is only the duration of the initial call.",
+		Buckets:                         append(prometheus.DefBuckets, 25, 60),
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: time.Hour,
+	}, []string{"response_type"})
+
+	if reg == nil {
+		return readQueries, readQueriesTotalVec, readQueryDurationVec
+	}
+
+	// Each remote-read client gets its own metrics, distinguished by the
+	// remote_name and endpoint labels and registered with the provided registry.
+	wrappedReg := prometheus.WrapRegistererWith(prometheus.Labels{
+		"remote_name": name,
+		"endpoint":    url,
+	}, reg)
+
+	// Register OR reuse if already present (avoid panics and counter resets on reload).
+	var are prometheus.AlreadyRegisteredError
+	if err := wrappedReg.Register(readQueries); err != nil {
+		if !errors.As(err, &are) {
+			panic(err)
+		}
+		readQueries = are.ExistingCollector.(prometheus.Gauge)
+	}
+	if err := wrappedReg.Register(readQueriesTotalVec); err != nil {
+		if !errors.As(err, &are) {
+			panic(err)
+		}
+		readQueriesTotalVec = are.ExistingCollector.(*prometheus.CounterVec)
+	}
+	if err := wrappedReg.Register(readQueryDurationVec); err != nil {
+		if !errors.As(err, &are) {
+			panic(err)
+		}
+		readQueryDurationVec = are.ExistingCollector.(*prometheus.HistogramVec)
+	}
+
+	remoteReadMetricCache.Store(key, &readClientMetrics{
+		readQueries:          readQueries,
+		readQueriesTotalVec:  readQueriesTotalVec,
+		readQueryDurationVec: readQueryDurationVec,
+		reg:                  wrappedReg, // keep for explicit cleanup when a remote is removed
+	})
+
+	return readQueries, readQueriesTotalVec, readQueryDurationVec
+}
+
+// Unregister metrics for a removed remote_read config.
+func unregisterRemoteReadMetrics(key string) {
+	if val, ok := remoteReadMetricCache.LoadAndDelete(key); ok {
+		if m, ok := val.(*readClientMetrics); ok && m.reg != nil {
+			m.reg.Unregister(m.readQueries)
+			m.reg.Unregister(m.readQueriesTotalVec)
+			m.reg.Unregister(m.readQueryDurationVec)
+		}
+	}
+}
+
 // NewReadClient creates a new client for remote read.
-func NewReadClient(name string, conf *ClientConfig, optFuncs ...config_util.HTTPClientOption) (ReadClient, error) {
+func NewReadClient(name string, conf *ClientConfig, reg prometheus.Registerer, optFuncs ...config_util.HTTPClientOption) (ReadClient, error) {
 	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client", optFuncs...)
 	if err != nil {
 		return nil, err
@@ -166,6 +236,14 @@ func NewReadClient(name string, conf *ClientConfig, optFuncs ...config_util.HTTP
 		acceptedResponseTypes = AcceptedResponseTypes
 	}
 
+	// Create (or reuse) the per-client read metrics, registered with the provided registry.
+	var (
+		readQueries         prometheus.Gauge
+		readQueriesTotal    *prometheus.CounterVec
+		readQueriesDuration prometheus.ObserverVec
+	)
+	readQueries, readQueriesTotal, readQueriesDuration = newRemoteReadMetrics(name, conf.URL.Redacted(), reg)
+
 	return &Client{
 		remoteName:            name,
 		urlString:             conf.URL.String(),
@@ -173,9 +251,9 @@ func NewReadClient(name string, conf *ClientConfig, optFuncs ...config_util.HTTP
 		timeout:               time.Duration(conf.Timeout),
 		chunkedReadLimit:      conf.ChunkedReadLimit,
 		acceptedResponseTypes: acceptedResponseTypes,
-		readQueries:           remoteReadQueries.WithLabelValues(name, conf.URL.String()),
-		readQueriesTotal:      remoteReadQueriesTotal.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: conf.URL.String()}),
-		readQueriesDuration:   remoteReadQueryDuration.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: conf.URL.String()}),
+		readQueries:           readQueries,
+		readQueriesTotal:      readQueriesTotal,
+		readQueriesDuration:   readQueriesDuration,
 	}, nil
 }
 

@@ -59,8 +59,8 @@ type ServersetSDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*ServersetSDConfig) NewDiscovererMetrics(prometheus.Registerer, discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
-	return &discovery.NoopDiscovererMetrics{}
+func (*ServersetSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return newDiscovererMetrics(reg, rmi)
 }
 
 // Name returns the name of the Config.
@@ -68,7 +68,7 @@ func (*ServersetSDConfig) Name() string { return "serverset" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *ServersetSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewServersetDiscovery(c, opts.Logger)
+	return NewServersetDiscovery(c, opts.Logger, opts.Metrics)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -101,8 +101,8 @@ type NerveSDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*NerveSDConfig) NewDiscovererMetrics(prometheus.Registerer, discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
-	return &discovery.NoopDiscovererMetrics{}
+func (*NerveSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return newDiscovererMetrics(reg, rmi)
 }
 
 // Name returns the name of the Config.
@@ -110,7 +110,7 @@ func (*NerveSDConfig) Name() string { return "nerve" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *NerveSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewNerveDiscovery(c, opts.Logger)
+	return NewNerveDiscovery(c, opts.Logger, opts.Metrics)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -148,16 +148,18 @@ type Discovery struct {
 
 	parse  func(data []byte, path string) (model.LabelSet, error)
 	logger *slog.Logger
+
+	metrics *zookeeperMetrics
 }
 
 // NewNerveDiscovery returns a new Discovery for the given Nerve config.
-func NewNerveDiscovery(conf *NerveSDConfig, logger *slog.Logger) (*Discovery, error) {
-	return NewDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, logger, parseNerveMember)
+func NewNerveDiscovery(conf *NerveSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+	return NewDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, logger, parseNerveMember, metrics)
 }
 
 // NewServersetDiscovery returns a new Discovery for the given serverset config.
-func NewServersetDiscovery(conf *ServersetSDConfig, logger *slog.Logger) (*Discovery, error) {
-	return NewDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, logger, parseServersetMember)
+func NewServersetDiscovery(conf *ServersetSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+	return NewDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, logger, parseServersetMember, metrics)
 }
 
 // NewDiscovery returns a new discovery along Zookeeper parses with
@@ -168,6 +170,7 @@ func NewDiscovery(
 	paths []string,
 	logger *slog.Logger,
 	pf func(data []byte, path string) (model.LabelSet, error),
+	metrics discovery.DiscovererMetrics,
 ) (*Discovery, error) {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -188,11 +191,16 @@ func NewDiscovery(
 		sources: map[string]*targetgroup.Group{},
 		parse:   pf,
 		logger:  logger,
+		metrics: metrics.(*zookeeperMetrics),
 	}
 	for _, path := range paths {
 		pathUpdate := make(chan treecache.ZookeeperTreeCacheEvent)
 		sd.pathUpdates = append(sd.pathUpdates, pathUpdate)
-		sd.treeCaches = append(sd.treeCaches, treecache.NewZookeeperTreeCache(conn, path, pathUpdate, logger))
+		// Pass our metrics to the treecache.
+		sd.treeCaches = append(sd.treeCaches, treecache.NewZookeeperTreeCache(
+			conn, path, pathUpdate, logger,
+			sd.metrics.failureCounter, sd.metrics.numWatchers,
+		))
 	}
 	return sd, nil
 }

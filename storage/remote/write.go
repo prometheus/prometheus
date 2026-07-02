@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/config"
@@ -36,19 +35,19 @@ import (
 )
 
 var (
-	samplesIn = promauto.NewCounter(prometheus.CounterOpts{
+	samplesIn = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "samples_in_total",
 		Help:      "Samples in to remote storage, compare to samples out for queue managers. Deprecated, check prometheus_wal_watcher_records_read_total and prometheus_remote_storage_samples_dropped_total",
 	})
-	exemplarsIn = promauto.NewCounter(prometheus.CounterOpts{
+	exemplarsIn = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "exemplars_in_total",
 		Help:      "Exemplars in to remote storage, compare to exemplars out for queue managers. Deprecated, check prometheus_wal_watcher_records_read_total and prometheus_remote_storage_exemplars_dropped_total",
 	})
-	histogramsIn = promauto.NewCounter(prometheus.CounterOpts{
+	histogramsIn = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "histograms_in_total",
@@ -94,7 +93,7 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 		flushDeadline:     flushDeadline,
 		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		dir:               dir,
-		interner:          newPool(),
+		interner:          newPool(reg),
 		scraper:           sm,
 		quit:              make(chan struct{}),
 		highestTimestamp: &maxTimestamp{
