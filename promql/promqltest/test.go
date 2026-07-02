@@ -261,14 +261,8 @@ func newTest(t testing.TB, input string, testingMode bool, newStorage func(testi
 	return test, err
 }
 
-// testStorageOptions holds additional tsdb.Options applied by newTestStorage.
-// It is populated via init() in test files so that options only take effect
-// when the promqltest package itself is under test, not when callers such as
-// promql_test.go invoke RunBuiltinTests.
-var testStorageOptions []teststorage.Option
-
 func newTestStorage(t testing.TB) storage.Storage {
-	return teststorage.New(t, testStorageOptions...)
+	return teststorage.New(t)
 }
 
 //go:embed testdata
@@ -316,6 +310,11 @@ func parseLoad(lines []string, i int, startTime time.Time) (int, *loadCmd, error
 			if err != nil {
 				return i, nil, err
 			}
+			// Standalone @st line (no metric): set as default ST.
+			if labels.Equal(stMetric, labels.EmptyLabels()) {
+				cmd.defaultSTVals = stVals
+				continue
+			}
 			pendingSTVals = stVals
 			pendingSTMetric = stMetric
 			pendingSTLine = i
@@ -358,9 +357,12 @@ func isSTLine(defLine string) bool {
 //
 //	metric{labels}@st <st_sequence>
 //
-// It returns the metric labels and a slice of SequenceValues where each
-// non-omitted SequenceValue.Value is the ST offset in milliseconds relative
-// to the corresponding sample's timestamp.
+// Or a standalone default form:
+//
+//	@st <st_sequence>
+//
+// In the standalone form, the returned metric is nil and the ST sequence
+// applies as a default to all subsequent sample lines.
 func parseSTLine(defLine string, line int) (labels.Labels, []parser.SequenceValue, error) {
 	defLine = strings.TrimSpace(defLine)
 	spaceIdx := strings.IndexAny(defLine, " \t")
@@ -370,14 +372,20 @@ func parseSTLine(defLine string, line int) (labels.Labels, []parser.SequenceValu
 	metricPart := strings.TrimSuffix(defLine[:spaceIdx], "@st")
 	valsPart := strings.TrimSpace(defLine[spaceIdx+1:])
 
+	stVals, err := parseSTSequence(valsPart)
+	if err != nil {
+		return labels.Labels{}, nil, raise(line, "invalid @st sequence: %s", err)
+	}
+
+	// Standalone @st line (no metric name).
+	if metricPart == "" {
+		return labels.EmptyLabels(), stVals, nil
+	}
+
 	// Parse metric labels by reusing the series description parser with a dummy value.
 	metric, _, err := parseSeries(metricPart+" _", line)
 	if err != nil {
 		return labels.Labels{}, nil, raise(line, "invalid @st line metric %q: %s", metricPart, err)
-	}
-	stVals, err := parseSTSequence(valsPart)
-	if err != nil {
-		return labels.Labels{}, nil, raise(line, "invalid @st sequence: %s", err)
 	}
 	return metric, stVals, nil
 }
@@ -397,7 +405,8 @@ func parseSTLine(defLine string, line int) (labels.Labels, []parser.SequenceValu
 func parseSTSequence(input string) ([]parser.SequenceValue, error) {
 	var result []parser.SequenceValue
 	for item := range strings.FieldsSeq(input) {
-		vals, err := parseSTItem(item)
+		prev := lastNonOmitted(result)
+		vals, err := parseSTItem(item, prev)
 		if err != nil {
 			return nil, fmt.Errorf("invalid ST item %q: %w", item, err)
 		}
@@ -406,7 +415,17 @@ func parseSTSequence(input string) ([]parser.SequenceValue, error) {
 	return result, nil
 }
 
-func parseSTItem(item string) ([]parser.SequenceValue, error) {
+// lastNonOmitted returns the Value of the last non-omitted entry, or 0.
+func lastNonOmitted(vals []parser.SequenceValue) float64 {
+	for i := len(vals) - 1; i >= 0; i-- {
+		if !vals[i].Omitted {
+			return vals[i].Value
+		}
+	}
+	return 0
+}
+
+func parseSTItem(item string, prevValue float64) ([]parser.SequenceValue, error) {
 	if item == "_" {
 		return []parser.SequenceValue{{Omitted: true}}, nil
 	}
@@ -418,6 +437,22 @@ func parseSTItem(item string) ([]parser.SequenceValue, error) {
 		vals := make([]parser.SequenceValue, n)
 		for i := range vals {
 			vals[i] = parser.SequenceValue{Omitted: true}
+		}
+		return vals, nil
+	}
+
+	// "*" repeats the previous non-omitted value.
+	if item == "*" {
+		return []parser.SequenceValue{{Value: prevValue}}, nil
+	}
+	if strings.HasPrefix(item, "*x") {
+		n, err := strconv.ParseUint(item[2:], 10, 64)
+		if err != nil {
+			return nil, errors.New("invalid repeat count")
+		}
+		vals := make([]parser.SequenceValue, n+1)
+		for i := range vals {
+			vals[i] = parser.SequenceValue{Value: prevValue}
 		}
 		return vals, nil
 	}
@@ -862,12 +897,13 @@ type sampleST struct {
 // loadCmd is a command that loads sequences of sample values for specific
 // metrics into the storage.
 type loadCmd struct {
-	gap       time.Duration
-	metrics   map[uint64]labels.Labels
-	defs      map[uint64][]sampleST
-	exemplars map[uint64][]exemplar.Exemplar
-	withNHCB  bool
-	startTime time.Time
+	gap           time.Duration
+	metrics       map[uint64]labels.Labels
+	defs          map[uint64][]sampleST
+	exemplars     map[uint64][]exemplar.Exemplar
+	withNHCB      bool
+	startTime     time.Time
+	defaultSTVals []parser.SequenceValue
 }
 
 func newLoadCmd(gap time.Duration, withNHCB bool) *loadCmd {
@@ -886,7 +922,7 @@ func (loadCmd) String() string {
 }
 
 // set stores a sequence of sample values for the given metric with optional start timestamps.
-// stVals must be nil (no ST for any sample) or have the same length as vals.
+// stVals may be nil, have the same length as vals, or be nil while defaultSTVals provides defaults.
 func (cmd *loadCmd) set(m labels.Labels, vals, stVals []parser.SequenceValue) {
 	h := m.Hash()
 
@@ -902,8 +938,14 @@ func (cmd *loadCmd) set(m labels.Labels, vals, stVals []parser.SequenceValue) {
 					H: v.Histogram,
 				},
 			}
+			// Use explicit stVals, defaultSTVals (cycled), or no ST.
 			if len(stVals) > 0 && !stVals[i].Omitted {
 				s.ST = tsMs + int64(stVals[i].Value)
+			} else if len(stVals) == 0 && len(cmd.defaultSTVals) > 0 {
+				def := cmd.defaultSTVals[i%len(cmd.defaultSTVals)]
+				if !def.Omitted {
+					s.ST = tsMs + int64(def.Value)
+				}
 			}
 			samples = append(samples, s)
 		}

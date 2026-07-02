@@ -29,15 +29,6 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
-func init() {
-	testStorageOptions = []teststorage.Option{
-		func(opts *tsdb.Options) {
-			opts.EnableSTStorage = true
-			opts.FloatChunkEncoding = chunkenc.EncXOR2
-		},
-	}
-}
-
 func TestLazyLoader_WithSamplesTill(t *testing.T) {
 	type testCase struct {
 		ts             time.Time
@@ -1169,6 +1160,36 @@ func TestParseSTSequence(t *testing.T) {
 				{Value: float64(-60000)},
 			},
 		},
+		{
+			input: "-1m * *",
+			expected: []parser.SequenceValue{
+				{Value: float64(-60000)},
+				{Value: float64(-60000)},
+				{Value: float64(-60000)},
+			},
+		},
+		{
+			input: "-1m *x3",
+			expected: []parser.SequenceValue{
+				{Value: float64(-60000)},
+				{Value: float64(-60000)},
+				{Value: float64(-60000)},
+				{Value: float64(-60000)},
+				{Value: float64(-60000)},
+			},
+		},
+		{
+			input: "-30s-1mx2 * *x2",
+			expected: []parser.SequenceValue{
+				{Value: float64(-30000)},
+				{Value: float64(-90000)},
+				{Value: float64(-150000)},
+				{Value: float64(-150000)},
+				{Value: float64(-150000)},
+				{Value: float64(-150000)},
+				{Value: float64(-150000)},
+			},
+		},
 		{input: "", expected: nil},
 		{input: "badunit", wantErr: true},
 		{input: "_x0", wantErr: true},
@@ -1212,6 +1233,59 @@ func TestParseLoad_STLine(t *testing.T) {
 		wantST := wantT - 60000 // -1m in ms
 		require.Equal(t, wantT, s.T, "sample %d timestamp", i)
 		require.Equal(t, wantST, s.ST, "sample %d start timestamp", i)
+	}
+}
+
+func TestParseLoad_STLineDefault(t *testing.T) {
+	// Verify that a standalone @st line applies to all subsequent sample lines.
+	const step = 5 * time.Minute
+	stepMs := step.Milliseconds()
+
+	lines := []string{
+		"load 5m",
+		"  @st -1m",
+		"  my_counter 0+1x4",
+	}
+	_, cmd, err := parseLoad(lines, 0, testStartTime)
+	require.NoError(t, err)
+
+	metric := labels.FromStrings("__name__", "my_counter")
+	smpls := cmd.defs[metric.Hash()]
+	require.Len(t, smpls, 5)
+
+	for i, s := range smpls {
+		wantT := int64(i) * stepMs
+		wantST := wantT - 60000 // -1m in ms
+		require.Equal(t, wantT, s.T, "sample %d timestamp", i)
+		require.Equal(t, wantST, s.ST, "sample %d start timestamp", i)
+	}
+}
+
+func TestParseLoad_STLineMultipleMetrics(t *testing.T) {
+	// Verify that a standalone @st line applies to multiple subsequent sample lines.
+	const step = 5 * time.Minute
+	stepMs := step.Milliseconds()
+
+	lines := []string{
+		"load 5m",
+		"  @st -1m",
+		"  counter_a 0+1x2",
+		"  counter_b 0+1x2",
+	}
+	_, cmd, err := parseLoad(lines, 0, testStartTime)
+	require.NoError(t, err)
+
+	for _, name := range []string{"counter_a", "counter_b"} {
+		metric := labels.FromStrings("__name__", name)
+		smpls := cmd.defs[metric.Hash()]
+		require.Len(t, smpls, 3)
+
+		for i, s := range smpls {
+			wantT := int64(i) * stepMs
+			wantST := wantT - 60000
+			require.Equal(t, wantT, s.T, "%s sample %d timestamp", name, i)
+			require.Equal(t, wantST, s.ST, "%s sample %d start timestamp", name, i)
+		}
 	}
 }
 
@@ -1265,7 +1339,11 @@ func TestLoadSTLine_StorageRoundtrip(t *testing.T) {
 	// Parse and load samples with @st offsets into a real TSDB instance,
 	// then read them back via chunkenc Iterator to verify the start timestamps
 	// were stored and retrieved correctly.
-	store := newTestStorage(t)
+	// This test requires XOR2 chunk encoding and ST support enabled.
+	store := teststorage.New(t, func(opt *tsdb.Options) {
+		opt.EnableSTStorage = true
+		opt.FloatChunkEncoding = chunkenc.EncXOR2
+	})
 	const step = 5 * time.Minute
 	lines := []string{
 		"load 5m",
