@@ -147,12 +147,12 @@ post_pull_request() {
 }
 
 check_license() {
-  # Check to see if the input is an Apache license of some kind
-  echo "$1" | grep --quiet --no-messages --ignore-case 'Apache License'
+  # Check to see if the input is an Apache license of some kind.
+  grep --quiet --no-messages --ignore-case 'Apache License' <<<"$1"
 }
 
 check_no_sync() {
-  grep --quiet --no-messages 'no_prometheus_repo_sync' "${1}"
+  grep --quiet --no-messages 'no_prometheus_repo_sync' <<<"$1"
 }
 
 check_go() {
@@ -230,7 +230,7 @@ process_repo() {
       continue
     fi
     if check_no_sync "${target_file}" ; then
-      repo_log "${target_file} is marked as do not sync, skipping."
+      repo_log "${target_filename} is marked as do not sync, skipping."
       continue
     fi
     if [[ "${source_file}" == 'LICENSE' ]] && ! check_license "${target_file}" ; then
