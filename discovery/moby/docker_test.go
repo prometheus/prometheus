@@ -479,3 +479,67 @@ func sortFunc(labelSets []model.LabelSet) {
 		return labelSets[i]["__address__"] < labelSets[j]["__address__"]
 	})
 }
+
+func TestDockerSDRefreshIPv6Only(t *testing.T) {
+	sdmock := NewSDMock(t, "dockeripv6")
+	sdmock.Setup()
+
+	e := sdmock.Endpoint()
+	url := e[:len(e)-1]
+	cfgString := fmt.Sprintf(`
+---
+host: %s
+`, url)
+	var cfg DockerSDConfig
+	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
+	d, err := NewDockerDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:  promslog.NewNopLogger(),
+		Metrics: metrics,
+		SetName: "docker_sd",
+	})
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	tgs, err := d.refresh(ctx)
+	require.NoError(t, err)
+
+	require.Len(t, tgs, 1)
+
+	tg := tgs[0]
+	require.NotNil(t, tg)
+	require.NotNil(t, tg.Targets)
+	require.Len(t, tg.Targets, 1)
+
+	expected := []model.LabelSet{
+		{
+			"__address__":                          "[fc00::2]:80",
+			"__meta_docker_container_id":           "d43780927f21e5c56cc823545ddd546ac01cbcdd3d4d69104d01d4217e2361aa",
+			"__meta_docker_container_name":         "/web-server",
+			"__meta_docker_container_network_mode": "mynetwork",
+			"__meta_docker_network_id":             "03e01a4a093e66fe982403a640451f31860aa41026d9cdda213e081dd406b1e5",
+			"__meta_docker_network_ingress":        "false",
+			"__meta_docker_network_internal":       "false",
+			"__meta_docker_network_ip":             "fc00::2",
+			"__meta_docker_network_name":           "mynetwork",
+			"__meta_docker_network_scope":          "local",
+			"__meta_docker_port_private":           "80",
+		},
+	}
+
+	sortFunc(expected)
+	sortFunc(tg.Targets)
+
+	for i, lbls := range expected {
+		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
+			require.Equal(t, lbls, tg.Targets[i])
+		})
+	}
+}

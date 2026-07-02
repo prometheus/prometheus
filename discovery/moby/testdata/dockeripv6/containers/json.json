@@ -1,0 +1,30 @@
+[
+  {
+    "Id": "d43780927f21e5c56cc823545ddd546ac01cbcdd3d4d69104d01d4217e2361aa",
+    "Names": ["/web-server"],
+    "HostConfig": {
+      "NetworkMode": "mynetwork"
+    },
+    "Labels": {},
+    "Ports": [
+      {
+        "PrivatePort": 80,
+        "Type": "tcp"
+      }
+    ],
+    "NetworkSettings": {
+      "Networks": {
+        "mynetwork": {
+          "NetworkID": "03e01a4a093e66fe982403a640451f31860aa41026d9cdda213e081dd406b1e5",
+          "IPAddress": "",
+          "IPPrefixLen": 0,
+          "Gateway": "",
+          "GlobalIPv6Address": "fc00::2",
+          "GlobalIPv6PrefixLen": 64,
+          "IPv6Gateway": "fc00::1",
+          "MacAddress": "e6:8d:01:e6:b3:b1"
+        }
+      }
+    }
+  }
+]
