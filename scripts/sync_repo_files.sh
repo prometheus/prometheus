@@ -177,8 +177,13 @@ process_repo() {
   local org_repo
   local default_branch
   local pr_token
+  local force_fork
   org_repo="$1"
   pr_token="$2"
+  # When set, an open bot-only PR already exists and this is its fork
+  # (owner/repo). We then force-update the existing branch instead of opening a
+  # new PR, but only if the synced content actually changed.
+  force_fork="${3:-}"
   repo_log "Analyzing '${org_repo}'"
 
   default_branch="$(get_default_branch "${org_repo}")"
@@ -260,6 +265,7 @@ process_repo() {
   mkdir -p "./.github/workflows"
 
   # Update the files in target repo by one from prometheus/prometheus.
+  local synced_paths=()
   for source_file in "${needs_update[@]}"; do
     target_filename="${source_file}"
     if [[ "${source_file}" == 'scripts/dependabot.yml' ]] ; then
@@ -271,6 +277,7 @@ process_repo() {
     case "${source_file}" in
       *) cp -f "${source_dir}/${source_file}" "./${target_filename}" ;;
     esac
+    synced_paths+=("${target_filename}")
   done
 
   repo_log "File sync complete"
@@ -278,13 +285,36 @@ process_repo() {
   if [[ -n "$(git status --porcelain)" ]]; then
     git config user.email "${git_mail}"
     git config user.name "${git_user}"
+
+    if [[ -n "${force_fork}" ]]; then
+      # An open, bot-only PR already exists. The branch is rebuilt from the
+      # default branch above so it stays current with the base; only force-push
+      # when the synced files themselves differ from the PR branch, otherwise we
+      # would rewrite it on every run with no real diff.
+      if ! git fetch --quiet "https://github.com/${force_fork}.git" "${branch}" 2> /dev/null; then
+        repo_log_red "Can't fetch '${branch}' from fork ${force_fork}."
+        return 1
+      fi
+      if git diff --quiet FETCH_HEAD -- "${synced_paths[@]}"; then
+        repo_log_green "Open PR is already up to date, not force-pushing."
+        return
+      fi
+      repo_log_yellow "Open PR is stale, force-updating the branch."
+    fi
+
     git add .
     git commit -s -m "${commit_msg}"
     repo_log "Commit created"
     local fork_org_repo
-    fork_org_repo="$(fork_repo "${org_repo}")" || { repo_log_red "Forking ${org_repo} failed"; return 1; }
+    if [[ -n "${force_fork}" ]]; then
+      fork_org_repo="${force_fork}"
+    else
+      fork_org_repo="$(fork_repo "${org_repo}")" || { repo_log_red "Forking ${org_repo} failed"; return 1; }
+    fi
     if push_branch "${fork_org_repo}"; then
-      if ! post_pull_request "${org_repo}" "${default_branch}" "${git_user}" "${fork_org_repo}" "${pr_token}"; then
+      if [[ -n "${force_fork}" ]]; then
+        repo_log_green "Force-updated existing PR branch on ${fork_org_repo}"
+      elif ! post_pull_request "${org_repo}" "${default_branch}" "${git_user}" "${fork_org_repo}" "${pr_token}"; then
         repo_log_red "Posting PR failed"
         return 1
       fi
@@ -306,10 +336,25 @@ for org in ${orgs}; do
   fetch_repos "${org}" | while read -r repo; do
     # Check if a PR is already opened for the branch from the prombot fork.
     fetch_uri="repos/${org}/${repo}/pulls?state=open&head=${git_user}:${branch}"
-    prLink="$(github_api "${fetch_uri}" --show-error | jq -r '.[0].html_url')"
+    prData="$(github_api "${fetch_uri}" --show-error)"
+    prLink="$(echo "${prData}" | jq -r '.[0].html_url')"
     if [[ "${prLink}" != "null" ]]; then
-      echo_green "Pull request already opened for branch '${branch}': ${prLink}"
-      echo "Either close it or merge it before running this script again!"
+      prNumber="$(echo "${prData}" | jq -r '.[0].number')"
+      forkRepo="$(echo "${prData}" | jq -r '.[0].head.repo.full_name')"
+      # Count the commits on the PR. If a maintainer added their own commits we
+      # must not clobber them, so we leave the PR untouched. If it only carries
+      # the single bot commit we may safely force-update it with fresh content.
+      prCommits="$(github_api "repos/${org}/${repo}/pulls/${prNumber}" 2> /dev/null | jq -r '.commits')"
+      if [[ "${prCommits}" != "1" ]]; then
+        echo_green "Pull request '${branch}' has ${prCommits} commit(s), leaving it untouched: ${prLink}"
+        echo "Either close it or merge it before running this script again!"
+        continue
+      fi
+      echo_green "Pull request '${branch}' is bot-only, will force-update if content changed: ${prLink}"
+      if ! process_repo "${org}/${repo}" "${org_token_var}" "${forkRepo}"; then
+        echo_red "Failed to process '${org}/${repo}'"
+        exit 1
+      fi
       continue
     fi
 
