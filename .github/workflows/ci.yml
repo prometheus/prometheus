@@ -12,7 +12,10 @@ permissions:
 jobs:
   test_go:
     name: Go tests
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
@@ -24,7 +27,7 @@ jobs:
       - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
         with:
           enable_npm: true
-          cache_key_suffix: race
+          cache_key_suffix: race-${{ matrix.arch }}
       - run: make GO_ONLY=1 SKIP_GOLANGCI_LINT=1
       - run: go test ./tsdb/ -test.tsdb-isolation=false
       - run: make -C documentation/examples/remote_storage
