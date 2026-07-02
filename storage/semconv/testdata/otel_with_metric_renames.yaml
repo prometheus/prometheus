@@ -1,0 +1,11 @@
+file_format: "1.1.0"
+schema_url: https://example.com/schemas/1.0.0
+
+versions:
+  1.0.0:
+    metrics:
+      changes:
+        - rename_metrics:
+            name_map:
+              old.metric.name: new.metric.name
+              another.old.metric: another.new.metric

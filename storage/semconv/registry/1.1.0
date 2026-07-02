@@ -1,0 +1,30 @@
+groups:
+  - id: registry.http
+    type: attribute_group
+    brief: "HTTP attributes"
+    attributes:
+      - id: http.response.status_code
+        type: int
+        stability: stable
+        brief: "HTTP response status code"
+        examples: [200, 404, 500]
+  - id: registry.tenant
+    type: attribute_group
+    brief: "Tenant attributes"
+    attributes:
+      - id: tenant
+        type: string
+        stability: stable
+        brief: "The tenant identifier"
+        examples: ["alice", "bob"]
+  - id: metric.test
+    type: metric
+    brief: "Counts the number of iterations in the test application"
+    stability: stable
+    metric_name: test
+    instrument: counter
+    unit: By
+    attributes:
+      - ref: http.response.status_code
+        requirement_level: recommended
+      - ref: tenant
