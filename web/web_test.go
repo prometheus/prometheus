@@ -207,6 +207,55 @@ func TestReadyAndHealthy(t *testing.T) {
 	cleanupTestResponse(t, resp)
 }
 
+func TestLifecycleMethodNotAllowedSetsAllowHeader(t *testing.T) {
+	t.Parallel()
+
+	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+
+	opts := &Options{
+		ListenAddresses: []string{port},
+		MaxConnections:  512,
+		EnableLifecycle: true,
+		RoutePrefix:     "/",
+		ExternalURL: &url.URL{
+			Scheme: "http",
+			Host:   "localhost" + port,
+			Path:   "/",
+		},
+	}
+
+	webHandler := New(nil, opts)
+	webHandler.config = &config.Config{}
+	webHandler.notifier = &notifier.Manager{}
+	l, err := webHandler.Listeners()
+	if err != nil {
+		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
+	}
+
+	ctx := t.Context()
+	go func() {
+		err := webHandler.Run(ctx, l, "")
+		if err != nil {
+			panic(fmt.Sprintf("Can't start web handler:%s", err))
+		}
+	}()
+
+	baseURL := "http://localhost" + port
+
+	waitForServerReady(t, baseURL, 5*time.Second)
+
+	for _, path := range []string{"/-/quit", "/-/reload"} {
+		resp, err := http.Get(baseURL + path)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
+		require.Equal(t, "POST, PUT", resp.Header.Get("Allow"))
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, "Only POST or PUT requests allowed", strings.TrimSpace(string(body)))
+		cleanupTestResponse(t, resp)
+	}
+}
+
 func TestRoutePrefix(t *testing.T) {
 	t.Parallel()
 	dbDir := t.TempDir()
