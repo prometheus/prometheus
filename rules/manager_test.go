@@ -1947,6 +1947,55 @@ func TestDependentRulesWithNonMetricExpression(t *testing.T) {
 	require.True(t, depMap.isIndependent(rule3))
 }
 
+func TestIndeterminateRuleDependencyEdges(t *testing.T) {
+	ctx := context.Background()
+	opts := &ManagerOptions{
+		Context: ctx,
+		Logger:  promslog.NewNopLogger(),
+	}
+
+	independentExprs := []string{
+		"sum by (job)(rate(http_requests_total[1m]))",
+		"sum by (job)(rate(http_requests_total[5m]))",
+		"sum by (job)(rate(http_requests_total[15m]))",
+		"sum by (job)(rate(http_requests_total[30m]))",
+		"sum by (job)(rate(http_requests_total[1h]))",
+		"sum by (job)(rate(http_requests_total[2h]))",
+	}
+
+	var rules []Rule
+	for i, e := range independentExprs {
+		expr, err := testParser.ParseExpr(e)
+		require.NoError(t, err)
+		rules = append(rules, NewRecordingRule(fmt.Sprintf("rule_%d", i), expr, labels.Labels{}))
+	}
+
+	poisonExpr, err := testParser.ParseExpr(
+		`max({job=~".+"}) > 10000000000000`,
+	)
+	require.NoError(t, err)
+	poisonRule := NewAlertingRule("HighDiskUsage", poisonExpr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
+	rules = append(rules, poisonRule)
+
+	group := NewGroup(GroupOptions{
+		Name:     "rule_group",
+		Interval: time.Second,
+		Rules:    rules,
+		Opts:     opts,
+	})
+
+	depMap := buildDependencyMap(group.rules)
+	require.NotNil(t, depMap)
+
+	for _, r := range rules[:6] {
+		require.Equal(t, []Rule{poisonRule}, depMap.dependents(r), "rule %s: expected poison rule as only dependent", r.Name())
+		require.Empty(t, depMap.dependencies(r), "rule %s: expected no dependencies", r.Name())
+	}
+
+	require.Len(t, depMap.dependencies(poisonRule), 6)
+	require.Empty(t, depMap.dependents(poisonRule))
+}
+
 func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
 	storage := teststorage.New(t)
 	engine := testEngine(t)
@@ -2189,7 +2238,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		})
 	})
 
-	t.Run("asynchronous evaluation of independent rules, with indeterminate. Should be synchronous", func(t *testing.T) {
+	t.Run("asynchronous evaluation with indeterminate rule depending on all prior", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			storage := teststorage.New(t)
 
@@ -2218,11 +2267,11 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 
 				group.Eval(ctx, start)
 
-				// Never expect more than 1 inflight query at a time.
-				require.EqualValues(t, 1, maxInflight.Load())
-				// Each rule should take at least 1 second to execute sequentially.
-				require.GreaterOrEqual(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
-				// Each rule produces one vector.
+				// The indeterminate rule depends on all prior rules, but the 6
+				// independent rules can still run concurrently.
+				require.Greater(t, maxInflight.Load(), int32(1), "expected concurrent evaluation for independent rules")
+				require.Less(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds(),
+					"expected faster than fully sequential evaluation")
 				require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
 			}
 		})
@@ -2696,30 +2745,60 @@ func TestRuleDependencyController_AnalyseRules(t *testing.T) {
 			expected: map[string]expectedDependencies{
 				"job:http_requests:rate1m": {
 					noDependentRules:  false,
-					noDependencyRules: false,
+					noDependencyRules: true,
 				},
 				"job:http_requests:rate5m": {
 					noDependentRules:  false,
-					noDependencyRules: false,
+					noDependencyRules: true,
 				},
 				"job:http_requests:rate15m": {
 					noDependentRules:  false,
-					noDependencyRules: false,
+					noDependencyRules: true,
 				},
 				"job:http_requests:rate30m": {
 					noDependentRules:  false,
-					noDependencyRules: false,
+					noDependencyRules: true,
 				},
 				"job:http_requests:rate1h": {
 					noDependentRules:  false,
-					noDependencyRules: false,
+					noDependencyRules: true,
 				},
 				"job:http_requests:rate2h": {
 					noDependentRules:  false,
-					noDependencyRules: false,
+					noDependencyRules: true,
 				},
 				"matcher": {
+					noDependentRules:  true,
+					noDependencyRules: false,
+				},
+			},
+		},
+		{
+			name:     "indeterminate rules first and last",
+			ruleFile: "fixtures/rules_indeterminates_first_and_last.yaml",
+			expected: map[string]expectedDependencies{
+				"indeterminate_first": {
 					noDependentRules:  false,
+					noDependencyRules: true,
+				},
+				"job:http_requests:rate1m": {
+					noDependentRules:  false,
+					noDependencyRules: true,
+				},
+				"job:http_requests:rate5m": {
+					noDependentRules:  false,
+					noDependencyRules: true,
+				},
+				"job:http_requests:rate15m": {
+					noDependentRules:  false,
+					noDependencyRules: true,
+				},
+				"job:http_requests:rate30m": {
+					noDependentRules:  false,
+					noDependencyRules: true,
+				},
+				"IndeterminateLast": {
+					noDependentRules:  true,
 					noDependencyRules: false,
 				},
 			},
