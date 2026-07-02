@@ -32,6 +32,10 @@ convention.
 
 - Each commit must compile and pass tests independently, except when one commit adds a test to expose a bug and then the next commit fixes the bug.
 - Keep commits small and focused. Do not bundle unrelated changes in one commit.
+- Fold benchmark-only follow-ups into the commit that introduced the relevant
+  benchmark harness when possible, provided the resulting commit still compiles
+  and the benchmark does not depend on later changes; avoid leaving standalone
+  follow-up commits for review-response benchmark rows.
 - Sign off every commit with `git commit -s` to satisfy the DCO requirement.
 - Do not include unrelated local changes in the PR.
 
@@ -85,6 +89,19 @@ Maintainers take performance seriously. For any PERF PR:
 - Performance improvements require a benchmark that demonstrates the improvement.
 - Run benchmarks before and after the change using `go test -count=6 -benchmem -bench <directory changed in PR>`
 - Provide benchmark numbers in the PR body using `benchstat` output.
+- When the benchmark harness does not exist on `main`, compare against a
+  main-equivalent baseline built from the exact base commit plus benchmark-only
+  harness changes. Make clear which benchmark results are current-only
+  diagnostics rather than before/after comparisons.
+- Keep the PR benchmark section reproducible: record the machine/environment,
+  baseline commit, benchmarked branch commit, command shape, and concrete
+  `benchstat` output. Refresh these details after rebases, history rewrites, or
+  benchmark-harness changes.
+- Use collapsible `<details>` blocks with `<summary>` tags for large benchmark
+  outputs in PR descriptions.
+- Prefer explicit benchmark case tables over nested loops when adding a targeted
+  scale case, so the benchmark matrix does not silently add unintended
+  combinations.
 - If a subset of benchmark results show a regression, address this or explain why the case is not important.
 - Reuse allocations in hot paths where possible (slices, buffers). 
 - When reusing buffers passed to interfaces, document that callers must copy
