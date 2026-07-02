@@ -66,9 +66,28 @@ jobs:
       # Alternatively we could adjust each relevant test to have 386 aware parallelization setting.
       - run: GOARCH=386 go test -parallel=1 ./...
 
+  list_lts_releases:
+    name: List active LTS releases
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.lts.outputs.versions }}
+    steps:
+      - id: lts
+        # Emit the active LTS versions as a JSON array consumed by the matrix below.
+        run: |
+          versions=$(curl -sSf https://prometheus.io/download.json \
+            | jq -c '[.prometheus[] | select(.lts == true) | (.version | ltrimstr("v"))]')
+          echo "versions=$versions" >> "$GITHUB_OUTPUT"
+
   test_version_upgrade:
     name: Go tests for Prometheus upgrades and downgrades
+    needs: list_lts_releases
     runs-on: ubuntu-latest
+    strategy:
+      # Run every LTS release even if one fails.
+      fail-fast: false
+      matrix:
+        lts_version: ${{ fromJSON(needs.list_lts_releases.outputs.versions) }}
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
     steps:
@@ -78,7 +97,7 @@ jobs:
       - uses: prometheus/promci-setup@b7975feb8bd443f6da85911ca32b93c7701b81cf # v0.2.0
         with:
           cache_key_suffix: upgrade
-      - run: go test -v --race ./cmd/prometheus/ --test.version-upgrade=true -run TestVersionUpgrade
+      - run: go test -v --race ./cmd/prometheus/ --test.version-upgrade=true --test.lts-version=${{ matrix.lts_version }} -run TestVersionUpgrade
 
   test_go_oldest:
     name: Go tests with previous Go version
