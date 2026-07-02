@@ -15,7 +15,15 @@
 
 package chunks
 
+import "os"
+
 // HeadChunkFilePreallocationSize is the size to which the m-map file should be preallocated when a new file is cut.
 // Windows needs pre-allocations while the other OS does not. But we observed that a 0 pre-allocation causes unit tests to flake.
 // This small allocation for non-Windows OSes removes the flake.
 var HeadChunkFilePreallocationSize int64 = MinWriteBufferSize * 2
+
+// removeChunkFile deletes a head chunk file. On non-Windows systems no retry is
+// needed because sharing-violation semantics do not apply.
+func removeChunkFile(path string) error {
+	return os.Remove(path)
+}

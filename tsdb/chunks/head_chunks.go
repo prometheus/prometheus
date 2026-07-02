@@ -188,6 +188,20 @@ func (*chunkPos) bytesToWriteForChunk(chkLen uint64) uint64 {
 	return bytes
 }
 
+// ChunkDiskMapperOption is a functional option for NewChunkDiskMapper.
+type ChunkDiskMapperOption func(*ChunkDiskMapper)
+
+// WithReadOnly configures the ChunkDiskMapper to be tolerant of repair errors.
+// When set, if deleting a corrupted chunk file fails during initialization, the
+// file is silently skipped rather than causing an error. This is used by the
+// read-only DB which operates on a sandbox of hardlinks, where Windows may
+// temporarily prevent deletion of a hardlinked file.
+func WithReadOnly() ChunkDiskMapperOption {
+	return func(m *ChunkDiskMapper) {
+		m.readOnly = true
+	}
+}
+
 // ChunkDiskMapper is for writing the Head block chunks to disk
 // and access chunks via mmapped files.
 type ChunkDiskMapper struct {
@@ -229,6 +243,9 @@ type ChunkDiskMapper struct {
 	writeQueue *chunkWriteQueue
 
 	closed bool
+	// readOnly indicates that repair errors during initialization should be
+	// tolerated. Used by the read-only DB that works on a sandbox of hardlinks.
+	readOnly bool
 }
 
 // mmappedChunkFile provides mmap access to an entire head chunks file that holds many chunks.
@@ -241,7 +258,7 @@ type mmappedChunkFile struct {
 // using the default head chunk file duration.
 // NOTE: 'IterateAllChunks' method needs to be called at least once after creating ChunkDiskMapper
 // to set the maxt of all files.
-func NewChunkDiskMapper(reg prometheus.Registerer, dir string, pool chunkenc.Pool, writeBufferSize, writeQueueSize int) (*ChunkDiskMapper, error) {
+func NewChunkDiskMapper(reg prometheus.Registerer, dir string, pool chunkenc.Pool, writeBufferSize, writeQueueSize int, opts ...ChunkDiskMapperOption) (*ChunkDiskMapper, error) {
 	// Validate write buffer size.
 	if writeBufferSize < MinWriteBufferSize || writeBufferSize > MaxWriteBufferSize {
 		return nil, fmt.Errorf("ChunkDiskMapper write buffer size should be between %d and %d (actual: %d)", MinWriteBufferSize, MaxWriteBufferSize, writeBufferSize)
@@ -272,6 +289,10 @@ func NewChunkDiskMapper(reg prometheus.Registerer, dir string, pool chunkenc.Poo
 
 	if m.pool == nil {
 		m.pool = chunkenc.NewPool()
+	}
+
+	for _, opt := range opts {
+		opt(m)
 	}
 
 	return m, m.openMMapFiles()
@@ -315,7 +336,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 		return err
 	}
 
-	files, err = repairLastChunkFile(files)
+	files, err = repairLastChunkFile(files, cdm.readOnly)
 	if err != nil {
 		return err
 	}
@@ -411,7 +432,7 @@ func HardLinkChunkFiles(src, dst string) error {
 // repairLastChunkFile deletes the last file if it's empty.
 // Because we don't fsync when creating these files, we could end
 // up with an empty file at the end during an abrupt shutdown.
-func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr error) {
+func repairLastChunkFile(files map[int]string, readOnly bool) (_ map[int]string, returnErr error) {
 	lastFile := -1
 	for seq := range files {
 		if seq > lastFile {
@@ -443,8 +464,14 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 	// for proper repair mechanism to happen in the Head.
 	if size < MagicChunksSize || binary.BigEndian.Uint32(buf) == 0 {
 		// Corrupt file, hence remove it.
-		if err := os.RemoveAll(files[lastFile]); err != nil {
-			return files, fmt.Errorf("delete corrupted, empty head chunk file during last file repair: %w", err)
+		if err := removeChunkFile(files[lastFile]); err != nil {
+			if !readOnly {
+				return files, fmt.Errorf("delete corrupted, empty head chunk file during last file repair: %w", err)
+			}
+			// In read-only mode the mapper works on sandbox hardlinks, so deletion
+			// may fail on Windows if the retry deadline is exceeded. Exclude the
+			// file from the map so it will never be mmapped; it is cleaned up when
+			// the sandbox directory is removed.
 		}
 		delete(files, lastFile)
 	}
