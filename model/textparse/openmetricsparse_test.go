@@ -37,6 +37,7 @@ go_gc_duration_seconds{quantile="0"} 4.9351e-05
 go_gc_duration_seconds{quantile="0.25"} 7.424100000000001e-05
 go_gc_duration_seconds{quantile="0.5",a="b"} 8.3835e-05
 # HELP nohelp1 
+# HELP nohelp2
 # HELP help2 escape \ \n \\ \" \x chars
 # UNIT nounit 
 go_gc_duration_seconds{quantile="1.0",a="b"} 8.3835e-05
@@ -165,6 +166,9 @@ nansum{quantile="0.99"} NaN`
 					),
 				}, {
 					m:    "nohelp1",
+					help: "",
+				}, {
+					m:    "nohelp2",
 					help: "",
 				}, {
 					m:    "help2",
@@ -855,7 +859,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		},
 		{
 			input: "# TYPE m\n#EOF\n",
-			err:   "expected text in TYPE",
+			err:   `invalid metric type ""`,
 		},
 		{
 			input: "# UNIT metric suffix\n#EOF\n",
@@ -875,7 +879,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		},
 		{
 			input: "# UNIT m\n#EOF\n",
-			err:   "expected text in UNIT",
+			err:   `expected a valid start token, got "#E" ("INVALID") while parsing: "#E"`,
 		},
 		{
 			input: "# HELP \n#EOF\n",
@@ -883,7 +887,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		},
 		{
 			input: "# HELP m\n#EOF\n",
-			err:   "expected text in HELP",
+			err:   `expected a valid start token, got "#E" ("INVALID") while parsing: "#E"`,
 		},
 		{
 			input: "a\t1\n#EOF\n",
