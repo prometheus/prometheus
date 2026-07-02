@@ -492,7 +492,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			desc: "Partial write; first series with one OOO histogram sample",
 			input: func() []writev2.TimeSeries {
 				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
-				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, writev2.FromFloatHistogram(1, testHistogram.ToFloat(nil)))
+				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, writev2.FromFloatHistogram(0, 1, testHistogram.ToFloat(nil)))
 				return f.Timeseries
 			}(),
 			expectedCode:     http.StatusBadRequest,
@@ -1079,7 +1079,7 @@ func BenchmarkRemoteWriteHandler(b *testing.B) {
 			payloadFunc: func() ([]byte, error) {
 				buf, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{{
 					LabelsRefs: []uint32{0, 1, 2, 3},
-					Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, &testHistogram)},
+					Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, 0, &testHistogram)},
 				}}, labelStrings,
 					nil, nil, nil, "snappy")
 				return buf, err
@@ -1195,7 +1195,7 @@ func TestHistogramValidationErrorHandling(t *testing.T) {
 					st := writev2.NewSymbolTable()
 					ts := []writev2.TimeSeries{{
 						LabelsRefs: st.SymbolizeLabels(labels.FromStrings("__name__", "test"), nil),
-						Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, &tc.hist)},
+						Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, 1, &tc.hist)},
 					}}
 					buf, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), ts, st.Symbols(), nil, nil, nil, "snappy")
 				}
@@ -1607,11 +1607,11 @@ func TestHistogramsReduction(t *testing.T) {
 				payload, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
 					{
 						LabelsRefs: []uint32{0, 1},
-						Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, highSchemaHistogram)},
+						Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, 1, highSchemaHistogram)},
 					},
 					{
 						LabelsRefs: []uint32{0, 2},
-						Histograms: []writev2.Histogram{writev2.FromFloatHistogram(2, highSchemaHistogram.ToFloat(nil))},
+						Histograms: []writev2.Histogram{writev2.FromFloatHistogram(0, 2, highSchemaHistogram.ToFloat(nil))},
 					},
 				}, []string{"__name__", "test_metric1", "test_metric2"},
 					nil, nil, nil, "snappy")
