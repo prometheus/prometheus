@@ -662,10 +662,17 @@ matrix_selector : expr LEFT_BRACKET positive_duration_expr RIGHT_BRACKET
                         }
 
                         var rangeNl time.Duration
-                        if numLit, ok := $3.(*NumberLiteral); ok {
-                                rangeNl = time.Duration(math.Round(numLit.Val*float64(time.Second)))
+                        var rangeExpr Expr
+                        switch e := $3.(type) {
+                        case *NumberLiteral:
+                                if e.Wrapped {
+                                        rangeExpr = e
+                                } else {
+                                        rangeNl = time.Duration(math.Round(e.Val*float64(time.Second)))
+                                }
+                        case *DurationExpr:
+                                rangeExpr = e
                         }
-                        rangeExpr, _ := $3.(*DurationExpr)
                         $$ = &MatrixSelector{
                                 VectorSelector: $1.(Expr),
                                 Range: rangeNl,
@@ -1397,12 +1404,16 @@ duration_expr   : number_duration_literal
 paren_duration_expr : LEFT_PAREN duration_expr RIGHT_PAREN
                         {
                             yylex.(*parser).experimentalDurationExpr($2.(Expr))
-                            if durationExpr, ok := $2.(*DurationExpr); ok {
-                                durationExpr.Wrapped = true
-                                $$ = durationExpr
-                                break
+                            switch expr := $2.(type) {
+                            case *DurationExpr:
+                                expr.Wrapped = true
+                                $$ = expr
+                            case *NumberLiteral:
+                                expr.Wrapped = true
+                                $$ = expr
+                            default:
+                                $$ = $2
                             }
-                            $$ = $2
                         }
                 ;
 

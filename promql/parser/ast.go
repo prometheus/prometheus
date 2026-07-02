@@ -133,9 +133,9 @@ type MatrixSelector struct {
 	// It is safe to assume that this is an VectorSelector
 	// if the parser hasn't returned an error.
 	VectorSelector Expr
-	Range          time.Duration
-	RangeExpr      *DurationExpr
-	EndPos         posrange.Pos
+	Range     time.Duration
+	RangeExpr Expr
+	EndPos    posrange.Pos
 }
 
 // SubqueryExpr represents a subquery.
@@ -164,6 +164,7 @@ type NumberLiteral struct {
 	Val float64
 
 	Duration bool // Used to format the number as a duration.
+	Wrapped  bool // Set when the duration literal is wrapped in parentheses.
 	PosRange posrange.PositionRange
 }
 
