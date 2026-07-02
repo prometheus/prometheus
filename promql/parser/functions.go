@@ -263,6 +263,12 @@ var Functions = map[string]*Function{
 		Variadic:   -1,
 		ReturnType: ValueTypeVector,
 	},
+	"labelmap": {
+		Name:         "labelmap",
+		ArgTypes:     []ValueType{ValueTypeVector, ValueTypeString, ValueTypeString},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"max_of": {
 		Name:         "max_of",
 		ArgTypes:     []ValueType{ValueTypeScalar, ValueTypeScalar},
