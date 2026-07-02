@@ -256,6 +256,19 @@ Outer:
 		switch v := d.(type) {
 		case []record.RefSeries:
 			for _, walSeries := range v {
+				// Guard against a corrupted WAL that contains two series records with
+				// the same ref but different label sets. Without this check the second
+				// series silently overwrites the first in the series map while the
+				// first's postings entry remains, causing queries for the first metric
+				// to return the second metric's data (issue #18547).
+				if existing := h.series.getByID(walSeries.Ref); existing != nil && !labels.Equal(existing.labels(), walSeries.Labels) {
+					h.logger.Warn("Skipping WAL series record: ref collision with different labels",
+						"ref", walSeries.Ref,
+						"existing", existing.labels().String(),
+						"incoming", walSeries.Labels.String())
+					continue
+				}
+
 				mSeries, created, err := h.getOrCreateWithOptionalID(walSeries.Ref, walSeries.Labels.Hash(), walSeries.Labels, false)
 				if err != nil {
 					seriesCreationErr = err
