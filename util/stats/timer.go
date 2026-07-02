@@ -50,6 +50,11 @@ func (t *Timer) Duration() float64 {
 	return t.duration.Seconds()
 }
 
+// SetDuration sets the duration of the timer. This is primarily used for testing.
+func (t *Timer) SetDuration(d time.Duration) {
+	t.duration = d
+}
+
 // Return a string representation of the Timer.
 func (t *Timer) String() string {
 	return fmt.Sprintf("%s: %s", t.name, t.duration)

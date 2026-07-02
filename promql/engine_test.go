@@ -2896,7 +2896,7 @@ func TestQueryLogger_basic(t *testing.T) {
 	f1, err := logging.NewJSONFileLogger(ql1File)
 	require.NoError(t, err)
 
-	engine.SetQueryLogger(f1)
+	engine.SetQueryLogger(f1, 0)
 	queryExec()
 	logLines := getLogLines(t, ql1File)
 	require.Contains(t, logLines[0], "params", map[string]any{"query": "test statement"})
@@ -2910,7 +2910,7 @@ func TestQueryLogger_basic(t *testing.T) {
 
 	// Test that we close the query logger when unsetting it. The following
 	// attempt to close the file should error.
-	engine.SetQueryLogger(nil)
+	engine.SetQueryLogger(nil, 0)
 	err = f1.Close()
 	require.ErrorContains(t, err, "file already closed", "expected f1 to be closed, got open")
 	queryExec()
@@ -2922,9 +2922,9 @@ func TestQueryLogger_basic(t *testing.T) {
 	ql3File := filepath.Join(tmpDir, "query3.log")
 	f3, err := logging.NewJSONFileLogger(ql3File)
 	require.NoError(t, err)
-	engine.SetQueryLogger(f2)
+	engine.SetQueryLogger(f2, 0)
 	queryExec()
-	engine.SetQueryLogger(f3)
+	engine.SetQueryLogger(f3, 0)
 	err = f2.Close()
 	require.ErrorContains(t, err, "file already closed", "expected f2 to be closed, got open")
 	queryExec()
@@ -2949,7 +2949,7 @@ func TestQueryLogger_fields(t *testing.T) {
 		require.NoError(t, f1.Close())
 	})
 
-	engine.SetQueryLogger(f1)
+	engine.SetQueryLogger(f1, 0)
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	ctx = promql.NewOriginContext(ctx, map[string]any{"foo": "bar"})
@@ -2982,7 +2982,7 @@ func TestQueryLogger_error(t *testing.T) {
 		require.NoError(t, f1.Close())
 	})
 
-	engine.SetQueryLogger(f1)
+	engine.SetQueryLogger(f1, 0)
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	ctx = promql.NewOriginContext(ctx, map[string]any{"foo": "bar"})
@@ -2998,6 +2998,68 @@ func TestQueryLogger_error(t *testing.T) {
 	logLines := getLogLines(t, ql1File)
 	require.Contains(t, logLines[0], "error", testErr)
 	require.Contains(t, logLines[0], "params", map[string]any{"query": "test statement"})
+}
+
+func TestQueryLogger_minDuration(t *testing.T) {
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
+
+	queryExec := func(mockDuration time.Duration) {
+		ctx, cancelCtx := context.WithCancel(context.Background())
+		defer cancelCtx()
+		var qry promql.Query
+		qry = engine.NewTestQuery(func(ctx context.Context) error {
+			if mockDuration > 0 {
+				qry.Stats().Timers.GetTimer(stats.ExecTotalTime).SetDuration(mockDuration)
+			}
+			return contextDone(ctx, "test statement execution")
+		})
+		res := qry.Exec(ctx)
+		require.NoError(t, res.Err)
+	}
+
+	tmpDir := t.TempDir()
+	qlFile := filepath.Join(tmpDir, "query_duration.log")
+	f, err := logging.NewJSONFileLogger(qlFile)
+	require.NoError(t, err)
+	defer f.Close()
+
+	// Test 1: Log threshold is 10m, query takes 1ms. Should NOT log.
+	engine.SetQueryLogger(f, 10*time.Minute)
+	queryExec(1 * time.Millisecond)
+	logLines := getLogLines(t, qlFile)
+	require.Empty(t, logLines)
+
+	// Test 2: Log threshold is 1ms, query takes 20ms. Should log.
+	engine.SetQueryLogger(f, 1*time.Millisecond)
+	queryExec(20 * time.Millisecond)
+	logLines = getLogLines(t, qlFile)
+	require.Len(t, logLines, 1)
+
+	// Test 3: Log threshold is 10m, query takes 1ms, but errors. Should log.
+	engine.SetQueryLogger(f, 10*time.Minute)
+	queryExecError := func(mockDuration time.Duration) {
+		ctx, cancelCtx := context.WithCancel(context.Background())
+		defer cancelCtx()
+		var qry promql.Query
+		qry = engine.NewTestQuery(func(_ context.Context) error {
+			if mockDuration > 0 {
+				qry.Stats().Timers.GetTimer(stats.ExecTotalTime).SetDuration(mockDuration)
+			}
+			return errors.New("query execution error")
+		})
+		res := qry.Exec(ctx)
+		require.Error(t, res.Err)
+	}
+	queryExecError(1 * time.Millisecond)
+	logLines = getLogLines(t, qlFile)
+	require.Len(t, logLines, 2)
+	require.Contains(t, logLines[1], "error", "query execution error")
 }
 
 func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
