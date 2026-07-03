@@ -860,10 +860,10 @@ type TestWriteClient struct {
 	expectedSamples         map[string][]writev2.Sample
 	receivedExemplars       map[string][]prompb.Exemplar
 	expectedExemplars       map[string][]prompb.Exemplar
-	receivedHistograms      map[string][]prompb.Histogram
-	receivedFloatHistograms map[string][]prompb.Histogram
-	expectedHistograms      map[string][]prompb.Histogram
-	expectedFloatHistograms map[string][]prompb.Histogram
+	receivedHistograms      map[string][]writev2.Histogram
+	receivedFloatHistograms map[string][]writev2.Histogram
+	expectedHistograms      map[string][]writev2.Histogram
+	expectedFloatHistograms map[string][]writev2.Histogram
 	receivedMetadata        map[string][]prompb.MetricMetadata
 	expectedMetadata        map[string][]prompb.MetricMetadata
 	writesReceived          int
@@ -937,12 +937,12 @@ func (c *TestWriteClient) expectHistograms(hh []record.RefHistogramSample, serie
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	c.expectedHistograms = map[string][]prompb.Histogram{}
-	c.receivedHistograms = map[string][]prompb.Histogram{}
+	c.expectedHistograms = map[string][]writev2.Histogram{}
+	c.receivedHistograms = map[string][]writev2.Histogram{}
 
 	for _, h := range hh {
 		tsID := getSeriesIDFromRef(series[h.Ref])
-		c.expectedHistograms[tsID] = append(c.expectedHistograms[tsID], prompb.FromIntHistogram(h.T, h.H))
+		c.expectedHistograms[tsID] = append(c.expectedHistograms[tsID], writev2.FromIntHistogram(h.ST, h.T, h.H))
 	}
 }
 
@@ -950,12 +950,12 @@ func (c *TestWriteClient) expectFloatHistograms(fhs []record.RefFloatHistogramSa
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	c.expectedFloatHistograms = map[string][]prompb.Histogram{}
-	c.receivedFloatHistograms = map[string][]prompb.Histogram{}
+	c.expectedFloatHistograms = map[string][]writev2.Histogram{}
+	c.receivedFloatHistograms = map[string][]writev2.Histogram{}
 
 	for _, fh := range fhs {
 		tsID := getSeriesIDFromRef(series[fh.Ref])
-		c.expectedFloatHistograms[tsID] = append(c.expectedFloatHistograms[tsID], prompb.FromFloatHistogram(fh.T, fh.FH))
+		c.expectedFloatHistograms[tsID] = append(c.expectedFloatHistograms[tsID], writev2.FromFloatHistogram(fh.ST, fh.T, fh.FH))
 	}
 }
 
@@ -1134,11 +1134,18 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) (WriteResp
 		}
 		rs.Exemplars += len(ts.Exemplars)
 
-		for _, h := range ts.Histograms {
+		for j, h := range ts.Histograms {
+			// Mirror the float sample pattern (see Samples loop above): v1 has
+			// no ST on the wire so we record 0; v2 carries StartTimestamp on
+			// each histogram, which we pull from reqProtoV2 to preserve it.
+			st := int64(0)
+			if reqProtoV2 != nil {
+				st = reqProtoV2.Timeseries[i].Histograms[j].StartTimestamp
+			}
 			if h.IsFloatHistogram() {
-				c.receivedFloatHistograms[tsID] = append(c.receivedFloatHistograms[tsID], h)
+				c.receivedFloatHistograms[tsID] = append(c.receivedFloatHistograms[tsID], writev2.FromFloatHistogram(st, h.Timestamp, h.ToFloatHistogram()))
 			} else {
-				c.receivedHistograms[tsID] = append(c.receivedHistograms[tsID], h)
+				c.receivedHistograms[tsID] = append(c.receivedHistograms[tsID], writev2.FromIntHistogram(st, h.Timestamp, h.ToIntHistogram()))
 			}
 		}
 		rs.Histograms += len(ts.Histograms)
@@ -2726,4 +2733,73 @@ func TestAppendHistogramSchemaValidation(t *testing.T) {
 			require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedHistogramsTotal))
 		})
 	}
+}
+
+// TestAppendHistogramsWithStartTimestamp verifies that AppendHistograms and
+// AppendFloatHistograms propagate the per-sample start timestamp end-to-end
+// through the queue manager into a Remote Write 2.0 request. ST is only
+// carried by RW2, so RW1 is not exercised here.
+func TestAppendHistogramsWithStartTimestamp(t *testing.T) {
+	protoMsg := remoteapi.WriteV2MessageType
+
+	c := NewTestWriteClient(protoMsg)
+	cfg := testDefaultQueueConfig()
+	mcfg := config.DefaultMetadataConfig
+	cfg.MaxShards = 1
+
+	m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+	m.sendNativeHistograms = true
+
+	series := []record.RefSeries{
+		{
+			Ref:    chunks.HeadSeriesRef(0),
+			Labels: labels.FromStrings("__name__", "test_histogram"),
+		},
+	}
+	m.StoreSeries(series, 0)
+
+	intHist := func(seed int64) *histogram.Histogram {
+		h := &histogram.Histogram{
+			Schema:          0,
+			ZeroThreshold:   1e-128,
+			Count:           uint64(seed + 1),
+			Sum:             float64(seed),
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+			PositiveBuckets: []int64{seed + 1},
+		}
+		return h
+	}
+	floatHist := func(seed int64) *histogram.FloatHistogram {
+		fh := &histogram.FloatHistogram{
+			Schema:          0,
+			ZeroThreshold:   1e-128,
+			Count:           float64(seed + 1),
+			Sum:             float64(seed),
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+			PositiveBuckets: []float64{float64(seed + 1)},
+		}
+		return fh
+	}
+
+	histograms := []record.RefHistogramSample{
+		{Ref: chunks.HeadSeriesRef(0), ST: 100, T: 200, H: intHist(0)},
+		{Ref: chunks.HeadSeriesRef(0), ST: 100, T: 300, H: intHist(1)},
+		{Ref: chunks.HeadSeriesRef(0), ST: 250, T: 400, H: intHist(2)},
+	}
+	floatHistograms := []record.RefFloatHistogramSample{
+		{Ref: chunks.HeadSeriesRef(0), ST: 101, T: 201, FH: floatHist(0)},
+		{Ref: chunks.HeadSeriesRef(0), ST: 101, T: 301, FH: floatHist(1)},
+		{Ref: chunks.HeadSeriesRef(0), ST: 251, T: 401, FH: floatHist(2)},
+	}
+
+	c.expectHistograms(histograms, series)
+	c.expectFloatHistograms(floatHistograms, series)
+
+	m.Start()
+	defer m.Stop()
+
+	require.True(t, m.AppendHistograms(histograms))
+	require.True(t, m.AppendFloatHistograms(floatHistograms))
+
+	c.waitForExpectedData(t, 30*time.Second)
 }
