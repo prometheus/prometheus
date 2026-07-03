@@ -167,8 +167,9 @@ func deltasToCounts(deltas []int64) []float64 {
 	return counts
 }
 
-// FromIntHistogram returns remote Histogram from the integer Histogram.
-func FromIntHistogram(timestamp int64, h *histogram.Histogram) Histogram {
+// FromIntHistogram returns remote Histogram from the integer Histogram. The
+// st argument is the optional per-sample start timestamp; pass 0 if unknown.
+func FromIntHistogram(st, timestamp int64, h *histogram.Histogram) Histogram {
 	return Histogram{
 		Count:          &Histogram_CountInt{CountInt: h.Count},
 		Sum:            h.Sum,
@@ -182,11 +183,13 @@ func FromIntHistogram(timestamp int64, h *histogram.Histogram) Histogram {
 		ResetHint:      Histogram_ResetHint(h.CounterResetHint),
 		CustomValues:   h.CustomValues,
 		Timestamp:      timestamp,
+		StartTimestamp: st,
 	}
 }
 
-// FromFloatHistogram returns remote Histogram from the float Histogram.
-func FromFloatHistogram(timestamp int64, fh *histogram.FloatHistogram) Histogram {
+// FromFloatHistogram returns remote Histogram from the float Histogram. The
+// st argument is the optional per-sample start timestamp; pass 0 if unknown.
+func FromFloatHistogram(st, timestamp int64, fh *histogram.FloatHistogram) Histogram {
 	return Histogram{
 		Count:          &Histogram_CountFloat{CountFloat: fh.Count},
 		Sum:            fh.Sum,
@@ -200,6 +203,7 @@ func FromFloatHistogram(timestamp int64, fh *histogram.FloatHistogram) Histogram
 		ResetHint:      Histogram_ResetHint(fh.CounterResetHint),
 		CustomValues:   fh.CustomValues,
 		Timestamp:      timestamp,
+		StartTimestamp: st,
 	}
 }
 
