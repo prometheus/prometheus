@@ -3201,6 +3201,15 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  start_timestamp: (
+    <>
+      <p>
+        <code>start_timestamp(v instant-vector)</code> returns the start timestamp of each of the samples of the given
+        vector as the number of seconds since January 1, 1970 UTC. It acts on float and histogram samples in the same
+        way.
+      </p>
+    </>
+  ),
   stddev_over_time: (
     <>
       <p>

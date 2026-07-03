@@ -32,6 +32,7 @@ type MemoizedSeriesIterator struct {
 	valueType chunkenc.ValueType
 
 	// Keep track of the previously returned value.
+	prevST             int64
 	prevTime           int64
 	prevValue          float64
 	prevFloatHistogram *histogram.FloatHistogram
@@ -57,6 +58,7 @@ func NewMemoizedIterator(it chunkenc.Iterator, delta int64) *MemoizedSeriesItera
 // Reset the internal state to reuse the wrapper with the provided iterator.
 func (b *MemoizedSeriesIterator) Reset(it chunkenc.Iterator) {
 	b.it = it
+	b.prevST = 0
 	b.lastTime = math.MinInt64
 	b.prevTime = math.MinInt64
 	b.valueType = it.Next()
@@ -64,11 +66,11 @@ func (b *MemoizedSeriesIterator) Reset(it chunkenc.Iterator) {
 
 // PeekPrev returns the previous element of the iterator. If there is none buffered,
 // ok is false.
-func (b *MemoizedSeriesIterator) PeekPrev() (t int64, v float64, fh *histogram.FloatHistogram, ok bool) {
+func (b *MemoizedSeriesIterator) PeekPrev() (st, t int64, v float64, fh *histogram.FloatHistogram, ok bool) {
 	if b.prevTime == math.MinInt64 {
-		return 0, 0, nil, false
+		return 0, 0, 0, nil, false
 	}
-	return b.prevTime, b.prevValue, b.prevFloatHistogram, true
+	return b.prevST, b.prevTime, b.prevValue, b.prevFloatHistogram, true
 }
 
 // Seek advances the iterator to the element at time t or greater.
@@ -109,10 +111,12 @@ func (b *MemoizedSeriesIterator) Next() chunkenc.ValueType {
 	case chunkenc.ValNone:
 		return chunkenc.ValNone
 	case chunkenc.ValFloat:
+		b.prevST = b.it.AtST()
 		b.prevTime, b.prevValue = b.it.At()
 		b.prevFloatHistogram = nil
 	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 		b.prevValue = 0
+		b.prevST = b.it.AtST()
 		b.prevTime, b.prevFloatHistogram = b.it.AtFloatHistogram(nil)
 	}
 
@@ -135,6 +139,8 @@ func (b *MemoizedSeriesIterator) At() (int64, float64) {
 func (b *MemoizedSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	return b.it.AtFloatHistogram(nil)
 }
+
+func (b *MemoizedSeriesIterator) AtST() int64 { return b.it.AtST() }
 
 // AtT returns the timestamp of the current element of the iterator.
 func (b *MemoizedSeriesIterator) AtT() int64 {

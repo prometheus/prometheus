@@ -294,3 +294,21 @@ eval instant at 4m rate(counter_total[3m])
     expect warn msg: PromQL warning: sample has start time that overlaps with previous sample timestamp for metric "counter_total"
 
 clear
+
+# Tests for start_timestamp().
+load 10s
+    series{case="a"}@st  _  1ms   _   0  -1ms       -10ms       -100ms  -999ms  -1s       -10s        -20s  -30s
+    series{case="a"}     _   10  20  30    40  {{sum:50}}   {{sum:60}}      70   80 {{sum:90}} {{sum:100}}   110
+    series{case="b"}@st  _    _   _   _   -3s           _            _    -40s
+    series{case="b"}     _    _   _   _    40           _            _      70
+
+eval range from 0s to 110s step 5s start_timestamp(series)
+    {case="a"}  _  _  10.001  10.001  0  0  30  30  39.999  39.999  49.99  49.99  59.9  59.9  69.001 69.001 79  79  80  80  80  80  80
+    {case="b"}  _  _   _       _      _  _   _   _  37      37      37     37     37    37    30     30     30  30  30  30  30  30  30
+
+# The start timestamp data is lost if the input is an expression.
+eval range from 10s to 50s step 10s start_timestamp(series * 1)
+    {case="a"}  0x4
+    {case="b"}  _  _  _  0  0
+
+clear

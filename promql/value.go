@@ -423,6 +423,8 @@ type StartTimestamps struct {
 	Floats []int64
 	// Histograms stores start timestamps for histogram samples.
 	Histograms []int64
+	// Vector stores start timestamps for cases where a function expects instant vector.
+	Vector []int64
 }
 
 // Reset clears the start timestamps while keeping the slice capacity for reuse.

@@ -541,6 +541,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'start_timestamp',
+    detail: 'function',
+    info: 'Return the start timestamp for the samples in the input vector',
+    type: 'function',
+  },
+  {
     label: 'step',
     detail: 'function',
     info: 'Return the query step in seconds',
