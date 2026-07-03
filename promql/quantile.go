@@ -240,11 +240,12 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram, metricName string
 	}
 
 	var (
-		annos  annotations.Annotations
-		bucket histogram.Bucket[float64]
-		count  float64
-		it     histogram.BucketIterator[float64]
-		rank   float64
+		annos    annotations.Annotations
+		bucket   histogram.Bucket[float64]
+		count    float64
+		it       histogram.BucketIterator[float64]
+		rank     float64
+		reversed bool
 	)
 
 	// If there are NaN observations in the histogram (h.Sum is NaN), use the forward iterator.
@@ -255,6 +256,7 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram, metricName string
 		rank = q * h.Count
 	} else {
 		it = h.AllReverseBucketIterator()
+		reversed = true
 		rank = (1 - q) * h.Count
 	}
 
@@ -264,7 +266,7 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram, metricName string
 			continue
 		}
 		count += bucket.Count
-		if count >= rank {
+		if count > rank || (reversed && count == rank) {
 			break
 		}
 	}

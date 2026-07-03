@@ -286,6 +286,32 @@ eval instant at 5m histogram_quantile(0.5, balanced_histogram)
 
 clear
 
+# Regression test: histogram_quantiles() should select buckets in consistent manner irrespective whether
+# the reverse iteration order optimization is applied or not (i.e. independent on from which end the code
+# iterates the buckets). This is only visible when the quantile falls among empty buckets, because
+# then the upper bound of previous populated bucket is not equal to the lower bound of the next populated
+# bucket.
+#
+# Non-empty buckets of hist{case="no_gaps"}:  (0.5, 1] (1, 2] (2,  4] ( 4,  8]
+# Non-empty buckets of hist{case="gaps"}:     (0.5, 1] (2, 4] (8, 16] (32, 64]
+load 1m
+  hist{case="no_gaps"}  {{schema:0 sum:15 count:4 buckets:[1 1 1 1]}}
+  hist{case="gaps"}     {{schema:0 sum:85 count:4 buckets:[1 0 1 0 1 0 1]}}
+
+eval instant at 0 histogram_quantile(0.25, hist)
+  {case="no_gaps"}  1
+  {case="gaps"}     2
+
+eval instant at 0 histogram_quantile(0.5, hist)
+  {case="no_gaps"}  2
+  {case="gaps"}     8
+
+eval instant at 0 histogram_quantile(0.75, hist)
+  {case="no_gaps"}  4
+  {case="gaps"}     32
+
+clear
+
 # Add histogram to test sum(last_over_time) regression
 load 5m
     incr_sum_histogram{number="1"} {{schema:0 sum:0 count:0 buckets:[1]}}+{{schema:0 sum:1 count:1 buckets:[1]}}x10
