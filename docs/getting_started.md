@@ -178,6 +178,26 @@ scrape_configs:
 Go to the expression browser and verify that Prometheus now has information
 about time series that these example endpoints expose, such as `node_cpu_seconds_total`.
 
+To check that Prometheus is scraping the new targets, go to
+[localhost:9090/targets](http://localhost:9090/targets), or open the **Status**
+menu and select **Target health**. Under the `node` job you should see the three
+endpoints, each with a state of `UP`. Following the configuration above,
+`localhost:8080` and `localhost:8081` are labeled `group="production"` and
+`localhost:8082` is labeled `group="canary"`. If an endpoint shows `DOWN`, make
+sure the corresponding Node Exporter is still running on that port.
+
+To confirm the metrics are available, enter `node_cpu_seconds_total` into the
+expression browser and click "Execute". This should return one time series per CPU
+and mode for each instance, for example:
+
+​```
+node_cpu_seconds_total{cpu="0",group="production",instance="localhost:8080",job="node",mode="idle"}
+​```
+
+To browse every metric name that is currently available, open the query options
+menu (the three-dots button to the right of the expression input) and select
+**Explore metrics**. 
+
 ## Configure rules for aggregating scraped data into new time series
 
 Though not a problem in our example, queries that aggregate over thousands of
