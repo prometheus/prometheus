@@ -128,7 +128,7 @@
     "stddev_over_time": true,
     "stdvar_over_time": true,
     "step": false,
-    "start_timestamps": false,
+    "start_timestamp": false,
     "sum_over_time": true,
     "tan": true,
     "tanh": true,
