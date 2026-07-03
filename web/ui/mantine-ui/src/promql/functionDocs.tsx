@@ -525,6 +525,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
         </li>
         <li>
+          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
+        </li>
+        <li>
           <code>present_over_time(range-vector)</code>: the value 1 for any series in the specified interval.
         </li>
       </ul>
@@ -550,9 +553,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         </li>
         <li>
           <code>ts_of_last_over_time(range-vector)</code>: the timestamp of last sample in the specified interval.
-        </li>
-        <li>
-          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
         </li>
         <li>
           <code>ts_of_first_over_time(range-vector)</code>: the timestamp of earliest sample in the specified interval.
@@ -844,6 +844,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
         </li>
         <li>
+          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
+        </li>
+        <li>
           <code>present_over_time(range-vector)</code>: the value 1 for any series in the specified interval.
         </li>
       </ul>
@@ -869,9 +872,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         </li>
         <li>
           <code>ts_of_last_over_time(range-vector)</code>: the timestamp of last sample in the specified interval.
-        </li>
-        <li>
-          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
         </li>
         <li>
           <code>ts_of_first_over_time(range-vector)</code>: the timestamp of earliest sample in the specified interval.
@@ -1174,6 +1174,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
         </li>
         <li>
+          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
+        </li>
+        <li>
           <code>present_over_time(range-vector)</code>: the value 1 for any series in the specified interval.
         </li>
       </ul>
@@ -1199,9 +1202,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         </li>
         <li>
           <code>ts_of_last_over_time(range-vector)</code>: the timestamp of last sample in the specified interval.
-        </li>
-        <li>
-          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
         </li>
         <li>
           <code>ts_of_first_over_time(range-vector)</code>: the timestamp of earliest sample in the specified interval.
@@ -2005,6 +2005,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
         </li>
         <li>
+          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
+        </li>
+        <li>
           <code>present_over_time(range-vector)</code>: the value 1 for any series in the specified interval.
         </li>
       </ul>
@@ -2030,9 +2033,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         </li>
         <li>
           <code>ts_of_last_over_time(range-vector)</code>: the timestamp of last sample in the specified interval.
-        </li>
-        <li>
-          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
         </li>
         <li>
           <code>ts_of_first_over_time(range-vector)</code>: the timestamp of earliest sample in the specified interval.
@@ -2155,6 +2155,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
         </li>
         <li>
+          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
+        </li>
+        <li>
           <code>present_over_time(range-vector)</code>: the value 1 for any series in the specified interval.
         </li>
       </ul>
@@ -2180,9 +2183,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         </li>
         <li>
           <code>ts_of_last_over_time(range-vector)</code>: the timestamp of last sample in the specified interval.
-        </li>
-        <li>
-          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
         </li>
         <li>
           <code>ts_of_first_over_time(range-vector)</code>: the timestamp of earliest sample in the specified interval.
@@ -2280,6 +2280,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
         </li>
         <li>
+          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
+        </li>
+        <li>
           <code>present_over_time(range-vector)</code>: the value 1 for any series in the specified interval.
         </li>
       </ul>
@@ -2305,9 +2308,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         </li>
         <li>
           <code>ts_of_last_over_time(range-vector)</code>: the timestamp of last sample in the specified interval.
-        </li>
-        <li>
-          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
         </li>
         <li>
           <code>ts_of_first_over_time(range-vector)</code>: the timestamp of earliest sample in the specified interval.
@@ -2405,6 +2405,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
         </li>
         <li>
+          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
+        </li>
+        <li>
           <code>present_over_time(range-vector)</code>: the value 1 for any series in the specified interval.
         </li>
       </ul>
@@ -2430,9 +2433,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         </li>
         <li>
           <code>ts_of_last_over_time(range-vector)</code>: the timestamp of last sample in the specified interval.
-        </li>
-        <li>
-          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
         </li>
         <li>
           <code>ts_of_first_over_time(range-vector)</code>: the timestamp of earliest sample in the specified interval.
@@ -2620,6 +2620,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
         </li>
         <li>
+          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
+        </li>
+        <li>
           <code>present_over_time(range-vector)</code>: the value 1 for any series in the specified interval.
         </li>
       </ul>
@@ -2645,9 +2648,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         </li>
         <li>
           <code>ts_of_last_over_time(range-vector)</code>: the timestamp of last sample in the specified interval.
-        </li>
-        <li>
-          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
         </li>
         <li>
           <code>ts_of_first_over_time(range-vector)</code>: the timestamp of earliest sample in the specified interval.
@@ -2729,6 +2729,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
         </li>
         <li>
+          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
+        </li>
+        <li>
           <code>present_over_time(range-vector)</code>: the value 1 for any series in the specified interval.
         </li>
       </ul>
@@ -2754,9 +2757,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         </li>
         <li>
           <code>ts_of_last_over_time(range-vector)</code>: the timestamp of last sample in the specified interval.
-        </li>
-        <li>
-          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
         </li>
         <li>
           <code>ts_of_first_over_time(range-vector)</code>: the timestamp of earliest sample in the specified interval.
@@ -3242,6 +3242,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
         </li>
         <li>
+          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
+        </li>
+        <li>
           <code>present_over_time(range-vector)</code>: the value 1 for any series in the specified interval.
         </li>
       </ul>
@@ -3267,9 +3270,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         </li>
         <li>
           <code>ts_of_last_over_time(range-vector)</code>: the timestamp of last sample in the specified interval.
-        </li>
-        <li>
-          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
         </li>
         <li>
           <code>ts_of_first_over_time(range-vector)</code>: the timestamp of earliest sample in the specified interval.
@@ -3351,6 +3351,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
         </li>
         <li>
+          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
+        </li>
+        <li>
           <code>present_over_time(range-vector)</code>: the value 1 for any series in the specified interval.
         </li>
       </ul>
@@ -3376,9 +3379,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         </li>
         <li>
           <code>ts_of_last_over_time(range-vector)</code>: the timestamp of last sample in the specified interval.
-        </li>
-        <li>
-          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
         </li>
         <li>
           <code>ts_of_first_over_time(range-vector)</code>: the timestamp of earliest sample in the specified interval.
@@ -3476,6 +3476,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
         </li>
         <li>
+          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
+        </li>
+        <li>
           <code>present_over_time(range-vector)</code>: the value 1 for any series in the specified interval.
         </li>
       </ul>
@@ -3501,9 +3504,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         </li>
         <li>
           <code>ts_of_last_over_time(range-vector)</code>: the timestamp of last sample in the specified interval.
-        </li>
-        <li>
-          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
         </li>
         <li>
           <code>ts_of_first_over_time(range-vector)</code>: the timestamp of earliest sample in the specified interval.
@@ -3741,6 +3741,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
         </li>
         <li>
+          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
+        </li>
+        <li>
           <code>present_over_time(range-vector)</code>: the value 1 for any series in the specified interval.
         </li>
       </ul>
@@ -3766,9 +3769,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         </li>
         <li>
           <code>ts_of_last_over_time(range-vector)</code>: the timestamp of last sample in the specified interval.
-        </li>
-        <li>
-          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
         </li>
         <li>
           <code>ts_of_first_over_time(range-vector)</code>: the timestamp of earliest sample in the specified interval.
@@ -3850,6 +3850,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
         </li>
         <li>
+          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
+        </li>
+        <li>
           <code>present_over_time(range-vector)</code>: the value 1 for any series in the specified interval.
         </li>
       </ul>
@@ -3875,9 +3878,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         </li>
         <li>
           <code>ts_of_last_over_time(range-vector)</code>: the timestamp of last sample in the specified interval.
-        </li>
-        <li>
-          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
         </li>
         <li>
           <code>ts_of_first_over_time(range-vector)</code>: the timestamp of earliest sample in the specified interval.
@@ -3959,6 +3959,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
         </li>
         <li>
+          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
+        </li>
+        <li>
           <code>present_over_time(range-vector)</code>: the value 1 for any series in the specified interval.
         </li>
       </ul>
@@ -3984,9 +3987,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         </li>
         <li>
           <code>ts_of_last_over_time(range-vector)</code>: the timestamp of last sample in the specified interval.
-        </li>
-        <li>
-          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
         </li>
         <li>
           <code>ts_of_first_over_time(range-vector)</code>: the timestamp of earliest sample in the specified interval.
@@ -4068,6 +4068,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
         </li>
         <li>
+          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
+        </li>
+        <li>
           <code>present_over_time(range-vector)</code>: the value 1 for any series in the specified interval.
         </li>
       </ul>
@@ -4093,9 +4096,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         </li>
         <li>
           <code>ts_of_last_over_time(range-vector)</code>: the timestamp of last sample in the specified interval.
-        </li>
-        <li>
-          <code>first_over_time(range-vector)</code>: the oldest sample in the specified interval.
         </li>
         <li>
           <code>ts_of_first_over_time(range-vector)</code>: the timestamp of earliest sample in the specified interval.
