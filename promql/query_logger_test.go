@@ -184,7 +184,7 @@ func TestNewActiveQueryTrackerReturnsError(t *testing.T) {
 	localStoragePath := filepath.Join(t.TempDir(), "not-a-directory")
 	require.NoError(t, os.WriteFile(localStoragePath, nil, 0o666))
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	queryLogger, err := NewActiveQueryTracker(localStoragePath, 1, logger)
 	require.Error(t, err)
 	require.Nil(t, queryLogger)
