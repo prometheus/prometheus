@@ -41,6 +41,7 @@ import { KVSearch } from "@nexucis/kvsearch";
 import { inputIconStyle } from "../styles";
 import CustomInfiniteScroll from "../components/CustomInfiniteScroll";
 import classes from "./AlertsPage.module.css";
+import groupNameClasses from "../GroupName.module.css";
 
 type AlertsPageData = {
   // How many rules are in each state across all groups.
@@ -232,7 +233,7 @@ export default function AlertsPage() {
         <Card shadow="xs" withBorder p="md" key={`${g.file}-${g.name}`}>
           <Group mb="sm" justify="space-between">
             <Group align="baseline">
-              <Text fz="xl" fw={600} c="var(--mantine-primary-color-filled)">
+              <Text fz="xl" fw={600} className={groupNameClasses.groupName}>
                 {g.name}
               </Text>
               <Text fz="sm" c="gray.6">

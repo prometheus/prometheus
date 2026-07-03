@@ -1,0 +1,4 @@
+.groupName {
+  /* Use lighter blue in dark mode to meet WCAG 2.1 AA contrast (4.5:1) on dark backgrounds. */
+  color: light-dark(var(--mantine-color-blue-8), var(--mantine-color-blue-3));
+}

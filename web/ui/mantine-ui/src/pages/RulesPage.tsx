@@ -34,6 +34,7 @@ import {
 import { useSuspenseAPIQuery } from "../api/api";
 import { Rule, RuleGroup, RulesResult } from "../api/responseTypes/rules";
 import badgeClasses from "../Badge.module.css";
+import groupNameClasses from "../GroupName.module.css";
 import RuleDefinition from "../components/RuleDefinition";
 import { badgeIconStyle, inputIconStyle } from "../styles";
 import {
@@ -168,7 +169,7 @@ export default function RulesPage() {
         <Card shadow="xs" withBorder p="md" key={`${g.file}-${g.name}`}>
           <Group mb="sm" justify="space-between">
             <Group align="baseline">
-              <Text fz="xl" fw={600} c="var(--mantine-primary-color-filled)">
+              <Text fz="xl" fw={600} className={groupNameClasses.groupName}>
                 {g.name}
               </Text>
               <Text fz="sm" c="gray.6">
