@@ -186,9 +186,11 @@ endpoints, each with a state of `UP`. Following the configuration above,
 `localhost:8082` is labeled `group="canary"`. If an endpoint shows `DOWN`, make
 sure the corresponding Node Exporter is still running on that port.
 
-To confirm the metrics are available, enter `node_cpu_seconds_total` into the
-expression browser and click "Execute". This should return one time series per CPU
-and mode for each instance, for example:
+To confirm the metrics are available, first open a target's `/metrics` endpoint
+directly, for example [localhost:8080/metrics](http://localhost:8080/metrics), to
+see the raw metric names it exposes. Then enter one of them, such as 
+`node_cpu_seconds_total`, into the expression browser and click "Execute". This
+should return one time series per CPU and mode for each instance, for example:
 
 ​```
 node_cpu_seconds_total{cpu="0",group="production",instance="localhost:8080",job="node",mode="idle"}
