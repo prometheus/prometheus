@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -328,6 +329,54 @@ func valid2Tg(file string) []*targetgroup.Group {
 			},
 			Source: fileSource(file, 2),
 		},
+	}
+}
+
+func TestSDConfigUnmarshalYAML(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		yaml    string
+		wantErr bool
+	}{
+		{
+			name:    "wildcard in final segment (slash)",
+			yaml:    "files:\n  - targets/*.json",
+			wantErr: false,
+		},
+		{
+			name:    "wildcard in final segment (backslash)",
+			yaml:    "files:\n  - targets\\*.json",
+			wantErr: false,
+		},
+		{
+			name:    "no wildcard",
+			yaml:    "files:\n  - /etc/prometheus/targets.yml",
+			wantErr: false,
+		},
+		{
+			name:    "wildcard in non-final segment (slash) is rejected",
+			yaml:    "files:\n  - /etc/prometheus/*/targets.json",
+			wantErr: true,
+		},
+		{
+			name:    "wildcard in non-final segment (backslash)",
+			yaml:    "files:\n  - C:\\prometheus\\*\\targets.json",
+			wantErr: filepath.Separator == '\\',
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var cfg SDConfig
+			err := yaml.Unmarshal([]byte(tt.yaml), &cfg)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
 	}
 }
 
