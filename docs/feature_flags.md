@@ -392,3 +392,17 @@ to this maximum, so an operator setting a smaller cap does not break
 no-`limit` requests. Setting the flag to `0` disables the cap entirely; this
 is **not recommended** for endpoints exposed beyond a trusted network because a
 single client can then request the entire index in one response.
+
+## Fast startup
+
+`--enable-feature=fast-startup`
+
+When enabled, Prometheus writes a `series_state.json` file to the WAL directory
+to track active series state across restarts. This lets scraping resume in
+parallel with WAL replay on the next start, while queries remain disabled until
+replay finishes.
+
+On startup, a clean shutdown restores the last series ID directly from the state
+file. After an unclean shutdown the state file is used to scan only the WAL
+segments written since it was last updated. If the state file is missing or
+cannot be read, Prometheus falls back to the normal startup path.
