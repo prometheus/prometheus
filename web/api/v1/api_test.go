@@ -4403,6 +4403,27 @@ func TestParseTime(t *testing.T) {
 			fail:  true,
 		},
 		{
+			input: "NaN",
+			fail:  true,
+		},
+		{
+			input: "Inf",
+			fail:  true,
+		},
+		{
+			input: "+Inf",
+			fail:  true,
+		},
+		{
+			input: "-Inf",
+			fail:  true,
+		},
+		{
+			// Finite float that is out of the supported time range.
+			input: "9e18",
+			fail:  true,
+		},
+		{
 			input:  "123",
 			result: time.Unix(123, 0),
 		},

@@ -2264,9 +2264,12 @@ func parseTimeParam(r *http.Request, paramName string, defaultValue time.Time) (
 
 func parseTime(s string) (time.Time, error) {
 	if t, err := strconv.ParseFloat(s, 64); err == nil {
-		s, ns := math.Modf(t)
-		ns = math.Round(ns*1000) / 1000
-		return time.Unix(int64(s), int64(ns*float64(time.Second))).UTC(), nil
+		if math.IsNaN(t) || t < float64(MinTime.Unix()) || t > float64(MaxTime.Unix()) {
+			return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
+		}
+		sec, frac := math.Modf(t)
+		frac = math.Round(frac*1000) / 1000
+		return time.Unix(int64(sec), int64(frac*float64(time.Second))).UTC(), nil
 	}
 	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
 		return t, nil
