@@ -129,7 +129,23 @@ func newLightsailClientAdapter(c *lightsail.Client) *lightsailClientAdapter {
 }
 
 func (a *lightsailClientAdapter) GetInstances(ctx context.Context, params *lightsail.GetInstancesInput, optFns ...func(*lightsail.Options)) (*lightsail.GetInstancesOutput, error) {
-	return a.getInstances(ctx, params, optFns...)
+	output, err := a.getInstances(ctx, params, optFns...)
+	if err != nil {
+		return nil, err
+	}
+
+	for output.NextPageToken != nil {
+		params.PageToken = output.NextPageToken
+		nextOutput, err := a.getInstances(ctx, params, optFns...)
+		if err != nil {
+			return nil, err
+		}
+
+		output.Instances = append(output.Instances, nextOutput.Instances...)
+		output.NextPageToken = nextOutput.NextPageToken
+	}
+
+	return output, nil
 }
 
 // LightsailDiscovery periodically performs Lightsail-SD requests. It implements
@@ -242,9 +258,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		Source: d.region,
 	}
 
-	input := &lightsail.GetInstancesInput{}
-
-	output, err := lightsailClient.GetInstances(ctx, input)
+	output, err := lightsailClient.GetInstances(ctx, &lightsail.GetInstancesInput{})
 	if err != nil {
 		var awsErr smithy.APIError
 		if errors.As(err, &awsErr) && (awsErr.ErrorCode() == "AuthFailure" || awsErr.ErrorCode() == "UnauthorizedOperation") {

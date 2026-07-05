@@ -179,3 +179,40 @@ func TestLightsailRefreshAllOptionalFieldsNil(t *testing.T) {
 		require.NotContains(t, target, absent)
 	}
 }
+
+func TestLightsailClientAdapterGetInstancesPaginated(t *testing.T) {
+	ctx := context.Background()
+
+	pages := []*lightsail.GetInstancesOutput{
+		{
+			Instances:     []types.Instance{{Name: strptr("instance-1")}},
+			NextPageToken: strptr("page-2"),
+		},
+		{
+			Instances: []types.Instance{{Name: strptr("instance-2")}},
+		},
+	}
+
+	var calls int
+	client := &lightsailClientAdapter{
+		getInstances: func(_ context.Context, params *lightsail.GetInstancesInput, _ ...func(*lightsail.Options)) (*lightsail.GetInstancesOutput, error) {
+			if calls == 0 {
+				require.Nil(t, params.PageToken)
+			} else {
+				require.Equal(t, "page-2", *params.PageToken)
+			}
+			out := pages[calls]
+			calls++
+			return out, nil
+		},
+	}
+
+	output, err := client.GetInstances(ctx, &lightsail.GetInstancesInput{})
+	require.NoError(t, err)
+	require.Equal(t, 2, calls)
+	require.Equal(t, []types.Instance{
+		{Name: strptr("instance-1")},
+		{Name: strptr("instance-2")},
+	}, output.Instances)
+	require.Nil(t, output.NextPageToken)
+}
