@@ -558,6 +558,11 @@ func TestExitCodes(t *testing.T) {
 			file: "prometheus-config.good.yml",
 		},
 		{
+			// Regression test for https://github.com/prometheus/prometheus/issues/6092:
+			// AWS SDs with empty region must parse without IMDS calls.
+			file: "prometheus-aws-sd-empty-region.good.yml",
+		},
+		{
 			file:     "prometheus-config.bad.yml",
 			exitCode: 1,
 		},
