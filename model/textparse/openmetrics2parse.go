@@ -462,6 +462,9 @@ func (p *OpenMetrics2Parser) parseAfterValue() error {
 		case tLinebreak:
 			return nil
 		case tTimestamp:
+			if p.hasTS {
+				return fmt.Errorf("duplicate timestamp: %q", p.l.b[p.start:p.l.i])
+			}
 			p.hasTS = true
 			var ts float64
 			var err error
@@ -473,6 +476,9 @@ func (p *OpenMetrics2Parser) parseAfterValue() error {
 			}
 			p.ts = int64(ts * 1000)
 		case tStartTimestamp:
+			if p.hasST {
+				return fmt.Errorf("duplicate start timestamp: %q", p.l.b[p.start:p.l.i])
+			}
 			// buf is " st@<float>"; skip the leading " st@" (4 bytes).
 			raw := p.l.buf()
 			if len(raw) < 4 {

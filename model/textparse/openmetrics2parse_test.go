@@ -629,6 +629,14 @@ foo_total 1.0 # {id="x"} 1.0
 			input: "# TYPE foo histogram\nfoo {count:1,sum:1.0,schema:0,zero_threshold:0}\n# EOF\n",
 			err:   "missing required field: zero_count",
 		},
+		{
+			input: "# TYPE requests counter\nrequests_total 42.0 1000000.0 2000000.0\n# EOF\n",
+			err:   "duplicate timestamp",
+		},
+		{
+			input: "# TYPE requests counter\nrequests_total 42.0 1000000.0 st@500000.0 st@600000.0\n# EOF\n",
+			err:   "duplicate start timestamp",
+		},
 	} {
 		t.Run(tc.err, func(t *testing.T) {
 			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{})
