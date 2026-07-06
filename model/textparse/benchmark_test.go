@@ -425,7 +425,7 @@ Inner2:
 }
 
 // TODO(rbizos): Once an OM2 text formatter is available, replace the
-// hand-written *.bench.{om,om2}.txt pairs with files generated from a single
+// hand-written *.bench.{om,om2}.txt pairs with files generated from a single source.
 
 // TestOM1OM2BenchPairsEquivalent verifies that each matched pair of benchmark
 // testdata files (OM1 + OM2) parses to the same set of series.

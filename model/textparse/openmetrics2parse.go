@@ -91,7 +91,7 @@ type om2Exemplar struct {
 
 // OpenMetrics2Parser parses samples from a byte slice in the OpenMetrics 2.0
 // text exposition format.
-// Specification: https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetric.md
+// Specification: https://prometheus.io/docs/specs/om/open_metrics_spec_2_0/
 type OpenMetrics2Parser struct {
 	l       *openMetrics2Lexer
 	builder labels.ScratchBuilder
