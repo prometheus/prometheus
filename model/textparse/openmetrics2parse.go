@@ -142,6 +142,10 @@ type OpenMetrics2Parser struct {
 	pending    []pendingEntry
 	pendingIdx int
 
+	// seriesBuf backs pendingEntry.series; reused across entries to avoid
+	// allocating one identity per entry.
+	seriesBuf []byte
+
 	enableTypeAndUnitLabels bool
 
 	// When true, a composite histogram that exposes both native fields and a
@@ -289,6 +293,7 @@ func (p *OpenMetrics2Parser) Next() (Entry, error) {
 	}
 	p.pending = p.pending[:0]
 	p.pendingIdx = 0
+	p.seriesBuf = p.seriesBuf[:0]
 
 	var err error
 	p.start = p.l.i
@@ -1083,9 +1088,10 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 			return nil, fmt.Errorf("invalid count: %w", err)
 		}
 		name := mfName + "_count"
+		lset := p.buildPendingLabels(name, extraLabels, "", "")
 		pending = append(pending, pendingEntry{
-			series: []byte(name),
-			lset:   p.buildPendingLabels(name, extraLabels, "", ""),
+			series: p.appendSeriesBytes(lset),
+			lset:   lset,
 			val:    v,
 			ts:     tsPtr,
 		})
@@ -1098,9 +1104,10 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 			return nil, fmt.Errorf("invalid sum: %w", err)
 		}
 		name := mfName + "_sum"
+		lset := p.buildPendingLabels(name, extraLabels, "", "")
 		pending = append(pending, pendingEntry{
-			series: []byte(name),
-			lset:   p.buildPendingLabels(name, extraLabels, "", ""),
+			series: p.appendSeriesBytes(lset),
+			lset:   lset,
 			val:    v,
 			ts:     tsPtr,
 		})
@@ -1109,14 +1116,14 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 	// _bucket entries
 	if bv, ok := kv["bucket"]; ok {
 		name := mfName + "_bucket"
-		bucketSeries := []byte(name)
 		for b, err := range parseBuckets(bv) {
 			if err != nil {
 				return nil, fmt.Errorf("invalid bucket: %w", err)
 			}
+			lset := p.buildPendingLabels(name, extraLabels, "le", b.le)
 			pending = append(pending, pendingEntry{
-				series: bucketSeries,
-				lset:   p.buildPendingLabels(name, extraLabels, "le", b.le),
+				series: p.appendSeriesBytes(lset),
+				lset:   lset,
 				val:    b.count,
 				ts:     tsPtr,
 			})
@@ -1151,9 +1158,10 @@ func (p *OpenMetrics2Parser) buildSummaryPending(
 			return nil, fmt.Errorf("invalid count: %w", err)
 		}
 		name := mfName + "_count"
+		lset := p.buildPendingLabels(name, extraLabels, "", "")
 		pending = append(pending, pendingEntry{
-			series: []byte(name),
-			lset:   p.buildPendingLabels(name, extraLabels, "", ""),
+			series: p.appendSeriesBytes(lset),
+			lset:   lset,
 			val:    v,
 			ts:     tsPtr,
 		})
@@ -1165,23 +1173,24 @@ func (p *OpenMetrics2Parser) buildSummaryPending(
 			return nil, fmt.Errorf("invalid sum: %w", err)
 		}
 		name := mfName + "_sum"
+		lset := p.buildPendingLabels(name, extraLabels, "", "")
 		pending = append(pending, pendingEntry{
-			series: []byte(name),
-			lset:   p.buildPendingLabels(name, extraLabels, "", ""),
+			series: p.appendSeriesBytes(lset),
+			lset:   lset,
 			val:    v,
 			ts:     tsPtr,
 		})
 	}
 
 	if qv, ok := kv["quantile"]; ok {
-		quantileSeries := []byte(mfName)
 		for q, err := range parseQuantiles(qv) {
 			if err != nil {
 				return nil, fmt.Errorf("invalid quantile: %w", err)
 			}
+			lset := p.buildPendingLabels(mfName, extraLabels, "quantile", q.q)
 			pending = append(pending, pendingEntry{
-				series: quantileSeries,
-				lset:   p.buildPendingLabels(mfName, extraLabels, "quantile", q.q),
+				series: p.appendSeriesBytes(lset),
+				lset:   lset,
 				val:    q.val,
 				ts:     tsPtr,
 			})
@@ -1252,6 +1261,25 @@ func extractExtraLabels(series []byte, mfNameLen int) []labels.Label {
 		}
 	}
 	return result
+}
+
+// appendSeriesBytes returns a byte identity for lset, unique per distinct
+// label set, appended into the shared p.seriesBuf (reset per batch in Next(),
+// so sub-slices stay valid until then). Mirrors
+// ProtobufParser.onSeriesOrHistogramUpdate's entryBytes.
+func (p *OpenMetrics2Parser) appendSeriesBytes(lset labels.Labels) []byte {
+	start := len(p.seriesBuf)
+	lset.Range(func(l labels.Label) {
+		if l.Name == labels.MetricName {
+			p.seriesBuf = append(p.seriesBuf, l.Value...)
+			return
+		}
+		p.seriesBuf = append(p.seriesBuf, model.SeparatorByte)
+		p.seriesBuf = append(p.seriesBuf, l.Name...)
+		p.seriesBuf = append(p.seriesBuf, model.SeparatorByte)
+		p.seriesBuf = append(p.seriesBuf, l.Value...)
+	})
+	return p.seriesBuf[start:len(p.seriesBuf):len(p.seriesBuf)]
 }
 
 // buildPendingLabels builds labels for a pending entry, reusing p.builder so

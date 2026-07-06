@@ -292,17 +292,17 @@ rpc_duration_seconds {count:100,sum:30000.0,quantile:[0.5:100.0,0.9:200.0,0.99:3
 			lset: labels.FromStrings("__name__", "rpc_duration_seconds_sum"),
 		},
 		{
-			m:    "rpc_duration_seconds",
+			m:    "rpc_duration_seconds\xffquantile\xff0.5",
 			v:    100.0,
 			lset: labels.FromStrings("__name__", "rpc_duration_seconds", "quantile", "0.5"),
 		},
 		{
-			m:    "rpc_duration_seconds",
+			m:    "rpc_duration_seconds\xffquantile\xff0.9",
 			v:    200.0,
 			lset: labels.FromStrings("__name__", "rpc_duration_seconds", "quantile", "0.9"),
 		},
 		{
-			m:    "rpc_duration_seconds",
+			m:    "rpc_duration_seconds\xffquantile\xff0.99",
 			v:    300.0,
 			lset: labels.FromStrings("__name__", "rpc_duration_seconds", "quantile", "0.99"),
 		},
@@ -333,17 +333,17 @@ req_duration {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,1.0:2]}
 			lset: labels.FromStrings("__name__", "req_duration_sum"),
 		},
 		{
-			m:    "req_duration_bucket",
+			m:    "req_duration_bucket\xffle\xff+Inf",
 			v:    3,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
 		},
 		{
-			m:    "req_duration_bucket",
+			m:    "req_duration_bucket\xffle\xff0.1",
 			v:    1,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.1"),
 		},
 		{
-			m:    "req_duration_bucket",
+			m:    "req_duration_bucket\xffle\xff1.0",
 			v:    2,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0"),
 		},
@@ -386,9 +386,9 @@ req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positiv
 	classicSeries := []parsedEntry{
 		{m: "req_duration_count", v: 3, lset: labels.FromStrings("__name__", "req_duration_count")},
 		{m: "req_duration_sum", v: 6.0, lset: labels.FromStrings("__name__", "req_duration_sum")},
-		{m: "req_duration_bucket", v: 3, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf")},
-		{m: "req_duration_bucket", v: 1, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.1")},
-		{m: "req_duration_bucket", v: 2, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0")},
+		{m: "req_duration_bucket\xffle\xff+Inf", v: 3, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf")},
+		{m: "req_duration_bucket\xffle\xff0.1", v: 1, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.1")},
+		{m: "req_duration_bucket\xffle\xff1.0", v: 2, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0")},
 	}
 
 	for _, tc := range []struct {
@@ -670,22 +670,22 @@ func TestOpenMetrics2ParseCompositeExtraLabelsUTF8(t *testing.T) {
 	exp := []parsedEntry{
 		{m: "req.duration", typ: model.MetricTypeHistogram},
 		{
-			m:    "req.duration_count",
+			m:    "req.duration_count\xffjob\xffapi",
 			v:    3,
 			lset: labels.FromStrings("__name__", "req.duration_count", "job", "api"),
 		},
 		{
-			m:    "req.duration_sum",
+			m:    "req.duration_sum\xffjob\xffapi",
 			v:    6.0,
 			lset: labels.FromStrings("__name__", "req.duration_sum", "job", "api"),
 		},
 		{
-			m:    "req.duration_bucket",
+			m:    "req.duration_bucket\xffjob\xffapi\xffle\xff+Inf",
 			v:    3,
 			lset: labels.FromStrings("__name__", "req.duration_bucket", "job", "api", "le", "+Inf"),
 		},
 		{
-			m:    "req.duration_bucket",
+			m:    "req.duration_bucket\xffjob\xffapi\xffle\xff0.1",
 			v:    1,
 			lset: labels.FromStrings("__name__", "req.duration_bucket", "job", "api", "le", "0.1"),
 		},
@@ -704,27 +704,27 @@ req_duration{job="api",env="prod"} {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,1.0:2]}
 	exp := []parsedEntry{
 		{m: "req_duration", typ: model.MetricTypeHistogram},
 		{
-			m:    "req_duration_count",
+			m:    "req_duration_count\xffenv\xffprod\xffjob\xffapi",
 			v:    3,
 			lset: labels.FromStrings("__name__", "req_duration_count", "env", "prod", "job", "api"),
 		},
 		{
-			m:    "req_duration_sum",
+			m:    "req_duration_sum\xffenv\xffprod\xffjob\xffapi",
 			v:    6.0,
 			lset: labels.FromStrings("__name__", "req_duration_sum", "env", "prod", "job", "api"),
 		},
 		{
-			m:    "req_duration_bucket",
+			m:    "req_duration_bucket\xffenv\xffprod\xffjob\xffapi\xffle\xff+Inf",
 			v:    3,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "env", "prod", "job", "api", "le", "+Inf"),
 		},
 		{
-			m:    "req_duration_bucket",
+			m:    "req_duration_bucket\xffenv\xffprod\xffjob\xffapi\xffle\xff0.1",
 			v:    1,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "env", "prod", "job", "api", "le", "0.1"),
 		},
 		{
-			m:    "req_duration_bucket",
+			m:    "req_duration_bucket\xffenv\xffprod\xffjob\xffapi\xffle\xff1.0",
 			v:    2,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "env", "prod", "job", "api", "le", "1.0"),
 		},
@@ -733,6 +733,54 @@ req_duration{job="api",env="prod"} {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,1.0:2]}
 	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
+}
+
+// TestOpenMetrics2ParseCompositeSeriesUnique checks that Series() never
+// returns the same bytes for two entries with different label sets; the
+// scrape loop uses those bytes as a cache key, so a collision would corrupt
+// or drop samples.
+func TestOpenMetrics2ParseCompositeSeriesUnique(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input string
+	}{
+		{
+			name: "classic histogram buckets",
+			input: `# TYPE foo histogram
+foo {count:5,sum:12.5,bucket:[+Inf:5,1:3,0.5:1]}
+# EOF
+`,
+		},
+		{
+			name: "classic histogram with differing extra labels",
+			input: `# TYPE foo histogram
+foo{path="/a"} {count:1,sum:1.0,bucket:[+Inf:1,1.0:1]}
+foo{path="/b"} {count:2,sum:2.0,bucket:[+Inf:2,1.0:1]}
+# EOF
+`,
+		},
+		{
+			name: "summary quantiles",
+			input: `# TYPE foo summary
+foo {count:5,sum:12.5,quantile:[0.5:1.0,0.9:2.0,0.99:3.0]}
+# EOF
+`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{})
+			got := testParse(t, p)
+
+			seen := map[string]labels.Labels{}
+			for _, e := range got {
+				if prev, ok := seen[e.m]; ok {
+					require.Truef(t, labels.Equal(prev, e.lset),
+						"series key %q reused for a different label set: first saw %s, now %s", e.m, prev, e.lset)
+				}
+				seen[e.m] = e.lset
+			}
+		})
+	}
 }
 
 func TestOpenMetrics2ParseCompositeWithTimestamp(t *testing.T) {
@@ -932,17 +980,17 @@ rpc_duration_seconds {count:10,sum:5.0,quantile:[0.5:1.0]}
 		{m: "rpc_duration_seconds", typ: model.MetricTypeSummary},
 		{m: "rpc_duration_seconds", unit: "seconds"},
 		{
-			m:    "rpc_duration_seconds_count",
+			m:    "rpc_duration_seconds_count\xff__type__\xffsummary\xff__unit__\xffseconds",
 			v:    10,
 			lset: labels.FromStrings("__name__", "rpc_duration_seconds_count", "__type__", "summary", "__unit__", "seconds"),
 		},
 		{
-			m:    "rpc_duration_seconds_sum",
+			m:    "rpc_duration_seconds_sum\xff__type__\xffsummary\xff__unit__\xffseconds",
 			v:    5.0,
 			lset: labels.FromStrings("__name__", "rpc_duration_seconds_sum", "__type__", "summary", "__unit__", "seconds"),
 		},
 		{
-			m:    "rpc_duration_seconds",
+			m:    "rpc_duration_seconds\xff__type__\xffsummary\xff__unit__\xffseconds\xffquantile\xff0.5",
 			v:    1.0,
 			lset: labels.FromStrings("__name__", "rpc_duration_seconds", "__type__", "summary", "__unit__", "seconds", "quantile", "0.5"),
 		},
@@ -1008,27 +1056,27 @@ http_request_duration_seconds {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,0.5:2]}
 		{m: "http_request_duration_seconds", typ: model.MetricTypeHistogram},
 		{m: "http_request_duration_seconds", unit: "seconds"},
 		{
-			m:    "http_request_duration_seconds_count",
+			m:    "http_request_duration_seconds_count\xff__type__\xffhistogram\xff__unit__\xffseconds",
 			v:    3,
 			lset: labels.FromStrings("__name__", "http_request_duration_seconds_count", "__type__", "histogram", "__unit__", "seconds"),
 		},
 		{
-			m:    "http_request_duration_seconds_sum",
+			m:    "http_request_duration_seconds_sum\xff__type__\xffhistogram\xff__unit__\xffseconds",
 			v:    6.0,
 			lset: labels.FromStrings("__name__", "http_request_duration_seconds_sum", "__type__", "histogram", "__unit__", "seconds"),
 		},
 		{
-			m:    "http_request_duration_seconds_bucket",
+			m:    "http_request_duration_seconds_bucket\xff__type__\xffhistogram\xff__unit__\xffseconds\xffle\xff+Inf",
 			v:    3,
 			lset: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "__type__", "histogram", "__unit__", "seconds", "le", "+Inf"),
 		},
 		{
-			m:    "http_request_duration_seconds_bucket",
+			m:    "http_request_duration_seconds_bucket\xff__type__\xffhistogram\xff__unit__\xffseconds\xffle\xff0.1",
 			v:    1,
 			lset: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "__type__", "histogram", "__unit__", "seconds", "le", "0.1"),
 		},
 		{
-			m:    "http_request_duration_seconds_bucket",
+			m:    "http_request_duration_seconds_bucket\xff__type__\xffhistogram\xff__unit__\xffseconds\xffle\xff0.5",
 			v:    2,
 			lset: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "__type__", "histogram", "__unit__", "seconds", "le", "0.5"),
 		},
@@ -1049,27 +1097,27 @@ response_size_bytes {count:4,sum:1024.0,bucket:[+Inf:4,100:1,500:3]}
 		{m: "response_size_bytes", typ: model.MetricTypeGaugeHistogram},
 		{m: "response_size_bytes", unit: "bytes"},
 		{
-			m:    "response_size_bytes_count",
+			m:    "response_size_bytes_count\xff__type__\xffgaugehistogram\xff__unit__\xffbytes",
 			v:    4,
 			lset: labels.FromStrings("__name__", "response_size_bytes_count", "__type__", "gaugehistogram", "__unit__", "bytes"),
 		},
 		{
-			m:    "response_size_bytes_sum",
+			m:    "response_size_bytes_sum\xff__type__\xffgaugehistogram\xff__unit__\xffbytes",
 			v:    1024.0,
 			lset: labels.FromStrings("__name__", "response_size_bytes_sum", "__type__", "gaugehistogram", "__unit__", "bytes"),
 		},
 		{
-			m:    "response_size_bytes_bucket",
+			m:    "response_size_bytes_bucket\xff__type__\xffgaugehistogram\xff__unit__\xffbytes\xffle\xff+Inf",
 			v:    4,
 			lset: labels.FromStrings("__name__", "response_size_bytes_bucket", "__type__", "gaugehistogram", "__unit__", "bytes", "le", "+Inf"),
 		},
 		{
-			m:    "response_size_bytes_bucket",
+			m:    "response_size_bytes_bucket\xff__type__\xffgaugehistogram\xff__unit__\xffbytes\xffle\xff100.0",
 			v:    1,
 			lset: labels.FromStrings("__name__", "response_size_bytes_bucket", "__type__", "gaugehistogram", "__unit__", "bytes", "le", "100.0"),
 		},
 		{
-			m:    "response_size_bytes_bucket",
+			m:    "response_size_bytes_bucket\xff__type__\xffgaugehistogram\xff__unit__\xffbytes\xffle\xff500.0",
 			v:    3,
 			lset: labels.FromStrings("__name__", "response_size_bytes_bucket", "__type__", "gaugehistogram", "__unit__", "bytes", "le", "500.0"),
 		},
@@ -1102,27 +1150,27 @@ req_duration {count:144,sum:53.4,bucket:[+Inf:144,0.1:24,0.2:33,0.4:100,1.0:144]
 			lset: labels.FromStrings("__name__", "req_duration_sum"),
 		},
 		{
-			m:    "req_duration_bucket",
+			m:    "req_duration_bucket\xffle\xff+Inf",
 			v:    144,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
 		},
 		{
-			m:    "req_duration_bucket",
+			m:    "req_duration_bucket\xffle\xff0.1",
 			v:    24,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.1"),
 		},
 		{
-			m:    "req_duration_bucket",
+			m:    "req_duration_bucket\xffle\xff0.2",
 			v:    33,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.2"),
 		},
 		{
-			m:    "req_duration_bucket",
+			m:    "req_duration_bucket\xffle\xff0.4",
 			v:    100,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.4"),
 		},
 		{
-			m:    "req_duration_bucket",
+			m:    "req_duration_bucket\xffle\xff1.0",
 			v:    144,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0"),
 		},
@@ -1153,12 +1201,12 @@ req_duration {count:2,sum:4.0,bucket:[+Inf:2,1.0:1]} # {id="req-1"} 3.8 9999999.
 			lset: labels.FromStrings("__name__", "req_duration_sum"),
 		},
 		{
-			m:    "req_duration_bucket",
+			m:    "req_duration_bucket\xffle\xff+Inf",
 			v:    2,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
 		},
 		{
-			m:    "req_duration_bucket",
+			m:    "req_duration_bucket\xffle\xff1.0",
 			v:    1,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0"),
 		},
