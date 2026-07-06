@@ -892,14 +892,38 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 			chkEnc := chunkenc.Encoding(mmapFile.byteSlice.Range(idx, idx+ChunkEncodingSize)[0])
 			idx += ChunkEncodingSize
 			dataLen, n := binary.Uvarint(mmapFile.byteSlice.Range(idx, idx+MaxChunkLengthFieldSize))
+			if n <= 0 {
+				return &CorruptionErr{
+					Dir:       cdm.dir.Name(),
+					FileIndex: segID,
+					Err:       fmt.Errorf("reading chunk length failed with %d", n),
+				}
+			}
+			if dataLen > uint64(math.MaxInt) {
+				return &CorruptionErr{
+					Dir:       cdm.dir.Name(),
+					FileIndex: segID,
+					Err:       fmt.Errorf("chunk length %d exceeds supported size", dataLen),
+				}
+			}
+			dataLenInt := int(dataLen)
 			idx += n
 
 			numSamples := binary.BigEndian.Uint16(mmapFile.byteSlice.Range(idx, idx+2))
-			idx += int(dataLen) // Skip the data.
+			// We know idx <= fileEnd, so comparing against fileEnd-dataLenInt
+			// instead of idx+dataLenInt avoids any overflow of idx.
+			if idx > fileEnd-dataLenInt {
+				return &CorruptionErr{
+					Dir:       cdm.dir.Name(),
+					FileIndex: segID,
+					Err:       fmt.Errorf("head chunk file doesn't include enough bytes to read the chunk data - idx:%v, data length:%v, available:%v, file:%d", idx, dataLenInt, fileEnd, segID),
+				}
+			}
+			idx += dataLenInt // Skip the data.
 
 			// In the beginning we only checked for the chunk meta size.
 			// Now that we have added the chunk data length, we check for sufficient bytes again.
-			if idx+CRCSize > fileEnd {
+			if CRCSize > fileEnd-idx {
 				return &CorruptionErr{
 					Dir:       cdm.dir.Name(),
 					FileIndex: segID,
