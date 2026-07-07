@@ -2428,6 +2428,64 @@ func TestDeletedIterator_WithSeek(t *testing.T) {
 	}
 }
 
+// TestDeletedIterator_WithST verifies that DeletedIterator forwards start
+// timestamps from the underlying iterator for the samples that survive deletion.
+func TestDeletedIterator_WithST(t *testing.T) {
+	samples := []chunks.Sample{
+		sample{st: 100, t: 1000, f: 1.0},
+		sample{st: 200, t: 2000, f: 2.0},
+		sample{st: 300, t: 3000, f: 3.0},
+		sample{st: 400, t: 4000, f: 4.0},
+		sample{st: 500, t: 5000, f: 5.0},
+	}
+	meta, err := chunks.ChunkFromSamples(samples)
+	require.NoError(t, err)
+
+	cases := []struct {
+		name      string
+		intervals tombstones.Intervals
+		expected  []chunks.Sample
+	}{
+		{
+			name:     "no deletions - ST preserved",
+			expected: samples,
+		},
+		{
+			name:      "delete middle samples - ST preserved",
+			intervals: tombstones.Intervals{{Mint: 2000, Maxt: 2000}, {Mint: 4000, Maxt: 4000}},
+			expected: []chunks.Sample{
+				sample{st: 100, t: 1000, f: 1.0},
+				sample{st: 300, t: 3000, f: 3.0},
+				sample{st: 500, t: 5000, f: 5.0},
+			},
+		},
+		{
+			name:      "delete first sample - ST preserved",
+			intervals: tombstones.Intervals{{Mint: 1000, Maxt: 1000}},
+			expected: []chunks.Sample{
+				sample{st: 200, t: 2000, f: 2.0},
+				sample{st: 300, t: 3000, f: 3.0},
+				sample{st: 400, t: 4000, f: 4.0},
+				sample{st: 500, t: 5000, f: 5.0},
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			it := &DeletedIterator{Iter: meta.Chunk.Iterator(nil), Intervals: c.intervals}
+
+			var result []chunks.Sample
+			for it.Next() != chunkenc.ValNone {
+				ts, v := it.At()
+				result = append(result, sample{st: it.AtST(), t: ts, f: v})
+			}
+			require.NoError(t, it.Err())
+			require.Equal(t, c.expected, result)
+		})
+	}
+}
+
 type series struct {
 	l      labels.Labels
 	chunks []chunks.Meta
