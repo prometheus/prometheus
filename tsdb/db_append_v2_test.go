@@ -7528,6 +7528,8 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 		name             string
 		lbls             labels.Labels
 		expectedEncoding chunkenc.Encoding
+		// append wraps the Append() calls so they are uniform, and returns the
+		// appended sample so it can be used to initialize the expectation slice.
 		append           func(storage.AppenderV2, labels.Labels, int64) (chunks.Sample, error)
 	}
 
