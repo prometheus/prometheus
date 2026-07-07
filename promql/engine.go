@@ -168,10 +168,15 @@ type PrometheusQueryOpts struct {
 var _ QueryOpts = &PrometheusQueryOpts{}
 
 func NewPrometheusQueryOpts(enablePerStepStats bool, lookbackDelta time.Duration, useStartTimestamps *bool) QueryOpts {
+	var useStartTimestampsCopy *bool
+	if useStartTimestamps != nil {
+		val := *useStartTimestamps
+		useStartTimestampsCopy = &val
+	}
 	return &PrometheusQueryOpts{
 		enablePerStepStats: enablePerStepStats,
 		lookbackDelta:      lookbackDelta,
-		useStartTimestamps: useStartTimestamps,
+		useStartTimestamps: useStartTimestampsCopy,
 	}
 }
 

@@ -4892,23 +4892,23 @@ func TestExtractQueryOpts(t *testing.T) {
 			err:    nil,
 		},
 		{
-			name: "with start_timestamps true",
+			name: "with use_start_timestamps true",
 			form: url.Values{
-				"start_timestamps": []string{"true"},
+				"use_start_timestamps": []string{"true"},
 			},
 			expect: promql.NewPrometheusQueryOpts(false, 0, &trueVal),
 			err:    nil,
 		},
 		{
-			name: "with start_timestamps false",
+			name: "with use_start_timestamps false",
 			form: url.Values{
-				"start_timestamps": []string{"false"},
+				"use_start_timestamps": []string{"false"},
 			},
 			expect: promql.NewPrometheusQueryOpts(false, 0, &falseVal),
 			err:    nil,
 		},
 		{
-			name: "with X-Prometheus-Start-Timestamps header true",
+			name: "with X-Prometheus-Use-Start-Timestamps header true",
 			header: http.Header{
 				"X-Prometheus-Start-Timestamps": []string{"true"},
 			},
@@ -4916,7 +4916,7 @@ func TestExtractQueryOpts(t *testing.T) {
 			err:    nil,
 		},
 		{
-			name: "with X-Prometheus-Start-Timestamps header false",
+			name: "with X-Prometheus-Use-Start-Timestamps header false",
 			header: http.Header{
 				"X-Prometheus-Start-Timestamps": []string{"false"},
 			},
@@ -4924,9 +4924,9 @@ func TestExtractQueryOpts(t *testing.T) {
 			err:    nil,
 		},
 		{
-			name: "with X-Prometheus-Start-Timestamps header and start_timestamps parameter (header wins)",
+			name: "with X-Prometheus-Use-Start-Timestamps header and use_start_timestamps parameter (header wins)",
 			form: url.Values{
-				"start_timestamps": []string{"false"},
+				"use_start_timestamps": []string{"false"},
 			},
 			header: http.Header{
 				"X-Prometheus-Start-Timestamps": []string{"true"},
@@ -4935,20 +4935,20 @@ func TestExtractQueryOpts(t *testing.T) {
 			err:    nil,
 		},
 		{
-			name: "with invalid X-Prometheus-Start-Timestamps header",
+			name: "with invalid X-Prometheus-Use-Start-Timestamps header",
 			header: http.Header{
 				"X-Prometheus-Start-Timestamps": []string{"invalid"},
 			},
 			expect: nil,
-			err:    errors.New(`error parsing X-Prometheus-Start-Timestamps header: strconv.ParseBool: parsing "invalid": invalid syntax`),
+			err:    errors.New(`error parsing X-Prometheus-Use-Start-Timestamps header: strconv.ParseBool: parsing "invalid": invalid syntax`),
 		},
 		{
-			name: "with invalid start_timestamps",
+			name: "with invalid use_start_timestamps",
 			form: url.Values{
-				"start_timestamps": []string{"invalid"},
+				"use_start_timestamps": []string{"invalid"},
 			},
 			expect: nil,
-			err:    errors.New(`error parsing start_timestamps parameter: strconv.ParseBool: parsing "invalid": invalid syntax`),
+			err:    errors.New(`error parsing use_start_timestamps parameter: strconv.ParseBool: parsing "invalid": invalid syntax`),
 		},
 		{
 			name: "with invalid lookback delta",
