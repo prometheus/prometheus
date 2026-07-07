@@ -126,7 +126,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5 1520879600.789
 }
 
 func TestOpenMetrics2ParseStartTimestamp(t *testing.T) {
-	input := `# TYPE requests counter
+	input := `# TYPE requests_total counter
 requests_total 42.0 1000000.0 st@500000.0
 # EOF
 `
