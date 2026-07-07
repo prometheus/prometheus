@@ -227,6 +227,11 @@ type HeadOptions struct {
 
 	// EnableFastStartup enables scraping in parallel with WAL replay but with queries still disabled.
 	EnableFastStartup bool
+
+	// ReadOnly configures the Head to tolerate repair errors when it cannot
+	// delete corrupted chunk files. Used by the read-only DB which operates
+	// on a sandbox of hardlinks.
+	ReadOnly bool
 }
 
 const (
@@ -333,12 +338,17 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		opts.WALReplayConcurrency = defaultWALReplayConcurrency
 	}
 
+	var chunkDiskMapperOpts []chunks.ChunkDiskMapperOption
+	if opts.ReadOnly {
+		chunkDiskMapperOpts = append(chunkDiskMapperOpts, chunks.WithReadOnly())
+	}
 	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(
 		r,
 		mmappedChunksDir(opts.ChunkDirRoot),
 		opts.ChunkPool,
 		opts.ChunkWriteBufferSize,
 		opts.ChunkWriteQueueSize,
+		chunkDiskMapperOpts...,
 	)
 	if err != nil {
 		return nil, err
