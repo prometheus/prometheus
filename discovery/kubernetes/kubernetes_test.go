@@ -14,10 +14,12 @@
 package kubernetes
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -142,7 +144,7 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 	}
 
 	resChan := make(chan map[string]*targetgroup.Group)
-	go readResultWithTimeout(t, ctx, ch, d.expectedMaxItems, time.Second, resChan)
+	go readResultWithTimeout(t, ctx, ch, d.expectedMaxItems, 10*time.Second, d.expectedRes, resChan)
 
 	dd, ok := d.discovery.(hasSynced)
 	require.True(t, ok, "discoverer does not implement hasSynced interface")
@@ -164,7 +166,13 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 
 // readResultWithTimeout reads all targetgroups from channel with timeout.
 // It merges targetgroups by source and sends the result to result channel.
-func readResultWithTimeout(t *testing.T, ctx context.Context, ch <-chan []*targetgroup.Group, maxGroups int, stopAfter time.Duration, resChan chan<- map[string]*targetgroup.Group) {
+//
+// It stops early once the merged result equals expected (when given). This is
+// what makes tests that mutate objects after start deterministic: the number
+// of emissions for one source is timing-dependent (the update queue may
+// coalesce them), so neither a fixed emission count nor a fixed wait can
+// reliably capture the final state — matching on it can.
+func readResultWithTimeout(t *testing.T, ctx context.Context, ch <-chan []*targetgroup.Group, maxGroups int, stopAfter time.Duration, expected map[string]*targetgroup.Group, resChan chan<- map[string]*targetgroup.Group) {
 	res := make(map[string]*targetgroup.Group)
 	timeout := time.After(stopAfter)
 Loop:
@@ -176,6 +184,10 @@ Loop:
 					continue
 				}
 				res[tg.Source] = tg
+			}
+			if targetGroupsEqual(expected, res) {
+				// Reached the expected final state, break fast.
+				break Loop
 			}
 			if len(res) == maxGroups {
 				// Reached max target groups we may get, break fast.
@@ -194,6 +206,42 @@ Loop:
 	}
 
 	resChan <- res
+}
+
+// nodeWatchRegistered returns a channel that is closed once the fake clientset
+// has registered a watch for nodes. Tests that mutate a node in afterStart
+// must wait for it first: the informer reports HasSynced after its initial
+// LIST but registers its WATCH afterwards, and the fake clientset only
+// delivers events to already-registered watchers — an update issued in that
+// window is lost forever and the target groups are never re-resolved. (A real
+// API server replays such events via resourceVersion; this race is
+// fake-specific.)
+func nodeWatchRegistered(c kubernetes.Interface) <-chan struct{} {
+	registered := make(chan struct{})
+	var once sync.Once
+	c.(*fake.Clientset).PrependWatchReactor("nodes", func(kubetesting.Action) (bool, watch.Interface, error) {
+		once.Do(func() { close(registered) })
+		return false, nil, nil // fall through to the default watch reactor
+	})
+	return registered
+}
+
+// targetGroupsEqual reports whether res matches the expected target groups,
+// using the same JSON representation requireTargetGroups compares with.
+// A nil expected never matches.
+func targetGroupsEqual(expected, res map[string]*targetgroup.Group) bool {
+	if expected == nil || len(expected) != len(res) {
+		return false
+	}
+	be, err := marshalTargetGroups(expected)
+	if err != nil {
+		return false
+	}
+	br, err := marshalTargetGroups(res)
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(be, br)
 }
 
 func requireTargetGroups(t *testing.T, expected, res map[string]*targetgroup.Group) {
