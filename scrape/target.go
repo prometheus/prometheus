@@ -413,7 +413,7 @@ func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, 
 	return ref, nil
 }
 
-// bucketLimitAppender limits the number of total appended samples in a batch.
+// bucketLimitAppender limits the number of buckets in appended native histograms, reducing histogram resolution or returning errBucketLimit when the limit is exceeded.
 type bucketLimitAppender struct {
 	storage.Appender
 
@@ -486,7 +486,7 @@ func (app *maxSchemaAppender) AppendHistogram(ref storage.SeriesRef, lset labels
 	return ref, nil
 }
 
-// limitAppender limits the number of total appended samples in a batch.
+// limitAppenderV2 limits the number of total appended samples in a batch.
 type limitAppenderV2 struct {
 	storage.AppenderV2
 
@@ -520,7 +520,7 @@ func (app *timeLimitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, 
 	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
 }
 
-// bucketLimitAppender limits the number of total appended samples in a batch.
+// bucketLimitAppenderV2 limits the number of buckets in appended native histograms, reducing histogram resolution or returning errBucketLimit when the limit is exceeded.
 type bucketLimitAppenderV2 struct {
 	storage.AppenderV2
 
