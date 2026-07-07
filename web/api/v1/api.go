@@ -151,7 +151,11 @@ type RulesRetriever interface {
 // StatsRenderer converts engine statistics into a format suitable for the API.
 type StatsRenderer func(context.Context, *stats.Statistics, string) stats.QueryStats
 
-// DefaultStatsRenderer is the default stats renderer for the API.
+// DefaultStatsRenderer is the default stats renderer for the API: any
+// non-empty `stats` value includes statistics in the response. The API
+// handlers validate the parameter against the supported values ("true",
+// "all") before rendering; custom StatsRenderer implementations are exempt
+// from that validation and may define their own values.
 func DefaultStatsRenderer(_ context.Context, s *stats.Statistics, param string) stats.QueryStats {
 	if param != "" {
 		return stats.NewQueryStats(s)
@@ -250,6 +254,7 @@ type API struct {
 	gatherer            prometheus.Gatherer
 	isAgent             bool
 	statsRenderer       StatsRenderer
+	customStatsRenderer bool // See validateStatsParam: a custom StatsRenderer's `stats` vocabulary is not validated.
 	notificationsGetter func() []notifications.Notification
 	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
 	// Allows customizing the default mapping
@@ -357,6 +362,7 @@ func NewAPI(
 
 	if statsRenderer != nil {
 		a.statsRenderer = statsRenderer
+		a.customStatsRenderer = true
 	}
 
 	if (ap == nil || apV2 == nil) && (rwEnabled || otlpEnabled) {
@@ -525,6 +531,9 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return invalidParamError(err, "time")
 	}
+	if err := api.validateStatsParam(r.FormValue("stats")); err != nil {
+		return invalidParamError(err, "stats")
+	}
 	ctx := r.Context()
 	if to := r.FormValue("timeout"); to != "" {
 		var cancel context.CancelFunc
@@ -614,7 +623,34 @@ func extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
 		duration = parsedDuration
 	}
 
-	return promql.NewPrometheusQueryOpts(r.FormValue("stats") == "all", duration), nil
+	return promql.NewPrometheusQueryOpts(r.FormValue("stats") == statsAll, duration), nil
+}
+
+// Accepted values of the `stats` query parameter on /query and /query_range
+// when the default stats renderer is in use: statsTrue includes basic query
+// statistics in the response, statsAll additionally includes per-step
+// statistics (with --enable-feature=promql-per-step-stats). Empty disables
+// statistics.
+const (
+	statsTrue = "true"
+	statsAll  = "all"
+)
+
+// validateStatsParam rejects unsupported values of the `stats` query
+// parameter. Historically any non-empty value silently enabled basic
+// statistics; validating it as an enum matches how e.g. /api/v1/rules
+// validates `type`. Embedders that install a custom StatsRenderer define
+// their own vocabulary for the parameter, so no validation happens then.
+func (api *API) validateStatsParam(stats string) error {
+	if api.customStatsRenderer {
+		return nil
+	}
+	switch stats {
+	case "", statsTrue, statsAll:
+		return nil
+	default:
+		return fmt.Errorf("not supported value %q, must be %q or %q", stats, statsTrue, statsAll)
+	}
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
@@ -641,6 +677,10 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 
 	if step <= 0 {
 		return invalidParamError(errors.New("zero or negative query resolution step widths are not accepted. Try a positive integer"), "step")
+	}
+
+	if err := api.validateStatsParam(r.FormValue("stats")); err != nil {
+		return invalidParamError(err, "stats")
 	}
 
 	// For safety, limit the number of returned points per timeseries.

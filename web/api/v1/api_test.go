@@ -959,6 +959,7 @@ func TestStats(t *testing.T) {
 		name     string
 		renderer StatsRenderer
 		param    string
+		wantErr  errorType
 		expected func(*testing.T, any)
 	}{
 		{
@@ -969,6 +970,16 @@ func TestStats(t *testing.T) {
 				qd := i.(*QueryData)
 				require.Nil(t, qd.Stats)
 			},
+		},
+		{
+			name:    "stats is an unsupported value",
+			param:   "foo",
+			wantErr: errorBadData,
+		},
+		{
+			name:    "stats is an unsupported truthy value",
+			param:   "1",
+			wantErr: errorBadData,
 		},
 		{
 			name:  "stats is true",
@@ -1024,21 +1035,28 @@ func TestStats(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			before := api.statsRenderer
-			defer func() { api.statsRenderer = before }()
+			before, customBefore := api.statsRenderer, api.customStatsRenderer
+			defer func() { api.statsRenderer, api.customStatsRenderer = before, customBefore }()
+			// Installing a renderer through NewAPI marks it as custom, which
+			// exempts the `stats` value from validation; mirror that here.
 			api.statsRenderer = tc.renderer
+			api.customStatsRenderer = tc.renderer != nil
 
 			for _, method := range []string{http.MethodGet, http.MethodPost} {
 				ctx := context.Background()
 				req, err := request(method, tc.param)
 				require.NoError(t, err)
 				res := api.query(req.WithContext(ctx))
-				assertAPIError(t, res.err, errorNone)
-				tc.expected(t, res.data)
+				assertAPIError(t, res.err, tc.wantErr)
+				if tc.wantErr == errorNone {
+					tc.expected(t, res.data)
+				}
 
 				res = api.queryRange(req.WithContext(ctx))
-				assertAPIError(t, res.err, errorNone)
-				tc.expected(t, res.data)
+				assertAPIError(t, res.err, tc.wantErr)
+				if tc.wantErr == errorNone {
+					tc.expected(t, res.data)
+				}
 			}
 		})
 	}

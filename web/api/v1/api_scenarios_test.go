@@ -14,6 +14,7 @@
 package v1
 
 import (
+	"net/http"
 	"strconv"
 	"testing"
 	"time"
@@ -429,16 +430,19 @@ func TestAPIWithStats(t *testing.T) {
 
 	now := time.Now().Unix()
 
-	// Test combinations of methods, endpoints, and stats values.
+	// Test combinations of methods, endpoints, and stats values. Values
+	// outside the supported enum ("true", "all") are rejected with 400 —
+	// historically any non-empty value silently enabled basic statistics.
 	methods := []string{"GET", "POST"}
 	statsValues := []struct {
-		value       string
-		expectStats bool
+		value        string
+		expectStats  bool
+		expectReject bool
 	}{
-		{"true", true},
-		{"all", true},
-		{"1", true},
-		{"", false},
+		{"true", true, false},
+		{"all", true, false},
+		{"1", false, true},
+		{"", false, false},
 	}
 
 	for _, method := range methods {
@@ -456,6 +460,11 @@ func TestAPIWithStats(t *testing.T) {
 					resp = testhelpers.GET(t, api, "/api/v1/query", params...)
 				} else {
 					resp = testhelpers.POST(t, api, "/api/v1/query", params...)
+				}
+
+				if stats.expectReject {
+					resp.RequireStatusCode(http.StatusBadRequest).ValidateOpenAPI()
+					return
 				}
 
 				resp.RequireSuccess().ValidateOpenAPI()
@@ -493,6 +502,11 @@ func TestAPIWithStats(t *testing.T) {
 					resp = testhelpers.GET(t, api, "/api/v1/query_range", params...)
 				} else {
 					resp = testhelpers.POST(t, api, "/api/v1/query_range", params...)
+				}
+
+				if stats.expectReject {
+					resp.RequireStatusCode(http.StatusBadRequest).ValidateOpenAPI()
+					return
 				}
 
 				resp.RequireSuccess().ValidateOpenAPI()
