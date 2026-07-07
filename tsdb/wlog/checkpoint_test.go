@@ -177,21 +177,6 @@ func TestCheckpoint(t *testing.T) {
 				dir := t.TempDir()
 
 				enc := record.Encoder{EnableSTStorage: enableSTStorage}
-				setSampleSTs := func(samples []record.RefSample) {
-					for i := range samples {
-						samples[i].ST = samples[i].T - 1
-					}
-				}
-				setHistogramSTs := func(samples []record.RefHistogramSample) {
-					for i := range samples {
-						samples[i].ST = samples[i].T - 1
-					}
-				}
-				setFloatHistogramSTs := func(samples []record.RefFloatHistogramSample) {
-					for i := range samples {
-						samples[i].ST = samples[i].T - 1
-					}
-				}
 				// Create a dummy segment to bump the initial number.
 				seg, err := CreateSegment(dir, 100)
 				require.NoError(t, err)
@@ -244,63 +229,54 @@ func TestCheckpoint(t *testing.T) {
 					// Write samples until the WAL has enough segments.
 					// Make them have drifting timestamps within a record to see that they
 					// get filtered properly.
+					// Start times are ignored at encoding time if start time storage is
+					// disabled.
 					samples := []record.RefSample{
-						{Ref: 0, T: last, V: float64(i)},
-						{Ref: 1, T: last + 10000, V: float64(i)},
-						{Ref: 2, T: last + 20000, V: float64(i)},
-						{Ref: 3, T: last + 30000, V: float64(i)},
-					}
-					if enableSTStorage {
-						setSampleSTs(samples)
+						{Ref: 0, ST: last - 1, T: last, V: float64(i)},
+						{Ref: 1, ST: last + 9999, T: last + 10000, V: float64(i)},
+						{Ref: 2, ST: last + 19999, T: last + 20000, V: float64(i)},
+						{Ref: 3, ST: last + 29999, T: last + 30000, V: float64(i)},
 					}
 					b := enc.Samples(samples, nil)
 					require.NoError(t, w.Log(b))
 					samplesInWAL += 4
 					h := makeHistogram(i)
 					histograms := []record.RefHistogramSample{
-						{Ref: 0, T: last, H: h},
-						{Ref: 1, T: last + 10000, H: h},
-						{Ref: 2, T: last + 20000, H: h},
-						{Ref: 3, T: last + 30000, H: h},
-					}
-					if enableSTStorage {
-						setHistogramSTs(histograms)
+						{Ref: 0, ST: last - 1, T: last, H: h},
+						{Ref: 1, ST: last + 9999, T: last + 10000, H: h},
+						{Ref: 2, ST: last + 19999, T: last + 20000, H: h},
+						{Ref: 3, ST: last + 29999, T: last + 30000, H: h},
 					}
 					b, _ = enc.HistogramSamples(histograms, nil)
 					require.NoError(t, w.Log(b))
 					histogramsInWAL += 4
 					cbh := makeCustomBucketHistogram(i)
 					customBucketHistograms := []record.RefHistogramSample{
-						{Ref: 0, T: last, H: cbh},
-						{Ref: 1, T: last + 10000, H: cbh},
-						{Ref: 2, T: last + 20000, H: cbh},
-						{Ref: 3, T: last + 30000, H: cbh},
-					}
-					if enableSTStorage {
-						setHistogramSTs(customBucketHistograms)
+						{Ref: 0, ST: last - 1, T: last, H: cbh},
+						{Ref: 1, ST: last + 9999, T: last + 10000, H: cbh},
+						{Ref: 2, ST: last + 19999, T: last + 20000, H: cbh},
+						{Ref: 3, ST: last + 29999, T: last + 30000, H: cbh},
 					}
 					b = enc.CustomBucketsHistogramSamples(customBucketHistograms, nil)
 					require.NoError(t, w.Log(b))
 					histogramsInWAL += 4
 					fh := makeFloatHistogram(i)
 					floatHistograms := []record.RefFloatHistogramSample{
-						{Ref: 0, T: last, FH: fh},
-						{Ref: 1, T: last + 10000, FH: fh},
-						{Ref: 2, T: last + 20000, FH: fh},
-						{Ref: 3, T: last + 30000, FH: fh},
+						{Ref: 0, ST: last - 1, T: last, FH: fh},
+						{Ref: 1, ST: last + 9999, T: last + 10000, FH: fh},
+						{Ref: 2, ST: last + 19999, T: last + 20000, FH: fh},
+						{Ref: 3, ST: last + 29999, T: last + 30000, FH: fh},
 					}
-					setFloatHistogramSTs(floatHistograms)
 					b, _ = enc.FloatHistogramSamples(floatHistograms, nil)
 					require.NoError(t, w.Log(b))
 					floatHistogramsInWAL += 4
 					cbfh := makeCustomBucketFloatHistogram(i)
 					customBucketFloatHistograms := []record.RefFloatHistogramSample{
-						{Ref: 0, T: last, FH: cbfh},
-						{Ref: 1, T: last + 10000, FH: cbfh},
-						{Ref: 2, T: last + 20000, FH: cbfh},
-						{Ref: 3, T: last + 30000, FH: cbfh},
+						{Ref: 0, ST: last - 1, T: last, FH: cbfh},
+						{Ref: 1, ST: last + 9999, T: last + 10000, FH: cbfh},
+						{Ref: 2, ST: last + 19999, T: last + 20000, FH: cbfh},
+						{Ref: 3, ST: last + 29999, T: last + 30000, FH: cbfh},
 					}
-					setFloatHistogramSTs(customBucketFloatHistograms)
 					b = enc.CustomBucketsFloatHistogramSamples(customBucketFloatHistograms, nil)
 					require.NoError(t, w.Log(b))
 					floatHistogramsInWAL += 4
@@ -364,6 +340,7 @@ func TestCheckpoint(t *testing.T) {
 							if enableSTStorage {
 								require.Equal(t, s.T-1, s.ST, "sample with wrong start timestamp")
 							} else {
+								// Start times should have not survived the round trip.
 								require.Zero(t, s.ST, "sample should not have start timestamp")
 							}
 						}
