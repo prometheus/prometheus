@@ -178,24 +178,18 @@ func TestCheckpoint(t *testing.T) {
 
 				enc := record.Encoder{EnableSTStorage: enableSTStorage}
 				setSampleSTs := func(samples []record.RefSample) {
-					if enableSTStorage {
-						for i := range samples {
-							samples[i].ST = samples[i].T - 1
-						}
+					for i := range samples {
+						samples[i].ST = samples[i].T - 1
 					}
 				}
 				setHistogramSTs := func(samples []record.RefHistogramSample) {
-					if enableSTStorage {
-						for i := range samples {
-							samples[i].ST = samples[i].T - 1
-						}
+					for i := range samples {
+						samples[i].ST = samples[i].T - 1
 					}
 				}
 				setFloatHistogramSTs := func(samples []record.RefFloatHistogramSample) {
-					if enableSTStorage {
-						for i := range samples {
-							samples[i].ST = samples[i].T - 1
-						}
+					for i := range samples {
+						samples[i].ST = samples[i].T - 1
 					}
 				}
 				// Create a dummy segment to bump the initial number.
@@ -256,7 +250,9 @@ func TestCheckpoint(t *testing.T) {
 						{Ref: 2, T: last + 20000, V: float64(i)},
 						{Ref: 3, T: last + 30000, V: float64(i)},
 					}
-					setSampleSTs(samples)
+					if enableSTStorage {
+						setSampleSTs(samples)
+					}
 					b := enc.Samples(samples, nil)
 					require.NoError(t, w.Log(b))
 					samplesInWAL += 4
@@ -267,7 +263,9 @@ func TestCheckpoint(t *testing.T) {
 						{Ref: 2, T: last + 20000, H: h},
 						{Ref: 3, T: last + 30000, H: h},
 					}
-					setHistogramSTs(histograms)
+					if enableSTStorage {
+						setHistogramSTs(histograms)
+					}
 					b, _ = enc.HistogramSamples(histograms, nil)
 					require.NoError(t, w.Log(b))
 					histogramsInWAL += 4
@@ -278,7 +276,9 @@ func TestCheckpoint(t *testing.T) {
 						{Ref: 2, T: last + 20000, H: cbh},
 						{Ref: 3, T: last + 30000, H: cbh},
 					}
-					setHistogramSTs(customBucketHistograms)
+					if enableSTStorage {
+						setHistogramSTs(customBucketHistograms)
+					}
 					b = enc.CustomBucketsHistogramSamples(customBucketHistograms, nil)
 					require.NoError(t, w.Log(b))
 					histogramsInWAL += 4
