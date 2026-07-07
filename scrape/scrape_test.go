@@ -2880,14 +2880,19 @@ func testScrapeLoopCache(t *testing.T, appV2 bool) {
 	scraper.scrapeFunc = func(_ context.Context, w io.Writer) error {
 		switch numScrapes {
 		case 1, 2:
-			_, ok := sl.cache.series["metric_a"]
+			// _, ok := sl.cache.series["metric_a"]
+			_, ok := sl.cache.series.get([]byte("metric_a"))
 			require.True(t, ok, "metric_a missing from cache after scrape %d", numScrapes)
-			_, ok = sl.cache.series["metric_b"]
+			// _, ok = sl.cache.series["metric_b"]
+			_, ok = sl.cache.series.get([]byte("metric_b"))
+
 			require.True(t, ok, "metric_b missing from cache after scrape %d", numScrapes)
 		case 3:
-			_, ok := sl.cache.series["metric_a"]
+			// _, ok := sl.cache.series["metric_a"]
+			_, ok := sl.cache.series.get([]byte("metric_a"))
 			require.True(t, ok, "metric_a missing from cache after scrape %d", numScrapes)
-			_, ok = sl.cache.series["metric_b"]
+			// _, ok = sl.cache.series["metric_b"]
+			_, ok = sl.cache.series.get([]byte("metric_b"))
 			require.False(t, ok, "metric_b present in cache after scrape %d", numScrapes)
 		}
 
@@ -2963,7 +2968,8 @@ func testScrapeLoopCacheMemoryExhaustionProtection(t *testing.T, appV2 bool) {
 		require.FailNow(t, "Scrape wasn't stopped.")
 	}
 
-	require.LessOrEqual(t, len(sl.cache.series), 2000, "More than 2000 series cached.")
+	// require.LessOrEqual(t, len(sl.cache.series), 2000, "More than 2000 series cached.")
+	require.LessOrEqual(t, sl.cache.series.len(), 2000, "More than 2000 series cached.")
 }
 
 func TestScrapeLoopAppend_HonorLabels(t *testing.T) {
@@ -5239,9 +5245,14 @@ func testScrapeAddFast(t *testing.T, appV2 bool) {
 
 	// Poison the cache. There is just one entry, and one series in the
 	// storage. Changing the ref will create a 'not found' error.
-	for _, v := range sl.getCache().series {
+	// for _, v := range sl.getCache().series {
+	// 	v.ref++
+	// }
+
+	sl.getCache().series.iterate(func(_ []byte, v *cacheEntry) bool {
 		v.ref++
-	}
+		return true
+	})
 
 	app = sl.appender()
 	_, _, _, err = app.append([]byte("up 1\n"), "text/plain", time.Time{}.Add(time.Second))
