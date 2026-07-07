@@ -18,6 +18,8 @@ import (
 	"errors"
 	"math/rand"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
 	"testing"
@@ -541,6 +543,42 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 
 	// Check that it does not delete a valid last file.
 	checkRepair()
+}
+
+// TestRepairLastChunkFile_ReadOnlyToleratesDeletionFailure verifies that when
+// repairLastChunkFile cannot delete a corrupted last file, it returns an error
+// in the normal (writable) case, but tolerates the failure and excludes the
+// file from the returned map when readOnly is set. This matters for the
+// read-only DB, which operates on a sandbox of hardlinks that Windows may
+// transiently refuse to delete (see #16176).
+func TestRepairLastChunkFile_ReadOnlyToleratesDeletionFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Directory permission bits do not gate file deletion on Windows the
+		// way they do on POSIX systems, so this simulation does not apply.
+		// The Windows-specific retry behavior is covered separately in
+		// head_chunks_windows_test.go.
+		t.Skip("removal permission simulation relies on POSIX directory permissions")
+	}
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "000002")
+	require.NoError(t, os.WriteFile(path, nil, 0o666))
+
+	// Remove write permission on the directory so deleting the file inside it
+	// fails, simulating a deletion failure of a corrupted last chunk file.
+	require.NoError(t, os.Chmod(dir, 0o555))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	// Not read-only: the deletion failure must be surfaced as an error.
+	_, err := repairLastChunkFile(map[int]string{1: path}, false)
+	require.Error(t, err)
+
+	// Read-only: the deletion failure must be tolerated, and the corrupt file
+	// excluded from the returned map instead of causing an error.
+	files, err := repairLastChunkFile(map[int]string{1: path}, true)
+	require.NoError(t, err)
+	require.Empty(t, files, "corrupt file should be excluded from the map even though it could not be deleted")
 }
 
 func createChunkDiskMapper(t *testing.T, dir string) *ChunkDiskMapper {

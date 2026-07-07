@@ -25,6 +25,10 @@ import (
 // Windows needs pre-allocation to m-map the file.
 var HeadChunkFilePreallocationSize int64 = MaxHeadChunkFileSize
 
+// osRemove is a variable indirection over os.Remove so tests can observe
+// (and react to) each removal attempt without relying on real-time sleeps.
+var osRemove = os.Remove
+
 // removeChunkFile deletes a head chunk file, retrying briefly on transient
 // Windows sharing violations. Antivirus or file-indexing processes may open a
 // newly created file without granting FILE_SHARE_DELETE, causing os.Remove to
@@ -41,7 +45,7 @@ func removeChunkFile(path string) error {
 	start := time.Now()
 	sleep := initialBackoff
 	for {
-		err := os.Remove(path)
+		err := osRemove(path)
 		if err == nil {
 			return nil
 		}

@@ -195,7 +195,7 @@ type ChunkDiskMapperOption func(*ChunkDiskMapper)
 // When set, if deleting a corrupted chunk file fails during initialization, the
 // file is silently skipped rather than causing an error. This is used by the
 // read-only DB which operates on a sandbox of hardlinks, where Windows may
-// temporarily prevent deletion of a hardlinked file.
+// temporarily prevent deletion of a hard-linked file.
 func WithReadOnly() ChunkDiskMapperOption {
 	return func(m *ChunkDiskMapper) {
 		m.readOnly = true
