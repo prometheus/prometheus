@@ -846,18 +846,26 @@ func (d *Discovery) newIndexedEndpointsInformer(plw *cache.ListWatch) cache.Shar
 				return nil, errors.New("object is not endpoints")
 			}
 			var nodes []string
+			// Index every node the target builder may attach metadata for:
+			// the address's own NodeName (set with or without a TargetRef)
+			// and a TargetRef of kind Node. Missing an entry here means node
+			// updates never re-resolve the endpoints, leaving stale node
+			// metadata on its targets.
+			add := func(addr apiv1.EndpointAddress) {
+				if addr.NodeName != nil {
+					nodes = append(nodes, *addr.NodeName)
+				}
+				if addr.TargetRef != nil && addr.TargetRef.Kind == "Node" {
+					nodes = append(nodes, addr.TargetRef.Name)
+				}
+			}
 			for _, target := range e.Subsets {
 				for _, addr := range target.Addresses {
-					if addr.TargetRef != nil {
-						switch addr.TargetRef.Kind {
-						case "Pod":
-							if addr.NodeName != nil {
-								nodes = append(nodes, *addr.NodeName)
-							}
-						case "Node":
-							nodes = append(nodes, addr.TargetRef.Name)
-						}
-					}
+					add(addr)
+				}
+				// Node metadata is attached to not-ready targets too.
+				for _, addr := range target.NotReadyAddresses {
+					add(addr)
 				}
 			}
 			return nodes, nil
@@ -895,16 +903,17 @@ func (d *Discovery) newIndexedEndpointSlicesInformer(plw *cache.ListWatch, objec
 			}
 
 			var nodes []string
+			// Index every node the target builder may attach metadata for:
+			// the endpoint's own NodeName (set with or without a TargetRef)
+			// and a TargetRef of kind Node. Missing an entry here means node
+			// updates never re-resolve the endpointslice, leaving stale node
+			// metadata on its targets.
 			for _, target := range e.Endpoints {
-				if target.TargetRef != nil {
-					switch target.TargetRef.Kind {
-					case "Pod":
-						if target.NodeName != nil {
-							nodes = append(nodes, *target.NodeName)
-						}
-					case "Node":
-						nodes = append(nodes, target.TargetRef.Name)
-					}
+				if target.NodeName != nil {
+					nodes = append(nodes, *target.NodeName)
+				}
+				if target.TargetRef != nil && target.TargetRef.Kind == "Node" {
+					nodes = append(nodes, target.TargetRef.Name)
 				}
 			}
 
