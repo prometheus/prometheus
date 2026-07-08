@@ -285,7 +285,7 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 	return true
 }
 
-// StartTimestamp returns the start timestamp for a current Metric if exists or nil.
+// StartTimestamp returns the start timestamp for a current Metric, or 0 if it does not exist.
 // NOTE(Maniktherana): Might use additional CPU/mem resources due to deep copy of parser required for peeking given 1.0 OM specification on _created series.
 func (p *OpenMetricsParser) StartTimestamp() int64 {
 	if !typeRequiresST(p.mtype) {
