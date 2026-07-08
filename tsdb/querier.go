@@ -177,6 +177,13 @@ type chunkCacheEnabler interface {
 	EnableChunkCache()
 }
 
+// enableChunkCache enables the head-chunk cache on cr if it supports one.
+func enableChunkCache(cr ChunkReader) {
+	if enabler, ok := cr.(chunkCacheEnabler); ok {
+		enabler.EnableChunkCache()
+	}
+}
+
 func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms []*labels.Matcher,
 	index IndexReader, chunks ChunkReader, tombstones tombstones.Reader, mint, maxt int64,
 ) storage.SeriesSet {
@@ -184,9 +191,7 @@ func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.Select
 	sharded := hints != nil && hints.ShardCount > 0
 
 	if hints != nil && hints.Step > 0 {
-		if enabler, ok := chunks.(chunkCacheEnabler); ok {
-			enabler.EnableChunkCache()
-		}
+		enableChunkCache(chunks)
 	}
 
 	p, err := PostingsForMatchers(ctx, index, ms...)
@@ -238,9 +243,7 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 	sharded := hints != nil && hints.ShardCount > 0
 
 	if hints != nil && hints.Step > 0 {
-		if enabler, ok := chunks.(chunkCacheEnabler); ok {
-			enabler.EnableChunkCache()
-		}
+		enableChunkCache(chunks)
 	}
 
 	if hints != nil {

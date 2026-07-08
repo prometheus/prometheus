@@ -2384,9 +2384,10 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 			staleSeriesDeleted++
 		}
 
+		headChunkCount := series.headChunkCount.Load()
 		chunksRemoved += len(series.mmappedChunks)
-		chunksRemoved += int(series.headChunkCount.Load())
-		if series.headChunkCount.Load() >= 2 {
+		chunksRemoved += int(headChunkCount)
+		if headChunkCount >= 2 {
 			h.series.decMmapReady(series.ref)
 		}
 		// Clear to prevent a double-subtraction from the chunksRemoved gauge if
@@ -2450,7 +2451,8 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 			return
 		}
 
-		rmChunks += int(series.headChunkCount.Load())
+		headChunkCount := series.headChunkCount.Load()
+		rmChunks += int(headChunkCount)
 		rmChunks += len(series.mmappedChunks)
 
 		// The series is gone entirely. We need to keep the series lock
@@ -2459,7 +2461,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		// If we don't hold them all, there's a very small chance that a series receives
 		// samples again while we are half-way into deleting it.
 		stripe := s.refStripe(series.ref)
-		if series.headChunkCount.Load() >= 2 {
+		if headChunkCount >= 2 {
 			s.decMmapReady(series.ref)
 		}
 		if hashShard != stripe {
@@ -2752,13 +2754,13 @@ func (s *memSeries) setHeadChunks(head *memChunk, count uint32) {
 func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) int {
 	var removedInOrder int
 	if s.headChunks != nil {
-		var i int
+		var i uint32
 		var nextChk *memChunk
 		chk := s.headChunks
 		for chk != nil {
 			if chk.maxTime < mint {
 				// If any head chunk is truncated, we can truncate all mmapped chunks.
-				removedInOrder = int(s.headChunkCount.Load()) - i + len(s.mmappedChunks)
+				removedInOrder = chk.len() + len(s.mmappedChunks)
 				s.firstChunkID += chunks.HeadChunkID(removedInOrder)
 				if i == 0 {
 					// This is the first chunk on the list so we need to remove the entire list.
@@ -2837,7 +2839,9 @@ func (mc *memChunk) len() (count int) {
 // collectHeadChunks walks the headChunks linked list once and returns a slice
 // in oldest-first order (matching mmappedChunks ordering).
 // For example, given head{t4} -> t3 -> t2 -> t1 -> t0, it returns [t0, t1, t2, t3, t4].
-// buf must have length 0 but may have non-zero capacity for reuse.
+// buf must have length 0 but may have non-zero capacity for reuse; the
+// returned slice's tail beyond its length is zeroed, so a reused, shrinking
+// buffer does not pin chunks from a previous, longer collection.
 func collectHeadChunks(head *memChunk, buf []*memChunk) []*memChunk {
 	// Single walk: append newest-to-oldest (following prev pointers), then
 	// reverse to oldest-to-newest. Pointer-chasing the linked list is the

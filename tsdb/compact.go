@@ -943,9 +943,7 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 		closers = append(closers, chunkr)
 
 		// Enable the head-chunk cache for compaction.
-		if enabler, ok := chunkr.(chunkCacheEnabler); ok {
-			enabler.EnableChunkCache()
-		}
+		enableChunkCache(chunkr)
 
 		tombsr, err := b.Tombstones()
 		if err != nil {

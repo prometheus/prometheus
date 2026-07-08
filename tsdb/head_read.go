@@ -28,9 +28,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
-// headChunksBufMaxCap is the maximum capacity for the reusable headChunksBuf
-// slice. If the buffer grows beyond this, it is released to avoid holding
-// oversized backing arrays across many series iterations.
+// headChunksBufMaxCap is the maximum capacity retained for reusable []*memChunk
+// buffers. If a buffer grows beyond this, it is released to avoid holding
+// oversized backing arrays across series iterations.
 const headChunksBufMaxCap = 256
 
 func (h *Head) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
@@ -525,11 +525,19 @@ func (h *headChunkReader) Close() error {
 	return nil
 }
 
-// EnableChunkCache enables the head-chunk cache for sequential chunk access patterns.
+// EnableChunkCache enables the head-chunk cache for sequential chunk access
+// patterns (range queries, compaction), which look up every chunk of a series.
+// The cache is invalidated whenever the series' chunk layout changes (a
+// parallel append, mmapping, or truncation), falling back to O(n) for that
+// lookup.
 func (h *headChunkReader) EnableChunkCache() {
 	h.enableCache = true
 }
 
+// getOrCollectHeadChunks returns the cached head-chunk slice for s, collecting
+// it first if the cache does not match the series' current chunk layout.
+// The series lock must be held; the fingerprint comparison is only consistent
+// against concurrent appends, mmapping, and truncation under that lock.
 func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 	// Skip if the cache is disabled (instant queries) or there are no head chunks or there's only one.
 	if !h.enableCache || s.headChunks == nil || s.headChunks.prev == nil {
@@ -693,10 +701,15 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 	offset := headChunksLen - ix - 1
 	elem := s.headChunks
 	for range offset {
-		if elem.prev == nil {
-			return nil, false, false, storage.ErrNotFound
+		if elem == nil {
+			break
 		}
 		elem = elem.prev
+	}
+	if elem == nil {
+		// Defensive: headChunkCount disagreed with the actual list length.
+		// This only catches walks that run off the end of the list.
+		return nil, false, false, storage.ErrNotFound
 	}
 	return elem, true, offset == 0, nil
 }

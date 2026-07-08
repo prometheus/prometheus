@@ -1370,8 +1370,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 				lbls := labels.FromStrings("__name__", "bench", "series", strconv.Itoa(i))
 				for j := range nChunks {
 					// Counter reset on every histogram forces a new head chunk per sample.
-					hist := tsdbutil.GenerateTestHistogram(int64(j))
-					hist.CounterResetHint = histogram.CounterReset
+					hist := tsdbutil.GenerateTestHistogramWithHint(j, histogram.CounterReset)
 					_, err := app.AppendHistogram(0, lbls, int64(j)*1000, hist, nil)
 					require.NoError(b, err)
 				}
@@ -1396,65 +1395,67 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 	}
 }
 
-// TestCompactionFromHeadWithMultipleHeadChunks verifies that compaction from
-// a Head with multiple head chunks per series produces correct blocks. This
-// exercises the chunkCacheEnabler path in PopulateBlock, which enables the
-// head-chunk cache during compaction for O(1) chunk lookups.
-func TestCompactionFromHeadWithMultipleHeadChunks(t *testing.T) {
-	opts := DefaultHeadOptions()
-	opts.ChunkRange = 100
-	opts.ChunkDirRoot = t.TempDir()
-	h, err := NewHead(nil, nil, nil, nil, opts, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, h.Close()) })
-
-	// Append enough samples to create multiple head chunks.
-	// With ChunkRange=100 and DefaultSamplesPerChunk=120, each chunk holds
-	// ~20 samples (range/step = 100/5). 200 samples → ~10 head chunks.
-	lbls := labels.FromStrings("__name__", "test")
-	var expSamples []sample
-	app := h.Appender(t.Context())
-	for i := int64(0); i < 1000; i += 5 {
-		_, err := app.Append(0, lbls, i, float64(i))
+func TestCompactionFromHead(t *testing.T) {
+	t.Run("multiple head chunks", func(t *testing.T) {
+		// Verify compaction from a Head with multiple head chunks per series
+		// produces correct blocks. This exercises the chunkCacheEnabler path
+		// in PopulateBlock, which enables the head-chunk cache during
+		// compaction for O(1) chunk lookups.
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 100
+		opts.ChunkDirRoot = t.TempDir()
+		h, err := NewHead(nil, nil, nil, nil, opts, nil)
 		require.NoError(t, err)
-		expSamples = append(expSamples, sample{t: i, f: float64(i)})
-	}
-	require.NoError(t, app.Commit())
+		t.Cleanup(func() { require.NoError(t, h.Close()) })
 
-	// Verify we have multiple head chunks.
-	s := h.series.getByID(1)
-	require.NotNil(t, s)
-	s.Lock()
-	headChunks := int(s.headChunkCount.Load())
-	s.Unlock()
-	require.Greater(t, headChunks, 1, "need multiple head chunks for this test")
+		// Append enough samples to create multiple head chunks.
+		// With ChunkRange=100 and DefaultSamplesPerChunk=120, each chunk holds
+		// ~20 samples (range/step = 100/5). 200 samples → ~10 head chunks.
+		lbls := labels.FromStrings("__name__", "test")
+		var expSamples []sample
+		app := h.Appender(t.Context())
+		for i := int64(0); i < 1000; i += 5 {
+			_, err := app.Append(0, lbls, i, float64(i))
+			require.NoError(t, err)
+			expSamples = append(expSamples, sample{t: i, f: float64(i)})
+		}
+		require.NoError(t, app.Commit())
 
-	// Compact from head.
-	blockDir := createBlockFromHead(t, t.TempDir(), h)
+		// Verify we have multiple head chunks.
+		s := h.series.getByID(1)
+		require.NotNil(t, s)
+		s.Lock()
+		headChunks := int(s.headChunkCount.Load())
+		s.Unlock()
+		require.Greater(t, headChunks, 1, "need multiple head chunks for this test")
 
-	// Re-read the block and verify all samples survived.
-	block, err := OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, block.Close()) })
+		// Compact from head.
+		blockDir := createBlockFromHead(t, t.TempDir(), h)
 
-	q, err := NewBlockQuerier(block, math.MinInt64, math.MaxInt64)
-	require.NoError(t, err)
-	defer q.Close()
+		// Re-read the block and verify all samples survived.
+		block, err := OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, block.Close()) })
 
-	ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "test"))
-	require.True(t, ss.Next(), "expected a series")
+		q, err := NewBlockQuerier(block, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		defer q.Close()
 
-	var actSamples []sample
-	it := ss.At().Iterator(nil)
-	for it.Next() == chunkenc.ValFloat {
-		ts, v := it.At()
-		actSamples = append(actSamples, sample{t: ts, f: v})
-	}
-	require.NoError(t, it.Err())
-	require.False(t, ss.Next(), "expected only one series")
-	require.NoError(t, ss.Err())
+		ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "test"))
+		require.True(t, ss.Next(), "expected a series")
 
-	require.Equal(t, expSamples, actSamples, "compacted block should contain all samples")
+		var actSamples []sample
+		it := ss.At().Iterator(nil)
+		for it.Next() == chunkenc.ValFloat {
+			ts, v := it.At()
+			actSamples = append(actSamples, sample{t: ts, f: v})
+		}
+		require.NoError(t, it.Err())
+		require.False(t, ss.Next(), "expected only one series")
+		require.NoError(t, ss.Err())
+
+		require.Equal(t, expSamples, actSamples, "compacted block should contain all samples")
+	})
 }
 
 func BenchmarkCompactionFromOOOHead(b *testing.B) {
