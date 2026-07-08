@@ -731,7 +731,7 @@ func (c *safeHeadChunk) Iterator(reuseIter chunkenc.Iterator) chunkenc.Iterator 
 	return it
 }
 
-// iterator returns a chunk iterator for the requested chunkID, or a NopIterator if the requested ID is out of range.
+// iterator returns a chunk iterator for the requested chunk ID, or a NopIterator if it is out of range.
 // It is unsafe to call this concurrently with s.append(...) without holding the series lock.
 func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *isolationState, it chunkenc.Iterator) chunkenc.Iterator {
 	ix := int(id) - int(s.firstChunkID)
@@ -750,16 +750,20 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *
 			}
 		}
 
-		ix -= len(s.mmappedChunks)
 		if s.headChunks != nil {
-			// Iterate all head chunks from the oldest to the newest.
-			hc := collectHeadChunks(s.headChunks, make([]*memChunk, 0, s.headChunkCount.Load()))
-			for j, chk := range hc {
-				chkSamples := chk.chunk.NumSamples()
+			// Reset ix, so its base is 0 (oldest non-mmapped head chunk).
+			ix -= len(s.mmappedChunks)
+
+			// Head chunks are indexed oldest-first, matching chunk ID order, but the list is walked newest-first,
+			// so j starts at the highest (newest) index and counts down.
+			j := int(s.headChunkCount.Load()) - 1
+			for elem := s.headChunks; elem != nil; elem = elem.prev {
+				chkSamples := elem.chunk.NumSamples()
 				totalSamples += chkSamples
 				if j < ix {
 					previousSamples += chkSamples
 				}
+				j--
 			}
 		}
 
