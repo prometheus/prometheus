@@ -53,76 +53,93 @@ var ensureOrderBatchPool = sync.Pool{
 	},
 }
 
-// postingsPhaseGate lets MemPostings shard writes without exposing partially added
-// label sets to readers. Multiple Add calls may run concurrently, and multiple
-// reads may run concurrently, but the two phases do not overlap.
+// postingsPhaseGate separates MemPostings operations into add, read, and
+// exclusive phases. A phase is the part of an operation that observes or
+// publishes postings state across shards. The gate does not replace shard
+// locks; shard locks still protect shard-local maps and slices.
+//
+// The gate keeps read snapshots out of the middle of a multi-label Add. A
+// reader may see the postings before an Add or after it, but not after only
+// some label pairs for that series have been published. Exclusive waiters block
+// new readers and adders so Delete and EnsureOrder do not starve.
 type postingsPhaseGate struct {
 	mtx              sync.Mutex
 	cond             *sync.Cond
-	adds             int
-	reads            int
-	exclusive        bool
-	exclusiveWaiting int
+	activeAdds       int
+	activeReads      int
+	exclusiveActive  bool
+	exclusiveWaiters int
 }
 
 func (g *postingsPhaseGate) init() {
 	g.cond = sync.NewCond(&g.mtx)
 }
 
+// beginAdd waits until there are no active reads or exclusive operations. It
+// also waits behind pending exclusive operations so they can drain current work.
 func (g *postingsPhaseGate) beginAdd() {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
-	for g.reads > 0 || g.exclusive || g.exclusiveWaiting > 0 {
+	for g.activeReads > 0 || g.exclusiveActive || g.exclusiveWaiters > 0 {
 		g.cond.Wait()
 	}
-	g.adds++
+	g.activeAdds++
 }
 
 func (g *postingsPhaseGate) endAdd() {
 	g.mtx.Lock()
-	g.adds--
-	if g.adds == 0 {
+	g.activeAdds--
+	if g.activeAdds == 0 {
 		g.cond.Broadcast()
 	}
 	g.mtx.Unlock()
 }
 
+// beginRead waits for active Adds because a read can snapshot multiple shards
+// and label-value metadata. It also waits behind pending exclusive operations.
 func (g *postingsPhaseGate) beginRead() {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
-	for g.adds > 0 || g.exclusive || g.exclusiveWaiting > 0 {
+	for g.activeAdds > 0 || g.exclusiveActive || g.exclusiveWaiters > 0 {
 		g.cond.Wait()
 	}
-	g.reads++
+	g.activeReads++
 }
 
 func (g *postingsPhaseGate) endRead() {
 	g.mtx.Lock()
-	g.reads--
-	if g.reads == 0 {
+	g.activeReads--
+	if g.activeReads == 0 {
 		g.cond.Broadcast()
 	}
 	g.mtx.Unlock()
 }
 
+// beginExclusive is used by Delete and EnsureOrder. It marks an exclusive
+// waiter before waiting so new Adds and reads do not enter, then waits for
+// current Adds, reads, and any active exclusive operation to finish.
 func (g *postingsPhaseGate) beginExclusive() {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
-	g.exclusiveWaiting++
-	defer func() { g.exclusiveWaiting-- }()
-	for g.adds > 0 || g.reads > 0 || g.exclusive {
+	g.exclusiveWaiters++
+	defer func() { g.exclusiveWaiters-- }()
+	for g.activeAdds > 0 || g.activeReads > 0 || g.exclusiveActive {
 		g.cond.Wait()
 	}
-	g.exclusive = true
+	g.exclusiveActive = true
 }
 
 func (g *postingsPhaseGate) endExclusive() {
 	g.mtx.Lock()
-	g.exclusive = false
+	g.exclusiveActive = false
 	g.cond.Broadcast()
 	g.mtx.Unlock()
 }
 
+// yieldExclusive briefly drops the exclusive phase during long Delete work.
+// Readers and adders that are blocked on the gate can run between batches.
+// beginExclusive is called again afterwards, so later readers and adders queue
+// behind the Delete instead of starving it.
 func (g *postingsPhaseGate) yieldExclusive() {
 	g.endExclusive()
 	time.Sleep(time.Millisecond)
@@ -148,8 +165,9 @@ type MemPostings struct {
 	// shards holds the postings lists for each label-value pair.
 	shards [memPostingsShardCount]memPostingsShard
 
-	// lvs holds the label values for each label name.
-	// The phase gate prevents readers from observing lvs while Adds are active.
+	// lvs holds all known values for each label name. It lets label-value
+	// queries avoid scanning every shard to discover values. Add updates lvs
+	// while readers are excluded by the phase gate.
 	lvsMtx sync.RWMutex
 	lvs    map[string][]string
 
@@ -510,7 +528,10 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 	return nil
 }
 
-// Add a label set to the postings index.
+// Add a label set to the postings index. The whole label set, including the
+// all-postings entry, is published in one Add phase. This keeps readers from
+// observing a series through one label matcher but not another matcher from the
+// same label set.
 func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 	p.gate.beginAdd()
 	defer p.gate.endAdd()
@@ -593,6 +614,9 @@ func (p *MemPostings) valueIndexesByShard(name string, values []string) ([]int, 
 	return valueIndexes, offsets
 }
 
+// postingsForLabelValues assumes the caller is in a read phase. Shard locks
+// protect shard-local postings, and the read phase protects the cross-shard
+// snapshot from overlapping a multi-label Add.
 func (p *MemPostings) postingsForLabelValues(name string, values []string) []*listPostings {
 	if len(values) == 0 {
 		return nil
@@ -622,6 +646,9 @@ func (p *MemPostings) postingsForLabelValues(name string, values []string) []*li
 	return its
 }
 
+// postingsForAllLabelValues assumes the caller is in a read phase. Shard locks
+// protect shard-local postings, and the read phase protects the cross-shard
+// snapshot from overlapping a multi-label Add.
 func (p *MemPostings) postingsForAllLabelValues(name string, valueCount int) []*listPostings {
 	its := make([]*listPostings, 0, valueCount)
 	lps := make([]listPostings, valueCount)
@@ -641,6 +668,9 @@ func (p *MemPostings) postingsForAllLabelValues(name string, valueCount int) []*
 	return its
 }
 
+// postingsForAllLabelValuesIfUnchanged enters a read phase and verifies that
+// the label-value slice captured before matching is still current before reading
+// postings for all values.
 func (p *MemPostings) postingsForAllLabelValuesIfUnchanged(ctx context.Context, name string, labelValues []string) (Postings, bool) {
 	p.gate.beginRead()
 	p.lvsMtx.RLock()

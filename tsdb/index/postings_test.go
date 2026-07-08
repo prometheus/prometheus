@@ -1512,6 +1512,85 @@ func BenchmarkMemPostings_Add(b *testing.B) {
 	}
 }
 
+func TestMemPostingsConcurrentReadDoesNotObservePartialAdd(t *testing.T) {
+	mp := NewMemPostings()
+	ctx := context.Background()
+
+	const seriesCount = 512
+	start := make(chan struct{})
+	done := make(chan struct{})
+	errCh := make(chan error, 1)
+	var writers sync.WaitGroup
+	writers.Add(seriesCount)
+	for i := 1; i <= seriesCount; i++ {
+		id := storage.SeriesRef(i)
+		value := strconv.Itoa(i)
+		go func() {
+			defer writers.Done()
+			<-start
+			mp.Add(id, labels.FromStrings("a", value, "b", value))
+		}()
+	}
+
+	checkSnapshot := func() error {
+		mp.gate.beginRead()
+		defer mp.gate.endRead()
+		for i := 1; i <= seriesCount; i++ {
+			value := strconv.Itoa(i)
+			aRefs, err := ExpandPostings(Merge(ctx, mp.postingsForLabelValues("a", []string{value})...))
+			if err != nil {
+				return err
+			}
+			bRefs, err := ExpandPostings(Merge(ctx, mp.postingsForLabelValues("b", []string{value})...))
+			if err != nil {
+				return err
+			}
+
+			aVisible := slices.Contains(aRefs, storage.SeriesRef(i))
+			bVisible := slices.Contains(bRefs, storage.SeriesRef(i))
+			if aVisible != bVisible {
+				return fmt.Errorf("series %d visible through only one label", i)
+			}
+		}
+		return nil
+	}
+
+	var readers sync.WaitGroup
+	for range 4 {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			<-start
+			for range 16 {
+				select {
+				case <-done:
+					return
+				default:
+				}
+
+				if err := checkSnapshot(); err != nil {
+					select {
+					case errCh <- err:
+					default:
+					}
+					return
+				}
+			}
+		}()
+	}
+
+	close(start)
+	writers.Wait()
+	close(done)
+	readers.Wait()
+
+	select {
+	case err := <-errCh:
+		require.NoError(t, err)
+	default:
+	}
+}
+
 func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
 	mp := NewMemPostings()
 	mp.Add(1, labels.FromStrings("foo", "1"))
