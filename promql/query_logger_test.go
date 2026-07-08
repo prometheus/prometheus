@@ -54,11 +54,11 @@ func (*shortQueryLogWriter) Sync() error {
 
 type syncErrorQueryLogWriter struct {
 	queryLogWriter
-	err error
+	syncErr error
 }
 
 func (w *syncErrorQueryLogWriter) Sync() error {
-	return w.err
+	return w.syncErr
 }
 
 func TestQueryLogging(t *testing.T) {
@@ -177,7 +177,7 @@ func TestAllocateQueryLogFileReturnsWriteErrors(t *testing.T) {
 }
 
 func TestAllocateQueryLogFileReturnsSyncError(t *testing.T) {
-	require.ErrorIs(t, allocateQueryLogFile(&syncErrorQueryLogWriter{err: os.ErrPermission}, 1), os.ErrPermission)
+	require.ErrorIs(t, allocateQueryLogFile(&syncErrorQueryLogWriter{syncErr: os.ErrPermission}, 1), os.ErrPermission)
 }
 
 func TestNewActiveQueryTrackerReturnsError(t *testing.T) {
