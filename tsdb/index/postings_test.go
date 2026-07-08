@@ -1520,15 +1520,13 @@ func TestMemPostingsConcurrentReadDoesNotObservePartialAdd(t *testing.T) {
 	start := make(chan struct{})
 	errCh := make(chan error, 1)
 	var writers sync.WaitGroup
-	writers.Add(seriesCount)
 	for i := 1; i <= seriesCount; i++ {
 		id := storage.SeriesRef(i)
 		value := strconv.Itoa(i)
-		go func() {
-			defer writers.Done()
+		writers.Go(func() {
 			<-start
 			mp.Add(id, labels.FromStrings("a", value, "b", value))
-		}()
+		})
 	}
 
 	checkSnapshot := func() error {
@@ -1556,9 +1554,7 @@ func TestMemPostingsConcurrentReadDoesNotObservePartialAdd(t *testing.T) {
 
 	var readers sync.WaitGroup
 	for range 4 {
-		readers.Add(1)
-		go func() {
-			defer readers.Done()
+		readers.Go(func() {
 			<-start
 			for range 16 {
 				if err := checkSnapshot(); err != nil {
@@ -1569,7 +1565,7 @@ func TestMemPostingsConcurrentReadDoesNotObservePartialAdd(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 
 	close(start)
