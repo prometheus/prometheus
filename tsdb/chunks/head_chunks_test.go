@@ -446,6 +446,8 @@ func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
 	require.NoError(t, hrw.Truncate(2000))
 }
 
+// TestHeadReadWriter_ReadRepairOnEmptyLastFile covers more than empty files.
+// Name kept for history context.
 func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 	t.Parallel()
 	hrw := createChunkDiskMapper(t, "")
