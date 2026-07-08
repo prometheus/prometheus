@@ -158,7 +158,7 @@ func getMMappedFile(filename string, filesize int, logger *slog.Logger) ([]byte,
 func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger *slog.Logger) (*ActiveQueryTracker, error) {
 	err := os.MkdirAll(localStoragePath, 0o777)
 	if err != nil {
-		logger.Error("Failed to create directory for logging active queries")
+		logger.Error("Failed to create directory for logging active queries", "err", err)
 		return nil, fmt.Errorf("create active query log directory: %w", err)
 	}
 
