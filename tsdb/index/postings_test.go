@@ -1518,7 +1518,6 @@ func TestMemPostingsConcurrentReadDoesNotObservePartialAdd(t *testing.T) {
 
 	const seriesCount = 512
 	start := make(chan struct{})
-	done := make(chan struct{})
 	errCh := make(chan error, 1)
 	var writers sync.WaitGroup
 	writers.Add(seriesCount)
@@ -1562,12 +1561,6 @@ func TestMemPostingsConcurrentReadDoesNotObservePartialAdd(t *testing.T) {
 			defer readers.Done()
 			<-start
 			for range 16 {
-				select {
-				case <-done:
-					return
-				default:
-				}
-
 				if err := checkSnapshot(); err != nil {
 					select {
 					case errCh <- err:
@@ -1581,7 +1574,6 @@ func TestMemPostingsConcurrentReadDoesNotObservePartialAdd(t *testing.T) {
 
 	close(start)
 	writers.Wait()
-	close(done)
 	readers.Wait()
 
 	select {
