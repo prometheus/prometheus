@@ -25,7 +25,7 @@ function copy() {
 
 function publish() {
   dry_run="${1}"
-  cmd="npm publish --access public"
+  cmd="npm publish --access public --tag oldstable"
   if [[ "${dry_run}" == "dry-run" ]]; then
     cmd+=" --dry-run"
   fi
