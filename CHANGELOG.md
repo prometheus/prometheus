@@ -2,6 +2,12 @@
 
 ## main / unreleased
 
+## 3.5.5 / 2026-07-09
+
+This release is built with Go 1.25.12 and fixes a security issue in a UI dependency.
+
+- [SECURITY] UI: Bump `sanitize-html` to v2.17.5 to fix CVE-2026-53606. #19060
+
 ## 3.5.4 / 2026-06-17
 
 This release fixes multiple security issues.
