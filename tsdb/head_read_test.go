@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/util/compression"
 )
 
 // TestMemSeries_chunk runs a series of tests on memSeries.chunk() calls.
@@ -497,47 +498,69 @@ func TestHeadIndexReader_PostingsForLabelMatching(t *testing.T) {
 	})
 }
 
+// newCacheTestHead creates a Head whose single series ("__name__"="test",
+// ref 1) has at least three head chunks and no mmapped chunks, and returns the
+// head, the series, and the ref of its newest head chunk (chunk IDs are stable
+// across truncation).
+func newCacheTestHead(t *testing.T) (*Head, *memSeries, chunks.HeadChunkRef) {
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 100
+	h, _ := newTestHeadWithOptions(t, compression.None, opts)
+
+	// Append enough samples to create multiple head chunks. With
+	// ChunkRange=100 and DefaultSamplesPerChunk=120, each chunk holds ~20
+	// samples (range/step = 100/5).
+	app := h.Appender(t.Context())
+	lbls := labels.FromStrings("__name__", "test")
+	for i := int64(0); i < 500; i += 5 {
+		_, err := app.Append(0, lbls, i, float64(i))
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	s := h.series.getByID(1)
+	require.NotNil(t, s)
+	// Snapshot values under the lock and assert after unlocking: a failing
+	// require while the series lock is held would deadlock the head Close in
+	// the test cleanup.
+	s.Lock()
+	headChunksLen := s.headChunks.len()
+	mmappedLen := len(s.mmappedChunks)
+	newestCID := s.firstChunkID + chunks.HeadChunkID(mmappedLen) + chunks.HeadChunkID(headChunksLen) - 1
+	newestRef := chunks.NewHeadChunkRef(s.ref, newestCID)
+	s.Unlock()
+	require.Greater(t, headChunksLen, 2, "need at least 3 head chunks for the test")
+	require.Zero(t, mmappedLen, "test requires a series with no mmapped chunks")
+
+	return h, s, newestRef
+}
+
 func TestHeadChunkReaderCache(t *testing.T) {
 	t.Run("cache_hit", func(t *testing.T) {
 		// Verify that a second chunk lookup for the same (unchanged) series
 		// returns the cached head-chunks slice without re-collecting.
-		opts := DefaultHeadOptions()
-		opts.ChunkRange = 100
-		opts.ChunkDirRoot = t.TempDir()
-		h, err := NewHead(nil, nil, nil, nil, opts, nil)
-		require.NoError(t, err)
-		t.Cleanup(func() { require.NoError(t, h.Close()) })
-
-		app := h.Appender(t.Context())
-		lbls := labels.FromStrings("__name__", "test")
-		for i := int64(0); i < 500; i += 5 {
-			_, err := app.Append(0, lbls, i, float64(i))
-			require.NoError(t, err)
-		}
-		require.NoError(t, app.Commit())
-
-		s := h.series.getByID(1)
-		require.NotNil(t, s)
-		s.Lock()
-		require.Greater(t, s.headChunks.len(), 1, "need multiple head chunks for the test")
-		newestCID := s.firstChunkID + chunks.HeadChunkID(len(s.mmappedChunks)) + chunks.HeadChunkID(s.headChunks.len()) - 1
-		newestRef := chunks.NewHeadChunkRef(s.ref, newestCID)
-		s.Unlock()
+		h, _, newestRef := newCacheTestHead(t)
 
 		cr, err := h.chunksRange(0, 10000, nil)
 		require.NoError(t, err)
-		cr.enableCache = true
+		cr.EnableChunkCache()
 
 		// First call: populates the cache.
 		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
 		require.NoError(t, err)
 		require.NotNil(t, cr.cachedHeadChunks)
-		cachedSlice := cr.cachedHeadChunks
 
-		// Second call (same series, no changes): must reuse the cached slice.
+		// Plant a sentinel: a cache hit returns the slice untouched, while a
+		// re-collection overwrites index 0 with the series' real oldest chunk.
+		// The newest-chunk lookup below never dereferences index 0, so the
+		// sentinel is safe.
+		sentinel := &memChunk{}
+		cr.cachedHeadChunks[0] = sentinel
+
+		// Second call (same series, no changes): must take the cache-hit path.
 		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
 		require.NoError(t, err)
-		require.Same(t, &cachedSlice[0], &cr.cachedHeadChunks[0], "expected cache hit — slice backing array should be identical")
+		require.Same(t, sentinel, cr.cachedHeadChunks[0], "expected cache hit — the cached slice should not have been re-collected")
 	})
 
 	t.Run("invalidated_after_mmap", func(t *testing.T) {
@@ -547,41 +570,16 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		// keeps the same head pointer, so a pointer-only check would return
 		// a stale cache with chunks that have been mmapped.
 
-		opts := DefaultHeadOptions()
-		opts.ChunkRange = 100
-		opts.ChunkDirRoot = t.TempDir()
-		h, err := NewHead(nil, nil, nil, nil, opts, nil)
-		require.NoError(t, err)
-		t.Cleanup(func() { require.NoError(t, h.Close()) })
-
-		// Append enough samples to create multiple head chunks.
-		// With ChunkRange=100 and DefaultSamplesPerChunk=120, each chunk
-		// holds ~20 samples (range/step = 100/5). We want >=3 head chunks.
-		app := h.Appender(t.Context())
-		lbls := labels.FromStrings("__name__", "test")
-		for i := int64(0); i < 500; i += 5 {
-			_, err := app.Append(0, lbls, i, float64(i))
-			require.NoError(t, err)
-		}
-		require.NoError(t, app.Commit())
-
-		// Look up the series and verify we have multiple head chunks.
-		s := h.series.getByID(1)
-		require.NotNil(t, s)
+		h, s, newestRef := newCacheTestHead(t)
 		s.Lock()
-		require.Greater(t, s.headChunks.len(), 1, "need multiple head chunks for the test")
 		headChunksLenBefore := s.headChunks.len()
 		newestChunkMinTime := s.headChunks.minTime
-		// The chunk ID for the newest head chunk:
-		// firstChunkID + len(mmapped) + headChunksLen - 1
-		newestCID := s.firstChunkID + chunks.HeadChunkID(len(s.mmappedChunks)) + chunks.HeadChunkID(s.headChunks.len()) - 1
-		newestRef := chunks.NewHeadChunkRef(s.ref, newestCID)
 		s.Unlock()
 
 		// Create a headChunkReader with cache enabled and query the newest head chunk to populate the cache.
 		cr, err := h.chunksRange(0, 10000, nil)
 		require.NoError(t, err)
-		cr.enableCache = true
+		cr.EnableChunkCache()
 
 		chk1, _, err := cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
 		require.NoError(t, err)
@@ -591,18 +589,23 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		require.NotNil(t, cr.cachedHeadChunks)
 		require.Len(t, cr.cachedHeadChunks, headChunksLenBefore)
 
-		// Now mmap all but the newest head chunk — this severs the linked list.
+		// Now mmap all but the newest head chunk — this severs the linked
+		// list. Snapshot under the lock, assert after unlocking (a failing
+		// require under the series lock would deadlock the cleanup's Close).
 		s.Lock()
 		headPtrBefore := s.headChunks
 		s.mmapChunks(h.chunkDiskMapper)
-		require.Equal(t, 1, s.headChunks.len(), "after mmap, should have exactly 1 head chunk")
-		require.Same(t, headPtrBefore, s.headChunks, "head pointer should not change (the bug scenario)")
-		require.Equal(t, newestChunkMinTime, s.headChunks.minTime, "newest chunk should be the remaining head chunk")
-
+		headChunksLenAfter := s.headChunks.len()
+		headPtrAfter := s.headChunks
+		newestMinTimeAfter := s.headChunks.minTime
 		// Recompute the newest chunk ID after mmap: more mmapped chunks now.
-		newestCID = s.firstChunkID + chunks.HeadChunkID(len(s.mmappedChunks)) + chunks.HeadChunkID(s.headChunks.len()) - 1
+		newestCID := s.firstChunkID + chunks.HeadChunkID(len(s.mmappedChunks)) + chunks.HeadChunkID(s.headChunks.len()) - 1
 		newestRef = chunks.NewHeadChunkRef(s.ref, newestCID)
 		s.Unlock()
+
+		require.Equal(t, 1, headChunksLenAfter, "after mmap, should have exactly 1 head chunk")
+		require.Same(t, headPtrBefore, headPtrAfter, "mmapChunks must keep the head pointer — the precondition that would blind a pointer-only cache check")
+		require.Equal(t, newestChunkMinTime, newestMinTimeAfter, "newest chunk should be the remaining head chunk")
 
 		// Query the newest head chunk again. With the bug, the stale cache
 		// would be used and return a wrong (mmapped) chunk.
@@ -629,44 +632,16 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		// otherwise chunk IDs are resolved against the stale slice and the
 		// wrong chunk is returned.
 
-		opts := DefaultHeadOptions()
-		opts.ChunkRange = 100
-		opts.ChunkDirRoot = t.TempDir()
-		h, err := NewHead(nil, nil, nil, nil, opts, nil)
-		require.NoError(t, err)
-		t.Cleanup(func() { require.NoError(t, h.Close()) })
-
-		// Append enough samples to create multiple head chunks.
-		// With ChunkRange=100 and DefaultSamplesPerChunk=120, each chunk
-		// holds ~20 samples (range/step = 100/5). We want >=3 head chunks.
-		app := h.Appender(t.Context())
-		lbls := labels.FromStrings("__name__", "test")
-		for i := int64(0); i < 500; i += 5 {
-			_, err := app.Append(0, lbls, i, float64(i))
-			require.NoError(t, err)
-		}
-		require.NoError(t, app.Commit())
-
-		s := h.series.getByID(1)
-		require.NotNil(t, s)
-		// Snapshot values under the lock and assert after unlocking: a
-		// failing require while the series lock is held would deadlock the
-		// head Close in the test cleanup.
+		h, s, newestRef := newCacheTestHead(t)
 		s.Lock()
-		headChunksLen := s.headChunks.len()
-		mmappedLen := len(s.mmappedChunks)
 		newestChunkMinTime := s.headChunks.minTime
+		headChunksLenBefore := s.headChunks.len()
 		firstChunkIDBefore := s.firstChunkID
-		// Chunk IDs are stable across truncation, so this ref stays valid.
-		newestCID := firstChunkIDBefore + chunks.HeadChunkID(mmappedLen) + chunks.HeadChunkID(headChunksLen) - 1
-		newestRef := chunks.NewHeadChunkRef(s.ref, newestCID)
 		s.Unlock()
-		require.Greater(t, headChunksLen, 2, "need at least 3 head chunks for the test")
-		require.Zero(t, mmappedLen, "test requires a series with no mmapped chunks")
 
 		cr, err := h.chunksRange(0, 10000, nil)
 		require.NoError(t, err)
-		cr.enableCache = true
+		cr.EnableChunkCache()
 
 		// First call: populates the cache.
 		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
@@ -674,7 +649,9 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		require.NotNil(t, cr.cachedHeadChunks)
 
 		// Truncate the oldest head chunk: the head pointer and the mmapped
-		// chunk count (0) are unchanged, but firstChunkID advances.
+		// chunk count (0) are unchanged, but firstChunkID advances. Snapshot
+		// under the lock, assert after unlocking (a failing require under the
+		// series lock would deadlock the cleanup's Close).
 		s.Lock()
 		headPtrBefore := s.headChunks
 		oldestMaxTime := s.headChunks.oldest().maxTime
@@ -694,12 +671,74 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		chk, _, err := cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
 		require.NoError(t, err)
 		require.NotNil(t, chk)
-		require.Len(t, cr.cachedHeadChunks, headChunksLen-1, "the stale cache must be re-collected after truncation")
+		require.Len(t, cr.cachedHeadChunks, headChunksLenBefore-1, "the stale cache must be re-collected after truncation")
 
 		it := chk.Iterator(nil)
 		require.Equal(t, chunkenc.ValFloat, it.Next())
 		ts, _ := it.At()
 		require.Equal(t, newestChunkMinTime, ts, "returned chunk should be the newest head chunk, not a stale cached entry")
+	})
+
+	t.Run("cache_cap_release", func(t *testing.T) {
+		// The cache must not carry an oversized backing array from one series
+		// to the next (the headChunksBufMaxCap policy).
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 1
+		h, _ := newTestHeadWithOptions(t, compression.None, opts)
+
+		// The big series gets more than headChunksBufMaxCap head chunks
+		// (ChunkRange=1 cuts a chunk per sample); the small series a few.
+		app := h.Appender(t.Context())
+		big := labels.FromStrings("__name__", "big")
+		small := labels.FromStrings("__name__", "small")
+		for i := range int64(headChunksBufMaxCap) + 10 {
+			_, err := app.Append(0, big, i, float64(i))
+			require.NoError(t, err)
+		}
+		for i := range int64(5) {
+			_, err := app.Append(0, small, i, float64(i))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+
+		bigSeries := h.series.getByHash(big.Hash(), big)
+		require.NotNil(t, bigSeries)
+		smallSeries := h.series.getByHash(small.Hash(), small)
+		require.NotNil(t, smallSeries)
+
+		cr, err := h.chunksRange(0, 10000, nil)
+		require.NoError(t, err)
+		cr.EnableChunkCache()
+
+		// Populate the cache with the big series: its cap exceeds the bound.
+		bigRef := chunks.NewHeadChunkRef(bigSeries.ref, bigSeries.firstChunkID)
+		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(bigRef)}, false)
+		require.NoError(t, err)
+		require.Greater(t, cap(cr.cachedHeadChunks), headChunksBufMaxCap)
+
+		// Switching to the small series must release the oversized array and
+		// pre-size the replacement from the series' chunk count.
+		smallRef := chunks.NewHeadChunkRef(smallSeries.ref, smallSeries.firstChunkID)
+		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(smallRef)}, false)
+		require.NoError(t, err)
+		require.LessOrEqual(t, cap(cr.cachedHeadChunks), headChunksBufMaxCap)
+	})
+
+	t.Run("released_on_close", func(t *testing.T) {
+		// A closed reader must retain no cache key or chunk data.
+		h, _, newestRef := newCacheTestHead(t)
+
+		cr, err := h.chunksRange(0, 10000, nil)
+		require.NoError(t, err)
+		cr.EnableChunkCache()
+
+		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
+		require.NoError(t, err)
+		require.NotNil(t, cr.cachedHeadChunks)
+
+		require.NoError(t, cr.Close())
+		require.Equal(t, headChunkCacheKey{}, cr.cachedKey)
+		require.Nil(t, cr.cachedHeadChunks)
 	})
 
 	t.Run("buffer_cap_release", func(t *testing.T) {

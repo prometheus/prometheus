@@ -2787,10 +2787,12 @@ func (mc *memChunk) len() (count int) {
 	return count
 }
 
+// collectHeadChunks walks the headChunks linked list once and returns a slice
+// in oldest-first order (matching mmappedChunks ordering).
+// buf must have length 0 but may have non-zero capacity for reuse; the
+// returned slice's tail beyond its length is zeroed, so a reused, shrinking
+// buffer does not pin chunks from a previous, longer collection.
 func collectHeadChunks(head *memChunk, buf []*memChunk) []*memChunk {
-	if head == nil {
-		return buf
-	}
 	// Single walk: append newest-to-oldest (following prev pointers), then
 	// reverse to oldest-to-newest. Pointer-chasing the linked list is the
 	// expensive part; slices.Reverse on a contiguous array is essentially
@@ -2800,6 +2802,7 @@ func collectHeadChunks(head *memChunk, buf []*memChunk) []*memChunk {
 		hc = append(hc, elem)
 	}
 	slices.Reverse(hc)
+	clear(hc[len(hc):cap(hc)])
 	return hc
 }
 
