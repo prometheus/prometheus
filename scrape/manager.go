@@ -214,7 +214,7 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 		select {
 		case ts, ok := <-tsets:
 			if !ok {
-				break
+				return nil
 			}
 			m.updateTsets(ts)
 
