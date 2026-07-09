@@ -1045,8 +1045,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			if ms.headChunkCount.Load() >= 2 {
 				h.series.decMmapReady(ms.ref)
 			}
-			ms.headChunks = nil
-			ms.headChunkCount.Store(0)
+			ms.setHeadChunks(nil, 0)
 			ms.app = nil
 		}
 		return nil
@@ -2631,9 +2630,8 @@ type memSeries struct {
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
-	// headChunkCount tracks the number of head chunks.
-	// It is incremented in cutNewHeadChunk and the histogram new-chunk paths,
-	// and reset by mmapChunks and truncateChunksBefore.
+	// headChunkCount tracks the number of head chunks. All mutations of the
+	// headChunks/headChunkCount pair go through pushHeadChunk and setHeadChunks.
 	// Chunk counts are bounded by the 3-byte field in HeadChunkRef, so cannot overflow uint32.
 	// Explicitly uses sync/atomic.Uint32 (4 bytes) to fit in the existing padding
 	// between two bools and a float64.
@@ -2698,6 +2696,26 @@ func (s *memSeries) maxTime() int64 {
 	return math.MinInt64
 }
 
+// pushHeadChunk prepends chk to the head-chunk list, keeping headChunkCount in
+// sync with the list length. The invariant is that headChunkCount equals the
+// list length whenever the series lock is released; direct prev unlinks
+// (mmapChunks, truncateChunksBefore) must be immediately paired with a
+// setHeadChunks call.
+func (s *memSeries) pushHeadChunk(chk *memChunk) *memChunk {
+	chk.prev = s.headChunks
+	s.headChunks = chk
+	s.headChunkCount.Add(1)
+	return chk
+}
+
+// setHeadChunks replaces the head-chunk list with head, which must be a list
+// of count chunks, keeping headChunkCount in sync with the list length. See
+// pushHeadChunk for the invariant.
+func (s *memSeries) setHeadChunks(head *memChunk, count uint32) {
+	s.headChunks = head
+	s.headChunkCount.Store(count)
+}
+
 // truncateChunksBefore removes all chunks from the series that
 // have no timestamp at or after mint.
 // Chunk IDs remain unchanged.
@@ -2714,12 +2732,11 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 				s.firstChunkID += chunks.HeadChunkID(removedInOrder)
 				if i == 0 {
 					// This is the first chunk on the list so we need to remove the entire list.
-					s.headChunks = nil
-					s.headChunkCount.Store(0)
+					s.setHeadChunks(nil, 0)
 				} else {
 					// This is NOT the first chunk, unlink it from parent.
 					nextChk.prev = nil
-					s.headChunkCount.Store(i)
+					s.setHeadChunks(s.headChunks, i)
 				}
 				s.mmappedChunks = nil
 				break
