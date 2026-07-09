@@ -2065,6 +2065,7 @@ func (h *Head) onChunkCreated(series *memSeries, prevHeadChunkCount uint32) {
 // since holding the lock during an append could delay the next scrape or cause query timeouts.
 func (h *Head) mmapHeadChunks() {
 	var count int
+	var buf []*memChunk // Reusable scratch buffer for mmapChunks.
 	for i := range h.series.size {
 		if h.series.mmapReady[i].Load() == 0 {
 			continue // No series in this stripe need mmapping.
@@ -2077,7 +2078,8 @@ func (h *Head) mmapHeadChunks() {
 			}
 
 			series.Lock()
-			n := series.mmapChunks(h.chunkDiskMapper)
+			var n int
+			n, buf = series.mmapChunks(h.chunkDiskMapper, buf)
 			series.Unlock()
 			if n > 0 {
 				count += n
@@ -2838,6 +2840,26 @@ func (mc *memChunk) len() (count int) {
 		elem = elem.prev
 	}
 	return count
+}
+
+// prepareHeadChunksBuf returns an empty reusable buffer sized for expectedLen.
+func prepareHeadChunksBuf(buf []*memChunk, expectedLen int) []*memChunk {
+	if expectedLen < 0 {
+		expectedLen = 0
+	}
+	if cap(buf) > headChunksBufMaxCap || cap(buf) < expectedLen {
+		return make([]*memChunk, 0, expectedLen)
+	}
+	return buf[:0]
+}
+
+// releaseHeadChunksBuf returns an empty reusable buffer, or nil if it is oversized.
+func releaseHeadChunksBuf(buf []*memChunk) []*memChunk {
+	if cap(buf) > headChunksBufMaxCap {
+		return nil
+	}
+	clear(buf[:cap(buf)])
+	return buf[:0]
 }
 
 // collectHeadChunks walks the headChunks linked list once and returns a slice
