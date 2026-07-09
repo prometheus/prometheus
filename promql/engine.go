@@ -2676,7 +2676,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 
 		vec := make(Vector, 0, len(vs.Series))
 
-		propagateSTs := e.Func.Name == "start_timestamp"
+		propagateSTs := e.Func.Name == "start_timestamp" && ev.useStartTimestamps
 
 		var sts []int64
 		if propagateSTs {
