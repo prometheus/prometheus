@@ -9091,8 +9091,10 @@ func TestHead_WALCheckpoint_FullRangeTombstones(t *testing.T) {
 	walEntries := []any{
 		[]record.RefSeries{{Ref: 1, Labels: lbls1}, {Ref: 2, Labels: lbls2}},
 		[]record.RefSample{
-			{Ref: 1, T: 100, V: 1}, {Ref: 1, T: 500, V: 2},
-			{Ref: 2, T: 100, V: 3}, {Ref: 2, T: 200, V: 4},
+			{Ref: 1, T: 100, V: 1},
+			{Ref: 1, T: 500, V: 2},
+			{Ref: 2, T: 100, V: 3},
+			{Ref: 2, T: 200, V: 4},
 		},
 		[]tombstones.Stone{
 			{Ref: 1, Intervals: fullRange},
