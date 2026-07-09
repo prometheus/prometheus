@@ -2144,9 +2144,14 @@ func (h *Head) onChunkCreated(series *memSeries, prevHeadChunkCount uint32) {
 // since holding the lock during an append could delay the next scrape or cause query timeouts.
 func (h *Head) mmapHeadChunks() {
 	var count int
+	var mmapScratch headChunksScratch
 	for i := range h.series.size {
-		count += h.mmapHeadChunksInStripe(i)
+		if h.series.mmapReady[i].Load() == 0 {
+			continue // No series in this stripe need mmapping.
+		}
+		count += h.mmapHeadChunksInStripe(i, &mmapScratch)
 	}
+	mmapScratch.release()
 	h.metrics.mmapChunksTotal.Add(float64(count))
 }
 
@@ -2154,11 +2159,7 @@ func (h *Head) mmapHeadChunks() {
 // need it. It uses deferred unlocking so that locks are released even if
 // mmapChunks panics (e.g. via handleChunkWriteError), preventing deadlocks
 // during cleanup.
-func (h *Head) mmapHeadChunksInStripe(i int) (count int) {
-	if h.series.mmapReady[i].Load() == 0 {
-		return 0 // No series in this stripe need mmapping.
-	}
-
+func (h *Head) mmapHeadChunksInStripe(i int, mmapScratch *headChunksScratch) (count int) {
 	h.series.locks[i].RLock()
 	defer h.series.locks[i].RUnlock()
 
@@ -2166,7 +2167,7 @@ func (h *Head) mmapHeadChunksInStripe(i int) (count int) {
 		if series.headChunkCount.Load() < 2 { // < 2 means 0 or 1 head chunks, nothing to mmap.
 			continue
 		}
-		n := h.mmapSeriesChunks(series)
+		n := h.mmapSeriesChunks(series, mmapScratch)
 		if n > 0 {
 			count += n
 			h.series.decMmapReady(series.ref)
@@ -2175,10 +2176,10 @@ func (h *Head) mmapHeadChunksInStripe(i int) (count int) {
 	return count
 }
 
-func (h *Head) mmapSeriesChunks(s *memSeries) int {
+func (h *Head) mmapSeriesChunks(s *memSeries, mmapScratch *headChunksScratch) int {
 	s.Lock()
 	defer s.Unlock()
-	return s.mmapChunks(h.chunkDiskMapper)
+	return s.mmapChunks(h.chunkDiskMapper, mmapScratch)
 }
 
 // seriesHashmap lets TSDB find a memSeries by its label set, via a 64-bit hash.
@@ -3036,6 +3037,40 @@ func (mc *memChunk) len() (count int) {
 		elem = elem.prev
 	}
 	return count
+}
+
+type headChunksScratch struct {
+	buf     []*memChunk
+	storage [1]*memChunk
+}
+
+func (b *headChunksScratch) prepare(expectedLen int) []*memChunk {
+	if cap(b.buf) == 0 && expectedLen <= len(b.storage) {
+		b.buf = b.storage[:0]
+	}
+	if cap(b.buf) > headChunksBufMaxCap || cap(b.buf) < expectedLen {
+		b.buf = make([]*memChunk, expectedLen)
+	} else {
+		b.buf = b.buf[:expectedLen]
+	}
+	return b.buf
+}
+
+func (b *headChunksScratch) reuse(buf []*memChunk) {
+	if cap(buf) > headChunksBufMaxCap {
+		b.buf = nil
+		return
+	}
+	b.buf = buf[:0]
+}
+
+func (b *headChunksScratch) release() {
+	if cap(b.buf) > headChunksBufMaxCap {
+		b.buf = nil
+		return
+	}
+	clear(b.buf[:cap(b.buf)])
+	b.buf = b.buf[:0]
 }
 
 // collectHeadChunks walks the headChunks linked list once and returns a slice
