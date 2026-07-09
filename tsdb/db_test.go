@@ -3651,6 +3651,36 @@ func TestNoPanicOnTSDBOpenError(t *testing.T) {
 	require.NoError(t, l.Release())
 }
 
+func TestNoGoroutineLeakOnTSDBOpenError(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a WAL directory with a valid segment so that wlog.NewSize() succeeds
+	// and starts its run() goroutine.
+	walDir := filepath.Join(dir, "wal")
+	require.NoError(t, os.MkdirAll(walDir, 0o777))
+	w, err := wlog.NewSize(nil, nil, walDir, 32768, compression.None)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	// Create a corrupt chunks_head file with an invalid magic number.
+	// This will cause NewChunkDiskMapper.openMMapFiles() to fail,
+	// which in turn causes NewHead() to fail.
+	chunksDir := filepath.Join(dir, "chunks_head")
+	require.NoError(t, os.MkdirAll(chunksDir, 0o777))
+	require.NoError(t, os.WriteFile(filepath.Join(chunksDir, "000001"), []byte{0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x00, 0x00, 0x00}, 0o666))
+
+	opts := DefaultOptions()
+	opts.HeadChunksWriteQueueSize = 1000
+
+	_, err = Open(dir, nil, nil, opts, nil)
+	require.Error(t, err)
+
+	// Verify that no goroutines were leaked. Without proper cleanup,
+	// wlog.(*WL).run and chunks.(*chunkWriteQueue).start.func1 goroutines
+	// would remain running after the failed Open().
+	goleak.VerifyNone(t)
+}
+
 func TestLockfile(t *testing.T) {
 	tsdbutil.TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*tsdbutil.DirLocker, testutil.Closer) {
 		opts := DefaultOptions()
@@ -3958,11 +3988,11 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier(t *test
 
 	// Start OOO head compaction.
 	compactionComplete := atomic.NewBool(false)
+	compactionErr := make(chan error, 1)
 	go func() {
 		defer compactionComplete.Store(true)
 
-		require.NoError(t, db.CompactOOOHead(ctx))
-		require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
+		compactionErr <- db.CompactOOOHead(ctx)
 	}()
 
 	// Give CompactOOOHead time to start work.
@@ -4002,7 +4032,12 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier(t *test
 
 	require.False(t, compactionComplete.Load(), "compaction completed before closing querier created before compaction")
 	require.NoError(t, querierCreatedBeforeCompaction.Close())
-	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier created before compaction was closed, and not wait for querier created after compaction")
+	// CompactOOOHead only re-checks for pending readers every 500ms and still has
+	// to garbage collect chunks and truncate the WBL after it notices the close,
+	// so give slow runners plenty of time beyond the poll interval.
+	require.Eventually(t, compactionComplete.Load, time.Minute, 10*time.Millisecond, "compaction should complete after querier created before compaction was closed, and not wait for querier created after compaction")
+	require.NoError(t, <-compactionErr)
+	require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
 
 	// Use the querier created after compaction and confirm it returns the expected results (ie. from the disk block created from OOO head and in-order head) without error.
 	testQuerier(querierCreatedAfterCompaction)
@@ -4053,11 +4088,11 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterSelecting(t *testing.T) {
 
 	// Start OOO head compaction.
 	compactionComplete := atomic.NewBool(false)
+	compactionErr := make(chan error, 1)
 	go func() {
 		defer compactionComplete.Store(true)
 
-		require.NoError(t, db.CompactOOOHead(ctx))
-		require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
+		compactionErr <- db.CompactOOOHead(ctx)
 	}()
 
 	// Give CompactOOOHead time to start work.
@@ -4085,7 +4120,12 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterSelecting(t *testing.T) {
 
 	require.False(t, compactionComplete.Load(), "compaction completed before closing querier")
 	require.NoError(t, querier.Close())
-	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier was closed")
+	// CompactOOOHead only re-checks for pending readers every 500ms and still has
+	// to garbage collect chunks and truncate the WBL after it notices the close,
+	// so give slow runners plenty of time beyond the poll interval.
+	require.Eventually(t, compactionComplete.Load, time.Minute, 10*time.Millisecond, "compaction should complete after querier was closed")
+	require.NoError(t, <-compactionErr)
+	require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
 }
 
 func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators(t *testing.T) {
@@ -4141,11 +4181,11 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators(t *te
 
 	// Start OOO head compaction.
 	compactionComplete := atomic.NewBool(false)
+	compactionErr := make(chan error, 1)
 	go func() {
 		defer compactionComplete.Store(true)
 
-		require.NoError(t, db.CompactOOOHead(ctx))
-		require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
+		compactionErr <- db.CompactOOOHead(ctx)
 	}()
 
 	// Give CompactOOOHead time to start work.
@@ -4164,7 +4204,12 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators(t *te
 
 	require.False(t, compactionComplete.Load(), "compaction completed before closing querier")
 	require.NoError(t, querier.Close())
-	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier was closed")
+	// CompactOOOHead only re-checks for pending readers every 500ms and still has
+	// to garbage collect chunks and truncate the WBL after it notices the close,
+	// so give slow runners plenty of time beyond the poll interval.
+	require.Eventually(t, compactionComplete.Load, time.Minute, 10*time.Millisecond, "compaction should complete after querier was closed")
+	require.NoError(t, <-compactionErr)
+	require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
 }
 
 func TestOOOWALWrite(t *testing.T) {

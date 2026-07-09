@@ -582,8 +582,7 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	if mSeries.headChunkCount.Load() >= 2 {
 		h.series.decMmapReady(mSeries.ref)
 	}
-	mSeries.headChunks = nil
-	mSeries.headChunkCount.Store(0)
+	mSeries.setHeadChunks(nil, 0)
 	mSeries.app = nil
 	return overlapped
 }
@@ -1699,9 +1698,8 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 					continue
 				}
 				series.nextAt = csr.mc.maxTime // This will create a new chunk on append.
-				series.headChunks = csr.mc
 				chunkCount := uint32(csr.mc.len())
-				series.headChunkCount.Store(chunkCount)
+				series.setHeadChunks(csr.mc, chunkCount)
 				if chunkCount >= 2 {
 					h.series.incMmapReady(series.ref)
 				}

@@ -882,12 +882,12 @@ outer:
 			default:
 			}
 			if t.shards.enqueue(h.Ref, timeSeries{
-				seriesLabels: lbls,
-				metadata:     meta,
-				// TODO(bwplotka): Populate ST once histogram Ref has it.
-				timestamp: h.T,
-				histogram: h.H,
-				sType:     tHistogram,
+				seriesLabels:   lbls,
+				metadata:       meta,
+				startTimestamp: h.ST,
+				timestamp:      h.T,
+				histogram:      h.H,
+				sType:          tHistogram,
 			}) {
 				continue outer
 			}
@@ -944,9 +944,9 @@ outer:
 			default:
 			}
 			if t.shards.enqueue(h.Ref, timeSeries{
-				seriesLabels: lbls,
-				metadata:     meta,
-				// TODO(bwplotka): Populate ST once histogram Ref has it.
+				seriesLabels:   lbls,
+				metadata:       meta,
+				startTimestamp: h.ST,
 				timestamp:      h.T,
 				floatHistogram: h.FH,
 				sType:          tFloatHistogram,
@@ -2010,12 +2010,10 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			})
 			nPendingExemplars++
 		case tHistogram:
-			// TODO(bwplotka): Extend with ST once histograms populate it.
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromIntHistogram(d.timestamp, d.histogram))
+			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromIntHistogram(d.startTimestamp, d.timestamp, d.histogram))
 			nPendingHistograms++
 		case tFloatHistogram:
-			// TODO(bwplotka): Extend with ST once histograms populate it.
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromFloatHistogram(d.timestamp, d.floatHistogram))
+			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromFloatHistogram(d.startTimestamp, d.timestamp, d.floatHistogram))
 			nPendingHistograms++
 		case tMetadata:
 			nUnexpectedMetadata++

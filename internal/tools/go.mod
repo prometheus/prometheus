@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus/internal/tools
 
-go 1.25.7
+go 1.25.8
 
 require (
 	github.com/bufbuild/buf v1.65.0
