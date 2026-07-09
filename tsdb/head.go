@@ -2355,7 +2355,8 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		h.series.hashes[hashStripe].del(hash, series.ref)
 		h.series.locks[hashStripe].Unlock()
 
-		// Keep the series record in WAL checkpoints while the WAL still contains its samples.
+		// Keep the series record in checkpoints until its last sample time; while the
+		// WAL may still hold samples for this ref, they can't outlive maxt.
 		if h.wal != nil {
 			if maxt := series.maxTime(); maxt != math.MinInt64 {
 				h.updateWALExpiry(series.ref, maxt)
