@@ -477,8 +477,9 @@ type headChunkReader struct {
 	// iterating all chunks of a series oldest-to-newest.
 	cachedSeriesRef      storage.SeriesRef
 	cachedHeadChunks     []*memChunk
-	cachedHeadChunksHead *memChunk // Head pointer at collection time; detects head-chunk replacement.
-	cachedMmapLen        int       // len(s.mmappedChunks) at collection time; detects mmap events.
+	cachedHeadChunksHead *memChunk          // Head pointer at collection time; detects head-chunk replacement.
+	cachedMmapLen        int                // len(s.mmappedChunks) at collection time; detects mmap events.
+	cachedFirstChunkID   chunks.HeadChunkID // s.firstChunkID at collection time; detects truncation.
 }
 
 func (h *headChunkReader) Close() error {
@@ -488,6 +489,10 @@ func (h *headChunkReader) Close() error {
 	return nil
 }
 
+// getOrCollectHeadChunks returns the cached head-chunk slice for s, collecting
+// it first if the cache does not match the series' current chunk layout.
+// The series lock must be held; the fingerprint comparison is only consistent
+// against concurrent appends, mmapping, and truncation under that lock.
 func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 	// Skip if the cache is disabled (instant queries) or there are no head chunks or there's only one.
 	if !h.enableCache || s.headChunks == nil || s.headChunks.prev == nil {
@@ -495,7 +500,8 @@ func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 	}
 
 	ref := storage.SeriesRef(s.ref)
-	if ref == h.cachedSeriesRef && s.headChunks == h.cachedHeadChunksHead && h.cachedMmapLen == len(s.mmappedChunks) {
+	if ref == h.cachedSeriesRef && s.headChunks == h.cachedHeadChunksHead &&
+		h.cachedMmapLen == len(s.mmappedChunks) && h.cachedFirstChunkID == s.firstChunkID {
 		return h.cachedHeadChunks
 	}
 
@@ -509,6 +515,7 @@ func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 	h.cachedSeriesRef = ref
 	h.cachedHeadChunksHead = s.headChunks
 	h.cachedMmapLen = len(s.mmappedChunks)
+	h.cachedFirstChunkID = s.firstChunkID
 	return h.cachedHeadChunks
 }
 

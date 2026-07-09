@@ -621,6 +621,87 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		require.Equal(t, newestChunkMinTime, ts, "returned chunk should be the newest head chunk, not a stale cached entry")
 	})
 
+	t.Run("invalidated_after_truncation", func(t *testing.T) {
+		// Regression test: truncateChunksBefore can remove older head chunks
+		// while keeping the same head pointer and, for a series with no
+		// mmapped chunks, the same mmapped-chunk count — only firstChunkID
+		// advances. The cache must fingerprint firstChunkID as well,
+		// otherwise chunk IDs are resolved against the stale slice and the
+		// wrong chunk is returned.
+
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 100
+		opts.ChunkDirRoot = t.TempDir()
+		h, err := NewHead(nil, nil, nil, nil, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, h.Close()) })
+
+		// Append enough samples to create multiple head chunks.
+		// With ChunkRange=100 and DefaultSamplesPerChunk=120, each chunk
+		// holds ~20 samples (range/step = 100/5). We want >=3 head chunks.
+		app := h.Appender(t.Context())
+		lbls := labels.FromStrings("__name__", "test")
+		for i := int64(0); i < 500; i += 5 {
+			_, err := app.Append(0, lbls, i, float64(i))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+
+		s := h.series.getByID(1)
+		require.NotNil(t, s)
+		// Snapshot values under the lock and assert after unlocking: a
+		// failing require while the series lock is held would deadlock the
+		// head Close in the test cleanup.
+		s.Lock()
+		headChunksLen := s.headChunks.len()
+		mmappedLen := len(s.mmappedChunks)
+		newestChunkMinTime := s.headChunks.minTime
+		firstChunkIDBefore := s.firstChunkID
+		// Chunk IDs are stable across truncation, so this ref stays valid.
+		newestCID := firstChunkIDBefore + chunks.HeadChunkID(mmappedLen) + chunks.HeadChunkID(headChunksLen) - 1
+		newestRef := chunks.NewHeadChunkRef(s.ref, newestCID)
+		s.Unlock()
+		require.Greater(t, headChunksLen, 2, "need at least 3 head chunks for the test")
+		require.Zero(t, mmappedLen, "test requires a series with no mmapped chunks")
+
+		cr, err := h.chunksRange(0, 10000, nil)
+		require.NoError(t, err)
+		cr.enableCache = true
+
+		// First call: populates the cache.
+		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
+		require.NoError(t, err)
+		require.NotNil(t, cr.cachedHeadChunks)
+
+		// Truncate the oldest head chunk: the head pointer and the mmapped
+		// chunk count (0) are unchanged, but firstChunkID advances.
+		s.Lock()
+		headPtrBefore := s.headChunks
+		oldestMaxTime := s.headChunks.oldest().maxTime
+		s.truncateChunksBefore(oldestMaxTime+1, 0)
+		headPtrAfter := s.headChunks
+		mmappedLenAfter := len(s.mmappedChunks)
+		firstChunkIDAfter := s.firstChunkID
+		s.Unlock()
+
+		require.Same(t, headPtrBefore, headPtrAfter, "truncation must keep the head pointer")
+		require.Zero(t, mmappedLenAfter, "mmapped-chunk count must stay 0 so only firstChunkID distinguishes the truncated state")
+		require.Greater(t, firstChunkIDAfter, firstChunkIDBefore, "truncation should advance firstChunkID")
+
+		// Query the newest head chunk again. With a stale cache, the
+		// advanced firstChunkID indexes the old slice at the wrong position
+		// and returns an older chunk.
+		chk, _, err := cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
+		require.NoError(t, err)
+		require.NotNil(t, chk)
+		require.Len(t, cr.cachedHeadChunks, headChunksLen-1, "the stale cache must be re-collected after truncation")
+
+		it := chk.Iterator(nil)
+		require.Equal(t, chunkenc.ValFloat, it.Next())
+		ts, _ := it.At()
+		require.Equal(t, newestChunkMinTime, ts, "returned chunk should be the newest head chunk, not a stale cached entry")
+	})
+
 	t.Run("buffer_cap_release", func(t *testing.T) {
 		// Test that headChunksBuf is released when its capacity exceeds
 		// headChunksBufMaxCap, preventing unbounded memory retention.
