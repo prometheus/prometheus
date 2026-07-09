@@ -313,9 +313,13 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			if err != nil {
 				return nil, fmt.Errorf("decode deletes: %w", err)
 			}
-			// Drop irrelevant tombstones in place.
+			// Drop irrelevant tombstones in place. A tombstone is dropped together with
+			// its series record, or once all its intervals age out of the WAL.
 			repl := tstones[:0]
 			for _, s := range tstones {
+				if !keep(chunks.HeadSeriesRef(s.Ref)) {
+					continue
+				}
 				for _, iv := range s.Intervals {
 					if iv.Maxt >= mint {
 						repl = append(repl, s)
