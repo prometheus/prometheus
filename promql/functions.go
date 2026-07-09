@@ -1921,7 +1921,7 @@ func funcStartTimestamp(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh
 	vec := vectorVals[0]
 	var sts []int64
 	if enh.StartTimestamps != nil {
-		sts = enh.StartTimestamps.Vector
+		sts = enh.StartTimestamps.Floats
 	}
 	for i, el := range vec {
 		if !enh.enableDelayedNameRemoval {

@@ -2681,7 +2681,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 		var sts []int64
 		if propagateSTs {
 			if enh.StartTimestamps != nil {
-				sts = enh.StartTimestamps.Vector[:0]
+				sts = enh.StartTimestamps.Floats[:0]
 			}
 			sts = slices.Grow(sts, len(vs.Series))[:0]
 		}
@@ -2713,10 +2713,10 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 			if enh.StartTimestamps == nil {
 				enh.StartTimestamps = &StartTimestamps{}
 			}
-			enh.StartTimestamps.Vector = sts
+			enh.StartTimestamps.Floats = sts
 		} else if enh.StartTimestamps != nil {
 			// Clear the slice in case it wasn't empty.
-			enh.StartTimestamps.Vector = enh.StartTimestamps.Vector[:0]
+			enh.StartTimestamps.Floats = enh.StartTimestamps.Floats[:0]
 		}
 
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
