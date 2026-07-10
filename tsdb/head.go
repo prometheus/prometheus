@@ -2500,13 +2500,22 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		headChunkCount := series.headChunkCount.Load()
 		chunksRemoved += len(series.mmappedChunks)
 		chunksRemoved += int(headChunkCount)
+		if series.ooo != nil {
+			chunksRemoved += len(series.ooo.oooMmappedChunks)
+			if series.ooo.oooHeadChunk != nil {
+				chunksRemoved++
+			}
+		}
 		if headChunkCount >= 2 {
 			h.series.decMmapReady(series.ref)
 		}
-		// Clear to prevent a double-subtraction from the chunksRemoved gauge if
-		// resetSeriesWithMMappedChunks is queued on the same WAL-replay processor
-		// after this deletion (it would otherwise subtract len(mmappedChunks) again).
+		// Release all chunk data and keep the head-chunk list and count in sync.
+		// A stale reference may remain queued on this WAL-replay processor after
+		// the series has been removed from the lookup maps.
 		series.mmappedChunks = nil
+		series.setHeadChunks(nil, 0)
+		series.app = nil
+		series.ooo = nil
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		deletedForCallback[series.ref] = series.lset
