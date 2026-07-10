@@ -980,8 +980,8 @@ func TestHead_WALMultiRef(t *testing.T) {
 	}}, series)
 }
 
-// TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative is a regression test
-// for https://github.com/prometheus/prometheus/issues/10884.
+// TestHead_WALMultiRef_StaleDeletion_RecreatedSeriesSurvives is a regression
+// test for https://github.com/prometheus/prometheus/issues/10884.
 //
 // When a stale series is deleted via truncateStaleSeries (which writes a
 // [MinInt64, MaxInt64] tombstone to the WAL) and then re-created under the same
@@ -992,11 +992,10 @@ func TestHead_WALMultiRef(t *testing.T) {
 //	deleteSeriesByID(oldRef)           ← removes chunks from gauge
 //	reset(mSeries, newRef_chunks, newRef) ← was double-subtracting old chunks
 //
-// Without the fix, deleteSeriesByID removes M chunks from the gauge but leaves
-// series.mmappedChunks non-nil. The subsequent reset then subtracts those M
-// chunks a second time, driving prometheus_tsdb_head_chunks negative when M
-// exceeds the new series' chunk count.
-func TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative(t *testing.T) {
+// Without deletion ordering, the new series record can resolve to the old
+// object before its queued deletion is applied. The deletion then removes the
+// object, drops the new series' samples, and corrupts chunk accounting.
+func TestHead_WALMultiRef_StaleDeletion_RecreatedSeriesSurvives(t *testing.T) {
 	head, w := newTestHead(t, 1000, compression.None, false)
 	require.NoError(t, head.Init(0))
 
@@ -1022,16 +1021,24 @@ func TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative(t *testing.T) {
 	// [MinInt64, MaxInt64] tombstone record to the WAL.
 	require.NoError(t, head.truncateStaleSeries([]storage.SeriesRef{ref1}, 3500, math.MaxUint64))
 
-	// Append a single sample with the same labels to create ref2.
-	// Ref2 has 0 m-mapped chunks, fewer than ref1's 3.
+	// Re-create the series and produce both m-mapped and active head chunks.
 	ref2 := appendSample(5000, 5)
+	appendSample(6200, 6)
+	appendSample(7300, 7)
+	appendSample(8400, 8)
 	require.NotEqual(t, ref1, ref2, "refs must differ after stale truncation and recreation")
+	head.mmapHeadChunks()
+	ref2Series := head.series.getByID(chunks.HeadSeriesRef(ref2))
+	require.NotNil(t, ref2Series)
+	require.Len(t, ref2Series.mmappedChunks, 3, "test needs real m-mapped chunks on the re-created series")
+	require.NotNil(t, ref2Series.headChunks)
 
 	require.NoError(t, head.Close())
 
 	// Reopen the head to trigger WAL replay. The WAL contains (in order):
-	//   series(ref1) → tombstone(ref1, [MinInt64,MaxInt64]) → series(ref2) → sample(ref2)
-	// Without the fix, replay drives prometheus_tsdb_head_chunks negative.
+	//   series(ref1) → tombstone(ref1, [MinInt64,MaxInt64]) → series(ref2) → samples(ref2)
+	// The deletion must complete before ref2 is resolved so its samples and
+	// m-mapped chunks are attached to a live series object.
 	w, err := wlog.New(nil, nil, w.Dir(), compression.None)
 	require.NoError(t, err)
 	opts := DefaultHeadOptions()
@@ -1044,8 +1051,656 @@ func TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative(t *testing.T) {
 		require.NoError(t, head.Close())
 	}()
 
-	chunksGauge := prom_testutil.ToFloat64(head.metrics.chunks)
-	require.GreaterOrEqual(t, chunksGauge, 0.0, "prometheus_tsdb_head_chunks gauge must not be negative after WAL replay")
+	require.Equal(t, 1, int(head.NumSeries()))
+	q, err := NewBlockQuerier(head, 5000, 8400)
+	require.NoError(t, err)
+	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	require.Equal(t, map[string][]chunks.Sample{`{foo="bar"}`: {
+		sample{0, 5000, 5, nil, nil},
+		sample{0, 6200, 6, nil, nil},
+		sample{0, 7300, 7, nil, nil},
+		sample{0, 8400, 8, nil, nil},
+	}}, series)
+	require.Equal(t, 4.0, prom_testutil.ToFloat64(head.metrics.chunks),
+		"the chunk gauge must count only the re-created series' three m-mapped chunks and active head chunk")
+}
+
+func TestHead_WALReplayFullDeletionOrdering(t *testing.T) {
+	fullTombstone := func(ref storage.SeriesRef) tombstones.Stone {
+		return tombstones.Stone{Ref: ref, Intervals: tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}}
+	}
+
+	type testCase struct {
+		name     string
+		records  []any
+		expected map[string][]chunks.Sample
+	}
+	testCases := []testCase{
+		{
+			name: "duplicate series record after recreation",
+			records: []any{
+				[]record.RefSeries{{Ref: 1, Labels: labels.FromStrings("foo", "bar")}},
+				[]record.RefSample{{Ref: 1, T: 10, V: 1}, {Ref: 1, T: 20, V: 2}},
+				[]tombstones.Stone{fullTombstone(1)},
+				[]record.RefSeries{{Ref: 2, Labels: labels.FromStrings("foo", "bar")}},
+				[]record.RefSeries{{Ref: 3, Labels: labels.FromStrings("foo", "bar")}},
+				[]record.RefSample{{Ref: 3, T: 30, V: 3}},
+			},
+			expected: map[string][]chunks.Sample{`{foo="bar"}`: {sample{0, 30, 3, nil, nil}}},
+		},
+		{
+			name: "tombstone for duplicate series reference",
+			records: []any{
+				[]record.RefSeries{{Ref: 1, Labels: labels.FromStrings("foo", "bar")}},
+				[]record.RefSeries{{Ref: 2, Labels: labels.FromStrings("foo", "bar")}},
+				[]record.RefSample{{Ref: 2, T: 10, V: 1}},
+				[]tombstones.Stone{fullTombstone(2)},
+				[]record.RefSeries{{Ref: 3, Labels: labels.FromStrings("foo", "bar")}},
+				[]record.RefSample{{Ref: 3, T: 30, V: 3}},
+			},
+			expected: map[string][]chunks.Sample{`{foo="bar"}`: {sample{0, 30, 3, nil, nil}}},
+		},
+		{
+			name: "repeated and absent tombstones",
+			records: []any{
+				[]record.RefSeries{{Ref: 1, Labels: labels.FromStrings("foo", "bar")}},
+				[]record.RefSample{{Ref: 1, T: 10, V: 1}},
+				[]tombstones.Stone{fullTombstone(1)},
+				[]tombstones.Stone{fullTombstone(1), fullTombstone(99)},
+				[]record.RefSeries{{Ref: 2, Labels: labels.FromStrings("foo", "bar")}},
+				[]record.RefSample{{Ref: 2, T: 30, V: 3}},
+			},
+			expected: map[string][]chunks.Sample{`{foo="bar"}`: {sample{0, 30, 3, nil, nil}}},
+		},
+		{
+			name: "deletions across processor shards",
+			records: []any{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("foo", "a")},
+					{Ref: 2, Labels: labels.FromStrings("foo", "b")},
+				},
+				[]record.RefSample{{Ref: 1, T: 10, V: 1}, {Ref: 2, T: 10, V: 2}},
+				[]tombstones.Stone{fullTombstone(1), fullTombstone(2)},
+				[]record.RefSeries{
+					{Ref: 3, Labels: labels.FromStrings("foo", "a")},
+					{Ref: 4, Labels: labels.FromStrings("foo", "b")},
+				},
+				[]record.RefSample{{Ref: 3, T: 30, V: 3}, {Ref: 4, T: 30, V: 4}},
+			},
+			expected: map[string][]chunks.Sample{
+				`{foo="a"}`: {sample{0, 30, 3, nil, nil}},
+				`{foo="b"}`: {sample{0, 30, 4, nil, nil}},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, concurrency := range []int{1, defaultWALReplayConcurrency} {
+				t.Run(fmt.Sprintf("concurrency=%d", concurrency), func(t *testing.T) {
+					dir := t.TempDir()
+					wal, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
+					require.NoError(t, err)
+					populateTestWL(t, wal, tc.records, nil, false)
+
+					opts := DefaultHeadOptions()
+					opts.ChunkRange = 1000
+					opts.ChunkDirRoot = dir
+					opts.WALReplayConcurrency = concurrency
+					head, err := NewHead(nil, nil, wal, nil, opts, nil)
+					require.NoError(t, err)
+					require.NoError(t, head.Init(0))
+
+					require.Equal(t, len(tc.expected), int(head.NumSeries()))
+					q, err := NewBlockQuerier(head, 0, 100)
+					require.NoError(t, err)
+					actual := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".+"))
+					require.Equal(t, tc.expected, actual)
+					for _, recordType := range []string{"series", "samples", "exemplars", "histograms", "metadata", "tombstones"} {
+						require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.walReplayUnknownRefsTotal.WithLabelValues(recordType)),
+							"valid replay must not report unknown %s references", recordType)
+					}
+					require.NoError(t, head.Close())
+				})
+			}
+		})
+	}
+}
+
+type coordinatedReplayLifecycleCallback struct {
+	mtx          sync.Mutex
+	preCreations int
+	creations    int
+	deletions    int
+	preCreation  func(labels.Labels, int)
+	postCreation func(labels.Labels, int)
+	postDeletion func(map[chunks.HeadSeriesRef]labels.Labels)
+}
+
+func (c *coordinatedReplayLifecycleCallback) PreCreation(lset labels.Labels) error {
+	c.mtx.Lock()
+	c.preCreations++
+	preCreations := c.preCreations
+	preCreation := c.preCreation
+	c.mtx.Unlock()
+	if preCreation != nil {
+		preCreation(lset, preCreations)
+	}
+	return nil
+}
+
+func (c *coordinatedReplayLifecycleCallback) PostCreation(lset labels.Labels) {
+	c.mtx.Lock()
+	c.creations++
+	creations := c.creations
+	postCreation := c.postCreation
+	c.mtx.Unlock()
+	if postCreation != nil {
+		postCreation(lset, creations)
+	}
+}
+
+func (c *coordinatedReplayLifecycleCallback) PostDeletion(deleted map[chunks.HeadSeriesRef]labels.Labels) {
+	if len(deleted) == 0 {
+		return
+	}
+	c.mtx.Lock()
+	c.deletions++
+	postDeletion := c.postDeletion
+	c.mtx.Unlock()
+	if postDeletion != nil {
+		postDeletion(deleted)
+	}
+}
+
+func (c *coordinatedReplayLifecycleCallback) counts() (int, int, int) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	return c.preCreations, c.creations, c.deletions
+}
+
+func TestWALReplayPendingDeletions(t *testing.T) {
+	registry := newWALReplayPendingDeletions()
+	firstLabels := labels.FromStrings("series", "first")
+	secondLabels := labels.FromStrings("series", "second")
+	const collidingHash = 1
+
+	firstBarrier := &walReplayDeletionBarrier{done: make(chan struct{}), registry: registry}
+	secondBarrier := &walReplayDeletionBarrier{done: make(chan struct{}), registry: registry}
+	registry.add(collidingHash, firstLabels, firstBarrier)
+	registry.add(collidingHash, secondLabels, secondBarrier)
+
+	firstBarrier.complete()
+	registry.wait(collidingHash, firstLabels)
+	registry.mtx.Lock()
+	bucket := registry.byHash[collidingHash]
+	registry.mtx.Unlock()
+	require.Equal(t, walReplayPendingDeletion{lset: secondLabels, barrier: secondBarrier}, bucket.entry)
+	require.Empty(t, bucket.collisions)
+
+	replacementBarrier := &walReplayDeletionBarrier{done: make(chan struct{}), registry: registry}
+	registry.add(collidingHash, secondLabels, replacementBarrier)
+	secondBarrier.complete()
+	registry.mtx.Lock()
+	bucket = registry.byHash[collidingHash]
+	registry.mtx.Unlock()
+	require.Equal(t, walReplayPendingDeletion{lset: secondLabels, barrier: replacementBarrier}, bucket.entry,
+		"completing an older barrier must not remove its replacement")
+	require.Empty(t, bucket.collisions)
+
+	replacementBarrier.complete()
+	registry.wait(collidingHash, secondLabels)
+	registry.mtx.Lock()
+	require.Empty(t, registry.byHash)
+	registry.mtx.Unlock()
+}
+
+type gatedReplayExemplarStorage struct {
+	ExemplarStorage
+	timestamp int64
+	entered   chan struct{}
+	release   chan struct{}
+	once      sync.Once
+}
+
+func (s *gatedReplayExemplarStorage) AddExemplar(lset labels.Labels, e exemplar.Exemplar) error {
+	if e.Ts == s.timestamp {
+		s.once.Do(func() { close(s.entered) })
+		<-s.release
+	}
+	return s.ExemplarStorage.AddExemplar(lset, e)
+}
+
+func TestHead_WALReplayFullDeletionDrainsEarlierExemplars(t *testing.T) {
+	dir := t.TempDir()
+	wal, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
+	require.NoError(t, err)
+	lset := labels.FromStrings("foo", "bar")
+	populateTestWL(t, wal, []any{
+		[]record.RefSeries{{Ref: 1, Labels: lset}},
+		[]record.RefExemplar{{Ref: 1, T: 10, V: 1, Labels: labels.FromStrings("trace_id", "old")}},
+		[]tombstones.Stone{{Ref: 1, Intervals: tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}}},
+		[]record.RefSeries{{Ref: 2, Labels: lset}},
+		[]record.RefExemplar{{Ref: 2, T: 20, V: 2, Labels: labels.FromStrings("trace_id", "new")}},
+	}, nil, false)
+
+	callback := &coordinatedReplayLifecycleCallback{}
+	deletionStarted := make(chan struct{})
+	var signalDeletion sync.Once
+	callback.postDeletion = func(map[chunks.HeadSeriesRef]labels.Labels) {
+		signalDeletion.Do(func() { close(deletionStarted) })
+	}
+	opts := DefaultHeadOptions()
+	opts.ChunkDirRoot = dir
+	opts.WALReplayConcurrency = 1
+	opts.EnableExemplarStorage = true
+	opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
+	opts.SeriesCallback = callback
+	head, err := NewHead(nil, nil, wal, nil, opts, nil)
+	require.NoError(t, err)
+
+	exemplarEntered := make(chan struct{})
+	allowExemplar := make(chan struct{})
+	var releaseExemplar sync.Once
+	release := func() { releaseExemplar.Do(func() { close(allowExemplar) }) }
+	t.Cleanup(release)
+	head.exemplars = &gatedReplayExemplarStorage{
+		ExemplarStorage: head.exemplars,
+		timestamp:       10,
+		entered:         exemplarEntered,
+		release:         allowExemplar,
+	}
+	drainHookEntered := make(chan (<-chan struct{}), 1)
+	allowDrainHook := make(chan struct{})
+	var releaseDrainHook sync.Once
+	releaseHook := func() { releaseDrainHook.Do(func() { close(allowDrainHook) }) }
+	t.Cleanup(releaseHook)
+	head.walReplayExemplarDrainHook = func(done <-chan struct{}) {
+		drainHookEntered <- done
+		<-allowDrainHook
+	}
+
+	initDone := make(chan error, 1)
+	go func() {
+		initDone <- head.Init(0)
+	}()
+
+	select {
+	case <-exemplarEntered:
+	case <-time.After(10 * time.Second):
+		releaseHook()
+		release()
+		initErr := <-initDone
+		require.NoError(t, initErr)
+		require.NoError(t, head.Close())
+		require.FailNow(t, "timed out waiting for the earlier exemplar")
+	}
+	var exemplarDrainDone <-chan struct{}
+	select {
+	case exemplarDrainDone = <-drainHookEntered:
+	case <-time.After(10 * time.Second):
+		releaseHook()
+		release()
+		initErr := <-initDone
+		require.NoError(t, initErr)
+		require.NoError(t, head.Close())
+		require.FailNow(t, "timed out waiting for the exemplar drain marker")
+	}
+	select {
+	case <-exemplarDrainDone:
+		require.Fail(t, "the drain marker completed before the earlier exemplar")
+	default:
+	}
+	select {
+	case <-deletionStarted:
+		require.Fail(t, "deletion started before the earlier exemplar was drained")
+	default:
+	}
+
+	releaseHook()
+	release()
+	require.NoError(t, <-initDone)
+	var exemplarTimestamps []int64
+	require.NoError(t, head.exemplars.IterateExemplars(func(_ labels.Labels, e exemplar.Exemplar) error {
+		exemplarTimestamps = append(exemplarTimestamps, e.Ts)
+		return nil
+	}))
+	require.Equal(t, []int64{10, 20}, exemplarTimestamps)
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
+	require.NoError(t, head.Close())
+}
+
+func TestHead_WALReplayFullDeletionWaitsOnlyForMatchingSeries(t *testing.T) {
+	const stripeSize = 32
+	for _, blockedRef := range []chunks.HeadSeriesRef{1, 2} {
+		t.Run(fmt.Sprintf("blocked_ref=%d", blockedRef), func(t *testing.T) {
+			refStripe := int(blockedRef) & (stripeSize - 1)
+			labelOutsideStripe := func(value string, stripe int) labels.Labels {
+				for i := 0; ; i++ {
+					lset := labels.FromStrings("series", fmt.Sprintf("%s-%d", value, i))
+					if int(lset.Hash()&uint64(stripeSize-1)) != stripe {
+						return lset
+					}
+				}
+			}
+
+			dir := t.TempDir()
+			wal, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
+			require.NoError(t, err)
+			oldLabels := labelOutsideStripe("old", refStripe)
+			blockedHashStripe := int(oldLabels.Hash() & uint64(stripeSize-1))
+			unrelatedLabels := labelOutsideStripe("unrelated", blockedHashStripe)
+			unrelatedRef := chunks.HeadSeriesRef(3)
+			for int(unrelatedRef)&(stripeSize-1) == blockedHashStripe || unrelatedRef == blockedRef {
+				unrelatedRef++
+			}
+			replacementRef := unrelatedRef + 1
+			for replacementRef == blockedRef {
+				replacementRef++
+			}
+			populateTestWL(t, wal, []any{
+				[]record.RefSeries{{Ref: blockedRef, Labels: oldLabels}},
+				[]record.RefSample{{Ref: blockedRef, T: 10, V: 1}},
+				[]tombstones.Stone{{Ref: storage.SeriesRef(blockedRef), Intervals: tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}}},
+				[]record.RefSeries{{Ref: unrelatedRef, Labels: unrelatedLabels}},
+				[]record.RefSeries{{Ref: replacementRef, Labels: oldLabels}},
+				[]record.RefSample{{Ref: unrelatedRef, T: 20, V: 2}, {Ref: replacementRef, T: 30, V: 3}},
+			}, nil, false)
+
+			callback := &coordinatedReplayLifecycleCallback{}
+			initialSeriesCreated := make(chan struct{})
+			allowReplay := make(chan struct{})
+			unrelatedPreCreation := make(chan struct{})
+			unrelatedPostCreation := make(chan struct{})
+			replacementPreCreation := make(chan struct{})
+			replacementPostCreation := make(chan struct{})
+			deletionStarted := make(chan struct{})
+			allowDeletion := make(chan struct{})
+			var signalInitialCreation, releaseCreation, signalUnrelatedPre, signalUnrelatedPost sync.Once
+			var signalReplacementPre, signalReplacementPost, signalDeletion, releaseDeletion sync.Once
+			releaseReplay := func() { releaseCreation.Do(func() { close(allowReplay) }) }
+			releaseDeletionCallback := func() { releaseDeletion.Do(func() { close(allowDeletion) }) }
+			t.Cleanup(func() {
+				releaseReplay()
+				releaseDeletionCallback()
+			})
+			oldPreCreations := 0
+			callback.preCreation = func(lset labels.Labels, _ int) {
+				switch {
+				case labels.Equal(lset, oldLabels):
+					oldPreCreations++
+					if oldPreCreations == 2 {
+						signalReplacementPre.Do(func() { close(replacementPreCreation) })
+					}
+				case labels.Equal(lset, unrelatedLabels):
+					signalUnrelatedPre.Do(func() { close(unrelatedPreCreation) })
+				}
+			}
+			oldPostCreations := 0
+			callback.postCreation = func(lset labels.Labels, _ int) {
+				switch {
+				case labels.Equal(lset, oldLabels):
+					oldPostCreations++
+					if oldPostCreations == 1 {
+						signalInitialCreation.Do(func() { close(initialSeriesCreated) })
+						<-allowReplay
+					} else {
+						signalReplacementPost.Do(func() { close(replacementPostCreation) })
+					}
+				case labels.Equal(lset, unrelatedLabels):
+					signalUnrelatedPost.Do(func() { close(unrelatedPostCreation) })
+				}
+			}
+			callback.postDeletion = func(deleted map[chunks.HeadSeriesRef]labels.Labels) {
+				if _, ok := deleted[blockedRef]; ok {
+					signalDeletion.Do(func() { close(deletionStarted) })
+					<-allowDeletion
+				}
+			}
+
+			opts := DefaultHeadOptions()
+			opts.ChunkDirRoot = dir
+			opts.StripeSize = stripeSize
+			opts.WALReplayConcurrency = 2
+			opts.SeriesCallback = callback
+			head, err := NewHead(nil, nil, wal, nil, opts, nil)
+			require.NoError(t, err)
+
+			initDone := make(chan error, 1)
+			go func() {
+				initDone <- head.Init(0)
+			}()
+
+			select {
+			case <-initialSeriesCreated:
+			case <-time.After(10 * time.Second):
+				releaseReplay()
+				releaseDeletionCallback()
+				initErr := <-initDone
+				require.NoError(t, initErr)
+				require.NoError(t, head.Close())
+				require.FailNow(t, "timed out waiting for the initial series")
+			}
+
+			releaseReplay()
+
+			select {
+			case <-unrelatedPreCreation:
+			case <-time.After(10 * time.Second):
+				releaseDeletionCallback()
+				initErr := <-initDone
+				require.NoError(t, initErr)
+				require.NoError(t, head.Close())
+				require.FailNow(t, "timed out waiting for unrelated PreCreation")
+			}
+			select {
+			case <-unrelatedPostCreation:
+			case <-time.After(10 * time.Second):
+				releaseDeletionCallback()
+				initErr := <-initDone
+				require.NoError(t, initErr)
+				require.NoError(t, head.Close())
+				require.FailNow(t, "timed out waiting for unrelated PostCreation")
+			}
+			select {
+			case <-replacementPreCreation:
+				require.Fail(t, "replacement PreCreation ran before the matching deletion")
+			default:
+			}
+			select {
+			case <-replacementPostCreation:
+				require.Fail(t, "replacement PostCreation ran before the matching deletion")
+			default:
+			}
+
+			select {
+			case <-deletionStarted:
+			case <-time.After(10 * time.Second):
+				releaseDeletionCallback()
+				initErr := <-initDone
+				require.NoError(t, initErr)
+				require.NoError(t, head.Close())
+				require.FailNow(t, "timed out waiting for PostDeletion")
+			}
+			select {
+			case <-replacementPreCreation:
+				require.Fail(t, "replacement PreCreation ran before PostDeletion returned")
+			default:
+			}
+			select {
+			case <-replacementPostCreation:
+				require.Fail(t, "replacement PostCreation ran before PostDeletion returned")
+			default:
+			}
+
+			releaseDeletionCallback()
+			require.NoError(t, <-initDone)
+			preCreations, creations, deletions := callback.counts()
+			require.Equal(t, 3, preCreations)
+			require.Equal(t, 3, creations)
+			require.Equal(t, 1, deletions)
+			require.Equal(t, uint64(2), head.NumSeries())
+			q, err := NewBlockQuerier(head, 0, 100)
+			require.NoError(t, err)
+			actual := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "series", ".+"))
+			require.Equal(t, map[string][]chunks.Sample{
+				oldLabels.String():       {sample{0, 30, 3, nil, nil}},
+				unrelatedLabels.String(): {sample{0, 20, 2, nil, nil}},
+			}, actual)
+			require.NoError(t, head.Close())
+		})
+	}
+}
+
+func TestHead_WALReplayFullDeletionPreservesWBLData(t *testing.T) {
+	dir := t.TempDir()
+	wal, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
+	require.NoError(t, err)
+	wbl, err := wlog.New(nil, nil, filepath.Join(dir, wlog.WblDirName), compression.None)
+	require.NoError(t, err)
+	lset := labels.FromStrings("foo", "bar")
+	populateTestWL(t, wal, []any{
+		[]record.RefSeries{{Ref: 1, Labels: lset}},
+		[]record.RefSample{{Ref: 1, T: 10, V: 1}},
+		[]tombstones.Stone{{Ref: 1, Intervals: tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}}},
+		[]record.RefSeries{{Ref: 2, Labels: lset}},
+		[]record.RefSample{{Ref: 2, T: 100, V: 2}},
+	}, nil, false)
+	populateTestWL(t, wbl, []any{
+		[]record.RefSample{{Ref: 2, T: 50, V: 3}},
+	}, nil, false)
+	require.NoError(t, wal.Close())
+	require.NoError(t, wbl.Close())
+	wal, err = wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
+	require.NoError(t, err)
+	wbl, err = wlog.New(nil, nil, filepath.Join(dir, wlog.WblDirName), compression.None)
+	require.NoError(t, err)
+
+	opts := DefaultHeadOptions()
+	opts.ChunkDirRoot = dir
+	opts.OutOfOrderTimeWindow.Store(10 * time.Minute.Milliseconds())
+	head, err := NewHead(nil, nil, wal, wbl, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(0))
+
+	q, err := NewBlockQuerier(head, 0, 200)
+	require.NoError(t, err)
+	actual := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	require.Equal(t, map[string][]chunks.Sample{`{foo="bar"}`: {
+		sample{0, 100, 2, nil, nil},
+	}}, actual)
+
+	ms := head.series.getByID(2)
+	require.NotNil(t, ms)
+	require.NotNil(t, ms.ooo)
+	require.NotNil(t, ms.ooo.oooHeadChunk)
+	oooChunks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, false, false)
+	require.NoError(t, err)
+	require.Len(t, oooChunks, 1)
+	oooSamples, err := storage.ExpandSamples(oooChunks[0].chunk.Iterator(nil), nil)
+	require.NoError(t, err)
+	requireEqualSamples(t, lset.String(), []chunks.Sample{sample{0, 50, 3, nil, nil}}, oooSamples)
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.wblReplayUnknownRefsTotal.WithLabelValues("samples")))
+	require.NoError(t, head.Close())
+}
+
+func BenchmarkHeadWALReplayFullDeletion(b *testing.B) {
+	const (
+		generations         = 6
+		seriesPerGeneration = 1000
+	)
+	cases := []struct {
+		name                string
+		fullDeletionRecords int
+		recreate            bool
+	}{
+		{name: "none"},
+		{name: "unrelated/one", fullDeletionRecords: 1},
+		{name: "unrelated/repeated", fullDeletionRecords: 5},
+		{name: "recreated/one", fullDeletionRecords: 1, recreate: true},
+		{name: "recreated/repeated", fullDeletionRecords: 5, recreate: true},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			walDir := b.TempDir()
+			wal, err := wlog.New(nil, nil, walDir, compression.None)
+			require.NoError(b, err)
+
+			var buf []byte
+			for generation := range generations {
+				series := make([]record.RefSeries, 0, seriesPerGeneration)
+				samples := make([]record.RefSample, 0, seriesPerGeneration)
+				tombstonesForGeneration := make([]tombstones.Stone, 0, seriesPerGeneration)
+				for i := range seriesPerGeneration {
+					ref := chunks.HeadSeriesRef(generation*seriesPerGeneration + i + 1)
+					lset := labels.FromStrings(
+						"__name__", "wal_replay_benchmark",
+						"series", strconv.Itoa(i),
+					)
+					if !tc.recreate {
+						lset = labels.FromStrings(
+							"__name__", "wal_replay_benchmark",
+							"generation", strconv.Itoa(generation),
+							"series", strconv.Itoa(i),
+						)
+					}
+					series = append(series, record.RefSeries{
+						Ref:    ref,
+						Labels: lset,
+					})
+					samples = append(samples, record.RefSample{Ref: ref, T: int64(generation), V: float64(generation)})
+					tombstonesForGeneration = append(tombstonesForGeneration, tombstones.Stone{
+						Ref: storage.SeriesRef(ref),
+						Intervals: tombstones.Intervals{{
+							Mint: math.MinInt64,
+							Maxt: math.MaxInt64,
+						}},
+					})
+				}
+				buf = populateTestWL(b, wal, []any{series, samples}, buf, false)
+				if generation < tc.fullDeletionRecords {
+					buf = populateTestWL(b, wal, []any{tombstonesForGeneration}, buf, false)
+				}
+			}
+			require.NoError(b, wal.Close())
+
+			for _, concurrency := range []int{1, defaultWALReplayConcurrency} {
+				b.Run(fmt.Sprintf("concurrency=%d", concurrency), func(b *testing.B) {
+					chunkDirRoot := b.TempDir()
+					b.ReportAllocs()
+					for b.Loop() {
+						b.StopTimer()
+						segmentsReader, err := wlog.NewSegmentsReader(walDir)
+						require.NoError(b, err)
+						opts := DefaultHeadOptions()
+						opts.ChunkDirRoot = chunkDirRoot
+						opts.WALReplayConcurrency = concurrency
+						head, err := NewHead(nil, nil, nil, nil, opts, nil)
+						require.NoError(b, err)
+
+						b.StartTimer()
+						err = head.loadWAL(
+							wlog.NewReader(segmentsReader),
+							labels.NewSymbolTable(),
+							map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{},
+							nil,
+							nil,
+						)
+						b.StopTimer()
+						require.NoError(b, err)
+						expectedSeries := uint64((generations - tc.fullDeletionRecords) * seriesPerGeneration)
+						if tc.recreate {
+							expectedSeries = seriesPerGeneration
+						}
+						require.Equal(b, expectedSeries, head.NumSeries())
+						require.NoError(b, segmentsReader.Close())
+						require.NoError(b, head.Close())
+						b.StartTimer()
+					}
+				})
+			}
+		})
+	}
 }
 
 func TestHead_WALCheckpointMultiRef(t *testing.T) {
@@ -8905,15 +9560,12 @@ func TestFloatChunkEncodingSwitchWaitsForNextChunk(t *testing.T) {
 	})
 }
 
-// TestWALReplayRaceWithStaleSeriesCompaction verifies that deleteSeriesByID correctly locks the
-// hash shard (not only the ref shard) when deleting from the hashes map.
-// The race only occurs when Prometheus restarts after having done a stale series compaction because
-// deleteSeriesByID is not used otherwise.
-func TestWALReplayRaceWithStaleSeriesCompaction(t *testing.T) {
+// TestWALReplayFullDeletionBeforeLaterSeriesCreation verifies that replayed
+// full deletions complete before later series records and samples are handled.
+func TestWALReplayFullDeletionBeforeLaterSeriesCreation(t *testing.T) {
 	opts := newTestHeadDefaultOptions(1000, false)
-	// A small stripe size ensures many series share hash shards, increasing
-	// the likelihood that deleteSeriesByID and getOrCreateWithOptionalID
-	// contend on the same shard during WAL replay.
+	// A small stripe size makes the test cover many ref and hash shard
+	// collisions while replaying a large deletion batch.
 	opts.StripeSize = 32
 	head, _ := newTestHeadWithOptions(t, compression.None, opts)
 	require.NoError(t, head.Init(0))
@@ -8949,12 +9601,9 @@ func TestWALReplayRaceWithStaleSeriesCompaction(t *testing.T) {
 	require.Equal(t, uint64(0), head.NumStaleSeries())
 	require.Equal(t, uint64(0), head.NumSeries())
 
-	// Step 3: Add new series AFTER the truncation. In the WAL, these series
-	// records appear after the tombstone records. During replay, the main
-	// goroutine will create these series (via getOrCreateWithOptionalID, which
-	// accesses hashes[hashShard] under locks[hashShard]) concurrently with
-	// the walSubsetProcessor goroutines deleting the stale series (via
-	// deleteSeriesByID, which must also lock the correct hashShard).
+	// Step 3: Add new series after the truncation. In the WAL, these series
+	// records and samples appear after the tombstone records and must not be
+	// overtaken by the queued full deletions.
 	const numNewSeries = 500
 	for i := range numNewSeries {
 		lbl := labels.FromStrings("__name__", "new_metric", "i", strconv.Itoa(i))
@@ -8963,19 +9612,24 @@ func TestWALReplayRaceWithStaleSeriesCompaction(t *testing.T) {
 	require.Equal(t, uint64(numNewSeries), head.NumSeries())
 
 	// Step 4: Close and re-open the Head to trigger WAL replay.
-	// With the buggy locking, the race detector should catch the data race
-	// between the main goroutine (creating series) and worker goroutines
-	// (deleting stale series) during replay.
 	require.NoError(t, head.Close())
 
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(head.opts.ChunkDirRoot, "wal"), 32768, compression.None)
 	require.NoError(t, err)
 	head, err = NewHead(nil, nil, wal, nil, head.opts, nil)
 	require.NoError(t, err)
-	require.NoError(t, head.Init(0)) // Should not cause a race here.
+	require.NoError(t, head.Init(0))
 
 	require.Equal(t, uint64(0), head.NumStaleSeries())
 	require.Equal(t, uint64(numNewSeries), head.NumSeries())
+	q, err := NewBlockQuerier(head, 0, 500)
+	require.NoError(t, err)
+	series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
+	require.Len(t, series, numNewSeries)
+	for _, samples := range series {
+		require.Len(t, samples, 1)
+		require.Equal(t, int64(300), samples[0].T())
+	}
 	require.NoError(t, head.Close())
 }
 

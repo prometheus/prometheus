@@ -150,6 +150,8 @@ type Head struct {
 
 	memTruncationInProcess atomic.Bool
 	memTruncationCallBack  func() // For testing purposes.
+
+	walReplayExemplarDrainHook func(<-chan struct{}) // For testing purposes.
 }
 
 type ExemplarStorage interface {
@@ -262,6 +264,8 @@ func (o *HeadOptions) UseXOR2FloatEncoding() bool {
 // SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
 // It is always a no-op in Prometheus and mainly meant for external users who import TSDB.
 // All the callbacks should be safe to be called concurrently.
+// During WAL replay, callbacks for a label set are invoked in lifecycle order.
+// Callbacks must not wait for a later WAL replay lifecycle callback.
 // It is up to the user to implement soft or hard consistency by making the callbacks
 // atomic or non-atomic. Atomic callbacks can cause degradation performance.
 type SeriesLifecycleCallback interface {
@@ -2323,9 +2327,11 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 	return deleted
 }
 
-// deleteSeriesByID deletes the series with the given reference.
+// deleteSeriesByID deletes the series with the given reference and returns the
+// payload for the lifecycle callback. The caller must invoke PostDeletion before
+// completing the associated replay-deletion barrier.
 // Only used for WAL replay.
-func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
+func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) map[chunks.HeadSeriesRef]labels.Labels {
 	var (
 		deleted            = map[storage.SeriesRef]struct{}{}
 		deletedForCallback = map[chunks.HeadSeriesRef]labels.Labels{}
@@ -2406,9 +2412,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
 
-	if len(deletedForCallback) > 0 {
-		h.series.seriesLifecycleCallback.PostDeletion(deletedForCallback)
-	}
+	return deletedForCallback
 }
 
 // gcSeries walks all series and removes those whose ref is in seriesRefs, whose maxTime is

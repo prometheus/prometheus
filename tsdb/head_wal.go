@@ -59,6 +59,172 @@ type seriesRefSet struct {
 	mtx  sync.Mutex
 }
 
+type walReplayDeletionBarrierEntry struct {
+	hash uint64
+	lset labels.Labels
+}
+
+type walReplayDeletionBarrier struct {
+	done     chan struct{}
+	entries  []walReplayDeletionBarrierEntry
+	registry *walReplayPendingDeletions
+}
+
+type walReplayPendingDeletion struct {
+	lset    labels.Labels
+	barrier *walReplayDeletionBarrier
+}
+
+type walReplayPendingDeletionBucket struct {
+	entry      walReplayPendingDeletion
+	collisions []walReplayPendingDeletion
+}
+
+// walReplayPendingDeletions prevents a series record from re-creating a label
+// set until an earlier full deletion and its lifecycle callback have completed.
+type walReplayPendingDeletions struct {
+	// Keep the 64-bit atomic first to guarantee alignment on 32-bit systems.
+	count  atomic.Int64
+	mtx    sync.Mutex
+	byHash map[uint64]walReplayPendingDeletionBucket
+}
+
+func newWALReplayPendingDeletions() *walReplayPendingDeletions {
+	return &walReplayPendingDeletions{byHash: map[uint64]walReplayPendingDeletionBucket{}}
+}
+
+func (p *walReplayPendingDeletions) add(hash uint64, lset labels.Labels, barrier *walReplayDeletionBarrier) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	p.addLocked(hash, lset, barrier)
+}
+
+func (p *walReplayPendingDeletions) addLocked(hash uint64, lset labels.Labels, barrier *walReplayDeletionBarrier) {
+	bucket, ok := p.byHash[hash]
+	if !ok {
+		p.byHash[hash] = walReplayPendingDeletionBucket{
+			entry: walReplayPendingDeletion{lset: lset, barrier: barrier},
+		}
+		barrier.entries = append(barrier.entries, walReplayDeletionBarrierEntry{hash: hash, lset: lset})
+		p.count.Inc()
+		return
+	}
+
+	if labels.Equal(bucket.entry.lset, lset) {
+		if bucket.entry.barrier == barrier {
+			return
+		}
+		bucket.entry.barrier = barrier
+		p.byHash[hash] = bucket
+		barrier.entries = append(barrier.entries, walReplayDeletionBarrierEntry{hash: hash, lset: lset})
+		return
+	}
+
+	for i := range bucket.collisions {
+		if !labels.Equal(bucket.collisions[i].lset, lset) {
+			continue
+		}
+		if bucket.collisions[i].barrier == barrier {
+			return
+		}
+		bucket.collisions[i].barrier = barrier
+		p.byHash[hash] = bucket
+		barrier.entries = append(barrier.entries, walReplayDeletionBarrierEntry{hash: hash, lset: lset})
+		return
+	}
+
+	bucket.collisions = append(bucket.collisions, walReplayPendingDeletion{lset: lset, barrier: barrier})
+	p.byHash[hash] = bucket
+	barrier.entries = append(barrier.entries, walReplayDeletionBarrierEntry{hash: hash, lset: lset})
+	p.count.Inc()
+}
+
+func (p *walReplayPendingDeletions) newBarrier(lsets []labels.Labels) *walReplayDeletionBarrier {
+	barrier := &walReplayDeletionBarrier{
+		done:     make(chan struct{}),
+		registry: p,
+	}
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	for _, lset := range lsets {
+		p.addLocked(lset.Hash(), lset, barrier)
+	}
+	return barrier
+}
+
+func (p *walReplayPendingDeletions) wait(hash uint64, lset labels.Labels) {
+	for {
+		if p.count.Load() == 0 {
+			return
+		}
+		p.mtx.Lock()
+		var done <-chan struct{}
+		if bucket, ok := p.byHash[hash]; ok {
+			if labels.Equal(bucket.entry.lset, lset) {
+				done = bucket.entry.barrier.done
+			} else {
+				for _, entry := range bucket.collisions {
+					if labels.Equal(entry.lset, lset) {
+						done = entry.barrier.done
+						break
+					}
+				}
+			}
+		}
+		p.mtx.Unlock()
+
+		if done == nil {
+			return
+		}
+		<-done
+	}
+}
+
+func (p *walReplayPendingDeletions) complete(barrier *walReplayDeletionBarrier) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	close(barrier.done)
+	for _, completed := range barrier.entries {
+		bucket, ok := p.byHash[completed.hash]
+		if !ok {
+			continue
+		}
+
+		if bucket.entry.barrier == barrier && labels.Equal(bucket.entry.lset, completed.lset) {
+			p.count.Dec()
+			if len(bucket.collisions) == 0 {
+				delete(p.byHash, completed.hash)
+			} else {
+				last := len(bucket.collisions) - 1
+				bucket.entry = bucket.collisions[last]
+				bucket.collisions = bucket.collisions[:last]
+				p.byHash[completed.hash] = bucket
+			}
+			continue
+		}
+
+		for i := range bucket.collisions {
+			entry := bucket.collisions[i]
+			if entry.barrier != barrier || !labels.Equal(entry.lset, completed.lset) {
+				continue
+			}
+			last := len(bucket.collisions) - 1
+			bucket.collisions[i] = bucket.collisions[last]
+			bucket.collisions = bucket.collisions[:last]
+			p.byHash[completed.hash] = bucket
+			p.count.Dec()
+			break
+		}
+	}
+}
+
+func (b *walReplayDeletionBarrier) complete() {
+	if b != nil {
+		b.registry.complete(b)
+	}
+}
+
 func (s *seriesRefSet) merge(other map[chunks.HeadSeriesRef]struct{}) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
@@ -95,7 +261,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		wg             sync.WaitGroup
 		concurrency    = h.opts.WALReplayConcurrency
 		processors     = make([]walSubsetProcessor, concurrency)
-		exemplarsInput chan record.RefExemplar
+		exemplarsInput chan walReplayExemplarInput
 
 		shards          = make([][]record.RefSample, concurrency)
 		histogramShards = make([][]histogramRecord, concurrency)
@@ -103,6 +269,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		decoded                      = make(chan any, 10)
 		decodeErr, seriesCreationErr error
 	)
+	pendingDeletions := newWALReplayPendingDeletions()
 
 	defer func() {
 		// For CorruptionErr ensure to terminate all workers before exiting.
@@ -131,12 +298,17 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	}
 
 	wg.Add(1)
-	exemplarsInput = make(chan record.RefExemplar, 300)
-	go func(input <-chan record.RefExemplar) {
+	exemplarsInput = make(chan walReplayExemplarInput, 300)
+	go func(input <-chan walReplayExemplarInput) {
 		missingSeries := make(map[chunks.HeadSeriesRef]struct{})
 		var err error
 		defer wg.Done()
-		for e := range input {
+		for in := range input {
+			if in.done != nil {
+				close(in.done)
+				continue
+			}
+			e := in.exemplar
 			ms := h.series.getByID(e.Ref)
 			if ms == nil {
 				unknownExemplarRefs.Inc()
@@ -251,12 +423,15 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 	// The records are always replayed from the oldest to the newest.
 	missingSeries := make(map[chunks.HeadSeriesRef]struct{})
+	exemplarsPending := false
 Outer:
 	for d := range decoded {
 		switch v := d.(type) {
 		case []record.RefSeries:
 			for _, walSeries := range v {
-				mSeries, created, err := h.getOrCreateWithOptionalID(walSeries.Ref, walSeries.Labels.Hash(), walSeries.Labels, false)
+				hash := walSeries.Labels.Hash()
+				pendingDeletions.wait(hash, walSeries.Labels)
+				mSeries, created, err := h.getOrCreateWithOptionalID(walSeries.Ref, hash, walSeries.Labels, false)
 				if err != nil {
 					seriesCreationErr = err
 					break Outer
@@ -314,6 +489,20 @@ Outer:
 		case []tombstones.Stone:
 			// Tombstone records will be fairly rare, so not trying to optimise the allocations here.
 			deleteSeriesShards := make([][]chunks.HeadSeriesRef, concurrency)
+			deleteSeriesLabelShards := make([][]labels.Labels, concurrency)
+			queueFullDeletion := func(ref chunks.HeadSeriesRef) {
+				series := h.series.getByID(ref)
+				if series == nil {
+					return
+				}
+				// Remove the series from the hash index so a later series record with
+				// the same labels creates a fresh series. The by-ref entry remains until
+				// the queued deletion applies, so earlier records can still resolve it.
+				h.series.unlinkHash(series.lset.Hash(), ref)
+				mod := uint64(ref) % uint64(concurrency)
+				deleteSeriesShards[mod] = append(deleteSeriesShards[mod], ref)
+				deleteSeriesLabelShards[mod] = append(deleteSeriesLabelShards[mod], series.labels())
+			}
 			for _, s := range v {
 				// A tombstone means this ref was previously allocated, even if its series record is no
 				// longer in the WAL. Advance lastSeriesID so the ref is not reissued.
@@ -327,15 +516,7 @@ Outer:
 					if r, ok := multiRef[ref]; ok {
 						ref = r
 					}
-					if series := h.series.getByID(ref); series != nil {
-						// Remove the series from the hash index so that a later series
-						// record with the same labels creates a fresh series instead of
-						// mapping onto this one. It stays in the by-ref map so
-						// already-queued samples still resolve until the deletion applies.
-						h.series.unlinkHash(series.lset.Hash(), ref)
-						mod := uint64(ref) % uint64(concurrency)
-						deleteSeriesShards[mod] = append(deleteSeriesShards[mod], ref)
-					}
+					queueFullDeletion(ref)
 					continue
 				}
 				for _, itv := range s.Intervals {
@@ -356,10 +537,36 @@ Outer:
 				}
 			}
 
+			hasLiveFullDeletions := false
+			for i := range concurrency {
+				if len(deleteSeriesLabelShards[i]) > 0 {
+					hasLiveFullDeletions = true
+					break
+				}
+			}
+
+			// Drain separately processed exemplars before dispatching a live
+			// deletion so it cannot overtake an earlier exemplar for the series.
+			if hasLiveFullDeletions && exemplarsPending {
+				done := make(chan struct{})
+				exemplarsInput <- walReplayExemplarInput{done: done}
+				if h.walReplayExemplarDrainHook != nil {
+					h.walReplayExemplarDrainHook(done)
+				}
+				<-done
+				exemplarsPending = false
+			}
+
 			for i := range concurrency {
 				if len(deleteSeriesShards[i]) > 0 {
-					processors[i].input <- walSubsetProcessorInputItem{deletedSeriesRefs: deleteSeriesShards[i]}
-					deleteSeriesShards[i] = nil
+					var barrier *walReplayDeletionBarrier
+					if len(deleteSeriesLabelShards[i]) > 0 {
+						barrier = pendingDeletions.newBarrier(deleteSeriesLabelShards[i])
+					}
+					processors[i].input <- walSubsetProcessorInputItem{
+						deletedSeriesRefs: deleteSeriesShards[i],
+						deletionBarrier:   barrier,
+					}
 				}
 			}
 
@@ -375,7 +582,8 @@ Outer:
 					h.updateWALExpiry(e.Ref, e.T)
 					e.Ref = r
 				}
-				exemplarsInput <- e
+				exemplarsInput <- walReplayExemplarInput{exemplar: e}
+				exemplarsPending = true
 			}
 			for i := range v { // Zero out to avoid retaining label data.
 				v[i].Labels = labels.EmptyLabels()
@@ -604,12 +812,18 @@ type walSubsetProcessor struct {
 	histogramsOutput chan []histogramRecord
 }
 
+type walReplayExemplarInput struct {
+	exemplar record.RefExemplar
+	done     chan struct{}
+}
+
 type walSubsetProcessorInputItem struct {
 	samples           []record.RefSample
 	histogramSamples  []histogramRecord
 	existingSeries    *memSeries
 	walSeriesRef      chunks.HeadSeriesRef
 	deletedSeriesRefs []chunks.HeadSeriesRef
+	deletionBarrier   *walReplayDeletionBarrier
 }
 
 func (wp *walSubsetProcessor) setup() {
@@ -792,9 +1006,14 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 		default:
 		}
 
+		var deletedForCallback map[chunks.HeadSeriesRef]labels.Labels
 		if len(in.deletedSeriesRefs) > 0 {
-			h.deleteSeriesByID(in.deletedSeriesRefs)
+			deletedForCallback = h.deleteSeriesByID(in.deletedSeriesRefs)
 		}
+		if len(deletedForCallback) > 0 {
+			h.series.seriesLifecycleCallback.PostDeletion(deletedForCallback)
+		}
+		in.deletionBarrier.complete()
 	}
 	h.updateMinMaxTime(mint, maxt)
 
