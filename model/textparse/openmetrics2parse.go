@@ -323,6 +323,9 @@ func (p *OpenMetrics2Parser) Next() (Entry, error) {
 				mStart++
 				mEnd--
 			}
+			if mStart == mEnd {
+				return EntryInvalid, errors.New("metric name must not be empty")
+			}
 			if !utf8.Valid(p.l.b[mStart:mEnd]) {
 				return EntryInvalid, fmt.Errorf("invalid UTF-8 metric name: %q", p.l.b[mStart:mEnd])
 			}
@@ -602,7 +605,10 @@ func (p *OpenMetrics2Parser) parseSingleExemplar() (done bool, err error) {
 // parseLVals parses the label set "{k="v",...}" and appends byte offsets.
 func (p *OpenMetrics2Parser) parseLVals(offsets []int, isExemplar bool) ([]int, error) {
 	t := p.nextToken()
+	first := true
 	for {
+		isFirst := first
+		first = false
 		curTStart := p.l.start
 		curTI := p.l.i
 		var isQString bool
@@ -621,11 +627,17 @@ func (p *OpenMetrics2Parser) parseLVals(offsets []int, isExemplar bool) ([]int, 
 			if isExemplar {
 				return nil, p.parseError("expected label name", t)
 			}
+			if !isFirst {
+				return nil, errors.New("metric name must be the first item in the label set")
+			}
 			if offsets[0] != -1 || offsets[1] != -1 {
 				return nil, fmt.Errorf("metric name already set while parsing: %q", p.l.b[p.start:p.l.i])
 			}
 			offsets[0] = curTStart + 1
 			offsets[1] = curTI - 1
+			if offsets[0] == offsets[1] {
+				return nil, errors.New("metric name must not be empty")
+			}
 			if !utf8.Valid(p.l.b[offsets[0]:offsets[1]]) {
 				return nil, fmt.Errorf("invalid UTF-8 metric name: %q", p.l.b[offsets[0]:offsets[1]])
 			}

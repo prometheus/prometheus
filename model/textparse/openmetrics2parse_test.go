@@ -649,6 +649,18 @@ foo_total 1.0 # {id="x"} 1.0
 			input: "# TYPE foo counter\nfoo{\"a\xffb\"=\"v\"} 1.0\n# EOF\n",
 			err:   "invalid UTF-8 label name",
 		},
+		{
+			input: "{\"\",label=\"v\"} 1.0\n# EOF\n",
+			err:   "metric name must not be empty",
+		},
+		{
+			input: "# TYPE \"\" counter\n# EOF\n",
+			err:   "metric name must not be empty",
+		},
+		{
+			input: "{label=\"v\",\"m.n\"} 1.0\n# EOF\n",
+			err:   "metric name must be the first item in the label set",
+		},
 	} {
 		t.Run(tc.err, func(t *testing.T) {
 			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{})
