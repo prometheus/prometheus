@@ -618,10 +618,6 @@ foo_total 1.0 # {id="x"} 1.0
 			err:   "missing required field: sum",
 		},
 		{
-			input: "# TYPE foo histogram\nfoo {count:1,sum:1.0,zero_threshold:0,zero_count:0}\n# EOF\n",
-			err:   "missing required field: schema",
-		},
-		{
 			input: "# TYPE foo histogram\nfoo {count:1,sum:1.0,schema:0,zero_count:0}\n# EOF\n",
 			err:   "missing required field: zero_threshold",
 		},
@@ -675,6 +671,33 @@ foo_total 1.0 # {id="x"} 1.0
 			require.ErrorContains(t, gotErr, tc.err)
 		})
 	}
+}
+
+// TestOpenMetrics2ParseHistogramNativeDetectionRequiresSchema verifies that a
+// composite carrying zero_threshold/zero_count but no schema must fall through
+// to classic histogram parsing instead of failing with "missing required field: schema".
+func TestOpenMetrics2ParseHistogramNativeDetectionRequiresSchema(t *testing.T) {
+	input := `# TYPE foo histogram
+foo {count:1,sum:1.0,zero_threshold:0,zero_count:0}
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "foo", typ: model.MetricTypeHistogram},
+		{
+			m:    "foo_count",
+			v:    1,
+			lset: labels.FromStrings("__name__", "foo_count"),
+		},
+		{
+			m:    "foo_sum",
+			v:    1.0,
+			lset: labels.FromStrings("__name__", "foo_sum"),
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
 }
 
 // TestOpenMetrics2ParseEOFHandling verifies that the parser returns io.EOF

@@ -768,17 +768,9 @@ func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 		return EntryInvalid, err
 	}
 
-	isNative := false
-	for _, k := range []string{
-		"schema", "zero_threshold", "zero_count",
-		"positive_spans", "positive_buckets",
-		"negative_spans", "negative_buckets",
-	} {
-		if _, ok := kv[k]; ok {
-			isNative = true
-			break
-		}
-	}
+	// schema is mandatory for native histograms and absent from classic
+	// ones, so its presence is the sole reliable signal.
+	_, isNative := kv["schema"]
 
 	if isNative {
 		h, fh, err := buildNativeHistogram(kv, p.mtype == model.MetricTypeGaugeHistogram)
@@ -853,12 +845,11 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 		return n, true, err
 	}
 
-	schema64, ok, err := getInt("schema")
+	// schema is guaranteed present: the caller only reaches buildNativeHistogram
+	// when kv["schema"] exists.
+	schema64, _, err := getInt("schema")
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid schema: %w", err)
-	}
-	if !ok {
-		return nil, nil, errors.New("missing required field: schema")
 	}
 
 	countKey, sumKey := "count", "sum"
