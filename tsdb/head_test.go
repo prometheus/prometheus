@@ -9594,6 +9594,74 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		}
 	})
 
+	t.Run("wal replay deletion clears all chunk state", func(t *testing.T) {
+		opts := newTestHeadDefaultOptions(DefaultBlockDuration, true)
+		opts.OutOfOrderCapMax.Store(1)
+		h, _ := newTestHeadWithOptions(t, compression.None, opts)
+		require.NoError(t, h.Init(0))
+
+		mmapReadyTotal := func() int32 {
+			var n int32
+			for i := range h.series.size {
+				n += h.series.mmapReady[i].Load()
+			}
+			return n
+		}
+
+		lbls := labels.FromStrings("__name__", "seriesToDelete")
+		ts := int64(0)
+		app := h.Appender(t.Context())
+		for range chunkCutIterations {
+			_, err := app.Append(0, lbls, ts, float64(ts))
+			require.NoError(t, err)
+			ts += interval
+		}
+		require.NoError(t, app.Commit())
+
+		// With an OOO chunk capacity of one, the second OOO sample m-maps the
+		// first OOO head chunk and creates a replacement head chunk.
+		oooTs := ts - 5*time.Minute.Milliseconds()
+		app = h.Appender(t.Context())
+		_, err := app.Append(0, lbls, oooTs, 1)
+		require.NoError(t, err)
+		_, err = app.Append(0, lbls, oooTs+1, 2)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		s := h.series.getByHash(lbls.Hash(), lbls)
+		require.NotNil(t, s)
+		require.GreaterOrEqual(t, s.headChunkCount.Load(), uint32(2))
+		require.NotNil(t, s.ooo)
+		require.NotEmpty(t, s.ooo.oooMmappedChunks)
+		require.NotNil(t, s.ooo.oooHeadChunk)
+		require.Equal(t, int32(1), mmapReadyTotal())
+
+		expectedRemoved := len(s.mmappedChunks) + s.headChunks.len() + len(s.ooo.oooMmappedChunks) + 1
+		require.Equal(t, float64(expectedRemoved), prom_testutil.ToFloat64(h.metrics.chunks))
+		removedBefore := prom_testutil.ToFloat64(h.metrics.chunksRemoved)
+
+		h.deleteSeriesByID([]chunks.HeadSeriesRef{s.ref})
+
+		require.Nil(t, h.series.getByID(s.ref))
+		require.Nil(t, h.series.getByHash(lbls.Hash(), lbls))
+		require.Zero(t, h.NumSeries())
+		require.Equal(t, int32(0), mmapReadyTotal())
+		require.Zero(t, s.headChunkCount.Load())
+		require.Nil(t, s.headChunks)
+		require.Nil(t, s.app)
+		require.Nil(t, s.mmappedChunks)
+		require.Nil(t, s.ooo)
+		require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.chunks))
+		require.Equal(t, removedBefore+float64(expectedRemoved), prom_testutil.ToFloat64(h.metrics.chunksRemoved))
+
+		// A stale reset with no chunks must not release mmap readiness or chunk
+		// accounting a second time.
+		h.resetSeriesWithMMappedChunks(s, nil, nil, s.ref+1)
+		require.Equal(t, int32(0), mmapReadyTotal())
+		require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.chunks))
+		require.Equal(t, removedBefore+float64(expectedRemoved), prom_testutil.ToFloat64(h.metrics.chunksRemoved))
+	})
+
 	// Verify the mmapReady per-stripe counter stays in sync with the actual
 	// number of series that have headChunkCount >= 2, across append, mmap,
 	// GC, and stale-series deletion.
