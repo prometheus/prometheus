@@ -96,9 +96,7 @@ type OpenMetrics2Parser struct {
 	l       *openMetrics2Lexer
 	builder labels.ScratchBuilder
 
-	// Metadata for the current metric family.  These fields persist across
-	// every series line in the same family and are reset only when a descriptor
-	// line (# TYPE / # HELP / # UNIT) for a new metric family name is seen.
+	// Metadata for the current metric family. Reset by resetOnFamilyChange.
 	mtype model.MetricType
 	unit  string
 	text  []byte
@@ -107,9 +105,8 @@ type OpenMetrics2Parser struct {
 	series    []byte
 	mfNameLen int // byte length of metric family name within series
 
-	// curFamilyName is a slice into l.b pointing at the metric family name of
-	// the last seen descriptor line (# TYPE / # HELP / # UNIT). Used to detect family
-	// transitions and reset mtype/unit accordingly.
+	// curFamilyName is a slice into l.b holding the last metric name seen by
+	// resetOnFamilyChange.
 	curFamilyName []byte
 
 	// offsets encodes the metric name and label positions as absolute byte
@@ -164,6 +161,16 @@ func NewOpenMetrics2Parser(b []byte, st *labels.SymbolTable, opts ParserOptions)
 		enableTypeAndUnitLabels: opts.EnableTypeAndUnitLabels,
 		keepClassicOnNativeHist: opts.KeepClassicOnClassicAndNativeHistograms,
 	}
+}
+
+// resetOnFamilyChange resets mtype/unit when name differs from curFamilyName
+func (p *OpenMetrics2Parser) resetOnFamilyChange(name []byte) {
+	if !bytes.Equal(name, p.curFamilyName) {
+		p.mtype = model.MetricTypeUnknown
+		p.unit = ""
+	}
+	p.curFamilyName = name
+	p.mfNameLen = len(name)
 }
 
 // Series returns the bytes of the current series, the timestamp if set, and
@@ -329,16 +336,8 @@ func (p *OpenMetrics2Parser) Next() (Entry, error) {
 			if !utf8.Valid(p.l.b[mStart:mEnd]) {
 				return EntryInvalid, fmt.Errorf("invalid UTF-8 metric name: %q", p.l.b[mStart:mEnd])
 			}
-			p.mfNameLen = mEnd - mStart
 			p.offsets = append(p.offsets, mStart, mEnd)
-			// Reset family state when the metric name changes.  The OM2
-			// places no ordering constraint on TYPE/HELP/UNIT
-			newFamily := p.l.b[mStart:mEnd]
-			if !bytes.Equal(newFamily, p.curFamilyName) {
-				p.mtype = model.MetricTypeUnknown
-				p.unit = ""
-				p.curFamilyName = newFamily
-			}
+			p.resetOnFamilyChange(p.l.b[mStart:mEnd])
 		default:
 			return EntryInvalid, p.parseError("expected metric name after "+t.String(), t2)
 		}
@@ -399,11 +398,15 @@ func (p *OpenMetrics2Parser) Next() (Entry, error) {
 		if p.offsets, err = p.parseLVals(p.offsets, false); err != nil {
 			return EntryInvalid, err
 		}
+		if p.offsets[0] != -1 {
+			p.resetOnFamilyChange(p.l.b[p.offsets[0]:p.offsets[1]])
+		}
 		p.series = p.l.b[p.start:p.l.i]
 		return p.parseSeriesEndOfLine(p.nextToken())
 
 	case tMName:
 		p.offsets = append(p.offsets, p.start, p.l.i)
+		p.resetOnFamilyChange(p.l.b[p.start:p.l.i])
 		p.series = p.l.b[p.start:p.l.i]
 
 		t2 := p.nextToken()

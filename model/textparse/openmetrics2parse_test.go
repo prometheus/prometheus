@@ -1286,3 +1286,31 @@ http_requests 1.0
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
+
+func TestOpenMetrics2ParseFamilyResetOnUndeclaredMetric(t *testing.T) {
+	// A metric family with no descriptor lines at all must not inherit
+	// mtype/unit from the previous family
+	input := `# TYPE http_requests counter
+# UNIT http_requests requests
+http_requests 1.0
+bare_metric 2.0
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "http_requests", typ: model.MetricTypeCounter},
+		{m: "http_requests", unit: "requests"},
+		{
+			m:    "http_requests",
+			v:    1.0,
+			lset: labels.FromStrings("__name__", "http_requests", "__type__", "counter", "__unit__", "requests"),
+		},
+		{
+			m:    "bare_metric",
+			v:    2.0,
+			lset: labels.FromStrings("__name__", "bare_metric"),
+		},
+	}
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{EnableTypeAndUnitLabels: true})
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
