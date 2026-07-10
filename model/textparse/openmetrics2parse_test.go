@@ -131,7 +131,7 @@ requests_total 42.0 1000000.0 st@500000.0
 # EOF
 `
 	exp := []parsedEntry{
-		{m: "requests", typ: model.MetricTypeCounter},
+		{m: "requests_total", typ: model.MetricTypeCounter},
 		{
 			m:    "requests_total",
 			v:    42.0,
@@ -636,6 +636,18 @@ foo_total 1.0 # {id="x"} 1.0
 		{
 			input: "# TYPE requests counter\nrequests_total 42.0 1000000.0 st@500000.0 st@600000.0\n# EOF\n",
 			err:   "duplicate start timestamp",
+		},
+		{
+			input: "{\"a\xffb\"} 1.0\n# EOF\n",
+			err:   "invalid UTF-8 metric name",
+		},
+		{
+			input: "# TYPE \"a\xffb\" counter\n# EOF\n",
+			err:   "invalid UTF-8 metric name",
+		},
+		{
+			input: "# TYPE foo counter\nfoo{\"a\xffb\"=\"v\"} 1.0\n# EOF\n",
+			err:   "invalid UTF-8 label name",
 		},
 	} {
 		t.Run(tc.err, func(t *testing.T) {

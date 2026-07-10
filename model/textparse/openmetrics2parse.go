@@ -323,6 +323,9 @@ func (p *OpenMetrics2Parser) Next() (Entry, error) {
 				mStart++
 				mEnd--
 			}
+			if !utf8.Valid(p.l.b[mStart:mEnd]) {
+				return EntryInvalid, fmt.Errorf("invalid UTF-8 metric name: %q", p.l.b[mStart:mEnd])
+			}
 			p.mfNameLen = mEnd - mStart
 			p.offsets = append(p.offsets, mStart, mEnd)
 			// Reset family state when the metric name changes.  The OM2
@@ -623,6 +626,9 @@ func (p *OpenMetrics2Parser) parseLVals(offsets []int, isExemplar bool) ([]int, 
 			}
 			offsets[0] = curTStart + 1
 			offsets[1] = curTI - 1
+			if !utf8.Valid(p.l.b[offsets[0]:offsets[1]]) {
+				return nil, fmt.Errorf("invalid UTF-8 metric name: %q", p.l.b[offsets[0]:offsets[1]])
+			}
 			if t == tBraceClose {
 				return offsets, nil
 			}
@@ -632,6 +638,9 @@ func (p *OpenMetrics2Parser) parseLVals(offsets []int, isExemplar bool) ([]int, 
 		if p.l.b[curTStart] == '"' {
 			curTStart++
 			curTI--
+		}
+		if !utf8.Valid(p.l.b[curTStart:curTI]) {
+			return nil, fmt.Errorf("invalid UTF-8 label name: %q", p.l.b[curTStart:curTI])
 		}
 		offsets = append(offsets, curTStart, curTI)
 
