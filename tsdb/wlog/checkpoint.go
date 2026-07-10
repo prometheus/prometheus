@@ -95,8 +95,15 @@ func DeleteTempCheckpoints(logger *slog.Logger, dir string) error {
 
 // Checkpoint creates a compacted checkpoint of segments in range [from, to] in the given WAL.
 // It includes the most recent checkpoint if it exists.
-// All series not satisfying keep, samples/tombstones/exemplars below mint and
-// metadata that are not the latest are dropped.
+// All series not satisfying keep, samples/exemplars below mint, tombstones not
+// satisfying keep or with all intervals below mint, and metadata that are not the
+// latest are dropped.
+//
+// keep is evaluated per record as segments are read, so its result for a given ref
+// must not change while Checkpoint runs. Otherwise records for the same ref could be
+// treated inconsistently, e.g. a series record kept but its tombstone dropped. The
+// Head satisfies this by serializing checkpointing with every series-deleting path
+// (GC and series truncation) via chunkSnapshotMtx.
 //
 // The checkpoint is stored in a directory named checkpoint.N in the same
 // segmented format as the original WAL itself.

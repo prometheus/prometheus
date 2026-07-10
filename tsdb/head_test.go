@@ -9147,6 +9147,13 @@ func TestHead_WALCheckpoint_FullRangeTombstones(t *testing.T) {
 	require.NoError(t, err)
 	recs := append(readTestWAL(t, cpDir), readTestWAL(t, w.Dir())...)
 	testutil.RequireEqual(t, expected, recs)
+
+	// WAL expiries are cleaned up alongside the records they retain.
+	keepUntil, ok = head.getWALExpiry(1)
+	require.True(t, ok, "ref 1 expiry must be retained (500 >= mint 250)")
+	require.Equal(t, int64(500), keepUntil)
+	_, ok = head.getWALExpiry(2)
+	require.False(t, ok, "ref 2 expiry must be cleared (200 < mint 250)")
 }
 
 func TestHead_FastStartupStateFile(t *testing.T) {
