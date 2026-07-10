@@ -60,13 +60,15 @@ var ensureOrderBatchPool = sync.Pool{
 //
 // The gate keeps read snapshots out of the middle of a multi-label Add. A
 // reader may see the postings before an Add or after it, but not after only
-// some label pairs for that series have been published. Exclusive waiters block
-// new readers and adders so Delete and EnsureOrder do not starve.
+// some label pairs for that series have been published. Waiting readers block
+// new adders so an active Add phase can drain. Exclusive waiters block new
+// readers and adders so Delete and EnsureOrder do not starve.
 type postingsPhaseGate struct {
 	mtx              sync.Mutex
 	cond             *sync.Cond
 	activeAdds       int
 	activeReads      int
+	readWaiters      int
 	exclusiveActive  bool
 	exclusiveWaiters int
 }
@@ -76,11 +78,12 @@ func (g *postingsPhaseGate) init() {
 }
 
 // beginAdd waits until there are no active reads or exclusive operations. It
-// also waits behind pending exclusive operations so they can drain current work.
+// also waits behind pending readers and exclusive operations so the current
+// phase can drain.
 func (g *postingsPhaseGate) beginAdd() {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
-	for g.activeReads > 0 || g.exclusiveActive || g.exclusiveWaiters > 0 {
+	for g.activeReads > 0 || g.readWaiters > 0 || g.exclusiveActive || g.exclusiveWaiters > 0 {
 		g.cond.Wait()
 	}
 	g.activeAdds++
@@ -96,10 +99,14 @@ func (g *postingsPhaseGate) endAdd() {
 }
 
 // beginRead waits for active Adds because a read can snapshot multiple shards
-// and label-value metadata. It also waits behind pending exclusive operations.
+// and label-value metadata. It registers as a waiter before blocking so later
+// Adds cannot keep extending the active Add phase. Pending exclusive operations
+// retain priority over waiting readers.
 func (g *postingsPhaseGate) beginRead() {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
+	g.readWaiters++
+	defer func() { g.readWaiters-- }()
 	for g.activeAdds > 0 || g.exclusiveActive || g.exclusiveWaiters > 0 {
 		g.cond.Wait()
 	}
