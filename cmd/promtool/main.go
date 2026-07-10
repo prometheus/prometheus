@@ -364,6 +364,8 @@ func main() {
 				// This feature is now permanently enabled and therefore a no-op.
 			case "promql-extended-range-selectors":
 				promtoolParserOpts.EnableExtendedRangeSelectors = true
+			case "promql-binop-fill-modifiers":
+				promtoolParserOpts.EnableBinopFillModifiers = true
 			case "":
 				continue
 			default:
