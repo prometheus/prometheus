@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/grafana/regexp"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 )
 
@@ -125,6 +126,25 @@ func TestMMapFile(t *testing.T) {
 	require.NoError(t, err, "Unexpected error while reading file.")
 	require.Equal(t, 2, n)
 	require.Equal(t, []byte(data), bytes[:2], "Mmap failed")
+}
+
+func TestNewActiveQueryTracker(t *testing.T) {
+	tracker, err := NewActiveQueryTracker(t.TempDir(), 5, promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, tracker.Close())
+}
+
+func TestNewActiveQueryTrackerError(t *testing.T) {
+	// Pass a file as the localStoragePath so creating the query log
+	// file inside it fails: the error must be returned, not panic.
+	notADir := filepath.Join(t.TempDir(), "file")
+	require.NoError(t, os.WriteFile(notADir, nil, 0o666))
+
+	require.NotPanics(t, func() {
+		tracker, err := NewActiveQueryTracker(notADir, 5, promslog.NewNopLogger())
+		require.Error(t, err)
+		require.Nil(t, tracker)
+	})
 }
 
 func TestTrimStringByBytes(t *testing.T) {
