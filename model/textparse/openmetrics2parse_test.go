@@ -278,6 +278,54 @@ hits 17.0 # {"my.id"="abc"} 5 1520879600.789
 	requireEntries(t, exp, got)
 }
 
+// TestOpenMetrics2ParseCompositeClassicGaugeHistogram verifies that a classic
+// GaugeHistogram composite value exposes its count/sum as gcount/gsum, not
+// count/sum, per the OM2 spec:
+// https://prometheus.io/docs/specs/om/open_metrics_spec_2_0/#gaugehistogram-1
+func TestOpenMetrics2ParseCompositeClassicGaugeHistogram(t *testing.T) {
+	input := `# TYPE foo gaugehistogram
+foo {gcount:42,gsum:3289.3,bucket:[0.01:20,0.1:25,1:34,+Inf:42]}
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "foo", typ: model.MetricTypeGaugeHistogram},
+		{
+			m:    "foo_gcount",
+			v:    42,
+			lset: labels.FromStrings("__name__", "foo_gcount"),
+		},
+		{
+			m:    "foo_gsum",
+			v:    3289.3,
+			lset: labels.FromStrings("__name__", "foo_gsum"),
+		},
+		{
+			m:    "foo_bucket\xffle\xff0.01",
+			v:    20,
+			lset: labels.FromStrings("__name__", "foo_bucket", "le", "0.01"),
+		},
+		{
+			m:    "foo_bucket\xffle\xff0.1",
+			v:    25,
+			lset: labels.FromStrings("__name__", "foo_bucket", "le", "0.1"),
+		},
+		{
+			m:    "foo_bucket\xffle\xff1.0",
+			v:    34,
+			lset: labels.FromStrings("__name__", "foo_bucket", "le", "1.0"),
+		},
+		{
+			m:    "foo_bucket\xffle\xff+Inf",
+			v:    42,
+			lset: labels.FromStrings("__name__", "foo_bucket", "le", "+Inf"),
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
 func TestOpenMetrics2ParseCompositeSummary(t *testing.T) {
 	input := `# HELP rpc_duration_seconds RPC duration.
 # TYPE rpc_duration_seconds summary
@@ -1148,21 +1196,21 @@ http_request_duration_seconds {count:3,sum:6.0,bucket:[0.1:1,0.5:2,+Inf:3]}
 func TestOpenMetrics2ParseTypeAndUnitLabelsGaugeHistogram(t *testing.T) {
 	input := `# TYPE response_size_bytes gaugehistogram
 # UNIT response_size_bytes bytes
-response_size_bytes {count:4,sum:1024.0,bucket:[100:1,500:3,+Inf:4]}
+response_size_bytes {gcount:4,gsum:1024.0,bucket:[100:1,500:3,+Inf:4]}
 # EOF
 `
 	exp := []parsedEntry{
 		{m: "response_size_bytes", typ: model.MetricTypeGaugeHistogram},
 		{m: "response_size_bytes", unit: "bytes"},
 		{
-			m:    "response_size_bytes_count\xff__type__\xffgaugehistogram\xff__unit__\xffbytes",
+			m:    "response_size_bytes_gcount\xff__type__\xffgaugehistogram\xff__unit__\xffbytes",
 			v:    4,
-			lset: labels.FromStrings("__name__", "response_size_bytes_count", "__type__", "gaugehistogram", "__unit__", "bytes"),
+			lset: labels.FromStrings("__name__", "response_size_bytes_gcount", "__type__", "gaugehistogram", "__unit__", "bytes"),
 		},
 		{
-			m:    "response_size_bytes_sum\xff__type__\xffgaugehistogram\xff__unit__\xffbytes",
+			m:    "response_size_bytes_gsum\xff__type__\xffgaugehistogram\xff__unit__\xffbytes",
 			v:    1024.0,
-			lset: labels.FromStrings("__name__", "response_size_bytes_sum", "__type__", "gaugehistogram", "__unit__", "bytes"),
+			lset: labels.FromStrings("__name__", "response_size_bytes_gsum", "__type__", "gaugehistogram", "__unit__", "bytes"),
 		},
 		{
 			m:    "response_size_bytes_bucket\xff__type__\xffgaugehistogram\xff__unit__\xffbytes\xffle\xff100.0",

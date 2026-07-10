@@ -1096,13 +1096,22 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 	// so we reuse its backing array across composite parses.
 	pending := p.pending
 
-	// _count
-	if cv, ok := kv["count"]; ok {
+	// GaugeHistogram Samples with Classic Buckets expose count/sum as
+	// gcount/gsum, mirroring Count/Sum's role for a plain Histogram.
+	// https://prometheus.io/docs/specs/om/open_metrics_spec_2_0/#gaugehistogram-1
+	countKey, sumKey := "count", "sum"
+	countSuffix, sumSuffix := "_count", "_sum"
+	if p.mtype == model.MetricTypeGaugeHistogram {
+		countKey, sumKey = "gcount", "gsum"
+		countSuffix, sumSuffix = "_gcount", "_gsum"
+	}
+
+	if cv, ok := kv[countKey]; ok {
 		v, err := strconv.ParseFloat(cv, 64)
 		if err != nil {
-			return nil, fmt.Errorf("invalid count: %w", err)
+			return nil, fmt.Errorf("invalid %s: %w", countKey, err)
 		}
-		name := mfName + "_count"
+		name := mfName + countSuffix
 		lset := p.buildPendingLabels(name, extraLabels, "", "")
 		pending = append(pending, pendingEntry{
 			series: p.appendSeriesBytes(lset),
@@ -1112,13 +1121,12 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 		})
 	}
 
-	// _sum
-	if sv, ok := kv["sum"]; ok {
+	if sv, ok := kv[sumKey]; ok {
 		v, err := strconv.ParseFloat(sv, 64)
 		if err != nil {
-			return nil, fmt.Errorf("invalid sum: %w", err)
+			return nil, fmt.Errorf("invalid %s: %w", sumKey, err)
 		}
-		name := mfName + "_sum"
+		name := mfName + sumSuffix
 		lset := p.buildPendingLabels(name, extraLabels, "", "")
 		pending = append(pending, pendingEntry{
 			series: p.appendSeriesBytes(lset),
