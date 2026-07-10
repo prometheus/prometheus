@@ -162,7 +162,7 @@ func NewOpenMetrics2Parser(b []byte, st *labels.SymbolTable, opts ParserOptions)
 	}
 }
 
-// resetOnFamilyChange resets mtype/unit when name differs from curFamilyName
+// resetOnFamilyChange resets mtype/unit when name differs from curFamilyName.
 func (p *OpenMetrics2Parser) resetOnFamilyChange(name []byte) {
 	if !bytes.Equal(name, p.curFamilyName) {
 		p.mtype = model.MetricTypeUnknown
@@ -442,6 +442,16 @@ func (p *OpenMetrics2Parser) parseSeriesEndOfLine(t token) (Entry, error) {
 
 	if len(raw) > 0 && raw[0] == '{' {
 		return p.parseCompositeValue(raw)
+	}
+
+	// Histogram, GaugeHistogram, and Summary Samples MUST use a composite
+	// value.
+	switch p.mtype {
+	case model.MetricTypeHistogram, model.MetricTypeGaugeHistogram, model.MetricTypeSummary:
+		return EntryInvalid, fmt.Errorf(
+			"composite value required for metric type %q while parsing: %q",
+			p.mtype, p.l.b[p.start:p.l.i],
+		)
 	}
 
 	// Plain float value.
@@ -1148,51 +1158,65 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 		countSuffix, sumSuffix = "_gcount", "_gsum"
 	}
 
-	if cv, ok := kv[countKey]; ok {
-		v, err := strconv.ParseFloat(cv, 64)
+	cv, ok := kv[countKey]
+	if !ok {
+		return nil, fmt.Errorf("missing required field: %s", countKey)
+	}
+	v, err := strconv.ParseFloat(cv, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s: %w", countKey, err)
+	}
+	name := mfName + countSuffix
+	lset := p.buildPendingLabels(name, extraLabels, "", "")
+	pending = append(pending, pendingEntry{
+		series: p.appendSeriesBytes(lset),
+		lset:   lset,
+		val:    v,
+		ts:     tsPtr,
+	})
+
+	sv, ok := kv[sumKey]
+	if !ok {
+		return nil, fmt.Errorf("missing required field: %s", sumKey)
+	}
+	v, err = strconv.ParseFloat(sv, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s: %w", sumKey, err)
+	}
+	name = mfName + sumSuffix
+	lset = p.buildPendingLabels(name, extraLabels, "", "")
+	pending = append(pending, pendingEntry{
+		series: p.appendSeriesBytes(lset),
+		lset:   lset,
+		val:    v,
+		ts:     tsPtr,
+	})
+
+	// _bucket entries. The spec requires a Classic Bucket list to include a
+	// +Inf threshold.
+	bv, ok := kv["bucket"]
+	if !ok {
+		return nil, errors.New("missing required field: bucket")
+	}
+	name = mfName + "_bucket"
+	hasPosInf := false
+	for b, err := range parseBuckets(bv) {
 		if err != nil {
-			return nil, fmt.Errorf("invalid %s: %w", countKey, err)
+			return nil, fmt.Errorf("invalid bucket: %w", err)
 		}
-		name := mfName + countSuffix
-		lset := p.buildPendingLabels(name, extraLabels, "", "")
+		if b.le == "+Inf" {
+			hasPosInf = true
+		}
+		lset := p.buildPendingLabels(name, extraLabels, "le", b.le)
 		pending = append(pending, pendingEntry{
 			series: p.appendSeriesBytes(lset),
 			lset:   lset,
-			val:    v,
+			val:    b.count,
 			ts:     tsPtr,
 		})
 	}
-
-	if sv, ok := kv[sumKey]; ok {
-		v, err := strconv.ParseFloat(sv, 64)
-		if err != nil {
-			return nil, fmt.Errorf("invalid %s: %w", sumKey, err)
-		}
-		name := mfName + sumSuffix
-		lset := p.buildPendingLabels(name, extraLabels, "", "")
-		pending = append(pending, pendingEntry{
-			series: p.appendSeriesBytes(lset),
-			lset:   lset,
-			val:    v,
-			ts:     tsPtr,
-		})
-	}
-
-	// _bucket entries
-	if bv, ok := kv["bucket"]; ok {
-		name := mfName + "_bucket"
-		for b, err := range parseBuckets(bv) {
-			if err != nil {
-				return nil, fmt.Errorf("invalid bucket: %w", err)
-			}
-			lset := p.buildPendingLabels(name, extraLabels, "le", b.le)
-			pending = append(pending, pendingEntry{
-				series: p.appendSeriesBytes(lset),
-				lset:   lset,
-				val:    b.count,
-				ts:     tsPtr,
-			})
-		}
+	if !hasPosInf {
+		return nil, errors.New("classic histogram buckets must include a +Inf threshold")
 	}
 
 	return pending, nil
@@ -1214,49 +1238,55 @@ func (p *OpenMetrics2Parser) buildSummaryPending(
 	// so we reuse its backing array across composite parses.
 	pending := p.pending
 
-	if cv, ok := kv["count"]; ok {
-		v, err := strconv.ParseFloat(cv, 64)
+	cv, ok := kv["count"]
+	if !ok {
+		return nil, errors.New("missing required field: count")
+	}
+	v, err := strconv.ParseFloat(cv, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid count: %w", err)
+	}
+	name := mfName + "_count"
+	lset := p.buildPendingLabels(name, extraLabels, "", "")
+	pending = append(pending, pendingEntry{
+		series: p.appendSeriesBytes(lset),
+		lset:   lset,
+		val:    v,
+		ts:     tsPtr,
+	})
+
+	sv, ok := kv["sum"]
+	if !ok {
+		return nil, errors.New("missing required field: sum")
+	}
+	v, err = strconv.ParseFloat(sv, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid sum: %w", err)
+	}
+	name = mfName + "_sum"
+	lset = p.buildPendingLabels(name, extraLabels, "", "")
+	pending = append(pending, pendingEntry{
+		series: p.appendSeriesBytes(lset),
+		lset:   lset,
+		val:    v,
+		ts:     tsPtr,
+	})
+
+	qv, ok := kv["quantile"]
+	if !ok {
+		return nil, errors.New("missing required field: quantile")
+	}
+	for q, err := range parseQuantiles(qv) {
 		if err != nil {
-			return nil, fmt.Errorf("invalid count: %w", err)
+			return nil, fmt.Errorf("invalid quantile: %w", err)
 		}
-		name := mfName + "_count"
-		lset := p.buildPendingLabels(name, extraLabels, "", "")
+		lset := p.buildPendingLabels(mfName, extraLabels, "quantile", q.q)
 		pending = append(pending, pendingEntry{
 			series: p.appendSeriesBytes(lset),
 			lset:   lset,
-			val:    v,
+			val:    q.val,
 			ts:     tsPtr,
 		})
-	}
-
-	if sv, ok := kv["sum"]; ok {
-		v, err := strconv.ParseFloat(sv, 64)
-		if err != nil {
-			return nil, fmt.Errorf("invalid sum: %w", err)
-		}
-		name := mfName + "_sum"
-		lset := p.buildPendingLabels(name, extraLabels, "", "")
-		pending = append(pending, pendingEntry{
-			series: p.appendSeriesBytes(lset),
-			lset:   lset,
-			val:    v,
-			ts:     tsPtr,
-		})
-	}
-
-	if qv, ok := kv["quantile"]; ok {
-		for q, err := range parseQuantiles(qv) {
-			if err != nil {
-				return nil, fmt.Errorf("invalid quantile: %w", err)
-			}
-			lset := p.buildPendingLabels(mfName, extraLabels, "quantile", q.q)
-			pending = append(pending, pendingEntry{
-				series: p.appendSeriesBytes(lset),
-				lset:   lset,
-				val:    q.val,
-				ts:     tsPtr,
-			})
-		}
 	}
 
 	return pending, nil

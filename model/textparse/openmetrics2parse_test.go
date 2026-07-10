@@ -752,6 +752,46 @@ foo_total 1.0 # {id="x"} 1.0
 			input: "# TYPE foo histogram\nfoo {count:1,sum:1.0,schema:0,zero_threshold:+Inf,zero_count:0}\n# EOF\n",
 			err:   "zero_threshold must be a non-negative, finite number",
 		},
+		{
+			input: "# TYPE foo histogram\nfoo 5\n# EOF\n",
+			err:   "composite value required for metric type",
+		},
+		{
+			input: "# TYPE foo gaugehistogram\nfoo 5\n# EOF\n",
+			err:   "composite value required for metric type",
+		},
+		{
+			input: "# TYPE foo summary\nfoo 5\n# EOF\n",
+			err:   "composite value required for metric type",
+		},
+		{
+			input: "# TYPE foo summary\nfoo {sum:2.0,quantile:[0.5:1.0]}\n# EOF\n",
+			err:   "missing required field: count",
+		},
+		{
+			input: "# TYPE foo summary\nfoo {count:1,quantile:[0.5:1.0]}\n# EOF\n",
+			err:   "missing required field: sum",
+		},
+		{
+			input: "# TYPE foo summary\nfoo {count:1,sum:2.0}\n# EOF\n",
+			err:   "missing required field: quantile",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {sum:2.0,bucket:[+Inf:1]}\n# EOF\n",
+			err:   "missing required field: count",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:1,bucket:[+Inf:1]}\n# EOF\n",
+			err:   "missing required field: sum",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:1,sum:2.0}\n# EOF\n",
+			err:   "missing required field: bucket",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:1,sum:2.0,bucket:[0.1:1]}\n# EOF\n",
+			err:   "classic histogram buckets must include a +Inf threshold",
+		},
 	} {
 		t.Run(tc.err, func(t *testing.T) {
 			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{})
@@ -773,7 +813,7 @@ foo_total 1.0 # {id="x"} 1.0
 // to classic histogram parsing instead of failing with "missing required field: schema".
 func TestOpenMetrics2ParseHistogramNativeDetectionRequiresSchema(t *testing.T) {
 	input := `# TYPE foo histogram
-foo {count:1,sum:1.0,zero_threshold:0,zero_count:0}
+foo {count:1,sum:1.0,zero_threshold:0,zero_count:0,bucket:[+Inf:1]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -787,6 +827,11 @@ foo {count:1,sum:1.0,zero_threshold:0,zero_count:0}
 			m:    "foo_sum",
 			v:    1.0,
 			lset: labels.FromStrings("__name__", "foo_sum"),
+		},
+		{
+			m:    "foo_bucket\xffle\xff+Inf",
+			v:    1,
+			lset: labels.FromStrings("__name__", "foo_bucket", "le", "+Inf"),
 		},
 	}
 
@@ -992,7 +1037,7 @@ foo {count:5,sum:12.5,quantile:[0.5:1.0,0.9:2.0,0.99:3.0]}
 
 func TestOpenMetrics2ParseCompositeWithTimestamp(t *testing.T) {
 	input := `# TYPE req_duration histogram
-req_duration {count:2,sum:4.0} 1234567.0 st@1000.0
+req_duration {count:2,sum:4.0,bucket:[+Inf:2]} 1234567.0 st@1000.0
 # EOF
 `
 	exp := []parsedEntry{
@@ -1010,6 +1055,13 @@ req_duration {count:2,sum:4.0} 1234567.0 st@1000.0
 			t:    int64p(1234567000),
 			st:   1000000,
 			lset: labels.FromStrings("__name__", "req_duration_sum"),
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff+Inf",
+			v:    2,
+			t:    int64p(1234567000),
+			st:   1000000,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
 		},
 	}
 
