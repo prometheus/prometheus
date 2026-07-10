@@ -8979,6 +8979,183 @@ func TestWALReplayRaceWithStaleSeriesCompaction(t *testing.T) {
 	require.NoError(t, head.Close())
 }
 
+// TestHead_ReadWAL_TombstonesAdvanceLastSeriesID verifies that replay advances
+// lastSeriesID past tombstone refs, regardless of whether the stone's series
+// record exists.
+func TestHead_ReadWAL_TombstonesAdvanceLastSeriesID(t *testing.T) {
+	cases := []struct {
+		name  string
+		stone tombstones.Stone
+	}{
+		{
+			name:  "interval tombstone",
+			stone: tombstones.Stone{Ref: 42, Intervals: []tombstones.Interval{{Mint: 0, Maxt: 100}}},
+		},
+		{
+			name:  "full-range tombstone",
+			stone: tombstones.Stone{Ref: 42, Intervals: []tombstones.Interval{{Mint: math.MinInt64, Maxt: math.MaxInt64}}},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			entries := []any{
+				[]record.RefSeries{
+					{Ref: 10, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefSample{
+					{Ref: 10, T: 100, V: 1},
+				},
+				[]tombstones.Stone{tc.stone},
+			}
+
+			head, w := newTestHead(t, 1000, compression.None, false)
+			defer func() {
+				require.NoError(t, head.Close())
+			}()
+
+			populateTestWL(t, w, entries, nil, false)
+
+			require.NoError(t, head.Init(math.MinInt64))
+
+			require.Equal(t, uint64(42), head.lastSeriesID.Load())
+		})
+	}
+}
+
+// TestStripeSeries_UnlinkHash verifies that unlinkHash removes a series from the hash
+// index while leaving it resolvable by ref. Lookups by labels no longer find it, and a
+// series with the same labels is created fresh instead of aliasing the unlinked one.
+func TestStripeSeries_UnlinkHash(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	lbls := labels.FromStrings("a", "1")
+	s1, created, err := head.getOrCreateWithOptionalID(1, lbls.Hash(), lbls, false)
+	require.NoError(t, err)
+	require.True(t, created)
+
+	head.series.unlinkHash(lbls.Hash(), s1.ref)
+
+	// Gone from the hash index, still resolvable by ref.
+	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
+	require.Same(t, s1, head.series.getByID(s1.ref))
+
+	// A series with the same labels isn't aliased onto s1.
+	s2, created, err := head.getOrCreateWithOptionalID(2, lbls.Hash(), lbls, false)
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Equal(t, chunks.HeadSeriesRef(2), s2.ref)
+}
+
+// TestHead_WALReplay_FullRangeTombstoneDeletesDuplicateRef verifies that a full-range
+// tombstone whose ref was mapped onto another series during replay deletes the series it was mapped to.
+func TestHead_WALReplay_FullRangeTombstoneDeletesDuplicateRef(t *testing.T) {
+	lbls := labels.FromStrings("a", "1")
+	entries := []any{
+		[]record.RefSeries{
+			{Ref: 1, Labels: lbls},
+			// Duplicate record for the same series under a different ref; replay
+			// maps ref 2 onto ref 1.
+			{Ref: 2, Labels: lbls},
+		},
+		[]record.RefSample{
+			{Ref: 2, T: 100, V: 1},
+		},
+		[]tombstones.Stone{
+			{Ref: 2, Intervals: tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}},
+		},
+	}
+
+	head, w := newTestHead(t, 1000, compression.None, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+	populateTestWL(t, w, entries, nil, false)
+
+	require.NoError(t, head.Init(math.MinInt64))
+
+	require.Equal(t, uint64(0), head.NumSeries())
+}
+
+// TestHead_WALCheckpoint_FullRangeTombstones verifies checkpointing of a series deleted
+// during replay by a full-range tombstone. Replay sets a WAL expiry at the series' max
+// sample time, so checkpoints keep its series record and tombstone while the WAL still
+// holds samples for it and drop both once those samples age out.
+func TestHead_WALCheckpoint_FullRangeTombstones(t *testing.T) {
+	lbls1 := labels.FromStrings("a", "1")
+	lbls2 := labels.FromStrings("a", "2")
+	fullRange := tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}
+	walEntries := []any{
+		[]record.RefSeries{{Ref: 1, Labels: lbls1}, {Ref: 2, Labels: lbls2}},
+		[]record.RefSample{
+			{Ref: 1, T: 100, V: 1},
+			{Ref: 1, T: 500, V: 2},
+			{Ref: 2, T: 100, V: 3},
+			{Ref: 2, T: 200, V: 4},
+		},
+		[]tombstones.Stone{
+			{Ref: 1, Intervals: fullRange},
+			{Ref: 2, Intervals: fullRange},
+		},
+	}
+
+	head, w := newTestHead(t, 1000, compression.None, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+	populateTestWL(t, w, walEntries, nil, false)
+	first, _, err := wlog.Segments(w.Dir())
+	require.NoError(t, err)
+
+	require.NoError(t, head.Init(math.MinInt64))
+
+	// Replay applied the tombstones: both series are deleted, and each ref has a WAL
+	// expiry at its max sample time.
+	require.Equal(t, uint64(0), head.NumSeries())
+	keepUntil, ok := head.getWALExpiry(1)
+	require.True(t, ok)
+	require.Equal(t, int64(500), keepUntil)
+	keepUntil, ok = head.getWALExpiry(2)
+	require.True(t, ok)
+	require.Equal(t, int64(200), keepUntil)
+
+	// Checkpoint with mint=250, between the two expiries. Each truncation creates a
+	// new segment, so attempt truncations until a checkpoint is created.
+	for {
+		head.lastWALTruncationTime.Store(0) // Reset so that it's always time to truncate the WAL.
+		require.NoError(t, head.truncateWAL(250))
+		f, _, err := wlog.Segments(w.Dir())
+		require.NoError(t, err)
+		if f > first {
+			break
+		}
+	}
+
+	// The WAL still holds a sample for ref 1 (t=500 >= mint), so its series record
+	// must be kept for the sample to resolve on replay, and its tombstone with it so
+	// the replayed series is deleted again. Ref 2's samples all age out, and its
+	// series record and tombstone are dropped with them.
+	expected := []any{
+		[]record.RefSeries{{Ref: 1, Labels: lbls1}},
+		[]record.RefSample{{Ref: 1, T: 500, V: 2}},
+		[]tombstones.Stone{{Ref: 1, Intervals: fullRange}},
+	}
+	cpDir, _, err := wlog.LastCheckpoint(w.Dir())
+	require.NoError(t, err)
+	recs := append(readTestWAL(t, cpDir), readTestWAL(t, w.Dir())...)
+	testutil.RequireEqual(t, expected, recs)
+
+	// WAL expiries are cleaned up alongside the records they retain.
+	keepUntil, ok = head.getWALExpiry(1)
+	require.True(t, ok, "ref 1 expiry must be retained (500 >= mint 250)")
+	require.Equal(t, int64(500), keepUntil)
+	_, ok = head.getWALExpiry(2)
+	require.False(t, ok, "ref 2 expiry must be cleared (200 < mint 250)")
+}
+
 func TestHead_FastStartupStateFile(t *testing.T) {
 	opts := newTestHeadDefaultOptions(1000, false)
 	// Enable the fast startup feature.
