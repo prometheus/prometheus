@@ -30,14 +30,11 @@ func TestOpenMetrics2Parse(t *testing.T) {
 	input := `# HELP go_gc_duration_seconds A summary of GC invocation durations.
 # TYPE go_gc_duration_seconds summary
 # UNIT go_gc_duration_seconds seconds
-go_gc_duration_seconds{quantile="0"} 4.9351e-05
-go_gc_duration_seconds{quantile="0.5",a="b"} 8.3835e-05
-go_gc_duration_seconds_count 99
-go_gc_duration_seconds_sum 0.004
+go_gc_duration_seconds {count:99,sum:0.004,quantile:[0:4.9351e-05,0.5:8.3835e-05]}
 # TYPE go_goroutines gauge
 go_goroutines 33 123456.789
 # TYPE hh histogram
-hh_bucket{le="+Inf"} 1
+hh {count:1,sum:1.0,bucket:[+Inf:1]}
 # TYPE ii info
 ii{foo="bar"} 1
 # TYPE ss stateset
@@ -55,16 +52,6 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5 1520879600.789
 		{m: "go_gc_duration_seconds", typ: model.MetricTypeSummary},
 		{m: "go_gc_duration_seconds", unit: "seconds"},
 		{
-			m:    `go_gc_duration_seconds{quantile="0"}`,
-			v:    4.9351e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.0"),
-		},
-		{
-			m:    `go_gc_duration_seconds{quantile="0.5",a="b"}`,
-			v:    8.3835e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "a", "b", "quantile", "0.5"),
-		},
-		{
 			m:    "go_gc_duration_seconds_count",
 			v:    99,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds_count"),
@@ -73,6 +60,16 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5 1520879600.789
 			m:    "go_gc_duration_seconds_sum",
 			v:    0.004,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds_sum"),
+		},
+		{
+			m:    "go_gc_duration_seconds\xffquantile\xff0.0",
+			v:    4.9351e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.0"),
+		},
+		{
+			m:    "go_gc_duration_seconds\xffquantile\xff0.5",
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.5"),
 		},
 		{m: "go_goroutines", typ: model.MetricTypeGauge},
 		{
@@ -83,7 +80,17 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5 1520879600.789
 		},
 		{m: "hh", typ: model.MetricTypeHistogram},
 		{
-			m:    `hh_bucket{le="+Inf"}`,
+			m:    "hh_count",
+			v:    1,
+			lset: labels.FromStrings("__name__", "hh_count"),
+		},
+		{
+			m:    "hh_sum",
+			v:    1.0,
+			lset: labels.FromStrings("__name__", "hh_sum"),
+		},
+		{
+			m:    "hh_bucket\xffle\xff+Inf",
 			v:    1,
 			lset: labels.FromStrings("__name__", "hh_bucket", "le", "+Inf"),
 		},
@@ -147,12 +154,12 @@ requests_total 42.0 1000000.0 st@500000.0
 }
 
 func TestOpenMetrics2ParseStartTimestampNoMainTimestamp(t *testing.T) {
-	input := `# TYPE requests counter
+	input := `# TYPE requests_total counter
 requests_total 42.0 st@500000.0
 # EOF
 `
 	exp := []parsedEntry{
-		{m: "requests", typ: model.MetricTypeCounter},
+		{m: "requests_total", typ: model.MetricTypeCounter},
 		{
 			m:    "requests_total",
 			v:    42.0,
@@ -167,12 +174,12 @@ requests_total 42.0 st@500000.0
 }
 
 func TestOpenMetrics2ParseMultipleExemplars(t *testing.T) {
-	input := `# TYPE foo counter
+	input := `# TYPE foo_total counter
 foo_total 17.0 # {id="a"} 1.0 1234566.0 # {id="b"} 2.0 1234567.0
 # EOF
 `
 	exp := []parsedEntry{
-		{m: "foo", typ: model.MetricTypeCounter},
+		{m: "foo_total", typ: model.MetricTypeCounter},
 		{
 			m:    "foo_total",
 			v:    17.0,
@@ -190,12 +197,12 @@ foo_total 17.0 # {id="a"} 1.0 1234566.0 # {id="b"} 2.0 1234567.0
 }
 
 func TestOpenMetrics2ParseExemplarMultipleLabels(t *testing.T) {
-	input := `# TYPE http_requests counter
+	input := `# TYPE http_requests_total counter
 http_requests_total 1027 1710000000.0 # {trace_id="abc123",span_id="def456"} 1.0 1709999999.0
 # EOF
 `
 	exp := []parsedEntry{
-		{m: "http_requests", typ: model.MetricTypeCounter},
+		{m: "http_requests_total", typ: model.MetricTypeCounter},
 		{
 			m:    "http_requests_total",
 			v:    1027,
@@ -316,7 +323,7 @@ rpc_duration_seconds {count:100,sum:30000.0,quantile:[0.5:100.0,0.9:200.0,0.99:3
 func TestOpenMetrics2ParseCompositeClassicHistogram(t *testing.T) {
 	input := `# HELP req_duration Request duration histogram.
 # TYPE req_duration histogram
-req_duration {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,1.0:2]}
+req_duration {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -333,11 +340,6 @@ req_duration {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,1.0:2]}
 			lset: labels.FromStrings("__name__", "req_duration_sum"),
 		},
 		{
-			m:    "req_duration_bucket\xffle\xff+Inf",
-			v:    3,
-			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
-		},
-		{
 			m:    "req_duration_bucket\xffle\xff0.1",
 			v:    1,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.1"),
@@ -346,6 +348,11 @@ req_duration {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,1.0:2]}
 			m:    "req_duration_bucket\xffle\xff1.0",
 			v:    2,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0"),
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff+Inf",
+			v:    3,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
 		},
 	}
 
@@ -363,7 +370,7 @@ func TestOpenMetrics2ParseCompositeNativeAndClassicHistogram(t *testing.T) {
 	// when on, classic _count/_sum/_bucket flat series are also emitted.
 	input := `# HELP req_duration Request duration histogram with both representations.
 # TYPE req_duration histogram
-req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positive_spans:[0:2],positive_buckets:[1,2],bucket:[+Inf:3,0.1:1,1.0:2]}
+req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positive_spans:[0:2],positive_buckets:[1,2],bucket:[0.1:1,1.0:2,+Inf:3]}
 # EOF
 `
 	header := []parsedEntry{
@@ -386,9 +393,9 @@ req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positiv
 	classicSeries := []parsedEntry{
 		{m: "req_duration_count", v: 3, lset: labels.FromStrings("__name__", "req_duration_count")},
 		{m: "req_duration_sum", v: 6.0, lset: labels.FromStrings("__name__", "req_duration_sum")},
-		{m: "req_duration_bucket\xffle\xff+Inf", v: 3, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf")},
 		{m: "req_duration_bucket\xffle\xff0.1", v: 1, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.1")},
 		{m: "req_duration_bucket\xffle\xff1.0", v: 2, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0")},
+		{m: "req_duration_bucket\xffle\xff+Inf", v: 3, lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf")},
 	}
 
 	for _, tc := range []struct {
@@ -657,6 +664,10 @@ foo_total 1.0 # {id="x"} 1.0
 			input: "{label=\"v\",\"m.n\"} 1.0\n# EOF\n",
 			err:   "metric name must be the first item in the label set",
 		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,1.0:2]}\n# EOF\n",
+			err:   "classic histogram buckets must be sorted in increasing order",
+		},
 	} {
 		t.Run(tc.err, func(t *testing.T) {
 			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{})
@@ -711,7 +722,7 @@ func TestOpenMetrics2ParseEOFHandling(t *testing.T) {
 
 func TestOpenMetrics2ParseCompositeExtraLabelsUTF8(t *testing.T) {
 	input := `# TYPE "req.duration" histogram
-{"req.duration",job="api"} {count:3,sum:6.0,bucket:[+Inf:3,0.1:1]}
+{"req.duration",job="api"} {count:3,sum:6.0,bucket:[0.1:1,+Inf:3]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -727,14 +738,14 @@ func TestOpenMetrics2ParseCompositeExtraLabelsUTF8(t *testing.T) {
 			lset: labels.FromStrings("__name__", "req.duration_sum", "job", "api"),
 		},
 		{
-			m:    "req.duration_bucket\xffjob\xffapi\xffle\xff+Inf",
-			v:    3,
-			lset: labels.FromStrings("__name__", "req.duration_bucket", "job", "api", "le", "+Inf"),
-		},
-		{
 			m:    "req.duration_bucket\xffjob\xffapi\xffle\xff0.1",
 			v:    1,
 			lset: labels.FromStrings("__name__", "req.duration_bucket", "job", "api", "le", "0.1"),
+		},
+		{
+			m:    "req.duration_bucket\xffjob\xffapi\xffle\xff+Inf",
+			v:    3,
+			lset: labels.FromStrings("__name__", "req.duration_bucket", "job", "api", "le", "+Inf"),
 		},
 	}
 
@@ -745,7 +756,7 @@ func TestOpenMetrics2ParseCompositeExtraLabelsUTF8(t *testing.T) {
 
 func TestOpenMetrics2ParseCompositeExtraLabels(t *testing.T) {
 	input := `# TYPE req_duration histogram
-req_duration{job="api",env="prod"} {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,1.0:2]}
+req_duration{job="api",env="prod"} {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -761,11 +772,6 @@ req_duration{job="api",env="prod"} {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,1.0:2]}
 			lset: labels.FromStrings("__name__", "req_duration_sum", "env", "prod", "job", "api"),
 		},
 		{
-			m:    "req_duration_bucket\xffenv\xffprod\xffjob\xffapi\xffle\xff+Inf",
-			v:    3,
-			lset: labels.FromStrings("__name__", "req_duration_bucket", "env", "prod", "job", "api", "le", "+Inf"),
-		},
-		{
 			m:    "req_duration_bucket\xffenv\xffprod\xffjob\xffapi\xffle\xff0.1",
 			v:    1,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "env", "prod", "job", "api", "le", "0.1"),
@@ -774,6 +780,11 @@ req_duration{job="api",env="prod"} {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,1.0:2]}
 			m:    "req_duration_bucket\xffenv\xffprod\xffjob\xffapi\xffle\xff1.0",
 			v:    2,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "env", "prod", "job", "api", "le", "1.0"),
+		},
+		{
+			m:    "req_duration_bucket\xffenv\xffprod\xffjob\xffapi\xffle\xff+Inf",
+			v:    3,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "env", "prod", "job", "api", "le", "+Inf"),
 		},
 	}
 
@@ -794,15 +805,15 @@ func TestOpenMetrics2ParseCompositeSeriesUnique(t *testing.T) {
 		{
 			name: "classic histogram buckets",
 			input: `# TYPE foo histogram
-foo {count:5,sum:12.5,bucket:[+Inf:5,1:3,0.5:1]}
+foo {count:5,sum:12.5,bucket:[0.5:1,1:3,+Inf:5]}
 # EOF
 `,
 		},
 		{
 			name: "classic histogram with differing extra labels",
 			input: `# TYPE foo histogram
-foo{path="/a"} {count:1,sum:1.0,bucket:[+Inf:1,1.0:1]}
-foo{path="/b"} {count:2,sum:2.0,bucket:[+Inf:2,1.0:1]}
+foo{path="/a"} {count:1,sum:1.0,bucket:[1.0:1,+Inf:1]}
+foo{path="/b"} {count:2,sum:2.0,bucket:[1.0:1,+Inf:2]}
 # EOF
 `,
 		},
@@ -1096,7 +1107,7 @@ unknown_metric 42.0
 func TestOpenMetrics2ParseTypeAndUnitLabelsClassicHistogram(t *testing.T) {
 	input := `# TYPE http_request_duration_seconds histogram
 # UNIT http_request_duration_seconds seconds
-http_request_duration_seconds {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,0.5:2]}
+http_request_duration_seconds {count:3,sum:6.0,bucket:[0.1:1,0.5:2,+Inf:3]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -1113,11 +1124,6 @@ http_request_duration_seconds {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,0.5:2]}
 			lset: labels.FromStrings("__name__", "http_request_duration_seconds_sum", "__type__", "histogram", "__unit__", "seconds"),
 		},
 		{
-			m:    "http_request_duration_seconds_bucket\xff__type__\xffhistogram\xff__unit__\xffseconds\xffle\xff+Inf",
-			v:    3,
-			lset: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "__type__", "histogram", "__unit__", "seconds", "le", "+Inf"),
-		},
-		{
 			m:    "http_request_duration_seconds_bucket\xff__type__\xffhistogram\xff__unit__\xffseconds\xffle\xff0.1",
 			v:    1,
 			lset: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "__type__", "histogram", "__unit__", "seconds", "le", "0.1"),
@@ -1126,6 +1132,11 @@ http_request_duration_seconds {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,0.5:2]}
 			m:    "http_request_duration_seconds_bucket\xff__type__\xffhistogram\xff__unit__\xffseconds\xffle\xff0.5",
 			v:    2,
 			lset: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "__type__", "histogram", "__unit__", "seconds", "le", "0.5"),
+		},
+		{
+			m:    "http_request_duration_seconds_bucket\xff__type__\xffhistogram\xff__unit__\xffseconds\xffle\xff+Inf",
+			v:    3,
+			lset: labels.FromStrings("__name__", "http_request_duration_seconds_bucket", "__type__", "histogram", "__unit__", "seconds", "le", "+Inf"),
 		},
 	}
 
@@ -1137,7 +1148,7 @@ http_request_duration_seconds {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,0.5:2]}
 func TestOpenMetrics2ParseTypeAndUnitLabelsGaugeHistogram(t *testing.T) {
 	input := `# TYPE response_size_bytes gaugehistogram
 # UNIT response_size_bytes bytes
-response_size_bytes {count:4,sum:1024.0,bucket:[+Inf:4,100:1,500:3]}
+response_size_bytes {count:4,sum:1024.0,bucket:[100:1,500:3,+Inf:4]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -1154,11 +1165,6 @@ response_size_bytes {count:4,sum:1024.0,bucket:[+Inf:4,100:1,500:3]}
 			lset: labels.FromStrings("__name__", "response_size_bytes_sum", "__type__", "gaugehistogram", "__unit__", "bytes"),
 		},
 		{
-			m:    "response_size_bytes_bucket\xff__type__\xffgaugehistogram\xff__unit__\xffbytes\xffle\xff+Inf",
-			v:    4,
-			lset: labels.FromStrings("__name__", "response_size_bytes_bucket", "__type__", "gaugehistogram", "__unit__", "bytes", "le", "+Inf"),
-		},
-		{
 			m:    "response_size_bytes_bucket\xff__type__\xffgaugehistogram\xff__unit__\xffbytes\xffle\xff100.0",
 			v:    1,
 			lset: labels.FromStrings("__name__", "response_size_bytes_bucket", "__type__", "gaugehistogram", "__unit__", "bytes", "le", "100.0"),
@@ -1168,6 +1174,11 @@ response_size_bytes {count:4,sum:1024.0,bucket:[+Inf:4,100:1,500:3]}
 			v:    3,
 			lset: labels.FromStrings("__name__", "response_size_bytes_bucket", "__type__", "gaugehistogram", "__unit__", "bytes", "le", "500.0"),
 		},
+		{
+			m:    "response_size_bytes_bucket\xff__type__\xffgaugehistogram\xff__unit__\xffbytes\xffle\xff+Inf",
+			v:    4,
+			lset: labels.FromStrings("__name__", "response_size_bytes_bucket", "__type__", "gaugehistogram", "__unit__", "bytes", "le", "+Inf"),
+		},
 	}
 
 	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{EnableTypeAndUnitLabels: true})
@@ -1175,62 +1186,30 @@ response_size_bytes {count:4,sum:1024.0,bucket:[+Inf:4,100:1,500:3]}
 	requireEntries(t, exp, got)
 }
 
-// TestOpenMetrics2ParseUnsortedClassicBuckets verifies that the parser accepts
-// classic histogram buckets in any order — a known edge case we allow since
-// consumers can reconstruct the correct order from the le labels.  Native
-// histograms are unaffected as they have no explicit le bounds.
-func TestOpenMetrics2ParseUnsortedClassicBuckets(t *testing.T) {
+// TestOpenMetrics2ParseUnsortedClassicBucketsRejected verifies that classic
+// histogram buckets out of increasing order are rejected: the spec requires
+// "Classic Buckets MUST be sorted in number increasing order".
+// https://prometheus.io/docs/specs/om/open_metrics_spec_2_0/#histogram-with-classic-buckets
+func TestOpenMetrics2ParseUnsortedClassicBucketsRejected(t *testing.T) {
 	input := `# TYPE req_duration histogram
 req_duration {count:144,sum:53.4,bucket:[+Inf:144,0.1:24,0.2:33,0.4:100,1.0:144]}
 # EOF
 `
-	exp := []parsedEntry{
-		{m: "req_duration", typ: model.MetricTypeHistogram},
-		{
-			m:    "req_duration_count",
-			v:    144,
-			lset: labels.FromStrings("__name__", "req_duration_count"),
-		},
-		{
-			m:    "req_duration_sum",
-			v:    53.4,
-			lset: labels.FromStrings("__name__", "req_duration_sum"),
-		},
-		{
-			m:    "req_duration_bucket\xffle\xff+Inf",
-			v:    144,
-			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
-		},
-		{
-			m:    "req_duration_bucket\xffle\xff0.1",
-			v:    24,
-			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.1"),
-		},
-		{
-			m:    "req_duration_bucket\xffle\xff0.2",
-			v:    33,
-			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.2"),
-		},
-		{
-			m:    "req_duration_bucket\xffle\xff0.4",
-			v:    100,
-			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "0.4"),
-		},
-		{
-			m:    "req_duration_bucket\xffle\xff1.0",
-			v:    144,
-			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0"),
-		},
-	}
-
 	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
-	got := testParse(t, p)
-	requireEntries(t, exp, got)
+	var gotErr error
+	for {
+		_, err := p.Next()
+		if err != nil {
+			gotErr = err
+			break
+		}
+	}
+	require.ErrorContains(t, gotErr, "classic histogram buckets must be sorted in increasing order")
 }
 
 func TestOpenMetrics2ParseExemplarOnCompositeLine(t *testing.T) {
 	input := `# TYPE req_duration histogram
-req_duration {count:2,sum:4.0,bucket:[+Inf:2,1.0:1]} # {id="req-1"} 3.8 9999999.0
+req_duration {count:2,sum:4.0,bucket:[1.0:1,+Inf:2]} # {id="req-1"} 3.8 9999999.0
 # EOF
 `
 	exp := []parsedEntry{
@@ -1248,14 +1227,14 @@ req_duration {count:2,sum:4.0,bucket:[+Inf:2,1.0:1]} # {id="req-1"} 3.8 9999999.
 			lset: labels.FromStrings("__name__", "req_duration_sum"),
 		},
 		{
-			m:    "req_duration_bucket\xffle\xff+Inf",
-			v:    2,
-			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
-		},
-		{
 			m:    "req_duration_bucket\xffle\xff1.0",
 			v:    1,
 			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "1.0"),
+		},
+		{
+			m:    "req_duration_bucket\xffle\xff+Inf",
+			v:    2,
+			lset: labels.FromStrings("__name__", "req_duration_bucket", "le", "+Inf"),
 		},
 	}
 

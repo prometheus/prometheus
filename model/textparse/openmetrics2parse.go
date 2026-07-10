@@ -1342,6 +1342,7 @@ func parseBuckets(s string) iter.Seq2[bucketEntry, error] {
 			return
 		}
 		inner := s[1 : len(s)-1]
+		prevLe := math.Inf(-1)
 		for part := range strings.SplitSeq(inner, ",") {
 			part = strings.TrimSpace(part)
 			if part == "" {
@@ -1360,6 +1361,11 @@ func parseBuckets(s string) iter.Seq2[bucketEntry, error] {
 			}
 			// Normalise le to OpenMetrics float format.
 			if lef, err := strconv.ParseFloat(le, 64); err == nil {
+				if lef <= prevLe {
+					yield(bucketEntry{}, fmt.Errorf("classic histogram buckets must be sorted in increasing order: %q", part))
+					return
+				}
+				prevLe = lef
 				le = labels.FormatOpenMetricsFloat(lef)
 			}
 			if !yield(bucketEntry{le: le, count: count}, nil) {
