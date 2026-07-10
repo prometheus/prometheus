@@ -73,6 +73,9 @@ Example:
 - Bug fixes require a test that reproduces the bug.
 - New behaviour or exported API changes require unit or e2e tests.
 - Tests should attempt to mirror realistic data and/or behaviour.
+- Run `go test` without `-count=1` by default so Go can reuse cached results.
+  Use `-count=1` only when uncached execution is specifically required, and
+  state why.
 - Use only exported APIs in tests where possible — this keeps tests closer to
   real library usage and simplifies review.
 
