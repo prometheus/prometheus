@@ -865,6 +865,71 @@ req_duration{job="api",env="prod"} {count:3,sum:6.0,bucket:[0.1:1,1.0:2,+Inf:3]}
 	requireEntries(t, exp, got)
 }
 
+// TestOpenMetrics2ParseCompositeExtraLabelsQuoted verifies that a quoted
+// extra label (OM2 UTF-8 label names) on a composite line is extracted
+// correctly — same as it already is on a plain (non-composite) sample line.
+func TestOpenMetrics2ParseCompositeExtraLabelsQuoted(t *testing.T) {
+	input := `# TYPE foo summary
+foo{"user.id"="x"} {count:1,sum:2.0,quantile:[0.5:1.0]}
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "foo", typ: model.MetricTypeSummary},
+		{
+			m:    "foo_count\xffuser.id\xffx",
+			v:    1,
+			lset: labels.FromStrings("__name__", "foo_count", "user.id", "x"),
+		},
+		{
+			m:    "foo_sum\xffuser.id\xffx",
+			v:    2.0,
+			lset: labels.FromStrings("__name__", "foo_sum", "user.id", "x"),
+		},
+		{
+			m:    "foo\xffquantile\xff0.5\xffuser.id\xffx",
+			v:    1.0,
+			lset: labels.FromStrings("__name__", "foo", "quantile", "0.5", "user.id", "x"),
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
+// TestOpenMetrics2ParseCompositeExtraLabelsQuotedWithEquals verifies that a
+// quoted extra label whose name itself contains "=" (valid per the OM2
+// UTF-8 label-name grammar) doesn't confuse the key/value split for a
+// composite line's extra labels.
+func TestOpenMetrics2ParseCompositeExtraLabelsQuotedWithEquals(t *testing.T) {
+	input := `# TYPE foo summary
+foo{"a=b"="v",job="api"} {count:1,sum:2.0,quantile:[0.5:1.0]}
+# EOF
+`
+	exp := []parsedEntry{
+		{m: "foo", typ: model.MetricTypeSummary},
+		{
+			m:    "foo_count\xffa=b\xffv\xffjob\xffapi",
+			v:    1,
+			lset: labels.FromStrings("__name__", "foo_count", "a=b", "v", "job", "api"),
+		},
+		{
+			m:    "foo_sum\xffa=b\xffv\xffjob\xffapi",
+			v:    2.0,
+			lset: labels.FromStrings("__name__", "foo_sum", "a=b", "v", "job", "api"),
+		},
+		{
+			m:    "foo\xffa=b\xffv\xffjob\xffapi\xffquantile\xff0.5",
+			v:    1.0,
+			lset: labels.FromStrings("__name__", "foo", "a=b", "v", "job", "api", "quantile", "0.5"),
+		},
+	}
+
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
 // TestOpenMetrics2ParseCompositeSeriesUnique checks that Series() never
 // returns the same bytes for two entries with different label sets; the
 // scrape loop uses those bytes as a cache key, so a collision would corrupt

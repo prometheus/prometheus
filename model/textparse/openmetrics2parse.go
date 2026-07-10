@@ -102,8 +102,7 @@ type OpenMetrics2Parser struct {
 	text  []byte
 
 	// Current sample position in the input.
-	series    []byte
-	mfNameLen int // byte length of metric family name within series
+	series []byte
 
 	// curFamilyName is a slice into l.b holding the last metric name seen by
 	// resetOnFamilyChange.
@@ -170,7 +169,6 @@ func (p *OpenMetrics2Parser) resetOnFamilyChange(name []byte) {
 		p.unit = ""
 	}
 	p.curFamilyName = name
-	p.mfNameLen = len(name)
 }
 
 // Series returns the bytes of the current series, the timestamp if set, and
@@ -821,7 +819,7 @@ func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 		// caller asked to keep it, queue the classic flat series so that
 		// subsequent Next() calls drain them after the EntryHistogram.
 		if _, hasBucket := kv["bucket"]; hasBucket && p.keepClassicOnNativeHist {
-			pending, err := p.buildClassicHistogramPending(kv, p.series, p.mfNameLen, p.hasTS, p.ts)
+			pending, err := p.buildClassicHistogramPending(kv, p.hasTS, p.ts)
 			if err != nil {
 				return EntryInvalid, fmt.Errorf("error parsing classic histogram composite: %w", err)
 			}
@@ -832,7 +830,7 @@ func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 	}
 
 	// Classic histogram: explode into flat pending entries.
-	pending, err := p.buildClassicHistogramPending(kv, p.series, p.mfNameLen, p.hasTS, p.ts)
+	pending, err := p.buildClassicHistogramPending(kv, p.hasTS, p.ts)
 	if err != nil {
 		return EntryInvalid, fmt.Errorf("error parsing classic histogram composite: %w", err)
 	}
@@ -851,7 +849,7 @@ func (p *OpenMetrics2Parser) parseSummaryComposite(raw []byte) (Entry, error) {
 		return EntryInvalid, err
 	}
 
-	pending, err := p.buildSummaryPending(kv, p.series, p.mfNameLen, p.hasTS, p.ts)
+	pending, err := p.buildSummaryPending(kv, p.hasTS, p.ts)
 	if err != nil {
 		return EntryInvalid, fmt.Errorf("error parsing summary composite: %w", err)
 	}
@@ -1122,13 +1120,10 @@ func parseFloatBuckets(s string) ([]float64, error) {
 
 func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 	kv map[string]string,
-	series []byte,
-	mfNameLen int,
 	hasTS bool,
 	ts int64,
 ) ([]pendingEntry, error) {
-	mfName := extractMFName(series, mfNameLen)
-	extraLabels := extractExtraLabels(series, mfNameLen)
+	mfName, extraLabels := p.nameAndExtraLabelsFromOffsets()
 
 	var tsPtr *int64
 	if hasTS {
@@ -1201,13 +1196,10 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 
 func (p *OpenMetrics2Parser) buildSummaryPending(
 	kv map[string]string,
-	series []byte,
-	mfNameLen int,
 	hasTS bool,
 	ts int64,
 ) ([]pendingEntry, error) {
-	mfName := extractMFName(series, mfNameLen)
-	extraLabels := extractExtraLabels(series, mfNameLen)
+	mfName, extraLabels := p.nameAndExtraLabelsFromOffsets()
 
 	var tsPtr *int64
 	if hasTS {
@@ -1266,67 +1258,22 @@ func (p *OpenMetrics2Parser) buildSummaryPending(
 	return pending, nil
 }
 
-// extractMFName extracts the metric family name from the series bytes.
-func extractMFName(series []byte, mfNameLen int) string {
-	if len(series) > 1 && series[0] == '{' && series[1] == '"' {
-		return string(series[2 : mfNameLen+2])
+// nameAndExtraLabelsFromOffsets returns the metric family name and the extra
+// (non metric name) labels for the line currently being parsed, reusing the
+// offsets parseLVals already computed
+func (p *OpenMetrics2Parser) nameAndExtraLabelsFromOffsets() (string, []labels.Label) {
+	s := string(p.series)
+	name := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
+	if len(p.offsets) <= 2 {
+		return name, nil
 	}
-	return string(series[:mfNameLen])
-}
-
-// extractExtraLabels extracts label name-value pairs from the "{...}" part of
-// the series bytes.
-func extractExtraLabels(series []byte, mfNameLen int) []labels.Label {
-	_, inner, ok := bytes.Cut(series, []byte{'{'})
-	if !ok {
-		return nil
+	extra := make([]labels.Label, 0, (len(p.offsets)-2)/4)
+	for i := 2; i < len(p.offsets); i += 4 {
+		k := unreplace(s[p.offsets[i]-p.start : p.offsets[i+1]-p.start])
+		v := unreplace(s[p.offsets[i+2]-p.start : p.offsets[i+3]-p.start])
+		extra = append(extra, labels.Label{Name: k, Value: v})
 	}
-	if len(inner) == 0 || inner[len(inner)-1] != '}' {
-		return nil
-	}
-	inner = inner[:len(inner)-1]
-	// For UTF-8 metric names the series starts with {"name",labels...}.
-	// Skip past the quoted name so the label scanner only sees key=value pairs.
-	if len(inner) > 0 && inner[0] == '"' {
-		inner = inner[mfNameLen+2:] // skip opening quote + name bytes + closing quote
-		if len(inner) > 0 && inner[0] == ',' {
-			inner = inner[1:]
-		}
-	}
-	if len(bytes.TrimSpace(inner)) == 0 {
-		return nil
-	}
-	var result []labels.Label
-	for len(inner) > 0 {
-		eq := bytes.IndexByte(inner, '=')
-		if eq < 0 {
-			break
-		}
-		k := string(bytes.TrimSpace(inner[:eq]))
-		inner = inner[eq+1:]
-		if len(inner) == 0 || inner[0] != '"' {
-			break
-		}
-		end := 1
-		for end < len(inner) {
-			if inner[end] == '\\' {
-				end += 2
-				continue
-			}
-			if inner[end] == '"' {
-				end++
-				break
-			}
-			end++
-		}
-		v := unreplace(string(inner[1 : end-1]))
-		result = append(result, labels.Label{Name: k, Value: v})
-		inner = inner[end:]
-		if len(inner) > 0 && inner[0] == ',' {
-			inner = inner[1:]
-		}
-	}
-	return result
+	return name, extra
 }
 
 // appendSeriesBytes returns a byte identity for lset, unique per distinct
