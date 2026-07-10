@@ -6016,6 +6016,36 @@ metric: <
 	}
 }
 
+func TestProtobufParseNoRecursion(t *testing.T) {
+	// Generate a protobuf payload with a large number of empty metric families.
+	// Historically, this would cause a stack overflow due to recursive p.Next() calls.
+	tmf := `name: "empty_metric"
+help: "no samples"
+type: GAUGE
+`
+	pb := &dto.MetricFamily{}
+	require.NoError(t, proto.UnmarshalText(tmf, pb))
+
+	protoBuf, err := proto.Marshal(pb)
+	require.NoError(t, err)
+
+	const numEmpty = 50000
+	varintBuf := make([]byte, binary.MaxVarintLen32)
+	buf := &bytes.Buffer{}
+	for i := 0; i < numEmpty; i++ {
+		n := binary.PutUvarint(varintBuf, uint64(len(protoBuf)))
+		buf.Write(varintBuf[:n])
+		buf.Write(protoBuf)
+	}
+
+	p := NewProtobufParser(buf.Bytes(), false, false, false, false, labels.NewSymbolTable())
+
+	// We call p.Next() - it should successfully skip all 50k empty metric families and return EOF
+	// without overflowing the call stack.
+	_, err = p.Next()
+	require.ErrorIs(t, err, io.EOF)
+}
+
 func generateString(r *rand.Rand, firstRunes, restRunes []rune) string {
 	result := make([]rune, 1+r.Intn(20))
 	for i := range result {
