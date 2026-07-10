@@ -1189,19 +1189,41 @@ func validateExpectedAnnotationsOfType(expr string, expectedAnnotationsOfType []
 		return fmt.Errorf("expected %s annotations but none were found for query %q (line %d)", annotationType, expr, line)
 	}
 
+	var actualAnnotationsOfTypeWithPositions []string
+	actualWithPositions := func() []string {
+		if actualAnnotationsOfTypeWithPositions != nil {
+			return actualAnnotationsOfTypeWithPositions
+		}
+		warnings, infos := allAnnos.AsStrings(expr, 0, 0)
+		if annotationType == "warn" {
+			actualAnnotationsOfTypeWithPositions = warnings
+		} else {
+			actualAnnotationsOfTypeWithPositions = infos
+		}
+		return actualAnnotationsOfTypeWithPositions
+	}
+
 	// Check if all expected annotations are found in actual.
 	for _, e := range expectedAnnotationsOfType {
-		matchFound := slices.ContainsFunc(actualAnnotationsOfType, e.CheckMatch)
+		matchFound := slices.ContainsFunc(actualAnnotationsOfType, e.CheckMatch) || slices.ContainsFunc(actualWithPositions(), e.CheckMatch)
 		if !matchFound {
-			return fmt.Errorf(`expected %s annotation matching %s %q but no matching annotation was found for query %q (line %d), found: %v`, annotationType, e.Type(), e.String(), expr, line, allAnnos.AsErrors())
+			return fmt.Errorf(`expected %s annotation matching %s %q but no matching annotation was found for query %q (line %d), found: %v`, annotationType, e.Type(), e.String(), expr, line, actualAnnotationsOfType)
 		}
 	}
 
 	// Check if all actual annotations have a corresponding expected annotation.
-	for _, anno := range actualAnnotationsOfType {
+	for i, anno := range actualAnnotationsOfType {
 		matchFound := slices.ContainsFunc(expectedAnnotationsOfType, func(e expectCmd) bool {
 			return e.CheckMatch(anno)
 		})
+		if !matchFound {
+			actualAnnotationsOfTypeWithPositions := actualWithPositions()
+			if i < len(actualAnnotationsOfTypeWithPositions) {
+				matchFound = slices.ContainsFunc(expectedAnnotationsOfType, func(e expectCmd) bool {
+					return e.CheckMatch(actualAnnotationsOfTypeWithPositions[i])
+				})
+			}
+		}
 		if !matchFound {
 			return fmt.Errorf("unexpected %s annotation %q found for query %s (line %d)", annotationType, anno, expr, line)
 		}

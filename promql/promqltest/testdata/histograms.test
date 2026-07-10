@@ -1035,7 +1035,7 @@ eval instant at 50m histogram_quantile(0.99, nonmonotonic_bucket)
     {} 979.75
 
 eval instant at 50m histogram_quantiles(nonmonotonic_bucket, "q", 0.01, 0.5, 0.99)
-    expect info
+    expect info regex: PromQL info: input to histogram_quantile needed to be fixed for monotonicity .* \(1:21\)
     {q="0.01"} 0.0045
     {q="0.5"} 8.5
     {q="0.99"} 979.75
