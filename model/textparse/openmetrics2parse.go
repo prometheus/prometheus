@@ -487,6 +487,9 @@ func (p *OpenMetrics2Parser) parseAfterValue() error {
 			if p.hasTS {
 				return fmt.Errorf("duplicate timestamp: %q", p.l.b[p.start:p.l.i])
 			}
+			if p.hasST {
+				return fmt.Errorf("timestamp must precede start timestamp: %q", p.l.b[p.start:p.l.i])
+			}
 			p.hasTS = true
 			var ts float64
 			var err error
@@ -1294,7 +1297,7 @@ func (p *OpenMetrics2Parser) buildSummaryPending(
 
 // nameAndExtraLabelsFromOffsets returns the metric family name and the extra
 // (non metric name) labels for the line currently being parsed, reusing the
-// offsets parseLVals already computed
+// offsets parseLVals already computed.
 func (p *OpenMetrics2Parser) nameAndExtraLabelsFromOffsets() (string, []labels.Label) {
 	s := string(p.series)
 	name := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
@@ -1429,6 +1432,7 @@ func parseQuantiles(s string) iter.Seq2[quantileEntry, error] {
 			return
 		}
 		inner := s[1 : len(s)-1]
+		prevQ := math.Inf(-1)
 		for part := range strings.SplitSeq(inner, ",") {
 			part = strings.TrimSpace(part)
 			if part == "" {
@@ -1447,6 +1451,11 @@ func parseQuantiles(s string) iter.Seq2[quantileEntry, error] {
 			}
 			// Normalise quantile label to OpenMetrics float format.
 			if qf, err := strconv.ParseFloat(q, 64); err == nil {
+				if qf <= prevQ {
+					yield(quantileEntry{}, fmt.Errorf("quantiles must be sorted in increasing order: %q", part))
+					return
+				}
+				prevQ = qf
 				q = labels.FormatOpenMetricsFloat(qf)
 			}
 			if !yield(quantileEntry{q: q, val: val}, nil) {

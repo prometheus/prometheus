@@ -689,6 +689,14 @@ foo_total 1.0 # {id="x"} 1.0
 			err:   "duplicate start timestamp",
 		},
 		{
+			input: "# TYPE requests counter\nrequests_total 42.0 st@500000.0 1000000.0\n# EOF\n",
+			err:   "timestamp must precede start timestamp",
+		},
+		{
+			input: "# TYPE foo summary\nfoo {count:3,sum:6.0,quantile:[0.99:1.0,0.5:2.0]}\n# EOF\n",
+			err:   "quantiles must be sorted in increasing order",
+		},
+		{
 			input: "{\"a\xffb\"} 1.0\n# EOF\n",
 			err:   "invalid UTF-8 metric name",
 		},
