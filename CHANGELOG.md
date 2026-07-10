@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.13.1 / 2026-07-10
+
+- [BUGFIX] TSDB: Fix the head-chunk cache returning samples from the wrong chunk, or spurious not-found errors, to range queries after head-chunk truncation. #19134
+
 ## 3.13.0 / 2026-07-01
 
 - [SECURITY] UI: Bump `sanitize-html` to fix a cross-site scripting vulnerability (CVE-2026-44990). #18697
