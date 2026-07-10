@@ -6032,7 +6032,7 @@ type: GAUGE
 	const numEmpty = 50000
 	varintBuf := make([]byte, binary.MaxVarintLen32)
 	buf := &bytes.Buffer{}
-	for i := 0; i < numEmpty; i++ {
+	for range numEmpty {
 		n := binary.PutUvarint(varintBuf, uint64(len(protoBuf)))
 		buf.Write(varintBuf[:n])
 		buf.Write(protoBuf)
