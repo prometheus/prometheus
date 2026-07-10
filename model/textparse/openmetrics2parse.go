@@ -921,6 +921,10 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 	if !ok {
 		return nil, nil, errors.New("missing required field: zero_threshold")
 	}
+
+	if math.IsNaN(zeroThreshold) || math.IsInf(zeroThreshold, 0) || zeroThreshold < 0 {
+		return nil, nil, fmt.Errorf("zero_threshold must be a non-negative, finite number, got %v", zeroThreshold)
+	}
 	zeroCount, ok, err := getFloat("zero_count")
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid zero_count: %w", err)
