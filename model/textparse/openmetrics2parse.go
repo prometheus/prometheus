@@ -892,6 +892,11 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid schema: %w", err)
 	}
+	// Schema values outside [-4, 8] are reserved for future use and MUST NOT
+	// be used.
+	if schema64 < -4 || schema64 > 8 {
+		return nil, nil, fmt.Errorf("schema must be between -4 and 8, got %d", schema64)
+	}
 
 	countKey, sumKey := "count", "sum"
 	if isGauge {

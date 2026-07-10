@@ -728,6 +728,18 @@ foo_total 1.0 # {id="x"} 1.0
 			input: "# TYPE foo summary\nfoo {count:1,sum:2.0,quantiles:[0.5:1.0]}\n# EOF\n",
 			err:   "unknown composite field",
 		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:1,sum:1.0,schema:9,zero_threshold:0,zero_count:0}\n# EOF\n",
+			err:   "schema must be between -4 and 8",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:1,sum:1.0,schema:-5,zero_threshold:0,zero_count:0}\n# EOF\n",
+			err:   "schema must be between -4 and 8",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:1,sum:1.0,schema:4294967296,zero_threshold:0,zero_count:0}\n# EOF\n",
+			err:   "schema must be between -4 and 8",
+		},
 	} {
 		t.Run(tc.err, func(t *testing.T) {
 			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{})
