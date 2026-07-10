@@ -257,7 +257,7 @@ process by using the `SIGHUP` signal. If you're running on Linux this can be
 performed by using `kill -s SIGHUP <PID>`, replacing `<PID>` with your Prometheus
 process ID.
 
-## Shutting down your instance gracefully.
+## Shutting down your instance gracefully
 
 While Prometheus does have recovery mechanisms in the case that there is an
 abrupt process failure it is recommended to use signals or interrupts for a
