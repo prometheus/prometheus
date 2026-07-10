@@ -716,6 +716,18 @@ foo_total 1.0 # {id="x"} 1.0
 			input: "# TYPE foo histogram\nfoo {count:3,sum:6.0,bucket:[+Inf:3,0.1:1,1.0:2]}\n# EOF\n",
 			err:   "classic histogram buckets must be sorted in increasing order",
 		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:1,count:99,sum:2.0,bucket:[+Inf:1]}\n# EOF\n",
+			err:   "duplicate composite field",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:5,sum:2.0,buckets:[1:3,+Inf:5]}\n# EOF\n",
+			err:   "unknown composite field",
+		},
+		{
+			input: "# TYPE foo summary\nfoo {count:1,sum:2.0,quantiles:[0.5:1.0]}\n# EOF\n",
+			err:   "unknown composite field",
+		},
 	} {
 		t.Run(tc.err, func(t *testing.T) {
 			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{})

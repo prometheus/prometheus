@@ -723,9 +723,41 @@ func kvMap(raw []byte) (map[string]string, error) {
 		}
 		k := string(bytes.TrimSpace(before))
 		v := string(bytes.TrimSpace(after))
+		if _, dup := m[k]; dup {
+			return nil, fmt.Errorf("duplicate composite field %q: %q", k, raw)
+		}
 		m[k] = v
 	}
 	return m, nil
+}
+
+// histogramCompositeFields are the field names recognized in a Histogram or
+// GaugeHistogram composite value, across both the classic-bucket and native
+// qq representations.
+var histogramCompositeFields = map[string]struct{}{
+	"count": {}, "sum": {}, "gcount": {}, "gsum": {}, "bucket": {},
+	"schema": {}, "zero_threshold": {}, "zero_count": {},
+	"positive_spans": {}, "positive_buckets": {},
+	"negative_spans": {}, "negative_buckets": {},
+}
+
+// summaryCompositeFields are the field names recognised in a Summary
+// composite value.
+var summaryCompositeFields = map[string]struct{}{
+	"count": {}, "sum": {}, "quantile": {},
+}
+
+// validateCompositeFields rejects any key in kv not present in allowed —
+// the ABNF for composite values is a closed grammar with no unknown fields,
+// so an unrecognised key (e.g. a typo) must be rejected rather than silently
+// ignored.
+func validateCompositeFields(kv map[string]string, allowed map[string]struct{}, raw []byte) error {
+	for k := range kv {
+		if _, ok := allowed[k]; !ok {
+			return fmt.Errorf("unknown composite field %q: %q", k, raw)
+		}
+	}
+	return nil
 }
 
 // splitCompositeFields yields each top-level field of b (split at commas not
@@ -770,6 +802,9 @@ func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 	if err != nil {
 		return EntryInvalid, err
 	}
+	if err := validateCompositeFields(kv, histogramCompositeFields, raw); err != nil {
+		return EntryInvalid, err
+	}
 
 	// schema is mandatory for native histograms and absent from classic
 	// ones, so its presence is the sole reliable signal.
@@ -810,6 +845,9 @@ func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 func (p *OpenMetrics2Parser) parseSummaryComposite(raw []byte) (Entry, error) {
 	kv, err := kvMap(raw)
 	if err != nil {
+		return EntryInvalid, err
+	}
+	if err := validateCompositeFields(kv, summaryCompositeFields, raw); err != nil {
 		return EntryInvalid, err
 	}
 
