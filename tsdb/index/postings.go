@@ -196,51 +196,12 @@ type PostingsStats struct {
 // Stats calculates the cardinality statistics from postings.
 // Caller can pass in a function which computes the space required for n series with a given label.
 func (p *MemPostings) Stats(label string, limit int, labelSizeFunc func(string, string, uint64) uint64) *PostingsStats {
-	var size uint64
-	p.mtx.RLock()
-
-	metrics := &maxHeap{}
-	labels := &maxHeap{}
-	labelValueLength := &maxHeap{}
-	labelValuePairs := &maxHeap{}
-	numLabelPairs := 0
-
-	metrics.init(limit)
-	labels.init(limit)
-	labelValueLength.init(limit)
-	labelValuePairs.init(limit)
-
-	for n, e := range p.m {
-		if n == "" {
-			continue
-		}
-		labels.push(Stat{Name: n, Count: uint64(len(e))})
-		numLabelPairs += len(e)
-		size = 0
-		for name, values := range e {
-			if n == label {
-				metrics.push(Stat{Name: name, Count: uint64(len(values))})
-			}
-			seriesCnt := uint64(len(values))
-			labelValuePairs.push(Stat{Name: n + "=" + name, Count: seriesCnt})
-			size += labelSizeFunc(n, name, seriesCnt)
-		}
-		labelValueLength.push(Stat{Name: n, Count: size})
-	}
-
-	p.mtx.RUnlock()
-
-	return &PostingsStats{
-		CardinalityMetricsStats: metrics.get(),
-		CardinalityLabelStats:   labels.get(),
-		LabelValueStats:         labelValueLength.get(),
-		LabelValuePairsStats:    labelValuePairs.get(),
-		NumLabelPairs:           numLabelPairs,
-	}
+	return p.StatsForMatchedSeries(label, limit, labelSizeFunc, nil)
 }
 
 // StatsForMatchedSeries calculates cardinality statistics from postings,
 // considering only the series whose refs are present in matchedSeries.
+// A nil matchedSeries means all series are included (equivalent to Stats).
 // Caller can pass in a function which computes the space required for n series with a given label.
 func (p *MemPostings) StatsForMatchedSeries(label string, limit int, labelSizeFunc func(string, string, uint64) uint64, matchedSeries map[storage.SeriesRef]struct{}) *PostingsStats {
 	var size uint64
@@ -265,9 +226,13 @@ func (p *MemPostings) StatsForMatchedSeries(label string, limit int, labelSizeFu
 		labelValueCount := 0
 		for name, values := range e {
 			var filteredCount uint64
-			for _, ref := range values {
-				if _, ok := matchedSeries[ref]; ok {
-					filteredCount++
+			if matchedSeries == nil {
+				filteredCount = uint64(len(values))
+			} else {
+				for _, ref := range values {
+					if _, ok := matchedSeries[ref]; ok {
+						filteredCount++
+					}
 				}
 			}
 			if filteredCount == 0 {
