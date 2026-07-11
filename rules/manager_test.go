@@ -534,6 +534,94 @@ func TestForStateRestore(t *testing.T) {
 	}
 }
 
+func TestForStateRestoreAlreadyFiringShortHold(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 5m
+		http_requests{job="app-server", instance="0", group="canary"}	75  85 50 0 0 25 0 0 40 0 120
+	`)
+
+	expr, err := testParser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
+	require.NoError(t, err)
+
+	ng := testEngine(t)
+	opts := &ManagerOptions{
+		QueryFunc:       EngineQueryFunc(ng, storage),
+		Appendable:      storage,
+		Queryable:       storage,
+		Context:         context.Background(),
+		Logger:          promslog.NewNopLogger(),
+		NotifyFunc:      func(context.Context, string, ...*Alert) {},
+		OutageTolerance: 30 * time.Minute,
+		ForGracePeriod:  10 * time.Minute,
+	}
+
+	alertForDuration := 5 * time.Minute // Shorter than ForGracePeriod of 10m
+	rule := NewAlertingRule(
+		"HTTPRequestRateLow",
+		expr,
+		alertForDuration,
+		0,
+		labels.FromStrings("severity", "critical"),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+	)
+
+	group := NewGroup(GroupOptions{
+		Name:          "default",
+		Interval:      time.Second,
+		Rules:         []Rule{rule},
+		ShouldRestore: true,
+		Opts:          opts,
+	})
+
+	baseTime := time.Unix(0, 0).UTC()
+	// Run at 0m and 5m.
+	// At 0m, alert goes to StatePending.
+	// At 5m, alert goes to StateFiring (since 5m >= alertForDuration).
+	group.Eval(context.TODO(), baseTime)
+	group.Eval(context.TODO(), baseTime.Add(5*time.Minute))
+
+	// Verify it is firing before restart.
+	require.Len(t, rule.ActiveAlerts(), 1)
+	require.Equal(t, StateFiring, rule.ActiveAlerts()[0].State)
+
+	// Now simulate Prometheus restart.
+	newRule := NewAlertingRule(
+		"HTTPRequestRateLow",
+		expr,
+		alertForDuration,
+		0,
+		labels.FromStrings("severity", "critical"),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", false, nil,
+	)
+	newGroup := NewGroup(GroupOptions{
+		Name:          "default",
+		Interval:      time.Second,
+		Rules:         []Rule{newRule},
+		ShouldRestore: true,
+		Opts:          opts,
+	})
+
+	restoreTime := baseTime.Add(15 * time.Minute)
+	// First eval before restoration to create the alert instances.
+	newGroup.Eval(context.TODO(), restoreTime)
+
+	// Verify the alert is newly created in StatePending state.
+	require.Len(t, newRule.ActiveAlerts(), 1)
+	require.Equal(t, StatePending, newRule.ActiveAlerts()[0].State)
+	require.Equal(t, restoreTime, newRule.ActiveAlerts()[0].ActiveAt)
+
+	// Perform state restoration.
+	newGroup.RestoreForState(restoreTime)
+
+	// Verify that restored ActiveAt is correct (original ActiveAt was baseTime, i.e., 0).
+	require.Len(t, newRule.ActiveAlerts(), 1)
+	require.Equal(t, baseTime, newRule.ActiveAlerts()[0].ActiveAt)
+
+	// Evaluate again, this should transition the alert to StateFiring immediately.
+	newGroup.Eval(context.TODO(), restoreTime.Add(time.Second))
+	require.Equal(t, StateFiring, newRule.ActiveAlerts()[0].State)
+}
+
 func TestStaleness(t *testing.T) {
 	for _, queryOffset := range []time.Duration{0, time.Minute} {
 		st := teststorage.New(t)
