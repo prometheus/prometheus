@@ -1389,10 +1389,14 @@ See below for the configuration options for Azure discovery:
 # The Azure environment.
 [ environment: <string> | default = AzurePublicCloud ]
 
-# The authentication method, either OAuth, ManagedIdentity or SDK.
+# The authentication method, either OAuth, ManagedIdentity, SDK or WorkloadIdentity.
 # See https://learn.microsoft.com/en-us/entra/identity/managed-identities-azure-resources/overview
 # SDK authentication method uses environment variables by default.
 # See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
+# WorkloadIdentity authentication method uses the environment variables injected
+# by the Azure Workload Identity webhook (AZURE_CLIENT_ID, AZURE_TENANT_ID and
+# AZURE_FEDERATED_TOKEN_FILE).
+# See https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview
 [ authentication_method: <string> | default = OAuth]
 # The subscription ID. Always required.
 subscription_id: <string>
