@@ -1362,12 +1362,72 @@ func TestHasPrefixCaseInsensitive(t *testing.T) {
 	require.False(t, hasPrefixCaseInsensitive("\u212aelvin", "s"))
 }
 
-func TestHasSuffixCaseInsensitive(t *testing.T) {
-	require.True(t, hasSuffixCaseInsensitive("marco", "rco"))
-	require.True(t, hasSuffixCaseInsensitive("marco", "RcO"))
-	require.True(t, hasSuffixCaseInsensitive("marco", "marco"))
-	require.False(t, hasSuffixCaseInsensitive("marco", "a"))
-	require.False(t, hasSuffixCaseInsensitive("marco", "abcdefghi"))
+func TestPrefixCaseInsensitiveMatchLen(t *testing.T) {
+	for _, c := range []struct {
+		s, prefix   string
+		expectedLen int
+		expectedOK  bool
+	}{
+		{"marco", "mar", 3, true},
+		{"mArco", "MaR", 3, true},
+		{"marco", "marco", 5, true},
+		{"mar", "marco", 0, false},
+		{"marco", "x", 0, false},
+		{"", "", 0, true},
+		{"marco", "", 0, true},
+		// The matched prefix of s can have a different length than the
+		// searched prefix due to Unicode simple case folding.
+		{"\u212aelvin", "k", 3, true},
+		{"\u212aelvin", "kel", 5, true},
+		{"kelvin", "\u212a", 1, true},
+		{"ſtreet", "st", 3, true},
+		{"streets", "ſt", 2, true},
+		{"ſſs", "sss", 5, true},
+		{"ſtreet", "str", 4, true},
+		{"\u212aelvin", "s", 0, false},
+		{"ſtreet", "sx", 0, false},
+		// Invalid UTF-8 is decoded to U+FFFD, which folds only with itself.
+		{"\xff", "\xff", 1, true},
+		{"\xffabc", "\xffab", 3, true},
+		{"\u212aelvin", "\xff", 0, false},
+	} {
+		n, ok := prefixCaseInsensitiveMatchLen(c.s, c.prefix)
+		require.Equal(t, c.expectedOK, ok, "s=%q prefix=%q", c.s, c.prefix)
+		require.Equal(t, c.expectedLen, n, "s=%q prefix=%q", c.s, c.prefix)
+	}
+}
+
+func TestSuffixCaseInsensitiveMatchLen(t *testing.T) {
+	for _, c := range []struct {
+		s, suffix   string
+		expectedLen int
+		expectedOK  bool
+	}{
+		{"marco", "rco", 3, true},
+		{"marco", "RcO", 3, true},
+		{"marco", "marco", 5, true},
+		{"rco", "marco", 0, false},
+		{"marco", "x", 0, false},
+		{"", "", 0, true},
+		{"marco", "", 0, true},
+		// The matched suffix of s can have a different length than the
+		// searched suffix due to Unicode simple case folding.
+		{"a\u212a", "k", 3, true},
+		{"drin\u212a", "ink", 5, true},
+		{"drink", "in\u212a", 3, true},
+		{"streetſ", "ts", 3, true},
+		{"ſſs", "sss", 5, true},
+		{"a\u212a", "s", 0, false},
+		{"streetſ", "tſt", 0, false},
+		// Invalid UTF-8 is decoded to U+FFFD, which folds only with itself.
+		{"\xff", "\xff", 1, true},
+		{"abc\xff", "bc\xff", 3, true},
+		{"a\u212a", "\xff", 0, false},
+	} {
+		n, ok := suffixCaseInsensitiveMatchLen(c.s, c.suffix)
+		require.Equal(t, c.expectedOK, ok, "s=%q suffix=%q", c.s, c.suffix)
+		require.Equal(t, c.expectedLen, n, "s=%q suffix=%q", c.s, c.suffix)
+	}
 }
 
 func TestContainsInOrder(t *testing.T) {
