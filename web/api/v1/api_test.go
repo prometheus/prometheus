@@ -4924,14 +4924,14 @@ func TestExtractQueryOpts(t *testing.T) {
 			err:    nil,
 		},
 		{
-			name: "with X-Prometheus-Use-Start-Timestamps header and use_start_timestamps parameter (header wins)",
+			name: "with X-Prometheus-Use-Start-Timestamps header and use_start_timestamps parameter (parameter wins)",
 			form: url.Values{
 				"use_start_timestamps": []string{"false"},
 			},
 			header: http.Header{
 				"X-Prometheus-Use-Start-Timestamps": []string{"true"},
 			},
-			expect: promql.NewPrometheusQueryOpts(false, 0, &trueVal),
+			expect: promql.NewPrometheusQueryOpts(false, 0, &falseVal),
 			err:    nil,
 		},
 		{
