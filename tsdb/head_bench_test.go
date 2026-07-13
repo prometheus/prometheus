@@ -252,6 +252,31 @@ func BenchmarkHeadAppender_AppendCommit(b *testing.B) {
 	}
 }
 
+func BenchmarkHeadUpdateNativeHistogramMetricsOnAppend(b *testing.B) {
+	testCases := []struct {
+		name                      string
+		wasHistogram, isHistogram bool
+		oldBuckets, newBuckets    int
+	}{
+		{name: "unchanged_float"},
+		{name: "unchanged_histogram", wasHistogram: true, isHistogram: true, oldBuckets: 8, newBuckets: 8},
+		{name: "bucket_growth", wasHistogram: true, isHistogram: true, oldBuckets: 8, newBuckets: 9},
+		{name: "float_to_histogram", isHistogram: true, newBuckets: 8},
+	}
+
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			h := &Head{}
+			b.ReportAllocs()
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					h.updateNativeHistogramMetricsOnAppend(tc.wasHistogram, tc.isHistogram, tc.oldBuckets, tc.newBuckets)
+				}
+			})
+		})
+	}
+}
+
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 	chunkDir := b.TempDir()
 	// Put a series, select it. GC it and then access it.

@@ -646,27 +646,103 @@ func (wp *walSubsetProcessor) reuseHistogramBuf() []histogramRecord {
 	return nil
 }
 
-// appendChunkAndMmap appends a sample to ms via appendFn and, if a new head
-// chunk was created, immediately mmaps the now-completed predecessors. Used
-// by WAL replay paths to keep memory bounded by mmapping eagerly rather than
-// waiting for the periodic mmapHeadChunks pass.
-//
-// If the chunk cut + mmap reduces headChunkCount from >= 2 to < 2 (which
-// happens whenever prev >= 2, since mmapChunks always sets the count to 1
-// when it does work), the per-stripe mmap-ready counter is decremented to
-// maintain its invariant.
-func (h *Head) appendChunkAndMmap(ms *memSeries, appendFn func() bool) bool {
+// appendChunkAndMmap appends during WAL replay and eagerly mmaps completed
+// predecessors. It returns whether the sample was accepted and cut a chunk.
+func (h *Head) appendChunkAndMmap(ms *memSeries, appendFn func() (bool, bool)) (sampleInOrder, chunkCreated bool) {
 	prev := ms.headChunkCount.Load()
-	chunkCreated := appendFn()
+	sampleInOrder, chunkCreated = appendFn()
 	if chunkCreated {
 		h.metrics.chunksCreated.Inc()
 		h.metrics.chunks.Inc()
 		_ = ms.mmapChunks(h.chunkDiskMapper)
+		// mmapChunks leaves one head chunk, so the series is no longer ready.
 		if prev >= 2 {
 			h.series.decMmapReady(ms.ref)
 		}
 	}
-	return chunkCreated
+	return sampleInOrder, chunkCreated
+}
+
+func valueTypeForChunkEncoding(enc chunkenc.Encoding) chunkenc.ValueType {
+	switch enc {
+	case chunkenc.EncXOR, chunkenc.EncXOR2:
+		return chunkenc.ValFloat
+	case chunkenc.EncHistogram, chunkenc.EncHistogramST:
+		return chunkenc.ValHistogram
+	case chunkenc.EncFloatHistogram, chunkenc.EncFloatHistogramST:
+		return chunkenc.ValFloatHistogram
+	default:
+		return chunkenc.ValNone
+	}
+}
+
+// latestInOrderValueType reports the newest materialized chunk's type, falling
+// back to snapshot last-value state when no chunk remains.
+func (s *memSeries) latestInOrderValueType() chunkenc.ValueType {
+	switch {
+	case s.headChunks != nil:
+		return valueTypeForChunkEncoding(s.headChunks.chunk.Encoding())
+	case len(s.mmappedChunks) > 0:
+		return valueTypeForChunkEncoding(s.mmappedChunks[len(s.mmappedChunks)-1].encoding)
+	case s.lastHistogramValue != nil:
+		return chunkenc.ValHistogram
+	case s.lastFloatHistogramValue != nil:
+		return chunkenc.ValFloatHistogram
+	default:
+		return chunkenc.ValNone
+	}
+}
+
+func (h *Head) appendWALFloat(ms *memSeries, s record.RefSample, opts chunkOpts) bool {
+	if value.IsStaleNaN(s.V) {
+		switch ms.latestInOrderValueType() {
+		case chunkenc.ValHistogram:
+			return h.appendWALHistogram(ms, s.ST, s.T, &histogram.Histogram{Sum: s.V}, nil, opts)
+		case chunkenc.ValFloatHistogram:
+			return h.appendWALHistogram(ms, s.ST, s.T, nil, &histogram.FloatHistogram{Sum: s.V}, opts)
+		}
+	}
+
+	wasStale := isStaleSeries(ms)
+	isStale := value.IsStaleNaN(s.V)
+	wasHistogram, oldBuckets := ms.nativeHistogramState()
+	sampleInOrder, _ := h.appendChunkAndMmap(ms, func() (bool, bool) {
+		return ms.append(s.ST, s.T, s.V, 0, opts)
+	})
+	if !sampleInOrder {
+		return false
+	}
+	h.updateStaleSeriesMetricOnAppend(wasStale, isStale)
+	h.updateNativeHistogramMetricsOnAppend(wasHistogram, false, oldBuckets, 0)
+	return true
+}
+
+func (h *Head) appendWALHistogram(ms *memSeries, st, t int64, hist *histogram.Histogram, floatHist *histogram.FloatHistogram, opts chunkOpts) bool {
+	wasStale := isStaleSeries(ms)
+	wasHistogram, oldBuckets := ms.nativeHistogramState()
+	var isStale bool
+	var newBuckets int
+	var sampleInOrder bool
+
+	if hist != nil {
+		isStale = value.IsStaleNaN(hist.Sum)
+		newBuckets = nativeHistogramBucketCount(hist.Sum, len(hist.PositiveBuckets), len(hist.NegativeBuckets))
+		sampleInOrder, _ = h.appendChunkAndMmap(ms, func() (bool, bool) {
+			return ms.appendHistogram(st, t, hist, 0, opts)
+		})
+	} else {
+		isStale = value.IsStaleNaN(floatHist.Sum)
+		newBuckets = nativeHistogramBucketCount(floatHist.Sum, len(floatHist.PositiveBuckets), len(floatHist.NegativeBuckets))
+		sampleInOrder, _ = h.appendChunkAndMmap(ms, func() (bool, bool) {
+			return ms.appendFloatHistogram(st, t, floatHist, 0, opts)
+		})
+	}
+	if !sampleInOrder {
+		return false
+	}
+	h.updateStaleSeriesMetricOnAppend(wasStale, isStale)
+	h.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
+	return true
 }
 
 // processWALSamples adds the samples it receives to the head and passes
@@ -715,19 +791,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				continue
 			}
 
-			if !value.IsStaleNaN(ms.lastValue) && value.IsStaleNaN(s.V) {
-				h.numStaleSeries.Inc()
-			}
-			if value.IsStaleNaN(ms.lastValue) && !value.IsStaleNaN(s.V) {
-				h.numStaleSeries.Dec()
-			}
-
-			wasHistogram, oldBuckets := ms.nativeHistogramState()
-			h.appendChunkAndMmap(ms, func() bool {
-				_, chunkCreated := ms.append(s.ST, s.T, s.V, 0, appendChunkOpts)
-				return chunkCreated
-			})
-			h.updateNativeHistogramMetricsOnAppend(wasHistogram, false, oldBuckets, 0)
+			h.appendWALFloat(ms, s, appendChunkOpts)
 			if s.T > maxt {
 				maxt = s.T
 			}
@@ -753,39 +817,11 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if s.t <= ms.mmMaxTime {
 				continue
 			}
-			var newlyStale, staleToNonStale bool
-			wasHistogram, oldBuckets := ms.nativeHistogramState()
-			var newBuckets int
 			if s.h != nil {
-				newlyStale = value.IsStaleNaN(s.h.Sum)
-				if ms.lastHistogramValue != nil {
-					newlyStale = newlyStale && !value.IsStaleNaN(ms.lastHistogramValue.Sum)
-					staleToNonStale = value.IsStaleNaN(ms.lastHistogramValue.Sum) && !value.IsStaleNaN(s.h.Sum)
-				}
-				newBuckets = len(s.h.PositiveBuckets) + len(s.h.NegativeBuckets)
-				h.appendChunkAndMmap(ms, func() bool {
-					_, chunkCreated := ms.appendHistogram(s.st, s.t, s.h, 0, appendChunkOpts)
-					return chunkCreated
-				})
+				h.appendWALHistogram(ms, s.st, s.t, s.h, nil, appendChunkOpts)
 			} else {
-				newlyStale = value.IsStaleNaN(s.fh.Sum)
-				if ms.lastFloatHistogramValue != nil {
-					newlyStale = newlyStale && !value.IsStaleNaN(ms.lastFloatHistogramValue.Sum)
-					staleToNonStale = value.IsStaleNaN(ms.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.fh.Sum)
-				}
-				newBuckets = len(s.fh.PositiveBuckets) + len(s.fh.NegativeBuckets)
-				h.appendChunkAndMmap(ms, func() bool {
-					_, chunkCreated := ms.appendFloatHistogram(s.st, s.t, s.fh, 0, appendChunkOpts)
-					return chunkCreated
-				})
+				h.appendWALHistogram(ms, s.st, s.t, nil, s.fh, appendChunkOpts)
 			}
-			if newlyStale {
-				h.numStaleSeries.Inc()
-			}
-			if staleToNonStale {
-				h.numStaleSeries.Dec()
-			}
-			h.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
 			if s.t > maxt {
 				maxt = s.t
 			}
@@ -1725,9 +1761,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 				series.lastHistogramValue = csr.lastHistogramValue
 				series.lastFloatHistogramValue = csr.lastFloatHistogramValue
 
-				if value.IsStaleNaN(series.lastValue) ||
-					(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
-					(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
+				if isStaleSeries(series) {
 					h.numStaleSeries.Inc()
 				}
 				if isHist, buckets := series.nativeHistogramState(); isHist {

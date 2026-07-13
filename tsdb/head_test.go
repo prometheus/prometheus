@@ -7899,6 +7899,629 @@ func TestHead_NumStaleSeries(t *testing.T) {
 	verifySeriesCounts(4, 5)
 }
 
+type nativeHistogramTestSample struct {
+	labels labels.Labels
+	st, t  int64
+	v      float64
+	h      *histogram.Histogram
+	fh     *histogram.FloatHistogram
+}
+
+func openTestHeadWithWALAndWBL(t testing.TB, dir string, opts *HeadOptions) *Head {
+	t.Helper()
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
+	require.NoError(t, err)
+	wbl, err := wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, compression.None)
+	require.NoError(t, err)
+	head, err := NewHead(nil, nil, wal, wbl, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(0))
+	return head
+}
+
+func appendNativeHistogramTestSamples(t testing.TB, head *Head, appenderV2 bool, samples ...nativeHistogramTestSample) {
+	t.Helper()
+	if appenderV2 {
+		app := head.AppenderV2(t.Context())
+		for _, s := range samples {
+			_, err := app.Append(0, s.labels, s.st, s.t, s.v, s.h, s.fh, storage.AOptions{})
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+		return
+	}
+
+	app := head.Appender(t.Context())
+	for _, s := range samples {
+		var err error
+		if s.h != nil || s.fh != nil {
+			_, err = app.AppendHistogram(0, s.labels, s.t, s.h, s.fh)
+		} else {
+			_, err = app.Append(0, s.labels, s.t, s.v)
+		}
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+}
+
+func requireHeadSampleTypeAndST(t testing.TB, head *Head, lbls labels.Labels, ts int64, wantType chunkenc.ValueType, wantST int64) {
+	t.Helper()
+	q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, q.Close()) }()
+
+	ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "name", lbls.Get("name")))
+	require.True(t, ss.Next())
+	it := ss.At().Iterator(nil)
+	found := false
+	for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
+		var gotT int64
+		switch typ {
+		case chunkenc.ValFloat:
+			gotT, _ = it.At()
+		case chunkenc.ValHistogram:
+			gotT, _ = it.AtHistogram(nil)
+		case chunkenc.ValFloatHistogram:
+			gotT, _ = it.AtFloatHistogram(nil)
+		}
+		if gotT != ts {
+			continue
+		}
+		require.Equal(t, wantType, typ)
+		require.Equal(t, wantST, it.AtST())
+		found = true
+	}
+	require.NoError(t, it.Err())
+	require.NoError(t, ss.Err())
+	require.True(t, found, "sample at timestamp %d not found", ts)
+}
+
+func requireOOOHeadSampleTypeAndST(t testing.TB, head *Head, lbls labels.Labels, ts int64, wantType chunkenc.ValueType, wantST int64) {
+	t.Helper()
+	series := head.series.getByHash(lbls.Hash(), lbls)
+	require.NotNil(t, series)
+	require.NotNil(t, series.ooo)
+	require.NotNil(t, series.ooo.oooHeadChunk)
+	encoded, err := series.ooo.oooHeadChunk.chunk.ToEncodedChunks(
+		math.MinInt64,
+		math.MaxInt64,
+		head.opts.UseXOR2FloatEncoding(),
+		head.opts.EnableHistogramSTEncoding.Load(),
+	)
+	require.NoError(t, err)
+	found := false
+	for _, chk := range encoded {
+		it := chk.chunk.Iterator(nil)
+		for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
+			var gotT int64
+			switch typ {
+			case chunkenc.ValFloat:
+				gotT, _ = it.At()
+			case chunkenc.ValHistogram:
+				gotT, _ = it.AtHistogram(nil)
+			case chunkenc.ValFloatHistogram:
+				gotT, _ = it.AtFloatHistogram(nil)
+			}
+			if gotT != ts {
+				continue
+			}
+			require.Equal(t, wantType, typ)
+			require.Equal(t, wantST, it.AtST())
+			found = true
+		}
+		require.NoError(t, it.Err())
+	}
+	require.True(t, found, "OOO sample at timestamp %d not found", ts)
+}
+
+func TestHead_NativeHistogramMetrics_WALReplayStaleMarkerConversion(t *testing.T) {
+	for _, appenderV2 := range []bool{false, true} {
+		for _, floatHistogram := range []bool{false, true} {
+			name := fmt.Sprintf("appender_v2=%t/float_histogram=%t", appenderV2, floatHistogram)
+			t.Run(name, func(t *testing.T) {
+				dir := t.TempDir()
+				opts := DefaultHeadOptions()
+				opts.ChunkDirRoot = dir
+				opts.ChunkRange = 1000
+				if appenderV2 {
+					opts.EnableSTStorage.Store(true)
+					opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+					opts.EnableHistogramSTEncoding.Store(true)
+				}
+
+				head := openTestHeadWithWALAndWBL(t, dir, opts)
+				lbls := labels.FromStrings("name", name)
+				first := nativeHistogramTestSample{labels: lbls, st: 900, t: 1000}
+				if floatHistogram {
+					first.fh = tsdbutil.GenerateTestFloatHistograms(1)[0]
+				} else {
+					first.h = tsdbutil.GenerateTestHistograms(1)[0]
+				}
+				appendNativeHistogramTestSamples(t, head, appenderV2, first)
+				appendNativeHistogramTestSamples(t, head, appenderV2, nativeHistogramTestSample{
+					labels: lbls,
+					st:     1900,
+					t:      2000,
+					v:      math.Float64frombits(value.StaleNaN),
+				})
+
+				require.Equal(t, uint64(1), head.NumNativeHistogramSeries())
+				require.Equal(t, uint64(0), head.NumNativeHistogramBuckets())
+				require.Equal(t, uint64(1), head.NumStaleSeries())
+				wantType := chunkenc.ValHistogram
+				if floatHistogram {
+					wantType = chunkenc.ValFloatHistogram
+				}
+				wantST := int64(0)
+				if appenderV2 {
+					wantST = 1900
+				}
+				requireHeadSampleTypeAndST(t, head, lbls, 2000, wantType, wantST)
+
+				head.mmapHeadChunks()
+				series := head.series.getByHash(lbls.Hash(), lbls)
+				require.NotNil(t, series)
+				series.Lock()
+				require.NotEmpty(t, series.mmappedChunks, "the predecessor must be mmaped for this regression test")
+				require.Equal(t, wantType, valueTypeForChunkEncoding(series.mmappedChunks[len(series.mmappedChunks)-1].encoding))
+				series.Unlock()
+
+				require.NoError(t, head.Close())
+				head = openTestHeadWithWALAndWBL(t, dir, opts)
+				t.Cleanup(func() { _ = head.Close() })
+
+				require.Equal(t, uint64(1), head.NumNativeHistogramSeries())
+				require.Equal(t, uint64(0), head.NumNativeHistogramBuckets())
+				require.Equal(t, uint64(1), head.NumStaleSeries())
+				requireHeadSampleTypeAndST(t, head, lbls, 2000, wantType, wantST)
+			})
+		}
+	}
+
+	for _, appenderV2 := range []bool{false, true} {
+		for _, floatHistogram := range []bool{false, true} {
+			name := fmt.Sprintf("newer_mmap_than_snapshot/appender_v2=%t/float_histogram=%t", appenderV2, floatHistogram)
+			t.Run(name, func(t *testing.T) {
+				dir := t.TempDir()
+				opts := DefaultHeadOptions()
+				opts.ChunkDirRoot = dir
+				opts.ChunkRange = 1000
+				opts.EnableMemorySnapshotOnShutdown = true
+				if appenderV2 {
+					opts.EnableSTStorage.Store(true)
+					opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+					opts.EnableHistogramSTEncoding.Store(true)
+				}
+
+				head := openTestHeadWithWALAndWBL(t, dir, opts)
+				lbls := labels.FromStrings("name", name)
+				first := nativeHistogramTestSample{labels: lbls, st: 900, t: 1000}
+				if floatHistogram {
+					first.fh = tsdbutil.GenerateTestFloatHistograms(1)[0]
+				} else {
+					first.h = tsdbutil.GenerateTestHistograms(1)[0]
+				}
+				appendNativeHistogramTestSamples(t, head, appenderV2, first)
+				require.NoError(t, head.Close())
+
+				snapshotDir, snapshotIdx, snapshotOffset, err := LastChunkSnapshot(dir)
+				require.NoError(t, err)
+
+				head = openTestHeadWithWALAndWBL(t, dir, opts)
+				appendNativeHistogramTestSamples(t, head, appenderV2,
+					nativeHistogramTestSample{labels: lbls, st: 1900, t: 2000, v: 1},
+					nativeHistogramTestSample{labels: lbls, st: 2900, t: 3000, v: math.Float64frombits(value.StaleNaN)},
+				)
+				head.mmapHeadChunks()
+				series := head.series.getByHash(lbls.Hash(), lbls)
+				require.NotNil(t, series)
+				func() {
+					series.Lock()
+					defer series.Unlock()
+					require.NotEmpty(t, series.mmappedChunks, "a newer float predecessor must be mmaped")
+					require.Equal(t, chunkenc.ValFloat, valueTypeForChunkEncoding(series.mmappedChunks[len(series.mmappedChunks)-1].encoding))
+				}()
+
+				head.opts.EnableMemorySnapshotOnShutdown = false
+				require.NoError(t, head.Close())
+				gotSnapshotDir, gotSnapshotIdx, gotSnapshotOffset, err := LastChunkSnapshot(dir)
+				require.NoError(t, err)
+				require.Equal(t, snapshotDir, gotSnapshotDir)
+				require.Equal(t, snapshotIdx, gotSnapshotIdx)
+				require.Equal(t, snapshotOffset, gotSnapshotOffset)
+
+				opts.EnableMemorySnapshotOnShutdown = true
+				head = openTestHeadWithWALAndWBL(t, dir, opts)
+				t.Cleanup(func() { _ = head.Close() })
+
+				require.Equal(t, uint64(0), head.NumNativeHistogramSeries())
+				require.Equal(t, uint64(0), head.NumNativeHistogramBuckets())
+				require.Equal(t, uint64(1), head.NumStaleSeries())
+				wantST := int64(0)
+				if appenderV2 {
+					wantST = 2900
+				}
+				requireHeadSampleTypeAndST(t, head, lbls, 3000, chunkenc.ValFloat, wantST)
+			})
+		}
+	}
+
+	for _, appenderV2 := range []bool{false, true} {
+		for _, floatHistogram := range []bool{false, true} {
+			name := fmt.Sprintf("stale_snapshot_with_newer_histogram_mmap/appender_v2=%t/float_histogram=%t", appenderV2, floatHistogram)
+			t.Run(name, func(t *testing.T) {
+				dir := t.TempDir()
+				opts := DefaultHeadOptions()
+				opts.ChunkDirRoot = dir
+				opts.ChunkRange = 1000
+				opts.EnableMemorySnapshotOnShutdown = true
+				if appenderV2 {
+					opts.EnableSTStorage.Store(true)
+					opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+					opts.EnableHistogramSTEncoding.Store(true)
+				}
+
+				head := openTestHeadWithWALAndWBL(t, dir, opts)
+				lbls := labels.FromStrings("name", name)
+				appendNativeHistogramTestSamples(t, head, appenderV2, nativeHistogramTestSample{
+					labels: lbls,
+					st:     900,
+					t:      1000,
+					v:      math.Float64frombits(value.StaleNaN),
+				})
+				require.NoError(t, head.Close())
+
+				snapshotDir, snapshotIdx, snapshotOffset, err := LastChunkSnapshot(dir)
+				require.NoError(t, err)
+
+				head = openTestHeadWithWALAndWBL(t, dir, opts)
+				histogramSample := nativeHistogramTestSample{labels: lbls, st: 1900, t: 2000}
+				wantType := chunkenc.ValHistogram
+				if floatHistogram {
+					histogramSample.fh = tsdbutil.GenerateTestFloatHistograms(1)[0]
+					wantType = chunkenc.ValFloatHistogram
+				} else {
+					histogramSample.h = tsdbutil.GenerateTestHistograms(1)[0]
+				}
+				appendNativeHistogramTestSamples(t, head, appenderV2, histogramSample)
+				appendNativeHistogramTestSamples(t, head, appenderV2, nativeHistogramTestSample{
+					labels: lbls,
+					st:     2900,
+					t:      3000,
+					v:      math.Float64frombits(value.StaleNaN),
+				})
+				head.mmapHeadChunks()
+				series := head.series.getByHash(lbls.Hash(), lbls)
+				require.NotNil(t, series)
+				func() {
+					series.Lock()
+					defer series.Unlock()
+					require.NotEmpty(t, series.mmappedChunks, "a newer histogram predecessor must be mmaped")
+					require.Equal(t, wantType, valueTypeForChunkEncoding(series.mmappedChunks[len(series.mmappedChunks)-1].encoding))
+				}()
+
+				head.opts.EnableMemorySnapshotOnShutdown = false
+				require.NoError(t, head.Close())
+				gotSnapshotDir, gotSnapshotIdx, gotSnapshotOffset, err := LastChunkSnapshot(dir)
+				require.NoError(t, err)
+				require.Equal(t, snapshotDir, gotSnapshotDir)
+				require.Equal(t, snapshotIdx, gotSnapshotIdx)
+				require.Equal(t, snapshotOffset, gotSnapshotOffset)
+
+				opts.EnableMemorySnapshotOnShutdown = true
+				head = openTestHeadWithWALAndWBL(t, dir, opts)
+				t.Cleanup(func() { _ = head.Close() })
+
+				require.Equal(t, uint64(1), head.NumNativeHistogramSeries())
+				require.Equal(t, uint64(0), head.NumNativeHistogramBuckets())
+				require.Equal(t, uint64(1), head.NumStaleSeries())
+				wantST := int64(0)
+				if appenderV2 {
+					wantST = 2900
+				}
+				requireHeadSampleTypeAndST(t, head, lbls, 3000, wantType, wantST)
+			})
+		}
+	}
+}
+
+func TestHead_NativeHistogramMetrics_WALReplaySelectedSeriesDeletion(t *testing.T) {
+	for _, appenderV2 := range []bool{false, true} {
+		for _, floatHistogram := range []bool{false, true} {
+			name := fmt.Sprintf("appender_v2=%t/float_histogram=%t", appenderV2, floatHistogram)
+			t.Run(name, func(t *testing.T) {
+				dir := t.TempDir()
+				opts := DefaultHeadOptions()
+				opts.ChunkDirRoot = dir
+				if appenderV2 {
+					opts.EnableSTStorage.Store(true)
+					opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+					opts.EnableHistogramSTEncoding.Store(true)
+				}
+
+				head := openTestHeadWithWALAndWBL(t, dir, opts)
+				lbls := labels.FromStrings("name", name)
+				appendNativeHistogramTestSamples(t, head, appenderV2, nativeHistogramTestSample{
+					labels: lbls,
+					st:     900,
+					t:      1000,
+					v:      math.Float64frombits(value.StaleNaN),
+				})
+
+				histogramSample := nativeHistogramTestSample{labels: lbls, st: 1900, t: 2000}
+				if floatHistogram {
+					histogramSample.fh = tsdbutil.GenerateTestFloatHistograms(1)[0]
+				} else {
+					histogramSample.h = tsdbutil.GenerateTestHistograms(1)[0]
+				}
+				appendNativeHistogramTestSamples(t, head, appenderV2, histogramSample)
+
+				series := head.series.getByHash(lbls.Hash(), lbls)
+				require.NotNil(t, series)
+				require.NoError(t, head.truncateSelectedSeries(
+					[]storage.SeriesRef{storage.SeriesRef(series.ref)},
+					2000,
+					math.MaxUint64,
+				))
+				require.Zero(t, head.NumSeries())
+				require.NoError(t, head.Close())
+
+				head = openTestHeadWithWALAndWBL(t, dir, opts)
+				t.Cleanup(func() { _ = head.Close() })
+				require.Zero(t, head.NumSeries())
+				require.Zero(t, head.NumStaleSeries())
+				require.Zero(t, head.NumNativeHistogramSeries())
+				require.Zero(t, head.NumNativeHistogramBuckets())
+			})
+		}
+	}
+}
+
+func TestHead_NativeHistogramMetrics_MixedTypeStalenessRecoveryAndGC(t *testing.T) {
+	testTypes := []struct {
+		name   string
+		sample func(labels.Labels, int64, int64, bool) nativeHistogramTestSample
+	}{
+		{
+			name: "float",
+			sample: func(lbls labels.Labels, st, ts int64, stale bool) nativeHistogramTestSample {
+				v := float64(1)
+				if stale {
+					v = math.Float64frombits(value.StaleNaN)
+				}
+				return nativeHistogramTestSample{labels: lbls, st: st, t: ts, v: v}
+			},
+		},
+		{
+			name: "histogram",
+			sample: func(lbls labels.Labels, st, ts int64, stale bool) nativeHistogramTestSample {
+				h := tsdbutil.GenerateTestHistograms(1)[0]
+				if stale {
+					h.Sum = math.Float64frombits(value.StaleNaN)
+				}
+				return nativeHistogramTestSample{labels: lbls, st: st, t: ts, h: h}
+			},
+		},
+		{
+			name: "float_histogram",
+			sample: func(lbls labels.Labels, st, ts int64, stale bool) nativeHistogramTestSample {
+				fh := tsdbutil.GenerateTestFloatHistograms(1)[0]
+				if stale {
+					fh.Sum = math.Float64frombits(value.StaleNaN)
+				}
+				return nativeHistogramTestSample{labels: lbls, st: st, t: ts, fh: fh}
+			},
+		},
+	}
+
+	for _, appenderV2 := range []bool{false, true} {
+		for _, from := range testTypes {
+			for _, to := range testTypes {
+				if from.name == to.name {
+					continue
+				}
+				name := fmt.Sprintf("appender_v2=%t/from=%s/to=%s", appenderV2, from.name, to.name)
+				t.Run(name, func(t *testing.T) {
+					dir := t.TempDir()
+					opts := DefaultHeadOptions()
+					opts.ChunkDirRoot = dir
+					opts.ChunkRange = 1000
+					if appenderV2 {
+						opts.EnableSTStorage.Store(true)
+						opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+						opts.EnableHistogramSTEncoding.Store(true)
+					}
+
+					head := openTestHeadWithWALAndWBL(t, dir, opts)
+					lbls := labels.FromStrings("name", name)
+					appendNativeHistogramTestSamples(t, head, appenderV2, from.sample(lbls, 900, 1000, true))
+					require.Equal(t, uint64(1), head.NumStaleSeries())
+					appendNativeHistogramTestSamples(t, head, appenderV2, to.sample(lbls, 1900, 2000, false))
+					require.Zero(t, head.NumStaleSeries())
+
+					// Simulate an unclean shutdown before the stale predecessor is mmaped.
+					require.NoError(t, head.chunkDiskMapper.Close())
+					require.NoError(t, head.wal.Close())
+					require.NoError(t, head.wbl.Close())
+
+					head = openTestHeadWithWALAndWBL(t, dir, opts)
+					t.Cleanup(func() { _ = head.Close() })
+					require.Zero(t, head.NumStaleSeries())
+
+					appendNativeHistogramTestSamples(t, head, appenderV2, nativeHistogramTestSample{
+						labels: labels.FromStrings("name", "keep"),
+						st:     3900,
+						t:      4000,
+						v:      1,
+					})
+					require.NoError(t, head.Truncate(3000))
+					head.gc()
+					require.Equal(t, uint64(1), head.NumSeries())
+					require.Zero(t, head.NumStaleSeries())
+					require.Zero(t, head.NumNativeHistogramSeries())
+					require.Zero(t, head.NumNativeHistogramBuckets())
+				})
+			}
+		}
+	}
+}
+
+func TestHead_NativeHistogramMetrics_WALReplayRejectedSamples(t *testing.T) {
+	for _, appenderV2 := range []bool{false, true} {
+		t.Run(fmt.Sprintf("appender_v2=%t", appenderV2), func(t *testing.T) {
+			dir := t.TempDir()
+			opts := DefaultHeadOptions()
+			opts.ChunkDirRoot = dir
+			opts.ChunkRange = DefaultBlockDuration
+			opts.OutOfOrderTimeWindow.Store(5000)
+			if appenderV2 {
+				opts.EnableSTStorage.Store(true)
+				opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+				opts.EnableHistogramSTEncoding.Store(true)
+			}
+			head := openTestHeadWithWALAndWBL(t, dir, opts)
+
+			histograms := tsdbutil.GenerateTestHistograms(5)
+			threeBucketHistogram := &histogram.Histogram{
+				Count:           9,
+				ZeroThreshold:   0.001,
+				Schema:          1,
+				Sum:             10,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+				PositiveBuckets: []int64{2, 1, 1},
+			}
+			histogramSeries := labels.FromStrings("name", "histogram_then_ooo_floats")
+			floatSeries := labels.FromStrings("name", "float_then_ooo_histograms")
+			staleSeries := labels.FromStrings("name", "histogram_then_ooo_stale")
+			conflictSeries := labels.FromStrings("name", "conflicting_histograms")
+
+			appendNativeHistogramTestSamples(t, head, appenderV2, nativeHistogramTestSample{labels: histogramSeries, st: 1900, t: 2000, h: histograms[0]})
+			appendNativeHistogramTestSamples(t, head, appenderV2,
+				nativeHistogramTestSample{labels: histogramSeries, st: 900, t: 1000, v: 1},
+				nativeHistogramTestSample{labels: histogramSeries, st: 1000, t: 1100, v: 2},
+			)
+			appendNativeHistogramTestSamples(t, head, appenderV2, nativeHistogramTestSample{labels: floatSeries, st: 1900, t: 2000, v: 1})
+			appendNativeHistogramTestSamples(t, head, appenderV2,
+				nativeHistogramTestSample{labels: floatSeries, st: 900, t: 1000, h: histograms[1]},
+				nativeHistogramTestSample{labels: floatSeries, st: 1000, t: 1100, h: histograms[2]},
+			)
+			appendNativeHistogramTestSamples(t, head, appenderV2, nativeHistogramTestSample{labels: staleSeries, st: 1900, t: 2000, h: histograms[3]})
+			appendNativeHistogramTestSamples(t, head, appenderV2, nativeHistogramTestSample{
+				labels: staleSeries,
+				st:     900,
+				t:      1000,
+				v:      math.Float64frombits(value.StaleNaN),
+			})
+			appendNativeHistogramTestSamples(t, head, appenderV2,
+				nativeHistogramTestSample{labels: conflictSeries, st: 2900, t: 3000, h: histograms[4]},
+				nativeHistogramTestSample{labels: conflictSeries, st: 2900, t: 3000, h: threeBucketHistogram},
+			)
+
+			require.Equal(t, uint64(3), head.NumNativeHistogramSeries())
+			require.Equal(t, uint64(24), head.NumNativeHistogramBuckets())
+			require.Equal(t, uint64(0), head.NumStaleSeries())
+			require.NoError(t, head.Close())
+
+			head = openTestHeadWithWALAndWBL(t, dir, opts)
+			t.Cleanup(func() { _ = head.Close() })
+			require.Equal(t, uint64(3), head.NumNativeHistogramSeries())
+			require.Equal(t, uint64(24), head.NumNativeHistogramBuckets())
+			require.Equal(t, uint64(0), head.NumStaleSeries())
+
+			wantOOOST := int64(0)
+			wantInOrderST := int64(0)
+			if appenderV2 {
+				wantOOOST = 900
+				wantInOrderST = 1900
+			}
+			requireOOOHeadSampleTypeAndST(t, head, histogramSeries, 1000, chunkenc.ValFloat, wantOOOST)
+			requireHeadSampleTypeAndST(t, head, histogramSeries, 2000, chunkenc.ValHistogram, wantInOrderST)
+			requireOOOHeadSampleTypeAndST(t, head, floatSeries, 1000, chunkenc.ValHistogram, wantOOOST)
+			requireHeadSampleTypeAndST(t, head, floatSeries, 2000, chunkenc.ValFloat, wantInOrderST)
+			requireOOOHeadSampleTypeAndST(t, head, staleSeries, 1000, chunkenc.ValHistogram, wantOOOST)
+
+			series := head.series.getByHash(conflictSeries.Hash(), conflictSeries)
+			require.NotNil(t, series)
+			series.Lock()
+			require.NotNil(t, series.lastHistogramValue)
+			require.Equal(t, 8, len(series.lastHistogramValue.PositiveBuckets)+len(series.lastHistogramValue.NegativeBuckets))
+			series.Unlock()
+		})
+	}
+}
+
+func TestHead_NativeHistogramMetrics_StalePayloadRecoveryAndGC(t *testing.T) {
+	for _, snapshot := range []bool{false, true} {
+		for _, floatHistogram := range []bool{false, true} {
+			name := fmt.Sprintf("snapshot=%t/float_histogram=%t", snapshot, floatHistogram)
+			t.Run(name, func(t *testing.T) {
+				dir := t.TempDir()
+				opts := DefaultHeadOptions()
+				opts.ChunkDirRoot = dir
+				opts.ChunkRange = 1000
+				opts.EnableMemorySnapshotOnShutdown = snapshot
+				head := openTestHeadWithWALAndWBL(t, dir, opts)
+
+				lbls := labels.FromStrings("name", "stale_histogram")
+				first := nativeHistogramTestSample{labels: lbls, t: 100}
+				stale := nativeHistogramTestSample{labels: lbls, t: 200}
+				wantType := chunkenc.ValHistogram
+				if floatHistogram {
+					first.fh = tsdbutil.GenerateTestFloatHistograms(1)[0]
+					stale.fh = first.fh.Copy()
+					stale.fh.Sum = math.Float64frombits(value.StaleNaN)
+					wantType = chunkenc.ValFloatHistogram
+				} else {
+					first.h = tsdbutil.GenerateTestHistograms(1)[0]
+					stale.h = first.h.Copy()
+					stale.h.Sum = math.Float64frombits(value.StaleNaN)
+				}
+				appendNativeHistogramTestSamples(t, head, false, first)
+				appendNativeHistogramTestSamples(t, head, false, stale)
+				require.Equal(t, uint64(1), head.NumNativeHistogramSeries())
+				require.Equal(t, uint64(0), head.NumNativeHistogramBuckets())
+				require.Equal(t, uint64(1), head.NumStaleSeries())
+				require.NoError(t, head.Close())
+				if snapshot {
+					_, _, _, err := LastChunkSnapshot(dir)
+					require.NoError(t, err)
+				}
+
+				head = openTestHeadWithWALAndWBL(t, dir, opts)
+				t.Cleanup(func() { _ = head.Close() })
+				require.Equal(t, uint64(1), head.NumNativeHistogramSeries())
+				require.Equal(t, uint64(0), head.NumNativeHistogramBuckets())
+				require.Equal(t, uint64(1), head.NumStaleSeries())
+				requireHeadSampleTypeAndST(t, head, lbls, 200, wantType, 0)
+
+				series := head.series.getByHash(lbls.Hash(), lbls)
+				require.NotNil(t, series)
+				series.Lock()
+				isHistogram, buckets := series.nativeHistogramState()
+				require.True(t, isHistogram)
+				require.Zero(t, buckets)
+				if floatHistogram {
+					require.NotEmpty(t, series.lastFloatHistogramValue.PositiveBuckets)
+				} else {
+					require.NotEmpty(t, series.lastHistogramValue.PositiveBuckets)
+				}
+				series.Unlock()
+
+				appendNativeHistogramTestSamples(t, head, false, nativeHistogramTestSample{
+					labels: labels.FromStrings("name", "keep"),
+					t:      2000,
+					v:      1,
+				})
+				require.NoError(t, head.Truncate(1000))
+				head.gc()
+				require.Equal(t, uint64(1), head.NumSeries())
+				require.Equal(t, uint64(0), head.NumNativeHistogramSeries())
+				require.Equal(t, uint64(0), head.NumNativeHistogramBuckets())
+			})
+		}
+	}
+}
+
 func TestHead_NumNativeHistogramSeriesAndBuckets(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
 	t.Cleanup(func() {
@@ -9647,7 +10270,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 
 		type testCase struct {
 			appendOnce     func(app storage.Appender, lbls labels.Labels, ts int64, i int) error
-			appendInternal func(ms *memSeries, t int64, opts chunkOpts) bool
+			appendInternal func(ms *memSeries, t int64, opts chunkOpts) (bool, bool)
 		}
 		testCases := map[string]testCase{
 			"floats": {
@@ -9655,9 +10278,8 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 					_, err := app.Append(0, lbls, ts, float64(ts))
 					return err
 				},
-				appendInternal: func(ms *memSeries, t int64, opts chunkOpts) bool {
-					_, chunkCreated := ms.append(0, t, 0, 0, opts)
-					return chunkCreated
+				appendInternal: func(ms *memSeries, t int64, opts chunkOpts) (bool, bool) {
+					return ms.append(0, t, 0, 0, opts)
 				},
 			},
 			"histograms": {
@@ -9665,9 +10287,8 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 					_, err := app.AppendHistogram(0, lbls, ts, histograms[i], nil)
 					return err
 				},
-				appendInternal: func(ms *memSeries, t int64, opts chunkOpts) bool {
-					_, chunkCreated := ms.appendHistogram(0, t, histograms[0], 0, opts)
-					return chunkCreated
+				appendInternal: func(ms *memSeries, t int64, opts chunkOpts) (bool, bool) {
+					return ms.appendHistogram(0, t, histograms[0], 0, opts)
 				},
 			},
 			"float histograms": {
@@ -9675,9 +10296,8 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 					_, err := app.AppendHistogram(0, lbls, ts, nil, floatHistograms[i])
 					return err
 				},
-				appendInternal: func(ms *memSeries, t int64, opts chunkOpts) bool {
-					_, chunkCreated := ms.appendFloatHistogram(0, t, floatHistograms[0], 0, opts)
-					return chunkCreated
+				appendInternal: func(ms *memSeries, t int64, opts chunkOpts) (bool, bool) {
+					return ms.appendFloatHistogram(0, t, floatHistograms[0], 0, opts)
 				},
 			},
 		}
@@ -9713,7 +10333,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 				// Invoke the WAL-replay-style helper with a sample timestamped
 				// past the next chunk boundary to force a chunk cut.
 				s.Lock()
-				chunkCreated := h.appendChunkAndMmap(s, func() bool {
+				sampleInOrder, chunkCreated := h.appendChunkAndMmap(s, func() (bool, bool) {
 					return tc.appendInternal(s, ts+h.chunkRange.Load(), chunkOpts{
 						chunkDiskMapper: h.chunkDiskMapper,
 						chunkRange:      h.chunkRange.Load(),
@@ -9721,6 +10341,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 					})
 				})
 				s.Unlock()
+				require.True(t, sampleInOrder, "test sample must be accepted")
 				require.True(t, chunkCreated, "test needs a chunk cut to be meaningful")
 
 				// After the chunk cut + mmap, headChunkCount == 1 (mmapChunks

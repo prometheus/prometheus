@@ -473,13 +473,13 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		}),
 		nativeHistogramSeries: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_head_native_histogram_series",
-			Help: "Total number of native histogram series in the head block.",
+			Help: "Number of series whose most recent in-order sample is a native histogram.",
 		}, func() float64 {
 			return float64(h.NumNativeHistogramSeries())
 		}),
 		nativeHistogramBuckets: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_head_native_histogram_buckets",
-			Help: "Total number of native histogram buckets across all series in the head block.",
+			Help: "Number of positive and negative bucket entries in the most recent in-order native histogram sample of each series; stale histograms contribute zero.",
 		}, func() float64 {
 			return float64(h.NumNativeHistogramBuckets())
 		}),
@@ -1006,6 +1006,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 					minTime:    mint,
 					maxTime:    maxt,
 					numSamples: numSamples,
+					encoding:   encoding,
 				})
 				return nil
 			}
@@ -1022,6 +1023,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 				minTime:    mint,
 				maxTime:    maxt,
 				numSamples: numSamples,
+				encoding:   encoding,
 			})
 
 			h.updateMinOOOMaxOOOTime(mint, maxt)
@@ -1040,6 +1042,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 				minTime:    mint,
 				maxTime:    maxt,
 				numSamples: numSamples,
+				encoding:   encoding,
 			})
 			mmappedChunks[seriesRef] = slice
 			return nil
@@ -1059,6 +1062,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			minTime:    mint,
 			maxTime:    maxt,
 			numSamples: numSamples,
+			encoding:   encoding,
 		})
 		h.updateMinMaxTime(mint, maxt)
 		if ms.headChunks != nil && maxt >= ms.headChunks.minTime {
@@ -1302,9 +1306,14 @@ func isSeriesWithoutOOO(s *memSeries) bool {
 
 // isStaleSeries reports whether s's most recent in-order sample is a stale-NaN marker.
 func isStaleSeries(s *memSeries) bool {
-	return value.IsStaleNaN(s.lastValue) ||
-		(s.lastHistogramValue != nil && value.IsStaleNaN(s.lastHistogramValue.Sum)) ||
-		(s.lastFloatHistogramValue != nil && value.IsStaleNaN(s.lastFloatHistogramValue.Sum))
+	switch {
+	case s.lastHistogramValue != nil:
+		return value.IsStaleNaN(s.lastHistogramValue.Sum)
+	case s.lastFloatHistogramValue != nil:
+		return value.IsStaleNaN(s.lastFloatHistogramValue.Sum)
+	default:
+		return value.IsStaleNaN(s.lastValue)
+	}
 }
 
 // truncateStaleSeries removes the provided series as long as they are still stale and
@@ -1908,27 +1917,38 @@ func (h *Head) NumStaleSeries() uint64 {
 	return h.numStaleSeries.Load()
 }
 
+// updateStaleSeriesMetricOnAppend updates the stale-series gauge after an in-order append.
+func (h *Head) updateStaleSeriesMetricOnAppend(wasStale, isStale bool) {
+	switch {
+	case !wasStale && isStale:
+		h.numStaleSeries.Inc()
+	case wasStale && !isStale:
+		h.numStaleSeries.Dec()
+	}
+}
+
 // NumNativeHistogramSeries returns the number of series in the head whose most
 // recent in-order sample is a native histogram.
 func (h *Head) NumNativeHistogramSeries() uint64 {
 	return h.numNativeHistogramSeries.Load()
 }
 
-// NumNativeHistogramBuckets returns the total number of native histogram
-// buckets across all series in the head, counting the buckets of each series'
-// most recent in-order native histogram sample.
+// NumNativeHistogramBuckets returns the total positive and negative bucket
+// entries in each series' most recent in-order native histogram. Stale
+// histograms contribute zero buckets.
 func (h *Head) NumNativeHistogramBuckets() uint64 {
 	return h.numNativeHistogramBuckets.Load()
 }
 
-// addNativeHistogramBuckets adjusts the native histogram bucket gauge by delta,
-// which may be negative.
+// addNativeHistogramBuckets adjusts the bucket gauge by a signed delta.
 func (h *Head) addNativeHistogramBuckets(delta int) {
-	if delta >= 0 {
+	if delta > 0 {
 		h.numNativeHistogramBuckets.Add(uint64(delta))
 		return
 	}
-	h.numNativeHistogramBuckets.Sub(uint64(-delta))
+	if delta < 0 {
+		h.numNativeHistogramBuckets.Sub(uint64(-delta))
+	}
 }
 
 // updateNativeHistogramMetricsOnAppend updates the native histogram series and
@@ -2326,9 +2346,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			defer s.locks[stripe].Unlock()
 		}
 
-		if value.IsStaleNaN(series.lastValue) ||
-			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
-			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
+		if isStaleSeries(series) {
 			staleSeriesDeleted++
 		}
 		if isHist, buckets := series.nativeHistogramState(); isHist {
@@ -2436,9 +2454,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 			}
 		}
 
-		if value.IsStaleNaN(series.lastValue) ||
-			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
-			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
+		if isStaleSeries(series) {
 			staleSeriesDeleted++
 		}
 		if isHist, buckets := series.nativeHistogramState(); isHist {
@@ -2757,18 +2773,30 @@ type memSeries struct {
 	txs *txRing
 }
 
-// nativeHistogramState reports whether the series' most recent in-order sample
-// is a native histogram (integer or float) and the number of stored buckets in
-// that sample. The buckets count is 0 when the series is not a native histogram
-// series or when its last sample is a staleness marker, which carries no
-// buckets. It reads the last-value fields only once, for use on the append hot
-// path.
+// nativeHistogramBucketCount returns zero for a staleness marker.
+func nativeHistogramBucketCount(sum float64, positiveBuckets, negativeBuckets int) int {
+	if value.IsStaleNaN(sum) {
+		return 0
+	}
+	return positiveBuckets + negativeBuckets
+}
+
+// nativeHistogramState reports whether the most recent in-order sample is a
+// native histogram and its bucket-entry count. Stale histograms have no buckets.
 func (s *memSeries) nativeHistogramState() (isHistogram bool, buckets int) {
 	switch {
 	case s.lastHistogramValue != nil:
-		return true, len(s.lastHistogramValue.PositiveBuckets) + len(s.lastHistogramValue.NegativeBuckets)
+		return true, nativeHistogramBucketCount(
+			s.lastHistogramValue.Sum,
+			len(s.lastHistogramValue.PositiveBuckets),
+			len(s.lastHistogramValue.NegativeBuckets),
+		)
 	case s.lastFloatHistogramValue != nil:
-		return true, len(s.lastFloatHistogramValue.PositiveBuckets) + len(s.lastFloatHistogramValue.NegativeBuckets)
+		return true, nativeHistogramBucketCount(
+			s.lastFloatHistogramValue.Sum,
+			len(s.lastFloatHistogramValue.PositiveBuckets),
+			len(s.lastFloatHistogramValue.NegativeBuckets),
+		)
 	}
 	return false, 0
 }
@@ -3003,6 +3031,7 @@ func overlapsClosedInterval(mint1, maxt1, mint2, maxt2 int64) bool {
 type mmappedChunk struct {
 	ref              chunks.ChunkDiskMapperRef
 	numSamples       uint16
+	encoding         chunkenc.Encoding
 	minTime, maxTime int64
 }
 
