@@ -77,12 +77,36 @@ func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.S
 	*chks = (*chks)[:0]
 
 	if s.ooo != nil {
+		if err := s.checkOOOChunkIDSpace(); err != nil {
+			return err
+		}
 		oh.headChunksBuf = getOOOSeriesChunks(s, oh.head.opts.UseXOR2FloatEncoding(), oh.head.opts.EnableHistogramSTEncoding.Load(), oh.mint, oh.maxt, oh.lastGarbageCollectedMmapRef, 0, true, oh.inoMint, chks, oh.headChunksBuf)
 	} else {
 		*chks, oh.headChunksBuf = appendSeriesChunks(s, oh.inoMint, oh.maxt, *chks, oh.headChunksBuf)
 	}
 	if cap(oh.headChunksBuf) > headChunksBufMaxCap {
 		oh.headChunksBuf = nil
+	}
+	return nil
+}
+
+// checkOOOChunkIDSpace returns an error if the series has exhausted its
+// out-of-order chunk ID space, so callers can fail the query instead of
+// panicking. firstOOOChunkID grows monotonically as OOO chunks are truncated and
+// is only reset when the series' OOO data fully drains (s.ooo becomes nil). A
+// series that stays continuously out-of-order can therefore exhaust the space,
+// which is the low 23 bits of the chunk ID (bit 23 is the oooChunkIDMask "is OOO"
+// flag). Once firstOOOChunkID+pos reaches oooChunkIDMask the ID collides with that
+// flag bit, and a little further on NewHeadChunkRef panics with "chunk ID exceeds
+// 3 bytes", crashing the whole process for a single bad series. Restarting the
+// TSDB re-derives firstOOOChunkID from the current (small) set of OOO chunks.
+//
+// s must be locked and s.ooo must be non-nil.
+func (s *memSeries) checkOOOChunkIDSpace() error {
+	// The highest position getOOOSeriesChunks encodes is the OOO head chunk at
+	// len(oooMmappedChunks); bounding that bounds every ref it can build.
+	if uint64(s.ooo.firstOOOChunkID)+uint64(len(s.ooo.oooMmappedChunks)) >= oooChunkIDMask {
+		return fmt.Errorf("series %d has exhausted its out-of-order chunk ID space (firstOOOChunkID=%d, oooMmappedChunks=%d, limit=%d); restart to reclaim it", s.ref, s.ooo.firstOOOChunkID, len(s.ooo.oooMmappedChunks), oooChunkIDMask)
 	}
 	return nil
 }
@@ -525,6 +549,9 @@ func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *l
 
 	if s.ooo == nil {
 		return nil
+	}
+	if err := s.checkOOOChunkIDSpace(); err != nil {
+		return err
 	}
 
 	getOOOSeriesChunks(s, ir.ch.head.opts.UseXOR2FloatEncoding(), ir.ch.head.opts.EnableHistogramSTEncoding.Load(), ir.ch.mint, ir.ch.maxt, 0, ir.ch.lastMmapRef, false, 0, chks, nil)
