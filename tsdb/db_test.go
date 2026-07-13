@@ -11547,3 +11547,68 @@ func TestBeyondSizeRetentionWithPercentage(t *testing.T) {
 	require.Len(t, deletable, 1)
 	require.Contains(t, deletable, ulid)
 }
+
+func TestOOOCompactionAcrossChunkIDWrap(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOCompactionAcrossChunkIDWrap(t, scenario)
+		})
+	}
+}
+
+func testOOOCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeScenario) {
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = 5
+	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
+
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	l := labels.FromStrings("l", "v1")
+	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
+
+	app := db.Appender(context.Background())
+
+	// In-order sample.
+	ref, _, err := scenario.appendFunc(app, l, minutes(200), 200)
+	require.NoError(t, err)
+	var expSamples []chunks.Sample
+	expSamples = append(expSamples, scenario.sampleFunc(minutes(200), 200))
+
+	// 15 OOO samples to create 3 mmapped chunks (cap=5).
+	for i := int64(1); i <= 15; i++ {
+		_, _, err = scenario.appendFunc(app, l, minutes(i), i)
+		require.NoError(t, err)
+		expSamples = append(expSamples, scenario.sampleFunc(minutes(i), i))
+	}
+	require.NoError(t, app.Commit())
+
+	// Seed firstOOOChunkID near the wrap boundary.
+	ms := db.head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.NotNil(t, ms)
+	ms.Lock()
+	require.NotNil(t, ms.ooo)
+	ms.ooo.firstOOOChunkID = chunks.HeadChunkID(oooChunkIDMask - 1)
+	ms.Unlock()
+
+	// More OOO data whose chunk IDs cross the boundary.
+	app = db.Appender(context.Background())
+	for i := int64(16); i <= 30; i++ {
+		_, _, err = scenario.appendFunc(app, l, minutes(i), i)
+		require.NoError(t, err)
+		expSamples = append(expSamples, scenario.sampleFunc(minutes(i), i))
+	}
+	require.NoError(t, app.Commit())
+
+	// Compact.
+	require.NoError(t, db.Compact(context.Background()))
+
+	// Query and verify all data is present.
+	querier, err := db.Querier(0, minutes(300))
+	require.NoError(t, err)
+
+	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "l", "v1"))
+
+	sort.Slice(expSamples, func(i, j int) bool { return expSamples[i].T() < expSamples[j].T() })
+	requireEqualSeries(t, map[string][]chunks.Sample{l.String(): expSamples}, seriesSet, true)
+}
