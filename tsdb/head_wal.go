@@ -722,10 +722,13 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				h.numStaleSeries.Dec()
 			}
 
+			wasHistogram := ms.isNativeHistogramSeries()
+			oldBuckets := ms.nativeHistogramBucketCount()
 			h.appendChunkAndMmap(ms, func() bool {
 				_, chunkCreated := ms.append(s.ST, s.T, s.V, 0, appendChunkOpts)
 				return chunkCreated
 			})
+			h.updateNativeHistogramMetricsOnAppend(wasHistogram, false, oldBuckets, 0)
 			if s.T > maxt {
 				maxt = s.T
 			}
@@ -752,12 +755,16 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				continue
 			}
 			var newlyStale, staleToNonStale bool
+			wasHistogram := ms.isNativeHistogramSeries()
+			oldBuckets := ms.nativeHistogramBucketCount()
+			var newBuckets int
 			if s.h != nil {
 				newlyStale = value.IsStaleNaN(s.h.Sum)
 				if ms.lastHistogramValue != nil {
 					newlyStale = newlyStale && !value.IsStaleNaN(ms.lastHistogramValue.Sum)
 					staleToNonStale = value.IsStaleNaN(ms.lastHistogramValue.Sum) && !value.IsStaleNaN(s.h.Sum)
 				}
+				newBuckets = len(s.h.PositiveBuckets) + len(s.h.NegativeBuckets)
 				h.appendChunkAndMmap(ms, func() bool {
 					_, chunkCreated := ms.appendHistogram(s.st, s.t, s.h, 0, appendChunkOpts)
 					return chunkCreated
@@ -768,6 +775,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 					newlyStale = newlyStale && !value.IsStaleNaN(ms.lastFloatHistogramValue.Sum)
 					staleToNonStale = value.IsStaleNaN(ms.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.fh.Sum)
 				}
+				newBuckets = len(s.fh.PositiveBuckets) + len(s.fh.NegativeBuckets)
 				h.appendChunkAndMmap(ms, func() bool {
 					_, chunkCreated := ms.appendFloatHistogram(s.st, s.t, s.fh, 0, appendChunkOpts)
 					return chunkCreated
@@ -779,6 +787,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if staleToNonStale {
 				h.numStaleSeries.Dec()
 			}
+			h.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
 			if s.t > maxt {
 				maxt = s.t
 			}
@@ -1722,6 +1731,10 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 					(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
 					(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
 					h.numStaleSeries.Inc()
+				}
+				if series.isNativeHistogramSeries() {
+					h.numNativeHistogramSeries.Inc()
+					h.addNativeHistogramBuckets(series.nativeHistogramBucketCount())
 				}
 
 				app, err := series.headChunks.chunk.Appender()

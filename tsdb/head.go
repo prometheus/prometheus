@@ -69,9 +69,15 @@ var (
 
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
-	chunkRange               atomic.Int64
-	numSeries                atomic.Uint64
-	numStaleSeries           atomic.Uint64
+	chunkRange     atomic.Int64
+	numSeries      atomic.Uint64
+	numStaleSeries atomic.Uint64
+	// Native histogram counters, tracking the number of series whose most recent
+	// in-order sample is a native histogram and the total number of buckets across
+	// those series.
+	numNativeHistogramSeries  atomic.Uint64
+	numNativeHistogramBuckets atomic.Uint64
+
 	minOOOTime, maxOOOTime   atomic.Int64 // TODO(jesusvazquez) These should be updated after garbage collection.
 	minTime, maxTime         atomic.Int64 // Current min and max of the samples included in the head. minTime != math.MaxInt64 is used to determine whether the head has been initialized, so care must be taken that the initialized state only changes after maxTime is already updated.
 	minValidTime             atomic.Int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
@@ -379,6 +385,8 @@ func (h *Head) resetInMemoryState() error {
 	h.iso = newIsolation(h.opts.IsolationDisabled)
 	h.oooIso = newOOOIsolation()
 	h.numSeries.Store(0)
+	h.numNativeHistogramSeries.Store(0)
+	h.numNativeHistogramBuckets.Store(0)
 	h.exemplarMetrics = em
 	h.exemplars = es
 	h.postings = index.NewUnorderedMemPostings()
@@ -409,6 +417,8 @@ type headMetrics struct {
 	activeAppenders           prometheus.Gauge
 	series                    prometheus.GaugeFunc
 	staleSeries               prometheus.GaugeFunc
+	nativeHistogramSeries     prometheus.GaugeFunc
+	nativeHistogramBuckets    prometheus.GaugeFunc
 	seriesCreated             prometheus.Counter
 	seriesRemoved             prometheus.Counter
 	seriesNotFound            prometheus.Counter
@@ -460,6 +470,18 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Help: "Total number of stale series in the head block.",
 		}, func() float64 {
 			return float64(h.NumStaleSeries())
+		}),
+		nativeHistogramSeries: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_native_histogram_series",
+			Help: "Total number of native histogram series in the head block.",
+		}, func() float64 {
+			return float64(h.NumNativeHistogramSeries())
+		}),
+		nativeHistogramBuckets: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_native_histogram_buckets",
+			Help: "Total number of native histogram buckets across all series in the head block.",
+		}, func() float64 {
+			return float64(h.NumNativeHistogramBuckets())
 		}),
 		seriesCreated: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_series_created_total",
@@ -588,6 +610,8 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.activeAppenders,
 			m.series,
 			m.staleSeries,
+			m.nativeHistogramSeries,
+			m.nativeHistogramBuckets,
 			m.chunks,
 			m.chunksCreated,
 			m.chunksRemoved,
@@ -1836,7 +1860,7 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, affected, chunksRemoved, staleSeriesDeleted, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
+	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -1844,6 +1868,8 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	h.metrics.chunks.Sub(float64(chunksRemoved))
 	h.numSeries.Sub(uint64(seriesRemoved))
 	h.numStaleSeries.Sub(uint64(staleSeriesDeleted))
+	h.numNativeHistogramSeries.Sub(uint64(histogramSeriesDeleted))
+	h.numNativeHistogramBuckets.Sub(uint64(histogramBucketsDeleted))
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
@@ -1880,6 +1906,44 @@ func (h *Head) NumSeries() uint64 {
 // NumStaleSeries returns the number of stale series in the head.
 func (h *Head) NumStaleSeries() uint64 {
 	return h.numStaleSeries.Load()
+}
+
+// NumNativeHistogramSeries returns the number of series in the head whose most
+// recent in-order sample is a native histogram.
+func (h *Head) NumNativeHistogramSeries() uint64 {
+	return h.numNativeHistogramSeries.Load()
+}
+
+// NumNativeHistogramBuckets returns the total number of native histogram
+// buckets across all series in the head, counting the buckets of each series'
+// most recent in-order native histogram sample.
+func (h *Head) NumNativeHistogramBuckets() uint64 {
+	return h.numNativeHistogramBuckets.Load()
+}
+
+// addNativeHistogramBuckets adjusts the native histogram bucket gauge by delta,
+// which may be negative.
+func (h *Head) addNativeHistogramBuckets(delta int) {
+	if delta >= 0 {
+		h.numNativeHistogramBuckets.Add(uint64(delta))
+		return
+	}
+	h.numNativeHistogramBuckets.Sub(uint64(-delta))
+}
+
+// updateNativeHistogramMetricsOnAppend updates the native histogram series and
+// bucket gauges after an in-order sample was appended to a series. wasHistogram
+// and oldBuckets must be captured before the append overwrote the series' last
+// values. isHistogram reports whether the just-appended sample is a native
+// histogram and newBuckets is its bucket count (both zero for a float sample).
+func (h *Head) updateNativeHistogramMetricsOnAppend(wasHistogram, isHistogram bool, oldBuckets, newBuckets int) {
+	switch {
+	case !wasHistogram && isHistogram:
+		h.numNativeHistogramSeries.Inc()
+	case wasHistogram && !isHistogram:
+		h.numNativeHistogramSeries.Dec()
+	}
+	h.addNativeHistogramBuckets(newBuckets - oldBuckets)
 }
 
 var headULID = ulid.MustParse("0000000000XXXXXXXXXXXXHEAD")
@@ -2197,14 +2261,16 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 // but the returned map goes into postings.Delete() which expects a map[storage.SeriesRef]struct
 // and there's no easy way to cast maps.
 // minMmapFile is the min mmap file number seen in the series (in-order and out-of-order) after gc'ing the series.
-func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _ int, _, _ int64, minMmapFile int) {
+func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _, _, _ int, _, _ int64, minMmapFile int) {
 	var (
-		deleted                  = map[storage.SeriesRef]struct{}{}
-		affected                 = map[labels.Label]struct{}{}
-		rmChunks                 = 0
-		staleSeriesDeleted       = 0
-		actualMint         int64 = math.MaxInt64
-		minOOOTime         int64 = math.MaxInt64
+		deleted                       = map[storage.SeriesRef]struct{}{}
+		affected                      = map[labels.Label]struct{}{}
+		rmChunks                      = 0
+		staleSeriesDeleted            = 0
+		histogramSeriesDeleted        = 0
+		histogramBucketsDeleted       = 0
+		actualMint              int64 = math.MaxInt64
+		minOOOTime              int64 = math.MaxInt64
 	)
 	minMmapFile = math.MaxInt32
 
@@ -2265,6 +2331,10 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
 			staleSeriesDeleted++
 		}
+		if series.isNativeHistogramSeries() {
+			histogramSeriesDeleted++
+			histogramBucketsDeleted += series.nativeHistogramBucketCount()
+		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
@@ -2279,7 +2349,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		actualMint = mint
 	}
 
-	return deleted, affected, rmChunks, staleSeriesDeleted, actualMint, minOOOTime, minMmapFile
+	return deleted, affected, rmChunks, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted, actualMint, minOOOTime, minMmapFile
 }
 
 // gcSeries removes the provided series from the head index and updates head metrics,
@@ -2291,7 +2361,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) map[storage.SeriesRef]struct{} {
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, affected, chunksRemoved, staleSeriesDeleted := h.series.gcSeries(seriesRefs, maxt, shouldEvict)
+	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, shouldEvict)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -2299,6 +2369,8 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 	h.metrics.chunks.Sub(float64(chunksRemoved))
 	h.numSeries.Sub(uint64(seriesRemoved))
 	h.numStaleSeries.Sub(uint64(staleSeriesDeleted))
+	h.numNativeHistogramSeries.Sub(uint64(histogramSeriesDeleted))
+	h.numNativeHistogramBuckets.Sub(uint64(histogramBucketsDeleted))
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
@@ -2327,11 +2399,13 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 // Only used for WAL replay.
 func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	var (
-		deleted            = map[storage.SeriesRef]struct{}{}
-		deletedForCallback = map[chunks.HeadSeriesRef]labels.Labels{}
-		affected           = map[labels.Label]struct{}{}
-		staleSeriesDeleted = 0
-		chunksRemoved      = 0
+		deleted                 = map[storage.SeriesRef]struct{}{}
+		deletedForCallback      = map[chunks.HeadSeriesRef]labels.Labels{}
+		affected                = map[labels.Label]struct{}{}
+		staleSeriesDeleted      = 0
+		histogramSeriesDeleted  = 0
+		histogramBucketsDeleted = 0
+		chunksRemoved           = 0
 	)
 
 	for _, ref := range refs {
@@ -2367,6 +2441,10 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
 			staleSeriesDeleted++
 		}
+		if series.isNativeHistogramSeries() {
+			histogramSeriesDeleted++
+			histogramBucketsDeleted += series.nativeHistogramBucketCount()
+		}
 
 		chunksRemoved += len(series.mmappedChunks)
 		if series.headChunks != nil {
@@ -2390,6 +2468,8 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	h.metrics.chunks.Sub(float64(chunksRemoved))
 	h.numSeries.Sub(uint64(len(deleted)))
 	h.numStaleSeries.Sub(uint64(staleSeriesDeleted))
+	h.numNativeHistogramSeries.Sub(uint64(histogramSeriesDeleted))
+	h.numNativeHistogramBuckets.Sub(uint64(histogramBucketsDeleted))
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
@@ -2406,12 +2486,14 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 // <= maxt, and for which shouldEvict returns true. Returns the set of deleted refs, the set
 // of label-name/value pairs whose postings are affected, the count of removed chunks, and
 // the number of deleted series that carried a stale-NaN last value.
-func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _ int) {
+func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _, _, _ int) {
 	var (
-		deleted            = map[storage.SeriesRef]struct{}{}
-		affected           = map[labels.Label]struct{}{}
-		rmChunks           = 0
-		staleSeriesDeleted = 0
+		deleted                 = map[storage.SeriesRef]struct{}{}
+		affected                = map[labels.Label]struct{}{}
+		rmChunks                = 0
+		staleSeriesDeleted      = 0
+		histogramSeriesDeleted  = 0
+		histogramBucketsDeleted = 0
 	)
 
 	refsSet := map[storage.SeriesRef]struct{}{}
@@ -2459,6 +2541,10 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		if isStaleSeries(series) {
 			staleSeriesDeleted++
 		}
+		if series.isNativeHistogramSeries() {
+			histogramSeriesDeleted++
+			histogramBucketsDeleted += series.nativeHistogramBucketCount()
+		}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
 		delete(s.series[stripe], series.ref)
@@ -2467,7 +2553,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 
 	s.iterForDeletion(check)
 
-	return deleted, affected, rmChunks, staleSeriesDeleted
+	return deleted, affected, rmChunks, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted
 }
 
 // The iterForDeletion function iterates through all series, invoking the checkDeletedFunc for each.
@@ -2669,6 +2755,26 @@ type memSeries struct {
 
 	// txs is nil if isolation is disabled.
 	txs *txRing
+}
+
+// isNativeHistogramSeries reports whether the series' most recent in-order
+// sample is a native histogram (integer or float).
+func (s *memSeries) isNativeHistogramSeries() bool {
+	return s.lastHistogramValue != nil || s.lastFloatHistogramValue != nil
+}
+
+// nativeHistogramBucketCount returns the number of stored buckets in the
+// series' most recent in-order native histogram sample, or 0 if the series is
+// not currently a native histogram series (e.g. a float series or a staleness
+// marker, which carries no buckets).
+func (s *memSeries) nativeHistogramBucketCount() int {
+	switch {
+	case s.lastHistogramValue != nil:
+		return len(s.lastHistogramValue.PositiveBuckets) + len(s.lastHistogramValue.NegativeBuckets)
+	case s.lastFloatHistogramValue != nil:
+		return len(s.lastFloatHistogramValue.PositiveBuckets) + len(s.lastFloatHistogramValue.NegativeBuckets)
+	}
+	return 0
 }
 
 // memSeriesOOOFields contains the fields required by memSeries
