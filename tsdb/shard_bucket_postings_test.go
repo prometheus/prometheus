@@ -69,6 +69,8 @@ type shardBucketSnapshot struct {
 	dirty   int
 }
 
+// snapshotShardBuckets captures slice identity, length, and dirty state; callers
+// must prevent concurrent bucket mutations.
 func snapshotShardBuckets(s *shardBucketPostings) []shardBucketSnapshot {
 	out := make([]shardBucketSnapshot, len(s.buckets))
 	for i := range s.buckets {
@@ -82,30 +84,7 @@ func snapshotShardBuckets(s *shardBucketPostings) []shardBucketSnapshot {
 	return out
 }
 
-func TestShardBucketPostings(t *testing.T) {
-	t.Run("membership partitions the refs across shards", func(t *testing.T) {
-		t.Parallel()
-		s := newShardBucketPostings(8)
-
-		const numRefs = 1000
-		byShard := map[uint64][]storage.SeriesRef{}
-		for ref := chunks.HeadSeriesRef(1); ref <= numRefs; ref++ {
-			hash := uint64(ref) * 0x9e3779b97f4a7c15 // Arbitrary spread.
-			s.add(ref, hash)
-			byShard[hash%4] = append(byShard[hash%4], storage.SeriesRef(ref))
-		}
-		require.Equal(t, numRefs, s.numSeries())
-
-		var total int
-		for shardIndex := range uint64(4) {
-			got := expandShardCandidates(t, s, shardIndex, 4)
-			require.True(t, slices.IsSorted(got))
-			require.Equal(t, byShard[shardIndex], got)
-			total += len(got)
-		}
-		require.Equal(t, numRefs, total)
-	})
-
+func TestShardBucketPostings_PostingsFor(t *testing.T) {
 	t.Run("exact shard counts partition refs across bucket counts", func(t *testing.T) {
 		t.Parallel()
 		// Power-of-two shard counts up to the bucket count are served exactly by
@@ -120,28 +99,22 @@ func TestShardBucketPostings(t *testing.T) {
 				s.add(ref, h)
 				refHashes[storage.SeriesRef(ref)] = h
 			}
+			require.Equal(t, numRefs, s.numSeries())
 
-			for _, shardCount := range []uint64{2, 4, 64, uint64(bucketCount)} {
+			for _, shardCount := range []uint64{2, 4, 64, 128} {
+				if shardCount > uint64(bucketCount) {
+					continue
+				}
 				want := map[uint64][]storage.SeriesRef{}
 				for ref := storage.SeriesRef(1); ref <= numRefs; ref++ {
 					sh := refHashes[ref] % shardCount
 					want[sh] = append(want[sh], ref) // appended in ref order => sorted.
 				}
 
-				seen := map[storage.SeriesRef]struct{}{}
-				var total int
 				for shardIndex := range shardCount {
 					got := expandShardCandidates(t, s, shardIndex, shardCount)
-					require.True(t, slices.IsSorted(got), "bucketCount=%d shardCount=%d shard=%d", bucketCount, shardCount, shardIndex)
 					require.Equal(t, want[shardIndex], got, "bucketCount=%d shardCount=%d shard=%d", bucketCount, shardCount, shardIndex)
-					for _, ref := range got {
-						_, dup := seen[ref]
-						require.False(t, dup, "ref %d returned by multiple shards (bucketCount=%d shardCount=%d)", ref, bucketCount, shardCount)
-						seen[ref] = struct{}{}
-					}
-					total += len(got)
 				}
-				require.Equal(t, numRefs, total, "shards must partition all refs (bucketCount=%d shardCount=%d)", bucketCount, shardCount)
 			}
 		}
 	})
@@ -149,23 +122,28 @@ func TestShardBucketPostings(t *testing.T) {
 	t.Run("reports when shard hash filtering is needed", func(t *testing.T) {
 		t.Parallel()
 		s := newShardBucketPostings(64)
-		s.add(1, 42)
 
 		// A zero shard count selects nothing.
 		lists, subFiltered := s.postingsFor(0, 0)
 		require.Nil(t, lists)
 		require.False(t, subFiltered)
 
-		// Power-of-two counts above 64 need final shard-hash filtering of their
-		// single candidate bucket.
-		for _, shardCount := range []uint64{128, 256} {
-			_, needsShardHashFilter := s.postingsFor(0, shardCount)
-			require.True(t, needsShardHashFilter, "shardCount %d", shardCount)
-		}
-		// Power-of-two counts up to 64 use the exact path.
-		for _, shardCount := range []uint64{1, 2, 4, 8, 16, 32, 64} {
-			_, needsShardHashFilter := s.postingsFor(0, shardCount)
-			require.False(t, needsShardHashFilter, "shardCount %d", shardCount)
+		for _, tc := range []struct {
+			shardCount uint64
+			wantFilter bool
+		}{
+			{shardCount: 1},
+			{shardCount: 2},
+			{shardCount: 4},
+			{shardCount: 8},
+			{shardCount: 16},
+			{shardCount: 32},
+			{shardCount: 64},
+			{shardCount: 128, wantFilter: true},
+			{shardCount: 256, wantFilter: true},
+		} {
+			_, needsShardHashFilter := s.postingsFor(0, tc.shardCount)
+			require.Equal(t, tc.wantFilter, needsShardHashFilter, "shardCount %d", tc.shardCount)
 		}
 	})
 
@@ -191,7 +169,6 @@ func TestShardBucketPostings(t *testing.T) {
 		const shardCount = uint64(128) // Exceeds 64 buckets => candidate refs need final filtering.
 		for shardIndex := range shardCount {
 			got := expandShardCandidates(t, s, shardIndex, shardCount)
-			require.True(t, slices.IsSorted(got))
 			var want []storage.SeriesRef
 			for ref, h := range refHashes {
 				if h%64 == shardIndex%64 {
@@ -213,122 +190,6 @@ func TestShardBucketPostings(t *testing.T) {
 		require.Zero(t, s.numSeries())
 		s.add(1, 1)                             // Must not panic.
 		s.remove(identityDeletedShardHashes(1)) // Must not panic.
-	})
-
-	t.Run("remove drops deleted refs and keeps reader snapshots intact", func(t *testing.T) {
-		t.Parallel()
-		s := newShardBucketPostings(2)
-		for ref := chunks.HeadSeriesRef(1); ref <= 10; ref++ {
-			s.add(ref, uint64(ref))
-		}
-
-		// Capture a snapshot before removal.
-		before := expandShardCandidates(t, s, 0, 2)
-
-		deleted := map[storage.SeriesRef]struct{}{2: {}, 4: {}, 7: {}}
-		s.remove(deletedShardHashMap(t, deleted, map[storage.SeriesRef]uint64{
-			2: 2,
-			4: 4,
-			7: 7,
-		}))
-		require.Equal(t, 7, s.numSeries())
-
-		after := expandShardCandidates(t, s, 0, 2)
-		for ref := range deleted {
-			require.NotContains(t, after, ref)
-		}
-		// The pre-removal snapshot still contains the original refs.
-		require.Contains(t, before, storage.SeriesRef(2))
-	})
-
-	t.Run("remove rebuilds only touched buckets", func(t *testing.T) {
-		t.Parallel()
-		s := newShardBucketPostings(8)
-		refHashes := map[storage.SeriesRef]uint64{}
-		for ref := storage.SeriesRef(1); ref <= 64; ref++ {
-			refHashes[ref] = uint64(ref)
-			s.add(chunks.HeadSeriesRef(ref), uint64(ref))
-		}
-
-		before := snapshotShardBuckets(s)
-		deleted := map[storage.SeriesRef]struct{}{
-			1:  {},
-			9:  {},
-			5:  {},
-			13: {},
-		}
-		s.remove(deletedShardHashMap(t, deleted, refHashes))
-
-		after := snapshotShardBuckets(s)
-		expectedTouched := map[int]struct{}{1: {}, 5: {}}
-		for i := range s.buckets {
-			if _, ok := expectedTouched[i]; ok {
-				require.Less(t, after[i].refsLen, before[i].refsLen, "bucket %d should be rebuilt", i)
-				continue
-			}
-			require.Equal(t, before[i], after[i], "bucket %d should not be rebuilt", i)
-		}
-	})
-
-	t.Run("remove skips buckets without deleted refs", func(t *testing.T) {
-		t.Parallel()
-		s := newShardBucketPostings(2)
-		for ref := storage.SeriesRef(1); ref <= 8; ref++ {
-			s.add(chunks.HeadSeriesRef(ref), uint64(ref))
-		}
-
-		genBefore := s.buckets[0].gen
-		// The deleted refs map to bucket 0 by shard hash but are not present
-		// in it: removal must leave the bucket untouched, without taking its
-		// write lock (observable through the unchanged generation).
-		s.remove(map[storage.SeriesRef]uint64{1000: 0, 1002: 2})
-		require.Equal(t, genBefore, s.buckets[0].gen)
-		require.Equal(t, []storage.SeriesRef{2, 4, 6, 8}, expandShardCandidates(t, s, 0, 2))
-	})
-
-	t.Run("remove carries over refs appended during the unlocked rebuild", func(t *testing.T) {
-		t.Parallel()
-		s := newShardBucketPostings(1)
-		for ref := storage.SeriesRef(1); ref <= 6; ref++ {
-			s.add(chunks.HeadSeriesRef(ref), 0)
-		}
-
-		hookRuns := 0
-		s.removeUnlockedHook = func() {
-			// Appends landing between the survivor rebuild and the bucket
-			// re-lock must be carried over, and can never be deleted refs.
-			s.add(7, 0)
-			s.add(8, 0)
-			hookRuns++
-		}
-		s.remove(map[storage.SeriesRef]uint64{2: 0, 4: 0})
-		s.removeUnlockedHook = nil
-
-		require.Equal(t, 1, hookRuns)
-		require.Equal(t, []storage.SeriesRef{1, 3, 5, 6, 7, 8}, expandShardCandidates(t, s, 0, 1))
-	})
-
-	t.Run("remove falls back when the bucket is replaced during the unlocked rebuild", func(t *testing.T) {
-		t.Parallel()
-		s := newShardBucketPostings(1)
-		// Out-of-order adds leave the bucket dirty, so a read during the
-		// unlocked rebuild re-sorts it and replaces the refs slice.
-		for _, ref := range []chunks.HeadSeriesRef{2, 6, 4, 8} {
-			s.add(ref, 0)
-		}
-		require.NotEqual(t, cleanShardBucket, s.buckets[0].dirty)
-
-		genBefore := s.buckets[0].gen
-		s.removeUnlockedHook = func() {
-			// Sorts the dirty bucket, bumping the generation.
-			expandShardCandidates(t, s, 0, 1)
-		}
-		s.remove(map[storage.SeriesRef]uint64{4: 0})
-		s.removeUnlockedHook = nil
-
-		// One bump from the re-sort, one from the fallback rebuild.
-		require.Equal(t, genBefore+2, s.buckets[0].gen)
-		require.Equal(t, []storage.SeriesRef{2, 6, 8}, expandShardCandidates(t, s, 0, 1))
 	})
 
 	t.Run("out-of-order adds are served sorted", func(t *testing.T) {
@@ -366,7 +227,110 @@ func TestShardBucketPostings(t *testing.T) {
 		require.Equal(t, []storage.SeriesRef{3, 11}, expandShardCandidates(t, s, 1, 4))
 		require.Equal(t, cleanShardBucket, s.buckets[1].dirty)
 	})
+}
 
+func TestShardBucketPostings_Remove(t *testing.T) {
+	t.Run("drops deleted refs and keeps reader snapshots intact", func(t *testing.T) {
+		t.Parallel()
+		s := newShardBucketPostings(4)
+		for ref := chunks.HeadSeriesRef(1); ref <= 10; ref++ {
+			s.add(ref, uint64(ref))
+		}
+
+		snapshotLists, _ := s.postingsFor(0, 2)
+
+		s.remove(identityDeletedShardHashes(2, 4, 7))
+		require.Equal(t, 7, s.numSeries())
+
+		snapshot, err := index.ExpandPostings(index.Merge(t.Context(), snapshotLists...))
+		require.NoError(t, err)
+		after := expandShardCandidates(t, s, 0, 2)
+		require.Equal(t, []storage.SeriesRef{2, 4, 6, 8, 10}, snapshot)
+		require.Equal(t, []storage.SeriesRef{6, 8, 10}, after)
+	})
+
+	t.Run("rebuilds only touched buckets", func(t *testing.T) {
+		t.Parallel()
+		s := newShardBucketPostings(8)
+		for ref := storage.SeriesRef(1); ref <= 64; ref++ {
+			s.add(chunks.HeadSeriesRef(ref), uint64(ref))
+		}
+
+		before := snapshotShardBuckets(s)
+		s.remove(identityDeletedShardHashes(1, 9, 5, 13))
+
+		after := snapshotShardBuckets(s)
+		expectedTouched := map[int]struct{}{1: {}, 5: {}}
+		for i := range s.buckets {
+			if _, ok := expectedTouched[i]; ok {
+				require.Less(t, after[i].refsLen, before[i].refsLen, "bucket %d should be rebuilt", i)
+				continue
+			}
+			require.Equal(t, before[i], after[i], "bucket %d should not be rebuilt", i)
+		}
+	})
+
+	t.Run("skips buckets without deleted refs", func(t *testing.T) {
+		t.Parallel()
+		s := newShardBucketPostings(2)
+		for ref := storage.SeriesRef(1); ref <= 8; ref++ {
+			s.add(chunks.HeadSeriesRef(ref), uint64(ref))
+		}
+
+		genBefore := s.buckets[0].gen
+		// The deleted refs map to bucket 0 by shard hash but are not present
+		// in it: removal must leave the bucket untouched, without taking its
+		// write lock (observable through the unchanged generation).
+		s.remove(map[storage.SeriesRef]uint64{1000: 0, 1002: 2})
+		require.Equal(t, genBefore, s.buckets[0].gen)
+		require.Equal(t, []storage.SeriesRef{2, 4, 6, 8}, expandShardCandidates(t, s, 0, 2))
+	})
+
+	t.Run("carries over refs appended during the unlocked rebuild", func(t *testing.T) {
+		t.Parallel()
+		s := newShardBucketPostings(1)
+		for ref := storage.SeriesRef(1); ref <= 6; ref++ {
+			s.add(chunks.HeadSeriesRef(ref), 0)
+		}
+
+		hookRuns := 0
+		s.removeUnlockedHook = func() {
+			// Appends landing between the survivor rebuild and the bucket
+			// re-lock must be carried over, and can never be deleted refs.
+			s.add(7, 0)
+			s.add(8, 0)
+			hookRuns++
+		}
+		s.remove(map[storage.SeriesRef]uint64{2: 0, 4: 0})
+
+		require.Equal(t, 1, hookRuns)
+		require.Equal(t, []storage.SeriesRef{1, 3, 5, 6, 7, 8}, expandShardCandidates(t, s, 0, 1))
+	})
+
+	t.Run("falls back when the bucket is replaced during the unlocked rebuild", func(t *testing.T) {
+		t.Parallel()
+		s := newShardBucketPostings(1)
+		// Out-of-order adds leave the bucket dirty, so a read during the
+		// unlocked rebuild re-sorts it and replaces the refs slice.
+		for _, ref := range []chunks.HeadSeriesRef{2, 6, 4, 8} {
+			s.add(ref, 0)
+		}
+		require.NotEqual(t, cleanShardBucket, s.buckets[0].dirty)
+
+		genBefore := s.buckets[0].gen
+		s.removeUnlockedHook = func() {
+			// Sorts the dirty bucket, bumping the generation.
+			expandShardCandidates(t, s, 0, 1)
+		}
+		s.remove(map[storage.SeriesRef]uint64{4: 0})
+
+		// One bump from the re-sort, one from the fallback rebuild.
+		require.Equal(t, genBefore+2, s.buckets[0].gen)
+		require.Equal(t, []storage.SeriesRef{2, 6, 8}, expandShardCandidates(t, s, 0, 1))
+	})
+}
+
+func TestShardBucketPostings_Concurrency(t *testing.T) {
 	t.Run("multi-bucket read holds earlier candidate bucket while waiting for later bucket", func(t *testing.T) {
 		s := newShardBucketPostings(4)
 		s.add(1, 0)
@@ -432,7 +396,7 @@ func TestShardBucketPostings(t *testing.T) {
 		require.Equal(t, []storage.SeriesRef{1, 3, 5}, expandShardCandidates(t, s, 0, 2))
 	})
 
-	t.Run("Concurrent adds, removes and reads", func(t *testing.T) {
+	t.Run("adds, removes and reads", func(t *testing.T) {
 		t.Parallel()
 		s := newShardBucketPostings(8)
 
@@ -492,7 +456,7 @@ func TestShardBucketPostings(t *testing.T) {
 		require.Len(t, got, writers*refsPerWriter/2)
 	})
 
-	t.Run("Concurrent multi-bucket reads with remove and dirty sort", func(t *testing.T) {
+	t.Run("multi-bucket reads with remove and dirty sort", func(t *testing.T) {
 		t.Parallel()
 		s := newShardBucketPostings(16)
 
@@ -563,24 +527,6 @@ func TestShardBucketPostings(t *testing.T) {
 	})
 }
 
-func benchmarkSortRefsFull(refs []storage.SeriesRef, _ int) {
-	sortedRefs := sortRefsFull(refs)
-	copy(refs, sortedRefs)
-}
-
-func benchmarkSortRefsSuffix(refs []storage.SeriesRef, dirtyStart int) {
-	sortedRefs := sortRefsSuffix(refs, dirtyStart)
-	copy(refs, sortedRefs)
-}
-
-func benchmarkSortRefsAdaptiveSuffix(refs []storage.SeriesRef, dirtyStart int) {
-	if dirtyStart < len(refs)/2 {
-		benchmarkSortRefsFull(refs, dirtyStart)
-		return
-	}
-	benchmarkSortRefsSuffix(refs, dirtyStart)
-}
-
 func dirtySortInput(n, dirtyTail int, interleaved bool) ([]storage.SeriesRef, int) {
 	refs := make([]storage.SeriesRef, 0, n)
 	if interleaved {
@@ -605,7 +551,7 @@ func dirtySortInput(n, dirtyTail int, interleaved bool) ([]storage.SeriesRef, in
 	return refs, sorted
 }
 
-func BenchmarkShardBucketDirtySort(b *testing.B) {
+func BenchmarkShardBucketPostings_DirtySort(b *testing.B) {
 	for _, tc := range []struct {
 		name        string
 		n           int
@@ -618,17 +564,29 @@ func BenchmarkShardBucketDirtySort(b *testing.B) {
 		baseRefs, dirtyStart := dirtySortInput(tc.n, tc.dirtyTail, tc.interleaved)
 		for _, alg := range []struct {
 			name string
-			fn   func([]storage.SeriesRef, int)
+			fn   func([]storage.SeriesRef, int) []storage.SeriesRef
 		}{
-			{name: "full", fn: benchmarkSortRefsFull},
-			{name: "suffix", fn: benchmarkSortRefsSuffix},
-			{name: "adaptive-suffix", fn: benchmarkSortRefsAdaptiveSuffix},
+			{
+				name: "full",
+				fn: func(refs []storage.SeriesRef, _ int) []storage.SeriesRef {
+					return sortRefsFull(refs)
+				},
+			},
+			{name: "suffix", fn: sortRefsSuffix},
+			{
+				name: "adaptive",
+				fn: func(refs []storage.SeriesRef, dirtyStart int) []storage.SeriesRef {
+					if dirtyStart < len(refs)/2 {
+						return sortRefsFull(refs)
+					}
+					return sortRefsSuffix(refs, dirtyStart)
+				},
+			},
 		} {
 			b.Run(fmt.Sprintf("%s/%s", tc.name, alg.name), func(b *testing.B) {
 				b.ReportAllocs()
 				for b.Loop() {
-					refs := slices.Clone(baseRefs)
-					alg.fn(refs, dirtyStart)
+					refs := alg.fn(baseRefs, dirtyStart)
 					shardBucketDirtySortSink = refs[len(refs)/2]
 				}
 			})
@@ -636,14 +594,9 @@ func BenchmarkShardBucketDirtySort(b *testing.B) {
 	}
 }
 
-// BenchmarkShardBucketPostingsFootprint measures the resident size of the index
-// relative to the live series it holds, after churn — new series created and an
-// equal number removed, as the head turns over between GCs. It reports the slice
-// capacity as bytes per live series and the cap/len ratio, so a regression in
-// the index's memory amplification is visible: cap/len above ~1 means remove
-// retained the dropped refs' capacity. It also reports approximate fixed bucket
-// struct and mutex overhead as a candidate-side diagnostic.
-func BenchmarkShardBucketPostingsFootprint(b *testing.B) {
+// BenchmarkShardBucketPostings_Footprint reports bucket capacity and fixed
+// overhead per live series after churn.
+func BenchmarkShardBucketPostings_Footprint(b *testing.B) {
 	const live = 100_000
 	for _, churn := range []int{0, 1, 2} {
 		b.Run(fmt.Sprintf("churn=%dx", churn), func(b *testing.B) {
@@ -687,15 +640,33 @@ type shardBucketDeletePattern struct {
 	sparseBuckets []uint64
 }
 
-var shardBucketSparseBenchmarkBuckets = []uint64{0, 32, 64, 96}
+const shardBucketBenchmarkHashCount = 1 << 16
 
-func shardBucketDeletePatterns() []shardBucketDeletePattern {
-	return []shardBucketDeletePattern{
+var (
+	shardBucketBenchmarkShardCounts = [...]uint64{16, 64, 128, 256}
+	shardBucketDeletePatterns       = [...]shardBucketDeletePattern{
 		{name: "dense/churn=1/2", every: 2},
 		{name: "dense/churn=1/3", every: 3},
 		{name: "dense/churn=1/8", every: 8},
-		{name: "sparse/spread4/churn=1/8", every: 8, sparseBuckets: shardBucketSparseBenchmarkBuckets},
+		{name: "sparse/spread4/churn=1/8", every: 8, sparseBuckets: []uint64{0, 32, 64, 96}},
 	}
+)
+
+func newShardBucketBenchmarkHashes() []uint64 {
+	hashes := make([]uint64, shardBucketBenchmarkHashCount)
+	rng := rand.New(rand.NewSource(1))
+	for i := range hashes {
+		hashes[i] = rng.Uint64()
+	}
+	return hashes
+}
+
+func newPopulatedShardBucketPostings(numSeries int, hashes []uint64) *shardBucketPostings {
+	s := newShardBucketPostings(DefaultShardedPostingsBuckets)
+	for i := range numSeries {
+		s.add(chunks.HeadSeriesRef(i+1), hashes[i%len(hashes)])
+	}
+	return s
 }
 
 func shardBucketBenchmarkHash(hashes []uint64, ref storage.SeriesRef) uint64 {
@@ -788,6 +759,8 @@ func benchmarkShardBucketRead(ctx context.Context, s *shardBucketPostings, shard
 }
 
 func collectShardBucketBaselineSamples(b *testing.B, s *shardBucketPostings, shardCount uint64, readers int) []shardBucketReadSample {
+	b.Helper()
+
 	const baselineSamples = 256
 
 	samples := make([]shardBucketReadSample, baselineSamples)
@@ -865,38 +838,39 @@ func shardBucketPercentile(sorted []int64, numerator, denominator int) int64 {
 	return sorted[i-1]
 }
 
+func reportShardBucketDurationMetrics(b *testing.B, name string, baseline, samples []int64) {
+	b.Helper()
+
+	baselineP99 := shardBucketPercentile(baseline, 99, 100)
+	p99 := shardBucketPercentile(samples, 99, 100)
+	b.ReportMetric(float64(baselineP99), "baseline-"+name+"-p99-ns")
+	b.ReportMetric(float64(shardBucketPercentile(samples, 50, 100)), name+"-p50-ns")
+	b.ReportMetric(float64(p99), name+"-p99-ns")
+	b.ReportMetric(float64(samples[len(samples)-1]), name+"-max-ns")
+	if baselineP99 > 0 {
+		b.ReportMetric(float64(p99)/float64(baselineP99), name+"-p99-over-baseline-ratio")
+	}
+}
+
 func reportShardBucketReadMetrics(b *testing.B, baseline, samples []shardBucketReadSample, readers int) {
+	b.Helper()
+
 	if len(samples) == 0 {
 		b.Fatal("no concurrent remove/read samples collected")
 	}
 
 	baselineSnapshots, baselineReads := shardBucketReadSampleDurations(baseline)
 	snapshots, reads := shardBucketReadSampleDurations(samples)
-	baselineSnapshotP99 := shardBucketPercentile(baselineSnapshots, 99, 100)
-	baselineReadP99 := shardBucketPercentile(baselineReads, 99, 100)
-	snapshotP99 := shardBucketPercentile(snapshots, 99, 100)
-	readP99 := shardBucketPercentile(reads, 99, 100)
-
-	b.ReportMetric(float64(baselineSnapshotP99), "baseline-snapshot-p99-ns")
-	b.ReportMetric(float64(baselineReadP99), "baseline-read-p99-ns")
-	b.ReportMetric(float64(shardBucketPercentile(snapshots, 50, 100)), "snapshot-p50-ns")
-	b.ReportMetric(float64(snapshotP99), "snapshot-p99-ns")
-	b.ReportMetric(float64(snapshots[len(snapshots)-1]), "snapshot-max-ns")
-	if baselineSnapshotP99 > 0 {
-		b.ReportMetric(float64(snapshotP99)/float64(baselineSnapshotP99), "snapshot-p99-over-baseline-ratio")
-	}
-	b.ReportMetric(float64(shardBucketPercentile(reads, 50, 100)), "read-p50-ns")
-	b.ReportMetric(float64(readP99), "read-p99-ns")
-	b.ReportMetric(float64(reads[len(reads)-1]), "read-max-ns")
-	if baselineReadP99 > 0 {
-		b.ReportMetric(float64(readP99)/float64(baselineReadP99), "read-p99-over-baseline-ratio")
-	}
+	reportShardBucketDurationMetrics(b, "snapshot", baselineSnapshots, snapshots)
+	reportShardBucketDurationMetrics(b, "read", baselineReads, reads)
 	b.ReportMetric(float64(len(samples))/float64(b.N), "samples/remove")
 	b.ReportMetric(float64(len(samples)), "samples-total")
 	b.ReportMetric(float64(readers), "reader-goroutines")
 }
 
 func benchmarkShardBucketConcurrentRemoveRead(b *testing.B, s *shardBucketPostings, deleted map[storage.SeriesRef]uint64, shardCount uint64, readers int) []shardBucketReadSample {
+	b.Helper()
+
 	const samplesPerReader = 32_768
 
 	readerSamples := make([][]shardBucketReadSample, readers)
@@ -1004,139 +978,108 @@ func benchmarkShardBucketConcurrentRemoveRead(b *testing.B, s *shardBucketPostin
 	return samples
 }
 
-func BenchmarkShardBucketPostings(b *testing.B) {
-	// Precompute random shard hashes once so the hot loop measures the
-	// structure (lock + append), not StableHash. StableHash is not correlated
-	// with increasing series refs, so the random order is intentional.
-	const numHashes = 1 << 16
-	hashes := make([]uint64, numHashes)
-	rng := rand.New(rand.NewSource(1))
-	for i := range hashes {
-		hashes[i] = rng.Uint64()
-	}
+func BenchmarkShardBucketPostings_Add(b *testing.B) {
+	hashes := newShardBucketBenchmarkHashes()
 
-	// populate fills a fresh structure with numSeries refs added in increasing
-	// ref order, so every bucket ends up sorted (no dirty buckets).
-	populate := func(numSeries int) *shardBucketPostings {
+	b.Run("serial", func(b *testing.B) {
 		s := newShardBucketPostings(DefaultShardedPostingsBuckets)
-		for i := range numSeries {
-			s.add(chunks.HeadSeriesRef(i+1), hashes[i%numHashes])
+		b.ReportAllocs()
+		for i := 0; b.Loop(); i++ {
+			s.add(chunks.HeadSeriesRef(i+1), hashes[i%shardBucketBenchmarkHashCount])
 		}
-		return s
-	}
+	})
 
-	// add is the write path: one bucket-mutex acquire + append per series.
-	b.Run("add", func(b *testing.B) {
-		b.Run("serial", func(b *testing.B) {
-			s := newShardBucketPostings(DefaultShardedPostingsBuckets)
+	// Parallel exposes bucket-lock contention during concurrent series creation.
+	b.Run("parallel", func(b *testing.B) {
+		s := newShardBucketPostings(DefaultShardedPostingsBuckets)
+		var goroutine atomic.Int64
+		b.ReportAllocs()
+		b.RunParallel(func(pb *testing.PB) {
+			// Disjoint monotonic ranges make only cross-goroutine interleaving
+			// dirty buckets, matching globally increasing production series IDs.
+			worker := goroutine.Inc() - 1
+			ref := chunks.HeadSeriesRef((worker + 1) << 40)
+			i := int(worker*9973) % shardBucketBenchmarkHashCount
+			for pb.Next() {
+				s.add(ref, hashes[i%shardBucketBenchmarkHashCount])
+				ref++
+				i++
+			}
+		})
+	})
+}
+
+func BenchmarkShardBucketPostings_PostingsFor(b *testing.B) {
+	const numSeries = 1_000_000
+	hashes := newShardBucketBenchmarkHashes()
+
+	// Population leaves buckets sorted, so this measures steady-state reads.
+	for _, shardCount := range shardBucketBenchmarkShardCounts {
+		b.Run(fmt.Sprintf("shardCount=%d", shardCount), func(b *testing.B) {
+			s := newPopulatedShardBucketPostings(numSeries, hashes)
 			b.ReportAllocs()
 			for i := 0; b.Loop(); i++ {
-				s.add(chunks.HeadSeriesRef(i+1), hashes[i%numHashes])
+				lists, _ := s.postingsFor(uint64(i)%shardCount, shardCount)
+				if _, err := index.ExpandPostings(index.Merge(b.Context(), lists...)); err != nil {
+					b.Fatal(err)
+				}
 			}
 		})
+	}
+}
 
-		// Parallel exposes contention on the shardBucketPostings bucket mutexes
-		// during concurrent series creation. Run with -cpu 1,4,8,18 to see how
-		// add scales with concurrent creators.
-		b.Run("parallel", func(b *testing.B) {
-			s := newShardBucketPostings(DefaultShardedPostingsBuckets)
-			var goroutine atomic.Int64
-			b.ReportAllocs()
-			b.RunParallel(func(pb *testing.PB) {
-				// Each goroutine owns a disjoint, monotonic ref range, so only
-				// cross-goroutine interleaving (not self) drives bucket churn —
-				// matching globally increasing series IDs in production.
-				worker := goroutine.Inc() - 1
-				ref := chunks.HeadSeriesRef((worker + 1) << 40)
-				i := int(worker*9973) % numHashes
-				for pb.Next() {
-					s.add(ref, hashes[i%numHashes])
-					ref++
-					i++
-				}
-			})
+func BenchmarkShardBucketPostings_Remove(b *testing.B) {
+	const numSeries = 2_000_000
+	hashes := newShardBucketBenchmarkHashes()
+
+	// Repopulation is untimed; each iteration measures one removal.
+	for _, pattern := range shardBucketDeletePatterns {
+		b.Run(pattern.name, func(b *testing.B) {
+			deleted, touched := shardBucketDeletedRefs(b, numSeries, hashes, pattern)
+			b.ReportMetric(float64(len(touched)), "touched_buckets")
+			for b.Loop() {
+				b.StopTimer()
+				s := newPopulatedShardBucketPostings(numSeries, hashes)
+				b.StartTimer()
+				s.remove(deleted)
+			}
 		})
-	})
+	}
+}
 
-	// shardPostings is the read path: gather one list per candidate bucket
-	// (whole buckets when shardCount <= bucketCount, else the single candidate
-	// bucket that the head layer sub-filters), then drain the candidates.
-	// populate leaves buckets sorted, so this measures the steady-state read,
-	// not the one-off sort. 256 exercises the over-bucket candidate path; 128
-	// is the exact single-bucket case.
-	b.Run("shardPostings", func(b *testing.B) {
-		const numSeries = 1_000_000
-		for _, shardCount := range []uint64{16, 64, 128, 256} {
-			b.Run(fmt.Sprintf("shardCount=%d", shardCount), func(b *testing.B) {
-				s := populate(numSeries)
-				b.ReportAllocs()
-				for i := 0; b.Loop(); i++ {
-					lists, _ := s.postingsFor(uint64(i)%shardCount, shardCount)
-					if _, err := index.ExpandPostings(index.Merge(b.Context(), lists...)); err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-		}
-	})
+func BenchmarkShardBucketPostings_ConcurrentRemoveRead(b *testing.B) {
+	const numSeries = 2_000_000
+	hashes := newShardBucketBenchmarkHashes()
+	readers := runtime.GOMAXPROCS(0)
 
-	// Remove is the GC path: group deleted refs by bucket and rebuild only
-	// touched buckets. It mutates, so re-populate per iteration (untimed).
-	// The 2M-series cases are intentionally large enough to expose lock-hold
-	// behavior. Dense cases cover broad deletes, while sparse spread coverage
-	// verifies targeted removal avoids full-bucket traversal.
-	b.Run("remove", func(b *testing.B) {
-		const numSeries = 2_000_000
-		for _, pattern := range shardBucketDeletePatterns() {
-			b.Run(pattern.name, func(b *testing.B) {
-				deleted, touched := shardBucketDeletedRefs(b, numSeries, hashes, pattern)
+	// Allocation metrics include readers; Remove remains the pure removal signal.
+	for _, pattern := range shardBucketDeletePatterns {
+		deleted, touched := shardBucketDeletedRefs(b, numSeries, hashes, pattern)
+		for _, shardCount := range shardBucketBenchmarkShardCounts {
+			b.Run(fmt.Sprintf("%s/shardCount=%d", pattern.name, shardCount), func(b *testing.B) {
+				baseline := collectShardBucketBaselineSamples(b, newPopulatedShardBucketPostings(numSeries, hashes), shardCount, readers)
+				samples := make([]shardBucketReadSample, 0, readers*128)
+				var sampledRemoves, zeroSampleRemoves int
 				b.ReportMetric(float64(len(touched)), "touched_buckets")
+				b.ReportAllocs()
 				for b.Loop() {
 					b.StopTimer()
-					s := populate(numSeries)
+					s := newPopulatedShardBucketPostings(numSeries, hashes)
+					iterSamples := benchmarkShardBucketConcurrentRemoveRead(b, s, deleted, shardCount, readers)
+					if len(iterSamples) == 0 {
+						zeroSampleRemoves++
+					} else {
+						sampledRemoves++
+					}
+					samples = append(samples, iterSamples...)
 					b.StartTimer()
-					s.remove(deleted)
 				}
+				b.StopTimer()
+				// Fast sparse removals can finish before one reader sample.
+				b.ReportMetric(float64(sampledRemoves), "sampled-removes")
+				b.ReportMetric(float64(zeroSampleRemoves), "zero-sample-removes")
+				reportShardBucketReadMetrics(b, baseline, samples, readers)
 			})
 		}
-	})
-
-	// concurrentRemoveRead is a diagnostic workload for reader stalls during
-	// remove. Its allocation metrics include concurrent readers; the remove
-	// benchmark above remains the pure remove allocation signal.
-	b.Run("concurrentRemoveRead", func(b *testing.B) {
-		const numSeries = 2_000_000
-		readers := runtime.GOMAXPROCS(0)
-		for _, pattern := range shardBucketDeletePatterns() {
-			deleted, touched := shardBucketDeletedRefs(b, numSeries, hashes, pattern)
-			for _, shardCount := range []uint64{16, 64, 128, 256} {
-				b.Run(fmt.Sprintf("%s/shardCount=%d", pattern.name, shardCount), func(b *testing.B) {
-					baseline := collectShardBucketBaselineSamples(b, populate(numSeries), shardCount, readers)
-					samples := make([]shardBucketReadSample, 0, readers*128)
-					var sampledRemoves, zeroSampleRemoves int
-					b.ReportMetric(float64(len(touched)), "touched_buckets")
-					b.ReportAllocs()
-					for b.Loop() {
-						b.StopTimer()
-						s := populate(numSeries)
-						iterSamples := benchmarkShardBucketConcurrentRemoveRead(b, s, deleted, shardCount, readers)
-						if len(iterSamples) == 0 {
-							zeroSampleRemoves++
-						} else {
-							sampledRemoves++
-						}
-						samples = append(samples, iterSamples...)
-						b.StartTimer()
-					}
-					b.StopTimer()
-					// Fast sparse removals can finish before a reader completes
-					// during one iteration; keep that visible without failing the
-					// whole benchmark row unless every iteration produced no samples.
-					b.ReportMetric(float64(sampledRemoves), "sampled-removes")
-					b.ReportMetric(float64(zeroSampleRemoves), "zero-sample-removes")
-					reportShardBucketReadMetrics(b, baseline, samples, readers)
-				})
-			}
-		}
-	})
+	}
 }
