@@ -15,6 +15,8 @@ package promql
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,6 +24,42 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
 )
+
+type queryLogWriter struct {
+	written int
+	err     error
+}
+
+func (w *queryLogWriter) Write(p []byte) (int, error) {
+	if w.err != nil {
+		return 0, w.err
+	}
+	w.written += len(p)
+	return len(p), nil
+}
+
+func (*queryLogWriter) Sync() error {
+	return nil
+}
+
+type shortQueryLogWriter struct{}
+
+func (*shortQueryLogWriter) Write(p []byte) (int, error) {
+	return len(p) - 1, nil
+}
+
+func (*shortQueryLogWriter) Sync() error {
+	return nil
+}
+
+type syncErrorQueryLogWriter struct {
+	queryLogWriter
+	err error
+}
+
+func (w *syncErrorQueryLogWriter) Sync() error {
+	return w.err
+}
 
 func TestQueryLogging(t *testing.T) {
 	fileAsBytes := make([]byte, 4096)
@@ -125,6 +163,32 @@ func TestMMapFile(t *testing.T) {
 	require.NoError(t, err, "Unexpected error while reading file.")
 	require.Equal(t, 2, n)
 	require.Equal(t, []byte(data), bytes[:2], "Mmap failed")
+}
+
+func TestAllocateQueryLogFile(t *testing.T) {
+	writer := &queryLogWriter{}
+
+	require.NoError(t, allocateQueryLogFile(writer, 100_000))
+	require.Equal(t, 100_000, writer.written)
+}
+
+func TestAllocateQueryLogFileReturnsWriteErrors(t *testing.T) {
+	require.ErrorIs(t, allocateQueryLogFile(&queryLogWriter{err: os.ErrPermission}, 1), os.ErrPermission)
+	require.ErrorIs(t, allocateQueryLogFile(&shortQueryLogWriter{}, 1), io.ErrShortWrite)
+}
+
+func TestAllocateQueryLogFileReturnsSyncError(t *testing.T) {
+	require.ErrorIs(t, allocateQueryLogFile(&syncErrorQueryLogWriter{err: os.ErrPermission}, 1), os.ErrPermission)
+}
+
+func TestNewActiveQueryTrackerReturnsError(t *testing.T) {
+	localStoragePath := filepath.Join(t.TempDir(), "not-a-directory")
+	require.NoError(t, os.WriteFile(localStoragePath, nil, 0o666))
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	queryLogger, err := NewActiveQueryTracker(localStoragePath, 1, logger)
+	require.Error(t, err)
+	require.Nil(t, queryLogger)
 }
 
 func TestTrimStringByBytes(t *testing.T) {
