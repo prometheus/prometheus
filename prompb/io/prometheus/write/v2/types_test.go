@@ -87,9 +87,9 @@ func TestInteropV1UnmarshalWithV2_DeterministicEmpty(t *testing.T) {
 			out := &Request{}
 			require.NoError(t, proto.Unmarshal(in, out))
 
-			// Drop unknowns, we expect them when incoming payload had some fields.
-			// This field & method will be likely gone after gogo removal.
-			out.XXX_unrecognized = nil // NOTE: out.XXX_DiscardUnknown() does not work with nullables.
+			// wiresmith discards unknown fields during Unmarshal, so no
+			// XXX_unrecognized needs to be cleared here (the gogo codegen used to
+			// capture unknowns; wiresmith drops them by design).
 
 			require.Equal(t, expectedV2Empty, out)
 		})

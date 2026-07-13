@@ -19,7 +19,9 @@ package io.prometheus.write.v2;
 
 option go_package = "writev2";
 
-import "gogoproto/gogo.proto";
+option (wiresmith.options.no_presence_all) = true;
+
+import "wiresmith/options.proto";
 
 // Request represents a request to write the given timeseries to a remote destination.
 // This message was introduced in the Remote Write 2.0 specification:
@@ -51,7 +53,7 @@ message Request {
   // strings is up to the sender. The receiver should not assume any particular encoding.
   repeated string symbols = 4;
   // timeseries represents an array of distinct series with 0 or more samples.
-  repeated TimeSeries timeseries = 5 [(gogoproto.nullable) = false];
+  repeated TimeSeries timeseries = 5;
 }
 
 // TimeSeries represents a single series.
@@ -70,14 +72,14 @@ message TimeSeries {
   // streaming), in healthy cases, there will be only one sample or histogram.
   //
   // Samples and histograms are sorted by timestamp (older first).
-  repeated Sample samples = 2 [(gogoproto.nullable) = false];
-  repeated Histogram histograms = 3 [(gogoproto.nullable) = false];
+  repeated Sample samples = 2;
+  repeated Histogram histograms = 3;
 
   // exemplars represents an optional set of exemplars attached to this series' samples.
-  repeated Exemplar exemplars = 4 [(gogoproto.nullable) = false];
+  repeated Exemplar exemplars = 4;
 
   // metadata represents the metadata associated with the given series' samples.
-  Metadata metadata = 5 [(gogoproto.nullable) = false];
+  Metadata metadata = 5;
 
   // This field is reserved for backward compatibility with the deprecated fields;
   // previously present in the experimental remote write period.
@@ -195,7 +197,7 @@ message Histogram {
   }
 
   // Negative Buckets.
-  repeated BucketSpan negative_spans =  8 [(gogoproto.nullable) = false];
+  repeated BucketSpan negative_spans =  8;
   // Use either "negative_deltas" or "negative_counts", the former for
   // regular histograms with integer counts, the latter for
   // float histograms.
@@ -208,7 +210,7 @@ message Histogram {
   // * The span offset+length points to an the index of the custom_values array
   // or +Inf if pointing to the len of the array.
   // * The counts and deltas have the same meaning as for exponential histograms.
-  repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
+  repeated BucketSpan positive_spans = 11;
   // Use either "positive_deltas" or "positive_counts", the former for
   // regular histograms with integer counts, the latter for
   // float histograms.
