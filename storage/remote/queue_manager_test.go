@@ -1840,12 +1840,12 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 			seriesBuff[i].Samples = []prompb.Sample{{}}
 			seriesBuff[i].Exemplars = []prompb.Exemplar{{}}
 		}
-		pBuf := proto.NewBuffer(nil)
+		var pBuf []byte
 
 		totalSize := 0
 		for b.Loop() {
 			populateTimeSeries(batch, seriesBuff, true, true)
-			req, _, _, err := buildWriteRequest(noopLogger, seriesBuff, nil, pBuf, nil, cEnc, compression.Snappy)
+			req, _, _, err := buildWriteRequest(noopLogger, seriesBuff, nil, &pBuf, nil, cEnc, compression.Snappy)
 			if err != nil {
 				b.Fatal(err)
 			}

@@ -6,6 +6,7 @@ require (
 	github.com/bufbuild/buf v1.65.0
 	github.com/daixiang0/gci v0.14.0
 	github.com/gogo/protobuf v1.3.2
+	github.com/grafana/wiresmith v0.9.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 )
 

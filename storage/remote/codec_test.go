@@ -1138,7 +1138,9 @@ func TestChunkedSeriesSet(t *testing.T) {
 
 		res := ss.Next()
 		require.False(t, res)
-		require.ErrorContains(t, ss.Err(), "proto: illegal wireType 7")
+		// wiresmith's decoder reports "unknown wire type 7" where gogo reported
+		// "proto: illegal wireType 7"; the on-wire format is unchanged.
+		require.ErrorContains(t, ss.Err(), "unknown wire type 7")
 	})
 }
 
