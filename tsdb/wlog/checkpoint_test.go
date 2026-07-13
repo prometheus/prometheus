@@ -387,6 +387,43 @@ func TestCheckpoint(t *testing.T) {
 	}
 }
 
+func TestCheckpoint_Metadata(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	w, err := NewSize(nil, nil, dir, 128*1024, compression.None)
+	require.NoError(t, err)
+
+	enc := record.Encoder{EnableSTStorage: false}
+
+	require.NoError(t, w.Log(enc.Metadata([]record.RefMetadata{
+		{Ref: 1, Unit: "u1", Help: "h1"},
+		{Ref: 2, Unit: "u2", Help: "h2"},
+		{Ref: 3, Unit: "u3", Help: "h3"},
+	}, nil)))
+
+	require.NoError(t, w.Log(enc.Metadata([]record.RefMetadata{
+		{Ref: 1, Unit: "u1-updated", Help: "h1-updated"},
+	}, nil)))
+
+	require.NoError(t, w.Close())
+
+	w, err = NewSize(nil, nil, dir, 128*1024, compression.None)
+	require.NoError(t, err)
+	t.Cleanup(func() { w.Close() })
+
+	first, last, err := Segments(w.Dir())
+	require.NoError(t, err)
+
+	stats, err := Checkpoint(promslog.NewNopLogger(), w, first, last, func(id chunks.HeadSeriesRef) bool {
+		return id == 1 || id == 2
+	}, 0, false)
+	require.NoError(t, err)
+
+	require.Equal(t, 4, stats.TotalMetadata)
+	require.Equal(t, 2, stats.DroppedMetadata)
+}
+
 // TestCheckpoint_Tombstones verifies tombstone retention. A tombstone is dropped
 // together with its series record, or once all its intervals age out of the WAL.
 func TestCheckpoint_Tombstones(t *testing.T) {
