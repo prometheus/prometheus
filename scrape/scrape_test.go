@@ -54,6 +54,7 @@ import (
 	"go.uber.org/atomic"
 	"go.uber.org/goleak"
 	"go.yaml.in/yaml/v2"
+	"google.golang.org/protobuf/encoding/prototext"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -4181,7 +4182,7 @@ func textToProto(text string, buf *bytes.Buffer) error {
 	// In case of protobuf, we have to create the binary representation.
 	pb := &dto.MetricFamily{}
 	// From text to proto message.
-	err := proto.UnmarshalText(text, pb)
+	err := prototext.Unmarshal([]byte(text), pb)
 	if err != nil {
 		return err
 	}
@@ -6218,7 +6219,7 @@ metric: <
 						// In case of protobuf, we have to create the binary representation.
 						pb := &dto.MetricFamily{}
 						// From text to proto message.
-						require.NoError(t, proto.UnmarshalText(text, pb))
+						require.NoError(t, prototext.Unmarshal([]byte(text), pb))
 						// From proto message to binary protobuf.
 						buf.Write(protoMarshalDelimited(t, pb))
 					}

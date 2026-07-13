@@ -18,10 +18,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 	"unicode/utf8"
 	"unsafe"
 
-	proto "github.com/gogo/protobuf/proto"
+	"github.com/grafana/wiresmith/protohelpers"
 	"github.com/prometheus/common/model"
 )
 
@@ -62,6 +63,14 @@ func NewMetricStreamingDecoder(data []byte) *MetricStreamingDecoder {
 
 var errInvalidVarint = errors.New("clientpb: invalid varint encountered")
 
+// errInvalidLengthMetrics and errIntOverflowMetrics mirror the wire-format
+// errors the wiresmith-generated Unmarshal returns; the hand-written streaming
+// decoders below reuse them for the same length/overflow checks.
+var (
+	errInvalidLengthMetrics = errors.New("proto: negative length found during unmarshaling")
+	errIntOverflowMetrics   = errors.New("proto: integer overflow")
+)
+
 // NextMetricFamily decodes the next metric family from the input without metrics.
 // Use NextMetric() to decode metrics. The MetricFamily fields Name, Help and Unit
 // are only valid until NextMetricFamily is called again.
@@ -70,8 +79,8 @@ func (m *MetricStreamingDecoder) NextMetricFamily() error {
 	if len(b) == 0 {
 		return io.EOF
 	}
-	messageLength, varIntLength := proto.DecodeVarint(b) // TODO(bwplotka): Get rid of gogo.
-	if varIntLength == 0 || varIntLength > binary.MaxVarintLen32 {
+	messageLength, varIntLength := binary.Uvarint(b)
+	if varIntLength <= 0 || varIntLength > binary.MaxVarintLen32 {
 		return errInvalidVarint
 	}
 	totalLength := varIntLength + int(messageLength)
@@ -114,7 +123,7 @@ func (m *MetricStreamingDecoder) resetMetric() {
 	// TODO(bwplotka): Autogenerate reset functions.
 	if m.Counter != nil {
 		m.Counter.Value = 0
-		m.Counter.StartTimestamp = nil
+		m.Counter.StartTimestamp = time.Time{}
 		m.Counter.Exemplar = nil
 	}
 	if m.Gauge != nil {
@@ -125,7 +134,7 @@ func (m *MetricStreamingDecoder) resetMetric() {
 		m.Histogram.SampleCountFloat = 0
 		m.Histogram.SampleSum = 0
 		m.Histogram.Bucket = m.Histogram.Bucket[:0]
-		m.Histogram.StartTimestamp = nil
+		m.Histogram.StartTimestamp = time.Time{}
 		m.Histogram.Schema = 0
 		m.Histogram.ZeroThreshold = 0
 		m.Histogram.ZeroCount = 0
@@ -142,7 +151,7 @@ func (m *MetricStreamingDecoder) resetMetric() {
 		m.Summary.SampleCount = 0
 		m.Summary.SampleSum = 0
 		m.Summary.Quantile = m.Summary.Quantile[:0]
-		m.Summary.StartTimestamp = nil
+		m.Summary.StartTimestamp = time.Time{}
 	}
 }
 
@@ -186,11 +195,10 @@ func parseLabel(dAtA []byte, b unsafeLabelAdder) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
-		preIndex := iNdEx
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
-				return ErrIntOverflowMetrics
+				return errIntOverflowMetrics
 			}
 			if iNdEx >= l {
 				return io.ErrUnexpectedEOF
@@ -218,7 +226,7 @@ func parseLabel(dAtA []byte, b unsafeLabelAdder) error {
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowMetrics
+					return errIntOverflowMetrics
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
@@ -232,11 +240,11 @@ func parseLabel(dAtA []byte, b unsafeLabelAdder) error {
 			}
 			intStringLen := int(stringLen)
 			if intStringLen < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			postIndex := iNdEx + intStringLen
 			if postIndex < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
@@ -253,7 +261,7 @@ func parseLabel(dAtA []byte, b unsafeLabelAdder) error {
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowMetrics
+					return errIntOverflowMetrics
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
@@ -267,11 +275,11 @@ func parseLabel(dAtA []byte, b unsafeLabelAdder) error {
 			}
 			intStringLen := int(stringLen)
 			if intStringLen < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			postIndex := iNdEx + intStringLen
 			if postIndex < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
@@ -282,16 +290,9 @@ func parseLabel(dAtA []byte, b unsafeLabelAdder) error {
 			}
 			iNdEx = postIndex
 		default:
-			iNdEx = preIndex
-			skippy, err := skipMetrics(dAtA[iNdEx:])
+			skippy, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
 				return err
-			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthMetrics
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
 			}
 			iNdEx += skippy
 		}
@@ -315,11 +316,10 @@ func (m *Metric) unmarshalWithoutLabels(p *MetricStreamingDecoder, dAtA []byte) 
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
-		preIndex := iNdEx
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
-				return ErrIntOverflowMetrics
+				return errIntOverflowMetrics
 			}
 			if iNdEx >= l {
 				return io.ErrUnexpectedEOF
@@ -347,7 +347,7 @@ func (m *Metric) unmarshalWithoutLabels(p *MetricStreamingDecoder, dAtA []byte) 
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowMetrics
+					return errIntOverflowMetrics
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
@@ -360,11 +360,11 @@ func (m *Metric) unmarshalWithoutLabels(p *MetricStreamingDecoder, dAtA []byte) 
 				}
 			}
 			if msglen < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			postIndex := iNdEx + msglen
 			if postIndex < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
@@ -378,7 +378,7 @@ func (m *Metric) unmarshalWithoutLabels(p *MetricStreamingDecoder, dAtA []byte) 
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowMetrics
+					return errIntOverflowMetrics
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
@@ -391,11 +391,11 @@ func (m *Metric) unmarshalWithoutLabels(p *MetricStreamingDecoder, dAtA []byte) 
 				}
 			}
 			if msglen < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			postIndex := iNdEx + msglen
 			if postIndex < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
@@ -414,7 +414,7 @@ func (m *Metric) unmarshalWithoutLabels(p *MetricStreamingDecoder, dAtA []byte) 
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowMetrics
+					return errIntOverflowMetrics
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
@@ -427,11 +427,11 @@ func (m *Metric) unmarshalWithoutLabels(p *MetricStreamingDecoder, dAtA []byte) 
 				}
 			}
 			if msglen < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			postIndex := iNdEx + msglen
 			if postIndex < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
@@ -450,7 +450,7 @@ func (m *Metric) unmarshalWithoutLabels(p *MetricStreamingDecoder, dAtA []byte) 
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowMetrics
+					return errIntOverflowMetrics
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
@@ -463,11 +463,11 @@ func (m *Metric) unmarshalWithoutLabels(p *MetricStreamingDecoder, dAtA []byte) 
 				}
 			}
 			if msglen < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			postIndex := iNdEx + msglen
 			if postIndex < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
@@ -486,7 +486,7 @@ func (m *Metric) unmarshalWithoutLabels(p *MetricStreamingDecoder, dAtA []byte) 
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowMetrics
+					return errIntOverflowMetrics
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
@@ -499,11 +499,11 @@ func (m *Metric) unmarshalWithoutLabels(p *MetricStreamingDecoder, dAtA []byte) 
 				}
 			}
 			if msglen < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			postIndex := iNdEx + msglen
 			if postIndex < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
@@ -522,7 +522,7 @@ func (m *Metric) unmarshalWithoutLabels(p *MetricStreamingDecoder, dAtA []byte) 
 			m.TimestampMs = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowMetrics
+					return errIntOverflowMetrics
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
@@ -541,7 +541,7 @@ func (m *Metric) unmarshalWithoutLabels(p *MetricStreamingDecoder, dAtA []byte) 
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowMetrics
+					return errIntOverflowMetrics
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
@@ -554,11 +554,11 @@ func (m *Metric) unmarshalWithoutLabels(p *MetricStreamingDecoder, dAtA []byte) 
 				}
 			}
 			if msglen < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			postIndex := iNdEx + msglen
 			if postIndex < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
@@ -571,18 +571,10 @@ func (m *Metric) unmarshalWithoutLabels(p *MetricStreamingDecoder, dAtA []byte) 
 			}
 			iNdEx = postIndex
 		default:
-			iNdEx = preIndex
-			skippy, err := skipMetrics(dAtA[iNdEx:])
+			skippy, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthMetrics
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
@@ -597,11 +589,10 @@ func (m *MetricFamily) unmarshalWithoutMetrics(buf *MetricStreamingDecoder, dAtA
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
-		preIndex := iNdEx
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
-				return ErrIntOverflowMetrics
+				return errIntOverflowMetrics
 			}
 			if iNdEx >= l {
 				return io.ErrUnexpectedEOF
@@ -629,7 +620,7 @@ func (m *MetricFamily) unmarshalWithoutMetrics(buf *MetricStreamingDecoder, dAtA
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowMetrics
+					return errIntOverflowMetrics
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
@@ -643,11 +634,11 @@ func (m *MetricFamily) unmarshalWithoutMetrics(buf *MetricStreamingDecoder, dAtA
 			}
 			intStringLen := int(stringLen)
 			if intStringLen < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			postIndex := iNdEx + intStringLen
 			if postIndex < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
@@ -661,7 +652,7 @@ func (m *MetricFamily) unmarshalWithoutMetrics(buf *MetricStreamingDecoder, dAtA
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowMetrics
+					return errIntOverflowMetrics
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
@@ -675,11 +666,11 @@ func (m *MetricFamily) unmarshalWithoutMetrics(buf *MetricStreamingDecoder, dAtA
 			}
 			intStringLen := int(stringLen)
 			if intStringLen < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			postIndex := iNdEx + intStringLen
 			if postIndex < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
@@ -693,7 +684,7 @@ func (m *MetricFamily) unmarshalWithoutMetrics(buf *MetricStreamingDecoder, dAtA
 			m.Type = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowMetrics
+					return errIntOverflowMetrics
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
@@ -712,7 +703,7 @@ func (m *MetricFamily) unmarshalWithoutMetrics(buf *MetricStreamingDecoder, dAtA
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowMetrics
+					return errIntOverflowMetrics
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
@@ -725,11 +716,11 @@ func (m *MetricFamily) unmarshalWithoutMetrics(buf *MetricStreamingDecoder, dAtA
 				}
 			}
 			if msglen < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			postIndex := iNdEx + msglen
 			if postIndex < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
@@ -743,7 +734,7 @@ func (m *MetricFamily) unmarshalWithoutMetrics(buf *MetricStreamingDecoder, dAtA
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowMetrics
+					return errIntOverflowMetrics
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
@@ -757,11 +748,11 @@ func (m *MetricFamily) unmarshalWithoutMetrics(buf *MetricStreamingDecoder, dAtA
 			}
 			intStringLen := int(stringLen)
 			if intStringLen < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			postIndex := iNdEx + intStringLen
 			if postIndex < 0 {
-				return ErrInvalidLengthMetrics
+				return errInvalidLengthMetrics
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
@@ -769,18 +760,10 @@ func (m *MetricFamily) unmarshalWithoutMetrics(buf *MetricStreamingDecoder, dAtA
 			m.Unit = yoloString(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
-			iNdEx = preIndex
-			skippy, err := skipMetrics(dAtA[iNdEx:])
+			skippy, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthMetrics
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}

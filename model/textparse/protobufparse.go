@@ -19,9 +19,9 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"time"
 	"unicode/utf8"
 
-	"github.com/gogo/protobuf/types"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -347,11 +347,11 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 			for p.exemplarPos < len(exs) {
 				exProto = exs[p.exemplarPos]
 				p.exemplarPos++
-				if exProto != nil && exProto.GetTimestamp() != nil {
+				if exProto != nil && !exProto.GetTimestamp().IsZero() {
 					break
 				}
 			}
-			if exProto != nil && exProto.GetTimestamp() == nil {
+			if exProto != nil && exProto.GetTimestamp().IsZero() {
 				return false
 			}
 		} else {
@@ -369,12 +369,12 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 				}
 				p.fieldPos++
 				// We deliberately drop exemplars with no timestamp only for native histograms.
-				if exProto != nil && (isClassic || exProto.GetTimestamp() != nil) {
+				if exProto != nil && (isClassic || !exProto.GetTimestamp().IsZero()) {
 					break // Found a classic histogram exemplar or a native histogram exemplar with a timestamp.
 				}
 			}
 			// If the last exemplar for native histograms has no timestamp, ignore it.
-			if !isClassic && exProto.GetTimestamp() == nil {
+			if !isClassic && exProto.GetTimestamp().IsZero() {
 				return false
 			}
 		}
@@ -385,9 +385,9 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 		return false
 	}
 	ex.Value = exProto.GetValue()
-	if ts := exProto.GetTimestamp(); ts != nil {
+	if ts := exProto.GetTimestamp(); !ts.IsZero() {
 		ex.HasTs = true
-		ex.Ts = ts.GetSeconds()*1000 + int64(ts.GetNanos()/1_000_000)
+		ex.Ts = ts.UnixMilli()
 	}
 	p.builder.Reset()
 	for _, lp := range exProto.GetLabel() {
@@ -401,7 +401,7 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 
 // StartTimestamp returns ST or 0 if ST is not present on counters, summaries or histograms.
 func (p *ProtobufParser) StartTimestamp() int64 {
-	var st *types.Timestamp
+	var st time.Time
 	switch p.dec.GetType() {
 	case dto.MetricType_COUNTER:
 		st = p.dec.GetCounter().GetStartTimestamp()
@@ -411,12 +411,12 @@ func (p *ProtobufParser) StartTimestamp() int64 {
 		st = p.dec.GetHistogram().GetStartTimestamp()
 	default:
 	}
-	if st == nil {
+	if st.IsZero() {
 		return 0
 	}
-	// Same as the gogo proto types.TimestampFromProto but straight to integer.
-	// and without validation.
-	return st.GetSeconds()*1e3 + int64(st.GetNanos())/1e6
+	// wiresmith's stdtime decode normalises to UTC; milliseconds since the
+	// epoch, matching the former gogo types.Timestamp seconds*1e3 + nanos/1e6.
+	return st.UnixMilli()
 }
 
 // Next advances the parser to the next "sample" (emulating the behavior of a
