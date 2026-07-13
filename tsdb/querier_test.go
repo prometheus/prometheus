@@ -2328,16 +2328,13 @@ func (mockChunkReader) Close() error {
 }
 
 func TestDeletedIterator(t *testing.T) {
-	chk := chunkenc.NewXORChunk()
-	app, err := chk.Appender()
-	require.NoError(t, err)
 	// Insert random stuff from (0, 1000).
-	act := make([]sample, 1000)
+	act := make([]chunks.Sample, 1000)
 	for i := range 1000 {
-		act[i].t = int64(i)
-		act[i].f = rand.Float64()
-		app.Append(0, act[i].t, act[i].f)
+		act[i] = sample{st: int64(i / 2), t: int64(i), f: rand.Float64()}
 	}
+	meta, err := chunks.ChunkFromSamples(act)
+	require.NoError(t, err)
 
 	cases := []struct {
 		r tombstones.Intervals
@@ -2356,7 +2353,7 @@ func TestDeletedIterator(t *testing.T) {
 
 	for _, c := range cases {
 		i := int64(-1)
-		it := &DeletedIterator{Iter: chk.Iterator(nil), Intervals: c.r[:]}
+		it := &DeletedIterator{Iter: meta.Chunk.Iterator(nil), Intervals: c.r[:]}
 		ranges := c.r[:]
 		for it.Next() == chunkenc.ValFloat {
 			i++
@@ -2370,8 +2367,9 @@ func TestDeletedIterator(t *testing.T) {
 			require.Less(t, i, int64(1000))
 
 			ts, v := it.At()
-			require.Equal(t, act[i].t, ts)
-			require.Equal(t, act[i].f, v)
+			require.Equal(t, act[i].T(), ts)
+			require.Equal(t, act[i].F(), v)
+			require.Equal(t, act[i].ST(), it.AtST())
 		}
 		// There has been an extra call to Next().
 		i++
