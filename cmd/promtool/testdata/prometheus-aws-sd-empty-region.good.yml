@@ -1,0 +1,24 @@
+# Regression test for https://github.com/prometheus/prometheus/issues/6092.
+# Before the fix, the AWS SDs called IMDS during YAML parsing, so
+# `promtool check config` failed with a network error when the region
+# was omitted (which the docs say is valid).
+
+scrape_configs:
+  - job_name: 'ec2'
+    ec2_sd_configs:
+      - port: 9090
+  - job_name: 'ecs'
+    ecs_sd_configs:
+      - port: 9090
+  - job_name: 'rds'
+    rds_sd_configs:
+      - port: 9090
+  - job_name: 'msk'
+    msk_sd_configs:
+      - port: 9090
+  - job_name: 'elasticache'
+    elasticache_sd_configs:
+      - port: 9090
+  - job_name: 'lightsail'
+    lightsail_sd_configs:
+      - port: 9090
