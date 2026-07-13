@@ -14,7 +14,6 @@
 package v1
 
 import (
-	"net/http"
 	"strconv"
 	"testing"
 	"time"
@@ -431,19 +430,22 @@ func TestAPIWithStats(t *testing.T) {
 	now := time.Now().Unix()
 
 	// Test combinations of methods, endpoints, and stats values. Values
-	// outside the supported enum ("true", "all") are rejected with 400 —
-	// historically any non-empty value silently enabled basic statistics.
+	// outside the supported enum ("true", "all") keep the historical
+	// behaviour (any non-empty value enables basic statistics) but attach a
+	// deprecation warning to the response; they will be rejected in the next
+	// major release.
 	methods := []string{"GET", "POST"}
 	statsValues := []struct {
-		value        string
-		expectStats  bool
-		expectReject bool
+		value         string
+		expectStats   bool
+		expectWarning bool
 	}{
 		{"true", true, false},
 		{"all", true, false},
-		{"1", false, true},
+		{"1", true, true},
 		{"", false, false},
 	}
+	deprecationWarning := `value "1" for parameter "stats" is deprecated and will be rejected in the next major release, use "true" or "all"`
 
 	for _, method := range methods {
 		for _, stats := range statsValues {
@@ -462,12 +464,13 @@ func TestAPIWithStats(t *testing.T) {
 					resp = testhelpers.POST(t, api, "/api/v1/query", params...)
 				}
 
-				if stats.expectReject {
-					resp.RequireStatusCode(http.StatusBadRequest).ValidateOpenAPI()
-					return
-				}
-
 				resp.RequireSuccess().ValidateOpenAPI()
+
+				if stats.expectWarning {
+					resp.RequireArrayContains("$.warnings", deprecationWarning)
+				} else {
+					resp.RequireJSONPathNotExists("$.warnings")
+				}
 
 				if stats.expectStats {
 					resp.RequireJSONPathExists("$.data.stats").
@@ -504,12 +507,13 @@ func TestAPIWithStats(t *testing.T) {
 					resp = testhelpers.POST(t, api, "/api/v1/query_range", params...)
 				}
 
-				if stats.expectReject {
-					resp.RequireStatusCode(http.StatusBadRequest).ValidateOpenAPI()
-					return
-				}
-
 				resp.RequireSuccess().ValidateOpenAPI()
+
+				if stats.expectWarning {
+					resp.RequireArrayContains("$.warnings", deprecationWarning)
+				} else {
+					resp.RequireJSONPathNotExists("$.warnings")
+				}
 
 				if stats.expectStats {
 					resp.RequireJSONPathExists("$.data.stats").

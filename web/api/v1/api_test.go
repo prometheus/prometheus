@@ -956,11 +956,12 @@ func TestStats(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name     string
-		renderer StatsRenderer
-		param    string
-		wantErr  errorType
-		expected func(*testing.T, any)
+		name        string
+		renderer    StatsRenderer
+		param       string
+		wantErr     errorType
+		wantWarning bool
+		expected    func(*testing.T, any)
 	}{
 		{
 			name:  "stats is blank",
@@ -972,14 +973,26 @@ func TestStats(t *testing.T) {
 			},
 		},
 		{
-			name:    "stats is an unsupported value",
-			param:   "foo",
-			wantErr: errorBadData,
+			name:        "stats is an unsupported value",
+			param:       "foo",
+			wantWarning: true,
+			expected: func(t *testing.T, i any) {
+				// Deprecated values keep the historical behaviour for now:
+				// any non-empty value enables basic statistics.
+				require.IsType(t, &QueryData{}, i)
+				qd := i.(*QueryData)
+				require.NotNil(t, qd.Stats)
+			},
 		},
 		{
-			name:    "stats is an unsupported truthy value",
-			param:   "1",
-			wantErr: errorBadData,
+			name:        "stats is an unsupported truthy value",
+			param:       "1",
+			wantWarning: true,
+			expected: func(t *testing.T, i any) {
+				require.IsType(t, &QueryData{}, i)
+				qd := i.(*QueryData)
+				require.NotNil(t, qd.Stats)
+			},
 		},
 		{
 			name:  "stats is true",
@@ -1042,6 +1055,17 @@ func TestStats(t *testing.T) {
 			api.statsRenderer = tc.renderer
 			api.customStatsRenderer = tc.renderer != nil
 
+			assertWarnings := func(res apiFuncResult) {
+				if tc.wantWarning {
+					require.Len(t, res.warnings, 1)
+					for msg := range res.warnings {
+						require.Contains(t, msg, "deprecated")
+					}
+				} else {
+					require.Empty(t, res.warnings)
+				}
+			}
+
 			for _, method := range []string{http.MethodGet, http.MethodPost} {
 				ctx := context.Background()
 				req, err := request(method, tc.param)
@@ -1050,12 +1074,14 @@ func TestStats(t *testing.T) {
 				assertAPIError(t, res.err, tc.wantErr)
 				if tc.wantErr == errorNone {
 					tc.expected(t, res.data)
+					assertWarnings(res)
 				}
 
 				res = api.queryRange(req.WithContext(ctx))
 				assertAPIError(t, res.err, tc.wantErr)
 				if tc.wantErr == errorNone {
 					tc.expected(t, res.data)
+					assertWarnings(res)
 				}
 			}
 		})

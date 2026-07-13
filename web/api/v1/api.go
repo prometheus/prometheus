@@ -153,9 +153,10 @@ type StatsRenderer func(context.Context, *stats.Statistics, string) stats.QueryS
 
 // DefaultStatsRenderer is the default stats renderer for the API: any
 // non-empty `stats` value includes statistics in the response. The API
-// handlers validate the parameter against the supported values ("true",
-// "all") before rendering; custom StatsRenderer implementations are exempt
-// from that validation and may define their own values.
+// handlers attach a deprecation warning to the response for values outside
+// the supported enum ("true", "all"); those values will be rejected in the
+// next major release. Custom StatsRenderer implementations are exempt and
+// may define their own values.
 func DefaultStatsRenderer(_ context.Context, s *stats.Statistics, param string) stats.QueryStats {
 	if param != "" {
 		return stats.NewQueryStats(s)
@@ -531,9 +532,6 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return invalidParamError(err, "time")
 	}
-	if err := api.validateStatsParam(r.FormValue("stats")); err != nil {
-		return invalidParamError(err, "stats")
-	}
 	ctx := r.Context()
 	if to := r.FormValue("timeout"); to != "" {
 		var cancel context.CancelFunc
@@ -579,6 +577,9 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		if isTruncated {
 			warnings = warnings.Add(errors.New("results truncated due to limit"))
 		}
+	}
+	if warn := api.statsParamWarning(r.FormValue("stats")); warn != nil {
+		warnings = warnings.Add(warn)
 	}
 	// Optional stats field in response if parameter "stats" is not empty.
 	sr := api.statsRenderer
@@ -636,12 +637,15 @@ const (
 	statsAll  = "all"
 )
 
-// validateStatsParam rejects unsupported values of the `stats` query
-// parameter. Historically any non-empty value silently enabled basic
-// statistics; validating it as an enum matches how e.g. /api/v1/rules
-// validates `type`. Embedders that install a custom StatsRenderer define
-// their own vocabulary for the parameter, so no validation happens then.
-func (api *API) validateStatsParam(stats string) error {
+// statsParamWarning returns a deprecation warning for unsupported values of
+// the `stats` query parameter, to be attached to the response's warnings.
+// Historically any non-empty value silently enabled basic statistics; that
+// behaviour is kept for compatibility within the current major release, but
+// values outside the supported enum ("true", "all") are deprecated and will
+// be rejected in the next major release. Embedders that install a custom
+// StatsRenderer define their own vocabulary for the parameter, so no warning
+// is attached then.
+func (api *API) statsParamWarning(stats string) error {
 	if api.customStatsRenderer {
 		return nil
 	}
@@ -649,7 +653,7 @@ func (api *API) validateStatsParam(stats string) error {
 	case "", statsTrue, statsAll:
 		return nil
 	default:
-		return fmt.Errorf("not supported value %q, must be %q or %q", stats, statsTrue, statsAll)
+		return fmt.Errorf("value %q for parameter \"stats\" is deprecated and will be rejected in the next major release, use %q or %q", stats, statsTrue, statsAll)
 	}
 }
 
@@ -677,10 +681,6 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 
 	if step <= 0 {
 		return invalidParamError(errors.New("zero or negative query resolution step widths are not accepted. Try a positive integer"), "step")
-	}
-
-	if err := api.validateStatsParam(r.FormValue("stats")); err != nil {
-		return invalidParamError(err, "stats")
 	}
 
 	// For safety, limit the number of returned points per timeseries.
@@ -734,6 +734,9 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		if isTruncated {
 			warnings = warnings.Add(errors.New("results truncated due to limit"))
 		}
+	}
+	if warn := api.statsParamWarning(r.FormValue("stats")); warn != nil {
+		warnings = warnings.Add(warn)
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
