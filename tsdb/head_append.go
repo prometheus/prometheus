@@ -1443,8 +1443,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 		default:
 			newlyStale := !value.IsStaleNaN(series.lastValue) && value.IsStaleNaN(s.V)
 			staleToNonStale := value.IsStaleNaN(series.lastValue) && !value.IsStaleNaN(s.V)
-			wasHistogram := series.isNativeHistogramSeries()
-			oldBuckets := series.nativeHistogramBucketCount()
+			wasHistogram, oldBuckets := series.nativeHistogramState()
 			ok, chunkCreated = series.append(s.ST, s.T, s.V, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
@@ -1555,8 +1554,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				newlyStale = newlyStale && !value.IsStaleNaN(series.lastHistogramValue.Sum)
 				staleToNonStale = value.IsStaleNaN(series.lastHistogramValue.Sum) && !value.IsStaleNaN(s.H.Sum)
 			}
-			wasHistogram := series.isNativeHistogramSeries()
-			oldBuckets := series.nativeHistogramBucketCount()
+			wasHistogram, oldBuckets := series.nativeHistogramState()
 			newBuckets := len(s.H.PositiveBuckets) + len(s.H.NegativeBuckets)
 			ok, chunkCreated = series.appendHistogram(s.ST, s.T, s.H, a.appendID, acc.appendChunkOpts)
 			if ok {
@@ -1668,8 +1666,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				newlyStale = newlyStale && !value.IsStaleNaN(series.lastFloatHistogramValue.Sum)
 				staleToNonStale = value.IsStaleNaN(series.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.FH.Sum)
 			}
-			wasHistogram := series.isNativeHistogramSeries()
-			oldBuckets := series.nativeHistogramBucketCount()
+			wasHistogram, oldBuckets := series.nativeHistogramState()
 			newBuckets := len(s.FH.PositiveBuckets) + len(s.FH.NegativeBuckets)
 			ok, chunkCreated = series.appendFloatHistogram(s.ST, s.T, s.FH, a.appendID, acc.appendChunkOpts)
 			if ok {

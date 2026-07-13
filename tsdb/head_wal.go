@@ -722,8 +722,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				h.numStaleSeries.Dec()
 			}
 
-			wasHistogram := ms.isNativeHistogramSeries()
-			oldBuckets := ms.nativeHistogramBucketCount()
+			wasHistogram, oldBuckets := ms.nativeHistogramState()
 			h.appendChunkAndMmap(ms, func() bool {
 				_, chunkCreated := ms.append(s.ST, s.T, s.V, 0, appendChunkOpts)
 				return chunkCreated
@@ -755,8 +754,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				continue
 			}
 			var newlyStale, staleToNonStale bool
-			wasHistogram := ms.isNativeHistogramSeries()
-			oldBuckets := ms.nativeHistogramBucketCount()
+			wasHistogram, oldBuckets := ms.nativeHistogramState()
 			var newBuckets int
 			if s.h != nil {
 				newlyStale = value.IsStaleNaN(s.h.Sum)
@@ -1732,9 +1730,9 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 					(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
 					h.numStaleSeries.Inc()
 				}
-				if series.isNativeHistogramSeries() {
+				if isHist, buckets := series.nativeHistogramState(); isHist {
 					h.numNativeHistogramSeries.Inc()
-					h.addNativeHistogramBuckets(series.nativeHistogramBucketCount())
+					h.addNativeHistogramBuckets(buckets)
 				}
 
 				app, err := series.headChunks.chunk.Appender()

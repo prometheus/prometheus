@@ -2331,9 +2331,9 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
 			staleSeriesDeleted++
 		}
-		if series.isNativeHistogramSeries() {
+		if isHist, buckets := series.nativeHistogramState(); isHist {
 			histogramSeriesDeleted++
-			histogramBucketsDeleted += series.nativeHistogramBucketCount()
+			histogramBucketsDeleted += buckets
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
@@ -2441,9 +2441,9 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
 			staleSeriesDeleted++
 		}
-		if series.isNativeHistogramSeries() {
+		if isHist, buckets := series.nativeHistogramState(); isHist {
 			histogramSeriesDeleted++
-			histogramBucketsDeleted += series.nativeHistogramBucketCount()
+			histogramBucketsDeleted += buckets
 		}
 
 		chunksRemoved += len(series.mmappedChunks)
@@ -2541,9 +2541,9 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		if isStaleSeries(series) {
 			staleSeriesDeleted++
 		}
-		if series.isNativeHistogramSeries() {
+		if isHist, buckets := series.nativeHistogramState(); isHist {
 			histogramSeriesDeleted++
-			histogramBucketsDeleted += series.nativeHistogramBucketCount()
+			histogramBucketsDeleted += buckets
 		}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
@@ -2757,24 +2757,20 @@ type memSeries struct {
 	txs *txRing
 }
 
-// isNativeHistogramSeries reports whether the series' most recent in-order
-// sample is a native histogram (integer or float).
-func (s *memSeries) isNativeHistogramSeries() bool {
-	return s.lastHistogramValue != nil || s.lastFloatHistogramValue != nil
-}
-
-// nativeHistogramBucketCount returns the number of stored buckets in the
-// series' most recent in-order native histogram sample, or 0 if the series is
-// not currently a native histogram series (e.g. a float series or a staleness
-// marker, which carries no buckets).
-func (s *memSeries) nativeHistogramBucketCount() int {
+// nativeHistogramState reports whether the series' most recent in-order sample
+// is a native histogram (integer or float) and the number of stored buckets in
+// that sample. The buckets count is 0 when the series is not a native histogram
+// series or when its last sample is a staleness marker, which carries no
+// buckets. It reads the last-value fields only once, for use on the append hot
+// path.
+func (s *memSeries) nativeHistogramState() (isHistogram bool, buckets int) {
 	switch {
 	case s.lastHistogramValue != nil:
-		return len(s.lastHistogramValue.PositiveBuckets) + len(s.lastHistogramValue.NegativeBuckets)
+		return true, len(s.lastHistogramValue.PositiveBuckets) + len(s.lastHistogramValue.NegativeBuckets)
 	case s.lastFloatHistogramValue != nil:
-		return len(s.lastFloatHistogramValue.PositiveBuckets) + len(s.lastFloatHistogramValue.NegativeBuckets)
+		return true, len(s.lastFloatHistogramValue.PositiveBuckets) + len(s.lastFloatHistogramValue.NegativeBuckets)
 	}
-	return 0
+	return false, 0
 }
 
 // memSeriesOOOFields contains the fields required by memSeries
