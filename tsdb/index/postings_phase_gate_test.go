@@ -52,9 +52,7 @@ func TestMemPostingsReadWaiterBlocksNewAdds(t *testing.T) {
 	secondAddEntered := make(chan struct{})
 	secondAddDone := make(chan struct{})
 
-	// Hold the gate mutex while both the later Add and the first Add's exit are
-	// started. This ensures the later Add has attempted to enter before the
-	// active Add phase is allowed to drain.
+	// Start the second Add before releasing the first one.
 	gate.mtx.Lock()
 	go func() {
 		close(secondAddStarted)
