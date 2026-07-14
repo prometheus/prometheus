@@ -9170,16 +9170,21 @@ func TestHead_FastStartupStateFile(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	// Wait for the ticker to update the series state file.
-	time.Sleep(1500 * time.Millisecond)
-
 	stateFilePath := filepath.Join(w.Dir(), "series_state.json")
 
-	b, err := os.ReadFile(stateFilePath)
-	require.NoError(t, err, "series_state.json should exist after ticker runs")
-
+	// Poll for the ticker (1s interval) to write the series state file rather
+	// than waiting a fixed amount of time: faster in the common case, and robust
+	// if the first tick is momentarily delayed under load.
 	var state SeriesLifecycleState
-	require.NoError(t, json.Unmarshal(b, &state), "file should be valid JSON")
+	var b []byte
+	require.Eventually(t, func() bool {
+		var err error
+		b, err = os.ReadFile(stateFilePath)
+		if err != nil {
+			return false
+		}
+		return json.Unmarshal(b, &state) == nil && state.LastSeriesID == 1
+	}, 10*time.Second, 20*time.Millisecond, "series_state.json should be written by the ticker")
 
 	// The ticker should write an unclean state.
 	require.False(t, state.CleanShutdown, "ticker should write CleanShutdown: false")
