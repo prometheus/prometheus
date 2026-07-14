@@ -61,7 +61,7 @@ func TestHeadConcurrentSeriesCreationDoesNotExposePartialPostings(t *testing.T) 
 				default:
 				}
 
-				p, err := PostingsForMatchers(context.Background(), ir, early, lateMissing)
+				p, err := PostingsForMatchers(t.Context(), ir, early, lateMissing)
 				if err != nil {
 					reportPostingsLoadError(readerErr, err)
 					return
@@ -88,7 +88,7 @@ func TestHeadConcurrentSeriesCreationDoesNotExposePartialPostings(t *testing.T) 
 	for writer := range writerCount {
 		writers.Go(func() {
 			for scrape := range scrapesPerWriter {
-				app := h.Appender(context.Background())
+				app := h.Appender(t.Context())
 				for series := range seriesPerScrape {
 					lset := postingsLoadLabels(writer, scrape, series)
 					if _, err := app.Append(0, lset, int64(scrape), float64(series)); err != nil {
@@ -116,14 +116,11 @@ func TestHeadConcurrentSeriesCreationDoesNotExposePartialPostings(t *testing.T) 
 	}
 }
 
-// Run with a fixed iteration count when comparing branches, for example:
-//
-// go test ./tsdb -run '^$' -bench '^BenchmarkHeadInitialScrapeWithQueries$' -benchmem -benchtime=20x -count=6
 func BenchmarkHeadInitialScrapeWithQueries(b *testing.B) {
 	const seriesPerScrape = 200
 
 	for _, queryers := range []int{0, 4} {
-		b.Run(fmt.Sprintf("queryers=%d", queryers), func(b *testing.B) {
+		b.Run("queryers="+strconv.Itoa(queryers), func(b *testing.B) {
 			opts := DefaultHeadOptions()
 			opts.ChunkRange = 1000
 			opts.ChunkDirRoot = b.TempDir()
@@ -163,7 +160,7 @@ func BenchmarkHeadInitialScrapeWithQueries(b *testing.B) {
 							}
 							return
 						}
-						for p.Next() {
+						if p.Next() {
 							reportPostingsLoadError(queryErr, fmt.Errorf("series %d was visible before all of its postings were added", p.At()))
 							return
 						}
