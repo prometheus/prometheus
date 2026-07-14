@@ -204,6 +204,10 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 // Refer to https://github.com/prometheus/prometheus/issues/13676 for more details.
 func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
 	n.targetUpdateLoop(tsets)
+	// The target update loop also returns when tsets is closed, so wait for Stop before
+	// cleaning up the send loops. This keeps callers in control of shutdown ordering, so
+	// that rule evaluation can finish sending notifications.
+	<-n.stopRequested
 
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
@@ -227,7 +231,8 @@ func (n *Manager) targetUpdateLoop(tsets <-chan map[string][]*targetgroup.Group)
 				return
 			case ts, ok := <-tsets:
 				if !ok {
-					break
+					// The discovery manager has closed the channel, no more updates are coming.
+					return
 				}
 				n.reload(ts)
 			}
