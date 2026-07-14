@@ -545,8 +545,7 @@ func dirtySortInput(n, dirtyTail int, interleaved bool) ([]storage.SeriesRef, in
 		refs = append(refs, storage.SeriesRef(i))
 	}
 	for i := range dirtyTail {
-		ref := storage.SeriesRef(sorted/2 + i*2 + 1)
-		refs = append(refs, ref)
+		refs = append(refs, storage.SeriesRef(sorted/2+i*2+1))
 	}
 	return refs, sorted
 }
@@ -561,36 +560,20 @@ func BenchmarkShardBucketPostings_DirtySort(b *testing.B) {
 		{name: "mostly-sorted-tail", n: 65_536, dirtyTail: 64},
 		{name: "interleaved", n: 65_536, interleaved: true},
 	} {
-		baseRefs, dirtyStart := dirtySortInput(tc.n, tc.dirtyTail, tc.interleaved)
-		for _, alg := range []struct {
-			name string
-			fn   func([]storage.SeriesRef, int) []storage.SeriesRef
-		}{
-			{
-				name: "full",
-				fn: func(refs []storage.SeriesRef, _ int) []storage.SeriesRef {
-					return sortRefsFull(refs)
-				},
-			},
-			{name: "suffix", fn: sortRefsSuffix},
-			{
-				name: "adaptive",
-				fn: func(refs []storage.SeriesRef, dirtyStart int) []storage.SeriesRef {
-					if dirtyStart < len(refs)/2 {
-						return sortRefsFull(refs)
-					}
-					return sortRefsSuffix(refs, dirtyStart)
-				},
-			},
-		} {
-			b.Run(fmt.Sprintf("%s/%s", tc.name, alg.name), func(b *testing.B) {
-				b.ReportAllocs()
-				for b.Loop() {
-					refs := alg.fn(baseRefs, dirtyStart)
-					shardBucketDirtySortSink = refs[len(refs)/2]
-				}
-			})
-		}
+		b.Run(tc.name, func(b *testing.B) {
+			baseRefs, dirtyStart := dirtySortInput(tc.n, tc.dirtyTail, tc.interleaved)
+			bucket := shardBucket{}
+			bucket.mtx.Lock()
+			defer bucket.mtx.Unlock()
+
+			b.ReportAllocs()
+			for b.Loop() {
+				bucket.refs = baseRefs
+				bucket.dirty = dirtyStart
+				sortDirtyBucketLocked(&bucket)
+				shardBucketDirtySortSink = bucket.refs[len(bucket.refs)/2]
+			}
+		})
 	}
 }
 
@@ -598,7 +581,7 @@ func BenchmarkShardBucketPostings_DirtySort(b *testing.B) {
 // overhead per live series after churn.
 func BenchmarkShardBucketPostings_Footprint(b *testing.B) {
 	const live = 100_000
-	for _, churn := range []int{0, 1, 2} {
+	for _, churn := range []int{0, 1} {
 		b.Run(fmt.Sprintf("churn=%dx", churn), func(b *testing.B) {
 			var capEntries, entries int
 			var fixedBytes uintptr
@@ -643,10 +626,9 @@ type shardBucketDeletePattern struct {
 const shardBucketBenchmarkHashCount = 1 << 16
 
 var (
-	shardBucketBenchmarkShardCounts = [...]uint64{16, 64, 128, 256}
+	shardBucketBenchmarkShardCounts = [...]uint64{16, 64, 128}
 	shardBucketDeletePatterns       = [...]shardBucketDeletePattern{
 		{name: "dense/churn=1/2", every: 2},
-		{name: "dense/churn=1/3", every: 3},
 		{name: "dense/churn=1/8", every: 8},
 		{name: "sparse/spread4/churn=1/8", every: 8, sparseBuckets: []uint64{0, 32, 64, 96}},
 	}
@@ -885,11 +867,9 @@ func benchmarkShardBucketConcurrentRemoveRead(b *testing.B, s *shardBucketPostin
 	recordErr, firstErr := shardBucketFirstError()
 	var wg, warmup, steadyReady sync.WaitGroup
 	for r := range readers {
-		wg.Add(1)
 		warmup.Add(1)
 		steadyReady.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			shard := uint64(r) % shardCount
 			if _, err := benchmarkShardBucketRead(b.Context(), s, shard, shardCount); err != nil {
 				recordErr(err)
@@ -939,7 +919,7 @@ func benchmarkShardBucketConcurrentRemoveRead(b *testing.B, s *shardBucketPostin
 				}
 				shard = (shard + uint64(readers)) % shardCount
 			}
-		}()
+		})
 	}
 
 	warmup.Wait()
