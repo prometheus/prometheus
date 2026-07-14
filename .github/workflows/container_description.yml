@@ -1,4 +1,7 @@
 ---
+###
+# This action is synced from https://github.com/prometheus/prometheus
+###
 name: Push README to Docker Hub
 on:
   push:
