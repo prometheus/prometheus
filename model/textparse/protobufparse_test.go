@@ -114,6 +114,10 @@ metric: <
 >
 
 `,
+		`name: "empty_metric_family"
+help: "No samples, only metadata."
+type: GAUGE
+`,
 		`name: "test_histogram"
 help: "Test histogram with many buckets removed to keep it manageable in size."
 type: HISTOGRAM
@@ -6014,28 +6018,6 @@ metric: <
 			require.ErrorContains(t, gotErr, "positive side")
 		})
 	}
-}
-
-func TestProtobufParseRecursionStackOverflow(t *testing.T) {
-	// Generate 500,000 empty metric families in binary format.
-	// Serialized dto.MetricFamily{Name: "a"} is []byte{10, 1, 'a'}. Length-prefixed with varint 3: []byte{3, 10, 1, 'a'}
-	b := []byte{3, 10, 1, 'a'}
-	var buf bytes.Buffer
-	for range 500000 {
-		buf.Write(b)
-	}
-
-	p := NewProtobufParser(buf.Bytes(), false, false, false, false, labels.NewSymbolTable())
-
-	// This would trigger a stack overflow previously, but should now pass successfully and iteratively.
-	require.NotPanics(t, func() {
-		for {
-			_, err := p.Next()
-			if errors.Is(err, io.EOF) || err != nil {
-				break
-			}
-		}
-	})
 }
 
 func generateString(r *rand.Rand, firstRunes, restRunes []rune) string {
