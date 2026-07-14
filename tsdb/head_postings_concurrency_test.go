@@ -120,7 +120,7 @@ func BenchmarkHeadInitialScrapeWithQueries(b *testing.B) {
 	const seriesPerScrape = 200
 
 	for _, queryers := range []int{0, 4} {
-		b.Run("queryers="+strconv.Itoa(queryers), func(b *testing.B) {
+		b.Run("queryers=" + strconv.Itoa(queryers), func(b *testing.B) {
 			opts := DefaultHeadOptions()
 			opts.ChunkRange = 1000
 			opts.ChunkDirRoot = b.TempDir()
