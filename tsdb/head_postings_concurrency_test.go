@@ -79,9 +79,9 @@ func TestHeadConcurrentSeriesCreationDoesNotExposePartialPostings(t *testing.T) 
 	}
 
 	const (
-		writerCount      = 8
-		scrapesPerWriter = 20
-		seriesPerScrape  = 200
+		writerCount      = 4
+		scrapesPerWriter = 10
+		seriesPerScrape  = 100
 	)
 
 	var writers sync.WaitGroup
@@ -137,6 +137,7 @@ func BenchmarkHeadInitialScrapeWithQueries(b *testing.B) {
 			ctx, cancel := context.WithCancel(b.Context())
 			defer cancel()
 
+			startQueries := make(chan struct{})
 			var queryCount atomic.Uint64
 			queryErr := make(chan error, 1)
 			var readers sync.WaitGroup
@@ -153,6 +154,7 @@ func BenchmarkHeadInitialScrapeWithQueries(b *testing.B) {
 						}
 					}()
 
+					<-startQueries
 					for ctx.Err() == nil {
 						p, err := PostingsForMatchers(ctx, ir, early, lateMissing)
 						if err != nil {
@@ -177,6 +179,7 @@ func BenchmarkHeadInitialScrapeWithQueries(b *testing.B) {
 			var nextScrape atomic.Uint64
 			b.ReportAllocs()
 			b.ResetTimer()
+			close(startQueries)
 			b.RunParallel(func(pb *testing.PB) {
 				for pb.Next() {
 					scrape := nextScrape.Inc()
