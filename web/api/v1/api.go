@@ -645,15 +645,15 @@ const (
 // be rejected in the next major release. Embedders that install a custom
 // StatsRenderer define their own vocabulary for the parameter, so no warning
 // is attached then.
-func (api *API) statsParamWarning(stats string) error {
+func (api *API) statsParamWarning(s string) error {
 	if api.customStatsRenderer {
 		return nil
 	}
-	switch stats {
+	switch s {
 	case "", statsTrue, statsAll:
 		return nil
 	default:
-		return fmt.Errorf("value %q for parameter \"stats\" is deprecated and will be rejected in the next major release, use %q or %q", stats, statsTrue, statsAll)
+		return fmt.Errorf("value %q for parameter \"stats\" is deprecated and will be rejected in the next major release, use %q or %q", s, statsTrue, statsAll)
 	}
 }
 
