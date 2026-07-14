@@ -64,7 +64,7 @@ for org in ${orgs}; do
 done
 
 # List of files that should be synced.
-SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .dockerignore .yamllint scripts/dependabot.yml scripts/golangci-lint.yml .github/workflows/govulncheck.yml .github/workflows/scorecards.yml .github/workflows/container_description.yml .github/workflows/stale.yml"
+SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .dockerignore .yamllint scripts/dependabot.yml scripts/golangci-lint.yml .github/workflows/approve-workflows.yml .github/workflows/govulncheck.yml .github/workflows/scorecards.yml .github/workflows/container_description.yml .github/workflows/stale.yml"
 
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)" || exit 1
@@ -238,7 +238,7 @@ process_repo() {
     if [[ -z "${target_file}" ]]; then
       repo_log "${target_filename} doesn't exist in ${org_repo}"
       case "${source_file}" in
-        CODE_OF_CONDUCT.md | SECURITY.md | .dockerignore | .github/workflows/container_description.yml | .github/workflows/govulncheck.yml)
+        CODE_OF_CONDUCT.md | SECURITY.md | .dockerignore | .github/workflows/approve-workflows.yml | .github/workflows/container_description.yml | .github/workflows/govulncheck.yml)
           repo_log_yellow "${source_file} missing in ${org_repo}, force updating."
           needs_update+=("${source_file}")
           ;;
