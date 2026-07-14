@@ -1563,3 +1563,23 @@ func newImmediateAlertManager(done chan<- struct{}) *httptest.Server {
 		close(done)
 	}))
 }
+
+func TestRunReturnsWhenTargetSetsClosed(t *testing.T) {
+	n := NewManager(&Options{}, model.UTF8Validation, nil)
+	defer n.Stop()
+
+	tsets := make(chan map[string][]*targetgroup.Group)
+	done := make(chan struct{})
+	go func() {
+		n.Run(tsets)
+		close(done)
+	}()
+
+	close(tsets)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("notifier manager did not stop after target sets channel was closed")
+	}
+}
