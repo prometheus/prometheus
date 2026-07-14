@@ -1278,9 +1278,17 @@ func isSeriesWithoutOOO(s *memSeries) bool {
 
 // isStaleSeries reports whether s's most recent in-order sample is a stale-NaN marker.
 func isStaleSeries(s *memSeries) bool {
-	return value.IsStaleNaN(s.lastValue) ||
-		(s.lastHistogramValue != nil && value.IsStaleNaN(s.lastHistogramValue.Sum)) ||
-		(s.lastFloatHistogramValue != nil && value.IsStaleNaN(s.lastFloatHistogramValue.Sum))
+	// Determine staleness from the series' current sample type. lastValue is not
+	// cleared when a histogram is appended, so it must only be consulted when the
+	// most recent sample is a float.
+	switch {
+	case s.lastHistogramValue != nil:
+		return value.IsStaleNaN(s.lastHistogramValue.Sum)
+	case s.lastFloatHistogramValue != nil:
+		return value.IsStaleNaN(s.lastFloatHistogramValue.Sum)
+	default:
+		return value.IsStaleNaN(s.lastValue)
+	}
 }
 
 // truncateStaleSeries removes the provided series as long as they are still stale and
@@ -1882,6 +1890,18 @@ func (h *Head) NumStaleSeries() uint64 {
 	return h.numStaleSeries.Load()
 }
 
+// updateStaleSeriesMetricOnAppend updates the stale-series gauge after an
+// in-order append, given whether the series was stale before the append and
+// whether the just-appended sample is a staleness marker.
+func (h *Head) updateStaleSeriesMetricOnAppend(wasStale, isStale bool) {
+	switch {
+	case !wasStale && isStale:
+		h.numStaleSeries.Inc()
+	case wasStale && !isStale:
+		h.numStaleSeries.Dec()
+	}
+}
+
 var headULID = ulid.MustParse("0000000000XXXXXXXXXXXXHEAD")
 
 // Meta returns meta information about the head.
@@ -2260,9 +2280,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			defer s.locks[stripe].Unlock()
 		}
 
-		if value.IsStaleNaN(series.lastValue) ||
-			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
-			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
+		if isStaleSeries(series) {
 			staleSeriesDeleted++
 		}
 
@@ -2362,9 +2380,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 			}
 		}
 
-		if value.IsStaleNaN(series.lastValue) ||
-			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
-			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
+		if isStaleSeries(series) {
 			staleSeriesDeleted++
 		}
 
