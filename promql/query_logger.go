@@ -114,10 +114,18 @@ func getMMappedFile(filename string, filesize int, logger *slog.Logger) ([]byte,
 		return nil, nil, err
 	}
 
-	err = file.Truncate(int64(filesize))
-	if err != nil {
+	// Write zeroes instead of calling Truncate to reserve the space on disk.
+	// On filesystems supporting sparse files, Truncate would only update the
+	// file size without allocating blocks, and writes through the memory map
+	// would crash the process with SIGBUS once the disk is full.
+	if _, err := file.Write(make([]byte, filesize)); err != nil {
 		file.Close()
-		logger.Error("Error setting filesize.", "filesize", filesize, "err", err)
+		logger.Error("Error allocating disk space for query log file", "filesize", filesize, "err", err)
+		return nil, nil, err
+	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		logger.Error("Error syncing query log file to disk", "err", err)
 		return nil, nil, err
 	}
 
@@ -131,7 +139,7 @@ func getMMappedFile(filename string, filesize int, logger *slog.Logger) ([]byte,
 	return fileAsBytes, &mmappedFile{f: file, m: fileAsBytes}, err
 }
 
-func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger *slog.Logger) *ActiveQueryTracker {
+func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger *slog.Logger) (*ActiveQueryTracker, error) {
 	err := os.MkdirAll(localStoragePath, 0o777)
 	if err != nil {
 		logger.Error("Failed to create directory for logging active queries")
@@ -142,7 +150,7 @@ func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger *s
 
 	fileAsBytes, closer, err := getMMappedFile(filename, filesize, logger)
 	if err != nil {
-		panic("Unable to create mmap-ed active query log")
+		return nil, fmt.Errorf("create mmapped active query log: %w", err)
 	}
 
 	copy(fileAsBytes, "[")
@@ -156,7 +164,7 @@ func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger *s
 
 	activeQueryTracker.generateIndices(maxConcurrent)
 
-	return &activeQueryTracker
+	return &activeQueryTracker, nil
 }
 
 func trimStringByBytes(str string, size int) string {
