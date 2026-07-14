@@ -121,6 +121,18 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "i", "2"+postingsBenchSuffix)
 	iNot2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "2.*")
 	iNotStar2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", ".*2.*")
+	iNot1Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "1.*")
+	iNot3Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "3.*")
+	iNot4Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "4.*")
+	iNot1Plus := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "1.+")
+	// Many "not equal" regexp matchers that all reduce to a set match (literal
+	// value), so none of them scan label values. This is the case that
+	// regressed in the first attempt at #14619 (PR #15680); combining must not
+	// touch it.
+	manyNotLiteralRegexp := make([]*labels.Matcher, 0, 55)
+	for k := 1; k <= 55; k++ {
+		manyNotLiteralRegexp = append(manyNotLiteralRegexp, labels.MustNewMatcher(labels.MatchNotRegexp, "i", strconv.Itoa(k)))
+	}
 	jFooBar := labels.MustNewMatcher(labels.MatchRegexp, "j", "foo|bar")
 	jXXXYYY := labels.MustNewMatcher(labels.MatchRegexp, "j", "XXX|YYY")
 	jXplus := labels.MustNewMatcher(labels.MatchRegexp, "j", "X.+")
@@ -173,6 +185,17 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		{`n="1",i=~".+",i!~"2.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNot2Star, jFoo}},
 		{`n="1",i=~".+",i!~".*2.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNotStar2Star, jFoo}},
 		{`n="X",i=~".+",i!~".*2.*",j="foo"`, []*labels.Matcher{nX, iPlus, iNotStar2Star, jFoo}},
+		// Multiple regexp matchers on the same label name. These exercise the
+		// same-label scan-combining path: without combining, each matcher scans
+		// all values of "i" independently. See issue #14619.
+		{`i!~"1.*",i!~"2.*",i!~"3.*",i!~"4.*"`, []*labels.Matcher{iNot1Star, iNot2Star, iNot3Star, iNot4Star}},
+		{`n="1",i!~"1.*",i!~"2.*",i!~"3.*",i!~"4.*"`, []*labels.Matcher{n1, iNot1Star, iNot2Star, iNot3Star, iNot4Star}},
+		{`n="1",i=~".+",i!~"1.*",i!~"3.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNot1Star, iNot3Star, jFoo}},
+		{`i=~"1.+",i=~".*1.*"`, []*labels.Matcher{i1Plus, iStar1Star}},
+		// Cases reproduced from the closed PR #15680 to guard against the
+		// allocation/CPU regression it introduced.
+		{`i!~"1",...,i!~"55"`, manyNotLiteralRegexp},
+		{`i!~"1.+",i!~".*2.*",i!="2"`, []*labels.Matcher{iNot1Plus, iNotStar2Star, iNot2}},
 	}
 
 	for _, c := range cases {
