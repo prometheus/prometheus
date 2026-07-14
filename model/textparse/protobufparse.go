@@ -426,178 +426,181 @@ func (p *ProtobufParser) Next() (Entry, error) {
 	p.exemplarReturned = false
 	p.nhcbH = nil
 	p.nhcbFH = nil
-	switch p.state {
-	// Invalid state occurs on:
-	// * First Next() call.
-	// * Recursive call that tells Next to move to the next metric family.
-	case EntryInvalid:
-		p.exemplarPos = 0
-		p.fieldPos = -2
-
-		if err := p.dec.NextMetricFamily(); err != nil {
-			return p.state, err
-		}
-		if err := p.dec.NextMetric(); err != nil {
-			// Skip empty metric families.
-			if errors.Is(err, io.EOF) {
-				return p.Next()
-			}
-			return EntryInvalid, err
-		}
-
-		// We are at the beginning of a metric family. Put only the name
-		// into entryBytes and validate only name, help, and type for now.
-		name := p.dec.GetName()
-		if !model.UTF8Validation.IsValidMetricName(name) {
-			return EntryInvalid, fmt.Errorf("invalid metric name: %s", name)
-		}
-		if help := p.dec.GetHelp(); !utf8.ValidString(help) {
-			return EntryInvalid, fmt.Errorf("invalid help for metric %q: %s", name, help)
-		}
-		switch p.dec.GetType() {
-		case dto.MetricType_COUNTER,
-			dto.MetricType_GAUGE,
-			dto.MetricType_HISTOGRAM,
-			dto.MetricType_GAUGE_HISTOGRAM,
-			dto.MetricType_SUMMARY,
-			dto.MetricType_UNTYPED:
-			// All good.
-		default:
-			return EntryInvalid, fmt.Errorf("unknown metric type for metric %q: %s", name, p.dec.GetType())
-		}
-		p.entryBytes.Reset()
-		p.entryBytes.WriteString(name)
-		p.state = EntryHelp
-	case EntryHelp:
-		if p.dec.Unit != "" {
-			p.state = EntryUnit
-		} else {
-			p.state = EntryType
-		}
-	case EntryUnit:
-		p.state = EntryType
-	case EntryType:
-		t := p.dec.GetType()
-		if t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM {
-			if p.ignoreNativeHistograms || !isNativeHistogram(p.dec.GetHistogram()) {
-				p.state = EntrySeries
-				p.fieldPos = -3 // We have not returned anything, let p.Next() increment it to -2.
-				return p.Next()
-			}
-			if err := checkNativeHistogramConsistency(p.dec.GetHistogram()); err != nil {
-				return EntryInvalid, fmt.Errorf("histogram %q: %w", p.dec.GetName(), err)
-			}
-			p.state = EntryHistogram
-		} else {
-			p.state = EntrySeries
-		}
-		if err := p.onSeriesOrHistogramUpdate(); err != nil {
-			return EntryInvalid, err
-		}
-	case EntrySeries:
-		// Potentially a second series in the metric family.
-		t := p.dec.GetType()
-		decodeNext := true
-		if t == dto.MetricType_SUMMARY ||
-			t == dto.MetricType_HISTOGRAM ||
-			t == dto.MetricType_GAUGE_HISTOGRAM {
-			// Non-trivial series (complex metrics, with magic suffixes).
-
-			isClassicHistogram := (t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM) &&
-				(p.ignoreNativeHistograms || !isNativeHistogram(p.dec.GetHistogram()))
-			skipSeries := p.convertClassicHistogramsToNHCB && isClassicHistogram && !p.parseClassicHistograms
-
-			// Did we iterate over all the classic representations fields?
-			// NOTE: p.fieldsDone is updated on p.onSeriesOrHistogramUpdate.
-			if !p.fieldsDone && !skipSeries {
-				// Still some fields to iterate over.
-				p.fieldPos++
-				if err := p.onSeriesOrHistogramUpdate(); err != nil {
-					return EntryInvalid, err
-				}
-				return p.state, nil
-			}
-
-			// Reset histogram fields.
-			p.fieldPos = -2
-			p.fieldsDone = false
+	for {
+		switch p.state {
+		// Invalid state occurs on:
+		// * First Next() call.
+		// * Loop iteration that tells Next to move to the next metric family.
+		case EntryInvalid:
 			p.exemplarPos = 0
+			p.fieldPos = -2
 
-			// If this is a metric family containing native
-			// histograms, it means we are here thanks to redoClassic state.
-			// Return to native histograms for the consistent flow.
-			// If this is a metric family containing classic histograms,
-			// it means we might need to do NHCB conversion.
-			if t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM {
-				if !isClassicHistogram {
-					if err := checkNativeHistogramConsistency(p.dec.GetHistogram()); err != nil {
-						return EntryInvalid, fmt.Errorf("histogram %q: %w", p.dec.GetName(), err)
-					}
-					p.state = EntryHistogram
-				} else if p.convertClassicHistogramsToNHCB {
-					// We still need to spit out the NHCB.
-					var err error
-					p.nhcbH, p.nhcbFH, err = p.convertToNHCB(t)
-					if err != nil {
-						return EntryInvalid, err
-					}
-					p.state = EntryHistogram
-					// We have an NHCB to emit, no need to decode the next series.
-					decodeNext = false
-				}
+			if err := p.dec.NextMetricFamily(); err != nil {
+				return p.state, err
 			}
-		}
-		// Is there another series?
-		if decodeNext {
 			if err := p.dec.NextMetric(); err != nil {
+				// Skip empty metric families.
 				if errors.Is(err, io.EOF) {
-					p.state = EntryInvalid
-					return p.Next()
+					continue
 				}
 				return EntryInvalid, err
 			}
-		}
-		if err := p.onSeriesOrHistogramUpdate(); err != nil {
-			return EntryInvalid, err
-		}
-	case EntryHistogram:
-		switchToClassic := func() (Entry, error) {
-			p.redoClassic = false
-			p.fieldPos = -3
-			p.fieldsDone = false
-			p.state = EntrySeries
-			return p.Next() // Switch to classic histogram.
-		}
 
-		// Was Histogram() called and parseClassicHistograms is true?
-		if p.redoClassic {
-			return switchToClassic()
-		}
-
-		// Is there another series?
-		if err := p.dec.NextMetric(); err != nil {
-			if errors.Is(err, io.EOF) {
-				p.state = EntryInvalid
-				return p.Next()
+			// We are at the beginning of a metric family. Put only the name
+			// into entryBytes and validate only name, help, and type for now.
+			name := p.dec.GetName()
+			if !model.UTF8Validation.IsValidMetricName(name) {
+				return EntryInvalid, fmt.Errorf("invalid metric name: %s", name)
 			}
-			return EntryInvalid, err
-		}
+			if help := p.dec.GetHelp(); !utf8.ValidString(help) {
+				return EntryInvalid, fmt.Errorf("invalid help for metric %q: %s", name, help)
+			}
+			switch p.dec.GetType() {
+			case dto.MetricType_COUNTER,
+				dto.MetricType_GAUGE,
+				dto.MetricType_HISTOGRAM,
+				dto.MetricType_GAUGE_HISTOGRAM,
+				dto.MetricType_SUMMARY,
+				dto.MetricType_UNTYPED:
+				// All good.
+			default:
+				return EntryInvalid, fmt.Errorf("unknown metric type for metric %q: %s", name, p.dec.GetType())
+			}
+			p.entryBytes.Reset()
+			p.entryBytes.WriteString(name)
+			p.state = EntryHelp
+		case EntryHelp:
+			if p.dec.Unit != "" {
+				p.state = EntryUnit
+			} else {
+				p.state = EntryType
+			}
+		case EntryUnit:
+			p.state = EntryType
+		case EntryType:
+			t := p.dec.GetType()
+			if t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM {
+				if p.ignoreNativeHistograms || !isNativeHistogram(p.dec.GetHistogram()) {
+					p.state = EntrySeries
+					p.fieldPos = -3 // We have not returned anything, let p.Next() increment it to -2.
+					continue
+				}
+				if err := checkNativeHistogramConsistency(p.dec.GetHistogram()); err != nil {
+					return EntryInvalid, fmt.Errorf("histogram %q: %w", p.dec.GetName(), err)
+				}
+				p.state = EntryHistogram
+			} else {
+				p.state = EntrySeries
+			}
+			if err := p.onSeriesOrHistogramUpdate(); err != nil {
+				return EntryInvalid, err
+			}
+		case EntrySeries:
+			// Potentially a second series in the metric family.
+			t := p.dec.GetType()
+			decodeNext := true
+			if t == dto.MetricType_SUMMARY ||
+				t == dto.MetricType_HISTOGRAM ||
+				t == dto.MetricType_GAUGE_HISTOGRAM {
+				// Non-trivial series (complex metrics, with magic suffixes).
 
-		// If this metric is not a native histograms or we are ignoring
-		// native histograms, it means we are here thanks to NHCB
-		// conversion. Return to classic histograms for the consistent
-		// flow.
-		if p.ignoreNativeHistograms || !isNativeHistogram(p.dec.GetHistogram()) {
-			return switchToClassic()
-		}
+				isClassicHistogram := (t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM) &&
+					(p.ignoreNativeHistograms || !isNativeHistogram(p.dec.GetHistogram()))
+				skipSeries := p.convertClassicHistogramsToNHCB && isClassicHistogram && !p.parseClassicHistograms
 
-		if err := p.onSeriesOrHistogramUpdate(); err != nil {
-			return EntryInvalid, err
+				// Did we iterate over all the classic representations fields?
+				// NOTE: p.fieldsDone is updated on p.onSeriesOrHistogramUpdate.
+				if !p.fieldsDone && !skipSeries {
+					// Still some fields to iterate over.
+					p.fieldPos++
+					if err := p.onSeriesOrHistogramUpdate(); err != nil {
+						return EntryInvalid, err
+					}
+					return p.state, nil
+				}
+
+				// Reset histogram fields.
+				p.fieldPos = -2
+				p.fieldsDone = false
+				p.exemplarPos = 0
+
+				// If this is a metric family containing native
+				// histograms, it means we are here thanks to redoClassic state.
+				// Return to native histograms for the consistent flow.
+				// If this is a metric family containing classic histograms,
+				// it means we might need to do NHCB conversion.
+				if t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM {
+					if !isClassicHistogram {
+						if err := checkNativeHistogramConsistency(p.dec.GetHistogram()); err != nil {
+							return EntryInvalid, fmt.Errorf("histogram %q: %w", p.dec.GetName(), err)
+						}
+						p.state = EntryHistogram
+					} else if p.convertClassicHistogramsToNHCB {
+						// We still need to spit out the NHCB.
+						var err error
+						p.nhcbH, p.nhcbFH, err = p.convertToNHCB(t)
+						if err != nil {
+							return EntryInvalid, err
+						}
+						p.state = EntryHistogram
+						// We have an NHCB to emit, no need to decode the next series.
+						decodeNext = false
+					}
+				}
+			}
+			// Is there another series?
+			if decodeNext {
+				if err := p.dec.NextMetric(); err != nil {
+					if errors.Is(err, io.EOF) {
+						p.state = EntryInvalid
+						continue
+					}
+					return EntryInvalid, err
+				}
+			}
+			if err := p.onSeriesOrHistogramUpdate(); err != nil {
+				return EntryInvalid, err
+			}
+		case EntryHistogram:
+			switchToClassic := func() {
+				p.redoClassic = false
+				p.fieldPos = -3
+				p.fieldsDone = false
+				p.state = EntrySeries
+			}
+
+			// Was Histogram() called and parseClassicHistograms is true?
+			if p.redoClassic {
+				switchToClassic()
+				continue
+			}
+
+			// Is there another series?
+			if err := p.dec.NextMetric(); err != nil {
+				if errors.Is(err, io.EOF) {
+					p.state = EntryInvalid
+					continue
+				}
+				return EntryInvalid, err
+			}
+
+			// If this metric is not a native histograms or we are ignoring
+			// native histograms, it means we are here thanks to NHCB
+			// conversion. Return to classic histograms for the consistent
+			// flow.
+			if p.ignoreNativeHistograms || !isNativeHistogram(p.dec.GetHistogram()) {
+				switchToClassic()
+				continue
+			}
+
+			if err := p.onSeriesOrHistogramUpdate(); err != nil {
+				return EntryInvalid, err
+			}
+		default:
+			return EntryInvalid, fmt.Errorf("invalid protobuf parsing state: %d", p.state)
 		}
-	default:
-		return EntryInvalid, fmt.Errorf("invalid protobuf parsing state: %d", p.state)
+		return p.state, nil
 	}
-	return p.state, nil
 }
 
 // onSeriesOrHistogramUpdate updates internal state before returning
