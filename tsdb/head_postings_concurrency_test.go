@@ -216,14 +216,14 @@ func BenchmarkHeadInitialScrapeWithQueries(b *testing.B) {
 
 func postingsLoadLabels(writer, scrape, series int) labels.Labels {
 	return labels.FromStrings(
-		labels.MetricName, "postings_load_metric_"+strconv.Itoa(series%50),
+		labels.MetricName, "postings_load_metric_" + strconv.Itoa(series%50),
 		"cluster", "test",
 		"early", "present",
-		"instance", "target-"+strconv.Itoa(writer),
+		"instance", "target-" + strconv.Itoa(writer),
 		"job", "postings-load",
 		"late", "present",
-		"namespace", "namespace-"+strconv.Itoa(series%20),
-		"pod", "pod-"+strconv.Itoa(scrape)+"-"+strconv.Itoa(series),
+		"namespace", "namespace-" + strconv.Itoa(series%20),
+		"pod", "pod-" + strconv.Itoa(scrape) + "-" + strconv.Itoa(series),
 		"scrape", strconv.Itoa(scrape),
 		"series", strconv.Itoa(series),
 	)
