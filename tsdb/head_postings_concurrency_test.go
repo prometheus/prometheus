@@ -34,6 +34,7 @@ func TestHeadConcurrentSeriesCreationDoesNotExposePartialPostings(t *testing.T) 
 	h, err := NewHead(nil, nil, nil, nil, opts, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, h.Close()) })
+	require.NoError(t, h.Init(0))
 
 	early := labels.MustNewMatcher(labels.MatchEqual, "early", "present")
 	lateMissing := labels.MustNewMatcher(labels.MatchNotEqual, "late", "present")
@@ -128,6 +129,7 @@ func BenchmarkHeadInitialScrapeWithQueries(b *testing.B) {
 			h, err := NewHead(nil, nil, nil, nil, opts, nil)
 			require.NoError(b, err)
 			defer func() { require.NoError(b, h.Close()) }()
+			require.NoError(b, h.Init(0))
 
 			early := labels.MustNewMatcher(labels.MatchEqual, "early", "present")
 			lateMissing := labels.MustNewMatcher(labels.MatchNotEqual, "late", "present")

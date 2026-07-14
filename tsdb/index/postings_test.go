@@ -64,6 +64,15 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 
 	p.EnsureOrder(0)
 
+	require.True(t, p.sharded)
+	nonEmptyShards := 0
+	for i := range p.shards {
+		if len(p.shards[i].m) > 0 {
+			nonEmptyShards++
+		}
+	}
+	require.Greater(t, nonEmptyShards, 1)
+
 	require.NoError(t, p.Iter(func(_ labels.Label, postings Postings) error {
 		refs, err := ExpandPostings(postings)
 		require.NoError(t, err)

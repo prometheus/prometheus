@@ -440,7 +440,40 @@ func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 	close(workc)
 	wg.Wait()
 
+	p.enableSharding()
 	p.ordered = true
+}
+
+// enableSharding moves replay-built postings into the live shards without
+// copying the postings lists. The caller must hold the exclusive phase.
+func (p *MemPostings) enableSharding() {
+	if p.sharded {
+		return
+	}
+
+	var sharded [memPostingsShardCount]map[string]map[string][]storage.SeriesRef
+	for i := range sharded {
+		sharded[i] = make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize/memPostingsShardCount+1)
+	}
+
+	for i := range p.shards {
+		for name, values := range p.shards[i].m {
+			for value, refs := range values {
+				shardIndex := memPostingsShardIndex(name, value)
+				byName := sharded[shardIndex][name]
+				if byName == nil {
+					byName = map[string][]storage.SeriesRef{}
+					sharded[shardIndex][name] = byName
+				}
+				byName[value] = refs
+			}
+		}
+	}
+
+	for i := range p.shards {
+		p.shards[i].m = sharded[i]
+	}
+	p.sharded = true
 }
 
 // Delete removes all ids in the given map from the postings lists.
@@ -574,22 +607,23 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 		p.lvs[l.Name] = appendWithExponentialGrowth(p.lvs[l.Name], l.Value)
 		p.lvsMtx.Unlock()
 	}
-	list := appendWithExponentialGrowth(vm, id)
-	nm[l.Value] = list
-
-	if !p.ordered {
+	if !p.ordered || len(vm) == 0 || vm[len(vm)-1] <= id {
+		nm[l.Value] = appendWithExponentialGrowth(vm, id)
 		return
 	}
-	// There is no guarantee that no higher ID was inserted before as they may
-	// be generated independently before adding them to postings.
-	// We repair order violations on insert. The invariant is that the first n-1
-	// items in the list are already sorted.
+
+	// Existing iterators retain the old slice after the shard lock is released.
+	// Copy before moving IDs so a later out-of-order insert cannot change them.
+	list := make([]storage.SeriesRef, len(vm)+1, len(vm)*exponentialSliceGrowthFactor+1)
+	copy(list, vm)
+	list[len(vm)] = id
 	for i := len(list) - 1; i >= 1; i-- {
 		if list[i] >= list[i-1] {
 			break
 		}
 		list[i], list[i-1] = list[i-1], list[i]
 	}
+	nm[l.Value] = list
 }
 
 func sameStringSliceData(a, b []string) bool {
