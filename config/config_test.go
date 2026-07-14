@@ -84,8 +84,9 @@ const (
 	globLabelNameLengthLimit  = 200
 	globLabelValueLengthLimit = 200
 	globalGoGC                = 42
-	globScrapeFailureLogFile  = "testdata/fail.log"
 )
+
+var globScrapeFailureLogFile  = filepath.FromSlash("testdata/fail.log")
 
 var expectedConf = &Config{
 	loaded: true,
@@ -93,7 +94,7 @@ var expectedConf = &Config{
 		ScrapeInterval:       model.Duration(15 * time.Second),
 		ScrapeTimeout:        DefaultGlobalConfig.ScrapeTimeout,
 		EvaluationInterval:   model.Duration(30 * time.Second),
-		QueryLogFile:         "testdata/query.log",
+		QueryLogFile:         filepath.FromSlash("testdata/query.log"),
 		ScrapeFailureLogFile: globScrapeFailureLogFile,
 
 		ExternalLabels: labels.FromStrings("foo", "bar", "monitor", "codelab"),
@@ -229,7 +230,7 @@ var expectedConf = &Config{
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
 			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFallbackProtocol:         PrometheusText0_0_4,
-			ScrapeFailureLogFile:           "testdata/fail_prom.log",
+			ScrapeFailureLogFile:           filepath.FromSlash("testdata/fail_prom.log"),
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
 			ScrapeNativeHistograms:         boolPtr(false),
@@ -263,11 +264,11 @@ var expectedConf = &Config{
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&file.SDConfig{
-					Files:           []string{"testdata/foo/*.slow.json", "testdata/foo/*.slow.yml", "testdata/single/file.yml"},
+					Files:           []string{filepath.FromSlash("testdata/foo/*.slow.json"), filepath.FromSlash("testdata/foo/*.slow.yml"), filepath.FromSlash("testdata/single/file.yml")},
 					RefreshInterval: model.Duration(10 * time.Minute),
 				},
 				&file.SDConfig{
-					Files:           []string{"testdata/bar/*.yaml"},
+					Files:           []string{filepath.FromSlash("testdata/bar/*.yaml")},
 					RefreshInterval: model.Duration(5 * time.Minute),
 				},
 				discovery.StaticConfig{
@@ -1110,8 +1111,8 @@ var expectedConf = &Config{
 					RefreshInterval: model.Duration(60 * time.Second),
 					Version:         1,
 					TLSConfig: config.TLSConfig{
-						CertFile: "testdata/valid_cert_file",
-						KeyFile:  "testdata/valid_key_file",
+						CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+						KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 					},
 				},
 			},
@@ -1266,7 +1267,7 @@ var expectedConf = &Config{
 					Tenancy:          "ocid1.tenancy.oc1..tenancy001",
 					User:             "ocid1.user.oc1..user001",
 					Fingerprint:      "aa:bb:cc:dd:ee:ff",
-					KeyFile:          "testdata/valid_key_file",
+					KeyFile:          filepath.FromSlash("testdata/valid_key_file"),
 					KeyPassphrase:    "mysecret",
 					Compartments:     []string{"ocid1.compartment.oc1..comp001"},
 					Port:             9100,
@@ -1309,9 +1310,9 @@ var expectedConf = &Config{
 					Availability:    "public",
 					RefreshInterval: model.Duration(60 * time.Second),
 					TLSConfig: config.TLSConfig{
-						CAFile:   "testdata/valid_ca_file",
-						CertFile: "testdata/valid_cert_file",
-						KeyFile:  "testdata/valid_key_file",
+						CAFile:   filepath.FromSlash("testdata/valid_ca_file"),
+						CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+						KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 					},
 				},
 			},
@@ -1353,9 +1354,9 @@ var expectedConf = &Config{
 						FollowRedirects: true,
 						EnableHTTP2:     true,
 						TLSConfig: config.TLSConfig{
-							CAFile:   "testdata/valid_ca_file",
-							CertFile: "testdata/valid_cert_file",
-							KeyFile:  "testdata/valid_key_file",
+							CAFile:   filepath.FromSlash("testdata/valid_ca_file"),
+							CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+							KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 						},
 					},
 				},
@@ -1837,8 +1838,8 @@ var expectedConf = &Config{
 		Timeout:     model.Duration(5 * time.Second),
 		Headers:     map[string]string{"foo": "bar"},
 		TLSConfig: config.TLSConfig{
-			CertFile:           "testdata/valid_cert_file",
-			KeyFile:            "testdata/valid_key_file",
+			CertFile:           filepath.FromSlash("testdata/valid_cert_file"),
+			KeyFile:            filepath.FromSlash("testdata/valid_key_file"),
 			InsecureSkipVerify: true,
 		},
 	},
