@@ -979,7 +979,11 @@ func TestStats(t *testing.T) {
 				require.NotNil(t, qd.Stats)
 				qs := qd.Stats.Builtin()
 				require.NotNil(t, qs.Timings)
-				require.Greater(t, qs.Timings.EvalTotalTime, float64(0))
+				// GreaterOrEqual, not Greater: on Windows the monotonic clock has
+				// millisecond-scale granularity, so evaluating this trivial query
+				// legitimately measures 0. Non-nil Timings already proves the
+				// timings were populated.
+				require.GreaterOrEqual(t, qs.Timings.EvalTotalTime, float64(0))
 				require.NotNil(t, qs.Samples)
 				require.NotNil(t, qs.Samples.TotalQueryableSamples)
 				require.Nil(t, qs.Samples.TotalQueryableSamplesPerStep)
@@ -995,7 +999,11 @@ func TestStats(t *testing.T) {
 				require.NotNil(t, qd.Stats)
 				qs := qd.Stats.Builtin()
 				require.NotNil(t, qs.Timings)
-				require.Greater(t, qs.Timings.EvalTotalTime, float64(0))
+				// GreaterOrEqual, not Greater: on Windows the monotonic clock has
+				// millisecond-scale granularity, so evaluating this trivial query
+				// legitimately measures 0. Non-nil Timings already proves the
+				// timings were populated.
+				require.GreaterOrEqual(t, qs.Timings.EvalTotalTime, float64(0))
 				require.NotNil(t, qs.Samples)
 				require.NotNil(t, qs.Samples.TotalQueryableSamples)
 				require.NotNil(t, qs.Samples.TotalQueryableSamplesPerStep)
