@@ -256,6 +256,21 @@ func (ls Labels) HasDuplicateLabelNames() (string, bool) {
 	return "", false
 }
 
+// HasOutOfOrderLabel checks if labels are not sorted by name (including duplicates).
+// Since labels are expected to be sorted, out-of-order labels indicate corruption.
+func (ls Labels) HasOutOfOrderLabel() (string, bool) {
+	var prev string
+	for i := 0; i < len(ls.data); {
+		lName, newI := decodeString(ls.data, i)
+		_, i = decodeString(ls.data, newI)
+		if prev != "" && lName <= prev {
+			return lName, true
+		}
+		prev = lName
+	}
+	return "", false
+}
+
 // WithoutEmpty returns the labelset without empty labels.
 // May return the same labelset.
 func (ls Labels) WithoutEmpty() Labels {
