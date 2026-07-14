@@ -542,7 +542,7 @@ eval instant at 1m quantile without(point)((scalar(foo)), data)
 	{test="NaN sample"} 0.6
 
 eval instant at 1m quantile without(point)(NaN, data)
-	expect warn msg: PromQL warning: quantile value should be between 0 and 1, got NaN
+	expect warn regex: PromQL warning: quantile value should be between 0 and 1, got NaN \([0-9]+:[0-9]+\)
 	{test="two samples"} NaN
 	{test="three samples"} NaN
 	{test="uneven samples"} NaN
