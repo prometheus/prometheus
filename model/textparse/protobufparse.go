@@ -430,7 +430,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		switch p.state {
 		// Invalid state occurs on:
 		// * First Next() call.
-		// * Loop iteration that tells Next to move to the next metric family.
+		// * Loop continue that tells Next to move to the next metric family.
 		case EntryInvalid:
 			p.exemplarPos = 0
 			p.fieldPos = -2
