@@ -426,7 +426,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 	p.exemplarReturned = false
 	p.nhcbH = nil
 	p.nhcbFH = nil
-	for {
+	for { // Note there is a return at end of this loop; we only come back here on explicit continue.
 		switch p.state {
 		// Invalid state occurs on:
 		// * First Next() call.
