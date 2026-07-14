@@ -3428,28 +3428,6 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 			},
 		},
 		{
-			input: `some_metric @ 123 offset 1m [10m:5s]`,
-			expected: &parser.SubqueryExpr{
-				Expr: &parser.StepInvariantExpr{
-					Expr: &parser.VectorSelector{
-						Name: "some_metric",
-						LabelMatchers: []*labels.Matcher{
-							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
-						},
-						PosRange: posrange.PositionRange{
-							Start: 0,
-							End:   27,
-						},
-						Timestamp:      makeInt64Pointer(123000),
-						OriginalOffset: 1 * time.Minute,
-					},
-				},
-				Range:  10 * time.Minute,
-				Step:   5 * time.Second,
-				EndPos: 36,
-			},
-		},
-		{
 			input: `some_metric[10m:5s] offset 1m @ 123`,
 			expected: &parser.StepInvariantExpr{
 				Expr: &parser.SubqueryExpr{

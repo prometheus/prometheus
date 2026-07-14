@@ -1737,6 +1737,10 @@ yydefault:
 	case 96:
 		yyDollar = yyS[yypt-6 : yypt+1]
 		{
+			if errMsg := offsetOrAtErrMsg(yyDollar[1].node.(Expr)); errMsg != "" {
+				errRange := mergeRanges(&yyDollar[2].item, &yyDollar[6].item)
+				yylex.(*parser).addParseErrf(errRange, "%s", errMsg)
+			}
 			var rangeNl time.Duration
 			var stepNl time.Duration
 			if numLit, ok := yyDollar[3].node.(*NumberLiteral); ok {
@@ -1759,6 +1763,10 @@ yydefault:
 	case 97:
 		yyDollar = yyS[yypt-5 : yypt+1]
 		{
+			if errMsg := offsetOrAtErrMsg(yyDollar[1].node.(Expr)); errMsg != "" {
+				errRange := mergeRanges(&yyDollar[2].item, &yyDollar[5].item)
+				yylex.(*parser).addParseErrf(errRange, "%s", errMsg)
+			}
 			var rangeNl time.Duration
 			if numLit, ok := yyDollar[3].node.(*NumberLiteral); ok {
 				rangeNl = time.Duration(math.Round(numLit.Val * float64(time.Second)))

@@ -2803,6 +2803,96 @@ var testExpr = []struct {
 			},
 		},
 	},
+	// Test subquery: offset/@ modifiers immediately before subquery range, adjacent or
+	// spaced, apply to a plain, matrix, or nested subquery selector (should all error).
+	{
+		input: `some_metric offset 5m[2m:10s]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 21, End: 29},
+				Err:           errors.New("no offset modifiers allowed before range"),
+				Query:         `some_metric offset 5m[2m:10s]`,
+			},
+		},
+	},
+	{
+		input: `some_metric @ 123[2m:10s]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 17, End: 25},
+				Err:           errors.New("no @ modifiers allowed before range"),
+				Query:         `some_metric @ 123[2m:10s]`,
+			},
+		},
+	},
+	{
+		input: `some_metric offset 5m [2m:10s]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 22, End: 30},
+				Err:           errors.New("no offset modifiers allowed before range"),
+				Query:         `some_metric offset 5m [2m:10s]`,
+			},
+		},
+	},
+	{
+		input: `some_metric @ 123 [2m:10s]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 18, End: 26},
+				Err:           errors.New("no @ modifiers allowed before range"),
+				Query:         `some_metric @ 123 [2m:10s]`,
+			},
+		},
+	},
+	{
+		input: `some_metric[5m] offset 1m[2m:10s]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 25, End: 33},
+				Err:           errors.New("no offset modifiers allowed before range"),
+				Query:         `some_metric[5m] offset 1m[2m:10s]`,
+			},
+		},
+	},
+	{
+		input: `some_metric[5m] @ 123[2m:10s]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 21, End: 29},
+				Err:           errors.New("no @ modifiers allowed before range"),
+				Query:         `some_metric[5m] @ 123[2m:10s]`,
+			},
+		},
+	},
+	{
+		input: `some_metric[2m:10s] offset 1m[5m:1m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 29, End: 36},
+				Err:           errors.New("no offset modifiers allowed before range"),
+				Query:         `some_metric[2m:10s] offset 1m[5m:1m]`,
+			},
+		},
+	},
+	{
+		input: `some_metric[2m:10s] @ 123[5m:1m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 25, End: 32},
+				Err:           errors.New("no @ modifiers allowed before range"),
+				Query:         `some_metric[2m:10s] @ 123[5m:1m]`,
+			},
+		},
+	},
 	{
 		input: `(foo + bar)[5m]`,
 		fail:  true,
@@ -3916,68 +4006,46 @@ var testExpr = []struct {
 	},
 	{
 		input: `some_metric OFFSET 1m [10m:5s]`,
-		expected: &SubqueryExpr{
-			Expr: &VectorSelector{
-				Name: "some_metric",
-				LabelMatchers: []*labels.Matcher{
-					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
-				},
-				PosRange:       posrange.PositionRange{Start: 0, End: 21},
-				OriginalOffset: 1 * time.Minute,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 22, End: 30},
+				Err:           errors.New("no offset modifiers allowed before range"),
+				Query:         `some_metric OFFSET 1m [10m:5s]`,
 			},
-			Range:  10 * time.Minute,
-			Step:   5 * time.Second,
-			EndPos: 30,
 		},
 	},
 	{
 		input: `some_metric @ 123 [10m:5s]`,
-		expected: &SubqueryExpr{
-			Expr: &VectorSelector{
-				Name: "some_metric",
-				LabelMatchers: []*labels.Matcher{
-					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
-				},
-				PosRange:  posrange.PositionRange{Start: 0, End: 17},
-				Timestamp: makeInt64Pointer(123000),
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 18, End: 26},
+				Err:           errors.New("no @ modifiers allowed before range"),
+				Query:         `some_metric @ 123 [10m:5s]`,
 			},
-			Range:  10 * time.Minute,
-			Step:   5 * time.Second,
-			EndPos: 26,
 		},
 	},
 	{
 		input: `some_metric @ 123 offset 1m [10m:5s]`,
-		expected: &SubqueryExpr{
-			Expr: &VectorSelector{
-				Name: "some_metric",
-				LabelMatchers: []*labels.Matcher{
-					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
-				},
-				PosRange:       posrange.PositionRange{Start: 0, End: 27},
-				Timestamp:      makeInt64Pointer(123000),
-				OriginalOffset: 1 * time.Minute,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 28, End: 36},
+				Err:           errors.New("no offset modifiers allowed before range"),
+				Query:         `some_metric @ 123 offset 1m [10m:5s]`,
 			},
-			Range:  10 * time.Minute,
-			Step:   5 * time.Second,
-			EndPos: 36,
 		},
 	},
 	{
 		input: `some_metric offset 1m @ 123 [10m:5s]`,
-		expected: &SubqueryExpr{
-			Expr: &VectorSelector{
-				Name: "some_metric",
-				LabelMatchers: []*labels.Matcher{
-					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
-				},
-				PosRange:       posrange.PositionRange{Start: 0, End: 27},
-				Timestamp:      makeInt64Pointer(123000),
-				OriginalOffset: 1 * time.Minute,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 28, End: 36},
+				Err:           errors.New("no offset modifiers allowed before range"),
+				Query:         `some_metric offset 1m @ 123 [10m:5s]`,
 			},
-			Range:  10 * time.Minute,
-			Step:   5 * time.Second,
-			EndPos: 36,
 		},
 	},
 	{
@@ -4098,8 +4166,8 @@ var testExpr = []struct {
 		fail:  true,
 		errors: ParseErrors{
 			ParseErr{
-				PositionRange: posrange.PositionRange{Start: 0, End: 28},
-				Err:           errors.New("subquery is only allowed on instant vector, got matrix instead"),
+				PositionRange: posrange.PositionRange{Start: 20, End: 28},
+				Err:           errors.New("no offset modifiers allowed before range"),
 				Query:         "test[5d] OFFSET 10s [10m:5s]",
 			},
 		},
