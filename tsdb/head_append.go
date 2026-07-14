@@ -1714,7 +1714,6 @@ func (a *headAppenderBase) unmarkCreatedSeriesAsPendingCommit() {
 }
 
 // Commit writes to the WAL and adds the data to the Head.
-// TODO(codesome): Refactor this method to reduce indentation and make it more readable.
 func (a *headAppenderBase) Commit() (err error) {
 	if a.closed {
 		return ErrAppenderClosed
