@@ -583,6 +583,74 @@ func (a alertmanagerMock) url() *url.URL {
 	return u
 }
 
+func TestManager_ClosedTargetSetsChannel(t *testing.T) {
+	t.Run("target update loop returns", func(t *testing.T) {
+		m := NewManager(&Options{}, model.UTF8Validation, nil)
+		defer m.Stop()
+
+		targetSetsCh := make(chan map[string][]*targetgroup.Group)
+		loopDone := make(chan struct{})
+		go func() {
+			m.targetUpdateLoop(targetSetsCh)
+			close(loopDone)
+		}()
+		close(targetSetsCh)
+
+		select {
+		case <-loopDone:
+		case <-time.After(time.Second):
+			t.Fatal("notification manager target update loop did not stop after target sets channel was closed")
+		}
+	})
+
+	t.Run("Run waits for Stop", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			m := NewManager(&Options{}, model.UTF8Validation, nil)
+			defer m.Stop()
+
+			const alertmanagerURL = "http://alertmanager:9093/api/v2/alerts"
+			amCfg := config.DefaultAlertmanagerConfig
+			ams := newTestAlertmanagerSet(&amCfg, nil, m.opts, m.metrics, alertmanagerURL)
+			m.alertmanagers = map[string]*alertmanagerSet{"test": ams}
+			ams.startSendLoops(ams.ams)
+
+			targetSetsCh := make(chan map[string][]*targetgroup.Group)
+			runDone := make(chan struct{})
+			go func() {
+				m.Run(targetSetsCh)
+				close(runDone)
+			}()
+			close(targetSetsCh)
+			synctest.Wait()
+
+			select {
+			case <-runDone:
+				t.Fatal("notification manager returned before Stop was called")
+			default:
+			}
+
+			ams.mtx.RLock()
+			sendLoopCount := len(ams.sendLoops)
+			ams.mtx.RUnlock()
+			require.Equal(t, 1, sendLoopCount, "send loop was cleaned up before Stop was called")
+
+			m.Stop()
+			synctest.Wait()
+
+			select {
+			case <-runDone:
+			default:
+				t.Fatal("notification manager did not return after Stop was called")
+			}
+
+			ams.mtx.RLock()
+			sendLoopCount = len(ams.sendLoops)
+			ams.mtx.RUnlock()
+			require.Zero(t, sendLoopCount, "send loop was not cleaned up after Stop was called")
+		})
+	})
+}
+
 func TestReload(t *testing.T) {
 	tests := []struct {
 		in  *targetgroup.Group

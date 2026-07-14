@@ -204,6 +204,8 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 // Refer to https://github.com/prometheus/prometheus/issues/13676 for more details.
 func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
 	n.targetUpdateLoop(tsets)
+	// Wait for Stop even if the target update channel closes so callers control when send loops are cleaned up.
+	<-n.stopRequested
 
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
@@ -227,7 +229,7 @@ func (n *Manager) targetUpdateLoop(tsets <-chan map[string][]*targetgroup.Group)
 				return
 			case ts, ok := <-tsets:
 				if !ok {
-					break
+					return
 				}
 				n.reload(ts)
 			}
