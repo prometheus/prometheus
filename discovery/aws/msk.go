@@ -308,6 +308,12 @@ func (d *MSKDiscovery) describeClusters(ctx context.Context, clusterARNs []strin
 			if err != nil {
 				return fmt.Errorf("could not describe cluster %v: %w", clusterARN, err)
 			}
+			// Only provisioned clusters expose broker nodes; skip anything
+			// else (e.g. serverless clusters) that was explicitly configured.
+			if cluster.ClusterInfo.ClusterType != types.ClusterTypeProvisioned {
+				d.logger.Warn("Skipping non-provisioned MSK cluster, only provisioned clusters are supported", "cluster", clusterARN, "type", string(cluster.ClusterInfo.ClusterType))
+				return nil
+			}
 			mu.Lock()
 			clusters = append(clusters, *cluster.ClusterInfo)
 			mu.Unlock()
