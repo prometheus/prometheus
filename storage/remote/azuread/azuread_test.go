@@ -47,11 +47,6 @@ type AzureAdTestSuite struct {
 	mockCredential *mockCredential
 }
 
-type TokenProviderTestSuite struct {
-	suite.Suite
-	mockCredential *mockCredential
-}
-
 // mockCredential mocks azidentity TokenCredential interface.
 type mockCredential struct {
 	mock.Mock
@@ -274,7 +269,7 @@ func TestAzureAdConfig(t *testing.T) {
 		_, err := loadAzureAdConfig(c.filename)
 		if c.err != "" {
 			if err == nil {
-				t.Fatalf("Did not receive expected error unmarshaling bad azuread config")
+				t.Fatal("Did not receive expected error unmarshaling bad azuread config")
 			}
 			require.EqualError(t, err, c.err)
 		} else {
@@ -292,21 +287,16 @@ func (m *mockCredential) GetToken(ctx context.Context, options policy.TokenReque
 	return args.Get(0).(azcore.AccessToken), nil
 }
 
-func (s *TokenProviderTestSuite) BeforeTest(_, _ string) {
-	s.mockCredential = new(mockCredential)
-}
+func TestNewTokenProvider(t *testing.T) {
+	t.Parallel()
 
-func TestTokenProvider(t *testing.T) {
-	suite.Run(t, new(TokenProviderTestSuite))
-}
-
-func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 	cases := []struct {
-		cfg *AzureADConfig
-		err string
+		name string
+		cfg  *AzureADConfig
+		err  string
 	}{
-		// Invalid tokenProvider for managedidentity.
 		{
+			name: "invalid managed identity cloud",
 			cfg: &AzureADConfig{
 				Cloud: "PublicAzure",
 				ManagedIdentity: &ManagedIdentityConfig{
@@ -315,8 +305,8 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 			},
 			err: "Cloud is not specified or is incorrect: ",
 		},
-		// Invalid tokenProvider for oauth.
 		{
+			name: "invalid oauth cloud",
 			cfg: &AzureADConfig{
 				Cloud: "PublicAzure",
 				OAuth: &OAuthConfig{
@@ -327,8 +317,8 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 			},
 			err: "Cloud is not specified or is incorrect: ",
 		},
-		// Invalid tokenProvider for SDK.
 		{
+			name: "invalid SDK cloud",
 			cfg: &AzureADConfig{
 				Cloud: "PublicAzure",
 				SDK: &SDKConfig{
@@ -337,8 +327,8 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 			},
 			err: "Cloud is not specified or is incorrect: ",
 		},
-		// Invalid tokenProvider for workload identity.
 		{
+			name: "invalid workload identity cloud",
 			cfg: &AzureADConfig{
 				Cloud: "PublicAzure",
 				WorkloadIdentity: &WorkloadIdentityConfig{
@@ -349,8 +339,8 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 			},
 			err: "Cloud is not specified or is incorrect: ",
 		},
-		// Valid tokenProvider for managedidentity.
 		{
+			name: "valid managed identity",
 			cfg: &AzureADConfig{
 				Cloud: "AzurePublic",
 				ManagedIdentity: &ManagedIdentityConfig{
@@ -358,8 +348,8 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 				},
 			},
 		},
-		// Valid tokenProvider for oauth.
 		{
+			name: "valid oauth",
 			cfg: &AzureADConfig{
 				Cloud: "AzurePublic",
 				OAuth: &OAuthConfig{
@@ -369,8 +359,8 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 				},
 			},
 		},
-		// Valid tokenProvider for SDK.
 		{
+			name: "valid SDK",
 			cfg: &AzureADConfig{
 				Cloud: "AzurePublic",
 				SDK: &SDKConfig{
@@ -378,8 +368,8 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 				},
 			},
 		},
-		// Valid tokenProvider for workload identity.
 		{
+			name: "valid workload identity",
 			cfg: &AzureADConfig{
 				Cloud: "AzurePublic",
 				WorkloadIdentity: &WorkloadIdentityConfig{
@@ -390,42 +380,55 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 			},
 		},
 	}
-	mockGetTokenCallCounter := 1
-	for _, c := range cases {
-		if c.err != "" {
-			actualTokenProvider, actualErr := newTokenProvider(c.cfg, s.mockCredential)
 
-			s.Nil(actualTokenProvider)
-			s.Require().Error(actualErr)
-			s.Require().ErrorContains(actualErr, c.err)
-		} else {
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Each subtest uses its own mock so cases can run concurrently.
+			mockCred := new(mockCredential)
+
+			if c.err != "" {
+				actualTokenProvider, actualErr := newTokenProvider(c.cfg, mockCred)
+
+				require.Nil(t, actualTokenProvider)
+				require.Error(t, actualErr)
+				require.ErrorContains(t, actualErr, c.err)
+				return
+			}
+
 			testToken := &azcore.AccessToken{
 				Token:     testTokenString,
 				ExpiresOn: testTokenExpiry(),
 			}
 
-			s.mockCredential.On("GetToken", mock.Anything, mock.Anything).Return(*testToken, nil).Once().
+			mockCred.On("GetToken", mock.Anything, mock.Anything).Return(*testToken, nil).Once().
 				On("GetToken", mock.Anything, mock.Anything).Return(getToken(), nil).Once()
 
-			actualTokenProvider, actualErr := newTokenProvider(c.cfg, s.mockCredential)
+			actualTokenProvider, actualErr := newTokenProvider(c.cfg, mockCred)
 
-			s.NotNil(actualTokenProvider)
-			s.Require().NoError(actualErr)
-			s.NotNil(actualTokenProvider.getAccessToken(context.Background()))
+			require.NotNil(t, actualTokenProvider)
+			require.NoError(t, actualErr)
+			require.NotEmpty(t, mustGetAccessToken(t, actualTokenProvider))
 
 			// Token set to refresh at half of the expiry time. The test tokens are set to expiry in 5s.
 			// Hence, the 4 seconds wait to check if the token is refreshed.
 			time.Sleep(4 * time.Second)
 
-			s.NotNil(actualTokenProvider.getAccessToken(context.Background()))
+			require.NotEmpty(t, mustGetAccessToken(t, actualTokenProvider))
 
-			s.mockCredential.AssertNumberOfCalls(s.T(), "GetToken", 2*mockGetTokenCallCounter)
-			mockGetTokenCallCounter++
-			accessToken, err := actualTokenProvider.getAccessToken(context.Background())
-			s.Require().NoError(err)
-			s.NotEqual(testTokenString, accessToken)
-		}
+			mockCred.AssertNumberOfCalls(t, "GetToken", 2)
+			accessToken := mustGetAccessToken(t, actualTokenProvider)
+			require.NotEqual(t, testTokenString, accessToken)
+		})
 	}
+}
+
+func mustGetAccessToken(t *testing.T, tp *tokenProvider) string {
+	t.Helper()
+	accessToken, err := tp.getAccessToken(context.Background())
+	require.NoError(t, err)
+	return accessToken
 }
 
 func getToken() azcore.AccessToken {

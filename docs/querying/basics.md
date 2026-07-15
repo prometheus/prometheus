@@ -174,6 +174,65 @@ Examples:
     12h34m56s # Equivalent to 45296s and thus 45296.
     54s321ms # Equivalent to 54.321.
 
+### Duration expressions
+
+Arithmetic expressions can be used wherever a time duration is expected, that is
+in [range vector selectors](#range-vector-selectors) and in
+[offset durations](#offset-modifier).
+
+In range vectors:
+
+    rate(http_requests_total[5m * 2])     # 10 minute range
+    rate(http_requests_total[(5+2) * 1m]) # 7 minute range
+
+In offset durations:
+
+    http_requests_total offset (1h / 2)       # 30 minute offset
+    http_requests_total offset ((2 ^ 3) * 1m) # 8 minute offset
+
+When using `offset` with a duration expression, you must wrap the expression in
+parentheses. Without parentheses, only the first duration value is used in the
+offset calculation.
+
+The following operators are supported, following the usual precedence rules:
+
+* `+` – addition
+* `-` – subtraction
+* `*` – multiplication
+* `/` – division
+* `%` – modulo
+* `^` – exponentiation
+
+The following functions can be used inside duration expressions:
+
+* `step()` resolves to the step width of a [range query](api.md#range-queries),
+  and to `0s` for an [instant query](api.md#instant-queries).
+* `range()` resolves to the full range of a range query (end time − start time),
+  and to `0s` for an instant query. This is particularly useful in combination
+  with `@ end()` to look back over the entire query range, e.g.
+  `max_over_time(metric[range()] @ end())`.
+* `min_of(<duration>, <duration>)` returns the smaller of the two durations,
+  which is useful for capping a duration at a maximum value.
+* `max_of(<duration>, <duration>)` returns the larger of the two durations,
+  which is useful for enforcing a minimum value.
+
+For example, `max_of(step(), 5s)` ensures the duration is never shorter than
+`5s`, while `min_of(range(), 1h)` caps the duration at `1h`.
+
+**Note**: Duration expressions are not supported in the [`@` modifier](#modifier).
+
+Examples of equivalent durations:
+
+* `5m * 2` is equivalent to `10m` or `600s`.
+* `10m - 1m` is equivalent to `9m` or `540s`.
+* `(5+2) * 1m` is equivalent to `7m` or `420s`.
+* `1h / 2` is equivalent to `30m` or `1800s`.
+* `4h % 3h` is equivalent to `1h` or `3600s`.
+* `(2 ^ 3) * 1m` is equivalent to `8m` or `480s`.
+* `step() + 1` is equivalent to the query step width increased by `1s`.
+* `max_of(step(), 5s)` is equivalent to the larger of the query step width and `5s`.
+* `min_of(2 * step() + 5s, 5m)` is equivalent to the smaller of twice the query step increased by `5s` and `5m`.
+
 ## Time series selectors
 
 These are the basic building-blocks that instruct PromQL what data to fetch.

@@ -77,7 +77,7 @@ func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.S
 	*chks = (*chks)[:0]
 
 	if s.ooo != nil {
-		oh.headChunksBuf = getOOOSeriesChunks(s, oh.head.opts.UseXOR2FloatEncoding(), oh.mint, oh.maxt, oh.lastGarbageCollectedMmapRef, 0, true, oh.inoMint, chks, oh.headChunksBuf)
+		oh.headChunksBuf = getOOOSeriesChunks(s, oh.head.opts.UseXOR2FloatEncoding(), oh.head.opts.EnableHistogramSTEncoding.Load(), oh.mint, oh.maxt, oh.lastGarbageCollectedMmapRef, 0, true, oh.inoMint, chks, oh.headChunksBuf)
 	} else {
 		*chks, oh.headChunksBuf = appendSeriesChunks(s, oh.inoMint, oh.maxt, *chks, oh.headChunksBuf)
 	}
@@ -93,7 +93,7 @@ func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.S
 // maxMmapRef tells up to what max m-map chunk that we can consider. If it is non-0, then
 // the oooHeadChunk will not be considered.
 // headChunksBuf is a reusable buffer for collectHeadChunks; the (possibly grown) buffer is returned.
-func getOOOSeriesChunks(s *memSeries, useXOR2 bool, mint, maxt int64, lastGarbageCollectedMmapRef, maxMmapRef chunks.ChunkDiskMapperRef, includeInOrder bool, inoMint int64, chks *[]chunks.Meta, headChunksBuf []*memChunk) []*memChunk {
+func getOOOSeriesChunks(s *memSeries, useXOR2, useHistogramST bool, mint, maxt int64, lastGarbageCollectedMmapRef, maxMmapRef chunks.ChunkDiskMapperRef, includeInOrder bool, inoMint int64, chks *[]chunks.Meta, headChunksBuf []*memChunk) []*memChunk {
 	tmpChks := make([]chunks.Meta, 0, len(s.ooo.oooMmappedChunks))
 
 	addChunk := func(minT, maxT int64, ref chunks.ChunkRef, chunk chunkenc.Chunk) {
@@ -111,7 +111,7 @@ func getOOOSeriesChunks(s *memSeries, useXOR2 bool, mint, maxt int64, lastGarbag
 		if c.OverlapsClosedInterval(mint, maxt) && maxMmapRef == 0 {
 			ref := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(len(s.ooo.oooMmappedChunks))))
 			if len(c.chunk.samples) > 0 { // Empty samples happens in tests, at least.
-				chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(c.minTime, c.maxTime, useXOR2)
+				chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(c.minTime, c.maxTime, useXOR2, useHistogramST)
 				if err != nil {
 					handleChunkWriteError(err)
 					return headChunksBuf
@@ -304,7 +304,6 @@ func (cr *HeadAndOOOChunkReader) collectOrGetHeadChunks(s *memSeries) []*memChun
 	// (OOOCompactionHead.Chunks), which only requests OOO chunks, so this
 	// branch is not reached. It is kept for correctness if callers change.
 	cr.headChunksBuf = collectHeadChunks(s.headChunks, cr.headChunksBuf[:0])
-	clear(cr.headChunksBuf[len(cr.headChunksBuf):cap(cr.headChunksBuf)])
 	hc := cr.headChunksBuf
 	if cap(cr.headChunksBuf) > headChunksBufMaxCap {
 		cr.headChunksBuf = nil
@@ -312,23 +311,26 @@ func (cr *HeadAndOOOChunkReader) collectOrGetHeadChunks(s *memSeries) []*memChun
 	return hc
 }
 
-// EnableChunkCache enables the head-chunk cache on the underlying headChunkReader.
-// This should only be called for range queries where the cache provides O(1) lookups
-// across multiple chunk accesses for the same series.
+// EnableChunkCache enables the head-chunk cache on the underlying
+// headChunkReader; see its documentation for the caching semantics.
 func (cr *HeadAndOOOChunkReader) EnableChunkCache() {
 	if cr.cr != nil {
-		cr.cr.enableCache = true
+		cr.cr.EnableChunkCache()
 	}
 }
 
 func (cr *HeadAndOOOChunkReader) Close() error {
-	if cr.cr != nil && cr.cr.isoState != nil {
-		cr.cr.isoState.Close()
+	var err error
+	if cr.cr != nil {
+		err = cr.cr.Close()
 	}
 	if cr.oooIsoState != nil {
 		cr.oooIsoState.Close()
 	}
-	return nil
+	// Release the fallback collection buffer so a closed reader retains no
+	// chunk data.
+	cr.headChunksBuf = nil
+	return err
 }
 
 type OOOCompactionHead struct {
@@ -391,7 +393,7 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 		}
 
 		var lastMmapRef chunks.ChunkDiskMapperRef
-		mmapRefs := ms.mmapCurrentOOOHeadChunk(chunkOpts{chunkDiskMapper: head.chunkDiskMapper, useXOR2: head.opts.UseXOR2FloatEncoding()}, head.logger)
+		mmapRefs := ms.mmapCurrentOOOHeadChunk(chunkOpts{chunkDiskMapper: head.chunkDiskMapper, useXOR2: head.opts.UseXOR2FloatEncoding(), useHistogramST: head.opts.EnableHistogramSTEncoding.Load()}, head.logger)
 		if len(mmapRefs) == 0 && len(ms.ooo.oooMmappedChunks) > 0 {
 			// Nothing was m-mapped. So take the mmapRef from the existing slice if it exists.
 			mmapRefs = []chunks.ChunkDiskMapperRef{ms.ooo.oooMmappedChunks[len(ms.ooo.oooMmappedChunks)-1].ref}
@@ -525,7 +527,7 @@ func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *l
 		return nil
 	}
 
-	getOOOSeriesChunks(s, ir.ch.head.opts.UseXOR2FloatEncoding(), ir.ch.mint, ir.ch.maxt, 0, ir.ch.lastMmapRef, false, 0, chks, nil)
+	getOOOSeriesChunks(s, ir.ch.head.opts.UseXOR2FloatEncoding(), ir.ch.head.opts.EnableHistogramSTEncoding.Load(), ir.ch.mint, ir.ch.maxt, 0, ir.ch.lastMmapRef, false, 0, chks, nil)
 	return nil
 }
 
@@ -569,7 +571,7 @@ func NewHeadAndOOOQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oo
 		head:     head,
 		mint:     mint,
 		maxt:     maxt,
-		isoState: head.iso.State(mint, maxt),
+		isoState: head.iso.State(inoMint, maxt),
 	}
 	return &HeadAndOOOQuerier{
 		mint:    mint,
@@ -618,11 +620,11 @@ func (q *HeadAndOOOQuerier) SearchLabelValues(ctx context.Context, name string, 
 }
 
 func (q *HeadAndOOOQuerier) Close() error {
-	q.chunkr.Close()
+	err := q.chunkr.Close()
 	if q.querier == nil {
-		return nil
+		return err
 	}
-	return q.querier.Close()
+	return errors.Join(err, q.querier.Close())
 }
 
 func (q *HeadAndOOOQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
@@ -643,7 +645,7 @@ func NewHeadAndOOOChunkQuerier(inoMint, mint, maxt int64, head *Head, oooIsoStat
 		head:     head,
 		mint:     mint,
 		maxt:     maxt,
-		isoState: head.iso.State(mint, maxt),
+		isoState: head.iso.State(inoMint, maxt),
 	}
 	return &HeadAndOOOChunkQuerier{
 		mint:    mint,
@@ -670,11 +672,11 @@ func (q *HeadAndOOOChunkQuerier) LabelNames(ctx context.Context, hints *storage.
 }
 
 func (q *HeadAndOOOChunkQuerier) Close() error {
-	q.chunkr.Close()
+	err := q.chunkr.Close()
 	if q.querier == nil {
-		return nil
+		return err
 	}
-	return q.querier.Close()
+	return errors.Join(err, q.querier.Close())
 }
 
 func (q *HeadAndOOOChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {

@@ -32,6 +32,7 @@ func TestChunkedReaderCanReadFromChunkedWriter(t *testing.T) {
 	b := &bytes.Buffer{}
 	f := &mockedFlusher{}
 	w := NewChunkedWriter(b, f)
+
 	r := NewChunkedReader(b, 20, nil)
 
 	msgs := [][]byte{
@@ -48,12 +49,13 @@ func TestChunkedReaderCanReadFromChunkedWriter(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, msg, n)
 	}
+	w.Close()
 
 	i := 0
 	for ; i < 4; i++ {
 		msg, err := r.Next()
 		require.NoError(t, err)
-		require.Less(t, i, len(msgs), "more messages then expected")
+		require.Less(t, i, len(msgs), "more messages than expected")
 		require.Equal(t, msgs[i], msg)
 	}
 
@@ -62,14 +64,14 @@ func TestChunkedReaderCanReadFromChunkedWriter(t *testing.T) {
 
 	msg, err := r.Next()
 	require.NoError(t, err)
-	require.Less(t, i, len(msgs), "more messages then expected")
+	require.Less(t, i, len(msgs), "more messages than expected")
 	require.Equal(t, msgs[i], msg)
 
 	_, err = r.Next()
 	require.Error(t, err, "expected io.EOF")
 	require.Equal(t, io.EOF, err)
 
-	require.Equal(t, 5, f.flushed)
+	require.Equal(t, 1, f.flushed)
 }
 
 func TestChunkedReader_Overflow(t *testing.T) {

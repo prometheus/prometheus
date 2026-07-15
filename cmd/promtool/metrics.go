@@ -29,7 +29,7 @@ import (
 )
 
 // PushMetrics to a prometheus remote write (for testing purpose only).
-func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, timeout time.Duration, protoMsg string, labels map[string]string, files ...string) int {
+func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, timeout time.Duration, protoMsg, apiPath string, labels map[string]string, files ...string) int {
 	addressURL, err := url.Parse(url.String())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -46,7 +46,11 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 	}
 
 	// Create remote write API client.
-	writeAPI, err := remoteapi.NewAPI(addressURL.String(), remoteapi.WithAPIHTTPClient(httpClient))
+	writeAPI, err := remoteapi.NewAPI(
+		addressURL.String(),
+		remoteapi.WithAPIPath(apiPath),
+		remoteapi.WithAPIHTTPClient(httpClient),
+	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return failureExitCode
@@ -73,9 +77,9 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 			fmt.Fprintln(os.Stderr, "  FAILED:", err)
 			return failureExitCode
 		}
-		fmt.Printf("Parsing standard input\n")
+		fmt.Print("Parsing standard input\n")
 		if parseAndPushMetrics(writeAPI, messageType, data, labels) {
-			fmt.Printf("  SUCCESS: metrics pushed to remote write.\n")
+			fmt.Print("  SUCCESS: metrics pushed to remote write.\n")
 			return successExitCode
 		}
 		return failureExitCode

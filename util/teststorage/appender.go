@@ -85,7 +85,7 @@ func (s Sample) String() string {
 }
 
 func (s Sample) Equals(other Sample) bool {
-	return strings.Compare(s.MF, other.MF) == 0 &&
+	return s.MF == other.MF &&
 		labels.Equal(s.L, other.L) &&
 		s.M.Equals(other.M) &&
 		s.ST == other.ST &&

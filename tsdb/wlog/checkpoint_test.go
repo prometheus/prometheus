@@ -16,6 +16,7 @@ package wlog
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -30,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -229,48 +231,55 @@ func TestCheckpoint(t *testing.T) {
 					// Write samples until the WAL has enough segments.
 					// Make them have drifting timestamps within a record to see that they
 					// get filtered properly.
-					b := enc.Samples([]record.RefSample{
-						{Ref: 0, T: last, V: float64(i)},
-						{Ref: 1, T: last + 10000, V: float64(i)},
-						{Ref: 2, T: last + 20000, V: float64(i)},
-						{Ref: 3, T: last + 30000, V: float64(i)},
-					}, nil)
+					// Start times are ignored at encoding time if start time storage is
+					// disabled.
+					samples := []record.RefSample{
+						{Ref: 0, ST: last - 1, T: last, V: float64(i)},
+						{Ref: 1, ST: last + 9999, T: last + 10000, V: float64(i)},
+						{Ref: 2, ST: last + 19999, T: last + 20000, V: float64(i)},
+						{Ref: 3, ST: last + 29999, T: last + 30000, V: float64(i)},
+					}
+					b := enc.Samples(samples, nil)
 					require.NoError(t, w.Log(b))
 					samplesInWAL += 4
 					h := makeHistogram(i)
-					b, _ = enc.HistogramSamples([]record.RefHistogramSample{
-						{Ref: 0, T: last, H: h},
-						{Ref: 1, T: last + 10000, H: h},
-						{Ref: 2, T: last + 20000, H: h},
-						{Ref: 3, T: last + 30000, H: h},
-					}, nil)
+					histograms := []record.RefHistogramSample{
+						{Ref: 0, ST: last - 1, T: last, H: h},
+						{Ref: 1, ST: last + 9999, T: last + 10000, H: h},
+						{Ref: 2, ST: last + 19999, T: last + 20000, H: h},
+						{Ref: 3, ST: last + 29999, T: last + 30000, H: h},
+					}
+					b, _ = enc.HistogramSamples(histograms, nil)
 					require.NoError(t, w.Log(b))
 					histogramsInWAL += 4
 					cbh := makeCustomBucketHistogram(i)
-					b = enc.CustomBucketsHistogramSamples([]record.RefHistogramSample{
-						{Ref: 0, T: last, H: cbh},
-						{Ref: 1, T: last + 10000, H: cbh},
-						{Ref: 2, T: last + 20000, H: cbh},
-						{Ref: 3, T: last + 30000, H: cbh},
-					}, nil)
+					customBucketHistograms := []record.RefHistogramSample{
+						{Ref: 0, ST: last - 1, T: last, H: cbh},
+						{Ref: 1, ST: last + 9999, T: last + 10000, H: cbh},
+						{Ref: 2, ST: last + 19999, T: last + 20000, H: cbh},
+						{Ref: 3, ST: last + 29999, T: last + 30000, H: cbh},
+					}
+					b = enc.CustomBucketsHistogramSamples(customBucketHistograms, nil)
 					require.NoError(t, w.Log(b))
 					histogramsInWAL += 4
 					fh := makeFloatHistogram(i)
-					b, _ = enc.FloatHistogramSamples([]record.RefFloatHistogramSample{
-						{Ref: 0, T: last, FH: fh},
-						{Ref: 1, T: last + 10000, FH: fh},
-						{Ref: 2, T: last + 20000, FH: fh},
-						{Ref: 3, T: last + 30000, FH: fh},
-					}, nil)
+					floatHistograms := []record.RefFloatHistogramSample{
+						{Ref: 0, ST: last - 1, T: last, FH: fh},
+						{Ref: 1, ST: last + 9999, T: last + 10000, FH: fh},
+						{Ref: 2, ST: last + 19999, T: last + 20000, FH: fh},
+						{Ref: 3, ST: last + 29999, T: last + 30000, FH: fh},
+					}
+					b, _ = enc.FloatHistogramSamples(floatHistograms, nil)
 					require.NoError(t, w.Log(b))
 					floatHistogramsInWAL += 4
 					cbfh := makeCustomBucketFloatHistogram(i)
-					b = enc.CustomBucketsFloatHistogramSamples([]record.RefFloatHistogramSample{
-						{Ref: 0, T: last, FH: cbfh},
-						{Ref: 1, T: last + 10000, FH: cbfh},
-						{Ref: 2, T: last + 20000, FH: cbfh},
-						{Ref: 3, T: last + 30000, FH: cbfh},
-					}, nil)
+					customBucketFloatHistograms := []record.RefFloatHistogramSample{
+						{Ref: 0, ST: last - 1, T: last, FH: cbfh},
+						{Ref: 1, ST: last + 9999, T: last + 10000, FH: cbfh},
+						{Ref: 2, ST: last + 19999, T: last + 20000, FH: cbfh},
+						{Ref: 3, ST: last + 29999, T: last + 30000, FH: cbfh},
+					}
+					b = enc.CustomBucketsFloatHistogramSamples(customBucketFloatHistograms, nil)
 					require.NoError(t, w.Log(b))
 					floatHistogramsInWAL += 4
 
@@ -330,6 +339,12 @@ func TestCheckpoint(t *testing.T) {
 						require.NoError(t, err)
 						for _, s := range samples {
 							require.GreaterOrEqual(t, s.T, last/2, "sample with wrong timestamp")
+							if enableSTStorage {
+								require.Equal(t, s.T-1, s.ST, "sample with wrong start timestamp")
+							} else {
+								// Start times should have not survived the round trip.
+								require.Zero(t, s.ST, "sample should not have start timestamp")
+							}
 						}
 						samplesInCheckpoint += len(samples)
 					case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
@@ -337,6 +352,11 @@ func TestCheckpoint(t *testing.T) {
 						require.NoError(t, err)
 						for _, h := range histograms {
 							require.GreaterOrEqual(t, h.T, last/2, "histogram with wrong timestamp")
+							if enableSTStorage {
+								require.Equal(t, h.T-1, h.ST, "histogram with wrong start timestamp")
+							} else {
+								require.Zero(t, h.ST, "histogram should not have start timestamp")
+							}
 						}
 						histogramsInCheckpoint += len(histograms)
 					case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
@@ -344,6 +364,11 @@ func TestCheckpoint(t *testing.T) {
 						require.NoError(t, err)
 						for _, h := range floatHistograms {
 							require.GreaterOrEqual(t, h.T, last/2, "float histogram with wrong timestamp")
+							if enableSTStorage {
+								require.Equal(t, h.T-1, h.ST, "float histogram with wrong start timestamp")
+							} else {
+								require.Zero(t, h.ST, "float histogram should not have start timestamp")
+							}
 						}
 						floatHistogramsInCheckpoint += len(floatHistograms)
 					case record.Exemplars:
@@ -383,6 +408,68 @@ func TestCheckpoint(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestCheckpoint_Tombstones verifies tombstone retention. A tombstone is dropped
+// together with its series record, or once all its intervals age out of the WAL.
+func TestCheckpoint_Tombstones(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	seg, err := CreateSegment(dir, 0)
+	require.NoError(t, err)
+	require.NoError(t, seg.Close())
+
+	w, err := NewSize(nil, nil, dir, 128*1024, compression.None)
+	require.NoError(t, err)
+	var enc record.Encoder
+	fullRange := tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}
+	require.NoError(t, w.Log(enc.Tombstones([]tombstones.Stone{
+		// Full-range tombstones: kept iff keep(ref).
+		{Ref: 1, Intervals: fullRange},
+		{Ref: 2, Intervals: fullRange},
+		// Finite intervals with keep(ref) = true: kept iff they extend past mint.
+		{Ref: 3, Intervals: tombstones.Intervals{{Mint: 0, Maxt: 100}}},
+		{Ref: 4, Intervals: tombstones.Intervals{{Mint: 0, Maxt: 5}}},
+		// Dropped because keep(ref) is false, even though their intervals extend past mint.
+		{Ref: 5, Intervals: tombstones.Intervals{{Mint: 1000, Maxt: math.MaxInt64}}},
+		{Ref: 6, Intervals: tombstones.Intervals{{Mint: 0, Maxt: 100}}},
+	}, nil)))
+	first, last, err := Segments(w.Dir())
+	require.NoError(t, err)
+	_, err = w.NextSegment()
+	require.NoError(t, err)
+
+	_, err = Checkpoint(promslog.NewNopLogger(), w, first, last, func(id chunks.HeadSeriesRef) bool {
+		return id == 2 || id == 3 || id == 4
+	}, 10, false)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	cpDir, _, err := LastCheckpoint(w.Dir())
+	require.NoError(t, err)
+	sr, err := NewSegmentsReader(cpDir)
+	require.NoError(t, err)
+	defer sr.Close()
+
+	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+	r := NewReader(sr)
+	var stones []tombstones.Stone
+	for r.Next() {
+		rec := r.Record()
+		if dec.Type(rec) == record.Tombstones {
+			stones, err = dec.Tombstones(rec, stones)
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, r.Err())
+
+	expected := []tombstones.Stone{
+		// Refs 1, 5, and 6 are dropped by keep(ref); ref 4 aged out.
+		{Ref: 2, Intervals: fullRange},
+		{Ref: 3, Intervals: tombstones.Intervals{{Mint: 0, Maxt: 100}}},
+	}
+	require.Equal(t, expected, stones)
 }
 
 // TestCheckpointV2HistogramsToV1 verifies that when a WAL contains V2 histogram

@@ -220,7 +220,7 @@ func (t *testRunner) requireUpdate(ref time.Time, expected []*targetgroup.Group)
 	for {
 		select {
 		case <-timeout:
-			t.Fatalf("Expected update but got none")
+			t.Fatal("Expected update but got none")
 		case <-time.After(defaultWait / 10):
 			if ref.Equal(t.lastReceive()) {
 				// No update received.

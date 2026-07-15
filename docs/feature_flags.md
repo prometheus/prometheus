@@ -102,12 +102,12 @@ Besides enabling this feature in Prometheus, start timestamps need to be exposed
 
 > NOTE: This is an experimental feature with known limitations until fully implemented.
 > * It introduces new WAL record type (SamplesV2) that can only be replayed with Prometheus 3.11 or later versions.
-> * For persistent storage support (TSDB blocks), you need to manually opt-in for XOR2 chunk format ([`xor2-encoding` flag](#xor2-chunk-encoding)).
+> * For persistent storage support (TSDB blocks), you need to manually opt-in for the XOR2 chunk format for floats ([`xor2-encoding` flag](#xor2-chunk-encoding)) and the histogram ST chunk format for native histograms ([`histograms-st-encoding` flag](#histogram-st-chunk-encoding)).
 >   The float chunk encoding must resolve to XOR2 when `st-storage` is active, because XOR chunks do not store start timestamps.
 >   If the resolved encoding is XOR (that is, `--enable-feature=xor2-encoding` is not set and `chunk_encoding.floats: xor2` is not configured), Prometheus refuses to start and fails the configuration validation with an error rather than continuing to run.
 >   Likewise, explicitly setting `chunk_encoding.floats: xor` in the config file while `st-storage` is active is rejected at config reload.
->   This might change later once we finish experimentation phase with XOR2.
-> * ST for native histograms and NHCBs are not yet implemented (see [#18315](https://github.com/prometheus/prometheus/issues/18315)).
+>   These constraints might change later once we finish the experimentation phase.
+> * Other areas of ST support for native histograms and NHCBs are still in progress (see [#18315](https://github.com/prometheus/prometheus/issues/18315)).
 > * PromQL use of ST is out of scope of this feature.
 
 ## Start timestamp (ST) usage in PromQL functions
@@ -139,7 +139,7 @@ reason to run them sequentially.
 When the `concurrent-rule-eval` feature flag is enabled, rules without any dependency on other rules within a rule group will be evaluated concurrently.
 This has the potential to improve rule group evaluation latency and resource utilization at the expense of adding more concurrent query load.
 
-The number of concurrent rule evaluations can be configured with `--rules.max-concurrent-rule-evals`, which is set to `4` by default.
+The number of concurrent rule evaluations can be configured with `--rules.max-concurrent-evals`, which is set to `4` by default.
 
 ## Serve old Prometheus UI
 
@@ -213,66 +213,6 @@ Enabling this _can_ have negative impact on performance, because the in-memory
 state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
 [d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
-
-## PromQL arithmetic expressions in time durations
-
-`--enable-feature=promql-duration-expr`
-
-With this flag, arithmetic expressions can be used in time durations in range queries and offset durations.
-
-In range queries:
-```
-rate(http_requests_total[5m * 2])  # 10 minute range
-rate(http_requests_total[(5+2) * 1m])  # 7 minute range
-```
-
-In offset durations:
-```
-http_requests_total offset (1h / 2)  # 30 minute offset
-http_requests_total offset ((2 ^ 3) * 1m)  # 8 minute offset
-```
-
-When using offset with duration expressions, you must wrap the expression in
-parentheses. Without parentheses, only the first duration value will be used in
-the offset calculation.
-
-`step()` can be used in duration expressions.
-For a **range query**, it resolves to the step width of the range query.
-For an **instant query**, it resolves to `0s`.
-
-`range()` can be used in duration expressions.
-For a **range query**, it resolves to the full range of the query (end time - start time).
-For an **instant query**, it resolves to `0s`.
-This is particularly useful in combination with `@end()` to look back over the entire query range, e.g., `max_over_time(metric[range()] @ end())`.
-
-`min_of(<duration>, <duration>)` and `max_of(<duration>, <duration>)` select between two duration expressions.
-`min_of` returns the smaller of the two, which is useful for capping a duration at a maximum value.
-`max_of` returns the larger of the two, which is useful for enforcing a minimum value.
-For example, `max_of(step(), 5s)` ensures the duration is never shorter than `5s`, while `min_of(range(), 1h)` caps the duration at `1h`.
-
-**Note**: Duration expressions are not supported in the @ timestamp operator.
-
-The following operators are supported:
-
-* `+` - addition
-* `-` - subtraction
-* `*` - multiplication
-* `/` - division
-* `%` - modulo
-* `^` - exponentiation
-
-Examples of equivalent durations:
-
-* `5m * 2` is equivalent to `10m` or `600s`
-* `10m - 1m` is equivalent to `9m` or `540s`
-* `(5+2) * 1m` is equivalent to `7m` or `420s`
-* `1h / 2` is equivalent to `30m` or `1800s`
-* `4h % 3h` is equivalent to `1h` or `3600s`
-* `(2 ^ 3) * 1m` is equivalent to `8m` or `480s`
-* `step() + 1` is equivalent to the query step width increased by 1s.
-* `max_of(step(), 5s)` is equivalent to the larger of the query step width and `5s`.
-* `min_of(2 * step() + 5s, 5m)` is equivalent to the smaller of twice the query step increased by `5s` and `5m`.
-
 
 ## OTLP Native Delta Support
 
@@ -358,6 +298,19 @@ For more details, see the [proposal](https://github.com/prometheus/proposals/pul
 > * This encoding is new, meaning downstream tools and LTS systems might not support it yet (e.g. Thanos sidecar uploaded blocks).
 
 This setting enables the new XOR2 chunk encoding for float samples, which provides better disk compression than the default XOR encoding for typical Prometheus workloads. This format also allows storing Start Timestamp (ST).
+
+For the equivalent ST-capable chunk encoding for native histograms and float histograms, see the [`histograms-st-encoding`](#histogram-st-chunk-encoding) flag. The two flags are independent.
+
+## Histogram ST chunk encoding
+
+`--enable-feature=histograms-st-encoding`
+
+> WARNING: This is highly experimental and risky setting:
+> * Chunks encoded with `histogramST` and `floathistogramST` **cannot be read by older Prometheus versions** that do not support the encoding. Once enabled and data is written, you need to **manually delete blocks from the disk**, otherwise Prometheus will return error on all queries.
+> * We are still experimenting on the final encoding. As of now this encoding can change in any Prometheus version. All your persistent block data will be lost between versions.
+> * This encoding is new, meaning downstream tools and LTS systems might not support it yet (e.g. Thanos sidecar uploaded blocks).
+
+This setting enables the new `histogramST` and `floathistogramST` chunk encodings for native histogram and float histogram samples. These encodings extend the corresponding histogram chunk formats with a Start Timestamp (ST) header and per-sample ST encoding, equivalent to what `xor2-encoding` does for float chunks. The flag does not affect float chunks.
 
 The encoding can also be controlled at each configuration reload via the `chunk_encoding.floats` field in the `storage.tsdb` section of the configuration file. Setting `chunk_encoding.floats: xor` forces standard XOR encoding even when `--enable-feature=xor2-encoding` is set; setting `chunk_encoding.floats: xor2` requires `--enable-feature=xor2-encoding` to be enabled.
 

@@ -1277,12 +1277,36 @@ eval instant at 55s stddev_over_time(metric[1m])
 clear
 load 10s
 	metric 4 6 2 1 999 1 2
+	metric_odd 1 2 3 4 5
+	metric_equal 7 7 7 7 7
+	metric_single 5
+	metric_nan 1 2 NaN 4
 	metric_histogram{type="only_histogram"} {{schema:1 sum:2 count:3}}x5
 	metric_histogram{type="mix"} 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
 
 eval instant at 70s mad_over_time(metric[70s])
 	expect no_info
 	{} 1
+
+# Odd number of samples: median is the exact middle value.
+eval instant at 40s mad_over_time(metric_odd[50s])
+	expect no_info
+	{} 1
+
+# All samples equal: deviations are all zero, so MAD is zero.
+eval instant at 40s mad_over_time(metric_equal[50s])
+	expect no_info
+	{} 0
+
+# Single sample: deviation from itself is zero.
+eval instant at 0s mad_over_time(metric_single[10s])
+	expect no_info
+	{} 0
+
+# A NaN sample makes the result NaN rather than being silently dropped.
+eval instant at 30s mad_over_time(metric_nan[40s])
+	expect no_info
+	{} NaN
 
 eval instant at 70s mad_over_time(metric_histogram{type="only_histogram"}[70s])
 	expect no_info

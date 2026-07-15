@@ -194,6 +194,9 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 		return
 	}
 
+	cw := NewChunkedWriter(w, f)
+	defer cw.Close()
+
 	for i, query := range req.Queries {
 		if err := func() error {
 			filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
@@ -225,7 +228,7 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 			}
 
 			ws, err := StreamChunkedReadResponses(
-				NewChunkedWriter(w, f),
+				cw,
 				int64(i),
 				// The streaming API has to provide the series sorted.
 				querier.Select(ctx, true, hints, filteredMatchers...),

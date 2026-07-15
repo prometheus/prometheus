@@ -151,7 +151,12 @@ type RulesRetriever interface {
 // StatsRenderer converts engine statistics into a format suitable for the API.
 type StatsRenderer func(context.Context, *stats.Statistics, string) stats.QueryStats
 
-// DefaultStatsRenderer is the default stats renderer for the API.
+// DefaultStatsRenderer is the default stats renderer for the API: any
+// non-empty `stats` value includes statistics in the response. The API
+// handlers attach a deprecation warning to the response for values outside
+// the supported enum ("true", "all"); those values will be rejected in the
+// next major release. Custom StatsRenderer implementations are exempt and
+// may define their own values.
 func DefaultStatsRenderer(_ context.Context, s *stats.Statistics, param string) stats.QueryStats {
 	if param != "" {
 		return stats.NewQueryStats(s)
@@ -250,6 +255,7 @@ type API struct {
 	gatherer            prometheus.Gatherer
 	isAgent             bool
 	statsRenderer       StatsRenderer
+	customStatsRenderer bool // See validateStatsParam: a custom StatsRenderer's `stats` vocabulary is not validated.
 	notificationsGetter func() []notifications.Notification
 	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
 	// Allows customizing the default mapping
@@ -357,6 +363,7 @@ func NewAPI(
 
 	if statsRenderer != nil {
 		a.statsRenderer = statsRenderer
+		a.customStatsRenderer = true
 	}
 
 	if (ap == nil || apV2 == nil) && (rwEnabled || otlpEnabled) {
@@ -571,6 +578,9 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 			warnings = warnings.Add(errors.New("results truncated due to limit"))
 		}
 	}
+	if warn := api.statsParamWarning(r.FormValue("stats")); warn != nil {
+		warnings = warnings.Add(warn)
+	}
 	// Optional stats field in response if parameter "stats" is not empty.
 	sr := api.statsRenderer
 	if sr == nil {
@@ -614,7 +624,37 @@ func extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
 		duration = parsedDuration
 	}
 
-	return promql.NewPrometheusQueryOpts(r.FormValue("stats") == "all", duration), nil
+	return promql.NewPrometheusQueryOpts(r.FormValue("stats") == statsAll, duration), nil
+}
+
+// Accepted values of the `stats` query parameter on /query and /query_range
+// when the default stats renderer is in use: statsTrue includes basic query
+// statistics in the response, statsAll additionally includes per-step
+// statistics (with --enable-feature=promql-per-step-stats). Empty disables
+// statistics.
+const (
+	statsTrue = "true"
+	statsAll  = "all"
+)
+
+// statsParamWarning returns a deprecation warning for unsupported values of
+// the `stats` query parameter, to be attached to the response's warnings.
+// Historically any non-empty value silently enabled basic statistics; that
+// behaviour is kept for compatibility within the current major release, but
+// values outside the supported enum ("true", "all") are deprecated and will
+// be rejected in the next major release. Embedders that install a custom
+// StatsRenderer define their own vocabulary for the parameter, so no warning
+// is attached then.
+func (api *API) statsParamWarning(s string) error {
+	if api.customStatsRenderer {
+		return nil
+	}
+	switch s {
+	case "", statsTrue, statsAll:
+		return nil
+	default:
+		return fmt.Errorf("value %q for parameter \"stats\" is deprecated and will be rejected in the next major release, use %q or %q", s, statsTrue, statsAll)
+	}
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
@@ -694,6 +734,9 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		if isTruncated {
 			warnings = warnings.Add(errors.New("results truncated due to limit"))
 		}
+	}
+	if warn := api.statsParamWarning(r.FormValue("stats")); warn != nil {
+		warnings = warnings.Add(warn)
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.

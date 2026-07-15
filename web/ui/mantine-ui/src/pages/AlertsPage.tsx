@@ -14,6 +14,8 @@ import {
   Pagination,
   rem,
   Divider,
+  CopyButton,
+  ActionIcon,
 } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
 import { AlertingRule, AlertingRulesResult } from "../api/responseTypes/rules";
@@ -23,7 +25,7 @@ import RuleDefinition from "../components/RuleDefinition";
 import { humanizeDurationRelative, now } from "../lib/formatTime";
 import { Fragment, useEffect, useMemo } from "react";
 import { StateMultiSelect } from "../components/StateMultiSelect";
-import { IconInfoCircle, IconSearch } from "@tabler/icons-react";
+import { IconCheck, IconCopy, IconInfoCircle, IconSearch } from "@tabler/icons-react";
 import { LabelBadges } from "../components/LabelBadges";
 import { useLocalStorage } from "@mantine/hooks";
 import { useSettings } from "../state/settingsSlice";
@@ -305,10 +307,28 @@ export default function AlertsPage() {
                         }
                       >
                         <Accordion.Control
+                          className={classes.ruleControl}
                           styles={{ label: { paddingBlock: rem(10) } }}
                         >
                           <Group wrap="nowrap" justify="space-between" mr="lg">
-                            <Text>{r.rule.name}</Text>
+                            <Group gap="xs" wrap="nowrap">
+                              <Text>{r.rule.name}</Text>
+                              <CopyButton value={r.rule.name}>
+                                {({ copied, copy }) => (
+                                  <ActionIcon
+                                    className={classes.copyAlertNameButton}
+                                    variant="subtle"
+                                    color="gray"
+                                    onClick={(e) => {
+                                      e.stopPropagation(); copy();
+                                    }}
+                                    size="xs"
+                                  >
+                                    {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
+                                  </ActionIcon>
+                                )}
+                              </CopyButton>
+                            </Group>
                             <Group gap="xs">
                               {r.counts.firing > 0 && (
                                 <Badge className={badgeClasses.healthErr}>

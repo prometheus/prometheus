@@ -32,7 +32,7 @@
     "bool": true,
     "by": true,
     "delayed_name_removal": false,
-    "duration_expr": false,
+    "duration_expr": true,
     "fill": false,
     "fill_left": false,
     "fill_right": false,
@@ -78,7 +78,7 @@
     "double_exponential_smoothing": false,
     "end": false,
     "exp": true,
-    "first_over_time": false,
+    "first_over_time": true,
     "floor": true,
     "histogram_avg": true,
     "histogram_count": true,
@@ -212,6 +212,7 @@
     "msk": true,
     "nerve": true,
     "nomad": true,
+    "oci": true,
     "openstack": true,
     "outscale": true,
     "ovhcloud": true,
@@ -259,11 +260,12 @@
   "tsdb": {
     "delayed_compaction": false,
     "exemplar_storage": false,
+    "histograms_st_encoding": false,
     "isolation": true,
     "native_histograms": true,
     "st_storage": false,
-    "xor2_encoding": false,
-    "use_uncached_io": false
+    "use_uncached_io": false,
+    "xor2_encoding": false
   },
   "ui": {
     "ui_v2": false,

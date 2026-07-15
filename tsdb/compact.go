@@ -168,8 +168,14 @@ type LeveledCompactorOptions struct {
 	// MaxBlockChunkSegmentSize is the max block chunk segment size. If it is 0 then the default chunks.DefaultChunkSegmentSize is used.
 	MaxBlockChunkSegmentSize int64
 
-	// MergeFunc is used for merging series together in vertical compaction. By default storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge) is used.
+	// MergeFunc is used for merging series together in vertical compaction. By default storage.NewCompactingChunkSeriesMergerWithFloatEncoding(storage.ChainedSeriesMerge, opts.FloatChunkEncoding) is used.
 	MergeFunc storage.VerticalChunkSeriesMergeFunc
+
+	// FloatChunkEncoding returns the encoding used for float chunks re-encoded during
+	// vertical (overlapping) compaction. Consulted at compaction time, so it may
+	// reflect runtime-reloaded configuration. Nil means EncXOR. Ignored when MergeFunc
+	// is set.
+	FloatChunkEncoding func() chunkenc.Encoding
 
 	// BlockExcludeFilter is used to decide which blocks are excluded from compactions.
 	BlockExcludeFilter BlockExcludeFilterFunc
@@ -211,7 +217,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 	}
 	mergeFunc := opts.MergeFunc
 	if mergeFunc == nil {
-		mergeFunc = storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)
+		mergeFunc = storage.NewCompactingChunkSeriesMergerWithFloatEncoding(storage.ChainedSeriesMerge, opts.FloatChunkEncoding)
 	}
 	maxBlockChunkSegmentSize := opts.MaxBlockChunkSegmentSize
 	if maxBlockChunkSegmentSize == 0 {
@@ -277,6 +283,71 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 }
 
 func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
+	if len(dms) == 0 {
+		return nil, nil
+	}
+
+	// Blocks created from a partial view of the head (stale-series and
+	// selected-series compactions) carry the from-stale-series or
+	// from-selected-series hint, which must survive compaction: a block that
+	// is fully made of partial-view data must keep its hint, otherwise it
+	// would wrongly count towards inOrderBlocksMaxTime and advance the
+	// WAL-replay cutoff past WAL-only data. To preserve the hint we never mix
+	// the classes during compaction: a partial-view block is only ever merged
+	// with other blocks of the same class. We therefore plan each class
+	// independently and prefer regular (no-hint) compaction over partial-view
+	// compaction so regular compaction is not starved.
+	// See https://github.com/prometheus/prometheus/issues/18379.
+	//
+	// Out-of-order blocks (the from-out-of-order hint) are deliberately NOT
+	// segregated here: they must be co-compacted with overlapping in-order
+	// blocks to resolve overlaps, so the resulting block legitimately
+	// contains in-order data. Their hint is instead propagated by
+	// CompactBlockMetas only when every source block is out-of-order; a
+	// mixed merge correctly drops the hint.
+	//
+	// Note: with EnableOverlappingCompaction this means a partial-view block
+	// that overlaps a block of a different class is never co-compacted with
+	// it and so is retained on disk separately until it ages out through
+	// normal retention; the two are never merged. This is intentional:
+	// merging would drop the hint and reintroduce #18379.
+	var stale, selected, nonHint []dirMeta
+	for _, dm := range dms {
+		switch {
+		case dm.meta.Compaction.FromStaleSeries():
+			stale = append(stale, dm)
+		case dm.meta.Compaction.FromSelectedSeries():
+			selected = append(selected, dm)
+		default:
+			nonHint = append(nonHint, dm)
+		}
+	}
+	classes := 0
+	for _, cls := range [][]dirMeta{stale, selected, nonHint} {
+		if len(cls) > 0 {
+			classes++
+		}
+	}
+	if classes > 1 {
+		// Prefer non-hint compaction so it is never starved by partial-view
+		// blocks accumulating in the data directory.
+		if res, err := c.planClass(nonHint); err != nil || len(res) > 0 {
+			return res, err
+		}
+		if res, err := c.planClass(stale); err != nil || len(res) > 0 {
+			return res, err
+		}
+		return c.planClass(selected)
+	}
+
+	return c.planClass(dms)
+}
+
+// planClass plans compaction for a single class of blocks: either all blocks
+// carry the same partial-view hint (from-stale-series or from-selected-series)
+// or none do. It must not be called with a mix of classes, so that those
+// hints are preserved through compaction (see plan).
+func (c *LeveledCompactor) planClass(dms []dirMeta) ([]string, error) {
 	if len(dms) == 0 {
 		return nil, nil
 	}
@@ -447,6 +518,17 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 	mint := blocks[0].MinTime
 	maxt := blocks[0].MaxTime
 
+	// inOrderBlocksMaxTime ignores blocks that are *totally* made of out-of-order
+	// data, so the from-out-of-order hint must be propagated to the merged block
+	// only when every source block carries it. The from-stale-series and
+	// from-selected-series hints, by contrast, are propagated when any source
+	// carries them: the planner guarantees such blocks are only merged with
+	// blocks of the same class (see plan), so any-source semantics are
+	// equivalent to all-sources for those hints while staying safe even if
+	// segregation were ever bypassed. Dropping any of these hints would let the
+	// merged block wrongly advance the WAL-replay cutoff. See #18379.
+	allOutOfOrder := true
+
 	for _, b := range blocks {
 		if b.MinTime < mint {
 			mint = b.MinTime
@@ -460,11 +542,28 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 		for _, s := range b.Compaction.Sources {
 			sources[s] = struct{}{}
 		}
+		// Preserve the from-stale-series and from-selected-series hints when merging.
+		// The planner only ever groups stale/selected blocks with other stale/selected
+		// blocks (see plan), so the resulting block is fully made of stale/selected
+		// series and must keep the hint, otherwise it would wrongly count towards
+		// inOrderBlocksMaxTime. See #18379.
+		if b.Compaction.FromStaleSeries() {
+			res.Compaction.SetStaleSeries()
+		}
+		if b.Compaction.FromSelectedSeries() {
+			res.Compaction.SetSelectedSeries()
+		}
+		if !b.Compaction.FromOutOfOrder() {
+			allOutOfOrder = false
+		}
 		res.Compaction.Parents = append(res.Compaction.Parents, BlockDesc{
 			ULID:    b.ULID,
 			MinTime: b.MinTime,
 			MaxTime: b.MaxTime,
 		})
+	}
+	if allOutOfOrder {
+		res.Compaction.SetOutOfOrder()
 	}
 	res.Compaction.Level++
 
@@ -606,6 +705,9 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 		}
 		if base.Compaction.FromStaleSeries() {
 			meta.Compaction.SetStaleSeries()
+		}
+		if base.Compaction.FromSelectedSeries() {
+			meta.Compaction.SetSelectedSeries()
 		}
 	}
 
@@ -840,6 +942,9 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 		}
 		closers = append(closers, chunkr)
 
+		// Enable the head-chunk cache for compaction.
+		enableChunkCache(chunkr)
+
 		tombsr, err := b.Tombstones()
 		if err != nil {
 			return fmt.Errorf("open tombstone reader for block %+v: %w", b.Meta(), err)
@@ -917,7 +1022,7 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 			samples := uint64(chk.Chunk.NumSamples())
 			meta.Stats.NumSamples += samples
 			switch chk.Chunk.Encoding() {
-			case chunkenc.EncHistogram, chunkenc.EncFloatHistogram:
+			case chunkenc.EncHistogram, chunkenc.EncFloatHistogram, chunkenc.EncHistogramST, chunkenc.EncFloatHistogramST:
 				meta.Stats.NumHistogramSamples += samples
 			case chunkenc.EncXOR, chunkenc.EncXOR2:
 				meta.Stats.NumFloatSamples += samples
