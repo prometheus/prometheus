@@ -4125,9 +4125,19 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier(t *test
 		compactionErr <- db.CompactOOOHead(ctx)
 	}()
 
-	// Give CompactOOOHead time to start work.
-	// If it does not wait for querierCreatedBeforeCompaction to be closed, then the query will return incorrect results or fail.
-	time.Sleep(time.Second)
+	// Wait until CompactOOOHead has written the OOO block, reloaded, and published
+	// lastGarbageCollectedMmapRef before creating the second querier below.
+	// Until that ref is set, the second querier would capture the stale ref (0)
+	// and permanently block the OOO reader-wait loop, which has no timeout, hanging
+	// the test on slow runners. A fixed sleep is not enough here: writing the block
+	// and reloading are disk-I/O bound and can exceed it on slow Windows CI runners.
+	require.Eventually(t, func() bool {
+		db.mtx.RLock()
+		defer db.mtx.RUnlock()
+		return db.lastGarbageCollectedMmapRef != 0
+	}, time.Minute, 10*time.Millisecond, "CompactOOOHead did not reach the reader-wait phase")
+	// The compaction must still be waiting for querierCreatedBeforeCompaction to be
+	// closed. If it does not wait, then the query will return incorrect results or fail.
 	require.False(t, compactionComplete.Load(), "compaction completed before reading chunks or closing querier created before compaction")
 
 	// Get another querier. This one should only use the compacted blocks from disk and ignore the chunks that will be garbage collected.
