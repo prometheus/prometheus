@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/kafka"
 	"github.com/aws/aws-sdk-go-v2/service/kafka/types"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -137,6 +138,41 @@ func TestMSKDiscoveryDescribeClusters(t *testing.T) {
 		expected    []types.Cluster
 	}{
 		{
+			name: "ServerlessClusterIsSkipped",
+			mskData: &mskDataStore{
+				region: "us-west-2",
+				clusters: []types.Cluster{
+					{
+						ClusterName:    strptr("provisioned-cluster"),
+						ClusterArn:     strptr("arn:aws:kafka:us-west-2:123456789012:cluster/provisioned-cluster/abc-123"),
+						State:          types.ClusterStateActive,
+						ClusterType:    types.ClusterTypeProvisioned,
+						CurrentVersion: strptr("1.2.3"),
+					},
+					{
+						ClusterName:    strptr("serverless-cluster"),
+						ClusterArn:     strptr("arn:aws:kafka:us-west-2:123456789012:cluster/serverless-cluster/def-456"),
+						State:          types.ClusterStateActive,
+						ClusterType:    types.ClusterTypeServerless,
+						CurrentVersion: strptr("1.0.0"),
+					},
+				},
+			},
+			clusterARNs: []string{
+				"arn:aws:kafka:us-west-2:123456789012:cluster/provisioned-cluster/abc-123",
+				"arn:aws:kafka:us-west-2:123456789012:cluster/serverless-cluster/def-456",
+			},
+			expected: []types.Cluster{
+				{
+					ClusterName:    strptr("provisioned-cluster"),
+					ClusterArn:     strptr("arn:aws:kafka:us-west-2:123456789012:cluster/provisioned-cluster/abc-123"),
+					State:          types.ClusterStateActive,
+					ClusterType:    types.ClusterTypeProvisioned,
+					CurrentVersion: strptr("1.2.3"),
+				},
+			},
+		},
+		{
 			name: "SingleCluster",
 			mskData: &mskDataStore{
 				region: "us-west-2",
@@ -218,7 +254,8 @@ func TestMSKDiscoveryDescribeClusters(t *testing.T) {
 			client := newMockMSKClient(tt.mskData)
 
 			d := &MSKDiscovery{
-				msk: client,
+				msk:    client,
+				logger: promslog.NewNopLogger(),
 				cfg: &MSKSDConfig{
 					Region:             tt.mskData.region,
 					RequestConcurrency: 10,
@@ -508,7 +545,7 @@ func TestMSKDiscoveryRefresh(t *testing.T) {
 			},
 		},
 		{
-			name: "ServerlessClusterWithoutProvisionedConfig",
+			name: "ServerlessClusterProducesNoTargets",
 			mskData: &mskDataStore{
 				region: "us-west-2",
 				clusters: []types.Cluster{
@@ -544,28 +581,11 @@ func TestMSKDiscoveryRefresh(t *testing.T) {
 				RequestConcurrency: 10,
 				Clusters:           []string{"arn:aws:kafka:us-west-2:123456789012:cluster/serverless-cluster/def-456"},
 			},
+			// Serverless clusters are skipped by describeClusters, so no
+			// targets are produced even though the cluster has nodes.
 			expected: []*targetgroup.Group{
 				{
 					Source: "us-west-2",
-					Targets: []model.LabelSet{
-						{
-							model.AddressLabel:                 model.LabelValue("b-2.serverless-cluster.def456.kafka.us-west-2.amazonaws.com:80"),
-							"__meta_msk_cluster_name":          model.LabelValue("serverless-cluster"),
-							"__meta_msk_cluster_arn":           model.LabelValue("arn:aws:kafka:us-west-2:123456789012:cluster/serverless-cluster/def-456"),
-							"__meta_msk_cluster_state":         model.LabelValue("ACTIVE"),
-							"__meta_msk_cluster_type":          model.LabelValue("SERVERLESS"),
-							"__meta_msk_cluster_version":       model.LabelValue("1.0.0"),
-							"__meta_msk_node_type":             model.LabelValue("BROKER"),
-							"__meta_msk_node_arn":              model.LabelValue("arn:aws:kafka:us-west-2:123456789012:node/broker-2"),
-							"__meta_msk_node_added_time":       model.LabelValue("2023-01-01T00:00:00Z"),
-							"__meta_msk_node_instance_type":    model.LabelValue("kafka.m5.xlarge"),
-							"__meta_msk_node_attached_eni":     model.LabelValue("eni-67890"),
-							"__meta_msk_broker_id":             model.LabelValue("2"),
-							"__meta_msk_broker_client_subnet":  model.LabelValue("subnet-67890"),
-							"__meta_msk_broker_client_vpc_ip":  model.LabelValue("10.0.2.100"),
-							"__meta_msk_broker_endpoint_index": model.LabelValue("0"),
-						},
-					},
 				},
 			},
 		},
@@ -1141,6 +1161,7 @@ func TestMSKDiscoveryRefresh(t *testing.T) {
 
 			d := &MSKDiscovery{
 				msk:    client,
+				logger: promslog.NewNopLogger(),
 				cfg:    config,
 				region: tt.mskData.region,
 			}
