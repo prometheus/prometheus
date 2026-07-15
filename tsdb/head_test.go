@@ -8141,6 +8141,78 @@ func TestHead_NumStaleSeries_WALReplayIgnoresRejectedCrossTypeSamples(t *testing
 	}
 }
 
+// TestHead_WALReplayStaleMarkerTypeConsistency verifies that a float staleness
+// marker appended to a native histogram series is replayed as a histogram (or
+// float-histogram) staleness marker — matching the live commitFloats conversion
+// — rather than as a float sample landing on a histogram series.
+func TestHead_WALReplayStaleMarkerTypeConsistency(t *testing.T) {
+	for _, floatHistogram := range []bool{false, true} {
+		name := "histogram"
+		wantType := chunkenc.ValHistogram
+		if floatHistogram {
+			name = "float_histogram"
+			wantType = chunkenc.ValFloatHistogram
+		}
+		t.Run(name, func(t *testing.T) {
+			head, _ := newTestHead(t, 1000, compression.None, false)
+			t.Cleanup(func() {
+				// Captures head by reference, so it closes the reopened head.
+				_ = head.Close()
+			})
+			require.NoError(t, head.Init(0))
+
+			lbls := labels.FromStrings("foo", "bar")
+
+			// Establish the series as a native histogram.
+			app := head.Appender(context.Background())
+			var err error
+			if floatHistogram {
+				_, err = app.AppendHistogram(0, lbls, 100, nil, tsdbutil.GenerateTestFloatHistogram(1))
+			} else {
+				_, err = app.AppendHistogram(0, lbls, 100, tsdbutil.GenerateTestHistogram(1), nil)
+			}
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// Append the staleness marker in a separate appender so it is logged as
+			// a float record (converted to a histogram marker only for the chunk).
+			app = head.Appender(context.Background())
+			_, err = app.Append(0, lbls, 200, math.Float64frombits(value.StaleNaN))
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// Reopen, forcing WAL replay of the float staleness record.
+			require.NoError(t, head.Close())
+			wal, err := wlog.NewSize(nil, nil, filepath.Join(head.opts.ChunkDirRoot, "wal"), 32768, compression.None)
+			require.NoError(t, err)
+			head, err = NewHead(nil, nil, wal, nil, head.opts, nil)
+			require.NoError(t, err)
+			require.NoError(t, head.Init(0))
+
+			q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+			ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+			require.True(t, ss.Next())
+			it := ss.At().Iterator(nil)
+
+			var gotType chunkenc.ValueType
+			var found bool
+			for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+				if it.AtT() == 200 {
+					gotType = vt
+					found = true
+				}
+			}
+			require.NoError(t, it.Err())
+			require.False(t, ss.Next())
+			require.True(t, found, "staleness marker at t=200 not found")
+			require.Equal(t, wantType, gotType, "replayed staleness marker must keep the series' native histogram type")
+		})
+	}
+}
+
 // TestHead_FilterSelectedSeriesAndSortPostings exercises the helper directly, covering the
 // three outcomes for a given ref: kept (clean series), skipped (series carries OOO data), and
 // silently dropped (ref does not resolve to any series in the head).
