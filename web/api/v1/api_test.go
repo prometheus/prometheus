@@ -956,10 +956,12 @@ func TestStats(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name     string
-		renderer StatsRenderer
-		param    string
-		expected func(*testing.T, any)
+		name        string
+		renderer    StatsRenderer
+		param       string
+		wantErr     errorType
+		wantWarning bool
+		expected    func(*testing.T, any)
 	}{
 		{
 			name:  "stats is blank",
@@ -968,6 +970,28 @@ func TestStats(t *testing.T) {
 				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.Nil(t, qd.Stats)
+			},
+		},
+		{
+			name:        "stats is an unsupported value",
+			param:       "foo",
+			wantWarning: true,
+			expected: func(t *testing.T, i any) {
+				// Deprecated values keep the historical behaviour for now:
+				// any non-empty value enables basic statistics.
+				require.IsType(t, &QueryData{}, i)
+				qd := i.(*QueryData)
+				require.NotNil(t, qd.Stats)
+			},
+		},
+		{
+			name:        "stats is an unsupported truthy value",
+			param:       "1",
+			wantWarning: true,
+			expected: func(t *testing.T, i any) {
+				require.IsType(t, &QueryData{}, i)
+				qd := i.(*QueryData)
+				require.NotNil(t, qd.Stats)
 			},
 		},
 		{
@@ -1032,21 +1056,41 @@ func TestStats(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			before := api.statsRenderer
-			defer func() { api.statsRenderer = before }()
+			before, customBefore := api.statsRenderer, api.customStatsRenderer
+			defer func() { api.statsRenderer, api.customStatsRenderer = before, customBefore }()
+			// Installing a renderer through NewAPI marks it as custom, which
+			// exempts the `stats` value from validation; mirror that here.
 			api.statsRenderer = tc.renderer
+			api.customStatsRenderer = tc.renderer != nil
+
+			assertWarnings := func(res apiFuncResult) {
+				if tc.wantWarning {
+					require.Len(t, res.warnings, 1)
+					for msg := range res.warnings {
+						require.Contains(t, msg, "deprecated")
+					}
+				} else {
+					require.Empty(t, res.warnings)
+				}
+			}
 
 			for _, method := range []string{http.MethodGet, http.MethodPost} {
 				ctx := context.Background()
 				req, err := request(method, tc.param)
 				require.NoError(t, err)
 				res := api.query(req.WithContext(ctx))
-				assertAPIError(t, res.err, errorNone)
-				tc.expected(t, res.data)
+				assertAPIError(t, res.err, tc.wantErr)
+				if tc.wantErr == errorNone {
+					tc.expected(t, res.data)
+					assertWarnings(res)
+				}
 
 				res = api.queryRange(req.WithContext(ctx))
-				assertAPIError(t, res.err, errorNone)
-				tc.expected(t, res.data)
+				assertAPIError(t, res.err, tc.wantErr)
+				if tc.wantErr == errorNone {
+					tc.expected(t, res.data)
+					assertWarnings(res)
+				}
 			}
 		})
 	}
