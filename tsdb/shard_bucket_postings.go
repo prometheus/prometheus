@@ -41,11 +41,12 @@ func isPowerOfTwo(v uint64) bool {
 type shardBucketPostings struct {
 	buckets []shardBucket
 
-	// removeUnlockedHook, when non-nil, runs after a removal's unlocked
-	// survivor rebuild and before the bucket is re-locked. Tests use it to
-	// interleave appends and re-sorts into that window; it is nil in
-	// production.
+	// removeUnlockedHook runs during an unlocked survivor rebuild in tests.
 	removeUnlockedHook func()
+	// sortUnlockedHook runs while preparing a dirty-bucket replacement in tests.
+	sortUnlockedHook func()
+	// sortTailCarryHook runs before carrying concurrent sort-tail appends in tests.
+	sortTailCarryHook func()
 }
 
 // shardBucket holds one bucket's refs and must not be copied after initialization.
@@ -53,13 +54,12 @@ type shardBucket struct {
 	mtx   sync.RWMutex
 	refs  []storage.SeriesRef
 	dirty int // Earliest out-of-order suffix index, or cleanShardBucket when clean.
-	// gen counts replacements of refs (re-sorts and removals). Appends do not
-	// change it: they only extend refs, and refs within a previously observed
-	// length are never mutated in place. Removal uses it to detect whether a
-	// snapshot's prefix is still current after rebuilding survivors unlocked.
-	gen uint64
+	// replacementMtx serializes refs replacements. It is never acquired while
+	// mtx is held.
+	replacementMtx sync.Mutex
 }
 
+// cleanShardBucket is distinct from dirty index 0, which requires a full sort.
 const cleanShardBucket = -1
 
 func newShardBucketPostings(buckets int) *shardBucketPostings {
@@ -91,9 +91,9 @@ func (s *shardBucketPostings) add(ref chunks.HeadSeriesRef, shardHash uint64) {
 	bucket.mtx.Unlock()
 }
 
-// removeTailHeadroom reserves capacity for refs appended during an unlocked
-// removal rebuild, usually avoiding reallocation when they are carried over.
-const removeTailHeadroom = 16
+// replacementTailHeadroom reserves capacity for refs appended while a bucket
+// replacement is prepared.
+const replacementTailHeadroom = 16
 
 // remove drops deleted refs from their shard hash buckets. Survivors are rebuilt
 // outside bucket locks and swapped in without invalidating reader snapshots. A
@@ -121,12 +121,14 @@ func (s *shardBucketPostings) remove(deleted map[storage.SeriesRef]uint64) {
 	}
 }
 
-// removeFromBucket rebuilds survivors from an unlocked snapshot. Later appends
-// are carried over; a concurrent slice replacement triggers a locked rebuild.
+// removeFromBucket rebuilds survivors outside the main lock and carries over
+// later appends. replacementMtx keeps the snapshot prefix current until swap.
 func (s *shardBucketPostings) removeFromBucket(bucket *shardBucket, deletedRefs map[storage.SeriesRef]struct{}) {
+	bucket.replacementMtx.Lock()
+	defer bucket.replacementMtx.Unlock()
+
 	bucket.mtx.RLock()
 	snap := bucket.refs
-	snapGen := bucket.gen
 	bucket.mtx.RUnlock()
 
 	survivors, found := survivingRefs(snap, deletedRefs)
@@ -143,24 +145,10 @@ func (s *shardBucketPostings) removeFromBucket(bucket *shardBucket, deletedRefs 
 	bucket.mtx.Lock()
 	defer bucket.mtx.Unlock()
 
-	if bucket.gen == snapGen {
-		// The snapshot prefix is still current: carry over refs appended
-		// during the unlocked rebuild and swap.
-		bucket.refs = append(survivors, bucket.refs[len(snap):]...)
-	} else {
-		// The refs were replaced while unlocked, so the snapshot-derived
-		// survivors are stale. Replacements are rare (concurrent re-sorts and
-		// removals), so rebuilding under the lock keeps the previous behavior
-		// as the worst case.
-		replacement, found := survivingRefs(bucket.refs, deletedRefs)
-		if !found {
-			return
-		}
-		bucket.refs = replacement
-	}
-	bucket.gen++
+	bucket.refs = append(survivors, bucket.refs[len(snap):]...)
 	if bucket.dirty != cleanShardBucket {
-		// The recorded dirty suffix index does not survive the rebuild.
+		// Removal invalidates the dirty suffix boundary. Sort the rebuilt
+		// bucket in full on its next read.
 		if len(bucket.refs) == 0 {
 			bucket.dirty = cleanShardBucket
 		} else {
@@ -170,7 +158,7 @@ func (s *shardBucketPostings) removeFromBucket(bucket *shardBucket, deletedRefs 
 }
 
 // survivingRefs returns a fresh slice without deletedRefs and reports whether
-// any ref was removed. The result reserves removeTailHeadroom for later appends.
+// any ref was removed. The result reserves headroom for later appends.
 func survivingRefs(refs []storage.SeriesRef, deletedRefs map[storage.SeriesRef]struct{}) ([]storage.SeriesRef, bool) {
 	first := -1
 	for i, ref := range refs {
@@ -188,7 +176,7 @@ func survivingRefs(refs []storage.SeriesRef, deletedRefs map[storage.SeriesRef]s
 			surviving++
 		}
 	}
-	out := make([]storage.SeriesRef, first, surviving+removeTailHeadroom)
+	out := make([]storage.SeriesRef, first, surviving+replacementTailHeadroom)
 	copy(out, refs[:first])
 	for i := first + 1; i < len(refs); i++ {
 		if _, ok := deletedRefs[refs[i]]; !ok {
@@ -204,7 +192,7 @@ func survivingRefs(refs []storage.SeriesRef, deletedRefs map[storage.SeriesRef]s
 // bucket shardIndex%B and requests shard hash sub-filtering.
 //
 // A nil receiver (sharding disabled) or a zero shard count returns no lists.
-// Candidate buckets are snapshotted under lock as one consistent view.
+// Each bucket is captured independently; snapshots remain valid after unlock.
 func (s *shardBucketPostings) postingsFor(shardIndex, shardCount uint64) (lists []index.Postings, needsShardHashFilter bool) {
 	if s == nil || shardCount == 0 {
 		return nil, false
@@ -224,47 +212,66 @@ func (s *shardBucketPostings) postingsFor(shardIndex, shardCount uint64) (lists 
 		needsShardHashFilter = true
 	}
 
-	writeLocked := s.lockCandidateBuckets(base, step)
 	lists = make([]index.Postings, 0, bucketCount/step)
 	for b := base; b < bucketCount; b += step {
-		bucket := &s.buckets[b]
-		lists = append(lists, index.NewListPostings(bucket.refs))
+		refs := s.snapshotShardBucket(&s.buckets[b])
+		lists = append(lists, index.NewListPostings(refs))
 	}
-	s.unlockCandidateBuckets(base, step, writeLocked)
 	return lists, needsShardHashFilter
 }
 
-func (s *shardBucketPostings) lockCandidateBuckets(base, step uint64) []uint64 {
-	var writeLocked []uint64
-	for b := base; b < uint64(len(s.buckets)); b += step {
-		bucket := &s.buckets[b]
-		bucket.mtx.RLock()
-		if bucket.dirty == cleanShardBucket {
-			continue
-		}
+// snapshotShardBucket returns sorted refs that remain valid after unlock.
+func (s *shardBucketPostings) snapshotShardBucket(bucket *shardBucket) []storage.SeriesRef {
+	bucket.mtx.RLock()
+	if bucket.dirty == cleanShardBucket {
+		refs := bucket.refs
 		bucket.mtx.RUnlock()
-		bucket.mtx.Lock()
-		sortDirtyBucketLocked(bucket)
-		writeLocked = append(writeLocked, b)
+		return refs
 	}
-	return writeLocked
-}
+	bucket.mtx.RUnlock()
 
-func (s *shardBucketPostings) unlockCandidateBuckets(base, step uint64, writeLocked []uint64) {
-	if len(writeLocked) == 0 {
-		for b := base; b < uint64(len(s.buckets)); b += step {
-			s.buckets[b].mtx.RUnlock()
-		}
-		return
+	bucket.replacementMtx.Lock()
+	defer bucket.replacementMtx.Unlock()
+
+	bucket.mtx.RLock()
+	if bucket.dirty == cleanShardBucket {
+		refs := bucket.refs
+		bucket.mtx.RUnlock()
+		return refs
 	}
-	nextWriteLocked := 0
-	for b := base; b < uint64(len(s.buckets)); b += step {
-		if nextWriteLocked < len(writeLocked) && writeLocked[nextWriteLocked] == b {
-			s.buckets[b].mtx.Unlock()
-			nextWriteLocked++
-			continue
+	refs := bucket.refs
+	dirtyStart := bucket.dirty
+	bucket.mtx.RUnlock()
+
+	if h := s.sortUnlockedHook; h != nil {
+		h()
+	}
+	snapshotRefs := sortDirtyRefs(refs, dirtyStart)
+	replacementRefs := snapshotRefs
+	replacementDirty := cleanShardBucket
+	capturedLen := len(refs)
+	tailCarryHook := s.sortTailCarryHook
+
+	for {
+		bucket.mtx.Lock()
+		currentRefs := bucket.refs
+		tail := currentRefs[capturedLen:]
+		if len(tail) <= cap(replacementRefs)-len(replacementRefs) {
+			// The capacity check keeps this append non-allocating under mtx.
+			replacementRefs, replacementDirty = appendShardBucketTail(replacementRefs, tail, replacementDirty)
+			bucket.refs = replacementRefs
+			bucket.dirty = replacementDirty
+			bucket.mtx.Unlock()
+			return snapshotRefs
 		}
-		s.buckets[b].mtx.RUnlock()
+		bucket.mtx.Unlock()
+
+		if tailCarryHook != nil {
+			tailCarryHook()
+			tailCarryHook = nil
+		}
+		replacementRefs, replacementDirty = appendShardBucketTail(replacementRefs, tail, replacementDirty)
+		capturedLen = len(currentRefs)
 	}
 }
 
@@ -284,31 +291,22 @@ func (s *shardBucketPostings) numSeries() int {
 	return n
 }
 
-// sortDirtyBucketLocked replaces a dirty bucket with a sorted copy. The caller
-// must hold bucket.mtx for writing.
-func sortDirtyBucketLocked(bucket *shardBucket) {
-	dirtyStart := bucket.dirty
-	if dirtyStart == cleanShardBucket {
-		return
-	}
-	refs := bucket.refs
+// sortDirtyRefs returns a sorted copy using the recorded dirty suffix.
+func sortDirtyRefs(refs []storage.SeriesRef, dirtyStart int) []storage.SeriesRef {
 	if dirtyStart < len(refs)/2 {
-		bucket.refs = sortRefsFull(refs)
-	} else {
-		bucket.refs = sortRefsSuffix(refs, dirtyStart)
+		return sortRefsFull(refs)
 	}
-	bucket.gen++
-	bucket.dirty = cleanShardBucket
+	return sortRefsSuffix(refs, dirtyStart)
 }
 
 func sortRefsFull(refs []storage.SeriesRef) []storage.SeriesRef {
-	sortedRefs := slices.Clone(refs)
+	sortedRefs := cloneRefsForReplacement(refs)
 	slices.Sort(sortedRefs)
 	return sortedRefs
 }
 
 func sortRefsSuffix(refs []storage.SeriesRef, dirtyStart int) []storage.SeriesRef {
-	sortedRefs := slices.Clone(refs)
+	sortedRefs := cloneRefsForReplacement(refs)
 	if dirtyStart <= 0 {
 		slices.Sort(sortedRefs)
 		return sortedRefs
@@ -324,4 +322,24 @@ func sortRefsSuffix(refs []storage.SeriesRef, dirtyStart int) []storage.SeriesRe
 	}
 	slices.Sort(sortedRefs[suffixStart:])
 	return sortedRefs
+}
+
+func cloneRefsForReplacement(refs []storage.SeriesRef) []storage.SeriesRef {
+	out := make([]storage.SeriesRef, len(refs), len(refs)+replacementTailHeadroom)
+	copy(out, refs)
+	return out
+}
+
+func appendShardBucketTail(refs, tail []storage.SeriesRef, dirty int) ([]storage.SeriesRef, int) {
+	start := len(refs)
+	refs = append(refs, tail...)
+	if dirty != cleanShardBucket {
+		return refs, dirty
+	}
+	for i := max(1, start); i < len(refs); i++ {
+		if refs[i-1] >= refs[i] {
+			return refs, i
+		}
+	}
+	return refs, cleanShardBucket
 }
