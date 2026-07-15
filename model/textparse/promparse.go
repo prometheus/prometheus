@@ -298,108 +298,107 @@ func (p *PromParser) parseError(exp string, got token) error {
 // Next advances the parser to the next sample.
 // It returns (EntryInvalid, io.EOF) if no samples were read.
 func (p *PromParser) Next() (Entry, error) {
-	var err error
+	for { // In some cases we skip a line and come back here to look at the next line.
+		p.start = p.l.i
+		p.offsets = p.offsets[:0]
 
-	p.start = p.l.i
-	p.offsets = p.offsets[:0]
+		switch t := p.nextToken(); t { // Note every case either returns or continues.
+		case tEOF:
+			return EntryInvalid, io.EOF
+		case tLinebreak:
+			// Allow full blank lines.
+			continue
 
-	switch t := p.nextToken(); t {
-	case tEOF:
-		return EntryInvalid, io.EOF
-	case tLinebreak:
-		// Allow full blank lines.
-		return p.Next()
-
-	case tHelp, tType:
-		switch t2 := p.nextToken(); t2 {
-		case tMName:
-			mStart := p.l.start
-			mEnd := p.l.i
-			if p.l.b[mStart] == '"' && p.l.b[mEnd-1] == '"' {
-				mStart++
-				mEnd--
-			}
-			p.offsets = append(p.offsets, mStart, mEnd)
-		default:
-			return EntryInvalid, p.parseError("expected metric name after "+t.String(), t2)
-		}
-		switch t2 := p.nextToken(); t2 {
-		case tText:
-			if len(p.l.buf()) > 1 {
-				p.text = p.l.buf()[1:]
-			} else {
-				p.text = []byte{}
-			}
-		default:
-			return EntryInvalid, fmt.Errorf("expected text in %s, got %v", t.String(), t2.String())
-		}
-		switch t {
-		case tType:
-			switch s := yoloString(p.text); s {
-			case "counter":
-				p.mtype = model.MetricTypeCounter
-			case "gauge":
-				p.mtype = model.MetricTypeGauge
-			case "histogram":
-				p.mtype = model.MetricTypeHistogram
-			case "summary":
-				p.mtype = model.MetricTypeSummary
-			case "untyped":
-				p.mtype = model.MetricTypeUnknown
+		case tHelp, tType:
+			switch t2 := p.nextToken(); t2 {
+			case tMName:
+				mStart := p.l.start
+				mEnd := p.l.i
+				if p.l.b[mStart] == '"' && p.l.b[mEnd-1] == '"' {
+					mStart++
+					mEnd--
+				}
+				p.offsets = append(p.offsets, mStart, mEnd)
 			default:
-				return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
+				return EntryInvalid, p.parseError("expected metric name after "+t.String(), t2)
 			}
-		case tHelp:
-			if !utf8.Valid(p.text) {
-				return EntryInvalid, fmt.Errorf("help text %q is not a valid utf8 string", p.text)
+			switch t2 := p.nextToken(); t2 {
+			case tText:
+				if len(p.l.buf()) > 1 {
+					p.text = p.l.buf()[1:]
+				} else {
+					p.text = []byte{}
+				}
+			default:
+				return EntryInvalid, fmt.Errorf("expected text in %s, got %v", t.String(), t2.String())
 			}
-		}
-		if t := p.nextToken(); t != tLinebreak {
-			return EntryInvalid, p.parseError("linebreak expected after metadata", t)
-		}
-		switch t {
-		case tHelp:
-			return EntryHelp, nil
-		case tType:
-			return EntryType, nil
-		}
-	case tComment:
-		p.text = p.l.buf()
-		if t := p.nextToken(); t != tLinebreak {
-			return EntryInvalid, p.parseError("linebreak expected after comment", t)
-		}
-		return EntryComment, nil
-	case tBraceOpen:
-		// We found a brace, so make room for the eventual metric name. If these
-		// values aren't updated, then the metric name was not set inside the
-		// braces and we can return an error.
-		if len(p.offsets) == 0 {
-			p.offsets = []int{-1, -1}
-		}
-		if err := p.parseLVals(); err != nil {
-			return EntryInvalid, err
-		}
-
-		p.series = p.l.b[p.start:p.l.i]
-		return p.parseMetricSuffix(p.nextToken())
-	case tMName:
-		p.offsets = append(p.offsets, p.start, p.l.i)
-		p.series = p.l.b[p.start:p.l.i]
-		t2 := p.nextToken()
-		// If there's a brace, consume and parse the label values.
-		if t2 == tBraceOpen {
+			switch t {
+			case tType:
+				switch s := yoloString(p.text); s {
+				case "counter":
+					p.mtype = model.MetricTypeCounter
+				case "gauge":
+					p.mtype = model.MetricTypeGauge
+				case "histogram":
+					p.mtype = model.MetricTypeHistogram
+				case "summary":
+					p.mtype = model.MetricTypeSummary
+				case "untyped":
+					p.mtype = model.MetricTypeUnknown
+				default:
+					return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
+				}
+			case tHelp:
+				if !utf8.Valid(p.text) {
+					return EntryInvalid, fmt.Errorf("help text %q is not a valid utf8 string", p.text)
+				}
+			}
+			if t := p.nextToken(); t != tLinebreak {
+				return EntryInvalid, p.parseError("linebreak expected after metadata", t)
+			}
+			switch t {
+			case tHelp:
+				return EntryHelp, nil
+			case tType:
+				return EntryType, nil
+			}
+		case tComment:
+			p.text = p.l.buf()
+			if t := p.nextToken(); t != tLinebreak {
+				return EntryInvalid, p.parseError("linebreak expected after comment", t)
+			}
+			return EntryComment, nil
+		case tBraceOpen:
+			// We found a brace, so make room for the eventual metric name. If these
+			// values aren't updated, then the metric name was not set inside the
+			// braces and we can return an error.
+			if len(p.offsets) == 0 {
+				p.offsets = []int{-1, -1}
+			}
 			if err := p.parseLVals(); err != nil {
 				return EntryInvalid, err
 			}
-			p.series = p.l.b[p.start:p.l.i]
-			t2 = p.nextToken()
-		}
-		return p.parseMetricSuffix(t2)
 
-	default:
-		err = p.parseError("expected a valid start token", t)
+			p.series = p.l.b[p.start:p.l.i]
+			return p.parseMetricSuffix(p.nextToken())
+		case tMName:
+			p.offsets = append(p.offsets, p.start, p.l.i)
+			p.series = p.l.b[p.start:p.l.i]
+			t2 := p.nextToken()
+			// If there's a brace, consume and parse the label values.
+			if t2 == tBraceOpen {
+				if err := p.parseLVals(); err != nil {
+					return EntryInvalid, err
+				}
+				p.series = p.l.b[p.start:p.l.i]
+				t2 = p.nextToken()
+			}
+			return p.parseMetricSuffix(t2)
+
+		default:
+			return EntryInvalid, p.parseError("expected a valid start token", t)
+		}
 	}
-	return EntryInvalid, err
 }
 
 // parseLVals parses the contents inside the braces.

@@ -26,7 +26,7 @@ var (
 )
 
 // RandomUnprivilegedPort returns valid unprivileged random port number which can be used for testing.
-func RandomUnprivilegedPort(t *testing.T) int {
+func RandomUnprivilegedPort(t testing.TB) int {
 	t.Helper()
 	mu.Lock()
 	defer mu.Unlock()

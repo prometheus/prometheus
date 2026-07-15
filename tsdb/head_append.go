@@ -1363,6 +1363,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			case series.lastHistogramValue != nil:
 				b.histograms = append(b.histograms, record.RefHistogramSample{
 					Ref: series.ref,
+					ST:  s.ST,
 					T:   s.T,
 					H:   &histogram.Histogram{Sum: s.V},
 				})
@@ -1375,6 +1376,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			case series.lastFloatHistogramValue != nil:
 				b.floatHistograms = append(b.floatHistograms, record.RefFloatHistogramSample{
 					Ref: series.ref,
+					ST:  s.ST,
 					T:   s.T,
 					FH:  &histogram.FloatHistogram{Sum: s.V},
 				})
@@ -1441,8 +1443,8 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 				acc.floatsAppended--
 			}
 		default:
-			newlyStale := !value.IsStaleNaN(series.lastValue) && value.IsStaleNaN(s.V)
-			staleToNonStale := value.IsStaleNaN(series.lastValue) && !value.IsStaleNaN(s.V)
+			wasStale := isStaleSeries(series)
+			isStale := value.IsStaleNaN(s.V)
 			ok, chunkCreated = series.append(s.ST, s.T, s.V, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
@@ -1451,12 +1453,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 				if s.T > acc.inOrderMaxt {
 					acc.inOrderMaxt = s.T
 				}
-				if newlyStale {
-					a.head.numStaleSeries.Inc()
-				}
-				if staleToNonStale {
-					a.head.numStaleSeries.Dec()
-				}
+				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 			} else {
 				// The sample is an exact duplicate, and should be silently dropped.
 				acc.floatsAppended--
@@ -1546,12 +1543,8 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				acc.histogramsAppended--
 			}
 		default:
-			newlyStale := value.IsStaleNaN(s.H.Sum)
-			staleToNonStale := false
-			if series.lastHistogramValue != nil {
-				newlyStale = newlyStale && !value.IsStaleNaN(series.lastHistogramValue.Sum)
-				staleToNonStale = value.IsStaleNaN(series.lastHistogramValue.Sum) && !value.IsStaleNaN(s.H.Sum)
-			}
+			wasStale := isStaleSeries(series)
+			isStale := value.IsStaleNaN(s.H.Sum)
 			ok, chunkCreated = series.appendHistogram(s.ST, s.T, s.H, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
@@ -1560,12 +1553,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				if s.T > acc.inOrderMaxt {
 					acc.inOrderMaxt = s.T
 				}
-				if newlyStale {
-					a.head.numStaleSeries.Inc()
-				}
-				if staleToNonStale {
-					a.head.numStaleSeries.Dec()
-				}
+				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 			} else {
 				acc.histogramsAppended--
 				acc.histoOOORejected++
@@ -1655,12 +1643,8 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				acc.histogramsAppended--
 			}
 		default:
-			newlyStale := value.IsStaleNaN(s.FH.Sum)
-			staleToNonStale := false
-			if series.lastFloatHistogramValue != nil {
-				newlyStale = newlyStale && !value.IsStaleNaN(series.lastFloatHistogramValue.Sum)
-				staleToNonStale = value.IsStaleNaN(series.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.FH.Sum)
-			}
+			wasStale := isStaleSeries(series)
+			isStale := value.IsStaleNaN(s.FH.Sum)
 			ok, chunkCreated = series.appendFloatHistogram(s.ST, s.T, s.FH, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
@@ -1669,12 +1653,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				if s.T > acc.inOrderMaxt {
 					acc.inOrderMaxt = s.T
 				}
-				if newlyStale {
-					a.head.numStaleSeries.Inc()
-				}
-				if staleToNonStale {
-					a.head.numStaleSeries.Dec()
-				}
+				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 			} else {
 				acc.histogramsAppended--
 				acc.histoOOORejected++
@@ -1714,7 +1693,6 @@ func (a *headAppenderBase) unmarkCreatedSeriesAsPendingCommit() {
 }
 
 // Commit writes to the WAL and adds the data to the Head.
-// TODO(codesome): Refactor this method to reduce indentation and make it more readable.
 func (a *headAppenderBase) Commit() (err error) {
 	if a.closed {
 		return ErrAppenderClosed

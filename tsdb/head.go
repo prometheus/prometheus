@@ -1278,9 +1278,17 @@ func isSeriesWithoutOOO(s *memSeries) bool {
 
 // isStaleSeries reports whether s's most recent in-order sample is a stale-NaN marker.
 func isStaleSeries(s *memSeries) bool {
-	return value.IsStaleNaN(s.lastValue) ||
-		(s.lastHistogramValue != nil && value.IsStaleNaN(s.lastHistogramValue.Sum)) ||
-		(s.lastFloatHistogramValue != nil && value.IsStaleNaN(s.lastFloatHistogramValue.Sum))
+	// Determine staleness from the series' current sample type. lastValue is not
+	// cleared when a histogram is appended, so it must only be consulted when the
+	// most recent sample is a float.
+	switch {
+	case s.lastHistogramValue != nil:
+		return value.IsStaleNaN(s.lastHistogramValue.Sum)
+	case s.lastFloatHistogramValue != nil:
+		return value.IsStaleNaN(s.lastFloatHistogramValue.Sum)
+	default:
+		return value.IsStaleNaN(s.lastValue)
+	}
 }
 
 // truncateStaleSeries removes the provided series as long as they are still stale and
@@ -1882,6 +1890,18 @@ func (h *Head) NumStaleSeries() uint64 {
 	return h.numStaleSeries.Load()
 }
 
+// updateStaleSeriesMetricOnAppend updates the stale-series gauge after an
+// in-order append, given whether the series was stale before the append and
+// whether the just-appended sample is a staleness marker.
+func (h *Head) updateStaleSeriesMetricOnAppend(wasStale, isStale bool) {
+	switch {
+	case !wasStale && isStale:
+		h.numStaleSeries.Inc()
+	case wasStale && !isStale:
+		h.numStaleSeries.Dec()
+	}
+}
+
 var headULID = ulid.MustParse("0000000000XXXXXXXXXXXXHEAD")
 
 // Meta returns meta information about the head.
@@ -2260,9 +2280,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			defer s.locks[stripe].Unlock()
 		}
 
-		if value.IsStaleNaN(series.lastValue) ||
-			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
-			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
+		if isStaleSeries(series) {
 			staleSeriesDeleted++
 		}
 
@@ -2354,9 +2372,15 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		h.series.hashes[hashStripe].del(hash, series.ref)
 		h.series.locks[hashStripe].Unlock()
 
-		if value.IsStaleNaN(series.lastValue) ||
-			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
-			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
+		// Keep the series record in checkpoints until its last sample time; while the
+		// WAL may still hold samples for this ref, they can't outlive maxt.
+		if h.wal != nil {
+			if maxt := series.maxTime(); maxt != math.MinInt64 {
+				h.updateWALExpiry(series.ref, maxt)
+			}
+		}
+
+		if isStaleSeries(series) {
 			staleSeriesDeleted++
 		}
 
@@ -2524,6 +2548,16 @@ func (s *stripeSeries) getByHash(hash uint64, lset labels.Labels) *memSeries {
 	s.locks[i].RUnlock()
 
 	return series
+}
+
+// unlinkHash removes the series with the given ref from the hash index, but leaves it
+// in the by-ref map so refs to it remain resolvable until it is fully deleted.
+func (s *stripeSeries) unlinkHash(hash uint64, ref chunks.HeadSeriesRef) {
+	i := hash & uint64(s.size-1)
+
+	s.locks[i].Lock()
+	defer s.locks[i].Unlock()
+	s.hashes[i].del(hash, ref)
 }
 
 func (s *stripeSeries) setUnlessAlreadySet(hash uint64, lset labels.Labels, series *memSeries) (*memSeries, bool) {

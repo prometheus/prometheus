@@ -139,7 +139,7 @@ reason to run them sequentially.
 When the `concurrent-rule-eval` feature flag is enabled, rules without any dependency on other rules within a rule group will be evaluated concurrently.
 This has the potential to improve rule group evaluation latency and resource utilization at the expense of adding more concurrent query load.
 
-The number of concurrent rule evaluations can be configured with `--rules.max-concurrent-rule-evals`, which is set to `4` by default.
+The number of concurrent rule evaluations can be configured with `--rules.max-concurrent-evals`, which is set to `4` by default.
 
 ## Serve old Prometheus UI
 

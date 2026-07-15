@@ -1897,6 +1897,136 @@ func TestDBApplyConfigChunkEncoding(t *testing.T) {
 	})
 }
 
+// requireBlockFloatChunkEncoding queries all chunks of the single series in
+// the block and asserts they all use the expected encoding.
+func requireBlockFloatChunkEncoding(t *testing.T, b *Block, expected chunkenc.Encoding) {
+	t.Helper()
+
+	q, err := NewBlockChunkQuerier(b, b.MinTime(), b.MaxTime())
+	require.NoError(t, err)
+	res := queryChunks(t, q, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "0"))
+	require.Len(t, res, 1)
+	for _, chks := range res {
+		require.NotEmpty(t, chks)
+		for _, chk := range chks {
+			require.Equal(t, expected, chk.Chunk.Encoding())
+		}
+	}
+}
+
+// TestVerticalCompactionFloatChunkEncoding verifies that chunks re-encoded
+// while compacting overlapping blocks use the configured float chunk encoding,
+// including after a runtime configuration reload.
+func TestVerticalCompactionFloatChunkEncoding(t *testing.T) {
+	xorCfg := func(floats string) *config.Config {
+		return &config.Config{StorageConfig: config.StorageConfig{
+			TSDBConfig: &config.TSDBConfig{ChunkEncoding: config.ChunkEncodingConfig{Floats: floats}},
+		}}
+	}
+
+	// createOverlappingBlocks writes two overlapping blocks for the same series.
+	createOverlappingBlocks := func(t *testing.T, dir string, mint int64) {
+		createBlock(t, dir, genSeries(1, 1, mint, mint+50))
+		createBlock(t, dir, genSeries(1, 1, mint+25, mint+75))
+	}
+
+	t.Run("default_xor", func(t *testing.T) {
+		dir := t.TempDir()
+		createOverlappingBlocks(t, dir, 0)
+
+		db := newTestDB(t, withDir(dir))
+		db.DisableCompactions()
+
+		require.NoError(t, db.Compact(context.Background()))
+		blocks := db.Blocks()
+		require.Len(t, blocks, 1)
+		requireBlockFloatChunkEncoding(t, blocks[0], chunkenc.EncXOR)
+	})
+
+	t.Run("config_xor2", func(t *testing.T) {
+		dir := t.TempDir()
+		createOverlappingBlocks(t, dir, 0)
+
+		opts := DefaultOptions()
+		opts.XOR2EncodingAllowed = true
+		opts.FloatChunkEncoding = chunkenc.EncXOR2
+		db := newTestDB(t, withDir(dir), withOpts(opts))
+		db.DisableCompactions()
+
+		require.NoError(t, db.Compact(context.Background()))
+		blocks := db.Blocks()
+		require.Len(t, blocks, 1)
+		requireBlockFloatChunkEncoding(t, blocks[0], chunkenc.EncXOR2)
+	})
+
+	t.Run("apply_config_flip", func(t *testing.T) {
+		dir := t.TempDir()
+		createOverlappingBlocks(t, dir, 0)
+
+		opts := DefaultOptions()
+		opts.XOR2EncodingAllowed = true
+		db := newTestDB(t, withDir(dir), withOpts(opts))
+		db.DisableCompactions()
+
+		// Flip the startup XOR default to XOR2 before the first compaction.
+		require.NoError(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR2)))
+		require.NoError(t, db.Compact(context.Background()))
+		blocks := db.Blocks()
+		require.Len(t, blocks, 1)
+		requireBlockFloatChunkEncoding(t, blocks[0], chunkenc.EncXOR2)
+
+		// Flip back to XOR; the next compaction of a new pair of overlapping
+		// blocks must re-encode to XOR while the previous block stays XOR2.
+		createOverlappingBlocks(t, db.Dir(), 100)
+		require.NoError(t, db.reloadBlocks())
+		require.NoError(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR)))
+		require.NoError(t, db.Compact(context.Background()))
+		blocks = db.Blocks()
+		require.Len(t, blocks, 2)
+		requireBlockFloatChunkEncoding(t, blocks[0], chunkenc.EncXOR2)
+		requireBlockFloatChunkEncoding(t, blocks[1], chunkenc.EncXOR)
+	})
+}
+
+// TestChunkQuerierFloatChunkEncoding verifies that chunks re-encoded while
+// merging overlapping blocks at query time use the configured float chunk
+// encoding.
+func TestChunkQuerierFloatChunkEncoding(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		xor2     bool
+		expected chunkenc.Encoding
+	}{
+		{name: "default_xor", expected: chunkenc.EncXOR},
+		{name: "config_xor2", xor2: true, expected: chunkenc.EncXOR2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			createBlock(t, dir, genSeries(1, 1, 0, 50))
+			createBlock(t, dir, genSeries(1, 1, 25, 75))
+
+			opts := DefaultOptions()
+			if tc.xor2 {
+				opts.XOR2EncodingAllowed = true
+				opts.FloatChunkEncoding = chunkenc.EncXOR2
+			}
+			db := newTestDB(t, withDir(dir), withOpts(opts))
+			db.DisableCompactions()
+
+			q, err := db.ChunkQuerier(0, 75)
+			require.NoError(t, err)
+			res := queryChunks(t, q, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "0"))
+			require.Len(t, res, 1)
+			for _, chks := range res {
+				require.NotEmpty(t, chks)
+				for _, chk := range chks {
+					require.Equal(t, tc.expected, chk.Chunk.Encoding())
+				}
+			}
+		})
+	}
+}
+
 func TestHeadOptionsUseXOR2FloatEncoding(t *testing.T) {
 	t.Parallel()
 
@@ -3995,9 +4125,26 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier(t *test
 		compactionErr <- db.CompactOOOHead(ctx)
 	}()
 
-	// Give CompactOOOHead time to start work.
-	// If it does not wait for querierCreatedBeforeCompaction to be closed, then the query will return incorrect results or fail.
-	time.Sleep(time.Second)
+	// Wait until CompactOOOHead has written the OOO block, reloaded, and published
+	// lastGarbageCollectedMmapRef before creating the second querier below.
+	// Until that ref is set, the second querier would capture the stale ref (0)
+	// and permanently block the OOO reader-wait loop, which has no timeout, hanging
+	// the test on slow runners.
+	// If compaction exits before publishing the ref, stop waiting so its error can
+	// be reported below instead of being masked by the timeout.
+	require.Eventually(t, func() bool {
+		if compactionComplete.Load() {
+			return true
+		}
+		db.mtx.RLock()
+		defer db.mtx.RUnlock()
+		return db.lastGarbageCollectedMmapRef != 0
+	}, time.Minute, 10*time.Millisecond, "CompactOOOHead did not reach the reader-wait phase")
+	if compactionComplete.Load() {
+		require.NoError(t, <-compactionErr)
+	}
+	// The compaction must still be waiting for querierCreatedBeforeCompaction to be
+	// closed. If it does not wait, then the query will return incorrect results or fail.
 	require.False(t, compactionComplete.Load(), "compaction completed before reading chunks or closing querier created before compaction")
 
 	// Get another querier. This one should only use the compacted blocks from disk and ignore the chunks that will be garbage collected.

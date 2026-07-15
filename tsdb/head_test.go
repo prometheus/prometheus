@@ -7899,6 +7899,248 @@ func TestHead_NumStaleSeries(t *testing.T) {
 	verifySeriesCounts(4, 5)
 }
 
+// staleSampleKind selects the sample type appended by appendStaleTestSample.
+type staleSampleKind int
+
+const (
+	staleKindFloat staleSampleKind = iota
+	staleKindHistogram
+	staleKindFloatHistogram
+)
+
+func (k staleSampleKind) String() string {
+	switch k {
+	case staleKindFloat:
+		return "float"
+	case staleKindHistogram:
+		return "histogram"
+	default:
+		return "float_histogram"
+	}
+}
+
+// appendStaleTestSample appends a single sample of the given type, either a
+// normal value or a staleness marker, and commits it.
+func appendStaleTestSample(t testing.TB, head *Head, kind staleSampleKind, lbls labels.Labels, ts int64, stale bool) {
+	t.Helper()
+	staleNaN := math.Float64frombits(value.StaleNaN)
+	app := head.Appender(context.Background())
+	var err error
+	switch kind {
+	case staleKindFloat:
+		v := float64(ts)
+		if stale {
+			v = staleNaN
+		}
+		_, err = app.Append(0, lbls, ts, v)
+	case staleKindHistogram:
+		h := tsdbutil.GenerateTestHistogram(1)
+		if stale {
+			h.Sum = staleNaN
+		}
+		_, err = app.AppendHistogram(0, lbls, ts, h, nil)
+	case staleKindFloatHistogram:
+		fh := tsdbutil.GenerateTestFloatHistogram(1)
+		if stale {
+			fh.Sum = staleNaN
+		}
+		_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
+	}
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+}
+
+// TestHead_NumStaleSeries_MixedType verifies that the stale-series gauge is
+// maintained when a series goes stale as one sample type and then becomes
+// non-stale as a different type (float, integer histogram, or float histogram).
+// Before the fix, such a series stayed counted as stale because staleness was
+// derived from a type-specific last value. The scenarios are exercised during
+// live ingestion and after reconstruction from the WAL and from a memory
+// snapshot.
+func TestHead_NumStaleSeries_MixedType(t *testing.T) {
+	transitions := []struct{ stale, resolve staleSampleKind }{
+		{staleKindFloat, staleKindHistogram},
+		{staleKindFloat, staleKindFloatHistogram},
+		{staleKindHistogram, staleKindFloat},
+		{staleKindHistogram, staleKindFloatHistogram},
+		{staleKindFloatHistogram, staleKindFloat},
+		{staleKindFloatHistogram, staleKindHistogram},
+	}
+	for _, mode := range []string{"live", "wal", "snapshot"} {
+		for _, tr := range transitions {
+			t.Run(fmt.Sprintf("%s/%s_to_%s", mode, tr.stale, tr.resolve), func(t *testing.T) {
+				head, _ := newTestHead(t, 1000, compression.None, false)
+				head.opts.EnableMemorySnapshotOnShutdown = mode == "snapshot"
+				t.Cleanup(func() {
+					// Captures head by reference, so it closes the final head after a restart.
+					_ = head.Close()
+				})
+				require.NoError(t, head.Init(0))
+
+				lbls := labels.FromStrings("name", t.Name())
+				// Going stale counts the series, resolving with a different type must uncount it.
+				appendStaleTestSample(t, head, tr.stale, lbls, 100, true)
+				require.Equal(t, uint64(1), head.NumStaleSeries())
+				appendStaleTestSample(t, head, tr.resolve, lbls, 200, false)
+				require.Equal(t, uint64(0), head.NumStaleSeries())
+
+				if mode != "live" {
+					require.NoError(t, head.Close())
+					wal, err := wlog.NewSize(nil, nil, filepath.Join(head.opts.ChunkDirRoot, "wal"), 32768, compression.None)
+					require.NoError(t, err)
+					head, err = NewHead(nil, nil, wal, nil, head.opts, nil)
+					require.NoError(t, err)
+					require.NoError(t, head.Init(0))
+				}
+
+				require.Equal(t, uint64(1), head.NumSeries())
+				require.Equal(t, uint64(0), head.NumStaleSeries())
+			})
+		}
+	}
+}
+
+// TestHead_NumStaleSeries_MixedTypeRemoval verifies that the removal paths that
+// consult isStaleSeries treat a series that resolved to non-stale via a
+// different sample type correctly: garbage collection must not decrement the
+// gauge for it (which would underflow), and the early stale-series eviction
+// (truncateStaleSeries, used during block writes) must not drop it as if it
+// were stale.
+func TestHead_NumStaleSeries_MixedTypeRemoval(t *testing.T) {
+	ref := func(head *Head, lbls labels.Labels) storage.SeriesRef {
+		ms := head.series.getByHash(lbls.Hash(), lbls)
+		require.NotNil(t, ms)
+		return storage.SeriesRef(ms.ref)
+	}
+	for _, tc := range []struct {
+		name              string
+		remove            func(t *testing.T, head *Head, refs []storage.SeriesRef)
+		wantSeries        uint64
+		crossTypeSurvives bool
+	}{
+		{
+			name: "gc",
+			remove: func(t *testing.T, head *Head, _ []storage.SeriesRef) {
+				require.NoError(t, head.Truncate(1000))
+				head.gc()
+			},
+			wantSeries:        1, // Only the keeper, which has a recent sample.
+			crossTypeSurvives: false,
+		},
+		{
+			name: "truncate_stale_series",
+			remove: func(t *testing.T, head *Head, refs []storage.SeriesRef) {
+				require.NoError(t, head.truncateStaleSeries(refs, 1000, math.MaxUint64))
+			},
+			wantSeries:        2, // Only the genuinely stale series is evicted.
+			crossTypeSurvives: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			head, _ := newTestHead(t, 1000, compression.None, false)
+			t.Cleanup(func() { _ = head.Close() })
+			require.NoError(t, head.Init(0))
+
+			// A series that went stale as a float and became non-stale as a histogram.
+			crossType := labels.FromStrings("name", "cross_type")
+			appendStaleTestSample(t, head, staleKindFloat, crossType, 100, true)
+			appendStaleTestSample(t, head, staleKindHistogram, crossType, 200, false)
+			// A genuinely stale series.
+			staleOnly := labels.FromStrings("name", "stale_only")
+			appendStaleTestSample(t, head, staleKindHistogram, staleOnly, 100, true)
+			// A recent non-stale series, kept alive past the truncation point.
+			keeper := labels.FromStrings("name", "keeper")
+			appendStaleTestSample(t, head, staleKindFloat, keeper, 5000, false)
+			require.Equal(t, uint64(1), head.NumStaleSeries())
+
+			crossTypeRef := ref(head, crossType)
+			staleOnlyRef := ref(head, staleOnly)
+			keeperRef := ref(head, keeper)
+			refs := []storage.SeriesRef{crossTypeRef, staleOnlyRef, keeperRef}
+			staleRefs, err := head.staleSeriesRefsNoOOOData(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, []storage.SeriesRef{staleOnlyRef}, staleRefs.sortedByRef)
+			tc.remove(t, head, refs)
+
+			require.Equal(t, tc.wantSeries, head.NumSeries())
+			require.Equal(t, uint64(0), head.NumStaleSeries())
+			if tc.crossTypeSurvives {
+				require.NotNil(t, head.series.getByHash(crossType.Hash(), crossType), "cross-type non-stale series must survive")
+			} else {
+				require.Nil(t, head.series.getByHash(crossType.Hash(), crossType))
+			}
+		})
+	}
+}
+
+// TestHead_NumStaleSeries_WALReplayIgnoresRejectedCrossTypeSamples verifies
+// that an older sample appearing later in the WAL does not change stale-series
+// accounting when replay rejects it. This ordering is possible when concurrent
+// appenders log in one order but apply their samples to the series in another.
+func TestHead_NumStaleSeries_WALReplayIgnoresRejectedCrossTypeSamples(t *testing.T) {
+	stale := math.Float64frombits(value.StaleNaN)
+	hist := tsdbutil.GenerateTestHistogram(1)
+	staleHist := hist.Copy()
+	staleHist.Sum = stale
+	floatHist := tsdbutil.GenerateTestFloatHistogram(1)
+
+	tests := []struct {
+		name  string
+		newer any
+		older any
+	}{
+		{
+			name: "histogram_then_older_float",
+			newer: []record.RefHistogramSample{
+				{Ref: 1, T: 200, H: staleHist},
+			},
+			older: []record.RefSample{
+				{Ref: 1, T: 100, V: 1},
+			},
+		},
+		{
+			name: "float_then_older_histogram",
+			newer: []record.RefSample{
+				{Ref: 1, T: 200, V: stale},
+			},
+			older: []record.RefHistogramSample{
+				{Ref: 1, T: 100, H: hist},
+			},
+		},
+		{
+			name: "float_then_older_float_histogram",
+			newer: []record.RefSample{
+				{Ref: 1, T: 200, V: stale},
+			},
+			older: []record.RefFloatHistogramSample{
+				{Ref: 1, T: 100, FH: floatHist},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			head, wal := newTestHead(t, 1000, compression.None, false)
+			t.Cleanup(func() { require.NoError(t, head.Close()) })
+
+			populateTestWL(t, wal, []any{
+				[]record.RefSeries{{Ref: 1, Labels: labels.FromStrings("name", tc.name)}},
+				[]record.RefSample{{Ref: 1, T: 0, V: 1}},
+				tc.newer,
+				tc.older,
+			}, nil, false)
+
+			require.NoError(t, head.Init(0))
+
+			series := head.series.getByID(1)
+			require.NotNil(t, series)
+			require.Equal(t, int64(200), series.maxTime())
+			require.True(t, isStaleSeries(series))
+			require.Equal(t, uint64(1), head.NumSeries())
+			require.Equal(t, uint64(1), head.NumStaleSeries())
+		})
+	}
+}
+
 // TestHead_FilterSelectedSeriesAndSortPostings exercises the helper directly, covering the
 // three outcomes for a given ref: kept (clean series), skipped (series carries OOO data), and
 // silently dropped (ref does not resolve to any series in the head).
@@ -8979,6 +9221,183 @@ func TestWALReplayRaceWithStaleSeriesCompaction(t *testing.T) {
 	require.NoError(t, head.Close())
 }
 
+// TestHead_ReadWAL_TombstonesAdvanceLastSeriesID verifies that replay advances
+// lastSeriesID past tombstone refs, regardless of whether the stone's series
+// record exists.
+func TestHead_ReadWAL_TombstonesAdvanceLastSeriesID(t *testing.T) {
+	cases := []struct {
+		name  string
+		stone tombstones.Stone
+	}{
+		{
+			name:  "interval tombstone",
+			stone: tombstones.Stone{Ref: 42, Intervals: []tombstones.Interval{{Mint: 0, Maxt: 100}}},
+		},
+		{
+			name:  "full-range tombstone",
+			stone: tombstones.Stone{Ref: 42, Intervals: []tombstones.Interval{{Mint: math.MinInt64, Maxt: math.MaxInt64}}},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			entries := []any{
+				[]record.RefSeries{
+					{Ref: 10, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefSample{
+					{Ref: 10, T: 100, V: 1},
+				},
+				[]tombstones.Stone{tc.stone},
+			}
+
+			head, w := newTestHead(t, 1000, compression.None, false)
+			defer func() {
+				require.NoError(t, head.Close())
+			}()
+
+			populateTestWL(t, w, entries, nil, false)
+
+			require.NoError(t, head.Init(math.MinInt64))
+
+			require.Equal(t, uint64(42), head.lastSeriesID.Load())
+		})
+	}
+}
+
+// TestStripeSeries_UnlinkHash verifies that unlinkHash removes a series from the hash
+// index while leaving it resolvable by ref. Lookups by labels no longer find it, and a
+// series with the same labels is created fresh instead of aliasing the unlinked one.
+func TestStripeSeries_UnlinkHash(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	lbls := labels.FromStrings("a", "1")
+	s1, created, err := head.getOrCreateWithOptionalID(1, lbls.Hash(), lbls, false)
+	require.NoError(t, err)
+	require.True(t, created)
+
+	head.series.unlinkHash(lbls.Hash(), s1.ref)
+
+	// Gone from the hash index, still resolvable by ref.
+	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
+	require.Same(t, s1, head.series.getByID(s1.ref))
+
+	// A series with the same labels isn't aliased onto s1.
+	s2, created, err := head.getOrCreateWithOptionalID(2, lbls.Hash(), lbls, false)
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Equal(t, chunks.HeadSeriesRef(2), s2.ref)
+}
+
+// TestHead_WALReplay_FullRangeTombstoneDeletesDuplicateRef verifies that a full-range
+// tombstone whose ref was mapped onto another series during replay deletes the series it was mapped to.
+func TestHead_WALReplay_FullRangeTombstoneDeletesDuplicateRef(t *testing.T) {
+	lbls := labels.FromStrings("a", "1")
+	entries := []any{
+		[]record.RefSeries{
+			{Ref: 1, Labels: lbls},
+			// Duplicate record for the same series under a different ref; replay
+			// maps ref 2 onto ref 1.
+			{Ref: 2, Labels: lbls},
+		},
+		[]record.RefSample{
+			{Ref: 2, T: 100, V: 1},
+		},
+		[]tombstones.Stone{
+			{Ref: 2, Intervals: tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}},
+		},
+	}
+
+	head, w := newTestHead(t, 1000, compression.None, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+	populateTestWL(t, w, entries, nil, false)
+
+	require.NoError(t, head.Init(math.MinInt64))
+
+	require.Equal(t, uint64(0), head.NumSeries())
+}
+
+// TestHead_WALCheckpoint_FullRangeTombstones verifies checkpointing of a series deleted
+// during replay by a full-range tombstone. Replay sets a WAL expiry at the series' max
+// sample time, so checkpoints keep its series record and tombstone while the WAL still
+// holds samples for it and drop both once those samples age out.
+func TestHead_WALCheckpoint_FullRangeTombstones(t *testing.T) {
+	lbls1 := labels.FromStrings("a", "1")
+	lbls2 := labels.FromStrings("a", "2")
+	fullRange := tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}
+	walEntries := []any{
+		[]record.RefSeries{{Ref: 1, Labels: lbls1}, {Ref: 2, Labels: lbls2}},
+		[]record.RefSample{
+			{Ref: 1, T: 100, V: 1},
+			{Ref: 1, T: 500, V: 2},
+			{Ref: 2, T: 100, V: 3},
+			{Ref: 2, T: 200, V: 4},
+		},
+		[]tombstones.Stone{
+			{Ref: 1, Intervals: fullRange},
+			{Ref: 2, Intervals: fullRange},
+		},
+	}
+
+	head, w := newTestHead(t, 1000, compression.None, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+	populateTestWL(t, w, walEntries, nil, false)
+	first, _, err := wlog.Segments(w.Dir())
+	require.NoError(t, err)
+
+	require.NoError(t, head.Init(math.MinInt64))
+
+	// Replay applied the tombstones: both series are deleted, and each ref has a WAL
+	// expiry at its max sample time.
+	require.Equal(t, uint64(0), head.NumSeries())
+	keepUntil, ok := head.getWALExpiry(1)
+	require.True(t, ok)
+	require.Equal(t, int64(500), keepUntil)
+	keepUntil, ok = head.getWALExpiry(2)
+	require.True(t, ok)
+	require.Equal(t, int64(200), keepUntil)
+
+	// Checkpoint with mint=250, between the two expiries. Each truncation creates a
+	// new segment, so attempt truncations until a checkpoint is created.
+	for {
+		head.lastWALTruncationTime.Store(0) // Reset so that it's always time to truncate the WAL.
+		require.NoError(t, head.truncateWAL(250))
+		f, _, err := wlog.Segments(w.Dir())
+		require.NoError(t, err)
+		if f > first {
+			break
+		}
+	}
+
+	// The WAL still holds a sample for ref 1 (t=500 >= mint), so its series record
+	// must be kept for the sample to resolve on replay, and its tombstone with it so
+	// the replayed series is deleted again. Ref 2's samples all age out, and its
+	// series record and tombstone are dropped with them.
+	expected := []any{
+		[]record.RefSeries{{Ref: 1, Labels: lbls1}},
+		[]record.RefSample{{Ref: 1, T: 500, V: 2}},
+		[]tombstones.Stone{{Ref: 1, Intervals: fullRange}},
+	}
+	cpDir, _, err := wlog.LastCheckpoint(w.Dir())
+	require.NoError(t, err)
+	recs := append(readTestWAL(t, cpDir), readTestWAL(t, w.Dir())...)
+	testutil.RequireEqual(t, expected, recs)
+
+	// WAL expiries are cleaned up alongside the records they retain.
+	keepUntil, ok = head.getWALExpiry(1)
+	require.True(t, ok, "ref 1 expiry must be retained (500 >= mint 250)")
+	require.Equal(t, int64(500), keepUntil)
+	_, ok = head.getWALExpiry(2)
+	require.False(t, ok, "ref 2 expiry must be cleared (200 < mint 250)")
+}
+
 func TestHead_FastStartupStateFile(t *testing.T) {
 	opts := newTestHeadDefaultOptions(1000, false)
 	// Enable the fast startup feature.
@@ -8993,16 +9412,21 @@ func TestHead_FastStartupStateFile(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	// Wait for the ticker to update the series state file.
-	time.Sleep(1500 * time.Millisecond)
-
 	stateFilePath := filepath.Join(w.Dir(), "series_state.json")
 
-	b, err := os.ReadFile(stateFilePath)
-	require.NoError(t, err, "series_state.json should exist after ticker runs")
-
+	// Poll for the ticker (1s interval) to write the series state file rather
+	// than waiting a fixed amount of time: faster in the common case, and robust
+	// if the first tick is momentarily delayed under load.
 	var state SeriesLifecycleState
-	require.NoError(t, json.Unmarshal(b, &state), "file should be valid JSON")
+	var b []byte
+	require.Eventually(t, func() bool {
+		var err error
+		b, err = os.ReadFile(stateFilePath)
+		if err != nil {
+			return false
+		}
+		return json.Unmarshal(b, &state) == nil && state.LastSeriesID == 1
+	}, 10*time.Second, 20*time.Millisecond, "series_state.json should be written by the ticker")
 
 	// The ticker should write an unclean state.
 	require.False(t, state.CleanShutdown, "ticker should write CleanShutdown: false")
@@ -9332,7 +9756,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 
 		type testCase struct {
 			appendOnce     func(app storage.Appender, lbls labels.Labels, ts int64, i int) error
-			appendInternal func(ms *memSeries, t int64, opts chunkOpts) bool
+			appendInternal func(ms *memSeries, t int64, opts chunkOpts) (bool, bool)
 		}
 		testCases := map[string]testCase{
 			"floats": {
@@ -9340,9 +9764,8 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 					_, err := app.Append(0, lbls, ts, float64(ts))
 					return err
 				},
-				appendInternal: func(ms *memSeries, t int64, opts chunkOpts) bool {
-					_, chunkCreated := ms.append(0, t, 0, 0, opts)
-					return chunkCreated
+				appendInternal: func(ms *memSeries, t int64, opts chunkOpts) (bool, bool) {
+					return ms.append(0, t, 0, 0, opts)
 				},
 			},
 			"histograms": {
@@ -9350,9 +9773,8 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 					_, err := app.AppendHistogram(0, lbls, ts, histograms[i], nil)
 					return err
 				},
-				appendInternal: func(ms *memSeries, t int64, opts chunkOpts) bool {
-					_, chunkCreated := ms.appendHistogram(0, t, histograms[0], 0, opts)
-					return chunkCreated
+				appendInternal: func(ms *memSeries, t int64, opts chunkOpts) (bool, bool) {
+					return ms.appendHistogram(0, t, histograms[0], 0, opts)
 				},
 			},
 			"float histograms": {
@@ -9360,9 +9782,8 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 					_, err := app.AppendHistogram(0, lbls, ts, nil, floatHistograms[i])
 					return err
 				},
-				appendInternal: func(ms *memSeries, t int64, opts chunkOpts) bool {
-					_, chunkCreated := ms.appendFloatHistogram(0, t, floatHistograms[0], 0, opts)
-					return chunkCreated
+				appendInternal: func(ms *memSeries, t int64, opts chunkOpts) (bool, bool) {
+					return ms.appendFloatHistogram(0, t, floatHistograms[0], 0, opts)
 				},
 			},
 		}
@@ -9398,7 +9819,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 				// Invoke the WAL-replay-style helper with a sample timestamped
 				// past the next chunk boundary to force a chunk cut.
 				s.Lock()
-				chunkCreated := h.appendChunkAndMmap(s, func() bool {
+				_, chunkCreated := h.appendChunkAndMmap(s, func() (bool, bool) {
 					return tc.appendInternal(s, ts+h.chunkRange.Load(), chunkOpts{
 						chunkDiskMapper: h.chunkDiskMapper,
 						chunkRange:      h.chunkRange.Load(),

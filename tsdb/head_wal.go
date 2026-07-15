@@ -315,15 +315,26 @@ Outer:
 			// Tombstone records will be fairly rare, so not trying to optimise the allocations here.
 			deleteSeriesShards := make([][]chunks.HeadSeriesRef, concurrency)
 			for _, s := range v {
+				// A tombstone means this ref was previously allocated, even if its series record is no
+				// longer in the WAL. Advance lastSeriesID so the ref is not reissued.
+				if h.lastSeriesID.Load() < uint64(s.Ref) {
+					h.lastSeriesID.Store(uint64(s.Ref))
+				}
 				if len(s.Intervals) == 1 && s.Intervals[0].Mint == math.MinInt64 && s.Intervals[0].Maxt == math.MaxInt64 {
 					// This series was fully deleted at this point. This record is only done for stale series at the moment.
-					mod := uint64(s.Ref) % uint64(concurrency)
-					deleteSeriesShards[mod] = append(deleteSeriesShards[mod], chunks.HeadSeriesRef(s.Ref))
-
-					// If the series is with a different reference, try deleting that.
-					if r, ok := multiRef[chunks.HeadSeriesRef(s.Ref)]; ok {
-						mod := uint64(r) % uint64(concurrency)
-						deleteSeriesShards[mod] = append(deleteSeriesShards[mod], r)
+					ref := chunks.HeadSeriesRef(s.Ref)
+					// If the series is with a different reference, delete that one.
+					if r, ok := multiRef[ref]; ok {
+						ref = r
+					}
+					if series := h.series.getByID(ref); series != nil {
+						// Remove the series from the hash index so that a later series
+						// record with the same labels creates a fresh series instead of
+						// mapping onto this one. It stays in the by-ref map so
+						// already-queued samples still resolve until the deletion applies.
+						h.series.unlinkHash(series.lset.Hash(), ref)
+						mod := uint64(ref) % uint64(concurrency)
+						deleteSeriesShards[mod] = append(deleteSeriesShards[mod], ref)
 					}
 					continue
 				}
@@ -638,15 +649,18 @@ func (wp *walSubsetProcessor) reuseHistogramBuf() []histogramRecord {
 // appendChunkAndMmap appends a sample to ms via appendFn and, if a new head
 // chunk was created, immediately mmaps the now-completed predecessors. Used
 // by WAL replay paths to keep memory bounded by mmapping eagerly rather than
-// waiting for the periodic mmapHeadChunks pass.
+// waiting for the periodic mmapHeadChunks pass. appendFn returns whether the
+// sample was accepted as in-order and whether it cut a new chunk, and those
+// values are returned to the caller so it can skip metric updates for samples
+// that were rejected (e.g. an older sample appearing later in the WAL).
 //
 // If the chunk cut + mmap reduces headChunkCount from >= 2 to < 2 (which
 // happens whenever prev >= 2, since mmapChunks always sets the count to 1
 // when it does work), the per-stripe mmap-ready counter is decremented to
 // maintain its invariant.
-func (h *Head) appendChunkAndMmap(ms *memSeries, appendFn func() bool) bool {
+func (h *Head) appendChunkAndMmap(ms *memSeries, appendFn func() (sampleInOrder, chunkCreated bool)) (sampleInOrder, chunkCreated bool) {
 	prev := ms.headChunkCount.Load()
-	chunkCreated := appendFn()
+	sampleInOrder, chunkCreated = appendFn()
 	if chunkCreated {
 		h.metrics.chunksCreated.Inc()
 		h.metrics.chunks.Inc()
@@ -655,7 +669,7 @@ func (h *Head) appendChunkAndMmap(ms *memSeries, appendFn func() bool) bool {
 			h.series.decMmapReady(ms.ref)
 		}
 	}
-	return chunkCreated
+	return sampleInOrder, chunkCreated
 }
 
 // processWALSamples adds the samples it receives to the head and passes
@@ -704,17 +718,14 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				continue
 			}
 
-			if !value.IsStaleNaN(ms.lastValue) && value.IsStaleNaN(s.V) {
-				h.numStaleSeries.Inc()
-			}
-			if value.IsStaleNaN(ms.lastValue) && !value.IsStaleNaN(s.V) {
-				h.numStaleSeries.Dec()
-			}
-
-			h.appendChunkAndMmap(ms, func() bool {
-				_, chunkCreated := ms.append(s.ST, s.T, s.V, 0, appendChunkOpts)
-				return chunkCreated
+			wasStale := isStaleSeries(ms)
+			isStale := value.IsStaleNaN(s.V)
+			sampleInOrder, _ := h.appendChunkAndMmap(ms, func() (bool, bool) {
+				return ms.append(s.ST, s.T, s.V, 0, appendChunkOpts)
 			})
+			if sampleInOrder {
+				h.updateStaleSeriesMetricOnAppend(wasStale, isStale)
+			}
 			if s.T > maxt {
 				maxt = s.T
 			}
@@ -740,33 +751,21 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if s.t <= ms.mmMaxTime {
 				continue
 			}
-			var newlyStale, staleToNonStale bool
+			wasStale := isStaleSeries(ms)
+			var isStale, sampleInOrder bool
 			if s.h != nil {
-				newlyStale = value.IsStaleNaN(s.h.Sum)
-				if ms.lastHistogramValue != nil {
-					newlyStale = newlyStale && !value.IsStaleNaN(ms.lastHistogramValue.Sum)
-					staleToNonStale = value.IsStaleNaN(ms.lastHistogramValue.Sum) && !value.IsStaleNaN(s.h.Sum)
-				}
-				h.appendChunkAndMmap(ms, func() bool {
-					_, chunkCreated := ms.appendHistogram(s.st, s.t, s.h, 0, appendChunkOpts)
-					return chunkCreated
+				isStale = value.IsStaleNaN(s.h.Sum)
+				sampleInOrder, _ = h.appendChunkAndMmap(ms, func() (bool, bool) {
+					return ms.appendHistogram(s.st, s.t, s.h, 0, appendChunkOpts)
 				})
 			} else {
-				newlyStale = value.IsStaleNaN(s.fh.Sum)
-				if ms.lastFloatHistogramValue != nil {
-					newlyStale = newlyStale && !value.IsStaleNaN(ms.lastFloatHistogramValue.Sum)
-					staleToNonStale = value.IsStaleNaN(ms.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.fh.Sum)
-				}
-				h.appendChunkAndMmap(ms, func() bool {
-					_, chunkCreated := ms.appendFloatHistogram(s.st, s.t, s.fh, 0, appendChunkOpts)
-					return chunkCreated
+				isStale = value.IsStaleNaN(s.fh.Sum)
+				sampleInOrder, _ = h.appendChunkAndMmap(ms, func() (bool, bool) {
+					return ms.appendFloatHistogram(s.st, s.t, s.fh, 0, appendChunkOpts)
 				})
 			}
-			if newlyStale {
-				h.numStaleSeries.Inc()
-			}
-			if staleToNonStale {
-				h.numStaleSeries.Dec()
+			if sampleInOrder {
+				h.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 			}
 			if s.t > maxt {
 				maxt = s.t
@@ -1707,9 +1706,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 				series.lastHistogramValue = csr.lastHistogramValue
 				series.lastFloatHistogramValue = csr.lastFloatHistogramValue
 
-				if value.IsStaleNaN(series.lastValue) ||
-					(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
-					(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
+				if isStaleSeries(series) {
 					h.numStaleSeries.Inc()
 				}
 

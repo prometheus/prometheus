@@ -36,7 +36,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
-	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
@@ -4870,7 +4869,11 @@ func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T)
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			head, _ := newTestHead(t, 1000, compression.None, false)
+			opts := newTestHeadDefaultOptions(1000, false)
+			opts.EnableSTStorage.Store(true)
+			opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+			opts.EnableHistogramSTEncoding.Store(true)
+			head, _ := newTestHeadWithOptions(t, compression.None, opts)
 			defer func() {
 				require.NoError(t, head.Close())
 			}()
@@ -4891,9 +4894,12 @@ func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T)
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
-			// Step 2: Add a float staleness marker
+			// Step 2: Add a float staleness marker with a start timestamp. It is
+			// converted to a (float) histogram staleness marker, which must keep
+			// the start timestamp like the plain float staleness path does.
+			const markerST = int64(1900)
 			app = head.AppenderV2(context.Background())
-			_, err = app.Append(0, lbls, 0, 2000, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{})
+			_, err = app.Append(0, lbls, markerST, 2000, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
@@ -4910,6 +4916,8 @@ func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T)
 
 			actualFloatSamples := 0
 			actualHistogramSamples := 0
+			markerFound := false
+			var markerGotST int64
 
 			for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 				switch valType {
@@ -4918,12 +4926,20 @@ func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T)
 				case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 					actualHistogramSamples++
 				}
+				if it.AtT() == 2000 {
+					markerFound = true
+					markerGotST = it.AtST()
+				}
 			}
 			require.NoError(t, it.Err())
 
 			// Verify what was actually stored - should be 0 floats, 2 histograms (original + converted staleness marker)
 			require.Equal(t, 0, actualFloatSamples, "Should have 0 float samples stored")
 			require.Equal(t, 2, actualHistogramSamples, "Should have 2 histogram samples: original + converted staleness marker")
+
+			// The converted staleness marker must keep the start timestamp.
+			require.True(t, markerFound, "converted staleness marker not found")
+			require.Equal(t, markerST, markerGotST, "start timestamp must be preserved on the converted staleness marker")
 
 			// The metrics should match what was actually stored
 			require.Equal(t, float64(actualFloatSamples), getSampleCounter(sampleMetricTypeFloat),
@@ -4979,6 +4995,14 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 				{st: 30, ts: 300, h: testHistogram},
 			},
 			expectedSTs: []int64{10, 20, 30},
+		},
+		{
+			name: "Float staleness marker keeps ST",
+			samples: []sampleData{
+				{st: 10, ts: 100, fSample: 1.0},
+				{st: 20, ts: 200, fSample: math.Float64frombits(value.StaleNaN)},
+			},
+			expectedSTs: []int64{10, 20},
 		},
 	}
 
@@ -5058,48 +5082,11 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 	}
 }
 
-// readWALHistogramSamples reads the WAL at dir and returns the decoded
-// integer-histogram samples, float-histogram samples, and the record types
-// observed for each.
-func readWALHistogramSamples(t testing.TB, dir string) (intSamples []record.RefHistogramSample, intTypes []record.Type, floatSamples []record.RefFloatHistogramSample, floatTypes []record.Type) {
-	sr, err := wlog.NewSegmentsReader(dir)
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, sr.Close())
-	}()
-
-	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
-	r := wlog.NewReader(sr)
-	for r.Next() {
-		rec := r.Record()
-		switch typ := dec.Type(rec); typ {
-		case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
-			samples, err := dec.HistogramSamples(rec, nil)
-			require.NoError(t, err)
-			intSamples = append(intSamples, samples...)
-			for range samples {
-				intTypes = append(intTypes, typ)
-			}
-		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
-			samples, err := dec.FloatHistogramSamples(rec, nil)
-			require.NoError(t, err)
-			floatSamples = append(floatSamples, samples...)
-			for range samples {
-				floatTypes = append(floatTypes, typ)
-			}
-		}
-	}
-	require.NoError(t, r.Err())
-	return intSamples, intTypes, floatSamples, floatTypes
-}
-
-// TestHeadAppenderV2_Histogram_STInWAL verifies that start timestamps supplied
-// via AppenderV2.Append are written into the WAL for histogram and
-// float-histogram samples. The chunk encoder still drops histogram ST until
-// #18609 lands, so this test asserts at the WAL record layer.
-// TODO(krajorama,ywwg): Once histogram chunks preserve ST, simplify this test
-// to assert histogram ST through chunks or queries instead of WAL records.
-func TestHeadAppenderV2_Histogram_STInWAL(t *testing.T) {
+// TestHeadAppenderV2_Histogram_STStorage verifies that start timestamps supplied
+// via AppenderV2.Append round-trip through histogram and float-histogram chunks
+// and are returned by both the chunk iterator and the querier. When ST encoding
+// is disabled the histograms fall back to V1 chunks and report ST=0.
+func TestHeadAppenderV2_Histogram_STStorage(t *testing.T) {
 	type histSample struct {
 		st int64
 		ts int64
@@ -5119,42 +5106,37 @@ func TestHeadAppenderV2_Histogram_STInWAL(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name               string
-		enableSTStorage    bool
-		samples            []histSample
-		expectedSTs        []int64
-		expectedRecordType record.Type
-		isFloatHistogram   bool
+		name             string
+		enableSTStorage  bool
+		samples          []histSample
+		expectedSTs      []int64
+		isFloatHistogram bool
 	}{
 		{
-			name:               "Integer histograms with ST enabled",
-			enableSTStorage:    true,
-			samples:            []histSample{{st: 10, ts: 100, h: intHist(1)}, {st: 100, ts: 200, h: intHist(2)}, {st: 200, ts: 300, h: intHist(3)}},
-			expectedSTs:        []int64{10, 100, 200},
-			expectedRecordType: record.HistogramSamplesV2,
+			name:            "Integer histograms with ST enabled",
+			enableSTStorage: true,
+			samples:         []histSample{{st: 10, ts: 100, h: intHist(1)}, {st: 100, ts: 200, h: intHist(2)}, {st: 200, ts: 300, h: intHist(3)}},
+			expectedSTs:     []int64{10, 100, 200},
 		},
 		{
-			name:               "Float histograms with ST enabled",
-			enableSTStorage:    true,
-			samples:            []histSample{{st: 11, ts: 101, fh: floatHist(1)}, {st: 101, ts: 202, fh: floatHist(2)}, {st: 202, ts: 303, fh: floatHist(3)}},
-			expectedSTs:        []int64{11, 101, 202},
-			expectedRecordType: record.FloatHistogramSamplesV2,
-			isFloatHistogram:   true,
+			name:             "Float histograms with ST enabled",
+			enableSTStorage:  true,
+			samples:          []histSample{{st: 11, ts: 101, fh: floatHist(1)}, {st: 101, ts: 202, fh: floatHist(2)}, {st: 202, ts: 303, fh: floatHist(3)}},
+			expectedSTs:      []int64{11, 101, 202},
+			isFloatHistogram: true,
 		},
 		{
-			name:               "Integer histograms with ST disabled emit V1 records and ST=0",
-			enableSTStorage:    false,
-			samples:            []histSample{{st: 10, ts: 100, h: intHist(1)}, {st: 100, ts: 200, h: intHist(2)}},
-			expectedSTs:        []int64{0, 0},
-			expectedRecordType: record.HistogramSamples,
+			name:            "Integer histograms with ST disabled report ST=0",
+			enableSTStorage: false,
+			samples:         []histSample{{st: 10, ts: 100, h: intHist(1)}, {st: 100, ts: 200, h: intHist(2)}},
+			expectedSTs:     []int64{0, 0},
 		},
 		{
-			name:               "Float histograms with ST disabled emit V1 records and ST=0",
-			enableSTStorage:    false,
-			samples:            []histSample{{st: 11, ts: 101, fh: floatHist(1)}, {st: 101, ts: 202, fh: floatHist(2)}},
-			expectedSTs:        []int64{0, 0},
-			expectedRecordType: record.FloatHistogramSamples,
-			isFloatHistogram:   true,
+			name:             "Float histograms with ST disabled report ST=0",
+			enableSTStorage:  false,
+			samples:          []histSample{{st: 11, ts: 101, fh: floatHist(1)}, {st: 101, ts: 202, fh: floatHist(2)}},
+			expectedSTs:      []int64{0, 0},
+			isFloatHistogram: true,
 		},
 	}
 
@@ -5163,7 +5145,8 @@ func TestHeadAppenderV2_Histogram_STInWAL(t *testing.T) {
 			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
 			opts.EnableSTStorage.Store(tc.enableSTStorage)
 			opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
-			h, w := newTestHeadWithOptions(t, compression.None, opts)
+			opts.EnableHistogramSTEncoding.Store(tc.enableSTStorage)
+			h, _ := newTestHeadWithOptions(t, compression.None, opts)
 
 			lbls := labels.FromStrings("foo", "bar")
 
@@ -5173,29 +5156,59 @@ func TestHeadAppenderV2_Histogram_STInWAL(t *testing.T) {
 				require.NoError(t, err)
 			}
 			require.NoError(t, a.Commit())
-			require.NoError(t, h.Close())
 
-			intSamples, intTypes, floatSamples, floatTypes := readWALHistogramSamples(t, w.Dir())
+			ctx := context.Background()
 
-			if tc.isFloatHistogram {
-				require.Empty(t, intSamples, "no integer-histogram records expected")
-				require.Len(t, floatSamples, len(tc.samples))
-				var gotSTs []int64
-				for i, s := range floatSamples {
-					gotSTs = append(gotSTs, s.ST)
-					require.Equal(t, tc.expectedRecordType, floatTypes[i], "unexpected float-histogram record type")
+			// Verify ST values round-trip through the chunks.
+			idxReader, err := h.Index()
+			require.NoError(t, err)
+			defer idxReader.Close()
+
+			chkReader, err := h.Chunks()
+			require.NoError(t, err)
+			defer chkReader.Close()
+
+			p, err := idxReader.Postings(ctx, "foo", "bar")
+			require.NoError(t, err)
+
+			var lblBuilder labels.ScratchBuilder
+			require.True(t, p.Next())
+			sRef := p.At()
+
+			var chkMetas []chunks.Meta
+			require.NoError(t, idxReader.Series(sRef, &lblBuilder, &chkMetas))
+
+			var chunkSTs []int64
+			for _, meta := range chkMetas {
+				chk, iterable, err := chkReader.ChunkOrIterable(meta)
+				require.NoError(t, err)
+				require.Nil(t, iterable)
+
+				it := chk.Iterator(nil)
+				for it.Next() != chunkenc.ValNone {
+					chunkSTs = append(chunkSTs, it.AtST())
 				}
-				require.Equal(t, tc.expectedSTs, gotSTs)
-			} else {
-				require.Empty(t, floatSamples, "no float-histogram records expected")
-				require.Len(t, intSamples, len(tc.samples))
-				var gotSTs []int64
-				for i, s := range intSamples {
-					gotSTs = append(gotSTs, s.ST)
-					require.Equal(t, tc.expectedRecordType, intTypes[i], "unexpected integer-histogram record type")
-				}
-				require.Equal(t, tc.expectedSTs, gotSTs)
+				require.NoError(t, it.Err())
 			}
+			require.Equal(t, tc.expectedSTs, chunkSTs, "ST values should round-trip through chunks")
+
+			// Verify the querier returns the same ST values.
+			q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			defer q.Close()
+
+			ss := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+			require.True(t, ss.Next())
+			series := ss.At()
+			require.NoError(t, ss.Err())
+
+			seriesIt := series.Iterator(nil)
+			var queriedSTs []int64
+			for seriesIt.Next() != chunkenc.ValNone {
+				queriedSTs = append(queriedSTs, seriesIt.AtST())
+			}
+			require.NoError(t, seriesIt.Err())
+			require.Equal(t, tc.expectedSTs, queriedSTs, "querier should return same ST values as chunk iterator")
 		})
 	}
 }

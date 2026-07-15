@@ -288,7 +288,7 @@ func (c versionChangeTest) snapshotQueryRange(t *testing.T, end time.Time) strin
 	return string(parsed.Data.Result)
 }
 
-func ensureHealthyLogs(t *testing.T, r io.Reader) {
+func ensureHealthyLogs(t testing.TB, r io.Reader) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()

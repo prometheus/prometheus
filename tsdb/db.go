@@ -1094,6 +1094,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			PD:                          opts.PostingsDecoderFactory,
 			UseUncachedIO:               opts.UseUncachedIO,
 			BlockExcludeFilter:          opts.BlockCompactionExcludeFunc,
+			FloatChunkEncoding:          db.floatChunkEncoding,
 		})
 	}
 	if err != nil {
@@ -2732,13 +2733,24 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 	return blockQueriers, nil
 }
 
+// floatChunkEncoding returns the float chunk encoding currently in effect,
+// following runtime configuration reloads. Falls back to the startup option before
+// the head exists; only called from compaction and queries, which start after
+// open() has set db.head.
+func (db *DB) floatChunkEncoding() chunkenc.Encoding {
+	if h := db.head; h != nil {
+		return chunkenc.Encoding(h.opts.FloatChunkEncoding.Load())
+	}
+	return db.opts.FloatChunkEncoding
+}
+
 // ChunkQuerier returns a new chunk querier over the data partition for the given time range.
 func (db *DB) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	blockQueriers, err := db.blockChunkQuerierForRange(mint, maxt)
 	if err != nil {
 		return nil, err
 	}
-	return storage.NewMergeChunkQuerier(blockQueriers, nil, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), nil
+	return storage.NewMergeChunkQuerier(blockQueriers, nil, storage.NewCompactingChunkSeriesMergerWithFloatEncoding(storage.ChainedSeriesMerge, db.floatChunkEncoding)), nil
 }
 
 func (db *DB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
