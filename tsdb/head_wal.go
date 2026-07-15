@@ -714,7 +714,8 @@ func (s *memSeries) latestInOrderValueType() chunkenc.ValueType {
 // staleness marker, matching the live commitFloats path, so replay reproduces
 // the same chunk types instead of appending a float to a histogram series.
 func (h *Head) appendWALFloat(ms *memSeries, s record.RefSample, opts chunkOpts) {
-	if value.IsStaleNaN(s.V) {
+	isStale := value.IsStaleNaN(s.V)
+	if isStale {
 		// Mirror commitFloats: decide the marker type from the series' most recent
 		// in-order sample. Its type is taken from the newest chunk so that a
 		// preceding histogram in an m-mapped chunk (whose samples replay skips) is
@@ -730,7 +731,6 @@ func (h *Head) appendWALFloat(ms *memSeries, s record.RefSample, opts chunkOpts)
 	}
 
 	wasStale := isStaleSeries(ms)
-	isStale := value.IsStaleNaN(s.V)
 	sampleInOrder, _ := h.appendChunkAndMmap(ms, func() (bool, bool) {
 		return ms.append(s.ST, s.T, s.V, 0, opts)
 	})
