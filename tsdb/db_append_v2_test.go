@@ -2533,11 +2533,19 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier_AppendV
 	// Until that ref is set, the second querier would capture the stale ref (0)
 	// and permanently block the OOO reader-wait loop, which has no timeout, hanging
 	// the test on slow runners.
+	// If compaction exits before publishing the ref, stop waiting so its error can
+	// be reported below instead of being masked by the timeout.
 	require.Eventually(t, func() bool {
+		if compactionComplete.Load() {
+			return true
+		}
 		db.mtx.RLock()
 		defer db.mtx.RUnlock()
 		return db.lastGarbageCollectedMmapRef != 0
 	}, time.Minute, 10*time.Millisecond, "CompactOOOHead did not reach the reader-wait phase")
+	if compactionComplete.Load() {
+		require.NoError(t, <-compactionErr)
+	}
 	// The compaction must still be waiting for querierCreatedBeforeCompaction to be
 	// closed. If it does not wait, then the query will return incorrect results or fail.
 	require.False(t, compactionComplete.Load(), "compaction completed before reading chunks or closing querier created before compaction")
