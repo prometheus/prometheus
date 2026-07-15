@@ -730,12 +730,15 @@ func (h *Head) appendWALFloat(ms *memSeries, s record.RefSample, opts chunkOpts)
 		}
 	}
 
-	wasStale := isStaleSeries(ms)
+	wasStale, wasHistogram, oldBuckets := ms.sampleState()
 	sampleInOrder, _ := h.appendChunkAndMmap(ms, func() (bool, bool) {
 		return ms.append(s.ST, s.T, s.V, 0, opts)
 	})
 	if sampleInOrder {
 		h.updateStaleSeriesMetricOnAppend(wasStale, isStale)
+		if wasHistogram {
+			h.updateNativeHistogramMetricsOnAppend(true, false, oldBuckets, 0)
+		}
 	}
 }
 
@@ -743,21 +746,25 @@ func (h *Head) appendWALFloat(ms *memSeries, s record.RefSample, opts chunkOpts)
 // hist/floatHist must be non-nil) and updates the stale-series gauge if the
 // sample is accepted in-order.
 func (h *Head) appendWALHistogram(ms *memSeries, st, t int64, hist *histogram.Histogram, floatHist *histogram.FloatHistogram, opts chunkOpts) {
-	wasStale := isStaleSeries(ms)
+	wasStale, wasHistogram, oldBuckets := ms.sampleState()
 	var isStale, sampleInOrder bool
+	var newBuckets int
 	if hist != nil {
 		isStale = value.IsStaleNaN(hist.Sum)
+		newBuckets = len(hist.PositiveBuckets) + len(hist.NegativeBuckets)
 		sampleInOrder, _ = h.appendChunkAndMmap(ms, func() (bool, bool) {
 			return ms.appendHistogram(st, t, hist, 0, opts)
 		})
 	} else {
 		isStale = value.IsStaleNaN(floatHist.Sum)
+		newBuckets = len(floatHist.PositiveBuckets) + len(floatHist.NegativeBuckets)
 		sampleInOrder, _ = h.appendChunkAndMmap(ms, func() (bool, bool) {
 			return ms.appendFloatHistogram(st, t, floatHist, 0, opts)
 		})
 	}
 	if sampleInOrder {
 		h.updateStaleSeriesMetricOnAppend(wasStale, isStale)
+		h.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
 	}
 }
 
@@ -1777,8 +1784,13 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 				series.lastHistogramValue = csr.lastHistogramValue
 				series.lastFloatHistogramValue = csr.lastFloatHistogramValue
 
-				if isStaleSeries(series) {
+				stale, isHist, buckets := series.sampleState()
+				if stale {
 					h.numStaleSeries.Inc()
+				}
+				if isHist {
+					h.numNativeHistogramSeries.Inc()
+					h.addNativeHistogramBuckets(buckets)
 				}
 
 				app, err := series.headChunks.chunk.Appender()

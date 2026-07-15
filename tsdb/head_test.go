@@ -8260,6 +8260,144 @@ func TestHead_WALReplayStaleMarkerTypeConsistency(t *testing.T) {
 	}
 }
 
+func TestHead_NumNativeHistogramSeriesAndBuckets(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	t.Cleanup(func() {
+		// Captures head by reference, so it closes the final head after restarts.
+		_ = head.Close()
+	})
+	require.NoError(t, head.Init(0))
+
+	// Initially, there are no native histogram series or buckets.
+	require.Equal(t, uint64(0), head.NumNativeHistogramSeries())
+	require.Equal(t, uint64(0), head.NumNativeHistogramBuckets())
+
+	appendSample := func(lbls labels.Labels, ts int64, val float64) {
+		app := head.Appender(context.Background())
+		_, err := app.Append(0, lbls, ts, val)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+	appendHistogram := func(lbls labels.Labels, ts int64, val *histogram.Histogram) {
+		app := head.Appender(context.Background())
+		_, err := app.AppendHistogram(0, lbls, ts, val, nil)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+	appendFloatHistogram := func(lbls labels.Labels, ts int64, val *histogram.FloatHistogram) {
+		app := head.Appender(context.Background())
+		_, err := app.AppendHistogram(0, lbls, ts, nil, val)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+
+	verifyCounts := func(numHistogramSeries, numHistogramBuckets, numSeries int) {
+		t.Helper()
+		require.Equal(t, uint64(numHistogramSeries), head.NumNativeHistogramSeries())
+		require.Equal(t, uint64(numHistogramBuckets), head.NumNativeHistogramBuckets())
+		require.Equal(t, uint64(numSeries), head.NumSeries())
+	}
+
+	restartHeadAndVerifyCounts := func(numHistogramSeries, numHistogramBuckets, numSeries int) {
+		t.Helper()
+		verifyCounts(numHistogramSeries, numHistogramBuckets, numSeries)
+
+		require.NoError(t, head.Close())
+
+		wal, err := wlog.NewSize(nil, nil, filepath.Join(head.opts.ChunkDirRoot, "wal"), 32768, compression.None)
+		require.NoError(t, err)
+		head, err = NewHead(nil, nil, wal, nil, head.opts, nil)
+		require.NoError(t, err)
+		require.NoError(t, head.Init(0))
+
+		verifyCounts(numHistogramSeries, numHistogramBuckets, numSeries)
+	}
+
+	// The standard test histograms carry 4 positive and 4 negative buckets each.
+	stdHist := tsdbutil.GenerateTestHistograms(3)
+	require.Equal(t, 8, len(stdHist[0].PositiveBuckets)+len(stdHist[0].NegativeBuckets))
+	stdFloatHist := tsdbutil.GenerateTestFloatHistograms(3)
+	require.Equal(t, 8, len(stdFloatHist[0].PositiveBuckets)+len(stdFloatHist[0].NegativeBuckets))
+	// A histogram with a different (3) bucket count, to exercise bucket deltas.
+	threeBucketHist := &histogram.Histogram{
+		// Buckets accumulate to 2, 3, 4, so the observation count is 9.
+		Count:           9,
+		ZeroThreshold:   0.001,
+		Schema:          1,
+		Sum:             10,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+		PositiveBuckets: []int64{2, 1, 1},
+	}
+
+	series1 := labels.FromStrings("name", "series1")
+	series2 := labels.FromStrings("name", "series2")
+
+	// Plain float series never count as native histogram series.
+	appendSample(series1, 100, 1)
+	verifyCounts(0, 0, 1)
+
+	// A float series turning into a native histogram series is counted, and its
+	// buckets are added.
+	appendHistogram(series1, 110, stdHist[0])
+	verifyCounts(1, 8, 1)
+
+	// Another native histogram sample with the same bucket count keeps the counts.
+	appendHistogram(series1, 120, stdHist[1])
+	verifyCounts(1, 8, 1)
+
+	// A new series that starts directly as a float histogram is counted.
+	appendFloatHistogram(series2, 100, stdFloatHist[0])
+	verifyCounts(2, 16, 2)
+
+	restartHeadAndVerifyCounts(2, 16, 2)
+
+	// A native histogram sample with fewer buckets adjusts the bucket gauge by
+	// the delta (8 -> 3).
+	appendHistogram(series1, 130, threeBucketHist)
+	verifyCounts(2, 11, 2)
+
+	// A float sample on a native histogram series removes it from both gauges.
+	appendSample(series1, 140, 5)
+	verifyCounts(1, 8, 2)
+
+	restartHeadAndVerifyCounts(1, 8, 2)
+
+	// A proper staleness marker (an empty histogram) keeps the series counted as
+	// a native histogram series but drops its buckets to zero.
+	staleFloatHist := &histogram.FloatHistogram{Sum: math.Float64frombits(value.StaleNaN)}
+	appendFloatHistogram(series2, 110, staleFloatHist)
+	verifyCounts(1, 0, 2)
+
+	// A subsequent non-stale float histogram restores the bucket count.
+	appendFloatHistogram(series2, 120, stdFloatHist[1])
+	verifyCounts(1, 8, 2)
+
+	// This will test restarting with snapshot.
+	head.opts.EnableMemorySnapshotOnShutdown = true
+	restartHeadAndVerifyCounts(1, 8, 2)
+
+	// Garbage collection: a removed native histogram series decrements both gauges.
+	// Keep series2 alive with a fresh sample, then truncate away the older series1.
+	appendFloatHistogram(series2, 400, stdFloatHist[2])
+	require.NoError(t, head.Truncate(300))
+	head.gc()
+	// series1 (float, last sample at ts 140) is gone; series2 remains as a native
+	// histogram series with 8 buckets.
+	verifyCounts(1, 8, 1)
+
+	// A brand new series starting directly as a native histogram is counted.
+	series3 := labels.FromStrings("name", "series3")
+	appendHistogram(series3, 400, stdHist[2])
+	verifyCounts(2, 16, 2)
+
+	// GC of that native histogram series decrements the gauges again.
+	appendFloatHistogram(series2, 500, stdFloatHist[0])
+	require.NoError(t, head.Truncate(450))
+	head.gc()
+	// series3 (last sample at ts 400) is removed, series2 remains.
+	verifyCounts(1, 8, 1)
+}
+
 // TestHead_FilterSelectedSeriesAndSortPostings exercises the helper directly, covering the
 // three outcomes for a given ref: kept (clean series), skipped (series carries OOO data), and
 // silently dropped (ref does not resolve to any series in the head).
