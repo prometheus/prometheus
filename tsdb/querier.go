@@ -550,7 +550,8 @@ type seriesData struct {
 }
 
 // Labels implements part of storage.Series and storage.ChunkSeries.
-func (s *seriesData) Labels() labels.Labels { return s.labels }
+func (s *seriesData) Labels() labels.Labels      { return s.labels }
+func (s *seriesData) OriginalLabelsHash() uint64 { return s.labels.Hash() }
 
 // blockBaseSeriesSet allows to iterate over all series in the single block.
 // Iterated series are trimmed with given min and max time as well as tombstones.

@@ -447,6 +447,10 @@ func NewStorageSeries(series Series) *StorageSeries {
 	}
 }
 
+func (ss *StorageSeries) OriginalLabelsHash() uint64 {
+	return ss.series.Metric.Hash()
+}
+
 func (ss *StorageSeries) Labels() labels.Labels {
 	return ss.series.Metric
 }
