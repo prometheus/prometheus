@@ -8207,6 +8207,8 @@ func TestHead_WALReplayStaleMarkerTypeConsistency(t *testing.T) {
 			}
 			require.NoError(t, it.Err())
 			require.False(t, ss.Next())
+			require.NoError(t, ss.Err())
+			require.Empty(t, ss.Warnings())
 			require.True(t, found, "staleness marker at t=200 not found")
 			require.Equal(t, wantType, gotType, "replayed staleness marker must keep the series' native histogram type")
 		})
