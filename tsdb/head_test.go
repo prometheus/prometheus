@@ -1801,7 +1801,7 @@ func TestMemSeries_truncateChunks_scenarios(t *testing.T) {
 			}
 
 			if tc.headChunks == 0 {
-				series.headChunks = nil
+				series.setHeadChunks(nil, 0)
 			} else {
 				for i := headStart; i < chunkRange*(tc.mmappedChunks+tc.headChunks); i += chunkStep {
 					ok, _ := series.append(0, int64(i), float64(i), 0, cOpts)
@@ -1843,6 +1843,22 @@ func TestMemSeries_truncateChunks_scenarios(t *testing.T) {
 			require.Equal(t, tc.expectedFirstChunkID, series.firstChunkID, "wrong firstChunkID after truncation")
 		})
 	}
+
+	t.Run("head chunk count mismatch", func(t *testing.T) {
+		// truncateChunksBefore must advance firstChunkID by the actual number of
+		// removed chunks, measured from the list itself, even if headChunkCount
+		// drifted from the real list length.
+		s := &memSeries{ref: 1}
+		s.setHeadChunks(buildHeadChunksLight(5), 5)
+		s.headChunkCount.Store(7) // Drifted: the list has 5 chunks.
+
+		// Chunks span [0,999]..[4000,4999]; mint=2000 drops the two oldest.
+		removed := s.truncateChunksBefore(2000, 0)
+		require.Equal(t, 2, removed)
+		require.Equal(t, chunks.HeadChunkID(2), s.firstChunkID)
+		require.Equal(t, 3, s.headChunks.len())
+		require.Equal(t, uint32(3), s.headChunkCount.Load(), "truncation re-syncs the counter from the walk")
+	})
 }
 
 func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {

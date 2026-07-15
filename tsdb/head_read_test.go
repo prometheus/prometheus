@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"sync"
 	"testing"
@@ -22,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/compression"
@@ -167,7 +169,7 @@ func TestMemSeries_chunk(t *testing.T) {
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
 				require.Equal(t, chunkRange*3, s.headChunks.oldest().minTime, "wrong minTime on last headChunks element")
 				require.Equal(t, (chunkRange*4)-chunkStep, s.headChunks.maxTime, "wrong maxTime on first headChunks element")
-				s.headChunks = nil
+				s.setHeadChunks(nil, 0)
 			},
 			inputID:  0,
 			expected: outMmappedChunk,
@@ -181,7 +183,7 @@ func TestMemSeries_chunk(t *testing.T) {
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
 				require.Equal(t, chunkRange*3, s.headChunks.oldest().minTime, "wrong minTime on last headChunks element")
 				require.Equal(t, (chunkRange*4)-chunkStep, s.headChunks.maxTime, "wrong maxTime on first headChunks element")
-				s.headChunks = nil
+				s.setHeadChunks(nil, 0)
 			},
 			inputID:  2,
 			expected: outMmappedChunk,
@@ -195,7 +197,7 @@ func TestMemSeries_chunk(t *testing.T) {
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
 				require.Equal(t, chunkRange*3, s.headChunks.oldest().minTime, "wrong minTime on last headChunks element")
 				require.Equal(t, (chunkRange*4)-chunkStep, s.headChunks.maxTime, "wrong maxTime on first headChunks element")
-				s.headChunks = nil
+				s.setHeadChunks(nil, 0)
 			},
 			inputID:  3,
 			expected: outErr,
@@ -409,6 +411,25 @@ func TestMemSeries_chunk(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("head chunk count mismatch", func(t *testing.T) {
+		// A drifted headChunkCount (larger than the actual list length) must
+		// yield ErrNotFound, not a panic or a nil chunk with a nil error.
+		s := &memSeries{ref: 1}
+		s.headChunkCount.Store(2) // Drifted: the list is empty.
+
+		// ix == count-1: the walk is skipped entirely (offset 0).
+		c, headChunk, isOpen, err := s.chunk(1, nil, nil, nil)
+		require.ErrorIs(t, err, storage.ErrNotFound)
+		require.Nil(t, c)
+		require.False(t, headChunk)
+		require.False(t, isOpen)
+
+		// ix < count-1: the walk runs off the end of the shorter list.
+		c, _, _, err = s.chunk(0, nil, nil, nil)
+		require.ErrorIs(t, err, storage.ErrNotFound)
+		require.Nil(t, c)
+	})
 }
 
 // TestMemSeries_chunk_FastPath verifies that the O(1) indexed lookup via a
@@ -474,6 +495,10 @@ func TestMemSeries_chunk_FastPath(t *testing.T) {
 			require.Same(t, chkLL, chkFP, "ix=%d: head chunk pointer mismatch", ix)
 		}
 	}
+
+	// Out-of-range ID via the fast path must return ErrNotFound.
+	_, _, _, err = series.chunk(chunks.HeadChunkID(totalChunks), chunkDiskMapper, memChunkPool, hc)
+	require.ErrorIs(t, err, storage.ErrNotFound)
 }
 
 func TestHeadIndexReader_PostingsForLabelMatching(t *testing.T) {
@@ -815,7 +840,13 @@ func TestHeadChunkReaderCache(t *testing.T) {
 	})
 }
 
-var benchSink *memChunk
+// Benchmark sinks prevent the compiler from eliding the measured calls.
+var (
+	benchSinkChunk  *memChunk
+	benchSinkChunks []*memChunk
+	benchSinkMeta   []chunks.Meta
+	benchSinkInt    int
+)
 
 // BenchmarkSeriesChunkIteration measures iterating all N head chunks of a series
 // oldest-to-newest (the real query pattern) using the cached head-chunks slice.
@@ -827,11 +858,12 @@ func BenchmarkSeriesChunkIteration(b *testing.B) {
 				firstChunkID: 0,
 				headChunks:   buildHeadChunksLight(n),
 			}
+			s.setHeadChunks(s.headChunks, uint32(n))
 			hc := collectHeadChunks(s.headChunks, nil)
 			b.ReportAllocs()
 			for b.Loop() {
 				for i := range n {
-					benchSink, _, _, _ = s.chunk(chunks.HeadChunkID(i), nil, nil, hc)
+					benchSinkChunk, _, _, _ = s.chunk(chunks.HeadChunkID(i), nil, nil, hc)
 				}
 			}
 		})
@@ -851,4 +883,126 @@ func buildHeadChunksLight(n int) *memChunk {
 		}
 	}
 	return head
+}
+
+func BenchmarkAppendSeriesChunks(b *testing.B) {
+	for _, numHeadChunks := range []int{1, 4, 16, 64, 256} {
+		b.Run(fmt.Sprintf("head only/%d", numHeadChunks), func(b *testing.B) {
+			s := &memSeries{
+				ref:        1,
+				headChunks: buildHeadChunksLight(numHeadChunks),
+			}
+			mint := int64(0)
+			maxt := int64(numHeadChunks) * 1000
+			chks := make([]chunks.Meta, 0, numHeadChunks)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				chks, _ = appendSeriesChunks(s, mint, maxt, chks[:0], nil)
+			}
+			benchSinkMeta = chks
+		})
+
+		b.Run(fmt.Sprintf("with mmapped/%d", numHeadChunks), func(b *testing.B) {
+			// Same number of mmapped chunks as head chunks. Mmapped chunks are
+			// strictly older than all head chunks, as in a real series.
+			mmapped := make([]*mmappedChunk, numHeadChunks)
+			for i := range numHeadChunks {
+				mmapped[i] = &mmappedChunk{
+					minTime: int64(i-numHeadChunks) * 1000,
+					maxTime: int64(i-numHeadChunks)*1000 + 999,
+				}
+			}
+			s := &memSeries{
+				ref:           1,
+				headChunks:    buildHeadChunksLight(numHeadChunks),
+				mmappedChunks: mmapped,
+			}
+			mint := int64(-numHeadChunks) * 1000
+			maxt := int64(numHeadChunks) * 1000
+			chks := make([]chunks.Meta, 0, numHeadChunks*2)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				chks, _ = appendSeriesChunks(s, mint, maxt, chks[:0], nil)
+			}
+			benchSinkMeta = chks
+		})
+	}
+}
+
+func BenchmarkCollectHeadChunks(b *testing.B) {
+	for _, n := range []int{1, 4, 16, 64, 256} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			head := buildHeadChunksLight(n)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				benchSinkChunks = collectHeadChunks(head, make([]*memChunk, 0, n))
+			}
+		})
+	}
+}
+
+func BenchmarkSeriesChunk(b *testing.B) {
+	for _, n := range []int{1, 4, 16, 64, 256} {
+		for _, pos := range []struct {
+			name string
+			id   chunks.HeadChunkID
+		}{
+			{name: "oldest", id: 0}, // Worst case: the full list walk.
+			{name: "middle", id: chunks.HeadChunkID(n / 2)},
+		} {
+			if n < 2 && pos.name == "middle" {
+				// With a single chunk, "middle" is the same lookup as "oldest".
+				continue
+			}
+			b.Run(fmt.Sprintf("%d/%s", n, pos.name), func(b *testing.B) {
+				s := &memSeries{
+					ref:          1,
+					firstChunkID: 0,
+					headChunks:   buildHeadChunksLight(n),
+				}
+				s.setHeadChunks(s.headChunks, uint32(n))
+
+				b.ReportAllocs()
+				for b.Loop() {
+					c, _, _, err := s.chunk(pos.id, nil, nil, nil)
+					if err != nil {
+						b.Fatal(err)
+					}
+					benchSinkChunk = c
+				}
+			})
+		}
+	}
+}
+
+func BenchmarkTruncateChunksBefore(b *testing.B) {
+	for _, n := range []int{1, 4, 16, 64, 256} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			// mint truncates the oldest half of head chunks.
+			mint := int64(n/2) * 1000
+			head := buildHeadChunksLight(n)
+			headChunks := collectHeadChunks(head, nil)
+			removedHeadChunks := n / 2
+			var boundary, removedTail *memChunk
+			if removedHeadChunks > 0 {
+				boundary = headChunks[removedHeadChunks]
+				removedTail = headChunks[removedHeadChunks-1]
+			}
+			s := &memSeries{firstChunkID: 0}
+
+			b.ReportAllocs()
+			for b.Loop() {
+				if boundary != nil {
+					boundary.prev = removedTail
+				}
+				s.firstChunkID = 0
+				s.mmappedChunks = nil
+				s.setHeadChunks(head, uint32(n))
+				benchSinkInt = s.truncateChunksBefore(mint, 0)
+			}
+		})
+	}
 }
