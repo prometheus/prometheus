@@ -656,9 +656,19 @@ func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool,
 // (and not the chunkenc.Chunk inside it) can be garbage collected after its usage.
 // if isOpen is true, it means that the returned *memChunk is used for appends.
 func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool, headChunks []*memChunk) (chunk *memChunk, headChunk, isOpen bool, err error) {
-	// ix is the chunk's position in the logical sequence: mmappedChunks first
-	// (oldest at index 0), then headChunks (oldest first). Values 0..len(mmappedChunks)-1
-	// refer to mmapped chunks; values >= len(mmappedChunks) refer to head chunks.
+	// ix is the chunk's oldest-first position in the logical sequence. Chunk IDs
+	// increase by one when a chunk is created, so id-firstChunkID yields that position.
+	// s.mmappedChunks is stored oldest-first, while the s.headChunks linked list is
+	// stored newest-first:
+	//
+	// memSeries {
+	//   mmappedChunks: [t0, t1, t2]
+	//   headChunks:    {t5}->{t4}->{t3}
+	// }
+	//
+	// Values below len(s.mmappedChunks) index the slice directly. Remaining values
+	// index head chunks oldest-first; the pre-collected headChunks slice already uses
+	// this order, while the linked-list fallback reverses the index.
 	ix := int(id) - int(s.firstChunkID)
 	if ix < 0 {
 		return nil, false, false, storage.ErrNotFound

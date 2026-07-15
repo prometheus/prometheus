@@ -495,6 +495,10 @@ func TestMemSeries_chunk_FastPath(t *testing.T) {
 			require.Same(t, chkLL, chkFP, "ix=%d: head chunk pointer mismatch", ix)
 		}
 	}
+
+	// Out-of-range ID via the fast path must return ErrNotFound.
+	_, _, _, err = series.chunk(chunks.HeadChunkID(totalChunks), chunkDiskMapper, memChunkPool, hc)
+	require.ErrorIs(t, err, storage.ErrNotFound)
 }
 
 func TestHeadIndexReader_PostingsForLabelMatching(t *testing.T) {
