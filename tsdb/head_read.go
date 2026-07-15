@@ -691,7 +691,7 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 		return headChunks[ix], true, ix == len(headChunks)-1, nil
 	}
 
-	// Fallback: walk the linked list using cached length.
+	// Fallback: walk the linked list.
 	headChunksLen := int(s.headChunkCount.Load())
 	if ix >= headChunksLen {
 		return nil, false, false, storage.ErrNotFound
