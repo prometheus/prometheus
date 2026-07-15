@@ -4129,8 +4129,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier(t *test
 	// lastGarbageCollectedMmapRef before creating the second querier below.
 	// Until that ref is set, the second querier would capture the stale ref (0)
 	// and permanently block the OOO reader-wait loop, which has no timeout, hanging
-	// the test on slow runners. A fixed sleep is not enough here: writing the block
-	// and reloading are disk-I/O bound and can exceed it on slow Windows CI runners.
+	// the test on slow runners.
 	require.Eventually(t, func() bool {
 		db.mtx.RLock()
 		defer db.mtx.RUnlock()
