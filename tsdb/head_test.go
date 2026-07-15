@@ -8144,74 +8144,103 @@ func TestHead_NumStaleSeries_WALReplayIgnoresRejectedCrossTypeSamples(t *testing
 // TestHead_WALReplayStaleMarkerTypeConsistency verifies that a float staleness
 // marker appended to a native histogram series is replayed as a histogram (or
 // float-histogram) staleness marker — matching the live commitFloats conversion
-// — rather than as a float sample landing on a histogram series.
+// — rather than as a float sample landing on a histogram series. This must hold
+// even when the preceding histogram is only in an m-mapped chunk (whose samples
+// WAL replay skips), so the marker type is recovered from the chunk encoding.
 func TestHead_WALReplayStaleMarkerTypeConsistency(t *testing.T) {
 	for _, floatHistogram := range []bool{false, true} {
-		name := "histogram"
-		wantType := chunkenc.ValHistogram
-		if floatHistogram {
-			name = "float_histogram"
-			wantType = chunkenc.ValFloatHistogram
+		for _, mmapped := range []bool{false, true} {
+			for _, stStorage := range []bool{false, true} {
+				name := fmt.Sprintf("floatHistogram=%t/mmapped=%t/stStorage=%t", floatHistogram, mmapped, stStorage)
+				t.Run(name, func(t *testing.T) {
+					opts := newTestHeadDefaultOptions(1000, false)
+					if stStorage {
+						opts.EnableSTStorage.Store(true)
+						opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+						opts.EnableHistogramSTEncoding.Store(true)
+					}
+					head, _ := newTestHeadWithOptions(t, compression.None, opts)
+					t.Cleanup(func() {
+						// Captures head by reference, so it closes the reopened head.
+						_ = head.Close()
+					})
+					require.NoError(t, head.Init(0))
+
+					lbls := labels.FromStrings("foo", "bar")
+					wantType := chunkenc.ValHistogram
+					if floatHistogram {
+						wantType = chunkenc.ValFloatHistogram
+					}
+
+					// Establish the series as a native histogram.
+					app := head.Appender(context.Background())
+					var err error
+					if floatHistogram {
+						_, err = app.AppendHistogram(0, lbls, 100, nil, tsdbutil.GenerateTestFloatHistogram(1))
+					} else {
+						_, err = app.AppendHistogram(0, lbls, 100, tsdbutil.GenerateTestHistogram(1), nil)
+					}
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+
+					// For the m-mapped case the marker crosses the chunk-range boundary
+					// so the histogram chunk becomes a completed predecessor that gets
+					// m-mapped; on replay those histogram samples are skipped.
+					markerT := int64(200)
+					if mmapped {
+						markerT = 1000
+					}
+
+					// Append the staleness marker in a separate appender so it is logged
+					// as a float record (converted to a histogram marker for the chunk).
+					app = head.Appender(context.Background())
+					_, err = app.Append(0, lbls, markerT, math.Float64frombits(value.StaleNaN))
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+
+					if mmapped {
+						head.mmapHeadChunks()
+						s := head.series.getByHash(lbls.Hash(), lbls)
+						require.NotNil(t, s)
+						s.Lock()
+						nMmapped := len(s.mmappedChunks)
+						s.Unlock()
+						require.NotZero(t, nMmapped, "histogram chunk must be m-mapped for this case")
+					}
+
+					// Reopen, forcing WAL replay of the float staleness record.
+					require.NoError(t, head.Close())
+					wal, err := wlog.NewSize(nil, nil, filepath.Join(head.opts.ChunkDirRoot, "wal"), 32768, compression.None)
+					require.NoError(t, err)
+					head, err = NewHead(nil, nil, wal, nil, head.opts, nil)
+					require.NoError(t, err)
+					require.NoError(t, head.Init(0))
+
+					q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
+					require.NoError(t, err)
+					t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+					ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+					require.True(t, ss.Next())
+					it := ss.At().Iterator(nil)
+
+					var gotType chunkenc.ValueType
+					var found bool
+					for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+						if it.AtT() == markerT {
+							gotType = vt
+							found = true
+						}
+					}
+					require.NoError(t, it.Err())
+					require.False(t, ss.Next())
+					require.NoError(t, ss.Err())
+					require.Empty(t, ss.Warnings())
+					require.True(t, found, "staleness marker not found")
+					require.Equal(t, wantType, gotType, "replayed staleness marker must keep the series' native histogram type")
+				})
+			}
 		}
-		t.Run(name, func(t *testing.T) {
-			head, _ := newTestHead(t, 1000, compression.None, false)
-			t.Cleanup(func() {
-				// Captures head by reference, so it closes the reopened head.
-				_ = head.Close()
-			})
-			require.NoError(t, head.Init(0))
-
-			lbls := labels.FromStrings("foo", "bar")
-
-			// Establish the series as a native histogram.
-			app := head.Appender(context.Background())
-			var err error
-			if floatHistogram {
-				_, err = app.AppendHistogram(0, lbls, 100, nil, tsdbutil.GenerateTestFloatHistogram(1))
-			} else {
-				_, err = app.AppendHistogram(0, lbls, 100, tsdbutil.GenerateTestHistogram(1), nil)
-			}
-			require.NoError(t, err)
-			require.NoError(t, app.Commit())
-
-			// Append the staleness marker in a separate appender so it is logged as
-			// a float record (converted to a histogram marker only for the chunk).
-			app = head.Appender(context.Background())
-			_, err = app.Append(0, lbls, 200, math.Float64frombits(value.StaleNaN))
-			require.NoError(t, err)
-			require.NoError(t, app.Commit())
-
-			// Reopen, forcing WAL replay of the float staleness record.
-			require.NoError(t, head.Close())
-			wal, err := wlog.NewSize(nil, nil, filepath.Join(head.opts.ChunkDirRoot, "wal"), 32768, compression.None)
-			require.NoError(t, err)
-			head, err = NewHead(nil, nil, wal, nil, head.opts, nil)
-			require.NoError(t, err)
-			require.NoError(t, head.Init(0))
-
-			q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
-			require.NoError(t, err)
-			t.Cleanup(func() { require.NoError(t, q.Close()) })
-
-			ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-			require.True(t, ss.Next())
-			it := ss.At().Iterator(nil)
-
-			var gotType chunkenc.ValueType
-			var found bool
-			for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
-				if it.AtT() == 200 {
-					gotType = vt
-					found = true
-				}
-			}
-			require.NoError(t, it.Err())
-			require.False(t, ss.Next())
-			require.NoError(t, ss.Err())
-			require.Empty(t, ss.Warnings())
-			require.True(t, found, "staleness marker at t=200 not found")
-			require.Equal(t, wantType, gotType, "replayed staleness marker must keep the series' native histogram type")
-		})
 	}
 }
 

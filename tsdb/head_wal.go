@@ -672,6 +672,42 @@ func (h *Head) appendChunkAndMmap(ms *memSeries, appendFn func() (sampleInOrder,
 	return sampleInOrder, chunkCreated
 }
 
+// valueTypeForChunkEncoding maps a chunk encoding to the sample value type it holds.
+func valueTypeForChunkEncoding(enc chunkenc.Encoding) chunkenc.ValueType {
+	switch enc {
+	case chunkenc.EncXOR, chunkenc.EncXOR2:
+		return chunkenc.ValFloat
+	case chunkenc.EncHistogram, chunkenc.EncHistogramST:
+		return chunkenc.ValHistogram
+	case chunkenc.EncFloatHistogram, chunkenc.EncFloatHistogramST:
+		return chunkenc.ValFloatHistogram
+	default:
+		return chunkenc.ValNone
+	}
+}
+
+// latestInOrderValueType reports the value type of the series' most recent
+// in-order sample, taken from the newest materialized chunk. During WAL replay a
+// series' last-value pointers do not reflect samples already covered by m-mapped
+// chunks (those samples are skipped), so the chunk encoding is authoritative: it
+// recovers the histogram type when the preceding samples live only in an m-mapped
+// chunk. It falls back to the last-value fields when no chunk is present, and
+// defaults to ValFloat for a series with no in-order sample yet.
+func (s *memSeries) latestInOrderValueType() chunkenc.ValueType {
+	switch {
+	case s.headChunks != nil:
+		return valueTypeForChunkEncoding(s.headChunks.chunk.Encoding())
+	case len(s.mmappedChunks) > 0:
+		return valueTypeForChunkEncoding(s.mmappedChunks[len(s.mmappedChunks)-1].encoding)
+	case s.lastHistogramValue != nil:
+		return chunkenc.ValHistogram
+	case s.lastFloatHistogramValue != nil:
+		return chunkenc.ValFloatHistogram
+	default:
+		return chunkenc.ValFloat
+	}
+}
+
 // appendWALFloat replays a float sample and updates the stale-series gauge if the
 // sample is accepted in-order. A staleness marker for a series whose most recent
 // in-order sample is a native histogram is converted to a (float) histogram
@@ -680,12 +716,14 @@ func (h *Head) appendChunkAndMmap(ms *memSeries, appendFn func() (sampleInOrder,
 func (h *Head) appendWALFloat(ms *memSeries, s record.RefSample, opts chunkOpts) {
 	if value.IsStaleNaN(s.V) {
 		// Mirror commitFloats: decide the marker type from the series' most recent
-		// in-order sample.
-		switch {
-		case ms.lastHistogramValue != nil:
+		// in-order sample. Its type is taken from the newest chunk so that a
+		// preceding histogram in an m-mapped chunk (whose samples replay skips) is
+		// still recognised.
+		switch ms.latestInOrderValueType() {
+		case chunkenc.ValHistogram:
 			h.appendWALHistogram(ms, s.ST, s.T, &histogram.Histogram{Sum: s.V}, nil, opts)
 			return
-		case ms.lastFloatHistogramValue != nil:
+		case chunkenc.ValFloatHistogram:
 			h.appendWALHistogram(ms, s.ST, s.T, nil, &histogram.FloatHistogram{Sum: s.V}, opts)
 			return
 		}
