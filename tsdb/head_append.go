@@ -1363,6 +1363,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			case series.lastHistogramValue != nil:
 				b.histograms = append(b.histograms, record.RefHistogramSample{
 					Ref: series.ref,
+					ST:  s.ST,
 					T:   s.T,
 					H:   &histogram.Histogram{Sum: s.V},
 				})
@@ -1375,6 +1376,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			case series.lastFloatHistogramValue != nil:
 				b.floatHistograms = append(b.floatHistograms, record.RefFloatHistogramSample{
 					Ref: series.ref,
+					ST:  s.ST,
 					T:   s.T,
 					FH:  &histogram.FloatHistogram{Sum: s.V},
 				})
