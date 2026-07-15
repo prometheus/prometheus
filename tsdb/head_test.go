@@ -8053,7 +8053,13 @@ func TestHead_NumStaleSeries_MixedTypeRemoval(t *testing.T) {
 			appendStaleTestSample(t, head, staleKindFloat, keeper, 5000, false)
 			require.Equal(t, uint64(1), head.NumStaleSeries())
 
-			refs := []storage.SeriesRef{ref(head, crossType), ref(head, staleOnly), ref(head, keeper)}
+			crossTypeRef := ref(head, crossType)
+			staleOnlyRef := ref(head, staleOnly)
+			keeperRef := ref(head, keeper)
+			refs := []storage.SeriesRef{crossTypeRef, staleOnlyRef, keeperRef}
+			staleRefs, err := head.staleSeriesRefsNoOOOData(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, []storage.SeriesRef{staleOnlyRef}, staleRefs.sortedByRef)
 			tc.remove(t, head, refs)
 
 			require.Equal(t, tc.wantSeries, head.NumSeries())
