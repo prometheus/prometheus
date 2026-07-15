@@ -3031,12 +3031,10 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 // ref and may include refs of series deleted since the call began, which callers
 // resolve like any other stale postings entry. For shard counts larger than the
 // bucket count, the single candidate bucket is lazily sub-filtered by resolving
-// candidate refs' shard hashes. Bucket-indexed results capture candidate buckets
-// while all candidate buckets are locked, so multi-bucket results are internally
-// consistent. Shard 0 of 1 returns all head postings directly. It returns empty
-// postings when sharding is disabled or the shard index is out of range. The
-// context controls construction only; callers remain responsible for
-// cancellation while iterating the returned postings. Cancellation observed
+// candidate refs' shard hashes. Shard 0 of 1 returns all head postings directly.
+// It returns empty postings when sharding is disabled or the shard index is out
+// of range. The context controls construction only; callers remain responsible
+// for cancellation while iterating the returned postings. Cancellation observed
 // during construction is reported by the returned postings' Err method.
 func (h *Head) ShardedAllPostings(ctx context.Context, shardIndex, shardCount uint64) index.Postings {
 	if !h.opts.EnableSharding || shardIndex >= shardCount {

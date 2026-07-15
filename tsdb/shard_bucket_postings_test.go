@@ -203,6 +203,124 @@ func TestShardBucketPostings_PostingsFor(t *testing.T) {
 		require.Equal(t, []storage.SeriesRef{1, 3, 5, 7, 9}, got)
 	})
 
+	t.Run("snapshots stay valid after a later resort", func(t *testing.T) {
+		t.Parallel()
+		s := newShardBucketPostings(1)
+		s.add(1, 0)
+		s.add(3, 0)
+
+		snapshotLists, _ := s.postingsFor(0, 1)
+		s.add(2, 0)
+
+		require.Equal(t, []storage.SeriesRef{1, 2, 3}, expandShardCandidates(t, s, 0, 1))
+		snapshot, err := index.ExpandPostings(index.Merge(t.Context(), snapshotLists...))
+		require.NoError(t, err)
+		require.Equal(t, []storage.SeriesRef{1, 3}, snapshot)
+	})
+
+	t.Run("append proceeds while dirty sorting is unlocked", func(t *testing.T) {
+		t.Parallel()
+		s := newShardBucketPostings(1)
+		s.add(4, 0)
+		s.add(2, 0)
+
+		sortStarted := make(chan struct{})
+		allowSort := make(chan struct{})
+		s.sortUnlockedHook = func() {
+			close(sortStarted)
+			<-allowSort
+		}
+		type readResult struct {
+			refs []storage.SeriesRef
+			err  error
+		}
+		readDone := make(chan readResult, 1)
+		go func() {
+			lists, _ := s.postingsFor(0, 1)
+			refs, err := index.ExpandPostings(index.Merge(t.Context(), lists...))
+			readDone <- readResult{refs: refs, err: err}
+		}()
+		<-sortStarted
+
+		addDone := make(chan struct{})
+		go func() {
+			s.add(1, 0)
+			close(addDone)
+		}()
+		select {
+		case <-addDone:
+		case <-time.After(time.Second):
+			close(allowSort)
+			<-readDone
+			<-addDone
+			t.Fatal("append blocked while dirty bucket was sorted")
+		}
+		close(allowSort)
+		result := <-readDone
+
+		require.NoError(t, result.err)
+		require.Equal(t, []storage.SeriesRef{2, 4}, result.refs)
+		s.sortUnlockedHook = nil
+		require.Equal(t, []storage.SeriesRef{1, 2, 4}, expandShardCandidates(t, s, 0, 1))
+	})
+
+	t.Run("append proceeds while sort tail grows unlocked", func(t *testing.T) {
+		t.Parallel()
+		s := newShardBucketPostings(1)
+		s.add(4, 0)
+		s.add(2, 0)
+
+		const burst = replacementTailHeadroom + 1
+		s.sortUnlockedHook = func() {
+			for i := range burst {
+				s.add(chunks.HeadSeriesRef(100+i), 0)
+			}
+		}
+		tailCarryStarted := make(chan struct{})
+		allowTailCarry := make(chan struct{})
+		s.sortTailCarryHook = func() {
+			close(tailCarryStarted)
+			<-allowTailCarry
+		}
+		type readResult struct {
+			refs []storage.SeriesRef
+			err  error
+		}
+		readDone := make(chan readResult, 1)
+		go func() {
+			lists, _ := s.postingsFor(0, 1)
+			refs, err := index.ExpandPostings(index.Merge(t.Context(), lists...))
+			readDone <- readResult{refs: refs, err: err}
+		}()
+		<-tailCarryStarted
+
+		addDone := make(chan struct{})
+		go func() {
+			s.add(1, 0)
+			close(addDone)
+		}()
+		select {
+		case <-addDone:
+		case <-time.After(time.Second):
+			close(allowTailCarry)
+			<-addDone
+			<-readDone
+			t.Fatal("append blocked while the sort tail was carried")
+		}
+		close(allowTailCarry)
+		result := <-readDone
+
+		require.NoError(t, result.err)
+		require.Equal(t, []storage.SeriesRef{2, 4}, result.refs)
+		s.sortUnlockedHook = nil
+		s.sortTailCarryHook = nil
+		want := []storage.SeriesRef{1, 2, 4}
+		for i := range burst {
+			want = append(want, storage.SeriesRef(100+i))
+		}
+		require.Equal(t, want, expandShardCandidates(t, s, 0, 1))
+	})
+
 	t.Run("read sorts only candidate dirty buckets", func(t *testing.T) {
 		t.Parallel()
 		s := newShardBucketPostings(4)
@@ -277,12 +395,10 @@ func TestShardBucketPostings_Remove(t *testing.T) {
 			s.add(chunks.HeadSeriesRef(ref), uint64(ref))
 		}
 
-		genBefore := s.buckets[0].gen
-		// The deleted refs map to bucket 0 by shard hash but are not present
-		// in it: removal must leave the bucket untouched, without taking its
-		// write lock (observable through the unchanged generation).
+		before := snapshotShardBuckets(s)[0]
+		// The deleted refs map to bucket 0 but are not present in it.
 		s.remove(map[storage.SeriesRef]uint64{1000: 0, 1002: 2})
-		require.Equal(t, genBefore, s.buckets[0].gen)
+		require.Equal(t, before, snapshotShardBuckets(s)[0])
 		require.Equal(t, []storage.SeriesRef{2, 4, 6, 8}, expandShardCandidates(t, s, 0, 2))
 	})
 
@@ -307,95 +423,51 @@ func TestShardBucketPostings_Remove(t *testing.T) {
 		require.Equal(t, []storage.SeriesRef{1, 3, 5, 6, 7, 8}, expandShardCandidates(t, s, 0, 1))
 	})
 
-	t.Run("falls back when the bucket is replaced during the unlocked rebuild", func(t *testing.T) {
+	t.Run("clean readers proceed during the unlocked rebuild", func(t *testing.T) {
 		t.Parallel()
 		s := newShardBucketPostings(1)
-		// Out-of-order adds leave the bucket dirty, so a read during the
-		// unlocked rebuild re-sorts it and replaces the refs slice.
-		for _, ref := range []chunks.HeadSeriesRef{2, 6, 4, 8} {
+		for ref := chunks.HeadSeriesRef(1); ref <= 6; ref++ {
 			s.add(ref, 0)
 		}
-		require.NotEqual(t, cleanShardBucket, s.buckets[0].dirty)
 
-		genBefore := s.buckets[0].gen
+		rebuildStarted := make(chan struct{})
+		allowCommit := make(chan struct{})
 		s.removeUnlockedHook = func() {
-			// Sorts the dirty bucket, bumping the generation.
-			expandShardCandidates(t, s, 0, 1)
+			close(rebuildStarted)
+			<-allowCommit
 		}
-		s.remove(map[storage.SeriesRef]uint64{4: 0})
+		removeDone := make(chan struct{})
+		go func() {
+			s.remove(map[storage.SeriesRef]uint64{2: 0, 4: 0})
+			close(removeDone)
+		}()
+		<-rebuildStarted
 
-		// One bump from the re-sort, one from the fallback rebuild.
-		require.Equal(t, genBefore+2, s.buckets[0].gen)
-		require.Equal(t, []storage.SeriesRef{2, 6, 8}, expandShardCandidates(t, s, 0, 1))
+		var snapshotLists []index.Postings
+		readDone := make(chan struct{})
+		go func() {
+			snapshotLists, _ = s.postingsFor(0, 1)
+			close(readDone)
+		}()
+		select {
+		case <-readDone:
+		case <-time.After(time.Second):
+			close(allowCommit)
+			<-removeDone
+			<-readDone
+			t.Fatal("clean read blocked during unlocked rebuild")
+		}
+		close(allowCommit)
+		<-removeDone
+
+		snapshot, err := index.ExpandPostings(index.Merge(t.Context(), snapshotLists...))
+		require.NoError(t, err)
+		require.Equal(t, []storage.SeriesRef{1, 2, 3, 4, 5, 6}, snapshot)
+		require.Equal(t, []storage.SeriesRef{1, 3, 5, 6}, expandShardCandidates(t, s, 0, 1))
 	})
 }
 
 func TestShardBucketPostings_Concurrency(t *testing.T) {
-	t.Run("multi-bucket read holds earlier candidate bucket while waiting for later bucket", func(t *testing.T) {
-		s := newShardBucketPostings(4)
-		s.add(1, 0)
-		s.add(3, 2)
-		require.Equal(t, []storage.SeriesRef{1, 3}, expandShardCandidates(t, s, 0, 2))
-
-		later := &s.buckets[2]
-		later.mtx.Lock()
-		laterLocked := true
-		defer func() {
-			if laterLocked {
-				later.mtx.Unlock()
-			}
-		}()
-
-		type readResult struct {
-			refs []storage.SeriesRef
-			err  error
-		}
-		readDone := make(chan readResult, 1)
-		go func() {
-			lists, _ := s.postingsFor(0, 2)
-			refs, err := index.ExpandPostings(index.Merge(t.Context(), lists...))
-			readDone <- readResult{refs: refs, err: err}
-		}()
-
-		require.Eventually(t, func() bool {
-			if s.buckets[0].mtx.TryLock() {
-				s.buckets[0].mtx.Unlock()
-				return false
-			}
-			return true
-		}, time.Second, time.Millisecond)
-
-		addDone := make(chan struct{})
-		go func() {
-			s.add(5, 4)
-			close(addDone)
-		}()
-
-		select {
-		case <-addDone:
-			t.Fatal("add to earlier candidate bucket completed while multi-bucket read was blocked on later bucket")
-		case <-time.After(50 * time.Millisecond):
-		}
-
-		later.mtx.Unlock()
-		laterLocked = false
-
-		select {
-		case result := <-readDone:
-			require.NoError(t, result.err)
-			require.Equal(t, []storage.SeriesRef{1, 3}, result.refs)
-		case <-time.After(time.Second):
-			t.Fatal("timed out waiting for multi-bucket read")
-		}
-
-		select {
-		case <-addDone:
-		case <-time.After(time.Second):
-			t.Fatal("timed out waiting for blocked add")
-		}
-		require.Equal(t, []storage.SeriesRef{1, 3, 5}, expandShardCandidates(t, s, 0, 2))
-	})
-
 	t.Run("adds, removes and reads", func(t *testing.T) {
 		t.Parallel()
 		s := newShardBucketPostings(8)
@@ -562,17 +634,86 @@ func BenchmarkShardBucketPostings_DirtySort(b *testing.B) {
 	} {
 		b.Run(tc.name, func(b *testing.B) {
 			baseRefs, dirtyStart := dirtySortInput(tc.n, tc.dirtyTail, tc.interleaved)
-			bucket := shardBucket{}
-			bucket.mtx.Lock()
-			defer bucket.mtx.Unlock()
 
 			b.ReportAllocs()
 			for b.Loop() {
-				bucket.refs = baseRefs
-				bucket.dirty = dirtyStart
-				sortDirtyBucketLocked(&bucket)
-				shardBucketDirtySortSink = bucket.refs[len(bucket.refs)/2]
+				sortedRefs := sortDirtyRefs(baseRefs, dirtyStart)
+				shardBucketDirtySortSink = sortedRefs[len(sortedRefs)/2]
 			}
+		})
+	}
+}
+
+func BenchmarkShardBucketPostings_ConcurrentDirtySort(b *testing.B) {
+	const concurrentRefBase chunks.HeadSeriesRef = 1 << 40
+
+	baseRefs, dirtyStart := dirtySortInput(65_536, 0, true)
+	for _, tc := range []struct {
+		name       string
+		tailGrowth bool
+	}{
+		{name: "during-sort"},
+		{name: "during-tail-growth", tailGrowth: true},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			tailCapacity := 1
+			if tc.tailGrowth {
+				tailCapacity = replacementTailHeadroom + 2
+			}
+			inputRefs := make([]storage.SeriesRef, len(baseRefs), len(baseRefs)+tailCapacity)
+			copy(inputRefs, baseRefs)
+			addLatency := make([]int64, 0, b.N)
+			b.ReportAllocs()
+
+			for b.Loop() {
+				b.StopTimer()
+				s := newShardBucketPostings(1)
+				bucket := &s.buckets[0]
+				bucket.mtx.Lock()
+				bucket.refs = inputRefs
+				bucket.dirty = dirtyStart
+				bucket.mtx.Unlock()
+
+				addDone := make(chan int64, 1)
+				startMeasuredAdd := func(ref chunks.HeadSeriesRef) {
+					addAttempted := make(chan struct{})
+					go func() {
+						start := time.Now()
+						close(addAttempted)
+						s.add(ref, 0)
+						addDone <- time.Since(start).Nanoseconds()
+					}()
+					<-addAttempted
+					runtime.Gosched()
+				}
+				if tc.tailGrowth {
+					s.sortUnlockedHook = func() {
+						for i := range replacementTailHeadroom + 1 {
+							s.add(concurrentRefBase+chunks.HeadSeriesRef(i), 0)
+						}
+					}
+					s.sortTailCarryHook = func() {
+						startMeasuredAdd(concurrentRefBase << 1)
+					}
+				} else {
+					s.sortUnlockedHook = func() {
+						startMeasuredAdd(concurrentRefBase)
+					}
+				}
+				b.StartTimer()
+
+				lists, _ := s.postingsFor(0, 1)
+				if !lists[0].Next() {
+					b.Fatal("empty dirty bucket snapshot")
+				}
+				shardBucketDirtySortSink = lists[0].At()
+				addLatency = append(addLatency, <-addDone)
+			}
+			b.StopTimer()
+
+			slices.Sort(addLatency)
+			b.ReportMetric(float64(shardBucketPercentile(addLatency, 50, 100)), "add-latency-p50-ns")
+			b.ReportMetric(float64(shardBucketPercentile(addLatency, 99, 100)), "add-latency-p99-ns")
 		})
 	}
 }
