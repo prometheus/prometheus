@@ -15,7 +15,7 @@ jobs:
     if: >-
       github.event.issue.pull_request &&
       github.event.comment.body == '/workflow-approve' &&
-      github.repository_owner == 'prometheus'
+      (github.repository_owner == 'prometheus' || github.repository_owner == 'prometheus-community')
     runs-on: ubuntu-latest
     permissions:
       actions: write
