@@ -165,5 +165,32 @@
     "Containers": {},
     "Options": {},
     "Labels": {}
+  },
+  {
+    "Name": "dockersd_ipv6",
+    "Id": "aabbcc1122334455667788990011aabbcc1122334455667788990011aabbcc11",
+    "Created": "2021-03-20T21:19:50.639982673+01:00",
+    "Scope": "local",
+    "Driver": "bridge",
+    "EnableIPv6": true,
+    "IPAM": {
+      "Driver": "default",
+      "Options": null,
+      "Config": [
+        {
+          "Subnet": "fc00::/64"
+        }
+      ]
+    },
+    "Internal": false,
+    "Attachable": false,
+    "Ingress": false,
+    "ConfigFrom": {
+      "Network": ""
+    },
+    "ConfigOnly": false,
+    "Containers": {},
+    "Options": {},
+    "Labels": {}
   }
 ]

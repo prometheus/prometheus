@@ -64,9 +64,25 @@ host: %s
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Len(t, tg.Targets, 8)
+	require.Len(t, tg.Targets, 9)
 
 	expected := []model.LabelSet{
+		{
+			"__address__":                "[fc00::2]:9100",
+			"__meta_docker_container_id": "a5f3b2c1d4e6f7890abc123def456789012345678901234567890abcdef012345",
+			"__meta_docker_container_label_com_docker_compose_project": "dockersd",
+			"__meta_docker_container_label_com_docker_compose_service": "ipv6_node",
+			"__meta_docker_container_label_com_docker_compose_version": "1.25.0",
+			"__meta_docker_container_name":                             "/dockersd_ipv6_node",
+			"__meta_docker_container_network_mode":                     "dockersd_ipv6",
+			"__meta_docker_network_id":                                 "aabbcc1122334455667788990011aabbcc1122334455667788990011aabbcc11",
+			"__meta_docker_network_ingress":                            "false",
+			"__meta_docker_network_internal":                           "false",
+			"__meta_docker_network_ip":                                 "fc00::2",
+			"__meta_docker_network_name":                               "dockersd_ipv6",
+			"__meta_docker_network_scope":                              "local",
+			"__meta_docker_port_private":                               "9100",
+		},
 		{
 			"__address__":                "172.19.0.2:9100",
 			"__meta_docker_container_id": "c301b928faceb1a18fe379f6bc178727ef920bb30b0f9b8592b32b36255a0eca",
@@ -246,9 +262,25 @@ host: %s
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Len(t, tg.Targets, 13)
+	require.Len(t, tg.Targets, 14)
 
 	expected := []model.LabelSet{
+		{
+			"__address__":                "[fc00::2]:9100",
+			"__meta_docker_container_id": "a5f3b2c1d4e6f7890abc123def456789012345678901234567890abcdef012345",
+			"__meta_docker_container_label_com_docker_compose_project": "dockersd",
+			"__meta_docker_container_label_com_docker_compose_service": "ipv6_node",
+			"__meta_docker_container_label_com_docker_compose_version": "1.25.0",
+			"__meta_docker_container_name":                             "/dockersd_ipv6_node",
+			"__meta_docker_container_network_mode":                     "dockersd_ipv6",
+			"__meta_docker_network_id":                                 "aabbcc1122334455667788990011aabbcc1122334455667788990011aabbcc11",
+			"__meta_docker_network_ingress":                            "false",
+			"__meta_docker_network_internal":                           "false",
+			"__meta_docker_network_ip":                                 "fc00::2",
+			"__meta_docker_network_name":                               "dockersd_ipv6",
+			"__meta_docker_network_scope":                              "local",
+			"__meta_docker_port_private":                               "9100",
+		},
 		{
 			"__address__":                "172.19.0.2:9100",
 			"__meta_docker_container_id": "c301b928faceb1a18fe379f6bc178727ef920bb30b0f9b8592b32b36255a0eca",

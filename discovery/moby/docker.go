@@ -277,6 +277,8 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 				ipAddr := ""
 				if n.IPAddress.IsValid() {
 					ipAddr = n.IPAddress.String()
+				} else if n.GlobalIPv6Address.IsValid() {
+					ipAddr = n.GlobalIPv6Address.String()
 				}
 
 				labels := model.LabelSet{
@@ -312,6 +314,8 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 				ipAddr := ""
 				if n.IPAddress.IsValid() {
 					ipAddr = n.IPAddress.String()
+				} else if n.GlobalIPv6Address.IsValid() {
+					ipAddr = n.GlobalIPv6Address.String()
 				}
 
 				labels := model.LabelSet{
