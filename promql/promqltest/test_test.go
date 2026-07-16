@@ -1342,6 +1342,7 @@ func TestLoadSTLine_StorageRoundtrip(t *testing.T) {
 	// This test requires XOR2 chunk encoding and ST support enabled.
 	store := teststorage.New(t, func(opt *tsdb.Options) {
 		opt.EnableSTStorage = true
+		opt.XOR2EncodingAllowed = true
 		opt.FloatChunkEncoding = chunkenc.EncXOR2
 	})
 	const step = 5 * time.Minute
