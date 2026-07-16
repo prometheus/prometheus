@@ -4608,3 +4608,34 @@ func TestFloatHistogramReduceResolution(t *testing.T) {
 		})
 	}
 }
+
+func TestFloatHistogramTrimBucketsInPlace(t *testing.T) {
+	// Schema 0 native histogram with buckets straddling a trim point of 4.
+	newHist := func() *FloatHistogram {
+		return &FloatHistogram{
+			Schema:          0,
+			Count:           30,
+			Sum:             100,
+			PositiveSpans:   []Span{{Offset: 0, Length: 4}},
+			PositiveBuckets: []float64{5, 5, 10, 10}, // Bucket upper bounds: 1, 2, 4, 8.
+		}
+	}
+
+	t.Run("mutates the receiver and returns it", func(t *testing.T) {
+		h := newHist()
+		got := h.TrimBuckets(4, true)
+		// The returned histogram is the receiver, not a copy.
+		require.Same(t, h, got)
+		// The bucket entirely above the trim point (upper bound 8) is dropped.
+		require.NotEqual(t, newHist(), h)
+	})
+
+	t.Run("Copy preserves the original", func(t *testing.T) {
+		h := newHist()
+		trimmed := h.Copy().TrimBuckets(4, true)
+		// The original is untouched.
+		require.Equal(t, newHist(), h)
+		// The copy was actually trimmed.
+		require.NotEqual(t, h, trimmed)
+	})
+}

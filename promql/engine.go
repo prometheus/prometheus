@@ -3505,10 +3505,12 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 				return 0, hlhs.Copy().Mul(rhs).Compact(0), true, nil, nil
 			case parser.DIV:
 				return 0, hlhs.Copy().Div(rhs).Compact(0), true, nil, nil
+			// TrimBuckets mutates its receiver in place, and hlhs may be shared
+			// with other samples/series, so trim a copy rather than hlhs itself.
 			case parser.TRIM_UPPER:
-				return 0, hlhs.TrimBuckets(rhs, true), true, nil, nil
+				return 0, hlhs.Copy().TrimBuckets(rhs, true), true, nil, nil
 			case parser.TRIM_LOWER:
-				return 0, hlhs.TrimBuckets(rhs, false), true, nil, nil
+				return 0, hlhs.Copy().TrimBuckets(rhs, false), true, nil, nil
 			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", parser.ItemTypeStr[op], "float", pos)
 			}
