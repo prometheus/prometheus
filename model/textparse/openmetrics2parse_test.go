@@ -808,6 +808,10 @@ foo_total 1.0 # {id="x"} 1.0
 			input: "# TYPE ss stateset\nss{other=\"foo\"} 1\n# EOF\n",
 			err:   "stateset sample must have a label matching the metric family name",
 		},
+		{
+			input: "# TYPE foo counter\nfoo_total NaN\n# EOF\n",
+			err:   "counter sample value must not be NaN",
+		},
 	} {
 		t.Run(tc.err, func(t *testing.T) {
 			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{})

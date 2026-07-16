@@ -472,6 +472,9 @@ func (p *OpenMetrics2Parser) parseSeriesEndOfLine(t token) (Entry, error) {
 		return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
 	}
 	if math.IsNaN(p.val) {
+		if p.mtype == model.MetricTypeCounter {
+			return EntryInvalid, fmt.Errorf("counter sample value must not be NaN while parsing: %q", p.l.b[p.start:p.l.i])
+		}
 		p.val = math.Float64frombits(value.NormalNaN)
 	}
 
