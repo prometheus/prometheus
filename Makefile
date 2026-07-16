@@ -167,7 +167,7 @@ install-goyacc:
 	@go install golang.org/x/tools/cmd/goyacc@$(GOYACC_VERSION)
 
 .PHONY: test
-# If we only want to only test go code we have to change the test target
+# If we only want to test go code we have to change the test target
 # which is called by all.
 ifeq ($(GO_ONLY),1)
 test: common-test check-go-mod-version

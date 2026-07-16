@@ -2521,16 +2521,33 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier_AppendV
 
 	// Start OOO head compaction.
 	compactionComplete := atomic.NewBool(false)
+	compactionErr := make(chan error, 1)
 	go func() {
 		defer compactionComplete.Store(true)
 
-		require.NoError(t, db.CompactOOOHead(ctx))
-		require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
+		compactionErr <- db.CompactOOOHead(ctx)
 	}()
 
-	// Give CompactOOOHead time to start work.
-	// If it does not wait for querierCreatedBeforeCompaction to be closed, then the query will return incorrect results or fail.
-	time.Sleep(time.Second)
+	// Wait until CompactOOOHead has written the OOO block, reloaded, and published
+	// lastGarbageCollectedMmapRef before creating the second querier below.
+	// Until that ref is set, the second querier would capture the stale ref (0)
+	// and permanently block the OOO reader-wait loop, which has no timeout, hanging
+	// the test on slow runners.
+	// If compaction exits before publishing the ref, stop waiting so its error can
+	// be reported below instead of being masked by the timeout.
+	require.Eventually(t, func() bool {
+		if compactionComplete.Load() {
+			return true
+		}
+		db.mtx.RLock()
+		defer db.mtx.RUnlock()
+		return db.lastGarbageCollectedMmapRef != 0
+	}, time.Minute, 10*time.Millisecond, "CompactOOOHead did not reach the reader-wait phase")
+	if compactionComplete.Load() {
+		require.NoError(t, <-compactionErr)
+	}
+	// The compaction must still be waiting for querierCreatedBeforeCompaction to be
+	// closed. If it does not wait, then the query will return incorrect results or fail.
 	require.False(t, compactionComplete.Load(), "compaction completed before reading chunks or closing querier created before compaction")
 
 	// Get another querier. This one should only use the compacted blocks from disk and ignore the chunks that will be garbage collected.
@@ -2565,7 +2582,12 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier_AppendV
 
 	require.False(t, compactionComplete.Load(), "compaction completed before closing querier created before compaction")
 	require.NoError(t, querierCreatedBeforeCompaction.Close())
-	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier created before compaction was closed, and not wait for querier created after compaction")
+	// CompactOOOHead only re-checks for pending readers every 500ms and still has
+	// to garbage collect chunks and truncate the WBL after it notices the close,
+	// so give slow runners plenty of time beyond the poll interval.
+	require.Eventually(t, compactionComplete.Load, time.Minute, 10*time.Millisecond, "compaction should complete after querier created before compaction was closed, and not wait for querier created after compaction")
+	require.NoError(t, <-compactionErr)
+	require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
 
 	// Use the querier created after compaction and confirm it returns the expected results (ie. from the disk block created from OOO head and in-order head) without error.
 	testQuerier(querierCreatedAfterCompaction)
@@ -2616,11 +2638,11 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterSelecting_AppendV2(t *tes
 
 	// Start OOO head compaction.
 	compactionComplete := atomic.NewBool(false)
+	compactionErr := make(chan error, 1)
 	go func() {
 		defer compactionComplete.Store(true)
 
-		require.NoError(t, db.CompactOOOHead(ctx))
-		require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
+		compactionErr <- db.CompactOOOHead(ctx)
 	}()
 
 	// Give CompactOOOHead time to start work.
@@ -2648,7 +2670,12 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterSelecting_AppendV2(t *tes
 
 	require.False(t, compactionComplete.Load(), "compaction completed before closing querier")
 	require.NoError(t, querier.Close())
-	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier was closed")
+	// CompactOOOHead only re-checks for pending readers every 500ms and still has
+	// to garbage collect chunks and truncate the WBL after it notices the close,
+	// so give slow runners plenty of time beyond the poll interval.
+	require.Eventually(t, compactionComplete.Load, time.Minute, 10*time.Millisecond, "compaction should complete after querier was closed")
+	require.NoError(t, <-compactionErr)
+	require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
 }
 
 func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators_AppendV2(t *testing.T) {
@@ -2704,11 +2731,11 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators_Appen
 
 	// Start OOO head compaction.
 	compactionComplete := atomic.NewBool(false)
+	compactionErr := make(chan error, 1)
 	go func() {
 		defer compactionComplete.Store(true)
 
-		require.NoError(t, db.CompactOOOHead(ctx))
-		require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
+		compactionErr <- db.CompactOOOHead(ctx)
 	}()
 
 	// Give CompactOOOHead time to start work.
@@ -2727,7 +2754,12 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators_Appen
 
 	require.False(t, compactionComplete.Load(), "compaction completed before closing querier")
 	require.NoError(t, querier.Close())
-	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier was closed")
+	// CompactOOOHead only re-checks for pending readers every 500ms and still has
+	// to garbage collect chunks and truncate the WBL after it notices the close,
+	// so give slow runners plenty of time beyond the poll interval.
+	require.Eventually(t, compactionComplete.Load, time.Minute, 10*time.Millisecond, "compaction should complete after querier was closed")
+	require.NoError(t, <-compactionErr)
+	require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
 }
 
 func TestOOOWALWrite_AppendV2(t *testing.T) {
@@ -7505,9 +7537,55 @@ func TestAbortBlockCompactions_AppendV2(t *testing.T) {
 }
 
 // TestCompactHeadWithSTStorage_AppendV2 ensures that when EnableSTStorage is true,
-// compacted blocks contain chunks with EncXOR2 encoding for float samples.
+// compacted blocks contain ST-capable chunks that preserve start timestamps.
 func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 	t.Parallel()
+
+	type sampleCase struct {
+		name             string
+		lbls             labels.Labels
+		expectedEncoding chunkenc.Encoding
+		// append wraps the Append() calls so they are uniform, and returns the
+		// appended sample so it can be used to initialize the expectation slice.
+		append func(storage.AppenderV2, labels.Labels, int64) (chunks.Sample, error)
+	}
+
+	cases := []sampleCase{
+		{
+			name:             "float",
+			lbls:             labels.FromStrings("a", "b", "type", "float"),
+			expectedEncoding: chunkenc.EncXOR2,
+			append: func(app storage.AppenderV2, lbls labels.Labels, ts int64) (chunks.Sample, error) {
+				st := ts - 50
+				_, err := app.Append(0, lbls, st, ts, float64(ts), nil, nil, storage.AOptions{})
+				return newSample(st, ts, float64(ts), nil, nil), err
+			},
+		},
+		{
+			name:             "histogram",
+			lbls:             labels.FromStrings("a", "b", "type", "histogram"),
+			expectedEncoding: chunkenc.EncHistogramST,
+			append: func(app storage.AppenderV2, lbls labels.Labels, ts int64) (chunks.Sample, error) {
+				st := ts - 60
+				h := tsdbutil.GenerateTestHistogram(ts)
+				h.CounterResetHint = histogram.NotCounterReset
+				_, err := app.Append(0, lbls, st, ts, 0, h, nil, storage.AOptions{})
+				return newSample(st, ts, 0, h, nil), err
+			},
+		},
+		{
+			name:             "float histogram",
+			lbls:             labels.FromStrings("a", "b", "type", "float_histogram"),
+			expectedEncoding: chunkenc.EncFloatHistogramST,
+			append: func(app storage.AppenderV2, lbls labels.Labels, ts int64) (chunks.Sample, error) {
+				st := ts - 70
+				fh := tsdbutil.GenerateTestFloatHistogram(ts)
+				fh.CounterResetHint = histogram.NotCounterReset
+				_, err := app.Append(0, lbls, st, ts, 0, nil, fh, storage.AOptions{})
+				return newSample(st, ts, 0, nil, fh), err
+			},
+		},
+	}
 
 	opts := &Options{
 		RetentionDuration:         int64(time.Hour * 24 * 15 / time.Millisecond),
@@ -7526,9 +7604,13 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 
 	mint := 100
 	maxt := 200
+	expectedSamples := make(map[string][]chunks.Sample, len(cases))
 	for i := mint; i < maxt; i++ {
-		_, err := app.Append(0, labels.FromStrings("a", "b"), 50, int64(i), float64(i), nil, nil, storage.AOptions{})
-		require.NoError(t, err)
+		for _, c := range cases {
+			s, err := c.append(app, c.lbls, int64(i))
+			require.NoError(t, err)
+			expectedSamples[c.name] = append(expectedSamples[c.name], s)
+		}
 	}
 	require.NoError(t, app.Commit())
 
@@ -7544,24 +7626,35 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 	require.NoError(t, err)
 	defer indexr.Close()
 
-	p, err := indexr.Postings(ctx, "a", "b")
-	require.NoError(t, err)
-
 	chunkCount := 0
-	for p.Next() {
-		var builder labels.ScratchBuilder
-		var chks []chunks.Meta
-		require.NoError(t, indexr.Series(p.At(), &builder, &chks))
-
-		for _, chk := range chks {
-			c, _, err := chunkr.ChunkOrIterable(chk)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p, err := indexr.Postings(ctx, "type", c.lbls.Get("type"))
 			require.NoError(t, err)
-			require.Equal(t, chunkenc.EncXOR2, c.Encoding(),
-				"unexpected chunk encoding, got %s", c.Encoding())
-			chunkCount++
-		}
+
+			var actualSamples []chunks.Sample
+			for p.Next() {
+				var builder labels.ScratchBuilder
+				var chks []chunks.Meta
+				require.NoError(t, indexr.Series(p.At(), &builder, &chks))
+
+				for _, chk := range chks {
+					chunk, _, err := chunkr.ChunkOrIterable(chk)
+					require.NoError(t, err)
+					require.Equal(t, c.expectedEncoding, chunk.Encoding(),
+						"unexpected chunk encoding, got %s", chunk.Encoding())
+
+					samples, err := storage.ExpandSamples(chunk.Iterator(nil), newSample)
+					require.NoError(t, err)
+					actualSamples = append(actualSamples, samples...)
+					chunkCount++
+				}
+			}
+			require.NoError(t, p.Err())
+			requireEqualSamples(t, c.name, expectedSamples[c.name], actualSamples, requireEqualSamplesIgnoreCounterResets)
+		})
 	}
-	require.NoError(t, p.Err())
+
 	require.Positive(t, chunkCount, "expected at least one chunk")
 }
 

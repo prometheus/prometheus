@@ -14,7 +14,7 @@ Maintainers for specific parts of the codebase:
 * `cmd`
   * `promtool`: David Leadbeater (<dgl@dgl.cx> / @dgl)
 * `discovery`
-  * `hetzner`: (@jooola) (@apricote)
+  * `hetzner`: Jonas Lammler (<jonas.lammler@hetzner-cloud.de> / @jooola), Julian Tölle (<julian.toelle@hetzner-cloud.de> / @apricote)
   * `k8s`: Frederic Branczyk (<fbranczyk@gmail.com> / @brancz), Pranshu Srivastava (<rexagod@gmail.com> / @rexagod)
   * `stackit`: Jan-Otto Kröpke (<mail@jkroepke.de> / @jkroepke)
   * `consul`: Mohammad Varmazyar (<mrvarmazyar@gmail.com> / @mrvarmazyar)

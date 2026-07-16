@@ -168,8 +168,14 @@ type LeveledCompactorOptions struct {
 	// MaxBlockChunkSegmentSize is the max block chunk segment size. If it is 0 then the default chunks.DefaultChunkSegmentSize is used.
 	MaxBlockChunkSegmentSize int64
 
-	// MergeFunc is used for merging series together in vertical compaction. By default storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge) is used.
+	// MergeFunc is used for merging series together in vertical compaction. By default storage.NewCompactingChunkSeriesMergerWithFloatEncoding(storage.ChainedSeriesMerge, opts.FloatChunkEncoding) is used.
 	MergeFunc storage.VerticalChunkSeriesMergeFunc
+
+	// FloatChunkEncoding returns the encoding used for float chunks re-encoded during
+	// vertical (overlapping) compaction. Consulted at compaction time, so it may
+	// reflect runtime-reloaded configuration. Nil means EncXOR. Ignored when MergeFunc
+	// is set.
+	FloatChunkEncoding func() chunkenc.Encoding
 
 	// BlockExcludeFilter is used to decide which blocks are excluded from compactions.
 	BlockExcludeFilter BlockExcludeFilterFunc
@@ -211,7 +217,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 	}
 	mergeFunc := opts.MergeFunc
 	if mergeFunc == nil {
-		mergeFunc = storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)
+		mergeFunc = storage.NewCompactingChunkSeriesMergerWithFloatEncoding(storage.ChainedSeriesMerge, opts.FloatChunkEncoding)
 	}
 	maxBlockChunkSegmentSize := opts.MaxBlockChunkSegmentSize
 	if maxBlockChunkSegmentSize == 0 {
@@ -935,6 +941,9 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 			return fmt.Errorf("open chunk reader for block %+v: %w", b.Meta(), err)
 		}
 		closers = append(closers, chunkr)
+
+		// Enable the head-chunk cache for compaction.
+		enableChunkCache(chunkr)
 
 		tombsr, err := b.Tombstones()
 		if err != nil {

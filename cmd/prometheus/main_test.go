@@ -801,7 +801,7 @@ func reloadPrometheusConfig(t *testing.T, reloadURL string) {
 	require.Equal(t, http.StatusOK, r.StatusCode, "Unexpected status code when reloading Prometheus")
 }
 
-func getMetricValue(t *testing.T, body io.Reader, metricType model.MetricType, metricName string) (float64, error) {
+func getMetricValue(t testing.TB, body io.Reader, metricType model.MetricType, metricName string) (float64, error) {
 	t.Helper()
 
 	p := expfmt.NewTextParser(model.UTF8Validation)

@@ -516,6 +516,7 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 					Region:  client.ec2Data.region,
 					Filters: tt.filters,
 				},
+				region: client.ec2Data.region,
 			}
 
 			g, err := d.refresh(ctx)

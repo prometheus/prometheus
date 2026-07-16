@@ -140,7 +140,6 @@ linters:
         - returnAfterHttpError
         - sloppyReassign
         - sprintfQuotedString
-        - stringsCompare
         - todoCommentWithoutDetail
         - tooManyResultsChecker
         - typeUnparen

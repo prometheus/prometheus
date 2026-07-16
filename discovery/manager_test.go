@@ -50,6 +50,7 @@ func NewTestMetrics(t *testing.T, reg prometheus.Registerer) *SDMetrics {
 
 // TestTargetUpdatesOrder checks that the target updates are received in the expected order.
 func TestTargetUpdatesOrder(t *testing.T) {
+	t.Parallel()
 	// The order by which the updates are send is determined by the interval passed to the mock discovery adapter
 	// Final targets array is ordered alphabetically by the name of the discoverer.
 	// For example discoverer "A" with targets "t2,t3" and discoverer "B" with targets "t1,t2" will result in "t2,t3,t1,t2" after the merge.
@@ -673,6 +674,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 
 	for i, tc := range testCases {
 		t.Run(tc.title, func(t *testing.T) {
+			t.Parallel()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
@@ -787,6 +789,7 @@ func pk(provider, setName string, n int) poolKey {
 }
 
 func TestTargetSetTargetGroupsPresentOnStartup(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name            string
 		updatert        time.Duration
@@ -814,6 +817,7 @@ func TestTargetSetTargetGroupsPresentOnStartup(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			synctest.Test(t, func(t *testing.T) {
 				ctx := t.Context()
 
@@ -865,6 +869,7 @@ func TestTargetSetTargetGroupsPresentOnStartup(t *testing.T) {
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -901,6 +906,7 @@ func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -940,6 +946,7 @@ func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -982,6 +989,7 @@ func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testi
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -1049,6 +1057,7 @@ func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 }
 
 func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -1092,6 +1101,7 @@ func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
 }
 
 func TestDiscovererConfigs(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -1128,6 +1138,7 @@ func TestDiscovererConfigs(t *testing.T) {
 // removing all targets from the static_configs cleans the corresponding targetGroups entries to avoid leaks and sends an empty update.
 // The update is required to signal the consumers that the previous targets should be dropped.
 func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -1169,6 +1180,7 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 }
 
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -1201,6 +1213,7 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 }
 
 func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
+	t.Parallel()
 	originalConfig := Configs{
 		staticConfig("foo:9090", "bar:9090", "baz:9090"),
 	}
@@ -1267,6 +1280,7 @@ func (s lockStaticDiscoverer) Run(ctx context.Context, up chan<- []*targetgroup.
 }
 
 func TestGaugeFailedConfigs(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -1301,6 +1315,7 @@ func TestGaugeFailedConfigs(t *testing.T) {
 }
 
 func TestCoordinationWithReceiver(t *testing.T) {
+	t.Parallel()
 	updateDelay := 100 * time.Millisecond
 
 	type expect struct {
@@ -1422,6 +1437,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.title, func(t *testing.T) {
+			t.Parallel()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
@@ -1517,6 +1533,7 @@ func (o onceProvider) Run(_ context.Context, ch chan<- []*targetgroup.Group) {
 // TestTargetSetTargetGroupsUpdateDuringApplyConfig is used to detect races when
 // ApplyConfig happens at the same time as targets update.
 func TestTargetSetTargetGroupsUpdateDuringApplyConfig(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -1612,6 +1629,7 @@ func (t *testDiscoverer) update(tgs []*targetgroup.Group) {
 }
 
 func TestUnregisterMetrics(t *testing.T) {
+	t.Parallel()
 	reg := prometheus.NewRegistry()
 	// Check that all metrics can be unregistered, allowing a second manager to be created.
 	for range 2 {
@@ -1634,6 +1652,7 @@ func TestUnregisterMetrics(t *testing.T) {
 
 // Refresh and discovery metrics should be deleted for providers that are removed.
 func TestMetricsCleanupAfterConfigReload(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
@@ -1685,6 +1704,7 @@ func TestMetricsCleanupAfterConfigReload(t *testing.T) {
 // Calling ApplyConfig() that removes providers at the same time as shutting down
 // the manager should not hang.
 func TestConfigReloadAndShutdownRace(t *testing.T) {
+	t.Parallel()
 	reg := prometheus.NewRegistry()
 	sdMetrics := NewTestMetrics(t, reg)
 
@@ -1729,6 +1749,7 @@ func TestConfigReloadAndShutdownRace(t *testing.T) {
 }
 
 func TestGaugeLastUpdateTimestamp(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()

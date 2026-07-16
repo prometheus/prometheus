@@ -775,12 +775,13 @@ type literalPrefixInsensitiveStringMatcher struct {
 }
 
 func (m *literalPrefixInsensitiveStringMatcher) Matches(s string) bool {
-	if !hasPrefixCaseInsensitive(s, m.prefix) {
+	prefixLen, ok := prefixCaseInsensitiveMatchLen(s, m.prefix)
+	if !ok {
 		return false
 	}
 
 	// Ensure the right side matches.
-	return m.right.Matches(s[len(m.prefix):])
+	return m.right.Matches(s[prefixLen:])
 }
 
 // literalSuffixStringMatcher matches a string with the given literal suffix and left side matcher.
@@ -794,15 +795,22 @@ type literalSuffixStringMatcher struct {
 
 func (m *literalSuffixStringMatcher) Matches(s string) bool {
 	// Ensure the suffix matches.
-	if m.suffixCaseSensitive && !strings.HasSuffix(s, m.suffix) {
-		return false
+	if m.suffixCaseSensitive {
+		if !strings.HasSuffix(s, m.suffix) {
+			return false
+		}
+
+		// Ensure the left side matches.
+		return m.left.Matches(s[:len(s)-len(m.suffix)])
 	}
-	if !m.suffixCaseSensitive && !hasSuffixCaseInsensitive(s, m.suffix) {
+
+	suffixLen, ok := suffixCaseInsensitiveMatchLen(s, m.suffix)
+	if !ok {
 		return false
 	}
 
 	// Ensure the left side matches.
-	return m.left.Matches(s[:len(s)-len(m.suffix)])
+	return m.left.Matches(s[:len(s)-suffixLen])
 }
 
 // emptyStringMatcher matches an empty string.
@@ -1201,11 +1209,111 @@ func findEqualOrPrefixStringMatchers(input StringMatcher, equalMatcherCallback f
 }
 
 func hasPrefixCaseInsensitive(s, prefix string) bool {
-	return len(s) >= len(prefix) && strings.EqualFold(s[0:len(prefix)], prefix)
+	_, ok := prefixCaseInsensitiveMatchLen(s, prefix)
+	return ok
 }
 
-func hasSuffixCaseInsensitive(s, suffix string) bool {
-	return len(s) >= len(suffix) && strings.EqualFold(s[len(s)-len(suffix):], suffix)
+// prefixCaseInsensitiveMatchLen checks whether s begins with a prefix that is
+// equal to prefix under Unicode simple case folding (the same folding the
+// regexp engine applies for case-insensitive matching). It returns the length
+// in bytes of that prefix in s, and whether such a prefix exists.
+//
+// The returned length can differ from len(prefix) because simple case folding
+// does not preserve the encoded length of a rune, e.g. 'K' (the Kelvin sign,
+// U+212A, 3 bytes) folds with 'k' (1 byte). For this reason a simple
+// strings.EqualFold(s[:len(prefix)], prefix) check is not equivalent: it would
+// slice s in the middle of a rune and fail to match.
+func prefixCaseInsensitiveMatchLen(s, prefix string) (int, bool) {
+	// Fast path: process ASCII characters in lockstep while we can.
+	i := 0
+	for ; i < len(prefix) && i < len(s); i++ {
+		pc, sc := prefix[i], s[i]
+		if pc >= utf8.RuneSelf || sc >= utf8.RuneSelf {
+			break
+		}
+		if pc != sc && lowerASCII(pc) != lowerASCII(sc) {
+			return 0, false
+		}
+	}
+	if i == len(prefix) {
+		return i, true
+	}
+
+	// Slow path: at least one of the next characters is non-ASCII, so runes
+	// must be compared one by one under simple case folding. Both prefix[i:]
+	// and s[i:] start at a rune boundary because the fast path above only
+	// consumed ASCII bytes from both.
+	n := i
+	for _, pr := range prefix[i:] {
+		if n >= len(s) {
+			return 0, false
+		}
+		sr, size := utf8.DecodeRuneInString(s[n:])
+		if sr != pr && !runeFoldEqual(sr, pr) {
+			return 0, false
+		}
+		n += size
+	}
+	return n, true
+}
+
+// suffixCaseInsensitiveMatchLen is the equivalent of
+// prefixCaseInsensitiveMatchLen for suffixes: it checks whether s ends with a
+// suffix that is equal to suffix under Unicode simple case folding, and
+// returns the length in bytes of that suffix in s.
+func suffixCaseInsensitiveMatchLen(s, suffix string) (int, bool) {
+	// Fast path: process ASCII characters in lockstep while we can. Bytes of
+	// multi-byte runes are >= utf8.RuneSelf, so this cannot stop in the middle
+	// of a rune.
+	i, j := len(suffix), len(s)
+	for i > 0 && j > 0 {
+		pc, sc := suffix[i-1], s[j-1]
+		if pc >= utf8.RuneSelf || sc >= utf8.RuneSelf {
+			break
+		}
+		if pc != sc && lowerASCII(pc) != lowerASCII(sc) {
+			return 0, false
+		}
+		i--
+		j--
+	}
+	if i == 0 {
+		return len(s) - j, true
+	}
+
+	// Slow path: compare the remaining runes one by one, from the end, under
+	// simple case folding.
+	for i > 0 {
+		if j == 0 {
+			return 0, false
+		}
+		pr, prSize := utf8.DecodeLastRuneInString(suffix[:i])
+		sr, srSize := utf8.DecodeLastRuneInString(s[:j])
+		if sr != pr && !runeFoldEqual(sr, pr) {
+			return 0, false
+		}
+		i -= prSize
+		j -= srSize
+	}
+	return len(s) - j, true
+}
+
+func lowerASCII(c byte) byte {
+	if 'A' <= c && c <= 'Z' {
+		return c + 'a' - 'A'
+	}
+	return c
+}
+
+// runeFoldEqual tells whether two distinct runes are equal under Unicode
+// simple case folding.
+func runeFoldEqual(a, b rune) bool {
+	for r := unicode.SimpleFold(a); r != a; r = unicode.SimpleFold(r) {
+		if r == b {
+			return true
+		}
+	}
+	return false
 }
 
 func containsInOrder(s string, contains []string) bool {

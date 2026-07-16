@@ -159,12 +159,6 @@ global:
   # native histogram with custom buckets.
   [ always_scrape_classic_histograms: <boolean> | default = false ]
 
-  # When enabled, Prometheus stores additional time series for each scrape:
-  # scrape_timeout_seconds, scrape_sample_limit, and scrape_body_size_bytes.
-  # These metrics help monitor how close targets are to their configured limits.
-  # This option can be overridden per scrape config.
-  [ extra_scrape_metrics: <boolean> | default = false ]
-
   # The following explains the various combinations of the last three options
   # in various exposition cases.
   #
@@ -200,6 +194,12 @@ global:
   # convert_classic_histograms_to_nhcb is set to (it would collide with the
   # actual native histogram). However, there will be a classic histogram if (and
   # only if) always_scrape_classic_histograms is set to true.
+
+  # When enabled, Prometheus stores additional time series for each scrape:
+  # scrape_timeout_seconds, scrape_sample_limit, and scrape_body_size_bytes.
+  # These metrics help monitor how close targets are to their configured limits.
+  # This option can be overridden per scrape config.
+  [ extra_scrape_metrics: <boolean> | default = false ]
 
 runtime:
   # Configure the Go garbage collector GOGC parameter
@@ -661,14 +661,14 @@ metric_relabel_configs:
 # native histogram with custom buckets.
 [ always_scrape_classic_histograms: <boolean> | default = <global.always_scrape_classic_histograms> ]
 
+# See global configuration above for further explanations of how the last three
+# options combine their effects.
+
 # When enabled, Prometheus stores additional time series for this scrape job:
 # scrape_timeout_seconds, scrape_sample_limit, and scrape_body_size_bytes.
 # These metrics help monitor how close targets are to their configured limits.
 # If not set, inherits the value from the global configuration.
 [ extra_scrape_metrics: <boolean> | default = <global.extra_scrape_metrics> ]
-
-# See global configuration above for further explanations of how the last three
-# options combine their effects.
 
 ```
 
@@ -722,7 +722,7 @@ tls_config:
 # that should be excluded from proxying. IP and domain names can
 # contain port numbers.
 [ no_proxy: <string> ]
-# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+# Use proxy URL indicated by environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, and their lowercase versions)
 [ proxy_from_environment: <boolean> | default: false ]
 # Specifies headers to send to proxies during CONNECT requests.
 [ proxy_connect_header:
@@ -857,23 +857,11 @@ tls_config:
 # that should be excluded from proxying. IP and domain names can
 # contain port numbers.
 [ no_proxy: <string> ]
-# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+# Use proxy URL indicated by environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, and their lowercase versions)
 [ proxy_from_environment: <boolean> | default: false ]
 # Specifies headers to send to proxies during CONNECT requests.
 [ proxy_connect_header:
   [ <string>: [<secret>, ...] ] ]
-
-# Custom HTTP headers to be sent along with each request.
-# Headers that are set by Prometheus itself can't be overwritten.
-http_headers:
-  # Header name.
-  [ <string>:
-    # Header values.
-    [ values: [<string>, ...] ]
-    # Headers values. Hidden in configuration page.
-    [ secrets: [<secret>, ...] ]
-    # Files to read header values from.
-    [ files: [<string>, ...] ] ]
 ```
 
 ### `<aws_sd_config>`
@@ -1401,10 +1389,14 @@ See below for the configuration options for Azure discovery:
 # The Azure environment.
 [ environment: <string> | default = AzurePublicCloud ]
 
-# The authentication method, either OAuth, ManagedIdentity or SDK.
+# The authentication method, either OAuth, ManagedIdentity, SDK or WorkloadIdentity.
 # See https://learn.microsoft.com/en-us/entra/identity/managed-identities-azure-resources/overview
 # SDK authentication method uses environment variables by default.
 # See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
+# WorkloadIdentity authentication method uses the environment variables injected
+# by the Azure Workload Identity webhook (AZURE_CLIENT_ID, AZURE_TENANT_ID and
+# AZURE_FEDERATED_TOKEN_FILE).
+# See https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview
 [ authentication_method: <string> | default = OAuth]
 # The subscription ID. Always required.
 subscription_id: <string>
@@ -3049,7 +3041,7 @@ region: <string>
 # that should be excluded from proxying. IP and domain names can
 # contain port numbers.
 [ no_proxy: <string> ]
-# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+# Use proxy URL indicated by environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, and their lowercase versions)
 [ proxy_from_environment: <boolean> | default: false ]
 # Specifies headers to send to proxies during CONNECT requests.
 [ proxy_connect_header:
@@ -4062,7 +4054,7 @@ metadata_config:
   # How frequently metric metadata is sent to remote storage.
   [ send_interval: <duration> | default = 1m ]
   # Maximum number of samples per send.
-  [ max_samples_per_send: <int> | default = 500]
+  [ max_samples_per_send: <int> | default = 2000]
 
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
