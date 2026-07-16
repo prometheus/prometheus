@@ -682,6 +682,46 @@ http_requests_total{code="200"} 3 1629863088.000
 			},
 		},
 		{
+			// Regression test for https://github.com/prometheus/prometheus/issues/12531.
+			// Duplicate samples (same series + timestamp, different value) that cross an
+			// appender batch boundary must be silently skipped, matching the within-batch
+			// behaviour where the TSDB commit already drops them without error.
+			ToParse: `# HELP http_requests_total The total number of HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{code="200"} 1 1565133713.989
+http_requests_total{code="200"} 2 1565133713.989
+http_requests_total{code="200"} 3 1565133714.989
+# EOF
+`,
+			IsOk:                 true,
+			Description:          "Duplicate samples across appender batch boundary are skipped, not fatal.",
+			MaxSamplesInAppender: 1,
+			Expected: struct {
+				MinTime       int64
+				MaxTime       int64
+				NumBlocks     int
+				BlockDuration int64
+				Samples       []backfillSample
+			}{
+				MinTime:       1565133713989,
+				MaxTime:       1565133714989,
+				NumBlocks:     1,
+				BlockDuration: tsdb.DefaultBlockDuration,
+				Samples: []backfillSample{
+					{
+						Timestamp: 1565133713989,
+						Value:     1,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+					{
+						Timestamp: 1565133714989,
+						Value:     3,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+				},
+			},
+		},
+		{
 			ToParse: `# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
 # TYPE rpc_duration_seconds summary
 rpc_duration_seconds{quantile="0.01"} 3102
