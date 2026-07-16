@@ -263,14 +263,13 @@ func newTest(t testing.TB, input string, testingMode bool, newStorage func(testi
 	return test, err
 }
 
-// testStorageOptions holds additional tsdb.Options applied by newTestStorage.
-// It is populated via init() in test files so that options only take effect
-// when the promqltest package itself is under test, not when callers such as
-// promql_test.go invoke RunBuiltinTests.
-var testStorageOptions []teststorage.Option
-
 func newTestStorage(t testing.TB) storage.Storage {
-	return teststorage.New(t, testStorageOptions...)
+	return teststorage.New(t, func(opts *tsdb.Options) {
+		opts.EnableSTStorage = true
+		opts.XOR2EncodingAllowed = true
+		opts.FloatChunkEncoding = chunkenc.EncXOR2
+		opts.EnableHistogramSTEncoding = true
+	})
 }
 
 //go:embed testdata
@@ -299,7 +298,7 @@ func parseLoad(lines []string, i int, startTime time.Time) (int, *loadCmd, error
 	cmd := newLoadCmd(time.Duration(gap), withNHCB)
 	cmd.startTime = startTime
 	var (
-		pendingSTVals   []parser.SequenceValue
+		pendingSTVals   []stSequenceValue
 		pendingSTMetric labels.Labels
 		pendingSTLine   int
 	)
@@ -335,7 +334,9 @@ func parseLoad(lines []string, i int, startTime time.Time) (int, *loadCmd, error
 				return i, nil, raise(pendingSTLine, "@st line has %d values but sample line has %d", len(pendingSTVals), len(vals))
 			}
 		}
-		cmd.set(metric, vals, pendingSTVals)
+		if err := cmd.set(metric, vals, pendingSTVals); err != nil {
+			return i, nil, raise(i, "error setting series values: %s", err)
+		}
 		pendingSTVals = nil
 	}
 	if pendingSTVals != nil {
@@ -356,14 +357,19 @@ func isSTLine(defLine string) bool {
 	return strings.HasSuffix(defLine[:spaceIdx], "@st")
 }
 
+type stSequenceValue struct {
+	offset  int64
+	omitted bool
+	abs     bool
+	repeat  bool
+}
+
 // parseSTLine parses a start-timestamp line of the form:
 //
 //	metric{labels}@st <st_sequence>
 //
-// It returns the metric labels and a slice of SequenceValues where each
-// non-omitted SequenceValue.Value is the ST offset in milliseconds relative
-// to the corresponding sample's timestamp.
-func parseSTLine(defLine string, line int) (labels.Labels, []parser.SequenceValue, error) {
+// It returns the metric labels and a slice of stSequenceValues.
+func parseSTLine(defLine string, line int) (labels.Labels, []stSequenceValue, error) {
 	defLine = strings.TrimSpace(defLine)
 	spaceIdx := strings.IndexAny(defLine, " \t")
 	if spaceIdx < 0 {
@@ -393,11 +399,12 @@ func parseSTLine(defLine string, line int) (labels.Labels, []parser.SequenceValu
 //	<dur>xN      – N+1 positions all with the same offset
 //	<dur>+<dur>xN – N+1 positions, offset increasing by delta each step
 //	<dur>-<dur>xN – N+1 positions, offset decreasing by delta each step
+//	@<dur>       – absolute timestamp (testStartTime + dur)
+//	^            – repeat previous absolute ST
 //
-// Offsets are Prometheus durations (e.g. -1m, 30s, 0s) and stored as
-// milliseconds in SequenceValue.Value.
-func parseSTSequence(input string) ([]parser.SequenceValue, error) {
-	var result []parser.SequenceValue
+// Offsets are Prometheus durations (e.g. -1m, 30s, 0s).
+func parseSTSequence(input string) ([]stSequenceValue, error) {
+	var result []stSequenceValue
 	for item := range strings.FieldsSeq(input) {
 		vals, err := parseSTItem(item)
 		if err != nil {
@@ -408,20 +415,40 @@ func parseSTSequence(input string) ([]parser.SequenceValue, error) {
 	return result, nil
 }
 
-func parseSTItem(item string) ([]parser.SequenceValue, error) {
+func parseSTItem(item string) ([]stSequenceValue, error) {
 	if item == "_" {
-		return []parser.SequenceValue{{Omitted: true}}, nil
+		return []stSequenceValue{{omitted: true}}, nil
 	}
 	if strings.HasPrefix(item, "_x") {
 		n, err := strconv.ParseUint(item[2:], 10, 64)
 		if err != nil || n == 0 {
 			return nil, errors.New("invalid repeat count")
 		}
-		vals := make([]parser.SequenceValue, n)
+		vals := make([]stSequenceValue, n)
 		for i := range vals {
-			vals[i] = parser.SequenceValue{Omitted: true}
+			vals[i] = stSequenceValue{omitted: true}
 		}
 		return vals, nil
+	}
+	if item == "^" {
+		return []stSequenceValue{{repeat: true}}, nil
+	}
+	if strings.HasPrefix(item, "^x") {
+		n, err := strconv.ParseUint(item[2:], 10, 64)
+		if err != nil || n == 0 {
+			return nil, errors.New("invalid repeat count")
+		}
+		vals := make([]stSequenceValue, n+1)
+		for i := range vals {
+			vals[i] = stSequenceValue{repeat: true}
+		}
+		return vals, nil
+	}
+
+	abs := false
+	if strings.HasPrefix(item, "@") {
+		abs = true
+		item = item[1:]
 	}
 
 	base, rest, err := parseDurationPrefix(item)
@@ -430,16 +457,16 @@ func parseSTItem(item string) ([]parser.SequenceValue, error) {
 	}
 	// No step: <dur> or <dur>xN.
 	if rest == "" {
-		return []parser.SequenceValue{{Value: float64(base)}}, nil
+		return []stSequenceValue{{offset: base, abs: abs}}, nil
 	}
 	if rest[0] == 'x' {
 		n, err := strconv.ParseUint(rest[1:], 10, 64)
 		if err != nil {
 			return nil, errors.New("invalid repeat count")
 		}
-		vals := make([]parser.SequenceValue, n+1)
+		vals := make([]stSequenceValue, n+1)
 		for i := range vals {
-			vals[i] = parser.SequenceValue{Value: float64(base)}
+			vals[i] = stSequenceValue{offset: base, abs: abs}
 		}
 		return vals, nil
 	}
@@ -462,10 +489,10 @@ func parseSTItem(item string) ([]parser.SequenceValue, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid repeat count: %w", err)
 	}
-	vals := make([]parser.SequenceValue, n+1)
+	vals := make([]stSequenceValue, n+1)
 	offset := base
 	for i := range vals {
-		vals[i] = parser.SequenceValue{Value: float64(offset)}
+		vals[i] = stSequenceValue{offset: offset, abs: abs}
 		offset += delta
 	}
 	return vals, nil
@@ -889,11 +916,13 @@ func (loadCmd) String() string {
 
 // set stores a sequence of sample values for the given metric with optional start timestamps.
 // stVals must be nil (no ST for any sample) or have the same length as vals.
-func (cmd *loadCmd) set(m labels.Labels, vals, stVals []parser.SequenceValue) {
+func (cmd *loadCmd) set(m labels.Labels, vals []parser.SequenceValue, stVals []stSequenceValue) error {
 	h := m.Hash()
 
 	samples := make([]sampleST, 0, len(vals))
 	ts := cmd.startTime
+	var lastST int64
+	var hasLastST bool
 	for i, v := range vals {
 		tsMs := ts.UnixNano() / int64(time.Millisecond/time.Nanosecond)
 		if !v.Omitted {
@@ -904,8 +933,24 @@ func (cmd *loadCmd) set(m labels.Labels, vals, stVals []parser.SequenceValue) {
 					H: v.Histogram,
 				},
 			}
-			if len(stVals) > 0 && !stVals[i].Omitted {
-				s.ST = tsMs + int64(stVals[i].Value)
+			if len(stVals) > 0 && !stVals[i].omitted {
+				switch {
+				case stVals[i].repeat:
+					if !hasLastST {
+						return errors.New("repeat requested but no previous start timestamp exists")
+					}
+					s.ST = lastST
+				case stVals[i].abs:
+					s.ST = cmd.startTime.UnixNano()/int64(time.Millisecond) + stVals[i].offset
+					lastST = s.ST
+					hasLastST = true
+				default:
+					s.ST = tsMs + stVals[i].offset
+					lastST = s.ST
+					hasLastST = true
+				}
+			} else {
+				hasLastST = false
 			}
 			samples = append(samples, s)
 		}
@@ -913,6 +958,7 @@ func (cmd *loadCmd) set(m labels.Labels, vals, stVals []parser.SequenceValue) {
 	}
 	cmd.defs[h] = samples
 	cmd.metrics[h] = m
+	return nil
 }
 
 // append the defined time series to the storage.
