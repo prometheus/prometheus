@@ -479,7 +479,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		}),
 		nativeHistogramBuckets: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_head_native_histogram_buckets",
-			Help: "Number of positive and negative bucket entries in the most recent in-order native histogram sample of each series.",
+			Help: "Number of positive and negative bucket entries in the most recent in-order native histogram sample of each series, including entries carried by staleness markers.",
 		}, func() float64 {
 			return float64(h.NumNativeHistogramBuckets())
 		}),
@@ -1938,9 +1938,9 @@ func (h *Head) NumNativeHistogramSeries() uint64 {
 	return h.numNativeHistogramSeries.Load()
 }
 
-// NumNativeHistogramBuckets returns the total number of native histogram
-// buckets across all series in the head, counting the buckets of each series'
-// most recent in-order native histogram sample.
+// NumNativeHistogramBuckets returns the total positive and negative bucket
+// entries in each series' most recent in-order native histogram, including
+// entries carried by staleness markers.
 func (h *Head) NumNativeHistogramBuckets() uint64 {
 	return h.numNativeHistogramBuckets.Load()
 }
@@ -2780,12 +2780,9 @@ type memSeries struct {
 	txs *txRing
 }
 
-// sampleState reports, in a single pass over the series' most recent in-order
-// sample: whether it is a staleness marker, whether it is a native histogram,
-// and the number of stored buckets in that sample (0 for a float). It combines
-// the staleness check (see isStaleSeries) with the native-histogram bookkeeping
-// so the last-value fields are read only once on the append hot path, where the
-// stale-series and native-histogram gauges are updated together.
+// sampleState reports the latest in-order sample's staleness, type, and bucket
+// count. Floats have no buckets; histogram bucket entries are counted even when
+// the sample is stale.
 func (s *memSeries) sampleState() (isStale, isHistogram bool, buckets int) {
 	switch {
 	case s.lastHistogramValue != nil:

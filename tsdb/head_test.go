@@ -8396,6 +8396,113 @@ func TestHead_NumNativeHistogramSeriesAndBuckets(t *testing.T) {
 	head.gc()
 	// series3 (last sample at ts 400) is removed, series2 remains.
 	verifyCounts(1, 8, 1)
+
+	t.Run("stale payload buckets are counted", func(t *testing.T) {
+		variants := []struct {
+			name      string
+			newSample func() (*histogram.Histogram, *histogram.FloatHistogram)
+		}{
+			{
+				name: "histogram",
+				newSample: func() (*histogram.Histogram, *histogram.FloatHistogram) {
+					return tsdbutil.GenerateTestHistograms(1)[0], nil
+				},
+			},
+			{
+				name: "float_histogram",
+				newSample: func() (*histogram.Histogram, *histogram.FloatHistogram) {
+					return nil, tsdbutil.GenerateTestFloatHistograms(1)[0]
+				},
+			},
+			{
+				name: "custom_bucket_histogram",
+				newSample: func() (*histogram.Histogram, *histogram.FloatHistogram) {
+					return tsdbutil.GenerateTestCustomBucketsHistogram(1), nil
+				},
+			},
+			{
+				name: "custom_bucket_float_histogram",
+				newSample: func() (*histogram.Histogram, *histogram.FloatHistogram) {
+					return nil, tsdbutil.GenerateTestCustomBucketsFloatHistogram(1)
+				},
+			},
+		}
+
+		for _, appenderV2 := range []bool{false, true} {
+			for _, snapshot := range []bool{false, true} {
+				for _, variant := range variants {
+					name := fmt.Sprintf("appender_v2=%t/snapshot=%t/%s", appenderV2, snapshot, variant.name)
+					t.Run(name, func(t *testing.T) {
+						testHead, _ := newTestHead(t, 1000, compression.None, false)
+						testHead.opts.EnableMemorySnapshotOnShutdown = snapshot
+						t.Cleanup(func() { _ = testHead.Close() })
+						require.NoError(t, testHead.Init(0))
+
+						appendSample := func(lbls labels.Labels, ts int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) {
+							t.Helper()
+							if appenderV2 {
+								app := testHead.AppenderV2(t.Context())
+								_, err := app.Append(0, lbls, 0, ts, v, h, fh, storage.AOptions{})
+								require.NoError(t, err)
+								require.NoError(t, app.Commit())
+								return
+							}
+
+							app := testHead.Appender(t.Context())
+							var err error
+							if h != nil || fh != nil {
+								_, err = app.AppendHistogram(0, lbls, ts, h, fh)
+							} else {
+								_, err = app.Append(0, lbls, ts, v)
+							}
+							require.NoError(t, err)
+							require.NoError(t, app.Commit())
+						}
+
+						lbls := labels.FromStrings("name", t.Name())
+						h, fh := variant.newSample()
+						payloadBuckets := 0
+						if h != nil {
+							payloadBuckets = len(h.PositiveBuckets) + len(h.NegativeBuckets)
+						} else {
+							payloadBuckets = len(fh.PositiveBuckets) + len(fh.NegativeBuckets)
+						}
+						require.Positive(t, payloadBuckets)
+
+						if h != nil {
+							h.Sum = math.Float64frombits(value.StaleNaN)
+						} else {
+							fh.Sum = math.Float64frombits(value.StaleNaN)
+						}
+						appendSample(lbls, 100, 0, h, fh)
+						require.Equal(t, uint64(1), testHead.NumStaleSeries())
+						require.Equal(t, uint64(1), testHead.NumNativeHistogramSeries())
+						require.Equal(t, uint64(payloadBuckets), testHead.NumNativeHistogramBuckets())
+
+						opts := testHead.opts
+						require.NoError(t, testHead.Close())
+						wal, err := wlog.NewSize(nil, nil, filepath.Join(opts.ChunkDirRoot, "wal"), 32768, compression.None)
+						require.NoError(t, err)
+						testHead, err = NewHead(nil, nil, wal, nil, opts, nil)
+						require.NoError(t, err)
+						require.NoError(t, testHead.Init(0))
+
+						require.Equal(t, uint64(1), testHead.NumStaleSeries())
+						require.Equal(t, uint64(1), testHead.NumNativeHistogramSeries())
+						require.Equal(t, uint64(payloadBuckets), testHead.NumNativeHistogramBuckets())
+
+						series := testHead.series.getByHash(lbls.Hash(), lbls)
+						require.NotNil(t, series)
+						require.NoError(t, testHead.truncateStaleSeries([]storage.SeriesRef{storage.SeriesRef(series.ref)}, 100, math.MaxUint64))
+						require.Zero(t, testHead.NumSeries())
+						require.Zero(t, testHead.NumStaleSeries())
+						require.Zero(t, testHead.NumNativeHistogramSeries())
+						require.Zero(t, testHead.NumNativeHistogramBuckets())
+					})
+				}
+			}
+		}
+	})
 }
 
 // TestHead_FilterSelectedSeriesAndSortPostings exercises the helper directly, covering the
