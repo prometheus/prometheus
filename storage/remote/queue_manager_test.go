@@ -2551,6 +2551,150 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 	}
 }
 
+// TestPopulateV2TimeSeries_WriteRelabelConfigs_TypeAndUnitLabelDrop verifies how type and unit labels
+// add metadata in populateV2TimeSeries when write_relabel_configs is configured with action: labeldrop
+// for (__type__|__unit__).
+func TestPopulateV2TimeSeries_WriteRelabelConfigs_TypeAndUnitLabelDrop(t *testing.T) {
+	testCases := []struct {
+		name              string
+		enableTypeAndUnit bool
+		metadata          *metadata.Metadata
+		expectedType      writev2.Metadata_MetricType
+		expectedUnit      string
+		expectedHelp      string
+	}{
+		{
+			name:              "enableTypeAndUnit_true_no_meta",
+			enableTypeAndUnit: true,
+			metadata:          nil,
+			expectedType:      writev2.Metadata_METRIC_TYPE_COUNTER,
+			expectedUnit:      "operations",
+			expectedHelp:      "",
+		},
+		{
+			name:              "enableTypeAndUnit_true_with_meta",
+			enableTypeAndUnit: true,
+			metadata: &metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Unit: "operations",
+				Help: "Test counter metric",
+			},
+			// When enableTypeAndUnit is true, populateV2TimeSeries prioritizes seriesLabels.
+			// Because write_relabel_configs dropped __type__ and __unit__ from seriesLabels,
+			// populateV2TimeSeries falls back to stored metadata to ensure metadata is propagated despite relabelling.
+			expectedType: writev2.Metadata_METRIC_TYPE_COUNTER,
+			expectedUnit: "operations",
+			expectedHelp: "Test counter metric",
+		},
+		{
+			name:              "enableTypeAndUnit_false_with_meta",
+			enableTypeAndUnit: false,
+			metadata: &metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Unit: "operations",
+				Help: "Test counter metric",
+			},
+			// When enableTypeAndUnit is false, populateV2TimeSeries uses d.metadata.
+			expectedType: writev2.Metadata_METRIC_TYPE_COUNTER,
+			expectedUnit: "operations",
+			expectedHelp: "Test counter metric",
+		},
+		{
+			name:              "enableTypeAndUnit_false_no_meta",
+			enableTypeAndUnit: false,
+			metadata:          nil,
+			expectedType:      writev2.Metadata_METRIC_TYPE_UNSPECIFIED,
+			expectedUnit:      "",
+			expectedHelp:      "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			relabelConfigs := []*relabel.Config{
+				{
+					Regex:  relabel.MustNewRegexp("(__type__|__unit__)"),
+					Action: relabel.LabelDrop,
+				},
+			}
+
+			c := NewTestWriteClient(remoteapi.WriteV2MessageType)
+			m := newTestQueueManager(t, config.DefaultQueueConfig, config.DefaultMetadataConfig, defaultFlushDeadline, c, remoteapi.WriteV2MessageType)
+			m.relabelConfigs = relabelConfigs
+			m.enableTypeAndUnitLabels = tc.enableTypeAndUnit
+
+			series := []record.RefSeries{
+				{
+					Ref:    1,
+					Labels: labels.FromStrings("__name__", "test_metric", "__type__", "counter", "__unit__", "operations", "instance", "localhost"),
+				},
+			}
+			m.StoreSeries(series, 0)
+
+			// Verify that write_relabel_configs dropped __type__ and __unit__.
+			require.Equal(t, labels.FromStrings("__name__", "test_metric", "instance", "localhost"), m.seriesLabels[1])
+
+			if tc.metadata != nil {
+				m.StoreMetadata([]record.RefMetadata{
+					{
+						Ref:  1,
+						Type: record.GetMetricType(tc.metadata.Type),
+						Unit: tc.metadata.Unit,
+						Help: tc.metadata.Help,
+					},
+				})
+			}
+
+			batch := []timeSeries{
+				{
+					seriesLabels: m.seriesLabels[1],
+					metadata:     m.seriesMetadata[1],
+					value:        123.45,
+					timestamp:    time.Now().UnixMilli(),
+					sType:        tSample,
+				},
+			}
+
+			symbolTable := writev2.NewSymbolTable()
+			pendingData := make([]writev2.TimeSeries, 1)
+
+			nSamples, nExemplars, nHistograms, nMetadata, _ := populateV2TimeSeries(
+				&symbolTable,
+				batch,
+				pendingData,
+				false,
+				false,
+				tc.enableTypeAndUnit,
+			)
+
+			require.Equal(t, 1, nSamples, "Should have 1 sample")
+			require.Equal(t, 0, nExemplars, "Should have 0 exemplars")
+			require.Equal(t, 0, nHistograms, "Should have 0 histograms")
+
+			if tc.metadata != nil || tc.enableTypeAndUnit {
+				require.Equal(t, 1, nMetadata, "Should count metadata when d.metadata is provided or enableTypeAndUnit is true")
+			} else {
+				require.Equal(t, 0, nMetadata, "Should not count metadata when d.metadata is nil and enableTypeAndUnit is false")
+			}
+
+			require.Equal(t, tc.expectedType, pendingData[0].Metadata.Type)
+
+			symbols := symbolTable.Symbols()
+			var actualUnit string
+			if unitRef := pendingData[0].Metadata.UnitRef; unitRef > 0 && unitRef < uint32(len(symbols)) {
+				actualUnit = symbols[unitRef]
+			}
+			require.Equal(t, tc.expectedUnit, actualUnit)
+
+			var actualHelp string
+			if helpRef := pendingData[0].Metadata.HelpRef; helpRef > 0 && helpRef < uint32(len(symbols)) {
+				actualHelp = symbols[helpRef]
+			}
+			require.Equal(t, tc.expectedHelp, actualHelp)
+		})
+	}
+}
+
 func TestHighestTimestampOnAppend(t *testing.T) {
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {

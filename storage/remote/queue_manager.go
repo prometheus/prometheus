@@ -1016,6 +1016,24 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 		// Just make sure all the Refs of Series will insert into seriesSegmentIndexes map for tracking.
 		t.seriesSegmentIndexes[s.Ref] = index
 
+		// Extract type and unit labels before relabelling to preserve metadata if type and unit labels are dropped by write_relabel_configs.
+		if t.enableTypeAndUnitLabels && t.protoMsg != remoteapi.WriteV1MessageType {
+			m := schema.NewMetadataFromLabels(s.Labels)
+			if !m.IsTypeEmpty() || m.Unit != "" {
+				meta := t.seriesMetadata[s.Ref]
+				if meta == nil {
+					meta = &metadata.Metadata{}
+					t.seriesMetadata[s.Ref] = meta
+				}
+				if !m.IsTypeEmpty() {
+					meta.Type = m.Type
+				}
+				if m.Unit != "" {
+					meta.Unit = m.Unit
+				}
+			}
+		}
+
 		t.builder.Reset(s.Labels)
 		processExternalLabels(t.builder, t.externalLabels)
 		keep := relabel.ProcessBuilder(t.builder, t.relabelConfigs...)
@@ -1037,10 +1055,21 @@ func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 	for _, m := range meta {
-		t.seriesMetadata[m.Ref] = &metadata.Metadata{
-			Type: record.ToMetricType(m.Type),
-			Unit: m.Unit,
-			Help: m.Help,
+		existing := t.seriesMetadata[m.Ref]
+		if existing != nil && t.enableTypeAndUnitLabels {
+			if existing.Type == "" || existing.Type == model.MetricTypeUnknown {
+				existing.Type = record.ToMetricType(m.Type)
+			}
+			if existing.Unit == "" {
+				existing.Unit = m.Unit
+			}
+			existing.Help = m.Help
+		} else {
+			t.seriesMetadata[m.Ref] = &metadata.Metadata{
+				Type: record.ToMetricType(m.Type),
+				Unit: m.Unit,
+				Help: m.Help,
+			}
 		}
 	}
 }
@@ -1962,14 +1991,23 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 		switch {
 		case enableTypeAndUnitLabels:
 			m := schema.NewMetadataFromLabels(d.seriesLabels)
-			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(m.Type)
-			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(m.Unit)
-			pendingData[nPending].Metadata.HelpRef = 0 // Type and unit does not give us help.
-			// Use Help from d.metadata if available.
+			typ := m.Type
+			unit := m.Unit
 			if d.metadata != nil {
+				// Fall back to stored metadata when type or unit labels are dropped by relabelling.
+				if typ == "" || typ == model.MetricTypeUnknown {
+					typ = d.metadata.Type
+				}
+				if unit == "" {
+					unit = d.metadata.Unit
+				}
 				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
 				nPendingMetadata++
+			} else {
+				pendingData[nPending].Metadata.HelpRef = 0 // Type and unit does not give us help.
 			}
+			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(typ)
+			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(unit)
 		case d.metadata != nil:
 			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(d.metadata.Type)
 			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
