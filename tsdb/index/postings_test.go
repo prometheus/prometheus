@@ -1539,8 +1539,8 @@ func TestMemPostingsConcurrentReadDoesNotObservePartialAdd(t *testing.T) {
 	}
 
 	checkSnapshot := func() error {
-		mp.gate.beginRead()
-		defer mp.gate.endRead()
+		mp.gate.enterRead()
+		defer mp.gate.leaveRead()
 		for i := 1; i <= seriesCount; i++ {
 			value := strconv.Itoa(i)
 			aRefs, err := ExpandPostings(Merge(ctx, mp.postingsForLabelValues("a", []string{value})...))

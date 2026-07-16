@@ -21,12 +21,12 @@ import (
 )
 
 func TestMemPostingsReadWaiterBlocksNewAdds(t *testing.T) {
-	var gate postingsPhaseGate
+	var gate postingsGate
 	gate.init()
 
-	gate.beginAdd()
+	gate.enterAdd()
 	var endFirstAdd sync.Once
-	endFirst := func() { endFirstAdd.Do(gate.endAdd) }
+	endFirst := func() { endFirstAdd.Do(gate.leaveAdd) }
 	t.Cleanup(endFirst)
 
 	readerEntered := make(chan struct{})
@@ -37,28 +37,27 @@ func TestMemPostingsReadWaiterBlocksNewAdds(t *testing.T) {
 	t.Cleanup(release)
 
 	go func() {
-		gate.beginRead()
+		gate.enterRead()
 		close(readerEntered)
 		<-releaseReader
-		gate.endRead()
+		gate.leaveRead()
 		close(readerDone)
 	}()
 
-	waitForGateState(t, &gate, func(g *postingsPhaseGate) bool {
-		return g.readWaiters == 1
+	waitForGateState(t, &gate, func(g *postingsGate) bool {
+		return g.waitingReaders == 1
 	}, "reader did not register as waiting")
 
 	secondAddStarted := make(chan struct{})
 	secondAddEntered := make(chan struct{})
 	secondAddDone := make(chan struct{})
 
-	// Start the second Add before releasing the first one.
-	gate.mtx.Lock()
+	gate.mu.Lock()
 	go func() {
 		close(secondAddStarted)
-		gate.beginAdd()
+		gate.enterAdd()
 		close(secondAddEntered)
-		gate.endAdd()
+		gate.leaveAdd()
 		close(secondAddDone)
 	}()
 	<-secondAddStarted
@@ -69,7 +68,7 @@ func TestMemPostingsReadWaiterBlocksNewAdds(t *testing.T) {
 		endFirst()
 	}()
 	<-firstAddExitStarted
-	gate.mtx.Unlock()
+	gate.mu.Unlock()
 
 	select {
 	case <-readerEntered:
@@ -105,15 +104,15 @@ func TestMemPostingsReadWaiterBlocksNewAdds(t *testing.T) {
 	}
 }
 
-func waitForGateState(t *testing.T, gate *postingsPhaseGate, condition func(*postingsPhaseGate) bool, failure string) {
+func waitForGateState(t *testing.T, gate *postingsGate, condition func(*postingsGate) bool, failure string) {
 	t.Helper()
 
 	timer := time.NewTimer(time.Second)
 	defer timer.Stop()
 	for {
-		gate.mtx.Lock()
+		gate.mu.Lock()
 		ok := condition(gate)
-		gate.mtx.Unlock()
+		gate.mu.Unlock()
 		if ok {
 			return
 		}

@@ -24,7 +24,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/bboreham/go-loser"
 	"github.com/cespare/xxhash/v2"
@@ -53,106 +52,6 @@ var ensureOrderBatchPool = sync.Pool{
 	},
 }
 
-// postingsPhaseGate separates MemPostings operations into add, read, and
-// exclusive phases. A phase is the part of an operation that observes or
-// publishes postings state across shards. The gate does not replace shard
-// locks; shard locks still protect shard-local maps and slices.
-//
-// The gate keeps read snapshots out of the middle of a multi-label Add. A
-// reader may see the postings before an Add or after it, but not after only
-// some label pairs for that series have been published. Waiting readers block
-// new adders so an active Add phase can drain. Exclusive waiters block new
-// readers and adders so Delete and EnsureOrder do not starve.
-type postingsPhaseGate struct {
-	mtx              sync.Mutex
-	cond             *sync.Cond
-	activeAdds       int
-	activeReads      int
-	readWaiters      int
-	exclusiveActive  bool
-	exclusiveWaiters int
-}
-
-func (g *postingsPhaseGate) init() {
-	g.cond = sync.NewCond(&g.mtx)
-}
-
-// beginAdd waits until there are no active reads or exclusive operations. It
-// also waits behind pending readers and exclusive operations so the current
-// phase can drain.
-func (g *postingsPhaseGate) beginAdd() {
-	g.mtx.Lock()
-	defer g.mtx.Unlock()
-	for g.activeReads > 0 || g.readWaiters > 0 || g.exclusiveActive || g.exclusiveWaiters > 0 {
-		g.cond.Wait()
-	}
-	g.activeAdds++
-}
-
-func (g *postingsPhaseGate) endAdd() {
-	g.mtx.Lock()
-	g.activeAdds--
-	if g.activeAdds == 0 {
-		g.cond.Broadcast()
-	}
-	g.mtx.Unlock()
-}
-
-// beginRead waits for active Adds because a read can snapshot multiple shards
-// and label-value metadata. It registers as a waiter before blocking so later
-// Adds cannot keep extending the active Add phase. Pending exclusive operations
-// retain priority over waiting readers.
-func (g *postingsPhaseGate) beginRead() {
-	g.mtx.Lock()
-	defer g.mtx.Unlock()
-	g.readWaiters++
-	defer func() { g.readWaiters-- }()
-	for g.activeAdds > 0 || g.exclusiveActive || g.exclusiveWaiters > 0 {
-		g.cond.Wait()
-	}
-	g.activeReads++
-}
-
-func (g *postingsPhaseGate) endRead() {
-	g.mtx.Lock()
-	g.activeReads--
-	if g.activeReads == 0 {
-		g.cond.Broadcast()
-	}
-	g.mtx.Unlock()
-}
-
-// beginExclusive is used by Delete and EnsureOrder. It marks an exclusive
-// waiter before waiting so new Adds and reads do not enter, then waits for
-// current Adds, reads, and any active exclusive operation to finish.
-func (g *postingsPhaseGate) beginExclusive() {
-	g.mtx.Lock()
-	defer g.mtx.Unlock()
-	g.exclusiveWaiters++
-	defer func() { g.exclusiveWaiters-- }()
-	for g.activeAdds > 0 || g.activeReads > 0 || g.exclusiveActive {
-		g.cond.Wait()
-	}
-	g.exclusiveActive = true
-}
-
-func (g *postingsPhaseGate) endExclusive() {
-	g.mtx.Lock()
-	g.exclusiveActive = false
-	g.cond.Broadcast()
-	g.mtx.Unlock()
-}
-
-// yieldExclusive briefly drops the exclusive phase during long Delete work.
-// Readers and adders that are blocked on the gate can run between batches.
-// beginExclusive is called again afterwards, so later readers and adders queue
-// behind the Delete instead of starving it.
-func (g *postingsPhaseGate) yieldExclusive() {
-	g.endExclusive()
-	time.Sleep(time.Millisecond)
-	g.beginExclusive()
-}
-
 const memPostingsShardCount = 256
 
 type memPostingsShard struct {
@@ -167,14 +66,11 @@ type memPostingsShard struct {
 // EnsureOrder() must be called once before any reads are done. This allows for quick
 // unordered batch fills on startup.
 type MemPostings struct {
-	gate postingsPhaseGate
+	gate postingsGate
 
-	// shards holds the postings lists for each label-value pair.
 	shards [memPostingsShardCount]memPostingsShard
 
-	// lvs holds all known values for each label name. It lets label-value
-	// queries avoid scanning every shard to discover values. Add updates lvs
-	// while readers are excluded by the phase gate.
+	// lvs indexes known values by label name.
 	lvsMtx sync.RWMutex
 	lvs    map[string][]string
 
@@ -225,8 +121,8 @@ func (p *MemPostings) shard(name, value string) *memPostingsShard {
 
 // Symbols returns an iterator over all unique name and value strings, in order.
 func (p *MemPostings) Symbols() StringIter {
-	p.gate.beginRead()
-	defer p.gate.endRead()
+	p.gate.enterRead()
+	defer p.gate.leaveRead()
 
 	// Add all the strings to a map to de-duplicate.
 	symbols := make(map[string]struct{}, defaultLabelNamesMapSize)
@@ -250,8 +146,8 @@ func (p *MemPostings) Symbols() StringIter {
 
 // SortedKeys returns a list of sorted label keys of the postings.
 func (p *MemPostings) SortedKeys() []labels.Label {
-	p.gate.beginRead()
-	defer p.gate.endRead()
+	p.gate.enterRead()
+	defer p.gate.leaveRead()
 
 	keys := make([]labels.Label, 0, defaultLabelNamesMapSize)
 	for i := range p.shards {
@@ -279,8 +175,8 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 
 // LabelNames returns all the unique label names.
 func (p *MemPostings) LabelNames() []string {
-	p.gate.beginRead()
-	defer p.gate.endRead()
+	p.gate.enterRead()
+	defer p.gate.leaveRead()
 
 	p.lvsMtx.RLock()
 	defer p.lvsMtx.RUnlock()
@@ -296,8 +192,8 @@ func (p *MemPostings) LabelNames() []string {
 
 // LabelValues returns label values for the given name.
 func (p *MemPostings) LabelValues(_ context.Context, name string, hints *storage.LabelHints) []string {
-	p.gate.beginRead()
-	defer p.gate.endRead()
+	p.gate.enterRead()
+	defer p.gate.leaveRead()
 
 	p.lvsMtx.RLock()
 	values := p.lvs[name]
@@ -321,8 +217,8 @@ type PostingsStats struct {
 // Stats calculates the cardinality statistics from postings.
 // Caller can pass in a function which computes the space required for n series with a given label.
 func (p *MemPostings) Stats(label string, limit int, labelSizeFunc func(string, string, uint64) uint64) *PostingsStats {
-	p.gate.beginRead()
-	defer p.gate.endRead()
+	p.gate.enterRead()
+	defer p.gate.leaveRead()
 
 	metrics := &maxHeap{}
 	labelStats := &maxHeap{}
@@ -385,8 +281,8 @@ func (p *MemPostings) All() Postings {
 // CPU cores used for this operation. If it is <= 0, GOMAXPROCS is used.
 // GOMAXPROCS was the default before introducing this parameter.
 func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
-	p.gate.beginExclusive()
-	defer p.gate.endExclusive()
+	p.gate.enterExclusive()
+	defer p.gate.leaveExclusive()
 
 	if p.ordered {
 		return
@@ -444,8 +340,7 @@ func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 	p.ordered = true
 }
 
-// enableSharding moves replay-built postings into the live shards without
-// copying the postings lists. The caller must hold the exclusive phase.
+// enableSharding moves replay-built postings into the live shards.
 func (p *MemPostings) enableSharding() {
 	if p.sharded {
 		return
@@ -479,8 +374,8 @@ func (p *MemPostings) enableSharding() {
 // Delete removes all ids in the given map from the postings lists.
 // affectedLabels contains all the labels that are affected by the deletion, there's no need to check other labels.
 func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected map[labels.Label]struct{}) {
-	p.gate.beginExclusive()
-	defer p.gate.endExclusive()
+	p.gate.enterExclusive()
+	defer p.gate.leaveExclusive()
 
 	affectedLabelNames := map[string]struct{}{}
 	process := func(l labels.Label) {
@@ -512,7 +407,7 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 		i++
 		process(l)
 
-		// From time to time we want some readers to go through and read their postings.
+		// Let blocked operations run between batches.
 		if i%512 == 0 {
 			p.gate.yieldExclusive()
 		}
@@ -549,8 +444,8 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 
 // Iter calls f for each postings list. It aborts if f returns an error and returns it.
 func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
-	p.gate.beginRead()
-	defer p.gate.endRead()
+	p.gate.enterRead()
+	defer p.gate.leaveRead()
 
 	for i := range p.shards {
 		shard := &p.shards[i]
@@ -568,13 +463,10 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 	return nil
 }
 
-// Add a label set to the postings index. The whole label set, including the
-// all-postings entry, is published in one Add phase. This keeps readers from
-// observing a series through one label matcher but not another matcher from the
-// same label set.
+// Add inserts a series into every postings list before allowing reads to continue.
 func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
-	p.gate.beginAdd()
-	defer p.gate.endAdd()
+	p.gate.enterAdd()
+	defer p.gate.leaveAdd()
 
 	lset.Range(func(l labels.Label) {
 		p.addFor(id, l)
@@ -626,7 +518,7 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	nm[l.Value] = list
 }
 
-func sameStringSliceData(a, b []string) bool {
+func sameStringSliceBackingArray(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -655,9 +547,6 @@ func (p *MemPostings) valueIndexesByShard(name string, values []string) ([]int, 
 	return valueIndexes, offsets
 }
 
-// postingsForLabelValues assumes the caller is in a read phase. Shard locks
-// protect shard-local postings, and the read phase protects the cross-shard
-// snapshot from overlapping a multi-label Add.
 func (p *MemPostings) postingsForLabelValues(name string, values []string) []*listPostings {
 	if len(values) == 0 {
 		return nil
@@ -687,9 +576,6 @@ func (p *MemPostings) postingsForLabelValues(name string, values []string) []*li
 	return its
 }
 
-// postingsForAllLabelValues assumes the caller is in a read phase. Shard locks
-// protect shard-local postings, and the read phase protects the cross-shard
-// snapshot from overlapping a multi-label Add.
 func (p *MemPostings) postingsForAllLabelValues(name string, valueCount int) []*listPostings {
 	its := make([]*listPostings, 0, valueCount)
 	lps := make([]listPostings, valueCount)
@@ -709,22 +595,19 @@ func (p *MemPostings) postingsForAllLabelValues(name string, valueCount int) []*
 	return its
 }
 
-// postingsForAllLabelValuesIfUnchanged enters a read phase and verifies that
-// the label-value slice captured before matching is still current before reading
-// postings for all values.
 func (p *MemPostings) postingsForAllLabelValuesIfUnchanged(ctx context.Context, name string, labelValues []string) (Postings, bool) {
-	p.gate.beginRead()
+	p.gate.enterRead()
 	p.lvsMtx.RLock()
 	currentLabelValues := p.lvs[name]
-	unchanged := sameStringSliceData(labelValues, currentLabelValues)
+	unchanged := sameStringSliceBackingArray(labelValues, currentLabelValues)
 	p.lvsMtx.RUnlock()
 	if !unchanged {
-		p.gate.endRead()
+		p.gate.leaveRead()
 		return nil, false
 	}
 
 	its := p.postingsForAllLabelValues(name, len(currentLabelValues))
-	p.gate.endRead()
+	p.gate.leaveRead()
 	return Merge(ctx, its...), true
 }
 
@@ -737,11 +620,11 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	//
 	// We just need to make sure we don't modify the slice we took,
 	// so we'll append matching values to a different one.
-	p.gate.beginRead()
+	p.gate.enterRead()
 	p.lvsMtx.RLock()
 	readOnlyLabelValues := p.lvs[name]
 	p.lvsMtx.RUnlock()
-	p.gate.endRead()
+	p.gate.leaveRead()
 
 	if len(readOnlyLabelValues) == 0 {
 		return EmptyPostings()
@@ -775,7 +658,7 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 		return EmptyPostings()
 	}
 
-	if sameStringSliceData(vals, readOnlyLabelValues) {
+	if sameStringSliceBackingArray(vals, readOnlyLabelValues) {
 		postings, ok := p.postingsForAllLabelValuesIfUnchanged(ctx, name, readOnlyLabelValues)
 		if ok {
 			return postings
@@ -783,10 +666,9 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	}
 
 	// Now `vals` only contains the values that matched, get their postings.
-	p.gate.beginRead()
+	p.gate.enterRead()
 	its := p.postingsForLabelValues(name, vals)
-	// Let the mutex go before merging.
-	p.gate.endRead()
+	p.gate.leaveRead()
 
 	return Merge(ctx, its...)
 }
@@ -797,7 +679,7 @@ func (p *MemPostings) Postings(ctx context.Context, name string, values ...strin
 	lps := make([]listPostings, len(values))
 	valueIndexes, shardOffsets := p.valueIndexesByShard(name, values)
 
-	p.gate.beginRead()
+	p.gate.enterRead()
 	for shardIndex := range p.shards {
 		start, end := shardOffsets[shardIndex], shardOffsets[shardIndex+1]
 		if start == end {
@@ -815,12 +697,12 @@ func (p *MemPostings) Postings(ctx context.Context, name string, values ...strin
 		}
 		shard.mtx.RUnlock()
 	}
-	p.gate.endRead()
+	p.gate.leaveRead()
 	return Merge(ctx, res...)
 }
 
 func (p *MemPostings) PostingsForAllLabelValues(ctx context.Context, name string) Postings {
-	p.gate.beginRead()
+	p.gate.enterRead()
 
 	var its []*listPostings
 	var lps []listPostings
@@ -841,8 +723,7 @@ func (p *MemPostings) PostingsForAllLabelValues(ctx context.Context, name string
 		shard.mtx.RUnlock()
 	}
 
-	// Let the mutex go before merging.
-	p.gate.endRead()
+	p.gate.leaveRead()
 	return Merge(ctx, its...)
 }
 
