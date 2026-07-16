@@ -4453,6 +4453,30 @@ func testQueryOOOHeadDuringTruncate(t *testing.T, makeQuerier func(db *DB, minT,
 	<-compactionFinished // Wait for compaction otherwise Go test finds stray goroutines.
 }
 
+func TestHistogramBucketsAppendedMetric(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	require.NoError(t, head.Init(0))
+	t.Cleanup(func() { require.NoError(t, head.Close()) })
+
+	app := head.Appender(context.Background())
+
+	var expBuckets int
+	for i, h := range tsdbutil.GenerateTestHistograms(3) {
+		_, err := app.AppendHistogram(0, labels.FromStrings("__name__", "int_hist"), int64(i), h, nil)
+		require.NoError(t, err)
+		expBuckets += len(h.PositiveBuckets) + len(h.NegativeBuckets)
+	}
+	for i, fh := range tsdbutil.GenerateTestFloatHistograms(2) {
+		_, err := app.AppendHistogram(0, labels.FromStrings("__name__", "float_hist"), int64(i), nil, fh)
+		require.NoError(t, err)
+		expBuckets += len(fh.PositiveBuckets) + len(fh.NegativeBuckets)
+	}
+	require.NoError(t, app.Commit())
+
+	require.Positive(t, expBuckets)
+	require.Equal(t, float64(expBuckets), prom_testutil.ToFloat64(head.metrics.histogramBucketsAppended))
+}
+
 func TestAppendHistogram(t *testing.T) {
 	l := labels.FromStrings("a", "b")
 	for _, numHistograms := range []int{1, 10, 150, 200, 250, 300} {

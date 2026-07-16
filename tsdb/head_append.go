@@ -1165,6 +1165,10 @@ func exemplarsForEncoding(es []exemplarWithSeriesRef) []record.RefExemplar {
 type appenderCommitContext struct {
 	floatsAppended     int
 	histogramsAppended int
+	// Number of native histogram buckets (positive and negative, excluding the
+	// zero bucket) in the appended histogram samples, both in-order and accepted
+	// out-of-order. Mirrors the sample counting of histogramsAppended.
+	histogramBucketsAppended int
 	// Number of samples out of order but accepted: with ooo enabled and within time window.
 	oooFloatsAccepted    int
 	oooHistogramAccepted int
@@ -1538,6 +1542,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 					acc.oooMaxT = s.T
 				}
 				acc.oooHistogramAccepted++
+				acc.histogramBucketsAppended += len(s.H.PositiveBuckets) + len(s.H.NegativeBuckets)
 			} else {
 				// Sample is an exact duplicate of the last sample.
 				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
@@ -1559,6 +1564,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				}
 				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 				a.head.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
+				acc.histogramBucketsAppended += newBuckets
 			} else {
 				acc.histogramsAppended--
 				acc.histoOOORejected++
@@ -1640,6 +1646,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 					acc.oooMaxT = s.T
 				}
 				acc.oooHistogramAccepted++
+				acc.histogramBucketsAppended += len(s.FH.PositiveBuckets) + len(s.FH.NegativeBuckets)
 			} else {
 				// Sample is an exact duplicate of the last sample.
 				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
@@ -1661,6 +1668,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				}
 				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 				a.head.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
+				acc.histogramBucketsAppended += newBuckets
 			} else {
 				acc.histogramsAppended--
 				acc.histoOOORejected++
@@ -1779,6 +1787,7 @@ func (a *headAppenderBase) Commit() (err error) {
 	h.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatTooOldRejected))
 	h.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatsAppended))
 	h.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histogramsAppended))
+	h.metrics.histogramBucketsAppended.Add(float64(acc.histogramBucketsAppended))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.oooFloatsAccepted))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.oooHistogramAccepted))
 	h.updateMinMaxTime(acc.inOrderMint, acc.inOrderMaxt)
