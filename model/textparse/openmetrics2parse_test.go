@@ -800,6 +800,14 @@ foo_total 1.0 # {id="x"} 1.0
 			input: "# TYPE foo histogram\nfoo {count:1,sum:2.0,bucket:[0.1:1]}\n# EOF\n",
 			err:   "classic histogram buckets must include a +Inf threshold",
 		},
+		{
+			input: "# TYPE ss stateset\nss{ss=\"foo\"} 2\n# EOF\n",
+			err:   "stateset sample value must be 0 or 1",
+		},
+		{
+			input: "# TYPE ss stateset\nss{other=\"foo\"} 1\n# EOF\n",
+			err:   "stateset sample must have a label matching the metric family name",
+		},
 	} {
 		t.Run(tc.err, func(t *testing.T) {
 			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{})

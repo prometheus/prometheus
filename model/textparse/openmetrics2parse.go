@@ -171,6 +171,17 @@ func (p *OpenMetrics2Parser) resetOnFamilyChange(name []byte) {
 	p.curFamilyName = name
 }
 
+// hasFamilyNameLabel reports whether the current sample's labelsinclude a label key matching
+// p.curFamilyName. Used to enforce the OM2 stateset requirements.
+func (p *OpenMetrics2Parser) hasFamilyNameLabel() bool {
+	for i := 2; i < len(p.offsets); i += 4 {
+		if bytes.Equal(p.l.b[p.offsets[i]:p.offsets[i+1]], p.curFamilyName) {
+			return true
+		}
+	}
+	return false
+}
+
 // Series returns the bytes of the current series, the timestamp if set, and
 // the sample value.
 func (p *OpenMetrics2Parser) Series() ([]byte, *int64, float64) {
@@ -462,6 +473,15 @@ func (p *OpenMetrics2Parser) parseSeriesEndOfLine(t token) (Entry, error) {
 	}
 	if math.IsNaN(p.val) {
 		p.val = math.Float64frombits(value.NormalNaN)
+	}
+
+	if p.mtype == model.MetricTypeStateset {
+		if p.val != 0 && p.val != 1 {
+			return EntryInvalid, fmt.Errorf("stateset sample value must be 0 or 1, got %v while parsing: %q", p.val, p.l.b[p.start:p.l.i])
+		}
+		if !p.hasFamilyNameLabel() {
+			return EntryInvalid, fmt.Errorf("stateset sample must have a label matching the metric family name %q while parsing: %q", p.curFamilyName, p.l.b[p.start:p.l.i])
+		}
 	}
 
 	if err := p.parseAfterValue(); err != nil {
