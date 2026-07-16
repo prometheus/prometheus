@@ -125,7 +125,7 @@ func TestMemSeries_chunk(t *testing.T) {
 			name: "call ix=0 on memSeries with 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
 				appendSamples(t, s, 0, chunkRange*4, cdm)
-				s.mmapChunks(cdm)
+				s.mmapChunks(cdm, nil)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
 				require.Equal(t, chunkRange*3, s.headChunks.oldest().minTime, "wrong minTime on last headChunks element")
@@ -138,7 +138,7 @@ func TestMemSeries_chunk(t *testing.T) {
 			name: "call ix=1 on memSeries with 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
 				appendSamples(t, s, 0, chunkRange*4, cdm)
-				s.mmapChunks(cdm)
+				s.mmapChunks(cdm, nil)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
 				require.Equal(t, chunkRange*3, s.headChunks.oldest().minTime, "wrong minTime on last headChunks element")
@@ -151,7 +151,7 @@ func TestMemSeries_chunk(t *testing.T) {
 			name: "call ix=3 on memSeries with 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
 				appendSamples(t, s, 0, chunkRange*4, cdm)
-				s.mmapChunks(cdm)
+				s.mmapChunks(cdm, nil)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
 				require.Equal(t, chunkRange*3, s.headChunks.oldest().minTime, "wrong minTime on last headChunks element")
@@ -164,7 +164,7 @@ func TestMemSeries_chunk(t *testing.T) {
 			name: "call ix=0 on memSeries with 3 mmapped chunks and no headChunk",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
 				appendSamples(t, s, 0, chunkRange*4, cdm)
-				s.mmapChunks(cdm)
+				s.mmapChunks(cdm, nil)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
 				require.Equal(t, chunkRange*3, s.headChunks.oldest().minTime, "wrong minTime on last headChunks element")
@@ -178,7 +178,7 @@ func TestMemSeries_chunk(t *testing.T) {
 			name: "call ix=2 on memSeries with 3 mmapped chunks and no headChunk",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
 				appendSamples(t, s, 0, chunkRange*4, cdm)
-				s.mmapChunks(cdm)
+				s.mmapChunks(cdm, nil)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
 				require.Equal(t, chunkRange*3, s.headChunks.oldest().minTime, "wrong minTime on last headChunks element")
@@ -192,7 +192,7 @@ func TestMemSeries_chunk(t *testing.T) {
 			name: "call ix=3 on memSeries with 3 mmapped chunks and no headChunk",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
 				appendSamples(t, s, 0, chunkRange*4, cdm)
-				s.mmapChunks(cdm)
+				s.mmapChunks(cdm, nil)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
 				require.Equal(t, chunkRange*3, s.headChunks.oldest().minTime, "wrong minTime on last headChunks element")
@@ -206,7 +206,7 @@ func TestMemSeries_chunk(t *testing.T) {
 			name: "call ix=1 on memSeries with 3 mmapped chunks and closed ChunkDiskMapper",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
 				appendSamples(t, s, 0, chunkRange*4, cdm)
-				s.mmapChunks(cdm)
+				s.mmapChunks(cdm, nil)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
 				require.Equal(t, chunkRange*3, s.headChunks.oldest().minTime, "wrong minTime on last headChunks element")
@@ -220,7 +220,7 @@ func TestMemSeries_chunk(t *testing.T) {
 			name: "call ix=3 on memSeries with 3 mmapped chunks and closed ChunkDiskMapper",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
 				appendSamples(t, s, 0, chunkRange*4, cdm)
-				s.mmapChunks(cdm)
+				s.mmapChunks(cdm, nil)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
 				require.Equal(t, chunkRange*3, s.headChunks.oldest().minTime, "wrong minTime on last headChunks element")
@@ -270,7 +270,7 @@ func TestMemSeries_chunk(t *testing.T) {
 			name: "call ix=0 on memSeries with 3 head chunks and 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
 				appendSamples(t, s, 0, chunkRange*4, cdm)
-				s.mmapChunks(cdm)
+				s.mmapChunks(cdm, nil)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
 
@@ -287,7 +287,7 @@ func TestMemSeries_chunk(t *testing.T) {
 			name: "call ix=2 on memSeries with 3 head chunks and 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
 				appendSamples(t, s, 0, chunkRange*4, cdm)
-				s.mmapChunks(cdm)
+				s.mmapChunks(cdm, nil)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
 
@@ -304,7 +304,7 @@ func TestMemSeries_chunk(t *testing.T) {
 			name: "call ix=3 on memSeries with 3 head chunks and 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
 				appendSamples(t, s, 0, chunkRange*4, cdm)
-				s.mmapChunks(cdm)
+				s.mmapChunks(cdm, nil)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
 
@@ -321,7 +321,7 @@ func TestMemSeries_chunk(t *testing.T) {
 			name: "call ix=5 on memSeries with 3 head chunks and 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
 				appendSamples(t, s, 0, chunkRange*4, cdm)
-				s.mmapChunks(cdm)
+				s.mmapChunks(cdm, nil)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
 
@@ -338,7 +338,7 @@ func TestMemSeries_chunk(t *testing.T) {
 			name: "call ix=6 on memSeries with 3 head chunks and 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
 				appendSamples(t, s, 0, chunkRange*4, cdm)
-				s.mmapChunks(cdm)
+				s.mmapChunks(cdm, nil)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
 
@@ -356,7 +356,7 @@ func TestMemSeries_chunk(t *testing.T) {
 			name: "call ix=10 on memSeries with 3 head chunks and 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
 				appendSamples(t, s, 0, chunkRange*4, cdm)
-				s.mmapChunks(cdm)
+				s.mmapChunks(cdm, nil)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
 
@@ -462,7 +462,7 @@ func TestMemSeries_chunk_FastPath(t *testing.T) {
 
 	// Build 3 mmapped + 3 head chunks.
 	appendSamples(t, series, 0, chunkRange*4, chunkDiskMapper)
-	series.mmapChunks(chunkDiskMapper)
+	series.mmapChunks(chunkDiskMapper, nil)
 	require.Len(t, series.mmappedChunks, 3)
 	require.Equal(t, 1, series.headChunks.len())
 	appendSamples(t, series, chunkRange*4, chunkRange*6, chunkDiskMapper)
@@ -619,7 +619,7 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		// require under the series lock would deadlock the cleanup's Close).
 		s.Lock()
 		headPtrBefore := s.headChunks
-		s.mmapChunks(h.chunkDiskMapper)
+		s.mmapChunks(h.chunkDiskMapper, nil)
 		headChunksLenAfter := s.headChunks.len()
 		headPtrAfter := s.headChunks
 		newestMinTimeAfter := s.headChunks.minTime
@@ -837,6 +837,37 @@ func TestHeadChunkReaderCache(t *testing.T) {
 
 		// Buffer should have been released because cap exceeded threshold.
 		require.Nil(t, ir.headChunksBuf, "headChunksBuf should be released when cap > headChunksBufMaxCap")
+	})
+}
+
+func TestHeadChunksBufReusePolicy(t *testing.T) {
+	t.Run("small buffer retained and cleared", func(t *testing.T) {
+		buf := make([]*memChunk, 2, headChunksBufMaxCap)
+		buf[0] = &memChunk{}
+		buf[1] = &memChunk{}
+
+		released := releaseHeadChunksBuf(buf)
+		require.NotNil(t, released)
+		require.Empty(t, released)
+		require.Equal(t, headChunksBufMaxCap, cap(released))
+		for _, chk := range buf[:cap(buf)] {
+			require.Nil(t, chk)
+		}
+	})
+
+	t.Run("oversized buffer released", func(t *testing.T) {
+		buf := make([]*memChunk, 1, headChunksBufMaxCap+1)
+		buf[0] = &memChunk{}
+
+		require.Nil(t, releaseHeadChunksBuf(buf))
+	})
+
+	t.Run("oversized buffer dropped before reuse", func(t *testing.T) {
+		buf := make([]*memChunk, 0, headChunksBufMaxCap+1)
+
+		prepared := prepareHeadChunksBuf(buf, 4)
+		require.Empty(t, prepared)
+		require.Equal(t, 4, cap(prepared))
 	})
 }
 

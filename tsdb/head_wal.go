@@ -658,18 +658,21 @@ func (wp *walSubsetProcessor) reuseHistogramBuf() []histogramRecord {
 // happens whenever prev >= 2, since mmapChunks always sets the count to 1
 // when it does work), the per-stripe mmap-ready counter is decremented to
 // maintain its invariant.
-func (h *Head) appendChunkAndMmap(ms *memSeries, appendFn func() (sampleInOrder, chunkCreated bool)) (sampleInOrder, chunkCreated bool) {
+//
+// buf is a reusable scratch buffer for mmapChunks; the (possibly grown)
+// buffer is returned so callers can pass it back on the next call.
+func (h *Head) appendChunkAndMmap(ms *memSeries, buf []*memChunk, appendFn func() (sampleInOrder, chunkCreated bool)) (sampleInOrder, chunkCreated bool, mmapBuf []*memChunk) {
 	prev := ms.headChunkCount.Load()
 	sampleInOrder, chunkCreated = appendFn()
 	if chunkCreated {
 		h.metrics.chunksCreated.Inc()
 		h.metrics.chunks.Inc()
-		_ = ms.mmapChunks(h.chunkDiskMapper)
+		_, buf = ms.mmapChunks(h.chunkDiskMapper, buf)
 		if prev >= 2 {
 			h.series.decMmapReady(ms.ref)
 		}
 	}
-	return sampleInOrder, chunkCreated
+	return sampleInOrder, chunkCreated, buf
 }
 
 // valueTypeForChunkEncoding maps a chunk encoding to the sample value type it holds.
@@ -713,7 +716,8 @@ func (s *memSeries) latestInOrderValueType() chunkenc.ValueType {
 // in-order sample is a native histogram is converted to a (float) histogram
 // staleness marker, matching the live commitFloats path, so replay reproduces
 // the same chunk types instead of appending a float to a histogram series.
-func (h *Head) appendWALFloat(ms *memSeries, s record.RefSample, opts chunkOpts) {
+// mmapBuf is returned for reuse by subsequent WAL samples.
+func (h *Head) appendWALFloat(ms *memSeries, s record.RefSample, opts chunkOpts, mmapBuf []*memChunk) []*memChunk {
 	isStale := value.IsStaleNaN(s.V)
 	if isStale {
 		// Mirror commitFloats: decide the marker type from the series' most recent
@@ -722,43 +726,44 @@ func (h *Head) appendWALFloat(ms *memSeries, s record.RefSample, opts chunkOpts)
 		// still recognised.
 		switch ms.latestInOrderValueType() {
 		case chunkenc.ValHistogram:
-			h.appendWALHistogram(ms, s.ST, s.T, &histogram.Histogram{Sum: s.V}, nil, opts)
-			return
+			return h.appendWALHistogram(ms, s.ST, s.T, &histogram.Histogram{Sum: s.V}, nil, opts, mmapBuf)
 		case chunkenc.ValFloatHistogram:
-			h.appendWALHistogram(ms, s.ST, s.T, nil, &histogram.FloatHistogram{Sum: s.V}, opts)
-			return
+			return h.appendWALHistogram(ms, s.ST, s.T, nil, &histogram.FloatHistogram{Sum: s.V}, opts, mmapBuf)
 		}
 	}
 
 	wasStale := isStaleSeries(ms)
-	sampleInOrder, _ := h.appendChunkAndMmap(ms, func() (bool, bool) {
+	sampleInOrder, _, mmapBuf := h.appendChunkAndMmap(ms, mmapBuf, func() (bool, bool) {
 		return ms.append(s.ST, s.T, s.V, 0, opts)
 	})
 	if sampleInOrder {
 		h.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 	}
+	return mmapBuf
 }
 
 // appendWALHistogram replays an integer or float histogram sample (exactly one of
 // hist/floatHist must be non-nil) and updates the stale-series gauge if the
 // sample is accepted in-order.
-func (h *Head) appendWALHistogram(ms *memSeries, st, t int64, hist *histogram.Histogram, floatHist *histogram.FloatHistogram, opts chunkOpts) {
+// mmapBuf is returned for reuse by subsequent WAL samples.
+func (h *Head) appendWALHistogram(ms *memSeries, st, t int64, hist *histogram.Histogram, floatHist *histogram.FloatHistogram, opts chunkOpts, mmapBuf []*memChunk) []*memChunk {
 	wasStale := isStaleSeries(ms)
 	var isStale, sampleInOrder bool
 	if hist != nil {
 		isStale = value.IsStaleNaN(hist.Sum)
-		sampleInOrder, _ = h.appendChunkAndMmap(ms, func() (bool, bool) {
+		sampleInOrder, _, mmapBuf = h.appendChunkAndMmap(ms, mmapBuf, func() (bool, bool) {
 			return ms.appendHistogram(st, t, hist, 0, opts)
 		})
 	} else {
 		isStale = value.IsStaleNaN(floatHist.Sum)
-		sampleInOrder, _ = h.appendChunkAndMmap(ms, func() (bool, bool) {
+		sampleInOrder, _, mmapBuf = h.appendChunkAndMmap(ms, mmapBuf, func() (bool, bool) {
 			return ms.appendFloatHistogram(st, t, floatHist, 0, opts)
 		})
 	}
 	if sampleInOrder {
 		h.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 	}
+	return mmapBuf
 }
 
 // processWALSamples adds the samples it receives to the head and passes
@@ -773,6 +778,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 
 	minValidTime := h.minValidTime.Load()
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
+	var mmapBuf []*memChunk // Reusable scratch buffer for mmapChunks.
 	// storeST must be passed here so that appendPreprocessor cuts an in-progress
 	// XOR chunk immediately when replaying into a head with ST storage enabled.
 	// XOR chunks cannot store start timestamps and must not be continued with
@@ -807,7 +813,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				continue
 			}
 
-			h.appendWALFloat(ms, s, appendChunkOpts)
+			mmapBuf = h.appendWALFloat(ms, s, appendChunkOpts, mmapBuf)
 			if s.T > maxt {
 				maxt = s.T
 			}
@@ -834,9 +840,9 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				continue
 			}
 			if s.h != nil {
-				h.appendWALHistogram(ms, s.st, s.t, s.h, nil, appendChunkOpts)
+				mmapBuf = h.appendWALHistogram(ms, s.st, s.t, s.h, nil, appendChunkOpts, mmapBuf)
 			} else {
-				h.appendWALHistogram(ms, s.st, s.t, nil, s.fh, appendChunkOpts)
+				mmapBuf = h.appendWALHistogram(ms, s.st, s.t, nil, s.fh, appendChunkOpts, mmapBuf)
 			}
 			if s.t > maxt {
 				maxt = s.t
