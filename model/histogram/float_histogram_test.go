@@ -4460,6 +4460,41 @@ func BenchmarkFloatHistogramAdd(b *testing.B) {
 	})
 }
 
+func BenchmarkFloatHistogramTrimBuckets(b *testing.B) {
+	var (
+		rng           = rand.New(rand.NewSource(0))
+		numHistograms = 120
+		fhs           = make([]*FloatHistogram, 0, numHistograms)
+	)
+
+	for range numHistograms {
+		fhs = append(fhs, createRandomFloatHistogram(rng, 5))
+	}
+
+	// In place: the caller owns the histogram and lets TrimBuckets mutate it.
+	b.Run("InPlace", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			for _, hist := range fhs {
+				hist.TrimBuckets(3, true)
+			}
+		}
+	})
+
+	// Copy: the caller must preserve the input, so it copies first (the old
+	// behaviour, now expressed explicitly at the call site).
+	b.Run("Copy", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			for _, hist := range fhs {
+				hist.Copy().TrimBuckets(3, true)
+			}
+		}
+	})
+}
+
 func createRandomFloatHistogram(rng *rand.Rand, spanNum int32) *FloatHistogram {
 	f := &FloatHistogram{}
 	f.PositiveSpans, f.PositiveBuckets = createRandomSpans(rng, spanNum)
