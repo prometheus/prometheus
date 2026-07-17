@@ -140,6 +140,7 @@ func (b *MemoizedSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHist
 	return b.it.AtFloatHistogram(nil)
 }
 
+// AtST returns the start timestamp of the current element of the iterator.
 func (b *MemoizedSeriesIterator) AtST() int64 { return b.it.AtST() }
 
 // AtT returns the timestamp of the current element of the iterator.
