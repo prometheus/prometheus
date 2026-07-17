@@ -11,224 +11,445 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package infohelper provides utilities for extracting data labels from info metrics.
-// Info metrics (like target_info) contain metadata labels that can be used to enrich
-// other time series via identifying labels like "job" and "instance".
+// Package infohelper provides shared matching helpers for PromQL info metrics.
 package infohelper
 
 import (
-	"context"
 	"fmt"
-	"maps"
+	"iter"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/grafana/regexp"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// InfoLabelRecord is one data label discovered on an info metric, with the
-// unique values seen across matching series and the relevance score produced
-// by the optional filter (1.0 when the filter accepted the name unconditionally
-// or no filter was supplied).
-type InfoLabelRecord struct {
-	Name   string
-	Values []string
-	Score  float64
-}
+const (
+	// DefaultIdentifyingLabelInstance is the standard instance identity label.
+	DefaultIdentifyingLabelInstance = "instance"
+	// DefaultIdentifyingLabelJob is the standard job identity label.
+	DefaultIdentifyingLabelJob = "job"
+)
 
-// DefaultIdentifyingLabels are the standard labels used to match base metrics to info metrics.
-// These are the default identifying labels for Prometheus info metrics.
-var DefaultIdentifyingLabels = []string{"instance", "job"}
+var defaultIdentifyingLabels = [...]string{DefaultIdentifyingLabelInstance, DefaultIdentifyingLabelJob}
 
 // DefaultInfoMetricName is the default info metric name when none is specified.
 const DefaultInfoMetricName = "target_info"
 
-// Config controls behavior of info label extraction.
-type Config struct {
-	// IdentifyingLabels are the labels used to match base metrics to info metrics.
-	// These labels are excluded from the data labels returned.
-	IdentifyingLabels []string
-
-	// DefaultInfoMetric is the default info metric to query when none is specified.
-	DefaultInfoMetric string
-}
-
-// DefaultConfig returns the standard config for Prometheus info metrics.
-func DefaultConfig() Config {
-	return Config{
-		IdentifyingLabels: DefaultIdentifyingLabels,
-		DefaultInfoMetric: DefaultInfoMetricName,
-	}
-}
-
-// InfoLabelExtractor extracts data labels from info metrics.
-type InfoLabelExtractor struct {
-	config Config
-}
-
-// New creates an InfoLabelExtractor with the given config.
-func New(config Config) *InfoLabelExtractor {
-	return &InfoLabelExtractor{config: config}
-}
-
-// NewWithDefaults creates an InfoLabelExtractor with default config.
-func NewWithDefaults() *InfoLabelExtractor {
-	return New(DefaultConfig())
-}
-
-// ExtractDataLabels queries info metrics and returns the discovered data
-// labels as records. Data labels are all labels on an info metric except
-// __name__ and the configured identifying labels.
-//
-// Parameters:
-//   - ctx: cancellation context.
-//   - querier: storage querier used to fetch series.
-//   - infoMetricMatcher: matcher for the info metric __name__
-//     (e.g. MatchEqual "target_info" or MatchRegexp ".*_info").
-//   - identifyingLabelValues: if non-empty, restricts info metrics to those
-//     whose identifying labels (keys) take any of the provided values.
-//   - hints: select hints forwarded to the storage layer.
-//   - filter: optional storage.Filter applied to label NAMES. When nil, all
-//     non-identifying labels are accepted with score 1.0. When non-nil, only
-//     accepted names are returned and Score reflects the filter's relevance.
-//   - namesLimit: if > 0, caps the number of distinct label NAMES collected.
-//     Once the cap is reached, the extractor still drains the series set to
-//     accumulate values for names already accepted, but rejects any
-//     not-yet-seen names. A warning is added to the returned annotations.
-//     Note that when names are truncated, callers using a score-based sort
-//     may miss high-scoring names that arrived after the cap.
-//   - valuesLimit: if > 0, truncates the per-label values slice to this length.
-//     Truncation happens after alphabetical sort.
-//
-// Records are returned in undefined order; callers apply their own sort.
-func (e *InfoLabelExtractor) ExtractDataLabels(
-	ctx context.Context,
-	querier storage.Querier,
-	infoMetricMatcher *labels.Matcher,
-	identifyingLabelValues map[string]map[string]struct{},
-	hints *storage.SelectHints,
-	filter storage.Filter,
-	namesLimit, valuesLimit int,
-) ([]InfoLabelRecord, annotations.Annotations, error) {
-	var warnings annotations.Annotations
-
-	infoMatchers := []*labels.Matcher{infoMetricMatcher}
-	if len(identifyingLabelValues) > 0 {
-		for name, vals := range identifyingLabelValues {
-			infoMatchers = append(infoMatchers, labels.MustNewMatcher(labels.MatchRegexp, name, BuildRegexpAlternation(vals)))
+// EffectiveNameMatchers returns the metric-name matchers used to select info
+// series. Negative-only selections are restricted to info metric names.
+func EffectiveNameMatchers(matchers []*labels.Matcher) []*labels.Matcher {
+	for _, m := range matchers {
+		if m.Type == labels.MatchEqual || m.Type == labels.MatchRegexp {
+			return matchers
 		}
 	}
-
-	infoSet := querier.Select(ctx, false, hints, infoMatchers...)
-	warnings.Merge(infoSet.Warnings())
-
-	type dataLabelEntry struct {
-		values map[string]struct{}
-		score  float64
+	if len(matchers) > 0 {
+		return append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+_info")}, matchers...)
 	}
-	// nameDecision memoises filter outcomes (and the score) per label name so
-	// the per-series Range below doesn't re-invoke the filter for every series
-	// that exposes the same label.
-	nameDecision := map[string]struct {
-		accept bool
-		score  float64
-	}{}
-	dataLabels := map[string]*dataLabelEntry{}
-	namesTruncated := false
 
-	for infoSet.Next() {
-		if ctx.Err() != nil {
-			return nil, warnings, ctx.Err()
+	return []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, DefaultInfoMetricName)}
+}
+
+// MatchesAll reports whether value matches every matcher.
+func MatchesAll(value string, matchers []*labels.Matcher) bool {
+	for _, m := range matchers {
+		if !m.Matches(value) {
+			return false
 		}
+	}
+	return true
+}
 
-		infoSet.At().Labels().Range(func(lbl labels.Label) {
-			if lbl.Name == labels.MetricName {
-				return
+// MatcherSetLimits bounds the intermediate values and regular expressions used
+// to construct identifying matcher sets. Zero disables the corresponding bound.
+type MatcherSetLimits struct {
+	MaxValues      int
+	MaxRegexpBytes int
+}
+
+// IsDefaultIdentifyingLabel reports whether name identifies an info series.
+func IsDefaultIdentifyingLabel(name string) bool {
+	return name == DefaultIdentifyingLabelInstance || name == DefaultIdentifyingLabelJob
+}
+
+const (
+	firstLabelIndex = iota
+	secondLabelIndex
+)
+
+type identifyingLabelPresence uint8
+
+const (
+	secondLabelPresent identifyingLabelPresence = 1 << iota
+	firstLabelPresent
+)
+
+var identifyingLabelPresenceBits = [...]identifyingLabelPresence{firstLabelPresent, secondLabelPresent}
+
+type twoIdentifyingLabelGroup [2]map[string]struct{}
+
+type twoIdentifyingLabelMatcherSetBuilder struct {
+	limits      MatcherSetLimits
+	groups      map[identifyingLabelPresence]*twoIdentifyingLabelGroup
+	valueCount  int
+	regexpBytes int
+}
+
+func newTwoIdentifyingLabelMatcherSetBuilder(limits MatcherSetLimits) twoIdentifyingLabelMatcherSetBuilder {
+	return twoIdentifyingLabelMatcherSetBuilder{
+		limits: limits,
+		groups: map[identifyingLabelPresence]*twoIdentifyingLabelGroup{},
+	}
+}
+
+func (b *twoIdentifyingLabelMatcherSetBuilder) add(metric labels.Labels, identifyingLabels [2]string) error {
+	if b.groups == nil {
+		b.groups = map[identifyingLabelPresence]*twoIdentifyingLabelGroup{}
+	}
+	values := [2]string{
+		firstLabelIndex:  metric.Get(identifyingLabels[firstLabelIndex]),
+		secondLabelIndex: metric.Get(identifyingLabels[secondLabelIndex]),
+	}
+	var presence identifyingLabelPresence
+	if values[firstLabelIndex] != "" {
+		presence |= firstLabelPresent
+	}
+	if values[secondLabelIndex] != "" {
+		presence |= secondLabelPresent
+	}
+	if presence == 0 {
+		return nil
+	}
+
+	g := b.groups[presence]
+	if g == nil {
+		g = &twoIdentifyingLabelGroup{}
+		b.groups[presence] = g
+	}
+	for i, value := range values {
+		if value == "" {
+			continue
+		}
+		if g[i] == nil {
+			g[i] = map[string]struct{}{}
+		}
+		if _, exists := g[i][value]; exists {
+			continue
+		}
+		b.valueCount++
+		if b.limits.MaxValues > 0 && b.valueCount > b.limits.MaxValues {
+			return fmt.Errorf("identifying matcher values exceed limit of %d", b.limits.MaxValues)
+		}
+		valueBytes := escapedRegexpLen(value)
+		if len(g[i]) > 0 {
+			valueBytes++
+		}
+		b.regexpBytes += valueBytes
+		if b.limits.MaxRegexpBytes > 0 && b.regexpBytes > b.limits.MaxRegexpBytes {
+			return fmt.Errorf("identifying matcher regular expressions exceed limit of %d bytes", b.limits.MaxRegexpBytes)
+		}
+		g[i][value] = struct{}{}
+	}
+	return nil
+}
+
+func (b *twoIdentifyingLabelMatcherSetBuilder) matcherSets(identifyingLabels [2]string) [][]*labels.Matcher {
+	presences := make([]identifyingLabelPresence, 0, len(b.groups))
+	for presence := range b.groups {
+		presences = append(presences, presence)
+	}
+	slices.Sort(presences)
+
+	matcherSets := make([][]*labels.Matcher, 0, len(b.groups))
+	for _, presence := range presences {
+		g := b.groups[presence]
+		matchers := make([]*labels.Matcher, 0, len(identifyingLabels))
+		for i, name := range identifyingLabels {
+			if presence&identifyingLabelPresenceBits[i] == 0 {
+				matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, name, ""))
+				continue
 			}
-			if slices.Contains(e.config.IdentifyingLabels, lbl.Name) {
-				return
+
+			values := make([]string, 0, len(g[i]))
+			for value := range g[i] {
+				values = append(values, value)
 			}
-			decision, seen := nameDecision[lbl.Name]
-			if !seen {
-				if filter == nil {
-					decision.accept = true
-					decision.score = 1.0
-				} else {
-					decision.accept, decision.score = filter.Accept(lbl.Name)
+			slices.Sort(values)
+
+			var sb strings.Builder
+			for i, value := range values {
+				if i > 0 {
+					sb.WriteRune('|')
 				}
-				nameDecision[lbl.Name] = decision
+				sb.WriteString(regexp.QuoteMeta(value))
 			}
-			if !decision.accept {
-				return
+			matchers = append(matchers, labels.MustNewMatcher(labels.MatchRegexp, name, sb.String()))
+		}
+		matcherSets = append(matcherSets, matchers)
+	}
+	return matcherSets
+}
+
+// DefaultIdentifyingMatcherSetBuilder incrementally builds matcher sets for
+// the standard instance and job identity labels.
+type DefaultIdentifyingMatcherSetBuilder struct {
+	builder twoIdentifyingLabelMatcherSetBuilder
+}
+
+// NewDefaultIdentifyingMatcherSetBuilder returns an empty builder with limits.
+func NewDefaultIdentifyingMatcherSetBuilder(limits MatcherSetLimits) DefaultIdentifyingMatcherSetBuilder {
+	return DefaultIdentifyingMatcherSetBuilder{builder: newTwoIdentifyingLabelMatcherSetBuilder(limits)}
+}
+
+// Add includes metric in the identifying matcher sets.
+func (b *DefaultIdentifyingMatcherSetBuilder) Add(metric labels.Labels) error {
+	return b.builder.add(metric, defaultIdentifyingLabels)
+}
+
+// MatcherSets returns the accumulated identifying matcher sets.
+func (b *DefaultIdentifyingMatcherSetBuilder) MatcherSets() [][]*labels.Matcher {
+	return b.builder.matcherSets(defaultIdentifyingLabels)
+}
+
+// IdentifyingMatcherSets builds matcher sets for every identifying-label
+// presence pattern represented by metrics.
+func IdentifyingMatcherSets(metrics iter.Seq[labels.Labels], identifyingLabels []string, limits MatcherSetLimits) ([][]*labels.Matcher, error) {
+	if len(identifyingLabels) == 2 && identifyingLabels[0] != identifyingLabels[1] {
+		return identifyingMatcherSetsForTwoLabels(metrics, identifyingLabels, limits)
+	}
+	return identifyingMatcherSetsGeneric(metrics, identifyingLabels, limits)
+}
+
+func identifyingMatcherSetsForTwoLabels(metrics iter.Seq[labels.Labels], identifyingLabels []string, limits MatcherSetLimits) ([][]*labels.Matcher, error) {
+	labelsArray := [2]string{identifyingLabels[firstLabelIndex], identifyingLabels[secondLabelIndex]}
+	builder := newTwoIdentifyingLabelMatcherSetBuilder(limits)
+	var iterationErr error
+	metrics(func(metric labels.Labels) bool {
+		iterationErr = builder.add(metric, labelsArray)
+		return iterationErr == nil
+	})
+	if iterationErr != nil {
+		return nil, iterationErr
+	}
+	return builder.matcherSets(labelsArray), nil
+}
+
+func identifyingMatcherSetsGeneric(metrics iter.Seq[labels.Labels], identifyingLabels []string, limits MatcherSetLimits) ([][]*labels.Matcher, error) {
+	type group map[string]map[string]struct{}
+	groups := map[string]group{}
+	valueCount := 0
+	regexpBytes := 0
+
+	var iterationErr error
+	metrics(func(metric labels.Labels) bool {
+		presence := make([]byte, len(identifyingLabels))
+		values := make(map[string]string, len(identifyingLabels))
+		hasIdentifier := false
+		for i, name := range identifyingLabels {
+			value := metric.Get(name)
+			if value == "" {
+				presence[i] = '0'
+				continue
 			}
-			entry := dataLabels[lbl.Name]
-			if entry == nil {
-				// Enforce the names cap: drop new names once at the cap,
-				// but keep accepting values for already-collected names.
-				if namesLimit > 0 && len(dataLabels) >= namesLimit {
-					namesTruncated = true
-					return
+			presence[i] = '1'
+			values[name] = value
+			hasIdentifier = true
+		}
+		if !hasIdentifier {
+			return true
+		}
+
+		key := string(presence)
+		if groups[key] == nil {
+			groups[key] = group{}
+		}
+		for name, value := range values {
+			if groups[key][name] == nil {
+				groups[key][name] = map[string]struct{}{}
+			}
+			if _, exists := groups[key][name][value]; exists {
+				continue
+			}
+			valueCount++
+			if limits.MaxValues > 0 && valueCount > limits.MaxValues {
+				iterationErr = fmt.Errorf("identifying matcher values exceed limit of %d", limits.MaxValues)
+				return false
+			}
+			valueBytes := escapedRegexpLen(value)
+			if len(groups[key][name]) > 0 {
+				valueBytes++
+			}
+			regexpBytes += valueBytes
+			if limits.MaxRegexpBytes > 0 && regexpBytes > limits.MaxRegexpBytes {
+				iterationErr = fmt.Errorf("identifying matcher regular expressions exceed limit of %d bytes", limits.MaxRegexpBytes)
+				return false
+			}
+			groups[key][name][value] = struct{}{}
+		}
+		return true
+	})
+	if iterationErr != nil {
+		return nil, iterationErr
+	}
+
+	matcherSets := make([][]*labels.Matcher, 0, len(groups))
+	keys := make([]string, 0, len(groups))
+	for key := range groups {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		matchers := make([]*labels.Matcher, 0, len(identifyingLabels))
+		for i, name := range identifyingLabels {
+			if key[i] == '0' {
+				matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, name, ""))
+				continue
+			}
+			matchers = append(matchers, labels.MustNewMatcher(labels.MatchRegexp, name, BuildRegexpAlternation(groups[key][name])))
+		}
+		matcherSets = append(matcherSets, matchers)
+	}
+	return matcherSets, nil
+}
+
+func escapedRegexpLen(value string) int {
+	length := len(value)
+	for i := 0; i < len(value); i++ {
+		switch value[i] {
+		case '\\', '.', '+', '*', '?', '(', ')', '|', '[', ']', '{', '}', '^', '$':
+			length++
+		}
+	}
+	return length
+}
+
+// SelectPlan contains the storage bounds and evaluation reference for info series.
+type SelectPlan struct {
+	Hints     storage.SelectHints
+	Timestamp *int64
+	Offset    time.Duration
+}
+
+type seriesReference struct {
+	timestamp *int64
+	offset    time.Duration
+}
+
+func (r seriesReference) equal(other seriesReference) bool {
+	if r.timestamp == nil || other.timestamp == nil {
+		return r.timestamp == nil && other.timestamp == nil && r.offset.Milliseconds() == other.offset.Milliseconds()
+	}
+	return *r.timestamp-r.offset.Milliseconds() == *other.timestamp-other.offset.Milliseconds()
+}
+
+// SelectTimestampAndOffset derives a shared reference for vector-producing paths.
+func SelectTimestampAndOffset(expr parser.Expr) (nodeTimestamp *int64, offset time.Duration, uniform bool) {
+	var (
+		first         seriesReference
+		found         bool
+		referenceFree bool
+	)
+	uniform = true
+
+	var inspect func(parser.Expr, []parser.Node) bool
+	inspect = func(expr parser.Expr, path []parser.Node) bool {
+		if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeMatrix {
+			return false
+		}
+
+		if n, ok := expr.(*parser.VectorSelector); ok {
+			ref := seriesReference{timestamp: n.Timestamp, offset: n.OriginalOffset}
+			// Enclosing subqueries shift the reference until an @ timestamp anchors it.
+			for i := len(path) - 1; ref.timestamp == nil && i >= 0; i-- {
+				if sq, ok := path[i].(*parser.SubqueryExpr); ok {
+					ref.offset += sq.OriginalOffset
+					ref.timestamp = sq.Timestamp
 				}
-				entry = &dataLabelEntry{values: map[string]struct{}{}, score: decision.score}
-				dataLabels[lbl.Name] = entry
 			}
-			entry.values[lbl.Value] = struct{}{}
-		})
-	}
 
-	if err := infoSet.Err(); err != nil {
-		return nil, warnings, err
-	}
-
-	if namesTruncated {
-		warnings = warnings.Add(fmt.Errorf("info-labels names truncated at %d; narrow metric_match or raise --web.search.max-limit", namesLimit))
-	}
-
-	records := make([]InfoLabelRecord, 0, len(dataLabels))
-	for name, entry := range dataLabels {
-		vals := make([]string, 0, len(entry.values))
-		for v := range entry.values {
-			vals = append(vals, v)
+			if !found {
+				first = ref
+				found = true
+			} else if !first.equal(ref) {
+				uniform = false
+			}
+			return true
 		}
-		slices.Sort(vals)
-		if valuesLimit > 0 && len(vals) > valuesLimit {
-			vals = vals[:valuesLimit]
+
+		path = append(path, expr)
+		if call, ok := expr.(*parser.Call); ok && call.Func.Name == "info" {
+			// The second argument is selector syntax, not an evaluated vector.
+			return inspect(call.Args[0], path)
 		}
-		records = append(records, InfoLabelRecord{Name: name, Values: vals, Score: entry.score})
+
+		hasSelector := false
+		for child := range parser.ChildrenIter(expr) {
+			childExpr, ok := child.(parser.Expr)
+			if ok && inspect(childExpr, path) {
+				hasSelector = true
+			}
+		}
+		if !hasSelector {
+			// Selector-free vectors use the evaluator time.
+			referenceFree = true
+		}
+		return hasSelector
 	}
 
-	return records, warnings, nil
+	inspect(expr, nil)
+	if !found {
+		return nil, 0, false
+	}
+	return first.timestamp, first.offset, uniform && !referenceFree
 }
 
-// IdentifyingLabels returns the identifying labels configured for this extractor.
-func (e *InfoLabelExtractor) IdentifyingLabels() []string {
-	return e.config.IdentifyingLabels
+// BuildSelectPlan derives the shared info-series reference for expr.
+func BuildSelectPlan(expr parser.Expr, start, end, step int64, lookbackDelta time.Duration) SelectPlan {
+	nodeTimestamp, offset, uniform := SelectTimestampAndOffset(expr)
+	if !uniform {
+		nodeTimestamp = nil
+		offset = 0
+	}
+
+	if nodeTimestamp != nil {
+		start = *nodeTimestamp
+		end = *nodeTimestamp
+	}
+	start -= lookbackDelta.Milliseconds() - 1
+	start -= offset.Milliseconds()
+	end -= offset.Milliseconds()
+
+	return SelectPlan{
+		Hints: storage.SelectHints{
+			Start: start,
+			End:   end,
+			Step:  step,
+			Func:  "info",
+		},
+		Timestamp: nodeTimestamp,
+		Offset:    offset,
+	}
 }
 
-// DefaultInfoMetric returns the default info metric configured for this extractor.
-func (e *InfoLabelExtractor) DefaultInfoMetric() string {
-	return e.config.DefaultInfoMetric
-}
-
-// BuildRegexpAlternation creates a regex pattern that matches any of the provided values.
-// Values are escaped for use in regular expressions and joined with the '|' alternation operator.
-// The values are sorted to ensure deterministic output.
-// For example: {"foo": {}, "bar": {}, "baz": {}} -> "bar|baz|foo"
-// Special regex characters in values are escaped: {"a.b": {}, "c*d": {}} -> "a\\.b|c\\*d"
-//
-// This is used to build efficient regex matchers for filtering info metrics by
-// identifying label values extracted from base metrics.
+// BuildRegexpAlternation returns a deterministic, escaped alternation for the provided values.
 func BuildRegexpAlternation(values map[string]struct{}) string {
 	if len(values) == 0 {
 		return ""
 	}
 
 	var sb strings.Builder
-	for i, v := range slices.Sorted(maps.Keys(values)) {
+	sortedValues := make([]string, 0, len(values))
+	for value := range values {
+		sortedValues = append(sortedValues, value)
+	}
+	slices.Sort(sortedValues)
+	for i, v := range sortedValues {
 		if i > 0 {
 			sb.WriteRune('|')
 		}

@@ -140,6 +140,13 @@ func booleanSchemaWithDescription(description string) *base.SchemaProxy {
 	})
 }
 
+func stringArraySchema() *base.SchemaProxy {
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:  []string{"array"},
+		Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+	})
+}
+
 func stringArraySchemaWithDescription(description string) *base.SchemaProxy {
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:        []string{"array"},
@@ -155,6 +162,19 @@ func stringArraySchemaWithDescriptionAndExample(description string, example any)
 		Description: description,
 		Example:     createYAMLNode(example),
 	})
+}
+
+func searchTermsSchema(description string, example any) *base.SchemaProxy {
+	schema := &base.Schema{
+		Type:        []string{"array"},
+		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+		Description: description,
+		MaxItems:    int64Ptr(maxSearchTermsPerRequest),
+	}
+	if example != nil {
+		schema.Example = createYAMLNode(example)
+	}
+	return base.CreateSchemaProxy(schema)
 }
 
 func statusSchema() *base.SchemaProxy {

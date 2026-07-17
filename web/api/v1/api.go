@@ -254,6 +254,7 @@ type API struct {
 	enableSearch                bool
 	maxSearchLimit              int
 	enableExperimentalFunctions bool
+	queryTimeout                time.Duration
 	metaCache                   *searchMetadataCache
 	logger                      *slog.Logger
 	CORSOrigin                  *regexp.Regexp
@@ -318,6 +319,7 @@ func NewAPI(
 	otlpEnabled, otlpDeltaToCumulative, otlpNativeDeltaIngestion bool,
 	stZeroIngestionEnabled bool,
 	lookbackDelta time.Duration,
+	queryTimeout time.Duration,
 	enableTypeAndUnitLabels bool,
 	appendMetadata bool,
 	overrideErrorCode OverrideErrorCode,
@@ -345,6 +347,7 @@ func NewAPI(
 		enableSearch:                enableSearch,
 		maxSearchLimit:              maxSearchLimit,
 		enableExperimentalFunctions: enableExperimentalFunctions,
+		queryTimeout:                queryTimeout,
 		metaCache:                   &searchMetadataCache{},
 		rulesRetriever:              rr,
 		logger:                      logger,
@@ -502,6 +505,8 @@ func (api *API) Register(r *route.Router) {
 	r.Post("/search/label_values", api.ready(api.searchLabelValues))
 	r.Get("/info_labels", api.ready(api.infoLabels))
 	r.Post("/info_labels", api.ready(api.infoLabels))
+	r.Get("/info_label_values", api.ready(api.infoLabelValues))
+	r.Post("/info_label_values", api.ready(api.infoLabelValues))
 
 	r.Get("/alerts", wrapAgent(api.alerts))
 	r.Get("/rules", wrapAgent(api.rules))

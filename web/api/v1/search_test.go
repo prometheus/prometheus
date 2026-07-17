@@ -106,6 +106,21 @@ func minimalSearchAPI() *API {
 	}
 }
 
+func newUnsupportedSearchAPI(t *testing.T) *API {
+	t.Helper()
+
+	api := minimalSearchAPI()
+	api.Queryable = errorTestQueryable{q: storage.NewMergeQuerier(
+		[]storage.Querier{fixedSearchQuerier{rs: storage.EmptySearchResultSet()}},
+		[]storage.Querier{errorTestQuerier{}},
+		storage.ChainedSeriesMerge,
+	)}
+	api.QueryEngine = testEngine(t)
+	api.enableExperimentalFunctions = true
+	api.queryTimeout = 2 * time.Minute
+	return api
+}
+
 // parseNDJSON parses NDJSON response body into individual JSON objects.
 func parseNDJSON(t *testing.T, body string) []json.RawMessage {
 	t.Helper()
@@ -204,6 +219,37 @@ func TestSearchEndpointsMapTSDBNotReadyToUnavailable(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestSearchEndpointsRejectIncompleteStorageSearchSupport(t *testing.T) {
+	api := newUnsupportedSearchAPI(t)
+	r := route.New()
+	api.Register(r)
+	endpoints := []struct {
+		path   string
+		params url.Values
+	}{
+		{path: "/search/metric_names"},
+		{path: "/search/label_names"},
+		{path: "/search/label_values", params: url.Values{"label": {"job"}}},
+	}
+
+	for _, endpoint := range endpoints {
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			t.Run(method+" "+endpoint.path, func(t *testing.T) {
+				rec := httptest.NewRecorder()
+				r.ServeHTTP(rec, infoEndpointRequest(t, method, endpoint.path, endpoint.params))
+				require.Equal(t, http.StatusInternalServerError, rec.Code)
+				require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+
+				var response Response
+				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+				require.Equal(t, statusError, response.Status)
+				require.Equal(t, errorUnavailable.str, response.ErrorType)
+				require.Equal(t, "search is not supported by all storage backends participating in the query", response.Error)
+			})
+		}
 	}
 }
 
@@ -477,6 +523,16 @@ func TestSearchMetricNames(t *testing.T) {
 		})
 	}
 
+	for _, v := range []string{"1", "1000", "10001"} {
+		t.Run("batch_size "+v+" is accepted", func(t *testing.T) {
+			rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
+				"batch_size": []string{v},
+				"limit":      []string{"1"},
+			})
+			require.Equal(t, http.StatusOK, rec.Code)
+		})
+	}
+
 	t.Run("sort_by cardinality is invalid", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
 			"search[]": []string{"up"},
@@ -516,10 +572,11 @@ func TestSearchMetricNames(t *testing.T) {
 		require.Len(t, batch.Results, 1)
 	})
 
-	t.Run("end before start is rejected", func(t *testing.T) {
+	t.Run("end before start is rejected even with unrelated expr", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
 			"start": []string{"7200"},
 			"end":   []string{"3600"},
+			"expr":  []string{"up"},
 		})
 		require.Equal(t, http.StatusBadRequest, rec.Code)
 		require.Contains(t, rec.Body.String(), "end timestamp must not be before start timestamp")
@@ -1166,6 +1223,35 @@ func TestSearchStreamFirstBatchError(t *testing.T) {
 	require.Equal(t, "error", lastTrailer.Status, "stream must terminate with an error line, not a success trailer")
 }
 
+func TestSearchStreamDeadlineErrors(t *testing.T) {
+	t.Run("before streaming", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		streamSearchResults(t.Context(), minimalSearchAPI(), rec, storage.ErrSearchResultSet(context.DeadlineExceeded), searchParams{batchSize: 5, limit: 5}, func(result storage.SearchResult) string {
+			return result.Value
+		})
+
+		require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+		var response Response
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+		require.Equal(t, errorTimeout.str, response.ErrorType)
+	})
+
+	t.Run("after partial results", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		rs := storage.NewSearchResultSetFromSliceAndError([]storage.SearchResult{{Value: "alpha", Score: 1}}, nil, context.DeadlineExceeded)
+		streamSearchResults(t.Context(), minimalSearchAPI(), rec, rs, searchParams{batchSize: 5, limit: 5}, func(result storage.SearchResult) string {
+			return result.Value
+		})
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		lines := parseNDJSON(t, rec.Body.String())
+		require.Len(t, lines, 2)
+		var terminal searchErrorResponse
+		require.NoError(t, json.Unmarshal(lines[1], &terminal))
+		require.Equal(t, errorTimeout.str, terminal.ErrorType)
+	})
+}
+
 // TestStreamSearchResultsWarningsSorted verifies that warnings emitted in the
 // first NDJSON batch are sorted (so the on-wire order is deterministic) and
 // that the trailer's order-independent dedup correctly omits them when the
@@ -1368,7 +1454,7 @@ func TestSearchBatchSize(t *testing.T) {
 			api.maxSearchLimit = tc.maxLimit
 			params := url.Values{"batch_size": {tc.batchSize}, "limit": {tc.limit}}
 			req := httptest.NewRequest(http.MethodGet, "/search/metric_names?"+params.Encode(), http.NoBody)
-			sp, err := api.parseSearchParams(req)
+			sp, err := api.parseSearchParams(req, true)
 			require.Nil(t, err)
 			require.Equal(t, tc.want, sp.batchSize)
 		})
