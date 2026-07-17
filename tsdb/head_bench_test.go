@@ -14,9 +14,13 @@
 package tsdb
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
+	"runtime"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -28,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/compression"
 )
 
@@ -253,57 +258,56 @@ func BenchmarkHeadAppender_AppendCommit(b *testing.B) {
 }
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
-	chunkDir := b.TempDir()
-	// Put a series, select it. GC it and then access it.
-	opts := DefaultHeadOptions()
-	opts.ChunkRange = 1000
-	opts.ChunkDirRoot = chunkDir
-	h, err := NewHead(nil, nil, nil, nil, opts, nil)
-	require.NoError(b, err)
-	defer h.Close()
-
-	for i := 0; b.Loop(); i++ {
-		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)), false)
+	newHead := func(b *testing.B, enableSharding bool) *Head {
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 1000
+		opts.ChunkDirRoot = b.TempDir()
+		opts.EnableSharding = enableSharding
+		h, err := NewHead(nil, nil, nil, nil, opts, nil)
+		require.NoError(b, err)
+		b.Cleanup(func() { require.NoError(b, h.Close()) })
+		return h
 	}
-}
 
-func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
-	chunkDir := b.TempDir()
-	// Put a series, select it. GC it and then access it.
-	opts := DefaultHeadOptions()
-	opts.ChunkRange = 1000
-	opts.ChunkDirRoot = chunkDir
-	h, err := NewHead(nil, nil, nil, nil, opts, nil)
-	require.NoError(b, err)
-	defer h.Close()
+	// With sharding enabled, series creation additionally maintains shard buckets.
+	for _, sharding := range []bool{false, true} {
+		b.Run(fmt.Sprintf("sharding=%t", sharding), func(b *testing.B) {
+			b.Run("serial", func(b *testing.B) {
+				h := newHead(b, sharding)
+				for i := 0; b.Loop(); i++ {
+					h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)), false)
+				}
+			})
 
-	var count atomic.Int64
+			b.Run("parallel", func(b *testing.B) {
+				h := newHead(b, sharding)
+				var count atomic.Int64
+				b.RunParallel(func(pb *testing.PB) {
+					for pb.Next() {
+						i := count.Inc()
+						h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(int(i))), false)
+					}
+				})
+			})
+		})
+	}
 
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			i := count.Inc()
-			h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(int(i))), false)
+	// The PreCreation() callback rejects every series.
+	b.Run("preCreationFailure", func(b *testing.B) {
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 1000
+		opts.ChunkDirRoot = b.TempDir()
+
+		// Mock the PreCreation() callback to fail on each series.
+		opts.SeriesCallback = failingSeriesLifecycleCallback{}
+		h, err := NewHead(nil, nil, nil, nil, opts, nil)
+		require.NoError(b, err)
+		b.Cleanup(func() { require.NoError(b, h.Close()) })
+
+		for i := 0; b.Loop(); i++ {
+			h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)), false)
 		}
 	})
-}
-
-func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
-	chunkDir := b.TempDir()
-	// Put a series, select it. GC it and then access it.
-	opts := DefaultHeadOptions()
-	opts.ChunkRange = 1000
-	opts.ChunkDirRoot = chunkDir
-
-	// Mock the PreCreation() callback to fail on each series.
-	opts.SeriesCallback = failingSeriesLifecycleCallback{}
-
-	h, err := NewHead(nil, nil, nil, nil, opts, nil)
-	require.NoError(b, err)
-	defer h.Close()
-
-	for i := 0; b.Loop(); i++ {
-		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)), false)
-	}
 }
 
 type failingSeriesLifecycleCallback struct{}
@@ -381,5 +385,413 @@ func BenchmarkMmapHeadChunks(b *testing.B) {
 				}
 			})
 		}
+	}
+}
+
+// setupHeadWithSeriesForSharding returns a Head with sharding enabled and
+// numSeries series created in it, along with the series refs in creation order.
+func setupHeadWithSeriesForSharding(b testing.TB, numSeries int) (*Head, []storage.SeriesRef) {
+	b.Helper()
+
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = b.TempDir()
+	opts.EnableSharding = true
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, h.Close()) })
+
+	refs := make([]storage.SeriesRef, 0, numSeries)
+	for i := range numSeries {
+		lset := labels.FromStrings("const", "1", "unique", strconv.Itoa(i))
+		s, _, err := h.getOrCreate(lset.Hash(), lset, false)
+		require.NoError(b, err)
+		refs = append(refs, storage.SeriesRef(s.ref))
+	}
+	return h, refs
+}
+
+func benchmarkHeadShardedPostings(b *testing.B, h *Head, refs []storage.SeriesRef, shardCount uint64) {
+	b.Helper()
+
+	ir := h.indexRange(math.MinInt64, math.MaxInt64)
+
+	b.ReportAllocs()
+	shard := uint64(0)
+	for b.Loop() {
+		sp := ir.ShardedPostings(index.NewListPostings(refs), shard%shardCount, shardCount)
+		for sp.Next() {
+		}
+		require.NoError(b, sp.Err())
+		shard++
+	}
+	b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(len(refs)), "ns/series")
+}
+
+func benchmarkHeadShardedPostingsTreeInput(b *testing.B, h *Head, refs []storage.SeriesRef, shardCount uint64) {
+	b.Helper()
+
+	const subLists = 64
+
+	lists := make([][]storage.SeriesRef, subLists)
+	for i, ref := range refs {
+		lists[i%subLists] = append(lists[i%subLists], ref)
+	}
+
+	ir := h.indexRange(math.MinInt64, math.MaxInt64)
+	b.ReportAllocs()
+	shard := uint64(0)
+	for b.Loop() {
+		sub := make([]index.Postings, 0, subLists)
+		for _, l := range lists {
+			sub = append(sub, index.NewListPostings(l))
+		}
+		sp := ir.ShardedPostings(index.Merge(b.Context(), sub...), shard%shardCount, shardCount)
+		for sp.Next() {
+		}
+		require.NoError(b, sp.Err())
+		shard++
+	}
+	b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(len(refs)), "ns/series")
+}
+
+func BenchmarkHeadShardedPostings(b *testing.B) {
+	for _, tc := range []struct {
+		numSeries  int
+		shardCount uint64
+	}{
+		{100_000, 16},
+		{100_000, 64},
+		{100_000, 256},
+		{1_000_000, 16},
+		{1_000_000, 64},
+		{1_000_000, 256},
+		{2_000_000, 16},
+	} {
+		b.Run(fmt.Sprintf("series=%d/shardCount=%d", tc.numSeries, tc.shardCount), func(b *testing.B) {
+			h, refs := setupHeadWithSeriesForSharding(b, tc.numSeries)
+			benchmarkHeadShardedPostings(b, h, refs, tc.shardCount)
+		})
+	}
+
+	// Half the series get garbage collected from the head, while their refs
+	// remain in the benchmarked postings list: exercises the not-found path,
+	// like querying postings that include recently deleted series.
+	b.Run("series=100000/shardCount=16/withChurn", func(b *testing.B) {
+		const numSeries = 100_000
+		h, refs := setupHeadWithSeriesForSharding(b, numSeries)
+
+		// Give even-numbered series a sample at t=3000 so they survive the
+		// truncation below. One series gets a sample at t=0 so the head's min
+		// time makes the truncation effective. Odd-numbered series stay
+		// sample-less and get garbage collected.
+		ctx := b.Context()
+		app := h.Appender(ctx)
+		_, err := app.Append(0, labels.FromStrings("const", "1", "unique", "1"), 0, 1.0)
+		require.NoError(b, err)
+		for i := 0; i < numSeries; i += 2 {
+			lset := labels.FromStrings("const", "1", "unique", strconv.Itoa(i))
+			_, err := app.Append(0, lset, 3000, 1.0)
+			require.NoError(b, err)
+			if i%20_000 == 0 {
+				require.NoError(b, app.Commit())
+				app = h.Appender(ctx)
+			}
+		}
+		require.NoError(b, app.Commit())
+		require.NoError(b, h.Truncate(2000))
+
+		benchmarkHeadShardedPostings(b, h, refs, 16)
+	})
+
+	// Refs spaced 50 apart (~2% ref-space occupancy): Head assigns refs
+	// monotonically as series are created, so churn can leave live refs sparse
+	// in ref space, unlike the dense refs the other variants create.
+	b.Run("series=100000/shardCount=16/sparseRefs", func(b *testing.B) {
+		const (
+			numSeries = 100_000
+			refStride = 50
+		)
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 1000
+		opts.ChunkDirRoot = b.TempDir()
+		opts.EnableSharding = true
+		h, err := NewHead(nil, nil, nil, nil, opts, nil)
+		require.NoError(b, err)
+		b.Cleanup(func() { require.NoError(b, h.Close()) })
+
+		refs := make([]storage.SeriesRef, 0, numSeries)
+		for i := range numSeries {
+			lset := labels.FromStrings("const", "1", "unique", strconv.Itoa(i))
+			s, _, err := h.getOrCreateWithOptionalID(chunks.HeadSeriesRef((i+1)*refStride), lset.Hash(), lset, false)
+			require.NoError(b, err)
+			refs = append(refs, storage.SeriesRef(s.ref))
+		}
+		benchmarkHeadShardedPostings(b, h, refs, 16)
+	})
+
+	// The input postings is a merge tree over interleaved sub-lists: the
+	// shape multi-matcher queries produce. Exercises implementations whose
+	// cost depends on the input's Seek cost, unlike a flat list input.
+	b.Run("series=100000/shardCount=16/treeInput", func(b *testing.B) {
+		const numSeries = 100_000
+		h, refs := setupHeadWithSeriesForSharding(b, numSeries)
+		benchmarkHeadShardedPostingsTreeInput(b, h, refs, 16)
+	})
+
+	for _, shardCount := range []uint64{16, 64, 128, 256} {
+		b.Run(fmt.Sprintf("series=1000000/treeInput/shardCount=%d", shardCount), func(b *testing.B) {
+			const numSeries = 1_000_000
+			h, refs := setupHeadWithSeriesForSharding(b, numSeries)
+			benchmarkHeadShardedPostingsTreeInput(b, h, refs, shardCount)
+		})
+	}
+}
+
+func BenchmarkHeadSortedPostings(b *testing.B) {
+	for _, numSeries := range []int{100_000, 1_000_000} {
+		b.Run(fmt.Sprintf("series=%d", numSeries), func(b *testing.B) {
+			h, refs := setupHeadWithSeriesForSharding(b, numSeries)
+			ir := h.indexRange(math.MinInt64, math.MaxInt64)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				sp := ir.SortedPostings(index.NewListPostings(refs))
+				for sp.Next() {
+				}
+				require.NoError(b, sp.Err())
+			}
+			b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(len(refs)), "ns/series")
+		})
+	}
+
+	// Input shaped like the sharded query pipeline: sort the output of
+	// ShardedPostings for one shard.
+	b.Run("series=1000000/postSharding", func(b *testing.B) {
+		const numSeries = 1_000_000
+		h, refs := setupHeadWithSeriesForSharding(b, numSeries)
+		ir := h.indexRange(math.MinInt64, math.MaxInt64)
+
+		b.ReportAllocs()
+		shard := uint64(0)
+		for b.Loop() {
+			sp := ir.SortedPostings(ir.ShardedPostings(index.NewListPostings(refs), shard%16, 16))
+			for sp.Next() {
+			}
+			require.NoError(b, sp.Err())
+			shard++
+		}
+		b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(len(refs)), "ns/series")
+	})
+
+	// Production-shaped label sets: long shared prefixes mean every
+	// comparison scans through the common bytes, unlike the quickly
+	// diverging labels of the other variants.
+	for _, numSeries := range []int{100_000, 1_000_000} {
+		b.Run(fmt.Sprintf("series=%d/realisticLabels", numSeries), func(b *testing.B) {
+			h, refs := setupHeadWithRealisticSeries(b, numSeries)
+			ir := h.indexRange(math.MinInt64, math.MaxInt64)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				sp := ir.SortedPostings(index.NewListPostings(refs))
+				for sp.Next() {
+				}
+				require.NoError(b, sp.Err())
+			}
+			b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(len(refs)), "ns/series")
+		})
+	}
+}
+
+// setupHeadWithRealisticSeries returns a head with numSeries series shaped
+// like Kubernetes container metrics: a dozen labels whose leading values are
+// shared across all series (the shape of single-metric selects), diverging
+// only at the instance/node/pod labels.
+func setupHeadWithRealisticSeries(b testing.TB, numSeries int) (*Head, []storage.SeriesRef) {
+	b.Helper()
+
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = b.TempDir()
+	opts.EnableSharding = true
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, h.Close()) })
+
+	refs := make([]storage.SeriesRef, 0, numSeries)
+	for i := range numSeries {
+		lset := labels.FromStrings(
+			"__name__", "container_network_transmit_bytes_total",
+			"cluster", "prod-us-central-0-very-long-cluster-name",
+			"container", "server",
+			"endpoint", "https-metrics",
+			"instance", fmt.Sprintf("10.128.%d.%d:10250", i/250%250, i%250),
+			"job", "integrations/kubernetes/cadvisor",
+			"metrics_path", "/metrics/cadvisor",
+			"namespace", "very-long-production-namespace-name",
+			"node", fmt.Sprintf("gke-prod-us-central-0-pool-1-%08d", i/8),
+			"pod", fmt.Sprintf("server-deployment-7d4b9c8f6d-%05x", i),
+			"prometheus", "monitoring/kube-prometheus-stack",
+			"service", "kubelet",
+		)
+		s, _, err := h.getOrCreate(lset.Hash(), lset, false)
+		require.NoError(b, err)
+		refs = append(refs, storage.SeriesRef(s.ref))
+	}
+	return h, refs
+}
+
+// shardedAllPostingsViaStripeScanForBenchmark scans every series stripe and
+// keeps the refs whose shard hash maps to the requested shard. It is a
+// metric-free benchmark-only implementation used for active-series full-scan and
+// non-power-of-two fallback comparisons.
+func shardedAllPostingsViaStripeScanForBenchmark(h *Head, shardIndex, shardCount uint64) index.Postings {
+	capacity := h.NumSeries() / shardCount
+	capacity = min(capacity, uint64(math.MaxInt))
+	out := make([]storage.SeriesRef, 0, int(capacity))
+	for i := range h.series.size {
+		h.series.locks[i].RLock()
+		for _, s := range h.series.hashes[i].unique {
+			if s.shardHash%shardCount == shardIndex {
+				out = append(out, storage.SeriesRef(s.ref))
+			}
+		}
+		for _, all := range h.series.hashes[i].conflicts {
+			for _, s := range all {
+				if s.shardHash%shardCount == shardIndex {
+					out = append(out, storage.SeriesRef(s.ref))
+				}
+			}
+		}
+		h.series.locks[i].RUnlock()
+	}
+	slices.Sort(out)
+	return index.NewListPostings(out)
+}
+
+// BenchmarkHeadShardedAllPostings covers the active-series path, which has no
+// input postings. Power-of-two shard counts compare the shard-bucket path
+// against a full series scan. The non-power-of-two fallback compares the current
+// stripe scan against ShardedPostings' series-lookup fallback over all head postings.
+func BenchmarkHeadShardedAllPostings(b *testing.B) {
+	const numSeries = 1_000_000
+	h, _ := setupHeadWithSeriesForSharding(b, numSeries)
+
+	b.Run("shardCount=001", func(b *testing.B) {
+		strategies := []struct {
+			name string
+			fn   func(context.Context) index.Postings
+		}{
+			{"api", func(ctx context.Context) index.Postings { return h.ShardedAllPostings(ctx, 0, 1) }},
+			{"all-postings", func(context.Context) index.Postings { return h.postings.All() }},
+			{"fullscan", func(context.Context) index.Postings { return shardedAllPostingsViaStripeScanForBenchmark(h, 0, 1) }},
+		}
+		for _, s := range strategies {
+			b.Run(s.name, func(b *testing.B) {
+				ctx := b.Context()
+				b.ReportAllocs()
+				for b.Loop() {
+					p := s.fn(ctx)
+					for p.Next() {
+					}
+					require.NoError(b, p.Err())
+				}
+				b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(numSeries), "ns/series")
+			})
+		}
+	})
+
+	for _, shardCount := range []uint64{16, 128, 256} {
+		candidateBuckets := uint64(DefaultShardedPostingsBuckets) / shardCount
+		if shardCount > uint64(DefaultShardedPostingsBuckets) {
+			candidateBuckets = 1
+		}
+		strategies := []struct {
+			name string
+			fn   func(context.Context, uint64, uint64) index.Postings
+		}{
+			{"bucket-index", h.ShardedAllPostings},
+			{"fullscan", func(_ context.Context, i, n uint64) index.Postings {
+				return shardedAllPostingsViaStripeScanForBenchmark(h, i, n)
+			}},
+		}
+		for _, s := range strategies {
+			b.Run(fmt.Sprintf("shardCount=%03d/buckets=%03d/%s", shardCount, candidateBuckets, s.name), func(b *testing.B) {
+				ctx := b.Context()
+				b.ReportAllocs()
+				shard := uint64(0)
+				for b.Loop() {
+					p := s.fn(ctx, shard%shardCount, shardCount)
+					for p.Next() {
+					}
+					require.NoError(b, p.Err())
+					shard++
+				}
+				b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(numSeries), "ns/series")
+			})
+		}
+	}
+
+	b.Run("fallback", func(b *testing.B) {
+		const shardCount = 127
+		ir := h.indexRange(math.MinInt64, math.MaxInt64)
+		strategies := []struct {
+			name string
+			fn   func(context.Context, uint64, uint64) index.Postings
+		}{
+			{"stripe-scan", h.ShardedAllPostings},
+			{"all-postings-lookup", func(_ context.Context, i, n uint64) index.Postings {
+				return ir.shardedPostingsViaSeriesLookup(h.postings.All(), i, n)
+			}},
+		}
+		for _, s := range strategies {
+			b.Run(s.name, func(b *testing.B) {
+				ctx := b.Context()
+				b.ReportAllocs()
+				shard := uint64(0)
+				for b.Loop() {
+					p := s.fn(ctx, shard%shardCount, shardCount)
+					for p.Next() {
+					}
+					require.NoError(b, p.Err())
+					shard++
+				}
+				b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(numSeries), "ns/series")
+			})
+		}
+	})
+}
+
+func BenchmarkStripeSeriesShardHashLookup(b *testing.B) {
+	for _, numSeries := range []int{1_000_000, 3_000_000} {
+		b.Run(fmt.Sprintf("series=%d", numSeries), func(b *testing.B) {
+			h, refs := setupHeadWithSeriesForSharding(b, numSeries)
+
+			b.Run("getByID", func(b *testing.B) {
+				b.ReportAllocs()
+				for i := 0; b.Loop(); i++ {
+					if s := h.series.getByID(chunks.HeadSeriesRef(refs[i%len(refs)])); s == nil {
+						b.Fatal("series not found")
+					}
+				}
+			})
+
+			b.Run("getByID-parallel", func(b *testing.B) {
+				b.ReportAllocs()
+				// Start workers at evenly spaced, deterministic offsets so
+				// the access pattern is identical across runs.
+				var worker atomic.Int64
+				b.RunParallel(func(pb *testing.PB) {
+					i := int(worker.Inc()-1) * len(refs) / runtime.GOMAXPROCS(0)
+					for pb.Next() {
+						if s := h.series.getByID(chunks.HeadSeriesRef(refs[i%len(refs)])); s == nil {
+							panic("series not found")
+						}
+						i++
+					}
+				})
+			})
+		})
 	}
 }
