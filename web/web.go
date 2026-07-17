@@ -277,6 +277,7 @@ type Options struct {
 	ExemplarStorage       storage.ExemplarQueryable
 	QueryEngine           *promql.Engine
 	LookbackDelta         time.Duration
+	QueryTimeout          time.Duration
 	ScrapeManager         *scrape.Manager
 	RuleManager           *rules.Manager
 	Notifier              *notifier.Manager
@@ -431,6 +432,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.NativeOTLPDeltaIngestion,
 		o.STZeroIngestionEnabled,
 		o.LookbackDelta,
+		o.QueryTimeout,
 		o.EnableTypeAndUnitLabels,
 		o.AppendMetadata,
 		nil,
@@ -450,6 +452,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		r.Set(features.API, "remote_write_receiver", o.EnableRemoteWriteReceiver)
 		r.Set(features.API, "otlp_write_receiver", o.EnableOTLPWriteReceiver)
 		r.Set(features.API, "search", o.EnableSearch)
+		r.Set(features.API, "info_label_search", o.EnableSearch && o.EnableExperimentalFunctions && !o.IsAgent)
 		for _, alg := range api_v1.FuzzAlgorithms() {
 			r.Enable(features.API, "search_fuzz_alg_"+alg)
 		}

@@ -11,5 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-export { PrometheusClient, PrometheusConfig, CacheConfig, HTTPPrometheusClient, CachedPrometheusClient } from './prometheus';
+export {
+  PrometheusClient,
+  PrometheusConfig,
+  CacheConfig,
+  InfoSearchResult,
+  InfoLabelSearchRequest,
+  HTTPPrometheusClient,
+  CachedPrometheusClient,
+} from './prometheus';
 export { FetchFn, Matcher, MetricMetadata, labelMatchersToString, EqlSingle, EqlRegex, Neq, NeqRegex } from './types';

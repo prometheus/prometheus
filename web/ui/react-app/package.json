@@ -92,7 +92,8 @@
   "jest": {
     "moduleNameMapper": {
       "^react-router/dom$": "<rootDir>/node_modules/react-router/dist/development/dom-export.js",
-      "^(@prometheus-io/)?lezer-promql$": "<rootDir>/../module/lezer-promql/dist/index.cjs"
+      "^(@prometheus-io/)?lezer-promql$": "<rootDir>/../module/lezer-promql/dist/index.cjs",
+      "^(@prometheus-io/)?lezer-promql/client$": "<rootDir>/../module/lezer-promql/dist/cjs/client/index.cjs"
     }
   },
   "optionalDependencies": {

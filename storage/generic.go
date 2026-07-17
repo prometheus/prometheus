@@ -26,8 +26,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// querierAdapter must implement the Searcher interface.
-var _ Searcher = &querierAdapter{}
+var _ Searcher = &searchQuerierAdapter{}
 
 type genericQuerier interface {
 	LabelQuerier
@@ -84,6 +83,20 @@ func newGenericQuerierFromChunk(cq ChunkQuerier) genericQuerier {
 
 type querierAdapter struct {
 	genericQuerier
+}
+
+type searchQuerierAdapter struct {
+	*querierAdapter
+	searchers []Searcher
+}
+
+func newQuerierAdapter(q genericQuerier) Querier {
+	adapter := &querierAdapter{genericQuerier: q}
+	searchers, ok := collectSearchers(q)
+	if !ok {
+		return adapter
+	}
+	return &searchQuerierAdapter{querierAdapter: adapter, searchers: searchers}
 }
 
 type seriesSetAdapter struct {
@@ -143,26 +156,34 @@ func (a *chunkSeriesMergerAdapter) Merge(s ...Labels) Labels {
 // genericQuerierAdapter.
 func searcherFromGenericQuerier(gq genericQuerier) (Searcher, bool) {
 	if a, ok := gq.(*genericQuerierAdapter); ok {
-		s, ok := a.q.(Searcher)
+		if a.q != nil {
+			s, ok := a.q.(Searcher)
+			return s, ok
+		}
+		s, ok := a.cq.(Searcher)
 		return s, ok
 	}
 	s, ok := gq.(Searcher)
 	return s, ok
 }
 
-// collectSearchers extracts Searcher implementations from a genericQuerier tree.
-func collectSearchers(gq genericQuerier) []Searcher {
+// collectSearchers extracts Searchers only when the complete querier tree supports search.
+func collectSearchers(gq genericQuerier) ([]Searcher, bool) {
 	if m, ok := gq.(*mergeGenericQuerier); ok {
 		var searchers []Searcher
 		for _, q := range m.queriers {
-			searchers = append(searchers, collectSearchers(q)...)
+			childSearchers, ok := collectSearchers(q)
+			if !ok {
+				return nil, false
+			}
+			searchers = append(searchers, childSearchers...)
 		}
-		return searchers
+		return searchers, true
 	}
 	if s, ok := searcherFromGenericQuerier(gq); ok {
-		return []Searcher{s}
+		return []Searcher{s}, true
 	}
-	return nil
+	return nil, false
 }
 
 // sliceSearchResultSet is a SearchResultSet backed by a pre-built slice.
@@ -234,8 +255,8 @@ func NewSearchResultSetFromSliceAndError(results []SearchResult, warns annotatio
 // keeping the upfront allocation small for sparse matches against large indices.
 const minLinearAllocCap = 256
 
-// ApplySearchHints filters, sorts, and limits a slice of string values according to hints,
-// returning scored SearchResult entries. A nil hints value is treated as the zero value.
+// ApplySearchHints filters, sorts, and limits values without cancellation.
+// Use ApplySearchHintsWithContext in request paths.
 // The input values slice is assumed to be ordered ascending by value; the function only
 // performs extra work for orderings that differ from this.
 //
@@ -250,42 +271,61 @@ const minLinearAllocCap = 256
 //   - Other combinations fall back to filter-then-reorder-then-slice, with the upfront
 //     capacity capped by min(len(values), max(2*Limit, minLinearAllocCap)).
 func ApplySearchHints(values []string, hints *SearchHints) []SearchResult {
+	results, _ := ApplySearchHintsWithContext(context.Background(), values, hints)
+	return results
+}
+
+// ApplySearchHintsWithContext applies hints and returns the context cause when canceled.
+func ApplySearchHintsWithContext(ctx context.Context, values []string, hints *SearchHints) ([]SearchResult, error) {
+	if err := context.Cause(ctx); err != nil {
+		return nil, err
+	}
 	if hints == nil {
 		hints = &SearchHints{}
 	}
 	if hints.Filter == nil {
-		return applySearchHintsNoFilter(values, hints)
+		return applySearchHintsNoFilter(ctx, values, hints)
 	}
 	if hints.Limit > 0 {
 		switch hints.OrderBy {
 		case OrderByScoreDesc:
-			return topKByScore(values, hints.Filter, hints.Limit)
+			return topKByScore(ctx, values, hints.Filter, hints.Limit)
 		case OrderByValueDesc:
-			return reverseFilterEarlyExit(values, hints.Filter, hints.Limit)
+			return reverseFilterEarlyExit(ctx, values, hints.Filter, hints.Limit)
 		}
 	}
-	return applySearchHintsLinear(values, hints)
+	return applySearchHintsLinear(ctx, values, hints)
+}
+
+func searchHintsContextErr(ctx context.Context, i int) error {
+	if i%128 != 0 {
+		return nil
+	}
+	return context.Cause(ctx)
 }
 
 // reverseFilterEarlyExit walks the input ascending-sorted slice from the tail,
 // accepting up to limit matches. Because the input is ascending, the tail
 // holds the lex-largest entries, so iterating in reverse yields results in
 // descending order without an extra sort.
-func reverseFilterEarlyExit(values []string, filter Filter, limit int) []SearchResult {
+func reverseFilterEarlyExit(ctx context.Context, values []string, filter Filter, limit int) ([]SearchResult, error) {
 	results := make([]SearchResult, 0, min(limit, len(values)))
 	for i := len(values) - 1; i >= 0 && len(results) < limit; i-- {
+		if err := searchHintsContextErr(ctx, len(values)-1-i); err != nil {
+			return nil, err
+		}
 		accepted, score := filter.Accept(values[i])
 		if !accepted {
 			continue
 		}
 		results = append(results, SearchResult{Value: values[i], Score: score})
 	}
-	return results
+	return results, context.Cause(ctx)
 }
 
 // applySearchHintsNoFilter handles the unfiltered path: scores are uniformly 1.0
 // and at most Limit entries are emitted in the requested order.
-func applySearchHintsNoFilter(values []string, hints *SearchHints) []SearchResult {
+func applySearchHintsNoFilter(ctx context.Context, values []string, hints *SearchHints) ([]SearchResult, error) {
 	n := len(values)
 	if hints.Limit > 0 && hints.Limit < n {
 		n = hints.Limit
@@ -297,25 +337,34 @@ func applySearchHintsNoFilter(values []string, hints *SearchHints) []SearchResul
 		// guard is defensive: n is clamped to len(values) above, so we
 		// should always exit on len(results) == n first.
 		for i := len(values) - 1; i >= 0 && len(results) < n; i-- {
+			if err := searchHintsContextErr(ctx, len(values)-1-i); err != nil {
+				return nil, err
+			}
 			results = append(results, SearchResult{Value: values[i], Score: 1.0})
 		}
-		return results
+		return results, context.Cause(ctx)
 	}
 	// OrderByValueAsc and OrderByScoreDesc both reduce to value-ascending here:
 	// uniform scores tie-break on Value asc under (Score desc, Value asc).
 	for i := range n {
+		if err := searchHintsContextErr(ctx, i); err != nil {
+			return nil, err
+		}
 		results = append(results, SearchResult{Value: values[i], Score: 1.0})
 	}
-	return results
+	return results, context.Cause(ctx)
 }
 
 // applySearchHintsLinear handles the filtered path for orderings other than
 // OrderByScoreDesc-with-limit (which uses top-K). It streams the filter and,
 // for OrderByValueAsc with a limit, exits as soon as the limit is reached.
-func applySearchHintsLinear(values []string, hints *SearchHints) []SearchResult {
+func applySearchHintsLinear(ctx context.Context, values []string, hints *SearchHints) ([]SearchResult, error) {
 	results := make([]SearchResult, 0, linearResultCap(len(values), hints.Limit))
 	earlyExit := hints.OrderBy == OrderByValueAsc && hints.Limit > 0
-	for _, v := range values {
+	for i, v := range values {
+		if err := searchHintsContextErr(ctx, i); err != nil {
+			return nil, err
+		}
 		accepted, score := hints.Filter.Accept(v)
 		if !accepted {
 			continue
@@ -336,7 +385,10 @@ func applySearchHintsLinear(values []string, hints *SearchHints) []SearchResult 
 	if hints.Limit > 0 && len(results) > hints.Limit {
 		results = results[:hints.Limit]
 	}
-	return results
+	if err := context.Cause(ctx); err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 // linearResultCap returns the upfront capacity hint for the linear-path result
@@ -373,9 +425,12 @@ func linearResultCap(numValues, limit int) int {
 // The heap is a small typed structure (no container/heap interface) so each
 // candidate replacement is a direct struct write rather than an interface
 // box. This keeps the hot loop allocation-free past the initial fill.
-func topKByScore(values []string, filter Filter, limit int) []SearchResult {
+func topKByScore(ctx context.Context, values []string, filter Filter, limit int) ([]SearchResult, error) {
 	h := make(searchTopKHeap, 0, min(limit, len(values)))
-	for _, v := range values {
+	for i, v := range values {
+		if err := searchHintsContextErr(ctx, i); err != nil {
+			return nil, err
+		}
 		accepted, score := filter.Accept(v)
 		if !accepted {
 			continue
@@ -404,11 +459,17 @@ func topKByScore(values []string, filter Filter, limit int) []SearchResult {
 	// Pop returns worst-first under our heap order; place results from the tail
 	// so the final slice is best-first (Score desc, Value asc).
 	for i := range slices.Backward(out) {
+		if err := searchHintsContextErr(ctx, len(out)-1-i); err != nil {
+			return nil, err
+		}
 		var r SearchResult
 		r, h = h.pop()
 		out[i] = r
 	}
-	return out
+	if err := context.Cause(ctx); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // searchTopKHeap is a typed binary min-heap under the inverse of the (Score
@@ -795,20 +856,18 @@ func (s *mergingSearchResultSet) Close() error {
 	return errors.Join(s.a.Close(), s.b.Close())
 }
 
-// SearchLabelNames implements Searcher by merging results from all underlying queriers
-// that support the Searcher interface.
-func (q *querierAdapter) SearchLabelNames(ctx context.Context, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
+// SearchLabelNames implements Searcher by merging results from every underlying querier.
+func (q *searchQuerierAdapter) SearchLabelNames(ctx context.Context, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
 	return mergeSearchSets(hints, func(s Searcher) SearchResultSet {
 		return s.SearchLabelNames(ctx, hints, matchers...)
-	}, collectSearchers(q.genericQuerier))
+	}, q.searchers)
 }
 
-// SearchLabelValues implements Searcher by merging results from all underlying queriers
-// that support the Searcher interface.
-func (q *querierAdapter) SearchLabelValues(ctx context.Context, name string, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
+// SearchLabelValues implements Searcher by merging results from every underlying querier.
+func (q *searchQuerierAdapter) SearchLabelValues(ctx context.Context, name string, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet {
 	return mergeSearchSets(hints, func(s Searcher) SearchResultSet {
 		return s.SearchLabelValues(ctx, name, hints, matchers...)
-	}, collectSearchers(q.genericQuerier))
+	}, q.searchers)
 }
 
 type noopGenericSeriesSet struct{}

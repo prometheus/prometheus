@@ -98,16 +98,28 @@ func (q *blockBaseQuerier) LabelNames(ctx context.Context, hints *storage.LabelH
 
 // SearchLabelNames implements storage.Searcher.
 func (q *blockBaseQuerier) SearchLabelNames(ctx context.Context, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
-	names, err := q.index.LabelNames(ctx, matchers...)
+	return searchLabelNames(ctx, q.index, hints, matchers...)
+}
+
+func searchLabelNames(ctx context.Context, index IndexReader, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	names, err := index.LabelNames(ctx, matchers...)
 	if err != nil {
 		return storage.ErrSearchResultSet(err)
 	}
 
-	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(names, hints), nil)
+	results, err := storage.ApplySearchHintsWithContext(ctx, names, hints)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	return storage.NewSearchResultSetFromSlice(results, nil)
 }
 
 // SearchLabelValues implements storage.Searcher.
 func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	return searchLabelValues(ctx, q.index, name, hints, matchers...)
+}
+
+func searchLabelValues(ctx context.Context, index IndexReader, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
 	if hints == nil {
 		hints = &storage.SearchHints{}
 	}
@@ -128,15 +140,19 @@ func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, h
 	case storage.OrderByScoreDesc:
 		// Score-based sorting happens in ApplySearchHints; avoid the
 		// index-level sort.
-		values, err = q.index.LabelValues(ctx, name, labelHints, matchers...)
+		values, err = index.LabelValues(ctx, name, labelHints, matchers...)
 	default:
-		values, err = q.index.SortedLabelValues(ctx, name, labelHints, matchers...)
+		values, err = index.SortedLabelValues(ctx, name, labelHints, matchers...)
 	}
 	if err != nil {
 		return storage.ErrSearchResultSet(err)
 	}
 
-	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(values, hints), nil)
+	results, err := storage.ApplySearchHintsWithContext(ctx, values, hints)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	return storage.NewSearchResultSetFromSlice(results, nil)
 }
 
 func (q *blockBaseQuerier) Close() error {

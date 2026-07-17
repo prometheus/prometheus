@@ -133,10 +133,29 @@ func integerSchemaWithDescriptionDefaultAndExample(description string, defaultVa
 	})
 }
 
+func batchSizeSchema(description string, example int) *base.SchemaProxy {
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"integer"},
+		Format:      "int64",
+		Description: description,
+		Minimum:     float64Ptr(1),
+		Maximum:     float64Ptr(maxSearchBatchSize),
+		Default:     createYAMLNode(defaultSearchBatchSize),
+		Example:     createYAMLNode(example),
+	})
+}
+
 func booleanSchemaWithDescription(description string) *base.SchemaProxy {
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:        []string{"boolean"},
 		Description: description,
+	})
+}
+
+func stringArraySchema() *base.SchemaProxy {
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:  []string{"array"},
+		Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
 	})
 }
 
@@ -155,6 +174,19 @@ func stringArraySchemaWithDescriptionAndExample(description string, example any)
 		Description: description,
 		Example:     createYAMLNode(example),
 	})
+}
+
+func searchTermsSchema(description string, example any) *base.SchemaProxy {
+	schema := &base.Schema{
+		Type:        []string{"array"},
+		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+		Description: description,
+		MaxItems:    int64Ptr(maxSearchTermsPerRequest),
+	}
+	if example != nil {
+		schema.Example = createYAMLNode(example)
+	}
+	return base.CreateSchemaProxy(schema)
 }
 
 func statusSchema() *base.SchemaProxy {
