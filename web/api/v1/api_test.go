@@ -2448,7 +2448,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					},
 				},
 				{
-					identifier: "secondTarget",
+					identifier: "blackbox",
 					metadata: []scrape.MetricMetadata{
 						{
 							MetricFamily: "go_threads",
@@ -3889,9 +3889,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 
 					tr.ResetMetadataStore()
 					for _, tm := range test.metadata {
-						// TODO: Check error and fixed broken test/bug.
-						// TestEndpoints/local/run_60_metricMetadata_"limit=1&limit_per_metric=1"/GET fails if we check the error.
-						_ = tr.SetMetadataStoreForTargets(tm.identifier, &testMetaStore{Metadata: tm.metadata})
+						err := tr.SetMetadataStoreForTargets(tm.identifier, &testMetaStore{Metadata: tm.metadata})
+						require.NoError(t, err)
 					}
 
 					res := test.endpoint(req.WithContext(ctx))
