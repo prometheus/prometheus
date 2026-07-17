@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -7470,8 +7471,7 @@ func TestChunkQuerierReadWriteRace_AppendV2(t *testing.T) {
 			for it.Next() {
 				m := it.At()
 				b := m.Chunk.Bytes()
-				bb := make([]byte, len(b))
-				copy(bb, b) // This copying of chunk bytes detects any race.
+				_ = bytes.Clone(b) // This copying of chunk bytes detects any race.
 			}
 		}
 		require.NoError(t, ss.Err())
