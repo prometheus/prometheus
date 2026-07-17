@@ -644,6 +644,85 @@ func BenchmarkShardBucketPostings_DirtySort(b *testing.B) {
 	}
 }
 
+func BenchmarkShardBucketPostings_DirtyRepairBufferReuse(b *testing.B) {
+	baseRefs, dirtyStart := dirtySortInput(65_536, 0, true)
+	for _, mode := range []struct {
+		name string
+		cold bool
+		warm bool
+	}{
+		{name: "recycler=off"},
+		{name: "recycler=cold", cold: true},
+		{name: "recycler=warm", warm: true},
+	} {
+		b.Run(mode.name, func(b *testing.B) {
+			stats := &shardBucketRepairStats{}
+			s := newShardBucketPostings(1)
+			s.repairStats = stats
+			var recycler *ShardedPostingsBufferRecycler
+			var lifecycle *shardPostingsBufferLifecycle
+			if mode.warm {
+				recycler = NewShardedPostingsBufferRecycler(uint64(len(baseRefs))*seriesRefBytes*4, nil)
+				lifecycle = newShardPostingsBufferLifecycle(recycler)
+				recycler.put(make([]storage.SeriesRef, 0, len(baseRefs)+replacementTailHeadroom))
+			}
+			s.lifecycle = lifecycle
+			var installed []storage.SeriesRef
+
+			b.ReportAllocs()
+			for b.Loop() {
+				b.StopTimer()
+				lifecycle.put(installed)
+				if mode.cold {
+					recycler = NewShardedPostingsBufferRecycler(uint64(len(baseRefs))*seriesRefBytes*4, nil)
+					lifecycle = newShardPostingsBufferLifecycle(recycler)
+					s.lifecycle = lifecycle
+				}
+				input := make([]storage.SeriesRef, len(baseRefs), len(baseRefs)+1)
+				copy(input, baseRefs)
+				bucket := &s.buckets[0]
+				bucket.refs = input
+				bucket.dirty = dirtyStart
+				b.StartTimer()
+
+				lease := acquireShardPostingsReader(lifecycle)
+				lists, _ := s.postingsFor(0, 1)
+				if !lists[0].Next() {
+					b.Fatal("empty dirty bucket snapshot")
+				}
+				shardBucketDirtySortSink = lists[0].At()
+				lease.close()
+
+				b.StopTimer()
+				installed = bucket.refs
+				b.StartTimer()
+			}
+			b.ReportMetric(float64(stats.allocations.Load())/float64(b.N), "repair-buffer-allocs/op")
+			b.ReportMetric(float64(stats.allocatedBytes.Load())/float64(b.N), "repair-buffer-bytes/op")
+		})
+	}
+}
+
+func BenchmarkShardedPostingsBufferRecycler_ConcurrentGetPut(b *testing.B) {
+	const capacity = 65_536 + replacementTailHeadroom
+	recycler := NewShardedPostingsBufferRecycler(uint64(maxShardedPostingsIdleBuffers*capacity)*seriesRefBytes, nil)
+	for range maxShardedPostingsIdleBuffers {
+		recycler.put(make([]storage.SeriesRef, 0, capacity))
+	}
+
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			refs := recycler.get(capacity, capacity)
+			if refs == nil {
+				refs = make([]storage.SeriesRef, capacity)
+			}
+			shardBucketDirtySortSink = refs[0]
+			recycler.put(refs)
+		}
+	})
+}
+
 func BenchmarkShardBucketPostings_ConcurrentDirtySort(b *testing.B) {
 	const concurrentRefBase chunks.HeadSeriesRef = 1 << 40
 

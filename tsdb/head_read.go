@@ -52,14 +52,16 @@ func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
 // headIndexReader provides index reading for the head block.
 // Not safe for concurrent use from multiple goroutines.
 type headIndexReader struct {
-	head       *Head
-	mint, maxt int64
+	head                     *Head
+	mint, maxt               int64
+	shardPostingsReaderLease shardPostingsReaderLease
 	// Reusable buffer for collectHeadChunks inside appendSeriesChunks,
 	// avoiding a per-series allocation during iteration.
 	headChunksBuf []*memChunk
 }
 
-func (*headIndexReader) Close() error {
+func (h *headIndexReader) Close() error {
+	h.shardPostingsReaderLease.close()
 	return nil
 }
 
@@ -174,6 +176,7 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 	if h.head.shardBuckets == nil || !isPowerOfTwo(shardCount) {
 		return h.shardedPostingsViaSeriesLookup(p, shardIndex, shardCount)
 	}
+	h.ensureShardPostingsReaderLease()
 
 	// Candidate bucket postings are intersected with the input postings; when
 	// the shard count exceeds the bucket count, the bucket candidates need a
@@ -206,6 +209,7 @@ func (h *headIndexReader) ShardedAllPostings(ctx context.Context, shardIndex, sh
 	if head.shardBuckets == nil || !isPowerOfTwo(shardCount) {
 		return head.shardedAllPostingsViaSeriesScan(ctx, shardIndex, shardCount)
 	}
+	h.ensureShardPostingsReaderLease()
 	lists, needsShardHashFilter := head.shardBuckets.postingsFor(shardIndex, shardCount)
 	if err := ctx.Err(); err != nil {
 		return index.ErrPostings(err)
@@ -219,6 +223,12 @@ func (h *headIndexReader) ShardedAllPostings(ctx context.Context, shardIndex, sh
 		return newShardHashLookupFilterPostings(p, head.series, shardIndex, shardCount)
 	}
 	return p
+}
+
+func (h *headIndexReader) ensureShardPostingsReaderLease() {
+	if h.shardPostingsReaderLease.lifecycle == nil {
+		h.head.shardPostingsBufferLifecycle.acquireReader(&h.shardPostingsReaderLease)
+	}
 }
 
 // shardedPostingsViaSeriesLookup serves arbitrary shard counts or disabled

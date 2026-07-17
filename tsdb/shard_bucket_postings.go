@@ -17,6 +17,8 @@ import (
 	"slices"
 	"sync"
 
+	"go.uber.org/atomic"
+
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -39,7 +41,9 @@ func isPowerOfTwo(v uint64) bool {
 // Bucket slices are replaced rather than mutated within their existing length,
 // so read snapshots remain valid after locks are released.
 type shardBucketPostings struct {
-	buckets []shardBucket
+	buckets     []shardBucket
+	lifecycle   *shardPostingsBufferLifecycle
+	repairStats *shardBucketRepairStats
 
 	// removeUnlockedHook runs during an unlocked survivor rebuild in tests.
 	removeUnlockedHook func()
@@ -61,6 +65,12 @@ type shardBucket struct {
 
 // cleanShardBucket is distinct from dirty index 0, which requires a full sort.
 const cleanShardBucket = -1
+
+type shardBucketRepairStats struct {
+	repairs        atomic.Uint64
+	allocations    atomic.Uint64
+	allocatedBytes atomic.Uint64
+}
 
 func newShardBucketPostings(buckets int) *shardBucketPostings {
 	shardBuckets := make([]shardBucket, buckets)
@@ -231,12 +241,12 @@ func (s *shardBucketPostings) snapshotShardBucket(bucket *shardBucket) []storage
 	bucket.mtx.RUnlock()
 
 	bucket.replacementMtx.Lock()
-	defer bucket.replacementMtx.Unlock()
 
 	bucket.mtx.RLock()
 	if bucket.dirty == cleanShardBucket {
 		refs := bucket.refs
 		bucket.mtx.RUnlock()
+		bucket.replacementMtx.Unlock()
 		return refs
 	}
 	refs := bucket.refs
@@ -246,11 +256,16 @@ func (s *shardBucketPostings) snapshotShardBucket(bucket *shardBucket) []storage
 	if h := s.sortUnlockedHook; h != nil {
 		h()
 	}
-	snapshotRefs := sortDirtyRefs(refs, dirtyStart)
+	if s.repairStats != nil {
+		s.repairStats.repairs.Inc()
+	}
+	snapshotRefs := s.sortDirtyRefsForRepair(refs, dirtyStart)
 	replacementRefs := snapshotRefs
+	replacementIsSnapshot := true
 	replacementDirty := cleanShardBucket
 	capturedLen := len(refs)
 	tailCarryHook := s.sortTailCarryHook
+	var reusable [][]storage.SeriesRef
 
 	for {
 		bucket.mtx.Lock()
@@ -262,6 +277,16 @@ func (s *shardBucketPostings) snapshotShardBucket(bucket *shardBucket) []storage
 			bucket.refs = replacementRefs
 			bucket.dirty = replacementDirty
 			bucket.mtx.Unlock()
+			bucket.replacementMtx.Unlock()
+
+			if replacementIsSnapshot {
+				s.lifecycle.retire(refs)
+			} else {
+				s.lifecycle.retire(refs, snapshotRefs)
+			}
+			for _, refs := range reusable {
+				s.lifecycle.put(refs)
+			}
 			return snapshotRefs
 		}
 		bucket.mtx.Unlock()
@@ -270,7 +295,12 @@ func (s *shardBucketPostings) snapshotShardBucket(bucket *shardBucket) []storage
 			tailCarryHook()
 			tailCarryHook = nil
 		}
-		replacementRefs, replacementDirty = appendShardBucketTail(replacementRefs, tail, replacementDirty)
+		previousReplacement := replacementRefs
+		replacementRefs, replacementDirty = s.growRepairBuffer(replacementRefs, tail, replacementDirty)
+		if !replacementIsSnapshot {
+			reusable = append(reusable, previousReplacement)
+		}
+		replacementIsSnapshot = false
 		capturedLen = len(currentRefs)
 	}
 }
@@ -293,20 +323,20 @@ func (s *shardBucketPostings) numSeries() int {
 
 // sortDirtyRefs returns a sorted copy using the recorded dirty suffix.
 func sortDirtyRefs(refs []storage.SeriesRef, dirtyStart int) []storage.SeriesRef {
-	if dirtyStart < len(refs)/2 {
-		return sortRefsFull(refs)
+	return sortClonedDirtyRefs(cloneRefsForReplacement(refs), dirtyStart)
+}
+
+func (s *shardBucketPostings) sortDirtyRefsForRepair(refs []storage.SeriesRef, dirtyStart int) []storage.SeriesRef {
+	sortedRefs := s.newRepairBuffer(len(refs), len(refs)+replacementTailHeadroom)
+	copy(sortedRefs, refs)
+	return sortClonedDirtyRefs(sortedRefs, dirtyStart)
+}
+
+func sortClonedDirtyRefs(sortedRefs []storage.SeriesRef, dirtyStart int) []storage.SeriesRef {
+	if dirtyStart < len(sortedRefs)/2 {
+		slices.Sort(sortedRefs)
+		return sortedRefs
 	}
-	return sortRefsSuffix(refs, dirtyStart)
-}
-
-func sortRefsFull(refs []storage.SeriesRef) []storage.SeriesRef {
-	sortedRefs := cloneRefsForReplacement(refs)
-	slices.Sort(sortedRefs)
-	return sortedRefs
-}
-
-func sortRefsSuffix(refs []storage.SeriesRef, dirtyStart int) []storage.SeriesRef {
-	sortedRefs := cloneRefsForReplacement(refs)
 	if dirtyStart <= 0 {
 		slices.Sort(sortedRefs)
 		return sortedRefs
@@ -322,6 +352,25 @@ func sortRefsSuffix(refs []storage.SeriesRef, dirtyStart int) []storage.SeriesRe
 	}
 	slices.Sort(sortedRefs[suffixStart:])
 	return sortedRefs
+}
+
+func (s *shardBucketPostings) growRepairBuffer(refs, tail []storage.SeriesRef, dirty int) ([]storage.SeriesRef, int) {
+	length := len(refs) + len(tail)
+	out := s.newRepairBuffer(len(refs), length+replacementTailHeadroom)
+	copy(out, refs)
+	return appendShardBucketTail(out, tail, dirty)
+}
+
+func (s *shardBucketPostings) newRepairBuffer(length, capacity int) []storage.SeriesRef {
+	if refs := s.lifecycle.get(length, capacity); refs != nil {
+		return refs
+	}
+	refs := make([]storage.SeriesRef, length, capacity)
+	if s.repairStats != nil {
+		s.repairStats.allocations.Inc()
+		s.repairStats.allocatedBytes.Add(shardPostingsBufferBytes(refs))
+	}
+	return refs
 }
 
 func cloneRefsForReplacement(refs []storage.SeriesRef) []storage.SeriesRef {

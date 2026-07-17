@@ -122,7 +122,9 @@ type Head struct {
 
 	// Sorted series refs per shard hash bucket, used by ShardedPostings.
 	// Nil when sharding is disabled.
-	shardBuckets *shardBucketPostings
+	shardBuckets                 *shardBucketPostings
+	shardPostingsBufferLifecycle *shardPostingsBufferLifecycle
+	shardBucketRepairStats       shardBucketRepairStats
 
 	tombstones *tombstones.MemTombstones
 
@@ -224,6 +226,10 @@ type HeadOptions struct {
 	// while keeping sharding enabled through the generic fallback.
 	// Only used when EnableSharding is true.
 	ShardedPostingsBuckets int
+
+	// ShardedPostingsBufferRecycler optionally reuses dirty-repair buffers. A
+	// recycler may be shared across Heads.
+	ShardedPostingsBufferRecycler *ShardedPostingsBufferRecycler
 
 	// EnableSTAsZeroSample represents 'created-timestamp-zero-ingestion' feature flag.
 	// If true, ST, if non-empty and earlier than sample timestamp, will be stored
@@ -336,6 +342,10 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 	if !opts.EnableExemplarStorage {
 		opts.MaxExemplars.Store(0)
 	}
+	var shardPostingsBufferLifecycle *shardPostingsBufferLifecycle
+	if opts.EnableSharding && opts.ShardedPostingsBuckets >= 0 {
+		shardPostingsBufferLifecycle = newShardPostingsBufferLifecycle(opts.ShardedPostingsBufferRecycler)
+	}
 
 	h := &Head{
 		wal:    wal,
@@ -347,9 +357,10 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 				return &memChunk{}
 			},
 		},
-		stats:           stats,
-		reg:             r,
-		seriesStateQuit: make(chan struct{}),
+		stats:                        stats,
+		reg:                          r,
+		seriesStateQuit:              make(chan struct{}),
+		shardPostingsBufferLifecycle: shardPostingsBufferLifecycle,
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -419,6 +430,8 @@ func (h *Head) resetInMemoryState() error {
 			buckets = DefaultShardedPostingsBuckets
 		}
 		h.shardBuckets = newShardBucketPostings(buckets)
+		h.shardBuckets.lifecycle = h.shardPostingsBufferLifecycle
+		h.shardBuckets.repairStats = &h.shardBucketRepairStats
 	}
 	h.tombstones = tombstones.NewMemTombstones()
 	h.walExpiries = map[chunks.HeadSeriesRef]int64{}
@@ -453,6 +466,9 @@ type headMetrics struct {
 	shardedPostingsSubfiltered prometheus.Counter
 	shardedPostingsFallback    prometheus.Counter
 	shardedAllPostingsFallback prometheus.Counter
+	shardBucketRepairs         prometheus.CounterFunc
+	shardBucketAllocations     prometheus.CounterFunc
+	shardBucketAllocatedBytes  prometheus.CounterFunc
 	chunks                     prometheus.Gauge
 	chunksCreated              prometheus.Counter
 	chunksRemoved              prometheus.Counter
@@ -525,6 +541,24 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		shardedAllPostingsFallback: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_sharded_all_postings_fallback_total",
 			Help: "Total number of ShardedAllPostings calls served by a full series scan because the shard count is not a power of two or the shard bucket index is disabled.",
+		}),
+		shardBucketRepairs: prometheus.NewCounterFunc(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_shard_bucket_repairs_total",
+			Help: "Total number of dirty shard buckets repaired.",
+		}, func() float64 {
+			return float64(h.shardBucketRepairStats.repairs.Load())
+		}),
+		shardBucketAllocations: prometheus.NewCounterFunc(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_shard_bucket_repair_buffer_allocations_total",
+			Help: "Total number of shard bucket repair buffers allocated.",
+		}, func() float64 {
+			return float64(h.shardBucketRepairStats.allocations.Load())
+		}),
+		shardBucketAllocatedBytes: prometheus.NewCounterFunc(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_shard_bucket_repair_buffer_allocated_bytes_total",
+			Help: "Total capacity in bytes of shard bucket repair buffers allocated.",
+		}, func() float64 {
+			return float64(h.shardBucketRepairStats.allocatedBytes.Load())
 		}),
 		chunks: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_head_chunks",
@@ -650,6 +684,9 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.shardedPostingsSubfiltered,
 			m.shardedPostingsFallback,
 			m.shardedAllPostingsFallback,
+			m.shardBucketRepairs,
+			m.shardBucketAllocations,
+			m.shardBucketAllocatedBytes,
 			m.gcDuration,
 			m.walTruncateDuration,
 			m.walCorruptionsTotal,
