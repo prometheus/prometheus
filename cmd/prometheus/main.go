@@ -1086,6 +1086,7 @@ func main() {
 	cfg.web.RuleManager = ruleManager
 	cfg.web.Notifier = notifierManager
 	cfg.web.LookbackDelta = time.Duration(cfg.lookbackDelta)
+	cfg.web.QueryTimeout = time.Duration(cfg.queryTimeout)
 	cfg.web.IsAgent = agentMode
 	cfg.web.AppName = modeAppName
 	cfg.web.Parser = promqlParser

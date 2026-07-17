@@ -12,5 +12,5 @@
 // limitations under the License.
 
 // Re-export client from lezer-promql for backwards compatibility
-export type { PrometheusClient, PrometheusConfig, CacheConfig, FetchFn, MetricMetadata } from '@prometheus-io/lezer-promql/client';
+export type { PrometheusClient, PrometheusConfig, CacheConfig, FetchFn, InfoSearchResult, MetricMetadata } from '@prometheus-io/lezer-promql/client';
 export { HTTPPrometheusClient, CachedPrometheusClient, Matcher, labelMatchersToString } from '@prometheus-io/lezer-promql/client';

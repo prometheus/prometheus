@@ -289,6 +289,7 @@ func (b *OpenAPIBuilder) getAllPathDefinitions() *orderedmap.Map[string, *v3.Pat
 	paths.Set("/search/label_names", b.searchLabelNamesPath())
 	paths.Set("/search/label_values", b.searchLabelValuesPath())
 	paths.Set("/info_labels", b.infoLabelsPath())
+	paths.Set("/info_label_values", b.infoLabelValuesPath())
 
 	// Series endpoints.
 	paths.Set("/series", b.seriesPath())
