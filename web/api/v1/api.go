@@ -495,6 +495,8 @@ func (api *API) Register(r *route.Router) {
 	r.Post("/search/label_values", api.ready(api.searchLabelValues))
 	r.Get("/info_labels", api.ready(api.infoLabels))
 	r.Post("/info_labels", api.ready(api.infoLabels))
+	r.Get("/info_label_values", api.ready(api.infoLabelValues))
+	r.Post("/info_label_values", api.ready(api.infoLabelValues))
 
 	r.Get("/alerts", wrapAgent(api.alerts))
 	r.Get("/rules", wrapAgent(api.rules))

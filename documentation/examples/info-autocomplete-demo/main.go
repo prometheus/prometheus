@@ -141,7 +141,7 @@ func runDemo() error {
 
 		PageTitle: "Prometheus - info() Autocomplete Demo",
 
-		// /api/v1/info_labels is dual-gated: search-api covers the
+		// The info-label discovery endpoints are dual-gated: search-api covers the
 		// NDJSON/parsing infrastructure shared with /api/v1/search/*, and
 		// promql-experimental-functions covers info() itself (without
 		// info() enabled, the endpoint has no consumer use case).
@@ -317,11 +317,12 @@ func printInstructions() {
 	fmt.Println("   info(http_requests_total)")
 	fmt.Println("   This returns metrics enriched with target_info labels")
 	fmt.Println()
-	fmt.Println("4. Test the info_labels API endpoint (NDJSON stream, requires both")
+	fmt.Println("4. Test the info-label API endpoints (NDJSON streams, require both")
 	fmt.Println("   --enable-feature=search-api and --enable-feature=promql-experimental-functions):")
 	fmt.Println("   curl -N 'http://localhost:9090/api/v1/info_labels'")
 	fmt.Println("   curl -N 'http://localhost:9090/api/v1/info_labels?expr=http_requests_total{job=\"api-gateway\"}'")
 	fmt.Println("   curl -N 'http://localhost:9090/api/v1/info_labels?expr=rate(http_requests_total[5m])'")
+	fmt.Println("   curl -N 'http://localhost:9090/api/v1/info_label_values?label=version&search[]=v2'")
 	fmt.Println()
 	fmt.Println("5. Test search filtering (search[] + sort_by=score for relevance):")
 	fmt.Println("   curl -N 'http://localhost:9090/api/v1/info_labels?search[]=env'")

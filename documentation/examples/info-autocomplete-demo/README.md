@@ -49,10 +49,12 @@ This returns metrics enriched with their `target_info` labels.
 
 ### 4. API Endpoint
 
-`/api/v1/info_labels` is part of the experimental search-api family and is
-dual-gated behind `--enable-feature=search-api` (NDJSON + parsing
-infrastructure) and `--enable-feature=promql-experimental-functions`
-(the `info()` function itself — the endpoint's only consumer). The demo
+`/api/v1/info_labels` and `/api/v1/info_label_values` are top-level companion
+endpoints for `info()`. They reuse the experimental search API's storage and
+NDJSON infrastructure, but remain function-specific and are dual-gated behind
+`--enable-feature=search-api` (NDJSON + parsing infrastructure) and
+`--enable-feature=promql-experimental-functions` (the `info()` function
+itself — the endpoints' only consumer). The demo
 binary sets both for you. The response is an NDJSON stream: zero or more `{results, warnings?}`
 batch lines followed by a `{status, has_more, warnings?}` trailer, or an
 in-band `{status, errorType, error}` error line if iteration fails after
@@ -62,17 +64,17 @@ the first batch:
 # Get all data labels from target_info
 curl -N 'http://localhost:9090/api/v1/info_labels'
 # Stream:
-#   {"results":[{"name":"cluster","values":["us-east","us-west"]},...]}
+#   {"results":[{"name":"cluster"},...]}
 #   {"status":"success","has_more":false}
 
 # Restrict by an expression's identifying labels
 curl -N 'http://localhost:9090/api/v1/info_labels?expr=http_requests_total{job="api-gateway"}'
 
 # Use a different info metric
-curl -N 'http://localhost:9090/api/v1/info_labels?metric_match=build_info'
+curl -N -g 'http://localhost:9090/api/v1/info_labels?metric_match[]=__name__="build_info"'
 
-# Cap values per label
-curl -N 'http://localhost:9090/api/v1/info_labels?values_limit=5'
+# Fetch and refine values for one exact data label
+curl -N 'http://localhost:9090/api/v1/info_label_values?label=cluster&search[]=us-'
 ```
 
 ### 5. Search, Sort, and Score
@@ -133,7 +135,7 @@ The demo creates metrics from 3 service instances:
 Test Metrics ──► TSDB ◄── Web Handler ──► Browser UI
    (direct)       │       (port 9090)
                   │
-                  └──► /api/v1/info_labels endpoint
+                  └──► info-label discovery endpoints
 ```
 
 The demo directly appends metrics to the TSDB Head using the `Appender` interface,

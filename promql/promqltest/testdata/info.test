@@ -295,6 +295,28 @@ eval range from 0m to 2m step 1m info(metric, {__name__="custom_info"})
 
 clear
 
+# Mixed identifying-label presence patterns must not force every series to
+# carry both labels. Cross-pairs admitted by the bounded prefetch are removed
+# by the exact signature join.
+load 1m
+	metric{job="api"} 1 2 3
+	metric{instance="standalone"} 4 5 6
+	metric{job="api", instance="a"} 7 8 9
+	metric{job="worker", instance="b"} 10 11 12
+	target_info{job="api", job_data="job-only"} 1 1 1
+	target_info{instance="standalone", instance_data="instance-only"} 1 1 1
+	target_info{job="api", instance="a", pair_data="api-a"} 1 1 1
+	target_info{job="worker", instance="b", pair_data="worker-b"} 1 1 1
+	target_info{job="api", instance="b", cross_pair="ignored"} 1 1 1
+
+eval range from 0m to 2m step 1m info(metric)
+	metric{job="api", job_data="job-only"} 1 2 3
+	metric{instance="standalone", instance_data="instance-only"} 4 5 6
+	metric{job="api", instance="a", pair_data="api-a"} 7 8 9
+	metric{job="worker", instance="b", pair_data="worker-b"} 10 11 12
+
+clear
+
 # Conflicting labels across different info metrics should error.
 load 1m
 	metric{instance="a", job="1"} 1 2 3

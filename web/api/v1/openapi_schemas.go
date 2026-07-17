@@ -58,6 +58,7 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	schemas.Set("SearchLabelNamesPostInputBody", b.searchLabelNamesPostInputBodySchema())
 	schemas.Set("SearchLabelValuesPostInputBody", b.searchLabelValuesPostInputBodySchema())
 	schemas.Set("InfoLabelsPostInputBody", b.infoLabelsPostInputBodySchema())
+	schemas.Set("InfoLabelValuesPostInputBody", b.infoLabelValuesPostInputBodySchema())
 
 	// Series schemas.
 	schemas.Set("SeriesOutputBody", b.labelsArrayResponseBodySchema())
@@ -740,16 +741,36 @@ func (*OpenAPIBuilder) labelsPostInputBodySchema() *base.SchemaProxy {
 
 func (b *OpenAPIBuilder) infoLabelsPostInputBodySchema() *base.SchemaProxy {
 	props := append([]schemaProp{
-		{"expr", stringSchemaWithDescriptionAndExample("Form field: Optional PromQL expression. When provided, identifying labels are extracted from the result to scope the info-metric query.", "up{job=\"prometheus\"}")},
-		{"metric_match", stringSchemaWithDescriptionAndExample("Form field: Matcher for the info metric name. Default: exact match on target_info.", "target_info")},
-		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against data label names (OR logic).", []string{"ver"})},
-	}, b.commonSearchPostProps()...)
-	props = append(props, schemaProp{"values_limit", integerSchemaWithDescriptionAndExample("Form field: Maximum number of values returned per label. 0 means no cap.", 100)})
+		{"expr", stringSchemaWithDescriptionAndExample("Form field: Optional instant-vector PromQL expression. Identifying labels scope the info-metric query using info() temporal semantics and bounded matcher construction.", "up{job=\"prometheus\"}")},
+		{"metric_match[]", stringArraySchemaWithDescriptionAndExample("Form field: Full PromQL __name__ matchers with AND semantics. Default: __name__=\"target_info\".", []string{`__name__=~".+_info"`})},
+		{"data_match[]", stringArraySchemaWithDescriptionAndExample("Form field: Full PromQL data-label matchers with AND semantics.", []string{`env="prod"`})},
+		{"time", stringSchemaWithDescriptionAndExample("Form field: Evaluation timestamp for expr. Defaults to end.", "2026-01-02T13:37:00.000Z")},
+		{"search[]", searchTermsSchema("Form field: Up to 32 search terms matched against data label names (OR logic).", []string{"ver"})},
+	}, b.infoSearchPostProps()...)
 
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:                 []string{"object"},
-		Description:          "POST request body for info labels query.",
+		Description:          "POST request body for info data-label name discovery.",
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Properties:           propsMap(props),
+	})
+}
+
+func (b *OpenAPIBuilder) infoLabelValuesPostInputBodySchema() *base.SchemaProxy {
+	props := append([]schemaProp{
+		{"label", stringSchemaWithDescriptionAndExample("Form field: Exact data-label name whose values should be searched.", "version")},
+		{"expr", stringSchemaWithDescriptionAndExample("Form field: Optional instant-vector PromQL expression. Identifying labels scope the info-metric query using info() temporal semantics and bounded matcher construction.", "up{job=\"prometheus\"}")},
+		{"metric_match[]", stringArraySchemaWithDescriptionAndExample("Form field: Full PromQL __name__ matchers with AND semantics. Default: __name__=\"target_info\".", []string{`__name__=~".+_info"`})},
+		{"data_match[]", stringArraySchemaWithDescriptionAndExample("Form field: Full PromQL data-label matchers with AND semantics.", []string{`env="prod"`})},
+		{"time", stringSchemaWithDescriptionAndExample("Form field: Evaluation timestamp for expr. Defaults to end.", "2026-01-02T13:37:00.000Z")},
+		{"search[]", searchTermsSchema("Form field: Up to 32 search terms matched against values (OR logic).", []string{"2."})},
+	}, b.infoSearchPostProps()...)
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "POST request body for info data-label value discovery.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"label"},
 		Properties:           propsMap(props),
 	})
 }
@@ -789,22 +810,35 @@ func propsMap(pairs []schemaProp) *orderedmap.Map[string, *base.SchemaProxy] {
 func (b *OpenAPIBuilder) commonSearchPostProps() []schemaProp {
 	return []schemaProp{
 		{"fuzz_threshold", integerSchemaWithDescriptionAndExample("Form field: Fuzzy threshold in the range 0-100. Default is 0, the lowest fuzzy threshold.", 80)},
-		{"fuzz_alg", enumStringSchemaWithDescription("Form field: Fuzzy algorithm. Supported values are subsequence (default) and jarowinkler.", FuzzAlgorithms()...)},
+		{"fuzz_alg", enumStringSchemaWithDescription("Form field: Fuzzy algorithm. Supported values are jarowinkler (default) and subsequence.", FuzzAlgorithms()...)},
 		{"case_sensitive", booleanSchemaWithDescription("Form field: Whether matching is case-sensitive.")},
 		{"sort_by", enumStringSchemaWithDescription("Form field: Sort mode. Supported values are alpha and score. If unset, results are returned in natural order.", "alpha", "score")},
 		{"sort_dir", enumStringSchemaWithDescription("Form field: Sort direction. Only valid with sort_by=alpha. Supported values are asc and dsc.", "asc", "dsc")},
 		{"include_score", booleanSchemaWithDescription("Form field: Include the relevance score in each result record.")},
 		{"start", stringSchemaWithDescriptionAndExample("Form field: The start time of the query.", "2026-01-02T12:37:00.000Z")},
 		{"end", stringSchemaWithDescriptionAndExample("Form field: The end time of the query.", "2026-01-02T13:37:00.000Z")},
-		{"limit", integerSchemaWithDescriptionDefaultAndExample("Form field: The maximum number of results to return.", b.searchDefaultLimit(), 20)},
-		{"batch_size", integerSchemaWithDescriptionDefaultAndExample("Form field: Preferred number of results per NDJSON batch.", defaultSearchBatchSize, 20)},
+		{"limit", integerSchemaWithDescriptionDefaultAndExample("Form field: The positive maximum number of results to return, subject to the operator-configured search limit.", b.searchDefaultLimit(), 20)},
+		{"batch_size", batchSizeSchema("Form field: Preferred number of results per NDJSON batch, capped at 10000 and at limit.", 20)},
 	}
+}
+
+func (b *OpenAPIBuilder) infoSearchPostProps() []schemaProp {
+	props := b.commonSearchPostProps()
+	for i := range props {
+		switch props[i].name {
+		case "start":
+			props[i].schema = stringSchemaWithDescriptionAndExample("Form field: Start of the info-metric storage range when expr is omitted. With expr, it must be valid but is ignored for range selection and ordering validation.", "2026-01-02T12:37:00.000Z")
+		case "end":
+			props[i].schema = stringSchemaWithDescriptionAndExample("Form field: End of the info-metric storage range when expr is omitted and the default expr evaluation time.", "2026-01-02T13:37:00.000Z")
+		}
+	}
+	return append(props, schemaProp{"lookback_delta", stringSchemaWithDescriptionAndExample("Form field: Override the lookback period used to evaluate expr and search matching info metrics.", "5m")})
 }
 
 func (b *OpenAPIBuilder) searchMetricNamesPostInputBodySchema() *base.SchemaProxy {
 	props := append([]schemaProp{
 		{"match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope metric discovery.", []string{"{job=\"prometheus\"}"})},
-		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against metric names (OR logic).", []string{"http_req"})},
+		{"search[]", searchTermsSchema("Form field: Up to 32 search terms matched against metric names (OR logic).", []string{"http_req"})},
 	}, b.commonSearchPostProps()...)
 	props = append(props, schemaProp{"include_metadata", booleanSchemaWithDescription("Form field: Include metric metadata in each result.")})
 
@@ -819,7 +853,7 @@ func (b *OpenAPIBuilder) searchMetricNamesPostInputBodySchema() *base.SchemaProx
 func (b *OpenAPIBuilder) searchLabelNamesPostInputBodySchema() *base.SchemaProxy {
 	props := append([]schemaProp{
 		{"match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope label discovery.", []string{"{__name__=\"up\"}"})},
-		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against label names (OR logic).", []string{"inst"})},
+		{"search[]", searchTermsSchema("Form field: Up to 32 search terms matched against label names (OR logic).", []string{"inst"})},
 	}, b.commonSearchPostProps()...)
 
 	return base.CreateSchemaProxy(&base.Schema{
@@ -834,7 +868,7 @@ func (b *OpenAPIBuilder) searchLabelValuesPostInputBodySchema() *base.SchemaProx
 	props := append([]schemaProp{
 		{"label", stringSchemaWithDescriptionAndExample("Form field: Label name whose values should be searched.", "instance")},
 		{"match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope label value discovery.", []string{"up"})},
-		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against label values (OR logic).", []string{"909"})},
+		{"search[]", searchTermsSchema("Form field: Up to 32 search terms matched against label values (OR logic).", []string{"909"})},
 	}, b.commonSearchPostProps()...)
 
 	return base.CreateSchemaProxy(&base.Schema{

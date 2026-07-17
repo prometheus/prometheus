@@ -919,6 +919,15 @@ func TestLabelNames(t *testing.T) {
 	}
 }
 
+// infoLabelsResult retains legacy fixture values for table readability while
+// WireValues detects any regression to the removed combined response shape.
+type infoLabelsResult struct {
+	Name       string          `json:"name"`
+	Values     []string        `json:"-"`
+	Score      *float64        `json:"score,omitempty"`
+	WireValues json.RawMessage `json:"values,omitempty"`
+}
+
 func TestInfoLabels(t *testing.T) {
 	// Data spans [0s, 7800s] at 1m intervals so that the default search
 	// window [now-1h, now] and instant-query lookback at now both include
@@ -946,6 +955,10 @@ func TestInfoLabels(t *testing.T) {
 	}
 
 	api := newAPI()
+	tooManyMatchers := url.Values{}
+	for i := 0; i <= maxInfoMatchersPerRequest; i++ {
+		tooManyMatchers.Add("data_match[]", fmt.Sprintf(`label_%d="value"`, i))
+	}
 
 	for _, tc := range []struct {
 		name              string
@@ -998,20 +1011,20 @@ func TestInfoLabels(t *testing.T) {
 			},
 		},
 		{
-			name:   "custom info metric with metric_match",
-			params: url.Values{"metric_match": {"custom_info"}},
+			name:   "custom info metric with metric_match[]",
+			params: url.Values{"metric_match[]": {`__name__="custom_info"`}},
 			expected: []infoLabelsResult{
 				{Name: "custom_label", Values: []string{"custom_value"}},
 			},
 		},
 		{
 			name:     "non-existent info metric",
-			params:   url.Values{"metric_match": {"nonexistent_info"}},
+			params:   url.Values{"metric_match[]": {`__name__="nonexistent_info"`}},
 			expected: []infoLabelsResult{},
 		},
 		{
 			name:   "regex match on info metric name",
-			params: url.Values{"metric_match": {"=~.*_info"}},
+			params: url.Values{"metric_match[]": {`__name__=~".*_info"`}},
 			expected: []infoLabelsResult{
 				{Name: "custom_label", Values: []string{"custom_value"}},
 				{Name: "env", Values: []string{"prod", "staging"}},
@@ -1021,7 +1034,7 @@ func TestInfoLabels(t *testing.T) {
 		},
 		{
 			name:   "negated match on info metric",
-			params: url.Values{"metric_match": {"!=custom_info"}},
+			params: url.Values{"metric_match[]": {`__name__!="custom_info"`}},
 			expected: []infoLabelsResult{
 				{Name: "env", Values: []string{"prod", "staging"}},
 				{Name: "region", Values: []string{"us-east"}},
@@ -1029,8 +1042,35 @@ func TestInfoLabels(t *testing.T) {
 			},
 		},
 		{
+			name:   "multiple metric matchers are ANDed",
+			params: url.Values{"metric_match[]": {`__name__=~".+_info"`, `__name__!~"custom.*"`}},
+			expected: []infoLabelsResult{
+				{Name: "env", Values: []string{"prod", "staging"}},
+				{Name: "region", Values: []string{"us-east"}},
+				{Name: "version", Values: []string{"1.0", "2.0", "2.1"}},
+			},
+		},
+		{
+			name:     "exact empty metric matcher is accepted",
+			params:   url.Values{"metric_match[]": {`__name__=""`}},
+			expected: []infoLabelsResult{},
+		},
+		{
+			name:   "data matcher scopes info series",
+			params: url.Values{"data_match[]": {`env="prod"`}},
+			expected: []infoLabelsResult{
+				{Name: "env", Values: []string{"prod"}},
+				{Name: "version", Values: []string{"2.0"}},
+			},
+		},
+		{
 			name:     "no matching expr results",
 			params:   url.Values{"expr": {`http_requests_total{job="nonexistent"}`}},
+			expected: []infoLabelsResult{},
+		},
+		{
+			name:     "time controls expression evaluation",
+			params:   url.Values{"expr": {`http_requests_total{job="prometheus"}`}, "time": {"20000"}},
 			expected: []infoLabelsResult{},
 		},
 		{
@@ -1043,13 +1083,24 @@ func TestInfoLabels(t *testing.T) {
 			expectedHasMore: true,
 		},
 		{
-			name:   "values_limit caps per-label values",
-			params: url.Values{"values_limit": {"1"}},
-			expected: []infoLabelsResult{
-				{Name: "env", Values: []string{"prod"}},
-				{Name: "region", Values: []string{"us-east"}},
-				{Name: "version", Values: []string{"1.0"}},
+			name: "omitted limit honors lower operator maximum",
+			api: &API{
+				Queryable:                   storage,
+				QueryEngine:                 testEngine(t),
+				now:                         func() time.Time { return time.Unix(7200, 0) },
+				parser:                      parser.NewParser(parser.Options{}),
+				enableSearch:                true,
+				enableExperimentalFunctions: true,
+				maxSearchLimit:              1,
 			},
+			expected:        []infoLabelsResult{{Name: "env"}},
+			expectedHasMore: true,
+		},
+		{
+			name:              "values_limit is rejected",
+			params:            url.Values{"values_limit": {"1"}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
 		},
 		{
 			name:   "search[]=ver matches version only",
@@ -1126,8 +1177,44 @@ func TestInfoLabels(t *testing.T) {
 			},
 		},
 		{
-			name:              "invalid metric_match returns 400",
-			params:            url.Values{"metric_match": {"=~"}},
+			name:              "invalid metric_match[] returns 400",
+			params:            url.Values{"metric_match[]": {`__name__=~"["`}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "metric matcher must target metric name",
+			params:            url.Values{"metric_match[]": {`env="prod"`}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "data matcher cannot target metric name",
+			params:            url.Values{"data_match[]": {`__name__="target_info"`}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "matcher value must contain exactly one matcher",
+			params:            url.Values{"data_match[]": {`env="prod",version="2.0"`}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "matcher count is bounded",
+			params:            tooManyMatchers,
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "legacy singular metric_match is rejected",
+			params:            url.Values{"metric_match": {"target_info"}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "legacy singular data_match is rejected",
+			params:            url.Values{"data_match": {`env="prod"`}},
 			expectedErrorType: errorBadData,
 			expectedHTTPCode:  http.StatusBadRequest,
 		},
@@ -1138,8 +1225,38 @@ func TestInfoLabels(t *testing.T) {
 			expectedHTTPCode:  http.StatusBadRequest,
 		},
 		{
+			name:              "invalid expression evaluation time",
+			params:            url.Values{"time": {"not-a-time"}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "expression still validates start syntax",
+			params:            url.Values{"expr": {"up"}, "start": {"not-a-time"}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "expression still validates end syntax",
+			params:            url.Values{"expr": {"up"}, "end": {"not-a-time"}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "inverted range without expression is rejected",
+			params:            url.Values{"start": {"7200"}, "end": {"3600"}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
 			name:              "scalar expr returns error",
 			params:            url.Values{"expr": {`1+1`}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "matrix expr returns error",
+			params:            url.Values{"expr": {`http_requests_total[5m]`}},
 			expectedErrorType: errorBadData,
 			expectedHTTPCode:  http.StatusBadRequest,
 		},
@@ -1150,8 +1267,14 @@ func TestInfoLabels(t *testing.T) {
 			expectedHTTPCode:  http.StatusBadRequest,
 		},
 		{
-			name:              "invalid values_limit",
+			name:              "removed values_limit is rejected regardless of value",
 			params:            url.Values{"values_limit": {"-1"}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "label is rejected on name endpoint",
+			params:            url.Values{"label": {"version"}},
 			expectedErrorType: errorBadData,
 			expectedHTTPCode:  http.StatusBadRequest,
 		},
@@ -1208,14 +1331,6 @@ func TestInfoLabels(t *testing.T) {
 			expectedErrorType: errorUnavailable,
 			expectedHTTPCode:  http.StatusInternalServerError,
 		},
-		{
-			// metric_match with only a prefix and no value should be
-			// rejected with errorBadData.
-			name:              "metric_match=!~ empty value rejected",
-			params:            url.Values{"metric_match": {"!~"}},
-			expectedErrorType: errorBadData,
-			expectedHTTPCode:  http.StatusBadRequest,
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, method := range []string{http.MethodGet, http.MethodPost} {
@@ -1239,8 +1354,310 @@ func TestInfoLabels(t *testing.T) {
 				require.Equal(t, http.StatusOK, rec.Code)
 				records, trailer, errLine := parseInfoLabelsNDJSON(t, rec.Body.String())
 				require.Nil(t, errLine, "unexpected in-band error line: %+v", errLine)
+				for _, record := range records {
+					require.Nil(t, record.WireValues, "name records must not contain values")
+				}
 				require.NotNil(t, trailer)
 				require.Equal(t, "success", trailer.Status)
+				require.Equal(t, tc.expectedHasMore, trailer.HasMore)
+				expected := make([]infoLabelsResult, 0, len(tc.expected))
+				for _, record := range tc.expected {
+					expected = append(expected, infoLabelsResult{Name: record.Name, Score: record.Score})
+				}
+				require.Equal(t, expected, records)
+			}
+		})
+	}
+}
+
+func TestInfoLabelsMixedIdentifierPresence(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			metric{job="api"} 1+0x130
+			metric{instance="standalone"} 1+0x130
+			metric{job="api", instance="a"} 1+0x130
+			metric{job="worker", instance="b"} 1+0x130
+			target_info{job="api", job_data="job-only"} 1+0x130
+			target_info{instance="standalone", instance_data="instance-only"} 1+0x130
+			target_info{job="api", instance="a", pair_data="api-a"} 1+0x130
+			target_info{job="worker", instance="b", pair_data="worker-b"} 1+0x130
+			target_info{job="api", instance="b", cross_pair="conservative"} 1+0x130
+	`)
+	api := &API{
+		Queryable:                   storage,
+		QueryEngine:                 testEngine(t),
+		now:                         func() time.Time { return time.Unix(7200, 0) },
+		parser:                      parser.NewParser(parser.Options{}),
+		enableSearch:                true,
+		enableExperimentalFunctions: true,
+	}
+
+	rec := httptest.NewRecorder()
+	api.infoLabels(rec, infoLabelsRequest(t, http.MethodGet, url.Values{"expr": {"metric"}}))
+	require.Equal(t, http.StatusOK, rec.Code)
+	records, trailer, errLine := parseInfoLabelsNDJSON(t, rec.Body.String())
+	require.Nil(t, errLine)
+	require.NotNil(t, trailer)
+	require.Equal(t, []infoLabelsResult{
+		{Name: "cross_pair"},
+		{Name: "instance_data"},
+		{Name: "job_data"},
+		{Name: "pair_data"},
+	}, records)
+
+	rec = httptest.NewRecorder()
+	api.infoLabels(rec, infoLabelsRequest(t, http.MethodGet, url.Values{"expr": {"target_info"}}))
+	require.Equal(t, http.StatusOK, rec.Code)
+	records, trailer, errLine = parseInfoLabelsNDJSON(t, rec.Body.String())
+	require.Nil(t, errLine)
+	require.NotNil(t, trailer)
+	require.Empty(t, records, "info series returned by expr must not scope autocomplete")
+}
+
+type recordingSampleAndChunkQueryable struct {
+	storage.SampleAndChunkQueryable
+	querierRanges [][2]int64
+}
+
+func (q *recordingSampleAndChunkQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	q.querierRanges = append(q.querierRanges, [2]int64{mint, maxt})
+	return q.SampleAndChunkQueryable.Querier(mint, maxt)
+}
+
+func TestInfoLabelsExprStorageRange(t *testing.T) {
+	loaded := promqltest.LoadedStorage(t, `
+		load 1m
+			metric{job="api", instance="a"} 1+0x130
+			target_info{job="api", instance="a", version="1"} 1+0x130
+	`)
+
+	for _, tc := range []struct {
+		name     string
+		params   url.Values
+		expected [2]int64
+	}{
+		{
+			name:     "default lookback ignores search start",
+			params:   url.Values{"expr": {"metric"}, "time": {"7200"}, "start": {"0"}},
+			expected: [2]int64{6_900_001, 7_200_000},
+		},
+		{
+			name:     "historical end defaults expression time",
+			params:   url.Values{"expr": {"metric"}, "end": {"1800"}},
+			expected: [2]int64{1_500_001, 1_800_000},
+		},
+		{
+			name:     "expression ignores inverted search range",
+			params:   url.Values{"expr": {"metric"}, "start": {"7200"}, "end": {"3600"}},
+			expected: [2]int64{3_300_001, 3_600_000},
+		},
+		{
+			name:     "request lookback delta",
+			params:   url.Values{"expr": {"metric"}, "time": {"7200"}, "lookback_delta": {"1m"}},
+			expected: [2]int64{7_140_001, 7_200_000},
+		},
+		{
+			name:     "offset",
+			params:   url.Values{"expr": {"metric offset 1h"}, "time": {"7200"}},
+			expected: [2]int64{3_300_001, 3_600_000},
+		},
+		{
+			name:     "at modifier",
+			params:   url.Values{"expr": {"metric @ 3600"}, "time": {"7200"}},
+			expected: [2]int64{3_300_001, 3_600_000},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			queryable := &recordingSampleAndChunkQueryable{SampleAndChunkQueryable: loaded}
+			api := &API{
+				Queryable:                   queryable,
+				QueryEngine:                 testEngine(t),
+				now:                         func() time.Time { return time.Unix(7200, 0) },
+				parser:                      parser.NewParser(parser.Options{}),
+				enableSearch:                true,
+				enableExperimentalFunctions: true,
+			}
+
+			rec := httptest.NewRecorder()
+			api.infoLabels(rec, infoLabelsRequest(t, http.MethodGet, tc.params))
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			require.NotEmpty(t, queryable.querierRanges)
+			require.Equal(t, tc.expected, queryable.querierRanges[len(queryable.querierRanges)-1])
+		})
+	}
+}
+
+func TestInfoLabelsRejectsOversizedExprBeforeSearch(t *testing.T) {
+	loaded := promqltest.LoadedStorage(t, "")
+	queryable := &recordingSampleAndChunkQueryable{SampleAndChunkQueryable: loaded}
+	expr, err := testParser.ParseExpr("metric")
+	require.NoError(t, err)
+	vector := make(promql.Vector, maxInfoIdentifyingValues+1)
+	for i := range vector {
+		vector[i].Metric = labels.FromStrings("job", strconv.Itoa(i))
+	}
+	engine := &fakeEngine{query: fakeQuery{
+		statement: &parser.EvalStmt{
+			Expr:          expr,
+			Start:         time.Unix(7200, 0),
+			End:           time.Unix(7200, 0),
+			LookbackDelta: 5 * time.Minute,
+		},
+		result: &promql.Result{Value: vector},
+	}}
+	api := &API{
+		Queryable:                   queryable,
+		QueryEngine:                 engine,
+		now:                         func() time.Time { return time.Unix(7200, 0) },
+		parser:                      testParser,
+		enableSearch:                true,
+		enableExperimentalFunctions: true,
+	}
+
+	rec := httptest.NewRecorder()
+	api.infoLabels(rec, infoLabelsRequest(t, http.MethodGet, url.Values{"expr": {"metric"}}))
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Empty(t, queryable.querierRanges, "info storage must not open after scope validation fails")
+}
+
+func TestInfoLabelValues(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			target_info{job="prometheus", instance="localhost:9090", version="2.0", env="prod"} 1+0x130
+			target_info{job="prometheus", instance="localhost:9091", version="2.1", env="staging"} 1+0x130
+			target_info{job="node", instance="node1:9100", version="1.0", region="us-east"} 1+0x130
+			http_requests_total{job="prometheus", instance="localhost:9090"} 100+0x130
+			http_requests_total{job="prometheus", instance="localhost:9091"} 200+0x130
+			http_requests_total{job="node", instance="node1:9100"} 50+0x130
+	`)
+
+	newAPI := func() *API {
+		return &API{
+			Queryable:                   storage,
+			QueryEngine:                 testEngine(t),
+			now:                         func() time.Time { return time.Unix(7200, 0) },
+			parser:                      parser.NewParser(parser.Options{}),
+			enableSearch:                true,
+			enableExperimentalFunctions: true,
+		}
+	}
+
+	for _, tc := range []struct {
+		name              string
+		api               *API
+		params            url.Values
+		expected          []searchLabelValueResult
+		expectedHasMore   bool
+		expectedHTTPCode  int
+		expectedErrorType errorType
+	}{
+		{
+			name:     "all values for exact data label",
+			params:   url.Values{"label": {"version"}},
+			expected: []searchLabelValueResult{{Value: "1.0"}, {Value: "2.0"}, {Value: "2.1"}},
+		},
+		{
+			name:     "expression scopes values",
+			params:   url.Values{"label": {"version"}, "expr": {`http_requests_total{job="prometheus"}`}},
+			expected: []searchLabelValueResult{{Value: "2.0"}, {Value: "2.1"}},
+		},
+		{
+			name:     "expression ignores inverted search range",
+			params:   url.Values{"label": {"version"}, "expr": {`http_requests_total{job="prometheus"}`}, "start": {"7200"}, "end": {"3600"}},
+			expected: []searchLabelValueResult{{Value: "2.0"}, {Value: "2.1"}},
+		},
+		{
+			name:     "data matchers scope values and preserve same-label AND semantics",
+			params:   url.Values{"label": {"version"}, "data_match[]": {`env=~".+"`, `env!="staging"`}},
+			expected: []searchLabelValueResult{{Value: "2.0"}},
+		},
+		{
+			name:     "typed search filters values",
+			params:   url.Values{"label": {"env"}, "search[]": {"STAG"}, "case_sensitive": {"false"}, "sort_by": {"score"}},
+			expected: []searchLabelValueResult{{Value: "staging"}},
+		},
+		{
+			name:            "limit is value-specific and sets has_more",
+			params:          url.Values{"label": {"version"}, "limit": {"2"}},
+			expected:        []searchLabelValueResult{{Value: "1.0"}, {Value: "2.0"}},
+			expectedHasMore: true,
+		},
+		{
+			name:     "include_score surfaces value score",
+			params:   url.Values{"label": {"env"}, "search[]": {"prod"}, "include_score": {"true"}},
+			expected: []searchLabelValueResult{{Value: "prod", Score: float64Ptr(1)}},
+		},
+		{
+			name:     "no identifying values returns complete empty stream",
+			params:   url.Values{"label": {"version"}, "expr": {`http_requests_total{job="missing"}`}},
+			expected: []searchLabelValueResult{},
+		},
+		{
+			name:              "label is required",
+			params:            url.Values{},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "metric name is not a data label",
+			params:            url.Values{"label": {labels.MetricName}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "identifying label is rejected",
+			params:            url.Values{"label": {"job"}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "match is rejected",
+			params:            url.Values{"label": {"version"}, "match[]": {"up"}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:              "values_limit is rejected",
+			params:            url.Values{"label": {"version"}, "values_limit": {"1"}},
+			expectedErrorType: errorBadData,
+			expectedHTTPCode:  http.StatusBadRequest,
+		},
+		{
+			name:   "experimental function gate is required",
+			params: url.Values{"label": {"version"}},
+			api: &API{
+				Queryable:                   storage,
+				QueryEngine:                 testEngine(t),
+				now:                         func() time.Time { return time.Unix(7200, 0) },
+				parser:                      parser.NewParser(parser.Options{}),
+				enableSearch:                true,
+				enableExperimentalFunctions: false,
+			},
+			expectedErrorType: errorUnavailable,
+			expectedHTTPCode:  http.StatusInternalServerError,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				api := tc.api
+				if api == nil {
+					api = newAPI()
+				}
+				req := infoEndpointRequest(t, method, "/api/v1/info_label_values", tc.params)
+				rec := httptest.NewRecorder()
+				api.infoLabelValues(rec, req)
+
+				if tc.expectedErrorType != errorNone {
+					require.Equal(t, tc.expectedHTTPCode, rec.Code)
+					var resp Response
+					require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+					require.Equal(t, tc.expectedErrorType.str, resp.ErrorType)
+					continue
+				}
+
+				records, trailer, errLine := parseInfoSearchNDJSON[searchLabelValueResult](t, rec.Body.String())
+				require.Nil(t, errLine)
+				require.NotNil(t, trailer)
 				require.Equal(t, tc.expectedHasMore, trailer.HasMore)
 				require.Equal(t, tc.expected, records)
 			}
@@ -1248,27 +1665,7 @@ func TestInfoLabels(t *testing.T) {
 	}
 }
 
-// cancelOnWriteRecorder is an httptest.ResponseRecorder that cancels its
-// associated context as soon as the first Write is observed. Used to drive
-// the streamer's between-batches ctx.Done branch: the first batch flushes,
-// then the loop sees the cancellation and returns without writing further
-// batches or the trailer.
-//
-// This test relies on two implementation contracts of streamInfoLabelRecords
-// that are NOT load-bearing for production behaviour but ARE load-bearing for
-// the determinism of this test:
-//
-//  1. context.WithCancel propagates cancellation synchronously, so the
-//     select { case <-ctx.Done() } executed right after the Write returns
-//     observes the cancellation without a sleep or yield.
-//  2. The streamer checks ctx.Done() BETWEEN batches, not inside the
-//     per-batch write path. The first batch is therefore always flushed
-//     before the cancellation is honoured.
-//
-// If either of those contracts changes (e.g. the streamer starts buffering
-// internally, splits the trailer into a separate Write, or moves the ctx
-// check inside emitBatch), this test will need to be rewritten — the
-// recorder's first-Write cancel is too coarse to encode the new contract.
+// cancelOnWriteRecorder cancels its context after the first streamed batch.
 type cancelOnWriteRecorder struct {
 	*httptest.ResponseRecorder
 	cancel    context.CancelFunc
@@ -1286,9 +1683,8 @@ func (r *cancelOnWriteRecorder) Write(b []byte) (int, error) {
 
 func (*cancelOnWriteRecorder) Flush() {}
 
-// TestInfoLabels_ContextCancellationMidStream covers the streamer's ctx.Done
-// branch: when the context is canceled after the first batch is flushed, the
-// loop short-circuits and no further batches or the trailer are written.
+// TestInfoLabels_ContextCancellationMidStream verifies that cancellation
+// between batches prevents further records and the success trailer.
 func TestInfoLabels_ContextCancellationMidStream(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `
 		load 1m
@@ -1319,10 +1715,8 @@ func TestInfoLabels_ContextCancellationMidStream(t *testing.T) {
 	require.Len(t, records, 1)
 }
 
-// failingResponseWriter wraps an httptest.ResponseRecorder and returns an
-// io.ErrShortWrite from Write() after a configurable number of successful
-// writes. Used to exercise the streamer's emitBatch error path without
-// triggering a panic.
+// failingResponseWriter returns io.ErrShortWrite after a configurable number
+// of successful writes.
 type failingResponseWriter struct {
 	*httptest.ResponseRecorder
 	writeCount int
@@ -1341,10 +1735,7 @@ func (*failingResponseWriter) Flush() {
 	// Required by ndjsonWriter; no-op for the recorder.
 }
 
-// TestInfoLabels_WriteErrorMidStream covers the streamer's emitBatch error
-// path: when the response writer starts returning errors after the first
-// batch, the handler must surface the failure (via the in-band error line)
-// without panicking.
+// TestInfoLabels_WriteErrorMidStream verifies that a write failure does not panic.
 func TestInfoLabels_WriteErrorMidStream(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `
 		load 1m
@@ -1371,23 +1762,29 @@ func TestInfoLabels_WriteErrorMidStream(t *testing.T) {
 	})
 }
 
-// infoLabelsRequest builds a /api/v1/info_labels request with the given method.
-// GET requests carry params in the URL; POST requests in form-encoded body.
 func infoLabelsRequest(t *testing.T, method string, params url.Values) *http.Request {
+	return infoEndpointRequest(t, method, "/api/v1/info_labels", params)
+}
+
+// infoEndpointRequest builds a GET or form-encoded POST request.
+func infoEndpointRequest(t *testing.T, method, path string, params url.Values) *http.Request {
 	t.Helper()
 	if method == http.MethodPost {
-		req := httptest.NewRequest(method, "http://example.com/api/v1/info_labels", strings.NewReader(params.Encode()))
+		req := httptest.NewRequest(method, "http://example.com"+path, strings.NewReader(params.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		return req
 	}
-	return httptest.NewRequest(method, "http://example.com/api/v1/info_labels?"+params.Encode(), http.NoBody)
+	return httptest.NewRequest(method, "http://example.com"+path+"?"+params.Encode(), http.NoBody)
 }
 
-// parseInfoLabelsNDJSON walks the NDJSON body, returning the accumulated
-// records, the success trailer (nil if absent), and any in-band error line.
 func parseInfoLabelsNDJSON(t *testing.T, body string) ([]infoLabelsResult, *searchTrailer, *searchErrorResponse) {
+	return parseInfoSearchNDJSON[infoLabelsResult](t, body)
+}
+
+// parseInfoSearchNDJSON returns the accumulated records and terminal line.
+func parseInfoSearchNDJSON[T any](t *testing.T, body string) ([]T, *searchTrailer, *searchErrorResponse) {
 	t.Helper()
-	records := []infoLabelsResult{}
+	records := []T{}
 	var trailer *searchTrailer
 	var errLine *searchErrorResponse
 
@@ -1422,7 +1819,7 @@ func parseInfoLabelsNDJSON(t *testing.T, body string) ([]infoLabelsResult, *sear
 			require.NoError(t, json.Unmarshal(line, &tr))
 			trailer = &tr
 		case hasResults:
-			var batch searchBatch[infoLabelsResult]
+			var batch searchBatch[T]
 			require.NoError(t, json.Unmarshal(line, &batch))
 			records = append(records, batch.Results...)
 		}
@@ -5549,10 +5946,15 @@ func (e *fakeEngine) NewRangeQuery(context.Context, storage.Queryable, promql.Qu
 type fakeQuery struct {
 	query     string
 	execCalls []context.Context
+	statement parser.Statement
+	result    *promql.Result
 }
 
 func (q *fakeQuery) Exec(ctx context.Context) *promql.Result {
 	q.execCalls = append(q.execCalls, ctx)
+	if q.result != nil {
+		return q.result
+	}
 	return &promql.Result{
 		Value: &parser.StringLiteral{
 			Val: "test",
@@ -5562,8 +5964,8 @@ func (q *fakeQuery) Exec(ctx context.Context) *promql.Result {
 
 func (*fakeQuery) Close() {}
 
-func (*fakeQuery) Statement() parser.Statement {
-	return nil
+func (q *fakeQuery) Statement() parser.Statement {
+	return q.statement
 }
 
 func (*fakeQuery) Stats() *stats.Statistics {

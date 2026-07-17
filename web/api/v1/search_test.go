@@ -475,6 +475,23 @@ func TestSearchMetricNames(t *testing.T) {
 		})
 	}
 
+	for _, v := range []string{"1", "10000"} {
+		t.Run("batch_size "+v+" is accepted", func(t *testing.T) {
+			rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
+				"batch_size": []string{v},
+				"limit":      []string{"1"},
+			})
+			require.Equal(t, http.StatusOK, rec.Code)
+		})
+	}
+	t.Run("batch_size above hard ceiling is rejected", func(t *testing.T) {
+		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
+			"batch_size": []string{"10001"},
+		})
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+		require.Contains(t, rec.Body.String(), "exceeds the maximum")
+	})
+
 	t.Run("sort_by cardinality is invalid", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
 			"search[]": []string{"up"},
@@ -514,10 +531,11 @@ func TestSearchMetricNames(t *testing.T) {
 		require.Len(t, batch.Results, 1)
 	})
 
-	t.Run("end before start is rejected", func(t *testing.T) {
+	t.Run("end before start is rejected even with unrelated expr", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
 			"start": []string{"7200"},
 			"end":   []string{"3600"},
+			"expr":  []string{"up"},
 		})
 		require.Equal(t, http.StatusBadRequest, rec.Code)
 		require.Contains(t, rec.Body.String(), "end timestamp must not be before start timestamp")

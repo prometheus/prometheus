@@ -67,7 +67,7 @@ import {
 } from '@prometheus-io/lezer-promql';
 import { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import { EditorState } from '@codemirror/state';
-import { buildLabelMatchers, containsAtLeastOneChild, containsChild, walkBackward } from '../parser';
+import { buildLabelMatchers, containsAtLeastOneChild, containsChild, unquotePromQLStringLiteral, walkBackward } from '../parser';
 import {
   aggregateOpModifierTerms,
   aggregateOpTerms,
@@ -129,8 +129,8 @@ export interface Context {
   metricName?: string;
   labelName?: string;
   matchers?: Matcher[];
-  // For info() function autocomplete: the __name__ matcher for info metrics
-  infoMetricMatch?: string;
+  infoMetricMatches?: string[];
+  infoDataMatches?: string[];
 }
 
 // extractMetricName extracts the metric name from an expression node.
@@ -149,15 +149,14 @@ interface InfoFunctionContext {
   // The full expression from the first argument (e.g., "rate(http_requests_total[5m])" or "http_requests_total")
   // This is passed to the API's expr parameter for evaluation.
   metricName: string;
-  // The __name__ matcher from the second argument, if present (e.g., "~.*_info" for =~, "!=target_info" for !=)
-  // Format matches the API's metric_match parameter
-  infoMetricMatch?: string;
+  infoMetricMatches: string[];
+  infoDataMatches: string[];
 }
 
 // getInfoFunctionContext checks if we're inside the second argument (data label matchers)
 // of the info() function and extracts the expression from the first argument.
 function getInfoFunctionContext(node: SyntaxNode, state: EditorState): InfoFunctionContext {
-  const notInInfo: InfoFunctionContext = { isInSecondArg: false, metricName: '' };
+  const notInInfo: InfoFunctionContext = { isInSecondArg: false, metricName: '', infoMetricMatches: [], infoDataMatches: [] };
 
   // Walk up to find if we're inside a FunctionCallBody
   let current: SyntaxNode | null = node;
@@ -180,9 +179,11 @@ function getInfoFunctionContext(node: SyntaxNode, state: EditorState): InfoFunct
               // Extract the metric name from the first argument
               // Extract the full expression from the first argument (e.g., "rate(http_requests_total[5m])")
               const metricName = extractExpression(firstArg, state);
-              // Extract __name__ matcher from the second argument (LabelMatchers)
-              const infoMetricMatch = extractInfoMetricMatch(current, state);
-              return { isInSecondArg: true, metricName, infoMetricMatch };
+              const { metricMatches, dataMatches, hasMetricPrefix } = extractInfoMatchers(current, node, state);
+              if (hasMetricPrefix) {
+                return notInInfo;
+              }
+              return { isInSecondArg: true, metricName, infoMetricMatches: metricMatches, infoDataMatches: dataMatches };
             }
           }
         }
@@ -194,64 +195,73 @@ function getInfoFunctionContext(node: SyntaxNode, state: EditorState): InfoFunct
   return notInInfo;
 }
 
-// extractInfoMetricMatch extracts the __name__ matcher from the LabelMatchers in the second argument
-// of the info() function. Returns a string formatted for the API's metric_match parameter.
-function extractInfoMetricMatch(functionCallBody: SyntaxNode, state: EditorState): string | undefined {
-  // Find the LabelMatchers node in the second argument.
-  // The second argument is typically a VectorSelector containing LabelMatchers,
-  // e.g., info(metric, {__name__=~"target_info"}) parses as:
-  //   FunctionCallBody > VectorSelector > LabelMatchers
-  let labelMatchersNode: SyntaxNode | null = null;
+function extractInfoMatchers(
+  functionCallBody: SyntaxNode,
+  currentNode: SyntaxNode,
+  state: EditorState
+): { metricMatches: string[]; dataMatches: string[]; hasMetricPrefix: boolean } {
+  let selectorNode: SyntaxNode | null = null;
   let argIndex = 0;
   for (let child = functionCallBody.firstChild; child !== null; child = child.nextSibling) {
-    // Skip punctuation nodes (opening paren, comma, closing paren)
     const nodeText = state.sliceDoc(child.from, child.to);
     if (nodeText === '(' || nodeText === ')' || nodeText === ',') {
       continue;
     }
     argIndex++;
-    if (argIndex >= 2) {
-      // Second argument or later - look for LabelMatchers directly or inside VectorSelector
-      if (child.type.id === LabelMatchers) {
-        labelMatchersNode = child;
-        break;
-      } else if (child.type.id === VectorSelector) {
-        // LabelMatchers is inside VectorSelector
-        labelMatchersNode = child.getChild(LabelMatchers);
-        break;
-      }
+    if (argIndex === 2 && child.type.id === VectorSelector) {
+      selectorNode = child;
+      break;
     }
   }
-  if (!labelMatchersNode) {
-    return undefined;
+  if (!selectorNode) {
+    return { metricMatches: [], dataMatches: [], hasMetricPrefix: false };
   }
 
-  // Look for __name__ matchers in the LabelMatchers
-  const labelMatcherOpts = [QuotedLabelMatcher, UnquotedLabelMatcher];
-  for (const opt of labelMatcherOpts) {
-    const matchers = labelMatchersNode.getChildren(opt);
-    for (const matcher of matchers) {
-      const builtMatchers = buildLabelMatchers([matcher], state);
-      for (const m of builtMatchers) {
-        if (m.name === '__name__' && m.value !== '') {
-          // Format for API: value, ~value, !=value, or !~value
-          switch (m.type) {
-            case EqlSingle:
-              return m.value;
-            case EqlRegex:
-              return `~${m.value}`;
-            case Neq:
-              return `!=${m.value}`;
-            case NeqRegex:
-              return `!~${m.value}`;
-            default:
-              return m.value;
-          }
-        }
-      }
+  let currentMatcher: SyntaxNode | null = currentNode;
+  while (currentMatcher !== null && currentMatcher.type.id !== QuotedLabelMatcher && currentMatcher.type.id !== UnquotedLabelMatcher) {
+    currentMatcher = currentMatcher.parent;
+  }
+
+  const metricMatches: string[] = [];
+  const dataMatches: string[] = [];
+  const hasIdentifierPrefix = selectorNode.getChild(Identifier) !== null;
+
+  const labelMatchersNode = selectorNode.getChild(LabelMatchers);
+  if (!labelMatchersNode) {
+    return { metricMatches, dataMatches, hasMetricPrefix: hasIdentifierPrefix };
+  }
+  const hasMetricPrefix = hasIdentifierPrefix || labelMatchersNode.getChild(QuotedLabelName) !== null;
+
+  for (const matcher of [...labelMatchersNode.getChildren(QuotedLabelMatcher), ...labelMatchersNode.getChildren(UnquotedLabelMatcher)]) {
+    if (currentMatcher && matcher.from === currentMatcher.from && matcher.to === currentMatcher.to) {
+      continue;
+    }
+    if (!matcher.getChild(MatchOp) || !matcher.getChild(StringLiteral)) {
+      continue;
+    }
+    const builtMatcher = buildLabelMatchers([matcher], state)[0];
+    if (!builtMatcher) {
+      continue;
+    }
+    const raw = state.sliceDoc(matcher.from, matcher.to);
+    if (builtMatcher.name === '__name__') {
+      metricMatches.push(raw);
+    } else {
+      dataMatches.push(raw);
     }
   }
-  return undefined;
+  return { metricMatches, dataMatches, hasMetricPrefix };
+}
+
+function infoContextFields(infoContext: InfoFunctionContext): Pick<Context, 'infoMetricMatches' | 'infoDataMatches'> {
+  return {
+    ...(infoContext.infoMetricMatches.length > 0 ? { infoMetricMatches: infoContext.infoMetricMatches } : {}),
+    ...(infoContext.infoDataMatches.length > 0 ? { infoDataMatches: infoContext.infoDataMatches } : {}),
+  };
+}
+
+function decodeQuotedLabelName(node: SyntaxNode, state: EditorState): string {
+  return unquotePromQLStringLiteral(state.sliceDoc(node.from, node.to));
 }
 
 function getMetricNameInGroupBy(tree: SyntaxNode, state: EditorState): string {
@@ -309,6 +319,20 @@ function escapePromQLString(str: string): string {
   // Backtick-quoted string completions are not handled separately today, so keep
   // the inserted value escaped unconditionally.
   return str.replace(/([\\"])/g, '\\$1');
+}
+
+function decodePromQLSearch(str: string): string {
+  const escapes: Record<string, string> = {
+    '\\': '\\',
+    '"': '"',
+    n: '\n',
+    r: '\r',
+    t: '\t',
+    b: '\b',
+    f: '\f',
+    v: '\v',
+  };
+  return str.replace(/\\([\\"nrtbfv])/g, (_match, escaped: string) => escapes[escaped]);
 }
 
 function isAfterClosedFunctionCallBody(state: EditorState, node: SyntaxNode, pos: number): boolean {
@@ -644,7 +668,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       // Check if we're in the info() function's second argument
       const infoCtxLM = getInfoFunctionContext(node, state);
       if (infoCtxLM.isInSecondArg) {
-        result.push({ kind: ContextKind.InfoDataLabelName, metricName: infoCtxLM.metricName, infoMetricMatch: infoCtxLM.infoMetricMatch });
+        result.push({ kind: ContextKind.InfoDataLabelName, metricName: infoCtxLM.metricName, ...infoContextFields(infoCtxLM) });
         break;
       }
       // In that case we are in the given situation:
@@ -663,7 +687,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         // Check if we're in the info() function's second argument
         const infoCtxLN = getInfoFunctionContext(node, state);
         if (infoCtxLN.isInSecondArg) {
-          result.push({ kind: ContextKind.InfoDataLabelName, metricName: infoCtxLN.metricName, infoMetricMatch: infoCtxLN.infoMetricMatch });
+          result.push({ kind: ContextKind.InfoDataLabelName, metricName: infoCtxLN.metricName, ...infoContextFields(infoCtxLN) });
           break;
         }
         // In that case we are in the given situation:
@@ -682,21 +706,20 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       break;
     case StringLiteral:
       if (node.parent?.type.id === UnquotedLabelMatcher || node.parent?.type.id === QuotedLabelMatcher) {
+        let labelName = '';
+        if (node.parent.firstChild?.type.id === LabelName) {
+          labelName = state.sliceDoc(node.parent.firstChild.from, node.parent.firstChild.to);
+        } else if (node.parent.firstChild?.type.id === QuotedLabelName) {
+          labelName = decodeQuotedLabelName(node.parent.firstChild, state);
+        }
         // Check if we're in the info() function's second argument
         const infoCtxSL = getInfoFunctionContext(node, state);
-        if (infoCtxSL.isInSecondArg) {
-          // Get the labelName for info() data label value autocomplete
-          let labelName = '';
-          if (node.parent.firstChild?.type.id === LabelName) {
-            labelName = state.sliceDoc(node.parent.firstChild.from, node.parent.firstChild.to);
-          } else if (node.parent.firstChild?.type.id === QuotedLabelName) {
-            labelName = state.sliceDoc(node.parent.firstChild.from, node.parent.firstChild.to).slice(1, -1);
-          }
+        if (infoCtxSL.isInSecondArg && !['__name__', 'job', 'instance'].includes(labelName)) {
           result.push({
             kind: ContextKind.InfoDataLabelValue,
-            labelName: labelName,
+            labelName,
             metricName: infoCtxSL.metricName,
-            infoMetricMatch: infoCtxSL.infoMetricMatch,
+            ...infoContextFields(infoCtxSL),
           });
           break;
         }
@@ -706,12 +729,6 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
 
         // Get the labelName.
         // By definition it's the firstChild: https://github.com/promlabs/lezer-promql/blob/0ef65e196a8db6a989ff3877d57fd0447d70e971/src/promql.grammar#L250
-        let labelName = '';
-        if (node.parent.firstChild?.type.id === LabelName) {
-          labelName = state.sliceDoc(node.parent.firstChild.from, node.parent.firstChild.to);
-        } else if (node.parent.firstChild?.type.id === QuotedLabelName) {
-          labelName = state.sliceDoc(node.parent.firstChild.from, node.parent.firstChild.to).slice(1, -1);
-        }
         // then find the metricName if it exists
         const metricName = getMetricNameInVectorSelector(node, state);
         // finally get the full matcher available
@@ -860,6 +877,8 @@ export class HybridComplete implements CompleteStrategy {
   promQL(context: CompletionContext): Promise<CompletionResult | null> | CompletionResult | null {
     const { state, pos } = context;
     const tree = syntaxTree(state).resolve(pos, -1);
+    const completionStart = computeStartCompletePosition(state, tree, pos);
+    const infoSearch = decodePromQLSearch(state.sliceDoc(completionStart, pos));
     // The lines above can help you to print the current lezer tree.
     // It's useful when you are trying to understand why it doesn't autocomplete.
     // console.log(syntaxTree(state).topNode.toString());
@@ -957,24 +976,18 @@ export class HybridComplete implements CompleteStrategy {
           break;
         case ContextKind.InfoDataLabelName:
           asyncResult = asyncResult.then((result) => {
-            return this.autocompleteInfoDataLabelName(result, context);
+            return this.autocompleteInfoDataLabelName(result, context, infoSearch);
           });
           break;
         case ContextKind.InfoDataLabelValue:
           asyncResult = asyncResult.then((result) => {
-            return this.autocompleteInfoDataLabelValue(result, context);
+            return this.autocompleteInfoDataLabelValue(result, context, infoSearch);
           });
           break;
       }
     }
     return asyncResult.then((result) => {
-      return arrayToCompletionResult(
-        result,
-        computeStartCompletePosition(state, tree, pos),
-        computeEndCompletePosition(state, tree, pos),
-        completeSnippet,
-        span
-      );
+      return arrayToCompletionResult(result, completionStart, computeEndCompletePosition(state, tree, pos), completeSnippet, span);
     });
   }
 
@@ -1065,29 +1078,33 @@ export class HybridComplete implements CompleteStrategy {
     });
   }
 
-  private autocompleteInfoDataLabelName(result: Completion[], context: Context): Completion[] | Promise<Completion[]> {
+  private autocompleteInfoDataLabelName(result: Completion[], context: Context, search: string): Completion[] | Promise<Completion[]> {
     if (!this.prometheusClient) {
       return result;
     }
-    // Pass metricName to filter labels by resources associated with the metric
-    // Pass infoMetricMatch to filter which info metrics to query
-    return this.prometheusClient.infoLabelPairs(context.metricName, context.infoMetricMatch).then((labels) => {
-      const labelNames = Object.keys(labels);
-      return result.concat(labelNames.map((name: string) => ({ label: name, type: 'constant', detail: 'info label' })));
-    });
+    return this.prometheusClient
+      .infoLabelNames({
+        expr: context.metricName,
+        metricMatches: context.infoMetricMatches,
+        dataMatches: context.infoDataMatches,
+        search: search || undefined,
+      })
+      .then(({ results }) => result.concat(results.map((name) => ({ label: name, type: 'constant', detail: 'info label' }))))
+      .catch(() => result);
   }
 
-  private autocompleteInfoDataLabelValue(result: Completion[], context: Context): Completion[] | Promise<Completion[]> {
+  private autocompleteInfoDataLabelValue(result: Completion[], context: Context, search: string): Completion[] | Promise<Completion[]> {
     if (!this.prometheusClient || !context.labelName) {
       return result;
     }
-    // Capture labelName to avoid TypeScript narrowing issues in the callback
-    const labelName = context.labelName;
-    // Pass metricName to filter labels by resources associated with the metric
-    // Pass infoMetricMatch to filter which info metrics to query
-    return this.prometheusClient.infoLabelPairs(context.metricName, context.infoMetricMatch).then((labels) => {
-      const values = labels[labelName] || [];
-      return result.concat(values.map((value: string) => ({ label: value, type: 'text' })));
-    });
+    return this.prometheusClient
+      .infoLabelValues(context.labelName, {
+        expr: context.metricName,
+        metricMatches: context.infoMetricMatches,
+        dataMatches: context.infoDataMatches,
+        search: search || undefined,
+      })
+      .then(({ results }) => result.concat(results.map((value) => ({ label: value, apply: escapePromQLString(value), type: 'text' }))))
+      .catch(() => result);
   }
 }

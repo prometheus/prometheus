@@ -17,9 +17,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -33,391 +33,305 @@ import (
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
-// defaultInfoExtractor is reused across requests; it carries only static config
-// (identifying labels, default info metric) and has no per-request state.
-//
-// Snapshot semantics: infohelper.NewWithDefaults() captures the package vars
-// infohelper.DefaultIdentifyingLabels and infohelper.DefaultInfoMetricName at
-// init time. The captured slice header points at DefaultIdentifyingLabels'
-// backing array, so per-element mutations of that slice would be visible
-// here — but a full reassignment of the var (DefaultIdentifyingLabels =
-// otherSlice) would not. The package convention is that those vars are not
-// reassigned at runtime, so the singleton is safe to share.
-var defaultInfoExtractor = infohelper.NewWithDefaults()
+const (
+	maxInfoMatchersPerRequest     = 32
+	maxInfoIdentifyingValues      = 10_000
+	maxInfoIdentifyingRegexpBytes = 1_048_576
+)
 
-// infoLabelsResult is one NDJSON record emitted by /api/v1/info_labels. Score
-// is included only when include_score=true.
-type infoLabelsResult struct {
-	Name   string   `json:"name"`
-	Values []string `json:"values"`
-	Score  *float64 `json:"score,omitempty"`
+// infoDataLabelFilter excludes labels that identify an info series before the
+// storage search applies its limit. The wrapped filter retains the shared
+// search API's matching and scoring semantics for data labels.
+type infoDataLabelFilter struct {
+	filter storage.Filter
 }
 
-// infoLabels handles GET/POST /api/v1/info_labels. It mirrors the contract of
-// the /api/v1/search/* endpoints (feature-gated, NDJSON streaming, search[] +
-// fuzzy + sort/score options) and adds the /info_labels-specific parameters
-// metric_match (info-metric matcher), expr (PromQL expression evaluated to
-// extract identifying-label values), and values_limit (per-label values cap).
+func (f infoDataLabelFilter) Accept(value string) (bool, float64) {
+	if value == labels.MetricName || slices.Contains(infohelper.DefaultIdentifyingLabels, value) {
+		return false, 0
+	}
+	if f.filter == nil {
+		return true, 1
+	}
+	return f.filter.Accept(value)
+}
+
+// searchResultSetWithWarnings adds expression-evaluation warnings to the
+// warnings produced by storage without changing iteration behavior.
+type searchResultSetWithWarnings struct {
+	storage.SearchResultSet
+	warnings annotations.Annotations
+}
+
+func (s searchResultSetWithWarnings) Warnings() annotations.Annotations {
+	var warnings annotations.Annotations
+	warnings.Merge(s.warnings)
+	warnings.Merge(s.SearchResultSet.Warnings())
+	return warnings
+}
+
+// newInfoLabelSearchRequest prepares the common search request and rejects
+// parameters that would introduce a second, conflicting scoping mechanism or
+// the removed combined-response value limit.
+func (api *API) newInfoLabelSearchRequest(w http.ResponseWriter, r *http.Request, endpoint string) *preparedAutocompleteRequest {
+	if !api.infoLabelFeaturesEnabled(w, r, endpoint) {
+		return nil
+	}
+
+	req := api.prepareAutocompleteRequest(w, r, endpoint, autocompleteRequestOptions{exprControlsTimeRange: true})
+	if req == nil {
+		return nil
+	}
+
+	if len(req.sp.matcherSets) > 0 {
+		api.respondError(w, &apiError{errorBadData, fmt.Errorf("match[] is not supported by %s; use metric_match[], data_match[], or expr", endpoint)}, nil)
+		return nil
+	}
+	if _, ok := r.Form["values_limit"]; ok {
+		api.respondError(w, &apiError{errorBadData, errors.New("values_limit is not supported; use limit on info_label_values")}, nil)
+		return nil
+	}
+	for _, legacy := range []string{"metric_match", "data_match"} {
+		if _, ok := r.Form[legacy]; ok {
+			api.respondError(w, &apiError{errorBadData, fmt.Errorf("%s is not supported; use %s[]", legacy, legacy)}, nil)
+			return nil
+		}
+	}
+	return req
+}
+
+func (api *API) infoLabelFeaturesEnabled(w http.ResponseWriter, r *http.Request, endpoint string) bool {
+	if api.enableSearch && api.enableExperimentalFunctions {
+		return true
+	}
+
+	httputil.SetCORS(w, api.CORSOrigin, r)
+	missing := make([]string, 0, 2)
+	if !api.enableSearch {
+		missing = append(missing, "search-api")
+	}
+	if !api.enableExperimentalFunctions {
+		missing = append(missing, "promql-experimental-functions")
+	}
+	api.respondError(w, &apiError{errorUnavailable, fmt.Errorf("%s requires --enable-feature=%s", endpoint, strings.Join(missing, ","))}, nil)
+	return false
+}
+
+// infoLabels handles GET/POST /api/v1/info_labels and streams data-label
+// names from the scoped info metrics.
 func (api *API) infoLabels(w http.ResponseWriter, r *http.Request) {
-	// /info_labels is dual-gated: --enable-feature=search-api covers the
-	// NDJSON + parsing infrastructure it reuses; --enable-feature=
-	// promql-experimental-functions covers info() itself — without info(),
-	// the endpoint has no consumer use case. Both flags are checked upfront
-	// so the user sees a single error listing every missing flag, instead
-	// of having to flip them one at a time.
-	if !api.enableSearch || !api.enableExperimentalFunctions {
-		httputil.SetCORS(w, api.CORSOrigin, r)
-		missing := make([]string, 0, 2)
-		if !api.enableSearch {
-			missing = append(missing, "search-api")
-		}
-		if !api.enableExperimentalFunctions {
-			missing = append(missing, "promql-experimental-functions")
-		}
-		api.respondError(w, &apiError{errorUnavailable, fmt.Errorf("info_labels requires --enable-feature=%s", strings.Join(missing, ","))}, nil)
+	req := api.newInfoLabelSearchRequest(w, r, "info_labels")
+	if req == nil {
 		return
 	}
 
-	aReq := api.newAutocompleteRequest(w, r, "info_labels")
-	if aReq == nil {
-		return
-	}
-	defer aReq.q.Close()
-
-	// /info_labels scopes its search via metric_match and expr; match[] is not
-	// supported because it would mean two equivalent matcher mechanisms with
-	// unclear precedence. Reject explicitly so callers can fix the call.
-	if len(aReq.sp.matcherSets) > 0 {
-		api.respondError(w, &apiError{errorBadData, errors.New("match[] is not supported by info_labels; use metric_match or expr")}, nil)
+	if _, ok := r.Form["label"]; ok {
+		api.respondError(w, &apiError{errorBadData, errors.New("label is not supported by info_labels; use info_label_values for value discovery")}, nil)
 		return
 	}
 
-	infoMetricMatcher, err := parseInfoMetricMatch(r.FormValue("metric_match"), defaultInfoExtractor.DefaultInfoMetric())
-	if err != nil {
-		api.respondError(w, &apiError{errorBadData, fmt.Errorf("invalid metric_match: %w", err)}, nil)
-		return
-	}
-
-	valuesLimit, apiErr := parseInfoValuesLimit(r)
+	matcherSets, exprWarnings, empty, mint, maxt, apiErr := api.infoMetricMatcherSets(r, req.sp)
 	if apiErr != nil {
 		api.respondError(w, apiErr, nil)
 		return
 	}
 
-	ctx := r.Context()
+	req.hints.Filter = infoDataLabelFilter{filter: req.hints.Filter}
+	results := storage.EmptySearchResultSet()
+	if !empty {
+		searchReq := api.openSearchRequest(w, req, mint, maxt)
+		if searchReq == nil {
+			return
+		}
+		defer searchReq.q.Close()
+		results = searchLabelNames(r.Context(), searchReq.searcher, matcherSets, req.hints)
+	}
+	results = searchResultSetWithWarnings{SearchResultSet: results, warnings: exprWarnings}
 
-	var (
-		identifyingLabelValues map[string]map[string]struct{}
-		exprWarnings           []string
-	)
+	streamSearchResults(r.Context(), api, w, results, req.sp, func(sr storage.SearchResult) searchLabelNameResult {
+		result := searchLabelNameResult{Name: sr.Value}
+		if req.sp.includeScore {
+			score := sr.Score
+			result.Score = &score
+		}
+		return result
+	})
+}
+
+// infoLabelValues handles GET/POST /api/v1/info_label_values and streams
+// values for one exact data-label name from the scoped info metrics.
+func (api *API) infoLabelValues(w http.ResponseWriter, r *http.Request) {
+	req := api.newInfoLabelSearchRequest(w, r, "info_label_values")
+	if req == nil {
+		return
+	}
+
+	labelName := r.FormValue("label")
+	if labelName == "" {
+		api.respondError(w, &apiError{errorBadData, errors.New("missing required parameter \"label\"")}, nil)
+		return
+	}
+	if labelName == labels.MetricName || slices.Contains(infohelper.DefaultIdentifyingLabels, labelName) {
+		api.respondError(w, &apiError{errorBadData, fmt.Errorf("label %q is not an info data label", labelName)}, nil)
+		return
+	}
+
+	matcherSets, exprWarnings, empty, mint, maxt, apiErr := api.infoMetricMatcherSets(r, req.sp)
+	if apiErr != nil {
+		api.respondError(w, apiErr, nil)
+		return
+	}
+
+	results := storage.EmptySearchResultSet()
+	if !empty {
+		searchReq := api.openSearchRequest(w, req, mint, maxt)
+		if searchReq == nil {
+			return
+		}
+		defer searchReq.q.Close()
+		results = searchLabelValues(r.Context(), searchReq.searcher, labelName, matcherSets, req.hints)
+	}
+	results = searchResultSetWithWarnings{SearchResultSet: results, warnings: exprWarnings}
+
+	streamSearchResults(r.Context(), api, w, results, req.sp, func(sr storage.SearchResult) searchLabelValueResult {
+		result := searchLabelValueResult{Value: sr.Value}
+		if req.sp.includeScore {
+			score := sr.Score
+			result.Score = &score
+		}
+		return result
+	})
+}
+
+// infoMetricMatcherSets builds the common storage scope for both info-label
+// discovery operations. An expression with no identifying-label values is a
+// successful empty result and avoids an unscoped storage search.
+func (api *API) infoMetricMatcherSets(r *http.Request, sp searchParams) ([][]*labels.Matcher, annotations.Annotations, bool, int64, int64, *apiError) {
+	nameMatchers, dataMatchers, err := parseInfoMatchers(api.parser, r.Form)
+	if err != nil {
+		return nil, nil, false, 0, 0, &apiError{errorBadData, err}
+	}
+	evalTime, err := parseTimeParam(r, "time", sp.end)
+	if err != nil {
+		return nil, nil, false, 0, 0, &apiError{errorBadData, err}
+	}
+
+	effectiveNameMatchers := infohelper.EffectiveNameMatchers(nameMatchers)
 	if exprParam := r.FormValue("expr"); exprParam != "" {
 		opts, optsErr := extractQueryOpts(r)
 		if optsErr != nil {
-			api.respondError(w, &apiError{errorBadData, optsErr}, nil)
-			return
+			return nil, nil, false, 0, 0, &apiError{errorBadData, optsErr}
 		}
-		ids, warnings, exprErr := api.evaluateExprIdentifyingLabels(ctx, opts, exprParam, aReq.sp.end, defaultInfoExtractor.IdentifyingLabels())
+		vector, warnings, selectHints, exprErr := api.evaluateExprSeries(r.Context(), opts, exprParam, evalTime)
 		if exprErr != nil {
-			api.respondError(w, exprErr, nil)
-			return
+			return nil, warnings, false, 0, 0, exprErr
 		}
-		exprWarnings = warnings
-		if len(ids) == 0 {
-			// No identifying-label values means no info metrics can match.
-			// Emit an empty first batch (carrying expr warnings) and a
-			// success trailer so clients see a well-formed stream.
-			respondEmptyInfoLabelsStream(api, w, warnings)
-			return
+		eligibleMetrics := iter.Seq[labels.Labels](func(yield func(labels.Labels) bool) {
+			for _, sample := range vector {
+				if infohelper.MatchesAll(sample.Metric.Get(labels.MetricName), effectiveNameMatchers) {
+					continue
+				}
+				if !yield(sample.Metric) {
+					return
+				}
+			}
+		})
+		matcherSets, err := infohelper.IdentifyingMatcherSets(eligibleMetrics, infohelper.DefaultIdentifyingLabels, infohelper.MatcherSetLimits{
+			MaxValues:      maxInfoIdentifyingValues,
+			MaxRegexpBytes: maxInfoIdentifyingRegexpBytes,
+		})
+		if err != nil {
+			return nil, warnings, false, 0, 0, &apiError{errorBadData, fmt.Errorf("expr scope is too broad: %w; narrow expr", err)}
 		}
-		identifyingLabelValues = ids
+		if len(matcherSets) == 0 {
+			return nil, warnings, true, selectHints.Start, selectHints.End, nil
+		}
+		return appendInfoScopeMatchers(matcherSets, dataMatchers, effectiveNameMatchers), warnings, false, selectHints.Start, selectHints.End, nil
 	}
 
-	// SelectHints.Limit is deliberately left unset: we need to traverse
-	// every matching info-metric series to discover the universe of data
-	// labels, and per-series cost is small (just label iteration).
-	//
-	// In-memory growth on pathological metric_match values (e.g. =~.*)
-	// is bounded instead by the namesLimit passed to ExtractDataLabels
-	// below. We source the cap from api.maxSearchLimit, i.e. the operator
-	// flag --web.search.max-limit (default 10000). Setting that flag to 0
-	// disables the cap and makes the extractor unbounded — same convention
-	// as the /api/v1/search/* endpoints.
-	selectHints := &storage.SelectHints{
-		Start: timestamp.FromTime(aReq.sp.start),
-		End:   timestamp.FromTime(aReq.sp.end),
-		Func:  "info_labels",
-	}
-
-	records, warnings, err := defaultInfoExtractor.ExtractDataLabels(ctx, aReq.q, infoMetricMatcher, identifyingLabelValues, selectHints, aReq.hints.Filter, api.maxSearchLimit, valuesLimit)
-	if err != nil {
-		api.respondPreStreamSearchError(w, err)
-		return
-	}
-
-	sortInfoLabelRecords(records, aReq.sp.sortBy, aReq.sp.sortDir)
-
-	hasMore := false
-	if aReq.sp.limit > 0 && len(records) > aReq.sp.limit {
-		records = records[:aReq.sp.limit]
-		hasMore = true
-	}
-
-	streamInfoLabelRecords(ctx, api, w, records, hasMore, exprWarnings, annotationsToStrings(warnings), aReq.sp)
+	return appendInfoScopeMatchers([][]*labels.Matcher{{}}, dataMatchers, effectiveNameMatchers), nil, false, timestamp.FromTime(sp.start), timestamp.FromTime(sp.end), nil
 }
 
-// parseInfoValuesLimit parses the optional values_limit query parameter, which
-// caps the number of values returned per label. 0 (or unset) means no cap.
-func parseInfoValuesLimit(r *http.Request) (int, *apiError) {
-	v := r.FormValue("values_limit")
-	if v == "" {
-		return 0, nil
+func appendInfoScopeMatchers(matcherSets [][]*labels.Matcher, dataMatchers, nameMatchers []*labels.Matcher) [][]*labels.Matcher {
+	for i, identifyingMatchers := range matcherSets {
+		matchers := make([]*labels.Matcher, 0, len(identifyingMatchers)+len(dataMatchers)+len(nameMatchers))
+		matchers = append(matchers, identifyingMatchers...)
+		matchers = append(matchers, dataMatchers...)
+		matchers = append(matchers, nameMatchers...)
+		matcherSets[i] = matchers
 	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n < 0 {
-		return 0, &apiError{errorBadData, fmt.Errorf("invalid values_limit %q: must be a non-negative integer", v)}
-	}
-	return n, nil
+	return matcherSets
 }
 
-// evaluateExprIdentifyingLabels evaluates a PromQL expression and extracts the
-// identifying-label values from the result. Those values are used to restrict
-// the info-metric query so callers can ask "what info labels are relevant to
-// this expression's series" (e.g. rate(http_requests_total[5m])).
-func (api *API) evaluateExprIdentifyingLabels(ctx context.Context, opts promql.QueryOpts, exprParam string, end time.Time, identifyingLabels []string) (map[string]map[string]struct{}, []string, *apiError) {
+// evaluateExprSeries evaluates an instant-vector expression and returns the
+// storage range that the corresponding info() call would use.
+func (api *API) evaluateExprSeries(ctx context.Context, opts promql.QueryOpts, exprParam string, end time.Time) (promql.Vector, annotations.Annotations, storage.SelectHints, *apiError) {
 	qry, err := api.QueryEngine.NewInstantQuery(ctx, api.Queryable, opts, exprParam, end)
 	if err != nil {
-		return nil, nil, &apiError{errorBadData, fmt.Errorf("invalid expr: %w", err)}
+		return nil, nil, storage.SelectHints{}, &apiError{errorBadData, fmt.Errorf("invalid expr: %w", err)}
 	}
 	defer qry.Close()
 
+	stmt, ok := qry.Statement().(*parser.EvalStmt)
+	if !ok {
+		return nil, nil, storage.SelectHints{}, &apiError{errorInternal, errors.New("instant query returned an unexpected statement type")}
+	}
+	if stmt.Expr.Type() != parser.ValueTypeVector {
+		return nil, nil, storage.SelectHints{}, &apiError{errorBadData, fmt.Errorf("expr must be an instant vector, got %s", parser.DocumentedType(stmt.Expr.Type()))}
+	}
+	selectHints := infohelper.SelectHints(stmt.Expr, timestamp.FromTime(stmt.Start), timestamp.FromTime(stmt.End), stmt.Interval.Milliseconds(), stmt.LookbackDelta)
+
 	res := qry.Exec(ctx)
-	warnings := annotationsToStrings(res.Warnings)
 	if res.Err != nil {
-		return nil, warnings, returnAPIError(res.Err)
+		return nil, res.Warnings, storage.SelectHints{}, returnAPIError(res.Err)
 	}
-	switch res.Value.Type() {
-	case parser.ValueTypeVector, parser.ValueTypeMatrix:
-		// OK.
-	default:
-		return nil, warnings, &apiError{errorBadData, fmt.Errorf("expr must return series (vector or matrix), got %s", res.Value.Type())}
+	vector, ok := res.Value.(promql.Vector)
+	if !ok {
+		return nil, res.Warnings, storage.SelectHints{}, &apiError{errorInternal, fmt.Errorf("instant-vector expression returned %s", res.Value.Type())}
 	}
-	return extractIdentifyingLabels(res.Value, identifyingLabels), warnings, nil
+	return vector, res.Warnings, selectHints, nil
 }
 
-// sortInfoLabelRecords sorts the records in-place by the given sort criteria.
-// sort_by=score sorts descending by Score with name as tie-breaker.
-// Default (sort_by=alpha or unset) sorts ascending by Name; sort_dir=dsc
-// reverses to descending. Mirrors sortOrdering for the search endpoints.
-func sortInfoLabelRecords(records []infohelper.InfoLabelRecord, sortBy, sortDir string) {
-	switch sortBy {
-	case "score":
-		slices.SortFunc(records, func(a, b infohelper.InfoLabelRecord) int {
-			switch {
-			case a.Score > b.Score:
-				return -1
-			case a.Score < b.Score:
-				return 1
-			default:
-				return strings.Compare(a.Name, b.Name)
-			}
-		})
-	default:
-		if sortDir == "dsc" {
-			slices.SortFunc(records, func(a, b infohelper.InfoLabelRecord) int {
-				return strings.Compare(b.Name, a.Name)
-			})
-		} else {
-			slices.SortFunc(records, func(a, b infohelper.InfoLabelRecord) int {
-				return strings.Compare(a.Name, b.Name)
-			})
+func parseInfoMatchers(p parser.Parser, form map[string][]string) ([]*labels.Matcher, []*labels.Matcher, error) {
+	metricValues := form["metric_match[]"]
+	dataValues := form["data_match[]"]
+	if len(metricValues)+len(dataValues) > maxInfoMatchersPerRequest {
+		return nil, nil, fmt.Errorf("too many info matchers: maximum is %d", maxInfoMatchersPerRequest)
+	}
+
+	nameMatchers := make([]*labels.Matcher, 0, len(metricValues))
+	for _, value := range metricValues {
+		matcher, err := parseSingleInfoMatcher(p, value)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid metric_match[] %q: %w", value, err)
 		}
+		if matcher.Name != labels.MetricName {
+			return nil, nil, fmt.Errorf("metric_match[] must match %s, got %s", labels.MetricName, matcher.Name)
+		}
+		nameMatchers = append(nameMatchers, matcher)
 	}
+
+	dataMatchers := make([]*labels.Matcher, 0, len(dataValues))
+	for _, value := range dataValues {
+		matcher, err := parseSingleInfoMatcher(p, value)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid data_match[] %q: %w", value, err)
+		}
+		if matcher.Name == labels.MetricName {
+			return nil, nil, fmt.Errorf("data_match[] cannot match %s; use metric_match[]", labels.MetricName)
+		}
+		dataMatchers = append(dataMatchers, matcher)
+	}
+	return nameMatchers, dataMatchers, nil
 }
 
-// streamInfoLabelRecords writes the records as NDJSON batches followed by a
-// success trailer. Any write failure during streaming surfaces as an in-band
-// searchErrorResponse line — pre-stream errors are already handled by callers.
-func streamInfoLabelRecords(ctx context.Context, api *API, w http.ResponseWriter, records []infohelper.InfoLabelRecord, hasMore bool, exprWarnings, extractWarnings []string, sp searchParams) {
-	nw, err := newNDJSONWriter(w)
+func parseSingleInfoMatcher(p parser.Parser, value string) (*labels.Matcher, error) {
+	matchers, err := p.ParseMetricSelector("{" + value + "}")
 	if err != nil {
-		api.respondError(w, &apiError{errorInternal, err}, nil)
-		return
+		return nil, err
 	}
-
-	warnings := mergeWarnings(exprWarnings, extractWarnings)
-
-	includeScore := sp.includeScore
-	batchSize := sp.batchSize
-	if batchSize <= 0 {
-		batchSize = defaultSearchBatchSize
+	if len(matchers) != 1 {
+		return nil, fmt.Errorf("expected exactly one matcher, got %d", len(matchers))
 	}
-
-	emitBatch := func(batch []infoLabelsResult, warnings []string) bool {
-		if writeErr := nw.writeLine(searchBatch[infoLabelsResult]{Results: batch, Warnings: warnings}); writeErr != nil {
-			writeStreamInternalError(nw, writeErr)
-			return false
-		}
-		return true
-	}
-
-	// Always emit a first batch line so warnings are observable even when
-	// there are no records.
-	first := make([]infoLabelsResult, 0, min(batchSize, len(records)))
-	for i := 0; i < len(records) && i < batchSize; i++ {
-		first = append(first, toInfoLabelsResult(records[i], includeScore))
-	}
-	if !emitBatch(first, warnings) {
-		return
-	}
-
-	for offset := batchSize; offset < len(records); offset += batchSize {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-		end := min(offset+batchSize, len(records))
-		batch := make([]infoLabelsResult, 0, end-offset)
-		for _, rec := range records[offset:end] {
-			batch = append(batch, toInfoLabelsResult(rec, includeScore))
-		}
-		if !emitBatch(batch, nil) {
-			return
-		}
-	}
-
-	_ = nw.writeLine(searchTrailer{Status: "success", HasMore: hasMore})
-}
-
-// respondEmptyInfoLabelsStream emits a well-formed empty NDJSON stream — a
-// single empty first batch (carrying any warnings) followed by the success
-// trailer. Used when the expr eval produced no identifying-label values.
-func respondEmptyInfoLabelsStream(api *API, w http.ResponseWriter, warnings []string) {
-	nw, err := newNDJSONWriter(w)
-	if err != nil {
-		api.respondError(w, &apiError{errorInternal, err}, nil)
-		return
-	}
-	_ = nw.writeLine(searchBatch[infoLabelsResult]{Results: []infoLabelsResult{}, Warnings: warnings})
-	_ = nw.writeLine(searchTrailer{Status: "success", HasMore: false})
-}
-
-func toInfoLabelsResult(r infohelper.InfoLabelRecord, includeScore bool) infoLabelsResult {
-	out := infoLabelsResult{Name: r.Name, Values: r.Values}
-	if includeScore {
-		score := r.Score
-		out.Score = &score
-	}
-	return out
-}
-
-// mergeWarnings returns a deduplicated, sorted slice combining the inputs.
-// Stable order makes the NDJSON wire format assertable.
-func mergeWarnings(a, b []string) []string {
-	if len(a) == 0 && len(b) == 0 {
-		return nil
-	}
-	seen := make(map[string]struct{}, len(a)+len(b))
-	out := make([]string, 0, len(a)+len(b))
-	for _, s := range a {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = struct{}{}
-		out = append(out, s)
-	}
-	for _, s := range b {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = struct{}{}
-		out = append(out, s)
-	}
-	slices.Sort(out)
-	return out
-}
-
-// annotationsToStrings converts annotations.Annotations into a []string for
-// use in NDJSON batch / trailer warnings.
-func annotationsToStrings(a annotations.Annotations) []string {
-	if len(a) == 0 {
-		return nil
-	}
-	errs := a.AsErrors()
-	out := make([]string, 0, len(errs))
-	for _, e := range errs {
-		out = append(out, e.Error())
-	}
-	return out
-}
-
-// parseInfoMetricMatch parses the metric_match query parameter for the
-// /info_labels endpoint. Supported formats:
-//
-//   - "value"      -> MatchEqual
-//   - "=~value"    -> MatchRegexp
-//   - "!=value"    -> MatchNotEqual
-//   - "!~value"    -> MatchNotRegexp
-//
-// An empty input returns MatchEqual for the configured default metric.
-func parseInfoMetricMatch(s, defaultMetric string) (*labels.Matcher, error) {
-	if s == "" {
-		return labels.NewMatcher(labels.MatchEqual, labels.MetricName, defaultMetric)
-	}
-
-	var matchType labels.MatchType
-	var value string
-
-	switch {
-	case strings.HasPrefix(s, "!~"):
-		matchType = labels.MatchNotRegexp
-		value = s[2:]
-	case strings.HasPrefix(s, "!="):
-		matchType = labels.MatchNotEqual
-		value = s[2:]
-	case strings.HasPrefix(s, "=~"):
-		matchType = labels.MatchRegexp
-		value = s[2:]
-	default:
-		matchType = labels.MatchEqual
-		value = s
-	}
-
-	if value == "" {
-		return nil, errors.New("metric_match value cannot be empty")
-	}
-
-	return labels.NewMatcher(matchType, labels.MetricName, value)
-}
-
-// extractIdentifyingLabels collects the identifying-label values present in a
-// PromQL Vector or Matrix result, used to restrict /info_labels' info-metric
-// query to series whose identifying labels match the expr eval.
-func extractIdentifyingLabels(val parser.Value, identifyingLabels []string) map[string]map[string]struct{} {
-	result := make(map[string]map[string]struct{})
-
-	collect := func(metric labels.Labels) {
-		for _, idLbl := range identifyingLabels {
-			v := metric.Get(idLbl)
-			if v == "" {
-				continue
-			}
-			if result[idLbl] == nil {
-				result[idLbl] = make(map[string]struct{})
-			}
-			result[idLbl][v] = struct{}{}
-		}
-	}
-
-	switch v := val.(type) {
-	case promql.Vector:
-		for _, sample := range v {
-			collect(sample.Metric)
-		}
-	case promql.Matrix:
-		for _, series := range v {
-			collect(series.Metric)
-		}
-	}
-	return result
+	return matchers[0], nil
 }

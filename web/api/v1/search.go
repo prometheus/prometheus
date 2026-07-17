@@ -58,13 +58,16 @@ import (
 )
 
 // defaultFuzzAlg is the algorithm assumed when fuzz_alg is not specified.
-const defaultFuzzAlg = "subsequence"
+const defaultFuzzAlg = "jarowinkler"
 
 // defaultSearchLimit is the default value for the limit parameter when the client omits it.
 const defaultSearchLimit = 100
 
 // defaultSearchBatchSize is the default value for the batch_size parameter when the client omits it.
 const defaultSearchBatchSize = 100
+
+// maxSearchBatchSize bounds per-line allocation even when the result limit is unbounded.
+const maxSearchBatchSize = 10_000
 
 // maxSearchTermsPerRequest caps the number of search[] query parameters
 // accepted in one request. Per-value filter cost grows with the number of
@@ -78,7 +81,7 @@ const maxSearchTermsPerRequest = 32
 // used by validation, feature registration, and API documentation. It is kept
 // unexported so it cannot be mutated by external packages; use FuzzAlgorithms()
 // to obtain a defensive copy.
-var fuzzAlgorithms = []string{defaultFuzzAlg, "jarowinkler"}
+var fuzzAlgorithms = []string{defaultFuzzAlg, "subsequence"}
 
 // FuzzAlgorithms returns the canonical list of supported fuzzy matching
 // algorithms. The returned slice is a copy and may be modified safely.
@@ -91,7 +94,7 @@ type searchParams struct {
 	matcherSets   [][]*labels.Matcher
 	searches      []string
 	fuzzThreshold int    // 0-100, default 0 (lowest fuzzy threshold).
-	fuzzAlg       string // "subsequence" (default) or "jarowinkler".
+	fuzzAlg       string // "jarowinkler" (default) or "subsequence".
 	caseSensitive bool   // Default true.
 	sortBy        string
 	sortDir       string // "asc" (default) or "dsc".
@@ -179,8 +182,9 @@ func (nw *ndjsonWriter) writeLine(v any) error {
 	return nil
 }
 
-// parseSearchParams parses the common query parameters for search endpoints.
-func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
+// parseSearchParams parses common search parameters. Timestamps are always
+// parsed; validateTimeRange controls only start/end ordering validation.
+func (api *API) parseSearchParams(r *http.Request, validateTimeRange bool) (searchParams, *apiError) {
 	var sp searchParams
 
 	now := api.now()
@@ -199,7 +203,7 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 	// this instant" search. Only strictly inverted ranges are rejected, so
 	// a client that accidentally sets end < start gets an immediate error
 	// rather than empty (and possibly misleading) results.
-	if sp.end.Before(sp.start) {
+	if validateTimeRange && sp.end.Before(sp.start) {
 		return sp, &apiError{errorBadData, errors.New("end timestamp must not be before start timestamp")}
 	}
 
@@ -291,8 +295,12 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 		if err != nil || bs <= 0 {
 			return sp, &apiError{errorBadData, fmt.Errorf("invalid batch_size %q: must be a positive integer", v)}
 		}
+		if bs > maxSearchBatchSize {
+			return sp, &apiError{errorBadData, fmt.Errorf("batch_size %d exceeds the maximum (%d)", bs, maxSearchBatchSize)}
+		}
 		sp.batchSize = bs
 	}
+	sp.batchSize = min(sp.batchSize, sp.limit)
 
 	return sp, nil
 }
@@ -685,9 +693,18 @@ func filterChainHasExpensiveScoring(fuzzThreshold int, fuzzAlg string) bool {
 	return fuzzThreshold > 0
 }
 
-// autocompleteRequest holds the common objects prepared by newAutocompleteRequest:
-// the parsed search-style parameters, the resulting search hints (filter, limit,
-// ordering), and the acquired storage querier. Callers must defer q.Close().
+// preparedAutocompleteRequest holds validated search parameters and hints before
+// storage is opened.
+type preparedAutocompleteRequest struct {
+	sp    searchParams
+	hints *storage.SearchHints
+}
+
+type autocompleteRequestOptions struct {
+	exprControlsTimeRange bool
+}
+
+// autocompleteRequest adds an acquired storage querier. Callers must defer q.Close().
 type autocompleteRequest struct {
 	sp    searchParams
 	hints *storage.SearchHints
@@ -704,14 +721,9 @@ type searchRequest struct {
 	q        storage.Querier
 }
 
-// newAutocompleteRequest performs the setup shared by all autocomplete-style
-// endpoints (search endpoints and /info_labels): CORS headers, feature-gate
-// check, agent check, form parsing, common search parameter parsing, sort_by
-// validation, querier acquisition, and search hints construction (filter,
-// limit-plus-one, ordering). On success a non-nil request is returned and the
-// caller must defer req.q.Close(). On failure the error has already been
-// written to w and nil is returned.
-func (api *API) newAutocompleteRequest(w http.ResponseWriter, r *http.Request, endpoint string) *autocompleteRequest {
+// prepareAutocompleteRequest validates common autocomplete parameters without
+// opening storage.
+func (api *API) prepareAutocompleteRequest(w http.ResponseWriter, r *http.Request, endpoint string, opts autocompleteRequestOptions) *preparedAutocompleteRequest {
 	httputil.SetCORS(w, api.CORSOrigin, r)
 
 	if !api.enableSearch {
@@ -729,7 +741,8 @@ func (api *API) newAutocompleteRequest(w http.ResponseWriter, r *http.Request, e
 		return nil
 	}
 
-	sp, apiErr := api.parseSearchParams(r)
+	validateTimeRange := !opts.exprControlsTimeRange || r.FormValue("expr") == ""
+	sp, apiErr := api.parseSearchParams(r, validateTimeRange)
 	if apiErr != nil {
 		api.respondError(w, apiErr, nil)
 		return nil
@@ -740,19 +753,32 @@ func (api *API) newAutocompleteRequest(w http.ResponseWriter, r *http.Request, e
 		return nil
 	}
 
-	q, err := api.Queryable.Querier(timestamp.FromTime(sp.start), timestamp.FromTime(sp.end))
-	if err != nil {
-		api.respondPreStreamSearchError(w, err)
-		return nil
-	}
-
 	hints := &storage.SearchHints{
 		Filter: buildSearchFilter(sp.searches, sp.fuzzThreshold, sp.fuzzAlg, sp.caseSensitive),
 		Limit:  searchHintsLimit(sp.limit), // Fetch one extra to detect has_more (with saturation guard).
 	}
 	hints.OrderBy = sortOrdering(sp.sortBy, sp.sortDir)
 
-	return &autocompleteRequest{sp: sp, hints: hints, q: q}
+	return &preparedAutocompleteRequest{sp: sp, hints: hints}
+}
+
+func (api *API) openAutocompleteRequest(w http.ResponseWriter, prepared *preparedAutocompleteRequest, mint, maxt int64) *autocompleteRequest {
+	q, err := api.Queryable.Querier(mint, maxt)
+	if err != nil {
+		api.respondPreStreamSearchError(w, err)
+		return nil
+	}
+	return &autocompleteRequest{sp: prepared.sp, hints: prepared.hints, q: q}
+}
+
+// newAutocompleteRequest prepares a request and opens storage over its common
+// start/end range.
+func (api *API) newAutocompleteRequest(w http.ResponseWriter, r *http.Request, endpoint string) *autocompleteRequest {
+	prepared := api.prepareAutocompleteRequest(w, r, endpoint, autocompleteRequestOptions{})
+	if prepared == nil {
+		return nil
+	}
+	return api.openAutocompleteRequest(w, prepared, timestamp.FromTime(prepared.sp.start), timestamp.FromTime(prepared.sp.end))
 }
 
 // newSearchRequest is newAutocompleteRequest specialised for the /api/v1/search/*
@@ -764,6 +790,18 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 	if aReq == nil {
 		return nil
 	}
+	return api.searchRequestFromAutocomplete(w, aReq)
+}
+
+func (api *API) openSearchRequest(w http.ResponseWriter, prepared *preparedAutocompleteRequest, mint, maxt int64) *searchRequest {
+	aReq := api.openAutocompleteRequest(w, prepared, mint, maxt)
+	if aReq == nil {
+		return nil
+	}
+	return api.searchRequestFromAutocomplete(w, aReq)
+}
+
+func (api *API) searchRequestFromAutocomplete(w http.ResponseWriter, aReq *autocompleteRequest) *searchRequest {
 	searcher, ok := aReq.q.(storage.Searcher)
 	if !ok {
 		_ = aReq.q.Close()
