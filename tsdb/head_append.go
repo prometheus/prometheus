@@ -1443,7 +1443,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 				acc.floatsAppended--
 			}
 		default:
-			wasStale := isStaleSeries(series)
+			wasStale, wasHistogram, oldBuckets := series.sampleState()
 			isStale := value.IsStaleNaN(s.V)
 			ok, chunkCreated = series.append(s.ST, s.T, s.V, a.appendID, acc.appendChunkOpts)
 			if ok {
@@ -1454,6 +1454,9 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 					acc.inOrderMaxt = s.T
 				}
 				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
+				if wasHistogram {
+					a.head.updateNativeHistogramMetricsOnAppend(true, false, oldBuckets, 0)
+				}
 			} else {
 				// The sample is an exact duplicate, and should be silently dropped.
 				acc.floatsAppended--
@@ -1543,8 +1546,9 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				acc.histogramsAppended--
 			}
 		default:
-			wasStale := isStaleSeries(series)
+			wasStale, wasHistogram, oldBuckets := series.sampleState()
 			isStale := value.IsStaleNaN(s.H.Sum)
+			newBuckets := len(s.H.PositiveBuckets) + len(s.H.NegativeBuckets)
 			ok, chunkCreated = series.appendHistogram(s.ST, s.T, s.H, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
@@ -1554,6 +1558,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 					acc.inOrderMaxt = s.T
 				}
 				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
+				a.head.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
 			} else {
 				acc.histogramsAppended--
 				acc.histoOOORejected++
@@ -1643,8 +1648,9 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				acc.histogramsAppended--
 			}
 		default:
-			wasStale := isStaleSeries(series)
+			wasStale, wasHistogram, oldBuckets := series.sampleState()
 			isStale := value.IsStaleNaN(s.FH.Sum)
+			newBuckets := len(s.FH.PositiveBuckets) + len(s.FH.NegativeBuckets)
 			ok, chunkCreated = series.appendFloatHistogram(s.ST, s.T, s.FH, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
@@ -1654,6 +1660,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 					acc.inOrderMaxt = s.T
 				}
 				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
+				a.head.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
 			} else {
 				acc.histogramsAppended--
 				acc.histoOOORejected++
@@ -2183,6 +2190,7 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(o chunkOpts, logger *slog.Logger) []
 		s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
 			ref:        chunkRef,
 			numSamples: uint16(memchunk.chunk.NumSamples()),
+			encoding:   memchunk.chunk.Encoding(),
 			minTime:    memchunk.minTime,
 			maxTime:    memchunk.maxTime,
 		})
@@ -2198,15 +2206,14 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 		return count
 	}
 
-	// Write chunks starting from the oldest one and stop before we get to current s.headChunks.
-	// If we have this chain: s.headChunks{t4} -> t3 -> t2 -> t1 -> t0
-	// then we need to write chunks t0 to t3, but skip s.headChunks.
-	for i := s.headChunks.len() - 1; i > 0; i-- {
-		chk := s.headChunks.atOffset(i)
+	// Collect head chunks in oldest-first order, then write all except the newest.
+	hc := collectHeadChunks(s.headChunks, make([]*memChunk, 0, s.headChunkCount.Load()))
+	for _, chk := range hc[:len(hc)-1] {
 		chunkRef := chunkDiskMapper.WriteChunk(s.ref, chk.minTime, chk.maxTime, chk.chunk, false, handleChunkWriteError)
 		s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
 			ref:        chunkRef,
 			numSamples: uint16(chk.chunk.NumSamples()),
+			encoding:   chk.chunk.Encoding(),
 			minTime:    chk.minTime,
 			maxTime:    chk.maxTime,
 		})

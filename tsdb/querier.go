@@ -170,11 +170,18 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 	return selectSeriesSet(ctx, sortSeries, hints, ms, q.index, q.chunks, q.tombstones, q.mint, q.maxt)
 }
 
-// chunkCacheToggler is an optional interface implemented by chunk readers that
-// support an in-memory head-chunk cache. The cache is only beneficial for range
-// queries (Step > 0) where every chunk of a series is accessed.
-type chunkCacheToggler interface {
+// chunkCacheEnabler is an optional interface implemented by chunk readers that
+// support an in-memory head-chunk cache. The cache is beneficial when every
+// chunk of a series is accessed sequentially, such as range queries and compaction.
+type chunkCacheEnabler interface {
 	EnableChunkCache()
+}
+
+// enableChunkCache enables the head-chunk cache on cr if it supports one.
+func enableChunkCache(cr ChunkReader) {
+	if enabler, ok := cr.(chunkCacheEnabler); ok {
+		enabler.EnableChunkCache()
+	}
 }
 
 func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms []*labels.Matcher,
@@ -184,9 +191,7 @@ func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.Select
 	sharded := hints != nil && hints.ShardCount > 0
 
 	if hints != nil && hints.Step > 0 {
-		if toggler, ok := chunks.(chunkCacheToggler); ok {
-			toggler.EnableChunkCache()
-		}
+		enableChunkCache(chunks)
 	}
 
 	p, err := PostingsForMatchers(ctx, index, ms...)
@@ -238,9 +243,7 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 	sharded := hints != nil && hints.ShardCount > 0
 
 	if hints != nil && hints.Step > 0 {
-		if toggler, ok := chunks.(chunkCacheToggler); ok {
-			toggler.EnableChunkCache()
-		}
+		enableChunkCache(chunks)
 	}
 
 	if hints != nil {
