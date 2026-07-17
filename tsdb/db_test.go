@@ -2088,6 +2088,8 @@ func TestOptions_ShardedPostingsBuckets(t *testing.T) {
 			opts := DefaultOptions()
 			opts.EnableSharding = true
 			opts.ShardedPostingsBuckets = tc.buckets
+			recycler := NewShardedPostingsBufferRecycler(1<<20, nil)
+			opts.ShardedPostingsBufferRecycler = recycler
 
 			db, err := Open(t.TempDir(), nil, nil, opts, nil)
 			if tc.wantErr != "" {
@@ -2097,6 +2099,7 @@ func TestOptions_ShardedPostingsBuckets(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.NotNil(t, db)
+			require.Same(t, recycler, db.head.opts.ShardedPostingsBufferRecycler)
 			t.Cleanup(func() {
 				require.NoError(t, db.Close())
 			})
@@ -2106,6 +2109,7 @@ func TestOptions_ShardedPostingsBuckets(t *testing.T) {
 				return
 			}
 			require.NotNil(t, db.head.shardBuckets)
+			require.Same(t, recycler, db.head.shardBuckets.lifecycle.recycler)
 			require.Len(t, db.head.shardBuckets.buckets, tc.wantBucketCount)
 		})
 	}

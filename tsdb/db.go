@@ -219,6 +219,10 @@ type Options struct {
 	// Only used when EnableSharding is true.
 	ShardedPostingsBuckets int
 
+	// ShardedPostingsBufferRecycler optionally reuses dirty-repair buffers. A
+	// recycler may be shared across DBs.
+	ShardedPostingsBufferRecycler *ShardedPostingsBufferRecycler
+
 	// EnableDelayedCompaction, when set to true, assigns a random value to CompactionDelay during DB opening.
 	// When set to false, delayed compaction is disabled, unless CompactionDelay is set directly.
 	EnableDelayedCompaction bool
@@ -1177,6 +1181,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
 	headOpts.ShardedPostingsBuckets = opts.ShardedPostingsBuckets
+	headOpts.ShardedPostingsBufferRecycler = opts.ShardedPostingsBufferRecycler
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
 	headOpts.EnableSTStorage.Store(opts.EnableSTStorage)
 	headOpts.FloatChunkEncoding.Store(uint32(opts.FloatChunkEncoding))
