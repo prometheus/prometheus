@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLightsailClientAdapterGetInstancesPaginated(t *testing.T) {
+func TestLightsailDiscoveryListInstancesPaginated(t *testing.T) {
 	ctx := context.Background()
 
 	pages := []*lightsail.GetInstancesOutput{
@@ -36,7 +36,7 @@ func TestLightsailClientAdapterGetInstancesPaginated(t *testing.T) {
 	}
 
 	var calls int
-	client := &lightsailClientAdapter{
+	discovery := &LightsailDiscovery{lightsail: &lightsailClientAdapter{
 		getInstances: func(_ context.Context, params *lightsail.GetInstancesInput, _ ...func(*lightsail.Options)) (*lightsail.GetInstancesOutput, error) {
 			if calls == 0 {
 				require.Nil(t, params.PageToken)
@@ -47,14 +47,13 @@ func TestLightsailClientAdapterGetInstancesPaginated(t *testing.T) {
 			calls++
 			return out, nil
 		},
-	}
+	}}
 
-	output, err := client.GetInstances(ctx, &lightsail.GetInstancesInput{})
+	instances, err := discovery.listInstances(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 2, calls)
 	require.Equal(t, []lightsailTypes.Instance{
 		{Name: strptr("instance-1")},
 		{Name: strptr("instance-2")},
-	}, output.Instances)
-	require.Nil(t, output.NextPageToken)
+	}, instances)
 }
