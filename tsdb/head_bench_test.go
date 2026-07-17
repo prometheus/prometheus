@@ -677,13 +677,15 @@ func shardedAllPostingsViaStripeScanForBenchmark(h *Head, shardIndex, shardCount
 func BenchmarkHeadShardedAllPostings(b *testing.B) {
 	const numSeries = 1_000_000
 	h, _ := setupHeadWithSeriesForSharding(b, numSeries)
+	ir := h.indexRange(math.MinInt64, math.MaxInt64)
+	b.Cleanup(func() { require.NoError(b, ir.Close()) })
 
 	b.Run("shardCount=001", func(b *testing.B) {
 		strategies := []struct {
 			name string
 			fn   func(context.Context) index.Postings
 		}{
-			{"api", func(ctx context.Context) index.Postings { return h.ShardedAllPostings(ctx, 0, 1) }},
+			{"api", func(ctx context.Context) index.Postings { return ir.ShardedAllPostings(ctx, 0, 1) }},
 			{"all-postings", func(context.Context) index.Postings { return h.postings.All() }},
 			{"fullscan", func(context.Context) index.Postings { return shardedAllPostingsViaStripeScanForBenchmark(h, 0, 1) }},
 		}
@@ -711,7 +713,7 @@ func BenchmarkHeadShardedAllPostings(b *testing.B) {
 			name string
 			fn   func(context.Context, uint64, uint64) index.Postings
 		}{
-			{"bucket-index", h.ShardedAllPostings},
+			{"bucket-index", ir.ShardedAllPostings},
 			{"fullscan", func(_ context.Context, i, n uint64) index.Postings {
 				return shardedAllPostingsViaStripeScanForBenchmark(h, i, n)
 			}},
@@ -735,12 +737,11 @@ func BenchmarkHeadShardedAllPostings(b *testing.B) {
 
 	b.Run("fallback", func(b *testing.B) {
 		const shardCount = 127
-		ir := h.indexRange(math.MinInt64, math.MaxInt64)
 		strategies := []struct {
 			name string
 			fn   func(context.Context, uint64, uint64) index.Postings
 		}{
-			{"stripe-scan", h.ShardedAllPostings},
+			{"stripe-scan", ir.ShardedAllPostings},
 			{"all-postings-lookup", func(_ context.Context, i, n uint64) index.Postings {
 				return ir.shardedPostingsViaSeriesLookup(h.postings.All(), i, n)
 			}},

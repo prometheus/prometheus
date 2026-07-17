@@ -3869,7 +3869,7 @@ func TestHeadShardedPostings(t *testing.T) {
 		require.False(t, p.Seek(expected[len(expected)-1]+1))
 		require.NoError(t, p.Err())
 
-		got, err = index.ExpandPostings(head.ShardedAllPostings(t.Context(), shardIndex, shardCount))
+		got, err = index.ExpandPostings(ir.ShardedAllPostings(t.Context(), shardIndex, shardCount))
 		require.NoError(t, err)
 		require.Equal(t, expected, got)
 	})
@@ -4150,6 +4150,44 @@ func TestHeadSortedPostings(t *testing.T) {
 }
 
 func TestHeadShardedAllPostings(t *testing.T) {
+	t.Run("selected-series reader stays restricted", func(t *testing.T) {
+		headOpts := newTestHeadDefaultOptions(1000, false)
+		headOpts.EnableSharding = true
+		head, _ := newTestHeadWithOptions(t, compression.None, headOpts)
+
+		app := head.Appender(t.Context())
+		selected := seriesRefs{}
+		expected := map[storage.SeriesRef]labels.Labels{}
+		for i := range 20 {
+			lset := labels.FromStrings("unique", strconv.Itoa(i))
+			ref, err := app.Append(0, lset, 100, 0)
+			require.NoError(t, err)
+			if i%3 == 0 {
+				selected.sortedByRef = append(selected.sortedByRef, ref)
+				expected[ref] = lset
+			}
+		}
+		require.NoError(t, app.Commit())
+
+		ir, err := head.selectedSeriesIndex(math.MinInt64, math.MaxInt64, selected)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, ir.Close()) })
+
+		const shardCount = uint64(4)
+		seen := map[storage.SeriesRef]struct{}{}
+		for shardIndex := range shardCount {
+			refs, err := index.ExpandPostings(ir.ShardedAllPostings(t.Context(), shardIndex, shardCount))
+			require.NoError(t, err)
+			for _, ref := range refs {
+				lset, ok := expected[ref]
+				require.True(t, ok, "unselected ref %d returned", ref)
+				require.Equal(t, shardIndex, labels.StableHash(lset)%shardCount)
+				seen[ref] = struct{}{}
+			}
+		}
+		require.Len(t, seen, len(expected))
+	})
+
 	t.Run("partitions series for fallback exact and sub-filtered shard counts", func(t *testing.T) {
 		t.Parallel()
 		headOpts := newTestHeadDefaultOptions(1000, false)
@@ -4170,7 +4208,7 @@ func TestHeadShardedAllPostings(t *testing.T) {
 		expectedAll, err := index.ExpandPostings(head.postings.All())
 		require.NoError(t, err)
 		require.True(t, slices.IsSorted(expectedAll))
-		refs, err := index.ExpandPostings(head.ShardedAllPostings(ctx, 0, 1))
+		refs, err := index.ExpandPostings(ir.ShardedAllPostings(ctx, 0, 1))
 		require.NoError(t, err)
 		require.Equal(t, expectedAll, refs)
 		require.Equal(t, fallbackBefore, prom_testutil.ToFloat64(head.metrics.shardedAllPostingsFallback))
@@ -4182,7 +4220,7 @@ func TestHeadShardedAllPostings(t *testing.T) {
 			seen := map[storage.SeriesRef]struct{}{}
 			var total int
 			for shardIndex := range shardCount {
-				refs, err := index.ExpandPostings(head.ShardedAllPostings(ctx, shardIndex, shardCount))
+				refs, err := index.ExpandPostings(ir.ShardedAllPostings(ctx, shardIndex, shardCount))
 				require.NoError(t, err)
 				require.True(t, slices.IsSorted(refs), "shardCount %d shard %d", shardCount, shardIndex)
 				for _, ref := range refs {
@@ -4200,7 +4238,7 @@ func TestHeadShardedAllPostings(t *testing.T) {
 		require.Equal(t, fallbackBefore+3, prom_testutil.ToFloat64(head.metrics.shardedAllPostingsFallback))
 
 		// An out-of-range shard index selects nothing.
-		refs, err = index.ExpandPostings(head.ShardedAllPostings(ctx, 4, 4))
+		refs, err = index.ExpandPostings(ir.ShardedAllPostings(ctx, 4, 4))
 		require.NoError(t, err)
 		require.Empty(t, refs)
 	})
@@ -4224,10 +4262,11 @@ func TestHeadShardedAllPostings(t *testing.T) {
 		}
 		require.NoError(t, app.Commit())
 
+		ir := head.indexRange(math.MinInt64, math.MaxInt64)
 		expectedAll, err := index.ExpandPostings(head.postings.All())
 		require.NoError(t, err)
 		fallbackBefore := prom_testutil.ToFloat64(head.metrics.shardedAllPostingsFallback)
-		refs, err := index.ExpandPostings(head.ShardedAllPostings(t.Context(), 0, 1))
+		refs, err := index.ExpandPostings(ir.ShardedAllPostings(t.Context(), 0, 1))
 		require.NoError(t, err)
 		require.Equal(t, expectedAll, refs)
 		require.Equal(t, fallbackBefore, prom_testutil.ToFloat64(head.metrics.shardedAllPostingsFallback))
@@ -4236,7 +4275,7 @@ func TestHeadShardedAllPostings(t *testing.T) {
 		fallbackBefore = prom_testutil.ToFloat64(head.metrics.shardedAllPostingsFallback)
 		seen := map[storage.SeriesRef]struct{}{}
 		for shardIndex := range shardCount {
-			refs, err := index.ExpandPostings(head.ShardedAllPostings(t.Context(), shardIndex, shardCount))
+			refs, err := index.ExpandPostings(ir.ShardedAllPostings(t.Context(), shardIndex, shardCount))
 			require.NoError(t, err)
 			require.True(t, slices.IsSorted(refs))
 			for _, ref := range refs {
@@ -4257,14 +4296,15 @@ func TestHeadShardedAllPostings(t *testing.T) {
 		headOpts := newTestHeadDefaultOptions(1000, false)
 		headOpts.EnableSharding = true
 		head, _ := newTestHeadWithOptions(t, compression.None, headOpts)
+		ir := head.indexRange(math.MinInt64, math.MaxInt64)
 
 		canceledCtx, cancel := context.WithCancel(t.Context())
 		cancel()
-		p := head.ShardedAllPostings(canceledCtx, 4, 4)
+		p := ir.ShardedAllPostings(canceledCtx, 4, 4)
 		require.False(t, p.Next())
 		require.NoError(t, p.Err())
 
-		p = head.ShardedAllPostings(canceledCtx, 0, 4)
+		p = ir.ShardedAllPostings(canceledCtx, 0, 4)
 		require.False(t, p.Next())
 		require.ErrorIs(t, p.Err(), context.Canceled)
 
@@ -4280,7 +4320,7 @@ func TestHeadShardedAllPostings(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				ctx := &testutil.MockContextErrAfter{FailAfter: tc.failAfter}
-				p := head.ShardedAllPostings(ctx, 0, tc.shardCount)
+				p := ir.ShardedAllPostings(ctx, 0, tc.shardCount)
 				require.False(t, p.Next())
 				require.ErrorIs(t, p.Err(), context.Canceled)
 				require.Equal(t, tc.failAfter, ctx.Count())

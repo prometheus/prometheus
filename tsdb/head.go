@@ -3024,50 +3024,6 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 	h.stats.WALReplayStatus.Current = current
 }
 
-// ShardedAllPostings returns the postings of all series in the head that belong
-// to shard shardIndex of shardCount. Power-of-two shard counts use the shard
-// hash bucket index when it is enabled; other shard counts and disabled bucket
-// indexes fall back to a full series scan. The returned postings are sorted by
-// ref and may include refs of series deleted since the call began, which callers
-// resolve like any other stale postings entry. For shard counts larger than the
-// bucket count, the single candidate bucket is lazily sub-filtered by resolving
-// candidate refs' shard hashes. Shard 0 of 1 returns all head postings directly.
-// It returns empty postings when sharding is disabled or the shard index is out
-// of range. The context controls construction only; callers remain responsible
-// for cancellation while iterating the returned postings. Cancellation observed
-// during construction is reported by the returned postings' Err method.
-func (h *Head) ShardedAllPostings(ctx context.Context, shardIndex, shardCount uint64) index.Postings {
-	if !h.opts.EnableSharding || shardIndex >= shardCount {
-		return index.EmptyPostings()
-	}
-	if err := ctx.Err(); err != nil {
-		return index.ErrPostings(err)
-	}
-	if shardCount == 1 {
-		p := h.postings.All()
-		if err := ctx.Err(); err != nil {
-			return index.ErrPostings(err)
-		}
-		return p
-	}
-	if h.shardBuckets == nil || !isPowerOfTwo(shardCount) {
-		return h.shardedAllPostingsViaSeriesScan(ctx, shardIndex, shardCount)
-	}
-	lists, needsShardHashFilter := h.shardBuckets.postingsFor(shardIndex, shardCount)
-	if err := ctx.Err(); err != nil {
-		return index.ErrPostings(err)
-	}
-	// Iteration is caller-controlled, so do not bind the lazy merge to ctx.
-	p := index.Merge(context.Background(), lists...)
-	if err := ctx.Err(); err != nil {
-		return index.ErrPostings(err)
-	}
-	if needsShardHashFilter {
-		return newShardHashLookupFilterPostings(p, h.series, shardIndex, shardCount)
-	}
-	return p
-}
-
 // The context check interval keeps fallback scan cancellation responsive while
 // avoiding measurable overhead from checking around every stripe lock.
 const shardedAllPostingsContextCheckInterval = 256

@@ -187,6 +187,40 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 	return shardPostings
 }
 
+// ShardedAllPostings implements ShardedAllPostingsReader.
+func (h *headIndexReader) ShardedAllPostings(ctx context.Context, shardIndex, shardCount uint64) index.Postings {
+	head := h.head
+	if !head.opts.EnableSharding || shardIndex >= shardCount {
+		return index.EmptyPostings()
+	}
+	if err := ctx.Err(); err != nil {
+		return index.ErrPostings(err)
+	}
+	if shardCount == 1 {
+		p := head.postings.All()
+		if err := ctx.Err(); err != nil {
+			return index.ErrPostings(err)
+		}
+		return p
+	}
+	if head.shardBuckets == nil || !isPowerOfTwo(shardCount) {
+		return head.shardedAllPostingsViaSeriesScan(ctx, shardIndex, shardCount)
+	}
+	lists, needsShardHashFilter := head.shardBuckets.postingsFor(shardIndex, shardCount)
+	if err := ctx.Err(); err != nil {
+		return index.ErrPostings(err)
+	}
+	// Iteration is caller-controlled, so do not bind the lazy merge to ctx.
+	p := index.Merge(context.Background(), lists...)
+	if err := ctx.Err(); err != nil {
+		return index.ErrPostings(err)
+	}
+	if needsShardHashFilter {
+		return newShardHashLookupFilterPostings(p, head.series, shardIndex, shardCount)
+	}
+	return p
+}
+
 // shardedPostingsViaSeriesLookup serves arbitrary shard counts or disabled
 // bucket indexes by looking up every input series and testing its shard hash. It
 // preserves the IndexReader modulo-sharding contract for embedders that enabled
@@ -317,6 +351,11 @@ func (h *Head) selectedSeriesIndex(mint, maxt int64, selectedSeriesRefs seriesRe
 type headSelectedSeriesIndexReader struct {
 	*headIndexReader
 	selectedSeriesRefs seriesRefs
+}
+
+func (h *headSelectedSeriesIndexReader) ShardedAllPostings(ctx context.Context, shardIndex, shardCount uint64) index.Postings {
+	selected := index.NewListPostings(h.selectedSeriesRefs.sortedByRef)
+	return index.Intersect(selected, h.headIndexReader.ShardedAllPostings(ctx, shardIndex, shardCount))
 }
 
 type allSelectedSeriesPostings struct{ index.Postings }

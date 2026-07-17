@@ -105,8 +105,20 @@ type IndexReader interface {
 	// The names returned are sorted.
 	LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error)
 
-	// Close releases the underlying resources of the reader.
+	// Close releases the underlying resources of the reader. Returned iterators
+	// must not be used after Close.
 	Close() error
+}
+
+// ShardedAllPostingsReader provides direct sharded access to all postings.
+type ShardedAllPostingsReader interface {
+	IndexReader
+
+	// ShardedAllPostings returns all postings selected by ShardedPostings' shard
+	// mapping. Disabled sharding or an out-of-range shard returns empty postings.
+	// The context controls construction, not iteration; construction failures
+	// are reported by Err. Returned postings are valid only until Close.
+	ShardedAllPostings(ctx context.Context, shardIndex, shardCount uint64) index.Postings
 }
 
 // ChunkWriter serializes a time block of chunked series data.

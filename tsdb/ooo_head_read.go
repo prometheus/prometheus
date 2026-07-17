@@ -472,16 +472,19 @@ func (ch *OOOCompactionHead) LastMmapRef() chunks.ChunkDiskMapperRef { return ch
 func (ch *OOOCompactionHead) LastWBLFile() int                       { return ch.lastWBLFile }
 
 type OOOCompactionHeadIndexReader struct {
-	ch *OOOCompactionHead
+	ch         *OOOCompactionHead
+	headReader *headIndexReader
 }
 
 func NewOOOCompactionHeadIndexReader(ch *OOOCompactionHead) IndexReader {
-	return &OOOCompactionHeadIndexReader{ch: ch}
+	return &OOOCompactionHeadIndexReader{
+		ch:         ch,
+		headReader: &headIndexReader{head: ch.head, mint: ch.mint, maxt: ch.maxt},
+	}
 }
 
 func (ir *OOOCompactionHeadIndexReader) Symbols() index.StringIter {
-	hr := headIndexReader{head: ir.ch.head, mint: ir.ch.mint, maxt: ir.ch.maxt}
-	return hr.Symbols()
+	return ir.headReader.Symbols()
 }
 
 func (ir *OOOCompactionHeadIndexReader) Postings(_ context.Context, name string, values ...string) (index.Postings, error) {
@@ -506,8 +509,7 @@ func (*OOOCompactionHeadIndexReader) SortedPostings(p index.Postings) index.Post
 }
 
 func (ir *OOOCompactionHeadIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
-	hr := headIndexReader{head: ir.ch.head, mint: ir.ch.mint, maxt: ir.ch.maxt}
-	return hr.ShardedPostings(p, shardIndex, shardCount)
+	return ir.headReader.ShardedPostings(p, shardIndex, shardCount)
 }
 
 func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
@@ -551,8 +553,8 @@ func (*OOOCompactionHeadIndexReader) LabelNamesFor(context.Context, index.Postin
 	return nil, errors.New("not implemented")
 }
 
-func (*OOOCompactionHeadIndexReader) Close() error {
-	return nil
+func (ir *OOOCompactionHeadIndexReader) Close() error {
+	return ir.headReader.Close()
 }
 
 // HeadAndOOOQuerier queries both the head and the out-of-order head.
