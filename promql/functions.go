@@ -2637,8 +2637,8 @@ var FunctionCalls = map[string]FunctionCall{
 	"zscore":                       funcZScore,
 	"seasonal":                     funcSeasonal,
 	"mad":                          funcMAD,
-	"qscore":             funcQuantileAnomaly,
-	"hw":         funcHoltWintersAnomaly,
+	"qscore":                       funcQuantileAnomaly,
+	"hw":                           funcHoltWintersAnomaly,
 	"hst":                          funcHST,
 	"isolation_forest":             funcIsolationForest,
 	"absent":                       funcAbsent,
@@ -2894,8 +2894,8 @@ func funcEWMA(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, en
 		for i := 1; i < l; i++ {
 			val := series.Floats[i].F
 			delta := val - baseline
-			baseline = baseline + alpha*delta
-			variance = (1-alpha) * (variance + alpha*delta*delta)
+			baseline += alpha * delta
+			variance = (1 - alpha) * (variance + alpha*delta*delta)
 		}
 		lastVal := series.Floats[l-1].F
 		delta := lastVal - baseline
@@ -2904,8 +2904,12 @@ func funcEWMA(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, en
 		if std > 1e-9 {
 			score = 1 - math.Exp(-math.Abs(delta)/(3*std))
 		}
-		if score < 0 { score = 0 }
-		if score > 1 { score = 1 }
+		if score < 0 {
+			score = 0
+		}
+		if score > 1 {
+			score = 1
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric: series.Metric,
 			F:      score,
@@ -3003,9 +3007,7 @@ func rcfScoreInMemory(points [][6]float64, point [6]float64, trees int, seed uin
 		return 0
 	}
 	maxDepth := int(math.Ceil(math.Log2(float64(len(points))))) + 1
-	if maxDepth < 1 {
-		maxDepth = 1
-	}
+	maxDepth = max(maxDepth, 1)
 	indices := make([]int, len(points))
 	var total float64
 	for tree := 0; tree < trees; tree++ {
@@ -3092,8 +3094,12 @@ func funcZScore(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, 
 		} else if math.Abs(lastVal-mean) > 1e-9 {
 			score = 1.0
 		}
-		if score < 0 { score = 0 }
-		if score > 1 { score = 1 }
+		if score < 0 {
+			score = 0
+		}
+		if score > 1 {
+			score = 1
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric: series.Metric,
 			F:      score,
@@ -3138,8 +3144,8 @@ func funcSeasonal(vectorVals []Vector, matrixVal Matrix, args parser.Expressions
 		for i := 1; i < len(slotPoints); i++ {
 			val := slotPoints[i].F
 			delta := val - baseline
-			baseline = baseline + alpha*delta
-			variance = (1-alpha) * (variance + alpha*delta*delta)
+			baseline += alpha * delta
+			variance = (1 - alpha) * (variance + alpha*delta*delta)
 		}
 		delta := lastPoint.F - baseline
 		std := math.Sqrt(math.Max(variance, 0))
@@ -3147,8 +3153,12 @@ func funcSeasonal(vectorVals []Vector, matrixVal Matrix, args parser.Expressions
 		if std > 1e-9 {
 			score = 1 - math.Exp(-math.Abs(delta)/(3*std))
 		}
-		if score < 0 { score = 0 }
-		if score > 1 { score = 1 }
+		if score < 0 {
+			score = 0
+		}
+		if score > 1 {
+			score = 1
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric: series.Metric,
 			F:      score,
@@ -3193,8 +3203,12 @@ func funcMAD(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh
 		} else if math.Abs(lastVal-median) > 1e-9 {
 			score = 1.0
 		}
-		if score < 0 { score = 0 }
-		if score > 1 { score = 1 }
+		if score < 0 {
+			score = 0
+		}
+		if score > 1 {
+			score = 1
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric: series.Metric,
 			F:      score,
@@ -3248,8 +3262,12 @@ func funcQuantileAnomaly(vectorVals []Vector, matrixVal Matrix, args parser.Expr
 				score = 1.0
 			}
 		}
-		if score < 0 { score = 0 }
-		if score > 1 { score = 1 }
+		if score < 0 {
+			score = 0
+		}
+		if score > 1 {
+			score = 1
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric: series.Metric,
 			F:      score,
@@ -3296,9 +3314,12 @@ func funcHoltWintersAnomaly(vectorVals []Vector, matrixVal Matrix, args parser.E
 		if stdErr > 1e-9 {
 			score = math.Abs(errorVal) / (3.0 * stdErr)
 		}
-		if score < 0 { score = 0 }
-		if score > 1 { score = 1 }
-
+		if score < 0 {
+			score = 0
+		}
+		if score > 1 {
+			score = 1
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric: series.Metric,
 			F:      score,
@@ -3374,7 +3395,7 @@ func funcHST(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh
 		history := features[:len(features)-1]
 		seed := rcfSeedFromString(getMetricName(series.Metric))
 		avgDensity := 0.0
-		for tree := 0; tree < trees; tree++ {
+		for tree := range trees {
 			treeSeed := nextRandomInMemory(seed ^ uint64(tree))
 			leafCounts := make(map[string]int)
 			for _, feat := range history {
@@ -3386,9 +3407,12 @@ func funcHST(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh
 		}
 		avgDensity /= float64(trees)
 		score := 1.0 - (avgDensity / float64(len(features)))
-		if score < 0 { score = 0 }
-		if score > 1 { score = 1 }
-
+		if score < 0 {
+			score = 0
+		}
+		if score > 1 {
+			score = 1
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric: series.Metric,
 			F:      score,
@@ -3402,17 +3426,17 @@ func hstTraverseInMemory(point [6]float64, depth int, seed uint64) string {
 	minVals := [6]float64{-8, -8, -8, -8, -8, -8}
 	maxVals := [6]float64{8, 8, 8, 8, 8, 8}
 	path := ""
-	for d := 0; d < depth; d++ {
+	for range depth {
 		seed = nextRandomInMemory(seed)
 		dim := int(seed % 6)
 		minimum, maximum := minVals[dim], maxVals[dim]
 		mid := (minimum + maximum) / 2.0
-
+		var path strings.Builder
 		if point[dim] < mid {
-			path += "L"
+			path.WriteString("L")
 			maxVals[dim] = mid
 		} else {
-			path += "R"
+			path.WriteString("R")
 			minVals[dim] = mid
 		}
 	}
@@ -3426,10 +3450,10 @@ func funcIsolationForest(vectorVals []Vector, matrixVal Matrix, args parser.Expr
 	trees := int(vectorVals[0][0].F)
 	sampleSize := int(vectorVals[1][0].F)
 	if trees < 1 {
-		panic(fmt.Errorf("Isolation Forest trees must be positive"))
+		panic(fmt.Errorf("isolation Forest trees must be positive"))
 	}
 	if sampleSize < 2 {
-		panic(fmt.Errorf("Isolation Forest sample_size must be at least 2"))
+		panic(fmt.Errorf("isolation Forest sample_size must be at least 2"))
 	}
 	for _, series := range matrixVal {
 		l := len(series.Floats)
@@ -3511,7 +3535,7 @@ func isolationScoreInMemory(points [][6]float64, point [6]float64, trees int, se
 	}
 	var totalPath float64
 	maxDepth := int(math.Ceil(math.Log2(float64(n)))) + 1
-	for tree := 0; tree < trees; tree++ {
+	for range trees {
 		indices := make([]int, n)
 		for i := range points {
 			indices[i] = i
