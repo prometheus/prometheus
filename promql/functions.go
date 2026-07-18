@@ -3009,7 +3009,7 @@ func rcfScoreInMemory(points [][6]float64, point [6]float64, trees int, seed uin
 	maxDepth = max(maxDepth, 1)
 	indices := make([]int, len(points))
 	var total float64
-	for tree := 0; tree < trees; tree++ {
+	for range trees {
 		for i := range points {
 			indices[i] = i
 		}
