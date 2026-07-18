@@ -207,6 +207,39 @@ samples are ignored entirely. For elements that contain a mix of float and
 histogram samples, only the float samples are used as input, which is flagged
 by an info-level annotation.
 
+## `ewma()`
+
+`ewma(v range-vector, alpha scalar)` calculates the Exponentially Weighted Moving 
+Average (EWMA) anomaly score for each float time series in the range vector `v` 
+using the smoothing factor `alpha`.
+
+The `alpha` parameter must be a scalar between 0 (exclusive) and 1 (inclusive). 
+The function computes a running baseline and running variance on historical samples 
+within the range window. The anomaly score is computed as:
+
+`score = 1 - exp(-abs(last_value - baseline) / (3 * stddev))`
+
+This outputs a value between `0` (normal) and `1` (highly anomalous). 
+
+**When to use:** Use EWMA when you want to detect sudden, unexpected spikes or drops
+in volatile system metrics, but want to ignore slow, gradual changes. It is highly
+responsive to recent changes because the `alpha` parameter controls the decay rate
+of older history.
+
+**Usecase example (HTTP Response Latency Spikes):**
+
+An API server normally responds in 50ms. During a database lock, response times 
+suddenly jump to 1500ms. Since EWMA dynamically updates the running baseline, 
+it will immediately identify this massive divergence from the standard deviation 
+and return a score near `1.0`. If the latency stays high for a long time, the 
+baseline will gradually adapt to the new normal and the score will return toward `0.0`.
+
+*   **Query**: `ewma(http_request_duration_seconds_sum{job="api"}[2h], 0.2) > 0.85`
+*   **Why**: Setting `alpha = 0.2` ensures the moving average weights recent history 
+highly (around 80% weight on the last few minutes in a 2h window). An alert threshold 
+of `> 0.85` filters out normal statistical noise, ensuring we only alert when the
+deviation is at least 3 standard deviations away.
+
 ## `exp()`
 
 `exp(v instant-vector)` calculates the exponential function for all float
@@ -472,6 +505,61 @@ and do not show up in the returned vector.
 Similarly, `histogram_stdvar(v instant-vector)` returns the estimated
 variance of observations for each native histogram sample in `v`.
 
+## `hw()`
+
+`hw(v range-vector, alpha scalar, beta scalar)` computes the Holt-Winters 
+(double exponential smoothing) anomaly score for each float time series in the range vector `v`.
+
+The `alpha` parameter (level smoothing factor) and `beta` parameter (trend smoothing
+factor) must be scalars between `0` and `1`. Holt-Winters continuously estimates 
+both the current level and the underlying trend of the time series, projects the 
+expected value of the latest sample, and returns a normalized anomaly score based on
+the absolute deviation between the observed value and the trend-adjusted forecast.
+
+**When to use:** Use this function specifically for metrics that have a clear linear 
+trend (e.g., constant growth or reduction over time) where you want to detect abnormal 
+deviations from the slope. Regular mean/standard deviation functions fail on trended 
+metrics because the baseline is constantly changing.
+
+**Usecase example (Disk Space Depletion Acceleration):**
+A logging system writes log files at a steady rate, causing free disk space to decline
+linearly by 2 GB per hour. If a bug suddenly causes logs to be written at 50 GB per 
+hour, standard statistical alerts won't fire immediately because they don't model the 
+trend. `hw` models the 2 GB/hour slope; it will immediately detect 
+that the new 50 GB/hour decline is a massive anomaly relative to the expected trend.
+
+*   **Query**: `hw(node_filesystem_free_bytes{mountpoint="/var/log"}[4h], 0.3, 0.1) > 0.8`
+*   **Why**: `alpha = 0.3` controls how quickly the level adjusts, and `beta = 0.1` 
+ensures the trend slope estimate is stable and doesn't bounce around with temporary spikes. 
+A score above `0.8` indicates that the disk is depleting significantly faster than the linear trend forecast.
+
+## `hst()`
+
+`hst(v range-vector, trees scalar, depth scalar)` computes the density-based Half-Space 
+Trees (HST) anomaly score for each float time series in the range vector `v`.
+
+The `trees` parameter specifies the number of randomized trees to construct, and `depth` 
+specifies the maximum depth of each tree. HST is an online anomaly detection algorithm 
+that constructs recursive half-space partitions of the input space. Data points landing 
+in historically low-density leaf nodes receive higher anomaly scores between `0` and `1`.
+
+**When to use:** Use HST when your metric is multi-modal (meaning it has multiple 
+distinct "normal" states or ranges, like CPU usage being 5% at idle and 85% during batch jobs) 
+and you want to detect values that fall into the empty spaces between these normal states. 
+Traditional average/stddev methods will incorrectly assume the middle value (e.g. 45% CPU) 
+is the most "normal" because it matches the mean.
+
+**Usecase example (CPU Usage Multimodal Profiling):**
+A worker server alternates between sleeping (5% CPU) and processing large video transcodes 
+(90% CPU). A CPU utilization of 45% is anomalous because the server should never be running 
+at half-capacity for long. HST partitions the space and learns that the 5% region is dense, 
+and the 90% region is dense, but the 45% region has zero density. It will return a score 
+close to `1.0` for a 45% sample.
+
+*   **Query**: `hst(instance:node_cpu_utilisation:rate1m[1h], 100, 15) > 0.75`
+*   **Why**: `100` trees provide statistical stability while keeping memory low. 
+A depth of `15` splits the 0-100% CPU range into fine-grained partitions.
+
 ## `hour()`
 
 `hour(v=vector(time()) instant-vector)` interprets float samples in `v` as
@@ -658,6 +746,33 @@ or a function aggregating over time (any function ending in `_over_time`),
 always take an `irate()` first, then aggregate. Otherwise `irate()` cannot detect
 counter resets when your target restarts.
 
+## `isolation_forest()`
+
+`isolation_forest(v range-vector, trees scalar, sample_size scalar)` computes the 
+path-length based Isolation Forest anomaly score for each float time series in the 
+range vector `v`.
+
+The `trees` parameter specifies the number of isolation trees to build, and 
+`sample_size` specifies the number of historical points sampled to construct each tree. 
+Isolation Forest isolates anomalies by randomly partitioning feature paths. 
+Anomalies have shorter path lengths in the trees and thus score closer to `1`.
+
+**When to use:** Use this when you have a large set of timeseries instances 
+(e.g. dozens of servers in a cluster) and want to isolate individual instances that 
+behave completely differently from the rest of the group (outlier detection).
+
+**Usecase example (Microservice Memory Leak):**
+A Kubernetes deployment runs 50 replicas of an API gateway. Replicas typically 
+consume between 200MB and 300MB of RAM. One replica develops a memory leak, 
+and its consumption slowly increases to 1.5GB. Since Isolation Forest works by isolating
+points, it will easily find that the server, requiring very few random partitions 
+compared to the 49 servers clustered at 250MB, and returns a score close to `1.0`.
+
+*   **Query**: `isolation_forest(container_memory_working_set_bytes{container="api"}[12h], 100, 256) > 0.8`
+*   **Why**: Setting `sample_size = 256` ensures there are enough data points in 
+each tree to create distinct partition paths. A score threshold of `> 0.8` ensures 
+we only alert on extreme outliers that are easily isolated.
+
 ## `label_join()`
 
 For each timeseries in `v`, `label_join(v instant-vector, dst_label string, separator string, src_label_1 string, src_label_2 string, ...)` joins all the values of all the `src_labels`
@@ -733,6 +848,34 @@ are equivalent to those in `ln`.
 samples in `v`. Histogram samples in the input vector are ignored silently. The special
 cases are equivalent to those in `ln`.
 
+## `mad()`
+
+`mad(v range-vector, threshold scalar)` computes the Median Absolute Deviation (MAD) 
+anomaly score for each float time series in the range vector `v`.
+
+The `threshold` parameter (standard deviation scale factor) must be positive. 
+Unlike Z-Score, MAD uses the median instead of the mean, making it highly robust against
+extreme historical outliers. The score is computed as:
+
+`score = clamp(abs(last_value - median) / (1.4826 * MAD * threshold))`
+
+**When to use:** Use MAD when your historical baseline data is "dirty" and contains 
+massive, extreme spikes (e.g. daily cron jobs, data backups). In Z-score, a single 
+massive spike inflates the standard deviation so much that smaller, real anomalies 
+go undetected (called the "masking effect"). 
+MAD is highly resistant to this because it uses medians.
+
+**Usecase example (Database Query Rate Anomalies):**
+A PostGreSQL database handles 100 queries/sec normally. Every midnight, a backup job runs,
+causing a massive, brief spike to 5000 queries/sec. If a slow memory leak later causes the 
+query rate to drop to 5 queries/sec, Z-score won't alert because the standard deviation 
+is massive (inflated by the 5000 QPS spike). MAD ignores the midnight spike and correctly
+triggers an anomaly alert for the 5 QPS drop.
+
+*   **Query**: `mad(pg_stat_database_xact_commit[6h], 3.0) > 1.0`
+*   **Why**: A threshold of `3.0` scales the median absolute deviation to be equivalent 
+to 3-sigma boundaries. Any score above `1.0` indicates a robust outlier.
+
 ## `minute()`
 
 `minute(v=vector(time()) instant-vector)` interprets float samples in `v` as
@@ -762,6 +905,31 @@ samples. Elements in the range vector that contain only histogram samples are
 ignored entirely. For elements that contain a mix of float and histogram
 samples, only the float samples are used as input, which is flagged by an
 info-level annotation.
+
+## `qscore()`
+
+`qscore(v range-vector, lower scalar, upper scalar)` computes the 
+quantile-based deviation score for each float time series in the range vector `v`.
+
+The parameters `lower` and `upper` define the quantile boundaries (e.g. `0.05` and `0.95`). 
+If the latest value exceeds the upper quantile or falls below the lower quantile, 
+it calculates the relative deviation towards the historical bounds.
+
+**When to use:** Use this when you want to alert on breach of historical percentiles
+(SLA compliance) or when you want to ignore normal peak hours (e.g. day vs night traffic)
+and only alert when a metric breaks the historical 5th or 95th percentiles.
+
+**Usecase example (Active User Session SLA):**
+A customer web portal has highly variable traffic: 100 users at night, 1000 users during lunch.
+The 95th percentile of user sessions over 24 hours is 900. If the active session count climbs 
+to 1200 due to a scraping bot, the value is beyond the 95th percentile. 
+`qscore` calculates the deviation above the 95th percentile toward the absolute max, 
+yielding a score close to `1.0` to trigger an alert.
+
+*   **Query**: `qscore(istio_requests_in_flight{destination_service="portal.default.svc.cluster.local"}[24h], 0.05, 0.95) > 0.8`
+*   **Why**: Evaluates the latest active session count against the 5% (lower limit) and
+95% (upper limit) quantiles over the last 24 hours. A score `> 0.8` means the current value 
+is near or beyond the historic maximum limits.
 
 ## `range()`
 
@@ -802,6 +970,34 @@ or a function aggregating over time (any function ending in `_over_time`),
 always take a `rate()` first, then aggregate. Otherwise `rate()` cannot detect
 counter resets when your target restarts.
 
+## `rcf()`
+
+`rcf(v range-vector, trees scalar, dimensions scalar)` computes the Random Cut Forest
+(RCF) multi-dimensional anomaly score for each float time series in the range vector `v`.
+
+The `trees` parameter specifies the forest size. The `dimensions` parameter must be 
+exactly `6`. RCF dynamically builds random bounding boxes of the data. It structures 
+features over time by looking at the value, velocity, acceleration, and EWMA statistics. 
+The anomaly score (between `0` and `1`) is calculated based on the displacement caused
+by inserting the latest point into the forest.
+
+**When to use:** RCF is the most powerful and comprehensive algorithm in the suite. 
+Use RCF for complex, multi-dimensional anomalies that cannot be detected by simple 
+value thresholds, such as phase shifts, sudden change of variance (jitter), or structural breaks.
+
+**Usecase example (Latency Jitter):**
+A service normally responds in around 50 ms with very little variation. After a deployment, 
+lock contention causes response times to rapidly oscillate between 20 ms and 80 ms while 
+the average latency remains close to 50 ms. Traditional threshold- or mean-based detectors 
+may not trigger because the baseline is unchanged. RCF captures the changing shape of the 
+time series through features such as velocity, acceleration, and exponentially weighted moving
+averages, producing an anomaly score close to 1.0.
+
+*   **Query**: `rcf(http_requests_total{job="gateway"}[24h], 100, 6) > 0.8`
+*   **Why**: Setting `dimensions = 6` shingles the timeseries into 6-dimensional vectors
+containing statistics like velocity, acceleration, and variance. Using `100` trees offers a 
+great balance between accuracy and CPU evaluation time.
+
 ## `resets()`
 
 For each input time series, `resets(v range-vector)` returns the number of
@@ -841,6 +1037,31 @@ ignored silently.
 `sgn(v instant-vector)` returns a vector with all float sample values converted
 to their sign, defined as this: 1 if v is positive, -1 if v is negative and 0
 if v is equal to zero. Histogram samples in the input vector are ignored silently.
+
+## `seasonal()`
+
+`seasonal(v range-vector, period scalar, alpha scalar)` computes the seasonal time-series
+pattern anomaly score for each float time series in the range vector `v`.
+
+The `period` parameter specifies the seasonal cycle duration in seconds (e.g. `86400` 
+for a daily cycle). The `alpha` parameter is the learning rate for the seasonal EWMA baseline. 
+It compares the current value with the historical average of the corresponding seasonal slot 
+(e.g., comparing Monday 10:00 AM with prior Mondays at 10:00 AM).
+
+**When to use:** Use this for metrics that exhibit strong, regular periodic patterns (daily, weekly), 
+where the definition of "normal" depends entirely on the time of day or day of the week.
+
+**Usecase example (E-Commerce Traffic Drop):**
+An e-commerce app receives 10,000 requests/sec at 2:00 PM and 100 requests/sec at 3:00 AM. 
+A simple flat threshold alert would either trigger false alerts at night (as traffic naturally drops) 
+or fail to detect if traffic drops from 10,000 to 500 at 2:00 PM (since 500 is still above 
+the 100 night-time minimum). `seasonal` compares the 2:00 PM traffic to previous 2:00 PM windows,
+and will immediately flag a drop from 10,000 to 500 as an extreme anomaly.
+
+*   **Query**: `seasonal(http_requests_total[7d], 86400, 0.2) > 0.8`
+*   **Why**: `86400` seconds represents a 24-hour cycle. `alpha = 0.2` updates the seasonal baseline
+with a 20% weight from the most recent cycle, allowing it to adapt to slow daylight 
+savings or organic business changes.
 
 ## `sort()`
 
@@ -924,6 +1145,34 @@ a single-element instant vector with no labels.
 
 `year(v=vector(time()) instant-vector)` returns the year for each of the given
 times in UTC. Histogram samples in the input vector are ignored silently.
+
+## `zscore()`
+
+`zscore(v range-vector, threshold scalar)` computes the standard deviation (Z-score) 
+deviation score for each float time series in the range vector `v`.
+
+The `threshold` parameter is the multiplier for standard deviation (e.g., `3.0` for 3-sigma). 
+The score is computed as:
+
+`z = abs(last_value - mean) / stddev`
+`score = clamp(z / threshold)`
+
+**When to use:** Use this for normally distributed, stationary metrics 
+(meaning they have a stable baseline and do not have trends or cyclic patterns). 
+It is the computationally cheapest way to detect when a metric moves 
+significantly far from its historical average.
+
+**Usecase example (Connection Pool Exhaustion):**
+An database client maintains a connection pool that fluctuates stably around 20
+active connections with a standard deviation of 3 connections. If the active 
+connection count suddenly spikes to 32 (which is 4 standard deviations away from the mean), 
+the Z-score is 4.0. Divided by a threshold of `3.0`, this yields a normalized score of `1.33`
+(clamped to `1.0`), which will trigger an anomaly alert.
+
+*   **Query**: `zscore(db_connections_active{service="orders"}[12h], 3.0) > 1.0`
+*   **Why**: Setting `threshold = 3.0` matches the classic 3-sigma boundary of 
+statistical process control. A score above `1.0` indicates that the queue depth is more than
+3 standard deviations away from the 12-hour average.
 
 ## `<aggregation>_over_time()`
 

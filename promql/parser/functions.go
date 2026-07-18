@@ -150,6 +150,11 @@ var Functions = map[string]*Function{
 		ReturnType:   ValueTypeScalar,
 		Experimental: true,
 	},
+	"ewma": {
+		Name:       "ewma",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
+	},
 	"delta": {
 		Name:       "delta",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
@@ -229,6 +234,16 @@ var Functions = map[string]*Function{
 		Variadic:   1,
 		ReturnType: ValueTypeVector,
 	},
+	"hw": {
+		Name:       "hw",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
+	},
+	"hst": {
+		Name:       "hst",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
+	},
 	"idelta": {
 		Name:       "idelta",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
@@ -249,6 +264,11 @@ var Functions = map[string]*Function{
 	"irate": {
 		Name:       "irate",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
+	"isolation_forest": {
+		Name:       "isolation_forest",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
 		ReturnType: ValueTypeVector,
 	},
 	"label_replace": {
@@ -334,6 +354,11 @@ var Functions = map[string]*Function{
 		ReturnType:   ValueTypeVector,
 		Experimental: true,
 	},
+	"mad": {
+		Name:       "mad",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
+	},
 	"minute": {
 		Name:       "minute",
 		ArgTypes:   []ValueType{ValueTypeVector},
@@ -361,6 +386,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"qscore": {
+		Name:       "qscore",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
+	},
 	"quantile_over_time": {
 		Name:       "quantile_over_time",
 		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeMatrix},
@@ -382,6 +412,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"rcf": {
+		Name:       "rcf",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
+	},
 	"resets": {
 		Name:       "resets",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
@@ -397,6 +432,11 @@ var Functions = map[string]*Function{
 		Name:       "scalar",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeScalar,
+	},
+	"seasonal": {
+		Name:       "seasonal",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
 	},
 	"sgn": {
 		Name:       "sgn",
@@ -498,6 +538,11 @@ var Functions = map[string]*Function{
 		Name:       "year",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		Variadic:   1,
+		ReturnType: ValueTypeVector,
+	},
+	"zscore": {
+		Name:       "zscore",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
 		ReturnType: ValueTypeVector,
 	},
 }

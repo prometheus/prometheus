@@ -1102,16 +1102,16 @@ eval instant at 55s avg_over_time(metric1[1m])
 
 eval instant at 55s avg_over_time(metric2[1m])
   {} 1.67186744582113
-  
+
 eval instant at 55s avg_over_time(metric3[1m])
   {} 3.56528E+49
-  
+
 eval instant at 55s avg_over_time(metric4[1m])
   {} 3.56528E+49
-  
+
 eval instant at 55s avg_over_time(metric5[1m])
   {} 3.76333333333333E+219
-  
+
 # Contains negative values; result is dominated by a very large value.
 load 5s
   metric6 -1.78264E+50 0.76342771 1.9592258 2.258E+220 7.69805412 -458.90154
@@ -1122,10 +1122,10 @@ load 5s
 
 eval instant at 55s avg_over_time(metric6[1m])
   {} 3.76333333333333E+219
-  
+
 eval instant at 55s avg_over_time(metric7[1m])
   {} -3.76333333333333E+219
-  
+
 eval instant at 55s avg_over_time(metric8[1m])
   {} 3.76330362266667E+219
 
@@ -2263,3 +2263,157 @@ eval instant at 0s max_of(NaN, 3)
 
 eval instant at 0s max_of(3, NaN)
   NaN
+
+# Tests for anomaly detection functions
+
+
+# Baseline spike detection
+clear
+load 10s
+	http_requests{job="api-server"}	0 1 2 3 4 5 100
+
+# ZScore test
+eval instant at 60s zscore(http_requests[1m], 3)
+	{job="api-server"} 0.7448811425945446
+
+# EWMA test
+eval instant at 60s ewma(http_requests[1m], 0.5)
+	{job="api-server"} 0.2834314954129473
+
+# MAD test
+eval instant at 60s mad(http_requests[1m], 3)
+	{job="api-server"} 1.0
+
+# Holt-Winters test
+eval instant at 60s hw(http_requests[1m], 0.2, 0.2)
+	{job="api-server"} 0.5578086608876398
+
+
+# EWMA different smoothing factor
+eval instant at 60s ewma(http_requests[1m], 0.2)
+	{job="api-server"} 0.48635106612348433
+
+
+# Stateful tree models
+clear
+load 10s
+	http_requests{job="api-server"}	0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 100
+
+eval instant at 350s rcf(http_requests[6m], 100, 6)
+	{job="api-server"} 0.5514285714285714
+
+eval instant at 350s hst(http_requests[6m], 100, 6)
+	{job="api-server"} 0.5711111111111111
+
+eval instant at 350s isolation_forest(http_requests[6m], 100, 256)
+	{job="api-server"} 0.6812047320788529
+
+
+# Seasonal
+eval instant at 350s seasonal(http_requests[6m], 300, 0.5)
+	{job="api-server"} 0.28208120640959644
+
+# Quantile
+eval instant at 350s qscore(http_requests[6m], 0.1, 0.9)
+	{job="api-server"} 1.0
+
+
+# Constant series
+clear
+load 10s
+	http_requests{job="api-server"}	10 10 10 10 10 10 10 10 10 10
+
+eval instant at 90s mad(http_requests[1m], 3)
+	{job="api-server"} 0.0
+
+
+# Negative values
+clear
+load 10s
+	http_requests{job="api-server"}	-10 -8 -6 -4 -2 0 2 4 6 100
+
+eval instant at 90s mad(http_requests[1m], 3)
+	{job="api-server"} 1.0
+
+
+# Large spike
+clear
+load 10s
+	http_requests{job="api-server"}	100 101 99 100 102 98 101 1000
+
+eval instant at 70s zscore(http_requests[1m], 3)
+	{job="api-server"} 0.7453504714057754
+
+eval instant at 70s mad(http_requests[1m], 3)
+	{job="api-server"} 1.0
+
+
+# Multiple series
+clear
+load 10s
+	http_requests{job="api-server",instance="1"}	1 2 3 4 5 100
+	http_requests{job="api-server",instance="2"}	1 2 3 4 5 6
+
+eval instant at 50s zscore(http_requests[1m], 3)
+	{job="api-server",instance="1"} 0.7448811425945446
+	{job="api-server",instance="2"} 0.4879500364742666
+
+
+# Different zscore thresholds
+clear
+load 10s
+	http_requests{job="api-server"}	0 1 2 3 4 5 100
+
+eval instant at 60s zscore(http_requests[1m], 5)
+	{job="api-server"} 0.44692868555672675
+
+
+# Negative anomaly detection
+clear
+load 10s
+	http_requests{job="api-server"}	100 99 101 98 97 0
+
+eval instant at 50s zscore(http_requests[1m], 3)
+	{job="api-server"} 0.7449001172325128
+
+
+# Quantile upper anomaly
+clear
+load 10s
+	http_requests{job="api-server"}	1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 100
+
+eval instant at 350s qscore(http_requests[6m], 0.1, 0.9)
+	{job="api-server"} 1.0
+
+
+# Quantile lower anomaly
+clear
+load 10s
+	http_requests{job="api-server"}	100 99 98 97 96 95 94 93 92 91 90 89 88 87 86 85 84 83 82 81 80 79 78 77 76 75 74 73 72 71 70 69 68 67 66 0
+
+eval instant at 350s qscore(http_requests[6m], 0.1, 0.9)
+	{job="api-server"} 1.0
+
+
+# Seasonal pattern
+clear
+load 10s
+	http_requests{job="api-server"}	10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20
+
+eval instant at 350s seasonal(http_requests[6m], 40, 0.5)
+	{job="api-server"} 0.20998414207571825
+
+
+# Stateful models with a different anomaly
+clear
+load 10s
+	http_requests{job="api-server"}	10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 500
+
+eval instant at 350s rcf(http_requests[6m], 100, 6)
+	{job="api-server"} 0.5457142857142856
+
+eval instant at 350s hst(http_requests[6m], 100, 6)
+	{job="api-server"} 0.8157142857142857
+
+eval instant at 350s isolation_forest(http_requests[6m], 100, 256)
+	{job="api-server"} 0.7116658444120875
