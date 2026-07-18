@@ -128,9 +128,13 @@ func (h *readHandler) remoteReadSamples(
 	}
 	for i, query := range req.Queries {
 		if err := func() error {
-			filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
+			filteredMatchers, matches, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
 			if err != nil {
 				return err
+			}
+			if !matches {
+				resp.Results[i] = &prompb.QueryResult{}
+				return nil
 			}
 
 			querier, err := h.queryable.Querier(query.StartTimestampMs, query.EndTimestampMs)
@@ -199,9 +203,12 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 
 	for i, query := range req.Queries {
 		if err := func() error {
-			filteredMatchers, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
+			filteredMatchers, matches, err := filterExtLabelsFromMatchers(query.Matchers, externalLabels)
 			if err != nil {
 				return err
+			}
+			if !matches {
+				return nil
 			}
 
 			querier, err := h.queryable.ChunkQuerier(query.StartTimestampMs, query.EndTimestampMs)
@@ -256,28 +263,30 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 	}
 }
 
-// filterExtLabelsFromMatchers change equality matchers which match external labels
-// to a matcher that looks for an empty label,
-// as that label should not be present in the storage.
-func filterExtLabelsFromMatchers(pbMatchers []*prompb.LabelMatcher, externalLabels map[string]string) ([]*labels.Matcher, error) {
+// filterExtLabelsFromMatchers evaluates matchers for external labels before
+// querying storage, where those labels are absent.
+func filterExtLabelsFromMatchers(pbMatchers []*prompb.LabelMatcher, externalLabels map[string]string) ([]*labels.Matcher, bool, error) {
 	matchers, err := FromLabelMatchers(pbMatchers)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	filteredMatchers := make([]*labels.Matcher, 0, len(matchers))
 	for _, m := range matchers {
-		value := externalLabels[m.Name]
-		if m.Type == labels.MatchEqual && value == m.Value {
-			matcher, err := labels.NewMatcher(labels.MatchEqual, m.Name, "")
-			if err != nil {
-				return nil, err
-			}
-			filteredMatchers = append(filteredMatchers, matcher)
-		} else {
+		value, ok := externalLabels[m.Name]
+		if !ok {
 			filteredMatchers = append(filteredMatchers, m)
+			continue
 		}
+		if !m.Matches(value) {
+			return nil, false, nil
+		}
+		matcher, err := labels.NewMatcher(labels.MatchEqual, m.Name, "")
+		if err != nil {
+			return nil, false, err
+		}
+		filteredMatchers = append(filteredMatchers, matcher)
 	}
 
-	return filteredMatchers, nil
+	return filteredMatchers, true, nil
 }
