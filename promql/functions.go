@@ -2637,8 +2637,8 @@ var FunctionCalls = map[string]FunctionCall{
 	"zscore":                       funcZScore,
 	"seasonal":                     funcSeasonal,
 	"mad":                          funcMAD,
-	"qscore":                       funcQuantileAnomaly,
-	"hw":                           funcHoltWintersAnomaly,
+	"qscore":                       funcQScore,
+	"hw":                           funcHW,
 	"hst":                          funcHST,
 	"isolation_forest":             funcIsolationForest,
 	"absent":                       funcAbsent,
@@ -2876,13 +2876,16 @@ func getMetricName(metric labels.Labels) string {
 	return metric.Get(model.MetricNameLabel)
 }
 
-func funcEWMA(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vectorVals) < 1 || len(vectorVals[0]) == 0 || len(matrixVal) == 0 {
+func funcEWMA(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
 		return enh.Out, nil
 	}
-	alpha := vectorVals[0][0].F
+	alpha := 0.2
+	if len(args) > 1 {
+		alpha = args[1].(*parser.NumberLiteral).Val
+	}
 	if alpha <= 0 || alpha > 1 {
-		panic(fmt.Errorf("EWMA alpha must be in (0,1]"))
+		panic(errors.New("EWMA alpha must be in (0,1]"))
 	}
 	for _, series := range matrixVal {
 		l := len(series.Floats)
@@ -2919,17 +2922,13 @@ func funcEWMA(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, en
 	return enh.Out, nil
 }
 
-func funcRCF(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vectorVals) < 2 || len(vectorVals[0]) == 0 || len(vectorVals[1]) == 0 || len(matrixVal) == 0 {
-		return enh.Out, nil
+func funcRCF(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	trees := 100
+	if len(args) > 1 {
+		trees = int(args[1].(*parser.NumberLiteral).Val)
 	}
-	trees := int(vectorVals[0][0].F)
-	dimensions := int(vectorVals[1][0].F)
 	if trees < 1 {
-		panic(fmt.Errorf("RCF trees must be positive"))
-	}
-	if dimensions != 6 {
-		panic(fmt.Errorf("RCF dimensions must be exactly 6"))
+		panic(errors.New("RCF trees must be positive"))
 	}
 	for _, series := range matrixVal {
 		l := len(series.Floats)
@@ -3065,13 +3064,16 @@ func nextRandomInMemory(value uint64) uint64 {
 	return value
 }
 
-func funcZScore(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vectorVals) < 1 || len(vectorVals[0]) == 0 || len(matrixVal) == 0 {
+func funcZScore(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
 		return enh.Out, nil
 	}
-	threshold := vectorVals[0][0].F
+	threshold := 3.0
+	if len(args) > 1 {
+		threshold = args[1].(*parser.NumberLiteral).Val
+	}
 	if threshold <= 0 {
-		panic(fmt.Errorf("ZScore threshold must be positive"))
+		panic(errors.New("ZScore threshold must be positive"))
 	}
 	for _, series := range matrixVal {
 		l := len(series.Floats)
@@ -3109,17 +3111,23 @@ func funcZScore(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, 
 	return enh.Out, nil
 }
 
-func funcSeasonal(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vectorVals) < 2 || len(vectorVals[0]) == 0 || len(vectorVals[1]) == 0 || len(matrixVal) == 0 {
+func funcSeasonal(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
 		return enh.Out, nil
 	}
-	period := int64(vectorVals[0][0].F)
-	alpha := vectorVals[1][0].F
+	period := int64(24)
+	alpha := 0.2
+	if len(args) > 1 {
+		period = int64(args[1].(*parser.NumberLiteral).Val)
+	}
+	if len(args) > 2 {
+		alpha = args[2].(*parser.NumberLiteral).Val
+	}
 	if period <= 0 {
-		panic(fmt.Errorf("Seasonal period must be positive"))
+		panic(errors.New("seasonal period must be positive"))
 	}
 	if alpha <= 0 || alpha > 1 {
-		panic(fmt.Errorf("Seasonal alpha must be in (0,1]"))
+		panic(errors.New("seasonal alpha must be in (0,1]"))
 	}
 	for _, series := range matrixVal {
 		l := len(series.Floats)
@@ -3168,13 +3176,16 @@ func funcSeasonal(vectorVals []Vector, matrixVal Matrix, args parser.Expressions
 	return enh.Out, nil
 }
 
-func funcMAD(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vectorVals) < 1 || len(vectorVals[0]) == 0 || len(matrixVal) == 0 {
+func funcMAD(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
 		return enh.Out, nil
 	}
-	threshold := vectorVals[0][0].F
+	threshold := 3.0
+	if len(args) > 1 {
+		threshold = args[1].(*parser.NumberLiteral).Val
+	}
 	if threshold <= 0 {
-		panic(fmt.Errorf("MAD threshold must be positive"))
+		panic(errors.New("MAD threshold must be positive"))
 	}
 	for _, series := range matrixVal {
 		l := len(series.Floats)
@@ -3218,14 +3229,20 @@ func funcMAD(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh
 	return enh.Out, nil
 }
 
-func funcQuantileAnomaly(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vectorVals) < 2 || len(vectorVals[0]) == 0 || len(vectorVals[1]) == 0 || len(matrixVal) == 0 {
+func funcQScore(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
 		return enh.Out, nil
 	}
-	lower := vectorVals[0][0].F
-	upper := vectorVals[1][0].F
+	lower := 0.05
+	upper := 0.95
+	if len(args) > 1 {
+		lower = args[1].(*parser.NumberLiteral).Val
+	}
+	if len(args) > 2 {
+		upper = args[2].(*parser.NumberLiteral).Val
+	}
 	if lower < 0 || lower >= upper || upper > 1 {
-		panic(fmt.Errorf("Quantile lower and upper must satisfy 0 <= lower < upper <= 1"))
+		panic(errors.New("quantile lower and upper must satisfy 0 <= lower < upper <= 1"))
 	}
 	for _, series := range matrixVal {
 		l := len(series.Floats)
@@ -3277,14 +3294,20 @@ func funcQuantileAnomaly(vectorVals []Vector, matrixVal Matrix, args parser.Expr
 	return enh.Out, nil
 }
 
-func funcHoltWintersAnomaly(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vectorVals) < 2 || len(vectorVals[0]) == 0 || len(vectorVals[1]) == 0 || len(matrixVal) == 0 {
+func funcHW(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
 		return enh.Out, nil
 	}
-	alpha := vectorVals[0][0].F
-	beta := vectorVals[1][0].F
+	alpha := 0.2
+	beta := 0.1
+	if len(args) > 1 {
+		alpha = args[1].(*parser.NumberLiteral).Val
+	}
+	if len(args) > 2 {
+		beta = args[2].(*parser.NumberLiteral).Val
+	}
 	if alpha <= 0 || alpha > 1 || beta <= 0 || beta > 1 {
-		panic(fmt.Errorf("Holt-Winters alpha and beta must be in (0,1]"))
+		panic(errors.New("Holt-Winters alpha and beta must be in (0,1]"))
 	}
 	for _, series := range matrixVal {
 		l := len(series.Floats)
@@ -3329,14 +3352,20 @@ func funcHoltWintersAnomaly(vectorVals []Vector, matrixVal Matrix, args parser.E
 	return enh.Out, nil
 }
 
-func funcHST(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vectorVals) < 2 || len(vectorVals[0]) == 0 || len(vectorVals[1]) == 0 || len(matrixVal) == 0 {
+func funcHST(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
 		return enh.Out, nil
 	}
-	trees := int(vectorVals[0][0].F)
-	depth := int(vectorVals[1][0].F)
+	trees := 100
+	depth := 8
+	if len(args) > 1 {
+		trees = int(args[1].(*parser.NumberLiteral).Val)
+	}
+	if len(args) > 2 {
+		depth = int(args[2].(*parser.NumberLiteral).Val)
+	}
 	if trees < 1 || depth < 1 {
-		panic(fmt.Errorf("HST trees and depth must be positive"))
+		panic(errors.New("HST trees and depth must be positive"))
 	}
 	for _, series := range matrixVal {
 		l := len(series.Floats)
@@ -3425,35 +3454,41 @@ func funcHST(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh
 func hstTraverseInMemory(point [6]float64, depth int, seed uint64) string {
 	minVals := [6]float64{-8, -8, -8, -8, -8, -8}
 	maxVals := [6]float64{8, 8, 8, 8, 8, 8}
-	path := ""
+	var path strings.Builder
+	path.Grow(depth)
 	for range depth {
 		seed = nextRandomInMemory(seed)
 		dim := int(seed % 6)
 		minimum, maximum := minVals[dim], maxVals[dim]
 		mid := (minimum + maximum) / 2.0
-		var path strings.Builder
 		if point[dim] < mid {
-			path.WriteString("L")
+			path.WriteByte('L')
 			maxVals[dim] = mid
 		} else {
-			path.WriteString("R")
+			path.WriteByte('R')
 			minVals[dim] = mid
 		}
 	}
-	return path
+	return path.String()
 }
 
-func funcIsolationForest(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vectorVals) < 2 || len(vectorVals[0]) == 0 || len(vectorVals[1]) == 0 || len(matrixVal) == 0 {
+func funcIsolationForest(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
 		return enh.Out, nil
 	}
-	trees := int(vectorVals[0][0].F)
-	sampleSize := int(vectorVals[1][0].F)
+	trees := 100
+	sampleSize := 256
+	if len(args) > 1 {
+		trees = int(args[1].(*parser.NumberLiteral).Val)
+	}
+	if len(args) > 2 {
+		sampleSize = int(args[2].(*parser.NumberLiteral).Val)
+	}
 	if trees < 1 {
-		panic(fmt.Errorf("isolation Forest trees must be positive"))
+		panic(errors.New("isolation Forest trees must be positive"))
 	}
 	if sampleSize < 2 {
-		panic(fmt.Errorf("isolation Forest sample_size must be at least 2"))
+		panic(errors.New("isolation Forest sample_size must be at least 2"))
 	}
 	for _, series := range matrixVal {
 		l := len(series.Floats)
@@ -3529,8 +3564,8 @@ func isolationScoreInMemory(points [][6]float64, point [6]float64, trees int, se
 	if n < 2 {
 		return 0
 	}
-	c_n := cInMemory(n)
-	if c_n == 0 {
+	cN := cInMemory(n)
+	if cN == 0 {
 		return 0
 	}
 	var totalPath float64
@@ -3579,7 +3614,7 @@ func isolationScoreInMemory(points [][6]float64, point [6]float64, trees int, se
 		totalPath += float64(depth) + cInMemory(count)
 	}
 	avgPath := totalPath / float64(trees)
-	return math.Pow(2, -avgPath/c_n)
+	return math.Pow(2, -avgPath/cN)
 }
 
 func cInMemory(n int) float64 {

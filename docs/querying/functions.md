@@ -209,7 +209,7 @@ by an info-level annotation.
 
 ## `ewma()`
 
-`ewma(v range-vector, alpha scalar)` calculates the Exponentially Weighted Moving 
+`ewma(v range-vector, alpha scalar=0.2)` calculates the Exponentially Weighted Moving 
 Average (EWMA) anomaly score for each float time series in the range vector `v` 
 using the smoothing factor `alpha`.
 
@@ -507,7 +507,7 @@ variance of observations for each native histogram sample in `v`.
 
 ## `hw()`
 
-`hw(v range-vector, alpha scalar, beta scalar)` computes the Holt-Winters 
+`hw(v range-vector, alpha scalar=0.2, beta scalar=0.1)` computes the Holt-Winters 
 (double exponential smoothing) anomaly score for each float time series in the range vector `v`.
 
 The `alpha` parameter (level smoothing factor) and `beta` parameter (trend smoothing
@@ -535,7 +535,7 @@ A score above `0.8` indicates that the disk is depleting significantly faster th
 
 ## `hst()`
 
-`hst(v range-vector, trees scalar, depth scalar)` computes the density-based Half-Space 
+`hst(v range-vector, trees scalar=100, depth scalar=8)` computes the density-based Half-Space 
 Trees (HST) anomaly score for each float time series in the range vector `v`.
 
 The `trees` parameter specifies the number of randomized trees to construct, and `depth` 
@@ -748,7 +748,7 @@ counter resets when your target restarts.
 
 ## `isolation_forest()`
 
-`isolation_forest(v range-vector, trees scalar, sample_size scalar)` computes the 
+`isolation_forest(v range-vector, trees scalar=100, sample_size scalar=256)` computes the 
 path-length based Isolation Forest anomaly score for each float time series in the 
 range vector `v`.
 
@@ -850,7 +850,7 @@ cases are equivalent to those in `ln`.
 
 ## `mad()`
 
-`mad(v range-vector, threshold scalar)` computes the Median Absolute Deviation (MAD) 
+`mad(v range-vector, threshold scalar=3)` computes the Median Absolute Deviation (MAD) 
 anomaly score for each float time series in the range vector `v`.
 
 The `threshold` parameter (standard deviation scale factor) must be positive. 
@@ -908,7 +908,7 @@ info-level annotation.
 
 ## `qscore()`
 
-`qscore(v range-vector, lower scalar, upper scalar)` computes the 
+`qscore(v range-vector, lower scalar=0.05, upper scalar=0.95)` computes the 
 quantile-based deviation score for each float time series in the range vector `v`.
 
 The parameters `lower` and `upper` define the quantile boundaries (e.g. `0.05` and `0.95`). 
@@ -972,12 +972,11 @@ counter resets when your target restarts.
 
 ## `rcf()`
 
-`rcf(v range-vector, trees scalar, dimensions scalar)` computes the Random Cut Forest
+`rcf(v range-vector, trees scalar=100)` computes the Random Cut Forest
 (RCF) multi-dimensional anomaly score for each float time series in the range vector `v`.
 
-The `trees` parameter specifies the forest size. The `dimensions` parameter must be 
-exactly `6`. RCF dynamically builds random bounding boxes of the data. It structures 
-features over time by looking at the value, velocity, acceleration, and EWMA statistics. 
+The `trees` parameter specifies the forest size. RCF dynamically builds random bounding boxes of the data. 
+It structures features over time by looking at the value, velocity, acceleration, and EWMA statistics. 
 The anomaly score (between `0` and `1`) is calculated based on the displacement caused
 by inserting the latest point into the forest.
 
@@ -993,10 +992,8 @@ may not trigger because the baseline is unchanged. RCF captures the changing sha
 time series through features such as velocity, acceleration, and exponentially weighted moving
 averages, producing an anomaly score close to 1.0.
 
-*   **Query**: `rcf(http_requests_total{job="gateway"}[24h], 100, 6) > 0.8`
-*   **Why**: Setting `dimensions = 6` shingles the timeseries into 6-dimensional vectors
-containing statistics like velocity, acceleration, and variance. Using `100` trees offers a 
-great balance between accuracy and CPU evaluation time.
+*   **Query**: `rcf(http_requests_total{job="gateway"}[24h], 100) > 0.8`
+*   **Why**: Using `100` trees offers a great balance between accuracy and CPU evaluation time.
 
 ## `resets()`
 
@@ -1040,7 +1037,7 @@ if v is equal to zero. Histogram samples in the input vector are ignored silentl
 
 ## `seasonal()`
 
-`seasonal(v range-vector, period scalar, alpha scalar)` computes the seasonal time-series
+`seasonal(v range-vector, period scalar=24, alpha scalar=0.2)` computes the seasonal time-series
 pattern anomaly score for each float time series in the range vector `v`.
 
 The `period` parameter specifies the seasonal cycle duration in seconds (e.g. `86400` 
@@ -1148,7 +1145,7 @@ times in UTC. Histogram samples in the input vector are ignored silently.
 
 ## `zscore()`
 
-`zscore(v range-vector, threshold scalar)` computes the standard deviation (Z-score) 
+`zscore(v range-vector, threshold scalar=3)` computes the standard deviation (Z-score) 
 deviation score for each float time series in the range vector `v`.
 
 The `threshold` parameter is the multiplier for standard deviation (e.g., `3.0` for 3-sigma). 

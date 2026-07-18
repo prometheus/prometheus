@@ -165,12 +165,7 @@ export const functionSignatures: Record<string, Func> = {
   rad: { name: "rad", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   range: { name: "range", argTypes: [], variadic: 0, returnType: valueType.scalar },
   rate: { name: "rate", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
-  rcf: {
-    name: "rcf",
-    argTypes: [valueType.matrix, valueType.scalar, valueType.scalar],
-    variadic: 0,
-    returnType: valueType.vector,
-  },
+  rcf: { name: "rcf", argTypes: [valueType.matrix, valueType.scalar], variadic: 0, returnType: valueType.vector },
   resets: { name: "resets", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   round: { name: "round", argTypes: [valueType.vector, valueType.scalar], variadic: 1, returnType: valueType.vector },
   scalar: { name: "scalar", argTypes: [valueType.vector], variadic: 0, returnType: valueType.scalar },

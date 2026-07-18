@@ -414,7 +414,7 @@ var Functions = map[string]*Function{
 	},
 	"rcf": {
 		Name:       "rcf",
-		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
 		ReturnType: ValueTypeVector,
 	},
 	"resets": {

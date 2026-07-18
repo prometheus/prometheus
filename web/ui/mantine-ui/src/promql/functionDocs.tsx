@@ -1119,7 +1119,7 @@ const funcDocs: Record<string, React.ReactNode> = {
   ewma: (
     <>
       <p>
-        <code>ewma(v range-vector, alpha scalar)</code> calculates the Exponentially Weighted Moving Average (EWMA)
+        <code>ewma(v range-vector, alpha scalar=0.2)</code> calculates the Exponentially Weighted Moving Average (EWMA)
         anomaly score for each float time series in the range vector <code>v</code>
         using the smoothing factor <code>alpha</code>.
       </p>
@@ -1704,8 +1704,8 @@ const funcDocs: Record<string, React.ReactNode> = {
   hst: (
     <>
       <p>
-        <code>hst(v range-vector, trees scalar, depth scalar)</code> computes the density-based Half-Space Trees (HST)
-        anomaly score for each float time series in the range vector <code>v</code>.
+        <code>hst(v range-vector, trees scalar=100, depth scalar=8)</code> computes the density-based Half-Space Trees
+        (HST) anomaly score for each float time series in the range vector <code>v</code>.
       </p>
 
       <p>
@@ -1745,7 +1745,7 @@ const funcDocs: Record<string, React.ReactNode> = {
   hw: (
     <>
       <p>
-        <code>hw(v range-vector, alpha scalar, beta scalar)</code> computes the Holt-Winters (double exponential
+        <code>hw(v range-vector, alpha scalar=0.2, beta scalar=0.1)</code> computes the Holt-Winters (double exponential
         smoothing) anomaly score for each float time series in the range vector <code>v</code>.
       </p>
 
@@ -2036,8 +2036,8 @@ const funcDocs: Record<string, React.ReactNode> = {
   isolation_forest: (
     <>
       <p>
-        <code>isolation_forest(v range-vector, trees scalar, sample_size scalar)</code> computes the path-length based
-        Isolation Forest anomaly score for each float time series in the range vector <code>v</code>.
+        <code>isolation_forest(v range-vector, trees scalar=100, sample_size scalar=256)</code> computes the path-length
+        based Isolation Forest anomaly score for each float time series in the range vector <code>v</code>.
       </p>
 
       <p>
@@ -2303,7 +2303,7 @@ const funcDocs: Record<string, React.ReactNode> = {
   mad: (
     <>
       <p>
-        <code>mad(v range-vector, threshold scalar)</code> computes the Median Absolute Deviation (MAD) anomaly score
+        <code>mad(v range-vector, threshold scalar=3)</code> computes the Median Absolute Deviation (MAD) anomaly score
         for each float time series in the range vector <code>v</code>.
       </p>
 
@@ -2920,8 +2920,8 @@ const funcDocs: Record<string, React.ReactNode> = {
   qscore: (
     <>
       <p>
-        <code>qscore(v range-vector, lower scalar, upper scalar)</code> computes the quantile-based deviation score for
-        each float time series in the range vector <code>v</code>.
+        <code>qscore(v range-vector, lower scalar=0.05, upper scalar=0.95)</code> computes the quantile-based deviation
+        score for each float time series in the range vector <code>v</code>.
       </p>
 
       <p>
@@ -3198,16 +3198,15 @@ const funcDocs: Record<string, React.ReactNode> = {
   rcf: (
     <>
       <p>
-        <code>rcf(v range-vector, trees scalar, dimensions scalar)</code> computes the Random Cut Forest (RCF)
-        multi-dimensional anomaly score for each float time series in the range vector <code>v</code>.
+        <code>rcf(v range-vector, trees scalar=100)</code> computes the Random Cut Forest (RCF) multi-dimensional
+        anomaly score for each float time series in the range vector <code>v</code>.
       </p>
 
       <p>
-        The <code>trees</code> parameter specifies the forest size. The <code>dimensions</code> parameter must be
-        exactly <code>6</code>. RCF dynamically builds random bounding boxes of the data. It structures features over
-        time by looking at the value, velocity, acceleration, and EWMA statistics. The anomaly score (between{" "}
-        <code>0</code> and <code>1</code>) is calculated based on the displacement caused by inserting the latest point
-        into the forest.
+        The <code>trees</code> parameter specifies the forest size. RCF dynamically builds random bounding boxes of the
+        data. It structures features over time by looking at the value, velocity, acceleration, and EWMA statistics. The
+        anomaly score (between <code>0</code> and <code>1</code>) is calculated based on the displacement caused by
+        inserting the latest point into the forest.
       </p>
 
       <p>
@@ -3229,13 +3228,12 @@ const funcDocs: Record<string, React.ReactNode> = {
         <li>
           <strong>Query</strong>:{" "}
           <code>
-            rcf(http_requests_total{"{"}job=&quot;gateway&quot;{"}"}[24h], 100, 6) &gt; 0.8
+            rcf(http_requests_total{"{"}job=&quot;gateway&quot;{"}"}[24h], 100) &gt; 0.8
           </code>
         </li>
         <li>
-          <strong>Why</strong>: Setting <code>dimensions = 6</code> shingles the timeseries into 6-dimensional vectors
-          containing statistics like velocity, acceleration, and variance. Using <code>100</code> trees offers a great
-          balance between accuracy and CPU evaluation time.
+          <strong>Why</strong>: Using <code>100</code> trees offers a great balance between accuracy and CPU evaluation
+          time.
         </li>
       </ul>
     </>
@@ -3285,8 +3283,8 @@ const funcDocs: Record<string, React.ReactNode> = {
   seasonal: (
     <>
       <p>
-        <code>seasonal(v range-vector, period scalar, alpha scalar)</code> computes the seasonal time-series pattern
-        anomaly score for each float time series in the range vector <code>v</code>.
+        <code>seasonal(v range-vector, period scalar=24, alpha scalar=0.2)</code> computes the seasonal time-series
+        pattern anomaly score for each float time series in the range vector <code>v</code>.
       </p>
 
       <p>
@@ -4512,8 +4510,8 @@ const funcDocs: Record<string, React.ReactNode> = {
   zscore: (
     <>
       <p>
-        <code>zscore(v range-vector, threshold scalar)</code> computes the standard deviation (Z-score) deviation score
-        for each float time series in the range vector <code>v</code>.
+        <code>zscore(v range-vector, threshold scalar=3)</code> computes the standard deviation (Z-score) deviation
+        score for each float time series in the range vector <code>v</code>.
       </p>
 
       <p>
