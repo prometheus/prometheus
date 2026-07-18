@@ -96,7 +96,7 @@
     "increase": true,
     "info": false,
     "irate": true,
-    "isolation_forest": true,
+    "isf": true,
     "label_join": true,
     "label_replace": true,
     "last_over_time": true,

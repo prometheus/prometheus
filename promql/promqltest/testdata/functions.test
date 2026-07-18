@@ -2305,7 +2305,7 @@ eval instant at 350s rcf(http_requests[6m], 100)
 eval instant at 350s hst(http_requests[6m], 100, 6)
 	{job="api-server"} 0.5711111111111111
 
-eval instant at 350s isolation_forest(http_requests[6m], 100, 256)
+eval instant at 350s isf(http_requests[6m], 100, 256)
 	{job="api-server"} 0.6812047320788529
 
 
@@ -2415,5 +2415,5 @@ eval instant at 350s rcf(http_requests[6m], 100)
 eval instant at 350s hst(http_requests[6m], 100, 6)
 	{job="api-server"} 0.8157142857142857
 
-eval instant at 350s isolation_forest(http_requests[6m], 100, 256)
+eval instant at 350s isf(http_requests[6m], 100, 256)
 	{job="api-server"} 0.7116658444120875

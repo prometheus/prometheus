@@ -2033,11 +2033,11 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
-  isolation_forest: (
+  isf: (
     <>
       <p>
-        <code>isolation_forest(v range-vector, trees scalar=100, sample_size scalar=256)</code> computes the path-length
-        based Isolation Forest anomaly score for each float time series in the range vector <code>v</code>.
+        <code>isf(v range-vector, trees scalar=100, sample_size scalar=256)</code> computes the path-length based
+        Isolation Forest anomaly score for each float time series in the range vector <code>v</code>.
       </p>
 
       <p>
@@ -2065,8 +2065,7 @@ const funcDocs: Record<string, React.ReactNode> = {
         <li>
           <strong>Query</strong>:{" "}
           <code>
-            isolation_forest(container_memory_working_set_bytes{"{"}container=&quot;api&quot;{"}"}[12h], 100, 256) &gt;
-            0.8
+            isf(container_memory_working_set_bytes{"{"}container=&quot;api&quot;{"}"}[12h], 100, 256) &gt; 0.8
           </code>
         </li>
         <li>

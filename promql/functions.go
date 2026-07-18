@@ -2640,7 +2640,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"qscore":                       funcQScore,
 	"hw":                           funcHW,
 	"hst":                          funcHST,
-	"isolation_forest":             funcIsolationForest,
+	"isf":                          funcIsolationForest,
 	"absent":                       funcAbsent,
 	"absent_over_time":             funcAbsentOverTime,
 	"acos":                         funcAcos,

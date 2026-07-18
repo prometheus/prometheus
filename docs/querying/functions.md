@@ -746,9 +746,9 @@ or a function aggregating over time (any function ending in `_over_time`),
 always take an `irate()` first, then aggregate. Otherwise `irate()` cannot detect
 counter resets when your target restarts.
 
-## `isolation_forest()`
+## `isf()`
 
-`isolation_forest(v range-vector, trees scalar=100, sample_size scalar=256)` computes the 
+`isf(v range-vector, trees scalar=100, sample_size scalar=256)` computes the 
 path-length based Isolation Forest anomaly score for each float time series in the 
 range vector `v`.
 
@@ -768,7 +768,7 @@ and its consumption slowly increases to 1.5GB. Since Isolation Forest works by i
 points, it will easily find that the server, requiring very few random partitions 
 compared to the 49 servers clustered at 250MB, and returns a score close to `1.0`.
 
-*   **Query**: `isolation_forest(container_memory_working_set_bytes{container="api"}[12h], 100, 256) > 0.8`
+*   **Query**: `isf(container_memory_working_set_bytes{container="api"}[12h], 100, 256) > 0.8`
 *   **Why**: Setting `sample_size = 256` ensures there are enough data points in 
 each tree to create distinct partition paths. A score threshold of `> 0.8` ensures 
 we only alert on extreme outliers that are easily isolated.

@@ -266,8 +266,8 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
-	"isolation_forest": {
-		Name:       "isolation_forest",
+	"isf": {
+		Name:       "isf",
 		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
 		ReturnType: ValueTypeVector,
 	},

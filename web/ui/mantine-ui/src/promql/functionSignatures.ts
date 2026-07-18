@@ -107,8 +107,8 @@ export const functionSignatures: Record<string, Func> = {
   increase: { name: "increase", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   info: { name: "info", argTypes: [valueType.vector, valueType.vector], variadic: 1, returnType: valueType.vector },
   irate: { name: "irate", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
-  isolation_forest: {
-    name: "isolation_forest",
+  isf: {
+    name: "isf",
     argTypes: [valueType.matrix, valueType.scalar, valueType.scalar],
     variadic: 0,
     returnType: valueType.vector,
