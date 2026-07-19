@@ -150,9 +150,31 @@ var Functions = map[string]*Function{
 		ReturnType:   ValueTypeScalar,
 		Experimental: true,
 	},
+	"changepoint": {
+		Name:       "changepoint",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
+	"burst_score": {
+		Name:       "burst_score",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+	},
+	"entropy": {
+		Name:       "entropy",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
+	"trend_score": {
+		Name:       "trend_score",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
 	"ewma": {
 		Name:       "ewma",
 		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		Variadic:   1,
 		ReturnType: ValueTypeVector,
 	},
 	"delta": {
@@ -237,11 +259,13 @@ var Functions = map[string]*Function{
 	"hw": {
 		Name:       "hw",
 		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		Variadic:   2,
 		ReturnType: ValueTypeVector,
 	},
 	"hst": {
 		Name:       "hst",
 		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		Variadic:   2,
 		ReturnType: ValueTypeVector,
 	},
 	"idelta": {
@@ -269,6 +293,7 @@ var Functions = map[string]*Function{
 	"isf": {
 		Name:       "isf",
 		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		Variadic:   2,
 		ReturnType: ValueTypeVector,
 	},
 	"label_replace": {
@@ -357,6 +382,7 @@ var Functions = map[string]*Function{
 	"mad": {
 		Name:       "mad",
 		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		Variadic:   1,
 		ReturnType: ValueTypeVector,
 	},
 	"minute": {
@@ -436,6 +462,7 @@ var Functions = map[string]*Function{
 	"seasonal": {
 		Name:       "seasonal",
 		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		Variadic:   2,
 		ReturnType: ValueTypeVector,
 	},
 	"sgn": {
@@ -543,6 +570,7 @@ var Functions = map[string]*Function{
 	"zscore": {
 		Name:       "zscore",
 		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		Variadic:   1,
 		ReturnType: ValueTypeVector,
 	},
 }

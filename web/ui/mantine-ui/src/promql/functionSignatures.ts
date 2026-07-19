@@ -16,7 +16,14 @@ export const functionSignatures: Record<string, Func> = {
   atan: { name: "atan", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   atanh: { name: "atanh", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   avg_over_time: { name: "avg_over_time", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
+  burst_score: {
+    name: "burst_score",
+    argTypes: [valueType.matrix, valueType.scalar],
+    variadic: 1,
+    returnType: valueType.vector,
+  },
   ceil: { name: "ceil", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
+  changepoint: { name: "changepoint", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   changes: { name: "changes", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   clamp: {
     name: "clamp",
@@ -53,7 +60,8 @@ export const functionSignatures: Record<string, Func> = {
     returnType: valueType.vector,
   },
   end: { name: "end", argTypes: [], variadic: 0, returnType: valueType.scalar },
-  ewma: { name: "ewma", argTypes: [valueType.matrix, valueType.scalar], variadic: 0, returnType: valueType.vector },
+  entropy: { name: "entropy", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
+  ewma: { name: "ewma", argTypes: [valueType.matrix, valueType.scalar], variadic: 1, returnType: valueType.vector },
   exp: { name: "exp", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   first_over_time: { name: "first_over_time", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   floor: { name: "floor", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
@@ -94,13 +102,13 @@ export const functionSignatures: Record<string, Func> = {
   hst: {
     name: "hst",
     argTypes: [valueType.matrix, valueType.scalar, valueType.scalar],
-    variadic: 0,
+    variadic: 2,
     returnType: valueType.vector,
   },
   hw: {
     name: "hw",
     argTypes: [valueType.matrix, valueType.scalar, valueType.scalar],
-    variadic: 0,
+    variadic: 2,
     returnType: valueType.vector,
   },
   idelta: { name: "idelta", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
@@ -110,7 +118,7 @@ export const functionSignatures: Record<string, Func> = {
   isf: {
     name: "isf",
     argTypes: [valueType.matrix, valueType.scalar, valueType.scalar],
-    variadic: 0,
+    variadic: 2,
     returnType: valueType.vector,
   },
   label_join: {
@@ -129,7 +137,7 @@ export const functionSignatures: Record<string, Func> = {
   ln: { name: "ln", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   log10: { name: "log10", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   log2: { name: "log2", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
-  mad: { name: "mad", argTypes: [valueType.matrix, valueType.scalar], variadic: 0, returnType: valueType.vector },
+  mad: { name: "mad", argTypes: [valueType.matrix, valueType.scalar], variadic: 1, returnType: valueType.vector },
   mad_over_time: { name: "mad_over_time", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   max_of: { name: "max_of", argTypes: [valueType.scalar, valueType.scalar], variadic: 0, returnType: valueType.scalar },
   max_over_time: { name: "max_over_time", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
@@ -172,7 +180,7 @@ export const functionSignatures: Record<string, Func> = {
   seasonal: {
     name: "seasonal",
     argTypes: [valueType.matrix, valueType.scalar, valueType.scalar],
-    variadic: 0,
+    variadic: 2,
     returnType: valueType.vector,
   },
   sgn: { name: "sgn", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
@@ -212,6 +220,7 @@ export const functionSignatures: Record<string, Func> = {
   tanh: { name: "tanh", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   time: { name: "time", argTypes: [], variadic: 0, returnType: valueType.scalar },
   timestamp: { name: "timestamp", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
+  trend_score: { name: "trend_score", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   ts_of_first_over_time: {
     name: "ts_of_first_over_time",
     argTypes: [valueType.matrix],
@@ -238,5 +247,5 @@ export const functionSignatures: Record<string, Func> = {
   },
   vector: { name: "vector", argTypes: [valueType.scalar], variadic: 0, returnType: valueType.vector },
   year: { name: "year", argTypes: [valueType.vector], variadic: 1, returnType: valueType.vector },
-  zscore: { name: "zscore", argTypes: [valueType.matrix, valueType.scalar], variadic: 0, returnType: valueType.vector },
+  zscore: { name: "zscore", argTypes: [valueType.matrix, valueType.scalar], variadic: 1, returnType: valueType.vector },
 };

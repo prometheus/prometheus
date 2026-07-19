@@ -542,3 +542,12 @@ func NewStartTimeOverlapWarning(metricName string, pos posrange.PositionRange) e
 		count:         1,
 	}
 }
+
+// NewInvalidParamError is used when a function receives an invalid parameter value.
+func NewInvalidParamError(err error) Annotations {
+	a := New()
+	a.Add(&annoErr{
+		Err: fmt.Errorf("%w: invalid parameter: %s", PromQLWarning, err),
+	})
+	return *a
+}

@@ -593,6 +593,45 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  burst_score: (
+    <>
+      <p>
+        <code>burst_score(v range-vector, alpha scalar=0.1)</code> detects sudden spikes or bursts in a time series
+        using an Exponentially Weighted Moving Average (EWMA) baseline and variance. It returns a score in{" "}
+        <code>[0, 1]</code> where <code>1</code> means a strong burst.
+      </p>
+
+      <p>
+        The <code>alpha</code> parameter controls the EWMA decay rate and must be in <code>(0, 1]</code>. Smaller values
+        make the baseline slower to adapt, making the function more sensitive to sustained changes. Larger values make
+        it react faster.
+      </p>
+
+      <p>The score is computed as:</p>
+
+      <p>
+        <code>score = clamp(abs(last_value - baseline) / (3 * ewma_stddev))</code>
+      </p>
+
+      <p>Works with both float and native histogram series (using histogram average).</p>
+
+      <p>
+        <strong>When to use:</strong> Use <code>burst_score</code> when you need to detect sudden, short-lived spikes
+        that stand out from a slowly-varying baseline — for example, a sudden traffic burst on an otherwise stable
+        endpoint.
+      </p>
+
+      <p>
+        <strong>Example:</strong>
+      </p>
+
+      <pre>
+        <code>burst_score(rate(http_requests_total[5m])[1h], 0.1) &gt; 0.8</code>
+      </pre>
+
+      <p>Alerts when the current request rate is a strong burst relative to the recent EWMA baseline.</p>
+    </>
+  ),
   ceil: (
     <>
       <p>
@@ -615,6 +654,38 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>ceil(1.78) = 2.0</code>
         </li>
       </ul>
+    </>
+  ),
+  changepoint: (
+    <>
+      <p>
+        <code>changepoint(v range-vector)</code> detects sudden baseline shifts in a time series using the CUSUM
+        (Cumulative Sum) algorithm. It returns a score in <code>[0, 1]</code>
+        normalised so that a CUSUM value of 5 sigma-steps maps to <code>1.0</code>.
+      </p>
+
+      <p>
+        The algorithm accumulates positive and negative deviations from the overall mean. A large cumulative sum
+        indicates a persistent shift in the baseline level.
+      </p>
+
+      <p>Works with both float and native histogram series (using histogram average).</p>
+
+      <p>
+        <strong>When to use:</strong> Use <code>changepoint</code> when you need to detect a sustained level shift
+        rather than a momentary spike — for example, a deployment that permanently changes the memory footprint of a
+        service.
+      </p>
+
+      <p>
+        <strong>Example:</strong>
+      </p>
+
+      <pre>
+        <code>changepoint(process_resident_memory_bytes[6h]) &gt; 0.7</code>
+      </pre>
+
+      <p>Alerts when the memory baseline has shifted significantly over the last 6 hours.</p>
     </>
   ),
   changes: (
@@ -1116,6 +1187,39 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  entropy: (
+    <>
+      <p>
+        <code>entropy(v range-vector)</code> computes the normalised Shannon entropy of the value distribution within
+        the range window. It returns a score in <code>[0, 1]</code> where <code>0</code>
+        means all values are identical and <code>1</code> means values are spread uniformly across all histogram bins.
+      </p>
+
+      <p>
+        Bins are determined by Sturges\&rsquo; rule: <code>ceil(log2(n)) + 1</code> bins. The result is normalised by{" "}
+        <code>log2(n_bins)</code> so it is always in <code>[0, 1]</code> regardless of window size.
+      </p>
+
+      <p>Works with both float and native histogram series (using histogram average).</p>
+
+      <p>
+        <strong>When to use:</strong> Use <code>entropy</code> to measure the diversity or unpredictability of a metric.
+        High entropy means the metric is spread across many different values (e.g. a healthy mix of response codes). Low
+        entropy means it is concentrated (e.g. all requests returning the same status code, which may indicate a stuck
+        state).
+      </p>
+
+      <p>
+        <strong>Example:</strong>
+      </p>
+
+      <pre>
+        <code>entropy(http_response_status_code[1h]) &lt; 0.2</code>
+      </pre>
+
+      <p>Alerts when HTTP response codes have collapsed to a single value (e.g. all 500s).</p>
+    </>
+  ),
   ewma: (
     <>
       <p>
@@ -1137,6 +1241,8 @@ const funcDocs: Record<string, React.ReactNode> = {
       <p>
         This outputs a value between <code>0</code> (normal) and <code>1</code> (highly anomalous).
       </p>
+
+      <p>Works with both float and native histogram series (using histogram average).</p>
 
       <p>
         <strong>When to use:</strong> Use EWMA when you want to detect sudden, unexpected spikes or drops in volatile
@@ -1740,6 +1846,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           of <code>15</code> splits the 0-100% CPU range into fine-grained partitions.
         </li>
       </ul>
+
+      <p>Works with both float and native histogram series (using histogram average).</p>
     </>
   ),
   hw: (
@@ -1786,6 +1894,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           forecast.
         </li>
       </ul>
+
+      <p>Works with both float and native histogram series (using histogram average).</p>
     </>
   ),
   idelta: (
@@ -2074,6 +2184,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           extreme outliers that are easily isolated.
         </li>
       </ul>
+
+      <p>Works with both float and native histogram series (using histogram average).</p>
     </>
   ),
   label_join: (
@@ -2315,6 +2427,8 @@ const funcDocs: Record<string, React.ReactNode> = {
       <p>
         <code>score = clamp(abs(last_value - median) / (1.4826 * MAD * threshold))</code>
       </p>
+
+      <p>Works with both float and native histogram series (using histogram average).</p>
 
       <p>
         <strong>When to use:</strong> Use MAD when your historical baseline data is &ldquo;dirty&rdquo; and contains
@@ -2957,6 +3071,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           beyond the historic maximum limits.
         </li>
       </ul>
+
+      <p>Works with both float and native histogram series (using histogram average).</p>
     </>
   ),
   quantile_over_time: (
@@ -3235,6 +3351,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           time.
         </li>
       </ul>
+
+      <p>Works with both float and native histogram series (using histogram average).</p>
     </>
   ),
   resets: (
@@ -3317,6 +3435,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           savings or organic business changes.
         </li>
       </ul>
+
+      <p>Works with both float and native histogram series (using histogram average).</p>
     </>
   ),
   sgn: (
@@ -4054,6 +4174,43 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  trend_score: (
+    <>
+      <p>
+        <code>trend_score(v range-vector)</code> detects values that deviate abnormally from the linear trend of the
+        series using ordinary least-squares regression. It returns a score in <code>[0, 1]</code> where <code>0</code>{" "}
+        means the last value fits the trend perfectly and
+        <code>1</code> means it is more than 3 residual standard deviations away.
+      </p>
+
+      <p>The score is computed as:</p>
+
+      <p>
+        <code>score = clamp(abs(last_residual) / (3 * residual_stddev))</code>
+      </p>
+
+      <p>Works with both float and native histogram series (using histogram average).</p>
+
+      <p>
+        <strong>When to use:</strong> Use <code>trend_score</code> when your metric has a clear directional trend
+        (growing or shrinking) and you want to detect values that break that trend — for example, a disk that is filling
+        up faster than its historical rate, or a queue that suddenly stops draining.
+      </p>
+
+      <p>
+        <strong>Example:</strong>
+      </p>
+
+      <pre>
+        <code>trend_score(node_filesystem_avail_bytes[24h]) &gt; 0.8</code>
+      </pre>
+
+      <p>
+        Alerts when the available disk space deviates significantly from its 24-hour linear trend, which can indicate an
+        unexpected write burst or a stuck cleanup job.
+      </p>
+    </>
+  ),
   ts_of_first_over_time: (
     <>
       <p>
@@ -4522,6 +4679,8 @@ const funcDocs: Record<string, React.ReactNode> = {
         <code>z = abs(last_value - mean) / stddev</code>
         <code>score = clamp(z / threshold)</code>
       </p>
+
+      <p>Works with both float and native histogram series (using histogram average).</p>
 
       <p>
         <strong>When to use:</strong> Use this for normally distributed, stationary metrics (meaning they have a stable

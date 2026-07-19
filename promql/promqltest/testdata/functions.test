@@ -2264,156 +2264,470 @@ eval instant at 0s max_of(NaN, 3)
 eval instant at 0s max_of(3, NaN)
   NaN
 
-# Tests for anomaly detection functions
 
+# Tests for Anomaly detection functions
+# Histogram series mirror their float counterparts via sum/count avg:
+#   h_spike    : avg = 0 1 2 3 4 5 100
+#   h_const    : avg = 10 x10
+#   h_long     : avg = 0 1 2 … 34 100  (36 samples)
+#   h_seasonal : avg = 10 20 x18       (36 samples)
+#   h_mixed    : floats 0 1 2 then histograms → MixedFloatsHistogramsWarning
 
-# Baseline spike detection
+# ewma
 clear
 load 10s
-	http_requests{job="api-server"}	0 1 2 3 4 5 100
+	http_requests{job="api-server"}   0 1 2 3 4 5 100
+	h_spike{job="api-server"}         {{sum:0 count:2}}+{{sum:2 count:2}}x5 {{sum:200 count:2}}
+	h_const{job="api-server"}         {{sum:20 count:2}}x10
 
-# ZScore test
-eval instant at 60s zscore(http_requests[1m], 3)
-	{job="api-server"} 0.7448811425945446
-
-# EWMA test
+# float: spike at end scores high
 eval instant at 60s ewma(http_requests[1m], 0.5)
 	{job="api-server"} 0.2834314954129473
 
-# MAD test
-eval instant at 60s mad(http_requests[1m], 3)
-	{job="api-server"} 1.0
-
-# Holt-Winters test
-eval instant at 60s hw(http_requests[1m], 0.2, 0.2)
-	{job="api-server"} 0.5578086608876398
-
-
-# EWMA different smoothing factor
 eval instant at 60s ewma(http_requests[1m], 0.2)
 	{job="api-server"} 0.48635106612348433
 
+# float: different alpha
+eval instant at 60s ewma(http_requests[1m], 0.8)
+	{job="api-server"} 0.1535152730130579
 
-# Stateful tree models
-clear
-load 10s
-	http_requests{job="api-server"}	0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 100
+# histogram: spike at end scores high (same value as float alpha=0.2)
+eval instant at 60s ewma(h_spike[1m], 0.2)
+	{job="api-server"} 0.486581089576538
 
-eval instant at 350s rcf(http_requests[6m], 100)
-	{job="api-server"} 0.5514285714285714
-
-eval instant at 350s hst(http_requests[6m], 100, 6)
-	{job="api-server"} 0.5711111111111111
-
-eval instant at 350s isf(http_requests[6m], 100, 256)
-	{job="api-server"} 0.6812047320788529
-
-
-# Seasonal
-eval instant at 350s seasonal(http_requests[6m], 300, 0.5)
-	{job="api-server"} 0.28208120640959644
-
-# Quantile
-eval instant at 350s qscore(http_requests[6m], 0.1, 0.9)
-	{job="api-server"} 1.0
-
-
-# Constant series
-clear
-load 10s
-	http_requests{job="api-server"}	10 10 10 10 10 10 10 10 10 10
-
-eval instant at 90s mad(http_requests[1m], 3)
+# histogram: constant series scores zero
+eval instant at 90s ewma(h_const[1m], 0.2)
 	{job="api-server"} 0.0
 
-
-# Negative values
+# mixed series: warning, no output
 clear
 load 10s
-	http_requests{job="api-server"}	-10 -8 -6 -4 -2 0 2 4 6 100
+	h_mixed{job="api-server"} 0 1 2 {{sum:6 count:2}} {{sum:8 count:2}} {{sum:10 count:2}} {{sum:200 count:2}}
 
-eval instant at 90s mad(http_requests[1m], 3)
-	{job="api-server"} 1.0
+eval instant at 60s ewma(h_mixed[1m], 0.2)
+	expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "h_mixed"
 
-
-# Large spike
+# too few samples: empty
 clear
 load 10s
-	http_requests{job="api-server"}	100 101 99 100 102 98 101 1000
+	http_requests{job="api-server"} 42
+
+eval instant at 0s ewma(http_requests[1m], 0.2)
+
+# zscore
+clear
+load 10s
+	http_requests{job="api-server"}                    0 1 2 3 4 5 100
+	http_requests_multi{job="api-server",instance="1"} 1 2 3 4 5 100
+	http_requests_multi{job="api-server",instance="2"} 1 2 3 4 5 6
+	h_spike{job="api-server"}                          {{sum:0 count:2}}+{{sum:2 count:2}}x5 {{sum:200 count:2}}
+	h_const{job="api-server"}                          {{sum:20 count:2}}x10
+
+# float: spike scores high
+eval instant at 60s zscore(http_requests[1m], 3)
+	{job="api-server"} 1
+
+# float: higher threshold lowers score
+eval instant at 60s zscore(http_requests[1m], 5)
+	{job="api-server"} 1
+
+# float: multiple series
+eval instant at 50s zscore(http_requests_multi[1m], 3)
+	{job="api-server",instance="1"} 1
+	{job="api-server",instance="2"} 0.6324555320336759
+
+# float: negative anomaly
+clear
+load 10s
+	http_requests{job="api-server"} 100 99 101 98 97 0
+
+eval instant at 50s zscore(http_requests[1m], 3)
+	{job="api-server"} 1
+
+# float: large spike
+clear
+load 10s
+	http_requests{job="api-server"} 100 101 99 100 102 98 101 1000
 
 eval instant at 70s zscore(http_requests[1m], 3)
-	{job="api-server"} 0.7453504714057754
+	{job="api-server"} 1
 
-eval instant at 70s mad(http_requests[1m], 3)
+# histogram: spike scores high
+clear
+load 10s
+	h_spike{job="api-server"} {{sum:0 count:2}}+{{sum:2 count:2}}x5 {{sum:200 count:2}}
+	h_const{job="api-server"} {{sum:20 count:2}}x10
+
+eval instant at 60s zscore(h_spike[1m], 3)
+	{job="api-server"} 1
+
+# histogram: constant scores zero
+eval instant at 90s zscore(h_const[1m], 3)
+	{job="api-server"} 0.0
+
+# too few samples: empty
+clear
+load 10s
+	http_requests{job="api-server"} 42
+
+eval instant at 0s zscore(http_requests[1m], 3)
+
+# mad
+clear
+load 10s
+	http_requests{job="api-server"}         0 1 2 3 4 5 100
+	http_requests_const{job="api-server"}   10 10 10 10 10 10 10 10 10 10
+	http_requests_neg{job="api-server"}     -10 -8 -6 -4 -2 0 2 4 6 100
+	http_requests_spike{job="api-server"}   100 101 99 100 102 98 101 1000
+	h_spike{job="api-server"}               {{sum:0 count:2}}+{{sum:2 count:2}}x5 {{sum:200 count:2}}
+	h_const{job="api-server"}               {{sum:20 count:2}}x10
+
+# float: spike scores 1
+eval instant at 60s mad(http_requests[1m], 3)
 	{job="api-server"} 1.0
 
+# float: constant scores zero
+eval instant at 90s mad(http_requests_const[1m], 3)
+	{job="api-server"} 0.0
 
-# Multiple series
-clear
-load 10s
-	http_requests{job="api-server",instance="1"}	1 2 3 4 5 100
-	http_requests{job="api-server",instance="2"}	1 2 3 4 5 6
-
-eval instant at 50s zscore(http_requests[1m], 3)
-	{job="api-server",instance="1"} 0.7448811425945446
-	{job="api-server",instance="2"} 0.4879500364742666
-
-
-# Different zscore thresholds
-clear
-load 10s
-	http_requests{job="api-server"}	0 1 2 3 4 5 100
-
-eval instant at 60s zscore(http_requests[1m], 5)
-	{job="api-server"} 0.44692868555672675
-
-
-# Negative anomaly detection
-clear
-load 10s
-	http_requests{job="api-server"}	100 99 101 98 97 0
-
-eval instant at 50s zscore(http_requests[1m], 3)
-	{job="api-server"} 0.7449001172325128
-
-
-# Quantile upper anomaly
-clear
-load 10s
-	http_requests{job="api-server"}	1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 100
-
-eval instant at 350s qscore(http_requests[6m], 0.1, 0.9)
+# float: negative values with spike
+eval instant at 90s mad(http_requests_neg[1m], 3)
 	{job="api-server"} 1.0
 
-
-# Quantile lower anomaly
-clear
-load 10s
-	http_requests{job="api-server"}	100 99 98 97 96 95 94 93 92 91 90 89 88 87 86 85 84 83 82 81 80 79 78 77 76 75 74 73 72 71 70 69 68 67 66 0
-
-eval instant at 350s qscore(http_requests[6m], 0.1, 0.9)
+# float: large spike
+eval instant at 70s mad(http_requests_spike[1m], 3)
 	{job="api-server"} 1.0
 
+# histogram: spike scores 1
+eval instant at 60s mad(h_spike[1m], 3)
+	{job="api-server"} 1.0
 
-# Seasonal pattern
+# histogram: constant scores zero
+eval instant at 90s mad(h_const[1m], 3)
+	{job="api-server"} 0.0
+
+# too few samples: empty
 clear
 load 10s
-	http_requests{job="api-server"}	10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20
+	http_requests{job="api-server"} 1 2
 
-eval instant at 350s seasonal(http_requests[6m], 40, 0.5)
-	{job="api-server"} 0.20998414207571825
+eval instant at 10s mad(http_requests[1m], 3)
 
-
-# Stateful models with a different anomaly
+# hw (Holt-Winters)
 clear
 load 10s
-	http_requests{job="api-server"}	10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 500
+	http_requests{job="api-server"} 0 1 2 3 4 5 100
+	h_spike{job="api-server"}       {{sum:0 count:2}}+{{sum:2 count:2}}x5 {{sum:200 count:2}}
+	h_const{job="api-server"}       {{sum:20 count:2}}x10
 
+# float: spike scores high
+eval instant at 60s hw(http_requests[1m], 0.2, 0.2)
+	{job="api-server"} 0.5578086608876398
+
+# float: different alpha/beta
+eval instant at 60s hw(http_requests[1m], 0.2, 0.1)
+	{job="api-server"} 0.5730721259864594
+
+# histogram: spike scores high
+eval instant at 60s hw(h_spike[1m], 0.2, 0.1)
+	{job="api-server"} 0.5801418946372344
+
+# histogram: constant scores zero
+eval instant at 90s hw(h_const[1m], 0.2, 0.1)
+	{job="api-server"} 0.0
+
+# too few samples: empty
+clear
+load 10s
+	http_requests{job="api-server"} 1 2
+
+eval instant at 10s hw(http_requests[1m], 0.2, 0.1)
+
+# rcf / hst / isf
+clear
+load 10s
+	http_requests{job="api-server"}         0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 100
+	http_requests_step{job="api-server"}    10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 500
+	h_long{job="api-server"}               {{sum:0 count:2}}+{{sum:2 count:2}}x34 {{sum:200 count:2}}
+
+# float: spike at end
 eval instant at 350s rcf(http_requests[6m], 100)
-	{job="api-server"} 0.5457142857142856
+	{job="api-server"} 0.6099999999999997
 
 eval instant at 350s hst(http_requests[6m], 100, 6)
-	{job="api-server"} 0.8157142857142857
+	{job="api-server"} 0.5241666666666667
 
 eval instant at 350s isf(http_requests[6m], 100, 256)
-	{job="api-server"} 0.7116658444120875
+	{job="api-server"} 0.7138066938288744
+
+# float: different anomaly shape
+eval instant at 350s rcf(http_requests_step[6m], 100)
+	{job="api-server"} 0.5571428571428568
+
+eval instant at 350s hst(http_requests_step[6m], 100, 6)
+	{job="api-server"} 0.6697142857142857
+
+eval instant at 350s isf(http_requests_step[6m], 100, 256)
+	{job="api-server"} 0.7129668187483884
+
+# histogram: spike at end
+eval instant at 350s rcf(h_long[6m], 100)
+	{job="api-server"} 0.7014285714285708
+
+eval instant at 350s hst(h_long[6m], 100, 6)
+	{job="api-server"} 0.9819444444444444
+
+eval instant at 350s isf(h_long[6m], 100, 256)
+	{job="api-server"} 0.8032510927064954
+
+# too few samples: empty
+clear
+load 10s
+	http_requests{job="api-server"} 1 2 3 4 5
+
+eval instant at 40s rcf(http_requests[1m], 100)
+
+eval instant at 40s hst(http_requests[1m], 100, 6)
+
+eval instant at 40s isf(http_requests[1m], 100, 256)
+
+# qscore
+clear
+load 10s
+	http_requests_upper{job="api-server"} 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 100
+	http_requests_lower{job="api-server"} 100 99 98 97 96 95 94 93 92 91 90 89 88 87 86 85 84 83 82 81 80 79 78 77 76 75 74 73 72 71 70 69 68 67 66 0
+	h_long{job="api-server"}             {{sum:0 count:2}}+{{sum:2 count:2}}x34 {{sum:200 count:2}}
+
+# float: upper quantile breach
+eval instant at 350s qscore(http_requests_upper[6m], 0.1, 0.9)
+	{job="api-server"} 1.0
+
+# float: lower quantile breach
+eval instant at 350s qscore(http_requests_lower[6m], 0.1, 0.9)
+	{job="api-server"} 1.0
+
+# histogram: upper quantile breach
+eval instant at 350s qscore(h_long[6m], 0.1, 0.9)
+	{job="api-server"} 1.0
+
+# too few samples: empty
+clear
+load 10s
+	http_requests{job="api-server"} 1 2 3 4 5
+
+eval instant at 40s qscore(http_requests[1m], 0.1, 0.9)
+
+# seasonal
+clear
+load 10s
+	http_requests{job="api-server"}         0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 100
+	http_requests_alt{job="api-server"}     10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20
+	h_seasonal{job="api-server"}            {{sum:20 count:2}} {{sum:40 count:2}} {{sum:20 count:2}} {{sum:40 count:2}} {{sum:20 count:2}} {{sum:40 count:2}} {{sum:20 count:2}} {{sum:40 count:2}} {{sum:20 count:2}} {{sum:40 count:2}} {{sum:20 count:2}} {{sum:40 count:2}} {{sum:20 count:2}} {{sum:40 count:2}} {{sum:20 count:2}} {{sum:40 count:2}} {{sum:20 count:2}} {{sum:40 count:2}} {{sum:20 count:2}} {{sum:40 count:2}} {{sum:20 count:2}} {{sum:40 count:2}} {{sum:20 count:2}} {{sum:40 count:2}} {{sum:20 count:2}} {{sum:40 count:2}} {{sum:20 count:2}} {{sum:40 count:2}} {{sum:20 count:2}} {{sum:40 count:2}} {{sum:20 count:2}} {{sum:40 count:2}} {{sum:20 count:2}} {{sum:40 count:2}} {{sum:20 count:2}} {{sum:40 count:2}}
+
+# float: linear series with spike
+eval instant at 350s seasonal(http_requests[6m], 300, 0.5)
+	{job="api-server"} 0.28346868942621073
+
+# float: alternating pattern — slot 30 is constant (all 20), score=0
+eval instant at 350s seasonal(http_requests_alt[6m], 40, 0.5)
+	{job="api-server"} 0
+
+# histogram: alternating pattern — slot 30 is constant (all avg=20), score=0
+eval instant at 350s seasonal(h_seasonal[6m], 40, 0.5)
+	{job="api-server"} 0
+
+# too few samples: empty
+clear
+load 10s
+	http_requests{job="api-server"} 10
+
+eval instant at 0s seasonal(http_requests[1m], 40, 0.5)
+
+# burst_score
+clear
+load 10s
+	http_requests{job="api-server"}       0 1 2 3 4 5 100
+	http_requests_const{job="api-server"} 10 10 10 10 10 10 10 10 10 10
+	http_requests_long{job="api-server"}  0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 100
+	h_spike{job="api-server"}             {{sum:0 count:2}}+{{sum:2 count:2}}x5 {{sum:200 count:2}}
+	h_const{job="api-server"}             {{sum:20 count:2}}x10
+	h_long{job="api-server"}              {{sum:0 count:2}}+{{sum:2 count:2}}x34 {{sum:200 count:2}}
+
+# float: spike scores high
+eval instant at 60s burst_score(http_requests[1m])
+	{job="api-server"} 0.9477048158421847
+
+# float: constant scores zero
+eval instant at 90s burst_score(http_requests_const[1m])
+	{job="api-server"} 0.0
+
+# float: long series with spike
+eval instant at 350s burst_score(http_requests_long[6m])
+	{job="api-server"} 0.8924264800516025
+
+# histogram: spike scores high
+eval instant at 60s burst_score(h_spike[1m])
+	{job="api-server"} 0.9486748023083266
+
+# histogram: constant scores zero
+eval instant at 90s burst_score(h_const[1m])
+	{job="api-server"} 0.0
+
+# histogram: long series with spike
+eval instant at 350s burst_score(h_long[6m])
+	{job="api-server"} 0.9486706212764179
+
+# too few samples: empty
+clear
+load 10s
+	http_requests{job="api-server"} 42
+
+eval instant at 0s burst_score(http_requests[1m])
+
+# changepoint
+clear
+load 10s
+	http_requests{job="api-server"}          0 1 2 3 4 5 100
+	http_requests_const{job="api-server"}    10 10 10 10 10 10 10 10 10 10
+	http_requests_long{job="api-server"}     0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 100
+	http_requests_decline{job="api-server"}  100 99 98 97 96 95 94 93 92 91 90 89 88 87 86 85 84 83 82 81 80 79 78 77 76 75 74 73 72 71 70 69 68 67 66 0
+	http_requests_alt{job="api-server"}      10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20
+	h_spike{job="api-server"}                {{sum:0 count:2}}+{{sum:2 count:2}}x5 {{sum:200 count:2}}
+	h_const{job="api-server"}                {{sum:20 count:2}}x10
+	h_long{job="api-server"}                 {{sum:0 count:2}}+{{sum:2 count:2}}x34 {{sum:200 count:2}}
+
+# float: spike triggers changepoint
+eval instant at 60s changepoint(http_requests[1m])
+	{job="api-server"} 1
+
+# float: constant has no changepoint
+eval instant at 90s changepoint(http_requests_const[1m])
+	{job="api-server"} 0.0
+
+# float: long series with spike
+eval instant at 350s changepoint(http_requests_long[6m])
+	{job="api-server"} 1.0
+
+# float: declining series with sudden drop
+eval instant at 350s changepoint(http_requests_decline[6m])
+	{job="api-server"} 1.0
+
+# float: seasonal pattern has low score
+eval instant at 350s changepoint(http_requests_alt[6m])
+	{job="api-server"} 0.10283702113484394
+
+# histogram: spike triggers changepoint
+eval instant at 60s changepoint(h_spike[1m])
+	{job="api-server"} 1
+
+# histogram: constant has no changepoint
+eval instant at 90s changepoint(h_const[1m])
+	{job="api-server"} 0.0
+
+# histogram: long series with spike
+eval instant at 350s changepoint(h_long[6m])
+	{job="api-server"} 1.0
+
+# too few samples: empty
+clear
+load 10s
+	http_requests{job="api-server"} 1 2 3
+
+eval instant at 20s changepoint(http_requests[1m])
+
+# entropy
+clear
+load 10s
+	http_requests{job="api-server"}       0 1 2 3 4 5 100
+	http_requests_const{job="api-server"} 10 10 10 10 10 10 10 10 10 10
+	http_requests_long{job="api-server"}  0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 100
+	http_requests_alt{job="api-server"}   10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20
+	h_spike{job="api-server"}             {{sum:0 count:2}}+{{sum:2 count:2}}x5 {{sum:200 count:2}}
+	h_const{job="api-server"}             {{sum:20 count:2}}x10
+	h_long{job="api-server"}              {{sum:0 count:2}}+{{sum:2 count:2}}x34 {{sum:200 count:2}}
+
+# float: spike creates low entropy
+eval instant at 60s entropy(http_requests[1m])
+	{job="api-server"} 0.3250112108241771
+
+# float: constant has zero entropy
+eval instant at 90s entropy(http_requests_const[1m])
+	{job="api-server"} 0.0
+
+# float: long series with spike
+eval instant at 350s entropy(http_requests_long[6m])
+	{job="api-server"} 0.5808274537818324
+
+# float: alternating pattern
+eval instant at 350s entropy(http_requests_alt[6m])
+	{job="api-server"} 0.3562071871080222
+
+# histogram: spike creates low entropy
+eval instant at 60s entropy(h_spike[1m])
+	{job="api-server"} 0.32501121082417705
+
+# histogram: constant has zero entropy
+eval instant at 90s entropy(h_const[1m])
+	{job="api-server"} 0.0
+
+# histogram: long series with spike
+eval instant at 350s entropy(h_long[6m])
+	{job="api-server"} 0.0652293968470351
+
+# too few samples: empty
+clear
+load 10s
+	http_requests{job="api-server"} 42
+
+eval instant at 0s entropy(http_requests[1m])
+
+# trend_score
+clear
+load 10s
+	http_requests{job="api-server"}          0 1 2 3 4 5 100
+	http_requests_const{job="api-server"}    10 10 10 10 10 10 10 10 10 10
+	http_requests_long{job="api-server"}     0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 100
+	http_requests_decline{job="api-server"}  100 99 98 97 96 95 94 93 92 91 90 89 88 87 86 85 84 83 82 81 80 79 78 77 76 75 74 73 72 71 70 69 68 67 66 0
+	http_requests_alt{job="api-server"}      10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20 10 20
+	h_spike{job="api-server"}                {{sum:0 count:2}}+{{sum:2 count:2}}x5 {{sum:200 count:2}}
+	h_const{job="api-server"}                {{sum:20 count:2}}x10
+	h_long{job="api-server"}                 {{sum:0 count:2}}+{{sum:2 count:2}}x34 {{sum:200 count:2}}
+
+# float: spike deviates from trend
+eval instant at 60s trend_score(http_requests[1m])
+	{job="api-server"} 0.5143444998736398
+
+# float: constant has zero trend score
+eval instant at 90s trend_score(http_requests_const[1m])
+	{job="api-server"} 0.0
+
+# float: long series with spike
+eval instant at 350s trend_score(http_requests_long[6m])
+	{job="api-server"} 1.0
+
+# float: declining series with sudden drop
+eval instant at 350s trend_score(http_requests_decline[6m])
+	{job="api-server"} 1.0
+
+# float: seasonal pattern deviates from linear trend
+eval instant at 350s trend_score(http_requests_alt[6m])
+	{job="api-server"} 0.3023725325599075
+
+# histogram: spike deviates from trend
+eval instant at 60s trend_score(h_spike[1m])
+	{job="api-server"} 0.5143441206607079
+
+# histogram: constant has zero trend score
+eval instant at 90s trend_score(h_const[1m])
+	{job="api-server"} 0.0
+
+# histogram: long series with spike
+eval instant at 350s trend_score(h_long[6m])
+	{job="api-server"} 1.0
+
+# too few samples: empty
+clear
+load 10s
+	http_requests{job="api-server"} 1 2
+
+eval instant at 10s trend_score(http_requests[1m])

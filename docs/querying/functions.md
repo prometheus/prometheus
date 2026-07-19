@@ -80,6 +80,58 @@ vector. A float sample followed by a histogram sample, or vice versa, counts as
 a change. A counter histogram sample followed by a gauge histogram sample with
 otherwise exactly the same values, or vice versa, does not count as a change.
 
+## `burst_score()`
+
+`burst_score(v range-vector, alpha scalar=0.1)` detects sudden spikes or bursts
+in a time series using an Exponentially Weighted Moving Average (EWMA) baseline
+and variance. It returns a score in `[0, 1]` where `1` means a strong burst.
+
+The `alpha` parameter controls the EWMA decay rate and must be in `(0, 1]`.
+Smaller values make the baseline slower to adapt, making the function more
+sensitive to sustained changes. Larger values make it react faster.
+
+The score is computed as:
+
+`score = clamp(abs(last_value - baseline) / (3 * ewma_stddev))`
+
+Works with both float and native histogram series (using histogram average).
+
+**When to use:** Use `burst_score` when you need to detect sudden, short-lived
+spikes that stand out from a slowly-varying baseline — for example, a sudden
+traffic burst on an otherwise stable endpoint.
+
+**Example:**
+
+```
+burst_score(rate(http_requests_total[5m])[1h], 0.1) > 0.8
+```
+
+Alerts when the current request rate is a strong burst relative to the recent
+EWMA baseline.
+
+## `changepoint()`
+
+`changepoint(v range-vector)` detects sudden baseline shifts in a time series
+using the CUSUM (Cumulative Sum) algorithm. It returns a score in `[0, 1]`
+normalised so that a CUSUM value of 5 sigma-steps maps to `1.0`.
+
+The algorithm accumulates positive and negative deviations from the overall
+mean. A large cumulative sum indicates a persistent shift in the baseline level.
+
+Works with both float and native histogram series (using histogram average).
+
+**When to use:** Use `changepoint` when you need to detect a sustained level
+shift rather than a momentary spike — for example, a deployment that permanently
+changes the memory footprint of a service.
+
+**Example:**
+
+```
+changepoint(process_resident_memory_bytes[6h]) > 0.7
+```
+
+Alerts when the memory baseline has shifted significantly over the last 6 hours.
+
 ## `clamp()`
 
 `clamp(v instant-vector, min scalar, max scalar)` clamps the values of all
@@ -219,7 +271,9 @@ within the range window. The anomaly score is computed as:
 
 `score = 1 - exp(-abs(last_value - baseline) / (3 * stddev))`
 
-This outputs a value between `0` (normal) and `1` (highly anomalous). 
+This outputs a value between `0` (normal) and `1` (highly anomalous).
+
+Works with both float and native histogram series (using histogram average).
 
 **When to use:** Use EWMA when you want to detect sudden, unexpected spikes or drops
 in volatile system metrics, but want to ignore slow, gradual changes. It is highly
@@ -239,6 +293,33 @@ baseline will gradually adapt to the new normal and the score will return toward
 highly (around 80% weight on the last few minutes in a 2h window). An alert threshold 
 of `> 0.85` filters out normal statistical noise, ensuring we only alert when the
 deviation is at least 3 standard deviations away.
+
+## `entropy()`
+
+`entropy(v range-vector)` computes the normalised Shannon entropy of the value
+distribution within the range window. It returns a score in `[0, 1]` where `0`
+means all values are identical and `1` means values are spread uniformly across
+all histogram bins.
+
+Bins are determined by Sturges\' rule: `ceil(log2(n)) + 1` bins. The result is
+normalised by `log2(n_bins)` so it is always in `[0, 1]` regardless of window
+size.
+
+Works with both float and native histogram series (using histogram average).
+
+**When to use:** Use `entropy` to measure the diversity or unpredictability of a
+metric. High entropy means the metric is spread across many different values
+(e.g. a healthy mix of response codes). Low entropy means it is concentrated
+(e.g. all requests returning the same status code, which may indicate a stuck
+state).
+
+**Example:**
+
+```
+entropy(http_response_status_code[1h]) < 0.2
+```
+
+Alerts when HTTP response codes have collapsed to a single value (e.g. all 500s).
 
 ## `exp()`
 
@@ -533,6 +614,8 @@ that the new 50 GB/hour decline is a massive anomaly relative to the expected tr
 ensures the trend slope estimate is stable and doesn't bounce around with temporary spikes. 
 A score above `0.8` indicates that the disk is depleting significantly faster than the linear trend forecast.
 
+Works with both float and native histogram series (using histogram average).
+
 ## `hst()`
 
 `hst(v range-vector, trees scalar=100, depth scalar=8)` computes the density-based Half-Space 
@@ -559,6 +642,8 @@ close to `1.0` for a 45% sample.
 *   **Query**: `hst(instance:node_cpu_utilisation:rate1m[1h], 100, 15) > 0.75`
 *   **Why**: `100` trees provide statistical stability while keeping memory low. 
 A depth of `15` splits the 0-100% CPU range into fine-grained partitions.
+
+Works with both float and native histogram series (using histogram average).
 
 ## `hour()`
 
@@ -773,6 +858,8 @@ compared to the 49 servers clustered at 250MB, and returns a score close to `1.0
 each tree to create distinct partition paths. A score threshold of `> 0.8` ensures 
 we only alert on extreme outliers that are easily isolated.
 
+Works with both float and native histogram series (using histogram average).
+
 ## `label_join()`
 
 For each timeseries in `v`, `label_join(v instant-vector, dst_label string, separator string, src_label_1 string, src_label_2 string, ...)` joins all the values of all the `src_labels`
@@ -859,6 +946,8 @@ extreme historical outliers. The score is computed as:
 
 `score = clamp(abs(last_value - median) / (1.4826 * MAD * threshold))`
 
+Works with both float and native histogram series (using histogram average).
+
 **When to use:** Use MAD when your historical baseline data is "dirty" and contains 
 massive, extreme spikes (e.g. daily cron jobs, data backups). In Z-score, a single 
 massive spike inflates the standard deviation so much that smaller, real anomalies 
@@ -931,6 +1020,8 @@ yielding a score close to `1.0` to trigger an alert.
 95% (upper limit) quantiles over the last 24 hours. A score `> 0.8` means the current value 
 is near or beyond the historic maximum limits.
 
+Works with both float and native histogram series (using histogram average).
+
 ## `range()`
 
 **This function has to be enabled via the [feature
@@ -994,6 +1085,8 @@ averages, producing an anomaly score close to 1.0.
 
 *   **Query**: `rcf(http_requests_total{job="gateway"}[24h], 100) > 0.8`
 *   **Why**: Using `100` trees offers a great balance between accuracy and CPU evaluation time.
+
+Works with both float and native histogram series (using histogram average).
 
 ## `resets()`
 
@@ -1059,6 +1152,8 @@ and will immediately flag a drop from 10,000 to 500 as an extreme anomaly.
 *   **Why**: `86400` seconds represents a 24-hour cycle. `alpha = 0.2` updates the seasonal baseline
 with a 20% weight from the most recent cycle, allowing it to adapt to slow daylight 
 savings or organic business changes.
+
+Works with both float and native histogram series (using histogram average).
 
 ## `sort()`
 
@@ -1133,6 +1228,34 @@ expression is to be evaluated.
 the given vector as the number of seconds since January 1, 1970 UTC. It acts on
 float and histogram samples in the same way.
 
+## `trend_score()`
+
+`trend_score(v range-vector)` detects values that deviate abnormally from the
+linear trend of the series using ordinary least-squares regression. It returns
+a score in `[0, 1]` where `0` means the last value fits the trend perfectly and
+`1` means it is more than 3 residual standard deviations away.
+
+The score is computed as:
+
+`score = clamp(abs(last_residual) / (3 * residual_stddev))`
+
+Works with both float and native histogram series (using histogram average).
+
+**When to use:** Use `trend_score` when your metric has a clear directional
+trend (growing or shrinking) and you want to detect values that break that
+trend — for example, a disk that is filling up faster than its historical rate,
+or a queue that suddenly stops draining.
+
+**Example:**
+
+```
+trend_score(node_filesystem_avail_bytes[24h]) > 0.8
+```
+
+Alerts when the available disk space deviates significantly from its 24-hour
+linear trend, which can indicate an unexpected write burst or a stuck cleanup
+job.
+
 ## `vector()`
 
 `vector(s scalar)` converts the scalar `s` to a float sample and returns it as
@@ -1153,6 +1276,8 @@ The score is computed as:
 
 `z = abs(last_value - mean) / stddev`
 `score = clamp(z / threshold)`
+
+Works with both float and native histogram series (using histogram average).
 
 **When to use:** Use this for normally distributed, stationary metrics 
 (meaning they have a stable baseline and do not have trends or cyclic patterns). 
