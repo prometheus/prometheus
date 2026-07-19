@@ -203,6 +203,9 @@ type flagConfig struct {
 	RemoteFlushDeadline         model.Duration
 	maxNotificationsSubscribers int
 
+	rcfStorePath      string
+	rcfStoreCacheSize int
+
 	enableAutoReload   bool
 	autoReloadInterval model.Duration
 
@@ -588,6 +591,12 @@ func main() {
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
 		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
 
+	serverOnlyFlag(a, "storage.rcf.path", "Directory for RCF model persistence. Defaults to <storage.tsdb.path>/rcf.").
+		Default("").StringVar(&cfg.rcfStorePath)
+
+	serverOnlyFlag(a, "storage.rcf.cache-size", "Maximum number of RCF models to keep in memory.").
+		Default("0").IntVar(&cfg.rcfStoreCacheSize)
+
 	serverOnlyFlag(a, "storage.remote.read-sample-limit", "Maximum overall number of samples to return via the remote read interface, in a single query. 0 means no limit. This limit is ignored for streamed response types.").
 		Default("5e7").IntVar(&cfg.web.RemoteReadSampleLimit)
 
@@ -788,22 +797,21 @@ func main() {
 	cfg.tsdb.MaxBytes = cfgFile.StorageConfig.TSDBConfig.Retention.Size
 	cfg.tsdb.MaxPercentage = cfgFile.StorageConfig.TSDBConfig.Retention.Percentage
 
-	// Apply RCF model store configuration. The config file takes precedence;
-	// env vars (PROMETHEUS_RCF_STORE_PATH, PROMETHEUS_RCF_STORE_CACHE_SIZE)
-	// act as a fallback and are applied by init() in rcf_store.go.
-	if cfgFile.StorageConfig.RCFConfig != nil {
-		if cfgFile.StorageConfig.RCFConfig.StorePath != "" {
-			promql.RCFStorePath = cfgFile.StorageConfig.RCFConfig.StorePath
-		} else {
-			promql.RCFStorePath = filepath.Join(localStoragePath, "rcf")
-		}
-		if cfgFile.StorageConfig.RCFConfig.CacheSize > 0 {
-			promql.RCFStoreCacheSize = cfgFile.StorageConfig.RCFConfig.CacheSize
-		}
-	} else if promql.RCFStorePath == "" {
-		// No explicit config: default to <tsdb.path>/rcf so persistence works
-		// out of the box without any configuration.
+	// Apply RCF model store configuration.
+	// Priority: CLI flag > config file > default (<storage.tsdb.path>/rcf).
+	switch {
+	case cfg.rcfStorePath != "":
+		promql.RCFStorePath = cfg.rcfStorePath
+	case cfgFile.StorageConfig.RCFConfig != nil && cfgFile.StorageConfig.RCFConfig.StorePath != "":
+		promql.RCFStorePath = cfgFile.StorageConfig.RCFConfig.StorePath
+	default:
 		promql.RCFStorePath = filepath.Join(localStoragePath, "rcf")
+	}
+	switch {
+	case cfg.rcfStoreCacheSize > 0:
+		promql.RCFStoreCacheSize = cfg.rcfStoreCacheSize
+	case cfgFile.StorageConfig.RCFConfig != nil && cfgFile.StorageConfig.RCFConfig.CacheSize > 0:
+		promql.RCFStoreCacheSize = cfgFile.StorageConfig.RCFConfig.CacheSize
 	}
 
 	// Set Go runtime parameters before we get too far into initialization.
