@@ -3972,7 +3972,7 @@ func (ev *evaluator) evalRCFAttribution(ctx context.Context, args parser.Express
 			f.mu.Unlock()
 			rcfModels.markDirty(series.Metric.Hash())
 
-			base := series.Metric.DropMetricName()
+			base := series.Metric.DropReserved()
 			seriesHash := base.Hash()
 			for d := range rcfDims {
 				key := dimKey{seriesHash, d}

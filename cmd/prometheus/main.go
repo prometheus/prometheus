@@ -800,12 +800,10 @@ func main() {
 		if cfgFile.StorageConfig.RCFConfig.CacheSize > 0 {
 			promql.RCFStoreCacheSize = cfgFile.StorageConfig.RCFConfig.CacheSize
 		}
-	} else {
+	} else if promql.RCFStorePath == "" {
 		// No explicit config: default to <tsdb.path>/rcf so persistence works
 		// out of the box without any configuration.
-		if promql.RCFStorePath == "" {
-			promql.RCFStorePath = filepath.Join(localStoragePath, "rcf")
-		}
+		promql.RCFStorePath = filepath.Join(localStoragePath, "rcf")
 	}
 
 	// Set Go runtime parameters before we get too far into initialization.

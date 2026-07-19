@@ -487,4 +487,3 @@ func (f *rcfForest) attribution(p [rcfDims]float64) [rcfDims]float64 {
 	}
 	return sum
 }
-
