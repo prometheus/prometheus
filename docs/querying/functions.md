@@ -1124,7 +1124,7 @@ Both settings are configurable in the Prometheus config file under
 
 Example:
 
-```yaml
+```
 storage:
   rcf:
     store_path: /data/rcf

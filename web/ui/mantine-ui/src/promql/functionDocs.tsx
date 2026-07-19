@@ -3427,7 +3427,7 @@ const funcDocs: Record<string, React.ReactNode> = {
       <p>Example:</p>
 
       <pre>
-        <code class="language-yaml">storage: rcf: store_path: /data/rcf cache_size: 2048</code>
+        <code>storage: rcf: store_path: /data/rcf cache_size: 2048</code>
       </pre>
 
       <p>
