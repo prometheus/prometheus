@@ -2443,7 +2443,7 @@ load 10s
 
 eval instant at 10s hw(http_requests[1m], 0.2, 0.1)
 
-# rcf / hst / isf
+# random_cut_score / hst / isf
 clear
 load 10s
 	http_requests{job="api-server"}         0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 100
@@ -2451,7 +2451,7 @@ load 10s
 	h_long{job="api-server"}               {{sum:0 count:2}}+{{sum:2 count:2}}x34 {{sum:200 count:2}}
 
 # float: spike at end
-eval instant at 350s rcf(http_requests[6m], 100)
+eval instant at 350s random_cut_score(http_requests[6m], 100)
 	{job="api-server"} 0.6099999999999997
 
 eval instant at 350s hst(http_requests[6m], 100, 6)
@@ -2461,7 +2461,7 @@ eval instant at 350s isf(http_requests[6m], 100, 256)
 	{job="api-server"} 0.7138066938288744
 
 # float: different anomaly shape
-eval instant at 350s rcf(http_requests_step[6m], 100)
+eval instant at 350s random_cut_score(http_requests_step[6m], 100)
 	{job="api-server"} 0.5571428571428568
 
 eval instant at 350s hst(http_requests_step[6m], 100, 6)
@@ -2471,7 +2471,7 @@ eval instant at 350s isf(http_requests_step[6m], 100, 256)
 	{job="api-server"} 0.7129668187483884
 
 # histogram: spike at end
-eval instant at 350s rcf(h_long[6m], 100)
+eval instant at 350s random_cut_score(h_long[6m], 100)
 	{job="api-server"} 0.7014285714285708
 
 eval instant at 350s hst(h_long[6m], 100, 6)
@@ -2485,11 +2485,58 @@ clear
 load 10s
 	http_requests{job="api-server"} 1 2 3 4 5
 
-eval instant at 40s rcf(http_requests[1m], 100)
+eval instant at 40s random_cut_score(http_requests[1m], 100)
 
 eval instant at 40s hst(http_requests[1m], 100, 6)
 
 eval instant at 40s isf(http_requests[1m], 100, 256)
+
+# rcf
+clear
+load 10s
+	rcf_spike{job="api-server"}  0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 100
+	rcf_step{job="api-server"}   10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 500
+	rcf_hist{job="api-server"}   {{sum:0 count:2}}+{{sum:2 count:2}}x34 {{sum:200 count:2}}
+
+# float: spike at end
+eval instant at 350s rcf(rcf_spike[6m], 100, 256)
+	{job="api-server"} 0.258999879540875
+
+# float: step anomaly
+eval instant at 340s rcf(rcf_step[6m], 100, 256)
+	{job="api-server"} 0.26014143800043593
+
+# histogram: spike at end
+eval instant at 350s rcf(rcf_hist[6m], 100, 256)
+	{job="api-server"} 0.258999879540875
+
+# too few samples (1 sample): empty
+clear
+load 10s
+	rcf_one{job="api-server"} 42
+
+eval instant at 0s rcf(rcf_one[1m], 100, 256)
+
+# rcf_attribution
+clear
+load 10s
+	rcf_attr_spike{job="api-server"}  0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 100
+
+# 6 output series, one per feature dimension
+eval instant at 350s rcf_attribution(rcf_attr_spike[6m], 100, 256)
+	{job="api-server", rcf_dim="value"}        0.45166666666666699
+	{job="api-server", rcf_dim="delta"}        0.36666666666666681
+	{job="api-server", rcf_dim="velocity"}     0.1022222222222223
+	{job="api-server", rcf_dim="acceleration"} 0.11166666666666675
+	{job="api-server", rcf_dim="ewma_dev"}     0.24388888888888846
+	{job="api-server", rcf_dim="cv"}           0.16833333333333356
+
+# too few samples: empty
+clear
+load 10s
+	rcf_attr_one{job="api-server"} 42
+
+eval instant at 0s rcf_attribution(rcf_attr_one[1m], 100, 256)
 
 # qscore
 clear

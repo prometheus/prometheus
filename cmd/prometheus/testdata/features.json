@@ -123,6 +123,8 @@
     "random_cut_score": true,
     "range": false,
     "rate": true,
+    "rcf": true,
+    "rcf_attribution": true,
     "resets": true,
     "round": true,
     "scalar": true,

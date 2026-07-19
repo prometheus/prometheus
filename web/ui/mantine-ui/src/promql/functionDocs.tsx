@@ -3360,6 +3360,120 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  rcf: (
+    <>
+      <p>
+        <code>rcf(v range-vector, trees scalar=100, sample_size scalar=256)</code> computes a streaming Random Cut
+        Forest (RCF) anomaly score for each float time series in the range vector <code>v</code>, based on Guha et al.
+        (ICML 2016).
+      </p>
+
+      <p>
+        Unlike <code>random_cut_score</code>, <code>rcf</code> maintains a <strong>persistent per-series model</strong>
+        across PromQL evaluations. Each model is an ensemble of <code>trees</code> Random Cut Trees sharing a bounded
+        reservoir of <code>sample_size</code> points. New samples are inserted incrementally and old samples are evicted
+        via reservoir sampling. The anomaly score is the average collusive displacement of the latest feature vector,
+        normalised to <code>[0, 1]</code>.
+      </p>
+
+      <p>
+        The six feature dimensions used are: <code>value</code> (z-score), <code>delta</code>, <code>velocity</code>,
+        <code>acceleration</code>, <code>ewma_deviation</code>, and <code>coefficient_of_variation</code>.
+      </p>
+
+      <p>
+        Models are stored in an in-memory LRU cache and persisted to disk so they survive Prometheus restarts. By
+        default the store path is
+        <code>&lt;storage.tsdb.path&gt;/rcf</code> (i.e. alongside the TSDB data), so persistence works out of the box
+        with no configuration required.
+      </p>
+
+      <p>
+        Both settings are configurable in the Prometheus config file under
+        <code>storage.rcf</code>:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Config key</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr>
+            <td>
+              <code>storage.rcf.store_path</code>
+            </td>
+            <td>
+              <code>&lt;storage.tsdb.path&gt;/rcf</code>
+            </td>
+            <td>Directory for on-disk model persistence. Set to empty string to disable.</td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>storage.rcf.cache_size</code>
+            </td>
+            <td>
+              <code>1024</code>
+            </td>
+            <td>Maximum number of per-series models kept in memory.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>Example:</p>
+
+      <pre>
+        <code class="language-yaml">storage: rcf: store_path: /data/rcf cache_size: 2048</code>
+      </pre>
+
+      <p>
+        <strong>When to use:</strong> Use <code>rcf</code> when you need a stateful, incrementally-updated anomaly
+        detector that improves over time as it sees more data — for example, detecting gradual drift, multi-dimensional
+        anomalies, or patterns that only become visible after a warm-up period.
+      </p>
+
+      <p>
+        <strong>Example:</strong>
+      </p>
+
+      <pre>
+        <code>rcf(http_request_duration_seconds_sum[1h], 50, 128) &gt; 0.8</code>
+      </pre>
+
+      <p>Alerts when the request duration time series deviates significantly from its learned normal behaviour.</p>
+
+      <p>Works with both float and native histogram series (using histogram average).</p>
+    </>
+  ),
+  rcf_attribution: (
+    <>
+      <p>
+        <code>rcf_attribution(v range-vector, trees scalar=100, sample_size scalar=256)</code>
+        uses the same streaming Random Cut Forest model as <code>rcf()</code> and returns the per-dimension contribution
+        to the anomaly score for each input series.
+      </p>
+
+      <p>
+        The output carries a <code>rcf_dim</code> label identifying the feature dimension (<code>value</code>,{" "}
+        <code>delta</code>, <code>velocity</code>, <code>acceleration</code>, <code>ewma_dev</code>, <code>cv</code>).
+        Higher values indicate that dimension contributed more to the anomaly.
+      </p>
+
+      <p>
+        <strong>Example:</strong>
+      </p>
+
+      <pre>
+        <code>rcf_attribution(http_request_duration_seconds_sum[1h], 50, 128)</code>
+      </pre>
+
+      <p>Returns one result per input series showing which feature dimension is driving the anomaly score.</p>
+    </>
+  ),
   resets: (
     <>
       <p>

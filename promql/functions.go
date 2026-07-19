@@ -2706,6 +2706,8 @@ var FunctionCalls = map[string]FunctionCall{
 	"range":                        nil, // Folded into NumberLiteral by foldQueryContextFunctions.
 	"rate":                         funcRate,
 	"random_cut_score":             funcRandomCutScore,
+	"rcf":                          funcRCF,
+	"rcf_attribution":              nil, // evalRCFAttribution not called via this map.
 	"resets":                       funcResets,
 	"round":                        funcRound,
 	"scalar":                       funcScalar,
@@ -3879,4 +3881,145 @@ func funcEntropy(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNo
 		enh.Out = append(enh.Out, Sample{Metric: series.Metric, F: clampScore(entropy), T: samples[n-1].T})
 	}
 	return enh.Out, nil
+}
+
+// funcRCF implements rcf(v range-vector [, trees [, sample_size]]).
+//
+// It maintains a per-series streaming Random Cut Forest that persists across
+// PromQL evaluations. New samples are inserted incrementally; old samples are
+// evicted via bounded reservoir sampling. The anomaly score is the collusive
+// displacement of the latest point, normalised to [0, 1].
+func funcRCF(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	numTrees, sampleSize, annos := rcfParseArgs(args)
+	if annos != nil {
+		return enh.Out, annos
+	}
+	for _, series := range matrixVal {
+		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
+		if annos != nil {
+			return enh.Out, annos
+		}
+		if len(samples) < 2 {
+			continue
+		}
+		f := rcfModels.forest(series.Metric.Hash(), numTrees, sampleSize)
+		f.mu.Lock()
+		rcfIngest(f.forest, samples)
+		score := f.forest.score(buildFeatures(samples)[len(samples)-1])
+		f.mu.Unlock()
+		rcfModels.markDirty(series.Metric.Hash())
+		enh.Out = append(enh.Out, Sample{
+			Metric: series.Metric,
+			F:      score,
+			T:      samples[len(samples)-1].T,
+		})
+	}
+	return enh.Out, nil
+}
+
+// evalRCFAttribution implements rcf_attribution(v range-vector [, trees [, sample_size]]).
+//
+// It is special-cased in the engine (like label_replace) because it produces
+// rcfDims output series per input series — one per feature dimension — which
+// the standard range-vector evalCall path cannot support (it only takes outVec[0]).
+//
+// Each output series carries rcf_dim=<name> and the fractional displacement
+// contribution of that dimension to the anomaly score.
+func (ev *evaluator) evalRCFAttribution(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
+	numTrees, sampleSize, annos := rcfParseArgs(args)
+	if annos != nil {
+		return Matrix{}, annos
+	}
+
+	sel := args[0].(*parser.MatrixSelector)
+
+	// dimSeries accumulates FPoints per output label-set across all steps.
+	type dimKey struct {
+		hash uint64
+		dim  int
+	}
+	type dimSeries struct {
+		metric labels.Labels
+		points []FPoint
+	}
+	seriesMap := make(map[dimKey]*dimSeries)
+
+	dimNames := [rcfDims]string{"value", "delta", "velocity", "acceleration", "ewma_dev", "cv"}
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	var ws annotations.Annotations
+
+	// Iterate over every evaluation step, evaluating the matrix window at
+	// each step via matrixSelector (which handles windowing correctly).
+	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
+		// Temporarily set the evaluator timestamps to this single step so
+		// matrixSelector fetches the correct [ts-range, ts] window.
+		origStart, origEnd := ev.startTimestamp, ev.endTimestamp
+		ev.startTimestamp, ev.endTimestamp = ts, ts
+		matrix, stepWS := ev.matrixSelector(ctx, sel)
+		ev.startTimestamp, ev.endTimestamp = origStart, origEnd
+		ws.Merge(stepWS)
+
+		for _, series := range matrix {
+			samples, seriesAnnos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
+			ws.Merge(seriesAnnos)
+			if len(samples) < 2 {
+				continue
+			}
+			f := rcfModels.forest(series.Metric.Hash(), numTrees, sampleSize)
+			f.mu.Lock()
+			rcfIngest(f.forest, samples)
+			attr := f.forest.attribution(buildFeatures(samples)[len(samples)-1])
+			f.mu.Unlock()
+			rcfModels.markDirty(series.Metric.Hash())
+
+			base := series.Metric.DropMetricName()
+			seriesHash := base.Hash()
+			for d := range rcfDims {
+				key := dimKey{seriesHash, d}
+				ds, ok := seriesMap[key]
+				if !ok {
+					lb.Reset(base)
+					lb.Set("rcf_dim", dimNames[d])
+					ds = &dimSeries{metric: lb.Labels()}
+					seriesMap[key] = ds
+				}
+				ds.points = append(ds.points, FPoint{T: ts, F: attr[d]})
+			}
+		}
+	}
+
+	out := make(Matrix, 0, len(seriesMap))
+	for _, ds := range seriesMap {
+		out = append(out, Series{Metric: ds.metric, Floats: ds.points})
+	}
+	return ev.mergeSeriesWithSameLabelset(out), ws
+}
+
+// rcfParseArgs extracts and validates the optional trees and sample_size args.
+func rcfParseArgs(args parser.Expressions) (numTrees, sampleSize int, annos annotations.Annotations) {
+	numTrees, sampleSize = rcfDefaultTrees, rcfDefaultSampleSize
+	if len(args) > 1 {
+		numTrees = int(args[1].(*parser.NumberLiteral).Val)
+	}
+	if len(args) > 2 {
+		sampleSize = int(args[2].(*parser.NumberLiteral).Val)
+	}
+	if numTrees < 1 {
+		return 0, 0, annotations.NewInvalidParamError(fmt.Errorf("rcf trees must be positive, got %d", numTrees))
+	}
+	if sampleSize < 2 {
+		return 0, 0, annotations.NewInvalidParamError(fmt.Errorf("rcf sample_size must be at least 2, got %d", sampleSize))
+	}
+	return numTrees, sampleSize, nil
+}
+
+// rcfIngest inserts all samples newer than forest.LastTS into the forest.
+func rcfIngest(f *rcfForest, samples []anomalySample) {
+	features := buildFeatures(samples)
+	for i, s := range samples {
+		if s.T <= f.LastTS {
+			continue
+		}
+		f.update(s.T, features[i])
+	}
 }

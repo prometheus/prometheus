@@ -1093,6 +1093,79 @@ weighted moving averages, producing an anomaly score close to 1.0.
 
 Works with both float and native histogram series (using histogram average).
 
+## `rcf()`
+
+`rcf(v range-vector, trees scalar=100, sample_size scalar=256)` computes a
+streaming Random Cut Forest (RCF) anomaly score for each float time series in
+the range vector `v`, based on Guha et al. (ICML 2016).
+
+Unlike `random_cut_score`, `rcf` maintains a **persistent per-series model**
+across PromQL evaluations. Each model is an ensemble of `trees` Random Cut
+Trees sharing a bounded reservoir of `sample_size` points. New samples are
+inserted incrementally and old samples are evicted via reservoir sampling.
+The anomaly score is the average collusive displacement of the latest feature
+vector, normalised to `[0, 1]`.
+
+The six feature dimensions used are: `value` (z-score), `delta`, `velocity`,
+`acceleration`, `ewma_deviation`, and `coefficient_of_variation`.
+
+Models are stored in an in-memory LRU cache and persisted to disk so they
+survive Prometheus restarts. By default the store path is
+`<storage.tsdb.path>/rcf` (i.e. alongside the TSDB data), so persistence
+works out of the box with no configuration required.
+
+Both settings are configurable in the Prometheus config file under
+`storage.rcf`:
+
+| Config key | Default | Description |
+|---|---|---|
+| `storage.rcf.store_path` | `<storage.tsdb.path>/rcf` | Directory for on-disk model persistence. Set to empty string to disable. |
+| `storage.rcf.cache_size` | `1024` | Maximum number of per-series models kept in memory. |
+
+Example:
+
+```yaml
+storage:
+  rcf:
+    store_path: /data/rcf
+    cache_size: 2048
+```
+
+**When to use:** Use `rcf` when you need a stateful, incrementally-updated
+anomaly detector that improves over time as it sees more data — for example,
+detecting gradual drift, multi-dimensional anomalies, or patterns that only
+become visible after a warm-up period.
+
+**Example:**
+
+```
+rcf(http_request_duration_seconds_sum[1h], 50, 128) > 0.8
+```
+
+Alerts when the request duration time series deviates significantly from its
+learned normal behaviour.
+
+Works with both float and native histogram series (using histogram average).
+
+## `rcf_attribution()`
+
+`rcf_attribution(v range-vector, trees scalar=100, sample_size scalar=256)`
+uses the same streaming Random Cut Forest model as `rcf()` and returns the
+per-dimension contribution to the anomaly score for each input series.
+
+The output carries a `rcf_dim` label identifying the feature dimension
+(`value`, `delta`, `velocity`, `acceleration`, `ewma_dev`, `cv`). Higher
+values indicate that dimension contributed more to the anomaly.
+
+**Example:**
+
+```
+rcf_attribution(http_request_duration_seconds_sum[1h], 50, 128)
+```
+
+Returns one result per input series showing which feature dimension is driving
+the anomaly score.
+
 ## `resets()`
 
 For each input time series, `resets(v range-vector)` returns the number of

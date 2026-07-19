@@ -2156,6 +2156,8 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			return ev.evalLabelJoin(ctx, e.Args)
 		case "info":
 			return ev.evalInfo(ctx, e.Args)
+		case "rcf_attribution":
+			return ev.evalRCFAttribution(ctx, e.Args)
 		}
 
 		// Functions with nil entries in FunctionCalls should have been handled before reaching this point.

@@ -788,6 +788,26 @@ func main() {
 	cfg.tsdb.MaxBytes = cfgFile.StorageConfig.TSDBConfig.Retention.Size
 	cfg.tsdb.MaxPercentage = cfgFile.StorageConfig.TSDBConfig.Retention.Percentage
 
+	// Apply RCF model store configuration. The config file takes precedence;
+	// env vars (PROMETHEUS_RCF_STORE_PATH, PROMETHEUS_RCF_STORE_CACHE_SIZE)
+	// act as a fallback and are applied by init() in rcf_store.go.
+	if cfgFile.StorageConfig.RCFConfig != nil {
+		if cfgFile.StorageConfig.RCFConfig.StorePath != "" {
+			promql.RCFStorePath = cfgFile.StorageConfig.RCFConfig.StorePath
+		} else {
+			promql.RCFStorePath = filepath.Join(localStoragePath, "rcf")
+		}
+		if cfgFile.StorageConfig.RCFConfig.CacheSize > 0 {
+			promql.RCFStoreCacheSize = cfgFile.StorageConfig.RCFConfig.CacheSize
+		}
+	} else {
+		// No explicit config: default to <tsdb.path>/rcf so persistence works
+		// out of the box without any configuration.
+		if promql.RCFStorePath == "" {
+			promql.RCFStorePath = filepath.Join(localStoragePath, "rcf")
+		}
+	}
+
 	// Set Go runtime parameters before we get too far into initialization.
 	updateGoGC(cfgFile, logger)
 	if cfg.maxprocsEnable {
