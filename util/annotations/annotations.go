@@ -547,7 +547,7 @@ func NewStartTimeOverlapWarning(metricName string, pos posrange.PositionRange) e
 func NewInvalidParamError(err error) Annotations {
 	a := New()
 	a.Add(&annoErr{
-		Err: fmt.Errorf("%w: invalid parameter: %s", PromQLWarning, err),
+		Err: fmt.Errorf("%w: invalid parameter: %w", PromQLWarning, err),
 	})
 	return *a
 }

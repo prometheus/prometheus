@@ -3308,7 +3308,7 @@ func quickSelect(data []float64, k int) float64 {
 		} else if k >= i {
 			lo = i
 		} else {
-			break
+			return data[k]
 		}
 	}
 	return data[k]
@@ -3832,10 +3832,7 @@ func funcEntropy(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNo
 		}
 		n := len(samples)
 		// Sturges rule for bin count, capped at 32 to stay on stack.
-		nBins := int(math.Ceil(math.Log2(float64(n)))) + 1
-		if nBins < 2 {
-			nBins = 2
-		}
+		nBins := max(int(math.Ceil(math.Log2(float64(n))))+1, 2)
 		if nBins > 32 {
 			nBins = 32
 		}
