@@ -2527,7 +2527,7 @@ eval instant at 350s rcf_attribution(rcf_attr_spike[6m], 100, 256)
 	{job="api-server", rcf_dim="value"}        0.45166666666666699
 	{job="api-server", rcf_dim="delta"}        0.36666666666666681
 	{job="api-server", rcf_dim="velocity"}     0.1022222222222223
-	{job="api-server", rcf_dim="acceleration"} 0.11166666666666675
+	{job="api-server", rcf_dim="acceleration"} 0.09277777777777774
 	{job="api-server", rcf_dim="ewma_dev"}     0.24388888888888846
 	{job="api-server", rcf_dim="cv"}           0.16833333333333356
 

@@ -195,7 +195,7 @@ func (s *rcfModelStore) evictIfNeeded() {
 
 // ── disk I/O ──────────────────────────────────────────────────────────────────
 
-func (_ *rcfModelStore) diskPath(fingerprint uint64) string {
+func (s *rcfModelStore) diskPath(fingerprint uint64) string {
 	return filepath.Join(RCFStorePath, fmt.Sprintf("%016x.rcf", fingerprint))
 }
 
