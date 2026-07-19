@@ -2924,6 +2924,33 @@ func clampScore(s float64) float64 {
 	return s
 }
 
+// forEachAnomalySeries iterates over matrixVal, extracts anomaly samples for
+// each series, skips series with fewer than minSamples, and calls scoreFn to
+// compute a score. The result is appended to enh.Out.
+// scoreFn returns (score, ok): if ok is false the series is skipped.
+// Returns early with an annotation if extractAnomalySamples reports one.
+func forEachAnomalySeries(matrixVal Matrix, enh *EvalNodeHelper, minSamples int, scoreFn func(series Series, samples []anomalySample) (float64, bool)) (Vector, annotations.Annotations) {
+	for _, series := range matrixVal {
+		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
+		if annos != nil {
+			return enh.Out, annos
+		}
+		if len(samples) < minSamples {
+			continue
+		}
+		score, ok := scoreFn(series, samples)
+		if !ok {
+			continue
+		}
+		enh.Out = append(enh.Out, Sample{
+			Metric: series.Metric,
+			F:      clampScore(score),
+			T:      samples[len(samples)-1].T,
+		})
+	}
+	return enh.Out, nil
+}
+
 // buildFeatures converts a slice of anomaly samples into the 6-dimensional
 // feature vectors used by RCF, HST, and ISF. It uses Welford online statistics
 // (O(n)) instead of O(n²) sum-over-features approach.
@@ -2985,14 +3012,7 @@ func funcEWMA(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNo
 	if alpha <= 0 || alpha > 1 {
 		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("EWMA alpha must be in (0,1], got %g", alpha))
 	}
-	for _, series := range matrixVal {
-		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
-		if annos != nil {
-			return enh.Out, annos
-		}
-		if len(samples) < 2 {
-			continue
-		}
+	return forEachAnomalySeries(matrixVal, enh, 2, func(_ Series, samples []anomalySample) (float64, bool) {
 		baseline := samples[0].V
 		variance := 0.0
 		for _, s := range samples[1:] {
@@ -3003,17 +3023,11 @@ func funcEWMA(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNo
 		lastVal := samples[len(samples)-1].V
 		delta := lastVal - baseline
 		std := math.Sqrt(math.Max(variance, 0))
-		score := 0.0
 		if std > 1e-9 {
-			score = 1 - math.Exp(-math.Abs(delta)/(3*std))
+			return 1 - math.Exp(-math.Abs(delta)/(3*std)), true
 		}
-		enh.Out = append(enh.Out, Sample{
-			Metric: series.Metric,
-			F:      clampScore(score),
-			T:      samples[len(samples)-1].T,
-		})
-	}
-	return enh.Out, nil
+		return 0, true
+	})
 }
 
 // funcRandomCutScore computes a stateless random-cut anomaly score.
@@ -3029,26 +3043,14 @@ func funcRandomCutScore(_ []Vector, matrixVal Matrix, args parser.Expressions, e
 	if trees < 1 {
 		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("random_cut_score trees must be positive, got %d", trees))
 	}
-	for _, series := range matrixVal {
-		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
-		if annos != nil {
-			return enh.Out, annos
-		}
+	return forEachAnomalySeries(matrixVal, enh, 32, func(series Series, samples []anomalySample) (float64, bool) {
 		features := buildFeatures(samples)
 		if len(features) < 32 {
-			continue
+			return 0, false
 		}
-		target := features[len(features)-1]
-		history := features[:len(features)-1]
 		seed := rcfSeedFromString(getMetricName(series.Metric))
-		score := randomCutScoreInMemory(history, target, trees, seed)
-		enh.Out = append(enh.Out, Sample{
-			Metric: series.Metric,
-			F:      score,
-			T:      samples[len(samples)-1].T,
-		})
-	}
-	return enh.Out, nil
+		return randomCutScoreInMemory(features[:len(features)-1], features[len(features)-1], trees, seed), true
+	})
 }
 
 func rcfSeedFromString(name string) uint64 {
@@ -3142,14 +3144,7 @@ func funcZScore(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eval
 	if threshold <= 0 {
 		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("ZScore threshold must be positive, got %g", threshold))
 	}
-	for _, series := range matrixVal {
-		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
-		if annos != nil {
-			return enh.Out, annos
-		}
-		if len(samples) < 2 {
-			continue
-		}
+	return forEachAnomalySeries(matrixVal, enh, 2, func(_ Series, samples []anomalySample) (float64, bool) {
 		var stats onlineStats
 		for _, s := range samples[:len(samples)-1] {
 			stats.add(s.V)
@@ -3157,19 +3152,13 @@ func funcZScore(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eval
 		mean := stats.mean()
 		stddev := stats.stdDev()
 		lastVal := samples[len(samples)-1].V
-		score := 0.0
 		if stddev > 1e-9 {
-			score = math.Abs(lastVal-mean) / stddev / threshold
+			return math.Abs(lastVal-mean) / stddev / threshold, true
 		} else if math.Abs(lastVal-mean) > 1e-9 {
-			score = 1.0
+			return 1.0, true
 		}
-		enh.Out = append(enh.Out, Sample{
-			Metric: series.Metric,
-			F:      clampScore(score),
-			T:      samples[len(samples)-1].T,
-		})
-	}
-	return enh.Out, nil
+		return 0, true
+	})
 }
 
 func funcSeasonal(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
@@ -3190,24 +3179,15 @@ func funcSeasonal(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Ev
 	if alpha <= 0 || alpha > 1 {
 		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("seasonal alpha must be in (0,1], got %g", alpha))
 	}
-	for _, series := range matrixVal {
-		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
-		if annos != nil {
-			return enh.Out, annos
-		}
-		if len(samples) < 2 {
-			continue
-		}
+	return forEachAnomalySeries(matrixVal, enh, 2, func(_ Series, samples []anomalySample) (float64, bool) {
 		slotBuckets := make(map[int64][]anomalySample)
 		for _, s := range samples {
-			slotIdx := s.T / 1000 % period
-			slotBuckets[slotIdx] = append(slotBuckets[slotIdx], s)
+			slotBuckets[s.T/1000%period] = append(slotBuckets[s.T/1000%period], s)
 		}
 		last := samples[len(samples)-1]
-		slotIdx := last.T / 1000 % period
-		slotPoints := slotBuckets[slotIdx]
+		slotPoints := slotBuckets[last.T/1000%period]
 		if len(slotPoints) < 2 {
-			continue
+			return 0, false
 		}
 		baseline := slotPoints[0].V
 		variance := 0.0
@@ -3216,19 +3196,12 @@ func funcSeasonal(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Ev
 			baseline += alpha * delta
 			variance = (1 - alpha) * (variance + alpha*delta*delta)
 		}
-		delta := last.V - baseline
 		std := math.Sqrt(math.Max(variance, 0))
-		score := 0.0
 		if std > 1e-9 {
-			score = 1 - math.Exp(-math.Abs(delta)/(3*std))
+			return 1 - math.Exp(-math.Abs(last.V-baseline)/(3*std)), true
 		}
-		enh.Out = append(enh.Out, Sample{
-			Metric: series.Metric,
-			F:      clampScore(score),
-			T:      last.T,
-		})
-	}
-	return enh.Out, nil
+		return 0, true
+	})
 }
 
 func funcMAD(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
@@ -3242,40 +3215,26 @@ func funcMAD(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNod
 	if threshold <= 0 {
 		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("MAD threshold must be positive, got %g", threshold))
 	}
-	for _, series := range matrixVal {
-		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
-		if annos != nil {
-			return enh.Out, annos
-		}
-		if len(samples) < 3 {
-			continue
-		}
-		// Single allocation: vals holds values; devs reuses the same backing store.
+	return forEachAnomalySeries(matrixVal, enh, 3, func(_ Series, samples []anomalySample) (float64, bool) {
 		vals := make([]float64, len(samples))
 		for i, s := range samples {
 			vals[i] = s.V
 		}
-		median := quickSelectMedian(vals) // partially reorders vals in-place
-		devs := vals                      // reuse; overwrite with |v - median|
+		median := quickSelectMedian(vals)
+		devs := vals
 		for i, v := range vals {
 			devs[i] = math.Abs(v - median)
 		}
 		madVal := quickSelectMedian(devs)
 		lastVal := samples[len(samples)-1].V
 		denom := 1.4826 * madVal
-		score := 0.0
 		if denom > 1e-9 {
-			score = math.Abs(lastVal-median) / denom / threshold
+			return math.Abs(lastVal-median) / denom / threshold, true
 		} else if math.Abs(lastVal-median) > 1e-9 {
-			score = 1.0
+			return 1.0, true
 		}
-		enh.Out = append(enh.Out, Sample{
-			Metric: series.Metric,
-			F:      clampScore(score),
-			T:      samples[len(samples)-1].T,
-		})
-	}
-	return enh.Out, nil
+		return 0, true
+	})
 }
 
 // quickSelectMedian returns the median of vals using quickselect (O(n) average).
@@ -3341,52 +3300,32 @@ func funcQScore(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eval
 	if lower < 0 || lower >= upper || upper > 1 {
 		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("quantile lower and upper must satisfy 0 <= lower < upper <= 1, got lower=%g upper=%g", lower, upper))
 	}
-	for _, series := range matrixVal {
-		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
-		if annos != nil {
-			return enh.Out, annos
-		}
-		if len(samples) < 10 {
-			continue
-		}
-		// Single allocation; quickSelect reorders in-place so we copy once.
+	return forEachAnomalySeries(matrixVal, enh, 10, func(_ Series, samples []anomalySample) (float64, bool) {
 		work := make([]float64, len(samples))
 		for i, s := range samples {
 			work[i] = s.V
 		}
 		n := float64(len(work))
-		qLowerIdx := int(math.Floor(lower * (n - 1)))
-		qUpperIdx := int(math.Ceil(upper * (n - 1)))
-		// Each quickSelect call partially reorders work; order of calls matters
-		// only for correctness of the k-th element, which is guaranteed.
 		minVal := quickSelect(work, 0)
 		maxVal := quickSelect(work, len(work)-1)
-		qLower := quickSelect(work, qLowerIdx)
-		qUpper := quickSelect(work, qUpperIdx)
+		qLower := quickSelect(work, int(math.Floor(lower*(n-1))))
+		qUpper := quickSelect(work, int(math.Ceil(upper*(n-1))))
 		lastVal := samples[len(samples)-1].V
-		score := 0.0
 		if lastVal > qUpper {
 			denom := maxVal - qUpper
 			if denom > 1e-9 {
-				score = (lastVal - qUpper) / denom
-			} else {
-				score = 1.0
+				return (lastVal - qUpper) / denom, true
 			}
+			return 1.0, true
 		} else if lastVal < qLower {
 			denom := qLower - minVal
 			if denom > 1e-9 {
-				score = (qLower - lastVal) / denom
-			} else {
-				score = 1.0
+				return (qLower - lastVal) / denom, true
 			}
+			return 1.0, true
 		}
-		enh.Out = append(enh.Out, Sample{
-			Metric: series.Metric,
-			F:      clampScore(score),
-			T:      samples[len(samples)-1].T,
-		})
-	}
-	return enh.Out, nil
+		return 0, true
+	})
 }
 
 func funcHW(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
@@ -3404,14 +3343,7 @@ func funcHW(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNode
 	if alpha <= 0 || alpha > 1 || beta <= 0 || beta > 1 {
 		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("Holt-Winters alpha and beta must be in (0,1], got alpha=%g beta=%g", alpha, beta))
 	}
-	for _, series := range matrixVal {
-		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
-		if annos != nil {
-			return enh.Out, annos
-		}
-		if len(samples) < 3 {
-			continue
-		}
+	return forEachAnomalySeries(matrixVal, enh, 3, func(_ Series, samples []anomalySample) (float64, bool) {
 		level := samples[0].V
 		trend := samples[1].V - samples[0].V
 		varianceError := 0.0
@@ -3423,21 +3355,14 @@ func funcHW(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNode
 			trend = beta*(level-prevLevel) + (1-beta)*trend
 			varianceError = (1-alpha)*varianceError + alpha*errorVal*errorVal
 		}
-		last := samples[len(samples)-1]
 		forecast := level + trend
-		errorVal := last.V - forecast
+		errorVal := samples[len(samples)-1].V - forecast
 		stdErr := math.Sqrt(math.Max(varianceError, 0))
-		score := 0.0
 		if stdErr > 1e-9 {
-			score = math.Abs(errorVal) / (3.0 * stdErr)
+			return math.Abs(errorVal) / (3.0 * stdErr), true
 		}
-		enh.Out = append(enh.Out, Sample{
-			Metric: series.Metric,
-			F:      clampScore(score),
-			T:      last.T,
-		})
-	}
-	return enh.Out, nil
+		return 0, true
+	})
 }
 
 type onlineStats struct {
@@ -3487,23 +3412,13 @@ func funcHST(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNod
 			fmt.Errorf("HST trees and depth must be positive, got trees=%d depth=%d", trees, depth),
 		)
 	}
-	for _, series := range matrixVal {
-		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
-		if annos != nil {
-			return enh.Out, annos
-		}
+	return forEachAnomalySeries(matrixVal, enh, 32, func(series Series, samples []anomalySample) (float64, bool) {
 		features := buildFeatures(samples)
 		if len(features) < 32 {
-			continue
+			return 0, false
 		}
-		score := hstScore(features, trees, depth, getMetricName(series.Metric))
-		enh.Out = append(enh.Out, Sample{
-			Metric: series.Metric,
-			F:      score,
-			T:      samples[len(samples)-1].T,
-		})
-	}
-	return enh.Out, nil
+		return hstScore(features, trees, depth, getMetricName(series.Metric)), true
+	})
 }
 
 func hstScore(features [][6]float64, trees, depth int, metric string) float64 {
@@ -3563,29 +3478,18 @@ func funcIsolationForest(_ []Vector, matrixVal Matrix, args parser.Expressions, 
 	if sampleSize < 2 {
 		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("isolation Forest sample_size must be at least 2, got %d", sampleSize))
 	}
-	for _, series := range matrixVal {
-		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
-		if annos != nil {
-			return enh.Out, annos
-		}
+	return forEachAnomalySeries(matrixVal, enh, 32, func(series Series, samples []anomalySample) (float64, bool) {
 		features := buildFeatures(samples)
 		if len(features) < 32 {
-			continue
+			return 0, false
 		}
-		targetPoint := features[len(features)-1]
 		history := features[:len(features)-1]
 		if len(history) > sampleSize {
 			history = history[len(history)-sampleSize:]
 		}
 		seed := rcfSeedFromString(getMetricName(series.Metric))
-		score := isolationScoreInMemory(history, targetPoint, trees, seed)
-		enh.Out = append(enh.Out, Sample{
-			Metric: series.Metric,
-			F:      score,
-			T:      samples[len(samples)-1].T,
-		})
-	}
-	return enh.Out, nil
+		return isolationScoreInMemory(history, features[len(features)-1], trees, seed), true
+	})
 }
 
 // isoNode is a node in a built isolation tree.
@@ -3685,18 +3589,7 @@ func cInMemory(n int) float64 {
 // === changepoint(v range-vector) float ===
 // Detects sudden baseline shifts using CUSUM. O(n).
 func funcChangepoint(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(matrixVal) == 0 {
-		return enh.Out, nil
-	}
-	for _, series := range matrixVal {
-		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
-		if annos != nil {
-			return enh.Out, annos
-		}
-		if len(samples) < 4 {
-			continue
-		}
-		// Compute mean/std from history (exclude last sample) via inline Welford.
+	return forEachAnomalySeries(matrixVal, enh, 4, func(_ Series, samples []anomalySample) (float64, bool) {
 		var count int
 		var mean, m2 float64
 		for _, s := range samples[:len(samples)-1] {
@@ -3710,10 +3603,8 @@ func funcChangepoint(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *Ev
 			std = math.Sqrt(math.Max(m2/float64(count-1), 0))
 		}
 		if std < 1e-9 {
-			enh.Out = append(enh.Out, Sample{Metric: series.Metric, F: 0, T: samples[len(samples)-1].T})
-			continue
+			return 0, true
 		}
-		// CUSUM: track max cumulative deviation from mean.
 		var cusumPos, cusumNeg, maxCusum float64
 		for _, s := range samples {
 			z := (s.V - mean) / std
@@ -3723,27 +3614,14 @@ func funcChangepoint(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *Ev
 				maxCusum = c
 			}
 		}
-		// Normalise: threshold of 5 sigma-steps is a common CUSUM alarm level.
-		score := clampScore(maxCusum / 5.0)
-		enh.Out = append(enh.Out, Sample{Metric: series.Metric, F: score, T: samples[len(samples)-1].T})
-	}
-	return enh.Out, nil
+		return maxCusum / 5.0, true
+	})
 }
 
 // === trend_score(v range-vector) float ===
 // Detects abnormal slope via linear-regression residual. O(n).
 func funcTrendScore(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(matrixVal) == 0 {
-		return enh.Out, nil
-	}
-	for _, series := range matrixVal {
-		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
-		if annos != nil {
-			return enh.Out, annos
-		}
-		if len(samples) < 3 {
-			continue
-		}
+	return forEachAnomalySeries(matrixVal, enh, 3, func(_ Series, samples []anomalySample) (float64, bool) {
 		n := float64(len(samples))
 		t0 := samples[0].T
 		var sumT, sumV, sumTT, sumTV float64
@@ -3756,12 +3634,10 @@ func funcTrendScore(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *Eva
 		}
 		denom := n*sumTT - sumT*sumT
 		if math.Abs(denom) < 1e-12 {
-			enh.Out = append(enh.Out, Sample{Metric: series.Metric, F: 0, T: samples[len(samples)-1].T})
-			continue
+			return 0, true
 		}
 		slope := (n*sumTV - sumT*sumV) / denom
 		intercept := (sumV - slope*sumT) / n
-		// Compute residual std dev via inline Welford.
 		var resCount int
 		var resMean, resM2 float64
 		for _, s := range samples {
@@ -3777,15 +3653,12 @@ func funcTrendScore(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *Eva
 			resStd = math.Sqrt(math.Max(resM2/float64(resCount-1), 0))
 		}
 		if resStd < 1e-9 {
-			enh.Out = append(enh.Out, Sample{Metric: series.Metric, F: 0, T: samples[len(samples)-1].T})
-			continue
+			return 0, true
 		}
 		last := samples[len(samples)-1]
 		t := float64(last.T-t0) / 1000.0
-		residual := math.Abs(last.V-(slope*t+intercept)) / resStd
-		enh.Out = append(enh.Out, Sample{Metric: series.Metric, F: clampScore(residual / 3.0), T: last.T})
-	}
-	return enh.Out, nil
+		return math.Abs(last.V-(slope*t+intercept)) / resStd / 3.0, true
+	})
 }
 
 // === burst_score(v range-vector) float ===
@@ -3801,14 +3674,7 @@ func funcBurstScore(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *
 	if alpha <= 0 || alpha > 1 {
 		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("burst_score alpha must be in (0,1], got %g", alpha))
 	}
-	for _, series := range matrixVal {
-		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
-		if annos != nil {
-			return enh.Out, annos
-		}
-		if len(samples) < 2 {
-			continue
-		}
+	return forEachAnomalySeries(matrixVal, enh, 2, func(_ Series, samples []anomalySample) (float64, bool) {
 		baseline := samples[0].V
 		variance := 0.0
 		for _, s := range samples[1:] {
@@ -3816,34 +3682,20 @@ func funcBurstScore(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *
 			baseline += alpha * delta
 			variance = (1-alpha)*variance + alpha*delta*delta
 		}
-		last := samples[len(samples)-1]
 		std := math.Sqrt(math.Max(variance, 0))
-		score := 0.0
 		if std > 1e-9 {
-			score = math.Abs(last.V-baseline) / (3.0 * std)
+			return math.Abs(samples[len(samples)-1].V-baseline) / (3.0 * std), true
 		}
-		enh.Out = append(enh.Out, Sample{Metric: series.Metric, F: clampScore(score), T: last.T})
-	}
-	return enh.Out, nil
+		return 0, true
+	})
 }
 
 // === entropy(v range-vector) float ===
 // Computes normalised Shannon entropy of the value distribution. O(n).
 // Uses histogram binning (Sturges rule). Works on floats and histogram-avg values.
 func funcEntropy(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(matrixVal) == 0 {
-		return enh.Out, nil
-	}
-	for _, series := range matrixVal {
-		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
-		if annos != nil {
-			return enh.Out, annos
-		}
-		if len(samples) < 2 {
-			continue
-		}
+	return forEachAnomalySeries(matrixVal, enh, 2, func(_ Series, samples []anomalySample) (float64, bool) {
 		n := len(samples)
-		// Sturges rule for bin count, capped at 32 to stay on stack.
 		nBins := min(max(int(math.Ceil(math.Log2(float64(n))))+1, 2), 32)
 		minV, maxV := samples[0].V, samples[0].V
 		for _, s := range samples[1:] {
@@ -3855,9 +3707,7 @@ func funcEntropy(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNo
 			}
 		}
 		if maxV-minV < 1e-12 {
-			// All values identical → zero entropy.
-			enh.Out = append(enh.Out, Sample{Metric: series.Metric, F: 0, T: samples[n-1].T})
-			continue
+			return 0, true
 		}
 		binWidth := (maxV - minV) / float64(nBins)
 		var counts [32]int
@@ -3869,18 +3719,15 @@ func funcEntropy(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNo
 			counts[idx]++
 		}
 		var entropy float64
-		for _, c := range counts {
-			if c == 0 {
+		for _, cnt := range counts {
+			if cnt == 0 {
 				continue
 			}
-			p := float64(c) / float64(n)
+			p := float64(cnt) / float64(n)
 			entropy -= p * math.Log2(p)
 		}
-		// Normalise by log2(nBins) so result is in [0,1].
-		entropy /= math.Log2(float64(nBins))
-		enh.Out = append(enh.Out, Sample{Metric: series.Metric, F: clampScore(entropy), T: samples[n-1].T})
-	}
-	return enh.Out, nil
+		return entropy / math.Log2(float64(nBins)), true
+	})
 }
 
 // funcRCF implements rcf(v range-vector [, trees [, sample_size]]).
@@ -3902,12 +3749,12 @@ func funcRCF(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNod
 		if len(samples) < 2 {
 			continue
 		}
-		f := rcfModels.forest(series.Metric.Hash(), numTrees, sampleSize)
+		f := enh.RCFStore.forest(series.Metric.Hash(), numTrees, sampleSize)
 		f.mu.Lock()
 		rcfIngest(f.forest, samples)
 		score := f.forest.score(buildFeatures(samples)[len(samples)-1])
 		f.mu.Unlock()
-		rcfModels.markDirty(series.Metric.Hash())
+		enh.RCFStore.markDirty(series.Metric.Hash())
 		enh.Out = append(enh.Out, Sample{
 			Metric: series.Metric,
 			F:      score,
@@ -3965,12 +3812,12 @@ func (ev *evaluator) evalRCFAttribution(ctx context.Context, args parser.Express
 			if len(samples) < 2 {
 				continue
 			}
-			f := rcfModels.forest(series.Metric.Hash(), numTrees, sampleSize)
+			f := ev.rcfStore.forest(series.Metric.Hash(), numTrees, sampleSize)
 			f.mu.Lock()
 			rcfIngest(f.forest, samples)
 			attr := f.forest.attribution(buildFeatures(samples)[len(samples)-1])
 			f.mu.Unlock()
-			rcfModels.markDirty(series.Metric.Hash())
+			ev.rcfStore.markDirty(series.Metric.Hash())
 
 			base := series.Metric.DropReserved(func(n string) bool { return n == labels.MetricName })
 			seriesHash := base.Hash()

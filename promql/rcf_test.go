@@ -14,8 +14,9 @@
 package promql
 
 import (
-	"container/list"
+	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -155,10 +156,7 @@ func TestRCFForestAttributionNonNegative(t *testing.T) {
 // ── rcfModelStore ─────────────────────────────────────────────────────────────
 
 func TestRCFModelStoreMemoryOnly(t *testing.T) {
-	store := &rcfModelStore{
-		cache: make(map[uint64]*rcfEntry),
-		lru:   list.New(),
-	}
+	store := newRCFModelStore(nil, 1024)
 
 	e1 := store.forest(1, 10, 32)
 	require.NotNil(t, e1.forest)
@@ -179,13 +177,7 @@ func TestRCFModelStoreMemoryOnly(t *testing.T) {
 }
 
 func TestRCFModelStoreLRUEviction(t *testing.T) {
-	store := &rcfModelStore{
-		cache: make(map[uint64]*rcfEntry),
-		lru:   list.New(),
-	}
-	origSize := RCFStoreCacheSize
-	RCFStoreCacheSize = 2
-	t.Cleanup(func() { RCFStoreCacheSize = origSize })
+	store := newRCFModelStore(nil, 2)
 
 	store.forest(1, 5, 16)
 	store.forest(2, 5, 16)
@@ -203,15 +195,9 @@ func TestRCFModelStoreLRUEviction(t *testing.T) {
 }
 
 func TestRCFStoreCacheSizeEnvVar(t *testing.T) {
-	// Verify that RCFStoreCacheSize is respected by eviction: setting it to 1
+	// Verify that cacheSize is respected by eviction: setting it to 1
 	// and inserting 2 models should evict the first.
-	store := &rcfModelStore{
-		cache: make(map[uint64]*rcfEntry),
-		lru:   list.New(),
-	}
-	orig := RCFStoreCacheSize
-	RCFStoreCacheSize = 1
-	t.Cleanup(func() { RCFStoreCacheSize = orig })
+	store := newRCFModelStore(nil, 1)
 
 	store.forest(1, 5, 16)
 	store.forest(2, 5, 16)
@@ -227,15 +213,7 @@ func TestRCFStoreCacheSizeEnvVar(t *testing.T) {
 
 func TestRCFModelStoreDiskRoundtrip(t *testing.T) {
 	dir := t.TempDir()
-
-	origPath := RCFStorePath
-	RCFStorePath = dir
-	t.Cleanup(func() { RCFStorePath = origPath })
-
-	store := &rcfModelStore{
-		cache: make(map[uint64]*rcfEntry),
-		lru:   list.New(),
-	}
+	store := newRCFModelStore(NewDiskRCFStore(dir), 1024)
 
 	fp := uint64(0xdeadbeef)
 	e := store.forest(fp, 5, 16)
@@ -250,13 +228,10 @@ func TestRCFModelStoreDiskRoundtrip(t *testing.T) {
 	store.markDirty(fp)
 	store.Checkpoint()
 
-	_, err := os.Stat(rcfDiskPath(fp))
+	_, err := os.Stat(filepath.Join(dir, fmt.Sprintf("%016x.rcf", fp)))
 	require.NoError(t, err)
 
-	store2 := &rcfModelStore{
-		cache: make(map[uint64]*rcfEntry),
-		lru:   list.New(),
-	}
+	store2 := newRCFModelStore(NewDiskRCFStore(dir), 1024)
 	e2 := store2.forest(fp, 5, 16)
 	require.Equal(t, wantLastTS, e2.forest.LastTS)
 }

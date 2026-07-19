@@ -17,12 +17,10 @@ package promql
 //
 // Architecture
 // ────────────
-//   - rcfModelStore is the process-global singleton (rcfModels).
-//   - In-memory: an LRU cache of *rcfEntry keyed by series fingerprint.
-//     Capacity is RCFStoreCacheSize (default 1024 models).
-//   - On-disk: one gob file per model under RCFStorePath/<fingerprint>.rcf.
-//     Empty RCFStorePath disables persistence (memory-only mode).
-//   - Lifecycle: create → warm-up (ingest) → checkpoint → restore → prune/delete.
+//   - rcfModelStore is an LRU cache of *rcfEntry keyed by series fingerprint.
+//   - Persistence is delegated to a RCFStore implementation.
+//     Use newDiskRCFStore for restart-safe persistence, or newMemoryRCFStore
+//     (the default) for in-process-only storage.
 //   - Concurrency: the store-level mutex protects the LRU; each model has its
 //     own mutex so concurrent PromQL evaluations on different series do not
 //     block each other.
@@ -36,16 +34,79 @@ import (
 	"sync"
 )
 
-// ── configuration ─────────────────────────────────────────────────────────────
+// ── persistence interface ─────────────────────────────────────────────────────
 
-// RCFStorePath is the directory used for on-disk model persistence.
-// Set to a non-empty path before the first rcf() evaluation to enable
-// restart-safe persistence. An empty string disables disk I/O.
-var RCFStorePath = ""
+// RCFStore is the persistence back-end for RCF models.
+// Implementations must be safe for concurrent use.
+type RCFStore interface {
+	// Load returns the persisted forest for the given fingerprint, or nil if
+	// none exists or the stored model is incompatible with numTrees/sampleSize.
+	Load(fingerprint uint64, numTrees, sampleSize int) *rcfForest
+	// Save persists the forest for the given fingerprint.
+	Save(fingerprint uint64, forest *rcfForest)
+	// Delete removes any persisted model for the given fingerprint.
+	Delete(fingerprint uint64)
+}
 
-// RCFStoreCacheSize is the maximum number of models kept in memory at once.
-// Models evicted from the LRU are checkpointed to disk if RCFStorePath is set.
-var RCFStoreCacheSize = 1024
+// ── memory-only store ─────────────────────────────────────────────────────────
+
+type memoryRCFStore struct{}
+
+func newMemoryRCFStore() RCFStore                          { return memoryRCFStore{} }
+func (memoryRCFStore) Load(uint64, int, int) *rcfForest    { return nil }
+func (memoryRCFStore) Save(uint64, *rcfForest)             {}
+func (memoryRCFStore) Delete(uint64)                       {}
+
+// ── disk store ────────────────────────────────────────────────────────────────
+
+type diskRCFStore struct{ dir string }
+
+func NewDiskRCFStore(dir string) RCFStore { return &diskRCFStore{dir: dir} }
+
+func (s *diskRCFStore) path(fingerprint uint64) string {
+	return filepath.Join(s.dir, fmt.Sprintf("%016x.rcf", fingerprint))
+}
+
+func (s *diskRCFStore) Load(fingerprint uint64, numTrees, sampleSize int) *rcfForest {
+	f, err := os.Open(s.path(fingerprint))
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	var snap rcfDiskModel
+	if err := gob.NewDecoder(f).Decode(&snap); err != nil {
+		return nil
+	}
+	forest := forestFromSnapshot(&snap)
+	if forest.NumTrees != numTrees || forest.SampleSize != sampleSize {
+		return nil
+	}
+	return forest
+}
+
+func (s *diskRCFStore) Save(fingerprint uint64, forest *rcfForest) {
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+		return
+	}
+	snap := forestToSnapshot(forest)
+	tmp := s.path(fingerprint) + ".tmp"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return
+	}
+	if err := gob.NewEncoder(f).Encode(snap); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return
+	}
+	f.Close()
+	// Atomic rename for restart-safety.
+	_ = os.Rename(tmp, s.path(fingerprint))
+}
+
+func (s *diskRCFStore) Delete(fingerprint uint64) {
+	_ = os.Remove(s.path(fingerprint))
+}
 
 // ── model entry ───────────────────────────────────────────────────────────────
 
@@ -90,19 +151,30 @@ type rcfNodeSnapshot struct {
 // ── store ─────────────────────────────────────────────────────────────────────
 
 type rcfModelStore struct {
-	mu    sync.Mutex
-	cache map[uint64]*rcfEntry
-	lru   *list.List // front = most recently used
+	mu        sync.Mutex
+	cache     map[uint64]*rcfEntry
+	lru       *list.List // front = most recently used
+	backend   RCFStore
+	cacheSize int
 }
 
-// rcfModels is the process-global model store.
-var rcfModels = &rcfModelStore{
-	cache: make(map[uint64]*rcfEntry),
-	lru:   list.New(),
+func newRCFModelStore(backend RCFStore, cacheSize int) *rcfModelStore {
+	if backend == nil {
+		backend = newMemoryRCFStore()
+	}
+	if cacheSize <= 0 {
+		cacheSize = 1024
+	}
+	return &rcfModelStore{
+		cache:     make(map[uint64]*rcfEntry),
+		lru:       list.New(),
+		backend:   backend,
+		cacheSize: cacheSize,
+	}
 }
 
-// forest returns the in-memory entry for fingerprint, loading from disk or
-// creating a new forest if necessary. The caller must hold entry.mu while
+// forest returns the in-memory entry for fingerprint, loading from the backend
+// or creating a new forest if necessary. The caller must hold entry.mu while
 // using entry.forest.
 func (s *rcfModelStore) forest(fingerprint uint64, numTrees, sampleSize int) *rcfEntry {
 	s.mu.Lock()
@@ -120,9 +192,9 @@ func (s *rcfModelStore) forest(fingerprint uint64, numTrees, sampleSize int) *rc
 		return e
 	}
 
-	// Not in cache: try disk, then create fresh.
+	// Not in cache: try backend, then create fresh.
 	e := &rcfEntry{fingerprint: fingerprint}
-	if f := s.loadFromDisk(fingerprint); f != nil && f.NumTrees == numTrees && f.SampleSize == sampleSize {
+	if f := s.backend.Load(fingerprint, numTrees, sampleSize); f != nil {
 		e.forest = f
 	} else {
 		e.forest = newRCFForest(numTrees, sampleSize, rcfSeedFromString("")^fingerprint)
@@ -143,7 +215,7 @@ func (s *rcfModelStore) markDirty(fingerprint uint64) {
 	s.mu.Unlock()
 }
 
-// Checkpoint writes all dirty models to disk.
+// Checkpoint writes all dirty models to the backend.
 func (s *rcfModelStore) Checkpoint() {
 	s.mu.Lock()
 	dirty := make([]*rcfEntry, 0)
@@ -155,13 +227,13 @@ func (s *rcfModelStore) Checkpoint() {
 	s.mu.Unlock()
 	for _, e := range dirty {
 		e.mu.Lock()
-		s.saveToDisk(e)
+		s.backend.Save(e.fingerprint, e.forest)
 		e.dirty = false
 		e.mu.Unlock()
 	}
 }
 
-// Delete removes a model from memory and disk.
+// Delete removes a model from memory and the backend.
 func (s *rcfModelStore) Delete(fingerprint uint64) {
 	s.mu.Lock()
 	if e, ok := s.cache[fingerprint]; ok {
@@ -169,15 +241,13 @@ func (s *rcfModelStore) Delete(fingerprint uint64) {
 		delete(s.cache, fingerprint)
 	}
 	s.mu.Unlock()
-	if RCFStorePath != "" {
-		_ = os.Remove(rcfDiskPath(fingerprint))
-	}
+	s.backend.Delete(fingerprint)
 }
 
 // evictIfNeeded removes the least-recently-used model when the cache is full.
 // Must be called with s.mu held.
 func (s *rcfModelStore) evictIfNeeded() {
-	for s.lru.Len() > RCFStoreCacheSize {
+	for s.lru.Len() > s.cacheSize {
 		back := s.lru.Back()
 		if back == nil {
 			break
@@ -187,55 +257,10 @@ func (s *rcfModelStore) evictIfNeeded() {
 		delete(s.cache, e.fingerprint)
 		if e.dirty {
 			e.mu.Lock()
-			s.saveToDisk(e)
+			s.backend.Save(e.fingerprint, e.forest)
 			e.mu.Unlock()
 		}
 	}
-}
-
-// ── disk I/O ──────────────────────────────────────────────────────────────────
-
-func rcfDiskPath(fingerprint uint64) string {
-	return filepath.Join(RCFStorePath, fmt.Sprintf("%016x.rcf", fingerprint))
-}
-
-func (s *rcfModelStore) loadFromDisk(fingerprint uint64) *rcfForest {
-	if RCFStorePath == "" {
-		return nil
-	}
-	f, err := os.Open(rcfDiskPath(fingerprint))
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-	var snap rcfDiskModel
-	if err := gob.NewDecoder(f).Decode(&snap); err != nil {
-		return nil
-	}
-	return forestFromSnapshot(&snap)
-}
-
-func (s *rcfModelStore) saveToDisk(e *rcfEntry) {
-	if RCFStorePath == "" {
-		return
-	}
-	if err := os.MkdirAll(RCFStorePath, 0o755); err != nil {
-		return
-	}
-	snap := forestToSnapshot(e.forest)
-	tmp := rcfDiskPath(e.fingerprint) + ".tmp"
-	f, err := os.Create(tmp)
-	if err != nil {
-		return
-	}
-	if err := gob.NewEncoder(f).Encode(snap); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return
-	}
-	f.Close()
-	// Atomic rename for restart-safety.
-	_ = os.Rename(tmp, rcfDiskPath(e.fingerprint))
 }
 
 // ── snapshot serialisation ────────────────────────────────────────────────────

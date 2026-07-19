@@ -342,6 +342,14 @@ type EngineOpts struct {
 
 	// Parser is the PromQL parser instance used for parsing expressions.
 	Parser parser.Parser
+
+	// RCFBackend is the persistence back-end for RCF models.
+	// If nil, models are kept in memory only (no disk persistence).
+	RCFBackend RCFStore
+
+	// RCFCacheSize is the maximum number of RCF models kept in the LRU cache.
+	// Defaults to 1024 when zero.
+	RCFCacheSize int
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -363,6 +371,7 @@ type Engine struct {
 	enableTypeAndUnitLabels  bool
 	useStartTimestamps       bool
 	parser                   parser.Parser
+	rcfStore                 *rcfModelStore
 }
 
 // NewEngine returns a new engine.
@@ -500,6 +509,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
 		useStartTimestamps:       opts.UseStartTimestamps,
 		parser:                   opts.Parser,
+		rcfStore:                 newRCFModelStore(opts.RCFBackend, opts.RCFCacheSize),
 	}
 }
 
@@ -817,6 +827,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 			useStartTimestamps:       ng.useStartTimestamps,
 			querier:                  querier,
+			rcfStore:                 ng.rcfStore,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
 
@@ -878,6 +889,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 		useStartTimestamps:       ng.useStartTimestamps,
 		querier:                  querier,
+		rcfStore:                 ng.rcfStore,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
 	val, warnings, err := evaluator.Eval(ctxInnerEval, s.Expr)
@@ -1166,6 +1178,7 @@ type evaluator struct {
 	enableTypeAndUnitLabels  bool
 	useStartTimestamps       bool
 	querier                  storage.Querier
+	rcfStore                 *rcfModelStore
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -1230,6 +1243,9 @@ type EvalNodeHelper struct {
 	Ts int64
 	// Vector that can be used for output.
 	Out Vector
+
+	// RCFStore is the model store used by rcf() and rcf_attribution().
+	RCFStore *rcfModelStore
 
 	// Caches.
 	// funcHistogramQuantile and funcHistogramFraction for classic histograms.
@@ -1441,7 +1457,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 			biggestLen = len(matrixes[i])
 		}
 	}
-	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
+	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen), enableDelayedNameRemoval: ev.enableDelayedNameRemoval, RCFStore: ev.rcfStore}
 	type seriesAndTimestamp struct {
 		Series
 		ts int64
@@ -1599,7 +1615,7 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 
 	var annos annotations.Annotations
 
-	enh := &EvalNodeHelper{enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
+	enh := &EvalNodeHelper{enableDelayedNameRemoval: ev.enableDelayedNameRemoval, RCFStore: ev.rcfStore}
 	tempNumSamples := ev.currentSamples
 
 	// Create a mapping from input series to output groups.
@@ -1974,6 +1990,7 @@ func (ev *evaluator) runSubquery(ctx context.Context, e *parser.SubqueryExpr) (p
 		enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 		useStartTimestamps:       ev.useStartTimestamps,
 		querier:                  ev.querier,
+		rcfStore:                 ev.rcfStore,
 	}
 
 	if subqStart != ev.startTimestamp {
@@ -2227,7 +2244,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		var histograms []HPoint
 		var prevSS *Series
 		inMatrix := make(Matrix, 1)
-		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
+		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), enableDelayedNameRemoval: ev.enableDelayedNameRemoval, RCFStore: ev.rcfStore}
 		// Process all the calls for one time series at a time.
 		// For anchored and smoothed selectors, we need to iterate over a
 		// larger range than the query range to account for the lookback delta.
@@ -2578,6 +2595,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			useStartTimestamps:       ev.useStartTimestamps,
 			querier:                  ev.querier,
+			rcfStore:                 ev.rcfStore,
 		}
 		res, ws := newEv.eval(ctx, e.Expr)
 		ev.currentSamples = newEv.currentSamples

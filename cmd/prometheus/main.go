@@ -799,19 +799,21 @@ func main() {
 
 	// Apply RCF model store configuration.
 	// Priority: CLI flag > config file > default (<storage.tsdb.path>/rcf).
+	var rcfStorePath string
 	switch {
 	case cfg.rcfStorePath != "":
-		promql.RCFStorePath = cfg.rcfStorePath
+		rcfStorePath = cfg.rcfStorePath
 	case cfgFile.StorageConfig.RCFConfig != nil && cfgFile.StorageConfig.RCFConfig.StorePath != "":
-		promql.RCFStorePath = cfgFile.StorageConfig.RCFConfig.StorePath
+		rcfStorePath = cfgFile.StorageConfig.RCFConfig.StorePath
 	default:
-		promql.RCFStorePath = filepath.Join(localStoragePath, "rcf")
+		rcfStorePath = filepath.Join(localStoragePath, "rcf")
 	}
+	var rcfCacheSize int
 	switch {
 	case cfg.rcfStoreCacheSize > 0:
-		promql.RCFStoreCacheSize = cfg.rcfStoreCacheSize
+		rcfCacheSize = cfg.rcfStoreCacheSize
 	case cfgFile.StorageConfig.RCFConfig != nil && cfgFile.StorageConfig.RCFConfig.CacheSize > 0:
-		promql.RCFStoreCacheSize = cfgFile.StorageConfig.RCFConfig.CacheSize
+		rcfCacheSize = cfgFile.StorageConfig.RCFConfig.CacheSize
 	}
 
 	// Set Go runtime parameters before we get too far into initialization.
@@ -1035,6 +1037,8 @@ func main() {
 			UseStartTimestamps:       cfg.useStartTimestamps,
 			FeatureRegistry:          features.DefaultRegistry,
 			Parser:                   promqlParser,
+			RCFBackend:               promql.NewDiskRCFStore(rcfStorePath),
+			RCFCacheSize:             rcfCacheSize,
 		}
 
 		queryEngine = promql.NewEngine(opts)
