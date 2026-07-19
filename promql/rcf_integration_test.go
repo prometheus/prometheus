@@ -22,6 +22,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
@@ -31,6 +32,7 @@ func newRCFTestEngine(t *testing.T) *promql.Engine {
 	return promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
 		MaxSamples: 50000,
 		Timeout:    30 * time.Second,
+		Parser:     parser.NewParser(promqltest.TestParserOpts),
 	})
 }
 
