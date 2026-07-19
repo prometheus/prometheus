@@ -3287,6 +3287,7 @@ func quickSelectMedian(vals []float64) float64 {
 // quickSelect partially sorts data so that data[k] is the k-th smallest element.
 func quickSelect(data []float64, k int) float64 {
 	lo, hi := 0, len(data)-1
+outer:
 	for lo < hi {
 		pivot := data[(lo+hi)/2]
 		i, j := lo, hi
@@ -3303,12 +3304,13 @@ func quickSelect(data []float64, k int) float64 {
 				j--
 			}
 		}
-		if k <= j {
+		switch {
+		case k <= j:
 			hi = j
-		} else if k >= i {
+		case k >= i:
 			lo = i
-		} else {
-			return data[k]
+		default:
+			break outer
 		}
 	}
 	return data[k]
@@ -3832,10 +3834,7 @@ func funcEntropy(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNo
 		}
 		n := len(samples)
 		// Sturges rule for bin count, capped at 32 to stay on stack.
-		nBins := max(int(math.Ceil(math.Log2(float64(n))))+1, 2)
-		if nBins > 32 {
-			nBins = 32
-		}
+		nBins := min(max(int(math.Ceil(math.Log2(float64(n))))+1, 2), 32)
 		minV, maxV := samples[0].V, samples[0].V
 		for _, s := range samples[1:] {
 			if s.V < minV {
