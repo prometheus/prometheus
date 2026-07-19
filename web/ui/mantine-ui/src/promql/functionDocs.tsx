@@ -596,6 +596,14 @@ const funcDocs: Record<string, React.ReactNode> = {
   burst_score: (
     <>
       <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
         <code>burst_score(v range-vector, alpha scalar=0.1)</code> detects sudden spikes or bursts in a time series
         using an Exponentially Weighted Moving Average (EWMA) baseline and variance. It returns a score in{" "}
         <code>[0, 1]</code> where <code>1</code> means a strong burst.
@@ -658,6 +666,14 @@ const funcDocs: Record<string, React.ReactNode> = {
   ),
   changepoint: (
     <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
       <p>
         <code>changepoint(v range-vector)</code> detects sudden baseline shifts in a time series using the CUSUM
         (Cumulative Sum) algorithm. It returns a score in <code>[0, 1]</code>
@@ -1190,6 +1206,14 @@ const funcDocs: Record<string, React.ReactNode> = {
   entropy: (
     <>
       <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
         <code>entropy(v range-vector)</code> computes the normalised Shannon entropy of the value distribution within
         the range window. It returns a score in <code>[0, 1]</code> where <code>0</code>
         means all values are identical and <code>1</code> means values are spread uniformly across all histogram bins.
@@ -1222,6 +1246,14 @@ const funcDocs: Record<string, React.ReactNode> = {
   ),
   ewma: (
     <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
       <p>
         <code>ewma(v range-vector, alpha scalar=0.2)</code> calculates the Exponentially Weighted Moving Average (EWMA)
         anomaly score for each float time series in the range vector <code>v</code>
@@ -1810,6 +1842,14 @@ const funcDocs: Record<string, React.ReactNode> = {
   hst: (
     <>
       <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
         <code>hst(v range-vector, trees scalar=100, depth scalar=8)</code> computes the density-based Half-Space Trees
         (HST) anomaly score for each float time series in the range vector <code>v</code>.
       </p>
@@ -1852,6 +1892,14 @@ const funcDocs: Record<string, React.ReactNode> = {
   ),
   hw: (
     <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
       <p>
         <code>hw(v range-vector, alpha scalar=0.2, beta scalar=0.1)</code> computes the Holt-Winters (double exponential
         smoothing) anomaly score for each float time series in the range vector <code>v</code>.
@@ -2146,6 +2194,14 @@ const funcDocs: Record<string, React.ReactNode> = {
   isf: (
     <>
       <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
         <code>isf(v range-vector, trees scalar=100, sample_size scalar=256)</code> computes the path-length based
         Isolation Forest anomaly score for each float time series in the range vector <code>v</code>.
       </p>
@@ -2413,6 +2469,14 @@ const funcDocs: Record<string, React.ReactNode> = {
   ),
   mad: (
     <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
       <p>
         <code>mad(v range-vector, threshold scalar=3)</code> computes the Median Absolute Deviation (MAD) anomaly score
         for each float time series in the range vector <code>v</code>.
@@ -3033,6 +3097,14 @@ const funcDocs: Record<string, React.ReactNode> = {
   qscore: (
     <>
       <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
         <code>qscore(v range-vector, lower scalar=0.05, upper scalar=0.95)</code> computes the quantile-based deviation
         score for each float time series in the range vector <code>v</code>.
       </p>
@@ -3257,6 +3329,14 @@ const funcDocs: Record<string, React.ReactNode> = {
   random_cut_score: (
     <>
       <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
         <code>random_cut_score(v range-vector, trees scalar=100)</code> computes a stateless random-cut anomaly score
         for each float time series in the range vector <code>v</code>.
       </p>
@@ -3363,6 +3443,14 @@ const funcDocs: Record<string, React.ReactNode> = {
   rcf: (
     <>
       <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
         <code>rcf(v range-vector, trees scalar=100, sample_size scalar=256)</code> computes a streaming Random Cut
         Forest (RCF) anomaly score for each float time series in the range vector <code>v</code>, based on Guha et al.
         (ICML 2016).
@@ -3452,6 +3540,14 @@ const funcDocs: Record<string, React.ReactNode> = {
   rcf_attribution: (
     <>
       <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
         <code>rcf_attribution(v range-vector, trees scalar=100, sample_size scalar=256)</code>
         uses the same streaming Random Cut Forest model as <code>rcf()</code> and returns the per-dimension contribution
         to the anomaly score for each input series.
@@ -3518,6 +3614,14 @@ const funcDocs: Record<string, React.ReactNode> = {
   ),
   seasonal: (
     <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
       <p>
         <code>seasonal(v range-vector, period scalar=24, alpha scalar=0.2)</code> computes the seasonal time-series
         pattern anomaly score for each float time series in the range vector <code>v</code>.
@@ -4296,6 +4400,14 @@ const funcDocs: Record<string, React.ReactNode> = {
   trend_score: (
     <>
       <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
         <code>trend_score(v range-vector)</code> detects values that deviate abnormally from the linear trend of the
         series using ordinary least-squares regression. It returns a score in <code>[0, 1]</code> where <code>0</code>{" "}
         means the last value fits the trend perfectly and
@@ -4784,6 +4896,14 @@ const funcDocs: Record<string, React.ReactNode> = {
   ),
   zscore: (
     <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
       <p>
         <code>zscore(v range-vector, threshold scalar=3)</code> computes the standard deviation (Z-score) deviation
         score for each float time series in the range vector <code>v</code>.

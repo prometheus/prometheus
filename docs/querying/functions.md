@@ -82,6 +82,10 @@ otherwise exactly the same values, or vice versa, does not count as a change.
 
 ## `burst_score()`
 
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
 `burst_score(v range-vector, alpha scalar=0.1)` detects sudden spikes or bursts
 in a time series using an Exponentially Weighted Moving Average (EWMA) baseline
 and variance. It returns a score in `[0, 1]` where `1` means a strong burst.
@@ -110,6 +114,10 @@ Alerts when the current request rate is a strong burst relative to the recent
 EWMA baseline.
 
 ## `changepoint()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
 
 `changepoint(v range-vector)` detects sudden baseline shifts in a time series
 using the CUSUM (Cumulative Sum) algorithm. It returns a score in `[0, 1]`
@@ -261,6 +269,10 @@ by an info-level annotation.
 
 ## `ewma()`
 
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
 `ewma(v range-vector, alpha scalar=0.2)` calculates the Exponentially Weighted Moving 
 Average (EWMA) anomaly score for each float time series in the range vector `v` 
 using the smoothing factor `alpha`.
@@ -295,6 +307,10 @@ of `> 0.85` filters out normal statistical noise, ensuring we only alert when th
 deviation is at least 3 standard deviations away.
 
 ## `entropy()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
 
 `entropy(v range-vector)` computes the normalised Shannon entropy of the value
 distribution within the range window. It returns a score in `[0, 1]` where `0`
@@ -588,6 +604,10 @@ variance of observations for each native histogram sample in `v`.
 
 ## `hw()`
 
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
 `hw(v range-vector, alpha scalar=0.2, beta scalar=0.1)` computes the Holt-Winters 
 (double exponential smoothing) anomaly score for each float time series in the range vector `v`.
 
@@ -617,6 +637,10 @@ A score above `0.8` indicates that the disk is depleting significantly faster th
 Works with both float and native histogram series (using histogram average).
 
 ## `hst()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
 
 `hst(v range-vector, trees scalar=100, depth scalar=8)` computes the density-based Half-Space 
 Trees (HST) anomaly score for each float time series in the range vector `v`.
@@ -833,6 +857,10 @@ counter resets when your target restarts.
 
 ## `isf()`
 
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
 `isf(v range-vector, trees scalar=100, sample_size scalar=256)` computes the 
 path-length based Isolation Forest anomaly score for each float time series in the 
 range vector `v`.
@@ -937,6 +965,10 @@ cases are equivalent to those in `ln`.
 
 ## `mad()`
 
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
 `mad(v range-vector, threshold scalar=3)` computes the Median Absolute Deviation (MAD) 
 anomaly score for each float time series in the range vector `v`.
 
@@ -996,6 +1028,10 @@ samples, only the float samples are used as input, which is flagged by an
 info-level annotation.
 
 ## `qscore()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
 
 `qscore(v range-vector, lower scalar=0.05, upper scalar=0.95)` computes the 
 quantile-based deviation score for each float time series in the range vector `v`.
@@ -1063,6 +1099,10 @@ counter resets when your target restarts.
 
 ## `random_cut_score()`
 
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
 `random_cut_score(v range-vector, trees scalar=100)` computes a stateless
 random-cut anomaly score for each float time series in the range vector `v`.
 
@@ -1094,6 +1134,10 @@ weighted moving averages, producing an anomaly score close to 1.0.
 Works with both float and native histogram series (using histogram average).
 
 ## `rcf()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
 
 `rcf(v range-vector, trees scalar=100, sample_size scalar=256)` computes a
 streaming Random Cut Forest (RCF) anomaly score for each float time series in
@@ -1148,6 +1192,10 @@ learned normal behaviour.
 Works with both float and native histogram series (using histogram average).
 
 ## `rcf_attribution()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
 
 `rcf_attribution(v range-vector, trees scalar=100, sample_size scalar=256)`
 uses the same streaming Random Cut Forest model as `rcf()` and returns the
@@ -1207,6 +1255,10 @@ to their sign, defined as this: 1 if v is positive, -1 if v is negative and 0
 if v is equal to zero. Histogram samples in the input vector are ignored silently.
 
 ## `seasonal()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
 
 `seasonal(v range-vector, period scalar=24, alpha scalar=0.2)` computes the seasonal time-series
 pattern anomaly score for each float time series in the range vector `v`.
@@ -1308,6 +1360,10 @@ float and histogram samples in the same way.
 
 ## `trend_score()`
 
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
 `trend_score(v range-vector)` detects values that deviate abnormally from the
 linear trend of the series using ordinary least-squares regression. It returns
 a score in `[0, 1]` where `0` means the last value fits the trend perfectly and
@@ -1345,6 +1401,10 @@ a single-element instant vector with no labels.
 times in UTC. Histogram samples in the input vector are ignored silently.
 
 ## `zscore()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
 
 `zscore(v range-vector, threshold scalar=3)` computes the standard deviation (Z-score) 
 deviation score for each float time series in the range vector `v`.
