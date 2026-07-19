@@ -2705,7 +2705,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"rad":                          funcRad,
 	"range":                        nil, // Folded into NumberLiteral by foldQueryContextFunctions.
 	"rate":                         funcRate,
-	"rcf":                          funcRCF,
+	"random_cut_score":             funcRandomCutScore,
 	"resets":                       funcResets,
 	"round":                        funcRound,
 	"scalar":                       funcScalar,
@@ -3014,13 +3014,18 @@ func funcEWMA(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNo
 	return enh.Out, nil
 }
 
-func funcRCF(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+// funcRandomCutScore computes a stateless random-cut anomaly score.
+// It repeatedly partitions the history with random axis-aligned cuts until the
+// query point is isolated, returning a normalised depth score in [0, 1].
+// This is NOT a streaming Random Cut Forest: no model is persisted between
+// evaluations and the cost is O(trees × N log N) per call.
+func funcRandomCutScore(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	trees := 100
 	if len(args) > 1 {
 		trees = int(args[1].(*parser.NumberLiteral).Val)
 	}
 	if trees < 1 {
-		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("RCF trees must be positive, got %d", trees))
+		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("random_cut_score trees must be positive, got %d", trees))
 	}
 	for _, series := range matrixVal {
 		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
@@ -3034,7 +3039,7 @@ func funcRCF(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNod
 		target := features[len(features)-1]
 		history := features[:len(features)-1]
 		seed := rcfSeedFromString(getMetricName(series.Metric))
-		score := rcfScoreInMemory(history, target, trees, seed)
+		score := randomCutScoreInMemory(history, target, trees, seed)
 		enh.Out = append(enh.Out, Sample{
 			Metric: series.Metric,
 			F:      score,
@@ -3058,7 +3063,10 @@ func rcfSeedFromString(name string) uint64 {
 	return h
 }
 
-func rcfScoreInMemory(points [][6]float64, point [6]float64, trees int, seed uint64) float64 {
+// randomCutScoreInMemory is the stateless scoring kernel for funcRandomCutScore.
+// It isolates point from points using random axis-aligned cuts and returns a
+// normalised depth score. It is NOT a persistent Random Cut Forest.
+func randomCutScoreInMemory(points [][6]float64, point [6]float64, trees int, seed uint64) float64 {
 	if len(points) < 2 || trees == 0 {
 		return 0
 	}

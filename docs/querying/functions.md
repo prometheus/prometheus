@@ -1061,29 +1061,34 @@ or a function aggregating over time (any function ending in `_over_time`),
 always take a `rate()` first, then aggregate. Otherwise `rate()` cannot detect
 counter resets when your target restarts.
 
-## `rcf()`
+## `random_cut_score()`
 
-`rcf(v range-vector, trees scalar=100)` computes the Random Cut Forest
-(RCF) multi-dimensional anomaly score for each float time series in the range vector `v`.
+`random_cut_score(v range-vector, trees scalar=100)` computes a stateless
+random-cut anomaly score for each float time series in the range vector `v`.
 
-The `trees` parameter specifies the forest size. RCF dynamically builds random bounding boxes of the data. 
-It structures features over time by looking at the value, velocity, acceleration, and EWMA statistics. 
-The anomaly score (between `0` and `1`) is calculated based on the displacement caused
-by inserting the latest point into the forest.
+The algorithm repeatedly partitions the history with random axis-aligned cuts
+until the query point is isolated, returning a normalised depth score in
+`[0, 1]`. It is **not** a streaming Random Cut Forest: no model is persisted
+between evaluations and the cost is O(trees × N log N) per call.
 
-**When to use:** RCF is the most powerful and comprehensive algorithm in the suite. 
-Use RCF for complex, multi-dimensional anomalies that cannot be detected by simple 
-value thresholds, such as phase shifts, sudden change of variance (jitter), or structural breaks.
+The `trees` parameter specifies the number of independent random-cut trials.
+Features are derived from the raw value, velocity, acceleration, and EWMA
+statistics of the time series.
+
+**When to use:** Use `random_cut_score` for complex, multi-dimensional
+anomalies such as phase shifts, sudden variance changes (jitter), or structural
+breaks that cannot be detected by simple value thresholds.
 
 **Usecase example (Latency Jitter):**
-A service normally responds in around 50 ms with very little variation. After a deployment, 
-lock contention causes response times to rapidly oscillate between 20 ms and 80 ms while 
-the average latency remains close to 50 ms. Traditional threshold- or mean-based detectors 
-may not trigger because the baseline is unchanged. RCF captures the changing shape of the 
-time series through features such as velocity, acceleration, and exponentially weighted moving
-averages, producing an anomaly score close to 1.0.
+A service normally responds in around 50 ms with very little variation. After a
+deployment, lock contention causes response times to rapidly oscillate between
+20 ms and 80 ms while the average latency remains close to 50 ms.
+Traditional threshold- or mean-based detectors may not trigger because the
+baseline is unchanged. `random_cut_score` captures the changing shape of the
+time series through features such as velocity, acceleration, and exponentially
+weighted moving averages, producing an anomaly score close to 1.0.
 
-*   **Query**: `rcf(http_requests_total{job="gateway"}[24h], 100) > 0.8`
+*   **Query**: `random_cut_score(http_requests_total{job="gateway"}[24h], 100) > 0.8`
 *   **Why**: Using `100` trees offers a great balance between accuracy and CPU evaluation time.
 
 Works with both float and native histogram series (using histogram average).

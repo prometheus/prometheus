@@ -3254,6 +3254,56 @@ const funcDocs: Record<string, React.ReactNode> = {
       </ul>
     </>
   ),
+  random_cut_score: (
+    <>
+      <p>
+        <code>random_cut_score(v range-vector, trees scalar=100)</code> computes a stateless random-cut anomaly score
+        for each float time series in the range vector <code>v</code>.
+      </p>
+
+      <p>
+        The algorithm repeatedly partitions the history with random axis-aligned cuts until the query point is isolated,
+        returning a normalised depth score in
+        <code>[0, 1]</code>. It is <strong>not</strong> a streaming Random Cut Forest: no model is persisted between
+        evaluations and the cost is O(trees × N log N) per call.
+      </p>
+
+      <p>
+        The <code>trees</code> parameter specifies the number of independent random-cut trials. Features are derived
+        from the raw value, velocity, acceleration, and EWMA statistics of the time series.
+      </p>
+
+      <p>
+        <strong>When to use:</strong> Use <code>random_cut_score</code> for complex, multi-dimensional anomalies such as
+        phase shifts, sudden variance changes (jitter), or structural breaks that cannot be detected by simple value
+        thresholds.
+      </p>
+
+      <p>
+        <strong>Usecase example (Latency Jitter):</strong>A service normally responds in around 50 ms with very little
+        variation. After a deployment, lock contention causes response times to rapidly oscillate between 20 ms and 80
+        ms while the average latency remains close to 50 ms. Traditional threshold- or mean-based detectors may not
+        trigger because the baseline is unchanged. <code>random_cut_score</code> captures the changing shape of the time
+        series through features such as velocity, acceleration, and exponentially weighted moving averages, producing an
+        anomaly score close to 1.0.
+      </p>
+
+      <ul>
+        <li>
+          <strong>Query</strong>:{" "}
+          <code>
+            random_cut_score(http_requests_total{"{"}job=&quot;gateway&quot;{"}"}[24h], 100) &gt; 0.8
+          </code>
+        </li>
+        <li>
+          <strong>Why</strong>: Using <code>100</code> trees offers a great balance between accuracy and CPU evaluation
+          time.
+        </li>
+      </ul>
+
+      <p>Works with both float and native histogram series (using histogram average).</p>
+    </>
+  ),
   range: (
     <>
       <p>
@@ -3308,51 +3358,6 @@ const funcDocs: Record<string, React.ReactNode> = {
         <code>rate()</code> first, then aggregate. Otherwise <code>rate()</code> cannot detect counter resets when your
         target restarts.
       </p>
-    </>
-  ),
-  rcf: (
-    <>
-      <p>
-        <code>rcf(v range-vector, trees scalar=100)</code> computes the Random Cut Forest (RCF) multi-dimensional
-        anomaly score for each float time series in the range vector <code>v</code>.
-      </p>
-
-      <p>
-        The <code>trees</code> parameter specifies the forest size. RCF dynamically builds random bounding boxes of the
-        data. It structures features over time by looking at the value, velocity, acceleration, and EWMA statistics. The
-        anomaly score (between <code>0</code> and <code>1</code>) is calculated based on the displacement caused by
-        inserting the latest point into the forest.
-      </p>
-
-      <p>
-        <strong>When to use:</strong> RCF is the most powerful and comprehensive algorithm in the suite. Use RCF for
-        complex, multi-dimensional anomalies that cannot be detected by simple value thresholds, such as phase shifts,
-        sudden change of variance (jitter), or structural breaks.
-      </p>
-
-      <p>
-        <strong>Usecase example (Latency Jitter):</strong>A service normally responds in around 50 ms with very little
-        variation. After a deployment, lock contention causes response times to rapidly oscillate between 20 ms and 80
-        ms while the average latency remains close to 50 ms. Traditional threshold- or mean-based detectors may not
-        trigger because the baseline is unchanged. RCF captures the changing shape of the time series through features
-        such as velocity, acceleration, and exponentially weighted moving averages, producing an anomaly score close to
-        1.0.
-      </p>
-
-      <ul>
-        <li>
-          <strong>Query</strong>:{" "}
-          <code>
-            rcf(http_requests_total{"{"}job=&quot;gateway&quot;{"}"}[24h], 100) &gt; 0.8
-          </code>
-        </li>
-        <li>
-          <strong>Why</strong>: Using <code>100</code> trees offers a great balance between accuracy and CPU evaluation
-          time.
-        </li>
-      </ul>
-
-      <p>Works with both float and native histogram series (using histogram average).</p>
     </>
   ),
   resets: (

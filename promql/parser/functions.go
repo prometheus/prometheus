@@ -438,9 +438,10 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
-	"rcf": {
-		Name:       "rcf",
+	"random_cut_score": {
+		Name:       "random_cut_score",
 		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		Variadic:   1,
 		ReturnType: ValueTypeVector,
 	},
 	"resets": {
