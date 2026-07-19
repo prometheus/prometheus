@@ -170,7 +170,7 @@ func (s *rcfModelStore) Delete(fingerprint uint64) {
 	}
 	s.mu.Unlock()
 	if RCFStorePath != "" {
-		_ = os.Remove(s.diskPath(fingerprint))
+		_ = os.Remove(rcfDiskPath(fingerprint))
 	}
 }
 
@@ -195,7 +195,7 @@ func (s *rcfModelStore) evictIfNeeded() {
 
 // ── disk I/O ──────────────────────────────────────────────────────────────────
 
-func (s *rcfModelStore) diskPath(fingerprint uint64) string {
+func rcfDiskPath(fingerprint uint64) string {
 	return filepath.Join(RCFStorePath, fmt.Sprintf("%016x.rcf", fingerprint))
 }
 
@@ -203,7 +203,7 @@ func (s *rcfModelStore) loadFromDisk(fingerprint uint64) *rcfForest {
 	if RCFStorePath == "" {
 		return nil
 	}
-	f, err := os.Open(s.diskPath(fingerprint))
+	f, err := os.Open(rcfDiskPath(fingerprint))
 	if err != nil {
 		return nil
 	}
@@ -223,7 +223,7 @@ func (s *rcfModelStore) saveToDisk(e *rcfEntry) {
 		return
 	}
 	snap := forestToSnapshot(e.forest)
-	tmp := s.diskPath(e.fingerprint) + ".tmp"
+	tmp := rcfDiskPath(e.fingerprint) + ".tmp"
 	f, err := os.Create(tmp)
 	if err != nil {
 		return
@@ -235,7 +235,7 @@ func (s *rcfModelStore) saveToDisk(e *rcfEntry) {
 	}
 	f.Close()
 	// Atomic rename for restart-safety.
-	_ = os.Rename(tmp, s.diskPath(e.fingerprint))
+	_ = os.Rename(tmp, rcfDiskPath(e.fingerprint))
 }
 
 // ── snapshot serialisation ────────────────────────────────────────────────────
