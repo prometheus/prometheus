@@ -99,12 +99,12 @@ func (s *diskRCFStore) Save(fingerprint uint64, forest *rcfForest) {
 	if err != nil {
 		return
 	}
-	if err := gob.NewEncoder(f).Encode(snap); err != nil {
-		f.Close()
-		os.Remove(tmp)
+	encErr := gob.NewEncoder(f).Encode(snap)
+	closeErr := f.Close()
+	if encErr != nil || closeErr != nil {
+		_ = os.Remove(tmp)
 		return
 	}
-	f.Close()
 	// Atomic rename for restart-safety.
 	_ = os.Rename(tmp, s.path(fingerprint))
 }

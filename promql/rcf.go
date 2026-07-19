@@ -166,10 +166,10 @@ func (t *rcfTree) insertAt(n, parent *rcfNode, p [rcfDims]float64) *rcfNode {
 			n.Mass++
 			return n
 		}
-		return t.splitLeaf(n, parent, p)
+		return t.wrapWithNewLeaf(n, parent, p)
 	}
 	if !n.Box.contains(p) {
-		return t.insertAbove(n, parent, p)
+		return t.wrapWithNewLeaf(n, parent, p)
 	}
 	if p[n.CutDim] <= n.CutVal {
 		n.Left = t.insertAt(n.Left, n, p)
@@ -181,23 +181,9 @@ func (t *rcfTree) insertAt(n, parent *rcfNode, p [rcfDims]float64) *rcfNode {
 	return n
 }
 
-func (t *rcfTree) splitLeaf(n, parent *rcfNode, p [rcfDims]float64) *rcfNode {
-	combined := n.Box
-	combined.extendPoint(p)
-	dim, val := t.randomCut(combined)
-	leaf := &rcfNode{Box: boxFromPoint(p), Mass: 1, Point: p, Count: 1}
-	internal := &rcfNode{Box: combined, Mass: n.Mass + 1, CutDim: dim, CutVal: val, Parent: parent}
-	if p[dim] <= val {
-		internal.Left, internal.Right = leaf, n
-	} else {
-		internal.Left, internal.Right = n, leaf
-	}
-	n.Parent = internal
-	leaf.Parent = internal
-	return internal
-}
-
-func (t *rcfTree) insertAbove(n, parent *rcfNode, p [rcfDims]float64) *rcfNode {
+// wrapWithNewLeaf creates a new internal node that contains both n and a new
+// leaf for p, connected to parent. Used for both split-leaf and insert-above.
+func (t *rcfTree) wrapWithNewLeaf(n, parent *rcfNode, p [rcfDims]float64) *rcfNode {
 	combined := n.Box
 	combined.extendPoint(p)
 	dim, val := t.randomCut(combined)

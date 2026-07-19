@@ -47,8 +47,7 @@ func newRCFTestEngine(t *testing.T) *promql.Engine {
 // Uses a dedicated metric name to isolate from the global rcfModels store.
 func TestFuncRCFStatefulDetection(t *testing.T) {
 	storage := teststorage.New(t)
-	defer storage.Close()
-
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 	metric := labels.FromStrings("__name__", "test_rcf_stateful", "job", "stateful")
 	app := storage.Appender(context.Background())
 	var lastNormalTS int64
@@ -58,10 +57,8 @@ func TestFuncRCFStatefulDetection(t *testing.T) {
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
-
 	engine := newRCFTestEngine(t)
 	ctx := context.Background()
-
 	q, err := engine.NewInstantQuery(ctx, storage, nil,
 		`rcf(test_rcf_stateful{job="stateful"}[15m], 10, 32)`,
 		time.UnixMilli(lastNormalTS))
@@ -72,13 +69,11 @@ func TestFuncRCFStatefulDetection(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, vec, 1)
 	normalScore := vec[0].F
-
 	spikeTS := lastNormalTS + 15_000
 	app2 := storage.Appender(ctx)
 	_, err = app2.Append(0, metric, spikeTS, 1000.0)
 	require.NoError(t, err)
 	require.NoError(t, app2.Commit())
-
 	q2, err := engine.NewInstantQuery(ctx, storage, nil,
 		`rcf(test_rcf_stateful{job="stateful"}[15m], 10, 32)`,
 		time.UnixMilli(spikeTS))
@@ -89,10 +84,8 @@ func TestFuncRCFStatefulDetection(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, vec2, 1)
 	spikeScore := vec2[0].F
-
 	require.Greater(t, spikeScore, normalScore,
 		"spike score (%v) should exceed normal score (%v) after warm-up", spikeScore, normalScore)
-
 	// rcf_attribution must return exactly 6 series (one per feature dimension),
 	// each with a non-negative value.
 	q3, err := engine.NewInstantQuery(ctx, storage, nil,
@@ -112,8 +105,9 @@ func TestFuncRCFStatefulDetection(t *testing.T) {
 // TestFuncRCFInvalidArgs verifies that invalid parameters produce empty results.
 func TestFuncRCFInvalidArgs(t *testing.T) {
 	storage := teststorage.New(t)
-	defer storage.Close()
-
+	t.Cleanup(func() {
+		require.NoError(t, storage.Close())
+	})
 	app := storage.Appender(context.Background())
 	metric := labels.FromStrings("__name__", "test_rcf_invalid", "job", "test")
 	var lastTS int64
@@ -123,11 +117,9 @@ func TestFuncRCFInvalidArgs(t *testing.T) {
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
-
 	engine := newRCFTestEngine(t)
 	ctx := context.Background()
 	evalTime := time.UnixMilli(lastTS)
-
 	for _, expr := range []string{
 		`rcf(test_rcf_invalid{job="test"}[15m], 0)`,    // trees < 1
 		`rcf(test_rcf_invalid{job="test"}[15m], 5, 1)`, // sample_size < 2
