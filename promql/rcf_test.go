@@ -250,7 +250,7 @@ func TestRCFModelStoreDiskRoundtrip(t *testing.T) {
 	store.markDirty(fp)
 	store.Checkpoint()
 
-	_, err := os.Stat(store.diskPath(fp))
+	_, err := os.Stat(rcfDiskPath(fp))
 	require.NoError(t, err)
 
 	store2 := &rcfModelStore{
