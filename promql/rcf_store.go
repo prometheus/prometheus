@@ -52,10 +52,15 @@ type RCFStore interface {
 
 type memoryRCFStore struct{}
 
-func newMemoryRCFStore() RCFStore                          { return memoryRCFStore{} }
-func (memoryRCFStore) Load(uint64, int, int) *rcfForest    { return nil }
-func (memoryRCFStore) Save(uint64, *rcfForest)             {}
-func (memoryRCFStore) Delete(uint64)                       {}
+func newMemoryRCFStore() RCFStore {
+	return memoryRCFStore{}
+}
+
+func (memoryRCFStore) Load(uint64, int, int) *rcfForest {
+	return nil
+}
+func (memoryRCFStore) Save(uint64, *rcfForest) {}
+func (memoryRCFStore) Delete(uint64)           {}
 
 // ── disk store ────────────────────────────────────────────────────────────────
 
