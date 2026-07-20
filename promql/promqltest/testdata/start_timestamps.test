@@ -308,7 +308,6 @@ eval range from 0s to 110s step 5s start_timestamp(series)
 
 # The start timestamp data is lost if the input is an expression.
 eval range from 10s to 50s step 10s start_timestamp(series * 1)
-    {case="a"}  0x4
-    {case="b"}  _  _  _  0  0
+    # no results
 
 clear

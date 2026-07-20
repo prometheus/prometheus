@@ -1928,14 +1928,15 @@ func funcStartTimestamp(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh
 			el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 		}
 
-		var st int64
-		if i < len(sts) {
-			st = sts[i]
+		if i >= len(sts) {
+			// Only return results if start timestamps slices is populated. This means that the output is empty
+			// when `use-start-timestamps` is disabled or when this function is called on an expression.
+			continue
 		}
 
 		enh.Out = append(enh.Out, Sample{
 			Metric:   el.Metric,
-			F:        float64(st) / 1000,
+			F:        float64(sts[i]) / 1000,
 			DropName: true,
 		})
 	}

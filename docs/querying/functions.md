@@ -900,6 +900,8 @@ to the evaluation timestamp.
 the given vector as the number of seconds since January 1, 1970 UTC. It acts on
 float and histogram samples in the same way.
 
+This function only works when used directly on an instant vector and when `use-start-timestamps` feature flag is enabled. Otherwise, if it's used on an expression or if `use-start-timestamps` is disabled, it returns empty results.
+
 ## `step()`
 
 **This function has to be enabled via the [feature
