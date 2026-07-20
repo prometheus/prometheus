@@ -1929,7 +1929,7 @@ func funcStartTimestamp(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh
 		}
 
 		if i >= len(sts) {
-			// Only return results if start timestamps slices is populated. This means that the output is empty
+			// Only return results if start timestamps slice is populated. This means that the output is empty
 			// when `use-start-timestamps` is disabled or when this function is called on an expression.
 			continue
 		}
