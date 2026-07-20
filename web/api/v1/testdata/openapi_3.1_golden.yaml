@@ -1044,6 +1044,71 @@ paths:
                                         error: TSDB not ready
                                         errorType: internal
                                         status: error
+        post:
+            tags:
+                - labels
+            summary: Get label values
+            operationId: label-values-post
+            parameters:
+                - name: name
+                  in: path
+                  description: Label name.
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                description: Submit a label values query. This endpoint accepts the same parameters as the GET version.
+                content:
+                    application/x-www-form-urlencoded:
+                        schema:
+                            $ref: '#/components/schemas/LabelValuesPostInputBody'
+                        examples:
+                            valuesWithMatch:
+                                summary: Get label values matching series selectors
+                                value:
+                                    match[]:
+                                        - up
+                                        - process_start_time_seconds{job="prometheus"}
+                            valuesWithTimeRange:
+                                summary: Get label values within time range
+                                value:
+                                    end: "2026-01-02T13:37:00.000Z"
+                                    start: "2026-01-02T12:37:00.000Z"
+                required: true
+            responses:
+                "200":
+                    description: Label values retrieved successfully via POST.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/LabelValuesOutputBody'
+                            examples:
+                                labelValues:
+                                    summary: List of values for a label
+                                    value:
+                                        data:
+                                            - alertmanager
+                                            - blackbox
+                                            - caddy
+                                            - cadvisor
+                                            - grafana
+                                            - node
+                                            - prometheus
+                                            - random
+                                        status: success
+                default:
+                    description: Error retrieving label values via POST.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
     /search/metric_names:
         get:
             tags:
@@ -3993,6 +4058,31 @@ components:
                 - data
             additionalProperties: false
             description: Response body with an array of strings.
+        LabelValuesPostInputBody:
+            type: object
+            properties:
+                start:
+                    type: string
+                    description: 'Form field: The start time of the query.'
+                    example: "2023-07-21T20:00:00.000Z"
+                end:
+                    type: string
+                    description: 'Form field: The end time of the query.'
+                    example: "2023-07-21T21:00:00.000Z"
+                match[]:
+                    type: array
+                    items:
+                        type: string
+                    description: 'Form field: Series selector argument that selects the series from which to read the label values.'
+                    example:
+                        - '{job="prometheus"}'
+                limit:
+                    type: integer
+                    format: int64
+                    description: 'Form field: The maximum number of label values to return.'
+                    example: 1000
+            additionalProperties: false
+            description: POST request body for label values query.
         SearchMetricNamesPostInputBody:
             type: object
             properties:

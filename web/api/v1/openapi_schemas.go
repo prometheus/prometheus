@@ -54,6 +54,7 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	schemas.Set("LabelsOutputBody", b.stringArrayResponseBodySchema())
 	schemas.Set("LabelsPostInputBody", b.labelsPostInputBodySchema())
 	schemas.Set("LabelValuesOutputBody", b.stringArrayResponseBodySchema())
+	schemas.Set("LabelValuesPostInputBody", b.labelValuesPostInputBodySchema())
 	schemas.Set("SearchMetricNamesPostInputBody", b.searchMetricNamesPostInputBodySchema())
 	schemas.Set("SearchLabelNamesPostInputBody", b.searchLabelNamesPostInputBodySchema())
 	schemas.Set("SearchLabelValuesPostInputBody", b.searchLabelValuesPostInputBodySchema())
@@ -732,6 +733,21 @@ func (*OpenAPIBuilder) labelsPostInputBodySchema() *base.SchemaProxy {
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:                 []string{"object"},
 		Description:          "POST request body for labels query.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) labelValuesPostInputBodySchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("start", stringSchemaWithDescriptionAndExample("Form field: The start time of the query.", "2023-07-21T20:00:00.000Z"))
+	props.Set("end", stringSchemaWithDescriptionAndExample("Form field: The end time of the query.", "2023-07-21T21:00:00.000Z"))
+	props.Set("match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument that selects the series from which to read the label values.", []string{"{job=\"prometheus\"}"}))
+	props.Set("limit", integerSchemaWithDescriptionAndExample("Form field: The maximum number of label values to return.", 1000))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "POST request body for label values query.",
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
 		Properties:           props,
 	})
