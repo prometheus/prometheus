@@ -4869,7 +4869,11 @@ func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T)
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			head, _ := newTestHead(t, 1000, compression.None, false)
+			opts := newTestHeadDefaultOptions(1000, false)
+			opts.EnableSTStorage.Store(true)
+			opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+			opts.EnableHistogramSTEncoding.Store(true)
+			head, _ := newTestHeadWithOptions(t, compression.None, opts)
 			defer func() {
 				require.NoError(t, head.Close())
 			}()
@@ -4890,9 +4894,12 @@ func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T)
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
-			// Step 2: Add a float staleness marker
+			// Step 2: Add a float staleness marker with a start timestamp. It is
+			// converted to a (float) histogram staleness marker, which must keep
+			// the start timestamp like the plain float staleness path does.
+			const markerST = int64(1900)
 			app = head.AppenderV2(context.Background())
-			_, err = app.Append(0, lbls, 0, 2000, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{})
+			_, err = app.Append(0, lbls, markerST, 2000, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
@@ -4909,6 +4916,8 @@ func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T)
 
 			actualFloatSamples := 0
 			actualHistogramSamples := 0
+			markerFound := false
+			var markerGotST int64
 
 			for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 				switch valType {
@@ -4917,12 +4926,20 @@ func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T)
 				case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 					actualHistogramSamples++
 				}
+				if it.AtT() == 2000 {
+					markerFound = true
+					markerGotST = it.AtST()
+				}
 			}
 			require.NoError(t, it.Err())
 
 			// Verify what was actually stored - should be 0 floats, 2 histograms (original + converted staleness marker)
 			require.Equal(t, 0, actualFloatSamples, "Should have 0 float samples stored")
 			require.Equal(t, 2, actualHistogramSamples, "Should have 2 histogram samples: original + converted staleness marker")
+
+			// The converted staleness marker must keep the start timestamp.
+			require.True(t, markerFound, "converted staleness marker not found")
+			require.Equal(t, markerST, markerGotST, "start timestamp must be preserved on the converted staleness marker")
 
 			// The metrics should match what was actually stored
 			require.Equal(t, float64(actualFloatSamples), getSampleCounter(sampleMetricTypeFloat),
@@ -4978,6 +4995,14 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 				{st: 30, ts: 300, h: testHistogram},
 			},
 			expectedSTs: []int64{10, 20, 30},
+		},
+		{
+			name: "Float staleness marker keeps ST",
+			samples: []sampleData{
+				{st: 10, ts: 100, fSample: 1.0},
+				{st: 20, ts: 200, fSample: math.Float64frombits(value.StaleNaN)},
+			},
+			expectedSTs: []int64{10, 20},
 		},
 	}
 
