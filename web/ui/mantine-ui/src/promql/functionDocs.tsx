@@ -3208,6 +3208,12 @@ const funcDocs: Record<string, React.ReactNode> = {
         vector as the number of seconds since January 1, 1970 UTC. It acts on float and histogram samples in the same
         way.
       </p>
+
+      <p>
+        This function only works when used directly on an instant vector and when <code>use-start-timestamps</code>{" "}
+        feature flag is enabled. Otherwise, if it&rsquo;s used on an expression or if <code>use-start-timestamps</code>{" "}
+        is disabled, it returns empty results.
+      </p>
     </>
   ),
   stddev_over_time: (

@@ -143,7 +143,7 @@ func TestStartTimestampOutputWhenUseStartTimestampIsDisabled(t *testing.T) {
 			vec, _ := result.Vector()
 			require.Len(t, vec, len(tt.expected), "Unexpected number of results, got %d", len(vec))
 			for i := range tt.expected {
-				require.EqualValues(t, tt.expected[i], vec[i].F, "At index %d", i)
+				require.Equal(t, tt.expected[i], vec[i].F, "At index %d", i)
 			}
 		})
 	}
