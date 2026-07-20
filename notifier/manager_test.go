@@ -835,6 +835,32 @@ func TestHangingNotifier(t *testing.T) {
 	})
 }
 
+// TestTargetUpdateLoopExitsOnClosedChannel verifies that targetUpdateLoop returns
+// cleanly when the target-set channel is closed, rather than spinning indefinitely.
+// Regression test for https://github.com/prometheus/prometheus/issues/19234.
+func TestTargetUpdateLoopExitsOnClosedChannel(t *testing.T) {
+	m := NewManager(&Options{QueueCapacity: 10}, model.UTF8Validation, nil)
+	m.alertmanagers = make(map[string]*alertmanagerSet)
+
+	tsets := make(chan map[string][]*targetgroup.Group)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		m.targetUpdateLoop(tsets)
+	}()
+
+	// Closing the channel should cause targetUpdateLoop to return, not spin.
+	close(tsets)
+
+	select {
+	case <-done:
+		// targetUpdateLoop exited cleanly as expected.
+	case <-time.After(5 * time.Second):
+		t.Fatal("targetUpdateLoop did not exit after tsets channel was closed — possible infinite spin")
+	}
+}
+
 func TestStop_DrainingDisabled(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const alertmanagerURL = "http://alertmanager:9093/api/v2/alerts"

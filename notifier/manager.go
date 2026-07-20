@@ -227,7 +227,8 @@ func (n *Manager) targetUpdateLoop(tsets <-chan map[string][]*targetgroup.Group)
 				return
 			case ts, ok := <-tsets:
 				if !ok {
-					break
+					// The channel has been closed; exit the loop cleanly.
+					return
 				}
 				n.reload(ts)
 			}
