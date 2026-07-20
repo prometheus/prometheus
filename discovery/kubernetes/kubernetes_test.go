@@ -144,7 +144,7 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 	}
 
 	resChan := make(chan map[string]*targetgroup.Group)
-	go readResultWithTimeout(t, ctx, ch, d.expectedMaxItems, 10*time.Second, d.expectedRes, resChan)
+	go readResultWithTimeout(t, ctx, ch, d.expectedMaxItems, 2*time.Second, d.expectedRes, resChan)
 
 	dd, ok := d.discovery.(hasSynced)
 	require.True(t, ok, "discoverer does not implement hasSynced interface")
