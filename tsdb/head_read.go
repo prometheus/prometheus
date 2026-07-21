@@ -416,8 +416,13 @@ const oooChunkIDMask = 1 << 23
 // * 0 <= pos < len(s.oooMmappedChunks) refer to s.oooMmappedChunks[pos]
 // * pos == len(s.oooMmappedChunks) refers to s.oooHeadChunk
 // The caller must ensure that s.ooo is not nil.
+//
+// The position is wrapped modulo oooChunkIDMask so that firstOOOChunkID can
+// grow indefinitely without overflowing the 23-bit ID space. Correctness
+// requires len(oooMmappedChunks) << oooChunkIDMask, which is enforced by the
+// guard in mmapCurrentOOOHeadChunk.
 func (s *memSeries) oooHeadChunkID(pos int) chunks.HeadChunkID {
-	return (chunks.HeadChunkID(pos) + s.ooo.firstOOOChunkID) | oooChunkIDMask
+	return ((chunks.HeadChunkID(pos) + s.ooo.firstOOOChunkID) & (oooChunkIDMask - 1)) | oooChunkIDMask
 }
 
 func unpackHeadChunkRef(ref chunks.ChunkRef) (seriesID chunks.HeadSeriesRef, chunkID chunks.HeadChunkID, isOOO bool) {
@@ -727,11 +732,13 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 // oooChunk returns the chunk for the HeadChunkID by m-mapping it from the disk.
 // It never returns the head OOO chunk.
 func (s *memSeries) oooChunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, _ *sync.Pool) (chunk chunkenc.Chunk, maxTime int64, err error) {
-	// ix represents the index of chunk in the s.ooo.oooMmappedChunks slice. The chunk id's are
-	// incremented by 1 when new chunk is created, hence (id - firstOOOChunkID) gives the slice index.
-	ix := int(id) - int(s.ooo.firstOOOChunkID)
+	// ix represents the index of chunk in the s.ooo.oooMmappedChunks slice.
+	// Both id and firstOOOChunkID live in a modular 23-bit space; unsigned
+	// subtraction followed by masking recovers the correct index even when
+	// firstOOOChunkID has wrapped past 0.
+	ix := int((id - s.ooo.firstOOOChunkID) & (oooChunkIDMask - 1))
 
-	if ix < 0 || ix >= len(s.ooo.oooMmappedChunks) {
+	if ix >= len(s.ooo.oooMmappedChunks) {
 		return nil, 0, storage.ErrNotFound
 	}
 

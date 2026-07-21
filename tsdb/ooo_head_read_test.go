@@ -1224,3 +1224,151 @@ func TestHeadAndOOOQuerierSearch(t *testing.T) {
 		require.NoError(t, rs.Close())
 	})
 }
+
+func TestOOOQueryAcrossChunkIDWrap(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOQueryAcrossChunkIDWrap(t, scenario)
+		})
+	}
+}
+
+func testOOOQueryAcrossChunkIDWrap(t *testing.T, scenario sampleTypeScenario) {
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = 5
+	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
+
+	db := newTestDB(t, withOpts(opts))
+
+	s1 := labels.FromStrings("l", "v1")
+	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
+
+	app := db.Appender(context.Background())
+
+	// In-order sample to establish the series.
+	ref, _, err := scenario.appendFunc(app, s1, minutes(120), 120)
+	require.NoError(t, err)
+	var expSamples []chunks.Sample
+	expSamples = append(expSamples, scenario.sampleFunc(minutes(120), 120))
+
+	// First batch of 10 OOO samples (creates 2 mmapped OOO chunks with cap=5).
+	for i := int64(1); i <= 10; i++ {
+		_, _, err = scenario.appendFunc(app, s1, minutes(i), i)
+		require.NoError(t, err)
+		expSamples = append(expSamples, scenario.sampleFunc(minutes(i), i))
+	}
+	require.NoError(t, app.Commit())
+
+	// Seed firstOOOChunkID near the wrap boundary.
+	ms := db.head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.NotNil(t, ms)
+	ms.Lock()
+	require.NotNil(t, ms.ooo)
+	ms.ooo.firstOOOChunkID = chunks.HeadChunkID(oooChunkIDMask - 1)
+	ms.Unlock()
+
+	// Second batch of 10 OOO samples whose chunk IDs cross the boundary.
+	app = db.Appender(context.Background())
+	for i := int64(11); i <= 20; i++ {
+		_, _, err = scenario.appendFunc(app, s1, minutes(i), i)
+		require.NoError(t, err)
+		expSamples = append(expSamples, scenario.sampleFunc(minutes(i), i))
+	}
+	require.NoError(t, app.Commit())
+
+	// Query all data and verify every sample is returned.
+	querier, err := db.Querier(0, minutes(200))
+	require.NoError(t, err)
+
+	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "l", "v1"))
+
+	sort.Slice(expSamples, func(i, j int) bool { return expSamples[i].T() < expSamples[j].T() })
+	requireEqualSeries(t, map[string][]chunks.Sample{s1.String(): expSamples}, seriesSet, true)
+}
+
+func TestOOOHeadChunkID_Wrap(t *testing.T) {
+	h, _ := newTestHead(t, 1000, compression.None, true)
+	require.NoError(t, h.Init(0))
+	t.Cleanup(func() { require.NoError(t, h.Close()) })
+
+	s, _, _ := h.getOrCreate(1, labels.FromStrings("a", "b"), false)
+	s.ooo = &memSeriesOOOFields{firstOOOChunkID: chunks.HeadChunkID(oooChunkIDMask - 5)}
+
+	for pos := 0; pos <= 10; pos++ {
+		id := s.oooHeadChunkID(pos)
+		expected := chunks.HeadChunkID((pos + oooChunkIDMask - 5) % oooChunkIDMask)
+
+		require.NotZero(t, id&oooChunkIDMask, "pos %d: OOO flag (bit 23) must be set", pos)
+		require.Less(t, id, chunks.HeadChunkID(1<<24), "pos %d: chunk ID must fit in 24 bits", pos)
+		require.Equal(t, expected, id&(oooChunkIDMask-1), "pos %d: lower 23 bits mismatch", pos)
+
+		ref := chunks.NewHeadChunkRef(s.ref, id)
+		_, chunkID, isOOO := unpackHeadChunkRef(chunks.ChunkRef(ref))
+		require.True(t, isOOO, "pos %d: round-trip must identify as OOO", pos)
+		require.Equal(t, expected, chunkID, "pos %d: round-trip chunkID mismatch", pos)
+	}
+}
+
+func TestOOOChunk_ResolveAfterWrap(t *testing.T) {
+	h, _ := newTestHead(t, 1000, compression.None, true)
+	require.NoError(t, h.Init(0))
+	t.Cleanup(func() { require.NoError(t, h.Close()) })
+
+	s, _, _ := h.getOrCreate(1, labels.FromStrings("a", "b"), false)
+	s.ooo = &memSeriesOOOFields{firstOOOChunkID: chunks.HeadChunkID(oooChunkIDMask - 5)}
+
+	ids := make([]chunks.HeadChunkID, 10)
+	rawIDs := make([]chunks.HeadChunkID, 10)
+	for i := range 10 {
+		ref := h.chunkDiskMapper.WriteChunk(s.ref, int64(i*100), int64(i*100+99), chunkenc.NewXORChunk(), true, handleChunkWriteError)
+		s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
+			ref: ref, minTime: int64(i * 100), maxTime: int64(i*100 + 99),
+		})
+		ids[i] = s.oooHeadChunkID(i)
+		_, rawIDs[i], _ = unpackHeadChunkRef(chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, ids[i])))
+	}
+
+	// Simulate truncation of the first 8 chunks.
+	s.ooo.oooMmappedChunks = s.ooo.oooMmappedChunks[8:]
+	s.ooo.firstOOOChunkID = (s.ooo.firstOOOChunkID + 8) & (oooChunkIDMask - 1)
+	require.Equal(t, chunks.HeadChunkID(3), s.ooo.firstOOOChunkID)
+
+	// Surviving chunks (original positions 8, 9) must resolve.
+	for _, pos := range []int{8, 9} {
+		chk, _, err := s.oooChunk(rawIDs[pos], h.chunkDiskMapper, nil)
+		require.NoError(t, err, "pos %d should resolve after truncation", pos)
+		require.NotNil(t, chk, "pos %d chunk must not be nil", pos)
+	}
+
+	// Truncated chunks (original positions 0-7) must return ErrNotFound.
+	for pos := range 8 {
+		_, _, err := s.oooChunk(rawIDs[pos], h.chunkDiskMapper, nil)
+		require.Equal(t, storage.ErrNotFound, err, "pos %d should return ErrNotFound after truncation", pos)
+	}
+}
+
+func TestOOOMmapGuardPreventsAliasing(t *testing.T) {
+	// The guard in mmapCurrentOOOHeadChunk caps oooMmappedChunks at
+	// oooChunkIDMask - 1 entries. With modular wrapping, this ensures
+	// unique chunk IDs within a single getOOOSeriesChunks call.
+	require.Equal(t, (1<<23)-1, oooChunkIDMask-1,
+		"guard bound must equal oooChunkIDMask-1 to prevent intra-call aliasing")
+
+	h, _ := newTestHead(t, 1000, compression.None, true)
+	require.NoError(t, h.Init(0))
+	t.Cleanup(func() { require.NoError(t, h.Close()) })
+
+	s, _, _ := h.getOrCreate(1, labels.FromStrings("a", "b"), false)
+	s.ooo = &memSeriesOOOFields{}
+
+	seen := make(map[chunks.HeadChunkID]int)
+	s.ooo.firstOOOChunkID = chunks.HeadChunkID(oooChunkIDMask - 100)
+	for pos := range 200 {
+		id := s.oooHeadChunkID(pos)
+		require.Less(t, id, chunks.HeadChunkID(1<<24), "chunk ID must fit in 24 bits")
+		if prev, ok := seen[id]; ok {
+			t.Fatalf("position %d produced same HeadChunkID as position %d", pos, prev)
+		}
+		seen[id] = pos
+	}
+}
