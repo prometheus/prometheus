@@ -24,6 +24,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -9999,6 +10000,56 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		afterMetric = prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
 		require.Greater(t, afterMetric, beforeMetric, "third call should mmap chunks from series B")
 		require.Equal(t, uint32(1), getCount(lblsB), "series B headChunkCount should be 1 after mmap")
+	})
+
+	// Regression test for https://github.com/prometheus/prometheus/issues/17941:
+	// if mmapChunks panics (via handleChunkWriteError) while mmapHeadChunks holds
+	// the stripe and series locks, those locks must still be released. A leaked
+	// lock previously self-deadlocked the subsequent Head.Close() -> mmapHeadChunks().
+	t.Run("panic releases locks", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("forces a chunk-write failure by removing the open chunk directory, which Windows disallows while the ChunkDiskMapper holds the directory handle")
+		}
+
+		h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+		require.NoError(t, h.Init(0))
+
+		lbls := labels.FromStrings("__name__", "series")
+		ts := int64(0)
+		var ref storage.SeriesRef
+		app := h.Appender(t.Context())
+		for range chunkCutIterations {
+			var err error
+			ref, err = app.Append(ref, lbls, ts, float64(ts))
+			require.NoError(t, err)
+			ts += interval
+		}
+		require.NoError(t, app.Commit())
+
+		s := h.series.getByHash(lbls.Hash(), lbls)
+		require.NotNil(t, s)
+		require.GreaterOrEqual(t, s.headChunkCount.Load(), uint32(2), "need >=2 head chunks pending mmap")
+
+		// Removing the chunk directory makes the next segment cut fail, so
+		// handleChunkWriteError panics inside mmapChunks. The chunk-write queue is
+		// synchronous by default, so the panic propagates out of mmapHeadChunks.
+		require.NoError(t, os.RemoveAll(mmappedChunksDir(h.opts.ChunkDirRoot)))
+		// newTestHead's cleanup calls Head.Close() -> mmapHeadChunks(), which would
+		// otherwise re-trigger the panic on the now-missing directory. Closing the
+		// mapper first makes WriteChunk return ErrChunkDiskMapperClosed, which
+		// handleChunkWriteError does not panic on. Cleanups run LIFO, so this runs
+		// before Head.Close().
+		t.Cleanup(func() { _ = h.chunkDiskMapper.Close() })
+
+		require.Panics(t, func() { h.mmapHeadChunks() })
+
+		// The locks held while mmapChunks panicked must have been released.
+		require.True(t, s.TryLock(), "series lock leaked after panic")
+		s.Unlock()
+		for i := range h.series.size {
+			require.Truef(t, h.series.locks[i].TryLock(), "stripe lock %d leaked after panic", i)
+			h.series.locks[i].Unlock()
+		}
 	})
 
 	t.Run("ooo does not inflate count", func(t *testing.T) {
