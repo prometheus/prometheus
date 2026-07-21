@@ -189,6 +189,56 @@ type AppenderV2 interface {
 	Append(ref SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts AppendV2Options) (SeriesRef, error)
 }
 
+// ExemplarAppenderV2 is an optional capability that an AppenderV2 implementation
+// MAY also implement to accept exemplars through a standalone call rather than
+// via AppendV2Options.Exemplars. Callers discover it via a type assertion on the
+// AppenderV2, similar to GetRef.
+//
+// It exists to let callers structured around standalone exemplar appends (e.g.
+// the remote-write receiver) reuse that shape. It is intentionally NOT embedded
+// into AppenderV2 so that downstream AppenderV2 implementations are not forced
+// to implement it.
+//
+// As with the V1 ExemplarAppender, AppendExemplar must be called after the
+// corresponding sample Append for the same series.
+type ExemplarAppenderV2 interface {
+	// AppendExemplar adds an exemplar for the given series labels.
+	// An optional reference number can be provided to accelerate calls.
+	// A reference number is returned which can be used to add further
+	// exemplars in the same or later transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to Append() at any point. Adding the sample via Append() returns a new
+	// reference number.
+	// If the reference is 0 it must not be used for caching.
+	// Note that in our current implementation of Prometheus' exemplar storage
+	// calls to Append should generate the reference numbers, AppendExemplar
+	// generating a new reference number should be considered possible erroneous behaviour and be logged.
+	AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error)
+}
+
+// MetadataUpdaterV2 is an optional capability that an AppenderV2 implementation
+// MAY also implement to accept series metadata through a standalone call rather
+// than via AppendV2Options.Metadata. Callers discover it via a type assertion on
+// the AppenderV2, similar to GetRef.
+//
+// It exists to let callers structured around standalone metadata updates (e.g.
+// the remote-write receiver) reuse that shape. It is intentionally NOT embedded
+// into AppenderV2 so that downstream AppenderV2 implementations are not forced
+// to implement it.
+//
+// As with the V1 MetadataUpdater, UpdateMetadata must be called after the
+// corresponding sample Append for the same series.
+type MetadataUpdaterV2 interface {
+	// UpdateMetadata updates a metadata entry for the given series and labels.
+	// A series reference number is returned which can be used to modify the
+	// metadata of the given series in the same or later transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to UpdateMetadata() at any point. If the series does not exist,
+	// UpdateMetadata returns an error.
+	// If the reference is 0 it must not be used for caching.
+	UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
+}
+
 // AppenderTransaction allows transactional appends.
 type AppenderTransaction interface {
 	// Commit submits the collected samples and purges the batch. If Commit

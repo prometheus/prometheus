@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -30,7 +31,7 @@ import (
 // initAppenderV2 is a helper to initialize the time bounds of the head
 // upon the first sample it receives.
 type initAppenderV2 struct {
-	app  storage.AppenderV2
+	app  *headAppenderV2
 	head *Head
 }
 
@@ -44,9 +45,35 @@ func (a *initAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	return a.app.Append(ref, ls, st, t, v, h, fh, opts)
 }
 
+func (a *initAppenderV2) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	// Check if exemplar storage is enabled.
+	if !a.head.opts.EnableExemplarStorage || a.head.opts.MaxExemplars.Load() <= 0 {
+		return 0, nil
+	}
+
+	if a.app != nil {
+		return a.app.AppendExemplar(ref, l, e)
+	}
+	// We should never reach here given we would call Append before AppendExemplar
+	// and we probably want to always base head/WAL min time on sample times.
+	a.head.initTime(e.Ts)
+	a.app = a.head.appenderV2()
+
+	return a.app.AppendExemplar(ref, l, e)
+}
+
+func (a *initAppenderV2) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
+	if a.app != nil {
+		return a.app.UpdateMetadata(ref, l, m)
+	}
+
+	a.app = a.head.appenderV2()
+	return a.app.UpdateMetadata(ref, l, m)
+}
+
 func (a *initAppenderV2) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
-	if g, ok := a.app.(storage.GetRef); ok {
-		return g.GetRef(lset, hash)
+	if a.app != nil {
+		return a.app.GetRef(lset, hash)
 	}
 	return 0, labels.EmptyLabels()
 }
