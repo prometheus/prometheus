@@ -17,5 +17,13 @@ lint:
       - remote.proto
       - types.proto
       - io/prometheus/client/metrics.proto
+breaking:
+  ignore_only:
+    # metrics.proto no longer imports gogoproto/gogo.proto — its gogo annotations
+    # became wiresmith options — so buf breaking against upstream main (which
+    # still carries that annotation-only import) reports the file as deleted.
+    # The removal does not change the wire schema.
+    FILE_NO_DELETE:
+      - gogoproto/gogo.proto
 deps:
-  - buf.build/gogo/protobuf
+  - buf.build/grafana/wiresmith

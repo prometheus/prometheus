@@ -27,7 +27,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/common/promslog"
@@ -471,7 +470,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		{
 			desc: "Partial write; first series with one OOO sample",
 			input: func() []writev2.TimeSeries {
-				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
+				f := writeV2RequestFixture.Clone()
 				f.Timeseries[0].Samples = append(f.Timeseries[0].Samples, writev2.Sample{Value: 2, Timestamp: 0})
 				return f.Timeseries
 			}(),
@@ -481,7 +480,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		{
 			desc: "Partial write; first series with one dup sample",
 			input: func() []writev2.TimeSeries {
-				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
+				f := writeV2RequestFixture.Clone()
 				f.Timeseries[0].Samples = append(f.Timeseries[0].Samples, f.Timeseries[0].Samples[0])
 				return f.Timeseries
 			}(),
@@ -491,7 +490,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		{
 			desc: "Partial write; first series with one OOO histogram sample",
 			input: func() []writev2.TimeSeries {
-				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
+				f := writeV2RequestFixture.Clone()
 				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, writev2.FromFloatHistogram(0, 1, testHistogram.ToFloat(nil)))
 				return f.Timeseries
 			}(),
@@ -501,7 +500,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		{
 			desc: "Partial write; first series with one dup histogram sample",
 			input: func() []writev2.TimeSeries {
-				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
+				f := writeV2RequestFixture.Clone()
 				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, f.Timeseries[0].Histograms[len(f.Timeseries[0].Histograms)-1])
 				return f.Timeseries
 			}(),

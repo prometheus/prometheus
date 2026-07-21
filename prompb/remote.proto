@@ -16,20 +16,22 @@ package prometheus;
 
 option go_package = "prompb";
 
+option (wiresmith.options.no_presence_all) = true;
+
 import "types.proto";
-import "gogoproto/gogo.proto";
+import "wiresmith/options.proto";
 
 message WriteRequest {
-  repeated prometheus.TimeSeries timeseries = 1 [(gogoproto.nullable) = false];
+  repeated prometheus.TimeSeries timeseries = 1;
   // Cortex uses this field to determine the source of the write request.
   // We reserve it to avoid any compatibility issues.
   reserved  2;
-  repeated prometheus.MetricMetadata metadata = 3 [(gogoproto.nullable) = false];
+  repeated prometheus.MetricMetadata metadata = 3;
 }
 
 // ReadRequest represents a remote read request.
 message ReadRequest {
-  repeated Query queries = 1;
+  repeated Query queries = 1 [(wiresmith.options.pointer) = true];
 
   enum ResponseType {
     // Server will return a single ReadResponse message with matched series that includes list of raw samples.
@@ -61,19 +63,19 @@ message ReadRequest {
 // ReadResponse is a response when response_type equals SAMPLES.
 message ReadResponse {
   // In same order as the request's queries.
-  repeated QueryResult results = 1;
+  repeated QueryResult results = 1 [(wiresmith.options.pointer) = true];
 }
 
 message Query {
   int64 start_timestamp_ms = 1;
   int64 end_timestamp_ms = 2;
-  repeated prometheus.LabelMatcher matchers = 3;
-  prometheus.ReadHints hints = 4;
+  repeated prometheus.LabelMatcher matchers = 3 [(wiresmith.options.pointer) = true];
+  prometheus.ReadHints hints = 4 [(wiresmith.options.pointer) = true];
 }
 
 message QueryResult {
   // Samples within a time series must be ordered by time.
-  repeated prometheus.TimeSeries timeseries = 1;
+  repeated prometheus.TimeSeries timeseries = 1 [(wiresmith.options.pointer) = true];
 }
 
 // ChunkedReadResponse is a response when response_type equals STREAMED_XOR_CHUNKS.
@@ -81,7 +83,7 @@ message QueryResult {
 // partition of the single series, but once a new series is started to be streamed it means that no more chunks will
 // be sent for previous one. Series are returned sorted in the same way TSDB block are internally.
 message ChunkedReadResponse {
-  repeated prometheus.ChunkedSeries chunked_series = 1;
+  repeated prometheus.ChunkedSeries chunked_series = 1 [(wiresmith.options.pointer) = true];
 
   // query_index represents an index of the query from ReadRequest.queries these chunks relates to.
   int64 query_index = 2;

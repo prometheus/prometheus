@@ -41,6 +41,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gophercloud/gophercloud/v2 v2.12.0
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
+	github.com/grafana/wiresmith v0.9.0
 	github.com/hashicorp/consul/api v1.33.7
 	github.com/hashicorp/nomad/api v0.0.0-20260622150140-ec332d2cba1c
 	github.com/hetznercloud/hcloud-go/v2 v2.43.0
@@ -231,7 +232,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
-	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
+	github.com/planetscale/vtprotobuf v0.6.1-0.20250313105119-ba97887b0a25 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/otlptranslator v1.0.0
 	github.com/prometheus/procfs v0.16.1 // indirect

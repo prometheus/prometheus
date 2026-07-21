@@ -15,6 +15,8 @@ package writev2
 
 import (
 	"slices"
+
+	"github.com/grafana/wiresmith/protohelpers"
 )
 
 func (m Sample) T() int64   { return m.Timestamp }
@@ -39,10 +41,6 @@ func (m *Request) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if m.XXX_unrecognized != nil {
-		i -= len(m.XXX_unrecognized)
-		copy(dAtA[i:], m.XXX_unrecognized)
-	}
 	if len(m.Timeseries) > 0 {
 		for iNdEx := len(m.Timeseries) - 1; iNdEx >= 0; iNdEx-- {
 			{
@@ -51,7 +49,7 @@ func (m *Request) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 					return 0, err
 				}
 				i -= size
-				i = encodeVarintTypes(dAtA, i, uint64(size))
+				i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
 			}
 			i--
 			dAtA[i] = 0x2a
@@ -61,7 +59,7 @@ func (m *Request) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 		for iNdEx := len(m.Symbols) - 1; iNdEx >= 0; iNdEx-- {
 			i -= len(m.Symbols[iNdEx])
 			copy(dAtA[i:], m.Symbols[iNdEx])
-			i = encodeVarintTypes(dAtA, i, uint64(len(m.Symbols[iNdEx])))
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Symbols[iNdEx])))
 			i--
 			dAtA[i] = 0x22
 		}
@@ -76,20 +74,20 @@ func (m *TimeSeries) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if m.XXX_unrecognized != nil {
-		i -= len(m.XXX_unrecognized)
-		copy(dAtA[i:], m.XXX_unrecognized)
-	}
 	{
 		size, err := m.Metadata.MarshalToSizedBuffer(dAtA[:i])
 		if err != nil {
 			return 0, err
 		}
-		i -= size
-		i = encodeVarintTypes(dAtA, i, uint64(size))
+		// Under no_presence_all the generated Marshal omits an empty embedded
+		// message; mirror that here so OptimizedMarshal stays byte-identical.
+		if size > 0 {
+			i -= size
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0x2a
+		}
 	}
-	i--
-	dAtA[i] = 0x2a
 	if len(m.Histograms) > 0 {
 		for iNdEx := len(m.Histograms) - 1; iNdEx >= 0; iNdEx-- {
 			{
@@ -98,7 +96,7 @@ func (m *TimeSeries) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 					return 0, err
 				}
 				i -= size
-				i = encodeVarintTypes(dAtA, i, uint64(size))
+				i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
 			}
 			i--
 			dAtA[i] = 0x1a
@@ -112,7 +110,7 @@ func (m *TimeSeries) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 					return 0, err
 				}
 				i -= size
-				i = encodeVarintTypes(dAtA, i, uint64(size))
+				i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
 			}
 			i--
 			dAtA[i] = 0x22
@@ -126,7 +124,7 @@ func (m *TimeSeries) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 					return 0, err
 				}
 				i -= size
-				i = encodeVarintTypes(dAtA, i, uint64(size))
+				i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
 			}
 			i--
 			dAtA[i] = 0x12
@@ -152,7 +150,7 @@ func (m *TimeSeries) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 		slices.Reverse(dAtA[i:start])
 		// --- end of trick
 
-		i = encodeVarintTypes(dAtA, i, uint64(j10))
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(j10))
 		i--
 		dAtA[i] = 0xa
 	}

@@ -20,10 +20,9 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"strings"
 	"testing"
+	"time"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
@@ -31,78 +30,59 @@ import (
 	"github.com/prometheus/prometheus/util/pool"
 )
 
-const (
-	testGauge = `name: "go_build_info"
-help: "Build information about the main Go module."
-type: GAUGE
-metric: <
-  label: <
-    name: "checksum"
-    value: ""
-  >
-  label: <
-    name: "path"
-    value: "github.com/prometheus/client_golang"
-  >
-  label: <
-    name: "version"
-    value: "(devel)"
-  >
-  gauge: <
-    value: 1
-  >
->
-metric: <
-  label: <
-    name: "checksum"
-    value: ""
-  >
-  label: <
-    name: "path"
-    value: "github.com/prometheus/prometheus"
-  >
-  label: <
-    name: "version"
-    value: "v3.0.0"
-  >
-  gauge: <
-    value: 2
-  >
->
+func testGaugeMetricFamily() *MetricFamily {
+	return &MetricFamily{
+		Name: "go_build_info",
+		Help: "Build information about the main Go module.",
+		Type: MetricType_GAUGE,
+		Metric: []Metric{
+			{
+				Label: []LabelPair{
+					{Name: "checksum", Value: ""},
+					{Name: "path", Value: "github.com/prometheus/client_golang"},
+					{Name: "version", Value: "(devel)"},
+				},
+				Gauge: &Gauge{Value: 1},
+			},
+			{
+				Label: []LabelPair{
+					{Name: "checksum", Value: ""},
+					{Name: "path", Value: "github.com/prometheus/prometheus"},
+					{Name: "version", Value: "v3.0.0"},
+				},
+				Gauge: &Gauge{Value: 2},
+			},
+		},
+	}
+}
 
-`
-	testCounter = `name: "go_memstats_alloc_bytes_total"
-help: "Total number of bytes allocated, even if freed."
-type: COUNTER
-unit: "bytes"
-metric: <
-  counter: <
-    value: 1.546544e+06
-    exemplar: <
-      label: <
-        name: "dummyID"
-        value: "42"
-      >
-      value: 12
-      timestamp: <
-        seconds: 1625851151
-        nanos: 233181499
-      >
-    >
-  >
->
-
-`
-)
+func testCounterMetricFamily() *MetricFamily {
+	return &MetricFamily{
+		Name: "go_memstats_alloc_bytes_total",
+		Help: "Total number of bytes allocated, even if freed.",
+		Unit: "bytes",
+		Type: MetricType_COUNTER,
+		Metric: []Metric{
+			{
+				Counter: &Counter{
+					Value: 1.546544e+06,
+					Exemplar: &Exemplar{
+						Label:     []LabelPair{{Name: "dummyID", Value: "42"}},
+						Value:     12,
+						Timestamp: time.Unix(1625851151, 233181499),
+					},
+				},
+			},
+		},
+	}
+}
 
 func TestMetricStreamingDecoder(t *testing.T) {
 	varintBuf := make([]byte, binary.MaxVarintLen32)
 	buf := bytes.Buffer{}
-	for _, m := range []string{testGauge, testCounter} {
-		mf := &MetricFamily{}
-		require.NoError(t, proto.UnmarshalText(m, mf))
+	for _, mf := range []*MetricFamily{testGaugeMetricFamily(), testCounterMetricFamily()} {
 		// From proto message to binary protobuf.
-		protoBuf, err := proto.Marshal(mf)
+		protoBuf, err := mf.Marshal()
 		require.NoError(t, err)
 
 		// Write first length, then binary protobuf.
@@ -191,10 +171,8 @@ func TestMetricStreamingDecoder_LabelsCorruption(t *testing.T) {
 		buf := bytes.NewBuffer(b)
 
 		// Generate some scraped data to parse
-		mf := &MetricFamily{}
-		data := generateMetricFamilyText(labelsCount)
-		require.NoError(t, proto.UnmarshalText(data, mf))
-		protoBuf, err := proto.Marshal(mf)
+		mf := generateMetricFamily(labelsCount)
+		protoBuf, err := mf.Marshal()
 		require.NoError(t, err)
 		sizeBuf := make([]byte, binary.MaxVarintLen32)
 		sizeBufSize := binary.PutUvarint(sizeBuf, uint64(len(protoBuf)))
@@ -224,32 +202,29 @@ func TestMetricStreamingDecoder_LabelsCorruption(t *testing.T) {
 	}
 }
 
-func generateLabels() string {
-	randomName := fmt.Sprintf("instance_%d", rand.Intn(1000))
-	randomValue := fmt.Sprintf("value_%d", rand.Intn(1000))
-	return fmt.Sprintf(`label: <
-    name: "%s"
-    value: "%s"
-  >`, randomName, randomValue)
+func generateLabels(labelsCount int) []LabelPair {
+	ls := make([]LabelPair, 0, labelsCount)
+	for range labelsCount {
+		ls = append(ls, LabelPair{
+			Name:  fmt.Sprintf("instance_%d", rand.Intn(1000)),
+			Value: fmt.Sprintf("value_%d", rand.Intn(1000)),
+		})
+	}
+	return ls
 }
 
-func generateMetricFamilyText(labelsCount int) string {
+func generateMetricFamily(labelsCount int) *MetricFamily {
 	randomName := fmt.Sprintf("metric_%d", rand.Intn(1000))
 	randomHelp := fmt.Sprintf("Test metric to demonstrate forced corruption %d.", rand.Intn(1000))
-	labels10 := ""
-	var labels10Sb239 strings.Builder
-	for range labelsCount {
-		labels10Sb239.WriteString(generateLabels())
+	return &MetricFamily{
+		Name: randomName,
+		Help: randomHelp,
+		Type: MetricType_GAUGE,
+		Metric: []Metric{
+			{
+				Label: generateLabels(labelsCount),
+				Gauge: &Gauge{Value: 1.0},
+			},
+		},
 	}
-	labels10 += labels10Sb239.String()
-	return fmt.Sprintf(`name: "%s"
-help: "%s"
-type: GAUGE
-metric: <
-  %s
-  gauge: <
-    value: 1.0
-  >
->
-`, randomName, randomHelp, labels10)
 }
