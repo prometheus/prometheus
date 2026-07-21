@@ -1876,6 +1876,20 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 	require.False(t, got.RemoteWriteConfigs[1].QueueConfig.RetryOnRateLimit)
 }
 
+func TestRemoteWriteFailedRequestLogging(t *testing.T) {
+	cfgYAML := `
+remote_write:
+  - url: http://remote1/api/v1/write
+    failed_request_logging: true
+  - url: http://remote2/api/v1/write
+`
+	cfg, err := Load(cfgYAML, promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Len(t, cfg.RemoteWriteConfigs, 2)
+	require.True(t, cfg.RemoteWriteConfigs[0].FailedRequestLogging)
+	require.False(t, cfg.RemoteWriteConfigs[1].FailedRequestLogging)
+}
+
 func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 	t.Run("good config - default resource attributes", func(t *testing.T) {
 		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_default_resource_attributes.good.yml"), false, promslog.NewNopLogger())
