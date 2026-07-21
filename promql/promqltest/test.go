@@ -263,13 +263,14 @@ func newTest(t testing.TB, input string, testingMode bool, newStorage func(testi
 	return test, err
 }
 
+// testStorageOptions holds additional tsdb.Options applied by newTestStorage.
+// It is populated via init() in test files so that options only take effect
+// when the promqltest package itself is under test, not when callers such as
+// promql_test.go invoke RunBuiltinTests.
+var testStorageOptions []teststorage.Option
+
 func newTestStorage(t testing.TB) storage.Storage {
-	return teststorage.New(t, func(opts *tsdb.Options) {
-		opts.EnableSTStorage = true
-		opts.XOR2EncodingAllowed = true
-		opts.FloatChunkEncoding = chunkenc.EncXOR2
-		opts.EnableHistogramSTEncoding = true
-	})
+	return teststorage.New(t, testStorageOptions...)
 }
 
 //go:embed testdata
