@@ -2132,27 +2132,40 @@ func (h *Head) onChunkCreated(series *memSeries, prevHeadChunkCount uint32) {
 func (h *Head) mmapHeadChunks() {
 	var count int
 	for i := range h.series.size {
-		if h.series.mmapReady[i].Load() == 0 {
-			continue // No series in this stripe need mmapping.
-		}
-
-		h.series.locks[i].RLock()
-		for _, series := range h.series.series[i] {
-			if series.headChunkCount.Load() < 2 { // < 2 means 0 or 1 head chunks, nothing to mmap.
-				continue
-			}
-
-			series.Lock()
-			n := series.mmapChunks(h.chunkDiskMapper)
-			series.Unlock()
-			if n > 0 {
-				count += n
-				h.series.decMmapReady(series.ref)
-			}
-		}
-		h.series.locks[i].RUnlock()
+		count += h.mmapHeadChunksInStripe(i)
 	}
 	h.metrics.mmapChunksTotal.Add(float64(count))
+}
+
+// mmapHeadChunksInStripe m-maps chunks for the series in a single stripe that
+// need it. It uses deferred unlocking so that locks are released even if
+// mmapChunks panics (e.g. via handleChunkWriteError), preventing deadlocks
+// during cleanup.
+func (h *Head) mmapHeadChunksInStripe(i int) (count int) {
+	if h.series.mmapReady[i].Load() == 0 {
+		return 0 // No series in this stripe need mmapping.
+	}
+
+	h.series.locks[i].RLock()
+	defer h.series.locks[i].RUnlock()
+
+	for _, series := range h.series.series[i] {
+		if series.headChunkCount.Load() < 2 { // < 2 means 0 or 1 head chunks, nothing to mmap.
+			continue
+		}
+		n := h.mmapSeriesChunks(series)
+		if n > 0 {
+			count += n
+			h.series.decMmapReady(series.ref)
+		}
+	}
+	return count
+}
+
+func (h *Head) mmapSeriesChunks(s *memSeries) int {
+	s.Lock()
+	defer s.Unlock()
+	return s.mmapChunks(h.chunkDiskMapper)
 }
 
 // seriesHashmap lets TSDB find a memSeries by its label set, via a 64-bit hash.
