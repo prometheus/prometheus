@@ -2852,8 +2852,10 @@ func TestQueueManager_FailedRequestLogging(t *testing.T) {
 			buf := &safeBuffer{}
 			logger := slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
+			var storeCalled atomic.Int64
 			client := &MockWriteClient{
 				StoreFunc: func(context.Context, []byte, int) (WriteResponseStats, error) {
+					storeCalled.Add(1)
 					if tc.noDataWritten {
 						return WriteResponseStats{}, nil
 					}
@@ -2886,7 +2888,9 @@ func TestQueueManager_FailedRequestLogging(t *testing.T) {
 						strings.Contains(s, "req=")
 				}, 5*time.Second, 10*time.Millisecond)
 			} else {
-				time.Sleep(100 * time.Millisecond)
+				require.Eventually(t, func() bool {
+					return storeCalled.Load() > 0
+				}, 5*time.Second, 10*time.Millisecond)
 				require.NotContains(t, buf.String(), "Failed to send remote write v2 request")
 			}
 		})

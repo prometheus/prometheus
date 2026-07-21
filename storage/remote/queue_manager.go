@@ -1862,9 +1862,6 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.
-		if s.qm.failedRequestLogging {
-			s.qm.logger.Debug("Failed to send remote write v2 request", "req", v2Req, "err", err)
-		}
 		return WriteResponseStats{}, err
 	}
 
@@ -1911,9 +1908,6 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 			)
 			s.qm.buildRequestLimitTimestamp.Store(lowest)
 			if err != nil {
-				if s.qm.failedRequestLogging {
-					s.qm.logger.Debug("Failed to send remote write v2 request", "req", v2Req2, "err", err)
-				}
 				return err
 			}
 			req = req2
