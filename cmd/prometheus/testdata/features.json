@@ -125,6 +125,7 @@
     "sort_desc": true,
     "sqrt": true,
     "start": false,
+    "start_timestamp": false,
     "stddev_over_time": true,
     "stdvar_over_time": true,
     "step": false,

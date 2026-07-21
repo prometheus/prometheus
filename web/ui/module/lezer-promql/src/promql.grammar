@@ -212,6 +212,7 @@ FunctionIdentifier {
   SortByLabel |
   SortByLabelDesc |
   StartFn |
+  StartTimestamp |
   EndFn |
   Range |
   Step |
@@ -505,6 +506,7 @@ durationPrimary[@inline] {
   SortByLabel { condFn<"sort_by_label"> }
   SortByLabelDesc { condFn<"sort_by_label_desc"> }
   Range { condFn<"range"> }
+  StartTimestamp { condFn<"start_timestamp"> }
   Step { condFn<"step"> }
   Sqrt { condFn<"sqrt"> }
   StddevOverTime { condFn<"stddev_over_time"> }
