@@ -318,6 +318,52 @@ func (f *fanoutAppenderV2) Append(ref SeriesRef, l labels.Labels, st, t int64, v
 	return ref, partialErr.ToError()
 }
 
+// AppendExemplar implements the optional storage.ExemplarAppenderV2 capability.
+// It delegates only to those appenders that also implement it.
+func (f *fanoutAppenderV2) AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error) {
+	if pa, ok := f.primary.(ExemplarAppenderV2); ok {
+		var err error
+		ref, err = pa.AppendExemplar(ref, l, e)
+		if err != nil {
+			return ref, err
+		}
+	}
+
+	for _, appender := range f.secondaries {
+		sa, ok := appender.(ExemplarAppenderV2)
+		if !ok {
+			continue
+		}
+		if _, err := sa.AppendExemplar(ref, l, e); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
+// UpdateMetadata implements the optional storage.MetadataUpdaterV2 capability.
+// It delegates only to those appenders that also implement it.
+func (f *fanoutAppenderV2) UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error) {
+	if pu, ok := f.primary.(MetadataUpdaterV2); ok {
+		var err error
+		ref, err = pu.UpdateMetadata(ref, l, m)
+		if err != nil {
+			return ref, err
+		}
+	}
+
+	for _, appender := range f.secondaries {
+		su, ok := appender.(MetadataUpdaterV2)
+		if !ok {
+			continue
+		}
+		if _, err := su.UpdateMetadata(ref, l, m); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
 func (f *fanoutAppenderV2) Commit() (err error) {
 	err = f.primary.Commit()
 
