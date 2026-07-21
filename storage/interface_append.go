@@ -156,6 +156,9 @@ var _ error = &AppendPartialError{}
 type AppenderV2 interface {
 	AppenderTransaction
 
+	ExemplarAppenderV2
+	MetadataUpdaterV2
+
 	// Append appends a sample and related exemplars, metadata, and start timestamp (st) to the storage.
 	//
 	// ref (optional) represents the stable ID for the given series identified by ls (excluding metadata).
@@ -187,6 +190,44 @@ type AppenderV2 interface {
 	//   of the series (metadata matters). Current solution is to enable 'type-and-unit-label' features for those cases, but we may
 	//   start to extend the id with metadata one day.
 	Append(ref SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts AppendV2Options) (SeriesRef, error)
+}
+
+// ExemplarAppenderV2 provides appending exemplars against a storage for AppenderV2.
+//
+// Exemplars can be provided either through this method or through
+// AppendV2Options.Exemplars passed to AppenderV2.Append. As with the V1
+// ExemplarAppender, AppendExemplar must be called after the corresponding
+// sample Append for the same series.
+type ExemplarAppenderV2 interface {
+	// AppendExemplar adds an exemplar for the given series labels.
+	// An optional reference number can be provided to accelerate calls.
+	// A reference number is returned which can be used to add further
+	// exemplars in the same or later transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to Append() at any point. Adding the sample via Append() returns a new
+	// reference number.
+	// If the reference is 0 it must not be used for caching.
+	// Note that in our current implementation of Prometheus' exemplar storage
+	// calls to Append should generate the reference numbers, AppendExemplar
+	// generating a new reference number should be considered possible erroneous behaviour and be logged.
+	AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error)
+}
+
+// MetadataUpdaterV2 provides updating series metadata against a storage for AppenderV2.
+//
+// Metadata can be provided either through this method or through
+// AppendV2Options.Metadata passed to AppenderV2.Append. As with the V1
+// MetadataUpdater, UpdateMetadata must be called after the corresponding
+// sample Append for the same series.
+type MetadataUpdaterV2 interface {
+	// UpdateMetadata updates a metadata entry for the given series and labels.
+	// A series reference number is returned which can be used to modify the
+	// metadata of the given series in the same or later transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to UpdateMetadata() at any point. If the series does not exist,
+	// UpdateMetadata returns an error.
+	// If the reference is 0 it must not be used for caching.
+	UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
 }
 
 // AppenderTransaction allows transactional appends.

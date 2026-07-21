@@ -44,6 +44,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -1349,6 +1350,45 @@ func TestHeadAppenderV2_AppendExemplars(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.NoError(t, head.Close())
+}
+
+// TestHeadAppenderV2_AppendExemplarAndUpdateMetadata verifies that the
+// standalone AppenderV2.AppendExemplar and AppenderV2.UpdateMetadata methods
+// store the exemplar and metadata against the appended series.
+func TestHeadAppenderV2_AppendExemplarAndUpdateMetadata(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	defer func() { require.NoError(t, head.Close()) }()
+
+	app := head.AppenderV2(context.Background())
+
+	ls := labels.FromStrings("a", "b")
+	ref, err := app.Append(0, ls, 0, 100, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+
+	e := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "abc"), HasTs: true, Ts: 100, Value: 1}
+	_, err = app.AppendExemplar(ref, ls, e)
+	require.NoError(t, err)
+
+	m := metadata.Metadata{Type: "counter", Unit: "seconds", Help: "help text"}
+	_, err = app.UpdateMetadata(ref, ls, m)
+	require.NoError(t, err)
+
+	require.NoError(t, app.Commit())
+
+	// Verify the exemplar was stored.
+	q, err := head.ExemplarQuerier(context.Background())
+	require.NoError(t, err)
+	res, err := q.Select(0, 1000, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "b")})
+	require.NoError(t, err)
+	require.Len(t, res, 1)
+	require.Len(t, res[0].Exemplars, 1)
+	require.True(t, e.Equals(res[0].Exemplars[0]))
+
+	// Verify the metadata was stored against the series.
+	s := head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.NotNil(t, s)
+	require.NotNil(t, s.meta)
+	require.Equal(t, m, *s.meta)
 }
 
 // Tests https://github.com/prometheus/prometheus/issues/9079.

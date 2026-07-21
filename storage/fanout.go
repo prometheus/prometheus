@@ -318,6 +318,34 @@ func (f *fanoutAppenderV2) Append(ref SeriesRef, l labels.Labels, st, t int64, v
 	return ref, partialErr.ToError()
 }
 
+func (f *fanoutAppenderV2) AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error) {
+	ref, err := f.primary.AppendExemplar(ref, l, e)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		if _, err := appender.AppendExemplar(ref, l, e); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
+func (f *fanoutAppenderV2) UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error) {
+	ref, err := f.primary.UpdateMetadata(ref, l, m)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		if _, err := appender.UpdateMetadata(ref, l, m); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
 func (f *fanoutAppenderV2) Commit() (err error) {
 	err = f.primary.Commit()
 

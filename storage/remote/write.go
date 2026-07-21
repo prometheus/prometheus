@@ -401,3 +401,14 @@ func (t *timestampTrackerV2) Append(ref storage.SeriesRef, _ labels.Labels, _, t
 	t.exemplars += int64(len(opts.Exemplars))
 	return ref, nil
 }
+
+func (t *timestampTrackerV2) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
+	t.exemplars++
+	return ref, nil
+}
+
+func (*timestampTrackerV2) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
+	// TODO: Add and increment a `metadata` field when we get around to wiring metadata in remote_write.
+	// UpdateMetadata is no-op for remote write (where timestampTrackerV2 is being used) for now.
+	return 0, nil
+}

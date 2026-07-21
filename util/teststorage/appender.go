@@ -614,3 +614,70 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 	}
 	return ref, partialErr
 }
+
+func (a *appenderV2) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	if err := a.checkErr(); err != nil {
+		return 0, err
+	}
+	if a.a.appendExemplarsError != nil {
+		return 0, a.a.appendExemplarsError
+	}
+
+	if !a.a.skipRecording {
+		var appended bool
+
+		a.a.mtx.Lock()
+		// NOTE(bwplotka): Eventually exemplar has to be attached to a series and soon
+		// the AppenderV2 will guarantee that for TSDB. Assume this from the mock perspective
+		// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
+		i := len(a.a.pendingSamples) - 1
+		for ; i >= 0; i-- { // Attach exemplars to the last matching sample.
+			if labels.Equal(l, a.a.pendingSamples[i].L) {
+				a.a.pendingSamples[i].ES = append(a.a.pendingSamples[i].ES, e)
+				appended = true
+				break
+			}
+		}
+		a.a.mtx.Unlock()
+		if !appended {
+			return 0, fmt.Errorf("teststorage.appenderV2: exemplar appender without series; ref %v; l %v; exemplar: %v", ref, l, e)
+		}
+	}
+
+	if a.next != nil {
+		return a.next.AppendExemplar(ref, l, e)
+	}
+	return computeOrCheckRef(ref, l)
+}
+
+func (a *appenderV2) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
+	if err := a.checkErr(); err != nil {
+		return 0, err
+	}
+
+	if !a.a.skipRecording {
+		var updated bool
+
+		a.a.mtx.Lock()
+		// NOTE(bwplotka): Eventually metadata has to be attached to a series and soon
+		// the AppenderV2 will guarantee that for TSDB. Assume this from the mock perspective
+		// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
+		i := len(a.a.pendingSamples) - 1
+		for ; i >= 0; i-- { // Attach metadata to the last matching sample.
+			if labels.Equal(l, a.a.pendingSamples[i].L) {
+				a.a.pendingSamples[i].M = m
+				updated = true
+				break
+			}
+		}
+		a.a.mtx.Unlock()
+		if !updated {
+			return 0, fmt.Errorf("teststorage.appenderV2: metadata update without series; ref %v; l %v; m: %v", ref, l, m)
+		}
+	}
+
+	if a.next != nil {
+		return a.next.UpdateMetadata(ref, l, m)
+	}
+	return computeOrCheckRef(ref, l)
+}
