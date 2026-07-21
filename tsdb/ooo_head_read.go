@@ -382,7 +382,7 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 			continue
 		}
 
-		ch.mmapOOOSeriesChunk(head, ms, seriesRef, &lastSeq, &lastOff)
+		ch.mmapOOOSeriesChunk(ms, seriesRef, &lastSeq, &lastOff)
 	}
 
 	return ch, nil
@@ -392,7 +392,8 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 // It uses deferred unlocking so that the series lock is released even if
 // mmapCurrentOOOHeadChunk panics (e.g. via handleChunkWriteError), preventing
 // deadlocks during test cleanup.
-func (ch *OOOCompactionHead) mmapOOOSeriesChunk(head *Head, ms *memSeries, seriesRef storage.SeriesRef, lastSeq, lastOff *int) {
+func (ch *OOOCompactionHead) mmapOOOSeriesChunk(ms *memSeries, seriesRef storage.SeriesRef, lastSeq, lastOff *int) {
+	head := ch.head
 	// M-map the in-memory chunk and keep track of the last one.
 	// Also build the block ranges -> series map.
 	// TODO: consider having a lock specifically for ooo data.
