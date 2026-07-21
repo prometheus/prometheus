@@ -380,6 +380,12 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedCode: http.StatusNoContent,
 		},
 		{
+			desc:           "All timeseries accepted with metadata stored via AppendV2Options",
+			input:          writeV2RequestFixture.Timeseries,
+			expectedCode:   http.StatusNoContent,
+			appendMetadata: true,
+		},
+		{
 			desc: "Partial write; first series with invalid labels (no metric name)",
 			input: append(
 				// Series with test_metric1="test_metric1" labels.
@@ -1391,20 +1397,45 @@ type mockAppenderV2 struct {
 	*mockAppendable
 }
 
-func (m mockAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, _ storage.AOptions) (storage.SeriesRef, error) {
+func (m mockAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+	var (
+		newRef storage.SeriesRef
+		err    error
+	)
 	if h != nil || fh != nil {
 		// A V2 appender is responsible for ST zero-sample injection; mirror that
 		// best-effort behaviour so ST errors don't fail the append.
 		if st != 0 {
 			_, _ = m.AppendHistogramSTZeroSample(ref, ls, t, st, h, fh)
 		}
-		return m.AppendHistogram(ref, ls, t, h, fh)
+		newRef, err = m.AppendHistogram(ref, ls, t, h, fh)
+	} else {
+		if st != 0 {
+			_, _ = m.AppendSTZeroSample(ref, ls, t, st)
+		}
+		// Qualified to call the V1 Append and not recurse into this method.
+		newRef, err = m.mockAppendable.Append(ref, ls, t, v)
 	}
-	if st != 0 {
-		_, _ = m.AppendSTZeroSample(ref, ls, t, st)
+	if err != nil {
+		return 0, err
 	}
-	// Qualified to call the V1 Append and not recurse into this method.
-	return m.mockAppendable.Append(ref, ls, t, v)
+
+	// Exemplars and metadata are attached to the sample via AppendV2Options.
+	var exemplarErrs []error
+	for _, e := range opts.Exemplars {
+		if m.appendExemplarErr != nil {
+			exemplarErrs = append(exemplarErrs, m.appendExemplarErr)
+			continue
+		}
+		m.exemplars = append(m.exemplars, mockExemplar{ls, e.Labels, e.Ts, e.Value})
+	}
+	if !opts.Metadata.IsEmpty() && m.updateMetadataErr == nil {
+		m.metadata = append(m.metadata, mockMetadata{l: ls, m: opts.Metadata})
+	}
+	if len(exemplarErrs) > 0 {
+		return newRef, &storage.AppendPartialError{ExemplarErrors: exemplarErrs}
+	}
+	return newRef, nil
 }
 
 func (*mockAppendable) SetOptions(*storage.AppendOptions) {
