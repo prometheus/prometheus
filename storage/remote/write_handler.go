@@ -14,12 +14,14 @@
 package remote
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -31,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
@@ -301,7 +302,7 @@ func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ rem
 	}
 
 	s := remoteapi.WriteResponseStats{}
-	samplesWithoutMetadata, errHTTPCode, err := h.appendV2(app, req, &s)
+	errHTTPCode, err := h.appendV2(app, req, &s)
 	if err != nil {
 		if errHTTPCode/5 == 100 {
 			// On 5xx, we always rollback, because we expect
@@ -319,7 +320,6 @@ func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ rem
 			return remoteapi.WriteResponseStats{}, http.StatusInternalServerError, commitErr
 		}
 		// Bad request error happened, but rest of data (if any) was written.
-		h.samplesAppendedWithoutMetadata.Add(float64(samplesWithoutMetadata))
 		return s, errHTTPCode, err
 	}
 
@@ -327,11 +327,10 @@ func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ rem
 	if err := app.Commit(); err != nil {
 		return remoteapi.WriteResponseStats{}, http.StatusInternalServerError, err
 	}
-	h.samplesAppendedWithoutMetadata.Add(float64(samplesWithoutMetadata))
 	return s, 0, nil
 }
 
-func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request, rs *remoteapi.WriteResponseStats) (samplesWithoutMetadata, errHTTPCode int, err error) {
+func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request, rs *remoteapi.WriteResponseStats) (errHTTPCode int, err error) {
 	var (
 		badRequestErrs                                   []error
 		outOfOrderExemplarErrs, samplesWithInvalidLabels int
@@ -384,20 +383,50 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 			continue
 		}
 
-		allSamplesSoFar := rs.AllSamples()
+		// Parse the series' exemplars once. They (and the metadata) are attached to
+		// the first sample/histogram Append via AppendV2Options, taking advantage of
+		// the combined AppenderV2.Append. AppendV2Options.Exemplars must be sorted by
+		// timestamp.
+		var exemplars []exemplar.Exemplar
+		for _, ep := range ts.Exemplars {
+			e, err := ep.ToExemplar(&b, req.Symbols)
+			if err != nil {
+				badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing exemplar for series %v: %w", ls.String(), err))
+				continue
+			}
+			exemplars = append(exemplars, e)
+		}
+		slices.SortStableFunc(exemplars, func(a, b exemplar.Exemplar) int { return cmp.Compare(a.Ts, b.Ts) })
+
+		opts := storage.AppendV2Options{Exemplars: exemplars}
+		// Only attach metadata (and thus persist it in the WAL) if the
+		// metadata-wal-records feature is enabled.
+		if h.appendMetadata {
+			opts.Metadata = m
+		}
+		// firstOpts returns opts for the first sample/histogram of the series and
+		// empty options for the rest, so exemplars and metadata are attached once.
+		firstOpts := func() storage.AppendV2Options {
+			o := opts
+			opts = storage.AppendV2Options{}
+			return o
+		}
+
 		var ref storage.SeriesRef
 		for _, s := range ts.Samples {
 			// AppenderV2 takes the start timestamp (st) directly; the appender is
-			// responsible for any ST zero-sample injection. We treat OOO ST errors
-			// specially (they are common, so the appender handles them internally).
+			// responsible for any ST zero-sample injection.
 			var st int64
 			if h.ingestSTZeroSample && s.StartTimestamp != 0 && s.Timestamp != 0 {
 				st = s.StartTimestamp
 			}
 
-			ref, err = app.Append(ref, ls, st, s.GetTimestamp(), s.GetValue(), nil, nil, storage.AppendV2Options{})
-			if err == nil {
+			o := firstOpts()
+			ref, err = app.Append(ref, ls, st, s.GetTimestamp(), s.GetValue(), nil, nil, o)
+			var partialErr *storage.AppendPartialError
+			if err == nil || errors.As(err, &partialErr) {
 				rs.Samples++
+				rs.Exemplars += h.handleAppendedExemplars(o.Exemplars, partialErr, ls, &badRequestErrs, &outOfOrderExemplarErrs)
 				continue
 			}
 			// Handle append error.
@@ -410,7 +439,7 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
 				continue
 			}
-			return 0, http.StatusInternalServerError, err
+			return http.StatusInternalServerError, err
 		}
 
 		// Native Histograms.
@@ -421,13 +450,16 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 			if h.ingestSTZeroSample && hp.StartTimestamp != 0 && hp.Timestamp != 0 {
 				st = hp.StartTimestamp
 			}
+			o := firstOpts()
 			if hp.IsFloatHistogram() {
-				ref, err = app.Append(ref, ls, st, hp.Timestamp, 0, nil, hp.ToFloatHistogram(), storage.AppendV2Options{})
+				ref, err = app.Append(ref, ls, st, hp.Timestamp, 0, nil, hp.ToFloatHistogram(), o)
 			} else {
-				ref, err = app.Append(ref, ls, st, hp.Timestamp, 0, hp.ToIntHistogram(), nil, storage.AppendV2Options{})
+				ref, err = app.Append(ref, ls, st, hp.Timestamp, 0, hp.ToIntHistogram(), nil, o)
 			}
-			if err == nil {
+			var partialErr *storage.AppendPartialError
+			if err == nil || errors.As(err, &partialErr) {
 				rs.Histograms++
+				rs.Exemplars += h.handleAppendedExemplars(o.Exemplars, partialErr, ls, &badRequestErrs, &outOfOrderExemplarErrs)
 				continue
 			}
 			// Handle append error.
@@ -447,42 +479,7 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
 				continue
 			}
-			return 0, http.StatusInternalServerError, err
-		}
-
-		// Exemplars.
-		for _, ep := range ts.Exemplars {
-			e, err := ep.ToExemplar(&b, req.Symbols)
-			if err != nil {
-				badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing exemplar for series %v: %w", ls.String(), err))
-				continue
-			}
-			ref, err = app.AppendExemplar(ref, ls, e)
-			if err == nil {
-				rs.Exemplars++
-				continue
-			}
-			// Handle append error.
-			if errors.Is(err, storage.ErrOutOfOrderExemplar) {
-				outOfOrderExemplarErrs++ // Maintain old metrics, but technically not needed, given we fail here.
-				h.logger.Error("Out of order exemplar", "err", err.Error(), "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e))
-				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
-				continue
-			}
-			// TODO(bwplotka): Add strict mode which would trigger rollback of everything if needed.
-			// For now we keep the previously released flow (just error not debug level) of dropping them without rollback and 5xx.
-			h.logger.Error("failed to ingest exemplar, emitting error log, but no error for PRW caller", "err", err.Error(), "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e))
-		}
-
-		// Only update metadata in WAL if the metadata-wal-records feature is enabled.
-		// Without this feature, metadata is not persisted to WAL.
-		if h.appendMetadata {
-			if _, err = app.UpdateMetadata(ref, ls, m); err != nil {
-				h.logger.Debug("error while updating metadata from remote write", "err", err)
-				// Metadata is attached to each series, so since Prometheus does not reject sample without metadata information,
-				// we don't report remote write error either. We increment metric instead.
-				samplesWithoutMetadata += rs.AllSamples() - allSamplesSoFar
-			}
+			return http.StatusInternalServerError, err
 		}
 	}
 
@@ -492,10 +489,36 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 	h.samplesWithInvalidLabelsTotal.Add(float64(samplesWithInvalidLabels))
 
 	if len(badRequestErrs) == 0 {
-		return samplesWithoutMetadata, 0, nil
+		return 0, nil
 	}
 	// TODO(bwplotka): Better concat formatting? Perhaps add size limit?
-	return samplesWithoutMetadata, http.StatusBadRequest, errors.Join(badRequestErrs...)
+	return http.StatusBadRequest, errors.Join(badRequestErrs...)
+}
+
+// handleAppendedExemplars accounts for the exemplars attached to a successful
+// sample/histogram Append via AppendV2Options. partialErr, if non-nil, carries
+// the per-exemplar errors returned by that Append. It returns the number of
+// successfully appended exemplars, appending any bad-request (out-of-order)
+// exemplar errors to badRequestErrs and counting them in outOfOrderExemplarErrs.
+func (h *writeHandler) handleAppendedExemplars(exemplars []exemplar.Exemplar, partialErr *storage.AppendPartialError, ls labels.Labels, badRequestErrs *[]error, outOfOrderExemplarErrs *int) int {
+	if len(exemplars) == 0 {
+		return 0
+	}
+	if partialErr == nil {
+		return len(exemplars)
+	}
+	for _, exErr := range partialErr.ExemplarErrors {
+		if errors.Is(exErr, storage.ErrOutOfOrderExemplar) {
+			*outOfOrderExemplarErrs++
+			h.logger.Error("Out of order exemplar", "err", exErr.Error(), "series", ls.String())
+			*badRequestErrs = append(*badRequestErrs, fmt.Errorf("%w for series %v", exErr, ls.String()))
+			continue
+		}
+		// TODO(bwplotka): Add strict mode which would trigger rollback of everything if needed.
+		// For now we keep the previously released flow of dropping them without rollback and 5xx.
+		h.logger.Error("failed to ingest exemplar, emitting error log, but no error for PRW caller", "err", exErr.Error(), "series", ls.String())
+	}
+	return len(exemplars) - len(partialErr.ExemplarErrors)
 }
 
 // TODO(bwplotka): Consider exposing timeLimitAppender and bucketLimitAppender appenders from scrape/target.go
@@ -535,14 +558,4 @@ func (app *remoteWriteAppenderV2) AppendExemplar(ref storage.SeriesRef, l labels
 		return 0, fmt.Errorf("appender %T does not support exemplars", app.AppenderV2)
 	}
 	return ea.AppendExemplar(ref, l, e)
-}
-
-// UpdateMetadata delegates to the wrapped appender's optional
-// storage.MetadataUpdaterV2 capability.
-func (app *remoteWriteAppenderV2) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
-	mu, ok := app.AppenderV2.(storage.MetadataUpdaterV2)
-	if !ok {
-		return 0, fmt.Errorf("appender %T does not support metadata updates", app.AppenderV2)
-	}
-	return mu.UpdateMetadata(ref, l, m)
 }
