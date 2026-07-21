@@ -91,7 +91,7 @@ func (p *queryLogTest) setQueryLog(t *testing.T, queryLogFile string) {
 		_, err = fmt.Fprintf(p.configFile, "global:\n  query_log_file: %s\n", queryLogFile)
 		require.NoError(t, err)
 	}
-	_, err = p.configFile.Write([]byte(p.configuration()))
+	_, err = p.configFile.WriteString(p.configuration())
 	require.NoError(t, err)
 }
 
