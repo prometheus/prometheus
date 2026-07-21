@@ -2806,6 +2806,23 @@ func TestAppendHistogramsWithStartTimestamp(t *testing.T) {
 	c.waitForExpectedData(t, 30*time.Second)
 }
 
+type safeBuffer struct {
+	mtx sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *safeBuffer) Write(p []byte) (int, error) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *safeBuffer) String() string {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	return s.buf.String()
+}
+
 func TestQueueManager_FailedRequestLogging(t *testing.T) {
 	for _, tc := range []struct {
 		name                 string
@@ -2832,8 +2849,8 @@ func TestQueueManager_FailedRequestLogging(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			var buf bytes.Buffer
-			logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			buf := &safeBuffer{}
+			logger := slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 			client := &MockWriteClient{
 				StoreFunc: func(context.Context, []byte, int) (WriteResponseStats, error) {
@@ -2864,8 +2881,9 @@ func TestQueueManager_FailedRequestLogging(t *testing.T) {
 
 			if tc.expectLog {
 				require.Eventually(t, func() bool {
-					return strings.Contains(buf.String(), "Failed to send remote write v2 request") &&
-						strings.Contains(buf.String(), "req=")
+					s := buf.String()
+					return strings.Contains(s, "Failed to send remote write v2 request") &&
+						strings.Contains(s, "req=")
 				}, 5*time.Second, 10*time.Millisecond)
 			} else {
 				time.Sleep(100 * time.Millisecond)
