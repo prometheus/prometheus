@@ -3973,6 +3973,10 @@ azuread:
   [ workload_identity:
      client_id: <string>
      tenant_id: <string>
+     # Path to the projected service account token file. If unset, Prometheus
+     # uses the AZURE_FEDERATED_TOKEN_FILE environment variable (set by the
+     # Azure Workload Identity webhook); if that is also unset, it falls back
+     # to the default below.
      [ token_file_path: <string> | default = "/var/run/secrets/azure/tokens/azure-identity-token" ] ]
 
   # Azure OAuth.
