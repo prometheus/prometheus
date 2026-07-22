@@ -116,6 +116,49 @@ Special cases:
 * Float samples are unchanged if `min` is `-Inf`
 * All float samples are set to `+Inf` if `min` is `+Inf`
 
+## `correlation_over_time()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`correlation_over_time(a range-vector, b range-vector, method=0 scalar)`
+returns the correlation coefficient between paired float samples of `a` and
+`b` over the given range, per matched series pair. Series across the two
+selectors are paired by exact match on all labels except `__name__`;
+unpaired series are silently dropped. At each evaluation step, only samples
+whose timestamps appear in both range windows are correlated.
+
+The optional `method` scalar selects the coefficient:
+
+| `method` | meaning                              |
+|----------|--------------------------------------|
+| `0`      | Pearson product-moment (default)     |
+| `1`      | Spearman rank, with average-rank ties |
+| `2`      | Kendall tau-b                        |
+
+Pearson and Spearman are computed in a single Kahan-compensated pass.
+Kendall is the naive O(n²) implementation, which is acceptable for the range
+sizes typical of Prometheus queries but can be expensive for very long
+windows.
+
+Returns `NaN` for a step when the paired window has fewer than 2 samples, the
+variance is zero (constant input, single distinct value, or all-tied pairs
+for Kendall), or `method` is outside `{0, 1, 2}` — in the last case a
+PromQL warning annotation is also emitted. Histogram samples are skipped
+and do not contribute to the correlation.
+
+For example, to surface request-error-rate and request-latency series whose
+per-minute behaviour over the past hour moves together (potentially the
+same upstream problem causing both):
+
+```
+correlation_over_time(
+  rate(http_request_errors_total[1m])[1h:1m],
+  histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[1m]))[1h:1m]
+) > 0.8
+```
+
 ## `day_of_month()`
 
 `day_of_month(v=vector(time()) instant-vector)` interprets float samples in

@@ -36,6 +36,12 @@ export const functionSignatures: Record<string, Func> = {
     variadic: 0,
     returnType: valueType.vector,
   },
+  correlation_over_time: {
+    name: "correlation_over_time",
+    argTypes: [valueType.matrix, valueType.matrix, valueType.scalar],
+    variadic: 1,
+    returnType: valueType.vector,
+  },
   cos: { name: "cos", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   cosh: { name: "cosh", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   count_over_time: { name: "count_over_time", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },

@@ -100,6 +100,13 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar},
 		ReturnType: ValueTypeVector,
 	},
+	"correlation_over_time": {
+		Name:         "correlation_over_time",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeMatrix, ValueTypeScalar},
+		Variadic:     1,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"cos": {
 		Name:       "cos",
 		ArgTypes:   []ValueType{ValueTypeVector},

@@ -164,6 +164,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'correlation_over_time',
+    detail: 'function',
+    info: 'Compute the correlation coefficient between two range vectors over time',
+    type: 'function',
+  },
+  {
     label: 'cos',
     detail: 'function',
     info: 'Calculate the cosine, in radians, for input series',

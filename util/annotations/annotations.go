@@ -154,6 +154,9 @@ var (
 	NativeHistogramNotGaugeWarning          = fmt.Errorf("%w: this native histogram metric is not a gauge:", PromQLWarning)
 	MixedExponentialCustomHistogramsWarning = fmt.Errorf("%w: vector contains a mix of histograms with exponential and custom buckets schemas for metric name", PromQLWarning)
 	IncompatibleBucketLayoutInBinOpWarning  = fmt.Errorf("%w: incompatible bucket layout encountered for binary operator", PromQLWarning)
+	InvalidCorrelationMethodWarning         = fmt.Errorf("%w: correlation method must be 0 (Pearson), 1 (Spearman) or 2 (Kendall)", PromQLWarning)
+	AmbiguousCorrelationPairWarning         = fmt.Errorf("%w: correlation_over_time: multiple series in the second range vector match the same label signature; pairing is non-deterministic", PromQLWarning)
+	LargeKendallCorrelationRangeInfo        = fmt.Errorf("%w: correlation_over_time: Kendall correlation is O(n²) and this range has many paired samples", PromQLInfo)
 	SortInRangeQueryWarning                 = fmt.Errorf("%w: sort is ineffective for range queries since results are always ordered by labels", PromQLWarning)
 
 	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count/_bucket:", PromQLInfo)
@@ -234,6 +237,35 @@ func NewInvalidRatioWarning(q, to float64, pos posrange.PositionRange) error {
 	return &annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w, got %g, capping to %g", InvalidRatioWarning, q, to),
+	}
+}
+
+// NewInvalidCorrelationMethodWarning is used when the user specifies an invalid
+// correlation method value for correlation_over_time.
+func NewInvalidCorrelationMethodWarning(method float64, pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w, got %g", InvalidCorrelationMethodWarning, method),
+	}
+}
+
+// NewAmbiguousCorrelationPairWarning is used when more than one series in the
+// second range vector of correlation_over_time matches the same label signature
+// (all labels except __name__) as a series from the first range vector, so the
+// pairing is non-deterministic.
+func NewAmbiguousCorrelationPairWarning(labels string, pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w: %s", AmbiguousCorrelationPairWarning, labels),
+	}
+}
+
+// NewLargeKendallCorrelationRangeInfo is used when correlation_over_time uses
+// Kendall tau-b on a range with many paired samples.
+func NewLargeKendallCorrelationRangeInfo(pairs int, pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w: %d pairs", LargeKendallCorrelationRangeInfo, pairs),
 	}
 }
 

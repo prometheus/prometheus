@@ -27,6 +27,7 @@ import {
   Clamp,
   ClampMax,
   ClampMin,
+  CorrelationOverTime,
   Cos,
   Cosh,
   CountOverTime,
@@ -209,6 +210,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
     name: 'clamp_min',
     argTypes: [ValueType.vector, ValueType.scalar],
     variadic: 0,
+    returnType: ValueType.vector,
+  },
+  [CorrelationOverTime]: {
+    name: 'correlation_over_time',
+    argTypes: [ValueType.matrix, ValueType.matrix, ValueType.scalar],
+    variadic: 1,
     returnType: ValueType.vector,
   },
   [Cos]: {

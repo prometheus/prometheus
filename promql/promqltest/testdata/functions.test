@@ -2764,3 +2764,168 @@ eval instant at 10m delta(counter[10m])
 # 4 * (300s / 240s) = 5.
 eval range from 5m to 10m step 1m delta(gauge[5m])
   {} 5 5 5 5 5 5
+
+# Tests for correlation_over_time.
+clear
+
+# Perfectly correlated (r = 1).
+load 1m
+  corr_a{job="test"} 1 2 3 4 5
+  corr_b{job="test"} 10 20 30 40 50
+
+eval instant at 5m correlation_over_time(corr_a{job="test"}[5m], corr_b{job="test"}[5m])
+  {job="test"} 1
+
+clear
+
+# Perfectly anti-correlated (r = -1).
+load 1m
+  corr_up{job="test"} 90 80 70 60 50
+  corr_down{job="test"} 10 20 30 40 50
+
+eval instant at 5m correlation_over_time(corr_up{job="test"}[5m], corr_down{job="test"}[5m])
+  {job="test"} -1
+
+clear
+
+# Constant series yields NaN (zero variance).
+load 1m
+  corr_flat{job="test"} 5 5 5 5 5
+  corr_ramp{job="test"} 1 2 3 4 5
+
+eval instant at 5m correlation_over_time(corr_flat{job="test"}[5m], corr_ramp{job="test"}[5m])
+  {job="test"} NaN
+
+clear
+
+# Spearman on non-linear but monotonic data gives 1.
+load 1m
+  corr_load{job="test"} 10 20 30 40 50
+  corr_lat{job="test"} 1 4 9 16 25
+
+eval instant at 5m correlation_over_time(corr_load{job="test"}[5m], corr_lat{job="test"}[5m], 1)
+  {job="test"} 1
+
+clear
+
+# Kendall on perfectly concordant data gives 1.
+load 1m
+  corr_x{job="test"} 1 2 3 4 5
+  corr_y{job="test"} 2 4 6 8 10
+
+eval instant at 5m correlation_over_time(corr_x{job="test"}[5m], corr_y{job="test"}[5m], 2)
+  {job="test"} 1
+
+clear
+
+# Fewer than 2 samples returns NaN.
+load 1m
+  corr_single_a{job="test"} 42
+  corr_single_b{job="test"} 99
+
+eval instant at 1m correlation_over_time(corr_single_a{job="test"}[2m], corr_single_b{job="test"}[2m])
+  {job="test"} NaN
+
+clear
+
+# Exactly 2 samples — minimum n for a defined correlation.
+# x={1,2}, y={2,4}: perfectly linear, r=1.
+load 1m
+  corr_two_a{job="test"} 1 2
+  corr_two_b{job="test"} 2 4
+
+eval instant at 1m correlation_over_time(corr_two_a{job="test"}[2m], corr_two_b{job="test"}[2m])
+  {job="test"} 1
+
+clear
+
+# Invalid method (out of {0,1,2}) => NaN per step + warning annotation.
+load 1m
+  corr_a{job="test"} 1 2 3 4 5
+  corr_b{job="test"} 10 20 30 40 50
+
+eval instant at 5m correlation_over_time(corr_a{job="test"}[5m], corr_b{job="test"}[5m], 99)
+  expect warn
+  {job="test"} NaN
+
+eval instant at 5m correlation_over_time(corr_a{job="test"}[5m], corr_b{job="test"}[5m], NaN)
+  expect warn
+  {job="test"} NaN
+
+clear
+
+# Unpaired series — only series whose non-__name__ labels match in both
+# selectors yield a result. Here `paired` exists in both with the same
+# label set; `only_a` and `only_b` are unpaired and silently skipped.
+load 1m
+  paired_a{job="test", endpoint="paired"} 1 2 3 4 5
+  paired_b{job="test", endpoint="paired"} 2 4 6 8 10
+  only_a{job="test", endpoint="orphan_a"}  1 2 3 4 5
+  only_b{job="test", endpoint="orphan_b"}  1 2 3 4 5
+
+eval instant at 5m correlation_over_time(paired_a[5m], paired_b[5m])
+  {job="test", endpoint="paired"} 1
+
+eval instant at 5m correlation_over_time(only_a[5m], only_b[5m])
+
+clear
+
+# Histogram samples in either range are ignored. With at least two float
+# samples on each side at common timestamps, the correlation is still
+# computed, and a PromQL info annotation reports the dropped histograms.
+load 1m
+  corr_mix_a{job="test"} 1 2 {{schema:1 sum:2 count:3}} 4 5
+  corr_mix_b{job="test"} 2 4 {{schema:1 sum:2 count:3}} 8 10
+
+eval instant at 5m correlation_over_time(corr_mix_a{job="test"}[5m], corr_mix_b{job="test"}[5m])
+  expect info
+  {job="test"} 1
+
+clear
+
+# Ambiguous pairing: two series in the second range vector share the same
+# label signature (all labels except __name__), so pairing is non-deterministic.
+# A PromQL warning annotation is emitted; the first matching series wins.
+load 1m
+  ambi_a{job="test"} 1 2 3 4 5
+  ambi_b{job="test"} 2 4 6 8 10
+  ambi_c{job="test"} 10 20 30 40 50
+
+eval instant at 5m correlation_over_time(ambi_a{job="test"}[5m], {__name__=~"ambi_b|ambi_c", job="test"}[5m])
+  expect warn
+  {job="test"} 1
+
+clear
+
+# Histogram-only ranges produce zero float pairs => no result.
+load 1m
+  corr_hist_a{job="test"} {{schema:1 sum:2 count:3}}x5
+  corr_hist_b{job="test"} {{schema:1 sum:2 count:3}}x5
+
+eval instant at 5m correlation_over_time(corr_hist_a{job="test"}[5m], corr_hist_b{job="test"}[5m])
+
+clear
+
+# Range-query mode: correlation evaluated at each step. Step-by-step
+# the (5m) window slides over a perfectly linear pair, so r=1 at every
+# step where both windows have at least 2 float samples.
+load 1m
+  corr_range_a{job="test"} 1 2 3 4 5 6 7 8 9 10
+  corr_range_b{job="test"} 10 20 30 40 50 60 70 80 90 100
+
+eval range from 2m to 9m step 1m correlation_over_time(corr_range_a{job="test"}[5m], corr_range_b{job="test"}[5m])
+  {job="test"} 1 1 1 1 1 1 1 1
+
+clear
+
+# Either argument can be a subquery expression, not just a plain
+# MatrixSelector. Here the second argument is `last_over_time(...)[5m:1m]`,
+# a subquery that materialises into a range vector before correlation.
+load 1m
+  corr_sub_a{job="test"} 1 2 3 4 5
+  corr_sub_b{job="test"} 10 20 30 40 50
+
+eval instant at 5m correlation_over_time(corr_sub_a{job="test"}[5m], last_over_time(corr_sub_b{job="test"}[1m])[5m:1m])
+  {job="test"} 1
+
+clear

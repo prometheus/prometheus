@@ -68,6 +68,7 @@
     "clamp": true,
     "clamp_max": true,
     "clamp_min": true,
+    "correlation_over_time": false,
     "cos": true,
     "cosh": true,
     "count_over_time": true,
