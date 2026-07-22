@@ -27,6 +27,9 @@
   ],
   "prConcurrentLimit": 20,
   "prHourlyLimit": 5,
+  "npm": {
+    "minimumReleaseAge": "7 days"
+  },
   "packageRules": [
     {
       "description": "Don't update replace directives",
