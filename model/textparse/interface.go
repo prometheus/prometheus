@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"mime"
+	"strings"
 
 	"github.com/prometheus/common/model"
 
@@ -120,6 +121,77 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 		return "", fmt.Errorf("received unsupported Content-Type %q and no fallback_scrape_protocol specified for target", contentType)
 	}
 	return fallbackType, fmt.Errorf("received unsupported Content-Type %q, using fallback_scrape_protocol %q", contentType, fallbackType)
+}
+
+// isSeriesPartOfFamily checks if a series name belongs to a given metric family
+// based on the metric type and family name. This handles suffixes like _total,
+// _bucket, _sum, _count, etc.
+func isSeriesPartOfFamily(seriesName string, familyName []byte, typ model.MetricType) bool {
+	familyNameStr := string(familyName)
+	if !strings.HasPrefix(seriesName, familyNameStr) { // Fast path.
+		return false
+	}
+
+	var (
+		gotFamilyName string
+		ok            bool
+	)
+	switch typ {
+	case model.MetricTypeCounter:
+		// Prometheus allows _total, cut it from family name to support this case.
+		familyNameStr, _ = strings.CutSuffix(familyNameStr, "_total")
+
+		gotFamilyName, ok = strings.CutSuffix(seriesName, "_total")
+		if !ok {
+			gotFamilyName = seriesName
+		}
+	case model.MetricTypeHistogram:
+		gotFamilyName, ok = strings.CutSuffix(seriesName, "_bucket")
+		if !ok {
+			gotFamilyName, ok = strings.CutSuffix(seriesName, "_sum")
+			if !ok {
+				gotFamilyName, ok = strings.CutSuffix(seriesName, "_count")
+				if !ok {
+					gotFamilyName = seriesName
+				}
+			}
+		}
+	case model.MetricTypeGaugeHistogram:
+		gotFamilyName, ok = strings.CutSuffix(seriesName, "_bucket")
+		if !ok {
+			gotFamilyName, ok = strings.CutSuffix(seriesName, "_gsum")
+			if !ok {
+				gotFamilyName, ok = strings.CutSuffix(seriesName, "_gcount")
+				if !ok {
+					gotFamilyName, ok = strings.CutSuffix(seriesName, "_count")
+					if !ok {
+						gotFamilyName = seriesName
+					}
+				}
+			}
+		}
+	case model.MetricTypeSummary:
+		gotFamilyName, ok = strings.CutSuffix(seriesName, "_sum")
+		if !ok {
+			gotFamilyName, ok = strings.CutSuffix(seriesName, "_count")
+			if !ok {
+				gotFamilyName = seriesName
+			}
+		}
+	case model.MetricTypeInfo:
+		// Technically prometheus text does not support info type, but we might
+		// accidentally allow info type in prom parse, so support metric family names
+		// with the _info explicitly too.
+		familyNameStr, _ = strings.CutSuffix(familyNameStr, "_info")
+
+		gotFamilyName, ok = strings.CutSuffix(seriesName, "_info")
+		if !ok {
+			gotFamilyName = seriesName
+		}
+	default:
+		gotFamilyName = seriesName
+	}
+	return familyNameStr == gotFamilyName
 }
 
 type ParserOptions struct {
