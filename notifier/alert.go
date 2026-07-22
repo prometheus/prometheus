@@ -73,7 +73,7 @@ func relabelAlerts(relabelConfigs []*relabel.Config, externalLabels labels.Label
 	var relabeledAlerts []*Alert
 
 	for _, a := range alerts {
-		lb.Reset(a.Labels)
+		lb.Reset(a.Labels.WithoutEmpty())
 		externalLabels.Range(func(l labels.Label) {
 			if a.Labels.Get(l.Name) == "" {
 				lb.Set(l.Name, l.Value)
