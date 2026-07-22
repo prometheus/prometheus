@@ -1734,7 +1734,9 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 	// should be maintained irrespective of success or failure.
 	s.qm.dataOut.incr(int64(sampleCount + exemplarCount + histogramCount + metadataCount))
 	s.qm.dataOutDuration.incr(int64(duration))
-	s.qm.lastSendTimestamp.Store(time.Now().Unix())
+	if err == nil {
+		s.qm.lastSendTimestamp.Store(time.Now().Unix())
+	}
 
 	// Pending samples/exemplars/histograms also should be subtracted, as an error means
 	// they will not be retried.

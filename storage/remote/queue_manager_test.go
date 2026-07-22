@@ -761,6 +761,45 @@ func TestShouldReshard(t *testing.T) {
 	}
 }
 
+func TestFailedSendDoesNotAllowReshard(t *testing.T) {
+	writeAttempted := make(chan struct{})
+	client := &MockWriteClient{
+		StoreFunc: func(context.Context, []byte, int) (WriteResponseStats, error) {
+			close(writeAttempted)
+			return WriteResponseStats{}, errors.New("remote endpoint unavailable")
+		},
+		NameFunc:     func() string { return "mock" },
+		EndpointFunc: func() string { return "http://fake:9090/api/v1/write" },
+	}
+
+	cfg := testDefaultQueueConfig()
+	cfg.MinShards = 1
+	cfg.MaxShards = 2
+	cfg.MaxSamplesPerSend = 1
+	cfg.Capacity = 1
+
+	recs := testwal.GenerateRecords(recCase{Series: 1, SamplesPerSeries: 1})
+	m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, client, remoteapi.WriteV1MessageType)
+	m.StoreSeries(recs.Series, 0)
+	m.Start()
+	defer m.Stop()
+
+	require.True(t, m.Append(recs.Samples))
+	select {
+	case <-writeAttempted:
+	case <-time.After(time.Second):
+		require.FailNow(t, "timed out waiting for a remote write attempt")
+	}
+	require.Eventually(t, func() bool {
+		return client_testutil.ToFloat64(m.metrics.failedSamplesTotal) == 1
+	}, time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool {
+		return client_testutil.ToFloat64(m.metrics.pendingSamples) == 0
+	}, time.Second, 10*time.Millisecond)
+
+	require.False(t, m.shouldReshard(m.numShards+1))
+}
+
 // TestDisableReshardOnRetry asserts that resharding should be disabled when a
 // recoverable error is returned from remote_write.
 func TestDisableReshardOnRetry(t *testing.T) {
