@@ -1,0 +1,51 @@
+# HELP http_requests_total Total number of HTTP requests.
+# TYPE http_requests_total counter
+# UNIT http_requests_total requests
+http_requests_total{method="get"} 1027.0 1395066363.0 st@1395066360.0 # {trace_id="abc123"} 1.0 1395066362.0
+http_requests_total{method="post"} 3.0 1395066363.0
+http_requests_total{method="put"} 0.0 1395066363.0 # {trace_id="t1",span_id="s1"} 1.0 1395066362.5 # {trace_id="t2",span_id="s2"} 1.0 1395066362.9
+# HELP go_gc_duration_seconds GC duration percentiles.
+# TYPE go_gc_duration_seconds summary
+# UNIT go_gc_duration_seconds seconds
+go_gc_duration_seconds {count:100,sum:1.5,quantile:[0.25:0.0001,0.5:0.0002,0.75:0.0003,1.0:0.0004]}
+go_gc_duration_seconds{gen="young"} {count:80,sum:1.2,quantile:[0.5:0.0001,0.99:0.0005]}
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+# UNIT process_open_fds fds
+process_open_fds 8.0
+# HELP up 1 if the target is up.
+# TYPE up gauge
+up{job="api",instance="api-1:9090"} 1.0 1395066363.5
+up{job="api",instance="api-2:9090"} 0.0 1395066363.5
+# HELP request_duration Request duration (classic histogram exposition).
+# TYPE request_duration histogram
+# UNIT request_duration seconds
+request_duration {count:144,sum:53.4,bucket:[0.1:24,0.2:33,0.4:100,1.0:144,+Inf:144]} # {trace_id="slow-req"} 0.95 1395066362.7
+request_duration{route="/api/v1/query"} {count:12,sum:3.2,bucket:[0.1:2,1.0:12,+Inf:12]}
+# HELP latency_seconds Service latency (native histogram).
+# TYPE latency_seconds histogram
+# UNIT latency_seconds seconds
+latency_seconds {count:5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:3],positive_buckets:[1,1,1]}
+# HELP payload_size Payload size (float native histogram).
+# TYPE payload_size histogram
+payload_size {count:5.5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2.5,positive_spans:[0:2],positive_buckets:[2.0,1.0]}
+# HELP request_size Request size distribution (gauge histogram).
+# TYPE request_size gaugehistogram
+# UNIT request_size bytes
+request_size {gcount:6,gsum:100.0,schema:0,zero_threshold:0.001,zero_count:1,positive_spans:[0:2],positive_buckets:[3,2]}
+# HELP build_info Build information.
+# TYPE build_info info
+build_info{version="1.0.0",revision="abc123"} 1.0
+# HELP subsystem_enabled Subsystem stateset.
+# TYPE subsystem_enabled stateset
+subsystem_enabled{subsystem_enabled="auth"} 0.0
+subsystem_enabled{subsystem_enabled="metrics"} 1.0
+subsystem_enabled{subsystem_enabled="tracing"} 1.0
+# HELP unknown_metric Some metric of unknown type.
+# TYPE unknown_metric unknown
+unknown_metric 42.0
+another_unknown_metric 41.0
+# HELP "metric.with.dots" UTF-8 metric name.
+# TYPE "metric.with.dots" gauge
+{"metric.with.dots",label="value"} 1.0
+# EOF
