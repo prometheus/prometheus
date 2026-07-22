@@ -2074,6 +2074,230 @@ func funcStdvarOverTime(_ []Vector, matrixVals Matrix, args parser.Expressions, 
 	return varianceOverTime(matrixVals, args, enh, nil)
 }
 
+// === zscore_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
+// Returns the z-score of the most recent sample relative to the mean and
+// standard deviation of the float samples in the range vector:
+//
+//	(last - mean) / stddev
+//
+// Returns NaN when stddev is 0 (constant series or single sample), mirroring
+// the statistical convention. For mixed float+histogram ranges, histogram
+// samples are skipped and an info-level annotation is emitted, like
+// stddev_over_time.
+func funcZscoreOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
+	samples := matrixVal[0]
+	if len(samples.Floats) == 0 {
+		return enh.Out, nil
+	}
+	var annos annotations.Annotations
+	if len(samples.Histograms) > 0 {
+		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(getMetricName(samples.Metric), args[0].PositionRange()))
+	}
+	return aggrOverTime(matrixVal, enh, func(s Series) float64 {
+		var count float64
+		var mean, cMean float64
+		var aux, cAux float64
+		for _, f := range s.Floats {
+			count++
+			delta := f.F - (mean + cMean)
+			mean, cMean = kahansum.Inc(delta/count, mean, cMean)
+			aux, cAux = kahansum.Inc(delta*(f.F-(mean+cMean)), aux, cAux)
+		}
+		variance := (aux + cAux) / count
+		if variance == 0 {
+			return math.NaN()
+		}
+		last := s.Floats[len(s.Floats)-1].F
+		return (last - (mean + cMean)) / math.Sqrt(variance)
+	}), annos
+}
+
+// === zscore(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+// Returns the z-score of each float sample in the instant vector relative
+// to the mean and standard deviation of the float samples across the
+// vector at the same evaluation timestamp:
+//
+//	(v - mean) / stddev
+//
+// Returns NaN per sample when stddev is 0 (constant vector or single
+// sample), mirroring the statistical convention. Histogram samples are
+// skipped; if any are present alongside floats, an info-level annotation
+// is emitted.
+func funcZscore(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	vec := vectorVals[0]
+	if len(vec) == 0 {
+		return enh.Out, nil
+	}
+	var annos annotations.Annotations
+	var count float64
+	var mean, cMean float64
+	var aux, cAux float64
+	hasHistogram, hasFloat := false, false
+	for _, el := range vec {
+		if el.H != nil {
+			hasHistogram = true
+			continue
+		}
+		hasFloat = true
+		count++
+		delta := el.F - (mean + cMean)
+		mean, cMean = kahansum.Inc(delta/count, mean, cMean)
+		aux, cAux = kahansum.Inc(delta*(el.F-(mean+cMean)), aux, cAux)
+	}
+	if hasHistogram && hasFloat {
+		annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("zscore", args[0].PositionRange()))
+	}
+	if !hasFloat {
+		return enh.Out, annos
+	}
+	variance := (aux + cAux) / count
+	finalMean := mean + cMean
+	stddev := math.Sqrt(variance)
+	for _, el := range vec {
+		if el.H != nil {
+			continue
+		}
+		var z float64
+		if variance == 0 {
+			z = math.NaN()
+		} else {
+			z = (el.F - finalMean) / stddev
+		}
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
+		}
+		enh.Out = append(enh.Out, Sample{
+			Metric:   el.Metric,
+			F:        z,
+			DropName: true,
+		})
+	}
+	return enh.Out, annos
+}
+
+// madScaleNormalConsistent is the scaling factor that makes the median
+// absolute deviation a consistent estimator of the standard deviation for
+// normally distributed data. It equals 1/Phi^-1(0.75), where Phi^-1 is the
+// inverse standard-normal CDF, and is conventionally rounded to four
+// decimals. See:
+//   - Rousseeuw, P. J., & Croux, C. (1993). "Alternatives to the median
+//     absolute deviation." Journal of the American Statistical Association,
+//     88(424), 1273-1283.
+//   - Leys, C., Ley, C., Klein, O., Bernard, P., & Licata, L. (2013).
+//     "Detecting outliers: Do not use standard deviation around the mean,
+//     use absolute deviation around the median." Journal of Experimental
+//     Social Psychology, 49(4), 764-766.
+const madScaleNormalConsistent = 1.4826
+
+// robustZscoreFromFloats returns the robust z-score of last relative to the
+// median and median absolute deviation (MAD) of values:
+//
+//	(last - median) / (madScaleNormalConsistent * MAD)
+//
+// Returns NaN when MAD is 0 (e.g. constant input, single sample, or a
+// majority of equal values that drives the MAD to 0).
+func robustZscoreFromFloats(values vectorByValueHeap, last float64) float64 {
+	median := quantile(0.5, values)
+	devs := make(vectorByValueHeap, 0, len(values))
+	for _, v := range values {
+		devs = append(devs, Sample{F: math.Abs(v.F - median)})
+	}
+	mad := quantile(0.5, devs)
+	if mad == 0 {
+		return math.NaN()
+	}
+	return (last - median) / (madScaleNormalConsistent * mad)
+}
+
+// === robust_zscore_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
+// Returns the robust z-score of the most recent sample relative to the
+// median and median absolute deviation (MAD) of the float samples in the
+// range vector. See madScaleNormalConsistent for the scaling rationale and
+// references. For mixed float+histogram ranges, histogram samples are skipped
+// and an info-level annotation is emitted, like mad_over_time.
+func funcRobustZscoreOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
+	samples := matrixVal[0]
+	if len(samples.Floats) == 0 {
+		return enh.Out, nil
+	}
+	var annos annotations.Annotations
+	if len(samples.Histograms) > 0 {
+		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(getMetricName(samples.Metric), args[0].PositionRange()))
+	}
+	return aggrOverTime(matrixVal, enh, func(s Series) float64 {
+		values := make(vectorByValueHeap, 0, len(s.Floats))
+		for _, f := range s.Floats {
+			values = append(values, Sample{F: f.F})
+		}
+		last := s.Floats[len(s.Floats)-1].F
+		return robustZscoreFromFloats(values, last)
+	}), annos
+}
+
+// === robust_zscore(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+// Returns the robust z-score of each float sample in the instant vector
+// relative to the median and median absolute deviation (MAD) of the float
+// samples across the vector at the same evaluation timestamp. See
+// madScaleNormalConsistent for the scaling rationale and references.
+// Histogram samples are skipped; if any are present alongside floats, an
+// info-level annotation is emitted.
+func funcRobustZscore(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	vec := vectorVals[0]
+	if len(vec) == 0 {
+		return enh.Out, nil
+	}
+	var annos annotations.Annotations
+	values := make(vectorByValueHeap, 0, len(vec))
+	hasHistogram, hasFloat := false, false
+	for _, el := range vec {
+		if el.H != nil {
+			hasHistogram = true
+			continue
+		}
+		hasFloat = true
+		values = append(values, Sample{F: el.F})
+	}
+	if hasHistogram && hasFloat {
+		annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("robust_zscore", args[0].PositionRange()))
+	}
+	if !hasFloat {
+		return enh.Out, annos
+	}
+	median := quantile(0.5, values)
+	devs := make(vectorByValueHeap, 0, len(values))
+	for _, v := range values {
+		devs = append(devs, Sample{F: math.Abs(v.F - median)})
+	}
+	mad := quantile(0.5, devs)
+	scaled := madScaleNormalConsistent * mad
+	for _, el := range vec {
+		if el.H != nil {
+			continue
+		}
+		var rz float64
+		if mad == 0 {
+			rz = math.NaN()
+		} else {
+			rz = (el.F - median) / scaled
+		}
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
+		}
+		enh.Out = append(enh.Out, Sample{
+			Metric:   el.Metric,
+			F:        rz,
+			DropName: true,
+		})
+	}
+	return enh.Out, annos
+}
+
 // === absent(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcAbsent(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	if len(vectorVals[0]) > 0 {
@@ -3010,6 +3234,8 @@ var FunctionCalls = map[string]FunctionCall{
 	"range":                        nil, // Folded into NumberLiteral by foldQueryContextFunctions.
 	"rate":                         funcRate,
 	"resets":                       funcResets,
+	"robust_zscore":                funcRobustZscore,
+	"robust_zscore_over_time":      funcRobustZscoreOverTime,
 	"round":                        funcRound,
 	"scalar":                       funcScalar,
 	"sort":                         funcSort,
@@ -3026,6 +3252,8 @@ var FunctionCalls = map[string]FunctionCall{
 	"timestamp":                    funcTimestamp,
 	"vector":                       funcVector,
 	"year":                         funcYear,
+	"zscore":                       funcZscore,
+	"zscore_over_time":             funcZscoreOverTime,
 }
 
 func init() {

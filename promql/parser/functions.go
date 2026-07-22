@@ -394,6 +394,18 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"robust_zscore": {
+		Name:         "robust_zscore",
+		ArgTypes:     []ValueType{ValueTypeVector},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
+	"robust_zscore_over_time": {
+		Name:         "robust_zscore_over_time",
+		ArgTypes:     []ValueType{ValueTypeMatrix},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"round": {
 		Name:       "round",
 		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar},
@@ -512,6 +524,18 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		Variadic:   1,
 		ReturnType: ValueTypeVector,
+	},
+	"zscore": {
+		Name:         "zscore",
+		ArgTypes:     []ValueType{ValueTypeVector},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
+	"zscore_over_time": {
+		Name:         "zscore_over_time",
+		ArgTypes:     []ValueType{ValueTypeMatrix},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
 	},
 }
 

@@ -146,6 +146,13 @@ export const functionSignatures: Record<string, Func> = {
   range: { name: "range", argTypes: [], variadic: 0, returnType: valueType.scalar },
   rate: { name: "rate", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   resets: { name: "resets", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
+  robust_zscore: { name: "robust_zscore", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
+  robust_zscore_over_time: {
+    name: "robust_zscore_over_time",
+    argTypes: [valueType.matrix],
+    variadic: 0,
+    returnType: valueType.vector,
+  },
   round: { name: "round", argTypes: [valueType.vector, valueType.scalar], variadic: 1, returnType: valueType.vector },
   scalar: { name: "scalar", argTypes: [valueType.vector], variadic: 0, returnType: valueType.scalar },
   sgn: { name: "sgn", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
@@ -212,4 +219,11 @@ export const functionSignatures: Record<string, Func> = {
   },
   vector: { name: "vector", argTypes: [valueType.scalar], variadic: 0, returnType: valueType.vector },
   year: { name: "year", argTypes: [valueType.vector], variadic: 1, returnType: valueType.vector },
+  zscore: { name: "zscore", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
+  zscore_over_time: {
+    name: "zscore_over_time",
+    argTypes: [valueType.matrix],
+    variadic: 0,
+    returnType: valueType.vector,
+  },
 };

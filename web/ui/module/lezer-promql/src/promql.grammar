@@ -206,6 +206,8 @@ FunctionIdentifier {
   Rad |
   Rate |
   Resets |
+  RobustZscore |
+  RobustZscoreOverTime |
   Round |
   Scalar |
   Sgn |
@@ -229,7 +231,9 @@ FunctionIdentifier {
   Timestamp |
   Time |
   Vector |
-  Year
+  Year |
+  Zscore |
+  ZscoreOverTime
 }
 
 FunctionCallBody {
@@ -513,6 +517,8 @@ durationPrimary[@inline] {
   Rad { condFn<"rad"> }
   Rate { condFn<"rate"> }
   Resets { condFn<"resets"> }
+  RobustZscore { condFn<"robust_zscore"> }
+  RobustZscoreOverTime { condFn<"robust_zscore_over_time"> }
   Round { condFn<"round"> }
   Scalar { condFn<"scalar"> }
   Sgn { condFn<"sgn"> }
@@ -535,6 +541,8 @@ durationPrimary[@inline] {
   Timestamp { condFn<"timestamp"> }
   Vector { condFn<"vector"> }
   Year { condFn<"year"> }
+  Zscore { condFn<"zscore"> }
+  ZscoreOverTime { condFn<"zscore_over_time"> }
 
 // Conditional function names (only parsed as function names when used as such).
 condFn<term> { @extend<Identifier, term> }
