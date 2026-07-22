@@ -31,7 +31,7 @@ importers:
         version: 5.9.3
       vite:
         specifier: ^6.4.3
-        version: 6.4.3(@types/node@25.9.1)(sugarss@5.0.1(postcss@8.5.15))
+        version: 6.4.3(@types/node@26.0.1)(sugarss@5.0.1(postcss@8.5.15))
 
   mantine-ui:
     dependencies:
@@ -179,7 +179,7 @@ importers:
         version: 8.62.1(eslint@9.39.4)(typescript@5.9.3)
       '@vitejs/plugin-react':
         specifier: ^4.7.0
-        version: 4.7.0(vite@6.4.3(@types/node@25.9.1)(sugarss@5.0.1(postcss@8.5.15)))
+        version: 4.7.0(vite@6.4.3(@types/node@26.0.1)(sugarss@5.0.1(postcss@8.5.15)))
       eslint:
         specifier: ^9.39.4
         version: 9.39.4
@@ -209,10 +209,10 @@ importers:
         version: 3.7.1(picomatch@4.0.4)(rollup@4.62.0)
       vite:
         specifier: ^6.4.3
-        version: 6.4.3(@types/node@25.9.1)(sugarss@5.0.1(postcss@8.5.15))
+        version: 6.4.3(@types/node@26.0.1)(sugarss@5.0.1(postcss@8.5.15))
       vitest:
         specifier: ^3.2.6
-        version: 3.2.6(@types/node@25.9.1)(jsdom@25.0.1)(sugarss@5.0.1(postcss@8.5.15))
+        version: 3.2.6(@types/node@26.0.1)(jsdom@25.0.1)(sugarss@5.0.1(postcss@8.5.15))
 
   module/codemirror-promql:
     dependencies:
@@ -273,7 +273,7 @@ importers:
         version: 3.0.0
       jest:
         specifier: ^30.4.2
-        version: 30.4.2(@types/node@25.9.1)
+        version: 30.4.2(@types/node@26.0.1)
       nock:
         specifier: ^14.0.15
         version: 14.0.15
@@ -4903,7 +4903,7 @@ snapshots:
   '@unrs/resolver-binding-win32-x64-msvc@1.12.2':
     optional: true
 
-  '@vitejs/plugin-react@4.7.0(vite@6.4.3(@types/node@25.9.1)(sugarss@5.0.1(postcss@8.5.15)))':
+  '@vitejs/plugin-react@4.7.0(vite@6.4.3(@types/node@26.0.1)(sugarss@5.0.1(postcss@8.5.15)))':
     dependencies:
       '@babel/core': 7.29.7
       '@babel/plugin-transform-react-jsx-self': 7.29.7(@babel/core@7.29.7)
@@ -4911,7 +4911,7 @@ snapshots:
       '@rolldown/pluginutils': 1.0.0-beta.27
       '@types/babel__core': 7.20.5
       react-refresh: 0.17.0
-      vite: 6.4.3(@types/node@25.9.1)(sugarss@5.0.1(postcss@8.5.15))
+      vite: 6.4.3(@types/node@26.0.1)(sugarss@5.0.1(postcss@8.5.15))
     transitivePeerDependencies:
       - supports-color
 
@@ -4923,13 +4923,13 @@ snapshots:
       chai: 5.3.3
       tinyrainbow: 2.0.0
 
-  '@vitest/mocker@3.2.6(vite@6.4.3(@types/node@25.9.1)(sugarss@5.0.1(postcss@8.5.15)))':
+  '@vitest/mocker@3.2.6(vite@6.4.3(@types/node@26.0.1)(sugarss@5.0.1(postcss@8.5.15)))':
     dependencies:
       '@vitest/spy': 3.2.6
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 6.4.3(@types/node@25.9.1)(sugarss@5.0.1(postcss@8.5.15))
+      vite: 6.4.3(@types/node@26.0.1)(sugarss@5.0.1(postcss@8.5.15))
 
   '@vitest/pretty-format@3.2.6':
     dependencies:
@@ -5779,25 +5779,6 @@ snapshots:
       - babel-plugin-macros
       - supports-color
 
-  jest-cli@30.4.2(@types/node@25.9.1):
-    dependencies:
-      '@jest/core': 30.4.2
-      '@jest/test-result': 30.4.1
-      '@jest/types': 30.4.1
-      chalk: 4.1.2
-      exit-x: 0.2.2
-      import-local: 3.2.0
-      jest-config: 30.4.2(@types/node@25.9.1)
-      jest-util: 30.4.1
-      jest-validate: 30.4.1
-      yargs: 17.7.3
-    transitivePeerDependencies:
-      - '@types/node'
-      - babel-plugin-macros
-      - esbuild-register
-      - supports-color
-      - ts-node
-
   jest-cli@30.4.2(@types/node@26.0.1):
     dependencies:
       '@jest/core': 30.4.2
@@ -5816,37 +5797,6 @@ snapshots:
       - esbuild-register
       - supports-color
       - ts-node
-
-  jest-config@30.4.2(@types/node@25.9.1):
-    dependencies:
-      '@babel/core': 7.29.7
-      '@jest/get-type': 30.1.0
-      '@jest/pattern': 30.4.0
-      '@jest/test-sequencer': 30.4.1
-      '@jest/types': 30.4.1
-      babel-jest: 30.4.1(@babel/core@7.29.7)
-      chalk: 4.1.2
-      ci-info: 4.4.0
-      deepmerge: 4.3.1
-      glob: 10.5.0
-      graceful-fs: 4.2.11
-      jest-circus: 30.4.2
-      jest-docblock: 30.4.0
-      jest-environment-node: 30.4.1
-      jest-regex-util: 30.4.0
-      jest-resolve: 30.4.1
-      jest-runner: 30.4.2
-      jest-util: 30.4.1
-      jest-validate: 30.4.1
-      parse-json: 5.2.0
-      pretty-format: 30.4.1
-      slash: 3.0.0
-      strip-json-comments: 3.1.1
-    optionalDependencies:
-      '@types/node': 25.9.1
-    transitivePeerDependencies:
-      - babel-plugin-macros
-      - supports-color
 
   jest-config@30.4.2(@types/node@26.0.1):
     dependencies:
@@ -6131,19 +6081,6 @@ snapshots:
       jest-util: 30.4.1
       merge-stream: 2.0.0
       supports-color: 8.1.1
-
-  jest@30.4.2(@types/node@25.9.1):
-    dependencies:
-      '@jest/core': 30.4.2
-      '@jest/types': 30.4.1
-      import-local: 3.2.0
-      jest-cli: 30.4.2(@types/node@25.9.1)
-    transitivePeerDependencies:
-      - '@types/node'
-      - babel-plugin-macros
-      - esbuild-register
-      - supports-color
-      - ts-node
 
   jest@30.4.2(@types/node@26.0.1):
     dependencies:
@@ -7008,13 +6945,13 @@ snapshots:
       '@types/istanbul-lib-coverage': 2.0.6
       convert-source-map: 2.0.0
 
-  vite-node@3.2.4(@types/node@25.9.1)(sugarss@5.0.1(postcss@8.5.15)):
+  vite-node@3.2.4(@types/node@26.0.1)(sugarss@5.0.1(postcss@8.5.15)):
     dependencies:
       cac: 6.7.14
       debug: 4.4.3
       es-module-lexer: 1.7.0
       pathe: 2.0.3
-      vite: 6.4.3(@types/node@25.9.1)(sugarss@5.0.1(postcss@8.5.15))
+      vite: 6.4.3(@types/node@26.0.1)(sugarss@5.0.1(postcss@8.5.15))
     transitivePeerDependencies:
       - '@types/node'
       - jiti
@@ -7029,7 +6966,7 @@ snapshots:
       - tsx
       - yaml
 
-  vite@6.4.3(@types/node@25.9.1)(sugarss@5.0.1(postcss@8.5.15)):
+  vite@6.4.3(@types/node@26.0.1)(sugarss@5.0.1(postcss@8.5.15)):
     dependencies:
       esbuild: 0.25.12
       fdir: 6.5.0(picomatch@4.0.4)
@@ -7038,15 +6975,15 @@ snapshots:
       rollup: 4.62.0
       tinyglobby: 0.2.16
     optionalDependencies:
-      '@types/node': 25.9.1
+      '@types/node': 26.0.1
       fsevents: 2.3.3
       sugarss: 5.0.1(postcss@8.5.15)
 
-  vitest@3.2.6(@types/node@25.9.1)(jsdom@25.0.1)(sugarss@5.0.1(postcss@8.5.15)):
+  vitest@3.2.6(@types/node@26.0.1)(jsdom@25.0.1)(sugarss@5.0.1(postcss@8.5.15)):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/expect': 3.2.6
-      '@vitest/mocker': 3.2.6(vite@6.4.3(@types/node@25.9.1)(sugarss@5.0.1(postcss@8.5.15)))
+      '@vitest/mocker': 3.2.6(vite@6.4.3(@types/node@26.0.1)(sugarss@5.0.1(postcss@8.5.15)))
       '@vitest/pretty-format': 3.2.6
       '@vitest/runner': 3.2.6
       '@vitest/snapshot': 3.2.6
@@ -7064,11 +7001,11 @@ snapshots:
       tinyglobby: 0.2.16
       tinypool: 1.1.1
       tinyrainbow: 2.0.0
-      vite: 6.4.3(@types/node@25.9.1)(sugarss@5.0.1(postcss@8.5.15))
-      vite-node: 3.2.4(@types/node@25.9.1)(sugarss@5.0.1(postcss@8.5.15))
+      vite: 6.4.3(@types/node@26.0.1)(sugarss@5.0.1(postcss@8.5.15))
+      vite-node: 3.2.4(@types/node@26.0.1)(sugarss@5.0.1(postcss@8.5.15))
       why-is-node-running: 2.3.0
     optionalDependencies:
-      '@types/node': 25.9.1
+      '@types/node': 26.0.1
       jsdom: 25.0.1
     transitivePeerDependencies:
       - jiti

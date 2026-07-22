@@ -4,3 +4,5 @@ packages:
 allowBuilds:
   esbuild: true
   unrs-resolver: true
+minimumReleaseAge: 10080
+blockExoticSubdeps: true
