@@ -1180,7 +1180,7 @@ func (ev *evalCmd) expectMetric(pos int, m labels.Labels, vals ...parser.Sequenc
 }
 
 // validateExpectedAnnotationsOfType validates expected messages and regex match actual annotations.
-func validateExpectedAnnotationsOfType(expr string, expectedAnnotationsOfType []expectCmd, actualAnnotationsOfType []string, line int, annotationType string, allAnnos annotations.Annotations) error {
+func validateExpectedAnnotationsOfType(expr string, expectedAnnotationsOfType []expectCmd, actualAnnotationsOfType []string, line int, annotationType string) error {
 	if len(expectedAnnotationsOfType) == 0 {
 		return nil
 	}
@@ -1193,7 +1193,7 @@ func validateExpectedAnnotationsOfType(expr string, expectedAnnotationsOfType []
 	for _, e := range expectedAnnotationsOfType {
 		matchFound := slices.ContainsFunc(actualAnnotationsOfType, e.CheckMatch)
 		if !matchFound {
-			return fmt.Errorf(`expected %s annotation matching %s %q but no matching annotation was found for query %q (line %d), found: %v`, annotationType, e.Type(), e.String(), expr, line, allAnnos.AsErrors())
+			return fmt.Errorf(`expected %s annotation matching %s %q but no matching annotation was found for query %q (line %d), found: %v`, annotationType, e.Type(), e.String(), expr, line, actualAnnotationsOfType)
 		}
 	}
 
@@ -1220,22 +1220,16 @@ func (ev *evalCmd) checkAnnotations(expr string, annos annotations.Annotations) 
 		return fmt.Errorf("expected info annotations evaluating query %q (line %d) but got none", expr, ev.line)
 	}
 
-	var warnings, infos []string
-
 	for _, err := range annos {
-		switch {
-		case errors.Is(err, annotations.PromQLWarning):
-			warnings = append(warnings, err.Error())
-		case errors.Is(err, annotations.PromQLInfo):
-			infos = append(infos, err.Error())
-		default:
+		if !errors.Is(err, annotations.PromQLWarning) && !errors.Is(err, annotations.PromQLInfo) {
 			return fmt.Errorf("unexpected annotation type, must be either info or warn but got: %w", err)
 		}
 	}
-	if err := validateExpectedAnnotationsOfType(expr, ev.expectedCmds[Warn], warnings, ev.line, "warn", annos); err != nil {
+	warnings, infos := annos.AsStrings(expr, 0, 0)
+	if err := validateExpectedAnnotationsOfType(expr, ev.expectedCmds[Warn], warnings, ev.line, "warn"); err != nil {
 		return err
 	}
-	if err := validateExpectedAnnotationsOfType(expr, ev.expectedCmds[Info], infos, ev.line, "info", annos); err != nil {
+	if err := validateExpectedAnnotationsOfType(expr, ev.expectedCmds[Info], infos, ev.line, "info"); err != nil {
 		return err
 	}
 	if ev.expectedCmds[NoWarn] != nil && len(warnings) > 0 {

@@ -283,7 +283,7 @@ eval instant at 4m rate(counter_total{type!="overlap"}[3m])
 # Test overlapping start timestamps - warning expected
 eval instant at 4m rate(counter_total{type="overlap"}[3m])
     {type="overlap"} 1
-    expect warn msg: PromQL warning: sample has start time that overlaps with previous sample timestamp for metric "counter_total"
+    expect warn msg: PromQL warning: sample has start time that overlaps with previous sample timestamp for metric "counter_total" (1:6)
 
 # Test querying all series - should only warn for overlap case
 eval instant at 4m rate(counter_total[3m])
@@ -291,7 +291,7 @@ eval instant at 4m rate(counter_total[3m])
     {type="cumulative"} 1
     {type="no_st"} 1
     {type="overlap"} 1
-    expect warn msg: PromQL warning: sample has start time that overlaps with previous sample timestamp for metric "counter_total"
+    expect warn msg: PromQL warning: sample has start time that overlaps with previous sample timestamp for metric "counter_total" (1:6)
 
 clear
 

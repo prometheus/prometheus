@@ -4532,26 +4532,26 @@ load 1m
 	nonmonotonic_bucket{le="+Inf"}  				0+8x10
 
 eval instant at 1m histogram_quantile(0.5, classic_histogram_invalid)
-	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of ""
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)
 
 eval instant at 1m histogram_fraction(0.5, 1, conflicting_histogram)
-	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms
+	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms (1:28)
 
 eval instant at 1m histogram_quantile(0.5, nonmonotonic_bucket)
-	expect info msg: PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile)
+	expect info regex: PromQL info: input to histogram_quantile needed to be fixed for monotonicity .* \(1:25\)
 	{} 8.5
 
 eval instant at 1m histogram_quantile(1, histogram_nan)
-    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN (1:20)
     {case="100% NaNs"} NaN
     {case="20% NaNs"} NaN
 
 eval instant at 1m histogram_quantile(0.8, histogram_nan{case="20% NaNs"})
-    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher (1:20)
     {case="20% NaNs"} 1
 
 eval instant at 1m histogram_fraction(-Inf, 0.7071067811865475, histogram_nan)
-    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions
+    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions (1:20)
     {case="100% NaNs"} 0.0
     {case="20% NaNs"} 0.4
 

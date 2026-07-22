@@ -699,10 +699,10 @@ eval instant at 50m histogram_quantiles(testhistogram_bucket, "q", NaN)
 	{q="NaN", start="negative"} NaN
 
 eval instant at 50m histogram_quantile(NaN, non_existent)
-  expect warn msg: PromQL warning: quantile value should be between 0 and 1, got NaN
+  expect warn regex: PromQL warning: quantile value should be between 0 and 1, got NaN \([0-9]+:[0-9]+\)
 
 eval instant at 50m histogram_quantiles(non_existent, "q", NaN)
-  expect warn msg: PromQL warning: quantile value should be between 0 and 1, got NaN
+  expect warn regex: PromQL warning: quantile value should be between 0 and 1, got NaN \([0-9]+:[0-9]+\)
 
 # Quantile value in lowest bucket.
 
@@ -1035,7 +1035,7 @@ eval instant at 50m histogram_quantile(0.99, nonmonotonic_bucket)
     {} 979.75
 
 eval instant at 50m histogram_quantiles(nonmonotonic_bucket, "q", 0.01, 0.5, 0.99)
-    expect info
+    expect info regex: PromQL info: input to histogram_quantile needed to be fixed for monotonicity .* \(1:21\)
     {q="0.01"} 0.0045
     {q="0.5"} 8.5
     {q="0.99"} 979.75
@@ -1157,17 +1157,17 @@ load 1m
 
 eval instant at 0 histogram_quantile(0.8, series)
   expect no_info
-  expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series"
+  expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:25)
   # Should return no results.
 
 eval instant at 0 histogram_quantiles(series, "q", 0.1, 0.2)
   expect no_info
-  expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series"
+  expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:21)
   # Should return no results.
 
 eval instant at 0 histogram_fraction(-Inf, 1, series)
   expect no_info
-  expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series"
+  expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:29)
   # Should return no results.
 
 clear
@@ -1178,17 +1178,17 @@ load 1m
 
 eval instant at 0 histogram_quantile(0.8, series)
 	expect no_info
-	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series"
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series" (1:25)
 	# Should return no results.
 
 eval instant at 0 histogram_quantiles(series, "q", 0.1, 0.2)
 	expect no_info
-	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series"
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series" (1:21)
 	# Should return no results.
 
 eval instant at 0 histogram_fraction(-Inf, 1, series)
 	expect no_info
-	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series"
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series" (1:29)
 	# Should return no results.
 
 clear
@@ -1199,17 +1199,17 @@ load 1m
 
 eval instant at 0 histogram_quantile(0.8, series)
 	expect no_info
-	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "Hello World" for metric name "series"
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "Hello World" for metric name "series" (1:25)
 	# Should return no results.
 
 eval instant at 0 histogram_quantiles(series, "q", 0.1, 0.2)
 	expect no_info
-	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "Hello World" for metric name "series"
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "Hello World" for metric name "series" (1:21)
 	# Should return no results.
 
 eval instant at 0 histogram_fraction(-Inf, 1, series)
 	expect no_info
-	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "Hello World" for metric name "series"
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "Hello World" for metric name "series" (1:29)
 	# Should return no results.
 
 clear
@@ -1222,15 +1222,15 @@ load 1m
 
 eval instant at 0 histogram_quantile(0.8, series)
 	expect no_info
-	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series"
+	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:25)
 	# Should return no results.
 
 eval instant at 0 histogram_quantiles(series, "q", 0.1, 0.2)
 	expect no_info
-	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series"
+	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:21)
 	# Should return no results.
 
 eval instant at 0 histogram_fraction(-Inf, 1, series)
 	expect no_info
-	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series"
+	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:29)
 	# Should return no results.
