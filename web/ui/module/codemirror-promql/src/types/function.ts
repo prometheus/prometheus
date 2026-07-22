@@ -38,6 +38,7 @@ import {
   Delta,
   Deriv,
   EndFn,
+  EwmaOverTime,
   Exp,
   FirstOverTime,
   Floor,
@@ -276,6 +277,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
     argTypes: [],
     variadic: 0,
     returnType: ValueType.scalar,
+  },
+  [EwmaOverTime]: {
+    name: 'ewma_over_time',
+    argTypes: [ValueType.matrix, ValueType.scalar],
+    variadic: 0,
+    returnType: ValueType.vector,
   },
   [Exp]: {
     name: 'exp',

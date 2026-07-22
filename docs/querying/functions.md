@@ -220,6 +220,38 @@ samples are ignored entirely. For elements that contain a mix of float and
 histogram samples, only the float samples are used as input, which is flagged
 by an info-level annotation.
 
+## `ewma_over_time()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`ewma_over_time(v range-vector, alpha scalar)` returns the
+exponentially-weighted moving average of the float samples in the range vector
+for a smoothing factor `alpha` in `(0, 1]`:
+
+```
+s[i] = alpha * x[i] + (1 - alpha) * s[i-1], with s[0] = x[0]
+```
+
+Higher `alpha` tracks the most recent samples more responsively; lower `alpha`
+applies heavier smoothing of older history. Compared to `avg_over_time`, EWMA
+weights recent observations more, so it can track gradual drifts while damping
+per-scrape noise.
+
+Returns `NaN` per series for an out-of-range or `NaN` `alpha`, with a
+warning-level annotation. Histogram samples are skipped. Ranges containing only
+histogram samples are silently removed from the output, while ranges containing
+a mix of float and histogram samples use only the float samples and emit an
+info-level annotation.
+
+For example, to track sustained request-latency drift while dampening
+per-scrape noise:
+
+```
+ewma_over_time(http_request_duration_seconds[30m], 0.2)
+```
+
 ## `exp()`
 
 `exp(v instant-vector)` calculates the exponential function for all float

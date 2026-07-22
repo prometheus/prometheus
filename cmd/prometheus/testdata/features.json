@@ -80,6 +80,7 @@
     "deriv": true,
     "double_exponential_smoothing": false,
     "end": false,
+    "ewma_over_time": false,
     "exp": true,
     "first_over_time": true,
     "floor": true,

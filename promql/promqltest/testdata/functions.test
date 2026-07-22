@@ -2764,3 +2764,90 @@ eval instant at 10m delta(counter[10m])
 # 4 * (300s / 240s) = 5.
 eval range from 5m to 10m step 1m delta(gauge[5m])
   {} 5 5 5 5 5 5
+
+# Tests for ewma_over_time.
+clear
+load 10s
+	metric 10 20 15 25 18
+
+# alpha=0.5, samples 10,20,15,25,18:
+# s0=10, s1=0.5*20+0.5*10=15, s2=0.5*15+0.5*15=15, s3=0.5*25+0.5*15=20, s4=0.5*18+0.5*20=19.
+eval instant at 40s ewma_over_time(metric[50s], 0.5)
+	{} 19
+
+# alpha=1: returns last sample (no smoothing).
+eval instant at 40s ewma_over_time(metric[50s], 1)
+	{} 18
+
+# Single sample => s = x[0].
+clear
+load 10s
+	metric 42
+
+eval instant at 0s ewma_over_time(metric[10s], 0.3)
+	{} 42
+
+# Constant series => smoothed value = constant.
+clear
+load 10s
+	metric 7 7 7 7 7
+
+eval instant at 40s ewma_over_time(metric[50s], 0.3)
+	{} 7
+
+# alpha out of range (0, 1] => NaN + warning.
+clear
+load 10s
+	metric 1 2 3
+
+eval instant at 20s ewma_over_time(metric[30s], 0)
+	expect warn
+	{} NaN
+
+eval instant at 20s ewma_over_time(metric[30s], 1.5)
+	expect warn
+	{} NaN
+
+eval instant at 20s ewma_over_time(metric[30s], -0.1)
+	expect warn
+	{} NaN
+
+eval instant at 20s ewma_over_time(metric[30s], NaN)
+	expect warn
+	{} NaN
+
+# Histograms only => empty.
+clear
+load 10s
+	metric {{schema:1 sum:2 count:3}}x5
+
+eval instant at 40s ewma_over_time(metric[50s], 0.5)
+	#empty
+
+# Mixed range: floats smoothed, histograms skipped, annotation emitted.
+clear
+load 10s
+	metric 10 20 {{schema:1 sum:2 count:3}} 30
+
+# Only floats {10, 20, 30}: s0=10, s1=0.5*20+0.5*10=15, s2=0.5*30+0.5*15=22.5.
+eval instant at 30s ewma_over_time(metric[40s], 0.5)
+	expect info
+	{} 22.5
+
+# Operational example: smoothing a noisy request-rate signal.
+# A jittery 1m-rate of http_requests_total bounces between 100 and 140 RPS
+# every 10s. The raw avg_over_time captures the bulk mean;
+# ewma_over_time with alpha=0.3 tracks the drift while damping the noise.
+clear
+load 10s
+	http_request_rate{service="api"} 100 140 100 140 100 140 100 140 100 140
+
+eval instant at 90s round(avg_over_time(http_request_rate[100s]), 1)
+	{service="api"} 120
+
+# EWMA with alpha=0.3 over the same data tends toward the mean but is
+# pulled toward the most recent (140) sample; computed iteratively:
+# 100, 112, 108.4, 117.88, 112.516, 120.7612, 114.53284, 122.17299,
+# 115.52109, 122.86476. round(0.01) for stable expectation.
+eval instant at 90s round(ewma_over_time(http_request_rate[100s], 0.3), 0.01)
+	{service="api"} 122.86

@@ -230,6 +230,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'ewma_over_time',
+    detail: 'function',
+    info: 'Return the exponentially-weighted moving average of float samples over a range vector',
+    type: 'function',
+  },
+  {
     label: 'exp',
     detail: 'function',
     info: 'Calculate exponential function for input vector values',

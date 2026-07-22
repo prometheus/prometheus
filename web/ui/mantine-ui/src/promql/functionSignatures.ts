@@ -53,6 +53,12 @@ export const functionSignatures: Record<string, Func> = {
     returnType: valueType.vector,
   },
   end: { name: "end", argTypes: [], variadic: 0, returnType: valueType.scalar },
+  ewma_over_time: {
+    name: "ewma_over_time",
+    argTypes: [valueType.matrix, valueType.scalar],
+    variadic: 0,
+    returnType: valueType.vector,
+  },
   exp: { name: "exp", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   first_over_time: { name: "first_over_time", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   floor: { name: "floor", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
