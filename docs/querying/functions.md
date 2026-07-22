@@ -960,6 +960,36 @@ queries, this returns `0`.
 this does not actually return the current time, but the time at which the
 expression is to be evaluated.
 
+## `time_to_threshold()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`time_to_threshold(v range-vector, threshold scalar)` returns the number of
+seconds, relative to the current evaluation time, at which a linear-regression
+extrapolation of the range vector would reach `threshold`. It is the inverse of
+`predict_linear`: instead of answering "what value at time now+t", it answers
+"at what t does the value cross T".
+
+Positive results are in the future. Negative results mean the threshold has
+already been crossed under the same extrapolation. Returns `NaN` when the
+regression slope is zero because the fitted line never crosses the threshold.
+Very small non-zero slopes can return very large ETAs, matching the linear
+model.
+
+The function should only be used with gauges and only works for float samples.
+Elements in the range vector that contain only histogram samples are ignored
+entirely. For elements that contain a mix of float and histogram samples, only
+the float samples are used as input, which is flagged by an info-level
+annotation.
+
+For example, to flag disks predicted to fill within the next 24 hours:
+
+```
+time_to_threshold(node_filesystem_avail_bytes[1h], 0) < 86400
+```
+
 ## `timestamp()`
 
 `timestamp(v instant-vector)` returns the timestamp of each of the samples of

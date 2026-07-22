@@ -598,6 +598,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'time_to_threshold',
+    detail: 'function',
+    info: 'Return seconds until a linear-regression extrapolation of the range vector crosses a threshold',
+    type: 'function',
+  },
+  {
     label: 'timestamp',
     detail: 'function',
     info: 'Return the Unix timestamp for the samples in the input vector',

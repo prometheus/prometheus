@@ -185,6 +185,12 @@ export const functionSignatures: Record<string, Func> = {
   tan: { name: "tan", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   tanh: { name: "tanh", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   time: { name: "time", argTypes: [], variadic: 0, returnType: valueType.scalar },
+  time_to_threshold: {
+    name: "time_to_threshold",
+    argTypes: [valueType.matrix, valueType.scalar],
+    variadic: 0,
+    returnType: valueType.vector,
+  },
   timestamp: { name: "timestamp", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   ts_of_first_over_time: {
     name: "ts_of_first_over_time",

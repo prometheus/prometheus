@@ -3791,6 +3791,43 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  time_to_threshold: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>time_to_threshold(v range-vector, threshold scalar)</code> returns the number of seconds, relative to the
+        current evaluation time, at which a linear-regression extrapolation of the range vector would reach{" "}
+        <code>threshold</code>. It is the inverse of
+        <code>predict_linear</code>: instead of answering &ldquo;what value at time now+t&rdquo;, it answers &ldquo;at
+        what t does the value cross T&rdquo;.
+      </p>
+
+      <p>
+        Positive results are in the future. Negative results mean the threshold has already been crossed under the same
+        extrapolation. Returns <code>NaN</code> when the regression slope is zero because the fitted line never crosses
+        the threshold. Very small non-zero slopes can return very large ETAs, matching the linear model.
+      </p>
+
+      <p>
+        The function should only be used with gauges and only works for float samples. Elements in the range vector that
+        contain only histogram samples are ignored entirely. For elements that contain a mix of float and histogram
+        samples, only the float samples are used as input, which is flagged by an info-level annotation.
+      </p>
+
+      <p>For example, to flag disks predicted to fill within the next 24 hours:</p>
+
+      <pre>
+        <code>time_to_threshold(node_filesystem_avail_bytes[1h], 0) &lt; 86400</code>
+      </pre>
+    </>
+  ),
   timestamp: (
     <>
       <p>

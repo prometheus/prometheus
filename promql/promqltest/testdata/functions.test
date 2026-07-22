@@ -2764,3 +2764,97 @@ eval instant at 10m delta(counter[10m])
 # 4 * (300s / 240s) = 5.
 eval range from 5m to 10m step 1m delta(gauge[5m])
   {} 5 5 5 5 5 5
+
+# Tests for time_to_threshold.
+# Linear decrease: -10/s, intercept at t=40s is 600. Time to 0 = 60s.
+clear
+load 10s
+	metric 1000 900 800 700 600
+
+eval instant at 40s time_to_threshold(metric[50s], 0)
+	{} 60
+
+# Threshold above current => already crossed (negative dt).
+eval instant at 40s time_to_threshold(metric[50s], 800)
+	{} -20
+
+# Threshold equal to extrapolated value at now => dt=0.
+eval instant at 40s time_to_threshold(metric[50s], 600)
+	{} 0
+
+# Constant series => slope=0 => NaN.
+clear
+load 10s
+	metric 500 500 500 500 500
+
+eval instant at 40s time_to_threshold(metric[50s], 0)
+	{} NaN
+
+# Single sample => insufficient data => empty.
+clear
+load 10s
+	metric 42
+
+eval instant at 0s time_to_threshold(metric[10s], 0)
+	#empty
+
+# Histograms only => empty.
+clear
+load 10s
+	metric {{schema:1 sum:2 count:3}}x5
+
+eval instant at 40s time_to_threshold(metric[50s], 0)
+	#empty
+
+# Exactly 1 float + histograms => insufficient floats for regression,
+# but histogram annotation still emitted.
+clear
+load 10s
+	metric 42 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
+
+eval instant at 20s time_to_threshold(metric[30s], 0)
+	expect info
+	#empty
+
+# Mixed range with >= 2 floats: floats regressed, histogram skipped,
+# annotation emitted. Floats {1000, 900, 800, 700} at t={0, 10, 30, 40}
+# (t=20 skipped): slope=-7/s, intercept=710 at t=40s; dt = (0-710)/(-7).
+clear
+load 10s
+	metric 1000 900 {{schema:1 sum:2 count:3}} 800 700
+
+eval instant at 40s round(time_to_threshold(metric[50s], 0), 0.01)
+	expect info
+	{} 101.43
+
+# Per-series: each filesystem its own ETA.
+clear
+load 10s
+	disk_free{mount="/"}     1000 900 800 700 600
+	disk_free{mount="/var"}  1000 950 900 850 800
+	disk_free{mount="/data"} 1000 1100 1200 1300 1400
+
+# /: slope=-10, intercept=600, dt = 60.
+# /var: slope=-5, intercept=800, dt = 160.
+# /data: slope=+10, intercept=1400, dt = -140 (already crossed in the past).
+eval instant at 40s time_to_threshold(disk_free[50s], 0)
+	{mount="/"} 60
+	{mount="/var"} 160
+	{mount="/data"} -140
+
+# Operational example: predict disk-fill ETA across nodes.
+# node_filesystem_avail_bytes scraped every 30s for 10 minutes. Two nodes:
+# node-1 is filling steadily (linear -1 GiB/min). node-2 is stable.
+# time_to_threshold(..., 0) gives seconds until each node's free space hits 0.
+# Filter `< 86400` keeps only nodes predicted to fill within 24 hours.
+# node-1 starts at 21474836480 (20 GiB), drops by 536870912 (512 MiB) every
+# 30s = -1 GiB/min. At t=10m the last sample is 10 GiB; linear time to 0:
+# 10 GiB / (1 GiB/min) = 10 min = 600s.
+# node-2 is constant => slope=0 => NaN (filtered out by < 86400).
+clear
+load 30s
+	node_filesystem_avail_bytes{node="node-1"} 21474836480-536870912x20
+	node_filesystem_avail_bytes{node="node-2"} 53687091200+0x20
+
+eval instant at 10m round(time_to_threshold(node_filesystem_avail_bytes[10m], 0), 1) < 86400
+	{node="node-1"} 600
