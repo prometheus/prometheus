@@ -17,6 +17,9 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -282,4 +285,62 @@ func TestRulesUnitTestRun(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// TestRulesUnitTestStdinRuleFile reproduces https://github.com/prometheus/prometheus/issues/13785:
+// a rule file delivered through a non-seekable input (a pipe, as with /dev/stdin)
+// can be read only once. When it is referenced by more than one test group, every
+// group after the first used to see an empty file because the file was re-read per
+// group. The shared rule file must instead be read only once.
+func TestRulesUnitTestStdinRuleFile(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("/dev/fd is not available on Windows")
+	}
+
+	ruleContent := []byte(`groups:
+  - name: alerts
+    rules:
+      - alert: AlwaysFiring
+        expr: 1
+`)
+	// A pipe is non-seekable, so reading it a second time yields EOF. The small
+	// content fits the kernel buffer, so writing then closing before any read
+	// keeps the test deterministic without a writer goroutine.
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	_, err = w.Write(ruleContent)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	defer r.Close()
+
+	testContent := fmt.Sprintf(`rule_files:
+  - /dev/fd/%d
+evaluation_interval: 1m
+tests:
+  - name: first group
+    input_series:
+      - series: 'up{job="prometheus"}'
+        values: "1 1"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: AlwaysFiring
+        exp_alerts:
+          - {}
+  - name: second group
+    input_series:
+      - series: 'up{job="prometheus"}'
+        values: "1 1"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: AlwaysFiring
+        exp_alerts:
+          - {}
+`, r.Fd())
+
+	testFile := filepath.Join(t.TempDir(), "stdin-rule-test.yml")
+	require.NoError(t, os.WriteFile(testFile, []byte(testContent), 0o644))
+
+	got := RulesUnitTest(promqltest.LazyLoaderOpts{}, parser.NewParser(parser.Options{}), nil, false, false, false, testFile)
+	require.Equal(t, 0, got, "both test groups should pass: the shared rule file must be read only once")
 }
