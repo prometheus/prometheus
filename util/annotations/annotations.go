@@ -147,6 +147,7 @@ var (
 	PromQLInfo    = errors.New("PromQL info")
 	PromQLWarning = errors.New("PromQL warning")
 
+	InvalidIntegralStrategy                 = fmt.Errorf("%w: strategy should be 0, 1, or 2 (default), using 2", PromQLWarning)
 	InvalidRatioWarning                     = fmt.Errorf("%w: ratio value should be between -1 and 1", PromQLWarning)
 	InvalidQuantileWarning                  = fmt.Errorf("%w: quantile value should be between 0 and 1", PromQLWarning)
 	BadBucketLabelWarning                   = fmt.Errorf("%w: bucket label %q is missing or has a malformed value", PromQLWarning, model.BucketLabel)
@@ -540,5 +541,13 @@ func NewStartTimeOverlapWarning(metricName string, pos posrange.PositionRange) e
 		Err:           StartTimeOverlapWarning,
 		metricName:    metricName,
 		count:         1,
+	}
+}
+
+// NewInvalidIntegralStrategyWarning is used when the user specifies an invalid integral strategy.
+func NewInvalidIntegralStrategyWarning(strategy float64, pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w, got %g", InvalidIntegralStrategy, strategy),
 	}
 }
