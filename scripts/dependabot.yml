@@ -20,6 +20,9 @@ updates:
       k8s.io:
         patterns:
           - "k8s.io/*"
+      prometheus:
+        patterns:
+          - "github.com/prometheus/*"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
