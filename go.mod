@@ -39,7 +39,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/pprof v0.0.0-20260604005048-7023385849c0
 	github.com/google/uuid v1.6.0
-	github.com/gophercloud/gophercloud/v2 v2.12.0
+	github.com/gophercloud/gophercloud/v2 v2.13.0
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
 	github.com/hashicorp/consul/api v1.33.7
 	github.com/hashicorp/nomad/api v0.0.0-20260622150140-ec332d2cba1c
