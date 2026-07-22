@@ -1916,6 +1916,33 @@ func funcTimestamp(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *Eva
 	return enh.Out, nil
 }
 
+// === start_timestamp(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+func funcStartTimestamp(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	vec := vectorVals[0]
+	var sts []int64
+	if enh.StartTimestamps != nil {
+		sts = enh.StartTimestamps.Floats
+	}
+	for i, el := range vec {
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
+		}
+
+		if i >= len(sts) {
+			// Only return results if start timestamps slice is populated. This means that the output is empty
+			// when `use-start-timestamps` is disabled or when this function is called on an expression.
+			continue
+		}
+
+		enh.Out = append(enh.Out, Sample{
+			Metric:   el.Metric,
+			F:        float64(sts[i]) / 1000,
+			DropName: true,
+		})
+	}
+	return enh.Out, nil
+}
+
 // linearRegression performs a least-square linear regression analysis on the
 // provided SamplePairs. It returns the slope, and the intercept value at the
 // provided time.
@@ -2707,6 +2734,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"sort_by_label":                funcSortByLabel,
 	"sort_by_label_desc":           funcSortByLabelDesc,
 	"start":                        nil, // Folded into NumberLiteral by foldQueryContextFunctions.
+	"start_timestamp":              funcStartTimestamp,
 	"step":                         nil, // Folded into NumberLiteral by foldQueryContextFunctions.
 	"sqrt":                         funcSqrt,
 	"stddev_over_time":             funcStddevOverTime,

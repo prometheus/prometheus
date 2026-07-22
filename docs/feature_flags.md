@@ -114,7 +114,7 @@ Besides enabling this feature in Prometheus, start timestamps need to be exposed
 
 `--enable-feature=use-start-timestamps`
 
-Enables the use of start timestamps (ST) in PromQL functions such as `rate()`, `irate()`, and `increase()`. This feature doesn't currently work with extended range selectors (`promql-extended-range-selectors`). 
+Enables the use of start timestamps (ST) in PromQL functions such as `rate()`, `irate()`, `increase()` and `start_timestamp()`. This feature doesn't currently work with extended range selectors (`promql-extended-range-selectors`). 
 
 ## Start timestamp (ST) synthesis
 

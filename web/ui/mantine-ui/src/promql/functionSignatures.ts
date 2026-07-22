@@ -161,6 +161,7 @@ export const functionSignatures: Record<string, Func> = {
   sort_desc: { name: "sort_desc", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   sqrt: { name: "sqrt", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   start: { name: "start", argTypes: [], variadic: 0, returnType: valueType.scalar },
+  start_timestamp: { name: "start_timestamp", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   stddev_over_time: {
     name: "stddev_over_time",
     argTypes: [valueType.matrix],

@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -28,10 +29,7 @@ type mockIndexWriter struct {
 }
 
 func copyChunk(c chunkenc.Chunk) (chunkenc.Chunk, error) {
-	b := c.Bytes()
-	nb := make([]byte, len(b))
-	copy(nb, b)
-	return chunkenc.FromData(c.Encoding(), nb)
+	return chunkenc.FromData(c.Encoding(), bytes.Clone(c.Bytes()))
 }
 
 func (mockIndexWriter) AddSymbol(string) error { return nil }
