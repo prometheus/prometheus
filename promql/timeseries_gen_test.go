@@ -1,0 +1,472 @@
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package promql
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
+)
+
+func requireLabelsEqual(t *testing.T, expected, actual labels.Labels) {
+	t.Helper()
+	require.Truef(t, labels.Equal(expected, actual), "expected %s, got %s", expected, actual)
+}
+
+func TestKVPairsToLabels_Valid(t *testing.T) {
+	got, err := kvPairsToLabels([]string{"env", "prod", "job", "api"}, true)
+	require.NoError(t, err)
+	requireLabelsEqual(t,
+		labels.FromStrings("env", "prod", "job", "api"),
+		got,
+	)
+}
+
+func TestKVPairsToLabels_Empty(t *testing.T) {
+	got, err := kvPairsToLabels(nil, true)
+	require.NoError(t, err)
+	requireLabelsEqual(t, labels.EmptyLabels(), got)
+}
+
+func TestKVPairsToLabels_OddLength(t *testing.T) {
+	_, err := kvPairsToLabels([]string{"env", "prod", "job"}, true)
+	require.ErrorContains(t, err, "expected even number")
+}
+
+func TestKVPairsToLabels_RejectsDuplicateLabelName(t *testing.T) {
+	_, err := kvPairsToLabels([]string{"env", "prod", "env", "stage"}, true)
+	require.ErrorContains(t, err, `duplicate label name: "env"`)
+}
+
+func TestKVPairsToLabels_AcceptsDottedName(t *testing.T) {
+	// UTF-8 validation allows OpenTelemetry-style dotted label names.
+	got, err := kvPairsToLabels([]string{"http.method", "GET"}, true)
+	require.NoError(t, err)
+	requireLabelsEqual(t, labels.FromStrings("http.method", "GET"), got)
+}
+
+func TestKVPairsToLabels_RejectsEmptyName(t *testing.T) {
+	_, err := kvPairsToLabels([]string{"", "x"}, true)
+	require.ErrorContains(t, err, "invalid label name")
+}
+
+func TestKVPairsToLabels_RejectsNameLabelWhenFlagSet(t *testing.T) {
+	_, err := kvPairsToLabels([]string{"__name__", "foo", "env", "prod"}, true)
+	require.ErrorContains(t, err, "__name__ must not be set")
+}
+
+func TestKVPairsToLabels_AllowsNameLabelWhenFlagUnset(t *testing.T) {
+	// When the caller has not supplied a metric_name argument, the
+	// template is free to set __name__ on a per-series basis.
+	got, err := kvPairsToLabels([]string{"__name__", "foo", "env", "prod"}, false)
+	require.NoError(t, err)
+	requireLabelsEqual(t,
+		labels.FromStrings("__name__", "foo", "env", "prod"),
+		got,
+	)
+}
+
+func TestKVPairsToLabels_AllowsCommaInValue(t *testing.T) {
+	got, err := kvPairsToLabels([]string{"tags", "a,b,c", "env", "prod"}, true)
+	require.NoError(t, err)
+	requireLabelsEqual(t,
+		labels.FromStrings("env", "prod", "tags", "a,b,c"),
+		got,
+	)
+}
+
+func TestSeriesBuilder_InjectsMetricName(t *testing.T) {
+	b := newSeriesBuilder("my_metric", 1000, 7000)
+	require.NoError(t, b.add(labels.FromStrings("env", "prod"), 1.0))
+
+	require.Len(t, b.out, 1)
+	requireLabelsEqual(t,
+		labels.FromStrings("__name__", "my_metric", "env", "prod"),
+		b.out[0].Metric,
+	)
+	require.Equal(t, 1.0, b.out[0].F)
+	require.Equal(t, int64(7000), b.out[0].T)
+}
+
+func TestSeriesBuilder_OmitsMetricNameWhenEmpty(t *testing.T) {
+	b := newSeriesBuilder("", 1000, 7000)
+	require.NoError(t, b.add(labels.FromStrings("env", "prod"), 1.0))
+
+	require.False(t, b.out[0].Metric.Has("__name__"))
+}
+
+func TestSeriesBuilder_Overflow(t *testing.T) {
+	b := newSeriesBuilder("", 2, 0)
+	require.NoError(t, b.add(labels.FromStrings("env", "prod"), 1))
+	require.NoError(t, b.add(labels.FromStrings("env", "stage"), 1))
+	err := b.add(labels.FromStrings("env", "dev"), 1)
+	require.ErrorContains(t, err, "emitted series exceeds limit 2")
+}
+
+func TestSeriesBuilder_DuplicateLabelSet(t *testing.T) {
+	b := newSeriesBuilder("f", 1000, 0)
+	require.NoError(t, b.add(labels.FromStrings("env", "prod"), 1))
+	err := b.add(labels.FromStrings("env", "prod"), 2)
+	require.ErrorContains(t, err, "duplicate label set")
+}
+
+func TestTplEngine_ParseError(t *testing.T) {
+	_, err := newTplEngine(`{{ this is not valid go template syntax`)
+	require.ErrorContains(t, err, "template parse error")
+}
+
+func TestTplEngine_RejectsDefine(t *testing.T) {
+	_, err := newTplEngine(`{{define "x"}}y{{end}}`)
+	require.ErrorContains(t, err, "forbidden template action: define")
+}
+
+func TestTplEngine_RejectsTemplate(t *testing.T) {
+	_, err := newTplEngine(`{{template "x"}}`)
+	require.ErrorContains(t, err, "forbidden template action: template")
+}
+
+func TestTplEngine_AcceptsValidTemplate(t *testing.T) {
+	_, err := newTplEngine(`hello {{.}}`)
+	require.NoError(t, err)
+}
+
+func TestTplEngine_Build_SingleSeries(t *testing.T) {
+	e, err := newTplEngine(`{{series 1.0 "env" "prod"}}`)
+	require.NoError(t, err)
+
+	v, err := e.build("f", 7000)
+	require.NoError(t, err)
+	require.Len(t, v, 1)
+	requireLabelsEqual(t,
+		labels.FromStrings("__name__", "f", "env", "prod"),
+		v[0].Metric,
+	)
+	require.Equal(t, 1.0, v[0].F)
+	require.Equal(t, int64(7000), v[0].T)
+}
+
+func TestTplEngine_Build_SeriesNoLabels(t *testing.T) {
+	e, err := newTplEngine(`{{series 42.0}}`)
+	require.NoError(t, err)
+
+	v, err := e.build("f", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 1)
+	requireLabelsEqual(t, labels.FromStrings("__name__", "f"), v[0].Metric)
+	require.Equal(t, 42.0, v[0].F)
+}
+
+func TestTplEngine_Build_RangeSeries(t *testing.T) {
+	e, err := newTplEngine(`{{rangeSeries "env" "prod,stage,dev" 1.0}}`)
+	require.NoError(t, err)
+
+	v, err := e.build("", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 3)
+	envs := []string{}
+	for _, s := range v {
+		envs = append(envs, s.Metric.Get("env"))
+	}
+	require.ElementsMatch(t, []string{"prod", "stage", "dev"}, envs)
+}
+
+func TestTplEngine_Build_RangeSeriesWithExtras(t *testing.T) {
+	e, err := newTplEngine(`{{rangeSeries "env" "prod,stage" 1.0 "job" "api"}}`)
+	require.NoError(t, err)
+
+	v, err := e.build("", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 2)
+	for _, s := range v {
+		require.Equal(t, "api", s.Metric.Get("job"))
+	}
+}
+
+func TestTplEngine_Build_SeqAndPrintf(t *testing.T) {
+	e, err := newTplEngine(`{{range $i := seq 1 3}}{{series 1.0 "i" (printf "%d" $i)}}{{end}}`)
+	require.NoError(t, err)
+
+	v, err := e.build("f", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 3)
+}
+
+func TestTplEngine_Build_IntValueCoercedToFloat(t *testing.T) {
+	// The loop variable from seq is an int; Go's text/template does not
+	// auto-convert int to float64 in function calls, so series accepts any
+	// and coerces internally.
+	e, err := newTplEngine(`{{range $i := seq 1 3}}{{series $i "i" (printf "%d" $i)}}{{end}}`)
+	require.NoError(t, err)
+
+	v, err := e.build("", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 3)
+	values := []float64{v[0].F, v[1].F, v[2].F}
+	require.ElementsMatch(t, []float64{1, 2, 3}, values)
+}
+
+func TestTplEngine_Build_NonNumericValueRejected(t *testing.T) {
+	// A string passed where a numeric value is expected should error
+	// rather than silently producing zero.
+	e, err := newTplEngine(`{{series "not-a-number" "env" "prod"}}`)
+	require.NoError(t, err)
+
+	_, err = e.build("", 0)
+	require.ErrorContains(t, err, "expected numeric value")
+}
+
+func TestTplEngine_Build_MathHelpers(t *testing.T) {
+	// add/sub/mul/div/mod let templates compute values from loop indices.
+	e, err := newTplEngine(
+		`{{range $i := seq 1 5}}{{series (div $i 10) "i" (printf "%d" $i)}}{{end}}`,
+	)
+	require.NoError(t, err)
+
+	v, err := e.build("", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 5)
+	values := make([]float64, len(v))
+	for i, s := range v {
+		values[i] = s.F
+	}
+	require.ElementsMatch(t, []float64{0.1, 0.2, 0.3, 0.4, 0.5}, values)
+}
+
+func TestTplEngine_Build_DivByZero(t *testing.T) {
+	e, err := newTplEngine(`{{series (div 1 0) "env" "prod"}}`)
+	require.NoError(t, err)
+
+	_, err = e.build("", 0)
+	require.ErrorContains(t, err, "division by zero")
+}
+
+func TestTplEngine_Build_IntHelper(t *testing.T) {
+	// (int (mul $i 2)) feeds printf %d cleanly.
+	e, err := newTplEngine(
+		`{{range $i := seq 1 3}}{{series $i "x" (printf "%d" (int (mul $i 2)))}}{{end}}`,
+	)
+	require.NoError(t, err)
+
+	v, err := e.build("", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 3)
+	xs := []string{}
+	for _, s := range v {
+		xs = append(xs, s.Metric.Get("x"))
+	}
+	require.ElementsMatch(t, []string{"2", "4", "6"}, xs)
+}
+
+func TestTplEngine_Build_RoundFloorCeilAbs(t *testing.T) {
+	e, err := newTplEngine(`{{series (round 1.5) "r" "1"}}{{series (floor 1.7) "f" "1"}}{{series (ceil 1.2) "c" "1"}}{{series (abs (sub 0 3)) "a" "1"}}`)
+	require.NoError(t, err)
+
+	v, err := e.build("", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 4)
+	got := make(map[string]float64, len(v))
+	for _, s := range v {
+		switch {
+		case s.Metric.Has("r"):
+			got["round"] = s.F
+		case s.Metric.Has("f"):
+			got["floor"] = s.F
+		case s.Metric.Has("c"):
+			got["ceil"] = s.F
+		case s.Metric.Has("a"):
+			got["abs"] = s.F
+		}
+	}
+	require.Equal(t, 2.0, got["round"])
+	require.Equal(t, 1.0, got["floor"])
+	require.Equal(t, 2.0, got["ceil"])
+	require.Equal(t, 3.0, got["abs"])
+}
+
+func TestTplEngine_Build_MinMax(t *testing.T) {
+	e, err := newTplEngine(`{{series (min 3 7) "k" "min"}}{{series (max 3 7) "k" "max"}}`)
+	require.NoError(t, err)
+
+	v, err := e.build("", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 2)
+	got := map[string]float64{}
+	for _, s := range v {
+		got[s.Metric.Get("k")] = s.F
+	}
+	require.Equal(t, 3.0, got["min"])
+	require.Equal(t, 7.0, got["max"])
+}
+
+func TestTplEngine_Build_CapEnforced(t *testing.T) {
+	e, err := newTplEngine(`{{series 1.0 "i" "1"}}{{series 1.0 "i" "2"}}{{series 1.0 "i" "3"}}{{series 1.0 "i" "4"}}`)
+	require.NoError(t, err)
+
+	v, err := e.buildWithCap("f", 0, 3)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "emitted series exceeds limit 3")
+	require.Nil(t, v)
+}
+
+func TestTplEngine_Build_SeqCapEnforced(t *testing.T) {
+	e, err := newTplEngine(`{{range $i := seq 1 4}}{{end}}`)
+	require.NoError(t, err)
+
+	v, err := e.buildWithCap("f", 0, 3)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "seq length exceeds limit 3")
+	require.Nil(t, v)
+}
+
+func TestTplEngine_Build_TemplateSetsNameRejectedWhenMetricArg(t *testing.T) {
+	// metric_name argument provided → template MUST NOT set __name__.
+	e, err := newTplEngine(`{{series 1.0 "__name__" "foo" "env" "prod"}}`)
+	require.NoError(t, err)
+
+	_, err = e.build("my_metric", 0)
+	require.ErrorContains(t, err, "__name__ must not be set")
+}
+
+func TestTplEngine_Build_TemplateSetsNameAllowedWhenNoMetricArg(t *testing.T) {
+	// metric_name argument omitted → template MAY set __name__ per series.
+	e, err := newTplEngine(`{{series 1.0 "__name__" "foo" "env" "prod"}}`)
+	require.NoError(t, err)
+
+	v, err := e.build("", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 1)
+	requireLabelsEqual(t,
+		labels.FromStrings("__name__", "foo", "env", "prod"),
+		v[0].Metric,
+	)
+}
+
+func TestTplEngine_Build_RangeSeriesNameFanoutRejectedWhenMetricArg(t *testing.T) {
+	e, err := newTplEngine(`{{rangeSeries "__name__" "a,b" 1.0}}`)
+	require.NoError(t, err)
+
+	_, err = e.build("my_metric", 0)
+	require.ErrorContains(t, err, "__name__ must not be the fanout label")
+}
+
+func TestTplEngine_Build_RangeSeriesNameFanoutAllowedWhenNoMetricArg(t *testing.T) {
+	// Fan out across multiple metric names. Useful for emitting several
+	// related synthetic series in one call.
+	e, err := newTplEngine(`{{rangeSeries "__name__" "a,b,c" 1.0 "env" "prod"}}`)
+	require.NoError(t, err)
+
+	v, err := e.build("", 0)
+	require.NoError(t, err)
+	require.Len(t, v, 3)
+	names := []string{}
+	for _, s := range v {
+		names = append(names, s.Metric.Get("__name__"))
+		require.Equal(t, "prod", s.Metric.Get("env"))
+	}
+	require.ElementsMatch(t, []string{"a", "b", "c"}, names)
+}
+
+func TestTplEngine_Build_SeriesOddKVPairs(t *testing.T) {
+	e, err := newTplEngine(`{{series 1.0 "env" "prod" "lonely"}}`)
+	require.NoError(t, err)
+
+	_, err = e.build("", 0)
+	require.ErrorContains(t, err, "expected even number")
+}
+
+func TestEvalTimeseriesGen_FirstCallBuilds(t *testing.T) {
+	enh := &EvalNodeHelper{Ts: 1000}
+	args := mustParseArgs(t, `timeseries_gen("{{series 1.0 \"env\" \"prod\"}}", "f")`)
+	v, _ := funcTimeseriesGen(nil, nil, args, enh)
+
+	require.Len(t, v, 1)
+	requireLabelsEqual(t,
+		labels.FromStrings("__name__", "f", "env", "prod"),
+		v[0].Metric,
+	)
+	require.Equal(t, int64(1000), v[0].T)
+	require.NotNil(t, enh.NodeCache)
+}
+
+func TestEvalTimeseriesGen_SecondCallReusesCache(t *testing.T) {
+	enh := &EvalNodeHelper{Ts: 1000}
+	args := mustParseArgs(t, `timeseries_gen("{{series 1.0 \"env\" \"prod\"}}", "f")`)
+	_, _ = funcTimeseriesGen(nil, nil, args, enh)
+	first := enh.NodeCache
+
+	enh.Ts = 2000
+	v, _ := funcTimeseriesGen(nil, nil, args, enh)
+
+	require.Same(t, first, enh.NodeCache, "second call must reuse the cache")
+	require.Equal(t, int64(2000), v[0].T, "timestamp must be restamped per step")
+}
+
+func TestEvalTimeseriesGen_BadTemplatePanics(t *testing.T) {
+	enh := &EvalNodeHelper{Ts: 1000}
+	args := mustParseArgs(t, `timeseries_gen("{{define \"x\"}}y{{end}}")`)
+
+	require.PanicsWithError(t, "timeseries_gen: forbidden template action: define", func() {
+		_, _ = funcTimeseriesGen(nil, nil, args, enh)
+	})
+}
+
+// mustParseArgs parses a PromQL call expression and returns its arguments.
+func mustParseArgs(t *testing.T, expr string) parser.Expressions {
+	t.Helper()
+	p := parser.NewParser(parser.Options{EnableExperimentalFunctions: true})
+	e, err := p.ParseExpr(expr)
+	require.NoError(t, err)
+	call, ok := e.(*parser.Call)
+	require.True(t, ok)
+	return call.Args
+}
+
+// BenchmarkTimeseriesGen_WarmPath measures the per-step cost of
+// timeseries_gen after the first call has primed enh.NodeCache. The
+// warm path must be O(N) in emitted series count and must NOT re-execute
+// the underlying text/template.
+func BenchmarkTimeseriesGen_WarmPath(b *testing.B) {
+	enh := &EvalNodeHelper{Ts: 1000}
+	args := mustParseArgsB(b, `timeseries_gen("{{range $i := seq 1 100}}{{series 1.0 \"i\" (printf \"%d\" $i)}}{{end}}", "f")`)
+
+	// Prime the cache so the loop below exercises the warm path only.
+	_, _ = funcTimeseriesGen(nil, nil, args, enh)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		enh.Ts = int64(i)
+		v, _ := funcTimeseriesGen(nil, nil, args, enh)
+		if len(v) != 100 {
+			b.Fatalf("unexpected len: %d", len(v))
+		}
+	}
+}
+
+// mustParseArgsB is the *testing.B variant of mustParseArgs.
+func mustParseArgsB(b *testing.B, expr string) parser.Expressions {
+	b.Helper()
+	p := parser.NewParser(parser.Options{EnableExperimentalFunctions: true})
+	e, err := p.ParseExpr(expr)
+	if err != nil {
+		b.Fatal(err)
+	}
+	call, ok := e.(*parser.Call)
+	if !ok {
+		b.Fatal("not a *parser.Call")
+	}
+	return call.Args
+}

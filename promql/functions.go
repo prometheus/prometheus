@@ -3022,6 +3022,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"stddev_over_time":             funcStddevOverTime,
 	"stdvar_over_time":             funcStdvarOverTime,
 	"sum_over_time":                funcSumOverTime,
+	"timeseries_gen":               funcTimeseriesGen,
 	"time":                         funcTime,
 	"timestamp":                    funcTimestamp,
 	"vector":                       funcVector,

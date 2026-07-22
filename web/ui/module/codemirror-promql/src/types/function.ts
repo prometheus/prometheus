@@ -98,6 +98,7 @@ import {
   Tan,
   Tanh,
   Time,
+  TimeseriesGen,
   Timestamp,
   Vector,
   Year,
@@ -636,6 +637,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
     argTypes: [],
     variadic: 0,
     returnType: ValueType.scalar,
+  },
+  [TimeseriesGen]: {
+    name: 'timeseries_gen',
+    argTypes: [ValueType.string, ValueType.string],
+    variadic: 1,
+    returnType: ValueType.vector,
   },
   [Timestamp]: {
     name: 'timestamp',
