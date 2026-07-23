@@ -1535,3 +1535,53 @@ bare_metric 2.0
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
+
+func TestOpenMetrics2ParseFamilyResetOnSuffixedMetric(t *testing.T) {
+	// OM2 removes the implicit suffix stripping of OM1: a Metric name must
+	// exactly match its MetricFamily name. A sample whose name only
+	// suffix-extends the declared family (e.g. foo_total under `# TYPE foo`)
+	// does not belong to that family and is parsed as untyped, whereas a
+	// sample whose name matches the descriptor exactly keeps the declared type.
+	for _, tc := range []struct {
+		name  string
+		input string
+		exp   []parsedEntry
+	}{
+		{
+			name: "suffix mismatch reverts to unknown",
+			input: `# TYPE foo counter
+foo_total 1.0
+# EOF
+`,
+			exp: []parsedEntry{
+				{m: "foo", typ: model.MetricTypeCounter},
+				{
+					m:    "foo_total",
+					v:    1.0,
+					lset: labels.FromStrings("__name__", "foo_total"),
+				},
+			},
+		},
+		{
+			name: "exact match keeps counter type",
+			input: `# TYPE foo_total counter
+foo_total 1.0
+# EOF
+`,
+			exp: []parsedEntry{
+				{m: "foo_total", typ: model.MetricTypeCounter},
+				{
+					m:    "foo_total",
+					v:    1.0,
+					lset: labels.FromStrings("__name__", "foo_total", "__type__", "counter"),
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{EnableTypeAndUnitLabels: true})
+			got := testParse(t, p)
+			requireEntries(t, tc.exp, got)
+		})
+	}
+}
