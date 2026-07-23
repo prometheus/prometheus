@@ -1651,7 +1651,7 @@ yydefault:
 			if numLit, ok := yyDollar[1].node.(*NumberLiteral); ok {
 				if numLit.Val <= 0 {
 					yylex.(*parser).addParseErrf(numLit.PositionRange(), "duration must be greater than 0")
-					yyVAL.node = &NumberLiteral{Val: 0} // Return 0 on error.
+					yyVAL.node = &NumberLiteral{Val: 0, PosRange: numLit.PosRange} // Return 0 on error.
 					break
 				}
 				yyVAL.node = yyDollar[1].node
@@ -2332,7 +2332,7 @@ yydefault:
 			nl := yyDollar[1].node.(*NumberLiteral)
 			if durationLiteralOutOfRange(nl.Val) {
 				yylex.(*parser).addParseErrf(nl.PosRange, "duration out of range")
-				yyVAL.node = &NumberLiteral{Val: 0}
+				yyVAL.node = &NumberLiteral{Val: 0, PosRange: nl.PosRange}
 				break
 			}
 			yyVAL.node = nl
@@ -2346,7 +2346,7 @@ yydefault:
 			}
 			if durationLiteralOutOfRange(nl.Val) {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "duration out of range")
-				yyVAL.node = &NumberLiteral{Val: 0}
+				yyVAL.node = &NumberLiteral{Val: 0, PosRange: yyDollar[1].item.PositionRange()}
 				break
 			}
 			nl.PosRange.Start = yyDollar[1].item.Pos
@@ -2446,7 +2446,7 @@ yydefault:
 			nl := yyDollar[1].node.(*NumberLiteral)
 			if durationLiteralOutOfRange(nl.Val) {
 				yylex.(*parser).addParseErrf(nl.PosRange, "duration out of range")
-				yyVAL.node = &NumberLiteral{Val: 0}
+				yyVAL.node = &NumberLiteral{Val: 0, PosRange: nl.PosRange}
 				break
 			}
 			yyVAL.node = nl
@@ -2480,7 +2480,7 @@ yydefault:
 			yylex.(*parser).experimentalDurationExpr(yyDollar[1].node.(Expr))
 			if nl, ok := yyDollar[3].node.(*NumberLiteral); ok && nl.Val == 0 {
 				yylex.(*parser).addParseErrf(yyDollar[2].item.PositionRange(), "division by zero")
-				yyVAL.node = &NumberLiteral{Val: 0}
+				yyVAL.node = &NumberLiteral{Val: 0, PosRange: mergeRanges(yyDollar[1].node, yyDollar[3].node)}
 				break
 			}
 			yyVAL.node = &DurationExpr{Op: DIV, LHS: yyDollar[1].node.(Expr), RHS: yyDollar[3].node.(Expr)}
@@ -2491,7 +2491,7 @@ yydefault:
 			yylex.(*parser).experimentalDurationExpr(yyDollar[1].node.(Expr))
 			if nl, ok := yyDollar[3].node.(*NumberLiteral); ok && nl.Val == 0 {
 				yylex.(*parser).addParseErrf(yyDollar[2].item.PositionRange(), "modulo by zero")
-				yyVAL.node = &NumberLiteral{Val: 0}
+				yyVAL.node = &NumberLiteral{Val: 0, PosRange: mergeRanges(yyDollar[1].node, yyDollar[3].node)}
 				break
 			}
 			yyVAL.node = &DurationExpr{Op: MOD, LHS: yyDollar[1].node.(Expr), RHS: yyDollar[3].node.(Expr)}
