@@ -1418,7 +1418,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		}
 		bytesRead = len(b)
 	} else {
-		sl.l.Debug("Scrape failed", "err", scrapeErr)
+		sl.l.Warn("Scrape failed", "err", scrapeErr)
 		sl.scrapeFailureLoggerMtx.RLock()
 		if sl.scrapeFailureLogger != nil {
 			slog.New(sl.scrapeFailureLogger).Error(scrapeErr.Error())
