@@ -1843,7 +1843,10 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration,
 // For every storage.Series iterator in series, the method iterates in ev.interval sized steps from ev.startTimestamp until and including ev.endTimestamp,
 // collecting every corresponding sample (obtained via ev.vectorSelectorSingle) into a Series.
 // All of the generated Series are collected into a Matrix, that gets returned.
-func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, offset time.Duration, recordOrigT bool) Matrix {
+// If atTimestamp is non-nil, every step is evaluated as of that fixed timestamp instead of the
+// step timestamp (the sample is still emitted at the step timestamp); this is used by info() so
+// that an @ modifier on its first argument pins the info-series lookup to that timestamp.
+func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, offset time.Duration, recordOrigT bool, atTimestamp *int64) Matrix {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 
 	mat := make(Matrix, 0, len(series))
@@ -1863,7 +1866,11 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 
 		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 			step++
-			_, origT, f, h, ok := ev.vectorSelectorSingle(it, offset, ts)
+			lookupTS := ts
+			if atTimestamp != nil {
+				lookupTS = *atTimestamp
+			}
+			_, origT, f, h, ok := ev.vectorSelectorSingle(it, offset, lookupTS)
 			if !ok {
 				continue
 			}
@@ -2542,7 +2549,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			ws.Merge(smoothAnnos)
 			return mat, ws
 		}
-		mat := ev.evalSeries(ctx, e.Series, e.Offset, false)
+		mat := ev.evalSeries(ctx, e.Series, e.Offset, false, nil)
 		return mat, ws
 
 	case *parser.MatrixSelector:
