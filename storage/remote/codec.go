@@ -382,6 +382,10 @@ func (c *concreteSeries) Labels() labels.Labels {
 	return c.labels.Copy()
 }
 
+func (c *concreteSeries) OriginalLabelsHash() uint64 {
+	return c.labels.Hash()
+}
+
 func (c *concreteSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 	if csi, ok := it.(*concreteSeriesIterator); ok {
 		csi.reset(c)
@@ -709,6 +713,10 @@ var _ storage.Series = &chunkedSeries{}
 func (s *chunkedSeries) Labels() labels.Labels {
 	b := labels.NewScratchBuilder(0)
 	return s.ToLabels(&b, nil)
+}
+
+func (s *chunkedSeries) OriginalLabelsHash() uint64 {
+	return s.Labels().Hash()
 }
 
 func (s *chunkedSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {

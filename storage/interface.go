@@ -241,8 +241,9 @@ type SelectHints struct {
 	// even if we only fetch the `label` label. For some storage implementations this is beneficial.
 
 	// ProjectionLabels are the minimum amount of labels required to be fetched for this Select call
-	// When honored it is required to add an __series_hash__ label containing the hash of all labels
-	// of a particular series so that the engine can still perform horizontal joins.
+	// When honored you can add an __series_hash__ label containing the hash of all labels
+	// of a particular series so that the engine can still perform horizontal joins. However, adding it as a label
+	// is wasteful and slower than exposing it through OriginalLabelsHash() so prefer that if possible.
 	ProjectionLabels []string
 
 	// ProjectionInclude defines if we have to include or exclude the labels from the ProjectLabels field.
@@ -601,6 +602,20 @@ func ErrChunkSeriesSet(err error) ChunkSeriesSet {
 type Series interface {
 	Labels
 	SampleIterable
+
+	// Returns the hash of the original labels. If projections are enabled
+	// (returns a subset of labels of each series for example in case of
+	// sum by (...) as an optimization to reduce I/O needed. Not supported right now in
+	// Prometheus itself!) then this returns the hash of the original labels
+	// before trimming.
+	// For now, implementers can just call Labels.Hash() Not used by
+	// Prometheus itself.
+	// Not using the labels to pass around the hash because:
+	// - Storing a hash (8 bytes binary data) in a string takes more space
+	// compared to uint64
+	// - It is slower and wasteful to compare strings and/or convert the hash into a
+	// uint64 before comparison
+	OriginalLabelsHash() uint64
 }
 
 type mockSeries struct {
@@ -612,6 +627,10 @@ type mockSeries struct {
 
 func (s mockSeries) Labels() labels.Labels {
 	return labels.FromStrings(s.labelSet...)
+}
+
+func (s mockSeries) OriginalLabelsHash() uint64 {
+	return labels.FromStrings(s.labelSet...).Hash()
 }
 
 func (s mockSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator {
