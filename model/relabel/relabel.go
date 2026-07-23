@@ -194,13 +194,23 @@ func (c *Config) Validate(nameValidationScheme model.ValidationScheme) error {
 // Regexp encapsulates a regexp.Regexp and makes it YAML marshalable.
 type Regexp struct {
 	*regexp.Regexp
+	// literal is non-empty when the pattern contains no regex
+	// metacharacters, enabling simple string equality matching.
+	literal string
 }
 
 // NewRegexp creates a new anchored Regexp and returns an error if the
 // passed-in regular expression does not compile.
 func NewRegexp(s string) (Regexp, error) {
 	regex, err := regexp.Compile("^(?s:" + s + ")$")
-	return Regexp{Regexp: regex}, err
+	if err != nil {
+		return Regexp{}, err
+	}
+	re := Regexp{Regexp: regex}
+	if regexp.QuoteMeta(s) == s {
+		re.literal = s
+	}
+	return re, nil
 }
 
 // MustNewRegexp works like NewRegexp, but panics if the regular expression does not compile.
@@ -258,6 +268,15 @@ func (re Regexp) IsZero() bool {
 	return re.Regexp == DefaultRelabelConfig.Regex.Regexp
 }
 
+// MatchString returns whether s matches the regular expression.
+// For literal patterns it uses simple string comparison.
+func (re Regexp) MatchString(s string) bool {
+	if re.literal != "" {
+		return s == re.literal
+	}
+	return re.Regexp.MatchString(s)
+}
+
 // String returns the original string used to compile the regular expression.
 func (re Regexp) String() string {
 	if re.Regexp == nil {
@@ -310,9 +329,38 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 			return false
 		}
 	case Replace:
-		// Fast path to add or delete label pair.
-		if val == "" && cfg.Regex == DefaultRelabelConfig.Regex &&
+		// Fast path for the default regex (.*): it always matches and
+		// $0/$1 equal val, so we can expand templates without the regex engine.
+		if cfg.Regex.Regexp == DefaultRelabelConfig.Regex.Regexp {
+			target, targetOK := resolveDefaultExpand(cfg.TargetLabel, val)
+			replacement, replacementOK := resolveDefaultExpand(cfg.Replacement, val)
+			if targetOK && replacementOK {
+				if !cfg.NameValidationScheme.IsValidLabelName(target) {
+					break
+				}
+				if replacement == "" {
+					lb.Del(target)
+					break
+				}
+				lb.Set(target, replacement)
+				break
+			}
+		}
+
+		// Fast path for literal regex with no template variables:
+		// the regex is just a guard and templates are used verbatim.
+		if cfg.Regex.literal != "" &&
 			!varInRegexTemplate(cfg.TargetLabel) && !varInRegexTemplate(cfg.Replacement) {
+			if val != cfg.Regex.literal {
+				break
+			}
+			if !cfg.NameValidationScheme.IsValidLabelName(cfg.TargetLabel) {
+				break
+			}
+			if cfg.Replacement == "" {
+				lb.Del(cfg.TargetLabel)
+				break
+			}
 			lb.Set(cfg.TargetLabel, cfg.Replacement)
 			break
 		}
@@ -369,4 +417,19 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 
 func varInRegexTemplate(template string) bool {
 	return strings.Contains(template, "$")
+}
+
+// resolveDefaultExpand resolves a template for the default regex (.*),
+// where $0 and $1 both equal val. It handles the common cases of plain
+// strings and bare $0/$1/${0}/${1} references. For anything more complex
+// it returns ok=false to signal the caller to fall back to the general path.
+func resolveDefaultExpand(template, val string) (string, bool) {
+	if !strings.Contains(template, "$") {
+		return template, true
+	}
+	switch template {
+	case "$0", "${0}", "$1", "${1}":
+		return val, true
+	}
+	return "", false
 }
