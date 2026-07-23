@@ -1214,15 +1214,36 @@ func (p *parser) experimentalDurationExpr(e Expr) {
 	}
 }
 
-// applyUnaryOpToDurationExpr applies a unary operator to a duration expression
-// node, which may be a *DurationExpr or a *NumberLiteral. When wrapped is true
-// (parenthesised form), the Wrapped flag is set on *DurationExpr nodes.
+func (p *parser) wrapDurationExpr(expr Node, start posrange.Pos) Node {
+	durationExpr, ok := expr.(*DurationExpr)
+	if ok {
+		durationExpr.Wrapped = true
+		return durationExpr
+	}
+	durationOperand, ok := expr.(Expr)
+	if !ok {
+		p.addParseErrf(expr.PositionRange(), "expected duration expression")
+		return &NumberLiteral{Val: 0}
+	}
+	return &DurationExpr{
+		Op:       ADD,
+		RHS:      durationOperand,
+		Wrapped:  true,
+		StartPos: start,
+	}
+}
+
+// ApplyUnaryOpToDurationExpr applies a unary operator to a duration expression node.
+//
+// The node may be a *DurationExpr or a *NumberLiteral.
+// Parenthesised expressions are converted to or marked as a wrapped DurationExpr node.
 func (p *parser) applyUnaryOpToDurationExpr(op Item, expr Node, wrapped bool) Node {
+	if wrapped {
+		expr = p.wrapDurationExpr(expr, expr.PositionRange().Start)
+	}
+
 	switch e := expr.(type) {
 	case *DurationExpr:
-		if wrapped {
-			e.Wrapped = true
-		}
 		if op.Typ == SUB {
 			return &DurationExpr{
 				Op:       SUB,
