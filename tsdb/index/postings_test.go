@@ -964,6 +964,68 @@ func TestMemPostingsStats(t *testing.T) {
 	require.Equal(t, 3, stats.NumLabelPairs)
 }
 
+func TestStatsForMatchedSeries(t *testing.T) {
+	// Use the same setup as TestMemPostingsStats:
+	//   series 1: label=value1, label=value2, label=value3
+	//   series 2: label=value1
+	p := NewMemPostings()
+	p.Add(1, labels.FromStrings("label", "value1"))
+	p.Add(1, labels.FromStrings("label", "value2"))
+	p.Add(1, labels.FromStrings("label", "value3"))
+	p.Add(2, labels.FromStrings("label", "value1"))
+
+	labelSizeFunc := func(name, value string, n uint64) uint64 { return uint64(len(name)+len(value)) * n }
+
+	t.Run("filter to series 1 only", func(t *testing.T) {
+		filtered := map[storage.SeriesRef]struct{}{1: {}}
+		stats := p.StatsForMatchedSeries("label", 10, labelSizeFunc, filtered)
+
+		// series 1 has value1, value2, value3 — all 3 unique values
+		require.Equal(t, uint64(3), stats.CardinalityLabelStats[0].Count)
+		require.Equal(t, "label", stats.CardinalityLabelStats[0].Name)
+
+		// each label-value pair has exactly 1 series (from ref 1)
+		for _, s := range stats.CardinalityMetricsStats {
+			require.Equal(t, uint64(1), s.Count)
+		}
+		require.Equal(t, 3, stats.NumLabelPairs)
+	})
+
+	t.Run("filter to series 2 only", func(t *testing.T) {
+		filtered := map[storage.SeriesRef]struct{}{2: {}}
+		stats := p.StatsForMatchedSeries("label", 10, labelSizeFunc, filtered)
+
+		// series 2 only has label=value1
+		require.Equal(t, uint64(1), stats.CardinalityLabelStats[0].Count)
+		require.Equal(t, "label", stats.CardinalityLabelStats[0].Name)
+
+		require.Len(t, stats.CardinalityMetricsStats, 1)
+		require.Equal(t, "value1", stats.CardinalityMetricsStats[0].Name)
+		require.Equal(t, uint64(1), stats.CardinalityMetricsStats[0].Count)
+		require.Equal(t, 1, stats.NumLabelPairs)
+	})
+
+	t.Run("filter to both series", func(t *testing.T) {
+		filtered := map[storage.SeriesRef]struct{}{1: {}, 2: {}}
+		stats := p.StatsForMatchedSeries("label", 10, labelSizeFunc, filtered)
+
+		// Same as the unfiltered Stats result
+		require.Equal(t, uint64(3), stats.CardinalityLabelStats[0].Count)
+		require.Equal(t, uint64(2), stats.CardinalityMetricsStats[0].Count)
+		require.Equal(t, "value1", stats.CardinalityMetricsStats[0].Name)
+		require.Equal(t, 3, stats.NumLabelPairs)
+	})
+
+	t.Run("empty filter set", func(t *testing.T) {
+		filtered := map[storage.SeriesRef]struct{}{}
+		stats := p.StatsForMatchedSeries("label", 10, labelSizeFunc, filtered)
+
+		require.Empty(t, stats.CardinalityLabelStats)
+		require.Empty(t, stats.CardinalityMetricsStats)
+		require.Equal(t, 0, stats.NumLabelPairs)
+	})
+}
+
 func TestMemPostings_Delete(t *testing.T) {
 	p := NewMemPostings()
 	p.Add(1, labels.FromStrings("lbl1", "a"))
