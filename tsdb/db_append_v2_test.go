@@ -2815,7 +2815,7 @@ func TestOOOWALWrite_AppendV2(t *testing.T) {
 				},
 
 				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
-					{Ref: 1, MmapRef: 0x100000000 + 58},
+					{Ref: 1, MmapRef: 0x100000000 + 59},
 				},
 				[]record.RefSample{ // Does not contain the in-order sample here.
 					{Ref: 1, T: minutes(50), V: 50},
@@ -2823,14 +2823,14 @@ func TestOOOWALWrite_AppendV2(t *testing.T) {
 
 				// Single commit but multiple OOO records.
 				[]record.RefMmapMarker{
-					{Ref: 2, MmapRef: 0x100000000 + 107},
+					{Ref: 2, MmapRef: 0x100000000 + 109},
 				},
 				[]record.RefSample{
 					{Ref: 2, T: minutes(50), V: 50},
 					{Ref: 2, T: minutes(51), V: 51},
 				},
 				[]record.RefMmapMarker{
-					{Ref: 2, MmapRef: 0x100000000 + 156},
+					{Ref: 2, MmapRef: 0x100000000 + 160},
 				},
 				[]record.RefSample{
 					{Ref: 2, T: minutes(52), V: 52},
@@ -7593,7 +7593,6 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 		MaxBlockDuration:          int64(time.Hour * 2 / time.Millisecond),
 		WALCompression:            compression.Snappy,
 		EnableSTStorage:           true,
-		XOR2EncodingAllowed:       true,
 		FloatChunkEncoding:        chunkenc.EncXOR2,
 		EnableHistogramSTEncoding: true,
 	}
@@ -7748,7 +7747,6 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 			opts := DefaultOptions()
 			opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 			opts.EnableSTStorage = true
-			opts.XOR2EncodingAllowed = true
 			opts.FloatChunkEncoding = chunkenc.EncXOR2
 			opts.EnableHistogramSTEncoding = true
 			db := newTestDB(t, withOpts(opts))

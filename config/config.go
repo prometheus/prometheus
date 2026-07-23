@@ -1133,15 +1133,14 @@ func (t *TSDBRetentionConfig) UnmarshalYAML(unmarshal func(any) error) error {
 const (
 	// FloatChunkEncodingXOR selects standard XOR encoding for float chunks.
 	FloatChunkEncodingXOR = "xor"
-	// FloatChunkEncodingXOR2 selects XOR2 encoding for float chunks; requires --enable-feature=xor2-encoding.
+	// FloatChunkEncodingXOR2 selects XOR2 encoding for float chunks. This is the default.
 	FloatChunkEncodingXOR2 = "xor2"
 )
 
 // ChunkEncodingConfig configures per-chunk-type encoding overrides.
 type ChunkEncodingConfig struct {
 	// Floats selects the encoding used for float chunks.
-	// Valid values are "xor", "xor2", and "" (empty/absent). When empty, the encoding
-	// follows the --enable-feature=xor2-encoding flag. Setting "xor2" requires the flag to be enabled.
+	// Valid values are "xor", "xor2", and "" (empty/absent). When empty, it defaults to "xor2".
 	Floats string `yaml:"floats,omitempty"`
 }
 

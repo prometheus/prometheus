@@ -266,7 +266,7 @@
     "native_histograms": true,
     "st_storage": false,
     "use_uncached_io": false,
-    "xor2_encoding": false
+    "xor2_encoding": true
   },
   "ui": {
     "ui_v2": false,
