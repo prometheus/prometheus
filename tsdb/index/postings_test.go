@@ -29,6 +29,7 @@ import (
 
 	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -37,36 +38,47 @@ import (
 
 func TestMemPostings_addFor(t *testing.T) {
 	p := NewMemPostings()
-	p.m[allPostingsKey.Name] = map[string][]storage.SeriesRef{}
-	p.m[allPostingsKey.Name][allPostingsKey.Value] = []storage.SeriesRef{1, 2, 3, 4, 6, 7, 8}
+	shard := p.shard(allPostingsKey.Name, allPostingsKey.Value)
+	shard.m[allPostingsKey.Name] = map[string][]storage.SeriesRef{}
+	shard.m[allPostingsKey.Name][allPostingsKey.Value] = []storage.SeriesRef{1, 2, 3, 4, 6, 7, 8}
 
 	p.addFor(5, allPostingsKey)
 
-	require.Equal(t, []storage.SeriesRef{1, 2, 3, 4, 5, 6, 7, 8}, p.m[allPostingsKey.Name][allPostingsKey.Value])
+	require.Equal(t, []storage.SeriesRef{1, 2, 3, 4, 5, 6, 7, 8}, shard.m[allPostingsKey.Name][allPostingsKey.Value])
 }
 
 func TestMemPostings_ensureOrder(t *testing.T) {
 	p := NewUnorderedMemPostings()
-	p.m["a"] = map[string][]storage.SeriesRef{}
-
 	for i := range 100 {
 		l := make([]storage.SeriesRef, 100)
 		for j := range l {
 			l[j] = storage.SeriesRef(rand.Uint64())
 		}
 		v := strconv.Itoa(i)
-
-		p.m["a"][v] = l
+		shard := p.shard("a", v)
+		if shard.m["a"] == nil {
+			shard.m["a"] = map[string][]storage.SeriesRef{}
+		}
+		shard.m["a"][v] = l
 	}
 
 	p.EnsureOrder(0)
 
-	for _, e := range p.m {
-		for _, l := range e {
-			ok := slices.IsSorted(l)
-			require.True(t, ok, "postings list %v is not sorted", l)
+	require.True(t, p.sharded)
+	nonEmptyShards := 0
+	for i := range p.shards {
+		if len(p.shards[i].m) > 0 {
+			nonEmptyShards++
 		}
 	}
+	require.Greater(t, nonEmptyShards, 1)
+
+	require.NoError(t, p.Iter(func(_ labels.Label, postings Postings) error {
+		refs, err := ExpandPostings(postings)
+		require.NoError(t, err)
+		require.True(t, slices.IsSorted(refs), "postings list %v is not sorted", refs)
+		return nil
+	}))
 }
 
 func BenchmarkMemPostings_ensureOrder(b *testing.B) {
@@ -99,7 +111,6 @@ func BenchmarkMemPostings_ensureOrder(b *testing.B) {
 			// Generate postings.
 			for l := 0; l < testData.numLabels; l++ {
 				labelName := strconv.Itoa(l)
-				p.m[labelName] = map[string][]storage.SeriesRef{}
 
 				for v := 0; v < testData.numValuesPerLabel; v++ {
 					refs := make([]storage.SeriesRef, testData.numRefsPerValue)
@@ -108,7 +119,11 @@ func BenchmarkMemPostings_ensureOrder(b *testing.B) {
 					}
 
 					labelValue := strconv.Itoa(v)
-					p.m[labelName][labelValue] = refs
+					shard := p.shard(labelName, labelValue)
+					if shard.m[labelName] == nil {
+						shard.m[labelName] = map[string][]storage.SeriesRef{}
+					}
+					shard.m[labelName][labelValue] = refs
 				}
 			}
 
@@ -1464,6 +1479,112 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 				}
 			})
 		})
+	}
+}
+
+func BenchmarkMemPostings_Add(b *testing.B) {
+	const labelSetCount = 100_000
+	labelSets := make([]labels.Labels, labelSetCount)
+	for i := range labelSets {
+		labelSets[i] = labels.FromStrings(
+			labels.MetricName, "metric_"+strconv.Itoa(i%1000),
+			"job", "large-scrape",
+			"namespace", "namespace_"+strconv.Itoa(i%100),
+			"pod", "pod_"+strconv.Itoa(i),
+			"instance", "instance_"+strconv.Itoa(i%10_000),
+			"common", "same",
+		)
+	}
+
+	for _, workers := range []int{1, 10, 20} {
+		b.Run(fmt.Sprintf("workers=%d", workers), func(b *testing.B) {
+			p := NewMemPostings()
+			var next atomic.Uint64
+			var wg sync.WaitGroup
+
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for range workers {
+				wg.Go(func() {
+					for {
+						n := next.Inc()
+						if n > uint64(b.N) {
+							return
+						}
+						p.Add(storage.SeriesRef(n), labelSets[n%labelSetCount])
+					}
+				})
+			}
+			wg.Wait()
+		})
+	}
+}
+
+func TestMemPostingsConcurrentReadDoesNotObservePartialAdd(t *testing.T) {
+	mp := NewMemPostings()
+	ctx := context.Background()
+
+	const seriesCount = 512
+	start := make(chan struct{})
+	errCh := make(chan error, 1)
+	var writers sync.WaitGroup
+	for i := 1; i <= seriesCount; i++ {
+		id := storage.SeriesRef(i)
+		value := strconv.Itoa(i)
+		writers.Go(func() {
+			<-start
+			mp.Add(id, labels.FromStrings("a", value, "b", value))
+		})
+	}
+
+	checkSnapshot := func() error {
+		mp.gate.enterRead()
+		defer mp.gate.leaveRead()
+		for i := 1; i <= seriesCount; i++ {
+			value := strconv.Itoa(i)
+			aRefs, err := ExpandPostings(Merge(ctx, mp.postingsForLabelValues("a", []string{value})...))
+			if err != nil {
+				return err
+			}
+			bRefs, err := ExpandPostings(Merge(ctx, mp.postingsForLabelValues("b", []string{value})...))
+			if err != nil {
+				return err
+			}
+
+			aVisible := slices.Contains(aRefs, storage.SeriesRef(i))
+			bVisible := slices.Contains(bRefs, storage.SeriesRef(i))
+			if aVisible != bVisible {
+				return fmt.Errorf("series %d visible through only one label", i)
+			}
+		}
+		return nil
+	}
+
+	var readers sync.WaitGroup
+	for range 4 {
+		readers.Go(func() {
+			<-start
+			for range 16 {
+				if err := checkSnapshot(); err != nil {
+					select {
+					case errCh <- err:
+					default:
+					}
+					return
+				}
+			}
+		})
+	}
+
+	close(start)
+	writers.Wait()
+	readers.Wait()
+
+	select {
+	case err := <-errCh:
+		require.NoError(t, err)
+	default:
 	}
 }
 
