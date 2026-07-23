@@ -1007,10 +1007,10 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_msk_cluster_name`: the name of the MSK cluster
 * `__meta_msk_cluster_arn`: the ARN of the MSK cluster
 * `__meta_msk_cluster_state`: the state of the MSK cluster (e.g., ACTIVE, CREATING, DELETING)
-* `__meta_msk_cluster_type`: the type of the MSK cluster (e.g., PROVISIONED, SERVERLESS)
+* `__meta_msk_cluster_type`: the type of the MSK cluster (always PROVISIONED, as serverless clusters are skipped)
 * `__meta_msk_cluster_version`: the current version of the MSK cluster
 * `__meta_msk_cluster_kafka_version`: the Kafka version running on the cluster
-* `__meta_msk_cluster_jmx_exporter_enabled`: whether JMX exporter is enabled on the cluster
+* `__meta_msk_cluster_jmx_exporter_enabled`: whether JMX exporter is enabled on the cluster; this label is absent (not `false`) when Open Monitoring is not enabled on the cluster
 * `__meta_msk_cluster_configuration_arn`: the ARN of the MSK configuration
 * `__meta_msk_cluster_configuration_revision`: the revision of the MSK configuration
 * `__meta_msk_cluster_tag_<tagkey>`: each cluster tag value, keyed by tag name
@@ -1023,7 +1023,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_msk_broker_endpoint_index`: the index of the broker endpoint (broker nodes only)
 * `__meta_msk_broker_client_subnet`: the client subnet of the broker (broker nodes only)
 * `__meta_msk_broker_client_vpc_ip`: the VPC IP address of the broker (broker nodes only)
-* `__meta_msk_broker_node_exporter_enabled`: whether node exporter is enabled on brokers (broker nodes only)
+* `__meta_msk_broker_node_exporter_enabled`: whether node exporter is enabled on brokers (broker nodes only); this label is absent (not `false`) when Open Monitoring is not enabled on the cluster
 * `__meta_msk_controller_endpoint_index`: the index of the controller endpoint (controller nodes only)
 
 #### `elasticache`
