@@ -809,7 +809,7 @@ foo_total 1.0 # {id="x"} 1.0
 			err:   "stateset sample must have a label matching the metric family name",
 		},
 		{
-			input: "# TYPE foo counter\nfoo_total NaN\n# EOF\n",
+			input: "# TYPE foo_total counter\nfoo_total NaN\n# EOF\n",
 			err:   "counter sample value must not be NaN",
 		},
 	} {
