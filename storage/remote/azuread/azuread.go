@@ -48,7 +48,15 @@ const (
 const (
 	// DefaultWorkloadIdentityTokenPath is the default path where the Azure Workload Identity
 	// webhook puts the service account token on Azure environments. See <azure docs link>.
+	// It is only used as a fallback when the AzureFederatedTokenFileEnvVar environment
+	// variable is unset, since the webhook may project the token to a different path.
 	DefaultWorkloadIdentityTokenPath = "/var/run/secrets/azure/tokens/azure-identity-token"
+
+	// AzureFederatedTokenFileEnvVar is the environment variable the Azure Workload Identity
+	// webhook sets to the path of the projected service account token. The path moved
+	// between webhook releases, so this variable is the authoritative source of the token
+	// location and takes precedence over DefaultWorkloadIdentityTokenPath.
+	AzureFederatedTokenFileEnvVar = "AZURE_FEDERATED_TOKEN_FILE"
 )
 
 // ManagedIdentityConfig is used to store managed identity config values.
@@ -67,7 +75,8 @@ type WorkloadIdentityConfig struct {
 	TenantID string `yaml:"tenant_id,omitempty"`
 
 	// TokenFilePath is the path to the token file provided by the Kubernetes service account projected volume.
-	// If not specified, it defaults to DefaultWorkloadIdentityTokenPath.
+	// If not specified, it defaults to the AzureFederatedTokenFileEnvVar environment variable when set,
+	// otherwise to DefaultWorkloadIdentityTokenPath.
 	TokenFilePath string `yaml:"token_file_path,omitempty"`
 }
 
@@ -215,7 +224,14 @@ func (c *AzureADConfig) Validate() error {
 		}
 
 		if c.WorkloadIdentity.TokenFilePath == "" {
-			c.WorkloadIdentity.TokenFilePath = DefaultWorkloadIdentityTokenPath
+			// Prefer the path advertised by the Azure Workload Identity webhook via the
+			// environment variable, since the projected token location can change between
+			// webhook releases. Fall back to the historical default only when it is unset.
+			if tokenFilePath := os.Getenv(AzureFederatedTokenFileEnvVar); tokenFilePath != "" {
+				c.WorkloadIdentity.TokenFilePath = tokenFilePath
+			} else {
+				c.WorkloadIdentity.TokenFilePath = DefaultWorkloadIdentityTokenPath
+			}
 		}
 	}
 

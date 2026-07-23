@@ -168,7 +168,7 @@ export default function RulesPage() {
         <Card shadow="xs" withBorder p="md" key={`${g.file}-${g.name}`}>
           <Group mb="sm" justify="space-between">
             <Group align="baseline">
-              <Text fz="xl" fw={600} c="var(--mantine-primary-color-filled)">
+              <Text fz="xl" fw={600}>
                 {g.name}
               </Text>
               <Text fz="sm" c="gray.6">

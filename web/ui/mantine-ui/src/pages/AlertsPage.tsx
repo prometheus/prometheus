@@ -232,7 +232,7 @@ export default function AlertsPage() {
         <Card shadow="xs" withBorder p="md" key={`${g.file}-${g.name}`}>
           <Group mb="sm" justify="space-between">
             <Group align="baseline">
-              <Text fz="xl" fw={600} c="var(--mantine-primary-color-filled)">
+              <Text fz="xl" fw={600}>
                 {g.name}
               </Text>
               <Text fz="sm" c="gray.6">
@@ -458,7 +458,7 @@ export default function AlertsPage() {
           }
           optionCount={(o) =>
             alertsPageData.globalCounts[
-              o as keyof typeof alertsPageData.globalCounts
+            o as keyof typeof alertsPageData.globalCounts
             ]
           }
           placeholder="Filter by rule group state"
