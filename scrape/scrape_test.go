@@ -1916,6 +1916,84 @@ test_metric 32
 	requireSample(t, got[8], "test_metric", 7, timestamp.FromTime(tsF), timestamp.FromTime(tsE), false)
 }
 
+func TestScrapeLoopAppend_StartTimeSynthesis_Summary(t *testing.T) {
+	ts := time.Now()
+
+	requireSample := func(t *testing.T, s teststorage.Sample, name string, val float64, ts, st int64) {
+		t.Helper()
+		require.Equal(t, name, s.L.Get(model.MetricNameLabel))
+		require.Equal(t, ts, s.T)
+		require.Equal(t, val, s.V)
+		require.Equal(t, st, s.ST)
+	}
+
+	s := teststorage.New(t)
+
+	appTest := teststorage.NewAppendable().Then(s)
+	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+		sl.synthesizeST = true
+		sl.parseST = true
+	})
+
+	// First Scrape: anchor the start time for _sum and _count, their append is
+	// skipped. Quantile series are gauge-like and appended as-is with no ST.
+	scrapeA := []byte(`# TYPE test_summary summary
+test_summary{quantile="0.5"} 0.3
+test_summary_sum 100
+test_summary_count 10
+# EOF
+`)
+	app := sl.appender()
+	_, _, _, err := app.append(scrapeA, "application/openmetrics-text", ts)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got := appTest.ResultSamples()
+	require.Len(t, got, 1)
+	requireSample(t, got[0], "test_summary", 0.3, timestamp.FromTime(ts), 0)
+
+	// Second Scrape: _sum and _count yield deltas with ST = ts. The quantile
+	// series must not be synthesized (still no ST).
+	ts2 := ts.Add(time.Second)
+	scrapeB := []byte(`# TYPE test_summary summary
+test_summary{quantile="0.5"} 0.4
+test_summary_sum 130
+test_summary_count 13
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeB, "application/openmetrics-text", ts2)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got = appTest.ResultSamples()
+
+	require.Len(t, got, 4)
+	requireSample(t, got[1], "test_summary", 0.4, timestamp.FromTime(ts2), 0)
+	requireSample(t, got[2], "test_summary_sum", 30, timestamp.FromTime(ts2), timestamp.FromTime(ts))
+	requireSample(t, got[3], "test_summary_count", 3, timestamp.FromTime(ts2), timestamp.FromTime(ts))
+
+	// Third Scrape: simulate a reset (_count and _sum drop). ST becomes ts3-1.
+	ts3 := ts2.Add(time.Second)
+	scrapeC := []byte(`# TYPE test_summary summary
+test_summary{quantile="0.5"} 0.2
+test_summary_sum 5
+test_summary_count 1
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeC, "application/openmetrics-text", ts3)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got = appTest.ResultSamples()
+
+	require.Len(t, got, 7)
+	requireSample(t, got[4], "test_summary", 0.2, timestamp.FromTime(ts3), 0)
+	requireSample(t, got[5], "test_summary_sum", 5, timestamp.FromTime(ts3), timestamp.FromTime(ts3)-1)
+	requireSample(t, got[6], "test_summary_count", 1, timestamp.FromTime(ts3), timestamp.FromTime(ts3)-1)
+}
+
 func TestScrapeLoopAppend_StartTimeSynthesis_WithSTStorage(t *testing.T) {
 	ts := time.Now()
 

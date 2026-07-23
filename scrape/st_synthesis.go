@@ -21,7 +21,8 @@ import (
 // information needed to synthesize start times for cumulative metrics
 // (Counters, Summaries, Histograms).
 //
-// Only Counters and Histograms (Classic/Native/Float) are supported.
+// Only Counters, Histograms (Classic/Native/Float) and the _sum and _count
+// series of Summaries are supported.
 //
 // Note: The first sample observed for a series is dropped to establish the
 // start timestamp reference point. All subsequent samples are adjusted relative
