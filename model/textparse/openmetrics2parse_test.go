@@ -35,14 +35,14 @@ go_gc_duration_seconds {count:99,sum:0.004,quantile:[0:4.9351e-05,0.5:8.3835e-05
 go_goroutines 33 123456.789
 # TYPE hh histogram
 hh {count:1,sum:1.0,bucket:[+Inf:1]}
-# TYPE ii info
-ii{foo="bar"} 1
+# TYPE ii_info info
+ii_info{foo="bar"} 1
 # TYPE ss stateset
 ss{ss="foo"} 1
 ss{ss="bar"} 0
 # TYPE un unknown
 un 1
-# TYPE foo counter
+# TYPE foo_total counter
 foo_total 17.0 1520879607.789 # {id="counter-test"} 5 1520879600.789
 # EOF
 `
@@ -94,11 +94,11 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5 1520879600.789
 			v:    1,
 			lset: labels.FromStrings("__name__", "hh_bucket", "le", "+Inf"),
 		},
-		{m: "ii", typ: model.MetricTypeInfo},
+		{m: "ii_info", typ: model.MetricTypeInfo},
 		{
-			m:    `ii{foo="bar"}`,
+			m:    `ii_info{foo="bar"}`,
 			v:    1,
-			lset: labels.FromStrings("__name__", "ii", "foo", "bar"),
+			lset: labels.FromStrings("__name__", "ii_info", "foo", "bar"),
 		},
 		{m: "ss", typ: model.MetricTypeStateset},
 		{
@@ -117,7 +117,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5 1520879600.789
 			v:    1,
 			lset: labels.FromStrings("__name__", "un"),
 		},
-		{m: "foo", typ: model.MetricTypeCounter},
+		{m: "foo_total", typ: model.MetricTypeCounter},
 		{
 			m:    "foo_total",
 			v:    17.0,
@@ -229,12 +229,12 @@ func TestOpenMetrics2ParseExemplarExceedsOM1Limit(t *testing.T) {
 	// label names and values).  OM2 removes that cap; this exemplar is
 	// well over the old limit (4 + 200 = 204 code points).
 	longValue := strings.Repeat("x", 200)
-	input := `# TYPE foo counter
+	input := `# TYPE foo_total counter
 foo_total 1.0 # {data="` + longValue + `"} 1.0 1234567.0
 # EOF
 `
 	exp := []parsedEntry{
-		{m: "foo", typ: model.MetricTypeCounter},
+		{m: "foo_total", typ: model.MetricTypeCounter},
 		{
 			m:    "foo_total",
 			v:    1.0,
@@ -658,7 +658,7 @@ func TestOpenMetrics2ParseErrors(t *testing.T) {
 		},
 		{
 			// OM2 requires every exemplar to carry a timestamp.
-			input: `# TYPE foo counter
+			input: `# TYPE foo_total counter
 foo_total 1.0 # {id="x"} 1.0
 # EOF
 `,
@@ -681,15 +681,15 @@ foo_total 1.0 # {id="x"} 1.0
 			err:   "missing required field: zero_count",
 		},
 		{
-			input: "# TYPE requests counter\nrequests_total 42.0 1000000.0 2000000.0\n# EOF\n",
+			input: "# TYPE requests_total counter\nrequests_total 42.0 1000000.0 2000000.0\n# EOF\n",
 			err:   "duplicate timestamp",
 		},
 		{
-			input: "# TYPE requests counter\nrequests_total 42.0 1000000.0 st@500000.0 st@600000.0\n# EOF\n",
+			input: "# TYPE requests_total counter\nrequests_total 42.0 1000000.0 st@500000.0 st@600000.0\n# EOF\n",
 			err:   "duplicate start timestamp",
 		},
 		{
-			input: "# TYPE requests counter\nrequests_total 42.0 st@500000.0 1000000.0\n# EOF\n",
+			input: "# TYPE requests_total counter\nrequests_total 42.0 st@500000.0 1000000.0\n# EOF\n",
 			err:   "timestamp must precede start timestamp",
 		},
 		{
