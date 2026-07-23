@@ -10436,3 +10436,71 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		requireCounterConsistent("final state")
 	})
 }
+
+func TestHeadAppender_DuplicateSamplesDroppedMetric(t *testing.T) {
+	ctx := context.Background()
+	lbls := labels.FromStrings("foo", "bar")
+
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			head, _ := newTestHead(t, DefaultBlockDuration, compression.None, true)
+
+			dupsDropped := func() float64 {
+				return prom_testutil.ToFloat64(head.metrics.duplicateSamplesDropped.WithLabelValues(scenario.sampleType))
+			}
+
+			app := head.Appender(ctx)
+			_, _, err := scenario.appendFunc(app, lbls, 60_000, 1)
+			require.NoError(t, err)
+			_, _, err = scenario.appendFunc(app, lbls, 120_000, 2)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// An exact duplicate of the latest in-order sample is accepted by
+			// Append but dropped at commit time and counted in the metric.
+			app = head.Appender(ctx)
+			_, _, err = scenario.appendFunc(app, lbls, 120_000, 2)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Equal(t, 1.0, dupsDropped())
+
+			// The same timestamp with a different value stays an error for
+			// in-order samples and is not counted as a dropped duplicate.
+			app = head.Appender(ctx)
+			_, _, err = scenario.appendFunc(app, lbls, 120_000, 3)
+			require.ErrorIs(t, err, storage.ErrDuplicateSampleForTimestamp)
+			require.NoError(t, app.Commit())
+			require.Equal(t, 1.0, dupsDropped())
+			// The in-order duplicate must not be counted as an out-of-order
+			// rejection.
+			require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType)))
+
+			// The first out-of-order sample is accepted, not counted.
+			app = head.Appender(ctx)
+			_, _, err = scenario.appendFunc(app, lbls, 30_000, 4)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Equal(t, 1.0, dupsDropped())
+
+			// An exact duplicate of the out-of-order sample is dropped and
+			// counted.
+			app = head.Appender(ctx)
+			_, _, err = scenario.appendFunc(app, lbls, 30_000, 4)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Equal(t, 2.0, dupsDropped())
+
+			// A sample duplicating the timestamp of a sample in the OOO head
+			// chunk is dropped and counted even when its value differs.
+			app = head.Appender(ctx)
+			_, _, err = scenario.appendFunc(app, lbls, 30_000, 5)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			require.Equal(t, 3.0, dupsDropped())
+
+			// The dropped duplicates must not have inflated the appended
+			// samples count: 60000, 120000 in-order plus 30000 out-of-order.
+			require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.samplesAppended.WithLabelValues(scenario.sampleType)))
+		})
+	}
+}
