@@ -15,8 +15,8 @@ grpc_calls_total{service="payments"} 5612.0 1710000000.0
 # HELP db_queries_total Total number of database queries.
 # TYPE db_queries_total counter
 db_queries_total 482910.0 1710000000.0
-# HELP cache_hits Total number of cache hits.
-# TYPE cache_hits counter
+# HELP cache_hits_total Total number of cache hits.
+# TYPE cache_hits_total counter
 cache_hits_total 921830.0 1710000000.0
 # HELP cache_misses_total Total number of cache misses.
 # TYPE cache_misses_total counter
@@ -27,36 +27,36 @@ errors_total{code="EINVAL"} 23.0 1710000000.0
 errors_total{code="ETIMEDOUT"} 7.0 1710000000.0
 errors_total{code="ECONNRESET"} 14.0 1710000000.0
 errors_total{code="EIO"} 2.0 1710000000.0
-# HELP network_received_bytes Total bytes received.
-# TYPE network_received_bytes counter
-# UNIT network_received_bytes bytes
+# HELP network_received_bytes_total Total bytes received.
+# TYPE network_received_bytes_total counter
+# UNIT network_received_bytes_total bytes
 network_received_bytes_total 9.83e+10 1710000000.0
-# HELP network_sent_bytes Total bytes sent.
-# TYPE network_sent_bytes counter
-# UNIT network_sent_bytes bytes
+# HELP network_sent_bytes_total Total bytes sent.
+# TYPE network_sent_bytes_total counter
+# UNIT network_sent_bytes_total bytes
 network_sent_bytes_total 1.27e+11 1710000000.0
-# HELP jobs_completed Total number of jobs completed.
-# TYPE jobs_completed counter
+# HELP jobs_completed_total Total number of jobs completed.
+# TYPE jobs_completed_total counter
 jobs_completed_total 18234.0 1710000000.0
-# HELP jobs_failed Total number of jobs failed.
-# TYPE jobs_failed counter
+# HELP jobs_failed_total Total number of jobs failed.
+# TYPE jobs_failed_total counter
 jobs_failed_total 142.0 1710000000.0
-# HELP signals_received Total number of signals received.
-# TYPE signals_received counter
+# HELP signals_received_total Total number of signals received.
+# TYPE signals_received_total counter
 signals_received_total 8.0 1710000000.0
-# HELP gc_invocations Total number of GC invocations.
-# TYPE gc_invocations counter
+# HELP gc_invocations_total Total number of GC invocations.
+# TYPE gc_invocations_total counter
 gc_invocations_total 4821.0 1710000000.0
-# HELP allocations Total allocations by pool.
-# TYPE allocations counter
+# HELP allocations_total Total allocations by pool.
+# TYPE allocations_total counter
 allocations_total{pool="small"} 9.31e+08 1710000000.0
 allocations_total{pool="medium"} 1.42e+07 1710000000.0
 allocations_total{pool="large"} 832.0 1710000000.0
-# HELP mutex_contentions Total mutex contentions.
-# TYPE mutex_contentions counter
+# HELP mutex_contentions_total Total mutex contentions.
+# TYPE mutex_contentions_total counter
 mutex_contentions_total 6831.0 1710000000.0
-# HELP scrape_samples Total samples scraped.
-# TYPE scrape_samples counter
+# HELP scrape_samples_total Total samples scraped.
+# TYPE scrape_samples_total counter
 scrape_samples_total 8412.0 1710000000.0
 # HELP memory_bytes Memory in use by area.
 # TYPE memory_bytes gauge

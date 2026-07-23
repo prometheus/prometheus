@@ -1,22 +1,22 @@
-# HELP http_requests Total HTTP requests.
-# TYPE http_requests counter
-# UNIT http_requests requests
+# HELP http_requests_total Total HTTP requests.
+# TYPE http_requests_total counter
+# UNIT http_requests_total requests
 http_requests_total{method="GET"} 12034.0 1710000000.0 st@1709900000.0
 http_requests_total{method="POST"} 4521.0 1710000000.0 st@1709900000.0
 http_requests_total{method="PUT"} 312.0 1710000000.0 st@1709900000.0
-# HELP grpc_calls Total gRPC calls.
-# TYPE grpc_calls counter
+# HELP grpc_calls_total Total gRPC calls.
+# TYPE grpc_calls_total counter
 grpc_calls_total{service="catalog"} 19234.0 1710000000.0 st@1709800000.0
 grpc_calls_total{service="orders"} 8231.0 1710000000.0 st@1709800000.0
-# HELP db_queries Total database queries.
-# TYPE db_queries counter
+# HELP db_queries_total Total database queries.
+# TYPE db_queries_total counter
 db_queries_total 482910.0 1710000000.0 st@1709700000.0
-# HELP cache_evictions Total cache evictions.
-# TYPE cache_evictions counter
+# HELP cache_evictions_total Total cache evictions.
+# TYPE cache_evictions_total counter
 cache_evictions_total{cache="lru"} 1842.0 1710000000.0 st@1709600000.0
 cache_evictions_total{cache="arc"} 921.0 1710000000.0 st@1709600000.0
-# HELP errors Total errors by code.
-# TYPE errors counter
+# HELP errors_total Total errors by code.
+# TYPE errors_total counter
 errors_total{code="EINVAL"} 23.0 1710000000.0 st@1709500000.0
 errors_total{code="ETIMEDOUT"} 7.0 1710000000.0 st@1709500000.0
 errors_total{code="ECONNRESET"} 14.0 1710000000.0 st@1709500000.0
