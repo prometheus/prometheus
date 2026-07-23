@@ -140,8 +140,10 @@ func TestTargetURL(t *testing.T) {
 
 func TestTargetURL_Unix(t *testing.T) {
 	scrapeConfig := &config.ScrapeConfig{}
+	// When __unix_socket__ is set, __address__ is not used for the
+	// connection — host is always set to "localhost" — so it is
+	// deliberately omitted here.
 	labels := labels.FromMap(map[string]string{
-		model.AddressLabel:     "example.com:1234",
 		model.SchemeLabel:      "unix+http",
 		model.MetricsPathLabel: "/metrics",
 		UnixSocketLabel:        "/tmp/sock",
@@ -165,8 +167,9 @@ func TestTargetURL_Unix(t *testing.T) {
 
 func TestTargetURL_UnixDefaultScheme(t *testing.T) {
 	scrapeConfig := &config.ScrapeConfig{}
+	// When __unix_socket__ is set, __address__ is unused; host defaults to
+	// "localhost" and the connection is routed through the Unix socket.
 	labels := labels.FromMap(map[string]string{
-		model.AddressLabel:     "example.com:1234",
 		model.MetricsPathLabel: "/metrics",
 		UnixSocketLabel:        "/tmp/sock",
 		// No __scheme__ set — defaults to "http".
@@ -185,8 +188,9 @@ func TestTargetURL_UnixDefaultScheme(t *testing.T) {
 
 func TestTargetURL_UnixHTTPS(t *testing.T) {
 	scrapeConfig := &config.ScrapeConfig{}
+	// When __unix_socket__ is set, __address__ is unused; host defaults to
+	// "localhost" and the connection is routed through the Unix socket.
 	labels := labels.FromMap(map[string]string{
-		model.AddressLabel:     "example.com:1234",
 		model.SchemeLabel:      "unix+https",
 		model.MetricsPathLabel: "/metrics",
 		UnixSocketLabel:        "/tmp/sock",

@@ -2286,21 +2286,23 @@ func pickSchema(bucketFactor float64) int32 {
 	}
 }
 
-// UnixSocketLabel is the name of the label that holds the unix socket path
-// to connect to for scraping. When set, the scrape client will connect via
-// the specified Unix domain socket instead of the target's __address__.
-const UnixSocketLabel = "__unix_socket__"
+const (
+	// UnixSocketLabel is the name of the label that holds the unix socket path
+	// to connect to for scraping. When set, the scrape client will connect via
+	// the specified Unix domain socket instead of the target's __address__.
+	UnixSocketLabel = "__unix_socket__"
 
-// unixSchemeParam is the query parameter used internally to pass the
-// original scheme (e.g. "http", "https") through to the custom
-// RoundTripper, which restores it before forwarding the request.
-const unixSchemeParam = "__unix_scheme__"
+	// unixSchemeParam is the query parameter used internally to pass the
+	// original scheme (e.g. "http", "https") through to the custom
+	// RoundTripper, which restores it before forwarding the request.
+	unixSchemeParam = "__unix_scheme__"
 
-// unixRoundTripperPrefix is used to mark hosts that should be routed
-// through the custom unixRoundTripper, which then forwards them to a
-// Unix domain socket. The prefix uses "_" because underscores aren't
-// allowed in valid DNS hostnames, preventing collisions.
-const unixRoundTripperPrefix = "_unix-"
+	// unixRoundTripperPrefix is used to mark hosts that should be routed
+	// through the custom unixRoundTripper, which then forwards them to a
+	// Unix domain socket. The prefix uses "_" because underscores aren't
+	// allowed in valid DNS hostnames, preventing collisions.
+	unixRoundTripperPrefix = "_unix-"
+)
 
 func newScrapeClient(cfg config_util.HTTPClientConfig, name string, optFuncs ...config_util.HTTPClientOption) (*http.Client, error) {
 	client, err := config_util.NewClientFromConfig(cfg, name, optFuncs...)
