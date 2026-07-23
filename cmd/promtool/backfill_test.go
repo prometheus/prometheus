@@ -14,8 +14,11 @@
 package main
 
 import (
+	"compress/bzip2"
 	"context"
+	"io"
 	"math"
+	"os"
 	"sort"
 	"testing"
 	"time"
@@ -753,5 +756,21 @@ after_eof 1 2
 
 			testBlocks(t, db, test.Expected.MinTime, test.Expected.MaxTime, test.Expected.BlockDuration, test.Expected.Samples, test.Expected.NumBlocks)
 		})
+	}
+}
+
+func BenchmarkBackfill(b *testing.B) {
+	metricsFile, err := os.Open("testdata/dump-openmetrics-large.prom.bz2")
+	require.NoError(b, err)
+	metricsReader := bzip2.NewReader(metricsFile)
+	initialMetrics, err := io.ReadAll(metricsReader)
+	require.NoError(b, err)
+	initialMetrics = normalizeNewLine(initialMetrics)
+
+	for b.Loop() {
+		dbDir := b.TempDir()
+		// Import samples from OM format
+		err = backfill(5000, initialMetrics, dbDir, false, true, 2*time.Hour, map[string]string{})
+		require.NoError(b, err)
 	}
 }
