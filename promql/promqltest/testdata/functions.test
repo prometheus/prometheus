@@ -1718,6 +1718,43 @@ eval instant at 0m round(data)
 	{type="ninf"} -Inf
 	{type="nan"} NaN
 
+# Test for round() with to_nearest values of 0 and negative numbers.
+# round(v, 0) should return the input unchanged (was producing NaN for all samples).
+# round(v, -2) should match round(v, 2) since the set of multiples is identical.
+
+eval instant at 0m round(data, 0)
+	{type="positive"} 2.5
+	{type="whole"} 2
+	{type="negative"} -2.5
+	{type="nwhole"} -2
+	{type="zero"} 0
+	{type="nzero"} 0
+	{type="inf"} +Inf
+	{type="ninf"} -Inf
+	{type="nan"} NaN
+
+eval instant at 0m round(data, 2)
+	{type="positive"} 2
+	{type="whole"} 2
+	{type="negative"} -2
+	{type="nwhole"} -2
+	{type="zero"} 0
+	{type="nzero"} 0
+	{type="inf"} +Inf
+	{type="ninf"} -Inf
+	{type="nan"} NaN
+
+eval instant at 0m round(data, -2)
+	{type="positive"} 2
+	{type="whole"} 2
+	{type="negative"} -2
+	{type="nwhole"} -2
+	{type="zero"} 0
+	{type="nzero"} 0
+	{type="inf"} +Inf
+	{type="ninf"} -Inf
+	{type="nan"} NaN
+
 clear
 
 # Test for absent().

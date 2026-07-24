@@ -1163,6 +1163,19 @@ func funcRound(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *Eval
 	if len(args) >= 2 {
 		toNearest = vectorVals[1][0].F
 	}
+	// The set of multiples of N equals the set of multiples of -N, so a negative
+	// toNearest must not change the result. Use the absolute value to keep the
+	// floor direction consistent.
+	toNearest = math.Abs(toNearest)
+	// round to 0 is undefined and previously produced NaN for every sample
+	// (division by zero); return the input unchanged in that case. Route through
+	// simpleFloatFunc with an identity function so label/metric handling matches
+	// the normal path.
+	if toNearest == 0 {
+		return simpleFloatFunc(vectorVals, enh, func(f float64) float64 {
+			return f
+		}), nil
+	}
 	// Invert as it seems to cause fewer floating point accuracy issues.
 	toNearestInverse := 1.0 / toNearest
 	return simpleFloatFunc(vectorVals, enh, func(f float64) float64 {
