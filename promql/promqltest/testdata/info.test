@@ -211,6 +211,33 @@ eval range from 1m to 4m step 1m info(metric @ 60)
 eval range from 1m to 4m step 1m info(metric offset 1m)
     metric{data="info", instance="a", job="1", label="value"} 0 0 2 3
 
+# @ operator works also with info in an instant query.
+# Because info() evaluates the info series as of the @ timestamp, info(metric @ 60) is step
+# invariant: it returns the same result at any evaluation time, so the instant-query test
+# harness's @-invariance checks (which re-evaluate at other eval times) hold.
+eval instant at 4m info(metric @ 60)
+    metric{data="info", instance="a", job="1", label="value"} 0
+
+clear
+
+# info() honours the @ modifier when evaluating the info series, not just when selecting it.
+load 1m
+    metric{instance="a", job="1"} 1 2 3 4 5 6 7 8
+    target_info{instance="a", job="1", version="v1"} 1
+
+# The enrichment is evaluated as of t=0 (the @ timestamp) at every step, independent of the
+# query range start: the two queries below agree on the shared timestamps 6m and 7m.
+eval range from 4m to 7m step 1m info(metric @ 0)
+    metric{instance="a", job="1", version="v1"} 1 1 1 1
+
+eval range from 6m to 7m step 1m info(metric @ 0)
+    metric{instance="a", job="1", version="v1"} 1 1
+
+# The same holds for an instant query far past the @ timestamp: enrichment is pinned to t=0
+# rather than being looked up (and lost) at the evaluation time.
+eval instant at 40m info(metric @ 0)
+    metric{instance="a", job="1", version="v1"} 1
+
 clear
 
 # info_metric churn:
