@@ -979,15 +979,19 @@ func TestWatcher_StartSegment(t *testing.T) {
 		return out
 	}
 
+	// Run scans through maxSegment even when startSegment suppresses sample delivery.
+	// Therefore, the reported segment is maxSegment unless startSegment is higher.
 	tests := []struct {
 		name           string
 		startSegment   int
 		wantSampleVals []float64
+		wantSegment    int
 	}{
 		{
 			name:           "no savepoint skips historical samples",
 			startSegment:   -1,
 			wantSampleVals: nil,
+			wantSegment:    maxSegment,
 		},
 		{
 			name:         "savepoint at segment 1",
@@ -996,6 +1000,7 @@ func TestWatcher_StartSegment(t *testing.T) {
 				valsOf(segSamples[1]),
 				valsOf(segSamples[2]),
 			),
+			wantSegment: maxSegment,
 		},
 		{
 			name:         "savepoint at first segment replays everything",
@@ -1005,11 +1010,20 @@ func TestWatcher_StartSegment(t *testing.T) {
 				valsOf(segSamples[1]),
 				valsOf(segSamples[2]),
 			),
+			wantSegment: maxSegment,
 		},
 		{
 			name:           "savepoint at last historical segment",
 			startSegment:   2,
 			wantSampleVals: valsOf(segSamples[2]),
+			wantSegment:    maxSegment,
+		},
+		{
+			// A start beyond maxSegment remains the reported floor without emitting samples.
+			name:           "savepoint ahead of stop point holds the floor",
+			startSegment:   numSegments - 1, // 3, beyond maxSegment (2).
+			wantSampleVals: nil,
+			wantSegment:    numSegments - 1,
 		},
 	}
 
@@ -1035,8 +1049,56 @@ func TestWatcher_StartSegment(t *testing.T) {
 			} else {
 				require.Equal(t, tc.wantSampleVals, gotVals, "delivered sample values mismatch")
 			}
+
+			// Savepoints and retries use the reported segment, which sample assertions do not cover.
+			require.Equal(t, tc.wantSegment, watcher.LastProcessedSegment(), "reported segment mismatch")
 		})
 	}
+}
+
+// TestWatcher_StartSegment_ResumeMonotonic verifies that the reported segment advances monotonically across repeated Run calls.
+func TestWatcher_StartSegment_ResumeMonotonic(t *testing.T) {
+	const (
+		seriesCount = 5
+		numSegments = 4 // Segment 3 is an unread tail.
+	)
+
+	series := make([]record.RefSeries, seriesCount)
+	for i := range series {
+		series[i] = record.RefSeries{
+			Ref:    chunks.HeadSeriesRef(i),
+			Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
+		}
+	}
+
+	dir := t.TempDir()
+	wdir := path.Join(dir, "wal")
+	require.NoError(t, os.Mkdir(wdir, 0o777))
+	w, err := NewSize(nil, nil, wdir, 32*1024, compression.None)
+	require.NoError(t, err)
+	var enc record.Encoder
+	for i := range numSegments {
+		if i == 0 {
+			require.NoError(t, w.Log(enc.Series(series, nil)))
+		}
+		require.NoError(t, w.Log(enc.Samples([]record.RefSample{{Ref: series[0].Ref, T: int64(i + 1), V: float64(i)}}, nil)))
+		if i < numSegments-1 {
+			_, err := w.NextSegment()
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, w.Close())
+
+	watcher := NewWatcher(wMetrics, nil, promslog.NewNopLogger(), "test", newWriteToMock(0), dir, false, false, false, nil, -1)
+	watcher.SetMetrics()
+
+	watcher.MaxSegment = 1
+	require.NoError(t, watcher.Run())
+	require.Equal(t, 1, watcher.LastProcessedSegment(), "first run should reach segment 1")
+
+	watcher.MaxSegment = 2
+	require.NoError(t, watcher.Run())
+	require.Equal(t, 2, watcher.LastProcessedSegment(), "second run should advance to segment 2")
 }
 
 // TestWatcher_StartSegment_CheckpointNotReplayed verifies that a startSegment at or
