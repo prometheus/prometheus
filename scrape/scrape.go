@@ -902,11 +902,13 @@ type scrapeCache struct {
 
 	// Parsed string to an entry with information about the actual label set
 	// and its storage reference.
-	series map[string]*cacheEntry
+	// series map[string]*cacheEntry
+	series *trieSeries
 
 	// Cache of dropped metric strings and their iteration. The iteration must
 	// be a pointer so we can update it.
-	droppedSeries map[string]*uint64
+	// droppedSeries map[string]*uint64
+	droppedSeries *trieDropped
 
 	// Series that were seen in the current and previous scrape, for staleness detection.
 	seriesCur  map[storage.SeriesRef]*cacheEntry
@@ -928,6 +930,256 @@ type metaEntry struct {
 	lastIterChange uint64 // Last scrape iteration the entry was changed at.
 }
 
+type radixNode struct {
+	prefix   []byte
+	children []*radixNode
+	value    any
+}
+
+type radixTrie struct {
+	root  *radixNode
+	count int
+}
+
+type trieSeries struct {
+	*radixTrie
+}
+
+type trieDropped struct {
+	*radixTrie
+}
+
+func newTrieSeries() *trieSeries {
+	return &trieSeries{newRadixTrie()}
+}
+
+func newTrieDropped() *trieDropped {
+	return &trieDropped{newRadixTrie()}
+}
+
+func newRadixTrie() *radixTrie {
+	return &radixTrie{root: &radixNode{}}
+}
+
+func getRadix(node *radixNode, key []byte) (any, bool) {
+	for len(key) > 0 {
+		var next *radixNode
+		for _, child := range node.children {
+			if child.prefix[0] == key[0] {
+				next = child
+				break
+			}
+		}
+
+		if next == nil || len(key) < len(next.prefix) || !bytes.HasPrefix(key, next.prefix) {
+			return nil, false
+		}
+
+		key = key[len(next.prefix):]
+		node = next
+	}
+
+	// * MATCH NOT FOUND
+	if node.value == nil {
+		return nil, false
+	}
+
+	return node.value, true
+}
+
+func (ts *trieSeries) get(key []byte) (*cacheEntry, bool) {
+	value, exists := getRadix(ts.root, key)
+	if exists {
+		return value.(*cacheEntry), true
+	}
+	return nil, false
+}
+
+func (td *trieDropped) get(key []byte) (*uint64, bool) {
+	value, exists := getRadix(td.root, key)
+	if exists {
+		return value.(*uint64), true
+	}
+	return nil, false
+}
+
+func (ts *trieSeries) delete(key []byte) {
+	if deleteRadix(ts.root, key) {
+		ts.count--
+	}
+}
+
+// ! Not needed as of now
+// func (td *trieDropped) delete(key []byte) {
+// 	if deleteRadix(td.root, key) {
+// 		td.count--
+// 	}
+// }
+
+func deleteRadix(node *radixNode, key []byte) bool {
+	// * CASE: MATCHING
+	// * When we matched the word to be deleted
+	if len(key) == 0 {
+		if node.value == nil {
+			// Never existed in the first place
+			return false
+		}
+		node.value = nil
+		return true
+	}
+
+	for index, child := range node.children {
+		// * We continue from the children which are not matching to the key
+		if child.prefix[0] != key[0] || !bytes.HasPrefix(key, child.prefix) {
+			continue
+		}
+
+		// * Matching child
+		// * now recurse to traverse more further
+		if !deleteRadix(child, key[len(child.prefix):]) {
+			return false
+		}
+		switch {
+		// * CASE: Dead Node with no child dangling with no value... deleting it
+		case child.value == nil && len(child.children) == 0:
+			// * deleting that child from the slice
+			node.children = append(node.children[:index], node.children[index+1:]...)
+			// * CASE: Dead Node with a child
+		case child.value == nil && len(child.children) == 1:
+			// * Passing the values of the child to the parent node
+			only := child.children[0]
+			child.prefix = append(child.prefix, only.prefix...)
+			child.value = only.value
+			child.children = only.children
+			only = nil
+		}
+		return true
+	}
+	return false
+}
+
+func (ts *trieSeries) set(key []byte, value any) {
+	if insertRadix(ts.root, key, value) {
+		ts.count++
+	}
+}
+
+func (td *trieDropped) set(key []byte, iterPtr *uint64) {
+	if insertRadix(td.root, key, iterPtr) {
+		td.count++
+	}
+}
+
+func insertRadix(node *radixNode, key []byte, value any) bool {
+	for {
+		// * CASE 1: MATCHING
+		// * when the search is complete the len of key == 0 , then we check
+		// * if node.value == nil to check if it is a leaf node or not
+		// * We have matched the entire key
+		if len(key) == 0 {
+			isNew := node.value == nil
+			node.value = value
+			return isNew
+		}
+		index := -1
+		for i, child := range node.children {
+			if child.prefix[0] == key[0] {
+				index = i
+				break
+			}
+		}
+
+		// * CASE 2: CREATING NODE
+		// * If there is no children for the prefix we will create one :)
+		if index == -1 {
+			newPrefix := make([]byte, len(key))
+			copy(newPrefix, key)
+			node.children = append(node.children, &radixNode{
+				prefix: newPrefix,
+				value:  value,
+			})
+			return true
+		}
+
+		child := node.children[index]
+		cp := commonPrefixLen(child.prefix, key)
+		switch {
+		// * CASE 3: DESCENT
+		// * The entrie child node matches a part of a key so we keep traversing downward
+		case cp == len(child.prefix):
+			node = child
+			key = key[cp:]
+			continue
+
+		// * CASE 4: SPLITTING
+		// * Splitting prefixes or words as the whole key matchies just a part of the child node prefix
+		default:
+			split := &radixNode{
+				prefix:   child.prefix[:cp:cp],
+				children: make([]*radixNode, 1, 2),
+			}
+			split.children[0] = child
+			child.prefix = child.prefix[cp:]
+			node.children[index] = split
+			if cp == len(key) {
+				split.value = value
+				return true
+			}
+			split.children = append(split.children, &radixNode{
+				prefix: append([]byte(nil), key[cp:]...),
+				value:  value,
+			})
+			return true
+		}
+	}
+}
+
+func commonPrefixLen(a, b []byte) int {
+	n := min(len(a), len(b))
+	i := 0
+	for i < n && a[i] == b[i] {
+		i++
+	}
+	return i
+}
+
+func (ts *trieSeries) len() int {
+	return ts.count
+}
+
+func (td *trieDropped) len() int {
+	return td.count
+}
+
+func iterateRadix(node *radixNode, path []byte, f func([]byte, any) bool) bool {
+	if node.value != nil {
+		if !f(path, node.value) {
+			return false
+		}
+	}
+	for _, child := range node.children {
+		childPath := make([]byte, 0, len(path)+len(child.prefix))
+		childPath = append(childPath, path...)
+		childPath = append(childPath, child.prefix...)
+		if !iterateRadix(child, childPath, f) {
+			return false
+		}
+	}
+	return true
+}
+
+func (ts *trieSeries) iterate(f func([]byte, *cacheEntry) bool) {
+	iterateRadix(ts.root, nil, func(k []byte, v any) bool {
+		return f(k, v.(*cacheEntry))
+	})
+}
+
+func (td *trieDropped) iterate(f func([]byte, *uint64) bool) {
+	iterateRadix(td.root, nil, func(k []byte, v any) bool {
+		return f(k, v.(*uint64))
+	})
+}
+
 func (m *metaEntry) size() int {
 	// The attribute lastIter although part of the struct it is not metadata.
 	return len(m.Help) + len(m.Unit) + len(m.Type)
@@ -935,8 +1187,8 @@ func (m *metaEntry) size() int {
 
 func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 	return &scrapeCache{
-		series:        map[string]*cacheEntry{},
-		droppedSeries: map[string]*uint64{},
+		series:        newTrieSeries(),
+		droppedSeries: newTrieDropped(),
 		seriesCur:     map[storage.SeriesRef]*cacheEntry{},
 		seriesPrev:    map[storage.SeriesRef]*cacheEntry{},
 		metadata:      map[string]*metaEntry{},
@@ -946,7 +1198,7 @@ func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 
 func (c *scrapeCache) iterDone(flushCache bool) {
 	c.metaMtx.Lock()
-	count := len(c.series) + len(c.droppedSeries) + len(c.metadata)
+	count := c.series.len() + c.droppedSeries.len() + len(c.metadata)
 	c.metaMtx.Unlock()
 
 	switch {
@@ -966,16 +1218,25 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		// All caches may grow over time through series churn
 		// or multiple string representations of the same metric. Clean up entries
 		// that haven't appeared in the last scrape.
-		for s, e := range c.series {
+		var toDelete [][]byte
+		c.series.iterate(func(met []byte, e *cacheEntry) bool {
 			if c.iter != e.lastIter {
-				delete(c.series, s)
+				toDelete = append(toDelete, append([]byte{}, met...))
 			}
+			return true
+		})
+
+		for _, met := range toDelete {
+			c.series.delete(met)
 		}
-		for s, iter := range c.droppedSeries {
+
+		var droppedToDelete [][]byte
+		c.droppedSeries.iterate(func(met []byte, iter *uint64) bool {
 			if c.iter != *iter {
-				delete(c.droppedSeries, s)
+				droppedToDelete = append(droppedToDelete, append([]byte{}, met...))
 			}
-		}
+			return true
+		})
 		c.metaMtx.Lock()
 		for m, e := range c.metadata {
 			// Keep metadata around for 10 scrapes after its metric disappeared.
@@ -994,7 +1255,7 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 }
 
 func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
-	e, ok := c.series[string(met)]
+	e, ok := c.series.get(met)
 	if !ok {
 		return nil, false, false
 	}
@@ -1005,17 +1266,17 @@ func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
 
 func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels, hash uint64) (ce *cacheEntry) {
 	ce = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
-	c.series[string(met)] = ce
+	c.series.set(met, ce)
 	return ce
 }
 
 func (c *scrapeCache) addDropped(met []byte) {
 	iter := c.iter
-	c.droppedSeries[string(met)] = &iter
+	c.droppedSeries.set(met, &iter)
 }
 
 func (c *scrapeCache) getDropped(met []byte) bool {
-	iterp, ok := c.droppedSeries[string(met)]
+	iterp, ok := c.droppedSeries.get(met)
 	if ok {
 		*iterp = c.iter
 	}
