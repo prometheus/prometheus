@@ -32,6 +32,8 @@ import { EqlSingle, Neq } from '@prometheus-io/lezer-promql';
 import { syntaxTree } from '@codemirror/language';
 import { newCompleteStrategy } from './index';
 import nock from 'nock';
+import { jest } from '@jest/globals';
+import type { PrometheusClient } from '../client';
 
 describe('analyzeCompletion test', () => {
   const testCases = [
@@ -719,6 +721,24 @@ describe('analyzeCompletion test', () => {
       pos: 24,
       expectedContext: [{ kind: ContextKind.MetricName, metricName: 'r' }, { kind: ContextKind.Function }, { kind: ContextKind.Aggregation }],
     },
+    {
+      title: 'info() function second arg - label name after __name__ matcher',
+      expr: 'info(http_requests_total, {__name__=~"build_info", })',
+      pos: 50,
+      expectedContext: [
+        {
+          kind: ContextKind.InfoDataLabelName,
+          metricName: 'http_requests_total',
+          infoMetricMatches: ['__name__=~"build_info"'],
+        },
+      ],
+    },
+    {
+      title: 'info() function second arg - label name without __name__ matcher',
+      expr: 'info(http_requests_total, {})',
+      pos: 27,
+      expectedContext: [{ kind: ContextKind.InfoDataLabelName, metricName: 'http_requests_total' }],
+    },
   ];
   testCases.forEach((value) => {
     it(value.title, () => {
@@ -727,6 +747,90 @@ describe('analyzeCompletion test', () => {
       const result = analyzeCompletion(state, node, value.pos);
       expect(result).toEqual(value.expectedContext);
     });
+  });
+
+  it('preserves all complete info selector matchers', () => {
+    const expr = 'info(up, {__name__=~".+_info", __name__!~"build.*", env="prod", version!="old", })';
+    const pos = expr.length - 2;
+    const state = createEditorState(expr);
+    const result = analyzeCompletion(state, syntaxTree(state).resolve(pos, -1), pos);
+    expect(result).toEqual([
+      {
+        kind: ContextKind.InfoDataLabelName,
+        metricName: 'up',
+        infoMetricMatches: ['__name__=~".+_info"', '__name__!~"build.*"'],
+        infoDataMatches: ['env="prod"', 'version!="old"'],
+      },
+    ]);
+  });
+
+  it('excludes only the matcher currently being edited', () => {
+    const expr = 'info(up, {env!="dev", env="prod"})';
+    const pos = expr.lastIndexOf('prod') + 2;
+    const state = createEditorState(expr);
+    const result = analyzeCompletion(state, syntaxTree(state).resolve(pos, -1), pos);
+    expect(result).toEqual([
+      {
+        kind: ContextKind.InfoDataLabelValue,
+        metricName: 'up',
+        labelName: 'env',
+        infoDataMatches: ['env!="dev"'],
+      },
+    ]);
+  });
+
+  it('decodes a quoted label name exactly once', () => {
+    const expr = String.raw`info(up, {"path\\name"="value"})`;
+    const pos = expr.indexOf('value') + 2;
+    const state = createEditorState(expr);
+    const result = analyzeCompletion(state, syntaxTree(state).resolve(pos, -1), pos);
+    expect(result).toEqual([
+      {
+        kind: ContextKind.InfoDataLabelValue,
+        metricName: 'up',
+        labelName: String.raw`path\name`,
+      },
+    ]);
+  });
+
+  it.each(['info(up, build_info{env="prod", })', 'info(up, {"build_info", env="prod", })'])(
+    'uses generic completion for an invalid second-argument metric prefix: %s',
+    (expr) => {
+      const pos = expr.length - 2;
+      const state = createEditorState(expr);
+      const result = analyzeCompletion(state, syntaxTree(state).resolve(pos, -1), pos);
+      expect(result.some(({ kind }) => kind === ContextKind.InfoDataLabelName || kind === ContextKind.InfoDataLabelValue)).toBe(false);
+    }
+  );
+
+  it('does not call info endpoints for an invalid second-argument metric prefix', async () => {
+    const infoLabelNames = jest.fn(() => Promise.resolve({ results: [], hasMore: false }));
+    const infoLabelValues = jest.fn(() => Promise.resolve({ results: [], hasMore: false }));
+    const client = {
+      metricNames: jest.fn(() => Promise.resolve([])),
+      metricMetadata: jest.fn(() => Promise.resolve({})),
+      labelNames: jest.fn(() => Promise.resolve([])),
+      labelValues: jest.fn(() => Promise.resolve([])),
+      series: jest.fn(() => Promise.resolve([])),
+      infoLabelNames,
+      infoLabelValues,
+    } as unknown as PrometheusClient;
+    const expr = 'info(up, build_info{env="prod", })';
+    const state = createEditorState(expr);
+    const completion = newCompleteStrategy({ remote: client });
+    await completion.promQL(new CompletionContext(state, expr.length - 2, true));
+
+    expect(infoLabelNames).not.toHaveBeenCalled();
+    expect(infoLabelValues).not.toHaveBeenCalled();
+  });
+
+  it('uses generic value completion for identifying labels', () => {
+    const expr = 'info(up, {job="api"})';
+    const pos = expr.indexOf('api') + 1;
+    const state = createEditorState(expr);
+    const result = analyzeCompletion(state, syntaxTree(state).resolve(pos, -1), pos);
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe(ContextKind.LabelValue);
   });
 });
 

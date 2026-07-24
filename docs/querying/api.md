@@ -585,11 +585,11 @@ Common URL query parameters:
 - `match[]=<series_selector>`: Repeated series selector used to scope the
   search. Optional.
 - `search[]=<string>`: Repeated search string matched against names or values.
-  Multiple values use OR semantics. Optional.
+  Multiple values use OR semantics. Optional. At most 32 values may be supplied.
 - `fuzz_threshold=<number>`: Fuzzy threshold from 0 to 100. Optional. A value
   of 0 is the lowest fuzzy threshold.
-- `fuzz_alg=<subsequence | jarowinkler>`: Matching algorithm. Optional. Default
-  is `subsequence`.
+- `fuzz_alg=<jarowinkler | subsequence>`: Matching algorithm. Optional. Default
+  is `jarowinkler`.
 - `case_sensitive=<bool>`: Toggle case-sensitive matching. Optional.
 - `sort_by=<string>`: Sort mode. Supported values depend on the endpoint.
 - `sort_dir=<asc | dsc>`: Sort direction. Optional. Only valid with
@@ -597,10 +597,13 @@ Common URL query parameters:
 - `include_score=<bool>`: Include the relevance score in each result. Optional.
 - `start=<rfc3339 | unix_timestamp>`: Start timestamp. Optional.
 - `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
-- `limit=<number>`: Maximum number of returned results. Optional. Default is
-  100.
+- `limit=<number>`: Positive maximum number of returned results. Optional.
+  Default is 100. A positive `--web.search.max-limit` caps explicit values and
+  may reduce the default; setting the flag to 0 disables that operator cap but
+  does not make `limit=0` valid.
 - `batch_size=<number>`: Preferred number of results per NDJSON batch.
-  Optional. Default is 100.
+  Optional and positive. Default is 100, the maximum is 10000, and the
+  effective batch size is no greater than `limit`.
 
 The `start` and `end` parameters narrow results to the selected time window.
 Results may include values from series active slightly outside that window,
@@ -642,6 +645,89 @@ curl -g 'http://localhost:9090/api/v1/search/label_values?label=instance&match[]
 {"results":[{"value":"localhost:9090"},{"value":"localhost:9091"}]}
 {"status":"success","has_more":true}
 ```
+
+### Querying info labels
+
+The experimental info-label endpoints support autocomplete for the second
+argument of the experimental `info()` PromQL function. They discover data
+labels on info metrics such as `target_info`; `__name__`, `job`, and `instance`
+are excluded. They are top-level endpoints because their `expr` scope,
+info-specific matchers, and dual `info()` feature gate are function-specific;
+reusing the search API's storage and NDJSON machinery does not make them
+general `/search/*` resources.
+
+```
+GET /api/v1/info_labels
+POST /api/v1/info_labels
+GET /api/v1/info_label_values
+POST /api/v1/info_label_values
+```
+
+Both endpoints accept the common search parameters described above, except
+`match[]`. They additionally accept:
+
+- `metric_match[]=<matcher>`: Repeated full PromQL matcher on `__name__`, for
+  example `__name__=~".+_info"`. Multiple matchers use AND semantics. When
+  omitted, the endpoint uses `__name__="target_info"`. A request containing
+  only negative name matchers is also restricted to names matching `.+_info`.
+- `data_match[]=<matcher>`: Repeated full PromQL matcher on an info data label,
+  for example `env="prod"`. Multiple matchers use AND semantics.
+- `expr=<string>`: Optional instant-vector PromQL expression. Its `job` and
+  `instance` values scope the matching info metrics. Results containing only `job`, only
+  `instance`, or both are kept in separate presence groups so a missing label
+  is not treated as a wildcard. For a group containing both labels, the
+  endpoint may conservatively inspect cross-pairs of observed values; the
+  `info()` function still performs its exact identifying-label join. Matrix,
+  scalar, and string expressions are rejected.
+- `time=<rfc3339 | unix_timestamp>`: Evaluation timestamp for `expr`. Defaults
+  to `end`.
+- `lookback_delta=<duration | float>`: Override the lookback period used both
+  to evaluate `expr` and to search the matching info metrics.
+
+When `expr` is present, the info-metric storage range is the range an instant
+`info(expr, ...)` evaluation would use, including lookback, `offset`, and `@`
+modifiers. `start` does not alter that range or participate in `start`/`end`
+ordering validation, while `end` supplies the default evaluation `time`.
+Supplied timestamps must still be syntactically valid. Without `expr`, `start`
+and `end` directly bound the info-metric storage search and must not be
+inverted.
+
+`/api/v1/info_labels` applies `search[]` and `limit` to data-label names and
+streams `{name, score?}` records. It rejects the `label` parameter.
+
+```bash
+curl -N -g 'http://localhost:9090/api/v1/info_labels?expr=http_requests_total{job="prometheus"}&metric_match[]=__name__=~".+_info"&data_match[]=env="prod"&search[]=ver&sort_by=score'
+```
+
+```json
+{"results":[{"name":"version"}]}
+{"status":"success","has_more":false}
+```
+
+`/api/v1/info_label_values` requires an exact decoded `label` parameter. It
+applies `search[]` and `limit` to that label's values and streams
+`{value, score?}` records. Empty labels and the non-data labels `__name__`,
+`job`, and `instance` are rejected.
+
+```bash
+curl -N -g 'http://localhost:9090/api/v1/info_label_values?label=version&expr=http_requests_total{job="prometheus"}&search[]=2.'
+```
+
+```json
+{"results":[{"value":"2.0"},{"value":"2.1"}]}
+{"status":"success","has_more":false}
+```
+
+Both endpoints require `--enable-feature=search-api,promql-experimental-functions`.
+Their default result limit is 100, reduced when `--web.search.max-limit` is
+lower. Limits bound the endpoint's retained result state and wire output;
+storage implementations may still enumerate a larger candidate set internally.
+At most 32 `metric_match[]` and `data_match[]` parameters may be supplied in
+total. Expression-derived scope is rejected before the info-metric search if
+it exceeds 10,000 unique identifying values or 1,048,576 escaped regular-
+expression bytes; it is never silently truncated. The legacy singular
+`metric_match` and `data_match` parameters, and the removed `values_limit`
+parameter, are rejected.
 
 ## Querying exemplars
 

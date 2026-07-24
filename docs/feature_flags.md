@@ -385,6 +385,10 @@ label names, and label values with fuzzy matching and filtering support. See
 [the search API documentation](querying/api.md#searching-metric-names-label-names-and-label-values)
 for details.
 
+The info-label discovery endpoints also require this flag and
+`promql-experimental-functions`. See
+[the info-label API documentation](querying/api.md#querying-info-labels).
+
 The `--web.search.max-limit` flag (default `10000`) bounds the `limit` query
 parameter accepted by the search endpoints. Requests with a higher `limit` are
 rejected with HTTP 400. The default response limit (100) is silently clamped

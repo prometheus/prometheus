@@ -242,22 +242,23 @@ type API struct {
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 	globalURLOptions      GlobalURLOptions
 
-	db                  TSDBAdminStats
-	dbDir               string
-	enableAdmin         bool
-	enableSearch        bool
-	maxSearchLimit      int
-	metaCache           *searchMetadataCache
-	logger              *slog.Logger
-	CORSOrigin          *regexp.Regexp
-	buildInfo           *PrometheusVersion
-	runtimeInfo         func() (RuntimeInfo, error)
-	gatherer            prometheus.Gatherer
-	isAgent             bool
-	statsRenderer       StatsRenderer
-	customStatsRenderer bool // See validateStatsParam: a custom StatsRenderer's `stats` vocabulary is not validated.
-	notificationsGetter func() []notifications.Notification
-	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
+	db                          TSDBAdminStats
+	dbDir                       string
+	enableAdmin                 bool
+	enableSearch                bool
+	maxSearchLimit              int
+	enableExperimentalFunctions bool
+	metaCache                   *searchMetadataCache
+	logger                      *slog.Logger
+	CORSOrigin                  *regexp.Regexp
+	buildInfo                   *PrometheusVersion
+	runtimeInfo                 func() (RuntimeInfo, error)
+	gatherer                    prometheus.Gatherer
+	isAgent                     bool
+	statsRenderer               StatsRenderer
+	customStatsRenderer         bool // See validateStatsParam: a custom StatsRenderer's `stats` vocabulary is not validated.
+	notificationsGetter         func() []notifications.Notification
+	notificationsSub            func() (<-chan notifications.Notification, func(), bool)
 	// Allows customizing the default mapping
 	overrideErrorCode OverrideErrorCode
 
@@ -291,6 +292,7 @@ func NewAPI(
 	enableAdmin bool,
 	enableSearch bool,
 	maxSearchLimit int,
+	enableExperimentalFunctions bool,
 	logger *slog.Logger,
 	rr func(context.Context) RulesRetriever,
 	remoteReadSampleLimit int,
@@ -326,31 +328,32 @@ func NewAPI(
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 
-		now:                 time.Now,
-		config:              configFunc,
-		flagsMap:            flagsMap,
-		ready:               readyFunc,
-		globalURLOptions:    globalURLOptions,
-		db:                  db,
-		dbDir:               dbDir,
-		enableAdmin:         enableAdmin,
-		enableSearch:        enableSearch,
-		maxSearchLimit:      maxSearchLimit,
-		metaCache:           &searchMetadataCache{},
-		rulesRetriever:      rr,
-		logger:              logger,
-		CORSOrigin:          corsOrigin,
-		runtimeInfo:         runtimeInfo,
-		buildInfo:           buildInfo,
-		gatherer:            gatherer,
-		isAgent:             isAgent,
-		statsRenderer:       DefaultStatsRenderer,
-		notificationsGetter: notificationsGetter,
-		notificationsSub:    notificationsSub,
-		overrideErrorCode:   overrideErrorCode,
-		featureRegistry:     featureRegistry,
-		openAPIBuilder:      NewOpenAPIBuilder(openAPIOptions, logger),
-		parser:              promqlParser,
+		now:                         time.Now,
+		config:                      configFunc,
+		flagsMap:                    flagsMap,
+		ready:                       readyFunc,
+		globalURLOptions:            globalURLOptions,
+		db:                          db,
+		dbDir:                       dbDir,
+		enableAdmin:                 enableAdmin,
+		enableSearch:                enableSearch,
+		maxSearchLimit:              maxSearchLimit,
+		enableExperimentalFunctions: enableExperimentalFunctions,
+		metaCache:                   &searchMetadataCache{},
+		rulesRetriever:              rr,
+		logger:                      logger,
+		CORSOrigin:                  corsOrigin,
+		runtimeInfo:                 runtimeInfo,
+		buildInfo:                   buildInfo,
+		gatherer:                    gatherer,
+		isAgent:                     isAgent,
+		statsRenderer:               DefaultStatsRenderer,
+		notificationsGetter:         notificationsGetter,
+		notificationsSub:            notificationsSub,
+		overrideErrorCode:           overrideErrorCode,
+		featureRegistry:             featureRegistry,
+		openAPIBuilder:              NewOpenAPIBuilder(openAPIOptions, logger),
+		parser:                      promqlParser,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -490,6 +493,10 @@ func (api *API) Register(r *route.Router) {
 	r.Post("/search/label_names", api.ready(api.searchLabelNames))
 	r.Get("/search/label_values", api.ready(api.searchLabelValues))
 	r.Post("/search/label_values", api.ready(api.searchLabelValues))
+	r.Get("/info_labels", api.ready(api.infoLabels))
+	r.Post("/info_labels", api.ready(api.infoLabels))
+	r.Get("/info_label_values", api.ready(api.infoLabelValues))
+	r.Post("/info_label_values", api.ready(api.infoLabelValues))
 
 	r.Get("/alerts", wrapAgent(api.alerts))
 	r.Get("/rules", wrapAgent(api.rules))

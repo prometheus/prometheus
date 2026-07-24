@@ -67,7 +67,7 @@ import {
 } from '@prometheus-io/lezer-promql';
 import { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import { EditorState } from '@codemirror/state';
-import { buildLabelMatchers, containsAtLeastOneChild, containsChild, walkBackward } from '../parser';
+import { buildLabelMatchers, containsAtLeastOneChild, containsChild, unquotePromQLStringLiteral, walkBackward } from '../parser';
 import {
   aggregateOpModifierTerms,
   aggregateOpTerms,
@@ -105,6 +105,9 @@ export enum ContextKind {
   MetricName,
   LabelName,
   LabelValue,
+  // info() function data label matchers
+  InfoDataLabelName,
+  InfoDataLabelValue,
   // static autocompletion
   Function,
   Aggregation,
@@ -126,6 +129,139 @@ export interface Context {
   metricName?: string;
   labelName?: string;
   matchers?: Matcher[];
+  infoMetricMatches?: string[];
+  infoDataMatches?: string[];
+}
+
+// extractMetricName extracts the metric name from an expression node.
+// It traverses the tree to find an Identifier node and returns its text.
+function extractExpression(node: SyntaxNode, state: EditorState): string {
+  // Extract the full text of the expression node.
+  // This is used to pass the complete expression (e.g., "rate(http_requests_total[5m])")
+  // to the API for evaluating complex PromQL expressions.
+  return state.sliceDoc(node.from, node.to);
+}
+
+// InfoFunctionContext contains information about the info() function call context.
+interface InfoFunctionContext {
+  // Whether we're inside the second argument of info()
+  isInSecondArg: boolean;
+  // The full expression from the first argument (e.g., "rate(http_requests_total[5m])" or "http_requests_total")
+  // This is passed to the API's expr parameter for evaluation.
+  metricName: string;
+  infoMetricMatches: string[];
+  infoDataMatches: string[];
+}
+
+// getInfoFunctionContext checks if we're inside the second argument (data label matchers)
+// of the info() function and extracts the expression from the first argument.
+function getInfoFunctionContext(node: SyntaxNode, state: EditorState): InfoFunctionContext {
+  const notInInfo: InfoFunctionContext = { isInSecondArg: false, metricName: '', infoMetricMatches: [], infoDataMatches: [] };
+
+  // Walk up to find if we're inside a FunctionCallBody
+  let current: SyntaxNode | null = node;
+  while (current !== null) {
+    if (current.type.id === FunctionCallBody) {
+      // Found a FunctionCallBody, now check if its parent function is "info"
+      const parent = current.parent;
+      if (parent !== null) {
+        // The function name is the first child (FunctionIdentifier node).
+        // Check if the text content is "info".
+        const funcName = parent.firstChild;
+        if (funcName) {
+          const name = state.sliceDoc(funcName.from, funcName.to);
+          if (name === 'info') {
+            // Check if node is in the second argument (after the first child of FunctionCallBody)
+            // The FunctionCallBody structure is: FunctionCallBody(Expr, LabelMatchers)
+            // We're in the second argument if we're not within the first child (which is the expression)
+            const firstArg = current.firstChild;
+            if (firstArg !== null && node.from >= firstArg.to) {
+              // Extract the metric name from the first argument
+              // Extract the full expression from the first argument (e.g., "rate(http_requests_total[5m])")
+              const metricName = extractExpression(firstArg, state);
+              const { metricMatches, dataMatches, hasMetricPrefix } = extractInfoMatchers(current, node, state);
+              if (hasMetricPrefix) {
+                return notInInfo;
+              }
+              return { isInSecondArg: true, metricName, infoMetricMatches: metricMatches, infoDataMatches: dataMatches };
+            }
+          }
+        }
+      }
+      return notInInfo;
+    }
+    current = current.parent;
+  }
+  return notInInfo;
+}
+
+function extractInfoMatchers(
+  functionCallBody: SyntaxNode,
+  currentNode: SyntaxNode,
+  state: EditorState
+): { metricMatches: string[]; dataMatches: string[]; hasMetricPrefix: boolean } {
+  let selectorNode: SyntaxNode | null = null;
+  let argIndex = 0;
+  for (let child = functionCallBody.firstChild; child !== null; child = child.nextSibling) {
+    const nodeText = state.sliceDoc(child.from, child.to);
+    if (nodeText === '(' || nodeText === ')' || nodeText === ',') {
+      continue;
+    }
+    argIndex++;
+    if (argIndex === 2 && child.type.id === VectorSelector) {
+      selectorNode = child;
+      break;
+    }
+  }
+  if (!selectorNode) {
+    return { metricMatches: [], dataMatches: [], hasMetricPrefix: false };
+  }
+
+  let currentMatcher: SyntaxNode | null = currentNode;
+  while (currentMatcher !== null && currentMatcher.type.id !== QuotedLabelMatcher && currentMatcher.type.id !== UnquotedLabelMatcher) {
+    currentMatcher = currentMatcher.parent;
+  }
+
+  const metricMatches: string[] = [];
+  const dataMatches: string[] = [];
+  const hasIdentifierPrefix = selectorNode.getChild(Identifier) !== null;
+
+  const labelMatchersNode = selectorNode.getChild(LabelMatchers);
+  if (!labelMatchersNode) {
+    return { metricMatches, dataMatches, hasMetricPrefix: hasIdentifierPrefix };
+  }
+  const hasMetricPrefix = hasIdentifierPrefix || labelMatchersNode.getChild(QuotedLabelName) !== null;
+
+  for (const matcher of [...labelMatchersNode.getChildren(QuotedLabelMatcher), ...labelMatchersNode.getChildren(UnquotedLabelMatcher)]) {
+    if (currentMatcher && matcher.from === currentMatcher.from && matcher.to === currentMatcher.to) {
+      continue;
+    }
+    if (!matcher.getChild(MatchOp) || !matcher.getChild(StringLiteral)) {
+      continue;
+    }
+    const builtMatcher = buildLabelMatchers([matcher], state)[0];
+    if (!builtMatcher) {
+      continue;
+    }
+    const raw = state.sliceDoc(matcher.from, matcher.to);
+    if (builtMatcher.name === '__name__') {
+      metricMatches.push(raw);
+    } else {
+      dataMatches.push(raw);
+    }
+  }
+  return { metricMatches, dataMatches, hasMetricPrefix };
+}
+
+function infoContextFields(infoContext: InfoFunctionContext): Pick<Context, 'infoMetricMatches' | 'infoDataMatches'> {
+  return {
+    ...(infoContext.infoMetricMatches.length > 0 ? { infoMetricMatches: infoContext.infoMetricMatches } : {}),
+    ...(infoContext.infoDataMatches.length > 0 ? { infoDataMatches: infoContext.infoDataMatches } : {}),
+  };
+}
+
+function decodeQuotedLabelName(node: SyntaxNode, state: EditorState): string {
+  return unquotePromQLStringLiteral(state.sliceDoc(node.from, node.to));
 }
 
 function getMetricNameInGroupBy(tree: SyntaxNode, state: EditorState): string {
@@ -183,6 +319,20 @@ function escapePromQLString(str: string): string {
   // Backtick-quoted string completions are not handled separately today, so keep
   // the inserted value escaped unconditionally.
   return str.replace(/([\\"])/g, '\\$1');
+}
+
+function decodePromQLSearch(str: string): string {
+  const escapes: Record<string, string> = {
+    '\\': '\\',
+    '"': '"',
+    n: '\n',
+    r: '\r',
+    t: '\t',
+    b: '\b',
+    f: '\f',
+    v: '\v',
+  };
+  return str.replace(/\\([\\"nrtbfv])/g, (_match, escaped: string) => escapes[escaped]);
 }
 
 function isAfterClosedFunctionCallBody(state: EditorState, node: SyntaxNode, pos: number): boolean {
@@ -515,6 +665,12 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         // so don't offer label-related completions anymore.
         break;
       }
+      // Check if we're in the info() function's second argument
+      const infoCtxLM = getInfoFunctionContext(node, state);
+      if (infoCtxLM.isInSecondArg) {
+        result.push({ kind: ContextKind.InfoDataLabelName, metricName: infoCtxLM.metricName, ...infoContextFields(infoCtxLM) });
+        break;
+      }
       // In that case we are in the given situation:
       //       metric_name{} or {}
       // so we have or to autocomplete any kind of labelName or to autocomplete only the labelName associated to the metric
@@ -528,6 +684,12 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         // So we have to continue to autocomplete any kind of labelName
         result.push({ kind: ContextKind.LabelName });
       } else if (node.parent?.type.id === UnquotedLabelMatcher) {
+        // Check if we're in the info() function's second argument
+        const infoCtxLN = getInfoFunctionContext(node, state);
+        if (infoCtxLN.isInSecondArg) {
+          result.push({ kind: ContextKind.InfoDataLabelName, metricName: infoCtxLN.metricName, ...infoContextFields(infoCtxLN) });
+          break;
+        }
         // In that case we are in the given situation:
         //       metric_name{myL} or {myL}
         // so we have or to continue to autocomplete any kind of labelName or
@@ -544,18 +706,29 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       break;
     case StringLiteral:
       if (node.parent?.type.id === UnquotedLabelMatcher || node.parent?.type.id === QuotedLabelMatcher) {
+        let labelName = '';
+        if (node.parent.firstChild?.type.id === LabelName) {
+          labelName = state.sliceDoc(node.parent.firstChild.from, node.parent.firstChild.to);
+        } else if (node.parent.firstChild?.type.id === QuotedLabelName) {
+          labelName = decodeQuotedLabelName(node.parent.firstChild, state);
+        }
+        // Check if we're in the info() function's second argument
+        const infoCtxSL = getInfoFunctionContext(node, state);
+        if (infoCtxSL.isInSecondArg && !['__name__', 'job', 'instance'].includes(labelName)) {
+          result.push({
+            kind: ContextKind.InfoDataLabelValue,
+            labelName,
+            metricName: infoCtxSL.metricName,
+            ...infoContextFields(infoCtxSL),
+          });
+          break;
+        }
         // In this case we are in the given situation:
         //      metric_name{labelName=""} or metric_name{"labelName"=""}
         // So we can autocomplete the labelValue
 
         // Get the labelName.
         // By definition it's the firstChild: https://github.com/promlabs/lezer-promql/blob/0ef65e196a8db6a989ff3877d57fd0447d70e971/src/promql.grammar#L250
-        let labelName = '';
-        if (node.parent.firstChild?.type.id === LabelName) {
-          labelName = state.sliceDoc(node.parent.firstChild.from, node.parent.firstChild.to);
-        } else if (node.parent.firstChild?.type.id === QuotedLabelName) {
-          labelName = state.sliceDoc(node.parent.firstChild.from, node.parent.firstChild.to).slice(1, -1);
-        }
         // then find the metricName if it exists
         const metricName = getMetricNameInVectorSelector(node, state);
         // finally get the full matcher available
@@ -704,6 +877,8 @@ export class HybridComplete implements CompleteStrategy {
   promQL(context: CompletionContext): Promise<CompletionResult | null> | CompletionResult | null {
     const { state, pos } = context;
     const tree = syntaxTree(state).resolve(pos, -1);
+    const completionStart = computeStartCompletePosition(state, tree, pos);
+    const infoSearch = decodePromQLSearch(state.sliceDoc(completionStart, pos));
     // The lines above can help you to print the current lezer tree.
     // It's useful when you are trying to understand why it doesn't autocomplete.
     // console.log(syntaxTree(state).topNode.toString());
@@ -798,16 +973,21 @@ export class HybridComplete implements CompleteStrategy {
           asyncResult = asyncResult.then((result) => {
             return this.autocompleteLabelValue(result, context);
           });
+          break;
+        case ContextKind.InfoDataLabelName:
+          asyncResult = asyncResult.then((result) => {
+            return this.autocompleteInfoDataLabelName(result, context, infoSearch);
+          });
+          break;
+        case ContextKind.InfoDataLabelValue:
+          asyncResult = asyncResult.then((result) => {
+            return this.autocompleteInfoDataLabelValue(result, context, infoSearch);
+          });
+          break;
       }
     }
     return asyncResult.then((result) => {
-      return arrayToCompletionResult(
-        result,
-        computeStartCompletePosition(state, tree, pos),
-        computeEndCompletePosition(state, tree, pos),
-        completeSnippet,
-        span
-      );
+      return arrayToCompletionResult(result, completionStart, computeEndCompletePosition(state, tree, pos), completeSnippet, span);
     });
   }
 
@@ -896,5 +1076,35 @@ export class HybridComplete implements CompleteStrategy {
     return this.prometheusClient.labelValues(context.labelName, context.metricName, context.matchers).then((labelValues: string[]) => {
       return result.concat(labelValues.map((value) => ({ label: value, apply: escapePromQLString(value), type: 'text' })));
     });
+  }
+
+  private autocompleteInfoDataLabelName(result: Completion[], context: Context, search: string): Completion[] | Promise<Completion[]> {
+    if (!this.prometheusClient) {
+      return result;
+    }
+    return this.prometheusClient
+      .infoLabelNames({
+        expr: context.metricName,
+        metricMatches: context.infoMetricMatches,
+        dataMatches: context.infoDataMatches,
+        search: search || undefined,
+      })
+      .then(({ results }) => result.concat(results.map((name) => ({ label: name, type: 'constant', detail: 'info label' }))))
+      .catch(() => result);
+  }
+
+  private autocompleteInfoDataLabelValue(result: Completion[], context: Context, search: string): Completion[] | Promise<Completion[]> {
+    if (!this.prometheusClient || !context.labelName) {
+      return result;
+    }
+    return this.prometheusClient
+      .infoLabelValues(context.labelName, {
+        expr: context.metricName,
+        metricMatches: context.infoMetricMatches,
+        dataMatches: context.infoDataMatches,
+        search: search || undefined,
+      })
+      .then(({ results }) => result.concat(results.map((value) => ({ label: value, apply: escapePromQLString(value), type: 'text' }))))
+      .catch(() => result);
   }
 }

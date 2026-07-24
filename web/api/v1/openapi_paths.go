@@ -203,7 +203,7 @@ func (*OpenAPIBuilder) labelValuesPath() *v3.PathItem {
 func commonSearchParams() []*v3.Parameter {
 	return []*v3.Parameter{
 		queryParamWithExample("fuzz_threshold", "Fuzzy threshold in the range 0-100. A value of 0 is the lowest fuzzy threshold.", false, integerSchema(), []example{{"example", 80}}),
-		queryParamWithExample("fuzz_alg", "Fuzzy algorithm. Supported values are subsequence (default) and jarowinkler.", false, enumStringSchema(FuzzAlgorithms()...), nil),
+		queryParamWithExample("fuzz_alg", "Fuzzy algorithm. Supported values are jarowinkler (default) and subsequence.", false, enumStringSchema(FuzzAlgorithms()...), nil),
 		queryParamWithExample("case_sensitive", "Whether matching is case-sensitive.", false, booleanSchema(), []example{{"example", true}}),
 		queryParamWithExample("sort_by", "Sort mode. Supported values are alpha and score.", false, enumStringSchema("alpha", "score"), nil),
 		queryParamWithExample("sort_dir", "Sort direction. Only valid with sort_by=alpha. Supported values are asc and dsc.", false, enumStringSchema("asc", "dsc"), nil),
@@ -217,17 +217,14 @@ func (b *OpenAPIBuilder) searchMetricNamesPath() *v3.PathItem {
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
 		}), []example{{"example", []string{"{job=\"prometheus\"}"}}}),
-		queryParamWithExample("search[]", "One or more search terms matched against metric names (OR logic).", false, base.CreateSchemaProxy(&base.Schema{
-			Type:  []string{"array"},
-			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
-		}), []example{{"example", []string{"http_req"}}}),
+		queryParamWithExample("search[]", "Up to 32 search terms matched against metric names (OR logic).", false, searchTermsSchema("", nil), []example{{"example", []string{"http_req"}}}),
 	}, commonSearchParams()...)
 	params = append(params,
 		queryParamWithExample("include_metadata", "Include metric metadata in each result.", false, booleanSchema(), []example{{"example", true}}),
 		queryParamWithExample("start", "Start timestamp for metric name search.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
 		queryParamWithExample("end", "End timestamp for metric name search.", false, timestampSchema(), timestampExamples(exampleTime)),
-		queryParamWithExample("limit", "Maximum number of metric names to return.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 20}}),
-		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch.", false, integerSchemaWithDefault(defaultSearchBatchSize), []example{{"example", 20}}),
+		queryParamWithExample("limit", "Positive maximum number of metric names to return, subject to the operator-configured search limit.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 20}}),
+		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch, capped at 10000 and at limit.", false, batchSizeSchema("", 20), []example{{"example", 20}}),
 	)
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -253,16 +250,13 @@ func (b *OpenAPIBuilder) searchLabelNamesPath() *v3.PathItem {
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
 		}), []example{{"example", []string{"{__name__=\"up\"}"}}}),
-		queryParamWithExample("search[]", "One or more search terms matched against label names (OR logic).", false, base.CreateSchemaProxy(&base.Schema{
-			Type:  []string{"array"},
-			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
-		}), []example{{"example", []string{"inst"}}}),
+		queryParamWithExample("search[]", "Up to 32 search terms matched against label names (OR logic).", false, searchTermsSchema("", nil), []example{{"example", []string{"inst"}}}),
 	}, commonSearchParams()...)
 	params = append(params,
 		queryParamWithExample("start", "Start timestamp for label name search.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
 		queryParamWithExample("end", "End timestamp for label name search.", false, timestampSchema(), timestampExamples(exampleTime)),
-		queryParamWithExample("limit", "Maximum number of label names to return.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 20}}),
-		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch.", false, integerSchemaWithDefault(defaultSearchBatchSize), []example{{"example", 20}}),
+		queryParamWithExample("limit", "Positive maximum number of label names to return, subject to the operator-configured search limit.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 20}}),
+		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch, capped at 10000 and at limit.", false, batchSizeSchema("", 20), []example{{"example", 20}}),
 	)
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -289,16 +283,13 @@ func (b *OpenAPIBuilder) searchLabelValuesPath() *v3.PathItem {
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
 		}), []example{{"example", []string{"up"}}}),
-		queryParamWithExample("search[]", "One or more search terms matched against label values (OR logic).", false, base.CreateSchemaProxy(&base.Schema{
-			Type:  []string{"array"},
-			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
-		}), []example{{"example", []string{"909"}}}),
+		queryParamWithExample("search[]", "Up to 32 search terms matched against label values (OR logic).", false, searchTermsSchema("", nil), []example{{"example", []string{"909"}}}),
 	}, commonSearchParams()...)
 	params = append(params,
 		queryParamWithExample("start", "Start timestamp for label value search.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
 		queryParamWithExample("end", "End timestamp for label value search.", false, timestampSchema(), timestampExamples(exampleTime)),
-		queryParamWithExample("limit", "Maximum number of label values to return.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 10}}),
-		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch.", false, integerSchemaWithDefault(defaultSearchBatchSize), []example{{"example", 10}}),
+		queryParamWithExample("limit", "Positive maximum number of label values to return, subject to the operator-configured search limit.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 10}}),
+		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch, capped at 10000 and at limit.", false, batchSizeSchema("", 10), []example{{"example", 10}}),
 	)
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -314,6 +305,77 @@ func (b *OpenAPIBuilder) searchLabelValuesPath() *v3.PathItem {
 			Tags:        []string{"labels"},
 			RequestBody: formRequestBodyWithExamples("SearchLabelValuesPostInputBody", searchLabelValuesPostExamples(), "Submit a label value search. This endpoint accepts the same parameters as the GET version."),
 			Responses:   ndjsonResponsesWithErrorExamples(searchLabelValuesResponseExamples(), errorResponseExamples(), "Label values streamed successfully via POST.", "Error searching label values via POST."),
+		},
+	}
+}
+
+func (b *OpenAPIBuilder) infoLabelsPath() *v3.PathItem {
+	params := append([]*v3.Parameter{
+		queryParamWithExample("expr", "Optional instant-vector PromQL expression. Its identifying labels (job, instance) scope the info-metric query, whose storage range follows info() lookback, offset, and @ semantics.", false, stringSchema(), []example{{"example", "up{job=\"prometheus\"}"}}),
+		queryParamWithExample("metric_match[]", "Full PromQL __name__ matcher. Repeat for AND semantics. Defaults to __name__=\"target_info\"; negative-only requests are restricted to .+_info names.", false, stringArraySchema(), []example{{"example", []string{`__name__=~".+_info"`, `__name__!="custom_info"`}}}),
+		queryParamWithExample("data_match[]", "Full PromQL data-label matcher. Repeat for AND semantics. At most 32 metric and data matchers are accepted in total.", false, stringArraySchema(), []example{{"example", []string{`env="prod"`}}}),
+		queryParamWithExample("search[]", "Up to 32 search terms matched against data label names (OR logic).", false, searchTermsSchema("", nil), []example{{"example", []string{"ver"}}}),
+	}, commonSearchParams()...)
+	params = append(params,
+		queryParamWithExample("time", "Evaluation timestamp for expr. Defaults to end.", false, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("lookback_delta", "Override the lookback period used to evaluate expr and search matching info metrics.", false, durationSchema(), []example{{"duration", "5m"}, {"number", "300"}}),
+		queryParamWithExample("start", "Start of the info-metric storage range when expr is omitted. With expr, it must be valid but is ignored for range selection and ordering validation.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "End of the info-metric storage range when expr is omitted; also the default expr evaluation time.", false, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("limit", "Positive maximum number of label names to return, subject to the operator-configured search limit.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 20}}),
+		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch, capped at 10000 and at limit.", false, batchSizeSchema("", 20), []example{{"example", 20}}),
+	)
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "info-labels",
+			Summary:     "Discover info metric data-label names",
+			Description: "Streams data-label names from info metrics matching metric_match[], data_match[], and the identifying-label scope derived from expr. Expression-derived scope is limited to 10000 unique identifying values and 1048576 escaped regular-expression bytes.",
+			Tags:        []string{"labels"},
+			Parameters:  params,
+			Responses:   ndjsonResponsesWithErrorExamples(infoLabelsResponseExamples(), errorResponseExamples(), "Info labels streamed successfully.", "Error retrieving info labels."),
+		},
+		Post: &v3.Operation{
+			OperationId: "info-labels-post",
+			Summary:     "Discover info metric data-label names",
+			Description: "Streams data-label names from scoped info metrics. Accepts the same parameters as the GET version.",
+			Tags:        []string{"labels"},
+			RequestBody: formRequestBodyWithExamples("InfoLabelsPostInputBody", infoLabelsPostExamples(), "Submit an info labels query."),
+			Responses:   ndjsonResponsesWithErrorExamples(infoLabelsResponseExamples(), errorResponseExamples(), "Info labels streamed successfully via POST.", "Error retrieving info labels via POST."),
+		},
+	}
+}
+
+func (b *OpenAPIBuilder) infoLabelValuesPath() *v3.PathItem {
+	params := append([]*v3.Parameter{
+		queryParamWithExample("label", "Exact data-label name whose values should be searched.", true, stringSchema(), []example{{"example", "version"}}),
+		queryParamWithExample("expr", "Optional instant-vector PromQL expression. Its identifying labels (job, instance) scope the info-metric query, whose storage range follows info() lookback, offset, and @ semantics.", false, stringSchema(), []example{{"example", "up{job=\"prometheus\"}"}}),
+		queryParamWithExample("metric_match[]", "Full PromQL __name__ matcher. Repeat for AND semantics. Defaults to __name__=\"target_info\"; negative-only requests are restricted to .+_info names.", false, stringArraySchema(), []example{{"example", []string{`__name__=~".+_info"`}}}),
+		queryParamWithExample("data_match[]", "Full PromQL data-label matcher. Repeat for AND semantics. At most 32 metric and data matchers are accepted in total.", false, stringArraySchema(), []example{{"example", []string{`env="prod"`}}}),
+		queryParamWithExample("search[]", "Up to 32 search terms matched against values (OR logic).", false, searchTermsSchema("", nil), []example{{"example", []string{"2."}}}),
+	}, commonSearchParams()...)
+	params = append(params,
+		queryParamWithExample("time", "Evaluation timestamp for expr. Defaults to end.", false, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("lookback_delta", "Override the lookback period used to evaluate expr and search matching info metrics.", false, durationSchema(), []example{{"duration", "5m"}, {"number", "300"}}),
+		queryParamWithExample("start", "Start of the info-metric storage range when expr is omitted. With expr, it must be valid but is ignored for range selection and ordering validation.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "End of the info-metric storage range when expr is omitted; also the default expr evaluation time.", false, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("limit", "Positive maximum number of label values to return, subject to the operator-configured search limit.", false, integerSchemaWithDefault(b.searchDefaultLimit()), []example{{"example", 20}}),
+		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch, capped at 10000 and at limit.", false, batchSizeSchema("", 20), []example{{"example", 20}}),
+	)
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "info-label-values",
+			Summary:     "Discover info metric data-label values",
+			Description: "Streams values for one exact data-label name from scoped info metrics. Expression-derived scope is limited to 10000 unique identifying values and 1048576 escaped regular-expression bytes.",
+			Tags:        []string{"labels"},
+			Parameters:  params,
+			Responses:   ndjsonResponsesWithErrorExamples(infoLabelValuesResponseExamples(), errorResponseExamples(), "Info label values streamed successfully.", "Error retrieving info label values."),
+		},
+		Post: &v3.Operation{
+			OperationId: "info-label-values-post",
+			Summary:     "Discover info metric data-label values",
+			Description: "Streams values for one exact data-label name from scoped info metrics. Accepts the same parameters as the GET version.",
+			Tags:        []string{"labels"},
+			RequestBody: formRequestBodyWithExamples("InfoLabelValuesPostInputBody", infoLabelValuesPostExamples(), "Submit an info label value query."),
+			Responses:   ndjsonResponsesWithErrorExamples(infoLabelValuesResponseExamples(), errorResponseExamples(), "Info label values streamed successfully via POST.", "Error retrieving info label values via POST."),
 		},
 	}
 }

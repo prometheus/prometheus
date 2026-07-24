@@ -586,6 +586,80 @@ func labelValuesResponseExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
+// infoLabelsResponseExamples returns NDJSON name examples for /info_labels.
+func infoLabelsResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("infoLabelsStream", &base.Example{
+		Summary: "NDJSON stream of info-metric data-label names",
+		Value:   createYAMLNode("{\"results\":[{\"name\":\"commit\"},{\"name\":\"go_version\"},{\"name\":\"version\"}]}\n{\"status\":\"success\",\"has_more\":false}\n"),
+	})
+
+	examples.Set("infoLabelsStreamWithSearch", &base.Example{
+		Summary: "NDJSON stream filtered by search[]=ver with sort_by=score and include_score=true",
+		Value:   createYAMLNode("{\"results\":[{\"name\":\"version\",\"score\":1},{\"name\":\"go_version\",\"score\":0.5}]}\n{\"status\":\"success\",\"has_more\":false}\n"),
+	})
+
+	return examples
+}
+
+// infoLabelsPostExamples returns examples for POST /info_labels endpoint.
+func infoLabelsPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("simpleQuery", &base.Example{
+		Summary: "Simple info labels query",
+		Value: createYAMLNode(map[string]any{
+			"metric_match[]": []string{`__name__="target_info"`},
+		}),
+	})
+
+	examples.Set("queryWithExpr", &base.Example{
+		Summary: "Info labels query with expression",
+		Value: createYAMLNode(map[string]any{
+			"expr":           "up{job=\"prometheus\"}",
+			"metric_match[]": []string{`__name__=~".+_info"`},
+			"data_match[]":   []string{`env="prod"`},
+		}),
+	})
+
+	examples.Set("queryWithSearch", &base.Example{
+		Summary: "Info labels query with search and score",
+		Value: createYAMLNode(map[string]any{
+			"metric_match[]": []string{`__name__="target_info"`},
+			"search[]":       []string{"ver"},
+			"sort_by":        "score",
+			"include_score":  true,
+		}),
+	})
+
+	return examples
+}
+
+func infoLabelValuesResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+	examples.Set("infoLabelValuesStream", &base.Example{
+		Summary: "NDJSON stream of values for one info data label",
+		Value:   createYAMLNode("{\"results\":[{\"value\":\"1.0.0\"},{\"value\":\"2.0.0\"}]}\n{\"status\":\"success\",\"has_more\":false}\n"),
+	})
+	return examples
+}
+
+func infoLabelValuesPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+	examples.Set("queryValues", &base.Example{
+		Summary: "Search values for an exact info data label",
+		Value: createYAMLNode(map[string]any{
+			"label":          "version",
+			"metric_match[]": []string{`__name__="target_info"`},
+			"data_match[]":   []string{`env="prod"`},
+			"search[]":       []string{"2."},
+			"sort_by":        "score",
+		}),
+	})
+	return examples
+}
+
 // metadataResponseExamples returns examples for /metadata response.
 func metadataResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
