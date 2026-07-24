@@ -362,8 +362,9 @@ func (t *timestampTracker) AppendHistogramSTZeroSample(_ storage.SeriesRef, _ la
 }
 
 func (*timestampTracker) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
-	// TODO: Add and increment a `metadata` field when we get around to wiring metadata in remote_write.
-	// UpdateMetadata is no-op for remote write (where timestampTracker is being used) for now.
+	// Intentionally a no-op. dataIn measures records that create work for the
+	// sharded queue and is used to estimate queue load and backlog. A metadata
+	// update only changes cached per-series state; it does not enqueue an item.
 	return 0, nil
 }
 

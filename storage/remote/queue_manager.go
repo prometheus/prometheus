@@ -1697,7 +1697,7 @@ func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sen
 func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf compression.EncodeBuffer, compr compression.Type) error {
 	begin := time.Now()
 	rs, err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, 0, pBuf, buf, compr)
-	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, 0, rs, time.Since(begin))
+	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, rs, time.Since(begin))
 	return err
 }
 
@@ -1706,11 +1706,11 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 func (s *shards) sendV2Samples(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *[]byte, buf compression.EncodeBuffer, compr compression.Type) error {
 	begin := time.Now()
 	rs, err := s.sendV2SamplesWithBackoff(ctx, samples, labels, sampleCount, exemplarCount, histogramCount, metadataCount, pBuf, buf, compr)
-	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, metadataCount, rs, time.Since(begin))
+	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, rs, time.Since(begin))
 	return err
 }
 
-func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exemplarCount, histogramCount, metadataCount int, rs WriteResponseStats, duration time.Duration) {
+func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exemplarCount, histogramCount int, rs WriteResponseStats, duration time.Duration) {
 	// Partial errors may happen -- account for that.
 	sampleDiff := sampleCount - rs.Samples
 	if sampleDiff > 0 {
@@ -1732,7 +1732,12 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 
 	// These counters are used to calculate the dynamic sharding, and as such
 	// should be maintained irrespective of success or failure.
-	s.qm.dataOut.incr(int64(sampleCount + exemplarCount + histogramCount + metadataCount))
+	// Count only queueable items so dataOut remains comparable with dataIn.
+	// Remote write v2 copies cached metadata into outgoing series, potentially
+	// many times per metadata update, so counting those copies would distort the
+	// per-item send time and backlog estimates. Their actual cost is already
+	// included in dataOutDuration. Remote write v1 sends metadata separately.
+	s.qm.dataOut.incr(int64(sampleCount + exemplarCount + histogramCount))
 	s.qm.dataOutDuration.incr(int64(duration))
 	s.qm.lastSendTimestamp.Store(time.Now().Unix())
 

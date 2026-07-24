@@ -386,6 +386,9 @@ func TestWALMetadataDelivery(t *testing.T) {
 	c.expectMetadataForBatch(recs.Metadata, recs.Series, recs.Samples, nil, nil, nil)
 	qm.Append(recs.Samples)
 	c.waitForExpectedData(t, 30*time.Second)
+
+	// Metadata is cached state, not a queue item used for shard scaling.
+	require.Equal(t, int64(len(recs.Samples)), qm.dataOut.newEvents.Load())
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
