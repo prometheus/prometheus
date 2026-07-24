@@ -2735,6 +2735,76 @@ func TestAppendHistogramSchemaValidation(t *testing.T) {
 	}
 }
 
+// TestQueueManager_DropsExemplarsForUnsentNativeHistogram is a regression test for
+// https://github.com/prometheus/prometheus/issues/13552: when send_native_histograms
+// is disabled, exemplars attached to a native histogram series must be dropped too,
+// since the histogram sample itself is never sent and the remote endpoint would
+// otherwise reject the exemplar as belonging to a series it never received.
+func TestQueueManager_DropsExemplarsForUnsentNativeHistogram(t *testing.T) {
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		t.Run(string(protoMsg), func(t *testing.T) {
+			c := NewTestWriteClient(protoMsg)
+			cfg := testDefaultQueueConfig()
+			mcfg := config.DefaultMetadataConfig
+			cfg.MaxShards = 1
+
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m.sendExemplars = true
+			// m.sendNativeHistograms stays false, as set by newTestQueueManager.
+
+			histogramSeriesRef := chunks.HeadSeriesRef(0)
+			floatSeriesRef := chunks.HeadSeriesRef(1)
+			series := []record.RefSeries{
+				{Ref: histogramSeriesRef, Labels: labels.FromStrings("__name__", "test_histogram")},
+				{Ref: floatSeriesRef, Labels: labels.FromStrings("__name__", "test_float")},
+			}
+			m.StoreSeries(series, 0)
+
+			histograms := []record.RefHistogramSample{
+				{
+					Ref: histogramSeriesRef,
+					T:   1234567890,
+					H: &histogram.Histogram{
+						Schema:          0,
+						ZeroThreshold:   1e-128,
+						Count:           2,
+						Sum:             5.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []int64{2},
+					},
+				},
+			}
+			floatSamples := []record.RefSample{
+				{Ref: floatSeriesRef, T: 1234567890, V: 1},
+			}
+			exemplars := []record.RefExemplar{
+				{Ref: histogramSeriesRef, T: 1234567891, V: 1, Labels: labels.FromStrings("traceID", "histogram-exemplar")},
+				{Ref: floatSeriesRef, T: 1234567891, V: 1, Labels: labels.FromStrings("traceID", "float-exemplar")},
+			}
+
+			c.expectSamples(floatSamples, series)
+			c.expectExemplars(exemplars[1:], series) // Only the float series' exemplar should be sent.
+
+			m.Start()
+			defer m.Stop()
+
+			// Append the histogram before its exemplar, so the queue manager has
+			// already learned that histogramSeriesRef is a native histogram series.
+			require.True(t, m.AppendHistograms(histograms))
+			require.True(t, m.Append(floatSamples))
+			require.True(t, m.AppendExemplars(exemplars))
+
+			c.waitForExpectedData(t, 30*time.Second)
+
+			require.Equal(t, 1.0, client_testutil.ToFloat64(m.metrics.droppedExemplarsTotal.WithLabelValues(reasonNativeHistogramNotSent)))
+
+			c.mtx.Lock()
+			defer c.mtx.Unlock()
+			require.Empty(t, c.receivedExemplars[getSeriesIDFromRef(series[histogramSeriesRef])], "exemplar for unsent native histogram series must not be sent")
+		})
+	}
+}
+
 // TestAppendHistogramsWithStartTimestamp verifies that AppendHistograms and
 // AppendFloatHistograms propagate the per-sample start timestamp end-to-end
 // through the queue manager into a Remote Write 2.0 request. ST is only
