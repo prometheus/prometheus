@@ -1039,7 +1039,7 @@ func TestWatcher_StartSegment(t *testing.T) {
 	}
 }
 
-// TestWatcher_StartSegment_CheckpointNotReplayed verifies that a savepoint at or
+// TestWatcher_StartSegment_CheckpointNotReplayed verifies that a startSegment at or
 // behind the checkpoint index doesn't cause the compacted checkpoint payload to be replayed.
 // The checkpoint is series-only by design; only live WAL segments at
 // or after the savepoint deliver samples.
