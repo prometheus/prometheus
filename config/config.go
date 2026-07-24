@@ -496,6 +496,8 @@ type GlobalConfig struct {
 	RuleQueryOffset model.Duration `yaml:"rule_query_offset,omitempty"`
 	// File to which PromQL queries are logged.
 	QueryLogFile string `yaml:"query_log_file,omitempty"`
+	// Minimum query execution duration to log.
+	QueryLogMinDuration model.Duration `yaml:"query_log_min_duration,omitempty"`
 	// File to which scrape failures are logged.
 	ScrapeFailureLogFile string `yaml:"scrape_failure_log_file,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
@@ -711,6 +713,7 @@ func (c *GlobalConfig) isZero() bool {
 		c.EvaluationInterval == 0 &&
 		c.RuleQueryOffset == 0 &&
 		c.QueryLogFile == "" &&
+		c.QueryLogMinDuration == 0 &&
 		c.ScrapeFailureLogFile == "" &&
 		c.ScrapeProtocols == nil &&
 		c.ScrapeNativeHistograms == nil &&
