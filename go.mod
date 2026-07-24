@@ -42,7 +42,7 @@ require (
 	github.com/gophercloud/gophercloud/v2 v2.12.0
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
 	github.com/hashicorp/consul/api v1.33.7
-	github.com/hashicorp/nomad/api v0.0.0-20260622150140-ec332d2cba1c
+	github.com/hashicorp/nomad/api v0.0.0-20260724112153-37c73b2918bd
 	github.com/hetznercloud/hcloud-go/v2 v2.43.0
 	github.com/ionos-cloud/sdk-go/v6 v6.3.9
 	github.com/json-iterator/go v1.1.12

@@ -313,8 +313,8 @@ github.com/hashicorp/golang-lru v1.0.2 h1:dV3g9Z/unq5DpblPpw+Oqcv4dU/1omnb4Ok8iP
 github.com/hashicorp/golang-lru v1.0.2/go.mod h1:iADmTwqILo4mZ8BN3D2Q6+9jd8WM5uGBxy+E8yxSoD4=
 github.com/hashicorp/memberlist v0.6.0 h1:hhVDLQUzWkLaitLLSrxLLqSD2l2+qiOz1DMr5zb9EQQ=
 github.com/hashicorp/memberlist v0.6.0/go.mod h1:a2lqh8KICpm8JibWOmuld7DaA+9QU1YcUtTTTMAtt/M=
-github.com/hashicorp/nomad/api v0.0.0-20260622150140-ec332d2cba1c h1:A9XbbytAcfT8XRn3qeRJHFrM4PYuLOBz/wcgwW1nUYU=
-github.com/hashicorp/nomad/api v0.0.0-20260622150140-ec332d2cba1c/go.mod h1:Gnzrrc6H3OackqTmXNoGN30v347WpaX6oPZDJRSwX8A=
+github.com/hashicorp/nomad/api v0.0.0-20260724112153-37c73b2918bd h1:wznQR/Ba48RMaoWhuJnhLXm4kyT7FWDybBoORxFQl7w=
+github.com/hashicorp/nomad/api v0.0.0-20260724112153-37c73b2918bd/go.mod h1:Gnzrrc6H3OackqTmXNoGN30v347WpaX6oPZDJRSwX8A=
 github.com/hashicorp/serf v0.10.4 h1:TCQOrJXHZ1Xf80c4WBhMM9OwUFgDaIP0R+YvoQUKadI=
 github.com/hashicorp/serf v0.10.4/go.mod h1:l+s5Q1OSPWU6b9l9m7ODJzTp7mLevSaVzAI03Nka2F0=
 github.com/hetznercloud/hcloud-go/v2 v2.43.0 h1:soqEUxJJqbf8UICQmDXfUwY/khfROAk0fi1s0bnBtd8=
