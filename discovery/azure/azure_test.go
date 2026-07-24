@@ -51,6 +51,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestMapFromVMWithEmptyTags(t *testing.T) {
+	t.Parallel()
 	id := "test"
 	name := "name"
 	size := "size"
@@ -104,6 +105,7 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 }
 
 func TestVMToLabelSet(t *testing.T) {
+	t.Parallel()
 	id := "/subscriptions/00000000-0000-0000-0000-000000000000/test"
 	name := "name"
 	size := "size"
@@ -189,6 +191,7 @@ func TestVMToLabelSet(t *testing.T) {
 }
 
 func TestMapFromVMWithEmptyOSType(t *testing.T) {
+	t.Parallel()
 	id := "test"
 	name := "name"
 	size := "size"
@@ -238,6 +241,7 @@ func TestMapFromVMWithEmptyOSType(t *testing.T) {
 }
 
 func TestMapFromVMWithTags(t *testing.T) {
+	t.Parallel()
 	id := "test"
 	name := "name"
 	size := "size"
@@ -294,6 +298,7 @@ func TestMapFromVMWithTags(t *testing.T) {
 }
 
 func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
+	t.Parallel()
 	id := "test"
 	name := "name"
 	size := "size"
@@ -352,6 +357,7 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 }
 
 func TestMapFromVMScaleSetVMWithEmptyOSType(t *testing.T) {
+	t.Parallel()
 	id := "test"
 	name := "name"
 	size := "size"
@@ -404,6 +410,7 @@ func TestMapFromVMScaleSetVMWithEmptyOSType(t *testing.T) {
 }
 
 func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
+	t.Parallel()
 	id := "test"
 	name := "name"
 	size := "size"
@@ -465,6 +472,7 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 }
 
 func TestNewAzureResourceFromID(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		id       string
 		expected *arm.ResourceID
@@ -492,6 +500,7 @@ func TestNewAzureResourceFromID(t *testing.T) {
 }
 
 func TestNewCredentialManagedIdentity(t *testing.T) {
+	t.Parallel()
 	// Test that system-assigned managed identity (empty ClientID) creates
 	// a valid credential. Previously, an empty ClientID was passed as
 	// azidentity.ClientID("") which is not nil and caused Azure SDK to
@@ -513,6 +522,7 @@ func TestNewCredentialManagedIdentity(t *testing.T) {
 }
 
 func TestAzureRefresh(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		scenario       string
 		vmResp         []armcompute.VirtualMachinesClientListAllResponse
