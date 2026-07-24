@@ -64,6 +64,9 @@ func (*dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
 }
 
+// Ensure dbAdapter satisfies the LocalStorage interface used by the web handler.
+var _ LocalStorage = (*dbAdapter)(nil)
+
 func TestReadyAndHealthy(t *testing.T) {
 	t.Parallel()
 
