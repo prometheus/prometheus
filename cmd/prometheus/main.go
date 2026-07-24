@@ -1065,6 +1065,7 @@ func main() {
 	}
 
 	cfg.web.Flags = map[string]string{}
+	cfg.web.ConfigFile = cfg.configFile
 
 	// Exclude kingpin default flags to expose only Prometheus ones.
 	boilerplateFlags := kingpin.New("", "").Version("")

@@ -36,6 +36,7 @@ import {
   IconSearch,
   IconServer,
   IconServerCog,
+  IconSettingsAutomation,
 } from "@tabler/icons-react";
 import {
   BrowserRouter,
@@ -55,6 +56,7 @@ import StatusPage from "./pages/StatusPage";
 import TSDBStatusPage from "./pages/TSDBStatusPage";
 import FlagsPage from "./pages/FlagsPage";
 import ConfigPage from "./pages/ConfigPage";
+import ConfigurationAssistantPage from "./pages/ConfigurationAssistantPage";
 import AgentPage from "./pages/AgentPage";
 import { Suspense } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -153,6 +155,13 @@ const serverStatusPages = [
     path: "/config",
     icon: <IconServerCog style={navIconStyle} />,
     element: <ConfigPage />,
+    inAgentMode: true,
+  },
+  {
+    title: "Configuration assistant",
+    path: "/configuration-assistant",
+    icon: <IconSettingsAutomation style={navIconStyle} />,
+    element: <ConfigurationAssistantPage />,
     inAgentMode: true,
   },
   {
