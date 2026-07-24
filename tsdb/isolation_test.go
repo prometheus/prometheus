@@ -169,11 +169,15 @@ func BenchmarkIsolation(b *testing.B) {
 			wg := sync.WaitGroup{}
 			start := make(chan struct{})
 
-			for range goroutines {
+			for worker := range goroutines {
+				iterations := b.N / goroutines
+				if worker < b.N%goroutines {
+					iterations++
+				}
 				wg.Go(func() {
 					<-start
 
-					for b.Loop() {
+					for range iterations {
 						appendID, _ := iso.newAppendID(0)
 
 						iso.closeAppend(appendID)
@@ -196,11 +200,18 @@ func BenchmarkIsolationWithState(b *testing.B) {
 			wg := sync.WaitGroup{}
 			start := make(chan struct{})
 
-			for range goroutines {
+			readers := max(goroutines/100, 1)
+			workers := goroutines + readers
+
+			for worker := range goroutines {
+				iterations := b.N / workers
+				if worker < b.N%workers {
+					iterations++
+				}
 				wg.Go(func() {
 					<-start
 
-					for b.Loop() {
+					for range iterations {
 						appendID, _ := iso.newAppendID(0)
 
 						iso.closeAppend(appendID)
@@ -208,16 +219,16 @@ func BenchmarkIsolationWithState(b *testing.B) {
 				})
 			}
 
-			readers := goroutines / 100
-			if readers == 0 {
-				readers++
-			}
-
-			for g := 0; g < readers; g++ {
+			for reader := range readers {
+				worker := goroutines + reader
+				iterations := b.N / workers
+				if worker < b.N%workers {
+					iterations++
+				}
 				wg.Go(func() {
 					<-start
 
-					for b.Loop() {
+					for range iterations {
 						s := iso.State(math.MinInt64, math.MaxInt64)
 						s.Close()
 					}
