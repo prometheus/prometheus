@@ -392,3 +392,70 @@ to this maximum, so an operator setting a smaller cap does not break
 no-`limit` requests. Setting the flag to `0` disables the cap entirely; this
 is **not recommended** for endpoints exposed beyond a trusted network because a
 single client can then request the entire index in one response.
+
+## Semconv Versioned Read
+
+`--enable-feature=semconv-versioned-read`
+
+Wraps the query path with a semconv-aware storage layer that recognises two
+special matchers in PromQL queries:
+
+- `__semconv_url__="registry/<version>"` selects the semantic conventions
+  version that supplies metric metadata. It is required by `__schema_url__` and
+  has no effect on its own.
+- `__schema_url__="registry/<file>"` selects an OTel schema file that declares
+  per-version attribute and metric renames; it triggers version-rename fan-out,
+  matching the metric's historical names and rendering the merged results under
+  the queried version's name.
+
+Both matchers may only reference paths inside the active registry under the
+`registry/` namespace; they are matcher values, not locations, so arbitrary HTTP
+URLs and local file paths are rejected regardless of the registry source.
+
+By default the registry embedded in the binary (under `storage/semconv/registry/`)
+is used. Operators can instead supply their own registry via the `semconv` block
+in the main configuration file, which fully replaces the embedded one:
+
+```yaml
+semconv:
+  registry:
+    # Either local files/globs of the registry root (the registry.yaml schema
+    # index plus the per-version semconv files), resolved relative to the config
+    # file like rule_files:
+    files:
+      - /etc/prometheus/semconv/*
+    # ...or a remote .tar.gz archive of the registry root, fetched once at startup:
+    # url: https://example.com/semconv-registry.tar.gz
+    # Optional HTTP client settings used only with `url`:
+    # basic_auth: { username: u, password: p }
+```
+
+Exactly one of `files` or `url` must be set. A registry must contain at least one
+OTel schema file (e.g. `registry.yaml`) plus the semver-named semconv files (e.g.
+`1.0.0`) you query as `__semconv_url__` anchors. Files are addressed by base name,
+so each must be unique.
+
+The registry is loaded and validated at startup: it must be reachable and every
+file must parse (a semver-named file as a semconv file, any other as an OTel
+schema). A malformed or schema-less registry fails startup rather than surfacing
+only at query time. It is read once; the block is re-validated on configuration
+reload but changes take effect only on restart, and it is ignored unless the
+feature flag is set.
+
+For a remote `url`, the archive is fetched once at startup using `http_client_config`
+(so redirects follow `follow_redirects`, default `true`; set it to `false` to
+forbid them); the fetch blocks startup, is not retried, and both the download and
+its decompressed size are bounded.
+
+Example:
+
+```
+test{__semconv_url__="registry/1.1.0", __schema_url__="registry/registry.yaml"}
+```
+
+For `test` in semconv 1.1.0, this matches the metric's earlier names (e.g.
+`test.counter` in 1.0.0) declared by the schema's `versions` section and merges
+the results under the queried name `test`.
+
+This feature is experimental: the matcher names, the registry layout, and the
+`semconv` configuration block are subject to change.
