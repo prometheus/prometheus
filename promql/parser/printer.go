@@ -356,13 +356,20 @@ func (node *SubqueryExpr) getSubqueryTimeSuffix() string {
 }
 
 func (node *NumberLiteral) String() string {
+	var s string
 	if node.Duration {
 		if node.Val < 0 {
-			return fmt.Sprintf("-%s", model.Duration(-node.Val*1e9).String())
+			s = fmt.Sprintf("-%s", model.Duration(-node.Val*1e9).String())
+		} else {
+			s = model.Duration(node.Val * 1e9).String()
 		}
-		return model.Duration(node.Val * 1e9).String()
+	} else {
+		s = strconv.FormatFloat(node.Val, 'f', -1, 64)
 	}
-	return strconv.FormatFloat(node.Val, 'f', -1, 64)
+	if node.Wrapped {
+		return "(" + s + ")"
+	}
+	return s
 }
 
 func (node *ParenExpr) String() string {
