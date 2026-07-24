@@ -1081,7 +1081,52 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 		// secondLastRef because the lastRef caused an error.
 		return nil, nil, secondLastRef, fmt.Errorf("iterate on-disk chunks: %w", err)
 	}
+	for _, ms := range refSeries {
+		// A snapshot may contain an in-memory head chunk newer than the chunks
+		// loaded above. In that case its cached state is still authoritative.
+		if ms.headChunks == nil && len(ms.mmappedChunks) > 0 {
+			if err := h.restoreSeriesStateFromMmappedChunks(ms); err != nil {
+				return nil, nil, secondLastRef, err
+			}
+		}
+	}
 	return mmappedChunks, oooMmappedChunks, lastRef, nil
+}
+
+// restoreSeriesStateFromMmappedChunks restores the cached state that is not
+// persisted in the WAL when samples are already covered by an m-mapped chunk.
+func (h *Head) restoreSeriesStateFromMmappedChunks(s *memSeries) error {
+	wasStale, wasHistogram, oldBuckets := s.sampleState()
+	s.lastValue = 0
+	s.lastHistogramValue = nil
+	s.lastFloatHistogramValue = nil
+
+	if len(s.mmappedChunks) > 0 {
+		lastChunk := s.mmappedChunks[len(s.mmappedChunks)-1]
+		chunk, err := h.chunkDiskMapper.Chunk(lastChunk.ref)
+		if err != nil {
+			return fmt.Errorf("load last m-mapped chunk for series ref %d: %w", s.ref, err)
+		}
+		it := chunk.Iterator(nil)
+		switch typ := it.Seek(lastChunk.maxTime); typ {
+		case chunkenc.ValFloat:
+			_, s.lastValue = it.At()
+		case chunkenc.ValHistogram:
+			_, s.lastHistogramValue = it.AtHistogram(nil)
+		case chunkenc.ValFloatHistogram:
+			_, s.lastFloatHistogramValue = it.AtFloatHistogram(nil)
+		default:
+			if err := it.Err(); err != nil {
+				return fmt.Errorf("iterate last m-mapped chunk for series ref %d: %w", s.ref, err)
+			}
+			return fmt.Errorf("last m-mapped chunk for series ref %d has no sample at %d", s.ref, lastChunk.maxTime)
+		}
+	}
+
+	isStale, isHistogram, newBuckets := s.sampleState()
+	h.updateStaleSeriesMetricOnAppend(wasStale, isStale)
+	h.updateNativeHistogramMetricsOnAppend(wasHistogram, isHistogram, oldBuckets, newBuckets)
+	return nil
 }
 
 // removeCorruptedMmappedChunks attempts to delete the corrupted mmapped chunks and if it fails, it clears all the previously

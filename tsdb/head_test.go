@@ -8261,6 +8261,79 @@ func TestHead_WALReplayStaleMarkerTypeConsistency(t *testing.T) {
 	}
 }
 
+func TestHead_MmappedChunkRestoresSeriesState(t *testing.T) {
+	tests := map[string]struct {
+		appendSamples func(*Head, labels.Labels)
+		wantStale     uint64
+		wantHist      uint64
+		wantBuckets   uint64
+	}{
+		"stale float": {
+			appendSamples: func(head *Head, lbls labels.Labels) {
+				app := head.Appender(context.Background())
+				_, err := app.Append(0, lbls, 100, 1)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+
+				app = head.Appender(context.Background())
+				_, err = app.Append(0, lbls, 200, math.Float64frombits(value.StaleNaN))
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+			},
+			wantStale: 1,
+		},
+		"integer histogram": {
+			appendSamples: func(head *Head, lbls labels.Labels) {
+				app := head.Appender(context.Background())
+				_, err := app.AppendHistogram(0, lbls, 100, tsdbutil.GenerateTestHistogram(1), nil)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+			},
+			wantHist:    1,
+			wantBuckets: 8,
+		},
+		"float histogram": {
+			appendSamples: func(head *Head, lbls labels.Labels) {
+				app := head.Appender(context.Background())
+				_, err := app.AppendHistogram(0, lbls, 100, nil, tsdbutil.GenerateTestFloatHistogram(1))
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+			},
+			wantHist:    1,
+			wantBuckets: 8,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			opts := newTestHeadDefaultOptions(1000, false)
+			head, _ := newTestHeadWithOptions(t, compression.None, opts)
+			t.Cleanup(func() { _ = head.Close() })
+			require.NoError(t, head.Init(0))
+
+			lbls := labels.FromStrings("name", name)
+			tc.appendSamples(head, lbls)
+			require.Equal(t, tc.wantStale, head.NumStaleSeries())
+			require.Equal(t, tc.wantHist, head.NumNativeHistogramSeries())
+			require.Equal(t, tc.wantBuckets, head.NumNativeHistogramBuckets())
+
+			// Force the latest sample into an m-mapped chunk. WAL replay skips
+			// samples covered by this chunk, so startup must restore its state.
+			require.NoError(t, head.truncateMemory(300))
+			require.NoError(t, head.Close())
+
+			wal, err := wlog.NewSize(nil, nil, filepath.Join(opts.ChunkDirRoot, "wal"), 32768, compression.None)
+			require.NoError(t, err)
+			head, err = NewHead(nil, nil, wal, nil, opts, nil)
+			require.NoError(t, err)
+			require.NoError(t, head.Init(0))
+			require.Equal(t, tc.wantStale, head.NumStaleSeries())
+			require.Equal(t, tc.wantHist, head.NumNativeHistogramSeries())
+			require.Equal(t, tc.wantBuckets, head.NumNativeHistogramBuckets())
+		})
+	}
+}
+
 func TestHead_NumNativeHistogramSeriesAndBuckets(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
 	t.Cleanup(func() {
