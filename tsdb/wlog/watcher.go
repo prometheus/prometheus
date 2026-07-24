@@ -617,6 +617,12 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			if len(histogramsToSend) > 0 {
 				w.writer.AppendHistograms(histogramsToSend)
 			}
+			// Zero H pointers so the capacity slots are not reused for the
+			// next WAL record's decode: H escapes into the writer queue and
+			// must not be overwritten by a subsequent DecodeHistogram call.
+			for i := range histograms {
+				histograms[i].H = nil
+			}
 
 		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
 			// Skip if "native histograms over remote write" is not enabled.
@@ -646,6 +652,9 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			if len(floatHistogramsToSend) > 0 {
 				w.writer.AppendFloatHistograms(floatHistogramsToSend)
+			}
+			for i := range floatHistograms {
+				floatHistograms[i].FH = nil
 			}
 
 		case record.Metadata:
