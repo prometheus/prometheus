@@ -48,10 +48,19 @@ import (
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
 func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, p parser.Parser, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
-	return RulesUnitTestResult(io.Discard, queryOpts, p, runStrings, diffFlag, debug, ignoreUnknownFields, files...)
+	return RulesUnitTestResult(io.Discard, queryOpts, p, runStrings, diffFlag, debug, ignoreUnknownFields, false, 0, files...)
 }
 
-func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
+// RulesUnitTestResult runs unit tests for rules and writes JUnit XML results to the
+// provided writer. If coverage is true, it reports to stderr which rules are
+// exercised by the test assertions. If coverageThreshold is greater than zero, it
+// also enables coverage reporting and returns a non-zero exit code when the total
+// coverage percentage is below the threshold.
+func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, runStrings []string, diffFlag, debug, ignoreUnknownFields, coverage bool, coverageThreshold float64, files ...string) int {
+	if coverageThreshold < 0 || coverageThreshold > 100 {
+		fmt.Fprintf(os.Stderr, "invalid --coverage-threshold %.1f: must be between 0 and 100\n", coverageThreshold)
+		return failureExitCode
+	}
 	failed := false
 	junit := &junitxml.JUnitXML{}
 
@@ -60,8 +69,13 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 		run = regexp.MustCompile(strings.Join(runStrings, "|"))
 	}
 
+	var cov *ruleCoverage
+	if coverage || coverageThreshold > 0 {
+		cov = newRuleCoverage()
+	}
+
 	for _, f := range files {
-		if errs := ruleUnitTest(f, queryOpts, p, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f)); errs != nil {
+		if errs := ruleUnitTest(f, queryOpts, p, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f), cov); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -77,13 +91,20 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to write JUnit XML: %s\n", err)
 	}
+	if cov != nil {
+		pct := cov.report(os.Stderr)
+		if belowThreshold(pct, coverageThreshold) {
+			fmt.Fprintf(os.Stderr, "Rule test coverage %.1f%% is below the threshold of %.1f%%.\n", pct, coverageThreshold)
+			failed = true
+		}
+	}
 	if failed {
 		return failureExitCode
 	}
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite) []error {
+func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite, cov *ruleCoverage) []error {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		ts.Abort(err)
@@ -102,6 +123,12 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser
 
 	if unitTestInp.EvaluationInterval == 0 {
 		unitTestInp.EvaluationInterval = model.Duration(1 * time.Minute)
+	}
+
+	// Record rule coverage for the suite before running the tests, so rules in
+	// files whose tests fail (or that have no tests at all) are still counted.
+	if cov != nil {
+		cov.record(p, run, ignoreUnknownFields, &unitTestInp)
 	}
 
 	evalInterval := time.Duration(unitTestInp.EvaluationInterval)
@@ -735,4 +762,322 @@ func (ps *parsedSample) String() string {
 		return ps.Labels.String() + " " + ps.Histogram
 	}
 	return ps.Labels.String() + " " + strconv.FormatFloat(ps.Value, 'E', -1, 64)
+}
+
+// ruleKind identifies whether a rule is an alerting or a recording rule, used
+// for coverage reporting.
+type ruleKind uint8
+
+const (
+	alertingRule ruleKind = iota
+	recordingRule
+)
+
+// String returns the rule kind as it appears in rule files, "alert" or "record".
+func (k ruleKind) String() string {
+	if k == alertingRule {
+		return "alert"
+	}
+	return "record"
+}
+
+// Meta-metric names emitted by alerting rules. A promql_expr_test selecting one
+// of these with an "alertname" matcher exercises the corresponding alerting rule.
+const (
+	alertsMetricName         = "ALERTS"
+	alertsForStateMetricName = "ALERTS_FOR_STATE"
+)
+
+// ruleCoverageKey uniquely identifies a rule within a test suite. Keying on
+// file, group, name, kind, labels and query ensures that the same physical rule
+// referenced by multiple test files is counted exactly once, while distinct
+// rules that merely share a name (in different groups, or with different labels
+// or expressions) are counted separately.
+type ruleCoverageKey struct {
+	file   string
+	group  string
+	name   string
+	labels string
+	query  string
+	kind   ruleKind
+}
+
+// ruleCoverage tracks which rules of a test suite are exercised by unit test
+// assertions. It is populated from the output of rules.Manager.LoadGroups so it
+// stays consistent with how Prometheus itself loads rules.
+type ruleCoverage struct {
+	order   []ruleCoverageKey
+	covered map[ruleCoverageKey]bool
+}
+
+func newRuleCoverage() *ruleCoverage {
+	return &ruleCoverage{covered: map[ruleCoverageKey]bool{}}
+}
+
+// register records a rule so that it is counted towards the coverage total. It
+// is idempotent: registering the same rule again returns the existing key and
+// preserves its covered state.
+func (c *ruleCoverage) register(g *rules.Group, r rules.Rule, kind ruleKind) ruleCoverageKey {
+	// Canonicalize the file path so the same physical rule file reached through
+	// different relative paths from different test files is counted once.
+	file := g.File()
+	if abs, err := filepath.Abs(file); err == nil {
+		file = abs
+	}
+	k := ruleCoverageKey{
+		file:   file,
+		group:  g.Name(),
+		name:   r.Name(),
+		labels: r.Labels().String(),
+		query:  r.Query().String(),
+		kind:   kind,
+	}
+	if _, ok := c.covered[k]; !ok {
+		c.order = append(c.order, k)
+		c.covered[k] = false
+	}
+	return k
+}
+
+// mark flags the rule identified by k as covered by a test assertion.
+func (c *ruleCoverage) mark(k ruleCoverageKey) {
+	c.covered[k] = true
+}
+
+// record loads the rule files referenced by a single unit test file through
+// rules.Manager.LoadGroups, registers every alerting and recording rule, and
+// marks those exercised by the file's test assertions as covered. Because rules
+// are attributed via their loaded group rather than by bare name, coverage is
+// counted precisely across files and groups. Only test groups selected by run
+// contribute coverage, so the report reflects what this invocation actually ran.
+func (c *ruleCoverage) record(p parser.Parser, run *regexp.Regexp, ignoreUnknownFields bool, utf *unitTestFile) {
+	// Collect the alert names and PromQL selectors asserted by the test groups
+	// that will actually run.
+	testedAlertnames := map[string]struct{}{}
+	var exprSelectors [][]*labels.Matcher
+	for i := range utf.Tests {
+		tg := &utf.Tests[i]
+		if !matchesRun(tg.TestGroupName, run) {
+			continue
+		}
+		for _, a := range tg.AlertRuleTests {
+			testedAlertnames[a.Alertname] = struct{}{}
+		}
+		for _, tc := range tg.PromqlExprTests {
+			expr, err := p.ParseExpr(tc.Expr)
+			if err != nil {
+				continue
+			}
+			exprSelectors = append(exprSelectors, parser.ExtractSelectors(expr)...)
+		}
+	}
+
+	// Load each rule file independently so that one unparseable file does not
+	// drop the rules of its valid siblings from the coverage total. Files that
+	// fail to load are reported by the test run itself.
+	m := rules.NewManager(&rules.ManagerOptions{Parser: p})
+	for _, rf := range utf.RuleFiles {
+		groupsMap, errs := m.LoadGroups(time.Duration(utf.EvaluationInterval), labels.EmptyLabels(), "", nil, ignoreUnknownFields, rf)
+		if len(errs) > 0 {
+			continue
+		}
+		for _, g := range groupsMap {
+			for _, r := range g.Rules() {
+				switch rule := r.(type) {
+				case *rules.AlertingRule:
+					k := c.register(g, rule, alertingRule)
+					// An alerting rule is covered by an alert_rule_test naming its
+					// alertname, or by a promql_expr_test selecting its ALERTS series.
+					if _, ok := testedAlertnames[rule.Name()]; ok {
+						c.mark(k)
+						continue
+					}
+					for _, matchers := range exprSelectors {
+						if selectorCoversAlertingRule(rule.Name(), rule.Labels(), matchers) {
+							c.mark(k)
+							break
+						}
+					}
+				case *rules.RecordingRule:
+					k := c.register(g, rule, recordingRule)
+					for _, matchers := range exprSelectors {
+						if selectorCoversRecordingRule(rule, matchers) {
+							c.mark(k)
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// metricNameMatcher returns the matcher on the __name__ label from a selector,
+// or nil for a wildcard selector that has no __name__ matcher.
+func metricNameMatcher(matchers []*labels.Matcher) *labels.Matcher {
+	for _, m := range matchers {
+		if m.Name == labels.MetricName {
+			return m
+		}
+	}
+	return nil
+}
+
+// selectorCoversRecordingRule reports whether a promql_expr_test selector reads
+// the output of the given recording rule: its __name__ must match the rule's
+// output metric and any other matchers must be compatible with the rule's
+// (merged group and rule) static labels. It is inspired by, but stricter than,
+// the selector matching in buildDependencyMap in rules/group.go, which matches on
+// name only.
+func selectorCoversRecordingRule(rule *rules.RecordingRule, matchers []*labels.Matcher) bool {
+	nameMatcher := metricNameMatcher(matchers)
+	if nameMatcher == nil {
+		// Wildcard selector: it cannot be attributed to a specific rule.
+		return false
+	}
+	if !nameMatcher.Matches(rule.Name()) {
+		return false
+	}
+	return labelsCompatible(rule.Labels(), matchers)
+}
+
+// selectorCoversAlertingRule reports whether a promql_expr_test selector asserts
+// on the alerting rule with the given name and static labels via its ALERTS or
+// ALERTS_FOR_STATE meta-metric. A selector without an "alertname" matcher is
+// treated as indeterminate and does not count as coverage. Any remaining
+// matchers must be compatible with the rule's static labels.
+func selectorCoversAlertingRule(name string, ruleLabels labels.Labels, matchers []*labels.Matcher) bool {
+	nameMatcher := metricNameMatcher(matchers)
+	if nameMatcher == nil {
+		return false
+	}
+	if !nameMatcher.Matches(alertsMetricName) && !nameMatcher.Matches(alertsForStateMetricName) {
+		return false
+	}
+	alertnameMatched := false
+	for _, m := range matchers {
+		if m.Name == labels.AlertName {
+			if !m.Matches(name) {
+				return false
+			}
+			alertnameMatched = true
+			break
+		}
+	}
+	if !alertnameMatched {
+		return false
+	}
+	return labelsCompatible(ruleLabels, matchers)
+}
+
+// labelsCompatible reports whether the non-name matchers of a selector are
+// compatible with the rule's known static labels. The __name__ and alertname
+// matchers are handled by the callers and skipped here. A matcher on a label the
+// rule does not statically set is treated as compatible, because the value may be
+// produced from the input series at evaluation time.
+func labelsCompatible(ruleLabels labels.Labels, matchers []*labels.Matcher) bool {
+	for _, m := range matchers {
+		if m.Name == labels.MetricName || m.Name == labels.AlertName {
+			continue
+		}
+		if ruleLabels.Has(m.Name) && !m.Matches(ruleLabels.Get(m.Name)) {
+			return false
+		}
+	}
+	return true
+}
+
+// report writes the coverage summary to w and returns the overall coverage
+// percentage in the range [0, 100]. Alerting and recording rules are reported
+// separately. A suite with no rules is reported as fully covered.
+func (c *ruleCoverage) report(w io.Writer) float64 {
+	var alertTotal, alertCovered, recordTotal, recordCovered int
+	for _, k := range c.order {
+		switch k.kind {
+		case alertingRule:
+			alertTotal++
+			if c.covered[k] {
+				alertCovered++
+			}
+		case recordingRule:
+			recordTotal++
+			if c.covered[k] {
+				recordCovered++
+			}
+		}
+	}
+	total := alertTotal + recordTotal
+	covered := alertCovered + recordCovered
+
+	fmt.Fprintln(w, "Rule test coverage:")
+	fmt.Fprintf(w, "  Alerting rules:  %s\n", coverageFraction(alertCovered, alertTotal))
+	fmt.Fprintf(w, "  Recording rules: %s\n", coverageFraction(recordCovered, recordTotal))
+	fmt.Fprintf(w, "  Total:           %s\n", coverageFraction(covered, total))
+
+	if covered < total {
+		fmt.Fprintln(w, "  Untested rules:")
+		uncovered := make([]ruleCoverageKey, 0, total-covered)
+		for _, k := range c.order {
+			if !c.covered[k] {
+				uncovered = append(uncovered, k)
+			}
+		}
+		slices.SortFunc(uncovered, func(a, b ruleCoverageKey) int {
+			if n := strings.Compare(a.file, b.file); n != 0 {
+				return n
+			}
+			if n := strings.Compare(a.group, b.group); n != 0 {
+				return n
+			}
+			if a.kind != b.kind {
+				return int(a.kind) - int(b.kind)
+			}
+			if n := strings.Compare(a.name, b.name); n != 0 {
+				return n
+			}
+			return strings.Compare(a.labels, b.labels)
+		})
+		var lastFile, lastGroup string
+		headerPrinted := false
+		for _, k := range uncovered {
+			if !headerPrinted || k.file != lastFile || k.group != lastGroup {
+				fmt.Fprintf(w, "    group %q in %s:\n", k.group, filepath.Base(k.file))
+				lastFile, lastGroup = k.file, k.group
+				headerPrinted = true
+			}
+			fmt.Fprintf(w, "      - %s: %s\n", k.kind, k.name)
+		}
+	}
+
+	return coveragePercentage(covered, total)
+}
+
+// coverageFraction formats a covered/total count together with its percentage.
+// A count with no rules is reported without a percentage.
+func coverageFraction(covered, total int) string {
+	if total == 0 {
+		return "0/0 covered"
+	}
+	return fmt.Sprintf("%d/%d covered (%.1f%%)", covered, total, coveragePercentage(covered, total))
+}
+
+// coveragePercentage returns covered/total as a percentage, treating an empty
+// set as fully covered.
+func coveragePercentage(covered, total int) float64 {
+	if total == 0 {
+		return 100
+	}
+	return float64(covered) / float64(total) * 100
+}
+
+// belowThreshold reports whether the coverage percentage pct is below threshold.
+// A threshold of zero or less disables the check. The comparison uses pct exactly
+// as it is displayed (one decimal place) so the exit code never contradicts the
+// reported number, even at rounding ties.
+func belowThreshold(pct, threshold float64) bool {
+	if threshold <= 0 {
+		return false
+	}
+	displayed, _ := strconv.ParseFloat(fmt.Sprintf("%.1f", pct), 64)
+	return displayed < threshold
 }

@@ -1,0 +1,23 @@
+# Asserts on the SameName alert once (covers both same-named alerting rules,
+# which promtool evaluates together) and on dup:metric scoped to tier="a" (covers
+# only groupA's recording rule, not groupB's).
+rule_files:
+  - coverage_dupname_rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'up{job="prometheus"}'
+        values: "1x5"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: SameName
+        exp_alerts: []
+    promql_expr_test:
+      - expr: dup:metric{tier="a"}
+        eval_time: 1m
+        exp_samples:
+          - value: 1
+            labels: 'dup:metric{job="prometheus",tier="a"}'

@@ -1,0 +1,34 @@
+rule_files:
+  - coverage_rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'up{job="prometheus", instance="localhost:9090"}'
+        values: "0+0x1440"
+
+    # Tests for alerting rules: covers InstanceDown and AlwaysFiring.
+    # NeverTested is intentionally NOT tested.
+    alert_rule_test:
+      - eval_time: 1d
+        alertname: AlwaysFiring
+        exp_alerts:
+          - {}
+      - eval_time: 1d
+        alertname: InstanceDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              instance: localhost:9090
+              job: prometheus
+
+    # Tests for recording rules: covers job:up:sum.
+    # job:up:avg is intentionally NOT tested.
+    promql_expr_test:
+      - expr: job:up:sum
+        eval_time: 1m
+        exp_samples:
+          - value: 0
+            labels: 'job:up:sum{job="prometheus"}'
