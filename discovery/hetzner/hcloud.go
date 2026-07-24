@@ -117,12 +117,6 @@ func (d *hcloudDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			model.AddressLabel: model.LabelValue(net.JoinHostPort(server.PublicNet.IPv4.IP.String(), strconv.FormatUint(uint64(d.port), 10))),
 		}
 
-		// [hcloud.Server.Datacenter] is deprecated and will be removed after 1 July 2026.
-		// See https://docs.hetzner.cloud/changelog#2025-12-16-phasing-out-datacenters
-		if server.Datacenter != nil { // nolint: staticcheck
-			labels[hetznerLabelDatacenter] = model.LabelValue(server.Datacenter.Name) // nolint: staticcheck
-		}
-
 		if server.Image != nil {
 			labels[hetznerLabelHcloudImageName] = model.LabelValue(server.Image.Name)
 			labels[hetznerLabelHcloudImageDescription] = model.LabelValue(server.Image.Description)
