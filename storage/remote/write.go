@@ -36,7 +36,8 @@ import (
 )
 
 // savepointPersistDuration is the interval at which run() persists the savepoint.
-const savepointPersistDuration = 30 * time.Second
+// It is a var (not a const) so tests can shorten it.
+var savepointPersistDuration = 30 * time.Second
 
 var (
 	samplesIn = promauto.NewCounter(prometheus.CounterOpts{

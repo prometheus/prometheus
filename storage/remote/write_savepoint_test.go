@@ -49,38 +49,71 @@ func testRemoteWriteConfigForHost(host string) *config.RemoteWriteConfig {
 	}
 }
 
-// Unit tests for savepoint lifecycle mechanics (no WAL data flow).
-
+// TestWriteStorageSavepointDisabled verifies that a disabled run ignores and
+// removes an existing savepoint, does not persist a replacement on shutdown,
+// and does not replay old WAL segments after savepoints are re-enabled.
 func TestWriteStorageSavepointDisabled(t *testing.T) {
-	dir := t.TempDir()
+	const (
+		noStartupSamplesAssertDuration = 500 * time.Millisecond
+		noStartupSamplesAssertTick     = 50 * time.Millisecond
+	)
 
-	// Pre-populate a savepoint file on disk.
-	sp := Savepoint{"abc123": {Segment: 5}}
-	require.NoError(t, sp.Save(dir))
+	series := makeSeries(2, 0)
+	dir := createWALWithSegments(t, []walSegmentData{
+		{series: series, samples: makeSamples(series, 1_000, 0)},
+		{samples: makeSamples(series, 2_000, 1)},
+		{samples: makeSamples(series, 3_000, 2)},
+	})
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, false)
+	cfg := testRemoteWriteConfigForHost("http://savepoint-disabled.local")
+	queueCfg := config.DefaultQueueConfig
+	queueCfg.MinShards = 1
+	queueCfg.MaxShards = 1
+	queueCfg.MaxSamplesPerSend = 1000
+	queueCfg.BatchSendDeadline = model.Duration(50 * time.Millisecond)
+	cfg.QueueConfig = queueCfg
 
-	// Savepoint should not be loaded when disabled.
-	require.Empty(t, s.savepoint)
+	hash, err := toHash(cfg)
+	require.NoError(t, err)
 
-	// A stale savepoint file is removed on startup so it cannot be acted upon
-	// if the feature is later re-enabled.
+	// A prior enabled run left a savepoint pointing at an early segment.
+	require.NoError(t, Savepoint{hash: {Segment: 1}}.Save(dir))
+
+	// Disabled run: the savepoint is not loaded and the stale file is deleted on startup.
+	disabled := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, false)
+	require.Empty(t, disabled.savepoint, "savepoint must not be loaded when disabled")
 	_, statErr := os.Stat(savepointFilePath(dir))
-	require.ErrorIs(t, statErr, fs.ErrNotExist, "stale savepoint file should be deleted when feature is disabled")
+	require.ErrorIs(t, statErr, fs.ErrNotExist, "stale savepoint file must be deleted when disabled")
 
-	// Apply a config so there's a queue.
-	cfg := testRemoteWriteConfigForHost("http://disabled-test.com")
-	require.NoError(t, s.ApplyConfig(&config.Config{
+	// Even with a queue configured, nothing is written back on close.
+	require.NoError(t, disabled.ApplyConfig(&config.Config{
 		GlobalConfig:       config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
 	}))
-
-	require.NoError(t, s.Close())
-
-	// No savepoint file is written on close when the feature is disabled.
+	require.NoError(t, disabled.Close())
 	loaded, err := LoadSavepoint(dir)
 	require.NoError(t, err)
-	require.Empty(t, loaded, "no savepoint file should be written when feature is disabled")
+	require.Empty(t, loaded, "no savepoint file must be written when disabled")
+
+	// Re-enabling finds no savepoint (deleted above), so it must not replay the old segments.
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, true)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+
+	client := NewTestWriteClient(remoteapi.WriteV1MessageType)
+	factory := WithWriteClientFactory(func(string, *ClientConfig) (WriteClient, error) {
+		return client, nil
+	})
+	require.NoError(t, s.ApplyConfig(&config.Config{
+		GlobalConfig:       config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
+	}, factory))
+	require.Contains(t, s.queues, hash)
+
+	require.Never(t, func() bool {
+		client.mtx.Lock()
+		defer client.mtx.Unlock()
+		return deepLen(client.receivedSamples) > 0
+	}, noStartupSamplesAssertDuration, noStartupSamplesAssertTick)
 }
 
 func TestWriteStorageSavepointPersistOnClose(t *testing.T) {
@@ -455,13 +488,113 @@ func TestWriteStorageSavepointE2E(t *testing.T) {
 			saved, err := LoadSavepoint(dir)
 			require.NoError(t, err)
 			require.Contains(t, saved, hash)
-			require.GreaterOrEqual(t, saved[hash].Segment, 0)
+
+			// The persisted savepoint must record the actual WAL tail the watcher reached.
+			_, lastSegment, err := wlog.Segments(filepath.Join(dir, "wal"))
+			require.NoError(t, err)
+			require.Equal(t, lastSegment, saved[hash].Segment,
+				"persisted savepoint should record the last processed (tail) segment")
 		})
 	}
 }
 
 func ptrInt(v int) *int {
 	return &v
+}
+
+// overwriteSavepointPersistDuration shortens the persist ticker interval for the
+// duration of a test and restores it on cleanup. Tests using this must not run in
+// parallel, since savepointPersistDuration is a shared package-level var.
+func overwriteSavepointPersistDuration(t *testing.T, val time.Duration) {
+	t.Helper()
+	initial := savepointPersistDuration
+	savepointPersistDuration = val
+	t.Cleanup(func() { savepointPersistDuration = initial })
+}
+
+// TestWriteStorageSavepointCloseRace exercises Close while the persist ticker fires
+// aggressively, and asserts the done-channel contract: Close does not return until
+// run() has exited. Run under -race to cover concurrent persist vs. shutdown.
+func TestWriteStorageSavepointCloseRace(t *testing.T) {
+	// Fire the persist ticker aggressively so it overlaps Close.
+	overwriteSavepointPersistDuration(t, time.Millisecond)
+
+	dir := t.TempDir()
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, true)
+
+	cfg := testRemoteWriteConfigForHost("http://close-race.com")
+	require.NoError(t, s.ApplyConfig(&config.Config{
+		GlobalConfig:       config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
+	}))
+
+	// Wait until the ticker has persisted a few times so Close overlaps live persists.
+	require.Eventually(t, func() bool {
+		return client_testutil.ToFloat64(s.savepointPersistTotal) >= 3
+	}, 2*time.Second, time.Millisecond)
+
+	require.NoError(t, s.Close())
+
+	// Close must not return until run() has exited, so done is already closed here.
+	select {
+	case <-s.done:
+	default:
+		t.Fatal("Close returned before run() goroutine exited")
+	}
+
+	// No persist may happen after Close: run() is gone, so the counter is stable.
+	total := client_testutil.ToFloat64(s.savepointPersistTotal)
+	time.Sleep(20 * time.Millisecond) // Much larger than the 1ms ticker interval.
+	require.Equal(t, total, client_testutil.ToFloat64(s.savepointPersistTotal),
+		"no savepoint persist should happen after Close returns")
+
+	// The savepoint file must be well-formed (never left half-written).
+	_, err := LoadSavepoint(dir)
+	require.NoError(t, err)
+}
+
+// TestWriteStorageSavepointCorruptedOnLoad verifies a corrupt savepoint file does
+// not crash startup and does not trigger replay; it falls back to no savepoint.
+func TestWriteStorageSavepointCorruptedOnLoad(t *testing.T) {
+	const (
+		noStartupSamplesAssertDuration = 500 * time.Millisecond
+		noStartupSamplesAssertTick     = 50 * time.Millisecond
+	)
+
+	series := makeSeries(2, 0)
+	dir := createWALWithSegments(t, []walSegmentData{
+		{series: series, samples: makeSamples(series, 1_000, 0)},
+		{samples: makeSamples(series, 2_000, 1)},
+	})
+
+	// Write a corrupt (unparseable) savepoint file.
+	require.NoError(t, os.WriteFile(savepointFilePath(dir), []byte("{invalid"), 0o644))
+
+	// Startup with the feature enabled must not panic and must fall back to empty.
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, true)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+	require.Empty(t, s.savepoint, "corrupt savepoint should fall back to empty")
+
+	cfg := testRemoteWriteConfigForHost("http://savepoint-corrupt.local")
+	hash, err := toHash(cfg)
+	require.NoError(t, err)
+
+	client := NewTestWriteClient(remoteapi.WriteV1MessageType)
+	factory := WithWriteClientFactory(func(string, *ClientConfig) (WriteClient, error) {
+		return client, nil
+	})
+	require.NoError(t, s.ApplyConfig(&config.Config{
+		GlobalConfig:       config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
+	}, factory))
+	require.Contains(t, s.queues, hash)
+
+	// No savepoint => no replay of the historical WAL samples.
+	require.Never(t, func() bool {
+		client.mtx.Lock()
+		defer client.mtx.Unlock()
+		return deepLen(client.receivedSamples) > 0
+	}, noStartupSamplesAssertDuration, noStartupSamplesAssertTick)
 }
 
 func waitForExpectedDataWithNotify(t *testing.T, s *WriteStorage, client *TestWriteClient, timeout time.Duration) {
