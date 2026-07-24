@@ -283,6 +283,16 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config, options ...ApplyConfig
 	externalLabelUnchanged := labels.Equal(conf.GlobalConfig.ExternalLabels, rws.externalLabels)
 	rws.externalLabels = conf.GlobalConfig.ExternalLabels
 
+	// Capture live positions before building replacement queues. A reload can recreate
+	// queues, for example when external labels change, and replacements resume from
+	// rws.savepoint. Refreshing it here avoids replaying from a periodically persisted
+	// position that may be up to savepointPersistDuration stale.
+	if rws.enableSavepoint {
+		for hash, q := range rws.queues {
+			rws.savepoint[hash] = SavepointEntry{Segment: q.watcher.LastProcessedSegment()}
+		}
+	}
+
 	newQueues := make(map[string]*QueueManager)
 	newHashes := []string{}
 	for _, rwConf := range conf.RemoteWriteConfigs {

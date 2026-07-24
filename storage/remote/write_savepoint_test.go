@@ -173,6 +173,61 @@ func TestWriteStorageSavepointStaleCleanup(t *testing.T) {
 	require.NotContains(t, s.savepoint, staleHash, "stale entry should be removed after ApplyConfig")
 }
 
+func TestWriteStorageSavepointRecreateResumesFromLivePosition(t *testing.T) {
+	// Changing external labels recreates all remote write queues.
+	// Replacements must resume from each outgoing watcher's live segment rather than an older
+	// persisted segment to avoid unnecessary replay.
+	series := makeSeries(2, 0)
+	dir := createWALWithSegments(t, []walSegmentData{
+		{series: series, samples: makeSamples(series, 1_000, 0)},
+		{samples: makeSamples(series, 2_000, 1)},
+		{samples: makeSamples(series, 3_000, 2)},
+	})
+
+	cfg := testRemoteWriteConfigForHost("http://savepoint-recreate.local")
+	hash, err := toHash(cfg)
+	require.NoError(t, err)
+
+	// Seed a stale savepoint; the watcher will advance to segment 2.
+	require.NoError(t, Savepoint{hash: {Segment: 0}}.Save(dir))
+
+	client := NewTestWriteClient(remoteapi.WriteV1MessageType)
+	factory := WithWriteClientFactory(func(string, *ClientConfig) (WriteClient, error) {
+		return client, nil
+	})
+
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, true)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+
+	applyWithLabels := func(extLabels labels.Labels) {
+		gc := config.DefaultGlobalConfig
+		gc.ExternalLabels = extLabels
+		require.NoError(t, s.ApplyConfig(&config.Config{
+			GlobalConfig:       gc,
+			RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
+		}, factory))
+	}
+
+	applyWithLabels(labels.EmptyLabels())
+	require.Contains(t, s.queues, hash)
+	origQueue := s.queues[hash]
+
+	// Wait for the watcher to reach the last existing WAL segment.
+	var live int
+	require.Eventually(t, func() bool {
+		s.mtx.Lock()
+		defer s.mtx.Unlock()
+		live = s.queues[hash].watcher.LastProcessedSegment()
+		return live == 2
+	}, 5*time.Second, 20*time.Millisecond)
+
+	applyWithLabels(labels.FromStrings("cluster", "a"))
+
+	require.NotSame(t, origQueue, s.queues[hash], "queue should have been recreated")
+	require.Equal(t, live, s.savepoint[hash].Segment,
+		"reload must capture the live segment, not resume from the older persisted one")
+}
+
 func TestWriteStorageSavepointMultipleDestinations(t *testing.T) {
 	dir := t.TempDir()
 
