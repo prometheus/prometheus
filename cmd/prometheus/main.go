@@ -203,6 +203,9 @@ type flagConfig struct {
 	RemoteFlushDeadline         model.Duration
 	maxNotificationsSubscribers int
 
+	rcfStorePath      string
+	rcfStoreCacheSize int
+
 	enableAutoReload   bool
 	autoReloadInterval model.Duration
 
@@ -588,6 +591,12 @@ func main() {
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
 		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
 
+	serverOnlyFlag(a, "storage.rcf.path", "Directory for RCF model persistence. Defaults to <storage.tsdb.path>/rcf.").
+		Default("").StringVar(&cfg.rcfStorePath)
+
+	serverOnlyFlag(a, "storage.rcf.cache-size", "Maximum number of RCF models to keep in memory.").
+		Default("0").IntVar(&cfg.rcfStoreCacheSize)
+
 	serverOnlyFlag(a, "storage.remote.read-sample-limit", "Maximum overall number of samples to return via the remote read interface, in a single query. 0 means no limit. This limit is ignored for streamed response types.").
 		Default("5e7").IntVar(&cfg.web.RemoteReadSampleLimit)
 
@@ -787,6 +796,25 @@ func main() {
 	cfg.tsdb.RetentionDuration = cfgFile.StorageConfig.TSDBConfig.Retention.Time
 	cfg.tsdb.MaxBytes = cfgFile.StorageConfig.TSDBConfig.Retention.Size
 	cfg.tsdb.MaxPercentage = cfgFile.StorageConfig.TSDBConfig.Retention.Percentage
+
+	// Apply RCF model store configuration.
+	// Priority: CLI flag > config file > default (<storage.tsdb.path>/rcf).
+	var rcfStorePath string
+	switch {
+	case cfg.rcfStorePath != "":
+		rcfStorePath = cfg.rcfStorePath
+	case cfgFile.StorageConfig.RCFConfig != nil && cfgFile.StorageConfig.RCFConfig.StorePath != "":
+		rcfStorePath = cfgFile.StorageConfig.RCFConfig.StorePath
+	default:
+		rcfStorePath = filepath.Join(localStoragePath, "rcf")
+	}
+	var rcfCacheSize int
+	switch {
+	case cfg.rcfStoreCacheSize > 0:
+		rcfCacheSize = cfg.rcfStoreCacheSize
+	case cfgFile.StorageConfig.RCFConfig != nil && cfgFile.StorageConfig.RCFConfig.CacheSize > 0:
+		rcfCacheSize = cfgFile.StorageConfig.RCFConfig.CacheSize
+	}
 
 	// Set Go runtime parameters before we get too far into initialization.
 	updateGoGC(cfgFile, logger)
@@ -1009,6 +1037,8 @@ func main() {
 			UseStartTimestamps:       cfg.useStartTimestamps,
 			FeatureRegistry:          features.DefaultRegistry,
 			Parser:                   promqlParser,
+			RCFBackend:               promql.NewDiskRCFStore(rcfStorePath),
+			RCFCacheSize:             rcfCacheSize,
 		}
 
 		queryEngine = promql.NewEngine(opts)
