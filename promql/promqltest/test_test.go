@@ -23,7 +23,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -1119,56 +1118,80 @@ eval instant at 0m http_requests
 func TestParseSTSequence(t *testing.T) {
 	cases := []struct {
 		input    string
-		expected []parser.SequenceValue
+		expected []stSequenceValue
 		wantErr  bool
 	}{
 		{
 			input:    "_",
-			expected: []parser.SequenceValue{{Omitted: true}},
+			expected: []stSequenceValue{{omitted: true}},
 		},
 		{
 			input: "_x3",
-			expected: []parser.SequenceValue{
-				{Omitted: true}, {Omitted: true}, {Omitted: true},
+			expected: []stSequenceValue{
+				{omitted: true}, {omitted: true}, {omitted: true},
 			},
 		},
 		{
 			input:    "0s",
-			expected: []parser.SequenceValue{{Value: 0}},
+			expected: []stSequenceValue{{offset: 0}},
 		},
 		{
 			input:    "-1m",
-			expected: []parser.SequenceValue{{Value: float64(-60 * 1000)}},
+			expected: []stSequenceValue{{offset: -60000}},
 		},
 		{
 			input: "-1mx2",
-			expected: []parser.SequenceValue{
-				{Value: float64(-60000)},
-				{Value: float64(-60000)},
-				{Value: float64(-60000)},
+			expected: []stSequenceValue{
+				{offset: -60000},
+				{offset: -60000},
+				{offset: -60000},
 			},
 		},
 		{
 			input: "-1m+15sx2",
-			expected: []parser.SequenceValue{
-				{Value: float64(-60000)},
-				{Value: float64(-60000 + 15000)},
-				{Value: float64(-60000 + 30000)},
+			expected: []stSequenceValue{
+				{offset: -60000},
+				{offset: -45000},
+				{offset: -30000},
 			},
 		},
 		{
 			input: "30s-10sx2",
-			expected: []parser.SequenceValue{
-				{Value: float64(30000)},
-				{Value: float64(20000)},
-				{Value: float64(10000)},
+			expected: []stSequenceValue{
+				{offset: 30000},
+				{offset: 20000},
+				{offset: 10000},
 			},
 		},
 		{
 			input: "_ -1m",
-			expected: []parser.SequenceValue{
-				{Omitted: true},
-				{Value: float64(-60000)},
+			expected: []stSequenceValue{
+				{omitted: true},
+				{offset: -60000},
+			},
+		},
+		{
+			input:    "^",
+			expected: []stSequenceValue{{repeat: true}},
+		},
+		{
+			input: "^x2",
+			expected: []stSequenceValue{
+				{repeat: true},
+				{repeat: true},
+				{repeat: true},
+			},
+		},
+		{
+			input:    "@10m",
+			expected: []stSequenceValue{{offset: 600000, abs: true}},
+		},
+		{
+			input: "@10m+1mx2",
+			expected: []stSequenceValue{
+				{offset: 600000, abs: true},
+				{offset: 660000, abs: true},
+				{offset: 720000, abs: true},
 			},
 		},
 		{input: "", expected: nil},
@@ -1201,6 +1224,8 @@ func TestParseLoad_STLine(t *testing.T) {
 		"load 5m",
 		"  my_counter@st -1mx4",
 		"  my_counter 0+1x4",
+		"  my_counter2@st @10m ^x3",
+		"  my_counter2 0+1x4",
 	}
 	_, cmd, err := parseLoad(lines, 0, testStartTime)
 	require.NoError(t, err)
@@ -1212,6 +1237,17 @@ func TestParseLoad_STLine(t *testing.T) {
 	for i, s := range smpls {
 		wantT := int64(i) * stepMs
 		wantST := wantT - 60000 // -1m in ms
+		require.Equal(t, wantT, s.T, "sample %d timestamp", i)
+		require.Equal(t, wantST, s.ST, "sample %d start timestamp", i)
+	}
+
+	metric2 := labels.FromStrings("__name__", "my_counter2")
+	smpls2 := cmd.defs[metric2.Hash()]
+	require.Len(t, smpls2, 5)
+
+	for i, s := range smpls2 {
+		wantT := int64(i) * stepMs
+		wantST := int64(600000) // @10m in ms is 600000, and it repeats
 		require.Equal(t, wantT, s.T, "sample %d timestamp", i)
 		require.Equal(t, wantST, s.ST, "sample %d start timestamp", i)
 	}
