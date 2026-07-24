@@ -538,6 +538,21 @@ type GlobalConfig struct {
 	// When enabled, Prometheus stores samples for scrape_timeout_seconds,
 	// scrape_sample_limit, and scrape_body_size_bytes.
 	ExtraScrapeMetrics *bool `yaml:"extra_scrape_metrics,omitempty"`
+	// ScrapeHTTPClientConfig provides default HTTP client settings for all
+	// scrape jobs. Per-job settings under a scrape config take precedence over
+	// these defaults. Authentication (basic_auth, authorization, oauth2,
+	// bearer_token, bearer_token_file) and proxy options are inherited as
+	// atomic groups: a scrape config that sets any option from a group does not
+	// inherit the corresponding global settings, to avoid combining mutually
+	// exclusive options. The follow_redirects and enable_http2 options default
+	// to true, so a scrape config only overrides the global value when it sets
+	// a value that differs from that default. A nil value means no global
+	// defaults are applied. Use with caution, as it may be difficult to
+	// understand the effective configuration of a scrape job when global
+	// defaults are applied. A good example of a use case for this is to set
+	// a global HTTP header for a custom User-Agent string, while leaving
+	// all other HTTP client settings to their defaults.
+	ScrapeHTTPClientConfig *config.HTTPClientConfig `yaml:"scrape_http_client_config,omitempty"`
 }
 
 // ScrapeProtocol represents supported protocol for scraping metrics.
@@ -630,6 +645,7 @@ func validateAcceptScrapeProtocols(sps []ScrapeProtocol) error {
 func (c *GlobalConfig) SetDirectory(dir string) {
 	c.QueryLogFile = config.JoinDir(dir, c.QueryLogFile)
 	c.ScrapeFailureLogFile = config.JoinDir(dir, c.ScrapeFailureLogFile)
+	c.ScrapeHTTPClientConfig.SetDirectory(dir)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -699,6 +715,20 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 	}
 
+	// follow_redirects and enable_http2 cannot be inherited by scrape configs
+	// because their default is true and a false value is indistinguishable from
+	// an explicitly configured false, so a scrape config could not reliably
+	// override a global value. They default to true in the global block, so
+	// reject only an explicit false to avoid silently ignoring the setting.
+	if gc.ScrapeHTTPClientConfig != nil {
+		if !gc.ScrapeHTTPClientConfig.FollowRedirects {
+			return errors.New("global scrape_http_client_config does not support follow_redirects; configure it per scrape config instead")
+		}
+		if !gc.ScrapeHTTPClientConfig.EnableHTTP2 {
+			return errors.New("global scrape_http_client_config does not support enable_http2; configure it per scrape config instead")
+		}
+	}
+
 	*c = *gc
 	return nil
 }
@@ -725,7 +755,8 @@ func (c *GlobalConfig) isZero() bool {
 		c.KeepDroppedTargets == 0 &&
 		c.MetricNameValidationScheme == model.UnsetValidation &&
 		c.MetricNameEscapingScheme == "" &&
-		c.ExtraScrapeMetrics == nil
+		c.ExtraScrapeMetrics == nil &&
+		c.ScrapeHTTPClientConfig == nil
 }
 
 const DefaultGoGCPercentage = 75
@@ -944,6 +975,15 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		c.ExtraScrapeMetrics = globalConfig.ExtraScrapeMetrics
 	}
 
+	// Fill unset HTTP client settings from the global scrape HTTP client
+	// config, then re-validate the resulting combination.
+	if globalConfig.ScrapeHTTPClientConfig != nil {
+		applyGlobalHTTPClientConfigDefaults(*globalConfig.ScrapeHTTPClientConfig, &c.HTTPClientConfig)
+		if err := c.HTTPClientConfig.Validate(); err != nil {
+			return fmt.Errorf("%w for scrape config with job name %q", err, c.JobName)
+		}
+	}
+
 	if c.ScrapeProtocols == nil {
 		switch {
 		case globalConfig.ScrapeProtocols != nil:
@@ -1055,6 +1095,114 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 // MarshalYAML implements the yaml.Marshaler interface.
 func (c *ScrapeConfig) MarshalYAML() (any, error) {
 	return discovery.MarshalYAMLWithInlineConfigs(c)
+}
+
+// applyGlobalHTTPClientConfigDefaults fills unset fields of c from the global
+// scrape HTTP client config. Authentication and proxy settings are treated as
+// atomic groups: a scrape config that specifies any option from a group does
+// not inherit the corresponding global settings, to avoid combining mutually
+// exclusive options. Pointer fields carrying file paths are cloned so that a
+// later SetDirectory call on one scrape config cannot mutate the settings of
+// another scrape config that inherited the same global values.
+//
+// FollowRedirects and EnableHTTP2 are intentionally not inherited: they default
+// to true and their zero value is indistinguishable from an explicitly
+// configured false, so a scrape config could not reliably override a global
+// value. They must be configured per scrape config instead.
+//
+// TODO: Consider generalizing this HTTPClientConfig merge/inheritance logic and
+// moving it to prometheus/common alongside the config types. The atomic-group
+// and FollowRedirects/EnableHTTP2 semantics here are Prometheus-specific policy,
+// so any upstream helper would need to keep those decisions configurable.
+func applyGlobalHTTPClientConfigDefaults(global config.HTTPClientConfig, c *config.HTTPClientConfig) {
+	// Authentication group. bearer_token and bearer_token_file are folded into
+	// Authorization during validation, so an already-validated scrape config
+	// only carries auth in BasicAuth, Authorization, or OAuth2.
+	if c.BasicAuth == nil && c.Authorization == nil && c.OAuth2 == nil &&
+		c.BearerToken == "" && c.BearerTokenFile == "" {
+		c.BasicAuth = cloneBasicAuth(global.BasicAuth)
+		c.Authorization = cloneAuthorization(global.Authorization)
+		c.OAuth2 = cloneOAuth2(global.OAuth2)
+		c.BearerToken = global.BearerToken
+		c.BearerTokenFile = global.BearerTokenFile
+	}
+
+	// TLS config. TLSConfig is a value field, so a plain copy is independent.
+	if c.TLSConfig == (config.TLSConfig{}) {
+		c.TLSConfig = global.TLSConfig
+	}
+
+	// Proxy group. ProxyConfig is a value field with no file paths resolved via
+	// SetDirectory, so a plain copy is safe.
+	if c.ProxyURL.URL == nil && c.NoProxy == "" && !c.ProxyFromEnvironment && c.ProxyConnectHeader == nil {
+		c.ProxyConfig = global.ProxyConfig
+	}
+
+	// Custom headers.
+	if c.HTTPHeaders == nil {
+		c.HTTPHeaders = cloneHeaders(global.HTTPHeaders)
+	}
+}
+
+// TODO: The clone* helpers below operate only on prometheus/common/config types
+// and contain no Prometheus-specific logic. They should be upstreamed to
+// prometheus/common (ideally as Clone methods on the respective types) so they
+// stay in sync with the struct definitions: whenever a field is added to one of
+// those types, its clone must be updated in lockstep. Note that cloneOAuth2 is
+// only a shallow copy and relies on EndpointParams/Scopes/TLSConfig being
+// read-only after parsing; a general-purpose Clone in common would need to deep
+// copy those fields.
+
+// cloneBasicAuth returns an independent copy of b, or nil if b is nil.
+func cloneBasicAuth(b *config.BasicAuth) *config.BasicAuth {
+	if b == nil {
+		return nil
+	}
+	nb := *b
+	return &nb
+}
+
+// cloneAuthorization returns an independent copy of a, or nil if a is nil.
+func cloneAuthorization(a *config.Authorization) *config.Authorization {
+	if a == nil {
+		return nil
+	}
+	na := *a
+	return &na
+}
+
+// cloneOAuth2 returns a copy of o whose file-path fields are independent, or
+// nil if o is nil. The shared maps and slices are only read after parsing, so
+// a shallow struct copy is sufficient for SetDirectory safety.
+func cloneOAuth2(o *config.OAuth2) *config.OAuth2 {
+	if o == nil {
+		return nil
+	}
+	no := *o
+	return &no
+}
+
+// cloneHeaders returns a deep copy of h, or nil if h is nil. The header value
+// slices are copied because SetDirectory rewrites their file paths in place.
+func cloneHeaders(h *config.Headers) *config.Headers {
+	if h == nil {
+		return nil
+	}
+	nh := &config.Headers{Headers: make(map[string]config.Header, len(h.Headers))}
+	for name, header := range h.Headers {
+		nHeader := config.Header{}
+		if header.Values != nil {
+			nHeader.Values = append([]string(nil), header.Values...)
+		}
+		if header.Secrets != nil {
+			nHeader.Secrets = append([]config.Secret(nil), header.Secrets...)
+		}
+		if header.Files != nil {
+			nHeader.Files = append([]string(nil), header.Files...)
+		}
+		nh.Headers[name] = nHeader
+	}
+	return nh
 }
 
 // ToEscapingScheme wraps the equivalent common library function with the

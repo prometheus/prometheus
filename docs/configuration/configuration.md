@@ -168,7 +168,7 @@ global:
   # case, the scrape_native_histograms setting has no effect. If
   # convert_classic_histograms_to_nhcb is false, the histogram is ingested as
   # a classic histograms. If convert_classic_histograms_to_nhcb is true, the
-  # histograms is converted to an NHCB. In this case, 
+  # histograms is converted to an NHCB. In this case,
   # always_scrape_classic_histograms determines whether it is also ingested
   # as a classic histograms or not.
   #
@@ -179,7 +179,7 @@ global:
   # 1, but the resulting classic histogram or NHCB only has a sole bucket, the
   # +Inf bucket. If scrape_native_histograms is true, however, the histogram is
   # recognized as a pure native histogram and ingested as such. There will be
-  # no classic histogram ingested, no matter what 
+  # no classic histogram ingested, no matter what
   # always_scrape_classic_histograms is set to, and there will be no
   # conversion to an NHCB, no matter what convert_classic_histograms_to_nhcb
   # is set to.
@@ -200,6 +200,74 @@ global:
   # These metrics help monitor how close targets are to their configured limits.
   # This option can be overridden per scrape config.
   [ extra_scrape_metrics: <boolean> | default = false ]
+
+  # Default HTTP client settings applied to every scrape config. Any setting
+  # explicitly configured in a scrape config takes precedence over the value
+  # set here. The authentication options (basic_auth, authorization, oauth2,
+  # bearer_token, bearer_token_file) are inherited as a single group: a scrape
+  # config that configures any of them does not inherit the global
+  # authentication settings. The proxy options (proxy_url, no_proxy,
+  # proxy_from_environment, proxy_connect_header) are likewise inherited as a
+  # single group.
+  #
+  # follow_redirects and enable_http2 are NOT supported here and must be
+  # configured per scrape config. They default to true, and a false value is
+  # indistinguishable from an explicitly configured false, so a scrape config
+  # could not reliably override a global value. Setting either to false in this
+  # block is rejected at load time.
+  scrape_http_client_config:
+    # Sets the `Authorization` header on every request with the
+    # configured username and password.
+    # username and username_file are mutually exclusive.
+    # password and password_file are mutually exclusive.
+    [ basic_auth:
+      [ username: <string> ]
+      [ username_file: <string> ]
+      [ password: <secret> ]
+      [ password_file: <string> ] ]
+
+    # Sets the `Authorization` header on every request with
+    # the configured credentials.
+    [ authorization:
+      # Sets the authentication type of the request.
+      [ type: <string> | default: Bearer ]
+      # Sets the credentials of the request. It is mutually exclusive with
+      # `credentials_file`.
+      [ credentials: <secret> ]
+      # Sets the credentials of the request with the credentials read from the
+      # configured file. It is mutually exclusive with `credentials`.
+      [ credentials_file: <filename> ] ]
+
+    # Optional OAuth 2.0 configuration.
+    # Cannot be used at the same time as basic_auth or authorization.
+    [ oauth2: <oauth2> ]
+
+    # Configures the request's TLS settings.
+    [ tls_config: <tls_config> ]
+
+    # Optional proxy URL.
+    [ proxy_url: <string> ]
+    # Comma-separated string that can contain IPs, CIDR notation, domain names
+    # that should be excluded from proxying. IP and domain names can
+    # contain port numbers.
+    [ no_proxy: <string> ]
+    # Use proxy URL indicated by environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, and their lowercase versions)
+    [ proxy_from_environment: <boolean> | default: false ]
+    # Specifies headers to send to proxies during CONNECT requests.
+    [ proxy_connect_header:
+      [ <string>: [<secret>, ...] ] ]
+
+    # Custom HTTP headers to be sent along with each request.
+    # Headers that are set by Prometheus itself can't be overwritten.
+    [ http_headers:
+      # Header name.
+      [ <string>:
+        # Header values.
+        [ values: [<string>, ...] ]
+        # Headers values. Hidden in configuration page.
+        [ secrets: [<secret>, ...] ]
+        # Files to read header values from.
+        [ files: [<string>, ...] ] ] ]
 
 runtime:
   # Configure the Go garbage collector GOGC parameter
@@ -326,7 +394,7 @@ job_name: <job_name>
 # The protocols to negotiate during a scrape with the client.
 # Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
 # OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
-# If not set in the global config, the default value depends on the 
+# If not set in the global config, the default value depends on the
 # setting of scrape_native_histograms. If false, it is
 # [ OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText1.0.0, PrometheusText0.0.4 ].
 # If true, it is
@@ -821,7 +889,7 @@ client_id: <string>
 # GrantType is set to "urn:ietf:params:oauth:grant-type:jwt-bearer".
 [ iss: <string> ]
 
-# Intended audience of the request. If empty, the value 
+# Intended audience of the request. If empty, the value
 # of TokenURL is used as the intended audience. Only used if
 # GrantType is set to "urn:ietf:params:oauth:grant-type:jwt-bearer".
 [ audience: <string> ]
@@ -928,7 +996,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 #### `ecs`
 
-The `ecs` role discovers targets from AWS ECS containers. 
+The `ecs` role discovers targets from AWS ECS containers.
 
 ECS service discovery supports all ECS networking modes:
 - **awsvpc mode** (Fargate and EC2 with ENI): Uses the task's private IP address from its elastic network interface
@@ -4005,7 +4073,7 @@ azuread:
   # Optional custom OAuth 2.0 scope to request when acquiring tokens.
   # If not specified, defaults to the appropriate monitoring scope for the cloud:
   # - AzurePublic: https://monitor.azure.com//.default
-  # - AzureGovernment: https://monitor.azure.us//.default  
+  # - AzureGovernment: https://monitor.azure.us//.default
   # - AzureChina: https://monitor.azure.cn//.default
   # Use this to authenticate against custom Azure applications or non-standard endpoints.
   [ scope: <string> ]
