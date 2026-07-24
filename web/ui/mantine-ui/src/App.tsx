@@ -36,6 +36,7 @@ import {
   IconSearch,
   IconServer,
   IconServerCog,
+  IconCloudUpload,
 } from "@tabler/icons-react";
 import {
   BrowserRouter,
@@ -56,6 +57,7 @@ import TSDBStatusPage from "./pages/TSDBStatusPage";
 import FlagsPage from "./pages/FlagsPage";
 import ConfigPage from "./pages/ConfigPage";
 import AgentPage from "./pages/AgentPage";
+import RemoteWriteStatusPage from "./pages/RemoteWriteStatusPage";
 import { Suspense } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeSelector } from "./components/ThemeSelector";
@@ -116,6 +118,13 @@ const monitoringStatusPages = [
     icon: <IconTable style={navIconStyle} />,
     element: <RulesPage />,
     inAgentMode: false,
+  },
+  {
+    title: "Remote write",
+    path: "/remote-write",
+    icon: <IconCloudUpload style={navIconStyle} />,
+    element: <RemoteWriteStatusPage />,
+    inAgentMode: true,
   },
   {
     title: "Service discovery",
