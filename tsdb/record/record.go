@@ -219,8 +219,20 @@ type Decoder struct {
 	logger  *slog.Logger
 }
 
-func NewDecoder(_ *labels.SymbolTable, logger *slog.Logger) Decoder { // FIXME remove t (or use scratch builder with symbols)
-	b := labels.NewScratchBuilder(0)
+// NewDecoder returns a Decoder that decodes WAL records into typed slices.
+//
+// If t is non-nil, decoded labels are constructed against t — under the
+// dedupelabels build tag this preserves symbol-table sharing across decoder
+// instances, which is required when callers run multiple decoders against
+// the same WAL. If t is nil, the Decoder constructs its own private symbol
+// state (the historical behaviour).
+func NewDecoder(t *labels.SymbolTable, logger *slog.Logger) Decoder {
+	var b labels.ScratchBuilder
+	if t == nil {
+		b = labels.NewScratchBuilder(0)
+	} else {
+		b = labels.NewScratchBuilderWithSymbolTable(t, 0)
+	}
 	b.SetUnsafeAdd(true)
 	return Decoder{builder: b, logger: logger}
 }
