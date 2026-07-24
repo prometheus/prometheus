@@ -1824,7 +1824,7 @@ load 10s
 	for _, c := range cases {
 		t.Run(c.Query, func(t *testing.T) {
 			t.Run("perStepEnabled", func(t *testing.T) {
-				opts := promql.NewPrometheusQueryOpts(true, 0)
+				opts := promql.NewPrometheusQueryOpts(true, 0, nil)
 				engine := promqltest.NewTestEngine(t, true, 0, promqltest.DefaultMaxSamplesPerQuery)
 
 				stats := runQuery(t, engine, opts, c, nil)
@@ -1844,7 +1844,7 @@ load 10s
 			})
 
 			t.Run("perStepDisabled", func(t *testing.T) {
-				opts := promql.NewPrometheusQueryOpts(false, 0)
+				opts := promql.NewPrometheusQueryOpts(false, 0, nil)
 				engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
 
 				stats := runQuery(t, engine, opts, c, nil)
@@ -4020,7 +4020,7 @@ metric 0 1 2
 			engine := promqltest.NewTestEngine(t, false, c.engineLookback, promqltest.DefaultMaxSamplesPerQuery)
 			storage := promqltest.LoadedStorage(t, load)
 
-			opts := promql.NewPrometheusQueryOpts(false, c.queryLookback)
+			opts := promql.NewPrometheusQueryOpts(false, c.queryLookback, nil)
 			qry, err := engine.NewInstantQuery(context.Background(), storage, opts, query, c.ts)
 			require.NoError(t, err)
 
@@ -4832,6 +4832,75 @@ func TestHistogram_CounterResetHint(t *testing.T) {
 			require.Len(t, v, 1)
 			require.NotNil(t, v[0].H)
 			require.Equal(t, tc.want, v[0].H.CounterResetHint)
+		})
+	}
+}
+
+func TestQueryStartTimestampsOverride(t *testing.T) {
+	testStorageOpts := func(opts *tsdb.Options) {
+		opts.XOR2EncodingAllowed = true
+		opts.FloatChunkEncoding = chunkenc.EncXOR2
+		opts.EnableSTStorage = true
+	}
+
+	load := `load 10s
+  metric@st 0 -5s
+  metric 1 1
+`
+	storage := promqltest.LoadedStorage(t, load, testStorageOpts)
+	defer storage.Close()
+
+	trueVal := true
+	falseVal := false
+
+	testCases := []struct {
+		name     string
+		engineST bool
+		queryST  *bool
+		expected string
+	}{
+		{
+			name:     "Override to false (engine default: true)",
+			engineST: true,
+			queryST:  &falseVal,
+			expected: "{} => 0 @[10000]",
+		},
+		{
+			name:     "Override to true on false default (engine default: false)",
+			engineST: false,
+			queryST:  &trueVal,
+			expected: "{} => 2 @[10000]",
+		},
+		{
+			name:     "Default is used when nil (engine default: true)",
+			engineST: true,
+			queryST:  nil,
+			expected: "{} => 2 @[10000]",
+		},
+		{
+			name:     "Default is used when nil (engine default: false)",
+			engineST: false,
+			queryST:  nil,
+			expected: "{} => 0 @[10000]",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+				UseStartTimestamps: tc.engineST,
+				Timeout:            5 * time.Minute,
+				MaxSamples:         promqltest.DefaultMaxSamplesPerQuery,
+			})
+			opts := promql.NewPrometheusQueryOpts(false, 0, tc.queryST)
+			q, err := engine.NewInstantQuery(context.Background(), storage, opts, "increase(metric[20s])", time.Unix(10, 0))
+			require.NoError(t, err)
+			defer q.Close()
+
+			res := q.Exec(context.Background())
+			require.NoError(t, res.Err)
+			require.NotNil(t, res.Value)
+			require.Equal(t, tc.expected, res.Value.String())
 		})
 	}
 }
