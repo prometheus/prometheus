@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unique"
 
 	"github.com/gogo/protobuf/proto"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
@@ -443,7 +444,7 @@ type QueueManager struct {
 
 	seriesMtx      sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries and builder.
 	seriesLabels   map[chunks.HeadSeriesRef]labels.Labels
-	seriesMetadata map[chunks.HeadSeriesRef]*metadata.Metadata
+	seriesMetadata map[chunks.HeadSeriesRef]unique.Handle[metadata.Metadata]
 	droppedSeries  map[chunks.HeadSeriesRef]struct{}
 	builder        *labels.Builder
 
@@ -514,7 +515,7 @@ func NewQueueManager(
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
-		seriesMetadata:       make(map[chunks.HeadSeriesRef]*metadata.Metadata),
+		seriesMetadata:       make(map[chunks.HeadSeriesRef]unique.Handle[metadata.Metadata]),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
 		builder:              labels.NewBuilder(labels.EmptyLabels()),
@@ -1037,11 +1038,11 @@ func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 	for _, m := range meta {
-		t.seriesMetadata[m.Ref] = &metadata.Metadata{
+		t.seriesMetadata[m.Ref] = unique.Make(metadata.Metadata{
 			Type: record.ToMetricType(m.Type),
 			Unit: m.Unit,
 			Help: m.Help,
-		}
+		})
 	}
 }
 
@@ -1399,12 +1400,15 @@ type queue struct {
 	batchPool [][]timeSeries
 }
 
+// Used for identifying a seriesMetadata map miss.
+var emptyMetadataHandle unique.Handle[metadata.Metadata]
+
 type timeSeries struct {
 	seriesLabels              labels.Labels
 	value                     float64
 	histogram                 *histogram.Histogram
 	floatHistogram            *histogram.FloatHistogram
-	metadata                  *metadata.Metadata
+	metadata                  unique.Handle[metadata.Metadata]
 	startTimestamp, timestamp int64
 	exemplarLabels            labels.Labels
 	// The type of series: sample, exemplar, or histogram.
@@ -1966,14 +1970,15 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(m.Unit)
 			pendingData[nPending].Metadata.HelpRef = 0 // Type and unit does not give us help.
 			// Use Help from d.metadata if available.
-			if d.metadata != nil {
-				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
+			if d.metadata != emptyMetadataHandle {
+				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Value().Help)
 				nPendingMetadata++
 			}
-		case d.metadata != nil:
-			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(d.metadata.Type)
-			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
-			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(d.metadata.Unit)
+		case d.metadata != emptyMetadataHandle:
+			md := d.metadata.Value()
+			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(md.Type)
+			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(md.Help)
+			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(md.Unit)
 			nPendingMetadata++
 		default:
 			// Safeguard against sending garbage in case of not having metadata

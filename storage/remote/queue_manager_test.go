@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"strconv"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+	"unique"
 
 	"github.com/gogo/protobuf/proto"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
@@ -343,6 +345,41 @@ func TestMetadataDelivery(t *testing.T) {
 	require.Equal(t, numMetadata/config.DefaultMetadataConfig.MaxSamplesPerSend+1, c.writesReceived)
 	// Make sure the last samples were sent.
 	require.Equal(t, c.receivedMetadata[metadata[len(metadata)-1].MetricFamily][0].MetricFamilyName, metadata[len(metadata)-1].MetricFamily)
+}
+
+func TestStoreMetadataInterns(t *testing.T) {
+	_, m := newTestClientAndQueueManager(t, defaultFlushDeadline, remoteapi.WriteV2MessageType)
+
+	// Refs 1-3 share an identical {Type, Unit, Help} triple; ref 4 differs.
+	meta := []record.RefMetadata{
+		{Ref: 1, Type: uint8(record.Counter), Unit: "bytes", Help: "a shared help string"},
+		{Ref: 2, Type: uint8(record.Counter), Unit: "bytes", Help: "a shared help string"},
+		{Ref: 3, Type: uint8(record.Counter), Unit: "bytes", Help: "a shared help string"},
+		{Ref: 4, Type: uint8(record.Gauge), Unit: "seconds", Help: "a different help string"},
+	}
+	m.StoreMetadata(meta)
+
+	m.seriesMtx.Lock()
+	defer m.seriesMtx.Unlock()
+
+	// Series with an identical metadata triple must resolve to the same interned
+	// handle, so it is allocated only once regardless of series count.
+	require.Equal(t, m.seriesMetadata[1], m.seriesMetadata[2], "identical metadata should share one handle")
+	require.Equal(t, m.seriesMetadata[1], m.seriesMetadata[3], "identical metadata should share one handle")
+	require.NotEqual(t, m.seriesMetadata[1], m.seriesMetadata[4], "different metadata must not share a handle")
+
+	// The handle must round-trip the original values.
+	got := m.seriesMetadata[1].Value()
+	require.Equal(t, model.MetricTypeCounter, got.Type)
+	require.Equal(t, "bytes", got.Unit)
+	require.Equal(t, "a shared help string", got.Help)
+
+	// Remote-write v1 must not store metadata at all.
+	_, mv1 := newTestClientAndQueueManager(t, defaultFlushDeadline, remoteapi.WriteV1MessageType)
+	mv1.StoreMetadata(meta)
+	mv1.seriesMtx.Lock()
+	require.Empty(t, mv1.seriesMetadata)
+	mv1.seriesMtx.Unlock()
 }
 
 func TestWALMetadataDelivery(t *testing.T) {
@@ -1405,6 +1442,53 @@ func BenchmarkStoreSeries(b *testing.B) {
 
 				m.StoreSeries(recs.Series, 0)
 			}
+		})
+	}
+}
+
+// BenchmarkSeriesMetadataMemory measures the heap retained by a QueueManager's
+// seriesMetadata map for many series sharing metadata per family.
+func BenchmarkSeriesMetadataMemory(b *testing.B) {
+	const numSeries = 1_000_000
+
+	// Each record gets fresh Help/Unit strings, as decoding WAL records would.
+	genRecords := func(seriesPerFamily int) []record.RefMetadata {
+		recs := make([]record.RefMetadata, numSeries)
+		for i := range recs {
+			family := i / seriesPerFamily
+			recs[i] = record.RefMetadata{
+				Ref:  chunks.HeadSeriesRef(i),
+				Type: uint8(record.Gauge),
+				Unit: fmt.Sprintf("unit_for_family_%d", family),
+				Help: fmt.Sprintf("Help text describing metric family number %d, generated for the remote write metadata interning benchmark.", family),
+			}
+		}
+		return recs
+	}
+
+	for _, seriesPerFamily := range []int{1, 5, 10, 100} {
+		b.Run(fmt.Sprintf("seriesPerFamily=%d", seriesPerFamily), func(b *testing.B) {
+			var retained uint64
+			for b.Loop() {
+				_, m := newTestClientAndQueueManager(b, defaultFlushDeadline, remoteapi.WriteV2MessageType)
+
+				// Snapshot the empty manager so the delta isolates seriesMetadata. Two GCs:
+				// one runs the unique package's cleanup, the second frees what it released.
+				runtime.GC()
+				runtime.GC()
+				var before, after runtime.MemStats
+				runtime.ReadMemStats(&before)
+
+				m.StoreMetadata(genRecords(seriesPerFamily))
+
+				runtime.GC()
+				runtime.GC()
+				runtime.ReadMemStats(&after)
+				runtime.KeepAlive(m)
+				retained = after.HeapAlloc - before.HeapAlloc
+			}
+			b.ReportMetric(float64(retained), "retainedBytes")
+			b.ReportMetric(float64(retained)/numSeries, "retainedBytes/series")
 		})
 	}
 }
@@ -2517,7 +2601,9 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 				value:        123.45,
 				timestamp:    time.Now().UnixMilli(),
 				sType:        tSample,
-				metadata:     tc.metadata,
+			}
+			if tc.metadata != nil {
+				batch[0].metadata = unique.Make(*tc.metadata)
 			}
 
 			pendingData := make([]writev2.TimeSeries, 1)
