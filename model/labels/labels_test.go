@@ -346,6 +346,15 @@ func TestLabels_ValidationModes(t *testing.T) {
 		{
 			input: FromStrings(
 				"__name__", "test",
+				"host.name", "localhost",
+				"team/name", "platform",
+			),
+			callMode: model.UTF8Validation,
+			expected: true,
+		},
+		{
+			input: FromStrings(
+				"__name__", "test",
 				"\xc5 bad utf8", "localhost",
 				"job", "check",
 			),
