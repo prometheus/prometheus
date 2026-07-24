@@ -16,6 +16,8 @@ package tsdb
 import (
 	"math"
 	"sync"
+
+	"github.com/prometheus/prometheus/util/zeropool"
 )
 
 // isolationState holds the isolation information.
@@ -35,9 +37,13 @@ type isolationState struct {
 // Close closes the state.
 func (i *isolationState) Close() {
 	i.isolation.readMtx.Lock()
-	defer i.isolation.readMtx.Unlock()
 	i.next.prev = i.prev
 	i.prev.next = i.next
+	i.isolation.readMtx.Unlock()
+
+	clear(i.incompleteAppends)
+	i.isolation.incompleteAppendsPool.Put(i.incompleteAppends)
+	i.incompleteAppends = nil
 }
 
 func (i *isolationState) IsolationDisabled() bool {
@@ -71,6 +77,9 @@ type isolation struct {
 	readsOpen *isolationState
 	// If true, writes are not tracked while reads are still tracked.
 	disabled bool
+
+	// Pool of reusable incomplete appends maps to save on allocations.
+	incompleteAppendsPool zeropool.Pool[map[uint64]struct{}]
 }
 
 func newIsolation(disabled bool) *isolation {
@@ -139,12 +148,17 @@ func (i *isolation) State(mint, maxt int64) *isolationState {
 	i.appendMtx.RLock() // Take append mutex before read mutex.
 	defer i.appendMtx.RUnlock()
 
+	incompleteAppends := i.incompleteAppendsPool.Get()
+	if incompleteAppends == nil {
+		incompleteAppends = make(map[uint64]struct{}, len(i.appendsOpen))
+	}
+
 	// We need to track reads even when isolation is disabled, so that head
 	// truncation can wait till reads overlapping that range have finished.
 	isoState := &isolationState{
 		maxAppendID:       i.appendsOpenList.appendID,
 		lowWatermark:      i.appendsOpenList.next.appendID, // Lowest appendID from appenders, or lastAppendId.
-		incompleteAppends: make(map[uint64]struct{}, len(i.appendsOpen)),
+		incompleteAppends: incompleteAppends,
 		isolation:         i,
 		mint:              mint,
 		maxt:              maxt,

@@ -63,6 +63,10 @@ func TestIsolation(t *testing.T) {
 	stateA.Close()
 	require.Equal(t, uint64(2), iso.lowWatermark())
 
+	stateB := iso.State(20, 30)
+	require.Equal(t, map[uint64]struct{}{appendB.id: {}}, stateB.incompleteAppends)
+	stateB.Close()
+
 	require.Equal(t, 0, countOpenReads(iso))
 
 	iso.closeAppend(appendB.id)
