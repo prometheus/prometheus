@@ -17,11 +17,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"reflect"
@@ -2284,15 +2286,85 @@ func pickSchema(bucketFactor float64) int32 {
 	}
 }
 
+const (
+	// UnixSocketLabel is the name of the label that holds the unix socket path
+	// to connect to for scraping. When set, the scrape client will connect via
+	// the specified Unix domain socket instead of the target's __address__.
+	UnixSocketLabel = "__unix_socket__"
+
+	// unixSchemeParam is the query parameter used internally to pass the
+	// original scheme (e.g. "http", "https") through to the custom
+	// RoundTripper, which restores it before forwarding the request.
+	unixSchemeParam = "__unix_scheme__"
+
+	// unixRoundTripperPrefix is used to mark hosts that should be routed
+	// through the custom unixRoundTripper, which then forwards them to a
+	// Unix domain socket. The prefix uses "_" because underscores aren't
+	// allowed in valid DNS hostnames, preventing collisions.
+	unixRoundTripperPrefix = "_unix-"
+)
+
 func newScrapeClient(cfg config_util.HTTPClientConfig, name string, optFuncs ...config_util.HTTPClientOption) (*http.Client, error) {
 	client, err := config_util.NewClientFromConfig(cfg, name, optFuncs...)
 	if err != nil {
 		return nil, fmt.Errorf("error creating HTTP client: %w", err)
 	}
-	client.Transport = otelhttp.NewTransport(
+
+	if t, ok := client.Transport.(*http.Transport); ok {
+		oldDialContext := t.DialContext
+		t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, _, err := net.SplitHostPort(addr)
+			// Intercept unixRoundTripperPrefix prefixed hosts (generated in unixRoundTripper) and dial the unix socket directly.
+			if err == nil && strings.HasPrefix(host, unixRoundTripperPrefix) {
+				decodedBytes, err := hex.DecodeString(strings.TrimPrefix(host, unixRoundTripperPrefix))
+				if err == nil {
+					if oldDialContext != nil {
+						return oldDialContext(ctx, "unix", string(decodedBytes))
+					}
+					return (&net.Dialer{}).DialContext(ctx, "unix", string(decodedBytes))
+				}
+			}
+			if oldDialContext != nil {
+				return oldDialContext(ctx, network, addr)
+			}
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		}
+	}
+
+	client.Transport = &unixRoundTripper{rt: otelhttp.NewTransport(
 		client.Transport,
 		otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
 			return otelhttptrace.NewClientTrace(ctx, otelhttptrace.WithoutSubSpans())
-		}))
+		}))}
 	return client, nil
+}
+
+type unixRoundTripper struct {
+	rt http.RoundTripper
+}
+
+func (t *unixRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL.Scheme != "unix" {
+		return t.rt.RoundTrip(req)
+	}
+
+	socketPath := req.URL.Query().Get(UnixSocketLabel)
+	if socketPath == "" {
+		return nil, fmt.Errorf("unix scheme used but %s query param missing", UnixSocketLabel)
+	}
+
+	newReq := req.Clone(req.Context())
+	q := newReq.URL.Query()
+	scheme := q.Get(unixSchemeParam)
+	if scheme == "" {
+		scheme = "http"
+	}
+	q.Del(UnixSocketLabel)
+	q.Del(unixSchemeParam)
+	newReq.URL.RawQuery = q.Encode()
+
+	newReq.URL.Scheme = scheme
+	newReq.URL.Host = unixRoundTripperPrefix + hex.EncodeToString([]byte(socketPath))
+
+	return t.rt.RoundTrip(newReq)
 }
