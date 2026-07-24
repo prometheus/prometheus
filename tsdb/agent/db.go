@@ -983,7 +983,7 @@ func (a *appenderBase) getOrCreate(ref chunks.HeadSeriesRef, l labels.Labels) (s
 	return series, nil
 }
 
-func (a *appender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+func (a *appenderBase) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	// Series references and chunk references are identical for agent mode.
 	headRef := chunks.HeadSeriesRef(ref)
 
@@ -1091,7 +1091,7 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 	return storage.SeriesRef(series.ref), nil
 }
 
-func (*appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
+func (*appenderBase) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
 	// TODO: Wire metadata in the Agent's appender.
 	return 0, nil
 }

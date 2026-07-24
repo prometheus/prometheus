@@ -39,8 +39,12 @@ import (
 )
 
 type writeHandler struct {
-	logger     *slog.Logger
-	appendable storage.Appendable
+	logger *slog.Logger
+	// appendable is used by the Remote Write 2.x path (writeV2). The Remote
+	// Write 1.0 path (write) uses appendableV2 as part of the migration to
+	// AppenderV2 (https://github.com/prometheus/prometheus/issues/17632).
+	appendable   storage.Appendable
+	appendableV2 storage.AppendableV2
 
 	samplesWithInvalidLabelsTotal  prometheus.Counter
 	samplesAppendedWithoutMetadata prometheus.Counter
@@ -50,17 +54,31 @@ type writeHandler struct {
 	appendMetadata          bool
 }
 
+// receiverAppenderV2 is the AppenderV2 capability the Remote Write receiver
+// requires: standalone exemplar and metadata appends on top of AppenderV2.
+// Prometheus' own appenders (TSDB head, agent, fanout, remote write) implement
+// it. It is defined here, rather than embedded into storage.AppenderV2, so that
+// downstream AppenderV2 implementations are not forced to implement it.
+type receiverAppenderV2 interface {
+	storage.AppenderV2
+	storage.ExemplarAppenderV2
+	storage.MetadataUpdaterV2
+}
+
 const maxAheadTime = 10 * time.Minute
 
 // NewWriteHandler creates a http.Handler that accepts remote write requests with
-// the given message in acceptedMsgs and writes them to the provided appendable.
+// the given message in acceptedMsgs and writes them to the provided appendables.
+// The Remote Write 1.0 path uses appendableV2 (storage.AppenderV2); the Remote
+// Write 2.x path still uses appendable (storage.Appender) until it is migrated.
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMsgs remoteapi.MessageTypes, ingestSTZeroSample, enableTypeAndUnitLabels, appendMetadata bool) http.Handler {
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, appendableV2 storage.AppendableV2, acceptedMsgs remoteapi.MessageTypes, ingestSTZeroSample, enableTypeAndUnitLabels, appendMetadata bool) http.Handler {
 	h := &writeHandler{
-		logger:     logger,
-		appendable: appendable,
+		logger:       logger,
+		appendable:   appendable,
+		appendableV2: appendableV2,
 		samplesWithInvalidLabelsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
 			Subsystem: "api",
@@ -151,9 +169,14 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	samplesWithInvalidLabels := 0
 	samplesAppended := 0
 
-	app := &remoteWriteAppender{
-		Appender: h.appendable.Appender(ctx),
-		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
+	appV2 := h.appendableV2.AppenderV2(ctx)
+	recv, ok := appV2.(receiverAppenderV2)
+	if !ok {
+		return fmt.Errorf("remote write 1.0 receiver requires a storage.AppenderV2 that also implements storage.ExemplarAppenderV2 and storage.MetadataUpdaterV2, got %T", appV2)
+	}
+	app := &remoteWriteAppenderV2{
+		AppenderV2: recv,
+		maxTime:    timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
 
 	defer func() {
@@ -217,11 +240,11 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	return nil
 }
 
-func (h *writeHandler) appendV1Samples(app storage.Appender, ss []prompb.Sample, labels labels.Labels) error {
+func (h *writeHandler) appendV1Samples(app storage.AppenderV2, ss []prompb.Sample, labels labels.Labels) error {
 	var ref storage.SeriesRef
 	var err error
 	for _, s := range ss {
-		ref, err = app.Append(ref, labels, s.GetTimestamp(), s.GetValue())
+		ref, err = app.Append(ref, labels, 0, s.GetTimestamp(), s.GetValue(), nil, nil, storage.AppendV2Options{})
 		if err != nil {
 			if errors.Is(err, storage.ErrOutOfOrderSample) ||
 				errors.Is(err, storage.ErrOutOfBounds) ||
@@ -235,13 +258,14 @@ func (h *writeHandler) appendV1Samples(app storage.Appender, ss []prompb.Sample,
 	return nil
 }
 
-func (h *writeHandler) appendV1Histograms(app storage.Appender, hh []prompb.Histogram, labels labels.Labels) error {
+func (h *writeHandler) appendV1Histograms(app storage.AppenderV2, hh []prompb.Histogram, labels labels.Labels) error {
+	var ref storage.SeriesRef
 	var err error
 	for _, hp := range hh {
 		if hp.IsFloatHistogram() {
-			_, err = app.AppendHistogram(0, labels, hp.Timestamp, nil, hp.ToFloatHistogram())
+			ref, err = app.Append(ref, labels, 0, hp.Timestamp, 0, nil, hp.ToFloatHistogram(), storage.AppendV2Options{})
 		} else {
-			_, err = app.AppendHistogram(0, labels, hp.Timestamp, hp.ToIntHistogram(), nil)
+			ref, err = app.Append(ref, labels, 0, hp.Timestamp, 0, hp.ToIntHistogram(), nil, storage.AppendV2Options{})
 		}
 		if err != nil {
 			// Although AppendHistogram does not currently return ErrDuplicateSampleForTimestamp there is
@@ -567,4 +591,17 @@ func (app *remoteWriteAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels
 		}
 	}
 	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+}
+
+// AppendExemplar delegates to the wrapped appender's optional
+// storage.ExemplarAppenderV2 capability, enforcing max ahead time.
+func (app *remoteWriteAppenderV2) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	if e.Ts > app.maxTime {
+		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
+	}
+	ea, ok := app.AppenderV2.(storage.ExemplarAppenderV2)
+	if !ok {
+		return 0, fmt.Errorf("appender %T does not support exemplars", app.AppenderV2)
+	}
+	return ea.AppendExemplar(ref, l, e)
 }
