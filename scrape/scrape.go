@@ -502,13 +502,13 @@ func (sp *scrapePool) sync(targets []*Target) {
 		}
 	}
 
-	sp.targetMtx.Unlock()
-
 	sp.metrics.targetScrapePoolTargetsAdded.WithLabelValues(sp.config.JobName).Set(float64(len(uniqueLoops)))
 	forcedErr := sp.refreshTargetLimitErr()
 	for _, l := range sp.loops {
 		l.setForcedError(forcedErr)
 	}
+
+	sp.targetMtx.Unlock()
 	for _, l := range uniqueLoops {
 		if l != nil {
 			go l.run(nil)

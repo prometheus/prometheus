@@ -274,7 +274,7 @@ func (d *Discovery) getNamespaces() []string {
 	}
 
 	if includeOwnNamespace && d.ownNamespace != "" {
-		return append(namespaces, d.ownNamespace)
+		return append(append([]string{}, namespaces...), d.ownNamespace)
 	}
 
 	return namespaces
