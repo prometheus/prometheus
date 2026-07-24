@@ -1686,6 +1686,10 @@ func TestMetricsCleanupAfterConfigReload(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, count)
 
+	count, err = client_testutil.GatherAndCount(reg, "prometheus_sd_last_update_timestamp_seconds")
+	require.NoError(t, err)
+	require.Equal(t, 2, count)
+
 	// Simulate a config refresh.
 	delete(c, "prometheus")
 	discoveryManager.ApplyConfig(c)
@@ -1697,6 +1701,10 @@ func TestMetricsCleanupAfterConfigReload(t *testing.T) {
 	require.Equal(t, 1, count)
 
 	count, err = client_testutil.GatherAndCount(reg, "prometheus_sd_refresh_failures_total")
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+
+	count, err = client_testutil.GatherAndCount(reg, "prometheus_sd_last_update_timestamp_seconds")
 	require.NoError(t, err)
 	require.Equal(t, 1, count)
 }
