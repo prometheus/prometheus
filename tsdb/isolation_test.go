@@ -196,6 +196,10 @@ func BenchmarkIsolationWithState(b *testing.B) {
 	for _, goroutines := range []int{10, 100, 1000, 10000} {
 		b.Run(strconv.Itoa(goroutines), func(b *testing.B) {
 			iso := newIsolation(false)
+			openAppenders := make([]uint64, goroutines)
+			for appender := range openAppenders {
+				openAppenders[appender], _ = iso.newAppendID(0)
+			}
 
 			wg := sync.WaitGroup{}
 			start := make(chan struct{})
@@ -238,6 +242,11 @@ func BenchmarkIsolationWithState(b *testing.B) {
 			b.ResetTimer()
 			close(start)
 			wg.Wait()
+			b.StopTimer()
+
+			for _, appendID := range openAppenders {
+				iso.closeAppend(appendID)
+			}
 		})
 	}
 }
