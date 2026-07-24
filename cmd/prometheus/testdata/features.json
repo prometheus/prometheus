@@ -95,6 +95,7 @@
     "irate": true,
     "label_join": true,
     "label_replace": true,
+    "labelmap": false,
     "last_over_time": true,
     "ln": true,
     "log10": true,
