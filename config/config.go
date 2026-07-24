@@ -1691,7 +1691,7 @@ type RemoteReadConfig struct {
 	RequiredMatchers model.LabelSet `yaml:"required_matchers,omitempty"`
 
 	// Whether to use the external labels as selectors for the remote read endpoint.
-	FilterExternalLabels bool `yaml:"filter_external_labels,omitempty"`
+	FilterExternalLabels bool `yaml:"filter_external_labels"`
 }
 
 // SetDirectory joins any relative file paths with dir.
