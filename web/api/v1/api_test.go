@@ -1842,6 +1842,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						LastScrapeDuration: 0.1,
 						ScrapeInterval:     "20s",
 						ScrapeTimeout:      "10s",
+						ScrapeTimeoutUsage: 0.01,
 					},
 					{
 						DiscoveredLabels:   labels.FromStrings("__always_scrape_classic_histograms__", "false", "__convert_classic_histograms_to_nhcb__", "false", "__scrape_interval__", "0s", "__scrape_native_histograms__", "false", "__scrape_timeout__", "0s"),
@@ -1855,6 +1856,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						LastScrapeDuration: 0.07,
 						ScrapeInterval:     "15s",
 						ScrapeTimeout:      "5s",
+						ScrapeTimeoutUsage: 0.014000000000000002,
 					},
 				},
 				DroppedTargets: []*DroppedTarget{
@@ -1895,6 +1897,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						LastScrapeDuration: 0.1,
 						ScrapeInterval:     "20s",
 						ScrapeTimeout:      "10s",
+						ScrapeTimeoutUsage: 0.01,
 					},
 					{
 						DiscoveredLabels:   labels.FromStrings("__always_scrape_classic_histograms__", "false", "__convert_classic_histograms_to_nhcb__", "false", "__scrape_interval__", "0s", "__scrape_native_histograms__", "false", "__scrape_timeout__", "0s"),
@@ -1908,6 +1911,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						LastScrapeDuration: 0.07,
 						ScrapeInterval:     "15s",
 						ScrapeTimeout:      "5s",
+						ScrapeTimeoutUsage: 0.014000000000000002,
 					},
 				},
 				DroppedTargets: []*DroppedTarget{
@@ -1948,6 +1952,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						LastScrapeDuration: 0.1,
 						ScrapeInterval:     "20s",
 						ScrapeTimeout:      "10s",
+						ScrapeTimeoutUsage: 0.01,
 					},
 					{
 						DiscoveredLabels:   labels.FromStrings("__always_scrape_classic_histograms__", "false", "__convert_classic_histograms_to_nhcb__", "false", "__scrape_interval__", "0s", "__scrape_native_histograms__", "false", "__scrape_timeout__", "0s"),
@@ -1961,6 +1966,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						LastScrapeDuration: 0.07,
 						ScrapeInterval:     "15s",
 						ScrapeTimeout:      "5s",
+						ScrapeTimeoutUsage: 0.014000000000000002,
 					},
 				},
 				DroppedTargets: []*DroppedTarget{},
@@ -4542,6 +4548,46 @@ func TestParseDuration(t *testing.T) {
 			continue
 		}
 		require.Error(t, err, "Expected error for %q but got none", test.input)
+	}
+}
+
+func TestScrapeTimeoutUsage(t *testing.T) {
+	tests := []struct {
+		name               string
+		lastScrapeDuration time.Duration
+		scrapeTimeout      string
+		expected           float64
+	}{
+		{
+			name:               "normal usage",
+			lastScrapeDuration: 100 * time.Millisecond,
+			scrapeTimeout:      "10s",
+			expected:           0.01,
+		},
+		{
+			name:               "different timeout",
+			lastScrapeDuration: 70 * time.Millisecond,
+			scrapeTimeout:      "5s",
+			expected:           0.014,
+		},
+		{
+			name:               "invalid timeout",
+			lastScrapeDuration: 100 * time.Millisecond,
+			scrapeTimeout:      "invalid",
+			expected:           0,
+		},
+		{
+			name:               "zero timeout",
+			lastScrapeDuration: 100 * time.Millisecond,
+			scrapeTimeout:      "0s",
+			expected:           0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.InDelta(t, tt.expected, scrapeTimeoutUsage(tt.lastScrapeDuration, tt.scrapeTimeout), 1e-9)
+		})
 	}
 }
 
