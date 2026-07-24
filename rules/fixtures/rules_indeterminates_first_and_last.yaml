@@ -1,8 +1,10 @@
 groups:
-  - name: indeterminate
+  - name: indeterminate_first_and_last
     rules:
-      # The open matcher rule depends on all prior rules, but the prior
-      # independent rules can still run in parallel with each other.
+      # First rule is indeterminate (no __name__ matcher).
+      - record: indeterminate_first
+        expr: count({job=~".+"})
+      # Four independent rules in the middle.
       - record: job:http_requests:rate1m
         expr: sum by (job)(rate(http_requests_total[1m]))
       - record: job:http_requests:rate5m
@@ -11,9 +13,6 @@ groups:
         expr: sum by (job)(rate(http_requests_total[15m]))
       - record: job:http_requests:rate30m
         expr: sum by (job)(rate(http_requests_total[30m]))
-      - record: job:http_requests:rate1h
-        expr: sum by (job)(rate(http_requests_total[1h]))
-      - record: job:http_requests:rate2h
-        expr: sum by (job)(rate(http_requests_total[2h]))
-      - record: matcher
-        expr: '{job="job1"}'
+      # Last rule is also indeterminate (no __name__ matcher).
+      - alert: IndeterminateLast
+        expr: max({job=~".+"}) > 1e15
