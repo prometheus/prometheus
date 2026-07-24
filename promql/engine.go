@@ -1844,8 +1844,7 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration,
 // collecting every corresponding sample (obtained via ev.vectorSelectorSingle) into a Series.
 // All of the generated Series are collected into a Matrix, that gets returned.
 // If atTimestamp is non-nil, every step is evaluated as of that fixed timestamp instead of the
-// step timestamp (the sample is still emitted at the step timestamp); this is used by info() so
-// that an @ modifier on its first argument pins the info-series lookup to that timestamp.
+// step timestamp; the sample is still emitted at the step timestamp.
 func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, offset time.Duration, recordOrigT bool, atTimestamp *int64) Matrix {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 

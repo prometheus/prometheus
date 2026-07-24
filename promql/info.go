@@ -77,7 +77,7 @@ func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (par
 	// series are evaluated and matched (not just which series are selected), so that info(v @ T)
 	// enriches with the info series as of T at every step, independent of the evaluation time.
 	nodeTimestamp, offset := infoSelectTimestampAndOffset(args[0])
-	selectHints := ev.infoSelectHints(args[0])
+	selectHints := ev.infoSelectHints(nodeTimestamp, offset)
 	infoSeries, ws, err := ev.fetchInfoSeries(ctx, mat, ignoreSeries, dataLabelMatchers, selectHints, nodeTimestamp, offset)
 	if err != nil {
 		ev.error(err)
@@ -111,8 +111,8 @@ func effectiveInfoNameMatchers(matchers []*labels.Matcher) []*labels.Matcher {
 
 // infoSelectTimestampAndOffset returns the @ timestamp (nil if unset) and offset that govern
 // selection and evaluation of the info series, given expr (the first argument to an info call).
-// They are taken from the first vector selector found in expr, mirroring the way infoSelectHints
-// and Prometheus's step-invariance handling treat the modifiers on the first argument.
+// They are taken from the first vector selector found in expr, mirroring the way Prometheus's
+// step-invariance handling treats the modifiers on the first argument.
 func infoSelectTimestampAndOffset(expr parser.Expr) (nodeTimestamp *int64, offset time.Duration) {
 	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		if n, ok := node.(*parser.VectorSelector); ok {
@@ -125,9 +125,9 @@ func infoSelectTimestampAndOffset(expr parser.Expr) (nodeTimestamp *int64, offse
 	return nodeTimestamp, offset
 }
 
-// infoSelectHints calculates the storage.SelectHints for selecting info series, given expr (first argument to info call).
-func (ev *evaluator) infoSelectHints(expr parser.Expr) storage.SelectHints {
-	nodeTimestamp, offset := infoSelectTimestampAndOffset(expr)
+// infoSelectHints calculates the storage.SelectHints for selecting info series, given the
+// @ timestamp (nil if unset) and offset that govern the first argument to the info call.
+func (ev *evaluator) infoSelectHints(nodeTimestamp *int64, offset time.Duration) storage.SelectHints {
 	offsetMs := durationMilliseconds(offset)
 
 	start := ev.startTimestamp
