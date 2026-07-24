@@ -377,6 +377,43 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 	}
 }
 
+// TestOOOHeadIndexReader_Series_ChunkIDSpaceExhausted verifies that a series
+// whose out-of-order chunk ID space is exhausted (firstOOOChunkID grown close to
+// oooChunkIDMask) fails its query with an error instead of panicking inside
+// NewHeadChunkRef and crashing the whole process.
+func TestOOOHeadIndexReader_Series_ChunkIDSpaceExhausted(t *testing.T) {
+	s1Lset := labels.FromStrings("foo", "bar")
+	s1ID := uint64(1)
+
+	h, _ := newTestHead(t, 1000, compression.None, true)
+	defer func() {
+		require.NoError(t, h.Close())
+	}()
+	require.NoError(t, h.Init(0))
+
+	s1, _, _ := h.getOrCreate(s1ID, s1Lset, false)
+	s1.ooo = &memSeriesOOOFields{
+		// Simulate a series that has been continuously out-of-order long enough to
+		// exhaust the OOO chunk ID space. This value is past the point where
+		// NewHeadChunkRef would panic ("chunk ID exceeds 3 bytes") without the guard.
+		firstOOOChunkID: 1 << 24,
+	}
+	s1.ooo.oooMmappedChunks = append(s1.ooo.oooMmappedChunks, &mmappedChunk{
+		minTime: 100,
+		maxTime: 200,
+	})
+
+	ir := NewHeadAndOOOIndexReader(h, 0, 0, math.MaxInt64, 0)
+
+	var chks []chunks.Meta
+	var b labels.ScratchBuilder
+	var err error
+	require.NotPanics(t, func() {
+		err = ir.Series(storage.SeriesRef(s1ID), &b, &chks)
+	})
+	require.ErrorContains(t, err, "exhausted its out-of-order chunk ID space")
+}
+
 func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
