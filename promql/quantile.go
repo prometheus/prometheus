@@ -426,25 +426,13 @@ func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram, metric
 			if b.Lower == math.Inf(-1) {
 				return b.Count
 			}
-			return rank + b.Count*(v-b.Lower)/(b.Upper-b.Lower)
+			return rank + b.Count*b.FractionBelow(v, true)
 		}
 
-		// interpolateExponentially is using the same exponential
-		// interpolation method as above for histogramQuantile. This
-		// method is a better fit for exponential bucketing.
+		// interpolateExponentially interpolates on a logarithmic scale, which
+		// is a better fit for exponential bucketing. See Bucket.FractionBelow.
 		interpolateExponentially := func(v float64) float64 {
-			var (
-				logLower = math.Log2(math.Abs(b.Lower))
-				logUpper = math.Log2(math.Abs(b.Upper))
-				logV     = math.Log2(math.Abs(v))
-				fraction float64
-			)
-			if v > 0 {
-				fraction = (logV - logLower) / (logUpper - logLower)
-			} else {
-				fraction = 1 - ((logV - logUpper) / (logLower - logUpper))
-			}
-			return rank + b.Count*fraction
+			return rank + b.Count*b.FractionBelow(v, false)
 		}
 
 		if b.Lower <= 0 && b.Upper >= 0 {
