@@ -478,6 +478,7 @@ The following endpoint returns a list of label values for a provided label name:
 
 ```
 GET /api/v1/label/<label_name>/values
+POST /api/v1/label/<label_name>/values
 ```
 
 URL query parameters:
@@ -487,6 +488,10 @@ URL query parameters:
 - `match[]=<series_selector>`: Repeated series selector argument that selects the
   series from which to read the label values. Optional.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
+
+You can URL-encode these parameters directly in the request body by using the `POST` method and
+`Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
+or dynamic number of series selectors that may breach server-side URL character limits.
 
 The `data` section of the JSON response is a list of string label values. Note
 that the `start` and `end` times are approximate and the result may contain
