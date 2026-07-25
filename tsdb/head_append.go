@@ -470,7 +470,10 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		// series" and "known series with stNone".
 	}
 
-	s.Lock()
+	s, err := a.lockForAppend(s)
+	if err != nil {
+		return 0, err
+	}
 	defer s.Unlock()
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
@@ -525,7 +528,10 @@ func (a *headAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 	// Check if ST wouldn't be OOO vs samples we already might have for this series.
 	// NOTE(bwplotka): This will be often hit as it's expected for long living
 	// counters to share the same ST.
-	s.Lock()
+	s, err := a.lockForAppend(s)
+	if err != nil {
+		return 0, err
+	}
 	isOOO, _, err := s.appendable(st, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 	if err == nil {
 		s.pendingCommit = true
@@ -565,6 +571,30 @@ func (a *headAppenderBase) getOrCreate(lset labels.Labels) (s *memSeries, create
 		a.series = append(a.series, s)
 	}
 	return s, created, nil
+}
+
+// lockForAppend locks s and returns it, ready to be marked as pending commit.
+//
+// Looking a series up only holds the stripe lock for the duration of the lookup, so
+// garbage collection can remove the series from the head index before the appender gets
+// to lock it and mark it as pending commit. Appending to such a series succeeds but the
+// samples are unreachable from the head, i.e. they are silently lost. When that
+// happened, a live series for the same labels is created and returned locked instead,
+// which is the same outcome as garbage collection winning the race outright.
+func (a *headAppenderBase) lockForAppend(s *memSeries) (*memSeries, error) {
+	for {
+		s.Lock()
+		if !s.gced {
+			return s, nil
+		}
+		lset := s.lset // Safe to access; the series is locked.
+		s.Unlock()
+
+		var err error
+		if s, _, err = a.getOrCreate(lset); err != nil {
+			return nil, err
+		}
+	}
 }
 
 // getCurrentBatch returns the current batch if it fits the provided sampleType
@@ -846,7 +876,10 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 
 	switch {
 	case h != nil:
-		s.Lock()
+		var lockErr error
+		if s, lockErr = a.lockForAppend(s); lockErr != nil {
+			return 0, lockErr
+		}
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
 		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow)
@@ -878,7 +911,10 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		})
 		b.histogramSeries = append(b.histogramSeries, s)
 	case fh != nil:
-		s.Lock()
+		var lockErr error
+		if s, lockErr = a.lockForAppend(s); lockErr != nil {
+			return 0, lockErr
+		}
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
 		_, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow)
@@ -938,7 +974,10 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			ZeroThreshold: h.ZeroThreshold,
 			CustomValues:  h.CustomValues,
 		}
-		s.Lock()
+		var lockErr error
+		if s, lockErr = a.lockForAppend(s); lockErr != nil {
+			return 0, lockErr
+		}
 		// For STZeroSamples OOO is not allowed.
 		// We set it to true to make this implementation as close as possible to the float implementation.
 		isOOO, _, err := s.appendableHistogram(st, zeroHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow)
@@ -980,7 +1019,10 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			ZeroThreshold: fh.ZeroThreshold,
 			CustomValues:  fh.CustomValues,
 		}
-		s.Lock()
+		var lockErr error
+		if s, lockErr = a.lockForAppend(s); lockErr != nil {
+			return 0, lockErr
+		}
 		// We set it to true to make this implementation as close as possible to the float implementation.
 		isOOO, _, err := s.appendableFloatHistogram(st, zeroFloatHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow) // OOO is not allowed for STZeroSamples.
 		if err != nil {
