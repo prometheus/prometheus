@@ -28,6 +28,7 @@ func TestIsolation(t *testing.T) {
 		lowWatermark uint64
 	}
 	var appendA, appendB result
+	var isoAppA, isoAppB *isolationAppender
 	iso := newIsolation(false)
 
 	// Low watermark starts at 1.
@@ -35,7 +36,8 @@ func TestIsolation(t *testing.T) {
 	require.Equal(t, int64(math.MaxInt64), iso.lowestAppendTime())
 
 	// Pretend we are starting to append.
-	appendA.id, appendA.lowWatermark = iso.newAppendID(10)
+	isoAppA, appendA.lowWatermark = iso.newAppendID(10)
+	appendA.id = isoAppA.appendID
 	require.Equal(t, result{1, 1}, appendA)
 	require.Equal(t, uint64(1), iso.lowWatermark())
 
@@ -47,12 +49,13 @@ func TestIsolation(t *testing.T) {
 	require.Equal(t, 1, countOpenReads(iso))
 
 	// Second appender.
-	appendB.id, appendB.lowWatermark = iso.newAppendID(20)
+	isoAppB, appendB.lowWatermark = iso.newAppendID(20)
+	appendB.id = isoAppB.appendID
 	require.Equal(t, result{2, 1}, appendB)
 	require.Equal(t, uint64(1), iso.lowWatermark())
 	require.Equal(t, int64(10), iso.lowestAppendTime())
 
-	iso.closeAppend(appendA.id)
+	iso.closeAppend(isoAppA)
 	// Low watermark remains at 1 because stateA is still open
 	require.Equal(t, uint64(1), iso.lowWatermark())
 
@@ -69,7 +72,7 @@ func TestIsolation(t *testing.T) {
 
 	require.Equal(t, 0, countOpenReads(iso))
 
-	iso.closeAppend(appendB.id)
+	iso.closeAppend(isoAppB)
 	require.Equal(t, uint64(2), iso.lowWatermark())
 	require.Equal(t, int64(math.MaxInt64), iso.lowestAppendTime())
 }
@@ -98,10 +101,11 @@ func TestCommittedAppendID(t *testing.T) {
 
 	t.Run("all issued IDs closed returns lastAppendID", func(t *testing.T) {
 		iso := newIsolation(false)
-		idA, _ := iso.newAppendID(0)
-		idB, _ := iso.newAppendID(0)
-		iso.closeAppend(idA)
-		iso.closeAppend(idB)
+		isoAppA, _ := iso.newAppendID(0)
+		isoAppB, _ := iso.newAppendID(0)
+		idB := isoAppB.appendID
+		iso.closeAppend(isoAppA)
+		iso.closeAppend(isoAppB)
 		require.Equal(t, idB, iso.committedAppendID(),
 			"with no open appenders, committed must equal lastAppendID")
 		require.Equal(t, iso.lastAppendID(), iso.committedAppendID())
@@ -109,32 +113,35 @@ func TestCommittedAppendID(t *testing.T) {
 
 	t.Run("single open appender caps committed at id-1", func(t *testing.T) {
 		iso := newIsolation(false)
-		id, _ := iso.newAppendID(0)
-		require.Equal(t, id-1, iso.committedAppendID(),
+		appender, _ := iso.newAppendID(0)
+		require.Equal(t, appender.appendID-1, iso.committedAppendID(),
 			"the only open appender is in flight, so committed is one below its id")
 	})
 
 	t.Run("multiple open appenders track the lowest", func(t *testing.T) {
 		iso := newIsolation(false)
-		idA, _ := iso.newAppendID(0) // 1
-		idB, _ := iso.newAppendID(0) // 2
-		idC, _ := iso.newAppendID(0) // 3
+		isoAppA, _ := iso.newAppendID(0) // 1
+		isoAppB, _ := iso.newAppendID(0) // 2
+		isoAppC, _ := iso.newAppendID(0) // 3
+		idA := isoAppA.appendID
+		idB := isoAppB.appendID
+		idC := isoAppC.appendID
 		require.Equal(t, idA-1, iso.committedAppendID(),
 			"with A,B,C open the lowest open is A, so committed is A-1")
 
 		// Closing the highest open ID must not change committed: A is still in
 		// flight, so anything >= A is still uncovered by the block.
-		iso.closeAppend(idC)
+		iso.closeAppend(isoAppC)
 		require.Equal(t, idA-1, iso.committedAppendID(),
 			"closing the highest open appender does not advance committed")
 
 		// Closing the lowest open ID raises committed to (next lowest)-1.
-		iso.closeAppend(idA)
+		iso.closeAppend(isoAppA)
 		require.Equal(t, idB-1, iso.committedAppendID(),
 			"closing the lowest open appender raises committed to (new lowest)-1")
 
 		// Closing the last open appender returns committed to lastAppendID.
-		iso.closeAppend(idB)
+		iso.closeAppend(isoAppB)
 		require.Equal(t, idC, iso.committedAppendID(),
 			"once every issued ID is closed, committed equals lastAppendID")
 	})
@@ -144,9 +151,10 @@ func TestCommittedAppendID(t *testing.T) {
 		// captured at a lower watermark must not pull committed back, otherwise
 		// long-running queries would unnecessarily block eviction.
 		iso := newIsolation(false)
-		idA, _ := iso.newAppendID(0)
+		isoAppA, _ := iso.newAppendID(0)
+		idA := isoAppA.appendID
 		state := iso.State(0, math.MaxInt64)
-		iso.closeAppend(idA)
+		iso.closeAppend(isoAppA)
 
 		require.Equal(t, idA, iso.committedAppendID(),
 			"with no open appenders, committed must equal lastAppendID even while a read is open")
@@ -154,6 +162,25 @@ func TestCommittedAppendID(t *testing.T) {
 		state.Close()
 		require.Equal(t, idA, iso.committedAppendID())
 	})
+}
+
+// TestIsolationCloseAppendTwice verifies that closing an appender twice is safe.
+func TestIsolationCloseAppendTwice(t *testing.T) {
+	iso := newIsolation(false)
+	isoAppA, _ := iso.newAppendID(10)
+	isoAppB, _ := iso.newAppendID(20)
+
+	iso.closeAppend(isoAppA)
+	iso.closeAppend(isoAppA)
+
+	state := iso.State(0, math.MaxInt64)
+	require.Equal(t, map[uint64]struct{}{
+		isoAppB.appendID: {},
+	}, state.incompleteAppends)
+	state.Close()
+	require.Equal(t, int64(20), iso.lowestAppendTime())
+
+	iso.closeAppend(isoAppB)
 }
 
 func countOpenReads(iso *isolation) int {
@@ -182,9 +209,9 @@ func BenchmarkIsolation(b *testing.B) {
 					<-start
 
 					for range iterations {
-						appendID, _ := iso.newAppendID(0)
+						appender, _ := iso.newAppendID(0)
 
-						iso.closeAppend(appendID)
+						iso.closeAppend(appender)
 					}
 				})
 			}
@@ -200,7 +227,7 @@ func BenchmarkIsolationWithState(b *testing.B) {
 	for _, goroutines := range []int{10, 100, 1000, 10000} {
 		b.Run(strconv.Itoa(goroutines), func(b *testing.B) {
 			iso := newIsolation(false)
-			openAppenders := make([]uint64, goroutines)
+			openAppenders := make([]*isolationAppender, goroutines)
 			for appender := range openAppenders {
 				openAppenders[appender], _ = iso.newAppendID(0)
 			}
@@ -220,9 +247,9 @@ func BenchmarkIsolationWithState(b *testing.B) {
 					<-start
 
 					for range iterations {
-						appendID, _ := iso.newAppendID(0)
+						appender, _ := iso.newAppendID(0)
 
-						iso.closeAppend(appendID)
+						iso.closeAppend(appender)
 					}
 				})
 			}
@@ -248,8 +275,8 @@ func BenchmarkIsolationWithState(b *testing.B) {
 			wg.Wait()
 			b.StopTimer()
 
-			for _, appendID := range openAppenders {
-				iso.closeAppend(appendID)
+			for _, appender := range openAppenders {
+				iso.closeAppend(appender)
 			}
 		})
 	}

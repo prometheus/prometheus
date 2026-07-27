@@ -178,7 +178,7 @@ func (h *Head) Appender(context.Context) storage.Appender {
 
 func (h *Head) appender() *headAppender {
 	minValidTime := h.appendableMinValidTime()
-	appendID, cleanupAppendIDsBelow := h.iso.newAppendID(minValidTime) // Every appender gets an ID that is cleared upon commit/rollback.
+	isolationAppender, cleanupAppendIDsBelow := h.iso.newAppendID(minValidTime)
 	return &headAppender{
 		headAppenderBase: headAppenderBase{
 			head:                  h,
@@ -188,8 +188,8 @@ func (h *Head) appender() *headAppender {
 			seriesRefs:            h.getRefSeriesBuffer(),
 			series:                h.getSeriesBuffer(),
 			typesInBatch:          h.getTypeMap(),
-			appendID:              appendID,
 			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
+			isolationAppender:     isolationAppender,
 			storeST:               h.opts.EnableSTStorage.Load(),
 			useXOR2:               h.opts.UseXOR2FloatEncoding(),
 			useHistogramST:        h.opts.EnableHistogramSTEncoding.Load(),
@@ -418,11 +418,12 @@ type headAppenderBase struct {
 
 	typesInBatch map[chunks.HeadSeriesRef]sampleType // Which (one) sample type each series holds in the most recent batch.
 
-	appendID, cleanupAppendIDsBelow uint64
-	closed                          bool
-	storeST                         bool // Whether start-timestamp storage is enabled for this append.
-	useXOR2                         bool // Whether XOR2 encoding is used for float chunks in this append.
-	useHistogramST                  bool // Whether ST-capable histogram chunk encoding is used in this append.
+	cleanupAppendIDsBelow uint64
+	isolationAppender     *isolationAppender
+	closed                bool
+	storeST               bool // Whether start-timestamp storage is enabled for this append.
+	useXOR2               bool // Whether XOR2 encoding is used for float chunks in this append.
+	useHistogramST        bool // Whether ST-capable histogram chunk encoding is used in this append.
 }
 type headAppender struct {
 	headAppenderBase
@@ -1445,7 +1446,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 		default:
 			wasStale, wasHistogram, oldBuckets := series.sampleState()
 			isStale := value.IsStaleNaN(s.V)
-			ok, chunkCreated = series.append(s.ST, s.T, s.V, a.appendID, acc.appendChunkOpts)
+			ok, chunkCreated = series.append(s.ST, s.T, s.V, a.isolationAppender.id(), acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1549,7 +1550,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 			wasStale, wasHistogram, oldBuckets := series.sampleState()
 			isStale := value.IsStaleNaN(s.H.Sum)
 			newBuckets := len(s.H.PositiveBuckets) + len(s.H.NegativeBuckets)
-			ok, chunkCreated = series.appendHistogram(s.ST, s.T, s.H, a.appendID, acc.appendChunkOpts)
+			ok, chunkCreated = series.appendHistogram(s.ST, s.T, s.H, a.isolationAppender.id(), acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1651,7 +1652,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 			wasStale, wasHistogram, oldBuckets := series.sampleState()
 			isStale := value.IsStaleNaN(s.FH.Sum)
 			newBuckets := len(s.FH.PositiveBuckets) + len(s.FH.NegativeBuckets)
-			ok, chunkCreated = series.appendFloatHistogram(s.ST, s.T, s.FH, a.appendID, acc.appendChunkOpts)
+			ok, chunkCreated = series.appendFloatHistogram(s.ST, s.T, s.FH, a.isolationAppender.id(), acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1753,7 +1754,7 @@ func (a *headAppenderBase) Commit() (err error) {
 		defer b.close(h)
 	}
 	defer h.metrics.activeAppenders.Dec()
-	defer h.iso.closeAppend(a.appendID)
+	defer h.iso.closeAppend(a.isolationAppender)
 
 	defer func() {
 		for i := range acc.oooRecords {
@@ -2244,7 +2245,7 @@ func (a *headAppenderBase) Rollback() (err error) {
 	h := a.head
 	defer func() {
 		a.unmarkCreatedSeriesAsPendingCommit()
-		h.iso.closeAppend(a.appendID)
+		h.iso.closeAppend(a.isolationAppender)
 		h.metrics.activeAppenders.Dec()
 		a.closed = true
 		h.putRefSeriesBuffer(a.seriesRefs)
