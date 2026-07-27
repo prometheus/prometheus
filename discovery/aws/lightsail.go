@@ -173,21 +173,21 @@ func NewLightsailDiscovery(conf *LightsailSDConfig, opts discovery.DiscovererOpt
 	return d, nil
 }
 
-func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsailClientAdapter, error) {
+func (d *LightsailDiscovery) lightsailClient(ctx context.Context) error {
 	if d.lightsail != nil {
-		return d.lightsail, nil
+		return nil
 	}
 
 	// Build the HTTP client from the provided HTTPClientConfig.
 	httpClient, err := config.NewClientFromConfig(d.cfg.HTTPClientConfig, "lightsail_sd")
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Resolve the region lazily. See LightsailSDConfig.UnmarshalYAML.
 	d.region, err = loadRegion(ctx, d.cfg.Region)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Build the AWS config with the resolved region.
@@ -210,7 +210,7 @@ func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsailCli
 
 	cfg, err := awsConfig.LoadDefaultConfig(ctx, configOptions...)
 	if err != nil {
-		return nil, fmt.Errorf("could not create aws config: %w", err)
+		return fmt.Errorf("could not create aws config: %w", err)
 	}
 
 	// If the role ARN is set, assume the role to get credentials and set the credentials provider in the config.
@@ -230,11 +230,11 @@ func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsailCli
 		options.HTTPClient = httpClient
 	}))
 
-	return d.lightsail, nil
+	return nil
 }
 
 func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	_, err := d.lightsailClient(ctx)
+	err := d.lightsailClient(ctx)
 	if err != nil {
 		return nil, err
 	}
