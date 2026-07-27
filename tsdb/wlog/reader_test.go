@@ -383,7 +383,7 @@ func TestReaderFuzz_Live(t *testing.T) {
 			require.NoError(t, err)
 			defer seg.Close()
 
-			r := NewLiveReader(logger, nil, seg)
+			r := NewLiveReader(logger, NewLiveReaderMetrics(nil), seg)
 			segmentTicker := time.NewTicker(100 * time.Millisecond)
 			readTicker := time.NewTicker(10 * time.Millisecond)
 
@@ -424,7 +424,7 @@ func TestReaderFuzz_Live(t *testing.T) {
 					seg, err = OpenReadSegment(SegmentName(dir, seg.i+1))
 					require.NoError(t, err)
 					defer seg.Close()
-					r = NewLiveReader(logger, nil, seg)
+					r = NewLiveReader(logger, NewLiveReaderMetrics(nil), seg)
 
 				case <-readTicker.C:
 					readSegment(r)
@@ -476,7 +476,7 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 	require.NoError(t, err)
 	defer seg.Close()
 
-	r := NewLiveReader(logger, nil, seg)
+	r := NewLiveReader(logger, NewLiveReaderMetrics(nil), seg)
 	require.False(t, r.Next(), "expected no records")
 	require.Equal(t, io.EOF, r.Err(), "expected error, got: %v", r.Err())
 }
