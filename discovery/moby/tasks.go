@@ -81,9 +81,7 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 
 		if s.Spec.ContainerSpec != nil {
 			if s.Status.ContainerStatus != nil {
-				for k, v := range containerLabels[s.Status.ContainerStatus.ContainerID] {
-					commonLabels[k] = v
-				}
+				maps.Copy(commonLabels, containerLabels[s.Status.ContainerStatus.ContainerID])
 			}
 			// Then apply container spec labels (higher priority, may override image labels).
 			for k, v := range s.Spec.ContainerSpec.Labels {
