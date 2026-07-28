@@ -62,7 +62,7 @@ Maintaining the release branches for older minor releases happens on a best effo
 
 A few days before a major or minor release, consider updating the dependencies.
 
-Note that we use [Dependabot](.github/dependabot.yml) to continuously update most things automatically. Therefore, most dependencies should be up to date.
+Note that we use [Dependabot](scripts/dependabot.yml) to continuously update most things automatically. Therefore, most dependencies should be up to date.
 Check the [dependencies GitHub label](https://github.com/prometheus/prometheus/labels/dependencies) to see if there are any pending updates.
 
 This bot currently does not manage `+incompatible` and `v0.0.0` in the version specifier for Go modules.
