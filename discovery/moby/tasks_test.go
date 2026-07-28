@@ -828,6 +828,10 @@ host: %s
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
+			if lbls["__meta_dockerswarm_task_container_id"] != "" {
+				lbls["__meta_dockerswarm_container_label_org_opencontainers_image_version"] = model.LabelValue("v-from-image")
+				lbls["__meta_dockerswarm_container_label_org_opencontainers_image_created"] = model.LabelValue("2026-01-01T00:00:00Z")
+			}
 			require.Equal(t, lbls, tg.Targets[i])
 		})
 	}
