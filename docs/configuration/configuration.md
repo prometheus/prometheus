@@ -2289,9 +2289,7 @@ The following meta labels are available on all targets during [relabeling](#rela
 * `__meta_hetzner_public_ipv4`: the public ipv4 address of the server
 * `__meta_hetzner_public_ipv6_network`: the public ipv6 network (/64) of the server
 
-Note that the `__meta_hetzner_datacenter` label is deprecated for both roles `robot` and `hcloud`:
-- For the `robot` role, the replacement label is `__meta_hetzner_robot_datacenter`.
-- For the `hcloud` role, the label will be removed after 1 July 2026. For more details, see the [changelog](https://docs.hetzner.cloud/changelog#2025-12-16-phasing-out-datacenters).
+Note that the `__meta_hetzner_datacenter` label is deprecated for the `robot` role, the replacement label is `__meta_hetzner_robot_datacenter`.
 
 The labels below are only available for targets with `role` set to `hcloud`:
 
