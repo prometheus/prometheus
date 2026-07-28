@@ -186,13 +186,13 @@ func (d *Discovery) getContainerLabels(ctx context.Context, tasks []mobyswarm.Ta
 			continue
 		}
 
-		c, err := d.client.ContainerInspect(ctx, containerID)
-		if err != nil || c.Config == nil {
+		c, err := d.client.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+		if err != nil || c.Container.Config == nil {
 			continue
 		}
 
-		containerLabels := make(map[string]string, len(c.Config.Labels))
-		for k, v := range c.Config.Labels {
+		containerLabels := make(map[string]string, len(c.Container.Config.Labels))
+		for k, v := range c.Container.Config.Labels {
 			ln := strutil.SanitizeLabelName(k)
 			containerLabels[swarmLabelContainerLabelPrefix+ln] = v
 		}
