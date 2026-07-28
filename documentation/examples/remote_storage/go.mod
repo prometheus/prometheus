@@ -69,7 +69,7 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/hashicorp/nomad/api v0.0.0-20260724112153-37c73b2918bd // indirect
-	github.com/hetznercloud/hcloud-go/v2 v2.43.0 // indirect
+	github.com/hetznercloud/hcloud-go/v2 v2.47.0 // indirect
 	github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839 // indirect
 	github.com/ionos-cloud/sdk-go/v6 v6.3.11 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
