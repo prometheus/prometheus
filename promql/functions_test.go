@@ -148,3 +148,46 @@ func TestStartTimestampOutputWhenUseStartTimestampIsDisabled(t *testing.T) {
 		})
 	}
 }
+
+func TestRound(t *testing.T) {
+	// Reproduces the bugs reported in https://github.com/prometheus/prometheus/issues/19198:
+	//   1. round(v, 0) used to return NaN for all samples (division by zero).
+	//   2. round(v, -N) used to produce wrong results because the negative
+	//      inverse flipped math.Floor's rounding direction.
+	tests := []struct {
+		expr     string
+		expected float64
+	}{
+		{expr: "round(foo)", expected: 6},         // default to_nearest=1, 5.5 rounds up
+		{expr: "round(foo, 2)", expected: 6},      // 5.5 rounded to nearest multiple of 2
+		{expr: "round(foo, -2)", expected: 6},     // negative to_nearest must match positive
+		{expr: "round(foo, 0)", expected: 5.5},    // zero to_nearest returns input unchanged
+		{expr: "round(neg_foo, 2)", expected: -4}, // -3.7 rounded to nearest multiple of 2
+		{expr: "round(neg_foo, -2)", expected: -4},
+	}
+	storage := teststorage.New(t)
+	a := storage.Appender(context.Background())
+	metric := labels.FromStrings("__name__", "foo")
+	negMetric := labels.FromStrings("__name__", "neg_foo")
+	a.Append(0, metric, 0, 5.5)
+	a.Append(0, negMetric, 0, -3.7)
+	require.NoError(t, a.Commit())
+
+	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples: 10000,
+		Timeout:    10 * time.Second,
+	})
+	ctx := context.Background()
+
+	for _, tc := range tests {
+		t.Run(tc.expr, func(t *testing.T) {
+			query, err := engine.NewInstantQuery(ctx, storage, nil, tc.expr, timestamp.Time(0))
+			require.NoError(t, err)
+			result := query.Exec(ctx)
+			require.NoError(t, result.Err)
+			vec, _ := result.Vector()
+			require.Len(t, vec, 1)
+			require.Equal(t, tc.expected, vec[0].F, "query: %s", tc.expr)
+		})
+	}
+}
