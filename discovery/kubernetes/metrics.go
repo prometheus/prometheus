@@ -60,6 +60,7 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 		RolePod.String(),
 		RoleService.String(),
 		RoleIngress.String(),
+		RoleGateway.String(),
 	} {
 		for _, evt := range []string{
 			MetricLabelRoleAdd,
