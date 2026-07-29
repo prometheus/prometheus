@@ -107,6 +107,7 @@ require (
 	k8s.io/client-go v0.35.3
 	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.140.0
+	sigs.k8s.io/gateway-api v1.4.1
 )
 
 require (
@@ -114,7 +115,6 @@ require (
 	github.com/hashicorp/go-metrics v0.6.0 // indirect
 	github.com/sony/gobreaker/v2 v2.4.0 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
-	sigs.k8s.io/gateway-api v1.4.1 // indirect
 )
 
 require (
