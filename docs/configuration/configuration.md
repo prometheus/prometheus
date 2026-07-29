@@ -1686,7 +1686,7 @@ created using the `port` parameter defined in the SD configuration.
 
 Available meta labels:
 
-* `__meta_dockerswarm_container_label_<labelname>`: each label of the container, with any unsupported characters converted to an underscore
+* `__meta_dockerswarm_container_label_<labelname>`: each label configured in the task's `ContainerSpec`, with any unsupported characters converted to an underscore. Labels defined in the image are not available through the Docker Swarm task API. To expose image metadata, copy the required values to a container or service label when deploying the service.
 * `__meta_dockerswarm_task_id`: the id of the task
 * `__meta_dockerswarm_task_container_id`: the container id of the task
 * `__meta_dockerswarm_task_desired_state`: the desired state of the task
