@@ -82,6 +82,7 @@ const (
 	RoleEndpointSlice Role = "endpointslice"
 	RoleIngress       Role = "ingress"
 	RoleGateway       Role = "gateway"
+	RoleHTTPRoute     Role = "httproute"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -90,7 +91,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 	switch *c {
-	case RoleNode, RolePod, RoleService, RoleEndpoint, RoleEndpointSlice, RoleIngress, RoleGateway:
+	case RoleNode, RolePod, RoleService, RoleEndpoint, RoleEndpointSlice, RoleIngress, RoleGateway, RoleHTTPRoute:
 		return nil
 	default:
 		return fmt.Errorf("unknown Kubernetes SD role %q", *c)
@@ -145,6 +146,7 @@ type roleSelector struct {
 	endpointslice resourceSelector
 	ingress       resourceSelector
 	gateway       resourceSelector
+	httpRoute     resourceSelector
 }
 
 type SelectorConfig struct {
@@ -215,6 +217,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		RoleNode:          {string(RoleNode)},
 		RoleIngress:       {string(RoleIngress)},
 		RoleGateway:       {string(RoleGateway)},
+		RoleHTTPRoute:     {string(RoleHTTPRoute)},
 	}
 
 	for _, selector := range c.Selectors {
@@ -387,6 +390,9 @@ func mapSelector(rawSelector []SelectorConfig) roleSelector {
 		case RoleGateway:
 			rs.gateway.field = resourceSelectorRaw.Field
 			rs.gateway.label = resourceSelectorRaw.Label
+		case RoleHTTPRoute:
+			rs.httpRoute.field = resourceSelectorRaw.Field
+			rs.httpRoute.label = resourceSelectorRaw.Label
 		case RoleNode:
 			rs.node.field = resourceSelectorRaw.Field
 			rs.node.label = resourceSelectorRaw.Label
@@ -714,6 +720,36 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			d.discoverers = append(d.discoverers, gtw)
 			go gtw.informer.Run(ctx.Done())
 		}
+	case RoleHTTPRoute:
+		var namespaceInformer cache.SharedInformer
+		if d.attachMetadata.Namespace {
+			namespaceInformer = d.newNamespaceInformer(ctx)
+			go namespaceInformer.Run(ctx.Done())
+		}
+
+		for _, namespace := range namespaces {
+			hrc := d.gatewayClient.GatewayV1().HTTPRoutes(namespace)
+			hlw := &cache.ListWatch{
+				ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.selectors.httpRoute.field
+					options.LabelSelector = d.selectors.httpRoute.label
+					return hrc.List(ctx, options)
+				},
+				WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.selectors.httpRoute.field
+					options.LabelSelector = d.selectors.httpRoute.label
+					return hrc.Watch(ctx, options)
+				},
+			}
+			hr := NewHTTPRoute(
+				d.logger.With("role", "httproute"),
+				d.newIndexedHTTPRoutesInformer(hlw),
+				namespaceInformer,
+				d.metrics.eventCount,
+			)
+			d.discoverers = append(d.discoverers, hr)
+			go hr.informer.Run(ctx.Done())
+		}
 	case RoleNode:
 		nodeInformer := d.newNodeInformer(ctx)
 		node := NewNode(d.logger.With("role", "node"), nodeInformer, d.metrics.eventCount)
@@ -996,6 +1032,16 @@ func (d *Discovery) newIndexedGatewaysInformer(glw *cache.ListWatch) cache.Share
 	}
 
 	return d.mustNewSharedIndexInformer(glw, &gatewayv1.Gateway{}, resyncDisabled, indexers)
+}
+
+func (d *Discovery) newIndexedHTTPRoutesInformer(hlw *cache.ListWatch) cache.SharedIndexInformer {
+	indexers := make(map[string]cache.IndexFunc)
+
+	if d.attachMetadata.Namespace {
+		indexers[cache.NamespaceIndex] = cache.MetaNamespaceIndexFunc
+	}
+
+	return d.mustNewSharedIndexInformer(hlw, &gatewayv1.HTTPRoute{}, resyncDisabled, indexers)
 }
 
 func (d *Discovery) informerWatchErrorHandler(ctx context.Context, r *cache.Reflector, err error) {
