@@ -31,9 +31,18 @@ const createQueryFn =
     recordResponseTime?: (time: number) => void;
   }) =>
   async ({ signal }: { signal: AbortSignal }) => {
-    const queryString = params
-      ? `?${new URLSearchParams(params).toString()}`
-      : "";
+    // Prototype (native-metadata): always request the resource attribute
+    // context for instant and range queries so results can be enriched with
+    // per-series metadata. The server ignores this when the native-metadata
+    // feature is disabled.
+    const effectiveParams: Record<string, string> = { ...(params ?? {}) };
+    if (path === "/query" || path === "/query_range") {
+      effectiveParams["context"] = "resource.*";
+    }
+    const queryString =
+      Object.keys(effectiveParams).length > 0
+        ? `?${new URLSearchParams(effectiveParams).toString()}`
+        : "";
 
     try {
       const startTime = Date.now();
