@@ -108,9 +108,9 @@ type ExemplarStorage interface {
 type Queryable interface {
 	// Querier returns a new Querier on the storage.
 	//
-	// mint and maxt specify the time bounds of the raw samples required to
-	// evaluate a query. They may be larger than the query's evaluation time
-	// range.
+	// mint and maxt are inclusive time bounds in milliseconds. The returned
+	// Querier is scoped to this range and its methods only consider series
+	// data within [mint, maxt].
 	Querier(mint, maxt int64) (Querier, error)
 }
 
