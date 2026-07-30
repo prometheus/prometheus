@@ -74,6 +74,14 @@ func unsafeMarshalSeriesJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 }
 
 func marshalSeriesJSON(s promql.Series, stream *jsoniter.Stream) {
+	marshalSeriesJSONWithContext(s, nil, stream)
+}
+
+// marshalSeriesJSONWithContext is like marshalSeriesJSON but additionally emits
+// a "context" field describing which context table entry applies to which
+// samples. runs is a change-point list indexed into s.Floats (or s.Histograms
+// for histogram-only series); a nil/empty runs omits the field.
+func marshalSeriesJSONWithContext(s promql.Series, runs []contextRun, stream *jsoniter.Stream) {
 	stream.WriteObjectStart()
 	stream.WriteObjectField(`metric`)
 	marshalLabelsJSON(s.Metric, stream)
@@ -100,7 +108,42 @@ func marshalSeriesJSON(s promql.Series, stream *jsoniter.Stream) {
 	if len(s.Histograms) > 0 {
 		stream.WriteArrayEnd()
 	}
+	marshalSeriesContextJSON(runs, stream)
 	stream.WriteObjectEnd()
+}
+
+// marshalSeriesContextJSON writes the "context" field for a matrix series. A
+// single run starting at index 0 collapses to a bare id string; otherwise it is
+// a change-point array of {"i":<index>,"id":<id|null>} entries. Nothing is
+// written when there is no resolvable context.
+func marshalSeriesContextJSON(runs []contextRun, stream *jsoniter.Stream) {
+	if len(runs) == 0 {
+		return
+	}
+	stream.WriteMore()
+	stream.WriteObjectField(`context`)
+	if len(runs) == 1 && runs[0].StartIndex == 0 && runs[0].ID != "" {
+		stream.WriteString(runs[0].ID)
+		return
+	}
+	stream.WriteArrayStart()
+	for i, run := range runs {
+		if i != 0 {
+			stream.WriteMore()
+		}
+		stream.WriteObjectStart()
+		stream.WriteObjectField(`i`)
+		stream.WriteInt(run.StartIndex)
+		stream.WriteMore()
+		stream.WriteObjectField(`id`)
+		if run.ID == "" {
+			stream.WriteNil()
+		} else {
+			stream.WriteString(run.ID)
+		}
+		stream.WriteObjectEnd()
+	}
+	stream.WriteArrayEnd()
 }
 
 // In the Prometheus API we render an empty object as `[]` or similar.
@@ -135,6 +178,13 @@ func unsafeMarshalSampleJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 }
 
 func marshalSampleJSON(s promql.Sample, stream *jsoniter.Stream) {
+	marshalSampleJSONWithContext(s, "", stream)
+}
+
+// marshalSampleJSONWithContext is like marshalSampleJSON but additionally emits
+// a "context" field with the given context table id. An empty contextID omits
+// the field.
+func marshalSampleJSONWithContext(s promql.Sample, contextID string, stream *jsoniter.Stream) {
 	stream.WriteObjectStart()
 	stream.WriteObjectField(`metric`)
 	marshalLabelsJSON(s.Metric, stream)
@@ -153,6 +203,11 @@ func marshalSampleJSON(s promql.Sample, stream *jsoniter.Stream) {
 		jsonutil.MarshalHistogram(s.H, stream)
 	}
 	stream.WriteArrayEnd()
+	if contextID != "" {
+		stream.WriteMore()
+		stream.WriteObjectField(`context`)
+		stream.WriteString(contextID)
+	}
 	stream.WriteObjectEnd()
 }
 

@@ -54,6 +54,7 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 		false, // enableAdmin
 		false, // enableSearch
 		0,     // maxSearchLimit
+		true,  // enableNativeMetadata
 		params.Logger,
 		func(ctx context.Context) RulesRetriever {
 			return adaptRulesRetriever(params.RulesRetriever(ctx))

@@ -242,22 +242,25 @@ type API struct {
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 	globalURLOptions      GlobalURLOptions
 
-	db                  TSDBAdminStats
-	dbDir               string
-	enableAdmin         bool
-	enableSearch        bool
-	maxSearchLimit      int
-	metaCache           *searchMetadataCache
-	logger              *slog.Logger
-	CORSOrigin          *regexp.Regexp
-	buildInfo           *PrometheusVersion
-	runtimeInfo         func() (RuntimeInfo, error)
-	gatherer            prometheus.Gatherer
-	isAgent             bool
-	statsRenderer       StatsRenderer
-	customStatsRenderer bool // See validateStatsParam: a custom StatsRenderer's `stats` vocabulary is not validated.
-	notificationsGetter func() []notifications.Notification
-	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
+	db             TSDBAdminStats
+	dbDir          string
+	enableAdmin    bool
+	enableSearch   bool
+	maxSearchLimit int
+	metaCache      *searchMetadataCache
+	// enableNativeMetadata gates the native-metadata query surface, currently
+	// the context= enrichment of /query and /query_range results.
+	enableNativeMetadata bool
+	logger               *slog.Logger
+	CORSOrigin           *regexp.Regexp
+	buildInfo            *PrometheusVersion
+	runtimeInfo          func() (RuntimeInfo, error)
+	gatherer             prometheus.Gatherer
+	isAgent              bool
+	statsRenderer        StatsRenderer
+	customStatsRenderer  bool // See validateStatsParam: a custom StatsRenderer's `stats` vocabulary is not validated.
+	notificationsGetter  func() []notifications.Notification
+	notificationsSub     func() (<-chan notifications.Notification, func(), bool)
 	// Allows customizing the default mapping
 	overrideErrorCode OverrideErrorCode
 
@@ -291,6 +294,7 @@ func NewAPI(
 	enableAdmin bool,
 	enableSearch bool,
 	maxSearchLimit int,
+	enableNativeMetadata bool,
 	logger *slog.Logger,
 	rr func(context.Context) RulesRetriever,
 	remoteReadSampleLimit int,
@@ -326,31 +330,32 @@ func NewAPI(
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 
-		now:                 time.Now,
-		config:              configFunc,
-		flagsMap:            flagsMap,
-		ready:               readyFunc,
-		globalURLOptions:    globalURLOptions,
-		db:                  db,
-		dbDir:               dbDir,
-		enableAdmin:         enableAdmin,
-		enableSearch:        enableSearch,
-		maxSearchLimit:      maxSearchLimit,
-		metaCache:           &searchMetadataCache{},
-		rulesRetriever:      rr,
-		logger:              logger,
-		CORSOrigin:          corsOrigin,
-		runtimeInfo:         runtimeInfo,
-		buildInfo:           buildInfo,
-		gatherer:            gatherer,
-		isAgent:             isAgent,
-		statsRenderer:       DefaultStatsRenderer,
-		notificationsGetter: notificationsGetter,
-		notificationsSub:    notificationsSub,
-		overrideErrorCode:   overrideErrorCode,
-		featureRegistry:     featureRegistry,
-		openAPIBuilder:      NewOpenAPIBuilder(openAPIOptions, logger),
-		parser:              promqlParser,
+		now:                  time.Now,
+		config:               configFunc,
+		flagsMap:             flagsMap,
+		ready:                readyFunc,
+		globalURLOptions:     globalURLOptions,
+		db:                   db,
+		dbDir:                dbDir,
+		enableAdmin:          enableAdmin,
+		enableSearch:         enableSearch,
+		maxSearchLimit:       maxSearchLimit,
+		enableNativeMetadata: enableNativeMetadata,
+		metaCache:            &searchMetadataCache{},
+		rulesRetriever:       rr,
+		logger:               logger,
+		CORSOrigin:           corsOrigin,
+		runtimeInfo:          runtimeInfo,
+		buildInfo:            buildInfo,
+		gatherer:             gatherer,
+		isAgent:              isAgent,
+		statsRenderer:        DefaultStatsRenderer,
+		notificationsGetter:  notificationsGetter,
+		notificationsSub:     notificationsSub,
+		overrideErrorCode:    overrideErrorCode,
+		featureRegistry:      featureRegistry,
+		openAPIBuilder:       NewOpenAPIBuilder(openAPIOptions, logger),
+		parser:               promqlParser,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -511,6 +516,10 @@ type QueryData struct {
 	ResultType parser.ValueType `json:"resultType"`
 	Result     parser.Value     `json:"result"`
 	Stats      stats.QueryStats `json:"stats,omitempty"`
+	// Contexts is the shared, deduplicated native-metadata table populated when
+	// the context= parameter is used (native-metadata feature). Series in Result
+	// reference entries here by id. Omitted when enrichment is not requested.
+	Contexts map[string]SeriesContext `json:"contexts,omitempty"`
 }
 
 func invalidParamError(err error, parameter string) apiFuncResult {
@@ -588,11 +597,19 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}
 	qs := sr(ctx, qry.Stats(), r.FormValue("stats"))
 
-	return apiFuncResult{&QueryData{
+	qd := &QueryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
 		Stats:      qs,
-	}, nil, warnings, qry.Close}
+	}
+	tsMs := timestamp.FromTime(ts)
+	if warn, err := api.applyContext(r, qd, tsMs, tsMs); err != nil {
+		return invalidParamError(err, "context")
+	} else if warn != nil {
+		warnings = warnings.Add(warn)
+	}
+
+	return apiFuncResult{qd, nil, warnings, qry.Close}
 }
 
 func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
@@ -746,11 +763,18 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	}
 	qs := sr(ctx, qry.Stats(), r.FormValue("stats"))
 
-	return apiFuncResult{&QueryData{
+	qd := &QueryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
 		Stats:      qs,
-	}, nil, warnings, qry.Close}
+	}
+	if warn, err := api.applyContext(r, qd, timestamp.FromTime(start), timestamp.FromTime(end)); err != nil {
+		return invalidParamError(err, "context")
+	} else if warn != nil {
+		warnings = warnings.Add(warn)
+	}
+
+	return apiFuncResult{qd, nil, warnings, qry.Close}
 }
 
 func (api *API) queryExemplars(r *http.Request) apiFuncResult {

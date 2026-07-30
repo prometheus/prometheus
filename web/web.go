@@ -311,6 +311,7 @@ type Options struct {
 	IsAgent                    bool
 	STZeroIngestionEnabled     bool
 	EnableTypeAndUnitLabels    bool
+	EnableNativeMetadata       bool
 	AppendMetadata             bool
 	AppName                    string
 
@@ -408,6 +409,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		h.options.EnableAdminAPI,
 		h.options.EnableSearch,
 		h.options.MaxSearchLimit,
+		h.options.EnableNativeMetadata,
 		logger,
 		FactoryRr,
 		h.options.RemoteReadSampleLimit,
