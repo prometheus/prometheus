@@ -4687,8 +4687,8 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 		}
 
 	pathLoop:
-		for i := len(path) - 1; i >= 0; i-- { // Walk backwards up the path.
-			switch p := path[i].(type) {
+		for _, v := range slices.Backward(path) { // Walk backwards up the path.
+			switch p := v.(type) {
 			case *parser.SubqueryExpr:
 				// If we ever see a subquery in the path, we
 				// will not skip the buckets. We need the

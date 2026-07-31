@@ -403,7 +403,7 @@ func topKByScore(values []string, filter Filter, limit int) []SearchResult {
 	out := make([]SearchResult, len(h))
 	// Pop returns worst-first under our heap order; place results from the tail
 	// so the final slice is best-first (Score desc, Value asc).
-	for i := len(out) - 1; i >= 0; i-- {
+	for i := range slices.Backward(out) {
 		var r SearchResult
 		r, h = h.pop()
 		out[i] = r
