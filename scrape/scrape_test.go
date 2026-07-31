@@ -6683,11 +6683,11 @@ func testScrapeLoopSeriesAddedDuplicates(t *testing.T, appV2 bool) {
 
 func TestScrapeLoopSeriesAddedDuplicates_MetricRelabeling(t *testing.T) {
 	foreachAppendable(t, func(t *testing.T, appV2 bool) {
-		testScrapeLoopSeriesAddedDuplicates_MetricRelabeling(t, appV2)
+		testScrapeLoopSeriesAddedDuplicatesMetricRelabeling(t, appV2)
 	})
 }
 
-func testScrapeLoopSeriesAddedDuplicates_MetricRelabeling(t *testing.T, appV2 bool) {
+func testScrapeLoopSeriesAddedDuplicatesMetricRelabeling(t *testing.T, appV2 bool) {
 	sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2), func(sl *scrapeLoop) {
 		// Mutator drops the "drop" label.
 		sl.sampleMutator = func(l labels.Labels) labels.Labels {
