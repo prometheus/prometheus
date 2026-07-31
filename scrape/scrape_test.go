@@ -6681,6 +6681,34 @@ func testScrapeLoopSeriesAddedDuplicates(t *testing.T, appV2 bool) {
 	require.Equal(t, 4.0, prom_testutil.ToFloat64(sl.metrics.targetScrapeSampleDuplicate))
 }
 
+func TestScrapeLoopSeriesAddedDuplicates_MetricRelabeling(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testScrapeLoopSeriesAddedDuplicates_MetricRelabeling(t, appV2)
+	})
+}
+
+func testScrapeLoopSeriesAddedDuplicates_MetricRelabeling(t *testing.T, appV2 bool) {
+	sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2), func(sl *scrapeLoop) {
+		// Mutator drops the "drop" label.
+		sl.sampleMutator = func(l labels.Labels) labels.Labels {
+			b := labels.NewBuilder(l)
+			b.Del("drop")
+			return b.Labels()
+		}
+	})
+
+	// test_metric{drop="a"} and test_metric{drop="b"} both become test_metric{}
+	// Since they map to the same post-relabeling labelset, it should be treated as a duplicate.
+	app := sl.appender()
+	total, added, seriesAdded, err := app.append([]byte("test_metric{drop=\"a\"} 1\ntest_metric{drop=\"b\"} 2\n"), "text/plain", time.Time{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, 2, total)
+	require.Equal(t, 2, added)
+	require.Equal(t, 1, seriesAdded) // Only one series should be added.
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(sl.metrics.targetScrapeSampleDuplicate))
+}
+
 // This tests running a full scrape loop and checking that the scrape option
 // `native_histogram_min_bucket_factor` is used correctly.
 func TestNativeHistogramMaxSchemaSet(t *testing.T) {
