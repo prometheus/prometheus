@@ -629,46 +629,21 @@ func addServerlessCacheTargets(tg *targetgroup.Group, cache *types.ServerlessCac
 		elasticacheLabelServerlessCacheMajorEngineVersion: model.LabelValue(*cache.MajorEngineVersion),
 	}
 
-	if cache.Description != nil {
-		labels[elasticacheLabelServerlessCacheDescription] = model.LabelValue(*cache.Description)
-	}
-
-	if cache.CreateTime != nil {
-		labels[elasticacheLabelServerlessCacheCreateTime] = model.LabelValue(cache.CreateTime.Format(time.RFC3339))
-	}
-
-	if cache.KmsKeyId != nil {
-		labels[elasticacheLabelServerlessCacheKmsKeyID] = model.LabelValue(*cache.KmsKeyId)
-	}
-
-	if cache.UserGroupId != nil {
-		labels[elasticacheLabelServerlessCacheUserGroupID] = model.LabelValue(*cache.UserGroupId)
-	}
-
-	if cache.DailySnapshotTime != nil {
-		labels[elasticacheLabelServerlessCacheDailySnapshotTime] = model.LabelValue(*cache.DailySnapshotTime)
-	}
-
-	if cache.SnapshotRetentionLimit != nil {
-		labels[elasticacheLabelServerlessCacheSnapshotRetentionLimit] = model.LabelValue(strconv.Itoa(int(*cache.SnapshotRetentionLimit)))
-	}
+	setStringLabel(labels, elasticacheLabelServerlessCacheDescription, cache.Description)
+	setTimeLabel(labels, elasticacheLabelServerlessCacheCreateTime, cache.CreateTime)
+	setStringLabel(labels, elasticacheLabelServerlessCacheKmsKeyID, cache.KmsKeyId)
+	setStringLabel(labels, elasticacheLabelServerlessCacheUserGroupID, cache.UserGroupId)
+	setStringLabel(labels, elasticacheLabelServerlessCacheDailySnapshotTime, cache.DailySnapshotTime)
+	setIntLabel(labels, elasticacheLabelServerlessCacheSnapshotRetentionLimit, cache.SnapshotRetentionLimit)
 
 	if cache.Endpoint != nil {
-		if cache.Endpoint.Address != nil {
-			labels[elasticacheLabelServerlessCacheEndpointAddress] = model.LabelValue(*cache.Endpoint.Address)
-		}
-		if cache.Endpoint.Port != nil {
-			labels[elasticacheLabelServerlessCacheEndpointPort] = model.LabelValue(strconv.Itoa(int(*cache.Endpoint.Port)))
-		}
+		setStringLabel(labels, elasticacheLabelServerlessCacheEndpointAddress, cache.Endpoint.Address)
+		setIntLabel(labels, elasticacheLabelServerlessCacheEndpointPort, cache.Endpoint.Port)
 	}
 
 	if cache.ReaderEndpoint != nil {
-		if cache.ReaderEndpoint.Address != nil {
-			labels[elasticacheLabelServerlessCacheReaderEndpointAddress] = model.LabelValue(*cache.ReaderEndpoint.Address)
-		}
-		if cache.ReaderEndpoint.Port != nil {
-			labels[elasticacheLabelServerlessCacheReaderEndpointPort] = model.LabelValue(strconv.Itoa(int(*cache.ReaderEndpoint.Port)))
-		}
+		setStringLabel(labels, elasticacheLabelServerlessCacheReaderEndpointAddress, cache.ReaderEndpoint.Address)
+		setIntLabel(labels, elasticacheLabelServerlessCacheReaderEndpointPort, cache.ReaderEndpoint.Port)
 	}
 
 	for i, sgID := range cache.SecurityGroupIds {
@@ -681,21 +656,13 @@ func addServerlessCacheTargets(tg *targetgroup.Group, cache *types.ServerlessCac
 
 	if cache.CacheUsageLimits != nil {
 		if cache.CacheUsageLimits.DataStorage != nil {
-			if cache.CacheUsageLimits.DataStorage.Maximum != nil {
-				labels[elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorageMaximum] = model.LabelValue(strconv.Itoa(int(*cache.CacheUsageLimits.DataStorage.Maximum)))
-			}
-			if cache.CacheUsageLimits.DataStorage.Minimum != nil {
-				labels[elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorageMinimum] = model.LabelValue(strconv.Itoa(int(*cache.CacheUsageLimits.DataStorage.Minimum)))
-			}
+			setIntLabel(labels, elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorageMaximum, cache.CacheUsageLimits.DataStorage.Maximum)
+			setIntLabel(labels, elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorageMinimum, cache.CacheUsageLimits.DataStorage.Minimum)
 			labels[elasticacheLabelServerlessCacheCacheUsageLimitCacheDataStorageUnit] = model.LabelValue(cache.CacheUsageLimits.DataStorage.Unit)
 		}
 		if cache.CacheUsageLimits.ECPUPerSecond != nil {
-			if cache.CacheUsageLimits.ECPUPerSecond.Maximum != nil {
-				labels[elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecondMaximum] = model.LabelValue(strconv.Itoa(int(*cache.CacheUsageLimits.ECPUPerSecond.Maximum)))
-			}
-			if cache.CacheUsageLimits.ECPUPerSecond.Minimum != nil {
-				labels[elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecondMinimum] = model.LabelValue(strconv.Itoa(int(*cache.CacheUsageLimits.ECPUPerSecond.Minimum)))
-			}
+			setIntLabel(labels, elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecondMaximum, cache.CacheUsageLimits.ECPUPerSecond.Maximum)
+			setIntLabel(labels, elasticacheLabelServerlessCacheCacheUsageLimitECPUPerSecondMinimum, cache.CacheUsageLimits.ECPUPerSecond.Minimum)
 		}
 	}
 
@@ -724,163 +691,71 @@ func addCacheClusterTargets(tg *targetgroup.Group, cluster *types.CacheCluster, 
 		elasticacheLabelCacheClusterStatus: model.LabelValue(*cluster.CacheClusterStatus),
 	}
 
-	if cluster.AtRestEncryptionEnabled != nil {
-		commonLabels[elasticacheLabelCacheClusterAtRestEncryptionEnabled] = model.LabelValue(strconv.FormatBool(*cluster.AtRestEncryptionEnabled))
+	setBoolLabel(commonLabels, elasticacheLabelCacheClusterAtRestEncryptionEnabled, cluster.AtRestEncryptionEnabled)
+	setBoolLabel(commonLabels, elasticacheLabelCacheClusterAuthTokenEnabled, cluster.AuthTokenEnabled)
+	setTimeLabel(commonLabels, elasticacheLabelCacheClusterAuthTokenLastModified, cluster.AuthTokenLastModifiedDate)
+	setBoolLabel(commonLabels, elasticacheLabelCacheClusterAutoMinorVersionUpgrade, cluster.AutoMinorVersionUpgrade)
+	setTimeLabel(commonLabels, elasticacheLabelCacheClusterCreateTime, cluster.CacheClusterCreateTime)
+	setStringLabel(commonLabels, elasticacheLabelCacheClusterNodeType, cluster.CacheNodeType)
+
+	if cluster.CacheParameterGroup != nil {
+		setStringLabel(commonLabels, elasticacheLabelCacheClusterParameterGroup, cluster.CacheParameterGroup.CacheParameterGroupName)
 	}
 
-	if cluster.AuthTokenEnabled != nil {
-		commonLabels[elasticacheLabelCacheClusterAuthTokenEnabled] = model.LabelValue(strconv.FormatBool(*cluster.AuthTokenEnabled))
-	}
-
-	if cluster.AuthTokenLastModifiedDate != nil {
-		commonLabels[elasticacheLabelCacheClusterAuthTokenLastModified] = model.LabelValue(cluster.AuthTokenLastModifiedDate.Format(time.RFC3339))
-	}
-
-	if cluster.AutoMinorVersionUpgrade != nil {
-		commonLabels[elasticacheLabelCacheClusterAutoMinorVersionUpgrade] = model.LabelValue(strconv.FormatBool(*cluster.AutoMinorVersionUpgrade))
-	}
-
-	if cluster.CacheClusterCreateTime != nil {
-		commonLabels[elasticacheLabelCacheClusterCreateTime] = model.LabelValue(cluster.CacheClusterCreateTime.Format(time.RFC3339))
-	}
-
-	if cluster.CacheNodeType != nil {
-		commonLabels[elasticacheLabelCacheClusterNodeType] = model.LabelValue(*cluster.CacheNodeType)
-	}
-
-	if cluster.CacheParameterGroup != nil && cluster.CacheParameterGroup.CacheParameterGroupName != nil {
-		commonLabels[elasticacheLabelCacheClusterParameterGroup] = model.LabelValue(*cluster.CacheParameterGroup.CacheParameterGroupName)
-	}
-
-	if cluster.CacheSubnetGroupName != nil {
-		commonLabels[elasticacheLabelCacheClusterSubnetGroupName] = model.LabelValue(*cluster.CacheSubnetGroupName)
-	}
-
-	if cluster.ClientDownloadLandingPage != nil {
-		commonLabels[elasticacheLabelCacheClusterClientDownloadLandingPage] = model.LabelValue(*cluster.ClientDownloadLandingPage)
-	}
+	setStringLabel(commonLabels, elasticacheLabelCacheClusterSubnetGroupName, cluster.CacheSubnetGroupName)
+	setStringLabel(commonLabels, elasticacheLabelCacheClusterClientDownloadLandingPage, cluster.ClientDownloadLandingPage)
 
 	if cluster.ConfigurationEndpoint != nil {
-		if cluster.ConfigurationEndpoint.Address != nil {
-			commonLabels[elasticacheLabelCacheClusterConfigurationEndpointAddress] = model.LabelValue(*cluster.ConfigurationEndpoint.Address)
-		}
-		if cluster.ConfigurationEndpoint.Port != nil {
-			commonLabels[elasticacheLabelCacheClusterConfigurationEndpointPort] = model.LabelValue(strconv.Itoa(int(*cluster.ConfigurationEndpoint.Port)))
-		}
+		setStringLabel(commonLabels, elasticacheLabelCacheClusterConfigurationEndpointAddress, cluster.ConfigurationEndpoint.Address)
+		setIntLabel(commonLabels, elasticacheLabelCacheClusterConfigurationEndpointPort, cluster.ConfigurationEndpoint.Port)
 	}
 
-	if cluster.Engine != nil {
-		commonLabels[elasticacheLabelCacheClusterEngine] = model.LabelValue(*cluster.Engine)
-	}
-
-	if cluster.EngineVersion != nil {
-		commonLabels[elasticacheLabelCacheClusterEngineVersion] = model.LabelValue(*cluster.EngineVersion)
-	}
-
-	if len(cluster.IpDiscovery) > 0 {
-		commonLabels[elasticacheLabelCacheClusterIPDiscovery] = model.LabelValue(cluster.IpDiscovery)
-	}
-
-	if len(cluster.NetworkType) > 0 {
-		commonLabels[elasticacheLabelCacheClusterNetworkType] = model.LabelValue(cluster.NetworkType)
-	}
+	setStringLabel(commonLabels, elasticacheLabelCacheClusterEngine, cluster.Engine)
+	setStringLabel(commonLabels, elasticacheLabelCacheClusterEngineVersion, cluster.EngineVersion)
+	setNonEmptyLabel(commonLabels, elasticacheLabelCacheClusterIPDiscovery, cluster.IpDiscovery)
+	setNonEmptyLabel(commonLabels, elasticacheLabelCacheClusterNetworkType, cluster.NetworkType)
 
 	if cluster.NotificationConfiguration != nil {
-		if cluster.NotificationConfiguration.TopicArn != nil {
-			commonLabels[elasticacheLabelCacheClusterNotificationTopicARN] = model.LabelValue(*cluster.NotificationConfiguration.TopicArn)
-		}
-		if cluster.NotificationConfiguration.TopicStatus != nil {
-			commonLabels[elasticacheLabelCacheClusterNotificationTopicStatus] = model.LabelValue(*cluster.NotificationConfiguration.TopicStatus)
-		}
+		setStringLabel(commonLabels, elasticacheLabelCacheClusterNotificationTopicARN, cluster.NotificationConfiguration.TopicArn)
+		setStringLabel(commonLabels, elasticacheLabelCacheClusterNotificationTopicStatus, cluster.NotificationConfiguration.TopicStatus)
 	}
 
-	if cluster.NumCacheNodes != nil {
-		commonLabels[elasticacheLabelCacheClusterNumCacheNodes] = model.LabelValue(strconv.Itoa(int(*cluster.NumCacheNodes)))
-	}
-
-	if cluster.PreferredAvailabilityZone != nil {
-		commonLabels[elasticacheLabelCacheClusterPreferredAvailabilityZone] = model.LabelValue(*cluster.PreferredAvailabilityZone)
-	}
-
-	if cluster.PreferredMaintenanceWindow != nil {
-		commonLabels[elasticacheLabelCacheClusterPreferredMaintenanceWindow] = model.LabelValue(*cluster.PreferredMaintenanceWindow)
-	}
-
-	if cluster.PreferredOutpostArn != nil {
-		commonLabels[elasticacheLabelCacheClusterPreferredOutpostARN] = model.LabelValue(*cluster.PreferredOutpostArn)
-	}
-
-	if cluster.ReplicationGroupId != nil {
-		commonLabels[elasticacheLabelCacheClusterReplicationGroupID] = model.LabelValue(*cluster.ReplicationGroupId)
-	}
-
-	if cluster.ReplicationGroupLogDeliveryEnabled != nil {
-		commonLabels[elasticacheLabelCacheClusterReplicationGroupLogDeliveryEnabled] = model.LabelValue(strconv.FormatBool(*cluster.ReplicationGroupLogDeliveryEnabled))
-	}
-
-	if cluster.SnapshotRetentionLimit != nil {
-		commonLabels[elasticacheLabelCacheClusterSnapshotRetentionLimit] = model.LabelValue(strconv.Itoa(int(*cluster.SnapshotRetentionLimit)))
-	}
-
-	if cluster.SnapshotWindow != nil {
-		commonLabels[elasticacheLabelCacheClusterSnapshotWindow] = model.LabelValue(*cluster.SnapshotWindow)
-	}
-
-	if cluster.TransitEncryptionEnabled != nil {
-		commonLabels[elasticacheLabelCacheClusterTransitEncryptionEnabled] = model.LabelValue(strconv.FormatBool(*cluster.TransitEncryptionEnabled))
-	}
-
-	if len(cluster.TransitEncryptionMode) > 0 {
-		commonLabels[elasticacheLabelCacheClusterTransitEncryptionMode] = model.LabelValue(cluster.TransitEncryptionMode)
-	}
+	setIntLabel(commonLabels, elasticacheLabelCacheClusterNumCacheNodes, cluster.NumCacheNodes)
+	setStringLabel(commonLabels, elasticacheLabelCacheClusterPreferredAvailabilityZone, cluster.PreferredAvailabilityZone)
+	setStringLabel(commonLabels, elasticacheLabelCacheClusterPreferredMaintenanceWindow, cluster.PreferredMaintenanceWindow)
+	setStringLabel(commonLabels, elasticacheLabelCacheClusterPreferredOutpostARN, cluster.PreferredOutpostArn)
+	setStringLabel(commonLabels, elasticacheLabelCacheClusterReplicationGroupID, cluster.ReplicationGroupId)
+	setBoolLabel(commonLabels, elasticacheLabelCacheClusterReplicationGroupLogDeliveryEnabled, cluster.ReplicationGroupLogDeliveryEnabled)
+	setIntLabel(commonLabels, elasticacheLabelCacheClusterSnapshotRetentionLimit, cluster.SnapshotRetentionLimit)
+	setStringLabel(commonLabels, elasticacheLabelCacheClusterSnapshotWindow, cluster.SnapshotWindow)
+	setBoolLabel(commonLabels, elasticacheLabelCacheClusterTransitEncryptionEnabled, cluster.TransitEncryptionEnabled)
+	setNonEmptyLabel(commonLabels, elasticacheLabelCacheClusterTransitEncryptionMode, cluster.TransitEncryptionMode)
 
 	// Log delivery configurations (slice)
 	for i, logDelivery := range cluster.LogDeliveryConfigurations {
-		if len(logDelivery.DestinationType) > 0 {
-			commonLabels[model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterLogDeliveryConfigurationDestinationType, i))] = model.LabelValue(logDelivery.DestinationType)
-		}
-		if len(logDelivery.LogFormat) > 0 {
-			commonLabels[model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterLogDeliveryConfigurationLogFormat, i))] = model.LabelValue(logDelivery.LogFormat)
-		}
-		if len(logDelivery.LogType) > 0 {
-			commonLabels[model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterLogDeliveryConfigurationLogType, i))] = model.LabelValue(logDelivery.LogType)
-		}
-		if len(logDelivery.Status) > 0 {
-			commonLabels[model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterLogDeliveryConfigurationStatus, i))] = model.LabelValue(logDelivery.Status)
-		}
-		if logDelivery.Message != nil {
-			commonLabels[model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterLogDeliveryConfigurationMessage, i))] = model.LabelValue(*logDelivery.Message)
-		}
+		setNonEmptyLabel(commonLabels, model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterLogDeliveryConfigurationDestinationType, i)), logDelivery.DestinationType)
+		setNonEmptyLabel(commonLabels, model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterLogDeliveryConfigurationLogFormat, i)), logDelivery.LogFormat)
+		setNonEmptyLabel(commonLabels, model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterLogDeliveryConfigurationLogType, i)), logDelivery.LogType)
+		setNonEmptyLabel(commonLabels, model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterLogDeliveryConfigurationStatus, i)), logDelivery.Status)
+		setStringLabel(commonLabels, model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterLogDeliveryConfigurationMessage, i)), logDelivery.Message)
 		if logDelivery.DestinationDetails != nil {
-			if logDelivery.DestinationDetails.CloudWatchLogsDetails != nil && logDelivery.DestinationDetails.CloudWatchLogsDetails.LogGroup != nil {
-				commonLabels[model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterLogDeliveryConfigurationLogGroup, i))] = model.LabelValue(*logDelivery.DestinationDetails.CloudWatchLogsDetails.LogGroup)
+			if logDelivery.DestinationDetails.CloudWatchLogsDetails != nil {
+				setStringLabel(commonLabels, model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterLogDeliveryConfigurationLogGroup, i)), logDelivery.DestinationDetails.CloudWatchLogsDetails.LogGroup)
 			}
-			if logDelivery.DestinationDetails.KinesisFirehoseDetails != nil && logDelivery.DestinationDetails.KinesisFirehoseDetails.DeliveryStream != nil {
-				commonLabels[model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterLogDeliveryConfigurationDeliveryStream, i))] = model.LabelValue(*logDelivery.DestinationDetails.KinesisFirehoseDetails.DeliveryStream)
+			if logDelivery.DestinationDetails.KinesisFirehoseDetails != nil {
+				setStringLabel(commonLabels, model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterLogDeliveryConfigurationDeliveryStream, i)), logDelivery.DestinationDetails.KinesisFirehoseDetails.DeliveryStream)
 			}
 		}
 	}
 
 	// Pending modified values
 	if cluster.PendingModifiedValues != nil {
-		if len(cluster.PendingModifiedValues.AuthTokenStatus) > 0 {
-			commonLabels[elasticacheLabelCacheClusterPendingModifiedValuesAuthTokenStatus] = model.LabelValue(cluster.PendingModifiedValues.AuthTokenStatus)
-		}
-		if cluster.PendingModifiedValues.CacheNodeType != nil {
-			commonLabels[elasticacheLabelCacheClusterPendingModifiedValuesCacheNodeType] = model.LabelValue(*cluster.PendingModifiedValues.CacheNodeType)
-		}
-		if cluster.PendingModifiedValues.EngineVersion != nil {
-			commonLabels[elasticacheLabelCacheClusterPendingModifiedValuesEngineVersion] = model.LabelValue(*cluster.PendingModifiedValues.EngineVersion)
-		}
-		if cluster.PendingModifiedValues.NumCacheNodes != nil {
-			commonLabels[elasticacheLabelCacheClusterPendingModifiedValuesNumCacheNodes] = model.LabelValue(strconv.Itoa(int(*cluster.PendingModifiedValues.NumCacheNodes)))
-		}
-		if cluster.PendingModifiedValues.TransitEncryptionEnabled != nil {
-			commonLabels[elasticacheLabelCacheClusterPendingModifiedValuesTransitEncryptionEnabled] = model.LabelValue(strconv.FormatBool(*cluster.PendingModifiedValues.TransitEncryptionEnabled))
-		}
-		if len(cluster.PendingModifiedValues.TransitEncryptionMode) > 0 {
-			commonLabels[elasticacheLabelCacheClusterPendingModifiedValuesTransitEncryptionMode] = model.LabelValue(cluster.PendingModifiedValues.TransitEncryptionMode)
-		}
+		setNonEmptyLabel(commonLabels, elasticacheLabelCacheClusterPendingModifiedValuesAuthTokenStatus, cluster.PendingModifiedValues.AuthTokenStatus)
+		setStringLabel(commonLabels, elasticacheLabelCacheClusterPendingModifiedValuesCacheNodeType, cluster.PendingModifiedValues.CacheNodeType)
+		setStringLabel(commonLabels, elasticacheLabelCacheClusterPendingModifiedValuesEngineVersion, cluster.PendingModifiedValues.EngineVersion)
+		setIntLabel(commonLabels, elasticacheLabelCacheClusterPendingModifiedValuesNumCacheNodes, cluster.PendingModifiedValues.NumCacheNodes)
+		setBoolLabel(commonLabels, elasticacheLabelCacheClusterPendingModifiedValuesTransitEncryptionEnabled, cluster.PendingModifiedValues.TransitEncryptionEnabled)
+		setNonEmptyLabel(commonLabels, elasticacheLabelCacheClusterPendingModifiedValuesTransitEncryptionMode, cluster.PendingModifiedValues.TransitEncryptionMode)
 		if len(cluster.PendingModifiedValues.CacheNodeIdsToRemove) > 0 {
 			commonLabels[elasticacheLabelCacheClusterPendingModifiedValuesCacheNodeIDsToRemove] = model.LabelValue(strings.Join(cluster.PendingModifiedValues.CacheNodeIdsToRemove, ","))
 		}
@@ -888,12 +763,8 @@ func addCacheClusterTargets(tg *targetgroup.Group, cluster *types.CacheCluster, 
 
 	// Security group membership (slice)
 	for i, sg := range cluster.SecurityGroups {
-		if sg.SecurityGroupId != nil {
-			commonLabels[model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterSecurityGroupMembershipID, i))] = model.LabelValue(*sg.SecurityGroupId)
-		}
-		if sg.Status != nil {
-			commonLabels[model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterSecurityGroupMembershipStatus, i))] = model.LabelValue(*sg.Status)
-		}
+		setStringLabel(commonLabels, model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterSecurityGroupMembershipID, i)), sg.SecurityGroupId)
+		setStringLabel(commonLabels, model.LabelName(fmt.Sprintf("%s_%d", elasticacheLabelCacheClusterSecurityGroupMembershipStatus, i)), sg.Status)
 	}
 
 	// Tags
@@ -910,34 +781,17 @@ func addCacheClusterTargets(tg *targetgroup.Group, cluster *types.CacheCluster, 
 		maps.Copy(labels, commonLabels)
 
 		// Add node-specific labels
-		if node.CacheNodeId != nil {
-			labels[elasticacheLabelCacheClusterNodeID] = model.LabelValue(*node.CacheNodeId)
-		}
-		if node.CacheNodeStatus != nil {
-			labels[elasticacheLabelCacheClusterNodeStatus] = model.LabelValue(*node.CacheNodeStatus)
-		}
-		if node.CacheNodeCreateTime != nil {
-			labels[elasticacheLabelCacheClusterNodeCreateTime] = model.LabelValue(node.CacheNodeCreateTime.Format(time.RFC3339))
-		}
-		if node.CustomerAvailabilityZone != nil {
-			labels[elasticacheLabelCacheClusterNodeAZ] = model.LabelValue(*node.CustomerAvailabilityZone)
-		}
-		if node.CustomerOutpostArn != nil {
-			labels[elasticacheLabelCacheClusterNodeCustomerOutpostARN] = model.LabelValue(*node.CustomerOutpostArn)
-		}
-		if node.SourceCacheNodeId != nil {
-			labels[elasticacheLabelCacheClusterNodeSourceCacheNodeID] = model.LabelValue(*node.SourceCacheNodeId)
-		}
-		if node.ParameterGroupStatus != nil {
-			labels[elasticacheLabelCacheClusterNodeParameterGroupStatus] = model.LabelValue(*node.ParameterGroupStatus)
-		}
+		setStringLabel(labels, elasticacheLabelCacheClusterNodeID, node.CacheNodeId)
+		setStringLabel(labels, elasticacheLabelCacheClusterNodeStatus, node.CacheNodeStatus)
+		setTimeLabel(labels, elasticacheLabelCacheClusterNodeCreateTime, node.CacheNodeCreateTime)
+		setStringLabel(labels, elasticacheLabelCacheClusterNodeAZ, node.CustomerAvailabilityZone)
+		setStringLabel(labels, elasticacheLabelCacheClusterNodeCustomerOutpostARN, node.CustomerOutpostArn)
+		setStringLabel(labels, elasticacheLabelCacheClusterNodeSourceCacheNodeID, node.SourceCacheNodeId)
+		setStringLabel(labels, elasticacheLabelCacheClusterNodeParameterGroupStatus, node.ParameterGroupStatus)
+
 		if node.Endpoint != nil {
-			if node.Endpoint.Address != nil {
-				labels[elasticacheLabelCacheClusterNodeEndpointAddress] = model.LabelValue(*node.Endpoint.Address)
-			}
-			if node.Endpoint.Port != nil {
-				labels[elasticacheLabelCacheClusterNodeEndpointPort] = model.LabelValue(strconv.Itoa(int(*node.Endpoint.Port)))
-			}
+			setStringLabel(labels, elasticacheLabelCacheClusterNodeEndpointAddress, node.Endpoint.Address)
+			setIntLabel(labels, elasticacheLabelCacheClusterNodeEndpointPort, node.Endpoint.Port)
 
 			// Set the address label to this node's endpoint
 			if node.Endpoint.Address != nil && node.Endpoint.Port != nil {

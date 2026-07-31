@@ -272,9 +272,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		addr := net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port))
 		labels[model.AddressLabel] = model.LabelValue(addr)
 
-		if inst.PublicIpAddress != nil {
-			labels[lightsailLabelPublicIP] = model.LabelValue(*inst.PublicIpAddress)
-		}
+		setStringLabel(labels, lightsailLabelPublicIP, inst.PublicIpAddress)
 
 		if len(inst.Ipv6Addresses) > 0 {
 			var ipv6addrs []string

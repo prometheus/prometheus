@@ -16,6 +16,7 @@ package aws
 import (
 	"context"
 	"errors"
+	"math"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -628,4 +630,138 @@ region: us-west-1
 			cfg.SetDirectory(tmpDir)
 		})
 	})
+}
+
+func TestSetLabelHelpers(t *testing.T) {
+	t.Parallel()
+
+	// enum stands in for the AWS SDK enumeration types, which are string types
+	// without a nil value.
+	type enum string
+
+	const name = model.LabelName("test_label")
+
+	testTime := time.Date(2024, 1, 1, 12, 30, 0, 0, time.UTC)
+	cet := time.FixedZone("CET", 3600)
+
+	tests := []struct {
+		name     string
+		set      func(model.LabelSet)
+		expected model.LabelSet
+	}{
+		// setStringLabel.
+		{
+			name:     "string pointer is set",
+			set:      func(ls model.LabelSet) { setStringLabel(ls, name, aws.String("db.example.com")) },
+			expected: model.LabelSet{name: "db.example.com"},
+		},
+		{
+			name:     "nil string pointer is skipped",
+			set:      func(ls model.LabelSet) { setStringLabel(ls, name, nil) },
+			expected: model.LabelSet{},
+		},
+		{
+			name:     "pointer to empty string is set",
+			set:      func(ls model.LabelSet) { setStringLabel(ls, name, aws.String("")) },
+			expected: model.LabelSet{name: ""},
+		},
+
+		// setNonEmptyLabel.
+		{
+			name:     "enum is set",
+			set:      func(ls model.LabelSet) { setNonEmptyLabel(ls, name, enum("async")) },
+			expected: model.LabelSet{name: "async"},
+		},
+		{
+			name:     "empty enum is skipped",
+			set:      func(ls model.LabelSet) { setNonEmptyLabel(ls, name, enum("")) },
+			expected: model.LabelSet{},
+		},
+		{
+			name:     "string is set",
+			set:      func(ls model.LabelSet) { setNonEmptyLabel(ls, name, "subnet-01234567") },
+			expected: model.LabelSet{name: "subnet-01234567"},
+		},
+		{
+			name:     "empty string is skipped",
+			set:      func(ls model.LabelSet) { setNonEmptyLabel(ls, name, "") },
+			expected: model.LabelSet{},
+		},
+
+		// setBoolLabel.
+		{
+			name:     "true bool is set",
+			set:      func(ls model.LabelSet) { setBoolLabel(ls, name, aws.Bool(true)) },
+			expected: model.LabelSet{name: "true"},
+		},
+		{
+			name:     "false bool is set",
+			set:      func(ls model.LabelSet) { setBoolLabel(ls, name, aws.Bool(false)) },
+			expected: model.LabelSet{name: "false"},
+		},
+		{
+			name:     "nil bool is skipped",
+			set:      func(ls model.LabelSet) { setBoolLabel(ls, name, nil) },
+			expected: model.LabelSet{},
+		},
+
+		// setIntLabel.
+		{
+			name:     "int32 is set",
+			set:      func(ls model.LabelSet) { setIntLabel(ls, name, aws.Int32(100)) },
+			expected: model.LabelSet{name: "100"},
+		},
+		{
+			name:     "zero int32 is set",
+			set:      func(ls model.LabelSet) { setIntLabel(ls, name, aws.Int32(0)) },
+			expected: model.LabelSet{name: "0"},
+		},
+		{
+			name:     "nil int32 is skipped",
+			set:      func(ls model.LabelSet) { setIntLabel(ls, name, (*int32)(nil)) },
+			expected: model.LabelSet{},
+		},
+		{
+			name:     "int64 is set",
+			set:      func(ls model.LabelSet) { setIntLabel(ls, name, aws.Int64(4294967296)) },
+			expected: model.LabelSet{name: "4294967296"},
+		},
+		{
+			name:     "int64 max is not truncated",
+			set:      func(ls model.LabelSet) { setIntLabel(ls, name, aws.Int64(math.MaxInt64)) },
+			expected: model.LabelSet{name: "9223372036854775807"},
+		},
+		{
+			name:     "nil int64 is skipped",
+			set:      func(ls model.LabelSet) { setIntLabel(ls, name, (*int64)(nil)) },
+			expected: model.LabelSet{},
+		},
+
+		// setTimeLabel.
+		{
+			name:     "UTC time is set",
+			set:      func(ls model.LabelSet) { setTimeLabel(ls, name, &testTime) },
+			expected: model.LabelSet{name: "2024-01-01T12:30:00Z"},
+		},
+		{
+			name:     "time keeps its offset",
+			set:      func(ls model.LabelSet) { ts := testTime.In(cet); setTimeLabel(ls, name, &ts) },
+			expected: model.LabelSet{name: "2024-01-01T13:30:00+01:00"},
+		},
+		{
+			name:     "nil time is skipped",
+			set:      func(ls model.LabelSet) { setTimeLabel(ls, name, nil) },
+			expected: model.LabelSet{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			labels := model.LabelSet{}
+			tt.set(labels)
+			require.Equal(t, tt.expected, labels)
+		})
+	}
 }

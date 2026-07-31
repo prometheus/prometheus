@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
@@ -124,30 +125,14 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 		c.EC2SDConfig.HTTPClientConfig = c.HTTPClientConfig
 		c.EC2SDConfig.Region = c.Region
-		if c.Endpoint != "" {
-			c.EC2SDConfig.Endpoint = c.Endpoint
-		}
-		if c.AccessKey != "" {
-			c.EC2SDConfig.AccessKey = c.AccessKey
-		}
-		if c.SecretKey != "" {
-			c.EC2SDConfig.SecretKey = c.SecretKey
-		}
-		if c.Profile != "" {
-			c.EC2SDConfig.Profile = c.Profile
-		}
-		if c.RoleARN != "" {
-			c.EC2SDConfig.RoleARN = c.RoleARN
-		}
-		if c.ExternalID != "" {
-			c.EC2SDConfig.ExternalID = c.ExternalID
-		}
-		if c.Port != 0 {
-			c.EC2SDConfig.Port = c.Port
-		}
-		if c.RefreshInterval != 0 {
-			c.EC2SDConfig.RefreshInterval = c.RefreshInterval
-		}
+		setIfNonZero(&c.EC2SDConfig.Endpoint, c.Endpoint)
+		setIfNonZero(&c.EC2SDConfig.AccessKey, c.AccessKey)
+		setIfNonZero(&c.EC2SDConfig.SecretKey, c.SecretKey)
+		setIfNonZero(&c.EC2SDConfig.Profile, c.Profile)
+		setIfNonZero(&c.EC2SDConfig.RoleARN, c.RoleARN)
+		setIfNonZero(&c.EC2SDConfig.ExternalID, c.ExternalID)
+		setIfNonZero(&c.EC2SDConfig.Port, c.Port)
+		setIfNonZero(&c.EC2SDConfig.RefreshInterval, c.RefreshInterval)
 		if c.Filters != nil {
 			c.EC2SDConfig.Filters = c.Filters
 		}
@@ -158,30 +143,14 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 		c.ECSSDConfig.HTTPClientConfig = c.HTTPClientConfig
 		c.ECSSDConfig.Region = c.Region
-		if c.Endpoint != "" {
-			c.ECSSDConfig.Endpoint = c.Endpoint
-		}
-		if c.AccessKey != "" {
-			c.ECSSDConfig.AccessKey = c.AccessKey
-		}
-		if c.SecretKey != "" {
-			c.ECSSDConfig.SecretKey = c.SecretKey
-		}
-		if c.Profile != "" {
-			c.ECSSDConfig.Profile = c.Profile
-		}
-		if c.RoleARN != "" {
-			c.ECSSDConfig.RoleARN = c.RoleARN
-		}
-		if c.ExternalID != "" {
-			c.ECSSDConfig.ExternalID = c.ExternalID
-		}
-		if c.Port != 0 {
-			c.ECSSDConfig.Port = c.Port
-		}
-		if c.RefreshInterval != 0 {
-			c.ECSSDConfig.RefreshInterval = c.RefreshInterval
-		}
+		setIfNonZero(&c.ECSSDConfig.Endpoint, c.Endpoint)
+		setIfNonZero(&c.ECSSDConfig.AccessKey, c.AccessKey)
+		setIfNonZero(&c.ECSSDConfig.SecretKey, c.SecretKey)
+		setIfNonZero(&c.ECSSDConfig.Profile, c.Profile)
+		setIfNonZero(&c.ECSSDConfig.RoleARN, c.RoleARN)
+		setIfNonZero(&c.ECSSDConfig.ExternalID, c.ExternalID)
+		setIfNonZero(&c.ECSSDConfig.Port, c.Port)
+		setIfNonZero(&c.ECSSDConfig.RefreshInterval, c.RefreshInterval)
 		if c.Clusters != nil {
 			c.ECSSDConfig.Clusters = c.Clusters
 		}
@@ -192,30 +161,14 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 		c.ElasticacheSDConfig.HTTPClientConfig = c.HTTPClientConfig
 		c.ElasticacheSDConfig.Region = c.Region
-		if c.Endpoint != "" {
-			c.ElasticacheSDConfig.Endpoint = c.Endpoint
-		}
-		if c.AccessKey != "" {
-			c.ElasticacheSDConfig.AccessKey = c.AccessKey
-		}
-		if c.SecretKey != "" {
-			c.ElasticacheSDConfig.SecretKey = c.SecretKey
-		}
-		if c.Profile != "" {
-			c.ElasticacheSDConfig.Profile = c.Profile
-		}
-		if c.RoleARN != "" {
-			c.ElasticacheSDConfig.RoleARN = c.RoleARN
-		}
-		if c.ExternalID != "" {
-			c.ElasticacheSDConfig.ExternalID = c.ExternalID
-		}
-		if c.Port != 0 {
-			c.ElasticacheSDConfig.Port = c.Port
-		}
-		if c.RefreshInterval != 0 {
-			c.ElasticacheSDConfig.RefreshInterval = c.RefreshInterval
-		}
+		setIfNonZero(&c.ElasticacheSDConfig.Endpoint, c.Endpoint)
+		setIfNonZero(&c.ElasticacheSDConfig.AccessKey, c.AccessKey)
+		setIfNonZero(&c.ElasticacheSDConfig.SecretKey, c.SecretKey)
+		setIfNonZero(&c.ElasticacheSDConfig.Profile, c.Profile)
+		setIfNonZero(&c.ElasticacheSDConfig.RoleARN, c.RoleARN)
+		setIfNonZero(&c.ElasticacheSDConfig.ExternalID, c.ExternalID)
+		setIfNonZero(&c.ElasticacheSDConfig.Port, c.Port)
+		setIfNonZero(&c.ElasticacheSDConfig.RefreshInterval, c.RefreshInterval)
 		if c.Clusters != nil {
 			c.ElasticacheSDConfig.Clusters = c.Clusters
 		}
@@ -226,30 +179,14 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 		c.LightsailSDConfig.HTTPClientConfig = c.HTTPClientConfig
 		c.LightsailSDConfig.Region = c.Region
-		if c.Endpoint != "" {
-			c.LightsailSDConfig.Endpoint = c.Endpoint
-		}
-		if c.AccessKey != "" {
-			c.LightsailSDConfig.AccessKey = c.AccessKey
-		}
-		if c.SecretKey != "" {
-			c.LightsailSDConfig.SecretKey = c.SecretKey
-		}
-		if c.Profile != "" {
-			c.LightsailSDConfig.Profile = c.Profile
-		}
-		if c.RoleARN != "" {
-			c.LightsailSDConfig.RoleARN = c.RoleARN
-		}
-		if c.ExternalID != "" {
-			c.LightsailSDConfig.ExternalID = c.ExternalID
-		}
-		if c.Port != 0 {
-			c.LightsailSDConfig.Port = c.Port
-		}
-		if c.RefreshInterval != 0 {
-			c.LightsailSDConfig.RefreshInterval = c.RefreshInterval
-		}
+		setIfNonZero(&c.LightsailSDConfig.Endpoint, c.Endpoint)
+		setIfNonZero(&c.LightsailSDConfig.AccessKey, c.AccessKey)
+		setIfNonZero(&c.LightsailSDConfig.SecretKey, c.SecretKey)
+		setIfNonZero(&c.LightsailSDConfig.Profile, c.Profile)
+		setIfNonZero(&c.LightsailSDConfig.RoleARN, c.RoleARN)
+		setIfNonZero(&c.LightsailSDConfig.ExternalID, c.ExternalID)
+		setIfNonZero(&c.LightsailSDConfig.Port, c.Port)
+		setIfNonZero(&c.LightsailSDConfig.RefreshInterval, c.RefreshInterval)
 	case RoleMSK:
 		if c.MSKSDConfig == nil {
 			mskConfig := DefaultMSKSDConfig
@@ -257,30 +194,14 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 		c.MSKSDConfig.HTTPClientConfig = c.HTTPClientConfig
 		c.MSKSDConfig.Region = c.Region
-		if c.Endpoint != "" {
-			c.MSKSDConfig.Endpoint = c.Endpoint
-		}
-		if c.AccessKey != "" {
-			c.MSKSDConfig.AccessKey = c.AccessKey
-		}
-		if c.SecretKey != "" {
-			c.MSKSDConfig.SecretKey = c.SecretKey
-		}
-		if c.Profile != "" {
-			c.MSKSDConfig.Profile = c.Profile
-		}
-		if c.RoleARN != "" {
-			c.MSKSDConfig.RoleARN = c.RoleARN
-		}
-		if c.ExternalID != "" {
-			c.MSKSDConfig.ExternalID = c.ExternalID
-		}
-		if c.Port != 0 {
-			c.MSKSDConfig.Port = c.Port
-		}
-		if c.RefreshInterval != 0 {
-			c.MSKSDConfig.RefreshInterval = c.RefreshInterval
-		}
+		setIfNonZero(&c.MSKSDConfig.Endpoint, c.Endpoint)
+		setIfNonZero(&c.MSKSDConfig.AccessKey, c.AccessKey)
+		setIfNonZero(&c.MSKSDConfig.SecretKey, c.SecretKey)
+		setIfNonZero(&c.MSKSDConfig.Profile, c.Profile)
+		setIfNonZero(&c.MSKSDConfig.RoleARN, c.RoleARN)
+		setIfNonZero(&c.MSKSDConfig.ExternalID, c.ExternalID)
+		setIfNonZero(&c.MSKSDConfig.Port, c.Port)
+		setIfNonZero(&c.MSKSDConfig.RefreshInterval, c.RefreshInterval)
 		if c.Clusters != nil {
 			c.MSKSDConfig.Clusters = c.Clusters
 		}
@@ -291,30 +212,14 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 		c.RDSSDConfig.HTTPClientConfig = c.HTTPClientConfig
 		c.RDSSDConfig.Region = c.Region
-		if c.Endpoint != "" {
-			c.RDSSDConfig.Endpoint = c.Endpoint
-		}
-		if c.AccessKey != "" {
-			c.RDSSDConfig.AccessKey = c.AccessKey
-		}
-		if c.SecretKey != "" {
-			c.RDSSDConfig.SecretKey = c.SecretKey
-		}
-		if c.Profile != "" {
-			c.RDSSDConfig.Profile = c.Profile
-		}
-		if c.RoleARN != "" {
-			c.RDSSDConfig.RoleARN = c.RoleARN
-		}
-		if c.ExternalID != "" {
-			c.RDSSDConfig.ExternalID = c.ExternalID
-		}
-		if c.Port != 0 {
-			c.RDSSDConfig.Port = c.Port
-		}
-		if c.RefreshInterval != 0 {
-			c.RDSSDConfig.RefreshInterval = c.RefreshInterval
-		}
+		setIfNonZero(&c.RDSSDConfig.Endpoint, c.Endpoint)
+		setIfNonZero(&c.RDSSDConfig.AccessKey, c.AccessKey)
+		setIfNonZero(&c.RDSSDConfig.SecretKey, c.SecretKey)
+		setIfNonZero(&c.RDSSDConfig.Profile, c.Profile)
+		setIfNonZero(&c.RDSSDConfig.RoleARN, c.RoleARN)
+		setIfNonZero(&c.RDSSDConfig.ExternalID, c.ExternalID)
+		setIfNonZero(&c.RDSSDConfig.Port, c.Port)
+		setIfNonZero(&c.RDSSDConfig.RefreshInterval, c.RefreshInterval)
 		if c.Filters != nil {
 			c.RDSSDConfig.Filters = c.Filters
 		}
@@ -370,29 +275,30 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 func (c *SDConfig) SetDirectory(dir string) {
 	switch c.Role {
 	case RoleEC2:
-		if c.EC2SDConfig != nil {
-			c.EC2SDConfig.SetDirectory(dir)
-		}
+		setDirectory(c.EC2SDConfig, dir)
 	case RoleECS:
-		if c.ECSSDConfig != nil {
-			c.ECSSDConfig.SetDirectory(dir)
-		}
+		setDirectory(c.ECSSDConfig, dir)
 	case RoleElasticache:
-		if c.ElasticacheSDConfig != nil {
-			c.ElasticacheSDConfig.SetDirectory(dir)
-		}
+		setDirectory(c.ElasticacheSDConfig, dir)
 	case RoleLightsail:
-		if c.LightsailSDConfig != nil {
-			c.LightsailSDConfig.SetDirectory(dir)
-		}
+		setDirectory(c.LightsailSDConfig, dir)
 	case RoleMSK:
-		if c.MSKSDConfig != nil {
-			c.MSKSDConfig.SetDirectory(dir)
-		}
+		setDirectory(c.MSKSDConfig, dir)
 	case RoleRDS:
-		if c.RDSSDConfig != nil {
-			c.RDSSDConfig.SetDirectory(dir)
-		}
+		setDirectory(c.RDSSDConfig, dir)
+	}
+}
+
+// setDirectory calls cfg.SetDirectory, unless cfg is nil. It replaces the nil
+// check every role repeats in SDConfig.SetDirectory, since the role-specific
+// config for the role that is not active is left nil.
+func setDirectory[T interface {
+	comparable
+	SetDirectory(string)
+}](cfg T, dir string) {
+	var zero T
+	if cfg != zero {
+		cfg.SetDirectory(dir)
 	}
 }
 
@@ -432,4 +338,73 @@ func loadRegion(ctx context.Context, specifiedRegion string) (region string, err
 	}
 
 	return imdsRegion.Region, nil
+}
+
+// setIfNonZero assigns *dst = src, unless src is the zero value of T. It
+// replaces the repeated "if the parent config set this field, copy it into
+// the role-specific config" checks in SDConfig.UnmarshalYAML.
+func setIfNonZero[T comparable](dst *T, src T) {
+	var zero T
+	if src != zero {
+		*dst = src
+	}
+}
+
+// setIfNotNil assigns *dst = *v, unless v is nil. It replaces the nil checks
+// AWS discoveries repeat when copying an optional AWS SDK pointer field into
+// a plain struct field.
+func setIfNotNil[T any](dst, v *T) {
+	if v != nil {
+		*dst = *v
+	}
+}
+
+// setNonEmptyField assigns *dst = string(v), unless v is empty. It is meant
+// for the AWS SDK enumeration types, which are string types without a nil
+// value, when the destination is a plain struct field rather than a label.
+func setNonEmptyField[T ~string](dst *string, v T) {
+	if v != "" {
+		*dst = string(v)
+	}
+}
+
+// The setXLabel helpers below replace the nil and empty value checks that every
+// AWS discovery repeats for each meta label it builds. They leave labels
+// untouched for values AWS did not report, so a target never carries a label
+// with a placeholder value.
+
+// setStringLabel sets name in labels to the value of v, unless v is nil.
+func setStringLabel(labels model.LabelSet, name model.LabelName, v *string) {
+	if v != nil {
+		labels[name] = model.LabelValue(*v)
+	}
+}
+
+// setNonEmptyLabel sets name in labels to v, unless v is empty. It is meant for
+// the AWS SDK enumeration types, which are string types without a nil value.
+func setNonEmptyLabel[T ~string](labels model.LabelSet, name model.LabelName, v T) {
+	if v != "" {
+		labels[name] = model.LabelValue(v)
+	}
+}
+
+// setBoolLabel sets name in labels to "true" or "false", unless v is nil.
+func setBoolLabel(labels model.LabelSet, name model.LabelName, v *bool) {
+	if v != nil {
+		labels[name] = model.LabelValue(strconv.FormatBool(*v))
+	}
+}
+
+// setIntLabel sets name in labels to the decimal representation of v, unless v is nil.
+func setIntLabel[T ~int32 | ~int64](labels model.LabelSet, name model.LabelName, v *T) {
+	if v != nil {
+		labels[name] = model.LabelValue(strconv.FormatInt(int64(*v), 10))
+	}
+}
+
+// setTimeLabel sets name in labels to v formatted as RFC 3339, unless v is nil.
+func setTimeLabel(labels model.LabelSet, name model.LabelName, v *time.Time) {
+	if v != nil {
+		labels[name] = model.LabelValue(v.Format(time.RFC3339))
+	}
 }

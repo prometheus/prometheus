@@ -358,33 +358,22 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					ec2LabelRegion:     model.LabelValue(d.region),
 				}
 
-				if r.OwnerId != nil {
-					labels[ec2LabelOwnerID] = model.LabelValue(*r.OwnerId)
-				}
+				setStringLabel(labels, ec2LabelOwnerID, r.OwnerId)
 
-				if defaultIPv6Addr != nil {
-					labels[ec2LabelDefaultIPv6Address] = model.LabelValue(*defaultIPv6Addr)
-				}
+				setStringLabel(labels, ec2LabelDefaultIPv6Address, defaultIPv6Addr)
 
+				setStringLabel(labels, ec2LabelPrivateIP, inst.PrivateIpAddress)
 				if inst.PrivateIpAddress != nil {
-					labels[ec2LabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
 					labels[model.AddressLabel] = model.LabelValue(net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port)))
 				} else {
 					labels[model.AddressLabel] = model.LabelValue(net.JoinHostPort(*defaultIPv6Addr, strconv.Itoa(d.cfg.Port)))
 				}
 
-				if inst.PrivateDnsName != nil {
-					labels[ec2LabelPrivateDNS] = model.LabelValue(*inst.PrivateDnsName)
-				}
+				setStringLabel(labels, ec2LabelPrivateDNS, inst.PrivateDnsName)
+				setNonEmptyLabel(labels, ec2LabelPlatform, inst.Platform)
 
-				if inst.Platform != "" {
-					labels[ec2LabelPlatform] = model.LabelValue(inst.Platform)
-				}
-
-				if inst.PublicIpAddress != nil {
-					labels[ec2LabelPublicIP] = model.LabelValue(*inst.PublicIpAddress)
-					labels[ec2LabelPublicDNS] = model.LabelValue(*inst.PublicDnsName)
-				}
+				setStringLabel(labels, ec2LabelPublicIP, inst.PublicIpAddress)
+				setStringLabel(labels, ec2LabelPublicDNS, inst.PublicDnsName)
 
 				if primaryIPv6Addrs != nil {
 					labels[ec2LabelPrimaryIPv6Addresses] = model.LabelValue(
@@ -412,17 +401,12 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				labels[ec2LabelInstanceState] = model.LabelValue(inst.State.Name)
 				labels[ec2LabelInstanceType] = model.LabelValue(inst.InstanceType)
 
-				if inst.InstanceLifecycle != "" {
-					labels[ec2LabelInstanceLifecycle] = model.LabelValue(inst.InstanceLifecycle)
-				}
-
-				if inst.Architecture != "" {
-					labels[ec2LabelArch] = model.LabelValue(inst.Architecture)
-				}
+				setNonEmptyLabel(labels, ec2LabelInstanceLifecycle, inst.InstanceLifecycle)
+				setNonEmptyLabel(labels, ec2LabelArch, inst.Architecture)
 
 				if inst.VpcId != nil {
-					labels[ec2LabelVPCID] = model.LabelValue(*inst.VpcId)
-					labels[ec2LabelPrimarySubnetID] = model.LabelValue(*inst.SubnetId)
+					setStringLabel(labels, ec2LabelVPCID, inst.VpcId)
+					setStringLabel(labels, ec2LabelPrimarySubnetID, inst.SubnetId)
 
 					var subnets []string
 					subnetsMap := make(map[string]struct{})

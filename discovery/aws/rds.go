@@ -507,6 +507,206 @@ func (d *RDSDiscovery) describeDBInstances(ctx context.Context, dbClusterARN str
 	return dbInstances, nil
 }
 
+// rdsClusterWriters maps the instance identifier of every cluster member to its
+// IsClusterWriter status.
+func rdsClusterWriters(cluster types.DBCluster) map[string]bool {
+	writers := make(map[string]bool, len(cluster.DBClusterMembers))
+	for _, member := range cluster.DBClusterMembers {
+		if member.DBInstanceIdentifier != nil && member.IsClusterWriter != nil {
+			writers[*member.DBInstanceIdentifier] = *member.IsClusterWriter
+		}
+	}
+	return writers
+}
+
+// rdsClusterLabels returns the labels describing the DB cluster. The same set
+// applies to every instance of the cluster, so callers must copy it before
+// adding instance specific labels to it.
+func rdsClusterLabels(cluster types.DBCluster) model.LabelSet {
+	labels := model.LabelSet{}
+
+	setStringLabel(labels, rdsLabelClusterDBClusterArn, cluster.DBClusterArn)
+	setStringLabel(labels, rdsLabelClusterDBClusterIdentifier, cluster.DBClusterIdentifier)
+	setStringLabel(labels, rdsLabelClusterActivityStreamKinesisStreamName, cluster.ActivityStreamKinesisStreamName)
+	setStringLabel(labels, rdsLabelClusterActivityStreamKMSKeyID, cluster.ActivityStreamKmsKeyId)
+	setNonEmptyLabel(labels, rdsLabelClusterActivityStreamMode, cluster.ActivityStreamMode)
+	setNonEmptyLabel(labels, rdsLabelClusterActivityStreamStatus, cluster.ActivityStreamStatus)
+	setIntLabel(labels, rdsLabelClusterAllocatedStorage, cluster.AllocatedStorage)
+	setBoolLabel(labels, rdsLabelClusterAutoMinorVersionUpgrade, cluster.AutoMinorVersionUpgrade)
+	setTimeLabel(labels, rdsLabelClusterAutomaticRestartTime, cluster.AutomaticRestartTime)
+	setStringLabel(labels, rdsLabelClusterAwsBackupRecoveryPointArn, cluster.AwsBackupRecoveryPointArn)
+	setIntLabel(labels, rdsLabelClusterBacktrackConsumedChangeRecords, cluster.BacktrackConsumedChangeRecords)
+	setIntLabel(labels, rdsLabelClusterBacktrackWindow, cluster.BacktrackWindow)
+	setIntLabel(labels, rdsLabelClusterBackupRetentionPeriod, cluster.BackupRetentionPeriod)
+	setIntLabel(labels, rdsLabelClusterCapacity, cluster.Capacity)
+	setStringLabel(labels, rdsLabelClusterCharacterSetName, cluster.CharacterSetName)
+	setStringLabel(labels, rdsLabelClusterCloneGroupID, cluster.CloneGroupId)
+	setTimeLabel(labels, rdsLabelClusterClusterCreateTime, cluster.ClusterCreateTime)
+	setNonEmptyLabel(labels, rdsLabelClusterClusterScalabilityType, cluster.ClusterScalabilityType)
+	setBoolLabel(labels, rdsLabelClusterCopyTagsToSnapshot, cluster.CopyTagsToSnapshot)
+	setBoolLabel(labels, rdsLabelClusterCrossAccountClone, cluster.CrossAccountClone)
+	setStringLabel(labels, rdsLabelClusterDBClusterInstanceClass, cluster.DBClusterInstanceClass)
+	setStringLabel(labels, rdsLabelClusterDBClusterParameterGroup, cluster.DBClusterParameterGroup)
+	setStringLabel(labels, rdsLabelClusterDBSubnetGroup, cluster.DBSubnetGroup)
+	setStringLabel(labels, rdsLabelClusterDBSystemID, cluster.DBSystemId)
+	setNonEmptyLabel(labels, rdsLabelClusterDatabaseInsightsMode, cluster.DatabaseInsightsMode)
+	setStringLabel(labels, rdsLabelClusterDatabaseName, cluster.DatabaseName)
+	setStringLabel(labels, rdsLabelClusterDBClusterResourceID, cluster.DbClusterResourceId)
+	setBoolLabel(labels, rdsLabelClusterDeletionProtection, cluster.DeletionProtection)
+	setTimeLabel(labels, rdsLabelClusterEarliestBacktrackTime, cluster.EarliestBacktrackTime)
+	setTimeLabel(labels, rdsLabelClusterEarliestRestorableTime, cluster.EarliestRestorableTime)
+	setStringLabel(labels, rdsLabelClusterEndpoint, cluster.Endpoint)
+	setStringLabel(labels, rdsLabelClusterEngine, cluster.Engine)
+	setStringLabel(labels, rdsLabelClusterEngineLifecycleSupport, cluster.EngineLifecycleSupport)
+	setStringLabel(labels, rdsLabelClusterEngineMode, cluster.EngineMode)
+	setStringLabel(labels, rdsLabelClusterEngineVersion, cluster.EngineVersion)
+	setStringLabel(labels, rdsLabelClusterGlobalClusterIdentifier, cluster.GlobalClusterIdentifier)
+	setBoolLabel(labels, rdsLabelClusterGlobalWriteForwardingRequested, cluster.GlobalWriteForwardingRequested)
+	setNonEmptyLabel(labels, rdsLabelClusterGlobalWriteForwardingStatus, cluster.GlobalWriteForwardingStatus)
+	setStringLabel(labels, rdsLabelClusterHostedZoneID, cluster.HostedZoneId)
+	setBoolLabel(labels, rdsLabelClusterHTTPEndpointEnabled, cluster.HttpEndpointEnabled)
+	setBoolLabel(labels, rdsLabelClusterIAMDatabaseAuthenticationEnabled, cluster.IAMDatabaseAuthenticationEnabled)
+	setTimeLabel(labels, rdsLabelClusterIOOptimizedNextAllowedModificationTime, cluster.IOOptimizedNextAllowedModificationTime)
+	setIntLabel(labels, rdsLabelClusterIops, cluster.Iops)
+	setStringLabel(labels, rdsLabelClusterKMSKeyID, cluster.KmsKeyId)
+	setTimeLabel(labels, rdsLabelClusterLatestRestorableTime, cluster.LatestRestorableTime)
+	setNonEmptyLabel(labels, rdsLabelClusterLocalWriteForwardingStatus, cluster.LocalWriteForwardingStatus)
+	setStringLabel(labels, rdsLabelClusterMasterUsername, cluster.MasterUsername)
+	setIntLabel(labels, rdsLabelClusterMonitoringInterval, cluster.MonitoringInterval)
+	setStringLabel(labels, rdsLabelClusterMonitoringRoleArn, cluster.MonitoringRoleArn)
+	setBoolLabel(labels, rdsLabelClusterMultiAZ, cluster.MultiAZ)
+	setStringLabel(labels, rdsLabelClusterNetworkType, cluster.NetworkType)
+	setStringLabel(labels, rdsLabelClusterPercentProgress, cluster.PercentProgress)
+	setBoolLabel(labels, rdsLabelClusterPerformanceInsightsEnabled, cluster.PerformanceInsightsEnabled)
+	setStringLabel(labels, rdsLabelClusterPerformanceInsightsKMSKeyID, cluster.PerformanceInsightsKMSKeyId)
+	setIntLabel(labels, rdsLabelClusterPerformanceInsightsRetentionPeriod, cluster.PerformanceInsightsRetentionPeriod)
+	setIntLabel(labels, rdsLabelClusterPort, cluster.Port)
+	setStringLabel(labels, rdsLabelClusterPreferredBackupWindow, cluster.PreferredBackupWindow)
+	setStringLabel(labels, rdsLabelClusterPreferredMaintenanceWindow, cluster.PreferredMaintenanceWindow)
+	setBoolLabel(labels, rdsLabelClusterPubliclyAccessible, cluster.PubliclyAccessible)
+	setStringLabel(labels, rdsLabelClusterReaderEndpoint, cluster.ReaderEndpoint)
+	setStringLabel(labels, rdsLabelClusterReplicationSourceIdentifier, cluster.ReplicationSourceIdentifier)
+	setStringLabel(labels, rdsLabelClusterServerlessV2PlatformVersion, cluster.ServerlessV2PlatformVersion)
+	setStringLabel(labels, rdsLabelClusterStatus, cluster.Status)
+	setBoolLabel(labels, rdsLabelClusterStorageEncrypted, cluster.StorageEncrypted)
+	setNonEmptyLabel(labels, rdsLabelClusterStorageEncryptionType, cluster.StorageEncryptionType)
+	setIntLabel(labels, rdsLabelClusterStorageThroughput, cluster.StorageThroughput)
+	setStringLabel(labels, rdsLabelClusterStorageType, cluster.StorageType)
+	setNonEmptyLabel(labels, rdsLabelClusterUpgradeRolloutOrder, cluster.UpgradeRolloutOrder)
+
+	// Cluster tags.
+	for _, tag := range cluster.TagList {
+		if tag.Key != nil && tag.Value != nil {
+			labels[model.LabelName(rdsLabelClusterTag+strutil.SanitizeLabelName(*tag.Key))] = model.LabelValue(*tag.Value)
+		}
+	}
+
+	return labels
+}
+
+// addRDSInstanceLabels adds the labels describing the DB instance to labels.
+// writers maps instance identifiers to their IsClusterWriter status, as
+// returned by rdsClusterWriters.
+func addRDSInstanceLabels(labels model.LabelSet, instance types.DBInstance, writers map[string]bool) {
+	setStringLabel(labels, rdsLabelInstanceDBInstanceArn, instance.DBInstanceArn)
+	if instance.DBInstanceIdentifier != nil {
+		labels[rdsLabelInstanceDBInstanceIdentifier] = model.LabelValue(*instance.DBInstanceIdentifier)
+		// Set IsClusterWriter based on cluster membership information.
+		if isWriter, found := writers[*instance.DBInstanceIdentifier]; found {
+			labels[rdsLabelInstanceIsClusterWriter] = model.LabelValue(strconv.FormatBool(isWriter))
+		}
+	}
+	setBoolLabel(labels, rdsLabelInstanceActivityStreamEngineNativeAuditFieldsIncluded, instance.ActivityStreamEngineNativeAuditFieldsIncluded)
+	setStringLabel(labels, rdsLabelInstanceActivityStreamKinesisStreamName, instance.ActivityStreamKinesisStreamName)
+	setStringLabel(labels, rdsLabelInstanceActivityStreamKmsKeyID, instance.ActivityStreamKmsKeyId)
+	setNonEmptyLabel(labels, rdsLabelInstanceActivityStreamMode, instance.ActivityStreamMode)
+	setNonEmptyLabel(labels, rdsLabelInstanceActivityStreamPolicyStatus, instance.ActivityStreamPolicyStatus)
+	setNonEmptyLabel(labels, rdsLabelInstanceActivityStreamStatus, instance.ActivityStreamStatus)
+	setIntLabel(labels, rdsLabelInstanceAllocatedStorage, instance.AllocatedStorage)
+	setBoolLabel(labels, rdsLabelInstanceAutoMinorVersionUpgrade, instance.AutoMinorVersionUpgrade)
+	setTimeLabel(labels, rdsLabelInstanceAutomaticRestartTime, instance.AutomaticRestartTime)
+	setNonEmptyLabel(labels, rdsLabelInstanceAutomationMode, instance.AutomationMode)
+	setStringLabel(labels, rdsLabelInstanceAvailabilityZone, instance.AvailabilityZone)
+	setStringLabel(labels, rdsLabelInstanceAwsBackupRecoveryPointArn, instance.AwsBackupRecoveryPointArn)
+	setIntLabel(labels, rdsLabelInstanceBackupRetentionPeriod, instance.BackupRetentionPeriod)
+	setStringLabel(labels, rdsLabelInstanceBackupTarget, instance.BackupTarget)
+	setStringLabel(labels, rdsLabelInstanceCACertificateIdentifier, instance.CACertificateIdentifier)
+	setStringLabel(labels, rdsLabelInstanceCharacterSetName, instance.CharacterSetName)
+	setBoolLabel(labels, rdsLabelInstanceCopyTagsToSnapshot, instance.CopyTagsToSnapshot)
+	setStringLabel(labels, rdsLabelInstanceCustomIamInstanceProfile, instance.CustomIamInstanceProfile)
+	setBoolLabel(labels, rdsLabelInstanceCustomerOwnedIPEnabled, instance.CustomerOwnedIpEnabled)
+	setStringLabel(labels, rdsLabelInstanceDBClusterIdentifier, instance.DBClusterIdentifier)
+	setStringLabel(labels, rdsLabelInstanceDBInstanceClass, instance.DBInstanceClass)
+	setStringLabel(labels, rdsLabelInstanceDBInstanceStatus, instance.DBInstanceStatus)
+	setStringLabel(labels, rdsLabelInstanceDBName, instance.DBName)
+	setIntLabel(labels, rdsLabelInstanceDBInstancePort, instance.DbInstancePort)
+	setStringLabel(labels, rdsLabelInstanceDBResourceID, instance.DbiResourceId)
+	setBoolLabel(labels, rdsLabelInstanceDedicatedLogVolume, instance.DedicatedLogVolume)
+	setBoolLabel(labels, rdsLabelInstanceDeletionProtection, instance.DeletionProtection)
+	if instance.Endpoint != nil {
+		setStringLabel(labels, rdsLabelInstanceEndpointAddress, instance.Endpoint.Address)
+		setStringLabel(labels, rdsLabelInstanceEndpointHostedZoneID, instance.Endpoint.HostedZoneId)
+		setIntLabel(labels, rdsLabelInstanceEndpointPort, instance.Endpoint.Port)
+	}
+	setStringLabel(labels, rdsLabelInstanceEngine, instance.Engine)
+	setStringLabel(labels, rdsLabelInstanceEngineLifecycleSupport, instance.EngineLifecycleSupport)
+	setStringLabel(labels, rdsLabelInstanceEngineVersion, instance.EngineVersion)
+	setStringLabel(labels, rdsLabelInstanceEnhancedMonitoringResourceArn, instance.EnhancedMonitoringResourceArn)
+	setBoolLabel(labels, rdsLabelInstanceIAMDatabaseAuthenticationEnabled, instance.IAMDatabaseAuthenticationEnabled)
+	setTimeLabel(labels, rdsLabelInstanceInstanceCreateTime, instance.InstanceCreateTime)
+	setIntLabel(labels, rdsLabelInstanceIops, instance.Iops)
+	setBoolLabel(labels, rdsLabelInstanceIsStorageConfigUpgradeAvailable, instance.IsStorageConfigUpgradeAvailable)
+	setStringLabel(labels, rdsLabelInstanceKMSKeyID, instance.KmsKeyId)
+	setTimeLabel(labels, rdsLabelInstanceLatestRestorableTime, instance.LatestRestorableTime)
+	setStringLabel(labels, rdsLabelInstanceLicenseModel, instance.LicenseModel)
+	if instance.ListenerEndpoint != nil {
+		setStringLabel(labels, rdsLabelInstanceListenerEndpointAddress, instance.ListenerEndpoint.Address)
+		setStringLabel(labels, rdsLabelInstanceListenerEndpointHostedZoneID, instance.ListenerEndpoint.HostedZoneId)
+		setIntLabel(labels, rdsLabelInstanceListenerEndpointPort, instance.ListenerEndpoint.Port)
+	}
+	setStringLabel(labels, rdsLabelInstanceMasterUsername, instance.MasterUsername)
+	setIntLabel(labels, rdsLabelInstanceMaxAllocatedStorage, instance.MaxAllocatedStorage)
+	setIntLabel(labels, rdsLabelInstanceMonitoringInterval, instance.MonitoringInterval)
+	setStringLabel(labels, rdsLabelInstanceMonitoringRoleArn, instance.MonitoringRoleArn)
+	setBoolLabel(labels, rdsLabelInstanceMultiAZ, instance.MultiAZ)
+	setBoolLabel(labels, rdsLabelInstanceMultiTenant, instance.MultiTenant)
+	setStringLabel(labels, rdsLabelInstanceNcharCharacterSetName, instance.NcharCharacterSetName)
+	setStringLabel(labels, rdsLabelInstanceNetworkType, instance.NetworkType)
+	setStringLabel(labels, rdsLabelInstancePercentProgress, instance.PercentProgress)
+	setBoolLabel(labels, rdsLabelInstancePerformanceInsightsEnabled, instance.PerformanceInsightsEnabled)
+	setStringLabel(labels, rdsLabelInstancePerformanceInsightsKMSKeyID, instance.PerformanceInsightsKMSKeyId)
+	setIntLabel(labels, rdsLabelInstancePerformanceInsightsRetentionPeriod, instance.PerformanceInsightsRetentionPeriod)
+	setStringLabel(labels, rdsLabelInstancePreferredBackupWindow, instance.PreferredBackupWindow)
+	setStringLabel(labels, rdsLabelInstancePreferredMaintenanceWindow, instance.PreferredMaintenanceWindow)
+	setIntLabel(labels, rdsLabelInstancePromotionTier, instance.PromotionTier)
+	setBoolLabel(labels, rdsLabelInstancePubliclyAccessible, instance.PubliclyAccessible)
+	setStringLabel(labels, rdsLabelInstanceReadReplicaSourceDBClusterIdentifier, instance.ReadReplicaSourceDBClusterIdentifier)
+	setStringLabel(labels, rdsLabelInstanceReadReplicaSourceDBInstanceIdentifier, instance.ReadReplicaSourceDBInstanceIdentifier)
+	setNonEmptyLabel(labels, rdsLabelInstanceReplicaMode, instance.ReplicaMode)
+	setTimeLabel(labels, rdsLabelInstanceResumeFullAutomationModeTime, instance.ResumeFullAutomationModeTime)
+	setStringLabel(labels, rdsLabelInstanceSecondaryAvailabilityZone, instance.SecondaryAvailabilityZone)
+	setBoolLabel(labels, rdsLabelInstanceStorageEncrypted, instance.StorageEncrypted)
+	setNonEmptyLabel(labels, rdsLabelInstanceStorageEncryptionType, instance.StorageEncryptionType)
+	setIntLabel(labels, rdsLabelInstanceStorageThroughput, instance.StorageThroughput)
+	setStringLabel(labels, rdsLabelInstanceStorageType, instance.StorageType)
+	setStringLabel(labels, rdsLabelInstanceStorageVolumeStatus, instance.StorageVolumeStatus)
+	setStringLabel(labels, rdsLabelInstanceTdeCredentialArn, instance.TdeCredentialArn)
+	setStringLabel(labels, rdsLabelInstanceTimezone, instance.Timezone)
+	setNonEmptyLabel(labels, rdsLabelInstanceUpgradeRolloutOrder, instance.UpgradeRolloutOrder)
+	if instance.DBSubnetGroup != nil {
+		setStringLabel(labels, rdsLabelInstanceDBSubnetGroup, instance.DBSubnetGroup.DBSubnetGroupName)
+	}
+	setStringLabel(labels, rdsLabelInstanceDBSystemID, instance.DBSystemId)
+	setNonEmptyLabel(labels, rdsLabelInstanceDatabaseInsightsMode, instance.DatabaseInsightsMode)
+
+	// Instance tags.
+	for _, tag := range instance.TagList {
+		if tag.Key != nil && tag.Value != nil {
+			labels[model.LabelName(rdsLabelInstanceTag+strutil.SanitizeLabelName(*tag.Key))] = model.LabelValue(*tag.Value)
+		}
+	}
+}
+
 func (d *RDSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	err := d.initRdsClient(ctx)
 	if err != nil {
@@ -545,480 +745,14 @@ func (d *RDSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 		go func(cluster types.DBCluster, instances []types.DBInstance) {
 			defer wg.Done()
 
-			// Build a map of instance identifiers to their IsClusterWriter status
-			writerMap := make(map[string]bool)
-			for _, member := range cluster.DBClusterMembers {
-				if member.DBInstanceIdentifier != nil && member.IsClusterWriter != nil {
-					writerMap[*member.DBInstanceIdentifier] = *member.IsClusterWriter
-				}
-			}
+			// The cluster labels and the writer status of its members are the
+			// same for every instance of the cluster, so compute them once.
+			clusterLabels := rdsClusterLabels(cluster)
+			writers := rdsClusterWriters(cluster)
 
 			for _, instance := range instances {
-				labels := model.LabelSet{}
-
-				// Cluster labels
-				if cluster.DBClusterArn != nil {
-					labels[rdsLabelClusterDBClusterArn] = model.LabelValue(*cluster.DBClusterArn)
-				}
-				if cluster.DBClusterIdentifier != nil {
-					labels[rdsLabelClusterDBClusterIdentifier] = model.LabelValue(*cluster.DBClusterIdentifier)
-				}
-				if cluster.ActivityStreamKinesisStreamName != nil {
-					labels[rdsLabelClusterActivityStreamKinesisStreamName] = model.LabelValue(*cluster.ActivityStreamKinesisStreamName)
-				}
-				if cluster.ActivityStreamKmsKeyId != nil {
-					labels[rdsLabelClusterActivityStreamKMSKeyID] = model.LabelValue(*cluster.ActivityStreamKmsKeyId)
-				}
-				if cluster.ActivityStreamMode != "" {
-					labels[rdsLabelClusterActivityStreamMode] = model.LabelValue(cluster.ActivityStreamMode)
-				}
-				if cluster.ActivityStreamStatus != "" {
-					labels[rdsLabelClusterActivityStreamStatus] = model.LabelValue(cluster.ActivityStreamStatus)
-				}
-				if cluster.AllocatedStorage != nil {
-					labels[rdsLabelClusterAllocatedStorage] = model.LabelValue(strconv.Itoa(int(*cluster.AllocatedStorage)))
-				}
-				if cluster.AutoMinorVersionUpgrade != nil {
-					labels[rdsLabelClusterAutoMinorVersionUpgrade] = model.LabelValue(strconv.FormatBool(*cluster.AutoMinorVersionUpgrade))
-				}
-				if cluster.AutomaticRestartTime != nil {
-					labels[rdsLabelClusterAutomaticRestartTime] = model.LabelValue(cluster.AutomaticRestartTime.Format(time.RFC3339))
-				}
-				if cluster.AwsBackupRecoveryPointArn != nil {
-					labels[rdsLabelClusterAwsBackupRecoveryPointArn] = model.LabelValue(*cluster.AwsBackupRecoveryPointArn)
-				}
-				if cluster.BacktrackConsumedChangeRecords != nil {
-					labels[rdsLabelClusterBacktrackConsumedChangeRecords] = model.LabelValue(strconv.FormatInt(*cluster.BacktrackConsumedChangeRecords, 10))
-				}
-				if cluster.BacktrackWindow != nil {
-					labels[rdsLabelClusterBacktrackWindow] = model.LabelValue(strconv.FormatInt(*cluster.BacktrackWindow, 10))
-				}
-				if cluster.BackupRetentionPeriod != nil {
-					labels[rdsLabelClusterBackupRetentionPeriod] = model.LabelValue(strconv.Itoa(int(*cluster.BackupRetentionPeriod)))
-				}
-				if cluster.Capacity != nil {
-					labels[rdsLabelClusterCapacity] = model.LabelValue(strconv.Itoa(int(*cluster.Capacity)))
-				}
-				if cluster.CharacterSetName != nil {
-					labels[rdsLabelClusterCharacterSetName] = model.LabelValue(*cluster.CharacterSetName)
-				}
-				if cluster.CloneGroupId != nil {
-					labels[rdsLabelClusterCloneGroupID] = model.LabelValue(*cluster.CloneGroupId)
-				}
-				if cluster.ClusterCreateTime != nil {
-					labels[rdsLabelClusterClusterCreateTime] = model.LabelValue(cluster.ClusterCreateTime.Format(time.RFC3339))
-				}
-				if cluster.ClusterScalabilityType != "" {
-					labels[rdsLabelClusterClusterScalabilityType] = model.LabelValue(cluster.ClusterScalabilityType)
-				}
-				if cluster.CopyTagsToSnapshot != nil {
-					labels[rdsLabelClusterCopyTagsToSnapshot] = model.LabelValue(strconv.FormatBool(*cluster.CopyTagsToSnapshot))
-				}
-				if cluster.CrossAccountClone != nil {
-					labels[rdsLabelClusterCrossAccountClone] = model.LabelValue(strconv.FormatBool(*cluster.CrossAccountClone))
-				}
-				if cluster.DBClusterInstanceClass != nil {
-					labels[rdsLabelClusterDBClusterInstanceClass] = model.LabelValue(*cluster.DBClusterInstanceClass)
-				}
-				if cluster.DBClusterParameterGroup != nil {
-					labels[rdsLabelClusterDBClusterParameterGroup] = model.LabelValue(*cluster.DBClusterParameterGroup)
-				}
-				if cluster.DBSubnetGroup != nil {
-					labels[rdsLabelClusterDBSubnetGroup] = model.LabelValue(*cluster.DBSubnetGroup)
-				}
-				if cluster.DBSystemId != nil {
-					labels[rdsLabelClusterDBSystemID] = model.LabelValue(*cluster.DBSystemId)
-				}
-				if cluster.DatabaseInsightsMode != "" {
-					labels[rdsLabelClusterDatabaseInsightsMode] = model.LabelValue(cluster.DatabaseInsightsMode)
-				}
-				if cluster.DatabaseName != nil {
-					labels[rdsLabelClusterDatabaseName] = model.LabelValue(*cluster.DatabaseName)
-				}
-				if cluster.DbClusterResourceId != nil {
-					labels[rdsLabelClusterDBClusterResourceID] = model.LabelValue(*cluster.DbClusterResourceId)
-				}
-				if cluster.DeletionProtection != nil {
-					labels[rdsLabelClusterDeletionProtection] = model.LabelValue(strconv.FormatBool(*cluster.DeletionProtection))
-				}
-				if cluster.EarliestBacktrackTime != nil {
-					labels[rdsLabelClusterEarliestBacktrackTime] = model.LabelValue(cluster.EarliestBacktrackTime.Format(time.RFC3339))
-				}
-				if cluster.EarliestRestorableTime != nil {
-					labels[rdsLabelClusterEarliestRestorableTime] = model.LabelValue(cluster.EarliestRestorableTime.Format(time.RFC3339))
-				}
-				if cluster.Endpoint != nil {
-					labels[rdsLabelClusterEndpoint] = model.LabelValue(*cluster.Endpoint)
-				}
-				if cluster.Engine != nil {
-					labels[rdsLabelClusterEngine] = model.LabelValue(*cluster.Engine)
-				}
-				if cluster.EngineLifecycleSupport != nil {
-					labels[rdsLabelClusterEngineLifecycleSupport] = model.LabelValue(*cluster.EngineLifecycleSupport)
-				}
-				if cluster.EngineMode != nil {
-					labels[rdsLabelClusterEngineMode] = model.LabelValue(*cluster.EngineMode)
-				}
-				if cluster.EngineVersion != nil {
-					labels[rdsLabelClusterEngineVersion] = model.LabelValue(*cluster.EngineVersion)
-				}
-				if cluster.GlobalClusterIdentifier != nil {
-					labels[rdsLabelClusterGlobalClusterIdentifier] = model.LabelValue(*cluster.GlobalClusterIdentifier)
-				}
-				if cluster.GlobalWriteForwardingRequested != nil {
-					labels[rdsLabelClusterGlobalWriteForwardingRequested] = model.LabelValue(strconv.FormatBool(*cluster.GlobalWriteForwardingRequested))
-				}
-				if cluster.GlobalWriteForwardingStatus != "" {
-					labels[rdsLabelClusterGlobalWriteForwardingStatus] = model.LabelValue(cluster.GlobalWriteForwardingStatus)
-				}
-				if cluster.HostedZoneId != nil {
-					labels[rdsLabelClusterHostedZoneID] = model.LabelValue(*cluster.HostedZoneId)
-				}
-				if cluster.HttpEndpointEnabled != nil {
-					labels[rdsLabelClusterHTTPEndpointEnabled] = model.LabelValue(strconv.FormatBool(*cluster.HttpEndpointEnabled))
-				}
-				if cluster.IAMDatabaseAuthenticationEnabled != nil {
-					labels[rdsLabelClusterIAMDatabaseAuthenticationEnabled] = model.LabelValue(strconv.FormatBool(*cluster.IAMDatabaseAuthenticationEnabled))
-				}
-				if cluster.IOOptimizedNextAllowedModificationTime != nil {
-					labels[rdsLabelClusterIOOptimizedNextAllowedModificationTime] = model.LabelValue(cluster.IOOptimizedNextAllowedModificationTime.Format(time.RFC3339))
-				}
-				if cluster.Iops != nil {
-					labels[rdsLabelClusterIops] = model.LabelValue(strconv.Itoa(int(*cluster.Iops)))
-				}
-				if cluster.KmsKeyId != nil {
-					labels[rdsLabelClusterKMSKeyID] = model.LabelValue(*cluster.KmsKeyId)
-				}
-				if cluster.LatestRestorableTime != nil {
-					labels[rdsLabelClusterLatestRestorableTime] = model.LabelValue(cluster.LatestRestorableTime.Format(time.RFC3339))
-				}
-				if cluster.LocalWriteForwardingStatus != "" {
-					labels[rdsLabelClusterLocalWriteForwardingStatus] = model.LabelValue(cluster.LocalWriteForwardingStatus)
-				}
-				if cluster.MasterUsername != nil {
-					labels[rdsLabelClusterMasterUsername] = model.LabelValue(*cluster.MasterUsername)
-				}
-				if cluster.MonitoringInterval != nil {
-					labels[rdsLabelClusterMonitoringInterval] = model.LabelValue(strconv.Itoa(int(*cluster.MonitoringInterval)))
-				}
-				if cluster.MonitoringRoleArn != nil {
-					labels[rdsLabelClusterMonitoringRoleArn] = model.LabelValue(*cluster.MonitoringRoleArn)
-				}
-				if cluster.MultiAZ != nil {
-					labels[rdsLabelClusterMultiAZ] = model.LabelValue(strconv.FormatBool(*cluster.MultiAZ))
-				}
-				if cluster.NetworkType != nil {
-					labels[rdsLabelClusterNetworkType] = model.LabelValue(*cluster.NetworkType)
-				}
-				if cluster.PercentProgress != nil {
-					labels[rdsLabelClusterPercentProgress] = model.LabelValue(*cluster.PercentProgress)
-				}
-				if cluster.PerformanceInsightsEnabled != nil {
-					labels[rdsLabelClusterPerformanceInsightsEnabled] = model.LabelValue(strconv.FormatBool(*cluster.PerformanceInsightsEnabled))
-				}
-				if cluster.PerformanceInsightsKMSKeyId != nil {
-					labels[rdsLabelClusterPerformanceInsightsKMSKeyID] = model.LabelValue(*cluster.PerformanceInsightsKMSKeyId)
-				}
-				if cluster.PerformanceInsightsRetentionPeriod != nil {
-					labels[rdsLabelClusterPerformanceInsightsRetentionPeriod] = model.LabelValue(strconv.Itoa(int(*cluster.PerformanceInsightsRetentionPeriod)))
-				}
-				if cluster.Port != nil {
-					labels[rdsLabelClusterPort] = model.LabelValue(strconv.Itoa(int(*cluster.Port)))
-				}
-				if cluster.PreferredBackupWindow != nil {
-					labels[rdsLabelClusterPreferredBackupWindow] = model.LabelValue(*cluster.PreferredBackupWindow)
-				}
-				if cluster.PreferredMaintenanceWindow != nil {
-					labels[rdsLabelClusterPreferredMaintenanceWindow] = model.LabelValue(*cluster.PreferredMaintenanceWindow)
-				}
-				if cluster.PubliclyAccessible != nil {
-					labels[rdsLabelClusterPubliclyAccessible] = model.LabelValue(strconv.FormatBool(*cluster.PubliclyAccessible))
-				}
-				if cluster.ReaderEndpoint != nil {
-					labels[rdsLabelClusterReaderEndpoint] = model.LabelValue(*cluster.ReaderEndpoint)
-				}
-				if cluster.ReplicationSourceIdentifier != nil {
-					labels[rdsLabelClusterReplicationSourceIdentifier] = model.LabelValue(*cluster.ReplicationSourceIdentifier)
-				}
-				if cluster.ServerlessV2PlatformVersion != nil {
-					labels[rdsLabelClusterServerlessV2PlatformVersion] = model.LabelValue(*cluster.ServerlessV2PlatformVersion)
-				}
-				if cluster.Status != nil {
-					labels[rdsLabelClusterStatus] = model.LabelValue(*cluster.Status)
-				}
-				if cluster.StorageEncrypted != nil {
-					labels[rdsLabelClusterStorageEncrypted] = model.LabelValue(strconv.FormatBool(*cluster.StorageEncrypted))
-				}
-				if cluster.StorageEncryptionType != "" {
-					labels[rdsLabelClusterStorageEncryptionType] = model.LabelValue(cluster.StorageEncryptionType)
-				}
-				if cluster.StorageThroughput != nil {
-					labels[rdsLabelClusterStorageThroughput] = model.LabelValue(strconv.Itoa(int(*cluster.StorageThroughput)))
-				}
-				if cluster.StorageType != nil {
-					labels[rdsLabelClusterStorageType] = model.LabelValue(*cluster.StorageType)
-				}
-				if cluster.UpgradeRolloutOrder != "" {
-					labels[rdsLabelClusterUpgradeRolloutOrder] = model.LabelValue(cluster.UpgradeRolloutOrder)
-				}
-
-				// Cluster tags
-				for _, tag := range cluster.TagList {
-					if tag.Key != nil && tag.Value != nil {
-						labels[model.LabelName(rdsLabelClusterTag+strutil.SanitizeLabelName(*tag.Key))] = model.LabelValue(*tag.Value)
-					}
-				}
-
-				// Instance labels
-				if instance.DBInstanceArn != nil {
-					labels[rdsLabelInstanceDBInstanceArn] = model.LabelValue(*instance.DBInstanceArn)
-				}
-				if instance.DBInstanceIdentifier != nil {
-					labels[rdsLabelInstanceDBInstanceIdentifier] = model.LabelValue(*instance.DBInstanceIdentifier)
-					// Set IsClusterWriter based on cluster membership information
-					if isWriter, found := writerMap[*instance.DBInstanceIdentifier]; found {
-						labels[rdsLabelInstanceIsClusterWriter] = model.LabelValue(strconv.FormatBool(isWriter))
-					}
-				}
-				if instance.ActivityStreamEngineNativeAuditFieldsIncluded != nil {
-					labels[rdsLabelInstanceActivityStreamEngineNativeAuditFieldsIncluded] = model.LabelValue(strconv.FormatBool(*instance.ActivityStreamEngineNativeAuditFieldsIncluded))
-				}
-				if instance.ActivityStreamKinesisStreamName != nil {
-					labels[rdsLabelInstanceActivityStreamKinesisStreamName] = model.LabelValue(*instance.ActivityStreamKinesisStreamName)
-				}
-				if instance.ActivityStreamKmsKeyId != nil {
-					labels[rdsLabelInstanceActivityStreamKmsKeyID] = model.LabelValue(*instance.ActivityStreamKmsKeyId)
-				}
-				if instance.ActivityStreamMode != "" {
-					labels[rdsLabelInstanceActivityStreamMode] = model.LabelValue(instance.ActivityStreamMode)
-				}
-				if instance.ActivityStreamPolicyStatus != "" {
-					labels[rdsLabelInstanceActivityStreamPolicyStatus] = model.LabelValue(instance.ActivityStreamPolicyStatus)
-				}
-				if instance.ActivityStreamStatus != "" {
-					labels[rdsLabelInstanceActivityStreamStatus] = model.LabelValue(instance.ActivityStreamStatus)
-				}
-				if instance.AllocatedStorage != nil {
-					labels[rdsLabelInstanceAllocatedStorage] = model.LabelValue(strconv.Itoa(int(*instance.AllocatedStorage)))
-				}
-				if instance.AutoMinorVersionUpgrade != nil {
-					labels[rdsLabelInstanceAutoMinorVersionUpgrade] = model.LabelValue(strconv.FormatBool(*instance.AutoMinorVersionUpgrade))
-				}
-				if instance.AutomaticRestartTime != nil {
-					labels[rdsLabelInstanceAutomaticRestartTime] = model.LabelValue(instance.AutomaticRestartTime.Format(time.RFC3339))
-				}
-				if instance.AutomationMode != "" {
-					labels[rdsLabelInstanceAutomationMode] = model.LabelValue(instance.AutomationMode)
-				}
-				if instance.AvailabilityZone != nil {
-					labels[rdsLabelInstanceAvailabilityZone] = model.LabelValue(*instance.AvailabilityZone)
-				}
-				if instance.AwsBackupRecoveryPointArn != nil {
-					labels[rdsLabelInstanceAwsBackupRecoveryPointArn] = model.LabelValue(*instance.AwsBackupRecoveryPointArn)
-				}
-				if instance.BackupRetentionPeriod != nil {
-					labels[rdsLabelInstanceBackupRetentionPeriod] = model.LabelValue(strconv.Itoa(int(*instance.BackupRetentionPeriod)))
-				}
-				if instance.BackupTarget != nil {
-					labels[rdsLabelInstanceBackupTarget] = model.LabelValue(*instance.BackupTarget)
-				}
-				if instance.CACertificateIdentifier != nil {
-					labels[rdsLabelInstanceCACertificateIdentifier] = model.LabelValue(*instance.CACertificateIdentifier)
-				}
-				if instance.CharacterSetName != nil {
-					labels[rdsLabelInstanceCharacterSetName] = model.LabelValue(*instance.CharacterSetName)
-				}
-				if instance.CopyTagsToSnapshot != nil {
-					labels[rdsLabelInstanceCopyTagsToSnapshot] = model.LabelValue(strconv.FormatBool(*instance.CopyTagsToSnapshot))
-				}
-				if instance.CustomIamInstanceProfile != nil {
-					labels[rdsLabelInstanceCustomIamInstanceProfile] = model.LabelValue(*instance.CustomIamInstanceProfile)
-				}
-				if instance.CustomerOwnedIpEnabled != nil {
-					labels[rdsLabelInstanceCustomerOwnedIPEnabled] = model.LabelValue(strconv.FormatBool(*instance.CustomerOwnedIpEnabled))
-				}
-				if instance.DBClusterIdentifier != nil {
-					labels[rdsLabelInstanceDBClusterIdentifier] = model.LabelValue(*instance.DBClusterIdentifier)
-				}
-				if instance.DBInstanceClass != nil {
-					labels[rdsLabelInstanceDBInstanceClass] = model.LabelValue(*instance.DBInstanceClass)
-				}
-				if instance.DBInstanceStatus != nil {
-					labels[rdsLabelInstanceDBInstanceStatus] = model.LabelValue(*instance.DBInstanceStatus)
-				}
-				if instance.DBName != nil {
-					labels[rdsLabelInstanceDBName] = model.LabelValue(*instance.DBName)
-				}
-				if instance.DbInstancePort != nil {
-					labels[rdsLabelInstanceDBInstancePort] = model.LabelValue(strconv.Itoa(int(*instance.DbInstancePort)))
-				}
-				if instance.DbiResourceId != nil {
-					labels[rdsLabelInstanceDBResourceID] = model.LabelValue(*instance.DbiResourceId)
-				}
-				if instance.DedicatedLogVolume != nil {
-					labels[rdsLabelInstanceDedicatedLogVolume] = model.LabelValue(strconv.FormatBool(*instance.DedicatedLogVolume))
-				}
-				if instance.DeletionProtection != nil {
-					labels[rdsLabelInstanceDeletionProtection] = model.LabelValue(strconv.FormatBool(*instance.DeletionProtection))
-				}
-				if instance.Endpoint != nil {
-					if instance.Endpoint.Address != nil {
-						labels[rdsLabelInstanceEndpointAddress] = model.LabelValue(*instance.Endpoint.Address)
-					}
-					if instance.Endpoint.HostedZoneId != nil {
-						labels[rdsLabelInstanceEndpointHostedZoneID] = model.LabelValue(*instance.Endpoint.HostedZoneId)
-					}
-					if instance.Endpoint.Port != nil {
-						labels[rdsLabelInstanceEndpointPort] = model.LabelValue(strconv.Itoa(int(*instance.Endpoint.Port)))
-					}
-				}
-				if instance.Engine != nil {
-					labels[rdsLabelInstanceEngine] = model.LabelValue(*instance.Engine)
-				}
-				if instance.EngineLifecycleSupport != nil {
-					labels[rdsLabelInstanceEngineLifecycleSupport] = model.LabelValue(*instance.EngineLifecycleSupport)
-				}
-				if instance.EngineVersion != nil {
-					labels[rdsLabelInstanceEngineVersion] = model.LabelValue(*instance.EngineVersion)
-				}
-				if instance.EnhancedMonitoringResourceArn != nil {
-					labels[rdsLabelInstanceEnhancedMonitoringResourceArn] = model.LabelValue(*instance.EnhancedMonitoringResourceArn)
-				}
-				if instance.IAMDatabaseAuthenticationEnabled != nil {
-					labels[rdsLabelInstanceIAMDatabaseAuthenticationEnabled] = model.LabelValue(strconv.FormatBool(*instance.IAMDatabaseAuthenticationEnabled))
-				}
-				if instance.InstanceCreateTime != nil {
-					labels[rdsLabelInstanceInstanceCreateTime] = model.LabelValue(instance.InstanceCreateTime.Format(time.RFC3339))
-				}
-				if instance.Iops != nil {
-					labels[rdsLabelInstanceIops] = model.LabelValue(strconv.Itoa(int(*instance.Iops)))
-				}
-				if instance.IsStorageConfigUpgradeAvailable != nil {
-					labels[rdsLabelInstanceIsStorageConfigUpgradeAvailable] = model.LabelValue(strconv.FormatBool(*instance.IsStorageConfigUpgradeAvailable))
-				}
-				if instance.KmsKeyId != nil {
-					labels[rdsLabelInstanceKMSKeyID] = model.LabelValue(*instance.KmsKeyId)
-				}
-				if instance.LatestRestorableTime != nil {
-					labels[rdsLabelInstanceLatestRestorableTime] = model.LabelValue(instance.LatestRestorableTime.Format(time.RFC3339))
-				}
-				if instance.LicenseModel != nil {
-					labels[rdsLabelInstanceLicenseModel] = model.LabelValue(*instance.LicenseModel)
-				}
-				if instance.ListenerEndpoint != nil {
-					if instance.ListenerEndpoint.Address != nil {
-						labels[rdsLabelInstanceListenerEndpointAddress] = model.LabelValue(*instance.ListenerEndpoint.Address)
-					}
-					if instance.ListenerEndpoint.HostedZoneId != nil {
-						labels[rdsLabelInstanceListenerEndpointHostedZoneID] = model.LabelValue(*instance.ListenerEndpoint.HostedZoneId)
-					}
-					if instance.ListenerEndpoint.Port != nil {
-						labels[rdsLabelInstanceListenerEndpointPort] = model.LabelValue(strconv.Itoa(int(*instance.ListenerEndpoint.Port)))
-					}
-				}
-				if instance.MasterUsername != nil {
-					labels[rdsLabelInstanceMasterUsername] = model.LabelValue(*instance.MasterUsername)
-				}
-				if instance.MaxAllocatedStorage != nil {
-					labels[rdsLabelInstanceMaxAllocatedStorage] = model.LabelValue(strconv.Itoa(int(*instance.MaxAllocatedStorage)))
-				}
-				if instance.MonitoringInterval != nil {
-					labels[rdsLabelInstanceMonitoringInterval] = model.LabelValue(strconv.Itoa(int(*instance.MonitoringInterval)))
-				}
-				if instance.MonitoringRoleArn != nil {
-					labels[rdsLabelInstanceMonitoringRoleArn] = model.LabelValue(*instance.MonitoringRoleArn)
-				}
-				if instance.MultiAZ != nil {
-					labels[rdsLabelInstanceMultiAZ] = model.LabelValue(strconv.FormatBool(*instance.MultiAZ))
-				}
-				if instance.MultiTenant != nil {
-					labels[rdsLabelInstanceMultiTenant] = model.LabelValue(strconv.FormatBool(*instance.MultiTenant))
-				}
-				if instance.NcharCharacterSetName != nil {
-					labels[rdsLabelInstanceNcharCharacterSetName] = model.LabelValue(*instance.NcharCharacterSetName)
-				}
-				if instance.NetworkType != nil {
-					labels[rdsLabelInstanceNetworkType] = model.LabelValue(*instance.NetworkType)
-				}
-				if instance.PercentProgress != nil {
-					labels[rdsLabelInstancePercentProgress] = model.LabelValue(*instance.PercentProgress)
-				}
-				if instance.PerformanceInsightsEnabled != nil {
-					labels[rdsLabelInstancePerformanceInsightsEnabled] = model.LabelValue(strconv.FormatBool(*instance.PerformanceInsightsEnabled))
-				}
-				if instance.PerformanceInsightsKMSKeyId != nil {
-					labels[rdsLabelInstancePerformanceInsightsKMSKeyID] = model.LabelValue(*instance.PerformanceInsightsKMSKeyId)
-				}
-				if instance.PerformanceInsightsRetentionPeriod != nil {
-					labels[rdsLabelInstancePerformanceInsightsRetentionPeriod] = model.LabelValue(strconv.Itoa(int(*instance.PerformanceInsightsRetentionPeriod)))
-				}
-				if instance.PreferredBackupWindow != nil {
-					labels[rdsLabelInstancePreferredBackupWindow] = model.LabelValue(*instance.PreferredBackupWindow)
-				}
-				if instance.PreferredMaintenanceWindow != nil {
-					labels[rdsLabelInstancePreferredMaintenanceWindow] = model.LabelValue(*instance.PreferredMaintenanceWindow)
-				}
-				if instance.PromotionTier != nil {
-					labels[rdsLabelInstancePromotionTier] = model.LabelValue(strconv.Itoa(int(*instance.PromotionTier)))
-				}
-				if instance.PubliclyAccessible != nil {
-					labels[rdsLabelInstancePubliclyAccessible] = model.LabelValue(strconv.FormatBool(*instance.PubliclyAccessible))
-				}
-				if instance.ReadReplicaSourceDBClusterIdentifier != nil {
-					labels[rdsLabelInstanceReadReplicaSourceDBClusterIdentifier] = model.LabelValue(*instance.ReadReplicaSourceDBClusterIdentifier)
-				}
-				if instance.ReadReplicaSourceDBInstanceIdentifier != nil {
-					labels[rdsLabelInstanceReadReplicaSourceDBInstanceIdentifier] = model.LabelValue(*instance.ReadReplicaSourceDBInstanceIdentifier)
-				}
-				if instance.ReplicaMode != "" {
-					labels[rdsLabelInstanceReplicaMode] = model.LabelValue(instance.ReplicaMode)
-				}
-				if instance.ResumeFullAutomationModeTime != nil {
-					labels[rdsLabelInstanceResumeFullAutomationModeTime] = model.LabelValue(instance.ResumeFullAutomationModeTime.Format(time.RFC3339))
-				}
-				if instance.SecondaryAvailabilityZone != nil {
-					labels[rdsLabelInstanceSecondaryAvailabilityZone] = model.LabelValue(*instance.SecondaryAvailabilityZone)
-				}
-				if instance.StorageEncrypted != nil {
-					labels[rdsLabelInstanceStorageEncrypted] = model.LabelValue(strconv.FormatBool(*instance.StorageEncrypted))
-				}
-				if instance.StorageEncryptionType != "" {
-					labels[rdsLabelInstanceStorageEncryptionType] = model.LabelValue(instance.StorageEncryptionType)
-				}
-				if instance.StorageThroughput != nil {
-					labels[rdsLabelInstanceStorageThroughput] = model.LabelValue(strconv.Itoa(int(*instance.StorageThroughput)))
-				}
-				if instance.StorageType != nil {
-					labels[rdsLabelInstanceStorageType] = model.LabelValue(*instance.StorageType)
-				}
-				if instance.StorageVolumeStatus != nil {
-					labels[rdsLabelInstanceStorageVolumeStatus] = model.LabelValue(*instance.StorageVolumeStatus)
-				}
-				if instance.TdeCredentialArn != nil {
-					labels[rdsLabelInstanceTdeCredentialArn] = model.LabelValue(*instance.TdeCredentialArn)
-				}
-				if instance.Timezone != nil {
-					labels[rdsLabelInstanceTimezone] = model.LabelValue(*instance.Timezone)
-				}
-				if instance.UpgradeRolloutOrder != "" {
-					labels[rdsLabelInstanceUpgradeRolloutOrder] = model.LabelValue(instance.UpgradeRolloutOrder)
-				}
-				if instance.DBSubnetGroup != nil && instance.DBSubnetGroup.DBSubnetGroupName != nil {
-					labels[rdsLabelInstanceDBSubnetGroup] = model.LabelValue(*instance.DBSubnetGroup.DBSubnetGroupName)
-				}
-				if instance.DBSystemId != nil {
-					labels[rdsLabelInstanceDBSystemID] = model.LabelValue(*instance.DBSystemId)
-				}
-				if instance.DatabaseInsightsMode != "" {
-					labels[rdsLabelInstanceDatabaseInsightsMode] = model.LabelValue(instance.DatabaseInsightsMode)
-				}
-
-				// Instance tags
-				for _, tag := range instance.TagList {
-					if tag.Key != nil && tag.Value != nil {
-						labels[model.LabelName(rdsLabelInstanceTag+strutil.SanitizeLabelName(*tag.Key))] = model.LabelValue(*tag.Value)
-					}
-				}
+				labels := clusterLabels.Clone()
+				addRDSInstanceLabels(labels, instance, writers)
 
 				// Set the address label
 				if instance.Endpoint != nil && instance.Endpoint.Address != nil && instance.Endpoint.Port != nil {

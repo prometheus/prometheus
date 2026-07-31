@@ -618,15 +618,9 @@ func (d *ECSDiscovery) describeEC2Instances(ctx context.Context, instanceIDs []s
 					privateIP: *instance.PrivateIpAddress,
 					tags:      make(map[string]string),
 				}
-				if instance.PublicIpAddress != nil {
-					info.publicIP = *instance.PublicIpAddress
-				}
-				if instance.SubnetId != nil {
-					info.subnetID = *instance.SubnetId
-				}
-				if instance.InstanceType != "" {
-					info.instanceType = string(instance.InstanceType)
-				}
+				setIfNotNil(&info.publicIP, instance.PublicIpAddress)
+				setIfNotNil(&info.subnetID, instance.SubnetId)
+				setNonEmptyField(&info.instanceType, instance.InstanceType)
 				// Collect EC2 instance tags
 				for _, tag := range instance.Tags {
 					if tag.Key != nil && tag.Value != nil {
@@ -949,36 +943,17 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					}
 
 					// Add subnet ID when available (awsvpc mode from ENI, bridge/host from EC2 instance)
-					if subnetID != "" {
-						labels[ecsLabelSubnetID] = model.LabelValue(subnetID)
-					}
+					setNonEmptyLabel(labels, ecsLabelSubnetID, subnetID)
 
 					// Add container instance and EC2 instance info for EC2 launch type
-					if task.ContainerInstanceArn != nil {
-						labels[ecsLabelContainerInstanceARN] = model.LabelValue(*task.ContainerInstanceArn)
-					}
-					if ec2InstanceID != "" {
-						labels[ecsLabelEC2InstanceID] = model.LabelValue(ec2InstanceID)
-					}
-					if ec2InstanceType != "" {
-						labels[ecsLabelEC2InstanceType] = model.LabelValue(ec2InstanceType)
-					}
-					if ec2InstancePrivateIP != "" {
-						labels[ecsLabelEC2InstancePrivateIP] = model.LabelValue(ec2InstancePrivateIP)
-					}
-					if ec2InstancePublicIP != "" {
-						labels[ecsLabelEC2InstancePublicIP] = model.LabelValue(ec2InstancePublicIP)
-					}
-					if publicIP != "" {
-						labels[ecsLabelPublicIP] = model.LabelValue(publicIP)
-					}
-
-					if task.PlatformFamily != nil {
-						labels[ecsLabelPlatformFamily] = model.LabelValue(*task.PlatformFamily)
-					}
-					if task.PlatformVersion != nil {
-						labels[ecsLabelPlatformVersion] = model.LabelValue(*task.PlatformVersion)
-					}
+					setStringLabel(labels, ecsLabelContainerInstanceARN, task.ContainerInstanceArn)
+					setNonEmptyLabel(labels, ecsLabelEC2InstanceID, ec2InstanceID)
+					setNonEmptyLabel(labels, ecsLabelEC2InstanceType, ec2InstanceType)
+					setNonEmptyLabel(labels, ecsLabelEC2InstancePrivateIP, ec2InstancePrivateIP)
+					setNonEmptyLabel(labels, ecsLabelEC2InstancePublicIP, ec2InstancePublicIP)
+					setNonEmptyLabel(labels, ecsLabelPublicIP, publicIP)
+					setStringLabel(labels, ecsLabelPlatformFamily, task.PlatformFamily)
+					setStringLabel(labels, ecsLabelPlatformVersion, task.PlatformVersion)
 
 					labels[model.AddressLabel] = model.LabelValue(net.JoinHostPort(ipAddress, strconv.Itoa(d.cfg.Port)))
 
@@ -995,15 +970,9 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 						if !ok {
 							d.logger.Debug("Service not found for task", "task", *task.TaskArn, "service", getServiceNameFromTaskGroup(task))
 						}
-						if service.ServiceName != nil {
-							labels[ecsLabelService] = model.LabelValue(*service.ServiceName)
-						}
-						if service.ServiceArn != nil {
-							labels[ecsLabelServiceARN] = model.LabelValue(*service.ServiceArn)
-						}
-						if service.Status != nil {
-							labels[ecsLabelServiceStatus] = model.LabelValue(*service.Status)
-						}
+						setStringLabel(labels, ecsLabelService, service.ServiceName)
+						setStringLabel(labels, ecsLabelServiceARN, service.ServiceArn)
+						setStringLabel(labels, ecsLabelServiceStatus, service.Status)
 
 						// Add service tags
 						for _, serviceTag := range service.Tags {
