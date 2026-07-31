@@ -498,7 +498,7 @@ func (m *Manager) TargetsDroppedCounts() map[string]int {
 
 	counts := make(map[string]int, len(m.scrapePools))
 	for tset, sp := range m.scrapePools {
-		counts[tset] = sp.droppedTargetsCount
+		counts[tset] = sp.DroppedTargetsCount()
 	}
 	return counts
 }
