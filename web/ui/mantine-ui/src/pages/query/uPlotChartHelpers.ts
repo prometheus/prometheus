@@ -111,10 +111,49 @@ const formatLabels = (labels: { [key: string]: string }): string => `
 const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
   let over: HTMLDivElement;
   let selectedSeriesIdx: number | null = null;
+  // When pinned, the tooltip is frozen in place (its content and position stop
+  // updating) and further hovering does not open new tooltips, until the user
+  // clicks away from the tooltip.
+  let pinned = false;
 
   const overlay = document.createElement("div");
   overlay.className = "u-tooltip";
   overlay.style.display = "none";
+
+  const unpin = () => {
+    if (!pinned) {
+      return;
+    }
+    pinned = false;
+    overlay.classList.remove("pinned");
+    // Hide for now; a subsequent hover re-shows the tooltip via setCursor.
+    overlay.style.display = "none";
+  };
+
+  // onDocumentClick pins the tooltip when the user clicks over a series while
+  // its tooltip is shown, and unpins it on a click anywhere outside the
+  // tooltip. Clicks inside the tooltip are ignored so it stays open and can be
+  // interacted with.
+  const onDocumentClick = (e: MouseEvent) => {
+    const target = e.target as Node | null;
+    if (pinned) {
+      if (target !== null && overlay.contains(target)) {
+        return;
+      }
+      unpin();
+      return;
+    }
+    if (
+      over !== undefined &&
+      target !== null &&
+      over.contains(target) &&
+      selectedSeriesIdx !== null &&
+      overlay.style.display !== "none"
+    ) {
+      pinned = true;
+      overlay.classList.add("pinned");
+    }
+  };
 
   return {
     hooks: {
@@ -123,28 +162,42 @@ const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
         over = u.over;
 
         over.addEventListener("mouseenter", () => {
-          overlay.style.display = "block";
+          if (!pinned) {
+            overlay.style.display = "block";
+          }
         });
 
         over.addEventListener("mouseleave", () => {
-          overlay.style.display = "none";
+          if (!pinned) {
+            overlay.style.display = "none";
+          }
         });
+
+        document.addEventListener("click", onDocumentClick);
 
         document.body.appendChild(overlay);
       },
       // When the chart is destroyed, remove the overlay from the DOM.
       destroy: () => {
+        document.removeEventListener("click", onDocumentClick);
         overlay.remove();
       },
       // When a series is selected by hovering close to it, store the
       // index of the selected series, so we can update the hover tooltip
       // in setCursor.
       setSeries: (_u: uPlot, seriesIdx: number | null, _opts: Series) => {
+        if (pinned) {
+          return;
+        }
         selectedSeriesIdx = seriesIdx;
       },
       // When the cursor is moved, update the tooltip with the current
       // series value and position it near the cursor.
       setCursor: (u: uPlot) => {
+        if (pinned) {
+          return;
+        }
+
         const { left, top, idx } = u.cursor;
 
         if (
@@ -158,6 +211,8 @@ const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
         ) {
           return;
         }
+
+        overlay.style.display = "block";
 
         const ts = u.data[0][idx];
         const value = data[selectedSeriesIdx][idx];

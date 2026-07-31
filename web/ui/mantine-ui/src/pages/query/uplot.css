@@ -56,6 +56,13 @@
   }
 }
 
+/* A pinned tooltip stays put and becomes interactive so it can be clicked. */
+.u-tooltip.pinned {
+  pointer-events: auto;
+  box-shadow: 0 2px 12px light-dark(rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0.6));
+  cursor: default;
+}
+
 .u-tooltip {
   font-size: 0.8em;
   white-space: nowrap;
