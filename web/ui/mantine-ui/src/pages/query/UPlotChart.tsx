@@ -1,5 +1,5 @@
 import { FC, useEffect, useState } from "react";
-import { RangeSamples } from "../../api/responseTypes/query";
+import { RangeSamples, SeriesContext } from "../../api/responseTypes/query";
 import classes from "./Graph.module.css";
 import { GraphDisplayMode } from "../../state/queryPageSlice";
 import uPlot from "uplot";
@@ -20,6 +20,7 @@ export interface UPlotChartRange {
 
 export interface UPlotChartProps {
   data: RangeSamples[];
+  contexts?: Record<string, SeriesContext>;
   range: UPlotChartRange;
   width: number;
   showExemplars: boolean;
@@ -32,6 +33,7 @@ export interface UPlotChartProps {
 // uPlot format and sets up the uPlot options object depending on the UI settings.
 const UPlotChart: FC<UPlotChartProps> = ({
   data,
+  contexts,
   range: { startTime, endTime, resolution },
   width,
   displayMode,
@@ -64,7 +66,8 @@ const UPlotChart: FC<UPlotChartProps> = ({
       useLocalTime,
       yAxisMin,
       theme === "light",
-      onSelectRange
+      onSelectRange,
+      contexts
     );
 
     if (displayMode === GraphDisplayMode.Stacked) {
@@ -85,6 +88,7 @@ const UPlotChart: FC<UPlotChartProps> = ({
     theme,
     onSelectRange,
     yAxisMin,
+    contexts,
   ]);
 
   if (options === null || processedData === null) {

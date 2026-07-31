@@ -63,6 +63,49 @@
   cursor: default;
 }
 
+.u-tooltip .u-tooltip-context-toggle {
+  margin-top: 0.6em;
+  padding: 2px 6px;
+  font-size: 0.95em;
+  font-family: inherit;
+  color: inherit;
+  background: light-dark(
+    var(--mantine-color-gray-1),
+    var(--mantine-color-dark-5)
+  );
+  border: 1px solid light-dark(
+    var(--mantine-color-gray-4),
+    var(--mantine-color-dark-3)
+  );
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.u-tooltip .u-tooltip-context {
+  margin-top: 0.5em;
+  padding-left: 0.6em;
+  border-left: 2px solid
+    light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-3));
+  white-space: normal;
+  max-height: 320px;
+  overflow-y: auto;
+  line-height: 1.35em;
+}
+
+.u-tooltip .u-tooltip-context-section {
+  margin-top: 0.4em;
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.6;
+}
+
+.u-tooltip .u-tooltip-context-id {
+  margin-top: 0.4em;
+  font-weight: 700;
+  opacity: 0.7;
+}
+
 .u-tooltip {
   font-size: 0.8em;
   white-space: nowrap;

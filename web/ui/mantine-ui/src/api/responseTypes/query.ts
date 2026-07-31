@@ -81,4 +81,5 @@ export type RangeQueryResult = {
   resultType: "matrix";
   result: RangeSamples[];
   stats?: QueryStats;
+  contexts?: Record<string, SeriesContext>;
 };

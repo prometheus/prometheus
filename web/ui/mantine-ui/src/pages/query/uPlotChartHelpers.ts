@@ -1,4 +1,8 @@
-import { RangeSamples } from "../../api/responseTypes/query";
+import {
+  ContextRef,
+  RangeSamples,
+  SeriesContext,
+} from "../../api/responseTypes/query";
 import { formatSeries } from "../../lib/formatSeries";
 import { formatTimestamp } from "../../lib/formatTime";
 import { getSeriesColor } from "./colorPool";
@@ -108,7 +112,65 @@ const formatLabels = (labels: { [key: string]: string }): string => `
                 .join("")}
             </div>`;
 
-const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
+type ResolvedContext = { id: string; ctx: SeriesContext };
+
+// resolveSeriesContexts maps a series' context reference to the deduplicated
+// entries it points at in the shared contexts table.
+const resolveSeriesContexts = (
+  ref: ContextRef | undefined,
+  table: Record<string, SeriesContext> | undefined
+): ResolvedContext[] => {
+  if (ref === undefined || table === undefined) {
+    return [];
+  }
+  const ids =
+    typeof ref === "string"
+      ? [ref]
+      : Array.from(
+          new Set(ref.map((r) => r.id).filter((id): id is string => id !== null))
+        );
+  return ids
+    .map((id) => ({ id, ctx: table[id] }))
+    .filter((e): e is ResolvedContext => e.ctx !== undefined);
+};
+
+const contextAttrsHTML = (attrs: Record<string, string> | undefined): string =>
+  attrs === undefined
+    ? ""
+    : Object.keys(attrs)
+        .sort()
+        .map(
+          (k) =>
+            `<div><strong>${escapeHTML(k)}</strong> = ${escapeHTML(attrs[k])}</div>`
+        )
+        .join("");
+
+// contextSectionHTML builds the collapsible resource-context block appended to
+// a tooltip: a toggle button plus a hidden section listing every resource
+// attribute, one per row, grouped into identifying and descriptive. Returns ""
+// when the series has no resolvable context.
+const contextSectionHTML = (entries: ResolvedContext[]): string => {
+  if (entries.length === 0) {
+    return "";
+  }
+  const body = entries
+    .map(
+      ({ id, ctx }) => `
+        ${entries.length > 1 ? `<div class="u-tooltip-context-id">context ${escapeHTML(id)}</div>` : ""}
+        ${ctx.resource?.identifying ? `<div class="u-tooltip-context-section">identifying</div>${contextAttrsHTML(ctx.resource.identifying)}` : ""}
+        ${ctx.resource?.descriptive ? `<div class="u-tooltip-context-section">descriptive</div>${contextAttrsHTML(ctx.resource.descriptive)}` : ""}`
+    )
+    .join("");
+  return `
+            <button type="button" class="u-tooltip-context-toggle" aria-expanded="false">+ context</button>
+            <div class="u-tooltip-context" style="display: none">${body}</div>`;
+};
+
+const tooltipPlugin = (
+  useLocalTime: boolean,
+  data: AlignedData,
+  contexts: Record<string, SeriesContext> | undefined
+) => {
   let over: HTMLDivElement;
   let selectedSeriesIdx: number | null = null;
   // When pinned, the tooltip is frozen in place (its content and position stop
@@ -175,6 +237,28 @@ const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
 
         document.addEventListener("click", onDocumentClick);
 
+        // Toggle the resource-context section when its "+ context" button is
+        // clicked. Only reachable while pinned (the tooltip is otherwise not
+        // interactive), where the content is frozen so the toggle persists.
+        overlay.addEventListener("click", (e: MouseEvent) => {
+          const toggle = (e.target as HTMLElement).closest(
+            ".u-tooltip-context-toggle"
+          );
+          if (toggle === null) {
+            return;
+          }
+          const section = overlay.querySelector<HTMLDivElement>(
+            ".u-tooltip-context"
+          );
+          if (section === null) {
+            return;
+          }
+          const show = section.style.display === "none";
+          section.style.display = show ? "block" : "none";
+          toggle.setAttribute("aria-expanded", show ? "true" : "false");
+          toggle.textContent = show ? "− context" : "+ context";
+        });
+
         document.body.appendChild(overlay);
       },
       // When the chart is destroyed, remove the overlay from the DOM.
@@ -219,6 +303,8 @@ const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
         const series = u.series[selectedSeriesIdx];
         // @ts-expect-error - uPlot doesn't have a field for labels, but we just attach some anyway.
         const labels = series.labels;
+        // @ts-expect-error - uPlot doesn't have a field for context, but we just attach some anyway.
+        const contextEntries = resolveSeriesContexts(series.context, contexts);
         if (typeof series.stroke !== "function") {
           throw new Error("series.stroke is not a function");
         }
@@ -238,6 +324,7 @@ const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
               <span>${labels.__name__ ? escapeHTML(labels.__name__) + ": " : " "}<strong>${value}</strong></span>
             </div>
             ${formatLabels(labels)}
+            ${contextSectionHTML(contextEntries)}
           `.trimEnd();
 
         const virtualEl = {
@@ -370,6 +457,7 @@ export const getUPlotOptions = (
   yAxisMin: number | null,
   light: boolean,
   onSelectRange: (_start: number, _end: number) => void,
+  contexts?: Record<string, SeriesContext>,
 ): uPlot.Options => ({
   width: width - 30,
   height: 550,
@@ -388,7 +476,7 @@ export const getUPlotOptions = (
   tzDate: useLocalTime
     ? undefined
     : (ts) => uPlot.tzDate(new Date(ts * 1e3), "Etc/UTC"),
-  plugins: [tooltipPlugin(useLocalTime, data)],
+  plugins: [tooltipPlugin(useLocalTime, data, contexts)],
   legend: {
     show: true,
     live: false,
@@ -490,8 +578,9 @@ export const getUPlotOptions = (
         },
         label: formatSeries(r.metric),
         width: 1.5,
-        // @ts-expect-error - uPlot doesn't have a field for labels, but we just attach some anyway.
+        // @ts-expect-error - uPlot doesn't have a field for labels/context, but we just attach some anyway.
         labels: r.metric,
+        context: r.context,
         stroke: getSeriesColor(idx, light),
       }),
     ),
