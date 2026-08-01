@@ -8263,6 +8263,7 @@ func TestHead_WALReplayStaleMarkerTypeConsistency(t *testing.T) {
 func TestHead_MmappedChunkRestoresSeriesState(t *testing.T) {
 	tests := map[string]struct {
 		appendSamples func(*Head, labels.Labels)
+		snapshot      bool
 		wantStale     uint64
 		wantHist      uint64
 		wantBuckets   uint64
@@ -8301,6 +8302,16 @@ func TestHead_MmappedChunkRestoresSeriesState(t *testing.T) {
 			wantHist:    1,
 			wantBuckets: 8,
 		},
+		"stale float from snapshot": {
+			appendSamples: func(head *Head, lbls labels.Labels) {
+				app := head.Appender(context.Background())
+				_, err := app.Append(0, lbls, 100, math.Float64frombits(value.StaleNaN))
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+			},
+			snapshot:  true,
+			wantStale: 1,
+		},
 	}
 
 	for name, tc := range tests {
@@ -8309,6 +8320,7 @@ func TestHead_MmappedChunkRestoresSeriesState(t *testing.T) {
 			head, _ := newTestHeadWithOptions(t, compression.None, opts)
 			t.Cleanup(func() { _ = head.Close() })
 			require.NoError(t, head.Init(0))
+			head.opts.EnableMemorySnapshotOnShutdown = tc.snapshot
 
 			lbls := labels.FromStrings("name", name)
 			tc.appendSamples(head, lbls)
@@ -8316,9 +8328,26 @@ func TestHead_MmappedChunkRestoresSeriesState(t *testing.T) {
 			require.Equal(t, tc.wantHist, head.NumNativeHistogramSeries())
 			require.Equal(t, tc.wantBuckets, head.NumNativeHistogramBuckets())
 
-			// Force the latest sample into an m-mapped chunk. WAL replay skips
-			// samples covered by this chunk, so startup must restore its state.
-			require.NoError(t, head.truncateMemory(300))
+			// Put the only chunk on disk and remove the in-memory copy. This models
+			// a head whose latest sample is covered by an m-mapped chunk, so WAL
+			// replay skips it and startup must restore its cached state.
+			series, created, err := head.getOrCreate(lbls.Hash(), lbls, false)
+			require.NoError(t, err)
+			require.False(t, created)
+			series.Lock()
+			require.NotNil(t, series.headChunks)
+			chunk := series.headChunks
+			chunkRef := head.chunkDiskMapper.WriteChunk(series.ref, chunk.minTime, chunk.maxTime, chunk.chunk, false, handleChunkWriteError)
+			series.mmappedChunks = append(series.mmappedChunks, &mmappedChunk{
+				ref:        chunkRef,
+				minTime:    chunk.minTime,
+				maxTime:    chunk.maxTime,
+				numSamples: uint16(chunk.chunk.NumSamples()),
+				encoding:   chunk.chunk.Encoding(),
+			})
+			series.setHeadChunks(nil, 0)
+			series.app = nil
+			series.Unlock()
 			require.NoError(t, head.Close())
 
 			wal, err := wlog.NewSize(nil, nil, filepath.Join(opts.ChunkDirRoot, "wal"), 32768, compression.None)
@@ -8331,6 +8360,42 @@ func TestHead_MmappedChunkRestoresSeriesState(t *testing.T) {
 			require.Equal(t, tc.wantBuckets, head.NumNativeHistogramBuckets())
 		})
 	}
+}
+
+func TestHead_MmappedChunkRestoreFailureReplaysWALSamples(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	require.NoError(t, head.Init(0))
+
+	lset := labels.FromStrings("name", "corrupt-mmap")
+	series, created, err := head.getOrCreate(lset.Hash(), lset, false)
+	require.NoError(t, err)
+	require.True(t, created)
+
+	// Use a reference to a chunk file that does not exist. The restore path must
+	// discard it so replay does not treat its header's max time as authoritative.
+	mmapped := map[chunks.HeadSeriesRef][]*mmappedChunk{
+		series.ref: {{
+			ref:      chunks.ChunkDiskMapperRef(1 << 32),
+			minTime:  100,
+			maxTime:  100,
+			encoding: chunkenc.EncXOR,
+		}},
+	}
+	processor := walSubsetProcessor{}
+	processor.setup()
+	processor.input <- walSubsetProcessorInputItem{existingSeries: series, walSeriesRef: series.ref}
+	processor.input <- walSubsetProcessorInputItem{samples: []record.RefSample{{Ref: series.ref, T: 100, V: 42}}}
+	close(processor.input)
+
+	missing, unknownSamples, unknownHistograms, overlapping := processor.processWALSamples(head, mmapped, nil)
+	require.Empty(t, missing)
+	require.Zero(t, unknownSamples)
+	require.Zero(t, unknownHistograms)
+	require.Zero(t, overlapping)
+	require.Empty(t, series.mmappedChunks)
+	require.Equal(t, int64(math.MinInt64), series.mmMaxTime)
+	require.Equal(t, uint32(1), series.headChunkCount.Load())
+	require.Equal(t, float64(42), series.lastValue)
 }
 
 func TestHead_NumNativeHistogramSeriesAndBuckets(t *testing.T) {

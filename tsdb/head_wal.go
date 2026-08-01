@@ -598,6 +598,7 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	// the mmap chunk payload is unreadable.
 	if err := h.restoreSeriesStateFromMmappedChunks(mSeries); err != nil {
 		h.logger.Warn("Failed to restore series state from m-mapped chunks", "seriesRef", mSeries.ref, "err", err)
+		h.discardMmappedChunks(mSeries)
 	}
 	return overlapped
 }

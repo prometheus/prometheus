@@ -1086,7 +1086,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 		// restored after mmap replay attaches the on-disk chunks.
 		if ms.headChunks == nil && len(ms.mmappedChunks) > 0 {
 			if err := h.restoreSeriesStateFromMmappedChunks(ms); err != nil {
-				h.logger.Warn("Failed to restore series state from m-mapped chunks", "seriesRef", ms.ref, "err", err)
+				return nil, nil, secondLastRef, err
 			}
 		}
 	}
@@ -1130,6 +1130,18 @@ func (h *Head) restoreSeriesStateFromMmappedChunks(s *memSeries) error {
 	h.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 	h.updateNativeHistogramMetricsOnAppend(wasHistogram, isHistogram, oldBuckets, newBuckets)
 	return restoreErr
+}
+
+// discardMmappedChunks removes chunks that cannot be decoded from the series
+// so WAL replay can append their samples instead of skipping them via mmMaxTime.
+func (h *Head) discardMmappedChunks(s *memSeries) {
+	if len(s.mmappedChunks) == 0 {
+		return
+	}
+	h.metrics.chunksRemoved.Add(float64(len(s.mmappedChunks)))
+	h.metrics.chunks.Sub(float64(len(s.mmappedChunks)))
+	s.mmappedChunks = nil
+	s.mmMaxTime = math.MinInt64
 }
 
 // removeCorruptedMmappedChunks attempts to delete the corrupted mmapped chunks and if it fails, it clears all the previously
