@@ -1540,6 +1540,9 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if err := c.QueueConfig.Validate(); err != nil {
 		return err
 	}
+	if c.ProtobufMessage == remoteapi.WriteV1MessageType && c.MetadataConfig.Send && c.MetadataConfig.SendInterval <= 0 {
+		return errors.New("remote write metadata send_interval must be positive")
+	}
 
 	return validateAuthConfigs(c)
 }

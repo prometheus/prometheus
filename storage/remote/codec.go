@@ -662,6 +662,9 @@ func (s *chunkedSeriesSet) Next() bool {
 	res := &prompb.ChunkedReadResponse{}
 
 	err := s.chunkedReader.NextProto(res)
+	if err == nil && len(res.ChunkedSeries) == 0 {
+		err = errors.New("remote read response contains no series")
+	}
 	if err != nil {
 		if !errors.Is(err, io.EOF) {
 			s.err = err

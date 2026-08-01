@@ -1140,6 +1140,26 @@ func TestChunkedSeriesSet(t *testing.T) {
 		require.False(t, res)
 		require.ErrorContains(t, ss.Err(), "proto: illegal wireType 7")
 	})
+
+	t.Run("empty response", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		flusher := &mockFlusher{}
+
+		w := NewChunkedWriter(buf, flusher)
+		respBody := io.NopCloser(buf)
+		r := NewChunkedReader(respBody, config.DefaultChunkedReadLimit, nil)
+
+		b, err := proto.Marshal(&prompb.ChunkedReadResponse{})
+		require.NoError(t, err)
+
+		_, err = w.Write(b)
+		require.NoError(t, err)
+
+		ss := NewChunkedSeriesSet(r, respBody, 0, 14000, func(error) {})
+		require.False(t, ss.Next())
+		require.EqualError(t, ss.Err(), "remote read response contains no series")
+		require.False(t, ss.Next())
+	})
 }
 
 // mockFlusher implements http.Flusher.

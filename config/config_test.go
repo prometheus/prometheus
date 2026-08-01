@@ -2526,6 +2526,14 @@ var expectedErrors = []struct {
 		errMsg:   `remote write queue max_backoff must not be less than min_backoff`,
 	},
 	{
+		filename: "remote_write_metadata_send_interval_zero.bad.yml",
+		errMsg:   `remote write metadata send_interval must be positive`,
+	},
+	{
+		filename: "remote_write_metadata_send_interval_negative.bad.yml",
+		errMsg:   `remote write metadata send_interval must be positive`,
+	},
+	{
 		filename: "remote_read_dup.bad.yml",
 		errMsg:   `found multiple remote read configs with job name "queue1"`,
 	},
@@ -2792,6 +2800,37 @@ func TestBadConfigs(t *testing.T) {
 		_, err := LoadFile("testdata/"+ee.filename, false, promslog.NewNopLogger())
 		require.ErrorContains(t, err, ee.errMsg,
 			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
+	}
+}
+
+func TestRemoteWriteMetadataSendIntervalUnused(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		config string
+	}{
+		{
+			name: "remote write 1 with metadata sending disabled",
+			config: `remote_write:
+  - url: http://localhost:9090/api/v1/write
+    metadata_config:
+      send: false
+      send_interval: 0s
+`,
+		},
+		{
+			name: "remote write 2",
+			config: `remote_write:
+  - url: http://localhost:9090/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    metadata_config:
+      send_interval: 0s
+`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(tc.config, promslog.NewNopLogger())
+			require.NoError(t, err)
+		})
 	}
 }
 

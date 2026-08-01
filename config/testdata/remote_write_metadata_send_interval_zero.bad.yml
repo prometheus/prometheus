@@ -1,0 +1,5 @@
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    metadata_config:
+      send: true
+      send_interval: 0s
