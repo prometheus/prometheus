@@ -236,6 +236,10 @@ func (re Regexp) MarshalYAML() (any, error) {
 
 // UnmarshalJSON implements the json.Unmarshaler interface.
 func (re *Regexp) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		*re = Regexp{}
+		return nil
+	}
 	var s string
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
@@ -250,6 +254,9 @@ func (re *Regexp) UnmarshalJSON(b []byte) error {
 
 // MarshalJSON implements the json.Marshaler interface.
 func (re Regexp) MarshalJSON() ([]byte, error) {
+	if re.Regexp == nil {
+		return []byte("null"), nil
+	}
 	return json.Marshal(re.String())
 }
 
