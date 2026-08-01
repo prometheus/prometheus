@@ -1082,11 +1082,11 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 		return nil, nil, secondLastRef, fmt.Errorf("iterate on-disk chunks: %w", err)
 	}
 	for _, ms := range refSeries {
-		// A snapshot may contain an in-memory head chunk newer than the chunks
-		// loaded above. In that case its cached state is still authoritative.
+		// Snapshot records without an in-memory head chunk need their cached state
+		// restored after mmap replay attaches the on-disk chunks.
 		if ms.headChunks == nil && len(ms.mmappedChunks) > 0 {
 			if err := h.restoreSeriesStateFromMmappedChunks(ms); err != nil {
-				return nil, nil, secondLastRef, err
+				h.logger.Warn("Failed to restore series state from m-mapped chunks", "seriesRef", ms.ref, "err", err)
 			}
 		}
 	}
@@ -1100,33 +1100,36 @@ func (h *Head) restoreSeriesStateFromMmappedChunks(s *memSeries) error {
 	s.lastValue = 0
 	s.lastHistogramValue = nil
 	s.lastFloatHistogramValue = nil
+	var restoreErr error
 
 	if len(s.mmappedChunks) > 0 {
 		lastChunk := s.mmappedChunks[len(s.mmappedChunks)-1]
 		chunk, err := h.chunkDiskMapper.Chunk(lastChunk.ref)
 		if err != nil {
-			return fmt.Errorf("load last m-mapped chunk for series ref %d: %w", s.ref, err)
-		}
-		it := chunk.Iterator(nil)
-		switch typ := it.Seek(lastChunk.maxTime); typ {
-		case chunkenc.ValFloat:
-			_, s.lastValue = it.At()
-		case chunkenc.ValHistogram:
-			_, s.lastHistogramValue = it.AtHistogram(nil)
-		case chunkenc.ValFloatHistogram:
-			_, s.lastFloatHistogramValue = it.AtFloatHistogram(nil)
-		default:
-			if err := it.Err(); err != nil {
-				return fmt.Errorf("iterate last m-mapped chunk for series ref %d: %w", s.ref, err)
+			restoreErr = fmt.Errorf("load last m-mapped chunk for series ref %d: %w", s.ref, err)
+		} else {
+			it := chunk.Iterator(nil)
+			switch typ := it.Seek(lastChunk.maxTime); typ {
+			case chunkenc.ValFloat:
+				_, s.lastValue = it.At()
+			case chunkenc.ValHistogram:
+				_, s.lastHistogramValue = it.AtHistogram(nil)
+			case chunkenc.ValFloatHistogram:
+				_, s.lastFloatHistogramValue = it.AtFloatHistogram(nil)
+			default:
+				if err := it.Err(); err != nil {
+					restoreErr = fmt.Errorf("iterate last m-mapped chunk for series ref %d: %w", s.ref, err)
+				} else {
+					restoreErr = fmt.Errorf("last m-mapped chunk for series ref %d has no sample at %d", s.ref, lastChunk.maxTime)
+				}
 			}
-			return fmt.Errorf("last m-mapped chunk for series ref %d has no sample at %d", s.ref, lastChunk.maxTime)
 		}
 	}
 
 	isStale, isHistogram, newBuckets := s.sampleState()
 	h.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 	h.updateNativeHistogramMetricsOnAppend(wasHistogram, isHistogram, oldBuckets, newBuckets)
-	return nil
+	return restoreErr
 }
 
 // removeCorruptedMmappedChunks attempts to delete the corrupted mmapped chunks and if it fails, it clears all the previously

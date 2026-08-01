@@ -101,7 +101,6 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		histogramShards = make([][]histogramRecord, concurrency)
 
 		decoded                      = make(chan any, 10)
-		processErrChan               = make(chan error, concurrency)
 		decodeErr, seriesCreationErr error
 	)
 
@@ -122,14 +121,11 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		processors[i].setup()
 
 		go func(wp *walSubsetProcessor) {
-			missingSeries, unknownSamples, unknownHistograms, overlapping, processErr := wp.processWALSamples(h, mmappedChunks, oooMmappedChunks)
+			missingSeries, unknownSamples, unknownHistograms, overlapping := wp.processWALSamples(h, mmappedChunks, oooMmappedChunks)
 			unknownSeriesRefs.merge(missingSeries)
 			unknownSampleRefs.Add(unknownSamples)
 			mmapOverlappingChunks.Add(overlapping)
 			unknownHistogramRefs.Add(unknownHistograms)
-			if processErr != nil {
-				processErrChan <- processErr
-			}
 			wg.Done()
 		}(&processors[i])
 	}
@@ -498,12 +494,6 @@ Outer:
 	}
 	close(exemplarsInput)
 	wg.Wait()
-	select {
-	case err := <-processErrChan:
-		return err
-	default:
-	}
-
 	if err := r.Err(); err != nil {
 		return fmt.Errorf("read records: %w", err)
 	}
@@ -533,7 +523,7 @@ Outer:
 }
 
 // resetSeriesWithMMappedChunks is only used during the WAL replay.
-func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*mmappedChunk, walSeriesRef chunks.HeadSeriesRef) (overlapped bool, err error) {
+func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*mmappedChunk, walSeriesRef chunks.HeadSeriesRef) (overlapped bool) {
 	if mSeries.ref != walSeriesRef {
 		// Checking if the new m-mapped chunks overlap with the already existing ones.
 		if len(mSeries.mmappedChunks) > 0 && len(mmc) > 0 {
@@ -604,7 +594,12 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	}
 	mSeries.setHeadChunks(nil, 0)
 	mSeries.app = nil
-	return overlapped, h.restoreSeriesStateFromMmappedChunks(mSeries)
+	// State restoration is best-effort because WAL replay can recover samples if
+	// the mmap chunk payload is unreadable.
+	if err := h.restoreSeriesStateFromMmappedChunks(mSeries); err != nil {
+		h.logger.Warn("Failed to restore series state from m-mapped chunks", "seriesRef", mSeries.ref, "err", err)
+	}
+	return overlapped
 }
 
 type walSubsetProcessor struct {
@@ -780,7 +775,7 @@ func (h *Head) appendWALHistogram(ms *memSeries, st, t int64, hist *histogram.Hi
 // processWALSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
 // Samples before the minValidTime timestamp are discarded.
-func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (map[chunks.HeadSeriesRef]struct{}, uint64, uint64, uint64, error) {
+func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (map[chunks.HeadSeriesRef]struct{}, uint64, uint64, uint64) {
 	defer close(wp.output)
 	defer close(wp.histogramsOutput)
 
@@ -806,10 +801,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 		if in.existingSeries != nil {
 			mmc := mmappedChunks[in.walSeriesRef]
 			oooMmc := oooMmappedChunks[in.walSeriesRef]
-			overlapped, err := h.resetSeriesWithMMappedChunks(in.existingSeries, mmc, oooMmc, in.walSeriesRef)
-			if err != nil {
-				return missingSeries, unknownSampleRefs, unknownHistogramRefs, mmapOverlappingChunks, err
-			}
+			overlapped := h.resetSeriesWithMMappedChunks(in.existingSeries, mmc, oooMmc, in.walSeriesRef)
 			if overlapped {
 				mmapOverlappingChunks++
 			}
@@ -877,7 +869,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 	}
 	h.updateMinMaxTime(mint, maxt)
 
-	return missingSeries, unknownSampleRefs, unknownHistogramRefs, mmapOverlappingChunks, nil
+	return missingSeries, unknownSampleRefs, unknownHistogramRefs, mmapOverlappingChunks
 }
 
 func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
