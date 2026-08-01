@@ -1141,7 +1141,7 @@ func TestChunkedSeriesSet(t *testing.T) {
 		require.ErrorContains(t, ss.Err(), "proto: illegal wireType 7")
 	})
 
-	t.Run("empty response", func(t *testing.T) {
+	t.Run("response without series", func(t *testing.T) {
 		buf := &bytes.Buffer{}
 		flusher := &mockFlusher{}
 
@@ -1149,7 +1149,8 @@ func TestChunkedSeriesSet(t *testing.T) {
 		respBody := io.NopCloser(buf)
 		r := NewChunkedReader(respBody, config.DefaultChunkedReadLimit, nil)
 
-		b, err := proto.Marshal(&prompb.ChunkedReadResponse{})
+		// QueryIndex ensures the marshaled response has a non-empty payload.
+		b, err := proto.Marshal(&prompb.ChunkedReadResponse{QueryIndex: 1})
 		require.NoError(t, err)
 
 		_, err = w.Write(b)

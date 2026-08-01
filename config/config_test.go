@@ -2531,7 +2531,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "remote_write_metadata_send_interval_negative.bad.yml",
-		errMsg:   `remote write metadata send_interval must be positive`,
+		errMsg:   `not a valid duration string: "-1s"`,
 	},
 	{
 		filename: "remote_read_dup.bad.yml",
