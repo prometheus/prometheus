@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -2039,4 +2040,100 @@ func TestManagerReloader(t *testing.T) {
 			})
 		})
 	}
+}
+
+// levelRecordingHandler captures records emitted through the scrape manager's
+// logger so tests can assert on their severity.
+type levelRecordingHandler struct {
+	mtx     sync.Mutex
+	records []slog.Record
+}
+
+func (*levelRecordingHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *levelRecordingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mtx.Lock()
+	defer h.mtx.Unlock()
+	h.records = append(h.records, r.Clone())
+	return nil
+}
+
+func (h *levelRecordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+
+func (h *levelRecordingHandler) WithGroup(string) slog.Handler { return h }
+
+// find returns the first record with the given message.
+func (h *levelRecordingHandler) find(msg string) (slog.Record, bool) {
+	h.mtx.Lock()
+	defer h.mtx.Unlock()
+	for _, r := range h.records {
+		if r.Message == msg {
+			return r, true
+		}
+	}
+	return slog.Record{}, false
+}
+
+// TestScrapeFailedLogSeverity asserts that a failing scrape is logged at warn level
+// with the underlying error attached.
+func TestScrapeFailedLogSeverity(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+
+	srvURL, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	handler := &levelRecordingHandler{}
+	mgr, err := NewManager(
+		&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond)},
+		slog.New(handler),
+		nil,
+		teststorage.NewAppendable(),
+		nil,
+		prometheus.NewRegistry(),
+	)
+	require.NoError(t, err)
+
+	cfg := loadConfiguration(t, `
+global:
+  scrape_interval: 100ms
+  scrape_timeout: 100ms
+scrape_configs:
+- job_name: failing
+`)
+	require.NoError(t, mgr.ApplyConfig(cfg))
+
+	tsets := make(chan map[string][]*targetgroup.Group)
+	go func() {
+		require.NoError(t, mgr.Run(tsets))
+	}()
+	t.Cleanup(mgr.Stop)
+
+	tsets <- map[string][]*targetgroup.Group{
+		"failing": {{
+			Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(srvURL.Host)}},
+		}},
+	}
+
+	var rec slog.Record
+	require.Eventually(t, func() bool {
+		var ok bool
+		rec, ok = handler.find("Scrape failed")
+		return ok
+	}, 10*time.Second, 50*time.Millisecond, `no "Scrape failed" record was emitted`)
+
+	require.Equal(t, slog.LevelWarn, rec.Level,
+		"scrape failures must be visible without enabling debug logging")
+
+	var gotErr string
+	rec.Attrs(func(a slog.Attr) bool {
+		if a.Key == "err" {
+			gotErr = a.Value.String()
+			return false
+		}
+		return true
+	})
+	require.Contains(t, gotErr, "401", "the scrape failure reason must be attached to the record")
 }

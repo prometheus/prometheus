@@ -1418,7 +1418,9 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		}
 		bytesRead = len(b)
 	} else {
-		sl.l.Debug("Scrape failed", "err", scrapeErr)
+		// Warn, not debug: a failing target is an operational problem and its cause
+		// should be visible without enabling debug logging for the whole process.
+		sl.l.Warn("Scrape failed", "err", scrapeErr)
 		sl.scrapeFailureLoggerMtx.RLock()
 		if sl.scrapeFailureLogger != nil {
 			slog.New(sl.scrapeFailureLogger).Error(scrapeErr.Error())
