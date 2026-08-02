@@ -476,6 +476,7 @@ func compactBuckets[IBC InternalBucketCount](
 		}
 		// Merge span with previous one and insert empty buckets.
 		offset := int(spans[iSpan].Offset)
+		l := int(spans[iSpan].Length)
 		spans[iSpan-1].Length += uint32(offset) + spans[iSpan].Length
 		spans = append(spans[:iSpan], spans[iSpan+1:]...)
 		newPrimaryBuckets := make([]IBC, len(primaryBuckets)+offset)
@@ -493,7 +494,18 @@ func compactBuckets[IBC InternalBucketCount](
 			compensationBuckets = newCompensationBuckets
 		}
 		iBucket += offset
-		currentBucketAbsolute = primaryBuckets[iBucket]
+		// The buckets of the merged span are now part of the previous span, so
+		// iBucket has to skip them as well to keep pointing at the first bucket
+		// of the span we look at next. The inserted empty buckets have reset the
+		// running absolute count to zero, so the deltas of the merged span add up
+		// to the absolute count of its last bucket.
+		if deltaBuckets {
+			currentBucketAbsolute = 0
+			for _, bucket := range primaryBuckets[iBucket : iBucket+l] {
+				currentBucketAbsolute += bucket
+			}
+		}
+		iBucket += l
 		// Note that with many merges, it would be more efficient to
 		// first record all the chunks of empty buckets to insert and
 		// then do it in one go through all the buckets.
