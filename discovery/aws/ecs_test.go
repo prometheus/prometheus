@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecsTypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -1497,6 +1498,67 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 				},
 			},
 		},
+		{
+			// Every pointer blanked here is optional in the ECS API and was
+			// dereferenced without a nil check. A task that has not been placed
+			// yet has no AvailabilityZone, and an attachment detail is a
+			// KeyValuePair whose Name and Value are both optional, so a single
+			// absent field panicked the whole refresh instead of degrading the
+			// one target.
+			name: "TaskWithNilOptionalFields",
+			ecsData: &ecsDataStore{
+				region: "us-west-2",
+				clusters: []ecsTypes.Cluster{
+					{
+						ClusterName: strptr("nil-cluster"),
+						ClusterArn:  strptr("arn:aws:ecs:us-west-2:123456789012:cluster/nil-cluster"),
+						Status:      strptr("ACTIVE"),
+					},
+				},
+				tasks: []ecsTypes.Task{
+					{
+						TaskArn:           strptr("arn:aws:ecs:us-west-2:123456789012:task/nil-cluster/task-nil"),
+						ClusterArn:        strptr("arn:aws:ecs:us-west-2:123456789012:cluster/nil-cluster"),
+						TaskDefinitionArn: strptr("arn:aws:ecs:us-west-2:123456789012:task-definition/nil-task:1"),
+						LaunchType:        ecsTypes.LaunchTypeFargate,
+						// Group, LastStatus, DesiredStatus and AvailabilityZone
+						// are all absent.
+						Attachments: []ecsTypes.Attachment{
+							{
+								Type: strptr("ElasticNetworkInterface"),
+								Details: []ecsTypes.KeyValuePair{
+									// A detail with no Name at all.
+									{},
+									// A known key whose Value is absent.
+									{Name: strptr("subnetId")},
+									{Name: strptr("privateIPv4Address"), Value: strptr("10.0.4.10")},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: []*targetgroup.Group{
+				{
+					Source: "us-west-2",
+					Targets: []model.LabelSet{
+						{
+							model.AddressLabel:       model.LabelValue("10.0.4.10:80"),
+							"__meta_ecs_cluster":     model.LabelValue("nil-cluster"),
+							"__meta_ecs_cluster_arn": model.LabelValue("arn:aws:ecs:us-west-2:123456789012:cluster/nil-cluster"),
+							"__meta_ecs_task_arn":    model.LabelValue("arn:aws:ecs:us-west-2:123456789012:task/nil-cluster/task-nil"),
+							"__meta_ecs_task_definition": model.LabelValue(
+								"arn:aws:ecs:us-west-2:123456789012:task-definition/nil-task:1"),
+							"__meta_ecs_region":        model.LabelValue("us-west-2"),
+							"__meta_ecs_ip_address":    model.LabelValue("10.0.4.10"),
+							"__meta_ecs_launch_type":   model.LabelValue("FARGATE"),
+							"__meta_ecs_health_status": model.LabelValue(""),
+							"__meta_ecs_network_mode":  model.LabelValue("awsvpc"),
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -1513,6 +1575,10 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 					RequestConcurrency: 1,
 				},
 				region: tt.ecsData.region,
+				// NewECSDiscovery substitutes a no-op logger when none is
+				// supplied; construct the same thing here so the debug paths
+				// are exercised rather than panicking on a nil logger.
+				logger: promslog.NewNopLogger(),
 			}
 
 			groups, err := d.refresh(ctx)
