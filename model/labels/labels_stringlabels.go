@@ -522,8 +522,8 @@ func (b *Builder) Labels() Labels {
 
 func marshalLabelsToSizedBuffer(lbls []Label, data []byte) int {
 	i := len(data)
-	for index := len(lbls) - 1; index >= 0; index-- {
-		size := marshalLabelToSizedBuffer(&lbls[index], data[:i])
+	for _, v := range slices.Backward(lbls) {
+		size := marshalLabelToSizedBuffer(&v, data[:i])
 		i -= size
 	}
 	return len(data) - i

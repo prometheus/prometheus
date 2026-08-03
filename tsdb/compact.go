@@ -380,18 +380,18 @@ func (c *LeveledCompactor) planClass(dms []dirMeta) ([]string, error) {
 	}
 
 	// Compact any blocks with big enough time range that have >5% tombstones.
-	for i := len(dms) - 1; i >= 0; i-- {
-		meta := dms[i].meta
+	for _, v := range slices.Backward(dms) {
+		meta := v.meta
 		if meta.MaxTime-meta.MinTime < c.ranges[len(c.ranges)/2] {
 			// If the block is entirely deleted, then we don't care about the block being big enough.
 			// TODO: This is assuming a single tombstone is for a distinct series, which might not be true.
 			if meta.Stats.NumTombstones > 0 && meta.Stats.NumTombstones >= meta.Stats.NumSeries {
-				return []string{dms[i].dir}, nil
+				return []string{v.dir}, nil
 			}
 			break
 		}
 		if float64(meta.Stats.NumTombstones)/float64(meta.Stats.NumSeries+1) > 0.05 {
-			return []string{dms[i].dir}, nil
+			return []string{v.dir}, nil
 		}
 	}
 

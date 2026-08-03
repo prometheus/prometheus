@@ -2197,8 +2197,8 @@ func TestChunkSnapshot_AppenderV2(t *testing.T) {
 				files, err := os.ReadDir(head.opts.ChunkDirRoot)
 				require.NoError(t, err)
 				snapshots := 0
-				for i := len(files) - 1; i >= 0; i-- {
-					fi := files[i]
+				for _, v := range slices.Backward(files) {
+					fi := v
 					if strings.HasPrefix(fi.Name(), chunkSnapshotPrefix) {
 						snapshots++
 						require.Equal(t, chunkSnapshotDir(wlast, woffset), fi.Name())

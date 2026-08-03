@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 
 	"github.com/prometheus/prometheus/util/kahansum"
@@ -184,8 +185,8 @@ func (h *FloatHistogram) String() string {
 			nBuckets = append(nBuckets, it.At())
 		}
 	}
-	for i := len(nBuckets) - 1; i >= 0; i-- {
-		fmt.Fprintf(&sb, ", %s", nBuckets[i].String())
+	for _, v := range slices.Backward(nBuckets) {
+		fmt.Fprintf(&sb, ", %s", v.String())
 	}
 
 	if h.ZeroCount != 0 {
