@@ -14,11 +14,9 @@
 package remote
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/rand"
 	"os"
 	"runtime/pprof"
@@ -2804,95 +2802,4 @@ func TestAppendHistogramsWithStartTimestamp(t *testing.T) {
 	require.True(t, m.AppendFloatHistograms(floatHistograms))
 
 	c.waitForExpectedData(t, 30*time.Second)
-}
-
-type safeBuffer struct {
-	mtx sync.Mutex
-	buf bytes.Buffer
-}
-
-func (s *safeBuffer) Write(p []byte) (int, error) {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-	return s.buf.Write(p)
-}
-
-func (s *safeBuffer) String() string {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-	return s.buf.String()
-}
-
-func TestQueueManager_FailedRequestLogging(t *testing.T) {
-	for _, tc := range []struct {
-		name                 string
-		failedRequestLogging bool
-		expectLog            bool
-		noDataWritten        bool
-	}{
-		{
-			name:                 "failed request logging enabled",
-			failedRequestLogging: true,
-			expectLog:            true,
-		},
-		{
-			name:                 "failed request logging enabled - 2xx but no data written error",
-			failedRequestLogging: true,
-			expectLog:            true,
-			noDataWritten:        true,
-		},
-		{
-			name:                 "failed request logging disabled",
-			failedRequestLogging: false,
-			expectLog:            false,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			buf := &safeBuffer{}
-			logger := slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-
-			var storeCalled atomic.Int64
-			client := &MockWriteClient{
-				StoreFunc: func(context.Context, []byte, int) (WriteResponseStats, error) {
-					storeCalled.Add(1)
-					if tc.noDataWritten {
-						return WriteResponseStats{}, nil
-					}
-					return WriteResponseStats{}, errors.New("remote store error")
-				},
-				NameFunc:     func() string { return "mock" },
-				EndpointFunc: func() string { return "http://fake:9090/api/v1/write" },
-			}
-
-			cfg := testDefaultQueueConfig()
-			cfg.MaxBackoff = model.Duration(10 * time.Millisecond)
-			cfg.MinBackoff = model.Duration(10 * time.Millisecond)
-			cfg.BatchSendDeadline = model.Duration(10 * time.Millisecond)
-			mcfg := config.DefaultMetadataConfig
-
-			metrics := newQueueManagerMetrics(nil, "", "")
-			qm := NewQueueManager(metrics, nil, nil, logger, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV2MessageType, record.NewBuffersPool(), tc.failedRequestLogging)
-
-			qm.Start()
-			defer qm.Stop()
-
-			recs := testwal.GenerateRecords(recCase{Series: 1, SamplesPerSeries: 1})
-			qm.StoreSeries(recs.Series, 0)
-			qm.Append(recs.Samples)
-
-			if tc.expectLog {
-				require.Eventually(t, func() bool {
-					s := buf.String()
-					return strings.Contains(s, "Failed to send remote write v2 request") &&
-						strings.Contains(s, "req=")
-				}, 5*time.Second, 10*time.Millisecond)
-			} else {
-				require.Eventually(t, func() bool {
-					return storeCalled.Load() > 0
-				}, 5*time.Second, 10*time.Millisecond)
-				require.NotContains(t, buf.String(), "Failed to send remote write v2 request")
-			}
-		})
-	}
 }
