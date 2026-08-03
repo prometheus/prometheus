@@ -2853,6 +2853,98 @@ func testScrapeLoopRunCreatesStaleMarkersOnSampleLimit(t *testing.T, appV2 bool)
 	}
 }
 
+// refChangingAppendable simulates a storage backend that returns a new SeriesRef
+// on every Append call, e.g. because the previously handed out ref was evicted
+// from storage in the meantime and the series had to be recreated.
+type refChangingAppendable struct {
+	calls int
+}
+
+func (a *refChangingAppendable) Appender(context.Context) storage.Appender {
+	return &refChangingAppender{a: a}
+}
+
+func (a *refChangingAppendable) AppenderV2(context.Context) storage.AppenderV2 {
+	return &refChangingAppenderV2{a: a}
+}
+
+func (a *refChangingAppendable) nextRef() storage.SeriesRef {
+	a.calls++
+	return storage.SeriesRef(100 * a.calls)
+}
+
+type refChangingAppender struct {
+	a *refChangingAppendable
+}
+
+func (*refChangingAppender) Commit() error                     { return nil }
+func (*refChangingAppender) Rollback() error                   { return nil }
+func (*refChangingAppender) SetOptions(*storage.AppendOptions) {}
+
+func (r *refChangingAppender) Append(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error) {
+	return r.a.nextRef(), nil
+}
+
+func (*refChangingAppender) AppendHistogram(ref storage.SeriesRef, _ labels.Labels, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return ref, nil
+}
+
+func (*refChangingAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, _ labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return ref, nil
+}
+
+func (*refChangingAppender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
+	return ref, nil
+}
+
+func (*refChangingAppender) UpdateMetadata(ref storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+	return ref, nil
+}
+
+func (*refChangingAppender) AppendSTZeroSample(ref storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	return ref, nil
+}
+
+type refChangingAppenderV2 struct {
+	a *refChangingAppendable
+}
+
+func (*refChangingAppenderV2) Commit() error   { return nil }
+func (*refChangingAppenderV2) Rollback() error { return nil }
+
+func (r *refChangingAppenderV2) Append(storage.SeriesRef, labels.Labels, int64, int64, float64, *histogram.Histogram, *histogram.FloatHistogram, storage.AppendV2Options) (storage.SeriesRef, error) {
+	return r.a.nextRef(), nil
+}
+
+// TestScrapeLoopCacheRefUpdatedOnChange makes sure that when the storage returns a
+// different SeriesRef than the one the scrape loop cached, the cache is updated to
+// use the new ref on the next scrape rather than keep handing storage a ref it no
+// longer recognizes.
+func TestScrapeLoopCacheRefUpdatedOnChange(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		app := &refChangingAppendable{}
+		sl, _ := newTestScrapeLoop(t, withAppendable(app, appV2))
+
+		appender := sl.appender()
+		_, _, _, err := appender.append([]byte("metric_a 1\n"), "text/plain", time.Time{})
+		require.NoError(t, err)
+		require.NoError(t, appender.Commit())
+
+		ce, ok := sl.cache.series["metric_a"]
+		require.True(t, ok)
+		require.Equal(t, storage.SeriesRef(100), ce.ref)
+
+		appender = sl.appender()
+		_, _, _, err = appender.append([]byte("metric_a 2\n"), "text/plain", time.Time{})
+		require.NoError(t, err)
+		require.NoError(t, appender.Commit())
+
+		ce, ok = sl.cache.series["metric_a"]
+		require.True(t, ok)
+		require.Equal(t, storage.SeriesRef(200), ce.ref, "cache should track the new ref returned by the second Append call")
+	})
+}
+
 func TestScrapeLoopCache(t *testing.T) {
 	foreachAppendable(t, func(t *testing.T, appV2 bool) {
 		testScrapeLoopCache(t, appV2)

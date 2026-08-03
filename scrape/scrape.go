@@ -1773,6 +1773,10 @@ loop:
 		}
 
 		if err == nil {
+			// Append may return a new ref; keep the cache in sync.
+			if ce != nil && ref != 0 {
+				ce.ref = ref
+			}
 			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil && ce.ref != 0 {
 				sl.cache.trackStaleness(ce.ref, ce)
 			}
