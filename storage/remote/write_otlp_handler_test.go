@@ -305,6 +305,27 @@ func TestOTLPWriteHandler(t *testing.T) {
 			require.Equal(t, 1.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("histogram_zero_count_non_zero_sum")))
 		})
 	})
+
+	t.Run("concurrent requests", func(t *testing.T) {
+		handler, payload := newOTLPWriteHandlerFixture(t)
+
+		const requests = 64
+		statuses := make(chan int, requests)
+		var wg sync.WaitGroup
+		for range requests {
+			wg.Go(func() {
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, newOTLPWriteHandlerRequest(payload))
+				statuses <- recorder.Code
+			})
+		}
+		wg.Wait()
+		close(statuses)
+
+		for status := range statuses {
+			require.Equal(t, http.StatusOK, status)
+		}
+	})
 }
 
 func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg config.OTLPConfig, otlpOpts OTLPOptions) *teststorage.Appendable {
@@ -467,30 +488,6 @@ func TestOTLPDelta(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, appendable.ResultSamples(), cmp.Exporter(func(reflect.Type) bool { return true })); diff != "" {
 		t.Fatal(diff)
-	}
-}
-
-// TestOTLPWriteHandlerConcurrentRequests exercises the handler with overlapping
-// requests. The appendable is stateless so each request has its own independent
-// appender, as a production appendable would.
-func TestOTLPWriteHandlerConcurrentRequests(t *testing.T) {
-	handler, payload := newOTLPWriteHandlerFixture(t)
-
-	const requests = 64
-	statuses := make(chan int, requests)
-	var wg sync.WaitGroup
-	for range requests {
-		wg.Go(func() {
-			recorder := httptest.NewRecorder()
-			handler.ServeHTTP(recorder, newOTLPWriteHandlerRequest(payload))
-			statuses <- recorder.Code
-		})
-	}
-	wg.Wait()
-	close(statuses)
-
-	for status := range statuses {
-		require.Equal(t, http.StatusOK, status)
 	}
 }
 
