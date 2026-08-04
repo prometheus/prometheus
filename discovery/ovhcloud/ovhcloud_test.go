@@ -119,6 +119,41 @@ func TestParseIPs(t *testing.T) {
 	}
 }
 
+func TestFormatTargetAddress(t *testing.T) {
+	tests := []struct {
+		name string
+		ipv4 string
+		ipv6 string
+		want string
+	}{
+		{
+			name: "IPv4Only",
+			ipv4: "192.0.2.1",
+			want: "192.0.2.1",
+		},
+		{
+			name: "IPv6Only",
+			ipv6: "2001:db8::1",
+			want: "[2001:db8::1]",
+		},
+		{
+			name: "IPv4Preferred",
+			ipv4: "192.0.2.1",
+			ipv6: "2001:db8::1",
+			want: "192.0.2.1",
+		},
+		{
+			name: "NoAddress",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, formatTargetAddress(tt.ipv4, tt.ipv6))
+		})
+	}
+}
+
 func TestDiscoverer(t *testing.T) {
 	conf, _ := getMockConf("vps")
 	logger := promslog.NewNopLogger()
