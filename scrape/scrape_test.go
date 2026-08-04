@@ -2117,6 +2117,67 @@ test_metric 25
 	require.Empty(t, got, "Expected no samples because the state was cleared and the sample was used to re-anchor")
 }
 
+func TestScrapeLoopAppend_StartTimeSynthesis_Summary(t *testing.T) {
+	ts := time.Now()
+
+	requireSample := func(t *testing.T, s teststorage.Sample, name string, val float64, ts, st int64, isNaN bool) {
+		t.Helper()
+		require.Equal(t, name, s.L.Get(model.MetricNameLabel))
+		require.Equal(t, ts, s.T)
+		if isNaN {
+			require.True(t, value.IsStaleNaN(s.V))
+		} else {
+			require.Equal(t, val, s.V)
+		}
+		require.Equal(t, st, s.ST)
+	}
+
+	s := teststorage.New(t)
+
+	appTest := teststorage.NewAppendable().Then(s)
+	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+		sl.synthesizeST = true
+		sl.parseST = true
+	})
+
+	// First Scrape: Anchor start time for _sum and _count. Quantiles are not cumulative, so quantile is appended directly without anchoring.
+	scrapeA := []byte(`# TYPE test_summary summary
+test_summary{quantile="0.5"} 10
+test_summary_sum 100
+test_summary_count 10
+# EOF
+`)
+	app := sl.appender()
+	_, _, _, err := app.append(scrapeA, "application/openmetrics-text", ts)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Quantile should be appended (1 point), _sum and _count should be skipped (anchored).
+	got := appTest.ResultSamples()
+	require.Len(t, got, 1)
+	requireSample(t, got[0], "test_summary", 10, timestamp.FromTime(ts), 0, false)
+
+	// Second Scrape: _sum and _count should yield points with delta values and synthesized ST = ts.
+	ts2 := ts.Add(time.Second)
+	scrapeB := []byte(`# TYPE test_summary summary
+test_summary{quantile="0.5"} 12
+test_summary_sum 150
+test_summary_count 15
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeB, "application/openmetrics-text", ts2)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got = appTest.ResultSamples()
+	require.Len(t, got, 4)
+	requireSample(t, got[0], "test_summary", 10, timestamp.FromTime(ts), 0, false)
+	requireSample(t, got[1], "test_summary", 12, timestamp.FromTime(ts2), 0, false)
+	requireSample(t, got[2], "test_summary_sum", 50, timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
+	requireSample(t, got[3], "test_summary_count", 5, timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
+}
+
 func requireSampleHist(t *testing.T, s teststorage.Sample, name, expectedHist string, ts, st int64, isNaN bool) {
 	t.Helper()
 	require.Equal(t, name, s.L.Get(model.MetricNameLabel))
