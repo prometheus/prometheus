@@ -30,6 +30,7 @@ import (
 	storage2 "github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -84,6 +85,42 @@ func TestFunctionList(t *testing.T) {
 	for i := range parser.Functions {
 		_, ok := promql.FunctionCalls[i]
 		require.True(t, ok, "function %s exists in parser package, but not in promql package", i)
+	}
+}
+
+func TestReplacedFunctionCallCanRetainScalarVectors(t *testing.T) {
+	const functionName = "predict_linear"
+
+	originalFunctionCall := promql.FunctionCalls[functionName]
+	t.Cleanup(func() {
+		promql.FunctionCalls[functionName] = originalFunctionCall
+	})
+
+	var retainedScalarVectors []promql.Vector
+	promql.FunctionCalls[functionName] = func(vectorVals []promql.Vector, matrixVals promql.Matrix, args parser.Expressions, enh *promql.EvalNodeHelper) (promql.Vector, annotations.Annotations) {
+		retainedScalarVectors = append(retainedScalarVectors, vectorVals[0])
+		return originalFunctionCall(vectorVals, matrixVals, args, enh)
+	}
+
+	storage := promqltest.LoadedStorage(t, `
+load 20s
+	metric 1 2 3 4
+`)
+	t.Cleanup(func() {
+		require.NoError(t, storage.Close())
+	})
+
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+	query, err := engine.NewRangeQuery(t.Context(), storage, nil, "predict_linear(metric[20s], time())", time.Unix(20, 0), time.Unix(60, 0), 20*time.Second)
+	require.NoError(t, err)
+	defer query.Close()
+
+	result := query.Exec(t.Context())
+	require.NoError(t, result.Err)
+	require.Len(t, retainedScalarVectors, 3)
+	for i, scalarVector := range retainedScalarVectors {
+		require.Len(t, scalarVector, 1)
+		require.Equal(t, float64((i+1)*20), scalarVector[0].F)
 	}
 }
 

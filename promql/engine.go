@@ -2088,6 +2088,20 @@ func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr
 	return ms, mat.TotalSamples(), ws
 }
 
+// This helper reports whether call is a built-in range function that does not
+// retain scalar argument vectors. FunctionCalls is exported and can be
+// overridden, so compare the implementation rather than its name.
+func canReuseScalarVectorVals(call FunctionCall) bool {
+	switch reflect.ValueOf(call).Pointer() {
+	case reflect.ValueOf(funcDoubleExponentialSmoothing).Pointer(),
+		reflect.ValueOf(funcPredictLinear).Pointer(),
+		reflect.ValueOf(funcQuantileOverTime).Pointer():
+		return true
+	default:
+		return false
+	}
+}
+
 // eval evaluates the given expression as the given AST expression node requires.
 func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, annotations.Annotations) {
 	// This is the top-level evaluation method.
@@ -2296,6 +2310,12 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		// DropName set, we should respect that.
 		dropName := (e.Func.Name != "last_over_time" && e.Func.Name != "first_over_time")
 		vectorVals := make([]Vector, len(e.Args)-1)
+		reuseScalarVectorVals := len(vectorVals) > 0 && canReuseScalarVectorVals(call)
+		if reuseScalarVectorVals {
+			for i := range vectorVals {
+				vectorVals[i] = make(Vector, 1)
+			}
+		}
 		for i, s := range selVS.Series {
 			if err := contextDone(ctx, "expression evaluation"); err != nil {
 				ev.error(err)
@@ -2339,7 +2359,11 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				counter := 0
 				for j := range e.Args {
 					if j != matrixArgIndex {
-						vectorVals[counter] = Vector{Sample{F: evalVals[j][0].Floats[step].F}}
+						if reuseScalarVectorVals {
+							vectorVals[counter][0] = Sample{F: evalVals[j][0].Floats[step].F}
+						} else {
+							vectorVals[counter] = Vector{Sample{F: evalVals[j][0].Floats[step].F}}
+						}
 						counter++
 					}
 				}

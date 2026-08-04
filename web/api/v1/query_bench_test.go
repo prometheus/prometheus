@@ -90,7 +90,7 @@ func BenchmarkQueryScalarArguments(b *testing.B) {
 	var recorder *httptest.ResponseRecorder
 	b.ReportAllocs()
 	for b.Loop() {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req := httptest.NewRequest(http.MethodGet, path, http.NoBody)
 		recorder = httptest.NewRecorder()
 		api.Handler.ServeHTTP(recorder, req)
 		if recorder.Code != http.StatusOK {
