@@ -8010,14 +8010,25 @@ func TestWBLCorruption(t *testing.T) {
 	// We corrupt WBL after the sample at 255. So everything added later
 	// should be deleted after replay.
 
+	// segmentSize returns the on-disk size of the named WBL segment. It opens
+	// the file and stats the handle instead of relying on os.ReadDir's cached
+	// directory metadata, which on Windows can be stale for a segment that was
+	// just closed asynchronously by WL.NextSegment.
+	segmentSize := func(name string) int64 {
+		f, err := os.Open(path.Join(db.head.wbl.Dir(), name))
+		require.NoError(t, err)
+		defer f.Close()
+		fi, err := f.Stat()
+		require.NoError(t, err)
+		return fi.Size()
+	}
+
 	// Checking where we corrupt it.
 	require.NoError(t, db.head.wbl.Sync()) // Syncing to make sure wbl is flushed in windows.
 	files, err := os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 2)
-	f1, err := files[1].Info()
-	require.NoError(t, err)
-	corruptIndex := f1.Size()
+	corruptIndex := segmentSize(files[1].Name())
 	corruptFilePath := path.Join(db.head.wbl.Dir(), files[1].Name())
 
 	// Corrupt the WBL by adding a malformed record.
@@ -8038,15 +8049,9 @@ func TestWBLCorruption(t *testing.T) {
 	files, err = os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 3)
-	f1, err = files[1].Info()
-	require.NoError(t, err)
-	require.Greater(t, f1.Size(), corruptIndex)
-	f0, err := files[0].Info()
-	require.NoError(t, err)
-	require.Greater(t, f0.Size(), int64(100))
-	f2, err := files[2].Info()
-	require.NoError(t, err)
-	require.Greater(t, f2.Size(), int64(100))
+	require.Greater(t, segmentSize(files[1].Name()), corruptIndex)
+	require.Greater(t, segmentSize(files[0].Name()), int64(100))
+	require.Greater(t, segmentSize(files[2].Name()), int64(100))
 
 	verifySamples := func(expSamples []chunks.Sample) {
 		sort.Slice(expSamples, func(i, j int) bool {
@@ -8082,12 +8087,8 @@ func TestWBLCorruption(t *testing.T) {
 	files, err = os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 3)
-	f0, err = files[0].Info()
-	require.NoError(t, err)
-	require.Greater(t, f0.Size(), int64(100))
-	f2, err = files[2].Info()
-	require.NoError(t, err)
-	require.Equal(t, int64(0), f2.Size())
+	require.Greater(t, segmentSize(files[0].Name()), int64(100))
+	require.Equal(t, int64(0), segmentSize(files[2].Name()))
 	require.Equal(t, corruptFilePath, path.Join(db.head.wbl.Dir(), files[1].Name()))
 
 	// Verifying that everything after the corruption point is set to 0.
