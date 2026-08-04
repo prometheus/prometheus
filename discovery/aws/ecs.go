@@ -989,11 +989,11 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 						}
 					}
 
-					// If this is not a standalone task, add service information and tags
-					if !isStandaloneTask(task) {
-						service, ok := services[getServiceNameFromTaskGroup(task)]
+					// If this task belongs to a service, add service information and tags.
+					if serviceName, isServiceTask := strings.CutPrefix(*task.Group, "service:"); isServiceTask {
+						service, ok := services[serviceName]
 						if !ok {
-							d.logger.Debug("Service not found for task", "task", *task.TaskArn, "service", getServiceNameFromTaskGroup(task))
+							d.logger.Debug("Service not found for task", "task", *task.TaskArn, "service", serviceName)
 						}
 						if service.ServiceName != nil {
 							labels[ecsLabelService] = model.LabelValue(*service.ServiceName)
@@ -1050,13 +1050,4 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	tg.Targets = clusterTargets
 
 	return []*targetgroup.Group{tg}, nil
-}
-
-func isStandaloneTask(task types.Task) bool {
-	// A standalone task will have a group of "family:task-def-name"
-	return task.Group != nil && strings.HasPrefix(*task.Group, "family:")
-}
-
-func getServiceNameFromTaskGroup(task types.Task) string {
-	return strings.Split(*task.Group, ":")[1]
 }
