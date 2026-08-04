@@ -6742,7 +6742,7 @@ func testScrapeLoopSeriesAddedDuplicatesHashCollision(t *testing.T, appV2 bool) 
 	var buf strings.Builder
 	buf.WriteString(ls1.Get(model.MetricNameLabel))
 	buf.WriteString("{")
-	var first = true
+	first := true
 	ls1.Range(func(l labels.Label) {
 		if l.Name == model.MetricNameLabel {
 			return
