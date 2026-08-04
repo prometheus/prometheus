@@ -296,6 +296,7 @@ Run series query.
 | <code class="text-nowrap">--match</code> <code class="text-nowrap">...</code> | Series selector. Can be specified multiple times. |
 | <code class="text-nowrap">--start</code> | Start time (RFC3339 or Unix timestamp). |
 | <code class="text-nowrap">--end</code> | End time (RFC3339 or Unix timestamp). |
+| <code class="text-nowrap">--header</code> | Extra headers to send to server. |
 
 
 
@@ -322,6 +323,7 @@ Run labels query.
 | <code class="text-nowrap">--start</code> | Start time (RFC3339 or Unix timestamp). |
 | <code class="text-nowrap">--end</code> | End time (RFC3339 or Unix timestamp). |
 | <code class="text-nowrap">--match</code> <code class="text-nowrap">...</code> | Series selector. Can be specified multiple times. |
+| <code class="text-nowrap">--header</code> | Extra headers to send to server. |
 
 
 
