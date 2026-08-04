@@ -247,11 +247,7 @@ loop:
 
 		var isDuplicate bool
 		if parsedTimestamp == nil {
-			if _, ok := sl.cache.seriesHashes[hash]; ok {
-				isDuplicate = true
-			} else {
-				sl.cache.seriesHashes[hash] = struct{}{}
-			}
+			isDuplicate = sl.cache.isSeriesHashDuplicate(hash, lset)
 		}
 
 		if isDuplicate {

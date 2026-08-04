@@ -912,9 +912,12 @@ type scrapeCache struct {
 	seriesCur  map[storage.SeriesRef]*cacheEntry
 	seriesPrev map[storage.SeriesRef]*cacheEntry
 
-	// Cache of post-relabeling hashes seen in the current scrape iteration.
-	// Used to detect duplicate labels after relabeling.
-	seriesHashes map[uint64]struct{}
+	// Cache of post-relabeling label sets seen in the current scrape iteration,
+	// keyed by label-set hash. Used to detect duplicate labels after relabeling.
+	// A separate conflict map handles the rare case of hash collisions, following
+	// the same approach as TSDB's seriesHashmap.
+	seriesHashes        map[uint64]labels.Labels
+	seriesHashConflicts map[uint64][]labels.Labels
 
 	// TODO(bwplotka): Consider moving metadata caching to head. See
 	// https://github.com/prometheus/prometheus/issues/17619.
@@ -943,7 +946,7 @@ func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 		droppedSeries: map[string]*uint64{},
 		seriesCur:     map[storage.SeriesRef]*cacheEntry{},
 		seriesPrev:    map[storage.SeriesRef]*cacheEntry{},
-		seriesHashes:  map[uint64]struct{}{},
+		seriesHashes:  map[uint64]labels.Labels{},
 		metadata:      map[string]*metaEntry{},
 		metrics:       metrics,
 	}
@@ -995,8 +998,35 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 	c.seriesPrev, c.seriesCur = c.seriesCur, c.seriesPrev
 	clear(c.seriesCur)
 	clear(c.seriesHashes)
+	clear(c.seriesHashConflicts)
 
 	c.iter++
+}
+
+// isSeriesHashDuplicate reports whether lset was already seen in the current
+// scrape iteration. It follows the same approach as TSDB's seriesHashmap:
+// a primary map holds the first label set per hash, and a lazily-allocated
+// conflict map handles the rare case of different label sets sharing a hash.
+func (c *scrapeCache) isSeriesHashDuplicate(hash uint64, lset labels.Labels) bool {
+	if existing, ok := c.seriesHashes[hash]; ok {
+		if labels.Equal(existing, lset) {
+			return true
+		}
+		// Hash collision — check the conflict bucket.
+		for _, l := range c.seriesHashConflicts[hash] {
+			if labels.Equal(l, lset) {
+				return true
+			}
+		}
+		// New series with a colliding hash.
+		if c.seriesHashConflicts == nil {
+			c.seriesHashConflicts = make(map[uint64][]labels.Labels)
+		}
+		c.seriesHashConflicts[hash] = append(c.seriesHashConflicts[hash], lset)
+		return false
+	}
+	c.seriesHashes[hash] = lset
+	return false
 }
 
 func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
@@ -1747,11 +1777,7 @@ loop:
 
 		var isDuplicate bool
 		if parsedTimestamp == nil {
-			if _, ok := sl.cache.seriesHashes[hash]; ok {
-				isDuplicate = true
-			} else {
-				sl.cache.seriesHashes[hash] = struct{}{}
-			}
+			isDuplicate = sl.cache.isSeriesHashDuplicate(hash, lset)
 		}
 
 		if isDuplicate {
