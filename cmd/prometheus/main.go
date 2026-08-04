@@ -206,9 +206,10 @@ type flagConfig struct {
 	enableAutoReload   bool
 	autoReloadInterval model.Duration
 
-	maxprocsEnable bool
-	memlimitEnable bool
-	memlimitRatio  float64
+	maxprocsEnable          bool
+	memlimitEnable          bool
+	memlimitRatio           float64
+	memlimitRefreshInterval model.Duration
 
 	featureList []string
 	// These options are extracted from featureList
@@ -430,6 +431,8 @@ func main() {
 		Default("true").BoolVar(&cfg.memlimitEnable)
 	a.Flag("auto-gomemlimit.ratio", "The ratio of reserved GOMEMLIMIT memory to the detected maximum container or system memory").
 		Default("0.9").FloatVar(&cfg.memlimitRatio)
+	a.Flag("auto-gomemlimit.refresh-interval", "Interval at which to re-detect the container or system memory limit and update GOMEMLIMIT accordingly. Useful when the limit can change at runtime, e.g. with a Vertical Pod Autoscaler. Set to 0 to detect the limit only once at startup. Note that a downward change in the limit can cause a temporary increase in garbage collection activity. Only used when --auto-gomemlimit is set.").
+		Default("0s").SetValue(&cfg.memlimitRefreshInterval)
 
 	webConfig := a.Flag(
 		"web.config.file",
@@ -802,6 +805,7 @@ func main() {
 	if cfg.memlimitEnable {
 		if _, err := memlimit.SetGoMemLimitWithOpts(
 			memlimit.WithRatio(cfg.memlimitRatio),
+			memlimit.WithRefreshInterval(time.Duration(cfg.memlimitRefreshInterval)),
 			memlimit.WithProvider(
 				memlimit.ApplyFallback(
 					memlimit.FromCgroup,
