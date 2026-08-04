@@ -334,6 +334,86 @@ func TestEndpointSliceDiscoveryAdd(t *testing.T) {
 	}.Run(t)
 }
 
+func TestEndpointSliceDiscoveryWithDaemonSet(t *testing.T) {
+	t.Parallel()
+
+	daemonSet := makeDaemonSet("testdaemonset", "default")
+	pod := makeDaemonSetOwnedPod("default", daemonSet.Name, daemonSet.UID)
+	endpointSlice := &v1.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testendpoints",
+			Namespace: "default",
+		},
+		AddressType: v1.AddressTypeIPv4,
+		Ports: []v1.EndpointPort{
+			{
+				Name:     strptr("testport"),
+				Port:     int32ptr(9000),
+				Protocol: protocolptr(corev1.ProtocolTCP),
+			},
+		},
+		Endpoints: []v1.Endpoint{
+			{
+				Addresses: []string{pod.Status.PodIP},
+				Conditions: v1.EndpointConditions{
+					Ready: boolptr(true),
+				},
+				TargetRef: &corev1.ObjectReference{
+					Kind:      "Pod",
+					Name:      pod.Name,
+					Namespace: pod.Namespace,
+				},
+			},
+		},
+	}
+
+	n, _ := makeDiscoveryWithMetadata(RoleEndpointSlice, NamespaceDiscovery{}, AttachMetadataConfig{
+		PodMetadataConfig: PodMetadataConfig{DaemonSet: true},
+	}, daemonSet, pod, endpointSlice)
+
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"endpointslice/default/testendpoints": {
+				Targets: []model.LabelSet{
+					{
+						"__address__": "1.2.3.4:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":       "Pod",
+						"__meta_kubernetes_endpointslice_address_target_name":       "testpod",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready": "true",
+						"__meta_kubernetes_endpointslice_port":                      "9000",
+						"__meta_kubernetes_endpointslice_port_name":                 "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":             "TCP",
+						"__meta_kubernetes_pod_container_image":                     "testcontainer:latest",
+						"__meta_kubernetes_pod_container_init":                      "false",
+						"__meta_kubernetes_pod_container_name":                      "testcontainer",
+						"__meta_kubernetes_pod_container_port_name":                 "testport",
+						"__meta_kubernetes_pod_container_port_number":               "9000",
+						"__meta_kubernetes_pod_container_port_protocol":             "TCP",
+						"__meta_kubernetes_pod_controller_kind":                     "DaemonSet",
+						"__meta_kubernetes_pod_controller_name":                     "testdaemonset",
+						"__meta_kubernetes_pod_daemonset_name":                      "testdaemonset",
+						"__meta_kubernetes_pod_host_ip":                             "2.3.4.5",
+						"__meta_kubernetes_pod_ip":                                  "1.2.3.4",
+						"__meta_kubernetes_pod_name":                                "testpod",
+						"__meta_kubernetes_pod_node_name":                           "testnode",
+						"__meta_kubernetes_pod_phase":                               "Running",
+						"__meta_kubernetes_pod_ready":                               "true",
+						"__meta_kubernetes_pod_uid":                                 "pod123",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_endpointslice_address_type": "IPv4",
+					"__meta_kubernetes_endpointslice_name":         "testendpoints",
+					"__meta_kubernetes_namespace":                  "default",
+				},
+				Source: "endpointslice/default/testendpoints",
+			},
+		},
+	}.Run(t)
+}
+
 func TestEndpointSliceDiscoveryDelete(t *testing.T) {
 	t.Parallel()
 	n, c := makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{Names: []string{"default"}}, makeEndpointSliceV1("default"))
