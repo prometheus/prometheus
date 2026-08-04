@@ -1543,42 +1543,12 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 		default:
 		}
 
-		if !db.head.compactable() {
-			// Reset the counter once the head compactions are done.
-			// This would also reset it if a manual compaction was triggered while the auto compaction was in its delay period.
-			if !db.timeWhenCompactionDelayStarted.IsZero() {
-				db.timeWhenCompactionDelayStarted = time.Time{}
-			}
+		maxt, persisted, err := db.persistHead()
+		if err != nil {
+			return err
+		}
+		if !persisted {
 			break
-		}
-
-		if db.timeWhenCompactionDelayStarted.IsZero() {
-			// Start counting for the delay.
-			db.timeWhenCompactionDelayStarted = time.Now()
-		}
-		if db.waitingForCompactionDelay() {
-			break
-		}
-		mint := db.head.MinTime()
-		maxt := rangeForTimestamp(mint, db.head.chunkRange.Load())
-
-		// Wrap head into a range that bounds all reads to it.
-		// We remove 1 millisecond from maxt because block
-		// intervals are half-open: [b.MinTime, b.MaxTime). But
-		// chunk intervals are closed: [c.MinTime, c.MaxTime];
-		// so in order to make sure that overlaps are evaluated
-		// consistently, we explicitly remove the last value
-		// from the block interval here.
-		rh := NewRangeHeadWithIsolationDisabled(db.head, mint, maxt-1)
-
-		// Compaction runs with isolation disabled, because head.compactable()
-		// ensures that maxt is more than chunkRange/2 back from now, and
-		// head.appendableMinValidTime() ensures that no new appends can start within the compaction range.
-		// We do need to wait for any overlapping appenders that started previously to finish.
-		db.head.WaitForAppendersOverlapping(rh.MaxTime())
-
-		if err := db.compactHead(rh); err != nil {
-			return fmt.Errorf("compact head: %w", err)
 		}
 		// Consider only successful compactions for WAL truncation.
 		lastBlockMaxt = maxt
@@ -1607,6 +1577,56 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 	}
 
 	return db.compactBlocks()
+}
+
+// persistHead persists one chunk range of the head to disk if the head is
+// compactable and the compaction delay has passed. It returns the maxt of the
+// persisted range and whether a block was written.
+
+// Write HEAD block to disk, returning maxt and bool indicating if the
+// block was written or not, along with any error.
+// Callers are responsible for truncating the WAL and compacting the OOO head afterwards.
+// The db.cmtx should be held before calling this method.
+func (db *DB) persistHead() (int64, bool, error) {
+	if !db.head.compactable() {
+		// Reset the counter once the head compactions are done.
+		// This would also reset it if a manual compaction was triggered while the auto compaction was in its delay period.
+		if !db.timeWhenCompactionDelayStarted.IsZero() {
+			db.timeWhenCompactionDelayStarted = time.Time{}
+		}
+		return 0, false, nil
+	}
+
+	if db.timeWhenCompactionDelayStarted.IsZero() {
+		// Start counting for the delay.
+		db.timeWhenCompactionDelayStarted = time.Now()
+	}
+	if db.waitingForCompactionDelay() {
+		return 0, false, nil
+	}
+	mint := db.head.MinTime()
+	maxt := rangeForTimestamp(mint, db.head.chunkRange.Load())
+
+	// Wrap head into a range that bounds all reads to it.
+	// We remove 1 millisecond from maxt because block
+	// intervals are half-open: [b.MinTime, b.MaxTime). But
+	// chunk intervals are closed: [c.MinTime, c.MaxTime];
+	// so in order to make sure that overlaps are evaluated
+	// consistently, we explicitly remove the last value
+	// from the block interval here.
+	rh := NewRangeHeadWithIsolationDisabled(db.head, mint, maxt-1)
+
+	// Compaction runs with isolation disabled, because head.compactable()
+	// ensures that maxt is more than chunkRange/2 back from now, and
+	// head.appendableMinValidTime() ensures that no new appends can start within the compaction range.
+	// We do need to wait for any overlapping appenders that started previously to finish.
+	db.head.WaitForAppendersOverlapping(rh.MaxTime())
+
+	if err := db.compactHead(rh); err != nil {
+		return 0, false, fmt.Errorf("compact head: %w", err)
+	}
+
+	return maxt, true, nil
 }
 
 // CompactHead compacts the given RangeHead.
