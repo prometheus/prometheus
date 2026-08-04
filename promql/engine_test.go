@@ -4543,16 +4543,16 @@ eval instant at 1m histogram_quantile(0.5, nonmonotonic_bucket)
 	{} 8.5
 
 eval instant at 1m histogram_quantile(1, histogram_nan)
-    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN (1:20)
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN (1:23)
     {case="100% NaNs"} NaN
     {case="20% NaNs"} NaN
 
 eval instant at 1m histogram_quantile(0.8, histogram_nan{case="20% NaNs"})
-    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher (1:20)
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher (1:25)
     {case="20% NaNs"} 1
 
 eval instant at 1m histogram_fraction(-Inf, 0.7071067811865475, histogram_nan)
-    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions (1:20)
+    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions (1:46)
     {case="100% NaNs"} 0.0
     {case="20% NaNs"} 0.4
 

@@ -217,6 +217,9 @@ func BucketQuantile(q float64, buckets Buckets) (
 // HistogramQuantile is for calculating the histogram_quantile() of native
 // histograms. See also: BucketQuantile for classic histograms.
 //
+// The returned annotations are all about the histogram h, so pos must be the
+// position of the expression that h was derived from, not the position of q.
+//
 // HistogramQuantile is exported as it may be used by other PromQL engine
 // implementations.
 func HistogramQuantile(q float64, h *histogram.FloatHistogram, metricName string, pos posrange.PositionRange) (float64, annotations.Annotations) {
@@ -388,6 +391,9 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram, metricName string
 // If the histogram has NaN observations, these are not considered in any bucket
 // thus histogram_fraction(-Inf, +Inf, v) might be less than 1.0. The function
 // returns an info level annotation in this case.
+//
+// The returned annotation is about the histogram h, so pos must be the position
+// of the expression that h was derived from, not the position of lower or upper.
 //
 // HistogramFraction is exported as it may be used by other PromQL engine
 // implementations.
