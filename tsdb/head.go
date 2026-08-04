@@ -924,7 +924,7 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			return err
 		}
-		h.logger.Info("WAL segment loaded", "segment", i, "maxSegment", endAt, "duration", time.Since(walSegmentStart))
+		h.logger.Info("WAL segment loaded", "segment", i, "maxSegment", endAt, "duration", time.Since(walSegmentStart).String())
 		h.updateWALReplayStatusRead(i)
 	}
 	walReplayDuration := time.Since(walReplayStart)
@@ -1586,7 +1586,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	h.metrics.walTruncateDuration.Observe(time.Since(start).Seconds())
 
 	h.logger.Info("WAL checkpoint complete",
-		"first", first, "last", last, "duration", time.Since(start))
+		"first", first, "last", last, "duration", time.Since(start).String())
 
 	return nil
 }
@@ -1624,7 +1624,7 @@ func (h *Head) truncateSeriesAndChunkDiskMapper(caller string) error {
 	start := time.Now()
 	headMaxt := h.MaxTime()
 	actualMint, minOOOTime, minMmapFile := h.gc()
-	h.logger.Info("Head GC completed", "caller", caller, "duration", time.Since(start))
+	h.logger.Info("Head GC completed", "caller", caller, "duration", time.Since(start).String())
 	h.metrics.gcDuration.Observe(time.Since(start).Seconds())
 
 	if actualMint > h.minTime.Load() {
