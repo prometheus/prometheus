@@ -1614,12 +1614,12 @@ load 1m
     histogram_nan{case="20% NaNs"} {{schema:0 count:0 sum:0}} {{schema:0 count:15 sum:NaN buckets:[12]}}
 
 eval instant at 1m histogram_quantile(1, histogram_nan)
-    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN for metric name "histogram_nan" (1:20)
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN for metric name "histogram_nan" (1:23)
     {case="100% NaNs"} NaN
     {case="20% NaNs"} NaN
 
 eval instant at 1m histogram_quantile(0.81, histogram_nan)
-    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN for metric name "histogram_nan" (1:20)
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN for metric name "histogram_nan" (1:26)
     {case="100% NaNs"} NaN
     {case="20% NaNs"} NaN
 
@@ -1629,29 +1629,29 @@ eval instant at 1m histogram_quantiles(histogram_nan, "q", 0.81)
     {case="20% NaNs", q="0.81"} NaN
 
 eval instant at 1m histogram_quantile(0.8, histogram_nan{case="100% NaNs"})
-    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN for metric name "histogram_nan" (1:20)
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN for metric name "histogram_nan" (1:25)
     {case="100% NaNs"} NaN
 
 eval instant at 1m histogram_quantile(0.8, histogram_nan{case="20% NaNs"})
-    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher for metric name "histogram_nan" (1:20)
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher for metric name "histogram_nan" (1:25)
     {case="20% NaNs"} 1
 
 eval instant at 1m histogram_quantile(0.4, histogram_nan{case="100% NaNs"})
-    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN for metric name "histogram_nan" (1:20)
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN for metric name "histogram_nan" (1:25)
     {case="100% NaNs"} NaN
 
 # histogram_quantile and histogram_fraction equivalence if quantile is not NaN
 eval instant at 1m histogram_quantile(0.4, histogram_nan{case="20% NaNs"})
-    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher for metric name "histogram_nan" (1:20)
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher for metric name "histogram_nan" (1:25)
     {case="20% NaNs"} 0.7071067811865475
 
 eval instant at 1m histogram_fraction(-Inf, 0.7071067811865475, histogram_nan)
-    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions for metric name "histogram_nan" (1:20)
+    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions for metric name "histogram_nan" (1:46)
     {case="100% NaNs"} 0.0
     {case="20% NaNs"} 0.4
 
 eval instant at 1m histogram_fraction(-Inf, +Inf, histogram_nan)
-    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions for metric name "histogram_nan" (1:20)
+    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions for metric name "histogram_nan" (1:32)
     {case="100% NaNs"} 0.0
     {case="20% NaNs"} 0.8
 

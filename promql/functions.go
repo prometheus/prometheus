@@ -2145,7 +2145,7 @@ func funcHistogramFraction(vectorVals []Vector, _ Matrix, args parser.Expression
 		if !enh.enableDelayedNameRemoval {
 			sample.Metric = sample.Metric.DropReserved(schema.IsMetadataLabel)
 		}
-		hf, hfAnnos := HistogramFraction(lower, upper, sample.H, getMetricName(sample.Metric), args[0].PositionRange())
+		hf, hfAnnos := HistogramFraction(lower, upper, sample.H, getMetricName(sample.Metric), args[2].PositionRange())
 		annos.Merge(hfAnnos)
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
@@ -2196,7 +2196,7 @@ func funcHistogramQuantile(vectorVals []Vector, _ Matrix, args parser.Expression
 		if !enh.enableDelayedNameRemoval {
 			sample.Metric = sample.Metric.DropReserved(schema.IsMetadataLabel)
 		}
-		hq, hqAnnos := HistogramQuantile(q, sample.H, getMetricName(sample.Metric), args[0].PositionRange())
+		hq, hqAnnos := HistogramQuantile(q, sample.H, getMetricName(sample.Metric), args[1].PositionRange())
 		annos.Merge(hqAnnos)
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
