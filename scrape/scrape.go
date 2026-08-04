@@ -1022,6 +1022,32 @@ func (c *scrapeCache) getDropped(met []byte) bool {
 	return ok
 }
 
+// updateRef points the cache entry at a new storage reference, e.g. because the
+// storage garbage collected the series and had to recreate it. Staleness is tracked
+// per reference, so the tracking has to follow the entry to the new reference,
+// otherwise the series looks like it stopped being exposed and gets a stale marker.
+func (c *scrapeCache) updateRef(ce *cacheEntry, ref storage.SeriesRef) {
+	if ce.ref == ref {
+		return
+	}
+	if ce.ref != 0 {
+		moveStaleness(c.seriesPrev, ce, ref)
+		moveStaleness(c.seriesCur, ce, ref)
+	}
+	ce.ref = ref
+}
+
+// moveStaleness re-keys the staleness tracking of ce from ce.ref to ref. Whether the
+// series is considered stale is left as it is, only the reference it is tracked under
+// changes. Tracking that belongs to another cache entry is left alone.
+func moveStaleness(tracked map[storage.SeriesRef]*cacheEntry, ce *cacheEntry, ref storage.SeriesRef) {
+	if tracked[ce.ref] != ce {
+		return
+	}
+	delete(tracked, ce.ref)
+	tracked[ref] = ce
+}
+
 func (c *scrapeCache) trackStaleness(ref storage.SeriesRef, ce *cacheEntry) {
 	c.seriesCur[ref] = ce
 }
@@ -1775,7 +1801,7 @@ loop:
 		if err == nil {
 			// Append may return a new ref; keep the cache in sync.
 			if ce != nil && ref != 0 {
-				ce.ref = ref
+				sl.cache.updateRef(ce, ref)
 			}
 			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil && ce.ref != 0 {
 				sl.cache.trackStaleness(ce.ref, ce)

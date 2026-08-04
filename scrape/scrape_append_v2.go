@@ -326,7 +326,7 @@ loop:
 				// Append sample to the storage.
 				ref, err = app.Append(ref, lset, st, t, val, h, fh, appOpts)
 				if err == nil && ce != nil && ref != 0 {
-					ce.ref = ref
+					sl.cache.updateRef(ce, ref)
 				}
 			}
 		}
