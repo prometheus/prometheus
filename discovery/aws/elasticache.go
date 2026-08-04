@@ -600,7 +600,7 @@ func splitCacheDeploymentOptions(caches []string) (serverlessCacheIDs, cacheClus
 			continue
 		}
 		parts := strings.Split(cacheARN, ":")
-		if len(parts) < 6 {
+		if len(parts) < 7 {
 			continue
 		}
 		resourceType := parts[5]

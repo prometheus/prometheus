@@ -582,6 +582,7 @@ func TestSplitCacheDeploymentOptions(t *testing.T) {
 			caches: []string{
 				"not-an-arn",
 				"arn:aws:elasticache:us-east-1",
+				"arn:aws:elasticache:us-east-1:123456789012:serverlesscache",
 				"",
 			},
 			expectedServerlessCacheIDs: nil,
