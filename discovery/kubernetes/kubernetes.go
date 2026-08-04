@@ -162,7 +162,7 @@ type AttachMetadataConfig struct {
 	PodMetadataConfig `yaml:",inline"`
 }
 
-// PodMetadataConfig allows configuring which pod-related metadata to attach.
+// PodMetadataConfig allows configuring which pod-related metadata to attach. The fields below may be used through `AttachMetadataConfig` above in non-pod discoveries.
 type PodMetadataConfig struct {
 	Deployment bool `yaml:"deployment"`
 	DaemonSet  bool `yaml:"daemonset"`

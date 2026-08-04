@@ -2636,7 +2636,7 @@ attach_metadata:
 # When set to true, Prometheus must have permissions to list/watch ReplicaSets.
 # Enables the __meta_kubernetes_pod_deployment_name label.
   [ deployment: <boolean> | default = false ]
-# Attaches daemonset metadata to discovered pod targets. Valid for role: pod.
+# Attaches daemonset metadata to discovered pod targets. Valid for role: pod, endpoints, endpointslices.
 # Enables the __meta_kubernetes_pod_daemonset_name label.
   [ daemonset: <boolean> | default = false ]
 # Attaches job metadata to discovered pod targets. Valid for role: pod.
