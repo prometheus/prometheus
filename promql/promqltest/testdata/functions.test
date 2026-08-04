@@ -466,6 +466,10 @@ eval instant at 100m predict_linear(http_requests_inf[100m], 6000)
 eval instant at 50m predict_linear(http_requests_total[50m], 3600) - (http_requests_total + deriv(http_requests_total[50m]) * 3600)
 	{group="canary", instance="1", job="app-server"} 0
 
+# Scalar arguments to range-vector functions must be refreshed for every step.
+eval range from 10m to 20m step 5m predict_linear(http_requests_total[10m], time())
+	{group="canary", instance="1", job="app-server"} 320 480 640
+
 clear
 
 # Tests for label_replace.
