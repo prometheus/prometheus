@@ -953,6 +953,9 @@ runtime:
 // concurrently with a scrape does not trigger the data race described in
 // https://github.com/prometheus/prometheus/issues/16490.
 func TestHeadCompactionWhileScraping(t *testing.T) {
+	if runtime.GOOS == "windows" { // No race detector on Windows.
+		t.SkipNow()
+	}
 	t.Parallel()
 
 	// To increase the chance of reproducing the data race
@@ -983,6 +986,7 @@ scrape_configs:
 				port,
 				fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
 				"--storage.tsdb.min-block-duration=100ms",
+				"--scrape.discovery-reload-interval=100ms", // Reduce initial wait time from default of 5 seconds.
 			)
 			require.NoError(t, prom.Start())
 
@@ -1020,6 +1024,7 @@ scrape_configs:
 				require.Zero(t, failures)
 				return true
 			}, 15*time.Second, 500*time.Millisecond)
+			prom.Process.Signal(os.Interrupt)
 		})
 	}
 }
