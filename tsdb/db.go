@@ -381,6 +381,7 @@ type dbMetrics struct {
 	reloadsFailed                      prometheus.Counter
 	compactionsFailed                  prometheus.Counter
 	compactionsTriggered               prometheus.Counter
+	compactionsPaused                  prometheus.Counter
 	compactionsSkipped                 prometheus.Counter
 	sizeRetentionCount                 prometheus.Counter
 	timeRetentionCount                 prometheus.Counter
@@ -433,6 +434,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	m.compactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_triggered_total",
 		Help: "Total number of triggered compactions for the partition.",
+	})
+	m.compactionsPaused = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_compactions_paused_total",
+		Help: "Total number of times a block compaction was paused to persist the head block.",
 	})
 	m.compactionsFailed = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_failed_total",
@@ -525,6 +530,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.reloadsFailed,
 			m.compactionsFailed,
 			m.compactionsTriggered,
+			m.compactionsPaused,
 			m.compactionsSkipped,
 			m.sizeRetentionCount,
 			m.timeRetentionCount,
@@ -1115,6 +1121,9 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		return nil, fmt.Errorf("create compactor: %w", err)
 	}
 	db.compactCancel = cancel
+	if lc, ok := db.compactor.(*LeveledCompactor); ok {
+		lc.MaybePause = db.maybePause
+	}
 
 	if opts.BlockQuerierFunc == nil {
 		db.blockQuerierFunc = NewBlockQuerier
@@ -1621,6 +1630,48 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 	return db.compactBlocks()
 }
 
+// maybePause writes the head block if the head became compactable while
+// blocks are being compacted. Compact holds db.cmtx for the whole compaction,
+// so it can run while a merge is paused.
+func (db *DB) maybePause(ctx context.Context) error {
+	if !db.head.compactable() || db.waitingForCompactionDelay() {
+		return nil
+	}
+	if db.timeWhenCompactionDelayStarted.IsZero() {
+		db.timeWhenCompactionDelayStarted = time.Now()
+	}
+	if db.waitingForCompactionDelay() {
+		return nil
+	}
+	db.logger.Info("paused block compaction to persist the head block")
+	start := time.Now()
+
+	lastBlockMaxt := int64(math.MinInt64)
+	for {
+		maxt, persisted, err := db.persistHead()
+		if err != nil {
+			return err
+		}
+		if !persisted {
+			break
+		}
+		lastBlockMaxt = maxt
+	}
+	if lastBlockMaxt == math.MinInt64 {
+		return nil
+	}
+	db.metrics.compactionsPaused.Inc()
+
+	if err := db.head.truncateWAL(lastBlockMaxt); err != nil {
+		return fmt.Errorf("WAL truncation: %w", err)
+	}
+	if err := db.compactOOOHead(ctx); err != nil {
+		return fmt.Errorf("compact ooo head: %w", err)
+	}
+	db.logger.Info("resuming block compaction", "pause", time.Since(start).String())
+	return nil
+}
+
 // persistHead persists one chunk range of the head to disk if the head is
 // compactable and the compaction delay has passed. It returns the maxt of the
 // persisted range and whether a block was written.
@@ -2050,6 +2101,9 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 	return nil
 }
 
+// Callback for testing.
+var compactBlocksTestingCallback func()
+
 // compactBlocks compacts all the eligible on-disk blocks.
 // The db.cmtx should be held before calling this method.
 func (db *DB) compactBlocks() (err error) {
@@ -2069,6 +2123,10 @@ func (db *DB) compactBlocks() (err error) {
 		}
 		if len(plan) == 0 {
 			break
+		}
+
+		if compactBlocksTestingCallback != nil {
+			compactBlocksTestingCallback()
 		}
 
 		select {
