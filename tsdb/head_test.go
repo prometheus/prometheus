@@ -24,7 +24,6 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -10007,10 +10006,6 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 	// the stripe and series locks, those locks must still be released. A leaked
 	// lock previously self-deadlocked the subsequent Head.Close() -> mmapHeadChunks().
 	t.Run("panic releases locks", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("forces a chunk-write failure by removing the open chunk directory, which Windows disallows while the ChunkDiskMapper holds the directory handle")
-		}
-
 		h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
 		require.NoError(t, h.Init(0))
 
@@ -10030,10 +10025,13 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		require.NotNil(t, s)
 		require.GreaterOrEqual(t, s.headChunkCount.Load(), uint32(2), "need >=2 head chunks pending mmap")
 
-		// Removing the chunk directory makes the next segment cut fail, so
-		// handleChunkWriteError panics inside mmapChunks. The chunk-write queue is
-		// synchronous by default, so the panic propagates out of mmapHeadChunks.
-		require.NoError(t, os.RemoveAll(mmappedChunksDir(h.opts.ChunkDirRoot)))
+		// Break the chunk write path in an OS agnostic way: dropping a segment
+		// file with a far higher sequence number into the head chunks directory
+		// makes the next cut file's sequence differ from the one the chunk
+		// reference was handed out for, which fails the write.
+		rogue := filepath.Join(mmappedChunksDir(h.opts.ChunkDirRoot), "000100")
+		require.NoError(t, os.WriteFile(rogue, nil, 0o666))
+		h.chunkDiskMapper.CutNewFile()
 		// newTestHead's cleanup calls Head.Close() -> mmapHeadChunks(), which would
 		// otherwise re-trigger the panic on the now-missing directory. Closing the
 		// mapper first makes WriteChunk return ErrChunkDiskMapperClosed, which
@@ -10043,9 +10041,17 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 
 		require.Panics(t, func() { h.mmapHeadChunks() })
 
+		// Probe the locks without blocking. On failure the leaked locks are
+		// released, so that the test fails instead of hanging forever in the
+		// deferred Head.Close.
+		seriesFree := s.TryLock()
+		if seriesFree {
+			s.Unlock()
+		}
+
 		// The locks held while mmapChunks panicked must have been released.
-		require.True(t, s.TryLock(), "series lock leaked after panic")
-		s.Unlock()
+		require.True(t, seriesFree, "series lock still held after panic, any later m-mapping would block forever")
+
 		for i := range h.series.size {
 			require.Truef(t, h.series.locks[i].TryLock(), "stripe lock %d leaked after panic", i)
 			h.series.locks[i].Unlock()
