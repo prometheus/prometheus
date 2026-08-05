@@ -22,6 +22,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"reflect"
@@ -744,6 +745,12 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	}
 	ctx, span := otel.Tracer("").Start(ctx, "Scrape", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
+
+	// If the target has a unix socket path, pass it via the context so the
+	// custom DialContext can dial the socket instead of the URL host.
+	if socketPath := s.labels.Get(UnixSocketLabel); socketPath != "" {
+		ctx = context.WithValue(ctx, unixSocketContextKey{}, socketPath)
+	}
 
 	return s.client.Do(s.req.WithContext(ctx))
 }
@@ -2284,7 +2291,31 @@ func pickSchema(bucketFactor float64) int32 {
 	}
 }
 
+// UnixSocketLabel is the name of the label that holds the unix socket path
+// to connect to for scraping. When set, the scrape client will connect via
+// the specified Unix domain socket instead of the target's __address__.
+const UnixSocketLabel = "__unix_socket__"
+
+// unixSocketContextKey is used to pass the unix socket path
+// from the scraper to the custom DialContext via the request context.
+type unixSocketContextKey struct{}
+
 func newScrapeClient(cfg config_util.HTTPClientConfig, name string, optFuncs ...config_util.HTTPClientOption) (*http.Client, error) {
+	// Register a custom dial function so that when a unix socket path is
+	// present on the request context, connections are routed through the
+	// unix socket instead of the URL host. Using WithDialContextFunc
+	// ensures the dial function is installed during transport construction,
+	// before any auth or TLS file-watching wrappers are applied.
+	// Prepend so that callers can override this default via optFuncs.
+	optFuncs = append([]config_util.HTTPClientOption{config_util.WithDialContextFunc(
+		func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if socketPath, ok := ctx.Value(unixSocketContextKey{}).(string); ok && socketPath != "" {
+				return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+			}
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		},
+	)}, optFuncs...)
+
 	client, err := config_util.NewClientFromConfig(cfg, name, optFuncs...)
 	if err != nil {
 		return nil, fmt.Errorf("error creating HTTP client: %w", err)

@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -29,6 +30,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -4633,6 +4635,118 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 			runTest(t, acceptHeader(tc.scrapeProtocols, tc.scheme))
 		})
 	}
+}
+
+func TestTargetScraperScrapeOverUnixSocket(t *testing.T) {
+	// t.TempDir can produce paths exceeding the macOS 104-char socket
+	// path limit, so we create our own temp dir in /tmp.
+	tempDir, err := os.MkdirTemp("", "uds-scrape-test")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(tempDir) })
+	socketPath := filepath.Join(tempDir, "s")
+
+	// Create a Unix domain socket listener.
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+	defer listener.Close()
+
+	// Serve HTTP over the Unix socket.
+	server := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "localhost", r.Host)
+			w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+			_, _ = w.Write([]byte("metric_a 1\nmetric_b 2\n"))
+		}),
+	}
+	go server.Serve(listener)
+	defer server.Close()
+
+	// Create a client with a DialContext that routes to the unix socket.
+	client, err := newScrapeClient(config_util.HTTPClientConfig{}, "test_job")
+	require.NoError(t, err)
+
+	// No __address__ set — falls back to "localhost".
+	ts := &targetScraper{
+		Target: &Target{
+			labels: labels.FromStrings(
+				model.SchemeLabel, "http",
+				model.MetricsPathLabel, "/metrics",
+				UnixSocketLabel, socketPath,
+			),
+			scrapeConfig: &config.ScrapeConfig{},
+		},
+		client:       client,
+		timeout:      1500 * time.Millisecond,
+		acceptHeader: acceptHeader(config.DefaultScrapeProtocols, model.UnderscoreEscaping),
+	}
+
+	var buf bytes.Buffer
+	resp, err := ts.scrape(context.Background())
+	require.NoError(t, err)
+
+	contentType, err := ts.readResponse(context.Background(), resp, &buf)
+	require.NoError(t, err)
+	require.Equal(t, "text/plain; version=0.0.4", contentType)
+	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
+}
+
+func TestTargetScraperScrapeOverUnixSocketTLS(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "uds-tls-test")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(tempDir) })
+	socketPath := filepath.Join(tempDir, "s")
+
+	// Create a Unix domain socket listener and wrap it with TLS using
+	// the pre-generated test certificates (CN=localhost).
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+	defer listener.Close()
+
+	tlsListener := tls.NewListener(listener, newTLSConfig("server", t))
+
+	// Serve HTTPS over the Unix socket. The pre-generated certificate
+	// has SAN IP Address:127.0.0.1, so the __address__ must match.
+	server := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "127.0.0.1", r.Host)
+			w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+			_, _ = w.Write([]byte("metric_a 1\nmetric_b 2\n"))
+		}),
+	}
+	go server.Serve(tlsListener)
+	defer server.Close()
+
+	// Create a client configured to trust the test CA.
+	client, err := newScrapeClient(config_util.HTTPClientConfig{
+		TLSConfig: config_util.TLSConfig{
+			CAFile: caCertPath,
+		},
+	}, "test_job")
+	require.NoError(t, err)
+
+	ts := &targetScraper{
+		Target: &Target{
+			labels: labels.FromStrings(
+				model.SchemeLabel, "https",
+				model.AddressLabel, "127.0.0.1",
+				model.MetricsPathLabel, "/metrics",
+				UnixSocketLabel, socketPath,
+			),
+			scrapeConfig: &config.ScrapeConfig{},
+		},
+		client:       client,
+		timeout:      1500 * time.Millisecond,
+		acceptHeader: acceptHeader(config.DefaultScrapeProtocols, model.UnderscoreEscaping),
+	}
+
+	var buf bytes.Buffer
+	resp, err := ts.scrape(context.Background())
+	require.NoError(t, err)
+
+	contentType, err := ts.readResponse(context.Background(), resp, &buf)
+	require.NoError(t, err)
+	require.Equal(t, "text/plain; version=0.0.4", contentType)
+	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {
