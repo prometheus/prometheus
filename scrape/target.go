@@ -245,9 +245,19 @@ func (t *Target) URL() *url.URL {
 		}
 	})
 
+	host := t.labels.Get(model.AddressLabel)
+	scheme := t.labels.Get(model.SchemeLabel)
+
+	// If a unix socket is configured but no address is specified, fall
+	// back to "localhost" so that the URL remains valid. The actual
+	// connection is routed through the unix socket by the DialContext.
+	if host == "" && t.labels.Get(UnixSocketLabel) != "" {
+		host = "localhost"
+	}
+
 	return &url.URL{
-		Scheme:   t.labels.Get(model.SchemeLabel),
-		Host:     t.labels.Get(model.AddressLabel),
+		Scheme:   scheme,
+		Host:     host,
 		Path:     t.labels.Get(model.MetricsPathLabel),
 		RawQuery: params.Encode(),
 	}
