@@ -302,6 +302,38 @@ func TestOTLPWriteHandler(t *testing.T) {
 			require.NoError(t, ex.ConsumeMetrics(t.Context(), request.Metrics()))
 			require.Equal(t, 1.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("histogram_zero_count_non_zero_sum")))
 		})
+
+		t.Run("empty data points", func(t *testing.T) {
+			request := pmetricotlp.NewExportRequest()
+			m := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			m.SetName("test_empty_gauge")
+			m.SetEmptyGauge()
+
+			ex := newExporter()
+			require.Equal(t, 0.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("empty_data_points")))
+			require.NoError(t, ex.ConsumeMetrics(t.Context(), request.Metrics()))
+			require.Equal(t, 1.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("empty_data_points")))
+		})
+	})
+
+	t.Run("empty metric does not reject healthy metrics", func(t *testing.T) {
+		request := pmetricotlp.NewExportRequest()
+		metrics := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics()
+
+		healthy := metrics.AppendEmpty()
+		healthy.SetName("healthy_metric")
+		dp := healthy.SetEmptyGauge().DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+		dp.SetIntValue(1)
+
+		empty := metrics.AppendEmpty()
+		empty.SetName("empty_metric")
+		empty.SetEmptyGauge()
+
+		appendable := handleOTLP(t, request, config.OTLPConfig{}, OTLPOptions{})
+		samples := appendable.ResultSamples()
+		require.Len(t, samples, 1)
+		require.Equal(t, "healthy_metric", samples[0].L.Get(labels.MetricName))
 	})
 }
 
