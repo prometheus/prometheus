@@ -308,6 +308,60 @@ func TestFromMetrics(t *testing.T) {
 		}, ws)
 	})
 
+	t.Run("empty data points are surfaced as warnings", func(t *testing.T) {
+		for _, tc := range []struct {
+			name       string
+			buildEmpty func(pmetric.Metric)
+		}{
+			{
+				name: "gauge",
+				buildEmpty: func(m pmetric.Metric) {
+					m.SetEmptyGauge()
+				},
+			},
+			{
+				name: "sum",
+				buildEmpty: func(m pmetric.Metric) {
+					m.SetEmptySum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				},
+			},
+			{
+				name: "histogram",
+				buildEmpty: func(m pmetric.Metric) {
+					m.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				},
+			},
+			{
+				name: "exponential histogram",
+				buildEmpty: func(m pmetric.Metric) {
+					m.SetEmptyExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				},
+			},
+			{
+				name: "summary",
+				buildEmpty: func(m pmetric.Metric) {
+					m.SetEmptySummary()
+				},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				request := pmetricotlp.NewExportRequest()
+				m := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+				m.SetName("test_empty")
+				tc.buildEmpty(m)
+
+				converter := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
+				annots, err := converter.FromMetrics(t.Context(), request.Metrics(), Settings{})
+				require.NoError(t, err)
+				require.Equal(t, map[WarningCategory]int{WarningCategoryEmptyDataPoints: 1}, CountWarningsByCategory(annots))
+
+				ws, infos := annots.AsStrings("", 0, 0)
+				require.Empty(t, infos)
+				require.Equal(t, []string{"empty data points. test_empty is dropped"}, ws)
+			})
+		}
+	})
+
 	t.Run("attribute collision is surfaced as a warning", func(t *testing.T) {
 		request := pmetricotlp.NewExportRequest()
 		rm := request.Metrics().ResourceMetrics().AppendEmpty()

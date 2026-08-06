@@ -288,7 +288,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeGauge:
 					dataPoints := metric.Gauge().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						annots.Add(newCategorizedWarningf(WarningCategoryEmptyDataPoints, "empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, settings, appOpts); err != nil {
@@ -300,7 +300,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeSum:
 					dataPoints := metric.Sum().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						annots.Add(newCategorizedWarningf(WarningCategoryEmptyDataPoints, "empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					if err := c.addSumNumberDataPoints(ctx, dataPoints, settings, appOpts); err != nil {
@@ -312,7 +312,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeHistogram:
 					dataPoints := metric.Histogram().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						annots.Add(newCategorizedWarningf(WarningCategoryEmptyDataPoints, "empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					if settings.ConvertHistogramsToNHCB {
@@ -337,7 +337,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeExponentialHistogram:
 					dataPoints := metric.ExponentialHistogram().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						annots.Add(newCategorizedWarningf(WarningCategoryEmptyDataPoints, "empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					ws, err := c.addExponentialHistogramDataPoints(
@@ -357,7 +357,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeSummary:
 					dataPoints := metric.Summary().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						annots.Add(newCategorizedWarningf(WarningCategoryEmptyDataPoints, "empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					if err := c.addSummaryDataPoints(ctx, dataPoints, settings, appOpts); err != nil {

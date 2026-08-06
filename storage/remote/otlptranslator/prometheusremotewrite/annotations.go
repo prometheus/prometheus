@@ -26,6 +26,9 @@ import (
 type WarningCategory string
 
 const (
+	// WarningCategoryEmptyDataPoints is set when an OTLP metric has no data
+	// points and is dropped.
+	WarningCategoryEmptyDataPoints WarningCategory = "empty_data_points"
 	// WarningCategoryLabelNameCollision is set when two or more OTLP attribute
 	// names map to the same label name after sanitization and their values are
 	// concatenated.
