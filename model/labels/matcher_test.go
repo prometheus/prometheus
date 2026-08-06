@@ -31,7 +31,8 @@ func (m *Matcher) hasCaseInsensitivePrefix() bool {
 	if m.re == nil {
 		return false
 	}
-	return m.re.caseInsensitivePrefix
+	_, ok := m.re.stringMatcher.(*literalPrefixInsensitiveStringMatcher)
+	return ok
 }
 
 func TestMatcher(t *testing.T) {

@@ -155,10 +155,10 @@ func (m *Matcher) SetMatches() []string {
 // Prefix returns the required prefix of the value to match byte-for-byte, if possible.
 // It will be empty if it's an equality matcher or if the prefix can't be determined.
 func (m *Matcher) Prefix() string {
-	if m.re == nil || m.re.caseInsensitivePrefix {
+	if m.re == nil {
 		return ""
 	}
-	return m.re.prefix
+	return m.re.Prefix()
 }
 
 // IsRegexOptimized returns whether regex is optimized.
