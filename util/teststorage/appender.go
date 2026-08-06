@@ -182,10 +182,11 @@ func includeStaleNaNs(s []Sample) bool {
 // It allows recording all samples that were added through the appender and injecting errors.
 // Appendable will panic if more than one Appender is open.
 type Appendable struct {
-	appendErrFn          func(ls labels.Labels) error // If non-nil, inject appender error on every Append, AppendHistogram and ST zero calls.
-	appendExemplarsError error                        // If non-nil, inject exemplar error.
-	commitErr            error                        // If non-nil, inject commit error.
-	skipRecording        bool                         // If true, Appendable won't record samples, useful for benchmarks.
+	appendErrFn          func(ls labels.Labels) error             // If non-nil, inject appender error on every Append, AppendHistogram and ST zero calls.
+	refFn                func(ls labels.Labels) storage.SeriesRef // If non-nil, decides the storage.SeriesRef returned by the appender.
+	appendExemplarsError error                                    // If non-nil, inject exemplar error.
+	commitErr            error                                    // If non-nil, inject commit error.
+	skipRecording        bool                                     // If true, Appendable won't record samples, useful for benchmarks.
 
 	mtx           sync.Mutex
 	openAppenders atomic.Int32 // Guard against multi-appender use.
@@ -220,6 +221,16 @@ func (a *Appendable) WithErrs(appendErrFn func(ls labels.Labels) error, appendEx
 	a.appendErrFn = appendErrFn
 	a.appendExemplarsError = appendExemplarsError
 	a.commitErr = commitErr
+	return a
+}
+
+// WithRefFn makes the appender return the storage.SeriesRef given by refFn instead of
+// the label hash based one. It also disables the check that the caller passes back a
+// reference matching the label set, so tests can emulate a storage that hands out a
+// new reference for a series it already handed one out for, e.g. because the series
+// was garbage collected and recreated in the meantime.
+func (a *Appendable) WithRefFn(refFn func(ls labels.Labels) storage.SeriesRef) *Appendable {
+	a.refFn = refFn
 	return a
 }
 
@@ -419,10 +430,14 @@ func (a *appender) Append(ref storage.SeriesRef, ls labels.Labels, t int64, v fl
 		return a.next.Append(ref, ls, t, v)
 	}
 
-	return computeOrCheckRef(ref, ls)
+	return a.a.computeOrCheckRef(ref, ls)
 }
 
-func computeOrCheckRef(ref storage.SeriesRef, ls labels.Labels) (storage.SeriesRef, error) {
+func (a *Appendable) computeOrCheckRef(ref storage.SeriesRef, ls labels.Labels) (storage.SeriesRef, error) {
+	if a.refFn != nil {
+		return a.refFn(ls), nil
+	}
+
 	h := ls.Hash()
 	if ref == 0 {
 		// Use labels hash as a stand-in for unique series reference, to avoid having to track all series.
@@ -457,7 +472,7 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, ls labels.Labels, t in
 		return a.next.AppendHistogram(ref, ls, t, h, fh)
 	}
 
-	return computeOrCheckRef(ref, ls)
+	return a.a.computeOrCheckRef(ref, ls)
 }
 
 func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
@@ -492,7 +507,7 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 	if a.next != nil {
 		return a.next.AppendExemplar(ref, l, e)
 	}
-	return computeOrCheckRef(ref, l)
+	return a.a.computeOrCheckRef(ref, l)
 }
 
 func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, _, st int64) (storage.SeriesRef, error) {
@@ -535,7 +550,7 @@ func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m meta
 	if a.next != nil {
 		return a.next.UpdateMetadata(ref, l, m)
 	}
-	return computeOrCheckRef(ref, l)
+	return a.a.computeOrCheckRef(ref, l)
 }
 
 type appenderV2 struct {
@@ -607,7 +622,7 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 			return 0, err
 		}
 	} else {
-		ref, err = computeOrCheckRef(ref, ls)
+		ref, err = a.a.computeOrCheckRef(ref, ls)
 		if err != nil {
 			return ref, err
 		}
