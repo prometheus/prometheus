@@ -1630,6 +1630,100 @@ type SeriesMetadataResponse struct {
 	Versions []ResourceAttributeVersion `json:"versions,omitempty"`
 }
 
+// SeriesMetricsNamesView is the compact reverse-lookup response for view=names.
+type SeriesMetricsNamesView struct {
+	Metrics     []string `json:"metrics"`
+	SeriesCount int      `json:"series_count"`
+	Truncated   bool     `json:"truncated"`
+	LimitUnit   string   `json:"limit_unit"` // "metrics"
+}
+
+// SeriesMetricSummary is one metric rollup in view=summary.
+type SeriesMetricSummary struct {
+	Name          string            `json:"__name__"`
+	SeriesCount   int               `json:"series_count"`
+	ExampleLabels map[string]string `json:"example_labels"`
+}
+
+// SeriesMetricsSummaryView is the compact reverse-lookup response for view=summary.
+type SeriesMetricsSummaryView struct {
+	Metrics     []SeriesMetricSummary `json:"metrics"`
+	SeriesCount int                   `json:"series_count"`
+	Truncated   bool                  `json:"truncated"`
+	LimitUnit   string                `json:"limit_unit"` // "metrics"
+}
+
+const defaultMetricLimit = 200
+
+// buildSeriesMetricsCompact builds names or summary views from full series rows.
+// example_labels is the full label map of the first series (by labels.Compare order) per metric.
+func buildSeriesMetricsCompact(results []SeriesMetadataResponse, view string, metricLimit int) (any, annotations.Annotations) {
+	var warnings annotations.Annotations
+	if metricLimit <= 0 {
+		metricLimit = defaultMetricLimit
+	}
+
+	// Group series by __name__, preserving deterministic example via sorted results.
+	type agg struct {
+		count   int
+		example labels.Labels
+	}
+	byName := make(map[string]*agg)
+	var order []string
+	for _, r := range results {
+		name := r.Labels.Get(model.MetricNameLabel)
+		if name == "" {
+			name = "unknown"
+		}
+		a := byName[name]
+		if a == nil {
+			a = &agg{example: r.Labels}
+			byName[name] = a
+			order = append(order, name)
+		}
+		a.count++
+	}
+	slices.Sort(order)
+
+	truncated := false
+	if len(order) > metricLimit {
+		order = order[:metricLimit]
+		truncated = true
+		warnings.Add(errors.New("results truncated due to metric_limit"))
+	}
+
+	seriesCount := len(results)
+	switch view {
+	case "names":
+		return &SeriesMetricsNamesView{
+			Metrics:     order,
+			SeriesCount: seriesCount,
+			Truncated:   truncated,
+			LimitUnit:   "metrics",
+		}, warnings
+	default: // summary
+		out := make([]SeriesMetricSummary, 0, len(order))
+		for _, name := range order {
+			a := byName[name]
+			ex := make(map[string]string, a.example.Len())
+			a.example.Range(func(l labels.Label) {
+				ex[l.Name] = l.Value
+			})
+			out = append(out, SeriesMetricSummary{
+				Name:          name,
+				SeriesCount:   a.count,
+				ExampleLabels: ex,
+			})
+		}
+		return &SeriesMetricsSummaryView{
+			Metrics:     out,
+			SeriesCount: seriesCount,
+			Truncated:   truncated,
+			LimitUnit:   "metrics",
+		}, warnings
+	}
+}
+
 // ResourceAttributeKeyInfo is the verbose schema entry for format=attributes&verbose=1.
 type ResourceAttributeKeyInfo struct {
 	Role     string   `json:"role"` // identifying | descriptive
@@ -2350,7 +2444,29 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 		return invalidParamError(err, "limit")
 	}
 
+	view := strings.TrimSpace(r.FormValue("view"))
+	if view == "" {
+		view = "full"
+	}
+	switch view {
+	case "full", "names", "summary":
+	default:
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("invalid view %q: want full, names, or summary", view)}, nil, nil}
+	}
+
+	metricLimit := 0
+	if v := r.FormValue("metric_limit"); v != "" {
+		metricLimit, err = strconv.Atoi(v)
+		if err != nil || metricLimit < 0 {
+			return invalidParamError(errors.New("metric_limit must be a non-negative number"), "metric_limit")
+		}
+	}
+
 	nextToken := r.FormValue("next_token")
+	if nextToken != "" && view != "full" {
+		// Compact views do not support cursor pagination in v1.
+		nextToken = ""
+	}
 
 	// Parse optional match[] parameters
 	var matcherSets [][]*labels.Matcher
@@ -2532,9 +2648,14 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 		if !ok {
 			continue
 		}
+		// Compact views do not need version payloads.
+		vers := entry.resourceVersions
+		if view != "full" {
+			vers = nil
+		}
 		results = append(results, SeriesMetadataResponse{
 			Labels:   lset,
-			Versions: entry.resourceVersions,
+			Versions: vers,
 		})
 	}
 
@@ -2543,13 +2664,20 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 		return labels.Compare(a.Labels, b.Labels)
 	})
 
-	// Apply cursor pagination.
-	results = applySeriesMetadataCursor(results, nextToken)
-
 	var warnings annotations.Annotations
 	if len(matched) >= maxMetadataResults {
 		warnings.Add(errMaxResultsReached)
 	}
+
+	if view == "names" || view == "summary" {
+		compact, w := buildSeriesMetricsCompact(results, view, metricLimit)
+		warnings.Merge(w)
+		return apiFuncResult{compact, nil, warnings, nil}
+	}
+
+	// Apply cursor pagination (full view only).
+	results = applySeriesMetadataCursor(results, nextToken)
+
 	var respNextToken string
 	if limit > 0 && len(results) > limit {
 		respNextToken = getResourceNextToken(results[limit-1].Labels)

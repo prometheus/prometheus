@@ -20,6 +20,35 @@ func TestDiffStringMap(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestBuildSeriesMetricsCompact(t *testing.T) {
+	results := []SeriesMetadataResponse{
+		{Labels: labels.FromStrings("__name__", "demo_http_requests_total", "job", "shop/payment", "code", "200")},
+		{Labels: labels.FromStrings("__name__", "demo_http_requests_total", "job", "shop/payment", "code", "500")},
+		{Labels: labels.FromStrings("__name__", "system_cpu_load_average_1m", "instance", "uuid-1")},
+	}
+
+	namesAny, _ := buildSeriesMetricsCompact(results, "names", 10)
+	names := namesAny.(*SeriesMetricsNamesView)
+	require.Equal(t, []string{"demo_http_requests_total", "system_cpu_load_average_1m"}, names.Metrics)
+	require.Equal(t, 3, names.SeriesCount)
+	require.False(t, names.Truncated)
+	require.Equal(t, "metrics", names.LimitUnit)
+
+	sumAny, _ := buildSeriesMetricsCompact(results, "summary", 10)
+	sum := sumAny.(*SeriesMetricsSummaryView)
+	require.Len(t, sum.Metrics, 2)
+	require.Equal(t, "demo_http_requests_total", sum.Metrics[0].Name)
+	require.Equal(t, 2, sum.Metrics[0].SeriesCount)
+	require.Equal(t, "shop/payment", sum.Metrics[0].ExampleLabels["job"])
+	require.Equal(t, "demo_http_requests_total", sum.Metrics[0].ExampleLabels["__name__"])
+
+	limAny, w := buildSeriesMetricsCompact(results, "names", 1)
+	lim := limAny.(*SeriesMetricsNamesView)
+	require.True(t, lim.Truncated)
+	require.Len(t, lim.Metrics, 1)
+	require.NotEmpty(t, w)
+}
+
 func TestApplyLatestVersions(t *testing.T) {
 	mk := func() []ResourceAttributesResponse {
 		return []ResourceAttributesResponse{{
