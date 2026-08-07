@@ -2666,7 +2666,9 @@ var FunctionCalls = map[string]FunctionCall{
 	"atan":                         funcAtan,
 	"atanh":                        funcAtanh,
 	"avg_over_time":                funcAvgOverTime,
+	"burst_score":                  funcBurstScore,
 	"ceil":                         funcCeil,
+	"changepoint":                  funcChangepoint,
 	"changes":                      funcChanges,
 	"clamp":                        funcClamp,
 	"clamp_max":                    funcClampMax,
@@ -2679,9 +2681,11 @@ var FunctionCalls = map[string]FunctionCall{
 	"day_of_week":                  funcDayOfWeek,
 	"day_of_year":                  funcDayOfYear,
 	"deg":                          funcDeg,
-	"end":                          nil, // Folded into NumberLiteral by foldQueryContextFunctions.
 	"delta":                        funcDelta,
 	"deriv":                        funcDeriv,
+	"end":                          nil, // Folded into NumberLiteral by foldQueryContextFunctions.
+	"entropy":                      funcEntropy,
+	"ewma":                         funcEWMA,
 	"exp":                          funcExp,
 	"first_over_time":              funcFirstOverTime,
 	"floor":                        funcFloor,
@@ -2694,11 +2698,14 @@ var FunctionCalls = map[string]FunctionCall{
 	"histogram_stddev":             funcHistogramStdDev,
 	"histogram_stdvar":             funcHistogramStdVar,
 	"double_exponential_smoothing": funcDoubleExponentialSmoothing,
+	"hst":                          funcHST,
 	"hour":                         funcHour,
+	"hw":                           funcHW,
 	"idelta":                       funcIdelta,
 	"increase":                     funcIncrease,
 	"info":                         nil,
 	"irate":                        funcIrate,
+	"isf":                          funcIsolationForest,
 	"max_of":                       funcMaxOf,
 	"label_replace":                nil, // evalLabelReplace not called via this map.
 	"label_join":                   nil, // evalLabelJoin not called via this map.
@@ -2707,6 +2714,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"log10":                        funcLog10,
 	"log2":                         funcLog2,
 	"last_over_time":               funcLastOverTime,
+	"mad":                          funcMAD,
 	"mad_over_time":                funcMadOverTime,
 	"max_over_time":                funcMaxOverTime,
 	"min_over_time":                funcMinOverTime,
@@ -2719,13 +2727,18 @@ var FunctionCalls = map[string]FunctionCall{
 	"pi":                           funcPi,
 	"predict_linear":               funcPredictLinear,
 	"present_over_time":            funcPresentOverTime,
+	"qscore":                       funcQScore,
 	"quantile_over_time":           funcQuantileOverTime,
 	"rad":                          funcRad,
 	"range":                        nil, // Folded into NumberLiteral by foldQueryContextFunctions.
 	"rate":                         funcRate,
+	"random_cut_score":             funcRandomCutScore,
+	"rcf":                          funcRCF,
+	"rcf_attribution":              nil, // evalRCFAttribution not called via this map.
 	"resets":                       funcResets,
 	"round":                        funcRound,
 	"scalar":                       funcScalar,
+	"seasonal":                     funcSeasonal,
 	"sgn":                          funcSgn,
 	"sin":                          funcSin,
 	"sinh":                         funcSinh,
@@ -2744,8 +2757,10 @@ var FunctionCalls = map[string]FunctionCall{
 	"tanh":                         funcTanh,
 	"time":                         funcTime,
 	"timestamp":                    funcTimestamp,
+	"trend_score":                  funcTrendScore,
 	"vector":                       funcVector,
 	"year":                         funcYear,
+	"zscore":                       funcZScore,
 }
 
 // AtModifierUnsafeFunctions are the functions whose result
@@ -2891,4 +2906,995 @@ func stringSliceFromArgs(args parser.Expressions) []string {
 
 func getMetricName(metric labels.Labels) string {
 	return metric.Get(model.MetricNameLabel)
+}
+
+// anomalySample is a (timestamp, scalar-value) pair extracted from either a
+// float sample or a native histogram sample (represented as sum/count = avg).
+type anomalySample struct {
+	T int64
+	V float64
+}
+
+// extractAnomalySamples converts a Series into a flat []anomalySample.
+// For float series it uses the raw float value.
+// For histogram series it uses sum/count (the histogram average).
+// Mixed float+histogram series return a MixedFloatsHistogramsWarning and nil.
+func extractAnomalySamples(series Series, metricName string, pos posrange.PositionRange) ([]anomalySample, annotations.Annotations) {
+	if len(series.Floats) > 0 && len(series.Histograms) > 0 {
+		var annos annotations.Annotations
+		return nil, annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, pos))
+	}
+	if len(series.Histograms) > 0 {
+		out := make([]anomalySample, 0, len(series.Histograms))
+		for _, p := range series.Histograms {
+			if p.H == nil || p.H.Count <= 0 {
+				continue
+			}
+			out = append(out, anomalySample{T: p.T, V: p.H.Sum / p.H.Count})
+		}
+		return out, nil
+	}
+	out := make([]anomalySample, len(series.Floats))
+	for i, p := range series.Floats {
+		out[i] = anomalySample{T: p.T, V: p.F}
+	}
+	return out, nil
+}
+
+// clampScore clamps a score to [0, 1].
+func clampScore(s float64) float64 {
+	if s < 0 {
+		return 0
+	}
+	if s > 1 {
+		return 1
+	}
+	return s
+}
+
+// forEachAnomalySeries iterates over matrixVal, extracts anomaly samples for
+// each series, skips series with fewer than minSamples, and calls scoreFn to
+// compute a score. The result is appended to enh.Out.
+// scoreFn returns (score, ok): if ok is false the series is skipped.
+// Returns early with an annotation if extractAnomalySamples reports one.
+func forEachAnomalySeries(matrixVal Matrix, enh *EvalNodeHelper, minSamples int, scoreFn func(series Series, samples []anomalySample) (float64, bool)) (Vector, annotations.Annotations) {
+	for _, series := range matrixVal {
+		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
+		if annos != nil {
+			return enh.Out, annos
+		}
+		if len(samples) < minSamples {
+			continue
+		}
+		score, ok := scoreFn(series, samples)
+		if !ok {
+			continue
+		}
+		enh.Out = append(enh.Out, Sample{
+			Metric: series.Metric,
+			F:      clampScore(score),
+			T:      samples[len(samples)-1].T,
+		})
+	}
+	return enh.Out, nil
+}
+
+// buildFeatures converts a slice of anomaly samples into the 6-dimensional
+// feature vectors used by RCF, HST, and ISF. It uses Welford online statistics
+// (O(n)) instead of O(n²) sum-over-features approach.
+func buildFeatures(samples []anomalySample) [][6]float64 {
+	features := make([][6]float64, 0, len(samples))
+	var (
+		stats        onlineStats
+		lastVal      float64
+		lastVelocity float64
+		ewmaVal      float64
+		lastT        int64
+	)
+	for i, s := range samples {
+		if i == 0 {
+			lastVal = s.V
+			ewmaVal = s.V
+			lastT = s.T
+			stats.add(s.V)
+			features = append(features, [6]float64{})
+			continue
+		}
+		stats.add(s.V)
+		mean := stats.mean()
+		std := stats.stdDev()
+		if std < 1e-9 {
+			std = 1
+		}
+		delta := s.V - lastVal
+		dt := float64(s.T-lastT) / 1000.0
+		if dt <= 0 {
+			dt = 1
+		}
+		velocity := delta / dt
+		acceleration := velocity - lastVelocity
+		features = append(features, [6]float64{
+			(s.V - mean) / std,
+			delta / std,
+			velocity / std,
+			acceleration / std,
+			(s.V - ewmaVal) / std,
+			stats.stdDev() / math.Max(math.Abs(mean), 1e-9),
+		})
+		lastVal = s.V
+		lastVelocity = velocity
+		lastT = s.T
+		ewmaVal = 0.2*s.V + 0.8*ewmaVal
+	}
+	return features
+}
+
+func funcEWMA(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
+	alpha := 0.2
+	if len(args) > 1 {
+		alpha = args[1].(*parser.NumberLiteral).Val
+	}
+	if alpha <= 0 || alpha > 1 {
+		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("EWMA alpha must be in (0,1], got %g", alpha))
+	}
+	return forEachAnomalySeries(matrixVal, enh, 2, func(_ Series, samples []anomalySample) (float64, bool) {
+		baseline := samples[0].V
+		variance := 0.0
+		for _, s := range samples[1:] {
+			delta := s.V - baseline
+			baseline += alpha * delta
+			variance = (1 - alpha) * (variance + alpha*delta*delta)
+		}
+		lastVal := samples[len(samples)-1].V
+		delta := lastVal - baseline
+		std := math.Sqrt(math.Max(variance, 0))
+		if std > 1e-9 {
+			return 1 - math.Exp(-math.Abs(delta)/(3*std)), true
+		}
+		return 0, true
+	})
+}
+
+// funcRandomCutScore computes a stateless random-cut anomaly score.
+// It repeatedly partitions the history with random axis-aligned cuts until the
+// query point is isolated, returning a normalised depth score in [0, 1].
+// This is NOT a streaming Random Cut Forest: no model is persisted between
+// evaluations and the cost is O(trees × N log N) per call.
+func funcRandomCutScore(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	trees := 100
+	if len(args) > 1 {
+		trees = int(args[1].(*parser.NumberLiteral).Val)
+	}
+	if trees < 1 {
+		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("random_cut_score trees must be positive, got %d", trees))
+	}
+	return forEachAnomalySeries(matrixVal, enh, 32, func(series Series, samples []anomalySample) (float64, bool) {
+		features := buildFeatures(samples)
+		if len(features) < 32 {
+			return 0, false
+		}
+		seed := rcfSeedFromString(getMetricName(series.Metric))
+		return randomCutScoreInMemory(features[:len(features)-1], features[len(features)-1], trees, seed), true
+	})
+}
+
+func rcfSeedFromString(name string) uint64 {
+	// FNV-1a: fast, no allocation, good avalanche.
+	const (
+		offset64 uint64 = 14695981039346656037
+		prime64  uint64 = 1099511628211
+	)
+	h := offset64
+	for i := range len(name) {
+		h ^= uint64(name[i])
+		h *= prime64
+	}
+	return h
+}
+
+// randomCutScoreInMemory is the stateless scoring kernel for funcRandomCutScore.
+// It isolates point from points using random axis-aligned cuts and returns a
+// normalised depth score. It is NOT a persistent Random Cut Forest.
+func randomCutScoreInMemory(points [][6]float64, point [6]float64, trees int, seed uint64) float64 {
+	if len(points) < 2 || trees == 0 {
+		return 0
+	}
+	maxDepth := int(math.Ceil(math.Log2(float64(len(points))))) + 1
+	maxDepth = max(maxDepth, 1)
+	indices := make([]int, len(points))
+	var total float64
+	for range trees {
+		for i := range points {
+			indices[i] = i
+		}
+		count, depth := len(indices), 0
+		seed = nextRandomInMemory(seed)
+		for depth < maxDepth && count > 1 {
+			seed = nextRandomInMemory(seed)
+			dimension := int(seed % 6)
+			minimum, maximum := points[indices[0]][dimension], points[indices[0]][dimension]
+			for i := 1; i < count; i++ {
+				value := points[indices[i]][dimension]
+				if value < minimum {
+					minimum = value
+				}
+				if value > maximum {
+					maximum = value
+				}
+			}
+			if maximum-minimum < 1e-12 {
+				depth++
+				continue
+			}
+			seed = nextRandomInMemory(seed)
+			cut := minimum + (maximum-minimum)*float64(seed>>11)/float64(uint64(1)<<53)
+			goesLeft := point[dimension] < cut
+			nextCount := 0
+			for i := 0; i < count; i++ {
+				candidate := indices[i]
+				if (points[candidate][dimension] < cut) == goesLeft {
+					indices[nextCount] = candidate
+					nextCount++
+				}
+			}
+			count, depth = nextCount, depth+1
+		}
+		total += 1 - float64(depth)/float64(maxDepth)
+	}
+	score := total / float64(trees)
+	if score < 0 {
+		return 0
+	}
+	if score > 1 {
+		return 1
+	}
+	return score
+}
+
+func nextRandomInMemory(value uint64) uint64 {
+	value ^= value << 13
+	value ^= value >> 7
+	value ^= value << 17
+	return value
+}
+
+func funcZScore(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
+	threshold := 3.0
+	if len(args) > 1 {
+		threshold = args[1].(*parser.NumberLiteral).Val
+	}
+	if threshold <= 0 {
+		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("ZScore threshold must be positive, got %g", threshold))
+	}
+	return forEachAnomalySeries(matrixVal, enh, 2, func(_ Series, samples []anomalySample) (float64, bool) {
+		var stats onlineStats
+		for _, s := range samples[:len(samples)-1] {
+			stats.add(s.V)
+		}
+		mean := stats.mean()
+		stddev := stats.stdDev()
+		lastVal := samples[len(samples)-1].V
+		if stddev > 1e-9 {
+			return math.Abs(lastVal-mean) / stddev / threshold, true
+		} else if math.Abs(lastVal-mean) > 1e-9 {
+			return 1.0, true
+		}
+		return 0, true
+	})
+}
+
+func funcSeasonal(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
+	period := int64(86400)
+	alpha := 0.2
+	if len(args) > 1 {
+		period = int64(args[1].(*parser.NumberLiteral).Val)
+	}
+	if len(args) > 2 {
+		alpha = args[2].(*parser.NumberLiteral).Val
+	}
+	if period <= 0 {
+		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("seasonal period must be positive, got %d", period))
+	}
+	if alpha <= 0 || alpha > 1 {
+		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("seasonal alpha must be in (0,1], got %g", alpha))
+	}
+	return forEachAnomalySeries(matrixVal, enh, 2, func(_ Series, samples []anomalySample) (float64, bool) {
+		slotBuckets := make(map[int64][]anomalySample)
+		for _, s := range samples {
+			slotBuckets[s.T/1000%period] = append(slotBuckets[s.T/1000%period], s)
+		}
+		last := samples[len(samples)-1]
+		slotPoints := slotBuckets[last.T/1000%period]
+		if len(slotPoints) < 2 {
+			return 0, false
+		}
+		baseline := slotPoints[0].V
+		variance := 0.0
+		for _, s := range slotPoints[1:] {
+			delta := s.V - baseline
+			baseline += alpha * delta
+			variance = (1 - alpha) * (variance + alpha*delta*delta)
+		}
+		std := math.Sqrt(math.Max(variance, 0))
+		if std > 1e-9 {
+			return 1 - math.Exp(-math.Abs(last.V-baseline)/(3*std)), true
+		}
+		return 0, true
+	})
+}
+
+func funcMAD(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
+	threshold := 3.0
+	if len(args) > 1 {
+		threshold = args[1].(*parser.NumberLiteral).Val
+	}
+	if threshold <= 0 {
+		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("MAD threshold must be positive, got %g", threshold))
+	}
+	return forEachAnomalySeries(matrixVal, enh, 3, func(_ Series, samples []anomalySample) (float64, bool) {
+		vals := make([]float64, len(samples))
+		for i, s := range samples {
+			vals[i] = s.V
+		}
+		median := quickSelectMedian(vals)
+		devs := vals
+		for i, v := range vals {
+			devs[i] = math.Abs(v - median)
+		}
+		madVal := quickSelectMedian(devs)
+		lastVal := samples[len(samples)-1].V
+		denom := 1.4826 * madVal
+		if denom > 1e-9 {
+			return math.Abs(lastVal-median) / denom / threshold, true
+		} else if math.Abs(lastVal-median) > 1e-9 {
+			return 1.0, true
+		}
+		return 0, true
+	})
+}
+
+// quickSelectMedian returns the median of vals using quickselect (O(n) average).
+// It partially reorders vals in place — callers must not rely on order after this call.
+func quickSelectMedian(vals []float64) float64 {
+	n := len(vals)
+	if n == 0 {
+		return 0
+	}
+	mid := n / 2
+	v := quickSelect(vals, mid)
+	if n%2 == 1 {
+		return v
+	}
+	// Even length: average of two middle elements.
+	return (v + quickSelect(vals, mid-1)) / 2
+}
+
+// quickSelect partially sorts data so that data[k] is the k-th smallest element.
+func quickSelect(data []float64, k int) float64 {
+	lo, hi := 0, len(data)-1
+outer:
+	for lo < hi {
+		pivot := data[(lo+hi)/2]
+		i, j := lo, hi
+		for i <= j {
+			for data[i] < pivot {
+				i++
+			}
+			for data[j] > pivot {
+				j--
+			}
+			if i <= j {
+				data[i], data[j] = data[j], data[i]
+				i++
+				j--
+			}
+		}
+		switch {
+		case k <= j:
+			hi = j
+		case k >= i:
+			lo = i
+		default:
+			break outer
+		}
+	}
+	return data[k]
+}
+
+func funcQScore(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
+	lower := 0.05
+	upper := 0.95
+	if len(args) > 1 {
+		lower = args[1].(*parser.NumberLiteral).Val
+	}
+	if len(args) > 2 {
+		upper = args[2].(*parser.NumberLiteral).Val
+	}
+	if lower < 0 || lower >= upper || upper > 1 {
+		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("quantile lower and upper must satisfy 0 <= lower < upper <= 1, got lower=%g upper=%g", lower, upper))
+	}
+	return forEachAnomalySeries(matrixVal, enh, 10, func(_ Series, samples []anomalySample) (float64, bool) {
+		work := make([]float64, len(samples))
+		for i, s := range samples {
+			work[i] = s.V
+		}
+		n := float64(len(work))
+		minVal := quickSelect(work, 0)
+		maxVal := quickSelect(work, len(work)-1)
+		qLower := quickSelect(work, int(math.Floor(lower*(n-1))))
+		qUpper := quickSelect(work, int(math.Ceil(upper*(n-1))))
+		lastVal := samples[len(samples)-1].V
+		if lastVal > qUpper {
+			denom := maxVal - qUpper
+			if denom > 1e-9 {
+				return (lastVal - qUpper) / denom, true
+			}
+			return 1.0, true
+		} else if lastVal < qLower {
+			denom := qLower - minVal
+			if denom > 1e-9 {
+				return (qLower - lastVal) / denom, true
+			}
+			return 1.0, true
+		}
+		return 0, true
+	})
+}
+
+func funcHW(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
+	alpha := 0.2
+	beta := 0.1
+	if len(args) > 1 {
+		alpha = args[1].(*parser.NumberLiteral).Val
+	}
+	if len(args) > 2 {
+		beta = args[2].(*parser.NumberLiteral).Val
+	}
+	if alpha <= 0 || alpha > 1 || beta <= 0 || beta > 1 {
+		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("Holt-Winters alpha and beta must be in (0,1], got alpha=%g beta=%g", alpha, beta))
+	}
+	return forEachAnomalySeries(matrixVal, enh, 3, func(_ Series, samples []anomalySample) (float64, bool) {
+		level := samples[0].V
+		trend := samples[1].V - samples[0].V
+		varianceError := 0.0
+		for _, s := range samples[2:] {
+			forecast := level + trend
+			errorVal := s.V - forecast
+			prevLevel := level
+			level = alpha*s.V + (1-alpha)*(level+trend)
+			trend = beta*(level-prevLevel) + (1-beta)*trend
+			varianceError = (1-alpha)*varianceError + alpha*errorVal*errorVal
+		}
+		forecast := level + trend
+		errorVal := samples[len(samples)-1].V - forecast
+		stdErr := math.Sqrt(math.Max(varianceError, 0))
+		if stdErr > 1e-9 {
+			return math.Abs(errorVal) / (3.0 * stdErr), true
+		}
+		return 0, true
+	})
+}
+
+type onlineStats struct {
+	count int
+	mu    float64
+	m2    float64
+}
+
+func (s *onlineStats) add(v float64) {
+	s.count++
+	delta := v - s.mu
+	s.mu += delta / float64(s.count)
+	delta2 := v - s.mu
+	s.m2 += delta * delta2
+}
+
+func (s *onlineStats) mean() float64 {
+	return s.mu
+}
+
+func (s *onlineStats) variance() float64 {
+	if s.count < 2 {
+		return 0
+	}
+
+	return s.m2 / float64(s.count-1)
+}
+
+func (s *onlineStats) stdDev() float64 {
+	return math.Sqrt(math.Max(s.variance(), 0))
+}
+
+func funcHST(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
+	trees := 100
+	depth := 8
+	if len(args) > 1 {
+		trees = int(args[1].(*parser.NumberLiteral).Val)
+	}
+	if len(args) > 2 {
+		depth = int(args[2].(*parser.NumberLiteral).Val)
+	}
+	if trees < 1 || depth < 1 {
+		return enh.Out, annotations.NewInvalidParamError(
+			fmt.Errorf("HST trees and depth must be positive, got trees=%d depth=%d", trees, depth),
+		)
+	}
+	return forEachAnomalySeries(matrixVal, enh, 32, func(series Series, samples []anomalySample) (float64, bool) {
+		features := buildFeatures(samples)
+		if len(features) < 32 {
+			return 0, false
+		}
+		return hstScore(features, trees, depth, getMetricName(series.Metric)), true
+	})
+}
+
+func hstScore(features [][6]float64, trees, depth int, metric string) float64 {
+	target := features[len(features)-1]
+	history := features[:len(features)-1]
+	seed := rcfSeedFromString(metric)
+	var avgDensity float64
+	for tree := range trees {
+		treeSeed := nextRandomInMemory(seed ^ uint64(tree))
+		leafCounts := make(map[uint64]int, len(history))
+		for _, feature := range history {
+			path := hstPathKey(feature, depth, treeSeed)
+			leafCounts[path]++
+		}
+		targetPath := hstPathKey(target, depth, treeSeed)
+		avgDensity += float64(leafCounts[targetPath])
+	}
+	avgDensity /= float64(trees)
+	return clampScore(1.0 - avgDensity/float64(len(features)))
+}
+
+// hstPathKey encodes the HST traversal path as a uint64 bitmask (0=L, 1=R per bit).
+// Supports up to 64 depth levels; depth is capped at 63 in practice.
+func hstPathKey(point [6]float64, depth int, seed uint64) uint64 {
+	minVals := [6]float64{-8, -8, -8, -8, -8, -8}
+	maxVals := [6]float64{8, 8, 8, 8, 8, 8}
+	var key uint64
+	for i := range depth {
+		seed = nextRandomInMemory(seed)
+		dim := int(seed % 6)
+		mid := (minVals[dim] + maxVals[dim]) / 2
+		if point[dim] < mid {
+			maxVals[dim] = mid
+		} else {
+			key |= 1 << i
+			minVals[dim] = mid
+		}
+	}
+	return key
+}
+
+func funcIsolationForest(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
+	trees := 100
+	sampleSize := 256
+	if len(args) > 1 {
+		trees = int(args[1].(*parser.NumberLiteral).Val)
+	}
+	if len(args) > 2 {
+		sampleSize = int(args[2].(*parser.NumberLiteral).Val)
+	}
+	if trees < 1 {
+		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("isolation Forest trees must be positive, got %d", trees))
+	}
+	if sampleSize < 2 {
+		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("isolation Forest sample_size must be at least 2, got %d", sampleSize))
+	}
+	return forEachAnomalySeries(matrixVal, enh, 32, func(series Series, samples []anomalySample) (float64, bool) {
+		features := buildFeatures(samples)
+		if len(features) < 32 {
+			return 0, false
+		}
+		history := features[:len(features)-1]
+		if len(history) > sampleSize {
+			history = history[len(history)-sampleSize:]
+		}
+		seed := rcfSeedFromString(getMetricName(series.Metric))
+		return isolationScoreInMemory(history, features[len(features)-1], trees, seed), true
+	})
+}
+
+// isoNode is a node in a built isolation tree.
+type isoNode struct {
+	// leaf when left == nil
+	left, right *isoNode
+	dimension   int
+	splitValue  float64
+	size        int // number of training points that reached this node
+}
+
+// buildIsoTree builds a single isolation tree from points[indices] up to maxDepth.
+func buildIsoTree(points [][6]float64, indices []int, depth, maxDepth int, seed *uint64) *isoNode {
+	n := len(indices)
+	node := &isoNode{size: n}
+	if n <= 1 || depth >= maxDepth {
+		return node
+	}
+	*seed = nextRandomInMemory(*seed)
+	dim := int(*seed % 6)
+	minV, maxV := points[indices[0]][dim], points[indices[0]][dim]
+	for _, idx := range indices[1:] {
+		v := points[idx][dim]
+		if v < minV {
+			minV = v
+		}
+		if v > maxV {
+			maxV = v
+		}
+	}
+	if maxV-minV < 1e-12 {
+		return node
+	}
+	*seed = nextRandomInMemory(*seed)
+	split := minV + (maxV-minV)*float64(*seed>>11)/float64(uint64(1)<<53)
+	node.dimension = dim
+	node.splitValue = split
+	left := make([]int, 0, n/2+1)
+	right := make([]int, 0, n/2+1)
+	for _, idx := range indices {
+		if points[idx][dim] < split {
+			left = append(left, idx)
+		} else {
+			right = append(right, idx)
+		}
+	}
+	node.left = buildIsoTree(points, left, depth+1, maxDepth, seed)
+	node.right = buildIsoTree(points, right, depth+1, maxDepth, seed)
+	return node
+}
+
+// pathLength returns the path length for point in the tree, adding c(n) at leaves.
+func pathLength(node *isoNode, point [6]float64, depth int) float64 {
+	if node.left == nil {
+		return float64(depth) + cInMemory(node.size)
+	}
+	if point[node.dimension] < node.splitValue {
+		return pathLength(node.left, point, depth+1)
+	}
+	return pathLength(node.right, point, depth+1)
+}
+
+func isolationScoreInMemory(points [][6]float64, point [6]float64, trees int, seed uint64) float64 {
+	n := len(points)
+	if n < 2 {
+		return 0
+	}
+	cN := cInMemory(n)
+	if cN == 0 {
+		return 0
+	}
+	maxDepth := int(math.Ceil(math.Log2(float64(n)))) + 1
+	indices := make([]int, n)
+	for i := range points {
+		indices[i] = i
+	}
+	var totalPath float64
+	for range trees {
+		seed = nextRandomInMemory(seed)
+		root := buildIsoTree(points, indices, 0, maxDepth, &seed)
+		totalPath += pathLength(root, point, 0)
+	}
+	return clampScore(math.Pow(2, -totalPath/float64(trees)/cN))
+}
+
+func cInMemory(n int) float64 {
+	if n <= 1 {
+		return 0
+	}
+	if n == 2 {
+		return 1
+	}
+	fn := float64(n)
+	return 2*(math.Log(fn-1)+0.5772156649) - 2*(fn-1)/fn
+}
+
+// === changepoint(v range-vector) float ===
+// Detects sudden baseline shifts using CUSUM. O(n).
+func funcChangepoint(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return forEachAnomalySeries(matrixVal, enh, 4, func(_ Series, samples []anomalySample) (float64, bool) {
+		var count int
+		var mean, m2 float64
+		for _, s := range samples[:len(samples)-1] {
+			count++
+			delta := s.V - mean
+			mean += delta / float64(count)
+			m2 += delta * (s.V - mean)
+		}
+		var std float64
+		if count >= 2 {
+			std = math.Sqrt(math.Max(m2/float64(count-1), 0))
+		}
+		if std < 1e-9 {
+			return 0, true
+		}
+		var cusumPos, cusumNeg, maxCusum float64
+		for _, s := range samples {
+			z := (s.V - mean) / std
+			cusumPos = math.Max(0, cusumPos+z-0.5)
+			cusumNeg = math.Max(0, cusumNeg-z-0.5)
+			if c := math.Max(cusumPos, cusumNeg); c > maxCusum {
+				maxCusum = c
+			}
+		}
+		return maxCusum / 5.0, true
+	})
+}
+
+// === trend_score(v range-vector) float ===
+// Detects abnormal slope via linear-regression residual. O(n).
+func funcTrendScore(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return forEachAnomalySeries(matrixVal, enh, 3, func(_ Series, samples []anomalySample) (float64, bool) {
+		n := float64(len(samples))
+		t0 := samples[0].T
+		var sumT, sumV, sumTT, sumTV float64
+		for _, s := range samples {
+			t := float64(s.T-t0) / 1000.0
+			sumT += t
+			sumV += s.V
+			sumTT += t * t
+			sumTV += t * s.V
+		}
+		denom := n*sumTT - sumT*sumT
+		if math.Abs(denom) < 1e-12 {
+			return 0, true
+		}
+		slope := (n*sumTV - sumT*sumV) / denom
+		intercept := (sumV - slope*sumT) / n
+		var resCount int
+		var resMean, resM2 float64
+		for _, s := range samples {
+			t := float64(s.T-t0) / 1000.0
+			res := s.V - (slope*t + intercept)
+			resCount++
+			d := res - resMean
+			resMean += d / float64(resCount)
+			resM2 += d * (res - resMean)
+		}
+		var resStd float64
+		if resCount >= 2 {
+			resStd = math.Sqrt(math.Max(resM2/float64(resCount-1), 0))
+		}
+		if resStd < 1e-9 {
+			return 0, true
+		}
+		last := samples[len(samples)-1]
+		t := float64(last.T-t0) / 1000.0
+		return math.Abs(last.V-(slope*t+intercept)) / resStd / 3.0, true
+	})
+}
+
+// === burst_score(v range-vector) float ===
+// Detects sudden spikes using EWMA + variance. O(n).
+func funcBurstScore(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
+	alpha := 0.1
+	if len(args) > 1 {
+		alpha = args[1].(*parser.NumberLiteral).Val
+	}
+	if alpha <= 0 || alpha > 1 {
+		return enh.Out, annotations.NewInvalidParamError(fmt.Errorf("burst_score alpha must be in (0,1], got %g", alpha))
+	}
+	return forEachAnomalySeries(matrixVal, enh, 2, func(_ Series, samples []anomalySample) (float64, bool) {
+		baseline := samples[0].V
+		variance := 0.0
+		for _, s := range samples[1:] {
+			delta := s.V - baseline
+			baseline += alpha * delta
+			variance = (1-alpha)*variance + alpha*delta*delta
+		}
+		std := math.Sqrt(math.Max(variance, 0))
+		if std > 1e-9 {
+			return math.Abs(samples[len(samples)-1].V-baseline) / (3.0 * std), true
+		}
+		return 0, true
+	})
+}
+
+// === entropy(v range-vector) float ===
+// Computes normalised Shannon entropy of the value distribution. O(n).
+// Uses histogram binning (Sturges rule). Works on floats and histogram-avg values.
+func funcEntropy(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return forEachAnomalySeries(matrixVal, enh, 2, func(_ Series, samples []anomalySample) (float64, bool) {
+		n := len(samples)
+		nBins := min(max(int(math.Ceil(math.Log2(float64(n))))+1, 2), 32)
+		minV, maxV := samples[0].V, samples[0].V
+		for _, s := range samples[1:] {
+			if s.V < minV {
+				minV = s.V
+			}
+			if s.V > maxV {
+				maxV = s.V
+			}
+		}
+		if maxV-minV < 1e-12 {
+			return 0, true
+		}
+		binWidth := (maxV - minV) / float64(nBins)
+		var counts [32]int
+		for _, s := range samples {
+			idx := int((s.V - minV) / binWidth)
+			if idx >= nBins {
+				idx = nBins - 1
+			}
+			counts[idx]++
+		}
+		var entropy float64
+		for _, cnt := range counts {
+			if cnt == 0 {
+				continue
+			}
+			p := float64(cnt) / float64(n)
+			entropy -= p * math.Log2(p)
+		}
+		return entropy / math.Log2(float64(nBins)), true
+	})
+}
+
+// funcRCF implements rcf(v range-vector [, trees [, sample_size]]).
+//
+// It maintains a per-series streaming Random Cut Forest that persists across
+// PromQL evaluations. New samples are inserted incrementally; old samples are
+// evicted via bounded reservoir sampling. The anomaly score is the collusive
+// displacement of the latest point, normalised to [0, 1].
+func funcRCF(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	numTrees, sampleSize, annos := rcfParseArgs(args)
+	if annos != nil {
+		return enh.Out, annos
+	}
+	for _, series := range matrixVal {
+		samples, annos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
+		if annos != nil {
+			return enh.Out, annos
+		}
+		if len(samples) < 2 {
+			continue
+		}
+		f := enh.RCFStore.forest(series.Metric.Hash(), numTrees, sampleSize)
+		f.mu.Lock()
+		rcfIngest(f.forest, samples)
+		score := f.forest.score(buildFeatures(samples)[len(samples)-1])
+		f.mu.Unlock()
+		enh.RCFStore.markDirty(series.Metric.Hash())
+		enh.Out = append(enh.Out, Sample{
+			Metric: series.Metric,
+			F:      score,
+			T:      samples[len(samples)-1].T,
+		})
+	}
+	return enh.Out, nil
+}
+
+// evalRCFAttribution implements rcf_attribution(v range-vector [, trees [, sample_size]]).
+//
+// It is special-cased in the engine (like label_replace) because it produces
+// rcfDims output series per input series — one per feature dimension — which
+// the standard range-vector evalCall path cannot support (it only takes outVec[0]).
+//
+// Each output series carries rcf_dim=<name> and the fractional displacement
+// contribution of that dimension to the anomaly score.
+func (ev *evaluator) evalRCFAttribution(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
+	numTrees, sampleSize, annos := rcfParseArgs(args)
+	if annos != nil {
+		return Matrix{}, annos
+	}
+
+	sel := args[0].(*parser.MatrixSelector)
+
+	// dimSeries accumulates FPoints per output label-set across all steps.
+	type dimKey struct {
+		hash uint64
+		dim  int
+	}
+	type dimSeries struct {
+		metric labels.Labels
+		points []FPoint
+	}
+	seriesMap := make(map[dimKey]*dimSeries)
+
+	dimNames := [rcfDims]string{"value", "delta", "velocity", "acceleration", "ewma_dev", "cv"}
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	var ws annotations.Annotations
+
+	// Iterate over every evaluation step, evaluating the matrix window at
+	// each step via matrixSelector (which handles windowing correctly).
+	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
+		// Temporarily set the evaluator timestamps to this single step so
+		// matrixSelector fetches the correct [ts-range, ts] window.
+		origStart, origEnd := ev.startTimestamp, ev.endTimestamp
+		ev.startTimestamp, ev.endTimestamp = ts, ts
+		matrix, stepWS := ev.matrixSelector(ctx, sel)
+		ev.startTimestamp, ev.endTimestamp = origStart, origEnd
+		ws.Merge(stepWS)
+
+		for _, series := range matrix {
+			samples, seriesAnnos := extractAnomalySamples(series, getMetricName(series.Metric), posrange.PositionRange{})
+			ws.Merge(seriesAnnos)
+			if len(samples) < 2 {
+				continue
+			}
+			f := ev.rcfStore.forest(series.Metric.Hash(), numTrees, sampleSize)
+			f.mu.Lock()
+			rcfIngest(f.forest, samples)
+			attr := f.forest.attribution(buildFeatures(samples)[len(samples)-1])
+			f.mu.Unlock()
+			ev.rcfStore.markDirty(series.Metric.Hash())
+
+			base := series.Metric.DropReserved(func(n string) bool { return n == labels.MetricName })
+			seriesHash := base.Hash()
+			for d := range rcfDims {
+				key := dimKey{seriesHash, d}
+				ds, ok := seriesMap[key]
+				if !ok {
+					lb.Reset(base)
+					lb.Set("rcf_dim", dimNames[d])
+					ds = &dimSeries{metric: lb.Labels()}
+					seriesMap[key] = ds
+				}
+				ds.points = append(ds.points, FPoint{T: ts, F: attr[d]})
+			}
+		}
+	}
+
+	out := make(Matrix, 0, len(seriesMap))
+	for _, ds := range seriesMap {
+		out = append(out, Series{Metric: ds.metric, Floats: ds.points})
+	}
+	return ev.mergeSeriesWithSameLabelset(out), ws
+}
+
+// rcfParseArgs extracts and validates the optional trees and sample_size args.
+func rcfParseArgs(args parser.Expressions) (numTrees, sampleSize int, annos annotations.Annotations) {
+	numTrees, sampleSize = rcfDefaultTrees, rcfDefaultSampleSize
+	if len(args) > 1 {
+		numTrees = int(args[1].(*parser.NumberLiteral).Val)
+	}
+	if len(args) > 2 {
+		sampleSize = int(args[2].(*parser.NumberLiteral).Val)
+	}
+	if numTrees < 1 {
+		return 0, 0, annotations.NewInvalidParamError(fmt.Errorf("rcf trees must be positive, got %d", numTrees))
+	}
+	if sampleSize < 2 {
+		return 0, 0, annotations.NewInvalidParamError(fmt.Errorf("rcf sample_size must be at least 2, got %d", sampleSize))
+	}
+	return numTrees, sampleSize, nil
+}
+
+// rcfIngest inserts all samples newer than forest.LastTS into the forest.
+func rcfIngest(f *rcfForest, samples []anomalySample) {
+	features := buildFeatures(samples)
+	for i, s := range samples {
+		if s.T <= f.LastTS {
+			continue
+		}
+		f.update(s.T, features[i])
+	}
 }

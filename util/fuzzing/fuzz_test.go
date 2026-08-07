@@ -82,6 +82,9 @@ func FuzzParseOpenMetric(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, in []byte) {
+		if len(in) > maxInputSize {
+			t.Skip()
+		}
 		p, warning := textparse.New(in, "application/openmetrics-text", symbolTable, textparse.ParserOptions{})
 		if p == nil || warning != nil {
 			// An invalid content type is being passed, which should not happen
@@ -91,9 +94,26 @@ func FuzzParseOpenMetric(f *testing.F) {
 
 		var err error
 		for {
-			_, err = p.Next()
+			var entry textparse.Entry
+			entry, err = p.Next()
 			if err != nil {
 				break
+			}
+			switch entry {
+			case textparse.EntryHelp:
+				_, _ = p.Help()
+			case textparse.EntryType:
+				_, _ = p.Type()
+			case textparse.EntryUnit:
+				_, _ = p.Unit()
+			case textparse.EntrySeries:
+				var lbs labels.Labels
+				p.Labels(&lbs)
+				_, _, _ = p.Series()
+				_ = p.StartTimestamp()
+				var ex exemplar.Exemplar
+				for p.Exemplar(&ex) {
+				}
 			}
 		}
 		if errors.Is(err, io.EOF) {

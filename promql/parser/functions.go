@@ -150,6 +150,38 @@ var Functions = map[string]*Function{
 		ReturnType:   ValueTypeScalar,
 		Experimental: true,
 	},
+	"changepoint": {
+		Name:         "changepoint",
+		ArgTypes:     []ValueType{ValueTypeMatrix},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
+	"burst_score": {
+		Name:         "burst_score",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		Variadic:     1,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
+	"entropy": {
+		Name:         "entropy",
+		ArgTypes:     []ValueType{ValueTypeMatrix},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
+	"trend_score": {
+		Name:         "trend_score",
+		ArgTypes:     []ValueType{ValueTypeMatrix},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
+	"ewma": {
+		Name:         "ewma",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		Variadic:     1,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"delta": {
 		Name:       "delta",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
@@ -229,6 +261,20 @@ var Functions = map[string]*Function{
 		Variadic:   1,
 		ReturnType: ValueTypeVector,
 	},
+	"hw": {
+		Name:         "hw",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		Variadic:     2,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
+	"hst": {
+		Name:         "hst",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		Variadic:     2,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"idelta": {
 		Name:       "idelta",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
@@ -250,6 +296,13 @@ var Functions = map[string]*Function{
 		Name:       "irate",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
+	},
+	"isf": {
+		Name:         "isf",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		Variadic:     2,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
 	},
 	"label_replace": {
 		Name:       "label_replace",
@@ -334,6 +387,13 @@ var Functions = map[string]*Function{
 		ReturnType:   ValueTypeVector,
 		Experimental: true,
 	},
+	"mad": {
+		Name:         "mad",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		Variadic:     1,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"minute": {
 		Name:       "minute",
 		ArgTypes:   []ValueType{ValueTypeVector},
@@ -361,6 +421,12 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"qscore": {
+		Name:         "qscore",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"quantile_over_time": {
 		Name:       "quantile_over_time",
 		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeMatrix},
@@ -382,6 +448,27 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"random_cut_score": {
+		Name:         "random_cut_score",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		Variadic:     1,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
+	"rcf": {
+		Name:         "rcf",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		Variadic:     2,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
+	"rcf_attribution": {
+		Name:         "rcf_attribution",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		Variadic:     2,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"resets": {
 		Name:       "resets",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
@@ -397,6 +484,13 @@ var Functions = map[string]*Function{
 		Name:       "scalar",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeScalar,
+	},
+	"seasonal": {
+		Name:         "seasonal",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		Variadic:     2,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
 	},
 	"sgn": {
 		Name:       "sgn",
@@ -505,6 +599,13 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		Variadic:   1,
 		ReturnType: ValueTypeVector,
+	},
+	"zscore": {
+		Name:         "zscore",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		Variadic:     1,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
 	},
 }
 
