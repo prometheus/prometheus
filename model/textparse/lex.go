@@ -80,6 +80,13 @@ var (
 		return c != 0 && c != '{' && c != ' ' && c != '\t' && c != '\n'
 	})
 
+	// omValueChar marks the bytes of an OpenMetrics sample value,
+	// timestamp or exemplar value: [^ \n], minus the null byte, which no
+	// rule accepts there.
+	omValueChar = charTable(func(c byte) bool {
+		return c != 0 && c != ' ' && c != '\n'
+	})
+
 	// quotedStop marks the bytes that terminate or complicate a quoted
 	// string. A '"' closes the string, a '\\' starts an escape sequence,
 	// and 0 and '\n' are accepted inside a string by some of the lexer
@@ -113,6 +120,25 @@ func scanPromText(b []byte) int {
 		return -1
 	}
 	return n
+}
+
+// scanOMText scans the {S}{C}*\n help, type or unit text at the start of b. It
+// returns the length of the text including the leading space and the trailing
+// newline, both of which the rule matches, or -1 if the generated lexer has to
+// take over: when the space or the newline is missing, or when a null byte sits
+// inside the text or directly behind it, see scanQuoted.
+func scanOMText(b []byte) int {
+	if len(b) == 0 || b[0] != ' ' {
+		return -1
+	}
+	n := bytes.IndexByte(b[1:], '\n')
+	if n < 0 || bytes.IndexByte(b[1:n+1], 0) >= 0 {
+		return -1
+	}
+	if n+2 < len(b) && b[n+2] == 0 {
+		return -1
+	}
+	return n + 2
 }
 
 // scanQuoted scans the quoted string starting at b[0], which must be a '"'. It
@@ -274,39 +300,65 @@ func (l *openMetricsLexer) emit(end, next int, t token) token {
 	return t
 }
 
+// lexSpaced matches the {S}[^ \n]+ rule that OpenMetrics uses for sample
+// values and timestamps. The byte at the current position must be the space.
+// It fails on an empty run, which no rule accepts.
+func (l *openMetricsLexer) lexSpaced(next int, t token) (token, bool) {
+	n := scanRun(l.b[l.i+1:], &omValueChar)
+	if n == 0 {
+		return 0, false
+	}
+	return l.emit(l.i+1+n, next, t), true
+}
+
 // Lex returns the next token of the OpenMetrics text format input. It is the
 // entry point used by OpenMetricsParser; lexDFA in openmetricslex.l.go holds
 // the generated state machine that recognises the full grammar.
+//
+// The cases below cover the rules that a series line and its exemplar are made
+// of. Comments, the HELP, TYPE, UNIT and EOF keywords, escape sequences and
+// every error are left to the generated lexer, which also takes over whenever a
+// fast path finds a leading byte that its rules do not accept. See
+// openmetricslex.l for the rules themselves.
 func (l *openMetricsLexer) Lex() token {
 	if l.i >= len(l.b) {
 		return tEOF
 	}
-	// Each case below covers the rules of one start condition that are worth
-	// recognising directly. On a leading byte that no such rule accepts the
-	// generated lexer takes over. See openmetricslex.l for the rules
-	// themselves.
 	switch c := l.b[l.i]; l.state {
 	case sInit:
-		if metricNameStart[c] {
+		switch {
+		case metricNameStart[c]:
 			return l.emit(l.i+1+scanRun(l.b[l.i+1:], &metricNameChar), sValue, tMName)
+		case c == '{':
+			return l.emit(l.i+1, sLabels, tBraceOpen)
 		}
 	case sMeta1:
-		if metricNameStart[c] {
+		switch {
+		case metricNameStart[c]:
 			return l.emit(l.i+1+scanRun(l.b[l.i+1:], &metricNameChar), sMeta2, tMName)
-		}
-		if c == '"' {
+		case c == '"':
 			if n := scanQuoted(l.b[l.i:]); n > 0 {
 				return l.emit(l.i+n, sMeta2, tMName)
 			}
 		}
-	case sLabels:
-		if labelNameStart[c] {
-			return l.emit(l.i+1+scanRun(l.b[l.i+1:], &labelNameChar), sLabels, tLName)
+	case sMeta2:
+		if n := scanOMText(l.b[l.i:]); n > 0 {
+			return l.emit(l.i+n, sInit, tText)
 		}
-		if c == '"' {
+	case sLabels:
+		switch {
+		case labelNameStart[c]:
+			return l.emit(l.i+1+scanRun(l.b[l.i+1:], &labelNameChar), sLabels, tLName)
+		case c == '"':
 			if n := scanQuoted(l.b[l.i:]); n > 0 {
 				return l.emit(l.i+n, sLabels, tQString)
 			}
+		case c == '=':
+			return l.emit(l.i+1, sLValue, tEqual)
+		case c == ',':
+			return l.emit(l.i+1, sLabels, tComma)
+		case c == '}':
+			return l.emit(l.i+1, sValue, tBraceClose)
 		}
 	case sLValue:
 		if c == '"' {
@@ -314,19 +366,61 @@ func (l *openMetricsLexer) Lex() token {
 				return l.emit(l.i+n, sLabels, tLValue)
 			}
 		}
-	case sExemplar:
-		if labelNameStart[c] {
-			return l.emit(l.i+1+scanRun(l.b[l.i+1:], &labelNameChar), sExemplar, tLName)
+	case sValue:
+		switch c {
+		case ' ':
+			if t, ok := l.lexSpaced(sTimestamp, tValue); ok {
+				return t
+			}
+		case '{':
+			return l.emit(l.i+1, sLabels, tBraceOpen)
 		}
-		if c == '"' {
+	case sTimestamp:
+		switch c {
+		case '\n':
+			return l.emit(l.i+1, sInit, tLinebreak)
+		case ' ':
+			// A '#' here may start the {S}#{S}\{ exemplar rule, which
+			// overlaps with the timestamp rule for a whole token.
+			if l.i+1 < len(l.b) && l.b[l.i+1] != '#' {
+				if t, ok := l.lexSpaced(sTimestamp, tTimestamp); ok {
+					return t
+				}
+			}
+		}
+	case sExemplar:
+		switch {
+		case labelNameStart[c]:
+			return l.emit(l.i+1+scanRun(l.b[l.i+1:], &labelNameChar), sExemplar, tLName)
+		case c == '"':
 			if n := scanQuoted(l.b[l.i:]); n > 0 {
 				return l.emit(l.i+n, sExemplar, tQString)
 			}
+		case c == '=':
+			return l.emit(l.i+1, sEValue, tEqual)
+		case c == ',':
+			return l.emit(l.i+1, sExemplar, tComma)
+		case c == '}':
+			return l.emit(l.i+1, sEValue, tBraceClose)
 		}
 	case sEValue:
-		if c == '"' {
+		switch c {
+		case '"':
 			if n := scanQuoted(l.b[l.i:]); n > 0 {
 				return l.emit(l.i+n, sExemplar, tLValue)
+			}
+		case ' ':
+			if t, ok := l.lexSpaced(sETimestamp, tValue); ok {
+				return t
+			}
+		}
+	case sETimestamp:
+		switch c {
+		case '\n':
+			return l.emit(l.i+1, sInit, tLinebreak)
+		case ' ':
+			if t, ok := l.lexSpaced(sETimestamp, tTimestamp); ok {
+				return t
 			}
 		}
 	}

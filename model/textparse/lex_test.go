@@ -77,7 +77,14 @@ var omLexInputs = []struct {
 	{"exemplar", `m_bucket{le="1"} 1 # {a="b"} 0.5 123` + "\n"},
 	{"exemplar escaped", `m_bucket{le="1"} 1 # {a="\"b\""} 0.5` + "\n"},
 	{"exemplar unterminated", `m_bucket{le="1"} 1 # {a="b} 0.5` + "\n"},
+	{"exemplar no timestamp", `m_bucket{le="1"} 1 # {a="b",c="d"} 0.5` + "\n"},
+	{"timestamp starting with hash", `m 1 #123` + "\n"},
+	{"om unit", "# UNIT m_seconds seconds\n"},
+	{"om help", "# HELP m_seconds some text\n"},
+	{"om help empty", "# HELP m_seconds \n"},
+	{"om help null", "# HELP m_seconds so\x00me\n"},
 	{"om eof", "m 1\n# EOF\n"},
+	{"om series with timestamp", "m_total 1 1395066363\n"},
 }
 
 // TestLexFastPathEquivalence asserts that the fast paths in lex.go emit exactly
