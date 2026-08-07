@@ -1718,6 +1718,30 @@ eval instant at 0m round(data)
 	{type="ninf"} -Inf
 	{type="nan"} NaN
 
+# round with toNearest of 0 should return the original values unchanged.
+eval instant at 0m round(data, 0)
+	{type="positive"} 2.5
+	{type="whole"} 2
+	{type="negative"} -2.5
+	{type="nwhole"} -2
+	{type="zero"} 0
+	{type="nzero"} 0
+	{type="inf"} +Inf
+	{type="ninf"} -Inf
+	{type="nan"} NaN
+
+# round with negative toNearest should behave the same as with positive.
+eval instant at 0m round(data, -2)
+	{type="positive"} 2
+	{type="whole"} 2
+	{type="negative"} -2
+	{type="nwhole"} -2
+	{type="zero"} 0
+	{type="nzero"} 0
+	{type="inf"} +Inf
+	{type="ninf"} -Inf
+	{type="nan"} NaN
+
 clear
 
 # Test for absent().
