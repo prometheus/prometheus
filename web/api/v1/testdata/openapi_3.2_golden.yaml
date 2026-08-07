@@ -1975,12 +1975,12 @@ paths:
             tags:
                 - resources
             summary: Get resource attributes
-            description: Returns OTel resource attributes associated with time series. Supports two response formats based on the 'format' parameter.
+            description: Returns OTel resource attributes associated with time series. The response data shape depends on format and verbose.
             operationId: resources
             parameters:
                 - name: format
                   in: query
-                  description: Response format. Default returns full resource data with labels and versions. Set to 'attributes' for a simplified map of attribute names to values (useful for autocomplete).
+                  description: Response format. Omit for paginated series resources, or set to attributes for an attribute-name map.
                   required: false
                   explode: false
                   schema:
@@ -1994,17 +1994,58 @@ paths:
                         value: attributes
                 - name: translate
                   in: query
-                  description: When set to 'true', translates OTel attribute names to Prometheus label names. Only applicable when format=attributes.
+                  description: Translate OTel attribute names to Prometheus label names. Applies only to the flat format=attributes response; true and 1 enable it.
                   required: false
                   explode: false
                   schema:
-                    type: string
-                    enum:
-                        - true
-                        - false
+                    oneOf:
+                        - type: boolean
+                        - type: integer
+                          maximum: 1
+                          minimum: 0
+                          format: int32
+                    description: Boolean flag; 0 and 1 are accepted aliases for false and true.
                   examples:
-                    example:
-                        value: "true"
+                    boolean:
+                        value: true
+                    integer:
+                        value: 1
+                - name: verbose
+                  in: query
+                  description: Return role, OTel name, translated Prometheus name, and values per attribute. Applies only when format=attributes; true and 1 enable it.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: boolean
+                        - type: integer
+                          maximum: 1
+                          minimum: 0
+                          format: int32
+                    description: Boolean flag; 0 and 1 are accepted aliases for false and true.
+                  examples:
+                    boolean:
+                        value: true
+                    integer:
+                        value: 1
+                - name: latest
+                  in: query
+                  description: Keep only the newest version by min_time_ms for each series. Applies only to the default format; true and 1 enable it.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: boolean
+                        - type: integer
+                          maximum: 1
+                          minimum: 0
+                          format: int32
+                    description: Boolean flag; 0 and 1 are accepted aliases for false and true.
+                  examples:
+                    boolean:
+                        value: true
+                    integer:
+                        value: 1
                 - name: match[]
                   in: query
                   description: Series selector to filter resources by matching time series.
@@ -2089,20 +2130,22 @@ paths:
                                     summary: Full resource data with labels and versions
                                     value:
                                         data:
-                                            - labels:
-                                                __name__: http_requests_total
-                                                instance: localhost:8080
-                                                job: myservice
-                                              versions:
-                                                - max_time_ms: 1767361020000
-                                                  min_time_ms: 1767357420000
-                                                  resource_attributes:
-                                                    descriptive:
-                                                        host.name: server-01
-                                                        service.version: 1.0.0
-                                                    identifying:
-                                                        service.name: myservice
-                                                        service.namespace: production
+                                            nextToken: a1b2c3d4e5f6
+                                            results:
+                                                - labels:
+                                                    __name__: http_requests_total
+                                                    instance: localhost:8080
+                                                    job: myservice
+                                                  versions:
+                                                    - max_time_ms: 1767361020000
+                                                      min_time_ms: 1767357420000
+                                                      resource_attributes:
+                                                        descriptive:
+                                                            host.name: server-01
+                                                            service.version: 1.0.0
+                                                        identifying:
+                                                            service.name: myservice
+                                                            service.namespace: production
                                         status: success
                                 attributesFormat:
                                     summary: Simplified attribute name to values map (format=attributes)
@@ -2117,6 +2160,18 @@ paths:
                                             service.namespace:
                                                 - production
                                                 - staging
+                                        status: success
+                                verboseAttributesFormat:
+                                    summary: Verbose attribute schema (format=attributes&verbose=true)
+                                    value:
+                                        data:
+                                            service.name:
+                                                otel_name: service.name
+                                                prom_name: service_name
+                                                role: identifying
+                                                values:
+                                                    - myservice
+                                                    - otherservice
                                         status: success
                 default:
                     description: Error retrieving resource attributes.
@@ -2136,13 +2191,13 @@ paths:
             tags:
                 - resources
             summary: Find series by OTel metadata criteria
-            description: 'Reverse lookup: given resource attribute filters, find all series that have matching OTel metadata. At least one metadata filter is required.'
+            description: 'Reverse lookup: given one or more resource attribute filters, find matching series or compact metric rollups.'
             operationId: resources-series-lookup
             parameters:
                 - name: resource.attr
                   in: query
-                  description: Resource attribute filter in key:value format. Repeatable. All must match (AND).
-                  required: false
+                  description: Resource attribute filter in key:value format. Repeatable. All filters must match.
+                  required: true
                   explode: false
                   schema:
                     type: array
@@ -2202,9 +2257,41 @@ paths:
                         value: "2026-01-02T13:37:00Z"
                     epoch:
                         value: 1767361020
+                - name: view
+                  in: query
+                  description: Response view. full returns paginated series and versions; names and summary return compact metric rollups.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                    enum:
+                        - full
+                        - names
+                        - summary
+                    example: full
+                  examples:
+                    full:
+                        value: full
+                    names:
+                        value: names
+                    summary:
+                        value: summary
+                - name: metric_limit
+                  in: query
+                  description: Maximum metrics in names or summary. Omitted or zero uses 200. Not accepted with view=full.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    minimum: 0
+                    format: int64
+                    default: 200
+                  examples:
+                    example:
+                        value: 50
                 - name: limit
                   in: query
-                  description: Maximum number of series to return.
+                  description: Maximum series per page. Accepted only with view=full.
                   required: false
                   explode: false
                   schema:
@@ -2215,7 +2302,7 @@ paths:
                         value: 100
                 - name: next_token
                   in: query
-                  description: Cursor token from a previous paginated response to fetch the next page.
+                  description: Cursor from a previous page. Accepted only with view=full.
                   required: false
                   explode: false
                   schema:
@@ -2230,8 +2317,166 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ResourcesSeriesOutputBody'
+                            examples:
+                                full:
+                                    summary: Full paginated series view
+                                    value:
+                                        data:
+                                            results:
+                                                - labels:
+                                                    __name__: http_requests_total
+                                                    job: shop
+                                                  versions:
+                                                    - max_time_ms: 1767361020000
+                                                      min_time_ms: 1767357420000
+                                                      resource_attributes:
+                                                        descriptive:
+                                                            host.name: server-01
+                                                        identifying:
+                                                            service.name: payment
+                                        status: success
+                                names:
+                                    summary: Compact metric names view
+                                    value:
+                                        data:
+                                            limit_unit: metrics
+                                            metrics:
+                                                - http_requests_total
+                                                - orders_total
+                                            series_count: 3
+                                            truncated: false
+                                        status: success
+                                summary:
+                                    summary: Compact per-metric summary view
+                                    value:
+                                        data:
+                                            limit_unit: metrics
+                                            metrics:
+                                                - __name__: http_requests_total
+                                                  example_labels:
+                                                    __name__: http_requests_total
+                                                    job: shop
+                                                  series_count: 2
+                                            series_count: 2
+                                            truncated: false
+                                        status: success
                 default:
                     description: Error performing reverse lookup.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
+    /resources/diff:
+        get:
+            tags:
+                - resources
+            summary: Compare resource attribute versions
+            description: Returns each selected series' resource attribute changes between the effective version at time and its immediately preceding version.
+            operationId: resources-diff
+            parameters:
+                - name: match[]
+                  in: query
+                  description: Series selector. Repeatable; results are the union of selector matches. At least one non-empty matcher is required.
+                  required: true
+                  explode: false
+                  schema:
+                    type: array
+                    items:
+                        type: string
+                  examples:
+                    example:
+                        value:
+                            - '{job="prometheus"}'
+                - name: time
+                  in: query
+                  description: Time used to select the newest resource version whose min_time_ms is not later than the lookup time. Defaults to now.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
+                - name: limit
+                  in: query
+                  description: Maximum differences per page. Zero or omitted is unlimited up to the safety cap.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    minimum: 0
+                    format: int64
+                  examples:
+                    example:
+                        value: 100
+                - name: next_token
+                  in: query
+                  description: Cursor token from a previous page.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: a1b2c3d4e5f6...
+            responses:
+                "200":
+                    description: Resource attribute differences retrieved successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ResourcesDiffOutputBody'
+                            examples:
+                                changedResource:
+                                    summary: Resource attributes changed between versions
+                                    value:
+                                        data:
+                                            results:
+                                                - after:
+                                                    max_time_ms: 1767361020000
+                                                    min_time_ms: 1767360060000
+                                                    resource_attributes:
+                                                        descriptive:
+                                                            host.name: new
+                                                            service.version: "2"
+                                                        identifying:
+                                                            service.name: payment
+                                                  before:
+                                                    max_time_ms: 1767360000000
+                                                    min_time_ms: 1767357420000
+                                                    resource_attributes:
+                                                        descriptive:
+                                                            host.name: old
+                                                            service.version: "1"
+                                                        identifying:
+                                                            service.name: payment
+                                                  changed:
+                                                    descriptive:
+                                                        host.name: old->new
+                                                        service.version: 1->2
+                                                    identifying: {}
+                                                  labels:
+                                                    __name__: http_requests_total
+                                                    job: shop
+                                        status: success
+                default:
+                    description: Error retrieving resource attribute differences.
                     content:
                         application/json:
                             schema:
@@ -4664,19 +4909,34 @@ components:
                     description: Response status.
                     example: success
                 data:
-                    type: object
-                    properties:
-                        results:
-                            type: array
-                            items:
-                                $ref: '#/components/schemas/ResourceAttributesResponse'
-                            description: Array of resource attributes for matching time series.
-                        nextToken:
-                            type: string
-                            description: Cursor token for fetching the next page. Empty when there are no more results.
-                    required:
-                        - results
-                    description: Paginated resource attributes with cursor-based pagination.
+                    oneOf:
+                        - type: object
+                          properties:
+                            results:
+                                type: array
+                                items:
+                                    $ref: '#/components/schemas/ResourceAttributesResponse'
+                                description: Array of resource attributes for matching time series.
+                            nextToken:
+                                type: string
+                                description: Cursor token for fetching the next page. Empty when there are no more results.
+                          required:
+                            - results
+                          additionalProperties: false
+                          description: Paginated resource attributes returned by the default format.
+                        - anyOf:
+                            - type: object
+                              additionalProperties:
+                                type: array
+                                items:
+                                    type: string
+                              description: Map of attribute names to sorted unique values returned by format=attributes.
+                            - type: object
+                              additionalProperties:
+                                $ref: '#/components/schemas/ResourceAttributeKeyInfo'
+                              description: Map of OTel attribute names to schema information returned by format=attributes and verbose=true.
+                          description: Flat or verbose attribute data. Empty maps are valid for both variants.
+                    description: Full, flat attributes, or verbose attributes data selected by the request parameters.
                 warnings:
                     type: array
                     items:
@@ -4691,7 +4951,7 @@ components:
                 - status
                 - data
             additionalProperties: false
-            description: Response body for resources endpoint (default format).
+            description: Response body for the resources endpoint.
         ResourcesSeriesOutputBody:
             type: object
             properties:
@@ -4703,20 +4963,26 @@ components:
                     description: Response status.
                     example: success
                 data:
-                    type: object
-                    properties:
-                        results:
-                            type: array
-                            items:
-                                type: object
-                                description: A series matching the metadata criteria with its resource version history.
-                            description: Array of series matching the metadata criteria, with their resource versions.
-                        nextToken:
-                            type: string
-                            description: Cursor token for fetching the next page. Empty when there are no more results.
-                    required:
-                        - results
-                    description: Paginated series metadata with cursor-based pagination.
+                    oneOf:
+                        - type: object
+                          properties:
+                            results:
+                                type: array
+                                items:
+                                    $ref: '#/components/schemas/SeriesMetadataResponse'
+                                description: Array of series matching the metadata criteria, with their resource versions.
+                            nextToken:
+                                type: string
+                                description: Cursor token for fetching the next page. Empty when there are no more results.
+                          required:
+                            - results
+                          additionalProperties: false
+                          description: Paginated series metadata returned by view=full.
+                        - anyOf:
+                            - $ref: '#/components/schemas/SeriesMetricsNamesView'
+                            - $ref: '#/components/schemas/SeriesMetricsSummaryView'
+                          description: Names or summary compact data. Empty metrics arrays are valid for both variants.
+                    description: Full, names, or summary data selected by the view parameter.
                 warnings:
                     type: array
                     items:
@@ -4731,8 +4997,8 @@ components:
                 - status
                 - data
             additionalProperties: false
-            description: Response body for the reverse lookup endpoint.
-        ResourcesAttributesOutputBody:
+            description: Response body for the resource reverse-lookup endpoint.
+        ResourcesDiffOutputBody:
             type: object
             properties:
                 status:
@@ -4744,11 +5010,19 @@ components:
                     example: success
                 data:
                     type: object
-                    additionalProperties:
-                        type: array
-                        items:
+                    properties:
+                        results:
+                            type: array
+                            items:
+                                $ref: '#/components/schemas/ResourceAttributesDiffEntry'
+                            description: Sorted per-series resource attribute changes.
+                        nextToken:
                             type: string
-                    description: Map of attribute names to their unique values.
+                            description: Cursor token for the next page. Omitted on the final page.
+                    required:
+                        - results
+                    additionalProperties: false
+                    description: Paginated resource attribute differences.
                 warnings:
                     type: array
                     items:
@@ -4763,7 +5037,44 @@ components:
                 - status
                 - data
             additionalProperties: false
-            description: Response body for resources endpoint with format=attributes (for autocomplete).
+            description: Response body for the resource attribute diff endpoint.
+        ResourcesAttributesOutputBody:
+            type: object
+            properties:
+                status:
+                    type: string
+                    enum:
+                        - success
+                        - error
+                    description: Response status.
+                    example: success
+                data:
+                    anyOf:
+                        - type: object
+                          additionalProperties:
+                            type: array
+                            items:
+                                type: string
+                          description: Map of attribute names to sorted unique values returned by format=attributes.
+                        - type: object
+                          additionalProperties:
+                            $ref: '#/components/schemas/ResourceAttributeKeyInfo'
+                          description: Map of OTel attribute names to schema information returned by format=attributes and verbose=true.
+                warnings:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were warnings while executing the request. There will still be data in the data field.
+                infos:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were info-level annotations while executing the request.
+            required:
+                - status
+                - data
+            additionalProperties: false
+            description: Response body for format=attributes.
         ResourceAttributesResponse:
             type: object
             properties:
@@ -4816,6 +5127,135 @@ components:
                 - descriptive
             additionalProperties: false
             description: Resource attribute data with identifying and descriptive attributes.
+        ResourceAttributeKeyInfo:
+            type: object
+            properties:
+                role:
+                    type: string
+                    enum:
+                        - identifying
+                        - descriptive
+                    example: identifying
+                otel_name:
+                    type: string
+                    description: Original OTel resource attribute name.
+                prom_name:
+                    type: string
+                    description: Prometheus label name after configured translation. Omitted when translation fails.
+                values:
+                    type: array
+                    items:
+                        type: string
+                    description: Sorted unique values observed for the attribute.
+            required:
+                - role
+                - otel_name
+                - values
+            additionalProperties: false
+            description: Schema and observed values for one resource attribute.
+        ResourceAttributesDiffEntry:
+            type: object
+            properties:
+                labels:
+                    $ref: '#/components/schemas/Labels'
+                before:
+                    $ref: '#/components/schemas/ResourceAttributeVersion'
+                after:
+                    $ref: '#/components/schemas/ResourceAttributeVersion'
+                changed:
+                    $ref: '#/components/schemas/ResourceAttributeData'
+            required:
+                - labels
+                - after
+                - changed
+            additionalProperties: false
+            description: Resource attribute changes for one series. Added values are encoded as new, removed values as old->, and changed values as old->new.
+        SeriesMetadataResponse:
+            type: object
+            properties:
+                labels:
+                    $ref: '#/components/schemas/Labels'
+                versions:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ResourceAttributeVersion'
+                    description: Matching resource versions. Present in the full view.
+            required:
+                - labels
+            additionalProperties: false
+            description: A matching series and its resource versions.
+        SeriesMetricsNamesView:
+            type: object
+            properties:
+                metrics:
+                    type: array
+                    items:
+                        type: string
+                    description: Sorted unique metric names.
+                series_count:
+                    type: integer
+                    format: int64
+                    description: Total matching series counted before metric truncation.
+                truncated:
+                    type: boolean
+                    description: Whether metric_limit truncated the metrics array.
+                limit_unit:
+                    type: string
+                    enum:
+                        - metrics
+                    description: Unit to which metric_limit applies.
+            required:
+                - metrics
+                - series_count
+                - truncated
+                - limit_unit
+            additionalProperties: false
+            description: Compact resource reverse lookup grouped as metric names.
+        SeriesMetricSummary:
+            type: object
+            properties:
+                __name__:
+                    type: string
+                    description: Metric name.
+                series_count:
+                    type: integer
+                    format: int64
+                    description: Number of matching series for this metric.
+                example_labels:
+                    $ref: '#/components/schemas/Labels'
+            required:
+                - __name__
+                - series_count
+                - example_labels
+            additionalProperties: false
+            description: Per-metric rollup with the first label-sorted series as a deterministic example.
+        SeriesMetricsSummaryView:
+            type: object
+            properties:
+                metrics:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/SeriesMetricSummary'
+                    description: Sorted per-metric summaries.
+                series_count:
+                    type: integer
+                    format: int64
+                    description: Total matching series counted before metric truncation.
+                truncated:
+                    type: boolean
+                    description: Whether metric_limit truncated the metrics array.
+                limit_unit:
+                    type: string
+                    enum:
+                        - metrics
+                    description: Unit to which metric_limit applies.
+            required:
+                - metrics
+                - series_count
+                - truncated
+                - limit_unit
+            additionalProperties: false
+            description: Compact resource reverse lookup grouped into per-metric summaries.
         Metadata:
             type: object
             properties:
