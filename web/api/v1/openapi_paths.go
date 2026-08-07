@@ -358,16 +358,17 @@ func (*OpenAPIBuilder) seriesPath() *v3.PathItem {
 
 func (*OpenAPIBuilder) resourcesPath() *v3.PathItem {
 	params := []*v3.Parameter{
-		queryParamWithExample("format", "Response format. Default returns full resource data with labels and versions. Set to 'attributes' for a simplified map of attribute names to values (useful for autocomplete).", false,
+		queryParamWithExample("format", "Response format. Omit for paginated series resources, or set to attributes for an attribute-name map.", false,
 			base.CreateSchemaProxy(&base.Schema{
 				Type: []string{"string"},
 				Enum: createEnumNodes([]string{"attributes"}),
 			}), []example{{"default", nil}, {"attributes", "attributes"}}),
-		queryParamWithExample("translate", "When set to 'true', translates OTel attribute names to Prometheus label names. Only applicable when format=attributes.", false,
-			base.CreateSchemaProxy(&base.Schema{
-				Type: []string{"string"},
-				Enum: createEnumNodes([]string{"true", "false"}),
-			}), []example{{"example", "true"}}),
+		queryParamWithExample("translate", "Translate OTel attribute names to Prometheus label names. Applies only to the flat format=attributes response; true and 1 enable it.", false,
+			booleanOrBinaryFlagSchema(), []example{{"boolean", true}, {"integer", 1}}),
+		queryParamWithExample("verbose", "Return role, OTel name, translated Prometheus name, and values per attribute. Applies only when format=attributes; true and 1 enable it.", false,
+			booleanOrBinaryFlagSchema(), []example{{"boolean", true}, {"integer", 1}}),
+		queryParamWithExample("latest", "Keep only the newest version by min_time_ms for each series. Applies only to the default format; true and 1 enable it.", false,
+			booleanOrBinaryFlagSchema(), []example{{"boolean", true}, {"integer", 1}}),
 		queryParamWithExample("match[]", "Series selector to filter resources by matching time series.", false, base.CreateSchemaProxy(&base.Schema{
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
@@ -381,7 +382,7 @@ func (*OpenAPIBuilder) resourcesPath() *v3.PathItem {
 		Get: &v3.Operation{
 			OperationId: "resources",
 			Summary:     "Get resource attributes",
-			Description: "Returns OTel resource attributes associated with time series. Supports two response formats based on the 'format' parameter.",
+			Description: "Returns OTel resource attributes associated with time series. The response data shape depends on format and verbose.",
 			Tags:        []string{"resources"},
 			Parameters:  params,
 			Responses:   responsesWithErrorExamples("ResourcesOutputBody", resourcesResponseExamples(), errorResponseExamples(), "Resource attributes retrieved successfully.", "Error retrieving resource attributes."),
@@ -389,9 +390,24 @@ func (*OpenAPIBuilder) resourcesPath() *v3.PathItem {
 	}
 }
 
+func booleanOrBinaryFlagSchema() *base.SchemaProxy {
+	return base.CreateSchemaProxy(&base.Schema{
+		OneOf: []*base.SchemaProxy{
+			booleanSchema(),
+			base.CreateSchemaProxy(&base.Schema{
+				Type:    []string{"integer"},
+				Format:  "int32",
+				Minimum: float64Ptr(0),
+				Maximum: float64Ptr(1),
+			}),
+		},
+		Description: "Boolean flag; 0 and 1 are accepted aliases for false and true.",
+	})
+}
+
 func (*OpenAPIBuilder) resourcesSeriesPath() *v3.PathItem {
 	params := []*v3.Parameter{
-		queryParamWithExample("resource.attr", "Resource attribute filter in key:value format. Repeatable. All must match (AND).", false, base.CreateSchemaProxy(&base.Schema{
+		queryParamWithExample("resource.attr", "Resource attribute filter in key:value format. Repeatable. All filters must match.", true, base.CreateSchemaProxy(&base.Schema{
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
 		}), []example{{"example", "service.name:payment-service"}}),
@@ -401,17 +417,44 @@ func (*OpenAPIBuilder) resourcesSeriesPath() *v3.PathItem {
 		}), []example{{"example", []string{`{__name__="http_requests_total"}`}}}),
 		queryParamWithExample("start", "Start timestamp to filter metadata versions.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
 		queryParamWithExample("end", "End timestamp to filter metadata versions.", false, timestampSchema(), timestampExamples(exampleTime)),
-		queryParamWithExample("limit", "Maximum number of series to return.", false, integerSchema(), []example{{"example", 100}}),
-		queryParamWithExample("next_token", "Cursor token from a previous paginated response to fetch the next page.", false, stringSchema(), []example{{"example", "a1b2c3d4e5f6..."}}),
+		queryParamWithExample("view", "Response view. full returns paginated series and versions; names and summary return compact metric rollups.", false,
+			enumStringSchema("full", "names", "summary"), []example{{"full", "full"}, {"names", "names"}, {"summary", "summary"}}),
+		queryParamWithExample("metric_limit", "Maximum metrics in names or summary. Omitted or zero uses 200. Not accepted with view=full.", false,
+			base.CreateSchemaProxy(&base.Schema{Type: []string{"integer"}, Format: "int64", Minimum: float64Ptr(0), Default: createYAMLNode(200)}), []example{{"example", 50}}),
+		queryParamWithExample("limit", "Maximum series per page. Accepted only with view=full.", false, integerSchema(), []example{{"example", 100}}),
+		queryParamWithExample("next_token", "Cursor from a previous page. Accepted only with view=full.", false, stringSchema(), []example{{"example", "a1b2c3d4e5f6..."}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
 			OperationId: "resources-series-lookup",
 			Summary:     "Find series by OTel metadata criteria",
-			Description: "Reverse lookup: given resource attribute filters, find all series that have matching OTel metadata. At least one metadata filter is required.",
+			Description: "Reverse lookup: given one or more resource attribute filters, find matching series or compact metric rollups.",
 			Tags:        []string{"resources"},
 			Parameters:  params,
-			Responses:   responsesWithErrorExamples("ResourcesSeriesOutputBody", nil, errorResponseExamples(), "Matching series with metadata retrieved successfully.", "Error performing reverse lookup."),
+			Responses:   responsesWithErrorExamples("ResourcesSeriesOutputBody", resourcesSeriesResponseExamples(), errorResponseExamples(), "Matching series with metadata retrieved successfully.", "Error performing reverse lookup."),
+		},
+	}
+}
+
+func (*OpenAPIBuilder) resourcesDiffPath() *v3.PathItem {
+	params := []*v3.Parameter{
+		queryParamWithExample("match[]", "Series selector. Repeatable; results are the union of selector matches. At least one non-empty matcher is required.", true, base.CreateSchemaProxy(&base.Schema{
+			Type:  []string{"array"},
+			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+		}), []example{{"example", []string{`{job="prometheus"}`}}}),
+		queryParamWithExample("time", "Time used to select the newest resource version whose min_time_ms is not later than the lookup time. Defaults to now.", false, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("limit", "Maximum differences per page. Zero or omitted is unlimited up to the safety cap.", false,
+			base.CreateSchemaProxy(&base.Schema{Type: []string{"integer"}, Format: "int64", Minimum: float64Ptr(0)}), []example{{"example", 100}}),
+		queryParamWithExample("next_token", "Cursor token from a previous page.", false, stringSchema(), []example{{"example", "a1b2c3d4e5f6..."}}),
+	}
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "resources-diff",
+			Summary:     "Compare resource attribute versions",
+			Description: "Returns each selected series' resource attribute changes between the effective version at time and its immediately preceding version.",
+			Tags:        []string{"resources"},
+			Parameters:  params,
+			Responses:   responsesWithErrorExamples("ResourcesDiffOutputBody", resourcesDiffResponseExamples(), errorResponseExamples(), "Resource attribute differences retrieved successfully.", "Error retrieving resource attribute differences."),
 		},
 	}
 }
