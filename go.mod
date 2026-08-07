@@ -51,7 +51,7 @@ require (
 	github.com/linode/linodego v1.69.1
 	github.com/miekg/dns v1.1.72
 	github.com/moby/moby/api v1.55.0
-	github.com/moby/moby/client v0.5.0
+	github.com/moby/moby/client v0.5.1
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
 	github.com/nsf/jsondiff v0.0.0-20260207060731-8e8d90c4c0ac
