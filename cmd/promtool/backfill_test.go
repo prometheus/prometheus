@@ -85,6 +85,106 @@ func testBlocks(t *testing.T, db *tsdb.DB, expectedMinTime, expectedMaxTime, exp
 	}
 }
 
+func TestResolveBlockDuration(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		Description      string
+		BlockDuration    time.Duration
+		MaxBlockDuration time.Duration
+		Expected         time.Duration
+		ExpectedError    string
+	}{
+		{
+			Description: "Neither duration set uses the default block duration.",
+			Expected:    2 * time.Hour,
+		},
+		{
+			Description:      "Maximum duration below the default block duration is ignored.",
+			MaxBlockDuration: time.Hour,
+			Expected:         2 * time.Hour,
+		},
+		{
+			Description:      "Maximum duration matching a compaction range is used as is.",
+			MaxBlockDuration: 18 * time.Hour,
+			Expected:         18 * time.Hour,
+		},
+		{
+			Description:      "Maximum duration of a day rounds down to a compaction range.",
+			MaxBlockDuration: 24 * time.Hour,
+			Expected:         18 * time.Hour,
+		},
+		{
+			Description:      "Maximum duration between compaction ranges rounds down.",
+			MaxBlockDuration: 30 * time.Hour,
+			Expected:         18 * time.Hour,
+		},
+		{
+			Description:      "Enormous maximum duration is capped at the largest compaction range.",
+			MaxBlockDuration: 200000 * time.Hour,
+			Expected:         39366 * time.Hour,
+		},
+		{
+			Description:   "Exact duration of a day is used as is.",
+			BlockDuration: 24 * time.Hour,
+			Expected:      24 * time.Hour,
+		},
+		{
+			Description:   "Exact duration dividing a day is used as is.",
+			BlockDuration: 8 * time.Hour,
+			Expected:      8 * time.Hour,
+		},
+		{
+			Description:   "Exact duration that is a multiple of a day is used as is.",
+			BlockDuration: 48 * time.Hour,
+			Expected:      48 * time.Hour,
+		},
+		{
+			Description:   "Exact duration matching a compaction range is used as is.",
+			BlockDuration: 6 * time.Hour,
+			Expected:      6 * time.Hour,
+		},
+		{
+			Description:   "Exact duration is not rounded down to a compaction range.",
+			BlockDuration: 30 * time.Hour,
+			Expected:      30 * time.Hour,
+		},
+		{
+			Description:   "Exact duration below the default block duration is used as is.",
+			BlockDuration: time.Hour,
+			Expected:      time.Hour,
+		},
+		{
+			Description:      "Setting both durations is an error.",
+			BlockDuration:    24 * time.Hour,
+			MaxBlockDuration: 24 * time.Hour,
+			ExpectedError:    "mutually exclusive",
+		},
+		{
+			Description:   "Negative exact duration is an error.",
+			BlockDuration: -time.Hour,
+			ExpectedError: "must be positive",
+		},
+		{
+			Description:   "Exact duration below a millisecond is an error.",
+			BlockDuration: time.Microsecond,
+			ExpectedError: "must be at least 1ms",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.Description, func(t *testing.T) {
+			t.Parallel()
+
+			duration, err := resolveBlockDuration(test.BlockDuration, test.MaxBlockDuration)
+			if test.ExpectedError != "" {
+				require.ErrorContains(t, err, test.ExpectedError)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, int64(test.Expected/time.Millisecond), duration)
+		})
+	}
+}
+
 func TestBackfill(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -92,6 +192,7 @@ func TestBackfill(t *testing.T) {
 		IsOk                 bool
 		Description          string
 		MaxSamplesInAppender int
+		BlockDuration        time.Duration
 		MaxBlockDuration     time.Duration
 		Labels               map[string]string
 		Expected             struct {
@@ -682,6 +783,43 @@ http_requests_total{code="200"} 3 1629863088.000
 			},
 		},
 		{
+			// Both samples fall into one 18h compaction range, but on either side of a day boundary.
+			ToParse: `# HELP http_requests_total The total number of HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{code="200"} 1 1624474800.000
+http_requests_total{code="200"} 2 1624528800.000
+# EOF
+`,
+			IsOk:                 true,
+			Description:          "Day aligned blocks do not span a day boundary.",
+			MaxSamplesInAppender: 5000,
+			BlockDuration:        24 * time.Hour,
+			Expected: struct {
+				MinTime       int64
+				MaxTime       int64
+				NumBlocks     int
+				BlockDuration int64
+				Samples       []backfillSample
+			}{
+				MinTime:       1624474800000,
+				MaxTime:       1624528800000,
+				NumBlocks:     2,
+				BlockDuration: int64(24 * time.Hour / time.Millisecond),
+				Samples: []backfillSample{
+					{
+						Timestamp: 1624474800000,
+						Value:     1,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+					{
+						Timestamp: 1624528800000,
+						Value:     2,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+				},
+			},
+		},
+		{
 			ToParse: `# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
 # TYPE rpc_duration_seconds summary
 rpc_duration_seconds{quantile="0.01"} 3102
@@ -735,7 +873,10 @@ after_eof 1 2
 
 			outputDir := t.TempDir()
 
-			err := backfill(test.MaxSamplesInAppender, []byte(test.ToParse), outputDir, false, false, test.MaxBlockDuration, test.Labels)
+			blockDuration, err := resolveBlockDuration(test.BlockDuration, test.MaxBlockDuration)
+			require.NoError(t, err)
+
+			err = backfill(test.MaxSamplesInAppender, []byte(test.ToParse), outputDir, false, false, blockDuration, test.Labels)
 
 			if !test.IsOk {
 				require.Error(t, err, test.Description)
