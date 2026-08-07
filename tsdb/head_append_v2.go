@@ -83,7 +83,7 @@ func (h *Head) AppenderV2(context.Context) storage.AppenderV2 {
 
 func (h *Head) appenderV2() *headAppenderV2 {
 	minValidTime := h.appendableMinValidTime()
-	appendID, cleanupAppendIDsBelow := h.iso.newAppendID(minValidTime) // Every appender gets an ID that is cleared upon commit/rollback.
+	isolationAppender, cleanupAppendIDsBelow := h.iso.newAppendID(minValidTime)
 	return &headAppenderV2{
 		headAppenderBase: headAppenderBase{
 			head:                  h,
@@ -93,8 +93,8 @@ func (h *Head) appenderV2() *headAppenderV2 {
 			seriesRefs:            h.getRefSeriesBuffer(),
 			series:                h.getSeriesBuffer(),
 			typesInBatch:          h.getTypeMap(),
-			appendID:              appendID,
 			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
+			isolationAppender:     isolationAppender,
 			storeST:               h.opts.EnableSTStorage.Load(),
 			useXOR2:               h.opts.UseXOR2FloatEncoding(),
 			useHistogramST:        h.opts.EnableHistogramSTEncoding.Load(),

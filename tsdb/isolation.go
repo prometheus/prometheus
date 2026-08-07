@@ -16,6 +16,8 @@ package tsdb
 import (
 	"math"
 	"sync"
+
+	"github.com/prometheus/prometheus/util/zeropool"
 )
 
 // isolationState holds the isolation information.
@@ -35,9 +37,13 @@ type isolationState struct {
 // Close closes the state.
 func (i *isolationState) Close() {
 	i.isolation.readMtx.Lock()
-	defer i.isolation.readMtx.Unlock()
 	i.next.prev = i.prev
 	i.prev.next = i.next
+	i.isolation.readMtx.Unlock()
+
+	clear(i.incompleteAppends)
+	i.isolation.incompleteAppendsPool.Put(i.incompleteAppends)
+	i.incompleteAppends = nil
 }
 
 func (i *isolationState) IsolationDisabled() bool {
@@ -51,12 +57,17 @@ type isolationAppender struct {
 	next     *isolationAppender
 }
 
+func (i *isolationAppender) id() uint64 {
+	if i == nil {
+		return 0
+	}
+	return i.appendID
+}
+
 // isolation is the global isolation state.
 type isolation struct {
-	// Mutex for accessing lastAppendID and appendsOpen.
+	// Mutex for accessing appendsOpenList.
 	appendMtx sync.RWMutex
-	// Which appends are currently in progress.
-	appendsOpen map[uint64]*isolationAppender
 	// New appenders with higher appendID are added to the end. First element keeps lastAppendId.
 	// appendsOpenList.next points to the first element and appendsOpenList.prev points to the last element.
 	// If there are no appenders, both point back to appendsOpenList.
@@ -71,6 +82,9 @@ type isolation struct {
 	readsOpen *isolationState
 	// If true, writes are not tracked while reads are still tracked.
 	disabled bool
+
+	// Pool of reusable incomplete appends maps to save on allocations.
+	incompleteAppendsPool zeropool.Pool[map[uint64]struct{}]
 }
 
 func newIsolation(disabled bool) *isolation {
@@ -83,7 +97,6 @@ func newIsolation(disabled bool) *isolation {
 	appender.prev = appender
 
 	return &isolation{
-		appendsOpen:     map[uint64]*isolationAppender{},
 		appendsOpenList: appender,
 		readsOpen:       isoState,
 		disabled:        disabled,
@@ -139,18 +152,23 @@ func (i *isolation) State(mint, maxt int64) *isolationState {
 	i.appendMtx.RLock() // Take append mutex before read mutex.
 	defer i.appendMtx.RUnlock()
 
+	incompleteAppends := i.incompleteAppendsPool.Get()
+	if incompleteAppends == nil {
+		incompleteAppends = make(map[uint64]struct{})
+	}
+
 	// We need to track reads even when isolation is disabled, so that head
 	// truncation can wait till reads overlapping that range have finished.
 	isoState := &isolationState{
 		maxAppendID:       i.appendsOpenList.appendID,
 		lowWatermark:      i.appendsOpenList.next.appendID, // Lowest appendID from appenders, or lastAppendId.
-		incompleteAppends: make(map[uint64]struct{}, len(i.appendsOpen)),
+		incompleteAppends: incompleteAppends,
 		isolation:         i,
 		mint:              mint,
 		maxt:              maxt,
 	}
-	for k := range i.appendsOpen {
-		isoState.incompleteAppends[k] = struct{}{}
+	for appender := i.appendsOpenList.next; appender != i.appendsOpenList; appender = appender.next {
+		isoState.incompleteAppends[appender.appendID] = struct{}{}
 	}
 
 	i.readMtx.Lock()
@@ -178,12 +196,12 @@ func (i *isolation) TraverseOpenReads(f func(s *isolationState) bool) {
 	}
 }
 
-// newAppendID increments the transaction counter and returns a new transaction
-// ID. The first ID returned is 1.
-// Also returns the low watermark, to keep lock/unlock operations down.
-func (i *isolation) newAppendID(minTime int64) (uint64, uint64) {
+// newAppendID increments the transaction counter and returns a new appender.
+// The first appender ID is 1. It also returns the low watermark to keep
+// lock/unlock operations down.
+func (i *isolation) newAppendID(minTime int64) (*isolationAppender, uint64) {
 	if i.disabled {
-		return 0, 0
+		return nil, 0
 	}
 
 	i.appendMtx.Lock()
@@ -201,8 +219,7 @@ func (i *isolation) newAppendID(minTime int64) (uint64, uint64) {
 	i.appendsOpenList.prev.next = app
 	i.appendsOpenList.prev = app
 
-	i.appendsOpen[app.appendID] = app
-	return app.appendID, i.lowWatermarkLocked()
+	return app, i.lowWatermarkLocked()
 }
 
 func (i *isolation) lastAppendID() uint64 {
@@ -242,25 +259,25 @@ func (i *isolation) committedAppendID() uint64 {
 	return i.appendsOpenList.next.appendID - 1
 }
 
-func (i *isolation) closeAppend(appendID uint64) {
-	if i.disabled {
+func (i *isolation) closeAppend(app *isolationAppender) {
+	if i.disabled || app == nil {
 		return
 	}
 
 	i.appendMtx.Lock()
 	defer i.appendMtx.Unlock()
 
-	app := i.appendsOpen[appendID]
-	if app != nil {
-		app.prev.next = app.next
-		app.next.prev = app.prev
-
-		delete(i.appendsOpen, appendID)
-
-		// Clear all fields, and return to the pool.
-		*app = isolationAppender{}
-		i.appendersPool.Put(app)
+	// Ignore an appender that is already closed. Closing clears its list links.
+	if app.prev == nil || app.next == nil {
+		return
 	}
+
+	app.prev.next = app.next
+	app.next.prev = app.prev
+
+	// Clear all fields, and return to the pool.
+	*app = isolationAppender{}
+	i.appendersPool.Put(app)
 }
 
 // The transactionID ring buffer.
