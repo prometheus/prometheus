@@ -42,7 +42,7 @@ func TestIsolation(t *testing.T) {
 	require.Equal(t, 0, countOpenReads(iso))
 	require.Equal(t, int64(10), iso.lowestAppendTime())
 
-	// Now we start a read.
+	// Start a read.
 	stateA := iso.State(10, 20)
 	require.Equal(t, 1, countOpenReads(iso))
 
