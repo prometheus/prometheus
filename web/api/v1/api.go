@@ -481,6 +481,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/metadata", wrap(api.metricMetadata))
 	r.Get("/resources", wrap(api.resourceAttributes))
 	r.Get("/resources/series", wrap(api.resourceSeriesLookup))
+	r.Get("/resources/diff", wrap(api.resourceAttributesDiff))
 
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
@@ -1629,6 +1630,48 @@ type SeriesMetadataResponse struct {
 	Versions []ResourceAttributeVersion `json:"versions,omitempty"`
 }
 
+// ResourceAttributeKeyInfo is the verbose schema entry for format=attributes&verbose=1.
+type ResourceAttributeKeyInfo struct {
+	Role     string   `json:"role"` // identifying | descriptive
+	OtelName string   `json:"otel_name"`
+	PromName string   `json:"prom_name,omitempty"`
+	Values   []string `json:"values"`
+}
+
+// ResourceAttributesDiffEntry is one series' version-to-version attribute change.
+type ResourceAttributesDiffEntry struct {
+	Labels  labels.Labels             `json:"labels"`
+	Before  *ResourceAttributeVersion `json:"before,omitempty"`
+	After   *ResourceAttributeVersion `json:"after,omitempty"`
+	Changed ResourceAttributeData     `json:"changed"`
+}
+
+// ResourceAttributesDiffResponse wraps diff results.
+type ResourceAttributesDiffResponse struct {
+	Results []ResourceAttributesDiffEntry `json:"results"`
+}
+
+// applyLatestVersions keeps only the latest version (highest MaxTimeMs) per result when latest is set.
+func applyLatestVersions(results []ResourceAttributesResponse, latestOnly bool) []ResourceAttributesResponse {
+	if !latestOnly {
+		return results
+	}
+	for i := range results {
+		vs := results[i].Versions
+		if len(vs) <= 1 {
+			continue
+		}
+		best := vs[0]
+		for _, v := range vs[1:] {
+			if v.MaxTimeMs > best.MaxTimeMs || (v.MaxTimeMs == best.MaxTimeMs && v.MinTimeMs >= best.MinTimeMs) {
+				best = v
+			}
+		}
+		results[i].Versions = []ResourceAttributeVersion{best}
+	}
+	return results
+}
+
 func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
 	if !api.enableNativeMetadata {
 		return apiFuncResult{nil, &apiError{errorExec, errors.New("native metadata is disabled; enable with --enable-feature=native-metadata")}, nil, nil}
@@ -1641,7 +1684,7 @@ func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
 	}
 
-	// Handle format=attributes for autocomplete use case
+	// Handle format=attributes for autocomplete / agent schema discovery.
 	if r.FormValue("format") == "attributes" {
 		return api.resourceAttributePairs(r)
 	}
@@ -1667,6 +1710,8 @@ func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
 		return invalidParamError(err, "limit")
 	}
 
+	latestOnly := r.FormValue("latest") == "1" || strings.EqualFold(r.FormValue("latest"), "true")
+
 	// Parse match[] parameters if provided
 	var matcherSets [][]*labels.Matcher
 	if len(r.Form["match[]"]) > 0 {
@@ -1686,7 +1731,7 @@ func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
 
 	// If no matchers provided, return all resource attributes
 	if len(matcherSets) == 0 {
-		return api.resourceAttributesAll(mr, limit, startMs, endMs, nextToken)
+		return api.resourceAttributesAll(mr, limit, startMs, endMs, nextToken, latestOnly)
 	}
 
 	// Query series matching the selectors
@@ -1751,6 +1796,8 @@ func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, returnAPIError(err), warnings, closer}
 	}
 
+	results = applyLatestVersions(results, latestOnly)
+
 	// Sort for deterministic output.
 	slices.SortFunc(results, func(a, b ResourceAttributesResponse) int {
 		return labels.Compare(a.Labels, b.Labels)
@@ -1795,7 +1842,7 @@ func filterVersions(versions []*seriesmetadata.ResourceVersion, startMs, endMs i
 }
 
 // resourceAttributesAll returns all resource attributes without filtering by matchers.
-func (*API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, startMs, endMs int64, nextToken string) apiFuncResult {
+func (*API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, startMs, endMs int64, nextToken string, latestOnly bool) apiFuncResult {
 	var results []ResourceAttributesResponse
 	var warnings annotations.Annotations
 
@@ -1828,6 +1875,8 @@ func (*API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, startMs, 
 		warnings.Add(errMaxResultsReached)
 	}
 
+	results = applyLatestVersions(results, latestOnly)
+
 	// Sort for deterministic output.
 	slices.SortFunc(results, func(a, b ResourceAttributesResponse) int {
 		return labels.Compare(a.Labels, b.Labels)
@@ -1851,9 +1900,10 @@ func (*API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, startMs, 
 }
 
 // resourceAttributePairs returns all unique resource attribute names and their values.
-// Primarily intended for autocomplete in the UI.
+// Primarily intended for autocomplete and agent schema discovery.
 // Query parameters:
-//   - translate: if "true", translates OTel attribute names to Prometheus label names
+//   - translate: if "true", translates OTel attribute names to Prometheus label names (flat map keys)
+//   - verbose: if "1"/"true", returns role + otel_name + prom_name + values per key (additive; default stays flat map)
 //   - match[]: if provided, only returns attributes from resources associated with matching series
 func (api *API) resourceAttributePairs(r *http.Request) apiFuncResult {
 	if api.db == nil {
@@ -1867,11 +1917,12 @@ func (api *API) resourceAttributePairs(r *http.Request) apiFuncResult {
 	defer mr.Close()
 
 	// Check if translation is requested
-	translate := r.FormValue("translate") == "true"
+	translate := r.FormValue("translate") == "true" || r.FormValue("translate") == "1"
+	verbose := r.FormValue("verbose") == "1" || strings.EqualFold(r.FormValue("verbose"), "true")
 
-	// Build label namer for translation if needed
+	// Build label namer for translation / prom_name in verbose mode
 	var labelNamer *otlptranslator.LabelNamer
-	if translate {
+	if translate || verbose {
 		cfg := api.config()
 		allowUTF8 := cfg.GlobalConfig.MetricNameValidationScheme == model.UTF8Validation
 		labelNamer = &otlptranslator.LabelNamer{
@@ -1925,8 +1976,21 @@ func (api *API) resourceAttributePairs(r *http.Request) apiFuncResult {
 		}
 	}
 
-	// Collect unique label names and their values
-	labelValues := make(map[string]map[string]struct{})
+	// Collect unique attribute names and values (OTel names + role).
+	type attrAcc struct {
+		role   string
+		values map[string]struct{}
+	}
+	attrs := make(map[string]*attrAcc) // key = otel name
+
+	add := func(role, name, value string) {
+		a := attrs[name]
+		if a == nil {
+			a = &attrAcc{role: role, values: make(map[string]struct{})}
+			attrs[name] = a
+		}
+		a.values[value] = struct{}{}
+	}
 
 	err = mr.IterVersionedResources(r.Context(), func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
 		// If we have a filter, only process resources for matching series
@@ -1937,36 +2001,11 @@ func (api *API) resourceAttributePairs(r *http.Request) apiFuncResult {
 		}
 
 		for _, version := range resources.Versions {
-			// Process identifying attributes
 			for name, value := range version.Identifying {
-				labelName := name
-				if translate && labelNamer != nil {
-					var err error
-					labelName, err = labelNamer.Build(name)
-					if err != nil {
-						continue // Skip attributes that can't be translated
-					}
-				}
-				if labelValues[labelName] == nil {
-					labelValues[labelName] = make(map[string]struct{})
-				}
-				labelValues[labelName][value] = struct{}{}
+				add("identifying", name, value)
 			}
-
-			// Process descriptive attributes
 			for name, value := range version.Descriptive {
-				labelName := name
-				if translate && labelNamer != nil {
-					var err error
-					labelName, err = labelNamer.Build(name)
-					if err != nil {
-						continue // Skip attributes that can't be translated
-					}
-				}
-				if labelValues[labelName] == nil {
-					labelValues[labelName] = make(map[string]struct{})
-				}
-				labelValues[labelName][value] = struct{}{}
+				add("descriptive", name, value)
 			}
 		}
 		return nil
@@ -1975,17 +2014,249 @@ func (api *API) resourceAttributePairs(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resources: %w", err)}, nil, nil}
 	}
 
-	result := make(map[string][]string, len(labelValues))
-	for name, values := range labelValues {
-		valueList := make([]string, 0, len(values))
-		for v := range values {
+	if verbose {
+		result := make(map[string]ResourceAttributeKeyInfo, len(attrs))
+		for otelName, acc := range attrs {
+			valueList := make([]string, 0, len(acc.values))
+			for v := range acc.values {
+				valueList = append(valueList, v)
+			}
+			slices.Sort(valueList)
+			info := ResourceAttributeKeyInfo{
+				Role:     acc.role,
+				OtelName: otelName,
+				Values:   valueList,
+			}
+			if labelNamer != nil {
+				if pn, err := labelNamer.Build(otelName); err == nil {
+					info.PromName = pn
+				}
+			}
+			// Key by otel name (stable); clients use otel_name / prom_name fields.
+			result[otelName] = info
+		}
+		return apiFuncResult{result, nil, nil, nil}
+	}
+
+	// Default flat map (backward compatible): name -> values.
+	// When translate=true, keys are Prometheus label names.
+	result := make(map[string][]string, len(attrs))
+	for otelName, acc := range attrs {
+		key := otelName
+		if translate && labelNamer != nil {
+			pn, err := labelNamer.Build(otelName)
+			if err != nil {
+				continue
+			}
+			key = pn
+		}
+		valueList := make([]string, 0, len(acc.values))
+		for v := range acc.values {
 			valueList = append(valueList, v)
 		}
 		slices.Sort(valueList)
-		result[name] = valueList
+		// Merge if translate collides (unlikely).
+		if existing, ok := result[key]; ok {
+			seen := make(map[string]struct{}, len(existing)+len(valueList))
+			for _, v := range existing {
+				seen[v] = struct{}{}
+			}
+			for _, v := range valueList {
+				seen[v] = struct{}{}
+			}
+			merged := make([]string, 0, len(seen))
+			for v := range seen {
+				merged = append(merged, v)
+			}
+			slices.Sort(merged)
+			result[key] = merged
+			continue
+		}
+		result[key] = valueList
 	}
 
 	return apiFuncResult{result, nil, nil, nil}
+}
+
+// resourceAttributesDiff returns per-series resource attribute changes between
+// the version active at time T and the immediately previous version.
+// Query parameters:
+//   - match[] (required): series selectors
+//   - time: evaluation instant (default now)
+func (api *API) resourceAttributesDiff(r *http.Request) (result apiFuncResult) {
+	if !api.enableNativeMetadata {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("native metadata is disabled; enable with --enable-feature=native-metadata")}, nil, nil}
+	}
+	if api.db == nil {
+		return apiFuncResult{nil, &apiError{errorInternal, errors.New("TSDB not available")}, nil, nil}
+	}
+	if err := r.ParseForm(); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
+	}
+	if len(r.Form["match[]"]) == 0 {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("at least one match[] is required")}, nil, nil}
+	}
+	matcherSets, err := api.parseMatchersParam(r.Form["match[]"])
+	if err != nil {
+		return invalidParamError(err, "match[]")
+	}
+
+	ts, err := parseTimeParam(r, "time", api.now())
+	if err != nil {
+		return invalidParamError(err, "time")
+	}
+	tsMs := timestamp.FromTime(ts)
+
+	mr, err := api.db.SeriesMetadata()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to get series metadata: %w", err)}, nil, nil}
+	}
+	defer mr.Close()
+
+	ctx := r.Context()
+	// Select series over a wide range so presence does not require a sample at
+	// the exact evaluation instant; version choice still uses tsMs.
+	selStart := timestamp.FromTime(MinTime)
+	selEnd := timestamp.FromTime(MaxTime)
+	q, err := api.Queryable.Querier(selStart, selEnd)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+	defer q.Close()
+
+	hints := &storage.SelectHints{Start: selStart, End: selEnd, Func: "series"}
+	var set storage.SeriesSet
+	if len(matcherSets) > 1 {
+		var sets []storage.SeriesSet
+		for _, mset := range matcherSets {
+			sets = append(sets, q.Select(ctx, true, hints, mset...))
+		}
+		set = storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
+	} else {
+		set = q.Select(ctx, false, hints, matcherSets[0]...)
+	}
+
+	var results []ResourceAttributesDiffEntry
+	warnings := set.Warnings()
+	for set.Next() {
+		lset := set.At().Labels()
+		hash := labels.StableHash(lset)
+		versioned, ok := mr.GetVersionedResource(hash)
+		if !ok || len(versioned.Versions) == 0 {
+			continue
+		}
+		// Order versions by MinTime ascending for previous/next selection.
+		vers := append([]*seriesmetadata.ResourceVersion(nil), versioned.Versions...)
+		slices.SortFunc(vers, func(a, b *seriesmetadata.ResourceVersion) int {
+			if a.MinTime < b.MinTime {
+				return -1
+			}
+			if a.MinTime > b.MinTime {
+				return 1
+			}
+			return 0
+		})
+
+		// Find version active at tsMs: MinTime <= ts <= MaxTime, else last with MinTime <= ts.
+		idx := -1
+		for i, v := range vers {
+			if v.MinTime <= tsMs && tsMs <= v.MaxTime {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			for i, v := range vers {
+				if v.MinTime <= tsMs {
+					idx = i
+				}
+			}
+		}
+		if idx < 0 {
+			continue
+		}
+		afterRV := vers[idx]
+		var beforeRV *seriesmetadata.ResourceVersion
+		if idx > 0 {
+			beforeRV = vers[idx-1]
+		}
+
+		entry := ResourceAttributesDiffEntry{
+			Labels: lset,
+			After: &ResourceAttributeVersion{
+				Attributes: ResourceAttributeData{
+					Identifying: afterRV.Identifying,
+					Descriptive: afterRV.Descriptive,
+				},
+				MinTimeMs: afterRV.MinTime,
+				MaxTimeMs: afterRV.MaxTime,
+			},
+			Changed: ResourceAttributeData{
+				Identifying: map[string]string{},
+				Descriptive: map[string]string{},
+			},
+		}
+		if beforeRV != nil {
+			entry.Before = &ResourceAttributeVersion{
+				Attributes: ResourceAttributeData{
+					Identifying: beforeRV.Identifying,
+					Descriptive: beforeRV.Descriptive,
+				},
+				MinTimeMs: beforeRV.MinTime,
+				MaxTimeMs: beforeRV.MaxTime,
+			}
+			entry.Changed.Identifying = diffStringMap(beforeRV.Identifying, afterRV.Identifying)
+			entry.Changed.Descriptive = diffStringMap(beforeRV.Descriptive, afterRV.Descriptive)
+		} else {
+			// First version: report all after attrs as changed (from empty).
+			for k, v := range afterRV.Identifying {
+				entry.Changed.Identifying[k] = v
+			}
+			for k, v := range afterRV.Descriptive {
+				entry.Changed.Descriptive[k] = v
+			}
+		}
+		// Skip no-op diffs when a previous version exists and nothing changed.
+		if beforeRV != nil && len(entry.Changed.Identifying) == 0 && len(entry.Changed.Descriptive) == 0 {
+			continue
+		}
+		results = append(results, entry)
+	}
+	if err := set.Err(); err != nil {
+		return apiFuncResult{nil, returnAPIError(err), warnings, nil}
+	}
+	if results == nil {
+		results = []ResourceAttributesDiffEntry{}
+	}
+	slices.SortFunc(results, func(a, b ResourceAttributesDiffEntry) int {
+		return labels.Compare(a.Labels, b.Labels)
+	})
+	return apiFuncResult{&ResourceAttributesDiffResponse{Results: results}, nil, warnings, nil}
+}
+
+// diffStringMap returns keys whose values differ or were added/removed.
+// Removed keys are encoded as empty string values; added/changed use the new value.
+// For agent clarity we encode "from->to" when both exist and differ.
+func diffStringMap(before, after map[string]string) map[string]string {
+	out := make(map[string]string)
+	seen := make(map[string]struct{})
+	for k, av := range after {
+		seen[k] = struct{}{}
+		bv, ok := before[k]
+		if !ok {
+			out[k] = av // added
+			continue
+		}
+		if bv != av {
+			out[k] = bv + "->" + av
+		}
+	}
+	for k := range before {
+		if _, ok := seen[k]; !ok {
+			out[k] = before[k] + "->" // removed
+		}
+	}
+	return out
 }
 
 // parseAttrFilter parses "key:value" into key, value.
