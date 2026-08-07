@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -37,6 +38,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -118,6 +120,12 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser
 		groupOrderMap[gn] = i
 	}
 
+	// Read each rule file only once and share the result across all test
+	// groups. A rule file may be a non-seekable input such as /dev/stdin, which
+	// yields EOF on its second read; re-reading it per test group would make
+	// every group after the first see an empty file.
+	groupLoader := newCachingGroupLoader(fileGroupLoader{parser: p, logger: promslog.NewNopLogger()})
+
 	// Testing.
 	var errs []error
 	for i, t := range unitTestInp.Tests {
@@ -133,6 +141,7 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser
 			t.Interval = unitTestInp.EvaluationInterval
 		}
 		t.parser = p
+		t.groupLoader = groupLoader
 		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, unitTestInp.FuzzyCompare, unitTestInp.RuleFiles...)
 		if ers != nil {
 			for _, e := range ers {
@@ -189,6 +198,54 @@ func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
 	return nil
 }
 
+// fileGroupLoader loads rule groups from files. It mirrors rules.FileLoader,
+// whose fields are unexported and so cannot be constructed from this package.
+type fileGroupLoader struct {
+	parser parser.Parser
+	logger *slog.Logger
+}
+
+func (l fileGroupLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme, l.parser, l.logger)
+}
+
+func (l fileGroupLoader) Parse(query string) (parser.Expr, error) {
+	return l.parser.ParseExpr(query)
+}
+
+// cachingGroupLoader wraps a rules.GroupLoader and memoizes each identifier's
+// result, so a rule file referenced by multiple test groups is read only once.
+// This matters for non-seekable inputs such as /dev/stdin, which yield EOF on
+// their second read and would otherwise appear empty to every group after the
+// first.
+type cachingGroupLoader struct {
+	loader rules.GroupLoader
+	cache  map[string]cachedRuleGroups
+}
+
+// cachedRuleGroups is the memoized result of loading a single rule file.
+type cachedRuleGroups struct {
+	groups *rulefmt.RuleGroups
+	errs   []error
+}
+
+func newCachingGroupLoader(loader rules.GroupLoader) *cachingGroupLoader {
+	return &cachingGroupLoader{loader: loader, cache: make(map[string]cachedRuleGroups)}
+}
+
+func (c *cachingGroupLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+	if cached, ok := c.cache[identifier]; ok {
+		return cached.groups, cached.errs
+	}
+	groups, errs := c.loader.Load(identifier, ignoreUnknownFields, nameValidationScheme)
+	c.cache[identifier] = cachedRuleGroups{groups: groups, errs: errs}
+	return groups, errs
+}
+
+func (c *cachingGroupLoader) Parse(query string) (parser.Expr, error) {
+	return c.loader.Parse(query)
+}
+
 // testStartTimestamp wraps time.Time to support custom YAML unmarshaling.
 // It can parse both RFC3339 timestamps and Unix timestamps.
 type testStartTimestamp struct {
@@ -221,7 +278,8 @@ type testGroup struct {
 	TestGroupName   string             `yaml:"name,omitempty"`
 	StartTimestamp  testStartTimestamp `yaml:"start_timestamp,omitempty"`
 
-	parser parser.Parser `yaml:"-"`
+	parser      parser.Parser     `yaml:"-"`
+	groupLoader rules.GroupLoader `yaml:"-"`
 }
 
 // test performs the unit tests.
@@ -250,12 +308,13 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 
 	// Load the rule files.
 	opts := &rules.ManagerOptions{
-		QueryFunc:  rules.EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
-		Appendable: suite.Storage(),
-		Context:    context.Background(),
-		NotifyFunc: func(context.Context, string, ...*rules.Alert) {},
-		Logger:     promslog.NewNopLogger(),
-		Parser:     tg.parser,
+		QueryFunc:   rules.EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+		Appendable:  suite.Storage(),
+		Context:     context.Background(),
+		NotifyFunc:  func(context.Context, string, ...*rules.Alert) {},
+		Logger:      promslog.NewNopLogger(),
+		Parser:      tg.parser,
+		GroupLoader: tg.groupLoader,
 	}
 	m := rules.NewManager(opts)
 	groupsMap, ers := m.LoadGroups(time.Duration(tg.Interval), tg.ExternalLabels, tg.ExternalURL, nil, ignoreUnknownFields, ruleFiles...)

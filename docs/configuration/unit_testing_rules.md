@@ -17,6 +17,8 @@ You can use `promtool` to test your rules.
 
 ```yaml
 # This is a list of rule files to consider for testing. Globs are supported.
+# Each rule file is read only once, so a non-seekable input such as /dev/stdin
+# can be used even when it is referenced by multiple test groups.
 rule_files:
   [ - <file_name> ]
 
