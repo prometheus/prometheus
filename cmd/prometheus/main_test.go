@@ -704,9 +704,6 @@ func TestModeSpecificFlags(t *testing.T) {
 }
 
 func TestDocumentation(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.SkipNow()
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -719,12 +716,17 @@ func TestDocumentation(t *testing.T) {
 
 	require.NoError(t, cmd.Run(), "failed to generate CLI documentation via --write-documentation")
 
-	generatedContent := strings.ReplaceAll(stdout.String(), filepath.Base(promPath), strings.TrimSuffix(filepath.Base(promPath), ".test"))
+	appTitle := strings.TrimSuffix(filepath.Base(promPath), ".test")
+	if runtime.GOOS == "windows" {
+		appTitle = strings.TrimSuffix(appTitle, ".test.exe")
+	}
+
+	generatedContent := strings.ReplaceAll(stdout.String(), filepath.Base(promPath), appTitle)
 
 	expectedContent, err := os.ReadFile(filepath.Join("..", "..", "docs", "command-line", "prometheus.md"))
 	require.NoError(t, err)
 
-	require.Equal(t, string(expectedContent), generatedContent, "Generated content does not match documentation. Hint: run `make cli-documentation`.")
+	require.Equal(t, strings.ReplaceAll(string(expectedContent), "\r\n", "\n"), generatedContent, "Generated content does not match documentation. Hint: run `make cli-documentation`.")
 }
 
 func TestRwProtoMsgFlagParser(t *testing.T) {
@@ -1216,9 +1218,6 @@ remote_write:
 // TestFeatureFlagsDocumented ensures the --enable-feature help text in main.go
 // and the documented flags in docs/feature_flags.md list the same set of flags.
 func TestFeatureFlagsDocumented(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.SkipNow()
-	}
 	h, err := os.ReadFile(filepath.Join("..", "..", "cmd", "prometheus", "main.go"))
 	require.NoError(t, err)
 	m := regexp.MustCompile(`a\.Flag\("enable-feature", "Comma separated feature names to enable. Valid options: (.+?)\.`).FindSubmatch(h)
@@ -1230,6 +1229,10 @@ func TestFeatureFlagsDocumented(t *testing.T) {
 	require.NotEmpty(t, helpFlags)
 
 	d, err := os.ReadFile(filepath.Join("..", "..", "docs", "feature_flags.md"))
+	if runtime.GOOS == "windows" {
+		d = bytes.ReplaceAll(d, []byte("\r\n"), []byte("\n"))
+	}
+
 	require.NoError(t, err)
 	var docFlags []string
 	for _, dm := range regexp.MustCompile("(?m)^`--enable-feature=(.+)`$").FindAllSubmatch(d, -1) {
