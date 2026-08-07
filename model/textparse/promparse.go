@@ -232,8 +232,9 @@ func (p *PromParser) Labels(l *labels.Labels) {
 	// Defensive copy in case the following keeps a reference.
 	// See https://github.com/prometheus/prometheus/issues/16490
 	s := string(p.series)
+	u := newUnescaper(s)
 	p.builder.Reset()
-	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
+	metricName := u.unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
 
 	m := schema.Metadata{
 		Name: metricName,
@@ -251,14 +252,14 @@ func (p *PromParser) Labels(l *labels.Labels) {
 	for i := 2; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
 		b := p.offsets[i+1] - p.start
-		label := unreplace(s[a:b])
+		label := u.unreplace(s[a:b])
 		if p.enableTypeAndUnitLabels && !m.IsEmptyFor(label) {
 			// Dropping user provided metadata labels, if found in the OM metadata.
 			continue
 		}
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
-		value := normalizeFloatsInLabelValues(p.mtype, label, unreplace(s[c:d]))
+		value := normalizeFloatsInLabelValues(p.mtype, label, u.unreplace(s[c:d]))
 		p.builder.Add(label, value)
 	}
 
@@ -508,12 +509,25 @@ var helpReplacer = strings.NewReplacer(
 	`\n`, "\n",
 )
 
-func unreplace(s string) string {
+// unescaper resolves the escape sequences of the names and values of one
+// exposition line. Escape sequences are rare, so it decides once for the whole
+// line whether there is anything to do: a single scan of the line is cheaper
+// than a scan of every name and value on it.
+type unescaper bool
+
+// newUnescaper returns an unescaper for the exposition line s.
+func newUnescaper(s string) unescaper {
+	return unescaper(strings.IndexByte(s, '\\') >= 0)
+}
+
+// unreplace returns s with its escape sequences resolved. s must be a substring
+// of the line the unescaper was built from.
+func (u unescaper) unreplace(s string) string {
 	// Replacer causes allocations. Replace only when necessary.
-	if strings.IndexByte(s, byte('\\')) >= 0 {
-		return lvalReplacer.Replace(s)
+	if !u {
+		return s
 	}
-	return s
+	return lvalReplacer.Replace(s)
 }
 
 func yoloString(b []byte) string {
