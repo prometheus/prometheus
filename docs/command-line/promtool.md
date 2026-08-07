@@ -12,7 +12,7 @@ Tooling for the Prometheus monitoring system.
 | <code class="text-nowrap">-h</code>, <code class="text-nowrap">--help</code> | Show context-sensitive help (also try --help-long and --help-man). |
 | <code class="text-nowrap">--version</code> | Show application version. |
 | <code class="text-nowrap">--experimental</code> | Enable experimental commands. |
-| <code class="text-nowrap">--enable-feature</code> <code class="text-nowrap">...</code> | Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal, promql-duration-expr, promql-extended-range-selectors. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details |
+| <code class="text-nowrap">--enable-feature</code> <code class="text-nowrap">...</code> | Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal, promql-extended-range-selectors. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details |
 
 
 
@@ -435,6 +435,7 @@ Push metrics to a prometheus remote write (for testing purpose only).
 | <code class="text-nowrap">--timeout</code> | The time to wait for pushing metrics. | `30s` |
 | <code class="text-nowrap">--header</code> | Prometheus remote write header. |  |
 | <code class="text-nowrap">--protobuf_message</code> | Protobuf message to use when writing (prometheus.WriteRequest or io.prometheus.write.v2.Request). | `prometheus.WriteRequest` |
+| <code class="text-nowrap">--remote-write.path</code> | Override the default remote write API path. | `/api/v1/write` |
 
 
 

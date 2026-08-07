@@ -15,9 +15,11 @@ package promql_test
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -25,6 +27,9 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	storage2 "github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -79,5 +84,67 @@ func TestFunctionList(t *testing.T) {
 	for i := range parser.Functions {
 		_, ok := promql.FunctionCalls[i]
 		require.True(t, ok, "function %s exists in parser package, but not in promql package", i)
+	}
+}
+
+func TestStartTimestampOutputWhenUseStartTimestampIsDisabled(t *testing.T) {
+	storage := teststorage.New(t, func(opts *tsdb.Options) {
+		opts.XOR2EncodingAllowed = true
+		opts.FloatChunkEncoding = chunkenc.EncXOR2
+		opts.EnableSTStorage = true
+	})
+
+	a := storage.AppenderV2(t.Context())
+
+	for i := range int64(5) {
+		inputLabel := labels.FromStrings(model.MetricNameLabel, "some_series", "case", strconv.Itoa(int(i)))
+		var (
+			ts = i * 1000
+			st = ts - i*100
+		)
+		_, err := a.Append(0, inputLabel, st, ts, 0, nil, nil, storage2.AppendV2Options{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, a.Commit())
+
+	tests := []struct {
+		name               string
+		useStartTimestamps bool
+		expected           []float64
+	}{
+		{
+			name:               "use-start-timestamps enabled",
+			useStartTimestamps: true,
+			expected:           []float64{0, 0.9, 1.8, 2.7, 3.6},
+		},
+		{
+			name:               "use-start-timestamps disabled",
+			useStartTimestamps: false,
+			expected:           []float64{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := promql.EngineOpts{
+				MaxSamples:         10000,
+				Timeout:            10 * time.Second,
+				UseStartTimestamps: tt.useStartTimestamps,
+				Parser:             parser.NewParser(promqltest.TestParserOpts),
+			}
+			engine := promqltest.NewTestEngineWithOpts(t, opts)
+
+			query, err := engine.NewInstantQuery(t.Context(), storage, nil, "start_timestamp(some_series)", timestamp.Time(5000))
+			require.NoError(t, err)
+
+			result := query.Exec(t.Context())
+			require.NoError(t, result.Err)
+
+			vec, _ := result.Vector()
+			require.Len(t, vec, len(tt.expected), "Unexpected number of results, got %d", len(vec))
+			for i := range tt.expected {
+				require.Equal(t, tt.expected[i], vec[i].F, "At index %d", i)
+			}
+		})
 	}
 }

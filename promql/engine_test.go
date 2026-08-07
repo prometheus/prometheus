@@ -59,7 +59,8 @@ func TestMain(m *testing.M) {
 func TestQueryConcurrency(t *testing.T) {
 	maxConcurrency := 10
 
-	queryTracker := promql.NewActiveQueryTracker(t.TempDir(), maxConcurrency, nil)
+	queryTracker, err := promql.NewActiveQueryTracker(t.TempDir(), maxConcurrency, nil)
+	require.NoError(t, err)
 	opts := promql.EngineOpts{
 		Logger:             nil,
 		Reg:                nil,
@@ -2863,8 +2864,8 @@ func getLogLines(t *testing.T, name string) []string {
 	require.NoError(t, err)
 
 	lines := strings.Split(string(content), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if lines[i] == "" {
+	for i, v := range slices.Backward(lines) {
+		if v == "" {
 			lines = append(lines[:i], lines[i+1:]...)
 		}
 	}
@@ -3419,56 +3420,52 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 		},
 		{
 			input: `foo{bar="baz"}[10m:6s] @ 10`,
-			expected: &parser.StepInvariantExpr{
-				Expr: &parser.SubqueryExpr{
-					Expr: &parser.VectorSelector{
-						Name: "foo",
-						LabelMatchers: []*labels.Matcher{
-							parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
-							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
-						},
-						PosRange: posrange.PositionRange{
-							Start: 0,
-							End:   14,
-						},
+			expected: &parser.SubqueryExpr{
+				Expr: &parser.VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 					},
-					Range:     10 * time.Minute,
-					Step:      6 * time.Second,
-					Timestamp: makeInt64Pointer(10000),
-					EndPos:    27,
+					PosRange: posrange.PositionRange{
+						Start: 0,
+						End:   14,
+					},
 				},
+				Range:     10 * time.Minute,
+				Step:      6 * time.Second,
+				Timestamp: makeInt64Pointer(10000),
+				EndPos:    27,
 			},
 		},
 		{ // Even though the subquery is step invariant, the inside is also wrapped separately.
 			input: `sum(foo{bar="baz"} @ 20)[10m:6s] @ 10`,
-			expected: &parser.StepInvariantExpr{
-				Expr: &parser.SubqueryExpr{
-					Expr: &parser.StepInvariantExpr{
-						Expr: &parser.AggregateExpr{
-							Op: parser.SUM,
-							Expr: &parser.VectorSelector{
-								Name: "foo",
-								LabelMatchers: []*labels.Matcher{
-									parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
-									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
-								},
-								PosRange: posrange.PositionRange{
-									Start: 4,
-									End:   23,
-								},
-								Timestamp: makeInt64Pointer(20000),
+			expected: &parser.SubqueryExpr{
+				Expr: &parser.StepInvariantExpr{
+					Expr: &parser.AggregateExpr{
+						Op: parser.SUM,
+						Expr: &parser.VectorSelector{
+							Name: "foo",
+							LabelMatchers: []*labels.Matcher{
+								parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 							},
 							PosRange: posrange.PositionRange{
-								Start: 0,
-								End:   24,
+								Start: 4,
+								End:   23,
 							},
+							Timestamp: makeInt64Pointer(20000),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 0,
+							End:   24,
 						},
 					},
-					Range:     10 * time.Minute,
-					Step:      6 * time.Second,
-					Timestamp: makeInt64Pointer(10000),
-					EndPos:    37,
 				},
+				Range:     10 * time.Minute,
+				Step:      6 * time.Second,
+				Timestamp: makeInt64Pointer(10000),
+				EndPos:    37,
 			},
 		},
 		{
@@ -3543,70 +3540,66 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 		},
 		{
 			input: `some_metric[10m:5s] offset 1m @ 123`,
-			expected: &parser.StepInvariantExpr{
-				Expr: &parser.SubqueryExpr{
-					Expr: &parser.VectorSelector{
-						Name: "some_metric",
-						LabelMatchers: []*labels.Matcher{
-							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
-						},
-						PosRange: posrange.PositionRange{
-							Start: 0,
-							End:   11,
-						},
+			expected: &parser.SubqueryExpr{
+				Expr: &parser.VectorSelector{
+					Name: "some_metric",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 					},
-					Timestamp:      makeInt64Pointer(123000),
-					OriginalOffset: 1 * time.Minute,
-					Range:          10 * time.Minute,
-					Step:           5 * time.Second,
-					EndPos:         35,
+					PosRange: posrange.PositionRange{
+						Start: 0,
+						End:   11,
+					},
 				},
+				Timestamp:      makeInt64Pointer(123000),
+				OriginalOffset: 1 * time.Minute,
+				Range:          10 * time.Minute,
+				Step:           5 * time.Second,
+				EndPos:         35,
 			},
 		},
 		{
 			input: `(foo + bar{nm="val"} @ 1234)[5m:] @ 1603775019`,
-			expected: &parser.StepInvariantExpr{
-				Expr: &parser.SubqueryExpr{
-					Expr: &parser.ParenExpr{
-						Expr: &parser.BinaryExpr{
-							Op: parser.ADD,
-							VectorMatching: &parser.VectorMatching{
-								Card: parser.CardOneToOne,
+			expected: &parser.SubqueryExpr{
+				Expr: &parser.ParenExpr{
+					Expr: &parser.BinaryExpr{
+						Op: parser.ADD,
+						VectorMatching: &parser.VectorMatching{
+							Card: parser.CardOneToOne,
+						},
+						LHS: &parser.VectorSelector{
+							Name: "foo",
+							LabelMatchers: []*labels.Matcher{
+								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 							},
-							LHS: &parser.VectorSelector{
-								Name: "foo",
-								LabelMatchers: []*labels.Matcher{
-									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
-								},
-								PosRange: posrange.PositionRange{
-									Start: 1,
-									End:   4,
-								},
-							},
-							RHS: &parser.StepInvariantExpr{
-								Expr: &parser.VectorSelector{
-									Name: "bar",
-									LabelMatchers: []*labels.Matcher{
-										parser.MustLabelMatcher(labels.MatchEqual, "nm", "val"),
-										parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
-									},
-									Timestamp: makeInt64Pointer(1234000),
-									PosRange: posrange.PositionRange{
-										Start: 7,
-										End:   27,
-									},
-								},
+							PosRange: posrange.PositionRange{
+								Start: 1,
+								End:   4,
 							},
 						},
-						PosRange: posrange.PositionRange{
-							Start: 0,
-							End:   28,
+						RHS: &parser.StepInvariantExpr{
+							Expr: &parser.VectorSelector{
+								Name: "bar",
+								LabelMatchers: []*labels.Matcher{
+									parser.MustLabelMatcher(labels.MatchEqual, "nm", "val"),
+									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
+								},
+								Timestamp: makeInt64Pointer(1234000),
+								PosRange: posrange.PositionRange{
+									Start: 7,
+									End:   27,
+								},
+							},
 						},
 					},
-					Range:     5 * time.Minute,
-					Timestamp: makeInt64Pointer(1603775019000),
-					EndPos:    46,
+					PosRange: posrange.PositionRange{
+						Start: 0,
+						End:   28,
+					},
 				},
+				Range:     5 * time.Minute,
+				Timestamp: makeInt64Pointer(1603775019000),
+				EndPos:    46,
 			},
 		},
 		{
@@ -3785,46 +3778,42 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 		},
 		{
 			input: `some_metric[10m:5s] @ start()`,
-			expected: &parser.StepInvariantExpr{
-				Expr: &parser.SubqueryExpr{
-					Expr: &parser.VectorSelector{
-						Name: "some_metric",
-						LabelMatchers: []*labels.Matcher{
-							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
-						},
-						PosRange: posrange.PositionRange{
-							Start: 0,
-							End:   11,
-						},
+			expected: &parser.SubqueryExpr{
+				Expr: &parser.VectorSelector{
+					Name: "some_metric",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 					},
-					Timestamp:  makeInt64Pointer(timestamp.FromTime(startTime)),
-					StartOrEnd: parser.START,
-					Range:      10 * time.Minute,
-					Step:       5 * time.Second,
-					EndPos:     29,
+					PosRange: posrange.PositionRange{
+						Start: 0,
+						End:   11,
+					},
 				},
+				Timestamp:  makeInt64Pointer(timestamp.FromTime(startTime)),
+				StartOrEnd: parser.START,
+				Range:      10 * time.Minute,
+				Step:       5 * time.Second,
+				EndPos:     29,
 			},
 		},
 		{
 			input: `some_metric[10m:5s] @ end()`,
-			expected: &parser.StepInvariantExpr{
-				Expr: &parser.SubqueryExpr{
-					Expr: &parser.VectorSelector{
-						Name: "some_metric",
-						LabelMatchers: []*labels.Matcher{
-							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
-						},
-						PosRange: posrange.PositionRange{
-							Start: 0,
-							End:   11,
-						},
+			expected: &parser.SubqueryExpr{
+				Expr: &parser.VectorSelector{
+					Name: "some_metric",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 					},
-					Timestamp:  makeInt64Pointer(timestamp.FromTime(endTime)),
-					StartOrEnd: parser.END,
-					Range:      10 * time.Minute,
-					Step:       5 * time.Second,
-					EndPos:     27,
+					PosRange: posrange.PositionRange{
+						Start: 0,
+						End:   11,
+					},
 				},
+				Timestamp:  makeInt64Pointer(timestamp.FromTime(endTime)),
+				StartOrEnd: parser.END,
+				Range:      10 * time.Minute,
+				Step:       5 * time.Second,
+				EndPos:     27,
 			},
 		},
 		{
@@ -4623,26 +4612,26 @@ load 1m
 	nonmonotonic_bucket{le="+Inf"}  				0+8x10
 
 eval instant at 1m histogram_quantile(0.5, classic_histogram_invalid)
-	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of ""
+	expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)
 
 eval instant at 1m histogram_fraction(0.5, 1, conflicting_histogram)
-	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms
+	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms (1:28)
 
 eval instant at 1m histogram_quantile(0.5, nonmonotonic_bucket)
-	expect info msg: PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile)
+	expect info regex: PromQL info: input to histogram_quantile needed to be fixed for monotonicity .* \(1:25\)
 	{} 8.5
 
 eval instant at 1m histogram_quantile(1, histogram_nan)
-    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN (1:23)
     {case="100% NaNs"} NaN
     {case="20% NaNs"} NaN
 
 eval instant at 1m histogram_quantile(0.8, histogram_nan{case="20% NaNs"})
-    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher (1:25)
     {case="20% NaNs"} 1
 
 eval instant at 1m histogram_fraction(-Inf, 0.7071067811865475, histogram_nan)
-    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions
+    expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions (1:46)
     {case="100% NaNs"} 0.0
     {case="20% NaNs"} 0.4
 

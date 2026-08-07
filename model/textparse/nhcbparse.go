@@ -258,7 +258,8 @@ func (p *NHCBParser) differentMetric() bool {
 		// Different metric name.
 		return true
 	}
-	nextHash, _ := p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
+	nextHash, hBuffer := p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
+	p.hBuffer = hBuffer
 	// Different label values.
 	return p.lastHistogramLabelsHash != nextHash
 }
@@ -266,12 +267,12 @@ func (p *NHCBParser) differentMetric() bool {
 // Save the label set of the classic histogram without suffix and bucket `le` label.
 func (p *NHCBParser) storeClassicLabels(name string) {
 	p.lastHistogramName = name
-	p.lastHistogramLabelsHash, _ = p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
+	p.lastHistogramLabelsHash, p.hBuffer = p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
 }
 
 func (p *NHCBParser) storeExponentialLabels() {
 	p.lastHistogramName = p.lset.Get(labels.MetricName)
-	p.lastHistogramLabelsHash, _ = p.lset.HashWithoutLabels(p.hBuffer)
+	p.lastHistogramLabelsHash, p.hBuffer = p.lset.HashWithoutLabels(p.hBuffer)
 }
 
 // handleClassicHistogramSeries collates the classic histogram series to be converted to NHCB

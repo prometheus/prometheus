@@ -1,3 +1,6 @@
+###
+# This action is synced from https://github.com/prometheus/prometheus
+###
 name: Stale Check
 on:
   workflow_dispatch: {}

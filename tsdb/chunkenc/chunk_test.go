@@ -149,6 +149,14 @@ func TestPool(t *testing.T) {
 			encoding: EncXOR2,
 		},
 		{
+			name:     "histogram st",
+			encoding: EncHistogramST,
+		},
+		{
+			name:     "float histogram st",
+			encoding: EncFloatHistogramST,
+		},
+		{
 			name:     "invalid encoding",
 			encoding: EncNone,
 			expErr:   errors.New(`invalid chunk encoding "none"`),
@@ -171,6 +179,10 @@ func TestPool(t *testing.T) {
 				b = &c.(*FloatHistogramChunk).b
 			case EncXOR2:
 				b = &c.(*XOR2Chunk).b
+			case EncHistogramST:
+				b = &c.(*HistogramSTChunk).b
+			case EncFloatHistogramST:
+				b = &c.(*FloatHistogramSTChunk).b
 			default:
 				b = &c.(*XORChunk).b
 			}

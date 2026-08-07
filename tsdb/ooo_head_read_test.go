@@ -17,6 +17,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
+	"runtime"
 	"slices"
 	"sort"
 	"testing"
@@ -1223,4 +1225,45 @@ func TestHeadAndOOOQuerierSearch(t *testing.T) {
 		require.False(t, rs.Next())
 		require.NoError(t, rs.Close())
 	})
+}
+
+// TestNewOOOCompactionHead_panicReleasesLock is a regression test for
+// https://github.com/prometheus/prometheus/issues/17941: if mmapCurrentOOOHeadChunk
+// panics (via handleChunkWriteError) while NewOOOCompactionHead holds the series
+// lock, that lock must still be released so head shutdown does not deadlock.
+func TestNewOOOCompactionHead_panicReleasesLock(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("forces a chunk-write failure by removing the open chunk directory, which Windows disallows while the ChunkDiskMapper holds the directory handle")
+	}
+
+	h, _ := newTestHead(t, DefaultBlockDuration, compression.None, true /* oooEnabled */)
+	require.NoError(t, h.Init(0))
+
+	lbls := labels.FromStrings("__name__", "series")
+	app := h.Appender(t.Context())
+	inOrderTs := 60 * time.Minute.Milliseconds()
+	_, err := app.Append(0, lbls, inOrderTs, 0)
+	require.NoError(t, err)
+	// An out-of-order sample within the OOO window creates an OOO head chunk.
+	_, err = app.Append(0, lbls, inOrderTs-5*time.Minute.Milliseconds(), 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	s := h.series.getByHash(lbls.Hash(), lbls)
+	require.NotNil(t, s)
+	require.NotNil(t, s.ooo, "expected an OOO head chunk")
+
+	// Removing the chunk directory makes mmapCurrentOOOHeadChunk's segment cut
+	// fail, so handleChunkWriteError panics while the series lock is held.
+	require.NoError(t, os.RemoveAll(mmappedChunksDir(h.opts.ChunkDirRoot)))
+	// newTestHead's cleanup calls Head.Close() -> mmapHeadChunks(); closing the
+	// mapper first makes WriteChunk return ErrChunkDiskMapperClosed (which
+	// handleChunkWriteError does not panic on), so shutdown stays clean. Cleanups
+	// run LIFO, so this runs before Head.Close().
+	t.Cleanup(func() { _ = h.chunkDiskMapper.Close() })
+
+	require.Panics(t, func() { _, _ = NewOOOCompactionHead(t.Context(), h) })
+
+	require.True(t, s.TryLock(), "series lock leaked after panic")
+	s.Unlock()
 }

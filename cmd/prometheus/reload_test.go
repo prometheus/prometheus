@@ -188,7 +188,7 @@ func verifyConfigReloadMetric(t *testing.T, baseURL string, expectedValue float6
 	return found && actualValue == expectedValue
 }
 
-func captureLogsToTLog(t *testing.T, r io.Reader) {
+func captureLogsToTLog(t testing.TB, r io.Reader) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		t.Log(scanner.Text())
@@ -198,7 +198,7 @@ func captureLogsToTLog(t *testing.T, r io.Reader) {
 	}
 }
 
-func commandWithLogging(t *testing.T, logProcessor func(*testing.T, io.Reader), name string, args ...string) *exec.Cmd {
+func commandWithLogging(t testing.TB, logProcessor func(testing.TB, io.Reader), name string, args ...string) *exec.Cmd {
 	if logProcessor == nil {
 		logProcessor = captureLogsToTLog
 	}
@@ -232,7 +232,7 @@ func commandWithLogging(t *testing.T, logProcessor func(*testing.T, io.Reader), 
 	return cmd
 }
 
-func prometheusCommandWithLogging(t *testing.T, configFilePath string, port int, extraArgs ...string) *exec.Cmd {
+func prometheusCommandWithLogging(t testing.TB, configFilePath string, port int, extraArgs ...string) *exec.Cmd {
 	args := []string{
 		"-test.main",
 		"--config.file=" + configFilePath,

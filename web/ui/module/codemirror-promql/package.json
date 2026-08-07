@@ -1,6 +1,6 @@
 {
   "name": "@prometheus-io/codemirror-promql",
-  "version": "0.312.0",
+  "version": "0.313.2",
   "description": "a CodeMirror mode for the PromQL language",
   "types": "dist/esm/index.d.ts",
   "module": "dist/esm/index.js",
@@ -30,27 +30,27 @@
   "homepage": "https://github.com/prometheus/prometheus/blob/main/web/ui/module/codemirror-promql/README.md",
   "dependencies": {
     "@prometheus-io/lezer-promql": "workspace:*",
-    "lru-cache": "^11.5.1"
+    "lru-cache": "^11.5.2"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "^6.20.3",
-    "@eslint/compat": "^1.4.1",
-    "@eslint/eslintrc": "^3.3.5",
-    "@eslint/js": "^9.39.4",
-    "@typescript-eslint/eslint-plugin": "^8.61.0",
-    "@typescript-eslint/parser": "^8.61.0",
-    "eslint": "^9.39.4",
-    "@codemirror/language": "^6.12.3",
+    "@codemirror/language": "^6.12.4",
     "@codemirror/lint": "^6.9.7",
-    "@codemirror/state": "^6.6.0",
-    "@codemirror/view": "^6.43.1",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.6",
+    "@eslint/compat": "^1.4.1",
+    "@eslint/eslintrc": "^3.3.6",
+    "@eslint/js": "^9.39.5",
     "@lezer/common": "^1.5.2",
     "@lezer/highlight": "^1.2.3",
     "@lezer/lr": "^1.4.10",
+    "@typescript-eslint/eslint-plugin": "^8.65.0",
+    "@typescript-eslint/parser": "^8.65.0",
+    "eslint": "^9.39.5",
     "eslint-plugin-prettier": "^5.5.6",
     "isomorphic-fetch": "^3.0.0",
     "jest": "^30.4.2",
-    "nock": "^14.0.15"
+    "nock": "^14.0.16"
   },
   "peerDependencies": {
     "@codemirror/autocomplete": "^6.4.0",

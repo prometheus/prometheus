@@ -96,7 +96,7 @@ paths:
                         value: "300"
                 - name: stats
                   in: query
-                  description: When provided, include query statistics in the response. The special value 'all' enables more comprehensive statistics.
+                  description: 'Include query statistics in the response. Supported values: ''true'' (basic statistics) and ''all'' (basic plus per-step statistics). Other non-empty values are deprecated (they behave like ''true'') and will be rejected in the next major release.'
                   required: false
                   explode: false
                   schema:
@@ -329,7 +329,7 @@ paths:
                         value: "300"
                 - name: stats
                   in: query
-                  description: When provided, include query statistics in the response. The special value 'all' enables more comprehensive statistics.
+                  description: 'Include query statistics in the response. Supported values: ''true'' (basic statistics) and ''all'' (basic plus per-step statistics). Other non-empty values are deprecated (they behave like ''true'') and will be rejected in the next major release.'
                   required: false
                   explode: false
                   schema:

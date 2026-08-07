@@ -1100,7 +1100,7 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 			},
 		},
 		{
-			name: "StandaloneTaskNoService",
+			name: "StandaloneTaskWithCustomGroup",
 			ecsData: &ecsDataStore{
 				region: "us-west-2",
 				clusters: []ecsTypes.Cluster{
@@ -1116,7 +1116,7 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 						TaskArn:           strptr("arn:aws:ecs:us-west-2:123456789012:task/standalone-cluster/task-standalone"),
 						ClusterArn:        strptr("arn:aws:ecs:us-west-2:123456789012:cluster/standalone-cluster"),
 						TaskDefinitionArn: strptr("arn:aws:ecs:us-west-2:123456789012:task-definition/standalone-task:1"),
-						Group:             strptr("family:standalone-task"),
+						Group:             strptr("batch-jobs"),
 						LaunchType:        ecsTypes.LaunchTypeFargate,
 						LastStatus:        strptr("RUNNING"),
 						DesiredStatus:     strptr("RUNNING"),
@@ -1149,7 +1149,7 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 							model.AddressLabel:             model.LabelValue("10.0.4.10:80"),
 							"__meta_ecs_cluster":           model.LabelValue("standalone-cluster"),
 							"__meta_ecs_cluster_arn":       model.LabelValue("arn:aws:ecs:us-west-2:123456789012:cluster/standalone-cluster"),
-							"__meta_ecs_task_group":        model.LabelValue("family:standalone-task"),
+							"__meta_ecs_task_group":        model.LabelValue("batch-jobs"),
 							"__meta_ecs_task_arn":          model.LabelValue("arn:aws:ecs:us-west-2:123456789012:task/standalone-cluster/task-standalone"),
 							"__meta_ecs_task_definition":   model.LabelValue("arn:aws:ecs:us-west-2:123456789012:task-definition/standalone-task:1"),
 							"__meta_ecs_region":            model.LabelValue("us-west-2"),
@@ -1512,6 +1512,7 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 					Port:               80,
 					RequestConcurrency: 1,
 				},
+				region: tt.ecsData.region,
 			}
 
 			groups, err := d.refresh(ctx)
@@ -1666,32 +1667,34 @@ func (m *mockECSEC2Client) DescribeInstances(_ context.Context, input *ec2.Descr
 	var reservations []ec2Types.Reservation
 
 	for _, instanceID := range input.InstanceIds {
-		if info, ok := m.ec2Instances[instanceID]; ok {
-			instance := ec2Types.Instance{
-				InstanceId:       &instanceID,
-				PrivateIpAddress: &info.privateIP,
-			}
-			if info.publicIP != "" {
-				instance.PublicIpAddress = &info.publicIP
-			}
-			if info.subnetID != "" {
-				instance.SubnetId = &info.subnetID
-			}
-			if info.instanceType != "" {
-				instance.InstanceType = ec2Types.InstanceType(info.instanceType)
-			}
-			// Add tags
-			for tagKey, tagValue := range info.tags {
-				instance.Tags = append(instance.Tags, ec2Types.Tag{
-					Key:   &tagKey,
-					Value: &tagValue,
-				})
-			}
-			reservation := ec2Types.Reservation{
-				Instances: []ec2Types.Instance{instance},
-			}
-			reservations = append(reservations, reservation)
+		info, ok := m.ec2Instances[instanceID]
+		if !ok {
+			continue
 		}
+		instance := ec2Types.Instance{
+			InstanceId:       &instanceID,
+			PrivateIpAddress: &info.privateIP,
+		}
+		if info.publicIP != "" {
+			instance.PublicIpAddress = &info.publicIP
+		}
+		if info.subnetID != "" {
+			instance.SubnetId = &info.subnetID
+		}
+		if info.instanceType != "" {
+			instance.InstanceType = ec2Types.InstanceType(info.instanceType)
+		}
+		// Add tags
+		for tagKey, tagValue := range info.tags {
+			instance.Tags = append(instance.Tags, ec2Types.Tag{
+				Key:   &tagKey,
+				Value: &tagValue,
+			})
+		}
+		reservation := ec2Types.Reservation{
+			Instances: []ec2Types.Instance{instance},
+		}
+		reservations = append(reservations, reservation)
 	}
 
 	return &ec2.DescribeInstancesOutput{
@@ -1719,101 +1722,4 @@ func (m *mockECSEC2Client) DescribeNetworkInterfaces(_ context.Context, input *e
 	return &ec2.DescribeNetworkInterfacesOutput{
 		NetworkInterfaces: networkInterfaces,
 	}, nil
-}
-
-func TestIsStandaloneTask(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name     string
-		task     ecsTypes.Task
-		expected bool
-	}{
-		{
-			name: "StandaloneTask",
-			task: ecsTypes.Task{
-				Group: strptr("family:my-task-definition"),
-			},
-			expected: true,
-		},
-		{
-			name: "ServiceTask",
-			task: ecsTypes.Task{
-				Group: strptr("service:my-service"),
-			},
-			expected: false,
-		},
-		{
-			name: "ServiceTaskWithColon",
-			task: ecsTypes.Task{
-				Group: strptr("service:my:service:name"),
-			},
-			expected: false,
-		},
-		{
-			name: "NilGroup",
-			task: ecsTypes.Task{
-				Group: nil,
-			},
-			expected: false,
-		},
-		{
-			name: "EmptyGroup",
-			task: ecsTypes.Task{
-				Group: strptr(""),
-			},
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := isStandaloneTask(tt.task)
-			require.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestGetServiceNameFromTaskGroup(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name     string
-		task     ecsTypes.Task
-		expected string
-	}{
-		{
-			name: "SimpleServiceName",
-			task: ecsTypes.Task{
-				Group: strptr("service:my-service"),
-			},
-			expected: "my-service",
-		},
-		{
-			name: "ServiceNameWithHyphens",
-			task: ecsTypes.Task{
-				Group: strptr("service:web-api-service"),
-			},
-			expected: "web-api-service",
-		},
-		{
-			name: "ServiceNameWithColons",
-			task: ecsTypes.Task{
-				Group: strptr("service:my:service:name"),
-			},
-			expected: "my",
-		},
-		{
-			name: "FamilyGroup",
-			task: ecsTypes.Task{
-				Group: strptr("family:my-task-def"),
-			},
-			expected: "my-task-def",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := getServiceNameFromTaskGroup(tt.task)
-			require.Equal(t, tt.expected, result)
-		})
-	}
 }

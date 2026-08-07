@@ -19,6 +19,7 @@ import (
 	"io"
 	"math"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -469,9 +470,14 @@ func (sl *scrapeLoop) checkAndSynthesizeStartTime(
 			return st, val, h, fh, skipAppend, c
 		}
 
-		// TODO(bwplotka): Add support for _count and _sum summary series.
 		switch metadata.Type {
 		case model.MetricTypeCounter, model.MetricTypeHistogram:
+			// Proceed to synthesis.
+		case model.MetricTypeSummary:
+			mName := lset.Get(model.MetricNameLabel)
+			if !strings.HasSuffix(mName, "_count") && !strings.HasSuffix(mName, "_sum") {
+				return st, val, h, fh, skipAppend, c
+			}
 			// Proceed to synthesis.
 		default:
 			return st, val, h, fh, skipAppend, c

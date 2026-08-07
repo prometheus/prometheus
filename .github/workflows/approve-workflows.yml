@@ -1,0 +1,27 @@
+---
+###
+# This action is synced from https://github.com/prometheus/prometheus
+###
+name: Approve pending workflows
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions: read-all
+
+jobs:
+  approve:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/workflow-approve' &&
+      (github.repository_owner == 'prometheus' || github.repository_owner == 'prometheus-community')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: prometheus/promci/approve_workflows@370e8c15dcec50043cbe66f2f34633d9efc0a190 # v0.9.0
+        with:
+          github_token: ${{ github.token }}

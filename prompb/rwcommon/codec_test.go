@@ -233,7 +233,7 @@ func TestFromIntToFloatOrIntHistogram(t *testing.T) {
 		testIntHist := testIntHistogram()
 		testFloatHist := testFloatHistogram()
 
-		h := writev2.FromIntHistogram(123, &testIntHist)
+		h := writev2.FromIntHistogram(0, 123, &testIntHist)
 		require.False(t, h.IsFloatHistogram())
 		require.Equal(t, int64(123), h.Timestamp)
 		require.Equal(t, testIntHist, *h.ToIntHistogram())
@@ -254,7 +254,7 @@ func TestFromFloatToFloatHistogram(t *testing.T) {
 	t.Run("v2", func(t *testing.T) {
 		testFloatHist := testFloatHistogram()
 
-		h := writev2.FromFloatHistogram(123, &testFloatHist)
+		h := writev2.FromFloatHistogram(0, 123, &testFloatHist)
 		require.True(t, h.IsFloatHistogram())
 		require.Equal(t, int64(123), h.Timestamp)
 		require.Nil(t, h.ToIntHistogram())
@@ -304,14 +304,36 @@ func TestFromIntOrFloatHistogram_ResetHint(t *testing.T) {
 			t.Run("v2", func(t *testing.T) {
 				h := testIntHistogram()
 				h.CounterResetHint = tc.input
-				got := writev2.FromIntHistogram(1337, &h)
+				got := writev2.FromIntHistogram(0, 1337, &h)
 				require.Equal(t, tc.expectedV2, got.GetResetHint())
 
 				fh := testFloatHistogram()
 				fh.CounterResetHint = tc.input
-				got2 := writev2.FromFloatHistogram(1337, &fh)
+				got2 := writev2.FromFloatHistogram(0, 1337, &fh)
 				require.Equal(t, tc.expectedV2, got2.GetResetHint())
 			})
+		})
+	}
+}
+
+func TestFromIntOrFloatHistogram_StartTimestamp(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		st   int64
+	}{
+		{name: "no start timestamp", st: 0},
+		{name: "with start timestamp", st: 100},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := testIntHistogram()
+			got := writev2.FromIntHistogram(tc.st, 1337, &h)
+			require.Equal(t, tc.st, got.StartTimestamp)
+			require.Equal(t, int64(1337), got.Timestamp)
+
+			fh := testFloatHistogram()
+			got2 := writev2.FromFloatHistogram(tc.st, 1337, &fh)
+			require.Equal(t, tc.st, got2.StartTimestamp)
+			require.Equal(t, int64(1337), got2.Timestamp)
 		})
 	}
 }

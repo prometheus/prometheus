@@ -1,3 +1,13 @@
 .item {
   background-color: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-5));
 }
+
+.copyRuleNameButton {
+  opacity: 0;
+  transition: opacity 0.1s ease-in-out;
+}
+
+.ruleControl:hover .copyRuleNameButton,
+.ruleControl:focus-within .copyRuleNameButton {
+  opacity: 1;
+}

@@ -104,6 +104,8 @@ type SDConfig struct {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for SDConfig.
+// Region resolution is deferred to each concrete discovery's xxxClient
+// method; see loadRegion.
 func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	// Alias to avoid recursion
 	type plain SDConfig
@@ -113,12 +115,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 	*c = SDConfig(aux)
-
-	var err error
-	c.Region, err = loadRegion(context.Background(), c.Region)
-	if err != nil {
-		return fmt.Errorf("could not determine AWS region: %w", err)
-	}
 
 	switch c.Role {
 	case RoleEC2:
@@ -400,8 +396,17 @@ func (c *SDConfig) SetDirectory(dir string) {
 	}
 }
 
-// loadRegion finds the region in order: AWS config/env vars ->IMDS.
-func loadRegion(ctx context.Context, specifiedRegion string) (string, error) {
+// loadRegion finds the region in order: configured region -> AWS config/env vars -> IMDS.
+// Region resolution is intentionally deferred to SD init so config-only operations
+// (e.g. `promtool check config`) stay free of network I/O. See the UnmarshalYAML
+// docstrings in this package.
+func loadRegion(ctx context.Context, specifiedRegion string) (region string, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("could not determine AWS region: %w", err)
+		}
+	}()
+
 	if specifiedRegion != "" {
 		return specifiedRegion, nil
 	}
@@ -417,14 +422,14 @@ func loadRegion(ctx context.Context, specifiedRegion string) (string, error) {
 
 	// Fallback (may fail in non-AWS environments)
 	imdsClient := imds.NewFromConfig(cfg)
-	region, err := imdsClient.GetRegion(ctx, &imds.GetRegionInput{})
+	imdsRegion, err := imdsClient.GetRegion(ctx, &imds.GetRegionInput{})
 	if err != nil {
 		return "", fmt.Errorf("failed to get region from IMDS: %w", err)
 	}
 
-	if region.Region == "" {
+	if imdsRegion.Region == "" {
 		return "", errors.New("region not found in AWS config or IMDS")
 	}
 
-	return region.Region, nil
+	return imdsRegion.Region, nil
 }

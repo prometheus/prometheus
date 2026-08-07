@@ -98,6 +98,37 @@ type PrometheusConverter struct {
 	// sanitizedLabels caches the results of label name sanitization within a request.
 	// This avoids repeated string allocations for the same label names.
 	sanitizedLabels map[string]string
+
+	// collisionAnnots collects warning annotations about attribute names that
+	// collide after label name sanitization, causing their values to be
+	// concatenated. Reset on every FromMetrics call.
+	collisionAnnots annotations.Annotations
+	// recordedCollisions tracks the sanitized label names whose collision has
+	// already been recorded during the current FromMetrics call, so that a
+	// collision repeated across data points is recorded once instead of
+	// rebuilding the annotation per data point. Reset on
+	// every FromMetrics call.
+	recordedCollisions map[string]struct{}
+	// collisionSource records whether the attributes currently being converted are
+	// data point or resource attributes, so collision warnings can name the source.
+	collisionSource collisionAttrSource
+}
+
+// collisionAttrSource identifies which OTLP attribute source is being converted,
+// so label-name collision warnings can name it. The zero value is data point,
+// which covers every path except target_info (resource attributes).
+type collisionAttrSource int
+
+const (
+	collisionFromDataPoint collisionAttrSource = iota
+	collisionFromResource
+)
+
+func (s collisionAttrSource) String() string {
+	if s == collisionFromResource {
+		return "resource"
+	}
+	return "data point"
 }
 
 // targetInfoKey uniquely identifies a target_info sample by its labelset and timestamp.
@@ -181,6 +212,10 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 	unitNamer := otlptranslator.UnitNamer{}
 	c.everyN = everyNTimes{n: 128}
 	c.seenTargetInfo = make(map[targetInfoKey]struct{})
+	c.collisionAnnots = nil
+	c.recordedCollisions = nil
+	c.collisionSource = collisionFromDataPoint
+	defer func() { annots.Merge(c.collisionAnnots) }()
 	resourceMetricsSlice := md.ResourceMetrics()
 
 	for i := range resourceMetricsSlice.Len() {
@@ -253,7 +288,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeGauge:
 					dataPoints := metric.Gauge().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						annots.Add(newCategorizedWarningf(WarningCategoryEmptyDataPoints, "empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, settings, appOpts); err != nil {
@@ -265,7 +300,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeSum:
 					dataPoints := metric.Sum().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						annots.Add(newCategorizedWarningf(WarningCategoryEmptyDataPoints, "empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					if err := c.addSumNumberDataPoints(ctx, dataPoints, settings, appOpts); err != nil {
@@ -277,7 +312,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeHistogram:
 					dataPoints := metric.Histogram().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						annots.Add(newCategorizedWarningf(WarningCategoryEmptyDataPoints, "empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					if settings.ConvertHistogramsToNHCB {
@@ -302,7 +337,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeExponentialHistogram:
 					dataPoints := metric.ExponentialHistogram().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						annots.Add(newCategorizedWarningf(WarningCategoryEmptyDataPoints, "empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					ws, err := c.addExponentialHistogramDataPoints(
@@ -322,7 +357,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeSummary:
 					dataPoints := metric.Summary().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						annots.Add(newCategorizedWarningf(WarningCategoryEmptyDataPoints, "empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					if err := c.addSummaryDataPoints(ctx, dataPoints, settings, appOpts); err != nil {

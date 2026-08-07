@@ -4460,6 +4460,41 @@ func BenchmarkFloatHistogramAdd(b *testing.B) {
 	})
 }
 
+func BenchmarkFloatHistogramTrimBuckets(b *testing.B) {
+	var (
+		rng           = rand.New(rand.NewSource(0))
+		numHistograms = 120
+		fhs           = make([]*FloatHistogram, 0, numHistograms)
+	)
+
+	for range numHistograms {
+		fhs = append(fhs, createRandomFloatHistogram(rng, 5))
+	}
+
+	// In place: the caller owns the histogram and lets TrimBuckets mutate it.
+	b.Run("InPlace", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			for _, hist := range fhs {
+				hist.TrimBuckets(3, true)
+			}
+		}
+	})
+
+	// Copy: the caller must preserve the input, so it copies first (the old
+	// behaviour, now expressed explicitly at the call site).
+	b.Run("Copy", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			for _, hist := range fhs {
+				hist.Copy().TrimBuckets(3, true)
+			}
+		}
+	})
+}
+
 func createRandomFloatHistogram(rng *rand.Rand, spanNum int32) *FloatHistogram {
 	f := &FloatHistogram{}
 	f.PositiveSpans, f.PositiveBuckets = createRandomSpans(rng, spanNum)
@@ -4572,4 +4607,35 @@ func TestFloatHistogramReduceResolution(t *testing.T) {
 			require.Equal(t, tc.target, tc.origin)
 		})
 	}
+}
+
+func TestFloatHistogramTrimBucketsInPlace(t *testing.T) {
+	// Schema 0 native histogram with buckets straddling a trim point of 4.
+	newHist := func() *FloatHistogram {
+		return &FloatHistogram{
+			Schema:          0,
+			Count:           30,
+			Sum:             100,
+			PositiveSpans:   []Span{{Offset: 0, Length: 4}},
+			PositiveBuckets: []float64{5, 5, 10, 10}, // Bucket upper bounds: 1, 2, 4, 8.
+		}
+	}
+
+	t.Run("mutates the receiver and returns it", func(t *testing.T) {
+		h := newHist()
+		got := h.TrimBuckets(4, true)
+		// The returned histogram is the receiver, not a copy.
+		require.Same(t, h, got)
+		// The bucket entirely above the trim point (upper bound 8) is dropped.
+		require.NotEqual(t, newHist(), h)
+	})
+
+	t.Run("Copy preserves the original", func(t *testing.T) {
+		h := newHist()
+		trimmed := h.Copy().TrimBuckets(4, true)
+		// The original is untouched.
+		require.Equal(t, newHist(), h)
+		// The copy was actually trimmed.
+		require.NotEqual(t, h, trimmed)
+	})
 }

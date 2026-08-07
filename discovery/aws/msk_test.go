@@ -1006,8 +1006,9 @@ func TestMSKDiscoveryRefresh(t *testing.T) {
 			}
 
 			d := &MSKDiscovery{
-				msk: client,
-				cfg: config,
+				msk:    client,
+				cfg:    config,
+				region: tt.mskData.region,
 			}
 
 			groups, err := d.refresh(ctx)

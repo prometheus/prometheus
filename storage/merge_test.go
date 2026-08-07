@@ -387,13 +387,13 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 func histogramSample(ts int64, hint histogram.CounterResetHint) hSample {
 	h := tsdbutil.GenerateTestHistogram(ts + 1)
 	h.CounterResetHint = hint
-	return hSample{st: -ts, t: ts, h: h}
+	return hSample{st: 0, t: ts, h: h}
 }
 
 func floatHistogramSample(ts int64, hint histogram.CounterResetHint) fhSample {
 	fh := tsdbutil.GenerateTestFloatHistogram(ts + 1)
 	fh.CounterResetHint = hint
-	return fhSample{st: -ts, t: ts, fh: fh}
+	return fhSample{st: 0, t: ts, fh: fh}
 }
 
 // Shorthands for counter reset hints.
@@ -599,6 +599,86 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 			require.Equal(t, expSamples, actSamples)
 		})
 	}
+}
+
+func TestCompactingChunkSeriesMergerFloatEncoding(t *testing.T) {
+	lbls := labels.FromStrings("bar", "baz")
+
+	// Two series with overlapping XOR chunks, forcing a re-encode on merge.
+	overlappingInput := func() []ChunkSeries {
+		return []ChunkSeries{
+			NewListChunkSeriesFromSamples(lbls, []chunks.Sample{fSample{0, 1, 1}, fSample{0, 2, 2}}),
+			NewListChunkSeriesFromSamples(lbls, []chunks.Sample{fSample{0, 2, 2}, fSample{0, 3, 3}}),
+		}
+	}
+
+	expandChunks := func(t *testing.T, m VerticalChunkSeriesMergeFunc, input []ChunkSeries) []chunks.Meta {
+		t.Helper()
+		merged := m(input...)
+		require.Equal(t, lbls, merged.Labels())
+		actChks, err := ExpandChunks(merged.Iterator(nil))
+		require.NoError(t, err)
+		return actChks
+	}
+
+	t.Run("nil getter keeps XOR for re-encoded chunks", func(t *testing.T) {
+		m := NewCompactingChunkSeriesMergerWithFloatEncoding(ChainedSeriesMerge, nil)
+		actChks := expandChunks(t, m, overlappingInput())
+		require.Len(t, actChks, 1)
+		require.Equal(t, chunkenc.EncXOR, actChks[0].Chunk.Encoding())
+		require.Equal(t, 3, actChks[0].Chunk.NumSamples())
+	})
+
+	t.Run("XOR2 getter re-encodes overlapping chunks to XOR2", func(t *testing.T) {
+		m := NewCompactingChunkSeriesMergerWithFloatEncoding(ChainedSeriesMerge, func() chunkenc.Encoding { return chunkenc.EncXOR2 })
+		actChks := expandChunks(t, m, overlappingInput())
+		require.Len(t, actChks, 1)
+		require.Equal(t, chunkenc.EncXOR2, actChks[0].Chunk.Encoding())
+		require.Equal(t, 3, actChks[0].Chunk.NumSamples())
+		actSamples, err := ExpandSamples(actChks[0].Chunk.Iterator(nil), nil)
+		require.NoError(t, err)
+		require.Equal(t, []chunks.Sample{fSample{0, 1, 1}, fSample{0, 2, 2}, fSample{0, 3, 3}}, actSamples)
+	})
+
+	t.Run("non-overlapping chunks pass through with source encoding", func(t *testing.T) {
+		m := NewCompactingChunkSeriesMergerWithFloatEncoding(ChainedSeriesMerge, func() chunkenc.Encoding { return chunkenc.EncXOR2 })
+		input := []ChunkSeries{
+			NewListChunkSeriesFromSamples(lbls, []chunks.Sample{fSample{0, 1, 1}, fSample{0, 2, 2}}),
+			NewListChunkSeriesFromSamples(lbls, []chunks.Sample{fSample{0, 3, 3}, fSample{0, 4, 4}}),
+		}
+		actChks := expandChunks(t, m, input)
+		require.Len(t, actChks, 2)
+		require.Equal(t, chunkenc.EncXOR, actChks[0].Chunk.Encoding())
+		require.Equal(t, chunkenc.EncXOR, actChks[1].Chunk.Encoding())
+	})
+
+	t.Run("getter is read again for each merged series", func(t *testing.T) {
+		enc := chunkenc.EncXOR
+		m := NewCompactingChunkSeriesMergerWithFloatEncoding(ChainedSeriesMerge, func() chunkenc.Encoding { return enc })
+
+		actChks := expandChunks(t, m, overlappingInput())
+		require.Len(t, actChks, 1)
+		require.Equal(t, chunkenc.EncXOR, actChks[0].Chunk.Encoding())
+
+		enc = chunkenc.EncXOR2
+		actChks = expandChunks(t, m, overlappingInput())
+		require.Len(t, actChks, 1)
+		require.Equal(t, chunkenc.EncXOR2, actChks[0].Chunk.Encoding())
+	})
+
+	t.Run("150 overlapping samples split at 120 with XOR2", func(t *testing.T) {
+		m := NewCompactingChunkSeriesMergerWithFloatEncoding(ChainedSeriesMerge, func() chunkenc.Encoding { return chunkenc.EncXOR2 })
+		input := []ChunkSeries{
+			NewListChunkSeriesFromSamples(lbls, chunks.GenerateSamples(0, 90)),  // [0 - 90).
+			NewListChunkSeriesFromSamples(lbls, chunks.GenerateSamples(60, 90)), // [60 - 150).
+		}
+		actChks := expandChunks(t, m, input)
+		require.Len(t, actChks, 2)
+		require.Equal(t, chunkenc.EncXOR2, actChks[0].Chunk.Encoding())
+		require.Equal(t, 120, actChks[0].Chunk.NumSamples())
+		require.Equal(t, chunkenc.EncXOR2, actChks[1].Chunk.Encoding())
+		require.Equal(t, 30, actChks[1].Chunk.NumSamples())
+	})
 }
 
 func TestCompactingChunkSeriesMergerHistogramCounterResetHint(t *testing.T) {

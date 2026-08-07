@@ -55,13 +55,13 @@ ifneq ($(shell command -v gotestsum 2> /dev/null),)
 endif
 endif
 
-PROMU_VERSION ?= 0.18.1
+PROMU_VERSION ?= 0.20.0
 PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
 
 SKIP_GOLANGCI_LINT :=
 GOLANGCI_LINT :=
 GOLANGCI_LINT_OPTS ?=
-GOLANGCI_LINT_VERSION ?= v2.11.4
+GOLANGCI_LINT_VERSION ?= v2.12.2
 GOLANGCI_FMT_OPTS ?=
 # golangci-lint only supports linux, darwin and windows platforms on i386/amd64/arm64.
 # windows isn't included here because of the path separator being different.
@@ -166,7 +166,8 @@ common-deps:
 update-go-deps:
 	@echo ">> updating Go dependencies"
 	@for m in $$($(GO) list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
-		$(GO) get $$m; \
+		# Prevent go get from pulling deps that require a newer Go version.
+		GOTOOLCHAIN=go$$($(GO) mod edit -json | jq -r .Go) $(GO) get $$m; \
 	done
 	$(GO) mod tidy
 

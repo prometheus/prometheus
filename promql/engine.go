@@ -1455,17 +1455,18 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 	var warnings annotations.Annotations
 	for i, e := range exprs {
 		// Functions will take string arguments from the expressions, not the values.
-		if e != nil && e.Type() != parser.ValueTypeString {
-			// ev.currentSamples will be updated to the correct value within the ev.eval call.
-			val, ws := ev.eval(ctx, e)
-			warnings.Merge(ws)
-			matrixes[i] = val.(Matrix)
-
-			// Keep a copy of the original point slices so that they
-			// can be returned to the pool.
-			origMatrixes[i] = make(Matrix, len(matrixes[i]))
-			copy(origMatrixes[i], matrixes[i])
+		if e == nil || e.Type() == parser.ValueTypeString {
+			continue
 		}
+		// ev.currentSamples will be updated to the correct value within the ev.eval call.
+		val, ws := ev.eval(ctx, e)
+		warnings.Merge(ws)
+		matrixes[i] = val.(Matrix)
+
+		// Keep a copy of the original point slices so that they
+		// can be returned to the pool.
+		origMatrixes[i] = make(Matrix, len(matrixes[i]))
+		copy(origMatrixes[i], matrixes[i])
 	}
 
 	vectors := make([]Vector, len(exprs)) // Input vectors for the function.
@@ -1900,7 +1901,7 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 
 		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 			step++
-			origT, f, h, ok := ev.vectorSelectorSingle(it, offset, ts)
+			_, origT, f, h, ok := ev.vectorSelectorSingle(it, offset, ts)
 			if !ok {
 				continue
 			}
@@ -2144,7 +2145,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 	case *parser.Call:
 		call := FunctionCalls[e.Func.Name]
-		if e.Func.Name == "timestamp" {
+		if e.Func.Name == "timestamp" || e.Func.Name == "start_timestamp" {
 			// Matrix evaluation always returns the evaluation time,
 			// so this function needs special handling when given
 			// a vector selector.
@@ -2713,9 +2714,19 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 		}
 
 		vec := make(Vector, 0, len(vs.Series))
+
+		propagateSTs := e.Func.Name == "start_timestamp" && ev.useStartTimestamps
+
+		var sts []int64
+		if propagateSTs {
+			if enh.StartTimestamps != nil {
+				sts = enh.StartTimestamps.Floats[:0]
+			}
+			sts = slices.Grow(sts, len(vs.Series))[:0]
+		}
 		for i, s := range vs.Series {
 			it := seriesIterators[i]
-			t, _, _, ok := ev.vectorSelectorSingle(it, vs.Offset, enh.Ts)
+			st, t, _, _, ok := ev.vectorSelectorSingle(it, vs.Offset, enh.Ts)
 			if !ok {
 				continue
 			}
@@ -2725,6 +2736,9 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 				Metric: s.Labels(),
 				T:      t,
 			})
+			if propagateSTs {
+				sts = append(sts, st)
+			}
 
 			ev.currentSamples++
 			ev.samplesStats.IncrementSamplesAtTimestamp(enh.Ts, 1)
@@ -2733,6 +2747,17 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 				ev.error(ErrTooManySamples(env))
 			}
 		}
+
+		if propagateSTs {
+			if enh.StartTimestamps == nil {
+				enh.StartTimestamps = &StartTimestamps{}
+			}
+			enh.StartTimestamps.Floats = sts
+		} else if enh.StartTimestamps != nil {
+			// Clear the slice in case it wasn't empty.
+			enh.StartTimestamps.Floats = enh.StartTimestamps.Floats[:0]
+		}
+
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
 		vec, annos := call([]Vector{vec}, nil, e.Args, enh)
 		return vec, ws.Merge(annos)
@@ -2741,10 +2766,10 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 
 // vectorSelectorSingle evaluates an instant vector for the iterator of one time series.
 func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, offset time.Duration, ts int64) (
-	int64, float64, *histogram.FloatHistogram, bool,
+	int64, int64, float64, *histogram.FloatHistogram, bool,
 ) {
 	refTime := ts - durationMilliseconds(offset)
-	var t int64
+	var st, t int64
 	var v float64
 	var h *histogram.FloatHistogram
 
@@ -2756,22 +2781,24 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, of
 		}
 	case chunkenc.ValFloat:
 		t, v = it.At()
+		st = it.AtST()
 	case chunkenc.ValFloatHistogram:
 		t, h = it.AtFloatHistogram()
+		st = it.AtST()
 	default:
 		panic(fmt.Errorf("unknown value type %v", valueType))
 	}
 	if valueType == chunkenc.ValNone || t > refTime {
 		var ok bool
-		t, v, h, ok = it.PeekPrev()
+		st, t, v, h, ok = it.PeekPrev()
 		if !ok || t <= refTime-durationMilliseconds(ev.lookbackDelta) {
-			return 0, 0, nil, false
+			return 0, 0, 0, nil, false
 		}
 	}
 	if value.IsStaleNaN(v) || (h != nil && value.IsStaleNaN(h.Sum)) {
-		return 0, 0, nil, false
+		return 0, 0, 0, nil, false
 	}
-	return t, v, h, true
+	return st, t, v, h, true
 }
 
 var (
@@ -3543,10 +3570,12 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 				return 0, hlhs.Copy().Mul(rhs).Compact(0), true, nil, nil
 			case parser.DIV:
 				return 0, hlhs.Copy().Div(rhs).Compact(0), true, nil, nil
+			// TrimBuckets mutates its receiver in place, and hlhs may be shared
+			// with other samples/series, so trim a copy rather than hlhs itself.
 			case parser.TRIM_UPPER:
-				return 0, hlhs.TrimBuckets(rhs, true), true, nil, nil
+				return 0, hlhs.Copy().TrimBuckets(rhs, true), true, nil, nil
 			case parser.TRIM_LOWER:
-				return 0, hlhs.TrimBuckets(rhs, false), true, nil, nil
+				return 0, hlhs.Copy().TrimBuckets(rhs, false), true, nil, nil
 			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", parser.ItemTypeStr[op], "float", pos)
 			}
@@ -4619,6 +4648,7 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvaria
 		// Hence we wrap the inside of subquery irrespective of
 		// @ on subquery (given it is also step invariant) so that
 		// it is evaluated only once w.r.t. the start time of subquery.
+		// Like MatrixSelector we never wrap the subquery itself.
 		isInvariant, _ := preprocessExprHelper(n.Expr, start, end)
 		if isInvariant {
 			n.Expr = newStepInvariantExpr(n.Expr)
@@ -4629,7 +4659,7 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvaria
 		case parser.END:
 			n.Timestamp = makeInt64Pointer(timestamp.FromTime(end))
 		}
-		return n.Timestamp != nil, n.Timestamp != nil
+		return n.Timestamp != nil, false
 
 	case *parser.ParenExpr:
 		return preprocessExprHelper(n.Expr, start, end)
@@ -4696,8 +4726,8 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 		}
 
 	pathLoop:
-		for i := len(path) - 1; i >= 0; i-- { // Walk backwards up the path.
-			switch p := path[i].(type) {
+		for _, v := range slices.Backward(path) { // Walk backwards up the path.
+			switch p := v.(type) {
 			case *parser.SubqueryExpr:
 				// If we ever see a subquery in the path, we
 				// will not skip the buckets. We need the

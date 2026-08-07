@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -29,6 +30,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -1127,7 +1129,7 @@ func testScrapeLoopStop(t *testing.T, appV2 bool) {
 		case i%6 == 0:
 			ts = s.T
 		case s.T != ts:
-			t.Fatalf("Unexpected multiple timestamps within single scrape")
+			t.Fatal("Unexpected multiple timestamps within single scrape")
 		}
 	}
 	// All samples from the last scrape must be stale markers.
@@ -1921,7 +1923,9 @@ func TestScrapeLoopAppend_StartTimeSynthesis_WithSTStorage(t *testing.T) {
 
 	s := teststorage.New(t, func(opt *tsdb.Options) {
 		opt.EnableSTStorage = true
+		opt.XOR2EncodingAllowed = true
 		opt.FloatChunkEncoding = chunkenc.EncXOR2
+		opt.EnableHistogramSTEncoding = true
 	})
 
 	appTest := teststorage.NewAppendable().Then(s)
@@ -2113,6 +2117,67 @@ test_metric 25
 	// - 2nd scrape: OOO (dropped)
 	// - 3rd scrape: fresh start after cleared state (dropped)
 	require.Empty(t, got, "Expected no samples because the state was cleared and the sample was used to re-anchor")
+}
+
+func TestScrapeLoopAppend_StartTimeSynthesis_Summary(t *testing.T) {
+	ts := time.Now()
+
+	requireSample := func(t *testing.T, s teststorage.Sample, name string, val float64, ts, st int64, isNaN bool) {
+		t.Helper()
+		require.Equal(t, name, s.L.Get(model.MetricNameLabel))
+		require.Equal(t, ts, s.T)
+		if isNaN {
+			require.True(t, value.IsStaleNaN(s.V))
+		} else {
+			require.Equal(t, val, s.V)
+		}
+		require.Equal(t, st, s.ST)
+	}
+
+	s := teststorage.New(t)
+
+	appTest := teststorage.NewAppendable().Then(s)
+	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+		sl.synthesizeST = true
+		sl.parseST = true
+	})
+
+	// First Scrape: Anchor start time for _sum and _count. Quantiles are not cumulative, so quantile is appended directly without anchoring.
+	scrapeA := []byte(`# TYPE test_summary summary
+test_summary{quantile="0.5"} 10
+test_summary_sum 100
+test_summary_count 10
+# EOF
+`)
+	app := sl.appender()
+	_, _, _, err := app.append(scrapeA, "application/openmetrics-text", ts)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Quantile should be appended (1 point), _sum and _count should be skipped (anchored).
+	got := appTest.ResultSamples()
+	require.Len(t, got, 1)
+	requireSample(t, got[0], "test_summary", 10, timestamp.FromTime(ts), 0, false)
+
+	// Second Scrape: _sum and _count should yield points with delta values and synthesized ST = ts.
+	ts2 := ts.Add(time.Second)
+	scrapeB := []byte(`# TYPE test_summary summary
+test_summary{quantile="0.5"} 12
+test_summary_sum 150
+test_summary_count 15
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeB, "application/openmetrics-text", ts2)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got = appTest.ResultSamples()
+	require.Len(t, got, 4)
+	requireSample(t, got[0], "test_summary", 10, timestamp.FromTime(ts), 0, false)
+	requireSample(t, got[1], "test_summary", 12, timestamp.FromTime(ts2), 0, false)
+	requireSample(t, got[2], "test_summary_sum", 50, timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
+	requireSample(t, got[3], "test_summary_count", 5, timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
 }
 
 func requireSampleHist(t *testing.T, s teststorage.Sample, name, expectedHist string, ts, st int64, isNaN bool) {
@@ -2628,7 +2693,7 @@ func testSetOptionsHandlingStaleness(t *testing.T, appV2 bool) {
 	select {
 	case <-signal:
 	case <-time.After(10 * time.Second):
-		t.Fatalf("Scrape wasn't stopped.")
+		t.Fatal("Scrape wasn't stopped.")
 	}
 
 	ctx1, cancel := context.WithCancel(t.Context())
@@ -2849,6 +2914,98 @@ func testScrapeLoopRunCreatesStaleMarkersOnSampleLimit(t *testing.T, appV2 bool)
 		require.True(t, value.IsStaleNaN(got[i].V),
 			"Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(got[i].V))
 	}
+}
+
+// refChangingAppendable simulates a storage backend that returns a new SeriesRef
+// on every Append call, e.g. because the previously handed out ref was evicted
+// from storage in the meantime and the series had to be recreated.
+type refChangingAppendable struct {
+	calls int
+}
+
+func (a *refChangingAppendable) Appender(context.Context) storage.Appender {
+	return &refChangingAppender{a: a}
+}
+
+func (a *refChangingAppendable) AppenderV2(context.Context) storage.AppenderV2 {
+	return &refChangingAppenderV2{a: a}
+}
+
+func (a *refChangingAppendable) nextRef() storage.SeriesRef {
+	a.calls++
+	return storage.SeriesRef(100 * a.calls)
+}
+
+type refChangingAppender struct {
+	a *refChangingAppendable
+}
+
+func (*refChangingAppender) Commit() error                     { return nil }
+func (*refChangingAppender) Rollback() error                   { return nil }
+func (*refChangingAppender) SetOptions(*storage.AppendOptions) {}
+
+func (r *refChangingAppender) Append(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error) {
+	return r.a.nextRef(), nil
+}
+
+func (*refChangingAppender) AppendHistogram(ref storage.SeriesRef, _ labels.Labels, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return ref, nil
+}
+
+func (*refChangingAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, _ labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return ref, nil
+}
+
+func (*refChangingAppender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
+	return ref, nil
+}
+
+func (*refChangingAppender) UpdateMetadata(ref storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+	return ref, nil
+}
+
+func (*refChangingAppender) AppendSTZeroSample(ref storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	return ref, nil
+}
+
+type refChangingAppenderV2 struct {
+	a *refChangingAppendable
+}
+
+func (*refChangingAppenderV2) Commit() error   { return nil }
+func (*refChangingAppenderV2) Rollback() error { return nil }
+
+func (r *refChangingAppenderV2) Append(storage.SeriesRef, labels.Labels, int64, int64, float64, *histogram.Histogram, *histogram.FloatHistogram, storage.AppendV2Options) (storage.SeriesRef, error) {
+	return r.a.nextRef(), nil
+}
+
+// TestScrapeLoopCacheRefUpdatedOnChange makes sure that when the storage returns a
+// different SeriesRef than the one the scrape loop cached, the cache is updated to
+// use the new ref on the next scrape rather than keep handing storage a ref it no
+// longer recognizes.
+func TestScrapeLoopCacheRefUpdatedOnChange(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		app := &refChangingAppendable{}
+		sl, _ := newTestScrapeLoop(t, withAppendable(app, appV2))
+
+		appender := sl.appender()
+		_, _, _, err := appender.append([]byte("metric_a 1\n"), "text/plain", time.Time{})
+		require.NoError(t, err)
+		require.NoError(t, appender.Commit())
+
+		ce, ok := sl.cache.series["metric_a"]
+		require.True(t, ok)
+		require.Equal(t, storage.SeriesRef(100), ce.ref)
+
+		appender = sl.appender()
+		_, _, _, err = appender.append([]byte("metric_a 2\n"), "text/plain", time.Time{})
+		require.NoError(t, err)
+		require.NoError(t, appender.Commit())
+
+		ce, ok = sl.cache.series["metric_a"]
+		require.True(t, ok)
+		require.Equal(t, storage.SeriesRef(200), ce.ref, "cache should track the new ref returned by the second Append call")
+	})
 }
 
 func TestScrapeLoopCache(t *testing.T) {
@@ -4633,6 +4790,118 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 	}
 }
 
+func TestTargetScraperScrapeOverUnixSocket(t *testing.T) {
+	// t.TempDir can produce paths exceeding the macOS 104-char socket
+	// path limit, so we create our own temp dir in /tmp.
+	tempDir, err := os.MkdirTemp("", "uds-scrape-test")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(tempDir) })
+	socketPath := filepath.Join(tempDir, "s")
+
+	// Create a Unix domain socket listener.
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+	defer listener.Close()
+
+	// Serve HTTP over the Unix socket.
+	server := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "localhost", r.Host)
+			w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+			_, _ = w.Write([]byte("metric_a 1\nmetric_b 2\n"))
+		}),
+	}
+	go server.Serve(listener)
+	defer server.Close()
+
+	// Create a client with a DialContext that routes to the unix socket.
+	client, err := newScrapeClient(config_util.HTTPClientConfig{}, "test_job")
+	require.NoError(t, err)
+
+	// No __address__ set — falls back to "localhost".
+	ts := &targetScraper{
+		Target: &Target{
+			labels: labels.FromStrings(
+				model.SchemeLabel, "http",
+				model.MetricsPathLabel, "/metrics",
+				UnixSocketLabel, socketPath,
+			),
+			scrapeConfig: &config.ScrapeConfig{},
+		},
+		client:       client,
+		timeout:      1500 * time.Millisecond,
+		acceptHeader: acceptHeader(config.DefaultScrapeProtocols, model.UnderscoreEscaping),
+	}
+
+	var buf bytes.Buffer
+	resp, err := ts.scrape(context.Background())
+	require.NoError(t, err)
+
+	contentType, err := ts.readResponse(context.Background(), resp, &buf)
+	require.NoError(t, err)
+	require.Equal(t, "text/plain; version=0.0.4", contentType)
+	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
+}
+
+func TestTargetScraperScrapeOverUnixSocketTLS(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "uds-tls-test")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(tempDir) })
+	socketPath := filepath.Join(tempDir, "s")
+
+	// Create a Unix domain socket listener and wrap it with TLS using
+	// the pre-generated test certificates (CN=localhost).
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+	defer listener.Close()
+
+	tlsListener := tls.NewListener(listener, newTLSConfig("server", t))
+
+	// Serve HTTPS over the Unix socket. The pre-generated certificate
+	// has SAN IP Address:127.0.0.1, so the __address__ must match.
+	server := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "127.0.0.1", r.Host)
+			w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+			_, _ = w.Write([]byte("metric_a 1\nmetric_b 2\n"))
+		}),
+	}
+	go server.Serve(tlsListener)
+	defer server.Close()
+
+	// Create a client configured to trust the test CA.
+	client, err := newScrapeClient(config_util.HTTPClientConfig{
+		TLSConfig: config_util.TLSConfig{
+			CAFile: caCertPath,
+		},
+	}, "test_job")
+	require.NoError(t, err)
+
+	ts := &targetScraper{
+		Target: &Target{
+			labels: labels.FromStrings(
+				model.SchemeLabel, "https",
+				model.AddressLabel, "127.0.0.1",
+				model.MetricsPathLabel, "/metrics",
+				UnixSocketLabel, socketPath,
+			),
+			scrapeConfig: &config.ScrapeConfig{},
+		},
+		client:       client,
+		timeout:      1500 * time.Millisecond,
+		acceptHeader: acceptHeader(config.DefaultScrapeProtocols, model.UnderscoreEscaping),
+	}
+
+	var buf bytes.Buffer
+	resp, err := ts.scrape(context.Background())
+	require.NoError(t, err)
+
+	contentType, err := ts.readResponse(context.Background(), resp, &buf)
+	require.NoError(t, err)
+	require.Equal(t, "text/plain; version=0.0.4", contentType)
+	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
+}
+
 func TestTargetScrapeScrapeCancel(t *testing.T) {
 	block := make(chan struct{})
 
@@ -5397,7 +5666,7 @@ func testScrapeReportLimit(t *testing.T, appV2 bool) {
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("target was not scraped twice")
+		t.Fatal("target was not scraped twice")
 	case <-scrapedTwice:
 		// If the target has been scraped twice, report samples from the first
 		// scrape have been inserted in the database.
@@ -5457,7 +5726,7 @@ func testScrapeUTF8(t *testing.T, appV2 bool) {
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("target was not scraped twice")
+		t.Fatal("target was not scraped twice")
 	case <-scrapedTwice:
 		// If the target has been scraped twice, report samples from the first
 		// scrape have been inserted in the database.
@@ -5758,7 +6027,7 @@ test_summary_count 199
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("target was not scraped")
+		t.Fatal("target was not scraped")
 	case <-scrapedTwice:
 	}
 
@@ -6349,7 +6618,7 @@ disk_usage_bytes 456
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("target was not scraped")
+		t.Fatal("target was not scraped")
 	case <-scrapedTwice:
 	}
 
@@ -6411,7 +6680,7 @@ func testScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *
 	select {
 	case <-signal:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Scrape wasn't stopped.")
+		t.Fatal("Scrape wasn't stopped.")
 	}
 
 	got := appTest.ResultSamples()
@@ -6484,7 +6753,7 @@ func testScrapeLoopCompression(t *testing.T, appV2 bool) {
 
 			select {
 			case <-time.After(5 * time.Second):
-				t.Fatalf("target was not scraped")
+				t.Fatal("target was not scraped")
 			case <-scraped:
 			}
 		})

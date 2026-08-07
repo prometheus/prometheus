@@ -65,40 +65,8 @@ import (
 )
 
 const (
-	chunkSTHeaderSize  = 1
-	maxFirstSTChangeOn = 0x7F
+	chunkSTHeaderSize = 1
 )
-
-func writeHeaderFirstSTKnown(b []byte) {
-	b[0] = 0x80
-}
-
-func writeHeaderFirstSTChangeOn(b []byte, firstSTChangeOn uint16) {
-	// First bit indicates the initial ST value.
-	// Here we save the sample number from where the first change occurs in the
-	// rest of the byte (7 bits)
-
-	if firstSTChangeOn > maxFirstSTChangeOn {
-		// This should never happen, would cause corruption (ST already skipped but shouldn't).
-		return
-	}
-	b[0] |= uint8(firstSTChangeOn)
-}
-
-func readSTHeader(b []byte) (firstSTKnown bool, firstSTChangeOn uint8) {
-	if b[0] == 0x00 {
-		return false, 0
-	}
-	if b[0] == 0x80 {
-		return true, 0
-	}
-	mask := byte(0x80)
-	if b[0]&mask != 0 {
-		firstSTKnown = true
-	}
-	mask = 0x7F
-	return firstSTKnown, b[0] & mask
-}
 
 // XOR2Chunk holds XOR2 encoded samples with optional start
 // timestamp per chunk or per sample.
