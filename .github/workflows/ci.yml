@@ -139,7 +139,7 @@ jobs:
       - run: make assets-tarball
       - run: make ui-lint
       - run: make ui-test
-      - uses: prometheus/promci-artifacts/save@f9a587dbc0b2c78a0c54f8ad1cde71ea29a4b76f # v0.1.0
+      - uses: prometheus/promci-artifacts/save@9ca3252d07f230d5f923452b4df5697eba4a5bee # v0.1.1
         with:
           directory: .tarballs
 
@@ -218,7 +218,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: prometheus/promci-artifacts/restore@f9a587dbc0b2c78a0c54f8ad1cde71ea29a4b76f # v0.1.0
+      - uses: prometheus/promci-artifacts/restore@9ca3252d07f230d5f923452b4df5697eba4a5bee # v0.1.1
       - name: Extract pre-built UI assets
         run: |
           mkdir -p .prebuilt-ui
@@ -255,7 +255,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: prometheus/promci-artifacts/restore@f9a587dbc0b2c78a0c54f8ad1cde71ea29a4b76f # v0.1.0
+      - uses: prometheus/promci-artifacts/restore@9ca3252d07f230d5f923452b4df5697eba4a5bee # v0.1.1
       - name: Extract pre-built UI assets
         run: |
           mkdir -p .prebuilt-ui
