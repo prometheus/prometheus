@@ -49,6 +49,13 @@ var lexInputs = []struct {
 	// closing quote, because the rule action has not switched the start
 	// condition yet. Found by FuzzLexFastPathEquivalence.
 	{"null after label value", "m{a=\"\"\x00} 1"},
+	{"null after space before label value", "m{a= \x00\"b\"} 1"},
+	{"null in help text", "# HELP m so\x00me text\n"},
+	{"whitespace only help text", "# HELP m \n"},
+	{"empty help text", "# HELP m\n"},
+	{"tabs around value", "m\t1\t\t123\n"},
+	{"no trailing newline", "m 1"},
+	{"timestamp", "m 1 1395066363000\n"},
 	{"newline in label value", "m{a=\"b\nc\"} 1"},
 	{"quoted label name", `{"a.b"="c"} 1`},
 	{"quoted metric name", `{"m.n",a="b"} 1`},

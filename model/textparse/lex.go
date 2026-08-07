@@ -13,7 +13,10 @@
 
 package textparse
 
-import "io"
+import (
+	"bytes"
+	"io"
+)
 
 // This file holds hand-written fast paths for the two golex-generated lexers in
 // promlex.l.go and openmetricslex.l.go.
@@ -60,6 +63,23 @@ var (
 		return c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c == '_'
 	})
 
+	// digitChar marks the bytes of a timestamp: {D}.
+	digitChar = charTable(func(c byte) bool {
+		return c >= '0' && c <= '9'
+	})
+
+	// whitespaceChar marks the bytes matched by the [ \t]+ rule, which the
+	// Prometheus text format lexer applies in every start condition.
+	whitespaceChar = charTable(func(c byte) bool {
+		return c == ' ' || c == '\t'
+	})
+
+	// promValueChar marks the bytes of a Prometheus text format sample
+	// value: [^{ \t\n], minus the null byte, which no rule accepts here.
+	promValueChar = charTable(func(c byte) bool {
+		return c != 0 && c != '{' && c != ' ' && c != '\t' && c != '\n'
+	})
+
 	// quotedStop marks the bytes that terminate or complicate a quoted
 	// string. A '"' closes the string, a '\\' starts an escape sequence,
 	// and 0 and '\n' are accepted inside a string by some of the lexer
@@ -68,14 +88,31 @@ var (
 	quotedStop = [256]bool{'"': true, '\\': true, 0: true, '\n': true}
 )
 
-// scanName returns the length of the run of bytes at the start of b that are
+// scanRun returns the length of the run of bytes at the start of b that are
 // marked in tab.
-func scanName(b []byte, tab *[256]bool) int {
+func scanRun(b []byte, tab *[256]bool) int {
 	i := 0
 	for i < len(b) && tab[b[i]] {
 		i++
 	}
 	return i
+}
+
+// scanPromText scans the {C}* help or type text at the start of b, which runs
+// up to but not including the terminating newline. It returns the length of the
+// text, or -1 if the generated lexer has to take over: when the line holds a
+// null byte, which next swallows, when the line has no newline at all, or when
+// the text is empty or all whitespace, in which case the [ \t]+ rule matches
+// just as much and, being the earlier rule, wins.
+func scanPromText(b []byte) int {
+	n := bytes.IndexByte(b, '\n')
+	if n <= 0 || bytes.IndexByte(b[:n], 0) >= 0 {
+		return -1
+	}
+	if scanRun(b[:n], &whitespaceChar) == n {
+		return -1
+	}
+	return n
 }
 
 // scanQuoted scans the quoted string starting at b[0], which must be a '"'. It
@@ -112,43 +149,112 @@ func (l *promlexer) emit(end, next int, t token) token {
 	return t
 }
 
+// lexWhitespace matches the [ \t]+ rule, which leaves the start condition
+// alone. The byte at the current position must be a space or a tab. It fails
+// when the run ends on a null byte, for the reason given on scanQuoted: in the
+// start conditions where next swallows null bytes the generated lexer would
+// pull them into this token.
+func (l *promlexer) lexWhitespace() (token, bool) {
+	end := l.i + 1 + scanRun(l.b[l.i+1:], &whitespaceChar)
+	if end < len(l.b) && l.b[end] == 0 {
+		return 0, false
+	}
+	return l.emit(end, l.state, tWhitespace), true
+}
+
 // Lex returns the next token of the Prometheus text format input. It is the
 // entry point used by PromParser; lexDFA in promlex.l.go holds the generated
 // state machine that recognises the full grammar.
+//
+// The cases below cover the rules that a series line is made of. Comments,
+// the HELP and TYPE keywords, escape sequences and every error are left to the
+// generated lexer, which also takes over whenever a fast path finds a leading
+// byte that its rules do not accept. See promlex.l for the rules themselves.
 func (l *promlexer) Lex() token {
 	if l.i >= len(l.b) {
 		return tEOF
 	}
-	// Each case below covers the rules of one start condition that are worth
-	// recognising directly. On a leading byte that no such rule accepts the
-	// generated lexer takes over. See promlex.l for the rules themselves.
 	switch c := l.b[l.i]; l.state {
 	case sInit:
-		if metricNameStart[c] {
-			return l.emit(l.i+1+scanName(l.b[l.i+1:], &metricNameChar), sValue, tMName)
+		switch {
+		case metricNameStart[c]:
+			return l.emit(l.i+1+scanRun(l.b[l.i+1:], &metricNameChar), sValue, tMName)
+		case c == '\n':
+			return l.emit(l.i+1, sInit, tLinebreak)
+		case c == '{':
+			return l.emit(l.i+1, sLabels, tBraceOpen)
+		case whitespaceChar[c]:
+			if t, ok := l.lexWhitespace(); ok {
+				return t
+			}
 		}
 	case sMeta1:
-		if metricNameStart[c] {
-			return l.emit(l.i+1+scanName(l.b[l.i+1:], &metricNameChar), sMeta2, tMName)
-		}
-		if c == '"' {
+		switch {
+		case metricNameStart[c]:
+			return l.emit(l.i+1+scanRun(l.b[l.i+1:], &metricNameChar), sMeta2, tMName)
+		case c == '"':
 			if n := scanQuoted(l.b[l.i:]); n > 0 {
 				return l.emit(l.i+n, sMeta2, tMName)
 			}
+		case whitespaceChar[c]:
+			if t, ok := l.lexWhitespace(); ok {
+				return t
+			}
+		}
+	case sMeta2:
+		if n := scanPromText(l.b[l.i:]); n > 0 {
+			return l.emit(l.i+n, sInit, tText)
 		}
 	case sLabels:
-		if labelNameStart[c] {
-			return l.emit(l.i+1+scanName(l.b[l.i+1:], &labelNameChar), sLabels, tLName)
-		}
-		if c == '"' {
+		switch {
+		case labelNameStart[c]:
+			return l.emit(l.i+1+scanRun(l.b[l.i+1:], &labelNameChar), sLabels, tLName)
+		case c == '"':
 			if n := scanQuoted(l.b[l.i:]); n > 0 {
 				return l.emit(l.i+n, sLabels, tQString)
 			}
+		case c == '=':
+			return l.emit(l.i+1, sLValue, tEqual)
+		case c == ',':
+			return l.emit(l.i+1, sLabels, tComma)
+		case c == '}':
+			return l.emit(l.i+1, sValue, tBraceClose)
+		case whitespaceChar[c]:
+			if t, ok := l.lexWhitespace(); ok {
+				return t
+			}
 		}
 	case sLValue:
-		if c == '"' {
+		switch {
+		case c == '"':
 			if n := scanQuoted(l.b[l.i:]); n > 0 {
 				return l.emit(l.i+n, sLabels, tLValue)
+			}
+		case whitespaceChar[c]:
+			if t, ok := l.lexWhitespace(); ok {
+				return t
+			}
+		}
+	case sValue:
+		switch {
+		case promValueChar[c]:
+			return l.emit(l.i+1+scanRun(l.b[l.i+1:], &promValueChar), sTimestamp, tValue)
+		case c == '{':
+			return l.emit(l.i+1, sLabels, tBraceOpen)
+		case whitespaceChar[c]:
+			if t, ok := l.lexWhitespace(); ok {
+				return t
+			}
+		}
+	case sTimestamp:
+		switch {
+		case digitChar[c]:
+			return l.emit(l.i+1+scanRun(l.b[l.i+1:], &digitChar), sTimestamp, tTimestamp)
+		case c == '\n':
+			return l.emit(l.i+1, sInit, tLinebreak)
+		case whitespaceChar[c]:
+			if t, ok := l.lexWhitespace(); ok {
+				return t
 			}
 		}
 	}
@@ -182,11 +288,11 @@ func (l *openMetricsLexer) Lex() token {
 	switch c := l.b[l.i]; l.state {
 	case sInit:
 		if metricNameStart[c] {
-			return l.emit(l.i+1+scanName(l.b[l.i+1:], &metricNameChar), sValue, tMName)
+			return l.emit(l.i+1+scanRun(l.b[l.i+1:], &metricNameChar), sValue, tMName)
 		}
 	case sMeta1:
 		if metricNameStart[c] {
-			return l.emit(l.i+1+scanName(l.b[l.i+1:], &metricNameChar), sMeta2, tMName)
+			return l.emit(l.i+1+scanRun(l.b[l.i+1:], &metricNameChar), sMeta2, tMName)
 		}
 		if c == '"' {
 			if n := scanQuoted(l.b[l.i:]); n > 0 {
@@ -195,7 +301,7 @@ func (l *openMetricsLexer) Lex() token {
 		}
 	case sLabels:
 		if labelNameStart[c] {
-			return l.emit(l.i+1+scanName(l.b[l.i+1:], &labelNameChar), sLabels, tLName)
+			return l.emit(l.i+1+scanRun(l.b[l.i+1:], &labelNameChar), sLabels, tLName)
 		}
 		if c == '"' {
 			if n := scanQuoted(l.b[l.i:]); n > 0 {
@@ -210,7 +316,7 @@ func (l *openMetricsLexer) Lex() token {
 		}
 	case sExemplar:
 		if labelNameStart[c] {
-			return l.emit(l.i+1+scanName(l.b[l.i+1:], &labelNameChar), sExemplar, tLName)
+			return l.emit(l.i+1+scanRun(l.b[l.i+1:], &labelNameChar), sExemplar, tLName)
 		}
 		if c == '"' {
 			if n := scanQuoted(l.b[l.i:]); n > 0 {
