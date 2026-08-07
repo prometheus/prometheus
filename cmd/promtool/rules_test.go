@@ -59,7 +59,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 	testCases := []struct {
 		name                string
 		runcount            int
-		maxBlockDuration    time.Duration
+		blockDuration       time.Duration
 		expectedBlockCount  int
 		expectedSeriesCount int
 		expectedSampleCount int
@@ -80,7 +80,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 			// Execute the test more than once to simulate running the rule importer twice with the same data.
 			// We expect duplicate blocks with the same series are created when run more than once.
 			for i := 0; i < tt.runcount; i++ {
-				ruleImporter, err := newTestRuleImporter(ctx, start, tmpDir, tt.samples, tt.maxBlockDuration)
+				ruleImporter, err := newTestRuleImporter(ctx, start, tmpDir, tt.samples, tt.blockDuration)
 				require.NoError(t, err)
 				path1 := filepath.Join(tmpDir, "test.file")
 				require.NoError(t, createSingleRuleTestFiles(path1))
@@ -162,14 +162,14 @@ func TestBackfillRuleIntegration(t *testing.T) {
 	}
 }
 
-func newTestRuleImporter(_ context.Context, start time.Time, tmpDir string, testSamples model.Matrix, maxBlockDuration time.Duration) (*ruleImporter, error) {
+func newTestRuleImporter(_ context.Context, start time.Time, tmpDir string, testSamples model.Matrix, blockDuration time.Duration) (*ruleImporter, error) {
 	logger := promslog.NewNopLogger()
 	cfg := ruleImporterConfig{
 		outputDir:            tmpDir,
 		start:                start.Add(-10 * time.Hour),
 		end:                  start.Add(-7 * time.Hour),
 		evalInterval:         60 * time.Second,
-		maxBlockDuration:     maxBlockDuration,
+		blockDuration:        blockDuration,
 		nameValidationScheme: model.UTF8Validation,
 	}
 
