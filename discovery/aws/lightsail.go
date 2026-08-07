@@ -27,6 +27,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/lightsail"
+	lightsailTypes "github.com/aws/aws-sdk-go-v2/service/lightsail/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go"
 	"github.com/prometheus/client_golang/prometheus"
@@ -172,21 +173,21 @@ func NewLightsailDiscovery(conf *LightsailSDConfig, opts discovery.DiscovererOpt
 	return d, nil
 }
 
-func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsailClientAdapter, error) {
+func (d *LightsailDiscovery) lightsailClient(ctx context.Context) error {
 	if d.lightsail != nil {
-		return d.lightsail, nil
+		return nil
 	}
 
 	// Build the HTTP client from the provided HTTPClientConfig.
 	httpClient, err := config.NewClientFromConfig(d.cfg.HTTPClientConfig, "lightsail_sd")
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Resolve the region lazily. See LightsailSDConfig.UnmarshalYAML.
 	d.region, err = loadRegion(ctx, d.cfg.Region)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Build the AWS config with the resolved region.
@@ -209,7 +210,7 @@ func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsailCli
 
 	cfg, err := awsConfig.LoadDefaultConfig(ctx, configOptions...)
 	if err != nil {
-		return nil, fmt.Errorf("could not create aws config: %w", err)
+		return fmt.Errorf("could not create aws config: %w", err)
 	}
 
 	// If the role ARN is set, assume the role to get credentials and set the credentials provider in the config.
@@ -229,11 +230,11 @@ func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsailCli
 		options.HTTPClient = httpClient
 	}))
 
-	return d.lightsail, nil
+	return nil
 }
 
 func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	lightsailClient, err := d.lightsailClient(ctx)
+	err := d.lightsailClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -242,9 +243,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		Source: d.region,
 	}
 
-	input := &lightsail.GetInstancesInput{}
-
-	output, err := lightsailClient.GetInstances(ctx, input)
+	instances, err := d.listInstances(ctx)
 	if err != nil {
 		var awsErr smithy.APIError
 		if errors.As(err, &awsErr) && (awsErr.ErrorCode() == "AuthFailure" || awsErr.ErrorCode() == "UnauthorizedOperation") {
@@ -253,7 +252,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		return nil, fmt.Errorf("could not get instances: %w", err)
 	}
 
-	for _, inst := range output.Instances {
+	for _, inst := range instances {
 		if inst.PrivateIpAddress == nil {
 			continue
 		}
@@ -296,4 +295,26 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		tg.Targets = append(tg.Targets, labels)
 	}
 	return []*targetgroup.Group{tg}, nil
+}
+
+// listInstances lists all Lightsail instances in the configured region.
+func (d *LightsailDiscovery) listInstances(ctx context.Context) ([]lightsailTypes.Instance, error) {
+	var (
+		instances []lightsailTypes.Instance
+		pageToken *string
+	)
+	for {
+		output, err := d.lightsail.GetInstances(ctx, &lightsail.GetInstancesInput{PageToken: pageToken})
+		if err != nil {
+			return nil, err
+		}
+
+		instances = append(instances, output.Instances...)
+		if output.NextPageToken == nil {
+			break
+		}
+		pageToken = output.NextPageToken
+	}
+
+	return instances, nil
 }
