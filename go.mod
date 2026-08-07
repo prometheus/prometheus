@@ -9,6 +9,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4 v4.3.0
 	github.com/Code-Hex/go-generics-cache v1.5.1
 	github.com/KimMachineGun/automemlimit v0.7.5
+	github.com/RoaringBitmap/roaring v1.9.4
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 	github.com/aws/aws-sdk-go-v2 v1.43.0
@@ -60,6 +61,7 @@ require (
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor v0.157.0
 	github.com/outscale/osc-sdk-go/v2 v2.34.0
 	github.com/ovh/go-ovh v1.9.0
+	github.com/parquet-go/parquet-go v0.26.3
 	github.com/pb33f/libopenapi v0.38.7
 	github.com/pb33f/libopenapi-validator v0.14.0
 	github.com/prometheus/alertmanager v0.33.1
@@ -78,6 +80,7 @@ require (
 	go.opentelemetry.io/collector/component v1.63.0
 	go.opentelemetry.io/collector/consumer v1.63.0
 	go.opentelemetry.io/collector/pdata v1.63.0
+	go.opentelemetry.io/collector/pdata/xpdata v0.157.0
 	go.opentelemetry.io/collector/processor v1.63.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.69.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0
@@ -110,8 +113,10 @@ require (
 )
 
 require (
+	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/gofrs/flock v0.13.0 // indirect
 	github.com/hashicorp/go-metrics v0.6.0 // indirect
+	github.com/pierrec/lz4/v4 v4.1.26 // indirect
 	github.com/sony/gobreaker/v2 v2.4.0 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 )
@@ -122,6 +127,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/signin v1.5.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/basgys/goxml2json v1.1.1-0.20231018121955-e66ee54ceaad // indirect
+	github.com/bits-and-blooms/bitset v1.12.0 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/go-openapi/swag/cmdutils v0.26.0 // indirect
 	github.com/go-openapi/swag/conv v0.26.0 // indirect
@@ -135,7 +141,10 @@ require (
 	github.com/go-openapi/swag/typeutils v0.26.0 // indirect
 	github.com/go-openapi/swag/yamlutils v0.26.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
+	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/oracle/oci-go-sdk/v65 v65.121.1
+	github.com/parquet-go/bitpack v1.0.0 // indirect
+	github.com/parquet-go/jsonlite v1.0.0 // indirect
 	github.com/pb33f/jsonpath v0.8.2 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
