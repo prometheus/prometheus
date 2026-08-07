@@ -58,10 +58,53 @@ endif
 PROMU_VERSION ?= 0.20.0
 PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
 
+# These match the tarballs in the Promu release's sha256sums.txt.
+PROMU_SHA256_0.20.0_aix-ppc64 := 13651b4a9f950c8dc34bb882ff79f0e1ade79550dcd00e748f48977e2c36b7d9
+PROMU_SHA256_0.20.0_darwin-amd64 := b9b9d4e766f45963ac8c1e0a4a61c94699898fd34f81bf28780b9e72bdd8b02a
+PROMU_SHA256_0.20.0_darwin-arm64 := 7cb1ca7648e9998f65d4388b523c0ddc5d3eb2245a6c47caefd7c4ff9371a1a3
+PROMU_SHA256_0.20.0_dragonfly-amd64 := 65c0d2e4454a8537d86404da086709b4ebe196ce9078025a327009af1ba8abad
+PROMU_SHA256_0.20.0_freebsd-386 := 256bfa37675bd60408ae76e5fb6169043fa9dca6e370cb0aafce45de3ca704db
+PROMU_SHA256_0.20.0_freebsd-amd64 := bf550ba052e73dda0a18518893a20f4fc91e0ade59cdf6df9e30007ae7420b1b
+PROMU_SHA256_0.20.0_freebsd-arm64 := 2b4a4077682591f7d7ff9e420701ac07fbf0f704eab5f18b0601a22f14e0df99
+PROMU_SHA256_0.20.0_freebsd-armv6 := b67bb4bd74be443a39ea272e217b825fe83b724cd74d1ac131346375d491ed60
+PROMU_SHA256_0.20.0_freebsd-armv7 := bcab82596b701859c1df2b8118ff70f1d069103a0983fe8e25c6e61adc9c5832
+PROMU_SHA256_0.20.0_illumos-amd64 := b292232546c459ee1a1aa9ddd5015f1ca570e0dfd00bba93e354c382f520d7cb
+PROMU_SHA256_0.20.0_linux-386 := 7e5450796c6341a584cff74e100dabd05be7a66cd837c912fe3adb7cf499a9cd
+PROMU_SHA256_0.20.0_linux-amd64 := 24472f844d97a40e1ad8346f95e7abc5d9fd582148819287c252911a2f752971
+PROMU_SHA256_0.20.0_linux-arm64 := fb0d19d509aa954ed4c2f7ead02702545b77cc8765dc7eed7449d39e8fc4e8de
+PROMU_SHA256_0.20.0_linux-armv5 := 2dd72b667e2e35a418317625323f83f7b53e6af928a83959b02016f5ccc7dca9
+PROMU_SHA256_0.20.0_linux-armv6 := cfaafe3832360165bdfe8b69ed4cc383c57144648e74c2728eeec9568d57d95b
+PROMU_SHA256_0.20.0_linux-armv7 := 14906ea0c0d1f5cfeb905d2d571d255aaa47212e3f2c1b3566ac47b37665c603
+PROMU_SHA256_0.20.0_linux-mips := d879778407fceb4c1e3d385c8e5e1b2223acb9651d1ca865f4010125782aba92
+PROMU_SHA256_0.20.0_linux-mips64 := 14d0bd4b0b240b27c30cbd8b68b41d97d030b6a1b946e8c7afc6b60979db0633
+PROMU_SHA256_0.20.0_linux-mips64le := a1b0fccadbf8f2e393955c3caa6f0e5a4c4f635361381daf45ad1fb6632ca433
+PROMU_SHA256_0.20.0_linux-mipsle := ebab175127d30971e678e39dd18cb1b77a703f161e8b4e7c0c6caf4eb5bb0584
+PROMU_SHA256_0.20.0_linux-ppc64 := 93f5bbe59ec8dce3c1510fc7e4ecabdf16068e3416749028ac52d1922149d19a
+PROMU_SHA256_0.20.0_linux-ppc64le := db50e2fc043af829798c3847826629b3543ec6ed644873566e80833e8f85ccba
+PROMU_SHA256_0.20.0_linux-riscv64 := e8cb91db56ca3386af85bc8bbfdd55c4744e7507f626b684327003b371065138
+PROMU_SHA256_0.20.0_linux-s390x := 620cdd9b5343057a07d0e4a9162505111a4b9a3e15a0ce761c16a1ea803ddfa5
+PROMU_SHA256_0.20.0_netbsd-386 := a318c38f9e5bb5bdf485b7eb4e5a15997bf50cc846835a3b193bc016d37a80b4
+PROMU_SHA256_0.20.0_netbsd-amd64 := 6223713bd9740b423f0cb5c7fd361ed587d27e43efcec71f4196144eeb48232f
+PROMU_SHA256_0.20.0_netbsd-arm64 := 3a43da5ab3c87cf6a44d094517fc3ebb651509e56a4eb1de011b20047ed93270
+PROMU_SHA256_0.20.0_netbsd-armv6 := 206ef57db7fedeff99be16cf4bdc47d5328748cc9b662cd00b10dc4c3a756e4a
+PROMU_SHA256_0.20.0_netbsd-armv7 := 963273770f5c6c15aa39ad3c495afda85ce2be58295f4def122a26306dd6ae53
+PROMU_SHA256_0.20.0_openbsd-386 := 02eb3eed9978e52ac5b62f54666449e8f566d9c2ae119981633d0776e32d6c3f
+PROMU_SHA256_0.20.0_openbsd-amd64 := 450e6a796bfccf794b8a8d56ec255b8341ad22a6fdb1fa155fb7eac796a9104e
+PROMU_SHA256_0.20.0_openbsd-arm64 := d578ddee46cd00ecd9c37a44ba3ae52c33bc8fce756920ee206818732800226e
+PROMU_SHA256_0.20.0_openbsd-armv7 := b61631e3a819560e202776019e8d30a10e0a832949f7179c146161bd4bc0313a
+PROMU_SHA256_0.20.0_windows-386 := 26596d3ddc2abd4b00ab2beb9506bc19c4b46721682f8deb2b5ce45c21352261
+PROMU_SHA256_0.20.0_windows-amd64 := aae4937064eb382d9ed02a2ce0b83ffd650c004a91f5a6f65790f690e2bf0497
+PROMU_SHA256_0.20.0_windows-arm64 := 706814b411d036a2598b821c2e545c0ecd3927971ba30ce4308653c8cbe044e7
+PROMU_SHA256 ?= $(PROMU_SHA256_$(PROMU_VERSION)_$(GO_BUILD_PLATFORM))
+
 SKIP_GOLANGCI_LINT :=
 GOLANGCI_LINT :=
 GOLANGCI_LINT_OPTS ?=
 GOLANGCI_LINT_VERSION ?= v2.12.2
+GOLANGCI_LINT_INSTALLER_URL := https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh
+# This matches the versioned installer script above.
+GOLANGCI_LINT_INSTALLER_SHA256_v2.12.2 := d32d3534af96cfd59546a084d22b213e8a47541cada5013aa8a84c4fa2589905
+GOLANGCI_LINT_INSTALLER_SHA256 ?= $(GOLANGCI_LINT_INSTALLER_SHA256_$(GOLANGCI_LINT_VERSION))
 GOLANGCI_FMT_OPTS ?=
 # golangci-lint only supports linux, darwin and windows platforms on i386/amd64/arm64.
 # windows isn't included here because of the path separator being different.
@@ -114,6 +157,30 @@ PUBLISH_DOCKER_ARCHS = $(addprefix common-docker-publish-,$(DOCKER_ARCHS))
 TAG_DOCKER_ARCHS = $(addprefix common-docker-tag-latest-,$(DOCKER_ARCHS))
 
 SANITIZED_DOCKER_IMAGE_TAG := $(subst +,-,$(DOCKER_IMAGE_TAG))
+
+define check_sha256
+expected_checksum='$(strip $(2))'; \
+if command -v gsha256sum >/dev/null 2>&1; then \
+	actual_checksum="$$(gsha256sum "$(1)")" || exit 1; \
+	actual_checksum="$${actual_checksum%% *}"; \
+elif command -v sha256sum >/dev/null 2>&1; then \
+	actual_checksum="$$(sha256sum "$(1)")" || exit 1; \
+	actual_checksum="$${actual_checksum%% *}"; \
+elif command -v shasum >/dev/null 2>&1; then \
+	actual_checksum="$$(shasum -a 256 "$(1)")" || exit 1; \
+	actual_checksum="$${actual_checksum%% *}"; \
+elif command -v openssl >/dev/null 2>&1; then \
+	actual_checksum="$$(openssl dgst -sha256 "$(1)")" || exit 1; \
+	actual_checksum="$${actual_checksum##* }"; \
+else \
+	echo "No SHA-256 checksum utility found" >&2; \
+	exit 1; \
+fi; \
+if [ "$$actual_checksum" != "$$expected_checksum" ]; then \
+	echo "SHA-256 checksum mismatch for $(1): expected $$expected_checksum, got $$actual_checksum" >&2; \
+	exit 1; \
+fi
+endef
 
 ifeq ($(GOHOSTARCH),amd64)
         ifeq ($(GOHOSTOS),$(filter $(GOHOSTOS),linux freebsd darwin windows))
@@ -171,13 +238,26 @@ update-go-deps:
 	done
 	$(GO) mod tidy
 
+.PHONY: common-test-sha256
+common-test-sha256:
+	@set -e; \
+	test_tmp="$$(mktemp -d)"; \
+	trap 'rm -rf "$$test_tmp"' EXIT; \
+	test_file="$$test_tmp/input"; \
+	printf 'prometheus\n' > "$$test_file"; \
+	$(call check_sha256,$$test_file,e4af19ee8b2cee4fc81503a5e4bfce523a13c5a7a306612047f49d46447e7850); \
+	if ($(call check_sha256,$$test_file,0000000000000000000000000000000000000000000000000000000000000000)) >/dev/null 2>&1; then \
+		echo "Checksum verification accepted a mismatched checksum" >&2; \
+		exit 1; \
+	fi
+
 .PHONY: common-test-short
-common-test-short: $(GOTEST_DIR)
+common-test-short: common-test-sha256 $(GOTEST_DIR)
 	@echo ">> running short tests"
 	$(GOTEST) -short $(GOOPTS) $(pkgs)
 
 .PHONY: common-test
-common-test: $(GOTEST_DIR)
+common-test: common-test-sha256 $(GOTEST_DIR)
 	@echo ">> running all tests"
 	$(GOTEST) $(test-flags) $(GOOPTS) $(pkgs)
 
@@ -390,10 +470,18 @@ promu: $(PROMU)
 
 $(PROMU):
 	$(eval PROMU_TMP := $(shell mktemp -d))
-	curl -s -L $(PROMU_URL) | tar -xvzf - -C $(PROMU_TMP)
-	mkdir -p $(FIRST_GOPATH)/bin
-	cp $(PROMU_TMP)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM)/promu $(FIRST_GOPATH)/bin/promu
-	rm -r $(PROMU_TMP)
+	@set -e; \
+	trap 'rm -rf "$(PROMU_TMP)"' EXIT; \
+	if [ -z "$(PROMU_SHA256)" ]; then \
+		echo "No Promu checksum configured for version $(PROMU_VERSION) on $(GO_BUILD_PLATFORM)" >&2; \
+		exit 1; \
+	fi; \
+	archive="$(PROMU_TMP)/promu.tar.gz"; \
+	curl --fail --silent --show-error --location "$(PROMU_URL)" --output "$$archive"; \
+	$(call check_sha256,$$archive,$(PROMU_SHA256)); \
+	tar -xvzf "$$archive" -C "$(PROMU_TMP)"; \
+	mkdir -p "$(FIRST_GOPATH)/bin"; \
+	cp "$(PROMU_TMP)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM)/promu" "$(FIRST_GOPATH)/bin/promu"
 
 .PHONY: common-proto
 common-proto:
@@ -402,10 +490,18 @@ common-proto:
 
 ifdef GOLANGCI_LINT
 $(GOLANGCI_LINT):
-	mkdir -p $(FIRST_GOPATH)/bin
-	curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh \
-		| sed -e '/install -d/d' \
-		| sh -s -- -b $(FIRST_GOPATH)/bin $(GOLANGCI_LINT_VERSION)
+	$(eval GOLANGCI_LINT_TMP := $(shell mktemp -d))
+	@set -e; \
+	trap 'rm -rf "$(GOLANGCI_LINT_TMP)"' EXIT; \
+	if [ -z "$(GOLANGCI_LINT_INSTALLER_SHA256)" ]; then \
+		echo "No golangci-lint installer checksum configured for version $(GOLANGCI_LINT_VERSION)" >&2; \
+		exit 1; \
+	fi; \
+	installer="$(GOLANGCI_LINT_TMP)/install.sh"; \
+	curl --fail --silent --show-error --location "$(GOLANGCI_LINT_INSTALLER_URL)" --output "$$installer"; \
+	$(call check_sha256,$$installer,$(GOLANGCI_LINT_INSTALLER_SHA256)); \
+	mkdir -p "$(FIRST_GOPATH)/bin"; \
+	sed -e '/install -d/d' "$$installer" | sh -s -- -b "$(FIRST_GOPATH)/bin" "$(GOLANGCI_LINT_VERSION)"
 endif
 
 .PHONY: common-print-golangci-lint-version
