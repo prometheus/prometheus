@@ -10041,17 +10041,9 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 
 		require.Panics(t, func() { h.mmapHeadChunks() })
 
-		// Probe the locks without blocking. On failure the leaked locks are
-		// released, so that the test fails instead of hanging forever in the
-		// deferred Head.Close.
-		seriesFree := s.TryLock()
-		if seriesFree {
-			s.Unlock()
-		}
-
 		// The locks held while mmapChunks panicked must have been released.
-		require.True(t, seriesFree, "series lock still held after panic, any later m-mapping would block forever")
-
+		require.True(t, s.TryLock(), "series lock leaked after panic")
+		s.Unlock()
 		for i := range h.series.size {
 			require.Truef(t, h.series.locks[i].TryLock(), "stripe lock %d leaked after panic", i)
 			h.series.locks[i].Unlock()
