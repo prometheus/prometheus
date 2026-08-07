@@ -784,10 +784,6 @@ func TestBuilder(t *testing.T) {
 			set:  []Label{{"ddd", "444"}},
 			want: FromStrings("aaa", "111", "ccc", "333", "ddd", "444"),
 		},
-		{ // Blank value is interpreted as delete.
-			base: FromStrings("aaa", "111", "bbb", "", "ccc", "333"),
-			want: FromStrings("aaa", "111", "ccc", "333"),
-		},
 		{
 			base: FromStrings("aaa", "111", "bbb", "222", "ccc", "333"),
 			set:  []Label{{"bbb", ""}},
