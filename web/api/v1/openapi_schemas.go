@@ -65,10 +65,17 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	// Resources schemas.
 	schemas.Set("ResourcesOutputBody", b.resourcesOutputBodySchema())
 	schemas.Set("ResourcesSeriesOutputBody", b.resourcesSeriesOutputBodySchema())
+	schemas.Set("ResourcesDiffOutputBody", b.resourcesDiffOutputBodySchema())
 	schemas.Set("ResourcesAttributesOutputBody", b.resourcesAttributesOutputBodySchema())
 	schemas.Set("ResourceAttributesResponse", b.resourceAttributesResponseSchema())
 	schemas.Set("ResourceAttributeVersion", b.resourceAttributeVersionSchema())
 	schemas.Set("ResourceAttributeData", b.resourceAttributeDataSchema())
+	schemas.Set("ResourceAttributeKeyInfo", b.resourceAttributeKeyInfoSchema())
+	schemas.Set("ResourceAttributesDiffEntry", b.resourceAttributesDiffEntrySchema())
+	schemas.Set("SeriesMetadataResponse", b.seriesMetadataResponseSchema())
+	schemas.Set("SeriesMetricsNamesView", b.seriesMetricsNamesViewSchema())
+	schemas.Set("SeriesMetricSummary", b.seriesMetricSummarySchema())
+	schemas.Set("SeriesMetricsSummaryView", b.seriesMetricsSummaryViewSchema())
 
 	// Metadata schemas.
 	schemas.Set("Metadata", b.metadataSchema())
@@ -840,7 +847,22 @@ func (b *OpenAPIBuilder) searchLabelValuesPostInputBodySchema() *base.SchemaProx
 }
 
 func (*OpenAPIBuilder) resourcesOutputBodySchema() *base.SchemaProxy {
-	// The data field is a paginated object with results array and optional nextToken cursor.
+	return resourceResponseBodySchema(base.CreateSchemaProxy(&base.Schema{
+		OneOf: []*base.SchemaProxy{
+			resourcesFullDataSchema(),
+			base.CreateSchemaProxy(&base.Schema{
+				AnyOf: []*base.SchemaProxy{
+					resourcesFlatAttributesDataSchema(),
+					resourcesVerboseAttributesDataSchema(),
+				},
+				Description: "Flat or verbose attribute data. Empty maps are valid for both variants.",
+			}),
+		},
+		Description: "Full, flat attributes, or verbose attributes data selected by the request parameters.",
+	}), "Response body for the resources endpoint.")
+}
+
+func resourcesFullDataSchema() *base.SchemaProxy {
 	dataProps := orderedmap.New[string, *base.SchemaProxy]()
 	dataProps.Set("results", base.CreateSchemaProxy(&base.Schema{
 		Type:        []string{"array"},
@@ -852,66 +874,63 @@ func (*OpenAPIBuilder) resourcesOutputBodySchema() *base.SchemaProxy {
 		Description: "Cursor token for fetching the next page. Empty when there are no more results.",
 	}))
 
-	props := orderedmap.New[string, *base.SchemaProxy]()
-	props.Set("status", statusSchema())
-	props.Set("data", base.CreateSchemaProxy(&base.Schema{
-		Type:        []string{"object"},
-		Description: "Paginated resource attributes with cursor-based pagination.",
-		Required:    []string{"results"},
-		Properties:  dataProps,
-	}))
-	props.Set("warnings", warningsSchema())
-	props.Set("infos", infosSchema())
-
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:                 []string{"object"},
-		Description:          "Response body for resources endpoint (default format).",
+		Description:          "Paginated resource attributes returned by the default format.",
+		Required:             []string{"results"},
+		Properties:           dataProps,
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
-		Required:             []string{"status", "data"},
-		Properties:           props,
 	})
 }
 
 func (*OpenAPIBuilder) resourcesSeriesOutputBodySchema() *base.SchemaProxy {
-	// The data field is a paginated object with results array and optional nextToken cursor.
+	return resourceResponseBodySchema(base.CreateSchemaProxy(&base.Schema{
+		OneOf: []*base.SchemaProxy{
+			resourcesSeriesFullDataSchema(),
+			base.CreateSchemaProxy(&base.Schema{
+				AnyOf: []*base.SchemaProxy{
+					schemaRef("#/components/schemas/SeriesMetricsNamesView"),
+					schemaRef("#/components/schemas/SeriesMetricsSummaryView"),
+				},
+				Description: "Names or summary compact data. Empty metrics arrays are valid for both variants.",
+			}),
+		},
+		Description: "Full, names, or summary data selected by the view parameter.",
+	}), "Response body for the resource reverse-lookup endpoint.")
+}
+
+func resourcesSeriesFullDataSchema() *base.SchemaProxy {
 	dataProps := orderedmap.New[string, *base.SchemaProxy]()
 	dataProps.Set("results", base.CreateSchemaProxy(&base.Schema{
 		Type:        []string{"array"},
 		Description: "Array of series matching the metadata criteria, with their resource versions.",
-		Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: base.CreateSchemaProxy(&base.Schema{
-			Type:        []string{"object"},
-			Description: "A series matching the metadata criteria with its resource version history.",
-		})},
+		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: schemaRef("#/components/schemas/SeriesMetadataResponse")},
 	}))
 	dataProps.Set("nextToken", base.CreateSchemaProxy(&base.Schema{
 		Type:        []string{"string"},
 		Description: "Cursor token for fetching the next page. Empty when there are no more results.",
 	}))
 
-	props := orderedmap.New[string, *base.SchemaProxy]()
-	props.Set("status", statusSchema())
-	props.Set("data", base.CreateSchemaProxy(&base.Schema{
-		Type:        []string{"object"},
-		Description: "Paginated series metadata with cursor-based pagination.",
-		Required:    []string{"results"},
-		Properties:  dataProps,
-	}))
-	props.Set("warnings", warningsSchema())
-	props.Set("infos", infosSchema())
-
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:                 []string{"object"},
-		Description:          "Response body for the reverse lookup endpoint.",
+		Description:          "Paginated series metadata returned by view=full.",
+		Required:             []string{"results"},
+		Properties:           dataProps,
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
-		Required:             []string{"status", "data"},
-		Properties:           props,
 	})
 }
 
 func (*OpenAPIBuilder) resourcesAttributesOutputBodySchema() *base.SchemaProxy {
-	props := orderedmap.New[string, *base.SchemaProxy]()
-	props.Set("status", statusSchema())
-	props.Set("data", base.CreateSchemaProxy(&base.Schema{
+	return resourceResponseBodySchema(base.CreateSchemaProxy(&base.Schema{
+		AnyOf: []*base.SchemaProxy{
+			resourcesFlatAttributesDataSchema(),
+			resourcesVerboseAttributesDataSchema(),
+		},
+	}), "Response body for format=attributes.")
+}
+
+func resourcesFlatAttributesDataSchema() *base.SchemaProxy {
+	return base.CreateSchemaProxy(&base.Schema{
 		Type: []string{"object"},
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
 			A: base.CreateSchemaProxy(&base.Schema{
@@ -919,18 +938,51 @@ func (*OpenAPIBuilder) resourcesAttributesOutputBodySchema() *base.SchemaProxy {
 				Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
 			}),
 		},
-		Description: "Map of attribute names to their unique values.",
-	}))
+		Description: "Map of attribute names to sorted unique values returned by format=attributes.",
+	})
+}
+
+func resourcesVerboseAttributesDataSchema() *base.SchemaProxy {
+	return base.CreateSchemaProxy(&base.Schema{
+		Type: []string{"object"},
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
+			A: schemaRef("#/components/schemas/ResourceAttributeKeyInfo"),
+		},
+		Description: "Map of OTel attribute names to schema information returned by format=attributes and verbose=true.",
+	})
+}
+
+func resourceResponseBodySchema(dataSchema *base.SchemaProxy, description string) *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("status", statusSchema())
+	props.Set("data", dataSchema)
 	props.Set("warnings", warningsSchema())
 	props.Set("infos", infosSchema())
 
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:                 []string{"object"},
-		Description:          "Response body for resources endpoint with format=attributes (for autocomplete).",
+		Description:          description,
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
 		Required:             []string{"status", "data"},
 		Properties:           props,
 	})
+}
+
+func (*OpenAPIBuilder) resourcesDiffOutputBodySchema() *base.SchemaProxy {
+	dataProps := orderedmap.New[string, *base.SchemaProxy]()
+	dataProps.Set("results", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"array"},
+		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: schemaRef("#/components/schemas/ResourceAttributesDiffEntry")},
+		Description: "Sorted per-series resource attribute changes.",
+	}))
+	dataProps.Set("nextToken", stringSchemaWithDescription("Cursor token for the next page. Omitted on the final page."))
+	return resourceResponseBodySchema(base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Paginated resource attribute differences.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"results"},
+		Properties:           dataProps,
+	}), "Response body for the resource attribute diff endpoint.")
 }
 
 func (*OpenAPIBuilder) resourceAttributesResponseSchema() *base.SchemaProxy {
@@ -988,6 +1040,117 @@ func (*OpenAPIBuilder) resourceAttributeDataSchema() *base.SchemaProxy {
 		Description:          "Resource attribute data with identifying and descriptive attributes.",
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
 		Required:             []string{"identifying", "descriptive"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) resourceAttributeKeyInfoSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("role", enumStringSchema("identifying", "descriptive"))
+	props.Set("otel_name", stringSchemaWithDescription("Original OTel resource attribute name."))
+	props.Set("prom_name", stringSchemaWithDescription("Prometheus label name after configured translation. Omitted when translation fails."))
+	props.Set("values", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"array"},
+		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+		Description: "Sorted unique values observed for the attribute.",
+	}))
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Schema and observed values for one resource attribute.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"role", "otel_name", "values"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) resourceAttributesDiffEntrySchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("labels", schemaRef("#/components/schemas/Labels"))
+	props.Set("before", schemaRef("#/components/schemas/ResourceAttributeVersion"))
+	props.Set("after", schemaRef("#/components/schemas/ResourceAttributeVersion"))
+	props.Set("changed", schemaRef("#/components/schemas/ResourceAttributeData"))
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Resource attribute changes for one series. Added values are encoded as new, removed values as old->, and changed values as old->new.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"labels", "after", "changed"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) seriesMetadataResponseSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("labels", schemaRef("#/components/schemas/Labels"))
+	props.Set("versions", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"array"},
+		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: schemaRef("#/components/schemas/ResourceAttributeVersion")},
+		Description: "Matching resource versions. Present in the full view.",
+	}))
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "A matching series and its resource versions.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"labels"},
+		Properties:           props,
+	})
+}
+
+func metricsLimitUnitSchema() *base.SchemaProxy {
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"string"},
+		Enum:        createEnumNodes([]string{"metrics"}),
+		Description: "Unit to which metric_limit applies.",
+	})
+}
+
+func (*OpenAPIBuilder) seriesMetricsNamesViewSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("metrics", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"array"},
+		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+		Description: "Sorted unique metric names.",
+	}))
+	props.Set("series_count", integerSchemaWithDescription("Total matching series counted before metric truncation."))
+	props.Set("truncated", booleanSchemaWithDescription("Whether metric_limit truncated the metrics array."))
+	props.Set("limit_unit", metricsLimitUnitSchema())
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Compact resource reverse lookup grouped as metric names.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"metrics", "series_count", "truncated", "limit_unit"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) seriesMetricSummarySchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("__name__", stringSchemaWithDescription("Metric name."))
+	props.Set("series_count", integerSchemaWithDescription("Number of matching series for this metric."))
+	props.Set("example_labels", schemaRef("#/components/schemas/Labels"))
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Per-metric rollup with the first label-sorted series as a deterministic example.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"__name__", "series_count", "example_labels"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) seriesMetricsSummaryViewSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("metrics", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"array"},
+		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: schemaRef("#/components/schemas/SeriesMetricSummary")},
+		Description: "Sorted per-metric summaries.",
+	}))
+	props.Set("series_count", integerSchemaWithDescription("Total matching series counted before metric truncation."))
+	props.Set("truncated", booleanSchemaWithDescription("Whether metric_limit truncated the metrics array."))
+	props.Set("limit_unit", metricsLimitUnitSchema())
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Compact resource reverse lookup grouped into per-metric summaries.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"metrics", "series_count", "truncated", "limit_unit"},
 		Properties:           props,
 	})
 }
