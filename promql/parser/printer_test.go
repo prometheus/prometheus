@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
 func TestExprString(t *testing.T) {
@@ -334,6 +335,100 @@ func TestExprString(t *testing.T) {
 			}
 
 			require.Equal(t, exp, expr.String())
+		})
+	}
+}
+
+func TestExprStringPreserveComments(t *testing.T) {
+	commentParser := NewParser(Options{PreserveComments: true})
+
+	for _, tc := range []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "leading comment",
+			input:    "# trace_id=abc123\nup",
+			expected: "# trace_id=abc123\nup",
+		},
+		{
+			name:     "trailing comment",
+			input:    "up # trace_id=abc123",
+			expected: "up # trace_id=abc123",
+		},
+		{
+			name:     "nested comment",
+			input:    "sum(\n  # rate comment\n  rate(http_requests_total[5m])\n)",
+			expected: "sum( # rate comment\nrate(http_requests_total[5m]))",
+		},
+		{
+			name:     "multiple comments",
+			input:    "# first\nup # second\n# third",
+			expected: "# first\nup # second\n# third",
+		},
+		{
+			name:     "no comments",
+			input:    "sum(rate(http_requests_total[5m]))",
+			expected: "sum(rate(http_requests_total[5m]))",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			expr, err := commentParser.ParseExpr(tc.input)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, expr.String())
+		})
+	}
+}
+
+func TestPreserveCommentsExposesCommentPositions(t *testing.T) {
+	expr, err := NewParser(Options{PreserveComments: true}).ParseExpr("# first\nup # second")
+	require.NoError(t, err)
+
+	commented, ok := expr.(*CommentedExpr)
+	require.True(t, ok)
+	require.Equal(t, []Comment{
+		{
+			Text:     "# first",
+			PosRange: posrange.PositionRange{Start: 0, End: 7},
+		},
+		{
+			Text:     "# second",
+			PosRange: posrange.PositionRange{Start: 11, End: 19},
+		},
+	}, commented.Comments)
+}
+
+func TestPreserveCommentsSurviveASTMutation(t *testing.T) {
+	expr, err := NewParser(Options{PreserveComments: true}).ParseExpr("# trace\n1 + 2")
+	require.NoError(t, err)
+
+	commented := expr.(*CommentedExpr)
+	commented.Expr.(*BinaryExpr).RHS.(*NumberLiteral).Val = 3
+	require.Equal(t, "# trace\n1 + 3", commented.String())
+}
+
+func TestExprStringStripsCommentsByDefault(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "leading comment",
+			input:    "# trace_id=abc123\nup",
+			expected: "up",
+		},
+		{
+			name:     "trailing comment",
+			input:    "up # trace_id=abc123",
+			expected: "up",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			expr, err := testParser.ParseExpr(tc.input)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, expr.String())
 		})
 	}
 }

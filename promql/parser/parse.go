@@ -46,6 +46,9 @@ type Options struct {
 	ExperimentalDurationExpr     bool
 	EnableExtendedRangeSelectors bool
 	EnableBinopFillModifiers     bool
+	// PreserveComments keeps comments in the parsed expression for String rendering.
+	// The default parser behavior remains to discard comments.
+	PreserveComments bool
 }
 
 // Parser provides PromQL parsing methods. Create one with NewParser.
@@ -157,6 +160,7 @@ type parser struct {
 
 	generatedParserResult any
 	parseErrors           ParseErrors
+	comments              []Comment
 
 	// lastHistogramCounterResetHintSet is set to true when the most recently
 	// built histogram had a counter_reset_hint explicitly specified.
@@ -174,6 +178,7 @@ func newParser(input string, opts Options) *parser {
 	p.injecting = false
 	p.parseErrors = nil
 	p.generatedParserResult = nil
+	p.comments = nil
 	p.lastClosing = posrange.Pos(0)
 	p.options = opts
 
@@ -209,6 +214,12 @@ func (p *parser) parseExpr() (expr Expr, err error) {
 
 	if len(p.parseErrors) != 0 {
 		err = p.parseErrors
+	}
+	if err == nil && expr != nil && p.options.PreserveComments && len(p.comments) != 0 {
+		expr = &CommentedExpr{
+			Expr:     expr,
+			Comments: append([]Comment(nil), p.comments...),
+		}
 	}
 
 	return expr, err
@@ -376,6 +387,12 @@ func (p *parser) Lex(lval *yySymType) int {
 	for {
 		p.lex.NextItem(&lval.item)
 		typ = lval.item.Typ
+		if typ == COMMENT && p.options.PreserveComments {
+			p.comments = append(p.comments, Comment{
+				Text:     lval.item.Val,
+				PosRange: lval.item.PositionRange(),
+			})
+		}
 		if typ != COMMENT {
 			break
 		}
