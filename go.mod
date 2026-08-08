@@ -11,17 +11,17 @@ require (
 	github.com/KimMachineGun/automemlimit v0.7.5
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
-	github.com/aws/aws-sdk-go-v2 v1.43.0
-	github.com/aws/aws-sdk-go-v2/config v1.32.31
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.30
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.317.0
-	github.com/aws/aws-sdk-go-v2/service/ecs v1.89.0
-	github.com/aws/aws-sdk-go-v2/service/elasticache v1.56.0
-	github.com/aws/aws-sdk-go-v2/service/kafka v1.56.0
-	github.com/aws/aws-sdk-go-v2/service/lightsail v1.58.0
-	github.com/aws/aws-sdk-go-v2/service/rds v1.123.0
-	github.com/aws/aws-sdk-go-v2/service/sts v1.45.0
-	github.com/aws/smithy-go v1.27.4
+	github.com/aws/aws-sdk-go-v2 v1.43.4
+	github.com/aws/aws-sdk-go-v2/config v1.32.35
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.34
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.321.0
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.90.0
+	github.com/aws/aws-sdk-go-v2/service/elasticache v1.56.4
+	github.com/aws/aws-sdk-go-v2/service/kafka v1.58.0
+	github.com/aws/aws-sdk-go-v2/service/lightsail v1.58.4
+	github.com/aws/aws-sdk-go-v2/service/rds v1.124.1
+	github.com/aws/aws-sdk-go-v2/service/sts v1.45.4
+	github.com/aws/smithy-go v1.27.7
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/dennwc/varint v1.0.0
@@ -156,7 +156,7 @@ require (
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.7.2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.31
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.35
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.31 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.31 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.13 // indirect
