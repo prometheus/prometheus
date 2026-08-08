@@ -653,6 +653,14 @@ const funcDocs: Record<string, React.ReactNode> = {
         <code>clamp_max(v instant-vector, max scalar)</code> clamps the values of all float samples in <code>v</code> to
         have an upper limit of <code>max</code>. Histogram samples in the input vector are ignored silently.
       </p>
+
+      <p>Special cases:</p>
+
+      <ul>
+        <li>
+          Float samples are clamped to <code>NaN</code> if <code>max</code> is <code>NaN</code>
+        </li>
+      </ul>
     </>
   ),
   clamp_min: (
@@ -661,6 +669,14 @@ const funcDocs: Record<string, React.ReactNode> = {
         <code>clamp_min(v instant-vector, min scalar)</code> clamps the values of all float samples in <code>v</code> to
         have a lower limit of <code>min</code>. Histogram samples in the input vector are ignored silently.
       </p>
+
+      <p>Special cases:</p>
+
+      <ul>
+        <li>
+          Float samples are clamped to <code>NaN</code> if <code>min</code> is <code>NaN</code>
+        </li>
+      </ul>
     </>
   ),
   cos: (
