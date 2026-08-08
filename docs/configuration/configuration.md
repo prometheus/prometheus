@@ -2598,6 +2598,54 @@ Available meta labels:
   config is set. Defaults to `http`.
 * `__meta_kubernetes_ingress_path`: Path from ingress spec. Defaults to `/`.
 
+#### `gateway`
+
+The `gateway` role discovers a target for each listener of each
+[Gateway API](https://gateway-api.sigs.k8s.io/) `Gateway`. This is generally
+useful for blackbox monitoring of a gateway's exposed listeners.
+The address is set to the listener's hostname and port.
+
+This role requires the `sigs.k8s.io/gateway-api` CRDs to be installed in the
+cluster.
+
+Available meta labels:
+
+* `__meta_kubernetes_namespace`: The namespace of the gateway object.
+* `__meta_kubernetes_gateway_name`: The name of the gateway object.
+* `__meta_kubernetes_gateway_label_<labelname>`: Each label from the gateway object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_gateway_labelpresent_<labelname>`: `true` for each label from the gateway object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_gateway_annotation_<annotationname>`: Each annotation from the gateway object.
+* `__meta_kubernetes_gateway_annotationpresent_<annotationname>`: `true` for each annotation from the gateway object.
+* `__meta_kubernetes_gateway_class_name`: The `gatewayClassName` from the gateway spec.
+* `__meta_kubernetes_gateway_listener_name`: The name of the listener.
+* `__meta_kubernetes_gateway_listener_hostname`: The hostname of the listener, if set.
+* `__meta_kubernetes_gateway_listener_port`: The port of the listener.
+* `__meta_kubernetes_gateway_listener_protocol`: The protocol of the listener.
+
+#### `httproute`
+
+The `httproute` role discovers a target for each hostname/path combination of
+each [Gateway API](https://gateway-api.sigs.k8s.io/) `HTTPRoute`. This is
+generally useful for blackbox monitoring of an HTTPRoute's matched paths.
+The address is set to the route's hostname; since an HTTPRoute doesn't carry
+its own network address, resolving it depends on the `Gateway` it's attached
+to actually serving that hostname.
+
+This role requires the `sigs.k8s.io/gateway-api` CRDs to be installed in the
+cluster.
+
+Available meta labels:
+
+* `__meta_kubernetes_namespace`: The namespace of the HTTPRoute object.
+* `__meta_kubernetes_httproute_name`: The name of the HTTPRoute object.
+* `__meta_kubernetes_httproute_label_<labelname>`: Each label from the HTTPRoute object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_httproute_labelpresent_<labelname>`: `true` for each label from the HTTPRoute object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_httproute_annotation_<annotationname>`: Each annotation from the HTTPRoute object.
+* `__meta_kubernetes_httproute_annotationpresent_<annotationname>`: `true` for each annotation from the HTTPRoute object.
+* `__meta_kubernetes_httproute_parent_ref_name`: The name of the first `parentRef` (the Gateway this route is attached to).
+* `__meta_kubernetes_httproute_hostname`: Hostname matched by this target, if set on the route.
+* `__meta_kubernetes_httproute_path`: Path matched by this target. Defaults to `/`.
+
 See below for the configuration options for Kubernetes discovery:
 
 ```yaml
@@ -2609,7 +2657,7 @@ See below for the configuration options for Kubernetes discovery:
 [ api_server: <host> ]
 
 # The Kubernetes role of entities that should be discovered.
-# One of endpoints, endpointslice, service, pod, node, or ingress.
+# One of endpoints, endpointslice, service, pod, node, ingress, gateway, or httproute.
 role: <string>
 
 # Optional path to a kubeconfig file.
