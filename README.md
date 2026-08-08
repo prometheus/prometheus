@@ -225,3 +225,28 @@ Apache License 2.0, see [LICENSE](https://github.com/prometheus/prometheus/blob/
 
 [hub]: https://hub.docker.com/r/prom/prometheus/
 [quay]: https://quay.io/repository/prometheus/prometheus
+
+## Troubleshooting
+
+### Common Issues
+
+**Prometheus not scraping targets:**
+- Check scrape_configs in prometheus.yml
+- Verify target is reachable from Prometheus server
+- Check firewall rules for the scrape port
+
+**High memory usage:**
+- Reduce scrape_interval if scraping many targets
+- Use recording rules for expensive queries
+- Check for high cardinality labels
+
+**Alert rules not firing:**
+- Verify rule files are loaded: prometheus_config_last_reload_successful
+- Check alert expression syntax with the expression browser
+- Ensure Alertmanager is configured in lerting section
+
+### Useful Links
+
+- [Prometheus Querying](https://prometheus.io/docs/prometheus/latest/querying/basics/)
+- [Alerting Rules](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/)
+- [Recording Rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/)
