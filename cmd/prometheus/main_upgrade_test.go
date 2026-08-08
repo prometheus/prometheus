@@ -405,6 +405,7 @@ func testUpgradeDowngradeLTS(t *testing.T, start time.Time, lts ltsRelease) {
 	})
 
 	t.Run("Downgrading to the LTS version", func(t *testing.T) {
+		t.Skip("Downgrading to older LTS versions is not supported with the new default XOR2 chunk encoding")
 		cmd := commandWithLogging(t, ensureHealthyLogs, runLTS[0], runLTS[1:]...)
 		require.NoError(t, cmd.Start())
 		c.ensureHealthyMetrics(t)
