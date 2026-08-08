@@ -6948,6 +6948,110 @@ func testScrapeLoopSeriesAddedDuplicates(t *testing.T, appV2 bool) {
 	require.Equal(t, 4.0, prom_testutil.ToFloat64(sl.metrics.targetScrapeSampleDuplicate))
 }
 
+func TestScrapeLoopSeriesAddedDuplicates_MetricRelabeling(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testScrapeLoopSeriesAddedDuplicatesMetricRelabeling(t, appV2)
+	})
+}
+
+func testScrapeLoopSeriesAddedDuplicatesMetricRelabeling(t *testing.T, appV2 bool) {
+	sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2), func(sl *scrapeLoop) {
+		// Mutator drops the "drop" label.
+		sl.sampleMutator = func(l labels.Labels) labels.Labels {
+			b := labels.NewBuilder(l)
+			b.Del("drop")
+			return b.Labels()
+		}
+	})
+
+	// test_metric{drop="a"} and test_metric{drop="b"} both become test_metric{}
+	// Since they map to the same post-relabeling labelset, it should be treated as a duplicate.
+	app := sl.appender()
+	total, added, seriesAdded, err := app.append([]byte("test_metric{drop=\"a\"} 1\ntest_metric{drop=\"b\"} 2\n"), "text/plain", time.Time{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, 2, total)
+	require.Equal(t, 2, added)
+	require.Equal(t, 1, seriesAdded) // Only one series should be added.
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(sl.metrics.targetScrapeSampleDuplicate))
+}
+
+func labelsWithHashCollision() (labels.Labels, labels.Labels) {
+	// These two series have the same XXHash; thanks to https://github.com/pstibrany/labels_hash_collisions
+	ls1 := labels.FromStrings("__name__", "metric", "lbl", "HFnEaGl")
+	ls2 := labels.FromStrings("__name__", "metric", "lbl", "RqcXatm")
+
+	if ls1.Hash() != ls2.Hash() {
+		// These ones are the same when using -tags slicelabels
+		ls1 = labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "l6CQ5y")
+		ls2 = labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "v7uDlF")
+	}
+
+	if ls1.Hash() != ls2.Hash() {
+		panic("This code needs to be updated: find new labels with colliding hash values.")
+	}
+
+	return ls1, ls2
+}
+
+func TestScrapeLoopSeriesAddedDuplicates_HashCollision(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testScrapeLoopSeriesAddedDuplicatesHashCollision(t, appV2)
+	})
+}
+
+func testScrapeLoopSeriesAddedDuplicatesHashCollision(t *testing.T, appV2 bool) {
+	sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2))
+	app := sl.appender()
+
+	ls1, ls2 := labelsWithHashCollision()
+
+	var buf strings.Builder
+	buf.WriteString(ls1.Get(model.MetricNameLabel))
+	buf.WriteString("{")
+	first := true
+	ls1.Range(func(l labels.Label) {
+		if l.Name == model.MetricNameLabel {
+			return
+		}
+		if !first {
+			buf.WriteString(",")
+		}
+		buf.WriteString(l.Name)
+		buf.WriteString(`="`)
+		buf.WriteString(l.Value)
+		buf.WriteString(`"`)
+		first = false
+	})
+	buf.WriteString("} 1\n")
+
+	buf.WriteString(ls2.Get(model.MetricNameLabel))
+	buf.WriteString("{")
+	first = true
+	ls2.Range(func(l labels.Label) {
+		if l.Name == model.MetricNameLabel {
+			return
+		}
+		if !first {
+			buf.WriteString(",")
+		}
+		buf.WriteString(l.Name)
+		buf.WriteString(`="`)
+		buf.WriteString(l.Value)
+		buf.WriteString(`"`)
+		first = false
+	})
+	buf.WriteString("} 2\n")
+
+	total, added, seriesAdded, err := app.append([]byte(buf.String()), "text/plain", time.Time{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, 2, total)
+	require.Equal(t, 2, added)
+	require.Equal(t, 2, seriesAdded) // Both series should be added despite hash collision.
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(sl.metrics.targetScrapeSampleDuplicate))
+}
+
 // This tests running a full scrape loop and checking that the scrape option
 // `native_histogram_min_bucket_factor` is used correctly.
 func TestNativeHistogramMaxSchemaSet(t *testing.T) {
