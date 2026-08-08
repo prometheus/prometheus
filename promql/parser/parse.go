@@ -1202,6 +1202,36 @@ func (p *parser) getAtModifierVars(e Node) (**int64, *ItemType, *posrange.Pos, b
 	return timestampp, preprocp, endPosp, true
 }
 
+// offsetOrAtErrMsg returns the parse error to report if e (the expression that a range
+// or subquery selector is being applied to) already carries an offset or @ modifier,
+// which is not allowed immediately before a range. Returns "" if e has neither.
+func offsetOrAtErrMsg(e Expr) string {
+	var offset time.Duration
+	var offsetExpr *DurationExpr
+	var ts *int64
+	switch s := e.(type) {
+	case *VectorSelector:
+		offset, offsetExpr, ts = s.OriginalOffset, s.OriginalOffsetExpr, s.Timestamp
+	case *MatrixSelector:
+		vs, ok := s.VectorSelector.(*VectorSelector)
+		if !ok {
+			return ""
+		}
+		offset, offsetExpr, ts = vs.OriginalOffset, vs.OriginalOffsetExpr, vs.Timestamp
+	case *SubqueryExpr:
+		offset, offsetExpr, ts = s.OriginalOffset, s.OriginalOffsetExpr, s.Timestamp
+	default:
+		return ""
+	}
+	switch {
+	case offset != 0 || offsetExpr != nil:
+		return "no offset modifiers allowed before range"
+	case ts != nil:
+		return "no @ modifiers allowed before range"
+	}
+	return ""
+}
+
 // durationLiteralOutOfRange reports whether val, interpreted as seconds, would
 // overflow a time.Duration (int64 nanoseconds).
 func durationLiteralOutOfRange(val float64) bool {
