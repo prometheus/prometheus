@@ -258,15 +258,31 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 			continue
 		}
 
+		// Every field below is optional in the Lightsail API. Omit the label
+		// when the field is absent rather than dereferencing a nil pointer,
+		// which would panic and take down the whole Prometheus process.
 		labels := model.LabelSet{
-			lightsailLabelAZ:                  model.LabelValue(*inst.Location.AvailabilityZone),
-			lightsailLabelBlueprintID:         model.LabelValue(*inst.BlueprintId),
-			lightsailLabelBundleID:            model.LabelValue(*inst.BundleId),
-			lightsailLabelInstanceName:        model.LabelValue(*inst.Name),
-			lightsailLabelInstanceState:       model.LabelValue(*inst.State.Name),
-			lightsailLabelInstanceSupportCode: model.LabelValue(*inst.SupportCode),
-			lightsailLabelPrivateIP:           model.LabelValue(*inst.PrivateIpAddress),
-			lightsailLabelRegion:              model.LabelValue(d.region),
+			lightsailLabelPrivateIP: model.LabelValue(*inst.PrivateIpAddress),
+			lightsailLabelRegion:    model.LabelValue(d.region),
+		}
+
+		if inst.Location != nil && inst.Location.AvailabilityZone != nil {
+			labels[lightsailLabelAZ] = model.LabelValue(*inst.Location.AvailabilityZone)
+		}
+		if inst.BlueprintId != nil {
+			labels[lightsailLabelBlueprintID] = model.LabelValue(*inst.BlueprintId)
+		}
+		if inst.BundleId != nil {
+			labels[lightsailLabelBundleID] = model.LabelValue(*inst.BundleId)
+		}
+		if inst.Name != nil {
+			labels[lightsailLabelInstanceName] = model.LabelValue(*inst.Name)
+		}
+		if inst.State != nil && inst.State.Name != nil {
+			labels[lightsailLabelInstanceState] = model.LabelValue(*inst.State.Name)
+		}
+		if inst.SupportCode != nil {
+			labels[lightsailLabelInstanceSupportCode] = model.LabelValue(*inst.SupportCode)
 		}
 
 		addr := net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port))
