@@ -1,0 +1,41 @@
+# HELP http_requests Total HTTP requests.
+# TYPE http_requests counter
+# UNIT http_requests requests
+http_requests_total{method="GET"} 12034.0 1710000000.0 st@1709900000.0
+http_requests_total{method="POST"} 4521.0 1710000000.0 st@1709900000.0
+http_requests_total{method="PUT"} 312.0 1710000000.0 st@1709900000.0
+# HELP grpc_calls Total gRPC calls.
+# TYPE grpc_calls counter
+grpc_calls_total{service="catalog"} 19234.0 1710000000.0 st@1709800000.0
+grpc_calls_total{service="orders"} 8231.0 1710000000.0 st@1709800000.0
+# HELP db_queries Total database queries.
+# TYPE db_queries counter
+db_queries_total 482910.0 1710000000.0 st@1709700000.0
+# HELP cache_evictions Total cache evictions.
+# TYPE cache_evictions counter
+cache_evictions_total{cache="lru"} 1842.0 1710000000.0 st@1709600000.0
+cache_evictions_total{cache="arc"} 921.0 1710000000.0 st@1709600000.0
+# HELP errors Total errors by code.
+# TYPE errors counter
+errors_total{code="EINVAL"} 23.0 1710000000.0 st@1709500000.0
+errors_total{code="ETIMEDOUT"} 7.0 1710000000.0 st@1709500000.0
+errors_total{code="ECONNRESET"} 14.0 1710000000.0 st@1709500000.0
+# HELP request_duration_seconds Request duration.
+# TYPE request_duration_seconds histogram
+# UNIT request_duration_seconds seconds
+request_duration_seconds{handler="/api/query"} {count:8421,sum:1234.5,bucket:[0.005:120,0.01:560,0.025:2100,0.05:5310,0.1:7200,0.25:8100,0.5:8350,1.0:8410,2.5:8420,5.0:8421,+Inf:8421]} 1710000000.0 st@1709400000.0
+request_duration_seconds{handler="/api/write"} {count:4210,sum:512.3,bucket:[0.005:80,0.01:312,0.025:1100,0.05:2400,0.1:3800,0.25:4100,0.5:4180,1.0:4205,2.5:4210,5.0:4210,+Inf:4210]} 1710000000.0 st@1709400000.0
+# HELP db_query_duration_seconds Database query duration.
+# TYPE db_query_duration_seconds histogram
+# UNIT db_query_duration_seconds seconds
+db_query_duration_seconds {count:482910,sum:3120.4,bucket:[0.001:120000,0.005:380000,0.01:445000,0.05:478000,0.1:482000,0.5:482800,1.0:482910,+Inf:482910]} 1710000000.0 st@1709300000.0
+# HELP gc_duration_seconds GC duration summary.
+# TYPE gc_duration_seconds summary
+# UNIT gc_duration_seconds seconds
+gc_duration_seconds {count:4821,sum:12.4,quantile:[0.5:0.0023,0.9:0.0081,0.99:0.0145,1.0:0.0312]} 1710000000.0 st@1709200000.0
+# HELP allocation_duration_seconds Allocation duration summary.
+# TYPE allocation_duration_seconds summary
+# UNIT allocation_duration_seconds seconds
+allocation_duration_seconds{pool="small"} {count:9.31e+08,sum:142.3,quantile:[0.5:0.00012,0.9:0.00034,0.99:0.00091]} 1710000000.0 st@1709100000.0
+allocation_duration_seconds{pool="medium"} {count:1.42e+07,sum:84.1,quantile:[0.5:0.00041,0.9:0.0012,0.99:0.0034]} 1710000000.0 st@1709100000.0
+# EOF

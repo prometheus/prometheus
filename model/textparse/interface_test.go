@@ -55,6 +55,12 @@ func TestNewParser(t *testing.T) {
 		require.True(t, ok)
 	}
 
+	requireOpenMetrics2Parser := func(t *testing.T, p Parser) {
+		require.NotNil(t, p)
+		_, ok := p.(*OpenMetrics2Parser)
+		require.True(t, ok)
+	}
+
 	for name, tt := range map[string]*struct {
 		contentType            string
 		fallbackScrapeProtocol config.ScrapeProtocol
@@ -137,6 +143,14 @@ func TestNewParser(t *testing.T) {
 		"openmetrics-with-charset-and-version": {
 			contentType:    "application/openmetrics-text; version=1.0.0; charset=utf-8",
 			validateParser: requireOpenMetricsParser,
+		},
+		"openmetrics-v2": {
+			contentType:    "application/openmetrics-text; version=2.0.0",
+			validateParser: requireOpenMetrics2Parser,
+		},
+		"openmetrics-v2-with-charset": {
+			contentType:    "application/openmetrics-text; version=2.0.0; charset=utf-8",
+			validateParser: requireOpenMetrics2Parser,
 		},
 		"plain-text": {
 			contentType:    "text/plain",
