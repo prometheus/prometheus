@@ -1168,6 +1168,10 @@ type appenderCommitContext struct {
 	// Number of samples out of order but accepted: with ooo enabled and within time window.
 	oooFloatsAccepted    int
 	oooHistogramAccepted int
+	// Number of samples dropped without being appended because they were exact
+	// duplicates (same timestamp and value) of an already appended sample.
+	floatDuplicatesDropped int
+	histoDuplicatesDropped int
 	// Number of samples rejected due to: out of order but OOO support disabled.
 	floatOOORejected int
 	histoOOORejected int
@@ -1441,6 +1445,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 				// not with samples in already flushed OOO chunks.
 				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
 				acc.floatsAppended--
+				acc.floatDuplicatesDropped++
 			}
 		default:
 			wasStale, wasHistogram, oldBuckets := series.sampleState()
@@ -1458,8 +1463,9 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 					a.head.updateNativeHistogramMetricsOnAppend(true, false, oldBuckets, 0)
 				}
 			} else {
-				// The sample is an exact duplicate, and should be silently dropped.
+				// The sample is an exact duplicate of the latest in-order sample, and is dropped.
 				acc.floatsAppended--
+				acc.floatDuplicatesDropped++
 			}
 		}
 
@@ -1544,6 +1550,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				// not with samples in already flushed OOO chunks.
 				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
 				acc.histogramsAppended--
+				acc.histoDuplicatesDropped++
 			}
 		default:
 			wasStale, wasHistogram, oldBuckets := series.sampleState()
@@ -1560,8 +1567,9 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 				a.head.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
 			} else {
+				// The sample is an exact duplicate of the latest in-order sample, and is dropped.
 				acc.histogramsAppended--
-				acc.histoOOORejected++
+				acc.histoDuplicatesDropped++
 			}
 		}
 
@@ -1646,6 +1654,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				// not with samples in already flushed OOO chunks.
 				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
 				acc.histogramsAppended--
+				acc.histoDuplicatesDropped++
 			}
 		default:
 			wasStale, wasHistogram, oldBuckets := series.sampleState()
@@ -1662,8 +1671,9 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 				a.head.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
 			} else {
+				// The sample is an exact duplicate of the latest in-order sample, and is dropped.
 				acc.histogramsAppended--
-				acc.histoOOORejected++
+				acc.histoDuplicatesDropped++
 			}
 		}
 
@@ -1779,6 +1789,8 @@ func (a *headAppenderBase) Commit() (err error) {
 	h.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatTooOldRejected))
 	h.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatsAppended))
 	h.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histogramsAppended))
+	h.metrics.duplicateSamplesDropped.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatDuplicatesDropped))
+	h.metrics.duplicateSamplesDropped.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histoDuplicatesDropped))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.oooFloatsAccepted))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.oooHistogramAccepted))
 	h.updateMinMaxTime(acc.inOrderMint, acc.inOrderMaxt)
