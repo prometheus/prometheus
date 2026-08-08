@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/elasticache"
 	"github.com/aws/aws-sdk-go-v2/service/elasticache/types"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -582,6 +583,7 @@ func TestSplitCacheDeploymentOptions(t *testing.T) {
 			caches: []string{
 				"not-an-arn",
 				"arn:aws:elasticache:us-east-1",
+				"arn:aws:elasticache:us-east-1:123456789012:serverlesscache",
 				"",
 			},
 			expectedServerlessCacheIDs: nil,
@@ -611,7 +613,7 @@ func TestSplitCacheDeploymentOptions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			serverlessCacheIDs, cacheClusterIDs := splitCacheDeploymentOptions(tt.caches)
+			serverlessCacheIDs, cacheClusterIDs := splitCacheDeploymentOptions(tt.caches, promslog.NewNopLogger())
 
 			require.Equal(t, tt.expectedServerlessCacheIDs, serverlessCacheIDs, "serverless cache IDs mismatch")
 			require.Equal(t, tt.expectedCacheClusterIDs, cacheClusterIDs, "cache cluster IDs mismatch")

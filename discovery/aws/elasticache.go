@@ -519,7 +519,7 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 
 	var clusters []string
 	clustersMu := sync.Mutex{}
-	serverlessCacheIDs, cacheClusterIDs := splitCacheDeploymentOptions(d.cfg.Clusters)
+	serverlessCacheIDs, cacheClusterIDs := splitCacheDeploymentOptions(d.cfg.Clusters, d.logger)
 
 	clusterErrg, clusterCtx := errgroup.WithContext(ctx)
 	clusterErrg.Go(func() error {
@@ -594,13 +594,14 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 // splitCacheTypes takes a list of cache ARNs and splits them into serverless cache IDs and cache cluster IDs based on their format.
 // Serverless caches are in the format arn:aws:elasticache:<REGION>:<ACCOUNT_ID>:serverlesscache:<CACHE_NAME>
 // Cache clusters are in the format arn:aws:elasticache:<REGION>:<ACCOUNT_ID>:replicationgroup:<CACHE_CLUSTER_ID>.
-func splitCacheDeploymentOptions(caches []string) (serverlessCacheIDs, cacheClusterIDs []string) {
+func splitCacheDeploymentOptions(caches []string, logger *slog.Logger) (serverlessCacheIDs, cacheClusterIDs []string) {
 	for _, cacheARN := range caches {
 		if cacheARN == "" {
 			continue
 		}
 		parts := strings.Split(cacheARN, ":")
-		if len(parts) < 6 {
+		if len(parts) < 7 {
+			logger.Warn("Skipping invalid ElastiCache ARN", "arn", cacheARN)
 			continue
 		}
 		resourceType := parts[5]
