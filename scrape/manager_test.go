@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -2037,6 +2038,141 @@ func TestManagerReloader(t *testing.T) {
 
 				require.Len(t, findSamplesForMetric(app.ResultSamples(), "expected_metric"), tcase.expectedSamplesTotal)
 			})
+		})
+	}
+}
+
+// recordingFailureLogger is a caller-supplied FailureLogger used to assert that
+// scrape failures reach a destination other than a JSON file.
+type recordingFailureLogger struct {
+	mtx      sync.Mutex
+	messages []string
+	closed   bool
+}
+
+func (*recordingFailureLogger) Enabled(context.Context, slog.Level) bool { return true }
+
+func (l *recordingFailureLogger) Handle(_ context.Context, r slog.Record) error {
+	l.mtx.Lock()
+	defer l.mtx.Unlock()
+	l.messages = append(l.messages, r.Message)
+	return nil
+}
+
+func (l *recordingFailureLogger) WithAttrs([]slog.Attr) slog.Handler { return l }
+
+func (l *recordingFailureLogger) WithGroup(string) slog.Handler { return l }
+
+func (l *recordingFailureLogger) Close() error {
+	l.mtx.Lock()
+	defer l.mtx.Unlock()
+	l.closed = true
+	return nil
+}
+
+func (l *recordingFailureLogger) recorded() []string {
+	l.mtx.Lock()
+	defer l.mtx.Unlock()
+	return slices.Clone(l.messages)
+}
+
+// TestManagerScrapeFailureLoggerFactory verifies that a FailureLogger built by the
+// factory passed to NewManager receives scrape failures.
+func TestManagerScrapeFailureLoggerFactory(t *testing.T) {
+	for _, tcase := range []struct {
+		name         string
+		logFile      string
+		expectCalled bool
+	}{
+		{
+			name:         "failure logger configured",
+			logFile:      "scrape-failures.log",
+			expectCalled: true,
+		},
+		{
+			name:         "no failure logger configured",
+			logFile:      "",
+			expectCalled: false,
+		},
+	} {
+		t.Run(tcase.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			}))
+			t.Cleanup(srv.Close)
+
+			srvURL, err := url.Parse(srv.URL)
+			require.NoError(t, err)
+
+			recorder := &recordingFailureLogger{}
+			var (
+				keyMtx sync.Mutex
+				keys   []string
+			)
+			newFailureLogger := func(key string) (FailureLogger, error) {
+				keyMtx.Lock()
+				defer keyMtx.Unlock()
+				keys = append(keys, key)
+				return recorder, nil
+			}
+
+			mgr, err := NewManager(
+				&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond)},
+				promslog.NewNopLogger(),
+				newFailureLogger,
+				teststorage.NewAppendable(),
+				nil,
+				prometheus.NewRegistry(),
+			)
+			require.NoError(t, err)
+
+			failureLogLine := ""
+			if tcase.logFile != "" {
+				failureLogLine = "  scrape_failure_log_file: " + tcase.logFile + "\n"
+			}
+			cfg := loadConfiguration(t, fmt.Sprintf(`
+global:
+  scrape_interval: 100ms
+  scrape_timeout: 100ms
+scrape_configs:
+- job_name: failing
+%s`, failureLogLine))
+			require.NoError(t, mgr.ApplyConfig(cfg))
+
+			tsets := make(chan map[string][]*targetgroup.Group)
+			go func() {
+				require.NoError(t, mgr.Run(tsets))
+			}()
+			t.Cleanup(mgr.Stop)
+
+			tsets <- map[string][]*targetgroup.Group{
+				"failing": {{
+					Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(srvURL.Host)}},
+				}},
+			}
+
+			if !tcase.expectCalled {
+				// The factory must not be consulted when no file is configured,
+				// because the empty key is pre-seeded with a nil logger.
+				require.Eventually(t, func() bool {
+					return len(mgr.TargetsActive()["failing"]) > 0
+				}, 10*time.Second, 50*time.Millisecond, "target was never scraped")
+				keyMtx.Lock()
+				defer keyMtx.Unlock()
+				require.Empty(t, keys)
+				require.Empty(t, recorder.recorded())
+				return
+			}
+
+			require.Eventually(t, func() bool {
+				return len(recorder.recorded()) > 0
+			}, 10*time.Second, 50*time.Millisecond, "scrape failure never reached the supplied FailureLogger")
+
+			require.Contains(t, recorder.recorded()[0], "server returned HTTP status 500")
+
+			keyMtx.Lock()
+			defer keyMtx.Unlock()
+			require.Equal(t, []string{tcase.logFile}, keys)
 		})
 	}
 }
