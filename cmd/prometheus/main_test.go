@@ -119,13 +119,103 @@ func TestComputeExternalURL(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		_, err := computeExternalURL(test.input, "0.0.0.0:9090")
+		_, err := computeExternalURL(test.input, "0.0.0.0:9090", "")
 		if test.valid {
 			require.NoError(t, err)
 		} else {
 			require.Error(t, err, "input=%q", test.input)
 		}
 	}
+}
+
+func TestComputeExternalURLWithWebConfig(t *testing.T) {
+	dir := t.TempDir()
+
+	tlsConfig := filepath.Join(dir, "web-config-tls.yml")
+	require.NoError(t, os.WriteFile(tlsConfig, []byte(`
+tls_server_config:
+  cert_file: server.crt
+  key_file: server.key
+`), 0o644))
+
+	basicAuthOnlyConfig := filepath.Join(dir, "web-config-basic-auth.yml")
+	require.NoError(t, os.WriteFile(basicAuthOnlyConfig, []byte(`
+basic_auth_users:
+  alice: $2y$10$mDwo.lAisC94iLAyP81MCesa29IzH37oigHC/42V2pdJlUprsJPze
+`), 0o644))
+
+	emptyTLSConfig := filepath.Join(dir, "web-config-empty-tls.yml")
+	require.NoError(t, os.WriteFile(emptyTLSConfig, []byte(`
+tls_server_config:
+`), 0o644))
+
+	nonEnablingTLSConfig := filepath.Join(dir, "web-config-non-enabling-tls.yml")
+	require.NoError(t, os.WriteFile(nonEnablingTLSConfig, []byte(`
+tls_server_config:
+  min_version: TLS12
+`), 0o644))
+
+	tests := []struct {
+		name           string
+		webConfigFile  string
+		expectedScheme string
+	}{
+		{
+			name:           "no web config file",
+			webConfigFile:  "",
+			expectedScheme: "http",
+		},
+		{
+			name:           "web config file with tls_server_config",
+			webConfigFile:  tlsConfig,
+			expectedScheme: "https",
+		},
+		{
+			name:           "web config file without tls_server_config",
+			webConfigFile:  basicAuthOnlyConfig,
+			expectedScheme: "http",
+		},
+		{
+			name:           "web config file with empty tls_server_config",
+			webConfigFile:  emptyTLSConfig,
+			expectedScheme: "http",
+		},
+		{
+			name:           "web config file with tls_server_config setting only non-enabling fields",
+			webConfigFile:  nonEnablingTLSConfig,
+			expectedScheme: "http",
+		},
+		{
+			name:           "nonexistent web config file",
+			webConfigFile:  filepath.Join(dir, "does-not-exist.yml"),
+			expectedScheme: "http",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			u, err := computeExternalURL("", "0.0.0.0:9090", test.webConfigFile)
+			require.NoError(t, err)
+			require.Equal(t, test.expectedScheme, u.Scheme)
+		})
+	}
+}
+
+// TestComputeExternalURLExplicitSchemeUnaffectedByWebConfig verifies that an explicitly
+// provided --web.external-url is never overridden by TLS detection: only the inferred
+// default URL (empty input) should have its scheme derived from the web config file.
+func TestComputeExternalURLExplicitSchemeUnaffectedByWebConfig(t *testing.T) {
+	dir := t.TempDir()
+	tlsConfig := filepath.Join(dir, "web-config-tls.yml")
+	require.NoError(t, os.WriteFile(tlsConfig, []byte(`
+tls_server_config:
+  cert_file: server.crt
+  key_file: server.key
+`), 0o644))
+
+	u, err := computeExternalURL("http://alertmanager.company.com", "0.0.0.0:9090", tlsConfig)
+	require.NoError(t, err)
+	require.Equal(t, "http", u.Scheme)
 }
 
 // Let's provide an invalid configuration file and verify the exit status indicates the error.
