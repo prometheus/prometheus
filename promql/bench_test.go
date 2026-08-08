@@ -827,3 +827,112 @@ func BenchmarkParser(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkRangeVectorLabelsetMerge measures the overhead introduced by
+// mergeSeriesWithSameLabelset compared to the previous ContainsSameLabelset check.
+// In the no-collision path (common case), mergeSeriesWithSameLabelset calls
+// ContainsSameLabelset as a fast path and returns early, so the added cost is
+// one extra function call.
+func BenchmarkRangeVectorLabelsetMerge(b *testing.B) {
+	const (
+		intervalSec  = 60
+		numIntervals = 120
+	)
+
+	engineOpts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 50_000_000,
+		Timeout:    100 * time.Second,
+	}
+
+	appendSeries := func(b *testing.B, stor *teststorage.TestStorage, metrics []labels.Labels, stepRange [2]int) {
+		b.Helper()
+		ctx := context.Background()
+		refs := make([]storage.SeriesRef, len(metrics))
+		for s := stepRange[0]; s < stepRange[1]; s++ {
+			a := stor.Appender(ctx)
+			ts := int64(s) * intervalSec * 1000
+			for i, m := range metrics {
+				var err error
+				refs[i], err = a.Append(refs[i], m, ts, float64(s))
+				require.NoError(b, err)
+			}
+			require.NoError(b, a.Commit())
+		}
+		stor.ForceHeadMMap()
+	}
+
+	// NoCollision: each series has a unique id label so labelsets remain distinct
+	// after __name__ removal. This exercises the fast path in mergeSeriesWithSameLabelset.
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("NoCollision/series=%d", n), func(b *testing.B) {
+			stor := teststorage.New(b)
+			stor.DisableCompactions()
+
+			metrics := make([]labels.Labels, n)
+			for i := range n {
+				metrics[i] = labels.FromStrings("__name__", fmt.Sprintf("bench_noc_%d", i), "id", strconv.Itoa(i))
+			}
+			appendSeries(b, stor, metrics, [2]int{0, numIntervals})
+
+			engine := promqltest.NewTestEngineWithOpts(b, engineOpts)
+			ctx := context.Background()
+			expr := `max_over_time({__name__=~"bench_noc_.*"}[5m])`
+			start := time.Unix(int64(numIntervals/2)*intervalSec, 0)
+			end := time.Unix(int64(numIntervals)*intervalSec, 0)
+			step := time.Duration(intervalSec) * time.Second
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				qry, err := engine.NewRangeQuery(ctx, stor, nil, expr, start, end, step)
+				require.NoError(b, err)
+				res := qry.Exec(ctx)
+				require.NoError(b, res.Err)
+				qry.Close()
+			}
+		})
+	}
+
+	// WithCollision: pairs of series share the same id after __name__ removal, but
+	// have data in non-overlapping time windows (>5m gap). mergeSeriesWithSameLabelset
+	// detects the collision, merges the samples, and confirms no timestamp conflicts.
+	// The old code would have errored here, so this case can only run after the fix.
+	for _, n := range []int{10, 100} {
+		b.Run(fmt.Sprintf("WithCollision/pairs=%d", n), func(b *testing.B) {
+			stor := teststorage.New(b)
+			stor.DisableCompactions()
+
+			metricsA := make([]labels.Labels, n)
+			metricsB := make([]labels.Labels, n)
+			for i := range n {
+				metricsA[i] = labels.FromStrings("__name__", "bench_col_a", "id", strconv.Itoa(i))
+				metricsB[i] = labels.FromStrings("__name__", "bench_col_b", "id", strconv.Itoa(i))
+			}
+			// bench_col_a: steps 0..49, bench_col_b: steps 70..119.
+			// The 20-step (20m) gap is larger than the 5m query window, so no timestamp
+			// overlap occurs between the two series at any query step.
+			appendSeries(b, stor, metricsA, [2]int{0, 50})
+			appendSeries(b, stor, metricsB, [2]int{70, numIntervals})
+
+			engine := promqltest.NewTestEngineWithOpts(b, engineOpts)
+			ctx := context.Background()
+			expr := `max_over_time({__name__=~"bench_col_.*"}[5m])`
+			// Start at step 70 so the window [65m..70m] only sees bench_col_b.
+			start := time.Unix(70*intervalSec, 0)
+			end := time.Unix(int64(numIntervals)*intervalSec, 0)
+			step := time.Duration(intervalSec) * time.Second
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				qry, err := engine.NewRangeQuery(ctx, stor, nil, expr, start, end, step)
+				require.NoError(b, err)
+				res := qry.Exec(ctx)
+				require.NoError(b, res.Err)
+				qry.Close()
+			}
+		})
+	}
+}
