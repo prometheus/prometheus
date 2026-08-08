@@ -1397,12 +1397,7 @@ duration_expr   : number_duration_literal
 paren_duration_expr : LEFT_PAREN duration_expr RIGHT_PAREN
                         {
                             yylex.(*parser).experimentalDurationExpr($2.(Expr))
-                            if durationExpr, ok := $2.(*DurationExpr); ok {
-                                durationExpr.Wrapped = true
-                                $$ = durationExpr
-                                break
-                            }
-                            $$ = $2
+                            $$ = yylex.(*parser).wrapDurationExpr($2.(Node), $1.PositionRange().Start)
                         }
                 ;
 
