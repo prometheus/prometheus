@@ -65,6 +65,56 @@ load 1m
 Each `load` command is additive - it does not replace any data loaded in a previous `load` command.
 Use `clear` to remove all loaded data.
 
+### Start timestamps (ST)
+
+Each sample loaded by a `load` command can optionally carry a *start timestamp* (ST). Start
+timestamps allow PromQL functions like `rate()` and `increase()` to detect counter resets and
+delta temporality data (OpenTelemetry-style cumulative and delta metrics).
+
+#### Per-metric `@st` line
+
+Place an `@st` line immediately before a sample line to assign start timestamp offsets
+to each corresponding sample:
+
+```
+load 1m
+    my_counter@st -1mx4
+    my_counter 0+60x14
+```
+
+The `@st` offset sequence uses the same expanding syntax as sample values, but with
+durations instead of numbers:
+
+| Pattern | Meaning |
+|---------|---------|
+| `-1m` | One position with offset -1 minute |
+| `-1mx4` | Five positions, each with offset -1 minute |
+| `-30s-1mx2` | Three positions: -30s, -90s, -150s |
+| `-1m+30sx2` | Three positions: -60s, -30s, 0s |
+| `_` | One omitted position (no ST) |
+| `_x3` | Three omitted positions |
+| `*` | Repeat the previous non-omitted offset |
+| `*x3` | Repeat the previous offset three more times |
+
+The ST for each sample is computed as `sample_timestamp + offset`. The `@st` line must
+have the same number of positions as its following sample line and use the same metric name.
+
+#### Standalone `@st` default
+
+A standalone `@st` line (without a metric name) sets a default ST offset sequence for all
+subsequent sample lines in the same `load` block. This is especially useful for cumulative
+counters with constant start timestamps:
+
+```
+load 1m
+    @st -1m
+    counter_a 0+60x14
+    counter_b 0+60x10
+```
+
+Here every sample of both `counter_a` and `counter_b` gets ST = sample_timestamp - 1 minute.
+The default ST sequence is cycled if it has fewer positions than the sample line.
+
 ### Native histograms with custom buckets (NHCB)
 
 When loading a batch of classic histogram float series, you can optionally append the suffix `_with_nhcb` to convert them to native histograms with custom buckets and load both the original float series and the new histogram series.
