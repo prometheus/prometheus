@@ -763,15 +763,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 		if !ok {
 			continue
 		}
-
 		alertHoldDuration := alertRule.HoldDuration()
-		if alertHoldDuration < g.opts.ForGracePeriod {
-			// If alertHoldDuration is already less than grace period, we would not
-			// like to make it wait for `g.opts.ForGracePeriod` time before firing.
-			// Hence we skip restoration, which will make it wait for alertHoldDuration.
-			alertRule.SetRestored(true)
-			continue
-		}
 
 		sset, err := alertRule.QueryForStateSeries(g.opts.Context, q)
 		if err != nil {
@@ -855,11 +847,12 @@ func (g *Group) RestoreForState(ts time.Time) {
 				downDuration := ts.Sub(downAt)
 				restoredActiveAt = restoredActiveAt.Add(downDuration)
 			}
-
-			a.ActiveAt = restoredActiveAt
-			g.logger.Debug("'for' state restored",
-				labels.AlertName, alertRule.Name(), "restored_time", a.ActiveAt.Format(time.RFC850),
-				"labels", a.Labels.String())
+			if !restoredActiveAt.After(ts) {
+				a.ActiveAt = restoredActiveAt
+				g.logger.Debug("'for' state restored",
+					labels.AlertName, alertRule.Name(), "restored_time", a.ActiveAt.Format(time.RFC850),
+					"labels", a.Labels.String())
+			}
 		})
 
 		alertRule.SetRestored(true)
