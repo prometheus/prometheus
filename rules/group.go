@@ -1121,6 +1121,9 @@ func (m dependencyMap) isIndependent(r Rule) bool {
 // inferred, or concurrent evaluation of rules depending on these series would produce undefined/unexpected behaviour:
 //   - wildcard queriers like {cluster="prod1"} which would match every series with that label selector
 //
+// When a rule is indeterminate, it is conservatively treated as depending on all prior rules in the group.
+// Other rules in the group that are not indeterminate can still be analysed normally and may run concurrently.
+//
 // Rules which are independent can run concurrently with no side-effects.
 func buildDependencyMap(rules []Rule) dependencyMap {
 	dependencies := make(dependencyMap)
@@ -1130,15 +1133,15 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 		return dependencies
 	}
 
-	var indeterminate bool
-
-	for _, rule := range rules {
-		if indeterminate {
-			break
-		}
+	for i, rule := range rules {
+		var ruleIsIndeterminate bool
 
 		parser.Inspect(rule.Query(), func(node parser.Node, _ []parser.Node) error {
 			if n, ok := node.(*parser.VectorSelector); ok {
+				if ruleIsIndeterminate {
+					return nil
+				}
+
 				// Find the name matcher for the rule.
 				var nameMatcher *labels.Matcher
 				if n.Name != "" {
@@ -1152,10 +1155,13 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 					}
 				}
 
-				// A wildcard metric expression means we cannot reliably determine if this rule depends on any other,
-				// which means we cannot safely run any rules concurrently.
+				// A wildcard metric expression means we cannot reliably determine if this rule depends on
+				// any other. Conservatively treat it as depending on every prior rule in the group.
 				if nameMatcher == nil {
-					indeterminate = true
+					ruleIsIndeterminate = true
+					for _, other := range rules[:i] {
+						dependencies[other] = append(dependencies[other], rule)
+					}
 					return nil
 				}
 
@@ -1173,15 +1179,7 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 				}
 
 				// Find the other rules that this rule depends on.
-				for _, other := range rules {
-					// Rules are defined in order in a rule group. Once we find our rule we can stop searching
-					// because next rules can't be considered dependencies of this rule by specification, given
-					// they are defined later in the group. The next rules can still query this rule, but they're
-					// just not strict dependencies to honor.
-					if other == rule {
-						break
-					}
-
+				for _, other := range rules[:i] {
 					otherName := other.Name()
 
 					// If this rule vector selector matches the other rule name, then it's a dependency.
@@ -1201,10 +1199,6 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 			}
 			return nil
 		})
-	}
-
-	if indeterminate {
-		return nil
 	}
 
 	return dependencies
