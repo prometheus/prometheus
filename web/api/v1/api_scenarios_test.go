@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/web/api/testhelpers"
 )
@@ -139,6 +140,26 @@ func TestAPIEmpty(t *testing.T) {
 			ValidateOpenAPI().
 			RequireEquals("$.data.resultType", "vector")
 	})
+}
+
+func TestLabelValuesPOST(t *testing.T) {
+	store := promqltest.LoadedStorage(t, `
+		load 1m
+			up{job="prometheus"} 1
+			up{job="node"} 1
+	`)
+	t.Cleanup(func() { _ = store.Close() })
+
+	api := newTestAPI(t, testhelpers.APIConfig{
+		Queryable: testhelpers.NewLazyLoader(func() storage.SampleAndChunkQueryable {
+			return store
+		}),
+	})
+
+	testhelpers.POST(t, api, "/api/v1/label/job/values", "match[]", `{job="prometheus"}`).
+		RequireSuccess().
+		ValidateOpenAPI().
+		RequireEquals("$.data", []any{"prometheus"})
 }
 
 // TestAPIWithSeries tests the API with metrics/series data.

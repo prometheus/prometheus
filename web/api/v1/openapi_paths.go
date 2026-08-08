@@ -196,6 +196,14 @@ func (*OpenAPIBuilder) labelValuesPath() *v3.PathItem {
 			Parameters:  params,
 			Responses:   responsesWithErrorExamples("LabelValuesOutputBody", labelValuesResponseExamples(), errorResponseExamples(), "Label values retrieved successfully.", "Error retrieving label values."),
 		},
+		Post: &v3.Operation{
+			OperationId: "label-values-post",
+			Summary:     "Get label values",
+			Tags:        []string{"labels"},
+			Parameters:  []*v3.Parameter{pathParam("name", "Label name.", stringSchema())},
+			RequestBody: formRequestBodyWithExamples("LabelValuesPostInputBody", labelValuesPostExamples(), "Submit a label values query. This endpoint accepts the same parameters as the GET version."),
+			Responses:   responsesWithErrorExamples("LabelValuesOutputBody", labelValuesResponseExamples(), errorResponseExamples(), "Label values retrieved successfully via POST.", "Error retrieving label values via POST."),
+		},
 	}
 }
 

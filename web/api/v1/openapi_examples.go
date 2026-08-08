@@ -163,6 +163,28 @@ func labelsPostExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
+// labelValuesPostExamples returns examples for POST /label/{name}/values endpoint.
+func labelValuesPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("valuesWithMatch", &base.Example{
+		Summary: "Get label values matching series selectors",
+		Value: createYAMLNode(map[string]any{
+			"match[]": []string{"up", "process_start_time_seconds{job=\"prometheus\"}"},
+		}),
+	})
+
+	examples.Set("valuesWithTimeRange", &base.Example{
+		Summary: "Get label values within time range",
+		Value: createYAMLNode(map[string]any{
+			"start": "2026-01-02T12:37:00.000Z",
+			"end":   "2026-01-02T13:37:00.000Z",
+		}),
+	})
+
+	return examples
+}
+
 // searchMetricNamesPostExamples returns examples for POST /search/metric_names endpoint.
 func searchMetricNamesPostExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()

@@ -456,6 +456,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/labels", wrapAgent(api.labelNames))
 	r.Post("/labels", wrapAgent(api.labelNames))
 	r.Get("/label/:name/values", wrapAgent(api.labelValues))
+	r.Post("/label/:name/values", wrapAgent(api.labelValues))
 
 	r.Get("/series", wrapAgent(api.series))
 	r.Post("/series", wrapAgent(api.series))
@@ -895,6 +896,9 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	ctx := r.Context()
 	name := route.Param(ctx, "name")
+	if err := r.ParseForm(); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
+	}
 
 	if strings.HasPrefix(name, "U__") {
 		name = model.UnescapeName(name, model.ValueEncodingEscaping)
