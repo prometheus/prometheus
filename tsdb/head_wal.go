@@ -495,7 +495,6 @@ Outer:
 	}
 	close(exemplarsInput)
 	wg.Wait()
-
 	if err := r.Err(); err != nil {
 		return fmt.Errorf("read records: %w", err)
 	}
@@ -596,6 +595,12 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	}
 	mSeries.setHeadChunks(nil, 0)
 	mSeries.app = nil
+	// State restoration is best-effort because WAL replay can recover samples if
+	// the mmap chunk payload is unreadable.
+	if err := h.restoreSeriesStateFromMmappedChunks(mSeries); err != nil {
+		h.logger.Warn("Failed to restore series state from m-mapped chunks", "seriesRef", mSeries.ref, "err", err)
+		h.discardMmappedChunks(mSeries)
+	}
 	return overlapped
 }
 
@@ -798,7 +803,8 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 		if in.existingSeries != nil {
 			mmc := mmappedChunks[in.walSeriesRef]
 			oooMmc := oooMmappedChunks[in.walSeriesRef]
-			if h.resetSeriesWithMMappedChunks(in.existingSeries, mmc, oooMmc, in.walSeriesRef) {
+			overlapped := h.resetSeriesWithMMappedChunks(in.existingSeries, mmc, oooMmc, in.walSeriesRef)
+			if overlapped {
 				mmapOverlappingChunks++
 			}
 			continue
