@@ -26,6 +26,12 @@ GOYACC_VERSION ?= v0.6.0
 
 include Makefile.common
 
+GOYACC ?= $(shell command -v goyacc 2> /dev/null)
+ifeq ($(GOYACC),)
+GOYACC := $(FIRST_GOPATH)/bin/goyacc
+endif
+HAVE_GOYACC := $(shell test -x "$(GOYACC)" && echo yes)
+
 ifeq (arm, $(GOHOSTARCH))
 	PROTOC_ARCH ?= aarch_64
 else
@@ -135,7 +141,7 @@ protoc:
 .PHONY: parser
 parser:
 	@echo ">> running goyacc to generate the .go file."
-ifeq (, $(shell command -v goyacc 2> /dev/null))
+ifeq ($(HAVE_GOYACC),)
 	@echo "goyacc not installed so skipping"
 	@echo "To install: \"go install golang.org/x/tools/cmd/goyacc@$(GOYACC_VERSION)\" or run \"make install-goyacc\""
 else
@@ -144,12 +150,17 @@ endif
 
 promql/parser/generated_parser.y.go: promql/parser/generated_parser.y
 	@echo ">> running goyacc to generate the .go file."
-	@$(FIRST_GOPATH)/bin/goyacc -l -o promql/parser/generated_parser.y.go promql/parser/generated_parser.y
+ifeq ($(HAVE_GOYACC),)
+	@echo "goyacc not installed so skipping"
+	@echo "To install: \"go install golang.org/x/tools/cmd/goyacc@$(GOYACC_VERSION)\" or run \"make install-goyacc\""
+else
+	@$(GOYACC) -l -o promql/parser/generated_parser.y.go promql/parser/generated_parser.y
+endif
 
 .PHONY: clean-parser
 clean-parser:
 	@echo ">> cleaning generated parser"
-ifeq (, $(shell command -v goyacc 2> /dev/null))
+ifeq ($(HAVE_GOYACC),)
 	@echo "goyacc not installed so skipping"
 	@echo "To install: \"go install golang.org/x/tools/cmd/goyacc@$(GOYACC_VERSION)\" or run \"make install-goyacc\""
 else
