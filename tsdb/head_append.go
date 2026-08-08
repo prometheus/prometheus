@@ -777,9 +777,9 @@ func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogr
 	return false, headMaxt - t, storage.ErrOutOfOrderSample
 }
 
-// AppendExemplar for headAppender assumes the series ref already exists, and so it doesn't
+// AppendExemplar for the head appender assumes the series ref already exists, and so it doesn't
 // use getOrCreate or make any of the lset validity checks that Append does.
-func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+func (a *headAppenderBase) AppendExemplar(ref storage.SeriesRef, lset labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	// Check if exemplar storage is enabled.
 	if !a.head.opts.EnableExemplarStorage || a.head.opts.MaxExemplars.Load() <= 0 {
 		return 0, nil
@@ -1019,7 +1019,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 
 // UpdateMetadata for headAppender assumes the series ref already exists, and so it doesn't
 // use getOrCreate or make any of the lset sanity checks that Append does.
-func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels, meta metadata.Metadata) (storage.SeriesRef, error) {
+func (a *headAppenderBase) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels, meta metadata.Metadata) (storage.SeriesRef, error) {
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
 		s = a.head.series.getByHash(lset.Hash(), lset)
