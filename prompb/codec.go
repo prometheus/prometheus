@@ -14,6 +14,7 @@
 package prompb
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/prometheus/common/model"
@@ -28,6 +29,48 @@ import (
 // ToLabels return model labels.Labels from timeseries' remote labels.
 func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, _ []string) labels.Labels {
 	return labelProtosToLabels(b, m.GetLabels())
+}
+
+// ErrLabelValueTooLong is returned when a label value exceeds the maximum allowed length.
+type ErrLabelValueTooLong struct {
+	LabelName   string
+	ValueLength int
+	Limit       int
+}
+
+func (e ErrLabelValueTooLong) Error() string {
+	return "label value exceeds maximum length: label " + e.LabelName + " has length " + strconv.Itoa(e.ValueLength) + ", limit " + strconv.Itoa(e.Limit)
+}
+
+// ErrLabelNameTooLong is returned when a label name exceeds the maximum allowed length.
+type ErrLabelNameTooLong struct {
+	NameLength int
+	Limit      int
+}
+
+func (e ErrLabelNameTooLong) Error() string {
+	return "label name exceeds maximum length: length " + strconv.Itoa(e.NameLength) + ", limit " + strconv.Itoa(e.Limit)
+}
+
+// ToLabelsWithLimits returns model labels.Labels from timeseries' remote labels,
+// with validation of label name and value length.
+func (m TimeSeries) ToLabelsWithLimits(b *labels.ScratchBuilder, _ []string, maxLabelValueLength int) (labels.Labels, error) {
+	for _, l := range m.GetLabels() {
+		if len(l.Name) > maxLabelValueLength {
+			return labels.EmptyLabels(), ErrLabelNameTooLong{
+				NameLength: len(l.Name),
+				Limit:      maxLabelValueLength,
+			}
+		}
+		if len(l.Value) > maxLabelValueLength {
+			return labels.EmptyLabels(), ErrLabelValueTooLong{
+				LabelName:   l.Name,
+				ValueLength: len(l.Value),
+				Limit:       maxLabelValueLength,
+			}
+		}
+	}
+	return labelProtosToLabels(b, m.GetLabels()), nil
 }
 
 // ToLabels return model labels.Labels from timeseries' remote labels.
@@ -203,4 +246,25 @@ func (m Exemplar) ToExemplar(b *labels.ScratchBuilder, _ []string) exemplar.Exem
 		Ts:     timestamp,
 		HasTs:  timestamp != 0,
 	}
+}
+
+// ToExemplarWithLimits converts remote exemplar to model exemplar,
+// with validation of label name and value length.
+func (m Exemplar) ToExemplarWithLimits(b *labels.ScratchBuilder, _ []string, maxLabelValueLength int) (exemplar.Exemplar, error) {
+	for _, l := range m.GetLabels() {
+		if len(l.Name) > maxLabelValueLength {
+			return exemplar.Exemplar{}, ErrLabelNameTooLong{
+				NameLength: len(l.Name),
+				Limit:      maxLabelValueLength,
+			}
+		}
+		if len(l.Value) > maxLabelValueLength {
+			return exemplar.Exemplar{}, ErrLabelValueTooLong{
+				LabelName:   l.Name,
+				ValueLength: len(l.Value),
+				Limit:       maxLabelValueLength,
+			}
+		}
+	}
+	return m.ToExemplar(b, nil), nil
 }
