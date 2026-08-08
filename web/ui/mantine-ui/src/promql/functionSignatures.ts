@@ -106,6 +106,12 @@ export const functionSignatures: Record<string, Func> = {
     variadic: 0,
     returnType: valueType.vector,
   },
+  labelmap: {
+    name: "labelmap",
+    argTypes: [valueType.vector, valueType.string, valueType.string],
+    variadic: 0,
+    returnType: valueType.vector,
+  },
   last_over_time: { name: "last_over_time", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   ln: { name: "ln", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   log10: { name: "log10", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },

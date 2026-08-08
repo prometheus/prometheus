@@ -2154,6 +2154,8 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			return ev.evalLabelReplace(ctx, e.Args)
 		case "label_join":
 			return ev.evalLabelJoin(ctx, e.Args)
+		case "labelmap":
+			return ev.evalLabelMap(ctx, e.Args)
 		case "info":
 			return ev.evalInfo(ctx, e.Args)
 		}
