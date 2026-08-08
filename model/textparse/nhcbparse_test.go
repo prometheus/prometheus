@@ -1177,3 +1177,176 @@ metric: <
 		})
 	}
 }
+
+// TestNHCBUngroupedHistogramSeries shows that ungrouped classic histogram series in text format
+// will not be converted correctly by NHCBParser (specifically around processClassicHistogramSeries,
+// see https://github.com/prometheus/prometheus/blob/main/model/textparse/nhcbparse.go#L299).
+// Because NHCBParser relies on streaming and expects all components (_bucket, _count, _sum) of a
+// histogram instance to be grouped together contiguous in the input stream, alphabetically sorted
+// or ungrouped metric outputs cause it to prematurely emit incomplete NHCB histograms as soon as
+// the labelset changes. Notice below how each metric instance is split into multiple incomplete
+// histogram entries: buckets without sum/count, counts without buckets/sum, and sums without buckets/count.
+func TestNHCBUngroupedHistogramSeries(t *testing.T) {
+	input := `# TYPE kong_upstream_latency_ms histogram
+kong_upstream_latency_ms_bucket{service="service-655",route="route-655",le="2000"} 1
+kong_upstream_latency_ms_bucket{service="service-655",route="route-655",le="5000"} 1
+kong_upstream_latency_ms_bucket{service="service-655",route="route-655",le="10000"} 1
+kong_upstream_latency_ms_bucket{service="service-655",route="route-655",le="30000"} 1
+kong_upstream_latency_ms_bucket{service="service-655",route="route-655",le="60000"} 1
+kong_upstream_latency_ms_bucket{service="service-655",route="route-655",le="+Inf"} 1
+kong_upstream_latency_ms_bucket{service="service-668",route="route-668",le="25"} 1
+kong_upstream_latency_ms_bucket{service="service-668",route="route-668",le="50"} 1
+kong_upstream_latency_ms_bucket{service="service-668",route="route-668",le="80"} 1
+kong_upstream_latency_ms_bucket{service="service-668",route="route-668",le="100"} 1
+kong_upstream_latency_ms_bucket{service="service-668",route="route-668",le="250"} 1
+kong_upstream_latency_ms_bucket{service="service-668",route="route-668",le="400"} 1
+kong_upstream_latency_ms_bucket{service="service-668",route="route-668",le="700"} 1
+kong_upstream_latency_ms_bucket{service="service-668",route="route-668",le="1000"} 1
+kong_upstream_latency_ms_bucket{service="service-668",route="route-668",le="2000"} 1
+kong_upstream_latency_ms_bucket{service="service-668",route="route-668",le="5000"} 1
+kong_upstream_latency_ms_bucket{service="service-668",route="route-668",le="10000"} 1
+kong_upstream_latency_ms_bucket{service="service-668",route="route-668",le="30000"} 1
+kong_upstream_latency_ms_bucket{service="service-668",route="route-668",le="60000"} 1
+kong_upstream_latency_ms_bucket{service="service-668",route="route-668",le="+Inf"} 1
+kong_upstream_latency_ms_bucket{service="service-677",route="route-677",le="25"} 1
+kong_upstream_latency_ms_bucket{service="service-677",route="route-677",le="50"} 1
+kong_upstream_latency_ms_bucket{service="service-677",route="route-677",le="80"} 1
+kong_upstream_latency_ms_bucket{service="service-677",route="route-677",le="100"} 1
+kong_upstream_latency_ms_bucket{service="service-677",route="route-677",le="250"} 1
+kong_upstream_latency_ms_bucket{service="service-677",route="route-677",le="400"} 1
+kong_upstream_latency_ms_bucket{service="service-677",route="route-677",le="700"} 1
+kong_upstream_latency_ms_bucket{service="service-677",route="route-677",le="1000"} 1
+kong_upstream_latency_ms_bucket{service="service-677",route="route-677",le="2000"} 1
+kong_upstream_latency_ms_bucket{service="service-677",route="route-677",le="5000"} 1
+kong_upstream_latency_ms_bucket{service="service-677",route="route-677",le="10000"} 1
+kong_upstream_latency_ms_bucket{service="service-677",route="route-677",le="30000"} 1
+kong_upstream_latency_ms_bucket{service="service-677",route="route-677",le="60000"} 1
+kong_upstream_latency_ms_bucket{service="service-677",route="route-677",le="+Inf"} 1
+kong_upstream_latency_ms_count{service="service-655",route="route-655"} 1
+kong_upstream_latency_ms_count{service="service-668",route="route-668"} 1
+kong_upstream_latency_ms_count{service="service-677",route="route-677"} 1
+kong_upstream_latency_ms_sum{service="service-655",route="route-655"} 123.4
+kong_upstream_latency_ms_sum{service="service-668",route="route-668"} 456.7
+kong_upstream_latency_ms_sum{service="service-677",route="route-677"} 890.1
+`
+	p, err := New([]byte(input), "text/plain", labels.NewSymbolTable(), ParserOptions{ConvertClassicHistogramsToNHCB: true})
+	require.NoError(t, err)
+	require.NotNil(t, p)
+
+	got := testParse(t, p)
+	exp := []parsedEntry{
+		{
+			m:   "kong_upstream_latency_ms",
+			typ: model.MetricTypeHistogram,
+		},
+		{
+			m: `kong_upstream_latency_ms{route="route-655",service="service-655"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           1,
+				Sum:             0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+				CustomValues:    []float64{2000, 5000, 10000, 30000, 60000},
+			},
+			lset: labels.FromStrings("__name__", "kong_upstream_latency_ms", "route", "route-655", "service", "service-655"),
+		},
+		{
+			m: `kong_upstream_latency_ms{route="route-668",service="service-668"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           1,
+				Sum:             0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+				CustomValues:    []float64{25, 50, 80, 100, 250, 400, 700, 1000, 2000, 5000, 10000, 30000, 60000},
+			},
+			lset: labels.FromStrings("__name__", "kong_upstream_latency_ms", "route", "route-668", "service", "service-668"),
+		},
+		{
+			m: `kong_upstream_latency_ms{route="route-677",service="service-677"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           1,
+				Sum:             0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+				CustomValues:    []float64{25, 50, 80, 100, 250, 400, 700, 1000, 2000, 5000, 10000, 30000, 60000},
+			},
+			lset: labels.FromStrings("__name__", "kong_upstream_latency_ms", "route", "route-677", "service", "service-677"),
+		},
+		{
+			m: `kong_upstream_latency_ms{route="route-655",service="service-655"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           1,
+				Sum:             0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+				CustomValues:    []float64{},
+			},
+			lset: labels.FromStrings("__name__", "kong_upstream_latency_ms", "route", "route-655", "service", "service-655"),
+		},
+		{
+			m: `kong_upstream_latency_ms{route="route-668",service="service-668"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           1,
+				Sum:             0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+				CustomValues:    []float64{},
+			},
+			lset: labels.FromStrings("__name__", "kong_upstream_latency_ms", "route", "route-668", "service", "service-668"),
+		},
+		{
+			m: `kong_upstream_latency_ms{route="route-677",service="service-677"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           1,
+				Sum:             0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+				CustomValues:    []float64{},
+			},
+			lset: labels.FromStrings("__name__", "kong_upstream_latency_ms", "route", "route-677", "service", "service-677"),
+		},
+		{
+			m: `kong_upstream_latency_ms{route="route-655",service="service-655"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           0,
+				Sum:             123.4,
+				PositiveSpans:   nil,
+				PositiveBuckets: nil,
+				CustomValues:    nil,
+			},
+			lset: labels.FromStrings("__name__", "kong_upstream_latency_ms", "route", "route-655", "service", "service-655"),
+		},
+		{
+			m: `kong_upstream_latency_ms{route="route-668",service="service-668"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           0,
+				Sum:             456.7,
+				PositiveSpans:   nil,
+				PositiveBuckets: nil,
+				CustomValues:    nil,
+			},
+			lset: labels.FromStrings("__name__", "kong_upstream_latency_ms", "route", "route-668", "service", "service-668"),
+		},
+		{
+			m: `kong_upstream_latency_ms{route="route-677",service="service-677"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           0,
+				Sum:             890.1,
+				PositiveSpans:   nil,
+				PositiveBuckets: nil,
+				CustomValues:    nil,
+			},
+			lset: labels.FromStrings("__name__", "kong_upstream_latency_ms", "route", "route-677", "service", "service-677"),
+		},
+	}
+	requireEntries(t, exp, got)
+}
