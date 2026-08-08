@@ -184,6 +184,29 @@ func (p *MemPostings) LabelValues(_ context.Context, name string, hints *storage
 	return slices.Clone(values)
 }
 
+// LabelValuesFiltered returns values for which the filter function returns true.
+func (p *MemPostings) LabelValuesFiltered(ctx context.Context, name string, hints *storage.LabelHints, filter func(string) bool) ([]string, error) {
+	p.mtx.RLock()
+	allValues := p.lvs[name]
+	p.mtx.RUnlock()
+
+	var values []string // Not preallocated because we don't know what proportion of values will match.
+	count := 1
+	for _, v := range allValues {
+		if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		count++
+		if filter(v) {
+			values = append(values, v)
+			if hints != nil && hints.Limit > 0 && len(values) > hints.Limit {
+				break
+			}
+		}
+	}
+	return values, nil
+}
+
 // PostingsStats contains cardinality based statistics for postings.
 type PostingsStats struct {
 	CardinalityMetricsStats []Stat
