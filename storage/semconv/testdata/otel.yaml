@@ -1,0 +1,40 @@
+file_format: "1.1.0"
+schema_url: https://example.com/schemas/1.0.0
+
+versions:
+  1.0.0:
+    metrics:
+      changes:
+        - rename_attributes:
+            attribute_map:
+              http.method: http.request.method
+              http.status_code: http.response.status_code
+              url.path: url.full
+            apply_to_metrics:
+              - http.server.duration
+              - http.server.request.count
+
+        - rename_attributes:
+            attribute_map:
+              process.cpu.state: cpu.mode
+            apply_to_metrics:
+              - process.cpu.time
+
+groups:
+  - id: metric.http.server.duration
+    type: metric
+    metric_name: http.server.duration
+    instrument: histogram
+    unit: s
+
+  - id: metric.http.server.request.count
+    type: metric
+    metric_name: http.server.request.count
+    instrument: counter
+    unit: "{request}"
+
+  - id: metric.process.cpu.time
+    type: metric
+    metric_name: process.cpu.time
+    instrument: counter
+    unit: s
