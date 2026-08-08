@@ -4426,6 +4426,10 @@ type mockSeries struct {
 	labelSet []string
 }
 
+func (s mockSeries) OriginalLabelsHash() uint64 {
+	return s.Labels().Hash()
+}
+
 func (s mockSeries) Labels() labels.Labels {
 	return labels.FromStrings(s.labelSet...)
 }
