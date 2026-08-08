@@ -766,6 +766,8 @@ func formatSeriesSet(ss storage.SeriesSet) error {
 			case chunkenc.ValHistogram:
 				ts, h := it.AtHistogram(nil)
 				fmt.Printf("%s %s %d\n", lbs, h.String(), ts)
+			default:
+				return fmt.Errorf("unknown sample type %s", valType.String())
 			}
 		}
 		if it.Err() != nil {
