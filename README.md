@@ -179,7 +179,10 @@ go get buf.build/gen/go/prometheus/prometheus/protocolbuffers/go@latest
 
 This is experimental.
 
-### Prometheus code base
+### Prometheus
+
+[![Docker Pulls](https://img.shields.io/docker/pulls/prom/prometheus?style=flat-square)](https://hub.docker.com/r/prom/prometheus)
+[![Go Report Card](https://goreportcard.com/badge/github.com/prometheus/prometheus?style=flat-square)](https://goreportcard.com/report/github.com/prometheus/prometheus) code base
 
 In order to comply with [go mod](https://go.dev/ref/mod#versions) rules,
 Prometheus release number do not exactly match Go module releases.
