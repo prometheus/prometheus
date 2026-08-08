@@ -9718,29 +9718,45 @@ func TestBlockReloadInterval(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name            string
-		reloadInterval  time.Duration
-		expectedReloads float64
+		name             string
+		opts             *Options
+		expectedInterval time.Duration
+		verifyReloads    bool
+		expectedReloads  float64
 	}{
 		{
-			name:            "extremely small interval",
-			reloadInterval:  1 * time.Millisecond,
-			expectedReloads: 5,
+			name: "zero interval with custom options",
+			opts: &Options{
+				RetentionDuration: int64(time.Hour / time.Millisecond),
+			},
+			expectedInterval: time.Minute,
 		},
 		{
-			name:            "one second interval",
-			reloadInterval:  1 * time.Second,
-			expectedReloads: 5,
+			name: "extremely small interval",
+			opts: &Options{
+				BlockReloadInterval: time.Millisecond,
+			},
+			expectedInterval: time.Second,
+			verifyReloads:    true,
+			expectedReloads:  5,
+		},
+		{
+			name: "one second interval",
+			opts: &Options{
+				BlockReloadInterval: time.Second,
+			},
+			expectedInterval: time.Second,
+			verifyReloads:    true,
+			expectedReloads:  5,
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			db := newTestDB(t, withOpts(&Options{
-				BlockReloadInterval: c.reloadInterval,
-			}))
-			if c.reloadInterval < 1*time.Second {
-				require.Equal(t, 1*time.Second, db.opts.BlockReloadInterval, "interval should be clamped to minimum of 1 second")
+			db := newTestDB(t, withOpts(c.opts))
+			require.Equal(t, c.expectedInterval, db.opts.BlockReloadInterval)
+			if !c.verifyReloads {
+				return
 			}
 			require.Equal(t, float64(1), prom_testutil.ToFloat64(db.metrics.reloads), "there should be one initial reload")
 			require.Eventually(t, func() bool {
