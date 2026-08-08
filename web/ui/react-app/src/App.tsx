@@ -7,6 +7,7 @@ import { PathPrefixContext } from './contexts/PathPrefixContext';
 import { ThemeContext, themeName, themeSetting } from './contexts/ThemeContext';
 import { ReadyContext } from './contexts/ReadyContext';
 import { AnimateLogoContext } from './contexts/AnimateLogoContext';
+import { TargetScrapeProxyProvider } from './contexts/TargetScrapeProxyContext';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import useMedia from './hooks/useMedia';
 import {
@@ -27,9 +28,10 @@ interface AppProps {
   consolesLink: string | null;
   agentMode: boolean;
   ready: boolean;
+  enableTargetScrapeProxy: boolean;
 }
 
-const App: FC<AppProps> = ({ consolesLink, agentMode, ready }) => {
+const App: FC<AppProps> = ({ consolesLink, agentMode, ready, enableTargetScrapeProxy }) => {
   // This dynamically/generically determines the pathPrefix by stripping the first known
   // endpoint suffix from the window location path. It works out of the box for both direct
   // hosting and reverse proxy deployments with no additional configurations required.
@@ -77,50 +79,52 @@ const App: FC<AppProps> = ({ consolesLink, agentMode, ready }) => {
       <Theme />
       <PathPrefixContext.Provider value={basePath}>
         <ReadyContext.Provider value={ready}>
-          <Router basename={basePath}>
-            <AnimateLogoContext.Provider value={animateLogo}>
-              <Navigation consolesLink={consolesLink} agentMode={agentMode} animateLogo={animateLogo} />
-              <Container fluid style={{ paddingTop: 70 }}>
-                <Switch>
-                  <Redirect exact from="/" to={agentMode ? '/agent' : '/graph'} />
-                  {/*
-              NOTE: Any route added here needs to also be added to the list of
-              React-handled router paths ("reactRouterPaths") in /web/web.go.
-            */}
-                  <Route path="/agent">
-                    <AgentPage />
-                  </Route>
-                  <Route path="/graph">
-                    <PanelListPage />
-                  </Route>
-                  <Route path="/alerts">
-                    <AlertsPage />
-                  </Route>
-                  <Route path="/config">
-                    <ConfigPage />
-                  </Route>
-                  <Route path="/flags">
-                    <FlagsPage />
-                  </Route>
-                  <Route path="/rules">
-                    <RulesPage />
-                  </Route>
-                  <Route path="/service-discovery">
-                    <ServiceDiscoveryPage />
-                  </Route>
-                  <Route path="/status">
-                    <StatusPage agentMode={agentMode} setAnimateLogo={setAnimateLogo} />
-                  </Route>
-                  <Route path="/tsdb-status">
-                    <TSDBStatusPage />
-                  </Route>
-                  <Route path="/targets">
-                    <TargetsPage />
-                  </Route>
-                </Switch>
-              </Container>
-            </AnimateLogoContext.Provider>
-          </Router>
+          <TargetScrapeProxyProvider enabled={enableTargetScrapeProxy}>
+            <Router basename={basePath}>
+              <AnimateLogoContext.Provider value={animateLogo}>
+                <Navigation consolesLink={consolesLink} agentMode={agentMode} animateLogo={animateLogo} />
+                <Container fluid style={{ paddingTop: 70 }}>
+                  <Switch>
+                    <Redirect exact from="/" to={agentMode ? '/agent' : '/graph'} />
+                    {/*
+                NOTE: Any route added here needs to also be added to the list of
+                React-handled router paths ("reactRouterPaths") in /web/web.go.
+              */}
+                    <Route path="/agent">
+                      <AgentPage />
+                    </Route>
+                    <Route path="/graph">
+                      <PanelListPage />
+                    </Route>
+                    <Route path="/alerts">
+                      <AlertsPage />
+                    </Route>
+                    <Route path="/config">
+                      <ConfigPage />
+                    </Route>
+                    <Route path="/flags">
+                      <FlagsPage />
+                    </Route>
+                    <Route path="/rules">
+                      <RulesPage />
+                    </Route>
+                    <Route path="/service-discovery">
+                      <ServiceDiscoveryPage />
+                    </Route>
+                    <Route path="/status">
+                      <StatusPage agentMode={agentMode} setAnimateLogo={setAnimateLogo} />
+                    </Route>
+                    <Route path="/tsdb-status">
+                      <TSDBStatusPage />
+                    </Route>
+                    <Route path="/targets">
+                      <TargetsPage />
+                    </Route>
+                  </Switch>
+                </Container>
+              </AnimateLogoContext.Provider>
+            </Router>
+          </TargetScrapeProxyProvider>
         </ReadyContext.Provider>
       </PathPrefixContext.Provider>
     </ThemeContext.Provider>
