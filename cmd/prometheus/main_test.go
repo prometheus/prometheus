@@ -138,7 +138,8 @@ func TestFailedStartupExitCode(t *testing.T) {
 	fakeInputFile := "fake-input-file"
 	expectedExitStatus := 2
 
-	prom := exec.Command(promPath, "-test.main", "--web.listen-address=0.0.0.0:0", "--config.file="+fakeInputFile)
+	port := testutil.RandomUnprivilegedPort(t)
+	prom := exec.Command(promPath, "-test.main", fmt.Sprintf("--web.listen-address=0.0.0.0:%d", port), "--config.file="+fakeInputFile)
 	err := prom.Run()
 	require.Error(t, err)
 
@@ -289,7 +290,8 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 	} {
 		t.Run(tc.size, func(t *testing.T) {
 			t.Parallel()
-			prom := exec.Command(promPath, "-test.main", "--storage.tsdb.wal-segment-size="+tc.size, "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig, "--storage.tsdb.path="+filepath.Join(t.TempDir(), "data"))
+			port := testutil.RandomUnprivilegedPort(t)
+			prom := exec.Command(promPath, "-test.main", "--storage.tsdb.wal-segment-size="+tc.size, fmt.Sprintf("--web.listen-address=0.0.0.0:%d", port), "--config.file="+promConfig, "--storage.tsdb.path="+filepath.Join(t.TempDir(), "data"))
 
 			// Log stderr in case of failure.
 			stderr, err := prom.StderrPipe()
@@ -353,7 +355,8 @@ func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
 	} {
 		t.Run(tc.size, func(t *testing.T) {
 			t.Parallel()
-			prom := exec.Command(promPath, "-test.main", "--storage.tsdb.max-block-chunk-segment-size="+tc.size, "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig, "--storage.tsdb.path="+filepath.Join(t.TempDir(), "data"))
+			port := testutil.RandomUnprivilegedPort(t)
+			prom := exec.Command(promPath, "-test.main", "--storage.tsdb.max-block-chunk-segment-size="+tc.size, fmt.Sprintf("--web.listen-address=0.0.0.0:%d", port), "--config.file="+promConfig, "--storage.tsdb.path="+filepath.Join(t.TempDir(), "data"))
 
 			// Log stderr in case of failure.
 			stderr, err := prom.StderrPipe()
@@ -563,7 +566,8 @@ func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames
 func TestAgentSuccessfulStartup(t *testing.T) {
 	t.Parallel()
 
-	prom := exec.Command(promPath, "-test.main", "--agent", "--web.listen-address=0.0.0.0:0", "--config.file="+agentConfig)
+	port := testutil.RandomUnprivilegedPort(t)
+	prom := exec.Command(promPath, "-test.main", "--agent", fmt.Sprintf("--web.listen-address=0.0.0.0:%d", port), "--config.file="+agentConfig)
 	require.NoError(t, prom.Start())
 
 	actualExitStatus := 0
@@ -583,7 +587,8 @@ func TestAgentSuccessfulStartup(t *testing.T) {
 func TestAgentFailedStartupWithServerFlag(t *testing.T) {
 	t.Parallel()
 
-	prom := exec.Command(promPath, "-test.main", "--agent", "--storage.tsdb.path=.", "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
+	port := testutil.RandomUnprivilegedPort(t)
+	prom := exec.Command(promPath, "-test.main", "--agent", "--storage.tsdb.path=.", fmt.Sprintf("--web.listen-address=0.0.0.0:%d", port), "--config.file="+promConfig)
 
 	output := bytes.Buffer{}
 	prom.Stderr = &output
@@ -612,7 +617,8 @@ func TestAgentFailedStartupWithServerFlag(t *testing.T) {
 func TestAgentFailedStartupWithInvalidConfig(t *testing.T) {
 	t.Parallel()
 
-	prom := exec.Command(promPath, "-test.main", "--agent", "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
+	port := testutil.RandomUnprivilegedPort(t)
+	prom := exec.Command(promPath, "-test.main", "--agent", fmt.Sprintf("--web.listen-address=0.0.0.0:%d", port), "--config.file="+promConfig)
 	require.NoError(t, prom.Start())
 
 	actualExitStatus := 0
@@ -649,7 +655,8 @@ func TestModeSpecificFlags(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(fmt.Sprintf("%s mode with option %s", tc.mode, tc.arg), func(t *testing.T) {
 			t.Parallel()
-			args := []string{"-test.main", tc.arg, t.TempDir(), "--web.listen-address=0.0.0.0:0"}
+			port := testutil.RandomUnprivilegedPort(t)
+			args := []string{"-test.main", tc.arg, t.TempDir(), fmt.Sprintf("--web.listen-address=0.0.0.0:%d", port)}
 
 			if tc.mode == "agent" {
 				args = append(args, "--agent", "--config.file="+agentConfig)
