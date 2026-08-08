@@ -15,6 +15,7 @@ package remote
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
@@ -479,4 +481,68 @@ func addNativeHistogramsToTestSuite(t *testing.T, storage *teststorage.TestStora
 	}
 
 	require.NoError(t, app.Commit())
+}
+
+func TestRemoteReadGateWaitDurationObserved(t *testing.T) {
+	store := promqltest.LoadedStorage(t, `
+		load 1m
+			test_metric1{foo="bar"} 1
+	`)
+	defer store.Close()
+
+	newRequest := func(t *testing.T) *http.Request {
+		matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
+		require.NoError(t, err)
+		query, err := ToQuery(0, 1, []*labels.Matcher{matcher}, &storage.SelectHints{Step: 0, Func: "avg"})
+		require.NoError(t, err)
+		data, err := proto.Marshal(&prompb.ReadRequest{Queries: []*prompb.Query{query}})
+		require.NoError(t, err)
+		request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(snappy.Encode(nil, data)))
+		require.NoError(t, err)
+		return request
+	}
+
+	gateWaitSampleCount := func(t *testing.T, reg *prometheus.Registry) uint64 {
+		mfs, err := reg.Gather()
+		require.NoError(t, err)
+		for _, mf := range mfs {
+			if mf.GetName() == "prometheus_remote_read_handler_gate_wait_duration_seconds" {
+				return mf.GetMetric()[0].GetHistogram().GetSampleCount()
+			}
+		}
+		t.Fatal("expected gate wait duration histogram to be registered")
+		return 0
+	}
+
+	t.Run("successful acquisition", func(t *testing.T) {
+		reg := prometheus.NewRegistry()
+		h := NewReadHandler(nil, reg, store, func() config.Config {
+			return config.Config{}
+		}, 1e6, 1, 0)
+
+		recorder := httptest.NewRecorder()
+		h.ServeHTTP(recorder, newRequest(t))
+		require.Equal(t, 2, recorder.Code/100)
+
+		require.Equal(t, uint64(1), gateWaitSampleCount(t, reg))
+	})
+
+	t.Run("canceled acquisition", func(t *testing.T) {
+		reg := prometheus.NewRegistry()
+		// A concurrency limit of zero means the gate never opens, so a canceled context
+		// deterministically loses the race in Gate.Start and returns an error.
+		h := NewReadHandler(nil, reg, store, func() config.Config {
+			return config.Config{}
+		}, 1e6, 0, 0)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		recorder := httptest.NewRecorder()
+		h.ServeHTTP(recorder, newRequest(t).WithContext(ctx))
+		require.Equal(t, http.StatusInternalServerError, recorder.Code)
+
+		// The wait is still observed even though the request was canceled at the gate.
+		require.Equal(t, uint64(1), gateWaitSampleCount(t, reg))
+	})
 }
