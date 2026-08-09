@@ -400,15 +400,19 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 							ec2LabelSeparator)
 				}
 
-				labels[ec2LabelAMI] = model.LabelValue(*inst.ImageId)
-				labels[ec2LabelAZ] = model.LabelValue(*inst.Placement.AvailabilityZone)
-				azID, ok := d.azToAZID[*inst.Placement.AvailabilityZone]
-				if !ok && d.azToAZID != nil {
-					d.logger.Debug(
-						"Availability zone ID not found",
-						"az", *inst.Placement.AvailabilityZone)
+				if inst.ImageId != nil {
+					labels[ec2LabelAMI] = model.LabelValue(*inst.ImageId)
 				}
-				labels[ec2LabelAZID] = model.LabelValue(azID)
+				if inst.Placement != nil && inst.Placement.AvailabilityZone != nil {
+					labels[ec2LabelAZ] = model.LabelValue(*inst.Placement.AvailabilityZone)
+					azID, ok := d.azToAZID[*inst.Placement.AvailabilityZone]
+					if !ok && d.azToAZID != nil {
+						d.logger.Debug(
+							"Availability zone ID not found",
+							"az", *inst.Placement.AvailabilityZone)
+					}
+					labels[ec2LabelAZID] = model.LabelValue(azID)
+				}
 				labels[ec2LabelInstanceState] = model.LabelValue(inst.State.Name)
 				labels[ec2LabelInstanceType] = model.LabelValue(inst.InstanceType)
 
@@ -492,3 +496,4 @@ func getInstanceIPv6Addresses(i *ec2Types.Instance) (*string, []string, []string
 
 	return nil, primaryIPv6Addrs, ipv6Addrs
 }
+
