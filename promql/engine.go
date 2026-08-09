@@ -2149,14 +2149,18 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		}
 
 		// Special handling for functions that work on series not samples.
-		switch e.Func.Name {
-		case "label_replace":
-			return ev.evalLabelReplace(ctx, e.Args)
-		case "label_join":
-			return ev.evalLabelJoin(ctx, e.Args)
-		case "info":
-			return ev.evalInfo(ctx, e.Args)
-		}
+			switch e.Func.Name {
+			case "label_replace":
+				return ev.evalLabelReplace(ctx, e.Args)
+			case "label_join":
+				return ev.evalLabelJoin(ctx, e.Args)
+			case "info":
+				return ev.evalInfo(ctx, e.Args)
+			case "ignore_start_times":
+				// ignore_start_times should disable start timestamp processing for its argument
+				// We evaluate the argument with useStartTimestamps temporarily disabled
+				return ev.evalIgnoreStartTimes(ctx, e.Args)
+			}
 
 		// Functions with nil entries in FunctionCalls should have been handled before reaching this point.
 		if call == nil {
@@ -4867,6 +4871,19 @@ func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelp
 	ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 	return output, bufHelpers
+}
+
+// evalIgnoreStartTimes evaluates its argument with start timestamps disabled.
+func (ev *evaluator) evalIgnoreStartTimes(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
+	// Temporarily disable useStartTimestamps for the argument evaluation
+	originalUseStartTimestamps := ev.useStartTimestamps
+	ev.useStartTimestamps = false
+	defer func() {
+		ev.useStartTimestamps = originalUseStartTimestamps
+	}()
+
+	val, ws := ev.eval(ctx, args[0])
+	return val, ws
 }
 
 // extendFloats extends the floats to the given mint and maxt.
