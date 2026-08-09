@@ -127,6 +127,9 @@ paths:
                                 matrixResult:
                                     summary: 'Range vector query: up[5m]'
                                     value: {"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "up", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "values": [[1767436320, "1"], [1767436620, "1"]]}]}}
+                                histogramResult:
+                                    summary: Instant vector query with native histograms
+                                    value: {"status": "success", "data": {"resultType": "vector", "result": [{"metric": {"__name__": "http_request_duration_seconds", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "histogram": [1767436620, {"count": "12.5", "sum": "42.1", "buckets": [[0, "0.7071067811865475", "1", "5"], [0, "1", "1.414213562373095", "7.5"]]}]}]}}
                 default:
                     description: Error executing query.
                     content:
@@ -191,6 +194,9 @@ paths:
                                 matrixResult:
                                     summary: 'Range vector query: up[5m]'
                                     value: {"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "up", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "values": [[1767436320, "1"], [1767436620, "1"]]}]}}
+                                histogramResult:
+                                    summary: Instant vector query with native histograms
+                                    value: {"status": "success", "data": {"resultType": "vector", "result": [{"metric": {"__name__": "http_request_duration_seconds", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "histogram": [1767436620, {"count": "12.5", "sum": "42.1", "buckets": [[0, "0.7071067811865475", "1", "5"], [0, "1", "1.414213562373095", "7.5"]]}]}]}}
                 default:
                     description: Error executing instant query.
                     content:
@@ -348,6 +354,9 @@ paths:
                                 matrixResult:
                                     summary: 'Range query: rate(prometheus_http_requests_total[5m])'
                                     value: {"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "up", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "values": [[1767433020, "1"], [1767434820, "1"], [1767436620, "1"]]}]}}
+                                histogramResult:
+                                    summary: Range query with native histograms
+                                    value: {"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "http_request_duration_seconds", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "histograms": [[1767433020, {"count": "12.5", "sum": "42.1", "buckets": [[0, "0.7071067811865475", "1", "5"], [0, "1", "1.414213562373095", "7.5"]]}]]}]}}
                 default:
                     description: Error executing range query.
                     content:
@@ -400,6 +409,9 @@ paths:
                                 matrixResult:
                                     summary: 'Range query: rate(prometheus_http_requests_total[5m])'
                                     value: {"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "up", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "values": [[1767433020, "1"], [1767434820, "1"], [1767436620, "1"]]}]}}
+                                histogramResult:
+                                    summary: Range query with native histograms
+                                    value: {"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "http_request_duration_seconds", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "histograms": [[1767433020, {"count": "12.5", "sum": "42.1", "buckets": [[0, "0.7071067811865475", "1", "5"], [0, "1", "1.414213562373095", "7.5"]]}]]}]}}
                 default:
                     description: Error executing range query.
                     content:
