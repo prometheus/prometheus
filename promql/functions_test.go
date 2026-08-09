@@ -148,3 +148,96 @@ func TestStartTimestampOutputWhenUseStartTimestampIsDisabled(t *testing.T) {
 		})
 	}
 }
+
+func TestIgnoreStartTimesFunction(t *testing.T) {
+	storage := teststorage.New(t, func(opts *tsdb.Options) {
+		opts.XOR2EncodingAllowed = true
+		opts.FloatChunkEncoding = chunkenc.EncXOR2
+		opts.EnableSTStorage = true
+	})
+
+	a := storage.AppenderV2(t.Context())
+
+	// Insert data with start timestamps
+	for i := range int64(5) {
+		inputLabel := labels.FromStrings(model.MetricNameLabel, "some_series", "case", strconv.Itoa(int(i)))
+		var (
+			ts = i * 1000
+			st = ts - i*100
+		)
+		_, err := a.Append(0, inputLabel, st, ts, float64(i*10), nil, nil, storage2.AppendV2Options{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, a.Commit())
+
+	opts := promql.EngineOpts{
+		MaxSamples:         10000,
+		Timeout:            10 * time.Second,
+		UseStartTimestamps: true, // Enable start timestamps
+		Parser:             parser.NewParser(promqltest.TestParserOpts),
+	}
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
+
+	// ignore_start_times should return raw samples without start timestamp processing
+	query, err := engine.NewInstantQuery(t.Context(), storage, nil, "ignore_start_times(some_series)", timestamp.Time(5000))
+	require.NoError(t, err)
+
+	result := query.Exec(t.Context())
+	require.NoError(t, result.Err)
+
+	vec, _ := result.Vector()
+	require.Len(t, vec, 5, "Expected 5 results, got %d", len(vec))
+	// Values should be 0, 10, 20, 30, 40 (raw values, not start timestamps)
+	for i := range 5 {
+		require.Equal(t, float64(i*10), vec[i].F, "At index %d", i)
+	}
+}
+
+func TestIgnoreStartTimesWithRate(t *testing.T) {
+	storage := teststorage.New(t, func(opts *tsdb.Options) {
+		opts.XOR2EncodingAllowed = true
+		opts.FloatChunkEncoding = chunkenc.EncXOR2
+		opts.EnableSTStorage = true
+	})
+
+	a := storage.AppenderV2(t.Context())
+
+	// Insert cumulative counter with start timestamps that indicate resets
+	for i := range int64(10) {
+		inputLabel := labels.FromStrings(model.MetricNameLabel, "counter")
+		var (
+			ts  = i * 1000
+			st  = ts - 500 // ST indicates reset every sample
+			val = float64(i * 100)
+		)
+		_, err := a.Append(0, inputLabel, st, ts, val, nil, nil, storage2.AppendV2Options{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, a.Commit())
+
+	// Test with use-start-timestamps enabled but ignore_start_times wrapper
+	opts := promql.EngineOpts{
+		MaxSamples:         10000,
+		Timeout:            10 * time.Second,
+		UseStartTimestamps: true,
+		Parser:             parser.NewParser(promqltest.TestParserOpts),
+	}
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
+
+	// With ignore_start_times, rate should behave as if start timestamps are disabled
+	query, err := engine.NewRangeQuery(t.Context(), nil, nil, "rate(ignore_start_times(counter[5m]))", timestamp.Time(0), timestamp.Time(9000), time.Second)
+	require.NoError(t, err)
+
+	result := query.Exec(t.Context())
+	require.NoError(t, result.Err)
+
+	matrix, _ := result.Matrix()
+	require.Len(t, matrix, 1, "Expected 1 series")
+
+	// With start timestamps disabled, rate should be constant (100 per second = 1)
+	// Each step is 1s, values increase by 100, so rate = 100/1000 = 0.1 per ms = 100 per second
+	// Actually with 1s steps and values 0,100,200,300... the increase per step is 100, over 1s = 100/s
+	for _, sample := range matrix[0].Floats {
+		require.InDelta(t, 100.0, sample.F, 1.0, "Rate should be ~100 when start timestamps are ignored")
+	}
+}

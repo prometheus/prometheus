@@ -1943,6 +1943,24 @@ func funcStartTimestamp(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh
 	return enh.Out, nil
 }
 
+// === ignore_start_times(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+func funcIgnoreStartTimes(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	vec := vectorVals[0]
+	for _, el := range vec {
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
+		}
+		enh.Out = append(enh.Out, Sample{
+			Metric:   el.Metric,
+			F:        el.F,
+			H:        el.H,
+			T:        el.T,
+			DropName: true,
+		})
+	}
+	return enh.Out, nil
+}
+
 // linearRegression performs a least-square linear regression analysis on the
 // provided SamplePairs. It returns the slope, and the intercept value at the
 // provided time.
@@ -2570,6 +2588,19 @@ func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions)
 	return ev.mergeSeriesWithSameLabelset(matrix), ws
 }
 
+// evalIgnoreStartTimes evaluates its argument with start timestamps disabled.
+func (ev *evaluator) evalIgnoreStartTimes(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
+	// Temporarily disable useStartTimestamps for the argument evaluation
+	originalUseStartTimestamps := ev.useStartTimestamps
+	ev.useStartTimestamps = false
+	defer func() {
+		ev.useStartTimestamps = originalUseStartTimestamps
+	}()
+
+	val, ws := ev.eval(ctx, args[0])
+	return val, ws
+}
+
 // Common code for date related functions.
 func dateWrapper(vectorVals []Vector, enh *EvalNodeHelper, f func(time.Time) float64) Vector {
 	if len(vectorVals) == 0 {
@@ -2698,6 +2729,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"idelta":                       funcIdelta,
 	"increase":                     funcIncrease,
 	"info":                         nil,
+	"ignore_start_times":           funcIgnoreStartTimes,
 	"irate":                        funcIrate,
 	"max_of":                       funcMaxOf,
 	"label_replace":                nil, // evalLabelReplace not called via this map.

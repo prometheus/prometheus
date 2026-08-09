@@ -239,6 +239,12 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"ignore_start_times": {
+		Name:       "ignore_start_times",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+		Experimental: true,
+	},
 	"info": {
 		Name:         "info",
 		ArgTypes:     []ValueType{ValueTypeVector, ValueTypeVector},
