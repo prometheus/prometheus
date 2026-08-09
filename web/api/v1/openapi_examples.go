@@ -19,6 +19,7 @@ import (
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	"github.com/pb33f/libopenapi/orderedmap"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 )
@@ -288,7 +289,26 @@ func queryResponseExamples() *orderedmap.Map[string, *base.Example] {
 		Value:   matrixExample(matrixResult),
 	})
 
-	// TODO: Add native histogram example.
+	histogramResult := promql.Vector{
+		promql.Sample{
+			Metric: labels.FromStrings("__name__", "http_request_duration_seconds", "job", "prometheus", "instance", "demo.prometheus.io:9090"),
+			T:      1767436620000,
+			H: &histogram.FloatHistogram{
+				Schema:          1,
+				ZeroThreshold:   1e-128,
+				ZeroCount:       0,
+				Count:           12.5,
+				Sum:             42.1,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []float64{5, 7.5},
+			},
+		},
+	}
+
+	examples.Set("histogramResult", &base.Example{
+		Summary: "Instant vector query with native histograms",
+		Value:   vectorExample(histogramResult),
+	})
 
 	return examples
 }
@@ -313,7 +333,29 @@ func queryRangeResponseExamples() *orderedmap.Map[string, *base.Example] {
 		Value:   matrixExample(matrixResult),
 	})
 
-	// TODO: Add native histogram example.
+	histogramResult := promql.Matrix{
+		promql.Series{
+			Metric: labels.FromStrings("__name__", "http_request_duration_seconds", "job", "prometheus", "instance", "demo.prometheus.io:9090"),
+			Histograms: []promql.HPoint{
+				{
+					T: 1767433020000,
+					H: &histogram.FloatHistogram{
+						Schema:          1,
+						ZeroThreshold:   1e-128,
+						Count:           12.5,
+						Sum:             42.1,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+						PositiveBuckets: []float64{5, 7.5},
+					},
+				},
+			},
+		},
+	}
+
+	examples.Set("histogramResult", &base.Example{
+		Summary: "Range query with native histograms",
+		Value:   matrixExample(histogramResult),
+	})
 
 	return examples
 }
