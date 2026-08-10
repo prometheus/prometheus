@@ -1943,22 +1943,18 @@ func funcStartTimestamp(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh
 	return enh.Out, nil
 }
 
-// === ignore_start_times(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcIgnoreStartTimes(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	vec := vectorVals[0]
+// === ignore_start_times(Matrix parser.ValueTypeMatrix) (Matrix, Annotations) ===
+func funcIgnoreStartTimes(_ []Vector, matrixVals Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Matrix, annotations.Annotations) {
+	vec := matrixVals
+	var out Matrix
 	for _, el := range vec {
 		if !enh.enableDelayedNameRemoval {
 			el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 		}
-		enh.Out = append(enh.Out, Sample{
-			Metric:   el.Metric,
-			F:        el.F,
-			H:        el.H,
-			T:        el.T,
-			DropName: true,
-		})
+		el.DropName = true
+		out = append(out, el)
 	}
-	return enh.Out, nil
+	return out, nil
 }
 
 // linearRegression performs a least-square linear regression analysis on the
@@ -2589,7 +2585,7 @@ func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions)
 }
 
 // evalIgnoreStartTimes evaluates its argument with start timestamps disabled.
-func (ev *evaluator) evalIgnoreStartTimes(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
+func (ev *evaluator) evalIgnoreStartTimes(ctx context.Context, args parser.Expressions) (Matrix, annotations.Annotations) {
 	// Temporarily disable useStartTimestamps for the argument evaluation
 	originalUseStartTimestamps := ev.useStartTimestamps
 	ev.useStartTimestamps = false
@@ -2598,7 +2594,7 @@ func (ev *evaluator) evalIgnoreStartTimes(ctx context.Context, args parser.Expre
 	}()
 
 	val, ws := ev.eval(ctx, args[0])
-	return val, ws
+	return val.(Matrix), ws
 }
 
 // Common code for date related functions.
