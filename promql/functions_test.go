@@ -179,17 +179,19 @@ func TestIgnoreStartTimesFunction(t *testing.T) {
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
 	// ignore_start_times should return raw samples without start timestamp processing
-	query, err := engine.NewInstantQuery(t.Context(), storage, nil, "ignore_start_times(some_series)", timestamp.Time(5000))
+	// Use a range query since the function expects a Matrix (range vector)
+	query, err := engine.NewRangeQuery(t.Context(), storage, nil, "ignore_start_times(some_series[1m])", timestamp.Time(0), timestamp.Time(5000), time.Second)
 	require.NoError(t, err)
 
 	result := query.Exec(t.Context())
 	require.NoError(t, result.Err)
 
-	vec, _ := result.Vector()
-	require.Len(t, vec, 5, "Expected 5 results, got %d", len(vec))
+	matrix, _ := result.Matrix()
+	require.Len(t, matrix, 5, "Expected 5 series, got %d", len(matrix))
 	// Values should be 0, 10, 20, 30, 40 (raw values, not start timestamps)
 	for i := range 5 {
-		require.Equal(t, float64(i*10), vec[i].F, "At index %d", i)
+		require.Len(t, matrix[i].Floats, 1, "Expected 1 sample per series")
+		require.Equal(t, float64(i*10), matrix[i].Floats[0].F, "At index %d", i)
 	}
 }
 
