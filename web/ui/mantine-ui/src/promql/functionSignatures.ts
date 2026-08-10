@@ -91,7 +91,12 @@ export const functionSignatures: Record<string, Func> = {
   histogram_sum: { name: "histogram_sum", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   hour: { name: "hour", argTypes: [valueType.vector], variadic: 1, returnType: valueType.vector },
   idelta: { name: "idelta", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
-  ignore_start_times: { name: "ignore_start_times", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
+  ignore_start_times: {
+    name: "ignore_start_times",
+    argTypes: [valueType.matrix],
+    variadic: 0,
+    returnType: valueType.vector,
+  },
   increase: { name: "increase", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   info: { name: "info", argTypes: [valueType.vector, valueType.vector], variadic: 1, returnType: valueType.vector },
   irate: { name: "irate", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
