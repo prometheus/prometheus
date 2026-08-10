@@ -188,7 +188,7 @@ importers:
         version: 5.2.0(eslint@9.39.5(supports-color@8.1.1))
       eslint-plugin-react-refresh:
         specifier: ^0.5.3
-        version: 0.5.4(eslint@9.39.5(supports-color@8.1.1))
+        version: 0.5.3(eslint@9.39.5(supports-color@8.1.1))
       globals:
         specifier: ^16.5.0
         version: 16.5.0
@@ -2012,8 +2012,8 @@ packages:
     peerDependencies:
       eslint: ^3.0.0 || ^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0-0 || ^9.0.0
 
-  eslint-plugin-react-refresh@0.5.4:
-    resolution: {integrity: sha512-7bqTKz7T0r+HKWFarNXByDE9/5+73wI2ru+M3zuqGbR7s/b/5/pQJXZoufWlrngqGqoZto73ZkGumCdLxk+4rw==}
+  eslint-plugin-react-refresh@0.5.3:
+    resolution: {integrity: sha512-5EMmLCV98Pi4o/f/3DP/v/tNqLHMIc9I8LKClNDWhZ9JTho89/kQcitCXQBMG7sAfVRK0Ie3T2EDOzp1YXYiVA==}
     peerDependencies:
       eslint: ^9 || ^10
 
@@ -5359,7 +5359,7 @@ snapshots:
     dependencies:
       eslint: 9.39.5(supports-color@8.1.1)
 
-  eslint-plugin-react-refresh@0.5.4(eslint@9.39.5(supports-color@8.1.1)):
+  eslint-plugin-react-refresh@0.5.3(eslint@9.39.5(supports-color@8.1.1)):
     dependencies:
       eslint: 9.39.5(supports-color@8.1.1)
 
