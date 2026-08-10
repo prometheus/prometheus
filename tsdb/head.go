@@ -415,6 +415,7 @@ func (h *Head) resetWLReplayResources() {
 
 type headMetrics struct {
 	activeAppenders           prometheus.Gauge
+	appendersCreated          prometheus.Counter
 	series                    prometheus.GaugeFunc
 	staleSeries               prometheus.GaugeFunc
 	nativeHistogramSeries     prometheus.GaugeFunc
@@ -458,6 +459,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		activeAppenders: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_head_active_appenders",
 			Help: "Number of currently active appender transactions",
+		}),
+		appendersCreated: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_appenders_created_total",
+			Help: "Total number of appender transactions created.",
 		}),
 		series: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_head_series",
@@ -608,6 +613,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	if r != nil {
 		r.MustRegister(
 			m.activeAppenders,
+			m.appendersCreated,
 			m.series,
 			m.staleSeries,
 			m.nativeHistogramSeries,
