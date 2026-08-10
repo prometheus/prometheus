@@ -45,6 +45,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.yaml.in/yaml/v2"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/prometheus/prometheus/config"
@@ -465,6 +466,7 @@ func (api *API) Register(r *route.Router) {
 	r.Post("/series", wrapAgent(api.series))
 
 	r.Get("/scrape_pools", wrap(api.scrapePools))
+	r.Get("/scrape_pools/config", wrap(api.scrapePoolConfig))
 	r.Get("/targets", wrap(api.targets))
 	r.Get("/targets/metadata", wrap(api.targetMetadata))
 	r.Get("/targets/relabel_steps", wrap(api.targetRelabelSteps))
@@ -1271,6 +1273,25 @@ func (api *API) scrapePools(r *http.Request) apiFuncResult {
 	sort.Strings(names)
 	res := &ScrapePoolsDiscovery{ScrapePools: names}
 	return apiFuncResult{data: res, err: nil, warnings: nil, finalizer: nil}
+}
+
+func (api *API) scrapePoolConfig(r *http.Request) apiFuncResult {
+	scrapePool := r.FormValue("scrapePool")
+	if scrapePool == "" {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no scrapePool parameter provided")}, nil, nil}
+	}
+
+	scrapeConfig, err := api.targetRetriever(r.Context()).ScrapePoolConfig(scrapePool)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error retrieving scrape config: %w", err)}, nil, nil}
+	}
+
+	configYAML, err := yaml.Marshal(scrapeConfig)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error marshaling scrape config: %w", err)}, nil, nil}
+	}
+
+	return apiFuncResult{&prometheusConfig{YAML: string(configYAML)}, nil, nil, nil}
 }
 
 func (api *API) targets(r *http.Request) apiFuncResult {

@@ -22,6 +22,7 @@ import {
 } from "../../state/targetsPageSlice";
 import EndpointLink from "../../components/EndpointLink";
 import CustomInfiniteScroll from "../../components/CustomInfiniteScroll";
+import ScrapePoolConfig from "../../components/ScrapePoolConfig";
 
 import badgeClasses from "../../Badge.module.css";
 import panelClasses from "../../Panel.module.css";
@@ -258,6 +259,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                   </Group>
                 </Accordion.Control>
                 <Accordion.Panel>
+                  <ScrapePoolConfig pool={poolName} />
                   {pool.count === 0 ? (
                     <Alert title="No targets" icon={<IconInfoCircle />}>
                       No active targets in this scrape pool.

@@ -33,6 +33,7 @@ import { targetPoolDisplayLimit } from "./ServiceDiscoveryPage";
 import { LabelBadges } from "../../components/LabelBadges";
 import ErrorBoundary from "../../components/ErrorBoundary";
 import RelabelSteps from "./RelabelSteps";
+import ScrapePoolConfig from "../../components/ScrapePoolConfig";
 
 type TargetLabels = {
   discoveredLabels: Labels;
@@ -282,6 +283,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                 </Group>
               </Accordion.Control>
               <Accordion.Panel>
+                <ScrapePoolConfig pool={poolName} />
                 {pool.total !== pool.serverTotal && (
                   <Alert
                     title="Only showing partial dropped targets"
