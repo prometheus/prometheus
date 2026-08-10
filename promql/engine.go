@@ -4624,12 +4624,22 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvaria
 			unwrapParenExpr(&n.Args[i])
 			var argIsStepInvariant bool
 			argIsStepInvariant, shouldWrap[i] = preprocessExprHelper(n.Args[i], start, end)
+			if n.Func.Name == "info" && i == 1 {
+				// The second argument is selector syntax and is not evaluated.
+				shouldWrap[i] = false
+				continue
+			}
 			isStepInvariant = isStepInvariant && argIsStepInvariant
 
 			_, argIsVectorSelector := n.Args[i].(*parser.VectorSelector)
 			if !argIsStepInvariant || !argIsVectorSelector {
 				isTimestampWithAllArgsStepInvariantSafe = false
 			}
+		}
+		if n.Func.Name == "info" {
+			// Different vector input reference times make info() depend on the evaluation step.
+			_, _, uniformReference := infoSelectTimestampAndOffset(n.Args[0])
+			isStepInvariant = isStepInvariant && uniformReference
 		}
 
 		if isStepInvariant || isTimestampWithAllArgsStepInvariantSafe {
