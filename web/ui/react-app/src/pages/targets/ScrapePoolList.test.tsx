@@ -32,6 +32,10 @@ describe('ScrapePoolList', () => {
       mock = fetchMock.mockResponse(JSON.stringify(sampleApiResponse));
     });
 
+    afterEach(() => {
+      document.querySelectorAll('[id^="series-labels-"], [id^="scrape-duration-"]').forEach((element) => element.remove());
+    });
+
     it('renders a table', async () => {
       await act(async () => {
         scrapePoolList = mount(
@@ -52,6 +56,33 @@ describe('ScrapePoolList', () => {
         const panel = scrapePoolList.find(ScrapePoolPanel).filterWhere((panel) => panel.prop('scrapePool') === scrapePool);
         expect(panel).toHaveLength(1);
       });
+    });
+
+    it('opens the scrape pool dropdown and selects a pool', async () => {
+      const onPoolSelect = jest.fn();
+      await act(async () => {
+        scrapePoolList = mount(
+          <PathPrefixContext.Provider value="/path/prefix">
+            <ScrapePoolList
+              scrapePools={['blackbox', 'node_exporter', 'prometheus/test']}
+              selectedPool={null}
+              onPoolSelect={onPoolSelect}
+            />
+          </PathPrefixContext.Provider>
+        );
+      });
+      scrapePoolList.update();
+
+      scrapePoolList.find('button.dropdown-toggle').simulate('click');
+      scrapePoolList.update();
+
+      const menu = scrapePoolList.find('div.dropdown-menu.show');
+      expect(menu).toHaveLength(1);
+      const nodeExporterItem = menu.find('button.dropdown-item').filterWhere((item) => item.text() === 'node_exporter');
+      expect(nodeExporterItem).toHaveLength(1);
+
+      nodeExporterItem.simulate('click');
+      expect(onPoolSelect).toHaveBeenCalledWith('node_exporter');
     });
   });
 

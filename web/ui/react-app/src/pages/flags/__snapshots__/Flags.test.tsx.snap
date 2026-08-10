@@ -43,14 +43,6 @@ exports[`Flags should match snapshot 1`] = `
             Flag
           </span>
           <FontAwesomeIcon
-            beat={false}
-            beatFade={false}
-            border={false}
-            bounce={false}
-            className=""
-            fade={false}
-            fixedWidth={false}
-            flip={false}
             icon={
               Object {
                 "icon": Array [
@@ -60,29 +52,12 @@ exports[`Flags should match snapshot 1`] = `
                     "sort-desc",
                   ],
                   "f0dd",
-                  "M182.6 470.6c-12.5 12.5-32.8 12.5-45.3 0l-128-128c-9.2-9.2-11.9-22.9-6.9-34.9s16.6-19.8 29.6-19.8H288c12.9 0 24.6 7.8 29.6 19.8s2.2 25.7-6.9 34.9l-128 128z",
+                  "M182.6 470.6c-12.5 12.5-32.8 12.5-45.3 0l-128-128c-9.2-9.2-11.9-22.9-6.9-34.9s16.6-19.8 29.6-19.8l256 0c12.9 0 24.6 7.8 29.6 19.8s2.2 25.7-6.9 34.9l-128 128z",
                 ],
                 "iconName": "sort-down",
                 "prefix": "fas",
               }
             }
-            inverse={false}
-            listItem={false}
-            mask={null}
-            maskId={null}
-            pull={null}
-            pulse={false}
-            rotation={null}
-            shake={false}
-            size={null}
-            spin={false}
-            spinPulse={false}
-            spinReverse={false}
-            swapOpacity={false}
-            symbol={false}
-            title=""
-            titleId={null}
-            transform={null}
           />
         </td>
         <td
@@ -101,14 +76,6 @@ exports[`Flags should match snapshot 1`] = `
             Value
           </span>
           <FontAwesomeIcon
-            beat={false}
-            beatFade={false}
-            border={false}
-            bounce={false}
-            className=""
-            fade={false}
-            fixedWidth={false}
-            flip={false}
             icon={
               Object {
                 "icon": Array [
@@ -118,29 +85,12 @@ exports[`Flags should match snapshot 1`] = `
                     "unsorted",
                   ],
                   "f0dc",
-                  "M137.4 41.4c12.5-12.5 32.8-12.5 45.3 0l128 128c9.2 9.2 11.9 22.9 6.9 34.9s-16.6 19.8-29.6 19.8H32c-12.9 0-24.6-7.8-29.6-19.8s-2.2-25.7 6.9-34.9l128-128zm0 429.3l-128-128c-9.2-9.2-11.9-22.9-6.9-34.9s16.6-19.8 29.6-19.8H288c12.9 0 24.6 7.8 29.6 19.8s2.2 25.7-6.9 34.9l-128 128c-12.5 12.5-32.8 12.5-45.3 0z",
+                  "M137.4 41.4c12.5-12.5 32.8-12.5 45.3 0l128 128c9.2 9.2 11.9 22.9 6.9 34.9s-16.6 19.8-29.6 19.8L32 224c-12.9 0-24.6-7.8-29.6-19.8s-2.2-25.7 6.9-34.9l128-128zm0 429.3l-128-128c-9.2-9.2-11.9-22.9-6.9-34.9s16.6-19.8 29.6-19.8l256 0c12.9 0 24.6 7.8 29.6 19.8s2.2 25.7-6.9 34.9l-128 128c-12.5 12.5-32.8 12.5-45.3 0z",
                 ],
                 "iconName": "sort",
                 "prefix": "fas",
               }
             }
-            inverse={false}
-            listItem={false}
-            mask={null}
-            maskId={null}
-            pull={null}
-            pulse={false}
-            rotation={null}
-            shake={false}
-            size={null}
-            spin={false}
-            spinPulse={false}
-            spinReverse={false}
-            swapOpacity={false}
-            symbol={false}
-            title=""
-            titleId={null}
-            transform={null}
           />
         </td>
       </tr>
