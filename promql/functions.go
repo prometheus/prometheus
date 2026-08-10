@@ -2727,9 +2727,9 @@ var FunctionCalls = map[string]FunctionCall{
 	"double_exponential_smoothing": funcDoubleExponentialSmoothing,
 	"hour":                         funcHour,
 	"idelta":                       funcIdelta,
+	"ignore_start_times":           funcIgnoreStartTimes,
 	"increase":                     funcIncrease,
 	"info":                         nil,
-	"ignore_start_times":           funcIgnoreStartTimes,
 	"irate":                        funcIrate,
 	"max_of":                       funcMaxOf,
 	"label_replace":                nil, // evalLabelReplace not called via this map.

@@ -2159,7 +2159,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		case "ignore_start_times":
 			// ignore_start_times should disable start timestamp processing for its argument
 			// We evaluate the argument with useStartTimestamps temporarily disabled
-			return ev.evalIgnoreStartTimes(ctx, e)
+			return ev.evalIgnoreStartTimes(ctx, e.Args)
 		}
 
 		// Functions with nil entries in FunctionCalls should have been handled before reaching this point.
