@@ -80,8 +80,12 @@ ui-build-module:
 	cd $(UI_PATH) && pnpm run build:module
 
 .PHONY: ui-test
-ui-test:
+ui-test: ui-build-module
 	cd $(UI_PATH) && CI=true pnpm run test
+	# The old React app has been separated from the npm workspaces setup to avoid
+	# issues with conflicting dependencies. This is a temporary solution until the
+	# new Mantine-based UI is fully integrated and the old app can be removed.
+	cd $(UI_PATH)/react-app && CI=true pnpm run test
 
 .PHONY: ui-lint
 ui-lint:
@@ -172,7 +176,7 @@ install-goyacc:
 ifeq ($(GO_ONLY),1)
 test: common-test check-go-mod-version
 else
-test: check-generated-parser common-test check-node-version ui-build-module ui-test ui-lint check-go-mod-version
+test: check-generated-parser common-test check-node-version ui-test ui-lint check-go-mod-version
 endif
 
 .PHONY: tarball

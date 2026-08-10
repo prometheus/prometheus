@@ -19,6 +19,7 @@ jest.spyOn(global.Intl, 'NumberFormat').mockImplementation(() => ({
 
 describe('HistogramChart', () => {
   let wrapper: ReactWrapper;
+  let container: HTMLDivElement;
 
   const histogramDataLinear: Histogram = {
     count: '30',
@@ -69,6 +70,8 @@ describe('HistogramChart', () => {
   };
 
   beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
     mockFormat.mockClear();
     mockResolvedOptions.mockClear();
     mockFormatToParts.mockClear();
@@ -80,29 +83,38 @@ describe('HistogramChart', () => {
     if (wrapper && wrapper.exists()) {
       wrapper.unmount();
     }
+    container.remove();
   });
 
   it('renders without crashing', () => {
-    wrapper = mount(<HistogramChart {...defaultProps} histogram={histogramDataLinear} scale="linear" />);
+    wrapper = mount(<HistogramChart {...defaultProps} histogram={histogramDataLinear} scale="linear" />, {
+      attachTo: container,
+    });
     expect(wrapper.find('.histogram-y-wrapper').exists()).toBe(true);
     expect(wrapper.find('.histogram-container').exists()).toBe(true);
   });
 
   it('renders "No data" when buckets are empty', () => {
-    wrapper = mount(<HistogramChart {...defaultProps} histogram={histogramDataEmpty} scale="linear" />);
+    wrapper = mount(<HistogramChart {...defaultProps} histogram={histogramDataEmpty} scale="linear" />, {
+      attachTo: container,
+    });
     expect(wrapper.text()).toContain('No data');
     expect(wrapper.find('.histogram-container').exists()).toBe(false);
   });
 
   it('renders "No data" when buckets are null', () => {
-    wrapper = mount(<HistogramChart {...defaultProps} histogram={histogramDataNull} scale="linear" />);
+    wrapper = mount(<HistogramChart {...defaultProps} histogram={histogramDataNull} scale="linear" />, {
+      attachTo: container,
+    });
     expect(wrapper.text()).toContain('No data');
     expect(wrapper.find('.histogram-container').exists()).toBe(false);
   });
 
   describe('Linear Scale', () => {
     beforeEach(() => {
-      wrapper = mount(<HistogramChart {...defaultProps} histogram={histogramDataLinear} scale="linear" />);
+      wrapper = mount(<HistogramChart {...defaultProps} histogram={histogramDataLinear} scale="linear" />, {
+        attachTo: container,
+      });
     });
 
     it('renders the correct number of buckets', () => {
@@ -163,7 +175,8 @@ describe('HistogramChart', () => {
   describe('Exponential Scale', () => {
     beforeEach(() => {
       wrapper = mount(
-        <HistogramChart {...defaultProps} index={1} histogram={histogramDataExponential} scale="exponential" />
+        <HistogramChart {...defaultProps} index={1} histogram={histogramDataExponential} scale="exponential" />,
+        { attachTo: container }
       );
     });
 
@@ -216,7 +229,6 @@ describe('HistogramChart', () => {
       expect(parseFloat(b2.prop('style')?.width as string)).toBeGreaterThan(0);
 
       const b3 = buckets.at(2);
-      const b3Height = (50 / countMax) * 100;
       expect(b3.find('.histogram-bucket').prop('style')).toHaveProperty('height', '100%');
       expect(parseFloat(b3.prop('style')?.left as string)).toBeGreaterThan(0);
       expect(parseFloat(b3.prop('style')?.width as string)).toBeGreaterThan(0);
@@ -232,8 +244,10 @@ describe('HistogramChart', () => {
     });
 
     it('handles zero-crossing bucket correctly in exponential scale', () => {
+      wrapper.unmount();
       wrapper = mount(
-        <HistogramChart {...defaultProps} index={2} histogram={histogramDataZeroCrossing} scale="exponential" />
+        <HistogramChart {...defaultProps} index={2} histogram={histogramDataZeroCrossing} scale="exponential" />,
+        { attachTo: container }
       );
       const buckets = wrapper.find('.histogram-bucket-slot');
       const countMax = 15;
