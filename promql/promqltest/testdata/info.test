@@ -211,6 +211,67 @@ eval range from 1m to 4m step 1m info(metric @ 60)
 eval range from 1m to 4m step 1m info(metric offset 1m)
     metric{data="info", instance="a", job="1", label="value"} 0 0 2 3
 
+# @ operator works also with info in an instant query.
+# Because info() evaluates the info series as of the @ timestamp, info(metric @ 60) is step
+# invariant: it returns the same result at any evaluation time, so the instant-query test
+# harness's @-invariance checks (which re-evaluate at other eval times) hold.
+eval instant at 4m info(metric @ 60)
+    metric{data="info", instance="a", job="1", label="value"} 0
+
+clear
+
+# info() honours the @ modifier when evaluating the info series, not just when selecting it.
+load 1m
+    metric{instance="a", job="1"} 1 2 3 4 5 6 7 8
+    target_info{instance="a", job="1", version="v1"} 1
+
+# The enrichment is evaluated as of t=0 (the @ timestamp) at every step, independent of the
+# query range start: the two queries below agree on the shared timestamps 6m and 7m.
+eval range from 4m to 7m step 1m info(metric @ 0)
+    metric{instance="a", job="1", version="v1"} 1 1 1 1
+
+eval range from 6m to 7m step 1m info(metric @ 0)
+    metric{instance="a", job="1", version="v1"} 1 1
+
+# The same holds for an instant query far past the @ timestamp: enrichment is pinned to t=0
+# rather than being looked up (and lost) at the evaluation time.
+eval instant at 40m info(metric @ 0)
+    metric{instance="a", job="1", version="v1"} 1
+
+clear
+
+# Churning target_info series: @ and offset pin which info series enriches, not just whether
+# one is found.
+load 1m
+    metric{instance="a", job="1"} 0 1 2 3 4 5 6 7 8
+    target_info{instance="a", job="1", version="old"} 1 1 1 stale
+    target_info{instance="a", job="1", version="new"} _ _ _ 1 1 1 1 1 1
+
+# The info series is matched as of ts-2m, like the base samples, so enrichment reflects the
+# version current at the offset-shifted time and switches when that time crosses the flip at 3m.
+eval range from 4m to 8m step 1m info(metric offset 2m)
+    metric{instance="a", job="1", version="old"} 2 _ _ _ _
+    metric{instance="a", job="1", version="new"} _ 3 4 5 6
+
+# The @ timestamp selects the version current at 2m, even at evaluation times where "new" is
+# current and "old" has gone stale.
+eval range from 8m to 9m step 1m info(metric @ 120)
+    metric{instance="a", job="1", version="old"} 2 2
+
+# @ on a subquery argument is honoured too: enrichment is as of the subquery's @ timestamp.
+eval instant at 40m info(last_over_time(metric[10m:1m] @ 420))
+    metric{instance="a", job="1", version="new"} 7
+
+# An offset inside a pinned subquery shifts the info series reference time as well: samples
+# are read as of 2m (@ 3m minus the 1m offset), when "old" was still current.
+eval instant at 40m info(last_over_time((metric offset 1m)[10m:1m] @ 180))
+    metric{instance="a", job="1", version="old"} 2
+
+# Without @, a subquery offset shifts the info series reference time per step.
+eval range from 8m to 9m step 1m info(last_over_time(metric[5m:1m] offset 6m))
+    metric{instance="a", job="1", version="old"} 2 _
+    metric{instance="a", job="1", version="new"} _ 3
+
 clear
 
 # info_metric churn:

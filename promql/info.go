@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
@@ -37,6 +38,14 @@ var identifyingLabels = []string{"instance", "job"}
 
 // evalInfo implements the info PromQL function.
 func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
+	// The @ timestamp and offset on the first argument also govern at which time the info
+	// series are evaluated and matched (not just which series are selected), so that info(v @ T)
+	// enriches with the info series as of T at every step, independent of the evaluation time.
+	// They must be extracted before evaluating the first argument: evaluating a subquery
+	// replaces it in the expression with a materialized matrix selector that no longer carries
+	// the modifiers of the selectors inside the subquery.
+	nodeTimestamp, offset := infoSelectTimestampAndOffset(args[0])
+
 	val, annots := ev.eval(ctx, args[0])
 	mat := val.(Matrix)
 	// Map from data label name to matchers.
@@ -72,8 +81,8 @@ func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (par
 		}
 	}
 
-	selectHints := ev.infoSelectHints(args[0])
-	infoSeries, ws, err := ev.fetchInfoSeries(ctx, mat, ignoreSeries, dataLabelMatchers, selectHints)
+	selectHints := ev.infoSelectHints(nodeTimestamp, offset)
+	infoSeries, ws, err := ev.fetchInfoSeries(ctx, mat, ignoreSeries, dataLabelMatchers, selectHints, nodeTimestamp, offset)
 	if err != nil {
 		ev.error(err)
 	}
@@ -104,22 +113,37 @@ func effectiveInfoNameMatchers(matchers []*labels.Matcher) []*labels.Matcher {
 	return []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, targetInfo)}
 }
 
-// infoSelectHints calculates the storage.SelectHints for selecting info series, given expr (first argument to info call).
-func (ev *evaluator) infoSelectHints(expr parser.Expr) storage.SelectHints {
-	var nodeTimestamp *int64
-	var offset int64
-	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
-		switch n := node.(type) {
-		case *parser.VectorSelector:
-			if n.Timestamp != nil {
-				nodeTimestamp = n.Timestamp
-			}
-			offset = durationMilliseconds(n.OriginalOffset)
-			return errors.New("end traversal")
-		default:
+// infoSelectTimestampAndOffset returns the @ timestamp (nil if unset) and offset that govern
+// selection and evaluation of the info series, given expr (the first argument to an info call).
+// The reference time is derived from the first vector selector found in expr: the innermost @
+// timestamp among the selector and its enclosing subqueries anchors it (the evaluation time if
+// none is set), shifted by the offsets accumulated from the selector up to and including the
+// anchoring node.
+func infoSelectTimestampAndOffset(expr parser.Expr) (nodeTimestamp *int64, offset time.Duration) {
+	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+		n, ok := node.(*parser.VectorSelector)
+		if !ok {
 			return nil
 		}
+		nodeTimestamp = n.Timestamp
+		offset = n.OriginalOffset
+		// Enclosing subqueries shift the selector's reference time: their offsets add up until
+		// an @ timestamp anchors it, making any modifiers further out irrelevant.
+		for i := len(path) - 1; nodeTimestamp == nil && i >= 0; i-- {
+			if sq, ok := path[i].(*parser.SubqueryExpr); ok {
+				offset += sq.OriginalOffset
+				nodeTimestamp = sq.Timestamp
+			}
+		}
+		return errors.New("end traversal")
 	})
+	return nodeTimestamp, offset
+}
+
+// infoSelectHints calculates the storage.SelectHints for selecting info series, given the
+// @ timestamp (nil if unset) and offset that govern the first argument to the info call.
+func (ev *evaluator) infoSelectHints(nodeTimestamp *int64, offset time.Duration) storage.SelectHints {
+	offsetMs := durationMilliseconds(offset)
 
 	start := ev.startTimestamp
 	end := ev.endTimestamp
@@ -132,8 +156,8 @@ func (ev *evaluator) infoSelectHints(expr parser.Expr) storage.SelectHints {
 	// because wo want to exclude samples that are precisely the
 	// lookback delta before the eval time.
 	start -= durationMilliseconds(ev.lookbackDelta) - 1
-	start -= offset
-	end -= offset
+	start -= offsetMs
+	end -= offsetMs
 
 	return storage.SelectHints{
 		Start: start,
@@ -146,7 +170,7 @@ func (ev *evaluator) infoSelectHints(expr parser.Expr) storage.SelectHints {
 // fetchInfoSeries fetches info series given matching identifying labels in mat.
 // Series in ignoreSeries are not fetched.
 // dataLabelMatchers may be mutated.
-func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeries map[uint64]struct{}, dataLabelMatchers map[string][]*labels.Matcher, selectHints storage.SelectHints) (Matrix, annotations.Annotations, error) {
+func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeries map[uint64]struct{}, dataLabelMatchers map[string][]*labels.Matcher, selectHints storage.SelectHints, atTimestamp *int64, offset time.Duration) (Matrix, annotations.Annotations, error) {
 	removeNameFromDataLabelMatchers := func() {
 		for name, ms := range dataLabelMatchers {
 			ms = slices.DeleteFunc(ms, func(m *labels.Matcher) bool {
@@ -228,7 +252,10 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 		return nil, ws, err
 	}
 
-	infoMat := ev.evalSeries(ctx, infoSeries, 0, true)
+	// Evaluate the info series at the @-pinned timestamp (when set) and shifted by the offset,
+	// so enrichment reflects the info series as of the time selected by the first argument's
+	// modifiers, consistently at every step, rather than the raw evaluation timestamp.
+	infoMat := ev.evalSeries(ctx, infoSeries, offset, true, atTimestamp)
 	return infoMat, ws, nil
 }
 
