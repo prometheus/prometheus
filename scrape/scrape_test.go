@@ -4815,7 +4815,7 @@ func TestTargetScraperScrapeOverUnixSocket(t *testing.T) {
 	defer server.Close()
 
 	// Create a client with a DialContext that routes to the unix socket.
-	client, err := newScrapeClient(config_util.HTTPClientConfig{}, "test_job")
+	client, err := newUnixSocketScrapeClient(socketPath, config_util.HTTPClientConfig{}, "test_job")
 	require.NoError(t, err)
 
 	// No __address__ set — falls back to "localhost".
@@ -4870,7 +4870,7 @@ func TestTargetScraperScrapeOverUnixSocketTLS(t *testing.T) {
 	defer server.Close()
 
 	// Create a client configured to trust the test CA.
-	client, err := newScrapeClient(config_util.HTTPClientConfig{
+	client, err := newUnixSocketScrapeClient(socketPath, config_util.HTTPClientConfig{
 		TLSConfig: config_util.TLSConfig{
 			CAFile: caCertPath,
 		},
