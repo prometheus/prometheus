@@ -137,12 +137,41 @@ type targetInfoKey struct {
 	timestamp  int64
 }
 
+const maxSanitizedLabels = 64
+
 func NewPrometheusConverter(appender storage.AppenderV2) *PrometheusConverter {
-	return &PrometheusConverter{
-		scratchBuilder:  labels.NewScratchBuilder(0),
-		builder:         labels.NewBuilder(labels.EmptyLabels()),
+	c := &PrometheusConverter{}
+	c.Reset(appender)
+	return c
+}
+
+// Reset prepares c for conversion with appender. It must only be called after
+// Commit or Rollback has completed on the previous appender. Passing nil clears
+// request-local references before c is returned to a pool.
+func (c *PrometheusConverter) Reset(appender storage.AppenderV2) {
+	sanitizedLabels := c.sanitizedLabels
+	if len(sanitizedLabels) > maxSanitizedLabels {
+		sanitizedLabels = nil
+	} else {
+		clear(sanitizedLabels)
+	}
+
+	// Preserve only the bounded label cache across requests.
+	*c = PrometheusConverter{
 		appender:        appender,
-		sanitizedLabels: make(map[string]string, 64), // Pre-size for typical label count.
+		sanitizedLabels: sanitizedLabels,
+	}
+
+	if appender == nil {
+		return
+	}
+
+	// Builders retain their input strings in backing arrays after Reset, so use
+	// fresh builders for every request.
+	c.scratchBuilder = labels.NewScratchBuilder(0)
+	c.builder = labels.NewBuilder(labels.EmptyLabels())
+	if c.sanitizedLabels == nil {
+		c.sanitizedLabels = make(map[string]string, maxSanitizedLabels)
 	}
 }
 
