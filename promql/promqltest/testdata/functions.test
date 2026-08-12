@@ -649,6 +649,41 @@ eval instant at 0m clamp(test_clamp, NaN, 0)
 	{src="clamp-b"}	NaN
 	{src="clamp-c"}	NaN
 
+eval instant at 0m clamp_max(test_clamp, NaN)
+	{src="clamp-a"}	NaN
+	{src="clamp-b"}	NaN
+	{src="clamp-c"}	NaN
+
+eval instant at 0m clamp_min(test_clamp, NaN)
+	{src="clamp-a"}	NaN
+	{src="clamp-b"}	NaN
+	{src="clamp-c"}	NaN
+
+eval instant at 0m clamp_max(test_clamp, Inf)
+	{src="clamp-a"}	-50
+	{src="clamp-b"}	0
+	{src="clamp-c"}	100
+
+eval instant at 0m clamp_max(test_clamp, -Inf)
+	{src="clamp-a"}	-Inf
+	{src="clamp-b"}	-Inf
+	{src="clamp-c"}	-Inf
+
+eval instant at 0m clamp_min(test_clamp, -Inf)
+	{src="clamp-a"}	-50
+	{src="clamp-b"}	0
+	{src="clamp-c"}	100
+
+eval instant at 0m clamp_min(test_clamp, Inf)
+	{src="clamp-a"}	+Inf
+	{src="clamp-b"}	+Inf
+	{src="clamp-c"}	+Inf
+
+eval instant at 0m clamp(test_clamp, -Inf, Inf)
+	{src="clamp-a"}	-50
+	{src="clamp-b"}	0
+	{src="clamp-c"}	100
+
 eval instant at 0m clamp(test_clamp, 5, -5)
 
 clear
