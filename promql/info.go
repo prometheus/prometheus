@@ -40,14 +40,7 @@ var identifyingLabels = []string{"instance", "job"}
 func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
 	// Extract modifiers before evaluating the first argument: evaluating a subquery replaces it
 	// with a materialized matrix selector that no longer carries the modifiers inside it.
-	selectTimestamp, selectOffset, uniformReference := infoSelectTimestampAndOffset(args[0])
-	evalTimestamp, evalOffset := selectTimestamp, selectOffset
-	if !uniformReference {
-		// Keep the existing first-selector hints, but don't apply a reference to every info series
-		// unless the expression provides a single shared selector reference.
-		evalTimestamp = nil
-		evalOffset = 0
-	}
+	nodeTimestamp, offset := infoSeriesSelectTimestampAndOffset(args[0])
 
 	val, annots := ev.eval(ctx, args[0])
 	mat := val.(Matrix)
@@ -84,8 +77,8 @@ func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (par
 		}
 	}
 
-	selectHints := ev.infoSelectHints(selectTimestamp, selectOffset)
-	infoSeries, ws, err := ev.fetchInfoSeries(ctx, mat, ignoreSeries, dataLabelMatchers, selectHints, evalTimestamp, evalOffset)
+	selectHints := ev.infoSelectHints(nodeTimestamp, offset)
+	infoSeries, ws, err := ev.fetchInfoSeries(ctx, mat, ignoreSeries, dataLabelMatchers, selectHints, nodeTimestamp, offset)
 	if err != nil {
 		ev.error(err)
 	}
@@ -196,8 +189,20 @@ func infoSelectTimestampAndOffset(expr parser.Expr) (nodeTimestamp *int64, offse
 	return first.timestamp, first.offset, uniform && !referenceFree
 }
 
+// infoSeriesSelectTimestampAndOffset returns the reference used to select and
+// evaluate info series. Inputs without a shared reference use the evaluation time.
+func infoSeriesSelectTimestampAndOffset(expr parser.Expr) (*int64, time.Duration) {
+	nodeTimestamp, offset, uniformReference := infoSelectTimestampAndOffset(expr)
+	if !uniformReference {
+		return nil, 0
+	}
+	return nodeTimestamp, offset
+}
+
 // infoSelectHints calculates the storage.SelectHints for selecting info series, given the
-// @ timestamp (nil if unset) and offset that govern the first argument to the info call.
+// shared @ timestamp and offset of the info call's first argument. nodeTimestamp is nil both
+// when the first argument has no @ timestamp and when it has no single shared reference, in
+// which case info series are selected across the whole query range.
 func (ev *evaluator) infoSelectHints(nodeTimestamp *int64, offset time.Duration) storage.SelectHints {
 	offsetMs := durationMilliseconds(offset)
 

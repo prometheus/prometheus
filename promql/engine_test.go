@@ -296,6 +296,41 @@ func (h *hintRecordingQuerier) Select(ctx context.Context, sortSeries bool, hint
 	return h.Querier.Select(ctx, sortSeries, hints, matchers...)
 }
 
+type hintsClampingQueryable struct {
+	storage.Queryable
+}
+
+func (q hintsClampingQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	querier, err := q.Queryable.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return &hintsClampingQuerier{Querier: querier, mint: mint, maxt: maxt}, nil
+}
+
+type hintsClampingQuerier struct {
+	storage.Querier
+	mint, maxt int64
+}
+
+func (q *hintsClampingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	if hints == nil {
+		return q.Querier.Select(ctx, sortSeries, nil, matchers...)
+	}
+
+	clampedHints := *hints
+	if clampedHints.Start < q.mint {
+		clampedHints.Start = q.mint
+	}
+	if clampedHints.End > q.maxt {
+		clampedHints.End = q.maxt
+	}
+	if clampedHints.Start > clampedHints.End {
+		return storage.EmptySeriesSet()
+	}
+	return q.Querier.Select(ctx, sortSeries, &clampedHints, matchers...)
+}
+
 func TestSelectHintsSetCorrectly(t *testing.T) {
 	opts := promql.EngineOpts{
 		Logger:           nil,
@@ -610,6 +645,132 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			require.Equal(t, tc.expected, hintsRecorder.hints)
 		})
 	}
+}
+
+func TestFindMinMaxTimeForInfo(t *testing.T) {
+	const lookbackDelta = 5 * time.Second
+	testParser := parser.NewParser(parser.Options{EnableExperimentalFunctions: true})
+
+	testCases := []struct {
+		name       string
+		query      string
+		start, end time.Time
+		wantMin    int64
+		wantMax    int64
+	}{
+		{
+			name:    "mixed fixed references",
+			query:   "info(metric @ 120 or other_metric @ 480)",
+			start:   time.Unix(480, 0),
+			end:     time.Unix(540, 0),
+			wantMin: 115001,
+			wantMax: 540000,
+		},
+		{
+			name:    "mixed offsets",
+			query:   "info(metric offset 2m or other_metric offset 6m)",
+			start:   time.Unix(480, 0),
+			end:     time.Unix(540, 0),
+			wantMin: 115001,
+			wantMax: 540000,
+		},
+		{
+			name:    "selector-free input",
+			query:   `info(label_replace(label_replace(vector(1), "instance", "a", "__name__", ".*"), "job", "1", "__name__", ".*"))`,
+			start:   time.Unix(480, 0),
+			end:     time.Unix(540, 0),
+			wantMin: 475001,
+			wantMax: 540000,
+		},
+		{
+			name:    "offset subquery",
+			query:   "last_over_time((info(metric @ 120 or other_metric @ 480))[5m:1m] offset 6m)",
+			start:   time.Unix(1200, 0),
+			end:     time.Unix(1260, 0),
+			wantMin: 115001,
+			wantMax: 900000,
+		},
+		{
+			name:    "anchored offset subquery",
+			query:   "last_over_time((info(metric @ 120 or other_metric @ 480))[5m:1m] @ 1200 offset 6m)",
+			start:   time.Unix(1200, 0),
+			end:     time.Unix(1260, 0),
+			wantMin: 115001,
+			wantMax: 840000,
+		},
+		{
+			name:    "uniform fixed reference remains narrow",
+			query:   "info(metric @ 120 or other_metric @ 120)",
+			start:   time.Unix(480, 0),
+			end:     time.Unix(540, 0),
+			wantMin: 115001,
+			wantMax: 120000,
+		},
+		{
+			name:    "uniform short range includes metadata lookback",
+			query:   "info(last_over_time(metric[1s]))",
+			start:   time.Unix(480, 0),
+			end:     time.Unix(540, 0),
+			wantMin: 475001,
+			wantMax: 540000,
+		},
+		{
+			name:    "uniform fixed short range includes metadata lookback",
+			query:   "info(last_over_time(metric[1s] @ 120))",
+			start:   time.Unix(480, 0),
+			end:     time.Unix(540, 0),
+			wantMin: 115001,
+			wantMax: 120000,
+		},
+		{
+			name:    "uniform offset short range includes metadata lookback",
+			query:   "info(last_over_time(metric[1s] offset 2m))",
+			start:   time.Unix(480, 0),
+			end:     time.Unix(540, 0),
+			wantMin: 355001,
+			wantMax: 420000,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			expr, err := testParser.ParseExpr(tc.query)
+			require.NoError(t, err)
+			expr, err = promql.PreprocessExpr(expr, tc.start, tc.end, time.Minute)
+			require.NoError(t, err)
+
+			stmt := &parser.EvalStmt{
+				Expr:          expr,
+				Start:         tc.start,
+				End:           tc.end,
+				Interval:      time.Minute,
+				LookbackDelta: lookbackDelta,
+			}
+			gotMin, gotMax := promql.FindMinMaxTime(stmt)
+			require.Equal(t, tc.wantMin, gotMin)
+			require.Equal(t, tc.wantMax, gotMax)
+		})
+	}
+}
+
+func TestInfoIncludesMetadataLookbackInQuerierBounds(t *testing.T) {
+	testStorage := promqltest.LoadedStorage(t, `
+		load 1m
+			metric{instance="a", job="1"} _ _ _ _ _ _ _ _ _ _ 1
+			target_info{instance="a", job="1", version="v1"} _ _ _ _ _ _ 1
+	`)
+	queryable := hintsClampingQueryable{Queryable: testStorage}
+	engine := promqltest.NewTestEngine(t, false, defaultLookbackDelta, promqltest.DefaultMaxSamplesPerQuery)
+
+	query, err := engine.NewInstantQuery(t.Context(), queryable, nil, "info(last_over_time(metric[1m]))", time.Unix(600, 0))
+	require.NoError(t, err)
+	t.Cleanup(query.Close)
+
+	result := query.Exec(t.Context())
+	require.NoError(t, result.Err)
+	vector, err := result.Vector()
+	require.NoError(t, err)
+	require.Len(t, vector, 1)
+	testutil.RequireEqual(t, labels.FromStrings("__name__", "metric", "instance", "a", "job", "1", "version", "v1"), vector[0].Metric)
 }
 
 func TestEngineShutdown(t *testing.T) {
