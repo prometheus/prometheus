@@ -95,6 +95,9 @@ global:
   # Reloading the configuration will reopen the file.
   [ query_log_file: <string> ]
 
+  # Minimum query execution duration to log.
+  [ query_log_min_duration: <duration> | default = 0s ]
+
   # File to which scrape failures are logged.
   # Reloading the configuration will reopen the file.
   [ scrape_failure_log_file: <string> ]
