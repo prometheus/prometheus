@@ -950,6 +950,23 @@ func FindMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	var evalRange time.Duration
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
+		case *parser.Call:
+			if n.Func.Name != "info" {
+				break
+			}
+			nodeTimestamp, offset := infoSeriesSelectTimestampAndOffset(n.Args[0])
+			// Include info()'s implicit metadata selection in the query-wide bounds
+			// because SelectHints cannot expand the scoped Querier's time range.
+			start, end := getTimeRangesForSelector(s, &parser.VectorSelector{
+				Timestamp:      nodeTimestamp,
+				OriginalOffset: offset,
+			}, path, 0)
+			if start < minTimestamp {
+				minTimestamp = start
+			}
+			if end > maxTimestamp {
+				maxTimestamp = end
+			}
 		case *parser.VectorSelector:
 			start, end := getTimeRangesForSelector(s, n, path, evalRange)
 			if start < minTimestamp {
