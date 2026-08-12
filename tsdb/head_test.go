@@ -10031,7 +10031,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		// reference was handed out for, which fails the write.
 		rogue := filepath.Join(mmappedChunksDir(h.opts.ChunkDirRoot), "000100")
 		require.NoError(t, os.WriteFile(rogue, nil, 0o666))
-		h.chunkDiskMapper.CutNewFile()
+
 		// newTestHead's cleanup calls Head.Close() -> mmapHeadChunks(), which would
 		// otherwise re-trigger the panic on the now-missing directory. Closing the
 		// mapper first makes WriteChunk return ErrChunkDiskMapperClosed, which
