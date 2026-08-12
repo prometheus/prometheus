@@ -184,6 +184,7 @@
   },
   "scrape": {
     "extra_scrape_metrics": true,
+    "openmetrics2": false,
     "start_timestamp_zero_ingestion": false,
     "type_and_unit_labels": false
   },
