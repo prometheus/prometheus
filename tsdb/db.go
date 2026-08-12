@@ -58,8 +58,10 @@ const (
 	// DefaultCompactionDelayMaxPercent in percentage.
 	DefaultCompactionDelayMaxPercent = 10
 
+	// MinBlockReloadInterval is the minimum supported non-zero block reload interval.
+	MinBlockReloadInterval = time.Second
+
 	defaultBlockReloadInterval = time.Minute
-	minBlockReloadInterval     = time.Second
 
 	// Block dir suffixes to make deletion and creation operations atomic.
 	// We decided to do suffixes instead of creating meta.json as last (or delete as first) one,
@@ -265,7 +267,8 @@ type Options struct {
 	BlockCompactionExcludeFunc BlockExcludeFilterFunc
 
 	// BlockReloadInterval is the interval at which blocks are reloaded.
-	// A zero value uses the default of one minute. Non-zero values below one second are clamped to one second.
+	// A zero value uses the default of one minute. Non-zero values below
+	// MinBlockReloadInterval are clamped to it.
 	BlockReloadInterval time.Duration
 
 	// FloatChunkEncoding is the encoding used for new float chunks. It is the
@@ -971,8 +974,8 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64, error) {
 	}
 	if opts.BlockReloadInterval == 0 {
 		opts.BlockReloadInterval = defaultBlockReloadInterval
-	} else if opts.BlockReloadInterval < minBlockReloadInterval {
-		opts.BlockReloadInterval = minBlockReloadInterval
+	} else if opts.BlockReloadInterval < MinBlockReloadInterval {
+		opts.BlockReloadInterval = MinBlockReloadInterval
 	}
 
 	if len(rngs) == 0 {
