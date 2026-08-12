@@ -44,8 +44,34 @@ const (
 
 var userAgent = version.PrometheusUserAgent()
 
+// Role is the role of the target within STACKIT.
+type Role string
+
+const (
+	// RoleServer discovers IaaS servers.
+	RoleServer Role = "server"
+	// RolePostgres discovers Postgres instances.
+	RolePostgres Role = "postgres"
+	// RoleAll discovers all STACKIT targets.
+	RoleAll Role = "all"
+)
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *Role) UnmarshalYAML(unmarshal func(any) error) error {
+	if err := unmarshal((*string)(c)); err != nil {
+		return err
+	}
+	switch *c {
+	case RoleServer, RolePostgres, RoleAll, "":
+		return nil
+	default:
+		return fmt.Errorf("unknown role %q, expecting one of: %s, %s, %s", *c, RoleServer, RolePostgres, RoleAll)
+	}
+}
+
 // DefaultSDConfig is the default STACKIT SD configuration.
 var DefaultSDConfig = SDConfig{
+	Role:             RoleAll,
 	Region:           "eu01",
 	Port:             80,
 	RefreshInterval:  model.Duration(60 * time.Second),
@@ -60,6 +86,7 @@ func init() {
 type SDConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 
+	Role                  Role           `yaml:"role,omitempty"`
 	Project               string         `yaml:"project"`
 	RefreshInterval       model.Duration `yaml:"refresh_interval,omitempty"`
 	Port                  int            `yaml:"port,omitempty"`
@@ -150,5 +177,5 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*refresh.Di
 }
 
 func newRefresher(conf *SDConfig, l *slog.Logger) (refresher, error) {
-	return newServerDiscovery(conf, l)
+	return newClient(conf, l)
 }

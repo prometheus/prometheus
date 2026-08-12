@@ -1,4 +1,4 @@
-# A example scrape configuration for running Prometheus with
+# An example scrape configuration for running Prometheus with
 # STACKIT.
 
 scrape_configs:
@@ -12,6 +12,7 @@ scrape_configs:
 
     stackit_sd_configs:
       - project: 11111111-1111-1111-1111-111111111111
+        role: server
         oauth2:
           client_id: <credentials.sub>
           client_certificate_key: <credentials.privateKey>
@@ -32,6 +33,7 @@ scrape_configs:
 
     stackit_sd_configs:
       - project: 11111111-1111-1111-1111-111111111111
+        role: server
         oauth2:
           client_id: <credentials.sub>
           client_certificate_key: <credentials.privateKey>
@@ -46,3 +48,19 @@ scrape_configs:
       - source_labels: [__meta_stackit_private_ipv4_mynet]
         target_label: __address__
         replacement: "$1:9100"
+
+  # Discover Postgres instances to scrape.
+  - job_name: "postgres"
+
+    stackit_sd_configs:
+      - project: 11111111-1111-1111-1111-111111111111
+        role: postgres
+        oauth2:
+          client_id: <credentials.sub>
+          client_certificate_key: <credentials.privateKey>
+          client_certificate_key_id: <credentials.kid>
+          iss: <credentials.iss>
+          audience: <credentials.aud>
+          grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer"
+          token_url: "https://service-account.api.stackit.cloud/token"
+          signature_algorithm: RS512
