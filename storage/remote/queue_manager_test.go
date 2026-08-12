@@ -2016,6 +2016,7 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 				r := rand.New(rand.NewSource(99))
 
 				recs := testwal.GenerateRecords(recCase{
+					RefPadding:       batchID * 1000,
 					NoST:             protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
 					Series:           numberOfSeries,
 					SamplesPerSeries: 1,
@@ -2040,7 +2041,7 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 				require.True(t, sent, "samples not sent")
 				if !shouldBeDropped {
 					for _, s := range recs.Samples {
-						tsID := getSeriesIDFromRef(recs.Series[s.Ref])
+						tsID := getSeriesIDFromRef(recs.Series[s.Ref-chunks.HeadSeriesRef(batchID*1000)])
 						c.expectedSamples[tsID] = append(c.expectedSamples[tsID], writev2.Sample{
 							StartTimestamp: s.ST,
 							Timestamp:      s.T,
@@ -2292,7 +2293,7 @@ func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
 		{sType: tMetadata, seriesLabels: labels.FromStrings("__name__", "metric4")},
 	}
 
-	nSamples, nExemplars, nHistograms, nMetadata, nUnexpected := populateV2TimeSeries(
+	_, nSamples, nExemplars, nHistograms, nMetadata, nUnexpected := populateV2TimeSeries(
 		&symbolTable, batch, pendingData, false, false, false)
 
 	require.Equal(t, 2, nSamples, "Should count 2 samples")
@@ -2406,7 +2407,7 @@ func TestPopulateV2TimeSeries_TypeAndUnitLabels(t *testing.T) {
 			pendingData := make([]writev2.TimeSeries, 1)
 
 			symbolTable.Reset()
-			nSamples, nExemplars, nHistograms, _, _ := populateV2TimeSeries(
+			_, nSamples, nExemplars, nHistograms, _, _ := populateV2TimeSeries(
 				&symbolTable,
 				batch,
 				pendingData,
@@ -2526,7 +2527,7 @@ func TestPopulateV2TimeSeries_MetadataAndTypeAndUnit(t *testing.T) {
 			pendingData := make([]writev2.TimeSeries, 1)
 
 			symbolTable.Reset()
-			nSamples, nExemplars, nHistograms, nMetadata, _ := populateV2TimeSeries(
+			_, nSamples, nExemplars, nHistograms, nMetadata, _ := populateV2TimeSeries(
 				&symbolTable,
 				batch,
 				pendingData,

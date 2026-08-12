@@ -764,6 +764,7 @@ outer:
 			default:
 			}
 			if t.shards.enqueue(s.Ref, timeSeries{
+				ref:            s.Ref,
 				seriesLabels:   lbls,
 				metadata:       meta,
 				startTimestamp: s.ST,
@@ -823,6 +824,7 @@ outer:
 			default:
 			}
 			if t.shards.enqueue(e.Ref, timeSeries{
+				ref:            e.Ref,
 				seriesLabels:   lbls,
 				metadata:       meta,
 				timestamp:      e.T,
@@ -885,6 +887,7 @@ outer:
 			default:
 			}
 			if t.shards.enqueue(h.Ref, timeSeries{
+				ref:            h.Ref,
 				seriesLabels:   lbls,
 				metadata:       meta,
 				startTimestamp: h.ST,
@@ -947,6 +950,7 @@ outer:
 			default:
 			}
 			if t.shards.enqueue(h.Ref, timeSeries{
+				ref:            h.Ref,
 				seriesLabels:   lbls,
 				metadata:       meta,
 				startTimestamp: h.ST,
@@ -1403,6 +1407,7 @@ type queue struct {
 }
 
 type timeSeries struct {
+	ref                       chunks.HeadSeriesRef
 	seriesLabels              labels.Labels
 	value                     float64
 	histogram                 *histogram.Histogram
@@ -1603,8 +1608,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			}
 			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, encBuf, compr)
 		case remoteapi.WriteV2MessageType:
-			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels)
-			n := nPendingSamples + nPendingExemplars + nPendingHistograms
+			n, nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels)
 			if nUnexpectedMetadata > 0 {
 				s.qm.logger.Warn("unexpected metadata sType in populateV2TimeSeries", "count", nUnexpectedMetadata)
 			}
@@ -1970,71 +1974,122 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	return accumulatedStats, err
 }
 
-func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool) (int, int, int, int, int) {
+func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms, enableTypeAndUnitLabels bool) (int, int, int, int, int, int) {
 	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata int
-	for nPending, d := range batch {
-		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
-		switch {
-		case enableTypeAndUnitLabels:
-			m := schema.NewMetadataFromLabels(d.seriesLabels)
-			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(m.Type)
-			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(m.Unit)
-			pendingData[nPending].Metadata.HelpRef = 0 // Type and unit does not give us help.
-			// Use Help from d.metadata if available.
-			if d.metadata != nil {
-				pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
-				nPendingMetadata++
-			}
-		case d.metadata != nil:
-			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(d.metadata.Type)
-			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
-			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(d.metadata.Unit)
-			nPendingMetadata++
-		default:
-			// Safeguard against sending garbage in case of not having metadata
-			// for whatever reason.
-			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(model.MetricTypeUnknown)
-			pendingData[nPending].Metadata.UnitRef = 0
-			pendingData[nPending].Metadata.HelpRef = 0
-		}
+	nPending := 0
+	
+	refToSampleIdx := make(map[chunks.HeadSeriesRef]int, len(batch))
+	refToHistIdx := make(map[chunks.HeadSeriesRef]int)
 
-		if sendExemplars {
-			pendingData[nPending].Exemplars = pendingData[nPending].Exemplars[:0]
-		}
-		if sendNativeHistograms {
-			pendingData[nPending].Histograms = pendingData[nPending].Histograms[:0]
-		}
-
-		// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
-		// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
-		// stop reading from the queue. This makes it safe to reference pendingSamples by index.
-		pendingData[nPending].LabelsRefs = symbolTable.SymbolizeLabels(d.seriesLabels, pendingData[nPending].LabelsRefs)
+	for _, d := range batch {
+		idx := -1
+		isNew := false
 		switch d.sType {
 		case tSample:
-			pendingData[nPending].Samples = append(pendingData[nPending].Samples, writev2.Sample{
+			if i, ok := refToSampleIdx[d.ref]; ok {
+				idx = i
+			} else {
+				idx = nPending
+				refToSampleIdx[d.ref] = idx
+				nPending++
+				isNew = true
+			}
+		case tHistogram, tFloatHistogram:
+			if i, ok := refToHistIdx[d.ref]; ok {
+				idx = i
+			} else {
+				idx = nPending
+				refToHistIdx[d.ref] = idx
+				nPending++
+				isNew = true
+			}
+		case tExemplar:
+			if i, ok := refToSampleIdx[d.ref]; ok {
+				idx = i
+			} else if i, ok := refToHistIdx[d.ref]; ok {
+				idx = i
+			} else {
+				// No sample or histogram yet, create a new one (will act as sample bucket).
+				idx = nPending
+				refToSampleIdx[d.ref] = idx
+				nPending++
+				isNew = true
+			}
+		case tMetadata:
+			// For standalone metadata in batch (rare but might happen in tests)
+			if i, ok := refToSampleIdx[d.ref]; ok {
+				idx = i
+			} else if i, ok := refToHistIdx[d.ref]; ok {
+				idx = i
+			} else {
+				idx = nPending
+				refToSampleIdx[d.ref] = idx
+				nPending++
+				isNew = true
+			}
+		}
+
+		if isNew {
+			// Initialize new pendingData[idx]
+			pendingData[idx].Samples = pendingData[idx].Samples[:0]
+			if sendExemplars {
+				pendingData[idx].Exemplars = pendingData[idx].Exemplars[:0]
+			}
+			if sendNativeHistograms {
+				pendingData[idx].Histograms = pendingData[idx].Histograms[:0]
+			}
+			switch {
+			case enableTypeAndUnitLabels:
+				m := schema.NewMetadataFromLabels(d.seriesLabels)
+				pendingData[idx].Metadata.Type = writev2.FromMetadataType(m.Type)
+				pendingData[idx].Metadata.UnitRef = symbolTable.Symbolize(m.Unit)
+				pendingData[idx].Metadata.HelpRef = 0 // Type and unit does not give us help.
+				// Use Help from d.metadata if available.
+				if d.metadata != nil {
+					pendingData[idx].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
+					nPendingMetadata++
+				}
+			case d.metadata != nil:
+				pendingData[idx].Metadata.Type = writev2.FromMetadataType(d.metadata.Type)
+				pendingData[idx].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
+				pendingData[idx].Metadata.UnitRef = symbolTable.Symbolize(d.metadata.Unit)
+				nPendingMetadata++
+			default:
+				// Safeguard against sending garbage in case of not having metadata
+				// for whatever reason.
+				pendingData[idx].Metadata.Type = writev2.FromMetadataType(model.MetricTypeUnknown)
+				pendingData[idx].Metadata.UnitRef = 0
+				pendingData[idx].Metadata.HelpRef = 0
+			}
+			pendingData[idx].LabelsRefs = symbolTable.SymbolizeLabels(d.seriesLabels, pendingData[idx].LabelsRefs)
+		}
+
+		switch d.sType {
+		case tSample:
+			pendingData[idx].Samples = append(pendingData[idx].Samples, writev2.Sample{
 				Value:          d.value,
 				Timestamp:      d.timestamp,
 				StartTimestamp: d.startTimestamp,
 			})
 			nPendingSamples++
 		case tExemplar:
-			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, writev2.Exemplar{
+			pendingData[idx].Exemplars = append(pendingData[idx].Exemplars, writev2.Exemplar{
 				LabelsRefs: symbolTable.SymbolizeLabels(d.exemplarLabels, nil), // TODO: optimize, reuse slice
 				Value:      d.value,
 				Timestamp:  d.timestamp,
 			})
 			nPendingExemplars++
 		case tHistogram:
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromIntHistogram(d.startTimestamp, d.timestamp, d.histogram))
+			pendingData[idx].Histograms = append(pendingData[idx].Histograms, writev2.FromIntHistogram(d.startTimestamp, d.timestamp, d.histogram))
 			nPendingHistograms++
 		case tFloatHistogram:
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromFloatHistogram(d.startTimestamp, d.timestamp, d.floatHistogram))
+			pendingData[idx].Histograms = append(pendingData[idx].Histograms, writev2.FromFloatHistogram(d.startTimestamp, d.timestamp, d.floatHistogram))
 			nPendingHistograms++
 		case tMetadata:
 			nUnexpectedMetadata++
 		}
 	}
-	return nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata
+	return nPending, nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata
 }
 
 func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt func(int) error, onRetry func()) error {
