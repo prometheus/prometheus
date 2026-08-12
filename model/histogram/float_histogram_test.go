@@ -1415,6 +1415,47 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 			},
 			false, // No reset: all mapped buckets increase
 		},
+		{
+			// The previous histogram's first negative bucket is empty and a
+			// later one is populated. The current histogram has no negative
+			// buckets at all, so the populated previous bucket disappeared,
+			// which is a reset.
+			"reset when a populated bucket following an empty one disappears",
+			&FloatHistogram{
+				ZeroThreshold:   0.001,
+				Count:           10,
+				PositiveSpans:   []Span{{0, 1}},
+				PositiveBuckets: []float64{5},
+				NegativeSpans:   []Span{{1, 2}},
+				NegativeBuckets: []float64{0, 5},
+			},
+			&FloatHistogram{
+				ZeroThreshold:   0.001,
+				Count:           20,
+				PositiveSpans:   []Span{{0, 1}},
+				PositiveBuckets: []float64{20},
+			},
+			true,
+		},
+		{
+			// The current histogram runs out of buckets before a later
+			// populated bucket of the previous histogram, which sits behind an
+			// empty one. That populated bucket disappeared, so it is a reset.
+			"reset when current ends before a later populated previous bucket",
+			&FloatHistogram{
+				ZeroThreshold:   0.001,
+				Count:           7,
+				PositiveSpans:   []Span{{0, 3}},
+				PositiveBuckets: []float64{2, 0, 5},
+			},
+			&FloatHistogram{
+				ZeroThreshold:   0.001,
+				Count:           100,
+				PositiveSpans:   []Span{{0, 1}},
+				PositiveBuckets: []float64{100},
+			},
+			true,
+		},
 	}
 
 	for _, c := range cases {

@@ -822,6 +822,7 @@ func detectReset(currIt, prevIt *floatBucketIterator) bool {
 			if !prevIt.Next() {
 				return false
 			}
+			prevBucket = prevIt.strippedAt()
 		}
 	}
 	currBucket := currIt.strippedAt()
@@ -841,6 +842,7 @@ func detectReset(currIt, prevIt *floatBucketIterator) bool {
 					if !prevIt.Next() {
 						return false
 					}
+					prevBucket = prevIt.strippedAt()
 				}
 			}
 			currBucket = currIt.strippedAt()
