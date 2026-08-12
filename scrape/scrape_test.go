@@ -2964,6 +2964,10 @@ func (*refChangingAppender) UpdateMetadata(ref storage.SeriesRef, _ labels.Label
 	return ref, nil
 }
 
+func (*refChangingAppender) UpdateResource(ref storage.SeriesRef, _ labels.Labels, _, _ map[string]string, _ int64) (storage.SeriesRef, error) {
+	return ref, nil
+}
+
 func (*refChangingAppender) AppendSTZeroSample(ref storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
 	return ref, nil
 }

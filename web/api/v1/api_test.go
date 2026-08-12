@@ -60,6 +60,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -3976,8 +3977,9 @@ func assertAPIResponseMetadataLen(t *testing.T, got any, expLen int) {
 }
 
 type fakeDB struct {
-	err        error
-	blockMetas []tsdb.BlockMeta
+	err            error
+	blockMetas     []tsdb.BlockMeta
+	seriesMetadata seriesmetadata.Reader
 }
 
 func (f *fakeDB) CleanTombstones() error { return f.err }
@@ -4006,6 +4008,13 @@ func (*fakeDB) Stats(statsByLabelName string, limit int) (_ *tsdb.Stats, retErr 
 
 func (*fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
+}
+
+func (f *fakeDB) SeriesMetadata() (seriesmetadata.Reader, error) {
+	if f.seriesMetadata != nil {
+		return f.seriesMetadata, nil
+	}
+	return seriesmetadata.NewMemSeriesMetadata(), nil
 }
 
 func TestAdminEndpoints(t *testing.T) {
@@ -5088,4 +5097,504 @@ func TestGetRuleGroupNextToken(t *testing.T) {
 	// Distinct file and group inputs must produce distinct tokens.
 	require.NotEqual(t, token, getRuleGroupNextToken("/path/to/file", "other"))
 	require.NotEqual(t, token, getRuleGroupNextToken("/other/file", "group"))
+}
+
+func TestResourceSeriesLookup(t *testing.T) {
+	s := teststorage.New(t)
+
+	// Write some test series into storage.
+	app := s.Appender(context.Background())
+	now := time.Now()
+	nowMs := timestamp.FromTime(now)
+
+	paymentLbls := labels.FromStrings("__name__", "http_requests_total", "method", "GET", "service", "payment")
+	orderLbls := labels.FromStrings("__name__", "orders_total", "service", "order")
+	stagingLbls := labels.FromStrings("__name__", "http_requests_total", "method", "POST", "service", "payment-staging")
+
+	_, err := app.Append(0, paymentLbls, nowMs, 100)
+	require.NoError(t, err)
+	_, err = app.Append(0, orderLbls, nowMs, 50)
+	require.NoError(t, err)
+	_, err = app.Append(0, stagingLbls, nowMs, 10)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Compute stable hashes for the series.
+	paymentHash := labels.StableHash(paymentLbls)
+	orderHash := labels.StableHash(orderLbls)
+	stagingHash := labels.StableHash(stagingLbls)
+
+	// Build metadata store with resource versions.
+	mem := seriesmetadata.NewMemSeriesMetadata()
+
+	// payment-service resource
+	mem.SetVersionedResource(paymentHash, &seriesmetadata.VersionedResource{
+		Versions: []*seriesmetadata.ResourceVersion{
+			seriesmetadata.NewResourceVersion(
+				map[string]string{"service.name": "payment-service", "service.namespace": "production"},
+				map[string]string{"host.name": "host-1", "cloud.region": "us-west-2"},
+				nowMs-10000, nowMs,
+			),
+		},
+	})
+
+	// order-service resource
+	mem.SetVersionedResource(orderHash, &seriesmetadata.VersionedResource{
+		Versions: []*seriesmetadata.ResourceVersion{
+			seriesmetadata.NewResourceVersion(
+				map[string]string{"service.name": "order-service", "service.namespace": "production"},
+				map[string]string{"host.name": "host-2", "cloud.region": "us-west-2"},
+				nowMs-10000, nowMs,
+			),
+		},
+	})
+
+	// payment-service staging resource
+	mem.SetVersionedResource(stagingHash, &seriesmetadata.VersionedResource{
+		Versions: []*seriesmetadata.ResourceVersion{
+			seriesmetadata.NewResourceVersion(
+				map[string]string{"service.name": "payment-service", "service.namespace": "staging"},
+				map[string]string{"host.name": "staging-host-1", "cloud.region": "us-east-1"},
+				nowMs-10000, nowMs,
+			),
+		},
+	})
+
+	// Populate labels and inverted index for metadata lookups.
+	mem.SetLabels(paymentHash, paymentLbls)
+	mem.SetLabels(orderHash, orderLbls)
+	mem.SetLabels(stagingHash, stagingLbls)
+	mem.BuildResourceAttrIndex()
+
+	db := &fakeDB{seriesMetadata: mem}
+
+	api := &API{
+		Queryable:            s,
+		QueryEngine:          testEngine(t),
+		parser:               testParser,
+		db:                   db,
+		enableNativeMetadata: true,
+		now:                  time.Now,
+	}
+
+	startStr := strconv.FormatFloat(float64(nowMs-100000)/1000, 'f', 3, 64)
+	endStr := strconv.FormatFloat(float64(nowMs+100000)/1000, 'f', 3, 64)
+
+	makeRequest := func(params url.Values) *http.Request {
+		u, _ := url.Parse("http://example.com/api/v1/resources/series")
+		// Always include reasonable start/end to avoid extreme time ranges.
+		if params.Get("start") == "" {
+			params.Set("start", startStr)
+		}
+		if params.Get("end") == "" {
+			params.Set("end", endStr)
+		}
+		u.RawQuery = params.Encode()
+		r, _ := http.NewRequest(http.MethodGet, u.String(), http.NoBody)
+		return r
+	}
+
+	t.Run("no metadata filters returns error", func(t *testing.T) {
+		r := makeRequest(url.Values{})
+		result := api.resourceSeriesLookup(r)
+		require.NotNil(t, result.err)
+		require.Equal(t, errorBadData, result.err.typ)
+	})
+
+	t.Run("native metadata disabled returns error", func(t *testing.T) {
+		disabledAPI := &API{
+			Queryable:            s,
+			db:                   db,
+			enableNativeMetadata: false,
+		}
+		r := makeRequest(url.Values{"resource.attr": {"service.name:payment-service"}})
+		result := disabledAPI.resourceSeriesLookup(r)
+		require.NotNil(t, result.err)
+		require.Equal(t, errorBadData, result.err.typ)
+	})
+
+	t.Run("invalid attr filter format", func(t *testing.T) {
+		r := makeRequest(url.Values{"resource.attr": {"badformat"}})
+		result := api.resourceSeriesLookup(r)
+		require.NotNil(t, result.err)
+		require.Equal(t, errorBadData, result.err.typ)
+	})
+
+	t.Run("filter by single resource attribute", func(t *testing.T) {
+		r := makeRequest(url.Values{"resource.attr": {"service.name:payment-service"}})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.(*PaginatedSeriesMetadata).Results
+		// Should match payment (production) and staging
+		require.Len(t, data, 2)
+	})
+
+	t.Run("filter by multiple resource attributes (AND)", func(t *testing.T) {
+		r := makeRequest(url.Values{"resource.attr": {"service.name:payment-service", "service.namespace:production"}})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.(*PaginatedSeriesMetadata).Results
+		// Should only match production payment-service
+		require.Len(t, data, 1)
+		require.Equal(t, "payment-service", data[0].Versions[0].Attributes.Identifying["service.name"])
+		require.Equal(t, "production", data[0].Versions[0].Attributes.Identifying["service.namespace"])
+	})
+
+	t.Run("filter by descriptive resource attribute", func(t *testing.T) {
+		r := makeRequest(url.Values{"resource.attr": {"cloud.region:us-east-1"}})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.(*PaginatedSeriesMetadata).Results
+		// Only staging payment-service is in us-east-1
+		require.Len(t, data, 1)
+		require.Equal(t, "staging", data[0].Versions[0].Attributes.Identifying["service.namespace"])
+	})
+
+	t.Run("match[] pre-filter narrows results", func(t *testing.T) {
+		r := makeRequest(url.Values{
+			"resource.attr": {"cloud.region:us-west-2"},
+			"match[]":       {`{__name__="http_requests_total"}`},
+		})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.(*PaginatedSeriesMetadata).Results
+		// us-west-2 matches payment (production) and order, but match[] restricts to http_requests_total → only payment
+		require.Len(t, data, 1)
+		require.Equal(t, "http_requests_total", data[0].Labels.Get("__name__"))
+	})
+
+	t.Run("limit caps results", func(t *testing.T) {
+		r := makeRequest(url.Values{
+			"resource.attr": {"service.name:payment-service"},
+			"limit":         {"1"},
+		})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		paginated := result.data.(*PaginatedSeriesMetadata)
+		require.Len(t, paginated.Results, 1)
+		require.NotEmpty(t, paginated.NextToken, "should have nextToken when more results exist")
+	})
+
+	t.Run("no matching metadata returns empty", func(t *testing.T) {
+		r := makeRequest(url.Values{"resource.attr": {"service.name:nonexistent-service"}})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.(*PaginatedSeriesMetadata).Results
+		require.Empty(t, data)
+	})
+
+	t.Run("pagination with next_token", func(t *testing.T) {
+		// First page: limit=1
+		r := makeRequest(url.Values{
+			"resource.attr": {"service.name:payment-service"},
+			"limit":         {"1"},
+		})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		page1 := result.data.(*PaginatedSeriesMetadata)
+		require.Len(t, page1.Results, 1)
+		require.NotEmpty(t, page1.NextToken)
+
+		// Second page: use next_token
+		r = makeRequest(url.Values{
+			"resource.attr": {"service.name:payment-service"},
+			"limit":         {"1"},
+			"next_token":    {page1.NextToken},
+		})
+		result = api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		page2 := result.data.(*PaginatedSeriesMetadata)
+		require.Len(t, page2.Results, 1)
+		require.Empty(t, page2.NextToken, "last page should have no nextToken")
+
+		// Results should be different
+		require.NotEqual(t, page1.Results[0].Labels.String(), page2.Results[0].Labels.String())
+	})
+
+	t.Run("names view groups metric names", func(t *testing.T) {
+		r := makeRequest(url.Values{
+			"resource.attr": {"service.name:payment-service"},
+			"view":          {"names"},
+		})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.(*SeriesMetricsNamesView)
+		require.Equal(t, []string{"http_requests_total"}, data.Metrics)
+		require.Equal(t, 2, data.SeriesCount)
+		require.False(t, data.Truncated)
+		require.Equal(t, "metrics", data.LimitUnit)
+	})
+
+	t.Run("summary view returns deterministic example", func(t *testing.T) {
+		r := makeRequest(url.Values{
+			"resource.attr": {"service.name:payment-service"},
+			"view":          {"summary"},
+		})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.(*SeriesMetricsSummaryView)
+		require.Equal(t, 2, data.SeriesCount)
+		require.Len(t, data.Metrics, 1)
+		require.Equal(t, "http_requests_total", data.Metrics[0].Name)
+		require.Equal(t, 2, data.Metrics[0].SeriesCount)
+		require.Equal(t, "GET", data.Metrics[0].ExampleLabels["method"])
+	})
+
+	t.Run("metric limit truncates compact view", func(t *testing.T) {
+		r := makeRequest(url.Values{
+			"resource.attr": {"cloud.region:us-west-2"},
+			"view":          {"names"},
+			"metric_limit":  {"1"},
+		})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.(*SeriesMetricsNamesView)
+		require.Equal(t, []string{"http_requests_total"}, data.Metrics)
+		require.Equal(t, 2, data.SeriesCount)
+		require.True(t, data.Truncated)
+		require.NotEmpty(t, result.warnings)
+	})
+
+	t.Run("empty compact views keep compact response shape", func(t *testing.T) {
+		for _, view := range []string{"names", "summary"} {
+			t.Run(view, func(t *testing.T) {
+				r := makeRequest(url.Values{
+					"resource.attr": {"service.name:missing"},
+					"view":          {view},
+				})
+				result := api.resourceSeriesLookup(r)
+				require.Nil(t, result.err)
+				switch view {
+				case "names":
+					data := result.data.(*SeriesMetricsNamesView)
+					require.Empty(t, data.Metrics)
+					require.NotNil(t, data.Metrics)
+					require.Zero(t, data.SeriesCount)
+				case "summary":
+					data := result.data.(*SeriesMetricsSummaryView)
+					require.Empty(t, data.Metrics)
+					require.NotNil(t, data.Metrics)
+					require.Zero(t, data.SeriesCount)
+				}
+			})
+		}
+	})
+
+	t.Run("view-specific pagination parameters are rejected", func(t *testing.T) {
+		tests := []url.Values{
+			{"resource.attr": {"service.name:payment-service"}, "view": {"invalid"}},
+			{"resource.attr": {"service.name:payment-service"}, "view": {"names"}, "metric_limit": {"-1"}},
+			{"resource.attr": {"service.name:payment-service"}, "metric_limit": {"1"}},
+			{"resource.attr": {"service.name:payment-service"}, "view": {"names"}, "limit": {"1"}},
+			{"resource.attr": {"service.name:payment-service"}, "view": {"summary"}, "next_token": {"token"}},
+		}
+		for _, params := range tests {
+			result := api.resourceSeriesLookup(makeRequest(params))
+			require.NotNil(t, result.err, "params: %v", params)
+			require.Equal(t, errorBadData, result.err.typ)
+		}
+	})
+}
+
+func TestResourceAttributesAPI(t *testing.T) {
+	s := teststorage.New(t)
+	now := time.Unix(1_800_000_000, 0)
+	nowMs := timestamp.FromTime(now)
+
+	httpLabels := labels.FromStrings("__name__", "http_requests_total", "instance", "a", "job", "shop")
+	orderLabels := labels.FromStrings("__name__", "orders_total", "instance", "b", "job", "shop")
+	app := s.Appender(t.Context())
+	_, err := app.Append(0, httpLabels, nowMs, 1)
+	require.NoError(t, err)
+	_, err = app.Append(0, orderLabels, nowMs, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	httpHash := labels.StableHash(httpLabels)
+	orderHash := labels.StableHash(orderLabels)
+	mem := seriesmetadata.NewMemSeriesMetadata()
+	mem.SetVersionedResource(httpHash, &seriesmetadata.VersionedResource{Versions: []*seriesmetadata.ResourceVersion{
+		seriesmetadata.NewResourceVersion(
+			map[string]string{"service.name": "payment"},
+			map[string]string{"service.version": "1", "host.name": "old", "removed": "old"},
+			nowMs-30_000, nowMs+30_000,
+		),
+		seriesmetadata.NewResourceVersion(
+			map[string]string{"service.name": "payment"},
+			map[string]string{"service.version": "2", "host.name": "new", "cloud.region": "us"},
+			nowMs-10_000, nowMs-8_000,
+		),
+	}})
+	mem.SetVersionedResource(orderHash, &seriesmetadata.VersionedResource{Versions: []*seriesmetadata.ResourceVersion{
+		seriesmetadata.NewResourceVersion(
+			map[string]string{"service.name": "orders"},
+			map[string]string{"host.name": "orders-host"},
+			nowMs-20_000, nowMs-15_000,
+		),
+	}})
+	mem.SetLabels(httpHash, httpLabels)
+	mem.SetLabels(orderHash, orderLabels)
+	mem.BuildResourceAttrIndex()
+
+	api := &API{
+		Queryable:            s,
+		db:                   &fakeDB{seriesMetadata: mem},
+		enableNativeMetadata: true,
+		now:                  func() time.Time { return now },
+		config:               func() config.Config { return samplePrometheusCfg },
+		parser:               testParser,
+	}
+
+	request := func(path string, params url.Values) *http.Request {
+		u, parseErr := url.Parse("http://example.com/api/v1/" + path)
+		require.NoError(t, parseErr)
+		u.RawQuery = params.Encode()
+		r, requestErr := http.NewRequest(http.MethodGet, u.String(), http.NoBody)
+		require.NoError(t, requestErr)
+		return r
+	}
+
+	t.Run("latest uses newest start time", func(t *testing.T) {
+		result := api.resourceAttributes(request("resources", url.Values{"latest": {"1"}}))
+		require.Nil(t, result.err)
+		data := result.data.(*PaginatedResourceAttributes)
+		require.Len(t, data.Results, 2)
+		for _, resource := range data.Results {
+			require.Len(t, resource.Versions, 1)
+			if resource.Labels.Get(model.MetricNameLabel) == "http_requests_total" {
+				require.Equal(t, "2", resource.Versions[0].Attributes.Descriptive["service.version"])
+				require.Equal(t, nowMs-10_000, resource.Versions[0].MinTimeMs)
+			}
+		}
+	})
+
+	t.Run("verbose attributes include role and translated name", func(t *testing.T) {
+		result := api.resourceAttributes(request("resources", url.Values{
+			"format":  {"attributes"},
+			"verbose": {"true"},
+		}))
+		require.Nil(t, result.err)
+		data := result.data.(map[string]ResourceAttributeKeyInfo)
+		require.Equal(t, ResourceAttributeKeyInfo{
+			Role:     "identifying",
+			OtelName: "service.name",
+			PromName: "service_name",
+			Values:   []string{"orders", "payment"},
+		}, data["service.name"])
+		require.Equal(t, "descriptive", data["host.name"].Role)
+		require.Equal(t, "host_name", data["host.name"].PromName)
+	})
+
+	t.Run("flat translated attributes remain backward compatible", func(t *testing.T) {
+		result := api.resourceAttributes(request("resources", url.Values{
+			"format":    {"attributes"},
+			"translate": {"1"},
+		}))
+		require.Nil(t, result.err)
+		data := result.data.(map[string][]string)
+		require.Equal(t, []string{"orders", "payment"}, data["service_name"])
+		require.Contains(t, data, "host_name")
+	})
+
+	t.Run("diff selects newest started version across overlap and gap", func(t *testing.T) {
+		result := api.resourceAttributesDiff(request("resources/diff", url.Values{
+			"match[]": {`{__name__=~".+"}`},
+			"time":    {strconv.FormatFloat(float64(nowMs-5_000)/1000, 'f', 3, 64)},
+		}))
+		require.Nil(t, result.err)
+		data := result.data.(*ResourceAttributesDiffResponse)
+		require.Len(t, data.Results, 2)
+
+		var httpDiff, orderDiff ResourceAttributesDiffEntry
+		for _, entry := range data.Results {
+			switch entry.Labels.Get(model.MetricNameLabel) {
+			case "http_requests_total":
+				httpDiff = entry
+			case "orders_total":
+				orderDiff = entry
+			}
+		}
+		require.NotNil(t, httpDiff.Before)
+		require.NotNil(t, httpDiff.After)
+		require.Equal(t, nowMs-10_000, httpDiff.After.MinTimeMs)
+		require.Equal(t, "1->2", httpDiff.Changed.Descriptive["service.version"])
+		require.Equal(t, "old->new", httpDiff.Changed.Descriptive["host.name"])
+		require.Equal(t, "us", httpDiff.Changed.Descriptive["cloud.region"])
+		require.Equal(t, "old->", httpDiff.Changed.Descriptive["removed"])
+		require.Nil(t, orderDiff.Before)
+		require.NotNil(t, orderDiff.After)
+		require.Equal(t, "orders", orderDiff.Changed.Identifying["service.name"])
+		require.Equal(t, "orders-host", orderDiff.Changed.Descriptive["host.name"])
+	})
+
+	t.Run("diff paginates deterministically", func(t *testing.T) {
+		params := url.Values{
+			"match[]": {`{__name__=~".+"}`},
+			"time":    {strconv.FormatFloat(float64(nowMs-5_000)/1000, 'f', 3, 64)},
+			"limit":   {"1"},
+		}
+		first := api.resourceAttributesDiff(request("resources/diff", params))
+		require.Nil(t, first.err)
+		firstPage := first.data.(*ResourceAttributesDiffResponse)
+		require.Len(t, firstPage.Results, 1)
+		require.NotEmpty(t, firstPage.NextToken)
+		require.NotEmpty(t, first.warnings)
+
+		params.Set("next_token", firstPage.NextToken)
+		second := api.resourceAttributesDiff(request("resources/diff", params))
+		require.Nil(t, second.err)
+		secondPage := second.data.(*ResourceAttributesDiffResponse)
+		require.Len(t, secondPage.Results, 1)
+		require.Empty(t, secondPage.NextToken)
+		require.NotEqual(t, firstPage.Results[0].Labels.String(), secondPage.Results[0].Labels.String())
+	})
+
+	t.Run("diff validates required and temporal parameters", func(t *testing.T) {
+		for _, params := range []url.Values{
+			{},
+			{"match[]": {`{__name__=~".+"}`}, "time": {"invalid"}},
+			{"match[]": {`{__name__=~".+"}`}, "limit": {"-1"}},
+		} {
+			result := api.resourceAttributesDiff(request("resources/diff", params))
+			require.NotNil(t, result.err)
+			require.Equal(t, errorBadData, result.err.typ)
+		}
+	})
+
+	t.Run("native metadata gate protects all resource endpoints", func(t *testing.T) {
+		disabled := *api
+		disabled.enableNativeMetadata = false
+		require.NotNil(t, disabled.resourceAttributes(request("resources", nil)).err)
+		require.NotNil(t, disabled.resourceAttributesDiff(request("resources/diff", url.Values{
+			"match[]": {`{__name__=~".+"}`},
+		})).err)
+	})
+}
+
+func TestParseAttrFilter(t *testing.T) {
+	tests := []struct {
+		input string
+		key   string
+		value string
+		err   bool
+	}{
+		{"service.name:payment", "service.name", "payment", false},
+		{"key:value:with:colons", "key", "value:with:colons", false},
+		{"key:", "key", "", false},
+		{"novalue", "", "", true},
+		{":nokey", "", "", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			k, v, err := parseAttrFilter(tc.input)
+			if tc.err {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.key, k)
+				require.Equal(t, tc.value, v)
+			}
+		})
+	}
 }
