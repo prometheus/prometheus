@@ -2804,6 +2804,39 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `some_metric @ start() [5m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 22, End: 26},
+				Err:           errors.New("no @ modifiers allowed before range"),
+				Query:         `some_metric @ start() [5m]`,
+			},
+		},
+	},
+	{
+		input: `some_metric @ end()[5m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 19, End: 23},
+				Err:           errors.New("no @ modifiers allowed before range"),
+				Query:         `some_metric @ end()[5m]`,
+			},
+		},
+	},
+	{
+		input: `some_metric offset step()[5m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 25, End: 29},
+				Err:           errors.New("no offset modifiers allowed before range"),
+				Query:         `some_metric offset step()[5m]`,
+			},
+		},
+	},
+	{
 		input: `(foo + bar)[5m]`,
 		fail:  true,
 		errors: ParseErrors{

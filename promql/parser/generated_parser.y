@@ -650,9 +650,9 @@ matrix_selector : expr LEFT_BRACKET positive_duration_expr RIGHT_BRACKET
                         vs, ok := $1.(*VectorSelector)
                         if !ok{
                                 errMsg = "ranges only allowed for vector selectors"
-                        } else if vs.OriginalOffset != 0{
+                        } else if vs.OriginalOffset != 0 || vs.OriginalOffsetExpr != nil {
                                 errMsg = "no offset modifiers allowed before range"
-                        } else if vs.Timestamp != nil {
+                        } else if vs.Timestamp != nil || vs.StartOrEnd != 0 {
                                 errMsg = "no @ modifiers allowed before range"
                         }
 
