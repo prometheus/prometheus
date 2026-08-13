@@ -249,6 +249,13 @@ func TestAddServerlessCacheTargets(t *testing.T) {
 				"__address__": "my-cache.serverless.use1.cache.amazonaws.com:6379",
 			},
 		},
+		{
+			name:  "ServerlessCacheWithNilOptionalFields",
+			cache: &types.ServerlessCache{},
+			expectedLabels: model.LabelSet{
+				"__meta_elasticache_deployment_option": "serverless",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -443,6 +450,18 @@ func TestAddCacheClusterTargets(t *testing.T) {
 					"__meta_elasticache_cache_cluster_node_endpoint_address":  "node-cluster-001.abc123.0001.use1.cache.amazonaws.com",
 					"__meta_elasticache_cache_cluster_node_endpoint_port":     "6379",
 					"__address__": "node-cluster-001.abc123.0001.use1.cache.amazonaws.com:6379",
+				},
+			},
+		},
+		{
+			name: "CacheClusterWithNilOptionalFields",
+			cluster: &types.CacheCluster{
+				CacheNodes: []types.CacheNode{{}},
+			},
+			expectedTargetCount: 1,
+			expectedLabels: []model.LabelSet{
+				{
+					"__meta_elasticache_deployment_option": "node",
 				},
 			},
 		},
