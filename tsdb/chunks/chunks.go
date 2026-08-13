@@ -76,7 +76,10 @@ func (p HeadChunkRef) Unpack() (HeadSeriesRef, HeadChunkID) {
 }
 
 // HeadChunkID refers to a specific chunk in a series (memSeries) in the Head.
-// Each memSeries has its own monotonically increasing number to refer to its chunks.
+// Each memSeries has its own number to refer to its chunks: it is monotonically
+// increasing for in-order chunks, while out-of-order chunk IDs wrap around modulo
+// 2^23 (see oooHeadChunkID in tsdb/head_read.go), so they only increase between
+// wrap-arounds.
 // If the HeadChunkID value is...
 //   - memSeries.firstChunkID+len(memSeries.mmappedChunks), it's the head chunk.
 //   - less than the above, but >= memSeries.firstID, then it's
