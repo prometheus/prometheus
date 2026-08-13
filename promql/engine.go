@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -787,11 +788,20 @@ func durationMilliseconds(d time.Duration) int64 {
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.EvalStmt) (parser.Value, annotations.Annotations, error) {
 	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime, ng.metrics.queryPrepareTimeHistogram)
 	mint, maxt := FindMinMaxTime(s)
+
+	_, querierSpan := otel.Tracer("").Start(ctxPrepare, "Querier", trace.WithAttributes(
+		attribute.Int64("mint", mint),
+		attribute.Int64("maxt", maxt),
+	))
 	querier, err := query.queryable.Querier(mint, maxt)
 	if err != nil {
+		querierSpan.RecordError(err)
+		querierSpan.SetStatus(codes.Error, err.Error())
+		querierSpan.End()
 		prepareSpanTimer.Finish()
 		return nil, nil, err
 	}
+	querierSpan.End()
 	defer querier.Close()
 
 	ng.populateSeries(ctxPrepare, querier, s)
@@ -1065,7 +1075,13 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			}
 			evalRange = 0
 			hints.By, hints.Grouping = extractGroupsFromPath(path)
-			n.UnexpandedSeriesSet = querier.Select(ctx, false, hints, n.LabelMatchers...)
+			selectCtx, selectSpan := otel.Tracer("").Start(ctx, "querierSelect", trace.WithAttributes(
+				attribute.String("selector", n.String()),
+				attribute.Int64("start", hints.Start),
+				attribute.Int64("end", hints.End),
+			))
+			n.UnexpandedSeriesSet = querier.Select(selectCtx, false, hints, n.LabelMatchers...)
+			selectSpan.End()
 		case *parser.MatrixSelector:
 			evalRange = n.Range
 		}
@@ -1113,8 +1129,11 @@ func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) (annotations
 		if e.Series != nil {
 			return nil, nil
 		}
-		span := trace.SpanFromContext(ctx)
-		span.AddEvent("expand start", trace.WithAttributes(attribute.String("selector", e.String())))
+		// This span is created only when a selector is read from storage. The
+		// result is cached in e.Series. At most one span is produced per storage
+		// selector per query. The span is not produced per step or per series.
+		ctx, span := otel.Tracer("").Start(ctx, "promqlExpandSeries", trace.WithAttributes(attribute.String("selector", e.String())))
+		defer span.End()
 		series, ws, err := expandSeriesSet(ctx, e.UnexpandedSeriesSet)
 		if e.SkipHistogramBuckets {
 			for i := range series {
@@ -1122,7 +1141,11 @@ func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) (annotations
 			}
 		}
 		e.Series = series
-		span.AddEvent("expand end", trace.WithAttributes(attribute.Int("num_series", len(series))))
+		span.SetAttributes(attribute.Int("num_series", len(series)))
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
 		return ws, err
 	}
 	return nil, nil
