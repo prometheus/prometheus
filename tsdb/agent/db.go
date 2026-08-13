@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"math"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -108,6 +109,12 @@ type Options struct {
 	//
 	// Has no effect if CheckpointFromInMemorySeries is false.
 	CheckpointBatchSize int
+
+	// WALReplayConcurrency is the maximum number of goroutines that
+	// simultaneously process WAL samples during replay.
+	// The default value is GOMAXPROCS.
+	// If it is set to a negative value or zero, the default value is used.
+	WALReplayConcurrency int
 }
 
 // DefaultOptions used for the WAL storage. They are reasonable for setups using
@@ -122,6 +129,7 @@ func DefaultOptions() *Options {
 		MaxWALTime:           DefaultMaxWALTime,
 		NoLockfile:           false,
 		OutOfOrderTimeWindow: 0,
+		WALReplayConcurrency: runtime.GOMAXPROCS(0),
 	}
 }
 
@@ -402,6 +410,9 @@ func validateOptions(opts *Options) *Options {
 	if opts.MinWALTime > opts.MaxWALTime {
 		opts.MaxWALTime = opts.MinWALTime
 	}
+	if opts.WALReplayConcurrency <= 0 {
+		opts.WALReplayConcurrency = runtime.GOMAXPROCS(0)
+	}
 
 	if t := int64(opts.TruncateFrequency / time.Millisecond); opts.MaxWALTime < t {
 		opts.MaxWALTime = t
@@ -476,6 +487,120 @@ func (db *DB) resetWALReplayResources() {
 	db.walReplaySamplesPool = zeropool.Pool[[]record.RefSample]{}
 	db.walReplayHistogramsPool = zeropool.Pool[[]record.RefHistogramSample]{}
 	db.walReplayFloatHistogramsPool = zeropool.Pool[[]record.RefFloatHistogramSample]{}
+}
+
+type walSubsetProcessor struct {
+	input                 chan walSubsetProcessorInputItem
+	output                chan []record.RefSample
+	histogramsOutput      chan []record.RefHistogramSample
+	floatHistogramsOutput chan []record.RefFloatHistogramSample
+}
+
+type walSubsetProcessorInputItem struct {
+	samples         []record.RefSample
+	histograms      []record.RefHistogramSample
+	floatHistograms []record.RefFloatHistogramSample
+}
+
+func (wp *walSubsetProcessor) setup() {
+	wp.input = make(chan walSubsetProcessorInputItem, 300)
+	wp.output = make(chan []record.RefSample, 300)
+	wp.histogramsOutput = make(chan []record.RefHistogramSample, 300)
+	wp.floatHistogramsOutput = make(chan []record.RefFloatHistogramSample, 300)
+}
+
+func (wp *walSubsetProcessor) closeAndDrain() {
+	close(wp.input)
+	for range wp.output {
+	}
+	for range wp.histogramsOutput {
+	}
+	for range wp.floatHistogramsOutput {
+	}
+}
+
+// reuseBuf returns a buffer from the output chan for reuse, or nil if none is available.
+func (wp *walSubsetProcessor) reuseBuf() []record.RefSample {
+	select {
+	case buf := <-wp.output:
+		return buf[:0]
+	default:
+	}
+	return nil
+}
+
+// reuseHistogramBuf returns a buffer from the histograms output chan for reuse, or nil if none is available.
+func (wp *walSubsetProcessor) reuseHistogramBuf() []record.RefHistogramSample {
+	select {
+	case buf := <-wp.histogramsOutput:
+		return buf[:0]
+	default:
+	}
+	return nil
+}
+
+// reuseFloatHistogramBuf returns a buffer from the float histograms output chan for reuse, or nil if none is available.
+func (wp *walSubsetProcessor) reuseFloatHistogramBuf() []record.RefFloatHistogramSample {
+	select {
+	case buf := <-wp.floatHistogramsOutput:
+		return buf[:0]
+	default:
+	}
+	return nil
+}
+
+// processWALSamples updates the last sample timestamp for the series it
+// receives and passes the buffers received to output channels for reuse.
+// It returns the number of samples that referenced a series that does not exist.
+func (wp *walSubsetProcessor) processWALSamples(db *DB) uint64 {
+	defer close(wp.output)
+	defer close(wp.histogramsOutput)
+	defer close(wp.floatHistogramsOutput)
+
+	var nonExistentSeriesRefs uint64
+
+	for in := range wp.input {
+		for _, entry := range in.samples {
+			series := db.series.GetByID(entry.Ref)
+			if series == nil {
+				nonExistentSeriesRefs++
+				continue
+			}
+			series.updateTimestamp(entry.T)
+		}
+		select {
+		case wp.output <- in.samples:
+		default:
+		}
+
+		for _, entry := range in.histograms {
+			series := db.series.GetByID(entry.Ref)
+			if series == nil {
+				nonExistentSeriesRefs++
+				continue
+			}
+			series.updateTimestamp(entry.T)
+		}
+		select {
+		case wp.histogramsOutput <- in.histograms:
+		default:
+		}
+
+		for _, entry := range in.floatHistograms {
+			series := db.series.GetByID(entry.Ref)
+			if series == nil {
+				nonExistentSeriesRefs++
+				continue
+			}
+			series.updateTimestamp(entry.T)
+		}
+		select {
+		case wp.floatHistogramsOutput <- in.floatHistograms:
+		default:
+		}
+	}
+
+	return nonExistentSeriesRefs
 }
 
 func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, currentSegmentOrCheckpoint int) (err error) {
@@ -557,7 +682,28 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 		}
 	}()
 
-	var nonExistentSeriesRefs atomic.Uint64
+	// Start workers that each update the last sample timestamp for a partition of the series ID space.
+	var (
+		wg          sync.WaitGroup
+		concurrency = db.opts.WALReplayConcurrency
+		processors  = make([]walSubsetProcessor, concurrency)
+
+		nonExistentSeriesRefs atomic.Uint64
+
+		sampleShards         = make([][]record.RefSample, concurrency)
+		histogramShards      = make([][]record.RefHistogramSample, concurrency)
+		floatHistogramShards = make([][]record.RefFloatHistogramSample, concurrency)
+	)
+
+	wg.Add(concurrency)
+	for i := range concurrency {
+		processors[i].setup()
+
+		go func(wp *walSubsetProcessor) {
+			nonExistentSeriesRefs.Add(wp.processWALSamples(db))
+			wg.Done()
+		}(&processors[i])
+	}
 
 	for d := range decoded {
 		switch v := d.(type) {
@@ -596,74 +742,108 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 			}
 			db.walReplaySeriesPool.Put(v[:0])
 		case []record.RefSample:
-			for _, entry := range v {
-				if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
-					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
-					// it remains in the checkpoint until we get past that segment.
-					if meta, ok := db.deleted[entry.Ref]; ok && meta.lastSegment <= currentSegmentOrCheckpoint {
-						meta.lastSegment = currentSegmentOrCheckpoint
-						db.deleted[entry.Ref] = meta
+			samples := v
+			// We split up the samples into chunks of 5000 samples or less.
+			// With O(300 * #cores) in-flight sample batches, large scrapes could otherwise
+			// cause thousands of very large in flight buffers.
+			for len(samples) > 0 {
+				m := min(len(samples), 5000)
+				for i := range concurrency {
+					if sampleShards[i] == nil {
+						sampleShards[i] = processors[i].reuseBuf()
 					}
-					entry.Ref = ref
 				}
-
-				series := db.series.GetByID(entry.Ref)
-				if series == nil {
-					nonExistentSeriesRefs.Inc()
-					continue
+				for _, entry := range samples[:m] {
+					if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
+						// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
+						// it remains in the checkpoint until we get past that segment.
+						if meta, ok := db.deleted[entry.Ref]; ok && meta.lastSegment <= currentSegmentOrCheckpoint {
+							meta.lastSegment = currentSegmentOrCheckpoint
+							db.deleted[entry.Ref] = meta
+						}
+						entry.Ref = ref
+					}
+					mod := uint64(entry.Ref) % uint64(concurrency)
+					sampleShards[mod] = append(sampleShards[mod], entry)
 				}
-
-				// Update the lastTs for the series if this sample is newer.
-				if entry.T > series.lastTs {
-					series.lastTs = entry.T
+				for i := range concurrency {
+					if len(sampleShards[i]) > 0 {
+						processors[i].input <- walSubsetProcessorInputItem{samples: sampleShards[i]}
+						sampleShards[i] = nil
+					}
 				}
+				samples = samples[m:]
 			}
 			db.walReplaySamplesPool.Put(v)
 		case []record.RefHistogramSample:
-			for _, entry := range v {
-				if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
-					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
-					// it remains in the checkpoint until we get past that segment.
-					if meta, ok := db.deleted[entry.Ref]; ok && meta.lastSegment <= currentSegmentOrCheckpoint {
-						meta.lastSegment = currentSegmentOrCheckpoint
-						db.deleted[entry.Ref] = meta
+			samples := v
+			// We split up the samples into chunks of 5000 samples or less.
+			// With O(300 * #cores) in-flight sample batches, large scrapes could otherwise
+			// cause thousands of very large in flight buffers occupying large amounts
+			// of unused memory.
+			for len(samples) > 0 {
+				m := min(len(samples), 5000)
+				for i := range concurrency {
+					if histogramShards[i] == nil {
+						histogramShards[i] = processors[i].reuseHistogramBuf()
 					}
-					entry.Ref = ref
 				}
-				series := db.series.GetByID(entry.Ref)
-				if series == nil {
-					nonExistentSeriesRefs.Inc()
-					continue
+				for _, entry := range samples[:m] {
+					if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
+						// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
+						// it remains in the checkpoint until we get past that segment.
+						if meta, ok := db.deleted[entry.Ref]; ok && meta.lastSegment <= currentSegmentOrCheckpoint {
+							meta.lastSegment = currentSegmentOrCheckpoint
+							db.deleted[entry.Ref] = meta
+						}
+						entry.Ref = ref
+					}
+					mod := uint64(entry.Ref) % uint64(concurrency)
+					histogramShards[mod] = append(histogramShards[mod], entry)
 				}
-
-				// Update the lastTs for the series if this sample is newer.
-				if entry.T > series.lastTs {
-					series.lastTs = entry.T
+				for i := range concurrency {
+					if len(histogramShards[i]) > 0 {
+						processors[i].input <- walSubsetProcessorInputItem{histograms: histogramShards[i]}
+						histogramShards[i] = nil
+					}
 				}
+				samples = samples[m:]
 			}
 			clear(v) // Zero out to avoid retaining histogram data.
 			db.walReplayHistogramsPool.Put(v[:0])
 		case []record.RefFloatHistogramSample:
-			for _, entry := range v {
-				if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
-					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
-					// it remains in the checkpoint until we get past that segment.
-					if meta, ok := db.deleted[entry.Ref]; ok && meta.lastSegment <= currentSegmentOrCheckpoint {
-						meta.lastSegment = currentSegmentOrCheckpoint
-						db.deleted[entry.Ref] = meta
+			samples := v
+			// We split up the samples into chunks of 5000 samples or less.
+			// With O(300 * #cores) in-flight sample batches, large scrapes could otherwise
+			// cause thousands of very large in flight buffers occupying large amounts
+			// of unused memory.
+			for len(samples) > 0 {
+				m := min(len(samples), 5000)
+				for i := range concurrency {
+					if floatHistogramShards[i] == nil {
+						floatHistogramShards[i] = processors[i].reuseFloatHistogramBuf()
 					}
-					entry.Ref = ref
 				}
-				series := db.series.GetByID(entry.Ref)
-				if series == nil {
-					nonExistentSeriesRefs.Inc()
-					continue
+				for _, entry := range samples[:m] {
+					if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
+						// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
+						// it remains in the checkpoint until we get past that segment.
+						if meta, ok := db.deleted[entry.Ref]; ok && meta.lastSegment <= currentSegmentOrCheckpoint {
+							meta.lastSegment = currentSegmentOrCheckpoint
+							db.deleted[entry.Ref] = meta
+						}
+						entry.Ref = ref
+					}
+					mod := uint64(entry.Ref) % uint64(concurrency)
+					floatHistogramShards[mod] = append(floatHistogramShards[mod], entry)
 				}
-
-				// Update the lastTs for the series if this sample is newer.
-				if entry.T > series.lastTs {
-					series.lastTs = entry.T
+				for i := range concurrency {
+					if len(floatHistogramShards[i]) > 0 {
+						processors[i].input <- walSubsetProcessorInputItem{floatHistograms: floatHistogramShards[i]}
+						floatHistogramShards[i] = nil
+					}
 				}
+				samples = samples[m:]
 			}
 			clear(v) // Zero out to avoid retaining histogram data.
 			db.walReplayFloatHistogramsPool.Put(v[:0])
@@ -671,6 +851,12 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}
 	}
+
+	// Signal termination to each worker and wait for it to close its output channels.
+	for i := range concurrency {
+		processors[i].closeAndDrain()
+	}
+	wg.Wait()
 
 	if v := nonExistentSeriesRefs.Load(); v > 0 {
 		db.logger.Warn("found sample referencing non-existing series", "skipped_series", v)
