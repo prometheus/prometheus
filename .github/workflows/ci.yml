@@ -97,7 +97,9 @@ jobs:
       - uses: prometheus/promci-setup@55bd31fe92710532260eb57c554f2697363285c5 # v0.2.2
         with:
           cache_key_suffix: upgrade
-      - run: go test -v --race ./cmd/prometheus/ --test.version-upgrade=true --test.lts-version=${{ matrix.lts_version }} -run TestVersionUpgrade
+      - run: go test -v --race ./cmd/prometheus/ --test.version-upgrade=true --test.lts-version="${LTS_VERSION}" -run TestVersionUpgrade
+        env:
+          LTS_VERSION: ${{ matrix.lts_version }}
 
   test_go_oldest:
     name: Go tests with previous Go version
