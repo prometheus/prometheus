@@ -42,3 +42,4 @@ updates:
       - .github/workflows/govulncheck.yml
       - .github/workflows/scorecards.yml
       - .github/workflows/stale.yml
+      - .github/workflows/zizmor.yml
