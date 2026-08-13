@@ -207,7 +207,7 @@ func TestLightsailDiscoveryListInstancesPaginated(t *testing.T) {
 		},
 	}}
 
-	instances, err := discovery.listInstances(ctx)
+	instances, err := discovery.listInstances(ctx, discovery.lightsail)
 	require.NoError(t, err)
 	require.Equal(t, 2, calls)
 	require.Equal(t, []types.Instance{

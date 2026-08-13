@@ -173,21 +173,21 @@ func NewLightsailDiscovery(conf *LightsailSDConfig, opts discovery.DiscovererOpt
 	return d, nil
 }
 
-func (d *LightsailDiscovery) lightsailClient(ctx context.Context) error {
+func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsailClientAdapter, error) {
 	if d.lightsail != nil {
-		return nil
+		return d.lightsail, nil
 	}
 
 	// Build the HTTP client from the provided HTTPClientConfig.
 	httpClient, err := config.NewClientFromConfig(d.cfg.HTTPClientConfig, "lightsail_sd")
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Resolve the region lazily. See LightsailSDConfig.UnmarshalYAML.
 	d.region, err = loadRegion(ctx, d.cfg.Region)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Build the AWS config with the resolved region.
@@ -210,7 +210,7 @@ func (d *LightsailDiscovery) lightsailClient(ctx context.Context) error {
 
 	cfg, err := awsConfig.LoadDefaultConfig(ctx, configOptions...)
 	if err != nil {
-		return fmt.Errorf("could not create aws config: %w", err)
+		return nil, fmt.Errorf("could not create aws config: %w", err)
 	}
 
 	// If the role ARN is set, assume the role to get credentials and set the credentials provider in the config.
@@ -230,11 +230,11 @@ func (d *LightsailDiscovery) lightsailClient(ctx context.Context) error {
 		options.HTTPClient = httpClient
 	}))
 
-	return nil
+	return d.lightsail, nil
 }
 
 func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	err := d.lightsailClient(ctx)
+	lightsailClient, err := d.lightsailClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +243,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		Source: d.region,
 	}
 
-	instances, err := d.listInstances(ctx)
+	instances, err := d.listInstances(ctx, lightsailClient)
 	if err != nil {
 		var awsErr smithy.APIError
 		if errors.As(err, &awsErr) && (awsErr.ErrorCode() == "AuthFailure" || awsErr.ErrorCode() == "UnauthorizedOperation") {
@@ -314,13 +314,13 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 }
 
 // listInstances lists all Lightsail instances in the configured region.
-func (d *LightsailDiscovery) listInstances(ctx context.Context) ([]lightsailTypes.Instance, error) {
+func (*LightsailDiscovery) listInstances(ctx context.Context, client *lightsailClientAdapter) ([]lightsailTypes.Instance, error) {
 	var (
 		instances []lightsailTypes.Instance
 		pageToken *string
 	)
 	for {
-		output, err := d.lightsail.GetInstances(ctx, &lightsail.GetInstancesInput{PageToken: pageToken})
+		output, err := client.GetInstances(ctx, &lightsail.GetInstancesInput{PageToken: pageToken})
 		if err != nil {
 			return nil, err
 		}
