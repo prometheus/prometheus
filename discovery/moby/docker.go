@@ -228,8 +228,14 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			dockerLabelContainerID:          c.ID,
 			dockerLabelContainerName:        c.Names[0],
 			dockerLabelContainerNetworkMode: c.HostConfig.NetworkMode,
-			dockerLabelContainerImage:       c.Image,
-			dockerLabelContainerImageID:     c.ImageID,
+		}
+
+		if c.Image != "" {
+			commonLabels[dockerLabelContainerImage] = c.Image
+		}
+
+		if c.ImageID != "" {
+			commonLabels[dockerLabelContainerImageID] = c.ImageID
 		}
 
 		for k, v := range c.Labels {

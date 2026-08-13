@@ -564,8 +564,6 @@ host: %s
 		{
 			"__address__":                          "[fc00::2]:80",
 			"__meta_docker_container_id":           "d43780927f21e5c56cc823545ddd546ac01cbcdd3d4d69104d01d4217e2361aa",
-			"__meta_docker_container_image":        "",
-			"__meta_docker_container_image_id":     "",
 			"__meta_docker_container_name":         "/web-server",
 			"__meta_docker_container_network_mode": "mynetwork",
 			"__meta_docker_network_id":             "03e01a4a093e66fe982403a640451f31860aa41026d9cdda213e081dd406b1e5",
