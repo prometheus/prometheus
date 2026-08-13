@@ -2484,6 +2484,7 @@ Available meta labels:
 The `pod` role discovers all pods and exposes their containers as targets. For each declared
 port of a container, a single target is generated. If a container has no specified ports,
 a port-free target per container is created for manually adding a port via relabeling.
+In that case `__address__` is set to the pod IP only, without a port.
 
 Available meta labels:
 
@@ -3563,6 +3564,9 @@ You can also use special labels like `__address__`, `__scheme__`, `__metrics_pat
 override the respective settings in the scrape configuration.
 
 The `__address__` label is set to the `<host>:<port>` address of the target.
+Some service discovery implementations omit the port when none is known, so
+that it can be added via relabeling. Kubernetes pod discovery does this for
+containers that declare no ports; `__address__` is then the pod IP only.
 After relabeling, the `instance` label is set to the value of `__address__` by default if
 it was not set during relabeling.
 
