@@ -420,7 +420,7 @@ const oooChunkIDMask = 1 << 23
 //
 // The position is wrapped modulo oooChunkIDMask so that firstOOOChunkID can
 // grow indefinitely without overflowing the 23-bit ID space. Correctness
-// requires len(oooMmappedChunks) to stay far below oooChunkIDMask, which is
+// requires len(oooMmappedChunks) to stay below oooChunkIDMask, which is
 // enforced by the guard in mmapCurrentOOOHeadChunk.
 func (s *memSeries) oooHeadChunkID(pos int) chunks.HeadChunkID {
 	return ((chunks.HeadChunkID(pos) + s.ooo.firstOOOChunkID) & (oooChunkIDMask - 1)) | oooChunkIDMask
