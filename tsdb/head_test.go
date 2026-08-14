@@ -1347,7 +1347,7 @@ func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 	}
 }
 
-func TestHead_ActiveAppenders(t *testing.T) {
+func TestHead_AppendersMetrics(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
 
 	require.NoError(t, head.Init(0))
@@ -1355,21 +1355,26 @@ func TestHead_ActiveAppenders(t *testing.T) {
 	// First rollback with no samples.
 	app := head.Appender(context.Background())
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Then commit with no samples.
 	app = head.Appender(context.Background())
 	require.NoError(t, app.Commit())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Now rollback with one sample.
 	app = head.Appender(context.Background())
 	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
 	require.NoError(t, err)
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Now commit with one sample.
 	app = head.Appender(context.Background())
@@ -1377,6 +1382,7 @@ func TestHead_ActiveAppenders(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 4.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 }
 
 func TestHead_RaceBetweenSeriesCreationAndGC(t *testing.T) {

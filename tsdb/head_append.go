@@ -165,6 +165,7 @@ func (a *initAppender) Rollback() error {
 // Appender returns a new Appender on the database.
 func (h *Head) Appender(context.Context) storage.Appender {
 	h.metrics.activeAppenders.Inc()
+	h.metrics.appendersCreated.Inc()
 
 	// The head cache might not have a starting point yet. The init appender
 	// picks up the first appended timestamp as the base.
