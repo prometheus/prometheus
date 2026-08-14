@@ -53,14 +53,16 @@ func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
 // headIndexReader provides index reading for the head block.
 // Not safe for concurrent use from multiple goroutines.
 type headIndexReader struct {
-	head       *Head
-	mint, maxt int64
+	head                     *Head
+	mint, maxt               int64
+	shardPostingsReaderLease shardPostingsReaderLease
 	// Reusable buffer for collectHeadChunks inside appendSeriesChunks,
 	// avoiding a per-series allocation during iteration.
 	headChunksBuf []*memChunk
 }
 
-func (*headIndexReader) Close() error {
+func (h *headIndexReader) Close() error {
+	h.shardPostingsReaderLease.close()
 	return nil
 }
 
@@ -157,35 +159,166 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
-// ShardedPostings implements IndexReader. This function returns an failing postings list if sharding
+// ShardedPostings implements IndexReader. This function returns a failing postings list if sharding
 // has not been enabled in the Head.
 func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
 	if !h.head.opts.EnableSharding {
 		return index.ErrPostings(errors.New("sharding is disabled"))
 	}
+	if shardIndex >= shardCount {
+		// An out-of-range shard index selects nothing: hash % shardCount
+		// never reaches shardIndex.
+		return index.EmptyPostings()
+	}
+	if shardCount == 1 {
+		// Every series belongs to shard 0 of 1.
+		return p
+	}
+	if h.head.shardBuckets == nil || !isPowerOfTwo(shardCount) {
+		return h.shardedPostingsViaSeriesLookup(p, shardIndex, shardCount)
+	}
+	h.ensureShardPostingsReaderLease()
 
+	// Candidate bucket postings are intersected with the input postings; when
+	// the shard count exceeds the bucket count, the bucket candidates need a
+	// final shard-hash filter.
+	lists, needsShardHashFilter := h.head.shardBuckets.postingsFor(shardIndex, shardCount)
+	shardPostings := index.Intersect(p, index.Merge(context.Background(), lists...))
+	if needsShardHashFilter {
+		h.head.metrics.shardedPostingsSubfiltered.Inc()
+		return newShardHashLookupFilterPostings(shardPostings, h.head.series, shardIndex, shardCount)
+	}
+	return shardPostings
+}
+
+// ShardedAllPostings implements ShardedAllPostingsReader.
+func (h *headIndexReader) ShardedAllPostings(ctx context.Context, shardIndex, shardCount uint64) index.Postings {
+	head := h.head
+	if !head.opts.EnableSharding || shardIndex >= shardCount {
+		return index.EmptyPostings()
+	}
+	if err := ctx.Err(); err != nil {
+		return index.ErrPostings(err)
+	}
+	if shardCount == 1 {
+		p := head.postings.All()
+		if err := ctx.Err(); err != nil {
+			return index.ErrPostings(err)
+		}
+		return p
+	}
+	if head.shardBuckets == nil || !isPowerOfTwo(shardCount) {
+		return head.shardedAllPostingsViaSeriesScan(ctx, shardIndex, shardCount)
+	}
+	h.ensureShardPostingsReaderLease()
+	lists, needsShardHashFilter := head.shardBuckets.postingsFor(shardIndex, shardCount)
+	if err := ctx.Err(); err != nil {
+		return index.ErrPostings(err)
+	}
+	// Iteration is caller-controlled, so do not bind the lazy merge to ctx.
+	p := index.Merge(context.Background(), lists...)
+	if err := ctx.Err(); err != nil {
+		return index.ErrPostings(err)
+	}
+	if needsShardHashFilter {
+		return newShardHashLookupFilterPostings(p, head.series, shardIndex, shardCount)
+	}
+	return p
+}
+
+func (h *headIndexReader) ensureShardPostingsReaderLease() {
+	if h.shardPostingsReaderLease.lifecycle == nil {
+		h.head.shardPostingsBufferLifecycle.acquireReader(&h.shardPostingsReaderLease)
+	}
+}
+
+// shardedPostingsViaSeriesLookup serves arbitrary shard counts or disabled
+// bucket indexes by looking up every input series and testing its shard hash. It
+// preserves the IndexReader modulo-sharding contract for embedders that enabled
+// head sharding before the shard bucket optimization started assuming
+// power-of-two shard counts.
+func (h *headIndexReader) shardedPostingsViaSeriesLookup(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+	h.head.metrics.shardedPostingsFallback.Inc()
 	out := make([]storage.SeriesRef, 0, 128)
-	notFoundSeriesCount := 0
-
 	for p.Next() {
 		s := h.head.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if s == nil {
-			notFoundSeriesCount++
 			continue
 		}
-
-		// Check if the series belong to the shard.
 		if s.shardHash%shardCount != shardIndex {
 			continue
 		}
-
 		out = append(out, storage.SeriesRef(s.ref))
 	}
-	if notFoundSeriesCount > 0 {
-		h.head.logger.Debug("Looked up series not found", "count", notFoundSeriesCount)
+	if err := p.Err(); err != nil {
+		return index.ErrPostings(err)
 	}
-
 	return index.NewListPostings(out)
+}
+
+// shardHashLookupFilterPostings filters candidate refs by resolving their series
+// shard hashes. It is used only after shard bucket intersection has reduced the
+// input to the single candidate bucket for shard counts larger than the bucket
+// count. Refs deleted before lookup are skipped like other stale postings.
+type shardHashLookupFilterPostings struct {
+	input      index.Postings
+	series     *stripeSeries
+	shardIndex uint64
+	shardCount uint64
+	cur        storage.SeriesRef
+}
+
+func newShardHashLookupFilterPostings(input index.Postings, series *stripeSeries, shardIndex, shardCount uint64) *shardHashLookupFilterPostings {
+	return &shardHashLookupFilterPostings{
+		input:      input,
+		series:     series,
+		shardIndex: shardIndex,
+		shardCount: shardCount,
+	}
+}
+
+func (p *shardHashLookupFilterPostings) Next() bool {
+	for p.input.Next() {
+		if p.accept(p.input.At()) {
+			return true
+		}
+	}
+	p.cur = 0
+	return false
+}
+
+func (p *shardHashLookupFilterPostings) Seek(v storage.SeriesRef) bool {
+	if p.cur != 0 && p.cur >= v {
+		return true
+	}
+	if !p.input.Seek(v) {
+		p.cur = 0
+		return false
+	}
+	if p.accept(p.input.At()) {
+		return true
+	}
+	return p.Next()
+}
+
+func (p *shardHashLookupFilterPostings) At() storage.SeriesRef {
+	return p.cur
+}
+
+func (p *shardHashLookupFilterPostings) Err() error {
+	return p.input.Err()
+}
+
+func (p *shardHashLookupFilterPostings) accept(ref storage.SeriesRef) bool {
+	s := p.series.getByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		return false
+	}
+	if s.shardHash%p.shardCount != p.shardIndex {
+		return false
+	}
+	p.cur = ref
+	return true
 }
 
 // Series returns the series for the given reference.
@@ -229,6 +362,11 @@ func (h *Head) selectedSeriesIndex(mint, maxt int64, selectedSeriesRefs seriesRe
 type headSelectedSeriesIndexReader struct {
 	*headIndexReader
 	selectedSeriesRefs seriesRefs
+}
+
+func (h *headSelectedSeriesIndexReader) ShardedAllPostings(ctx context.Context, shardIndex, shardCount uint64) index.Postings {
+	selected := index.NewListPostings(h.selectedSeriesRefs.sortedByRef)
+	return index.Intersect(selected, h.headIndexReader.ShardedAllPostings(ctx, shardIndex, shardCount))
 }
 
 type allSelectedSeriesPostings struct{ index.Postings }
