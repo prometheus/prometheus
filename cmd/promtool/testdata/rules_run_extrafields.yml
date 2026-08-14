@@ -1,0 +1,21 @@
+# Minimal test case to see that --ignore-unknown-fields
+# is working as expected. It should not return an error
+# when any extra fields are present in the rules file.
+rule_files:
+  - rules_extrafields.yml
+
+evaluation_interval: 1m
+
+
+tests:
+  - name: extra ownership field test
+    input_series:
+      - series: test
+        values: 1
+
+    promql_expr_test:
+      - expr: test
+        eval_time: 0
+        exp_samples:
+          - value: 1
+            labels: test

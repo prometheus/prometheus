@@ -1,0 +1,4 @@
+scrape_configs:
+  - job_name: prometheus
+    relabel_configs:
+      - regex: abcdef

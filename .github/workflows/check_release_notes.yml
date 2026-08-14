@@ -1,0 +1,28 @@
+name: 'Check release notes'
+on:
+  pull_request:
+    branches: [main, 'release-*']
+    types:
+      - opened
+      - reopened
+      - edited
+      - synchronize
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check_release_notes:
+    name: check
+    runs-on: ubuntu-latest
+    # Don't run this workflow on forks.
+    # Don't run it on dependabot PRs either as humans would take control in case a bump introduces a breaking change.
+    if: (github.repository_owner == 'prometheus' || github.repository_owner == 'prometheus-community') && github.event.pull_request.user.login != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - env:
+          PR_DESCRIPTION: ${{ github.event.pull_request.body }}
+        run: |
+          echo "$PR_DESCRIPTION" | ./scripts/check_release_notes.sh

@@ -1,0 +1,4 @@
+targets: ['1.2.3.4:9001', '1.2.3.5:9090']
+labels:
+  valid_label: foo
+  !!binary "/w==": bar

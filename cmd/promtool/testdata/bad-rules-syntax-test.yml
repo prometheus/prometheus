@@ -1,0 +1,6 @@
+rule_files:
+  - bad-rules-syntax.yml
+
+tests:
+  # Need a test to ensure the recording rules actually run.
+  - {}

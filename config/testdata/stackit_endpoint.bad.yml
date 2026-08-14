@@ -1,0 +1,4 @@
+scrape_configs:
+  - job_name: stackit
+    stackit_sd_configs:
+      - endpoint: "://invalid"

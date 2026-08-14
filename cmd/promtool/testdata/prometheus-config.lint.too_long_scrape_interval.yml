@@ -1,0 +1,5 @@
+scrape_configs:
+  - job_name: too_long_scrape_interval_test
+    scrape_interval: 10m
+rule_files:
+  - prometheus-config.rules.good.yml

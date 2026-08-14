@@ -1,0 +1,7 @@
+rule_files:
+  - at-modifier.yml
+
+tests:
+  - input_series:
+      - series: "requests{}"
+        values: 1

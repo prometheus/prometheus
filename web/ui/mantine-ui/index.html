@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!--
+      Placeholders replaced by Prometheus during serving:
+      - CONSOLES_LINK_PLACEHOLDER is replaced and set to the consoles link if it exists.
+        It will render a "Consoles" link in the navbar when it is non-empty.
+      - AGENT_MODE_PLACEHOLDER is replaced by a boolean indicating if Prometheus is running in agent mode.
+        It true, it will disable querying capacities in the UI and generally adapt the UI to the agent mode.
+        It has to be represented as a string, because booleans can be mangled to !1 in production builds.
+      - READY_PLACEHOLDER is replaced by a boolean indicating whether Prometheus was ready at the time the
+        web app was served. It has to be represented as a string, because booleans can be mangled to !1 in
+        production builds.
+      - LOOKBACKDELTA_PLACEHOLDER is replaced by the default lookback delta duration used for queries.
+    -->
+    <script>
+      const GLOBAL_CONSOLES_LINK='CONSOLES_LINK_PLACEHOLDER';
+      const GLOBAL_AGENT_MODE='AGENT_MODE_PLACEHOLDER';
+      const GLOBAL_READY='READY_PLACEHOLDER';
+      const GLOBAL_LOOKBACKDELTA='LOOKBACKDELTA_PLACEHOLDER';
+    </script>
+
+    <!--
+        The TITLE_PLACEHOLDER magic value is replaced during serving by Prometheus.
+        We need it dynamic because it can be overridden by the command line flag `web.page-title`.
+    -->
+    <title>TITLE_PLACEHOLDER</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

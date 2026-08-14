@@ -1,0 +1,2 @@
+tracing:
+  sampling_fraction: 1

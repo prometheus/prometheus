@@ -1,0 +1,38 @@
+rule_files:
+  - rules.yml
+
+tests:
+  # Simple failing test, depends on no rules.
+  - interval: 1m
+    name: "Failing test"
+    input_series:
+      - series: test
+        values: '0'
+
+    promql_expr_test:
+      - expr: test
+        eval_time: 0m
+        exp_samples:
+          - value: 1
+            labels: test
+
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: Test
+        exp_alerts:
+          - exp_labels: {}
+
+  # Alerts firing, but no alert expected by the test.
+  - interval: 1m
+    name: Failing alert test
+    input_series:
+      - series: 'up{job="test"}'
+        values: 0x10
+
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: InstanceDown
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: AlwaysFiring
+        exp_alerts: []

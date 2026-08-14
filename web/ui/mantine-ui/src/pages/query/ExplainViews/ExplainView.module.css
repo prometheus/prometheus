@@ -1,0 +1,8 @@
+.funcDoc code {
+  background-color: light-dark(
+    var(--mantine-color-gray-1),
+    var(--mantine-color-dark-5)
+  );
+  padding: 0.05em 0.2em;
+  border-radius: 0.2em;
+}

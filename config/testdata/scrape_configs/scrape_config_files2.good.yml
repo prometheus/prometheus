@@ -1,0 +1,9 @@
+scrape_configs:
+  - job_name: node
+    scrape_interval: 15s
+    tls_config:
+      cert_file: ../valid_cert_file
+      key_file: ../valid_key_file
+    vultr_sd_configs:
+      - authorization:
+          credentials: abcdef

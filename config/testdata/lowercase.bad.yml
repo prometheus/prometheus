@@ -1,0 +1,7 @@
+global:
+  metric_name_validation_scheme: legacy
+scrape_configs:
+  - job_name: prometheus
+    relabel_configs:
+      - action: lowercase
+        source_labels: [__name__]

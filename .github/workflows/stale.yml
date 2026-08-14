@@ -1,0 +1,34 @@
+###
+# This action is synced from https://github.com/prometheus/prometheus
+###
+name: Stale Check
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '16 22 * * *'
+permissions:
+  issues: write
+  pull-requests: write
+jobs:
+  stale:
+    if: github.repository_owner == 'prometheus' || github.repository_owner == 'prometheus-community' # Don't run this workflow on forks.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@1e223db275d687790206a7acac4d1a11bd6fe629 # v10.4.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          # opt out of defaults to avoid marking issues as stale and closing them
+          # https://github.com/actions/stale#days-before-close
+          # https://github.com/actions/stale#days-before-stale
+          days-before-stale: -1
+          days-before-close: -1
+          # Setting it to empty string to skip comments.
+          # https://github.com/actions/stale#stale-pr-message
+          # https://github.com/actions/stale#stale-issue-message
+          stale-pr-message: ''
+          stale-issue-message: ''
+          operations-per-run: 30
+          # override days-before-stale, for only marking the pull requests as stale
+          days-before-pr-stale: 60
+          stale-pr-label: stale
+          exempt-pr-labels: keepalive

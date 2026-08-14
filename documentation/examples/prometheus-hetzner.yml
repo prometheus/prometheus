@@ -1,0 +1,48 @@
+# A example scrape configuration for running Prometheus with
+# Hetzner.
+
+scrape_configs:
+  # Make Prometheus scrape itself for metrics.
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Discover Node Exporter instances to scrape.
+  - job_name: "node"
+
+    hetzner_sd_configs:
+      - authorization:
+          credentials: "<replace with a Hetzner Cloud API Token>"
+        role: "hcloud"
+    relabel_configs:
+      # Use the public IPv4 and port 9100 to scrape the target.
+      - source_labels: [__meta_hetzner_public_ipv4]
+        target_label: __address__
+        replacement: "$1:9100"
+
+  # Discover Node Exporter instances to scrape using a Hetzner Cloud Network called mynet.
+  - job_name: "node_private"
+
+    hetzner_sd_configs:
+      - authorization:
+          credentials: "<replace with a Hetzner Cloud API Token>"
+        role: "hcloud"
+    relabel_configs:
+      # Use the private IPv4 within the Hetzner Cloud Network and port 9100 to scrape the target.
+      - source_labels: [__meta_hetzner_hcloud_private_ipv4_mynet]
+        target_label: __address__
+        replacement: "$1:9100"
+
+  # Discover Node Exporter instances to scrape.
+  - job_name: "node_robot"
+
+    hetzner_sd_configs:
+      - basic_auth:
+          username: "<replace with a Hetzner Robot API username>"
+          password: "<replace with a Hetzner Robot API password>"
+        role: "robot"
+    relabel_configs:
+      # Use the public IPv4 and port 9100 to scrape the target.
+      - source_labels: [__meta_hetzner_public_ipv4]
+        target_label: __address__
+        replacement: "$1:9100"

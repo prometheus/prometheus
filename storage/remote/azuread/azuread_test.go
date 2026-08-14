@@ -1,0 +1,577 @@
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package azuread
+
+import (
+	"context"
+	"net/http"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	config_util "github.com/prometheus/common/config"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+	"go.yaml.in/yaml/v2"
+)
+
+const (
+	dummyAudience                        = "dummyAudience"
+	dummyClientID                        = "00000000-0000-0000-0000-000000000000"
+	dummyClientSecret config_util.Secret = "Cl1ent$ecret!"
+	dummyTenantID                        = "00000000-a12b-3cd4-e56f-000000000000"
+	testTokenString                      = "testTokenString"
+)
+
+func testTokenExpiry() time.Time { return time.Now().Add(5 * time.Second) }
+
+type AzureAdTestSuite struct {
+	suite.Suite
+	mockCredential *mockCredential
+}
+
+// mockCredential mocks azidentity TokenCredential interface.
+type mockCredential struct {
+	mock.Mock
+}
+
+func (ad *AzureAdTestSuite) BeforeTest(_, _ string) {
+	ad.mockCredential = new(mockCredential)
+}
+
+func TestAzureAd(t *testing.T) {
+	suite.Run(t, new(AzureAdTestSuite))
+}
+
+func (ad *AzureAdTestSuite) TestAzureAdRoundTripper() {
+	cases := []struct {
+		cfg *AzureADConfig
+	}{
+		// AzureAd roundtripper with ManagedIdentity.
+		{
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				ManagedIdentity: &ManagedIdentityConfig{
+					ClientID: dummyClientID,
+				},
+			},
+		},
+		// AzureAd roundtripper with OAuth.
+		{
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				OAuth: &OAuthConfig{
+					ClientID:     dummyClientID,
+					ClientSecret: dummyClientSecret,
+					TenantID:     dummyTenantID,
+				},
+			},
+		},
+		// AzureAd roundtripper with Workload Identity.
+		{
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				WorkloadIdentity: &WorkloadIdentityConfig{
+					ClientID:      dummyClientID,
+					TenantID:      dummyTenantID,
+					TokenFilePath: DefaultWorkloadIdentityTokenPath,
+				},
+			},
+		},
+	}
+	for _, c := range cases {
+		var gotReq *http.Request
+
+		testToken := &azcore.AccessToken{
+			Token:     testTokenString,
+			ExpiresOn: testTokenExpiry(),
+		}
+
+		ad.mockCredential.On("GetToken", mock.Anything, mock.Anything).Return(*testToken, nil)
+
+		tokenProvider, err := newTokenProvider(c.cfg, ad.mockCredential)
+		ad.Require().NoError(err)
+
+		rt := &azureADRoundTripper{
+			next: promhttp.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				gotReq = req
+				return &http.Response{StatusCode: http.StatusOK}, nil
+			}),
+			tokenProvider: tokenProvider,
+		}
+
+		cli := &http.Client{Transport: rt}
+
+		req, err := http.NewRequest(http.MethodPost, "https://example.com", strings.NewReader("Hello, world!"))
+		ad.Require().NoError(err)
+
+		_, err = cli.Do(req)
+		ad.Require().NoError(err)
+		ad.NotNil(gotReq)
+
+		origReq := gotReq
+		ad.NotEmpty(origReq.Header.Get("Authorization"))
+		ad.Equal("Bearer "+testTokenString, origReq.Header.Get("Authorization"))
+	}
+}
+
+func loadAzureAdConfig(filename string) (*AzureADConfig, error) {
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	cfg := AzureADConfig{}
+	if err = yaml.UnmarshalStrict(content, &cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+func TestAzureAdConfig(t *testing.T) {
+	cases := []struct {
+		filename string
+		err      string
+	}{
+		// Missing managedidentity or oauth field.
+		{
+			filename: "testdata/azuread_bad_configmissing.yaml",
+			err:      "must provide an Azure Managed Identity, Azure Workload Identity, Azure OAuth, Azure Certificate or Azure SDK in the Azure AD config",
+		},
+		// Invalid managedidentity client id.
+		{
+			filename: "testdata/azuread_bad_invalidclientid.yaml",
+			err:      "the provided Azure Managed Identity client_id is invalid",
+		},
+		// Missing tenant id in oauth config.
+		{
+			filename: "testdata/azuread_bad_invalidoauthconfig.yaml",
+			err:      "must provide an Azure OAuth tenant_id in the Azure AD config",
+		},
+		// Invalid config when both managedidentity and oauth is provided.
+		{
+			filename: "testdata/azuread_bad_twoconfig.yaml",
+			err:      "cannot provide multiple authentication methods in the Azure AD config",
+		},
+		// Invalid config when both sdk and oauth is provided.
+		{
+			filename: "testdata/azuread_bad_oauthsdkconfig.yaml",
+			err:      "cannot provide multiple authentication methods in the Azure AD config",
+		},
+		// Invalid workload identity client id.
+		{
+			filename: "testdata/azuread_bad_workloadidentity_invalidclientid.yaml",
+			err:      "the provided Azure Workload Identity client_id is invalid",
+		},
+		// Invalid workload identity tenant id.
+		{
+			filename: "testdata/azuread_bad_workloadidentity_invalidtenantid.yaml",
+			err:      "the provided Azure Workload Identity tenant_id is invalid",
+		},
+		// Missing workload identity client id.
+		{
+			filename: "testdata/azuread_bad_workloadidentity_missingclientid.yaml",
+			err:      "must provide an Azure Workload Identity client_id in the Azure AD config",
+		},
+		// Missing workload identity tenant id.
+		{
+			filename: "testdata/azuread_bad_workloadidentity_missingtenantid.yaml",
+			err:      "must provide an Azure Workload Identity tenant_id in the Azure AD config",
+		},
+		// Invalid scope validation.
+		{
+			filename: "testdata/azuread_bad_scope_invalid.yaml",
+			err:      "the provided scope contains invalid characters",
+		},
+		// Valid config with missing  optionally cloud field.
+		{
+			filename: "testdata/azuread_good_cloudmissing.yaml",
+		},
+		// Valid specific managed identity config.
+		{
+			filename: "testdata/azuread_good_specificmanagedidentity.yaml",
+		},
+		// Valid default managed identity config.
+		{
+			filename: "testdata/azuread_good_defaultmanagedidentity.yaml",
+		},
+		// Valid Oauth config.
+		{
+			filename: "testdata/azuread_good_oauth.yaml",
+		},
+		// Valid SDK config.
+		{
+			filename: "testdata/azuread_good_sdk.yaml",
+		},
+		// Valid workload identity config.
+		{
+			filename: "testdata/azuread_good_workloadidentity.yaml",
+		},
+		// Valid OAuth config with custom scope.
+		{
+			filename: "testdata/azuread_good_oauth_customscope.yaml",
+		},
+		// Valid certificate config.
+		{
+			filename: "testdata/azuread_good_certificate.yaml",
+		},
+		// Valid certificate config with separate key file.
+		{
+			filename: "testdata/azuread_good_certificate_with_key.yaml",
+		},
+		// Valid certificate config with PFX.
+		{
+			filename: "testdata/azuread_good_certificate_pfx.yaml",
+		},
+		// Missing certificate client id.
+		{
+			filename: "testdata/azuread_bad_certificate_missingclientid.yaml",
+			err:      "must provide an Azure Certificate client_id in the Azure AD config",
+		},
+		// Missing certificate tenant id.
+		{
+			filename: "testdata/azuread_bad_certificate_missingtenantid.yaml",
+			err:      "must provide an Azure Certificate tenant_id in the Azure AD config",
+		},
+		// Missing certificate path.
+		{
+			filename: "testdata/azuread_bad_certificate_missingpath.yaml",
+			err:      "must provide an Azure Certificate certificate_path in the Azure AD config",
+		},
+		// Invalid certificate client id.
+		{
+			filename: "testdata/azuread_bad_certificate_invalidclientid.yaml",
+			err:      "the provided Azure Certificate client_id is invalid",
+		},
+		// Invalid config when both certificate and oauth is provided.
+		{
+			filename: "testdata/azuread_bad_certificate_oauth.yaml",
+			err:      "cannot provide multiple authentication methods in the Azure AD config",
+		},
+	}
+	for _, c := range cases {
+		_, err := loadAzureAdConfig(c.filename)
+		if c.err != "" {
+			if err == nil {
+				t.Fatal("Did not receive expected error unmarshaling bad azuread config")
+			}
+			require.EqualError(t, err, c.err)
+		} else {
+			require.NoError(t, err)
+		}
+	}
+}
+
+func (m *mockCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	args := m.MethodCalled("GetToken", ctx, options)
+	if args.Get(0) == nil {
+		return azcore.AccessToken{}, args.Error(1)
+	}
+
+	return args.Get(0).(azcore.AccessToken), nil
+}
+
+func TestNewTokenProvider(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		cfg  *AzureADConfig
+		err  string
+	}{
+		{
+			name: "invalid managed identity cloud",
+			cfg: &AzureADConfig{
+				Cloud: "PublicAzure",
+				ManagedIdentity: &ManagedIdentityConfig{
+					ClientID: dummyClientID,
+				},
+			},
+			err: "Cloud is not specified or is incorrect: ",
+		},
+		{
+			name: "invalid oauth cloud",
+			cfg: &AzureADConfig{
+				Cloud: "PublicAzure",
+				OAuth: &OAuthConfig{
+					ClientID:     dummyClientID,
+					ClientSecret: dummyClientSecret,
+					TenantID:     dummyTenantID,
+				},
+			},
+			err: "Cloud is not specified or is incorrect: ",
+		},
+		{
+			name: "invalid SDK cloud",
+			cfg: &AzureADConfig{
+				Cloud: "PublicAzure",
+				SDK: &SDKConfig{
+					TenantID: dummyTenantID,
+				},
+			},
+			err: "Cloud is not specified or is incorrect: ",
+		},
+		{
+			name: "invalid workload identity cloud",
+			cfg: &AzureADConfig{
+				Cloud: "PublicAzure",
+				WorkloadIdentity: &WorkloadIdentityConfig{
+					ClientID:      dummyClientID,
+					TenantID:      dummyTenantID,
+					TokenFilePath: DefaultWorkloadIdentityTokenPath,
+				},
+			},
+			err: "Cloud is not specified or is incorrect: ",
+		},
+		{
+			name: "valid managed identity",
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				ManagedIdentity: &ManagedIdentityConfig{
+					ClientID: dummyClientID,
+				},
+			},
+		},
+		{
+			name: "valid oauth",
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				OAuth: &OAuthConfig{
+					ClientID:     dummyClientID,
+					ClientSecret: dummyClientSecret,
+					TenantID:     dummyTenantID,
+				},
+			},
+		},
+		{
+			name: "valid SDK",
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				SDK: &SDKConfig{
+					TenantID: dummyTenantID,
+				},
+			},
+		},
+		{
+			name: "valid workload identity",
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				WorkloadIdentity: &WorkloadIdentityConfig{
+					ClientID:      dummyClientID,
+					TenantID:      dummyTenantID,
+					TokenFilePath: DefaultWorkloadIdentityTokenPath,
+				},
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Each subtest uses its own mock so cases can run concurrently.
+			mockCred := new(mockCredential)
+
+			if c.err != "" {
+				actualTokenProvider, actualErr := newTokenProvider(c.cfg, mockCred)
+
+				require.Nil(t, actualTokenProvider)
+				require.Error(t, actualErr)
+				require.ErrorContains(t, actualErr, c.err)
+				return
+			}
+
+			testToken := &azcore.AccessToken{
+				Token:     testTokenString,
+				ExpiresOn: testTokenExpiry(),
+			}
+
+			mockCred.On("GetToken", mock.Anything, mock.Anything).Return(*testToken, nil).Once().
+				On("GetToken", mock.Anything, mock.Anything).Return(getToken(), nil).Once()
+
+			actualTokenProvider, actualErr := newTokenProvider(c.cfg, mockCred)
+
+			require.NotNil(t, actualTokenProvider)
+			require.NoError(t, actualErr)
+			require.NotEmpty(t, mustGetAccessToken(t, actualTokenProvider))
+
+			// Token set to refresh at half of the expiry time. The test tokens are set to expiry in 5s.
+			// Hence, the 4 seconds wait to check if the token is refreshed.
+			time.Sleep(4 * time.Second)
+
+			require.NotEmpty(t, mustGetAccessToken(t, actualTokenProvider))
+
+			mockCred.AssertNumberOfCalls(t, "GetToken", 2)
+			accessToken := mustGetAccessToken(t, actualTokenProvider)
+			require.NotEqual(t, testTokenString, accessToken)
+		})
+	}
+}
+
+func mustGetAccessToken(t *testing.T, tp *tokenProvider) string {
+	t.Helper()
+	accessToken, err := tp.getAccessToken(context.Background())
+	require.NoError(t, err)
+	return accessToken
+}
+
+func getToken() azcore.AccessToken {
+	return azcore.AccessToken{
+		Token:     uuid.New().String(),
+		ExpiresOn: time.Now().Add(10 * time.Second),
+	}
+}
+
+func TestCustomScopeSupport(t *testing.T) {
+	mockCredential := new(mockCredential)
+	testToken := &azcore.AccessToken{
+		Token:     testTokenString,
+		ExpiresOn: testTokenExpiry(),
+	}
+
+	cases := []struct {
+		name          string
+		cfg           *AzureADConfig
+		expectedScope string
+	}{
+		{
+			name: "Custom scope with OAuth",
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				OAuth: &OAuthConfig{
+					ClientID:     dummyClientID,
+					ClientSecret: dummyClientSecret,
+					TenantID:     dummyTenantID,
+				},
+				Scope: "https://custom-app.com/.default",
+			},
+			expectedScope: "https://custom-app.com/.default",
+		},
+		{
+			name: "Custom scope with Managed Identity",
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				ManagedIdentity: &ManagedIdentityConfig{
+					ClientID: dummyClientID,
+				},
+				Scope: "https://monitor.azure.com//.default",
+			},
+			expectedScope: "https://monitor.azure.com//.default",
+		},
+		{
+			name: "Default scope fallback with OAuth",
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				OAuth: &OAuthConfig{
+					ClientID:     dummyClientID,
+					ClientSecret: dummyClientSecret,
+					TenantID:     dummyTenantID,
+				},
+			},
+			expectedScope: IngestionPublicAudience,
+		},
+		{
+			name: "Default scope fallback with China cloud",
+			cfg: &AzureADConfig{
+				Cloud: "AzureChina",
+				OAuth: &OAuthConfig{
+					ClientID:     dummyClientID,
+					ClientSecret: dummyClientSecret,
+					TenantID:     dummyTenantID,
+				},
+			},
+			expectedScope: IngestionChinaAudience,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// Set up mock to capture the actual scopes used
+			mockCredential.On("GetToken", mock.Anything, mock.MatchedBy(func(options policy.TokenRequestOptions) bool {
+				return len(options.Scopes) == 1 && options.Scopes[0] == c.expectedScope
+			})).Return(*testToken, nil).Once()
+
+			tokenProvider, err := newTokenProvider(c.cfg, mockCredential)
+			require.NoError(t, err)
+			require.NotNil(t, tokenProvider)
+
+			// Verify that the token provider uses the expected scope
+			token, err := tokenProvider.getAccessToken(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, testTokenString, token)
+
+			// Reset mock for next test
+			mockCredential.ExpectedCalls = nil
+		})
+	}
+}
+
+func TestWorkloadIdentityTokenFilePath(t *testing.T) {
+	const envTokenPath = "/var/run/secrets/azure/wi/token/azure-identity-token"
+
+	cases := []struct {
+		name              string
+		envValue          string
+		envSet            bool
+		configTokenPath   string
+		expectedTokenPath string
+	}{
+		{
+			name:              "AZURE_FEDERATED_TOKEN_FILE is honored when token_file_path is unset",
+			envValue:          envTokenPath,
+			envSet:            true,
+			expectedTokenPath: envTokenPath,
+		},
+		{
+			name:              "falls back to the default path when the environment variable is unset",
+			envSet:            false,
+			expectedTokenPath: DefaultWorkloadIdentityTokenPath,
+		},
+		{
+			name:              "an explicit token_file_path takes precedence over the environment variable",
+			envValue:          envTokenPath,
+			envSet:            true,
+			configTokenPath:   "/custom/token/path",
+			expectedTokenPath: "/custom/token/path",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if c.envSet {
+				t.Setenv(AzureFederatedTokenFileEnvVar, c.envValue)
+			} else {
+				// t.Setenv with an empty value still sets the variable, so unset it explicitly.
+				require.NoError(t, os.Unsetenv(AzureFederatedTokenFileEnvVar))
+			}
+
+			cfg := &AzureADConfig{
+				Cloud: "AzurePublic",
+				WorkloadIdentity: &WorkloadIdentityConfig{
+					ClientID:      dummyClientID,
+					TenantID:      dummyTenantID,
+					TokenFilePath: c.configTokenPath,
+				},
+			}
+
+			require.NoError(t, cfg.Validate())
+			require.Equal(t, c.expectedTokenPath, cfg.WorkloadIdentity.TokenFilePath)
+		})
+	}
+}

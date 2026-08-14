@@ -1,0 +1,39 @@
+# A example scrape configuration for running Prometheus with Docker.
+
+scrape_configs:
+  # Make Prometheus scrape itself for metrics.
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Create a job for Docker daemon.
+  #
+  # This example requires Docker daemon to be configured to expose
+  # Prometheus metrics, as documented here:
+  # https://docs.docker.com/config/daemon/prometheus/
+  - job_name: "docker"
+    static_configs:
+      - targets: ["localhost:9323"]
+
+  # Create a job for Docker Swarm containers.
+  #
+  # This example works with cadvisor running using:
+  # docker run --detach --name cadvisor -l prometheus-job=cadvisor
+  #     --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock,ro
+  #     --mount type=bind,src=/,dst=/rootfs,ro
+  #     --mount type=bind,src=/var/run,dst=/var/run
+  #     --mount type=bind,src=/sys,dst=/sys,ro
+  #     --mount type=bind,src=/var/lib/docker,dst=/var/lib/docker,ro
+  #     google/cadvisor -docker_only
+  - job_name: "docker-containers"
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock # You can also use http/https to connect to the Docker daemon.
+    relabel_configs:
+      # Only keep containers that have a `prometheus-job` label.
+      - source_labels: [__meta_docker_container_label_prometheus_job]
+        regex: .+
+        action: keep
+      # Use the task labels that are prefixed by `prometheus-`.
+      - regex: __meta_docker_container_label_prometheus_(.+)
+        action: labelmap
+        replacement: $1

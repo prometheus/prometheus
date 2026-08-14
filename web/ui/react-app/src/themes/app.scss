@@ -1,0 +1,14 @@
+/* This file contains styles that are applied to root document, which cannot be
+   nested under theme selectors. */
+
+html {
+  /* https://github.com/prometheus/prometheus/issues/7434 */
+  /* Scroll to hash-fragment-links counting the fixed navbar 40px tall with 16px padding */
+  scroll-padding-top: 56px;
+}
+
+/* Font used for autocompletion item icons. */
+@font-face {
+  font-family: 'codicon';
+  src: local('codicon'), url(../fonts/codicon.ttf) format('truetype');
+}

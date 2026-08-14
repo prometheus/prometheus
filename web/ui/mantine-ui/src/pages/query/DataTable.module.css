@@ -1,0 +1,24 @@
+.tableWrapper {
+  border: 1px solid
+    light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-5));
+  border-radius: var(--mantine-radius-default);
+}
+
+.numberCell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The count is backed by a bar proportional to the largest bucket count, so
+   that the table shows the shape of the distribution as well as exact values. */
+.bucketCountCell {
+  text-align: right;
+  min-width: 5rem;
+  background-image: linear-gradient(
+    to right,
+    light-dark(rgba(45, 180, 83, 0.25), rgba(45, 180, 83, 0.35)) 0
+      var(--bucket-count-fraction),
+    transparent var(--bucket-count-fraction) 100%
+  );
+  background-repeat: no-repeat;
+}

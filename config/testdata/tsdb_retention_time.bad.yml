@@ -1,0 +1,4 @@
+storage:
+  tsdb:
+    retention:
+      time: -1h

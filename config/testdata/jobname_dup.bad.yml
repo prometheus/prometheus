@@ -1,0 +1,7 @@
+# Two scrape configs with the same job names are not allowed.
+global:
+  metric_name_validation_scheme: legacy
+scrape_configs:
+  - job_name: prometheus
+  - job_name: service-x
+  - job_name: prometheus

@@ -1,0 +1,2 @@
+otlp:
+  promote_resource_attributes: ["service.name"]

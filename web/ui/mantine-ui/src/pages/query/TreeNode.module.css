@@ -1,0 +1,36 @@
+.nodeText {
+  cursor: pointer;
+  background-color: light-dark(
+    var(--mantine-color-gray-1),
+    var(--mantine-color-dark-5)
+  );
+  border: 2px solid transparent;
+}
+
+.nodeText.nodeTextSelected,
+.nodeText.nodeTextSelected:hover {
+  background-color: light-dark(
+    var(--mantine-color-gray-4),
+    var(--mantine-color-gray-7)
+  );
+  border: 2px solid
+    light-dark(var(--mantine-color-gray-5), var(--mantine-color-dark-2));
+}
+
+.nodeText:hover {
+  background-color: light-dark(
+    var(--mantine-color-gray-2),
+    var(--mantine-color-dark-4)
+  );
+}
+
+.nodeText.nodeTextError {
+  background-color: light-dark(
+    var(--mantine-color-red-1),
+    darken(var(--mantine-color-red-5), 70%)
+  );
+}
+
+.errorText {
+  color: light-dark(var(--mantine-color-red-9), var(--mantine-color-red-3));
+}
