@@ -4815,7 +4815,7 @@ func TestTargetScraperScrapeOverUnixSocket(t *testing.T) {
 	defer server.Close()
 
 	// Create a client with a DialContext that routes to the unix socket.
-	client, err := newScrapeClient(config_util.HTTPClientConfig{}, "test_job")
+	client, err := newUnixSocketScrapeClient(socketPath, config_util.HTTPClientConfig{}, "test_job")
 	require.NoError(t, err)
 
 	// No __address__ set — falls back to "localhost".
@@ -4870,7 +4870,7 @@ func TestTargetScraperScrapeOverUnixSocketTLS(t *testing.T) {
 	defer server.Close()
 
 	// Create a client configured to trust the test CA.
-	client, err := newScrapeClient(config_util.HTTPClientConfig{
+	client, err := newUnixSocketScrapeClient(socketPath, config_util.HTTPClientConfig{
 		TLSConfig: config_util.TLSConfig{
 			CAFile: caCertPath,
 		},
@@ -4900,6 +4900,77 @@ func TestTargetScraperScrapeOverUnixSocketTLS(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "text/plain; version=0.0.4", contentType)
 	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
+}
+
+func TestTargetScraperUnixSocketConnectionsAreNotShared(t *testing.T) {
+	// Two targets sharing the same __address__ but scraped through different
+	// unix sockets must never exchange pooled keep-alive connections,
+	// otherwise one target would receive the other target's metrics.
+	tempDir, err := os.MkdirTemp("", "uds-pool-test")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(tempDir) })
+
+	payloads := map[string]string{}
+	var targets []*Target
+	for i := range 2 {
+		socketPath := filepath.Join(tempDir, fmt.Sprintf("s%d", i))
+		listener, err := net.Listen("unix", socketPath)
+		require.NoError(t, err)
+		t.Cleanup(func() { listener.Close() })
+
+		payload := fmt.Sprintf("metric_a %d\n", i)
+		payloads[socketPath] = payload
+		server := &http.Server{
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+				_, _ = w.Write([]byte(payload))
+			}),
+		}
+		go server.Serve(listener)
+		t.Cleanup(func() { server.Close() })
+
+		targets = append(targets, &Target{
+			labels: labels.FromStrings(
+				model.SchemeLabel, "http",
+				model.AddressLabel, "localhost:9090",
+				model.MetricsPathLabel, "/metrics",
+				model.ScrapeIntervalLabel, "1s",
+				model.ScrapeTimeoutLabel, "1s",
+				UnixSocketLabel, socketPath,
+			),
+			scrapeConfig: &config.ScrapeConfig{},
+		})
+	}
+
+	var scrapers []*targetScraper
+	sp := newTestScrapePool(t, nil, false, func(opts scrapeLoopOptions) loop {
+		scrapers = append(scrapers, opts.scraper.(*targetScraper))
+		return &testLoop{
+			startFunc: func(time.Duration, time.Duration, chan<- error) {},
+			stopFunc:  func() {},
+		}
+	})
+	client, err := newScrapeClient(config_util.HTTPClientConfig{}, "test_job")
+	require.NoError(t, err)
+	sp.client = client
+
+	sp.sync(targets)
+	require.Len(t, scrapers, 2)
+
+	// Scrape each target twice so the second round is served from pooled
+	// keep-alive connections.
+	for range 2 {
+		for _, ts := range scrapers {
+			var buf bytes.Buffer
+			resp, err := ts.scrape(context.Background())
+			require.NoError(t, err)
+			_, err = ts.readResponse(context.Background(), resp, &buf)
+			require.NoError(t, err)
+			require.Equal(t, payloads[ts.labels.Get(UnixSocketLabel)], buf.String())
+		}
+	}
+
+	sp.stop()
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {

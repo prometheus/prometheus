@@ -93,7 +93,10 @@ type scrapePool struct {
 	mtx    sync.Mutex
 	config *config.ScrapeConfig
 	client *http.Client
-	loops  map[uint64]loop
+	// unixSocketClients caches dedicated HTTP clients for targets scraped
+	// through a unix domain socket, keyed by socket path. See clientForTarget.
+	unixSocketClients map[string]*http.Client
+	loops             map[uint64]loop
 
 	symbolTable           *labels.SymbolTable
 	lastSymbolTableCheck  time.Time
@@ -194,6 +197,36 @@ func (sp *scrapePool) newLoop(opts scrapeLoopOptions) loop {
 	return newScrapeLoop(opts)
 }
 
+// clientForTarget returns the HTTP client that scrapes of the given target
+// must use. Targets scraped through a unix domain socket get a dedicated
+// client per socket path: the HTTP transport pools idle connections by
+// scheme and host:port only, so sharing one client across sockets could
+// reuse a connection dialed to one socket for a target on another one.
+// Must be called with sp.mtx held.
+func (sp *scrapePool) clientForTarget(t *Target) *http.Client {
+	socketPath := t.labels.Get(UnixSocketLabel)
+	if socketPath == "" {
+		return sp.client
+	}
+	if client, ok := sp.unixSocketClients[socketPath]; ok {
+		return client
+	}
+	client, err := newUnixSocketScrapeClient(socketPath, sp.config.HTTPClientConfig, sp.config.JobName, sp.options.HTTPClientOptions...)
+	if err != nil {
+		// The same configuration was already used to build sp.client, so
+		// this should never happen. Fail the target's scrapes rather than
+		// falling back to the shared client, which would silently dial the
+		// target's __address__ over TCP instead of the socket.
+		sp.logger.Error("Failed to create unix socket scrape client", "socket_path", socketPath, "err", err)
+		client = &http.Client{Transport: failingRoundTripper{err: fmt.Errorf("creating unix socket scrape client for %q: %w", socketPath, err)}}
+	}
+	if sp.unixSocketClients == nil {
+		sp.unixSocketClients = make(map[string]*http.Client)
+	}
+	sp.unixSocketClients[socketPath] = client
+	return client
+}
+
 func (sp *scrapePool) ActiveTargets() []*Target {
 	sp.targetMtx.Lock()
 	defer sp.targetMtx.Unlock()
@@ -259,6 +292,9 @@ func (sp *scrapePool) stop() {
 	// context (via sl.parentCtx) and would fail if the context was cancelled early.
 	sp.cancel()
 	sp.client.CloseIdleConnections()
+	for _, c := range sp.unixSocketClients {
+		c.CloseIdleConnections()
+	}
 
 	if sp.config != nil {
 		sp.metrics.targetScrapePoolSyncsCounter.DeleteLabelValues(sp.config.JobName)
@@ -286,20 +322,27 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		return err
 	}
 
-	reuseCache := reusableCache(sp.config, cfg)
-	sp.config = cfg
-	oldClient := sp.client
-	sp.client = client
-
 	// Validate scheme so we don't need to do it later.
 
 	if _, err = config.ToEscapingScheme(cfg.MetricNameEscapingScheme, cfg.MetricNameValidationScheme); err != nil {
 		return fmt.Errorf("scrapePool.reload: invalid metric name escaping scheme, %w", err)
 	}
+
+	reuseCache := reusableCache(sp.config, cfg)
+	sp.config = cfg
+	oldClient := sp.client
+	sp.client = client
+	// The new configuration may change the HTTP client settings, so the
+	// per-socket clients are rebuilt by restartLoops below.
+	oldUnixSocketClients := sp.unixSocketClients
+	sp.unixSocketClients = nil
 	sp.metrics.targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
 
 	sp.restartLoops(reuseCache)
 	oldClient.CloseIdleConnections()
+	for _, c := range oldUnixSocketClients {
+		c.CloseIdleConnections()
+	}
 	sp.metrics.targetReloadIntervalLength.WithLabelValues(time.Duration(sp.config.ScrapeInterval).String()).Observe(
 		time.Since(start).Seconds(),
 	)
@@ -331,7 +374,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 			target: t,
 			scraper: &targetScraper{
 				Target:               t,
-				client:               sp.client,
+				client:               sp.clientForTarget(t),
 				timeout:              targetTimeout,
 				bodySizeLimit:        int64(sp.config.BodySizeLimit),
 				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
@@ -439,8 +482,16 @@ func (sp *scrapePool) sync(targets []*Target) {
 
 	sp.targetMtx.Lock()
 	escapingScheme, _ := config.ToEscapingScheme(sp.config.MetricNameEscapingScheme, sp.config.MetricNameValidationScheme)
+	var socketsInUse map[string]struct{}
 	for _, t := range targets {
 		hash := t.hash()
+
+		if socketPath := t.labels.Get(UnixSocketLabel); socketPath != "" {
+			if socketsInUse == nil {
+				socketsInUse = make(map[string]struct{})
+			}
+			socketsInUse[socketPath] = struct{}{}
+		}
 
 		if _, ok := sp.activeTargets[hash]; !ok {
 			// The scrape interval and timeout labels are set to the config's values initially,
@@ -455,7 +506,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 				target: t,
 				scraper: &targetScraper{
 					Target:               t,
-					client:               sp.client,
+					client:               sp.clientForTarget(t),
 					timeout:              targetTimeout,
 					bodySizeLimit:        int64(sp.config.BodySizeLimit),
 					acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
@@ -500,6 +551,15 @@ func (sp *scrapePool) sync(targets []*Target) {
 
 			delete(sp.loops, hash)
 			delete(sp.activeTargets, hash)
+		}
+	}
+
+	// Drop cached unix socket clients whose socket is no longer scraped by
+	// any target.
+	for socketPath, client := range sp.unixSocketClients {
+		if _, ok := socketsInUse[socketPath]; !ok {
+			client.CloseIdleConnections()
+			delete(sp.unixSocketClients, socketPath)
 		}
 	}
 
@@ -745,12 +805,6 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	}
 	ctx, span := otel.Tracer("").Start(ctx, "Scrape", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
-
-	// If the target has a unix socket path, pass it via the context so the
-	// custom DialContext can dial the socket instead of the URL host.
-	if socketPath := s.labels.Get(UnixSocketLabel); socketPath != "" {
-		ctx = context.WithValue(ctx, unixSocketContextKey{}, socketPath)
-	}
 
 	return s.client.Do(s.req.WithContext(ctx))
 }
@@ -2300,26 +2354,34 @@ func pickSchema(bucketFactor float64) int32 {
 // the specified Unix domain socket instead of the target's __address__.
 const UnixSocketLabel = "__unix_socket__"
 
-// unixSocketContextKey is used to pass the unix socket path
-// from the scraper to the custom DialContext via the request context.
-type unixSocketContextKey struct{}
-
-func newScrapeClient(cfg config_util.HTTPClientConfig, name string, optFuncs ...config_util.HTTPClientOption) (*http.Client, error) {
-	// Register a custom dial function so that when a unix socket path is
-	// present on the request context, connections are routed through the
-	// unix socket instead of the URL host. Using WithDialContextFunc
-	// ensures the dial function is installed during transport construction,
-	// before any auth or TLS file-watching wrappers are applied.
-	// Prepend so that callers can override this default via optFuncs.
+// newUnixSocketScrapeClient returns a scrape client that dials the given
+// unix domain socket instead of the request URL host. Each socket path needs
+// its own client: the HTTP transport pools idle connections by scheme and
+// host:port only, so a client shared across sockets could reuse a connection
+// dialed to a different socket.
+func newUnixSocketScrapeClient(socketPath string, cfg config_util.HTTPClientConfig, name string, optFuncs ...config_util.HTTPClientOption) (*http.Client, error) {
+	// Using WithDialContextFunc ensures the dial function is installed
+	// during transport construction, before any auth or TLS file-watching
+	// wrappers are applied. Prepend so that callers can override this
+	// default via optFuncs.
 	optFuncs = append([]config_util.HTTPClientOption{config_util.WithDialContextFunc(
-		func(ctx context.Context, network, addr string) (net.Conn, error) {
-			if socketPath, ok := ctx.Value(unixSocketContextKey{}).(string); ok && socketPath != "" {
-				return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
-			}
-			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
 		},
 	)}, optFuncs...)
+	return newScrapeClient(cfg, name, optFuncs...)
+}
 
+// failingRoundTripper fails every request with a fixed error. It stands in
+// for a scrape client that could not be built, so that the affected targets
+// fail to scrape instead of silently scraping the wrong endpoint.
+type failingRoundTripper struct{ err error }
+
+func (rt failingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, rt.err
+}
+
+func newScrapeClient(cfg config_util.HTTPClientConfig, name string, optFuncs ...config_util.HTTPClientOption) (*http.Client, error) {
 	client, err := config_util.NewClientFromConfig(cfg, name, optFuncs...)
 	if err != nil {
 		return nil, fmt.Errorf("error creating HTTP client: %w", err)
