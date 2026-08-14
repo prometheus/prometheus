@@ -350,11 +350,12 @@ func expectHeaderValue(t testing.TB, expected int, got string) {
 func TestRemoteWriteHandler_V2Message(t *testing.T) {
 	// V2 supports partial writes for non-retriable errors, so test them.
 	for _, tc := range []struct {
-		desc             string
-		input            []writev2.TimeSeries
-		symbols          []string // Custom symbol table for tests that need it
-		expectedCode     int
-		expectedRespBody string
+		desc                          string
+		input                         []writev2.TimeSeries
+		symbols                       []string // Custom symbol table for tests that need it
+		expectedCode                  int
+		expectedRespBody              string
+		expectedExtraExemplarsWritten int
 
 		commitErr             error
 		appendSampleErr       error
@@ -453,20 +454,28 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedRespBody: "parsing metadata for series [1 2]: metadata help_ref 999 outside of symbols table (size 18)\n",
 		},
 		{
-			desc: "Partial write; TimeSeries with only exemplars (no samples or histograms)",
+			desc: "TimeSeries with only exemplars (no samples or histograms) accepted",
 			input: append(
+				append([]writev2.TimeSeries{}, writeV2RequestFixture.Timeseries...),
 				// Series with only exemplars, no samples or histograms.
-				[]writev2.TimeSeries{{
+				writev2.TimeSeries{
 					LabelsRefs: []uint32{1, 2},
 					Exemplars: []writev2.Exemplar{{
 						LabelsRefs: []uint32{},
 						Value:      1.0,
-						Timestamp:  1,
+						Timestamp:  30,
 					}},
-				}},
+				}),
+			expectedCode:                  http.StatusNoContent,
+			expectedExtraExemplarsWritten: 1,
+		},
+		{
+			desc: "Partial write; first series with no samples, histograms or exemplars",
+			input: append(
+				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2}}},
 				writeV2RequestFixture.Timeseries...),
 			expectedCode:     http.StatusBadRequest,
-			expectedRespBody: "TimeSeries must contain at least one sample or histogram for series {__name__=\"test_metric1\"}\n",
+			expectedRespBody: "TimeSeries must contain at least one sample, histogram or exemplar for series {__name__=\"test_metric1\"}\n",
 		},
 		{
 			desc: "Partial write; first series with one OOO sample",
@@ -773,7 +782,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			if tc.appendExemplarErr != nil {
 				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenExemplarsHeader))
 			} else {
-				expectHeaderValue(t, 2, resp.Header.Get(rw20WrittenExemplarsHeader))
+				expectHeaderValue(t, 2+tc.expectedExtraExemplarsWritten, resp.Header.Get(rw20WrittenExemplarsHeader))
 			}
 
 			// Double check what was actually appended.
