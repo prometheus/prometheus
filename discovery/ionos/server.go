@@ -118,16 +118,33 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 
 		addr := net.JoinHostPort(ips[0], strconv.FormatUint(uint64(d.port), 10))
 		labels := model.LabelSet{
-			model.AddressLabel:          model.LabelValue(addr),
-			serverAvailabilityZoneLabel: model.LabelValue(*server.Properties.AvailabilityZone),
-			serverCPUFamilyLabel:        model.LabelValue(*server.Properties.CpuFamily),
-			serverServersIDLabel:        model.LabelValue(*servers.Id),
-			serverIDLabel:               model.LabelValue(*server.Id),
-			serverIPLabel:               model.LabelValue(join(ips, metaLabelSeparator)),
-			serverLifecycleLabel:        model.LabelValue(*server.Metadata.State),
-			serverNameLabel:             model.LabelValue(*server.Properties.Name),
-			serverStateLabel:            model.LabelValue(*server.Properties.VmState),
-			serverTypeLabel:             model.LabelValue(*server.Properties.Type),
+			model.AddressLabel: model.LabelValue(addr),
+			serverIPLabel:      model.LabelValue(join(ips, metaLabelSeparator)),
+		}
+
+		if server.Properties.AvailabilityZone != nil {
+			labels[serverAvailabilityZoneLabel] = model.LabelValue(*server.Properties.AvailabilityZone)
+		}
+		if server.Properties.CpuFamily != nil {
+			labels[serverCPUFamilyLabel] = model.LabelValue(*server.Properties.CpuFamily)
+		}
+		if servers.Id != nil {
+			labels[serverServersIDLabel] = model.LabelValue(*servers.Id)
+		}
+		if server.Id != nil {
+			labels[serverIDLabel] = model.LabelValue(*server.Id)
+		}
+		if server.Metadata != nil && server.Metadata.State != nil {
+			labels[serverLifecycleLabel] = model.LabelValue(*server.Metadata.State)
+		}
+		if server.Properties.Name != nil {
+			labels[serverNameLabel] = model.LabelValue(*server.Properties.Name)
+		}
+		if server.Properties.VmState != nil {
+			labels[serverStateLabel] = model.LabelValue(*server.Properties.VmState)
+		}
+		if server.Properties.Type != nil {
+			labels[serverTypeLabel] = model.LabelValue(*server.Properties.Type)
 		}
 
 		for nicName, nicIPs := range ipsByNICName {
