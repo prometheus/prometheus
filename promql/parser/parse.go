@@ -1214,33 +1214,56 @@ func (p *parser) experimentalDurationExpr(e Expr) {
 	}
 }
 
+// wrapParenDurationExpr marks a duration expression as parenthesised so
+// Expr.String() round-trips. A bare *NumberLiteral has no Wrapped flag, so it
+// is wrapped in a unary-plus *DurationExpr (see DurationExpr.writeTo).
+func (*parser) wrapParenDurationExpr(expr Expr, start, end posrange.Pos) Expr {
+	if de, ok := expr.(*DurationExpr); ok {
+		de.Wrapped = true
+		return de
+	}
+	return &DurationExpr{
+		Op:       ADD,
+		RHS:      expr,
+		Wrapped:  true,
+		StartPos: start,
+		EndPos:   end,
+	}
+}
+
 // applyUnaryOpToDurationExpr applies a unary operator to a duration expression
 // node, which may be a *DurationExpr or a *NumberLiteral. When wrapped is true
 // (parenthesised form), the Wrapped flag is set on *DurationExpr nodes.
 func (p *parser) applyUnaryOpToDurationExpr(op Item, expr Node, wrapped bool) Node {
-	switch e := expr.(type) {
+	e, ok := expr.(Expr)
+	if !ok {
+		p.addParseErrf(op.PositionRange(), "expected number literal or duration expression")
+		return &NumberLiteral{Val: 0}
+	}
+	if wrapped {
+		pr := e.PositionRange()
+		e = p.wrapParenDurationExpr(e, pr.Start, pr.End)
+	}
+	switch de := e.(type) {
 	case *DurationExpr:
-		if wrapped {
-			e.Wrapped = true
-		}
 		if op.Typ == SUB {
 			return &DurationExpr{
 				Op:       SUB,
-				RHS:      e,
+				RHS:      de,
 				StartPos: op.Pos,
 			}
 		}
-		return e
+		return de
 	case *NumberLiteral:
 		if op.Typ == SUB {
-			e.Val *= -1
+			de.Val *= -1
 		}
-		if durationLiteralOutOfRange(e.Val) {
+		if durationLiteralOutOfRange(de.Val) {
 			p.addParseErrf(op.PositionRange(), "duration out of range")
 			return &NumberLiteral{Val: 0}
 		}
-		e.PosRange.Start = op.Pos
-		return e
+		de.PosRange.Start = op.Pos
+		return de
 	default:
 		p.addParseErrf(op.PositionRange(), "expected number literal or duration expression")
 		return &NumberLiteral{Val: 0}
