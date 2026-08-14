@@ -108,7 +108,7 @@ func TestServerSDRefresh(t *testing.T) {
 			targetGroup := targetGroups[0]
 			require.NotNil(t, targetGroup, "targetGroup should not be nil")
 			require.NotNil(t, targetGroup.Targets, "targetGroup.targets should not be nil")
-			require.Len(t, targetGroup.Targets, 2)
+			require.Len(t, targetGroup.Targets, 1)
 
 			expectedTargets := []model.LabelSet{
 				{
@@ -126,16 +126,6 @@ func TestServerSDRefresh(t *testing.T) {
 					"__meta_stackit_status":                                   model.LabelValue("INACTIVE"),
 					"__meta_stackit_power_status":                             model.LabelValue("STOPPED"),
 					"__meta_stackit_label_stackit_project_id":                 model.LabelValue("00000000-0000-0000-0000-000000000000"),
-				},
-				{
-					"__address__":            model.LabelValue("postgres-flex-metrics.api.stackit.cloud:443"),
-					"__metrics_path__":       model.LabelValue("/v1alpha1/projects/00000000-0000-0000-0000-000000000000/regions/eu01/instances/pg-12345-6789/advanced/metrics"),
-					"__scheme__":             model.LabelValue("https"),
-					"__meta_stackit_project": model.LabelValue("00000000-0000-0000-0000-000000000000"),
-					"__meta_stackit_id":      model.LabelValue("pg-12345-6789"),
-					"__meta_stackit_name":    model.LabelValue("test-postgres-db"),
-					"__meta_stackit_status":  model.LabelValue("READY"),
-					"__meta_stackit_type":    model.LabelValue("postgres"),
 				},
 			}
 
@@ -365,11 +355,6 @@ func TestRoleFiltering(t *testing.T) {
 			role:        RolePostgres,
 			expectedLen: 1,
 		},
-		{
-			name:        "role all returns both server and postgres targets",
-			role:        RoleAll,
-			expectedLen: 2,
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			suite := &serverSDTestSuite{}
@@ -410,11 +395,6 @@ func TestRoleUnmarshalYAML(t *testing.T) {
 			name:     "postgres role",
 			input:    "role: postgres\n",
 			expected: RolePostgres,
-		},
-		{
-			name:     "all role",
-			input:    "role: all\n",
-			expected: RoleAll,
 		},
 		{
 			name:        "invalid role",

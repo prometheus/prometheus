@@ -89,7 +89,7 @@ func newClient(conf *SDConfig, logger *slog.Logger) (*stackitClient, error) {
 
 	r := conf.Role
 	if r == "" {
-		r = RoleAll
+		r = RoleServer
 	}
 
 	c := &stackitClient{
@@ -147,7 +147,7 @@ func newClient(conf *SDConfig, logger *slog.Logger) (*stackitClient, error) {
 func (sc *stackitClient) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	var targets []model.LabelSet
 
-	if sc.role == RoleServer || sc.role == RoleAll {
+	if sc.role == RoleServer {
 		serverTargets, err := sc.getInstances(ctx)
 		if err != nil {
 			return nil, err
@@ -155,7 +155,7 @@ func (sc *stackitClient) refresh(ctx context.Context) ([]*targetgroup.Group, err
 		targets = append(targets, serverTargets...)
 	}
 
-	if sc.role == RolePostgres || sc.role == RoleAll {
+	if sc.role == RolePostgres {
 		postgresTargets, err := sc.getPostgresInstances(ctx)
 		if err != nil {
 			return nil, err

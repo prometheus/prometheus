@@ -52,8 +52,6 @@ const (
 	RoleServer Role = "server"
 	// RolePostgres discovers Postgres instances.
 	RolePostgres Role = "postgres"
-	// RoleAll discovers all STACKIT targets.
-	RoleAll Role = "all"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -62,16 +60,16 @@ func (c *Role) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 	switch *c {
-	case RoleServer, RolePostgres, RoleAll, "":
+	case RoleServer, RolePostgres, "":
 		return nil
 	default:
-		return fmt.Errorf("unknown role %q, expecting one of: %s, %s, %s", *c, RoleServer, RolePostgres, RoleAll)
+		return fmt.Errorf("unknown role %q, expecting one of: %s, %s", *c, RoleServer, RolePostgres)
 	}
 }
 
 // DefaultSDConfig is the default STACKIT SD configuration.
 var DefaultSDConfig = SDConfig{
-	Role:             RoleAll,
+	Role:             RoleServer,
 	Region:           "eu01",
 	Port:             80,
 	RefreshInterval:  model.Duration(60 * time.Second),
