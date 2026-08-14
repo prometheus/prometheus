@@ -53,7 +53,7 @@ func TestIONOSServerRefresh(t *testing.T) {
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Len(t, tg.Targets, 2)
+	require.Len(t, tg.Targets, 3)
 
 	for i, lbls := range []model.LabelSet{
 		{
@@ -84,6 +84,15 @@ func TestIONOSServerRefresh(t *testing.T) {
 			"__meta_ionos_server_servers_id":        "8feda53f-15f0-447f-badf-ebe32dad2fc0/servers",
 			"__meta_ionos_server_state":             "RUNNING",
 			"__meta_ionos_server_type":              "ENTERPRISE",
+		},
+		{
+			// A server whose optional pointer fields (id, and everything under
+			// properties/metadata used for labels) are null in the API response
+			// must not panic and must simply omit the corresponding labels.
+			"__address__":                        "10.0.0.99:80",
+			"__meta_ionos_server_ip":             ",10.0.0.99,",
+			"__meta_ionos_server_nic_ip_unnamed": ",10.0.0.99,",
+			"__meta_ionos_server_servers_id":     "8feda53f-15f0-447f-badf-ebe32dad2fc0/servers",
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
