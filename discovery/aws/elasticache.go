@@ -560,6 +560,9 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 	tg := &targetgroup.Group{
 		Source: d.region,
 	}
+	// Both goroutines below append to tg.Targets, so the append must be
+	// serialised.
+	targetsMu := sync.Mutex{}
 
 	errg, ectx := errgroup.WithContext(ctx)
 	errg.Go(func() error {
@@ -568,7 +571,9 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 			return fmt.Errorf("failed to describe serverless caches: %w", err)
 		}
 		for _, cache := range caches {
+			targetsMu.Lock()
 			addServerlessCacheTargets(tg, &cache, tagsByResourceARN[*cache.ARN])
+			targetsMu.Unlock()
 		}
 		return nil
 	})
@@ -579,7 +584,9 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 			return fmt.Errorf("failed to describe cache clusters: %w", err)
 		}
 		for _, cluster := range cacheClusters {
+			targetsMu.Lock()
 			addCacheClusterTargets(tg, &cluster, tagsByResourceARN[*cluster.ARN])
+			targetsMu.Unlock()
 		}
 		return nil
 	})
