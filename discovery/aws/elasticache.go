@@ -528,6 +528,9 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 			return fmt.Errorf("failed to describe serverless caches: %w", err)
 		}
 		for _, cache := range caches {
+			if cache.ARN == nil {
+				continue
+			}
 			clustersMu.Lock()
 			clusters = append(clusters, *cache.ARN)
 			clustersMu.Unlock()
@@ -541,6 +544,9 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 			return fmt.Errorf("failed to describe cache clusters: %w", err)
 		}
 		for _, cluster := range cacheClusters {
+			if cluster.ARN == nil {
+				continue
+			}
 			clustersMu.Lock()
 			clusters = append(clusters, *cluster.ARN)
 			clustersMu.Unlock()
@@ -568,7 +574,11 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 			return fmt.Errorf("failed to describe serverless caches: %w", err)
 		}
 		for _, cache := range caches {
-			addServerlessCacheTargets(tg, &cache, tagsByResourceARN[*cache.ARN])
+			var tags []types.Tag
+			if cache.ARN != nil {
+				tags = tagsByResourceARN[*cache.ARN]
+			}
+			addServerlessCacheTargets(tg, &cache, tags)
 		}
 		return nil
 	})
@@ -579,7 +589,11 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 			return fmt.Errorf("failed to describe cache clusters: %w", err)
 		}
 		for _, cluster := range cacheClusters {
-			addCacheClusterTargets(tg, &cluster, tagsByResourceARN[*cluster.ARN])
+			var tags []types.Tag
+			if cluster.ARN != nil {
+				tags = tagsByResourceARN[*cluster.ARN]
+			}
+			addCacheClusterTargets(tg, &cluster, tags)
 		}
 		return nil
 	})
@@ -621,14 +635,14 @@ func splitCacheDeploymentOptions(caches []string, logger *slog.Logger) (serverle
 // addServerlessCacheTargets adds targets for a serverless cache to the target group.
 func addServerlessCacheTargets(tg *targetgroup.Group, cache *types.ServerlessCache, tags []types.Tag) {
 	labels := model.LabelSet{
-		elasticacheLabelDeploymentOption:                  model.LabelValue("serverless"),
-		elasticacheLabelServerlessCacheARN:                model.LabelValue(*cache.ARN),
-		elasticacheLabelServerlessCacheName:               model.LabelValue(*cache.ServerlessCacheName),
-		elasticacheLabelServerlessCacheStatus:             model.LabelValue(*cache.Status),
-		elasticacheLabelServerlessCacheEngine:             model.LabelValue(*cache.Engine),
-		elasticacheLabelServerlessCacheFullEngineVersion:  model.LabelValue(*cache.FullEngineVersion),
-		elasticacheLabelServerlessCacheMajorEngineVersion: model.LabelValue(*cache.MajorEngineVersion),
+		elasticacheLabelDeploymentOption: model.LabelValue("serverless"),
 	}
+	setStringLabel(labels, elasticacheLabelServerlessCacheARN, cache.ARN)
+	setStringLabel(labels, elasticacheLabelServerlessCacheName, cache.ServerlessCacheName)
+	setStringLabel(labels, elasticacheLabelServerlessCacheStatus, cache.Status)
+	setStringLabel(labels, elasticacheLabelServerlessCacheEngine, cache.Engine)
+	setStringLabel(labels, elasticacheLabelServerlessCacheFullEngineVersion, cache.FullEngineVersion)
+	setStringLabel(labels, elasticacheLabelServerlessCacheMajorEngineVersion, cache.MajorEngineVersion)
 
 	if cache.Description != nil {
 		labels[elasticacheLabelServerlessCacheDescription] = model.LabelValue(*cache.Description)
@@ -719,11 +733,11 @@ func addServerlessCacheTargets(tg *targetgroup.Group, cache *types.ServerlessCac
 func addCacheClusterTargets(tg *targetgroup.Group, cluster *types.CacheCluster, tags []types.Tag) {
 	// Build common labels that apply to all nodes in this cluster
 	commonLabels := model.LabelSet{
-		elasticacheLabelDeploymentOption:   model.LabelValue("node"),
-		elasticacheLabelCacheClusterARN:    model.LabelValue(*cluster.ARN),
-		elasticacheLabelCacheClusterID:     model.LabelValue(*cluster.CacheClusterId),
-		elasticacheLabelCacheClusterStatus: model.LabelValue(*cluster.CacheClusterStatus),
+		elasticacheLabelDeploymentOption: model.LabelValue("node"),
 	}
+	setStringLabel(commonLabels, elasticacheLabelCacheClusterARN, cluster.ARN)
+	setStringLabel(commonLabels, elasticacheLabelCacheClusterID, cluster.CacheClusterId)
+	setStringLabel(commonLabels, elasticacheLabelCacheClusterStatus, cluster.CacheClusterStatus)
 
 	if cluster.AtRestEncryptionEnabled != nil {
 		commonLabels[elasticacheLabelCacheClusterAtRestEncryptionEnabled] = model.LabelValue(strconv.FormatBool(*cluster.AtRestEncryptionEnabled))
@@ -947,5 +961,11 @@ func addCacheClusterTargets(tg *targetgroup.Group, cluster *types.CacheCluster, 
 		}
 
 		tg.Targets = append(tg.Targets, labels)
+	}
+}
+
+func setStringLabel(ls model.LabelSet, name model.LabelName, v *string) {
+	if v != nil {
+		ls[name] = model.LabelValue(*v)
 	}
 }
