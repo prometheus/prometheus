@@ -314,6 +314,16 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 			bound := pt.ExplicitBounds().At(i)
 			cumulativeCount += pt.BucketCounts().At(i)
 
+			// An explicit +Inf bound names the same le="+Inf" series that is
+			// synthesized from count below, at the same timestamp, and the
+			// duplicate would replace the total with a cumulative bucket
+			// value. Skipping leaves count in le="+Inf", and this bucket's
+			// exemplars still reach it through the remainder assigned after
+			// the loop.
+			if math.IsInf(bound, 1) {
+				continue
+			}
+
 			// Find exemplars that belong to this bucket. Both exemplars and
 			// buckets are sorted in ascending order.
 			appOpts.Exemplars = appOpts.Exemplars[:0]
