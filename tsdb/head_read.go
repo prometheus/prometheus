@@ -560,15 +560,15 @@ func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 		return nil
 	}
 
-	key := headChunkCacheKeyFor(s)
-	h.releaseOversizedCacheOnSeriesSwitch(key.ref)
-	// A series with at most one head chunk takes the direct lookup path. Release
-	// an oversized cache when moving to such a series, but preserve it while it
-	// still serves the same series.
+	// Release an oversized cache before the direct lookup path for a series with
+	// at most one head chunk, while preserving it when it still serves the same
+	// series.
+	h.releaseOversizedCacheOnSeriesSwitch(storage.SeriesRef(s.ref))
 	if s.headChunks == nil || s.headChunks.prev == nil {
 		return nil
 	}
 
+	key := headChunkCacheKeyFor(s)
 	if key == h.cachedKey {
 		return h.cachedHeadChunks
 	}
