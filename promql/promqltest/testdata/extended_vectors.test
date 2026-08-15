@@ -777,3 +777,39 @@ eval instant at 3m changes(honlywithreset[1m] anchored)
 
 eval instant at 3m changes(hhffmixed[1m] anchored)
     {} 1
+
+clear
+
+# A series can be selected on chunk granularity and then trimmed to no samples
+# at all: the chunk below spans 0s..1000s, so it overlaps the 2m window
+# evaluated at 500s while neither sample falls inside it. extendFloats used to
+# index into that empty slice and panic, with "index out of range [-1]" for
+# anchored and "index out of range [0] with length 0" for smoothed.
+load 1000s
+  emptyrange 1 2
+
+# Control: without a modifier this has always been an empty result.
+eval instant at 500s emptyrange[2m]
+  expect range vector from 380s to 500s step 60s
+
+eval instant at 500s emptyrange[2m] anchored
+  expect range vector from 380s to 500s step 60s
+
+eval instant at 500s emptyrange[2m] smoothed
+  expect range vector from 380s to 500s step 60s
+
+clear
+
+# The extension itself still works when the window does contain samples. The
+# samples on both boundaries are replaced by the extension's own endpoints, so
+# the result is the 200s sample framed by mint and maxt.
+load 100s
+  posrange 1 2 3 4
+
+eval instant at 300s posrange[200s] anchored
+  expect range vector from 100s to 300s step 100s
+  posrange 2 3 4
+
+eval instant at 300s posrange[200s] smoothed
+  expect range vector from 100s to 300s step 100s
+  posrange 2 3 4
