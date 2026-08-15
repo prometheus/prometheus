@@ -182,7 +182,7 @@ This is experimental.
 ### Prometheus code base
 
 In order to comply with [go mod](https://go.dev/ref/mod#versions) rules,
-Prometheus release number do not exactly match Go module releases.
+Prometheus release numbers do not exactly match Go module releases.
 
 For the
 Prometheus v3.y.z releases, we are publishing equivalent v0.3y.z tags. The y in v0.3y.z is always padded to two digits, with a leading zero if needed.
