@@ -303,6 +303,13 @@ func TestFromMetrics(t *testing.T) {
 					},
 				}
 			}
+			// Every expected native histogram here must be one the appender would
+			// accept; otherwise the expectation is unreachable.
+			for _, es := range expectedSamples {
+				if es.H != nil {
+					require.NoError(t, es.H.Validate(), "expected histogram for %s does not validate", es.L)
+				}
+			}
 			teststorage.RequireEqual(t, expectedSamples, appTest.ResultSamples())
 		})
 	}
