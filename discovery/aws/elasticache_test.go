@@ -502,23 +502,28 @@ func (m *mockElasticacheClient) DescribeServerlessCaches(_ context.Context, inpu
 	}, nil
 }
 
+// DescribeCacheClusters mirrors the ShowCacheClustersNotInReplicationGroups
+// filter: when it is set, only clusters that are not members of a replication
+// group are returned; when it is unset or false the API returns every cluster,
+// replication group members included.
 func (m *mockElasticacheClient) DescribeCacheClusters(_ context.Context, input *elasticache.DescribeCacheClustersInput, _ ...func(*elasticache.Options)) (*elasticache.DescribeCacheClustersOutput, error) {
-	if input.CacheClusterId != nil {
-		// Single cluster lookup
-		for _, cluster := range m.data.cacheClusters {
-			if cluster.CacheClusterId != nil && *cluster.CacheClusterId == *input.CacheClusterId {
-				return &elasticache.DescribeCacheClustersOutput{
-					CacheClusters: []types.CacheCluster{cluster},
-				}, nil
-			}
+	notInReplicationGroupsOnly := aws.ToBool(input.ShowCacheClustersNotInReplicationGroups)
+
+	clusters := []types.CacheCluster{}
+	for _, cluster := range m.data.cacheClusters {
+		// Single cluster lookup.
+		if input.CacheClusterId != nil &&
+			(cluster.CacheClusterId == nil || *cluster.CacheClusterId != *input.CacheClusterId) {
+			continue
 		}
-		return &elasticache.DescribeCacheClustersOutput{
-			CacheClusters: []types.CacheCluster{},
-		}, nil
+		if notInReplicationGroupsOnly && cluster.ReplicationGroupId != nil {
+			continue
+		}
+		clusters = append(clusters, cluster)
 	}
 
 	return &elasticache.DescribeCacheClustersOutput{
-		CacheClusters: m.data.cacheClusters,
+		CacheClusters: clusters,
 	}, nil
 }
 
@@ -840,6 +845,71 @@ func TestElasticacheRefreshCacheClusterNilOptionalFields(t *testing.T) {
 					"label sourced from the absent field should be omitted")
 				require.Equal(t, model.LabelValue("my-cluster-001.abc123.0001.use1.cache.amazonaws.com:6379"), target[model.AddressLabel])
 			}
+		})
+	}
+}
+
+// TestElasticacheDescribeCacheClustersReturnsEachClusterOnce guards against
+// describing the same cluster twice. DescribeCacheClusters returns every
+// provisioned cluster unless ShowCacheClustersNotInReplicationGroups is set, in
+// which case it returns only the subset that are not replication group members,
+// so querying with and without the flag and concatenating both responses yields
+// every standalone cluster twice.
+func TestElasticacheDescribeCacheClustersReturnsEachClusterOnce(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name        string
+		clusterIDs  []string
+		expectedIDs []string
+	}{
+		{
+			name:        "AllClusters",
+			clusterIDs:  nil,
+			expectedIDs: []string{"standalone-001", "member-001"},
+		},
+		{
+			name:        "StandaloneClusterByID",
+			clusterIDs:  []string{"standalone-001"},
+			expectedIDs: []string{"standalone-001"},
+		},
+		{
+			name:        "ReplicationGroupMemberByID",
+			clusterIDs:  []string{"member-001"},
+			expectedIDs: []string{"member-001"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			d := &ElasticacheDiscovery{
+				elasticacheClient: newMockElasticacheClient(&elasticacheDataStore{
+					region: "us-east-1",
+					cacheClusters: []types.CacheCluster{
+						// Memcached and single node clusters are not members of
+						// a replication group, so both API responses carry them.
+						{CacheClusterId: strptr("standalone-001")},
+						{
+							CacheClusterId:     strptr("member-001"),
+							ReplicationGroupId: strptr("my-replication-group"),
+						},
+					},
+				}),
+				cfg: &ElasticacheSDConfig{
+					Region:             "us-east-1",
+					RequestConcurrency: 10,
+				},
+			}
+
+			clusters, err := d.describeCacheClusters(context.Background(), tt.clusterIDs)
+			require.NoError(t, err)
+
+			ids := make([]string, 0, len(clusters))
+			for _, cluster := range clusters {
+				ids = append(ids, aws.ToString(cluster.CacheClusterId))
+			}
+			require.ElementsMatch(t, tt.expectedIDs, ids,
+				"each cluster must be described exactly once")
 		})
 	}
 }
