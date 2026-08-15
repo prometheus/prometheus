@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"math"
 	"slices"
 	"strconv"
@@ -530,10 +531,11 @@ func (c *PrometheusConverter) addLabels(name string, baseLabels labels.Labels, e
 }
 
 // addResourceTargetInfo converts the resource to the target info metric.
-func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, settings Settings, earliestTimestamp, latestTimestamp time.Time) error {
+func (c *PrometheusConverter) addResourceTargetInfo(ctx context.Context, resource pcommon.Resource, settings Settings, earliestTimestamp, latestTimestamp time.Time) error {
 	if settings.DisableTargetInfo {
 		return nil
 	}
+	debugEnabled := settings.Logger != nil && settings.Logger.Enabled(ctx, slog.LevelDebug)
 
 	attributes := resource.Attributes()
 	identifyingAttrs := []string{
@@ -624,6 +626,9 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		if err != nil {
 			return err
 		}
+		if debugEnabled {
+			settings.Logger.Debug("Converted OTLP target_info series", "series", lbls.String(), "value", 1.0, "timestamp", timestampMs, "start_timestamp", int64(0))
+		}
 	}
 
 	// Append the final sample at latestTimestamp.
@@ -638,7 +643,13 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 
 	c.seenTargetInfo[key] = struct{}{}
 	_, err = c.appender.Append(0, lbls, 0, finalTimestampMs, 1.0, nil, nil, appOpts)
-	return err
+	if err != nil {
+		return err
+	}
+	if debugEnabled {
+		settings.Logger.Debug("Converted OTLP target_info series", "series", lbls.String(), "value", 1.0, "timestamp", finalTimestampMs, "start_timestamp", int64(0))
+	}
+	return nil
 }
 
 // convertTimeStamp converts OTLP timestamp in ns to timestamp in ms.

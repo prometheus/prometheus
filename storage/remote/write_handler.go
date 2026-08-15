@@ -110,6 +110,9 @@ func (h *writeHandler) Store(r *http.Request, msgType remoteapi.WriteMessageType
 			wr.SetStatusCode(http.StatusBadRequest)
 			return wr, err
 		}
+		if h.logger.Enabled(r.Context(), slog.LevelDebug) {
+			h.logger.Debug("Remote write v1 request received", "request", req.String())
+		}
 		if err = h.write(r.Context(), &req); err != nil {
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrOutOfBounds), errors.Is(err, storage.ErrDuplicateSampleForTimestamp), errors.Is(err, storage.ErrTooOldSample):

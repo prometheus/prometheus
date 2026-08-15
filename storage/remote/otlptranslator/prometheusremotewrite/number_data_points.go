@@ -18,6 +18,7 @@ package prometheusremotewrite
 
 import (
 	"context"
+	"log/slog"
 	"math"
 
 	"github.com/prometheus/common/model"
@@ -33,6 +34,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(
 	settings Settings,
 	appOpts storage.AOptions,
 ) error {
+	debugEnabled := settings.Logger != nil && settings.Logger.Enabled(ctx, slog.LevelDebug)
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -66,6 +68,9 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(
 		if _, err = c.appender.Append(0, labels, st, ts, val, nil, nil, appOpts); err != nil {
 			return err
 		}
+		if debugEnabled {
+			settings.Logger.Debug("Converted OTLP gauge data point", "series", labels.String(), "value", val, "timestamp", ts, "start_timestamp", st)
+		}
 	}
 
 	return nil
@@ -77,6 +82,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(
 	settings Settings,
 	appOpts storage.AOptions,
 ) error {
+	debugEnabled := settings.Logger != nil && settings.Logger.Enabled(ctx, slog.LevelDebug)
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -115,6 +121,9 @@ func (c *PrometheusConverter) addSumNumberDataPoints(
 		appOpts.Exemplars = exemplars
 		if _, err = c.appender.Append(0, lbls, st, ts, val, nil, nil, appOpts); err != nil {
 			return err
+		}
+		if debugEnabled {
+			settings.Logger.Debug("Converted OTLP sum data point", "series", lbls.String(), "value", val, "timestamp", ts, "start_timestamp", st)
 		}
 	}
 

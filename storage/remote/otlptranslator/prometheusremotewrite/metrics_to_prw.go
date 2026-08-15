@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"time"
 
@@ -61,6 +62,9 @@ type Settings struct {
 	// LabelNamePreserveMultipleUnderscores enables preserving of multiple
 	// consecutive underscores in label names when AllowUTF8 is false.
 	LabelNamePreserveMultipleUnderscores bool
+	// Logger, if set, is used to emit debug logs of the resulting Prometheus
+	// series during conversion. Nil disables this logging.
+	Logger *slog.Logger
 }
 
 // cachedResourceLabels holds precomputed labels constant for all datapoints in a ResourceMetrics.
@@ -403,7 +407,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		if earliestTimestamp < pcommon.Timestamp(math.MaxUint64) {
 			// We have at least one metric sample for this resource.
 			// Generate a corresponding target_info series.
-			if err := c.addResourceTargetInfo(resource, settings, earliestTimestamp.AsTime(), latestTimestamp.AsTime()); err != nil {
+			if err := c.addResourceTargetInfo(ctx, resource, settings, earliestTimestamp.AsTime(), latestTimestamp.AsTime()); err != nil {
 				errs = errors.Join(errs, err)
 			}
 		}
