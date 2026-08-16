@@ -247,6 +247,7 @@ common-docker-repo-name:
 
 .PHONY: common-docker $(BUILD_DOCKER_ARCHS)
 common-docker: $(BUILD_DOCKER_ARCHS)
+# DOCKER_ARCHS holds promu architecture names, which are not OCI platform strings.
 $(BUILD_DOCKER_ARCHS): common-docker-%:
 	@for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \
 		dockerfile=$${variant#*:}; \
@@ -255,10 +256,16 @@ $(BUILD_DOCKER_ARCHS): common-docker-%:
 		if [ "$*" = "armv7" ]; then \
 			distroless_arch="arm"; \
 		fi; \
+		arch="$*"; \
+		case "$$arch" in \
+			armv*) docker_platform="linux/arm/v$${arch#armv}";; \
+			*)     docker_platform="linux/$$arch";; \
+		esac; \
 		if [ "$$dockerfile" = "Dockerfile" ]; then \
 			echo "Building default variant ($$variant_name) for linux-$* using $$dockerfile"; \
 			docker build -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)" \
 				-f $$dockerfile \
+				--platform "$$docker_platform" \
 				--build-arg ARCH="$*" \
 				--build-arg OS="linux" \
 				--build-arg DISTROLESS_ARCH="$$distroless_arch" \
@@ -272,6 +279,7 @@ $(BUILD_DOCKER_ARCHS): common-docker-%:
 			echo "Building $$variant_name variant for linux-$* using $$dockerfile"; \
 			docker build -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name" \
 				-f $$dockerfile \
+				--platform "$$docker_platform" \
 				--build-arg ARCH="$*" \
 				--build-arg OS="linux" \
 				--build-arg DISTROLESS_ARCH="$$distroless_arch" \
