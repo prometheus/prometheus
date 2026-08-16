@@ -1,0 +1,5 @@
+# Has no test groups, so only the coverage loader reads the rule file.
+rule_files:
+  - coverage_multidoc_rules.yml
+
+tests: []

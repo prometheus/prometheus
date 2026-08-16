@@ -1,0 +1,7 @@
+# Two rule files that share a base name, group name and rule name. Coverage must
+# count them separately and report them with distinguishable paths.
+rule_files:
+  - coverage_paths/a/rules.yml
+  - coverage_paths/b/rules.yml
+
+tests: []
