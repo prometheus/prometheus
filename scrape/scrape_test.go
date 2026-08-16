@@ -7983,6 +7983,9 @@ func TestScrapeOffsetDistribution(t *testing.T) {
 					}
 				}),
 			},
+			// setupSynctestManager is unusable here: it also sets skipJitterOffsetting,
+			// which zeroes the offsets asserted below.
+			fqdn: synctestFQDN,
 		}
 		scrapeManager, err := NewManager(opts, promslog.NewNopLogger(), nil, app, nil, prometheus.NewRegistry())
 		scrapeManager.offsetSeed = 1 // Set a fixed offset seed for deterministic testing.
