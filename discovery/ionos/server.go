@@ -93,19 +93,33 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		return nil, err
 	}
 
+	// Items is omitted from the response when the datacenter holds no servers.
+	var serverItems []ionoscloud.Server
+	if servers.Items != nil {
+		serverItems = *servers.Items
+	}
+
 	var targets []model.LabelSet
-	for _, server := range *servers.Items {
+	for _, server := range serverItems {
 		var ips []string
 		ipsByNICName := make(map[string][]string)
 
-		if server.Entities != nil && server.Entities.Nics != nil {
+		if server.Entities != nil && server.Entities.Nics != nil && server.Entities.Nics.Items != nil {
 			for _, nic := range *server.Entities.Nics.Items {
+				if nic.Properties == nil {
+					continue
+				}
+
 				nicName := nicDefaultName
 				if name := nic.Properties.Name; name != nil {
 					nicName = *name
 				}
 
-				nicIPs := *nic.Properties.Ips
+				// An absent Ips is equivalent to an empty one.
+				var nicIPs []string
+				if nic.Properties.Ips != nil {
+					nicIPs = *nic.Properties.Ips
+				}
 				ips = append(nicIPs, ips...)
 				ipsByNICName[nicName] = append(nicIPs, ipsByNICName[nicName]...)
 			}
@@ -122,11 +136,19 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			serverIPLabel:      model.LabelValue(join(ips, metaLabelSeparator)),
 		}
 
-		if server.Properties.AvailabilityZone != nil {
-			labels[serverAvailabilityZoneLabel] = model.LabelValue(*server.Properties.AvailabilityZone)
+		// Properties is a pointer and is absent from the response for servers
+		// that expose none. Substituting the zero value keeps the per-field
+		// checks below as the single place where a label is omitted.
+		props := server.Properties
+		if props == nil {
+			props = &ionoscloud.ServerProperties{}
 		}
-		if server.Properties.CpuFamily != nil {
-			labels[serverCPUFamilyLabel] = model.LabelValue(*server.Properties.CpuFamily)
+
+		if props.AvailabilityZone != nil {
+			labels[serverAvailabilityZoneLabel] = model.LabelValue(*props.AvailabilityZone)
+		}
+		if props.CpuFamily != nil {
+			labels[serverCPUFamilyLabel] = model.LabelValue(*props.CpuFamily)
 		}
 		if servers.Id != nil {
 			labels[serverServersIDLabel] = model.LabelValue(*servers.Id)
@@ -137,14 +159,14 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		if server.Metadata != nil && server.Metadata.State != nil {
 			labels[serverLifecycleLabel] = model.LabelValue(*server.Metadata.State)
 		}
-		if server.Properties.Name != nil {
-			labels[serverNameLabel] = model.LabelValue(*server.Properties.Name)
+		if props.Name != nil {
+			labels[serverNameLabel] = model.LabelValue(*props.Name)
 		}
-		if server.Properties.VmState != nil {
-			labels[serverStateLabel] = model.LabelValue(*server.Properties.VmState)
+		if props.VmState != nil {
+			labels[serverStateLabel] = model.LabelValue(*props.VmState)
 		}
-		if server.Properties.Type != nil {
-			labels[serverTypeLabel] = model.LabelValue(*server.Properties.Type)
+		if props.Type != nil {
+			labels[serverTypeLabel] = model.LabelValue(*props.Type)
 		}
 
 		for nicName, nicIPs := range ipsByNICName {
@@ -152,17 +174,17 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			labels[model.LabelName(name)] = model.LabelValue(join(nicIPs, metaLabelSeparator))
 		}
 
-		if server.Properties.BootCdrom != nil {
-			labels[serverBootCDROMIDLabel] = model.LabelValue(*server.Properties.BootCdrom.Id)
+		if props.BootCdrom != nil && props.BootCdrom.Id != nil {
+			labels[serverBootCDROMIDLabel] = model.LabelValue(*props.BootCdrom.Id)
 		}
 
-		if server.Properties.BootVolume != nil {
-			labels[serverBootVolumeIDLabel] = model.LabelValue(*server.Properties.BootVolume.Id)
+		if props.BootVolume != nil && props.BootVolume.Id != nil {
+			labels[serverBootVolumeIDLabel] = model.LabelValue(*props.BootVolume.Id)
 		}
 
-		if server.Entities != nil && server.Entities.Volumes != nil {
+		if server.Entities != nil && server.Entities.Volumes != nil && server.Entities.Volumes.Items != nil {
 			volumes := *server.Entities.Volumes.Items
-			if len(volumes) > 0 {
+			if len(volumes) > 0 && volumes[0].Properties != nil {
 				image := volumes[0].Properties.Image
 				if image != nil {
 					labels[serverBootImageIDLabel] = model.LabelValue(*image)
