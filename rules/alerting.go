@@ -169,7 +169,7 @@ func NewAlertingRule(
 		vector:              vec,
 		holdDuration:        hold,
 		keepFiringFor:       keepFiringFor,
-		labels:              labels,
+		labels:              labels.WithoutEmpty(),
 		annotations:         annotations,
 		externalLabels:      el,
 		externalURL:         externalURL,
