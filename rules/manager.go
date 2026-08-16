@@ -159,6 +159,12 @@ func NewManager(o *ManagerOptions) *Manager {
 		o.Context = context.Background()
 	}
 
+	// Default the logger first: the components built below capture it by value,
+	// so substituting it afterwards would leave them holding a nil logger.
+	if o.Logger == nil {
+		o.Logger = promslog.NewNopLogger()
+	}
+
 	if o.Metrics == nil {
 		o.Metrics = NewGroupMetrics(o.Registerer)
 	}
@@ -181,10 +187,6 @@ func NewManager(o *ManagerOptions) *Manager {
 
 	if o.RuleDependencyController == nil {
 		o.RuleDependencyController = ruleDependencyController{}
-	}
-
-	if o.Logger == nil {
-		o.Logger = promslog.NewNopLogger()
 	}
 
 	// Register rule manager features if a registry is provided.
