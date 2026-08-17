@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.14.0-rc.0 / 2026-08-06
+## 3.14.0 / 2026-08-17
 
 - [CHANGE] API: Deprecate the `stats` query parameter of `/api/v1/query` and `/api/v1/query_range` for values other than `true` and `all`. Other values still enable basic statistics but now return a deprecation warning; they will be rejected in the next major release. #19124
 - [CHANGE] API: `/api/v1/status/config` now correctly shows `separator: ""` and `replacement: ""` in relabel configs when explicitly set to empty, instead of omitting them. #18653
