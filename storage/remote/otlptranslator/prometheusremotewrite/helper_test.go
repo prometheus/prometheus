@@ -1006,9 +1006,9 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			},
 		},
 		{
-			// An explicit +Inf bound leaves the implicit last bucket
-			// spanning (+Inf, +infinity), so its count can only be 0. The
-			// duplicate le="+Inf" appears in this conformant shape too.
+			// An explicit +Inf bound leaves the implicit last bucket spanning
+			// (+Inf, +infinity), so its count can only be 0. This is the shape a
+			// producer emits, and the duplicate le="+Inf" appears in it.
 			name:         "histogram with an explicit +Inf bound and an empty trailing bucket",
 			wantWarnings: map[WarningCategory]int{WarningCategoryHistogramPlusInfBound: 1},
 			metric: func() pmetric.Metric {
@@ -1074,8 +1074,8 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			},
 		},
 		{
-			// Invalid input: a trailing count of 7 could not have been
-			// observed. The only shape where the two values differ.
+			// Invalid input: a trailing count of 7 could not have been observed.
+			// The two le="+Inf" values then differ.
 			name:         "histogram with an explicit +Inf bound and a non-empty trailing bucket",
 			wantWarnings: map[WarningCategory]int{WarningCategoryHistogramPlusInfBound: 1},
 			metric: func() pmetric.Metric {
@@ -1136,6 +1136,73 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 						),
 						T: convertTimeStamp(ts),
 						V: 42,
+					},
+				}
+			},
+		},
+		{
+			// Invalid the other way: the trailing bucket is empty, but count is
+			// not the sum of the bucket counts, which also makes them differ.
+			name: "histogram with an explicit +Inf bound and a count above its bucket sum",
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist")
+				metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetTimestamp(ts)
+				pt.SetCount(99)
+				pt.SetSum(99)
+				pt.BucketCounts().FromRaw([]uint64{5, 10, 20, 0})
+				pt.ExplicitBounds().FromRaw([]float64{1, 2, math.Inf(1)})
+
+				return metric
+			},
+			wantWarnings: map[WarningCategory]int{WarningCategoryHistogramPlusInfBound: 1},
+			want: func() []sample {
+				return []sample{
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+sumStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 99,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+countStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 99,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "1",
+						),
+						T: convertTimeStamp(ts),
+						V: 5,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "2",
+						),
+						T: convertTimeStamp(ts),
+						V: 15,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "+Inf",
+						),
+						T: convertTimeStamp(ts),
+						V: 99,
 					},
 				}
 			},
