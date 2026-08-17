@@ -886,6 +886,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 		scope        scope
 		promoteScope bool
 		want         func() []sample
+		wantWarnings map[WarningCategory]int
 	}{
 		{
 			name: "histogram with start time and without scope promotion",
@@ -1008,7 +1009,8 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			// An explicit +Inf bound leaves the implicit last bucket
 			// spanning (+Inf, +infinity), so its count can only be 0. The
 			// duplicate le="+Inf" appears in this conformant shape too.
-			name: "histogram with an explicit +Inf bound and an empty trailing bucket",
+			name:         "histogram with an explicit +Inf bound and an empty trailing bucket",
+			wantWarnings: map[WarningCategory]int{WarningCategoryHistogramPlusInfBound: 1},
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_hist")
@@ -1074,7 +1076,8 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 		{
 			// Invalid input: a trailing count of 7 could not have been
 			// observed. The only shape where the two values differ.
-			name: "histogram with an explicit +Inf bound and a non-empty trailing bucket",
+			name:         "histogram with an explicit +Inf bound and a non-empty trailing bucket",
+			wantWarnings: map[WarningCategory]int{WarningCategoryHistogramPlusInfBound: 1},
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_hist")
@@ -1163,6 +1166,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			))
 			require.NoError(t, app.Commit())
 			teststorage.RequireEqual(t, tt.want(), appTest.ResultSamples())
+			require.Equal(t, tt.wantWarnings, CountWarningsByCategory(converter.plusInfAnnots))
 		})
 	}
 }

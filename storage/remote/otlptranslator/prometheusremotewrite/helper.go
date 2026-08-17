@@ -317,6 +317,8 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 			// The le="+Inf" series is synthesized from count below; emitting
 			// this bound would write it a second time at the same timestamp.
 			if math.IsInf(bound, 1) {
+				c.plusInfAnnots.Add(newCategorizedWarningf(WarningCategoryHistogramPlusInfBound,
+					"histogram data point has an explicit +Inf bound, le=\"+Inf\" is taken from count"))
 				continue
 			}
 
