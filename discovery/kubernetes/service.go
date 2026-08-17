@@ -234,7 +234,18 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 		}
 
 		if svc.Spec.Type == apiv1.ServiceTypeLoadBalancer {
-			labelSet[serviceLoadBalancerIP] = lv(svc.Spec.LoadBalancerIP)
+			// spec.loadBalancerIP was deprecated in Kubernetes 1.24. Cloud providers
+			// now set status.loadBalancer.ingress instead. Fall back to the first
+			// ingress entry when the spec field is empty.
+			loadBalancerIP := svc.Spec.LoadBalancerIP
+			if loadBalancerIP == "" && len(svc.Status.LoadBalancer.Ingress) > 0 {
+				if ip := svc.Status.LoadBalancer.Ingress[0].IP; ip != "" {
+					loadBalancerIP = ip
+				} else {
+					loadBalancerIP = svc.Status.LoadBalancer.Ingress[0].Hostname
+				}
+			}
+			labelSet[serviceLoadBalancerIP] = lv(loadBalancerIP)
 		}
 
 		tg.Targets = append(tg.Targets, labelSet)
