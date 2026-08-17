@@ -639,48 +639,6 @@ func Test_convertTimeStamp(t *testing.T) {
 	}
 }
 
-func TestPrometheusConverter_ExplicitInfBoundDoesNotReplaceCount(t *testing.T) {
-	// An explicit +Inf bound is strictly increasing, so it violates no OTLP
-	// requirement, but it names the same le="+Inf" series that is synthesized
-	// from count. Only the first sample written for a series and timestamp is
-	// kept, so before this was handled the cumulative value replaced the total.
-	ts := pcommon.NewTimestampFromTime(time.UnixMilli(1_700_000_000_000))
-	metric := pmetric.NewMetric()
-	metric.SetName("test_hist")
-	metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
-	pt := metric.Histogram().DataPoints().AppendEmpty()
-	pt.SetTimestamp(ts)
-	pt.SetCount(42)
-	pt.SetSum(42)
-	pt.BucketCounts().FromRaw([]uint64{5, 10, 20, 7})
-	pt.ExplicitBounds().FromRaw([]float64{1, 2, math.Inf(1)})
-
-	appTest := teststorage.NewAppendable()
-	app := appTest.AppenderV2(t.Context())
-	converter := NewPrometheusConverter(app)
-	settings := Settings{}
-	require.NoError(t, converter.setResourceContext(pcommon.NewResource(), settings))
-	require.NoError(t, converter.setScopeContext(scope{}, settings))
-	require.NoError(t, converter.addHistogramDataPoints(
-		t.Context(),
-		metric.Histogram().DataPoints(),
-		settings,
-		storage.AOptions{MetricFamilyName: metric.Name()},
-	))
-	require.NoError(t, app.Commit())
-
-	var inf float64
-	var found bool
-	for _, s := range appTest.ResultSamples() {
-		if s.L.Get(model.MetricNameLabel) == "test_hist_bucket" && s.L.Get(model.BucketLabel) == "+Inf" {
-			require.False(t, found, "le=\"+Inf\" was written more than once")
-			inf, found = s.V, true
-		}
-	}
-	require.True(t, found, "no le=\"+Inf\" bucket was written")
-	require.Equal(t, float64(pt.Count()), inf, "le=\"+Inf\" must carry the data point's count")
-}
-
 func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 	scopeAttrs := pcommon.NewMap()
 	scopeAttrs.FromRaw(map[string]any{
@@ -1042,6 +1000,139 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 						),
 						T: convertTimeStamp(ts),
 						V: 0,
+					},
+				}
+			},
+		},
+		{
+			// An explicit +Inf bound leaves the implicit last bucket
+			// spanning (+Inf, +infinity), so its count can only be 0. The
+			// duplicate le="+Inf" appears in this conformant shape too.
+			name: "histogram with an explicit +Inf bound and an empty trailing bucket",
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist")
+				metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetTimestamp(ts)
+				pt.SetCount(35)
+				pt.SetSum(35)
+				pt.BucketCounts().FromRaw([]uint64{5, 10, 20, 0})
+				pt.ExplicitBounds().FromRaw([]float64{1, 2, math.Inf(1)})
+
+				return metric
+			},
+			want: func() []sample {
+				return []sample{
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+sumStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 35,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+countStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 35,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "1",
+						),
+						T: convertTimeStamp(ts),
+						V: 5,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "2",
+						),
+						T: convertTimeStamp(ts),
+						V: 15,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "+Inf",
+						),
+						T: convertTimeStamp(ts),
+						V: 35,
+					},
+				}
+			},
+		},
+		{
+			// Invalid input: a trailing count of 7 could not have been
+			// observed. The only shape where the two values differ.
+			name: "histogram with an explicit +Inf bound and a non-empty trailing bucket",
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist")
+				metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetTimestamp(ts)
+				pt.SetCount(42)
+				pt.SetSum(42)
+				pt.BucketCounts().FromRaw([]uint64{5, 10, 20, 7})
+				pt.ExplicitBounds().FromRaw([]float64{1, 2, math.Inf(1)})
+
+				return metric
+			},
+			want: func() []sample {
+				return []sample{
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+sumStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 42,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+countStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 42,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "1",
+						),
+						T: convertTimeStamp(ts),
+						V: 5,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "2",
+						),
+						T: convertTimeStamp(ts),
+						V: 15,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "+Inf",
+						),
+						T: convertTimeStamp(ts),
+						V: 42,
 					},
 				}
 			},
