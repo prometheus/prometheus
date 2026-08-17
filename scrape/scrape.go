@@ -41,6 +41,8 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
@@ -803,7 +805,8 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 
 		s.req = req
 	}
-	ctx, span := otel.Tracer("").Start(ctx, "Scrape", trace.WithSpanKind(trace.SpanKindClient))
+	ctx, span := otel.Tracer("").Start(ctx, "scrapeRequest", trace.WithSpanKind(trace.SpanKindClient))
+	span.SetAttributes(attribute.String("url", s.URL().Redacted()))
 	defer span.End()
 
 	return s.client.Do(s.req.WithContext(ctx))
@@ -1401,6 +1404,9 @@ func (sl *scrapeLoop) appender() scrapeLoopAppendAdapter {
 func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- error) time.Time {
 	start := time.Now()
 
+	spanCtx, span := otel.Tracer("").Start(sl.appenderCtx, "scrape")
+	defer span.End()
+
 	// Only record after the first scrape.
 	if !last.IsZero() {
 		sl.metrics.targetIntervalLength.WithLabelValues(sl.interval.String()).Observe(
@@ -1414,13 +1420,21 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	var total, added, seriesAdded, bytesRead int
 	var err, appErr, scrapeErr error
 
+	_, appenderSpan := otel.Tracer("").Start(spanCtx, "newAppender")
 	app := sl.appender()
+	appenderSpan.End()
 	defer func() {
 		if err != nil {
 			_ = app.Rollback()
 			return
 		}
+		_, commitSpan := otel.Tracer("").Start(spanCtx, "scrapeCommit")
 		err = app.Commit()
+		if err != nil {
+			commitSpan.RecordError(err)
+			commitSpan.SetStatus(codes.Error, err.Error())
+		}
+		commitSpan.End()
 		if sl.reportExtraMetrics {
 			totalDuration := time.Since(start)
 			// Record total scrape duration metric.
@@ -1432,7 +1446,14 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	}()
 
 	defer func() {
-		if err = sl.report(app, appendTime, time.Since(start), total, added, seriesAdded, bytesRead, scrapeErr); err != nil {
+		_, reportSpan := otel.Tracer("").Start(spanCtx, "scrapeReport")
+		err = sl.report(app, appendTime, time.Since(start), total, added, seriesAdded, bytesRead, scrapeErr)
+		if err != nil {
+			reportSpan.RecordError(err)
+			reportSpan.SetStatus(codes.Error, err.Error())
+		}
+		reportSpan.End()
+		if err != nil {
 			sl.l.Warn("Appending scrape report failed", "err", err)
 		}
 	}()
@@ -1459,13 +1480,20 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	var resp *http.Response
 	var b []byte
 	var buf *bytes.Buffer
-	scrapeCtx, cancel := context.WithTimeout(sl.parentCtx, sl.timeout)
+	scrapeCtx, cancel := context.WithTimeout(trace.ContextWithSpan(sl.parentCtx, span), sl.timeout)
 	resp, scrapeErr = sl.scraper.scrape(scrapeCtx)
 	if scrapeErr == nil {
 		b = sl.buffers.Get(sl.lastScrapeSize).([]byte)
 		defer sl.buffers.Put(b)
 		buf = bytes.NewBuffer(b)
+		// Trace the response body read and decompression into the buffer.
+		_, readSpan := otel.Tracer("").Start(spanCtx, "scrapeRead")
 		contentType, scrapeErr = sl.scraper.readResponse(scrapeCtx, resp, buf)
+		if scrapeErr != nil {
+			readSpan.RecordError(scrapeErr)
+			readSpan.SetStatus(codes.Error, scrapeErr.Error())
+		}
+		readSpan.End()
 	}
 	cancel()
 
@@ -1498,7 +1526,13 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 
 	// A failed scrape is the same as an empty scrape,
 	// we still call sl.append to trigger stale markers.
+	_, appendSpan := otel.Tracer("").Start(spanCtx, "scrapeAppend")
 	total, added, seriesAdded, appErr = app.append(b, contentType, appendTime)
+	if appErr != nil {
+		appendSpan.RecordError(appErr)
+		appendSpan.SetStatus(codes.Error, appErr.Error())
+	}
+	appendSpan.End()
 	if appErr != nil {
 		_ = app.Rollback()
 		app = sl.appender()
@@ -1514,6 +1548,17 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 
 	if scrapeErr == nil {
 		scrapeErr = appErr
+	}
+
+	span.SetAttributes(
+		attribute.Int("samples_scraped", total),
+		attribute.Int("samples_added", added),
+		attribute.Int("series_added", seriesAdded),
+		attribute.Int("bytes", bytesRead),
+	)
+	if scrapeErr != nil {
+		span.RecordError(scrapeErr)
+		span.SetStatus(codes.Error, scrapeErr.Error())
 	}
 
 	return start
