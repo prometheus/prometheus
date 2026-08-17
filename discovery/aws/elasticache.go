@@ -528,6 +528,11 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 			return fmt.Errorf("failed to describe serverless caches: %w", err)
 		}
 		for _, cache := range caches {
+			// ARN is optional in the ElastiCache API and is only used to look
+			// up tags, so a cache without one is still discovered below.
+			if cache.ARN == nil {
+				continue
+			}
 			clustersMu.Lock()
 			clusters = append(clusters, *cache.ARN)
 			clustersMu.Unlock()
@@ -541,6 +546,9 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 			return fmt.Errorf("failed to describe cache clusters: %w", err)
 		}
 		for _, cluster := range cacheClusters {
+			if cluster.ARN == nil {
+				continue
+			}
 			clustersMu.Lock()
 			clusters = append(clusters, *cluster.ARN)
 			clustersMu.Unlock()
@@ -560,6 +568,9 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 	tg := &targetgroup.Group{
 		Source: d.region,
 	}
+	// Both goroutines below append to tg.Targets, so the append must be
+	// serialised.
+	targetsMu := sync.Mutex{}
 
 	errg, ectx := errgroup.WithContext(ctx)
 	errg.Go(func() error {
@@ -568,7 +579,9 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 			return fmt.Errorf("failed to describe serverless caches: %w", err)
 		}
 		for _, cache := range caches {
-			addServerlessCacheTargets(tg, &cache, tagsByResourceARN[*cache.ARN])
+			targetsMu.Lock()
+			addServerlessCacheTargets(tg, &cache, tagsByResourceARN[aws.ToString(cache.ARN)])
+			targetsMu.Unlock()
 		}
 		return nil
 	})
@@ -579,7 +592,9 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 			return fmt.Errorf("failed to describe cache clusters: %w", err)
 		}
 		for _, cluster := range cacheClusters {
-			addCacheClusterTargets(tg, &cluster, tagsByResourceARN[*cluster.ARN])
+			targetsMu.Lock()
+			addCacheClusterTargets(tg, &cluster, tagsByResourceARN[aws.ToString(cluster.ARN)])
+			targetsMu.Unlock()
 		}
 		return nil
 	})
@@ -620,14 +635,35 @@ func splitCacheDeploymentOptions(caches []string, logger *slog.Logger) (serverle
 
 // addServerlessCacheTargets adds targets for a serverless cache to the target group.
 func addServerlessCacheTargets(tg *targetgroup.Group, cache *types.ServerlessCache, tags []types.Tag) {
+	// Every field below is optional in the ElastiCache API. Omit the label when
+	// the field is absent rather than dereferencing a nil pointer, which would
+	// panic and take down the whole Prometheus process.
 	labels := model.LabelSet{
-		elasticacheLabelDeploymentOption:                  model.LabelValue("serverless"),
-		elasticacheLabelServerlessCacheARN:                model.LabelValue(*cache.ARN),
-		elasticacheLabelServerlessCacheName:               model.LabelValue(*cache.ServerlessCacheName),
-		elasticacheLabelServerlessCacheStatus:             model.LabelValue(*cache.Status),
-		elasticacheLabelServerlessCacheEngine:             model.LabelValue(*cache.Engine),
-		elasticacheLabelServerlessCacheFullEngineVersion:  model.LabelValue(*cache.FullEngineVersion),
-		elasticacheLabelServerlessCacheMajorEngineVersion: model.LabelValue(*cache.MajorEngineVersion),
+		elasticacheLabelDeploymentOption: model.LabelValue("serverless"),
+	}
+
+	if cache.ARN != nil {
+		labels[elasticacheLabelServerlessCacheARN] = model.LabelValue(*cache.ARN)
+	}
+
+	if cache.ServerlessCacheName != nil {
+		labels[elasticacheLabelServerlessCacheName] = model.LabelValue(*cache.ServerlessCacheName)
+	}
+
+	if cache.Status != nil {
+		labels[elasticacheLabelServerlessCacheStatus] = model.LabelValue(*cache.Status)
+	}
+
+	if cache.Engine != nil {
+		labels[elasticacheLabelServerlessCacheEngine] = model.LabelValue(*cache.Engine)
+	}
+
+	if cache.FullEngineVersion != nil {
+		labels[elasticacheLabelServerlessCacheFullEngineVersion] = model.LabelValue(*cache.FullEngineVersion)
+	}
+
+	if cache.MajorEngineVersion != nil {
+		labels[elasticacheLabelServerlessCacheMajorEngineVersion] = model.LabelValue(*cache.MajorEngineVersion)
 	}
 
 	if cache.Description != nil {
@@ -717,12 +753,24 @@ func addServerlessCacheTargets(tg *targetgroup.Group, cache *types.ServerlessCac
 // addCacheClusterTargets adds targets for a cache cluster to the target group.
 // Creates one target per cache node for individual scraping.
 func addCacheClusterTargets(tg *targetgroup.Group, cluster *types.CacheCluster, tags []types.Tag) {
-	// Build common labels that apply to all nodes in this cluster
+	// Build common labels that apply to all nodes in this cluster. Every field
+	// below is optional in the ElastiCache API, so the label is omitted when the
+	// field is absent rather than dereferencing a nil pointer, which would panic
+	// and take down the whole Prometheus process.
 	commonLabels := model.LabelSet{
-		elasticacheLabelDeploymentOption:   model.LabelValue("node"),
-		elasticacheLabelCacheClusterARN:    model.LabelValue(*cluster.ARN),
-		elasticacheLabelCacheClusterID:     model.LabelValue(*cluster.CacheClusterId),
-		elasticacheLabelCacheClusterStatus: model.LabelValue(*cluster.CacheClusterStatus),
+		elasticacheLabelDeploymentOption: model.LabelValue("node"),
+	}
+
+	if cluster.ARN != nil {
+		commonLabels[elasticacheLabelCacheClusterARN] = model.LabelValue(*cluster.ARN)
+	}
+
+	if cluster.CacheClusterId != nil {
+		commonLabels[elasticacheLabelCacheClusterID] = model.LabelValue(*cluster.CacheClusterId)
+	}
+
+	if cluster.CacheClusterStatus != nil {
+		commonLabels[elasticacheLabelCacheClusterStatus] = model.LabelValue(*cluster.CacheClusterStatus)
 	}
 
 	if cluster.AtRestEncryptionEnabled != nil {

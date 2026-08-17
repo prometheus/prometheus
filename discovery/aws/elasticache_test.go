@@ -620,3 +620,226 @@ func TestSplitCacheDeploymentOptions(t *testing.T) {
 		})
 	}
 }
+
+// elasticacheTestDiscovery returns a discovery backed by the mock client, so
+// refresh() can be exercised without reaching AWS. initElasticacheClient returns
+// early when elasticacheClient is already set, which also leaves region unset,
+// so it is populated here.
+func elasticacheTestDiscovery(data *elasticacheDataStore) *ElasticacheDiscovery {
+	return &ElasticacheDiscovery{
+		logger:            promslog.NewNopLogger(),
+		elasticacheClient: newMockElasticacheClient(data),
+		cfg: &ElasticacheSDConfig{
+			Region:             data.region,
+			RequestConcurrency: 10,
+		},
+		region: data.region,
+	}
+}
+
+// fullyPopulatedServerlessCache is the shape the AWS API returns when every
+// optional field happens to be set. Each subtest below blanks exactly one of
+// them.
+func fullyPopulatedServerlessCache() types.ServerlessCache {
+	return types.ServerlessCache{
+		ARN:                 strptr("arn:aws:elasticache:us-east-1:123456789012:serverlesscache:my-cache"),
+		ServerlessCacheName: strptr("my-cache"),
+		Status:              strptr("available"),
+		Engine:              strptr("redis"),
+		FullEngineVersion:   strptr("7.1"),
+		MajorEngineVersion:  strptr("7"),
+		Endpoint: &types.Endpoint{
+			Address: strptr("my-cache.serverless.use1.cache.amazonaws.com"),
+			Port:    aws.Int32(6379),
+		},
+	}
+}
+
+// fullyPopulatedCacheCluster mirrors fullyPopulatedServerlessCache for the
+// node-based deployment option.
+func fullyPopulatedCacheCluster() types.CacheCluster {
+	return types.CacheCluster{
+		ARN:                strptr("arn:aws:elasticache:us-east-1:123456789012:cluster:my-cluster-001"),
+		CacheClusterId:     strptr("my-cluster-001"),
+		CacheClusterStatus: strptr("available"),
+		CacheNodes: []types.CacheNode{
+			{
+				CacheNodeId: strptr("0001"),
+				Endpoint: &types.Endpoint{
+					Address: strptr("my-cluster-001.abc123.0001.use1.cache.amazonaws.com"),
+					Port:    aws.Int32(6379),
+				},
+			},
+		},
+	}
+}
+
+// TestElasticacheRefreshFullyPopulated pins the happy path so the nil handling
+// added for the cases below cannot silently drop labels that used to be set.
+func TestElasticacheRefreshFullyPopulated(t *testing.T) {
+	t.Parallel()
+
+	tgs, err := elasticacheTestDiscovery(&elasticacheDataStore{
+		region:           "us-east-1",
+		serverlessCaches: []types.ServerlessCache{fullyPopulatedServerlessCache()},
+		cacheClusters:    []types.CacheCluster{fullyPopulatedCacheCluster()},
+		tags: map[string][]types.Tag{
+			"arn:aws:elasticache:us-east-1:123456789012:serverlesscache:my-cache": {
+				{Key: strptr("Environment"), Value: strptr("test")},
+			},
+			"arn:aws:elasticache:us-east-1:123456789012:cluster:my-cluster-001": {
+				{Key: strptr("Environment"), Value: strptr("prod")},
+			},
+		},
+	}).refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 1)
+
+	// describeCacheClusters queries the API twice, once with
+	// ShowCacheClustersNotInReplicationGroups set and once without, and
+	// concatenates both result sets. A cluster that is not a replication group
+	// member is returned by both calls, so the target count is not asserted
+	// here: that duplication predates this test and is out of its scope.
+	targetsByOption := map[model.LabelValue]model.LabelSet{}
+	for _, target := range tgs[0].Targets {
+		targetsByOption[target[elasticacheLabelDeploymentOption]] = target
+	}
+	require.Len(t, targetsByOption, 2, "both deployment options must be discovered")
+
+	serverless := targetsByOption["serverless"]
+	require.Equal(t, model.LabelValue("my-cache.serverless.use1.cache.amazonaws.com:6379"), serverless[model.AddressLabel])
+	require.Equal(t, model.LabelValue("arn:aws:elasticache:us-east-1:123456789012:serverlesscache:my-cache"), serverless[elasticacheLabelServerlessCacheARN])
+	require.Equal(t, model.LabelValue("my-cache"), serverless[elasticacheLabelServerlessCacheName])
+	require.Equal(t, model.LabelValue("available"), serverless[elasticacheLabelServerlessCacheStatus])
+	require.Equal(t, model.LabelValue("redis"), serverless[elasticacheLabelServerlessCacheEngine])
+	require.Equal(t, model.LabelValue("7.1"), serverless[elasticacheLabelServerlessCacheFullEngineVersion])
+	require.Equal(t, model.LabelValue("7"), serverless[elasticacheLabelServerlessCacheMajorEngineVersion])
+	require.Equal(t, model.LabelValue("test"), serverless[elasticacheLabelServerlessCacheTag+"Environment"])
+
+	node := targetsByOption["node"]
+	require.Equal(t, model.LabelValue("my-cluster-001.abc123.0001.use1.cache.amazonaws.com:6379"), node[model.AddressLabel])
+	require.Equal(t, model.LabelValue("arn:aws:elasticache:us-east-1:123456789012:cluster:my-cluster-001"), node[elasticacheLabelCacheClusterARN])
+	require.Equal(t, model.LabelValue("my-cluster-001"), node[elasticacheLabelCacheClusterID])
+	require.Equal(t, model.LabelValue("available"), node[elasticacheLabelCacheClusterStatus])
+	require.Equal(t, model.LabelValue("prod"), node[elasticacheLabelCacheClusterTag+"Environment"])
+}
+
+// TestElasticacheRefreshServerlessCacheNilOptionalFields covers serverless
+// caches where the AWS API omitted an optional field. None of the members of
+// ServerlessCache are marked required by the SDK, yet refresh() dereferenced
+// these without a nil check, so a single missing field panicked the whole
+// Prometheus process during service discovery rather than degrading the target.
+func TestElasticacheRefreshServerlessCacheNilOptionalFields(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(*types.ServerlessCache)
+		absent model.LabelName
+	}{
+		{
+			name:   "NilARN",
+			mutate: func(c *types.ServerlessCache) { c.ARN = nil },
+			absent: elasticacheLabelServerlessCacheARN,
+		},
+		{
+			name:   "NilServerlessCacheName",
+			mutate: func(c *types.ServerlessCache) { c.ServerlessCacheName = nil },
+			absent: elasticacheLabelServerlessCacheName,
+		},
+		{
+			name:   "NilStatus",
+			mutate: func(c *types.ServerlessCache) { c.Status = nil },
+			absent: elasticacheLabelServerlessCacheStatus,
+		},
+		{
+			name:   "NilEngine",
+			mutate: func(c *types.ServerlessCache) { c.Engine = nil },
+			absent: elasticacheLabelServerlessCacheEngine,
+		},
+		{
+			name:   "NilFullEngineVersion",
+			mutate: func(c *types.ServerlessCache) { c.FullEngineVersion = nil },
+			absent: elasticacheLabelServerlessCacheFullEngineVersion,
+		},
+		{
+			name:   "NilMajorEngineVersion",
+			mutate: func(c *types.ServerlessCache) { c.MajorEngineVersion = nil },
+			absent: elasticacheLabelServerlessCacheMajorEngineVersion,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cache := fullyPopulatedServerlessCache()
+			tc.mutate(&cache)
+
+			tgs, err := elasticacheTestDiscovery(&elasticacheDataStore{
+				region:           "us-east-1",
+				serverlessCaches: []types.ServerlessCache{cache},
+			}).refresh(context.Background())
+			require.NoError(t, err)
+			require.Len(t, tgs, 1)
+			require.Len(t, tgs[0].Targets, 1,
+				"cache must still be discovered when an optional field is absent")
+
+			target := tgs[0].Targets[0]
+			require.NotContains(t, target, tc.absent,
+				"label sourced from the absent field should be omitted")
+			// The cache is still usable: the address is what makes it a target.
+			require.Equal(t, model.LabelValue("my-cache.serverless.use1.cache.amazonaws.com:6379"), target[model.AddressLabel])
+		})
+	}
+}
+
+// TestElasticacheRefreshCacheClusterNilOptionalFields is the node deployment
+// counterpart of TestElasticacheRefreshServerlessCacheNilOptionalFields.
+func TestElasticacheRefreshCacheClusterNilOptionalFields(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(*types.CacheCluster)
+		absent model.LabelName
+	}{
+		{
+			name:   "NilARN",
+			mutate: func(c *types.CacheCluster) { c.ARN = nil },
+			absent: elasticacheLabelCacheClusterARN,
+		},
+		{
+			name:   "NilCacheClusterId",
+			mutate: func(c *types.CacheCluster) { c.CacheClusterId = nil },
+			absent: elasticacheLabelCacheClusterID,
+		},
+		{
+			name:   "NilCacheClusterStatus",
+			mutate: func(c *types.CacheCluster) { c.CacheClusterStatus = nil },
+			absent: elasticacheLabelCacheClusterStatus,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cluster := fullyPopulatedCacheCluster()
+			tc.mutate(&cluster)
+
+			tgs, err := elasticacheTestDiscovery(&elasticacheDataStore{
+				region:        "us-east-1",
+				cacheClusters: []types.CacheCluster{cluster},
+			}).refresh(context.Background())
+			require.NoError(t, err)
+			require.Len(t, tgs, 1)
+			require.NotEmpty(t, tgs[0].Targets,
+				"cluster node must still be discovered when an optional field is absent")
+
+			// See TestElasticacheRefreshFullyPopulated for why the target count
+			// is not asserted here.
+			for _, target := range tgs[0].Targets {
+				require.NotContains(t, target, tc.absent,
+					"label sourced from the absent field should be omitted")
+				require.Equal(t, model.LabelValue("my-cluster-001.abc123.0001.use1.cache.amazonaws.com:6379"), target[model.AddressLabel])
+			}
+		})
+	}
+}
