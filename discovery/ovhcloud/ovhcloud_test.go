@@ -57,6 +57,7 @@ func getMockConfFromString(confString string) (SDConfig, error) {
 }
 
 func TestErrorInitClient(t *testing.T) {
+	t.Parallel()
 	confString := fmt.Sprintf(`
 endpoint: %s
 
@@ -70,6 +71,7 @@ endpoint: %s
 }
 
 func TestParseIPs(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name  string
 		input []string
@@ -120,6 +122,7 @@ func TestParseIPs(t *testing.T) {
 }
 
 func TestDiscoverer(t *testing.T) {
+	t.Parallel()
 	conf, _ := getMockConf("vps")
 	logger := promslog.NewNopLogger()
 
