@@ -700,11 +700,8 @@ func TestElasticacheRefreshFullyPopulated(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, tgs, 1)
 
-	// describeCacheClusters queries the API twice, once with
-	// ShowCacheClustersNotInReplicationGroups set and once without, and
-	// concatenates both result sets. A cluster that is not a replication group
-	// member is returned by both calls, so the target count is not asserted
-	// here: that duplication predates this test and is out of its scope.
+	require.Len(t, tgs[0].Targets, 2, "one target per deployment option, and no duplicates")
+
 	targetsByOption := map[model.LabelValue]model.LabelSet{}
 	for _, target := range tgs[0].Targets {
 		targetsByOption[target[elasticacheLabelDeploymentOption]] = target
@@ -835,16 +832,13 @@ func TestElasticacheRefreshCacheClusterNilOptionalFields(t *testing.T) {
 			}).refresh(context.Background())
 			require.NoError(t, err)
 			require.Len(t, tgs, 1)
-			require.NotEmpty(t, tgs[0].Targets,
+			require.Len(t, tgs[0].Targets, 1,
 				"cluster node must still be discovered when an optional field is absent")
 
-			// See TestElasticacheRefreshFullyPopulated for why the target count
-			// is not asserted here.
-			for _, target := range tgs[0].Targets {
-				require.NotContains(t, target, tc.absent,
-					"label sourced from the absent field should be omitted")
-				require.Equal(t, model.LabelValue("my-cluster-001.abc123.0001.use1.cache.amazonaws.com:6379"), target[model.AddressLabel])
-			}
+			target := tgs[0].Targets[0]
+			require.NotContains(t, target, tc.absent,
+				"label sourced from the absent field should be omitted")
+			require.Equal(t, model.LabelValue("my-cluster-001.abc123.0001.use1.cache.amazonaws.com:6379"), target[model.AddressLabel])
 		})
 	}
 }
