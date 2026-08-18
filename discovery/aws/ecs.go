@@ -775,6 +775,15 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 			continue
 		}
 
+		cluster, ok := clusterMap[clusterARN]
+		if !ok {
+			// The cluster has tasks but could not be described, for instance
+			// because it was deleted after its tasks were listed. Skip it
+			// rather than dereferencing the zero cluster below.
+			d.logger.Debug("Cluster not found in DescribeClusters response", "cluster", clusterARN)
+			continue
+		}
+
 		clusterWg.Add(1)
 
 		go func(cluster types.Cluster, serviceARNs, taskARNs []string) {
@@ -1078,7 +1087,7 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 			clusterMu.Lock()
 			clusterTargets = append(clusterTargets, taskTargets...)
 			clusterMu.Unlock()
-		}(clusterMap[clusterARN], serviceMap[clusterARN], taskARNs)
+		}(cluster, serviceMap[clusterARN], taskARNs)
 	}
 
 	clusterWg.Wait()
