@@ -16,6 +16,7 @@ package textparse
 import (
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -627,4 +628,30 @@ func TestPromNullByteHandling(t *testing.T) {
 
 		require.EqualError(t, err, c.err, "test %d", i)
 	}
+}
+
+func TestPromParserLineTerminator(t *testing.T) {
+	const body = `# HELP go_goroutines Number of goroutines.
+# TYPE go_goroutines gauge
+go_goroutines 33
+`
+	withNewline := []byte(body)
+	withoutNewline := []byte(strings.TrimSuffix(body, "\n"))
+
+	want := testParse(t, NewPromParser(withNewline, labels.NewSymbolTable(), false))
+	require.NotEmpty(t, want)
+	requireEntries(t, want, testParse(t, NewPromParser(withoutNewline, labels.NewSymbolTable(), false)))
+
+	// Same backing array means the body was not copied.
+	exact := make([]byte, len(withNewline))
+	copy(exact, withNewline)
+	p := NewPromParser(exact, labels.NewSymbolTable(), false).(*PromParser)
+	require.Equal(t, &exact[0], &p.l.b[0])
+
+	p = NewPromParser(withoutNewline, labels.NewSymbolTable(), false).(*PromParser)
+	require.Len(t, p.l.b, len(withoutNewline)+1)
+	require.Equal(t, byte('\n'), p.l.b[len(p.l.b)-1])
+
+	p = NewPromParser(nil, labels.NewSymbolTable(), false).(*PromParser)
+	require.Equal(t, []byte("\n"), p.l.b)
 }
