@@ -414,10 +414,53 @@ func NewChildWithStepTracking(start, end, interval int64) *QuerySamples {
 	return qs
 }
 
-// MergeSamplesReadFromSubquery merges only SamplesRead and SamplesReadPerStep from
-// the child (subquery) into the parent. TotalSamples and TotalSamplesPerStep are
-// not merged, because the outer range-eval loop already counts those when it
-// iterates over the pre-computed matrix. The child must have per-step tracking
+// MergeTotalSamplesFromSubquery merges TotalSamples and TotalSamplesPerStep from
+// the child (subquery) into the parent. For range-vector functions, each parent
+// step counts the full subquery window it consumes. The child must have per-step
+// tracking enabled (callers should construct it via NewChildWithStepTracking).
+func (qs *QuerySamples) MergeTotalSamplesFromSubquery(child *QuerySamples, parentStart, parentInterval int64, parentNumSteps int, outerOffset, outerRange int64, reusedByParentSteps bool) {
+	if qs == nil || child == nil {
+		return
+	}
+	if parentNumSteps <= 1 || outerRange <= 0 {
+		qs.TotalSamples += child.TotalSamples
+		if qs.TotalSamplesPerStep != nil {
+			qs.TotalSamplesPerStep[0] += child.TotalSamples
+		}
+		return
+	}
+
+	if reusedByParentSteps {
+		for parentStep := range parentNumSteps {
+			qs.TotalSamples += child.TotalSamples
+			if qs.TotalSamplesPerStep != nil {
+				qs.TotalSamplesPerStep[parentStep] += child.TotalSamples
+			}
+		}
+		return
+	}
+
+	for parentStep := range parentNumSteps {
+		parentTs := parentStart + int64(parentStep)*parentInterval
+		for k, n := range child.TotalSamplesPerStep {
+			if n == 0 {
+				continue
+			}
+			tk := child.StartTimestamp + int64(k)*child.Interval + outerOffset
+			if tk <= parentTs-outerRange || tk > parentTs {
+				continue
+			}
+
+			qs.TotalSamples += n
+			if qs.TotalSamplesPerStep != nil {
+				qs.TotalSamplesPerStep[parentStep] += n
+			}
+		}
+	}
+}
+
+// MergeSamplesReadFromSubquery merges SamplesRead and SamplesReadPerStep from
+// the child (subquery) into the parent. The child must have per-step tracking
 // enabled (callers should construct it via NewChildWithStepTracking).
 //
 // parentStart, parentInterval and parentNumSteps describe the parent's step
@@ -459,21 +502,9 @@ func (qs *QuerySamples) MergeSamplesReadFromSubquery(child *QuerySamples, parent
 		if n == 0 {
 			continue
 		}
-		tk := child.StartTimestamp + int64(k)*child.Interval + outerOffset
-
-		outerStep := 0
-		if tk > parentStart {
-			outerStep = int((tk - parentStart + parentInterval - 1) / parentInterval)
-		}
-		if outerStep >= parentNumSteps {
-			outerStep = parentNumSteps - 1
-		}
-
-		if outerRange > 0 {
-			parentTs := parentStart + int64(outerStep)*parentInterval
-			if tk <= parentTs-outerRange {
-				continue
-			}
+		outerStep, ok := subqueryStep(child.StartTimestamp+int64(k)*child.Interval, parentStart, parentInterval, parentNumSteps, outerOffset, outerRange)
+		if !ok {
+			continue
 		}
 
 		qs.SamplesRead += n
@@ -481,6 +512,27 @@ func (qs *QuerySamples) MergeSamplesReadFromSubquery(child *QuerySamples, parent
 			qs.SamplesReadPerStep[outerStep] += n
 		}
 	}
+}
+
+func subqueryStep(childTs, parentStart, parentInterval int64, parentNumSteps int, outerOffset, outerRange int64) (int, bool) {
+	tk := childTs + outerOffset
+
+	outerStep := 0
+	if tk > parentStart {
+		outerStep = int((tk - parentStart + parentInterval - 1) / parentInterval)
+	}
+	if outerStep >= parentNumSteps {
+		outerStep = parentNumSteps - 1
+	}
+
+	if outerRange > 0 {
+		parentTs := parentStart + int64(outerStep)*parentInterval
+		if tk <= parentTs-outerRange {
+			return 0, false
+		}
+	}
+
+	return outerStep, true
 }
 
 func (qs *QueryTimers) GetSpanTimer(ctx context.Context, qt QueryTiming, observers ...prometheus.Observer) (*SpanTimer, context.Context) {
