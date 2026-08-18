@@ -344,8 +344,6 @@ Inner2:
 		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
 	 | tee ${bench}.txt
 */
-// BenchmarkNewPromParser covers the exact-sized case, which is what scrape's
-// buffer pool hands over for bodies past its largest bucket.
 func BenchmarkNewPromParser(b *testing.B) {
 	data := readTestdataFile(b, "alltypes.237mfs.prom.txt")
 	require.Equal(b, byte('\n'), data[len(data)-1])

@@ -2644,9 +2644,6 @@ func BenchmarkScrapeLoopScrapeAndReport(b *testing.B) {
 	}
 }
 
-// BenchmarkScrapeLoopLargeBody covers bodies past the pool's largest bucket,
-// where pool.Get stops padding to a bucket size. The test pool tops out at
-// 729000 bytes, so a few MiB is enough to get there.
 func BenchmarkScrapeLoopLargeBody(b *testing.B) {
 	for _, bodySize := range []int{1 << 20, 4 << 20, 16 << 20} {
 		b.Run(fmt.Sprintf("%dMiB", bodySize>>20), func(b *testing.B) {
@@ -2690,8 +2687,8 @@ func makeLargeTextBody(targetBytes int) []byte {
 func TestScrapeLoopBodyBufferSlack(t *testing.T) {
 	for _, bodySize := range []int{
 		1 << 10,
-		729000, // the largest bucket
-		729001, // above it, where pool.Get stops padding to a bucket size
+		729000, // The largest bucket.
+		729001, // Above it, where pool.Get stops padding to a bucket size.
 		2 << 20,
 	} {
 		t.Run(fmt.Sprintf("body=%d", bodySize), func(t *testing.T) {
