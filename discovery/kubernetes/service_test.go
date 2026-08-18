@@ -113,6 +113,38 @@ func makeLoadBalancerService() *v1.Service {
 	}
 }
 
+// makeLoadBalancerServiceWithStatusIngressIP returns a LoadBalancer service
+// that has no spec.loadBalancerIP (deprecated since Kubernetes 1.24) but
+// has the assigned IP in status.loadBalancer.ingress, as set by modern cloud
+// providers.
+func makeLoadBalancerServiceWithStatusIngressIP() *v1.Service {
+	return &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testservice-lb-status",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Ports: []v1.ServicePort{
+				{
+					Name:     "testport",
+					Protocol: v1.ProtocolTCP,
+					Port:     int32(31900),
+				},
+			},
+			Type:      v1.ServiceTypeLoadBalancer,
+			ClusterIP: "10.0.0.2",
+			// LoadBalancerIP intentionally left empty to simulate Kubernetes 1.24+
+		},
+		Status: v1.ServiceStatus{
+			LoadBalancer: v1.LoadBalancerStatus{
+				Ingress: []v1.LoadBalancerIngress{
+					{IP: "203.0.113.1"},
+				},
+			},
+		},
+	}
+}
+
 func TestServiceDiscoveryAdd(t *testing.T) {
 	t.Parallel()
 	n, c := makeDiscovery(RoleService, NamespaceDiscovery{})
@@ -180,6 +212,40 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 					"__meta_kubernetes_namespace":    "default",
 				},
 				Source: "svc/default/testservice-loadbalancer",
+			},
+		},
+	}.Run(t)
+}
+
+func TestServiceDiscoveryLoadBalancerIPFromStatusIngress(t *testing.T) {
+	t.Parallel()
+	n, c := makeDiscovery(RoleService, NamespaceDiscovery{})
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			obj := makeLoadBalancerServiceWithStatusIngressIP()
+			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+		},
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"svc/default/testservice-lb-status": {
+				Targets: []model.LabelSet{
+					{
+						"__meta_kubernetes_service_port_protocol":   "TCP",
+						"__address__":                               "testservice-lb-status.default.svc:31900",
+						"__meta_kubernetes_service_type":            "LoadBalancer",
+						"__meta_kubernetes_service_port_name":       "testport",
+						"__meta_kubernetes_service_port_number":     "31900",
+						"__meta_kubernetes_service_cluster_ip":      "10.0.0.2",
+						"__meta_kubernetes_service_loadbalancer_ip": "203.0.113.1",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_service_name": "testservice-lb-status",
+					"__meta_kubernetes_namespace":    "default",
+				},
+				Source: "svc/default/testservice-lb-status",
 			},
 		},
 	}.Run(t)
