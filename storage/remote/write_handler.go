@@ -55,14 +55,13 @@ type writeHandler struct {
 }
 
 // receiverAppenderV2 is the AppenderV2 capability the Remote Write receiver
-// requires: standalone exemplar and metadata appends on top of AppenderV2.
-// Prometheus' own appenders (TSDB head, agent, fanout, remote write) implement
-// it. It is defined here, rather than embedded into storage.AppenderV2, so that
+// requires: standalone exemplar appends on top of AppenderV2. Prometheus' own
+// appenders (TSDB head, agent, fanout, remote write) implement it. It is
+// defined here, rather than embedded into storage.AppenderV2, so that
 // downstream AppenderV2 implementations are not forced to implement it.
 type receiverAppenderV2 interface {
 	storage.AppenderV2
 	storage.ExemplarAppenderV2
-	storage.MetadataUpdaterV2
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -172,7 +171,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	appV2 := h.appendableV2.AppenderV2(ctx)
 	recv, ok := appV2.(receiverAppenderV2)
 	if !ok {
-		return fmt.Errorf("remote write 1.0 receiver requires a storage.AppenderV2 that also implements storage.ExemplarAppenderV2 and storage.MetadataUpdaterV2, got %T", appV2)
+		return fmt.Errorf("remote write 1.0 receiver requires a storage.AppenderV2 that also implements storage.ExemplarAppenderV2, got %T", appV2)
 	}
 	app := &remoteWriteAppenderV2{
 		AppenderV2: recv,
