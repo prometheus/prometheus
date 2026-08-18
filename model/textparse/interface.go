@@ -194,7 +194,10 @@ func New(b []byte, contentType string, st *labels.SymbolTable, opts ParserOption
 	}
 
 	if baseParser != nil && opts.ConvertClassicHistogramsToNHCB {
-		baseParser = NewNHCBParser(baseParser, st, opts.KeepClassicOnClassicAndNativeHistograms)
+		// OpenMetricsSkipSTSeries is set to true when the scrape loop
+		// wants start timestamps. NHCBParser uses it to decide if
+		// StartTimestamp calls are necessary.
+		baseParser = NewNHCBParser(baseParser, st, opts.KeepClassicOnClassicAndNativeHistograms, opts.OpenMetricsSkipSTSeries)
 	}
 
 	return baseParser, err
