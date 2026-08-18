@@ -937,9 +937,12 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name     string
-		ecsData  *ecsDataStore
-		expected []*targetgroup.Group
+		name string
+		// configuredClusters is the value of the clusters option. An empty
+		// slice discovers every cluster in the region.
+		configuredClusters []string
+		ecsData            *ecsDataStore
+		expected           []*targetgroup.Group
 	}{
 		{
 			name: "SingleClusterWithTasks",
@@ -1164,6 +1167,70 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 							"__meta_ecs_network_mode":      model.LabelValue("awsvpc"),
 							"__meta_ecs_public_ip":         model.LabelValue("52.4.5.6"),
 							"__meta_ecs_tag_task_Role":     model.LabelValue("batch"),
+						},
+					},
+				},
+			},
+		},
+		{
+			// The ECS API accepts either the short name or the full ARN of a
+			// cluster, so both forms are valid values of the clusters option.
+			name:               "ClusterConfiguredByShortName",
+			configuredClusters: []string{"prod-cluster"},
+			ecsData: &ecsDataStore{
+				region: "us-west-2",
+				clusters: []ecsTypes.Cluster{
+					{
+						ClusterName: strptr("prod-cluster"),
+						ClusterArn:  strptr("arn:aws:ecs:us-west-2:123456789012:cluster/prod-cluster"),
+						Status:      strptr("ACTIVE"),
+					},
+				},
+				services: []ecsTypes.Service{},
+				tasks: []ecsTypes.Task{
+					{
+						TaskArn:           strptr("arn:aws:ecs:us-west-2:123456789012:task/prod-cluster/task-1"),
+						ClusterArn:        strptr("arn:aws:ecs:us-west-2:123456789012:cluster/prod-cluster"),
+						TaskDefinitionArn: strptr("arn:aws:ecs:us-west-2:123456789012:task-definition/prod-task:1"),
+						Group:             strptr("batch-jobs"),
+						LaunchType:        ecsTypes.LaunchTypeFargate,
+						LastStatus:        strptr("RUNNING"),
+						DesiredStatus:     strptr("RUNNING"),
+						HealthStatus:      ecsTypes.HealthStatusHealthy,
+						AvailabilityZone:  strptr("us-west-2a"),
+						Attachments: []ecsTypes.Attachment{
+							{
+								Type: strptr("ElasticNetworkInterface"),
+								Details: []ecsTypes.KeyValuePair{
+									{Name: strptr("subnetId"), Value: strptr("subnet-prod-1")},
+									{Name: strptr("privateIPv4Address"), Value: strptr("10.0.1.100")},
+									{Name: strptr("networkInterfaceId"), Value: strptr("eni-prod-123")},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: []*targetgroup.Group{
+				{
+					Source: "us-west-2",
+					Targets: []model.LabelSet{
+						{
+							model.AddressLabel:             model.LabelValue("10.0.1.100:80"),
+							"__meta_ecs_cluster":           model.LabelValue("prod-cluster"),
+							"__meta_ecs_cluster_arn":       model.LabelValue("arn:aws:ecs:us-west-2:123456789012:cluster/prod-cluster"),
+							"__meta_ecs_task_group":        model.LabelValue("batch-jobs"),
+							"__meta_ecs_task_arn":          model.LabelValue("arn:aws:ecs:us-west-2:123456789012:task/prod-cluster/task-1"),
+							"__meta_ecs_task_definition":   model.LabelValue("arn:aws:ecs:us-west-2:123456789012:task-definition/prod-task:1"),
+							"__meta_ecs_region":            model.LabelValue("us-west-2"),
+							"__meta_ecs_availability_zone": model.LabelValue("us-west-2a"),
+							"__meta_ecs_subnet_id":         model.LabelValue("subnet-prod-1"),
+							"__meta_ecs_ip_address":        model.LabelValue("10.0.1.100"),
+							"__meta_ecs_launch_type":       model.LabelValue("FARGATE"),
+							"__meta_ecs_desired_status":    model.LabelValue("RUNNING"),
+							"__meta_ecs_last_status":       model.LabelValue("RUNNING"),
+							"__meta_ecs_health_status":     model.LabelValue("HEALTHY"),
+							"__meta_ecs_network_mode":      model.LabelValue("awsvpc"),
 						},
 					},
 				},
@@ -1571,6 +1638,7 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 				ec2: ec2Client,
 				cfg: &ECSSDConfig{
 					Region:             tt.ecsData.region,
+					Clusters:           tt.configuredClusters,
 					Port:               80,
 					RequestConcurrency: 1,
 				},
@@ -1618,9 +1686,21 @@ func (m *mockECSClient) ListClusters(_ context.Context, _ *ecs.ListClustersInput
 	}, nil
 }
 
+// resolveClusterARN mirrors the ECS API, which accepts either the short name or
+// the full ARN of a cluster everywhere a cluster is referenced.
+func (m *mockECSClient) resolveClusterARN(identifier string) string {
+	for _, cluster := range m.ecsData.clusters {
+		if cluster.ClusterName != nil && *cluster.ClusterName == identifier {
+			return *cluster.ClusterArn
+		}
+	}
+	return identifier
+}
+
 func (m *mockECSClient) DescribeClusters(_ context.Context, input *ecs.DescribeClustersInput, _ ...func(*ecs.Options)) (*ecs.DescribeClustersOutput, error) {
 	var clusters []ecsTypes.Cluster
-	for _, clusterArn := range input.Clusters {
+	for _, clusterIdentifier := range input.Clusters {
+		clusterArn := m.resolveClusterARN(clusterIdentifier)
 		for _, cluster := range m.ecsData.clusters {
 			if *cluster.ClusterArn == clusterArn {
 				clusters = append(clusters, cluster)
@@ -1636,8 +1716,9 @@ func (m *mockECSClient) DescribeClusters(_ context.Context, input *ecs.DescribeC
 
 func (m *mockECSClient) ListServices(_ context.Context, input *ecs.ListServicesInput, _ ...func(*ecs.Options)) (*ecs.ListServicesOutput, error) {
 	var serviceArns []string
+	clusterArn := m.resolveClusterARN(*input.Cluster)
 	for _, service := range m.ecsData.services {
-		if *service.ClusterArn == *input.Cluster {
+		if *service.ClusterArn == clusterArn {
 			serviceArns = append(serviceArns, *service.ServiceArn)
 		}
 	}
@@ -1649,9 +1730,10 @@ func (m *mockECSClient) ListServices(_ context.Context, input *ecs.ListServicesI
 
 func (m *mockECSClient) DescribeServices(_ context.Context, input *ecs.DescribeServicesInput, _ ...func(*ecs.Options)) (*ecs.DescribeServicesOutput, error) {
 	var services []ecsTypes.Service
+	clusterArn := m.resolveClusterARN(*input.Cluster)
 	for _, serviceArn := range input.Services {
 		for _, service := range m.ecsData.services {
-			if *service.ServiceArn == serviceArn && *service.ClusterArn == *input.Cluster {
+			if *service.ServiceArn == serviceArn && *service.ClusterArn == clusterArn {
 				services = append(services, service)
 				break
 			}
@@ -1665,8 +1747,9 @@ func (m *mockECSClient) DescribeServices(_ context.Context, input *ecs.DescribeS
 
 func (m *mockECSClient) ListTasks(_ context.Context, input *ecs.ListTasksInput, _ ...func(*ecs.Options)) (*ecs.ListTasksOutput, error) {
 	var taskArns []string
+	clusterArn := m.resolveClusterARN(*input.Cluster)
 	for _, task := range m.ecsData.tasks {
-		if *task.ClusterArn == *input.Cluster {
+		if *task.ClusterArn == clusterArn {
 			// If ServiceName is specified, filter by service
 			if input.ServiceName != nil {
 				expectedGroup := "service:" + *input.ServiceName
@@ -1686,9 +1769,10 @@ func (m *mockECSClient) ListTasks(_ context.Context, input *ecs.ListTasksInput, 
 
 func (m *mockECSClient) DescribeTasks(_ context.Context, input *ecs.DescribeTasksInput, _ ...func(*ecs.Options)) (*ecs.DescribeTasksOutput, error) {
 	var tasks []ecsTypes.Task
+	clusterArn := m.resolveClusterARN(*input.Cluster)
 	for _, taskArn := range input.Tasks {
 		for _, task := range m.ecsData.tasks {
-			if *task.TaskArn == taskArn && *task.ClusterArn == *input.Cluster {
+			if *task.TaskArn == taskArn && *task.ClusterArn == clusterArn {
 				tasks = append(tasks, task)
 				break
 			}
