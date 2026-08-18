@@ -662,7 +662,7 @@ func (a *appenderV2) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e ex
 	if ea, ok := a.next.(storage.ExemplarAppenderV2); ok {
 		return ea.AppendExemplar(ref, l, e)
 	}
-	return computeOrCheckRef(ref, l)
+	return a.a.computeOrCheckRef(ref, l)
 }
 
 func (a *appenderV2) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
@@ -694,5 +694,5 @@ func (a *appenderV2) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m me
 	if mu, ok := a.next.(storage.MetadataUpdaterV2); ok {
 		return mu.UpdateMetadata(ref, l, m)
 	}
-	return computeOrCheckRef(ref, l)
+	return a.a.computeOrCheckRef(ref, l)
 }
