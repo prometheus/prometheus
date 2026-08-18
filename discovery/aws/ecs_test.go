@@ -1237,6 +1237,95 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 			},
 		},
 		{
+			// A cluster deleted between ListTasks and DescribeClusters is
+			// reported as a failure by DescribeClusters, so it has tasks but no
+			// cluster to describe them with.
+			name: "ClusterMissingFromDescribeClusters",
+			configuredClusters: []string{
+				"arn:aws:ecs:us-west-2:123456789012:cluster/prod-cluster",
+				"arn:aws:ecs:us-west-2:123456789012:cluster/deleted-cluster",
+			},
+			ecsData: &ecsDataStore{
+				region: "us-west-2",
+				clusters: []ecsTypes.Cluster{
+					{
+						ClusterName: strptr("prod-cluster"),
+						ClusterArn:  strptr("arn:aws:ecs:us-west-2:123456789012:cluster/prod-cluster"),
+						Status:      strptr("ACTIVE"),
+					},
+				},
+				services: []ecsTypes.Service{},
+				tasks: []ecsTypes.Task{
+					{
+						TaskArn:           strptr("arn:aws:ecs:us-west-2:123456789012:task/prod-cluster/task-1"),
+						ClusterArn:        strptr("arn:aws:ecs:us-west-2:123456789012:cluster/prod-cluster"),
+						TaskDefinitionArn: strptr("arn:aws:ecs:us-west-2:123456789012:task-definition/prod-task:1"),
+						Group:             strptr("batch-jobs"),
+						LaunchType:        ecsTypes.LaunchTypeFargate,
+						LastStatus:        strptr("RUNNING"),
+						DesiredStatus:     strptr("RUNNING"),
+						HealthStatus:      ecsTypes.HealthStatusHealthy,
+						AvailabilityZone:  strptr("us-west-2a"),
+						Attachments: []ecsTypes.Attachment{
+							{
+								Type: strptr("ElasticNetworkInterface"),
+								Details: []ecsTypes.KeyValuePair{
+									{Name: strptr("subnetId"), Value: strptr("subnet-prod-1")},
+									{Name: strptr("privateIPv4Address"), Value: strptr("10.0.1.100")},
+									{Name: strptr("networkInterfaceId"), Value: strptr("eni-prod-123")},
+								},
+							},
+						},
+					},
+					{
+						TaskArn:           strptr("arn:aws:ecs:us-west-2:123456789012:task/deleted-cluster/task-1"),
+						ClusterArn:        strptr("arn:aws:ecs:us-west-2:123456789012:cluster/deleted-cluster"),
+						TaskDefinitionArn: strptr("arn:aws:ecs:us-west-2:123456789012:task-definition/deleted-task:1"),
+						Group:             strptr("batch-jobs"),
+						LaunchType:        ecsTypes.LaunchTypeFargate,
+						LastStatus:        strptr("RUNNING"),
+						DesiredStatus:     strptr("RUNNING"),
+						HealthStatus:      ecsTypes.HealthStatusHealthy,
+						AvailabilityZone:  strptr("us-west-2a"),
+						Attachments: []ecsTypes.Attachment{
+							{
+								Type: strptr("ElasticNetworkInterface"),
+								Details: []ecsTypes.KeyValuePair{
+									{Name: strptr("subnetId"), Value: strptr("subnet-deleted-1")},
+									{Name: strptr("privateIPv4Address"), Value: strptr("10.0.2.100")},
+									{Name: strptr("networkInterfaceId"), Value: strptr("eni-deleted-123")},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: []*targetgroup.Group{
+				{
+					Source: "us-west-2",
+					Targets: []model.LabelSet{
+						{
+							model.AddressLabel:             model.LabelValue("10.0.1.100:80"),
+							"__meta_ecs_cluster":           model.LabelValue("prod-cluster"),
+							"__meta_ecs_cluster_arn":       model.LabelValue("arn:aws:ecs:us-west-2:123456789012:cluster/prod-cluster"),
+							"__meta_ecs_task_group":        model.LabelValue("batch-jobs"),
+							"__meta_ecs_task_arn":          model.LabelValue("arn:aws:ecs:us-west-2:123456789012:task/prod-cluster/task-1"),
+							"__meta_ecs_task_definition":   model.LabelValue("arn:aws:ecs:us-west-2:123456789012:task-definition/prod-task:1"),
+							"__meta_ecs_region":            model.LabelValue("us-west-2"),
+							"__meta_ecs_availability_zone": model.LabelValue("us-west-2a"),
+							"__meta_ecs_subnet_id":         model.LabelValue("subnet-prod-1"),
+							"__meta_ecs_ip_address":        model.LabelValue("10.0.1.100"),
+							"__meta_ecs_launch_type":       model.LabelValue("FARGATE"),
+							"__meta_ecs_desired_status":    model.LabelValue("RUNNING"),
+							"__meta_ecs_last_status":       model.LabelValue("RUNNING"),
+							"__meta_ecs_health_status":     model.LabelValue("HEALTHY"),
+							"__meta_ecs_network_mode":      model.LabelValue("awsvpc"),
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "TaskWithBridgeNetworking",
 			ecsData: &ecsDataStore{
 				region: "us-west-2",
