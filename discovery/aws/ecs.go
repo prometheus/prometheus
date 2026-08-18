@@ -357,7 +357,7 @@ func (d *ECSDiscovery) listClusterARNs(ctx context.Context) ([]string, error) {
 	return clusterARNs, nil
 }
 
-// describeClusters returns a map of cluster ARN to a slice of clusters.
+// describeClusters returns a map of the requested cluster identifier to its cluster.
 // Uses concurrent requests limited by RequestConcurrency to respect AWS API throttling.
 // Clusters are described in batches of 100 to respect AWS API limits (DescribeClusters allows up to 100 clusters per call).
 func (d *ECSDiscovery) describeClusters(ctx context.Context, clusters []string) (map[string]types.Cluster, error) {
@@ -377,10 +377,20 @@ func (d *ECSDiscovery) describeClusters(ctx context.Context, clusters []string) 
 			}
 
 			for _, cluster := range resp.Clusters {
-				if cluster.ClusterArn != nil {
-					mu.Lock()
-					clusterMap[*cluster.ClusterArn] = cluster
-					mu.Unlock()
+				if cluster.ClusterArn == nil {
+					continue
+				}
+				// A cluster can be requested by its short name or by its ARN,
+				// but is always described with its ARN. Index it by the
+				// identifier it was requested with, as the rest of the
+				// discovery joins on the identifiers it was given.
+				for _, identifier := range batch {
+					if identifier == *cluster.ClusterArn || (cluster.ClusterName != nil && identifier == *cluster.ClusterName) {
+						mu.Lock()
+						clusterMap[identifier] = cluster
+						mu.Unlock()
+						break
+					}
 				}
 			}
 			return nil
