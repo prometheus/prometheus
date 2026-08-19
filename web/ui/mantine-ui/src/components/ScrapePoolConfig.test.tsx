@@ -1,7 +1,7 @@
 // Copyright The Prometheus Authors
 
 import { MantineProvider } from "@mantine/core";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { useSuspenseAPIQuery } from "../api/api";
@@ -42,20 +42,23 @@ describe("ScrapePoolConfig", () => {
   });
 
   it("loads the selected pool only when expanded", () => {
-    render(
+    const { rerender } = render(
       <MantineProvider>
         <MemoryRouter>
-          <ScrapePoolConfig pool="imported-job" />
+          <ScrapePoolConfig pool="imported-job" expanded={false} />
         </MemoryRouter>
       </MantineProvider>,
     );
 
     expect(useSuspenseAPIQuery).not.toHaveBeenCalled();
 
-    const control = screen.getByRole("button", {
-      name: "Scrape configuration",
-    });
-    fireEvent.click(control);
+    rerender(
+      <MantineProvider>
+        <MemoryRouter>
+          <ScrapePoolConfig pool="imported-job" expanded />
+        </MemoryRouter>
+      </MantineProvider>,
+    );
 
     expect(useSuspenseAPIQuery).toHaveBeenCalledWith({
       path: "/scrape_pools/config",
@@ -65,7 +68,14 @@ describe("ScrapePoolConfig", () => {
       "job_name: imported-job",
     );
 
-    fireEvent.click(control);
+    rerender(
+      <MantineProvider>
+        <MemoryRouter>
+          <ScrapePoolConfig pool="imported-job" expanded={false} />
+        </MemoryRouter>
+      </MantineProvider>,
+    );
+
     expect(screen.queryByTestId("scrape-config-yaml")).not.toBeInTheDocument();
   });
 });

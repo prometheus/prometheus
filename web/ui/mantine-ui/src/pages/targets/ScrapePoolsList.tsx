@@ -13,7 +13,7 @@ import { KVSearch } from "@nexucis/kvsearch";
 import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import { useSuspenseAPIQuery } from "../../api/api";
 import { Target, TargetsResult } from "../../api/responseTypes/targets";
-import React, { FC, memo, useMemo } from "react";
+import React, { FC, memo, useMemo, useState } from "react";
 import { useLocalStorage } from "@mantine/hooks";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import {
@@ -158,6 +158,9 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
     const { collapsedPools, showLimitAlert } = useAppSelector(
       (state) => state.targetsPage
     );
+    const [expandedConfigs, setExpandedConfigs] = useState<
+      Record<string, boolean>
+    >({});
 
     const allPools = useMemo(
       () =>
@@ -220,6 +223,8 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
         >
           {shownPoolNames.map((poolName) => {
             const pool = allPools[poolName];
+            const configId = `scrape-config-${poolName}`;
+            const configExpanded = Boolean(expandedConfigs[poolName]);
             return (
               <Accordion.Item
                 key={poolName}
@@ -230,6 +235,23 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                   <Group wrap="nowrap" justify="space-between" mr="lg">
                     <Text>{poolName}</Text>
                     <Group gap="xs">
+                      <Anchor
+                        component="button"
+                        type="button"
+                        size="xs"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setExpandedConfigs((previous) => ({
+                            ...previous,
+                            [poolName]: !previous[poolName],
+                          }));
+                        }}
+                        aria-expanded={configExpanded}
+                        aria-controls={configId}
+                      >
+                        {configExpanded ? "Hide config" : "Show config"}
+                      </Anchor>
                       <Text c="gray.6">
                         {pool.upCount} / {pool.count} up
                       </Text>
@@ -259,7 +281,11 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                   </Group>
                 </Accordion.Control>
                 <Accordion.Panel>
-                  <ScrapePoolConfig pool={poolName} />
+                  <ScrapePoolConfig
+                    pool={poolName}
+                    expanded={configExpanded}
+                    id={configId}
+                  />
                   {pool.count === 0 ? (
                     <Alert title="No targets" icon={<IconInfoCircle />}>
                       No active targets in this scrape pool.
