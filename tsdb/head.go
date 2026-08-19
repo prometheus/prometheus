@@ -2144,28 +2144,53 @@ func (h *Head) onChunkCreated(series *memSeries, prevHeadChunkCount uint32) {
 // since holding the lock during an append could delay the next scrape or cause query timeouts.
 func (h *Head) mmapHeadChunks() {
 	var count int
+	// candidates is reused across stripes: mmapHeadChunks only ever runs on
+	// one goroutine at a time, so it's safe to grow it once and keep reusing
+	// the backing array instead of allocating a new slice per stripe.
+	var candidates []*memSeries
 	for i := range h.series.size {
-		count += h.mmapHeadChunksInStripe(i)
+		count += h.mmapHeadChunksInStripe(i, &candidates)
 	}
 	h.metrics.mmapChunksTotal.Add(float64(count))
 }
 
 // mmapHeadChunksInStripe m-maps chunks for the series in a single stripe that
-// need it. It uses deferred unlocking so that locks are released even if
-// mmapChunks panics (e.g. via handleChunkWriteError), preventing deadlocks
-// during cleanup.
-func (h *Head) mmapHeadChunksInStripe(i int) (count int) {
-	if h.series.mmapReady[i].Load() == 0 {
+// need it.
+func (h *Head) mmapHeadChunksInStripe(i int, candidates *[]*memSeries) (count int) {
+	ready := int(h.series.mmapReady[i].Load())
+	if ready == 0 {
 		return 0 // No series in this stripe need mmapping.
 	}
 
-	h.series.locks[i].RLock()
-	defer h.series.locks[i].RUnlock()
+	buf := (*candidates)[:0]
+	if cap(buf) < ready {
+		buf = make([]*memSeries, 0, ready)
+	}
 
-	for _, series := range h.series.series[i] {
-		if series.headChunkCount.Load() < 2 { // < 2 means 0 or 1 head chunks, nothing to mmap.
-			continue
+	for {
+		var overflow bool
+		h.series.locks[i].RLock()
+		for _, series := range h.series.series[i] {
+			if series.headChunkCount.Load() < 2 { // < 2 means 0 or 1 head chunks, nothing to mmap.
+				continue
+			}
+			if len(buf) == cap(buf) {
+				// More series became mmap-ready after ready was read. Avoid growing the buffer while holding the RLock.
+				ready = len(h.series.series[i])
+				overflow = true
+				break
+			}
+			buf = append(buf, series)
 		}
+		h.series.locks[i].RUnlock()
+		if !overflow {
+			break
+		}
+		buf = make([]*memSeries, 0, ready)
+	}
+	*candidates = buf
+
+	for _, series := range buf {
 		n := h.mmapSeriesChunks(series)
 		if n > 0 {
 			count += n
@@ -2581,6 +2606,8 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		if headChunkCount >= 2 {
 			s.decMmapReady(series.ref)
 		}
+		// Detach the head chunks now to avoid mmaping an evicted series.
+		series.setHeadChunks(nil, 0)
 		if hashShard != stripe {
 			s.locks[stripe].Lock()
 			defer s.locks[stripe].Unlock()
