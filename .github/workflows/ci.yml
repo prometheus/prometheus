@@ -106,8 +106,9 @@ jobs:
       # Enforce the Go version.
       GOTOOLCHAIN: local
     container:
-      # The go version in this image should be N-1 wrt test_go.
-      image: quay.io/prometheus/golang-builder:1.25-base
+      # The go version in this image should be the oldest Go version upstream
+      # still supports, which scripts/check-go-mod-version.sh enforces.
+      image: quay.io/prometheus/golang-builder:1.26-base
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
