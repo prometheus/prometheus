@@ -270,6 +270,8 @@ loop:
 			if sl.synthesizeST && st == 0 {
 				st, val, h, fh, skipAppend, stCache = sl.checkAndSynthesizeStartTime(st, lset, ce, lastMFName, val, h, fh, t)
 				appOpts.RejectOutOfOrder = true
+			} else if sl.newSeriesZeroSample && st == 0 && !seriesCached {
+				st = sl.seedNewSeriesZeroSampleST(lastMFName, lset, t)
 			}
 
 			for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
@@ -498,4 +500,35 @@ func (sl *scrapeLoop) checkAndSynthesizeStartTime(
 	}
 
 	return st, val, h, fh, skipAppend, c
+}
+
+// seedNewSeriesZeroSampleST returns a synthetic start timestamp, half a scrape interval before t,
+// for a counter or histogram series that just appeared for the first time in this scrape loop. It
+// returns 0 if the series isn't eligible (wrong type, or the scrape interval is too short to halve).
+//
+// The returned start timestamp only turns into a stored zero sample if the storage layer
+// interprets start timestamps that way, e.g. tsdb's EnableSTAsZeroSample
+// ('created-timestamp-zero-ingestion'). See EnableNewSeriesZeroSample on scrape.Options.
+//
+// NOTE: Like checkAndSynthesizeStartTime, "first time in this scrape loop" is based on the local
+// per-target series cache, not global storage state. A scrape loop restart (e.g. on reload)
+// forgets which series it already saw, so a series that already has real samples elsewhere in
+// storage can be treated as new here and get a stray zero sample seeded again; the storage
+// layer's usual out-of-order handling makes this best-effort rather than incorrect.
+func (sl *scrapeLoop) seedNewSeriesZeroSampleST(lastMFName []byte, lset labels.Labels, t int64) int64 {
+	half := sl.interval.Milliseconds() / 2
+	if half <= 0 {
+		return 0
+	}
+
+	meta, ok := sl.cache.GetMetadata(string(lastMFName))
+	if !ok || !isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, meta.Type) {
+		return 0
+	}
+	switch meta.Type {
+	case model.MetricTypeCounter, model.MetricTypeHistogram:
+		return t - half
+	default:
+		return 0
+	}
 }

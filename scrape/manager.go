@@ -140,6 +140,15 @@ type Options struct {
 	// SynthesizeST enables the synthesis of start timestamp for cumulative metrics.
 	SynthesizeST bool
 
+	// EnableNewSeriesZeroSample seeds a synthetic start timestamp, half a scrape interval
+	// before the first sample, for newly appeared counter and histogram series that don't
+	// already carry a parsed start timestamp. This only has an effect (materializes into a
+	// stored zero sample) when combined with a storage layer that turns start timestamps into
+	// zero samples, e.g. tsdb's EnableSTAsZeroSample ('created-timestamp-zero-ingestion').
+	//
+	// This only applies to the AppenderV2 flow.
+	EnableNewSeriesZeroSample bool
+
 	// EnableTypeAndUnitLabels represents type-and-unit-labels feature flag.
 	EnableTypeAndUnitLabels bool
 
