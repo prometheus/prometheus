@@ -1101,10 +1101,11 @@ func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 
 	// NOTE: Eventually wal sample and appendable sample should be the same.
 	type appendableSample struct {
-		st, t int64
-		v     float64
-		lbls  labels.Labels
-		h     *histogram.Histogram
+		st, t           int64
+		v               float64
+		lbls            labels.Labels
+		h               *histogram.Histogram
+		onlyIfNewSeries bool
 	}
 
 	testHistograms := tsdbutil.GenerateTestHistograms(2)
@@ -1199,6 +1200,20 @@ func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 			},
 		},
 		{
+			name: "OnlyIfNewSeries suppresses st zero sample for pre-existing series/float",
+			inputSamples: []appendableSample{
+				{t: 100, v: 10, lbls: defLbls},
+				{t: 300, v: 20, st: 150, lbls: defLbls, onlyIfNewSeries: true},
+			},
+			// st=150 is in order relative to the t=100 sample, so absent the
+			// OnlyIfNewSeries gate the zero sample would be injected even
+			// though the series already existed.
+			expectedSamples: []walSample{
+				{t: 100, f: 10, lbls: defLbls, ref: 1},
+				{t: 300, f: 20, lbls: defLbls, ref: 1},
+			},
+		},
+		{
 			name: "ct+normal then OOO sample/float",
 			inputSamples: []appendableSample{
 				{t: 60_000, st: 40_000, v: 10, lbls: defLbls},
@@ -1229,7 +1244,7 @@ func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 			for _, sample := range tc.inputSamples {
 				// Simulate one sample per series logic we have in all our ingestion paths in Prometheus.
 				app := s.AppenderV2(t.Context())
-				_, err := app.Append(0, sample.lbls, sample.st, sample.t, sample.v, sample.h, nil, storage.AOptions{})
+				_, err := app.Append(0, sample.lbls, sample.st, sample.t, sample.v, sample.h, nil, storage.AOptions{OnlyIfNewSeries: sample.onlyIfNewSeries})
 				require.NoError(t, err)
 				require.NoError(t, app.Commit())
 			}
