@@ -180,13 +180,19 @@ type AppenderV2 interface {
 	//   start to extend the id with metadata one day.
 	Append(ref SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts AppendV2Options) (SeriesRef, error)
 
+	ExemplarAppenderV2
+}
+
+// ExemplarAppenderV2 provides an interface for adding exemplars to exemplar storage, which
+// within Prometheus is in-memory only.
+type ExemplarAppenderV2 interface {
 	// AppendExemplars appends one or more exemplars for the series identified by ref and/or ls.
 	//
 	// AppendExemplars MUST be called after the corresponding sample Append for the same series
 	// in the same or a later transaction. Implementations MUST NOT create a new series for
 	// exemplars alone; if the series does not exist, AppendExemplars MUST return an error.
 	//
-	// ref and ls follow the same contract as Append.
+	// ref and ls follow the same contract as AppenderV2.Append.
 	//
 	// exemplars MUST be sorted by Exemplar.Ts. The exemplars slice is unsafe for reuse.
 	// Duplicate exemplar errors MUST be ignored by implementations (not returned).
