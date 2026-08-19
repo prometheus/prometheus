@@ -1945,6 +1945,15 @@ func TestOOOTruncateChunksBefore_Wrap(t *testing.T) {
 	}
 }
 
+func TestCutNewHeadChunk_PanicsAtIDSpaceBound(t *testing.T) {
+	s := newMemSeries(labels.FromStrings("a", "b"), 1, 0, true, false)
+	s.headChunkCount.Store(oooChunkIDMask - 1)
+
+	require.Panics(t, func() {
+		s.cutNewHeadChunk(0, chunkenc.EncXOR, 1000)
+	})
+}
+
 func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
 	for _, enableSTStorage := range []bool{false, true} {
 		for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {

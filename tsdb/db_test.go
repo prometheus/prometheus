@@ -11617,3 +11617,80 @@ func testOOOCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeScenari
 	sort.Slice(expSamples, func(i, j int) bool { return expSamples[i].T() < expSamples[j].T() })
 	requireEqualSeries(t, map[string][]chunks.Sample{l.String(): expSamples}, seriesSet, true)
 }
+
+// TestInOrderCompactionAcrossChunkIDWrap verifies that queries and head
+// compaction work on a series whose in-order chunk IDs wrap past the 23-bit
+// boundary.
+func TestInOrderCompactionAcrossChunkIDWrap(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testInOrderCompactionAcrossChunkIDWrap(t, scenario)
+		})
+	}
+}
+
+func testInOrderCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeScenario) {
+	const chunkRange = 100
+	const maxT = 500
+
+	db := newTestDB(t, withRngs(chunkRange))
+	db.DisableCompactions()
+
+	l := labels.FromStrings("l", "v1")
+
+	// Create the series, then seed firstChunkID at the top of the 23-bit ID
+	// space to emulate a long-lived series that has already truncated ~8M
+	// chunks. Every chunk appended afterwards is created with an ID at or past
+	// the boundary, so their stored HeadChunkRef IDs must wrap.
+	app := db.Appender(context.Background())
+	ref, _, err := scenario.appendFunc(app, l, 0, 0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	firstChunkIDSeed := chunks.HeadChunkID(oooChunkIDMask - 1)
+	ms := db.head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.NotNil(t, ms)
+	ms.Lock()
+	ms.firstChunkID = firstChunkIDSeed
+	ms.Unlock()
+
+	newestChunkID := func() chunks.HeadChunkID {
+		ms.Lock()
+		defer ms.Unlock()
+		return ms.headChunkID(len(ms.mmappedChunks) + int(ms.headChunkCount.Load()) - 1)
+	}
+	newestBeforeAppends := newestChunkID()
+
+	expSamples := []chunks.Sample{scenario.sampleFunc(0, 0)}
+	app = db.Appender(context.Background())
+	for ts := int64(10); ts < maxT; ts += 10 {
+		_, _, err = scenario.appendFunc(app, l, ts, ts)
+		require.NoError(t, err)
+		expSamples = append(expSamples, scenario.sampleFunc(ts, ts))
+	}
+	require.NoError(t, app.Commit())
+	sort.Slice(expSamples, func(i, j int) bool { return expSamples[i].T() < expSamples[j].T() })
+
+	require.Less(t, newestChunkID(), newestBeforeAppends, "chunk IDs should have wrapped past the boundary")
+
+	matcher := labels.MustNewMatcher(labels.MatchEqual, "l", "v1")
+
+	// Queries must resolve the wrapped chunk IDs while the data is in the head.
+	querier, err := db.Querier(0, maxT)
+	require.NoError(t, err)
+	requireEqualSeries(t, map[string][]chunks.Sample{l.String(): expSamples}, query(t, querier, matcher), true)
+
+	// Head compaction reads every chunk through the same wrapped IDs, then drops
+	// the compacted ones via truncateChunksBefore, wrapping firstChunkID too.
+	require.NoError(t, db.Compact(context.Background()))
+
+	ms.Lock()
+	firstChunkIDAfter := ms.firstChunkID
+	ms.Unlock()
+	require.Less(t, firstChunkIDAfter, firstChunkIDSeed, "firstChunkID should have wrapped past 0")
+
+	// The compacted block must contain every sample.
+	querier, err = db.Querier(0, maxT)
+	require.NoError(t, err)
+	requireEqualSeries(t, map[string][]chunks.Sample{l.String(): expSamples}, query(t, querier, matcher), true)
+}

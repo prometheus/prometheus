@@ -501,6 +501,75 @@ func TestMemSeries_chunk_FastPath(t *testing.T) {
 	require.ErrorIs(t, err, storage.ErrNotFound)
 }
 
+// TestMemSeries_chunk_ResolveAfterWrap checks that chunk IDs keep resolving to
+// the same chunks as truncation advances firstChunkID and wraps it back past 0.
+// Truncated IDs must report ErrNotFound rather than aliasing onto a chunk that
+// is still live.
+func TestMemSeries_chunk_ResolveAfterWrap(t *testing.T) {
+	const chunkRange int64 = 100
+	const chunkStep int64 = 5
+	const numChunks = 20
+
+	dir := t.TempDir()
+	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, chunkDiskMapper.Close()) })
+	memChunkPool := &sync.Pool{New: func() any { return &memChunk{} }}
+
+	series := newMemSeries(labels.EmptyLabels(), 1, 0, true, false)
+	series.firstChunkID = chunks.HeadChunkID(oooChunkIDMask - 10)
+
+	for ts := int64(0); ts < chunkRange*numChunks; ts += chunkStep {
+		ok, _ := series.append(0, ts, float64(ts), 0, chunkOpts{
+			chunkDiskMapper: chunkDiskMapper,
+			chunkRange:      chunkRange,
+			samplesPerChunk: DefaultSamplesPerChunk,
+		})
+		require.True(t, ok, "sample append failed")
+	}
+	series.mmapChunks(chunkDiskMapper)
+	require.Len(t, series.mmappedChunks, numChunks-1, "wrong number of mmapped chunks")
+	require.Equal(t, 1, series.headChunks.len(), "wrong number of head chunks")
+
+	// Chunk i covers [i*chunkRange, (i+1)*chunkRange). Positions 10+ take IDs
+	// past the 23-bit boundary, so they wrap back to 0, 1, 2, ...
+	ids := make([]chunks.HeadChunkID, numChunks)
+	for i := range ids {
+		ids[i] = series.headChunkID(i)
+		require.Zero(t, ids[i]&oooChunkIDMask, "pos %d: ID must not set the OOO flag", i)
+	}
+	require.Equal(t, chunks.HeadChunkID(oooChunkIDMask-1), ids[9], "pos 9 should hold the last ID before the boundary")
+	require.Equal(t, chunks.HeadChunkID(0), ids[10], "pos 10 should have wrapped to 0")
+
+	requireResolves := func(t *testing.T, firstLive int) {
+		t.Helper()
+		for pos := range numChunks {
+			chk, _, _, err := series.chunk(ids[pos], chunkDiskMapper, memChunkPool, nil)
+			if pos < firstLive {
+				require.ErrorIs(t, err, storage.ErrNotFound, "pos %d was truncated and must not resolve", pos)
+				continue
+			}
+			require.NoError(t, err, "pos %d should resolve", pos)
+			require.Equal(t, int64(pos)*chunkRange, chk.minTime, "pos %d resolved to the wrong chunk", pos)
+		}
+	}
+
+	requireResolves(t, 0)
+
+	// Truncate positions 0-3. firstChunkID stays near the top of the space, so
+	// the surviving wrapped IDs (positions 10+) are numerically below it.
+	removed := series.truncateChunksBefore(chunkRange*4, 0)
+	require.Equal(t, 4, removed)
+	require.Equal(t, chunks.HeadChunkID(oooChunkIDMask-6), series.firstChunkID)
+	requireResolves(t, 4)
+
+	// Truncate positions 4-11, which carries firstChunkID itself past 0.
+	removed = series.truncateChunksBefore(chunkRange*12, 0)
+	require.Equal(t, 8, removed)
+	require.Equal(t, chunks.HeadChunkID(2), series.firstChunkID)
+	requireResolves(t, 12)
+}
+
 func TestHeadIndexReader_PostingsForLabelMatching(t *testing.T) {
 	testPostingsForLabelMatching(t, 0, func(t *testing.T, series []labels.Labels) IndexReader {
 		opts := DefaultHeadOptions()

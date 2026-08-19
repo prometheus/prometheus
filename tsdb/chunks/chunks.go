@@ -76,10 +76,10 @@ func (p HeadChunkRef) Unpack() (HeadSeriesRef, HeadChunkID) {
 }
 
 // HeadChunkID refers to a specific chunk in a series (memSeries) in the Head.
-// Each memSeries has its own number to refer to its chunks: it is monotonically
-// increasing for in-order chunks, while out-of-order chunk IDs wrap around modulo
-// 2^23 (see oooHeadChunkID in tsdb/head_read.go), so they only increase between
-// wrap-arounds.
+// Each memSeries has its own number to refer to its chunks: both in-order and
+// out-of-order chunk IDs wrap around modulo 2^23 (see headChunkID and
+// oooHeadChunkID in tsdb/head_read.go), so they only increase between
+// wrap-arounds. All arithmetic on them is modulo 2^23.
 // If the HeadChunkID value is...
 //   - memSeries.firstChunkID+len(memSeries.mmappedChunks), it's the head chunk.
 //   - less than the above, but >= memSeries.firstID, then it's
@@ -89,7 +89,7 @@ func (p HeadChunkRef) Unpack() (HeadSeriesRef, HeadChunkID) {
 // "open" (accepting appends) instance. *memChunk is a linked list and memChunk.next pointer
 // might link to the older *memChunk instance.
 // If there are multiple *memChunk instances linked to each other from memSeries.headChunks
-// they will be m-mapped as soon as possible leaving only "open" *memChunk instance.
+// they will be m-mapped as soon as possible leaving only one "open" *memChunk instance.
 //
 // Example:
 // assume a memSeries.firstChunkID=7 and memSeries.mmappedChunks=[p5,p6,p7,p8,p9].
