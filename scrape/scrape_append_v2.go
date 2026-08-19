@@ -201,10 +201,10 @@ loop:
 			t = *parsedTimestamp
 		}
 
-		if sl.cache.getDropped(met) {
+		slot, ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
+		if seriesCached && slot.dropped() {
 			continue
 		}
-		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
 		var (
 			ref  storage.SeriesRef
 			hash uint64
@@ -326,13 +326,13 @@ loop:
 				// Append sample to the storage.
 				ref, err = app.Append(ref, lset, st, t, val, h, fh, appOpts)
 				if err == nil && ce != nil && ref != 0 {
-					sl.cache.updateRef(ce, ref)
+					sl.cache.updateRef(slot, ref)
 				}
 			}
 		}
 		if err == nil {
 			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil && ce.ref != 0 {
-				sl.cache.trackStaleness(ce.ref, ce)
+				sl.cache.trackStaleness(ce.ref, slot)
 			}
 		}
 
@@ -349,7 +349,7 @@ loop:
 		// If a series was new, but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
-			ce = sl.cache.addRef(met, ref, lset, hash)
+			slot, ce = sl.cache.addRef(met, ref, lset, hash)
 
 			if sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
@@ -373,7 +373,7 @@ loop:
 		// - Or we are synthesizing start times (stCache != nil), so we can clear stCache if it goes stale.
 		shouldTrackStaleness := parsedTimestamp == nil || sl.trackTimestampsStaleness || stCache != nil
 		if ce != nil && ce.ref != 0 && shouldTrackStaleness && sampleAdded {
-			sl.cache.trackStaleness(ce.ref, ce)
+			sl.cache.trackStaleness(ce.ref, slot)
 		}
 
 		// Increment added even if there's an error so we correctly report the
@@ -415,7 +415,7 @@ loop:
 }
 
 func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float64, b *labels.Builder, rejectOOO bool) (err error) {
-	ce, ok, _ := sl.cache.get(s.name)
+	_, ce, ok, _ := sl.cache.get(s.name)
 	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {
@@ -438,7 +438,7 @@ func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float
 	switch {
 	case err == nil:
 		if !ok {
-			sl.cache.addRef(s.name, ref, lset, lset.Hash())
+			_, _ = sl.cache.addRef(s.name, ref, lset, lset.Hash())
 		}
 		return nil
 	case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):

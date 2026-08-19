@@ -25,6 +25,7 @@ import (
 	"log/slog"
 	"maps"
 	"math"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -2560,6 +2561,166 @@ func benchScrapeLoopAppend(
 	}
 }
 
+// benchScrapeOrders returns deterministic permutations, starting with identity.
+func benchScrapeOrders(numSeries, numOrders int) [][]int {
+	rnd := rand.New(rand.NewPCG(0, 0))
+
+	orders := make([][]int, 0, numOrders)
+	for i := range numOrders {
+		order := make([]int, numSeries)
+		for j := range order {
+			order[j] = j
+		}
+		if i > 0 {
+			rnd.Shuffle(len(order), func(a, b int) { order[a], order[b] = order[b], order[a] })
+		}
+		orders = append(orders, order)
+	}
+	return orders
+}
+
+// BenchmarkScrapeCacheGet benchmarks cache lookups by cardinality, series order,
+// and whether relabeling dropped the series.
+//
+// Recommended CLI invocation:
+/*
+	export bench=cacheGet && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeCacheGet' \
+		-benchtime 2s -count 6 -cpu 2 -timeout 999m \
+		| tee ${bench}.txt
+*/
+func BenchmarkScrapeCacheGet(b *testing.B) {
+	for _, numSeries := range []int{100, 2000, 100000} {
+		for _, order := range []string{"stable", "churn", "random"} {
+			for _, dropped := range []bool{false, true} {
+				benchScrapeCacheGet(b, numSeries, order, dropped)
+			}
+		}
+	}
+}
+
+func benchScrapeCacheGet(b *testing.B, numSeries int, order string, dropped bool) {
+	const numOrders = 8
+
+	b.Run(fmt.Sprintf("numSeries=%v/order=%v/dropped=%v", numSeries, order, dropped), func(b *testing.B) {
+		// One extra series so that churn has something to swap in.
+		mets := make([][]byte, 0, numSeries+1)
+		for i := range numSeries + 1 {
+			mets = append(mets, fmt.Appendf(nil, "metric_a{foo=%q,bar=%q}", strconv.Itoa(i), strconv.Itoa(i*100)))
+		}
+
+		orders := benchScrapeOrders(numSeries, numOrders)
+		if order != "random" {
+			orders = orders[:1]
+		}
+
+		c := newScrapeCache(newTestScrapeMetrics(b))
+		scrape := func(run int) {
+			swapped := numSeries - 1
+			if order == "churn" {
+				// Replace one series per scrape.
+				swapped = run % numSeries
+			}
+
+			for _, i := range orders[run%len(orders)] {
+				met := mets[i]
+				if i == swapped {
+					met = mets[numSeries]
+				}
+				if _, _, ok, _ := c.get(met); ok {
+					continue
+				}
+				if dropped {
+					c.addDropped(met)
+				} else {
+					c.addRef(met, storage.SeriesRef(i+1), labels.EmptyLabels(), 0)
+				}
+			}
+			c.iterDone(true)
+		}
+
+		// Learn the order and release the map for stable input.
+		for run := range numOrders + orderedRunsBeforeRelease {
+			scrape(run)
+		}
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for run := 0; b.Loop(); run++ {
+			scrape(run)
+		}
+	})
+}
+
+// makeTestGaugesInOrder returns gauge series in the given order.
+func makeTestGaugesInOrder(order []int) []byte {
+	sb := bytes.Buffer{}
+	sb.WriteString("# TYPE metric_a gauge\n")
+	sb.WriteString("# HELP metric_a help text\n")
+	for _, i := range order {
+		_, _ = fmt.Fprintf(&sb, "metric_a{foo=\"%d\",bar=\"%d\"} 1\n", i, i*100)
+	}
+	sb.WriteString("# EOF\n")
+	return sb.Bytes()
+}
+
+// BenchmarkScrapeLoopAppendSeriesOrder benchmarks append with stable and random
+// series order.
+//
+// Recommended CLI invocation:
+/*
+	export bench=appendOrder && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeLoopAppendSeriesOrder' \
+		-benchtime 2s -count 6 -cpu 2 -timeout 999m \
+		| tee ${bench}.txt
+*/
+func BenchmarkScrapeLoopAppendSeriesOrder(b *testing.B) {
+	const (
+		numSeries = 2000
+		numOrders = 8
+	)
+
+	for _, appV2 := range []bool{false, true} {
+		for _, order := range []string{"stable", "random"} {
+			b.Run(fmt.Sprintf("appV2=%v/order=%v", appV2, order), func(b *testing.B) {
+				orders := benchScrapeOrders(numSeries, numOrders)
+				if order == "stable" {
+					orders = orders[:1]
+				}
+				scrapes := make([][]byte, 0, len(orders))
+				for _, o := range orders {
+					scrapes = append(scrapes, makeTestGaugesInOrder(o))
+				}
+
+				sl, _ := newTestScrapeLoop(b, withAppendable(teststorage.NewAppendable().SkipRecording(true), appV2))
+				ts := time.Time{}
+				appendScrape := func(run int) {
+					app := sl.appender()
+					ts = ts.Add(time.Second)
+					if _, _, _, err := app.append(scrapes[run%len(scrapes)], "text/plain", ts); err != nil {
+						b.Fatal(err)
+					}
+					// Reset the appender without retaining benchmark data.
+					if err := app.Rollback(); err != nil {
+						b.Fatal(err)
+					}
+				}
+
+				// Learn the order and release the map for stable input.
+				for run := range numOrders + orderedRunsBeforeRelease {
+					appendScrape(run)
+				}
+
+				b.ReportAllocs()
+				b.ResetTimer()
+				for run := 0; b.Loop(); run++ {
+					appendScrape(run)
+				}
+			})
+		}
+	}
+}
+
 // BenchmarkScrapeLoopAppend_HistogramsWithExemplars benchmarks OM scrapes with histograms full of exemplars.
 //
 // For e2e TSDB impact, we enable the TSDB exemplar storage
@@ -3045,11 +3206,544 @@ func testScrapeLoopSeriesRefChange(t *testing.T, appV2 bool) {
 
 			teststorage.RequireEqual(t, tc.expectedSamples, app.ResultSamples())
 
-			ce, ok := sl.cache.series["metric_a"]
+			ce, ok := cachedEntry(t, sl.cache, "metric_a")
 			require.True(t, ok)
 			require.Equal(t, tc.expectedRef, ce.ref)
 		})
 	}
+}
+
+// cachedSlot returns the slot for met.
+func cachedSlot(t testing.TB, c *scrapeCache, met string) (cacheSlot, bool) {
+	t.Helper()
+	for _, slot := range c.slots {
+		if c.metOf(slot) == met {
+			return slot, true
+		}
+	}
+	return 0, false
+}
+
+// cachedEntry returns the non-dropped entry for met.
+func cachedEntry(t testing.TB, c *scrapeCache, met string) (cacheEntry, bool) {
+	t.Helper()
+	slot, ok := cachedSlot(t, c, met)
+	if !ok || slot.dropped() {
+		return cacheEntry{}, false
+	}
+	return c.entries[slot.index()], true
+}
+
+// requireCacheConsistent checks slot uniqueness and the optional map index.
+func requireCacheConsistent(t testing.TB, c *scrapeCache) {
+	t.Helper()
+
+	seen := make(map[cacheSlot]string, len(c.slots))
+	for _, slot := range c.slots {
+		met := c.metOf(slot)
+		require.NotContains(t, seen, slot, "slot of %q is used twice", met)
+		seen[slot] = met
+	}
+	require.Len(t, seen, len(c.slots))
+
+	if c.lookup == nil {
+		return
+	}
+	index := make(map[string]cacheSlot, len(c.slots))
+	for slot, met := range seen {
+		index[met] = slot
+	}
+	require.Equal(t, index, c.lookup, "map index and series order disagree")
+}
+
+// cacheOrder returns the expected metric order.
+func cacheOrder(c *scrapeCache) []string {
+	order := make([]string, 0, len(c.slots))
+	for _, slot := range c.slots {
+		order = append(order, c.metOf(slot))
+	}
+	return order
+}
+
+// cacheScraper drives a scrapeCache like the append loop.
+type cacheScraper struct {
+	c       *scrapeCache
+	dropped map[string]bool
+	nextRef storage.SeriesRef
+}
+
+func newCacheScraper(c *scrapeCache, dropped ...string) *cacheScraper {
+	s := &cacheScraper{c: c, dropped: map[string]bool{}}
+	for _, met := range dropped {
+		s.dropped[met] = true
+	}
+	return s
+}
+
+// feed adds uncached metrics and returns cache misses.
+func (s *cacheScraper) feed(mets ...string) []string {
+	var missed []string
+	for _, met := range mets {
+		slot, ce, cached, _ := s.c.get([]byte(met))
+		switch {
+		case cached && slot.dropped():
+			continue
+		case cached:
+			s.c.trackStaleness(ce.ref, slot)
+			continue
+		}
+
+		missed = append(missed, met)
+		if s.dropped[met] {
+			s.c.addDropped([]byte(met))
+			continue
+		}
+		s.nextRef++
+		slot, ce = s.c.addRef([]byte(met), s.nextRef, labels.FromStrings(model.MetricNameLabel, met), 0)
+		s.c.trackStaleness(ce.ref, slot)
+	}
+	return missed
+}
+
+// scrape runs feed and iterDone.
+func (s *cacheScraper) scrape(success bool, mets ...string) []string {
+	missed := s.feed(mets...)
+	s.c.iterDone(success)
+	return missed
+}
+
+func TestScrapeCacheSeriesOrder(t *testing.T) {
+	type scrape struct {
+		mets      []string
+		expMissed []string
+		expOrder  []string
+	}
+	for _, tc := range []struct {
+		name    string
+		dropped []string
+		scrapes []scrape
+	}{
+		{
+			name: "stable order is kept",
+			scrapes: []scrape{
+				{
+					mets:      []string{"a", "b", "c"},
+					expMissed: []string{"a", "b", "c"},
+					expOrder:  []string{"a", "b", "c"},
+				},
+				{
+					mets:     []string{"a", "b", "c"},
+					expOrder: []string{"a", "b", "c"},
+				},
+			},
+		},
+		{
+			name: "series added in the middle",
+			scrapes: []scrape{
+				{
+					mets:      []string{"a", "b", "c"},
+					expMissed: []string{"a", "b", "c"},
+					expOrder:  []string{"a", "b", "c"},
+				},
+				{
+					mets:      []string{"a", "x", "b", "c"},
+					expMissed: []string{"x"},
+					expOrder:  []string{"a", "x", "b", "c"},
+				},
+				{
+					mets:     []string{"a", "x", "b", "c"},
+					expOrder: []string{"a", "x", "b", "c"},
+				},
+			},
+		},
+		{
+			name: "series removed in the middle",
+			scrapes: []scrape{
+				{
+					mets:      []string{"a", "b", "c"},
+					expMissed: []string{"a", "b", "c"},
+					expOrder:  []string{"a", "b", "c"},
+				},
+				{
+					mets:     []string{"a", "c"},
+					expOrder: []string{"a", "c"},
+				},
+			},
+		},
+		{
+			name: "series removed at the end",
+			scrapes: []scrape{
+				{
+					mets:      []string{"a", "b", "c"},
+					expMissed: []string{"a", "b", "c"},
+					expOrder:  []string{"a", "b", "c"},
+				},
+				{
+					mets:     []string{"a", "b"},
+					expOrder: []string{"a", "b"},
+				},
+			},
+		},
+		{
+			name: "order is reversed",
+			scrapes: []scrape{
+				{
+					mets:      []string{"a", "b", "c"},
+					expMissed: []string{"a", "b", "c"},
+					expOrder:  []string{"a", "b", "c"},
+				},
+				{
+					mets:     []string{"c", "b", "a"},
+					expOrder: []string{"c", "b", "a"},
+				},
+				{
+					mets:     []string{"c", "b", "a"},
+					expOrder: []string{"c", "b", "a"},
+				},
+			},
+		},
+		{
+			name: "every series replaced",
+			scrapes: []scrape{
+				{
+					mets:      []string{"a", "b"},
+					expMissed: []string{"a", "b"},
+					expOrder:  []string{"a", "b"},
+				},
+				{
+					mets:      []string{"c", "d"},
+					expMissed: []string{"c", "d"},
+					expOrder:  []string{"c", "d"},
+				},
+			},
+		},
+		{
+			name: "series exposed twice in a row",
+			scrapes: []scrape{
+				{
+					mets:      []string{"a", "a", "b"},
+					expMissed: []string{"a", "b"},
+					expOrder:  []string{"a", "b"},
+				},
+				{
+					mets:     []string{"a", "a", "b"},
+					expOrder: []string{"a", "b"},
+				},
+			},
+		},
+		{
+			name: "series exposed twice with another series in between",
+			scrapes: []scrape{
+				{
+					mets:      []string{"a", "b", "a"},
+					expMissed: []string{"a", "b"},
+					expOrder:  []string{"a", "b"},
+				},
+				{
+					mets:     []string{"a", "b", "a"},
+					expOrder: []string{"a", "b"},
+				},
+			},
+		},
+		{
+			name:    "dropped series keep their place in the order",
+			dropped: []string{"b"},
+			scrapes: []scrape{
+				{
+					mets:      []string{"a", "b", "c"},
+					expMissed: []string{"a", "b", "c"},
+					expOrder:  []string{"a", "b", "c"},
+				},
+				{
+					mets:     []string{"a", "b", "c"},
+					expOrder: []string{"a", "b", "c"},
+				},
+				{
+					mets:     []string{"a", "c"},
+					expOrder: []string{"a", "c"},
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newScrapeCache(newTestScrapeMetrics(t))
+			s := newCacheScraper(c, tc.dropped...)
+
+			for i, scrape := range tc.scrapes {
+				missed := s.scrape(true, scrape.mets...)
+				require.Equal(t, scrape.expMissed, missed, "unexpected cache misses in scrape %d", i)
+				require.Equal(t, scrape.expOrder, cacheOrder(c), "unexpected series order after scrape %d", i)
+				requireCacheConsistent(t, c)
+			}
+		})
+	}
+}
+
+func TestScrapeCacheReleasesMapOnStableOrder(t *testing.T) {
+	c := newScrapeCache(newTestScrapeMetrics(t))
+	s := newCacheScraper(c, "b")
+
+	// Adding series builds the map index.
+	s.scrape(true, "a", "b", "c")
+	require.NotNil(t, c.lookup)
+
+	for range orderedRunsBeforeRelease {
+		require.NotNil(t, c.lookup, "map index released too early")
+		s.scrape(true, "a", "b", "c")
+	}
+	require.Nil(t, c.lookup, "map index should be released for a target with a stable order")
+
+	// An order change rebuilds the map.
+	require.Empty(t, s.scrape(true, "a", "b", "c"))
+	require.Nil(t, c.lookup)
+
+	require.Equal(t, []string{"x"}, s.scrape(true, "a", "b", "x", "c"))
+	require.NotNil(t, c.lookup)
+	require.Equal(t, []string{"a", "b", "x", "c"}, cacheOrder(c))
+}
+
+func TestScrapeCacheRandomOrder(t *testing.T) {
+	const numSeries = 200
+
+	c := newScrapeCache(newTestScrapeMetrics(t))
+	s := newCacheScraper(c)
+
+	mets := make([]string, 0, numSeries)
+	for i := range numSeries {
+		mets = append(mets, fmt.Sprintf("metric_%d", i))
+	}
+	require.Len(t, s.scrape(true, mets...), numSeries)
+
+	// Shuffling must not lose or duplicate entries.
+	rnd := rand.New(rand.NewPCG(0, 0))
+	for range 10 {
+		rnd.Shuffle(len(mets), func(i, j int) { mets[i], mets[j] = mets[j], mets[i] })
+
+		require.Empty(t, s.scrape(true, mets...), "shuffled series should all be cached")
+		require.Equal(t, mets, cacheOrder(c))
+		require.Len(t, c.entries, numSeries)
+		requireCacheConsistent(t, c)
+		require.NotNil(t, c.lookup, "map index should be kept for a target with a random order")
+	}
+}
+
+func TestScrapeCacheLookupsDoNotAllocate(t *testing.T) {
+	const numSeries = 100
+
+	c := newScrapeCache(newTestScrapeMetrics(t))
+	s := newCacheScraper(c, `metric_a{foo="7"}`)
+
+	var (
+		mets [][]byte
+		strs []string
+	)
+	for i := range numSeries {
+		met := fmt.Sprintf("metric_a{foo=%q}", strconv.Itoa(i))
+		strs = append(strs, met)
+		mets = append(mets, []byte(met))
+	}
+
+	// Release the map before measuring allocations.
+	for range orderedRunsBeforeRelease + 2 {
+		s.scrape(true, strs...)
+	}
+	require.Nil(t, c.lookup)
+
+	missing := 0
+	allocs := testing.AllocsPerRun(100, func() {
+		for _, met := range mets {
+			if _, _, ok, _ := c.get(met); !ok {
+				missing++
+			}
+		}
+		c.iterDone(true)
+	})
+	require.Zero(t, missing)
+	require.Zero(t, allocs, "looking up cached series of a target with a stable order should not allocate")
+}
+
+func TestScrapeCacheDroppedSeriesLifecycle(t *testing.T) {
+	c := newScrapeCache(newTestScrapeMetrics(t))
+	s := newCacheScraper(c, "dropped")
+
+	require.Equal(t, []string{"kept", "dropped"}, s.scrape(true, "kept", "dropped"))
+
+	// Cached drops skip relabeling.
+	require.Empty(t, s.scrape(true, "kept", "dropped"))
+
+	// Failed scrapes do not evict entries.
+	s.scrape(false, "kept", "dropped")
+	require.Equal(t, []string{"kept", "dropped"}, cacheOrder(c))
+
+	// Successful scrapes evict missing entries immediately.
+	s.scrape(true, "kept")
+	require.Equal(t, []string{"kept"}, cacheOrder(c))
+
+	// Returning series are relabeled again.
+	require.Equal(t, []string{"dropped"}, s.scrape(true, "kept", "dropped"))
+}
+
+func TestScrapeCacheCompaction(t *testing.T) {
+	const numSeries = 5000
+
+	c := newScrapeCache(newTestScrapeMetrics(t))
+	s := newCacheScraper(c, "dropped")
+
+	mets := []string{"kept", "dropped"}
+	for i := range numSeries {
+		mets = append(mets, fmt.Sprintf("metric_%d", i))
+	}
+	s.scrape(true, mets...)
+	require.Len(t, c.entries, numSeries+1)
+	require.Len(t, c.dropped, 1)
+
+	// Release storage after a cardinality peak.
+	s.scrape(true, "kept")
+	require.Equal(t, []string{"kept"}, cacheOrder(c))
+	require.Less(t, len(c.entries), numSeries, "entry storage was not compacted")
+	require.Empty(t, c.dropped)
+	require.Empty(t, c.freeEntries)
+	require.Empty(t, c.freeDropped)
+
+	// Compaction preserves surviving entries.
+	require.Empty(t, s.scrape(true, "kept"))
+	ce, ok := cachedEntry(t, c, "kept")
+	require.True(t, ok)
+	require.Equal(t, storage.SeriesRef(1), ce.ref)
+	require.Equal(t, labels.FromStrings(model.MetricNameLabel, "kept"), ce.lset)
+
+	// Released dropped entries can be cached again.
+	require.Equal(t, []string{"dropped"}, s.scrape(true, "kept", "dropped"))
+	require.Empty(t, s.scrape(true, "kept", "dropped"))
+	requireCacheConsistent(t, c)
+}
+
+func TestScrapeCacheCompactsOnlyAfterCompleteScrape(t *testing.T) {
+	const numSeries = 1100
+
+	c := newScrapeCache(newTestScrapeMetrics(t))
+	s := newCacheScraper(c)
+
+	mets := make([]string, 0, numSeries)
+	for i := range numSeries {
+		mets = append(mets, fmt.Sprintf("metric_%d", i))
+	}
+
+	// Failed scrapes may clean up but must not compact storage.
+	s.scrape(false, mets...)
+	s.scrape(false, mets[0])
+	require.Equal(t, []string{mets[0]}, cacheOrder(c))
+	require.Len(t, c.entries, numSeries, "failed scrape should not compact entry storage")
+	require.Len(t, c.freeEntries, numSeries-1)
+
+	// Successful scrapes may compact after cleanup.
+	s.scrape(true, mets[0])
+	require.Len(t, c.entries, 1)
+	require.Empty(t, c.freeEntries)
+}
+
+func TestScrapeCacheStalenessSlotsSurviveCompaction(t *testing.T) {
+	const numSeries = 1024
+
+	c := newScrapeCache(newTestScrapeMetrics(t))
+	s := newCacheScraper(c)
+
+	mets := make([]string, 0, numSeries)
+	for i := range numSeries {
+		mets = append(mets, fmt.Sprintf("metric_%d", i))
+	}
+	s.scrape(true, mets...)
+
+	// Keep the series that was added last, so that compaction has to move it.
+	kept := mets[len(mets)-1]
+	keptRef := s.nextRef
+
+	s.feed(kept)
+	keptSlot, ok := cachedSlot(t, c, kept)
+	require.True(t, ok)
+	oldLookup := c.lookup
+	// Multiple refs may point to one slot.
+	otherRef := keptRef + 1
+	c.trackStaleness(otherRef, keptSlot)
+	stale := map[storage.SeriesRef]labels.Labels{}
+	c.forEachStale(func(ref storage.SeriesRef, lset labels.Labels) bool {
+		stale[ref] = lset
+		return true
+	})
+	require.Len(t, stale, numSeries-1, "every series but one went stale")
+	require.NotContains(t, stale, keptRef)
+
+	// Compaction must rewrite staleness slots.
+	c.iterDone(true)
+	require.Less(t, len(c.entries), numSeries, "entry storage was not compacted")
+	newSlot, ok := cachedSlot(t, c, kept)
+	require.True(t, ok)
+	require.NotEqual(t, keptSlot, newSlot, "the surviving slot should have moved")
+	require.Equal(t, newSlot, c.seriesPrev[keptRef])
+	require.Equal(t, newSlot, c.seriesPrev[otherRef])
+	require.Equal(t, newSlot, c.lookup[kept])
+	require.Equal(t, keptSlot, oldLookup[kept], "compaction should rebuild the lookup map")
+
+	// Staleness must survive a moved slot.
+	s.feed()
+	stale = map[storage.SeriesRef]labels.Labels{}
+	c.forEachStale(func(ref storage.SeriesRef, lset labels.Labels) bool {
+		stale[ref] = lset
+		return true
+	})
+	require.Equal(t, map[storage.SeriesRef]labels.Labels{
+		keptRef: labels.FromStrings(model.MetricNameLabel, kept),
+	}, stale)
+}
+
+func TestScrapeLoopAppendDroppedSeriesCached(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		mutations := 0
+		sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2), func(sl *scrapeLoop) {
+			sl.sampleMutator = func(l labels.Labels) labels.Labels {
+				if l.Has("drop") {
+					mutations++
+					return labels.EmptyLabels()
+				}
+				return l
+			}
+		})
+
+		app := sl.appender()
+		_, _, _, err := app.append([]byte("dropped{drop=\"yes\"} 1\n"), "text/plain", time.Time{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Equal(t, 1, mutations)
+
+		app = sl.appender()
+		_, _, _, err = app.append([]byte("dropped{drop=\"yes\"} 2\n"), "text/plain", time.Unix(1, 0))
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Equal(t, 1, mutations)
+	})
+}
+
+func TestScrapeCacheStalenessSlotsSurviveGrowth(t *testing.T) {
+	c := newScrapeCache(newTestScrapeMetrics(t))
+	s := newCacheScraper(c)
+
+	s.scrape(true, "kept")
+	keptRef := s.nextRef
+
+	// Growth must not invalidate staleness slots.
+	mets := make([]string, 0, 1024)
+	for i := range 1024 {
+		mets = append(mets, fmt.Sprintf("metric_%d", i))
+	}
+	s.feed(mets...)
+
+	var stale labels.Labels
+	c.forEachStale(func(_ storage.SeriesRef, lset labels.Labels) bool {
+		stale = lset
+		return true
+	})
+	require.Equal(t, labels.FromStrings(model.MetricNameLabel, "kept"), stale)
+	require.Equal(t, storage.SeriesRef(1), keptRef)
 }
 
 func TestScrapeLoopCache(t *testing.T) {
@@ -3079,14 +3773,14 @@ func testScrapeLoopCache(t *testing.T, appV2 bool) {
 	scraper.scrapeFunc = func(_ context.Context, w io.Writer) error {
 		switch numScrapes {
 		case 1, 2:
-			_, ok := sl.cache.series["metric_a"]
+			_, ok := cachedSlot(t, sl.cache, "metric_a")
 			require.True(t, ok, "metric_a missing from cache after scrape %d", numScrapes)
-			_, ok = sl.cache.series["metric_b"]
+			_, ok = cachedSlot(t, sl.cache, "metric_b")
 			require.True(t, ok, "metric_b missing from cache after scrape %d", numScrapes)
 		case 3:
-			_, ok := sl.cache.series["metric_a"]
+			_, ok := cachedSlot(t, sl.cache, "metric_a")
 			require.True(t, ok, "metric_a missing from cache after scrape %d", numScrapes)
-			_, ok = sl.cache.series["metric_b"]
+			_, ok = cachedSlot(t, sl.cache, "metric_b")
 			require.False(t, ok, "metric_b present in cache after scrape %d", numScrapes)
 		}
 
@@ -3162,7 +3856,8 @@ func testScrapeLoopCacheMemoryExhaustionProtection(t *testing.T, appV2 bool) {
 		require.FailNow(t, "Scrape wasn't stopped.")
 	}
 
-	require.LessOrEqual(t, len(sl.cache.series), 2000, "More than 2000 series cached.")
+	require.LessOrEqual(t, len(sl.cache.slots), 2000, "More than 2000 series cached.")
+	require.LessOrEqual(t, len(sl.cache.entries), 2000, "More than 2000 entries retained.")
 }
 
 func TestScrapeLoopAppend_HonorLabels(t *testing.T) {
@@ -3354,7 +4049,7 @@ func testScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T, appV2 bool) {
 	hash := lset.Hash()
 
 	// Create a fake entry in the cache
-	sl.cache.addRef(metric, fakeRef, lset, hash)
+	_, _ = sl.cache.addRef(metric, fakeRef, lset, hash)
 	now := time.Now()
 
 	app := sl.appender()
@@ -5621,8 +6316,8 @@ func testScrapeAddFast(t *testing.T, appV2 bool) {
 
 	// Poison the cache. There is just one entry, and one series in the
 	// storage. Changing the ref will create a 'not found' error.
-	for _, v := range sl.getCache().series {
-		v.ref++
+	for _, slot := range sl.getCache().slots {
+		sl.getCache().entries[slot.index()].ref++
 	}
 
 	app = sl.appender()
