@@ -594,6 +594,10 @@ func (discardAppender) Append(storage.SeriesRef, labels.Labels, int64, int64, fl
 	return 0, nil
 }
 
+func (discardAppender) AppendExemplars(storage.SeriesRef, labels.Labels, []exemplar.Exemplar) (storage.SeriesRef, error) {
+	return 0, nil
+}
+
 func (discardAppender) Commit() error {
 	return nil
 }
@@ -928,7 +932,9 @@ func TestOTLPInstrumentedAppendable(t *testing.T) {
 		require.Equal(t, 0.0, testutil.ToFloat64(oa.samplesAppendedWithoutMetadata))
 
 		app := oa.AppenderV2(t.Context())
-		_, err := app.Append(0, labels.EmptyLabels(), -1, 1, 2, nil, nil, storage.AOptions{Exemplars: []exemplar.Exemplar{{}, {}}})
+		ref, err := app.Append(0, labels.EmptyLabels(), -1, 1, 2, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.AppendExemplars(ref, labels.EmptyLabels(), []exemplar.Exemplar{{}, {}})
 		// Partial errors should be handled in the middleware, OTLP converter does not handle it.
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
