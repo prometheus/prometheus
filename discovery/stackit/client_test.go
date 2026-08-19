@@ -158,8 +158,8 @@ func TestGetPostgresInstances(t *testing.T) {
 			},
 			expectedLen: 1,
 			expectedLabels: model.LabelSet{
-				"__address__":            model.LabelValue("postgres-flex-metrics.api.stackit.cloud:443"),
-				"__metrics_path__":       model.LabelValue("/v1alpha1/projects/test-proj/regions/eu01/instances/pg-111/advanced/metrics"),
+				"__address__":            model.LabelValue("postgres-prom-proxy.api.stackit.cloud:443"),
+				"__metrics_path__":       model.LabelValue("/v2/projects/test-proj/regions/eu01/instances/pg-111/metrics"),
 				"__scheme__":             model.LabelValue("https"),
 				"__meta_stackit_project": model.LabelValue("test-proj"),
 				"__meta_stackit_id":      model.LabelValue("pg-111"),

@@ -38,7 +38,7 @@ import (
 const (
 	stackitIAASAPIEndpoint         = "https://iaas.api.%s.stackit.cloud"
 	stackitPostgresAPIEndpoint     = "https://postgres-flex-service.api.stackit.cloud"
-	stackitPostgresMetricsEndpoint = "https://postgres-flex-metrics.api.stackit.cloud/"
+	stackitPostgresMetricsEndpoint = "https://postgres-prom-proxy.api.stackit.cloud/"
 
 	stackitLabelPrivateIPv4  = stackitLabelPrefix + "private_ipv4_"
 	stackitLabelType         = stackitLabelPrefix + "type"
@@ -53,7 +53,7 @@ const (
 	defaultHTTPPort           = "80"
 	defaultHTTPSPort          = "443"
 	schemeHTTPS               = "https"
-	postgresMetricsPathFormat = "/v1alpha1/projects/%s/regions/%s/instances/%s/advanced/metrics"
+	postgresMetricsPathFormat = "/v2/projects/%s/regions/%s/instances/%s/metrics"
 )
 
 type client interface {
