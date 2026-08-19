@@ -3352,6 +3352,7 @@ func testScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T, appV2 bool) {
 	_, err := p.Next()
 	require.NoError(t, err)
 	p.Labels(&lset)
+	lset = lset.Copy()
 	hash := lset.Hash()
 
 	// Create a fake entry in the cache
