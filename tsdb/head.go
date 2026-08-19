@@ -2144,21 +2144,22 @@ func (h *Head) mmapHeadChunks() {
 }
 
 // mmapHeadChunksInStripe m-maps chunks for the series in a single stripe that
-// need it. It uses deferred unlocking so that locks are released even if
-// mmapChunks panics (e.g. via handleChunkWriteError), preventing deadlocks
-// during cleanup.
+// need it.
 func (h *Head) mmapHeadChunksInStripe(i int) (count int) {
 	if h.series.mmapReady[i].Load() == 0 {
 		return 0 // No series in this stripe need mmapping.
 	}
 
 	h.series.locks[i].RLock()
-	defer h.series.locks[i].RUnlock()
-
+	candidates := make([]*memSeries, 0, len(h.series.series[i]))
 	for _, series := range h.series.series[i] {
-		if series.headChunkCount.Load() < 2 { // < 2 means 0 or 1 head chunks, nothing to mmap.
-			continue
+		if series.headChunkCount.Load() >= 2 { // < 2 means 0 or 1 head chunks, nothing to mmap.
+			candidates = append(candidates, series)
 		}
+	}
+	h.series.locks[i].RUnlock()
+
+	for _, series := range candidates {
 		n := h.mmapSeriesChunks(series)
 		if n > 0 {
 			count += n
@@ -2573,6 +2574,8 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		if headChunkCount >= 2 {
 			s.decMmapReady(series.ref)
 		}
+		// Detach the head chunks now to avoid mmaping an evicted series.
+		series.setHeadChunks(nil, 0)
 		if hashShard != stripe {
 			s.locks[stripe].Lock()
 			defer s.locks[stripe].Unlock()
