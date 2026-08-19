@@ -5681,7 +5681,7 @@ func TestCheckAddError(t *testing.T) {
 	var appErrs appendErrors
 	sl, _ := newTestScrapeLoop(t)
 	// TODO: Check err etc
-	_, _ = sl.checkAddError(nil, nil, storage.ErrOutOfOrderSample, nil, nil, &appErrs)
+	_, _ = sl.checkAddError(nil, storage.ErrOutOfOrderSample, nil, nil, &appErrs)
 	require.Equal(t, 1, appErrs.numOutOfOrder)
 	// TODO(bwplotka): Test partial error check and other cases
 }

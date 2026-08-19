@@ -293,7 +293,6 @@ loop:
 			if len(exemplars) > 0 {
 				// Sort so that checking for duplicates / out of order is more efficient during validation.
 				slices.SortFunc(exemplars, exemplar.Compare)
-				appOpts.Exemplars = exemplars
 			}
 
 			// Metadata path mimics the scrape appender V1 flow. Once we remove v2
@@ -325,8 +324,14 @@ loop:
 			if !skipAppend {
 				// Append sample to the storage.
 				ref, err = app.Append(ref, lset, st, t, val, h, fh, appOpts)
-				if err == nil && ce != nil && ref != 0 {
-					sl.cache.updateRef(ce, ref)
+				if err == nil {
+					if ce != nil && ref != 0 {
+						sl.cache.updateRef(ce, ref)
+					}
+					if len(exemplars) > 0 {
+						_, exErr := app.AppendExemplars(ref, lset, exemplars)
+						sl.checkExemplarsAddError(exemplars, exErr, &appErrs)
+					}
 				}
 			}
 		}
@@ -336,7 +341,7 @@ loop:
 			}
 		}
 
-		sampleAdded, err = sl.checkAddError(met, exemplars, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
+		sampleAdded, err = sl.checkAddError(met, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
 		if err != nil {
 			if !errors.Is(err, storage.ErrNotFound) {
 				sl.l.Debug("Unexpected error", "series", string(met), "err", err)

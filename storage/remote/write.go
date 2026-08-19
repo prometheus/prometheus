@@ -400,6 +400,10 @@ func (t *timestampTrackerV2) Append(ref storage.SeriesRef, _ labels.Labels, _, t
 	if ts > t.highestTimestamp {
 		t.highestTimestamp = ts
 	}
-	t.exemplars += int64(len(opts.Exemplars))
+	return ref, nil
+}
+
+func (t *timestampTrackerV2) AppendExemplars(ref storage.SeriesRef, _ labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	t.exemplars += int64(len(exemplars))
 	return ref, nil
 }

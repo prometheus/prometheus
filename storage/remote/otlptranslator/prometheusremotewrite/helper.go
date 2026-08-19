@@ -263,9 +263,6 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		}
 
 		pt := dataPoints.At(x)
-		// Clear stale exemplars from the previous data point to prevent
-		// them from leaking into _sum and _count of this data point.
-		appOpts.Exemplars = nil
 		timestamp := convertTimeStamp(pt.Timestamp())
 		startTimestamp := convertTimeStamp(pt.StartTimestamp())
 		baseLabels, err := c.createAttributes(pt.Attributes(), settings, reservedLabelNames, false, appOpts.Metadata)
@@ -301,6 +298,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 			return err
 		}
 		nextExemplarIdx := 0
+		var bucketExemplars []exemplar.Exemplar
 
 		// Cumulative count for conversion to cumulative histogram.
 		var cumulativeCount uint64
@@ -316,14 +314,14 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 
 			// Find exemplars that belong to this bucket. Both exemplars and
 			// buckets are sorted in ascending order.
-			appOpts.Exemplars = appOpts.Exemplars[:0]
+			bucketExemplars = bucketExemplars[:0]
 			for ; nextExemplarIdx < len(exemplars); nextExemplarIdx++ {
 				ex := exemplars[nextExemplarIdx]
 				if ex.Value > bound {
 					// This exemplar belongs in a higher bucket.
 					break
 				}
-				appOpts.Exemplars = append(appOpts.Exemplars, ex)
+				bucketExemplars = append(bucketExemplars, ex)
 			}
 			val := float64(cumulativeCount)
 			if pt.Flags().NoRecordedValue() {
@@ -331,20 +329,31 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 			}
 			boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
 			bucketLabels := c.addLabels(appOpts.MetricFamilyName+bucketStr, baseLabels, leStr, boundStr)
-			if _, err := c.appender.Append(0, bucketLabels, startTimestamp, timestamp, val, nil, nil, appOpts); err != nil {
+			ref, err := c.appender.Append(0, bucketLabels, startTimestamp, timestamp, val, nil, nil, appOpts)
+			if err != nil {
 				return err
+			}
+			if len(bucketExemplars) > 0 {
+				if _, err := c.appender.AppendExemplars(ref, bucketLabels, bucketExemplars); err != nil {
+					return err
+				}
 			}
 		}
 
-		appOpts.Exemplars = exemplars[nextExemplarIdx:]
 		// Add le=+Inf bucket.
 		val = float64(pt.Count())
 		if pt.Flags().NoRecordedValue() {
 			val = math.Float64frombits(value.StaleNaN)
 		}
 		infLabels := c.addLabels(appOpts.MetricFamilyName+bucketStr, baseLabels, leStr, pInfStr)
-		if _, err := c.appender.Append(0, infLabels, startTimestamp, timestamp, val, nil, nil, appOpts); err != nil {
+		ref, err := c.appender.Append(0, infLabels, startTimestamp, timestamp, val, nil, nil, appOpts)
+		if err != nil {
 			return err
+		}
+		if remaining := exemplars[nextExemplarIdx:]; len(remaining) > 0 {
+			if _, err := c.appender.AppendExemplars(ref, infLabels, remaining); err != nil {
+				return err
+			}
 		}
 	}
 

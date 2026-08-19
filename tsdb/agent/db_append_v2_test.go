@@ -63,19 +63,23 @@ func TestDB_InvalidSeries_AppendV2(t *testing.T) {
 	})
 
 	t.Run("Exemplars", func(t *testing.T) {
+		ls := labels.FromStrings("a", "1")
+		ref, err := app.Append(0, ls, 0, 0, 0, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+
 		e := exemplar.Exemplar{Labels: labels.FromStrings("a", "1", "a", "2")}
-		_, err := app.Append(0, labels.FromStrings("a", "1"), 0, 0, 0, nil, nil, storage.AOptions{
-			Exemplars: []exemplar.Exemplar{e},
-		})
+		_, err = app.AppendExemplars(ref, ls, []exemplar.Exemplar{e})
 		partErr := &storage.AppendPartialError{}
 		require.ErrorAs(t, err, &partErr)
 		require.Len(t, partErr.ExemplarErrors, 1)
 		require.ErrorIs(t, partErr.ExemplarErrors[0], tsdb.ErrInvalidExemplar, "should reject duplicate labels")
 
+		ls2 := labels.FromStrings("a", "2")
+		ref2, err := app.Append(0, ls2, 0, 0, 0, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+
 		e = exemplar.Exemplar{Labels: labels.FromStrings("a_somewhat_long_trace_id", "nYJSNtFrFTY37VR7mHzEE/LIDt7cdAQcuOzFajgmLDAdBSRHYPDzrxhMA4zz7el8naI/AoXFv9/e/G0vcETcIoNUi3OieeLfaIRQci2oa")}
-		_, err = app.Append(0, labels.FromStrings("a", "2"), 0, 0, 0, nil, nil, storage.AOptions{
-			Exemplars: []exemplar.Exemplar{e},
-		})
+		_, err = app.AppendExemplars(ref2, ls2, []exemplar.Exemplar{e})
 		partErr = &storage.AppendPartialError{}
 		require.ErrorAs(t, err, &partErr)
 		require.Len(t, partErr.ExemplarErrors, 1)
@@ -83,9 +87,7 @@ func TestDB_InvalidSeries_AppendV2(t *testing.T) {
 
 		// Inverse check.
 		e = exemplar.Exemplar{Labels: labels.FromStrings("a", "1"), Value: 20, Ts: 10, HasTs: true}
-		_, err = app.Append(0, labels.FromStrings("a", "1"), 0, 0, 0, nil, nil, storage.AOptions{
-			Exemplars: []exemplar.Exemplar{e},
-		})
+		_, err = app.AppendExemplars(ref, ls, []exemplar.Exemplar{e})
 		require.NoError(t, err, "should not reject valid exemplars")
 	})
 }
@@ -134,14 +136,14 @@ func TestCommit_AppendV2(t *testing.T) {
 				for i := range numDatapoints {
 					sample := chunks.GenerateSamples(0, 1)
 					st := int64(i + 1234)
-					_, err := app.Append(0, lset, st, sample[0].T()+2000, sample[0].F(), nil, nil, storage.AOptions{
-						Exemplars: []exemplar.Exemplar{{
-							Labels: lset,
-							Ts:     sample[0].T() + int64(i) + 2000,
-							Value:  sample[0].F(),
-							HasTs:  true,
-						}},
-					})
+					ref, err := app.Append(0, lset, st, sample[0].T()+2000, sample[0].F(), nil, nil, storage.AOptions{})
+					require.NoError(t, err)
+					_, err = app.AppendExemplars(ref, lset, []exemplar.Exemplar{{
+						Labels: lset,
+						Ts:     sample[0].T() + int64(i) + 2000,
+						Value:  sample[0].F(),
+						HasTs:  true,
+					}})
 					require.NoError(t, err)
 					if enableSTStorage {
 						expectedSampleSTs = append(expectedSampleSTs, st)
@@ -844,10 +846,11 @@ func TestStorage_DuplicateExemplarsIgnored_AppendV2(t *testing.T) {
 	e3 := exemplar.Exemplar{Labels: labels.FromStrings("b", "2"), Value: 42, Ts: 10, HasTs: true}
 	e4 := exemplar.Exemplar{Labels: labels.FromStrings("b", "2"), Value: 42, Ts: 25, HasTs: true}
 
-	_, err := app.Append(0, labels.FromStrings("a", "1"), 0, 0, 0, nil, nil, storage.AOptions{
-		Exemplars: []exemplar.Exemplar{e1, e1, e2, e2, e2, e3, e3, e4, e4},
-	})
+	ls := labels.FromStrings("a", "1")
+	ref, err := app.Append(0, ls, 0, 0, 0, nil, nil, storage.AOptions{})
 	require.NoError(t, err, "should not reject valid series")
+	_, err = app.AppendExemplars(ref, ls, []exemplar.Exemplar{e1, e1, e2, e2, e2, e3, e3, e4, e4})
+	require.NoError(t, err, "should not reject valid exemplars")
 	require.NoError(t, app.Commit())
 
 	// Read back what was written to the WAL.
@@ -892,14 +895,14 @@ func TestDBAllowOOOSamples_AppendV2(t *testing.T) {
 		lset := labels.New(l...)
 
 		for i := offset; i < numDatapoints+offset; i++ {
-			_, err := app.Append(0, lset, 0, int64(i), float64(i), nil, nil, storage.AOptions{
-				Exemplars: []exemplar.Exemplar{{
-					Labels: lset,
-					Ts:     int64(i) * 2,
-					Value:  float64(i),
-					HasTs:  true,
-				}},
-			})
+			ref, err := app.Append(0, lset, 0, int64(i), float64(i), nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+			_, err = app.AppendExemplars(ref, lset, []exemplar.Exemplar{{
+				Labels: lset,
+				Ts:     int64(i) * 2,
+				Value:  float64(i),
+				HasTs:  true,
+			}})
 			require.NoError(t, err)
 		}
 	}
@@ -978,14 +981,14 @@ func TestDBAllowOOOSamples_AppendV2(t *testing.T) {
 		lset := labels.New(l...)
 
 		for i := range numDatapoints {
-			_, err := app.Append(0, lset, 0, int64(i), float64(i), nil, nil, storage.AOptions{
-				Exemplars: []exemplar.Exemplar{{
-					Labels: lset,
-					Ts:     int64(i) * 2,
-					Value:  float64(i),
-					HasTs:  true,
-				}},
-			})
+			ref, err := app.Append(0, lset, 0, int64(i), float64(i), nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+			_, err = app.AppendExemplars(ref, lset, []exemplar.Exemplar{{
+				Labels: lset,
+				Ts:     int64(i) * 2,
+				Value:  float64(i),
+				HasTs:  true,
+			}})
 			require.NoError(t, err)
 		}
 	}
