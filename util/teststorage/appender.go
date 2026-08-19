@@ -633,14 +633,15 @@ func (a *appenderV2) AppendExemplars(ref storage.SeriesRef, l labels.Labels, exe
 			a.a.mtx.Lock()
 			i := len(a.a.pendingSamples) - 1
 			for ; i >= 0; i-- { // Attach exemplars to the last matching sample.
-				if labels.Equal(l, a.a.pendingSamples[i].L) {
-					// As per AppenderV2 interface, the exemplars slice is unsafe for reuse.
-					es := make([]exemplar.Exemplar, len(exemplars))
-					copy(es, exemplars)
-					a.a.pendingSamples[i].ES = append(a.a.pendingSamples[i].ES, es...)
-					appended = true
-					break
+				if !labels.Equal(l, a.a.pendingSamples[i].L) {
+					continue
 				}
+				// As per AppenderV2 interface, the exemplars slice is unsafe for reuse.
+				es := make([]exemplar.Exemplar, len(exemplars))
+				copy(es, exemplars)
+				a.a.pendingSamples[i].ES = append(a.a.pendingSamples[i].ES, es...)
+				appended = true
+				break
 			}
 			a.a.mtx.Unlock()
 			if !appended {
