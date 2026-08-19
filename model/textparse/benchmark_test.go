@@ -227,7 +227,7 @@ func benchExpFmt(b *testing.B, data []byte, expFormatTypeStr string) {
 	expfmtFormatType := expfmt.TypeUnknown
 	switch expFormatTypeStr {
 	case "expfmt-promtext":
-		expfmtFormatType = expfmt.TypeProtoText
+		expfmtFormatType = expfmt.TypeTextPlain
 	case "expfmt-promproto":
 		expfmtFormatType = expfmt.TypeProtoDelim
 	case "expfmt-omtext":
