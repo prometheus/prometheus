@@ -245,7 +245,7 @@ func (p *OpenMetricsParser) Labels(l *labels.Labels) {
 	}
 
 	p.builder.Sort()
-	*l = p.builder.Labels()
+	p.builder.Overwrite(l)
 }
 
 // Exemplar writes the exemplar of the current sample into the passed exemplar.

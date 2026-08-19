@@ -128,6 +128,7 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 		sampleLimitErr error
 		bucketLimitErr error
 		lset           labels.Labels     // Escapes to heap so hoisted out of loop.
+		lsetScratch    labels.Labels     // Reused by p.Labels via Overwrite; not retained.
 		e              exemplar.Exemplar // Escapes to heap so hoisted out of loop.
 		lastMeta       *metaEntry
 		lastMFName     []byte
@@ -215,7 +216,8 @@ loop:
 			lset = ce.lset
 			hash = ce.hash
 		} else {
-			p.Labels(&lset)
+			p.Labels(&lsetScratch)
+			lset = lsetScratch.Copy()
 			hash = lset.Hash()
 
 			// Hash label set as it is seen local to the target. Then add target labels
