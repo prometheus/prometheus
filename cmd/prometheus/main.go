@@ -281,9 +281,8 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				logger.Info("Experimental start timestamp zero ingestion enabled. OpenMetrics 1.0 parsing will parse <metric>_created metrics as ST instead of normal sample. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "xor2-encoding":
-				c.tsdb.XOR2EncodingAllowed = true
 				c.tsdb.FloatChunkEncoding = chunkenc.EncXOR2
-				logger.Info("Experimental XOR2 chunk encoding enabled.")
+				logger.Warn("This option for --enable-feature is being phased out. It currently changes the default for the storage.tsdb.chunk_encoding.floats config setting to xor2, but will become a no-op in a future major version. Stop using this option and set storage.tsdb.chunk_encoding.floats in the config instead.", "option", o)
 			case "histograms-st-encoding":
 				c.tsdb.EnableHistogramSTEncoding = true
 				logger.Info("Experimental ST-capable histogram chunk encoding enabled.")
@@ -785,6 +784,7 @@ func main() {
 		logger.Warn("The option --storage.tsdb.block-reload-interval is set to a value less than 1s. Setting it to 1s to avoid overload.")
 		cfg.tsdb.BlockReloadInterval = model.Duration(1 * time.Second)
 	}
+	cfg.tsdb.ChunkEncodingFloats = cfgFile.StorageConfig.TSDBConfig.ChunkEncoding.Floats
 	cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
 	cfg.tsdb.StaleSeriesCompactionThreshold = cfgFile.StorageConfig.TSDBConfig.StaleSeriesCompactionThreshold
 	cfg.tsdb.RetentionDuration = cfgFile.StorageConfig.TSDBConfig.Retention.Time
@@ -2115,7 +2115,7 @@ type tsdbOptions struct {
 	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
 	FloatChunkEncoding             chunkenc.Encoding
-	XOR2EncodingAllowed            bool
+	ChunkEncodingFloats            string
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -2149,7 +2149,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
 		FloatChunkEncoding:             opts.FloatChunkEncoding,
-		XOR2EncodingAllowed:            opts.XOR2EncodingAllowed,
+		ChunkEncodingFloats:            opts.ChunkEncodingFloats,
 	}
 }
 

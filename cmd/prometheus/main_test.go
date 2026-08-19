@@ -402,33 +402,55 @@ func TestChunkEncodingStartupValidation(t *testing.T) {
 		exitCode int
 	}{
 		{
-			name: "xor2 without xor2-encoding feature",
+			name: "xor2 without any feature flag",
 			config: `
 storage:
   tsdb:
     chunk_encoding:
       floats: xor2`,
 			features: "",
-			exitCode: 1,
+			exitCode: 0,
 		},
 		{
-			name: "xor2 with xor2-encoding feature",
+			name: "xor2 with st-storage feature",
 			config: `
 storage:
   tsdb:
     chunk_encoding:
       floats: xor2`,
-			features: "xor2-encoding",
+			features: "st-storage",
 			exitCode: 0,
 		},
 		{
-			name: "xor with st-storage and xor2-encoding features",
+			name: "xor with st-storage feature",
 			config: `
 storage:
   tsdb:
     chunk_encoding:
       floats: xor`,
+			features: "st-storage",
+			exitCode: 1,
+		},
+		{
+			name: "xor2-encoding flag with explicit xor in config",
+			config: `
+storage:
+  tsdb:
+    chunk_encoding:
+      floats: xor`,
+			features: "xor2-encoding",
+			exitCode: 0,
+		},
+		{
+			name:     "st-storage with the xor2-encoding flag and no config field",
+			config:   "",
 			features: "st-storage,xor2-encoding",
+			exitCode: 0,
+		},
+		{
+			name:     "st-storage without any float chunk encoding set",
+			config:   "",
+			features: "st-storage",
 			exitCode: 1,
 		},
 		{
