@@ -277,6 +277,28 @@ func TestRelabel(t *testing.T) {
 		},
 		{
 			input: labels.FromMap(map[string]string{
+				"a": "foo",
+				"b": "bar",
+				"c": "baz",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"c"},
+					TargetLabel:  "d",
+					Separator:    ";",
+					Action:       HashModSHA256,
+					Modulus:      1000,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"a": "foo",
+				"b": "bar",
+				"c": "baz",
+				"d": "307",
+			}),
+		},
+		{
+			input: labels.FromMap(map[string]string{
 				"a":  "foo",
 				"b1": "bar",
 				"b2": "baz",
