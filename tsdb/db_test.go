@@ -11090,6 +11090,40 @@ type selectedSeriesTestAppender struct {
 	append func(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error)
 }
 
+type selectedSeriesAppenderFactory struct {
+	name string
+	new  func(*testing.T, *Head) selectedSeriesTestAppender
+}
+
+// selectedSeriesAppenders returns one factory per appender version, so the
+// selected-series eviction tests can share a table across both.
+func selectedSeriesAppenders() []selectedSeriesAppenderFactory {
+	return []selectedSeriesAppenderFactory{
+		{
+			name: "v1",
+			new: func(t *testing.T, h *Head) selectedSeriesTestAppender {
+				a := h.Appender(t.Context()).(*headAppender)
+				return selectedSeriesTestAppender{
+					AppenderTransaction: a,
+					append:              a.Append,
+				}
+			},
+		},
+		{
+			name: "v2",
+			new: func(t *testing.T, h *Head) selectedSeriesTestAppender {
+				a := h.AppenderV2(t.Context()).(*headAppenderV2)
+				return selectedSeriesTestAppender{
+					AppenderTransaction: a,
+					append: func(ref storage.SeriesRef, lset labels.Labels, ts int64, v float64) (storage.SeriesRef, error) {
+						return a.Append(ref, lset, 0, ts, v, nil, nil, storage.AOptions{})
+					},
+				}
+			},
+		},
+	}
+}
+
 func requireSelectedSeriesSamples(t *testing.T, db *DB, lset labels.Labels, stage string, expected []chunks.Sample) {
 	t.Helper()
 
@@ -11116,6 +11150,64 @@ func restartDBForSelectedSeries(t *testing.T, db *DB, opts *Options) *DB {
 	return restarted
 }
 
+// TestCompactSelectedSeries_OverlappingAppendersKeepSeries verifies that eviction
+// keeps a series while any appender still has an uncommitted sample for it.
+//
+// Unlike TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction, which
+// commits its late appender before eviction runs and so is caught by the append-ID
+// watermark, the appender here is still open when shouldEvict is consulted. A second
+// appender closing in the meantime must not release the first one's protection.
+func TestCompactSelectedSeries_OverlappingAppendersKeepSeries(t *testing.T) {
+	interferingClosers := []struct {
+		name  string
+		close func(selectedSeriesTestAppender) error
+	}{
+		{name: "commit", close: func(app selectedSeriesTestAppender) error { return app.Commit() }},
+		{name: "rollback", close: func(app selectedSeriesTestAppender) error { return app.Rollback() }},
+	}
+
+	for _, appender := range selectedSeriesAppenders() {
+		for _, closer := range interferingClosers {
+			t.Run(appender.name+"/"+closer.name, func(t *testing.T) {
+				opts := DefaultOptions()
+				opts.MinBlockDuration = 1000
+				opts.MaxBlockDuration = 1000
+				db := newTestDB(t, withOpts(opts))
+				db.DisableCompactions()
+				h := db.Head()
+
+				lset := labels.FromStrings("series", "overlapping-appenders")
+				baseline := db.Appender(t.Context())
+				ref, err := baseline.Append(0, lset, 100, 1)
+				require.NoError(t, err)
+				require.NoError(t, baseline.Commit())
+
+				// Leave the newer sample uncommitted so the series remains eligible for deletion
+				// by maxTime but must still be protected from GC.
+				pending := appender.new(t, h)
+				_, err = pending.append(ref, lset, 200, 2)
+				require.NoError(t, err)
+
+				// Use a duplicate so closing this appender exercises pending-state bookkeeping
+				// without advancing the series timestamp and masking the bug.
+				interfering := appender.new(t, h)
+				_, err = interfering.append(ref, lset, 100, 1)
+				require.NoError(t, err)
+				require.NoError(t, closer.close(interfering))
+
+				require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+				require.Len(t, db.Blocks(), 1, "selected-series compaction must produce a block")
+				require.NoError(t, pending.Commit())
+
+				expected := []chunks.Sample{newSample(0, 100, 1, nil, nil), newSample(0, 200, 2, nil, nil)}
+				requireSelectedSeriesSamples(t, db, lset, "before WAL restart", expected)
+				db = restartDBForSelectedSeries(t, db, opts)
+				requireSelectedSeriesSamples(t, db, lset, "after WAL restart", expected)
+			})
+		}
+	}
+}
+
 // TestCompactSelectedSeries_RetriesAfterSeriesEvicted verifies that an appender
 // which resolved a series just before eviction unlinked it retries against a live
 // series instead of appending into the evicted one.
@@ -11124,33 +11216,7 @@ func restartDBForSelectedSeries(t *testing.T, db *DB, opts *Options) *DB {
 // series lock yet, so it has neither an append ID nor pending state when shouldEvict
 // runs. Both appender versions are exercised, in either isolation mode.
 func TestCompactSelectedSeries_RetriesAfterSeriesEvicted(t *testing.T) {
-	for _, appender := range []struct {
-		name string
-		new  func(*testing.T, *Head) selectedSeriesTestAppender
-	}{
-		{
-			name: "v1",
-			new: func(t *testing.T, h *Head) selectedSeriesTestAppender {
-				a := h.Appender(t.Context()).(*headAppender)
-				return selectedSeriesTestAppender{
-					AppenderTransaction: a,
-					append:              a.Append,
-				}
-			},
-		},
-		{
-			name: "v2",
-			new: func(t *testing.T, h *Head) selectedSeriesTestAppender {
-				a := h.AppenderV2(t.Context()).(*headAppenderV2)
-				return selectedSeriesTestAppender{
-					AppenderTransaction: a,
-					append: func(ref storage.SeriesRef, lset labels.Labels, ts int64, v float64) (storage.SeriesRef, error) {
-						return a.Append(ref, lset, 0, ts, v, nil, nil, storage.AOptions{})
-					},
-				}
-			},
-		},
-	} {
+	for _, appender := range selectedSeriesAppenders() {
 		t.Run(appender.name, func(t *testing.T) {
 			opts := DefaultOptions()
 			opts.MinBlockDuration = 1000

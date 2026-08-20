@@ -236,7 +236,7 @@ func (a *headAppenderV2) appendFloat(s *memSeries, st, t int64, v float64, fastR
 		return storage.ErrOutOfOrderSample
 	}
 	if err == nil {
-		s.pendingCommit = true
+		s.markPendingCommit()
 	}
 	if delta > 0 {
 		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
@@ -259,7 +259,7 @@ func (a *headAppenderV2) appendHistogram(s *memSeries, st, t int64, h *histogram
 		return storage.ErrOutOfOrderSample
 	}
 	if err == nil {
-		s.pendingCommit = true
+		s.markPendingCommit()
 	}
 	if delta > 0 {
 		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
@@ -285,7 +285,7 @@ func (a *headAppenderV2) appendFloatHistogram(s *memSeries, st, t int64, fh *his
 		return storage.ErrOutOfOrderSample
 	}
 	if err == nil {
-		s.pendingCommit = true
+		s.markPendingCommit()
 	}
 	if delta > 0 {
 		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
