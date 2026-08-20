@@ -448,6 +448,16 @@ storage:
 			exitCode: 0,
 		},
 		{
+			name: "st-storage and xor2-encoding flags with explicit xor in config",
+			config: `
+storage:
+  tsdb:
+    chunk_encoding:
+      floats: xor`,
+			features: "st-storage,xor2-encoding",
+			exitCode: 1,
+		},
+		{
 			name:     "st-storage without any float chunk encoding set",
 			config:   "",
 			features: "st-storage",
