@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -636,10 +637,18 @@ func TestEndpointsDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 		},
 	}
 	n, c := makeDiscoveryWithMetadata(RoleEndpoint, NamespaceDiscovery{}, metadataConfig, makeEndpoints("default"), node1, node2, svc)
+	nodeWatchStarted := nodeWatchRegistered(c)
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
+			// Update only once the node watch is registered, or the fake
+			// clientset would drop the event and discovery would never see it.
+			select {
+			case <-nodeWatchStarted:
+			case <-time.After(30 * time.Second):
+				t.Fatal("node watch was never registered")
+			}
 			node1.Labels["az"] = "eu-central1"
 			c.CoreV1().Nodes().Update(context.Background(), node1, metav1.UpdateOptions{})
 		},
@@ -654,7 +663,7 @@ func TestEndpointsDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 						"__meta_kubernetes_endpoint_port_name":     "testport",
 						"__meta_kubernetes_endpoint_port_protocol": "TCP",
 						"__meta_kubernetes_endpoint_ready":         "true",
-						"__meta_kubernetes_node_label_az":          "us-east1",
+						"__meta_kubernetes_node_label_az":          "eu-central1",
 						"__meta_kubernetes_node_labelpresent_az":   "true",
 						"__meta_kubernetes_node_name":              "foobar",
 					},
