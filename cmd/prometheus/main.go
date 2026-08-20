@@ -784,7 +784,16 @@ func main() {
 		logger.Warn("The option --storage.tsdb.block-reload-interval is set to a value less than 1s. Setting it to 1s to avoid overload.")
 		cfg.tsdb.BlockReloadInterval = model.Duration(1 * time.Second)
 	}
-	cfg.tsdb.ChunkEncodingFloats = cfgFile.StorageConfig.TSDBConfig.ChunkEncoding.Floats
+	// The configuration file takes precedence over the flag-derived default. An
+	// absent field keeps that default; other values are rejected when the
+	// configuration is unmarshalled. The TSDB reads the field again on every
+	// reload and falls back to the value resolved here whenever it is absent.
+	switch cfgFile.StorageConfig.TSDBConfig.ChunkEncoding.Floats {
+	case config.FloatChunkEncodingXOR:
+		cfg.tsdb.FloatChunkEncoding = chunkenc.EncXOR
+	case config.FloatChunkEncodingXOR2:
+		cfg.tsdb.FloatChunkEncoding = chunkenc.EncXOR2
+	}
 	cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
 	cfg.tsdb.StaleSeriesCompactionThreshold = cfgFile.StorageConfig.TSDBConfig.StaleSeriesCompactionThreshold
 	cfg.tsdb.RetentionDuration = cfgFile.StorageConfig.TSDBConfig.Retention.Time
@@ -2115,7 +2124,6 @@ type tsdbOptions struct {
 	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
 	FloatChunkEncoding             chunkenc.Encoding
-	ChunkEncodingFloats            string
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -2149,7 +2157,6 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
 		FloatChunkEncoding:             opts.FloatChunkEncoding,
-		ChunkEncodingFloats:            opts.ChunkEncodingFloats,
 	}
 }
 
