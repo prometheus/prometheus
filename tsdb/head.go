@@ -156,6 +156,7 @@ type Head struct {
 
 	memTruncationInProcess atomic.Bool
 	memTruncationCallBack  func() // For testing purposes.
+	testAfterSeriesLookup  func(*memSeries)
 }
 
 type ExemplarStorage interface {
@@ -2370,6 +2371,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			s.locks[stripe].Lock()
 			defer s.locks[stripe].Unlock()
 		}
+		series.setRetired()
 
 		stale, isHist, buckets := series.sampleState()
 		if stale {
@@ -2577,6 +2579,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 			s.locks[stripe].Lock()
 			defer s.locks[stripe].Unlock()
 		}
+		series.setRetired()
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		stale, isHist, buckets := series.sampleState()
@@ -2776,11 +2779,12 @@ type memSeries struct {
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
+	retired                          bool  // Whether the series has been unlinked from the head by GC.
 	// headChunkCount tracks the number of head chunks. All mutations of the
 	// headChunks/headChunkCount pair go through pushHeadChunk and setHeadChunks.
 	// Chunk counts are bounded by the 3-byte field in HeadChunkRef, so cannot overflow uint32.
 	// Explicitly uses sync/atomic.Uint32 (4 bytes) to fit in the existing padding
-	// between two bools and a float64.
+	// between three bools and a float64.
 	headChunkCount stdatomic.Uint32
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
@@ -2797,6 +2801,22 @@ type memSeries struct {
 
 	// txs is nil if isolation is disabled.
 	txs *txRing
+}
+
+// isRetired reports whether GC has unlinked the series from the head. A retired
+// series still resolves through pointers that were handed out before it was
+// unlinked, but appending to it would silently drop the samples.
+//
+// Must be called with the series lock held.
+func (s *memSeries) isRetired() bool {
+	return s.retired
+}
+
+// setRetired marks the series as unlinked from the head.
+//
+// Must be called with the series lock held.
+func (s *memSeries) setRetired() {
+	s.retired = true
 }
 
 // sampleState reports the latest in-order sample's staleness, type, and bucket

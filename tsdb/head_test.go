@@ -7346,9 +7346,11 @@ func stripeSeriesWithCollidingSeries(t *testing.T) (*stripeSeries, *memSeries, *
 	lbls1, lbls2 := labelsWithHashCollision()
 	ms1 := memSeries{
 		lset: lbls1,
+		ref:  1,
 	}
 	ms2 := memSeries{
 		lset: lbls2,
+		ref:  2,
 	}
 	hash := lbls1.Hash()
 	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
@@ -7387,6 +7389,12 @@ func TestStripeSeries_gc(t *testing.T) {
 	require.Nil(t, got)
 	got = s.getByHash(hash, ms2.lset)
 	require.Nil(t, got)
+	ms1.Lock()
+	require.True(t, ms1.isRetired())
+	ms1.Unlock()
+	ms2.Lock()
+	require.True(t, ms2.isRetired())
+	ms2.Unlock()
 }
 
 func TestPostingsCardinalityStats(t *testing.T) {
