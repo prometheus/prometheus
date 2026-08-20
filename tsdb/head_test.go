@@ -1954,6 +1954,31 @@ func TestCutNewHeadChunk_PanicsAtIDSpaceBound(t *testing.T) {
 	})
 }
 
+func TestAppendHistogramLayoutChange_PanicsAtIDSpaceBound(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	l := labels.FromStrings("l", "v1")
+
+	app := head.Appender(context.Background())
+	h := tsdbutil.GenerateTestHistogram(0)
+	_, err := app.AppendHistogram(0, l, 0, h, nil)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	ms, _, err := head.getOrCreate(l.Hash(), l, false)
+	require.NoError(t, err)
+	ms.Lock()
+	ms.headChunkCount.Store(oooChunkIDMask - 1)
+	ms.Unlock()
+
+	h2 := h.Copy()
+	h2.Schema++
+	require.Panics(t, func() {
+		app := head.Appender(context.Background())
+		_, _ = app.AppendHistogram(0, l, 1, h2, nil)
+		_ = app.Commit()
+	})
+}
+
 func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
 	for _, enableSTStorage := range []bool{false, true} {
 		for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {

@@ -2862,6 +2862,13 @@ func (s *memSeries) maxTime() int64 {
 // (mmapChunks, truncateChunksBefore) must be immediately paired with a
 // setHeadChunks call.
 func (s *memSeries) pushHeadChunk(chk *memChunk) *memChunk {
+	// Chunk IDs can only be 23 bits, so a series cannot hold more than 2^23 chunks
+	// without two of them sharing an ID. This is not reachable in practice (head
+	// compaction keeps the live set tiny); panic rather than serve an ambiguous ID.
+	if len(s.mmappedChunks)+int(s.headChunkCount.Load()) >= oooChunkIDMask-1 {
+		panic(fmt.Sprintf("too many in-order head chunks for series %s (%d)", s.lset.String(), s.ref))
+	}
+
 	chk.prev = s.headChunks
 	s.headChunks = chk
 	s.headChunkCount.Add(1)

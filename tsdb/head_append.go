@@ -2124,13 +2124,6 @@ func computeChunkEndTime(start, cur, maxT int64, ratioToFull float64) int64 {
 }
 
 func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange int64) *memChunk {
-	// Chunk IDs can only be 23 bits, so we can't track any more than 2^23 without aliasing.
-	// This is not reachable in practice (head compaction keeps the live set tiny); panic rather
-	// than generate an ambiguous ID.
-	if len(s.mmappedChunks)+int(s.headChunkCount.Load()) >= oooChunkIDMask-1 {
-		panic(fmt.Sprintf("too many in-order head chunks for series %s (%d)", s.lset.String(), s.ref))
-	}
-
 	// When cutting a new head chunk we create a new memChunk instance with .prev
 	// pointing at the current .headChunks, so it forms a linked list.
 	// All but first headChunks list elements will be m-mapped as soon as possible
