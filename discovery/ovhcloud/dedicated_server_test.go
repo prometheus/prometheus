@@ -62,6 +62,8 @@ consumer_key: %s`, mock.URL, ovhcloudApplicationKeyTest, ovhcloudApplicationSecr
 			"__meta_ovhcloud_dedicated_server_ipv6":             "",
 			"__meta_ovhcloud_dedicated_server_link_speed":       "123",
 			"__meta_ovhcloud_dedicated_server_name":             "abcde",
+			"__meta_ovhcloud_dedicated_server_iam_display_name": "abcde",
+			"__meta_ovhcloud_dedicated_server_monitoring":       "true",
 			"__meta_ovhcloud_dedicated_server_no_intervention":  "false",
 			"__meta_ovhcloud_dedicated_server_os":               "debian11_64",
 			"__meta_ovhcloud_dedicated_server_rack":             "TESTRACK",
