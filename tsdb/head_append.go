@@ -443,12 +443,10 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
-	if s == nil {
-		var err error
-		s, _, err = a.getOrCreate(lset)
-		if err != nil {
-			return 0, err
-		}
+	var err error
+	s, err = a.getOrCreateAndLock(s, lset)
+	if err != nil {
+		return 0, err
 	}
 
 	if value.IsStaleNaN(v) {
@@ -461,8 +459,12 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		// an optimization for the more likely case.
 		switch a.typesInBatch[s.ref] {
 		case stHistogram, stCustomBucketHistogram:
+			ref = storage.SeriesRef(s.ref)
+			s.Unlock()
 			return a.AppendHistogram(ref, lset, t, &histogram.Histogram{Sum: v}, nil)
 		case stFloatHistogram, stCustomBucketFloatHistogram:
+			ref = storage.SeriesRef(s.ref)
+			s.Unlock()
 			return a.AppendHistogram(ref, lset, t, nil, &histogram.FloatHistogram{Sum: v})
 		}
 		// Note that a series reference not yet in the map will come out
@@ -471,7 +473,6 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		// series" and "known series with stNone".
 	}
 
-	s.Lock()
 	defer s.Unlock()
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
@@ -515,18 +516,15 @@ func (a *headAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 	}
 
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
-	if s == nil {
-		var err error
-		s, _, err = a.getOrCreate(lset)
-		if err != nil {
-			return 0, err
-		}
+	var err error
+	s, err = a.getOrCreateAndLock(s, lset)
+	if err != nil {
+		return 0, err
 	}
 
 	// Check if ST wouldn't be OOO vs samples we already might have for this series.
 	// NOTE(bwplotka): This will be often hit as it's expected for long living
 	// counters to share the same ST.
-	s.Lock()
 	isOOO, _, err := s.appendable(st, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 	if err == nil {
 		s.pendingCommit = true
@@ -566,6 +564,31 @@ func (a *headAppenderBase) getOrCreate(lset labels.Labels) (s *memSeries, create
 		a.series = append(a.series, s)
 	}
 	return s, created, nil
+}
+
+// getOrCreateAndLock returns a live series with its lock held. If GC retired the
+// series after it was looked up, retry using the retired series' labels.
+func (a *headAppenderBase) getOrCreateAndLock(s *memSeries, lset labels.Labels) (*memSeries, error) {
+	if hook := a.head.testAfterSeriesLookup; hook != nil {
+		hook(s)
+	}
+	for {
+		if s == nil {
+			var err error
+			s, _, err = a.getOrCreate(lset)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		s.Lock()
+		if !s.isRetired() {
+			return s, nil
+		}
+		lset = s.lset
+		s.Unlock()
+		s = nil
+	}
 }
 
 // getCurrentBatch returns the current batch if it fits the provided sampleType
@@ -837,17 +860,14 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 	}
 
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
-	if s == nil {
-		var err error
-		s, _, err = a.getOrCreate(lset)
-		if err != nil {
-			return 0, err
-		}
+	var err error
+	s, err = a.getOrCreateAndLock(s, lset)
+	if err != nil {
+		return 0, err
 	}
 
 	switch {
 	case h != nil:
-		s.Lock()
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
 		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow)
@@ -879,7 +899,6 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		})
 		b.histogramSeries = append(b.histogramSeries, s)
 	case fh != nil:
-		s.Lock()
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
 		_, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow)
@@ -910,6 +929,8 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 			FH:  fh,
 		})
 		b.floatHistogramSeries = append(b.floatHistogramSeries, s)
+	default:
+		s.Unlock()
 	}
 
 	return storage.SeriesRef(s.ref), nil
@@ -921,12 +942,10 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 	}
 
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
-	if s == nil {
-		var err error
-		s, _, err = a.getOrCreate(lset)
-		if err != nil {
-			return 0, err
-		}
+	var err error
+	s, err = a.getOrCreateAndLock(s, lset)
+	if err != nil {
+		return 0, err
 	}
 
 	switch {
@@ -939,7 +958,6 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			ZeroThreshold: h.ZeroThreshold,
 			CustomValues:  h.CustomValues,
 		}
-		s.Lock()
 		// For STZeroSamples OOO is not allowed.
 		// We set it to true to make this implementation as close as possible to the float implementation.
 		isOOO, _, err := s.appendableHistogram(st, zeroHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow)
@@ -981,7 +999,6 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			ZeroThreshold: fh.ZeroThreshold,
 			CustomValues:  fh.CustomValues,
 		}
-		s.Lock()
 		// We set it to true to make this implementation as close as possible to the float implementation.
 		isOOO, _, err := s.appendableFloatHistogram(st, zeroFloatHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow) // OOO is not allowed for STZeroSamples.
 		if err != nil {
@@ -1013,6 +1030,8 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			FH:  zeroFloatHistogram,
 		})
 		b.floatHistogramSeries = append(b.floatHistogramSeries, s)
+	default:
+		s.Unlock()
 	}
 
 	return storage.SeriesRef(s.ref), nil
