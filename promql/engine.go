@@ -4878,9 +4878,8 @@ func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelp
 // extendFloats extends the floats to the given mint and maxt.
 // This function is used with matrix selectors that are smoothed or anchored.
 func extendFloats(floats []FPoint, mint, maxt int64, smoothed bool) []FPoint {
-	// A series can be selected on chunk granularity and then trimmed to no
-	// samples at all, so floats may be empty here. Return it as-is rather than
-	// a fresh slice, so the caller can still hand it back to the pool.
+	// Nothing to extend. Return floats as-is so the caller can still hand it
+	// back to the pool.
 	if len(floats) == 0 {
 		return floats
 	}

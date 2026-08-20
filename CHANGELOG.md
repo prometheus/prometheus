@@ -3,7 +3,6 @@
 ## Unreleased
 
 - [BUGFIX] Discovery/AWS: Defer region resolution in EC2, ECS, RDS, MSK, ElastiCache, and Lightsail service discovery configs from YAML unmarshaling to SD init time. `promtool check config` and other config-only operations no longer make network calls to the EC2 instance metadata service (IMDS) when the region is omitted, which is supported by the documented configuration. Region resolution errors now surface at the discovery's first refresh instead of failing config validation. #19037
-- [BUGFIX] PromQL: Fix a panic in range selectors using the experimental `anchored` or `smoothed` modifier when the selected series has no samples inside the query window, for example a query evaluated inside a scrape gap. The query failed with `unexpected error: runtime error: index out of range [-1]`; it now returns an empty result, as it does without the modifier. #19431
 
 ## 3.13.2 / 2026-07-29
 
