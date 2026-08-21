@@ -2862,6 +2862,13 @@ func (s *memSeries) maxTime() int64 {
 // (mmapChunks, truncateChunksBefore) must be immediately paired with a
 // setHeadChunks call.
 func (s *memSeries) pushHeadChunk(chk *memChunk) *memChunk {
+	// Chunk IDs can only be 23 bits, so a series cannot hold more than 2^23 chunks
+	// without two of them sharing an ID. This is not reachable in practice (head
+	// compaction keeps the live set tiny); panic rather than serve an ambiguous ID.
+	if len(s.mmappedChunks)+int(s.headChunkCount.Load()) >= oooChunkIDMask-1 {
+		panic(fmt.Sprintf("too many in-order head chunks for series %s (%d)", s.lset.String(), s.ref))
+	}
+
 	chk.prev = s.headChunks
 	s.headChunks = chk
 	s.headChunkCount.Add(1)
@@ -2889,7 +2896,7 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 			if chk.maxTime < mint {
 				// If any head chunk is truncated, we can truncate all mmapped chunks.
 				removedInOrder = chk.len() + len(s.mmappedChunks)
-				s.firstChunkID += chunks.HeadChunkID(removedInOrder)
+				s.firstChunkID = wrapChunkID(s.firstChunkID + chunks.HeadChunkID(removedInOrder))
 				if i == 0 {
 					// This is the first chunk on the list so we need to remove the entire list.
 					s.setHeadChunks(nil, 0)
@@ -2914,7 +2921,7 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 			removedInOrder = i + 1
 		}
 		s.mmappedChunks = append(s.mmappedChunks[:0], s.mmappedChunks[removedInOrder:]...)
-		s.firstChunkID += chunks.HeadChunkID(removedInOrder)
+		s.firstChunkID = wrapChunkID(s.firstChunkID + chunks.HeadChunkID(removedInOrder))
 	}
 
 	var removedOOO int
@@ -2926,7 +2933,7 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 			removedOOO = i + 1
 		}
 		s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks[:0], s.ooo.oooMmappedChunks[removedOOO:]...)
-		s.ooo.firstOOOChunkID = (s.ooo.firstOOOChunkID + chunks.HeadChunkID(removedOOO)) & (oooChunkIDMask - 1)
+		s.ooo.firstOOOChunkID = wrapChunkID(s.ooo.firstOOOChunkID + chunks.HeadChunkID(removedOOO))
 
 		if len(s.ooo.oooMmappedChunks) == 0 && s.ooo.oooHeadChunk == nil {
 			s.ooo = nil
