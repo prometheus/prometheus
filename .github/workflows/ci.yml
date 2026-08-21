@@ -16,7 +16,7 @@ jobs:
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
-      image: quay.io/prometheus/golang-builder:1.26-base
+      image: quay.io/prometheus/golang-builder:1.27-base
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,7 +34,7 @@ jobs:
     name: More Go tests
     runs-on: ubuntu-latest
     container:
-      image: quay.io/prometheus/golang-builder:1.26-base
+      image: quay.io/prometheus/golang-builder:1.27-base
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -53,7 +53,7 @@ jobs:
     name: Go tests for 32-bit x86
     runs-on: ubuntu-latest
     container:
-      image: quay.io/prometheus/golang-builder:1.26-base
+      image: quay.io/prometheus/golang-builder:1.27-base
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -89,7 +89,7 @@ jobs:
       matrix:
         lts_version: ${{ fromJSON(needs.list_lts_releases.outputs.versions) }}
     container:
-      image: quay.io/prometheus/golang-builder:1.26-base
+      image: quay.io/prometheus/golang-builder:1.27-base
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -108,7 +108,7 @@ jobs:
     container:
       # The go version in this image should be the oldest Go version upstream
       # still supports, which scripts/check-go-mod-version.sh enforces.
-      image: quay.io/prometheus/golang-builder:1.26-base
+      image: quay.io/prometheus/golang-builder:1.27-base
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -127,7 +127,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
-      image: quay.io/prometheus/golang-builder:1.26-base
+      image: quay.io/prometheus/golang-builder:1.27-base
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -165,7 +165,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
-      image: quay.io/prometheus/golang-builder:1.26-base
+      image: quay.io/prometheus/golang-builder:1.27-base
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -185,7 +185,7 @@ jobs:
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
-      image: quay.io/prometheus/golang-builder:1.26-base
+      image: quay.io/prometheus/golang-builder:1.27-base
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -297,7 +297,7 @@ jobs:
     name: Check generated parser
     runs-on: ubuntu-latest
     container:
-      image: quay.io/prometheus/golang-builder:1.26-base
+      image: quay.io/prometheus/golang-builder:1.27-base
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
