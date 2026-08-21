@@ -32,6 +32,10 @@ import (
 type mockRDSClient struct {
 	clusters  map[string]types.DBCluster
 	instances map[string][]types.DBInstance
+
+	// onDescribeDBInstances, when set, runs at the start of every
+	// DescribeDBInstances call.
+	onDescribeDBInstances func()
 }
 
 func (m *mockRDSClient) DescribeDBClusters(_ context.Context, input *rds.DescribeDBClustersInput, _ ...func(*rds.Options)) (*rds.DescribeDBClustersOutput, error) {
@@ -55,6 +59,10 @@ func (m *mockRDSClient) DescribeDBClusters(_ context.Context, input *rds.Describ
 }
 
 func (m *mockRDSClient) DescribeDBInstances(_ context.Context, input *rds.DescribeDBInstancesInput, _ ...func(*rds.Options)) (*rds.DescribeDBInstancesOutput, error) {
+	if m.onDescribeDBInstances != nil {
+		m.onDescribeDBInstances()
+	}
+
 	var instances []types.DBInstance
 
 	// Check if filtering by cluster
@@ -426,9 +434,9 @@ func TestDescribeAllDBClusters(t *testing.T) {
 	require.Contains(t, clusters, "arn:aws:rds:us-east-1:123456789012:cluster:cluster-2")
 }
 
-// benchmarkRDSFixture builds clusters populated the way the RDS API populates a
+// rdsFixture builds clusters populated the way the RDS API populates a
 // provisioned Aurora PostgreSQL cluster, each with instanceCount instances.
-func benchmarkRDSFixture(clusterCount, instanceCount int) (map[string]types.DBCluster, map[string][]types.DBInstance) {
+func rdsFixture(clusterCount, instanceCount int) (map[string]types.DBCluster, map[string][]types.DBInstance) {
 	createTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	clusters := make(map[string]types.DBCluster, clusterCount)
 	instances := make(map[string][]types.DBInstance, clusterCount)
@@ -550,7 +558,7 @@ func BenchmarkRDSRefresh(b *testing.B) {
 
 	for _, bm := range benchmarks {
 		b.Run(bm.name, func(b *testing.B) {
-			clusters, instances := benchmarkRDSFixture(bm.clusters, bm.instances)
+			clusters, instances := rdsFixture(bm.clusters, bm.instances)
 			d := &RDSDiscovery{
 				logger: promslog.NewNopLogger(),
 				rds:    &mockRDSClient{clusters: clusters, instances: instances},
@@ -572,5 +580,42 @@ func BenchmarkRDSRefresh(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+// BenchmarkRDSRefreshAPILatency models the DescribeDBInstances round trip, which
+// dominates a refresh over many clusters and which BenchmarkRDSRefresh cannot
+// show because its client answers instantly. The absolute latency is arbitrary;
+// the ratio between the two benchmarks is what the number says.
+func BenchmarkRDSRefreshAPILatency(b *testing.B) {
+	const (
+		clusterCount = 20
+		roundTrip    = time.Millisecond
+	)
+	clusters, instances := rdsFixture(clusterCount, 2)
+
+	d := &RDSDiscovery{
+		logger: promslog.NewNopLogger(),
+		rds: &mockRDSClient{
+			clusters:              clusters,
+			instances:             instances,
+			onDescribeDBInstances: func() { time.Sleep(roundTrip) },
+		},
+		cfg: &RDSSDConfig{
+			Region:             "us-east-1",
+			Port:               9187,
+			RequestConcurrency: 10,
+		},
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		tgs, err := d.refresh(context.Background())
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(tgs[0].Targets) != clusterCount*2 {
+			b.Fatalf("got %d targets, want %d", len(tgs[0].Targets), clusterCount*2)
+		}
 	}
 }
