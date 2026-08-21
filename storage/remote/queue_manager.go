@@ -725,14 +725,34 @@ func isV2TimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, s
 	}
 }
 
+// lazyCounter defers resolving a CounterVec child until it is first needed.
+// WithLabelValues hashes the label values and takes a lock on every call, so
+// resolving once per Append is worthwhile when most samples take a dropped
+// path. Resolving lazily keeps reasons that never occur from being created.
+type lazyCounter struct {
+	vec     *prometheus.CounterVec
+	label   string
+	counter prometheus.Counter
+}
+
+func (l *lazyCounter) Inc() {
+	if l.counter == nil {
+		l.counter = l.vec.WithLabelValues(l.label)
+	}
+	l.counter.Inc()
+}
+
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
 func (t *QueueManager) Append(samples []record.RefSample) bool {
 	currentTime := time.Now()
+	droppedTooOld := lazyCounter{vec: t.metrics.droppedSamplesTotal, label: reasonTooOld}
+	droppedRelabelled := lazyCounter{vec: t.metrics.droppedSamplesTotal, label: reasonDroppedSeries}
+	droppedUnintentional := lazyCounter{vec: t.metrics.droppedSamplesTotal, label: reasonUnintentionalDroppedSeries}
 outer:
 	for _, s := range samples {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), s.T) {
-			t.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Inc()
+			droppedTooOld.Inc()
 			continue
 		}
 		t.seriesMtx.Lock()
@@ -741,9 +761,9 @@ outer:
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[s.Ref]; !ok {
 				t.logger.Info("Dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
-				t.metrics.droppedSamplesTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+				droppedUnintentional.Inc()
 			} else {
-				t.metrics.droppedSamplesTotal.WithLabelValues(reasonDroppedSeries).Inc()
+				droppedRelabelled.Inc()
 			}
 			t.seriesMtx.Unlock()
 			continue
