@@ -34,6 +34,7 @@ var (
 )
 
 func TestIONOSServerRefresh(t *testing.T) {
+	t.Parallel()
 	mock := httptest.NewServer(http.HandlerFunc(mockIONOSServers))
 	defer mock.Close()
 
@@ -142,6 +143,7 @@ func ionosServersBody(items string) string {
 // NIC with no IPs panicked the whole Prometheus process instead of degrading the
 // target.
 func TestIONOSServerRefreshNilContainers(t *testing.T) {
+	t.Parallel()
 	const serversID = "8feda53f-15f0-447f-badf-ebe32dad2fc0/servers"
 
 	for _, tc := range []struct {
