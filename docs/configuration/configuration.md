@@ -3118,6 +3118,9 @@ See below for the configuration options for STACKIT discovery:
 # The STACKIT project
 project: <string>
 
+# Role of the targets to discover. Options: "server", "postgres".
+[ role: <string> | default = "server" ]
+
 # STACKIT region to use. No automatic discovery of the region is done.
 [ region : <string> | default = "eu01" ]
 

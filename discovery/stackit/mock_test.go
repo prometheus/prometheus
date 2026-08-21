@@ -48,17 +48,17 @@ func (m *SDMock) Setup() {
 	m.t.Cleanup(m.Server.Close)
 }
 
-// ShutdownServer creates the mock server.
+// ShutdownServer closes the mock server.
 func (m *SDMock) ShutdownServer() {
 	m.Server.Close()
 }
 
 const (
-	testToken     = "LRK9DAWQ1ZAEFSrCNEEzLCUwhYX1U3g7wMg4dTlkkDC96fyDuyJ39nVbVjCKSDfj"
+	testToken     = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjI1MjQ2MDgwMDB9.c2lnbmF0dXJl"
 	testProjectID = "00000000-0000-0000-0000-000000000000"
 )
 
-// HandleServers mocks the STACKIT IAAS API.
+// HandleServers mocks the STACKIT IAAS API and Postgres API.
 func (m *SDMock) HandleServers() {
 	// /token endpoint mocks the token endpoint for service account authentication.
 	// It checks if the request body starts with "assertion=ey" to simulate a valid assertion
@@ -156,6 +156,29 @@ func (m *SDMock) HandleServers() {
 	  ]
   	}
   ]
+}`,
+		)
+	})
+
+	m.Mux.HandleFunc(fmt.Sprintf("/v2/projects/%s/regions/eu01/instances", testProjectID), func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", testToken) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		w.Header().Add("content-type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+
+		_, _ = fmt.Fprint(w, `
+{
+  "items": [
+    {
+      "id": "pg-12345-6789",
+      "name": "test-postgres-db",
+      "status": "READY"
+    }
+  ],
+  "count": 1
 }`,
 		)
 	})
