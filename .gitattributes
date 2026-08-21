@@ -1,1 +1,4 @@
 web/api/v1/testdata/openapi_golden.yaml linguist-generated
+
+# Normalize text files to LF (Linux style line-endings) - eliminates the need to have windows specific CRLF checks. 
+* text=auto eol=lf
