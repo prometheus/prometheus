@@ -2775,16 +2775,16 @@ func TestGCChunkAccess(t *testing.T) {
 
 	cr, err := h.chunksRange(0, 1500, nil)
 	require.NoError(t, err)
-	_, _, err = cr.ChunkOrIterable(chnks[0])
+	_, _, _, err = cr.ChunkOrIterable(chnks[0])
 	require.NoError(t, err)
-	_, _, err = cr.ChunkOrIterable(chnks[1])
+	_, _, _, err = cr.ChunkOrIterable(chnks[1])
 	require.NoError(t, err)
 
 	require.NoError(t, h.Truncate(1500)) // Remove a chunk.
 
-	_, _, err = cr.ChunkOrIterable(chnks[0])
+	_, _, _, err = cr.ChunkOrIterable(chnks[0])
 	require.Equal(t, storage.ErrNotFound, err)
-	_, _, err = cr.ChunkOrIterable(chnks[1])
+	_, _, _, err = cr.ChunkOrIterable(chnks[1])
 	require.NoError(t, err)
 }
 
@@ -2831,18 +2831,18 @@ func TestGCSeriesAccess(t *testing.T) {
 
 	cr, err := h.chunksRange(0, 2000, nil)
 	require.NoError(t, err)
-	_, _, err = cr.ChunkOrIterable(chunks[0])
+	_, _, _, err = cr.ChunkOrIterable(chunks[0])
 	require.NoError(t, err)
-	_, _, err = cr.ChunkOrIterable(chunks[1])
+	_, _, _, err = cr.ChunkOrIterable(chunks[1])
 	require.NoError(t, err)
 
 	require.NoError(t, h.Truncate(2000)) // Remove the series.
 
 	require.Equal(t, (*memSeries)(nil), h.series.getByID(1))
 
-	_, _, err = cr.ChunkOrIterable(chunks[0])
+	_, _, _, err = cr.ChunkOrIterable(chunks[0])
 	require.Equal(t, storage.ErrNotFound, err)
-	_, _, err = cr.ChunkOrIterable(chunks[1])
+	_, _, _, err = cr.ChunkOrIterable(chunks[1])
 	require.Equal(t, storage.ErrNotFound, err)
 }
 
@@ -7187,7 +7187,7 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 				require.Len(t, chkMetas, len(tc.expectedChks))
 
 				for i, expected := range tc.expectedChks {
-					chk, iterable, err := chkReader.ChunkOrIterable(chkMetas[i])
+					chk, iterable, _, err := chkReader.ChunkOrIterable(chkMetas[i])
 					require.NoError(t, err)
 					require.Nil(t, iterable)
 
@@ -7234,7 +7234,7 @@ func TestHeadDetectsDuplicateSampleAtSizeLimit(t *testing.T) {
 
 	storedSampleCount := 0
 	for _, chunkMeta := range chunks {
-		chunk, iterable, err := chunkReader.ChunkOrIterable(chunkMeta)
+		chunk, iterable, _, err := chunkReader.ChunkOrIterable(chunkMeta)
 		require.NoError(t, err)
 		require.Nil(t, iterable)
 		storedSampleCount += chunk.NumSamples()
@@ -8922,7 +8922,7 @@ func TestHeadAppender_STStorage_Disabled(t *testing.T) {
 	require.NoError(t, idxReader.Series(sRef, &lblBuilder, &chkMetas))
 
 	for _, meta := range chkMetas {
-		chk, iterable, err := chkReader.ChunkOrIterable(meta)
+		chk, iterable, _, err := chkReader.ChunkOrIterable(meta)
 		require.NoError(t, err)
 		require.Nil(t, iterable)
 
@@ -9417,7 +9417,7 @@ func TestHeadAppender_STStorage_ChunkEncoding(t *testing.T) {
 				require.NotEmpty(t, chkMetas)
 
 				for _, meta := range chkMetas {
-					chk, iterable, err := chkReader.ChunkOrIterable(meta)
+					chk, iterable, _, err := chkReader.ChunkOrIterable(meta)
 					require.NoError(t, err)
 					require.Nil(t, iterable)
 
