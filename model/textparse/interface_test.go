@@ -256,6 +256,7 @@ func testParse(t *testing.T, p Parser) (ret []parsedEntry) {
 			}
 			got.m = string(m)
 			p.Labels(&got.lset)
+			got.lset = got.lset.Copy()
 			got.st = p.StartTimestamp()
 
 			for e := (exemplar.Exemplar{}); p.Exemplar(&e); {

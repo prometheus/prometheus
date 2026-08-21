@@ -68,6 +68,10 @@ type Parser interface {
 	// Labels writes the labels of the current sample into the passed labels.
 	// The values of the "le" labels of classic histograms and "quantile" labels
 	// of summaries should follow the OpenMetrics formatting rules.
+	// The underlying storage of l may be reused across calls to Next.
+	// If multiple labels.Labels instances share the same storage (slice or string)
+	// then this call will overwrite it for all instances, so the caller must make
+	// sure that no other labels.Labels points at the same storage.
 	Labels(l *labels.Labels)
 
 	// Exemplar writes the exemplar of the current sample into the passed

@@ -264,7 +264,7 @@ func (p *PromParser) Labels(l *labels.Labels) {
 	}
 
 	p.builder.Sort()
-	*l = p.builder.Labels()
+	p.builder.Overwrite(l)
 }
 
 // Exemplar implements the Parser interface. However, since the classic
