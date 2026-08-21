@@ -5988,8 +5988,8 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 
 // TestAppendHistogramErrorDoesNotSetPendingCommit verifies that when
 // AppendHistogram fails with a sample-validation error (e.g. out-of-order),
-// the existing memSeries's pendingCommit flag is not left set to true.
-// A stuck pendingCommit flag keeps the series alive across head GC even
+// the existing memSeries's pending state is not left set.
+// Stuck pending state keeps the series alive across head GC even
 // though no samples are pending for it.
 func TestAppendHistogramErrorDoesNotSetPendingCommit(t *testing.T) {
 	for _, tc := range []struct {
@@ -6016,14 +6016,14 @@ func TestAppendHistogramErrorDoesNotSetPendingCommit(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, ms)
 			ms.Lock()
-			pc := ms.pendingCommit
+			pc := ms.hasPendingCommit()
 			ms.Unlock()
-			require.False(t, pc, "pendingCommit should be cleared after a successful commit")
+			require.False(t, pc, "pending state should be cleared after a successful commit")
 
 			// Attempt an out-of-order append: same series, earlier timestamp,
 			// OOO time window disabled. appendableHistogram returns
 			// ErrOutOfOrderSample, so the sample is never recorded in the
-			// appender's batch and Commit/Rollback never clears pendingCommit
+			// appender's batch and Commit/Rollback never clears pending state
 			// for this series.
 			app = head.Appender(context.Background())
 			_, err = app.AppendHistogram(0, lbls, 100, tc.h, tc.fh)
@@ -6031,9 +6031,9 @@ func TestAppendHistogramErrorDoesNotSetPendingCommit(t *testing.T) {
 			require.NoError(t, app.Rollback())
 
 			ms.Lock()
-			pc = ms.pendingCommit
+			pc = ms.hasPendingCommit()
 			ms.Unlock()
-			require.False(t, pc, "pendingCommit should remain false after a failed AppendHistogram")
+			require.False(t, pc, "pending state should remain clear after a failed AppendHistogram")
 		})
 	}
 }
@@ -7308,9 +7308,11 @@ func stripeSeriesWithCollidingSeries(t *testing.T) (*stripeSeries, *memSeries, *
 	lbls1, lbls2 := labelsWithHashCollision()
 	ms1 := memSeries{
 		lset: lbls1,
+		ref:  1,
 	}
 	ms2 := memSeries{
 		lset: lbls2,
+		ref:  2,
 	}
 	hash := lbls1.Hash()
 	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
@@ -7349,6 +7351,46 @@ func TestStripeSeries_gc(t *testing.T) {
 	require.Nil(t, got)
 	got = s.getByHash(hash, ms2.lset)
 	require.Nil(t, got)
+	ms1.Lock()
+	require.True(t, ms1.isRetired())
+	ms1.Unlock()
+	ms2.Lock()
+	require.True(t, ms2.isRetired())
+	ms2.Unlock()
+}
+
+func TestStripeSeries_gcKeepsSeriesUntilAllPendingCommitsFinish(t *testing.T) {
+	lset := labels.FromStrings("a", "1")
+	series := newMemSeries(lset, 1, 0, defaultIsolationDisabled, false)
+	series.Lock()
+	series.markPendingCommit()
+	series.markPendingCommit()
+	require.True(t, series.unmarkPendingCommit())
+	series.Unlock()
+
+	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
+	got, created := s.setUnlessAlreadySet(lset.Hash(), lset, series)
+	require.True(t, created)
+	require.Same(t, series, got)
+
+	deleted, _, _, _, _, _, _, _, _ := s.gc(0, 0)
+	require.Empty(t, deleted)
+	require.Same(t, series, s.getByID(series.ref))
+
+	series.Lock()
+	require.True(t, series.unmarkPendingCommit())
+	series.Unlock()
+	deleted, _, _, _, _, _, _, _, _ = s.gc(0, 0)
+	require.Contains(t, deleted, storage.SeriesRef(series.ref))
+	require.Nil(t, s.getByID(series.ref))
+
+	// Releasing a reservation that was never taken is reported rather than
+	// wrapping the count into the flag bits.
+	series.Lock()
+	require.False(t, series.unmarkPendingCommit())
+	require.Zero(t, series.pendingCommitCount())
+	require.True(t, series.isRetired())
+	series.Unlock()
 }
 
 func TestPostingsCardinalityStats(t *testing.T) {
@@ -7773,6 +7815,68 @@ func TestHeadAppender_AppendSTZeroSample(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHeadAppender_RejectedSTZeroSampleDoesNotRemainPending(t *testing.T) {
+	h, _ := newTestHead(t, DefaultBlockDuration, compression.None, true)
+	lset := labels.FromStrings("a", "1")
+
+	baseline := h.Appender(context.Background())
+	ref, err := baseline.Append(0, lset, 200, 2)
+	require.NoError(t, err)
+	require.NoError(t, baseline.Commit())
+
+	app := h.Appender(context.Background())
+	_, err = app.AppendSTZeroSample(ref, lset, 300, 100)
+	require.ErrorIs(t, err, storage.ErrOutOfOrderST)
+	require.NoError(t, app.Rollback())
+
+	series := h.series.getByID(chunks.HeadSeriesRef(ref))
+	require.NotNil(t, series)
+	series.Lock()
+	require.Zero(t, series.pendingCommitCount())
+	series.Unlock()
+	require.Zero(t, prom_testutil.ToFloat64(h.metrics.pendingCommitUnderflow),
+		"a balanced append round trip must not release a reservation it never took")
+}
+
+// TestHeadAppender_PendingCommitUnderflowIsReportedNotFatal verifies that releasing
+// a pending-sample reservation that is not held is reported and survivable. Such an
+// imbalance means the series was already eligible for garbage collection with a
+// sample in flight, but the commit must still finish: panicking here would leave the
+// series lock held for good, and wrapping the count would corrupt the flag bits.
+func TestHeadAppender_PendingCommitUnderflowIsReportedNotFatal(t *testing.T) {
+	h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+	lset := labels.FromStrings("a", "1")
+
+	app := h.Appender(context.Background())
+	ref, err := app.Append(0, lset, 100, 1)
+	require.NoError(t, err)
+
+	// Drop both reservations the append took, so every release during Commit
+	// underflows: one for the queued sample, one for the created series.
+	series := h.series.getByID(chunks.HeadSeriesRef(ref))
+	require.NotNil(t, series)
+	series.Lock()
+	require.Equal(t, uint32(2), series.pendingCommitCount())
+	require.True(t, series.unmarkPendingCommit())
+	require.True(t, series.unmarkPendingCommit())
+	series.Unlock()
+
+	require.NotPanics(t, func() { require.NoError(t, app.Commit()) })
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(h.metrics.pendingCommitUnderflow))
+
+	series.Lock()
+	require.Zero(t, series.pendingCommitCount(), "the count must clamp rather than wrap")
+	require.False(t, series.isRetired(), "wrapping would have cleared the retired flag")
+	series.Unlock()
+
+	// The sample is still committed; the accounting bug must not lose data on its own.
+	q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	require.Equal(t,
+		map[string][]chunks.Sample{`{a="1"}`: {sample{t: 100, f: 1}}},
+		query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "1")))
 }
 
 func TestHeadCompactableDoesNotCompactEmptyHead(t *testing.T) {

@@ -156,6 +156,7 @@ type Head struct {
 
 	memTruncationInProcess atomic.Bool
 	memTruncationCallBack  func() // For testing purposes.
+	testAfterSeriesLookup  func(*memSeries)
 }
 
 type ExemplarStorage interface {
@@ -423,6 +424,7 @@ type headMetrics struct {
 	seriesCreated             prometheus.Counter
 	seriesRemoved             prometheus.Counter
 	seriesNotFound            prometheus.Counter
+	pendingCommitUnderflow    prometheus.Counter
 	chunks                    prometheus.Gauge
 	chunksCreated             prometheus.Counter
 	chunksRemoved             prometheus.Counter
@@ -499,6 +501,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		seriesNotFound: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_series_not_found_total",
 			Help: "Total number of requests for series that were not found.",
+		}),
+		pendingCommitUnderflow: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_series_pending_commit_underflow_total",
+			Help: "Total number of releases of a pending-sample reservation that was not held, meaning a series may have been garbage collected while samples for it were still in flight.",
 		}),
 		chunks: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_head_chunks",
@@ -624,6 +630,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.seriesCreated,
 			m.seriesRemoved,
 			m.seriesNotFound,
+			m.pendingCommitUnderflow,
 			m.gcDuration,
 			m.walTruncateDuration,
 			m.walCorruptionsTotal,
@@ -2352,7 +2359,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 				minOOOTime = series.ooo.oooHeadChunk.minTime
 			}
 		}
-		if len(series.mmappedChunks) > 0 || series.headChunks != nil || series.pendingCommit ||
+		if len(series.mmappedChunks) > 0 || series.headChunks != nil || series.hasPendingCommit() ||
 			(series.ooo != nil && (len(series.ooo.oooMmappedChunks) > 0 || series.ooo.oooHeadChunk != nil)) {
 			seriesMint := series.minTime()
 			if seriesMint < actualMint {
@@ -2370,6 +2377,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			s.locks[stripe].Lock()
 			defer s.locks[stripe].Unlock()
 		}
+		series.setRetired()
 
 		stale, isHist, buckets := series.sampleState()
 		if stale {
@@ -2552,7 +2560,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		series.Lock()
 		defer series.Unlock()
 
-		if series.maxTime() > maxt {
+		if series.hasPendingCommit() || series.maxTime() > maxt {
 			return
 		}
 
@@ -2577,6 +2585,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 			s.locks[stripe].Lock()
 			defer s.locks[stripe].Unlock()
 		}
+		series.setRetired()
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		stale, isHist, buckets := series.sampleState()
@@ -2773,14 +2782,14 @@ type memSeries struct {
 
 	mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
 
-	nextAt                           int64 // Timestamp at which to cut the next chunk.
-	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
-	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
+	nextAt int64 // Timestamp at which to cut the next chunk.
+	// The state packs the pending-sample count and infrequent boolean flags to avoid increasing memSeries size.
+	state uint32
 	// headChunkCount tracks the number of head chunks. All mutations of the
 	// headChunks/headChunkCount pair go through pushHeadChunk and setHeadChunks.
 	// Chunk counts are bounded by the 3-byte field in HeadChunkRef, so cannot overflow uint32.
-	// Explicitly uses sync/atomic.Uint32 (4 bytes) to fit in the existing padding
-	// between two bools and a float64.
+	// Explicitly uses sync/atomic.Uint32 (4 bytes) so state and the chunk count
+	// occupy one 8-byte word before lastValue.
 	headChunkCount stdatomic.Uint32
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
@@ -2797,6 +2806,62 @@ type memSeries struct {
 
 	// txs is nil if isolation is disabled.
 	txs *txRing
+}
+
+// Layout of memSeries.state, which is only ever read or written with the series
+// lock held. Every pending-commit reservation must be released exactly once, and
+// a series with a non-zero count must not be garbage collected.
+const (
+	seriesPendingCommitMask                    uint32 = (1 << 30) - 1
+	seriesHistogramChunkHasComputedEndTimeFlag        = 1 << 30
+	seriesRetiredFlag                                 = 1 << 31
+)
+
+func (s *memSeries) hasPendingCommit() bool {
+	return s.pendingCommitCount() != 0
+}
+
+func (s *memSeries) pendingCommitCount() uint32 {
+	return s.state & seriesPendingCommitMask
+}
+
+func (s *memSeries) markPendingCommit() {
+	if s.pendingCommitCount() == seriesPendingCommitMask {
+		panic("pending commit counter overflow")
+	}
+	s.state++
+}
+
+// unmarkPendingCommit releases one pending-sample reservation, reporting whether
+// there was one to release. A missing reservation means the series was left
+// unprotected against GC while a sample was still in flight, so callers must
+// surface it rather than let the counter wrap into the flag bits.
+func (s *memSeries) unmarkPendingCommit() bool {
+	if !s.hasPendingCommit() {
+		return false
+	}
+	s.state--
+	return true
+}
+
+func (s *memSeries) isRetired() bool {
+	return s.state&seriesRetiredFlag != 0
+}
+
+func (s *memSeries) setRetired() {
+	s.state |= seriesRetiredFlag
+}
+
+func (s *memSeries) hasComputedHistogramChunkEndTime() bool {
+	return s.state&seriesHistogramChunkHasComputedEndTimeFlag != 0
+}
+
+func (s *memSeries) setComputedHistogramChunkEndTime(computed bool) {
+	if computed {
+		s.state |= seriesHistogramChunkHasComputedEndTimeFlag
+		return
+	}
+	s.state &^= seriesHistogramChunkHasComputedEndTimeFlag
 }
 
 // sampleState reports the latest in-order sample's staleness, type, and bucket
@@ -2823,11 +2888,13 @@ type memSeriesOOOFields struct {
 
 func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64, isolationDisabled, pendingCommit bool) *memSeries {
 	s := &memSeries{
-		lset:          lset,
-		ref:           id,
-		nextAt:        math.MinInt64,
-		shardHash:     shardHash,
-		pendingCommit: pendingCommit,
+		lset:      lset,
+		ref:       id,
+		nextAt:    math.MinInt64,
+		shardHash: shardHash,
+	}
+	if pendingCommit {
+		s.markPendingCommit()
 	}
 	if !isolationDisabled {
 		s.txs = newTxRing(0)
