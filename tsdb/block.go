@@ -136,7 +136,14 @@ type ChunkReader interface {
 	// Only one of chunk or iterable should be returned. In some cases you may
 	// always expect a chunk to be returned. You can check that iterable is nil
 	// in those cases.
-	ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error)
+	// The returned bool is true if the chunk is pool-owned and must be returned
+	// via PutChunk when the caller is done with it.
+	ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, bool, error)
+
+	// PutChunk returns a chunk to the pool so it can be reused by subsequent
+	// queries. It must only be called with chunks for which ChunkOrIterable
+	// returned true as the third return value.
+	PutChunk(chunkenc.Chunk) error
 
 	// Close releases all underlying resources of the reader.
 	Close() error

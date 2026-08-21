@@ -569,32 +569,37 @@ func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 }
 
 // ChunkOrIterable returns the chunk for the reference number.
-func (h *headChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
-	chk, _, err := h.chunk(meta, false)
-	return chk, nil, err
+func (h *headChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, bool, error) {
+	chk, _, fromPool, err := h.chunk(meta, false)
+	return chk, nil, fromPool, err
+}
+
+// PutChunk returns a chunk to the pool.
+func (h *headChunkReader) PutChunk(c chunkenc.Chunk) error {
+	return h.head.opts.ChunkPool.Put(c.(*safeHeadChunk).Chunk)
 }
 
 type ChunkReaderWithCopy interface {
-	ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error)
+	ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, bool, error)
 }
 
 // ChunkOrIterableWithCopy returns the chunk for the reference number.
 // If the chunk is the in-memory chunk, then it makes a copy and returns the copied chunk, plus the max time of the chunk.
-func (h *headChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
-	chk, maxTime, err := h.chunk(meta, true)
-	return chk, nil, maxTime, err
+func (h *headChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, bool, error) {
+	chk, maxTime, fromPool, err := h.chunk(meta, true)
+	return chk, nil, maxTime, fromPool, err
 }
 
 // chunk returns the chunk for the reference number.
 // If copyLastChunk is true, then it makes a copy of the head chunk if asked for it.
 // Also returns max time of the chunk.
-func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.Chunk, int64, error) {
+func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.Chunk, int64, bool, error) {
 	sid, cid, isOOO := unpackHeadChunkRef(meta.Ref)
 
 	s := h.head.series.getByID(sid)
 	// This means that the series has been garbage collected.
 	if s == nil {
-		return nil, 0, storage.ErrNotFound
+		return nil, 0, false, storage.ErrNotFound
 	}
 
 	s.Lock()
@@ -612,14 +617,17 @@ type wrapOOOHeadChunk struct {
 }
 
 // Call with s locked.
-func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool, mint, maxt int64, isoState *isolationState, copyLastChunk bool, headChunks []*memChunk) (chunkenc.Chunk, int64, error) {
+func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool, mint, maxt int64, isoState *isolationState, copyLastChunk bool, headChunks []*memChunk) (chunkenc.Chunk, int64, bool, error) {
 	if isOOO {
 		chk, maxTime, err := s.oooChunk(cid, h.chunkDiskMapper, &h.memChunkPool)
-		return wrapOOOHeadChunk{chk}, maxTime, err
+		// OOO chunks may come from the chunk buffer or write queue rather than
+		// the pool, so they must not be returned to the pool. wrapOOOHeadChunk
+		// makes pool.Put() skip the chunk (unknown type).
+		return wrapOOOHeadChunk{chk}, maxTime, false, err
 	}
 	c, headChunk, isOpen, err := s.chunk(cid, h.chunkDiskMapper, &h.memChunkPool, headChunks)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, false, err
 	}
 	defer func() {
 		if !headChunk {
@@ -632,7 +640,7 @@ func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool,
 
 	// This means that the chunk is outside the specified range.
 	if !c.OverlapsClosedInterval(mint, maxt) {
-		return nil, 0, storage.ErrNotFound
+		return nil, 0, false, storage.ErrNotFound
 	}
 
 	chk, maxTime := c.chunk, c.maxTime
@@ -640,19 +648,25 @@ func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool,
 		// The caller may ask to copy the head chunk in order to take the
 		// bytes of the chunk without causing the race between read and append.
 		newB := bytes.Clone(s.headChunks.chunk.Bytes())
-		// TODO(codesome): Put back in the pool (non-trivial).
 		chk, err = h.opts.ChunkPool.Get(s.headChunks.chunk.Encoding(), newB)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, false, err
 		}
+		return &safeHeadChunk{
+			Chunk:    chk,
+			s:        s,
+			cid:      cid,
+			isoState: isoState,
+		}, maxTime, true, nil
 	}
 
+	// Live head chunk without copy — not pool-owned.
 	return &safeHeadChunk{
 		Chunk:    chk,
 		s:        s,
 		cid:      cid,
 		isoState: isoState,
-	}, maxTime, nil
+	}, maxTime, false, nil
 }
 
 // chunk returns the chunk for the HeadChunkID from memory or by m-mapping it from the disk.

@@ -692,24 +692,24 @@ func (s *Reader) Size() int64 {
 }
 
 // ChunkOrIterable returns a chunk from a given reference.
-func (s *Reader) ChunkOrIterable(meta Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
+func (s *Reader) ChunkOrIterable(meta Meta) (chunkenc.Chunk, chunkenc.Iterable, bool, error) {
 	sgmIndex, chkStart := BlockChunkRef(meta.Ref).Unpack()
 
 	if sgmIndex >= len(s.bs) {
-		return nil, nil, fmt.Errorf("segment index %d out of range", sgmIndex)
+		return nil, nil, false, fmt.Errorf("segment index %d out of range", sgmIndex)
 	}
 
 	sgmBytes := s.bs[sgmIndex]
 
 	if chkStart+MaxChunkLengthFieldSize > sgmBytes.Len() {
-		return nil, nil, fmt.Errorf("segment doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", chkStart+MaxChunkLengthFieldSize, sgmBytes.Len())
+		return nil, nil, false, fmt.Errorf("segment doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", chkStart+MaxChunkLengthFieldSize, sgmBytes.Len())
 	}
 	// With the minimum chunk length this should never cause us reading
 	// over the end of the slice.
 	c := sgmBytes.Range(chkStart, chkStart+MaxChunkLengthFieldSize)
 	chkDataLen, n := binary.Uvarint(c)
 	if n <= 0 {
-		return nil, nil, fmt.Errorf("reading chunk length failed with %d", n)
+		return nil, nil, false, fmt.Errorf("reading chunk length failed with %d", n)
 	}
 
 	chkEncStart := chkStart + n
@@ -718,18 +718,24 @@ func (s *Reader) ChunkOrIterable(meta Meta) (chunkenc.Chunk, chunkenc.Iterable, 
 	chkDataEnd := chkEnd - crc32.Size
 
 	if chkEnd > sgmBytes.Len() {
-		return nil, nil, fmt.Errorf("segment doesn't include enough bytes to read the chunk - required:%v, available:%v", chkEnd, sgmBytes.Len())
+		return nil, nil, false, fmt.Errorf("segment doesn't include enough bytes to read the chunk - required:%v, available:%v", chkEnd, sgmBytes.Len())
 	}
 
 	sum := sgmBytes.Range(chkDataEnd, chkEnd)
 	if err := checkCRC32(sgmBytes.Range(chkEncStart, chkDataEnd), sum); err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 
 	chkData := sgmBytes.Range(chkDataStart, chkDataEnd)
 	chkEnc := sgmBytes.Range(chkEncStart, chkEncStart+ChunkEncodingSize)[0]
 	chk, err := s.pool.Get(chunkenc.Encoding(chkEnc), chkData)
-	return chk, nil, err
+	return chk, nil, true, err
+}
+
+// PutChunk returns a chunk to the pool so it can be reused by subsequent
+// queries.
+func (s *Reader) PutChunk(c chunkenc.Chunk) error {
+	return s.pool.Put(c)
 }
 
 func nextSequenceFile(dir string) (string, int, error) {
