@@ -89,7 +89,8 @@ float samples in `v` to have a lower limit of `min` and an upper limit of
 Special cases:
 
 * Return an empty vector if `min > max`
-* Float samples are clamped to `NaN` if `min` or `max` is `NaN`
+* The function returns `NaN` if `min` or `max` is `NaN`
+* Float samples are unchanged if `min` is `-Inf` and `max` is `+Inf`
 
 ## `clamp_max()`
 
@@ -97,11 +98,23 @@ Special cases:
 samples in `v` to have an upper limit of `max`. Histogram samples in the input
 vector are ignored silently.
 
+Special cases:
+
+* The function returns `NaN` if the `max` argument is `NaN`
+* Float samples are unchanged if `max` is `+Inf`
+* All float samples are set to `-Inf` if `max` is `-Inf`
+
 ## `clamp_min()`
 
 `clamp_min(v instant-vector, min scalar)` clamps the values of all float
 samples in `v` to have a lower limit of `min`. Histogram samples in the input
 vector are ignored silently.
+
+Special cases:
+
+* The function returns `NaN` if the `min` argument is `NaN`
+* Float samples are unchanged if `min` is `-Inf`
+* All float samples are set to `+Inf` if `min` is `+Inf`
 
 ## `day_of_month()`
 
