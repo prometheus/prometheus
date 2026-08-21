@@ -571,7 +571,7 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		cr.EnableChunkCache()
 
 		// First call: populates the cache.
-		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
+		_, _, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
 		require.NoError(t, err)
 		require.NotNil(t, cr.cachedHeadChunks)
 
@@ -583,7 +583,7 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		cr.cachedHeadChunks[0] = sentinel
 
 		// Second call (same series, no changes): must take the cache-hit path.
-		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
+		_, _, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
 		require.NoError(t, err)
 		require.Same(t, sentinel, cr.cachedHeadChunks[0], "expected cache hit — the cached slice should not have been re-collected")
 	})
@@ -606,7 +606,7 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		require.NoError(t, err)
 		cr.EnableChunkCache()
 
-		chk1, _, err := cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
+		chk1, _, _, err := cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
 		require.NoError(t, err)
 		require.NotNil(t, chk1)
 
@@ -634,7 +634,7 @@ func TestHeadChunkReaderCache(t *testing.T) {
 
 		// Query the newest head chunk again. With the bug, the stale cache
 		// would be used and return a wrong (mmapped) chunk.
-		chk2, _, err := cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
+		chk2, _, _, err := cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
 		require.NoError(t, err)
 		require.NotNil(t, chk2)
 
@@ -669,7 +669,7 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		cr.EnableChunkCache()
 
 		// First call: populates the cache.
-		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
+		_, _, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
 		require.NoError(t, err)
 		require.NotNil(t, cr.cachedHeadChunks)
 
@@ -693,7 +693,7 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		// Query the newest head chunk again. With a stale cache, the
 		// advanced firstChunkID indexes the old slice at the wrong position
 		// and returns an older chunk.
-		chk, _, err := cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
+		chk, _, _, err := cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
 		require.NoError(t, err)
 		require.NotNil(t, chk)
 		require.Len(t, cr.cachedHeadChunks, headChunksLenBefore-1, "the stale cache must be re-collected after truncation")
@@ -737,14 +737,14 @@ func TestHeadChunkReaderCache(t *testing.T) {
 
 		// Populate the cache with the big series: its cap exceeds the bound.
 		bigRef := chunks.NewHeadChunkRef(bigSeries.ref, bigSeries.firstChunkID)
-		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(bigRef)}, false)
+		_, _, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(bigRef)}, false)
 		require.NoError(t, err)
 		require.Greater(t, cap(cr.cachedHeadChunks), headChunksBufMaxCap)
 
 		// Switching to the small series must release the oversized array and
 		// pre-size the replacement from the series' chunk count.
 		smallRef := chunks.NewHeadChunkRef(smallSeries.ref, smallSeries.firstChunkID)
-		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(smallRef)}, false)
+		_, _, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(smallRef)}, false)
 		require.NoError(t, err)
 		require.LessOrEqual(t, cap(cr.cachedHeadChunks), headChunksBufMaxCap)
 	})
@@ -757,7 +757,7 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		require.NoError(t, err)
 		cr.EnableChunkCache()
 
-		_, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
+		_, _, _, err = cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
 		require.NoError(t, err)
 		require.NotNil(t, cr.cachedHeadChunks)
 

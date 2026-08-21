@@ -230,23 +230,28 @@ func NewHeadAndOOOChunkReader(head *Head, mint, maxt int64, cr *headChunkReader,
 	}
 }
 
-func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
-	c, it, _, err := cr.chunkOrIterable(meta, false)
-	return c, it, err
+func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, bool, error) {
+	c, it, _, fromPool, err := cr.chunkOrIterable(meta, false)
+	return c, it, fromPool, err
+}
+
+// PutChunk returns a chunk to the pool.
+func (cr *HeadAndOOOChunkReader) PutChunk(c chunkenc.Chunk) error {
+	return cr.head.opts.ChunkPool.Put(c.(*safeHeadChunk).Chunk)
 }
 
 // ChunkOrIterableWithCopy implements ChunkReaderWithCopy. The special Copy
 // behaviour is only implemented for the in-order head chunk.
-func (cr *HeadAndOOOChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
+func (cr *HeadAndOOOChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, bool, error) {
 	return cr.chunkOrIterable(meta, true)
 }
 
-func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk bool) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
+func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk bool) (chunkenc.Chunk, chunkenc.Iterable, int64, bool, error) {
 	sid, cid, isOOO := unpackHeadChunkRef(meta.Ref)
 	s := cr.head.series.getByID(sid)
 	// This means that the series has been garbage collected.
 	if s == nil {
-		return nil, nil, 0, storage.ErrNotFound
+		return nil, nil, 0, false, storage.ErrNotFound
 	}
 	var isoState *isolationState
 	if cr.cr != nil {
@@ -261,12 +266,12 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 		if !isOOO {
 			headChunks = cr.collectOrGetHeadChunks(s)
 		}
-		c, maxt, err := cr.head.chunkFromSeries(s, cid, isOOO, meta.MinTime, meta.MaxTime, isoState, copyLastChunk, headChunks)
-		return c, nil, maxt, err
+		c, maxt, fromPool, err := cr.head.chunkFromSeries(s, cid, isOOO, meta.MinTime, meta.MaxTime, isoState, copyLastChunk, headChunks)
+		return c, nil, maxt, fromPool, err
 	}
 	mm, ok := meta.Chunk.(*multiMeta)
 	if !ok { // Complete chunk was supplied.
-		return meta.Chunk, nil, meta.MaxTime, nil
+		return meta.Chunk, nil, meta.MaxTime, false, nil
 	}
 	// We have a composite meta: construct a composite iterable.
 	mc := &mergedOOOChunks{}
@@ -280,14 +285,14 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 			if !isOOO && headChunks == nil {
 				headChunks = cr.collectOrGetHeadChunks(s)
 			}
-			iterable, _, err := cr.head.chunkFromSeries(s, cid, isOOO, m.MinTime, m.MaxTime, isoState, copyLastChunk, headChunks)
+			iterable, _, _, err := cr.head.chunkFromSeries(s, cid, isOOO, m.MinTime, m.MaxTime, isoState, copyLastChunk, headChunks)
 			if err != nil {
-				return nil, nil, 0, fmt.Errorf("invalid head chunk: %w", err)
+				return nil, nil, 0, false, fmt.Errorf("invalid head chunk: %w", err)
 			}
 			mc.chunkIterables = append(mc.chunkIterables, iterable)
 		}
 	}
-	return nil, mc, meta.MaxTime, nil
+	return nil, mc, meta.MaxTime, false, nil
 }
 
 // collectOrGetHeadChunks returns the pre-collected head chunks for s. When the

@@ -639,7 +639,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 
 		for _, chk := range chks {
 			// Load the actual data of the chunk.
-			chk, iterable, err := chunkr.ChunkOrIterable(chk)
+			chk, iterable, _, err := chunkr.ChunkOrIterable(chk)
 			if err != nil {
 				return err
 			}
