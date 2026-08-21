@@ -531,20 +531,15 @@ func (d *RDSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 		}
 	}
 
-	var (
-		mu sync.Mutex
-		wg sync.WaitGroup
-	)
+	var mu sync.Mutex
+	errg, ectx := errgroup.WithContext(ctx)
+	errg.SetLimit(d.cfg.RequestConcurrency)
 	for _, cluster := range clusters {
-		wg.Add(1)
-
-		instances, err := d.describeDBInstances(ctx, *cluster.DBClusterArn)
-		if err != nil {
-			return nil, fmt.Errorf("error describing DB instances: %w", err)
-		}
-
-		go func(cluster types.DBCluster, instances []types.DBInstance) {
-			defer wg.Done()
+		errg.Go(func() error {
+			instances, err := d.describeDBInstances(ectx, *cluster.DBClusterArn)
+			if err != nil {
+				return fmt.Errorf("error describing DB instances: %w", err)
+			}
 
 			// Build a map of instance identifiers to their IsClusterWriter status
 			writerMap := make(map[string]bool)
@@ -1040,9 +1035,12 @@ func (d *RDSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				tg.Targets = append(tg.Targets, labels)
 				mu.Unlock()
 			}
-		}(cluster, instances)
+			return nil
+		})
 	}
 
-	wg.Wait()
+	if err := errg.Wait(); err != nil {
+		return nil, err
+	}
 	return []*targetgroup.Group{tg}, nil
 }
