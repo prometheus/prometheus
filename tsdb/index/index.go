@@ -1207,7 +1207,7 @@ func (s Symbols) Lookup(o uint32) (string, error) {
 			d.UvarintBytes()
 		}
 	}
-	sym := d.UvarintStr()
+	sym := yoloString(d.UvarintBytes())
 	if d.Err() != nil {
 		return "", d.Err()
 	}
