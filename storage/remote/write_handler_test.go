@@ -934,6 +934,132 @@ func TestRemoteWriteHandler_V2Message_NoDuplicateTypeAndUnitLabels(t *testing.T)
 	}
 }
 
+func TestRemoteWriteHandler_V2Message_RejectsExpandedLabelsOverLimit(t *testing.T) {
+	st := writev2.NewSymbolTable()
+	nameRef := st.Symbolize(labels.MetricName)
+	metricRef := st.Symbolize("test_metric")
+	largeValueRef := st.Symbolize(strings.Repeat("x", 32*1024))
+
+	labelRefs := []uint32{nameRef, metricRef}
+	for i := range 2048 {
+		labelRefs = append(labelRefs, st.Symbolize(fmt.Sprintf("x_%04d", i)), largeValueRef)
+	}
+
+	recorder, appendable := serveV2WriteRequest(t, []writev2.TimeSeries{{
+		LabelsRefs: labelRefs,
+		Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
+	}}, st.Symbols())
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "expanded labels size exceeds remote write limit")
+	require.Empty(t, appendable.samples)
+}
+
+func TestRemoteWriteHandler_V2Message_RejectsCumulativeExpandedLabelsOverLimit(t *testing.T) {
+	st := writev2.NewSymbolTable()
+	nameRef := st.Symbolize(labels.MetricName)
+	largeValueRef := st.Symbolize(strings.Repeat("x", 32*1024))
+
+	buildRefs := func(metric string) []uint32 {
+		labelRefs := []uint32{nameRef, st.Symbolize(metric)}
+		for i := range 600 {
+			labelRefs = append(labelRefs, st.Symbolize(fmt.Sprintf("x_%04d", i)), largeValueRef)
+		}
+		return labelRefs
+	}
+
+	recorder, appendable := serveV2WriteRequest(t, []writev2.TimeSeries{
+		{
+			LabelsRefs: buildRefs("test_metric_1"),
+			Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
+		},
+		{
+			LabelsRefs: buildRefs("test_metric_2"),
+			Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
+		},
+		{
+			LabelsRefs: []uint32{nameRef, st.Symbolize("test_metric_3")},
+			Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
+		},
+	}, st.Symbols())
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "expanded labels size exceeds remote write limit")
+	require.Len(t, appendable.samples, 1)
+	require.Equal(t, "test_metric_1", appendable.samples[0].l.Get(labels.MetricName))
+}
+
+func TestRemoteWriteHandler_V2Message_CountsInvalidSeriesTowardExpandedLabelsLimit(t *testing.T) {
+	st := writev2.NewSymbolTable()
+	largeValueRef := st.Symbolize(strings.Repeat("x", 32*1024))
+
+	buildRefs := func(metric string) []uint32 {
+		labelRefs := []uint32{}
+		if metric != "" {
+			labelRefs = append(labelRefs, st.Symbolize(labels.MetricName), st.Symbolize(metric))
+		}
+		for i := range 600 {
+			labelRefs = append(labelRefs, st.Symbolize(fmt.Sprintf("%s_%04d", metric, i)), largeValueRef)
+		}
+		return labelRefs
+	}
+
+	recorder, appendable := serveV2WriteRequest(t, []writev2.TimeSeries{
+		{
+			LabelsRefs: buildRefs(""),
+			Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
+		},
+		{
+			LabelsRefs: buildRefs("test_metric"),
+			Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
+		},
+	}, st.Symbols())
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "invalid metric name or labels")
+	require.Empty(t, appendable.samples)
+}
+
+func TestRemoteWriteHandler_V2Message_BoundsBadRequestErrorResponse(t *testing.T) {
+	st := writev2.NewSymbolTable()
+	labelRefs := []uint32{
+		st.Symbolize(labels.MetricName), st.Symbolize("test_metric"),
+		st.Symbolize("duplicate"), st.Symbolize(strings.Repeat("x", maxRemoteWriteErrMsgBytes*2)),
+		st.Symbolize("duplicate"), st.Symbolize("value"),
+	}
+
+	recorder, appendable := serveV2WriteRequest(t, []writev2.TimeSeries{{
+		LabelsRefs: labelRefs,
+		Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
+	}}, st.Symbols())
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "invalid labels for series")
+	require.Contains(t, recorder.Body.String(), "remote write error response truncated")
+	// http.Error appends a trailing newline to the error message.
+	require.LessOrEqual(t, recorder.Body.Len(), maxRemoteWriteErrMsgBytes+len("\n"))
+	require.Empty(t, appendable.samples)
+}
+
+func serveV2WriteRequest(t *testing.T, timeSeries []writev2.TimeSeries, symbols []string) (*httptest.ResponseRecorder, *mockAppendable) {
+	t.Helper()
+
+	payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), timeSeries, symbols, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/write", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+	req.Header.Set("Content-Encoding", compression.Snappy)
+	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+
+	appendable := &mockAppendable{}
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, false, false, false)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	return recorder, appendable
+}
+
 // NOTE: V2 Message is tested in TestRemoteWriteHandler_V2Message.
 func TestOutOfOrderSample_V1Message(t *testing.T) {
 	for _, tc := range []struct {
