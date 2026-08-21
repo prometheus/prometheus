@@ -988,8 +988,9 @@ type scrapeCache struct {
 type metaEntry struct {
 	metadata.Metadata
 
-	lastIter       uint64 // Last scrape iteration the entry was observed at.
-	lastIterChange uint64 // Last scrape iteration the entry was changed at.
+	lastIter         uint64 // Last scrape iteration the entry was observed at.
+	lastIterChange   uint64 // Last scrape iteration the entry was changed at.
+	lastIterSurvived uint64 // Last scrape iteration checks if metadata should be dropped or not
 }
 
 func (m *metaEntry) size() int {
@@ -1136,7 +1137,12 @@ func (c *scrapeCache) setType(mfName []byte, t model.MetricType) ([]byte, *metaE
 
 	e, ok := c.metadata[string(mfName)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
+		e = &metaEntry{
+			Metadata: metadata.Metadata{
+				Type: model.MetricTypeUnknown,
+			},
+			lastIterSurvived: ^uint64(0),
+		}
 		c.metadata[string(mfName)] = e
 	}
 	if e.Type != t {
@@ -1153,7 +1159,12 @@ func (c *scrapeCache) setHelp(mfName, help []byte) ([]byte, *metaEntry) {
 
 	e, ok := c.metadata[string(mfName)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
+		e = &metaEntry{
+			Metadata: metadata.Metadata{
+				Type: model.MetricTypeUnknown,
+			},
+			lastIterSurvived: ^uint64(0),
+		}
 		c.metadata[string(mfName)] = e
 	}
 	if e.Help != string(help) {
@@ -1170,9 +1181,15 @@ func (c *scrapeCache) setUnit(mfName, unit []byte) ([]byte, *metaEntry) {
 
 	e, ok := c.metadata[string(mfName)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
+		e = &metaEntry{
+			Metadata: metadata.Metadata{
+				Type: model.MetricTypeUnknown,
+			},
+			lastIterSurvived: ^uint64(0),
+		}
 		c.metadata[string(mfName)] = e
 	}
+
 	if e.Unit != string(unit) {
 		e.Unit = string(unit)
 		e.lastIterChange = c.iter
@@ -1190,6 +1207,7 @@ func (c *scrapeCache) GetMetadata(mfName string) (MetricMetadata, bool) {
 	if !ok {
 		return MetricMetadata{}, false
 	}
+
 	return MetricMetadata{
 		MetricFamily: mfName,
 		Type:         m.Type,
@@ -1206,12 +1224,14 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 	res := make([]MetricMetadata, 0, len(c.metadata))
 
 	for m, e := range c.metadata {
-		res = append(res, MetricMetadata{
-			MetricFamily: m,
-			Type:         e.Type,
-			Help:         e.Help,
-			Unit:         e.Unit,
-		})
+		if c.iter-1 == e.lastIterSurvived {
+			res = append(res, MetricMetadata{
+				MetricFamily: m,
+				Type:         e.Type,
+				Help:         e.Help,
+				Unit:         e.Unit,
+			})
+		}
 	}
 	return res
 }
@@ -1253,6 +1273,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 	opts.target.SetMetadataStore(opts.cache)
 
 	appenderCtx := opts.sp.ctx
+
 	if opts.sp.options.PassMetadataInContext {
 		// Store the cache and target in the context. This is then used by downstream OTel Collector
 		// to lookup the metadata required to process the samples. Not used by Prometheus itself.
@@ -1998,6 +2019,10 @@ loop:
 					}
 				}
 			}
+		}
+
+		if sampleAdded && lastMeta != nil {
+			lastMeta.lastIterSurvived = sl.cache.iter
 		}
 	}
 	if sampleLimitErr != nil {

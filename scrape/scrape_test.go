@@ -1345,6 +1345,129 @@ test_metric_total 1
 	require.Empty(t, md.Unit)
 }
 
+func TestScrapeMetadataAfterMetricRelabel(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testScrapeMetadataAfterMetricRelabel(t, appV2)
+	})
+}
+
+func testScrapeMetadataAfterMetricRelabel(t *testing.T, appV2 bool) {
+	sl, _ := newTestScrapeLoop(
+		t,
+		withAppendable(teststorage.NewAppendable(), appV2),
+	)
+
+	// Drop only test_dropped. Keep test_kept.
+	sl.sampleMutator = func(l labels.Labels) labels.Labels {
+		if l.Get("__name__") == "test_dropped" {
+			return labels.EmptyLabels()
+		}
+		return l
+	}
+
+	app := sl.appender()
+
+	_, _, _, err := app.append([]byte(`# TYPE test_kept gauge
+# HELP test_kept metric that survives
+test_kept 1
+# TYPE test_dropped gauge
+# HELP test_dropped metric that gets dropped
+test_dropped 2
+# EOF`), "application/openmetrics-text", time.Now())
+
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	metadata := sl.cache.ListMetadata()
+
+	var kept, dropped bool
+
+	for _, md := range metadata {
+		switch md.MetricFamily {
+		case "test_kept":
+			kept = true
+			require.Equal(t, model.MetricTypeGauge, md.Type)
+			require.Equal(t, "metric that survives", md.Help)
+		case "test_dropped":
+			dropped = true
+		}
+	}
+
+	require.True(t, kept, "expected metadata for surviving metric")
+	require.False(t, dropped, "metadata for dropped metric should not be returned")
+}
+
+func TestScrapeDeleteDroppedMetadata(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testScrapeDeleteDroppedMetadata(t, appV2)
+	})
+}
+
+func testScrapeDeleteDroppedMetadata(t *testing.T, appV2 bool) {
+	sl, _ := newTestScrapeLoop(
+		t,
+		withAppendable(teststorage.NewAppendable(), appV2),
+	)
+
+	sl.sampleMutator = func(_ labels.Labels) labels.Labels {
+		return labels.EmptyLabels()
+	}
+	app := sl.appender()
+
+	_, _, _, err := app.append([]byte(`# TYPE test_metric counter
+# HELP test_metric some help text
+# UNIT test_metric metric
+test_metric_total 1
+# EOF`), "application/openmetrics-text", time.Now())
+
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	metadata := sl.cache.ListMetadata()
+
+	for _, md := range metadata {
+		require.NotEqual(t, "test_metric", md.MetricFamily)
+	}
+}
+
+func TestScrapeSurvivedMetadata(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testScrapeSurvivedMetadata(t, appV2)
+	})
+}
+
+func testScrapeSurvivedMetadata(t *testing.T, appV2 bool) {
+	sl, _ := newTestScrapeLoop(
+		t,
+		withAppendable(teststorage.NewAppendable(), appV2),
+	)
+
+	sl.sampleMutator = func(l labels.Labels) labels.Labels {
+		return l
+	}
+
+	app := sl.appender()
+
+	_, _, _, err := app.append([]byte(`# TYPE test_metric counter
+# HELP test_metric some help text
+# UNIT test_metric metric
+test_metric_total 1
+# EOF`), "application/openmetrics-text", time.Now())
+
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	metadata := sl.cache.ListMetadata()
+	found := false
+	for _, md := range metadata {
+		if md.MetricFamily == "test_metric" {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "Expected test_metric metadata to be present")
+}
+
 func TestScrapeLoopSeriesAdded(t *testing.T) {
 	foreachAppendable(t, func(t *testing.T, appV2 bool) {
 		testScrapeLoopSeriesAdded(t, appV2)
