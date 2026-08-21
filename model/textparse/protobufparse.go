@@ -498,6 +498,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		// Potentially a second series in the metric family.
 		t := p.dec.GetType()
 		decodeNext := true
+		lastWasRedoClassicConversion := false
 		if t == dto.MetricType_SUMMARY ||
 			t == dto.MetricType_HISTOGRAM ||
 			t == dto.MetricType_GAUGE_HISTOGRAM {
@@ -523,17 +524,19 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			p.fieldsDone = false
 			p.exemplarPos = 0
 
-			// If this is a metric family containing native
-			// histograms, it means we are here thanks to redoClassic state.
-			// Return to native histograms for the consistent flow.
-			// If this is a metric family containing classic histograms,
-			// it means we might need to do NHCB conversion.
+			// If this is a metric family containing classic histograms
+			// and NHCB conversion is enabled, emit the NHCB for the
+			// current series without advancing. We do not advance
+			// because the NHCB is derived from the current series and
+			// must be emitted before moving to the next one.
 			if t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM {
 				if !isClassicHistogram {
-					if err := checkNativeHistogramConsistency(p.dec.GetHistogram()); err != nil {
-						return EntryInvalid, fmt.Errorf("histogram %q: %w", p.dec.GetName(), err)
-					}
-					p.state = EntryHistogram
+					// We just finished emitting the classic fields
+					// (_count, _sum, _bucket) of a native histogram
+					// via the redoClassic=true. The next series in this
+					// metric family may be native or classic-only, and
+					// we cannot tell which without advancing it.
+					lastWasRedoClassicConversion = true
 				} else if p.convertClassicHistogramsToNHCB {
 					// We still need to spit out the NHCB.
 					var err error
@@ -555,6 +558,25 @@ func (p *ProtobufParser) Next() (Entry, error) {
 					return p.Next()
 				}
 				return EntryInvalid, err
+			}
+			if lastWasRedoClassicConversion {
+				// The previous series was a native histogram whose
+				// classic fields were emitted via redoClassic.
+				//
+				// If the current series is classic only then we need to
+				// iterate _count, _sum, and all buckets, emitting a
+				// series per each.
+				if p.ignoreNativeHistograms || !isNativeHistogram(p.dec.GetHistogram()) {
+					p.fieldPos = -3
+					p.fieldsDone = false
+					return p.Next()
+				}
+				// If the current series is a native histogram then we
+				// simply emit it.
+				if err := checkNativeHistogramConsistency(p.dec.GetHistogram()); err != nil {
+					return EntryInvalid, fmt.Errorf("histogram %q: %w", p.dec.GetName(), err)
+				}
+				p.state = EntryHistogram
 			}
 		}
 		if err := p.onSeriesOrHistogramUpdate(); err != nil {
