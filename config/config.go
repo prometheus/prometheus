@@ -1100,6 +1100,7 @@ func (c *ScrapeConfig) ExtraScrapeMetricsEnabled() bool {
 type StorageConfig struct {
 	TSDBConfig      *TSDBConfig      `yaml:"tsdb,omitempty"`
 	ExemplarsConfig *ExemplarsConfig `yaml:"exemplars,omitempty"`
+	RCFConfig       *RCFConfig       `yaml:"rcf,omitempty"`
 }
 
 // TSDBRetentionConfig holds the configuration retention of data in storage storage.
@@ -1267,6 +1268,19 @@ type ExemplarsConfig struct {
 	// MaxExemplars sets the size, in # of exemplars stored, of the single circular buffer used to store exemplars in memory.
 	// Use a value of 0 or less than 0 to disable the storage without having to restart Prometheus.
 	MaxExemplars int64 `yaml:"max_exemplars,omitempty"`
+}
+
+// RCFConfig configures the streaming Random Cut Forest model store used by
+// the rcf() and rcf_attribution() PromQL functions.
+type RCFConfig struct {
+	// StorePath is the directory for on-disk model persistence.
+	// Defaults to <storage.tsdb.path>/rcf when unset.
+	// Set to an empty string to disable disk persistence.
+	StorePath string `yaml:"store_path,omitempty"`
+
+	// CacheSize is the maximum number of per-series models kept in memory.
+	// Defaults to 1024.
+	CacheSize int `yaml:"cache_size,omitempty"`
 }
 
 // AlertingConfig configures alerting and alertmanager related configs.
