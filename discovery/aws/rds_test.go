@@ -17,6 +17,7 @@ import (
 	"context"
 	"slices"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -618,4 +619,64 @@ func BenchmarkRDSRefreshAPILatency(b *testing.B) {
 			b.Fatalf("got %d targets, want %d", len(tgs[0].Targets), clusterCount*2)
 		}
 	}
+}
+
+func TestRDSDiscoveryDescribesInstancesConcurrently(t *testing.T) {
+	t.Parallel()
+
+	const (
+		clusterCount = 8
+		concurrency  = 4
+	)
+	clusters, instances := rdsFixture(clusterCount, 1)
+
+	var (
+		mu          sync.Mutex
+		once        sync.Once
+		inFlight    int
+		maxInFlight int
+	)
+	allInFlight := make(chan struct{})
+
+	mockClient := &mockRDSClient{clusters: clusters, instances: instances}
+	mockClient.onDescribeDBInstances = func() {
+		mu.Lock()
+		inFlight++
+		maxInFlight = max(maxInFlight, inFlight)
+		if inFlight == concurrency {
+			once.Do(func() { close(allInFlight) })
+		}
+		mu.Unlock()
+
+		// Hold every call open until RequestConcurrency of them are in flight.
+		// A serial implementation never gets past the first one and falls back
+		// on the timeout, leaving maxInFlight at 1.
+		select {
+		case <-allInFlight:
+		case <-time.After(2 * time.Second):
+		}
+
+		mu.Lock()
+		inFlight--
+		mu.Unlock()
+	}
+
+	d := &RDSDiscovery{
+		logger: promslog.NewNopLogger(),
+		rds:    mockClient,
+		cfg: &RDSSDConfig{
+			Region:             "us-east-1",
+			Port:               9187,
+			RequestConcurrency: concurrency,
+		},
+	}
+
+	tgs, err := d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 1)
+	require.Len(t, tgs[0].Targets, clusterCount)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, concurrency, maxInFlight, "DescribeDBInstances was not called concurrently")
 }
