@@ -16,6 +16,7 @@ package aws
 import (
 	"context"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -423,4 +424,153 @@ func TestDescribeAllDBClusters(t *testing.T) {
 	require.Len(t, clusters, 2)
 	require.Contains(t, clusters, "arn:aws:rds:us-east-1:123456789012:cluster:cluster-1")
 	require.Contains(t, clusters, "arn:aws:rds:us-east-1:123456789012:cluster:cluster-2")
+}
+
+// benchmarkRDSFixture builds clusters populated the way the RDS API populates a
+// provisioned Aurora PostgreSQL cluster, each with instanceCount instances.
+func benchmarkRDSFixture(clusterCount, instanceCount int) (map[string]types.DBCluster, map[string][]types.DBInstance) {
+	createTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	clusters := make(map[string]types.DBCluster, clusterCount)
+	instances := make(map[string][]types.DBInstance, clusterCount)
+
+	for c := range clusterCount {
+		clusterID := "aurora-cluster-" + strconv.Itoa(c)
+		clusterARN := "arn:aws:rds:us-east-1:123456789012:cluster:" + clusterID
+
+		members := make([]types.DBClusterMember, 0, instanceCount)
+		clusterInstances := make([]types.DBInstance, 0, instanceCount)
+		for i := range instanceCount {
+			instanceID := clusterID + "-instance-" + strconv.Itoa(i)
+			members = append(members, types.DBClusterMember{
+				DBInstanceIdentifier: aws.String(instanceID),
+				IsClusterWriter:      aws.Bool(i == 0),
+				PromotionTier:        aws.Int32(int32(i)),
+			})
+			clusterInstances = append(clusterInstances, types.DBInstance{
+				AutoMinorVersionUpgrade:    aws.Bool(true),
+				AvailabilityZone:           aws.String("us-east-1a"),
+				BackupRetentionPeriod:      aws.Int32(7),
+				CopyTagsToSnapshot:         aws.Bool(true),
+				DBInstanceArn:              aws.String("arn:aws:rds:us-east-1:123456789012:db:" + instanceID),
+				DBInstanceClass:            aws.String("db.r6g.xlarge"),
+				DBInstanceIdentifier:       aws.String(instanceID),
+				DBInstanceStatus:           aws.String("available"),
+				DBClusterIdentifier:        aws.String(clusterID),
+				DbiResourceId:              aws.String("db-ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+				DeletionProtection:         aws.Bool(false),
+				Endpoint:                   &types.Endpoint{Address: aws.String(instanceID + ".xyz.us-east-1.rds.amazonaws.com"), Port: aws.Int32(5432), HostedZoneId: aws.String("Z2R2ITUGPM61AM")},
+				Engine:                     aws.String("aurora-postgresql"),
+				EngineVersion:              aws.String("15.4"),
+				InstanceCreateTime:         aws.Time(createTime),
+				KmsKeyId:                   aws.String("arn:aws:kms:us-east-1:123456789012:key/abcd1234"),
+				MonitoringInterval:         aws.Int32(60),
+				MonitoringRoleArn:          aws.String("arn:aws:iam::123456789012:role/rds-monitoring-role"),
+				MultiAZ:                    aws.Bool(false),
+				NetworkType:                aws.String("IPV4"),
+				PerformanceInsightsEnabled: aws.Bool(true),
+				PreferredBackupWindow:      aws.String("07:00-07:30"),
+				PreferredMaintenanceWindow: aws.String("sun:09:00-sun:09:30"),
+				PromotionTier:              aws.Int32(int32(i)),
+				PubliclyAccessible:         aws.Bool(false),
+				StorageEncrypted:           aws.Bool(true),
+				StorageType:                aws.String("aurora"),
+				TagList: []types.Tag{
+					{Key: aws.String("Name"), Value: aws.String(instanceID)},
+					{Key: aws.String("Environment"), Value: aws.String("production")},
+				},
+			})
+		}
+
+		clusters[clusterARN] = types.DBCluster{
+			ActivityStreamStatus:               types.ActivityStreamStatusStopped,
+			AllocatedStorage:                   aws.Int32(1),
+			AutoMinorVersionUpgrade:            aws.Bool(true),
+			BackupRetentionPeriod:              aws.Int32(7),
+			ClusterCreateTime:                  aws.Time(createTime),
+			CopyTagsToSnapshot:                 aws.Bool(true),
+			CrossAccountClone:                  aws.Bool(false),
+			DatabaseName:                       aws.String("appdb"),
+			DBClusterArn:                       aws.String(clusterARN),
+			DBClusterIdentifier:                aws.String(clusterID),
+			DBClusterMembers:                   members,
+			DBClusterParameterGroup:            aws.String("default.aurora-postgresql15"),
+			DbClusterResourceId:                aws.String("cluster-ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+			DBSubnetGroup:                      aws.String("default-vpc-0123456789abcdef0"),
+			DeletionProtection:                 aws.Bool(false),
+			EarliestRestorableTime:             aws.Time(createTime),
+			Endpoint:                           aws.String(clusterID + ".cluster-xyz.us-east-1.rds.amazonaws.com"),
+			Engine:                             aws.String("aurora-postgresql"),
+			EngineLifecycleSupport:             aws.String("open-source-rds-extended-support"),
+			EngineMode:                         aws.String("provisioned"),
+			EngineVersion:                      aws.String("15.4"),
+			HostedZoneId:                       aws.String("Z2R2ITUGPM61AM"),
+			HttpEndpointEnabled:                aws.Bool(false),
+			IAMDatabaseAuthenticationEnabled:   aws.Bool(false),
+			KmsKeyId:                           aws.String("arn:aws:kms:us-east-1:123456789012:key/abcd1234"),
+			LatestRestorableTime:               aws.Time(createTime),
+			LocalWriteForwardingStatus:         types.LocalWriteForwardingStatusDisabled,
+			MasterUsername:                     aws.String("postgres"),
+			MonitoringInterval:                 aws.Int32(60),
+			MonitoringRoleArn:                  aws.String("arn:aws:iam::123456789012:role/rds-monitoring-role"),
+			MultiAZ:                            aws.Bool(true),
+			NetworkType:                        aws.String("IPV4"),
+			PercentProgress:                    aws.String("100"),
+			PerformanceInsightsEnabled:         aws.Bool(true),
+			PerformanceInsightsRetentionPeriod: aws.Int32(7),
+			Port:                               aws.Int32(5432),
+			PreferredBackupWindow:              aws.String("07:00-07:30"),
+			PreferredMaintenanceWindow:         aws.String("sun:09:00-sun:09:30"),
+			PubliclyAccessible:                 aws.Bool(false),
+			ReaderEndpoint:                     aws.String(clusterID + ".cluster-ro-xyz.us-east-1.rds.amazonaws.com"),
+			Status:                             aws.String("available"),
+			StorageEncrypted:                   aws.Bool(true),
+			StorageType:                        aws.String("aurora"),
+			TagList: []types.Tag{
+				{Key: aws.String("Name"), Value: aws.String(clusterID)},
+				{Key: aws.String("Environment"), Value: aws.String("production")},
+				{Key: aws.String("Team"), Value: aws.String("platform")},
+			},
+		}
+		instances[clusterARN] = clusterInstances
+	}
+
+	return clusters, instances
+}
+
+func BenchmarkRDSRefresh(b *testing.B) {
+	benchmarks := []struct {
+		name      string
+		clusters  int
+		instances int
+	}{
+		{"1Cluster/1Instance", 1, 1},
+		{"1Cluster/16Instances", 1, 16},
+		{"20Clusters/4Instances", 20, 4},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			clusters, instances := benchmarkRDSFixture(bm.clusters, bm.instances)
+			d := &RDSDiscovery{
+				logger: promslog.NewNopLogger(),
+				rds:    &mockRDSClient{clusters: clusters, instances: instances},
+				cfg: &RDSSDConfig{
+					Region:             "us-east-1",
+					Port:               9187,
+					RequestConcurrency: 10,
+				},
+			}
+
+			b.ReportAllocs()
+			for b.Loop() {
+				tgs, err := d.refresh(context.Background())
+				if err != nil {
+					b.Fatal(err)
+				}
+				if len(tgs[0].Targets) != bm.clusters*bm.instances {
+					b.Fatalf("got %d targets, want %d", len(tgs[0].Targets), bm.clusters*bm.instances)
+				}
+			}
+		})
+	}
 }
