@@ -85,6 +85,73 @@ func testBlocks(t *testing.T, db *tsdb.DB, expectedMinTime, expectedMaxTime, exp
 	}
 }
 
+func TestGetCompatibleBlockDuration(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		Description      string
+		MaxBlockDuration time.Duration
+		Expected         time.Duration
+	}{
+		{
+			Description: "Unset duration uses the default block duration.",
+			Expected:    2 * time.Hour,
+		},
+		{
+			Description:      "Duration below the default block duration is ignored.",
+			MaxBlockDuration: time.Hour,
+			Expected:         2 * time.Hour,
+		},
+		{
+			Description:      "Day aligned duration of a day is used as is.",
+			MaxBlockDuration: 24 * time.Hour,
+			Expected:         24 * time.Hour,
+		},
+		{
+			Description:      "Day aligned duration dividing a day is used as is.",
+			MaxBlockDuration: 8 * time.Hour,
+			Expected:         8 * time.Hour,
+		},
+		{
+			Description:      "Day aligned duration that is a multiple of a day is used as is.",
+			MaxBlockDuration: 48 * time.Hour,
+			Expected:         48 * time.Hour,
+		},
+		{
+			Description:      "Duration matching a compaction range that is also day aligned.",
+			MaxBlockDuration: 6 * time.Hour,
+			Expected:         6 * time.Hour,
+		},
+		{
+			Description:      "Duration matching a compaction range that is not day aligned.",
+			MaxBlockDuration: 18 * time.Hour,
+			Expected:         18 * time.Hour,
+		},
+		{
+			Description:      "Duration that is neither day aligned nor a compaction range rounds down.",
+			MaxBlockDuration: 30 * time.Hour,
+			Expected:         18 * time.Hour,
+		},
+		{
+			Description:      "Duration shorter than a day that does not divide it rounds down.",
+			MaxBlockDuration: 5 * time.Hour,
+			Expected:         2 * time.Hour,
+		},
+		{
+			Description:      "Enormous duration is capped at the largest compaction range.",
+			MaxBlockDuration: 200000 * time.Hour,
+			Expected:         39366 * time.Hour,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.Description, func(t *testing.T) {
+			t.Parallel()
+
+			duration := getCompatibleBlockDuration(int64(test.MaxBlockDuration / time.Millisecond))
+			require.Equal(t, int64(test.Expected/time.Millisecond), duration)
+		})
+	}
+}
+
 func TestBackfill(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -677,6 +744,43 @@ http_requests_total{code="200"} 3 1629863088.000
 						Timestamp: 1629863088000,
 						Value:     3,
 						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200", "cluster_id", "123", "org_id", "999"),
+					},
+				},
+			},
+		},
+		{
+			// Both samples fall into one 18h compaction range, but on either side of a day boundary.
+			ToParse: `# HELP http_requests_total The total number of HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{code="200"} 1 1624474800.000
+http_requests_total{code="200"} 2 1624528800.000
+# EOF
+`,
+			IsOk:                 true,
+			Description:          "Day aligned blocks do not span a day boundary.",
+			MaxSamplesInAppender: 5000,
+			MaxBlockDuration:     24 * time.Hour,
+			Expected: struct {
+				MinTime       int64
+				MaxTime       int64
+				NumBlocks     int
+				BlockDuration int64
+				Samples       []backfillSample
+			}{
+				MinTime:       1624474800000,
+				MaxTime:       1624528800000,
+				NumBlocks:     2,
+				BlockDuration: int64(24 * time.Hour / time.Millisecond),
+				Samples: []backfillSample{
+					{
+						Timestamp: 1624474800000,
+						Value:     1,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+					{
+						Timestamp: 1624528800000,
+						Value:     2,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
 					},
 				},
 			},

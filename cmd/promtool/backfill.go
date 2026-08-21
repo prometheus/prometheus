@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -68,20 +69,35 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 	return maxt, mint, nil
 }
 
+const dayMilliseconds = int64(24 * time.Hour / time.Millisecond)
+
+// isDayAligned reports whether blocks of duration d stay within a day, block start times being aligned to the Unix epoch.
+func isDayAligned(d int64) bool {
+	return dayMilliseconds%d == 0 || d%dayMilliseconds == 0
+}
+
 func getCompatibleBlockDuration(maxBlockDuration int64) int64 {
-	blockDuration := tsdb.DefaultBlockDuration
-	if maxBlockDuration > tsdb.DefaultBlockDuration {
-		ranges := tsdb.ExponentialBlockRanges(tsdb.DefaultBlockDuration, 10, 3)
-		idx := len(ranges) - 1 // Use largest range if user asked for something enormous.
-		for i, v := range ranges {
-			if v > maxBlockDuration {
-				idx = i - 1
-				break
-			}
-		}
-		blockDuration = ranges[idx]
+	if maxBlockDuration <= tsdb.DefaultBlockDuration {
+		return tsdb.DefaultBlockDuration
 	}
-	return blockDuration
+
+	ranges := tsdb.ExponentialBlockRanges(tsdb.DefaultBlockDuration, 10, 3)
+	// Day aligned durations are kept as is, for TSDB systems that store daily blocks.
+	if isDayAligned(maxBlockDuration) {
+		if !slices.Contains(ranges, maxBlockDuration) {
+			logger.Warn("Creating day aligned blocks that do not match a Prometheus compaction range. Do not move them into a Prometheus data directory.", "block_duration", time.Duration(maxBlockDuration)*time.Millisecond)
+		}
+		return maxBlockDuration
+	}
+
+	idx := len(ranges) - 1 // Use largest range if user asked for something enormous.
+	for i, v := range ranges {
+		if v > maxBlockDuration {
+			idx = i - 1
+			break
+		}
+	}
+	return ranges[idx]
 }
 
 func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesInAppender int, outputDir string, humanReadable, quiet bool, customLabels map[string]string) (returnErr error) {
