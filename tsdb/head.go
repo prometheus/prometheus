@@ -2896,7 +2896,7 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 			if chk.maxTime < mint {
 				// If any head chunk is truncated, we can truncate all mmapped chunks.
 				removedInOrder = chk.len() + len(s.mmappedChunks)
-				s.firstChunkID = (s.firstChunkID + chunks.HeadChunkID(removedInOrder)) % oooChunkIDMask
+				s.firstChunkID = wrapChunkID(s.firstChunkID + chunks.HeadChunkID(removedInOrder))
 				if i == 0 {
 					// This is the first chunk on the list so we need to remove the entire list.
 					s.setHeadChunks(nil, 0)
@@ -2921,7 +2921,7 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 			removedInOrder = i + 1
 		}
 		s.mmappedChunks = append(s.mmappedChunks[:0], s.mmappedChunks[removedInOrder:]...)
-		s.firstChunkID = (s.firstChunkID + chunks.HeadChunkID(removedInOrder)) % oooChunkIDMask
+		s.firstChunkID = wrapChunkID(s.firstChunkID + chunks.HeadChunkID(removedInOrder))
 	}
 
 	var removedOOO int
@@ -2933,7 +2933,7 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 			removedOOO = i + 1
 		}
 		s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks[:0], s.ooo.oooMmappedChunks[removedOOO:]...)
-		s.ooo.firstOOOChunkID = (s.ooo.firstOOOChunkID + chunks.HeadChunkID(removedOOO)) % oooChunkIDMask
+		s.ooo.firstOOOChunkID = wrapChunkID(s.ooo.firstOOOChunkID + chunks.HeadChunkID(removedOOO))
 
 		if len(s.ooo.oooMmappedChunks) == 0 && s.ooo.oooHeadChunk == nil {
 			s.ooo = nil
