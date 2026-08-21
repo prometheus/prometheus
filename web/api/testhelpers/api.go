@@ -151,7 +151,7 @@ type NewAPIParams struct {
 }
 
 // PrepareAPI creates a NewAPIParams with sensible defaults for testing.
-func PrepareAPI(t testing.TB, cfg APIConfig) NewAPIParams {
+func PrepareAPI(t *testing.T, cfg APIConfig) NewAPIParams {
 	t.Helper()
 
 	// Create defaults for unset lazy loaders.

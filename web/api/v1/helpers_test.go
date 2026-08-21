@@ -25,7 +25,7 @@ import (
 )
 
 // newTestAPI creates a new API instance for testing using testhelpers.
-func newTestAPI(t testing.TB, cfg testhelpers.APIConfig) *testhelpers.APIWrapper {
+func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper {
 	t.Helper()
 
 	params := testhelpers.PrepareAPI(t, cfg)
