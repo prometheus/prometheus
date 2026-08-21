@@ -4,6 +4,9 @@ packages:
 allowBuilds:
   esbuild: true
   unrs-resolver: true
+minimumReleaseAge: 10080
+blockExoticSubdeps: true
+trustPolicy: no-downgrade
 minimumReleaseAgeExclude:
   - '@mantine/code-highlight@9.5.0'
   - '@mantine/core@9.5.0'
