@@ -1511,6 +1511,18 @@ func main() {
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
 				localStorage.Set(db, startTimeMargin)
 				db.SetWriteNotified(remoteStorage)
+
+				if cfg.tsdb.EnableFastStartup {
+					go func() {
+						// Wait for queries to become enabled.
+						<-db.Head().WaitForWALReplay()
+						localStorage.SetQueryReady()
+						logger.Info("WAL replay finished. Queries are now enabled.")
+					}()
+				} else {
+					localStorage.SetQueryReady()
+				}
+
 				close(dbOpen)
 				<-cancel
 				logger.Info("TSDB stopped")
@@ -1569,6 +1581,7 @@ func main() {
 				)
 
 				localStorage.Set(db, 0)
+				localStorage.SetQueryReady()
 				db.SetWriteNotified(remoteStorage)
 				close(dbOpen)
 				<-cancel
@@ -1820,6 +1833,7 @@ type readyStorage struct {
 	db              storage.Storage
 	startTimeMargin int64
 	stats           *tsdb.DBStats
+	queryReady      atomic.Bool
 }
 
 func (s *readyStorage) ApplyConfig(conf *config.Config) error {
@@ -1853,6 +1867,10 @@ func (s *readyStorage) getStats() *tsdb.DBStats {
 	return x
 }
 
+func (s *readyStorage) SetQueryReady() {
+	s.queryReady.Store(true)
+}
+
 // StartTime implements the Storage interface.
 func (s *readyStorage) StartTime() (int64, error) {
 	if x := s.get(); x != nil {
@@ -1878,6 +1896,9 @@ func (s *readyStorage) StartTime() (int64, error) {
 
 // Querier implements the Storage interface.
 func (s *readyStorage) Querier(mint, maxt int64) (storage.Querier, error) {
+	if !s.queryReady.Load() {
+		return nil, tsdb.ErrNotReady
+	}
 	if x := s.get(); x != nil {
 		return x.Querier(mint, maxt)
 	}
@@ -1886,6 +1907,9 @@ func (s *readyStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 
 // ChunkQuerier implements the Storage interface.
 func (s *readyStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	if !s.queryReady.Load() {
+		return nil, tsdb.ErrNotReady
+	}
 	if x := s.get(); x != nil {
 		return x.ChunkQuerier(mint, maxt)
 	}
@@ -1893,6 +1917,9 @@ func (s *readyStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, err
 }
 
 func (s *readyStorage) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
+	if !s.queryReady.Load() {
+		return nil, tsdb.ErrNotReady
+	}
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
 		case *tsdb.DB:
@@ -1974,6 +2001,9 @@ func (s *readyStorage) Close() error {
 
 // CleanTombstones implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
 func (s *readyStorage) CleanTombstones() error {
+	if !s.queryReady.Load() {
+		return tsdb.ErrNotReady
+	}
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
 		case *tsdb.DB:
@@ -1989,6 +2019,9 @@ func (s *readyStorage) CleanTombstones() error {
 
 // BlockMetas implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
 func (s *readyStorage) BlockMetas() ([]tsdb.BlockMeta, error) {
+	if !s.queryReady.Load() {
+		return nil, tsdb.ErrNotReady
+	}
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
 		case *tsdb.DB:
@@ -2004,6 +2037,9 @@ func (s *readyStorage) BlockMetas() ([]tsdb.BlockMeta, error) {
 
 // Delete implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
 func (s *readyStorage) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
+	if !s.queryReady.Load() {
+		return tsdb.ErrNotReady
+	}
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
 		case *tsdb.DB:
@@ -2019,6 +2055,9 @@ func (s *readyStorage) Delete(ctx context.Context, mint, maxt int64, ms ...*labe
 
 // Snapshot implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
 func (s *readyStorage) Snapshot(dir string, withHead bool) error {
+	if !s.queryReady.Load() {
+		return tsdb.ErrNotReady
+	}
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
 		case *tsdb.DB:
@@ -2034,6 +2073,9 @@ func (s *readyStorage) Snapshot(dir string, withHead bool) error {
 
 // Stats implements the api_v1.TSDBAdminStats interface.
 func (s *readyStorage) Stats(statsByLabelName string, limit int) (*tsdb.Stats, error) {
+	if !s.queryReady.Load() {
+		return nil, tsdb.ErrNotReady
+	}
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
 		case *tsdb.DB:
