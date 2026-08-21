@@ -66,21 +66,14 @@ type AppendV2Options struct {
 	// This moves the responsibility for metadata storage options to TSDB.
 	Metadata metadata.Metadata
 
-	// Exemplars (optional) attached to the appended sample.
-	// Exemplar slice MUST be sorted by Exemplar.TS.
-	// Exemplar slice is unsafe for reuse.
-	// Duplicate exemplars errors MUST be ignored by implementations.
-	Exemplars []exemplar.Exemplar
-
 	// RejectOutOfOrder tells implementation that this append should not be out
 	// of order. An OOO append MUST be rejected with storage.ErrOutOfOrderSample
 	// error.
 	RejectOutOfOrder bool
 }
 
-// AppendPartialError represents an AppenderV2.Append error that tells
-// callers sample was written but some auxiliary optional data (e.g. exemplars)
-// was not (or partially written)
+// AppendPartialError represents an AppenderV2.AppendExemplars error that tells
+// callers some, but not all, of the given exemplars were written.
 //
 // It's up to the caller to decide if it's an ignorable error or not, plus
 // it allows extra reporting (e.g. for Remote Write 2.0 X-Remote-Write-Written headers).
@@ -156,7 +149,7 @@ var _ error = &AppendPartialError{}
 type AppenderV2 interface {
 	AppenderTransaction
 
-	// Append appends a sample and related exemplars, metadata, and start timestamp (st) to the storage.
+	// Append appends a sample and related metadata and start timestamp (st) to the storage.
 	//
 	// ref (optional) represents the stable ID for the given series identified by ls (excluding metadata).
 	// Callers MAY provide the ref to help implementation avoid ls -> ref computation, otherwise ref MUST be 0 (unknown).
@@ -179,14 +172,35 @@ type AppenderV2 interface {
 	// }
 	// TODO(bwplotka): We plan to experiment on using generics for complex sampleType, but do it after we unify interface (derisk) and before we add native summaries.
 	//
-	// Implementations MUST attempt to append sample even if metadata, exemplar or (st) start timestamp appends fail.
-	// Implementations MAY return AppendPartialError as an error. Use errors.As to detect.
+	// Implementations MUST attempt to append sample even if metadata or (st) start timestamp appends fail.
 	// For the successful Append, Implementations MUST return valid SeriesRef that represents ls.
 	//   NOTE(bwplotka): Given OTLP and native histograms and the relaxation of the requirement for
 	//   type and unit suffixes in metric names we start to hit cases of ls being not enough for id
 	//   of the series (metadata matters). Current solution is to enable 'type-and-unit-label' features for those cases, but we may
 	//   start to extend the id with metadata one day.
 	Append(ref SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts AppendV2Options) (SeriesRef, error)
+
+	ExemplarAppenderV2
+}
+
+// ExemplarAppenderV2 provides an interface for adding exemplars to exemplar storage, which
+// within Prometheus is in-memory only.
+type ExemplarAppenderV2 interface {
+	// AppendExemplars appends one or more exemplars for the series identified by ref and/or ls.
+	//
+	// AppendExemplars MUST be called after the corresponding sample Append for the same series
+	// in the same or a later transaction. Implementations MUST NOT create a new series for
+	// exemplars alone; if the series does not exist, AppendExemplars MUST return an error.
+	//
+	// ref and ls follow the same contract as AppenderV2.Append.
+	//
+	// exemplars MUST be sorted by Exemplar.Ts. The exemplars slice is unsafe for reuse.
+	// Duplicate exemplar errors MUST be ignored by implementations (not returned).
+	//
+	// Implementations MUST attempt to append every exemplar even if one of them fails.
+	// Implementations MAY return AppendPartialError as an error to report which of the
+	// given exemplars failed. Use errors.As to detect it.
+	AppendExemplars(ref SeriesRef, ls labels.Labels, exemplars []exemplar.Exemplar) (SeriesRef, error)
 }
 
 // AppenderTransaction allows transactional appends.

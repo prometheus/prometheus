@@ -38,12 +38,12 @@ type appenderV2 struct {
 
 // Append appends pending sample to agent's DB.
 // TODO: Wire metadata in the Agent's appender.
-func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, _ storage.AOptions) (storage.SeriesRef, error) {
 	var (
 		// Avoid shadowing err variables for reliability.
-		valErr, partialErr error
-		sampleMetricType   = sampleMetricTypeFloat
-		isStale            bool
+		valErr           error
+		sampleMetricType = sampleMetricTypeFloat
+		isStale          bool
 	)
 	// Fail fast on incorrect histograms.
 	switch {
@@ -116,13 +116,22 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 		return storage.SeriesRef(s.ref), nil
 	}
 
-	// Append exemplars if any and if storage was configured for it.
-	// TODO(bwplotka): Agent does not have equivalent of a.head.opts.EnableExemplarStorage && a.head.opts.MaxExemplars.Load() > 0 ?
-	if len(opts.Exemplars) > 0 {
-		// Currently only exemplars can return partial errors.
-		partialErr = a.appendExemplars(s, opts.Exemplars)
+	return storage.SeriesRef(s.ref), nil
+}
+
+// AppendExemplars implements the mandatory AppenderV2.AppendExemplars capability.
+// The series identified by ref MUST already exist (it MUST have been appended to
+// via Append in the same or an earlier transaction).
+func (a *appenderV2) AppendExemplars(ref storage.SeriesRef, _ labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	if len(exemplars) == 0 {
+		return 0, nil
 	}
-	return storage.SeriesRef(s.ref), partialErr
+	// Series references and chunk references are identical for agent mode.
+	s := a.series.GetByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		return 0, fmt.Errorf("unknown series ref when trying to add exemplars: %d", ref)
+	}
+	return storage.SeriesRef(s.ref), a.appendExemplars(s, exemplars)
 }
 
 func (a *appenderV2) Commit() error {

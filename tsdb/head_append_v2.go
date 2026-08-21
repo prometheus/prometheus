@@ -44,6 +44,15 @@ func (a *initAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	return a.app.Append(ref, ls, st, t, v, h, fh, opts)
 }
 
+func (a *initAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	if a.app == nil {
+		// AppendExemplars MUST be called after an Append for the same series,
+		// which would have already initialized a.app.
+		return 0, errors.New("AppendExemplars called before any Append; no series exists yet")
+	}
+	return a.app.AppendExemplars(ref, ls, exemplars)
+}
+
 func (a *initAppenderV2) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
 	if g, ok := a.app.(storage.GetRef); ok {
 		return g.GetRef(lset, hash)
@@ -110,9 +119,9 @@ type headAppenderV2 struct {
 func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	var (
 		// Avoid shadowing err variables for reliability.
-		valErr, appErr, partialErr error
-		sampleMetricType           = sampleMetricTypeFloat
-		isStale                    bool
+		valErr, appErr   error
+		sampleMetricType = sampleMetricTypeFloat
+		isStale          bool
 	)
 	// Fail fast on incorrect histograms.
 
@@ -198,11 +207,6 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		return storage.SeriesRef(s.ref), nil
 	}
 
-	// Append exemplars if any and if storage was configured for it.
-	if len(opts.Exemplars) > 0 && a.head.opts.EnableExemplarStorage && a.head.opts.MaxExemplars.Load() > 0 {
-		// Currently only exemplars can return partial errors.
-		partialErr = a.appendExemplars(s, opts.Exemplars)
-	}
 	if a.head.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
 		s.Lock()
 		metaChanged := s.meta == nil || !s.meta.Equals(opts.Metadata)
@@ -218,7 +222,26 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			b.metadataSeries = append(b.metadataSeries, s)
 		}
 	}
-	return storage.SeriesRef(s.ref), partialErr
+	return storage.SeriesRef(s.ref), nil
+}
+
+// AppendExemplars implements the mandatory AppenderV2.AppendExemplars capability.
+// The series identified by ref and/or ls MUST already exist (it MUST have been
+// appended to via Append in the same or an earlier transaction).
+func (a *headAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	if len(exemplars) == 0 || !a.head.opts.EnableExemplarStorage || a.head.opts.MaxExemplars.Load() <= 0 {
+		return 0, nil
+	}
+
+	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		s = a.head.series.getByHash(ls.Hash(), ls)
+	}
+	if s == nil {
+		return 0, fmt.Errorf("unknown HeadSeriesRef when trying to add exemplars: %d", ref)
+	}
+
+	return storage.SeriesRef(s.ref), a.appendExemplars(s, exemplars)
 }
 
 func (a *headAppenderV2) appendFloat(s *memSeries, st, t int64, v float64, fastRejectOOO bool) error {
