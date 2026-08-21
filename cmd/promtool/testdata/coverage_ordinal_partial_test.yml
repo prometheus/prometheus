@@ -1,0 +1,15 @@
+rule_files:
+  - coverage_ordinal_partial_rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - input_series:
+      - series: 'up{job="prometheus"}'
+        values: "0x5"
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="Twin",alertstate="pending"}'
+        eval_time: 1m
+        exp_samples:
+          - labels: 'ALERTS{alertname="Twin",alertstate="pending",job="prometheus"}'
+            value: 1
