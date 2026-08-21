@@ -898,6 +898,11 @@ load 10s
 	http_requests_mix{job="api-server", instance="0", group="canary"}		0+30x1000 300+80x1000 {{schema:0 count:1 sum:2}}x1000
 	http_requests_mix{job="api-server", instance="1", group="canary"}		0+40x2000 {{schema:0 count:1 sum:2}}x1000
 	http_requests_histogram{job="api-server", instance="1", group="canary"}	{{schema:0 count:1 sum:2}}x1000
+	scalar_args	0 10 5 20 10
+
+# Scalar arguments to range-vector functions must be refreshed for every step.
+eval range from 20s to 40s step 10s double_exponential_smoothing(scalar_args[31s], 0.1 + time() / 1000, 0.2 + time() / 10000)
+	{} 18.200000000000003 26.659110499999997 -0.000768000000000324
 
 eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
 	expect no_info
@@ -1447,6 +1452,10 @@ eval instant at 1m quantile_over_time(0.5, data_histogram{test="mix samples"}[2m
 	expect info
 	expect no_warn
 	{test="mix samples"} 1
+
+# Scalar arguments to range-vector functions must be refreshed for every step.
+eval range from 10s to 30s step 10s quantile_over_time(time() / 100, data{test="three samples"}[20s])
+	{test="three samples"} 0.1 1.2 2
 
 clear
 
