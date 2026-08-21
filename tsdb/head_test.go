@@ -1421,6 +1421,96 @@ func TestHead_RaceBetweenSeriesCreationAndGC(t *testing.T) {
 	require.Equal(t, totalSeries, int(head.NumSeries()))
 }
 
+func TestHead_RaceBetweenExistingSeriesAppendAndGC(t *testing.T) {
+	// Unlike TestHead_RaceBetweenSeriesCreationAndGC above, this covers appends to a
+	// series that already exists in the head: Append() looks the series up, releases the
+	// stripe lock and only afterwards locks the series to mark it as pending commit. A
+	// gc() in between removes the series from the head, so the samples appended to it
+	// afterwards are lost even though Append() and Commit() report success.
+	// See https://github.com/prometheus/prometheus/issues/8365.
+	const (
+		totalSeries = 10_000
+		rounds      = 40
+		appenders   = 16
+		firstTs     = int64(1_000_000)
+		tsStep      = int64(10_000)
+	)
+
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	require.NoError(t, head.Init(0))
+
+	ctx := context.Background()
+	series := make([]labels.Labels, totalSeries)
+	for i := range series {
+		series[i] = labels.FromStrings("foo", strconv.Itoa(i))
+	}
+	refs := make([]storage.SeriesRef, totalSeries)
+
+	app := head.Appender(ctx)
+	for i := range series {
+		ref, err := app.Append(0, series[i], firstTs, 1)
+		require.NoError(t, err)
+		refs[i] = ref
+	}
+	require.NoError(t, app.Commit())
+	require.Equal(t, totalSeries, int(head.NumSeries()))
+
+	for round := int64(1); round <= rounds; round++ {
+		ts := firstTs + round*tsStep
+
+		// Emulate the head truncation that makes existing series collectable in
+		// production (see Head.truncateMemory): every series only holds samples from
+		// the previous round, so gc() drops their chunks and then the series
+		// themselves - unless an appender marked them as pending commit in time.
+		head.minTime.Store(ts)
+		head.minValidTime.Store(ts)
+
+		done := atomic.NewBool(false)
+		var wg sync.WaitGroup
+		for a := range appenders {
+			wg.Add(1)
+			go func(a int) {
+				defer wg.Done()
+				app := head.Appender(ctx)
+				defer func() {
+					if err := app.Commit(); err != nil {
+						t.Errorf("Failed to commit: %v", err)
+					}
+				}()
+				for i := a; i < totalSeries; i += appenders {
+					// Append by reference, like the scrape loop does for series it has seen before.
+					ref, err := app.Append(refs[i], series[i], ts, 1)
+					if err != nil {
+						t.Errorf("Failed to append: %v", err)
+						return
+					}
+					refs[i] = ref
+				}
+			}(a)
+		}
+		go func() {
+			wg.Wait()
+			done.Store(true)
+		}()
+
+		// Don't check the atomic.Bool on all iterations in order to perform more gc iterations and make the race condition more likely.
+		for i := 1; i%4 != 0 || !done.Load(); i++ {
+			head.gc()
+		}
+
+		// Every Append() reported success, so no sample may have been dropped: each
+		// series is either the one that was looked up or the one that replaced it after
+		// being collected, but it has to be in the head, holding the sample.
+		require.Equal(t, totalSeries, int(head.NumSeries()), "round %d", round)
+	}
+
+	for _, lset := range series {
+		s := head.series.getByHash(lset.Hash(), lset)
+		require.NotNil(t, s, "series %s is not in the head", lset)
+		require.NotNil(t, s.headChunks, "series %s holds no sample", lset)
+	}
+}
+
 func TestHead_CanGarbagecollectSeriesCreatedWithoutSamples(t *testing.T) {
 	for op, finishTxn := range map[string]func(app storage.Appender) error{
 		"after commit":   func(app storage.Appender) error { return app.Commit() },

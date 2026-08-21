@@ -2381,6 +2381,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		series.gced = true
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
 		delete(s.series[stripe], series.ref)
@@ -2579,6 +2580,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		series.gced = true
 		stale, isHist, buckets := series.sampleState()
 		if stale {
 			staleSeriesDeleted++
@@ -2776,6 +2778,11 @@ type memSeries struct {
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
+	// Whether garbage collection has removed this series from the head index. Such a
+	// series is unreachable, so appending to it would silently lose the samples;
+	// appenders that looked it up before it was collected have to get a fresh one
+	// instead. See headAppenderBase.lockForAppend.
+	gced bool
 	// headChunkCount tracks the number of head chunks. All mutations of the
 	// headChunks/headChunkCount pair go through pushHeadChunk and setHeadChunks.
 	// Chunk counts are bounded by the 3-byte field in HeadChunkRef, so cannot overflow uint32.
