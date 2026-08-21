@@ -374,7 +374,7 @@ func (h *Head) resetInMemoryState() error {
 	if h.series != nil {
 		// reset the existing series to make sure we call the appropriated hooks
 		// and increment the series removed metrics
-		fs := h.series.iterForDeletion(func(_ int, _ uint64, s *memSeries, flushedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
+		fs := h.series.iterForDeletion(nil, func(_ int, _ uint64, s *memSeries, flushedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
 			// All series should be flushed
 			flushedForCallback[s.ref] = s.lset
 		})
@@ -2319,8 +2319,14 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 	)
 	minMmapFile = math.MaxInt32
 
-	// For one series, truncate old chunks and check if any chunks left. If not, mark as deleted and collect the ID.
-	check := func(hashShard int, hash uint64, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
+	// isEmpty reports whether the series is empty and has no chunks left.
+	isEmpty := func(series *memSeries) bool {
+		return len(series.mmappedChunks) == 0 && series.headChunks == nil && !series.pendingCommit &&
+			(series.ooo == nil || (len(series.ooo.oooMmappedChunks) == 0 && series.ooo.oooHeadChunk == nil))
+	}
+
+	// For one series, truncate old chunks and checkSeries if any chunks left. If not, mark it as a deletion candidate.
+	checkSeries := func(_ int, _ uint64, series *memSeries) bool {
 		series.Lock()
 		defer series.Unlock()
 
@@ -2352,19 +2358,30 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 				minOOOTime = series.ooo.oooHeadChunk.minTime
 			}
 		}
-		if len(series.mmappedChunks) > 0 || series.headChunks != nil || series.pendingCommit ||
-			(series.ooo != nil && (len(series.ooo.oooMmappedChunks) > 0 || series.ooo.oooHeadChunk != nil)) {
+		if !isEmpty(series) {
 			seriesMint := series.minTime()
 			if seriesMint < actualMint {
 				actualMint = seriesMint
 			}
+			return false
+		}
+		return true
+	}
+
+	// The series is gone entirely. We need to keep the series lock
+	// and make sure we have acquired the stripe locks for hash and ID of the
+	// series alike.
+	// If we don't hold them all, there's a very small chance that a series receives
+	// samples again while we are half-way into deleting it.
+	deleteSeries := func(hashShard int, hash uint64, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
+		series.Lock()
+		defer series.Unlock()
+
+		// The series may have received samples after the check pass released the read lock.
+		if !isEmpty(series) {
 			return
 		}
-		// The series is gone entirely. We need to keep the series lock
-		// and make sure we have acquired the stripe locks for hash and ID of the
-		// series alike.
-		// If we don't hold them all, there's a very small chance that a series receives
-		// samples again while we are half-way into deleting it.
+
 		stripe := s.refStripe(series.ref)
 		if hashShard != stripe {
 			s.locks[stripe].Lock()
@@ -2387,7 +2404,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		deletedForCallback[series.ref] = series.lset // OK to access lset; series is locked at the top of this function.
 	}
 
-	s.iterForDeletion(check)
+	s.iterForDeletion(checkSeries, deleteSeries)
 
 	if actualMint == math.MaxInt64 {
 		actualMint = mint
@@ -2543,20 +2560,30 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		refsSet[ref] = struct{}{}
 	}
 
-	check := func(hashShard int, hash uint64, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
+	canEvict := func(series *memSeries) bool {
 		if _, exists := refsSet[storage.SeriesRef(series.ref)]; !exists {
-			// This series was not provided by the caller. Skip it.
-			return
+			return false
 		}
+		return series.maxTime() <= maxt && shouldEvict(series)
+	}
 
+	checkSeries := func(_ int, _ uint64, series *memSeries) bool {
+		series.Lock()
+		defer series.Unlock()
+		return canEvict(series)
+	}
+
+	// The series is gone entirely. We need to keep the series lock
+	// and make sure we have acquired the stripe locks for hash and ID of the
+	// series alike.
+	// If we don't hold them all, there's a very small chance that a series receives
+	// samples again while we are half-way into deleting it.
+	deleteSeries := func(hashShard int, hash uint64, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
 		series.Lock()
 		defer series.Unlock()
 
-		if series.maxTime() > maxt {
-			return
-		}
-
-		if !shouldEvict(series) {
+		// The series may have received samples after the check pass released the read lock.
+		if !canEvict(series) {
 			return
 		}
 
@@ -2564,11 +2591,6 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		rmChunks += int(headChunkCount)
 		rmChunks += len(series.mmappedChunks)
 
-		// The series is gone entirely. We need to keep the series lock
-		// and make sure we have acquired the stripe locks for hash and ID of the
-		// series alike.
-		// If we don't hold them all, there's a very small chance that a series receives
-		// samples again while we are half-way into deleting it.
 		stripe := s.refStripe(series.ref)
 		if headChunkCount >= 2 {
 			s.decMmapReady(series.ref)
@@ -2593,31 +2615,60 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		deletedForCallback[series.ref] = series.lset // OK to access lset; series is locked at the top of this function.
 	}
 
-	s.iterForDeletion(check)
+	s.iterForDeletion(checkSeries, deleteSeries)
 
 	return deleted, affected, rmChunks, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted
 }
 
-// The iterForDeletion function iterates through all series, invoking the checkDeletedFunc for each.
-// The checkDeletedFunc takes a map as input and should add to it all series that were deleted and should be included
+// The iterForDeletion function iterates through all series, invoking two functions for each:
+// - checkFunc - tells us if given series is empty and should be deleted.
+// - deleteFunc - called on series identified by checkFunc as safe to delete.
+//
+// The checkFunc can be nil - it simply means that all series can be deleted.
+// The deletedFunc takes a map as input and should add to it all series that were deleted and should be included
 // when invoking the PostDeletion hook.
-func (s *stripeSeries) iterForDeletion(checkDeletedFunc func(int, uint64, *memSeries, map[chunks.HeadSeriesRef]labels.Labels)) int {
+func (s *stripeSeries) iterForDeletion(
+	checkFunc func(int, uint64, *memSeries) bool,
+	deleteFunc func(int, uint64, *memSeries, map[chunks.HeadSeriesRef]labels.Labels),
+) int {
+	type candidate struct {
+		hash   uint64
+		series *memSeries
+	}
 	seriesSetFromPrevStripe := 0
 	totalDeletedSeries := 0
 	// Run through all series shard by shard
 	for i := 0; i < s.size; i++ {
-		seriesSet := make(map[chunks.HeadSeriesRef]labels.Labels, seriesSetFromPrevStripe)
-		s.locks[i].Lock()
+		var candidates []candidate
+		s.locks[i].RLock()
 		// Iterate conflicts first so f doesn't move them to the `unique` field,
 		// after deleting `unique`.
 		for hash, all := range s.hashes[i].conflicts {
 			for _, series := range all {
-				checkDeletedFunc(i, hash, series, seriesSet)
+				if checkFunc == nil || checkFunc(i, hash, series) {
+					candidates = append(candidates, candidate{hash, series})
+				}
 			}
 		}
 
 		for hash, series := range s.hashes[i].unique {
-			checkDeletedFunc(i, hash, series, seriesSet)
+			if checkFunc == nil || checkFunc(i, hash, series) {
+				candidates = append(candidates, candidate{
+					hash:   hash,
+					series: series,
+				})
+			}
+		}
+		s.locks[i].RUnlock()
+
+		if len(candidates) == 0 {
+			continue
+		}
+
+		seriesSet := make(map[chunks.HeadSeriesRef]labels.Labels, seriesSetFromPrevStripe)
+		s.locks[i].Lock()
+		for _, c := range candidates {
+			deleteFunc(i, c.hash, c.series, seriesSet)
 		}
 		s.locks[i].Unlock()
 		s.seriesLifecycleCallback.PostDeletion(seriesSet)
