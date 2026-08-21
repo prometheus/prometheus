@@ -124,7 +124,7 @@ func TestHeadAppenderV2_WALMultiRef(t *testing.T) {
 	}}, series)
 }
 
-func TestHeadAppenderV2_ActiveAppenders(t *testing.T) {
+func TestHeadAppenderV2_AppendersMetrics(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
 	defer head.Close()
 
@@ -133,21 +133,26 @@ func TestHeadAppenderV2_ActiveAppenders(t *testing.T) {
 	// First rollback with no samples.
 	app := head.AppenderV2(context.Background())
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Then commit with no samples.
 	app = head.AppenderV2(context.Background())
 	require.NoError(t, app.Commit())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Now rollback with one sample.
 	app = head.AppenderV2(context.Background())
 	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, 100, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Now commit with one sample.
 	app = head.AppenderV2(context.Background())
@@ -155,6 +160,7 @@ func TestHeadAppenderV2_ActiveAppenders(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 4.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 }
 
 func TestHeadAppenderV2_RaceBetweenSeriesCreationAndGC(t *testing.T) {

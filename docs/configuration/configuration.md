@@ -1011,8 +1011,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_msk_cluster_version`: the current version of the MSK cluster
 * `__meta_msk_cluster_kafka_version`: the Kafka version running on the cluster
 * `__meta_msk_cluster_jmx_exporter_enabled`: whether JMX exporter is enabled on the cluster; this label is absent (not `false`) when Open Monitoring is not enabled on the cluster
-* `__meta_msk_cluster_configuration_arn`: the ARN of the MSK configuration
-* `__meta_msk_cluster_configuration_revision`: the revision of the MSK configuration
+* `__meta_msk_cluster_configuration_arn`: the ARN of the MSK configuration; this label is absent when the cluster is not using custom config
+* `__meta_msk_cluster_configuration_revision`: the revision of the MSK configuration; this label is absent when the cluster is not using custom config
 * `__meta_msk_cluster_tag_<tagkey>`: each cluster tag value, keyed by tag name
 * `__meta_msk_node_type`: the type of the node (BROKER or CONTROLLER)
 * `__meta_msk_node_arn`: the ARN of the node
@@ -1590,6 +1590,8 @@ Available meta labels:
 
 * `__meta_docker_container_id`: the id of the container
 * `__meta_docker_container_name`: the name of the container
+* `__meta_docker_container_image`: the image of the container
+* `__meta_docker_container_image_id`: the SHA256 hash of the image of the container
 * `__meta_docker_container_network_mode`: the network mode of the container
 * `__meta_docker_container_label_<labelname>`: each label of the container, with any unsupported characters converted to an underscore
 * `__meta_docker_network_id`: the ID of the network
@@ -2469,7 +2471,7 @@ Available meta labels:
 * `__meta_kubernetes_service_annotation_<annotationname>`: Each annotation from the service object.
 * `__meta_kubernetes_service_annotationpresent_<annotationname>`: "true" for each annotation of the service object.
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
-* `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the loadbalancer. (Applies to services of type LoadBalancer)
+* `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the load balancer, taken from `status.loadBalancer.ingress` (comma-separated when there are multiple). Falls back to the deprecated `spec.loadBalancerIP`. (Applies to services of type LoadBalancer)
 * `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
 * `__meta_kubernetes_service_label_<labelname>`: Each label from the service object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object, with any unsupported characters converted to an underscore.
@@ -2484,6 +2486,7 @@ Available meta labels:
 The `pod` role discovers all pods and exposes their containers as targets. For each declared
 port of a container, a single target is generated. If a container has no specified ports,
 a port-free target per container is created for manually adding a port via relabeling.
+In that case `__address__` is set to the pod IP only, without a port.
 
 Available meta labels:
 
@@ -3566,6 +3569,9 @@ You can also use special labels like `__address__`, `__scheme__`, `__metrics_pat
 override the respective settings in the scrape configuration.
 
 The `__address__` label is set to the `<host>:<port>` address of the target.
+Some service discovery implementations omit the port when none is known, so
+that it can be added via relabeling. Kubernetes pod discovery does this for
+containers that declare no ports; `__address__` is then the pod IP only.
 After relabeling, the `instance` label is set to the value of `__address__` by default if
 it was not set during relabeling.
 

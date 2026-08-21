@@ -133,6 +133,17 @@ eval range from 0m to 10m step 5m info(metric, {__name__=~"target_.+", __name__=
 eval range from 0m to 10m step 5m info(metric, {__name__=~".+_info", __name__!~".*build.*"})
     metric{instance="a", job="1", label="value", data="info", another_data="another info"} 0 1 2
 
+# A metric name dropped by an operation on the base series stays dropped after enrichment.
+# With delayed name removal the name is only flagged for removal, and info() must preserve
+# the flag rather than resurrect the name.
+eval range from 0m to 10m step 5m info(floor(metric))
+    {data="info", instance="a", job="1", label="value", another_data="another info"} 0 1 2
+
+# The same applies to series that pass through unenriched because they are info series
+# themselves.
+eval range from 0m to 10m step 5m info(floor(target_info))
+    {instance="a", job="1", data="info", another_data="another info"} 1 1 1
+
 clear
 
 # Overlapping target_info series.

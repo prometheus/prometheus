@@ -15,6 +15,7 @@ package remote
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -25,6 +26,7 @@ import (
 	"reflect"
 	"runtime"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -335,6 +337,27 @@ func TestOTLPWriteHandler(t *testing.T) {
 		require.Len(t, samples, 1)
 		require.Equal(t, "healthy_metric", samples[0].L.Get(labels.MetricName))
 	})
+
+	t.Run("concurrent requests", func(t *testing.T) {
+		handler, payload := newOTLPWriteHandlerFixture(t)
+
+		const requests = 64
+		statuses := make(chan int, requests)
+		var wg sync.WaitGroup
+		for range requests {
+			wg.Go(func() {
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, newOTLPWriteHandlerRequest(payload))
+				statuses <- recorder.Code
+			})
+		}
+		wg.Wait()
+		close(statuses)
+
+		for status := range statuses {
+			require.Equal(t, http.StatusOK, status)
+		}
+	})
 }
 
 func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg config.OTLPConfig, otlpOpts OTLPOptions) *teststorage.Appendable {
@@ -498,6 +521,85 @@ func TestOTLPDelta(t *testing.T) {
 	if diff := cmp.Diff(want, appendable.ResultSamples(), cmp.Exporter(func(reflect.Type) bool { return true })); diff != "" {
 		t.Fatal(diff)
 	}
+}
+
+// BenchmarkOTLPWriteHandler measures a decoded OTLP request through the HTTP
+// handler, translation, and appender commit paths. The appendable discards
+// samples so that the benchmark does not retain prior requests.
+func BenchmarkOTLPWriteHandler(b *testing.B) {
+	handler, payload := newOTLPWriteHandlerFixture(b)
+
+	b.Run("serial", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, newOTLPWriteHandlerRequest(payload))
+			if recorder.Code != http.StatusOK {
+				b.Fatalf("unexpected status code %d", recorder.Code)
+			}
+		}
+	})
+
+	b.Run("parallel", func(b *testing.B) {
+		b.ReportAllocs()
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, newOTLPWriteHandlerRequest(payload))
+				if recorder.Code != http.StatusOK {
+					b.Errorf("unexpected status code %d", recorder.Code)
+					return
+				}
+			}
+		})
+	})
+}
+
+func newOTLPWriteHandlerFixture(tb testing.TB) (http.Handler, []byte) {
+	tb.Helper()
+
+	request := generateOTLPWriteRequest(time.Unix(0, 0), time.Unix(0, 0))
+	payload, err := request.MarshalProto()
+	require.NoError(tb, err)
+
+	handler := NewOTLPWriteHandler(
+		slog.New(slog.DiscardHandler),
+		nil,
+		discardAppendable{},
+		func() config.Config { return config.Config{OTLPConfig: config.DefaultOTLPConfig} },
+		OTLPOptions{},
+	)
+	return handler, payload
+}
+
+func newOTLPWriteHandlerRequest(payload []byte) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", pbContentType)
+	return req
+}
+
+type discardAppendable struct{}
+
+var _ storage.AppendableV2 = discardAppendable{}
+
+func (discardAppendable) AppenderV2(context.Context) storage.AppenderV2 {
+	return discardAppender{}
+}
+
+type discardAppender struct{}
+
+var _ storage.AppenderV2 = discardAppender{}
+
+func (discardAppender) Append(storage.SeriesRef, labels.Labels, int64, int64, float64, *histogram.Histogram, *histogram.FloatHistogram, storage.AOptions) (storage.SeriesRef, error) {
+	return 0, nil
+}
+
+func (discardAppender) Commit() error {
+	return nil
+}
+
+func (discardAppender) Rollback() error {
+	return nil
 }
 
 func BenchmarkOTLP(b *testing.B) {

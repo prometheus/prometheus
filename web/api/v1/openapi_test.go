@@ -168,6 +168,7 @@ func TestOpenAPISchemaCompleteness(t *testing.T) {
 		"QueryOutputBody",
 		"LabelsOutputBody",
 		"SeriesOutputBody",
+		"ScrapePoolConfigOutputBody",
 		"TargetsOutputBody",
 		"AlertsOutputBody",
 		"RulesOutputBody",

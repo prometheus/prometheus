@@ -429,17 +429,23 @@ func (d *MSKDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 			defer wg.Done()
 			for _, node := range nodes {
 				labels := model.LabelSet{
-					mskLabelClusterName:                  model.LabelValue(aws.ToString(cluster.ClusterName)),
-					mskLabelClusterARN:                   model.LabelValue(aws.ToString(cluster.ClusterArn)),
-					mskLabelClusterState:                 model.LabelValue(string(cluster.State)),
-					mskLabelClusterType:                  model.LabelValue(string(cluster.ClusterType)),
-					mskLabelClusterVersion:               model.LabelValue(aws.ToString(cluster.CurrentVersion)),
-					mskLabelNodeARN:                      model.LabelValue(aws.ToString(node.NodeARN)),
-					mskLabelNodeAddedTime:                model.LabelValue(aws.ToString(node.AddedToClusterTime)),
-					mskLabelNodeInstanceType:             model.LabelValue(aws.ToString(node.InstanceType)),
-					mskLabelClusterConfigurationARN:      model.LabelValue(aws.ToString(cluster.Provisioned.CurrentBrokerSoftwareInfo.ConfigurationArn)),
-					mskLabelClusterConfigurationRevision: model.LabelValue(strconv.FormatInt(aws.ToInt64(cluster.Provisioned.CurrentBrokerSoftwareInfo.ConfigurationRevision), 10)),
-					mskLabelClusterKafkaVersion:          model.LabelValue(aws.ToString(cluster.Provisioned.CurrentBrokerSoftwareInfo.KafkaVersion)),
+					mskLabelClusterName:         model.LabelValue(aws.ToString(cluster.ClusterName)),
+					mskLabelClusterARN:          model.LabelValue(aws.ToString(cluster.ClusterArn)),
+					mskLabelClusterState:        model.LabelValue(string(cluster.State)),
+					mskLabelClusterType:         model.LabelValue(string(cluster.ClusterType)),
+					mskLabelClusterVersion:      model.LabelValue(aws.ToString(cluster.CurrentVersion)),
+					mskLabelNodeARN:             model.LabelValue(aws.ToString(node.NodeARN)),
+					mskLabelNodeAddedTime:       model.LabelValue(aws.ToString(node.AddedToClusterTime)),
+					mskLabelNodeInstanceType:    model.LabelValue(aws.ToString(node.InstanceType)),
+					mskLabelClusterKafkaVersion: model.LabelValue(aws.ToString(cluster.Provisioned.CurrentBrokerSoftwareInfo.KafkaVersion)),
+				}
+
+				// The configuration ARN and revision labels are omitted when the cluster is not using a custom configuration.
+				if cluster.Provisioned.CurrentBrokerSoftwareInfo.ConfigurationArn != nil {
+					labels[mskLabelClusterConfigurationARN] = model.LabelValue(aws.ToString(cluster.Provisioned.CurrentBrokerSoftwareInfo.ConfigurationArn))
+				}
+				if cluster.Provisioned.CurrentBrokerSoftwareInfo.ConfigurationRevision != nil {
+					labels[mskLabelClusterConfigurationRevision] = model.LabelValue(strconv.FormatInt(aws.ToInt64(cluster.Provisioned.CurrentBrokerSoftwareInfo.ConfigurationRevision), 10))
 				}
 
 				// The JMX exporter label is omitted when Open Monitoring is

@@ -24,7 +24,6 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -1348,7 +1347,7 @@ func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 	}
 }
 
-func TestHead_ActiveAppenders(t *testing.T) {
+func TestHead_AppendersMetrics(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
 
 	require.NoError(t, head.Init(0))
@@ -1356,21 +1355,26 @@ func TestHead_ActiveAppenders(t *testing.T) {
 	// First rollback with no samples.
 	app := head.Appender(context.Background())
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Then commit with no samples.
 	app = head.Appender(context.Background())
 	require.NoError(t, app.Commit())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Now rollback with one sample.
 	app = head.Appender(context.Background())
 	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
 	require.NoError(t, err)
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Now commit with one sample.
 	app = head.Appender(context.Background())
@@ -1378,6 +1382,7 @@ func TestHead_ActiveAppenders(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 4.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 }
 
 func TestHead_RaceBetweenSeriesCreationAndGC(t *testing.T) {
@@ -1860,6 +1865,84 @@ func TestMemSeries_truncateChunks_scenarios(t *testing.T) {
 		require.Equal(t, 3, s.headChunks.len())
 		require.Equal(t, uint32(3), s.headChunkCount.Load(), "truncation re-syncs the counter from the walk")
 	})
+}
+
+func TestOOOTruncateChunksBefore_Wrap(t *testing.T) {
+	tests := []struct {
+		name               string
+		firstOOOChunkID    chunks.HeadChunkID
+		numOOOChunks       int
+		hasOOOHeadChunk    bool
+		truncateN          int
+		expFirstOOOChunkID chunks.HeadChunkID
+		expOOONil          bool
+		expOOOMmappedLen   int
+	}{
+		{
+			name:               "wrap past zero with remaining chunks",
+			firstOOOChunkID:    chunks.HeadChunkID(oooChunkIDMask - 3),
+			numOOOChunks:       5,
+			truncateN:          4,
+			expFirstOOOChunkID: 1,
+			expOOOMmappedLen:   1,
+		},
+		{
+			name:            "truncate all OOO chunks, no head chunk, ooo becomes nil",
+			firstOOOChunkID: chunks.HeadChunkID(oooChunkIDMask - 3),
+			numOOOChunks:    5,
+			truncateN:       5,
+			expOOONil:       true,
+		},
+		{
+			name:               "truncate all mmapped, head chunk keeps ooo alive",
+			firstOOOChunkID:    chunks.HeadChunkID(oooChunkIDMask - 1),
+			numOOOChunks:       3,
+			hasOOOHeadChunk:    true,
+			truncateN:          3,
+			expFirstOOOChunkID: 2,
+			expOOOMmappedLen:   0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, chunkDiskMapper.Close()) })
+
+			series := newMemSeries(labels.EmptyLabels(), 1, 0, true, false)
+			series.ooo = &memSeriesOOOFields{firstOOOChunkID: tc.firstOOOChunkID}
+
+			refs := make([]chunks.ChunkDiskMapperRef, tc.numOOOChunks)
+			for i := 0; i < tc.numOOOChunks; i++ {
+				ref := chunkDiskMapper.WriteChunk(series.ref, int64(i*100), int64(i*100+99), chunkenc.NewXORChunk(), true, handleChunkWriteError)
+				refs[i] = ref
+				series.ooo.oooMmappedChunks = append(series.ooo.oooMmappedChunks, &mmappedChunk{
+					ref: ref, minTime: int64(i * 100), maxTime: int64(i*100 + 99),
+				})
+			}
+
+			if tc.hasOOOHeadChunk {
+				series.ooo.oooHeadChunk = &oooHeadChunk{
+					chunk:   NewOOOChunk(),
+					minTime: int64(tc.numOOOChunks * 100),
+					maxTime: int64(tc.numOOOChunks*100 + 99),
+				}
+			}
+
+			minOOOMmapRef := refs[tc.truncateN-1]
+			series.truncateChunksBefore(0, minOOOMmapRef)
+
+			if tc.expOOONil {
+				require.Nil(t, series.ooo, "ooo should be nil after truncating all chunks")
+			} else {
+				require.NotNil(t, series.ooo, "ooo should not be nil")
+				require.Equal(t, tc.expFirstOOOChunkID, series.ooo.firstOOOChunkID, "firstOOOChunkID mismatch after wrap")
+				require.Len(t, series.ooo.oooMmappedChunks, tc.expOOOMmappedLen, "oooMmappedChunks length mismatch")
+			}
+		})
+	}
 }
 
 func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
@@ -10007,10 +10090,6 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 	// the stripe and series locks, those locks must still be released. A leaked
 	// lock previously self-deadlocked the subsequent Head.Close() -> mmapHeadChunks().
 	t.Run("panic releases locks", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("forces a chunk-write failure by removing the open chunk directory, which Windows disallows while the ChunkDiskMapper holds the directory handle")
-		}
-
 		h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
 		require.NoError(t, h.Init(0))
 
@@ -10030,10 +10109,13 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		require.NotNil(t, s)
 		require.GreaterOrEqual(t, s.headChunkCount.Load(), uint32(2), "need >=2 head chunks pending mmap")
 
-		// Removing the chunk directory makes the next segment cut fail, so
-		// handleChunkWriteError panics inside mmapChunks. The chunk-write queue is
-		// synchronous by default, so the panic propagates out of mmapHeadChunks.
-		require.NoError(t, os.RemoveAll(mmappedChunksDir(h.opts.ChunkDirRoot)))
+		// Break the chunk write path in an OS agnostic way: dropping a segment
+		// file with a far higher sequence number into the head chunks directory
+		// makes the next cut file's sequence differ from the one the chunk
+		// reference was handed out for, which fails the write.
+		rogue := filepath.Join(mmappedChunksDir(h.opts.ChunkDirRoot), "000100")
+		require.NoError(t, os.WriteFile(rogue, nil, 0o666))
+
 		// newTestHead's cleanup calls Head.Close() -> mmapHeadChunks(), which would
 		// otherwise re-trigger the panic on the now-missing directory. Closing the
 		// mapper first makes WriteChunk return ErrChunkDiskMapperClosed, which
@@ -10435,4 +10517,157 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		h.series.mmapReady[stripeD].Add(-1)
 		requireCounterConsistent("final state")
 	})
+}
+
+func TestQueryOOOHeadDuringTruncateAcrossWrap(t *testing.T) {
+	const maxT int64 = 6000
+
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = maxT
+	opts.MinBlockDuration = maxT / 2
+
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	l := labels.FromStrings("a", "b")
+	app := db.Appender(context.Background())
+
+	// In-order samples.
+	ref, err := app.Append(0, l, 0, 0)
+	require.NoError(t, err)
+	for i := int64(100); i < maxT; i += 100 {
+		_, err = app.Append(ref, l, i, float64(i))
+		require.NoError(t, err)
+	}
+	// OOO samples interleaved between in-order ones.
+	for i := int64(50); i < maxT; i += 100 {
+		_, err = app.Append(ref, l, i, float64(i))
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	// Seed firstOOOChunkID near the wrap boundary.
+	ms := db.head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.NotNil(t, ms)
+	ms.Lock()
+	require.NotNil(t, ms.ooo)
+	ms.ooo.firstOOOChunkID = chunks.HeadChunkID(oooChunkIDMask - 1)
+	ms.Unlock()
+
+	// Pre-truncation query.
+	q, err := db.Querier(0, maxT)
+	require.NoError(t, err)
+	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	require.True(t, ss.Next())
+	it := ss.At().Iterator(nil)
+	var preCount int
+	for it.Next() != chunkenc.ValNone {
+		preCount++
+	}
+	require.NoError(t, it.Err())
+	require.Positive(t, preCount, "pre-truncation query should return data")
+	require.NoError(t, q.Close())
+
+	// Compact, which triggers truncation and wraps firstOOOChunkID.
+	require.NoError(t, db.Compact(context.Background()))
+
+	// Post-truncation query.
+	q, err = db.Querier(0, maxT)
+	require.NoError(t, err)
+	ss = q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	require.True(t, ss.Next())
+	it = ss.At().Iterator(nil)
+	var postCount int
+	for it.Next() != chunkenc.ValNone {
+		postCount++
+	}
+	require.NoError(t, it.Err())
+	require.Positive(t, postCount, "post-truncation query should return data")
+	require.NoError(t, q.Close())
+}
+
+func TestOOORestartResetsFirstOOOChunkID(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOORestartResetsFirstOOOChunkID(t, scenario)
+		})
+	}
+}
+
+func testOOORestartResetsFirstOOOChunkID(t *testing.T, scenario sampleTypeScenario) {
+	dir := t.TempDir()
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.Snappy)
+	require.NoError(t, err)
+	oooWlog, err := wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, compression.Snappy)
+	require.NoError(t, err)
+
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = dir
+	opts.OutOfOrderCapMax.Store(30)
+	opts.OutOfOrderTimeWindow.Store(1000 * time.Minute.Milliseconds())
+
+	h, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, h.Init(0))
+
+	l := labels.FromStrings("foo", "bar")
+	appendSample := func(mins int64) {
+		app := h.Appender(context.Background())
+		_, _, err := scenario.appendFunc(app, l, mins*time.Minute.Milliseconds(), mins)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+
+	// In-order sample.
+	appendSample(200)
+
+	// OOO samples: 92 samples to create 3 mmapped chunks (cap=30).
+	for mins := int64(100); mins <= 191; mins++ {
+		appendSample(mins)
+	}
+
+	ms, ok, err := h.getOrCreate(l.Hash(), l, false)
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.NotNil(t, ms)
+	require.NotNil(t, ms.ooo)
+	require.NotEmpty(t, ms.ooo.oooMmappedChunks)
+
+	expMmapCount := len(ms.ooo.oooMmappedChunks)
+
+	// Seed firstOOOChunkID to a large value.
+	ms.Lock()
+	ms.ooo.firstOOOChunkID = chunks.HeadChunkID(oooChunkIDMask - 100)
+	ms.Unlock()
+
+	require.NoError(t, h.Close())
+
+	// Reopen.
+	wal, err = wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.Snappy)
+	require.NoError(t, err)
+	oooWlog, err = wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, compression.Snappy)
+	require.NoError(t, err)
+	h, err = NewHead(nil, nil, wal, oooWlog, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, h.Init(0))
+
+	ms, ok, err = h.getOrCreate(l.Hash(), l, false)
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.NotNil(t, ms)
+	require.NotNil(t, ms.ooo)
+
+	// firstOOOChunkID resets to 0 after replay.
+	require.Equal(t, chunks.HeadChunkID(0), ms.ooo.firstOOOChunkID)
+
+	// Verify mmapped chunks are still accessible.
+	require.Len(t, ms.ooo.oooMmappedChunks, expMmapCount)
+	for _, m := range ms.ooo.oooMmappedChunks {
+		chk, err := h.chunkDiskMapper.Chunk(m.ref)
+		require.NoError(t, err)
+		require.Equal(t, int(m.numSamples), chk.NumSamples())
+	}
+
+	require.NoError(t, h.Close())
 }

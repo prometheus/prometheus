@@ -876,6 +876,11 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 						networkMode = "awsvpc"
 						var eniID string
 						for _, detail := range eniAttachment.Details {
+							// Name and Value are both optional in the ECS API.
+							// Skip the entry rather than dereferencing nil.
+							if detail.Name == nil || detail.Value == nil {
+								continue
+							}
 							switch *detail.Name {
 							case "privateIPv4Address":
 								ipAddress = *detail.Value
@@ -906,10 +911,10 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 								ec2InstancePrivateIP = info.privateIP
 								ec2InstancePublicIP = info.publicIP
 							} else {
-								d.logger.Debug("EC2 instance info not found", "instance", ec2InstanceID, "task", *task.TaskArn)
+								d.logger.Debug("EC2 instance info not found", "instance", ec2InstanceID, "task", aws.ToString(task.TaskArn))
 							}
 						} else {
-							d.logger.Debug("Container instance not found in map", "arn", *task.ContainerInstanceArn, "task", *task.TaskArn)
+							d.logger.Debug("Container instance not found in map", "arn", *task.ContainerInstanceArn, "task", aws.ToString(task.TaskArn))
 						}
 					}
 
@@ -932,20 +937,42 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 						return
 					}
 
+					// Only IPAddress, Region, LaunchType, HealthStatus and
+					// NetworkMode are always available here: the first is
+					// checked above and the rest are not pointers. Every other
+					// field is optional in the ECS API, so emit its label only
+					// when present rather than dereferencing nil.
 					labels := model.LabelSet{
-						ecsLabelClusterARN:       model.LabelValue(*cluster.ClusterArn),
-						ecsLabelCluster:          model.LabelValue(*cluster.ClusterName),
-						ecsLabelTaskGroup:        model.LabelValue(*task.Group),
-						ecsLabelTaskARN:          model.LabelValue(*task.TaskArn),
-						ecsLabelTaskDefinition:   model.LabelValue(*task.TaskDefinitionArn),
-						ecsLabelIPAddress:        model.LabelValue(ipAddress),
-						ecsLabelRegion:           model.LabelValue(d.region),
-						ecsLabelLaunchType:       model.LabelValue(task.LaunchType),
-						ecsLabelAvailabilityZone: model.LabelValue(*task.AvailabilityZone),
-						ecsLabelDesiredStatus:    model.LabelValue(*task.DesiredStatus),
-						ecsLabelLastStatus:       model.LabelValue(*task.LastStatus),
-						ecsLabelHealthStatus:     model.LabelValue(task.HealthStatus),
-						ecsLabelNetworkMode:      model.LabelValue(networkMode),
+						ecsLabelIPAddress:    model.LabelValue(ipAddress),
+						ecsLabelRegion:       model.LabelValue(d.region),
+						ecsLabelLaunchType:   model.LabelValue(task.LaunchType),
+						ecsLabelHealthStatus: model.LabelValue(task.HealthStatus),
+						ecsLabelNetworkMode:  model.LabelValue(networkMode),
+					}
+
+					if cluster.ClusterArn != nil {
+						labels[ecsLabelClusterARN] = model.LabelValue(*cluster.ClusterArn)
+					}
+					if cluster.ClusterName != nil {
+						labels[ecsLabelCluster] = model.LabelValue(*cluster.ClusterName)
+					}
+					if task.Group != nil {
+						labels[ecsLabelTaskGroup] = model.LabelValue(*task.Group)
+					}
+					if task.TaskArn != nil {
+						labels[ecsLabelTaskARN] = model.LabelValue(*task.TaskArn)
+					}
+					if task.TaskDefinitionArn != nil {
+						labels[ecsLabelTaskDefinition] = model.LabelValue(*task.TaskDefinitionArn)
+					}
+					if task.AvailabilityZone != nil {
+						labels[ecsLabelAvailabilityZone] = model.LabelValue(*task.AvailabilityZone)
+					}
+					if task.DesiredStatus != nil {
+						labels[ecsLabelDesiredStatus] = model.LabelValue(*task.DesiredStatus)
+					}
+					if task.LastStatus != nil {
+						labels[ecsLabelLastStatus] = model.LabelValue(*task.LastStatus)
 					}
 
 					// Add subnet ID when available (awsvpc mode from ENI, bridge/host from EC2 instance)
@@ -990,10 +1017,10 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					}
 
 					// If this task belongs to a service, add service information and tags.
-					if serviceName, isServiceTask := strings.CutPrefix(*task.Group, "service:"); isServiceTask {
+					if serviceName, isServiceTask := strings.CutPrefix(aws.ToString(task.Group), "service:"); isServiceTask {
 						service, ok := services[serviceName]
 						if !ok {
-							d.logger.Debug("Service not found for task", "task", *task.TaskArn, "service", serviceName)
+							d.logger.Debug("Service not found for task", "task", aws.ToString(task.TaskArn), "service", serviceName)
 						}
 						if service.ServiceName != nil {
 							labels[ecsLabelService] = model.LabelValue(*service.ServiceName)

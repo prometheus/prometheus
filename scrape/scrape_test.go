@@ -2916,96 +2916,140 @@ func testScrapeLoopRunCreatesStaleMarkersOnSampleLimit(t *testing.T, appV2 bool)
 	}
 }
 
-// refChangingAppendable simulates a storage backend that returns a new SeriesRef
-// on every Append call, e.g. because the previously handed out ref was evicted
-// from storage in the meantime and the series had to be recreated.
-type refChangingAppendable struct {
-	calls int
-}
-
-func (a *refChangingAppendable) Appender(context.Context) storage.Appender {
-	return &refChangingAppender{a: a}
-}
-
-func (a *refChangingAppendable) AppenderV2(context.Context) storage.AppenderV2 {
-	return &refChangingAppenderV2{a: a}
-}
-
-func (a *refChangingAppendable) nextRef() storage.SeriesRef {
-	a.calls++
-	return storage.SeriesRef(100 * a.calls)
-}
-
-type refChangingAppender struct {
-	a *refChangingAppendable
-}
-
-func (*refChangingAppender) Commit() error                     { return nil }
-func (*refChangingAppender) Rollback() error                   { return nil }
-func (*refChangingAppender) SetOptions(*storage.AppendOptions) {}
-
-func (r *refChangingAppender) Append(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error) {
-	return r.a.nextRef(), nil
-}
-
-func (*refChangingAppender) AppendHistogram(ref storage.SeriesRef, _ labels.Labels, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return ref, nil
-}
-
-func (*refChangingAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, _ labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return ref, nil
-}
-
-func (*refChangingAppender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
-	return ref, nil
-}
-
-func (*refChangingAppender) UpdateMetadata(ref storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
-	return ref, nil
-}
-
-func (*refChangingAppender) AppendSTZeroSample(ref storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	return ref, nil
-}
-
-type refChangingAppenderV2 struct {
-	a *refChangingAppendable
-}
-
-func (*refChangingAppenderV2) Commit() error   { return nil }
-func (*refChangingAppenderV2) Rollback() error { return nil }
-
-func (r *refChangingAppenderV2) Append(storage.SeriesRef, labels.Labels, int64, int64, float64, *histogram.Histogram, *histogram.FloatHistogram, storage.AppendV2Options) (storage.SeriesRef, error) {
-	return r.a.nextRef(), nil
-}
-
-// TestScrapeLoopCacheRefUpdatedOnChange makes sure that when the storage returns a
-// different SeriesRef than the one the scrape loop cached, the cache is updated to
-// use the new ref on the next scrape rather than keep handing storage a ref it no
-// longer recognizes.
-func TestScrapeLoopCacheRefUpdatedOnChange(t *testing.T) {
+func TestScrapeLoopSeriesRefChange(t *testing.T) {
 	foreachAppendable(t, func(t *testing.T, appV2 bool) {
-		app := &refChangingAppendable{}
-		sl, _ := newTestScrapeLoop(t, withAppendable(app, appV2))
-
-		appender := sl.appender()
-		_, _, _, err := appender.append([]byte("metric_a 1\n"), "text/plain", time.Time{})
-		require.NoError(t, err)
-		require.NoError(t, appender.Commit())
-
-		ce, ok := sl.cache.series["metric_a"]
-		require.True(t, ok)
-		require.Equal(t, storage.SeriesRef(100), ce.ref)
-
-		appender = sl.appender()
-		_, _, _, err = appender.append([]byte("metric_a 2\n"), "text/plain", time.Time{})
-		require.NoError(t, err)
-		require.NoError(t, appender.Commit())
-
-		ce, ok = sl.cache.series["metric_a"]
-		require.True(t, ok)
-		require.Equal(t, storage.SeriesRef(200), ce.ref, "cache should track the new ref returned by the second Append call")
+		testScrapeLoopSeriesRefChange(t, appV2)
 	})
+}
+
+// testScrapeLoopSeriesRefChange tests scrapes against a storage that hands out a new
+// storage.SeriesRef for a series it already gave a reference for, e.g. because the
+// series was garbage collected and had to be recreated. The scrape loop has to pick up
+// the new reference, without mistaking the series for one that stopped being exposed.
+func testScrapeLoopSeriesRefChange(t *testing.T, appV2 bool) {
+	const scrapeInterval = 15 * time.Second
+
+	firstScrape := time.Unix(1600000000, 0)
+	metricA := labels.FromStrings(model.MetricNameLabel, "metric_a")
+
+	scrapeTime := func(scrape int) time.Time {
+		return firstScrape.Add(time.Duration(scrape) * scrapeInterval)
+	}
+	sampleAtMs := func(ms int64, v float64) teststorage.Sample {
+		return teststorage.Sample{L: metricA, T: ms, V: v}
+	}
+	sampleAt := func(scrape int, v float64) teststorage.Sample {
+		return sampleAtMs(timestamp.FromTime(scrapeTime(scrape)), v)
+	}
+	staleAt := func(scrape int) teststorage.Sample {
+		return sampleAt(scrape, math.Float64frombits(value.StaleNaN))
+	}
+
+	// A timestamp the target exposes for the second scrape, one second before that
+	// scrape happens, so it is visible whether the scrape loop honoured it.
+	explicitTS := timestamp.FromTime(scrapeTime(1)) - 1000
+	explicitTSBody := fmt.Sprintf("metric_a 2 %d\n", explicitTS)
+
+	// scrape is a single scrape of the target, together with the reference the storage
+	// hands out while it is appended.
+	type scrape struct {
+		body string
+		ref  storage.SeriesRef
+	}
+
+	for _, tc := range []struct {
+		name string
+
+		scrapes []scrape
+
+		expectedSamples []teststorage.Sample
+		expectedRef     storage.SeriesRef // Reference cached once all scrapes are done.
+	}{
+		{
+			name: "reference stays the same",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: "metric_a 2\n", ref: 100},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAt(1, 2)},
+			expectedRef:     100,
+		},
+		{
+			name: "reference changes while the series is still exposed",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: "metric_a 2\n", ref: 200},
+				{body: "metric_a 3\n", ref: 200},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAt(1, 2), sampleAt(2, 3)},
+			expectedRef:     200,
+		},
+		{
+			name: "reference changes on every scrape",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: "metric_a 2\n", ref: 200},
+				{body: "metric_a 3\n", ref: 300},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAt(1, 2), sampleAt(2, 3)},
+			expectedRef:     300,
+		},
+		{
+			name: "series stops being exposed after the reference changed",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: "metric_a 2\n", ref: 200},
+				{body: "", ref: 200},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAt(1, 2), staleAt(2)},
+			expectedRef:     200,
+		},
+		// A series that starts carrying an explicit timestamp drops out of the staleness
+		// tracking and gets a stale marker, even though the target still exposes it. The
+		// next two cases pin that down, to make sure a changing reference does not make
+		// the scrape loop behave differently than an unchanged one.
+		{
+			name: "explicit timestamp appears, reference stays the same",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: explicitTSBody, ref: 100},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAtMs(explicitTS, 2), staleAt(1)},
+			expectedRef:     100,
+		},
+		{
+			name: "explicit timestamp appears and the reference changes",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: explicitTSBody, ref: 200},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAtMs(explicitTS, 2), staleAt(1)},
+			expectedRef:     200,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var ref storage.SeriesRef
+			app := teststorage.NewAppendable().WithRefFn(func(labels.Labels) storage.SeriesRef {
+				return ref
+			})
+			sl, _ := newTestScrapeLoop(t, withAppendable(app, appV2))
+
+			for i, s := range tc.scrapes {
+				ref = s.ref
+
+				appender := sl.appender()
+				_, _, _, err := appender.append([]byte(s.body), "text/plain", scrapeTime(i))
+				require.NoError(t, err)
+				require.NoError(t, appender.Commit())
+			}
+
+			teststorage.RequireEqual(t, tc.expectedSamples, app.ResultSamples())
+
+			ce, ok := sl.cache.series["metric_a"]
+			require.True(t, ok)
+			require.Equal(t, tc.expectedRef, ce.ref)
+		})
+	}
 }
 
 func TestScrapeLoopCache(t *testing.T) {
@@ -4815,7 +4859,7 @@ func TestTargetScraperScrapeOverUnixSocket(t *testing.T) {
 	defer server.Close()
 
 	// Create a client with a DialContext that routes to the unix socket.
-	client, err := newScrapeClient(config_util.HTTPClientConfig{}, "test_job")
+	client, err := newUnixSocketScrapeClient(socketPath, config_util.HTTPClientConfig{}, "test_job")
 	require.NoError(t, err)
 
 	// No __address__ set — falls back to "localhost".
@@ -4870,7 +4914,7 @@ func TestTargetScraperScrapeOverUnixSocketTLS(t *testing.T) {
 	defer server.Close()
 
 	// Create a client configured to trust the test CA.
-	client, err := newScrapeClient(config_util.HTTPClientConfig{
+	client, err := newUnixSocketScrapeClient(socketPath, config_util.HTTPClientConfig{
 		TLSConfig: config_util.TLSConfig{
 			CAFile: caCertPath,
 		},
@@ -4900,6 +4944,77 @@ func TestTargetScraperScrapeOverUnixSocketTLS(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "text/plain; version=0.0.4", contentType)
 	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
+}
+
+func TestTargetScraperUnixSocketConnectionsAreNotShared(t *testing.T) {
+	// Two targets sharing the same __address__ but scraped through different
+	// unix sockets must never exchange pooled keep-alive connections,
+	// otherwise one target would receive the other target's metrics.
+	tempDir, err := os.MkdirTemp("", "uds-pool-test")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(tempDir) })
+
+	payloads := map[string]string{}
+	var targets []*Target
+	for i := range 2 {
+		socketPath := filepath.Join(tempDir, fmt.Sprintf("s%d", i))
+		listener, err := net.Listen("unix", socketPath)
+		require.NoError(t, err)
+		t.Cleanup(func() { listener.Close() })
+
+		payload := fmt.Sprintf("metric_a %d\n", i)
+		payloads[socketPath] = payload
+		server := &http.Server{
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+				_, _ = w.Write([]byte(payload))
+			}),
+		}
+		go server.Serve(listener)
+		t.Cleanup(func() { server.Close() })
+
+		targets = append(targets, &Target{
+			labels: labels.FromStrings(
+				model.SchemeLabel, "http",
+				model.AddressLabel, "localhost:9090",
+				model.MetricsPathLabel, "/metrics",
+				model.ScrapeIntervalLabel, "1s",
+				model.ScrapeTimeoutLabel, "1s",
+				UnixSocketLabel, socketPath,
+			),
+			scrapeConfig: &config.ScrapeConfig{},
+		})
+	}
+
+	var scrapers []*targetScraper
+	sp := newTestScrapePool(t, nil, false, func(opts scrapeLoopOptions) loop {
+		scrapers = append(scrapers, opts.scraper.(*targetScraper))
+		return &testLoop{
+			startFunc: func(time.Duration, time.Duration, chan<- error) {},
+			stopFunc:  func() {},
+		}
+	})
+	client, err := newScrapeClient(config_util.HTTPClientConfig{}, "test_job")
+	require.NoError(t, err)
+	sp.client = client
+
+	sp.sync(targets)
+	require.Len(t, scrapers, 2)
+
+	// Scrape each target twice so the second round is served from pooled
+	// keep-alive connections.
+	for range 2 {
+		for _, ts := range scrapers {
+			var buf bytes.Buffer
+			resp, err := ts.scrape(context.Background())
+			require.NoError(t, err)
+			_, err = ts.readResponse(context.Background(), resp, &buf)
+			require.NoError(t, err)
+			require.Equal(t, payloads[ts.labels.Get(UnixSocketLabel)], buf.String())
+		}
+	}
+
+	sp.stop()
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {
@@ -7912,6 +8027,9 @@ func TestScrapeOffsetDistribution(t *testing.T) {
 					}
 				}),
 			},
+			// setupSynctestManager is unusable here: it also sets skipJitterOffsetting,
+			// which zeroes the offsets asserted below.
+			fqdn: synctestFQDN,
 		}
 		scrapeManager, err := NewManager(opts, promslog.NewNopLogger(), nil, app, nil, prometheus.NewRegistry())
 		scrapeManager.offsetSeed = 1 // Set a fixed offset seed for deterministic testing.

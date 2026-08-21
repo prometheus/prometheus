@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -787,11 +788,20 @@ func durationMilliseconds(d time.Duration) int64 {
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.EvalStmt) (parser.Value, annotations.Annotations, error) {
 	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime, ng.metrics.queryPrepareTimeHistogram)
 	mint, maxt := FindMinMaxTime(s)
+
+	_, querierSpan := otel.Tracer("").Start(ctxPrepare, "Querier", trace.WithAttributes(
+		attribute.Int64("mint", mint),
+		attribute.Int64("maxt", maxt),
+	))
 	querier, err := query.queryable.Querier(mint, maxt)
 	if err != nil {
+		querierSpan.RecordError(err)
+		querierSpan.SetStatus(codes.Error, err.Error())
+		querierSpan.End()
 		prepareSpanTimer.Finish()
 		return nil, nil, err
 	}
+	querierSpan.End()
 	defer querier.Close()
 
 	ng.populateSeries(ctxPrepare, querier, s)
@@ -1065,7 +1075,13 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			}
 			evalRange = 0
 			hints.By, hints.Grouping = extractGroupsFromPath(path)
-			n.UnexpandedSeriesSet = querier.Select(ctx, false, hints, n.LabelMatchers...)
+			selectCtx, selectSpan := otel.Tracer("").Start(ctx, "querierSelect", trace.WithAttributes(
+				attribute.String("selector", n.String()),
+				attribute.Int64("start", hints.Start),
+				attribute.Int64("end", hints.End),
+			))
+			n.UnexpandedSeriesSet = querier.Select(selectCtx, false, hints, n.LabelMatchers...)
+			selectSpan.End()
 		case *parser.MatrixSelector:
 			evalRange = n.Range
 		}
@@ -1113,8 +1129,11 @@ func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) (annotations
 		if e.Series != nil {
 			return nil, nil
 		}
-		span := trace.SpanFromContext(ctx)
-		span.AddEvent("expand start", trace.WithAttributes(attribute.String("selector", e.String())))
+		// This span is created only when a selector is read from storage. The
+		// result is cached in e.Series. At most one span is produced per storage
+		// selector per query. The span is not produced per step or per series.
+		ctx, span := otel.Tracer("").Start(ctx, "promqlExpandSeries", trace.WithAttributes(attribute.String("selector", e.String())))
+		defer span.End()
 		series, ws, err := expandSeriesSet(ctx, e.UnexpandedSeriesSet)
 		if e.SkipHistogramBuckets {
 			for i := range series {
@@ -1122,7 +1141,11 @@ func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) (annotations
 			}
 		}
 		e.Series = series
-		span.AddEvent("expand end", trace.WithAttributes(attribute.Int("num_series", len(series))))
+		span.SetAttributes(attribute.Int("num_series", len(series)))
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
 		return ws, err
 	}
 	return nil, nil
@@ -1929,6 +1952,40 @@ func (ev *evaluator) numSteps() int {
 	return int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 }
 
+// subqueryTimeRange computes the start, end and step (all in milliseconds) of
+// the child evaluator used to evaluate subquery e within the context of the
+// parent evaluator ev.
+//
+// The parent end timestamp is aligned down to the parent's step grid before the
+// subquery offset is applied. A range query's outer loop only iterates up to
+// its last aligned step (start + N*interval), so when the caller supplies an
+// end timestamp that is not step-aligned the subquery must stop at that aligned
+// step too; otherwise it evaluates points the parent can never consume,
+// inflating PeakSamples and wasting work.
+func (ev *evaluator) subqueryTimeRange(e *parser.SubqueryExpr) (start, end, interval int64) {
+	offsetMillis := durationMilliseconds(e.Offset)
+	rangeMillis := durationMilliseconds(e.Range)
+
+	parentEnd := ev.endTimestamp
+	if ev.interval > 0 {
+		parentEnd = ev.startTimestamp + ((ev.endTimestamp-ev.startTimestamp)/ev.interval)*ev.interval
+	}
+	end = parentEnd - offsetMillis
+
+	if e.Step != 0 {
+		interval = durationMilliseconds(e.Step)
+	} else {
+		interval = ev.noStepSubqueryIntervalFn(rangeMillis)
+	}
+	// Start with the first timestamp after (ev.startTimestamp - offset - range)
+	// that is aligned with the step (multiple of 'interval').
+	start = interval * ((ev.startTimestamp - offsetMillis - rangeMillis) / interval)
+	if start <= (ev.startTimestamp - offsetMillis - rangeMillis) {
+		start += interval
+	}
+	return start, end, interval
+}
+
 // runSubquery evaluates the given SubqueryExpr in a fresh child evaluator
 // aligned to the subquery's own step grid and returns the result along with
 // the child's samples stats. The caller decides how to merge the child stats
@@ -1936,29 +1993,7 @@ func (ev *evaluator) numSteps() int {
 // TotalSamples should only be absorbed when the caller does not later
 // re-count the materialized matrix (e.g. evalSubquery does not absorb it).
 func (ev *evaluator) runSubquery(ctx context.Context, e *parser.SubqueryExpr) (parser.Value, *stats.QuerySamples, annotations.Annotations) {
-	offsetMillis := durationMilliseconds(e.Offset)
-	rangeMillis := durationMilliseconds(e.Range)
-
-	// Align the parent end timestamp down to the parent's step grid before
-	// applying the subquery offset, so the subquery does not evaluate past
-	// the parent's last actual evaluation point when the caller supplied
-	// an end timestamp that is not step-aligned.
-	parentEnd := ev.endTimestamp
-	if ev.interval > 0 {
-		parentEnd = ev.startTimestamp + ((ev.endTimestamp-ev.startTimestamp)/ev.interval)*ev.interval
-	}
-	subqEnd := parentEnd - offsetMillis
-
-	var subqInterval int64
-	if e.Step != 0 {
-		subqInterval = durationMilliseconds(e.Step)
-	} else {
-		subqInterval = ev.noStepSubqueryIntervalFn(rangeMillis)
-	}
-	subqStart := subqInterval * ((ev.startTimestamp - offsetMillis - rangeMillis) / subqInterval)
-	if subqStart <= (ev.startTimestamp - offsetMillis - rangeMillis) {
-		subqStart += subqInterval
-	}
+	subqStart, subqEnd, subqInterval := ev.subqueryTimeRange(e)
 
 	// Subquery children always track per-step samples-read (independent of
 	// the parent's per-step setting) so MergeSamplesReadFromSubquery can
@@ -3228,9 +3263,13 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 				oneSide = "left"
 			}
 			matchedLabels := rs.Metric.MatchLabels(matching.On, matching.MatchingLabels...)
-			// Many-to-many matching not allowed.
+			// Make the error message consistent between runs by ordering the reported series.
+			dupl1, dupl2 := rs.Metric.String(), duplSample.Metric.String()
+			if dupl1 > dupl2 {
+				dupl1, dupl2 = dupl2, dupl1
+			}
 			ev.errorf("found duplicate series for the match group %s on the %s hand-side of the operation: [%s, %s]"+
-				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, rs.Metric.String(), duplSample.Metric.String())
+				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, dupl1, dupl2)
 		}
 		rightSigs[sigOrd] = rs
 		rightSigsPresent[sigOrd] = true

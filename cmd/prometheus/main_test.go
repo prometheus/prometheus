@@ -178,14 +178,7 @@ storage:
 	)
 	require.NoError(t, prom.Start())
 
-	require.Eventually(t, func() bool {
-		r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
-		if err != nil {
-			return false
-		}
-		defer r.Body.Close()
-		return r.StatusCode == http.StatusOK
-	}, startupTime, 100*time.Millisecond)
+	waitForPrometheusReady(t, port)
 	require.DirExists(t, storagePath)
 }
 
@@ -904,26 +897,24 @@ global:
 				fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
 				"--web.enable-lifecycle",
 			)
-			// Inject GOGC when set.
-			prom.Env = os.Environ()
+			// Inject GOGC when set, and drop any inherited one otherwise, so
+			// that the environment the test runs in cannot influence the cases
+			// expecting the default or the configured value.
+			prom.Env = slices.DeleteFunc(os.Environ(), func(kv string) bool {
+				return strings.HasPrefix(kv, "GOGC=")
+			})
 			if tc.gogcEnvVar != "" {
 				prom.Env = append(prom.Env, fmt.Sprintf("GOGC=%s", tc.gogcEnvVar))
 			}
 			require.NoError(t, prom.Start())
 
+			// Wait for the initial configuration to be applied: /metrics is
+			// already served before that happens.
+			waitForPrometheusReady(t, port)
+
 			ensureGOGCValue := func(val float64) {
-				var (
-					r   *http.Response
-					err error
-				)
-				// Wait for the /metrics endpoint to be ready.
-				require.Eventually(t, func() bool {
-					r, err = http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
-					if err != nil {
-						return false
-					}
-					return r.StatusCode == http.StatusOK
-				}, 5*time.Second, 50*time.Millisecond)
+				r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+				require.NoError(t, err)
 				defer r.Body.Close()
 
 				// Check the final GOGC that's set, consider go_gc_gogc_percent from /metrics as source of truth.
