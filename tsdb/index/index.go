@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -1604,6 +1605,60 @@ func (r *Reader) PostingsForLabelMatching(ctx context.Context, name string, matc
 
 func (r *Reader) PostingsForAllLabelValues(ctx context.Context, name string) Postings {
 	return r.postingsForLabelMatching(ctx, name, nil)
+}
+
+func (r *Reader) PostingsForLabelMatchingMatcher(ctx context.Context, name string, m *labels.Matcher) Postings {
+	prefix := m.Prefix()
+	return r.PostingsForLabelMatchingWithPrefix(ctx, name, prefix, m.Matches)
+}
+
+func (r *Reader) PostingsForLabelMatchingWithPrefix(ctx context.Context, name, prefix string, match func(string) bool) Postings {
+	startIdx := 0
+	e := r.postings[name]
+	if len(e) == 0 {
+		return EmptyPostings()
+	}
+	if prefix != "" {
+		startIdx = sort.Search(len(e), func(i int) bool {
+			return e[i].value >= prefix
+		})
+		if startIdx == len(e) {
+			return EmptyPostings()
+		}
+		if startIdx > 0 && e[startIdx].value > prefix {
+			startIdx--
+		}
+	}
+
+	lastVal := e[len(e)-1].value
+	postingsEstimate := 0
+	if match == nil {
+		postingsEstimate = len(e) * symbolFactor
+	}
+	its := make([]Postings, 0, postingsEstimate)
+
+	if err := r.traversePostingOffsets(ctx, e[startIdx].off, func(val string, postingsOff uint64) (bool, error) {
+		if prefix != "" {
+			if val < prefix {
+				return true, nil
+			}
+			if !strings.HasPrefix(val, prefix) {
+				return false, nil
+			}
+		}
+		if match == nil || match(val) {
+			postingsDec := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
+			_, p, err := r.dec.DecodePostings(postingsDec)
+			if err != nil {
+				return false, fmt.Errorf("decode postings: %w", err)
+			}
+			its = append(its, p)
+		}
+		return val != lastVal, nil
+	}); err != nil {
+		return ErrPostings(err)
+	}
+	return Merge(ctx, its...)
 }
 
 // postingsForLabelMatching implements PostingsForLabelMatching if match is non-nil, and PostingsForAllLabelValues otherwise.
