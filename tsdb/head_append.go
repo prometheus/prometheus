@@ -335,6 +335,11 @@ func (h *Head) putTypeMap(b map[chunks.HeadSeriesRef]sampleType) {
 	h.typeMapPool.Put(b)
 }
 
+// maxPooledBytesBufferCapacity is the maximum capacity retained for reusable
+// record buffers. Larger buffers are released after use to avoid retaining
+// one-off large batches.
+const maxPooledBytesBufferCapacity = 1_000_000
+
 func (h *Head) getBytesBuffer() []byte {
 	b := h.bytesPool.Get()
 	if b == nil {
@@ -344,6 +349,9 @@ func (h *Head) getBytesBuffer() []byte {
 }
 
 func (h *Head) putBytesBuffer(b []byte) {
+	if cap(b) > maxPooledBytesBufferCapacity {
+		return
+	}
 	h.bytesPool.Put(b[:0])
 }
 
