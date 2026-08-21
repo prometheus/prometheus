@@ -27,6 +27,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/lightsail"
+	lightsailTypes "github.com/aws/aws-sdk-go-v2/service/lightsail/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go"
 	"github.com/prometheus/client_golang/prometheus"
@@ -242,9 +243,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		Source: d.region,
 	}
 
-	input := &lightsail.GetInstancesInput{}
-
-	output, err := lightsailClient.GetInstances(ctx, input)
+	instances, err := d.listInstances(ctx, lightsailClient)
 	if err != nil {
 		var awsErr smithy.APIError
 		if errors.As(err, &awsErr) && (awsErr.ErrorCode() == "AuthFailure" || awsErr.ErrorCode() == "UnauthorizedOperation") {
@@ -253,7 +252,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		return nil, fmt.Errorf("could not get instances: %w", err)
 	}
 
-	for _, inst := range output.Instances {
+	for _, inst := range instances {
 		if inst.PrivateIpAddress == nil {
 			continue
 		}
@@ -312,4 +311,26 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		tg.Targets = append(tg.Targets, labels)
 	}
 	return []*targetgroup.Group{tg}, nil
+}
+
+// listInstances lists all Lightsail instances in the configured region.
+func (*LightsailDiscovery) listInstances(ctx context.Context, client *lightsailClientAdapter) ([]lightsailTypes.Instance, error) {
+	var (
+		instances []lightsailTypes.Instance
+		pageToken *string
+	)
+	for {
+		output, err := client.GetInstances(ctx, &lightsail.GetInstancesInput{PageToken: pageToken})
+		if err != nil {
+			return nil, err
+		}
+
+		instances = append(instances, output.Instances...)
+		if output.NextPageToken == nil {
+			break
+		}
+		pageToken = output.NextPageToken
+	}
+
+	return instances, nil
 }
