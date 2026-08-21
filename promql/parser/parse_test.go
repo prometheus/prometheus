@@ -5187,7 +5187,7 @@ var testExpr = []struct {
 				Query:         `foo[step()/0d]`,
 			},
 			ParseErr{
-				PositionRange: posrange.PositionRange{Start: 0, End: 0}, // FIXME: this position looks wrong.
+				PositionRange: posrange.PositionRange{Start: 4, End: 13},
 				Err:           errors.New(`duration must be greater than 0`),
 				Query:         `foo[step()/0d]`,
 			},
@@ -5203,7 +5203,7 @@ var testExpr = []struct {
 				Query:         `foo[5s/0d]`,
 			},
 			ParseErr{
-				PositionRange: posrange.PositionRange{Start: 0, End: 0}, // FIXME: this position looks wrong.
+				PositionRange: posrange.PositionRange{Start: 4, End: 9},
 				Err:           errors.New(`duration must be greater than 0`),
 				Query:         `foo[5s/0d]`,
 			},
@@ -5230,8 +5230,9 @@ var testExpr = []struct {
 				Query:         `foo[5s%0d]`,
 			},
 			ParseErr{
-				Err:   errors.New(`duration must be greater than 0`),
-				Query: `foo[5s%0d]`,
+				PositionRange: posrange.PositionRange{Start: 4, End: 9},
+				Err:           errors.New(`duration must be greater than 0`),
+				Query:         `foo[5s%0d]`,
 			},
 		},
 	},
@@ -5256,8 +5257,9 @@ var testExpr = []struct {
 				Query:         `foo[9.5e10]`,
 			},
 			ParseErr{
-				Err:   errors.New(`duration must be greater than 0`),
-				Query: `foo[9.5e10]`,
+				PositionRange: posrange.PositionRange{Start: 4, End: 10},
+				Err:           errors.New(`duration must be greater than 0`),
+				Query:         `foo[9.5e10]`,
 			},
 		},
 	},
