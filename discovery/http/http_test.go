@@ -15,6 +15,7 @@ package http
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -473,4 +474,72 @@ func TestSourceDisappeared(t *testing.T) {
 			require.Equal(t, test.expectedTargets[i], tgs)
 		}
 	}
+}
+
+func TestHTTPEtagCaching(t *testing.T) {
+	targets := []targetgroup.Group{
+		{
+			Targets: []model.LabelSet{
+				{
+					model.AddressLabel: model.LabelValue("127.0.0.1:9090"),
+				},
+			},
+			Labels: model.LabelSet{
+				model.LabelName("__meta_datacenter"): model.LabelValue("bru1"),
+				model.LabelName("__meta_url"):        model.LabelValue("test-host.local/metrics"),
+			},
+		},
+	}
+	etag := "server-generated-content-hash"
+
+	notModifiedCount := 0
+	fullResponseCount := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Header.Get("If-None-Match") == etag {
+			notModifiedCount++
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		fullResponseCount++
+		w.Header().Add("Etag", etag)
+		w.Header().Add("Content-Type", "application/json")
+		err := json.NewEncoder(w).Encode(targets)
+		require.NoError(t, err)
+	}))
+	t.Cleanup(ts.Close)
+
+	cfg := SDConfig{
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		URL:              ts.URL,
+		RefreshInterval:  model.Duration(30 * time.Second),
+		UseETag:          true,
+	}
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:            promslog.NewNopLogger(),
+		HTTPClientOptions: nil,
+		Metrics:           metrics,
+		SetName:           "http",
+	})
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	tgs, err := d.Refresh(ctx)
+	require.NoError(t, err)
+	require.Len(t, tgs, 1)
+	require.Equal(t, 1, fullResponseCount)
+	require.Equal(t, 0, notModifiedCount)
+
+	tgs, err = d.Refresh(ctx)
+	require.NoError(t, err)
+	require.Nil(t, tgs)
+	require.Equal(t, 1, fullResponseCount)
+	require.Equal(t, 1, notModifiedCount)
 }
