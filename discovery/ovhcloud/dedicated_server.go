@@ -39,16 +39,23 @@ const (
 type dedicatedServer struct {
 	State           string `json:"state"`
 	ips             []netip.Addr
-	CommercialRange string `json:"commercialRange"`
-	LinkSpeed       int    `json:"linkSpeed"`
-	Rack            string `json:"rack"`
-	NoIntervention  bool   `json:"noIntervention"`
-	Os              string `json:"os"`
-	SupportLevel    string `json:"supportLevel"`
-	ServerID        int64  `json:"serverId"`
-	Reverse         string `json:"reverse"`
-	Datacenter      string `json:"datacenter"`
-	Name            string `json:"name"`
+	CommercialRange string  `json:"commercialRange"`
+	LinkSpeed       int     `json:"linkSpeed"`
+	Rack            string  `json:"rack"`
+	NoIntervention  bool    `json:"noIntervention"`
+	Os              string  `json:"os"`
+	SupportLevel    string  `json:"supportLevel"`
+	ServerID        int64   `json:"serverId"`
+	Reverse         string  `json:"reverse"`
+	Datacenter      string  `json:"datacenter"`
+	Name            string  `json:"name"`
+	Iam             iamInfo `json:"iam"`
+}
+
+// iamInfo holds the IAM metadata returned alongside an OVHcloud resource.
+type iamInfo struct {
+	DisplayName string `json:"displayName"`
+	State       string `json:"state"`
 }
 
 type dedicatedServerDiscovery struct {
@@ -148,6 +155,8 @@ func (d *dedicatedServerDiscovery) refresh(context.Context) ([]*targetgroup.Grou
 			dedicatedServerLabelPrefix + "server_id":        model.LabelValue(strconv.FormatInt(server.ServerID, 10)),
 			dedicatedServerLabelPrefix + "reverse":          model.LabelValue(server.Reverse),
 			dedicatedServerLabelPrefix + "datacenter":       model.LabelValue(server.Datacenter),
+			dedicatedServerLabelPrefix + "iam_display_name": model.LabelValue(server.Iam.DisplayName),
+			dedicatedServerLabelPrefix + "iam_state":        model.LabelValue(server.Iam.State),
 			dedicatedServerLabelPrefix + "name":             model.LabelValue(server.Name),
 			dedicatedServerLabelPrefix + "ipv4":             model.LabelValue(ipv4),
 			dedicatedServerLabelPrefix + "ipv6":             model.LabelValue(ipv6),
