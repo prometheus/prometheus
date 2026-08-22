@@ -526,9 +526,19 @@ func (h *headChunkReader) Close() error {
 		h.isoState.Close()
 	}
 	// Release the cache so a closed reader retains no chunk data.
+	h.resetCache()
+	return nil
+}
+
+func (h *headChunkReader) resetCache() {
 	h.cachedKey = headChunkCacheKey{}
 	h.cachedHeadChunks = nil
-	return nil
+}
+
+func (h *headChunkReader) releaseOversizedCacheOnSeriesSwitch(ref storage.SeriesRef) {
+	if cap(h.cachedHeadChunks) > headChunksBufMaxCap && ref != h.cachedKey.ref {
+		h.resetCache()
+	}
 }
 
 // EnableChunkCache enables the head-chunk cache for sequential chunk access
@@ -545,8 +555,16 @@ func (h *headChunkReader) EnableChunkCache() {
 // The series lock must be held; the fingerprint comparison is only consistent
 // against concurrent appends, mmapping, and truncation under that lock.
 func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
-	// Skip if the cache is disabled (instant queries) or there are no head chunks or there's only one.
-	if !h.enableCache || s.headChunks == nil || s.headChunks.prev == nil {
+	// Skip if the cache is disabled (instant queries).
+	if !h.enableCache {
+		return nil
+	}
+
+	// Release an oversized cache before the direct lookup path for a series with
+	// at most one head chunk, while preserving it when it still serves the same
+	// series.
+	h.releaseOversizedCacheOnSeriesSwitch(storage.SeriesRef(s.ref))
+	if s.headChunks == nil || s.headChunks.prev == nil {
 		return nil
 	}
 
@@ -560,7 +578,7 @@ func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 	// from one series to the next (the headChunksBufMaxCap policy used for
 	// headChunksBuf) — but keep a large array while it still serves the same
 	// series.
-	if c := cap(buf); c == 0 || (c > headChunksBufMaxCap && key.ref != h.cachedKey.ref) {
+	if cap(buf) == 0 {
 		buf = make([]*memChunk, 0, s.headChunkCount.Load())
 	}
 	h.cachedHeadChunks = collectHeadChunks(s.headChunks, buf)
