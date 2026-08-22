@@ -60,7 +60,9 @@ func (m *LiveReaderMetrics) Unregister() {
 	m.reg.Unregister(m.readerCorruptionErrors)
 }
 
-// NewLiveReader returns a new live reader.
+// NewLiveReader returns a new live reader. The metrics must be non-nil, since
+// the reader records corruption errors through them; use
+// NewLiveReaderMetrics(nil) when there is no registerer to attach them to.
 func NewLiveReader(logger *slog.Logger, metrics *LiveReaderMetrics, r io.Reader) *LiveReader {
 	lr := &LiveReader{
 		logger:  logger,
