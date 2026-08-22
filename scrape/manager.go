@@ -35,7 +35,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/features"
-	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/osutil"
 	"github.com/prometheus/prometheus/util/pool"
 )
@@ -47,12 +46,17 @@ import (
 //
 // NewManager returns error if both appendable and appendableV2 are specified.
 //
+// newScrapeFailureLogger builds the scrape failure log destination for a given
+// scrape_failure_log_file. It may be nil to disable scrape failure logging.
+// Implementations must return an untyped nil rather than a nil pointer in a
+// non-nil interface. The Manager closes the returned loggers on reload and shutdown.
+//
 // Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
 // storage.Appendable will be removed soon (ETA: Q2 2026).
 func NewManager(
 	o *Options,
 	logger *slog.Logger,
-	newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error),
+	newScrapeFailureLogger func(string) (FailureLogger, error),
 	appendable storage.Appendable,
 	appendableV2 storage.AppendableV2,
 	registerer prometheus.Registerer,
@@ -200,7 +204,7 @@ type Manager struct {
 	mtxScrape              sync.Mutex // Guards the fields below.
 	scrapeConfigs          map[string]*config.ScrapeConfig
 	scrapePools            map[string]*scrapePool
-	newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error)
+	newScrapeFailureLogger func(string) (FailureLogger, error)
 	scrapeFailureLoggers   map[string]FailureLogger
 	targetSets             map[string][]*targetgroup.Group
 	buffers                *pool.Pool

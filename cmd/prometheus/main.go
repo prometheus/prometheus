@@ -365,6 +365,20 @@ func parseCompressionType(compress bool, compressType compression.Type) compress
 	return compression.None
 }
 
+// newScrapeFailureLogger adapts logging.NewJSONFileLogger to scrape.FailureLogger.
+// NewJSONFileLogger returns a nil *JSONFileLogger when no file is configured, which
+// would become a non-nil interface holding a nil pointer, so map it to an untyped nil.
+func newScrapeFailureLogger(filename string) (scrape.FailureLogger, error) {
+	l, err := logging.NewJSONFileLogger(filename)
+	if err != nil {
+		return nil, err
+	}
+	if l == nil {
+		return nil, nil
+	}
+	return l, nil
+}
+
 func main() {
 	if os.Getenv("DEBUG") != "" {
 		runtime.SetBlockProfileRate(20)
@@ -981,7 +995,7 @@ func main() {
 	scrapeManager, err := scrape.NewManager(
 		&cfg.scrape,
 		logger.With("component", "scrape manager"),
-		logging.NewJSONFileLogger,
+		newScrapeFailureLogger,
 		nil, fanoutStorage,
 		prometheus.DefaultRegisterer,
 	)
