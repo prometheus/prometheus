@@ -39,7 +39,10 @@ an empty list `[]`. Target lists are unordered.
 
 Prometheus caches target lists. If an error occurs while fetching an updated
 targets list, Prometheus keeps using the current targets list. The targets list
-is not saved across restart. The `prometheus_sd_refresh_failures_total` counter
+is not saved across restart. When `min_backoff` is configured, Prometheus
+retries transport errors, HTTP 429 responses, and HTTP 5xx responses with
+exponential backoff. Retries stop when the refresh interval is exhausted.
+The `prometheus_sd_refresh_failures_total` counter
 metric tracks the number of refresh failures and the `prometheus_sd_refresh_duration_seconds`
 bucket can be used to track HTTP SD refresh attempts or performance. These metrics are
 removed when the underlying scrape job disappears on Prometheus configuration reload.
