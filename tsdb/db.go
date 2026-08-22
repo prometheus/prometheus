@@ -311,6 +311,10 @@ type DB struct {
 	compactor      Compactor
 	blocksToDelete BlocksToDeleteFunc
 
+	defaultDeletionPolicy bool
+	// compactionSize is only set while cmtx is held.
+	compactionSize int64
+
 	// mtx must be held when modifying the general block layout or lastGarbageCollectedMmapRef.
 	mtx    sync.RWMutex
 	blocks []*Block
@@ -1034,6 +1038,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		blocksToDelete: opts.BlocksToDelete,
 		registerer:     r,
 	}
+	db.defaultDeletionPolicy = db.blocksToDelete == nil
 	defer func() {
 		// Close files if startup fails somewhere.
 		if returnedErr == nil {
@@ -2004,6 +2009,16 @@ func (db *DB) compactBlocks() (err error) {
 			break
 		}
 
+		deleted, err := db.reserveSpaceForCompaction(plan)
+		if err != nil {
+			return fmt.Errorf("reserve space for compaction: %w", err)
+		}
+		if deleted {
+			// Retention may have removed one of the planned blocks. Always plan
+			// again after changing the block layout.
+			continue
+		}
+
 		select {
 		case <-db.stopc:
 			return nil
@@ -2027,6 +2042,63 @@ func (db *DB) compactBlocks() (err error) {
 	}
 
 	return nil
+}
+
+// reserveSpaceForCompaction applies size retention before compaction so the
+// replacement block can be written without exceeding the configured limit.
+func (db *DB) reserveSpaceForCompaction(plan []string) (bool, error) {
+	if !db.defaultDeletionPolicy {
+		return false, nil
+	}
+	maxBytes, maxPercentage := db.getRetentionSettings()
+	if maxBytes <= 0 && maxPercentage <= 0 {
+		return false, nil
+	}
+
+	planned := make(map[string]struct{}, len(plan))
+	for _, dir := range plan {
+		planned[filepath.Clean(dir)] = struct{}{}
+	}
+
+	blocks := slices.Clone(db.Blocks())
+	var plannedSize int64
+	for _, block := range blocks {
+		if _, ok := planned[filepath.Clean(block.Dir())]; !ok {
+			continue
+		}
+		plannedSize += block.Size()
+		delete(planned, filepath.Clean(block.Dir()))
+	}
+	if len(planned) > 0 {
+		// A custom compactor may plan directories that are not loaded blocks.
+		return false, nil
+	}
+	if plannedSize == 0 {
+		return false, nil
+	}
+
+	// Size retention expects blocks ordered newest to oldest.
+	slices.SortFunc(blocks, func(a, b *Block) int {
+		switch {
+		case b.Meta().MaxTime < a.Meta().MaxTime:
+			return -1
+		case b.Meta().MaxTime > a.Meta().MaxTime:
+			return 1
+		default:
+			return 0
+		}
+	})
+	deletableULIDs := beyondSizeRetention(db, blocks, plannedSize)
+	if len(deletableULIDs) == 0 {
+		return false, nil
+	}
+
+	db.compactionSize = plannedSize
+	defer func() { db.compactionSize = 0 }()
+	if err := db.reloadBlocks(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // getBlock iterates a given block range to find a block by a given id.
@@ -2231,7 +2303,11 @@ func deletableBlocks(db *DB, blocks []*Block) map[ulid.ULID]struct{} {
 		deletable[ulid] = struct{}{}
 	}
 
-	for ulid := range BeyondSizeRetention(db, blocks) {
+	sizeDeletable := beyondSizeRetention(db, blocks, db.compactionSize)
+	if len(sizeDeletable) > 0 {
+		db.metrics.sizeRetentionCount.Inc()
+	}
+	for ulid := range sizeDeletable {
 		deletable[ulid] = struct{}{}
 	}
 
@@ -2265,6 +2341,14 @@ func BeyondTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 // BeyondSizeRetention returns those blocks which are beyond the size retention
 // set in the db options.
 func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struct{}) {
+	deletable = beyondSizeRetention(db, blocks, 0)
+	if len(deletable) > 0 {
+		db.metrics.sizeRetentionCount.Inc()
+	}
+	return deletable
+}
+
+func beyondSizeRetention(db *DB, blocks []*Block, additionalBytes int64) (deletable map[ulid.ULID]struct{}) {
 	// No blocks to work with
 	if len(blocks) == 0 {
 		return deletable
@@ -2291,7 +2375,7 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 
 	// Initializing size counter with WAL size and Head chunks
 	// written to disk, as that is part of the retention strategy.
-	blocksSize := db.Head().Size()
+	blocksSize := db.Head().Size() + additionalBytes
 	for i, block := range blocks {
 		blocksSize += block.Size()
 		if blocksSize > maxBytes {
@@ -2299,7 +2383,6 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 			for _, b := range blocks[i:] {
 				deletable[b.meta.ULID] = struct{}{}
 			}
-			db.metrics.sizeRetentionCount.Inc()
 			break
 		}
 	}
