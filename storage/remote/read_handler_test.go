@@ -164,6 +164,122 @@ func TestSampledReadEndpoint(t *testing.T) {
 	}, resp.Results[2])
 }
 
+func TestSampledReadEndpointExternalLabelMatchers(t *testing.T) {
+	store := promqltest.LoadedStorage(t, `
+		load 1m
+			test_metric{job="api"} 1
+	`)
+	defer store.Close()
+
+	h := NewReadHandler(nil, nil, store, func() config.Config {
+		return config.Config{
+			GlobalConfig: config.GlobalConfig{
+				ExternalLabels: labels.FromStrings("cluster", "prod"),
+			},
+		}
+	}, 1e6, 1, 0)
+
+	tests := []struct {
+		name      string
+		matchType labels.MatchType
+		value     string
+		series    int
+	}{
+		{name: "matching regex", matchType: labels.MatchRegexp, value: "prod", series: 1},
+		{name: "non-matching regex", matchType: labels.MatchRegexp, value: "staging", series: 0},
+		{name: "negative equality", matchType: labels.MatchNotEqual, value: "prod", series: 0},
+		{name: "negative regex", matchType: labels.MatchNotRegexp, value: "prod", series: 0},
+		{name: "matching negative regex", matchType: labels.MatchNotRegexp, value: "staging", series: 1},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			nameMatcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric")
+			externalMatcher := labels.MustNewMatcher(tc.matchType, "cluster", tc.value)
+			query, err := ToQuery(0, 1, []*labels.Matcher{nameMatcher, externalMatcher}, nil)
+			require.NoError(t, err)
+
+			req, err := proto.Marshal(&prompb.ReadRequest{Queries: []*prompb.Query{query}})
+			require.NoError(t, err)
+
+			request, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(snappy.Encode(nil, req)))
+			require.NoError(t, err)
+			recorder := httptest.NewRecorder()
+			h.ServeHTTP(recorder, request)
+			require.Equal(t, http.StatusOK, recorder.Code)
+
+			compressed, err := io.ReadAll(recorder.Result().Body)
+			require.NoError(t, err)
+			decoded, err := snappy.Decode(nil, compressed)
+			require.NoError(t, err)
+			var resp prompb.ReadResponse
+			require.NoError(t, proto.Unmarshal(decoded, &resp))
+			require.Len(t, resp.Results, 1)
+			require.Len(t, resp.Results[0].Timeseries, tc.series)
+		})
+	}
+}
+
+func TestStreamReadEndpointExternalLabelMatchers(t *testing.T) {
+	store := promqltest.LoadedStorage(t, `
+		load 1m
+			test_metric{job="api"} 1
+	`)
+	defer store.Close()
+
+	h := NewReadHandler(nil, nil, store, func() config.Config {
+		return config.Config{
+			GlobalConfig: config.GlobalConfig{
+				ExternalLabels: labels.FromStrings("cluster", "prod"),
+			},
+		}
+	}, 1e6, 1, 0)
+
+	tests := []struct {
+		name      string
+		matchType labels.MatchType
+		value     string
+		frames    int
+	}{
+		{name: "matching regex", matchType: labels.MatchRegexp, value: "prod", frames: 1},
+		{name: "negative equality", matchType: labels.MatchNotEqual, value: "prod", frames: 0},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			nameMatcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric")
+			externalMatcher := labels.MustNewMatcher(tc.matchType, "cluster", tc.value)
+			query, err := ToQuery(0, 1, []*labels.Matcher{nameMatcher, externalMatcher}, nil)
+			require.NoError(t, err)
+
+			req, err := proto.Marshal(&prompb.ReadRequest{
+				Queries:               []*prompb.Query{query},
+				AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+			})
+			require.NoError(t, err)
+
+			request, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(snappy.Encode(nil, req)))
+			require.NoError(t, err)
+			recorder := httptest.NewRecorder()
+			h.ServeHTTP(recorder, request)
+			require.Equal(t, http.StatusOK, recorder.Code)
+
+			var frames []*prompb.ChunkedReadResponse
+			stream := NewChunkedReader(recorder.Result().Body, config.DefaultChunkedReadLimit, nil)
+			for {
+				frame := &prompb.ChunkedReadResponse{}
+				err := stream.NextProto(frame)
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				require.NoError(t, err)
+				frames = append(frames, frame)
+			}
+			require.Len(t, frames, tc.frames)
+		})
+	}
+}
+
 func BenchmarkStreamReadEndpoint(b *testing.B) {
 	store := promqltest.LoadedStorage(b, `
 	load 1m
