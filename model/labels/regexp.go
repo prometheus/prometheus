@@ -465,10 +465,21 @@ func optimizeConcatRegex(r *syntax.Regexp) (caseInsensitivePrefix bool, prefix, 
 	}
 
 	// If contains any literal which is not a prefix/suffix, we keep track of
-	// all the ones which are case-sensitive.
+	// all the ones which are case-sensitive. Adjacent literals are merged
+	// into a single contains entry so that they are checked as a contiguous
+	// substring; separate entries would allow non-contiguous matching,
+	// producing false positives for e.g. `.*\|(foo)\|.*` against `|foo-bar|`
+	// (the three literals |, foo, | would individually match as
+	// non-contiguous parts of |foo-bar|).
 	for i := 1; i < len(sub)-1; i++ {
 		if sub[i].Op == syntax.OpLiteral && (sub[i].Flags&syntax.FoldCase) == 0 {
-			contains = append(contains, string(sub[i].Rune))
+			var sb strings.Builder
+			sb.WriteString(string(sub[i].Rune))
+			for i+1 < len(sub)-1 && sub[i+1].Op == syntax.OpLiteral && (sub[i+1].Flags&syntax.FoldCase) == 0 {
+				i++
+				sb.WriteString(string(sub[i].Rune))
+			}
+			contains = append(contains, sb.String())
 		}
 	}
 
