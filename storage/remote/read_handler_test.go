@@ -16,9 +16,11 @@ package remote
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -162,6 +164,111 @@ func TestSampledReadEndpoint(t *testing.T) {
 			},
 		},
 	}, resp.Results[2])
+}
+
+func TestSampledReadEndpointWithoutExternalLabels(t *testing.T) {
+	store := promqltest.LoadedStorage(t, `
+		load 1m
+			test_metric{foo="bar"} 1
+	`)
+	defer store.Close()
+
+	h := NewReadHandler(nil, nil, store, func() config.Config {
+		return config.Config{}
+	}, 1e6, 1, 0)
+
+	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric")
+	require.NoError(t, err)
+	query, err := ToQuery(0, 1, []*labels.Matcher{matcher}, nil)
+	require.NoError(t, err)
+
+	data, err := proto.Marshal(&prompb.ReadRequest{Queries: []*prompb.Query{query}})
+	require.NoError(t, err)
+
+	request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(snappy.Encode(nil, data)))
+	require.NoError(t, err)
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, "application/x-protobuf", recorder.Result().Header.Get("Content-Type"))
+	require.Equal(t, "snappy", recorder.Result().Header.Get("Content-Encoding"))
+
+	uncompressed, err := snappy.Decode(nil, recorder.Body.Bytes())
+	require.NoError(t, err)
+	var resp prompb.ReadResponse
+	require.NoError(t, proto.Unmarshal(uncompressed, &resp))
+	require.Equal(t, &prompb.ReadResponse{
+		Results: []*prompb.QueryResult{{
+			Timeseries: []*prompb.TimeSeries{{
+				Labels: []prompb.Label{
+					{Name: "__name__", Value: "test_metric"},
+					{Name: "foo", Value: "bar"},
+				},
+				Samples: []prompb.Sample{{Value: 1}},
+			}},
+		}},
+	}, &resp)
+}
+
+func BenchmarkSampledReadEndpointWithoutExternalLabels(b *testing.B) {
+	for _, seriesCount := range []int{1, 10, 100} {
+		for _, labelCount := range []int{3, 12, 24} {
+			b.Run(fmt.Sprintf("series_%d_labels_%d", seriesCount, labelCount), func(b *testing.B) {
+				store := teststorage.New(b)
+				app := store.Appender(b.Context())
+				for i := range seriesCount {
+					labelStrings := make([]string, 0, 2*labelCount)
+					labelStrings = append(labelStrings, "__name__", "test_metric", "series", strconv.Itoa(i))
+					for j := 2; j < labelCount; j++ {
+						labelStrings = append(labelStrings, fmt.Sprintf("label_%d", j), "value")
+					}
+					_, err := app.Append(0, labels.FromStrings(labelStrings...), 0, 1)
+					require.NoError(b, err)
+				}
+				require.NoError(b, app.Commit())
+
+				api := NewReadHandler(nil, nil, store, func() config.Config {
+					return config.Config{}
+				}, 0, 1, 0)
+				matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric")
+				require.NoError(b, err)
+				query, err := ToQuery(0, 0, []*labels.Matcher{matcher}, nil)
+				require.NoError(b, err)
+				data, err := proto.Marshal(&prompb.ReadRequest{Queries: []*prompb.Query{query}})
+				require.NoError(b, err)
+				compressed := snappy.Encode(nil, data)
+				request := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(compressed))
+
+				serve := func() *httptest.ResponseRecorder {
+					request.Body = io.NopCloser(bytes.NewReader(compressed))
+					recorder := httptest.NewRecorder()
+					api.ServeHTTP(recorder, request)
+					return recorder
+				}
+
+				recorder := serve()
+				require.Equal(b, http.StatusOK, recorder.Code)
+				uncompressed, err := snappy.Decode(nil, recorder.Body.Bytes())
+				require.NoError(b, err)
+				var resp prompb.ReadResponse
+				require.NoError(b, proto.Unmarshal(uncompressed, &resp))
+				require.Len(b, resp.Results, 1)
+				require.Len(b, resp.Results[0].Timeseries, seriesCount)
+				for _, ts := range resp.Results[0].Timeseries {
+					require.Len(b, ts.Labels, labelCount)
+				}
+
+				b.ReportAllocs()
+				for b.Loop() {
+					recorder := serve()
+					if recorder.Code != http.StatusOK {
+						b.Fatalf("unexpected status code: %d", recorder.Code)
+					}
+				}
+			})
+		}
+	}
 }
 
 func BenchmarkStreamReadEndpoint(b *testing.B) {
