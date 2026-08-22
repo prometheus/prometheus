@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
 	"github.com/prometheus/prometheus/storage/remote/googleiam"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 var (
@@ -78,7 +79,7 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 	// point as well.
 	*cfg = DefaultConfig
 
-	err := yaml.UnmarshalStrict([]byte(s), cfg)
+	err := yamlutil.UnmarshalStrict([]byte(s), cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -369,7 +370,7 @@ func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 			if err != nil {
 				return nil, fileErr(filename, err)
 			}
-			err = yaml.UnmarshalStrict(content, &cfg)
+			err = yamlutil.UnmarshalStrict(content, &cfg)
 			if err != nil {
 				return nil, fileErr(filename, err)
 			}
