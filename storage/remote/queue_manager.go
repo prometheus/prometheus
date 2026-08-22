@@ -64,6 +64,7 @@ const (
 	reasonDroppedSeries              = "dropped_series"
 	reasonUnintentionalDroppedSeries = "unintentionally_dropped_series"
 	reasonNHCBNotSupported           = "nhcb_in_rw1_not_supported"
+	reasonNativeHistogramNotSent     = "native_histogram_not_sent"
 )
 
 type queueManagerMetrics struct {
@@ -442,11 +443,12 @@ type QueueManager struct {
 	protoMsg    remoteapi.WriteMessageType
 	compr       compression.Type
 
-	seriesMtx      sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries and builder.
-	seriesLabels   map[chunks.HeadSeriesRef]labels.Labels
-	seriesMetadata map[chunks.HeadSeriesRef]*metadata.Metadata
-	droppedSeries  map[chunks.HeadSeriesRef]struct{}
-	builder        *labels.Builder
+	seriesMtx         sync.Mutex // Covers seriesLabels, seriesMetadata, seriesIsHistogram, droppedSeries and builder.
+	seriesLabels      map[chunks.HeadSeriesRef]labels.Labels
+	seriesMetadata    map[chunks.HeadSeriesRef]*metadata.Metadata
+	seriesIsHistogram map[chunks.HeadSeriesRef]struct{}
+	droppedSeries     map[chunks.HeadSeriesRef]struct{}
+	builder           *labels.Builder
 
 	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
@@ -518,6 +520,7 @@ func NewQueueManager(
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
 		seriesMetadata:       make(map[chunks.HeadSeriesRef]*metadata.Metadata),
+		seriesIsHistogram:    make(map[chunks.HeadSeriesRef]struct{}),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
 		builder:              labels.NewBuilder(labels.EmptyLabels()),
@@ -748,6 +751,10 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
+		if !t.sendNativeHistograms {
+			// Series is receiving float samples now, so stop treating it as a histogram series.
+			delete(t.seriesIsHistogram, s.Ref)
+		}
 		// TODO(cstyan): Handle or at least log an error if no metadata is found.
 		// See https://github.com/prometheus/prometheus/issues/14405
 		meta := t.seriesMetadata[s.Ref]
@@ -812,6 +819,14 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
+		if !t.sendNativeHistograms {
+			if _, ok := t.seriesIsHistogram[e.Ref]; ok {
+				// Drop exemplars for native histogram series we're not sending.
+				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonNativeHistogramNotSent).Inc()
+				t.seriesMtx.Unlock()
+				continue
+			}
+		}
 		meta := t.seriesMetadata[e.Ref]
 		t.seriesMtx.Unlock()
 		// This will only loop if the queues are being resharded.
@@ -846,6 +861,14 @@ outer:
 
 func (t *QueueManager) AppendHistograms(histograms []record.RefHistogramSample) bool {
 	if !t.sendNativeHistograms {
+		if t.sendExemplars {
+			// Mark these as histogram series so AppendExemplars can drop their exemplars.
+			t.seriesMtx.Lock()
+			for _, h := range histograms {
+				t.seriesIsHistogram[h.Ref] = struct{}{}
+			}
+			t.seriesMtx.Unlock()
+		}
 		return true
 	}
 	currentTime := time.Now()
@@ -908,6 +931,14 @@ outer:
 
 func (t *QueueManager) AppendFloatHistograms(floatHistograms []record.RefFloatHistogramSample) bool {
 	if !t.sendNativeHistograms {
+		if t.sendExemplars {
+			// Mark these as histogram series so AppendExemplars can drop their exemplars.
+			t.seriesMtx.Lock()
+			for _, h := range floatHistograms {
+				t.seriesIsHistogram[h.Ref] = struct{}{}
+			}
+			t.seriesMtx.Unlock()
+		}
 		return true
 	}
 	currentTime := time.Now()
@@ -1069,12 +1100,14 @@ func (t *QueueManager) SeriesReset(index int) {
 	// Check for series that are in segments older than the checkpoint
 	// that were not also present in the checkpoint.
 	for k, v := range t.seriesSegmentIndexes {
-		if v < index {
-			delete(t.seriesSegmentIndexes, k)
-			delete(t.seriesLabels, k)
-			delete(t.seriesMetadata, k)
-			delete(t.droppedSeries, k)
+		if v >= index {
+			continue
 		}
+		delete(t.seriesSegmentIndexes, k)
+		delete(t.seriesLabels, k)
+		delete(t.seriesMetadata, k)
+		delete(t.seriesIsHistogram, k)
+		delete(t.droppedSeries, k)
 	}
 }
 
