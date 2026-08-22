@@ -2200,6 +2200,51 @@ func TestLoadConfig(t *testing.T) {
 	})
 }
 
+func TestLoadConfigWithYAMLMergeKey(t *testing.T) {
+	cfg, err := Load(`
+scrape_configs:
+- job_name: first
+  static_configs:
+  - targets: [localhost:9090]
+    labels: &default_labels
+      severity: warning
+      team: operations
+- job_name: second
+  static_configs:
+  - targets: [localhost:9091]
+    labels:
+      <<: *default_labels
+      severity: critical
+`, promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Len(t, cfg.ScrapeConfigs, 2)
+
+	staticConfigs, ok := cfg.ScrapeConfigs[1].ServiceDiscoveryConfigs[0].(discovery.StaticConfig)
+	require.True(t, ok)
+	require.Equal(t, model.LabelValue("critical"), staticConfigs[0].Labels["severity"])
+	require.Equal(t, model.LabelValue("operations"), staticConfigs[0].Labels["team"])
+
+	_, err = Load(`
+scrape_configs:
+- &defaults
+  job_name: first
+  unknown_option: true
+- <<: *defaults
+  job_name: second
+`, promslog.NewNopLogger())
+	require.ErrorContains(t, err, "field unknown_option not found")
+
+	_, err = Load(`
+scrape_configs:
+- &defaults
+  job_name: first
+- <<: *defaults
+  job_name: second
+  job_name: duplicate
+`, promslog.NewNopLogger())
+	require.ErrorContains(t, err, "field job_name already set")
+}
+
 func TestScrapeIntervalLarger(t *testing.T) {
 	c, err := LoadFile("testdata/scrape_interval_larger.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)

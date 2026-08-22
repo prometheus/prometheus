@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -24,7 +25,18 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/util/junitxml"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
+
+func TestRulesUnitTestYAMLMergeKey(t *testing.T) {
+	content, err := os.ReadFile("./testdata/yaml-merge-key.yml")
+	require.NoError(t, err)
+
+	var input unitTestFile
+	require.NoError(t, yamlutil.UnmarshalStrict(content, &input))
+	require.Equal(t, "critical", input.Tests[1].ExternalLabels.Get("severity"))
+	require.Equal(t, "operations", input.Tests[1].ExternalLabels.Get("team"))
+}
 
 func TestRulesUnitTest(t *testing.T) {
 	t.Parallel()
@@ -41,6 +53,13 @@ func TestRulesUnitTest(t *testing.T) {
 			name: "Passing Unit Tests",
 			args: args{
 				files: []string{"./testdata/unittest.yml"},
+			},
+			want: 0,
+		},
+		{
+			name: "YAML merge key",
+			args: args{
+				files: []string{"./testdata/yaml-merge-key.yml"},
 			},
 			want: 0,
 		},
