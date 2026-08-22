@@ -164,8 +164,10 @@ func (h *readHandler) remoteReadSamples(
 			for _, w := range ws {
 				h.logger.Warn("Warnings on remote read query", "err", w.Error())
 			}
-			for _, ts := range resp.Results[i].Timeseries {
-				ts.Labels = MergeLabels(ts.Labels, sortedExternalLabels)
+			if len(sortedExternalLabels) > 0 {
+				for _, ts := range resp.Results[i].Timeseries {
+					ts.Labels = MergeLabels(ts.Labels, sortedExternalLabels)
+				}
 			}
 			return nil
 		}(); err != nil {
