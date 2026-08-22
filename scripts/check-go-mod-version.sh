@@ -48,6 +48,23 @@ if [[ "${matches}" -ne 1 ]]; then
   exit 1
 fi
 
+for mod_file in "${mod_files[@]}"; do
+  if [[ "$(basename "${mod_file}")" != "go.mod" ]]; then
+    continue
+  fi
+
+  go_version="$(awk '$1 == "go" {print $2}' "${mod_file}")"
+  echo "Checking ${mod_file} with Go ${go_version}"
+
+  if ! (
+    cd "$(dirname "${mod_file}")" &&
+      GOWORK=off GOTOOLCHAIN="go${go_version}" go list -mod=readonly -m all > /dev/null
+  ); then
+    echo "Module ${mod_file} does not support minimum Go version ${go_version}"
+    exit 1
+  fi
+done
+
 ci_workflow=".github/workflows/ci.yml"
 if [[ -f "${ci_workflow}" ]] && yq -e '.jobs.test_go_oldest' "${ci_workflow}" > /dev/null 2>&1; then
   echo "Checking CI workflow test_go_oldest uses N-1 Go version"
