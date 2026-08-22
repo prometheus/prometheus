@@ -138,6 +138,8 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 	// Take an appender with limits.
 	app := appenderV2WithLimits(sl.AppenderV2, sl.sampleLimit, sl.bucketLimit, sl.maxSchema)
 
+	sl.cache.trackHashScrapeAttempt()
+
 	defer func() {
 		if err != nil {
 			return
@@ -204,7 +206,7 @@ loop:
 		if sl.cache.getDropped(met) {
 			continue
 		}
-		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
+		ce, seriesCached, _ := sl.cache.get(met)
 		var (
 			ref  storage.SeriesRef
 			hash uint64
@@ -216,10 +218,8 @@ loop:
 			hash = ce.hash
 		} else {
 			p.Labels(&lset)
-			hash = lset.Hash()
 
-			// Hash label set as it is seen local to the target. Then add target labels
-			// and relabeling and store the final label set.
+			// Add target labels and relabeling and store the final label set.
 			lset = sl.sampleMutator(lset)
 
 			// The label set may be set to empty to indicate dropping.
@@ -242,11 +242,18 @@ loop:
 				sl.metrics.targetScrapePoolExceededLabelLimits.Inc()
 				break loop
 			}
+
+			hash = lset.Hash()
 		}
 
 		exemplars = exemplars[:0] // Reset and reuse the exemplar slice.
 
-		if seriesAlreadyScraped && parsedTimestamp == nil {
+		var isDuplicate bool
+		if parsedTimestamp == nil {
+			isDuplicate = sl.cache.isSeriesHashDuplicate(hash, lset)
+		}
+
+		if isDuplicate {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
 			// Double check we don't append float 0 for
