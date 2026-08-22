@@ -137,6 +137,8 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 	// Take an appender with limits.
 	app := appenderV2WithLimits(sl.AppenderV2, sl.sampleLimit, sl.bucketLimit, sl.maxSchema)
 
+	sl.cache.trackHashScrapeAttempt()
+
 	defer func() {
 		if err != nil {
 			return

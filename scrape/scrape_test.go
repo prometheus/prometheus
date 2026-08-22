@@ -3250,7 +3250,7 @@ func testScrapeLoopAppendSampleLimit(t *testing.T, appV2 bool) {
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 9, total)
 	require.Equal(t, 6, added)
-	require.Equal(t, 1, seriesAdded)
+	require.Equal(t, 0, seriesAdded)
 }
 
 func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
@@ -6725,6 +6725,46 @@ func labelsWithHashCollision() (labels.Labels, labels.Labels) {
 	}
 
 	return ls1, ls2
+}
+
+// TestScrapeLoopHashStateCleanupOnError tests that post-relabel hash state from a
+// failed scrape does not leak into the next scrape and cause false duplicate
+// detection for a different raw metric that relabels to the same label set.
+// Regression test for https://github.com/prometheus/prometheus/issues/12255
+func TestScrapeLoopHashStateCleanupOnError(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testScrapeLoopHashStateCleanupOnError(t, appV2)
+	})
+}
+
+func testScrapeLoopHashStateCleanupOnError(t *testing.T, appV2 bool) {
+	sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2), func(sl *scrapeLoop) {
+		sl.sampleMutator = func(l labels.Labels) labels.Labels {
+			b := labels.NewBuilder(l)
+			b.Del("drop")
+			return b.Labels()
+		}
+	})
+
+	// First scrape: record a post-relabel hash for metric{}, then fail due to sample_limit
+	// on a metric with a different post-relabel label set.
+	sl.sampleLimit = 1
+	app := sl.appender()
+	_, _, _, err := app.append([]byte("metric{drop=\"a\"} 1\nmetric{keep=\"x\"} 1\n"), "text/plain", time.Time{})
+	require.ErrorIs(t, err, errSampleLimit)
+	require.NoError(t, app.Rollback())
+
+	// Second scrape: a different raw metric relabels to the same label set as scrape 1.
+	// It must not be treated as a duplicate because of stale hash state.
+	sl.sampleLimit = 0
+	app = sl.appender()
+	total, added, seriesAdded, err := app.append([]byte("metric{drop=\"b\"} 1\n"), "text/plain", time.Time{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, added)
+	require.Equal(t, 1, seriesAdded)
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(sl.metrics.targetScrapeSampleDuplicate))
 }
 
 func TestScrapeLoopSeriesAddedDuplicates_HashCollision(t *testing.T) {
