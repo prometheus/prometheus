@@ -554,6 +554,12 @@ func (a *headAppenderBase) getOrCreate(lset labels.Labels) (s *memSeries, create
 	if l, dup := lset.HasDuplicateLabelNames(); dup {
 		return nil, false, fmt.Errorf(`label name "%s" is not unique: %w`, l, ErrInvalidSample)
 	}
+	// Ensure labels are sorted lexicographically by name.
+	for i := 1; i < len(lset); i++ {
+		if lset[i].Name < lset[i-1].Name {
+			return nil, false, fmt.Errorf("labels %q are not sorted, found %q before %q: %w", lset, lset[i-1].Name, lset[i].Name, ErrInvalidSample)
+		}
+	}
 	s, created, err = a.head.getOrCreate(lset.Hash(), lset, true)
 	if err != nil {
 		return nil, false, err
