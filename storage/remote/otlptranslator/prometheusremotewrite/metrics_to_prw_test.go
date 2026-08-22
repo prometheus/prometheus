@@ -242,7 +242,10 @@ func TestFromMetrics(t *testing.T) {
 
 			h.SetCount(15)
 			h.SetSum(155)
-			h.BucketCounts().FromRaw([]uint64{3, 11, 0})
+			// The last bucket is the (1.123, +Inf] overflow bucket. It has to be
+			// counted for count to equal the sum of bucket_counts, which OTLP
+			// requires and which sum=155 is only possible with.
+			h.BucketCounts().FromRaw([]uint64{3, 11, 1})
 			h.ExplicitBounds().FromRaw([]float64{0.124, 1.123})
 
 			generateAttributes(h.Attributes(), "series", 1)
@@ -294,10 +297,17 @@ func TestFromMetrics(t *testing.T) {
 						T: ts.AsTime().UnixMilli(), H: &histogram.Histogram{
 							Schema: -53, Count: 15, Sum: 155,
 							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
-							PositiveBuckets: []int64{3, 8, -11},
+							PositiveBuckets: []int64{3, 8, -10},
 							CustomValues:    []float64{0.124, 1.123},
 						},
 					},
+				}
+			}
+			// Every expected native histogram here must be one the appender would
+			// accept; otherwise the expectation is unreachable.
+			for _, es := range expectedSamples {
+				if es.H != nil {
+					require.NoError(t, es.H.Validate(), "expected histogram for %s does not validate", es.L)
 				}
 			}
 			teststorage.RequireEqual(t, expectedSamples, appTest.ResultSamples())
