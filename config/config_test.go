@@ -113,7 +113,8 @@ var expectedConf = &Config{
 	},
 
 	Runtime: RuntimeConfig{
-		GoGC: globalGoGC,
+		GoGC:     globalGoGC,
+		LogLevel: LogLevel("info"),
 	},
 
 	RuleFiles: []string{
@@ -2858,6 +2859,67 @@ func TestEmptyConfig(t *testing.T) {
 	exp.StorageConfig.TSDBConfig = &TSDBConfig{Retention: &retention}
 	require.Equal(t, exp, *c)
 	require.Equal(t, 75, c.Runtime.GoGC)
+	require.Equal(t, LogLevel("info"), c.Runtime.LogLevel)
+}
+
+func TestRuntimeLogLevelConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		config    string
+		expected  LogLevel
+		errString string
+	}{
+		{
+			name:     "default",
+			expected: LogLevel("info"),
+		},
+		{
+			name: "configured",
+			config: `runtime:
+  log_level: warn
+`,
+			expected: LogLevel("warn"),
+		},
+		{
+			name: "normalized",
+			config: `runtime:
+  log_level: DEBUG
+`,
+			expected: LogLevel("debug"),
+		},
+		{
+			name: "invalid",
+			config: `runtime:
+  log_level: verbose
+`,
+			errString: "unrecognized log level verbose",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load(tc.config, promslog.NewNopLogger())
+			if tc.errString != "" {
+				require.ErrorContains(t, err, tc.errString)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, cfg.Runtime.LogLevel)
+		})
+	}
+
+	t.Run("configured process default", func(t *testing.T) {
+		previousRuntimeDefault := DefaultRuntimeConfig
+		previousConfigRuntime := DefaultConfig.Runtime
+		t.Cleanup(func() {
+			DefaultRuntimeConfig = previousRuntimeDefault
+			DefaultConfig.Runtime = previousConfigRuntime
+		})
+
+		DefaultRuntimeConfig.LogLevel = LogLevel("debug")
+		DefaultConfig.Runtime = DefaultRuntimeConfig
+		cfg, err := Load("runtime:\n  gogc: 77\n", promslog.NewNopLogger())
+		require.NoError(t, err)
+		require.Equal(t, LogLevel("debug"), cfg.Runtime.LogLevel)
+	})
 }
 
 func TestExpandExternalLabels(t *testing.T) {

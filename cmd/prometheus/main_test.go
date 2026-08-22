@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
@@ -972,6 +973,49 @@ runtime:
 			ensureGOGCValue(99.0)
 		})
 	}
+}
+
+func TestReloadConfigLogLevel(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "prometheus.yml")
+	require.NoError(t, os.WriteFile(configFile, []byte(`runtime:
+  log_level: debug
+`), 0o600))
+
+	level := promslog.NewLevel()
+	require.NoError(t, level.Set("info"))
+	var output bytes.Buffer
+	logger := promslog.New(&promslog.Config{Level: level, Writer: &output})
+	interval := &safePromQLNoStepSubqueryInterval{}
+
+	require.NoError(t, reloadConfig(configFile, false, logger, interval, level, func(bool) {}))
+	require.Equal(t, "debug", level.String())
+	output.Reset()
+	logger.Debug("debug message")
+	require.Contains(t, output.String(), "debug message")
+
+	require.NoError(t, os.WriteFile(configFile, []byte(`runtime:
+  log_level: error
+`), 0o600))
+	err := reloadConfig(configFile, false, logger, interval, level, func(bool) {}, reloader{
+		name: "failing",
+		reloader: func(*config.Config) error {
+			return errors.New("failed to apply")
+		},
+	})
+	require.Error(t, err)
+	require.Equal(t, "debug", level.String())
+	output.Reset()
+	logger.Debug("still visible")
+	require.Contains(t, output.String(), "still visible")
+
+	require.NoError(t, reloadConfig(configFile, false, logger, interval, level, func(bool) {}))
+	require.Equal(t, "error", level.String())
+	output.Reset()
+	logger.Warn("hidden warning")
+	require.Empty(t, output.String())
+	logger.Error("visible error")
+	require.Contains(t, output.String(), "visible error")
 }
 
 // TestHeadCompactionWhileScraping verifies that running a head compaction
