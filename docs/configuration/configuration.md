@@ -4153,15 +4153,19 @@ with this feature.
 [ stale_series_compaction_threshold: <float> | default = 0 ]
 
 # Configures the float chunk encoding to use for new chunks.
-# Valid values are 'xor' and 'xor2'. When absent, the encoding follows the
-# --enable-feature=xor2-encoding flag: 'xor2' if the flag is set, 'xor' otherwise.
-# Setting 'xor' forces standard XOR encoding even when --enable-feature=xor2-encoding is set.
-# Setting 'xor2' is only valid when --enable-feature=xor2-encoding is set;
-# Prometheus will refuse to reload if 'xor2' is set without the feature flag.
+# Valid values are 'xor' and 'xor2'. XOR2 gives better disk compression than XOR for
+# typical Prometheus workloads and can store start timestamps.
+#
+# WARNING: chunks encoded with XOR2 cannot be read by older Prometheus versions that do
+# not support the encoding, nor by downstream tools and LTS systems that do not support
+# it yet (e.g. blocks uploaded by the Thanos sidecar). Once XOR2 chunks have been
+# written, downgrading to a version without XOR2 support requires deleting the affected
+# blocks from disk manually, otherwise Prometheus returns an error on all queries.
+#
+# When absent, the encoding follows the deprecated --enable-feature=xor2-encoding
+# flag: 'xor2' if the flag is set, 'xor' otherwise.
 # Setting 'xor' is incompatible with --enable-feature=st-storage (XOR chunks do not store
-# start timestamps); Prometheus will refuse to reload in that case too.
-# Omitting 'floats' (or the entire 'chunk_encoding' field) is equivalent; the encoding
-# follows the --enable-feature=xor2-encoding flag.
+# start timestamps); Prometheus will refuse to start or reload in that case.
 # This field is runtime-reloadable.
 # When --enable-feature=st-storage is disabled, XOR and XOR2 are compatible
 # encodings and in-progress chunks are not cut on an encoding change; the new
@@ -4169,6 +4173,8 @@ with this feature.
 # When --enable-feature=st-storage is enabled, XOR and XOR2 are not compatible
 # (XOR chunks do not store start timestamps), so an in-progress chunk is cut
 # on the next append after the encoding changes.
+# For the equivalent ST-capable encoding for native histograms, see the experimental
+# histograms-st-encoding feature flag.
 [ chunk_encoding:
   [ floats: <string> ] ]
 
