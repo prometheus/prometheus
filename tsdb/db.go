@@ -58,6 +58,11 @@ const (
 	// DefaultCompactionDelayMaxPercent in percentage.
 	DefaultCompactionDelayMaxPercent = 10
 
+	// MinBlockReloadInterval is the minimum supported non-zero block reload interval.
+	MinBlockReloadInterval = time.Second
+
+	defaultBlockReloadInterval = time.Minute
+
 	// Block dir suffixes to make deletion and creation operations atomic.
 	// We decided to do suffixes instead of creating meta.json as last (or delete as first) one,
 	// because in error case you still can recover meta.json from the block content within local TSDB dir.
@@ -96,7 +101,7 @@ func DefaultOptions() *Options {
 		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
 		CompactionDelay:             time.Duration(0),
 		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,
-		BlockReloadInterval:         1 * time.Minute,
+		BlockReloadInterval:         defaultBlockReloadInterval,
 	}
 }
 
@@ -262,6 +267,8 @@ type Options struct {
 	BlockCompactionExcludeFunc BlockExcludeFilterFunc
 
 	// BlockReloadInterval is the interval at which blocks are reloaded.
+	// A zero value uses the default of one minute. Non-zero values below
+	// MinBlockReloadInterval are clamped to it.
 	BlockReloadInterval time.Duration
 
 	// FloatChunkEncoding is the encoding used for new float chunks. It is the
@@ -966,8 +973,10 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64, error) {
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
 	}
-	if opts.BlockReloadInterval < 1*time.Second {
-		opts.BlockReloadInterval = 1 * time.Second
+	if opts.BlockReloadInterval == 0 {
+		opts.BlockReloadInterval = defaultBlockReloadInterval
+	} else if opts.BlockReloadInterval < MinBlockReloadInterval {
+		opts.BlockReloadInterval = MinBlockReloadInterval
 	}
 
 	if len(rngs) == 0 {
