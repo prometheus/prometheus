@@ -247,8 +247,9 @@ var (
 		BatchSendDeadline: model.Duration(5 * time.Second),
 
 		// Backoff times for retrying a batch of samples on recoverable errors.
-		MinBackoff: model.Duration(30 * time.Millisecond),
-		MaxBackoff: model.Duration(5 * time.Second),
+		MinBackoff:       model.Duration(30 * time.Millisecond),
+		MaxBackoff:       model.Duration(5 * time.Second),
+		RetryOnRateLimit: false,
 	}
 
 	// DefaultMetadataConfig is the default metadata configuration for a remote write endpoint.
