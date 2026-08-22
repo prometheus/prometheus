@@ -1150,6 +1150,19 @@ func TestRegexp_ShouldMarshalAndUnmarshalZeroValue(t *testing.T) {
 	require.Nil(t, unmarshalled.Regexp)
 }
 
+func TestRegexp_ShouldJSONMarshalAndUnmarshalZeroValue(t *testing.T) {
+	var zero Regexp
+
+	marshalled, err := json.Marshal(&zero)
+	require.NoError(t, err)
+	require.Equal(t, "null", string(marshalled))
+
+	var unmarshalled Regexp
+	err = json.Unmarshal(marshalled, &unmarshalled)
+	require.NoError(t, err)
+	require.Nil(t, unmarshalled.Regexp)
+}
+
 func TestRegexp_JSONUnmarshalThenMarshal(t *testing.T) {
 	tests := []struct {
 		name  string
