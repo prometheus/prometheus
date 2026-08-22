@@ -97,11 +97,19 @@ Special cases:
 samples in `v` to have an upper limit of `max`. Histogram samples in the input
 vector are ignored silently.
 
+Special cases:
+
+* Float samples are clamped to `NaN` if `max` is `NaN`
+
 ## `clamp_min()`
 
 `clamp_min(v instant-vector, min scalar)` clamps the values of all float
 samples in `v` to have a lower limit of `min`. Histogram samples in the input
 vector are ignored silently.
+
+Special cases:
+
+* Float samples are clamped to `NaN` if `min` is `NaN`
 
 ## `day_of_month()`
 
