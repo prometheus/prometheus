@@ -247,6 +247,11 @@ common-docker-repo-name:
 
 .PHONY: common-docker $(BUILD_DOCKER_ARCHS)
 common-docker: $(BUILD_DOCKER_ARCHS)
+
+.PHONY: common-docker-current-arch
+common-docker-current-arch:
+	$(MAKE) common-docker-$(GOHOSTARCH)
+
 # DOCKER_ARCHS holds promu architecture names, which are not OCI platform strings.
 $(BUILD_DOCKER_ARCHS): common-docker-%:
 	@for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \
