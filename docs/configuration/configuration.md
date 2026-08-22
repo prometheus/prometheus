@@ -202,6 +202,10 @@ global:
   [ extra_scrape_metrics: <boolean> | default = false ]
 
 runtime:
+  # The minimum severity of messages emitted by the process logger.
+  # This setting can be changed by reloading the configuration.
+  [ log_level: <string> | default = info ]
+
   # Configure the Go garbage collector GOGC parameter
   # See: https://tip.golang.org/doc/gc-guide#GOGC
   # Lowering this number increases CPU usage.
