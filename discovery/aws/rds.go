@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"strconv"
 	"sync"
@@ -530,20 +531,15 @@ func (d *RDSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 		}
 	}
 
-	var (
-		mu sync.Mutex
-		wg sync.WaitGroup
-	)
+	var mu sync.Mutex
+	errg, ectx := errgroup.WithContext(ctx)
+	errg.SetLimit(d.cfg.RequestConcurrency)
 	for _, cluster := range clusters {
-		wg.Add(1)
-
-		instances, err := d.describeDBInstances(ctx, *cluster.DBClusterArn)
-		if err != nil {
-			return nil, fmt.Errorf("error describing DB instances: %w", err)
-		}
-
-		go func(cluster types.DBCluster, instances []types.DBInstance) {
-			defer wg.Done()
+		errg.Go(func() error {
+			instances, err := d.describeDBInstances(ectx, *cluster.DBClusterArn)
+			if err != nil {
+				return fmt.Errorf("error describing DB instances: %w", err)
+			}
 
 			// Build a map of instance identifiers to their IsClusterWriter status
 			writerMap := make(map[string]bool)
@@ -553,220 +549,230 @@ func (d *RDSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				}
 			}
 
-			for _, instance := range instances {
-				labels := model.LabelSet{}
+			// Cluster labels are the same for every instance of the cluster, so
+			// build them once and copy them into each target below.
+			commonLabels := model.LabelSet{}
 
-				// Cluster labels
-				if cluster.DBClusterArn != nil {
-					labels[rdsLabelClusterDBClusterArn] = model.LabelValue(*cluster.DBClusterArn)
-				}
-				if cluster.DBClusterIdentifier != nil {
-					labels[rdsLabelClusterDBClusterIdentifier] = model.LabelValue(*cluster.DBClusterIdentifier)
-				}
-				if cluster.ActivityStreamKinesisStreamName != nil {
-					labels[rdsLabelClusterActivityStreamKinesisStreamName] = model.LabelValue(*cluster.ActivityStreamKinesisStreamName)
-				}
-				if cluster.ActivityStreamKmsKeyId != nil {
-					labels[rdsLabelClusterActivityStreamKMSKeyID] = model.LabelValue(*cluster.ActivityStreamKmsKeyId)
-				}
-				if cluster.ActivityStreamMode != "" {
-					labels[rdsLabelClusterActivityStreamMode] = model.LabelValue(cluster.ActivityStreamMode)
-				}
-				if cluster.ActivityStreamStatus != "" {
-					labels[rdsLabelClusterActivityStreamStatus] = model.LabelValue(cluster.ActivityStreamStatus)
-				}
-				if cluster.AllocatedStorage != nil {
-					labels[rdsLabelClusterAllocatedStorage] = model.LabelValue(strconv.Itoa(int(*cluster.AllocatedStorage)))
-				}
-				if cluster.AutoMinorVersionUpgrade != nil {
-					labels[rdsLabelClusterAutoMinorVersionUpgrade] = model.LabelValue(strconv.FormatBool(*cluster.AutoMinorVersionUpgrade))
-				}
-				if cluster.AutomaticRestartTime != nil {
-					labels[rdsLabelClusterAutomaticRestartTime] = model.LabelValue(cluster.AutomaticRestartTime.Format(time.RFC3339))
-				}
-				if cluster.AwsBackupRecoveryPointArn != nil {
-					labels[rdsLabelClusterAwsBackupRecoveryPointArn] = model.LabelValue(*cluster.AwsBackupRecoveryPointArn)
-				}
-				if cluster.BacktrackConsumedChangeRecords != nil {
-					labels[rdsLabelClusterBacktrackConsumedChangeRecords] = model.LabelValue(strconv.FormatInt(*cluster.BacktrackConsumedChangeRecords, 10))
-				}
-				if cluster.BacktrackWindow != nil {
-					labels[rdsLabelClusterBacktrackWindow] = model.LabelValue(strconv.FormatInt(*cluster.BacktrackWindow, 10))
-				}
-				if cluster.BackupRetentionPeriod != nil {
-					labels[rdsLabelClusterBackupRetentionPeriod] = model.LabelValue(strconv.Itoa(int(*cluster.BackupRetentionPeriod)))
-				}
-				if cluster.Capacity != nil {
-					labels[rdsLabelClusterCapacity] = model.LabelValue(strconv.Itoa(int(*cluster.Capacity)))
-				}
-				if cluster.CharacterSetName != nil {
-					labels[rdsLabelClusterCharacterSetName] = model.LabelValue(*cluster.CharacterSetName)
-				}
-				if cluster.CloneGroupId != nil {
-					labels[rdsLabelClusterCloneGroupID] = model.LabelValue(*cluster.CloneGroupId)
-				}
-				if cluster.ClusterCreateTime != nil {
-					labels[rdsLabelClusterClusterCreateTime] = model.LabelValue(cluster.ClusterCreateTime.Format(time.RFC3339))
-				}
-				if cluster.ClusterScalabilityType != "" {
-					labels[rdsLabelClusterClusterScalabilityType] = model.LabelValue(cluster.ClusterScalabilityType)
-				}
-				if cluster.CopyTagsToSnapshot != nil {
-					labels[rdsLabelClusterCopyTagsToSnapshot] = model.LabelValue(strconv.FormatBool(*cluster.CopyTagsToSnapshot))
-				}
-				if cluster.CrossAccountClone != nil {
-					labels[rdsLabelClusterCrossAccountClone] = model.LabelValue(strconv.FormatBool(*cluster.CrossAccountClone))
-				}
-				if cluster.DBClusterInstanceClass != nil {
-					labels[rdsLabelClusterDBClusterInstanceClass] = model.LabelValue(*cluster.DBClusterInstanceClass)
-				}
-				if cluster.DBClusterParameterGroup != nil {
-					labels[rdsLabelClusterDBClusterParameterGroup] = model.LabelValue(*cluster.DBClusterParameterGroup)
-				}
-				if cluster.DBSubnetGroup != nil {
-					labels[rdsLabelClusterDBSubnetGroup] = model.LabelValue(*cluster.DBSubnetGroup)
-				}
-				if cluster.DBSystemId != nil {
-					labels[rdsLabelClusterDBSystemID] = model.LabelValue(*cluster.DBSystemId)
-				}
-				if cluster.DatabaseInsightsMode != "" {
-					labels[rdsLabelClusterDatabaseInsightsMode] = model.LabelValue(cluster.DatabaseInsightsMode)
-				}
-				if cluster.DatabaseName != nil {
-					labels[rdsLabelClusterDatabaseName] = model.LabelValue(*cluster.DatabaseName)
-				}
-				if cluster.DbClusterResourceId != nil {
-					labels[rdsLabelClusterDBClusterResourceID] = model.LabelValue(*cluster.DbClusterResourceId)
-				}
-				if cluster.DeletionProtection != nil {
-					labels[rdsLabelClusterDeletionProtection] = model.LabelValue(strconv.FormatBool(*cluster.DeletionProtection))
-				}
-				if cluster.EarliestBacktrackTime != nil {
-					labels[rdsLabelClusterEarliestBacktrackTime] = model.LabelValue(cluster.EarliestBacktrackTime.Format(time.RFC3339))
-				}
-				if cluster.EarliestRestorableTime != nil {
-					labels[rdsLabelClusterEarliestRestorableTime] = model.LabelValue(cluster.EarliestRestorableTime.Format(time.RFC3339))
-				}
-				if cluster.Endpoint != nil {
-					labels[rdsLabelClusterEndpoint] = model.LabelValue(*cluster.Endpoint)
-				}
-				if cluster.Engine != nil {
-					labels[rdsLabelClusterEngine] = model.LabelValue(*cluster.Engine)
-				}
-				if cluster.EngineLifecycleSupport != nil {
-					labels[rdsLabelClusterEngineLifecycleSupport] = model.LabelValue(*cluster.EngineLifecycleSupport)
-				}
-				if cluster.EngineMode != nil {
-					labels[rdsLabelClusterEngineMode] = model.LabelValue(*cluster.EngineMode)
-				}
-				if cluster.EngineVersion != nil {
-					labels[rdsLabelClusterEngineVersion] = model.LabelValue(*cluster.EngineVersion)
-				}
-				if cluster.GlobalClusterIdentifier != nil {
-					labels[rdsLabelClusterGlobalClusterIdentifier] = model.LabelValue(*cluster.GlobalClusterIdentifier)
-				}
-				if cluster.GlobalWriteForwardingRequested != nil {
-					labels[rdsLabelClusterGlobalWriteForwardingRequested] = model.LabelValue(strconv.FormatBool(*cluster.GlobalWriteForwardingRequested))
-				}
-				if cluster.GlobalWriteForwardingStatus != "" {
-					labels[rdsLabelClusterGlobalWriteForwardingStatus] = model.LabelValue(cluster.GlobalWriteForwardingStatus)
-				}
-				if cluster.HostedZoneId != nil {
-					labels[rdsLabelClusterHostedZoneID] = model.LabelValue(*cluster.HostedZoneId)
-				}
-				if cluster.HttpEndpointEnabled != nil {
-					labels[rdsLabelClusterHTTPEndpointEnabled] = model.LabelValue(strconv.FormatBool(*cluster.HttpEndpointEnabled))
-				}
-				if cluster.IAMDatabaseAuthenticationEnabled != nil {
-					labels[rdsLabelClusterIAMDatabaseAuthenticationEnabled] = model.LabelValue(strconv.FormatBool(*cluster.IAMDatabaseAuthenticationEnabled))
-				}
-				if cluster.IOOptimizedNextAllowedModificationTime != nil {
-					labels[rdsLabelClusterIOOptimizedNextAllowedModificationTime] = model.LabelValue(cluster.IOOptimizedNextAllowedModificationTime.Format(time.RFC3339))
-				}
-				if cluster.Iops != nil {
-					labels[rdsLabelClusterIops] = model.LabelValue(strconv.Itoa(int(*cluster.Iops)))
-				}
-				if cluster.KmsKeyId != nil {
-					labels[rdsLabelClusterKMSKeyID] = model.LabelValue(*cluster.KmsKeyId)
-				}
-				if cluster.LatestRestorableTime != nil {
-					labels[rdsLabelClusterLatestRestorableTime] = model.LabelValue(cluster.LatestRestorableTime.Format(time.RFC3339))
-				}
-				if cluster.LocalWriteForwardingStatus != "" {
-					labels[rdsLabelClusterLocalWriteForwardingStatus] = model.LabelValue(cluster.LocalWriteForwardingStatus)
-				}
-				if cluster.MasterUsername != nil {
-					labels[rdsLabelClusterMasterUsername] = model.LabelValue(*cluster.MasterUsername)
-				}
-				if cluster.MonitoringInterval != nil {
-					labels[rdsLabelClusterMonitoringInterval] = model.LabelValue(strconv.Itoa(int(*cluster.MonitoringInterval)))
-				}
-				if cluster.MonitoringRoleArn != nil {
-					labels[rdsLabelClusterMonitoringRoleArn] = model.LabelValue(*cluster.MonitoringRoleArn)
-				}
-				if cluster.MultiAZ != nil {
-					labels[rdsLabelClusterMultiAZ] = model.LabelValue(strconv.FormatBool(*cluster.MultiAZ))
-				}
-				if cluster.NetworkType != nil {
-					labels[rdsLabelClusterNetworkType] = model.LabelValue(*cluster.NetworkType)
-				}
-				if cluster.PercentProgress != nil {
-					labels[rdsLabelClusterPercentProgress] = model.LabelValue(*cluster.PercentProgress)
-				}
-				if cluster.PerformanceInsightsEnabled != nil {
-					labels[rdsLabelClusterPerformanceInsightsEnabled] = model.LabelValue(strconv.FormatBool(*cluster.PerformanceInsightsEnabled))
-				}
-				if cluster.PerformanceInsightsKMSKeyId != nil {
-					labels[rdsLabelClusterPerformanceInsightsKMSKeyID] = model.LabelValue(*cluster.PerformanceInsightsKMSKeyId)
-				}
-				if cluster.PerformanceInsightsRetentionPeriod != nil {
-					labels[rdsLabelClusterPerformanceInsightsRetentionPeriod] = model.LabelValue(strconv.Itoa(int(*cluster.PerformanceInsightsRetentionPeriod)))
-				}
-				if cluster.Port != nil {
-					labels[rdsLabelClusterPort] = model.LabelValue(strconv.Itoa(int(*cluster.Port)))
-				}
-				if cluster.PreferredBackupWindow != nil {
-					labels[rdsLabelClusterPreferredBackupWindow] = model.LabelValue(*cluster.PreferredBackupWindow)
-				}
-				if cluster.PreferredMaintenanceWindow != nil {
-					labels[rdsLabelClusterPreferredMaintenanceWindow] = model.LabelValue(*cluster.PreferredMaintenanceWindow)
-				}
-				if cluster.PubliclyAccessible != nil {
-					labels[rdsLabelClusterPubliclyAccessible] = model.LabelValue(strconv.FormatBool(*cluster.PubliclyAccessible))
-				}
-				if cluster.ReaderEndpoint != nil {
-					labels[rdsLabelClusterReaderEndpoint] = model.LabelValue(*cluster.ReaderEndpoint)
-				}
-				if cluster.ReplicationSourceIdentifier != nil {
-					labels[rdsLabelClusterReplicationSourceIdentifier] = model.LabelValue(*cluster.ReplicationSourceIdentifier)
-				}
-				if cluster.ServerlessV2PlatformVersion != nil {
-					labels[rdsLabelClusterServerlessV2PlatformVersion] = model.LabelValue(*cluster.ServerlessV2PlatformVersion)
-				}
-				if cluster.Status != nil {
-					labels[rdsLabelClusterStatus] = model.LabelValue(*cluster.Status)
-				}
-				if cluster.StorageEncrypted != nil {
-					labels[rdsLabelClusterStorageEncrypted] = model.LabelValue(strconv.FormatBool(*cluster.StorageEncrypted))
-				}
-				if cluster.StorageEncryptionType != "" {
-					labels[rdsLabelClusterStorageEncryptionType] = model.LabelValue(cluster.StorageEncryptionType)
-				}
-				if cluster.StorageThroughput != nil {
-					labels[rdsLabelClusterStorageThroughput] = model.LabelValue(strconv.Itoa(int(*cluster.StorageThroughput)))
-				}
-				if cluster.StorageType != nil {
-					labels[rdsLabelClusterStorageType] = model.LabelValue(*cluster.StorageType)
-				}
-				if cluster.UpgradeRolloutOrder != "" {
-					labels[rdsLabelClusterUpgradeRolloutOrder] = model.LabelValue(cluster.UpgradeRolloutOrder)
-				}
+			// Cluster labels
+			if cluster.DBClusterArn != nil {
+				commonLabels[rdsLabelClusterDBClusterArn] = model.LabelValue(*cluster.DBClusterArn)
+			}
+			if cluster.DBClusterIdentifier != nil {
+				commonLabels[rdsLabelClusterDBClusterIdentifier] = model.LabelValue(*cluster.DBClusterIdentifier)
+			}
+			if cluster.ActivityStreamKinesisStreamName != nil {
+				commonLabels[rdsLabelClusterActivityStreamKinesisStreamName] = model.LabelValue(*cluster.ActivityStreamKinesisStreamName)
+			}
+			if cluster.ActivityStreamKmsKeyId != nil {
+				commonLabels[rdsLabelClusterActivityStreamKMSKeyID] = model.LabelValue(*cluster.ActivityStreamKmsKeyId)
+			}
+			if cluster.ActivityStreamMode != "" {
+				commonLabels[rdsLabelClusterActivityStreamMode] = model.LabelValue(cluster.ActivityStreamMode)
+			}
+			if cluster.ActivityStreamStatus != "" {
+				commonLabels[rdsLabelClusterActivityStreamStatus] = model.LabelValue(cluster.ActivityStreamStatus)
+			}
+			if cluster.AllocatedStorage != nil {
+				commonLabels[rdsLabelClusterAllocatedStorage] = model.LabelValue(strconv.Itoa(int(*cluster.AllocatedStorage)))
+			}
+			if cluster.AutoMinorVersionUpgrade != nil {
+				commonLabels[rdsLabelClusterAutoMinorVersionUpgrade] = model.LabelValue(strconv.FormatBool(*cluster.AutoMinorVersionUpgrade))
+			}
+			if cluster.AutomaticRestartTime != nil {
+				commonLabels[rdsLabelClusterAutomaticRestartTime] = model.LabelValue(cluster.AutomaticRestartTime.Format(time.RFC3339))
+			}
+			if cluster.AwsBackupRecoveryPointArn != nil {
+				commonLabels[rdsLabelClusterAwsBackupRecoveryPointArn] = model.LabelValue(*cluster.AwsBackupRecoveryPointArn)
+			}
+			if cluster.BacktrackConsumedChangeRecords != nil {
+				commonLabels[rdsLabelClusterBacktrackConsumedChangeRecords] = model.LabelValue(strconv.FormatInt(*cluster.BacktrackConsumedChangeRecords, 10))
+			}
+			if cluster.BacktrackWindow != nil {
+				commonLabels[rdsLabelClusterBacktrackWindow] = model.LabelValue(strconv.FormatInt(*cluster.BacktrackWindow, 10))
+			}
+			if cluster.BackupRetentionPeriod != nil {
+				commonLabels[rdsLabelClusterBackupRetentionPeriod] = model.LabelValue(strconv.Itoa(int(*cluster.BackupRetentionPeriod)))
+			}
+			if cluster.Capacity != nil {
+				commonLabels[rdsLabelClusterCapacity] = model.LabelValue(strconv.Itoa(int(*cluster.Capacity)))
+			}
+			if cluster.CharacterSetName != nil {
+				commonLabels[rdsLabelClusterCharacterSetName] = model.LabelValue(*cluster.CharacterSetName)
+			}
+			if cluster.CloneGroupId != nil {
+				commonLabels[rdsLabelClusterCloneGroupID] = model.LabelValue(*cluster.CloneGroupId)
+			}
+			if cluster.ClusterCreateTime != nil {
+				commonLabels[rdsLabelClusterClusterCreateTime] = model.LabelValue(cluster.ClusterCreateTime.Format(time.RFC3339))
+			}
+			if cluster.ClusterScalabilityType != "" {
+				commonLabels[rdsLabelClusterClusterScalabilityType] = model.LabelValue(cluster.ClusterScalabilityType)
+			}
+			if cluster.CopyTagsToSnapshot != nil {
+				commonLabels[rdsLabelClusterCopyTagsToSnapshot] = model.LabelValue(strconv.FormatBool(*cluster.CopyTagsToSnapshot))
+			}
+			if cluster.CrossAccountClone != nil {
+				commonLabels[rdsLabelClusterCrossAccountClone] = model.LabelValue(strconv.FormatBool(*cluster.CrossAccountClone))
+			}
+			if cluster.DBClusterInstanceClass != nil {
+				commonLabels[rdsLabelClusterDBClusterInstanceClass] = model.LabelValue(*cluster.DBClusterInstanceClass)
+			}
+			if cluster.DBClusterParameterGroup != nil {
+				commonLabels[rdsLabelClusterDBClusterParameterGroup] = model.LabelValue(*cluster.DBClusterParameterGroup)
+			}
+			if cluster.DBSubnetGroup != nil {
+				commonLabels[rdsLabelClusterDBSubnetGroup] = model.LabelValue(*cluster.DBSubnetGroup)
+			}
+			if cluster.DBSystemId != nil {
+				commonLabels[rdsLabelClusterDBSystemID] = model.LabelValue(*cluster.DBSystemId)
+			}
+			if cluster.DatabaseInsightsMode != "" {
+				commonLabels[rdsLabelClusterDatabaseInsightsMode] = model.LabelValue(cluster.DatabaseInsightsMode)
+			}
+			if cluster.DatabaseName != nil {
+				commonLabels[rdsLabelClusterDatabaseName] = model.LabelValue(*cluster.DatabaseName)
+			}
+			if cluster.DbClusterResourceId != nil {
+				commonLabels[rdsLabelClusterDBClusterResourceID] = model.LabelValue(*cluster.DbClusterResourceId)
+			}
+			if cluster.DeletionProtection != nil {
+				commonLabels[rdsLabelClusterDeletionProtection] = model.LabelValue(strconv.FormatBool(*cluster.DeletionProtection))
+			}
+			if cluster.EarliestBacktrackTime != nil {
+				commonLabels[rdsLabelClusterEarliestBacktrackTime] = model.LabelValue(cluster.EarliestBacktrackTime.Format(time.RFC3339))
+			}
+			if cluster.EarliestRestorableTime != nil {
+				commonLabels[rdsLabelClusterEarliestRestorableTime] = model.LabelValue(cluster.EarliestRestorableTime.Format(time.RFC3339))
+			}
+			if cluster.Endpoint != nil {
+				commonLabels[rdsLabelClusterEndpoint] = model.LabelValue(*cluster.Endpoint)
+			}
+			if cluster.Engine != nil {
+				commonLabels[rdsLabelClusterEngine] = model.LabelValue(*cluster.Engine)
+			}
+			if cluster.EngineLifecycleSupport != nil {
+				commonLabels[rdsLabelClusterEngineLifecycleSupport] = model.LabelValue(*cluster.EngineLifecycleSupport)
+			}
+			if cluster.EngineMode != nil {
+				commonLabels[rdsLabelClusterEngineMode] = model.LabelValue(*cluster.EngineMode)
+			}
+			if cluster.EngineVersion != nil {
+				commonLabels[rdsLabelClusterEngineVersion] = model.LabelValue(*cluster.EngineVersion)
+			}
+			if cluster.GlobalClusterIdentifier != nil {
+				commonLabels[rdsLabelClusterGlobalClusterIdentifier] = model.LabelValue(*cluster.GlobalClusterIdentifier)
+			}
+			if cluster.GlobalWriteForwardingRequested != nil {
+				commonLabels[rdsLabelClusterGlobalWriteForwardingRequested] = model.LabelValue(strconv.FormatBool(*cluster.GlobalWriteForwardingRequested))
+			}
+			if cluster.GlobalWriteForwardingStatus != "" {
+				commonLabels[rdsLabelClusterGlobalWriteForwardingStatus] = model.LabelValue(cluster.GlobalWriteForwardingStatus)
+			}
+			if cluster.HostedZoneId != nil {
+				commonLabels[rdsLabelClusterHostedZoneID] = model.LabelValue(*cluster.HostedZoneId)
+			}
+			if cluster.HttpEndpointEnabled != nil {
+				commonLabels[rdsLabelClusterHTTPEndpointEnabled] = model.LabelValue(strconv.FormatBool(*cluster.HttpEndpointEnabled))
+			}
+			if cluster.IAMDatabaseAuthenticationEnabled != nil {
+				commonLabels[rdsLabelClusterIAMDatabaseAuthenticationEnabled] = model.LabelValue(strconv.FormatBool(*cluster.IAMDatabaseAuthenticationEnabled))
+			}
+			if cluster.IOOptimizedNextAllowedModificationTime != nil {
+				commonLabels[rdsLabelClusterIOOptimizedNextAllowedModificationTime] = model.LabelValue(cluster.IOOptimizedNextAllowedModificationTime.Format(time.RFC3339))
+			}
+			if cluster.Iops != nil {
+				commonLabels[rdsLabelClusterIops] = model.LabelValue(strconv.Itoa(int(*cluster.Iops)))
+			}
+			if cluster.KmsKeyId != nil {
+				commonLabels[rdsLabelClusterKMSKeyID] = model.LabelValue(*cluster.KmsKeyId)
+			}
+			if cluster.LatestRestorableTime != nil {
+				commonLabels[rdsLabelClusterLatestRestorableTime] = model.LabelValue(cluster.LatestRestorableTime.Format(time.RFC3339))
+			}
+			if cluster.LocalWriteForwardingStatus != "" {
+				commonLabels[rdsLabelClusterLocalWriteForwardingStatus] = model.LabelValue(cluster.LocalWriteForwardingStatus)
+			}
+			if cluster.MasterUsername != nil {
+				commonLabels[rdsLabelClusterMasterUsername] = model.LabelValue(*cluster.MasterUsername)
+			}
+			if cluster.MonitoringInterval != nil {
+				commonLabels[rdsLabelClusterMonitoringInterval] = model.LabelValue(strconv.Itoa(int(*cluster.MonitoringInterval)))
+			}
+			if cluster.MonitoringRoleArn != nil {
+				commonLabels[rdsLabelClusterMonitoringRoleArn] = model.LabelValue(*cluster.MonitoringRoleArn)
+			}
+			if cluster.MultiAZ != nil {
+				commonLabels[rdsLabelClusterMultiAZ] = model.LabelValue(strconv.FormatBool(*cluster.MultiAZ))
+			}
+			if cluster.NetworkType != nil {
+				commonLabels[rdsLabelClusterNetworkType] = model.LabelValue(*cluster.NetworkType)
+			}
+			if cluster.PercentProgress != nil {
+				commonLabels[rdsLabelClusterPercentProgress] = model.LabelValue(*cluster.PercentProgress)
+			}
+			if cluster.PerformanceInsightsEnabled != nil {
+				commonLabels[rdsLabelClusterPerformanceInsightsEnabled] = model.LabelValue(strconv.FormatBool(*cluster.PerformanceInsightsEnabled))
+			}
+			if cluster.PerformanceInsightsKMSKeyId != nil {
+				commonLabels[rdsLabelClusterPerformanceInsightsKMSKeyID] = model.LabelValue(*cluster.PerformanceInsightsKMSKeyId)
+			}
+			if cluster.PerformanceInsightsRetentionPeriod != nil {
+				commonLabels[rdsLabelClusterPerformanceInsightsRetentionPeriod] = model.LabelValue(strconv.Itoa(int(*cluster.PerformanceInsightsRetentionPeriod)))
+			}
+			if cluster.Port != nil {
+				commonLabels[rdsLabelClusterPort] = model.LabelValue(strconv.Itoa(int(*cluster.Port)))
+			}
+			if cluster.PreferredBackupWindow != nil {
+				commonLabels[rdsLabelClusterPreferredBackupWindow] = model.LabelValue(*cluster.PreferredBackupWindow)
+			}
+			if cluster.PreferredMaintenanceWindow != nil {
+				commonLabels[rdsLabelClusterPreferredMaintenanceWindow] = model.LabelValue(*cluster.PreferredMaintenanceWindow)
+			}
+			if cluster.PubliclyAccessible != nil {
+				commonLabels[rdsLabelClusterPubliclyAccessible] = model.LabelValue(strconv.FormatBool(*cluster.PubliclyAccessible))
+			}
+			if cluster.ReaderEndpoint != nil {
+				commonLabels[rdsLabelClusterReaderEndpoint] = model.LabelValue(*cluster.ReaderEndpoint)
+			}
+			if cluster.ReplicationSourceIdentifier != nil {
+				commonLabels[rdsLabelClusterReplicationSourceIdentifier] = model.LabelValue(*cluster.ReplicationSourceIdentifier)
+			}
+			if cluster.ServerlessV2PlatformVersion != nil {
+				commonLabels[rdsLabelClusterServerlessV2PlatformVersion] = model.LabelValue(*cluster.ServerlessV2PlatformVersion)
+			}
+			if cluster.Status != nil {
+				commonLabels[rdsLabelClusterStatus] = model.LabelValue(*cluster.Status)
+			}
+			if cluster.StorageEncrypted != nil {
+				commonLabels[rdsLabelClusterStorageEncrypted] = model.LabelValue(strconv.FormatBool(*cluster.StorageEncrypted))
+			}
+			if cluster.StorageEncryptionType != "" {
+				commonLabels[rdsLabelClusterStorageEncryptionType] = model.LabelValue(cluster.StorageEncryptionType)
+			}
+			if cluster.StorageThroughput != nil {
+				commonLabels[rdsLabelClusterStorageThroughput] = model.LabelValue(strconv.Itoa(int(*cluster.StorageThroughput)))
+			}
+			if cluster.StorageType != nil {
+				commonLabels[rdsLabelClusterStorageType] = model.LabelValue(*cluster.StorageType)
+			}
+			if cluster.UpgradeRolloutOrder != "" {
+				commonLabels[rdsLabelClusterUpgradeRolloutOrder] = model.LabelValue(cluster.UpgradeRolloutOrder)
+			}
 
-				// Cluster tags
-				for _, tag := range cluster.TagList {
-					if tag.Key != nil && tag.Value != nil {
-						labels[model.LabelName(rdsLabelClusterTag+strutil.SanitizeLabelName(*tag.Key))] = model.LabelValue(*tag.Value)
-					}
+			// Cluster tags
+			for _, tag := range cluster.TagList {
+				if tag.Key != nil && tag.Value != nil {
+					commonLabels[model.LabelName(rdsLabelClusterTag+strutil.SanitizeLabelName(*tag.Key))] = model.LabelValue(*tag.Value)
+				}
+			}
+
+			for i, instance := range instances {
+				// The last target takes ownership of commonLabels rather than
+				// copying them, as nothing reads them afterwards.
+				labels := commonLabels
+				if i < len(instances)-1 {
+					labels = make(model.LabelSet, len(commonLabels))
+					maps.Copy(labels, commonLabels)
 				}
 
 				// Instance labels
@@ -1029,9 +1035,12 @@ func (d *RDSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				tg.Targets = append(tg.Targets, labels)
 				mu.Unlock()
 			}
-		}(cluster, instances)
+			return nil
+		})
 	}
 
-	wg.Wait()
+	if err := errg.Wait(); err != nil {
+		return nil, err
+	}
 	return []*targetgroup.Group{tg}, nil
 }
