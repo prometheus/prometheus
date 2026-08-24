@@ -1016,6 +1016,13 @@ func TestReloadConfigLogLevel(t *testing.T) {
 	require.Empty(t, output.String())
 	logger.Error("visible error")
 	require.Contains(t, output.String(), "visible error")
+
+	require.NoError(t, os.WriteFile(configFile, []byte("{}\n"), 0o600))
+	require.NoError(t, reloadConfig(configFile, false, logger, interval, level, func(bool) {}))
+	require.Equal(t, "info", level.String())
+	output.Reset()
+	logger.Info("visible info")
+	require.Contains(t, output.String(), "visible info")
 }
 
 // TestHeadCompactionWhileScraping verifies that running a head compaction

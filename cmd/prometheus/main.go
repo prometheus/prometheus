@@ -674,7 +674,7 @@ func main() {
 	logger := promslog.New(&cfg.promslogConfig)
 	slog.SetDefault(logger)
 	if cfg.logLevelFlagSet {
-		logger.Warn("The flag --log.level is deprecated. Set runtime.log_level in the configuration file instead.")
+		logger.Warn("The flag --log.level is deprecated. Set runtime.log_level in the configuration file instead. This flag will be removed in the next version.")
 	}
 
 	// The CLI log level controls startup logging and supplies the default when
