@@ -111,6 +111,40 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 		expected []*targetgroup.Group
 	}{
 		{
+			name: "NilPlacementAndImageId",
+			ec2Data: &ec2DataStore{
+				region: "region-nilfields",
+				azToAZID: map[string]string{
+					"azname-a": "azid-1",
+				},
+				instances: []ec2Types.Instance{
+					{
+						InstanceId:       strptr("instance-id-nilfields"),
+						PrivateIpAddress: strptr("1.2.3.4"),
+						State:            &ec2Types.InstanceState{Name: "running"},
+						InstanceType:     "instance-type-nilfields",
+						// Placement and ImageId are nil
+					},
+				},
+			},
+			expected: []*targetgroup.Group{
+				{
+					Source: "region-nilfields",
+					Targets: []model.LabelSet{
+						{
+							"__address__":               model.LabelValue("1.2.3.4:4242"),
+							"__meta_ec2_instance_id":    model.LabelValue("instance-id-nilfields"),
+							"__meta_ec2_instance_state": model.LabelValue("running"),
+							"__meta_ec2_instance_type":  model.LabelValue("instance-type-nilfields"),
+							"__meta_ec2_owner_id":       model.LabelValue(""),
+							"__meta_ec2_private_ip":     model.LabelValue("1.2.3.4"),
+							"__meta_ec2_region":         model.LabelValue("region-nilfields"),
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "NoPrivateIpOrIpv6",
 			ec2Data: &ec2DataStore{
 				region: "region-noprivateip",
