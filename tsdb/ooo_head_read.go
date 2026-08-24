@@ -254,7 +254,7 @@ func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chu
 
 // PutChunk returns a chunk to the pool.
 func (cr *HeadAndOOOChunkReader) PutChunk(c chunkenc.Chunk) error {
-	return cr.head.opts.ChunkPool.Put(c.(*safeHeadChunk).Chunk)
+	return cr.head.putSafeHeadChunk(c)
 }
 
 // ChunkOrIterableWithCopy implements ChunkReaderWithCopy. The special Copy

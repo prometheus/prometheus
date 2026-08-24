@@ -591,7 +591,7 @@ func (h *headChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chu
 
 // PutChunk returns a chunk to the pool.
 func (h *headChunkReader) PutChunk(c chunkenc.Chunk) error {
-	return h.head.opts.ChunkPool.Put(c.(*safeHeadChunk).Chunk)
+	return h.head.putSafeHeadChunk(c)
 }
 
 type ChunkReaderWithCopy interface {
@@ -667,21 +667,24 @@ func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool,
 		if err != nil {
 			return nil, 0, false, err
 		}
-		return &safeHeadChunk{
-			Chunk:    chk,
-			s:        s,
-			cid:      cid,
-			isoState: isoState,
-		}, maxTime, true, nil
+		shc := h.safeHeadChunkPool.Get().(*safeHeadChunk)
+		shc.Chunk = chk
+		shc.s = s
+		shc.cid = cid
+		shc.isoState = isoState
+		shc.fromPool = true
+		return shc, maxTime, true, nil
 	}
 
-	// Live head chunk without copy — not pool-owned.
-	return &safeHeadChunk{
-		Chunk:    chk,
-		s:        s,
-		cid:      cid,
-		isoState: isoState,
-	}, maxTime, false, nil
+	// Live head chunk without copy. The inner chunk is not pool-owned but
+	// the safeHeadChunk wrapper is pooled.
+	shc := h.safeHeadChunkPool.Get().(*safeHeadChunk)
+	shc.Chunk = chk
+	shc.s = s
+	shc.cid = cid
+	shc.isoState = isoState
+	shc.fromPool = false
+	return shc, maxTime, true, nil
 }
 
 // chunk returns the chunk for the HeadChunkID from memory or by m-mapping it from the disk.
@@ -777,6 +780,28 @@ type safeHeadChunk struct {
 	s        *memSeries
 	cid      chunks.HeadChunkID
 	isoState *isolationState
+	fromPool bool
+}
+
+func (c *safeHeadChunk) reset() {
+	c.Chunk = nil
+	c.s = nil
+	c.cid = 0
+	c.isoState = nil
+	c.fromPool = false
+}
+
+// putSafeHeadChunk returns a safeHeadChunk wrapper to the pool. The inner
+// chunk is returned to ChunkPool only if it came from there (fromPool is true).
+func (h *Head) putSafeHeadChunk(c chunkenc.Chunk) error {
+	shc := c.(*safeHeadChunk)
+	var err error
+	if shc.fromPool {
+		err = h.opts.ChunkPool.Put(shc.Chunk)
+	}
+	shc.reset()
+	h.safeHeadChunkPool.Put(shc)
+	return err
 }
 
 func (c *safeHeadChunk) Iterator(reuseIter chunkenc.Iterator) chunkenc.Iterator {
