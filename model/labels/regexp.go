@@ -648,25 +648,25 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 }
 
 // isSimpleConcatenationPattern returns true if re contains only literals or wildcard matchers,
-// and starts and ends with a wildcard matcher (eg. .*-.*-.*).
+// and starts and ends with a wildcard matcher (eg. .*-.*-.*), with wildcards between every literal.
 func isSimpleConcatenationPattern(re *syntax.Regexp) bool {
 	if re.Op != syntax.OpConcat {
 		return false
 	}
 
-	if len(re.Sub) < 2 {
+	if len(re.Sub) < 3 || len(re.Sub)%2 == 0 {
 		return false
 	}
 
-	first := re.Sub[0]
-	last := re.Sub[len(re.Sub)-1]
-	if !isMatchAny(first) || !isMatchAny(last) {
-		return false
-	}
-
-	for _, re := range re.Sub[1 : len(re.Sub)-1] {
-		if !isMatchAny(re) && !isCaseSensitiveLiteral(re) {
-			return false
+	for i, sub := range re.Sub {
+		if i%2 == 0 {
+			if !isMatchAny(sub) {
+				return false
+			}
+		} else {
+			if !isCaseSensitiveLiteral(sub) {
+				return false
+			}
 		}
 	}
 
