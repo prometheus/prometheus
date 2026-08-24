@@ -270,8 +270,7 @@ type Options struct {
 	// resolve it into this one.
 	// Defaults to EncXOR. Set to EncXOR2 to encode new float chunks as XOR2.
 	// Always use DefaultOptions() rather than a bare Options literal; the zero value
-	// of this field is EncNone, not EncXOR. This field is independent of EnableSTStorage:
-	// st-storage does not automatically select EncXOR2.
+	// of this field is EncNone, not EncXOR.
 	FloatChunkEncoding chunkenc.Encoding
 
 	// FeatureRegistry is used to register TSDB features.
