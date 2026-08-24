@@ -830,7 +830,8 @@ func main() {
 	if tsdbDelayCompactFilePath != "" {
 		logger.Info("Compactions will be delayed for blocks not marked as uploaded in the file tracking uploads", "path", tsdbDelayCompactFilePath)
 		cfg.tsdb.BlockCompactionExcludeFunc = exludeBlocksPendingUpload(
-			logger, tsdbDelayCompactFilePath)
+			logger, tsdbDelayCompactFilePath,
+		)
 	}
 
 	// Now that the validity of the config is established, set the config

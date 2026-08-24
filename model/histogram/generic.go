@@ -270,7 +270,8 @@ func compactBuckets[IBC InternalBucketCount](
 	} else if compensationBuckets != nil && len(primaryBuckets) != len(compensationBuckets) {
 		panic(fmt.Errorf(
 			"primary buckets layout (%v) mismatch against associated compensation buckets layout (%v)",
-			primaryBuckets, compensationBuckets),
+			primaryBuckets, compensationBuckets,
+		),
 		)
 	}
 	// Fast path: If there are no empty buckets AND no offset in any span is

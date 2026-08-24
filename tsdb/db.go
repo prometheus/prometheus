@@ -2367,7 +2367,8 @@ func (o Overlaps) String() string {
 			r.Min, r.Max,
 			(time.Duration((r.Max-r.Min)/1000)*time.Second).String(),
 			len(overlaps),
-			strings.Join(groups, ", ")),
+			strings.Join(groups, ", "),
+		),
 		)
 	}
 	return strings.Join(res, "\n")

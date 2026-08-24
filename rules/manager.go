@@ -334,7 +334,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 				m.GroupLastEvalTime.DeleteLabelValues(n)
 				m.GroupLastDuration.DeleteLabelValues(n)
 				m.GroupRules.DeleteLabelValues(n)
-				m.GroupSamples.DeleteLabelValues((n))
+				m.GroupSamples.DeleteLabelValues(n)
 				m.GroupLastRuleDurationSum.DeleteLabelValues(n)
 				m.GroupLastRestoreDuration.DeleteLabelValues(n)
 			}

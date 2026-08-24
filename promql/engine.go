@@ -4727,7 +4727,7 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 // required for correctness.
 func detectHistogramStatsDecoding(expr parser.Expr) {
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
-		n, ok := (node).(*parser.VectorSelector)
+		n, ok := node.(*parser.VectorSelector)
 		if !ok {
 			return nil
 		}

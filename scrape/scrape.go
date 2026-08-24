@@ -2461,6 +2461,7 @@ func newScrapeClient(cfg config_util.HTTPClientConfig, name string, optFuncs ...
 		client.Transport,
 		otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
 			return otelhttptrace.NewClientTrace(ctx, otelhttptrace.WithoutSubSpans())
-		}))
+		}),
+	)
 	return client, nil
 }

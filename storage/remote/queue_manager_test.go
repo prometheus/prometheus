@@ -1807,7 +1807,8 @@ func createDummyTimeSeries(instances int) []timeSeries {
 		"cluster", "some-cluster-0",
 		"container", "prometheus",
 		"job", "some-namespace/prometheus",
-		"namespace", "some-namespace")
+		"namespace", "some-namespace",
+	)
 
 	var result []timeSeries
 	r := rand.New(rand.NewSource(0))
@@ -2293,7 +2294,8 @@ func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
 	}
 
 	nSamples, nExemplars, nHistograms, nMetadata, nUnexpected := populateV2TimeSeries(
-		&symbolTable, batch, pendingData, false, false, false)
+		&symbolTable, batch, pendingData, false, false, false,
+	)
 
 	require.Equal(t, 2, nSamples, "Should count 2 samples")
 	require.Equal(t, 0, nExemplars, "Should count 0 exemplars")
