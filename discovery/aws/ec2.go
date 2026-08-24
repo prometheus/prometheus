@@ -328,8 +328,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 		if err := d.refreshAZIDs(ctx); err != nil {
 			d.logger.Debug(
 				"Unable to describe availability zones",
-				"err", err,
-			)
+				"err", err)
 		}
 	}
 
@@ -354,16 +353,9 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					continue
 				}
 
-				// Every instance field below is optional in the EC2 API. Omit
-				// the label when the field is absent rather than dereferencing
-				// a nil pointer, which would panic and take down the whole
-				// Prometheus process.
 				labels := model.LabelSet{
-					ec2LabelRegion: model.LabelValue(d.region),
-				}
-
-				if inst.InstanceId != nil {
-					labels[ec2LabelInstanceID] = model.LabelValue(*inst.InstanceId)
+					ec2LabelInstanceID: model.LabelValue(*inst.InstanceId),
+					ec2LabelRegion:     model.LabelValue(d.region),
 				}
 
 				if r.OwnerId != nil {
@@ -400,40 +392,30 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					labels[ec2LabelPrimaryIPv6Addresses] = model.LabelValue(
 						ec2LabelSeparator +
 							strings.Join(primaryIPv6Addrs, ec2LabelSeparator) +
-							ec2LabelSeparator,
-					)
+							ec2LabelSeparator)
 				}
 
 				if ipv6Addrs != nil {
 					labels[ec2LabelIPv6Addresses] = model.LabelValue(
 						ec2LabelSeparator +
 							strings.Join(ipv6Addrs, ec2LabelSeparator) +
-							ec2LabelSeparator,
-					)
+							ec2LabelSeparator)
 				}
 
 				if inst.ImageId != nil {
 					labels[ec2LabelAMI] = model.LabelValue(*inst.ImageId)
 				}
-
-				// The availability zone ID is looked up by zone name, so both
-				// labels are omitted when the placement is absent.
 				if inst.Placement != nil && inst.Placement.AvailabilityZone != nil {
-					az := *inst.Placement.AvailabilityZone
-					labels[ec2LabelAZ] = model.LabelValue(az)
-					azID, ok := d.azToAZID[az]
+					labels[ec2LabelAZ] = model.LabelValue(*inst.Placement.AvailabilityZone)
+					azID, ok := d.azToAZID[*inst.Placement.AvailabilityZone]
 					if !ok && d.azToAZID != nil {
 						d.logger.Debug(
 							"Availability zone ID not found",
-							"az", az,
-						)
+							"az", *inst.Placement.AvailabilityZone)
 					}
 					labels[ec2LabelAZID] = model.LabelValue(azID)
 				}
-
-				if inst.State != nil {
-					labels[ec2LabelInstanceState] = model.LabelValue(inst.State.Name)
-				}
+				labels[ec2LabelInstanceState] = model.LabelValue(inst.State.Name)
 				labels[ec2LabelInstanceType] = model.LabelValue(inst.InstanceType)
 
 				if inst.InstanceLifecycle != "" {
@@ -465,8 +447,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					labels[ec2LabelSubnetID] = model.LabelValue(
 						ec2LabelSeparator +
 							strings.Join(subnets, ec2LabelSeparator) +
-							ec2LabelSeparator,
-					)
+							ec2LabelSeparator)
 				}
 
 				for _, t := range inst.Tags {
@@ -495,33 +476,16 @@ func getInstanceIPv6Addresses(i *ec2Types.Instance) (*string, []string, []string
 			}
 
 			for _, ipv6addr := range eni.Ipv6Addresses {
-				// Nothing identifies an address without a value, so skip the
-				// entry rather than dereferencing nil.
-				if ipv6addr.Ipv6Address == nil {
-					continue
-				}
 				ipv6Addrs = append(ipv6Addrs, *ipv6addr.Ipv6Address)
-
-				// IsPrimaryIpv6 is only populated once a primary IPv6 address
-				// has been enabled on the interface, so an absent flag means
-				// the address is not primary.
-				if !aws.ToBool(ipv6addr.IsPrimaryIpv6) {
-					continue
+				if *ipv6addr.IsPrimaryIpv6 {
+					// we might have to extend the slice with more than one element
+					// that could leave empty strings in the list which is intentional
+					// to keep the position/device index information
+					for int32(len(primaryIPv6Addrs)) <= *eni.Attachment.DeviceIndex {
+						primaryIPv6Addrs = append(primaryIPv6Addrs, "")
+					}
+					primaryIPv6Addrs[*eni.Attachment.DeviceIndex] = *ipv6addr.Ipv6Address
 				}
-
-				// The device index gives the position to record the primary
-				// address at; without a usable one there is no slot for it.
-				if eni.Attachment == nil || eni.Attachment.DeviceIndex == nil || *eni.Attachment.DeviceIndex < 0 {
-					continue
-				}
-
-				// we might have to extend the slice with more than one element
-				// that could leave empty strings in the list which is intentional
-				// to keep the position/device index information
-				for int32(len(primaryIPv6Addrs)) <= *eni.Attachment.DeviceIndex {
-					primaryIPv6Addrs = append(primaryIPv6Addrs, "")
-				}
-				primaryIPv6Addrs[*eni.Attachment.DeviceIndex] = *ipv6addr.Ipv6Address
 			}
 		}
 
