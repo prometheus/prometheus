@@ -328,7 +328,8 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 		if err := d.refreshAZIDs(ctx); err != nil {
 			d.logger.Debug(
 				"Unable to describe availability zones",
-				"err", err)
+				"err", err,
+			)
 		}
 	}
 
@@ -399,14 +400,16 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					labels[ec2LabelPrimaryIPv6Addresses] = model.LabelValue(
 						ec2LabelSeparator +
 							strings.Join(primaryIPv6Addrs, ec2LabelSeparator) +
-							ec2LabelSeparator)
+							ec2LabelSeparator,
+					)
 				}
 
 				if ipv6Addrs != nil {
 					labels[ec2LabelIPv6Addresses] = model.LabelValue(
 						ec2LabelSeparator +
 							strings.Join(ipv6Addrs, ec2LabelSeparator) +
-							ec2LabelSeparator)
+							ec2LabelSeparator,
+					)
 				}
 
 				if inst.ImageId != nil {
@@ -422,7 +425,8 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					if !ok && d.azToAZID != nil {
 						d.logger.Debug(
 							"Availability zone ID not found",
-							"az", az)
+							"az", az,
+						)
 					}
 					labels[ec2LabelAZID] = model.LabelValue(azID)
 				}
@@ -461,7 +465,8 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					labels[ec2LabelSubnetID] = model.LabelValue(
 						ec2LabelSeparator +
 							strings.Join(subnets, ec2LabelSeparator) +
-							ec2LabelSeparator)
+							ec2LabelSeparator,
+					)
 				}
 
 				for _, t := range inst.Tags {

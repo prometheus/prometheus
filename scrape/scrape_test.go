@@ -1990,7 +1990,8 @@ func TestScrapeLoopAppend_StartTimeSynthesis_OutOfOrder(t *testing.T) {
 				return storage.ErrOutOfOrderSample
 			}
 			return nil
-		}, nil, nil).Then(s)
+		}, nil, nil,
+	).Then(s)
 
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
 		sl.synthesizeST = true
@@ -2063,7 +2064,8 @@ func TestScrapeLoopAppend_StartTimeSynthesis_OOO_StateMutation(t *testing.T) {
 				return storage.ErrOutOfOrderSample
 			}
 			return nil
-		}, nil, nil).Then(s)
+		}, nil, nil,
+	).Then(s)
 
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
 		sl.synthesizeST = true
@@ -4513,7 +4515,8 @@ func testScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 			default:
 				return nil
 			}
-		}, nil, nil)
+		}, nil, nil,
+	)
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2))
 
 	now := time.Unix(1, 0)

@@ -476,8 +476,10 @@ func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, sett
 	}
 
 	c.labelNamer = otlptranslator.LabelNamer{
-		UTF8Allowed:                 settings.AllowUTF8,
-		UnderscoreLabelSanitization: settings.LabelNameUnderscoreSanitization,
+		UTF8Allowed: settings.AllowUTF8,
+		// The deprecated field is still the only way to opt into this
+		// behaviour, which is exposed as a Prometheus config option.
+		UnderscoreLabelSanitization: settings.LabelNameUnderscoreSanitization, //nolint:staticcheck
 		PreserveMultipleUnderscores: settings.LabelNamePreserveMultipleUnderscores,
 	}
 

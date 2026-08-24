@@ -2802,7 +2802,7 @@ func (s vectorByValueHeap) Swap(i, j int) {
 }
 
 func (s *vectorByValueHeap) Push(x any) {
-	*s = append(*s, *(x.(*Sample)))
+	*s = append(*s, *x.(*Sample))
 }
 
 func (s *vectorByValueHeap) Pop() any {
@@ -2832,7 +2832,7 @@ func (s vectorByReverseValueHeap) Swap(i, j int) {
 }
 
 func (s *vectorByReverseValueHeap) Push(x any) {
-	*s = append(*s, *(x.(*Sample)))
+	*s = append(*s, *x.(*Sample))
 }
 
 func (s *vectorByReverseValueHeap) Pop() any {
