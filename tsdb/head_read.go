@@ -403,14 +403,29 @@ func appendSeriesChunks(s *memSeries, mint, maxt int64, chks []chunks.Meta, head
 	return chks, headChunksBuf
 }
 
+const oooChunkIDMask = 1 << 23
+
+// wrapChunkID reduces id into the 23-bit chunk ID space (bits 0..22 of HeadChunkRef),
+// so that IDs never overflow into the OOO flag at bit 23. Callers wrap in both
+// directions: pos + firstChunkID when a chunk ID is assigned, and id - firstChunkID
+// when its position is looked up.
+// HeadChunkID is uint64, so id - firstChunkID wraps modulo 2^64 when firstChunkID > id;
+// masking with oooChunkIDMask-1 recovers the 23-bit position.
+func wrapChunkID(id chunks.HeadChunkID) chunks.HeadChunkID {
+	return id & (oooChunkIDMask - 1)
+}
+
 // headChunkID returns the HeadChunkID referred to by the given position.
 // * 0 <= pos < len(s.mmappedChunks) refer to s.mmappedChunks[pos]
 // * pos >= len(s.mmappedChunks) refers to s.headChunks linked list.
+//
+// The position is wrapped modulo oooChunkIDMask so that firstChunkID can grow
+// indefinitely without overflowing the 23-bit ID space. Correctness requires the
+// number of chunks a series holds to stay below 2^23,
+// which pushHeadChunk enforces.
 func (s *memSeries) headChunkID(pos int) chunks.HeadChunkID {
-	return chunks.HeadChunkID(pos) + s.firstChunkID
+	return wrapChunkID(chunks.HeadChunkID(pos) + s.firstChunkID)
 }
-
-const oooChunkIDMask = 1 << 23
 
 // oooHeadChunkID returns the HeadChunkID referred to by the given position.
 // Only the bottom 24 bits are used. Bit 23 is always 1 for an OOO chunk; for the rest:
@@ -420,10 +435,10 @@ const oooChunkIDMask = 1 << 23
 //
 // The position is wrapped modulo oooChunkIDMask so that firstOOOChunkID can
 // grow indefinitely without overflowing the 23-bit ID space. Correctness
-// requires len(oooMmappedChunks) to stay below oooChunkIDMask, which is
+// requires len(oooMmappedChunks) to stay below 2^23, which is
 // enforced by the guard in mmapCurrentOOOHeadChunk.
 func (s *memSeries) oooHeadChunkID(pos int) chunks.HeadChunkID {
-	return ((chunks.HeadChunkID(pos) + s.ooo.firstOOOChunkID) & (oooChunkIDMask - 1)) | oooChunkIDMask
+	return wrapChunkID(chunks.HeadChunkID(pos)+s.ooo.firstOOOChunkID) | oooChunkIDMask
 }
 
 func unpackHeadChunkRef(ref chunks.ChunkRef) (seriesID chunks.HeadSeriesRef, chunkID chunks.HeadChunkID, isOOO bool) {
@@ -661,7 +676,8 @@ func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool,
 // if isOpen is true, it means that the returned *memChunk is used for appends.
 func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool, headChunks []*memChunk) (chunk *memChunk, headChunk, isOpen bool, err error) {
 	// ix is the chunk's oldest-first position in the logical sequence. Chunk IDs
-	// increase by one when a chunk is created, so id-firstChunkID yields that position.
+	// increase by one per chunk, so wrapChunkID(id-firstChunkID) yields that
+	// position even after the IDs have wrapped past 0.
 	// s.mmappedChunks is stored oldest-first, while the s.headChunks linked list is
 	// stored newest-first:
 	//
@@ -673,10 +689,7 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 	// Values below len(s.mmappedChunks) index the slice directly. Remaining values
 	// index head chunks oldest-first; the pre-collected headChunks slice already uses
 	// this order, while the linked-list fallback reverses the index.
-	ix := int(id) - int(s.firstChunkID)
-	if ix < 0 {
-		return nil, false, false, storage.ErrNotFound
-	}
+	ix := int(wrapChunkID(id - s.firstChunkID))
 
 	if ix < len(s.mmappedChunks) {
 		chk, err := chunkDiskMapper.Chunk(s.mmappedChunks[ix].ref)
@@ -731,11 +744,10 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 // oooChunk returns the chunk for the HeadChunkID by m-mapping it from the disk.
 // It never returns the head OOO chunk.
 func (s *memSeries) oooChunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, _ *sync.Pool) (chunk chunkenc.Chunk, maxTime int64, err error) {
-	// ix represents the index of chunk in the s.ooo.oooMmappedChunks slice.
-	// Both id and firstOOOChunkID live in a modular 23-bit space; unsigned
-	// subtraction followed by masking recovers the correct index even when
-	// firstOOOChunkID has wrapped past 0.
-	ix := int((id - s.ooo.firstOOOChunkID) & (oooChunkIDMask - 1))
+	// ix is the index into s.ooo.oooMmappedChunks. Chunk IDs increase by one per
+	// chunk, so wrapChunkID(id-firstOOOChunkID) recovers the index even after the
+	// IDs have wrapped past 0.
+	ix := int(wrapChunkID(id - s.ooo.firstOOOChunkID))
 
 	if ix >= len(s.ooo.oooMmappedChunks) {
 		return nil, 0, storage.ErrNotFound
@@ -763,7 +775,7 @@ func (c *safeHeadChunk) Iterator(reuseIter chunkenc.Iterator) chunkenc.Iterator 
 // iterator returns a chunk iterator for the requested chunk ID, or a NopIterator if it is out of range.
 // It is unsafe to call this concurrently with s.append(...) without holding the series lock.
 func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *isolationState, it chunkenc.Iterator) chunkenc.Iterator {
-	ix := int(id) - int(s.firstChunkID)
+	ix := int(wrapChunkID(id - s.firstChunkID))
 
 	numSamples := c.NumSamples()
 	stopAfter := numSamples
