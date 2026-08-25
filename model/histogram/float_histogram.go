@@ -2139,135 +2139,36 @@ func (h *FloatHistogram) TrimBuckets(rhs float64, isUpperTrim bool) *FloatHistog
 		hasPositive, hasNegative bool
 	)
 
-	if isUpperTrim {
-		// Calculate the fraction to keep for buckets that contain the trim value.
-		// For TRIM_UPPER, we keep observations below the trim point (rhs).
-		// Example: histogram </ float.
-		for i, iter := 0, h.PositiveBucketIterator(); iter.Next(); i++ {
-			bucket := iter.At()
-			if bucket.Count == 0 {
-				continue
-			}
-			hasPositive = true
-
-			switch {
-			case bucket.Upper <= rhs:
-				// Bucket is entirely below the trim point - keep all.
-				updatedCount += bucket.Count
-				bucketMidpoint := computeMidpoint(bucket.Lower, bucket.Upper, true, isCustomBucket)
-				updatedSum += bucketMidpoint * bucket.Count
-
-			case bucket.Lower < rhs:
-				// Bucket contains the trim point - interpolate.
-				keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, true, isCustomBucket)
-
-				updatedCount += keepCount
-				updatedSum += bucketMidpoint * keepCount
-				if h.PositiveBuckets[i] != keepCount {
-					h.PositiveBuckets[i] = keepCount
-					trimmedBuckets = true
-				}
-
-			default:
-				// Bucket is entirely above the trim point - discard.
-				h.PositiveBuckets[i] = 0
-				trimmedBuckets = true
-			}
+	// Iterators are consumed inline, not via a helper taking a BucketIterator, so they stay on the stack instead of escaping to the heap.
+	for i, iter := 0, h.PositiveBucketIterator(); iter.Next(); i++ {
+		bucket := iter.At()
+		if bucket.Count == 0 {
+			continue
 		}
+		hasPositive = true
 
-		for i, iter := 0, h.NegativeBucketIterator(); iter.Next(); i++ {
-			bucket := iter.At()
-			if bucket.Count == 0 {
-				continue
-			}
-			hasNegative = true
-
-			switch {
-			case bucket.Upper <= rhs:
-				// Bucket is entirely below the trim point - keep all.
-				updatedCount += bucket.Count
-				bucketMidpoint := computeMidpoint(bucket.Lower, bucket.Upper, false, isCustomBucket)
-				updatedSum += bucketMidpoint * bucket.Count
-
-			case bucket.Lower < rhs:
-				// Bucket contains the trim point - interpolate.
-				keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, false, isCustomBucket)
-
-				updatedCount += keepCount
-				updatedSum += bucketMidpoint * keepCount
-				if h.NegativeBuckets[i] != keepCount {
-					h.NegativeBuckets[i] = keepCount
-					trimmedBuckets = true
-				}
-
-			default:
-				h.NegativeBuckets[i] = 0
-				trimmedBuckets = true
-			}
+		keepCount, bucketMidpoint := trimBucket(bucket, rhs, isUpperTrim, true, isCustomBucket)
+		updatedCount += keepCount
+		updatedSum += bucketMidpoint * keepCount
+		if h.PositiveBuckets[i] != keepCount {
+			h.PositiveBuckets[i] = keepCount
+			trimmedBuckets = true
 		}
-	} else { // !isUpperTrim
-		// For TRIM_LOWER, we keep observations above the trim point (rhs).
-		// Example: histogram >/ float.
-		for i, iter := 0, h.PositiveBucketIterator(); iter.Next(); i++ {
-			bucket := iter.At()
-			if bucket.Count == 0 {
-				continue
-			}
-			hasPositive = true
+	}
 
-			switch {
-			case bucket.Lower >= rhs:
-				// Bucket is entirely below the trim point - keep all.
-				updatedCount += bucket.Count
-				bucketMidpoint := computeMidpoint(bucket.Lower, bucket.Upper, true, isCustomBucket)
-				updatedSum += bucketMidpoint * bucket.Count
-
-			case bucket.Upper > rhs:
-				// Bucket contains the trim point - interpolate.
-				keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, true, isCustomBucket)
-
-				updatedCount += keepCount
-				updatedSum += bucketMidpoint * keepCount
-				if h.PositiveBuckets[i] != keepCount {
-					h.PositiveBuckets[i] = keepCount
-					trimmedBuckets = true
-				}
-
-			default:
-				h.PositiveBuckets[i] = 0
-				trimmedBuckets = true
-			}
+	for i, iter := 0, h.NegativeBucketIterator(); iter.Next(); i++ {
+		bucket := iter.At()
+		if bucket.Count == 0 {
+			continue
 		}
+		hasNegative = true
 
-		for i, iter := 0, h.NegativeBucketIterator(); iter.Next(); i++ {
-			bucket := iter.At()
-			if bucket.Count == 0 {
-				continue
-			}
-			hasNegative = true
-
-			switch {
-			case bucket.Lower >= rhs:
-				// Bucket is entirely below the trim point - keep all.
-				updatedCount += bucket.Count
-				bucketMidpoint := computeMidpoint(bucket.Lower, bucket.Upper, false, isCustomBucket)
-				updatedSum += bucketMidpoint * bucket.Count
-
-			case bucket.Upper > rhs:
-				// Bucket contains the trim point - interpolate.
-				keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, false, isCustomBucket)
-
-				updatedCount += keepCount
-				updatedSum += bucketMidpoint * keepCount
-				if h.NegativeBuckets[i] != keepCount {
-					h.NegativeBuckets[i] = keepCount
-					trimmedBuckets = true
-				}
-
-			default:
-				h.NegativeBuckets[i] = 0
-				trimmedBuckets = true
-			}
+		keepCount, bucketMidpoint := trimBucket(bucket, rhs, isUpperTrim, false, isCustomBucket)
+		updatedCount += keepCount
+		updatedSum += bucketMidpoint * keepCount
+		if h.NegativeBuckets[i] != keepCount {
+			h.NegativeBuckets[i] = keepCount
+			trimmedBuckets = true
 		}
 	}
 
@@ -2292,6 +2193,33 @@ func (h *FloatHistogram) TrimBuckets(rhs float64, isUpperTrim bool) *FloatHistog
 	}
 
 	return h
+}
+
+// trimBucket returns the portion of b's count to keep against trim point rhs (isUpperTrim keeps values below rhs, else above) and the midpoint for the retained sum.
+func trimBucket(b Bucket[float64], rhs float64, isUpperTrim, isPositive, isCustomBucket bool) (keepCount, bucketMidpoint float64) {
+	var keepAll, containsTrimPoint bool
+
+	if isUpperTrim {
+		keepAll = b.Upper <= rhs
+		containsTrimPoint = b.Lower < rhs
+	} else {
+		keepAll = b.Lower >= rhs
+		containsTrimPoint = b.Upper > rhs
+	}
+
+	switch {
+	case keepAll:
+		// Bucket is entirely on the kept side of the trim point - keep all.
+		return b.Count, computeMidpoint(b.Lower, b.Upper, isPositive, isCustomBucket)
+
+	case containsTrimPoint:
+		// Bucket contains the trim point - interpolate.
+		return computeBucketTrim(b, rhs, isUpperTrim, isPositive, isCustomBucket)
+
+	default:
+		// Bucket is entirely on the discarded side of the trim point.
+		return 0, 0
+	}
 }
 
 func handleInfinityBuckets(isUpperTrim bool, b Bucket[float64], rhs float64) (underCount, bucketMidpoint float64) {
