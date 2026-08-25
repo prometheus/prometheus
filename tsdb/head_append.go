@@ -442,6 +442,9 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if hook := a.head.testAfterSeriesLookup; hook != nil {
+		hook(s)
+	}
 	if s == nil {
 		var err error
 		s, _, err = a.getOrCreate(lset)

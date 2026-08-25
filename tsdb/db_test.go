@@ -11082,6 +11082,122 @@ func TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction(t *testing
 		"the late sample must survive restart, proving no tombstone was written for sel")
 }
 
+// selectedSeriesTestAppender adapts the v1 and v2 appenders to a common float-append
+// signature so the selected-series eviction tests below can run against both.
+type selectedSeriesTestAppender struct {
+	storage.AppenderTransaction
+	append func(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error)
+}
+
+// TestCompactSelectedSeries_RetriesAfterSeriesEvicted verifies that an appender
+// which resolved a series just before eviction unlinked it retries against a live
+// series instead of appending into the evicted one.
+//
+// The append-ID watermark cannot cover this case: the appender has not reached the
+// series lock yet, so it has neither an append ID nor pending state when shouldEvict
+// runs. Both appender versions are exercised.
+func TestCompactSelectedSeries_RetriesAfterSeriesEvicted(t *testing.T) {
+	for _, appender := range []struct {
+		name string
+		new  func(*testing.T, *Head) selectedSeriesTestAppender
+	}{
+		{
+			name: "v1",
+			new: func(t *testing.T, h *Head) selectedSeriesTestAppender {
+				a := h.Appender(t.Context()).(*headAppender)
+				return selectedSeriesTestAppender{
+					AppenderTransaction: a,
+					append:              a.Append,
+				}
+			},
+		},
+		{
+			name: "v2",
+			new: func(t *testing.T, h *Head) selectedSeriesTestAppender {
+				a := h.AppenderV2(t.Context()).(*headAppenderV2)
+				return selectedSeriesTestAppender{
+					AppenderTransaction: a,
+					append: func(ref storage.SeriesRef, lset labels.Labels, ts int64, v float64) (storage.SeriesRef, error) {
+						return a.Append(ref, lset, 0, ts, v, nil, nil, storage.AOptions{})
+					},
+				}
+			},
+		},
+	} {
+		t.Run(appender.name, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.MinBlockDuration = 1000
+			opts.MaxBlockDuration = 1000
+			db := newTestDB(t, withOpts(opts))
+			db.DisableCompactions()
+			h := db.Head()
+
+			lset := labels.FromStrings("series", "resolved-before-gc")
+			baseline := db.Appender(t.Context())
+			oldRef, err := baseline.Append(0, lset, 100, 1)
+			require.NoError(t, err)
+			require.NoError(t, baseline.Commit())
+			oldSeries := h.series.getByID(chunks.HeadSeriesRef(oldRef))
+			require.NotNil(t, oldSeries)
+
+			pending := appender.new(t, h)
+			lookupDone := make(chan struct{})
+			resumeAppend := make(chan struct{})
+			// Pause after the appender resolves oldSeries but before it can append,
+			// leaving it with a pointer that GC will unlink.
+			h.testAfterSeriesLookup = func(series *memSeries) {
+				if series != oldSeries {
+					return
+				}
+				close(lookupDone)
+				<-resumeAppend
+			}
+			t.Cleanup(func() { h.testAfterSeriesLookup = nil })
+
+			appendDone := make(chan error, 1)
+			go func() {
+				_, err := pending.append(oldRef, lset, 200, 2)
+				appendDone <- err
+			}()
+			select {
+			case <-lookupDone:
+			case appendErr := <-appendDone:
+				require.NoError(t, pending.Rollback())
+				t.Fatalf("append completed before reaching the series lookup hook: %v", appendErr)
+			}
+
+			compactErr := db.CompactSelectedSeries([]storage.SeriesRef{oldRef})
+			close(resumeAppend)
+			appendErr := <-appendDone
+			require.NoError(t, compactErr)
+			require.Len(t, db.Blocks(), 1, "selected-series compaction must produce a block")
+			require.NoError(t, appendErr)
+			require.NoError(t, pending.Commit())
+
+			expected := []chunks.Sample{
+				sample{t: 100, f: 1},
+				sample{t: 200, f: 2},
+			}
+			querySel := func(d *DB, stage string) {
+				t.Helper()
+				q, err := d.Querier(math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
+				result := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "series", "resolved-before-gc"))
+				require.Equal(t, expected, result[lset.String()], stage)
+			}
+			querySel(db, "before WAL restart")
+
+			dir := db.Dir()
+			require.NoError(t, db.Close())
+			restarted, err := Open(dir, nil, nil, opts, nil)
+			require.NoError(t, err)
+			restarted.DisableCompactions()
+			t.Cleanup(func() { require.NoError(t, restarted.Close()) })
+			querySel(restarted, "after WAL restart")
+		})
+	}
+}
+
 // TestSelectedBlockNotMergedWithNonSelectedBlock reproduces the data-loss path
 // that occurs when a from-selected-series block is merged with a non-selected
 // block by ordinary leveled compaction.
