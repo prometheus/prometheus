@@ -274,3 +274,5 @@ exclude (
 )
 
 replace cloud.google.com/go => cloud.google.com/go v0.123.0
+
+replace github.com/prometheus/client_golang => /Users/ntakashi/Workspace/github.com/nicolastakashi/prometheus/client_golang
