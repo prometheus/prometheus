@@ -127,8 +127,7 @@ func (h *Head) initTime(t int64) {
 		// Another goroutine already won the init race. Wait until it also sets
 		// minTime, so callers that next read initialized() can rely on both
 		// bounds being valid.
-		// This should complete in microseconds under normal operation.
-		antiDeadlockTimeout := time.After(100 * time.Millisecond)
+		antiDeadlockTimeout := time.After(500 * time.Millisecond)
 		for h.minTime.Load() == math.MaxInt64 {
 			select {
 			case <-antiDeadlockTimeout:
