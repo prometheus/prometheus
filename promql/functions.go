@@ -1163,6 +1163,12 @@ func funcRound(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *Eval
 	if len(args) >= 2 {
 		toNearest = vectorVals[1][0].F
 	}
+	if toNearest == 0 {
+		return vectorVals[0], nil
+	}
+	if toNearest < 0 {
+		toNearest = -toNearest
+	}
 	// Invert as it seems to cause fewer floating point accuracy issues.
 	toNearestInverse := 1.0 / toNearest
 	return simpleFloatFunc(vectorVals, enh, func(f float64) float64 {
