@@ -763,6 +763,31 @@ local row = panel.row;
           + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{instance}} {{remote_name}}:{{url}}' % $._config),
         ]);
 
+      local sendBatchLatencyQuantiles =
+        panel.timeSeries.new('Send Batch Duration (p95 / p99)')
+        + panelTimeSeriesStdOptions
+        + panel.timeSeries.standardOptions.withUnit('s')
+        + panel.timeSeries.queryOptions.withTargets([
+          prometheus.new(
+            '$datasource',
+            |||
+              histogram_quantile(0.95, sum by (le, %(clusterLabel)s, instance, remote_name, url) (rate(prometheus_remote_storage_sent_batch_duration_seconds_bucket{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}[5m])))
+            ||| % $._config
+          )
+          + prometheus.withFormat('time_series')
+          + prometheus.withIntervalFactor(2)
+          + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{instance}} {{remote_name}}:{{url}} p95' % $._config),
+          prometheus.new(
+            '$datasource',
+            |||
+              histogram_quantile(0.99, sum by (le, %(clusterLabel)s, instance, remote_name, url) (rate(prometheus_remote_storage_sent_batch_duration_seconds_bucket{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}[5m])))
+            ||| % $._config
+          )
+          + prometheus.withFormat('time_series')
+          + prometheus.withIntervalFactor(2)
+          + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{instance}} {{remote_name}}:{{url}} p99' % $._config),
+        ]);
+
       dashboard.new('%(prefix)sRemote Write' % $._config.grafanaPrometheus)
       + dashboard.time.withFrom('now-1h')
       + dashboard.withTags($._config.grafanaPrometheus.tags)
@@ -822,6 +847,14 @@ local row = panel.row;
             enqueueRetries,
           ]),
         ], panelWidth=6, panelHeight=7, startY=40)
+        +
+        grafana.util.grid.makeGrid([
+          row.new('Latencies')
+          + row.withPanels([
+            sendBatchLatencyQuantiles
+            + panel.timeSeries.gridPos.withW(24),
+          ]),
+        ], panelWidth=24, panelHeight=7, startY=48)
       ),
   },
 }
