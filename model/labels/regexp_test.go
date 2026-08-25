@@ -115,9 +115,47 @@ var (
 		".*(?i:k)",
 		"a.*(?i:sk)",
 		"(?i:some)-pattern.*",
+		// Multiple wildcard gaps between literal runs (former optimizeConcatRegex cases).
+		"foo.*hello.*bar",
+		"foo(hello|bar)",
+		"foo(hello|bar)world",
+		"^env-[0-9]+laio[1]?[^0-9].*",
+		".*[abc].*",
+		".*((?i)abc).*",
+		".*(?i:abc).*",
+		"(?i:abc).*",
+		".*(?i:abc)",
+		".*(?i:abc)def.*",
+		"(?i).*(?-i:abc)def",
+		".*(?msU:abc).*",
+		"[aA]bc.*",
+		"^5..$",
+		"^release.*",
+		// Newly-resolvable shapes (previously fell back to the regex engine entirely).
+		"(.+)/(foo.*|bar$)",
+		"aaa.?.?",
+		"aaa.?.*",
+		"10\\.0\\.(1|2)\\.+",
+		"(api|rpc)_(v1|prom)_((?i)push|query)",
+		"^(.*)((?i)foo|foobar)(.*)$",
+		`\d*`,
+		".",
+		"f.?o",
+		"[a-z][a-z]",
+		// Ordered-literal scans: repeated and overlapping literals, and non-empty outer gaps, where a greedy left-to-right scan must not over-match.
+		"a.*a",
+		"ab.*ba",
+		"a.*a.*a",
+		"aa.*aa",
+		".+foo.+bar.+",
+		".+a.*a.+",
+		"x.*x.*x$",
+		"^-.*-.*-$",
 	}
 	values = []string{
 		"foo", " foo bar", "bar", "buzz\nbar", "bar foo", "bfoo", "\n", "\nfoo", "foo\n", "hello foo world", "hello foo\n world", "",
+		"foohellobar", "foohelloworldbar", "foobar", "foo hello bar",
+		"env-1laioX", "env-laioX", "env-12laio1X", "env-1laio12",
 		"FOO", "Foo", "fOo", "foO", "OO", "Oo", "\nfoo\n", strings.Repeat("f", 20), "prometheus", "prometheus_api_v1", "prometheus_api_v1_foo",
 		"10.0.1.20", "10.0.2.10", "10.0.3.30", "10.0.4.40",
 		"report.scheduled.job_runscheduledreports", "Report.Scheduled.JobRunScheduledReports", "Report.Scheduled.Job_RunScheduledReports",
@@ -127,6 +165,10 @@ var (
 		"aaaaaa----eeeeee",
 		"----",
 		"-a-a-a-",
+
+		// Values probing the boundaries of ordered-literal scans: characters that could be double-counted, exact-minimum-length matches, and overlapping prefix/suffix literals.
+		"a", "aa", "aaa", "aba", "abba", "ab", "ba", "xx", "xxx", "-", "--", "---",
+		"foobar", "afooabara",
 
 		// Values matching / not matching the test regexps on long alternations.
 		"zQPbMkNO", "zQPbMkNo", "jyyfj00j0061", "jyyfj00j006", "jyyfj00j00612", "NNSPdvMi", "NNSPdvMiXXX", "NNSPdvMixxx", "nnSPdvMi", "nnSPdvMiXXX",
@@ -167,52 +209,6 @@ func readable(s string) string {
 		return s
 	}
 	return s[:maxReadableStringLen] + "..."
-}
-
-func TestOptimizeConcatRegex(t *testing.T) {
-	cases := []struct {
-		regex                   string
-		prefix                  string
-		isCaseInsensitivePrefix bool
-		suffix                  string
-		contains                []string
-	}{
-		{regex: "foo(hello|bar)", prefix: "foo", suffix: "", contains: nil},
-		{regex: "foo(hello|bar)world", prefix: "foo", suffix: "world", contains: nil},
-		{regex: "foo.*", prefix: "foo", suffix: "", contains: nil},
-		{regex: "foo.*hello.*bar", prefix: "foo", suffix: "bar", contains: []string{"hello"}},
-		{regex: ".*foo", prefix: "", suffix: "foo", contains: nil},
-		{regex: "^.*foo$", prefix: "", suffix: "foo", contains: nil},
-		{regex: ".*foo.*", prefix: "", suffix: "", contains: []string{"foo"}},
-		{regex: ".*foo.*bar.*", prefix: "", suffix: "", contains: []string{"foo", "bar"}},
-		{regex: ".*(foo|bar).*", prefix: "", suffix: "", contains: nil},
-		{regex: ".*[abc].*", prefix: "", suffix: "", contains: nil},
-		{regex: ".*((?i)abc).*", prefix: "", suffix: "", contains: nil},
-		{regex: ".*(?i:abc).*", prefix: "", suffix: "", contains: nil},
-		{regex: "(?i:abc).*", prefix: "ABC", isCaseInsensitivePrefix: true, suffix: "", contains: nil},
-		{regex: ".*(?i:abc)", prefix: "", suffix: "", contains: nil},
-		{regex: ".*(?i:abc)def.*", prefix: "", suffix: "", contains: []string{"def"}},
-		{regex: "(?i).*(?-i:abc)def", prefix: "", suffix: "", contains: []string{"abc"}},
-		{regex: ".*(?msU:abc).*", prefix: "", suffix: "", contains: []string{"abc"}},
-		{regex: "[aA]bc.*", prefix: "A", isCaseInsensitivePrefix: true, suffix: "", contains: []string{"bc"}},
-		{regex: "^5..$", prefix: "5", suffix: "", contains: nil},
-		{regex: "^release.*", prefix: "release", suffix: "", contains: nil},
-		{regex: "^env-[0-9]+laio[1]?[^0-9].*", prefix: "env-", suffix: "", contains: []string{"laio"}},
-		{regex: ".*-.*-.*-.*-.*", prefix: "", suffix: "", contains: []string{"-", "-", "-", "-"}},
-	}
-
-	for _, c := range cases {
-		t.Run(c.regex, func(t *testing.T) {
-			parsed, err := syntax.Parse(c.regex, syntax.Perl|syntax.DotNL)
-			require.NoError(t, err)
-
-			caseInsensitivePrefix, prefix, suffix, contains := optimizeConcatRegex(parsed)
-			require.Equal(t, c.prefix, prefix)
-			require.Equal(t, c.isCaseInsensitivePrefix, caseInsensitivePrefix)
-			require.Equal(t, c.suffix, suffix)
-			require.Equal(t, c.contains, contains)
-		})
-	}
 }
 
 // Refer to https://github.com/prometheus/prometheus/issues/2651.
@@ -404,16 +400,16 @@ func TestNewFastRegexMatcher(t *testing.T) {
 		{`(?i:((foo1|foo2|bar)))`, &equalMultiStringSliceMatcher{values: []string{"FOO1", "FOO2", "BAR"}, lengthsMask: 0b11000, caseSensitive: false}},
 		{"^((?i:foo|oo)|(bar))$", orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO", caseSensitive: false}, &equalStringMatcher{s: "OO", caseSensitive: false}, &equalStringMatcher{s: "bar", caseSensitive: true}})},
 		{"(?i:(foo1|foo2|bar))", &equalMultiStringSliceMatcher{values: []string{"FOO1", "FOO2", "BAR"}, lengthsMask: 0b11000, caseSensitive: false}},
-		{".*foo.*", trueMatcher{}},     // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
-		{"(.*)foo.*", trueMatcher{}},   // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
-		{"(.*)foo(.*)", trueMatcher{}}, // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
+		{".*foo.*", &containsStringMatcher{substrings: []string{"foo"}, left: trueMatcher{}, right: trueMatcher{}}},
+		{"(.*)foo.*", &containsStringMatcher{substrings: []string{"foo"}, left: trueMatcher{}, right: trueMatcher{}}},
+		{"(.*)foo(.*)", &containsStringMatcher{substrings: []string{"foo"}, left: trueMatcher{}, right: trueMatcher{}}},
 		{"(.+)foo(.*)", &containsStringMatcher{substrings: []string{"foo"}, left: &anyNonEmptyStringMatcher{matchNL: true}, right: trueMatcher{}}},
 		{"^.+foo.+", &containsStringMatcher{substrings: []string{"foo"}, left: &anyNonEmptyStringMatcher{matchNL: true}, right: &anyNonEmptyStringMatcher{matchNL: true}}},
-		{"^(.*)(foo)(.*)$", trueMatcher{}}, // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
+		{"^(.*)(foo)(.*)$", &containsStringMatcher{substrings: []string{"foo"}, left: trueMatcher{}, right: trueMatcher{}}},
 		{"^(.*)(foo|foobar)(.*)$", &containsStringMatcher{substrings: []string{"foo", "foobar"}, left: trueMatcher{}, right: trueMatcher{}}},
 		{"^(.*)(foo|foobar)(.+)$", &containsStringMatcher{substrings: []string{"foo", "foobar"}, left: trueMatcher{}, right: &anyNonEmptyStringMatcher{matchNL: true}}},
 		{"^(.*)(bar|b|buzz)(.+)$", &containsStringMatcher{substrings: []string{"bar", "b", "buzz"}, left: trueMatcher{}, right: &anyNonEmptyStringMatcher{matchNL: true}}},
-		{"10\\.0\\.(1|2)\\.+", nil},
+		{"10\\.0\\.(1|2)\\.+", &literalPrefixSensitiveStringMatcher{prefix: "10.0.", right: &regexpStringMatcher{re: regexp.MustCompile(`^(?:[12]\.+)$`)}}},
 		{"10\\.0\\.(1|2).+", &containsStringMatcher{substrings: []string{"10.0.1", "10.0.2"}, left: nil, right: &anyNonEmptyStringMatcher{matchNL: true}}},
 		{"^.+foo", &literalSuffixStringMatcher{left: &anyNonEmptyStringMatcher{matchNL: true}, suffix: "foo", suffixCaseSensitive: true}},
 		{"foo-.*$", &literalPrefixSensitiveStringMatcher{prefix: "foo-", right: trueMatcher{}}},
@@ -421,46 +417,101 @@ func TestNewFastRegexMatcher(t *testing.T) {
 		{"^((.*)(bar|b|buzz)(.+)|foo)$", orStringMatcher([]StringMatcher{&containsStringMatcher{substrings: []string{"bar", "b", "buzz"}, left: trueMatcher{}, right: &anyNonEmptyStringMatcher{matchNL: true}}, &equalStringMatcher{s: "foo", caseSensitive: true}})},
 		{"((fo(bar))|.+foo)", orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "fobar", caseSensitive: true}}), &literalSuffixStringMatcher{suffix: "foo", suffixCaseSensitive: true, left: &anyNonEmptyStringMatcher{matchNL: true}}})},
 		{"(.+)/(gateway|cortex-gw|cortex-gw-internal)", &containsStringMatcher{substrings: []string{"/gateway", "/cortex-gw", "/cortex-gw-internal"}, left: &anyNonEmptyStringMatcher{matchNL: true}, right: nil}},
-		// we don't support case insensitive matching for contains.
-		// This is because there's no strings.IndexOfFold function.
-		// We can revisit later if this is really popular by using strings.ToUpper.
+		// No strings.IndexOfFold function, so case-insensitive contains falls back to a compiled-regexp leaf.
 		{"^(.*)((?i)foo|foobar)(.*)$", nil},
 		{"(api|rpc)_(v1|prom)_((?i)push|query)", nil},
 		{"[a-z][a-z]", nil},
 		{"[1^3]", &equalMultiStringSliceMatcher{values: []string{"1", "3", "^"}, lengthsMask: 0b10, caseSensitive: true}},
-		{".*foo.*bar.*", trueMatcher{}}, // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
+		{".*foo.*bar.*", &containsInOrderStringMatcher{contains: []string{"foo", "bar"}, minLen: 6}},
 		{`\d*`, nil},
 		{".", nil},
 		{"/|/bar.*", &literalPrefixSensitiveStringMatcher{prefix: "/", right: orStringMatcher{emptyStringMatcher{}, &literalPrefixSensitiveStringMatcher{prefix: "bar", right: trueMatcher{}}}}},
-		// This one is not supported because  `stringMatcherFromRegexp` is not reentrant for syntax.OpConcat.
-		// It would make the code too complex to handle it.
-		{"(.+)/(foo.*|bar$)", nil},
+		// Previously unsupported; now resolves via the general run/gap decomposition.
+		{"(.+)/(foo.*|bar$)", &containsStringMatcher{substrings: []string{"/"}, left: &anyNonEmptyStringMatcher{matchNL: true}, right: orStringMatcher{&literalPrefixSensitiveStringMatcher{prefix: "foo", right: trueMatcher{}}, &literalPrefixSensitiveStringMatcher{prefix: "bar", right: &regexpStringMatcher{re: regexp.MustCompile(`^(?:(?-m:$))$`)}}}}}, //nolint:gocritic // (?-m:$) mirrors regexp/syntax's own serialization of a bare "$" node
 		// Case sensitive alternate with same literal prefix and .* suffix.
 		{"(xyz-016a-ixb-dp.*|xyz-016a-ixb-op.*)", &literalPrefixSensitiveStringMatcher{prefix: "xyz-016a-ixb-", right: orStringMatcher{&literalPrefixSensitiveStringMatcher{prefix: "dp", right: trueMatcher{}}, &literalPrefixSensitiveStringMatcher{prefix: "op", right: trueMatcher{}}}}},
 		// Case insensitive alternate with same literal prefix and .* suffix.
 		{"(?i:(xyz-016a-ixb-dp.*|xyz-016a-ixb-op.*))", &literalPrefixInsensitiveStringMatcher{prefix: "XYZ-016A-IXB-", right: orStringMatcher{&literalPrefixInsensitiveStringMatcher{prefix: "DP", right: trueMatcher{}}, &literalPrefixInsensitiveStringMatcher{prefix: "OP", right: trueMatcher{}}}}},
 		{"(?i)(xyz-016a-ixb-dp.*|xyz-016a-ixb-op.*)", &literalPrefixInsensitiveStringMatcher{prefix: "XYZ-016A-IXB-", right: orStringMatcher{&literalPrefixInsensitiveStringMatcher{prefix: "DP", right: trueMatcher{}}, &literalPrefixInsensitiveStringMatcher{prefix: "OP", right: trueMatcher{}}}}},
-		// Concatenated variable length selectors are not supported.
-		{"foo.*.*", nil},
-		{"foo.+.+", nil},
-		{".*.*foo", nil},
-		{".+.+foo", nil},
-		{"aaa.?.?", nil},
-		{"aaa.?.*", nil},
+		// Concatenated variable-length selectors: the middle falls back to a compiled-regexp leaf.
+		{"foo.*.*", &literalPrefixSensitiveStringMatcher{prefix: "foo", right: &regexpStringMatcher{re: regexp.MustCompile(`^(?:(?s:.*.*))$`)}}},
+		{"foo.+.+", &literalPrefixSensitiveStringMatcher{prefix: "foo", right: &regexpStringMatcher{re: regexp.MustCompile(`^(?:(?s:.+.+))$`)}}},
+		{".*.*foo", &literalSuffixStringMatcher{left: &regexpStringMatcher{re: regexp.MustCompile(`^(?:(?s:.*.*))$`)}, suffix: "foo", suffixCaseSensitive: true}},
+		{".+.+foo", &literalSuffixStringMatcher{left: &regexpStringMatcher{re: regexp.MustCompile(`^(?:(?s:.+.+))$`)}, suffix: "foo", suffixCaseSensitive: true}},
+		{"aaa.?.?", &literalPrefixSensitiveStringMatcher{prefix: "aaa", right: &regexpStringMatcher{re: regexp.MustCompile(`^(?:(?s:.?.?))$`)}}},
+		{"aaa.?.*", &literalPrefixSensitiveStringMatcher{prefix: "aaa", right: &regexpStringMatcher{re: regexp.MustCompile(`^(?:(?s:.?.*))$`)}}},
 		// Regexps with ".?".
 		{"ext.?|xfs", orStringMatcher{&literalPrefixSensitiveStringMatcher{prefix: "ext", right: &zeroOrOneCharacterStringMatcher{matchNL: true}}, &equalStringMatcher{s: "xfs", caseSensitive: true}}},
 		{"(?s)(ext.?|xfs)", orStringMatcher{&literalPrefixSensitiveStringMatcher{prefix: "ext", right: &zeroOrOneCharacterStringMatcher{matchNL: true}}, &equalStringMatcher{s: "xfs", caseSensitive: true}}},
 		{"foo.?", &literalPrefixSensitiveStringMatcher{prefix: "foo", right: &zeroOrOneCharacterStringMatcher{matchNL: true}}},
-		{"f.?o", nil},
+		// Previously unsupported (Quest in the middle); now resolved via the literal peel fallback.
+		{"f.?o", &literalPrefixSensitiveStringMatcher{prefix: "f", right: &literalSuffixStringMatcher{left: &regexpStringMatcher{re: regexp.MustCompile(`^(?:(?s:.?))$`)}, suffix: "o", suffixCaseSensitive: true}}},
 		{".*foo.*|.*bar.*|.*baz.*", &containsStringMatcher{left: trueMatcher{}, substrings: []string{"foo", "bar", "baz"}, right: trueMatcher{}}},
-		{"(?i)report.scheduled.job_runscheduledreports", nil},
-		{"report.scheduled.job_runscheduledreports", nil},
+		{"(?i)report.scheduled.job_runscheduledreports", &literalPrefixInsensitiveStringMatcher{prefix: "REPORT", right: &literalSuffixStringMatcher{left: &regexpStringMatcher{re: regexp.MustCompile(`^(?:(?is:.SCHEDULED.))$`)}, suffix: "JOB_RUNSCHEDULEDREPORTS", suffixCaseSensitive: false}}},
+		{"report.scheduled.job_runscheduledreports", &literalPrefixSensitiveStringMatcher{prefix: "report", right: &literalSuffixStringMatcher{left: &regexpStringMatcher{re: regexp.MustCompile(`^(?:(?s:.scheduled.))$`)}, suffix: "job_runscheduledreports", suffixCaseSensitive: true}}},
 	} {
 		t.Run(c.pattern, func(t *testing.T) {
 			t.Parallel()
 			matcher, err := NewFastRegexMatcher(c.pattern)
 			require.NoError(t, err)
-			require.Equal(t, c.exp, matcher.stringMatcher)
+			// A nil expectation means the regexp fallback; its pre-filter is checked separately in TestRegexpStringMatcherPrefilter rather than spelled out for every case here.
+			exp := c.exp
+			if exp == nil {
+				actual, ok := matcher.stringMatcher.(*regexpStringMatcher)
+				require.True(t, ok, "expected a regexp fallback, got %T", matcher.stringMatcher)
+				exp = &regexpStringMatcher{re: matcher.re, required: actual.required}
+			}
+			require.Equal(t, exp, matcher.stringMatcher)
+		})
+	}
+}
+
+func TestRegexpStringMatcherPrefilter(t *testing.T) {
+	for _, c := range []struct {
+		pattern       string
+		expRequired   []string
+		expMatches    []string
+		expNotMatches []string
+	}{
+		{
+			pattern:     "(api|rpc)_(v1|prom)_((?i)push|query)",
+			expRequired: []string{"_", "_"},
+			expMatches:  []string{"api_v1_push", "rpc_prom_QUERY"},
+			// Values rejected by the pre-filter, and values that pass it but still don't match.
+			expNotMatches: []string{"apiv1push", "api_v1", "api_v1_delete", "xxx_yyy_zzz"},
+		},
+		{
+			// The case-insensitive "f" is not a required literal, but the two "o"s are.
+			pattern:       "((.*))(?i:f)((.*))o((.*))o((.*))",
+			expRequired:   []string{"o", "o"},
+			expMatches:    []string{"foo", "Foo", "xFxoxox", "fooo"},
+			expNotMatches: []string{"fo", "oo", "fxo", "bar"},
+		},
+		{
+			// No top-level concatenation, so nothing to pre-filter on.
+			pattern:       "[a-z][a-z]",
+			expRequired:   nil,
+			expMatches:    []string{"ab", "zz"},
+			expNotMatches: []string{"a", "abc", "AB", "12"},
+		},
+	} {
+		t.Run(c.pattern, func(t *testing.T) {
+			m, err := NewFastRegexMatcher(c.pattern)
+			require.NoError(t, err)
+
+			rm, ok := m.stringMatcher.(*regexpStringMatcher)
+			require.Truef(t, ok, "expected a regexp fallback, got %T", m.stringMatcher)
+			require.Equal(t, c.expRequired, rm.required)
+
+			re := regexp.MustCompile("^(?s:" + c.pattern + ")$")
+			for _, v := range c.expMatches {
+				require.Truef(t, m.MatchString(v), "value: %s", v)
+				require.Truef(t, re.MatchString(v), "value: %s", v)
+			}
+			for _, v := range c.expNotMatches {
+				require.Falsef(t, m.MatchString(v), "value: %s", v)
+				require.Falsef(t, re.MatchString(v), "value: %s", v)
+			}
 		})
 	}
 }
@@ -1430,15 +1481,6 @@ func TestSuffixCaseInsensitiveMatchLen(t *testing.T) {
 	}
 }
 
-func TestContainsInOrder(t *testing.T) {
-	require.True(t, containsInOrder("abcdefghilmno", []string{"ab", "cd", "no"}))
-	require.True(t, containsInOrder("abcdefghilmno", []string{"def", "hil"}))
-
-	require.False(t, containsInOrder("abcdefghilmno", []string{"ac"}))
-	require.False(t, containsInOrder("abcdefghilmno", []string{"ab", "cd", "de"}))
-	require.False(t, containsInOrder("abcdefghilmno", []string{"cd", "ab"}))
-}
-
 func getTestNameFromRegexp(re string) string {
 	if len(re) > 32 {
 		return re[:32]
@@ -1517,25 +1559,6 @@ func TestToNormalisedLower(t *testing.T) {
 	}
 	for input, expectedOutput := range testCases {
 		require.Equal(t, expectedOutput, toNormalisedLower(input, nil))
-	}
-}
-
-func TestIsSimpleConcatenationPattern(t *testing.T) {
-	testCases := map[string]bool{
-		".*-.*-.*-.*-.*": true,
-		".+-.*-.*-.*-.+": false,
-		"-.*-.*-.*-.*":   false,
-		".*-.*-.*-.*-":   false,
-		"-":              false,
-		".*":             false,
-	}
-
-	for testCase, expected := range testCases {
-		t.Run(testCase, func(t *testing.T) {
-			re, err := syntax.Parse(testCase, syntax.Perl|syntax.DotNL)
-			require.NoError(t, err)
-			require.Equal(t, expected, isSimpleConcatenationPattern(re))
-		})
 	}
 }
 

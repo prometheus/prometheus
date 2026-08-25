@@ -42,12 +42,6 @@ type FastRegexMatcher struct {
 
 	setMatches    []string
 	stringMatcher StringMatcher
-	prefix        string
-	suffix        string
-	contains      []string
-
-	// caseInsensitivePrefix is true if prefix exists and should be matched case-insensitively
-	caseInsensitivePrefix bool
 
 	// matchString is the "compiled" function to run by MatchString().
 	matchString func(string) bool
@@ -81,9 +75,6 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 		// Remove any capture operations before trying to optimize the remaining operations.
 		clearCapture(parsed)
 
-		if parsed.Op == syntax.OpConcat {
-			m.caseInsensitivePrefix, m.prefix, m.suffix, m.contains = optimizeConcatRegex(parsed)
-		}
 		if matches, caseSensitive := findSetMatches(parsed); len(matches) > 0 {
 			if caseSensitive {
 				m.setMatches = matches
@@ -98,16 +89,11 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 		}
 
 		if m.stringMatcher == nil {
-			// Check if we have a pattern like .*-.*-.*.
-			// If so, then we can rely on the containsInOrder check in compileMatchStringFunction,
-			// so no further inspection of the string is required.
-			// We can't do this in stringMatcherFromRegexpInternal as we only want to apply this
-			// if the top-level pattern satisfies this requirement.
-			if isSimpleConcatenationPattern(parsed) {
-				m.stringMatcher = trueMatcher{}
-			} else {
-				m.stringMatcher = stringMatcherFromRegexp(parsed)
-			}
+			m.stringMatcher = stringMatcherFromRegexp(parsed)
+		}
+		// Fall back to the compiled regexp itself, where a literal pre-filter still pays for itself because the regexp, not a matcher tree testing the same literals, does the matching.
+		if m.stringMatcher == nil {
+			m.stringMatcher = newRegexpStringMatcher(m.re, requiredLiteralsInOrder(parsed))
 		}
 
 		m.matchString = m.compileMatchStringFunction()
@@ -123,41 +109,85 @@ func (m *FastRegexMatcher) compileMatchStringFunction() func(string) bool {
 		return func(s string) bool { return s == m.setMatches[0] }
 	}
 
-	// If the only optimization available is the string matcher, then we can just run it.
-	if m.prefix == "" && m.suffix == "" && len(m.contains) == 0 && m.stringMatcher != nil {
-		return m.stringMatcher.Matches
-	}
-
-	if m.caseInsensitivePrefix && m.prefix != "" {
+	// Inline the literal prefix test rather than dispatching into the matcher for it: most values are rejected by it, so keeping it out of the interface call matters.
+	if p, ok := m.stringMatcher.(*literalPrefixSensitiveStringMatcher); ok {
+		prefix, right := p.prefix, p.right
 		return func(s string) bool {
-			if !hasPrefixCaseInsensitive(s, m.prefix) {
-				return false
+			return strings.HasPrefix(s, prefix) && right.Matches(s[len(prefix):])
+		}
+	}
+	if prefix, caseSensitive := requiredLiteralPrefix(m.stringMatcher); prefix != "" {
+		matches := m.stringMatcher.Matches
+		if caseSensitive {
+			return func(s string) bool {
+				return strings.HasPrefix(s, prefix) && matches(s)
 			}
-			return m.re.MatchString(s)
+		}
+		return func(s string) bool {
+			return hasPrefixCaseInsensitive(s, prefix) && matches(s)
 		}
 	}
 
-	return func(s string) bool {
-		if m.prefix != "" && !strings.HasPrefix(s, m.prefix) {
-			return false
+	return m.stringMatcher.Matches
+}
+
+// requiredLiteralPrefix returns a literal that every matching string must start with, and whether it must match byte-for-byte, or "" if the matcher doesn't imply one. It's only a rejection aid: the matcher itself remains authoritative.
+func requiredLiteralPrefix(m StringMatcher) (prefix string, caseSensitive bool) {
+	switch v := m.(type) {
+	case *containsInOrderStringMatcher:
+		return v.prefix, true
+	case *containsStringMatcher:
+		// With no left matcher the substrings are anchored at the start, so whatever they share must be present.
+		if v.left == nil {
+			return longestCommonPrefix(v.substrings), true
 		}
-		if m.suffix != "" && !strings.HasSuffix(s, m.suffix) {
-			return false
+		// A left side that must equal a fixed string is itself an anchored prefix.
+		if eq, ok := v.left.(*equalStringMatcher); ok && !eq.caseSensitive {
+			return eq.s, false
 		}
-		if len(m.contains) > 0 && !containsInOrder(s, m.contains) {
-			return false
+	case *equalMultiStringSliceMatcher:
+		// Case-sensitive sets already reject cheaply on the length bitmask, so a prefix test would only add work there.
+		if !v.caseSensitive {
+			return longestCommonPrefix(v.values), false
 		}
-		if m.stringMatcher != nil {
-			return m.stringMatcher.Matches(s)
-		}
-		return m.re.MatchString(s)
 	}
+	return "", true
+}
+
+func longestCommonPrefix(ss []string) string {
+	if len(ss) == 0 {
+		return ""
+	}
+	prefix := ss[0]
+	for _, s := range ss[1:] {
+		for prefix != "" && !strings.HasPrefix(s, prefix) {
+			prefix = prefix[:len(prefix)-1]
+		}
+		if prefix == "" {
+			return ""
+		}
+	}
+	return prefix
 }
 
 // IsOptimized returns true if any fast-path optimization is applied to the
 // regex matcher.
 func (m *FastRegexMatcher) IsOptimized() bool {
-	return len(m.setMatches) > 0 || m.stringMatcher != nil || m.prefix != "" || m.suffix != "" || len(m.contains) > 0
+	if len(m.setMatches) > 0 {
+		return true
+	}
+	if _, ok := m.stringMatcher.(*regexpStringMatcher); ok {
+		return false
+	}
+	return m.stringMatcher != nil
+}
+
+// Prefix returns the required case-sensitive literal prefix of the value to match byte-for-byte, or "" if there's none (including when it would only be case-insensitive).
+func (m *FastRegexMatcher) Prefix() string {
+	if p, ok := m.stringMatcher.(*literalPrefixSensitiveStringMatcher); ok {
+		return p.prefix
+	}
+	return ""
 }
 
 // findSetMatches extract equality matches from a regexp.
@@ -424,47 +454,6 @@ func optimizeAlternatingSimpleContains(r *syntax.Regexp) *syntax.Regexp {
 	return r
 }
 
-// optimizeConcatRegex returns literal prefix/suffix text that can be safely
-// checked against the label value before running the regexp matcher.
-func optimizeConcatRegex(r *syntax.Regexp) (caseInsensitivePrefix bool, prefix, suffix string, contains []string) {
-	sub := r.Sub
-	clearCapture(sub...)
-
-	// We can safely remove begin and end text matchers respectively
-	// at the beginning and end of the regexp.
-	if len(sub) > 0 && sub[0].Op == syntax.OpBeginText {
-		sub = sub[1:]
-	}
-	if len(sub) > 0 && sub[len(sub)-1].Op == syntax.OpEndText {
-		sub = sub[:len(sub)-1]
-	}
-
-	if len(sub) == 0 {
-		return caseInsensitivePrefix, prefix, suffix, contains
-	}
-
-	// Given Prometheus regex matchers are always anchored to the begin/end
-	// of the text, if the first/last operations are literals, we can safely
-	// treat them as prefix/suffix.
-	if sub[0].Op == syntax.OpLiteral {
-		prefix = string(sub[0].Rune)
-		caseInsensitivePrefix = (sub[0].Flags & syntax.FoldCase) != 0
-	}
-	if last := len(sub) - 1; sub[last].Op == syntax.OpLiteral && (sub[last].Flags&syntax.FoldCase) == 0 {
-		suffix = string(sub[last].Rune)
-	}
-
-	// If contains any literal which is not a prefix/suffix, we keep track of
-	// all the ones which are case-sensitive.
-	for i := 1; i < len(sub)-1; i++ {
-		if sub[i].Op == syntax.OpLiteral && (sub[i].Flags&syntax.FoldCase) == 0 {
-			contains = append(contains, string(sub[i].Rune))
-		}
-	}
-
-	return caseInsensitivePrefix, prefix, suffix, contains
-}
-
 // StringMatcher is a matcher that matches a string in place of a regular expression.
 type StringMatcher interface {
 	Matches(s string) bool
@@ -549,21 +538,27 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 			return stringMatcherFromRegexpInternal(re.Sub[0])
 		}
 
+		// Preserved so an edge quantifier that fails to resolve below can still fall back to peeling a literal prefix/suffix instead of giving up entirely.
+		originalSubs := re.Sub
+
 		var left, right StringMatcher
+		var leftSub, rightSub *syntax.Regexp
 
 		// Let's try to find if there's a first and last any matchers.
 		if re.Sub[0].Op == syntax.OpPlus || re.Sub[0].Op == syntax.OpStar || re.Sub[0].Op == syntax.OpQuest {
 			left = stringMatcherFromRegexpInternal(re.Sub[0])
 			if left == nil {
-				return nil
+				return stringMatcherLiteralPeelFallback(originalSubs, nil, nil, nil, nil)
 			}
+			leftSub = re.Sub[0]
 			re.Sub = re.Sub[1:]
 		}
 		if re.Sub[len(re.Sub)-1].Op == syntax.OpPlus || re.Sub[len(re.Sub)-1].Op == syntax.OpStar || re.Sub[len(re.Sub)-1].Op == syntax.OpQuest {
 			right = stringMatcherFromRegexpInternal(re.Sub[len(re.Sub)-1])
 			if right == nil {
-				return nil
+				return stringMatcherLiteralPeelFallback(originalSubs, nil, nil, nil, nil)
 			}
+			rightSub = re.Sub[len(re.Sub)-1]
 			re.Sub = re.Sub[:len(re.Sub)-1]
 		}
 
@@ -591,9 +586,15 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 			}
 		}
 
-		// Ensure we've found some literals to match (optionally with a left and/or right matcher).
-		// If not, then this optimization doesn't trigger.
 		if len(matches) == 0 {
+			// Decompose the remaining subs into alternating literal/fixed-set runs separated by unbounded wildcard gaps (e.g. "foo.*hello.*bar", ".*-.*-.*-.*-.*").
+			if m := stringMatcherFromRunsAndGaps(re.Sub, left, right); m != nil {
+				return m
+			}
+			// Otherwise peel a single leading/trailing literal and wrap the rest as a compiled-regexp leaf, so Matcher.Prefix() still sees a prefix even when the remainder is too complex.
+			if m := stringMatcherLiteralPeelFallback(re.Sub, left, right, leftSub, rightSub); m != nil {
+				return m
+			}
 			return nil
 		}
 
@@ -637,30 +638,337 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 	return nil
 }
 
-// isSimpleConcatenationPattern returns true if re contains only literals or wildcard matchers,
-// and starts and ends with a wildcard matcher (eg. .*-.*-.*).
-func isSimpleConcatenationPattern(re *syntax.Regexp) bool {
-	if re.Op != syntax.OpConcat {
-		return false
-	}
+// regexpStringMatcher matches using a compiled regexp; it's the fallback leaf for sub-expressions that can't be reduced to a more specific StringMatcher.
+type regexpStringMatcher struct {
+	re *regexp.Regexp
 
-	if len(re.Sub) < 2 {
-		return false
-	}
+	// required are literals that any match must contain in this order, used to reject values without running the regexp; it may be empty and never causes a match on its own.
+	required []string
+}
 
-	first := re.Sub[0]
-	last := re.Sub[len(re.Sub)-1]
-	if !isMatchAny(first) || !isMatchAny(last) {
-		return false
-	}
-
-	for _, re := range re.Sub[1 : len(re.Sub)-1] {
-		if !isMatchAny(re) && !isCaseSensitiveLiteral(re) {
+func (m *regexpStringMatcher) Matches(s string) bool {
+	// Rule the value out on the literals it must contain before paying for the regexp engine.
+	off := 0
+	for _, sub := range m.required {
+		i := strings.Index(s[off:], sub)
+		if i < 0 {
 			return false
+		}
+		off += i + len(sub)
+	}
+	return m.re.MatchString(s)
+}
+
+func newRegexpStringMatcher(re *regexp.Regexp, required []string) *regexpStringMatcher {
+	return &regexpStringMatcher{re: re, required: required}
+}
+
+// requiredLiteralsInOrder returns the case-sensitive literals of a concatenation, in order. Every element of a concatenation has to match, so a value that doesn't contain these in order cannot match the whole expression.
+func requiredLiteralsInOrder(re *syntax.Regexp) []string {
+	if re.Op != syntax.OpConcat {
+		return nil
+	}
+	var out []string
+	for _, sub := range re.Sub {
+		if sub.Op == syntax.OpLiteral && isCaseSensitive(sub) {
+			out = append(out, string(sub.Rune))
+		}
+	}
+	return out
+}
+
+// regexpLeafFromSubs compiles an anchored regexp matching exactly the concatenation of subs, wrapped as a StringMatcher.
+func regexpLeafFromSubs(subs []*syntax.Regexp) StringMatcher {
+	if len(subs) == 0 {
+		return emptyStringMatcher{}
+	}
+	concat := &syntax.Regexp{Op: syntax.OpConcat, Sub: subs}
+	// Each sub already carries the DotNL flag from the original parse, so no need to add our own (?s:...) here.
+	re, err := regexp.Compile("^(?:" + concat.String() + ")$")
+	if err != nil {
+		return nil
+	}
+	return &regexpStringMatcher{re: re}
+}
+
+// isUnboundedAnyWildcard reports whether re is an unbounded "any character" repeat (.* or .+), i.e. a gap of any length with no other constraint.
+func isUnboundedAnyWildcard(re *syntax.Regexp) bool {
+	if re.Op != syntax.OpStar && re.Op != syntax.OpPlus {
+		return false
+	}
+	return re.Sub[0].Op == syntax.OpAnyChar || re.Sub[0].Op == syntax.OpAnyCharNotNL
+}
+
+// splitRunsAndGaps splits subs into alternating runs (stretches with no unbounded any-wildcard) and the gaps (the wildcards) between them; len(runs) == len(gaps)+1.
+func splitRunsAndGaps(subs []*syntax.Regexp) (runs [][]*syntax.Regexp, gaps []*syntax.Regexp) {
+	var cur []*syntax.Regexp
+	for _, s := range subs {
+		if isUnboundedAnyWildcard(s) {
+			runs = append(runs, cur)
+			gaps = append(gaps, s)
+			cur = nil
+		} else {
+			cur = append(cur, s)
+		}
+	}
+	runs = append(runs, cur)
+	return runs, gaps
+}
+
+// stringMatcherFromRunsAndGaps generalizes literal-prefix/literal-suffix/contains composition to an arbitrary number of literal-or-fixed-set runs separated by unbounded wildcard gaps (e.g. "foo.*hello.*bar", ".*-.*-.*-.*-.*"); outerLeft/outerRight are the matchers already built by the caller for a wildcard bordering subs on that side, nil meaning that side is anchored to the true start/end; returns nil if subs can't be decomposed this way.
+func stringMatcherFromRunsAndGaps(subs []*syntax.Regexp, outerLeft, outerRight StringMatcher) StringMatcher {
+	runSubs, gapSubs := splitRunsAndGaps(subs)
+	if len(gapSubs) == 0 {
+		return nil
+	}
+
+	n := len(runSubs)
+	runs := make([][]string, n)
+	runsCS := make([]bool, n)
+	for i, rs := range runSubs {
+		if len(rs) == 0 {
+			return nil
+		}
+		concat := &syntax.Regexp{Op: syntax.OpConcat, Sub: rs}
+		m, cs := findSetMatchesInternal(concat, "")
+		if len(m) == 0 {
+			return nil
+		}
+		runs[i] = m
+		runsCS[i] = cs
+	}
+
+	gaps := make([]StringMatcher, len(gapSubs))
+	for i, g := range gapSubs {
+		gm := stringMatcherFromRegexpInternal(g)
+		if gm == nil {
+			return nil
+		}
+		gaps[i] = gm
+	}
+
+	firstIsAnchor := outerLeft == nil
+	lastIsAnchor := outerRight == nil
+
+	// Runs located via substring search must be case-sensitive, since containsStringMatcher doesn't support case-insensitive substrings.
+	for i := 1; i < n-1; i++ {
+		if !runsCS[i] {
+			return nil
+		}
+	}
+	if !firstIsAnchor && !runsCS[0] {
+		return nil
+	}
+	if !lastIsAnchor && !runsCS[n-1] {
+		return nil
+	}
+
+	// Prefer a single greedy scan when every literal is separated by an unconstrained gap: it's exact for that shape and avoids the nested chain's backtracking search.
+	if m := containsInOrderFromRuns(runs, runsCS, gaps, outerLeft, outerRight); m != nil {
+		return m
+	}
+
+	lastGap := gaps[n-2]
+	var tail StringMatcher
+	if lastIsAnchor {
+		tail = orLiteralSuffixMatcher(runs[n-1], runsCS[n-1], lastGap)
+	} else {
+		tail = &containsStringMatcher{substrings: runs[n-1], left: lastGap, right: outerRight}
+	}
+
+	for i := n - 2; i >= 1; i-- {
+		tail = &containsStringMatcher{substrings: runs[i], left: gaps[i-1], right: tail}
+	}
+
+	if firstIsAnchor {
+		return orLiteralPrefixMatcher(runs[0], runsCS[0], tail)
+	}
+	return &containsStringMatcher{substrings: runs[0], left: outerLeft, right: tail}
+}
+
+func orLiteralPrefixMatcher(matches []string, caseSensitive bool, rest StringMatcher) StringMatcher {
+	if len(matches) == 1 {
+		return newLiteralPrefixStringMatcher(matches[0], caseSensitive, rest)
+	}
+	or := make([]StringMatcher, len(matches))
+	for i, s := range matches {
+		or[i] = newLiteralPrefixStringMatcher(s, caseSensitive, rest)
+	}
+	return orStringMatcher(or)
+}
+
+func orLiteralSuffixMatcher(matches []string, caseSensitive bool, left StringMatcher) StringMatcher {
+	if len(matches) == 1 {
+		return &literalSuffixStringMatcher{left: left, suffix: matches[0], suffixCaseSensitive: caseSensitive}
+	}
+	or := make([]StringMatcher, len(matches))
+	for i, s := range matches {
+		or[i] = &literalSuffixStringMatcher{left: left, suffix: s, suffixCaseSensitive: caseSensitive}
+	}
+	return orStringMatcher(or)
+}
+
+// containsInOrderStringMatcher matches a string starting with prefix, ending with suffix, and containing each of the contains literals in order in between (an empty prefix/suffix means that side is unanchored). It is an exact matcher, not a pre-check: it is only built when every literal is separated by an unconstrained gap, where a greedy left-to-right scan is equivalent to the regexp because a literal occurring after any occurrence of the previous one also occurs after the first.
+type containsInOrderStringMatcher struct {
+	prefix   string
+	contains []string
+	suffix   string
+
+	// minLeading/minTrailing are the characters that must precede the first literal and follow the last one when that side is unanchored but non-empty (i.e. the outer gap was ".+" not ".*").
+	minLeading  int
+	minTrailing int
+
+	// minLen is the shortest string that can possibly match, checked first as a cheap rejection.
+	minLen int
+}
+
+func (m *containsInOrderStringMatcher) Matches(s string) bool {
+	if len(s) < m.minLen {
+		return false
+	}
+
+	start, end := m.minLeading, len(s)-m.minTrailing
+	if m.prefix != "" {
+		if !strings.HasPrefix(s, m.prefix) {
+			return false
+		}
+		start = len(m.prefix)
+	}
+	if m.suffix != "" {
+		if !strings.HasSuffix(s, m.suffix) {
+			return false
+		}
+		end = len(s) - len(m.suffix)
+	}
+	if start > end {
+		return false
+	}
+
+	mid := s[start:end]
+	for _, sub := range m.contains {
+		i := strings.Index(mid, sub)
+		if i < 0 {
+			return false
+		}
+		mid = mid[i+len(sub):]
+	}
+	return true
+}
+
+// unconstrainedGapLen returns the minimum length a gap matcher consumes, and whether it accepts any character (so a greedy scan across it is exact).
+func unconstrainedGapLen(m StringMatcher) (minLen int, ok bool) {
+	switch v := m.(type) {
+	case trueMatcher:
+		return 0, true
+	case *anyNonEmptyStringMatcher:
+		if v.matchNL {
+			return 1, true
+		}
+	}
+	return 0, false
+}
+
+// containsInOrderFromRuns collapses a run/gap decomposition into a single containsInOrderStringMatcher, or returns nil if the shape doesn't allow an exact greedy scan.
+func containsInOrderFromRuns(runs [][]string, runsCS []bool, gaps []StringMatcher, outerLeft, outerRight StringMatcher) StringMatcher {
+	// Every literal must be a single case-sensitive string: alternations would need to be tried independently, which a single scan can't express.
+	for i, r := range runs {
+		if len(r) != 1 || !runsCS[i] {
+			return nil
+		}
+	}
+	// Interior gaps must be fully unconstrained, otherwise the scan would have to enforce a minimum distance between consecutive literals.
+	for _, g := range gaps {
+		if !isTrueMatcher(g) {
+			return nil
 		}
 	}
 
-	return true
+	m := &containsInOrderStringMatcher{}
+	lits := make([]string, 0, len(runs))
+	for _, r := range runs {
+		lits = append(lits, r[0])
+	}
+
+	if outerLeft == nil {
+		m.prefix = lits[0]
+		lits = lits[1:]
+	} else {
+		minLen, ok := unconstrainedGapLen(outerLeft)
+		if !ok {
+			return nil
+		}
+		m.minLeading = minLen
+	}
+
+	if outerRight == nil {
+		m.suffix = lits[len(lits)-1]
+		lits = lits[:len(lits)-1]
+	} else {
+		minLen, ok := unconstrainedGapLen(outerRight)
+		if !ok {
+			return nil
+		}
+		m.minTrailing = minLen
+	}
+
+	m.contains = lits
+	m.minLen = len(m.prefix) + len(m.suffix) + m.minLeading + m.minTrailing
+	for _, l := range m.contains {
+		m.minLen += len(l)
+	}
+	return m
+}
+
+// stringMatcherLiteralPeelFallback peels a leading/trailing literal not already consumed by outerLeft/outerRight and compiles a single regexp leaf for whatever remains (including leftSub/rightSub), so callers like Matcher.Prefix() still see a literal prefix even when subs is too complex to reduce to an exact StringMatcher.
+func stringMatcherLiteralPeelFallback(subs []*syntax.Regexp, outerLeft, outerRight StringMatcher, leftSub, rightSub *syntax.Regexp) StringMatcher {
+	inner := subs
+
+	var prefix string
+	var prefixCS bool
+	havePrefix := false
+	if outerLeft == nil && len(inner) > 0 && inner[0].Op == syntax.OpLiteral {
+		prefix = string(inner[0].Rune)
+		prefixCS = !isCaseInsensitive(inner[0])
+		havePrefix = true
+		inner = inner[1:]
+	}
+
+	var suffix string
+	var suffixCS bool
+	haveSuffix := false
+	if outerRight == nil && len(inner) > 0 && inner[len(inner)-1].Op == syntax.OpLiteral {
+		last := inner[len(inner)-1]
+		suffix = string(last.Rune)
+		suffixCS = !isCaseInsensitive(last)
+		haveSuffix = true
+		inner = inner[:len(inner)-1]
+	}
+
+	if !havePrefix && !haveSuffix {
+		return nil
+	}
+
+	coreSubs := make([]*syntax.Regexp, 0, len(inner)+2)
+	if leftSub != nil {
+		coreSubs = append(coreSubs, leftSub)
+	}
+	coreSubs = append(coreSubs, inner...)
+	if rightSub != nil {
+		coreSubs = append(coreSubs, rightSub)
+	}
+
+	core := regexpLeafFromSubs(coreSubs)
+	if core == nil {
+		return nil
+	}
+
+	if haveSuffix {
+		core = &literalSuffixStringMatcher{left: core, suffix: suffix, suffixCaseSensitive: suffixCS}
+	}
+	if havePrefix {
+		core = newLiteralPrefixStringMatcher(prefix, prefixCS, core)
+	}
+	return core
 }
 
 func isMatchAny(re *syntax.Regexp) bool {
@@ -690,6 +998,14 @@ func (m *containsStringMatcher) Matches(s string) bool {
 	for _, substr := range m.substrings {
 		switch {
 		case m.right != nil && m.left != nil:
+			// Fast path: if both sides are unconstrained, any occurrence of substr is a match.
+			if isTrueMatcher(m.left) && isTrueMatcher(m.right) {
+				if strings.Contains(s, substr) {
+					return true
+				}
+				continue
+			}
+
 			searchStartPos := 0
 
 			for {
@@ -1082,6 +1398,12 @@ func (trueMatcher) Matches(string) bool {
 	return true
 }
 
+// isTrueMatcher reports whether m is a trueMatcher, used to fast-path containsStringMatcher when a side is unconstrained.
+func isTrueMatcher(m StringMatcher) bool {
+	_, ok := m.(trueMatcher)
+	return ok
+}
+
 // optimizeEqualOrPrefixStringMatchers optimize a specific case where all matchers are made by an
 // alternation (orStringMatcher) of strings checked for equality (equalStringMatcher) or
 // with a literal prefix (literalPrefixSensitiveStringMatcher or literalPrefixInsensitiveStringMatcher).
@@ -1304,30 +1626,6 @@ func runeFoldEqual(a, b rune) bool {
 		}
 	}
 	return false
-}
-
-func containsInOrder(s string, contains []string) bool {
-	// Optimization for the case we only have to look for 1 substring.
-	if len(contains) == 1 {
-		return strings.Contains(s, contains[0])
-	}
-
-	return containsInOrderMulti(s, contains)
-}
-
-func containsInOrderMulti(s string, contains []string) bool {
-	offset := 0
-
-	for _, substr := range contains {
-		at := strings.Index(s[offset:], substr)
-		if at == -1 {
-			return false
-		}
-
-		offset += at + len(substr)
-	}
-
-	return true
 }
 
 // lengthMask returns a bitmask with the bit at position len(s) set to 1, and all other bits set to 0.
