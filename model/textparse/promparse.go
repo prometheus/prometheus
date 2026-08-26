@@ -138,6 +138,10 @@ func (l *promlexer) next() byte {
 	// they are allowed, consume them here immediately.
 	for l.b[l.i] == 0 && (l.state == sLValue || l.state == sMeta2 || l.state == sComment) {
 		l.i++
+		if l.i >= len(l.b) {
+			l.err = io.EOF
+			return byte(tEOF)
+		}
 	}
 	return l.b[l.i]
 }
