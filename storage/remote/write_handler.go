@@ -203,8 +203,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 			// AppendExemplars requires exemplars sorted by timestamp.
 			slices.SortFunc(exemplars, exemplar.Compare)
 			if _, err := app.AppendExemplars(ref, ls, exemplars); err != nil {
-				var pErr *storage.AppendPartialError
-				if errors.As(err, &pErr) {
+				if pErr, ok := errors.AsType[*storage.AppendPartialError](err); ok {
 					for _, eErr := range pErr.ExemplarErrors {
 						if errors.Is(eErr, storage.ErrOutOfOrderExemplar) {
 							outOfOrderExemplarErrs++
@@ -458,8 +457,7 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 
 			appended := len(exemplars)
 			if _, err := app.AppendExemplars(ref, ls, exemplars); err != nil {
-				var pErr *storage.AppendPartialError
-				if errors.As(err, &pErr) {
+				if pErr, ok := errors.AsType[*storage.AppendPartialError](err); ok {
 					appended -= len(pErr.ExemplarErrors)
 					for _, eErr := range pErr.ExemplarErrors {
 						if errors.Is(eErr, storage.ErrOutOfOrderExemplar) {
