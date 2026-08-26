@@ -307,6 +307,20 @@ const onlyDrawPointsForDisconnectedSamplesFilter = (
   return filtered.length ? filtered : null;
 };
 
+// uPlot only keeps legend show/hide state on the live chart instance, so it's
+// lost every time we swap in a new options object (theme, resize, a new
+// dataset, ...). This re-applies whatever was saved for a label, so callers
+// can carry it across rebuilds themselves.
+export const applySeriesVisibility = (
+  series: uPlot.Series[],
+  saved: Map<string, boolean>,
+): uPlot.Series[] =>
+  series.map((s) =>
+    typeof s.label === "string" && saved.has(s.label)
+      ? { ...s, show: saved.get(s.label) }
+      : s,
+  );
+
 export const getUPlotOptions = (
   data: AlignedData,
   width: number,
@@ -315,6 +329,7 @@ export const getUPlotOptions = (
   yAxisMin: number | null,
   light: boolean,
   onSelectRange: (_start: number, _end: number) => void,
+  seriesVisibility: Map<string, boolean>,
 ): uPlot.Options => ({
   width: width - 30,
   height: 550,
@@ -426,21 +441,24 @@ export const getUPlotOptions = (
       size: autoPadLeft,
     },
   ],
-  series: [
-    {},
-    ...result.map(
-      (r, idx): uPlot.Series => ({
-        points: {
-          filter: onlyDrawPointsForDisconnectedSamplesFilter,
-        },
-        label: formatSeries(r.metric),
-        width: 1.5,
-        // @ts-expect-error - uPlot doesn't have a field for labels, but we just attach some anyway.
-        labels: r.metric,
-        stroke: getSeriesColor(idx, light),
-      }),
-    ),
-  ],
+  series: applySeriesVisibility(
+    [
+      {},
+      ...result.map(
+        (r, idx): uPlot.Series => ({
+          points: {
+            filter: onlyDrawPointsForDisconnectedSamplesFilter,
+          },
+          label: formatSeries(r.metric),
+          width: 1.5,
+          // @ts-expect-error - uPlot doesn't have a field for labels, but we just attach some anyway.
+          labels: r.metric,
+          stroke: getSeriesColor(idx, light),
+        }),
+      ),
+    ],
+    seriesVisibility,
+  ),
   hooks: {
     setSelect: [
       (self: uPlot) => {
@@ -452,6 +470,20 @@ export const getUPlotOptions = (
         );
 
         onSelectRange(leftVal, rightVal);
+      },
+    ],
+    // Legend clicks call setSeries per affected series (once for a plain
+    // click's isolate, once for a ctrl/cmd click's toggle). Mirror whatever
+    // it lands on so a later rebuild can restore it.
+    setSeries: [
+      (u: uPlot, seriesIdx: number | null, opts: Series) => {
+        if (seriesIdx === null || opts.show === undefined) {
+          return;
+        }
+        const label = u.series[seriesIdx].label;
+        if (typeof label === "string") {
+          seriesVisibility.set(label, opts.show);
+        }
       },
     ],
   },
