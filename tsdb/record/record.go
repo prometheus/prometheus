@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"unsafe"
 
 	"github.com/prometheus/common/model"
@@ -223,6 +224,37 @@ func NewDecoder(_ *labels.SymbolTable, logger *slog.Logger) Decoder { // FIXME r
 	b := labels.NewScratchBuilder(0)
 	b.SetUnsafeAdd(true)
 	return Decoder{builder: b, logger: logger}
+}
+
+// nextHistogram returns the *histogram.Histogram at the next unused capacity
+// slot of out. When the caller later appends to out, the decoder reuses the
+// existing struct and its slice capacity (via DecodeHistogram's slices.Grow
+// pattern), eliminating a per-sample allocation on repeated calls with the
+// same pre-grown slice.
+//
+// Ownership invariant: the H pointers at capacity slots beyond len(out) must
+// not be retained by the caller after passing out (e.g. as out[:0]) to the
+// next HistogramSamples call. Callers that store H pointers across decode
+// calls must copy them first (h.H.Copy()) or use a fresh nil slice each time.
+func nextHistogram(out []RefHistogramSample) *histogram.Histogram {
+	if len(out) < cap(out) {
+		if h := out[:cap(out)][len(out)].H; h != nil {
+			return h
+		}
+	}
+	return new(histogram.Histogram)
+}
+
+// nextFloatHistogram is the FloatHistogram analogue of nextHistogram.
+// The same ownership invariant applies: FH pointers in capacity slots must not
+// be retained after passing the slice back for the next decode.
+func nextFloatHistogram(out []RefFloatHistogramSample) *histogram.FloatHistogram {
+	if len(out) < cap(out) {
+		if fh := out[:cap(out)][len(out)].FH; fh != nil {
+			return fh
+		}
+	}
+	return new(histogram.FloatHistogram)
 }
 
 // Type returns the type of the record.
@@ -555,7 +587,7 @@ func (d *Decoder) histogramSamplesV1(dec *encoding.Decbuf, histograms []RefHisto
 		rh := RefHistogramSample{
 			Ref: chunks.HeadSeriesRef(baseRef + uint64(dref)),
 			T:   baseTime + dtime,
-			H:   &histogram.Histogram{},
+			H:   nextHistogram(histograms),
 		}
 
 		DecodeHistogram(dec, rh.H)
@@ -614,7 +646,7 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 			Ref: chunks.HeadSeriesRef(ref),
 			ST:  st,
 			T:   t,
-			H:   &histogram.Histogram{},
+			H:   nextHistogram(histograms),
 		}
 		prevRef, prevST = rh.Ref, rh.ST
 		DecodeHistogram(dec, rh.H)
@@ -643,7 +675,8 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 	return histograms, nil
 }
 
-// DecodeHistogram decodes a Histogram from buf.
+// DecodeHistogram decodes a Histogram from buf. h may be a pooled object with
+// existing slice capacity; DecodeHistogram reuses that capacity where possible.
 func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
 	h.CounterResetHint = histogram.CounterResetHint(buf.Byte())
 
@@ -655,47 +688,39 @@ func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
 	h.Sum = math.Float64frombits(buf.Be64())
 
 	l := buf.Uvarint()
-	if l > 0 {
-		h.PositiveSpans = make([]histogram.Span, l)
-	}
+	h.PositiveSpans = slices.Grow(h.PositiveSpans[:0], l)[:l]
 	for i := range h.PositiveSpans {
 		h.PositiveSpans[i].Offset = int32(buf.Varint64())
 		h.PositiveSpans[i].Length = buf.Uvarint32()
 	}
 
 	l = buf.Uvarint()
-	if l > 0 {
-		h.NegativeSpans = make([]histogram.Span, l)
-	}
+	h.NegativeSpans = slices.Grow(h.NegativeSpans[:0], l)[:l]
 	for i := range h.NegativeSpans {
 		h.NegativeSpans[i].Offset = int32(buf.Varint64())
 		h.NegativeSpans[i].Length = buf.Uvarint32()
 	}
 
 	l = buf.Uvarint()
-	if l > 0 {
-		h.PositiveBuckets = make([]int64, l)
-	}
+	h.PositiveBuckets = slices.Grow(h.PositiveBuckets[:0], l)[:l]
 	for i := range h.PositiveBuckets {
 		h.PositiveBuckets[i] = buf.Varint64()
 	}
 
 	l = buf.Uvarint()
-	if l > 0 {
-		h.NegativeBuckets = make([]int64, l)
-	}
+	h.NegativeBuckets = slices.Grow(h.NegativeBuckets[:0], l)[:l]
 	for i := range h.NegativeBuckets {
 		h.NegativeBuckets[i] = buf.Varint64()
 	}
 
 	if histogram.IsCustomBucketsSchema(h.Schema) {
 		l = buf.Uvarint()
-		if l > 0 {
-			h.CustomValues = make([]float64, l)
-		}
+		h.CustomValues = slices.Grow(h.CustomValues[:0], l)[:l]
 		for i := range h.CustomValues {
 			h.CustomValues[i] = buf.Be64Float64()
 		}
+	} else {
+		h.CustomValues = nil
 	}
 }
 
@@ -729,7 +754,7 @@ func (d *Decoder) floatHistogramSamplesV1(dec *encoding.Decbuf, histograms []Ref
 		rh := RefFloatHistogramSample{
 			Ref: chunks.HeadSeriesRef(baseRef + uint64(dref)),
 			T:   baseTime + dtime,
-			FH:  &histogram.FloatHistogram{},
+			FH:  nextFloatHistogram(histograms),
 		}
 
 		DecodeFloatHistogram(dec, rh.FH)
@@ -786,7 +811,7 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 			Ref: chunks.HeadSeriesRef(ref),
 			ST:  st,
 			T:   t,
-			FH:  &histogram.FloatHistogram{},
+			FH:  nextFloatHistogram(histograms),
 		}
 		prevRef, prevST = rfh.Ref, rfh.ST
 		DecodeFloatHistogram(dec, rfh.FH)
@@ -816,7 +841,9 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 	return histograms, nil
 }
 
-// DecodeFloatHistogram decodes a FloatHistogram from buf.
+// DecodeFloatHistogram decodes a FloatHistogram from buf. fh may be a pooled
+// object with existing slice capacity; DecodeFloatHistogram reuses that capacity
+// where possible.
 func DecodeFloatHistogram(buf *encoding.Decbuf, fh *histogram.FloatHistogram) {
 	fh.CounterResetHint = histogram.CounterResetHint(buf.Byte())
 
@@ -828,47 +855,39 @@ func DecodeFloatHistogram(buf *encoding.Decbuf, fh *histogram.FloatHistogram) {
 	fh.Sum = buf.Be64Float64()
 
 	l := buf.Uvarint()
-	if l > 0 {
-		fh.PositiveSpans = make([]histogram.Span, l)
-	}
+	fh.PositiveSpans = slices.Grow(fh.PositiveSpans[:0], l)[:l]
 	for i := range fh.PositiveSpans {
 		fh.PositiveSpans[i].Offset = int32(buf.Varint64())
 		fh.PositiveSpans[i].Length = buf.Uvarint32()
 	}
 
 	l = buf.Uvarint()
-	if l > 0 {
-		fh.NegativeSpans = make([]histogram.Span, l)
-	}
+	fh.NegativeSpans = slices.Grow(fh.NegativeSpans[:0], l)[:l]
 	for i := range fh.NegativeSpans {
 		fh.NegativeSpans[i].Offset = int32(buf.Varint64())
 		fh.NegativeSpans[i].Length = buf.Uvarint32()
 	}
 
 	l = buf.Uvarint()
-	if l > 0 {
-		fh.PositiveBuckets = make([]float64, l)
-	}
+	fh.PositiveBuckets = slices.Grow(fh.PositiveBuckets[:0], l)[:l]
 	for i := range fh.PositiveBuckets {
 		fh.PositiveBuckets[i] = buf.Be64Float64()
 	}
 
 	l = buf.Uvarint()
-	if l > 0 {
-		fh.NegativeBuckets = make([]float64, l)
-	}
+	fh.NegativeBuckets = slices.Grow(fh.NegativeBuckets[:0], l)[:l]
 	for i := range fh.NegativeBuckets {
 		fh.NegativeBuckets[i] = buf.Be64Float64()
 	}
 
 	if histogram.IsCustomBucketsSchema(fh.Schema) {
 		l = buf.Uvarint()
-		if l > 0 {
-			fh.CustomValues = make([]float64, l)
-		}
+		fh.CustomValues = slices.Grow(fh.CustomValues[:0], l)[:l]
 		for i := range fh.CustomValues {
 			fh.CustomValues[i] = buf.Be64Float64()
 		}
+	} else {
+		fh.CustomValues = nil
 	}
 }
 
