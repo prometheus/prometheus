@@ -372,10 +372,9 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 		}
 
 		var ref storage.SeriesRef
-		// Attach metadata to the first sample/histogram append of the series only; if that
-		// append is rejected, metadata is dropped with it, same as the exemplars below.
 		// Only attach metadata if the metadata-wal-records feature is enabled; without it,
-		// metadata is not persisted to WAL.
+		// metadata is not persisted to WAL. It's attached to every sample/histogram append
+		// of the series; implementations only persist a metadata WAL record when it changed.
 		opts := storage.AOptions{}
 		if h.appendMetadata {
 			opts.Metadata = m
@@ -387,7 +386,6 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 			}
 
 			ref, err = app.Append(ref, ls, st, s.GetTimestamp(), s.GetValue(), nil, nil, opts)
-			opts = storage.AOptions{}
 			if err == nil {
 				rs.Samples++
 				continue
@@ -416,7 +414,6 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 			} else {
 				ref, err = app.Append(ref, ls, st, hp.Timestamp, 0, hp.ToIntHistogram(), nil, opts)
 			}
-			opts = storage.AOptions{}
 			if err == nil {
 				rs.Histograms++
 				continue
