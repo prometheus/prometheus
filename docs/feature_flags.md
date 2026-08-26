@@ -9,6 +9,12 @@ Their behaviour can change in future releases which will be communicated via the
 You can enable them using the `--enable-feature` flag with a comma separated list of features.
 They may be enabled by default in future versions.
 
+## Zstandard scrape compression
+
+`--enable-feature=zstd-scrape`
+
+When enabled, Prometheus advertises support for Zstandard-compressed scrape responses in addition to gzip. The uncompressed response remains subject to the configured `body_size_limit`.
+
 ## Exemplars storage
 
 `--enable-feature=exemplar-storage`

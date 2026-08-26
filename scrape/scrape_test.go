@@ -31,7 +31,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -5210,6 +5209,8 @@ func TestTargetScraperBodySizeLimit(t *testing.T) {
 				bodySizeLimit: bodySizeLimit,
 				acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.UnderscoreEscaping),
 				metrics:       newTestScrapeMetrics(t),
+				enableZstd:    true,
+				logger:        promslog.NewNopLogger(),
 			}
 			var buf bytes.Buffer
 
@@ -5243,75 +5244,14 @@ func TestTargetScraperMalformedCompressedResponse(t *testing.T) {
 			ts := &targetScraper{
 				bodySizeLimit: math.MaxInt64,
 				metrics:       newTestScrapeMetrics(t),
+				enableZstd:    true,
+				logger:        promslog.NewNopLogger(),
 			}
 
 			_, err := ts.readResponse(context.Background(), resp, io.Discard)
 			require.Error(t, err)
 		})
 	}
-}
-
-func TestTargetScraperZstdDecoderPool(t *testing.T) {
-	// Disable GC so sync.Pool retains the pooled decoder across responses;
-	// otherwise an intervening GC would drop it and force pool.New to run.
-	gcPercent := debug.SetGCPercent(-1)
-	t.Cleanup(func() { debug.SetGCPercent(gcPercent) })
-
-	created := 0
-	originalNew := zstdDecoderPool.New
-	zstdDecoderPool = sync.Pool{
-		New: func() any {
-			created++
-			return originalNew()
-		},
-	}
-	t.Cleanup(func() { zstdDecoderPool.New = originalNew })
-
-	compress := func(t *testing.T, body []byte) []byte {
-		var buf bytes.Buffer
-		zw, err := zstd.NewWriter(&buf)
-		require.NoError(t, err)
-		_, err = zw.Write(body)
-		require.NoError(t, err)
-		require.NoError(t, zw.Close())
-		return buf.Bytes()
-	}
-	newResponse := func(compressed []byte) *http.Response {
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Encoding": []string{"zstd"}},
-			Body:       io.NopCloser(bytes.NewReader(compressed)),
-		}
-	}
-	ts := &targetScraper{
-		bodySizeLimit: math.MaxInt64,
-		metrics:       newTestScrapeMetrics(t),
-	}
-
-	t.Run("reuses a decoder across responses", func(t *testing.T) {
-		created = 0
-		body := []byte("metric_a 1\nmetric_b 2\n")
-		compressed := compress(t, body)
-		for range 10 {
-			var buf bytes.Buffer
-			_, err := ts.readResponse(context.Background(), newResponse(compressed), &buf)
-			require.NoError(t, err)
-			require.Equal(t, string(body), buf.String())
-		}
-		require.Less(t, created, 10, "expected the pooled zstd decoder to be reused across responses")
-	})
-
-	t.Run("releases the previous response before pooling", func(t *testing.T) {
-		body := []byte("metric_a 1\nmetric_b 2\n")
-		compressed := compress(t, body)
-		_, err := ts.readResponse(context.Background(), newResponse(compressed), io.Discard)
-		require.NoError(t, err)
-
-		decoder := zstdDecoderPool.Get().(*zstd.Decoder)
-		zstdDecoderPool.Put(decoder)
-		_, err = decoder.Read(make([]byte, 1))
-		require.ErrorIs(t, err, zstd.ErrDecoderNilInput, "pooled zstd decoder must not retain the previous response")
-	})
 }
 
 // testScraper implements the scraper interface and allows setting values
@@ -6954,11 +6894,17 @@ func testScrapeLoopCompression(t *testing.T, appV2 bool) {
 
 	for _, tc := range []struct {
 		enableCompression bool
+		enableZstd        bool
 		acceptEncoding    string
 	}{
 		{
 			enableCompression: true,
 			acceptEncoding:    "zstd,gzip",
+			enableZstd:        true,
+		},
+		{
+			enableCompression: true,
+			acceptEncoding:    "gzip",
 		},
 		{
 			enableCompression: false,
@@ -6987,7 +6933,7 @@ func testScrapeLoopCompression(t *testing.T, appV2 bool) {
 			}
 
 			sa := selectAppendable(s, appV2)
-			sp, err := newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+			sp, err := newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{EnableZstdScrape: tc.enableZstd}, newTestScrapeMetrics(t))
 			require.NoError(t, err)
 			defer sp.stop()
 

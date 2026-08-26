@@ -381,7 +381,9 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 				timeout:              targetTimeout,
 				bodySizeLimit:        int64(sp.config.BodySizeLimit),
 				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
-				acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression),
+				acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression, sp.options.EnableZstdScrape),
+				enableZstd:           sp.options.EnableZstdScrape,
+				logger:               sp.logger,
 				metrics:              sp.metrics,
 			},
 			cache:    cache,
@@ -513,7 +515,9 @@ func (sp *scrapePool) sync(targets []*Target) {
 					timeout:              targetTimeout,
 					bodySizeLimit:        int64(sp.config.BodySizeLimit),
 					acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
-					acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression),
+					acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression, sp.options.EnableZstdScrape),
+					enableZstd:           sp.options.EnableZstdScrape,
+					logger:               sp.logger,
 					metrics:              sp.metrics,
 				},
 				cache:    newScrapeCache(sp.metrics),
@@ -757,6 +761,8 @@ type targetScraper struct {
 	bodySizeLimit        int64
 	acceptHeader         string
 	acceptEncodingHeader string
+	enableZstd           bool
+	logger               *slog.Logger
 
 	metrics *scrapeMetrics
 }
@@ -794,9 +800,12 @@ func acceptHeader(sps []config.ScrapeProtocol, scheme model.EscapingScheme) stri
 	return strings.Join(vals, ",")
 }
 
-func acceptEncodingHeader(enableCompression bool) string {
+func acceptEncodingHeader(enableCompression, enableZstd bool) string {
 	if enableCompression {
-		return "zstd,gzip"
+		if enableZstd {
+			return "zstd,gzip"
+		}
+		return "gzip"
 	}
 	return "identity"
 }
@@ -855,6 +864,14 @@ func (s *targetScraper) readResponse(_ context.Context, resp *http.Response, w i
 		defer s.gzipr.Close()
 		reader = s.gzipr
 	case "zstd":
+		if !s.enableZstd {
+			break
+		}
+		if s.Target == nil {
+			s.logger.Debug("Using zstd-compressed scrape response")
+		} else {
+			s.logger.Debug("Using zstd-compressed scrape response", "target", s.URL().Redacted())
+		}
 		zstdr := zstdDecoderPool.Get().(*zstd.Decoder)
 		if err := zstdr.Reset(resp.Body); err != nil {
 			_ = zstdr.Reset(nil)

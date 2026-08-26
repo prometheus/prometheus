@@ -147,6 +147,9 @@ type Options struct {
 	// the experimental OpenMetrics 2.0 parser.
 	EnableOpenMetrics2 bool
 
+	// EnableZstdScrape represents the zstd-scrape feature flag.
+	EnableZstdScrape bool
+
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
 
