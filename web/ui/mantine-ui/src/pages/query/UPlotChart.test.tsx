@@ -56,6 +56,7 @@ const props: UPlotChartProps = {
       ],
     },
   ],
+  expr: "up",
   range: { startTime: 0, endTime: 10, resolution: 10 },
   width: 800,
   showExemplars: false,
@@ -185,6 +186,7 @@ describe("uPlot lifecycle", () => {
       null,
       true,
       vi.fn(),
+      new Map(),
     );
     expect(document.querySelectorAll(".u-tooltip")).toHaveLength(0);
     const hooks = options.plugins![0].hooks!;
