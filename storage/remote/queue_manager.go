@@ -1742,7 +1742,9 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 	// included in dataOutDuration. Remote write v1 sends metadata separately.
 	s.qm.dataOut.incr(int64(sampleCount + exemplarCount + histogramCount))
 	s.qm.dataOutDuration.incr(int64(duration))
-	s.qm.lastSendTimestamp.Store(time.Now().Unix())
+	if err == nil {
+		s.qm.lastSendTimestamp.Store(time.Now().Unix())
+	}
 
 	// Pending samples/exemplars/histograms also should be subtracted, as an error means
 	// they will not be retried.
