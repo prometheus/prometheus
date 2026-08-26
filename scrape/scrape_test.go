@@ -312,6 +312,127 @@ func testScrapeReportMetadata(t *testing.T, appV2 bool) {
 	}, appTest.ResultMetadata())
 }
 
+func TestScrapeCacheSizeMetadata(t *testing.T) {
+	cases := []struct {
+		name  string
+		steps func(t *testing.T, c *scrapeCache)
+	}{
+		{
+			name: "insert type on new family",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				require.Equal(t, 7, c.SizeMetadata())
+			},
+		},
+		{
+			name: "insert help on new family",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setHelp([]byte("metric_b"), []byte("help text"))
+				require.Equal(t, 16, c.SizeMetadata())
+			},
+		},
+		{
+			name: "insert unit on new family",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setUnit([]byte("metric_c"), []byte("bytes"))
+				require.Equal(t, 12, c.SizeMetadata())
+			},
+		},
+		{
+			name: "update type on existing family",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setType([]byte("metric_a"), model.MetricTypeGauge)
+				require.Equal(t, 5, c.SizeMetadata())
+			},
+		},
+		{
+			name: "update help on existing family",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setHelp([]byte("metric_a"), []byte("new help"))
+				require.Equal(t, 15, c.SizeMetadata())
+			},
+		},
+		{
+			name: "repeated set with same value does not grow size",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				require.Equal(t, 7, c.SizeMetadata())
+			},
+		},
+		{
+			name: "multiple families accumulate",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setType([]byte("metric_b"), model.MetricTypeGauge)
+				c.setHelp([]byte("metric_b"), []byte("help"))
+				require.Equal(t, 16, c.SizeMetadata())
+			},
+		},
+		{
+			name: "stale entry removed on flush",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setHelp([]byte("metric_a"), []byte("help"))
+				c.iter = 20
+				c.iterDone(true)
+				require.Equal(t, 0, c.SizeMetadata())
+			},
+		},
+		{
+			name: "non-stale entry survives flush",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.iter = 5
+				c.iterDone(true)
+				require.Equal(t, 7, c.SizeMetadata())
+			},
+		},
+		{
+			name: "partial stale removal on flush",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.iter = 2
+				c.setType([]byte("metric_b"), model.MetricTypeGauge)
+				c.iter = 12
+				c.iterDone(true)
+				require.Equal(t, 5, c.SizeMetadata())
+			},
+		},
+		{
+			name: "full flush clears all stale entries",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setHelp([]byte("metric_a"), []byte("help"))
+				c.setType([]byte("metric_b"), model.MetricTypeGauge)
+				c.setUnit([]byte("metric_b"), []byte("bytes"))
+				c.iter = 100
+				c.iterDone(true)
+				require.Equal(t, 0, c.SizeMetadata())
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newScrapeCache(newTestScrapeMetrics(t))
+			tc.steps(t, c)
+		})
+	}
+}
+
 func TestIsSeriesPartOfFamily(t *testing.T) {
 	t.Run("counter", func(t *testing.T) {
 		require.True(t, isSeriesPartOfFamily("http_requests_total", []byte("http_requests_total"), model.MetricTypeCounter)) // Prometheus text style.
