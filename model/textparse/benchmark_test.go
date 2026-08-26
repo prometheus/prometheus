@@ -211,8 +211,9 @@ func BenchmarkParseOpenMetricsNHCB(b *testing.B) {
 	data := readTestdataFile(b, "1histogram.om.txt")
 
 	for _, parser := range []string{
-		"omtext",           // Measure OM parser baseline for histograms.
-		"omtext_with_nhcb", // Measure NHCB over OM parser.
+		"omtext",              // Measure OM parser baseline for histograms.
+		"omtext_with_nhcb",    // Measure NHCB over OM parser without ST parsing.
+		"omtext_with_nhcb_st", // Measure NHCB over OM parser with ST parsing enabled.
 	} {
 		b.Run(fmt.Sprintf("parser=%v", parser), func(b *testing.B) {
 			benchParse(b, data, parser)
@@ -246,6 +247,15 @@ func benchParse(b *testing.B, data []byte, parser string) {
 	case "om2text":
 		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
 			return NewOpenMetrics2Parser(b, st, ParserOptions{})
+		}
+	case "omtext_with_nhcb_st":
+		newParserFn = func(buf []byte, st *labels.SymbolTable) Parser {
+			p, err := New(buf, "application/openmetrics-text", st, ParserOptions{
+				ConvertClassicHistogramsToNHCB: true,
+				OpenMetricsSkipSTSeries:        true,
+			})
+			require.NoError(b, err)
+			return p
 		}
 	default:
 		b.Fatal("unknown parser", parser)
@@ -303,7 +313,7 @@ func benchExpFmt(b *testing.B, data []byte, expFormatTypeStr string) {
 	expfmtFormatType := expfmt.TypeUnknown
 	switch expFormatTypeStr {
 	case "expfmt-promtext":
-		expfmtFormatType = expfmt.TypeProtoText
+		expfmtFormatType = expfmt.TypeTextPlain
 	case "expfmt-promproto":
 		expfmtFormatType = expfmt.TypeProtoDelim
 	case "expfmt-omtext":

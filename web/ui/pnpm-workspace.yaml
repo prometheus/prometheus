@@ -4,3 +4,10 @@ packages:
 allowBuilds:
   esbuild: true
   unrs-resolver: true
+minimumReleaseAgeExclude:
+  - '@mantine/code-highlight@9.5.0'
+  - '@mantine/core@9.5.0'
+  - '@mantine/dates@9.5.0'
+  - '@mantine/hooks@9.5.0'
+  - '@mantine/notifications@9.5.0'
+  - '@mantine/store@9.5.0'

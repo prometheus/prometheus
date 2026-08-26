@@ -16,8 +16,53 @@ package testwal
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/config"
 )
+
+func TestGenerateRecordsStartTimestamps(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		noST bool
+	}{
+		{name: "with start timestamp"},
+		{name: "without start timestamp", noST: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			recs := GenerateRecords(RecordsCase{
+				NoST:                     tc.noST,
+				Series:                   1,
+				SamplesPerSeries:         2,
+				HistogramsPerSeries:      2,
+				FloatHistogramsPerSeries: 2,
+				TsFn: func(_, j int) int64 {
+					return int64(100 + j)
+				},
+			})
+
+			wantST := func(ts int64) int64 {
+				if tc.noST {
+					return 0
+				}
+				return ts - 1
+			}
+
+			require.Len(t, recs.Samples, 2)
+			for _, s := range recs.Samples {
+				require.Equal(t, wantST(s.T), s.ST)
+			}
+			require.Len(t, recs.Histograms, 2)
+			for _, h := range recs.Histograms {
+				require.Equal(t, wantST(h.T), h.ST)
+			}
+			require.Len(t, recs.FloatHistograms, 2)
+			for _, fh := range recs.FloatHistograms {
+				require.Equal(t, wantST(fh.T), fh.ST)
+			}
+		})
+	}
+}
 
 // BenchmarkGenerateRecords checks data generator performance.
 // Recommended CLI:

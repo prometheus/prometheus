@@ -136,17 +136,13 @@ func (c *ECSSDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the ECS Config.
+// Region resolution is deferred to initEcsClient; see loadRegion.
 func (c *ECSSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultECSSDConfig
 	type plain ECSSDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
-	}
-
-	c.Region, err = loadRegion(context.Background(), c.Region)
-	if err != nil {
-		return fmt.Errorf("could not determine AWS region: %w", err)
 	}
 
 	return c.HTTPClientConfig.Validate()
@@ -229,6 +225,10 @@ type ECSDiscovery struct {
 	cfg    *ECSSDConfig
 	ecs    ecsClient
 	ec2    ecsEC2Client
+
+	// region is the resolved region used for the AWS client and for the
+	// Source / __meta_ecs_region labels. Lazily populated by initEcsClient.
+	region string
 }
 
 // NewECSDiscovery returns a new ECSDiscovery which periodically refreshes its targets.
@@ -262,19 +262,21 @@ func (d *ECSDiscovery) initEcsClient(ctx context.Context) error {
 		return nil
 	}
 
-	if d.cfg.Region == "" {
-		return errors.New("region must be set for ECS service discovery")
-	}
-
 	// Build the HTTP client from the provided HTTPClientConfig.
 	client, err := config.NewClientFromConfig(d.cfg.HTTPClientConfig, "ecs_sd")
 	if err != nil {
 		return err
 	}
 
-	// Build the AWS config with the provided region.
+	// Resolve the region lazily. See ECSSDConfig.UnmarshalYAML.
+	d.region, err = loadRegion(ctx, d.cfg.Region)
+	if err != nil {
+		return err
+	}
+
+	// Build the AWS config with the resolved region.
 	var configOptions []func(*awsConfig.LoadOptions) error
-	configOptions = append(configOptions, awsConfig.WithRegion(d.cfg.Region))
+	configOptions = append(configOptions, awsConfig.WithRegion(d.region))
 	configOptions = append(configOptions, awsConfig.WithHTTPClient(client))
 
 	// Only set static credentials if both access key and secret key are provided
@@ -609,28 +611,29 @@ func (d *ECSDiscovery) describeEC2Instances(ctx context.Context, instanceIDs []s
 
 		for _, reservation := range resp.Reservations {
 			for _, instance := range reservation.Instances {
-				if instance.InstanceId != nil && instance.PrivateIpAddress != nil {
-					info := ec2InstanceInfo{
-						privateIP: *instance.PrivateIpAddress,
-						tags:      make(map[string]string),
-					}
-					if instance.PublicIpAddress != nil {
-						info.publicIP = *instance.PublicIpAddress
-					}
-					if instance.SubnetId != nil {
-						info.subnetID = *instance.SubnetId
-					}
-					if instance.InstanceType != "" {
-						info.instanceType = string(instance.InstanceType)
-					}
-					// Collect EC2 instance tags
-					for _, tag := range instance.Tags {
-						if tag.Key != nil && tag.Value != nil {
-							info.tags[*tag.Key] = *tag.Value
-						}
-					}
-					instanceInfo[*instance.InstanceId] = info
+				if instance.InstanceId == nil || instance.PrivateIpAddress == nil {
+					continue
 				}
+				info := ec2InstanceInfo{
+					privateIP: *instance.PrivateIpAddress,
+					tags:      make(map[string]string),
+				}
+				if instance.PublicIpAddress != nil {
+					info.publicIP = *instance.PublicIpAddress
+				}
+				if instance.SubnetId != nil {
+					info.subnetID = *instance.SubnetId
+				}
+				if instance.InstanceType != "" {
+					info.instanceType = string(instance.InstanceType)
+				}
+				// Collect EC2 instance tags
+				for _, tag := range instance.Tags {
+					if tag.Key != nil && tag.Value != nil {
+						info.tags[*tag.Key] = *tag.Value
+					}
+				}
+				instanceInfo[*instance.InstanceId] = info
 			}
 		}
 
@@ -713,13 +716,13 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	if len(clusters) == 0 {
 		return []*targetgroup.Group{
 			{
-				Source: d.cfg.Region,
+				Source: d.region,
 			},
 		}, nil
 	}
 
 	tg := &targetgroup.Group{
-		Source: d.cfg.Region,
+		Source: d.region,
 	}
 
 	// Fetch cluster details, service ARNs, and task ARNs in parallel
@@ -873,6 +876,11 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 						networkMode = "awsvpc"
 						var eniID string
 						for _, detail := range eniAttachment.Details {
+							// Name and Value are both optional in the ECS API.
+							// Skip the entry rather than dereferencing nil.
+							if detail.Name == nil || detail.Value == nil {
+								continue
+							}
 							switch *detail.Name {
 							case "privateIPv4Address":
 								ipAddress = *detail.Value
@@ -903,10 +911,10 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 								ec2InstancePrivateIP = info.privateIP
 								ec2InstancePublicIP = info.publicIP
 							} else {
-								d.logger.Debug("EC2 instance info not found", "instance", ec2InstanceID, "task", *task.TaskArn)
+								d.logger.Debug("EC2 instance info not found", "instance", ec2InstanceID, "task", aws.ToString(task.TaskArn))
 							}
 						} else {
-							d.logger.Debug("Container instance not found in map", "arn", *task.ContainerInstanceArn, "task", *task.TaskArn)
+							d.logger.Debug("Container instance not found in map", "arn", *task.ContainerInstanceArn, "task", aws.ToString(task.TaskArn))
 						}
 					}
 
@@ -929,20 +937,42 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 						return
 					}
 
+					// Only IPAddress, Region, LaunchType, HealthStatus and
+					// NetworkMode are always available here: the first is
+					// checked above and the rest are not pointers. Every other
+					// field is optional in the ECS API, so emit its label only
+					// when present rather than dereferencing nil.
 					labels := model.LabelSet{
-						ecsLabelClusterARN:       model.LabelValue(*cluster.ClusterArn),
-						ecsLabelCluster:          model.LabelValue(*cluster.ClusterName),
-						ecsLabelTaskGroup:        model.LabelValue(*task.Group),
-						ecsLabelTaskARN:          model.LabelValue(*task.TaskArn),
-						ecsLabelTaskDefinition:   model.LabelValue(*task.TaskDefinitionArn),
-						ecsLabelIPAddress:        model.LabelValue(ipAddress),
-						ecsLabelRegion:           model.LabelValue(d.cfg.Region),
-						ecsLabelLaunchType:       model.LabelValue(task.LaunchType),
-						ecsLabelAvailabilityZone: model.LabelValue(*task.AvailabilityZone),
-						ecsLabelDesiredStatus:    model.LabelValue(*task.DesiredStatus),
-						ecsLabelLastStatus:       model.LabelValue(*task.LastStatus),
-						ecsLabelHealthStatus:     model.LabelValue(task.HealthStatus),
-						ecsLabelNetworkMode:      model.LabelValue(networkMode),
+						ecsLabelIPAddress:    model.LabelValue(ipAddress),
+						ecsLabelRegion:       model.LabelValue(d.region),
+						ecsLabelLaunchType:   model.LabelValue(task.LaunchType),
+						ecsLabelHealthStatus: model.LabelValue(task.HealthStatus),
+						ecsLabelNetworkMode:  model.LabelValue(networkMode),
+					}
+
+					if cluster.ClusterArn != nil {
+						labels[ecsLabelClusterARN] = model.LabelValue(*cluster.ClusterArn)
+					}
+					if cluster.ClusterName != nil {
+						labels[ecsLabelCluster] = model.LabelValue(*cluster.ClusterName)
+					}
+					if task.Group != nil {
+						labels[ecsLabelTaskGroup] = model.LabelValue(*task.Group)
+					}
+					if task.TaskArn != nil {
+						labels[ecsLabelTaskARN] = model.LabelValue(*task.TaskArn)
+					}
+					if task.TaskDefinitionArn != nil {
+						labels[ecsLabelTaskDefinition] = model.LabelValue(*task.TaskDefinitionArn)
+					}
+					if task.AvailabilityZone != nil {
+						labels[ecsLabelAvailabilityZone] = model.LabelValue(*task.AvailabilityZone)
+					}
+					if task.DesiredStatus != nil {
+						labels[ecsLabelDesiredStatus] = model.LabelValue(*task.DesiredStatus)
+					}
+					if task.LastStatus != nil {
+						labels[ecsLabelLastStatus] = model.LabelValue(*task.LastStatus)
 					}
 
 					// Add subnet ID when available (awsvpc mode from ENI, bridge/host from EC2 instance)
@@ -986,11 +1016,11 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 						}
 					}
 
-					// If this is not a standalone task, add service information and tags
-					if !isStandaloneTask(task) {
-						service, ok := services[getServiceNameFromTaskGroup(task)]
+					// If this task belongs to a service, add service information and tags.
+					if serviceName, isServiceTask := strings.CutPrefix(aws.ToString(task.Group), "service:"); isServiceTask {
+						service, ok := services[serviceName]
 						if !ok {
-							d.logger.Debug("Service not found for task", "task", *task.TaskArn, "service", getServiceNameFromTaskGroup(task))
+							d.logger.Debug("Service not found for task", "task", aws.ToString(task.TaskArn), "service", serviceName)
 						}
 						if service.ServiceName != nil {
 							labels[ecsLabelService] = model.LabelValue(*service.ServiceName)
@@ -1047,13 +1077,4 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	tg.Targets = clusterTargets
 
 	return []*targetgroup.Group{tg}, nil
-}
-
-func isStandaloneTask(task types.Task) bool {
-	// A standalone task will have a group of "family:task-def-name"
-	return task.Group != nil && strings.HasPrefix(*task.Group, "family:")
-}
-
-func getServiceNameFromTaskGroup(task types.Task) string {
-	return strings.Split(*task.Group, ":")[1]
 }

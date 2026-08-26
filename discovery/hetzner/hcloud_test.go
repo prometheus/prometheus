@@ -36,6 +36,7 @@ func (s *hcloudSDTestSuite) SetupTest(t *testing.T) {
 }
 
 func TestHCloudSDRefresh(t *testing.T) {
+	t.Parallel()
 	suite := &hcloudSDTestSuite{}
 	suite.SetupTest(t)
 
@@ -64,7 +65,6 @@ func TestHCloudSDRefresh(t *testing.T) {
 			"__meta_hetzner_server_status":                           model.LabelValue("running"),
 			"__meta_hetzner_public_ipv4":                             model.LabelValue("1.2.3.4"),
 			"__meta_hetzner_public_ipv6_network":                     model.LabelValue("2001:db8::/64"),
-			"__meta_hetzner_datacenter":                              model.LabelValue("fsn1-dc8"),
 			"__meta_hetzner_hcloud_image_name":                       model.LabelValue("ubuntu-20.04"),
 			"__meta_hetzner_hcloud_image_description":                model.LabelValue("Ubuntu 20.04 Standard 64 bit"),
 			"__meta_hetzner_hcloud_image_os_flavor":                  model.LabelValue("ubuntu"),
@@ -88,7 +88,6 @@ func TestHCloudSDRefresh(t *testing.T) {
 			"__meta_hetzner_server_id":                               model.LabelValue("44"),
 			"__meta_hetzner_server_name":                             model.LabelValue("another-server"),
 			"__meta_hetzner_server_status":                           model.LabelValue("stopped"),
-			"__meta_hetzner_datacenter":                              model.LabelValue("fsn1-dc14"),
 			"__meta_hetzner_public_ipv4":                             model.LabelValue("1.2.3.5"),
 			"__meta_hetzner_public_ipv6_network":                     model.LabelValue("2001:db9::/64"),
 			"__meta_hetzner_hcloud_image_name":                       model.LabelValue("ubuntu-20.04"),
@@ -115,7 +114,6 @@ func TestHCloudSDRefresh(t *testing.T) {
 			"__meta_hetzner_server_id":                               model.LabelValue("36"),
 			"__meta_hetzner_server_name":                             model.LabelValue("deleted-image-server"),
 			"__meta_hetzner_server_status":                           model.LabelValue("stopped"),
-			"__meta_hetzner_datacenter":                              model.LabelValue("fsn1-dc14"),
 			"__meta_hetzner_public_ipv4":                             model.LabelValue("1.2.3.6"),
 			"__meta_hetzner_public_ipv6_network":                     model.LabelValue("2001:db7::/64"),
 			"__meta_hetzner_hcloud_location":                         model.LabelValue("fsn1"),
@@ -130,6 +128,7 @@ func TestHCloudSDRefresh(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, labelSet, targetGroup.Targets[i])
 		})
 	}

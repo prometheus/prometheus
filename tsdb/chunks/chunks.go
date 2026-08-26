@@ -76,28 +76,22 @@ func (p HeadChunkRef) Unpack() (HeadSeriesRef, HeadChunkID) {
 }
 
 // HeadChunkID refers to a specific chunk in a series (memSeries) in the Head.
-// Each memSeries has its own monotonically increasing number to refer to its chunks.
-// If the HeadChunkID value is...
-//   - memSeries.firstChunkID+len(memSeries.mmappedChunks), it's the head chunk.
-//   - less than the above, but >= memSeries.firstID, then it's
-//     memSeries.mmappedChunks[i] where i = HeadChunkID - memSeries.firstID.
+// Each memSeries has its own IDs for in-order and out-of-order chunks.
+//
+// IDs occupy bits 0-22 of HeadChunkRef (bit 23 is the OOO flag) and wrap modulo
+// 2^23 (see wrapChunkID, headChunkID, and oooHeadChunkID in tsdb/head_read.go).
+// They are not a globally monotonic counter: never order them, compare them, or
+// bound-check them directly. Recover the live-chunk index with
+//
+//	i = wrapChunkID(HeadChunkID - firstChunkID)
+//
+// For in-order chunks, i indexes mmappedChunks, then the headChunks linked list.
 //
 // If memSeries.headChunks is non-nil it points to a *memChunk that holds the current
-// "open" (accepting appends) instance. *memChunk is a linked list and memChunk.next pointer
-// might link to the older *memChunk instance.
+// "open" (accepting appends) instance. *memChunk is a linked list and memChunk.prev
+// pointer might link to the older *memChunk instance.
 // If there are multiple *memChunk instances linked to each other from memSeries.headChunks
-// they will be m-mapped as soon as possible leaving only "open" *memChunk instance.
-//
-// Example:
-// assume a memSeries.firstChunkID=7 and memSeries.mmappedChunks=[p5,p6,p7,p8,p9].
-//
-//	| HeadChunkID value | refers to ...                                                                          |
-//	|-------------------|----------------------------------------------------------------------------------------|
-//	|               0-6 | chunks that have been compacted to blocks, these won't return data for queries in Head |
-//	|              7-11 | memSeries.mmappedChunks[i] where i is 0 to 4.                                          |
-//	|                12 |                                                         *memChunk{next: nil}
-//	|                13 |                                         *memChunk{next: ^}
-//	|                14 | memSeries.headChunks -> *memChunk{next: ^}
+// they will be m-mapped as soon as possible leaving only one "open" *memChunk instance.
 type HeadChunkID uint64
 
 // BlockChunkRef refers to a chunk within a persisted block.
@@ -166,7 +160,7 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 	}
 
 	// Request storing ST in the chunk if available.
-	c, err := sampleType.NewChunk(hasST)
+	c, err := sampleType.NewChunk(hasST, hasST)
 	if err != nil {
 		return Meta{}, err
 	}
@@ -431,26 +425,25 @@ func (w *Writer) cut() error {
 	return nil
 }
 
+// cutSegmentFile creates the next segment file in dirFile and writes its header.
+// It does not fsync the file content, so a crash may leave the file with missing or invalid content.
+// Callers must account for this.
 func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, allocSize int64) (headerSize int, newFile *os.File, seq int, returnErr error) {
 	p, seq, err := nextSequenceFile(dirFile.Name())
 	if err != nil {
 		return 0, nil, 0, fmt.Errorf("next sequence file: %w", err)
 	}
-	ptmp := p + ".tmp"
-	f, err := os.OpenFile(ptmp, os.O_WRONLY|os.O_CREATE, 0o666)
+	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE, 0o666)
 	if err != nil {
-		return 0, nil, 0, fmt.Errorf("open temp file: %w", err)
+		return 0, nil, 0, fmt.Errorf("open segment file: %w", err)
 	}
 	defer func() {
 		if returnErr != nil {
-			errs := []error{
-				returnErr,
-			}
+			errs := []error{returnErr}
 			if f != nil {
 				errs = append(errs, f.Close())
 			}
-			// Calling RemoveAll on a non-existent file does not return error.
-			errs = append(errs, os.RemoveAll(ptmp))
+			errs = append(errs, os.RemoveAll(p))
 			returnErr = errors.Join(errs...)
 		}
 	}()
@@ -463,7 +456,7 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 		return 0, nil, 0, fmt.Errorf("sync directory: %w", err)
 	}
 
-	// Write header metadata for new file.
+	// Write header metadata.
 	metab := make([]byte, SegmentHeaderSize)
 	binary.BigEndian.PutUint32(metab[:MagicChunksSize], magicNumber)
 	metab[4] = chunksFormat
@@ -471,24 +464,6 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 	n, err := f.Write(metab)
 	if err != nil {
 		return 0, nil, 0, fmt.Errorf("write header: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		return 0, nil, 0, fmt.Errorf("close temp file: %w", err)
-	}
-	f = nil
-
-	if err := fileutil.Rename(ptmp, p); err != nil {
-		return 0, nil, 0, fmt.Errorf("replace file: %w", err)
-	}
-
-	f, err = os.OpenFile(p, os.O_WRONLY, 0o666)
-	if err != nil {
-		return 0, nil, 0, fmt.Errorf("open final file: %w", err)
-	}
-	// Skip header for further writes.
-	offset := int64(n)
-	if _, err := f.Seek(offset, 0); err != nil {
-		return 0, nil, 0, fmt.Errorf("seek to %d in final file: %w", offset, err)
 	}
 	return n, f, seq, nil
 }

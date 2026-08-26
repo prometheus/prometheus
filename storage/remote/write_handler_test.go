@@ -145,7 +145,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 }
 
 func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
-	payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
@@ -384,7 +384,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			input: append(
 				// Series with test_metric1="test_metric1" labels.
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{2, 2}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
-				writeV2RequestFixture.Timeseries...),
+				writeV2RequestFixture.Timeseries...,
+			),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "invalid metric name or labels, got {test_metric1=\"test_metric1\"}\n",
 		},
@@ -393,7 +394,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			input: append(
 				// Series with __name__="" labels.
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 0}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
-				writeV2RequestFixture.Timeseries...),
+				writeV2RequestFixture.Timeseries...,
+			),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "invalid metric name or labels, got {__name__=\"\"}\n",
 		},
@@ -402,7 +404,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			input: append(
 				// Series with __name__="test_metric1",test_metric1="test_metric1",test_metric1="test_metric1" labels.
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 2, 2, 2, 2}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
-				writeV2RequestFixture.Timeseries...),
+				writeV2RequestFixture.Timeseries...,
+			),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "invalid labels for series, labels {__name__=\"test_metric1\", test_metric1=\"test_metric1\", test_metric1=\"test_metric1\"}, duplicated label test_metric1\n",
 		},
@@ -410,7 +413,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			desc: "Partial write; first series with odd number of label refs",
 			input: append(
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 3}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
-				writeV2RequestFixture.Timeseries...),
+				writeV2RequestFixture.Timeseries...,
+			),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "parsing labels for series [1 2 3]: invalid labelRefs length 3\n",
 		},
@@ -418,7 +422,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			desc: "Partial write; first series with out-of-bounds symbol references",
 			input: append(
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 999}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
-				writeV2RequestFixture.Timeseries...),
+				writeV2RequestFixture.Timeseries...,
+			),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "parsing labels for series [1 999]: labelRefs 1 (name) = 999 (value) outside of symbols table (size 18)\n",
 		},
@@ -433,7 +438,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 					},
 					Samples: []writev2.Sample{{Value: 1, Timestamp: 1}},
 				}},
-				writeV2RequestFixture.Timeseries...),
+				writeV2RequestFixture.Timeseries...,
+			),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "parsing metadata for series [1 2]: metadata unit_ref 999 outside of symbols table (size 18)\n",
 		},
@@ -448,7 +454,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 					},
 					Samples: []writev2.Sample{{Value: 1, Timestamp: 1}},
 				}},
-				writeV2RequestFixture.Timeseries...),
+				writeV2RequestFixture.Timeseries...,
+			),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "parsing metadata for series [1 2]: metadata help_ref 999 outside of symbols table (size 18)\n",
 		},
@@ -464,7 +471,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 						Timestamp:  1,
 					}},
 				}},
-				writeV2RequestFixture.Timeseries...),
+				writeV2RequestFixture.Timeseries...,
+			),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "TimeSeries must contain at least one sample or histogram for series {__name__=\"test_metric1\"}\n",
 		},
@@ -492,7 +500,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			desc: "Partial write; first series with one OOO histogram sample",
 			input: func() []writev2.TimeSeries {
 				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
-				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, writev2.FromFloatHistogram(1, testHistogram.ToFloat(nil)))
+				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, writev2.FromFloatHistogram(0, 1, testHistogram.ToFloat(nil)))
 				return f.Timeseries
 			}(),
 			expectedCode:     http.StatusBadRequest,
@@ -718,7 +726,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			if tc.symbols != nil {
 				symbols = tc.symbols
 			}
-			payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), tc.input, symbols, nil, nil, nil, "snappy")
+			payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), tc.input, symbols, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
 			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
@@ -900,7 +908,7 @@ func TestRemoteWriteHandler_V2Message_NoDuplicateTypeAndUnitLabels(t *testing.T)
 				},
 			}
 
-			payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), ts, symbolTable.Symbols(), nil, nil, nil, "snappy")
+			payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), ts, symbolTable.Symbols(), nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
 			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
@@ -1077,9 +1085,9 @@ func BenchmarkRemoteWriteHandler(b *testing.B) {
 		{
 			name: "V2 Write",
 			payloadFunc: func() ([]byte, error) {
-				buf, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{{
+				buf, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{{
 					LabelsRefs: []uint32{0, 1, 2, 3},
-					Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, &testHistogram)},
+					Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, 0, &testHistogram)},
 				}}, labelStrings,
 					nil, nil, nil, "snappy")
 				return buf, err
@@ -1195,9 +1203,9 @@ func TestHistogramValidationErrorHandling(t *testing.T) {
 					st := writev2.NewSymbolTable()
 					ts := []writev2.TimeSeries{{
 						LabelsRefs: st.SymbolizeLabels(labels.FromStrings("__name__", "test"), nil),
-						Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, &tc.hist)},
+						Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, 1, &tc.hist)},
 					}}
-					buf, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), ts, st.Symbols(), nil, nil, nil, "snappy")
+					buf, _, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), ts, st.Symbols(), nil, nil, nil, "snappy")
 				}
 				require.NoError(t, err)
 
@@ -1215,7 +1223,7 @@ func TestHistogramValidationErrorHandling(t *testing.T) {
 }
 
 func TestCommitErr_V2Message(t *testing.T) {
-	payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
 	req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
@@ -1604,14 +1612,14 @@ func TestHistogramsReduction(t *testing.T) {
 					},
 				}, nil, nil, nil, nil, "snappy")
 			} else {
-				payload, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
+				payload, _, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
 					{
 						LabelsRefs: []uint32{0, 1},
-						Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, highSchemaHistogram)},
+						Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, 1, highSchemaHistogram)},
 					},
 					{
 						LabelsRefs: []uint32{0, 2},
-						Histograms: []writev2.Histogram{writev2.FromFloatHistogram(2, highSchemaHistogram.ToFloat(nil))},
+						Histograms: []writev2.Histogram{writev2.FromFloatHistogram(0, 2, highSchemaHistogram.ToFloat(nil))},
 					},
 				}, []string{"__name__", "test_metric1", "test_metric2"},
 					nil, nil, nil, "snappy")
@@ -1645,7 +1653,7 @@ func TestHistogramsReduction(t *testing.T) {
 func TestRemoteWriteHandler_ResponseStats(t *testing.T) {
 	payloadV1, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
 	require.NoError(t, err)
-	payloadV2, _, _, err := buildV2WriteRequest(nil, writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	payloadV2, _, _, _, err := buildV2WriteRequest(nil, writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
 	for _, tt := range []struct {

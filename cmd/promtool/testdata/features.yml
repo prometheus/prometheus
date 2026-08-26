@@ -8,3 +8,5 @@ groups:
         expr: rate(up[1m * 2])
       - record: promql-extended-range-selectors
         expr: rate(up[1m] anchored)
+      - record: promql-binop-fill-modifiers
+        expr: rate(up[5m]) + fill(0) rate(down[5m])

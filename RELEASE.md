@@ -23,8 +23,8 @@ Please see [the v2.55 RELEASE.md](https://github.com/prometheus/prometheus/blob/
 | v3.11          | 2026-03-25                                 | Julien Pivotto (GitHub: @roidelapluie)                                  |
 | v3.12          | 2026-05-06                                 | Bartek Plotka (GitHub: @bwplotka)                                       |
 | v3.13          | 2026-06-17                                 | György Krajcsovits (Github: @krajorama)                                 |
-| v3.14          | 2026-07-29                                 | **volunteer welcome**                                                   |
-| v3.15          | 2026-09-09                                 | **volunteer welcome**                                                   |
+| v3.14          | 2026-07-29                                 | Ayoub Mrini (Github: @machine424)                                       |
+| v3.15          | 2026-09-09                                 | Jan Fajerski (GitHub: @jan--f)                                          |
 | v3.16          | 2026-10-21                                 | **volunteer welcome**                                                   |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
@@ -62,7 +62,7 @@ Maintaining the release branches for older minor releases happens on a best effo
 
 A few days before a major or minor release, consider updating the dependencies.
 
-Note that we use [Dependabot](.github/dependabot.yml) to continuously update most things automatically. Therefore, most dependencies should be up to date.
+Note that we use [Dependabot](scripts/dependabot.yml) to continuously update most things automatically. Therefore, most dependencies should be up to date.
 Check the [dependencies GitHub label](https://github.com/prometheus/prometheus/labels/dependencies) to see if there are any pending updates.
 
 This bot currently does not manage `+incompatible` and `v0.0.0` in the version specifier for Go modules.

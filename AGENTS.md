@@ -75,6 +75,13 @@ Example:
 - Tests should attempt to mirror realistic data and/or behaviour.
 - Use only exported APIs in tests where possible — this keeps tests closer to
   real library usage and simplifies review.
+- Prefer adding cases to existing table-driven tests over writing new test
+  functions, even if the existing test needs minor adjustments to fit the new
+  case. Where it helps, convert an existing test into a table-driven test
+  rather than duplicating it.
+- Inline subtests in their parent test function. Extract a helper only when
+  setup or behavior is genuinely reused; do not extract one-off subtests merely
+  to avoid indentation.
 
 ---
 

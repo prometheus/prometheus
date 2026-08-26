@@ -22,6 +22,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"reflect"
@@ -40,6 +41,8 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
@@ -92,7 +95,10 @@ type scrapePool struct {
 	mtx    sync.Mutex
 	config *config.ScrapeConfig
 	client *http.Client
-	loops  map[uint64]loop
+	// unixSocketClients caches dedicated HTTP clients for targets scraped
+	// through a unix domain socket, keyed by socket path. See clientForTarget.
+	unixSocketClients map[string]*http.Client
+	loops             map[uint64]loop
 
 	symbolTable           *labels.SymbolTable
 	lastSymbolTableCheck  time.Time
@@ -193,6 +199,36 @@ func (sp *scrapePool) newLoop(opts scrapeLoopOptions) loop {
 	return newScrapeLoop(opts)
 }
 
+// clientForTarget returns the HTTP client that scrapes of the given target
+// must use. Targets scraped through a unix domain socket get a dedicated
+// client per socket path: the HTTP transport pools idle connections by
+// scheme and host:port only, so sharing one client across sockets could
+// reuse a connection dialed to one socket for a target on another one.
+// Must be called with sp.mtx held.
+func (sp *scrapePool) clientForTarget(t *Target) *http.Client {
+	socketPath := t.labels.Get(UnixSocketLabel)
+	if socketPath == "" {
+		return sp.client
+	}
+	if client, ok := sp.unixSocketClients[socketPath]; ok {
+		return client
+	}
+	client, err := newUnixSocketScrapeClient(socketPath, sp.config.HTTPClientConfig, sp.config.JobName, sp.options.HTTPClientOptions...)
+	if err != nil {
+		// The same configuration was already used to build sp.client, so
+		// this should never happen. Fail the target's scrapes rather than
+		// falling back to the shared client, which would silently dial the
+		// target's __address__ over TCP instead of the socket.
+		sp.logger.Error("Failed to create unix socket scrape client", "socket_path", socketPath, "err", err)
+		client = &http.Client{Transport: failingRoundTripper{err: fmt.Errorf("creating unix socket scrape client for %q: %w", socketPath, err)}}
+	}
+	if sp.unixSocketClients == nil {
+		sp.unixSocketClients = make(map[string]*http.Client)
+	}
+	sp.unixSocketClients[socketPath] = client
+	return client
+}
+
 func (sp *scrapePool) ActiveTargets() []*Target {
 	sp.targetMtx.Lock()
 	defer sp.targetMtx.Unlock()
@@ -258,6 +294,9 @@ func (sp *scrapePool) stop() {
 	// context (via sl.parentCtx) and would fail if the context was cancelled early.
 	sp.cancel()
 	sp.client.CloseIdleConnections()
+	for _, c := range sp.unixSocketClients {
+		c.CloseIdleConnections()
+	}
 
 	if sp.config != nil {
 		sp.metrics.targetScrapePoolSyncsCounter.DeleteLabelValues(sp.config.JobName)
@@ -285,20 +324,27 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		return err
 	}
 
-	reuseCache := reusableCache(sp.config, cfg)
-	sp.config = cfg
-	oldClient := sp.client
-	sp.client = client
-
 	// Validate scheme so we don't need to do it later.
 
 	if _, err = config.ToEscapingScheme(cfg.MetricNameEscapingScheme, cfg.MetricNameValidationScheme); err != nil {
 		return fmt.Errorf("scrapePool.reload: invalid metric name escaping scheme, %w", err)
 	}
+
+	reuseCache := reusableCache(sp.config, cfg)
+	sp.config = cfg
+	oldClient := sp.client
+	sp.client = client
+	// The new configuration may change the HTTP client settings, so the
+	// per-socket clients are rebuilt by restartLoops below.
+	oldUnixSocketClients := sp.unixSocketClients
+	sp.unixSocketClients = nil
 	sp.metrics.targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
 
 	sp.restartLoops(reuseCache)
 	oldClient.CloseIdleConnections()
+	for _, c := range oldUnixSocketClients {
+		c.CloseIdleConnections()
+	}
 	sp.metrics.targetReloadIntervalLength.WithLabelValues(time.Duration(sp.config.ScrapeInterval).String()).Observe(
 		time.Since(start).Seconds(),
 	)
@@ -330,7 +376,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 			target: t,
 			scraper: &targetScraper{
 				Target:               t,
-				client:               sp.client,
+				client:               sp.clientForTarget(t),
 				timeout:              targetTimeout,
 				bodySizeLimit:        int64(sp.config.BodySizeLimit),
 				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
@@ -438,8 +484,16 @@ func (sp *scrapePool) sync(targets []*Target) {
 
 	sp.targetMtx.Lock()
 	escapingScheme, _ := config.ToEscapingScheme(sp.config.MetricNameEscapingScheme, sp.config.MetricNameValidationScheme)
+	var socketsInUse map[string]struct{}
 	for _, t := range targets {
 		hash := t.hash()
+
+		if socketPath := t.labels.Get(UnixSocketLabel); socketPath != "" {
+			if socketsInUse == nil {
+				socketsInUse = make(map[string]struct{})
+			}
+			socketsInUse[socketPath] = struct{}{}
+		}
 
 		if _, ok := sp.activeTargets[hash]; !ok {
 			// The scrape interval and timeout labels are set to the config's values initially,
@@ -454,7 +508,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 				target: t,
 				scraper: &targetScraper{
 					Target:               t,
-					client:               sp.client,
+					client:               sp.clientForTarget(t),
 					timeout:              targetTimeout,
 					bodySizeLimit:        int64(sp.config.BodySizeLimit),
 					acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
@@ -499,6 +553,15 @@ func (sp *scrapePool) sync(targets []*Target) {
 
 			delete(sp.loops, hash)
 			delete(sp.activeTargets, hash)
+		}
+	}
+
+	// Drop cached unix socket clients whose socket is no longer scraped by
+	// any target.
+	for socketPath, client := range sp.unixSocketClients {
+		if _, ok := socketsInUse[socketPath]; !ok {
+			client.CloseIdleConnections()
+			delete(sp.unixSocketClients, socketPath)
 		}
 	}
 
@@ -742,7 +805,8 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 
 		s.req = req
 	}
-	ctx, span := otel.Tracer("").Start(ctx, "Scrape", trace.WithSpanKind(trace.SpanKindClient))
+	ctx, span := otel.Tracer("").Start(ctx, "scrapeRequest", trace.WithSpanKind(trace.SpanKindClient))
+	span.SetAttributes(attribute.String("url", s.URL().Redacted()))
 	defer span.End()
 
 	return s.client.Do(s.req.WithContext(ctx))
@@ -1021,6 +1085,32 @@ func (c *scrapeCache) getDropped(met []byte) bool {
 		*iterp = c.iter
 	}
 	return ok
+}
+
+// updateRef points the cache entry at a new storage reference, e.g. because the
+// storage garbage collected the series and had to recreate it. Staleness is tracked
+// per reference, so the tracking has to follow the entry to the new reference,
+// otherwise the series looks like it stopped being exposed and gets a stale marker.
+func (c *scrapeCache) updateRef(ce *cacheEntry, ref storage.SeriesRef) {
+	if ce.ref == ref {
+		return
+	}
+	if ce.ref != 0 {
+		moveStaleness(c.seriesPrev, ce, ref)
+		moveStaleness(c.seriesCur, ce, ref)
+	}
+	ce.ref = ref
+}
+
+// moveStaleness re-keys the staleness tracking of ce from ce.ref to ref. Whether the
+// series is considered stale is left as it is, only the reference it is tracked under
+// changes. Tracking that belongs to another cache entry is left alone.
+func moveStaleness(tracked map[storage.SeriesRef]*cacheEntry, ce *cacheEntry, ref storage.SeriesRef) {
+	if tracked[ce.ref] != ce {
+		return
+	}
+	delete(tracked, ce.ref)
+	tracked[ref] = ce
 }
 
 func (c *scrapeCache) trackStaleness(ref storage.SeriesRef, ce *cacheEntry) {
@@ -1342,6 +1432,9 @@ func (sl *scrapeLoop) appender() scrapeLoopAppendAdapter {
 func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- error) time.Time {
 	start := time.Now()
 
+	spanCtx, span := otel.Tracer("").Start(sl.appenderCtx, "scrape")
+	defer span.End()
+
 	// Only record after the first scrape.
 	if !last.IsZero() {
 		sl.metrics.targetIntervalLength.WithLabelValues(sl.interval.String()).Observe(
@@ -1355,13 +1448,21 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	var total, added, seriesAdded, bytesRead int
 	var err, appErr, scrapeErr error
 
+	_, appenderSpan := otel.Tracer("").Start(spanCtx, "newAppender")
 	app := sl.appender()
+	appenderSpan.End()
 	defer func() {
 		if err != nil {
 			_ = app.Rollback()
 			return
 		}
+		_, commitSpan := otel.Tracer("").Start(spanCtx, "scrapeCommit")
 		err = app.Commit()
+		if err != nil {
+			commitSpan.RecordError(err)
+			commitSpan.SetStatus(codes.Error, err.Error())
+		}
+		commitSpan.End()
 		if sl.reportExtraMetrics {
 			totalDuration := time.Since(start)
 			// Record total scrape duration metric.
@@ -1373,7 +1474,14 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	}()
 
 	defer func() {
-		if err = sl.report(app, appendTime, time.Since(start), total, added, seriesAdded, bytesRead, scrapeErr); err != nil {
+		_, reportSpan := otel.Tracer("").Start(spanCtx, "scrapeReport")
+		err = sl.report(app, appendTime, time.Since(start), total, added, seriesAdded, bytesRead, scrapeErr)
+		if err != nil {
+			reportSpan.RecordError(err)
+			reportSpan.SetStatus(codes.Error, err.Error())
+		}
+		reportSpan.End()
+		if err != nil {
 			sl.l.Warn("Appending scrape report failed", "err", err)
 		}
 	}()
@@ -1400,13 +1508,20 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	var resp *http.Response
 	var b []byte
 	var buf *bytes.Buffer
-	scrapeCtx, cancel := context.WithTimeout(sl.parentCtx, sl.timeout)
+	scrapeCtx, cancel := context.WithTimeout(trace.ContextWithSpan(sl.parentCtx, span), sl.timeout)
 	resp, scrapeErr = sl.scraper.scrape(scrapeCtx)
 	if scrapeErr == nil {
 		b = sl.buffers.Get(sl.lastScrapeSize).([]byte)
 		defer sl.buffers.Put(b)
 		buf = bytes.NewBuffer(b)
+		// Trace the response body read and decompression into the buffer.
+		_, readSpan := otel.Tracer("").Start(spanCtx, "scrapeRead")
 		contentType, scrapeErr = sl.scraper.readResponse(scrapeCtx, resp, buf)
+		if scrapeErr != nil {
+			readSpan.RecordError(scrapeErr)
+			readSpan.SetStatus(codes.Error, scrapeErr.Error())
+		}
+		readSpan.End()
 	}
 	cancel()
 
@@ -1439,7 +1554,13 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 
 	// A failed scrape is the same as an empty scrape,
 	// we still call sl.append to trigger stale markers.
+	_, appendSpan := otel.Tracer("").Start(spanCtx, "scrapeAppend")
 	total, added, seriesAdded, appErr = app.append(b, contentType, appendTime)
+	if appErr != nil {
+		appendSpan.RecordError(appErr)
+		appendSpan.SetStatus(codes.Error, appErr.Error())
+	}
+	appendSpan.End()
 	if appErr != nil {
 		_ = app.Rollback()
 		app = sl.appender()
@@ -1455,6 +1576,17 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 
 	if scrapeErr == nil {
 		scrapeErr = appErr
+	}
+
+	span.SetAttributes(
+		attribute.Int("samples_scraped", total),
+		attribute.Int("samples_added", added),
+		attribute.Int("series_added", seriesAdded),
+		attribute.Int("bytes", bytesRead),
+	)
+	if scrapeErr != nil {
+		span.RecordError(scrapeErr)
+		span.SetStatus(codes.Error, scrapeErr.Error())
 	}
 
 	return start
@@ -1776,6 +1908,10 @@ loop:
 		}
 
 		if err == nil {
+			// Append may return a new ref; keep the cache in sync.
+			if ce != nil && ref != 0 {
+				sl.cache.updateRef(ce, ref)
+			}
 			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil && ce.ref != 0 {
 				sl.cache.trackStaleness(ce.ref, ce)
 			}
@@ -2287,6 +2423,38 @@ func pickSchema(bucketFactor float64) int32 {
 	}
 }
 
+// UnixSocketLabel is the name of the label that holds the unix socket path
+// to connect to for scraping. When set, the scrape client will connect via
+// the specified Unix domain socket instead of the target's __address__.
+const UnixSocketLabel = "__unix_socket__"
+
+// newUnixSocketScrapeClient returns a scrape client that dials the given
+// unix domain socket instead of the request URL host. Each socket path needs
+// its own client: the HTTP transport pools idle connections by scheme and
+// host:port only, so a client shared across sockets could reuse a connection
+// dialed to a different socket.
+func newUnixSocketScrapeClient(socketPath string, cfg config_util.HTTPClientConfig, name string, optFuncs ...config_util.HTTPClientOption) (*http.Client, error) {
+	// Using WithDialContextFunc ensures the dial function is installed
+	// during transport construction, before any auth or TLS file-watching
+	// wrappers are applied. Prepend so that callers can override this
+	// default via optFuncs.
+	optFuncs = append([]config_util.HTTPClientOption{config_util.WithDialContextFunc(
+		func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+		},
+	)}, optFuncs...)
+	return newScrapeClient(cfg, name, optFuncs...)
+}
+
+// failingRoundTripper fails every request with a fixed error. It stands in
+// for a scrape client that could not be built, so that the affected targets
+// fail to scrape instead of silently scraping the wrong endpoint.
+type failingRoundTripper struct{ err error }
+
+func (rt failingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, rt.err
+}
+
 func newScrapeClient(cfg config_util.HTTPClientConfig, name string, optFuncs ...config_util.HTTPClientOption) (*http.Client, error) {
 	client, err := config_util.NewClientFromConfig(cfg, name, optFuncs...)
 	if err != nil {
@@ -2296,6 +2464,7 @@ func newScrapeClient(cfg config_util.HTTPClientConfig, name string, optFuncs ...
 		client.Transport,
 		otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
 			return otelhttptrace.NewClientTrace(ctx, otelhttptrace.WithoutSubSpans())
-		}))
+		}),
+	)
 	return client, nil
 }

@@ -102,7 +102,7 @@ URL query parameters:
    is capped by the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Doesn't affect scalars or strings but truncates the number of series for matrices and vectors. Optional. 0 means disabled.
 - `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
-- `stats=<string>`: Include query statistics in the response. If set to `all`, includes detailed statistics (timings and sample counts). Optional. See [Query statistics](#query-statistics).
+- `stats=<string>`: Include query statistics in the response. Supported values are `true` (basic statistics) and `all` (additionally includes detailed per-step statistics: timings and sample counts). Any other non-empty value currently behaves like `true`, but is deprecated, adds a warning to the response, and will be rejected in the next major release. Optional. See [Query statistics](#query-statistics).
 
 The current server time is used if the `time` parameter is omitted.
 
@@ -176,7 +176,7 @@ URL query parameters:
    is capped by the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 - `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
-- `stats=<string>`: Include query statistics in the response. If set to `all`, includes detailed statistics (timings and sample counts). Optional. See [Query statistics](#query-statistics).
+- `stats=<string>`: Include query statistics in the response. Supported values are `true` (basic statistics) and `all` (additionally includes detailed per-step statistics: timings and sample counts). Any other non-empty value currently behaves like `true`, but is deprecated, adds a warning to the response, and will be rejected in the next major release. Optional. See [Query statistics](#query-statistics).
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -838,6 +838,36 @@ curl http://localhost:9090/api/v1/scrape_pools
 ```
 
 *New in v2.42*
+
+### Scrape pool configuration
+
+This endpoint is **experimental** and might change in the future. It is
+currently intended for use by Prometheus' own web UI.
+
+The following endpoint returns the effective configuration for a scrape pool.
+This includes scrape configurations loaded through `scrape_config_files`.
+Authentication credentials and other secrets are redacted.
+
+The `scrapePool` query parameter is required and must contain the name of a
+configured scrape pool.
+
+```
+GET /api/v1/scrape_pools/config?scrapePool=<scrape_pool_name>
+```
+
+```bash
+curl -G http://localhost:9090/api/v1/scrape_pools/config \
+  --data-urlencode 'scrapePool=prometheus'
+```
+
+```json
+{
+  "status": "success",
+  "data": {
+    "yaml": "job_name: prometheus\nscrape_interval: 15s\nscrape_timeout: 10s\nmetrics_path: /metrics\nscheme: http\n"
+  }
+}
+```
 
 ## Targets
 
@@ -1838,6 +1868,14 @@ Enable the remote write receiver by setting
 endpoint is `/api/v1/write`. Find more details [here](../storage.md#overview).
 
 *New in v2.33*
+
+## Remote Read
+
+`POST /api/v1/read`
+
+Prometheus exposes a remote read endpoint that allows external systems (such as Thanos) to read data from the TSDB.
+
+For more details, see the [Remote Read API documentation](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) and the guide on [Remote Endpoints and Storage](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage).
 
 ## OTLP Receiver
 

@@ -112,6 +112,72 @@ func TestGetBoundExponential(t *testing.T) {
 	}
 }
 
+func TestBucketFractionBelow(t *testing.T) {
+	scenarios := []struct {
+		name   string
+		bucket Bucket[float64]
+		v      float64
+		linear bool
+		want   float64
+	}{
+		{
+			name:   "linear, midpoint",
+			bucket: Bucket[float64]{Lower: 0, Upper: 10, Count: 100},
+			v:      5,
+			linear: true,
+			want:   0.5,
+		},
+		{
+			name:   "linear, quarter",
+			bucket: Bucket[float64]{Lower: 2, Upper: 6, Count: 100},
+			v:      3,
+			linear: true,
+			want:   0.25,
+		},
+		{
+			name:   "linear, negative bucket",
+			bucket: Bucket[float64]{Lower: -10, Upper: -5, Count: 100},
+			v:      -6,
+			linear: true,
+			want:   0.8,
+		},
+		{
+			name:   "exponential, positive bucket at geometric midpoint",
+			bucket: Bucket[float64]{Lower: 2, Upper: 8, Count: 100},
+			v:      4,
+			linear: false,
+			want:   0.5,
+		},
+		{
+			name:   "exponential, positive bucket lower quarter of log scale",
+			bucket: Bucket[float64]{Lower: 1, Upper: 16, Count: 100},
+			v:      2,
+			linear: false,
+			want:   0.25,
+		},
+		{
+			name:   "exponential, negative bucket at geometric midpoint",
+			bucket: Bucket[float64]{Lower: -8, Upper: -2, Count: 100},
+			v:      -4,
+			linear: false,
+			want:   0.5,
+		},
+		{
+			name:   "exponential, negative bucket",
+			bucket: Bucket[float64]{Lower: -4, Upper: -2, Count: 100},
+			v:      -3,
+			linear: false,
+			want:   0.41503749927884383,
+		},
+	}
+
+	for _, s := range scenarios {
+		t.Run(s.name, func(t *testing.T) {
+			require.InDelta(t, s.want, s.bucket.FractionBelow(s.v, s.linear), 1e-12)
+		})
+	}
+}
+
 func TestReduceResolutionHistogram(t *testing.T) {
 	cases := []struct {
 		spans           []Span

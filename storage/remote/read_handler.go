@@ -164,8 +164,10 @@ func (h *readHandler) remoteReadSamples(
 			for _, w := range ws {
 				h.logger.Warn("Warnings on remote read query", "err", w.Error())
 			}
-			for _, ts := range resp.Results[i].Timeseries {
-				ts.Labels = MergeLabels(ts.Labels, sortedExternalLabels)
+			if len(sortedExternalLabels) > 0 {
+				for _, ts := range resp.Results[i].Timeseries {
+					ts.Labels = MergeLabels(ts.Labels, sortedExternalLabels)
+				}
 			}
 			return nil
 		}(); err != nil {
@@ -193,6 +195,9 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 		http.Error(w, "internal http.ResponseWriter does not implement http.Flusher interface", http.StatusInternalServerError)
 		return
 	}
+
+	cw := NewChunkedWriter(w, f)
+	defer cw.Close()
 
 	for i, query := range req.Queries {
 		if err := func() error {
@@ -225,7 +230,7 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 			}
 
 			ws, err := StreamChunkedReadResponses(
-				NewChunkedWriter(w, f),
+				cw,
 				int64(i),
 				// The streaming API has to provide the series sorted.
 				querier.Select(ctx, true, hints, filteredMatchers...),

@@ -108,8 +108,9 @@ func (*testMetaStore) LengthMetadata() int { return 0 }
 // testTargetRetriever represents a list of targets to scrape.
 // It is used to represent targets as part of test cases.
 type testTargetRetriever struct {
-	activeTargets  map[string][]*scrape.Target
-	droppedTargets map[string][]*scrape.Target
+	activeTargets       map[string][]*scrape.Target
+	droppedTargets      map[string][]*scrape.Target
+	scrapePoolConfigErr error
 }
 
 type testTargetParams struct {
@@ -171,8 +172,18 @@ func (t testTargetRetriever) TargetsDroppedCounts() map[string]int {
 	return r
 }
 
-func (testTargetRetriever) ScrapePoolConfig(pool string) (*config.ScrapeConfig, error) {
+func (t testTargetRetriever) ScrapePoolConfig(pool string) (*config.ScrapeConfig, error) {
+	if t.scrapePoolConfigErr != nil {
+		return nil, t.scrapePoolConfigErr
+	}
+
 	cfg := &config.ScrapeConfig{
+		JobName: pool,
+		HTTPClientConfig: config_util.HTTPClientConfig{
+			Authorization: &config_util.Authorization{
+				Credentials: config_util.Secret("credential helper secret"),
+			},
+		},
 		RelabelConfigs: []*relabel.Config{
 			{
 				Action:               relabel.Replace,
@@ -582,6 +593,43 @@ func TestEndpoints(t *testing.T) {
 	})
 }
 
+func TestScrapePoolConfig(t *testing.T) {
+	api := &API{targetRetriever: (&testTargetRetriever{}).toFactory()}
+
+	t.Run("returns redacted effective config", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/?scrapePool=testpool", http.NoBody)
+		res := api.scrapePoolConfig(req)
+
+		require.Nil(t, res.err)
+		cfg, ok := res.data.(*prometheusConfig)
+		require.True(t, ok)
+		require.Contains(t, cfg.YAML, "job_name: testpool")
+		require.Contains(t, cfg.YAML, "credentials: <secret>")
+		require.NotContains(t, cfg.YAML, "credential helper secret")
+	})
+
+	t.Run("requires scrape pool", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+		res := api.scrapePoolConfig(req)
+
+		assertAPIError(t, res.err, errorBadData)
+		require.EqualError(t, res.err.err, "no scrapePool parameter provided")
+	})
+
+	t.Run("reports unknown scrape pool", func(t *testing.T) {
+		api := &API{
+			targetRetriever: (&testTargetRetriever{
+				scrapePoolConfigErr: errors.New("scrape pool not found"),
+			}).toFactory(),
+		}
+		req := httptest.NewRequest(http.MethodGet, "/?scrapePool=missing", http.NoBody)
+		res := api.scrapePoolConfig(req)
+
+		assertAPIError(t, res.err, errorBadData)
+		require.EqualError(t, res.err.err, "error retrieving scrape config: scrape pool not found")
+	})
+}
+
 type byLabels []labels.Labels
 
 func (b byLabels) Len() int           { return len(b) }
@@ -956,10 +1004,12 @@ func TestStats(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name     string
-		renderer StatsRenderer
-		param    string
-		expected func(*testing.T, any)
+		name        string
+		renderer    StatsRenderer
+		param       string
+		wantErr     errorType
+		wantWarning bool
+		expected    func(*testing.T, any)
 	}{
 		{
 			name:  "stats is blank",
@@ -971,6 +1021,28 @@ func TestStats(t *testing.T) {
 			},
 		},
 		{
+			name:        "stats is an unsupported value",
+			param:       "foo",
+			wantWarning: true,
+			expected: func(t *testing.T, i any) {
+				// Deprecated values keep the historical behaviour for now:
+				// any non-empty value enables basic statistics.
+				require.IsType(t, &QueryData{}, i)
+				qd := i.(*QueryData)
+				require.NotNil(t, qd.Stats)
+			},
+		},
+		{
+			name:        "stats is an unsupported truthy value",
+			param:       "1",
+			wantWarning: true,
+			expected: func(t *testing.T, i any) {
+				require.IsType(t, &QueryData{}, i)
+				qd := i.(*QueryData)
+				require.NotNil(t, qd.Stats)
+			},
+		},
+		{
 			name:  "stats is true",
 			param: "true",
 			expected: func(t *testing.T, i any) {
@@ -979,7 +1051,11 @@ func TestStats(t *testing.T) {
 				require.NotNil(t, qd.Stats)
 				qs := qd.Stats.Builtin()
 				require.NotNil(t, qs.Timings)
-				require.Greater(t, qs.Timings.EvalTotalTime, float64(0))
+				// GreaterOrEqual, not Greater: on Windows the monotonic clock has
+				// millisecond-scale granularity, so evaluating this trivial query
+				// legitimately measures 0. Non-nil Timings already proves the
+				// timings were populated.
+				require.GreaterOrEqual(t, qs.Timings.EvalTotalTime, float64(0))
 				require.NotNil(t, qs.Samples)
 				require.NotNil(t, qs.Samples.TotalQueryableSamples)
 				require.Nil(t, qs.Samples.TotalQueryableSamplesPerStep)
@@ -995,7 +1071,11 @@ func TestStats(t *testing.T) {
 				require.NotNil(t, qd.Stats)
 				qs := qd.Stats.Builtin()
 				require.NotNil(t, qs.Timings)
-				require.Greater(t, qs.Timings.EvalTotalTime, float64(0))
+				// GreaterOrEqual, not Greater: on Windows the monotonic clock has
+				// millisecond-scale granularity, so evaluating this trivial query
+				// legitimately measures 0. Non-nil Timings already proves the
+				// timings were populated.
+				require.GreaterOrEqual(t, qs.Timings.EvalTotalTime, float64(0))
 				require.NotNil(t, qs.Samples)
 				require.NotNil(t, qs.Samples.TotalQueryableSamples)
 				require.NotNil(t, qs.Samples.TotalQueryableSamplesPerStep)
@@ -1024,21 +1104,41 @@ func TestStats(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			before := api.statsRenderer
-			defer func() { api.statsRenderer = before }()
+			before, customBefore := api.statsRenderer, api.customStatsRenderer
+			defer func() { api.statsRenderer, api.customStatsRenderer = before, customBefore }()
+			// Installing a renderer through NewAPI marks it as custom, which
+			// exempts the `stats` value from validation; mirror that here.
 			api.statsRenderer = tc.renderer
+			api.customStatsRenderer = tc.renderer != nil
+
+			assertWarnings := func(res apiFuncResult) {
+				if tc.wantWarning {
+					require.Len(t, res.warnings, 1)
+					for msg := range res.warnings {
+						require.Contains(t, msg, "deprecated")
+					}
+				} else {
+					require.Empty(t, res.warnings)
+				}
+			}
 
 			for _, method := range []string{http.MethodGet, http.MethodPost} {
 				ctx := context.Background()
 				req, err := request(method, tc.param)
 				require.NoError(t, err)
 				res := api.query(req.WithContext(ctx))
-				assertAPIError(t, res.err, errorNone)
-				tc.expected(t, res.data)
+				assertAPIError(t, res.err, tc.wantErr)
+				if tc.wantErr == errorNone {
+					tc.expected(t, res.data)
+					assertWarnings(res)
+				}
 
 				res = api.queryRange(req.WithContext(ctx))
-				assertAPIError(t, res.err, errorNone)
-				tc.expected(t, res.data)
+				assertAPIError(t, res.err, tc.wantErr)
+				if tc.wantErr == errorNone {
+					tc.expected(t, res.data)
+					assertWarnings(res)
+				}
 			}
 		})
 	}
@@ -2396,7 +2496,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 					},
 				},
 				{
-					identifier: "secondTarget",
+					identifier: "blackbox",
 					metadata: []scrape.MetricMetadata{
 						{
 							MetricFamily: "go_threads",
@@ -3837,9 +3937,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 
 					tr.ResetMetadataStore()
 					for _, tm := range test.metadata {
-						// TODO: Check error and fixed broken test/bug.
-						// TestEndpoints/local/run_60_metricMetadata_"limit=1&limit_per_metric=1"/GET fails if we check the error.
-						_ = tr.SetMetadataStoreForTargets(tm.identifier, &testMetaStore{Metadata: tm.metadata})
+						err := tr.SetMetadataStoreForTargets(tm.identifier, &testMetaStore{Metadata: tm.metadata})
+						require.NoError(t, err)
 					}
 
 					res := test.endpoint(req.WithContext(ctx))

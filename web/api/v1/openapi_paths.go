@@ -32,7 +32,7 @@ func (*OpenAPIBuilder) queryPath() *v3.PathItem {
 		queryParamWithExample("query", "The PromQL query to execute.", true, stringSchema(), []example{{"example", "up"}}),
 		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to and is capped by the value of the -query.timeout flag.", false, durationSchema(), []example{{"duration", "1m30s"}, {"number", "90"}}),
 		queryParamWithExample("lookback_delta", "Override the lookback period for this query. Optional.", false, durationSchema(), []example{{"duration", "5m"}, {"number", "300"}}),
-		queryParamWithExample("stats", "When provided, include query statistics in the response. The special value 'all' enables more comprehensive statistics.", false, stringSchema(), []example{{"example", "all"}}),
+		queryParamWithExample("stats", "Include query statistics in the response. Supported values: 'true' (basic statistics) and 'all' (basic plus per-step statistics). Other non-empty values are deprecated (they behave like 'true') and will be rejected in the next major release.", false, stringSchema(), []example{{"example", "all"}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -61,7 +61,7 @@ func (*OpenAPIBuilder) queryRangePath() *v3.PathItem {
 		queryParamWithExample("query", "The query to execute.", true, stringSchema(), []example{{"example", "rate(prometheus_http_requests_total{handler=\"/api/v1/query\"}[5m])"}}),
 		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to and is capped by the value of the -query.timeout flag.", false, durationSchema(), []example{{"duration", "1m30s"}, {"number", "90"}}),
 		queryParamWithExample("lookback_delta", "Override the lookback period for this query. Optional.", false, durationSchema(), []example{{"duration", "5m"}, {"number", "300"}}),
-		queryParamWithExample("stats", "When provided, include query statistics in the response. The special value 'all' enables more comprehensive statistics.", false, stringSchema(), []example{{"example", "all"}}),
+		queryParamWithExample("stats", "Include query statistics in the response. Supported values: 'true' (basic statistics) and 'all' (basic plus per-step statistics). Other non-empty values are deprecated (they behave like 'true') and will be rejected in the next major release.", false, stringSchema(), []example{{"example", "all"}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -370,6 +370,21 @@ func (*OpenAPIBuilder) scrapePoolsPath() *v3.PathItem {
 			Summary:     "Get scrape pools",
 			Tags:        []string{"targets"},
 			Responses:   responsesWithErrorExamples("ScrapePoolsOutputBody", scrapePoolsResponseExamples(), errorResponseExamples(), "Scrape pools retrieved successfully.", "Error retrieving scrape pools."),
+		},
+	}
+}
+
+func (*OpenAPIBuilder) scrapePoolConfigPath() *v3.PathItem {
+	params := []*v3.Parameter{
+		queryParamWithExample("scrapePool", "Name of the scrape pool.", true, stringSchema(), []example{{"example", "prometheus"}}),
+	}
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "get-scrape-pool-config",
+			Summary:     "Get scrape pool configuration",
+			Tags:        []string{"targets"},
+			Parameters:  params,
+			Responses:   responsesWithErrorExamples("ScrapePoolConfigOutputBody", scrapePoolConfigResponseExamples(), errorResponseExamples(), "Scrape pool configuration retrieved successfully.", "Error retrieving scrape pool configuration."),
 		},
 	}
 }

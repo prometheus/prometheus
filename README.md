@@ -10,7 +10,6 @@ examples and guides.</p>
 [![CI](https://github.com/prometheus/prometheus/actions/workflows/ci.yml/badge.svg)](https://github.com/prometheus/prometheus/actions/workflows/ci.yml)
 [![Docker Repository on Quay](https://quay.io/repository/prometheus/prometheus/status)][quay]
 [![Docker Pulls](https://img.shields.io/docker/pulls/prom/prometheus.svg?maxAge=604800)][hub]
-[![Go Report Card](https://goreportcard.com/badge/github.com/prometheus/prometheus)](https://goreportcard.com/report/github.com/prometheus/prometheus)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/486/badge)](https://bestpractices.coreinfrastructure.org/projects/486)
 [![govulncheck](https://github.com/prometheus/prometheus/actions/workflows/govulncheck.yml/badge.svg?event=schedule)](https://github.com/prometheus/prometheus/actions/workflows/govulncheck.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/prometheus/prometheus/badge)](https://securityscorecards.dev/viewer/?uri=github.com/prometheus/prometheus)
@@ -149,9 +148,13 @@ You can build a docker image locally with the following commands:
 
 ```bash
 make promu
-promu crossbuild -p linux/amd64
-make common-docker-amd64
+promu crossbuild -p linux/$(go env GOHOSTARCH)
+make common-docker-current-arch
 ```
+
+To build for a different architecture, replace `$(go env GOHOSTARCH)` with one
+of the architectures in `DOCKER_ARCHS` from Makefile.common, such as `amd64`, and run the corresponding
+`make common-docker-<architecture>` target.
 
 The `make docker` target is intended only for use in our CI system and will not
 produce a fully working image when run locally.

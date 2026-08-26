@@ -11,6 +11,8 @@ import { useSuspenseAPIQuery } from "../../../api/api";
 import { Card, Text, Divider, List } from "@mantine/core";
 import { MetadataResult } from "../../../api/responseTypes/metadata";
 import { formatPrometheusDuration } from "../../../lib/formatTime";
+import { formatDurationNode } from "../../../promql/format";
+import { durationExprNote } from "../../../promql/durationExprNotes";
 import { useSettings } from "../../../state/settingsSlice";
 
 interface SelectorExplainViewProps {
@@ -190,11 +192,22 @@ const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
           </>
         ) : (
           <>
-            This node selects{" "}
-            <span className="promql-code promql-duration">
-              {formatPrometheusDuration(node.range)}
-            </span>{" "}
-            of data going backward from the evaluation timestamp
+            This node looks back{" "}
+            {node.rangeExpr ? (
+              <>
+                a duration defined by{" "}
+                <span className="promql-code">
+                  {formatDurationNode(node.rangeExpr)}
+                </span>
+              </>
+            ) : (
+              <span className="promql-code">
+                <span className="promql-duration">
+                  {formatPrometheusDuration(node.range)}
+                </span>
+              </span>
+            )}{" "}
+            from the evaluation timestamp
             {node.anchored && (
               <>
                 {" "}
@@ -224,7 +237,20 @@ const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
         ) : (
           <></>
         )}
-        {node.offset === 0 ? (
+        {node.offsetExpr ? (
+          <>
+            , time-shifted{" "}
+            <span className="promql-code">
+              {formatDurationNode(node.offsetExpr)}
+            </span>
+            {node.offset > 0
+              ? " into the past"
+              : node.offset < 0
+                ? " into the future"
+                : ""}
+            ,
+          </>
+        ) : node.offset === 0 ? (
           <></>
         ) : node.offset > 0 ? (
           <>
@@ -247,24 +273,29 @@ const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
       </Text>
       {matchingCriteriaList(node.name, node.matchers)}
       <Text fz="sm">
-        If a series has no values in the last{" "}
-        <span className="promql-code promql-duration">
-          {node.type === nodeType.vectorSelector
-            ? lookbackDelta
-            : formatPrometheusDuration(node.range)}
-        </span>
-        {node.offset > 0 && (
+        If a series has no values in that window
+        {(node.offsetExpr || node.offset > 0) && (
           <>
             {" "}
             (relative to the time-shifted instant{" "}
-            <span className="promql-code promql-duration">
-              {formatPrometheusDuration(node.offset)}
+            <span className="promql-code">
+              {node.offsetExpr ? (
+                formatDurationNode(node.offsetExpr)
+              ) : (
+                <span className="promql-duration">
+                  {formatPrometheusDuration(node.offset)}
+                </span>
+              )}
             </span>{" "}
             in the past)
           </>
         )}
         , the series will not be returned.
       </Text>
+      {node.type === nodeType.matrixSelector &&
+        node.rangeExpr &&
+        durationExprNote(node.rangeExpr)}
+      {node.offsetExpr && durationExprNote(node.offsetExpr)}
     </Card>
   );
 };

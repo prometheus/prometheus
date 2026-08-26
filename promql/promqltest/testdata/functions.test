@@ -254,15 +254,15 @@ eval instant at 20m irate(http_requests_histogram{path="/b"}[6m])
   	expect no_warn
 
 eval instant at 20m irate(http_requests_histogram{path="/c"}[20m])
-	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram"
+	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram" (1:7)
 	{path="/c"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
 eval instant at 20m irate(http_requests_histogram{path="/d"}[20m])
-	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram"
+	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram" (1:7)
 	{path="/d"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
 eval instant at 20m irate(http_requests_histogram{path="/e"}[20m])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram" (1:7)
 
 eval instant at 20m irate(http_requests_histogram{path="/f"}[20m])
   	expect no_warn
@@ -293,12 +293,12 @@ eval instant at 20m delta(http_requests_gauge[20m])
 
 # delta emits warn annotation for non-gauge histogram types.
 eval instant at 20m delta(http_requests_counter[20m])
-	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_counter"
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_counter" (1:7)
 	{path="/foo"} {{schema:0 sum:4 count:8 buckets:[4 4 4]}}
 
 # delta emits warn annotation for mix of histogram and floats.
 eval instant at 20m delta(http_requests_mix[20m])
-	expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_mix"
+	expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_mix" (1:7)
 	#empty
 
 clear
@@ -337,22 +337,22 @@ eval instant at 20m idelta(http_requests_histogram{path="/b"}[6m])
 	expect no_warn
 
 eval instant at 20m idelta(http_requests_histogram{path="/c"}[20m])
-	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram"
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram" (1:8)
 	{path="/c"} {{sum:1 count:1 counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests_histogram{path="/d"}[20m])
-	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram"
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram" (1:8)
 	{path="/d"} {{sum:1 count:1 counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests_histogram{path="/e"}[20m])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram" (1:8)
 
 eval instant at 20m idelta(http_requests_histogram{path="/f"}[20m])
-  expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "http_requests_histogram"
+  expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "http_requests_histogram" (1:8)
 
 eval instant at 20m idelta(http_requests_histogram{path="/g"}[20m])
 	expect no_warn
-	expect info msg: PromQL info: mismatched custom buckets were reconciled during subtraction
+	expect info msg: PromQL info: mismatched custom buckets were reconciled during subtraction (1:8)
 	{path="/g"} {{schema:-53 custom_values:[1] counter_reset_hint:gauge buckets:[-1]}}
 
 clear
@@ -648,6 +648,41 @@ eval instant at 0m clamp(test_clamp, NaN, 0)
 	{src="clamp-a"}	NaN
 	{src="clamp-b"}	NaN
 	{src="clamp-c"}	NaN
+
+eval instant at 0m clamp_max(test_clamp, NaN)
+	{src="clamp-a"}	NaN
+	{src="clamp-b"}	NaN
+	{src="clamp-c"}	NaN
+
+eval instant at 0m clamp_min(test_clamp, NaN)
+	{src="clamp-a"}	NaN
+	{src="clamp-b"}	NaN
+	{src="clamp-c"}	NaN
+
+eval instant at 0m clamp_max(test_clamp, Inf)
+	{src="clamp-a"}	-50
+	{src="clamp-b"}	0
+	{src="clamp-c"}	100
+
+eval instant at 0m clamp_max(test_clamp, -Inf)
+	{src="clamp-a"}	-Inf
+	{src="clamp-b"}	-Inf
+	{src="clamp-c"}	-Inf
+
+eval instant at 0m clamp_min(test_clamp, -Inf)
+	{src="clamp-a"}	-50
+	{src="clamp-b"}	0
+	{src="clamp-c"}	100
+
+eval instant at 0m clamp_min(test_clamp, Inf)
+	{src="clamp-a"}	+Inf
+	{src="clamp-b"}	+Inf
+	{src="clamp-c"}	+Inf
+
+eval instant at 0m clamp(test_clamp, -Inf, Inf)
+	{src="clamp-a"}	-50
+	{src="clamp-b"}	0
+	{src="clamp-c"}	100
 
 eval instant at 0m clamp(test_clamp, 5, -5)
 
@@ -1277,12 +1312,36 @@ eval instant at 55s stddev_over_time(metric[1m])
 clear
 load 10s
 	metric 4 6 2 1 999 1 2
+	metric_odd 1 2 3 4 5
+	metric_equal 7 7 7 7 7
+	metric_single 5
+	metric_nan 1 2 NaN 4
 	metric_histogram{type="only_histogram"} {{schema:1 sum:2 count:3}}x5
 	metric_histogram{type="mix"} 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
 
 eval instant at 70s mad_over_time(metric[70s])
 	expect no_info
 	{} 1
+
+# Odd number of samples: median is the exact middle value.
+eval instant at 40s mad_over_time(metric_odd[50s])
+	expect no_info
+	{} 1
+
+# All samples equal: deviations are all zero, so MAD is zero.
+eval instant at 40s mad_over_time(metric_equal[50s])
+	expect no_info
+	{} 0
+
+# Single sample: deviation from itself is zero.
+eval instant at 0s mad_over_time(metric_single[10s])
+	expect no_info
+	{} 0
+
+# A NaN sample makes the result NaN rather than being silently dropped.
+eval instant at 30s mad_over_time(metric_nan[40s])
+	expect no_info
+	{} NaN
 
 eval instant at 70s mad_over_time(metric_histogram{type="only_histogram"}[70s])
 	expect no_info

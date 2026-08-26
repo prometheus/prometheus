@@ -20,7 +20,11 @@ done
 
 ncu "$1"
 pnpm install
+# Collapse duplicate package versions that pnpm's strict isolation may introduce.
+pnpm dedupe
 
 cd "${root_ui_folder}/react-app"
 ncu "$1"
 pnpm install
+# Collapse duplicate package versions that pnpm's strict isolation may introduce.
+pnpm dedupe

@@ -136,17 +136,13 @@ func (c *MSKSDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the MSK Config.
+// Region resolution is deferred to initMskClient; see loadRegion.
 func (c *MSKSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultMSKSDConfig
 	type plain MSKSDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
-	}
-
-	c.Region, err = loadRegion(context.Background(), c.Region)
-	if err != nil {
-		return fmt.Errorf("could not determine AWS region: %w", err)
 	}
 
 	return c.HTTPClientConfig.Validate()
@@ -195,6 +191,10 @@ type MSKDiscovery struct {
 	logger *slog.Logger
 	cfg    *MSKSDConfig
 	msk    mskClient
+
+	// region is the resolved region used for the AWS client and for the
+	// Source label. Lazily populated by initMskClient.
+	region string
 }
 
 // NewMSKDiscovery returns a new MSKDiscovery which periodically refreshes its targets.
@@ -228,19 +228,21 @@ func (d *MSKDiscovery) initMskClient(ctx context.Context) error {
 		return nil
 	}
 
-	if d.cfg.Region == "" {
-		return errors.New("region must be set for MSK service discovery")
-	}
-
 	// Build the HTTP client from the provided HTTPClientConfig.
 	client, err := config.NewClientFromConfig(d.cfg.HTTPClientConfig, "msk_sd")
 	if err != nil {
 		return err
 	}
 
-	// Build the AWS config with the provided region.
+	// Resolve the region lazily. See MSKSDConfig.UnmarshalYAML.
+	d.region, err = loadRegion(ctx, d.cfg.Region)
+	if err != nil {
+		return err
+	}
+
+	// Build the AWS config with the resolved region.
 	var configOptions []func(*awsConfig.LoadOptions) error
-	configOptions = append(configOptions, awsConfig.WithRegion(d.cfg.Region))
+	configOptions = append(configOptions, awsConfig.WithRegion(d.region))
 	configOptions = append(configOptions, awsConfig.WithHTTPClient(client))
 
 	// Only set static credentials if both access key and secret key are provided
@@ -305,6 +307,12 @@ func (d *MSKDiscovery) describeClusters(ctx context.Context, clusterARNs []strin
 			})
 			if err != nil {
 				return fmt.Errorf("could not describe cluster %v: %w", clusterARN, err)
+			}
+			// Only provisioned clusters expose broker nodes; skip anything
+			// else (e.g. serverless clusters) that was explicitly configured.
+			if cluster.ClusterInfo.ClusterType != types.ClusterTypeProvisioned {
+				d.logger.Warn("Skipping non-provisioned MSK cluster, only provisioned clusters are supported", "cluster", clusterARN, "type", string(cluster.ClusterInfo.ClusterType))
+				return nil
 			}
 			mu.Lock()
 			clusters = append(clusters, *cluster.ClusterInfo)
@@ -389,7 +397,7 @@ func (d *MSKDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	}
 
 	tg := &targetgroup.Group{
-		Source: d.cfg.Region,
+		Source: d.region,
 	}
 
 	var clusters []types.Cluster
@@ -421,18 +429,29 @@ func (d *MSKDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 			defer wg.Done()
 			for _, node := range nodes {
 				labels := model.LabelSet{
-					mskLabelClusterName:                  model.LabelValue(aws.ToString(cluster.ClusterName)),
-					mskLabelClusterARN:                   model.LabelValue(aws.ToString(cluster.ClusterArn)),
-					mskLabelClusterState:                 model.LabelValue(string(cluster.State)),
-					mskLabelClusterType:                  model.LabelValue(string(cluster.ClusterType)),
-					mskLabelClusterVersion:               model.LabelValue(aws.ToString(cluster.CurrentVersion)),
-					mskLabelNodeARN:                      model.LabelValue(aws.ToString(node.NodeARN)),
-					mskLabelNodeAddedTime:                model.LabelValue(aws.ToString(node.AddedToClusterTime)),
-					mskLabelNodeInstanceType:             model.LabelValue(aws.ToString(node.InstanceType)),
-					mskLabelClusterJmxExporterEnabled:    model.LabelValue(strconv.FormatBool(*cluster.Provisioned.OpenMonitoring.Prometheus.JmxExporter.EnabledInBroker)),
-					mskLabelClusterConfigurationARN:      model.LabelValue(aws.ToString(cluster.Provisioned.CurrentBrokerSoftwareInfo.ConfigurationArn)),
-					mskLabelClusterConfigurationRevision: model.LabelValue(strconv.FormatInt(*cluster.Provisioned.CurrentBrokerSoftwareInfo.ConfigurationRevision, 10)),
-					mskLabelClusterKafkaVersion:          model.LabelValue(aws.ToString(cluster.Provisioned.CurrentBrokerSoftwareInfo.KafkaVersion)),
+					mskLabelClusterName:         model.LabelValue(aws.ToString(cluster.ClusterName)),
+					mskLabelClusterARN:          model.LabelValue(aws.ToString(cluster.ClusterArn)),
+					mskLabelClusterState:        model.LabelValue(string(cluster.State)),
+					mskLabelClusterType:         model.LabelValue(string(cluster.ClusterType)),
+					mskLabelClusterVersion:      model.LabelValue(aws.ToString(cluster.CurrentVersion)),
+					mskLabelNodeARN:             model.LabelValue(aws.ToString(node.NodeARN)),
+					mskLabelNodeAddedTime:       model.LabelValue(aws.ToString(node.AddedToClusterTime)),
+					mskLabelNodeInstanceType:    model.LabelValue(aws.ToString(node.InstanceType)),
+					mskLabelClusterKafkaVersion: model.LabelValue(aws.ToString(cluster.Provisioned.CurrentBrokerSoftwareInfo.KafkaVersion)),
+				}
+
+				// The configuration ARN and revision labels are omitted when the cluster is not using a custom configuration.
+				if cluster.Provisioned.CurrentBrokerSoftwareInfo.ConfigurationArn != nil {
+					labels[mskLabelClusterConfigurationARN] = model.LabelValue(aws.ToString(cluster.Provisioned.CurrentBrokerSoftwareInfo.ConfigurationArn))
+				}
+				if cluster.Provisioned.CurrentBrokerSoftwareInfo.ConfigurationRevision != nil {
+					labels[mskLabelClusterConfigurationRevision] = model.LabelValue(strconv.FormatInt(aws.ToInt64(cluster.Provisioned.CurrentBrokerSoftwareInfo.ConfigurationRevision), 10))
+				}
+
+				// The JMX exporter label is omitted when Open Monitoring is
+				// not enabled on the cluster.
+				if om := cluster.Provisioned.OpenMonitoring; om != nil && om.Prometheus != nil && om.Prometheus.JmxExporter != nil {
+					labels[mskLabelClusterJmxExporterEnabled] = model.LabelValue(strconv.FormatBool(aws.ToBool(om.Prometheus.JmxExporter.EnabledInBroker)))
 				}
 
 				for key, value := range cluster.Tags {
@@ -446,7 +465,11 @@ func (d *MSKDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					labels[mskLabelBrokerID] = model.LabelValue(fmt.Sprintf("%.0f", aws.ToFloat64(node.BrokerNodeInfo.BrokerId)))
 					labels[mskLabelBrokerClientSubnet] = model.LabelValue(aws.ToString(node.BrokerNodeInfo.ClientSubnet))
 					labels[mskLabelBrokerClientVPCIP] = model.LabelValue(aws.ToString(node.BrokerNodeInfo.ClientVpcIpAddress))
-					labels[mskLabelBrokerNodeExporterEnabled] = model.LabelValue(strconv.FormatBool(*cluster.Provisioned.OpenMonitoring.Prometheus.NodeExporter.EnabledInBroker))
+					// The node exporter label is omitted when Open Monitoring
+					// is not enabled on the cluster.
+					if om := cluster.Provisioned.OpenMonitoring; om != nil && om.Prometheus != nil && om.Prometheus.NodeExporter != nil {
+						labels[mskLabelBrokerNodeExporterEnabled] = model.LabelValue(strconv.FormatBool(aws.ToBool(om.Prometheus.NodeExporter.EnabledInBroker)))
+					}
 
 					for idx, endpoint := range node.BrokerNodeInfo.Endpoints {
 						endpointLabels := labels.Clone()

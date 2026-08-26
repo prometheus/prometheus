@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -29,6 +30,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -1127,7 +1129,7 @@ func testScrapeLoopStop(t *testing.T, appV2 bool) {
 		case i%6 == 0:
 			ts = s.T
 		case s.T != ts:
-			t.Fatalf("Unexpected multiple timestamps within single scrape")
+			t.Fatal("Unexpected multiple timestamps within single scrape")
 		}
 	}
 	// All samples from the last scrape must be stale markers.
@@ -1972,6 +1974,7 @@ func TestScrapeLoopAppend_StartTimeSynthesis_WithSTStorage(t *testing.T) {
 	s := teststorage.New(t, func(opt *tsdb.Options) {
 		opt.EnableSTStorage = true
 		opt.FloatChunkEncoding = chunkenc.EncXOR2
+		opt.EnableHistogramSTEncoding = true
 	})
 
 	appTest := teststorage.NewAppendable().Then(s)
@@ -2037,7 +2040,8 @@ func TestScrapeLoopAppend_StartTimeSynthesis_OutOfOrder(t *testing.T) {
 				return storage.ErrOutOfOrderSample
 			}
 			return nil
-		}, nil, nil).Then(s)
+		}, nil, nil,
+	).Then(s)
 
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
 		sl.synthesizeST = true
@@ -2110,7 +2114,8 @@ func TestScrapeLoopAppend_StartTimeSynthesis_OOO_StateMutation(t *testing.T) {
 				return storage.ErrOutOfOrderSample
 			}
 			return nil
-		}, nil, nil).Then(s)
+		}, nil, nil,
+	).Then(s)
 
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
 		sl.synthesizeST = true
@@ -2163,6 +2168,67 @@ test_metric 25
 	// - 2nd scrape: OOO (dropped)
 	// - 3rd scrape: fresh start after cleared state (dropped)
 	require.Empty(t, got, "Expected no samples because the state was cleared and the sample was used to re-anchor")
+}
+
+func TestScrapeLoopAppend_StartTimeSynthesis_Summary(t *testing.T) {
+	ts := time.Now()
+
+	requireSample := func(t *testing.T, s teststorage.Sample, name string, val float64, ts, st int64, isNaN bool) {
+		t.Helper()
+		require.Equal(t, name, s.L.Get(model.MetricNameLabel))
+		require.Equal(t, ts, s.T)
+		if isNaN {
+			require.True(t, value.IsStaleNaN(s.V))
+		} else {
+			require.Equal(t, val, s.V)
+		}
+		require.Equal(t, st, s.ST)
+	}
+
+	s := teststorage.New(t)
+
+	appTest := teststorage.NewAppendable().Then(s)
+	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+		sl.synthesizeST = true
+		sl.parseST = true
+	})
+
+	// First Scrape: Anchor start time for _sum and _count. Quantiles are not cumulative, so quantile is appended directly without anchoring.
+	scrapeA := []byte(`# TYPE test_summary summary
+test_summary{quantile="0.5"} 10
+test_summary_sum 100
+test_summary_count 10
+# EOF
+`)
+	app := sl.appender()
+	_, _, _, err := app.append(scrapeA, "application/openmetrics-text", ts)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Quantile should be appended (1 point), _sum and _count should be skipped (anchored).
+	got := appTest.ResultSamples()
+	require.Len(t, got, 1)
+	requireSample(t, got[0], "test_summary", 10, timestamp.FromTime(ts), 0, false)
+
+	// Second Scrape: _sum and _count should yield points with delta values and synthesized ST = ts.
+	ts2 := ts.Add(time.Second)
+	scrapeB := []byte(`# TYPE test_summary summary
+test_summary{quantile="0.5"} 12
+test_summary_sum 150
+test_summary_count 15
+# EOF
+`)
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeB, "application/openmetrics-text", ts2)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got = appTest.ResultSamples()
+	require.Len(t, got, 4)
+	requireSample(t, got[0], "test_summary", 10, timestamp.FromTime(ts), 0, false)
+	requireSample(t, got[1], "test_summary", 12, timestamp.FromTime(ts2), 0, false)
+	requireSample(t, got[2], "test_summary_sum", 50, timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
+	requireSample(t, got[3], "test_summary_count", 5, timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
 }
 
 func requireSampleHist(t *testing.T, s teststorage.Sample, name, expectedHist string, ts, st int64, isNaN bool) {
@@ -2678,7 +2744,7 @@ func testSetOptionsHandlingStaleness(t *testing.T, appV2 bool) {
 	select {
 	case <-signal:
 	case <-time.After(10 * time.Second):
-		t.Fatalf("Scrape wasn't stopped.")
+		t.Fatal("Scrape wasn't stopped.")
 	}
 
 	ctx1, cancel := context.WithCancel(t.Context())
@@ -2898,6 +2964,142 @@ func testScrapeLoopRunCreatesStaleMarkersOnSampleLimit(t *testing.T, appV2 bool)
 	for i := 23; i <= 26; i++ {
 		require.True(t, value.IsStaleNaN(got[i].V),
 			"Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(got[i].V))
+	}
+}
+
+func TestScrapeLoopSeriesRefChange(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testScrapeLoopSeriesRefChange(t, appV2)
+	})
+}
+
+// testScrapeLoopSeriesRefChange tests scrapes against a storage that hands out a new
+// storage.SeriesRef for a series it already gave a reference for, e.g. because the
+// series was garbage collected and had to be recreated. The scrape loop has to pick up
+// the new reference, without mistaking the series for one that stopped being exposed.
+func testScrapeLoopSeriesRefChange(t *testing.T, appV2 bool) {
+	const scrapeInterval = 15 * time.Second
+
+	firstScrape := time.Unix(1600000000, 0)
+	metricA := labels.FromStrings(model.MetricNameLabel, "metric_a")
+
+	scrapeTime := func(scrape int) time.Time {
+		return firstScrape.Add(time.Duration(scrape) * scrapeInterval)
+	}
+	sampleAtMs := func(ms int64, v float64) teststorage.Sample {
+		return teststorage.Sample{L: metricA, T: ms, V: v}
+	}
+	sampleAt := func(scrape int, v float64) teststorage.Sample {
+		return sampleAtMs(timestamp.FromTime(scrapeTime(scrape)), v)
+	}
+	staleAt := func(scrape int) teststorage.Sample {
+		return sampleAt(scrape, math.Float64frombits(value.StaleNaN))
+	}
+
+	// A timestamp the target exposes for the second scrape, one second before that
+	// scrape happens, so it is visible whether the scrape loop honoured it.
+	explicitTS := timestamp.FromTime(scrapeTime(1)) - 1000
+	explicitTSBody := fmt.Sprintf("metric_a 2 %d\n", explicitTS)
+
+	// scrape is a single scrape of the target, together with the reference the storage
+	// hands out while it is appended.
+	type scrape struct {
+		body string
+		ref  storage.SeriesRef
+	}
+
+	for _, tc := range []struct {
+		name string
+
+		scrapes []scrape
+
+		expectedSamples []teststorage.Sample
+		expectedRef     storage.SeriesRef // Reference cached once all scrapes are done.
+	}{
+		{
+			name: "reference stays the same",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: "metric_a 2\n", ref: 100},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAt(1, 2)},
+			expectedRef:     100,
+		},
+		{
+			name: "reference changes while the series is still exposed",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: "metric_a 2\n", ref: 200},
+				{body: "metric_a 3\n", ref: 200},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAt(1, 2), sampleAt(2, 3)},
+			expectedRef:     200,
+		},
+		{
+			name: "reference changes on every scrape",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: "metric_a 2\n", ref: 200},
+				{body: "metric_a 3\n", ref: 300},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAt(1, 2), sampleAt(2, 3)},
+			expectedRef:     300,
+		},
+		{
+			name: "series stops being exposed after the reference changed",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: "metric_a 2\n", ref: 200},
+				{body: "", ref: 200},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAt(1, 2), staleAt(2)},
+			expectedRef:     200,
+		},
+		// A series that starts carrying an explicit timestamp drops out of the staleness
+		// tracking and gets a stale marker, even though the target still exposes it. The
+		// next two cases pin that down, to make sure a changing reference does not make
+		// the scrape loop behave differently than an unchanged one.
+		{
+			name: "explicit timestamp appears, reference stays the same",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: explicitTSBody, ref: 100},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAtMs(explicitTS, 2), staleAt(1)},
+			expectedRef:     100,
+		},
+		{
+			name: "explicit timestamp appears and the reference changes",
+			scrapes: []scrape{
+				{body: "metric_a 1\n", ref: 100},
+				{body: explicitTSBody, ref: 200},
+			},
+			expectedSamples: []teststorage.Sample{sampleAt(0, 1), sampleAtMs(explicitTS, 2), staleAt(1)},
+			expectedRef:     200,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var ref storage.SeriesRef
+			app := teststorage.NewAppendable().WithRefFn(func(labels.Labels) storage.SeriesRef {
+				return ref
+			})
+			sl, _ := newTestScrapeLoop(t, withAppendable(app, appV2))
+
+			for i, s := range tc.scrapes {
+				ref = s.ref
+
+				appender := sl.appender()
+				_, _, _, err := appender.append([]byte(s.body), "text/plain", scrapeTime(i))
+				require.NoError(t, err)
+				require.NoError(t, appender.Commit())
+			}
+
+			teststorage.RequireEqual(t, tc.expectedSamples, app.ResultSamples())
+
+			ce, ok := sl.cache.series["metric_a"]
+			require.True(t, ok)
+			require.Equal(t, tc.expectedRef, ce.ref)
+		})
 	}
 }
 
@@ -4363,7 +4565,8 @@ func testScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 			default:
 				return nil
 			}
-		}, nil, nil)
+		}, nil, nil,
+	)
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2))
 
 	now := time.Unix(1, 0)
@@ -4688,6 +4891,189 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 			runTest(t, acceptHeader(tc.scrapeProtocols, tc.scheme))
 		})
 	}
+}
+
+func TestTargetScraperScrapeOverUnixSocket(t *testing.T) {
+	// t.TempDir can produce paths exceeding the macOS 104-char socket
+	// path limit, so we create our own temp dir in /tmp.
+	tempDir, err := os.MkdirTemp("", "uds-scrape-test")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(tempDir) })
+	socketPath := filepath.Join(tempDir, "s")
+
+	// Create a Unix domain socket listener.
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+	defer listener.Close()
+
+	// Serve HTTP over the Unix socket.
+	server := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "localhost", r.Host)
+			w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+			_, _ = w.Write([]byte("metric_a 1\nmetric_b 2\n"))
+		}),
+	}
+	go server.Serve(listener)
+	defer server.Close()
+
+	// Create a client with a DialContext that routes to the unix socket.
+	client, err := newUnixSocketScrapeClient(socketPath, config_util.HTTPClientConfig{}, "test_job")
+	require.NoError(t, err)
+
+	// No __address__ set — falls back to "localhost".
+	ts := &targetScraper{
+		Target: &Target{
+			labels: labels.FromStrings(
+				model.SchemeLabel, "http",
+				model.MetricsPathLabel, "/metrics",
+				UnixSocketLabel, socketPath,
+			),
+			scrapeConfig: &config.ScrapeConfig{},
+		},
+		client:       client,
+		timeout:      1500 * time.Millisecond,
+		acceptHeader: acceptHeader(config.DefaultScrapeProtocols, model.UnderscoreEscaping),
+	}
+
+	var buf bytes.Buffer
+	resp, err := ts.scrape(context.Background())
+	require.NoError(t, err)
+
+	contentType, err := ts.readResponse(context.Background(), resp, &buf)
+	require.NoError(t, err)
+	require.Equal(t, "text/plain; version=0.0.4", contentType)
+	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
+}
+
+func TestTargetScraperScrapeOverUnixSocketTLS(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "uds-tls-test")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(tempDir) })
+	socketPath := filepath.Join(tempDir, "s")
+
+	// Create a Unix domain socket listener and wrap it with TLS using
+	// the pre-generated test certificates (CN=localhost).
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+	defer listener.Close()
+
+	tlsListener := tls.NewListener(listener, newTLSConfig("server", t))
+
+	// Serve HTTPS over the Unix socket. The pre-generated certificate
+	// has SAN IP Address:127.0.0.1, so the __address__ must match.
+	server := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "127.0.0.1", r.Host)
+			w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+			_, _ = w.Write([]byte("metric_a 1\nmetric_b 2\n"))
+		}),
+	}
+	go server.Serve(tlsListener)
+	defer server.Close()
+
+	// Create a client configured to trust the test CA.
+	client, err := newUnixSocketScrapeClient(socketPath, config_util.HTTPClientConfig{
+		TLSConfig: config_util.TLSConfig{
+			CAFile: caCertPath,
+		},
+	}, "test_job")
+	require.NoError(t, err)
+
+	ts := &targetScraper{
+		Target: &Target{
+			labels: labels.FromStrings(
+				model.SchemeLabel, "https",
+				model.AddressLabel, "127.0.0.1",
+				model.MetricsPathLabel, "/metrics",
+				UnixSocketLabel, socketPath,
+			),
+			scrapeConfig: &config.ScrapeConfig{},
+		},
+		client:       client,
+		timeout:      1500 * time.Millisecond,
+		acceptHeader: acceptHeader(config.DefaultScrapeProtocols, model.UnderscoreEscaping),
+	}
+
+	var buf bytes.Buffer
+	resp, err := ts.scrape(context.Background())
+	require.NoError(t, err)
+
+	contentType, err := ts.readResponse(context.Background(), resp, &buf)
+	require.NoError(t, err)
+	require.Equal(t, "text/plain; version=0.0.4", contentType)
+	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
+}
+
+func TestTargetScraperUnixSocketConnectionsAreNotShared(t *testing.T) {
+	// Two targets sharing the same __address__ but scraped through different
+	// unix sockets must never exchange pooled keep-alive connections,
+	// otherwise one target would receive the other target's metrics.
+	tempDir, err := os.MkdirTemp("", "uds-pool-test")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(tempDir) })
+
+	payloads := map[string]string{}
+	var targets []*Target
+	for i := range 2 {
+		socketPath := filepath.Join(tempDir, fmt.Sprintf("s%d", i))
+		listener, err := net.Listen("unix", socketPath)
+		require.NoError(t, err)
+		t.Cleanup(func() { listener.Close() })
+
+		payload := fmt.Sprintf("metric_a %d\n", i)
+		payloads[socketPath] = payload
+		server := &http.Server{
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+				_, _ = w.Write([]byte(payload))
+			}),
+		}
+		go server.Serve(listener)
+		t.Cleanup(func() { server.Close() })
+
+		targets = append(targets, &Target{
+			labels: labels.FromStrings(
+				model.SchemeLabel, "http",
+				model.AddressLabel, "localhost:9090",
+				model.MetricsPathLabel, "/metrics",
+				model.ScrapeIntervalLabel, "1s",
+				model.ScrapeTimeoutLabel, "1s",
+				UnixSocketLabel, socketPath,
+			),
+			scrapeConfig: &config.ScrapeConfig{},
+		})
+	}
+
+	var scrapers []*targetScraper
+	sp := newTestScrapePool(t, nil, false, func(opts scrapeLoopOptions) loop {
+		scrapers = append(scrapers, opts.scraper.(*targetScraper))
+		return &testLoop{
+			startFunc: func(time.Duration, time.Duration, chan<- error) {},
+			stopFunc:  func() {},
+		}
+	})
+	client, err := newScrapeClient(config_util.HTTPClientConfig{}, "test_job")
+	require.NoError(t, err)
+	sp.client = client
+
+	sp.sync(targets)
+	require.Len(t, scrapers, 2)
+
+	// Scrape each target twice so the second round is served from pooled
+	// keep-alive connections.
+	for range 2 {
+		for _, ts := range scrapers {
+			var buf bytes.Buffer
+			resp, err := ts.scrape(context.Background())
+			require.NoError(t, err)
+			_, err = ts.readResponse(context.Background(), resp, &buf)
+			require.NoError(t, err)
+			require.Equal(t, payloads[ts.labels.Get(UnixSocketLabel)], buf.String())
+		}
+	}
+
+	sp.stop()
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {
@@ -5454,7 +5840,7 @@ func testScrapeReportLimit(t *testing.T, appV2 bool) {
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("target was not scraped twice")
+		t.Fatal("target was not scraped twice")
 	case <-scrapedTwice:
 		// If the target has been scraped twice, report samples from the first
 		// scrape have been inserted in the database.
@@ -5514,7 +5900,7 @@ func testScrapeUTF8(t *testing.T, appV2 bool) {
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("target was not scraped twice")
+		t.Fatal("target was not scraped twice")
 	case <-scrapedTwice:
 		// If the target has been scraped twice, report samples from the first
 		// scrape have been inserted in the database.
@@ -5815,7 +6201,7 @@ test_summary_count 199
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("target was not scraped")
+		t.Fatal("target was not scraped")
 	case <-scrapedTwice:
 	}
 
@@ -6406,7 +6792,7 @@ disk_usage_bytes 456
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("target was not scraped")
+		t.Fatal("target was not scraped")
 	case <-scrapedTwice:
 	}
 
@@ -6468,7 +6854,7 @@ func testScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *
 	select {
 	case <-signal:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Scrape wasn't stopped.")
+		t.Fatal("Scrape wasn't stopped.")
 	}
 
 	got := appTest.ResultSamples()
@@ -6541,7 +6927,7 @@ func testScrapeLoopCompression(t *testing.T, appV2 bool) {
 
 			select {
 			case <-time.After(5 * time.Second):
-				t.Fatalf("target was not scraped")
+				t.Fatal("target was not scraped")
 			case <-scraped:
 			}
 		})
@@ -7700,6 +8086,9 @@ func TestScrapeOffsetDistribution(t *testing.T) {
 					}
 				}),
 			},
+			// setupSynctestManager is unusable here: it also sets skipJitterOffsetting,
+			// which zeroes the offsets asserted below.
+			fqdn: synctestFQDN,
 		}
 		scrapeManager, err := NewManager(opts, promslog.NewNopLogger(), nil, app, nil, prometheus.NewRegistry())
 		scrapeManager.offsetSeed = 1 // Set a fixed offset seed for deterministic testing.

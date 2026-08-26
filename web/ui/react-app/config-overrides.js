@@ -33,7 +33,7 @@ const singletons = [
   '@lezer/lr',
 ];
 
-module.exports = function override(config) {
+function override(config) {
   config.resolve = config.resolve || {};
   config.resolve.alias = Object.assign(
     {},
@@ -47,4 +47,21 @@ module.exports = function override(config) {
     (plugin) => !(plugin.constructor && plugin.constructor.name === 'ModuleScopePlugin')
   );
   return config;
+}
+
+override.jest = function overrideJest(config) {
+  config.moduleNameMapper = Object.assign(
+    {},
+    config.moduleNameMapper,
+    Object.fromEntries(singletons.map((pkg) => [`^${pkg}$`, `<rootDir>/node_modules/${pkg}`]))
+  );
+  // Jest 27 does not honor conditional CommonJS exports for these dependencies,
+  // so transpile their ESM entrypoints while leaving other node modules untouched.
+  config.transformIgnorePatterns = [
+    '<rootDir>/node_modules/(?!(@prometheus-io/(codemirror-promql|lezer-promql)|\\.pnpm/(@marijn\\+find-cluster-break|dom-serializer|domelementtype|domhandler|domutils|entities|htmlparser2)@)).+\\.(js|jsx|mjs|cjs|ts|tsx)$',
+    '^.+\\.module\\.(css|sass|scss)$',
+  ];
+  return config;
 };
+
+module.exports = override;

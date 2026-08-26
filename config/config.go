@@ -32,6 +32,7 @@ import (
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/sigv4"
 	"go.yaml.in/yaml/v2"
@@ -193,7 +194,8 @@ var (
 
 	DefaultRuntimeConfig = RuntimeConfig{
 		// Go runtime tuning.
-		GoGC: getGoGC(),
+		GoGC:     getGoGC(),
+		LogLevel: LogLevel("info"),
 	}
 
 	// DefaultScrapeConfig is the default scrape configuration. Users of this
@@ -732,10 +734,25 @@ func (c *GlobalConfig) isZero() bool {
 
 const DefaultGoGCPercentage = 75
 
+// LogLevel is a YAML representation of a promslog logging level.
+type LogLevel string
+
+// UnmarshalYAML validates and normalizes a log level.
+func (l *LogLevel) UnmarshalYAML(unmarshal func(any) error) error {
+	level := promslog.NewLevel()
+	if err := level.UnmarshalYAML(unmarshal); err != nil {
+		return err
+	}
+	*l = LogLevel(level.String())
+	return nil
+}
+
 // RuntimeConfig configures the values for the process behavior.
 type RuntimeConfig struct {
 	// The Go garbage collection target percentage.
 	GoGC int `yaml:"gogc,omitempty"`
+	// The minimum severity emitted by the process logger.
+	LogLevel LogLevel `yaml:"log_level,omitempty"`
 
 	// Below are guidelines for adding a new field:
 	//
@@ -755,7 +772,7 @@ type RuntimeConfig struct {
 
 // isZero returns true iff the global config is the zero value.
 func (c *RuntimeConfig) isZero() bool {
-	return c.GoGC == 0
+	return c.GoGC == 0 && c.LogLevel == ""
 }
 
 type ScrapeConfigs struct {
@@ -1135,15 +1152,15 @@ func (t *TSDBRetentionConfig) UnmarshalYAML(unmarshal func(any) error) error {
 const (
 	// FloatChunkEncodingXOR selects standard XOR encoding for float chunks.
 	FloatChunkEncodingXOR = "xor"
-	// FloatChunkEncodingXOR2 selects XOR2 encoding for float chunks; requires --enable-feature=xor2-encoding.
+	// FloatChunkEncodingXOR2 selects XOR2 encoding for float chunks.
 	FloatChunkEncodingXOR2 = "xor2"
 )
 
 // ChunkEncodingConfig configures per-chunk-type encoding overrides.
 type ChunkEncodingConfig struct {
 	// Floats selects the encoding used for float chunks.
-	// Valid values are "xor", "xor2", and "" (empty/absent). When empty, the encoding
-	// follows the --enable-feature=xor2-encoding flag. Setting "xor2" requires the flag to be enabled.
+	// Valid values are "xor", "xor2", and "" (empty/absent). When empty, the
+	// encoding follows the --enable-feature=xor2-encoding flag.
 	Floats string `yaml:"floats,omitempty"`
 }
 
@@ -1493,6 +1510,8 @@ type RemoteWriteConfig struct {
 	// ProtobufMessage specifies the protobuf message to use against the remote
 	// receiver as specified in https://prometheus.io/docs/specs/remote_write_spec_2_0/
 	ProtobufMessage remoteapi.WriteMessageType `yaml:"protobuf_message,omitempty"`
+	// FailedRequestLogging enables debug logging of remote write V2 request on send error.
+	FailedRequestLogging bool `yaml:"failed_request_logging,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
