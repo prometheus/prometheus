@@ -498,7 +498,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		// Potentially a second series in the metric family.
 		t := p.dec.GetType()
 		decodeNext := true
-		lastWasRedoClassicConversion := false
+		mustCheckNextSeriesKind := false
 		if t == dto.MetricType_SUMMARY ||
 			t == dto.MetricType_HISTOGRAM ||
 			t == dto.MetricType_GAUGE_HISTOGRAM {
@@ -530,14 +530,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			// because the NHCB is derived from the current series and
 			// must be emitted before moving to the next one.
 			if t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM {
-				if !isClassicHistogram {
-					// We just finished emitting the classic fields
-					// (_count, _sum, _bucket) of a native histogram
-					// via the redoClassic=true. The next series in this
-					// metric family may be native or classic-only, and
-					// we cannot tell which without advancing it.
-					lastWasRedoClassicConversion = true
-				} else if p.convertClassicHistogramsToNHCB {
+				if isClassicHistogram && p.convertClassicHistogramsToNHCB {
 					// We still need to spit out the NHCB.
 					var err error
 					p.nhcbH, p.nhcbFH, err = p.convertToNHCB(t)
@@ -547,6 +540,10 @@ func (p *ProtobufParser) Next() (Entry, error) {
 					p.state = EntryHistogram
 					// We have an NHCB to emit, no need to decode the next series.
 					decodeNext = false
+				} else {
+					// The next series in this metric family may be native or
+					// classic-only, and we cannot tell which without advancing it.
+					mustCheckNextSeriesKind = true
 				}
 			}
 		}
@@ -559,7 +556,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 				}
 				return EntryInvalid, err
 			}
-			if lastWasRedoClassicConversion {
+			if mustCheckNextSeriesKind {
 				// The previous series was a native histogram whose
 				// classic fields were emitted via redoClassic.
 				//
