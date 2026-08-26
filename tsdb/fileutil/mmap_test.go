@@ -16,6 +16,7 @@
 package fileutil
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -86,6 +88,65 @@ func TestClose(t *testing.T) {
 	require.Error(t, err, "Closing mmap multiple times should error.")
 }
 
+func TestMmapRefCloseRetriesAfterFailure(t *testing.T) {
+	wantErr := errors.New("unmap failed")
+	m := &mmapRef{b: []byte("mapped")}
+	calls := 0
+
+	err := m.closeWith(func([]byte) error {
+		calls++
+		return wantErr
+	})
+	require.ErrorIs(t, err, wantErr)
+	require.NotNil(t, m.b)
+
+	err = m.closeWith(func([]byte) error {
+		calls++
+		return nil
+	})
+	require.NoError(t, err)
+	require.Nil(t, m.b)
+	require.Equal(t, 2, calls)
+}
+
+func TestMmapViewRetainsMapping(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("inspecting process memory maps is only implemented on Linux")
+	}
+	if _, err := os.ReadFile("/proc/self/maps"); err != nil {
+		t.Skip("procfs is not mounted")
+	}
+
+	dir := testutil.NewTemporaryDirectory("test_mmap_view", t)
+	defer dir.Close()
+	path := filepath.Join(dir.Path(), "mmap_view_target")
+	content := []byte("the view owns this mapping")
+	require.NoError(t, os.WriteFile(path, content, 0o666))
+
+	assertMmapViewRetainsMapping(t, path, content)
+	requireEventuallyUnmapped(t, path)
+}
+
+func assertMmapViewRetainsMapping(t *testing.T, path string, content []byte) {
+	t.Helper()
+	view := openMmapView(t, path)
+	for range 3 {
+		runtime.GC()
+	}
+	mapped, err := isPathMmapped(path)
+	require.NoError(t, err)
+	require.True(t, mapped)
+	require.Equal(t, content, view.Copy())
+	runtime.KeepAlive(view)
+}
+
+func openMmapView(t *testing.T, path string) encoding.ByteView {
+	t.Helper()
+	f, err := OpenMmapFile(path)
+	require.NoError(t, err)
+	return f.BytesView()
+}
+
 func TestGCCleanup(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("inspecting process memorymaps not implemented on this platform")
@@ -105,35 +166,36 @@ func TestGCCleanup(t *testing.T) {
 	err = os.WriteFile(file, content, 0o666)
 	require.NoError(t, err, "Failed to write test target file %q.", file)
 
-	mmap, err := OpenMmapFile(file)
-	require.NoError(t, err, "Failed to mmap target file %q.", file)
+	openAndVerifyMmap(t, file)
+	requireEventuallyUnmapped(t, file)
+}
 
-	// ensure we can find the file in /proc/self/maps
-	mmapped, err := isPathMmapped(file)
-	require.NoError(t, err, "Failed to determine if file is mapped %q.", file)
-	require.True(t, mmapped, "mmap memory map was unexpectedly missing")
+func openAndVerifyMmap(t *testing.T, path string) {
+	t.Helper()
+	mmapFile, err := OpenMmapFile(path)
+	require.NoError(t, err, "Failed to mmap target file %q.", path)
 
-	// leak the mmap. Note the statement here keeps the object alive. After this
-	// the mmap is eligible for GC
-	_ = mmap
+	mapped, err := isPathMmapped(path)
+	require.NoError(t, err, "Failed to determine if file is mapped %q.", path)
+	require.True(t, mapped, "mmap memory map was unexpectedly missing")
+	runtime.KeepAlive(mmapFile)
+}
 
-	// run GC to run cleanup. This is undeterministic so let's run it a few times
-	for range 3 {
+func requireEventuallyUnmapped(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
 		runtime.GC()
-		mmapped, err = isPathMmapped(file)
-		require.NoError(t, err, "Failed to determine if file is mapped %q.", file)
-
-		if !mmapped {
-			// GC cleaned the mmap
-			break
+		mapped, err := isPathMmapped(path)
+		require.NoError(t, err, "Failed to determine if file is mapped %q.", path)
+		if !mapped {
+			return
 		}
-
-		// GC didn't clean the handle, retry
-		time.Sleep(time.Second)
+		if time.Now().After(deadline) {
+			require.FailNow(t, "mmap memory map was unexpectedly leaked", "path: %q", path)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-
-	// ensure the mmap was cleaned up, and we cannot find the mapping in /proc/self/maps
-	require.False(t, mmapped, "mmap memory map was unexpectedly leaked")
 }
 
 // Determines if this process has the given file in a file-backed memory map.
