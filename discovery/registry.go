@@ -249,8 +249,7 @@ func writeConfigs(structVal reflect.Value, configs Configs) error {
 }
 
 func replaceYAMLTypeError(err error, oldTyp, newTyp reflect.Type) error {
-	var e *yaml.TypeError
-	if errors.As(err, &e) {
+	if e, ok := errors.AsType[*yaml.TypeError](err); ok {
 		oldStr := oldTyp.String()
 		newStr := newTyp.String()
 		for i, s := range e.Errors {
