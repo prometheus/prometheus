@@ -4751,7 +4751,7 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 					// further up (the latter wouldn't make sense,
 					// but no harm in detecting it).
 					n.SkipHistogramBuckets = true
-				case "histogram_quantile", "histogram_quantiles", "histogram_fraction":
+				case "histogram_quantile", "histogram_quantiles", "histogram_fraction", "histogram_stddev", "histogram_stdvar":
 					// If we ever see a function that needs the
 					// whole histogram, we will not skip the
 					// buckets.
