@@ -2137,8 +2137,7 @@ func (sl *scrapeLoop) checkAddError(met []byte, exemplars []exemplar.Exemplar, e
 		return false, storage.ErrNotFound
 	default:
 		// If nothing from the above, check for partial errors. Do this here to not alloc the pErr on a hot path.
-		var pErr *storage.AppendPartialError
-		if errors.As(err, &pErr) {
+		if pErr, ok := errors.AsType[*storage.AppendPartialError](err); ok {
 			outOfOrderExemplars := 0
 			for _, e := range pErr.ExemplarErrors {
 				if errors.Is(e, storage.ErrOutOfOrderExemplar) {

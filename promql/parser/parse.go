@@ -250,12 +250,10 @@ func (errs ParseErrors) Error() string {
 
 // EnrichParseError enriches a single or list of parse errors (used for unit tests and promtool).
 func EnrichParseError(err error, enrich func(parseErr *ParseErr)) {
-	var parseErr *ParseErr
-	if errors.As(err, &parseErr) {
+	if parseErr, ok := errors.AsType[*ParseErr](err); ok {
 		enrich(parseErr)
 	}
-	var parseErrors ParseErrors
-	if errors.As(err, &parseErrors) {
+	if parseErrors, ok := errors.AsType[ParseErrors](err); ok {
 		for i, e := range parseErrors {
 			enrich(&e)
 			parseErrors[i] = e

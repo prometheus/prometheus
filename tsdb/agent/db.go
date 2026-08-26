@@ -782,8 +782,7 @@ func (db *DB) truncate(mint int64) error {
 
 	if err != nil {
 		db.metrics.checkpointCreationFail.Inc()
-		var cerr *wlog.CorruptionErr
-		if errors.As(err, &cerr) {
+		if _, ok := errors.AsType[*wlog.CorruptionErr](err); ok {
 			db.metrics.walCorruptionsTotal.Inc()
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
