@@ -104,7 +104,8 @@ func (c *shardCoalescer) TryAttachToBatch(batch []timeSeries, ref chunks.HeadSer
 // If the write pointer wraps around and overwrites an active pending exemplar,
 // the overwritten exemplar is evicted and onDrop is invoked.
 func (c *shardCoalescer) AddPendingExemplar(ref chunks.HeadSeriesRef, ex exemplar.Exemplar) {
-	slotIdx := c.head % c.capacity
+	slotIdx := c.head
+	c.head = (c.head + 1) % c.capacity
 	oldSlot := &c.slots[slotIdx]
 
 	// Check if we are overwriting an active slot due to wrap-around.
@@ -146,8 +147,6 @@ func (c *shardCoalescer) AddPendingExemplar(ref chunks.HeadSeriesRef, ex exempla
 		slotIdx:    slotIdx,
 		generation: gen,
 	}
-
-	c.head++
 }
 
 func (c *shardCoalescer) isValidSlot(slotIdx int, ref chunks.HeadSeriesRef) bool {
@@ -169,13 +168,20 @@ func (c *shardCoalescer) TryAttachMatchingExemplars(ref chunks.HeadSeriesRef, sa
 
 	var matched []exemplar.Exemplar
 	currIdx := entry.slotIdx
+	firstActiveSlot := -1
+	visited := 0
 
-	for currIdx >= 0 && currIdx < c.capacity {
+	for currIdx >= 0 && currIdx < c.capacity && visited < c.capacity {
+		visited++
 		slot := &c.slots[currIdx]
 		nextIdx := slot.nextSlot
 
-		// Validate generation & tombstone.
-		if slot.generation == c.generations[currIdx] && !slot.tombstone && slot.seriesRef == ref {
+		// Validate generation, seriesRef, and tombstone.
+		if slot.generation != c.generations[currIdx] || slot.seriesRef != ref {
+			break
+		}
+
+		if !slot.tombstone {
 			diff := sampleTs - slot.exemplar.Ts
 			if diff < 0 {
 				diff = -diff
@@ -190,13 +196,27 @@ func (c *shardCoalescer) TryAttachMatchingExemplars(ref chunks.HeadSeriesRef, sa
 				if c.onDrop != nil {
 					c.onDrop(slot.exemplar)
 				}
+			} else {
+				// Exemplar timestamp is in the future relative to this sample (|sampleTs - ex.Ts| > 50ms and sampleTs < ex.Ts - 50ms).
+				// It remains active for a subsequent scrape timestamp.
+				if firstActiveSlot == -1 {
+					firstActiveSlot = currIdx
+				}
 			}
 		}
 
 		currIdx = nextIdx
 	}
 
-	delete(c.seriesIndex, ref)
+	if firstActiveSlot >= 0 {
+		c.seriesIndex[ref] = coalescerIndexEntry{
+			slotIdx:    firstActiveSlot,
+			generation: c.slots[firstActiveSlot].generation,
+		}
+	} else {
+		delete(c.seriesIndex, ref)
+	}
+
 	return matched
 }
 

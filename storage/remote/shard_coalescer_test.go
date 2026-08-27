@@ -297,6 +297,30 @@ func TestShardCoalescer_EvictOlderThanAndFlush(t *testing.T) {
 	require.Equal(t, 0, coalescer.PendingCount())
 }
 
+func TestShardCoalescer_MultiExemplarTimestampSeparationAndCycleBounds(t *testing.T) {
+	var dropped atomic.Int64
+	coalescer := newShardCoalescer(16, func(e exemplar.Exemplar) {
+		dropped.Add(1)
+	})
+
+	// Add an exemplar for ref 601 at T=1000, and another for ref 601 at T=5000 (future scrape)
+	coalescer.AddPendingExemplar(601, exemplar.Exemplar{Ts: 1000, Value: 10, HasTs: true})
+	coalescer.AddPendingExemplar(601, exemplar.Exemplar{Ts: 5000, Value: 50, HasTs: true})
+
+	// Match sample at T=1010
+	m1 := coalescer.TryAttachMatchingExemplars(601, 1010)
+	require.Len(t, m1, 1)
+	require.Equal(t, float64(10), m1[0].Value)
+	require.Equal(t, 1, coalescer.PendingCount())
+
+	// The future exemplar at T=5000 is still preserved in index
+	m2 := coalescer.TryAttachMatchingExemplars(601, 5010)
+	require.Len(t, m2, 1)
+	require.Equal(t, float64(50), m2[0].Value)
+	require.Equal(t, 0, coalescer.PendingCount())
+	require.Equal(t, int64(0), dropped.Load())
+}
+
 func BenchmarkShardCoalescer_SampleFirst(b *testing.B) {
 	coalescer := newShardCoalescer(2048, nil)
 	lbls := labels.FromStrings("trace_id", "1234567890abcdef")

@@ -1304,6 +1304,7 @@ func (s *shards) start(n int) {
 
 	newQueues := make([]*queue, n)
 	onDrop := func(ex exemplar.Exemplar) {
+		s.enqueuedExemplars.Sub(1)
 		if s.qm.metrics != nil {
 			if s.qm.metrics.unmatchedExemplarsDroppedTotal != nil {
 				s.qm.metrics.unmatchedExemplarsDroppedTotal.Inc()
