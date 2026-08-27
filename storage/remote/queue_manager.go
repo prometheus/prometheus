@@ -36,6 +36,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
@@ -96,9 +97,10 @@ type queueManagerMetrics struct {
 	maxNumShards           prometheus.Gauge
 	minNumShards           prometheus.Gauge
 	desiredNumShards       prometheus.Gauge
-	sentBytesTotal         prometheus.Counter
-	metadataBytesTotal     prometheus.Counter
-	maxSamplesPerSend      prometheus.Gauge
+	sentBytesTotal                 prometheus.Counter
+	metadataBytesTotal             prometheus.Counter
+	maxSamplesPerSend              prometheus.Gauge
+	unmatchedExemplarsDroppedTotal prometheus.Counter
 }
 
 func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManagerMetrics {
@@ -328,6 +330,13 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "The maximum number of samples to be sent, in a single request, to the remote storage. Note that, when sending of exemplars over remote write is enabled, exemplars count towards this limit.",
 		ConstLabels: constLabels,
 	})
+	m.unmatchedExemplarsDroppedTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace:   namespace,
+		Subsystem:   subsystem,
+		Name:        "unmatched_exemplars_dropped_total",
+		Help:        "Total number of exemplars dropped due to not matching any sample within the coalescing window.",
+		ConstLabels: constLabels,
+	})
 
 	return m
 }
@@ -365,6 +374,7 @@ func (m *queueManagerMetrics) register() {
 			m.sentBytesTotal,
 			m.metadataBytesTotal,
 			m.maxSamplesPerSend,
+			m.unmatchedExemplarsDroppedTotal,
 		)
 	}
 }
@@ -401,6 +411,7 @@ func (m *queueManagerMetrics) unregister() {
 		m.reg.Unregister(m.sentBytesTotal)
 		m.reg.Unregister(m.metadataBytesTotal)
 		m.reg.Unregister(m.maxSamplesPerSend)
+		m.reg.Unregister(m.unmatchedExemplarsDroppedTotal)
 	}
 }
 
@@ -1292,8 +1303,24 @@ func (s *shards) start(n int) {
 	s.qm.metrics.numShards.Set(float64(n))
 
 	newQueues := make([]*queue, n)
+	onDrop := func(ex exemplar.Exemplar) {
+		if s.qm.metrics != nil {
+			if s.qm.metrics.unmatchedExemplarsDroppedTotal != nil {
+				s.qm.metrics.unmatchedExemplarsDroppedTotal.Inc()
+			}
+			if s.qm.metrics.droppedExemplarsTotal != nil {
+				s.qm.metrics.droppedExemplarsTotal.WithLabelValues("unmatched").Inc()
+			}
+			if s.qm.metrics.pendingExemplars != nil {
+				s.qm.metrics.pendingExemplars.Dec()
+			}
+		}
+		if s.qm.dataDropped != nil {
+			s.qm.dataDropped.incr(1)
+		}
+	}
 	for i := range n {
-		newQueues[i] = newQueue(s.qm.cfg.MaxSamplesPerSend, s.qm.cfg.Capacity)
+		newQueues[i] = newQueue(s.qm.cfg.MaxSamplesPerSend, s.qm.cfg.Capacity, s.qm.protoMsg, onDrop)
 	}
 
 	s.queues = newQueues
@@ -1367,6 +1394,7 @@ func (s *shards) enqueue(ref chunks.HeadSeriesRef, data timeSeries) bool {
 	case <-s.softShutdown:
 		return false
 	default:
+		data.seriesRef = ref
 		appended := s.queues[shard].Append(data)
 		if !appended {
 			return false
@@ -1395,6 +1423,9 @@ type queue struct {
 	batch      []timeSeries
 	batchQueue chan []timeSeries
 
+	coalescer *shardCoalescer
+	protoMsg  remoteapi.WriteMessageType
+
 	// Since we know there are a limited number of batches out, using a stack
 	// is easy and safe so a sync.Pool is not necessary.
 	// poolMtx covers adding and removing batches from the batchPool.
@@ -1403,6 +1434,7 @@ type queue struct {
 }
 
 type timeSeries struct {
+	seriesRef                 chunks.HeadSeriesRef
 	seriesLabels              labels.Labels
 	value                     float64
 	histogram                 *histogram.Histogram
@@ -1410,6 +1442,7 @@ type timeSeries struct {
 	metadata                  *metadata.Metadata
 	startTimestamp, timestamp int64
 	exemplarLabels            labels.Labels
+	exemplars                 []exemplar.Exemplar
 	// The type of series: sample, exemplar, or histogram.
 	sType seriesType
 }
@@ -1424,7 +1457,7 @@ const (
 	tMetadata
 )
 
-func newQueue(batchSize, capacity int) *queue {
+func newQueue(batchSize, capacity int, protoMsg remoteapi.WriteMessageType, onDrop func(exemplar.Exemplar)) *queue {
 	batches := capacity / batchSize
 	// Always create an unbuffered channel even if capacity is configured to be
 	// less than max_samples_per_send.
@@ -1437,6 +1470,8 @@ func newQueue(batchSize, capacity int) *queue {
 		// batchPool should have capacity for everything in the channel + 1 for
 		// the batch being processed.
 		batchPool: make([][]timeSeries, 0, batches+1),
+		coalescer: newShardCoalescer(defaultRingBufferSize, onDrop),
+		protoMsg:  protoMsg,
 	}
 }
 
@@ -1445,6 +1480,32 @@ func newQueue(batchSize, capacity int) *queue {
 func (q *queue) Append(datum timeSeries) bool {
 	q.batchMtx.Lock()
 	defer q.batchMtx.Unlock()
+
+	if q.protoMsg == remoteapi.WriteV2MessageType && q.coalescer != nil {
+		if datum.sType == tExemplar {
+			ex := exemplar.Exemplar{
+				Labels: datum.exemplarLabels,
+				Value:  datum.value,
+				Ts:     datum.timestamp,
+				HasTs:  true,
+			}
+			// Try attaching to an existing un-flushed sample/histogram in the current batch.
+			if q.coalescer.TryAttachToBatch(q.batch, datum.seriesRef, ex) {
+				return true
+			}
+			// Buffer in ring buffer.
+			q.coalescer.AddPendingExemplar(datum.seriesRef, ex)
+			return true
+		}
+
+		if datum.sType == tSample || datum.sType == tHistogram || datum.sType == tFloatHistogram {
+			// Check if there are any matching pending exemplars in the ring buffer.
+			if matched := q.coalescer.TryAttachMatchingExemplars(datum.seriesRef, datum.timestamp); len(matched) > 0 {
+				datum.exemplars = append(datum.exemplars, matched...)
+			}
+		}
+	}
+
 	// TODO(cstyan): Check if metadata now means we've reduced the total # of samples
 	// we can batch together here, and if so find a way to not include metadata
 	// in the batch size calculation.
@@ -1505,6 +1566,9 @@ loop:
 
 	q.batchMtx.Lock()
 	defer q.batchMtx.Unlock()
+	if q.coalescer != nil {
+		q.coalescer.FlushAndClear()
+	}
 	q.batch = nil
 	close(q.batchQueue)
 }
@@ -1604,7 +1668,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, encBuf, compr)
 		case remoteapi.WriteV2MessageType:
 			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels)
-			n := nPendingSamples + nPendingExemplars + nPendingHistograms
+			n := len(batch)
 			if nUnexpectedMetadata > 0 {
 				s.qm.logger.Warn("unexpected metadata sType in populateV2TimeSeries", "count", nUnexpectedMetadata)
 			}
@@ -1678,6 +1742,15 @@ func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sen
 				Value:     d.value,
 				Timestamp: d.timestamp,
 			})
+			if sendExemplars && len(d.exemplars) > 0 {
+				for _, ex := range d.exemplars {
+					pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, prompb.Exemplar{
+						Labels:    prompb.FromLabels(ex.Labels, nil),
+						Value:     ex.Value,
+						Timestamp: ex.Ts,
+					})
+				}
+			}
 			nPendingSamples++
 		case tExemplar:
 			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, prompb.Exemplar{
@@ -1688,9 +1761,27 @@ func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sen
 			nPendingExemplars++
 		case tHistogram:
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, prompb.FromIntHistogram(d.timestamp, d.histogram))
+			if sendExemplars && len(d.exemplars) > 0 {
+				for _, ex := range d.exemplars {
+					pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, prompb.Exemplar{
+						Labels:    prompb.FromLabels(ex.Labels, nil),
+						Value:     ex.Value,
+						Timestamp: ex.Ts,
+					})
+				}
+			}
 			nPendingHistograms++
 		case tFloatHistogram:
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, prompb.FromFloatHistogram(d.timestamp, d.floatHistogram))
+			if sendExemplars && len(d.exemplars) > 0 {
+				for _, ex := range d.exemplars {
+					pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, prompb.Exemplar{
+						Labels:    prompb.FromLabels(ex.Labels, nil),
+						Value:     ex.Value,
+						Timestamp: ex.Ts,
+					})
+				}
+			}
 			nPendingHistograms++
 		}
 	}
@@ -2017,19 +2108,51 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 				StartTimestamp: d.startTimestamp,
 			})
 			nPendingSamples++
+			if sendExemplars && len(d.exemplars) > 0 {
+				for _, ex := range d.exemplars {
+					pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, writev2.Exemplar{
+						LabelsRefs: symbolTable.SymbolizeLabels(ex.Labels, nil),
+						Value:      ex.Value,
+						Timestamp:  ex.Ts,
+					})
+					nPendingExemplars++
+				}
+			}
 		case tExemplar:
-			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, writev2.Exemplar{
-				LabelsRefs: symbolTable.SymbolizeLabels(d.exemplarLabels, nil), // TODO: optimize, reuse slice
-				Value:      d.value,
-				Timestamp:  d.timestamp,
-			})
-			nPendingExemplars++
+			if sendExemplars {
+				pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, writev2.Exemplar{
+					LabelsRefs: symbolTable.SymbolizeLabels(d.exemplarLabels, nil), // TODO: optimize, reuse slice
+					Value:      d.value,
+					Timestamp:  d.timestamp,
+				})
+				nPendingExemplars++
+			}
 		case tHistogram:
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromIntHistogram(d.startTimestamp, d.timestamp, d.histogram))
 			nPendingHistograms++
+			if sendExemplars && len(d.exemplars) > 0 {
+				for _, ex := range d.exemplars {
+					pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, writev2.Exemplar{
+						LabelsRefs: symbolTable.SymbolizeLabels(ex.Labels, nil),
+						Value:      ex.Value,
+						Timestamp:  ex.Ts,
+					})
+					nPendingExemplars++
+				}
+			}
 		case tFloatHistogram:
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromFloatHistogram(d.startTimestamp, d.timestamp, d.floatHistogram))
 			nPendingHistograms++
+			if sendExemplars && len(d.exemplars) > 0 {
+				for _, ex := range d.exemplars {
+					pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, writev2.Exemplar{
+						LabelsRefs: symbolTable.SymbolizeLabels(ex.Labels, nil),
+						Value:      ex.Value,
+						Timestamp:  ex.Ts,
+					})
+					nPendingExemplars++
+				}
+			}
 		case tMetadata:
 			nUnexpectedMetadata++
 		}

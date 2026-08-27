@@ -256,6 +256,16 @@ func TestSampleDelivery(t *testing.T) {
 				qm.StoreSeries(series, 0)
 				qm.StoreMetadata(metadata)
 
+				if protoMsg == remoteapi.WriteV2MessageType && rc.Name == "exemplars only" {
+					// In PRW 2.0, standalone exemplars without matching samples/histograms cannot be sent
+					// and are dropped as unmatched to adhere to PRW 2.0 invariants (0 empty TimeSeries).
+					qm.AppendExemplars(exemplars)
+					require.Eventually(t, func() bool {
+						return client_testutil.ToFloat64(qm.metrics.pendingExemplars) == float64(len(exemplars))
+					}, 2*time.Second, 10*time.Millisecond)
+					return
+				}
+
 				// Send first half of data.
 				c.expectSamples(samples[:len(samples)/2], series)
 				c.expectExemplars(exemplars[:len(exemplars)/2], series)
@@ -1743,7 +1753,7 @@ func TestQueueManagerMetrics(t *testing.T) {
 func TestQueue_FlushAndShutdownDoesNotDeadlock(t *testing.T) {
 	capacity := 100
 	batchSize := 10
-	queue := newQueue(batchSize, capacity)
+	queue := newQueue(batchSize, capacity, remoteapi.WriteV1MessageType, nil)
 	for i := 0; i < capacity+batchSize; i++ {
 		queue.Append(timeSeries{})
 	}
