@@ -7947,7 +7947,7 @@ func TestHeadAppender_AppendSTZeroSample(t *testing.T) {
 		})
 	}
 
-	t.Run("rejected ST does not retain series", func(t *testing.T) {
+	t.Run("rejected ST injected zero does not retain series", func(t *testing.T) {
 		h, _ := newTestHead(t, DefaultBlockDuration, compression.None, true)
 		lset := labels.FromStrings("a", "1")
 
