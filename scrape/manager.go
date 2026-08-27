@@ -97,6 +97,7 @@ func NewManager(
 		r.Enable(features.Scrape, "extra_scrape_metrics")
 		r.Set(features.Scrape, "start_timestamp_zero_ingestion", o.EnableStartTimestampZeroIngestion)
 		r.Set(features.Scrape, "type_and_unit_labels", o.EnableTypeAndUnitLabels)
+		r.Set(features.Scrape, "openmetrics2", o.EnableOpenMetrics2)
 	}
 
 	return m, nil
@@ -141,6 +142,10 @@ type Options struct {
 
 	// EnableTypeAndUnitLabels represents type-and-unit-labels feature flag.
 	EnableTypeAndUnitLabels bool
+
+	// EnableOpenMetrics2 represents the openmetrics2 feature flag. It enables
+	// the experimental OpenMetrics 2.0 parser.
+	EnableOpenMetrics2 bool
 
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption

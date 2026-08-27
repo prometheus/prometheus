@@ -935,6 +935,7 @@ type scrapeLoop struct {
 	enableSTZeroIngestion   bool
 	parseST                 bool // Used by AppenderV2 only.
 	enableTypeAndUnitLabels bool
+	enableOpenMetrics2      bool
 	reportExtraMetrics      bool
 	appendMetadataToWAL     bool
 	passMetadataInContext   bool
@@ -1319,6 +1320,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		parseST:                 opts.sp.options.ParseST || opts.sp.options.EnableStartTimestampZeroIngestion,
 		synthesizeST:            opts.sp.options.SynthesizeST,
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
+		enableOpenMetrics2:      opts.sp.options.EnableOpenMetrics2,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
 		skipJitterOffsetting:    opts.sp.options.skipJitterOffsetting,
@@ -1734,6 +1736,7 @@ func (sl *scrapeLoopAppender) append(b []byte, contentType string, ts time.Time)
 		ConvertClassicHistogramsToNHCB:          sl.convertClassicHistToNHCB,
 		KeepClassicOnClassicAndNativeHistograms: sl.alwaysScrapeClassicHist,
 		OpenMetricsSkipSTSeries:                 sl.enableSTZeroIngestion,
+		EnableOpenMetrics2:                      sl.enableOpenMetrics2,
 		FallbackContentType:                     sl.fallbackScrapeProtocol,
 	})
 	if p == nil {
@@ -2137,8 +2140,7 @@ func (sl *scrapeLoop) checkAddError(met []byte, exemplars []exemplar.Exemplar, e
 		return false, storage.ErrNotFound
 	default:
 		// If nothing from the above, check for partial errors. Do this here to not alloc the pErr on a hot path.
-		var pErr *storage.AppendPartialError
-		if errors.As(err, &pErr) {
+		if pErr, ok := errors.AsType[*storage.AppendPartialError](err); ok {
 			outOfOrderExemplars := 0
 			for _, e := range pErr.ExemplarErrors {
 				if errors.Is(e, storage.ErrOutOfOrderExemplar) {

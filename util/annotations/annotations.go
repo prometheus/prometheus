@@ -44,8 +44,7 @@ func (a *Annotations) Add(err error) Annotations {
 		*a = Annotations{}
 	}
 	if prevErr, exists := (*a)[err.Error()]; exists {
-		var anErr annoError
-		if errors.As(err, &anErr) {
+		if anErr, ok := errors.AsType[annoError](err); ok {
 			err = anErr.Merge(prevErr)
 		}
 	}
@@ -64,8 +63,7 @@ func (a *Annotations) Merge(aa Annotations) Annotations {
 	}
 	for key, val := range aa {
 		if prevVal, exists := (*a)[key]; exists {
-			var anErr annoError
-			if errors.As(val, &anErr) {
+			if anErr, ok := errors.AsType[annoError](val); ok {
 				val = anErr.Merge(prevVal)
 			}
 		}
@@ -95,8 +93,7 @@ func (a Annotations) AsStrings(query string, maxWarnings, maxInfos int) (warning
 	warnSkipped := 0
 	infoSkipped := 0
 	for _, err := range a {
-		var anErr annoError
-		if errors.As(err, &anErr) {
+		if anErr, ok := errors.AsType[annoError](err); ok {
 			anErr.SetQuery(query)
 		}
 		switch {

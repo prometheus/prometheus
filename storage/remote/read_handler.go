@@ -171,8 +171,7 @@ func (h *readHandler) remoteReadSamples(
 			}
 			return nil
 		}(); err != nil {
-			var httpErr HTTPError
-			if errors.As(err, &httpErr) {
+			if httpErr, ok := errors.AsType[HTTPError](err); ok {
 				http.Error(w, httpErr.Error(), httpErr.Status())
 				return
 			}
@@ -247,8 +246,7 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 			}
 			return nil
 		}(); err != nil {
-			var httpErr HTTPError
-			if errors.As(err, &httpErr) {
+			if httpErr, ok := errors.AsType[HTTPError](err); ok {
 				http.Error(w, httpErr.Error(), httpErr.Status())
 				return
 			}
