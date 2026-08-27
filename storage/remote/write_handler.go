@@ -40,10 +40,7 @@ import (
 )
 
 type writeHandler struct {
-	logger *slog.Logger
-	// appendableV2 is used by both the Remote Write 1.0 and 2.x paths, which
-	// have been migrated to AppenderV2
-	// (https://github.com/prometheus/prometheus/issues/17632).
+	logger       *slog.Logger
 	appendableV2 storage.AppendableV2
 
 	samplesWithInvalidLabelsTotal  prometheus.Counter
@@ -58,7 +55,6 @@ const maxAheadTime = 10 * time.Minute
 
 // NewWriteHandler creates a http.Handler that accepts remote write requests with
 // the given message in acceptedMsgs and writes them to the provided appendable.
-// Both the Remote Write 1.0 and 2.x paths use appendableV2 (storage.AppenderV2).
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
