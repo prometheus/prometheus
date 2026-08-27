@@ -377,3 +377,24 @@ to this maximum, so an operator setting a smaller cap does not break
 no-`limit` requests. Setting the flag to `0` disables the cap entirely; this
 is **not recommended** for endpoints exposed beyond a trusted network because a
 single client can then request the entire index in one response.
+
+## OpenMetrics 2.0
+
+`--enable-feature=openmetrics2`
+
+Enables scraping targets that expose the [OpenMetrics 2.0](https://prometheus.io/docs/specs/om/open_metrics_spec_2_0/)
+text format, advertised with the `application/openmetrics-text; version=2.0.0`
+content type.
+
+OpenMetrics 2.0 support is **experimental**. The parser is not stable
+yet, so expositions that Prometheus accepts today may be rejected by a later release.
+Do not depend on the current behavior in production.
+
+When this flag is disabled, an OpenMetrics 2.0 content type is treated as an
+unsupported content type: the target's `fallback_scrape_protocol` is used if
+one is configured, and the scrape fails otherwise.
+
+If you are implementing an OpenMetrics 2.0 exporter or client library, note that
+a successful scrape by Prometheus is **not** a certification that your output is
+spec-compliant. Refer to [OpenMetrics 2.0 migration guide](https://prometheus.io/docs/guides/open_metrics_2_0_migration/)
+instead. 
