@@ -7516,11 +7516,11 @@ func TestStripeSeries_gc(t *testing.T) {
 	t.Run("underflow preserves garbage-collected flag", func(t *testing.T) {
 		series := newMemSeries(labels.FromStrings("a", "1"), 1, 0, defaultIsolationDisabled, false)
 		series.Lock()
+		t.Cleanup(series.Unlock)
 		series.setGCed()
 		require.False(t, series.unmarkPendingCommit())
 		require.Zero(t, series.pendingCommitCount())
 		require.True(t, series.isGCed())
-		series.Unlock()
 	})
 }
 
