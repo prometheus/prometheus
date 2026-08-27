@@ -895,10 +895,8 @@ func (h *Head) Init(minValidTime int64) error {
 			}
 		}()
 
-		// A corrupted checkpoint is a hard error for now and requires user
-		// intervention. There's likely little data that can be recovered anyway.
 		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks); err != nil {
-			return fmt.Errorf("backfill checkpoint: %w", err)
+			return &errLoadCheckpoint{checkpointDir: dir, err: err}
 		}
 		h.updateWALReplayStatusRead(startFrom)
 		startFrom++

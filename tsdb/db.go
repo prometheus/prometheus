@@ -1215,6 +1215,15 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 				return nil, fmt.Errorf("repair corrupted WBL: %w", err)
 			}
 			db.logger.Info("Successfully repaired WBL")
+		} else if e, ok := errors.AsType[*errLoadCheckpoint](initErr); ok {
+			db.logger.Warn("Encountered checkpoint read error, deleting corrupted checkpoint and recovering remaining WAL", "err", initErr)
+			if err := os.RemoveAll(e.checkpointDir); err != nil {
+				return nil, fmt.Errorf("remove corrupted checkpoint: %w", err)
+			}
+			if err := db.head.Init(minValidTime); err != nil {
+				return nil, fmt.Errorf("replaying WAL after corrupted checkpoint removal: %w", err)
+			}
+			db.logger.Info("Successfully recovered from corrupted checkpoint")
 		} else {
 			db.logger.Warn("Encountered WAL read error, attempting repair", "err", initErr)
 			if err := wal.Repair(initErr); err != nil {

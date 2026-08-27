@@ -341,6 +341,74 @@ func TestNoPanicAfterWALCorruption(t *testing.T) {
 	}
 }
 
+// TestCheckpointCorruptionRecovery ensures that corruption in a checkpoint directory
+// does not mistakenly truncate or corrupt the main WAL, and that remaining WAL samples
+// can still be replayed.
+// https://github.com/prometheus/prometheus/issues/7530
+func TestCheckpointCorruptionRecovery(t *testing.T) {
+	db := newTestDB(t, withOpts(&Options{WALSegmentSize: 32 * 1024}))
+
+	ctx := context.Background()
+	var maxt int64
+
+	// 1. Append samples and trigger a checkpoint.
+	for range 100 {
+		app := db.Appender(ctx)
+		_, err := app.Append(0, labels.FromStrings("foo", "bar"), maxt, 0)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		maxt++
+	}
+
+	// Create checkpoint.
+	_, err := wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, 0, 1, func(chunks.HeadSeriesRef) bool {
+		return true
+	}, 0, false)
+	require.NoError(t, err)
+
+	// 2. Append samples that go into WAL segments after the checkpoint.
+	for range 50 {
+		app := db.Appender(ctx)
+		_, err := app.Append(0, labels.FromStrings("foo", "bar"), maxt, float64(maxt))
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		maxt++
+	}
+
+	require.NoError(t, db.Close())
+
+	// 3. Corrupt the checkpoint segment file.
+	checkpointDir, _, err := wlog.LastCheckpoint(path.Join(db.Dir(), "wal"))
+	require.NoError(t, err)
+	checkpointFiles, err := os.ReadDir(checkpointDir)
+	require.NoError(t, err)
+	require.NotEmpty(t, checkpointFiles)
+
+	f, err := os.OpenFile(path.Join(checkpointDir, checkpointFiles[0].Name()), os.O_RDWR, 0o666)
+	require.NoError(t, err)
+	// Write corrupted byte at the beginning of the checkpoint segment.
+	_, err = f.WriteAt([]byte{99}, 0)
+	require.NoError(t, err)
+	f.Close()
+
+	// 4. Open DB again and verify recovery.
+	{
+		reopenedDB := newTestDB(t, withDir(db.Dir()))
+		require.Equal(t, 1.0, prom_testutil.ToFloat64(reopenedDB.head.metrics.walCorruptionsTotal), "WAL corruption count mismatch")
+
+		// Check that the corrupted checkpoint directory has been removed.
+		_, _, err = wlog.LastCheckpoint(path.Join(db.Dir(), "wal"))
+		require.ErrorIs(t, err, record.ErrNotFound)
+
+		// Verify that the WAL segments were preserved and replayed.
+		querier, err := reopenedDB.Querier(0, maxt)
+		require.NoError(t, err)
+		seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "", ""))
+		require.NotEmpty(t, seriesSet[`{foo="bar"}`])
+		require.NoError(t, reopenedDB.Close())
+	}
+}
+
 func TestDataNotAvailableAfterRollback(t *testing.T) {
 	db := newTestDB(t)
 
