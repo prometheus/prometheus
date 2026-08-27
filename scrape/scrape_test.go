@@ -2645,6 +2645,81 @@ func BenchmarkScrapeLoopScrapeAndReport(b *testing.B) {
 	}
 }
 
+func BenchmarkScrapeLoopLargeBody(b *testing.B) {
+	for _, bodySize := range []int{1 << 20, 4 << 20, 16 << 20} {
+		b.Run(fmt.Sprintf("%dMiB", bodySize>>20), func(b *testing.B) {
+			body := makeLargeTextBody(bodySize)
+
+			s := teststorage.New(b)
+			sl, scraper := newTestScrapeLoop(b, withAppendable(s, false), func(sl *scrapeLoop) {
+				sl.fallbackScrapeProtocol = "text/plain"
+			})
+			scraper.scrapeFunc = func(_ context.Context, writer io.Writer) error {
+				_, err := writer.Write(body)
+				return err
+			}
+
+			ts := time.Time{}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				ts = ts.Add(time.Second)
+				sl.scrapeAndReport(time.Time{}, ts, nil)
+				require.NoError(b, scraper.lastError)
+			}
+		})
+	}
+}
+
+// makeLargeTextBody builds an exposition body of at least targetBytes.
+func makeLargeTextBody(targetBytes int) []byte {
+	var sb bytes.Buffer
+	sb.WriteString("# HELP bench_metric Synthetic metric for the large body benchmark.\n")
+	sb.WriteString("# TYPE bench_metric counter\n")
+	for i := 0; sb.Len() < targetBytes; i++ {
+		_, _ = fmt.Fprintf(&sb, "bench_metric{instance=\"i%06d\",shard=\"s%03d\"} %d\n", i, i%512, i)
+	}
+	return sb.Bytes()
+}
+
+// TestScrapeLoopBodyBufferSlack guards the slack that keeps
+// bytes.Buffer.ReadFrom from reallocating and copying the body.
+func TestScrapeLoopBodyBufferSlack(t *testing.T) {
+	for _, bodySize := range []int{
+		1 << 10,
+		729000, // The largest bucket.
+		729001, // Above it, where pool.Get stops padding to a bucket size.
+		2 << 20,
+	} {
+		t.Run(fmt.Sprintf("body=%d", bodySize), func(t *testing.T) {
+			body := makeLargeTextBody(bodySize)
+
+			var gotCap int
+			sl, scraper := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), false), func(sl *scrapeLoop) {
+				sl.fallbackScrapeProtocol = "text/plain"
+			})
+			scraper.scrapeFunc = func(_ context.Context, w io.Writer) error {
+				gotCap = cap(w.(*bytes.Buffer).Bytes())
+				_, err := w.Write(body)
+				return err
+			}
+
+			// The first scrape primes lastScrapeSize.
+			ts := time.Time{}
+			sl.scrapeAndReport(time.Time{}, ts, nil)
+			require.NoError(t, scraper.lastError)
+			require.Equal(t, len(body), sl.lastScrapeSize)
+
+			sl.scrapeAndReport(time.Time{}, ts.Add(time.Second), nil)
+			require.NoError(t, scraper.lastError)
+
+			require.GreaterOrEqual(t, gotCap, len(body)+bytes.MinRead,
+				"scrape read buffer must keep at least bytes.MinRead spare capacity to avoid a full-body copy")
+		})
+	}
+}
+
 func TestSetOptionsHandlingStaleness(t *testing.T) {
 	foreachAppendable(t, func(t *testing.T, appV2 bool) {
 		testSetOptionsHandlingStaleness(t, appV2)

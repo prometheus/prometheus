@@ -347,3 +347,41 @@ Inner2:
 		}
 	})
 }
+
+/*
+	export bench=v1 && go test ./model/textparse/... \
+		 -run '^$' -bench '^BenchmarkNewPromParser' \
+		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+	 | tee ${bench}.txt
+*/
+func BenchmarkNewPromParser(b *testing.B) {
+	data := readTestdataFile(b, "alltypes.237mfs.prom.txt")
+	require.Equal(b, byte('\n'), data[len(data)-1])
+
+	for _, tcase := range []struct {
+		name string
+		body []byte
+	}{
+		{name: "exact", body: exactSized(data)},
+		{name: "no-newline", body: exactSized(data[:len(data)-1])},
+		{name: "spare-cap", body: append(make([]byte, 0, len(data)+1), data...)},
+	} {
+		b.Run(tcase.name, func(b *testing.B) {
+			st := labels.NewSymbolTable()
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				benchNewParserSink = NewPromParser(tcase.body, st, false)
+			}
+		})
+	}
+}
+
+var benchNewParserSink Parser
+
+func exactSized(b []byte) []byte {
+	out := make([]byte, len(b))
+	copy(out, b)
+	return out
+}
