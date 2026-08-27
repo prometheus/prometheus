@@ -769,9 +769,15 @@ type targetScraper struct {
 
 var errBodySizeLimit = errors.New("body size limit exceeded")
 
+const zstdMaxWindowSize = 8 << 20
+
 var zstdDecoderPool = sync.Pool{
 	New: func() any {
-		decoder, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
+		decoder, err := zstd.NewReader(
+			nil,
+			zstd.WithDecoderConcurrency(1),
+			zstd.WithDecoderMaxWindow(zstdMaxWindowSize),
+		)
 		if err != nil {
 			panic(err)
 		}

@@ -5254,6 +5254,30 @@ func TestTargetScraperMalformedCompressedResponse(t *testing.T) {
 	}
 }
 
+func TestTargetScraperZstdWindowLimit(t *testing.T) {
+	encoder, err := zstd.NewWriter(nil, zstd.WithWindowSize(2*zstdMaxWindowSize))
+	require.NoError(t, err)
+	t.Cleanup(func() { encoder.Close() })
+
+	compressed := encoder.EncodeAll(bytes.Repeat([]byte("a"), zstdMaxWindowSize+1), nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Encoding": []string{"zstd"},
+		},
+		Body: io.NopCloser(bytes.NewReader(compressed)),
+	}
+	ts := &targetScraper{
+		bodySizeLimit: math.MaxInt64,
+		metrics:       newTestScrapeMetrics(t),
+		enableZstd:    true,
+		logger:        promslog.NewNopLogger(),
+	}
+
+	_, err = ts.readResponse(context.Background(), resp, io.Discard)
+	require.ErrorContains(t, err, "decompressed size exceeds configured limit")
+}
+
 // testScraper implements the scraper interface and allows setting values
 // returned by its methods. It also allows setting a custom scrape function.
 type testScraper struct {
