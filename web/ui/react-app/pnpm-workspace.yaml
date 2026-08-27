@@ -2,9 +2,6 @@
 # issues with conflicting dependencies. This is a temporary solution until the
 # new Mantine-based UI is fully integrated and the old app can be removed.
 packages: []
-overrides:
-  # Enzyme loads Cheerio before Jest setup; newer versions require TextDecoder.
-  enzyme>cheerio: 1.0.0-rc.12
 peerDependencyRules:
   allowedVersions:
     # Reactstrap 8 uses react-popper whose peer metadata predates React 18; interaction tests cover compatibility.
