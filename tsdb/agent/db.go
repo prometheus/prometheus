@@ -970,7 +970,7 @@ func (a *appenderBase) getOrCreate(ref chunks.HeadSeriesRef, l labels.Labels) (s
 	}
 
 	// Known limitation: unlike the TSDB head, agent memSeries has no
-	// pendingCommit flag. Between this point and the first sample write that
+	// pending-commit protection. Between this point and the first sample write that
 	// updates series.lastTs, GC may remove the series (lastTs == math.MinInt64
 	// satisfies mint > lastTs). The WAL record appended below would then
 	// reference a ref with no corresponding in-memory series.
