@@ -1,69 +1,57 @@
-import * as React from 'react';
-import { mount, ReactWrapper } from 'enzyme';
+import React from 'react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import ExpressionInput from './ExpressionInput';
-import { Button, InputGroup, InputGroupAddon } from 'reactstrap';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons';
+
+const defaultProps = {
+  value: 'node_cpu',
+  queryHistory: [],
+  metricNames: [],
+  executeQuery: jest.fn(),
+  onExpressionChange: jest.fn(),
+  loading: false,
+  enableAutocomplete: true,
+  enableHighlighting: true,
+  enableLinter: true,
+};
 
 describe('ExpressionInput', () => {
-  const expressionInputProps = {
-    value: 'node_cpu',
-    queryHistory: [],
-    metricNames: [],
-    executeQuery: (): void => {
-      // Do nothing.
-    },
-    onExpressionChange: (): void => {
-      // Do nothing.
-    },
-    loading: false,
-    enableAutocomplete: true,
-    enableHighlighting: true,
-    enableLinter: true,
-  };
+  const getSelection = document.getSelection;
 
-  let expressionInput: ReactWrapper;
+  beforeAll(() => {
+    document.getSelection = () =>
+      ({
+        addRange: jest.fn(),
+        collapse: jest.fn(),
+        removeAllRanges: jest.fn(),
+      }) as unknown as Selection;
+  });
+
+  afterAll(() => {
+    document.getSelection = getSelection;
+  });
+
   beforeEach(() => {
-    expressionInput = mount(<ExpressionInput {...expressionInputProps} />);
+    defaultProps.executeQuery.mockClear();
+    defaultProps.onExpressionChange.mockClear();
   });
 
-  it('renders an InputGroup', () => {
-    const inputGroup = expressionInput.find(InputGroup);
-    expect(inputGroup.prop('className')).toEqual('expression-input');
+  it('renders a CodeMirror expression and executes the query', () => {
+    const { container } = render(<ExpressionInput {...defaultProps} />);
+
+    expect(container.querySelector('.expression-input')).toBeTruthy();
+    expect(container.querySelector('.cm-expression-input')?.textContent).toContain('node_cpu');
+    expect(container.querySelector('[data-icon="magnifying-glass"]')).toBeTruthy();
+
+    const execute = screen.getByRole('button', { name: 'Execute' });
+    expect(execute.classList.contains('btn-primary')).toBe(true);
+    fireEvent.click(execute);
+    expect(defaultProps.executeQuery).toHaveBeenCalledTimes(1);
   });
 
-  it('renders a search icon when it is not loading', () => {
-    const addon = expressionInput.find(InputGroupAddon).filterWhere((addon) => addon.prop('addonType') === 'prepend');
-    const icon = addon.find(FontAwesomeIcon);
-    expect(icon.prop('icon')).toEqual(faSearch);
-  });
+  it('shows a spinner while loading', () => {
+    const { container } = render(<ExpressionInput {...defaultProps} loading />);
 
-  it('renders a loading icon when it is loading', () => {
-    const expressionInput = mount(<ExpressionInput {...expressionInputProps} loading={true} />);
-    const addon = expressionInput.find(InputGroupAddon).filterWhere((addon) => addon.prop('addonType') === 'prepend');
-    const icon = addon.find(FontAwesomeIcon);
-    expect(icon.prop('icon')).toEqual(faSpinner);
-    expect(icon.prop('spin')).toBe(true);
-  });
-
-  it('renders a CodeMirror expression input', () => {
-    const input = expressionInput.find('div.cm-expression-input');
-    expect(input.text()).toContain('node_cpu');
-  });
-
-  it('renders an execute button', () => {
-    const addon = expressionInput.find(InputGroupAddon).filterWhere((addon) => addon.prop('addonType') === 'append');
-    const button = addon.find(Button).find('.execute-btn').first();
-    expect(button.prop('color')).toEqual('primary');
-    expect(button.text()).toEqual('Execute');
-  });
-
-  it('executes the query when clicking the execute button', () => {
-    const spyExecuteQuery = jest.fn();
-    const props = { ...expressionInputProps, executeQuery: spyExecuteQuery };
-    const wrapper = mount(<ExpressionInput {...props} />);
-    const btn = wrapper.find(Button).filterWhere((btn) => btn.hasClass('execute-btn'));
-    btn.simulate('click');
-    expect(spyExecuteQuery).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[data-icon="spinner"]')).toBeTruthy();
+    expect(container.querySelector('[data-icon="magnifying-glass"]')).toBeNull();
   });
 });
