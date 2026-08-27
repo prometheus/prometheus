@@ -25,7 +25,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -233,7 +232,7 @@ func (p *queryLogTest) String() string {
 	case ruleOrigin:
 		name = "rule queries"
 	}
-	name = name + ", " + p.host + ":" + strconv.Itoa(p.port)
+	name = name + ", " + p.host
 	if p.enabledAtStart {
 		name += ", enabled at start"
 	}
@@ -480,12 +479,12 @@ func TestQueryLog(t *testing.T) {
 						host:           host,
 						enabledAtStart: enabledAtStart,
 						prefix:         prefix,
-						port:           testutil.RandomUnprivilegedPort(t),
 						cwd:            cwd,
 					}
 
 					t.Run(p.String(), func(t *testing.T) {
 						t.Parallel()
+						p.port = testutil.RandomUnprivilegedPort(t)
 						p.run(t)
 					})
 				}
