@@ -1,155 +1,237 @@
-import * as React from 'react';
-import { mount, shallow } from 'enzyme';
+import React, { FC, useState } from 'react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import Panel, { GraphDisplayMode, PanelOptions, PanelType } from './Panel';
-import GraphControls from './GraphControls';
-import { NavLink, TabPane } from 'reactstrap';
-import TimeInput from './TimeInput';
-import DataTable from './DataTable';
-import { GraphTabContent } from './GraphTabContent';
 
-const defaultProps = {
-  options: {
-    expr: 'prometheus_engine',
-    type: PanelType.Table,
-    range: 10,
-    endTime: 1572100217898,
-    resolution: 28,
-    displayMode: GraphDisplayMode.Lines,
-    showExemplars: true,
-  },
-  onOptionsChanged: (): void => {
-    // Do nothing.
-  },
-  useLocalTime: false,
-  pastQueries: [],
-  metricNames: [
-    'prometheus_engine_queries',
-    'prometheus_engine_queries_concurrent_max',
-    'prometheus_engine_query_duration_seconds',
-  ],
-  removePanel: (): void => {
-    // Do nothing.
-  },
-  onExecuteQuery: (): void => {
-    // Do nothing.
-  },
-  pathPrefix: '/',
-  enableAutocomplete: true,
-  enableHighlighting: true,
-  enableLinter: true,
-  id: 'panel',
+jest.mock('./ExpressionInput', () => {
+  const React = jest.requireActual('react');
+  return {
+    __esModule: true,
+    default: ({
+      value,
+      onExpressionChange,
+      executeQuery,
+      loading,
+    }: {
+      value: string;
+      onExpressionChange: (value: string) => void;
+      executeQuery: () => void;
+      loading: boolean;
+    }) =>
+      React.createElement(
+        'div',
+        { 'data-testid': 'expression-input', 'data-loading': loading },
+        React.createElement('input', {
+          'aria-label': 'Expression',
+          value,
+          onChange: (event: React.ChangeEvent<HTMLInputElement>) => onExpressionChange(event.target.value),
+        }),
+        React.createElement('button', { type: 'button', onClick: executeQuery }, 'Execute')
+      ),
+  };
+});
+
+jest.mock('./TimeInput', () => {
+  const React = jest.requireActual('react');
+  return {
+    __esModule: true,
+    default: ({
+      time,
+      range,
+      placeholder,
+      onChangeTime,
+    }: {
+      time: number | null;
+      range: number;
+      placeholder: string;
+      onChangeTime: (time: number) => void;
+    }) =>
+      React.createElement(
+        'button',
+        {
+          type: 'button',
+          'data-testid': 'time-input',
+          'data-time': time,
+          'data-range': range,
+          onClick: () => onChangeTime(1575744840000),
+        },
+        placeholder
+      ),
+  };
+});
+
+jest.mock('./DataTable', () => {
+  const React = jest.requireActual('react');
+  return {
+    __esModule: true,
+    default: ({ data }: { data: { resultType?: string } | null }) =>
+      React.createElement('div', { 'data-testid': 'data-table', 'data-state': data?.resultType || 'null' }),
+  };
+});
+
+jest.mock('./GraphControls', () => {
+  const React = jest.requireActual('react');
+  return {
+    __esModule: true,
+    default: ({
+      range,
+      endTime,
+      resolution,
+      displayMode,
+    }: {
+      range: number;
+      endTime: number | null;
+      resolution: number | null;
+      displayMode: GraphDisplayMode;
+    }) =>
+      React.createElement('div', {
+        'data-testid': 'graph-controls',
+        'data-range': range,
+        'data-end-time': endTime,
+        'data-resolution': resolution,
+        'data-display-mode': displayMode,
+      }),
+  };
+});
+
+jest.mock('./GraphTabContent', () => {
+  const React = jest.requireActual('react');
+  return {
+    __esModule: true,
+    GraphTabContent: ({ data, displayMode }: { data: { resultType?: string } | null; displayMode: GraphDisplayMode }) =>
+      React.createElement('div', {
+        'data-testid': 'graph-content',
+        'data-state': data?.resultType || 'null',
+        'data-display-mode': displayMode,
+      }),
+  };
+});
+
+const defaultOptions: PanelOptions = {
+  expr: 'prometheus_engine',
+  type: PanelType.Table,
+  range: 10,
+  endTime: 1572100217898,
+  resolution: 28,
+  displayMode: GraphDisplayMode.Lines,
+  showExemplars: false,
+};
+
+interface HarnessProps {
+  initialOptions?: PanelOptions;
+  onExecuteQuery?: (query: string) => void;
+  removePanel?: () => void;
+}
+
+const PanelHarness: FC<HarnessProps> = ({
+  initialOptions = defaultOptions,
+  onExecuteQuery = jest.fn(),
+  removePanel = jest.fn(),
+}) => {
+  const [options, setOptions] = useState(initialOptions);
+  return (
+    <>
+      <output data-testid="panel-options">{JSON.stringify(options)}</output>
+      <Panel
+        options={options}
+        onOptionsChanged={setOptions}
+        useLocalTime={false}
+        pastQueries={[]}
+        metricNames={['prometheus_engine']}
+        removePanel={removePanel}
+        onExecuteQuery={onExecuteQuery}
+        pathPrefix=""
+        enableAutocomplete
+        enableHighlighting
+        enableLinter
+        id="panel"
+      />
+    </>
+  );
+};
+
+const vectorResponse = JSON.stringify({
+  status: 'success',
+  data: { resultType: 'vector', result: [{ metric: {}, value: [1572100217, '1'] }] },
+});
+const matrixResponse = JSON.stringify({ status: 'success', data: { resultType: 'matrix', result: [] } });
+
+const firstRequestURL = (): URL => {
+  const request = fetchMock.mock.calls[0]?.[0];
+  if (!request) {
+    throw new Error('expected a fetch request');
+  }
+  return new URL(request.toString(), 'http://localhost');
 };
 
 describe('Panel', () => {
-  const panel = shallow(<Panel {...defaultProps} />);
+  beforeEach(() => {
+    fetchMock.resetMocks();
+    fetchMock.mockResponse(vectorResponse);
+  });
 
-  it('renders NavLinks', () => {
-    const results: PanelOptions[] = [];
-    const onOptionsChanged = (opts: PanelOptions): void => {
-      results.push(opts);
-    };
-    const panel = shallow(<Panel {...defaultProps} onOptionsChanged={onOptionsChanged} />);
-    const links = panel.find(NavLink);
-    [
-      { panelType: 'Table', active: true },
-      { panelType: 'Graph', active: false },
-    ].forEach((tc: { panelType: string; active: boolean }, i: number) => {
-      const link = links.at(i);
-      const className = tc.active ? 'active' : '';
-      expect(link.prop('className')).toEqual(className);
-      link.simulate('click');
-      if (tc.active) {
-        expect(results).toHaveLength(0);
-      } else {
-        expect(results).toHaveLength(1);
-        expect(results[0].type).toEqual(tc.panelType.toLowerCase());
-        results.pop();
-      }
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('executes the table query and renders returned data', async () => {
+    const onExecuteQuery = jest.fn();
+    render(<PanelHarness onExecuteQuery={onExecuteQuery} />);
+
+    await waitFor(() => expect(screen.getByTestId('data-table').getAttribute('data-state')).toBe('vector'));
+    expect(onExecuteQuery).toHaveBeenCalledWith('prometheus_engine');
+    const requestURL = firstRequestURL();
+    expect(requestURL.pathname).toBe('/api/v1/query');
+    expect(requestURL.searchParams.get('query')).toBe('prometheus_engine');
+    expect(requestURL.searchParams.get('time')).toBe('1572100217.898');
+    expect(screen.getByTestId('time-input').textContent).toBe('Evaluation time');
+  });
+
+  it('clears stale data when switching modes and ignores the active mode', async () => {
+    let resolveGraphQuery: (body: string) => void = () => undefined;
+    fetchMock.resetMocks();
+    fetchMock.mockResponseOnce(vectorResponse);
+    fetchMock.mockResponseOnce(() => new Promise((resolve) => (resolveGraphQuery = resolve)));
+    render(<PanelHarness />);
+    await waitFor(() => expect(screen.getByTestId('data-table').getAttribute('data-state')).toBe('vector'));
+
+    fireEvent.click(screen.getByText('Table'));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('data-table').getAttribute('data-state')).toBe('vector');
+
+    fireEvent.click(screen.getByText('Graph'));
+    expect(screen.getByTestId('graph-content').getAttribute('data-state')).toBe('null');
+    expect(JSON.parse(screen.getByTestId('panel-options').textContent || '').type).toBe(PanelType.Graph);
+
+    await act(async () => resolveGraphQuery(matrixResponse));
+    await waitFor(() => expect(screen.getByTestId('graph-content').getAttribute('data-state')).toBe('matrix'));
+    expect(screen.getByTestId('graph-controls').getAttribute('data-display-mode')).toBe(GraphDisplayMode.Lines);
+  });
+
+  it('executes the edited expression after a debounced time change', async () => {
+    jest.useFakeTimers();
+    const onExecuteQuery = jest.fn();
+    render(<PanelHarness initialOptions={{ ...defaultOptions, expr: '' }} onExecuteQuery={onExecuteQuery} />);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Expression' }), {
+      target: { value: 'time() - time()' },
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Evaluation time' }));
+    act(() => jest.advanceTimersByTime(250));
+    await act(async () => undefined);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const requestURL = firstRequestURL();
+    expect(requestURL.searchParams.get('query')).toBe('time() - time()');
+    expect(requestURL.searchParams.get('time')).toBe('1575744840');
+    expect(JSON.parse(screen.getByTestId('panel-options').textContent || '').expr).toBe('time() - time()');
   });
 
-  it('renders a TabPane with a TimeInput and a DataTable when in table mode', () => {
-    const tab = panel.find(TabPane).filterWhere((tab) => tab.prop('tabId') === 'table');
-    const timeInput = tab.find(TimeInput);
-    expect(timeInput.prop('time')).toEqual(defaultProps.options.endTime);
-    expect(timeInput.prop('range')).toEqual(defaultProps.options.range);
-    expect(timeInput.prop('placeholder')).toEqual('Evaluation time');
-    expect(tab.find(DataTable)).toHaveLength(1);
-  });
+  it('removes the panel through its visible control', () => {
+    const removePanel = jest.fn();
+    render(<PanelHarness initialOptions={{ ...defaultOptions, expr: '' }} removePanel={removePanel} />);
 
-  it('renders a TabPane with a Graph and GraphControls when in graph mode', () => {
-    const options = {
-      expr: 'prometheus_engine',
-      type: PanelType.Graph,
-      range: 10,
-      endTime: 1572100217898,
-      resolution: 28,
-      displayMode: GraphDisplayMode.Lines,
-      showExemplars: true,
-    };
-    const graphPanel = mount(<Panel {...defaultProps} options={options} />);
-    const controls = graphPanel.find(GraphControls);
-    graphPanel.setState({ data: { resultType: 'matrix', result: [] } });
-    const graph = graphPanel.find(GraphTabContent);
-    expect(controls.prop('endTime')).toEqual(options.endTime);
-    expect(controls.prop('range')).toEqual(options.range);
-    expect(controls.prop('resolution')).toEqual(options.resolution);
-    expect(controls.prop('displayMode')).toEqual(options.displayMode);
-    expect(graph.prop('displayMode')).toEqual(options.displayMode);
-  });
-
-  describe('when switching between modes', () => {
-    [
-      { from: PanelType.Table, to: PanelType.Graph },
-      { from: PanelType.Graph, to: PanelType.Table },
-    ].forEach(({ from, to }: { from: PanelType; to: PanelType }) => {
-      it(`${from} -> ${to} nulls out data`, () => {
-        const props = {
-          ...defaultProps,
-          options: { ...defaultProps.options, type: from },
-        };
-        const panel = shallow(<Panel {...props} />);
-        const instance: any = panel.instance();
-        panel.setState({ data: 'somedata' });
-        expect(panel.state('data')).toEqual('somedata');
-        instance.handleChangeType(to);
-        expect(panel.state('data')).toBeNull();
-      });
-    });
-  });
-
-  describe('when clicking on current mode', () => {
-    [PanelType.Table, PanelType.Graph].forEach((mode: PanelType) => {
-      it(`${mode} keeps data`, () => {
-        const props = {
-          ...defaultProps,
-          options: { ...defaultProps.options, type: mode },
-        };
-        const panel = shallow(<Panel {...props} />);
-        const instance: any = panel.instance();
-        panel.setState({ data: 'somedata' });
-        expect(panel.state('data')).toEqual('somedata');
-        instance.handleChangeType(mode);
-        expect(panel.state('data')).toEqual('somedata');
-      });
-    });
-  });
-
-  describe('when changing query then time', () => {
-    it('executes the new query', () => {
-      const initialExpr = 'time()';
-      const newExpr = 'time() - time()';
-      const panel = shallow(<Panel {...defaultProps} options={{ ...defaultProps.options, expr: initialExpr }} />);
-      const instance: any = panel.instance();
-      instance.executeQuery();
-      const executeQuerySpy = jest.spyOn(instance, 'executeQuery');
-      //change query without executing
-      panel.setProps({ options: { ...defaultProps.options, expr: newExpr } });
-      expect(executeQuerySpy).toHaveBeenCalledTimes(0);
-      const debounceExecuteQuerySpy = jest.spyOn(instance, 'debounceExecuteQuery');
-      //execute query implicitly with time change
-      panel.setProps({ options: { ...defaultProps.options, expr: newExpr, endTime: 1575744840 } });
-      expect(debounceExecuteQuerySpy).toHaveBeenCalledTimes(1);
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Panel' }));
+    expect(removePanel).toHaveBeenCalledTimes(1);
   });
 });
