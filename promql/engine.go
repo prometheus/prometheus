@@ -1432,8 +1432,12 @@ func (enh *EvalNodeHelper) getOrCreateLblsWithQuantile(lbls labels.Labels, quant
 // for each series, then passed to each call funcCall.
 func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatching, funcCall func([]Vector, Matrix, [][]EvalSeriesHelper, *EvalNodeHelper) (Vector, annotations.Annotations), exprs ...parser.Expr) (Matrix, annotations.Annotations) {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
+	isInstantQuery := ev.endTimestamp == ev.startTimestamp
 	matrixes := make([]Matrix, len(exprs))
-	origMatrixes := make([]Matrix, len(exprs))
+	var origMatrixes []Matrix
+	if !isInstantQuery {
+		origMatrixes = make([]Matrix, len(exprs))
+	}
 	originalNumSamples := ev.currentSamples
 	useSignatures := matching != nil
 
@@ -1448,10 +1452,12 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 		warnings.Merge(ws)
 		matrixes[i] = val.(Matrix)
 
-		// Keep a copy of the original point slices so that they
-		// can be returned to the pool.
-		origMatrixes[i] = make(Matrix, len(matrixes[i]))
-		copy(origMatrixes[i], matrixes[i])
+		if !isInstantQuery {
+			// Keep a copy of the original point slices so that they
+			// can be returned to the pool.
+			origMatrixes[i] = make(Matrix, len(matrixes[i]))
+			copy(origMatrixes[i], matrixes[i])
+		}
 	}
 
 	vectors := make([]Vector, len(exprs)) // Input vectors for the function.
@@ -1469,7 +1475,10 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 		Series
 		ts int64
 	}
-	seriess := make(map[uint64]seriesAndTimestamp, biggestLen) // Output series by series hash.
+	var seriess map[uint64]seriesAndTimestamp // Output series by series hash.
+	if !isInstantQuery {
+		seriess = make(map[uint64]seriesAndTimestamp, biggestLen)
+	}
 	tempNumSamples := ev.currentSamples
 
 	var (
@@ -1559,7 +1568,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 		}
 
 		// If this could be an instant query, shortcut so as not to change sort order.
-		if ev.endTimestamp == ev.startTimestamp {
+		if isInstantQuery {
 			if !ev.enableDelayedNameRemoval && result.ContainsSameLabelset() {
 				ev.errorf("vector cannot contain metrics with the same labelset")
 			}
