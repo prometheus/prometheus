@@ -52,6 +52,7 @@ func (s *OpenstackSDInstanceTestSuite) openstackAuthSuccess() (refresher, error)
 }
 
 func TestOpenstackSDInstanceRefresh(t *testing.T) {
+	t.Parallel()
 	mock := &OpenstackSDInstanceTestSuite{}
 	mock.SetupTest(t)
 
@@ -153,6 +154,7 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 }
 
 func TestOpenstackSDInstanceRefreshWithDoneContext(t *testing.T) {
+	t.Parallel()
 	mock := &OpenstackSDHypervisorTestSuite{}
 	mock.SetupTest(t)
 
