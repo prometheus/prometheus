@@ -42,6 +42,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/regexp"
+	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
@@ -5291,73 +5292,111 @@ func TestTargetScraperBodySizeLimit(t *testing.T) {
 		bodySizeLimit = 15
 		responseBody  = "metric_a 1\nmetric_b 2\n"
 	)
-	var gzipResponse bool
-	server := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
-			if gzipResponse {
-				w.Header().Set("Content-Encoding", "gzip")
-				gw := gzip.NewWriter(w)
-				defer func() { _ = gw.Close() }()
-				_, _ = gw.Write([]byte(responseBody))
-				return
+
+	for _, encoding := range []string{"identity", "gzip", "zstd"} {
+		t.Run(encoding, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				switch encoding {
+				case "gzip":
+					w.Header().Set("Content-Encoding", encoding)
+					gw := gzip.NewWriter(w)
+					defer func() { _ = gw.Close() }()
+					_, _ = gw.Write([]byte(responseBody))
+				case "zstd":
+					w.Header().Set("Content-Encoding", encoding)
+					zw, err := zstd.NewWriter(w)
+					require.NoError(t, err)
+					defer func() { _ = zw.Close() }()
+					_, _ = zw.Write([]byte(responseBody))
+				default:
+					_, _ = w.Write([]byte(responseBody))
+				}
+			}))
+			defer server.Close()
+
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			ts := &targetScraper{
+				Target: &Target{
+					labels: labels.FromStrings(
+						model.SchemeLabel, serverURL.Scheme,
+						model.AddressLabel, serverURL.Host,
+					),
+					scrapeConfig: &config.ScrapeConfig{},
+				},
+				client:        http.DefaultClient,
+				bodySizeLimit: bodySizeLimit,
+				acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.UnderscoreEscaping),
+				metrics:       newTestScrapeMetrics(t),
+				enableZstd:    true,
+				logger:        promslog.NewNopLogger(),
 			}
-			_, _ = w.Write([]byte(responseBody))
-		}),
-	)
-	defer server.Close()
+			var buf bytes.Buffer
 
-	serverURL, err := url.Parse(server.URL)
-	if err != nil {
-		panic(err)
+			resp, err := ts.scrape(context.Background())
+			require.NoError(t, err)
+			_, err = ts.readResponse(context.Background(), resp, &buf)
+			require.ErrorIs(t, err, errBodySizeLimit)
+			require.Equal(t, bodySizeLimit, buf.Len())
+
+			buf.Reset()
+			ts.bodySizeLimit = 0
+			resp, err = ts.scrape(context.Background())
+			require.NoError(t, err)
+			_, err = ts.readResponse(context.Background(), resp, &buf)
+			require.NoError(t, err)
+			require.Equal(t, responseBody, buf.String())
+		})
 	}
+}
 
-	ts := &targetScraper{
-		Target: &Target{
-			labels: labels.FromStrings(
-				model.SchemeLabel, serverURL.Scheme,
-				model.AddressLabel, serverURL.Host,
-			),
-			scrapeConfig: &config.ScrapeConfig{},
+func TestTargetScraperMalformedCompressedResponse(t *testing.T) {
+	for _, encoding := range []string{"gzip", "zstd"} {
+		t.Run(encoding, func(t *testing.T) {
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Encoding": []string{encoding},
+				},
+				Body: io.NopCloser(strings.NewReader("not compressed")),
+			}
+			ts := &targetScraper{
+				bodySizeLimit: math.MaxInt64,
+				metrics:       newTestScrapeMetrics(t),
+				enableZstd:    true,
+				logger:        promslog.NewNopLogger(),
+			}
+
+			_, err := ts.readResponse(context.Background(), resp, io.Discard)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestTargetScraperZstdWindowLimit(t *testing.T) {
+	encoder, err := zstd.NewWriter(nil, zstd.WithWindowSize(2*zstdMaxWindowSize))
+	require.NoError(t, err)
+	t.Cleanup(func() { encoder.Close() })
+
+	compressed := encoder.EncodeAll(bytes.Repeat([]byte("a"), zstdMaxWindowSize+1), nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Encoding": []string{"zstd"},
 		},
-		client:        http.DefaultClient,
-		bodySizeLimit: bodySizeLimit,
-		acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.UnderscoreEscaping),
-		metrics:       newTestScrapeMetrics(t),
+		Body: io.NopCloser(bytes.NewReader(compressed)),
 	}
-	var buf bytes.Buffer
+	ts := &targetScraper{
+		bodySizeLimit: math.MaxInt64,
+		metrics:       newTestScrapeMetrics(t),
+		enableZstd:    true,
+		logger:        promslog.NewNopLogger(),
+	}
 
-	// Target response uncompressed body, scrape with body size limit.
-	resp, err := ts.scrape(context.Background())
-	require.NoError(t, err)
-	_, err = ts.readResponse(context.Background(), resp, &buf)
-	require.ErrorIs(t, err, errBodySizeLimit)
-	require.Equal(t, bodySizeLimit, buf.Len())
-	// Target response gzip compressed body, scrape with body size limit.
-	gzipResponse = true
-	buf.Reset()
-	resp, err = ts.scrape(context.Background())
-	require.NoError(t, err)
-	_, err = ts.readResponse(context.Background(), resp, &buf)
-	require.ErrorIs(t, err, errBodySizeLimit)
-	require.Equal(t, bodySizeLimit, buf.Len())
-	// Target response uncompressed body, scrape without body size limit.
-	gzipResponse = false
-	buf.Reset()
-	ts.bodySizeLimit = 0
-	resp, err = ts.scrape(context.Background())
-	require.NoError(t, err)
-	_, err = ts.readResponse(context.Background(), resp, &buf)
-	require.NoError(t, err)
-	require.Len(t, responseBody, buf.Len())
-	// Target response gzip compressed body, scrape without body size limit.
-	gzipResponse = true
-	buf.Reset()
-	resp, err = ts.scrape(context.Background())
-	require.NoError(t, err)
-	_, err = ts.readResponse(context.Background(), resp, &buf)
-	require.NoError(t, err)
-	require.Len(t, responseBody, buf.Len())
+	_, err = ts.readResponse(context.Background(), resp, io.Discard)
+	require.ErrorContains(t, err, "decompressed size exceeds configured limit")
 }
 
 // testScraper implements the scraper interface and allows setting values
@@ -7000,8 +7039,14 @@ func testScrapeLoopCompression(t *testing.T, appV2 bool) {
 
 	for _, tc := range []struct {
 		enableCompression bool
+		enableZstd        bool
 		acceptEncoding    string
 	}{
+		{
+			enableCompression: true,
+			acceptEncoding:    "zstd,gzip",
+			enableZstd:        true,
+		},
 		{
 			enableCompression: true,
 			acceptEncoding:    "gzip",
@@ -7033,7 +7078,7 @@ func testScrapeLoopCompression(t *testing.T, appV2 bool) {
 			}
 
 			sa := selectAppendable(s, appV2)
-			sp, err := newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+			sp, err := newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{EnableZstdScrape: tc.enableZstd}, newTestScrapeMetrics(t))
 			require.NoError(t, err)
 			defer sp.stop()
 

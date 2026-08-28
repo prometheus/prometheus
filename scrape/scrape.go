@@ -34,6 +34,7 @@ import (
 	"unsafe"
 
 	"github.com/klauspost/compress/gzip"
+	"github.com/klauspost/compress/zstd"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -380,7 +381,9 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 				timeout:              targetTimeout,
 				bodySizeLimit:        int64(sp.config.BodySizeLimit),
 				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
-				acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression),
+				acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression, sp.options.EnableZstdScrape),
+				enableZstd:           sp.options.EnableZstdScrape,
+				logger:               sp.logger,
 				metrics:              sp.metrics,
 			},
 			cache:    cache,
@@ -512,7 +515,9 @@ func (sp *scrapePool) sync(targets []*Target) {
 					timeout:              targetTimeout,
 					bodySizeLimit:        int64(sp.config.BodySizeLimit),
 					acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
-					acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression),
+					acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression, sp.options.EnableZstdScrape),
+					enableZstd:           sp.options.EnableZstdScrape,
+					logger:               sp.logger,
 					metrics:              sp.metrics,
 				},
 				cache:    newScrapeCache(sp.metrics),
@@ -756,11 +761,29 @@ type targetScraper struct {
 	bodySizeLimit        int64
 	acceptHeader         string
 	acceptEncodingHeader string
+	enableZstd           bool
+	logger               *slog.Logger
 
 	metrics *scrapeMetrics
 }
 
 var errBodySizeLimit = errors.New("body size limit exceeded")
+
+const zstdMaxWindowSize = 8 << 20
+
+var zstdDecoderPool = sync.Pool{
+	New: func() any {
+		decoder, err := zstd.NewReader(
+			nil,
+			zstd.WithDecoderConcurrency(1),
+			zstd.WithDecoderMaxWindow(zstdMaxWindowSize),
+		)
+		if err != nil {
+			panic(err)
+		}
+		return decoder
+	},
+}
 
 // acceptHeader transforms preference from the options into specific header values as
 // https://www.rfc-editor.org/rfc/rfc9110.html#name-accept defines.
@@ -783,8 +806,11 @@ func acceptHeader(sps []config.ScrapeProtocol, scheme model.EscapingScheme) stri
 	return strings.Join(vals, ",")
 }
 
-func acceptEncodingHeader(enableCompression bool) string {
+func acceptEncodingHeader(enableCompression, enableZstd bool) string {
 	if enableCompression {
+		if enableZstd {
+			return "zstd,gzip"
+		}
 		return "gzip"
 	}
 	return "identity"
@@ -825,34 +851,47 @@ func (s *targetScraper) readResponse(_ context.Context, resp *http.Response, w i
 	if s.bodySizeLimit <= 0 {
 		s.bodySizeLimit = math.MaxInt64
 	}
-	if resp.Header.Get("Content-Encoding") != "gzip" {
-		n, err := io.Copy(w, io.LimitReader(resp.Body, s.bodySizeLimit))
-		if err != nil {
+	var reader io.Reader = resp.Body
+	switch resp.Header.Get("Content-Encoding") {
+	case "gzip":
+		if s.gzipr == nil {
+			s.buf = bufio.NewReader(resp.Body)
+			var err error
+			s.gzipr, err = gzip.NewReader(s.buf)
+			if err != nil {
+				return "", err
+			}
+		} else {
+			s.buf.Reset(resp.Body)
+			if err := s.gzipr.Reset(s.buf); err != nil {
+				return "", err
+			}
+		}
+		defer s.gzipr.Close()
+		reader = s.gzipr
+	case "zstd":
+		if !s.enableZstd {
+			break
+		}
+		if s.Target == nil {
+			s.logger.Debug("Using zstd-compressed scrape response")
+		} else {
+			s.logger.Debug("Using zstd-compressed scrape response", "target", s.URL().Redacted())
+		}
+		zstdr := zstdDecoderPool.Get().(*zstd.Decoder)
+		if err := zstdr.Reset(resp.Body); err != nil {
+			_ = zstdr.Reset(nil)
+			zstdDecoderPool.Put(zstdr)
 			return "", err
 		}
-		if n >= s.bodySizeLimit {
-			s.metrics.targetScrapeExceededBodySizeLimit.Inc()
-			return "", errBodySizeLimit
-		}
-		return resp.Header.Get("Content-Type"), nil
+		defer func() {
+			_ = zstdr.Reset(nil)
+			zstdDecoderPool.Put(zstdr)
+		}()
+		reader = zstdr
 	}
 
-	if s.gzipr == nil {
-		s.buf = bufio.NewReader(resp.Body)
-		var err error
-		s.gzipr, err = gzip.NewReader(s.buf)
-		if err != nil {
-			return "", err
-		}
-	} else {
-		s.buf.Reset(resp.Body)
-		if err := s.gzipr.Reset(s.buf); err != nil {
-			return "", err
-		}
-	}
-
-	n, err := io.Copy(w, io.LimitReader(s.gzipr, s.bodySizeLimit))
-	s.gzipr.Close()
+	n, err := io.Copy(w, io.LimitReader(reader, s.bodySizeLimit))
 	if err != nil {
 		return "", err
 	}
