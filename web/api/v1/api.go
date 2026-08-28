@@ -1636,6 +1636,30 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 		}
 	}
 
+	for _, group := range api.rulesRetriever(r.Context()).RuleGroups() {
+		for _, rule := range group.Rules() {
+			recordingRule, ok := rule.(*rules.RecordingRule)
+			if !ok || (metric != "" && recordingRule.Name() != metric) {
+				continue
+			}
+
+			m := recordingRule.Metadata()
+			if m.IsEmpty() {
+				continue
+			}
+
+			ms, ok := metrics[recordingRule.Name()]
+			if limitPerMetric > 0 && len(ms) >= limitPerMetric {
+				continue
+			}
+			if !ok {
+				ms = map[metadata.Metadata]struct{}{}
+				metrics[recordingRule.Name()] = ms
+			}
+			ms[m] = struct{}{}
+		}
+	}
+
 	// Put the elements from the pseudo-set into a slice for marshaling.
 	res := map[string][]metadata.Metadata{}
 	for name, set := range metrics {

@@ -25,6 +25,7 @@ import (
 	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -36,9 +37,10 @@ var ErrDuplicateRecordingLabelSet = errors.New("vector contains metrics with the
 
 // A RecordingRule records its vector expression into new timeseries.
 type RecordingRule struct {
-	name   string
-	vector parser.Expr
-	labels labels.Labels
+	name     string
+	vector   parser.Expr
+	labels   labels.Labels
+	metadata metadata.Metadata
 	// The health of the recording rule.
 	health *atomic.String
 	// Timestamp of last evaluation of the recording rule.
@@ -55,10 +57,16 @@ type RecordingRule struct {
 
 // NewRecordingRule returns a new recording rule.
 func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels) *RecordingRule {
+	return NewRecordingRuleWithMetadata(name, vector, lset, metadata.Metadata{})
+}
+
+// NewRecordingRuleWithMetadata returns a new recording rule with metric metadata.
+func NewRecordingRuleWithMetadata(name string, vector parser.Expr, lset labels.Labels, m metadata.Metadata) *RecordingRule {
 	return &RecordingRule{
 		name:                name,
 		vector:              vector,
 		labels:              lset,
+		metadata:            m,
 		health:              atomic.NewString(string(HealthUnknown)),
 		evaluationTimestamp: atomic.NewTime(time.Time{}),
 		evaluationDuration:  atomic.NewDuration(0),
@@ -79,6 +87,11 @@ func (rule *RecordingRule) Query() parser.Expr {
 // Labels returns the rule labels.
 func (rule *RecordingRule) Labels() labels.Labels {
 	return rule.labels
+}
+
+// Metadata returns the metric metadata configured for the recording rule.
+func (rule *RecordingRule) Metadata() metadata.Metadata {
+	return rule.metadata
 }
 
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
@@ -123,9 +136,11 @@ func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, 
 
 func (rule *RecordingRule) String() string {
 	r := rulefmt.Rule{
-		Record: rule.name,
-		Expr:   rule.vector.String(),
-		Labels: rule.labels.Map(),
+		Record:      rule.name,
+		Expr:        rule.vector.String(),
+		Description: rule.metadata.Help,
+		Type:        rule.metadata.Type,
+		Labels:      rule.labels.Map(),
 	}
 
 	byt, err := yaml.Marshal(r)
