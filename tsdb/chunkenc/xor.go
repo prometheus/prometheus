@@ -240,11 +240,11 @@ type xorIterator struct {
 	numTotal uint16
 	numRead  uint16
 
-	t   int64
-	val float64
-
 	leading  uint8
 	trailing uint8
+
+	t   int64
+	val float64
 
 	tDelta uint64
 	err    error

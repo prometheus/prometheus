@@ -910,28 +910,28 @@ type scrapeLoop struct {
 	appendableV2 storage.AppendableV2
 	buffers      *pool.Pool
 
-	synthesizeST bool
-	offsetSeed   uint64
-	symbolTable  *labels.SymbolTable
-	metrics      *scrapeMetrics
+	offsetSeed  uint64
+	symbolTable *labels.SymbolTable
+	metrics     *scrapeMetrics
 
 	// Options from config.ScrapeConfig.
 	sampleLimit                   int
 	bucketLimit                   int
-	maxSchema                     int32
 	labelLimits                   *labelLimits
+	fallbackScrapeProtocol        string
+	mrc                           []*relabel.Config
+	validationScheme              model.ValidationScheme
+	maxSchema                     int32
 	honorLabels                   bool
 	honorTimestamps               bool
 	trackTimestampsStaleness      bool
 	enableNativeHistogramScraping bool
 	alwaysScrapeClassicHist       bool
 	convertClassicHistToNHCB      bool
-	fallbackScrapeProtocol        string
 	enableCompression             bool
-	mrc                           []*relabel.Config
-	validationScheme              model.ValidationScheme
 
 	// Options from scrape.Options.
+	synthesizeST            bool
 	enableSTZeroIngestion   bool
 	parseST                 bool // Used by AppenderV2 only.
 	enableTypeAndUnitLabels bool
