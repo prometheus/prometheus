@@ -217,6 +217,7 @@ type flagConfig struct {
 	enablePerStepStats       bool
 	enableConcurrentRuleEval bool
 	useStartTimestamps       bool
+	enableQueryCost          bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -345,6 +346,10 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "search-api":
 				c.web.EnableSearch = true
 				logger.Info("Experimental search API enabled.")
+			case "query-cost":
+				c.enableQueryCost = true
+				c.web.EnableQueryCost = true
+				logger.Info("Experimental query cost guardrails enabled.")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -633,7 +638,7 @@ func main() {
 	serverOnlyFlag(a, "query.lookback-delta", "The maximum lookback duration for retrieving metrics during expression evaluations and federation.").
 		Default("5m").SetValue(&cfg.lookbackDelta)
 
-	serverOnlyFlag(a, "query.timeout", "Maximum time a query may take before being aborted.").
+	serverOnlyFlag(a, "query.timeout", "[DEPRECATED] Maximum time a query may take before being aborted. This flag has been deprecated, use the global.query_max_duration field in the config file instead.").
 		Default("2m").SetValue(&cfg.queryTimeout)
 
 	serverOnlyFlag(a, "query.max-concurrency", "Maximum number of queries executed concurrently.").
@@ -645,7 +650,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, query-cost, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -1011,6 +1016,7 @@ func main() {
 			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
 			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
 			UseStartTimestamps:       cfg.useStartTimestamps,
+			EnableQueryCost:          cfg.enableQueryCost,
 			FeatureRegistry:          features.DefaultRegistry,
 			Parser:                   promqlParser,
 		}
@@ -1055,6 +1061,7 @@ func main() {
 	cfg.web.RuleManager = ruleManager
 	cfg.web.Notifier = notifierManager
 	cfg.web.LookbackDelta = time.Duration(cfg.lookbackDelta)
+	cfg.web.QueryTimeout = time.Duration(cfg.queryTimeout)
 	cfg.web.IsAgent = agentMode
 	cfg.web.AppName = modeAppName
 	cfg.web.Parser = promqlParser
@@ -1090,6 +1097,9 @@ func main() {
 
 	// This is passed to ruleManager.Update().
 	externalURL := cfg.web.ExternalURL.String()
+
+	// Captured for the query_engine reloader, whose parameter shadows cfg.
+	enableQueryCost := cfg.enableQueryCost
 
 	reloaders := []reloader{
 		{
@@ -1128,6 +1138,16 @@ func main() {
 				if agentMode {
 					// No-op in Agent mode.
 					return nil
+				}
+
+				// Apply the reloadable query-cost limits only when the
+				// query-cost feature is enabled.
+				if enableQueryCost {
+					queryEngine.SetQueryLimits(
+						cfg.GlobalConfig.QueryMaxSeries,
+						cfg.GlobalConfig.QueryMaxSamplesScanned,
+						time.Duration(cfg.GlobalConfig.QueryMaxDuration),
+					)
 				}
 
 				if cfg.GlobalConfig.QueryLogFile == "" {

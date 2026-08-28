@@ -247,7 +247,13 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 	infoLabelMatchers = append(infoLabelMatchers, effectiveInfoNameMatchers(nameMatchers)...)
 
 	infoIt := ev.querier.Select(ctx, false, &selectHints, infoLabelMatchers...)
-	infoSeries, ws, err := expandSeriesSet(ctx, infoIt)
+	// expandSeriesSet accounts for the info series touched here as they are
+	// read, so they count toward the per-query series total and trip the
+	// series guardrail early, mirroring checkAndExpandSeriesSet. The main
+	// vector selector is already counted via its own checkAndExpandSeriesSet
+	// path, so only the info series expanded here are incremented, which avoids
+	// double counting.
+	infoSeries, ws, err := ev.expandSeriesSet(ctx, infoIt)
 	if err != nil {
 		return nil, ws, err
 	}

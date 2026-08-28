@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -2039,6 +2040,670 @@ load 10s
 			testFunc(promql.ErrTooManySamples(env))
 		})
 	}
+}
+
+func newQueryCostEngine(t *testing.T) *promql.Engine {
+	return promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples:               1e6,
+		Timeout:                  100 * time.Second,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return int64(time.Minute / time.Millisecond) },
+		EnableAtModifier:         true,
+		EnableNegativeOffset:     true,
+		EnableDelayedNameRemoval: true,
+		EnableQueryCost:          true,
+		Parser:                   parser.NewParser(promqltest.TestParserOpts),
+	})
+}
+
+func TestQueryCostMaxSeries(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  bigmetric{a="1"} 1+1x100
+  bigmetric{a="2"} 1+1x100
+  bigmetric{a="3"} 1+1x100
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	engine := newQueryCostEngine(t)
+	ts := time.Unix(0, 0)
+
+	// Operator ceiling of 3 series allows the query.
+	engine.SetQueryLimits(3, 0, 0)
+	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, "bigmetric", ts)
+	require.NoError(t, err)
+	require.NoError(t, qry.Exec(context.Background()).Err)
+
+	// Operator ceiling of 2 series rejects the query.
+	engine.SetQueryLimits(2, 0, 0)
+	qry, err = engine.NewInstantQuery(context.Background(), storage, nil, "bigmetric", ts)
+	require.NoError(t, err)
+	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(context.Background()).Err)
+
+	// A per-query override may lower the ceiling and reject the query.
+	engine.SetQueryLimits(10, 0, 0)
+	opts := promql.NewPrometheusQueryOptsWithLimits(false, 0, 2, 0, 0)
+	qry, err = engine.NewInstantQuery(context.Background(), storage, opts, "bigmetric", ts)
+	require.NoError(t, err)
+	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(context.Background()).Err)
+
+	// A per-query override may not raise the ceiling above the operator limit:
+	// the query is rejected at construction time rather than clamped.
+	engine.SetQueryLimits(2, 0, 0)
+	opts = promql.NewPrometheusQueryOptsWithLimits(false, 0, 100, 0, 0)
+	_, err = engine.NewInstantQuery(context.Background(), storage, opts, "bigmetric", ts)
+	var limitErr promql.ErrLimitAboveCeiling
+	require.ErrorAs(t, err, &limitErr)
+	require.Equal(t, "max_series", limitErr.Limit)
+}
+
+func TestQueryCostMaxSamplesScanned(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  bigmetric{a="1"} 1+1x100
+  bigmetric{a="2"} 1+1x100
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	engine := newQueryCostEngine(t)
+	ts := time.Unix(1000, 0)
+	query := "sum_over_time(bigmetric[100s])"
+
+	// A generous ceiling allows the query.
+	engine.SetQueryLimits(0, 1e6, 0)
+	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+	require.NoError(t, err)
+	require.NoError(t, qry.Exec(context.Background()).Err)
+
+	// A tiny ceiling rejects the query.
+	engine.SetQueryLimits(0, 1, 0)
+	qry, err = engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+	require.NoError(t, err)
+	require.Equal(t, promql.ErrTooManySamplesScanned(env), qry.Exec(context.Background()).Err)
+}
+
+func TestQueryCostDisabledFeature(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  bigmetric{a="1"} 1+1x100
+  bigmetric{a="2"} 1+1x100
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	// The feature is disabled, so limits and per-query overrides are ignored.
+	engine := promqltest.NewTestEngine(t, false, 0, 1e6)
+	engine.SetQueryLimits(1, 1, 0)
+	opts := promql.NewPrometheusQueryOptsWithLimits(false, 0, 1, 1, 0)
+	qry, err := engine.NewInstantQuery(context.Background(), storage, opts, "bigmetric", time.Unix(0, 0))
+	require.NoError(t, err)
+	require.NoError(t, qry.Exec(context.Background()).Err)
+}
+
+func TestQueryCostSamplesAccounting(t *testing.T) {
+	// The cost accounting the API reports as the actual cost of a query is the
+	// samples accounting, which is collected whether or not the query-cost
+	// feature is enabled. There is no separate cost object in the statistics.
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  bigmetric{a="1"} 1+1x100
+  bigmetric{a="2"} 1+1x100
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	ts := time.Unix(0, 0)
+
+	for _, c := range []struct {
+		name   string
+		engine *promql.Engine
+	}{
+		{name: "feature disabled", engine: promqltest.NewTestEngine(t, false, 0, 1e6)},
+		{name: "feature enabled", engine: newQueryCostEngine(t)},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			qry, err := c.engine.NewInstantQuery(context.Background(), storage, nil, "bigmetric", ts)
+			require.NoError(t, err)
+			require.NoError(t, qry.Exec(context.Background()).Err)
+			st := qry.Stats()
+			require.Equal(t, int64(2), st.Samples.TotalSeries, "series touched must be accounted")
+			require.Equal(t, int64(2), st.Samples.SamplesRead, "samples read must be accounted")
+			require.Positive(t, st.Samples.PeakSamples, "peak samples must be accounted")
+		})
+	}
+}
+
+// TestQueryCostLimitResolution covers how a per-query override of a counting
+// cost limit resolves against the operator-set ceiling. An override may only
+// tighten the ceiling: a request above it is rejected at query construction
+// time with an ErrLimitAboveCeiling instead of being silently clamped down.
+func TestQueryCostLimitResolution(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  bigmetric{a="1"} 1+1x100
+  bigmetric{a="2"} 1+1x100
+  bigmetric{a="3"} 1+1x100
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	ts := time.Unix(1000, 0)
+
+	// The value of each limit is not directly observable, so it is probed with a
+	// query that the tight value rejects and the loose value allows.
+	limits := []struct {
+		name         string
+		query        string
+		tight, loose uint64
+		setCeiling   func(engine *promql.Engine, ceiling uint64)
+		opts         func(requested uint64) promql.QueryOpts
+		wantRejected error
+	}{
+		{
+			name:       "max_series",
+			query:      "bigmetric",
+			tight:      2,
+			loose:      1000,
+			setCeiling: func(engine *promql.Engine, ceiling uint64) { engine.SetQueryLimits(ceiling, 0, 0) },
+			opts: func(requested uint64) promql.QueryOpts {
+				return promql.NewPrometheusQueryOptsWithLimits(false, 0, requested, 0, 0)
+			},
+			wantRejected: promql.ErrTooManySeries(env),
+		},
+		{
+			name:       "max_samples_scanned",
+			query:      "sum_over_time(bigmetric[100s])",
+			tight:      1,
+			loose:      1e6,
+			setCeiling: func(engine *promql.Engine, ceiling uint64) { engine.SetQueryLimits(0, ceiling, 0) },
+			opts: func(requested uint64) promql.QueryOpts {
+				return promql.NewPrometheusQueryOptsWithLimits(false, 0, 0, requested, 0)
+			},
+			wantRejected: promql.ErrTooManySamplesScanned(env),
+		},
+	}
+
+	// unset means the ceiling or the request is zero, i.e. not set.
+	const (
+		unset = "unset"
+		tight = "tight"
+		loose = "loose"
+	)
+
+	cases := []struct {
+		name             string
+		ceiling          string
+		requested        string
+		wantConstructErr bool
+		wantRejected     bool
+	}{
+		{name: "request below the ceiling tightens it", ceiling: loose, requested: tight, wantRejected: true},
+		{name: "request equal to the ceiling is accepted", ceiling: tight, requested: tight, wantRejected: true},
+		{name: "request above the ceiling is rejected", ceiling: tight, requested: loose, wantConstructErr: true},
+		{name: "no request falls back to the ceiling", ceiling: tight, requested: unset, wantRejected: true},
+		{name: "no request and a generous ceiling allows the query", ceiling: loose, requested: unset},
+		{name: "unlimited ceiling applies the request", ceiling: unset, requested: tight, wantRejected: true},
+		{name: "unlimited ceiling applies a large request", ceiling: unset, requested: loose},
+	}
+
+	for _, limit := range limits {
+		value := func(which string) uint64 {
+			switch which {
+			case tight:
+				return limit.tight
+			case loose:
+				return limit.loose
+			default:
+				return 0
+			}
+		}
+		for _, c := range cases {
+			t.Run(limit.name+"/"+c.name, func(t *testing.T) {
+				engine := newQueryCostEngine(t)
+				limit.setCeiling(engine, value(c.ceiling))
+
+				var opts promql.QueryOpts
+				if requested := value(c.requested); requested > 0 {
+					opts = limit.opts(requested)
+				}
+				qry, err := engine.NewInstantQuery(context.Background(), storage, opts, limit.query, ts)
+				if c.wantConstructErr {
+					var limitErr promql.ErrLimitAboveCeiling
+					require.ErrorAs(t, err, &limitErr)
+					require.Equal(t, limit.name, limitErr.Limit)
+					require.Equal(t, strconv.FormatUint(value(c.requested), 10), limitErr.Requested)
+					require.Equal(t, strconv.FormatUint(value(c.ceiling), 10), limitErr.Ceiling)
+					return
+				}
+				require.NoError(t, err)
+				if c.wantRejected {
+					require.Equal(t, limit.wantRejected, qry.Exec(context.Background()).Err)
+					return
+				}
+				require.NoError(t, qry.Exec(context.Background()).Err)
+			})
+		}
+	}
+}
+
+func TestQueryCostMaxSamplesScannedMatrix(t *testing.T) {
+	// A bare matrix selector is evaluated through the matrixSelector path, where
+	// SamplesRead is only incremented in a batch per series after the
+	// matrixIterSlice loop. The per-point checks inside matrixIterSlice run
+	// against a stale SamplesRead, so without a check right after the batch
+	// increment a large series can be fully scanned (and several series read in
+	// sequence) before the limit trips.
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  bigmetric{a="1"} 1+1x1000
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	engine := newQueryCostEngine(t)
+	ts := time.Unix(10000, 0)
+	query := "bigmetric[10000s]"
+
+	// A generous ceiling allows the query.
+	engine.SetQueryLimits(0, 1e6, 0)
+	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+	require.NoError(t, err)
+	require.NoError(t, qry.Exec(context.Background()).Err)
+
+	// A tiny ceiling rejects the query even though it is a single series whose
+	// points are all read in one matrixIterSlice pass.
+	engine.SetQueryLimits(0, 10, 0)
+	qry, err = engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+	require.NoError(t, err)
+	require.Equal(t, promql.ErrTooManySamplesScanned(env), qry.Exec(context.Background()).Err)
+}
+
+// sleepyQuerier is a storage.Querier whose Select blocks for the given
+// duration before returning an empty series set. It is used to make a query
+// run longer than a short per-query duration limit.
+type sleepyQuerier struct {
+	sleep time.Duration
+}
+
+func (q sleepyQuerier) Select(ctx context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+	select {
+	case <-time.After(q.sleep):
+	case <-ctx.Done():
+	}
+	return errSeriesSet{err: ctx.Err()}
+}
+
+func (sleepyQuerier) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+
+func (sleepyQuerier) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+
+func (sleepyQuerier) Close() error { return nil }
+
+func TestQueryCostMaxDuration(t *testing.T) {
+	// The engine timeout is generous, but the per-query duration limit is tiny.
+	// A query that runs longer than the limit must surface as ErrQueryTimeout.
+	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples:               1e6,
+		Timeout:                  100 * time.Second,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return int64(time.Minute / time.Millisecond) },
+		EnableQueryCost:          true,
+		Parser:                   parser.NewParser(promqltest.TestParserOpts),
+	})
+
+	queryable := storage.QueryableFunc(func(_, _ int64) (storage.Querier, error) {
+		return sleepyQuerier{sleep: time.Second}, nil
+	})
+
+	// An operator-set duration limit of 5ms, well below the engine timeout,
+	// rejects the slow query.
+	engine.SetQueryLimits(0, 0, 5*time.Millisecond)
+	qry, err := engine.NewInstantQuery(context.Background(), queryable, nil, "metric", time.Unix(0, 0))
+	require.NoError(t, err)
+	var timeoutErr promql.ErrQueryTimeout
+	require.ErrorAs(t, qry.Exec(context.Background()).Err, &timeoutErr)
+
+	// A per-query override may also impose a short duration limit.
+	engine.SetQueryLimits(0, 0, 0)
+	opts := promql.NewPrometheusQueryOptsWithLimits(false, 0, 0, 0, 5*time.Millisecond)
+	qry, err = engine.NewInstantQuery(context.Background(), queryable, opts, "metric", time.Unix(0, 0))
+	require.NoError(t, err)
+	require.ErrorAs(t, qry.Exec(context.Background()).Err, &timeoutErr)
+}
+
+// TestQueryCostMaxDurationResolution covers how a per-query max_query_duration
+// override resolves against its ceiling, and how that ceiling relates to the
+// deprecated -query.timeout flag: query_max_duration is the ceiling on its own
+// when set, and may be longer than the flag; while it is unset the flag remains
+// the ceiling.
+func TestQueryCostMaxDurationResolution(t *testing.T) {
+	// The query sleeps in Select, so it overruns a 5ms limit but finishes well
+	// within a limit of a second or more.
+	const querySleep = 500 * time.Millisecond
+
+	cases := []struct {
+		name string
+		// engineTimeout is the -query.timeout flag value.
+		engineTimeout    time.Duration
+		ceiling          time.Duration
+		requested        time.Duration
+		wantConstructErr bool
+		wantErrCeiling   string
+		wantTimeout      bool
+	}{
+		{
+			name:          "request below the ceiling tightens it",
+			engineTimeout: 100 * time.Second,
+			ceiling:       10 * time.Second,
+			requested:     5 * time.Millisecond,
+			wantTimeout:   true,
+		},
+		{
+			name:          "request equal to the ceiling is accepted",
+			engineTimeout: 100 * time.Second,
+			ceiling:       5 * time.Millisecond,
+			requested:     5 * time.Millisecond,
+			wantTimeout:   true,
+		},
+		{
+			name:             "request above the ceiling is rejected",
+			engineTimeout:    100 * time.Second,
+			ceiling:          5 * time.Millisecond,
+			requested:        10 * time.Second,
+			wantConstructErr: true,
+			wantErrCeiling:   "5ms",
+		},
+		{
+			name:          "no request falls back to the ceiling",
+			engineTimeout: 100 * time.Second,
+			ceiling:       5 * time.Millisecond,
+			wantTimeout:   true,
+		},
+		{
+			name:          "no request and a generous ceiling allows the query",
+			engineTimeout: 100 * time.Second,
+			ceiling:       10 * time.Second,
+		},
+		{
+			name:          "unset ceiling leaves the query timeout flag in force",
+			engineTimeout: 5 * time.Millisecond,
+			wantTimeout:   true,
+		},
+		{
+			name:          "unset ceiling accepts a request below the query timeout flag",
+			engineTimeout: 100 * time.Second,
+			requested:     5 * time.Millisecond,
+			wantTimeout:   true,
+		},
+		{
+			name:             "unset ceiling rejects a request above the query timeout flag",
+			engineTimeout:    50 * time.Millisecond,
+			requested:        10 * time.Second,
+			wantConstructErr: true,
+			wantErrCeiling:   "50ms",
+		},
+		{
+			name:          "ceiling above the query timeout flag is effective on its own",
+			engineTimeout: 50 * time.Millisecond,
+			ceiling:       10 * time.Second,
+		},
+		{
+			name:          "ceiling above the query timeout flag allows a request above it",
+			engineTimeout: 50 * time.Millisecond,
+			ceiling:       10 * time.Second,
+			requested:     5 * time.Second,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+				MaxSamples:               1e6,
+				Timeout:                  c.engineTimeout,
+				NoStepSubqueryIntervalFn: func(int64) int64 { return int64(time.Minute / time.Millisecond) },
+				EnableQueryCost:          true,
+				Parser:                   parser.NewParser(promqltest.TestParserOpts),
+			})
+			engine.SetQueryLimits(0, 0, c.ceiling)
+
+			queryable := storage.QueryableFunc(func(_, _ int64) (storage.Querier, error) {
+				return sleepyQuerier{sleep: querySleep}, nil
+			})
+
+			var opts promql.QueryOpts
+			if c.requested > 0 {
+				opts = promql.NewPrometheusQueryOptsWithLimits(false, 0, 0, 0, c.requested)
+			}
+			qry, err := engine.NewInstantQuery(context.Background(), queryable, opts, "metric", time.Unix(0, 0))
+			if c.wantConstructErr {
+				var limitErr promql.ErrLimitAboveCeiling
+				require.ErrorAs(t, err, &limitErr)
+				require.Equal(t, "max_query_duration", limitErr.Limit)
+				require.Equal(t, c.requested.String(), limitErr.Requested)
+				require.Equal(t, c.wantErrCeiling, limitErr.Ceiling)
+				return
+			}
+			require.NoError(t, err)
+
+			execErr := qry.Exec(context.Background()).Err
+			if c.wantTimeout {
+				var timeoutErr promql.ErrQueryTimeout
+				require.ErrorAs(t, execErr, &timeoutErr)
+				return
+			}
+			require.NoError(t, execErr)
+		})
+	}
+}
+
+func TestQueryCostMaxDurationRejectAttribution(t *testing.T) {
+	// This test exercises the metric-attribution fix for ErrQueryTimeout: the
+	// "max_duration" reject reason must only be credited when the per-query
+	// duration limit was the binding (effective) timeout, not when a generic
+	// engine timeout fired on a query that merely has a short maxQueryDuration
+	// set.
+	//
+	// NOTE: queryRejectedTotal is an unexported field on the engine's metrics
+	// struct with no accessor, so the external promql_test package cannot read
+	// the reason-labelled counter with testutil.ToFloat64. We therefore assert
+	// the observable proxy reachable here, the error type, and document the
+	// attribution semantics. The exec defer credits "max_duration" only when
+	// q.durationLimited is true, which is set exactly when the per-query limit
+	// is chosen as the shorter timeout below.
+
+	queryable := storage.QueryableFunc(func(_, _ int64) (storage.Querier, error) {
+		return sleepyQuerier{sleep: time.Second}, nil
+	})
+
+	// Case 1: the per-query duration limit (5ms) is far shorter than the engine
+	// timeout (100s). The limit is the binding timeout, so the query is
+	// duration-limited and the timeout is attributable to max_duration.
+	durationLimited := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples:               1e6,
+		Timeout:                  100 * time.Second,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return int64(time.Minute / time.Millisecond) },
+		EnableQueryCost:          true,
+		Parser:                   parser.NewParser(promqltest.TestParserOpts),
+	})
+	durationLimited.SetQueryLimits(0, 0, 5*time.Millisecond)
+	qry, err := durationLimited.NewInstantQuery(context.Background(), queryable, nil, "metric", time.Unix(0, 0))
+	require.NoError(t, err)
+	var timeoutErr promql.ErrQueryTimeout
+	require.ErrorAs(t, qry.Exec(context.Background()).Err, &timeoutErr)
+
+	// Case 2: no per-query duration limit is set (maxQueryDuration == 0). A tiny
+	// engine timeout makes the query time out anyway, but this is a generic
+	// engine timeout: the per-query limit was not the binding timeout, so it
+	// must NOT be attributed to max_duration even though it surfaces as
+	// ErrQueryTimeout.
+	engineLimited := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples:               1e6,
+		Timeout:                  5 * time.Millisecond,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return int64(time.Minute / time.Millisecond) },
+		EnableQueryCost:          true,
+		Parser:                   parser.NewParser(promqltest.TestParserOpts),
+	})
+	engineLimited.SetQueryLimits(0, 0, 0)
+	qry, err = engineLimited.NewInstantQuery(context.Background(), queryable, nil, "metric", time.Unix(0, 0))
+	require.NoError(t, err)
+	require.ErrorAs(t, qry.Exec(context.Background()).Err, &timeoutErr)
+}
+
+func TestQueryCostRejectMetricReason(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  bigmetric{a="1"} 1+1x100
+  bigmetric{a="2"} 1+1x100
+  bigmetric{a="3"} 1+1x100
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	engine := newQueryCostEngine(t)
+	ts := time.Unix(0, 0)
+
+	// NOTE: queryRejectedTotal is an unexported field on the engine's metrics
+	// struct and the reason-labelled counter is not exported through any
+	// accessor, so the external promql_test package cannot read it with
+	// testutil.ToFloat64. We therefore assert the rejection by error type,
+	// which is what the exec defer switches on to pick the reason label.
+	engine.SetQueryLimits(2, 0, 0)
+	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, "bigmetric", ts)
+	require.NoError(t, err)
+	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(context.Background()).Err)
+
+	engine.SetQueryLimits(0, 1, 0)
+	qry, err = engine.NewInstantQuery(context.Background(), storage, nil, "sum_over_time(bigmetric[100s])", time.Unix(1000, 0))
+	require.NoError(t, err)
+	require.Equal(t, promql.ErrTooManySamplesScanned(env), qry.Exec(context.Background()).Err)
+}
+
+func TestQueryCostMaxSeriesSubquery(t *testing.T) {
+	// other contributes 3 series in the parent evaluator; the subquery over
+	// bigmetric contributes 3 more in a child evaluator. Neither side alone
+	// exceeds a limit of 4 series, so the child's local check passes. Only the
+	// post-merge re-check in the parent catches the cumulative total of 6.
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  bigmetric{a="1"} 1+1x100
+  bigmetric{a="2"} 1+1x100
+  bigmetric{a="3"} 1+1x100
+  other{b="1"} 1+1x100
+  other{b="2"} 1+1x100
+  other{b="3"} 1+1x100
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	engine := newQueryCostEngine(t)
+	ts := time.Unix(1000, 0)
+	query := "other + sum_over_time(bigmetric[20s:10s])"
+
+	// A ceiling of 6 allows the cumulative parent+subquery series.
+	engine.SetQueryLimits(6, 0, 0)
+	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+	require.NoError(t, err)
+	require.NoError(t, qry.Exec(context.Background()).Err)
+
+	// A ceiling of 4 is above either side's local total but below the
+	// cumulative total, so the query is only rejected thanks to the post-merge
+	// re-check across the subquery boundary.
+	engine.SetQueryLimits(4, 0, 0)
+	qry, err = engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+	require.NoError(t, err)
+	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(context.Background()).Err)
+}
+
+func TestQueryCostMaxSeriesInfo(t *testing.T) {
+	// metric contributes 3 series through its own vector selector; the info()
+	// join then selects 3 matching target_info series. The series guardrail
+	// must account for the info series too, otherwise an info() query could
+	// touch unbounded series without ErrTooManySeries ever firing.
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  metric{instance="a", job="1"} 1+1x100
+  metric{instance="a", job="2"} 1+1x100
+  metric{instance="a", job="3"} 1+1x100
+  target_info{instance="a", job="1", data="one"} 1+0x100
+  target_info{instance="a", job="2", data="two"} 1+0x100
+  target_info{instance="a", job="3", data="three"} 1+0x100
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	engine := newQueryCostEngine(t)
+	ts := time.Unix(0, 0)
+	query := `info(metric)`
+
+	// A generous ceiling allows the base series plus all selected info series.
+	engine.SetQueryLimits(10, 0, 0)
+	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+	require.NoError(t, err)
+	require.NoError(t, qry.Exec(context.Background()).Err)
+
+	// A ceiling of 4 is above the 3 base series alone but below the cumulative
+	// total once the 3 info series are accounted for, so the query is rejected.
+	engine.SetQueryLimits(4, 0, 0)
+	qry, err = engine.NewInstantQuery(context.Background(), storage, nil, query, ts)
+	require.NoError(t, err)
+	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(context.Background()).Err)
+}
+
+// countingSeriesSet is a storage.SeriesSet that yields up to total distinct
+// series and records how many times Next was called. It is used to prove that
+// the series guardrail stops pulling series as soon as the ceiling is exceeded,
+// rather than materializing the whole set first.
+type countingSeriesSet struct {
+	total    int
+	produced int
+	calls    int
+}
+
+func (s *countingSeriesSet) Next() bool {
+	s.calls++
+	if s.produced >= s.total {
+		return false
+	}
+	s.produced++
+	return true
+}
+
+func (s *countingSeriesSet) At() storage.Series {
+	return storage.NewListSeries(labels.FromStrings(labels.MetricName, "bigmetric", "i", strconv.Itoa(s.produced)), nil)
+}
+
+func (*countingSeriesSet) Err() error { return nil }
+
+func (*countingSeriesSet) Warnings() annotations.Annotations { return nil }
+
+func TestQueryCostMaxSeriesEarlyTermination(t *testing.T) {
+	// The series guardrail must reject a selector as soon as the cumulative
+	// series count exceeds the ceiling, without materializing the entire set.
+	// We back the query with a SeriesSet that yields far more series than the
+	// ceiling and counts how many times Next is called. With a ceiling of N,
+	// the limit trips on the (N+1)th series, so Next is called exactly N+1
+	// times - not once per series in the whole set.
+	const (
+		maxSeries  = 5
+		totalAvail = 1000
+	)
+
+	set := &countingSeriesSet{total: totalAvail}
+	queryable := &storage.MockQueryable{
+		MockQuerier: &storage.MockQuerier{
+			SelectMockFunction: func(_ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+				return set
+			},
+		},
+	}
+
+	engine := newQueryCostEngine(t)
+	engine.SetQueryLimits(maxSeries, 0, 0)
+
+	qry, err := engine.NewInstantQuery(context.Background(), queryable, nil, "bigmetric", time.Unix(0, 0))
+	require.NoError(t, err)
+	require.Equal(t, promql.ErrTooManySeries(env), qry.Exec(context.Background()).Err)
+
+	// Next is called once per produced series plus the call that trips the
+	// limit; the limit trips on the (maxSeries+1)th series. Crucially it is far
+	// below totalAvail, proving the set was not fully materialized.
+	require.Equal(t, maxSeries+1, set.calls, "expected early termination after exceeding the ceiling")
+	require.Less(t, set.calls, totalAvail, "the whole series set must not be materialized")
 }
 
 func TestExtendedRangeSelectors(t *testing.T) {

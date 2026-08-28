@@ -58,7 +58,7 @@ paths:
                         value: up
                 - name: timeout
                   in: query
-                  description: Evaluation timeout. Optional. Defaults to and is capped by the value of the -query.timeout flag.
+                  description: 'Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when set, otherwise the deprecated -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.'
                   required: false
                   explode: false
                   schema:
@@ -104,6 +104,57 @@ paths:
                   examples:
                     example:
                         value: all
+                - name: cost
+                  in: query
+                  description: When true, include an estimated-vs-actual cost comparison in the response. Any non-boolean value is an error. Requires the query-cost feature flag (--enable-feature=query-cost).
+                  required: false
+                  explode: false
+                  schema:
+                    type: boolean
+                  examples:
+                    example:
+                        value: true
+                - name: max_series
+                  in: query
+                  description: 'Lower the maximum number of series this query may load. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_series ceiling, never raise it: a higher value is rejected.'
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 1000
+                - name: max_samples_scanned
+                  in: query
+                  description: 'Lower the maximum number of samples this query may scan. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_samples_scanned ceiling, never raise it: a higher value is rejected.'
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 100000
+                - name: max_query_duration
+                  in: query
+                  description: 'Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.'
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form such as 15s or 2m30s. Supported units are ms (milliseconds), s (seconds), m (minutes), h (hours), d (days), w (weeks) and y (years).
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds.
+                    description: Duration in human-readable or numeric format.
+                  examples:
+                    duration:
+                        value: 30s
+                    number:
+                        value: "30"
             responses:
                 "200":
                     description: Query executed successfully.
@@ -297,7 +348,7 @@ paths:
                         value: rate(prometheus_http_requests_total{handler="/api/v1/query"}[5m])
                 - name: timeout
                   in: query
-                  description: Evaluation timeout. Optional. Defaults to and is capped by the value of the -query.timeout flag.
+                  description: 'Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when set, otherwise the deprecated -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.'
                   required: false
                   explode: false
                   schema:
@@ -343,6 +394,57 @@ paths:
                   examples:
                     example:
                         value: all
+                - name: cost
+                  in: query
+                  description: When true, include an estimated-vs-actual cost comparison in the response. Any non-boolean value is an error. Requires the query-cost feature flag (--enable-feature=query-cost).
+                  required: false
+                  explode: false
+                  schema:
+                    type: boolean
+                  examples:
+                    example:
+                        value: true
+                - name: max_series
+                  in: query
+                  description: 'Lower the maximum number of series this query may load. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_series ceiling, never raise it: a higher value is rejected.'
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 1000
+                - name: max_samples_scanned
+                  in: query
+                  description: 'Lower the maximum number of samples this query may scan. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_samples_scanned ceiling, never raise it: a higher value is rejected.'
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 100000
+                - name: max_query_duration
+                  in: query
+                  description: 'Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.'
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form such as 15s or 2m30s. Supported units are ms (milliseconds), s (seconds), m (minutes), h (hours), d (days), w (weeks) and y (years).
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds.
+                    description: Duration in human-readable or numeric format.
+                  examples:
+                    duration:
+                        value: 30s
+                    number:
+                        value: "30"
             responses:
                 "200":
                     description: Range query executed successfully.
@@ -414,6 +516,498 @@ paths:
                                     value: {"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "http_request_duration_seconds", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "histograms": [[1767433020, {"count": "12.5", "sum": "42.1", "buckets": [[0, "0.7071067811865475", "1", "5"], [0, "1", "1.414213562373095", "7.5"]]}]]}]}}
                 default:
                     description: Error executing range query.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
+    /query_cost:
+        get:
+            tags:
+                - query
+            summary: Estimate the cost of an instant query
+            description: Estimates the resource cost of an instant query without executing it. Requires the query-cost feature flag (--enable-feature=query-cost).
+            operationId: query-cost
+            parameters:
+                - name: time
+                  in: query
+                  description: The evaluation timestamp (optional, defaults to current time).
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
+                - name: query
+                  in: query
+                  description: The PromQL query to estimate.
+                  required: true
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: up
+                - name: timeout
+                  in: query
+                  description: 'Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when set, otherwise the deprecated -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.'
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form such as 15s or 2m30s. Supported units are ms (milliseconds), s (seconds), m (minutes), h (hours), d (days), w (weeks) and y (years).
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds.
+                    description: Duration in human-readable or numeric format.
+                  examples:
+                    duration:
+                        value: 1m30s
+                    number:
+                        value: "90"
+                - name: lookback_delta
+                  in: query
+                  description: Override the lookback period for this query. Optional.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form such as 15s or 2m30s. Supported units are ms (milliseconds), s (seconds), m (minutes), h (hours), d (days), w (weeks) and y (years).
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds.
+                    description: Duration in human-readable or numeric format.
+                  examples:
+                    duration:
+                        value: 5m
+                    number:
+                        value: "300"
+                - name: limit
+                  in: query
+                  description: The maximum number of metrics to return. Validated identically to /api/v1/query but ignored, as no series are returned.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 100
+                - name: stats
+                  in: query
+                  description: Validated identically to /api/v1/query but ignored, as no query statistics are returned.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: all
+                - name: cost
+                  in: query
+                  description: Validated identically to /api/v1/query but ignored, as the response is already a cost estimate. Any non-boolean value is an error.
+                  required: false
+                  explode: false
+                  schema:
+                    type: boolean
+                  examples:
+                    example:
+                        value: true
+                - name: max_series
+                  in: query
+                  description: 'Lower the maximum number of series this query may load. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_series ceiling, never raise it: a higher value is rejected.'
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 1000
+                - name: max_samples_scanned
+                  in: query
+                  description: 'Lower the maximum number of samples this query may scan. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_samples_scanned ceiling, never raise it: a higher value is rejected.'
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 100000
+                - name: max_query_duration
+                  in: query
+                  description: 'Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.'
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form such as 15s or 2m30s. Supported units are ms (milliseconds), s (seconds), m (minutes), h (hours), d (days), w (weeks) and y (years).
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds.
+                    description: Duration in human-readable or numeric format.
+                  examples:
+                    duration:
+                        value: 30s
+                    number:
+                        value: "30"
+            responses:
+                "200":
+                    description: Query cost estimated successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/QueryCostOutputBody'
+                            examples:
+                                estimate:
+                                    summary: Cost estimate for a query
+                                    value:
+                                        data:
+                                            estimate:
+                                                samplesScanned: 5040
+                                                seriesTouched: 42
+                                        status: success
+                default:
+                    description: Error estimating query cost.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
+        post:
+            tags:
+                - query
+            summary: Estimate the cost of an instant query
+            description: Estimates the resource cost of an instant query without executing it. Requires the query-cost feature flag (--enable-feature=query-cost).
+            operationId: query-cost-post
+            requestBody:
+                description: Submit an instant query for cost estimation. This endpoint accepts the same parameters as the GET version.
+                content:
+                    application/x-www-form-urlencoded:
+                        schema:
+                            $ref: '#/components/schemas/QueryCostPostInputBody'
+                        examples:
+                            simpleQuery:
+                                summary: Estimate the cost of an instant query
+                                value:
+                                    query: up
+                            queryWithTime:
+                                summary: Estimate the cost at a specific timestamp
+                                value:
+                                    query: rate(prometheus_http_requests_total[5m])
+                                    time: "2026-01-02T13:37:00.000Z"
+                required: true
+            responses:
+                "200":
+                    description: Query cost estimated successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/QueryCostOutputBody'
+                            examples:
+                                estimate:
+                                    summary: Cost estimate for a query
+                                    value:
+                                        data:
+                                            estimate:
+                                                samplesScanned: 5040
+                                                seriesTouched: 42
+                                        status: success
+                default:
+                    description: Error estimating query cost.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
+    /query_range_cost:
+        get:
+            tags:
+                - query
+            summary: Estimate the cost of a range query
+            description: Estimates the resource cost of a range query without executing it. Requires the query-cost feature flag (--enable-feature=query-cost).
+            operationId: query-range-cost
+            parameters:
+                - name: start
+                  in: query
+                  description: The start time of the query.
+                  required: true
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
+                - name: end
+                  in: query
+                  description: The end time of the query.
+                  required: true
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
+                - name: step
+                  in: query
+                  description: The step size of the query.
+                  required: true
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form such as 15s or 2m30s. Supported units are ms (milliseconds), s (seconds), m (minutes), h (hours), d (days), w (weeks) and y (years).
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds.
+                    description: Duration in human-readable or numeric format.
+                  examples:
+                    duration:
+                        value: 15s
+                    number:
+                        value: "15"
+                - name: query
+                  in: query
+                  description: The PromQL query to estimate.
+                  required: true
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: rate(prometheus_http_requests_total{handler="/api/v1/query"}[5m])
+                - name: timeout
+                  in: query
+                  description: 'Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when set, otherwise the deprecated -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.'
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form such as 15s or 2m30s. Supported units are ms (milliseconds), s (seconds), m (minutes), h (hours), d (days), w (weeks) and y (years).
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds.
+                    description: Duration in human-readable or numeric format.
+                  examples:
+                    duration:
+                        value: 1m30s
+                    number:
+                        value: "90"
+                - name: lookback_delta
+                  in: query
+                  description: Override the lookback period for this query. Optional.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form such as 15s or 2m30s. Supported units are ms (milliseconds), s (seconds), m (minutes), h (hours), d (days), w (weeks) and y (years).
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds.
+                    description: Duration in human-readable or numeric format.
+                  examples:
+                    duration:
+                        value: 5m
+                    number:
+                        value: "300"
+                - name: limit
+                  in: query
+                  description: The maximum number of metrics to return. Validated identically to /api/v1/query but ignored, as no series are returned.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 100
+                - name: stats
+                  in: query
+                  description: Validated identically to /api/v1/query but ignored, as no query statistics are returned.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: all
+                - name: cost
+                  in: query
+                  description: Validated identically to /api/v1/query but ignored, as the response is already a cost estimate. Any non-boolean value is an error.
+                  required: false
+                  explode: false
+                  schema:
+                    type: boolean
+                  examples:
+                    example:
+                        value: true
+                - name: max_series
+                  in: query
+                  description: 'Lower the maximum number of series this query may load. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_series ceiling, never raise it: a higher value is rejected.'
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 1000
+                - name: max_samples_scanned
+                  in: query
+                  description: 'Lower the maximum number of samples this query may scan. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_samples_scanned ceiling, never raise it: a higher value is rejected.'
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 100000
+                - name: max_query_duration
+                  in: query
+                  description: 'Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.'
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form such as 15s or 2m30s. Supported units are ms (milliseconds), s (seconds), m (minutes), h (hours), d (days), w (weeks) and y (years).
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds.
+                    description: Duration in human-readable or numeric format.
+                  examples:
+                    duration:
+                        value: 30s
+                    number:
+                        value: "30"
+            responses:
+                "200":
+                    description: Range query cost estimated successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/QueryCostOutputBody'
+                            examples:
+                                estimate:
+                                    summary: Cost estimate for a query
+                                    value:
+                                        data:
+                                            estimate:
+                                                samplesScanned: 5040
+                                                seriesTouched: 42
+                                        status: success
+                default:
+                    description: Error estimating range query cost.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
+        post:
+            tags:
+                - query
+            summary: Estimate the cost of a range query
+            description: Estimates the resource cost of a range query without executing it. Requires the query-cost feature flag (--enable-feature=query-cost).
+            operationId: query-range-cost-post
+            requestBody:
+                description: Submit a range query for cost estimation. This endpoint accepts the same parameters as the GET version.
+                content:
+                    application/x-www-form-urlencoded:
+                        schema:
+                            $ref: '#/components/schemas/QueryRangeCostPostInputBody'
+                        examples:
+                            rangeQuery:
+                                summary: Estimate the cost of a range query
+                                value:
+                                    end: "2026-01-02T13:37:00.000Z"
+                                    query: rate(prometheus_http_requests_total[5m])
+                                    start: "2026-01-02T12:37:00.000Z"
+                                    step: 30s
+                required: true
+            responses:
+                "200":
+                    description: Range query cost estimated successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/QueryCostOutputBody'
+                            examples:
+                                estimate:
+                                    summary: Cost estimate for a query
+                                    value:
+                                        data:
+                                            estimate:
+                                                samplesScanned: 5040
+                                                seriesTouched: 42
+                                        status: success
+                default:
+                    description: Error estimating range query cost.
                     content:
                         application/json:
                             schema:
@@ -3509,7 +4103,7 @@ components:
                     example: 100
                 timeout:
                     type: string
-                    description: 'Form field: Evaluation timeout (optional, defaults to and is capped by the value of the -query.timeout flag).'
+                    description: 'Form field: Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when set, otherwise the deprecated -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.'
                     example: 30s
                 lookback_delta:
                     type: string
@@ -3519,6 +4113,23 @@ components:
                     type: string
                     description: 'Form field: When provided, include query statistics in the response (the special value ''all'' enables more comprehensive statistics).'
                     example: all
+                cost:
+                    type: boolean
+                    description: 'Form field: When true, include an estimated-vs-actual cost comparison in the response. Any non-boolean value is an error. Requires the query-cost feature flag (--enable-feature=query-cost).'
+                max_series:
+                    type: integer
+                    format: int64
+                    description: 'Form field: Lower the maximum number of series this query may load. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_series ceiling, never raise it: a higher value is rejected.'
+                    example: 1000
+                max_samples_scanned:
+                    type: integer
+                    format: int64
+                    description: 'Form field: Lower the maximum number of samples this query may scan. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_samples_scanned ceiling, never raise it: a higher value is rejected.'
+                    example: 100000
+                max_query_duration:
+                    type: string
+                    description: 'Form field: Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.'
+                    example: 30s
             required:
                 - query
             additionalProperties: false
@@ -3549,7 +4160,7 @@ components:
                     example: 100
                 timeout:
                     type: string
-                    description: 'Form field: Evaluation timeout (optional, defaults to and is capped by the value of the -query.timeout flag).'
+                    description: 'Form field: Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when set, otherwise the deprecated -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.'
                     example: 30s
                 lookback_delta:
                     type: string
@@ -3559,6 +4170,23 @@ components:
                     type: string
                     description: 'Form field: When provided, include query statistics in the response (the special value ''all'' enables more comprehensive statistics).'
                     example: all
+                cost:
+                    type: boolean
+                    description: 'Form field: When true, include an estimated-vs-actual cost comparison in the response. Any non-boolean value is an error. Requires the query-cost feature flag (--enable-feature=query-cost).'
+                max_series:
+                    type: integer
+                    format: int64
+                    description: 'Form field: Lower the maximum number of series this query may load. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_series ceiling, never raise it: a higher value is rejected.'
+                    example: 1000
+                max_samples_scanned:
+                    type: integer
+                    format: int64
+                    description: 'Form field: Lower the maximum number of samples this query may scan. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_samples_scanned ceiling, never raise it: a higher value is rejected.'
+                    example: 100000
+                max_query_duration:
+                    type: string
+                    description: 'Form field: Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.'
+                    example: 30s
             required:
                 - query
                 - start
@@ -3711,6 +4339,8 @@ components:
                         description: Array of samples (either float or histogram).
                     stats:
                         $ref: '#/components/schemas/QueryStats'
+                    cost:
+                        $ref: '#/components/schemas/QueryCostComparison'
                   required:
                     - resultType
                     - result
@@ -3730,6 +4360,8 @@ components:
                         description: Array of time series (either float or histogram).
                     stats:
                         $ref: '#/components/schemas/QueryStats'
+                    cost:
+                        $ref: '#/components/schemas/QueryCostComparison'
                   required:
                     - resultType
                     - result
@@ -3751,6 +4383,8 @@ components:
                         description: Scalar value as [timestamp, stringValue].
                     stats:
                         $ref: '#/components/schemas/QueryStats'
+                    cost:
+                        $ref: '#/components/schemas/QueryCostComparison'
                   required:
                     - resultType
                     - result
@@ -3770,6 +4404,8 @@ components:
                         description: String value as [timestamp, stringValue].
                     stats:
                         $ref: '#/components/schemas/QueryStats'
+                    cost:
+                        $ref: '#/components/schemas/QueryCostComparison'
                   required:
                     - resultType
                     - result
@@ -3841,6 +4477,199 @@ components:
                                 description: Timestamp and sample count as [timestamp, count].
                             description: Samples read per step (only included with stats=all when per-step stats enabled).
             description: Query execution statistics (included when the stats query parameter is provided).
+        CostEstimate:
+            type: object
+            properties:
+                seriesTouched:
+                    type: integer
+                    format: int64
+                    description: Number of series the query reads, summed per selector. Series shared between selectors may be counted more than once, so this is an upper bound.
+                samplesScanned:
+                    type: integer
+                    format: int64
+                    description: Number of samples the query scans.
+            required:
+                - seriesTouched
+                - samplesScanned
+            additionalProperties: false
+            description: Estimated resource cost of a query. All values are upper bounds.
+        ActualCost:
+            type: object
+            properties:
+                seriesTouched:
+                    type: integer
+                    format: int64
+                    description: Number of series the query loaded, summed per selector. Series shared between selectors may be counted more than once, so this is an upper bound.
+                samplesScanned:
+                    type: integer
+                    format: int64
+                    description: Number of samples the query read from storage.
+                peakSamples:
+                    type: integer
+                    format: int64
+                    description: Highest number of samples held in memory at once. Omitted when zero.
+            required:
+                - seriesTouched
+                - samplesScanned
+            additionalProperties: false
+            description: Actual resource cost measured while the query executed.
+        QueryCostComparison:
+            type: object
+            properties:
+                estimated:
+                    $ref: '#/components/schemas/CostEstimate'
+                actual:
+                    $ref: '#/components/schemas/ActualCost'
+            required:
+                - estimated
+                - actual
+            additionalProperties: false
+            description: Cost estimated before execution paired with the actual cost measured during execution. The estimated cost has no peakSamples; the actual cost includes it. Requires the query-cost feature flag (--enable-feature=query-cost).
+        QueryCostData:
+            type: object
+            properties:
+                estimate:
+                    $ref: '#/components/schemas/CostEstimate'
+            required:
+                - estimate
+            additionalProperties: false
+            description: Estimated cost of a query computed without executing it.
+        QueryCostOutputBody:
+            type: object
+            properties:
+                status:
+                    type: string
+                    enum:
+                        - success
+                        - error
+                    description: Response status.
+                    example: success
+                data:
+                    $ref: '#/components/schemas/QueryCostData'
+                warnings:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were warnings while executing the request. There will still be data in the data field.
+                infos:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were info-level annotations while executing the request.
+            required:
+                - status
+                - data
+            additionalProperties: false
+            description: Response body for query cost estimation.
+        QueryCostPostInputBody:
+            type: object
+            properties:
+                query:
+                    type: string
+                    description: 'Form field: The PromQL query to estimate.'
+                    example: up
+                time:
+                    type: string
+                    description: 'Form field: The evaluation timestamp (optional, defaults to current time).'
+                    example: "2023-07-21T20:10:51.781Z"
+                timeout:
+                    type: string
+                    description: 'Form field: Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when set, otherwise the deprecated -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.'
+                    example: 30s
+                lookback_delta:
+                    type: string
+                    description: 'Form field: Override the lookback period for this query (optional).'
+                    example: 5m
+                limit:
+                    type: integer
+                    format: int64
+                    description: 'Form field: The maximum number of metrics to return. Validated identically to /api/v1/query but ignored, as no series are returned.'
+                    example: 100
+                stats:
+                    type: string
+                    description: 'Form field: Validated identically to /api/v1/query but ignored, as no query statistics are returned.'
+                    example: all
+                cost:
+                    type: boolean
+                    description: 'Form field: Validated identically to /api/v1/query but ignored, as the response is already a cost estimate. Any non-boolean value is an error.'
+                max_series:
+                    type: integer
+                    format: int64
+                    description: 'Form field: Lower the maximum number of series this query may load. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_series ceiling, never raise it: a higher value is rejected.'
+                    example: 1000
+                max_samples_scanned:
+                    type: integer
+                    format: int64
+                    description: 'Form field: Lower the maximum number of samples this query may scan. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_samples_scanned ceiling, never raise it: a higher value is rejected.'
+                    example: 100000
+                max_query_duration:
+                    type: string
+                    description: 'Form field: Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.'
+                    example: 30s
+            required:
+                - query
+            additionalProperties: false
+            description: POST request body for instant query cost estimation.
+        QueryRangeCostPostInputBody:
+            type: object
+            properties:
+                query:
+                    type: string
+                    description: 'Form field: The PromQL query to estimate.'
+                    example: rate(http_requests_total[5m])
+                start:
+                    type: string
+                    description: 'Form field: The start time of the query.'
+                    example: "2023-07-21T20:10:30.781Z"
+                end:
+                    type: string
+                    description: 'Form field: The end time of the query.'
+                    example: "2023-07-21T20:20:30.781Z"
+                step:
+                    type: string
+                    description: 'Form field: The step size of the query.'
+                    example: 15s
+                timeout:
+                    type: string
+                    description: 'Form field: Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when set, otherwise the deprecated -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.'
+                    example: 30s
+                lookback_delta:
+                    type: string
+                    description: 'Form field: Override the lookback period for this query (optional).'
+                    example: 5m
+                limit:
+                    type: integer
+                    format: int64
+                    description: 'Form field: The maximum number of metrics to return. Validated identically to /api/v1/query but ignored, as no series are returned.'
+                    example: 100
+                stats:
+                    type: string
+                    description: 'Form field: Validated identically to /api/v1/query but ignored, as no query statistics are returned.'
+                    example: all
+                cost:
+                    type: boolean
+                    description: 'Form field: Validated identically to /api/v1/query but ignored, as the response is already a cost estimate. Any non-boolean value is an error.'
+                max_series:
+                    type: integer
+                    format: int64
+                    description: 'Form field: Lower the maximum number of series this query may load. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_series ceiling, never raise it: a higher value is rejected.'
+                    example: 1000
+                max_samples_scanned:
+                    type: integer
+                    format: int64
+                    description: 'Form field: Lower the maximum number of samples this query may scan. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_samples_scanned ceiling, never raise it: a higher value is rejected.'
+                    example: 100000
+                max_query_duration:
+                    type: string
+                    description: 'Form field: Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.'
+                    example: 30s
+            required:
+                - query
+                - start
+                - end
+                - step
+            additionalProperties: false
+            description: POST request body for range query cost estimation.
         FloatSample:
             type: object
             properties:

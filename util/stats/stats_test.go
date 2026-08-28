@@ -66,6 +66,11 @@ func TestQueryStatsWithTimersAndSamples(t *testing.T) {
 	require.Regexpf(t, `[,{]"totalQueryableSamplesPerStep":\[\[20001,5\],\[21001,0\],\[22001,0\],\[23001,0\],\[24001,0\],\[25001,5\]\]`, string(actual), "expected totalQueryableSamplesPerStep")
 	require.Regexpf(t, `[,{]"samplesRead":10[,}]`, string(actual), "expected samplesRead")
 	require.Regexpf(t, `[,{]"samplesReadPerStep":\[\[20001,5\],\[21001,0\],\[22001,0\],\[23001,0\],\[24001,0\],\[25001,5\]\]`, string(actual), "expected samplesReadPerStep")
+
+	// The statistics object exposes only timings and samples. Series-touched is
+	// surfaced by the API as part of the query cost comparison, not here.
+	require.NotContains(t, string(actual), `"totalSeriesTouched"`, "totalSeriesTouched must not appear under samples")
+	require.NotContains(t, string(actual), `"cost"`, "the statistics object must not carry a cost field")
 }
 
 func TestQueryStatsWithSpanTimers(t *testing.T) {

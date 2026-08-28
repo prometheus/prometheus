@@ -98,11 +98,19 @@ URL query parameters:
 
 - `query=<string>`: Prometheus expression query string.
 - `time=<rfc3339 | unix_timestamp>`: Evaluation timestamp. Optional.
-- `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
-   is capped by the value of the `-query.timeout` flag.
+- `timeout=<duration>`: Evaluation timeout. Optional. Defaults to the effective
+   server-side maximum, which is the `query_max_duration` configuration option
+   when it is set and otherwise the value of the deprecated `-query.timeout`
+   flag. With the [`query-cost`](../feature_flags.md#query-cost) feature flag
+   enabled and `query_max_duration` set, a `timeout` above that ceiling is
+   rejected with HTTP 400 (`bad_data`) instead of being silently lowered.
 - `limit=<number>`: Maximum number of returned series. Doesn't affect scalars or strings but truncates the number of series for matrices and vectors. Optional. 0 means disabled.
 - `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
 - `stats=<string>`: Include query statistics in the response. Supported values are `true` (basic statistics) and `all` (additionally includes detailed per-step statistics: timings and sample counts). Any other non-empty value currently behaves like `true`, but is deprecated, adds a warning to the response, and will be rejected in the next major release. Optional. See [Query statistics](#query-statistics).
+- `cost=<bool>`: Include an estimated-versus-actual cost comparison in the response `data`. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It is a plain on/off switch: any value that is not a boolean is an error. See [Query statistics](#query-statistics).
+- `max_series=<number>`: Lower the per-query maximum number of series this query may load. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the operator-set ceiling configured via `query_max_series`, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
+- `max_samples_scanned=<number>`: Lower the per-query maximum number of samples this query may scan. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the operator-set ceiling configured via `query_max_samples_scanned`, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
+- `max_query_duration=<duration>`: Lower the per-query maximum execution duration. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the operator-set ceiling configured via `query_max_duration`, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
 
 The current server time is used if the `time` parameter is omitted.
 
@@ -172,11 +180,19 @@ URL query parameters:
 - `start=<rfc3339 | unix_timestamp>`: Start timestamp, inclusive.
 - `end=<rfc3339 | unix_timestamp>`: End timestamp, inclusive.
 - `step=<duration | float>`: Query resolution step width in `duration` format or float number of seconds.
-- `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
-   is capped by the value of the `-query.timeout` flag.
+- `timeout=<duration>`: Evaluation timeout. Optional. Defaults to the effective
+   server-side maximum, which is the `query_max_duration` configuration option
+   when it is set and otherwise the value of the deprecated `-query.timeout`
+   flag. With the [`query-cost`](../feature_flags.md#query-cost) feature flag
+   enabled and `query_max_duration` set, a `timeout` above that ceiling is
+   rejected with HTTP 400 (`bad_data`) instead of being silently lowered.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 - `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
 - `stats=<string>`: Include query statistics in the response. Supported values are `true` (basic statistics) and `all` (additionally includes detailed per-step statistics: timings and sample counts). Any other non-empty value currently behaves like `true`, but is deprecated, adds a warning to the response, and will be rejected in the next major release. Optional. See [Query statistics](#query-statistics).
+- `cost=<bool>`: Include an estimated-versus-actual cost comparison in the response `data`. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It is a plain on/off switch: any value that is not a boolean is an error. See [Query statistics](#query-statistics).
+- `max_series=<number>`: Lower the per-query maximum number of series this query may load. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the operator-set ceiling configured via `query_max_series`, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
+- `max_samples_scanned=<number>`: Lower the per-query maximum number of samples this query may scan. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the operator-set ceiling configured via `query_max_samples_scanned`, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
+- `max_query_duration=<duration>`: Lower the per-query maximum execution duration. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the operator-set ceiling configured via `query_max_duration`, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -249,6 +265,137 @@ When the `stats` parameter is set (e.g. `stats=all`), the response `data` includ
   - **peakSamples**: Peak number of samples in memory during evaluation.
 
 The server also exposes two Prometheus metrics: `prometheus_engine_query_samples_total` (samples loaded) and `prometheus_engine_query_samples_read_total` (samples read). See [Per-step stats](../feature_flags.md#per-step-stats) for the `promql-per-step-stats` feature flag.
+
+When the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled, the
+instant and range query endpoints accept a `cost=<bool>` parameter. It is a plain
+on/off switch, not a set of levels: `cost=true` enables the comparison, and any
+value that does not parse as a boolean is rejected with HTTP 400 (`bad_data`).
+When `cost` is `true`, the response `data` includes an additional `cost` object
+comparing the cost estimated before execution with the actual cost measured
+during execution:
+
+```json
+"cost": {
+  "estimated": {
+    "seriesTouched": 42,
+    "samplesScanned": 5040
+  },
+  "actual": {
+    "seriesTouched": 40,
+    "samplesScanned": 4980,
+    "peakSamples": 320
+  }
+}
+```
+
+The estimated `seriesTouched` and `samplesScanned` values are upper bounds: see
+[Query cost](#query-cost) for how they are computed and their accuracy
+limitations. `peakSamples` is reported only for the actual cost; there is no
+estimated `peakSamples`. The comparison is informational: the estimate is never
+used to reject a query.
+
+Note that requesting `cost=true` adds some overhead: Prometheus performs an
+additional pre-execution cost estimation (a second series/index lookup) on top
+of executing the query.
+
+## Query cost
+
+*The query cost endpoints require the [`query-cost`](../feature_flags.md#query-cost) feature flag.*
+
+The following endpoints estimate the resource cost of a query *without executing
+it*, allowing clients to gauge how expensive a query would be before running it:
+
+```
+GET /api/v1/query_cost
+POST /api/v1/query_cost
+GET /api/v1/query_range_cost
+POST /api/v1/query_range_cost
+```
+
+`/api/v1/query_cost` accepts the same URL query parameters as
+[`/api/v1/query`](#instant-queries), and `/api/v1/query_range_cost` accepts the
+same parameters as [`/api/v1/query_range`](#range-queries), so a request accepted
+by one endpoint is accepted by the other. The parameters that only shape the
+response of an executed query (`limit`, `stats` and `cost`) are validated in the
+same way and then ignored, since these endpoints return no query result. As with
+the other query endpoints, parameters may be URL-encoded in the request body
+using the `POST` method with a `Content-Type: application/x-www-form-urlencoded`
+header.
+
+The `data` section of the response has the following format:
+
+```json
+{
+  "estimate": {
+    "seriesTouched": <number>,
+    "samplesScanned": <number>
+  }
+}
+```
+
+- `seriesTouched`: the number of series the query reads, summed per selector.
+- `samplesScanned`: the number of samples the query reads from storage, i.e. the
+  same quantity as the `samplesRead` [query statistic](#query-statistics) rather
+  than the peak number of samples in memory.
+
+Estimating reads the index, so it is bounded like an executed query: it occupies
+one of the `--query.max-concurrency` slots for its duration, and it inherits
+`query_max_duration` as a deadline unless the request sets a shorter `timeout`.
+Exceeding that deadline returns a `timeout` error rather than a partial estimate,
+so the figures are never silently lower bounds.
+
+```bash
+curl 'http://localhost:9090/api/v1/query_cost?query=up'
+```
+
+```json
+{
+   "status" : "success",
+   "data" : {
+      "estimate" : {
+         "seriesTouched" : 42,
+         "samplesScanned" : 5040
+      }
+   }
+}
+```
+
+Both values are deliberately cheap *upper* bounds, not exact figures: a series
+shared between several selectors is counted once per selector, and a series with
+no samples in the query's window still counts. The estimate is computed from the
+index, plus the metadata of a small, bounded number of chunks when the storage
+exposes it (falling back to the configured global scrape interval otherwise), so
+it does not execute the query and may differ from the actual cost. The estimate
+is advisory only: it is never used to reject a query. It is unavailable in agent
+mode.
+
+When the `query-cost` feature flag is enabled, the engine also enforces the
+reloadable cost limits configured under the `global:` section of the
+[configuration file](../configuration/configuration.md#configuration-file)
+(`query_max_series`, `query_max_samples_scanned`, and `query_max_duration`).
+These limits are enforced *during* query execution against the query's actual
+running cost, not against the estimate above. A query is rejected as soon as the
+number of series it loads or the number of samples it scans exceeds the
+configured limit, and `query_max_duration` surfaces as a query timeout. The
+estimate returned by these endpoints is informational only and is never used to
+reject a query.
+
+A client may lower any of these ceilings for a single request with the
+`max_series`, `max_samples_scanned`, `max_query_duration` and `timeout`
+parameters. These can only tighten the operator-set value, never loosen it: a
+request asking for a value above the ceiling is rejected with HTTP 400
+(`bad_data`) so that the caller sees that the limit it asked for was not applied,
+instead of being silently clamped down. A `timeout` must be positive; a
+non-positive value is rejected with HTTP 400 (`bad_data`).
+
+A query rejected by one of these limits during execution returns HTTP 422 with
+the `errorType` `cost_limit`, distinguishing a cost rejection from other
+execution failures.
+
+The engine also exposes three metrics while the feature flag is enabled:
+`prometheus_engine_query_rejected_total` (rejections by `reason`),
+`prometheus_engine_query_series_touched` and
+`prometheus_engine_query_samples_scanned` (per-query distributions).
 
 ## Formatting query expressions
 

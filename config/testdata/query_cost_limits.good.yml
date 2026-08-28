@@ -1,0 +1,4 @@
+global:
+  query_max_series: 1000000
+  query_max_samples_scanned: 50000000
+  query_max_duration: 45s

@@ -107,6 +107,8 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 		nil,                                // featureRegistry
 		OpenAPIOptions{},                   // openAPIOptions
 		parser.NewParser(parser.Options{}), // promqlParser
+		false,                              // enableQueryCost
+		0,                                  // queryTimeoutFlag
 	)
 
 	// Register routes.

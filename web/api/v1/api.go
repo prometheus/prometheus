@@ -98,6 +98,7 @@ const (
 	ErrorUnavailable
 	ErrorNotFound
 	ErrorNotAcceptable
+	ErrorCostLimit
 )
 
 var (
@@ -110,6 +111,9 @@ var (
 	errorUnavailable   = errorType{ErrorUnavailable, "unavailable"}
 	errorNotFound      = errorType{ErrorNotFound, "not_found"}
 	errorNotAcceptable = errorType{ErrorNotAcceptable, "not_acceptable"}
+	// errorCostLimit is returned when a query is rejected because it exceeds a
+	// configured query-cost limit (series, samples scanned, or duration).
+	errorCostLimit = errorType{ErrorCostLimit, "cost_limit"}
 )
 
 // OverrideErrorCode can be used to override status code for different error types.
@@ -275,6 +279,26 @@ type API struct {
 	openAPIBuilder  *OpenAPIBuilder
 
 	parser parser.Parser
+
+	// lookbackDelta is the engine's configured lookback delta, as set by
+	// --query.lookback-delta. It is the default the engine applies when a request
+	// does not override it with the lookback_delta parameter, and is handed to the
+	// cost estimator so the estimate models the same time windows the engine
+	// would read.
+	lookbackDelta time.Duration
+
+	// enableQueryCost reports whether the experimental query-cost feature is
+	// enabled. When set, it registers the query_cost and query_range_cost
+	// endpoints, makes extractQueryOpts honor the per-query cost-limit override
+	// parameters, and enables the estimated-vs-actual cost comparison on query
+	// and query_range. It has no effect when the feature is disabled.
+	enableQueryCost bool
+
+	// queryTimeoutFlag is the value of the deprecated --query.timeout flag. It is the
+	// effective query duration ceiling while the reloadable query_max_duration is
+	// unset, so the API resolves per-query duration overrides against the same
+	// ceiling the engine uses.
+	queryTimeoutFlag time.Duration
 }
 
 // NewAPI returns an initialized API type.
@@ -320,6 +344,8 @@ func NewAPI(
 	featureRegistry features.Collector,
 	openAPIOptions OpenAPIOptions,
 	promqlParser parser.Parser,
+	enableQueryCost bool,
+	queryTimeoutFlag time.Duration,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -355,6 +381,9 @@ func NewAPI(
 		featureRegistry:     featureRegistry,
 		openAPIBuilder:      NewOpenAPIBuilder(openAPIOptions, logger),
 		parser:              promqlParser,
+		lookbackDelta:       lookbackDelta,
+		enableQueryCost:     enableQueryCost,
+		queryTimeoutFlag:    queryTimeoutFlag,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -451,6 +480,16 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/query_exemplars", wrapAgent(api.queryExemplars))
 	r.Post("/query_exemplars", wrapAgent(api.queryExemplars))
 
+	// Cost estimation endpoints are only available when the query-cost feature
+	// is enabled. They require the TSDB index and are therefore unavailable in
+	// agent mode.
+	if api.enableQueryCost {
+		r.Get("/query_cost", wrapAgent(api.queryCost))
+		r.Post("/query_cost", wrapAgent(api.queryCost))
+		r.Get("/query_range_cost", wrapAgent(api.queryRangeCost))
+		r.Post("/query_range_cost", wrapAgent(api.queryRangeCost))
+	}
+
 	r.Get("/format_query", wrapAgent(api.formatQuery))
 	r.Post("/format_query", wrapAgent(api.formatQuery))
 
@@ -515,6 +554,41 @@ type QueryData struct {
 	ResultType parser.ValueType `json:"resultType"`
 	Result     parser.Value     `json:"result"`
 	Stats      stats.QueryStats `json:"stats,omitempty"`
+	// Cost carries the estimated and actual cost of the query. It is populated
+	// only when the query-cost feature is enabled and the request opts in via
+	// the "cost" form parameter. It is additive and omitted otherwise.
+	Cost *QueryCostComparison `json:"cost,omitempty"`
+}
+
+// CostEstimate is the estimated or actual resource cost of a query. Estimated
+// values are upper bounds; see promql.CostEstimate for their accuracy
+// limitations. Actual values are measured during execution, so they are exact
+// rather than bounds; see util/stats for how they are computed.
+type CostEstimate struct {
+	// SeriesTouched is the number of series the query reads, summed per
+	// selector. Series shared between selectors are counted once per selector,
+	// so an estimate of it is an upper bound on the distinct series touched.
+	SeriesTouched int64 `json:"seriesTouched"`
+	// SamplesScanned is the number of samples the query scans.
+	SamplesScanned int64 `json:"samplesScanned"`
+	// PeakSamples is the highest number of samples held in memory at once. It is
+	// only available for actual costs and is omitted when zero.
+	PeakSamples int64 `json:"peakSamples,omitempty"`
+}
+
+// QueryCostData is the payload returned by the query_cost and query_range_cost
+// endpoints. It carries the estimated cost of a query computed without executing
+// it.
+type QueryCostData struct {
+	Estimate CostEstimate `json:"estimate"`
+}
+
+// QueryCostComparison pairs the cost estimated before execution with the actual
+// cost measured during execution, allowing callers to gauge the accuracy of the
+// estimate.
+type QueryCostComparison struct {
+	Estimated CostEstimate `json:"estimated"`
+	Actual    CostEstimate `json:"actual"`
 }
 
 func invalidParamError(err error, parameter string) apiFuncResult {
@@ -557,20 +631,24 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		return invalidParamError(err, "time")
 	}
 	ctx := r.Context()
-	if to := r.FormValue("timeout"); to != "" {
+	timeout, apiErr := api.queryTimeout(r)
+	if apiErr != nil {
+		return apiFuncResult{nil, apiErr, nil, nil}
+	}
+	if timeout > 0 {
 		var cancel context.CancelFunc
-		timeout, err := parseDuration(to)
-		if err != nil {
-			return invalidParamError(err, "timeout")
-		}
-
 		ctx, cancel = context.WithDeadline(ctx, api.now().Add(timeout))
 		defer cancel()
 	}
 
-	opts, err := extractQueryOpts(r)
+	opts, err := api.extractQueryOpts(r)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	costOn, err := api.costRequested(r)
+	if err != nil {
+		return invalidParamError(err, "cost")
 	}
 
 	ctx, span := otel.Tracer("").Start(ctx, "promqlInstantQuery")
@@ -585,7 +663,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return invalidParamError(err, "query")
+		return apiFuncResult{nil, queryConstructionError(err), nil, nil}
 	}
 
 	// From now on, we must only return with a finalizer in the result (to
@@ -626,10 +704,25 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}
 	qs := sr(ctx, qry.Stats(), r.FormValue("stats"))
 
+	var cost *QueryCostComparison
+	if costOn {
+		comparison, ca, err := api.costComparison(ctx, qry, r.FormValue("query"), ts, ts, 0, opts)
+		warnings = warnings.Merge(ca)
+		// The query already executed successfully. A failing estimate must never
+		// replace that result, so we surface the estimation error as a warning and
+		// return the query result without a cost comparison.
+		if err != nil {
+			warnings = warnings.Add(fmt.Errorf("cost estimation failed: %w", err))
+		} else {
+			cost = comparison
+		}
+	}
+
 	return apiFuncResult{&QueryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
 		Stats:      qs,
+		Cost:       cost,
 	}, nil, warnings, qry.Close}
 }
 
@@ -651,7 +744,7 @@ func (api *API) parseQuery(r *http.Request) apiFuncResult {
 	return apiFuncResult{data: translateAST(expr), err: nil, warnings: nil, finalizer: nil}
 }
 
-func extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
+func (api *API) extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
 	var duration time.Duration
 
 	if strDuration := r.FormValue("lookback_delta"); strDuration != "" {
@@ -662,7 +755,376 @@ func extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
 		duration = parsedDuration
 	}
 
-	return promql.NewPrometheusQueryOpts(r.FormValue("stats") == statsAll, duration), nil
+	enablePerStepStats := r.FormValue("stats") == statsAll
+
+	// Per-query cost-limit overrides are only honored when the query-cost
+	// feature is enabled. They may only lower the operator-set ceiling.
+	if !api.enableQueryCost {
+		return promql.NewPrometheusQueryOpts(enablePerStepStats, duration), nil
+	}
+
+	seriesCeiling, samplesCeiling, durationCeiling := api.queryCostCeilings()
+
+	var maxSeries, maxSamplesScanned uint64
+	if v := r.FormValue("max_series"); v != "" {
+		parsed, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing max_series: %w", err)
+		}
+		maxSeries = parsed
+	}
+	if v := r.FormValue("max_samples_scanned"); v != "" {
+		parsed, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing max_samples_scanned: %w", err)
+		}
+		maxSamplesScanned = parsed
+	}
+
+	var maxQueryDuration time.Duration
+	if v := r.FormValue("max_query_duration"); v != "" {
+		parsed, err := parseDuration(v)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing max_query_duration: %w", err)
+		}
+		maxQueryDuration = parsed
+	}
+
+	// An override above the operator-set ceiling is rejected rather than clamped,
+	// so the caller learns that the limit it asked for was not applied. The engine
+	// applies the same rule when it builds a query and remains the authority for
+	// executed queries; checking here also covers the cost endpoints, which never
+	// build one.
+	if err := aboveCeiling("max_series", maxSeries, seriesCeiling); err != nil {
+		return nil, err
+	}
+	if err := aboveCeiling("max_samples_scanned", maxSamplesScanned, samplesCeiling); err != nil {
+		return nil, err
+	}
+	if maxQueryDuration > 0 && durationCeiling > 0 && maxQueryDuration > durationCeiling {
+		return nil, promql.ErrLimitAboveCeiling{
+			Limit:     "max_query_duration",
+			Requested: maxQueryDuration.String(),
+			Ceiling:   durationCeiling.String(),
+		}
+	}
+
+	return promql.NewPrometheusQueryOptsWithLimits(enablePerStepStats, duration, maxSeries, maxSamplesScanned, maxQueryDuration), nil
+}
+
+// aboveCeiling returns a promql.ErrLimitAboveCeiling when a per-query requested
+// limit exceeds the operator-set ceiling, and nil otherwise. Zero means
+// unlimited for both values, and a request equal to the ceiling is accepted.
+func aboveCeiling(name string, requested, ceiling uint64) error {
+	if requested == 0 || ceiling == 0 || requested <= ceiling {
+		return nil
+	}
+	return promql.ErrLimitAboveCeiling{
+		Limit:     name,
+		Requested: strconv.FormatUint(requested, 10),
+		Ceiling:   strconv.FormatUint(ceiling, 10),
+	}
+}
+
+// costRequested reports whether the request opted in to the actual-vs-estimated
+// cost comparison. It is honored only when the query-cost feature is enabled,
+// and is parsed as a boolean: an empty value leaves it disabled, and any other
+// value must parse via strconv.ParseBool.
+func (api *API) costRequested(r *http.Request) (bool, error) {
+	if !api.enableQueryCost {
+		return false, nil
+	}
+	v := r.FormValue("cost")
+	if v == "" {
+		return false, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, errors.New("must be a boolean")
+	}
+	return b, nil
+}
+
+// scrapeInterval returns the global scrape interval from the current
+// configuration, used to estimate the number of samples per series. It falls
+// back to zero when no configuration is available, in which case the estimator
+// degrades to one sample per series.
+func (api *API) scrapeInterval() time.Duration {
+	if api.config == nil {
+		return 0
+	}
+	return time.Duration(api.config().GlobalConfig.ScrapeInterval)
+}
+
+// queryCostCeilings returns the operator-set, reloadable query-cost ceilings
+// from the global configuration. Zero means unlimited for each of them. They are
+// only meaningful when the query-cost feature is enabled, so all-zero is
+// returned when it is not.
+func (api *API) queryCostCeilings() (maxSeries, maxSamplesScanned uint64, maxDuration time.Duration) {
+	if !api.enableQueryCost || api.config == nil {
+		return 0, 0, 0
+	}
+	g := api.config().GlobalConfig
+	maxDuration = time.Duration(g.QueryMaxDuration)
+	if maxDuration <= 0 {
+		// While query_max_duration is unset the deprecated --query.timeout flag is
+		// still the ceiling the engine enforces, so resolve against it here too.
+		maxDuration = api.queryTimeoutFlag
+	}
+	return g.QueryMaxSeries, g.QueryMaxSamplesScanned, maxDuration
+}
+
+// subqueryDefaultStep returns the default evaluation interval the engine uses
+// for a subquery without an explicit step, read from the global
+// evaluation_interval configuration. It mirrors the engine's
+// NoStepSubqueryIntervalFn so the cost estimator models subqueries on the same
+// step grid the engine evaluates them on. It falls back to zero when no
+// configuration is available, in which case the estimator uses its own default.
+func (api *API) subqueryDefaultStep() time.Duration {
+	if api.config == nil {
+		return 0
+	}
+	return time.Duration(api.config().GlobalConfig.EvaluationInterval)
+}
+
+// effectiveLookbackDelta returns the lookback delta the engine would apply to
+// this query: the per-query lookback_delta override when set, and otherwise the
+// engine's configured default.
+func (api *API) effectiveLookbackDelta(opts promql.QueryOpts) time.Duration {
+	if opts != nil && opts.LookbackDelta() > 0 {
+		return opts.LookbackDelta()
+	}
+	return api.lookbackDelta
+}
+
+// queryTimeout parses the per-query "timeout" parameter, returning zero when it
+// is absent. Like the other per-query cost overrides, a timeout may only lower
+// the operator-set query_max_duration ceiling: a request above it is rejected so
+// the caller can see that the timeout it asked for was not applied, rather than
+// being silently clamped. The timeout is applied as a context deadline instead
+// of through promql.QueryOpts, so the engine cannot enforce this itself. The
+// ceiling is query_max_duration when it is configured, and otherwise the
+// deprecated --query.timeout flag, which is the ceiling the engine falls back to.
+// A non-positive timeout is rejected rather than ignored, since it could only
+// ever produce an already-expired deadline.
+func (api *API) queryTimeout(r *http.Request) (time.Duration, *apiError) {
+	v := r.FormValue("timeout")
+	if v == "" {
+		return 0, nil
+	}
+	timeout, err := parseDuration(v)
+	if err != nil {
+		return 0, &apiError{errorBadData, fmt.Errorf("invalid parameter %q: %w", "timeout", err)}
+	}
+	if timeout <= 0 {
+		return 0, &apiError{errorBadData, fmt.Errorf("invalid parameter %q: timeout must be positive, got %s", "timeout", timeout)}
+	}
+	if _, _, ceiling := api.queryCostCeilings(); ceiling > 0 && timeout > ceiling {
+		return 0, &apiError{errorBadData, promql.ErrLimitAboveCeiling{
+			Limit:     "timeout",
+			Requested: timeout.String(),
+			Ceiling:   ceiling.String(),
+		}}
+	}
+	return timeout, nil
+}
+
+// queryConstructionError maps an error returned when building a query from an
+// API error. A per-query limit override above the operator-set ceiling is
+// reported as bad data with the engine's message, which names the limit, the
+// requested value and the ceiling; any other failure is a bad query parameter.
+func queryConstructionError(err error) *apiError {
+	var overCeiling promql.ErrLimitAboveCeiling
+	if errors.As(err, &overCeiling) {
+		return &apiError{errorBadData, err}
+	}
+	return &apiError{errorBadData, fmt.Errorf("invalid parameter %q: %w", "query", err)}
+}
+
+// costComparison estimates the cost of qs over [start,end] step and pairs it
+// with the actual cost read from the executed query's statistics. The estimator
+// is given the same lookback delta and default subquery interval the engine
+// would use for this query, so that it models the same time windows. It is only
+// called when the query-cost feature is enabled and the request opted in.
+func (api *API) costComparison(ctx context.Context, qry promql.Query, qs string, start, end time.Time, step time.Duration, opts promql.QueryOpts) (*QueryCostComparison, annotations.Annotations, error) {
+	estimate, annos, err := promql.EstimateCost(ctx, api.Queryable, api.parser, qs, start, end, step, api.effectiveLookbackDelta(opts), api.subqueryDefaultStep(), api.scrapeInterval())
+	if err != nil {
+		return nil, annos, err
+	}
+
+	comparison := &QueryCostComparison{
+		Estimated: CostEstimate{
+			SeriesTouched:  estimate.SeriesTouched,
+			SamplesScanned: estimate.SamplesScanned,
+		},
+	}
+
+	if s := qry.Stats(); s != nil && s.Samples != nil {
+		comparison.Actual = CostEstimate{
+			SeriesTouched:  s.Samples.TotalSeries,
+			SamplesScanned: s.Samples.SamplesRead,
+			PeakSamples:    int64(s.Samples.PeakSamples),
+		}
+	}
+
+	return comparison, annos, nil
+}
+
+// queryCost estimates the cost of an instant query without executing it. It
+// takes the same parameters as query but stops before evaluation and returns the
+// estimate. The parameters that only shape an executed query's response
+// ("limit", "stats" and "cost") are validated exactly as query validates them
+// and then ignored, so that a request accepted by one endpoint is accepted by
+// the other. It is only registered when the query-cost feature is enabled.
+func (api *API) queryCost(r *http.Request) apiFuncResult {
+	if _, err := parseLimitParam(r.FormValue("limit")); err != nil {
+		return invalidParamError(err, "limit")
+	}
+	if _, err := api.costRequested(r); err != nil {
+		return invalidParamError(err, "cost")
+	}
+	ts, err := parseTimeParam(r, "time", api.now())
+	if err != nil {
+		return invalidParamError(err, "time")
+	}
+
+	ctx := r.Context()
+	timeout, apiErr := api.queryTimeout(r)
+	if apiErr != nil {
+		return apiFuncResult{nil, apiErr, nil, nil}
+	}
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, api.now().Add(timeout))
+		defer cancel()
+	}
+
+	opts, err := api.extractQueryOpts(r)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	res := api.estimateCostResult(ctx, r.FormValue("query"), ts, ts, 0, opts)
+	if warn := api.statsParamWarning(r.FormValue("stats")); warn != nil {
+		res.warnings = res.warnings.Add(warn)
+	}
+	return res
+}
+
+// queryRangeCost estimates the cost of a range query without executing it. It
+// takes the same parameters as queryRange but stops before evaluation and
+// returns the estimate. The parameters that only shape an executed query's
+// response ("limit", "stats" and "cost") are validated exactly as queryRange
+// validates them and then ignored, so that a request accepted by one endpoint is
+// accepted by the other. It is only registered when the query-cost feature is
+// enabled.
+func (api *API) queryRangeCost(r *http.Request) apiFuncResult {
+	if _, err := parseLimitParam(r.FormValue("limit")); err != nil {
+		return invalidParamError(err, "limit")
+	}
+	if _, err := api.costRequested(r); err != nil {
+		return invalidParamError(err, "cost")
+	}
+	start, err := parseTime(r.FormValue("start"))
+	if err != nil {
+		return invalidParamError(err, "start")
+	}
+	end, err := parseTime(r.FormValue("end"))
+	if err != nil {
+		return invalidParamError(err, "end")
+	}
+	if end.Before(start) {
+		return invalidParamError(errors.New("end timestamp must not be before start time"), "end")
+	}
+
+	step, err := parseDuration(r.FormValue("step"))
+	if err != nil {
+		return invalidParamError(err, "step")
+	}
+
+	if step <= 0 {
+		return invalidParamError(errors.New("zero or negative query resolution step widths are not accepted. Try a positive integer"), "step")
+	}
+
+	// For safety, limit the number of returned points per timeseries.
+	// This is sufficient for 60s resolution for a week or 1h resolution for a year.
+	if end.Sub(start)/step > 11000 {
+		err := errors.New("exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	ctx := r.Context()
+	timeout, apiErr := api.queryTimeout(r)
+	if apiErr != nil {
+		return apiFuncResult{nil, apiErr, nil, nil}
+	}
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
+	opts, err := api.extractQueryOpts(r)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	res := api.estimateCostResult(ctx, r.FormValue("query"), start, end, step, opts)
+	if warn := api.statsParamWarning(r.FormValue("stats")); warn != nil {
+		res.warnings = res.warnings.Add(warn)
+	}
+	return res
+}
+
+// estimateCostResult runs the cost estimator over [start,end] step and maps the
+// result into a QueryCostData payload. The estimator is given the same lookback
+// delta and default subquery interval the engine would use for this query.
+//
+// Estimating touches storage, so it is bounded the same way an executed query
+// is: it holds one of the engine's concurrent query slots for its duration, and
+// it inherits the effective query duration ceiling as a deadline when the
+// request did not set a shorter one. Exceeding the deadline is an error rather
+// than a truncated estimate, so the figures never silently become lower bounds.
+//
+// A malformed query is reported as bad data, matching /query rather than looking
+// like an execution failure, and an exhausted deadline is reported as a timeout.
+// Other estimator warnings are propagated and errors are mapped via
+// returnAPIError.
+func (api *API) estimateCostResult(ctx context.Context, qs string, start, end time.Time, step time.Duration, opts promql.QueryOpts) apiFuncResult {
+	if _, err := api.parser.ParseExpr(qs); err != nil {
+		return invalidParamError(err, "query")
+	}
+
+	if _, _, ceiling := api.queryCostCeilings(); ceiling > 0 {
+		if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > ceiling {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, ceiling)
+			defer cancel()
+		}
+	}
+
+	if acquirer, ok := api.QueryEngine.(promql.QuerySlotAcquirer); ok {
+		release, err := acquirer.AcquireQuerySlot(ctx, qs)
+		defer release()
+		if err != nil {
+			return apiFuncResult{nil, returnAPIError(err), nil, nil}
+		}
+	}
+
+	estimate, annos, err := promql.EstimateCost(ctx, api.Queryable, api.parser, qs, start, end, step, api.effectiveLookbackDelta(opts), api.subqueryDefaultStep(), api.scrapeInterval())
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return apiFuncResult{nil, &apiError{errorTimeout, fmt.Errorf("cost estimation exceeded the query duration limit: %w", err)}, annos, nil}
+		}
+		return apiFuncResult{nil, returnAPIError(err), annos, nil}
+	}
+
+	return apiFuncResult{&QueryCostData{
+		Estimate: CostEstimate{
+			SeriesTouched:  estimate.SeriesTouched,
+			SamplesScanned: estimate.SamplesScanned,
+		},
+	}, nil, annos, nil}
 }
 
 // Accepted values of the `stats` query parameter on /query and /query_range
@@ -729,20 +1191,24 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	}
 
 	ctx := r.Context()
-	if to := r.FormValue("timeout"); to != "" {
+	timeout, apiErr := api.queryTimeout(r)
+	if apiErr != nil {
+		return apiFuncResult{nil, apiErr, nil, nil}
+	}
+	if timeout > 0 {
 		var cancel context.CancelFunc
-		timeout, err := parseDuration(to)
-		if err != nil {
-			return invalidParamError(err, "timeout")
-		}
-
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
 
-	opts, err := extractQueryOpts(r)
+	opts, err := api.extractQueryOpts(r)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	costOn, err := api.costRequested(r)
+	if err != nil {
+		return invalidParamError(err, "cost")
 	}
 
 	ctx, span := otel.Tracer("").Start(ctx, "promqlRangeQuery")
@@ -759,7 +1225,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return invalidParamError(err, "query")
+		return apiFuncResult{nil, queryConstructionError(err), nil, nil}
 	}
 	// From now on, we must only return with a finalizer in the result (to
 	// be called by the caller) or call qry.Close ourselves (which is
@@ -800,10 +1266,25 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	}
 	qs := sr(ctx, qry.Stats(), r.FormValue("stats"))
 
+	var cost *QueryCostComparison
+	if costOn {
+		comparison, ca, err := api.costComparison(ctx, qry, r.FormValue("query"), start, end, step, opts)
+		warnings = warnings.Merge(ca)
+		// The query already executed successfully. A failing estimate must never
+		// replace that result, so we surface the estimation error as a warning and
+		// return the query result without a cost comparison.
+		if err != nil {
+			warnings = warnings.Add(fmt.Errorf("cost estimation failed: %w", err))
+		} else {
+			cost = comparison
+		}
+	}
+
 	return apiFuncResult{&QueryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
 		Stats:      qs,
+		Cost:       cost,
 	}, nil, warnings, qry.Close}
 }
 
@@ -853,11 +1334,17 @@ func returnAPIError(err error) *apiError {
 	var eqc promql.ErrQueryCanceled
 	var eqt promql.ErrQueryTimeout
 	var es promql.ErrStorage
+	var etms promql.ErrTooManySeries
+	var etmss promql.ErrTooManySamplesScanned
 	switch {
 	case errors.As(err, &eqc):
 		return &apiError{errorCanceled, err}
 	case errors.As(err, &eqt):
 		return &apiError{errorTimeout, err}
+	case errors.As(err, &etms):
+		return &apiError{errorCostLimit, err}
+	case errors.As(err, &etmss):
+		return &apiError{errorCostLimit, err}
 	case errors.As(err, &es):
 		return &apiError{errorInternal, err}
 	}
@@ -2331,6 +2818,8 @@ func getDefaultErrorCode(errType errorType) int {
 	case errorBadData:
 		return http.StatusBadRequest
 	case errorExec:
+		return http.StatusUnprocessableEntity
+	case errorCostLimit:
 		return http.StatusUnprocessableEntity
 	case errorCanceled:
 		return statusClientClosedConnection

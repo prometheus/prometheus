@@ -496,6 +496,18 @@ type GlobalConfig struct {
 	RuleQueryOffset model.Duration `yaml:"rule_query_offset,omitempty"`
 	// File to which PromQL queries are logged.
 	QueryLogFile string `yaml:"query_log_file,omitempty"`
+	// QueryMaxSeries is the maximum number of series a query may touch before it
+	// is rejected. It is only enforced when the query-cost feature is enabled.
+	// Zero means no limit.
+	QueryMaxSeries uint64 `yaml:"query_max_series,omitempty"`
+	// QueryMaxSamplesScanned is the maximum number of samples a query may scan
+	// before it is rejected. It is only enforced when the query-cost feature is
+	// enabled. Zero means no limit.
+	QueryMaxSamplesScanned uint64 `yaml:"query_max_samples_scanned,omitempty"`
+	// QueryMaxDuration is the maximum wall-clock duration a query may take before
+	// it is rejected. It is only enforced when the query-cost feature is enabled.
+	// Zero means no limit.
+	QueryMaxDuration model.Duration `yaml:"query_max_duration,omitempty"`
 	// File to which scrape failures are logged.
 	ScrapeFailureLogFile string `yaml:"scrape_failure_log_file,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
@@ -711,6 +723,9 @@ func (c *GlobalConfig) isZero() bool {
 		c.EvaluationInterval == 0 &&
 		c.RuleQueryOffset == 0 &&
 		c.QueryLogFile == "" &&
+		c.QueryMaxSeries == 0 &&
+		c.QueryMaxSamplesScanned == 0 &&
+		c.QueryMaxDuration == 0 &&
 		c.ScrapeFailureLogFile == "" &&
 		c.ScrapeProtocols == nil &&
 		c.ScrapeNativeHistograms == nil &&

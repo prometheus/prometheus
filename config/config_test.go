@@ -1867,6 +1867,104 @@ func TestYAMLRoundtrip(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
+func TestQueryCostLimits(t *testing.T) {
+	t.Run("defaults are unlimited", func(t *testing.T) {
+		c, err := Load("", promslog.NewNopLogger())
+		require.NoError(t, err)
+		require.Zero(t, c.GlobalConfig.QueryMaxSeries)
+		require.Zero(t, c.GlobalConfig.QueryMaxSamplesScanned)
+		require.Zero(t, c.GlobalConfig.QueryMaxDuration)
+
+		require.Zero(t, DefaultGlobalConfig.QueryMaxSeries)
+		require.Zero(t, DefaultGlobalConfig.QueryMaxSamplesScanned)
+		require.Zero(t, DefaultGlobalConfig.QueryMaxDuration)
+	})
+
+	t.Run("explicit zero is unlimited", func(t *testing.T) {
+		c, err := Load("global:\n  query_max_series: 0\n  query_max_samples_scanned: 0\n  query_max_duration: 0s\n", promslog.NewNopLogger())
+		require.NoError(t, err)
+		require.Zero(t, c.GlobalConfig.QueryMaxSeries)
+		require.Zero(t, c.GlobalConfig.QueryMaxSamplesScanned)
+		require.Zero(t, c.GlobalConfig.QueryMaxDuration)
+	})
+
+	t.Run("parses from file", func(t *testing.T) {
+		c, err := LoadFile("testdata/query_cost_limits.good.yml", false, promslog.NewNopLogger())
+		require.NoError(t, err)
+		require.Equal(t, uint64(1000000), c.GlobalConfig.QueryMaxSeries)
+		require.Equal(t, uint64(50000000), c.GlobalConfig.QueryMaxSamplesScanned)
+		require.Equal(t, model.Duration(45*time.Second), c.GlobalConfig.QueryMaxDuration)
+	})
+
+	t.Run("round-trips through YAML", func(t *testing.T) {
+		want, err := LoadFile("testdata/query_cost_limits.good.yml", false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		require.Contains(t, string(out), "query_max_series: 1000000")
+		require.Contains(t, string(out), "query_max_samples_scanned: 50000000")
+		require.Contains(t, string(out), "query_max_duration: 45s")
+
+		got, err := Load(string(out), promslog.NewNopLogger())
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	})
+
+	t.Run("rejects bad values", func(t *testing.T) {
+		for _, tc := range []struct {
+			in     string
+			errMsg string
+		}{
+			{
+				in:     "global:\n  query_max_series: -1\n",
+				errMsg: "cannot unmarshal !!int `-1` into uint64",
+			},
+			{
+				in:     "global:\n  query_max_samples_scanned: -1\n",
+				errMsg: "cannot unmarshal !!int `-1` into uint64",
+			},
+			{
+				in:     "global:\n  query_max_duration: -1s\n",
+				errMsg: `not a valid duration string: "-1s"`,
+			},
+			{
+				in:     "global:\n  query_max_series: many\n",
+				errMsg: "cannot unmarshal !!str `many` into uint64",
+			},
+			{
+				in:     "global:\n  query_max_duration: 45\n",
+				errMsg: `not a valid duration string: "45"`,
+			},
+			{
+				in:     "global:\n  query_max_duration: forever\n",
+				errMsg: `not a valid duration string: "forever"`,
+			},
+		} {
+			t.Run(tc.in, func(t *testing.T) {
+				_, err := Load(tc.in, promslog.NewNopLogger())
+				require.ErrorContains(t, err, tc.errMsg)
+			})
+		}
+	})
+
+	t.Run("limits change on reload", func(t *testing.T) {
+		// The limits are reloadable: cmd/prometheus applies them to the
+		// running engine from the query_engine reloader, so a reloaded
+		// config must yield the new values without a restart.
+		before, err := LoadFile("testdata/query_cost_limits.good.yml", false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		after, err := Load("global:\n  query_max_series: 7\n  query_max_samples_scanned: 8\n  query_max_duration: 9s\n", promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		require.NotEqual(t, before.GlobalConfig.QueryMaxSeries, after.GlobalConfig.QueryMaxSeries)
+		require.Equal(t, uint64(7), after.GlobalConfig.QueryMaxSeries)
+		require.Equal(t, uint64(8), after.GlobalConfig.QueryMaxSamplesScanned)
+		require.Equal(t, model.Duration(9*time.Second), after.GlobalConfig.QueryMaxDuration)
+	})
+}
+
 func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 	want, err := LoadFile("testdata/remote_write_retry_on_rate_limit.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
@@ -2803,6 +2901,18 @@ var expectedErrors = []struct {
 	{
 		filename: "metric_name_validation_scheme.bad.yml",
 		errMsg:   "unrecognized ValidationScheme: \"invalid_scheme\"",
+	},
+	{
+		filename: "query_max_series.bad.yml",
+		errMsg:   "cannot unmarshal !!int `-1` into uint64",
+	},
+	{
+		filename: "query_max_samples_scanned.bad.yml",
+		errMsg:   "cannot unmarshal !!str `many` into uint64",
+	},
+	{
+		filename: "query_max_duration.bad.yml",
+		errMsg:   `not a valid duration string: "-1s"`,
 	},
 }
 

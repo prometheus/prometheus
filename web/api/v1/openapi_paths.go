@@ -30,9 +30,13 @@ func (*OpenAPIBuilder) queryPath() *v3.PathItem {
 		queryParamWithExample("limit", "The maximum number of metrics to return.", false, integerSchema(), []example{{"example", 100}}),
 		queryParamWithExample("time", "The evaluation timestamp (optional, defaults to current time).", false, timestampSchema(), timestampExamples(exampleTime)),
 		queryParamWithExample("query", "The PromQL query to execute.", true, stringSchema(), []example{{"example", "up"}}),
-		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to and is capped by the value of the -query.timeout flag.", false, durationSchema(), []example{{"duration", "1m30s"}, {"number", "90"}}),
+		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when set, otherwise the deprecated -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.", false, durationSchema(), []example{{"duration", "1m30s"}, {"number", "90"}}),
 		queryParamWithExample("lookback_delta", "Override the lookback period for this query. Optional.", false, durationSchema(), []example{{"duration", "5m"}, {"number", "300"}}),
 		queryParamWithExample("stats", "Include query statistics in the response. Supported values: 'true' (basic statistics) and 'all' (basic plus per-step statistics). Other non-empty values are deprecated (they behave like 'true') and will be rejected in the next major release.", false, stringSchema(), []example{{"example", "all"}}),
+		queryParamWithExample("cost", "When true, include an estimated-vs-actual cost comparison in the response. Any non-boolean value is an error. Requires the query-cost feature flag (--enable-feature=query-cost).", false, booleanSchema(), []example{{"example", true}}),
+		queryParamWithExample("max_series", "Lower the maximum number of series this query may load. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_series ceiling, never raise it: a higher value is rejected.", false, integerSchema(), []example{{"example", 1000}}),
+		queryParamWithExample("max_samples_scanned", "Lower the maximum number of samples this query may scan. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_samples_scanned ceiling, never raise it: a higher value is rejected.", false, integerSchema(), []example{{"example", 100000}}),
+		queryParamWithExample("max_query_duration", "Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.", false, durationSchema(), []example{{"duration", "30s"}, {"number", "30"}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -59,9 +63,13 @@ func (*OpenAPIBuilder) queryRangePath() *v3.PathItem {
 		queryParamWithExample("end", "The end time of the query.", true, timestampSchema(), timestampExamples(exampleTime)),
 		queryParamWithExample("step", "The step size of the query.", true, durationSchema(), []example{{"duration", "15s"}, {"number", "15"}}),
 		queryParamWithExample("query", "The query to execute.", true, stringSchema(), []example{{"example", "rate(prometheus_http_requests_total{handler=\"/api/v1/query\"}[5m])"}}),
-		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to and is capped by the value of the -query.timeout flag.", false, durationSchema(), []example{{"duration", "1m30s"}, {"number", "90"}}),
+		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when set, otherwise the deprecated -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.", false, durationSchema(), []example{{"duration", "1m30s"}, {"number", "90"}}),
 		queryParamWithExample("lookback_delta", "Override the lookback period for this query. Optional.", false, durationSchema(), []example{{"duration", "5m"}, {"number", "300"}}),
 		queryParamWithExample("stats", "Include query statistics in the response. Supported values: 'true' (basic statistics) and 'all' (basic plus per-step statistics). Other non-empty values are deprecated (they behave like 'true') and will be rejected in the next major release.", false, stringSchema(), []example{{"example", "all"}}),
+		queryParamWithExample("cost", "When true, include an estimated-vs-actual cost comparison in the response. Any non-boolean value is an error. Requires the query-cost feature flag (--enable-feature=query-cost).", false, booleanSchema(), []example{{"example", true}}),
+		queryParamWithExample("max_series", "Lower the maximum number of series this query may load. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_series ceiling, never raise it: a higher value is rejected.", false, integerSchema(), []example{{"example", 1000}}),
+		queryParamWithExample("max_samples_scanned", "Lower the maximum number of samples this query may scan. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_samples_scanned ceiling, never raise it: a higher value is rejected.", false, integerSchema(), []example{{"example", 100000}}),
+		queryParamWithExample("max_query_duration", "Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.", false, durationSchema(), []example{{"duration", "30s"}, {"number", "30"}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -77,6 +85,80 @@ func (*OpenAPIBuilder) queryRangePath() *v3.PathItem {
 			Tags:        []string{"query"},
 			RequestBody: formRequestBodyWithExamples("QueryRangePostInputBody", queryRangePostExamples(), "Submit a range query. This endpoint accepts the same parameters as the GET version."),
 			Responses:   responsesWithErrorExamples("QueryRangeOutputBody", queryRangeResponseExamples(), errorResponseExamples(), "Range query executed successfully.", "Error executing range query."),
+		},
+	}
+}
+
+// queryCostPath defines the /query_cost endpoint, which estimates the cost of an
+// instant query without executing it. It is only registered when the query-cost
+// feature is enabled.
+func (*OpenAPIBuilder) queryCostPath() *v3.PathItem {
+	params := []*v3.Parameter{
+		queryParamWithExample("time", "The evaluation timestamp (optional, defaults to current time).", false, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("query", "The PromQL query to estimate.", true, stringSchema(), []example{{"example", "up"}}),
+		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when set, otherwise the deprecated -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.", false, durationSchema(), []example{{"duration", "1m30s"}, {"number", "90"}}),
+		queryParamWithExample("lookback_delta", "Override the lookback period for this query. Optional.", false, durationSchema(), []example{{"duration", "5m"}, {"number", "300"}}),
+		queryParamWithExample("limit", "The maximum number of metrics to return. Validated identically to /api/v1/query but ignored, as no series are returned.", false, integerSchema(), []example{{"example", 100}}),
+		queryParamWithExample("stats", "Validated identically to /api/v1/query but ignored, as no query statistics are returned.", false, stringSchema(), []example{{"example", "all"}}),
+		queryParamWithExample("cost", "Validated identically to /api/v1/query but ignored, as the response is already a cost estimate. Any non-boolean value is an error.", false, booleanSchema(), []example{{"example", true}}),
+		queryParamWithExample("max_series", "Lower the maximum number of series this query may load. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_series ceiling, never raise it: a higher value is rejected.", false, integerSchema(), []example{{"example", 1000}}),
+		queryParamWithExample("max_samples_scanned", "Lower the maximum number of samples this query may scan. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_samples_scanned ceiling, never raise it: a higher value is rejected.", false, integerSchema(), []example{{"example", 100000}}),
+		queryParamWithExample("max_query_duration", "Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.", false, durationSchema(), []example{{"duration", "30s"}, {"number", "30"}}),
+	}
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "query-cost",
+			Summary:     "Estimate the cost of an instant query",
+			Description: "Estimates the resource cost of an instant query without executing it. Requires the query-cost feature flag (--enable-feature=query-cost).",
+			Tags:        []string{"query"},
+			Parameters:  params,
+			Responses:   responsesWithErrorExamples("QueryCostOutputBody", queryCostResponseExamples(), errorResponseExamples(), "Query cost estimated successfully.", "Error estimating query cost."),
+		},
+		Post: &v3.Operation{
+			OperationId: "query-cost-post",
+			Summary:     "Estimate the cost of an instant query",
+			Description: "Estimates the resource cost of an instant query without executing it. Requires the query-cost feature flag (--enable-feature=query-cost).",
+			Tags:        []string{"query"},
+			RequestBody: formRequestBodyWithExamples("QueryCostPostInputBody", queryCostPostExamples(), "Submit an instant query for cost estimation. This endpoint accepts the same parameters as the GET version."),
+			Responses:   responsesWithErrorExamples("QueryCostOutputBody", queryCostResponseExamples(), errorResponseExamples(), "Query cost estimated successfully.", "Error estimating query cost."),
+		},
+	}
+}
+
+// queryRangeCostPath defines the /query_range_cost endpoint, which estimates the
+// cost of a range query without executing it. It is only registered when the
+// query-cost feature is enabled.
+func (*OpenAPIBuilder) queryRangeCostPath() *v3.PathItem {
+	params := []*v3.Parameter{
+		queryParamWithExample("start", "The start time of the query.", true, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "The end time of the query.", true, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("step", "The step size of the query.", true, durationSchema(), []example{{"duration", "15s"}, {"number", "15"}}),
+		queryParamWithExample("query", "The PromQL query to estimate.", true, stringSchema(), []example{{"example", "rate(prometheus_http_requests_total{handler=\"/api/v1/query\"}[5m])"}}),
+		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to the effective server-side maximum: global.query_max_duration when set, otherwise the deprecated -query.timeout flag. With the query-cost feature flag and query_max_duration set, a higher value is rejected rather than silently lowered.", false, durationSchema(), []example{{"duration", "1m30s"}, {"number", "90"}}),
+		queryParamWithExample("lookback_delta", "Override the lookback period for this query. Optional.", false, durationSchema(), []example{{"duration", "5m"}, {"number", "300"}}),
+		queryParamWithExample("limit", "The maximum number of metrics to return. Validated identically to /api/v1/query but ignored, as no series are returned.", false, integerSchema(), []example{{"example", 100}}),
+		queryParamWithExample("stats", "Validated identically to /api/v1/query but ignored, as no query statistics are returned.", false, stringSchema(), []example{{"example", "all"}}),
+		queryParamWithExample("cost", "Validated identically to /api/v1/query but ignored, as the response is already a cost estimate. Any non-boolean value is an error.", false, booleanSchema(), []example{{"example", true}}),
+		queryParamWithExample("max_series", "Lower the maximum number of series this query may load. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_series ceiling, never raise it: a higher value is rejected.", false, integerSchema(), []example{{"example", 1000}}),
+		queryParamWithExample("max_samples_scanned", "Lower the maximum number of samples this query may scan. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_samples_scanned ceiling, never raise it: a higher value is rejected.", false, integerSchema(), []example{{"example", 100000}}),
+		queryParamWithExample("max_query_duration", "Lower the maximum execution duration of this query. Optional. Honored only with the query-cost feature flag (--enable-feature=query-cost). It may only lower the query_max_duration ceiling, never raise it: a higher value is rejected.", false, durationSchema(), []example{{"duration", "30s"}, {"number", "30"}}),
+	}
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "query-range-cost",
+			Summary:     "Estimate the cost of a range query",
+			Description: "Estimates the resource cost of a range query without executing it. Requires the query-cost feature flag (--enable-feature=query-cost).",
+			Tags:        []string{"query"},
+			Parameters:  params,
+			Responses:   responsesWithErrorExamples("QueryCostOutputBody", queryCostResponseExamples(), errorResponseExamples(), "Range query cost estimated successfully.", "Error estimating range query cost."),
+		},
+		Post: &v3.Operation{
+			OperationId: "query-range-cost-post",
+			Summary:     "Estimate the cost of a range query",
+			Description: "Estimates the resource cost of a range query without executing it. Requires the query-cost feature flag (--enable-feature=query-cost).",
+			Tags:        []string{"query"},
+			RequestBody: formRequestBodyWithExamples("QueryRangeCostPostInputBody", queryRangeCostPostExamples(), "Submit a range query for cost estimation. This endpoint accepts the same parameters as the GET version."),
+			Responses:   responsesWithErrorExamples("QueryCostOutputBody", queryCostResponseExamples(), errorResponseExamples(), "Range query cost estimated successfully.", "Error estimating range query cost."),
 		},
 	}
 }

@@ -1,0 +1,2 @@
+global:
+  query_max_samples_scanned: many

@@ -288,6 +288,13 @@ type QuerySamples struct {
 	// step's window.
 	SamplesReadPerStep []int64
 
+	// TotalSeries is the number of series touched while evaluating a query.
+	// It is computed as a per-selector SUM: the sum of len(series) across all
+	// selectors expanded during evaluation. Series shared between selectors may
+	// be counted more than once, so this value is an upper bound on the number
+	// of distinct series touched.
+	TotalSeries int64
+
 	EnablePerStepStats bool
 	StartTimestamp     int64
 	Interval           int64
@@ -371,6 +378,16 @@ func (qs *QuerySamples) IncrementSamplesReadAtTimestamp(t, n int64) {
 	}
 }
 
+// IncrementSeries increments the count of series touched while evaluating a
+// query. The total is a per-selector SUM and is therefore an upper bound on the
+// number of distinct series touched.
+func (qs *QuerySamples) IncrementSeries(n int64) {
+	if qs == nil {
+		return
+	}
+	qs.TotalSeries += n
+}
+
 // UpdatePeak updates the peak number of samples considered in
 // the evaluation of a query as used with the MaxSamples limit.
 func (qs *QuerySamples) UpdatePeak(samples int) {
@@ -391,6 +408,16 @@ func (qs *QuerySamples) UpdatePeakFromSubquery(other *QuerySamples) {
 	if other.PeakSamples > qs.PeakSamples {
 		qs.PeakSamples = other.PeakSamples
 	}
+}
+
+// MergeSeriesFromSubquery adds the series touched while evaluating a subquery to
+// the parent query's total. As with TotalSeries itself, the result is a
+// per-selector SUM and is an upper bound on the number of distinct series.
+func (qs *QuerySamples) MergeSeriesFromSubquery(child *QuerySamples) {
+	if qs == nil || child == nil {
+		return
+	}
+	qs.TotalSeries += child.TotalSeries
 }
 
 func NewQueryTimers() *QueryTimers {

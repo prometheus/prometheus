@@ -82,6 +82,63 @@ func queryRangePostExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
+// queryCostPostExamples returns examples for the POST /query_cost endpoint.
+func queryCostPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("simpleQuery", &base.Example{
+		Summary: "Estimate the cost of an instant query",
+		Value:   createYAMLNode(map[string]any{"query": "up"}),
+	})
+
+	examples.Set("queryWithTime", &base.Example{
+		Summary: "Estimate the cost at a specific timestamp",
+		Value: createYAMLNode(map[string]any{
+			"query": "rate(prometheus_http_requests_total[5m])",
+			"time":  "2026-01-02T13:37:00.000Z",
+		}),
+	})
+
+	return examples
+}
+
+// queryRangeCostPostExamples returns examples for the POST /query_range_cost endpoint.
+func queryRangeCostPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("rangeQuery", &base.Example{
+		Summary: "Estimate the cost of a range query",
+		Value: createYAMLNode(map[string]any{
+			"query": "rate(prometheus_http_requests_total[5m])",
+			"start": "2026-01-02T12:37:00.000Z",
+			"end":   "2026-01-02T13:37:00.000Z",
+			"step":  "30s",
+		}),
+	})
+
+	return examples
+}
+
+// queryCostResponseExamples returns examples for the query cost endpoints response.
+func queryCostResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("estimate", &base.Example{
+		Summary: "Cost estimate for a query",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string]any{
+				"estimate": map[string]any{
+					"seriesTouched":  42,
+					"samplesScanned": 5040,
+				},
+			},
+		}),
+	})
+
+	return examples
+}
+
 // queryExemplarsPostExamples returns examples for POST /query_exemplars endpoint.
 func queryExemplarsPostExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()

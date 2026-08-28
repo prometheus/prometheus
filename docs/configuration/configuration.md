@@ -95,6 +95,32 @@ global:
   # Reloading the configuration will reopen the file.
   [ query_log_file: <string> ]
 
+  # Maximum number of series a query may load before it is rejected. The limit
+  # is enforced during execution against the query's actual running cost, never
+  # against the cost estimate returned by the query cost API: the query is
+  # rejected as soon as it loads more series than this. 0 means no limit.
+  # These three query cost limits are reloadable and only enforced when the
+  # query-cost feature flag is enabled (--enable-feature=query-cost).
+  # A client may lower any of them for a single request with the max_series,
+  # max_samples_scanned and max_query_duration query parameters. A request that
+  # asks for a value above the ceiling set here is an error, it is not silently
+  # clamped down.
+  [ query_max_series: <int> | default = 0 ]
+
+  # Maximum number of samples a query may scan before it is rejected. Like
+  # query_max_series, it is enforced during execution against the samples the
+  # query actually reads from storage, never against the estimate: the query is
+  # rejected as soon as it scans more samples than this. 0 means no limit.
+  [ query_max_samples_scanned: <int> | default = 0 ]
+
+  # Maximum wall-clock duration a query may take. It surfaces as a query
+  # timeout: the query is aborted once it has run for this long. 0s means no
+  # limit. This supersedes the deprecated --query.timeout flag, which only
+  # applies while query_max_duration is unset. The per-query timeout parameter
+  # of the query endpoints is bounded by this ceiling in the same way: a larger
+  # value is an error.
+  [ query_max_duration: <duration> | default = 0s ]
+
   # File to which scrape failures are logged.
   # Reloading the configuration will reopen the file.
   [ scrape_failure_log_file: <string> ]
