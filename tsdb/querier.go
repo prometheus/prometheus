@@ -703,7 +703,6 @@ func (p *populateWithDelGenericSeriesIterator) reset(blockID ulid.ULID, cr Chunk
 	p.i = -1
 	p.err = nil
 	// Note we don't touch p.bufIter.Iter; it is holding on to an iterator we might reuse in next().
-	p.bufIter.Intervals = p.bufIter.Intervals[:0]
 	p.intervals = intervals
 	p.currDelIter = nil
 	p.currMeta = chunks.Meta{}
@@ -727,6 +726,7 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 			p.bufIter.Intervals = p.bufIter.Intervals.Add(interval)
 		}
 	}
+	p.bufIter.intervalIndex = 0
 
 	hcr, ok := p.cr.(ChunkReaderWithCopy)
 	var iterable chunkenc.Iterable
@@ -1275,7 +1275,8 @@ type DeletedIterator struct {
 	// Iter is an Iterator to be wrapped.
 	Iter chunkenc.Iterator
 	// Intervals are the deletion intervals.
-	Intervals tombstones.Intervals
+	Intervals     tombstones.Intervals
+	intervalIndex int // Index of the next interval to check.
 }
 
 func (it *DeletedIterator) At() (int64, float64) {
@@ -1312,13 +1313,14 @@ func (it *DeletedIterator) Seek(t int64) chunkenc.ValueType {
 
 	// Now double check if the entry falls into a deleted interval.
 	ts := it.AtT()
-	for _, itv := range it.Intervals {
+	for it.intervalIndex < len(it.Intervals) {
+		itv := it.Intervals[it.intervalIndex]
 		if ts < itv.Mint {
 			return valueType
 		}
 
 		if ts > itv.Maxt {
-			it.Intervals = it.Intervals[1:]
+			it.intervalIndex++
 			continue
 		}
 
@@ -1334,7 +1336,8 @@ func (it *DeletedIterator) Next() chunkenc.ValueType {
 Outer:
 	for valueType := it.Iter.Next(); valueType != chunkenc.ValNone; valueType = it.Iter.Next() {
 		ts := it.AtT()
-		for _, tr := range it.Intervals {
+		for it.intervalIndex < len(it.Intervals) {
+			tr := it.Intervals[it.intervalIndex]
 			if tr.InBounds(ts) {
 				continue Outer
 			}
@@ -1342,7 +1345,7 @@ Outer:
 			if ts <= tr.Maxt {
 				return valueType
 			}
-			it.Intervals = it.Intervals[1:]
+			it.intervalIndex++
 		}
 		return valueType
 	}
