@@ -669,6 +669,37 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedLabels:          labels.FromStrings("__name__", "test_metric_wal", "instance", "localhost"),
 		},
 		{
+			desc: "Metadata-wal-records enabled - metadata stored via AppendV2Options",
+			input: func() []writev2.TimeSeries {
+				symbolTable := writev2.NewSymbolTable()
+				labelRefs := symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric_wal", "instance", "localhost"), nil)
+				helpRef := symbolTable.Symbolize("Test metric for WAL verification")
+				unitRef := symbolTable.Symbolize("seconds")
+				return []writev2.TimeSeries{
+					{
+						LabelsRefs: labelRefs,
+						Metadata: writev2.Metadata{
+							Type:    writev2.Metadata_METRIC_TYPE_GAUGE,
+							HelpRef: helpRef,
+							UnitRef: unitRef,
+						},
+						Samples: []writev2.Sample{{Value: 42.0, Timestamp: 2000}},
+					},
+				}
+			}(),
+			symbols: func() []string {
+				symbolTable := writev2.NewSymbolTable()
+				symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric_wal", "instance", "localhost"), nil)
+				symbolTable.Symbolize("Test metric for WAL verification")
+				symbolTable.Symbolize("seconds")
+				return symbolTable.Symbols()
+			}(),
+			expectedCode:            http.StatusNoContent,
+			enableTypeAndUnitLabels: false,
+			appendMetadata:          true,
+			expectedLabels:          labels.FromStrings("__name__", "test_metric_wal", "instance", "localhost"),
+		},
+		{
 			desc: "Type and unit labels enabled but no metadata",
 			input: func() []writev2.TimeSeries {
 				symbolTable := writev2.NewSymbolTable()
@@ -1378,6 +1409,74 @@ func (m *mockAppendable) Appender(context.Context) storage.Appender {
 
 func (*mockAppendable) SetOptions(*storage.AppendOptions) {
 	panic("unimplemented")
+}
+
+// AppenderV2 returns a storage.AppenderV2 that records into the same slices as
+// the V1 appender. It reuses the V1 AppendExemplar, UpdateMetadata, and
+// AppendHistogram implementations, since their signatures are compatible.
+func (m *mockAppendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	m.Appender(ctx) // Ensure the latest* maps are initialized.
+	return (*mockAppenderV2)(m)
+}
+
+type mockAppenderV2 mockAppendable
+
+func (a *mockAppenderV2) asV1() *mockAppendable {
+	return (*mockAppendable)(a)
+}
+
+func (a *mockAppenderV2) Append(ref storage.SeriesRef, l labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+	if st != 0 && t != 0 {
+		// Mirror a real AppenderV2 implementation, which owns ST zero-sample
+		// injection internally and does not surface its errors to the caller
+		// (e.g. TSDB head's bestEffortAppendSTZeroSample).
+		if h != nil || fh != nil {
+			_, _ = a.asV1().AppendHistogramSTZeroSample(ref, l, t, st, h, fh)
+		} else {
+			_, _ = a.asV1().AppendSTZeroSample(ref, l, t, st)
+		}
+	}
+
+	var err error
+	if h != nil || fh != nil {
+		ref, err = a.asV1().AppendHistogram(ref, l, t, h, fh)
+	} else {
+		ref, err = a.asV1().Append(ref, l, t, v)
+	}
+	if err != nil {
+		return ref, err
+	}
+	if !opts.Metadata.IsEmpty() {
+		// Metadata is best-effort within Append; errors are not surfaced to the caller.
+		_, _ = a.asV1().UpdateMetadata(ref, l, opts.Metadata)
+	}
+	return ref, nil
+}
+
+func (a *mockAppenderV2) AppendExemplars(ref storage.SeriesRef, l labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	var errs []error
+	for _, e := range exemplars {
+		var err error
+		ref, err = a.asV1().AppendExemplar(ref, l, e)
+		if err != nil {
+			if errors.Is(err, storage.ErrDuplicateExemplar) {
+				continue
+			}
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) > 0 {
+		return ref, &storage.AppendPartialError{ExemplarErrors: errs}
+	}
+	return ref, nil
+}
+
+func (a *mockAppenderV2) Commit() error {
+	return a.asV1().Commit()
+}
+
+func (a *mockAppenderV2) Rollback() error {
+	return a.asV1().Rollback()
 }
 
 func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
