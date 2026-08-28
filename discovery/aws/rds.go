@@ -266,6 +266,10 @@ func (c *RDSSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
+	if c.RequestConcurrency <= 0 {
+		return fmt.Errorf("rds_sd: request_concurrency must be positive, got %d", c.RequestConcurrency)
+	}
+
 	return c.HTTPClientConfig.Validate()
 }
 

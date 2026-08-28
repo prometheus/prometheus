@@ -34,6 +34,7 @@ var (
 )
 
 func TestScalewayInstanceRefresh(t *testing.T) {
+	t.Parallel()
 	mock := httptest.NewServer(http.HandlerFunc(mockScalewayInstance))
 	defer mock.Close()
 
@@ -188,6 +189,7 @@ func mockScalewayInstance(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestScalewayInstanceRefreshIPAMPrivateNIC(t *testing.T) {
+	t.Parallel()
 	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Auth-Token") != testSecretKey {
 			http.Error(w, "bad token id", http.StatusUnauthorized)
@@ -277,6 +279,7 @@ api_url: %s
 }
 
 func TestScalewayInstanceAuthToken(t *testing.T) {
+	t.Parallel()
 	mock := httptest.NewServer(http.HandlerFunc(mockScalewayInstance))
 	defer mock.Close()
 

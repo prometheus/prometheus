@@ -102,10 +102,8 @@ Besides enabling this feature in Prometheus, start timestamps need to be exposed
 
 > NOTE: This is an experimental feature with known limitations until fully implemented.
 > * It introduces new WAL record type (SamplesV2) that can only be replayed with Prometheus 3.11 or later versions.
-> * For persistent storage support (TSDB blocks), you need to manually opt-in for the XOR2 chunk format for floats ([`chunk_encoding.floats: xor2`](configuration/configuration.md#tsdb)) and the histogram ST chunk format for native histograms ([`histograms-st-encoding` flag](#histogram-st-chunk-encoding)).
->   The float chunk encoding must resolve to XOR2 when `st-storage` is active, because XOR chunks do not store start timestamps.
->   If the resolved encoding is XOR, Prometheus refuses to start and fails the configuration validation with an error rather than continuing to run.
->   Likewise, explicitly setting `chunk_encoding.floats: xor` in the config file while `st-storage` is active is rejected at config reload.
+> * For persistent storage support (TSDB blocks), this feature automatically enables the XOR2 chunk format for floats and the histogram ST chunk formats for native histograms. These are the same formats enabled independently through [`chunk_encoding.floats: xor2`](configuration/configuration.md#tsdb) and the [`histograms-st-encoding`](#histogram-st-chunk-encoding) flag.
+>   Explicitly setting `chunk_encoding.floats: xor` in the config file while `st-storage` is active is rejected at config reload because XOR chunks do not store start timestamps.
 >   These constraints might change later once we finish the experimentation phase.
 > * Other areas of ST support for native histograms and NHCBs are still in progress (see [#18315](https://github.com/prometheus/prometheus/issues/18315)).
 > * PromQL use of ST is out of scope of this feature.
@@ -294,6 +292,8 @@ For more details, see the [proposal](https://github.com/prometheus/proposals/pul
 
 > **Note:** This feature flag is deprecated. The XOR2 float chunk encoding is stable; select it with the `chunk_encoding.floats` field in the `storage.tsdb` section of the configuration file instead, documented in the [configuration documentation](configuration/configuration.md#tsdb). The flag only sets the default float chunk encoding to `xor2`, and will become a no-op in a future major version.
 
+The [`st-storage`](#start-timestamp-st-native-storage) feature also selects XOR2 as the default float chunk encoding because XOR chunks cannot store start timestamps.
+
 ## Histogram ST chunk encoding
 
 `--enable-feature=histograms-st-encoding`
@@ -304,6 +304,8 @@ For more details, see the [proposal](https://github.com/prometheus/proposals/pul
 > * This encoding is new, meaning downstream tools and LTS systems might not support it yet (e.g. Thanos sidecar uploaded blocks).
 
 This setting enables the new `histogramST` and `floathistogramST` chunk encodings for native histogram and float histogram samples. These encodings extend the corresponding histogram chunk formats with a Start Timestamp (ST) header and per-sample ST encoding, equivalent to what the [XOR2 encoding](configuration/configuration.md#tsdb) does for float chunks. The flag does not affect float chunks.
+
+The [`st-storage`](#start-timestamp-st-native-storage) feature automatically enables these histogram encodings. When enabled without `st-storage`, Prometheus uses the ST-capable histogram chunk encodings but does not store start timestamps from ingestion.
 
 ## Extended Range Selectors
 
@@ -377,3 +379,24 @@ to this maximum, so an operator setting a smaller cap does not break
 no-`limit` requests. Setting the flag to `0` disables the cap entirely; this
 is **not recommended** for endpoints exposed beyond a trusted network because a
 single client can then request the entire index in one response.
+
+## OpenMetrics 2.0
+
+`--enable-feature=openmetrics2`
+
+Enables scraping targets that expose the [OpenMetrics 2.0](https://prometheus.io/docs/specs/om/open_metrics_spec_2_0/)
+text format, advertised with the `application/openmetrics-text; version=2.0.0`
+content type.
+
+OpenMetrics 2.0 support is **experimental**. The parser is not stable
+yet, so expositions that Prometheus accepts today may be rejected by a later release.
+Do not depend on the current behavior in production.
+
+When this flag is disabled, an OpenMetrics 2.0 content type is treated as an
+unsupported content type: the target's `fallback_scrape_protocol` is used if
+one is configured, and the scrape fails otherwise.
+
+If you are implementing an OpenMetrics 2.0 exporter or client library, note that
+a successful scrape by Prometheus is **not** a certification that your output is
+spec-compliant. Refer to [OpenMetrics 2.0 migration guide](https://prometheus.io/docs/guides/open_metrics_2_0_migration/)
+instead. 

@@ -960,6 +960,23 @@ func FindMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	var evalRange time.Duration
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
+		case *parser.Call:
+			if n.Func.Name != "info" {
+				break
+			}
+			nodeTimestamp, offset := infoSeriesSelectTimestampAndOffset(n.Args[0])
+			// Include info()'s implicit metadata selection in the query-wide bounds
+			// because SelectHints cannot expand the scoped Querier's time range.
+			start, end := getTimeRangesForSelector(s, &parser.VectorSelector{
+				Timestamp:      nodeTimestamp,
+				OriginalOffset: offset,
+			}, path, 0)
+			if start < minTimestamp {
+				minTimestamp = start
+			}
+			if end > maxTimestamp {
+				maxTimestamp = end
+			}
 		case *parser.VectorSelector:
 			start, end := getTimeRangesForSelector(s, n, path, evalRange)
 			if start < minTimestamp {
@@ -4624,12 +4641,22 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvaria
 			unwrapParenExpr(&n.Args[i])
 			var argIsStepInvariant bool
 			argIsStepInvariant, shouldWrap[i] = preprocessExprHelper(n.Args[i], start, end)
+			if n.Func.Name == "info" && i == 1 {
+				// The second argument is selector syntax and is not evaluated.
+				shouldWrap[i] = false
+				continue
+			}
 			isStepInvariant = isStepInvariant && argIsStepInvariant
 
 			_, argIsVectorSelector := n.Args[i].(*parser.VectorSelector)
 			if !argIsStepInvariant || !argIsVectorSelector {
 				isTimestampWithAllArgsStepInvariantSafe = false
 			}
+		}
+		if n.Func.Name == "info" {
+			// Different vector input reference times make info() depend on the evaluation step.
+			_, _, uniformReference := infoSelectTimestampAndOffset(n.Args[0])
+			isStepInvariant = isStepInvariant && uniformReference
 		}
 
 		if isStepInvariant || isTimestampWithAllArgsStepInvariantSafe {
@@ -4917,6 +4944,12 @@ func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelp
 // extendFloats extends the floats to the given mint and maxt.
 // This function is used with matrix selectors that are smoothed or anchored.
 func extendFloats(floats []FPoint, mint, maxt int64, smoothed bool) []FPoint {
+	// Nothing to extend. Return floats as-is so the caller can still hand it
+	// back to the pool.
+	if len(floats) == 0 {
+		return floats
+	}
+
 	lastSampleIndex := len(floats) - 1
 
 	firstSampleIndex := max(0, sort.Search(lastSampleIndex, func(i int) bool { return floats[i].T > mint })-1)

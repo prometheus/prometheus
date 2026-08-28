@@ -935,6 +935,7 @@ type scrapeLoop struct {
 	enableSTZeroIngestion   bool
 	parseST                 bool // Used by AppenderV2 only.
 	enableTypeAndUnitLabels bool
+	enableOpenMetrics2      bool
 	reportExtraMetrics      bool
 	appendMetadataToWAL     bool
 	passMetadataInContext   bool
@@ -980,6 +981,9 @@ type scrapeCache struct {
 	// https://github.com/prometheus/prometheus/issues/17619.
 	metaMtx  sync.Mutex            // Mutex is needed due to api touching it when metadata is queried.
 	metadata map[string]*metaEntry // metadata by metric family name.
+	// metadataSize is the total metadata size across all metaEntry.
+	// We calculate it as parse scrape results so we don't have to re-calculate it all when SizeMetadata is called.
+	metadataSize int
 
 	metrics *scrapeMetrics
 }
@@ -1044,6 +1048,7 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		for m, e := range c.metadata {
 			// Keep metadata around for 10 scrapes after its metric disappeared.
 			if c.iter-e.lastIter > 10 {
+				c.metadataSize -= e.size()
 				delete(c.metadata, m)
 			}
 		}
@@ -1135,15 +1140,19 @@ func (c *scrapeCache) setType(mfName []byte, t model.MetricType) ([]byte, *metaE
 	defer c.metaMtx.Unlock()
 
 	e, ok := c.metadata[string(mfName)]
+	var oldSize int
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(mfName)] = e
+	} else {
+		oldSize = e.size()
 	}
 	if e.Type != t {
 		e.Type = t
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
+	c.metadataSize += e.size() - oldSize
 	return mfName, e
 }
 
@@ -1152,15 +1161,19 @@ func (c *scrapeCache) setHelp(mfName, help []byte) ([]byte, *metaEntry) {
 	defer c.metaMtx.Unlock()
 
 	e, ok := c.metadata[string(mfName)]
+	var oldSize int
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(mfName)] = e
+	} else {
+		oldSize = e.size()
 	}
 	if e.Help != string(help) {
 		e.Help = string(help)
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
+	c.metadataSize += e.size() - oldSize
 	return mfName, e
 }
 
@@ -1169,15 +1182,19 @@ func (c *scrapeCache) setUnit(mfName, unit []byte) ([]byte, *metaEntry) {
 	defer c.metaMtx.Unlock()
 
 	e, ok := c.metadata[string(mfName)]
+	var oldSize int
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(mfName)] = e
+	} else {
+		oldSize = e.size()
 	}
 	if e.Unit != string(unit) {
 		e.Unit = string(unit)
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
+	c.metadataSize += e.size() - oldSize
 	return mfName, e
 }
 
@@ -1217,14 +1234,10 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 }
 
 // SizeMetadata returns the size of the metadata cache.
-func (c *scrapeCache) SizeMetadata() (s int) {
+func (c *scrapeCache) SizeMetadata() int {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
-	for _, e := range c.metadata {
-		s += e.size()
-	}
-
-	return s
+	return c.metadataSize
 }
 
 // LengthMetadata returns the number of metadata entries in the cache.
@@ -1270,7 +1283,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		stopped:     make(chan struct{}),
 		parentCtx:   opts.sp.ctx,
 		appenderCtx: appenderCtx,
-		l:           opts.sp.logger.With("target", opts.target),
+		l:           opts.sp.logger.With("target", opts.target.String()),
 		cache:       opts.cache,
 
 		interval: opts.interval,
@@ -1319,6 +1332,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		parseST:                 opts.sp.options.ParseST || opts.sp.options.EnableStartTimestampZeroIngestion,
 		synthesizeST:            opts.sp.options.SynthesizeST,
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
+		enableOpenMetrics2:      opts.sp.options.EnableOpenMetrics2,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
 		skipJitterOffsetting:    opts.sp.options.skipJitterOffsetting,
@@ -1734,6 +1748,7 @@ func (sl *scrapeLoopAppender) append(b []byte, contentType string, ts time.Time)
 		ConvertClassicHistogramsToNHCB:          sl.convertClassicHistToNHCB,
 		KeepClassicOnClassicAndNativeHistograms: sl.alwaysScrapeClassicHist,
 		OpenMetricsSkipSTSeries:                 sl.enableSTZeroIngestion,
+		EnableOpenMetrics2:                      sl.enableOpenMetrics2,
 		FallbackContentType:                     sl.fallbackScrapeProtocol,
 	})
 	if p == nil {
