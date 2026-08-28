@@ -1854,8 +1854,8 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 				b.Fatal(err)
 			}
 			totalSize += len(req)
-			b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
 		}
+		b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
 	}
 
 	twoBatch := createDummyTimeSeries(2)
@@ -1902,8 +1902,8 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 				b.Fatal(err)
 			}
 			totalSize += len(req)
-			b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
 		}
+		b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
 	}
 
 	twoBatch := createDummyTimeSeries(2)
