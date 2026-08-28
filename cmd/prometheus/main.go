@@ -294,12 +294,14 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "st-storage":
 				c.scrape.ParseST = true
 				c.tsdb.EnableSTStorage = true
+				c.tsdb.FloatChunkEncoding = chunkenc.EncXOR2
+				c.tsdb.EnableHistogramSTEncoding = true
 				c.agent.EnableSTStorage = true
 
 				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers. This is to widen the ST support surface.
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
-				logger.Info("Experimental start timestamp storage enabled. OpenMetrics 1.0 parsing will parse <metric>_created metrics as ST instead of normal sample. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
+				logger.Info("Experimental start timestamp storage enabled. XOR2 and ST-capable histogram chunk encodings enabled. OpenMetrics 1.0 parsing will parse <metric>_created metrics as ST instead of normal sample. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "use-start-timestamps":
 				c.useStartTimestamps = true
 				logger.Info("Experimental usage of start timestamps in PromQL engine is enabled.")

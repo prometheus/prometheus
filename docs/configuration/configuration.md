@@ -4166,8 +4166,8 @@ with this feature.
 # written, downgrading to a version without XOR2 support requires deleting the affected
 # blocks from disk manually, otherwise Prometheus returns an error on all queries.
 #
-# When absent, the encoding follows the deprecated --enable-feature=xor2-encoding
-# flag: 'xor2' if the flag is set, 'xor' otherwise.
+# When absent, the encoding is 'xor2' if --enable-feature=xor2-encoding or
+# --enable-feature=st-storage is set, and 'xor' otherwise.
 # Setting 'xor' is incompatible with --enable-feature=st-storage (XOR chunks do not store
 # start timestamps); Prometheus will refuse to start or reload in that case.
 # This field is runtime-reloadable.
@@ -4178,7 +4178,7 @@ with this feature.
 # (XOR chunks do not store start timestamps), so an in-progress chunk is cut
 # on the next append after the encoding changes.
 # For the equivalent ST-capable encoding for native histograms, see the experimental
-# histograms-st-encoding feature flag.
+# histograms-st-encoding feature flag. The st-storage feature enables that encoding too.
 [ chunk_encoding:
   [ floats: <string> ] ]
 
