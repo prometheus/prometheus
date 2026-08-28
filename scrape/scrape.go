@@ -1283,7 +1283,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		stopped:     make(chan struct{}),
 		parentCtx:   opts.sp.ctx,
 		appenderCtx: appenderCtx,
-		l:           opts.sp.logger.With("target", opts.target),
+		l:           opts.sp.logger.With("target", opts.target.String()),
 		cache:       opts.cache,
 
 		interval: opts.interval,
