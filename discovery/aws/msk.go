@@ -145,6 +145,10 @@ func (c *MSKSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
+	if c.RequestConcurrency <= 0 {
+		return fmt.Errorf("msk_sd: request_concurrency must be positive, got %d", c.RequestConcurrency)
+	}
+
 	return c.HTTPClientConfig.Validate()
 }
 
