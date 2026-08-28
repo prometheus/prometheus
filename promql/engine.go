@@ -4944,6 +4944,12 @@ func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelp
 // extendFloats extends the floats to the given mint and maxt.
 // This function is used with matrix selectors that are smoothed or anchored.
 func extendFloats(floats []FPoint, mint, maxt int64, smoothed bool) []FPoint {
+	// Nothing to extend. Return floats as-is so the caller can still hand it
+	// back to the pool.
+	if len(floats) == 0 {
+		return floats
+	}
+
 	lastSampleIndex := len(floats) - 1
 
 	firstSampleIndex := max(0, sort.Search(lastSampleIndex, func(i int) bool { return floats[i].T > mint })-1)
