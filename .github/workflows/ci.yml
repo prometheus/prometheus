@@ -29,10 +29,7 @@ jobs:
       - name: Smoke test Go benchmarks
         run: |
           set -o pipefail
-          # These TSDB benchmarks have multi-minute fixed setup or very large datasets.
-          # Keep them available for targeted performance runs, but out of the CI smoke test.
-          skip='^(BenchmarkCompaction|BenchmarkCompactionFromHead|BenchmarkCompactionFromOOOHead|BenchmarkCompactSelectedSeries|BenchmarkLoadWLs|BenchmarkLabelValues_SlowPath|BenchmarkQuerier|BenchmarkQuerierSelect|BenchmarkQuerierSelectWithOutOfOrder|BenchmarkQueryIterator|BenchmarkQuerySeek|BenchmarkQueries)$'
-          go test -p=1 -run '^$' -bench . -benchtime=1x -skip "$skip" -timeout=10m ./... | grep -v '^Benchmark'
+          go test -p=1 -short -run '^$' -bench . -benchtime=1x -timeout=10m ./... | grep -v '^Benchmark'
         shell: bash
       - run: go test ./tsdb/ -test.tsdb-isolation=false
       - run: make -C documentation/examples/remote_storage

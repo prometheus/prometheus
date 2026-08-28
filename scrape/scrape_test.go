@@ -6997,6 +6997,7 @@ func BenchmarkTargetScraperGzip(b *testing.B) {
 	if err != nil {
 		panic(err)
 	}
+	defer client.CloseIdleConnections()
 
 	for _, scenario := range scenarios {
 		b.Run(fmt.Sprintf("metrics=%d", scenario.metricsCount), func(b *testing.B) {
@@ -7017,8 +7018,9 @@ func BenchmarkTargetScraperGzip(b *testing.B) {
 			}
 			b.ResetTimer()
 			for b.Loop() {
-				_, err = ts.scrape(context.Background())
+				resp, err := ts.scrape(context.Background())
 				require.NoError(b, err)
+				require.NoError(b, resp.Body.Close())
 			}
 		})
 	}
