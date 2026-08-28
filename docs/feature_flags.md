@@ -9,12 +9,6 @@ Their behaviour can change in future releases which will be communicated via the
 You can enable them using the `--enable-feature` flag with a comma separated list of features.
 They may be enabled by default in future versions.
 
-## Zstandard scrape compression
-
-`--enable-feature=zstd-scrape`
-
-When enabled, Prometheus advertises support for Zstandard-compressed scrape responses in addition to gzip. The uncompressed response remains subject to the configured `body_size_limit`.
-
 ## Exemplars storage
 
 `--enable-feature=exemplar-storage`
@@ -404,3 +398,9 @@ If you are implementing an OpenMetrics 2.0 exporter or client library, note that
 a successful scrape by Prometheus is **not** a certification that your output is
 spec-compliant. Refer to [OpenMetrics 2.0 migration guide](https://prometheus.io/docs/guides/open_metrics_2_0_migration/)
 instead. 
+
+## Zstandard scrape compression
+
+`--enable-feature=zstd-scrape`
+
+When enabled, Prometheus advertises support for Zstandard-compressed scrape responses in addition to gzip. The uncompressed response remains subject to the configured `body_size_limit`.
