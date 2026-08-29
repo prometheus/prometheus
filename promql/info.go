@@ -245,27 +245,8 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 		}
 	}
 
-	// A map of values for all identifying labels we are interested in.
-	idLblValues := map[string]map[string]struct{}{}
-	for _, s := range mat {
-		if _, exists := ignoreSeries[s.Metric.Hash()]; exists {
-			continue
-		}
-
-		// Register relevant values per identifying label for this series.
-		for _, l := range identifyingLabels {
-			val := s.Metric.Get(l)
-			if val == "" {
-				continue
-			}
-
-			if idLblValues[l] == nil {
-				idLblValues[l] = map[string]struct{}{}
-			}
-			idLblValues[l][val] = struct{}{}
-		}
-	}
-	if len(idLblValues) == 0 {
+	identifyingMatcherSets := infoIdentifyingMatcherSets(mat, ignoreSeries)
+	if len(identifyingMatcherSets) == 0 {
 		// Even when returning early, we need to remove __name__ from dataLabelMatchers
 		// since it's not a data label selector (it's used to select which info metrics
 		// to consider). Without this, combineWithInfoVector would incorrectly exclude
@@ -274,50 +255,117 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 		return nil, nil, nil
 	}
 
-	// Generate regexps for every interesting value per identifying label.
-	var sb strings.Builder
-	idLblRegexps := make(map[string]string, len(idLblValues))
-	for name, vals := range idLblValues {
-		sb.Reset()
-		i := 0
-		for v := range vals {
-			if i > 0 {
-				sb.WriteRune('|')
-			}
-			sb.WriteString(regexp.QuoteMeta(v))
-			i++
-		}
-		idLblRegexps[name] = sb.String()
-	}
-
-	var infoLabelMatchers []*labels.Matcher
-	for name, re := range idLblRegexps {
-		infoLabelMatchers = append(infoLabelMatchers, labels.MustNewMatcher(labels.MatchRegexp, name, re))
-	}
 	var nameMatchers []*labels.Matcher
+	var dataMatchers []*labels.Matcher
 	for _, ms := range dataLabelMatchers {
 		for _, m := range ms {
 			if m.Name == model.MetricNameLabel {
 				nameMatchers = append(nameMatchers, m)
 				continue
 			}
-			infoLabelMatchers = append(infoLabelMatchers, m)
+			dataMatchers = append(dataMatchers, m)
 		}
 	}
 	removeNameFromDataLabelMatchers()
-	infoLabelMatchers = append(infoLabelMatchers, effectiveInfoNameMatchers(nameMatchers)...)
+	effectiveNameMatchers := effectiveInfoNameMatchers(nameMatchers)
 
-	infoIt := ev.querier.Select(ctx, false, &selectHints, infoLabelMatchers...)
-	infoSeries, ws, err := expandSeriesSet(ctx, infoIt)
-	if err != nil {
-		return nil, ws, err
+	var infoSeries []storage.Series
+	var warnings annotations.Annotations
+	for _, identifyingMatchers := range identifyingMatcherSets {
+		matchers := make([]*labels.Matcher, 0, len(identifyingMatchers)+len(dataMatchers)+len(effectiveNameMatchers))
+		matchers = append(matchers, identifyingMatchers...)
+		matchers = append(matchers, dataMatchers...)
+		matchers = append(matchers, effectiveNameMatchers...)
+
+		infoIt := ev.querier.Select(ctx, false, &selectHints, matchers...)
+		series, ws, err := expandSeriesSet(ctx, infoIt)
+		warnings.Merge(ws)
+		if err != nil {
+			return nil, warnings, err
+		}
+		infoSeries = append(infoSeries, series...)
 	}
 
 	// Evaluate the info series at the @-pinned timestamp (when set) and shifted by the offset,
 	// so enrichment reflects the info series as of the time selected by the first argument's
 	// modifiers, consistently at every step, rather than the raw evaluation timestamp.
 	infoMat := ev.evalSeries(ctx, infoSeries, offset, true, atTimestamp)
-	return infoMat, ws, nil
+	return infoMat, warnings, nil
+}
+
+// infoIdentifyingMatcherSets groups base metrics by identifying-label presence.
+// Empty matchers keep the groups disjoint; metrics without identifiers are skipped.
+func infoIdentifyingMatcherSets(mat Matrix, ignoreSeries map[uint64]struct{}) [][]*labels.Matcher {
+	type group map[string]map[string]struct{}
+	groups := map[string]group{}
+
+	for _, s := range mat {
+		if _, exists := ignoreSeries[s.Metric.Hash()]; exists {
+			continue
+		}
+
+		presence := make([]byte, len(identifyingLabels))
+		values := make(map[string]string, len(identifyingLabels))
+		hasIdentifier := false
+		for i, name := range identifyingLabels {
+			value := s.Metric.Get(name)
+			if value == "" {
+				presence[i] = '0'
+				continue
+			}
+			presence[i] = '1'
+			values[name] = value
+			hasIdentifier = true
+		}
+		if !hasIdentifier {
+			continue
+		}
+
+		key := string(presence)
+		if groups[key] == nil {
+			groups[key] = group{}
+		}
+		for name, value := range values {
+			if groups[key][name] == nil {
+				groups[key][name] = map[string]struct{}{}
+			}
+			groups[key][name][value] = struct{}{}
+		}
+	}
+
+	keys := make([]string, 0, len(groups))
+	for key := range groups {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+
+	matcherSets := make([][]*labels.Matcher, 0, len(groups))
+	for _, key := range keys {
+		matchers := make([]*labels.Matcher, 0, len(identifyingLabels))
+		for i, name := range identifyingLabels {
+			if key[i] == '0' {
+				matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, name, ""))
+				continue
+			}
+
+			values := make([]string, 0, len(groups[key][name]))
+			for value := range groups[key][name] {
+				values = append(values, value)
+			}
+			slices.Sort(values)
+
+			var sb strings.Builder
+			for i, value := range values {
+				if i > 0 {
+					sb.WriteRune('|')
+				}
+				sb.WriteString(regexp.QuoteMeta(value))
+			}
+			matchers = append(matchers, labels.MustNewMatcher(labels.MatchRegexp, name, sb.String()))
+		}
+		matcherSets = append(matcherSets, matchers)
+	}
+	return matcherSets
 }
 
 // combineWithInfoSeries combines mat with select data labels from infoMat.
