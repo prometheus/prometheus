@@ -356,7 +356,11 @@ against the active registry under the `registry/` namespace. Prometheus uses
 the registry embedded in the binary by default, but operators can configure a
 local-files or remote-archive registry via the `semconv` block, which fully
 replaces the embedded registry. The matcher values are registry paths, not
-locations; arbitrary HTTP URLs and filesystem paths are rejected. See
+locations; arbitrary HTTP URLs and filesystem paths are rejected.
+
+The selector must also include a non-empty equality matcher on `__name__`; a
+regular-expression or negative name matcher alone cannot anchor rename
+resolution and is rejected. See
 [Semconv Versioned Read](../feature_flags.md#semconv-versioned-read) for
 the supported registry layout, examples, and the limitations of the
 fan-out.

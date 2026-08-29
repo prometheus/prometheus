@@ -62,6 +62,10 @@ func TestLoadOTelSchema(t *testing.T) {
 		// ...alongside the metric-section renames.
 		require.Equal(t, "metric.new", attrs["metric.old"])
 		require.Equal(t, "metric.old", attrs["metric.new"])
+		require.Len(t, schema.versionRenames[0].changes, 2)
+		require.True(t, schema.versionRenames[0].changes[0].attributes.appliesTo("any.metric"))
+		require.True(t, schema.versionRenames[0].changes[1].attributes.appliesTo("my.metric"))
+		require.False(t, schema.versionRenames[0].changes[1].attributes.appliesTo("other.metric"))
 	})
 
 	t.Run("collects per-version metric renames", func(t *testing.T) {
@@ -81,6 +85,41 @@ func TestLoadOTelSchema(t *testing.T) {
 		renames := schema.versionRenames[0]
 		require.Equal(t, "http.request.method", renames.attributes["http.method"])
 		require.Equal(t, "http.method", renames.attributes["http.request.method"])
+		require.Len(t, renames.changes, 2)
+		require.True(t, renames.changes[0].attributes.appliesTo("http.server.duration"))
+		require.False(t, renames.changes[0].attributes.appliesTo("process.cpu.time"))
+		require.True(t, renames.changes[1].attributes.appliesTo("process.cpu.time"))
+	})
+
+	t.Run("preserves empty metric scope", func(t *testing.T) {
+		schema, err := loadOTelSchema([]byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.1.0:
+    metrics:
+      changes:
+        - rename_attributes:
+            attribute_map:
+              omitted.old: omitted.new
+        - rename_attributes:
+            attribute_map:
+              empty.old: empty.new
+            apply_to_metrics: []
+        - rename_attributes:
+            attribute_map:
+              scoped.old: scoped.new
+            apply_to_metrics:
+              - selected.metric
+`))
+		require.NoError(t, err)
+		require.Len(t, schema.versionRenames, 1)
+		changes := schema.versionRenames[0].changes
+		require.Len(t, changes, 3)
+
+		require.True(t, changes[0].attributes.appliesTo("any.metric"))
+		require.False(t, changes[1].attributes.appliesTo("any.metric"))
+		require.True(t, changes[2].attributes.appliesTo("selected.metric"))
+		require.False(t, changes[2].attributes.appliesTo("other.metric"))
 	})
 
 	t.Run("collects renames from multiple versions", func(t *testing.T) {
@@ -186,7 +225,8 @@ func TestTransformOTelSchemaLabels(t *testing.T) {
 			},
 		}
 
-		result := transformOTelSchemaLabels(lbls, mapping)
+		result, err := transformOTelSchemaLabels(lbls, mapping)
+		require.NoError(t, err)
 
 		require.Equal(t, "http.server.duration", result.Get(model.MetricNameLabel))
 		require.Equal(t, "GET", result.Get("http.method"))
@@ -208,7 +248,8 @@ func TestTransformOTelSchemaLabels(t *testing.T) {
 			translatedLabels: map[string]string{},
 		}
 
-		result := transformOTelSchemaLabels(lbls, mapping)
+		result, err := transformOTelSchemaLabels(lbls, mapping)
+		require.NoError(t, err)
 
 		require.Empty(t, result.Get(schemaURLLabel))
 		require.Equal(t, "http.server.duration", result.Get(model.MetricNameLabel))
