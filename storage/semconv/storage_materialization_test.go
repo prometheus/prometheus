@@ -35,8 +35,7 @@ versions:
     metrics:
       changes:
         - rename_metrics:
-            name_map:
-              budget.old: budget.current
+            budget.old: budget.current
         - rename_attributes:
             attribute_map:
               attr.old: attr.current
@@ -46,8 +45,7 @@ versions:
     metrics:
       changes:
         - rename_metrics:
-            name_map:
-              budget.current: budget.future
+            budget.current: budget.future
         - rename_attributes:
             attribute_map:
               attr.current: attr.future
