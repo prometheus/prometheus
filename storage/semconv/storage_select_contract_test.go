@@ -512,8 +512,7 @@ versions:
     metrics:
       changes:
         - rename_metrics:
-            name_map:
-              %s: %s
+            %s: %s
 `, i, oldName, newName)
 	}
 	version := fmt.Sprintf("1.%d.0", variants-1)
