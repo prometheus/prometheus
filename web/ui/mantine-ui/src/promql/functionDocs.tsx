@@ -1876,6 +1876,12 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
 
       <p>
+        Identifying-label presence is evaluated per input series. Inputs containing only <code>job</code>, only{" "}
+        <code>instance</code>, or both can therefore gain data labels from the corresponding info-series group; a
+        missing identifying label is not treated as a wildcard.
+      </p>
+
+      <p>
         These limitations are partially defeating the purpose of the <code>info</code> function. At the current stage,
         this is an experiment to find out how useful the approach turns out to be in practice. A final version of the{" "}
         <code>info</code> function will indeed consider all matching info series and with their appropriate identifying
