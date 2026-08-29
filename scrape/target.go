@@ -14,10 +14,12 @@
 package scrape
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"hash/fnv"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -221,6 +223,29 @@ func (t *Target) SetScrapeConfig(scrapeConfig *config.ScrapeConfig, tLabels, tgL
 	t.tgLabels = tgLabels
 }
 
+// indexedParam is a URL query parameter value set via a __param_<name>_<i> label.
+type indexedParam struct {
+	name  string
+	idx   int
+	value string
+}
+
+// parseParamIndex splits a __param_ label suffix of the form <name>_<i> into
+// the parameter name and the index i. The index must be a decimal integer
+// greater than zero without leading zeros; the name must be non-empty. Any
+// other suffix is reported as not indexed and names the parameter literally.
+func parseParamIndex(ks string) (string, int, bool) {
+	sep := strings.LastIndexByte(ks, '_')
+	if sep <= 0 || sep == len(ks)-1 || ks[sep+1] < '1' || ks[sep+1] > '9' {
+		return "", 0, false
+	}
+	idx, err := strconv.Atoi(ks[sep+1:])
+	if err != nil {
+		return "", 0, false
+	}
+	return ks[:sep], idx, true
+}
+
 // URL returns a copy of the target's URL.
 func (t *Target) URL() *url.URL {
 	t.mtx.RLock()
@@ -232,18 +257,36 @@ func (t *Target) URL() *url.URL {
 		params[k] = make([]string, len(v))
 		copy(params[k], v)
 	}
+	// Indexed __param_<name>_<i> labels are collected and applied after the
+	// bare __param_<name> labels, in ascending numeric order of <i>. Labels are
+	// iterated in lexicographic order, which would otherwise apply _10 before _2.
+	var indexed []indexedParam
 	t.labels.Range(func(l labels.Label) {
 		if !strings.HasPrefix(l.Name, model.ParamLabelPrefix) {
 			return
 		}
 		ks := l.Name[len(model.ParamLabelPrefix):]
 
+		if name, idx, ok := parseParamIndex(ks); ok {
+			indexed = append(indexed, indexedParam{name: name, idx: idx, value: l.Value})
+			return
+		}
 		if len(params[ks]) > 0 {
 			params[ks][0] = l.Value
 		} else {
 			params[ks] = []string{l.Value}
 		}
 	})
+	slices.SortFunc(indexed, func(a, b indexedParam) int {
+		return cmp.Or(strings.Compare(a.name, b.name), cmp.Compare(a.idx, b.idx))
+	})
+	for _, p := range indexed {
+		if p.idx < len(params[p.name]) {
+			params[p.name][p.idx] = p.value
+		} else {
+			params[p.name] = append(params[p.name], p.value)
+		}
+	}
 
 	host := t.labels.Get(model.AddressLabel)
 	scheme := t.labels.Get(model.SchemeLabel)
