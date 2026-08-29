@@ -16,6 +16,8 @@ package semconv_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -25,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/semconv"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
@@ -153,6 +156,275 @@ func collectSeries(t *testing.T, set storage.SeriesSet) map[string]float64 {
 	}
 	require.NoError(t, set.Err())
 	return out
+}
+
+func collectSeriesSampleCounts(t *testing.T, set storage.SeriesSet) map[string]int {
+	t.Helper()
+	out := make(map[string]int)
+	for set.Next() {
+		series := set.At()
+		it := series.Iterator(nil)
+		for it.Next() != chunkenc.ValNone {
+			out[series.Labels().String()]++
+		}
+		require.NoError(t, it.Err())
+	}
+	require.NoError(t, set.Err())
+	return out
+}
+
+func undeclaredAttributeRegistry() map[string][]byte {
+	return map[string][]byte{
+		"registry.yaml": []byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.0.0
+versions:
+  1.0.0:
+  1.1.0:
+    metrics:
+      changes:
+        - rename_metrics:
+            name_map:
+              m.old: m
+        - rename_attributes:
+            attribute_map:
+              svc.env: svc.environment
+            apply_to_metrics:
+              - m
+`),
+		"1.0.0": []byte(`groups:
+  - id: metric.m.old
+    type: metric
+    metric_name: m.old
+    instrument: counter
+    unit: "1"
+`),
+		"1.1.0": []byte(`groups:
+  - id: metric.m
+    type: metric
+    metric_name: m
+    instrument: counter
+    unit: "1"
+`),
+	}
+}
+
+func undeclaredAttributeMatchers(version, metric, attribute string, withAttribute bool) []*labels.Matcher {
+	matchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metric),
+		labels.MustNewMatcher(labels.MatchEqual, "__semconv_url__", "registry/"+version),
+		labels.MustNewMatcher(labels.MatchEqual, "__schema_url__", "registry/registry.yaml"),
+	}
+	if withAttribute {
+		matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, attribute, "prod"))
+	}
+	return matchers
+}
+
+func TestSchemaAttributeRenamesWithoutSemconvDeclarations(t *testing.T) {
+	underlying := teststorage.New(t)
+	wrapper, err := semconv.AwareStorageWithRegistry(underlying, undeclaredAttributeRegistry())
+	require.NoError(t, err)
+	appendSeries(t, underlying, "m.old", 1, 1, "svc.env", "prod")
+	appendSeries(t, underlying, "m", 2, 2, "svc.environment", "prod")
+
+	for _, anchor := range []struct {
+		name      string
+		version   string
+		metric    string
+		attribute string
+		alias     string
+	}{
+		{name: "backward", version: "1.1.0", metric: "m", attribute: "svc.environment", alias: "svc.env"},
+		{name: "forward", version: "1.0.0", metric: "m.old", attribute: "svc.env", alias: "svc.environment"},
+	} {
+		t.Run(anchor.name, func(t *testing.T) {
+			for _, withAttribute := range []bool{false, true} {
+				t.Run(fmt.Sprintf("attribute matcher %t", withAttribute), func(t *testing.T) {
+					matchers := undeclaredAttributeMatchers(anchor.version, anchor.metric, anchor.attribute, withAttribute)
+					querier, err := wrapper.Querier(0, 10)
+					require.NoError(t, err)
+					t.Cleanup(func() { require.NoError(t, querier.Close()) })
+					got := collectSeries(t, querier.Select(t.Context(), true, nil, matchers...))
+					require.Len(t, got, 1)
+					for labelSet := range got {
+						require.Contains(t, labelSet, `__name__="`+anchor.metric+`"`)
+						require.Contains(t, labelSet, `"`+anchor.attribute+`"="prod"`)
+						require.NotContains(t, labelSet, `"`+anchor.alias+`"=`)
+					}
+
+					chunkQuerier, err := wrapper.ChunkQuerier(0, 10)
+					require.NoError(t, err)
+					t.Cleanup(func() { require.NoError(t, chunkQuerier.Close()) })
+					chunks := chunkQuerier.Select(t.Context(), true, nil, matchers...)
+					require.Len(t, collectSeries(t, storage.NewSeriesSetFromChunkSeriesSet(chunks)), 1)
+				})
+			}
+
+			matchers := undeclaredAttributeMatchers(anchor.version, anchor.metric, anchor.attribute, false)
+			querier, err := wrapper.Querier(0, 10)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, querier.Close()) })
+			names, _, err := querier.LabelNames(t.Context(), nil, matchers...)
+			require.NoError(t, err)
+			require.Contains(t, names, anchor.attribute)
+			require.NotContains(t, names, anchor.alias)
+			values, _, err := querier.LabelValues(t.Context(), anchor.attribute, nil, matchers...)
+			require.NoError(t, err)
+			require.Equal(t, []string{"prod"}, values)
+		})
+	}
+
+	valueUnderlying := teststorage.New(t)
+	valueWrapper, err := semconv.AwareStorageWithRegistry(valueUnderlying, undeclaredAttributeRegistry())
+	require.NoError(t, err)
+	appendSeries(t, valueUnderlying, "m.old", 1, 1, "svc.env", "legacy")
+	appendSeries(t, valueUnderlying, "m", 2, 2, "svc.environment", "current")
+	for _, anchor := range []struct {
+		version   string
+		metric    string
+		attribute string
+	}{
+		{version: "1.1.0", metric: "m", attribute: "svc.environment"},
+		{version: "1.0.0", metric: "m.old", attribute: "svc.env"},
+	} {
+		querier, err := valueWrapper.Querier(0, 10)
+		require.NoError(t, err)
+		values, _, err := querier.LabelValues(
+			t.Context(),
+			anchor.attribute,
+			nil,
+			undeclaredAttributeMatchers(anchor.version, anchor.metric, anchor.attribute, false)...,
+		)
+		require.NoError(t, err)
+		require.NoError(t, querier.Close())
+		require.Equal(t, []string{"current", "legacy"}, values)
+	}
+}
+
+func TestSchemaMixedMetricAndAttributeEras(t *testing.T) {
+	for _, anchor := range []struct {
+		name      string
+		version   string
+		metric    string
+		attribute string
+		alias     string
+	}{
+		{name: "backward", version: "1.1.0", metric: "m", attribute: "svc.environment", alias: "svc.env"},
+		{name: "forward", version: "1.0.0", metric: "m.old", attribute: "svc.env", alias: "svc.environment"},
+	} {
+		t.Run(anchor.name, func(t *testing.T) {
+			underlying := teststorage.New(t)
+			wrapper, err := semconv.AwareStorageWithRegistry(underlying, undeclaredAttributeRegistry())
+			require.NoError(t, err)
+			for i, combination := range []struct {
+				metric    string
+				attribute string
+			}{
+				{metric: "m.old", attribute: "svc.env"},
+				{metric: "m.old", attribute: "svc.environment"},
+				{metric: "m", attribute: "svc.env"},
+				{metric: "m", attribute: "svc.environment"},
+			} {
+				appendSeries(t, underlying, combination.metric, int64(i+1), float64(i+1),
+					"instance", fmt.Sprintf("combination-%d", i), combination.attribute, "prod")
+			}
+			appendSeries(t, underlying, "m", 10, 10,
+				"instance", "dual", "svc.env", "prod", "svc.environment", "prod")
+
+			matchers := undeclaredAttributeMatchers(anchor.version, anchor.metric, anchor.attribute, true)
+			for _, query := range []string{"series", "chunks"} {
+				t.Run(query, func(t *testing.T) {
+					var set storage.SeriesSet
+					if query == "series" {
+						querier, err := wrapper.Querier(0, 20)
+						require.NoError(t, err)
+						t.Cleanup(func() { require.NoError(t, querier.Close()) })
+						set = querier.Select(t.Context(), true, nil, matchers...)
+					} else {
+						querier, err := wrapper.ChunkQuerier(0, 20)
+						require.NoError(t, err)
+						t.Cleanup(func() { require.NoError(t, querier.Close()) })
+						set = storage.NewSeriesSetFromChunkSeriesSet(querier.Select(t.Context(), true, nil, matchers...))
+					}
+					got := collectSeriesSampleCounts(t, set)
+					require.Len(t, got, 5)
+					for labelSet, sampleCount := range got {
+						require.Contains(t, labelSet, `__name__="`+anchor.metric+`"`)
+						require.Contains(t, labelSet, `"`+anchor.attribute+`"="prod"`)
+						require.NotContains(t, labelSet, `"`+anchor.alias+`"=`)
+						require.Equal(t, 1, sampleCount)
+					}
+				})
+			}
+
+			querier, err := wrapper.Querier(0, 20)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, querier.Close()) })
+			baseMatchers := undeclaredAttributeMatchers(anchor.version, anchor.metric, anchor.attribute, false)
+			names, _, err := querier.LabelNames(t.Context(), nil, baseMatchers...)
+			require.NoError(t, err)
+			require.Contains(t, names, anchor.attribute)
+			require.NotContains(t, names, anchor.alias)
+			values, _, err := querier.LabelValues(t.Context(), anchor.attribute, nil, baseMatchers...)
+			require.NoError(t, err)
+			require.Equal(t, []string{"prod"}, values)
+		})
+	}
+}
+
+func TestSchemaLabelMigrationConflictsFailClosed(t *testing.T) {
+	for _, query := range []string{"series", "chunks"} {
+		t.Run(query, func(t *testing.T) {
+			t.Run("equal values coalesce on the anchor metric", func(t *testing.T) {
+				wrapper, underlying := newAwareStorage(t)
+				appendSeries(t, underlying, "test", 1, 1, "user", "acme", "tenant", "acme")
+
+				if query == "series" {
+					querier, err := wrapper.Querier(0, 10)
+					require.NoError(t, err)
+					t.Cleanup(func() { require.NoError(t, querier.Close()) })
+					got := collectSeries(t, querier.Select(t.Context(), true, nil, schemaReadMatchers()...))
+					require.Len(t, got, 1)
+					for labelSet := range got {
+						require.Contains(t, labelSet, `tenant="acme"`)
+						require.NotContains(t, labelSet, "user=")
+					}
+					return
+				}
+
+				querier, err := wrapper.ChunkQuerier(0, 10)
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, querier.Close()) })
+				set := storage.NewSeriesSetFromChunkSeriesSet(querier.Select(t.Context(), true, nil, schemaReadMatchers()...))
+				require.Len(t, collectSeries(t, set), 1)
+			})
+
+			t.Run("different values on the anchor metric fail the query", func(t *testing.T) {
+				wrapper, underlying := newAwareStorage(t)
+				appendSeries(t, underlying, "test", 1, 1, "instance", "conflict", "user", "legacy", "tenant", "current")
+				appendSeries(t, underlying, "test", 2, 2, "instance", "healthy", "user", "same")
+
+				if query == "series" {
+					querier, err := wrapper.Querier(0, 10)
+					require.NoError(t, err)
+					t.Cleanup(func() { require.NoError(t, querier.Close()) })
+					set := querier.Select(t.Context(), true, nil, schemaReadMatchers()...)
+					for set.Next() {
+					}
+					require.ErrorContains(t, set.Err(), "conflicting values")
+					return
+				}
+
+				querier, err := wrapper.ChunkQuerier(0, 10)
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, querier.Close()) })
+				set := querier.Select(t.Context(), true, nil, schemaReadMatchers()...)
+				for set.Next() {
+				}
+				require.ErrorContains(t, set.Err(), "conflicting values")
+			})
+		})
+	}
 }
 
 // warningStrings flattens annotations into their string forms for assertion.
@@ -395,6 +667,76 @@ func TestAwareStorage(t *testing.T) {
 			require.ElementsMatch(t, []string{"legacy", "current"}, values)
 		})
 	})
+}
+
+func TestMetricNameConstraintsKeepPromQLSemantics(t *testing.T) {
+	wrapper, _ := newAwareStorage(t)
+	appendSeries(t, wrapper, "test.counter", 1, 1, "era", "old")
+	appendSeries(t, wrapper, "test", 1, 2, "era", "current")
+
+	tests := []struct {
+		name          string
+		nameMatchers  []*labels.Matcher
+		wantSeries    int
+		wantLabelName bool
+		wantValues    []string
+	}{
+		{
+			name: "compatible constraints apply to the canonical name",
+			nameMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, `test(?:\.counter)?`),
+				labels.MustNewMatcher(labels.MatchNotEqual, model.MetricNameLabel, "test.counter"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+			},
+			wantSeries:    2,
+			wantLabelName: true,
+			wantValues:    []string{"current", "old"},
+		},
+		{
+			name: "contradictory constraints remain unsatisfiable",
+			nameMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+				labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, `test\.counter`),
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			matchers := append(slices.Clone(tc.nameMatchers),
+				labels.MustNewMatcher(labels.MatchEqual, "__semconv_url__", "registry/1.1.0"),
+				labels.MustNewMatcher(labels.MatchEqual, "__schema_url__", "registry/registry.yaml"),
+			)
+
+			q, err := wrapper.Querier(0, 10)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+			got := collectSeries(t, q.Select(t.Context(), false, nil, matchers...))
+			require.Len(t, got, tc.wantSeries)
+			for key := range got {
+				require.Contains(t, key, `__name__="test"`)
+			}
+
+			names, _, err := q.LabelNames(t.Context(), nil, matchers...)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantLabelName, slices.Contains(names, "era"))
+
+			values, _, err := q.LabelValues(t.Context(), "era", nil, matchers...)
+			require.NoError(t, err)
+			if len(tc.wantValues) == 0 {
+				require.Empty(t, values)
+			} else {
+				require.Equal(t, tc.wantValues, values)
+			}
+
+			cq, err := wrapper.ChunkQuerier(0, 10)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, cq.Close()) })
+			chunks := storage.NewSeriesSetFromChunkSeriesSet(cq.Select(t.Context(), false, nil, matchers...))
+			require.Len(t, collectSeries(t, chunks), tc.wantSeries)
+		})
+	}
 }
 
 func TestSchemaWarning_ClassifiedAsWarning(t *testing.T) {
