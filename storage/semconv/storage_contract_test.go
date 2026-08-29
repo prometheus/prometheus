@@ -550,9 +550,8 @@ versions:
     metrics:
       changes:
         - rename_metrics:
-            name_map:
-              metric.old.one: metric.current
-              metric.old.two: metric.current
+            metric.old.one: metric.current
+            metric.old.two: metric.current
 `),
 		"1.0.0": []byte(`groups:
   - id: metric.metric.old.one
@@ -688,14 +687,12 @@ versions:
     metrics:
       changes:
         - rename_metrics:
-            name_map:
-              metric.old.one: metric.current
+            metric.old.one: metric.current
   1.1.0:
     metrics:
       changes:
         - rename_metrics:
-            name_map:
-              metric.old.two: metric.current
+            metric.old.two: metric.current
 `,
 		},
 	} {

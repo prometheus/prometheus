@@ -198,11 +198,11 @@ func collectVersionRenames(versionStr string, version otelSchemaVersion) *versio
 	// Collect metric and attribute renames from "metrics" section.
 	if version.Metrics != nil {
 		for _, change := range version.Metrics.Changes {
-			if change.RenameMetrics != nil {
-				if step := newDirectedRenames(change.RenameMetrics.NameMap); step != nil {
+			if len(change.RenameMetrics) > 0 {
+				if step := newDirectedRenames(change.RenameMetrics); step != nil {
 					renames.changes = append(renames.changes, schemaRenameChange{metrics: step})
 				}
-				for oldName, newName := range change.RenameMetrics.NameMap {
+				for oldName, newName := range change.RenameMetrics {
 					renames.metrics[oldName] = newName
 					renames.metrics[newName] = oldName
 				}
@@ -249,16 +249,14 @@ type otelSchemaSection struct {
 
 type otelSchemaChange struct {
 	RenameAttributes *otelRenameAttributes `yaml:"rename_attributes,omitempty"`
-	RenameMetrics    *otelRenameMetrics    `yaml:"rename_metrics,omitempty"`
+	// RenameMetrics maps old metric names directly to their new names. Unlike
+	// rename_attributes, the schema format defines no nested name_map key.
+	RenameMetrics map[string]string `yaml:"rename_metrics,omitempty"`
 }
 
 type otelRenameAttributes struct {
 	AttributeMap   map[string]string `yaml:"attribute_map,omitempty"`
 	ApplyToMetrics *[]string         `yaml:"apply_to_metrics,omitempty"`
-}
-
-type otelRenameMetrics struct {
-	NameMap map[string]string `yaml:"name_map,omitempty"`
 }
 
 // staticCache is a generic, goroutine-safe cache keyed by URL for static

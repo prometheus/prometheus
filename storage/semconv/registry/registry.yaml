@@ -8,8 +8,7 @@ versions:
     metrics:
       changes:
         - rename_metrics:
-            name_map:
-              test.counter: test
+            test.counter: test
         - rename_attributes:
             attribute_map:
               user: tenant
@@ -20,5 +19,4 @@ versions:
     metrics:
       changes:
         - rename_metrics:
-            name_map:
-              test: test.v2
+            test: test.v2

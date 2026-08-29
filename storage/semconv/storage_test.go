@@ -183,8 +183,7 @@ versions:
     metrics:
       changes:
         - rename_metrics:
-            name_map:
-              m.old: m
+            m.old: m
         - rename_attributes:
             attribute_map:
               svc.env: svc.environment
