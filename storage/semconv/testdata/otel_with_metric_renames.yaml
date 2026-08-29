@@ -6,6 +6,5 @@ versions:
     metrics:
       changes:
         - rename_metrics:
-            name_map:
-              old.metric.name: new.metric.name
-              another.old.metric: another.new.metric
+            old.metric.name: new.metric.name
+            another.old.metric: another.new.metric

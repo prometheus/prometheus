@@ -6,8 +6,7 @@ versions:
     metrics:
       changes:
         - rename_metrics:
-            name_map:
-              metric.v1: metric.v2
+            metric.v1: metric.v2
         - rename_attributes:
             attribute_map:
               attr.v1: attr.v2
@@ -15,8 +14,7 @@ versions:
     metrics:
       changes:
         - rename_metrics:
-            name_map:
-              metric.v2: metric.v3
+            metric.v2: metric.v3
         - rename_attributes:
             attribute_map:
               attr.v2: attr.v3
