@@ -72,9 +72,8 @@ type semconv struct {
 
 	version string
 
-	// attributesPerMetric lists, per metric name, the attributes the metric
-	// declares at this semconv version (populated by loadSemconv). It seeds
-	// attribute-rename normalisation; see buildAttributeRenameMap.
+	// attributesPerMetric lists the attributes each metric declares at this
+	// semconv version. The legacy rename-map helper uses this metadata.
 	attributesPerMetric map[string][]string
 }
 
@@ -105,12 +104,72 @@ type otelSchema struct {
 	versionRenames []versionRenames
 }
 
-// versionRenames holds bidirectional rename mappings from a single schema version.
-// When a version renames a→b, both directions are stored for lookup.
+// versionRenames holds the ordered rename steps from a single schema version,
+// plus bidirectional maps retained for the legacy rename helpers.
 type versionRenames struct {
 	version    string            // e.g., "1.1.0"
 	metrics    map[string]string // metric name → its variant (bidirectional)
 	attributes map[string]string // attribute name → its variant (bidirectional)
+	changes    []schemaRenameChange
+}
+
+// A schema rename change retains the order and direction of one supported
+// metrics-schema transformation.
+type schemaRenameChange struct {
+	metrics    *directedRenames
+	attributes *attributeRenameStep
+}
+
+type directedRenames struct {
+	forward map[string]string
+	reverse map[string][]string
+}
+
+func newDirectedRenames(forward map[string]string) *directedRenames {
+	if len(forward) == 0 {
+		return nil
+	}
+	renames := &directedRenames{
+		forward: make(map[string]string, len(forward)),
+		reverse: make(map[string][]string),
+	}
+	for oldName, newName := range forward {
+		renames.forward[oldName] = newName
+		renames.reverse[newName] = append(renames.reverse[newName], oldName)
+	}
+	for newName := range renames.reverse {
+		slices.Sort(renames.reverse[newName])
+	}
+	return renames
+}
+
+type attributeRenameStep struct {
+	renames        *directedRenames
+	applyToMetrics map[string]struct{}
+	scopeSpecified bool
+}
+
+func newAttributeRenameStep(rename *otelRenameAttributes, scoped bool) *attributeRenameStep {
+	if rename == nil || len(rename.AttributeMap) == 0 {
+		return nil
+	}
+	step := &attributeRenameStep{renames: newDirectedRenames(rename.AttributeMap)}
+	if scoped && rename.ApplyToMetrics != nil {
+		step.scopeSpecified = true
+		step.applyToMetrics = make(map[string]struct{}, len(*rename.ApplyToMetrics))
+		for _, metric := range *rename.ApplyToMetrics {
+			step.applyToMetrics[metric] = struct{}{}
+		}
+	}
+	return step
+}
+
+func (s *attributeRenameStep) appliesTo(metric string) bool {
+	if !s.scopeSpecified {
+		return true
+	}
+	_, ok := s.applyToMetrics[metric]
+	return ok
 }
 
 // collectVersionRenames extracts bidirectional rename mappings from a schema version.
@@ -125,6 +184,9 @@ func collectVersionRenames(versionStr string, version otelSchemaVersion) *versio
 	if version.All != nil {
 		for _, change := range version.All.Changes {
 			if change.RenameAttributes != nil {
+				if step := newAttributeRenameStep(change.RenameAttributes, false); step != nil {
+					renames.changes = append(renames.changes, schemaRenameChange{attributes: step})
+				}
 				for oldName, newName := range change.RenameAttributes.AttributeMap {
 					renames.attributes[oldName] = newName
 					renames.attributes[newName] = oldName
@@ -137,12 +199,18 @@ func collectVersionRenames(versionStr string, version otelSchemaVersion) *versio
 	if version.Metrics != nil {
 		for _, change := range version.Metrics.Changes {
 			if change.RenameMetrics != nil {
+				if step := newDirectedRenames(change.RenameMetrics.NameMap); step != nil {
+					renames.changes = append(renames.changes, schemaRenameChange{metrics: step})
+				}
 				for oldName, newName := range change.RenameMetrics.NameMap {
 					renames.metrics[oldName] = newName
 					renames.metrics[newName] = oldName
 				}
 			}
 			if change.RenameAttributes != nil {
+				if step := newAttributeRenameStep(change.RenameAttributes, true); step != nil {
+					renames.changes = append(renames.changes, schemaRenameChange{attributes: step})
+				}
 				for oldName, newName := range change.RenameAttributes.AttributeMap {
 					renames.attributes[oldName] = newName
 					renames.attributes[newName] = oldName
@@ -151,7 +219,7 @@ func collectVersionRenames(versionStr string, version otelSchemaVersion) *versio
 		}
 	}
 
-	if len(renames.metrics) == 0 && len(renames.attributes) == 0 {
+	if len(renames.changes) == 0 {
 		return nil
 	}
 	return renames
@@ -186,7 +254,7 @@ type otelSchemaChange struct {
 
 type otelRenameAttributes struct {
 	AttributeMap   map[string]string `yaml:"attribute_map,omitempty"`
-	ApplyToMetrics []string          `yaml:"apply_to_metrics,omitempty"`
+	ApplyToMetrics *[]string         `yaml:"apply_to_metrics,omitempty"`
 }
 
 type otelRenameMetrics struct {
