@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"math/rand"
 	"net"
@@ -41,6 +42,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"github.com/prometheus/otlptranslator"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -61,6 +63,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -116,6 +119,12 @@ var (
 // OverrideErrorCode can be used to override status code for different error types.
 // Return false to fall back to default status code.
 type OverrideErrorCode func(errorNum, error) (code int, override bool)
+
+// maxMetadataResults is the safety cap on resource metadata API responses.
+// Prevents unbounded memory allocation from large result sets.
+const maxMetadataResults = 500_000
+
+var errMaxResultsReached = errors.New("result set too large, truncated at safety cap")
 
 var LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
 
@@ -223,6 +232,7 @@ type TSDBAdminStats interface {
 	Stats(statsByLabelName string, limit int) (*tsdb.Stats, error)
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
 	BlockMetas() ([]tsdb.BlockMeta, error)
+	SeriesMetadata() (seriesmetadata.Reader, error)
 }
 
 type QueryOpts interface {
@@ -247,22 +257,23 @@ type API struct {
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 	globalURLOptions      GlobalURLOptions
 
-	db                  TSDBAdminStats
-	dbDir               string
-	enableAdmin         bool
-	enableSearch        bool
-	maxSearchLimit      int
-	metaCache           *searchMetadataCache
-	logger              *slog.Logger
-	CORSOrigin          *regexp.Regexp
-	buildInfo           *PrometheusVersion
-	runtimeInfo         func() (RuntimeInfo, error)
-	gatherer            prometheus.Gatherer
-	isAgent             bool
-	statsRenderer       StatsRenderer
-	customStatsRenderer bool // See validateStatsParam: a custom StatsRenderer's `stats` vocabulary is not validated.
-	notificationsGetter func() []notifications.Notification
-	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
+	db                   TSDBAdminStats
+	dbDir                string
+	enableAdmin          bool
+	enableSearch         bool
+	maxSearchLimit       int
+	metaCache            *searchMetadataCache
+	enableNativeMetadata bool
+	logger               *slog.Logger
+	CORSOrigin           *regexp.Regexp
+	buildInfo            *PrometheusVersion
+	runtimeInfo          func() (RuntimeInfo, error)
+	gatherer             prometheus.Gatherer
+	isAgent              bool
+	statsRenderer        StatsRenderer
+	customStatsRenderer  bool // See validateStatsParam: a custom StatsRenderer's `stats` vocabulary is not validated.
+	notificationsGetter  func() []notifications.Notification
+	notificationsSub     func() (<-chan notifications.Notification, func(), bool)
 	// Allows customizing the default mapping
 	overrideErrorCode OverrideErrorCode
 
@@ -318,6 +329,7 @@ func NewAPI(
 	enableTypeAndUnitLabels bool,
 	appendMetadata bool,
 	overrideErrorCode OverrideErrorCode,
+	enableNativeMetadata bool,
 	featureRegistry features.Collector,
 	openAPIOptions OpenAPIOptions,
 	promqlParser parser.Parser,
@@ -331,31 +343,32 @@ func NewAPI(
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 
-		now:                 time.Now,
-		config:              configFunc,
-		flagsMap:            flagsMap,
-		ready:               readyFunc,
-		globalURLOptions:    globalURLOptions,
-		db:                  db,
-		dbDir:               dbDir,
-		enableAdmin:         enableAdmin,
-		enableSearch:        enableSearch,
-		maxSearchLimit:      maxSearchLimit,
-		metaCache:           &searchMetadataCache{},
-		rulesRetriever:      rr,
-		logger:              logger,
-		CORSOrigin:          corsOrigin,
-		runtimeInfo:         runtimeInfo,
-		buildInfo:           buildInfo,
-		gatherer:            gatherer,
-		isAgent:             isAgent,
-		statsRenderer:       DefaultStatsRenderer,
-		notificationsGetter: notificationsGetter,
-		notificationsSub:    notificationsSub,
-		overrideErrorCode:   overrideErrorCode,
-		featureRegistry:     featureRegistry,
-		openAPIBuilder:      NewOpenAPIBuilder(openAPIOptions, logger),
-		parser:              promqlParser,
+		now:                  time.Now,
+		config:               configFunc,
+		flagsMap:             flagsMap,
+		ready:                readyFunc,
+		globalURLOptions:     globalURLOptions,
+		db:                   db,
+		dbDir:                dbDir,
+		enableAdmin:          enableAdmin,
+		enableSearch:         enableSearch,
+		maxSearchLimit:       maxSearchLimit,
+		metaCache:            &searchMetadataCache{},
+		enableNativeMetadata: enableNativeMetadata,
+		rulesRetriever:       rr,
+		logger:               logger,
+		CORSOrigin:           corsOrigin,
+		runtimeInfo:          runtimeInfo,
+		buildInfo:            buildInfo,
+		gatherer:             gatherer,
+		isAgent:              isAgent,
+		statsRenderer:        DefaultStatsRenderer,
+		notificationsGetter:  notificationsGetter,
+		notificationsSub:     notificationsSub,
+		overrideErrorCode:    overrideErrorCode,
+		featureRegistry:      featureRegistry,
+		openAPIBuilder:       NewOpenAPIBuilder(openAPIOptions, logger),
+		parser:               promqlParser,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -473,6 +486,9 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alertmanagers", wrapAgent(api.alertmanagers))
 
 	r.Get("/metadata", wrap(api.metricMetadata))
+	r.Get("/resources", wrap(api.resourceAttributes))
+	r.Get("/resources/series", wrap(api.resourceSeriesLookup))
+	r.Get("/resources/diff", wrap(api.resourceAttributesDiff))
 
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
@@ -1412,17 +1428,16 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 	builder := labels.NewBuilder(labels.EmptyLabels())
 	metric := r.FormValue("metric")
 	res := []metricMetadata{}
+
 	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
 			if limit >= 0 && len(res) >= limit {
 				break
 			}
 			targetLabels := t.Labels(builder)
-			// Filter targets that don't satisfy the label matchers.
 			if matchTarget != "" && !matchLabels(targetLabels, matchers) {
 				continue
 			}
-			// If no metric is specified, get the full list for the target.
 			if metric == "" {
 				for _, md := range t.ListMetadata() {
 					res = append(res, metricMetadata{
@@ -1435,7 +1450,6 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 				}
 				continue
 			}
-			// Get metadata for the specified metric.
 			if md, ok := t.GetMetadata(metric); ok {
 				res = append(res, metricMetadata{
 					Target: targetLabels,
@@ -1599,6 +1613,8 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	}
 
 	metric := r.FormValue("metric")
+
+	// Collect metadata from active scrape targets.
 	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
 			if metric == "" {
@@ -1651,6 +1667,1147 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	}
 
 	return apiFuncResult{res, nil, nil, nil}
+}
+
+// ResourceAttributeData contains identifying and descriptive attribute maps.
+type ResourceAttributeData struct {
+	Identifying map[string]string `json:"identifying"`
+	Descriptive map[string]string `json:"descriptive"`
+}
+
+// ResourceAttributeVersion is a single version of resource attributes with its time range.
+type ResourceAttributeVersion struct {
+	Attributes ResourceAttributeData `json:"resource_attributes"`
+	MinTimeMs  int64                 `json:"min_time_ms"`
+	MaxTimeMs  int64                 `json:"max_time_ms"`
+}
+
+// ResourceAttributesResponse is the response format for the resource_attributes endpoint.
+type ResourceAttributesResponse struct {
+	Labels   labels.Labels              `json:"labels"`
+	Versions []ResourceAttributeVersion `json:"versions"`
+}
+
+// PaginatedResourceAttributes wraps resource attribute results with cursor-based pagination.
+type PaginatedResourceAttributes struct {
+	Results   []ResourceAttributesResponse `json:"results"`
+	NextToken string                       `json:"nextToken,omitempty"`
+}
+
+// PaginatedSeriesMetadata wraps series metadata results with cursor-based pagination.
+type PaginatedSeriesMetadata struct {
+	Results   []SeriesMetadataResponse `json:"results"`
+	NextToken string                   `json:"nextToken,omitempty"`
+}
+
+// SeriesMetadataResponse is the response for the reverse lookup endpoint.
+type SeriesMetadataResponse struct {
+	Labels   labels.Labels              `json:"labels"`
+	Versions []ResourceAttributeVersion `json:"versions,omitempty"`
+}
+
+// SeriesMetricsNamesView is the compact reverse-lookup response for view=names.
+type SeriesMetricsNamesView struct {
+	Metrics     []string `json:"metrics"`
+	SeriesCount int      `json:"series_count"`
+	Truncated   bool     `json:"truncated"`
+	LimitUnit   string   `json:"limit_unit"`
+}
+
+// SeriesMetricSummary is one metric rollup in view=summary.
+type SeriesMetricSummary struct {
+	Name          string            `json:"__name__"`
+	SeriesCount   int               `json:"series_count"`
+	ExampleLabels map[string]string `json:"example_labels"`
+}
+
+// SeriesMetricsSummaryView is the compact reverse-lookup response for view=summary.
+type SeriesMetricsSummaryView struct {
+	Metrics     []SeriesMetricSummary `json:"metrics"`
+	SeriesCount int                   `json:"series_count"`
+	Truncated   bool                  `json:"truncated"`
+	LimitUnit   string                `json:"limit_unit"`
+}
+
+const defaultMetricLimit = 200
+
+// buildSeriesMetricsCompact builds names or summary views from label-sorted series rows.
+func buildSeriesMetricsCompact(results []SeriesMetadataResponse, view string, metricLimit int) (any, annotations.Annotations) {
+	var warnings annotations.Annotations
+	if metricLimit <= 0 {
+		metricLimit = defaultMetricLimit
+	}
+
+	// Group series by __name__, preserving deterministic example via sorted results.
+	type agg struct {
+		count   int
+		example labels.Labels
+	}
+	byName := make(map[string]*agg)
+	order := make([]string, 0)
+	for _, r := range results {
+		name := r.Labels.Get(model.MetricNameLabel)
+		if name == "" {
+			name = "unknown"
+		}
+		a := byName[name]
+		if a == nil {
+			a = &agg{example: r.Labels}
+			byName[name] = a
+			order = append(order, name)
+		}
+		a.count++
+	}
+	slices.Sort(order)
+
+	truncated := false
+	if len(order) > metricLimit {
+		order = order[:metricLimit]
+		truncated = true
+		warnings.Add(errors.New("results truncated due to metric_limit"))
+	}
+
+	seriesCount := len(results)
+	switch view {
+	case "names":
+		return &SeriesMetricsNamesView{
+			Metrics:     order,
+			SeriesCount: seriesCount,
+			Truncated:   truncated,
+			LimitUnit:   "metrics",
+		}, warnings
+	default: // summary
+		out := make([]SeriesMetricSummary, 0, len(order))
+		for _, name := range order {
+			a := byName[name]
+			ex := make(map[string]string, a.example.Len())
+			a.example.Range(func(l labels.Label) {
+				ex[l.Name] = l.Value
+			})
+			out = append(out, SeriesMetricSummary{
+				Name:          name,
+				SeriesCount:   a.count,
+				ExampleLabels: ex,
+			})
+		}
+		return &SeriesMetricsSummaryView{
+			Metrics:     out,
+			SeriesCount: seriesCount,
+			Truncated:   truncated,
+			LimitUnit:   "metrics",
+		}, warnings
+	}
+}
+
+// ResourceAttributeKeyInfo describes one resource attribute in the verbose attributes response.
+type ResourceAttributeKeyInfo struct {
+	Role     string   `json:"role"`
+	OtelName string   `json:"otel_name"`
+	PromName string   `json:"prom_name,omitempty"`
+	Values   []string `json:"values"`
+}
+
+// ResourceAttributesDiffEntry is one series' version-to-version attribute change.
+type ResourceAttributesDiffEntry struct {
+	Labels  labels.Labels             `json:"labels"`
+	Before  *ResourceAttributeVersion `json:"before,omitempty"`
+	After   *ResourceAttributeVersion `json:"after,omitempty"`
+	Changed ResourceAttributeData     `json:"changed"`
+}
+
+// ResourceAttributesDiffResponse wraps diff results.
+type ResourceAttributesDiffResponse struct {
+	Results   []ResourceAttributesDiffEntry `json:"results"`
+	NextToken string                        `json:"nextToken,omitempty"`
+}
+
+func resourceVersionsForView(versions []*seriesmetadata.ResourceVersion, view string) []ResourceAttributeVersion {
+	if view != "full" {
+		return nil
+	}
+	result := make([]ResourceAttributeVersion, 0, len(versions))
+	for _, version := range versions {
+		result = append(result, ResourceAttributeVersion{
+			Attributes: ResourceAttributeData{
+				Identifying: version.Identifying,
+				Descriptive: version.Descriptive,
+			},
+			MinTimeMs: version.MinTime,
+			MaxTimeMs: version.MaxTime,
+		})
+	}
+	return result
+}
+
+func emptySeriesMetadataResult(view string, metricLimit int) apiFuncResult {
+	if view == "names" || view == "summary" {
+		data, warnings := buildSeriesMetricsCompact([]SeriesMetadataResponse{}, view, metricLimit)
+		return apiFuncResult{data: data, warnings: warnings}
+	}
+	return apiFuncResult{data: &PaginatedSeriesMetadata{Results: []SeriesMetadataResponse{}}}
+}
+
+// applyLatestVersions keeps only the newest version by MinTimeMs when latest is set.
+func applyLatestVersions(results []ResourceAttributesResponse, latestOnly bool) []ResourceAttributesResponse {
+	if !latestOnly {
+		return results
+	}
+	for i := range results {
+		vs := results[i].Versions
+		if len(vs) <= 1 {
+			continue
+		}
+		best := vs[0]
+		for _, v := range vs[1:] {
+			if v.MinTimeMs >= best.MinTimeMs {
+				best = v
+			}
+		}
+		results[i].Versions = []ResourceAttributeVersion{best}
+	}
+	return results
+}
+
+func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
+	if !api.enableNativeMetadata {
+		return apiFuncResult{nil, &apiError{errorExec, errors.New("native metadata is disabled; enable with --enable-feature=native-metadata")}, nil, nil}
+	}
+	if api.db == nil {
+		return apiFuncResult{nil, &apiError{errorInternal, errors.New("TSDB not available")}, nil, nil}
+	}
+
+	if err := r.ParseForm(); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
+	}
+
+	// Handle format=attributes for autocomplete / agent schema discovery.
+	if r.FormValue("format") == "attributes" {
+		return api.resourceAttributePairs(r)
+	}
+
+	start, err := parseTimeParam(r, "start", MinTime)
+	if err != nil {
+		return invalidParamError(err, "start")
+	}
+	end, err := parseTimeParam(r, "end", MaxTime)
+	if err != nil {
+		return invalidParamError(err, "end")
+	}
+	if end.Before(start) {
+		err := errors.New("end timestamp must not be before start timestamp")
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	startMs := timestamp.FromTime(start)
+	endMs := timestamp.FromTime(end)
+
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+
+	latestOnly := r.FormValue("latest") == "1" || strings.EqualFold(r.FormValue("latest"), "true")
+
+	// Parse match[] parameters if provided
+	var matcherSets [][]*labels.Matcher
+	if len(r.Form["match[]"]) > 0 {
+		matcherSets, err = api.parseMatchersParam(r.Form["match[]"])
+		if err != nil {
+			return invalidParamError(err, "match[]")
+		}
+	}
+
+	mr, err := api.db.SeriesMetadata()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to get series metadata: %w", err)}, nil, nil}
+	}
+	defer mr.Close()
+
+	nextToken := r.FormValue("next_token")
+
+	// If no matchers provided, return all resource attributes
+	if len(matcherSets) == 0 {
+		return api.resourceAttributesAll(mr, limit, startMs, endMs, nextToken, latestOnly)
+	}
+
+	// Query series matching the selectors
+	ctx := r.Context()
+	q, err := api.Queryable.Querier(startMs, endMs)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+	defer func() {
+		if result.finalizer == nil {
+			q.Close()
+		}
+	}()
+	closer := func() {
+		q.Close()
+	}
+
+	hints := &storage.SelectHints{
+		Start: startMs,
+		End:   endMs,
+		Func:  "series",
+		Limit: toHintLimit(limit),
+	}
+
+	var set storage.SeriesSet
+	if len(matcherSets) > 1 {
+		var sets []storage.SeriesSet
+		for _, mset := range matcherSets {
+			s := q.Select(ctx, true, hints, mset...)
+			sets = append(sets, s)
+		}
+		set = storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
+	} else {
+		set = q.Select(ctx, false, hints, matcherSets[0]...)
+	}
+
+	var results []ResourceAttributesResponse
+	warnings := set.Warnings()
+
+	for set.Next() {
+		lset := set.At().Labels()
+		hash := labels.StableHash(lset)
+
+		versioned, ok := mr.GetVersionedResource(hash)
+		if !ok || len(versioned.Versions) == 0 {
+			continue
+		}
+
+		// Filter versions to only those overlapping with [start, end]
+		versions := filterVersions(versioned.Versions, startMs, endMs)
+		if len(versions) == 0 {
+			continue
+		}
+
+		results = append(results, ResourceAttributesResponse{
+			Labels:   lset,
+			Versions: versions,
+		})
+	}
+
+	if err := set.Err(); err != nil {
+		return apiFuncResult{nil, returnAPIError(err), warnings, closer}
+	}
+
+	results = applyLatestVersions(results, latestOnly)
+
+	// Sort for deterministic output.
+	slices.SortFunc(results, func(a, b ResourceAttributesResponse) int {
+		return labels.Compare(a.Labels, b.Labels)
+	})
+
+	// Apply cursor pagination.
+	results = applyResourceCursor(results, nextToken)
+
+	var respNextToken string
+	if limit > 0 && len(results) > limit {
+		respNextToken = getResourceNextToken(results[limit-1].Labels)
+		results = results[:limit]
+		warnings.Add(errors.New("results truncated due to limit"))
+	}
+
+	if results == nil {
+		results = []ResourceAttributesResponse{}
+	}
+
+	return apiFuncResult{&PaginatedResourceAttributes{Results: results, NextToken: respNextToken}, nil, warnings, closer}
+}
+
+// filterVersions returns versions that overlap with [startMs, endMs].
+func filterVersions(versions []*seriesmetadata.ResourceVersion, startMs, endMs int64) []ResourceAttributeVersion {
+	result := make([]ResourceAttributeVersion, 0, len(versions))
+	for _, v := range versions {
+		// Version overlaps if: version.MinTime <= endMs AND version.MaxTime >= startMs
+		if v.MinTime <= endMs && v.MaxTime >= startMs {
+			rv := ResourceAttributeVersion{
+				Attributes: ResourceAttributeData{
+					Identifying: v.Identifying,
+					Descriptive: v.Descriptive,
+				},
+				MinTimeMs: v.MinTime,
+				MaxTimeMs: v.MaxTime,
+			}
+
+			result = append(result, rv)
+		}
+	}
+	return result
+}
+
+// resourceAttributesAll returns all resource attributes without filtering by matchers.
+func (*API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, startMs, endMs int64, nextToken string, latestOnly bool) apiFuncResult {
+	var results []ResourceAttributesResponse
+	var warnings annotations.Annotations
+
+	err := mr.IterVersionedResources(context.Background(), func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+		// Filter versions to only those overlapping with [start, end]
+		versions := filterVersions(resources.Versions, startMs, endMs)
+		if len(versions) == 0 {
+			return nil
+		}
+
+		lset, ok := mr.LabelsForHash(labelsHash)
+		if !ok {
+			// With incremental head metadata and block Parquet labels,
+			// unresolved hashes indicate a race or deleted series — skip.
+			return nil
+		}
+		results = append(results, ResourceAttributesResponse{
+			Labels:   lset,
+			Versions: versions,
+		})
+		if len(results) >= maxMetadataResults {
+			return errMaxResultsReached
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, errMaxResultsReached) {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resources: %w", err)}, nil, nil}
+	}
+	if errors.Is(err, errMaxResultsReached) {
+		warnings.Add(errMaxResultsReached)
+	}
+
+	results = applyLatestVersions(results, latestOnly)
+
+	// Sort for deterministic output.
+	slices.SortFunc(results, func(a, b ResourceAttributesResponse) int {
+		return labels.Compare(a.Labels, b.Labels)
+	})
+
+	// Apply cursor pagination.
+	results = applyResourceCursor(results, nextToken)
+
+	var respNextToken string
+	if limit > 0 && len(results) > limit {
+		respNextToken = getResourceNextToken(results[limit-1].Labels)
+		results = results[:limit]
+		warnings.Add(errors.New("results truncated due to limit"))
+	}
+
+	if results == nil {
+		results = []ResourceAttributesResponse{}
+	}
+
+	return apiFuncResult{&PaginatedResourceAttributes{Results: results, NextToken: respNextToken}, nil, warnings, nil}
+}
+
+// resourceAttributePairs returns all unique resource attribute names and their values.
+// Primarily intended for autocomplete and agent schema discovery.
+// Query parameters:
+//   - translate: if "true", translates OTel attribute names to Prometheus label names (flat map keys)
+//   - verbose: if "1"/"true", returns role + otel_name + prom_name + values per key (additive; default stays flat map)
+//   - match[]: if provided, only returns attributes from resources associated with matching series
+func (api *API) resourceAttributePairs(r *http.Request) apiFuncResult {
+	if api.db == nil {
+		return apiFuncResult{nil, &apiError{errorInternal, errors.New("TSDB not available")}, nil, nil}
+	}
+
+	mr, err := api.db.SeriesMetadata()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to get series metadata: %w", err)}, nil, nil}
+	}
+	defer mr.Close()
+
+	// Check if translation is requested
+	translate := r.FormValue("translate") == "true" || r.FormValue("translate") == "1"
+	verbose := r.FormValue("verbose") == "1" || strings.EqualFold(r.FormValue("verbose"), "true")
+
+	// Build label namer for translation / prom_name in verbose mode
+	var labelNamer *otlptranslator.LabelNamer
+	if translate || verbose {
+		cfg := api.config()
+		allowUTF8 := cfg.GlobalConfig.MetricNameValidationScheme == model.UTF8Validation
+		labelNamer = &otlptranslator.LabelNamer{
+			UTF8Allowed:                 allowUTF8,
+			UnderscoreLabelSanitization: cfg.OTLPConfig.LabelNameUnderscoreSanitization, //nolint:staticcheck
+			PreserveMultipleUnderscores: cfg.OTLPConfig.LabelNamePreserveMultipleUnderscores,
+		}
+	}
+
+	// If match[] parameter is provided, filter resources by matching series
+	var allowedHashes map[uint64]struct{}
+	if len(r.Form["match[]"]) > 0 {
+		matcherSets, err := api.parseMatchersParam(r.Form["match[]"])
+		if err != nil {
+			return invalidParamError(err, "match[]")
+		}
+
+		// Query for matching series to get their hashes
+		q, err := api.Queryable.Querier(timestamp.FromTime(MinTime), timestamp.FromTime(MaxTime))
+		if err != nil {
+			return apiFuncResult{nil, returnAPIError(err), nil, nil}
+		}
+		defer q.Close()
+
+		hints := &storage.SelectHints{
+			Start: timestamp.FromTime(MinTime),
+			End:   timestamp.FromTime(MaxTime),
+			Func:  "series",
+		}
+
+		var set storage.SeriesSet
+		if len(matcherSets) > 1 {
+			var sets []storage.SeriesSet
+			for _, mset := range matcherSets {
+				s := q.Select(r.Context(), true, hints, mset...)
+				sets = append(sets, s)
+			}
+			set = storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
+		} else {
+			set = q.Select(r.Context(), false, hints, matcherSets[0]...)
+		}
+
+		// Collect the StableHash of each matching series
+		allowedHashes = make(map[uint64]struct{})
+		for set.Next() {
+			hash := labels.StableHash(set.At().Labels())
+			allowedHashes[hash] = struct{}{}
+		}
+		if err := set.Err(); err != nil {
+			return apiFuncResult{nil, returnAPIError(err), nil, nil}
+		}
+	}
+
+	// Collect unique attribute names and values (OTel names + role).
+	type attrAcc struct {
+		role   string
+		values map[string]struct{}
+	}
+	attrs := make(map[string]*attrAcc) // key = otel name
+
+	add := func(role, name, value string) {
+		a := attrs[name]
+		if a == nil {
+			a = &attrAcc{role: role, values: make(map[string]struct{})}
+			attrs[name] = a
+		}
+		a.values[value] = struct{}{}
+	}
+
+	err = mr.IterVersionedResources(r.Context(), func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+		// If we have a filter, only process resources for matching series
+		if allowedHashes != nil {
+			if _, ok := allowedHashes[labelsHash]; !ok {
+				return nil // Skip this resource
+			}
+		}
+
+		for _, version := range resources.Versions {
+			for name, value := range version.Identifying {
+				add("identifying", name, value)
+			}
+			for name, value := range version.Descriptive {
+				add("descriptive", name, value)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resources: %w", err)}, nil, nil}
+	}
+
+	if verbose {
+		result := make(map[string]ResourceAttributeKeyInfo, len(attrs))
+		for otelName, acc := range attrs {
+			valueList := make([]string, 0, len(acc.values))
+			for v := range acc.values {
+				valueList = append(valueList, v)
+			}
+			slices.Sort(valueList)
+			info := ResourceAttributeKeyInfo{
+				Role:     acc.role,
+				OtelName: otelName,
+				Values:   valueList,
+			}
+			if labelNamer != nil {
+				if pn, err := labelNamer.Build(otelName); err == nil {
+					info.PromName = pn
+				}
+			}
+			// Key by otel name (stable); clients use otel_name / prom_name fields.
+			result[otelName] = info
+		}
+		return apiFuncResult{result, nil, nil, nil}
+	}
+
+	// Default flat map (backward compatible): name -> values.
+	// When translate=true, keys are Prometheus label names.
+	result := make(map[string][]string, len(attrs))
+	for otelName, acc := range attrs {
+		key := otelName
+		if translate && labelNamer != nil {
+			pn, err := labelNamer.Build(otelName)
+			if err != nil {
+				continue
+			}
+			key = pn
+		}
+		valueList := make([]string, 0, len(acc.values))
+		for v := range acc.values {
+			valueList = append(valueList, v)
+		}
+		slices.Sort(valueList)
+		// Merge if translate collides (unlikely).
+		if existing, ok := result[key]; ok {
+			seen := make(map[string]struct{}, len(existing)+len(valueList))
+			for _, v := range existing {
+				seen[v] = struct{}{}
+			}
+			for _, v := range valueList {
+				seen[v] = struct{}{}
+			}
+			merged := make([]string, 0, len(seen))
+			for v := range seen {
+				merged = append(merged, v)
+			}
+			slices.Sort(merged)
+			result[key] = merged
+			continue
+		}
+		result[key] = valueList
+	}
+
+	return apiFuncResult{result, nil, nil, nil}
+}
+
+// resourceAttributesDiff returns per-series resource attribute changes between
+// the newest version started by time T and the immediately previous version.
+// Query parameters:
+//   - match[] (required): series selectors
+//   - time: evaluation instant (default now)
+//   - limit: maximum number of results (default unlimited)
+//   - next_token: cursor returned by a previous request
+func (api *API) resourceAttributesDiff(r *http.Request) (result apiFuncResult) {
+	if !api.enableNativeMetadata {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("native metadata is disabled; enable with --enable-feature=native-metadata")}, nil, nil}
+	}
+	if api.db == nil {
+		return apiFuncResult{nil, &apiError{errorInternal, errors.New("TSDB not available")}, nil, nil}
+	}
+	if err := r.ParseForm(); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
+	}
+	if len(r.Form["match[]"]) == 0 {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("at least one match[] is required")}, nil, nil}
+	}
+	matcherSets, err := api.parseMatchersParam(r.Form["match[]"])
+	if err != nil {
+		return invalidParamError(err, "match[]")
+	}
+
+	ts, err := parseTimeParam(r, "time", api.now())
+	if err != nil {
+		return invalidParamError(err, "time")
+	}
+	tsMs := timestamp.FromTime(ts)
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+	nextToken := r.FormValue("next_token")
+
+	mr, err := api.db.SeriesMetadata()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to get series metadata: %w", err)}, nil, nil}
+	}
+	defer mr.Close()
+
+	ctx := r.Context()
+	// Select series over a wide range so presence does not require a sample at
+	// the exact evaluation instant; version choice still uses tsMs.
+	selStart := timestamp.FromTime(MinTime)
+	selEnd := timestamp.FromTime(MaxTime)
+	q, err := api.Queryable.Querier(selStart, selEnd)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+	defer q.Close()
+
+	hints := &storage.SelectHints{Start: selStart, End: selEnd, Func: "series"}
+	var set storage.SeriesSet
+	if len(matcherSets) > 1 {
+		var sets []storage.SeriesSet
+		for _, mset := range matcherSets {
+			sets = append(sets, q.Select(ctx, true, hints, mset...))
+		}
+		set = storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
+	} else {
+		set = q.Select(ctx, false, hints, matcherSets[0]...)
+	}
+
+	var results []ResourceAttributesDiffEntry
+	warnings := set.Warnings()
+	for set.Next() {
+		lset := set.At().Labels()
+		hash := labels.StableHash(lset)
+		versioned, ok := mr.GetVersionedResource(hash)
+		if !ok || len(versioned.Versions) == 0 {
+			continue
+		}
+		// Versions are ordered by MinTime. GetResourceAt uses the newest version
+		// whose MinTime is not after the lookup time, including across gaps and overlaps.
+		vers := versioned.Versions
+		idx := -1
+		for i, version := range slices.Backward(vers) {
+			if version.MinTime <= tsMs {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			continue
+		}
+		afterRV := vers[idx]
+		var beforeRV *seriesmetadata.ResourceVersion
+		if idx > 0 {
+			beforeRV = vers[idx-1]
+		}
+
+		entry := ResourceAttributesDiffEntry{
+			Labels: lset,
+			After: &ResourceAttributeVersion{
+				Attributes: ResourceAttributeData{
+					Identifying: afterRV.Identifying,
+					Descriptive: afterRV.Descriptive,
+				},
+				MinTimeMs: afterRV.MinTime,
+				MaxTimeMs: afterRV.MaxTime,
+			},
+			Changed: ResourceAttributeData{
+				Identifying: map[string]string{},
+				Descriptive: map[string]string{},
+			},
+		}
+		if beforeRV != nil {
+			entry.Before = &ResourceAttributeVersion{
+				Attributes: ResourceAttributeData{
+					Identifying: beforeRV.Identifying,
+					Descriptive: beforeRV.Descriptive,
+				},
+				MinTimeMs: beforeRV.MinTime,
+				MaxTimeMs: beforeRV.MaxTime,
+			}
+			entry.Changed.Identifying = diffStringMap(beforeRV.Identifying, afterRV.Identifying)
+			entry.Changed.Descriptive = diffStringMap(beforeRV.Descriptive, afterRV.Descriptive)
+		} else {
+			// First version: report all after attrs as changed (from empty).
+			maps.Copy(entry.Changed.Identifying, afterRV.Identifying)
+			maps.Copy(entry.Changed.Descriptive, afterRV.Descriptive)
+		}
+		// Skip no-op diffs when a previous version exists and nothing changed.
+		if beforeRV != nil && len(entry.Changed.Identifying) == 0 && len(entry.Changed.Descriptive) == 0 {
+			continue
+		}
+		results = append(results, entry)
+		if len(results) > maxMetadataResults {
+			break
+		}
+	}
+	if err := set.Err(); err != nil {
+		return apiFuncResult{nil, returnAPIError(err), warnings, nil}
+	}
+	slices.SortFunc(results, func(a, b ResourceAttributesDiffEntry) int {
+		return labels.Compare(a.Labels, b.Labels)
+	})
+	if len(results) > maxMetadataResults {
+		results = results[:maxMetadataResults]
+		warnings.Add(errMaxResultsReached)
+	}
+	results = applyResourceDiffCursor(results, nextToken)
+
+	var respNextToken string
+	if limit > 0 && len(results) > limit {
+		respNextToken = getResourceNextToken(results[limit-1].Labels)
+		results = results[:limit]
+		warnings.Add(errors.New("results truncated due to limit"))
+	}
+	if results == nil {
+		results = []ResourceAttributesDiffEntry{}
+	}
+	return apiFuncResult{&ResourceAttributesDiffResponse{Results: results, NextToken: respNextToken}, nil, warnings, nil}
+}
+
+// diffStringMap encodes additions as the new value, removals as "old->", and
+// changes as "old->new".
+func diffStringMap(before, after map[string]string) map[string]string {
+	out := make(map[string]string)
+	seen := make(map[string]struct{})
+	for k, av := range after {
+		seen[k] = struct{}{}
+		bv, ok := before[k]
+		if !ok {
+			out[k] = av // added
+			continue
+		}
+		if bv != av {
+			out[k] = bv + "->" + av
+		}
+	}
+	for k := range before {
+		if _, ok := seen[k]; !ok {
+			out[k] = before[k] + "->" // removed
+		}
+	}
+	return out
+}
+
+// parseAttrFilter parses "key:value" into key, value.
+func parseAttrFilter(s string) (key, value string, err error) {
+	key, value, ok := strings.Cut(s, ":")
+	if !ok {
+		return "", "", fmt.Errorf("invalid attribute filter %q: expected key:value format", s)
+	}
+	if key == "" {
+		return "", "", fmt.Errorf("invalid attribute filter %q: key must not be empty", s)
+	}
+	return key, value, nil
+}
+
+// matchesResourceVersion checks if a ResourceVersion matches the given attribute filters.
+// All filters must match (AND semantics). Each filter matches against either identifying or descriptive attributes.
+// intersectSorted returns elements present in both sorted uint64 slices.
+func intersectSorted(a, b []uint64) []uint64 {
+	result := make([]uint64, 0, min(len(a), len(b)))
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		switch {
+		case a[i] < b[j]:
+			i++
+		case a[i] > b[j]:
+			j++
+		default:
+			result = append(result, a[i])
+			i++
+			j++
+		}
+	}
+	return result
+}
+
+func matchesResourceVersion(rv *seriesmetadata.ResourceVersion, resourceAttrFilters map[string]string) bool {
+	for k, v := range resourceAttrFilters {
+		if rv.Identifying[k] == v {
+			continue
+		}
+		if rv.Descriptive[k] == v {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
+	if !api.enableNativeMetadata {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("native metadata is disabled; enable with --enable-feature=native-metadata")}, nil, nil}
+	}
+	if api.db == nil {
+		return apiFuncResult{nil, &apiError{errorInternal, errors.New("TSDB not available")}, nil, nil}
+	}
+
+	if err := r.ParseForm(); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
+	}
+
+	// Parse resource attribute filters
+	resourceAttrFilters := make(map[string]string)
+	for _, f := range r.Form["resource.attr"] {
+		k, v, err := parseAttrFilter(f)
+		if err != nil {
+			return invalidParamError(err, "resource.attr")
+		}
+		resourceAttrFilters[k] = v
+	}
+
+	if len(resourceAttrFilters) == 0 {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("at least one resource.attr filter is required")}, nil, nil}
+	}
+
+	start, err := parseTimeParam(r, "start", MinTime)
+	if err != nil {
+		return invalidParamError(err, "start")
+	}
+	end, err := parseTimeParam(r, "end", MaxTime)
+	if err != nil {
+		return invalidParamError(err, "end")
+	}
+	if end.Before(start) {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("end timestamp must not be before start timestamp")}, nil, nil}
+	}
+	startMs := timestamp.FromTime(start)
+	endMs := timestamp.FromTime(end)
+
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+
+	view := strings.TrimSpace(r.FormValue("view"))
+	if view == "" {
+		view = "full"
+	}
+	switch view {
+	case "full", "names", "summary":
+	default:
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("invalid view %q: want full, names, or summary", view)}, nil, nil}
+	}
+
+	metricLimit := 0
+	metricLimitValue := r.FormValue("metric_limit")
+	if metricLimitValue != "" {
+		metricLimit, err = strconv.Atoi(metricLimitValue)
+		if err != nil || metricLimit < 0 {
+			return invalidParamError(errors.New("metric_limit must be a non-negative number"), "metric_limit")
+		}
+	}
+
+	nextToken := r.FormValue("next_token")
+	if view == "full" && metricLimitValue != "" {
+		return invalidParamError(errors.New("metric_limit is only supported for names and summary views"), "metric_limit")
+	}
+	if view != "full" && r.FormValue("limit") != "" {
+		return invalidParamError(errors.New("limit is only supported for the full view"), "limit")
+	}
+	if view != "full" && nextToken != "" {
+		return invalidParamError(errors.New("next_token is only supported for the full view"), "next_token")
+	}
+
+	// Parse optional match[] parameters
+	var matcherSets [][]*labels.Matcher
+	if len(r.Form["match[]"]) > 0 {
+		matcherSets, err = api.parseMatchersParam(r.Form["match[]"])
+		if err != nil {
+			return invalidParamError(err, "match[]")
+		}
+	}
+
+	mr, err := api.db.SeriesMetadata()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to get series metadata: %w", err)}, nil, nil}
+	}
+	defer mr.Close()
+
+	// Track matched series by labels hash.
+	type matchedEntry struct {
+		resourceVersions []ResourceAttributeVersion
+	}
+	matched := make(map[uint64]*matchedEntry)
+
+	// Filter resources by attribute matches.
+	// Try indexed path first: intersect candidate sets from the inverted index.
+	var candidates []uint64
+	useIndex := true
+	for k, v := range resourceAttrFilters {
+		hashes := mr.LookupResourceAttr(k, v)
+		if hashes == nil {
+			// Index not built — fall back to full scan.
+			useIndex = false
+			break
+		}
+		if candidates == nil {
+			// Start with the first sorted set (zero-copy from index).
+			candidates = hashes
+		} else {
+			// Intersect: two-pointer intersection of sorted slices.
+			candidates = intersectSorted(candidates, hashes)
+		}
+		if len(candidates) == 0 {
+			break
+		}
+	}
+
+	if useIndex {
+		// Indexed path: verify each candidate against time range and attribute filters.
+		for _, hash := range candidates {
+			if err := r.Context().Err(); err != nil {
+				return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("request cancelled: %w", err)}, nil, nil}
+			}
+			resources, ok := mr.GetVersionedResource(hash)
+			if !ok {
+				continue
+			}
+			var matchingVersions []*seriesmetadata.ResourceVersion
+			matchedResource := false
+			for _, rv := range resources.Versions {
+				if rv.MinTime > endMs || rv.MaxTime < startMs {
+					continue
+				}
+				if matchesResourceVersion(rv, resourceAttrFilters) {
+					matchedResource = true
+					if view != "full" {
+						break
+					}
+					matchingVersions = append(matchingVersions, rv)
+				}
+			}
+			if matchedResource {
+				matched[hash] = &matchedEntry{
+					resourceVersions: resourceVersionsForView(matchingVersions, view),
+				}
+				if len(matched) >= maxMetadataResults {
+					break
+				}
+			}
+		}
+	} else {
+		// Fallback: full scan for readers without an index.
+		err = mr.IterVersionedResources(r.Context(), func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+			var matchingVersions []*seriesmetadata.ResourceVersion
+			matchedResource := false
+			for _, rv := range resources.Versions {
+				if rv.MinTime > endMs || rv.MaxTime < startMs {
+					continue
+				}
+				if matchesResourceVersion(rv, resourceAttrFilters) {
+					matchedResource = true
+					if view != "full" {
+						break
+					}
+					matchingVersions = append(matchingVersions, rv)
+				}
+			}
+			if matchedResource {
+				matched[labelsHash] = &matchedEntry{
+					resourceVersions: resourceVersionsForView(matchingVersions, view),
+				}
+				if len(matched) >= maxMetadataResults {
+					return errMaxResultsReached
+				}
+			}
+			return nil
+		})
+		if err != nil && !errors.Is(err, errMaxResultsReached) {
+			return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resources: %w", err)}, nil, nil}
+		}
+	}
+
+	if len(matched) == 0 {
+		return emptySeriesMetadataResult(view, metricLimit)
+	}
+
+	// Resolve labelsHash -> labels.Labels, and if match[] is provided, intersect
+	// with label matchers at the same time (avoiding a second full series scan).
+	ctx := r.Context()
+	q, err := api.Queryable.Querier(startMs, endMs)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+	defer func() {
+		if result.finalizer == nil {
+			q.Close()
+		}
+	}()
+
+	hints := &storage.SelectHints{
+		Start: startMs,
+		End:   endMs,
+		Func:  "series",
+	}
+
+	hashToLabels := make(map[uint64]labels.Labels)
+	if len(matcherSets) > 0 {
+		// match[] provided: Select only matching series, save their labels,
+		// and intersect with metadata-matched hashes.
+		var set storage.SeriesSet
+		if len(matcherSets) > 1 {
+			var sets []storage.SeriesSet
+			for _, mset := range matcherSets {
+				s := q.Select(ctx, true, hints, mset...)
+				sets = append(sets, s)
+			}
+			set = storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
+		} else {
+			set = q.Select(ctx, false, hints, matcherSets[0]...)
+		}
+
+		for set.Next() {
+			lset := set.At().Labels()
+			hash := labels.StableHash(lset)
+			if _, ok := matched[hash]; ok {
+				hashToLabels[hash] = lset
+			}
+		}
+		if err := set.Err(); err != nil {
+			return apiFuncResult{nil, returnAPIError(err), nil, nil}
+		}
+
+		// Remove matched entries that didn't appear in the match[] results.
+		for hash := range matched {
+			if _, ok := hashToLabels[hash]; !ok {
+				delete(matched, hash)
+			}
+		}
+	} else {
+		// No match[]: resolve labels from metadata reader directly.
+		// With incremental head metadata and block Parquet labels,
+		// unresolved hashes indicate a race or deleted series — skip.
+		for hash := range matched {
+			lset, ok := mr.LabelsForHash(hash)
+			if !ok {
+				delete(matched, hash)
+				continue
+			}
+			hashToLabels[hash] = lset
+		}
+	}
+
+	if len(matched) == 0 {
+		return emptySeriesMetadataResult(view, metricLimit)
+	}
+
+	// Build response — collect all, then sort for determinism.
+	results := make([]SeriesMetadataResponse, 0, len(matched))
+	for hash, entry := range matched {
+		lset, ok := hashToLabels[hash]
+		if !ok {
+			continue
+		}
+		// Compact views do not need version payloads.
+		vers := entry.resourceVersions
+		if view != "full" {
+			vers = nil
+		}
+		results = append(results, SeriesMetadataResponse{
+			Labels:   lset,
+			Versions: vers,
+		})
+	}
+
+	// Sort for deterministic output.
+	slices.SortFunc(results, func(a, b SeriesMetadataResponse) int {
+		return labels.Compare(a.Labels, b.Labels)
+	})
+
+	var warnings annotations.Annotations
+	if len(matched) >= maxMetadataResults {
+		warnings.Add(errMaxResultsReached)
+	}
+
+	if view == "names" || view == "summary" {
+		compact, w := buildSeriesMetricsCompact(results, view, metricLimit)
+		warnings.Merge(w)
+		return apiFuncResult{compact, nil, warnings, nil}
+	}
+
+	// Apply cursor pagination (full view only).
+	results = applySeriesMetadataCursor(results, nextToken)
+
+	var respNextToken string
+	if limit > 0 && len(results) > limit {
+		respNextToken = getResourceNextToken(results[limit-1].Labels)
+		results = results[:limit]
+		warnings.Add(errors.New("results truncated due to limit"))
+	}
+
+	if results == nil {
+		results = []SeriesMetadataResponse{}
+	}
+
+	return apiFuncResult{&PaginatedSeriesMetadata{Results: results, NextToken: respNextToken}, nil, warnings, nil}
 }
 
 // RuleDiscovery has info for all rules.
@@ -1915,6 +3072,64 @@ func getRuleGroupNextToken(file, group string) string {
 	h := sha256.New()
 	h.Write([]byte(file + ";" + group))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// getResourceNextToken computes a cursor token for a sorted labels set.
+func getResourceNextToken(lset labels.Labels) string {
+	h := sha256.New()
+	h.Write([]byte(lset.String()))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// applyResourceCursor skips past results whose token matches nextToken.
+// Results must be sorted. If nextToken is empty, returns results unchanged.
+func applyResourceCursor(results []ResourceAttributesResponse, nextToken string) []ResourceAttributesResponse {
+	if nextToken == "" || len(results) == 0 {
+		return results
+	}
+	for i, r := range results {
+		if getResourceNextToken(r.Labels) == nextToken {
+			if i+1 < len(results) {
+				return results[i+1:]
+			}
+			return nil
+		}
+	}
+	return results
+}
+
+// applySeriesMetadataCursor skips past results whose token matches nextToken.
+// Results must be sorted. If nextToken is empty, returns results unchanged.
+func applySeriesMetadataCursor(results []SeriesMetadataResponse, nextToken string) []SeriesMetadataResponse {
+	if nextToken == "" || len(results) == 0 {
+		return results
+	}
+	for i, r := range results {
+		if getResourceNextToken(r.Labels) == nextToken {
+			if i+1 < len(results) {
+				return results[i+1:]
+			}
+			return nil
+		}
+	}
+	return results
+}
+
+// applyResourceDiffCursor skips past the diff result matching nextToken.
+// Results must be sorted. An unknown token leaves the results unchanged.
+func applyResourceDiffCursor(results []ResourceAttributesDiffEntry, nextToken string) []ResourceAttributesDiffEntry {
+	if nextToken == "" || len(results) == 0 {
+		return results
+	}
+	for i, result := range results {
+		if getResourceNextToken(result.Labels) == nextToken {
+			if i+1 < len(results) {
+				return results[i+1:]
+			}
+			return nil
+		}
+	}
+	return results
 }
 
 type prometheusConfig struct {
