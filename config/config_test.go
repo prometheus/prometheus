@@ -1888,7 +1888,7 @@ remote_write:
     failed_request_logging: true
   - url: http://remote2/api/v1/write
 `
-	cfg, err := Load(cfgYAML, promslog.NewNopLogger())
+	cfg, err := Load(cfgYAML, promslog.NewNopLogger(), LoadOptions{})
 	require.NoError(t, err)
 	require.Len(t, cfg.RemoteWriteConfigs, 2)
 	require.True(t, cfg.RemoteWriteConfigs[0].FailedRequestLogging)
