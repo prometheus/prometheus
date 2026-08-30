@@ -17,30 +17,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"slices"
-	"strings"
 	"time"
 
-	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/infohelper"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-const targetInfo = "target_info"
-
-// identifyingLabels are the labels we consider as identifying for info metrics.
-// Currently hard coded, so we don't need knowledge of individual info metrics.
-var identifyingLabels = []string{"instance", "job"}
-
 // evalInfo implements the info PromQL function.
 func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
-	// Extract modifiers before evaluating the first argument: evaluating a subquery replaces it
-	// with a materialized matrix selector that no longer carries the modifiers inside it.
-	nodeTimestamp, offset := infoSeriesSelectTimestampAndOffset(args[0])
+	// Build the plan before evaluating the first argument: evaluating a subquery replaces it
+	// with a materialized selector that no longer carries the original modifiers.
+	selectPlan := infohelper.BuildSelectPlan(args[0], ev.startTimestamp, ev.endTimestamp, ev.interval, ev.lookbackDelta)
 
 	val, annots := ev.eval(ctx, args[0])
 	mat := val.(Matrix)
@@ -57,28 +51,20 @@ func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (par
 			}
 		}
 	} else {
-		infoNameMatchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, targetInfo)}
+		infoNameMatchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, infohelper.DefaultInfoMetricName)}
 	}
 
 	// Don't try to enrich info series.
-	effectiveNameMatchers := effectiveInfoNameMatchers(infoNameMatchers)
+	effectiveNameMatchers := infohelper.EffectiveNameMatchers(infoNameMatchers)
 	ignoreSeries := map[uint64]struct{}{}
 	for _, s := range mat {
 		name := s.Metric.Get(model.MetricNameLabel)
-		matchesAllMatchers := true
-		for _, m := range effectiveNameMatchers {
-			if !m.Matches(name) {
-				matchesAllMatchers = false
-				break
-			}
-		}
-		if matchesAllMatchers {
+		if infohelper.MatchesAll(name, effectiveNameMatchers) {
 			ignoreSeries[s.Metric.Hash()] = struct{}{}
 		}
 	}
 
-	selectHints := ev.infoSelectHints(nodeTimestamp, offset)
-	infoSeries, ws, err := ev.fetchInfoSeries(ctx, mat, ignoreSeries, dataLabelMatchers, selectHints, nodeTimestamp, offset)
+	infoSeries, ws, err := ev.fetchInfoSeries(ctx, mat, ignoreSeries, dataLabelMatchers, selectPlan.Hints, selectPlan.Timestamp, selectPlan.Offset)
 	if err != nil {
 		ev.error(err)
 	}
@@ -89,143 +75,16 @@ func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (par
 	return res, annots
 }
 
-// effectiveInfoNameMatchers returns the set of __name__ matchers that will
-// actually be used to select info series.
-// When positive matchers exist, all matchers (positive + negative) are returned.
-// When only negative matchers exist, a synthetic .+_info matcher is prepended.
-// When no matchers exist, a target_info equality matcher is returned.
-func effectiveInfoNameMatchers(matchers []*labels.Matcher) []*labels.Matcher {
-	for _, m := range matchers {
-		if m.Type == labels.MatchEqual || m.Type == labels.MatchRegexp {
-			// There's at least one positive matcher - return as-is.
-			return matchers
-		}
-	}
-	if len(matchers) > 0 {
-		// Only negative matchers: prepend a synthetic .+_info matcher.
-		return append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+_info")}, matchers...)
-	}
-
-	return []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, targetInfo)}
+func infoSelectTimestampAndOffset(expr parser.Expr) (*int64, time.Duration, bool) {
+	return infohelper.SelectTimestampAndOffset(expr)
 }
 
-type infoSeriesReference struct {
-	timestamp *int64
-	offset    time.Duration
-}
-
-func (r infoSeriesReference) equal(other infoSeriesReference) bool {
-	if r.timestamp == nil || other.timestamp == nil {
-		return r.timestamp == nil && other.timestamp == nil &&
-			durationMilliseconds(r.offset) == durationMilliseconds(other.offset)
-	}
-	return *r.timestamp-durationMilliseconds(r.offset) == *other.timestamp-durationMilliseconds(other.offset)
-}
-
-// infoSelectTimestampAndOffset returns the first vector-producing selector's reference and
-// whether every vector-producing path has a selector with the same effective reference time.
-func infoSelectTimestampAndOffset(expr parser.Expr) (nodeTimestamp *int64, offset time.Duration, uniform bool) {
-	var (
-		first         infoSeriesReference
-		found         bool
-		referenceFree bool
-	)
-	uniform = true
-
-	var inspect func(parser.Expr, []parser.Node) bool
-	inspect = func(expr parser.Expr, path []parser.Node) bool {
-		if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeMatrix {
-			return false
-		}
-
-		if n, ok := expr.(*parser.VectorSelector); ok {
-			ref := infoSeriesReference{
-				timestamp: n.Timestamp,
-				offset:    n.OriginalOffset,
-			}
-			// Enclosing subqueries shift the selector's reference time: their offsets add up until
-			// an @ timestamp anchors it, making any modifiers further out irrelevant.
-			for i := len(path) - 1; ref.timestamp == nil && i >= 0; i-- {
-				if sq, ok := path[i].(*parser.SubqueryExpr); ok {
-					ref.offset += sq.OriginalOffset
-					ref.timestamp = sq.Timestamp
-				}
-			}
-
-			if !found {
-				first = ref
-				found = true
-			} else if !first.equal(ref) {
-				uniform = false
-			}
-			return true
-		}
-
-		path = append(path, expr)
-		if call, ok := expr.(*parser.Call); ok && call.Func.Name == "info" {
-			// The second argument is selector syntax, but it is not evaluated as a vector.
-			return inspect(call.Args[0], path)
-		}
-
-		hasSelector := false
-		for child := range parser.ChildrenIter(expr) {
-			childExpr, ok := child.(parser.Expr)
-			if ok && inspect(childExpr, path) {
-				hasSelector = true
-			}
-		}
-		if !hasSelector {
-			// Selector-free vectors use the evaluator time, which cannot be replaced by a
-			// selector reference from another vector-producing path.
-			referenceFree = true
-		}
-		return hasSelector
-	}
-
-	inspect(expr, nil)
-	if !found {
-		return nil, 0, false
-	}
-	return first.timestamp, first.offset, uniform && !referenceFree
-}
-
-// infoSeriesSelectTimestampAndOffset returns the reference used to select and
-// evaluate info series. Inputs without a shared reference use the evaluation time.
 func infoSeriesSelectTimestampAndOffset(expr parser.Expr) (*int64, time.Duration) {
-	nodeTimestamp, offset, uniformReference := infoSelectTimestampAndOffset(expr)
-	if !uniformReference {
+	nodeTimestamp, offset, uniform := infohelper.SelectTimestampAndOffset(expr)
+	if !uniform {
 		return nil, 0
 	}
 	return nodeTimestamp, offset
-}
-
-// infoSelectHints calculates the storage.SelectHints for selecting info series, given the
-// shared @ timestamp and offset of the info call's first argument. nodeTimestamp is nil both
-// when the first argument has no @ timestamp and when it has no single shared reference, in
-// which case info series are selected across the whole query range.
-func (ev *evaluator) infoSelectHints(nodeTimestamp *int64, offset time.Duration) storage.SelectHints {
-	offsetMs := durationMilliseconds(offset)
-
-	start := ev.startTimestamp
-	end := ev.endTimestamp
-	if nodeTimestamp != nil {
-		// The timestamp on the selector overrides everything.
-		start = *nodeTimestamp
-		end = *nodeTimestamp
-	}
-	// Reduce the start by one fewer ms than the lookback delta
-	// because wo want to exclude samples that are precisely the
-	// lookback delta before the eval time.
-	start -= durationMilliseconds(ev.lookbackDelta) - 1
-	start -= offsetMs
-	end -= offsetMs
-
-	return storage.SelectHints{
-		Start: start,
-		End:   end,
-		Step:  ev.interval,
-		Func:  "info",
-	}
 }
 
 // fetchInfoSeries fetches info series given matching identifying labels in mat.
@@ -245,27 +104,21 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 		}
 	}
 
-	// A map of values for all identifying labels we are interested in.
-	idLblValues := map[string]map[string]struct{}{}
-	for _, s := range mat {
-		if _, exists := ignoreSeries[s.Metric.Hash()]; exists {
-			continue
-		}
-
-		// Register relevant values per identifying label for this series.
-		for _, l := range identifyingLabels {
-			val := s.Metric.Get(l)
-			if val == "" {
+	baseMetrics := func(yield func(labels.Labels) bool) {
+		for _, s := range mat {
+			if _, exists := ignoreSeries[s.Metric.Hash()]; exists {
 				continue
 			}
-
-			if idLblValues[l] == nil {
-				idLblValues[l] = map[string]struct{}{}
+			if !yield(s.Metric) {
+				return
 			}
-			idLblValues[l][val] = struct{}{}
 		}
 	}
-	if len(idLblValues) == 0 {
+	matcherSets, err := infohelper.IdentifyingMatcherSets(iter.Seq[labels.Labels](baseMetrics), infohelper.DefaultIdentifyingLabels, infohelper.MatcherSetLimits{})
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(matcherSets) == 0 {
 		// Even when returning early, we need to remove __name__ from dataLabelMatchers
 		// since it's not a data label selector (it's used to select which info metrics
 		// to consider). Without this, combineWithInfoVector would incorrectly exclude
@@ -274,50 +127,42 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 		return nil, nil, nil
 	}
 
-	// Generate regexps for every interesting value per identifying label.
-	var sb strings.Builder
-	idLblRegexps := make(map[string]string, len(idLblValues))
-	for name, vals := range idLblValues {
-		sb.Reset()
-		i := 0
-		for v := range vals {
-			if i > 0 {
-				sb.WriteRune('|')
-			}
-			sb.WriteString(regexp.QuoteMeta(v))
-			i++
-		}
-		idLblRegexps[name] = sb.String()
-	}
-
-	var infoLabelMatchers []*labels.Matcher
-	for name, re := range idLblRegexps {
-		infoLabelMatchers = append(infoLabelMatchers, labels.MustNewMatcher(labels.MatchRegexp, name, re))
-	}
 	var nameMatchers []*labels.Matcher
+	var dataMatchers []*labels.Matcher
 	for _, ms := range dataLabelMatchers {
 		for _, m := range ms {
 			if m.Name == model.MetricNameLabel {
 				nameMatchers = append(nameMatchers, m)
 				continue
 			}
-			infoLabelMatchers = append(infoLabelMatchers, m)
+			dataMatchers = append(dataMatchers, m)
 		}
 	}
 	removeNameFromDataLabelMatchers()
-	infoLabelMatchers = append(infoLabelMatchers, effectiveInfoNameMatchers(nameMatchers)...)
+	effectiveNameMatchers := infohelper.EffectiveNameMatchers(nameMatchers)
 
-	infoIt := ev.querier.Select(ctx, false, &selectHints, infoLabelMatchers...)
-	infoSeries, ws, err := expandSeriesSet(ctx, infoIt)
-	if err != nil {
-		return nil, ws, err
+	var infoSeries []storage.Series
+	var warnings annotations.Annotations
+	for _, identifyingMatchers := range matcherSets {
+		matchers := make([]*labels.Matcher, 0, len(identifyingMatchers)+len(dataMatchers)+len(effectiveNameMatchers))
+		matchers = append(matchers, identifyingMatchers...)
+		matchers = append(matchers, dataMatchers...)
+		matchers = append(matchers, effectiveNameMatchers...)
+
+		infoIt := ev.querier.Select(ctx, false, &selectHints, matchers...)
+		series, ws, err := expandSeriesSet(ctx, infoIt)
+		warnings.Merge(ws)
+		if err != nil {
+			return nil, warnings, err
+		}
+		infoSeries = append(infoSeries, series...)
 	}
 
 	// Evaluate the info series at the @-pinned timestamp (when set) and shifted by the offset,
 	// so enrichment reflects the info series as of the time selected by the first argument's
 	// modifiers, consistently at every step, rather than the raw evaluation timestamp.
 	infoMat := ev.evalSeries(ctx, infoSeries, offset, true, atTimestamp)
-	return infoMat, ws, nil
+	return infoMat, warnings, nil
 }
 
 // combineWithInfoSeries combines mat with select data labels from infoMat.
@@ -328,7 +173,7 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 		return func(lset labels.Labels) string {
 			lb.Reset()
 			lb.Add(model.MetricNameLabel, name)
-			lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
+			lset.MatchLabels(true, infohelper.DefaultIdentifyingLabels...).Range(func(l labels.Label) {
 				lb.Add(l.Name, l.Value)
 			})
 			lb.Sort()

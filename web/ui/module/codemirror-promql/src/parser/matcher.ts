@@ -12,20 +12,81 @@
 // limitations under the License.
 
 import { SyntaxNode } from '@lezer/common';
-import {
-  EqlRegex,
-  EqlSingle,
-  LabelName,
-  MatchOp,
-  Neq,
-  NeqRegex,
-  StringLiteral,
-  UnquotedLabelMatcher,
-  QuotedLabelMatcher,
-  QuotedLabelName,
-} from '@prometheus-io/lezer-promql';
+import { EqlSingle, LabelName, MatchOp, StringLiteral, UnquotedLabelMatcher, QuotedLabelMatcher, QuotedLabelName } from '@prometheus-io/lezer-promql';
 import { EditorState } from '@codemirror/state';
-import { Matcher } from '../types';
+import { Matcher } from '@prometheus-io/lezer-promql/client';
+
+// Re-export labelMatchersToString from lezer-promql/client for backwards compatibility
+export { labelMatchersToString } from '@prometheus-io/lezer-promql/client';
+
+function decodeHexEscape(value: string, digits: number): string {
+  if (value.length !== digits || !/^[0-9a-fA-F]+$/.test(value)) {
+    throw new Error('invalid PromQL string escape');
+  }
+  const codePoint = Number.parseInt(value, 16);
+  if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) {
+    throw new Error('invalid PromQL Unicode escape');
+  }
+  return String.fromCodePoint(codePoint);
+}
+
+/** Decodes one complete PromQL string literal. */
+export function unquotePromQLStringLiteral(value: string): string {
+  if (value.length < 2 || value[0] !== value[value.length - 1] || ![`'`, `"`, '`'].includes(value[0])) {
+    throw new Error('invalid PromQL string literal');
+  }
+  const quote = value[0];
+  const inner = value.slice(1, -1);
+  if (quote === '`') {
+    return inner.replace(/\r/g, '');
+  }
+
+  const simpleEscapes: Record<string, string> = {
+    a: '\u0007',
+    b: '\b',
+    f: '\f',
+    n: '\n',
+    r: '\r',
+    t: '\t',
+    v: '\v',
+    '\\': '\\',
+    "'": "'",
+    '"': '"',
+  };
+  let result = '';
+  for (let i = 0; i < inner.length; i++) {
+    if (inner[i] !== '\\') {
+      result += inner[i];
+      continue;
+    }
+    i++;
+    if (i >= inner.length) {
+      throw new Error('invalid PromQL string escape');
+    }
+    const escaped = inner[i];
+    if (simpleEscapes[escaped] !== undefined) {
+      result += simpleEscapes[escaped];
+      continue;
+    }
+    if (escaped === 'x' || escaped === 'u' || escaped === 'U') {
+      const digits = escaped === 'x' ? 2 : escaped === 'u' ? 4 : 8;
+      result += decodeHexEscape(inner.slice(i + 1, i + 1 + digits), digits);
+      i += digits;
+      continue;
+    }
+    if (/[0-7]/.test(escaped)) {
+      const octal = escaped + inner.slice(i + 1, i + 3);
+      if (!/^[0-7]{3}$/.test(octal)) {
+        throw new Error('invalid PromQL octal escape');
+      }
+      result += String.fromCodePoint(Number.parseInt(octal, 8));
+      i += 2;
+      continue;
+    }
+    throw new Error('invalid PromQL string escape');
+  }
+  return result;
+}
 
 function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
   const matcher = new Matcher(0, '', '');
@@ -39,7 +100,7 @@ function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
       do {
         switch (cursor.type.id) {
           case QuotedLabelName:
-            matcher.name = state.sliceDoc(cursor.from, cursor.to).slice(1, -1);
+            matcher.name = unquotePromQLStringLiteral(state.sliceDoc(cursor.from, cursor.to));
             break;
           case MatchOp: {
             const ope = cursor.node.firstChild;
@@ -49,7 +110,7 @@ function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
             break;
           }
           case StringLiteral:
-            matcher.value = state.sliceDoc(cursor.from, cursor.to).slice(1, -1);
+            matcher.value = unquotePromQLStringLiteral(state.sliceDoc(cursor.from, cursor.to));
             break;
         }
       } while (cursor.nextSibling());
@@ -72,14 +133,14 @@ function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
             break;
           }
           case StringLiteral:
-            matcher.value = state.sliceDoc(cursor.from, cursor.to).slice(1, -1);
+            matcher.value = unquotePromQLStringLiteral(state.sliceDoc(cursor.from, cursor.to));
             break;
         }
       } while (cursor.nextSibling());
       break;
     case QuotedLabelName:
       matcher.name = '__name__';
-      matcher.value = state.sliceDoc(cursor.from, cursor.to).slice(1, -1);
+      matcher.value = unquotePromQLStringLiteral(state.sliceDoc(cursor.from, cursor.to));
       matcher.type = EqlSingle;
       break;
   }
@@ -92,41 +153,4 @@ export function buildLabelMatchers(labelMatchers: SyntaxNode[], state: EditorSta
     matchers.push(createMatcher(value, state));
   });
   return matchers;
-}
-
-export function labelMatchersToString(metricName: string, matchers?: Matcher[], labelName?: string): string {
-  if (!matchers || matchers.length === 0) {
-    return metricName;
-  }
-
-  let matchersAsString = '';
-  for (const matcher of matchers) {
-    if (matcher.name === labelName || matcher.value === '') {
-      continue;
-    }
-    let type = '';
-    switch (matcher.type) {
-      case EqlSingle:
-        type = '=';
-        break;
-      case Neq:
-        type = '!=';
-        break;
-      case NeqRegex:
-        type = '!~';
-        break;
-      case EqlRegex:
-        type = '=~';
-        break;
-      default:
-        type = '=';
-    }
-    const m = `${matcher.name}${type}"${matcher.value}"`;
-    if (matchersAsString === '') {
-      matchersAsString = m;
-    } else {
-      matchersAsString = `${matchersAsString},${m}`;
-    }
-  }
-  return `${metricName}{${matchersAsString}}`;
 }

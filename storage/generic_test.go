@@ -14,6 +14,7 @@
 package storage
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -226,6 +227,46 @@ func TestApplySearchHints(t *testing.T) {
 		})
 		require.LessOrEqual(t, len(got), 50)
 	})
+}
+
+func TestApplySearchHintsWithContext(t *testing.T) {
+	t.Run("already canceled", func(t *testing.T) {
+		cause := errors.New("request canceled")
+		ctx, cancel := context.WithCancelCause(context.Background())
+		cancel(cause)
+
+		results, err := ApplySearchHintsWithContext(ctx, []string{"alpha"}, nil)
+		require.ErrorIs(t, err, cause)
+		require.Nil(t, results)
+	})
+
+	for _, order := range []Ordering{OrderByValueAsc, OrderByScoreDesc} {
+		t.Run(fmt.Sprintf("order_%d", order), func(t *testing.T) {
+			cause := errors.New("filter canceled")
+			ctx, cancel := context.WithCancelCause(context.Background())
+			calls := 0
+			values := make([]string, 1024)
+			for i := range values {
+				values[i] = fmt.Sprintf("value-%04d", i)
+			}
+			hints := &SearchHints{
+				OrderBy: order,
+				Limit:   512,
+				Filter: FilterFunc(func(string) (bool, float64) {
+					calls++
+					if calls == 5 {
+						cancel(cause)
+					}
+					return true, 1
+				}),
+			}
+
+			results, err := ApplySearchHintsWithContext(ctx, values, hints)
+			require.ErrorIs(t, err, cause)
+			require.Nil(t, results)
+			require.LessOrEqual(t, calls, 128)
+		})
+	}
 }
 
 func TestNewSearchResultSetFromSliceAndError(t *testing.T) {

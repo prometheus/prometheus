@@ -260,6 +260,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Experimental concurrent rule evaluation enabled.")
 			case "promql-experimental-functions":
 				c.parserOpts.EnableExperimentalFunctions = true
+				c.web.EnableExperimentalFunctions = true
 				logger.Info("Experimental PromQL functions enabled.")
 			case "promql-duration-expr":
 				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
@@ -1082,6 +1083,7 @@ func main() {
 	cfg.web.RuleManager = ruleManager
 	cfg.web.Notifier = notifierManager
 	cfg.web.LookbackDelta = time.Duration(cfg.lookbackDelta)
+	cfg.web.QueryTimeout = time.Duration(cfg.queryTimeout)
 	cfg.web.IsAgent = agentMode
 	cfg.web.AppName = modeAppName
 	cfg.web.Parser = promqlParser
