@@ -375,7 +375,6 @@ func testUpgradeDowngradeLTS(t *testing.T, start time.Time, lts ltsRelease) {
 		"--storage.tsdb.min-block-duration=65s",
 		// Accelerate chunks mmapping.
 		"--storage.tsdb.samples-per-chunk=10",
-		"--log.level=debug",
 	}
 
 	runLTS := append([]string{c.ltsVersionBinPath}, commonArgs...)

@@ -657,9 +657,8 @@ func main() {
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
 
-	promslogflag.AddFlags(a, &cfg.promslogConfig)
-	a.GetFlag(promslogflag.LevelFlagName).
-		Help(promslogflag.LevelFlagHelp + " Deprecated: set runtime.log_level in the configuration file instead.")
+	a.Flag(promslogflag.FormatFlagName, promslogflag.FormatFlagHelp).
+		Default(promslog.DefaultFormat).SetValue(&cfg.promslogConfig.Format)
 
 	a.Flag("write-documentation", "Generate command line documentation. Internal use.").Hidden().Action(func(*kingpin.ParseContext) error {
 		if err := documentcli.GenerateMarkdown(a.Model(), os.Stdout); err != nil {
@@ -679,11 +678,6 @@ func main() {
 
 	logger := promslog.New(&cfg.promslogConfig)
 	slog.SetDefault(logger)
-
-	// The CLI log level controls startup logging and supplies the default when
-	// runtime.log_level is absent from the configuration file.
-	config.DefaultRuntimeConfig.LogLevel = config.LogLevel(cfg.promslogConfig.Level.String())
-	config.DefaultConfig.Runtime = config.DefaultRuntimeConfig
 
 	notifs := notifications.NewNotifications(cfg.maxNotificationsSubscribers, prometheus.DefaultRegisterer)
 	cfg.web.NotificationsSub = notifs.Sub
