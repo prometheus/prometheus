@@ -363,6 +363,26 @@ func (*OpenAPIBuilder) metadataPath() *v3.PathItem {
 	}
 }
 
+func (*OpenAPIBuilder) nativeMetricMetadataPath() *v3.PathItem {
+	params := []*v3.Parameter{
+		queryParamWithExample("match[]", "Series selector argument. Multiple selectors are combined with OR semantics.", true, base.CreateSchemaProxy(&base.Schema{
+			Type:  []string{"array"},
+			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+		}), []example{{"example", []string{"{job=\"prometheus\"}"}}}),
+		queryParamWithExample("limit", "Maximum number of series to return. Zero means unlimited.", false, integerSchema(), []example{{"example", 100}}),
+	}
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "get-native-metric-metadata",
+			Summary:     "Get versioned native metric metadata by series",
+			Description: "Experimental endpoint enabled by --enable-feature=native-metadata. Only metadata ingested through Remote Write 2.0 is exposed, and data is not persisted across restarts.",
+			Tags:        []string{"metadata"},
+			Parameters:  params,
+			Responses:   responsesWithErrorExamples("NativeMetricMetadataOutputBody", nativeMetricMetadataResponseExamples(), errorResponseExamples(), "Native metric metadata retrieved successfully.", "Error retrieving native metric metadata."),
+		},
+	}
+}
+
 func (*OpenAPIBuilder) scrapePoolsPath() *v3.PathItem {
 	return &v3.PathItem{
 		Get: &v3.Operation{

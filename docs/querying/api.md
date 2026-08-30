@@ -1378,6 +1378,74 @@ curl -G http://localhost:9090/api/v1/metadata?metric=http_requests_total
 }
 ```
 
+### Querying native metric metadata by series
+
+The following experimental endpoint returns versioned metric metadata ingested
+through Remote Write 2.0. It requires `--enable-feature=native-metadata`.
+
+```
+GET /api/v1/metadata/series
+```
+
+URL query parameters:
+
+- `match[]=<series_selector>`: Required. Multiple selectors are combined with
+  OR semantics and duplicate series are returned once.
+- `limit=<number>`: Maximum number of series to return. `0` means unlimited.
+
+Timestamps are milliseconds. `effectiveFrom` is inclusive and
+`effectiveUntil` is exclusive; the current version omits `effectiveUntil`.
+`data.truncated` reports result truncation by `limit`, while the metric
+category's `truncated` field reports that older versions were evicted from the
+per-series history.
+
+```bash
+curl -G http://localhost:9090/api/v1/metadata/series \
+    --data-urlencode 'match[]={__name__="http_requests_total"}'
+```
+
+```json
+{
+  "status": "success",
+  "data": {
+    "results": [
+      {
+        "labels": {
+          "__name__": "http_requests_total",
+          "job": "api"
+        },
+        "metadata": {
+          "categories": {
+            "metric": {
+              "versions": [
+                {
+                  "effectiveFrom": 1750000000000,
+                  "effectiveUntil": 1750003600000,
+                  "type": "counter",
+                  "unit": "requests",
+                  "help": "HTTP requests."
+                },
+                {
+                  "effectiveFrom": 1750003600000,
+                  "type": "counter",
+                  "unit": "requests",
+                  "help": "Total HTTP requests."
+                }
+              ],
+              "truncated": false
+            }
+          }
+        }
+      }
+    ],
+    "truncated": false
+  }
+}
+```
+
+The data is kept only in memory and is lost on restart. Scrapes, OTLP, and
+Remote Write 1.0 do not populate this endpoint in this prototype.
+
 ## Alertmanagers
 
 The following endpoint returns an overview of the current state of the

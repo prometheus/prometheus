@@ -380,6 +380,12 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedCode: http.StatusNoContent,
 		},
 		{
+			desc:           "All timeseries accepted/legacy_metadata_enabled",
+			input:          writeV2RequestFixture.Timeseries,
+			expectedCode:   http.StatusNoContent,
+			appendMetadata: true,
+		},
+		{
 			desc: "Partial write; first series with invalid labels (no metric name)",
 			input: append(
 				// Series with test_metric1="test_metric1" labels.
@@ -544,6 +550,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			desc:              "Partial write; skipped metadata; metadata storage errs are noop",
 			input:             writeV2RequestFixture.Timeseries,
 			updateMetadataErr: errors.New("some metadata update error"),
+			appendMetadata:    true,
 
 			expectedCode: http.StatusNoContent,
 		},
@@ -796,6 +803,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				require.Empty(t, appendable.histograms)
 				require.Empty(t, appendable.exemplars)
 				require.Empty(t, appendable.metadata)
+				require.Empty(t, appendable.nativeMetadata)
 				return
 			}
 
@@ -817,12 +825,21 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 
 			// Double check what was actually appended.
 			var (
-				b          = labels.NewScratchBuilder(0)
-				i, j, k, m int
+				b       = labels.NewScratchBuilder(0)
+				i, j, k int
 			)
+			var expectedMetadata, expectedNativeMetadata []mockMetadata
 			for _, ts := range writeV2RequestFixture.Timeseries {
 				ls, err := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
 				require.NoError(t, err)
+				expectedMeta, err := ts.ToMetadata(writeV2RequestFixture.Symbols)
+				require.NoError(t, err)
+				for range len(ts.Samples) + len(ts.Histograms) {
+					expectedNativeMetadata = append(expectedNativeMetadata, mockMetadata{ls, expectedMeta})
+					if tc.appendMetadata && tc.updateMetadataErr == nil {
+						expectedMetadata = append(expectedMetadata, mockMetadata{ls, expectedMeta})
+					}
+				}
 
 				for _, s := range ts.Samples {
 					if s.StartTimestamp != 0 && tc.ingestSTZeroSample {
@@ -859,18 +876,9 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 						j++
 					}
 				}
-				if tc.appendMetadata && tc.updateMetadataErr == nil {
-					expectedMeta, err := ts.ToMetadata(writeV2RequestFixture.Symbols)
-					require.NoError(t, err)
-					requireEqual(t, mockMetadata{ls, expectedMeta}, appendable.metadata[m])
-					m++
-				}
 			}
-
-			// Verify that when the feature flag is disabled, no metadata is stored in WAL.
-			if !tc.appendMetadata {
-				require.Empty(t, appendable.metadata, "metadata should not be stored when appendMetadata (metadata-wal-records) is false")
-			}
+			requireEqual(t, expectedMetadata, appendable.metadata)
+			requireEqual(t, expectedNativeMetadata, appendable.nativeMetadata)
 		})
 	}
 }
@@ -1347,6 +1355,7 @@ type mockAppendable struct {
 	latestFloatHist map[uint64]int64
 	histograms      []mockHistogram
 	metadata        []mockMetadata
+	nativeMetadata  []mockMetadata
 
 	// optional errors to inject.
 	commitErr             error
@@ -1446,6 +1455,9 @@ func (a *mockAppenderV2) Append(ref storage.SeriesRef, l labels.Labels, st, t in
 	if err != nil {
 		return ref, err
 	}
+	if !opts.NativeMetricMetadata.IsEmpty() {
+		a.asV1().nativeMetadata = append(a.asV1().nativeMetadata, mockMetadata{l: l, m: opts.NativeMetricMetadata})
+	}
 	if !opts.Metadata.IsEmpty() {
 		// Metadata is best-effort within Append; errors are not surfaced to the caller.
 		_, _ = a.asV1().UpdateMetadata(ref, l, opts.Metadata)
@@ -1516,6 +1528,7 @@ func (m *mockAppendable) Rollback() error {
 	m.exemplars = m.exemplars[:0]
 	m.histograms = m.histograms[:0]
 	m.metadata = m.metadata[:0]
+	m.nativeMetadata = m.nativeMetadata[:0]
 	return nil
 }
 

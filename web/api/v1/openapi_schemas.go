@@ -66,6 +66,13 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	schemas.Set("Metadata", b.metadataSchema())
 	schemas.Set("MetadataOutputBody", b.metadataOutputBodySchema())
 	schemas.Set("MetricMetadata", b.metricMetadataSchema())
+	schemas.Set("NativeMetricMetadataVersion", b.nativeMetricMetadataVersionSchema())
+	schemas.Set("NativeMetricMetadataCategory", b.nativeMetricMetadataCategorySchema())
+	schemas.Set("NativeMetadataCategories", b.nativeMetadataCategoriesSchema())
+	schemas.Set("NativeMetadata", b.nativeMetadataSchema())
+	schemas.Set("NativeMetricMetadataSeries", b.nativeMetricMetadataSeriesSchema())
+	schemas.Set("NativeMetricMetadataResponse", b.nativeMetricMetadataResponseSchema())
+	schemas.Set("NativeMetricMetadataOutputBody", b.refResponseBodySchema("NativeMetricMetadataResponse", "Response body for native metric metadata."))
 
 	// Target schemas.
 	schemas.Set("Target", b.targetSchema())
@@ -883,6 +890,90 @@ func (*OpenAPIBuilder) metricMetadataSchema() *base.SchemaProxy {
 		Description:          "Target metric metadata.",
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
 		Required:             []string{"target", "type", "help", "unit"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) nativeMetricMetadataVersionSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("effectiveFrom", integerSchemaWithDescription("Inclusive timestamp in milliseconds at which this version became effective."))
+	props.Set("effectiveUntil", integerSchemaWithDescription("Exclusive timestamp in milliseconds at which this version stopped being effective. Omitted for the current version."))
+	props.Set("type", stringSchemaWithDescription("Metric type."))
+	props.Set("unit", stringSchemaWithDescription("Unit of the metric."))
+	props.Set("help", stringSchemaWithDescription("Help text describing the metric."))
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "One native metric metadata version.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"effectiveFrom", "type", "unit", "help"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) nativeMetricMetadataCategorySchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("versions", base.CreateSchemaProxy(&base.Schema{
+		Type:  []string{"array"},
+		Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: schemaRef("#/components/schemas/NativeMetricMetadataVersion")},
+	}))
+	props.Set("truncated", booleanSchema())
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Versioned metadata in the metric category.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"versions", "truncated"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) nativeMetadataCategoriesSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("metric", schemaRef("#/components/schemas/NativeMetricMetadataCategory"))
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"object"},
+		Description: "Native metadata grouped by category. Clients must ignore unknown categories.",
+		Required:    []string{"metric"},
+		Properties:  props,
+	})
+}
+
+func (*OpenAPIBuilder) nativeMetadataSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("categories", schemaRef("#/components/schemas/NativeMetadataCategories"))
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Native metadata attached to a series.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"categories"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) nativeMetricMetadataSeriesSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("labels", schemaRef("#/components/schemas/Labels"))
+	props.Set("metadata", schemaRef("#/components/schemas/NativeMetadata"))
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Native metadata for one series.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"labels", "metadata"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) nativeMetricMetadataResponseSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("results", base.CreateSchemaProxy(&base.Schema{
+		Type:  []string{"array"},
+		Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: schemaRef("#/components/schemas/NativeMetricMetadataSeries")},
+	}))
+	props.Set("truncated", booleanSchema())
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Native metric metadata query result.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"results", "truncated"},
 		Properties:           props,
 	})
 }

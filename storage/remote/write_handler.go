@@ -368,10 +368,8 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 		}
 
 		var ref storage.SeriesRef
-		// Only attach metadata if the metadata-wal-records feature is enabled; without it,
-		// metadata is not persisted to WAL. It's attached to every sample/histogram append
-		// of the series; implementations only persist a metadata WAL record when it changed.
-		opts := storage.AOptions{}
+		// Native metadata is independent of the existing metadata ingestion path.
+		opts := storage.AOptions{NativeMetricMetadata: m}
 		if h.appendMetadata {
 			opts.Metadata = m
 		}
