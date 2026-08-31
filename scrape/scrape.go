@@ -767,7 +767,10 @@ type targetScraper struct {
 	metrics *scrapeMetrics
 }
 
-var errBodySizeLimit = errors.New("body size limit exceeded")
+var (
+	errBodySizeLimit  = errors.New("body size limit exceeded")
+	errZstdNotEnabled = errors.New(`received a zstd-compressed response, but the "zstd-scrape" feature flag is not enabled`)
+)
 
 const zstdMaxWindowSize = 8 << 20
 
@@ -871,7 +874,9 @@ func (s *targetScraper) readResponse(_ context.Context, resp *http.Response, w i
 		reader = s.gzipr
 	case "zstd":
 		if !s.enableZstd {
-			break
+			// Nothing here can decode the body, and passing the raw frame on
+			// would hand a zstd stream to the metrics parser.
+			return "", errZstdNotEnabled
 		}
 		if s.Target == nil {
 			s.logger.Debug("Using zstd-compressed scrape response")
