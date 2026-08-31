@@ -1796,35 +1796,11 @@ func computeExternalURL(u, listenAddr, webConfigFile string) (*url.URL, error) {
 	return eu, nil
 }
 
-// tlsServerConfig mirrors the TLS-enabling fields of exporter-toolkit's web.TLSConfig
-// (see https://github.com/prometheus/exporter-toolkit/blob/main/web/tls_config.go).
-// It intentionally omits every other field: only these are consulted by
-// exporter-toolkit to decide whether a server serves HTTPS.
-type tlsServerConfig struct {
-	TLSCert       string `yaml:"cert"`
-	TLSKey        string `yaml:"key"`
-	TLSCertPath   string `yaml:"cert_file"`
-	TLSKeyPath    string `yaml:"key_file"`
-	ClientCAsText string `yaml:"client_ca"`
-	ClientCAs     string `yaml:"client_ca_file"`
-	ClientAuth    string `yaml:"client_auth_type"`
-}
-
-// isEnabled reports whether c configures TLS, mirroring exporter-toolkit's own
-// validateTLSPaths check: a tls_server_config section that is present but sets
-// none of these fields (e.g. an empty section, or one that only tunes cipher
-// suites) does not enable TLS.
-func (c tlsServerConfig) isEnabled() bool {
-	return c.TLSCertPath != "" || c.TLSCert != "" ||
-		c.TLSKeyPath != "" || c.TLSKey != "" ||
-		c.ClientCAs != "" || c.ClientCAsText != "" ||
-		c.ClientAuth != ""
-}
-
 // webConfigHasTLSServerConfig reports whether the web config file at path configures TLS,
-// i.e. contains a tls_server_config section that sets at least one TLS-enabling field. An
-// empty path, or a file that cannot be read or parsed as YAML, is treated as not
-// configuring TLS; a definitive error for such cases is reported later by toolkit_web.Validate.
+// i.e. contains a tls_server_config section that sets at least one TLS-enabling field, as
+// decided by exporter-toolkit's own TLSConfig.IsEnabled(). An empty path, or a file that
+// cannot be read or parsed as YAML, is treated as not configuring TLS; a definitive error
+// for such cases is reported later by toolkit_web.Validate.
 func webConfigHasTLSServerConfig(path string) bool {
 	if path == "" {
 		return false
@@ -1835,14 +1811,12 @@ func webConfigHasTLSServerConfig(path string) bool {
 		return false
 	}
 
-	var webConfig struct {
-		TLSServerConfig *tlsServerConfig `yaml:"tls_server_config"`
-	}
+	var webConfig toolkit_web.Config
 	if err := yaml.Unmarshal(data, &webConfig); err != nil {
 		return false
 	}
 
-	return webConfig.TLSServerConfig != nil && webConfig.TLSServerConfig.isEnabled()
+	return webConfig.TLSConfig.IsEnabled()
 }
 
 // storagePathFsSize returns the filesystem size for path or its closest existing parent.
