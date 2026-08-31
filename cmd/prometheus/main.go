@@ -55,6 +55,7 @@ import (
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	"go.uber.org/atomic"
 	"go.uber.org/automaxprocs/maxprocs"
+	"go.yaml.in/yaml/v2"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
@@ -734,7 +735,7 @@ func main() {
 		localStoragePath = cfg.agentStoragePath
 	}
 
-	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddresses[0])
+	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddresses[0], *webConfig)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("parse external URL %q: %w", cfg.prometheusURL, err))
 		os.Exit(2)
@@ -1792,8 +1793,9 @@ func compileCORSRegexString(s string) (*regexp.Regexp, error) {
 }
 
 // computeExternalURL computes a sanitized external URL from a raw input. It infers unset
-// URL parts from the OS and the given listen address.
-func computeExternalURL(u, listenAddr string) (*url.URL, error) {
+// URL parts from the OS and the given listen address. When u is empty, the scheme of the
+// inferred URL is set to https if webConfigFile configures TLS.
+func computeExternalURL(u, listenAddr, webConfigFile string) (*url.URL, error) {
 	if u == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
@@ -1803,7 +1805,11 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 		if err != nil {
 			return nil, err
 		}
-		u = fmt.Sprintf("http://%s:%s/", hostname, port)
+		scheme := "http"
+		if webConfigHasTLSServerConfig(webConfigFile) {
+			scheme = "https"
+		}
+		u = fmt.Sprintf("%s://%s:%s/", scheme, hostname, port)
 	}
 
 	if startsOrEndsWithQuote(u) {
@@ -1822,6 +1828,29 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	eu.Path = ppref
 
 	return eu, nil
+}
+
+// webConfigHasTLSServerConfig reports whether the web config file at path configures TLS,
+// i.e. contains a tls_server_config section that sets at least one TLS-enabling field, as
+// decided by exporter-toolkit's own TLSConfig.IsEnabled(). An empty path, or a file that
+// cannot be read or parsed as YAML, is treated as not configuring TLS; a definitive error
+// for such cases is reported later by toolkit_web.Validate.
+func webConfigHasTLSServerConfig(path string) bool {
+	if path == "" {
+		return false
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+
+	var webConfig toolkit_web.Config
+	if err := yaml.Unmarshal(data, &webConfig); err != nil {
+		return false
+	}
+
+	return webConfig.TLSConfig.IsEnabled()
 }
 
 // storagePathFsSize returns the filesystem size for path or its closest existing parent.
