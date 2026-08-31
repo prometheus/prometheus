@@ -1207,7 +1207,14 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		minValidTime = inOrderMaxTime
 	}
 
-	if initErr := db.head.Init(minValidTime); initErr != nil {
+	var initErr error
+	if headOpts.EnableFastStartup {
+		initErr = db.head.Init(minValidTime)
+	} else {
+		initErr = db.head.InitFastStartup(minValidTime)
+	}
+
+	if initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()
 		if e, ok := errors.AsType[*errLoadWbl](initErr); ok {
 			db.logger.Warn("Encountered WBL read error, attempting repair", "err", initErr)
