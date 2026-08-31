@@ -407,7 +407,7 @@
             alert: 'PrometheusHAGroupNotIngestingSamples',
             expr: |||
               max by (%(prometheusHAGroupLabels)s) (
-                rate(prometheus_tsdb_head_samples_appended_total{%(prometheusSelector)s}[5m])
+                sum without(type) (rate(prometheus_tsdb_head_samples_appended_total{%(prometheusSelector)s}[5m]))
               and
                 (
                   sum without(scrape_job) (prometheus_target_metadata_cache_entries{%(prometheusSelector)s}) > 0
@@ -457,10 +457,10 @@
             alert: 'PrometheusHAGroupCrashlooping',
             expr: |||
               (
-                  prometheus_tsdb_clean_start{%(prometheusSelector)s} == 0
-                and
-                  (
-                    count by (%(prometheusHAGroupLabels)s) (
+                   (
+                      count by (%(prometheusHAGroupLabels)s) (
+                      prometheus_tsdb_clean_start{%(prometheusSelector)s} == 0
+                      and
                       changes(process_start_time_seconds{%(prometheusSelector)s}[1h]) > 1
                     )
                     /

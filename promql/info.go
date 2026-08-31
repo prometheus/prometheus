@@ -38,13 +38,9 @@ var identifyingLabels = []string{"instance", "job"}
 
 // evalInfo implements the info PromQL function.
 func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
-	// The @ timestamp and offset on the first argument also govern at which time the info
-	// series are evaluated and matched (not just which series are selected), so that info(v @ T)
-	// enriches with the info series as of T at every step, independent of the evaluation time.
-	// They must be extracted before evaluating the first argument: evaluating a subquery
-	// replaces it in the expression with a materialized matrix selector that no longer carries
-	// the modifiers of the selectors inside the subquery.
-	nodeTimestamp, offset := infoSelectTimestampAndOffset(args[0])
+	// Extract modifiers before evaluating the first argument: evaluating a subquery replaces it
+	// with a materialized matrix selector that no longer carries the modifiers inside it.
+	nodeTimestamp, offset := infoSeriesSelectTimestampAndOffset(args[0])
 
 	val, annots := ev.eval(ctx, args[0])
 	mat := val.(Matrix)
@@ -113,35 +109,100 @@ func effectiveInfoNameMatchers(matchers []*labels.Matcher) []*labels.Matcher {
 	return []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, targetInfo)}
 }
 
-// infoSelectTimestampAndOffset returns the @ timestamp (nil if unset) and offset that govern
-// selection and evaluation of the info series, given expr (the first argument to an info call).
-// The reference time is derived from the first vector selector found in expr: the innermost @
-// timestamp among the selector and its enclosing subqueries anchors it (the evaluation time if
-// none is set), shifted by the offsets accumulated from the selector up to and including the
-// anchoring node.
-func infoSelectTimestampAndOffset(expr parser.Expr) (nodeTimestamp *int64, offset time.Duration) {
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
-		n, ok := node.(*parser.VectorSelector)
-		if !ok {
-			return nil
+type infoSeriesReference struct {
+	timestamp *int64
+	offset    time.Duration
+}
+
+func (r infoSeriesReference) equal(other infoSeriesReference) bool {
+	if r.timestamp == nil || other.timestamp == nil {
+		return r.timestamp == nil && other.timestamp == nil &&
+			durationMilliseconds(r.offset) == durationMilliseconds(other.offset)
+	}
+	return *r.timestamp-durationMilliseconds(r.offset) == *other.timestamp-durationMilliseconds(other.offset)
+}
+
+// infoSelectTimestampAndOffset returns the first vector-producing selector's reference and
+// whether every vector-producing path has a selector with the same effective reference time.
+func infoSelectTimestampAndOffset(expr parser.Expr) (nodeTimestamp *int64, offset time.Duration, uniform bool) {
+	var (
+		first         infoSeriesReference
+		found         bool
+		referenceFree bool
+	)
+	uniform = true
+
+	var inspect func(parser.Expr, []parser.Node) bool
+	inspect = func(expr parser.Expr, path []parser.Node) bool {
+		if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeMatrix {
+			return false
 		}
-		nodeTimestamp = n.Timestamp
-		offset = n.OriginalOffset
-		// Enclosing subqueries shift the selector's reference time: their offsets add up until
-		// an @ timestamp anchors it, making any modifiers further out irrelevant.
-		for i := len(path) - 1; nodeTimestamp == nil && i >= 0; i-- {
-			if sq, ok := path[i].(*parser.SubqueryExpr); ok {
-				offset += sq.OriginalOffset
-				nodeTimestamp = sq.Timestamp
+
+		if n, ok := expr.(*parser.VectorSelector); ok {
+			ref := infoSeriesReference{
+				timestamp: n.Timestamp,
+				offset:    n.OriginalOffset,
+			}
+			// Enclosing subqueries shift the selector's reference time: their offsets add up until
+			// an @ timestamp anchors it, making any modifiers further out irrelevant.
+			for i := len(path) - 1; ref.timestamp == nil && i >= 0; i-- {
+				if sq, ok := path[i].(*parser.SubqueryExpr); ok {
+					ref.offset += sq.OriginalOffset
+					ref.timestamp = sq.Timestamp
+				}
+			}
+
+			if !found {
+				first = ref
+				found = true
+			} else if !first.equal(ref) {
+				uniform = false
+			}
+			return true
+		}
+
+		path = append(path, expr)
+		if call, ok := expr.(*parser.Call); ok && call.Func.Name == "info" {
+			// The second argument is selector syntax, but it is not evaluated as a vector.
+			return inspect(call.Args[0], path)
+		}
+
+		hasSelector := false
+		for child := range parser.ChildrenIter(expr) {
+			childExpr, ok := child.(parser.Expr)
+			if ok && inspect(childExpr, path) {
+				hasSelector = true
 			}
 		}
-		return errors.New("end traversal")
-	})
+		if !hasSelector {
+			// Selector-free vectors use the evaluator time, which cannot be replaced by a
+			// selector reference from another vector-producing path.
+			referenceFree = true
+		}
+		return hasSelector
+	}
+
+	inspect(expr, nil)
+	if !found {
+		return nil, 0, false
+	}
+	return first.timestamp, first.offset, uniform && !referenceFree
+}
+
+// infoSeriesSelectTimestampAndOffset returns the reference used to select and
+// evaluate info series. Inputs without a shared reference use the evaluation time.
+func infoSeriesSelectTimestampAndOffset(expr parser.Expr) (*int64, time.Duration) {
+	nodeTimestamp, offset, uniformReference := infoSelectTimestampAndOffset(expr)
+	if !uniformReference {
+		return nil, 0
+	}
 	return nodeTimestamp, offset
 }
 
 // infoSelectHints calculates the storage.SelectHints for selecting info series, given the
-// @ timestamp (nil if unset) and offset that govern the first argument to the info call.
+// shared @ timestamp and offset of the info call's first argument. nodeTimestamp is nil both
+// when the first argument has no @ timestamp and when it has no single shared reference, in
+// which case info series are selected across the whole query range.
 func (ev *evaluator) infoSelectHints(nodeTimestamp *int64, offset time.Duration) storage.SelectHints {
 	offsetMs := durationMilliseconds(offset)
 

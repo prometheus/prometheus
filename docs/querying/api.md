@@ -839,6 +839,36 @@ curl http://localhost:9090/api/v1/scrape_pools
 
 *New in v2.42*
 
+### Scrape pool configuration
+
+This endpoint is **experimental** and might change in the future. It is
+currently intended for use by Prometheus' own web UI.
+
+The following endpoint returns the effective configuration for a scrape pool.
+This includes scrape configurations loaded through `scrape_config_files`.
+Authentication credentials and other secrets are redacted.
+
+The `scrapePool` query parameter is required and must contain the name of a
+configured scrape pool.
+
+```
+GET /api/v1/scrape_pools/config?scrapePool=<scrape_pool_name>
+```
+
+```bash
+curl -G http://localhost:9090/api/v1/scrape_pools/config \
+  --data-urlencode 'scrapePool=prometheus'
+```
+
+```json
+{
+  "status": "success",
+  "data": {
+    "yaml": "job_name: prometheus\nscrape_interval: 15s\nscrape_timeout: 10s\nmetrics_path: /metrics\nscheme: http\n"
+  }
+}
+```
+
 ## Targets
 
 The following endpoint returns an overview of the current state of the
@@ -1838,6 +1868,14 @@ Enable the remote write receiver by setting
 endpoint is `/api/v1/write`. Find more details [here](../storage.md#overview).
 
 *New in v2.33*
+
+## Remote Read
+
+`POST /api/v1/read`
+
+Prometheus exposes a remote read endpoint that allows external systems (such as Thanos) to read data from the TSDB.
+
+For more details, see the [Remote Read API documentation](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) and the guide on [Remote Endpoints and Storage](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage).
 
 ## OTLP Receiver
 
