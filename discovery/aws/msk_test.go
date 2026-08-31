@@ -662,6 +662,85 @@ func TestMSKDiscoveryRefresh(t *testing.T) {
 			},
 		},
 		{
+			name: "ProvisionedClusterWithoutCustomConfiguration",
+			mskData: &mskDataStore{
+				region: "us-west-2",
+				clusters: []types.Cluster{
+					{
+						ClusterName:    strptr("no-monitoring-cluster"),
+						ClusterArn:     strptr("arn:aws:kafka:us-west-2:123456789012:cluster/no-monitoring-cluster/ghi-789"),
+						State:          types.ClusterStateActive,
+						ClusterType:    types.ClusterTypeProvisioned,
+						CurrentVersion: strptr("1.2.3"),
+						Provisioned: &types.Provisioned{
+							CurrentBrokerSoftwareInfo: &types.BrokerSoftwareInfo{
+								KafkaVersion: strptr("2.8.1"),
+							},
+							OpenMonitoring: &types.OpenMonitoringInfo{
+								Prometheus: &types.PrometheusInfo{
+									JmxExporter: &types.JmxExporterInfo{
+										EnabledInBroker: aws.Bool(true),
+									},
+									NodeExporter: &types.NodeExporterInfo{
+										EnabledInBroker: aws.Bool(true),
+									},
+								},
+							},
+						},
+					},
+				},
+				nodes: map[string][]types.NodeInfo{
+					"arn:aws:kafka:us-west-2:123456789012:cluster/no-monitoring-cluster/ghi-789": {
+						{
+							NodeARN:            strptr("arn:aws:kafka:us-west-2:123456789012:node/broker-3"),
+							AddedToClusterTime: strptr("2023-01-01T00:00:00Z"),
+							InstanceType:       strptr("kafka.m5.large"),
+							BrokerNodeInfo: &types.BrokerNodeInfo{
+								BrokerId:           aws.Float64(3),
+								ClientSubnet:       strptr("subnet-12345"),
+								ClientVpcIpAddress: strptr("10.0.3.100"),
+								Endpoints:          []string{"b-3.no-monitoring-cluster.ghi789.kafka.us-west-2.amazonaws.com"},
+								AttachedENIId:      strptr("eni-12345"),
+							},
+						},
+					},
+				},
+			},
+			config: &MSKSDConfig{
+				Region:             "us-west-2",
+				Port:               80,
+				RequestConcurrency: 10,
+				Clusters:           []string{"arn:aws:kafka:us-west-2:123456789012:cluster/no-monitoring-cluster/ghi-789"},
+			},
+			expected: []*targetgroup.Group{
+				{
+					Source: "us-west-2",
+					Targets: []model.LabelSet{
+						{
+							model.AddressLabel:                        model.LabelValue("b-3.no-monitoring-cluster.ghi789.kafka.us-west-2.amazonaws.com:80"),
+							"__meta_msk_cluster_name":                 model.LabelValue("no-monitoring-cluster"),
+							"__meta_msk_cluster_arn":                  model.LabelValue("arn:aws:kafka:us-west-2:123456789012:cluster/no-monitoring-cluster/ghi-789"),
+							"__meta_msk_cluster_state":                model.LabelValue("ACTIVE"),
+							"__meta_msk_cluster_type":                 model.LabelValue("PROVISIONED"),
+							"__meta_msk_cluster_version":              model.LabelValue("1.2.3"),
+							"__meta_msk_cluster_jmx_exporter_enabled": model.LabelValue("true"),
+							"__meta_msk_cluster_kafka_version":        model.LabelValue("2.8.1"),
+							"__meta_msk_node_type":                    model.LabelValue("BROKER"),
+							"__meta_msk_node_arn":                     model.LabelValue("arn:aws:kafka:us-west-2:123456789012:node/broker-3"),
+							"__meta_msk_node_added_time":              model.LabelValue("2023-01-01T00:00:00Z"),
+							"__meta_msk_node_instance_type":           model.LabelValue("kafka.m5.large"),
+							"__meta_msk_node_attached_eni":            model.LabelValue("eni-12345"),
+							"__meta_msk_broker_id":                    model.LabelValue("3"),
+							"__meta_msk_broker_client_subnet":         model.LabelValue("subnet-12345"),
+							"__meta_msk_broker_client_vpc_ip":         model.LabelValue("10.0.3.100"),
+							"__meta_msk_broker_endpoint_index":        model.LabelValue("0"),
+							"__meta_msk_broker_node_exporter_enabled": model.LabelValue("true"),
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "NoClustersWithEmptyClustersConfig",
 			mskData: &mskDataStore{
 				region:   "us-east-1",

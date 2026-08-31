@@ -642,7 +642,10 @@ const funcDocs: Record<string, React.ReactNode> = {
           Return an empty vector if <code>min &gt; max</code>
         </li>
         <li>
-          Float samples are clamped to <code>NaN</code> if <code>min</code> or <code>max</code> is <code>NaN</code>
+          The function returns <code>NaN</code> if <code>min</code> or <code>max</code> is <code>NaN</code>
+        </li>
+        <li>
+          Float samples are unchanged if <code>min</code> is <code>-Inf</code> and <code>max</code> is <code>+Inf</code>
         </li>
       </ul>
     </>
@@ -653,6 +656,20 @@ const funcDocs: Record<string, React.ReactNode> = {
         <code>clamp_max(v instant-vector, max scalar)</code> clamps the values of all float samples in <code>v</code> to
         have an upper limit of <code>max</code>. Histogram samples in the input vector are ignored silently.
       </p>
+
+      <p>Special cases:</p>
+
+      <ul>
+        <li>
+          The function returns <code>NaN</code> if the <code>max</code> argument is <code>NaN</code>
+        </li>
+        <li>
+          Float samples are unchanged if <code>max</code> is <code>+Inf</code>
+        </li>
+        <li>
+          All float samples are set to <code>-Inf</code> if <code>max</code> is <code>-Inf</code>
+        </li>
+      </ul>
     </>
   ),
   clamp_min: (
@@ -661,6 +678,20 @@ const funcDocs: Record<string, React.ReactNode> = {
         <code>clamp_min(v instant-vector, min scalar)</code> clamps the values of all float samples in <code>v</code> to
         have a lower limit of <code>min</code>. Histogram samples in the input vector are ignored silently.
       </p>
+
+      <p>Special cases:</p>
+
+      <ul>
+        <li>
+          The function returns <code>NaN</code> if the <code>min</code> argument is <code>NaN</code>
+        </li>
+        <li>
+          Float samples are unchanged if <code>min</code> is <code>-Inf</code>
+        </li>
+        <li>
+          All float samples are set to <code>+Inf</code> if <code>min</code> is <code>+Inf</code>
+        </li>
+      </ul>
     </>
   ),
   cos: (
