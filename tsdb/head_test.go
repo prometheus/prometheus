@@ -24,7 +24,6 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -1348,7 +1347,7 @@ func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 	}
 }
 
-func TestHead_ActiveAppenders(t *testing.T) {
+func TestHead_AppendersMetrics(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
 
 	require.NoError(t, head.Init(0))
@@ -1356,21 +1355,26 @@ func TestHead_ActiveAppenders(t *testing.T) {
 	// First rollback with no samples.
 	app := head.Appender(context.Background())
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Then commit with no samples.
 	app = head.Appender(context.Background())
 	require.NoError(t, app.Commit())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Now rollback with one sample.
 	app = head.Appender(context.Background())
 	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
 	require.NoError(t, err)
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Now commit with one sample.
 	app = head.Appender(context.Background())
@@ -1378,6 +1382,7 @@ func TestHead_ActiveAppenders(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 4.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 }
 
 func TestHead_RaceBetweenSeriesCreationAndGC(t *testing.T) {
@@ -1414,6 +1419,96 @@ func TestHead_RaceBetweenSeriesCreationAndGC(t *testing.T) {
 	}
 
 	require.Equal(t, totalSeries, int(head.NumSeries()))
+}
+
+func TestHead_RaceBetweenExistingSeriesAppendAndGC(t *testing.T) {
+	// Unlike TestHead_RaceBetweenSeriesCreationAndGC above, this covers appends to a
+	// series that already exists in the head: Append() looks the series up, releases the
+	// stripe lock and only afterwards locks the series to mark it as pending commit. A
+	// gc() in between removes the series from the head, so the samples appended to it
+	// afterwards are lost even though Append() and Commit() report success.
+	// See https://github.com/prometheus/prometheus/issues/8365.
+	const (
+		totalSeries = 10_000
+		rounds      = 40
+		appenders   = 16
+		firstTs     = int64(1_000_000)
+		tsStep      = int64(10_000)
+	)
+
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	require.NoError(t, head.Init(0))
+
+	ctx := context.Background()
+	series := make([]labels.Labels, totalSeries)
+	for i := range series {
+		series[i] = labels.FromStrings("foo", strconv.Itoa(i))
+	}
+	refs := make([]storage.SeriesRef, totalSeries)
+
+	app := head.Appender(ctx)
+	for i := range series {
+		ref, err := app.Append(0, series[i], firstTs, 1)
+		require.NoError(t, err)
+		refs[i] = ref
+	}
+	require.NoError(t, app.Commit())
+	require.Equal(t, totalSeries, int(head.NumSeries()))
+
+	for round := int64(1); round <= rounds; round++ {
+		ts := firstTs + round*tsStep
+
+		// Emulate the head truncation that makes existing series collectable in
+		// production (see Head.truncateMemory): every series only holds samples from
+		// the previous round, so gc() drops their chunks and then the series
+		// themselves - unless an appender marked them as pending commit in time.
+		head.minTime.Store(ts)
+		head.minValidTime.Store(ts)
+
+		done := atomic.NewBool(false)
+		var wg sync.WaitGroup
+		for a := range appenders {
+			wg.Add(1)
+			go func(a int) {
+				defer wg.Done()
+				app := head.Appender(ctx)
+				defer func() {
+					if err := app.Commit(); err != nil {
+						t.Errorf("Failed to commit: %v", err)
+					}
+				}()
+				for i := a; i < totalSeries; i += appenders {
+					// Append by reference, like the scrape loop does for series it has seen before.
+					ref, err := app.Append(refs[i], series[i], ts, 1)
+					if err != nil {
+						t.Errorf("Failed to append: %v", err)
+						return
+					}
+					refs[i] = ref
+				}
+			}(a)
+		}
+		go func() {
+			wg.Wait()
+			done.Store(true)
+		}()
+
+		// Don't check the atomic.Bool on all iterations in order to perform more gc iterations and make the race condition more likely.
+		for i := 1; i%4 != 0 || !done.Load(); i++ {
+			head.gc()
+		}
+
+		// Every Append() reported success, so no sample may have been dropped: each
+		// series is either the one that was looked up or the one that replaced it after
+		// being collected, but it has to be in the head, holding the sample.
+		require.Equal(t, totalSeries, int(head.NumSeries()), "round %d", round)
+	}
+
+	for _, lset := range series {
+		s := head.series.getByHash(lset.Hash(), lset)
+		require.NotNil(t, s, "series %s is not in the head", lset)
+		require.NotNil(t, s.headChunks, "series %s holds no sample", lset)
+	}
 }
 
 func TestHead_CanGarbagecollectSeriesCreatedWithoutSamples(t *testing.T) {
@@ -1859,6 +1954,122 @@ func TestMemSeries_truncateChunks_scenarios(t *testing.T) {
 		require.Equal(t, chunks.HeadChunkID(2), s.firstChunkID)
 		require.Equal(t, 3, s.headChunks.len())
 		require.Equal(t, uint32(3), s.headChunkCount.Load(), "truncation re-syncs the counter from the walk")
+	})
+}
+
+func TestOOOTruncateChunksBefore_Wrap(t *testing.T) {
+	tests := []struct {
+		name               string
+		firstOOOChunkID    chunks.HeadChunkID
+		numOOOChunks       int
+		hasOOOHeadChunk    bool
+		truncateN          int
+		expFirstOOOChunkID chunks.HeadChunkID
+		expOOONil          bool
+		expOOOMmappedLen   int
+	}{
+		{
+			name:               "wrap past zero with remaining chunks",
+			firstOOOChunkID:    chunks.HeadChunkID(oooChunkIDMask - 3),
+			numOOOChunks:       5,
+			truncateN:          4,
+			expFirstOOOChunkID: 1,
+			expOOOMmappedLen:   1,
+		},
+		{
+			name:            "truncate all OOO chunks, no head chunk, ooo becomes nil",
+			firstOOOChunkID: chunks.HeadChunkID(oooChunkIDMask - 3),
+			numOOOChunks:    5,
+			truncateN:       5,
+			expOOONil:       true,
+		},
+		{
+			name:               "truncate all mmapped, head chunk keeps ooo alive",
+			firstOOOChunkID:    chunks.HeadChunkID(oooChunkIDMask - 1),
+			numOOOChunks:       3,
+			hasOOOHeadChunk:    true,
+			truncateN:          3,
+			expFirstOOOChunkID: 2,
+			expOOOMmappedLen:   0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, chunkDiskMapper.Close()) })
+
+			series := newMemSeries(labels.EmptyLabels(), 1, 0, true, false)
+			series.ooo = &memSeriesOOOFields{firstOOOChunkID: tc.firstOOOChunkID}
+
+			refs := make([]chunks.ChunkDiskMapperRef, tc.numOOOChunks)
+			for i := 0; i < tc.numOOOChunks; i++ {
+				ref := chunkDiskMapper.WriteChunk(series.ref, int64(i*100), int64(i*100+99), chunkenc.NewXORChunk(), true, handleChunkWriteError)
+				refs[i] = ref
+				series.ooo.oooMmappedChunks = append(series.ooo.oooMmappedChunks, &mmappedChunk{
+					ref: ref, minTime: int64(i * 100), maxTime: int64(i*100 + 99),
+				})
+			}
+
+			if tc.hasOOOHeadChunk {
+				series.ooo.oooHeadChunk = &oooHeadChunk{
+					chunk:   NewOOOChunk(),
+					minTime: int64(tc.numOOOChunks * 100),
+					maxTime: int64(tc.numOOOChunks*100 + 99),
+				}
+			}
+
+			minOOOMmapRef := refs[tc.truncateN-1]
+			series.truncateChunksBefore(0, minOOOMmapRef)
+
+			if tc.expOOONil {
+				require.Nil(t, series.ooo, "ooo should be nil after truncating all chunks")
+			} else {
+				require.NotNil(t, series.ooo, "ooo should not be nil")
+				require.Equal(t, tc.expFirstOOOChunkID, series.ooo.firstOOOChunkID, "firstOOOChunkID mismatch after wrap")
+				require.Len(t, series.ooo.oooMmappedChunks, tc.expOOOMmappedLen, "oooMmappedChunks length mismatch")
+			}
+		})
+	}
+}
+
+func TestPushHeadChunk_PanicsAtIDSpaceBound(t *testing.T) {
+	s := newMemSeries(labels.FromStrings("a", "b"), 1, 0, true, false)
+	s.headChunkCount.Store(oooChunkIDMask - 1)
+
+	require.Panics(t, func() {
+		s.pushHeadChunk(&memChunk{
+			chunk:   chunkenc.NewXORChunk(),
+			minTime: 0,
+			maxTime: 0,
+		})
+	})
+}
+
+func TestAppendHistogramLayoutChange_PanicsAtIDSpaceBound(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	l := labels.FromStrings("l", "v1")
+
+	app := head.Appender(context.Background())
+	h := tsdbutil.GenerateTestHistogram(0)
+	_, err := app.AppendHistogram(0, l, 0, h, nil)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	ms, _, err := head.getOrCreate(l.Hash(), l, false)
+	require.NoError(t, err)
+	ms.Lock()
+	ms.headChunkCount.Store(oooChunkIDMask - 1)
+	ms.Unlock()
+
+	h2 := h.Copy()
+	h2.Schema++
+	require.Panics(t, func() {
+		app := head.Appender(context.Background())
+		_, _ = app.AppendHistogram(0, l, 1, h2, nil)
+		_ = app.Commit()
 	})
 }
 
@@ -5005,8 +5216,8 @@ func TestChunkSnapshot(t *testing.T) {
 				files, err := os.ReadDir(head.opts.ChunkDirRoot)
 				require.NoError(t, err)
 				snapshots := 0
-				for i := len(files) - 1; i >= 0; i-- {
-					fi := files[i]
+				for _, v := range slices.Backward(files) {
+					fi := v
 					if strings.HasPrefix(fi.Name(), chunkSnapshotPrefix) {
 						snapshots++
 						require.Equal(t, chunkSnapshotDir(wlast, woffset), fi.Name())
@@ -5905,8 +6116,8 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 
 // TestAppendHistogramErrorDoesNotSetPendingCommit verifies that when
 // AppendHistogram fails with a sample-validation error (e.g. out-of-order),
-// the existing memSeries's pendingCommit flag is not left set to true.
-// A stuck pendingCommit flag keeps the series alive across head GC even
+// the existing memSeries's pending state is not left set.
+// Stuck pending state keeps the series alive across head GC even
 // though no samples are pending for it.
 func TestAppendHistogramErrorDoesNotSetPendingCommit(t *testing.T) {
 	for _, tc := range []struct {
@@ -5933,14 +6144,14 @@ func TestAppendHistogramErrorDoesNotSetPendingCommit(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, ms)
 			ms.Lock()
-			pc := ms.pendingCommit
+			pc := ms.hasPendingCommit()
 			ms.Unlock()
-			require.False(t, pc, "pendingCommit should be cleared after a successful commit")
+			require.False(t, pc, "pending state should be cleared after a successful commit")
 
 			// Attempt an out-of-order append: same series, earlier timestamp,
 			// OOO time window disabled. appendableHistogram returns
 			// ErrOutOfOrderSample, so the sample is never recorded in the
-			// appender's batch and Commit/Rollback never clears pendingCommit
+			// appender's batch and Commit/Rollback never clears pending state
 			// for this series.
 			app = head.Appender(context.Background())
 			_, err = app.AppendHistogram(0, lbls, 100, tc.h, tc.fh)
@@ -5948,9 +6159,9 @@ func TestAppendHistogramErrorDoesNotSetPendingCommit(t *testing.T) {
 			require.NoError(t, app.Rollback())
 
 			ms.Lock()
-			pc = ms.pendingCommit
+			pc = ms.hasPendingCommit()
 			ms.Unlock()
-			require.False(t, pc, "pendingCommit should remain false after a failed AppendHistogram")
+			require.False(t, pc, "pending state should remain clear after a failed AppendHistogram")
 		})
 	}
 }
@@ -7225,9 +7436,11 @@ func stripeSeriesWithCollidingSeries(t *testing.T) (*stripeSeries, *memSeries, *
 	lbls1, lbls2 := labelsWithHashCollision()
 	ms1 := memSeries{
 		lset: lbls1,
+		ref:  1,
 	}
 	ms2 := memSeries{
 		lset: lbls2,
+		ref:  2,
 	}
 	hash := lbls1.Hash()
 	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
@@ -7256,16 +7469,59 @@ func TestStripeSeries_getOrSet(t *testing.T) {
 }
 
 func TestStripeSeries_gc(t *testing.T) {
-	s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
-	hash := ms1.lset.Hash()
+	t.Run("marks collected series", func(t *testing.T) {
+		s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
+		hash := ms1.lset.Hash()
 
-	s.gc(0, 0)
+		s.gc(0, 0)
 
-	// Verify that we can get neither ms1 nor ms2 after gc-ing corresponding series
-	got := s.getByHash(hash, ms1.lset)
-	require.Nil(t, got)
-	got = s.getByHash(hash, ms2.lset)
-	require.Nil(t, got)
+		// Verify that we can get neither ms1 nor ms2 after garbage collection.
+		require.Nil(t, s.getByHash(hash, ms1.lset))
+		require.Nil(t, s.getByHash(hash, ms2.lset))
+		ms1.Lock()
+		require.True(t, ms1.isGCed())
+		ms1.Unlock()
+		ms2.Lock()
+		require.True(t, ms2.isGCed())
+		ms2.Unlock()
+	})
+
+	t.Run("keeps series until all reservations are released", func(t *testing.T) {
+		lset := labels.FromStrings("a", "1")
+		series := newMemSeries(lset, 1, 0, defaultIsolationDisabled, false)
+		series.Lock()
+		series.markPendingCommit()
+		series.markPendingCommit()
+		require.True(t, series.unmarkPendingCommit())
+		require.Equal(t, uint32(1), series.pendingCommitCount())
+		series.Unlock()
+
+		s := newStripeSeries(1, noopSeriesLifecycleCallback{})
+		got, created := s.setUnlessAlreadySet(lset.Hash(), lset, series)
+		require.True(t, created)
+		require.Same(t, series, got)
+
+		deleted, _, _, _, _, _, _, _, _ := s.gc(0, 0)
+		require.Empty(t, deleted)
+		require.Same(t, series, s.getByID(series.ref))
+
+		series.Lock()
+		require.True(t, series.unmarkPendingCommit())
+		series.Unlock()
+		deleted, _, _, _, _, _, _, _, _ = s.gc(0, 0)
+		require.Contains(t, deleted, storage.SeriesRef(series.ref))
+		require.Nil(t, s.getByID(series.ref))
+	})
+
+	t.Run("underflow preserves garbage-collected flag", func(t *testing.T) {
+		series := newMemSeries(labels.FromStrings("a", "1"), 1, 0, defaultIsolationDisabled, false)
+		series.Lock()
+		t.Cleanup(series.Unlock)
+		series.setGCed()
+		require.False(t, series.unmarkPendingCommit())
+		require.Zero(t, series.pendingCommitCount())
+		require.True(t, series.isGCed())
+	})
 }
 
 func TestPostingsCardinalityStats(t *testing.T) {
@@ -7690,6 +7946,63 @@ func TestHeadAppender_AppendSTZeroSample(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("rejected ST injected zero does not retain series", func(t *testing.T) {
+		h, _ := newTestHead(t, DefaultBlockDuration, compression.None, true)
+		lset := labels.FromStrings("a", "1")
+
+		baseline := h.Appender(t.Context())
+		ref, err := baseline.Append(0, lset, 200, 2)
+		require.NoError(t, err)
+		require.NoError(t, baseline.Commit())
+
+		app := h.Appender(context.Background())
+		_, err = app.AppendSTZeroSample(ref, lset, 300, 100)
+		require.ErrorIs(t, err, storage.ErrOutOfOrderST)
+		require.NoError(t, app.Rollback())
+
+		require.NoError(t, h.Truncate(201))
+		require.Zero(t, h.NumSeries(), "the rejected sample must not protect the collectable series")
+		require.Zero(t, prom_testutil.ToFloat64(h.metrics.pendingCommitUnderflow))
+	})
+}
+
+// TestHeadAppender_PendingCommitUnderflowIsReportedNotFatal verifies that releasing
+// a pending-sample reservation that is not held is reported and survivable. The
+// commit must still finish: panicking here would leave the series lock held, and
+// wrapping the count would corrupt the packed flag bits.
+func TestHeadAppender_PendingCommitUnderflowIsReportedNotFatal(t *testing.T) {
+	h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+	lset := labels.FromStrings("a", "1")
+
+	app := h.Appender(t.Context())
+	ref, err := app.Append(0, lset, 100, 1)
+	require.NoError(t, err)
+
+	// Drop both reservations the append took, so every release during Commit
+	// underflows: one for the queued sample, one for the created series.
+	series := h.series.getByID(chunks.HeadSeriesRef(ref))
+	require.NotNil(t, series)
+	series.Lock()
+	require.Equal(t, uint32(2), series.pendingCommitCount())
+	require.True(t, series.unmarkPendingCommit())
+	require.True(t, series.unmarkPendingCommit())
+	series.Unlock()
+
+	require.NotPanics(t, func() { require.NoError(t, app.Commit()) })
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(h.metrics.pendingCommitUnderflow))
+
+	series.Lock()
+	require.Zero(t, series.pendingCommitCount(), "the count must clamp rather than wrap")
+	require.False(t, series.isGCed(), "underflow must not set packed flag bits")
+	series.Unlock()
+
+	// The sample is still committed; the accounting bug must not lose data on its own.
+	q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	require.Equal(t,
+		map[string][]chunks.Sample{`{a="1"}`: {sample{t: 100, f: 1}}},
+		query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "1")))
 }
 
 func TestHeadCompactableDoesNotCompactEmptyHead(t *testing.T) {
@@ -10007,10 +10320,6 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 	// the stripe and series locks, those locks must still be released. A leaked
 	// lock previously self-deadlocked the subsequent Head.Close() -> mmapHeadChunks().
 	t.Run("panic releases locks", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("forces a chunk-write failure by removing the open chunk directory, which Windows disallows while the ChunkDiskMapper holds the directory handle")
-		}
-
 		h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
 		require.NoError(t, h.Init(0))
 
@@ -10030,10 +10339,13 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		require.NotNil(t, s)
 		require.GreaterOrEqual(t, s.headChunkCount.Load(), uint32(2), "need >=2 head chunks pending mmap")
 
-		// Removing the chunk directory makes the next segment cut fail, so
-		// handleChunkWriteError panics inside mmapChunks. The chunk-write queue is
-		// synchronous by default, so the panic propagates out of mmapHeadChunks.
-		require.NoError(t, os.RemoveAll(mmappedChunksDir(h.opts.ChunkDirRoot)))
+		// Break the chunk write path in an OS agnostic way: dropping a segment
+		// file with a far higher sequence number into the head chunks directory
+		// makes the next cut file's sequence differ from the one the chunk
+		// reference was handed out for, which fails the write.
+		rogue := filepath.Join(mmappedChunksDir(h.opts.ChunkDirRoot), "000100")
+		require.NoError(t, os.WriteFile(rogue, nil, 0o666))
+
 		// newTestHead's cleanup calls Head.Close() -> mmapHeadChunks(), which would
 		// otherwise re-trigger the panic on the now-missing directory. Closing the
 		// mapper first makes WriteChunk return ErrChunkDiskMapperClosed, which
@@ -10435,4 +10747,157 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		h.series.mmapReady[stripeD].Add(-1)
 		requireCounterConsistent("final state")
 	})
+}
+
+func TestQueryOOOHeadDuringTruncateAcrossWrap(t *testing.T) {
+	const maxT int64 = 6000
+
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = maxT
+	opts.MinBlockDuration = maxT / 2
+
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	l := labels.FromStrings("a", "b")
+	app := db.Appender(context.Background())
+
+	// In-order samples.
+	ref, err := app.Append(0, l, 0, 0)
+	require.NoError(t, err)
+	for i := int64(100); i < maxT; i += 100 {
+		_, err = app.Append(ref, l, i, float64(i))
+		require.NoError(t, err)
+	}
+	// OOO samples interleaved between in-order ones.
+	for i := int64(50); i < maxT; i += 100 {
+		_, err = app.Append(ref, l, i, float64(i))
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	// Seed firstOOOChunkID near the wrap boundary.
+	ms := db.head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.NotNil(t, ms)
+	ms.Lock()
+	require.NotNil(t, ms.ooo)
+	ms.ooo.firstOOOChunkID = chunks.HeadChunkID(oooChunkIDMask - 1)
+	ms.Unlock()
+
+	// Pre-truncation query.
+	q, err := db.Querier(0, maxT)
+	require.NoError(t, err)
+	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	require.True(t, ss.Next())
+	it := ss.At().Iterator(nil)
+	var preCount int
+	for it.Next() != chunkenc.ValNone {
+		preCount++
+	}
+	require.NoError(t, it.Err())
+	require.Positive(t, preCount, "pre-truncation query should return data")
+	require.NoError(t, q.Close())
+
+	// Compact, which triggers truncation and wraps firstOOOChunkID.
+	require.NoError(t, db.Compact(context.Background()))
+
+	// Post-truncation query.
+	q, err = db.Querier(0, maxT)
+	require.NoError(t, err)
+	ss = q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	require.True(t, ss.Next())
+	it = ss.At().Iterator(nil)
+	var postCount int
+	for it.Next() != chunkenc.ValNone {
+		postCount++
+	}
+	require.NoError(t, it.Err())
+	require.Positive(t, postCount, "post-truncation query should return data")
+	require.NoError(t, q.Close())
+}
+
+func TestOOORestartResetsFirstOOOChunkID(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOORestartResetsFirstOOOChunkID(t, scenario)
+		})
+	}
+}
+
+func testOOORestartResetsFirstOOOChunkID(t *testing.T, scenario sampleTypeScenario) {
+	dir := t.TempDir()
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.Snappy)
+	require.NoError(t, err)
+	oooWlog, err := wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, compression.Snappy)
+	require.NoError(t, err)
+
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = dir
+	opts.OutOfOrderCapMax.Store(30)
+	opts.OutOfOrderTimeWindow.Store(1000 * time.Minute.Milliseconds())
+
+	h, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, h.Init(0))
+
+	l := labels.FromStrings("foo", "bar")
+	appendSample := func(mins int64) {
+		app := h.Appender(context.Background())
+		_, _, err := scenario.appendFunc(app, l, mins*time.Minute.Milliseconds(), mins)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+
+	// In-order sample.
+	appendSample(200)
+
+	// OOO samples: 92 samples to create 3 mmapped chunks (cap=30).
+	for mins := int64(100); mins <= 191; mins++ {
+		appendSample(mins)
+	}
+
+	ms, ok, err := h.getOrCreate(l.Hash(), l, false)
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.NotNil(t, ms)
+	require.NotNil(t, ms.ooo)
+	require.NotEmpty(t, ms.ooo.oooMmappedChunks)
+
+	expMmapCount := len(ms.ooo.oooMmappedChunks)
+
+	// Seed firstOOOChunkID to a large value.
+	ms.Lock()
+	ms.ooo.firstOOOChunkID = chunks.HeadChunkID(oooChunkIDMask - 100)
+	ms.Unlock()
+
+	require.NoError(t, h.Close())
+
+	// Reopen.
+	wal, err = wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.Snappy)
+	require.NoError(t, err)
+	oooWlog, err = wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, compression.Snappy)
+	require.NoError(t, err)
+	h, err = NewHead(nil, nil, wal, oooWlog, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, h.Init(0))
+
+	ms, ok, err = h.getOrCreate(l.Hash(), l, false)
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.NotNil(t, ms)
+	require.NotNil(t, ms.ooo)
+
+	// firstOOOChunkID resets to 0 after replay.
+	require.Equal(t, chunks.HeadChunkID(0), ms.ooo.firstOOOChunkID)
+
+	// Verify mmapped chunks are still accessible.
+	require.Len(t, ms.ooo.oooMmappedChunks, expMmapCount)
+	for _, m := range ms.ooo.oooMmappedChunks {
+		chk, err := h.chunkDiskMapper.Chunk(m.ref)
+		require.NoError(t, err)
+		require.Equal(t, int(m.numSamples), chk.NumSamples())
+	}
+
+	require.NoError(t, h.Close())
 }

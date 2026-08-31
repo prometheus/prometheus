@@ -18,9 +18,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/web/api/testhelpers"
 )
+
+type scrapeConfigTargetRetriever struct {
+	*testhelpers.FakeTargetRetriever
+	scrapeConfig *config.ScrapeConfig
+}
+
+func (r *scrapeConfigTargetRetriever) ScrapePoolConfig(string) (*config.ScrapeConfig, error) {
+	return r.scrapeConfig, nil
+}
 
 // TODO: Generate automated tests from OpenAPI spec to validate API responses.
 
@@ -75,6 +85,30 @@ func TestAPIEmpty(t *testing.T) {
 		testhelpers.GET(t, api, "/api/v1/targets").
 			RequireSuccess().
 			RequireJSONPathExists("$.data.activeTargets")
+	})
+
+	t.Run("GET /api/v1/scrape_pools/config requires a pool", func(t *testing.T) {
+		testhelpers.GET(t, api, "/api/v1/scrape_pools/config").
+			RequireStatusCode(400).
+			RequireError().
+			RequireEquals("$.errorType", "bad_data")
+	})
+
+	t.Run("GET /api/v1/scrape_pools/config returns effective config", func(t *testing.T) {
+		targetRetriever := &scrapeConfigTargetRetriever{
+			FakeTargetRetriever: testhelpers.NewEmptyTargetRetriever(),
+			scrapeConfig:        &config.ScrapeConfig{JobName: "prometheus"},
+		}
+		configAPI := newTestAPI(t, testhelpers.APIConfig{
+			TargetRetriever: testhelpers.NewLazyLoader(func() testhelpers.TargetRetriever {
+				return targetRetriever
+			}),
+		})
+
+		testhelpers.GET(t, configAPI, "/api/v1/scrape_pools/config", "scrapePool", "prometheus").
+			RequireSuccess().
+			ValidateOpenAPI().
+			RequireJSONPathExists("$.data.yaml")
 	})
 
 	t.Run("GET /api/v1/rules returns success with empty groups", func(t *testing.T) {

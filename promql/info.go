@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
@@ -37,6 +38,10 @@ var identifyingLabels = []string{"instance", "job"}
 
 // evalInfo implements the info PromQL function.
 func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
+	// Extract modifiers before evaluating the first argument: evaluating a subquery replaces it
+	// with a materialized matrix selector that no longer carries the modifiers inside it.
+	nodeTimestamp, offset := infoSeriesSelectTimestampAndOffset(args[0])
+
 	val, annots := ev.eval(ctx, args[0])
 	mat := val.(Matrix)
 	// Map from data label name to matchers.
@@ -72,8 +77,8 @@ func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (par
 		}
 	}
 
-	selectHints := ev.infoSelectHints(args[0])
-	infoSeries, ws, err := ev.fetchInfoSeries(ctx, mat, ignoreSeries, dataLabelMatchers, selectHints)
+	selectHints := ev.infoSelectHints(nodeTimestamp, offset)
+	infoSeries, ws, err := ev.fetchInfoSeries(ctx, mat, ignoreSeries, dataLabelMatchers, selectHints, nodeTimestamp, offset)
 	if err != nil {
 		ev.error(err)
 	}
@@ -104,22 +109,102 @@ func effectiveInfoNameMatchers(matchers []*labels.Matcher) []*labels.Matcher {
 	return []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, targetInfo)}
 }
 
-// infoSelectHints calculates the storage.SelectHints for selecting info series, given expr (first argument to info call).
-func (ev *evaluator) infoSelectHints(expr parser.Expr) storage.SelectHints {
-	var nodeTimestamp *int64
-	var offset int64
-	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
-		switch n := node.(type) {
-		case *parser.VectorSelector:
-			if n.Timestamp != nil {
-				nodeTimestamp = n.Timestamp
-			}
-			offset = durationMilliseconds(n.OriginalOffset)
-			return errors.New("end traversal")
-		default:
-			return nil
+type infoSeriesReference struct {
+	timestamp *int64
+	offset    time.Duration
+}
+
+func (r infoSeriesReference) equal(other infoSeriesReference) bool {
+	if r.timestamp == nil || other.timestamp == nil {
+		return r.timestamp == nil && other.timestamp == nil &&
+			durationMilliseconds(r.offset) == durationMilliseconds(other.offset)
+	}
+	return *r.timestamp-durationMilliseconds(r.offset) == *other.timestamp-durationMilliseconds(other.offset)
+}
+
+// infoSelectTimestampAndOffset returns the first vector-producing selector's reference and
+// whether every vector-producing path has a selector with the same effective reference time.
+func infoSelectTimestampAndOffset(expr parser.Expr) (nodeTimestamp *int64, offset time.Duration, uniform bool) {
+	var (
+		first         infoSeriesReference
+		found         bool
+		referenceFree bool
+	)
+	uniform = true
+
+	var inspect func(parser.Expr, []parser.Node) bool
+	inspect = func(expr parser.Expr, path []parser.Node) bool {
+		if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeMatrix {
+			return false
 		}
-	})
+
+		if n, ok := expr.(*parser.VectorSelector); ok {
+			ref := infoSeriesReference{
+				timestamp: n.Timestamp,
+				offset:    n.OriginalOffset,
+			}
+			// Enclosing subqueries shift the selector's reference time: their offsets add up until
+			// an @ timestamp anchors it, making any modifiers further out irrelevant.
+			for i := len(path) - 1; ref.timestamp == nil && i >= 0; i-- {
+				if sq, ok := path[i].(*parser.SubqueryExpr); ok {
+					ref.offset += sq.OriginalOffset
+					ref.timestamp = sq.Timestamp
+				}
+			}
+
+			if !found {
+				first = ref
+				found = true
+			} else if !first.equal(ref) {
+				uniform = false
+			}
+			return true
+		}
+
+		path = append(path, expr)
+		if call, ok := expr.(*parser.Call); ok && call.Func.Name == "info" {
+			// The second argument is selector syntax, but it is not evaluated as a vector.
+			return inspect(call.Args[0], path)
+		}
+
+		hasSelector := false
+		for child := range parser.ChildrenIter(expr) {
+			childExpr, ok := child.(parser.Expr)
+			if ok && inspect(childExpr, path) {
+				hasSelector = true
+			}
+		}
+		if !hasSelector {
+			// Selector-free vectors use the evaluator time, which cannot be replaced by a
+			// selector reference from another vector-producing path.
+			referenceFree = true
+		}
+		return hasSelector
+	}
+
+	inspect(expr, nil)
+	if !found {
+		return nil, 0, false
+	}
+	return first.timestamp, first.offset, uniform && !referenceFree
+}
+
+// infoSeriesSelectTimestampAndOffset returns the reference used to select and
+// evaluate info series. Inputs without a shared reference use the evaluation time.
+func infoSeriesSelectTimestampAndOffset(expr parser.Expr) (*int64, time.Duration) {
+	nodeTimestamp, offset, uniformReference := infoSelectTimestampAndOffset(expr)
+	if !uniformReference {
+		return nil, 0
+	}
+	return nodeTimestamp, offset
+}
+
+// infoSelectHints calculates the storage.SelectHints for selecting info series, given the
+// shared @ timestamp and offset of the info call's first argument. nodeTimestamp is nil both
+// when the first argument has no @ timestamp and when it has no single shared reference, in
+// which case info series are selected across the whole query range.
+func (ev *evaluator) infoSelectHints(nodeTimestamp *int64, offset time.Duration) storage.SelectHints {
+	offsetMs := durationMilliseconds(offset)
 
 	start := ev.startTimestamp
 	end := ev.endTimestamp
@@ -132,8 +217,8 @@ func (ev *evaluator) infoSelectHints(expr parser.Expr) storage.SelectHints {
 	// because wo want to exclude samples that are precisely the
 	// lookback delta before the eval time.
 	start -= durationMilliseconds(ev.lookbackDelta) - 1
-	start -= offset
-	end -= offset
+	start -= offsetMs
+	end -= offsetMs
 
 	return storage.SelectHints{
 		Start: start,
@@ -146,7 +231,7 @@ func (ev *evaluator) infoSelectHints(expr parser.Expr) storage.SelectHints {
 // fetchInfoSeries fetches info series given matching identifying labels in mat.
 // Series in ignoreSeries are not fetched.
 // dataLabelMatchers may be mutated.
-func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeries map[uint64]struct{}, dataLabelMatchers map[string][]*labels.Matcher, selectHints storage.SelectHints) (Matrix, annotations.Annotations, error) {
+func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeries map[uint64]struct{}, dataLabelMatchers map[string][]*labels.Matcher, selectHints storage.SelectHints, atTimestamp *int64, offset time.Duration) (Matrix, annotations.Annotations, error) {
 	removeNameFromDataLabelMatchers := func() {
 		for name, ms := range dataLabelMatchers {
 			ms = slices.DeleteFunc(ms, func(m *labels.Matcher) bool {
@@ -228,7 +313,10 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 		return nil, ws, err
 	}
 
-	infoMat := ev.evalSeries(ctx, infoSeries, 0, true)
+	// Evaluate the info series at the @-pinned timestamp (when set) and shifted by the offset,
+	// so enrichment reflects the info series as of the time selected by the first argument's
+	// modifiers, consistently at every step, rather than the raw evaluation timestamp.
+	infoMat := ev.evalSeries(ctx, infoSeries, offset, true, atTimestamp)
 	return infoMat, ws, nil
 }
 
@@ -339,7 +427,7 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 				}
 				ss.ts = ts
 			} else {
-				ss = seriesAndTimestamp{Series{Metric: sample.Metric}, ts}
+				ss = seriesAndTimestamp{Series{Metric: sample.Metric, DropName: sample.DropName}, ts}
 			}
 			addToSeries(&ss.Series, enh.Ts, sample.F, sample.H, numSteps)
 			seriess[h] = ss
@@ -412,9 +500,10 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[u
 		if _, exists := ignoreSeries[hash]; exists {
 			// This series should not be enriched with info metric data labels.
 			enh.Out = append(enh.Out, Sample{
-				Metric: bs.Metric,
-				F:      bs.F,
-				H:      bs.H,
+				Metric:   bs.Metric,
+				F:        bs.F,
+				H:        bs.H,
+				DropName: bs.DropName,
 			})
 			continue
 		}
@@ -484,9 +573,10 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[u
 		})
 
 		enh.Out = append(enh.Out, Sample{
-			Metric: enh.lb.Labels(),
-			F:      bs.F,
-			H:      bs.H,
+			Metric:   enh.lb.Labels(),
+			F:        bs.F,
+			H:        bs.H,
+			DropName: bs.DropName,
 		})
 	}
 	return enh.Out, nil

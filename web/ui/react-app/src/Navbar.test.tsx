@@ -1,30 +1,35 @@
 import * as React from 'react';
-import { shallow } from 'enzyme';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import Navigation from './Navbar';
-import { NavItem, NavLink } from 'reactstrap';
 
-describe('Navbar should contain console Link', () => {
-  it('with non-empty consoleslink', () => {
-    const app = shallow(<Navigation consolesLink="/path/consoles" agentMode={false} />);
-    expect(
-      app.contains(
-        <NavItem>
-          <NavLink href="/path/consoles">Consoles</NavLink>
-        </NavItem>
-      )
-    ).toBeTruthy();
+const renderNavigation = (consolesLink: string | null): ReturnType<typeof render> =>
+  render(
+    <MemoryRouter initialEntries={['/graph']}>
+      <Navigation consolesLink={consolesLink} agentMode={false} />
+      <Routes>
+        <Route path="/status" element={<div data-testid="status-route" />} />
+      </Routes>
+    </MemoryRouter>
+  );
+
+describe('Navbar', () => {
+  it.each([
+    ['/path/consoles', '/path/consoles'],
+    [null, null],
+  ])('renders consoles link %s', (consolesLink, expectedHref) => {
+    renderNavigation(consolesLink);
+
+    const link = screen.queryByRole('link', { name: 'Consoles' });
+    expect(link?.getAttribute('href') ?? null).toBe(expectedHref);
   });
-});
 
-describe('Navbar should not contain consoles link', () => {
-  it('with empty string in consolesLink', () => {
-    const app = shallow(<Navigation consolesLink={null} agentMode={false} />);
-    expect(
-      app.contains(
-        <NavItem>
-          <NavLink>Consoles</NavLink>
-        </NavItem>
-      )
-    ).toBeFalsy();
+  it('opens the status dropdown and navigates with React Router', async () => {
+    renderNavigation(null);
+
+    fireEvent.click(screen.getByText('Status'));
+    fireEvent.click(screen.getByText('Runtime & Build Information'));
+
+    await waitFor(() => expect(screen.getByTestId('status-route')).toBeTruthy());
   });
 });

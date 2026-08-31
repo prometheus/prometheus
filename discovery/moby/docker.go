@@ -42,6 +42,8 @@ const (
 	dockerLabel                     = model.MetaLabelPrefix + "docker_"
 	dockerLabelContainerPrefix      = dockerLabel + "container_"
 	dockerLabelContainerID          = dockerLabelContainerPrefix + "id"
+	dockerLabelContainerImage       = dockerLabelContainerPrefix + "image"
+	dockerLabelContainerImageID     = dockerLabelContainerPrefix + "image_id"
 	dockerLabelContainerName        = dockerLabelContainerPrefix + "name"
 	dockerLabelContainerNetworkMode = dockerLabelContainerPrefix + "network_mode"
 	dockerLabelContainerLabelPrefix = dockerLabelContainerPrefix + "label_"
@@ -228,6 +230,14 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			dockerLabelContainerNetworkMode: c.HostConfig.NetworkMode,
 		}
 
+		if c.Image != "" {
+			commonLabels[dockerLabelContainerImage] = c.Image
+		}
+
+		if c.ImageID != "" {
+			commonLabels[dockerLabelContainerImageID] = c.ImageID
+		}
+
 		for k, v := range c.Labels {
 			ln := strutil.SanitizeLabelName(k)
 			commonLabels[dockerLabelContainerLabelPrefix+ln] = v
@@ -281,6 +291,8 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 				ipAddr := ""
 				if n.IPAddress.IsValid() {
 					ipAddr = n.IPAddress.String()
+				} else if n.GlobalIPv6Address.IsValid() {
+					ipAddr = n.GlobalIPv6Address.String()
 				}
 
 				labels := model.LabelSet{
@@ -316,6 +328,8 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 				ipAddr := ""
 				if n.IPAddress.IsValid() {
 					ipAddr = n.IPAddress.String()
+				} else if n.GlobalIPv6Address.IsValid() {
+					ipAddr = n.GlobalIPv6Address.String()
 				}
 
 				labels := model.LabelSet{

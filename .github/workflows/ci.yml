@@ -16,12 +16,12 @@ jobs:
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
-      image: quay.io/prometheus/golang-builder:1.26-base
+      image: quay.io/prometheus/golang-builder:1.27-base
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
+      - uses: prometheus/promci-setup@55bd31fe92710532260eb57c554f2697363285c5 # v0.2.2
         with:
           enable_npm: true
           cache_key_suffix: race
@@ -34,16 +34,16 @@ jobs:
     name: More Go tests
     runs-on: ubuntu-latest
     container:
-      image: quay.io/prometheus/golang-builder:1.26-base
+      image: quay.io/prometheus/golang-builder:1.27-base
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
+      - uses: prometheus/promci-setup@55bd31fe92710532260eb57c554f2697363285c5 # v0.2.2
         with:
           cache_key_suffix: more
       - run: go test --tags=dedupelabels ./...
-      - run: go test --tags=slicelabels -race ./cmd/prometheus ./model/textparse ./prompb/...
+      - run: go test --tags=slicelabels -race ./cmd/prometheus ./cmd/promtool/... ./model/textparse ./prompb/...
       - run: go test --tags=forcedirectio -race ./tsdb/
       - run: make protoc
       - run: make proto
@@ -53,12 +53,12 @@ jobs:
     name: Go tests for 32-bit x86
     runs-on: ubuntu-latest
     container:
-      image: quay.io/prometheus/golang-builder:1.26-base
+      image: quay.io/prometheus/golang-builder:1.27-base
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
+      - uses: prometheus/promci-setup@55bd31fe92710532260eb57c554f2697363285c5 # v0.2.2
         with:
           cache_key_suffix: "386"
       # NOTE(bwplotka): We limit concurrency to avoid issues around too many concurrent mmaps
@@ -89,30 +89,48 @@ jobs:
       matrix:
         lts_version: ${{ fromJSON(needs.list_lts_releases.outputs.versions) }}
     container:
-      image: quay.io/prometheus/golang-builder:1.26-base
+      image: quay.io/prometheus/golang-builder:1.27-base
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
+      - uses: prometheus/promci-setup@55bd31fe92710532260eb57c554f2697363285c5 # v0.2.2
         with:
           cache_key_suffix: upgrade
       - run: go test -v --race ./cmd/prometheus/ --test.version-upgrade=true --test.lts-version=${{ matrix.lts_version }} -run TestVersionUpgrade
 
+  list_oldest_go_version:
+    name: List the oldest supported Go version
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.go.outputs.versions }}
+    steps:
+      - id: go
+        # Upstream only supports the two latest minor releases, so the oldest
+        # supported one is the lowest version listed. Emit it as a
+        # single-element JSON array consumed by the matrix below.
+        run: |
+          versions=$(curl -sSf 'https://go.dev/dl/?mode=json' \
+            | jq -c '[[.[].version | ltrimstr("go") | split(".")[1] | tonumber] | min | "1.\(.)"]')
+          echo "versions=$versions" >> "$GITHUB_OUTPUT"
+
   test_go_oldest:
     name: Go tests with previous Go version
+    needs: list_oldest_go_version
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go_version: ${{ fromJSON(needs.list_oldest_go_version.outputs.versions) }}
     env:
       # Enforce the Go version.
       GOTOOLCHAIN: local
     container:
-      # The go version in this image should be N-1 wrt test_go.
-      image: quay.io/prometheus/golang-builder:1.25-base
+      image: quay.io/prometheus/golang-builder:${{ matrix.go_version }}-base
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
+      - uses: prometheus/promci-setup@55bd31fe92710532260eb57c554f2697363285c5 # v0.2.2
         with:
           enable_npm: false
           cache_key_suffix: oldest
@@ -120,26 +138,41 @@ jobs:
       # Don't run NPM build; don't run race-detector.
       - run: make test GO_ONLY=1 test-flags=""
 
+  test_go_oldest_status:
+    # Empty check with a stable name for branch protection rules, since
+    # test_go_oldest now runs as a matrix job.
+    name: Go tests with previous Go version
+    runs-on: ubuntu-latest
+    needs: [test_go_oldest]
+    if: always()
+    steps:
+      - name: Successful tests
+        if: ${{ !(contains(needs.*.result, 'failure')) && !(contains(needs.*.result, 'cancelled')) }}
+        run: exit 0
+      - name: Failing or cancelled tests
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
+
   test_ui:
     name: UI tests
     runs-on: ubuntu-latest
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
-      image: quay.io/prometheus/golang-builder:1.26-base
+      image: quay.io/prometheus/golang-builder:1.27-base
 
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
+      - uses: prometheus/promci-setup@55bd31fe92710532260eb57c554f2697363285c5 # v0.2.2
         with:
           enable_go: false
           enable_npm: true
       - run: make assets-tarball
       - run: make ui-lint
       - run: make ui-test
-      - uses: prometheus/promci-artifacts/save@f9a587dbc0b2c78a0c54f8ad1cde71ea29a4b76f # v0.1.0
+      - uses: prometheus/promci-artifacts/save@9ca3252d07f230d5f923452b4df5697eba4a5bee # v0.1.1
         with:
           directory: .tarballs
 
@@ -147,12 +180,12 @@ jobs:
     name: Go tests on Windows
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: 1.26.x
+          go-version: 1.27.x
       - run: |
           $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
           go test $TestTargets -vet=off -v
@@ -164,9 +197,9 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
-      image: quay.io/prometheus/golang-builder:1.26-base
+      image: quay.io/prometheus/golang-builder:1.27-base
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: go install ./cmd/promtool/.
@@ -184,12 +217,12 @@ jobs:
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
-      image: quay.io/prometheus/golang-builder:1.26-base
+      image: quay.io/prometheus/golang-builder:1.27-base
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
+      - uses: prometheus/promci-setup@55bd31fe92710532260eb57c554f2697363285c5 # v0.2.2
         with:
           enable_npm: false
           cache_key_suffix: compliance
@@ -215,15 +248,15 @@ jobs:
       matrix:
         thread: [ 0, 1, 2 ]
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prometheus/promci-artifacts/restore@f9a587dbc0b2c78a0c54f8ad1cde71ea29a4b76f # v0.1.0
+      - uses: prometheus/promci-artifacts/restore@9ca3252d07f230d5f923452b4df5697eba4a5bee # v0.1.1
       - name: Extract pre-built UI assets
         run: |
           mkdir -p .prebuilt-ui
           tar -xzvf .tarballs/prometheus-web-ui-*.tar.gz -C .prebuilt-ui
-      - uses: prometheus/promci/build@13941414d409d227afd67544e5d306827db5a1a2 # v0.8.5
+      - uses: prometheus/promci/build@370e8c15dcec50043cbe66f2f34633d9efc0a190 # v0.9.0
         with:
           checkout: false
           # Feed the restored UI assets into the crossbuild containers so make
@@ -252,15 +285,15 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prometheus/promci-artifacts/restore@f9a587dbc0b2c78a0c54f8ad1cde71ea29a4b76f # v0.1.0
+      - uses: prometheus/promci-artifacts/restore@9ca3252d07f230d5f923452b4df5697eba4a5bee # v0.1.1
       - name: Extract pre-built UI assets
         run: |
           mkdir -p .prebuilt-ui
           tar -xzvf .tarballs/prometheus-web-ui-*.tar.gz -C .prebuilt-ui
-      - uses: prometheus/promci/build@13941414d409d227afd67544e5d306827db5a1a2 # v0.8.5
+      - uses: prometheus/promci/build@370e8c15dcec50043cbe66f2f34633d9efc0a190 # v0.9.0
         with:
           checkout: false
           parallelism: 12
@@ -296,13 +329,13 @@ jobs:
     name: Check generated parser
     runs-on: ubuntu-latest
     container:
-      image: quay.io/prometheus/golang-builder:1.26-base
+      image: quay.io/prometheus/golang-builder:1.27-base
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prometheus/promci-setup@3e5cd31b34b8ae19efa8f071c5e3cdb44884a7f8 # v0.2.1
+      - uses: prometheus/promci-setup@55bd31fe92710532260eb57c554f2697363285c5 # v0.2.2
         with:
           enable_npm: true
           cache_key_suffix: parser
@@ -313,13 +346,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: 1.26.x
+          go-version: 1.27.x
       - name: Install snmp_exporter/generator dependencies
         run: sudo apt-get update && sudo apt-get -y install libsnmp-dev
         if: github.repository == 'prometheus/snmp_exporter'
@@ -367,10 +400,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
-    needs: [test_ui, test_go, test_go_more, test_go_oldest, test_windows, golangci, codeql, build_all]
+    needs: [test_ui, test_go, test_go_more, test_go_oldest_status, test_windows, golangci, codeql, build_all]
     if: github.event_name == 'push' && github.event.ref == 'refs/heads/main'
     steps:
-      - uses: prometheus/promci/publish_main@13941414d409d227afd67544e5d306827db5a1a2 # v0.8.5
+      - uses: prometheus/promci/publish_main@370e8c15dcec50043cbe66f2f34633d9efc0a190 # v0.9.0
         with:
           docker_hub_login: ${{ secrets.docker_hub_login }}
           docker_hub_password: ${{ secrets.docker_hub_password }}
@@ -383,13 +416,13 @@ jobs:
     permissions:
       contents: write
       packages: write
-    needs: [test_ui, test_go, test_go_more, test_go_oldest, test_windows, golangci, codeql, build_all]
+    needs: [test_ui, test_go, test_go_more, test_go_oldest_status, test_windows, golangci, codeql, build_all]
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
       ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
     steps:
-      - uses: prometheus/promci/publish_release@13941414d409d227afd67544e5d306827db5a1a2 # v0.8.5
+      - uses: prometheus/promci/publish_release@370e8c15dcec50043cbe66f2f34633d9efc0a190 # v0.9.0
         with:
           docker_hub_login: ${{ secrets.docker_hub_login }}
           docker_hub_password: ${{ secrets.docker_hub_password }}
@@ -407,15 +440,15 @@ jobs:
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install nodejs
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: "web/ui/.nvmrc"
           registry-url: "https://registry.npmjs.org"
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           # Exclude the broken pnpm 11.12.0 (self-installer crash, see
           # https://github.com/pnpm/action-setup/issues/276) while still

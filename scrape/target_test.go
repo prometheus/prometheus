@@ -138,6 +138,49 @@ func TestTargetURL(t *testing.T) {
 	require.Equal(t, expectedURL, target.URL())
 }
 
+func TestTargetURL_Unix(t *testing.T) {
+	scrapeConfig := &config.ScrapeConfig{}
+	labels := labels.FromMap(map[string]string{
+		model.AddressLabel:     "example.com:1234",
+		model.SchemeLabel:      "https",
+		model.MetricsPathLabel: "/metrics",
+		UnixSocketLabel:        "/tmp/sock",
+	})
+	target := NewTarget(labels, scrapeConfig, nil, nil)
+
+	// __unix_socket__ does not affect URL generation; the URL is built
+	// from __scheme__, __address__ and __metrics_path__ as usual.
+	// The socket path is passed to the dialer via the request context.
+	expectedURL := &url.URL{
+		Scheme: "https",
+		Host:   "example.com:1234",
+		Path:   "/metrics",
+	}
+
+	require.Equal(t, expectedURL, target.URL())
+}
+
+func TestTargetURL_UnixEmptyAddress(t *testing.T) {
+	scrapeConfig := &config.ScrapeConfig{}
+	labels := labels.FromMap(map[string]string{
+		model.SchemeLabel:      "http",
+		model.MetricsPathLabel: "/metrics",
+		UnixSocketLabel:        "/tmp/sock",
+		// No __address__ set.
+	})
+	target := NewTarget(labels, scrapeConfig, nil, nil)
+
+	// When __unix_socket__ is set but __address__ is empty, "localhost"
+	// is used as a placeholder host to keep the URL valid.
+	expectedURL := &url.URL{
+		Scheme: "http",
+		Host:   "localhost",
+		Path:   "/metrics",
+	}
+
+	require.Equal(t, expectedURL, target.URL())
+}
+
 func newTestTarget(targetURL string, _ time.Duration, lbls labels.Labels) *Target {
 	lb := labels.NewBuilder(lbls)
 	lb.Set(model.SchemeLabel, "http")

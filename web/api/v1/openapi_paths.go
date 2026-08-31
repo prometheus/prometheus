@@ -374,6 +374,21 @@ func (*OpenAPIBuilder) scrapePoolsPath() *v3.PathItem {
 	}
 }
 
+func (*OpenAPIBuilder) scrapePoolConfigPath() *v3.PathItem {
+	params := []*v3.Parameter{
+		queryParamWithExample("scrapePool", "Name of the scrape pool.", true, stringSchema(), []example{{"example", "prometheus"}}),
+	}
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "get-scrape-pool-config",
+			Summary:     "Get scrape pool configuration",
+			Tags:        []string{"targets"},
+			Parameters:  params,
+			Responses:   responsesWithErrorExamples("ScrapePoolConfigOutputBody", scrapePoolConfigResponseExamples(), errorResponseExamples(), "Scrape pool configuration retrieved successfully.", "Error retrieving scrape pool configuration."),
+		},
+	}
+}
+
 func (*OpenAPIBuilder) targetsPath() *v3.PathItem {
 	params := []*v3.Parameter{
 		queryParamWithExample("scrapePool", "Filter targets by scrape pool name.", false, stringSchema(), []example{{"example", "prometheus"}}),

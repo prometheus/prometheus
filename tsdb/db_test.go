@@ -1808,39 +1808,25 @@ func TestDBApplyConfigChunkEncoding(t *testing.T) {
 		}}
 	}
 
-	t.Run("xor2_without_option_returns_error", func(t *testing.T) {
+	t.Run("xor_default_accepts_config_xor2", func(t *testing.T) {
 		opts := DefaultOptions()
 		opts.FloatChunkEncoding = chunkenc.EncXOR
 		db := newTestDB(t, withOpts(opts))
-		require.ErrorContains(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR2)),
-			"'storage.tsdb.chunk_encoding.floats: xor2' requires the xor2-encoding feature flag")
-	})
-
-	t.Run("xor2_allowed_with_xor_default_accepts_config_xor2", func(t *testing.T) {
-		opts := DefaultOptions()
-		opts.XOR2EncodingAllowed = true
-		opts.FloatChunkEncoding = chunkenc.EncXOR
-		db := newTestDB(t, withOpts(opts))
-		// With XOR2 allowed but the default kept at XOR, an explicit xor2 in the
-		// config must be accepted because the feature is enabled. This is the
-		// multi-tenant case where the encoding is opted in per reload.
 		require.NoError(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR2)))
 		require.True(t, db.head.opts.UseXOR2FloatEncoding())
 	})
 
-	t.Run("explicit_xor_overrides_xor2_option", func(t *testing.T) {
+	t.Run("explicit_xor_overrides_xor2_default", func(t *testing.T) {
 		opts := DefaultOptions()
-		opts.XOR2EncodingAllowed = true
 		opts.FloatChunkEncoding = chunkenc.EncXOR2
 		db := newTestDB(t, withOpts(opts))
 		require.NoError(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR)))
 		require.False(t, db.head.opts.UseXOR2FloatEncoding())
-		require.Equal(t, chunkenc.EncXOR2, db.opts.FloatChunkEncoding, "startup option must not be mutated")
+		require.Equal(t, chunkenc.EncXOR2, db.opts.FloatChunkEncoding, "startup default must not be mutated")
 	})
 
-	t.Run("xor2_with_option_succeeds", func(t *testing.T) {
+	t.Run("xor2_default_succeeds", func(t *testing.T) {
 		opts := DefaultOptions()
-		opts.XOR2EncodingAllowed = true
 		opts.FloatChunkEncoding = chunkenc.EncXOR2
 		db := newTestDB(t, withOpts(opts))
 		require.NoError(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR2)))
@@ -1851,7 +1837,6 @@ func TestDBApplyConfigChunkEncoding(t *testing.T) {
 		for _, enc := range []chunkenc.Encoding{chunkenc.EncXOR2, chunkenc.EncXOR} {
 			t.Run(enc.String(), func(t *testing.T) {
 				opts := DefaultOptions()
-				opts.XOR2EncodingAllowed = true
 				opts.FloatChunkEncoding = enc
 				db := newTestDB(t, withOpts(opts))
 				require.NoError(t, db.ApplyConfig(xorCfg("")))
@@ -1862,7 +1847,6 @@ func TestDBApplyConfigChunkEncoding(t *testing.T) {
 
 	t.Run("sequential_reload_reverts_to_startup_option", func(t *testing.T) {
 		opts := DefaultOptions()
-		opts.XOR2EncodingAllowed = true
 		opts.FloatChunkEncoding = chunkenc.EncXOR2
 		db := newTestDB(t, withOpts(opts))
 
@@ -1875,7 +1859,6 @@ func TestDBApplyConfigChunkEncoding(t *testing.T) {
 
 	t.Run("nil_TSDBConfig_resets_to_startup_option", func(t *testing.T) {
 		opts := DefaultOptions()
-		opts.XOR2EncodingAllowed = true
 		opts.FloatChunkEncoding = chunkenc.EncXOR2
 		db := newTestDB(t, withOpts(opts))
 
@@ -1888,12 +1871,35 @@ func TestDBApplyConfigChunkEncoding(t *testing.T) {
 
 	t.Run("xor_with_st_storage_returns_error", func(t *testing.T) {
 		opts := DefaultOptions()
-		opts.XOR2EncodingAllowed = true
 		opts.FloatChunkEncoding = chunkenc.EncXOR2
 		opts.EnableSTStorage = true
 		db := newTestDB(t, withOpts(opts))
 		require.ErrorContains(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR)),
-			"incompatible with st-storage")
+			"is incompatible with start-timestamp storage")
+	})
+
+	t.Run("empty_encoding_with_st_storage_keeps_startup_option", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.FloatChunkEncoding = chunkenc.EncXOR2
+		opts.EnableSTStorage = true
+		db := newTestDB(t, withOpts(opts))
+
+		// Removing the field must fall back to the startup option, not to the
+		// XOR default; otherwise st-storage would silently lose XOR2.
+		require.NoError(t, db.ApplyConfig(xorCfg("")))
+		require.True(t, db.head.opts.UseXOR2FloatEncoding())
+		require.NoError(t, db.ApplyConfig(&config.Config{}))
+		require.True(t, db.head.opts.UseXOR2FloatEncoding())
+	})
+
+	t.Run("rejected_reload_keeps_active_encoding", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.FloatChunkEncoding = chunkenc.EncXOR2
+		opts.EnableSTStorage = true
+		db := newTestDB(t, withOpts(opts))
+
+		require.ErrorContains(t, db.ApplyConfig(xorCfg(config.FloatChunkEncodingXOR)), "is incompatible with start-timestamp storage")
+		require.True(t, db.head.opts.UseXOR2FloatEncoding(), "active encoding must not change on a rejected reload")
 	})
 }
 
@@ -1948,7 +1954,6 @@ func TestVerticalCompactionFloatChunkEncoding(t *testing.T) {
 		createOverlappingBlocks(t, dir, 0)
 
 		opts := DefaultOptions()
-		opts.XOR2EncodingAllowed = true
 		opts.FloatChunkEncoding = chunkenc.EncXOR2
 		db := newTestDB(t, withDir(dir), withOpts(opts))
 		db.DisableCompactions()
@@ -1964,7 +1969,6 @@ func TestVerticalCompactionFloatChunkEncoding(t *testing.T) {
 		createOverlappingBlocks(t, dir, 0)
 
 		opts := DefaultOptions()
-		opts.XOR2EncodingAllowed = true
 		db := newTestDB(t, withDir(dir), withOpts(opts))
 		db.DisableCompactions()
 
@@ -2007,7 +2011,6 @@ func TestChunkQuerierFloatChunkEncoding(t *testing.T) {
 
 			opts := DefaultOptions()
 			if tc.xor2 {
-				opts.XOR2EncodingAllowed = true
 				opts.FloatChunkEncoding = chunkenc.EncXOR2
 			}
 			db := newTestDB(t, withDir(dir), withOpts(opts))
@@ -2066,22 +2069,8 @@ func TestValidateOptsSTStorageRequiresXOR2(t *testing.T) {
 	_, _, err := validateOpts(opts, nil)
 	require.ErrorContains(t, err, "is incompatible with start-timestamp storage")
 
-	// EncXOR2 + st-storage must be accepted when XOR2 is allowed.
-	opts.XOR2EncodingAllowed = true
+	// EncXOR2 + st-storage must be accepted.
 	opts.FloatChunkEncoding = chunkenc.EncXOR2
-	_, _, err = validateOpts(opts, nil)
-	require.NoError(t, err)
-}
-
-func TestValidateOptsXOR2RequiresAllowed(t *testing.T) {
-	t.Parallel()
-	opts := DefaultOptions()
-	opts.FloatChunkEncoding = chunkenc.EncXOR2
-	// XOR2 as the default encoding requires the feature to be enabled.
-	_, _, err := validateOpts(opts, nil)
-	require.ErrorContains(t, err, "is not enabled")
-
-	opts.XOR2EncodingAllowed = true
 	_, _, err = validateOpts(opts, nil)
 	require.NoError(t, err)
 }
@@ -8010,14 +7999,25 @@ func TestWBLCorruption(t *testing.T) {
 	// We corrupt WBL after the sample at 255. So everything added later
 	// should be deleted after replay.
 
+	// segmentSize returns the on-disk size of the named WBL segment. It opens
+	// the file and stats the handle instead of relying on os.ReadDir's cached
+	// directory metadata, which on Windows can be stale for a segment that was
+	// just closed asynchronously by WL.NextSegment.
+	segmentSize := func(name string) int64 {
+		f, err := os.Open(path.Join(db.head.wbl.Dir(), name))
+		require.NoError(t, err)
+		defer f.Close()
+		fi, err := f.Stat()
+		require.NoError(t, err)
+		return fi.Size()
+	}
+
 	// Checking where we corrupt it.
 	require.NoError(t, db.head.wbl.Sync()) // Syncing to make sure wbl is flushed in windows.
 	files, err := os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 2)
-	f1, err := files[1].Info()
-	require.NoError(t, err)
-	corruptIndex := f1.Size()
+	corruptIndex := segmentSize(files[1].Name())
 	corruptFilePath := path.Join(db.head.wbl.Dir(), files[1].Name())
 
 	// Corrupt the WBL by adding a malformed record.
@@ -8038,15 +8038,9 @@ func TestWBLCorruption(t *testing.T) {
 	files, err = os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 3)
-	f1, err = files[1].Info()
-	require.NoError(t, err)
-	require.Greater(t, f1.Size(), corruptIndex)
-	f0, err := files[0].Info()
-	require.NoError(t, err)
-	require.Greater(t, f0.Size(), int64(100))
-	f2, err := files[2].Info()
-	require.NoError(t, err)
-	require.Greater(t, f2.Size(), int64(100))
+	require.Greater(t, segmentSize(files[1].Name()), corruptIndex)
+	require.Greater(t, segmentSize(files[0].Name()), int64(100))
+	require.Greater(t, segmentSize(files[2].Name()), int64(100))
 
 	verifySamples := func(expSamples []chunks.Sample) {
 		sort.Slice(expSamples, func(i, j int) bool {
@@ -8082,12 +8076,8 @@ func TestWBLCorruption(t *testing.T) {
 	files, err = os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 3)
-	f0, err = files[0].Info()
-	require.NoError(t, err)
-	require.Greater(t, f0.Size(), int64(100))
-	f2, err = files[2].Info()
-	require.NoError(t, err)
-	require.Equal(t, int64(0), f2.Size())
+	require.Greater(t, segmentSize(files[0].Name()), int64(100))
+	require.Equal(t, int64(0), segmentSize(files[2].Name()))
 	require.Equal(t, corruptFilePath, path.Join(db.head.wbl.Dir(), files[1].Name()))
 
 	// Verifying that everything after the corruption point is set to 0.
@@ -9717,29 +9707,45 @@ func TestBlockReloadInterval(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name            string
-		reloadInterval  time.Duration
-		expectedReloads float64
+		name             string
+		opts             *Options
+		expectedInterval time.Duration
+		verifyReloads    bool
+		expectedReloads  float64
 	}{
 		{
-			name:            "extremely small interval",
-			reloadInterval:  1 * time.Millisecond,
-			expectedReloads: 5,
+			name: "zero interval with custom options",
+			opts: &Options{
+				RetentionDuration: int64(time.Hour / time.Millisecond),
+			},
+			expectedInterval: time.Minute,
 		},
 		{
-			name:            "one second interval",
-			reloadInterval:  1 * time.Second,
-			expectedReloads: 5,
+			name: "extremely small interval",
+			opts: &Options{
+				BlockReloadInterval: time.Millisecond,
+			},
+			expectedInterval: time.Second,
+			verifyReloads:    true,
+			expectedReloads:  5,
+		},
+		{
+			name: "one second interval",
+			opts: &Options{
+				BlockReloadInterval: time.Second,
+			},
+			expectedInterval: time.Second,
+			verifyReloads:    true,
+			expectedReloads:  5,
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			db := newTestDB(t, withOpts(&Options{
-				BlockReloadInterval: c.reloadInterval,
-			}))
-			if c.reloadInterval < 1*time.Second {
-				require.Equal(t, 1*time.Second, db.opts.BlockReloadInterval, "interval should be clamped to minimum of 1 second")
+			db := newTestDB(t, withOpts(c.opts))
+			require.Equal(t, c.expectedInterval, db.opts.BlockReloadInterval)
+			if !c.verifyReloads {
+				return
 			}
 			require.Equal(t, float64(1), prom_testutil.ToFloat64(db.metrics.reloads), "there should be one initial reload")
 			require.Eventually(t, func() bool {
@@ -11082,6 +11088,195 @@ func TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction(t *testing
 		"the late sample must survive restart, proving no tombstone was written for sel")
 }
 
+// TestCompactSelectedSeries_AppenderEvictionRaces verifies that selected-series
+// eviction remains safe while appenders are resolving or updating a series.
+func TestCompactSelectedSeries_AppenderEvictionRaces(t *testing.T) {
+	type testAppender struct {
+		storage.AppenderTransaction
+		append func(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error)
+	}
+
+	appenders := []struct {
+		name string
+		new  func(*testing.T, *Head) testAppender
+	}{
+		{
+			name: "v1",
+			new: func(t *testing.T, h *Head) testAppender {
+				a := h.Appender(t.Context())
+				return testAppender{
+					AppenderTransaction: a,
+					append:              a.Append,
+				}
+			},
+		},
+		{
+			name: "v2",
+			new: func(t *testing.T, h *Head) testAppender {
+				a := h.AppenderV2(t.Context())
+				return testAppender{
+					AppenderTransaction: a,
+					append: func(ref storage.SeriesRef, lset labels.Labels, ts int64, v float64) (storage.SeriesRef, error) {
+						return a.Append(ref, lset, 0, ts, v, nil, nil, storage.AOptions{})
+					},
+				}
+			},
+		},
+	}
+
+	t.Run("retries after series evicted", func(t *testing.T) {
+		// An appender that resolves a series just before eviction unlinks it must retry
+		// against a live series instead of appending into the evicted one. The append-ID
+		// watermark cannot cover this case because the appender has not reached the series
+		// lock yet, so it has neither an append ID nor pending state when shouldEvict runs.
+		for _, appender := range appenders {
+			t.Run(appender.name, func(t *testing.T) {
+				opts := DefaultOptions()
+				opts.MinBlockDuration = 1000
+				opts.MaxBlockDuration = 1000
+				db := newTestDB(t, withOpts(opts))
+				db.DisableCompactions()
+				h := db.Head()
+
+				lset := labels.FromStrings("series", "resolved-before-gc")
+				baseline := db.Appender(t.Context())
+				oldRef, err := baseline.Append(0, lset, 100, 1)
+				require.NoError(t, err)
+				require.NoError(t, baseline.Commit())
+				oldSeries := h.series.getByID(chunks.HeadSeriesRef(oldRef))
+				require.NotNil(t, oldSeries)
+
+				pending := appender.new(t, h)
+				lookupDone := make(chan struct{})
+				resumeAppend := make(chan struct{})
+				// Pause after the appender resolves oldSeries but before it can append,
+				// leaving it with a pointer that GC will unlink.
+				h.testAfterSeriesLookup = func(series *memSeries) {
+					if series != oldSeries {
+						return
+					}
+					close(lookupDone)
+					<-resumeAppend
+				}
+				t.Cleanup(func() { h.testAfterSeriesLookup = nil })
+
+				appendDone := make(chan error, 1)
+				go func() {
+					_, err := pending.append(oldRef, lset, 200, 2)
+					appendDone <- err
+				}()
+				select {
+				case <-lookupDone:
+				case appendErr := <-appendDone:
+					require.NoError(t, pending.Rollback())
+					t.Fatalf("append completed before reaching the series lookup hook: %v", appendErr)
+				}
+
+				compactErr := db.CompactSelectedSeries([]storage.SeriesRef{oldRef})
+				close(resumeAppend)
+				appendErr := <-appendDone
+				require.NoError(t, compactErr)
+				require.Len(t, db.Blocks(), 1, "selected-series compaction must produce a block")
+				require.NoError(t, appendErr)
+				require.NoError(t, pending.Commit())
+
+				expected := []chunks.Sample{
+					sample{t: 100, f: 1},
+					sample{t: 200, f: 2},
+				}
+				querySel := func(d *DB, stage string) {
+					t.Helper()
+					q, err := d.Querier(math.MinInt64, math.MaxInt64)
+					require.NoError(t, err)
+					result := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "series", "resolved-before-gc"))
+					require.Equal(t, expected, result[lset.String()], stage)
+				}
+				querySel(db, "before WAL restart")
+
+				dir := db.Dir()
+				require.NoError(t, db.Close())
+				restarted, err := Open(dir, nil, nil, opts, nil)
+				require.NoError(t, err)
+				restarted.DisableCompactions()
+				t.Cleanup(func() { require.NoError(t, restarted.Close()) })
+				querySel(restarted, "after WAL restart")
+			})
+		}
+	})
+
+	t.Run("overlapping appenders keep series", func(t *testing.T) {
+		// Eviction must keep a series while any appender still has an uncommitted sample
+		// for it. Unlike TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction,
+		// which commits its late appender before eviction runs and is caught by the append-ID
+		// watermark, the appender here remains open when shouldEvict is consulted. A second
+		// appender closing in the meantime must not release the first one's protection.
+		interferingClosers := []struct {
+			name  string
+			close func(testAppender) error
+		}{
+			{name: "commit", close: func(app testAppender) error { return app.Commit() }},
+			{name: "rollback", close: func(app testAppender) error { return app.Rollback() }},
+		}
+
+		for _, appender := range appenders {
+			for _, closer := range interferingClosers {
+				t.Run(appender.name+"/"+closer.name, func(t *testing.T) {
+					opts := DefaultOptions()
+					opts.MinBlockDuration = 1000
+					opts.MaxBlockDuration = 1000
+					db := newTestDB(t, withOpts(opts))
+					db.DisableCompactions()
+					h := db.Head()
+
+					lset := labels.FromStrings("series", "overlapping-appenders")
+					baseline := db.Appender(t.Context())
+					ref, err := baseline.Append(0, lset, 100, 1)
+					require.NoError(t, err)
+					require.NoError(t, baseline.Commit())
+
+					// Leave the newer sample uncommitted so the series remains eligible for deletion
+					// by maxTime but must still be protected from GC.
+					pending := appender.new(t, h)
+					_, err = pending.append(ref, lset, 200, 2)
+					require.NoError(t, err)
+
+					// Use a duplicate so closing this appender exercises pending-state bookkeeping
+					// without advancing the series timestamp and masking the bug.
+					interfering := appender.new(t, h)
+					_, err = interfering.append(ref, lset, 100, 1)
+					require.NoError(t, err)
+					require.NoError(t, closer.close(interfering))
+
+					require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+					require.Len(t, db.Blocks(), 1, "selected-series compaction must produce a block")
+					require.NoError(t, pending.Commit())
+
+					expected := []chunks.Sample{
+						sample{t: 100, f: 1},
+						sample{t: 200, f: 2},
+					}
+					querySeries := func(d *DB, stage string) {
+						t.Helper()
+						q, err := d.Querier(math.MinInt64, math.MaxInt64)
+						require.NoError(t, err)
+						result := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "series", "overlapping-appenders"))
+						require.Equal(t, expected, result[lset.String()], stage)
+					}
+					querySeries(db, "before WAL restart")
+
+					dir := db.Dir()
+					require.NoError(t, db.Close())
+					restarted, err := Open(dir, nil, nil, opts, nil)
+					require.NoError(t, err)
+					restarted.DisableCompactions()
+					t.Cleanup(func() { require.NoError(t, restarted.Close()) })
+					querySeries(restarted, "after WAL restart")
+				})
+			}
+		}
+	})
+}
+
 // TestSelectedBlockNotMergedWithNonSelectedBlock reproduces the data-loss path
 // that occurs when a from-selected-series block is merged with a non-selected
 // block by ordinary leveled compaction.
@@ -11561,4 +11756,146 @@ func TestBeyondSizeRetentionWithPercentage(t *testing.T) {
 	deletable = BeyondSizeRetention(db, blocks)
 	require.Len(t, deletable, 1)
 	require.Contains(t, deletable, ulid)
+}
+
+func TestOOOCompactionAcrossChunkIDWrap(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOCompactionAcrossChunkIDWrap(t, scenario)
+		})
+	}
+}
+
+func testOOOCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeScenario) {
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = 5
+	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
+
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	l := labels.FromStrings("l", "v1")
+	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
+
+	app := db.Appender(context.Background())
+
+	// In-order sample.
+	ref, _, err := scenario.appendFunc(app, l, minutes(200), 200)
+	require.NoError(t, err)
+	var expSamples []chunks.Sample
+	expSamples = append(expSamples, scenario.sampleFunc(minutes(200), 200))
+
+	// 15 OOO samples to create 3 mmapped chunks (cap=5).
+	for i := int64(1); i <= 15; i++ {
+		_, _, err = scenario.appendFunc(app, l, minutes(i), i)
+		require.NoError(t, err)
+		expSamples = append(expSamples, scenario.sampleFunc(minutes(i), i))
+	}
+	require.NoError(t, app.Commit())
+
+	// Seed firstOOOChunkID near the wrap boundary.
+	ms := db.head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.NotNil(t, ms)
+	ms.Lock()
+	require.NotNil(t, ms.ooo)
+	ms.ooo.firstOOOChunkID = chunks.HeadChunkID(oooChunkIDMask - 1)
+	ms.Unlock()
+
+	// More OOO data whose chunk IDs cross the boundary.
+	app = db.Appender(context.Background())
+	for i := int64(16); i <= 30; i++ {
+		_, _, err = scenario.appendFunc(app, l, minutes(i), i)
+		require.NoError(t, err)
+		expSamples = append(expSamples, scenario.sampleFunc(minutes(i), i))
+	}
+	require.NoError(t, app.Commit())
+
+	// Compact.
+	require.NoError(t, db.Compact(context.Background()))
+
+	// Query and verify all data is present.
+	querier, err := db.Querier(0, minutes(300))
+	require.NoError(t, err)
+
+	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "l", "v1"))
+
+	sort.Slice(expSamples, func(i, j int) bool { return expSamples[i].T() < expSamples[j].T() })
+	requireEqualSeries(t, map[string][]chunks.Sample{l.String(): expSamples}, seriesSet, true)
+}
+
+// TestInOrderCompactionAcrossChunkIDWrap verifies that queries and head
+// compaction work on a series whose in-order chunk IDs wrap past the 23-bit
+// boundary.
+func TestInOrderCompactionAcrossChunkIDWrap(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testInOrderCompactionAcrossChunkIDWrap(t, scenario)
+		})
+	}
+}
+
+func testInOrderCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeScenario) {
+	const chunkRange = 100
+	const maxT = 500
+
+	db := newTestDB(t, withRngs(chunkRange))
+	db.DisableCompactions()
+
+	l := labels.FromStrings("l", "v1")
+
+	// Create the series, then seed firstChunkID at the top of the 23-bit ID
+	// space to emulate a long-lived series that has already truncated ~8M
+	// chunks. Every chunk appended afterwards is created with an ID at or past
+	// the boundary, so their stored HeadChunkRef IDs must wrap.
+	app := db.Appender(context.Background())
+	ref, _, err := scenario.appendFunc(app, l, 0, 0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	firstChunkIDSeed := chunks.HeadChunkID(oooChunkIDMask - 1)
+	ms := db.head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.NotNil(t, ms)
+	ms.Lock()
+	ms.firstChunkID = firstChunkIDSeed
+	ms.Unlock()
+
+	newestChunkID := func() chunks.HeadChunkID {
+		ms.Lock()
+		defer ms.Unlock()
+		return ms.headChunkID(len(ms.mmappedChunks) + int(ms.headChunkCount.Load()) - 1)
+	}
+	newestBeforeAppends := newestChunkID()
+
+	expSamples := []chunks.Sample{scenario.sampleFunc(0, 0)}
+	app = db.Appender(context.Background())
+	for ts := int64(10); ts < maxT; ts += 10 {
+		_, _, err = scenario.appendFunc(app, l, ts, ts)
+		require.NoError(t, err)
+		expSamples = append(expSamples, scenario.sampleFunc(ts, ts))
+	}
+	require.NoError(t, app.Commit())
+	sort.Slice(expSamples, func(i, j int) bool { return expSamples[i].T() < expSamples[j].T() })
+
+	require.Less(t, newestChunkID(), newestBeforeAppends, "chunk IDs should have wrapped past the boundary")
+
+	matcher := labels.MustNewMatcher(labels.MatchEqual, "l", "v1")
+
+	// Queries must resolve the wrapped chunk IDs while the data is in the head.
+	querier, err := db.Querier(0, maxT)
+	require.NoError(t, err)
+	requireEqualSeries(t, map[string][]chunks.Sample{l.String(): expSamples}, query(t, querier, matcher), true)
+
+	// Head compaction reads every chunk through the same wrapped IDs, then drops
+	// the compacted ones via truncateChunksBefore, wrapping firstChunkID too.
+	require.NoError(t, db.Compact(context.Background()))
+
+	ms.Lock()
+	firstChunkIDAfter := ms.firstChunkID
+	ms.Unlock()
+	require.Less(t, firstChunkIDAfter, firstChunkIDSeed, "firstChunkID should have wrapped past 0")
+
+	// The compacted block must contain every sample.
+	querier, err = db.Querier(0, maxT)
+	require.NoError(t, err)
+	requireEqualSeries(t, map[string][]chunks.Sample{l.String(): expSamples}, query(t, querier, matcher), true)
 }

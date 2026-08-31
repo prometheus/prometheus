@@ -202,6 +202,10 @@ global:
   [ extra_scrape_metrics: <boolean> | default = false ]
 
 runtime:
+  # The minimum severity of messages emitted by the process logger.
+  # This setting can be changed by reloading the configuration.
+  [ log_level: <string> | default = info ]
+
   # Configure the Go garbage collector GOGC parameter
   # See: https://tip.golang.org/doc/gc-guide#GOGC
   # Lowering this number increases CPU usage.
@@ -1007,12 +1011,12 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_msk_cluster_name`: the name of the MSK cluster
 * `__meta_msk_cluster_arn`: the ARN of the MSK cluster
 * `__meta_msk_cluster_state`: the state of the MSK cluster (e.g., ACTIVE, CREATING, DELETING)
-* `__meta_msk_cluster_type`: the type of the MSK cluster (e.g., PROVISIONED, SERVERLESS)
+* `__meta_msk_cluster_type`: the type of the MSK cluster (always PROVISIONED, as serverless clusters are skipped)
 * `__meta_msk_cluster_version`: the current version of the MSK cluster
 * `__meta_msk_cluster_kafka_version`: the Kafka version running on the cluster
-* `__meta_msk_cluster_jmx_exporter_enabled`: whether JMX exporter is enabled on the cluster
-* `__meta_msk_cluster_configuration_arn`: the ARN of the MSK configuration
-* `__meta_msk_cluster_configuration_revision`: the revision of the MSK configuration
+* `__meta_msk_cluster_jmx_exporter_enabled`: whether JMX exporter is enabled on the cluster; this label is absent (not `false`) when Open Monitoring is not enabled on the cluster
+* `__meta_msk_cluster_configuration_arn`: the ARN of the MSK configuration; this label is absent when the cluster is not using custom config
+* `__meta_msk_cluster_configuration_revision`: the revision of the MSK configuration; this label is absent when the cluster is not using custom config
 * `__meta_msk_cluster_tag_<tagkey>`: each cluster tag value, keyed by tag name
 * `__meta_msk_node_type`: the type of the node (BROKER or CONTROLLER)
 * `__meta_msk_node_arn`: the ARN of the node
@@ -1023,7 +1027,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_msk_broker_endpoint_index`: the index of the broker endpoint (broker nodes only)
 * `__meta_msk_broker_client_subnet`: the client subnet of the broker (broker nodes only)
 * `__meta_msk_broker_client_vpc_ip`: the VPC IP address of the broker (broker nodes only)
-* `__meta_msk_broker_node_exporter_enabled`: whether node exporter is enabled on brokers (broker nodes only)
+* `__meta_msk_broker_node_exporter_enabled`: whether node exporter is enabled on brokers (broker nodes only); this label is absent (not `false`) when Open Monitoring is not enabled on the cluster
 * `__meta_msk_controller_endpoint_index`: the index of the controller endpoint (controller nodes only)
 
 #### `elasticache`
@@ -1590,6 +1594,8 @@ Available meta labels:
 
 * `__meta_docker_container_id`: the id of the container
 * `__meta_docker_container_name`: the name of the container
+* `__meta_docker_container_image`: the image of the container
+* `__meta_docker_container_image_id`: the SHA256 hash of the image of the container
 * `__meta_docker_container_network_mode`: the network mode of the container
 * `__meta_docker_container_label_<labelname>`: each label of the container, with any unsupported characters converted to an underscore
 * `__meta_docker_network_id`: the ID of the network
@@ -1686,7 +1692,7 @@ created using the `port` parameter defined in the SD configuration.
 
 Available meta labels:
 
-* `__meta_dockerswarm_container_label_<labelname>`: each label of the container, with any unsupported characters converted to an underscore
+* `__meta_dockerswarm_container_label_<labelname>`: each label configured in the task's `ContainerSpec`, with any unsupported characters converted to an underscore. Labels defined in the image are not available through the Docker Swarm task API. To expose image metadata, copy the required values to a container or service label when deploying the service.
 * `__meta_dockerswarm_task_id`: the id of the task
 * `__meta_dockerswarm_task_container_id`: the container id of the task
 * `__meta_dockerswarm_task_desired_state`: the desired state of the task
@@ -2289,9 +2295,7 @@ The following meta labels are available on all targets during [relabeling](#rela
 * `__meta_hetzner_public_ipv4`: the public ipv4 address of the server
 * `__meta_hetzner_public_ipv6_network`: the public ipv6 network (/64) of the server
 
-Note that the `__meta_hetzner_datacenter` label is deprecated for both roles `robot` and `hcloud`:
-- For the `robot` role, the replacement label is `__meta_hetzner_robot_datacenter`.
-- For the `hcloud` role, the label will be removed after 1 July 2026. For more details, see the [changelog](https://docs.hetzner.cloud/changelog#2025-12-16-phasing-out-datacenters).
+Note that the `__meta_hetzner_datacenter` label is deprecated for the `robot` role, the replacement label is `__meta_hetzner_robot_datacenter`.
 
 The labels below are only available for targets with `role` set to `hcloud`:
 
@@ -2471,7 +2475,7 @@ Available meta labels:
 * `__meta_kubernetes_service_annotation_<annotationname>`: Each annotation from the service object.
 * `__meta_kubernetes_service_annotationpresent_<annotationname>`: "true" for each annotation of the service object.
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
-* `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the loadbalancer. (Applies to services of type LoadBalancer)
+* `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the load balancer, taken from `status.loadBalancer.ingress` (comma-separated when there are multiple). Falls back to the deprecated `spec.loadBalancerIP`. (Applies to services of type LoadBalancer)
 * `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
 * `__meta_kubernetes_service_label_<labelname>`: Each label from the service object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object, with any unsupported characters converted to an underscore.
@@ -2486,6 +2490,7 @@ Available meta labels:
 The `pod` role discovers all pods and exposes their containers as targets. For each declared
 port of a container, a single target is generated. If a container has no specified ports,
 a port-free target per container is created for manually adding a port via relabeling.
+In that case `__address__` is set to the pod IP only, without a port.
 
 Available meta labels:
 
@@ -3560,11 +3565,14 @@ label is set to the `job_name` value of the respective scrape configuration.
 
 You can also use special labels like `__address__`, `__scheme__`, `__metrics_path__`,
 `__scrape_interval__`, `__scrape_timeout__`, `__convert_classic_histograms_to_nhcb__`,
-`__always_scrape_classic_histograms__`, `__scrape_native_histograms__`
-to customize the defined targets. These will
+`__always_scrape_classic_histograms__`, `__scrape_native_histograms__`,
+`__unix_socket__` to customize the defined targets. These will
 override the respective settings in the scrape configuration.
 
 The `__address__` label is set to the `<host>:<port>` address of the target.
+Some service discovery implementations omit the port when none is known, so
+that it can be added via relabeling. Kubernetes pod discovery does this for
+containers that declare no ports; `__address__` is then the pod IP only.
 After relabeling, the `instance` label is set to the value of `__address__` by default if
 it was not set during relabeling.
 
@@ -3596,6 +3604,11 @@ The `__scrape_native_histograms__` label is set to the target's
 the configured global). Setting it during relabeling overrides, per target,
 whether native histograms are scraped. Its value must parse as a boolean; a
 target with an invalid value is dropped.
+
+The `__unix_socket__` label, when set, causes the scrape client to connect via
+the specified Unix domain socket path instead of the target's `__address__`.
+Set `__scheme__` to `http` or `https` to specify the protocol used over
+the socket (defaults to `http`).
 
 Additional labels prefixed with `__meta_` may be available during the
 relabeling phase. They are set by the service discovery mechanism that provided
@@ -4144,15 +4157,19 @@ with this feature.
 [ stale_series_compaction_threshold: <float> | default = 0 ]
 
 # Configures the float chunk encoding to use for new chunks.
-# Valid values are 'xor' and 'xor2'. When absent, the encoding follows the
-# --enable-feature=xor2-encoding flag: 'xor2' if the flag is set, 'xor' otherwise.
-# Setting 'xor' forces standard XOR encoding even when --enable-feature=xor2-encoding is set.
-# Setting 'xor2' is only valid when --enable-feature=xor2-encoding is set;
-# Prometheus will refuse to reload if 'xor2' is set without the feature flag.
+# Valid values are 'xor' and 'xor2'. XOR2 gives better disk compression than XOR for
+# typical Prometheus workloads and can store start timestamps.
+#
+# WARNING: chunks encoded with XOR2 cannot be read by older Prometheus versions that do
+# not support the encoding, nor by downstream tools and LTS systems that do not support
+# it yet (e.g. blocks uploaded by the Thanos sidecar). Once XOR2 chunks have been
+# written, downgrading to a version without XOR2 support requires deleting the affected
+# blocks from disk manually, otherwise Prometheus returns an error on all queries.
+#
+# When absent, the encoding is 'xor2' if --enable-feature=xor2-encoding or
+# --enable-feature=st-storage is set, and 'xor' otherwise.
 # Setting 'xor' is incompatible with --enable-feature=st-storage (XOR chunks do not store
-# start timestamps); Prometheus will refuse to reload in that case too.
-# Omitting 'floats' (or the entire 'chunk_encoding' field) is equivalent; the encoding
-# follows the --enable-feature=xor2-encoding flag.
+# start timestamps); Prometheus will refuse to start or reload in that case.
 # This field is runtime-reloadable.
 # When --enable-feature=st-storage is disabled, XOR and XOR2 are compatible
 # encodings and in-progress chunks are not cut on an encoding change; the new
@@ -4160,6 +4177,8 @@ with this feature.
 # When --enable-feature=st-storage is enabled, XOR and XOR2 are not compatible
 # (XOR chunks do not store start timestamps), so an in-progress chunk is cut
 # on the next append after the encoding changes.
+# For the equivalent ST-capable encoding for native histograms, see the experimental
+# histograms-st-encoding feature flag. The st-storage feature enables that encoding too.
 [ chunk_encoding:
   [ floats: <string> ] ]
 

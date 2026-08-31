@@ -127,6 +127,9 @@ paths:
                                 matrixResult:
                                     summary: 'Range vector query: up[5m]'
                                     value: {"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "up", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "values": [[1767436320, "1"], [1767436620, "1"]]}]}}
+                                histogramResult:
+                                    summary: Instant vector query with native histograms
+                                    value: {"status": "success", "data": {"resultType": "vector", "result": [{"metric": {"__name__": "http_request_duration_seconds", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "histogram": [1767436620, {"count": "12.5", "sum": "42.1", "buckets": [[0, "0.7071067811865475", "1", "5"], [0, "1", "1.414213562373095", "7.5"]]}]}]}}
                 default:
                     description: Error executing query.
                     content:
@@ -191,6 +194,9 @@ paths:
                                 matrixResult:
                                     summary: 'Range vector query: up[5m]'
                                     value: {"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "up", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "values": [[1767436320, "1"], [1767436620, "1"]]}]}}
+                                histogramResult:
+                                    summary: Instant vector query with native histograms
+                                    value: {"status": "success", "data": {"resultType": "vector", "result": [{"metric": {"__name__": "http_request_duration_seconds", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "histogram": [1767436620, {"count": "12.5", "sum": "42.1", "buckets": [[0, "0.7071067811865475", "1", "5"], [0, "1", "1.414213562373095", "7.5"]]}]}]}}
                 default:
                     description: Error executing instant query.
                     content:
@@ -348,6 +354,9 @@ paths:
                                 matrixResult:
                                     summary: 'Range query: rate(prometheus_http_requests_total[5m])'
                                     value: {"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "up", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "values": [[1767433020, "1"], [1767434820, "1"], [1767436620, "1"]]}]}}
+                                histogramResult:
+                                    summary: Range query with native histograms
+                                    value: {"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "http_request_duration_seconds", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "histograms": [[1767433020, {"count": "12.5", "sum": "42.1", "buckets": [[0, "0.7071067811865475", "1", "5"], [0, "1", "1.414213562373095", "7.5"]]}]]}]}}
                 default:
                     description: Error executing range query.
                     content:
@@ -400,6 +409,9 @@ paths:
                                 matrixResult:
                                     summary: 'Range query: rate(prometheus_http_requests_total[5m])'
                                     value: {"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "up", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "values": [[1767433020, "1"], [1767434820, "1"], [1767436620, "1"]]}]}}
+                                histogramResult:
+                                    summary: Range query with native histograms
+                                    value: {"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "http_request_duration_seconds", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "histograms": [[1767433020, {"count": "12.5", "sum": "42.1", "buckets": [[0, "0.7071067811865475", "1", "5"], [0, "1", "1.414213562373095", "7.5"]]}]]}]}}
                 default:
                     description: Error executing range query.
                     content:
@@ -2065,6 +2077,55 @@ paths:
                                         status: success
                 default:
                     description: Error retrieving scrape pools.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
+    /scrape_pools/config:
+        get:
+            tags:
+                - targets
+            summary: Get scrape pool configuration
+            operationId: get-scrape-pool-config
+            parameters:
+                - name: scrapePool
+                  in: query
+                  description: Name of the scrape pool.
+                  required: true
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: prometheus
+            responses:
+                "200":
+                    description: Scrape pool configuration retrieved successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ScrapePoolConfigOutputBody'
+                            examples:
+                                scrapePoolConfig:
+                                    summary: Effective configuration for a scrape pool
+                                    value:
+                                        data:
+                                            yaml: |
+                                                job_name: prometheus
+                                                scrape_interval: 15s
+                                                scrape_timeout: 10s
+                                                metrics_path: /metrics
+                                                scheme: http
+                                        status: success
+                default:
+                    description: Error retrieving scrape pool configuration.
                     content:
                         application/json:
                             schema:
@@ -4541,6 +4602,43 @@ components:
                 - data
             additionalProperties: false
             description: Response body for scrape pools endpoint.
+        ScrapePoolConfigData:
+            type: object
+            properties:
+                yaml:
+                    type: string
+                    description: Effective scrape pool configuration in YAML format.
+            required:
+                - yaml
+            additionalProperties: false
+            description: Effective configuration for a scrape pool.
+        ScrapePoolConfigOutputBody:
+            type: object
+            properties:
+                status:
+                    type: string
+                    enum:
+                        - success
+                        - error
+                    description: Response status.
+                    example: success
+                data:
+                    $ref: '#/components/schemas/ScrapePoolConfigData'
+                warnings:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were warnings while executing the request. There will still be data in the data field.
+                infos:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were info-level annotations while executing the request.
+            required:
+                - status
+                - data
+            additionalProperties: false
+            description: Response body for scrape pool config endpoint.
         Config:
             type: object
             properties:

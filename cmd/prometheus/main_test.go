@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
@@ -268,14 +269,7 @@ storage:
 	)
 	require.NoError(t, prom.Start())
 
-	require.Eventually(t, func() bool {
-		r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
-		if err != nil {
-			return false
-		}
-		defer r.Body.Close()
-		return r.StatusCode == http.StatusOK
-	}, startupTime, 100*time.Millisecond)
+	waitForPrometheusReady(t, port)
 	require.DirExists(t, storagePath)
 }
 
@@ -499,27 +493,53 @@ func TestChunkEncodingStartupValidation(t *testing.T) {
 		exitCode int
 	}{
 		{
-			name: "xor2 without xor2-encoding feature",
+			name: "xor2 without any feature flag",
 			config: `
 storage:
   tsdb:
     chunk_encoding:
       floats: xor2`,
 			features: "",
-			exitCode: 1,
+			exitCode: 0,
 		},
 		{
-			name: "xor2 with xor2-encoding feature",
+			name: "xor2 with st-storage feature",
 			config: `
 storage:
   tsdb:
     chunk_encoding:
       floats: xor2`,
+			features: "st-storage",
+			exitCode: 0,
+		},
+		{
+			name: "xor with st-storage feature",
+			config: `
+storage:
+  tsdb:
+    chunk_encoding:
+      floats: xor`,
+			features: "st-storage",
+			exitCode: 1,
+		},
+		{
+			name: "xor2-encoding flag with explicit xor in config",
+			config: `
+storage:
+  tsdb:
+    chunk_encoding:
+      floats: xor`,
 			features: "xor2-encoding",
 			exitCode: 0,
 		},
 		{
-			name: "xor with st-storage and xor2-encoding features",
+			name:     "st-storage with the xor2-encoding flag and no config field",
+			config:   "",
+			features: "st-storage,xor2-encoding",
+			exitCode: 0,
+		},
+		{
+			name: "st-storage and xor2-encoding flags with explicit xor in config",
 			config: `
 storage:
   tsdb:
@@ -527,6 +547,12 @@ storage:
       floats: xor`,
 			features: "st-storage,xor2-encoding",
 			exitCode: 1,
+		},
+		{
+			name:     "st-storage implies ST-capable encodings",
+			config:   "",
+			features: "st-storage",
+			exitCode: 0,
 		},
 		{
 			name: "xor without st-storage feature",
@@ -782,8 +808,7 @@ func TestModeSpecificFlags(t *testing.T) {
 
 			err = prom.Wait()
 			require.Error(t, err)
-			var exitError *exec.ExitError
-			if errors.As(err, &exitError) {
+			if exitError, ok := errors.AsType[*exec.ExitError](err); ok {
 				status := exitError.Sys().(syscall.WaitStatus)
 				require.Equal(t, tc.exitStatus, status.ExitStatus())
 			} else {
@@ -794,9 +819,6 @@ func TestModeSpecificFlags(t *testing.T) {
 }
 
 func TestDocumentation(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.SkipNow()
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -809,12 +831,17 @@ func TestDocumentation(t *testing.T) {
 
 	require.NoError(t, cmd.Run(), "failed to generate CLI documentation via --write-documentation")
 
-	generatedContent := strings.ReplaceAll(stdout.String(), filepath.Base(promPath), strings.TrimSuffix(filepath.Base(promPath), ".test"))
+	appTitle := strings.TrimSuffix(filepath.Base(promPath), ".test")
+	if runtime.GOOS == "windows" {
+		appTitle = strings.TrimSuffix(appTitle, ".test.exe")
+	}
+
+	generatedContent := strings.ReplaceAll(stdout.String(), filepath.Base(promPath), appTitle)
 
 	expectedContent, err := os.ReadFile(filepath.Join("..", "..", "docs", "command-line", "prometheus.md"))
 	require.NoError(t, err)
 
-	require.Equal(t, string(expectedContent), generatedContent, "Generated content does not match documentation. Hint: run `make cli-documentation`.")
+	require.Equal(t, strings.ReplaceAll(string(expectedContent), "\r\n", "\n"), generatedContent, "Generated content does not match documentation. Hint: run `make cli-documentation`.")
 }
 
 func TestRwProtoMsgFlagParser(t *testing.T) {
@@ -992,26 +1019,24 @@ global:
 				fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
 				"--web.enable-lifecycle",
 			)
-			// Inject GOGC when set.
-			prom.Env = os.Environ()
+			// Inject GOGC when set, and drop any inherited one otherwise, so
+			// that the environment the test runs in cannot influence the cases
+			// expecting the default or the configured value.
+			prom.Env = slices.DeleteFunc(os.Environ(), func(kv string) bool {
+				return strings.HasPrefix(kv, "GOGC=")
+			})
 			if tc.gogcEnvVar != "" {
 				prom.Env = append(prom.Env, fmt.Sprintf("GOGC=%s", tc.gogcEnvVar))
 			}
 			require.NoError(t, prom.Start())
 
+			// Wait for the initial configuration to be applied: /metrics is
+			// already served before that happens.
+			waitForPrometheusReady(t, port)
+
 			ensureGOGCValue := func(val float64) {
-				var (
-					r   *http.Response
-					err error
-				)
-				// Wait for the /metrics endpoint to be ready.
-				require.Eventually(t, func() bool {
-					r, err = http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
-					if err != nil {
-						return false
-					}
-					return r.StatusCode == http.StatusOK
-				}, 5*time.Second, 50*time.Millisecond)
+				r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+				require.NoError(t, err)
 				defer r.Body.Close()
 
 				// Check the final GOGC that's set, consider go_gc_gogc_percent from /metrics as source of truth.
@@ -1039,10 +1064,63 @@ runtime:
 	}
 }
 
+func TestReloadConfigLogLevel(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "prometheus.yml")
+	require.NoError(t, os.WriteFile(configFile, []byte(`runtime:
+  log_level: debug
+`), 0o600))
+
+	level := promslog.NewLevel()
+	require.NoError(t, level.Set("info"))
+	var output bytes.Buffer
+	logger := promslog.New(&promslog.Config{Level: level, Writer: &output})
+	interval := &safePromQLNoStepSubqueryInterval{}
+
+	require.NoError(t, reloadConfig(configFile, false, logger, interval, level, func(bool) {}))
+	require.Equal(t, "debug", level.String())
+	output.Reset()
+	logger.Debug("debug message")
+	require.Contains(t, output.String(), "debug message")
+
+	require.NoError(t, os.WriteFile(configFile, []byte(`runtime:
+  log_level: error
+`), 0o600))
+	err := reloadConfig(configFile, false, logger, interval, level, func(bool) {}, reloader{
+		name: "failing",
+		reloader: func(*config.Config) error {
+			return errors.New("failed to apply")
+		},
+	})
+	require.Error(t, err)
+	require.Equal(t, "debug", level.String())
+	output.Reset()
+	logger.Debug("still visible")
+	require.Contains(t, output.String(), "still visible")
+
+	require.NoError(t, reloadConfig(configFile, false, logger, interval, level, func(bool) {}))
+	require.Equal(t, "error", level.String())
+	output.Reset()
+	logger.Warn("hidden warning")
+	require.Empty(t, output.String())
+	logger.Error("visible error")
+	require.Contains(t, output.String(), "visible error")
+
+	require.NoError(t, os.WriteFile(configFile, []byte("{}\n"), 0o600))
+	require.NoError(t, reloadConfig(configFile, false, logger, interval, level, func(bool) {}))
+	require.Equal(t, "info", level.String())
+	output.Reset()
+	logger.Info("visible info")
+	require.Contains(t, output.String(), "visible info")
+}
+
 // TestHeadCompactionWhileScraping verifies that running a head compaction
 // concurrently with a scrape does not trigger the data race described in
 // https://github.com/prometheus/prometheus/issues/16490.
 func TestHeadCompactionWhileScraping(t *testing.T) {
+	if runtime.GOOS == "windows" { // No race detector on Windows.
+		t.SkipNow()
+	}
 	t.Parallel()
 
 	// To increase the chance of reproducing the data race
@@ -1073,6 +1151,7 @@ scrape_configs:
 				port,
 				fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
 				"--storage.tsdb.min-block-duration=100ms",
+				"--scrape.discovery-reload-interval=100ms", // Reduce initial wait time from default of 5 seconds.
 			)
 			require.NoError(t, prom.Start())
 
@@ -1110,6 +1189,7 @@ scrape_configs:
 				require.Zero(t, failures)
 				return true
 			}, 15*time.Second, 500*time.Millisecond)
+			prom.Process.Signal(os.Interrupt)
 		})
 	}
 }
@@ -1301,9 +1381,6 @@ remote_write:
 // TestFeatureFlagsDocumented ensures the --enable-feature help text in main.go
 // and the documented flags in docs/feature_flags.md list the same set of flags.
 func TestFeatureFlagsDocumented(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.SkipNow()
-	}
 	h, err := os.ReadFile(filepath.Join("..", "..", "cmd", "prometheus", "main.go"))
 	require.NoError(t, err)
 	m := regexp.MustCompile(`a\.Flag\("enable-feature", "Comma separated feature names to enable. Valid options: (.+?)\.`).FindSubmatch(h)
@@ -1315,6 +1392,10 @@ func TestFeatureFlagsDocumented(t *testing.T) {
 	require.NotEmpty(t, helpFlags)
 
 	d, err := os.ReadFile(filepath.Join("..", "..", "docs", "feature_flags.md"))
+	if runtime.GOOS == "windows" {
+		d = bytes.ReplaceAll(d, []byte("\r\n"), []byte("\n"))
+	}
+
 	require.NoError(t, err)
 	var docFlags []string
 	for _, dm := range regexp.MustCompile("(?m)^`--enable-feature=(.+)`$").FindAllSubmatch(d, -1) {

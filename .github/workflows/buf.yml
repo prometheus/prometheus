@@ -12,20 +12,23 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository_owner == 'prometheus'
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+      - uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3 # v1.5.0
         with:
+          version: '1.72.0'
+          checksum: '8720830e26a733da55bb89bcd3cb44849c0965fc0c44fb5d691cccdc64dca5af'
           github_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: bufbuild/buf-lint-action@06f9dd823d873146471cfaaf108a993fe00e5325 # v1.1.1
-        with:
-          input: 'prompb'
-      - uses: bufbuild/buf-breaking-action@c57b3d842a5c3f3b454756ef65305a50a587c5ba # v1.1.4
-        with:
-          input: 'prompb'
-          against: 'https://github.com/prometheus/prometheus.git#branch=main,ref=HEAD~1,subdir=prompb'
-      - uses: bufbuild/buf-push-action@a654ff18effe4641ebea4a4ce242c49800728459 # v1.2.0
-        with:
-          input: 'prompb'
-          buf_token: ${{ secrets.BUF_TOKEN }}
+          setup_only: true
+      - name: Lint Protobuf
+        run: buf lint prompb --error-format github-actions
+      - name: Check Protobuf compatibility
+        run: buf breaking prompb --against 'https://github.com/prometheus/prometheus.git#branch=main,ref=HEAD~1,subdir=prompb' --error-format github-actions
+        env:
+          BUF_INPUT_HTTPS_USERNAME: ${{ github.actor }}
+          BUF_INPUT_HTTPS_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish Protobuf schema
+        run: buf push prompb --label main --label "${GITHUB_SHA}"
+        env:
+          BUF_TOKEN: ${{ secrets.BUF_TOKEN }}

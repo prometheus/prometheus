@@ -89,7 +89,6 @@ func TestFunctionList(t *testing.T) {
 
 func TestStartTimestampOutputWhenUseStartTimestampIsDisabled(t *testing.T) {
 	storage := teststorage.New(t, func(opts *tsdb.Options) {
-		opts.XOR2EncodingAllowed = true
 		opts.FloatChunkEncoding = chunkenc.EncXOR2
 		opts.EnableSTStorage = true
 	})
