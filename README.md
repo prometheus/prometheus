@@ -148,9 +148,13 @@ You can build a docker image locally with the following commands:
 
 ```bash
 make promu
-promu crossbuild -p linux/amd64
-make common-docker-amd64
+promu crossbuild -p linux/$(go env GOHOSTARCH)
+make common-docker-current-arch
 ```
+
+To build for a different architecture, replace `$(go env GOHOSTARCH)` with one
+of the architectures in `DOCKER_ARCHS` from Makefile.common, such as `amd64`, and run the corresponding
+`make common-docker-<architecture>` target.
 
 The `make docker` target is intended only for use in our CI system and will not
 produce a fully working image when run locally.

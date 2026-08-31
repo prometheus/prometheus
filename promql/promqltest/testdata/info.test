@@ -255,8 +255,11 @@ clear
 # one is found.
 load 1m
     metric{instance="a", job="1"} 0 1 2 3 4 5 6 7 8
+    other_metric{instance="b", job="1"} 0 1 2 3 4 5 6 7 8
     target_info{instance="a", job="1", version="old"} 1 1 1 stale
     target_info{instance="a", job="1", version="new"} _ _ _ 1 1 1 1 1 1
+    target_info{instance="b", job="1", version="old"} 1 1 1 stale
+    target_info{instance="b", job="1", version="new"} _ _ _ 1 1 1 1 1 1
 
 # The info series is matched as of ts-2m, like the base samples, so enrichment reflects the
 # version current at the offset-shifted time and switches when that time crosses the flip at 3m.
@@ -282,6 +285,101 @@ eval instant at 40m info(last_over_time((metric offset 1m)[10m:1m] @ 180))
 eval range from 8m to 9m step 1m info(last_over_time(metric[5m:1m] offset 6m))
     metric{instance="a", job="1", version="old"} 2 _
     metric{instance="a", job="1", version="new"} _ 3
+
+# Modifiers in scalar-only subexpressions do not shift enrichment for the vector operand.
+# Reordering scalar-vector multiplication therefore produces the same current info labels.
+# Multiplication drops the metric name, which info() must not restore.
+eval instant at 8m info(scalar(metric @ 120) * metric)
+    {instance="a", job="1", version="new"} 16
+
+eval instant at 8m info(metric * scalar(metric @ 120))
+    {instance="a", job="1", version="new"} 16
+
+eval instant at 8m info(scalar(metric offset 6m) * metric)
+    {instance="a", job="1", version="new"} 16
+
+# Different reference times on vector-producing operands are ambiguous: there is no single
+# shared reference, so info series are selected and matched at each evaluation step instead of
+# being pinned to the first selector's reference.
+eval range from 8m to 9m step 1m info(metric @ 120 or other_metric)
+    metric{instance="a", job="1", version="new"} 2 2
+    other_metric{instance="b", job="1", version="new"} 8 8
+
+# Operand order within the first argument must not affect which info series are selected.
+eval range from 8m to 9m step 1m info(other_metric or metric @ 120)
+    metric{instance="a", job="1", version="new"} 2 2
+    other_metric{instance="b", job="1", version="new"} 8 8
+
+# When all vector inputs are fixed at different times, info() still uses evaluation-time
+# matching. It must remain step-dependent so shared timestamps don't depend on the range start.
+eval range from 4m to 9m step 1m info(metric @ 120 or other_metric @ 480)
+    metric{instance="a", job="1", version="new"} 2 2 2 2 2 2
+    other_metric{instance="b", job="1", version="new"} 8 8 8 8 8 8
+
+eval range from 8m to 9m step 1m info(metric @ 120 or other_metric @ 480)
+    metric{instance="a", job="1", version="new"} 2 2
+    other_metric{instance="b", job="1", version="new"} 8 8
+
+# The optional data label selector is syntax rather than an evaluated vector. Its modifiers
+# must not make preprocessing wrap it and change the concrete type expected by info().
+eval range from 8m to 9m step 1m info(metric @ 120 or other_metric @ 480, {version=~".*"} @ 120)
+    metric{instance="a", job="1", version="new"} 2 2
+    other_metric{instance="b", job="1", version="new"} 8 8
+
+# A selector-free vector has no pinned reference for info series. Enrichment must therefore
+# follow each evaluation step instead of being fixed to the range start.
+eval range from 2m to 8m step 1m info(label_replace(label_replace(vector(1), "instance", "a", "__name__", ".*"), "job", "1", "__name__", ".*"), {version=~".*"})
+    {instance="a", job="1", version="old"} 1 _ _ _ _ _ _
+    {instance="a", job="1", version="new"} _ 1 1 1 1 1 1
+
+eval range from 4m to 8m step 1m info(label_replace(label_replace(vector(1), "instance", "a", "__name__", ".*"), "job", "1", "__name__", ".*"), {version=~".*"})
+    {instance="a", job="1", version="new"} 1 1 1 1 1
+
+# A fixed selector in another vector-producing branch does not provide a shared reference for
+# selector-free vectors. It must not pin their info series selection or enrichment to its
+# historical timestamp, regardless of operand order.
+eval range from 8m to 9m step 1m info(label_replace(label_replace(vector(1), "instance", "a", "__name__", ".*"), "job", "1", "__name__", ".*") or other_metric @ 120, {version=~".*"})
+    {instance="a", job="1", version="new"} 1 1
+    other_metric{instance="b", job="1", version="new"} 2 2
+
+eval range from 8m to 9m step 1m info(other_metric @ 120 or label_replace(label_replace(vector(1), "instance", "a", "__name__", ".*"), "job", "1", "__name__", ".*"), {version=~".*"})
+    {instance="a", job="1", version="new"} 1 1
+    other_metric{instance="b", job="1", version="new"} 2 2
+
+# Syntactically different fixed modifiers that resolve to the same lookup time stay uniform.
+eval range from 8m to 9m step 1m info(metric @ 180 offset 1m or other_metric @ 120)
+    metric{instance="a", job="1", version="old"} 2 2
+    other_metric{instance="b", job="1", version="old"} 2 2
+
+# A nested info data-label selector is selector syntax, not a vector-producing data source. The
+# nested selector-free input also does not share the sibling selector's historical reference.
+eval range from 8m to 9m step 1m info(info(vector(1), {foo=~".*"}) or metric @ 120)
+    {} 1 1
+    metric{instance="a", job="1", version="new"} 2 2
+
+clear
+
+# Mixed fixed references use evaluation-time info labels. The replacement info series starts
+# after the latest data selector reference, so the query-wide storage bounds must include it.
+load 1m
+    metric{instance="a", job="1"} 0+1x8
+    other_metric{instance="b", job="1"} 0+1x8
+    target_info{instance="a", job="1", version="old"} _ _ _ _ _ _ _ _ 1 stale
+    target_info{instance="a", job="1", version="new"} _ _ _ _ _ _ _ _ _ 1
+    target_info{instance="b", job="1", version="old"} _ _ _ _ _ _ _ _ 1 stale
+    target_info{instance="b", job="1", version="new"} _ _ _ _ _ _ _ _ _ 1
+
+eval range from 8m to 9m step 1m info(metric @ 120 or other_metric @ 480)
+    metric{instance="a", job="1", version="old"} 2 _
+    metric{instance="a", job="1", version="new"} _ 2
+    other_metric{instance="b", job="1", version="old"} 8 _
+    other_metric{instance="b", job="1", version="new"} _ 8
+
+eval range from 8m to 9m step 1m info(other_metric @ 480 or metric @ 120)
+    metric{instance="a", job="1", version="old"} 2 _
+    metric{instance="a", job="1", version="new"} _ 2
+    other_metric{instance="b", job="1", version="old"} 8 _
+    other_metric{instance="b", job="1", version="new"} _ 8
 
 clear
 

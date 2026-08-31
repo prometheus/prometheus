@@ -37,12 +37,14 @@ func newDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetric
 			prometheus.CounterOpts{
 				Name: "prometheus_sd_azure_failures_total",
 				Help: "Number of Azure service discovery refresh failures.",
-			}),
+			},
+		),
 		cacheHitCount: prometheus.NewCounter(
 			prometheus.CounterOpts{
 				Name: "prometheus_sd_azure_cache_hit_total",
 				Help: "Number of cache hit during refresh.",
-			}),
+			},
+		),
 	}
 
 	m.metricRegisterer = discovery.NewMetricRegisterer(reg, []prometheus.Collector{

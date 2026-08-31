@@ -185,6 +185,7 @@
   },
   "scrape": {
     "extra_scrape_metrics": true,
+    "openmetrics2": false,
     "start_timestamp_zero_ingestion": false,
     "type_and_unit_labels": false
   },
@@ -266,7 +267,7 @@
     "native_histograms": true,
     "st_storage": false,
     "use_uncached_io": false,
-    "xor2_encoding": false
+    "xor2_encoding": true
   },
   "ui": {
     "ui_v2": false,
