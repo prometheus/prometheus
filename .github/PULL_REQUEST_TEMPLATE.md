@@ -1,4 +1,16 @@
 <!--
+A message from the Prometheus Maintainers:
+
+Welcome! We appreciate your interest in the Prometheus project.
+We require that all contributions are submitted by a human, who signs
+off that they wrote or otherwise have the right to submit the code.
+
+We further require that you _understand_ what you are submitting.
+It is a frustrating waste of time every time we find the submitter
+is operating a chatbot with no understanding.
+
+-->
+<!--
     - Please give your PR a title in the form "area: short description".  For example "tsdb: reduce disk usage by 95%"
 
     - Please sign CNCF's Developer Certificate of Origin and sign-off your commits by adding the -s / --signoff flag to `git commit`. See https://github.com/apps/dco for more information.
