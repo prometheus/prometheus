@@ -918,10 +918,11 @@ type loop interface {
 }
 
 type cacheEntry struct {
-	ref      storage.SeriesRef
-	lastIter uint64
-	hash     uint64
-	lset     labels.Labels
+	ref  storage.SeriesRef
+	hash uint64
+	lset labels.Labels
+
+	met string
 
 	// st is an optional state for ST synthesis.
 	st *stCache
@@ -999,27 +1000,57 @@ type scrapeLoop struct {
 	disabledEndOfRunStalenessMarkers atomic.Bool
 }
 
-// scrapeCache tracks mappings of exposed metric strings to label sets and
-// storage references. Additionally, it tracks staleness of series between
-// scrapes.
-// Cache is meant to be used per a single target.
+// cacheSlot identifies a cached metric. Its high bit marks dropped series.
+type cacheSlot uint64
+
+const droppedSlotMask cacheSlot = 1 << 63
+
+func droppedSlot(index uint64) cacheSlot {
+	return cacheSlot(index) | droppedSlotMask
+}
+
+func (s cacheSlot) dropped() bool {
+	return s&droppedSlotMask != 0
+}
+
+func (s cacheSlot) index() uint64 {
+	return uint64(s &^ droppedSlotMask)
+}
+
+// scrapeCache maps metric strings to label sets and storage references for one
+// target. It also tracks staleness between scrapes.
+//
+// Cached data uses slices because targets usually preserve series order. This
+// allows lookup by the next expected index without maintaining a map. A map
+// index is built only when the order changes.
+//
+// iterDone must be called once per scrape.
 type scrapeCache struct {
 	iter uint64 // Current scrape iteration.
 
 	// How many series and metadata entries there were at the last success.
 	successfulCount int
 
-	// Parsed string to an entry with information about the actual label set
-	// and its storage reference.
-	series map[string]*cacheEntry
+	slots []cacheSlot // Metric order from the last successful scrape
+	pos   int         // Is the next expected slot.
 
-	// Cache of dropped metric strings and their iteration. The iteration must
-	// be a pointer so we can update it.
-	droppedSeries map[string]*uint64
+	nextSlots    []cacheSlot // Records the current order after a mismatch
+	orderChanged bool        // Marks nextSlots for adoption after a successful scrape.
+
+	lookup    map[string]cacheSlot // Maps metric strings to slots after order-based lookup fails
+	orderRuns int                  // Counts ordered scrapes until lookup is released.
+
+	entries     []cacheEntry // Holds cached series.
+	freeEntries []uint64     // Holds reusable entry indexes.
+	seenEntries []bool       // Marks entries seen this scrape.
+
+	dropped     []string // Holds relabel-dropped metric strings.
+	freeDropped []uint64 // Holds reusable dropped indexes.
+	seenDropped []bool   // Marks dropped entries seen this scrape.
 
 	// Series that were seen in the current and previous scrape, for staleness detection.
-	seriesCur  map[storage.SeriesRef]*cacheEntry
-	seriesPrev map[storage.SeriesRef]*cacheEntry
+	seriesCur  map[storage.SeriesRef]cacheSlot
+	seriesPrev map[storage.SeriesRef]cacheSlot
 
 	// TODO(bwplotka): Consider moving metadata caching to head. See
 	// https://github.com/prometheus/prometheus/issues/17619.
@@ -1045,21 +1076,32 @@ func (m *metaEntry) size() int {
 	return len(m.Help) + len(m.Unit) + len(m.Type)
 }
 
+// orderedRunsBeforeRelease controls when a stable target drops its map index.
+const orderedRunsBeforeRelease = 3
+
+// compactSlack delays compaction until allocated storage exceeds twice the
+// live slot count by this amount.
+const compactSlack = 128
+
 func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 	return &scrapeCache{
-		series:        map[string]*cacheEntry{},
-		droppedSeries: map[string]*uint64{},
-		seriesCur:     map[storage.SeriesRef]*cacheEntry{},
-		seriesPrev:    map[storage.SeriesRef]*cacheEntry{},
-		metadata:      map[string]*metaEntry{},
-		metrics:       metrics,
+		seriesCur:  map[storage.SeriesRef]cacheSlot{},
+		seriesPrev: map[storage.SeriesRef]cacheSlot{},
+		metadata:   map[string]*metaEntry{},
+		metrics:    metrics,
 	}
 }
 
 func (c *scrapeCache) iterDone(flushCache bool) {
 	c.metaMtx.Lock()
-	count := len(c.series) + len(c.droppedSeries) + len(c.metadata)
+	count := len(c.slots) + len(c.metadata)
 	c.metaMtx.Unlock()
+
+	// Save whether the scrape completed; flushCache may be forced below.
+	completeScrape := flushCache
+
+	// Adopt order only from a successful scrape.
+	publishOrder := flushCache && c.orderChanged
 
 	switch {
 	case flushCache:
@@ -1078,16 +1120,27 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		// All caches may grow over time through series churn
 		// or multiple string representations of the same metric. Clean up entries
 		// that haven't appeared in the last scrape.
-		for s, e := range c.series {
-			if c.iter != e.lastIter {
-				delete(c.series, s)
+		if publishOrder {
+			// Free unseen slots before adopting the new order.
+			for _, slot := range c.slots {
+				if !c.seenThisIter(slot) {
+					c.free(slot)
+				}
 			}
-		}
-		for s, iter := range c.droppedSeries {
-			if c.iter != *iter {
-				delete(c.droppedSeries, s)
+			c.slots, c.nextSlots = c.nextSlots, c.slots[:0]
+		} else {
+			w := 0
+			for _, slot := range c.slots {
+				if c.seenThisIter(slot) {
+					c.slots[w] = slot
+					w++
+					continue
+				}
+				c.free(slot)
 			}
+			c.slots = c.slots[:w]
 		}
+
 		c.metaMtx.Lock()
 		for m, e := range c.metadata {
 			// Keep metadata around for 10 scrapes after its metric disappeared.
@@ -1097,7 +1150,27 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 			}
 		}
 		c.metaMtx.Unlock()
+
+		if completeScrape {
+			// Compact before swapping seriesCur; compaction rewrites slots.
+			c.maybeCompact()
+		}
 	}
+
+	if c.orderChanged {
+		c.orderRuns = 0
+	} else {
+		// Release the map after enough ordered scrapes.
+		c.orderRuns++
+		if c.orderRuns >= orderedRunsBeforeRelease {
+			c.lookup = nil
+		}
+	}
+	c.nextSlots = c.nextSlots[:0]
+	c.orderChanged = false
+	c.pos = 0
+	clear(c.seenDropped)
+	clear(c.seenEntries)
 
 	// Swap current and previous series then clear the new current, to save allocations.
 	c.seriesPrev, c.seriesCur = c.seriesCur, c.seriesPrev
@@ -1106,69 +1179,241 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 	c.iter++
 }
 
-func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
-	e, ok := c.series[string(met)]
-	if !ok {
-		return nil, false, false
+func (c *scrapeCache) seenThisIter(slot cacheSlot) bool {
+	if slot.dropped() {
+		return c.seenDropped[slot.index()]
 	}
-	alreadyScraped := e.lastIter == c.iter
-	e.lastIter = c.iter
-	return e, true, alreadyScraped
+	return c.seenEntries[slot.index()]
 }
 
-func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels, hash uint64) (ce *cacheEntry) {
-	ce = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
-	c.series[string(met)] = ce
-	return ce
+// free releases the storage behind a slot. The slot must no longer be
+// referenced by c.slots.
+func (c *scrapeCache) free(slot cacheSlot) {
+	index := slot.index()
+	if slot.dropped() {
+		delete(c.lookup, c.dropped[index])
+		c.dropped[index] = ""
+		c.freeDropped = append(c.freeDropped, index)
+		return
+	}
+	delete(c.lookup, c.entries[index].met)
+	c.entries[index] = cacheEntry{}
+	c.freeEntries = append(c.freeEntries, index)
+}
+
+// maybeCompact compacts slot storage left unused by series churn.
+func (c *scrapeCache) maybeCompact() {
+	if len(c.entries)+len(c.dropped) > 2*len(c.slots)+compactSlack {
+		c.compact()
+	}
+}
+
+// compact moves all cached series into freshly sized storage. This changes slot
+// indices, so every slot the cache kept has to be rewritten.
+func (c *scrapeCache) compact() {
+	numEntries := 0
+	for _, slot := range c.slots {
+		if !slot.dropped() {
+			numEntries++
+		}
+	}
+
+	var (
+		entries = make([]cacheEntry, 0, numEntries)
+		dropped = make([]string, 0, len(c.slots)-numEntries)
+		slots   = make([]cacheSlot, len(c.slots))
+		remap   = make(map[cacheSlot]cacheSlot, len(c.slots))
+		lookup  map[string]cacheSlot
+	)
+	if c.lookup != nil {
+		lookup = make(map[string]cacheSlot, len(c.slots))
+	}
+	for i, old := range c.slots {
+		var (
+			newSlot cacheSlot
+			met     string
+		)
+		if old.dropped() {
+			dropped = append(dropped, c.dropped[old.index()])
+			newSlot = droppedSlot(uint64(len(dropped) - 1))
+			met = dropped[len(dropped)-1]
+		} else {
+			entries = append(entries, c.entries[old.index()])
+			e := &entries[len(entries)-1]
+			newSlot = cacheSlot(len(entries) - 1)
+			met = e.met
+		}
+
+		slots[i] = newSlot
+		remap[old] = newSlot
+		if lookup != nil {
+			lookup[met] = newSlot
+		}
+	}
+	for ref, oldSlot := range c.seriesCur {
+		c.seriesCur[ref] = remap[oldSlot]
+	}
+
+	// seriesPrev is cleared after compaction, so its slots need not be remapped.
+	c.slots = slots
+	c.entries = entries
+	c.dropped = dropped
+	c.lookup = lookup
+	c.freeEntries = nil
+	c.freeDropped = nil
+	c.nextSlots = nil
+	// Resize seen flags to match the rebuilt storage.
+	c.seenDropped = make([]bool, len(dropped))
+	c.seenEntries = make([]bool, len(entries))
+}
+
+func (c *scrapeCache) metOf(slot cacheSlot) string {
+	if slot.dropped() {
+		return c.dropped[slot.index()]
+	}
+	return c.entries[slot.index()].met
+}
+
+// get returns the slot, entry, cache status, and whether met was already seen.
+//
+// The entry is nil for dropped series and must not be retained past the scrape.
+func (c *scrapeCache) get(met []byte) (cacheSlot, *cacheEntry, bool, bool) {
+	// Fast path: compare the next expected slot.
+	if c.pos < len(c.slots) {
+		slot := c.slots[c.pos]
+		if c.metOf(slot) == string(met) {
+			c.pos++
+			return c.hit(slot)
+		}
+	}
+	return c.getUnordered(met)
+}
+
+// getUnordered looks up met in the map index, building it if needed.
+func (c *scrapeCache) getUnordered(met []byte) (cacheSlot, *cacheEntry, bool, bool) {
+	c.trackOrder()
+
+	slot, ok := c.lookup[string(met)]
+	if !ok {
+		return 0, nil, false, false
+	}
+	return c.hit(slot)
+}
+
+// hit marks a slot seen this scrape.
+func (c *scrapeCache) hit(slot cacheSlot) (cacheSlot, *cacheEntry, bool, bool) {
+	var (
+		e              *cacheEntry
+		alreadyScraped bool
+	)
+	if index := slot.index(); slot.dropped() {
+		alreadyScraped = c.seenDropped[index]
+		c.seenDropped[index] = true
+	} else {
+		e = &c.entries[index]
+		alreadyScraped = c.seenEntries[index]
+		c.seenEntries[index] = true
+	}
+
+	// A series exposed twice in the same scrape must not be recorded twice.
+	if c.orderChanged && !alreadyScraped {
+		c.nextSlots = append(c.nextSlots, slot)
+	}
+	return slot, e, true, alreadyScraped
+}
+
+// trackOrder records a changed order and builds the map index if needed.
+func (c *scrapeCache) trackOrder() {
+	if c.orderChanged {
+		return
+	}
+	c.orderChanged = true
+	c.nextSlots = append(c.nextSlots[:0], c.slots[:c.pos]...)
+
+	if c.lookup == nil {
+		c.lookup = make(map[string]cacheSlot, len(c.slots))
+		for _, slot := range c.slots {
+			c.lookup[c.metOf(slot)] = slot
+		}
+	}
+}
+
+// addSlot records a metric string that was not cached before.
+func (c *scrapeCache) addSlot(met string, slot cacheSlot) {
+	// Keep the cache valid if a caller adds without first missing a lookup.
+	c.trackOrder()
+
+	c.slots = append(c.slots, slot)
+	c.nextSlots = append(c.nextSlots, slot)
+	c.lookup[met] = slot
+}
+
+func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels, hash uint64) (cacheSlot, *cacheEntry) {
+	var index uint64
+	if n := len(c.freeEntries); n > 0 {
+		index = c.freeEntries[n-1]
+		c.freeEntries = c.freeEntries[:n-1]
+	} else {
+		index = uint64(len(c.entries))
+		c.entries = append(c.entries, cacheEntry{})
+		c.seenEntries = append(c.seenEntries, false)
+	}
+	c.seenEntries[index] = true
+
+	e := &c.entries[index]
+	*e = cacheEntry{ref: ref, lset: lset, hash: hash, met: string(met)}
+	c.addSlot(e.met, cacheSlot(index))
+	return cacheSlot(index), e
 }
 
 func (c *scrapeCache) addDropped(met []byte) {
-	iter := c.iter
-	c.droppedSeries[string(met)] = &iter
-}
-
-func (c *scrapeCache) getDropped(met []byte) bool {
-	iterp, ok := c.droppedSeries[string(met)]
-	if ok {
-		*iterp = c.iter
+	var index uint64
+	if n := len(c.freeDropped); n > 0 {
+		index = c.freeDropped[n-1]
+		c.freeDropped = c.freeDropped[:n-1]
+	} else {
+		index = uint64(len(c.dropped))
+		c.dropped = append(c.dropped, "")
+		c.seenDropped = append(c.seenDropped, false)
 	}
-	return ok
+	c.seenDropped[index] = true
+
+	c.dropped[index] = string(met)
+	c.addSlot(c.dropped[index], droppedSlot(index))
 }
 
-// updateRef points the cache entry at a new storage reference, e.g. because the
-// storage garbage collected the series and had to recreate it. Staleness is tracked
-// per reference, so the tracking has to follow the entry to the new reference,
-// otherwise the series looks like it stopped being exposed and gets a stale marker.
-func (c *scrapeCache) updateRef(ce *cacheEntry, ref storage.SeriesRef) {
-	if ce.ref == ref {
+// updateRef moves a cached series and its staleness tracking to ref.
+func (c *scrapeCache) updateRef(slot cacheSlot, ref storage.SeriesRef) {
+	entry := &c.entries[slot.index()]
+	oldRef := entry.ref
+	if oldRef == ref {
 		return
 	}
-	if ce.ref != 0 {
-		moveStaleness(c.seriesPrev, ce, ref)
-		moveStaleness(c.seriesCur, ce, ref)
+	if oldRef != 0 {
+		moveStaleness(c.seriesPrev, slot, oldRef, ref)
+		moveStaleness(c.seriesCur, slot, oldRef, ref)
 	}
-	ce.ref = ref
+	entry.ref = ref
 }
 
-// moveStaleness re-keys the staleness tracking of ce from ce.ref to ref. Whether the
-// series is considered stale is left as it is, only the reference it is tracked under
-// changes. Tracking that belongs to another cache entry is left alone.
-func moveStaleness(tracked map[storage.SeriesRef]*cacheEntry, ce *cacheEntry, ref storage.SeriesRef) {
-	if tracked[ce.ref] != ce {
+func moveStaleness(tracked map[storage.SeriesRef]cacheSlot, slot cacheSlot, oldRef, ref storage.SeriesRef) {
+	trackedSlot, ok := tracked[oldRef]
+	if !ok || trackedSlot != slot {
 		return
 	}
-	delete(tracked, ce.ref)
-	tracked[ref] = ce
+	delete(tracked, oldRef)
+	tracked[ref] = slot
 }
 
-func (c *scrapeCache) trackStaleness(ref storage.SeriesRef, ce *cacheEntry) {
-	c.seriesCur[ref] = ce
+func (c *scrapeCache) trackStaleness(ref storage.SeriesRef, slot cacheSlot) {
+	c.seriesCur[ref] = slot
 }
 
 func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool) {
-	for ref, ce := range c.seriesPrev {
+	for ref, slot := range c.seriesPrev {
 		if _, ok := c.seriesCur[ref]; !ok {
-			if !f(ce.ref, ce.lset) {
+			entry := c.entries[slot.index()]
+			if !f(entry.ref, entry.lset) {
 				break
 			}
 		}
@@ -1887,10 +2132,10 @@ loop:
 			t = *parsedTimestamp
 		}
 
-		if sl.cache.getDropped(met) {
+		slot, ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
+		if seriesCached && slot.dropped() {
 			continue
 		}
-		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
 		var (
 			ref  storage.SeriesRef
 			hash uint64
@@ -1966,10 +2211,10 @@ loop:
 		if err == nil {
 			// Append may return a new ref; keep the cache in sync.
 			if ce != nil && ref != 0 {
-				sl.cache.updateRef(ce, ref)
+				sl.cache.updateRef(slot, ref)
 			}
 			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil && ce.ref != 0 {
-				sl.cache.trackStaleness(ce.ref, ce)
+				sl.cache.trackStaleness(ce.ref, slot)
 			}
 		}
 
@@ -1986,11 +2231,11 @@ loop:
 		// If a series was new but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
-			ce = sl.cache.addRef(met, ref, lset, hash)
+			slot, ce = sl.cache.addRef(met, ref, lset, hash)
 			if ce != nil && ce.ref != 0 && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
 				// Bypass staleness logic if there is an explicit timestamp.
 				// But make sure we only do this if we have a cache entry (ce) for our series.
-				sl.cache.trackStaleness(ref, ce)
+				sl.cache.trackStaleness(ref, slot)
 			}
 			if sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
@@ -2369,7 +2614,7 @@ func (sl *scrapeLoop) reportStale(app scrapeLoopAppendAdapter, start time.Time) 
 }
 
 func (sl *scrapeLoopAppender) addReportSample(s reportSample, t int64, v float64, b *labels.Builder, rejectOOO bool) (err error) {
-	ce, ok, _ := sl.cache.get(s.name)
+	_, ce, ok, _ := sl.cache.get(s.name)
 	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {
@@ -2396,7 +2641,7 @@ func (sl *scrapeLoopAppender) addReportSample(s reportSample, t int64, v float64
 	switch {
 	case err == nil:
 		if !ok {
-			sl.cache.addRef(s.name, ref, lset, lset.Hash())
+			_, _ = sl.cache.addRef(s.name, ref, lset, lset.Hash())
 			// We only need to add metadata once a scrape target appears.
 			if sl.appendMetadataToWAL {
 				if _, merr := sl.UpdateMetadata(ref, lset, s.Metadata); merr != nil {
