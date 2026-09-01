@@ -1,47 +1,33 @@
-import * as React from 'react';
-import { shallow } from 'enzyme';
-import toJson from 'enzyme-to-json';
+import React from 'react';
+import { render, screen } from '@testing-library/react';
 import { StatusContent } from './Status';
 
-describe('Status', () => {
-  describe('Snapshot testing', () => {
-    const response: any = [
-      {
-        startTime: '2019-10-30T22:03:23.247913868+02:00',
-        CWD: '/home/boyskila/Desktop/prometheus',
-        reloadConfigSuccess: true,
-        lastConfigTime: '2019-10-30T22:03:23+02:00',
-        corruptionCount: 0,
-        goroutineCount: 37,
-        GOMAXPROCS: 4,
-        GOGC: '',
-        GODEBUG: '',
-        storageRetention: '15d',
-      },
-      {
-        version: '',
-        revision: '',
-        branch: '',
-        buildUser: '',
-        buildDate: '',
-        goVersion: 'go1.13.3',
-      },
-      {
-        activeAlertmanagers: [
-          { url: 'https://1.2.3.4:9093/api/v1/alerts' },
-          { url: 'https://1.2.3.5:9093/api/v1/alerts' },
-          { url: 'https://1.2.3.6:9093/api/v1/alerts' },
-          { url: 'https://1.2.3.7:9093/api/v1/alerts' },
-          { url: 'https://1.2.3.8:9093/api/v1/alerts' },
-          { url: 'https://1.2.3.9:9093/api/v1/alerts' },
-        ],
-        droppedAlertmanagers: [],
-      },
-    ];
-    it('should match table snapshot', () => {
-      const wrapper = shallow(<StatusContent data={response} title="Foo" />);
-      expect(toJson(wrapper)).toMatchSnapshot();
-      jest.restoreAllMocks();
-    });
+describe('StatusContent', () => {
+  it('formats configured values, renders alertmanager links, and skips hidden fields', () => {
+    const data = {
+      startTime: '2019-10-30T22:03:23.247913868+02:00',
+      CWD: '/srv/prometheus',
+      reloadConfigSuccess: true,
+      activeAlertmanagers: [
+        { url: 'https://alertmanager-1.example.com/api/v1/alerts' },
+        { url: 'https://alertmanager-2.example.com/api/v1/alerts' },
+      ],
+      droppedAlertmanagers: [{ url: 'https://dropped.example.com/api/v1/alerts' }],
+      customField: 'custom value',
+    } as unknown as Record<string, string>;
+
+    render(<StatusContent data={data} title="Runtime Information" />);
+
+    expect(screen.getByRole('heading', { name: 'Runtime Information' })).toBeTruthy();
+    expect(screen.getByText('Start time').closest('tr')?.textContent).toContain('Wed, 30 Oct 2019 20:03:23 GMT');
+    expect(screen.getByText('Working directory').closest('tr')?.textContent).toContain('/srv/prometheus');
+    expect(screen.getByText('Configuration reload').closest('tr')?.textContent).toContain('Successful');
+    expect(screen.getByText('customField').closest('tr')?.textContent).toContain('custom value');
+
+    const firstAlertmanager = screen.getByRole('link', { name: 'https://alertmanager-1.example.com' });
+    expect(firstAlertmanager.getAttribute('href')).toBe('https://alertmanager-1.example.com/api/v1/alerts');
+    expect(firstAlertmanager.closest('tr')?.textContent).toContain('/api/v1/alerts');
+    expect(screen.getByRole('link', { name: 'https://alertmanager-2.example.com' })).toBeTruthy();
+    expect(screen.queryByText(/dropped\.example\.com/)).toBeNull();
   });
 });

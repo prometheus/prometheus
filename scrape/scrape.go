@@ -34,6 +34,7 @@ import (
 	"unsafe"
 
 	"github.com/klauspost/compress/gzip"
+	"github.com/klauspost/compress/zstd"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -41,6 +42,8 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
@@ -93,7 +96,10 @@ type scrapePool struct {
 	mtx    sync.Mutex
 	config *config.ScrapeConfig
 	client *http.Client
-	loops  map[uint64]loop
+	// unixSocketClients caches dedicated HTTP clients for targets scraped
+	// through a unix domain socket, keyed by socket path. See clientForTarget.
+	unixSocketClients map[string]*http.Client
+	loops             map[uint64]loop
 
 	symbolTable           *labels.SymbolTable
 	lastSymbolTableCheck  time.Time
@@ -194,6 +200,36 @@ func (sp *scrapePool) newLoop(opts scrapeLoopOptions) loop {
 	return newScrapeLoop(opts)
 }
 
+// clientForTarget returns the HTTP client that scrapes of the given target
+// must use. Targets scraped through a unix domain socket get a dedicated
+// client per socket path: the HTTP transport pools idle connections by
+// scheme and host:port only, so sharing one client across sockets could
+// reuse a connection dialed to one socket for a target on another one.
+// Must be called with sp.mtx held.
+func (sp *scrapePool) clientForTarget(t *Target) *http.Client {
+	socketPath := t.labels.Get(UnixSocketLabel)
+	if socketPath == "" {
+		return sp.client
+	}
+	if client, ok := sp.unixSocketClients[socketPath]; ok {
+		return client
+	}
+	client, err := newUnixSocketScrapeClient(socketPath, sp.config.HTTPClientConfig, sp.config.JobName, sp.options.HTTPClientOptions...)
+	if err != nil {
+		// The same configuration was already used to build sp.client, so
+		// this should never happen. Fail the target's scrapes rather than
+		// falling back to the shared client, which would silently dial the
+		// target's __address__ over TCP instead of the socket.
+		sp.logger.Error("Failed to create unix socket scrape client", "socket_path", socketPath, "err", err)
+		client = &http.Client{Transport: failingRoundTripper{err: fmt.Errorf("creating unix socket scrape client for %q: %w", socketPath, err)}}
+	}
+	if sp.unixSocketClients == nil {
+		sp.unixSocketClients = make(map[string]*http.Client)
+	}
+	sp.unixSocketClients[socketPath] = client
+	return client
+}
+
 func (sp *scrapePool) ActiveTargets() []*Target {
 	sp.targetMtx.Lock()
 	defer sp.targetMtx.Unlock()
@@ -259,6 +295,9 @@ func (sp *scrapePool) stop() {
 	// context (via sl.parentCtx) and would fail if the context was cancelled early.
 	sp.cancel()
 	sp.client.CloseIdleConnections()
+	for _, c := range sp.unixSocketClients {
+		c.CloseIdleConnections()
+	}
 
 	if sp.config != nil {
 		sp.metrics.targetScrapePoolSyncsCounter.DeleteLabelValues(sp.config.JobName)
@@ -286,20 +325,27 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		return err
 	}
 
-	reuseCache := reusableCache(sp.config, cfg)
-	sp.config = cfg
-	oldClient := sp.client
-	sp.client = client
-
 	// Validate scheme so we don't need to do it later.
 
 	if _, err = config.ToEscapingScheme(cfg.MetricNameEscapingScheme, cfg.MetricNameValidationScheme); err != nil {
 		return fmt.Errorf("scrapePool.reload: invalid metric name escaping scheme, %w", err)
 	}
+
+	reuseCache := reusableCache(sp.config, cfg)
+	sp.config = cfg
+	oldClient := sp.client
+	sp.client = client
+	// The new configuration may change the HTTP client settings, so the
+	// per-socket clients are rebuilt by restartLoops below.
+	oldUnixSocketClients := sp.unixSocketClients
+	sp.unixSocketClients = nil
 	sp.metrics.targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
 
 	sp.restartLoops(reuseCache)
 	oldClient.CloseIdleConnections()
+	for _, c := range oldUnixSocketClients {
+		c.CloseIdleConnections()
+	}
 	sp.metrics.targetReloadIntervalLength.WithLabelValues(time.Duration(sp.config.ScrapeInterval).String()).Observe(
 		time.Since(start).Seconds(),
 	)
@@ -331,11 +377,13 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 			target: t,
 			scraper: &targetScraper{
 				Target:               t,
-				client:               sp.client,
+				client:               sp.clientForTarget(t),
 				timeout:              targetTimeout,
 				bodySizeLimit:        int64(sp.config.BodySizeLimit),
 				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
-				acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression),
+				acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression, sp.options.EnableZstdScrape),
+				enableZstd:           sp.options.EnableZstdScrape,
+				logger:               sp.logger,
 				metrics:              sp.metrics,
 			},
 			cache:    cache,
@@ -439,8 +487,16 @@ func (sp *scrapePool) sync(targets []*Target) {
 
 	sp.targetMtx.Lock()
 	escapingScheme, _ := config.ToEscapingScheme(sp.config.MetricNameEscapingScheme, sp.config.MetricNameValidationScheme)
+	var socketsInUse map[string]struct{}
 	for _, t := range targets {
 		hash := t.hash()
+
+		if socketPath := t.labels.Get(UnixSocketLabel); socketPath != "" {
+			if socketsInUse == nil {
+				socketsInUse = make(map[string]struct{})
+			}
+			socketsInUse[socketPath] = struct{}{}
+		}
 
 		if _, ok := sp.activeTargets[hash]; !ok {
 			// The scrape interval and timeout labels are set to the config's values initially,
@@ -455,11 +511,13 @@ func (sp *scrapePool) sync(targets []*Target) {
 				target: t,
 				scraper: &targetScraper{
 					Target:               t,
-					client:               sp.client,
+					client:               sp.clientForTarget(t),
 					timeout:              targetTimeout,
 					bodySizeLimit:        int64(sp.config.BodySizeLimit),
 					acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
-					acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression),
+					acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression, sp.options.EnableZstdScrape),
+					enableZstd:           sp.options.EnableZstdScrape,
+					logger:               sp.logger,
 					metrics:              sp.metrics,
 				},
 				cache:    newScrapeCache(sp.metrics),
@@ -500,6 +558,15 @@ func (sp *scrapePool) sync(targets []*Target) {
 
 			delete(sp.loops, hash)
 			delete(sp.activeTargets, hash)
+		}
+	}
+
+	// Drop cached unix socket clients whose socket is no longer scraped by
+	// any target.
+	for socketPath, client := range sp.unixSocketClients {
+		if _, ok := socketsInUse[socketPath]; !ok {
+			client.CloseIdleConnections()
+			delete(sp.unixSocketClients, socketPath)
 		}
 	}
 
@@ -694,11 +761,32 @@ type targetScraper struct {
 	bodySizeLimit        int64
 	acceptHeader         string
 	acceptEncodingHeader string
+	enableZstd           bool
+	logger               *slog.Logger
 
 	metrics *scrapeMetrics
 }
 
-var errBodySizeLimit = errors.New("body size limit exceeded")
+var (
+	errBodySizeLimit  = errors.New("body size limit exceeded")
+	errZstdNotEnabled = errors.New(`received a zstd-compressed response, but the "zstd-scrape" feature flag is not enabled`)
+)
+
+const zstdMaxWindowSize = 8 << 20
+
+var zstdDecoderPool = sync.Pool{
+	New: func() any {
+		decoder, err := zstd.NewReader(
+			nil,
+			zstd.WithDecoderConcurrency(1),
+			zstd.WithDecoderMaxWindow(zstdMaxWindowSize),
+		)
+		if err != nil {
+			panic(err)
+		}
+		return decoder
+	},
+}
 
 // acceptHeader transforms preference from the options into specific header values as
 // https://www.rfc-editor.org/rfc/rfc9110.html#name-accept defines.
@@ -721,8 +809,11 @@ func acceptHeader(sps []config.ScrapeProtocol, scheme model.EscapingScheme) stri
 	return strings.Join(vals, ",")
 }
 
-func acceptEncodingHeader(enableCompression bool) string {
+func acceptEncodingHeader(enableCompression, enableZstd bool) string {
 	if enableCompression {
+		if enableZstd {
+			return "zstd,gzip"
+		}
 		return "gzip"
 	}
 	return "identity"
@@ -743,14 +834,9 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 
 		s.req = req
 	}
-	ctx, span := otel.Tracer("").Start(ctx, "Scrape", trace.WithSpanKind(trace.SpanKindClient))
+	ctx, span := otel.Tracer("").Start(ctx, "scrapeRequest", trace.WithSpanKind(trace.SpanKindClient))
+	span.SetAttributes(attribute.String("url", s.URL().Redacted()))
 	defer span.End()
-
-	// If the target has a unix socket path, pass it via the context so the
-	// custom DialContext can dial the socket instead of the URL host.
-	if socketPath := s.labels.Get(UnixSocketLabel); socketPath != "" {
-		ctx = context.WithValue(ctx, unixSocketContextKey{}, socketPath)
-	}
 
 	return s.client.Do(s.req.WithContext(ctx))
 }
@@ -768,34 +854,49 @@ func (s *targetScraper) readResponse(_ context.Context, resp *http.Response, w i
 	if s.bodySizeLimit <= 0 {
 		s.bodySizeLimit = math.MaxInt64
 	}
-	if resp.Header.Get("Content-Encoding") != "gzip" {
-		n, err := io.Copy(w, io.LimitReader(resp.Body, s.bodySizeLimit))
-		if err != nil {
+	var reader io.Reader = resp.Body
+	switch resp.Header.Get("Content-Encoding") {
+	case "gzip":
+		if s.gzipr == nil {
+			s.buf = bufio.NewReader(resp.Body)
+			var err error
+			s.gzipr, err = gzip.NewReader(s.buf)
+			if err != nil {
+				return "", err
+			}
+		} else {
+			s.buf.Reset(resp.Body)
+			if err := s.gzipr.Reset(s.buf); err != nil {
+				return "", err
+			}
+		}
+		defer s.gzipr.Close()
+		reader = s.gzipr
+	case "zstd":
+		if !s.enableZstd {
+			// Nothing here can decode the body, and passing the raw frame on
+			// would hand a zstd stream to the metrics parser.
+			return "", errZstdNotEnabled
+		}
+		if s.Target == nil {
+			s.logger.Debug("Using zstd-compressed scrape response")
+		} else {
+			s.logger.Debug("Using zstd-compressed scrape response", "target", s.URL().Redacted())
+		}
+		zstdr := zstdDecoderPool.Get().(*zstd.Decoder)
+		if err := zstdr.Reset(resp.Body); err != nil {
+			_ = zstdr.Reset(nil)
+			zstdDecoderPool.Put(zstdr)
 			return "", err
 		}
-		if n >= s.bodySizeLimit {
-			s.metrics.targetScrapeExceededBodySizeLimit.Inc()
-			return "", errBodySizeLimit
-		}
-		return resp.Header.Get("Content-Type"), nil
+		defer func() {
+			_ = zstdr.Reset(nil)
+			zstdDecoderPool.Put(zstdr)
+		}()
+		reader = zstdr
 	}
 
-	if s.gzipr == nil {
-		s.buf = bufio.NewReader(resp.Body)
-		var err error
-		s.gzipr, err = gzip.NewReader(s.buf)
-		if err != nil {
-			return "", err
-		}
-	} else {
-		s.buf.Reset(resp.Body)
-		if err := s.gzipr.Reset(s.buf); err != nil {
-			return "", err
-		}
-	}
-
-	n, err := io.Copy(w, io.LimitReader(s.gzipr, s.bodySizeLimit))
-	s.gzipr.Close()
+	n, err := io.Copy(w, io.LimitReader(reader, s.bodySizeLimit))
 	if err != nil {
 		return "", err
 	}
@@ -878,6 +979,7 @@ type scrapeLoop struct {
 	enableSTZeroIngestion   bool
 	parseST                 bool // Used by AppenderV2 only.
 	enableTypeAndUnitLabels bool
+	enableOpenMetrics2      bool
 	reportExtraMetrics      bool
 	appendMetadataToWAL     bool
 	passMetadataInContext   bool
@@ -923,6 +1025,9 @@ type scrapeCache struct {
 	// https://github.com/prometheus/prometheus/issues/17619.
 	metaMtx  sync.Mutex            // Mutex is needed due to api touching it when metadata is queried.
 	metadata map[string]*metaEntry // metadata by metric family name.
+	// metadataSize is the total metadata size across all metaEntry.
+	// We calculate it as parse scrape results so we don't have to re-calculate it all when SizeMetadata is called.
+	metadataSize int
 
 	metrics *scrapeMetrics
 }
@@ -987,6 +1092,7 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		for m, e := range c.metadata {
 			// Keep metadata around for 10 scrapes after its metric disappeared.
 			if c.iter-e.lastIter > 10 {
+				c.metadataSize -= e.size()
 				delete(c.metadata, m)
 			}
 		}
@@ -1029,6 +1135,32 @@ func (c *scrapeCache) getDropped(met []byte) bool {
 	return ok
 }
 
+// updateRef points the cache entry at a new storage reference, e.g. because the
+// storage garbage collected the series and had to recreate it. Staleness is tracked
+// per reference, so the tracking has to follow the entry to the new reference,
+// otherwise the series looks like it stopped being exposed and gets a stale marker.
+func (c *scrapeCache) updateRef(ce *cacheEntry, ref storage.SeriesRef) {
+	if ce.ref == ref {
+		return
+	}
+	if ce.ref != 0 {
+		moveStaleness(c.seriesPrev, ce, ref)
+		moveStaleness(c.seriesCur, ce, ref)
+	}
+	ce.ref = ref
+}
+
+// moveStaleness re-keys the staleness tracking of ce from ce.ref to ref. Whether the
+// series is considered stale is left as it is, only the reference it is tracked under
+// changes. Tracking that belongs to another cache entry is left alone.
+func moveStaleness(tracked map[storage.SeriesRef]*cacheEntry, ce *cacheEntry, ref storage.SeriesRef) {
+	if tracked[ce.ref] != ce {
+		return
+	}
+	delete(tracked, ce.ref)
+	tracked[ref] = ce
+}
+
 func (c *scrapeCache) trackStaleness(ref storage.SeriesRef, ce *cacheEntry) {
 	c.seriesCur[ref] = ce
 }
@@ -1052,15 +1184,19 @@ func (c *scrapeCache) setType(mfName []byte, t model.MetricType) ([]byte, *metaE
 	defer c.metaMtx.Unlock()
 
 	e, ok := c.metadata[string(mfName)]
+	var oldSize int
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(mfName)] = e
+	} else {
+		oldSize = e.size()
 	}
 	if e.Type != t {
 		e.Type = t
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
+	c.metadataSize += e.size() - oldSize
 	return mfName, e
 }
 
@@ -1069,15 +1205,19 @@ func (c *scrapeCache) setHelp(mfName, help []byte) ([]byte, *metaEntry) {
 	defer c.metaMtx.Unlock()
 
 	e, ok := c.metadata[string(mfName)]
+	var oldSize int
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(mfName)] = e
+	} else {
+		oldSize = e.size()
 	}
 	if e.Help != string(help) {
 		e.Help = string(help)
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
+	c.metadataSize += e.size() - oldSize
 	return mfName, e
 }
 
@@ -1086,15 +1226,19 @@ func (c *scrapeCache) setUnit(mfName, unit []byte) ([]byte, *metaEntry) {
 	defer c.metaMtx.Unlock()
 
 	e, ok := c.metadata[string(mfName)]
+	var oldSize int
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(mfName)] = e
+	} else {
+		oldSize = e.size()
 	}
 	if e.Unit != string(unit) {
 		e.Unit = string(unit)
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
+	c.metadataSize += e.size() - oldSize
 	return mfName, e
 }
 
@@ -1134,14 +1278,10 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 }
 
 // SizeMetadata returns the size of the metadata cache.
-func (c *scrapeCache) SizeMetadata() (s int) {
+func (c *scrapeCache) SizeMetadata() int {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
-	for _, e := range c.metadata {
-		s += e.size()
-	}
-
-	return s
+	return c.metadataSize
 }
 
 // LengthMetadata returns the number of metadata entries in the cache.
@@ -1187,7 +1327,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		stopped:     make(chan struct{}),
 		parentCtx:   opts.sp.ctx,
 		appenderCtx: appenderCtx,
-		l:           opts.sp.logger.With("target", opts.target),
+		l:           opts.sp.logger.With("target", opts.target.String()),
 		cache:       opts.cache,
 
 		interval: opts.interval,
@@ -1236,6 +1376,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		parseST:                 opts.sp.options.ParseST || opts.sp.options.EnableStartTimestampZeroIngestion,
 		synthesizeST:            opts.sp.options.SynthesizeST,
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
+		enableOpenMetrics2:      opts.sp.options.EnableOpenMetrics2,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
 		skipJitterOffsetting:    opts.sp.options.skipJitterOffsetting,
@@ -1347,6 +1488,9 @@ func (sl *scrapeLoop) appender() scrapeLoopAppendAdapter {
 func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- error) time.Time {
 	start := time.Now()
 
+	spanCtx, span := otel.Tracer("").Start(sl.appenderCtx, "scrape")
+	defer span.End()
+
 	// Only record after the first scrape.
 	if !last.IsZero() {
 		sl.metrics.targetIntervalLength.WithLabelValues(sl.interval.String()).Observe(
@@ -1360,13 +1504,21 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	var total, added, seriesAdded, bytesRead int
 	var err, appErr, scrapeErr error
 
+	_, appenderSpan := otel.Tracer("").Start(spanCtx, "newAppender")
 	app := sl.appender()
+	appenderSpan.End()
 	defer func() {
 		if err != nil {
 			_ = app.Rollback()
 			return
 		}
+		_, commitSpan := otel.Tracer("").Start(spanCtx, "scrapeCommit")
 		err = app.Commit()
+		if err != nil {
+			commitSpan.RecordError(err)
+			commitSpan.SetStatus(codes.Error, err.Error())
+		}
+		commitSpan.End()
 		if sl.reportExtraMetrics {
 			totalDuration := time.Since(start)
 			// Record total scrape duration metric.
@@ -1378,7 +1530,14 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	}()
 
 	defer func() {
-		if err = sl.report(app, appendTime, time.Since(start), total, added, seriesAdded, bytesRead, scrapeErr); err != nil {
+		_, reportSpan := otel.Tracer("").Start(spanCtx, "scrapeReport")
+		err = sl.report(app, appendTime, time.Since(start), total, added, seriesAdded, bytesRead, scrapeErr)
+		if err != nil {
+			reportSpan.RecordError(err)
+			reportSpan.SetStatus(codes.Error, err.Error())
+		}
+		reportSpan.End()
+		if err != nil {
 			sl.l.Warn("Appending scrape report failed", "err", err)
 		}
 	}()
@@ -1405,13 +1564,20 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	var resp *http.Response
 	var b []byte
 	var buf *bytes.Buffer
-	scrapeCtx, cancel := context.WithTimeout(sl.parentCtx, sl.timeout)
+	scrapeCtx, cancel := context.WithTimeout(trace.ContextWithSpan(sl.parentCtx, span), sl.timeout)
 	resp, scrapeErr = sl.scraper.scrape(scrapeCtx)
 	if scrapeErr == nil {
 		b = sl.buffers.Get(sl.lastScrapeSize).([]byte)
 		defer sl.buffers.Put(b)
 		buf = bytes.NewBuffer(b)
+		// Trace the response body read and decompression into the buffer.
+		_, readSpan := otel.Tracer("").Start(spanCtx, "scrapeRead")
 		contentType, scrapeErr = sl.scraper.readResponse(scrapeCtx, resp, buf)
+		if scrapeErr != nil {
+			readSpan.RecordError(scrapeErr)
+			readSpan.SetStatus(codes.Error, scrapeErr.Error())
+		}
+		readSpan.End()
 	}
 	cancel()
 
@@ -1444,7 +1610,13 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 
 	// A failed scrape is the same as an empty scrape,
 	// we still call sl.append to trigger stale markers.
+	_, appendSpan := otel.Tracer("").Start(spanCtx, "scrapeAppend")
 	total, added, seriesAdded, appErr = app.append(b, contentType, appendTime)
+	if appErr != nil {
+		appendSpan.RecordError(appErr)
+		appendSpan.SetStatus(codes.Error, appErr.Error())
+	}
+	appendSpan.End()
 	if appErr != nil {
 		_ = app.Rollback()
 		app = sl.appender()
@@ -1460,6 +1632,17 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 
 	if scrapeErr == nil {
 		scrapeErr = appErr
+	}
+
+	span.SetAttributes(
+		attribute.Int("samples_scraped", total),
+		attribute.Int("samples_added", added),
+		attribute.Int("series_added", seriesAdded),
+		attribute.Int("bytes", bytesRead),
+	)
+	if scrapeErr != nil {
+		span.RecordError(scrapeErr)
+		span.SetStatus(codes.Error, scrapeErr.Error())
 	}
 
 	return start
@@ -1609,6 +1792,7 @@ func (sl *scrapeLoopAppender) append(b []byte, contentType string, ts time.Time)
 		ConvertClassicHistogramsToNHCB:          sl.convertClassicHistToNHCB,
 		KeepClassicOnClassicAndNativeHistograms: sl.alwaysScrapeClassicHist,
 		OpenMetricsSkipSTSeries:                 sl.enableSTZeroIngestion,
+		EnableOpenMetrics2:                      sl.enableOpenMetrics2,
 		FallbackContentType:                     sl.fallbackScrapeProtocol,
 	})
 	if p == nil {
@@ -1782,7 +1966,7 @@ loop:
 		if err == nil {
 			// Append may return a new ref; keep the cache in sync.
 			if ce != nil && ref != 0 {
-				ce.ref = ref
+				sl.cache.updateRef(ce, ref)
 			}
 			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil && ce.ref != 0 {
 				sl.cache.trackStaleness(ce.ref, ce)
@@ -2012,8 +2196,7 @@ func (sl *scrapeLoop) checkAddError(met []byte, exemplars []exemplar.Exemplar, e
 		return false, storage.ErrNotFound
 	default:
 		// If nothing from the above, check for partial errors. Do this here to not alloc the pErr on a hot path.
-		var pErr *storage.AppendPartialError
-		if errors.As(err, &pErr) {
+		if pErr, ok := errors.AsType[*storage.AppendPartialError](err); ok {
 			outOfOrderExemplars := 0
 			for _, e := range pErr.ExemplarErrors {
 				if errors.Is(e, storage.ErrOutOfOrderExemplar) {
@@ -2300,26 +2483,34 @@ func pickSchema(bucketFactor float64) int32 {
 // the specified Unix domain socket instead of the target's __address__.
 const UnixSocketLabel = "__unix_socket__"
 
-// unixSocketContextKey is used to pass the unix socket path
-// from the scraper to the custom DialContext via the request context.
-type unixSocketContextKey struct{}
-
-func newScrapeClient(cfg config_util.HTTPClientConfig, name string, optFuncs ...config_util.HTTPClientOption) (*http.Client, error) {
-	// Register a custom dial function so that when a unix socket path is
-	// present on the request context, connections are routed through the
-	// unix socket instead of the URL host. Using WithDialContextFunc
-	// ensures the dial function is installed during transport construction,
-	// before any auth or TLS file-watching wrappers are applied.
-	// Prepend so that callers can override this default via optFuncs.
+// newUnixSocketScrapeClient returns a scrape client that dials the given
+// unix domain socket instead of the request URL host. Each socket path needs
+// its own client: the HTTP transport pools idle connections by scheme and
+// host:port only, so a client shared across sockets could reuse a connection
+// dialed to a different socket.
+func newUnixSocketScrapeClient(socketPath string, cfg config_util.HTTPClientConfig, name string, optFuncs ...config_util.HTTPClientOption) (*http.Client, error) {
+	// Using WithDialContextFunc ensures the dial function is installed
+	// during transport construction, before any auth or TLS file-watching
+	// wrappers are applied. Prepend so that callers can override this
+	// default via optFuncs.
 	optFuncs = append([]config_util.HTTPClientOption{config_util.WithDialContextFunc(
-		func(ctx context.Context, network, addr string) (net.Conn, error) {
-			if socketPath, ok := ctx.Value(unixSocketContextKey{}).(string); ok && socketPath != "" {
-				return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
-			}
-			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
 		},
 	)}, optFuncs...)
+	return newScrapeClient(cfg, name, optFuncs...)
+}
 
+// failingRoundTripper fails every request with a fixed error. It stands in
+// for a scrape client that could not be built, so that the affected targets
+// fail to scrape instead of silently scraping the wrong endpoint.
+type failingRoundTripper struct{ err error }
+
+func (rt failingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, rt.err
+}
+
+func newScrapeClient(cfg config_util.HTTPClientConfig, name string, optFuncs ...config_util.HTTPClientOption) (*http.Client, error) {
 	client, err := config_util.NewClientFromConfig(cfg, name, optFuncs...)
 	if err != nil {
 		return nil, fmt.Errorf("error creating HTTP client: %w", err)
@@ -2328,6 +2519,7 @@ func newScrapeClient(cfg config_util.HTTPClientConfig, name string, optFuncs ...
 		client.Transport,
 		otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
 			return otelhttptrace.NewClientTrace(ctx, otelhttptrace.WithoutSubSpans())
-		}))
+		}),
+	)
 	return client, nil
 }

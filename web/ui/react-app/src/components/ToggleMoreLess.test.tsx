@@ -1,28 +1,20 @@
 import React from 'react';
-import { shallow } from 'enzyme';
-import { Button } from 'reactstrap';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { ToggleMoreLess } from './ToggleMoreLess';
 
 describe('ToggleMoreLess', () => {
-  const showMoreValue = false;
-  const defaultProps = {
-    event: (): void => {
-      tggleBtn.setProps({ showMore: !showMoreValue });
-    },
-    showMore: showMoreValue,
-  };
-  const tggleBtn = shallow(<ToggleMoreLess {...defaultProps} />);
+  it('renders the controlled state and reports clicks', () => {
+    const event = jest.fn();
+    const { rerender } = render(<ToggleMoreLess event={event} showMore={false} />);
 
-  it('renders a show more btn at start', () => {
-    const btn = tggleBtn.find(Button);
-    expect(btn).toHaveLength(1);
-    expect(btn.prop('color')).toEqual('primary');
-    expect(btn.prop('size')).toEqual('xs');
-    expect(btn.render().text()).toEqual('show more');
-  });
+    const button = screen.getByRole('button', { name: 'show more' });
+    expect(button.classList.contains('btn-primary')).toBe(true);
+    expect(button.classList.contains('btn-xs')).toBe(true);
 
-  it('renders a show less btn if clicked', () => {
-    tggleBtn.find(Button).simulate('click');
-    expect(tggleBtn.find(Button).render().text()).toEqual('show less');
+    fireEvent.click(button);
+    expect(event).toHaveBeenCalledTimes(1);
+
+    rerender(<ToggleMoreLess event={event} showMore />);
+    expect(screen.getByRole('button', { name: 'show less' })).toBeTruthy();
   });
 });

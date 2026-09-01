@@ -124,7 +124,7 @@ func TestHeadAppenderV2_WALMultiRef(t *testing.T) {
 	}}, series)
 }
 
-func TestHeadAppenderV2_ActiveAppenders(t *testing.T) {
+func TestHeadAppenderV2_AppendersMetrics(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
 	defer head.Close()
 
@@ -133,21 +133,26 @@ func TestHeadAppenderV2_ActiveAppenders(t *testing.T) {
 	// First rollback with no samples.
 	app := head.AppenderV2(context.Background())
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Then commit with no samples.
 	app = head.AppenderV2(context.Background())
 	require.NoError(t, app.Commit())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Now rollback with one sample.
 	app = head.AppenderV2(context.Background())
 	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, 100, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 
 	// Now commit with one sample.
 	app = head.AppenderV2(context.Background())
@@ -155,6 +160,7 @@ func TestHeadAppenderV2_ActiveAppenders(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.Equal(t, 4.0, prom_testutil.ToFloat64(head.metrics.appendersCreated))
 }
 
 func TestHeadAppenderV2_RaceBetweenSeriesCreationAndGC(t *testing.T) {
@@ -1157,7 +1163,7 @@ func testHeadAppenderV2OutOfOrderSamplesMetric(t *testing.T, scenario sampleType
 
 // TestHeadAppenderV2_HistogramErrorDoesNotSetPendingCommit is the V2
 // counterpart of TestAppendHistogramErrorDoesNotSetPendingCommit. The V2
-// histogram paths in head_append_v2.go already set pendingCommit only on
+// histogram paths in head_append_v2.go already reserve pending state only on
 // success, so this test is here to lock that property in.
 func TestHeadAppenderV2_HistogramErrorDoesNotSetPendingCommit(t *testing.T) {
 	for _, tc := range []struct {
@@ -1184,9 +1190,9 @@ func TestHeadAppenderV2_HistogramErrorDoesNotSetPendingCommit(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, ms)
 			ms.Lock()
-			pc := ms.pendingCommit
+			pc := ms.hasPendingCommit()
 			ms.Unlock()
-			require.False(t, pc, "pendingCommit should be cleared after a successful commit")
+			require.False(t, pc, "pending state should be cleared after a successful commit")
 
 			// Out-of-order append for the same series, OOO window disabled.
 			app = head.AppenderV2(ctx)
@@ -1195,9 +1201,9 @@ func TestHeadAppenderV2_HistogramErrorDoesNotSetPendingCommit(t *testing.T) {
 			require.NoError(t, app.Rollback())
 
 			ms.Lock()
-			pc = ms.pendingCommit
+			pc = ms.hasPendingCommit()
 			ms.Unlock()
-			require.False(t, pc, "pendingCommit should remain false after a failed AppenderV2.Append")
+			require.False(t, pc, "pending state should remain clear after a failed AppenderV2.Append")
 		})
 	}
 }

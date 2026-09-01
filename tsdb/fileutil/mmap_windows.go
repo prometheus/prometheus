@@ -40,7 +40,7 @@ func mmap(f *os.File, size int) ([]byte, error) {
 }
 
 func munmap(b []byte) error {
-	if err := syscall.UnmapViewOfFile((uintptr)(unsafe.Pointer(&b[0]))); err != nil {
+	if err := syscall.UnmapViewOfFile(uintptr(unsafe.Pointer(&b[0]))); err != nil {
 		return os.NewSyscallError("UnmapViewOfFile", err)
 	}
 	return nil

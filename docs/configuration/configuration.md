@@ -202,6 +202,10 @@ global:
   [ extra_scrape_metrics: <boolean> | default = false ]
 
 runtime:
+  # The minimum severity of messages emitted by the process logger.
+  # This setting can be changed by reloading the configuration.
+  [ log_level: <string> | default = info ]
+
   # Configure the Go garbage collector GOGC parameter
   # See: https://tip.golang.org/doc/gc-guide#GOGC
   # Lowering this number increases CPU usage.
@@ -1011,8 +1015,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_msk_cluster_version`: the current version of the MSK cluster
 * `__meta_msk_cluster_kafka_version`: the Kafka version running on the cluster
 * `__meta_msk_cluster_jmx_exporter_enabled`: whether JMX exporter is enabled on the cluster; this label is absent (not `false`) when Open Monitoring is not enabled on the cluster
-* `__meta_msk_cluster_configuration_arn`: the ARN of the MSK configuration
-* `__meta_msk_cluster_configuration_revision`: the revision of the MSK configuration
+* `__meta_msk_cluster_configuration_arn`: the ARN of the MSK configuration; this label is absent when the cluster is not using custom config
+* `__meta_msk_cluster_configuration_revision`: the revision of the MSK configuration; this label is absent when the cluster is not using custom config
 * `__meta_msk_cluster_tag_<tagkey>`: each cluster tag value, keyed by tag name
 * `__meta_msk_node_type`: the type of the node (BROKER or CONTROLLER)
 * `__meta_msk_node_arn`: the ARN of the node
@@ -1590,6 +1594,8 @@ Available meta labels:
 
 * `__meta_docker_container_id`: the id of the container
 * `__meta_docker_container_name`: the name of the container
+* `__meta_docker_container_image`: the image of the container
+* `__meta_docker_container_image_id`: the SHA256 hash of the image of the container
 * `__meta_docker_container_network_mode`: the network mode of the container
 * `__meta_docker_container_label_<labelname>`: each label of the container, with any unsupported characters converted to an underscore
 * `__meta_docker_network_id`: the ID of the network
@@ -2469,7 +2475,7 @@ Available meta labels:
 * `__meta_kubernetes_service_annotation_<annotationname>`: Each annotation from the service object.
 * `__meta_kubernetes_service_annotationpresent_<annotationname>`: "true" for each annotation of the service object.
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
-* `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the loadbalancer. (Applies to services of type LoadBalancer)
+* `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the load balancer, taken from `status.loadBalancer.ingress` (comma-separated when there are multiple). Falls back to the deprecated `spec.loadBalancerIP`. (Applies to services of type LoadBalancer)
 * `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
 * `__meta_kubernetes_service_label_<labelname>`: Each label from the service object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object, with any unsupported characters converted to an underscore.
@@ -4151,15 +4157,19 @@ with this feature.
 [ stale_series_compaction_threshold: <float> | default = 0 ]
 
 # Configures the float chunk encoding to use for new chunks.
-# Valid values are 'xor' and 'xor2'. When absent, the encoding follows the
-# --enable-feature=xor2-encoding flag: 'xor2' if the flag is set, 'xor' otherwise.
-# Setting 'xor' forces standard XOR encoding even when --enable-feature=xor2-encoding is set.
-# Setting 'xor2' is only valid when --enable-feature=xor2-encoding is set;
-# Prometheus will refuse to reload if 'xor2' is set without the feature flag.
+# Valid values are 'xor' and 'xor2'. XOR2 gives better disk compression than XOR for
+# typical Prometheus workloads and can store start timestamps.
+#
+# WARNING: chunks encoded with XOR2 cannot be read by older Prometheus versions that do
+# not support the encoding, nor by downstream tools and LTS systems that do not support
+# it yet (e.g. blocks uploaded by the Thanos sidecar). Once XOR2 chunks have been
+# written, downgrading to a version without XOR2 support requires deleting the affected
+# blocks from disk manually, otherwise Prometheus returns an error on all queries.
+#
+# When absent, the encoding is 'xor2' if --enable-feature=xor2-encoding or
+# --enable-feature=st-storage is set, and 'xor' otherwise.
 # Setting 'xor' is incompatible with --enable-feature=st-storage (XOR chunks do not store
-# start timestamps); Prometheus will refuse to reload in that case too.
-# Omitting 'floats' (or the entire 'chunk_encoding' field) is equivalent; the encoding
-# follows the --enable-feature=xor2-encoding flag.
+# start timestamps); Prometheus will refuse to start or reload in that case.
 # This field is runtime-reloadable.
 # When --enable-feature=st-storage is disabled, XOR and XOR2 are compatible
 # encodings and in-progress chunks are not cut on an encoding change; the new
@@ -4167,6 +4177,8 @@ with this feature.
 # When --enable-feature=st-storage is enabled, XOR and XOR2 are not compatible
 # (XOR chunks do not store start timestamps), so an in-progress chunk is cut
 # on the next append after the encoding changes.
+# For the equivalent ST-capable encoding for native histograms, see the experimental
+# histograms-st-encoding feature flag. The st-storage feature enables that encoding too.
 [ chunk_encoding:
   [ floats: <string> ] ]
 

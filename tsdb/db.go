@@ -58,6 +58,11 @@ const (
 	// DefaultCompactionDelayMaxPercent in percentage.
 	DefaultCompactionDelayMaxPercent = 10
 
+	// MinBlockReloadInterval is the minimum supported non-zero block reload interval.
+	MinBlockReloadInterval = time.Second
+
+	defaultBlockReloadInterval = time.Minute
+
 	// Block dir suffixes to make deletion and creation operations atomic.
 	// We decided to do suffixes instead of creating meta.json as last (or delete as first) one,
 	// because in error case you still can recover meta.json from the block content within local TSDB dir.
@@ -97,7 +102,7 @@ func DefaultOptions() *Options {
 		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
 		CompactionDelay:             time.Duration(0),
 		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,
-		BlockReloadInterval:         1 * time.Minute,
+		BlockReloadInterval:         defaultBlockReloadInterval,
 	}
 }
 
@@ -277,25 +282,18 @@ type Options struct {
 	BlockCompactionExcludeFunc BlockExcludeFilterFunc
 
 	// BlockReloadInterval is the interval at which blocks are reloaded.
+	// A zero value uses the default of one minute. Non-zero values below
+	// MinBlockReloadInterval are clamped to it.
 	BlockReloadInterval time.Duration
 
-	// FloatChunkEncoding is the encoding used for new float chunks when
-	// chunk_encoding.floats is absent from the configuration file.
-	// Defaults to EncXOR. Set to EncXOR2 to default new float chunks to XOR2.
+	// FloatChunkEncoding is the encoding used for new float chunks. It is the
+	// encoding ApplyConfig falls back to whenever chunk_encoding.floats is absent
+	// from the configuration file, so callers reading that field at startup must
+	// resolve it into this one.
+	// Defaults to EncXOR. Set to EncXOR2 to encode new float chunks as XOR2.
 	// Always use DefaultOptions() rather than a bare Options literal; the zero value
-	// of this field is EncNone, not EncXOR. This field is independent of EnableSTStorage:
-	// st-storage does not automatically select EncXOR2.
-	// Selecting EncXOR2 here requires XOR2EncodingAllowed to be true.
+	// of this field is EncNone, not EncXOR.
 	FloatChunkEncoding chunkenc.Encoding
-
-	// XOR2EncodingAllowed gates whether the XOR2 float chunk encoding may be used
-	// at all, either as the FloatChunkEncoding default or via chunk_encoding.floats
-	// in the configuration file. It is the enable/disable switch for the feature,
-	// kept separate from FloatChunkEncoding which selects the active default.
-	// Callers that want XOR2 available without making it the default (e.g.
-	// multi-tenant setups that opt tenants in individually) can set this to true
-	// while leaving FloatChunkEncoding at EncXOR.
-	XOR2EncodingAllowed bool
 
 	// FeatureRegistry is used to register TSDB features.
 	FeatureRegistry features.Collector
@@ -937,12 +935,17 @@ func Open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, st
 		opts.FeatureRegistry.Set(features.TSDB, "use_uncached_io", opts.UseUncachedIO)
 		opts.FeatureRegistry.Enable(features.TSDB, "native_histograms")
 		opts.FeatureRegistry.Set(features.TSDB, "st_storage", opts.EnableSTStorage)
-		opts.FeatureRegistry.Set(features.TSDB, "xor2_encoding", opts.XOR2EncodingAllowed)
+		opts.FeatureRegistry.Enable(features.TSDB, "xor2_encoding")
 		opts.FeatureRegistry.Set(features.TSDB, "histograms_st_encoding", opts.EnableHistogramSTEncoding)
 	}
 
 	return open(dir, l, r, opts, rngs, stats)
 }
+
+// errXORIncompatibleWithSTStorage is returned when the float chunk encoding
+// resolves to XOR while EnableSTStorage is set; XOR chunks do not store start
+// timestamps.
+var errXORIncompatibleWithSTStorage = fmt.Errorf("float chunk encoding %q is incompatible with start-timestamp storage; XOR chunks do not store start timestamps, use %q", config.FloatChunkEncodingXOR, config.FloatChunkEncodingXOR2)
 
 func validateOpts(opts *Options, rngs []int64) (*Options, []int64, error) {
 	if opts == nil {
@@ -954,11 +957,8 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64, error) {
 	if opts.FloatChunkEncoding != chunkenc.EncXOR && opts.FloatChunkEncoding != chunkenc.EncXOR2 {
 		return nil, nil, fmt.Errorf("unsupported float chunk encoding %q; valid values are %q and %q", strings.ToLower(opts.FloatChunkEncoding.String()), config.FloatChunkEncodingXOR, config.FloatChunkEncodingXOR2)
 	}
-	if opts.FloatChunkEncoding == chunkenc.EncXOR2 && !opts.XOR2EncodingAllowed {
-		return nil, nil, fmt.Errorf("float chunk %q is not enabled", config.FloatChunkEncodingXOR2)
-	}
 	if opts.EnableSTStorage && opts.FloatChunkEncoding == chunkenc.EncXOR {
-		return nil, nil, fmt.Errorf("float chunk encoding %q is incompatible with start-timestamp storage; XOR chunks do not store start timestamps, use %q", config.FloatChunkEncodingXOR, config.FloatChunkEncodingXOR2)
+		return nil, nil, errXORIncompatibleWithSTStorage
 	}
 	if opts.StripeSize <= 0 {
 		opts.StripeSize = DefaultStripeSize
@@ -992,8 +992,10 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64, error) {
 			return nil, nil, err
 		}
 	}
-	if opts.BlockReloadInterval < 1*time.Second {
-		opts.BlockReloadInterval = 1 * time.Second
+	if opts.BlockReloadInterval == 0 {
+		opts.BlockReloadInterval = defaultBlockReloadInterval
+	} else if opts.BlockReloadInterval < MinBlockReloadInterval {
+		opts.BlockReloadInterval = MinBlockReloadInterval
 	}
 
 	if len(rngs) == 0 {
@@ -1229,8 +1231,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()
-		var e *errLoadWbl
-		if errors.As(initErr, &e) {
+		if e, ok := errors.AsType[*errLoadWbl](initErr); ok {
 			db.logger.Warn("Encountered WBL read error, attempting repair", "err", initErr)
 			if err := wbl.Repair(e.err); err != nil {
 				return nil, fmt.Errorf("repair corrupted WBL: %w", err)
@@ -1387,12 +1388,20 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	if conf.StorageConfig.TSDBConfig != nil {
 		// Validate encoding config before updating the head encoding so that
 		// an invalid encoding in the config does not change the active encoding.
-		if conf.StorageConfig.TSDBConfig.ChunkEncoding.Floats == config.FloatChunkEncodingXOR2 && !db.opts.XOR2EncodingAllowed {
-			return errors.New("'storage.tsdb.chunk_encoding.floats: xor2' requires the xor2-encoding feature flag to be enabled at startup")
-		}
 		// db.opts.EnableSTStorage is set once at startup and never mutated.
-		if conf.StorageConfig.TSDBConfig.ChunkEncoding.Floats == config.FloatChunkEncodingXOR && db.opts.EnableSTStorage {
-			return errors.New("'storage.tsdb.chunk_encoding.floats: xor' is incompatible with st-storage; XOR chunks do not store start timestamps")
+		// An absent chunk_encoding.floats keeps the encoding resolved at startup.
+		effectiveEncoding := db.opts.FloatChunkEncoding
+		switch floats := conf.StorageConfig.TSDBConfig.ChunkEncoding.Floats; floats {
+		case "":
+		case config.FloatChunkEncodingXOR:
+			effectiveEncoding = chunkenc.EncXOR
+		case config.FloatChunkEncodingXOR2:
+			effectiveEncoding = chunkenc.EncXOR2
+		default:
+			return fmt.Errorf("unsupported float chunk encoding %q; valid values are %q and %q", floats, config.FloatChunkEncodingXOR, config.FloatChunkEncodingXOR2)
+		}
+		if db.opts.EnableSTStorage && effectiveEncoding == chunkenc.EncXOR {
+			return errXORIncompatibleWithSTStorage
 		}
 		oooTimeWindow = conf.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
 		db.opts.staleSeriesCompactionThreshold.Store(conf.StorageConfig.TSDBConfig.StaleSeriesCompactionThreshold)
@@ -1406,14 +1415,6 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 			db.opts.MaxPercentage = conf.StorageConfig.TSDBConfig.Retention.Percentage
 			db.metrics.maxPercentage.Set(db.opts.MaxPercentage)
 			db.retentionMtx.Unlock()
-		}
-		// Default to the startup encoding; overridden by an explicit value below.
-		effectiveEncoding := db.opts.FloatChunkEncoding
-		switch conf.StorageConfig.TSDBConfig.ChunkEncoding.Floats {
-		case config.FloatChunkEncodingXOR:
-			effectiveEncoding = chunkenc.EncXOR
-		case config.FloatChunkEncodingXOR2:
-			effectiveEncoding = chunkenc.EncXOR2
 		}
 		db.head.opts.FloatChunkEncoding.Store(uint32(effectiveEncoding))
 	} else {
@@ -2395,7 +2396,8 @@ func (o Overlaps) String() string {
 			r.Min, r.Max,
 			(time.Duration((r.Max-r.Min)/1000)*time.Second).String(),
 			len(overlaps),
-			strings.Join(groups, ", ")),
+			strings.Join(groups, ", "),
+		),
 		)
 	}
 	return strings.Join(res, "\n")

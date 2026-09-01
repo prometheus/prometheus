@@ -1,1 +1,6 @@
 web/api/v1/testdata/openapi_golden.yaml linguist-generated
+
+# Ensure OpenMetrics test fixtures keep LF line endings on checkout.
+# The parsers reject "\r" as part of tokens (OpenMetrics/OM2 text format is
+# LF-only), so CRLF-mangled fixtures break parsing on Windows checkouts.
+model/textparse/testdata/*.txt text eol=lf

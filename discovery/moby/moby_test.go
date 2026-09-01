@@ -50,6 +50,7 @@ type refresher interface {
 // accepts the connection but never answers cannot block discovery forever. The
 // http case also guards the option ordering the timeout relies on.
 func TestRefreshTimesOutOnUnresponsiveDaemon(t *testing.T) {
+	t.Parallel()
 	for _, host := range []struct {
 		name string
 		host func(t *testing.T) string

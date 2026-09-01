@@ -1,16 +1,9 @@
-import * as React from 'react';
-import { mount, ReactWrapper } from 'enzyme';
-import { act } from 'react-dom/test-utils';
-import { Table } from 'reactstrap';
-
-import TSDBStatus from './TSDBStatus';
-import { TSDBMap } from './TSDBStatus';
+import React from 'react';
+import { render, screen } from '@testing-library/react';
+import TSDBStatus, { TSDBMap } from './TSDBStatus';
 import { PathPrefixContext } from '../../contexts/PathPrefixContext';
 
-const fakeTSDBStatusResponse: {
-  status: string;
-  data: TSDBMap;
-} = {
+const fakeTSDBStatusResponse: { status: string; data: TSDBMap } = {
   status: 'success',
   data: {
     headStats: {
@@ -20,183 +13,96 @@ const fakeTSDBStatusResponse: {
       minTime: 1591516800000,
       maxTime: 1598896800143,
     },
-    labelValueCountByLabelName: [
-      {
-        name: '__name__',
-        value: 5,
-      },
-    ],
+    labelValueCountByLabelName: [{ name: '__name__', value: 5 }],
     seriesCountByMetricName: [
-      {
-        name: 'scrape_duration_seconds',
-        value: 1,
-      },
-      {
-        name: 'scrape_samples_scraped',
-        value: 1,
-      },
+      { name: 'scrape_duration_seconds', value: 1 },
+      { name: 'scrape_samples_scraped', value: 1 },
     ],
-    memoryInBytesByLabelName: [
-      {
-        name: '__name__',
-        value: 103,
-      },
-    ],
-    seriesCountByLabelValuePair: [
-      {
-        name: 'instance=localhost:9100',
-        value: 5,
-      },
-    ],
+    memoryInBytesByLabelName: [{ name: '__name__', value: 103 }],
+    seriesCountByLabelValuePair: [{ name: 'instance=localhost:9100', value: 5 }],
   },
 };
 
-const fakeEmptyTSDBStatusResponse: {
-  status: string;
-  data: TSDBMap;
-} = {
-  status: 'success',
-  data: {
-    headStats: {
-      numSeries: 0,
-      numLabelPairs: 0,
-      chunkCount: 0,
-      minTime: 9223372036854776000,
-      maxTime: -9223372036854776000,
-    },
-    labelValueCountByLabelName: [],
-    seriesCountByMetricName: [],
-    memoryInBytesByLabelName: [],
-    seriesCountByLabelValuePair: [],
-  },
+const emptyCardinality = {
+  labelValueCountByLabelName: [],
+  seriesCountByMetricName: [],
+  memoryInBytesByLabelName: [],
+  seriesCountByLabelValuePair: [],
 };
 
-const fakeInvalidTimestampTSDBStatusResponse: {
-  status: string;
-  data: TSDBMap;
-} = {
-  status: 'success',
-  data: {
-    headStats: {
-      numSeries: 1,
-      numLabelPairs: 0,
-      chunkCount: 0,
-      minTime: 9223372036854776000,
-      maxTime: -9223372036854776000,
-    },
-    labelValueCountByLabelName: [],
-    seriesCountByMetricName: [],
-    memoryInBytesByLabelName: [],
-    seriesCountByLabelValuePair: [],
-  },
-};
+const renderStatus = () =>
+  render(
+    <PathPrefixContext.Provider value="/path/prefix">
+      <TSDBStatus />
+    </PathPrefixContext.Provider>
+  );
 
-describe('TSDB Stats', () => {
+const tableCells = (table: HTMLElement): string[] =>
+  Array.from(table.querySelectorAll('tbody td')).map((cell) => cell.textContent || '');
+
+describe('TSDBStatus', () => {
   beforeEach(() => {
     fetchMock.resetMocks();
   });
 
-  describe('Table Data Validation', () => {
-    it('Table Test', async () => {
-      const tables = [
-        fakeTSDBStatusResponse.data.labelValueCountByLabelName,
-        fakeTSDBStatusResponse.data.seriesCountByMetricName,
-        fakeTSDBStatusResponse.data.memoryInBytesByLabelName,
-        fakeTSDBStatusResponse.data.seriesCountByLabelValuePair,
-      ];
+  it('fetches and renders head and cardinality statistics', async () => {
+    fetchMock.mockResponse(JSON.stringify(fakeTSDBStatusResponse));
 
-      const mock = fetchMock.mockResponse(JSON.stringify(fakeTSDBStatusResponse));
-      let page: any;
-      await act(async () => {
-        page = mount(
-          <PathPrefixContext.Provider value="/path/prefix">
-            <TSDBStatus />
-          </PathPrefixContext.Provider>
-        );
-      });
-      page.update();
+    renderStatus();
 
-      expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/status/tsdb', {
-        cache: 'no-store',
-        credentials: 'same-origin',
-      });
-
-      const headStats = page.find(Table).at(0).find('tbody').find('td');
-      ['508', '937', '1234', '2020-06-07T08:00:00.000Z (1591516800000)', '2020-08-31T18:00:00.143Z (1598896800143)'].forEach(
-        (value, i) => {
-          expect(headStats.at(i).text()).toEqual(value);
-        }
-      );
-
-      for (let i = 0; i < tables.length; i++) {
-        const data = tables[i];
-        const table = page
-          .find(Table)
-          .at(i + 1)
-          .find('tbody');
-        const rows = table.find('tr');
-        for (let i = 0; i < data.length; i++) {
-          const firstRowColumns = rows
-            .at(i)
-            .find('td')
-            .map((column: ReactWrapper) => column.text());
-          expect(rows.length).toBe(data.length);
-          expect(firstRowColumns[0]).toBe(data[i].name);
-          expect(firstRowColumns[1]).toBe(data[i].value.toString());
-        }
-      }
+    expect(await screen.findByRole('heading', { name: 'TSDB Status' })).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledWith('/path/prefix/api/v1/status/tsdb', {
+      cache: 'no-store',
+      credentials: 'same-origin',
     });
 
-    it('No Data', async () => {
-      const mock = fetchMock.mockResponse(JSON.stringify(fakeEmptyTSDBStatusResponse));
-      let page: any;
-      await act(async () => {
-        page = mount(
-          <PathPrefixContext.Provider value="/path/prefix">
-            <TSDBStatus />
-          </PathPrefixContext.Provider>
-        );
-      });
-      page.update();
+    const tables = screen.getAllByRole('table');
+    expect(tableCells(tables[0])).toEqual([
+      '508',
+      '937',
+      '1234',
+      '2020-06-07T08:00:00.000Z (1591516800000)',
+      '2020-08-31T18:00:00.143Z (1598896800143)',
+    ]);
+    expect(tableCells(tables[1])).toEqual(['__name__', '5']);
+    expect(tableCells(tables[2])).toEqual(['scrape_duration_seconds', '1', 'scrape_samples_scraped', '1']);
+    expect(tableCells(tables[3])).toEqual(['__name__', '103']);
+    expect(tableCells(tables[4])).toEqual(['instance=localhost:9100', '5']);
+  });
 
-      expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/status/tsdb', {
-        cache: 'no-store',
-        credentials: 'same-origin',
-      });
+  it.each([
+    {
+      name: 'no datapoints',
+      numSeries: 0,
+      expectedMin: 'No datapoints yet',
+      expectedMax: 'No datapoints yet',
+    },
+    {
+      name: 'invalid timestamps with existing series',
+      numSeries: 1,
+      expectedMin: 'Error parsing time (9223372036854776000)',
+      expectedMax: 'Error parsing time (-9223372036854776000)',
+    },
+  ])('renders $name', async ({ numSeries, expectedMin, expectedMax }) => {
+    fetchMock.mockResponse(
+      JSON.stringify({
+        status: 'success',
+        data: {
+          headStats: {
+            numSeries,
+            numLabelPairs: 0,
+            chunkCount: 0,
+            minTime: 9223372036854776000,
+            maxTime: -9223372036854776000,
+          },
+          ...emptyCardinality,
+        },
+      })
+    );
 
-      expect(page.find('h2').text()).toEqual('TSDB Status');
+    renderStatus();
+    await screen.findByRole('heading', { name: 'TSDB Status' });
 
-      const headStats = page.find(Table).at(0).find('tbody').find('td');
-      ['0', '0', '0', 'No datapoints yet', 'No datapoints yet'].forEach((value, i) => {
-        expect(headStats.at(i).text()).toEqual(value);
-      });
-    });
-
-    it('Invalid min/max Timestamp', async () => {
-      const mock = fetchMock.mockResponse(JSON.stringify(fakeInvalidTimestampTSDBStatusResponse));
-      let page: any;
-      await act(async () => {
-        page = mount(
-          <PathPrefixContext.Provider value="/path/prefix">
-            <TSDBStatus />
-          </PathPrefixContext.Provider>
-        );
-      });
-      page.update();
-
-      expect(mock).toHaveBeenCalledWith('/path/prefix/api/v1/status/tsdb', {
-        cache: 'no-store',
-        credentials: 'same-origin',
-      });
-
-      expect(page.find('h2').text()).toEqual('TSDB Status');
-
-      const headStats = page.find(Table).at(0).find('tbody').find('td');
-      ['1', '0', '0', 'Error parsing time (9223372036854776000)', 'Error parsing time (-9223372036854776000)'].forEach(
-        (value, i) => {
-          expect(headStats.at(i).text()).toEqual(value);
-        }
-      );
-    });
+    expect(tableCells(screen.getAllByRole('table')[0])).toEqual([numSeries.toString(), '0', '0', expectedMin, expectedMax]);
   });
 });

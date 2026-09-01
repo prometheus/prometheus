@@ -2541,12 +2541,7 @@ yydefault:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			yylex.(*parser).experimentalDurationExpr(yyDollar[2].node.(Expr))
-			if durationExpr, ok := yyDollar[2].node.(*DurationExpr); ok {
-				durationExpr.Wrapped = true
-				yyVAL.node = durationExpr
-				break
-			}
-			yyVAL.node = yyDollar[2].node
+			yyVAL.node = yylex.(*parser).wrapParenDurationExpr(yyDollar[2].node.(Expr), yyDollar[1].item.PositionRange().Start, yyDollar[3].item.PositionRange().End)
 		}
 	}
 	goto yystack /* stack new state and value */
