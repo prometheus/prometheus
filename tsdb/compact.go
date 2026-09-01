@@ -90,6 +90,12 @@ type LeveledCompactor struct {
 	postingsEncoder             index.PostingsEncoder
 	postingsDecoderFactory      PostingsDecoderFactory
 	enableOverlappingCompaction bool
+
+	// MaybePause tells compactor if it should pause. Compactor will
+	// call it sporadically and if merges should be pause then the call to
+	// MaybePause() will simply block until merges should resume.
+	// If MaybePause() returns an error then compaction should abort.
+	MaybePause func(ctx context.Context) error
 }
 
 type CompactorMetrics struct {
@@ -582,7 +588,7 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 // Compact creates a new block in the compactor's directory from the blocks in the
 // provided directories.
 func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) ([]ulid.ULID, error) {
-	return c.CompactWithBlockPopulator(dest, dirs, open, DefaultBlockPopulator{})
+	return c.CompactWithBlockPopulator(dest, dirs, open, DefaultBlockPopulator{MaybePause: c.MaybePause})
 }
 
 func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string, open []*Block, blockPopulator BlockPopulator) ([]ulid.ULID, error) {
@@ -635,6 +641,14 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 	uid := ulid.MustNew(ulid.Now(), rand.Reader)
 
 	meta := CompactBlockMetas(uid, metas...)
+	c.logger.Info(
+		"compact blocks started",
+		"count", len(blocks),
+		"mint", meta.MinTime,
+		"maxt", meta.MaxTime,
+		"ulid", meta.ULID,
+		"sources", fmt.Sprintf("%v", uids),
+	)
 	err := c.write(dest, meta, blockPopulator, blocks...)
 	if err == nil {
 		if meta.Stats.NumSamples == 0 {
@@ -659,7 +673,7 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 		}
 
 		c.logger.Info(
-			"compact blocks",
+			"compact blocks completed",
 			"count", len(blocks),
 			"mint", meta.MinTime,
 			"maxt", meta.MaxTime,
@@ -887,12 +901,14 @@ func AllSortedPostings(ctx context.Context, reader IndexReader) index.Postings {
 	return reader.SortedPostings(all)
 }
 
-type DefaultBlockPopulator struct{}
+type DefaultBlockPopulator struct {
+	MaybePause func(ctx context.Context) error
+}
 
 // PopulateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
 // It expects sorted blocks input by mint.
-func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger *slog.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter, postingsFunc IndexReaderPostingsFunc) (err error) {
+func (d DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger *slog.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter, postingsFunc IndexReaderPostingsFunc) (err error) {
 	if len(blocks) == 0 {
 		return errors.New("cannot populate block from no readers")
 	}
@@ -985,11 +1001,16 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 	}
 
 	// Iterate over all sorted chunk series.
-	for set.Next() {
+	for i := 0; set.Next(); i++ {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+		}
+		if d.MaybePause != nil && i%10000 == 0 {
+			if err := d.MaybePause(ctx); err != nil {
+				return fmt.Errorf("maybe pause: %w", err)
+			}
 		}
 		s := set.At()
 		chksIter = s.Iterator(chksIter)
