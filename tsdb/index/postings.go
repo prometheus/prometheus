@@ -28,6 +28,8 @@ import (
 	"time"
 
 	"github.com/bboreham/go-loser"
+	"github.com/cespare/xxhash/v2"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -53,6 +55,21 @@ var ensureOrderBatchPool = sync.Pool{
 	},
 }
 
+// readEpochShards is the number of shards that label names are hashed onto to track which postings lists have been handed out to readers.
+const readEpochShards = 512
+
+// trackedListMinLen is the postings list length from which we track how much of the list readers may have observed, shorter ones are just copied.
+const trackedListMinLen = 1024
+
+// listMeta records how much of a postings list may already have been observed by a reader, so that addFor knows which refs it must not modify in place.
+type listMeta struct {
+	// safeLen is the number of leading refs that may already have been handed out to a reader, refs below it must not be modified.
+	safeLen int
+
+	// epoch is the label name's read epoch when safeLen was last computed, and safeLen must be recomputed once it has moved on.
+	epoch uint64
+}
+
 // MemPostings holds postings list for series ID per label pair. They may be written
 // to out of order.
 // EnsureOrder() must be called once before any reads are done. This allows for quick
@@ -63,10 +80,7 @@ type MemPostings struct {
 	// m holds the postings lists for each label-value pair, indexed first by label name, and then by label value.
 	//
 	// mtx must be held when interacting with m (the appropriate one for reading or writing).
-	// It is safe to retain a reference to a postings list after releasing the lock.
-	//
-	// BUG: There's currently a data race in addFor, which might modify the tail of the postings list:
-	// https://github.com/prometheus/prometheus/issues/15317
+	// It is safe to retain a reference to a postings list after releasing the lock, as refs a reader can see are never modified in place, see addFor.
 	m map[string]map[string][]storage.SeriesRef
 
 	// lvs holds the label values for each label name.
@@ -75,7 +89,30 @@ type MemPostings struct {
 	// Since it's append-only, it is safe to read the label values slice after releasing the lock.
 	lvs map[string][]string
 
+	// readEpochs[i] is incremented by readers holding mtx for reading when they take a postings list of a label name on shard i, so that the increment happens-before the next writer sees it.
+	readEpochs [readEpochShards]atomic.Uint64
+
+	// listMeta tracks reader exposure for postings lists of at least trackedListMinLen refs, mtx must be held for writing when interacting with it.
+	listMeta map[labels.Label]listMeta
+
 	ordered bool
+}
+
+// readEpochShard returns the read epoch shard a label name is tracked on.
+func readEpochShard(name string) uint64 {
+	return xxhash.Sum64String(name) % readEpochShards
+}
+
+// markRead records that the caller is taking a reference to postings lists of the given label name, and must be called while still holding mtx.
+func (p *MemPostings) markRead(name string) {
+	p.readEpochs[readEpochShard(name)].Add(1)
+}
+
+// markAllRead is markRead for callers that take references to the postings lists of every label name.
+func (p *MemPostings) markAllRead() {
+	for i := range p.readEpochs {
+		p.readEpochs[i].Add(1)
+	}
 }
 
 const defaultLabelNamesMapSize = 512
@@ -83,9 +120,10 @@ const defaultLabelNamesMapSize = 512
 // NewMemPostings returns a memPostings that's ready for reads and writes.
 func NewMemPostings() *MemPostings {
 	return &MemPostings{
-		m:       make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
-		lvs:     make(map[string][]string, defaultLabelNamesMapSize),
-		ordered: true,
+		m:        make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
+		lvs:      make(map[string][]string, defaultLabelNamesMapSize),
+		listMeta: map[labels.Label]listMeta{},
+		ordered:  true,
 	}
 }
 
@@ -93,9 +131,10 @@ func NewMemPostings() *MemPostings {
 // until EnsureOrder() was called once.
 func NewUnorderedMemPostings() *MemPostings {
 	return &MemPostings{
-		m:       make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
-		lvs:     make(map[string][]string, defaultLabelNamesMapSize),
-		ordered: false,
+		m:        make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
+		lvs:      make(map[string][]string, defaultLabelNamesMapSize),
+		listMeta: map[labels.Label]listMeta{},
+		ordered:  false,
 	}
 }
 
@@ -318,8 +357,11 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 				repl = append(repl, id)
 			}
 		}
+		// repl is a fresh slice that no reader can have a reference to, so what we recorded about the old one no longer applies.
+		delete(p.listMeta, l)
 		if len(repl) > 0 {
 			p.m[l.Name][l.Value] = repl
+			p.resetSafeLen(l, len(repl))
 		} else {
 			delete(p.m[l.Name], l.Value)
 			affectedLabelNames[l.Name] = struct{}{}
@@ -388,6 +430,7 @@ func (p *MemPostings) unlockWaitAndLockAgain() {
 func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
+	p.markAllRead()
 
 	for n, e := range p.m {
 		for v, p := range e {
@@ -430,22 +473,73 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	if !ok {
 		p.lvs[l.Name] = appendWithExponentialGrowth(p.lvs[l.Name], l.Value)
 	}
+	// appendWithExponentialGrowth reallocates when the list is full, and no reader can have a reference to the resulting backing array.
+	copied := cap(vm) < len(vm)+1
 	list := appendWithExponentialGrowth(vm, id)
 	nm[l.Value] = list
 
-	if !p.ordered {
+	// Appending never modifies a ref that a reader can already see, so a list that is still ordered needs no repair, which is by far the common case.
+	if !p.ordered || len(list) == 1 || list[len(list)-1] >= list[len(list)-2] {
+		if copied {
+			// The append reallocated, so nothing in the new backing array has been handed out to a reader yet.
+			p.resetSafeLen(l, len(list))
+		}
 		return
 	}
+
 	// There is no guarantee that no higher ID was inserted before as they may
 	// be generated independently before adding them to postings.
 	// We repair order violations on insert. The invariant is that the first n-1
 	// items in the list are already sorted.
-	for i := len(list) - 1; i >= 1; i-- {
-		if list[i] >= list[i-1] {
-			break
-		}
-		list[i], list[i-1] = list[i-1], list[i]
+	// Repairing the order moves refs that are already in the list, which must not be done to refs a reader may hold, see https://github.com/prometheus/prometheus/issues/15317.
+	at := len(list) - 1
+	for at > 0 && list[at-1] > id {
+		at--
 	}
+
+	if !copied && at < p.safeLen(l, len(list)-1) {
+		// The new ref belongs among refs a reader may already be reading, so insert it into a copy of the list and publish that instead.
+		repl := make([]storage.SeriesRef, len(list), cap(list))
+		copy(repl, list[:at])
+		repl[at] = id
+		copy(repl[at+1:], list[at:len(list)-1])
+		nm[l.Value] = repl
+		p.resetSafeLen(l, len(repl))
+		return
+	}
+
+	// Everything from at onwards is ours to move.
+	copy(list[at+1:], list[at:len(list)-1])
+	list[at] = id
+	if copied {
+		p.resetSafeLen(l, len(list))
+	}
+}
+
+// safeLen returns how many leading refs of l's postings list must not be modified in place, where n is the list length before the append. mtx must be held for writing.
+func (p *MemPostings) safeLen(l labels.Label, n int) int {
+	if n < trackedListMinLen {
+		// Not worth tracking: copying a list this short is cheap, so treat all of it as potentially observed by a reader.
+		return n
+	}
+
+	epoch := p.readEpochs[readEpochShard(l.Name)].Load()
+	meta, ok := p.listMeta[l]
+	if !ok || meta.epoch != epoch {
+		// A reader has taken a postings list of this label name since we last looked, so assume it took this one at its current length.
+		meta = listMeta{safeLen: n, epoch: epoch}
+		p.listMeta[l] = meta
+	}
+	return meta.safeLen
+}
+
+// resetSafeLen records that l's postings list lives in a backing array no reader has a reference to, so all of it may be modified until the next read. mtx must be held for writing.
+func (p *MemPostings) resetSafeLen(l labels.Label, n int) {
+	if n < trackedListMinLen {
+		// Short lists are never tracked and safeLen doesn't consult listMeta for them, so there is nothing to reset, and Delete cleans up any leftover entry.
+		return
+	}
+	p.listMeta[l] = listMeta{safeLen: 0, epoch: p.readEpochs[readEpochShard(l.Name)].Load()}
 }
 
 func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
@@ -481,6 +575,7 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	its := make([]*listPostings, 0, len(vals))
 	lps := make([]listPostings, len(vals))
 	p.mtx.RLock()
+	p.markRead(name)
 	e := p.m[name]
 	for i, v := range vals {
 		if refs, ok := e[v]; ok {
@@ -503,6 +598,7 @@ func (p *MemPostings) Postings(ctx context.Context, name string, values ...strin
 	res := make([]*listPostings, 0, len(values))
 	lps := make([]listPostings, len(values))
 	p.mtx.RLock()
+	p.markRead(name)
 	postingsMapForName := p.m[name]
 	for i, value := range values {
 		if lp := postingsMapForName[value]; lp != nil {
@@ -516,6 +612,7 @@ func (p *MemPostings) Postings(ctx context.Context, name string, values ...strin
 
 func (p *MemPostings) PostingsForAllLabelValues(ctx context.Context, name string) Postings {
 	p.mtx.RLock()
+	p.markRead(name)
 
 	e := p.m[name]
 	its := make([]*listPostings, 0, len(e))
