@@ -14,7 +14,6 @@
 package semconv
 
 import (
-	"maps"
 	"os"
 	"testing"
 
@@ -54,41 +53,45 @@ func TestLoadOTelSchema(t *testing.T) {
 
 	t.Run("collects renames from the all section", func(t *testing.T) {
 		schema := loadOTelSchemaFile(t, "./testdata/otel_with_all_section.yaml")
-		require.Len(t, schema.versionRenames, 1)
-		attrs := schema.versionRenames[0].attributes
-		// Global ("all" section) renames are collected bidirectionally...
-		require.Equal(t, "global.new", attrs["global.old"])
-		require.Equal(t, "global.old", attrs["global.new"])
-		// ...alongside the metric-section renames.
-		require.Equal(t, "metric.new", attrs["metric.old"])
-		require.Equal(t, "metric.old", attrs["metric.new"])
-		require.Len(t, schema.versionRenames[0].changes, 2)
-		require.True(t, schema.versionRenames[0].changes[0].attributes.appliesTo("any.metric"))
-		require.True(t, schema.versionRenames[0].changes[1].attributes.appliesTo("my.metric"))
-		require.False(t, schema.versionRenames[0].changes[1].attributes.appliesTo("other.metric"))
+		require.Len(t, schema.revisions, 1)
+		require.Len(t, schema.revisions[0].changes, 2)
+
+		global := schema.revisions[0].changes[0].attributeRenames
+		require.Equal(t, "global.new", global.renames.forward["global.old"])
+		require.Equal(t, []string{"global.old"}, global.renames.reverse["global.new"])
+		require.True(t, global.appliesTo("any.metric"))
+
+		scoped := schema.revisions[0].changes[1].attributeRenames
+		require.Equal(t, "metric.new", scoped.renames.forward["metric.old"])
+		require.True(t, scoped.appliesTo("my.metric"))
+		require.False(t, scoped.appliesTo("other.metric"))
 	})
 
 	t.Run("collects per-version metric renames", func(t *testing.T) {
 		schema := loadOTelSchemaFile(t, "./testdata/otel_with_metric_renames.yaml")
-		require.Len(t, schema.versionRenames, 1)
-		// Metric renames should be bidirectional.
-		renames := schema.versionRenames[0]
-		require.Equal(t, "new.metric.name", renames.metrics["old.metric.name"])
-		require.Equal(t, "old.metric.name", renames.metrics["new.metric.name"])
-		require.Equal(t, "another.new.metric", renames.metrics["another.old.metric"])
-		require.Equal(t, "another.old.metric", renames.metrics["another.new.metric"])
+		require.Len(t, schema.revisions, 1)
+		renames := schema.revisions[0].changes[0].metricRenames
+		require.Equal(t, "new.metric.name", renames.forward["old.metric.name"])
+		require.Equal(t, []string{"old.metric.name"}, renames.reverse["new.metric.name"])
+		require.Equal(t, "another.new.metric", renames.forward["another.old.metric"])
+		require.Equal(t, []string{"another.old.metric"}, renames.reverse["another.new.metric"])
 	})
 
-	t.Run("collects per-version attribute renames", func(t *testing.T) {
+	t.Run("scopes per-version attribute renames to apply_to_metrics", func(t *testing.T) {
 		schema := loadOTelSchemaFile(t, "./testdata/otel.yaml")
-		require.Len(t, schema.versionRenames, 1)
-		renames := schema.versionRenames[0]
-		require.Equal(t, "http.request.method", renames.attributes["http.method"])
-		require.Equal(t, "http.method", renames.attributes["http.request.method"])
-		require.Len(t, renames.changes, 2)
-		require.True(t, renames.changes[0].attributes.appliesTo("http.server.duration"))
-		require.False(t, renames.changes[0].attributes.appliesTo("process.cpu.time"))
-		require.True(t, renames.changes[1].attributes.appliesTo("process.cpu.time"))
+		require.Len(t, schema.revisions, 1)
+		require.Len(t, schema.revisions[0].changes, 2)
+		http := schema.revisions[0].changes[0].attributeRenames
+		for _, metric := range []string{"http.server.duration", "http.server.request.count"} {
+			require.True(t, http.appliesTo(metric))
+		}
+		require.False(t, http.appliesTo("process.cpu.time"))
+		require.Equal(t, "http.request.method", http.renames.forward["http.method"])
+
+		cpu := schema.revisions[0].changes[1].attributeRenames
+		require.True(t, cpu.appliesTo("process.cpu.time"))
+		require.False(t, cpu.appliesTo("http.server.duration"))
+		require.Equal(t, "cpu.mode", cpu.renames.forward["process.cpu.state"])
 	})
 
 	t.Run("preserves empty metric scope", func(t *testing.T) {
@@ -112,33 +115,57 @@ versions:
               - selected.metric
 `))
 		require.NoError(t, err)
-		require.Len(t, schema.versionRenames, 1)
-		changes := schema.versionRenames[0].changes
+		require.Len(t, schema.revisions, 1)
+		changes := schema.revisions[0].changes
 		require.Len(t, changes, 3)
 
-		require.True(t, changes[0].attributes.appliesTo("any.metric"))
-		require.False(t, changes[1].attributes.appliesTo("any.metric"))
-		require.True(t, changes[2].attributes.appliesTo("selected.metric"))
-		require.False(t, changes[2].attributes.appliesTo("other.metric"))
+		require.True(t, changes[0].attributeRenames.appliesTo("any.metric"))
+		require.False(t, changes[1].attributeRenames.appliesTo("any.metric"))
+		require.True(t, changes[2].attributeRenames.appliesTo("selected.metric"))
+		require.False(t, changes[2].attributeRenames.appliesTo("other.metric"))
 	})
 
 	t.Run("collects renames from multiple versions", func(t *testing.T) {
 		schema := loadOTelSchemaFile(t, "./testdata/otel_with_chained_renames.yaml")
-		require.Len(t, schema.versionRenames, 2)
-		allMetricRenames := make(map[string]string)
-		for _, r := range schema.versionRenames {
-			maps.Copy(allMetricRenames, r.metrics)
-		}
-		require.Contains(t, allMetricRenames, "metric.v1")
-		require.Contains(t, allMetricRenames, "metric.v2")
-		require.Contains(t, allMetricRenames, "metric.v3")
+		require.Len(t, schema.revisions, 2)
+		require.Equal(t, "metric.v2", schema.revisions[0].changes[0].metricRenames.forward["metric.v1"])
+		require.Equal(t, "metric.v3", schema.revisions[1].changes[0].metricRenames.forward["metric.v2"])
 	})
 
 	t.Run("sorts versions by semver", func(t *testing.T) {
 		schema := loadOTelSchemaFile(t, "./testdata/otel_with_chained_renames.yaml")
-		require.Len(t, schema.versionRenames, 2)
-		require.Equal(t, "1.0.0", schema.versionRenames[0].version)
-		require.Equal(t, "1.1.0", schema.versionRenames[1].version)
+		require.Len(t, schema.revisions, 2)
+		require.Equal(t, "1.0.0", schema.revisions[0].version)
+		require.Equal(t, "1.1.0", schema.revisions[1].version)
+	})
+
+	t.Run("keeps every predecessor of a real many-to-one rename", func(t *testing.T) {
+		schema := loadOTelSchemaFile(t, "./testdata/upstream/schema-1.44.0.yaml")
+		var renames *directedRenames
+		for _, revision := range schema.revisions {
+			if revision.version != "1.38.0" {
+				continue
+			}
+			for _, change := range revision.changes {
+				if change.metricRenames != nil {
+					renames = change.metricRenames
+					break
+				}
+			}
+		}
+		require.NotNil(t, renames)
+		require.Equal(t, []string{
+			"k8s.replication_controller.available_pods",
+			"k8s.replicationcontroller.available_pods",
+		}, renames.reverse["k8s.replicationcontroller.pod.available"])
+
+		variants := requireMatcherVariants(t, "1.38.0", &schema,
+			equalMatchers("k8s.replicationcontroller.pod.available"), nil, nil)
+		require.ElementsMatch(t, []string{
+			"k8s.replicationcontroller.pod.available",
+			"k8s.replication_controller.available_pods",
+			"k8s.replicationcontroller.available_pods",
+		}, variantNames(variants))
 	})
 }
 
@@ -208,6 +235,63 @@ func TestFetchSemconv(t *testing.T) {
 	})
 }
 
+func TestLoadSemconv(t *testing.T) {
+	t.Run("indexes metric groups with attributes", func(t *testing.T) {
+		sc, err := loadSemconv([]byte(`
+groups:
+  - id: metric.http.server.request.duration
+    type: metric
+    metric_name: http.server.request.duration
+    stability: stable
+    unit: s
+    instrument: histogram
+    attributes:
+      - ref: http.request.method
+`), "1.0.0")
+		require.NoError(t, err)
+		require.Equal(t, metricDef{attributes: []string{"http.request.method"}}, sc.metrics["http.server.request.duration"])
+	})
+
+	t.Run("indexes a metric group that declares no attributes", func(t *testing.T) {
+		// Such a group is still a metric, so it must be visible to the
+		// existence check that validates rename edges, even though it
+		// contributes nothing to attribute-rename normalisation.
+		sc, err := loadSemconv([]byte(`
+groups:
+  - id: metric.queue.depth
+    type: metric
+    metric_name: queue.depth
+    unit: "{item}"
+    instrument: updowncounter
+`), "1.0.0")
+		require.NoError(t, err)
+		require.Contains(t, sc.metrics, "queue.depth")
+		require.Empty(t, sc.attributesOf("queue.depth"))
+	})
+
+	t.Run("keeps the first declaration of a duplicate metric name", func(t *testing.T) {
+		sc, err := loadSemconv([]byte(`
+groups:
+  - id: metric.shared.name
+    type: metric
+    metric_name: shared.name
+    unit: s
+    instrument: histogram
+    attributes:
+      - ref: http.request.method
+  - id: metric.shared.name.other
+    type: metric
+    metric_name: shared.name
+    unit: "{item}"
+    instrument: updowncounter
+    attributes:
+      - ref: queue.name
+`), "1.0.0")
+		require.NoError(t, err)
+		require.Equal(t, []string{"http.request.method"}, sc.attributesOf("shared.name"))
+	})
+}
+
 func TestTransformOTelSchemaLabels(t *testing.T) {
 	t.Run("transforms metric and label names", func(t *testing.T) {
 		lbls := labels.FromStrings(
@@ -254,6 +338,89 @@ func TestTransformOTelSchemaLabels(t *testing.T) {
 		require.Empty(t, result.Get(schemaURLLabel))
 		require.Equal(t, "http.server.duration", result.Get(model.MetricNameLabel))
 	})
+
+	t.Run("sorts labels after a rename", func(t *testing.T) {
+		lbls := labels.FromStrings(
+			model.MetricNameLabel, "jvm.thread.count",
+			"service.name", "api",
+			"thread.daemon", "true",
+		)
+		mapping := &labelMapping{
+			translatedMetric: "jvm.thread.count",
+			translatedLabels: map[string]string{"thread.daemon": "jvm.thread.daemon"},
+		}
+
+		result, err := transformOTelSchemaLabels(lbls, mapping)
+		require.NoError(t, err)
+		require.Equal(t, labels.FromStrings(
+			model.MetricNameLabel, "jvm.thread.count",
+			"jvm.thread.daemon", "true",
+			"service.name", "api",
+		), result)
+		require.Equal(t, "true", result.Get("jvm.thread.daemon"))
+	})
+
+	t.Run("collapses aliases with equal values", func(t *testing.T) {
+		lbls := labels.FromStrings(
+			model.MetricNameLabel, "jvm.thread.count",
+			"jvm.thread.daemon", "true",
+			"thread.daemon", "true",
+		)
+		mapping := &labelMapping{
+			translatedMetric: "jvm.thread.count",
+			translatedLabels: map[string]string{"thread.daemon": "jvm.thread.daemon"},
+		}
+
+		result, err := transformOTelSchemaLabels(lbls, mapping)
+		require.NoError(t, err)
+		require.Equal(t, labels.FromStrings(
+			model.MetricNameLabel, "jvm.thread.count",
+			"jvm.thread.daemon", "true",
+		), result)
+	})
+
+	t.Run("rejects aliases with conflicting values", func(t *testing.T) {
+		lbls := labels.FromStrings(
+			model.MetricNameLabel, "jvm.thread.count",
+			"jvm.thread.daemon", "false",
+			"thread.daemon", "true",
+		)
+		mapping := &labelMapping{
+			translatedMetric: "jvm.thread.count",
+			translatedLabels: map[string]string{"thread.daemon": "jvm.thread.daemon"},
+		}
+
+		_, err := transformOTelSchemaLabels(lbls, mapping)
+		require.ErrorContains(t, err, `maps "jvm.thread.daemon" and "thread.daemon" to "jvm.thread.daemon" with conflicting values`)
+	})
+
+	t.Run("handles many-to-one mappings", func(t *testing.T) {
+		mapping := &labelMapping{
+			translatedMetric: "metric.current",
+			translatedLabels: map[string]string{
+				"legacy.a": "current",
+				"legacy.b": "current",
+			},
+		}
+
+		result, err := transformOTelSchemaLabels(labels.FromStrings(
+			model.MetricNameLabel, "metric.old",
+			"legacy.a", "same",
+			"legacy.b", "same",
+		), mapping)
+		require.NoError(t, err)
+		require.Equal(t, labels.FromStrings(
+			model.MetricNameLabel, "metric.current",
+			"current", "same",
+		), result)
+
+		_, err = transformOTelSchemaLabels(labels.FromStrings(
+			model.MetricNameLabel, "metric.old",
+			"legacy.a", "one",
+			"legacy.b", "two",
+		), mapping)
+		require.ErrorContains(t, err, `maps "legacy.a" and "legacy.b" to "current" with conflicting values`)
+	})
 }
 
 func TestReadRegistryFile(t *testing.T) {
@@ -277,4 +444,32 @@ func TestReadRegistryFile(t *testing.T) {
 			require.Errorf(t, err, "expected %q to be rejected", url)
 		}
 	})
+}
+
+// TestUpstreamSemconvAttributes pins how the real semconv files' metric attributes
+// parse, against the unmodified v1.44.0 artefact for semconv 1.22.0.
+//
+// It records a gap as much as a guarantee. Most real metric groups declare their
+// attributes with extends, naming an attribute_group to inherit from, and
+// semconvGroup has no such field: those groups parse with no attributes at all, so
+// nothing canonicalises their attribute names across a rename and no
+// apply_to_metrics scoping applies to them either. Only groups that list attributes
+// inline are seen. If extends is resolved later, the second assertion here is the
+// one that should change.
+func TestUpstreamSemconvAttributes(t *testing.T) {
+	b, err := os.ReadFile("./testdata/upstream/semconv-1.22.0.yaml")
+	require.NoError(t, err)
+	sc, err := loadSemconv(b, "1.22.0")
+	require.NoError(t, err)
+
+	// Declared inline, so they are parsed.
+	require.Contains(t, sc.attributesOf("http.server.active_requests"), "http.request.method",
+		"inline attributes of a real metric group must be parsed")
+
+	// Declared via "extends: metric_attributes.http.server", so they are not.
+	require.Empty(t, sc.attributesOf("http.server.request.duration"),
+		"extends is not resolved, so this group has no attributes; if that changes, so must this")
+
+	// Either way the group is indexed as a metric for lifecycle traversal.
+	require.Contains(t, sc.metrics, "http.server.request.duration")
 }

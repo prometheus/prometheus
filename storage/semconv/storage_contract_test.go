@@ -541,7 +541,125 @@ versions:
 	require.Equal(t, &resolverBudgetCallCounts{}, calls)
 }
 
-func TestForwardMetricConvergenceFailsBeforeStorage(t *testing.T) {
+func TestAmbiguousSchemaReuseFailsBeforeStorage(t *testing.T) {
+	metricReuseSchema := `file_format: 1.1.0
+schema_url: https://example.com/schemas/1.2.0
+versions:
+  1.0.0:
+  1.1.0:
+    metrics:
+      changes:
+        - rename_metrics:
+            foo: bar
+  1.2.0:
+    metrics:
+      changes:
+        - rename_metrics:
+            baz: foo
+`
+	for _, tc := range []struct {
+		name       string
+		metric     string
+		attribute  string
+		labelValue string
+		schema     string
+	}{
+		{
+			name:       "historical metric alias",
+			metric:     "bar",
+			labelValue: model.MetricNameLabel,
+			schema:     metricReuseSchema,
+		},
+		{
+			name:       "reused metric anchor",
+			metric:     "foo",
+			labelValue: model.MetricNameLabel,
+			schema:     metricReuseSchema,
+		},
+		{
+			name:       "reused attribute alias",
+			metric:     "metric",
+			attribute:  "user",
+			labelValue: "user",
+			schema: `file_format: 1.1.0
+schema_url: https://example.com/schemas/1.2.0
+versions:
+  1.0.0:
+  1.1.0:
+    metrics:
+      changes:
+        - rename_attributes:
+            attribute_map:
+              user: tenant
+  1.2.0:
+    metrics:
+      changes:
+        - rename_attributes:
+            attribute_map:
+              account: user
+`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			registry := map[string][]byte{
+				"registry.yaml": []byte(tc.schema),
+				"1.2.0": []byte(`groups:
+  - id: metric.metric
+    type: metric
+    metric_name: metric
+    instrument: counter
+    unit: "1"
+  - id: metric.foo
+    type: metric
+    metric_name: foo
+    instrument: counter
+    unit: "1"
+  - id: metric.bar
+    type: metric
+    metric_name: bar
+    instrument: counter
+    unit: "1"
+`),
+			}
+			engine := newSchemaEngine(newRegistrySource(registry))
+			calls := &resolverBudgetCallCounts{}
+			matchers := []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, tc.metric),
+				labels.MustNewMatcher(labels.MatchEqual, semconvURLLabel, "registry/1.2.0"),
+				labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, "registry/registry.yaml"),
+			}
+			if tc.attribute != "" {
+				matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, tc.attribute, "value"))
+			}
+
+			querier := &awareQuerier{
+				Querier:              &resolverBudgetQuerier{Querier: storage.NoopQuerier(), calls: calls},
+				engine:               engine,
+				canonicalSeriesLimit: maxCanonicalSeriesMaterialization,
+			}
+			series := querier.Select(t.Context(), true, nil, matchers...)
+			require.False(t, series.Next())
+			require.ErrorIs(t, series.Err(), errAmbiguousSchemaRename)
+
+			chunkQuerier := &awareChunkQuerier{
+				ChunkQuerier:         &resolverBudgetChunkQuerier{ChunkQuerier: storage.NoopChunkedQuerier(), calls: calls},
+				engine:               engine,
+				canonicalSeriesLimit: maxCanonicalSeriesMaterialization,
+			}
+			chunks := chunkQuerier.Select(t.Context(), true, nil, matchers...)
+			require.False(t, chunks.Next())
+			require.ErrorIs(t, chunks.Err(), errAmbiguousSchemaRename)
+
+			_, _, err := querier.LabelNames(t.Context(), nil, matchers...)
+			require.ErrorIs(t, err, errAmbiguousSchemaRename)
+			_, _, err = querier.LabelValues(t.Context(), tc.labelValue, nil, matchers...)
+			require.ErrorIs(t, err, errAmbiguousSchemaRename)
+			require.Equal(t, &resolverBudgetCallCounts{}, calls)
+		})
+	}
+}
+
+func TestForwardMetricConvergenceFansOutToStorage(t *testing.T) {
 	registry := map[string][]byte{
 		"registry.yaml": []byte(`file_format: 1.1.0
 schema_url: https://example.com/schemas/1.1.0
@@ -576,7 +694,7 @@ versions:
 	}
 	series := querier.Select(t.Context(), true, nil, matchers...)
 	require.False(t, series.Next())
-	require.ErrorIs(t, series.Err(), errAmbiguousSchemaRename)
+	require.NoError(t, series.Err())
 
 	chunkQuerier := &awareChunkQuerier{
 		ChunkQuerier:         &resolverBudgetChunkQuerier{ChunkQuerier: storage.NoopChunkedQuerier(), calls: calls},
@@ -585,16 +703,19 @@ versions:
 	}
 	chunks := chunkQuerier.Select(t.Context(), true, nil, matchers...)
 	require.False(t, chunks.Next())
-	require.ErrorIs(t, chunks.Err(), errAmbiguousSchemaRename)
+	require.NoError(t, chunks.Err())
 
 	_, _, err := querier.LabelNames(t.Context(), nil, matchers...)
-	require.ErrorIs(t, err, errAmbiguousSchemaRename)
+	require.NoError(t, err)
 	_, _, err = querier.LabelValues(t.Context(), model.MetricNameLabel, nil, matchers...)
-	require.ErrorIs(t, err, errAmbiguousSchemaRename)
-	require.Equal(t, &resolverBudgetCallCounts{}, calls)
+	require.NoError(t, err)
+	require.Positive(t, calls.series)
+	require.Positive(t, calls.chunk)
+	require.Positive(t, calls.labelNames)
+	require.Positive(t, calls.labelValues)
 }
 
-func TestAmbiguousSchemaRenameFailsBeforeStorage(t *testing.T) {
+func TestSchemaConvergenceFansOutToStorage(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		metric    string
@@ -730,7 +851,7 @@ versions:
 			}
 			series := querier.Select(t.Context(), true, nil, matchers...)
 			require.False(t, series.Next())
-			require.ErrorIs(t, series.Err(), errAmbiguousSchemaRename)
+			require.NoError(t, series.Err())
 
 			chunkQuerier := &awareChunkQuerier{
 				ChunkQuerier:         &resolverBudgetChunkQuerier{ChunkQuerier: storage.NoopChunkedQuerier(), calls: calls},
@@ -739,17 +860,20 @@ versions:
 			}
 			chunks := chunkQuerier.Select(t.Context(), true, nil, matchers...)
 			require.False(t, chunks.Next())
-			require.ErrorIs(t, chunks.Err(), errAmbiguousSchemaRename)
+			require.NoError(t, chunks.Err())
 
 			_, _, err := querier.LabelNames(t.Context(), nil, matchers...)
-			require.ErrorIs(t, err, errAmbiguousSchemaRename)
+			require.NoError(t, err)
 			labelName := tc.attribute
 			if labelName == "" {
 				labelName = model.MetricNameLabel
 			}
 			_, _, err = querier.LabelValues(t.Context(), labelName, nil, matchers...)
-			require.ErrorIs(t, err, errAmbiguousSchemaRename)
-			require.Equal(t, &resolverBudgetCallCounts{}, calls)
+			require.NoError(t, err)
+			require.Positive(t, calls.series)
+			require.Positive(t, calls.chunk)
+			require.Positive(t, calls.labelNames)
+			require.Positive(t, calls.labelValues)
 		})
 	}
 }
