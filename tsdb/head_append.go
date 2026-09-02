@@ -427,6 +427,10 @@ type headAppenderBase struct {
 	useHistogramST                  bool // Whether ST-capable histogram chunk encoding is used in this append.
 }
 
+// observeNativeMetricMetadata records m for s at timestamp. The store check is
+// repeated at the call site, which skips the call entirely when the Head has no
+// native metadata store, so that the disabled case costs a branch rather than a
+// call. This one keeps the method safe for callers that do not.
 func (a *headAppenderBase) observeNativeMetricMetadata(s *memSeries, timestamp int64, m metadata.Metadata) {
 	if a.head.nativeMetricMetadata == nil || m.IsEmpty() {
 		return

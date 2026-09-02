@@ -1444,8 +1444,8 @@ curl -G http://localhost:9090/api/v1/metadata/series \
 }
 ```
 
-The data is kept only in memory and is lost on restart. Scrapes, OTLP, and
-Remote Write 1.0 do not populate this endpoint in this prototype.
+The data is kept only in memory and is lost on restart. Remote Write 1.0 does
+not populate this endpoint in this prototype.
 
 ## Alertmanagers
 

@@ -140,28 +140,30 @@ func (a *nativeMetricMetadataAppender) metadataReference(store *nativeMetricMeta
 
 	// Reuse the committed handle for stable high-cardinality metadata. This
 	// bounds raw transaction state without paying the interning cost again.
+	var (
+		committed     unique.Handle[metadata.Metadata]
+		haveCommitted bool
+	)
 	stripe := store.stripe(ref)
 	stripe.mtx.RLock()
 	history, ok := stripe.histories[ref]
 	if ok && len(history.versions) > 0 {
-		handle := history.versions[len(history.versions)-1].metadata
-		if handle.Value() == m {
-			stripe.mtx.RUnlock()
-			return a.appendDirectHandle(handle)
-		}
+		committed = history.versions[len(history.versions)-1].metadata
+		haveCommitted = true
 	}
 	stripe.mtx.RUnlock()
+
+	// Compare after unlocking. The handle keeps its value alive independently
+	// of the stripe, and the comparison copies a struct and walks three
+	// strings, which is more than a read lock shared with commits should hold.
+	if haveCommitted && committed.Value() == m {
+		return a.appendDirectHandle(committed)
+	}
 	return a.appendDirectHandle(unique.Make(m))
 }
 
 func (a *nativeMetricMetadataAppender) appendDirectHandle(handle unique.Handle[metadata.Metadata]) uint32 {
 	ref := nativeMetricMetadataDirectRefMask | uint32(len(a.directHandles))
-	if len(a.directHandles) == cap(a.directHandles) {
-		newCapacity := max(16, 2*cap(a.directHandles))
-		handles := make([]unique.Handle[metadata.Metadata], len(a.directHandles), newCapacity)
-		copy(handles, a.directHandles)
-		a.directHandles = handles
-	}
 	a.directHandles = append(a.directHandles, handle)
 	return ref
 }
@@ -169,11 +171,6 @@ func (a *nativeMetricMetadataAppender) appendDirectHandle(handle unique.Handle[m
 func (a *nativeMetricMetadataAppender) appendObservation(ref chunks.HeadSeriesRef, effectiveFrom int64, metadataRef uint32) uint32 {
 	stripe := uint8(uint64(ref) & (nativeMetricMetadataStripes - 1))
 	observationRef := uint32(len(a.observations) + 1)
-	if len(a.observations) == cap(a.observations) {
-		observations := make([]nativeMetricMetadataObservation, len(a.observations), 2*cap(a.observations))
-		copy(observations, a.observations)
-		a.observations = observations
-	}
 	a.observations = append(a.observations, nativeMetricMetadataObservation{
 		ref:           ref,
 		effectiveFrom: effectiveFrom,
@@ -415,34 +412,6 @@ func (s *nativeMetricMetadataStore) commitAppenderStripe(stripeIndex uint8, appe
 	}
 }
 
-func compareNativeMetricMetadataPoints(a, b nativeMetricMetadataPoint) int {
-	switch {
-	case a.effectiveFrom < b.effectiveFrom:
-		return -1
-	case a.effectiveFrom > b.effectiveFrom:
-		return 1
-	default:
-		return 0
-	}
-}
-
-func sortAndCompactNativeMetricMetadataObservations(observations []nativeMetricMetadataPoint) []nativeMetricMetadataPoint {
-	if !slices.IsSortedFunc(observations, compareNativeMetricMetadataPoints) {
-		slices.SortStableFunc(observations, compareNativeMetricMetadataPoints)
-	}
-
-	compacted := observations[:0]
-	for _, observation := range observations {
-		if len(compacted) > 0 && compacted[len(compacted)-1].effectiveFrom == observation.effectiveFrom {
-			compacted[len(compacted)-1] = observation
-			continue
-		}
-		compacted = append(compacted, observation)
-	}
-	clear(observations[len(compacted):])
-	return compacted
-}
-
 func appendNativeMetricMetadataPoint(versions []nativeMetricMetadataPoint, point nativeMetricMetadataPoint) ([]nativeMetricMetadataPoint, bool) {
 	if len(versions) == maxNativeMetricMetadataVersions {
 		copy(versions, versions[1:])
@@ -543,20 +512,6 @@ func mergeOverlappingNativeMetricMetadata(existing, observations []nativeMetricM
 	return versions, evictions
 }
 
-// merge applies observations in append order when timestamps are equal.
-func (s *nativeMetricMetadataStore) merge(ref chunks.HeadSeriesRef, observations []nativeMetricMetadataPoint) {
-	if len(observations) == 0 {
-		return
-	}
-	observations = sortAndCompactNativeMetricMetadataObservations(observations)
-
-	stripe := s.stripe(ref)
-	stripe.mtx.Lock()
-	history, exists := stripe.histories[ref]
-	s.mergeLocked(stripe, ref, history, exists, observations)
-	stripe.mtx.Unlock()
-}
-
 func (s *nativeMetricMetadataStore) mergeLocked(stripe *nativeMetricMetadataStripe, ref chunks.HeadSeriesRef, history nativeMetricMetadataHistory, exists bool, observations []nativeMetricMetadataPoint) {
 	oldLen := len(history.versions)
 	var evictions int
@@ -575,23 +530,6 @@ func (s *nativeMetricMetadataStore) mergeLocked(stripe *nativeMetricMetadataStri
 		s.series.Add(1)
 	}
 	s.versions.Add(int64(len(history.versions) - oldLen))
-}
-
-func (s *nativeMetricMetadataStore) mergeOne(ref chunks.HeadSeriesRef, observation nativeMetricMetadataPoint) {
-	stripe := s.stripe(ref)
-	stripe.mtx.Lock()
-	history, exists := stripe.histories[ref]
-	if exists && len(history.versions) > 0 {
-		last := history.versions[len(history.versions)-1]
-		if observation.effectiveFrom >= last.effectiveFrom && observation.metadata == last.metadata {
-			stripe.mtx.Unlock()
-			return
-		}
-	}
-
-	observations := [1]nativeMetricMetadataPoint{observation}
-	s.mergeLocked(stripe, ref, history, exists, observations[:])
-	stripe.mtx.Unlock()
 }
 
 func (s *nativeMetricMetadataStore) get(ref chunks.HeadSeriesRef) ([]NativeMetricMetadataVersion, bool, bool) {
@@ -701,6 +639,10 @@ func (h *Head) nativeMetricMetadataForMatchers(ctx context.Context, matcherSets 
 		}
 		postings = append(postings, p)
 	}
+	// Sorting materialises every matching series before iteration, so limit
+	// bounds the response and the per-series decode below but not this. That is
+	// deliberate: bounding before the sort would return an arbitrary subset
+	// rather than the first by label order.
 	p := reader.SortedPostings(&nativeMetricMetadataPostings{
 		Postings: index.Merge(ctx, postings...),
 		store:    h.nativeMetricMetadata,
@@ -722,6 +664,10 @@ func (h *Head) nativeMetricMetadataForMatchers(ctx context.Context, matcherSets 
 			}
 			return nil, false, err
 		}
+		// Check the limit only once a series has actually produced a result.
+		// Either continue above can still skip a posting when a concurrent gc
+		// removes the series, so checking earlier would report truncation
+		// without a further result existing.
 		if limit > 0 && len(result) == limit {
 			return result, true, nil
 		}

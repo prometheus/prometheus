@@ -1706,6 +1706,9 @@ func (api *API) nativeMetricMetadata(r *http.Request) apiFuncResult {
 		return invalidParamError(err, "match[]")
 	}
 
+	// errorExec answers 422, matching how the API already reports an endpoint
+	// the server cannot serve in its current configuration, as it does for
+	// agent mode.
 	reader, ok := api.db.(nativeMetricMetadataReader)
 	if !ok {
 		return apiFuncResult{nil, &apiError{errorExec, tsdb.ErrNativeMetadataDisabled}, nil, nil}
