@@ -202,7 +202,7 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		return 0, appErr
 	}
 	s = appended
-	a.observeNativeMetricMetadata(s, t, opts.NativeMetricMetadata)
+	a.observeNativeMetricMetadata(s, t, opts.Metadata)
 
 	if isStale {
 		// Legacy WAL metadata is not updated for stale values.

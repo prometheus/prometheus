@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/compression"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -803,7 +804,6 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				require.Empty(t, appendable.histograms)
 				require.Empty(t, appendable.exemplars)
 				require.Empty(t, appendable.metadata)
-				require.Empty(t, appendable.nativeMetadata)
 				return
 			}
 
@@ -828,14 +828,13 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				b       = labels.NewScratchBuilder(0)
 				i, j, k int
 			)
-			var expectedMetadata, expectedNativeMetadata []mockMetadata
+			var expectedMetadata []mockMetadata
 			for _, ts := range writeV2RequestFixture.Timeseries {
 				ls, err := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
 				require.NoError(t, err)
 				expectedMeta, err := ts.ToMetadata(writeV2RequestFixture.Symbols)
 				require.NoError(t, err)
 				for range len(ts.Samples) + len(ts.Histograms) {
-					expectedNativeMetadata = append(expectedNativeMetadata, mockMetadata{ls, expectedMeta})
 					if tc.appendMetadata && tc.updateMetadataErr == nil {
 						expectedMetadata = append(expectedMetadata, mockMetadata{ls, expectedMeta})
 					}
@@ -878,7 +877,57 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				}
 			}
 			requireEqual(t, expectedMetadata, appendable.metadata)
-			requireEqual(t, expectedNativeMetadata, appendable.nativeMetadata)
+		})
+	}
+}
+
+func TestRemoteWriteHandler_V2NativeMetadata(t *testing.T) {
+	payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name         string
+		passMetadata bool
+	}{
+		{name: "metadata passing disabled"},
+		{name: "metadata passing enabled", passMetadata: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := teststorage.New(t, func(opts *tsdb.Options) {
+				opts.EnableNativeMetadata = true
+			})
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, db, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, false, false, tc.passMetadata)
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+			req.Header.Set("Content-Encoding", compression.Snappy)
+			req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			require.Equal(t, http.StatusNoContent, recorder.Code)
+
+			nameMatcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric1")
+			result, truncated, err := db.NativeMetricMetadata(t.Context(), [][]*labels.Matcher{{nameMatcher}}, 0)
+			require.NoError(t, err)
+			require.False(t, truncated)
+			if !tc.passMetadata {
+				require.Empty(t, result)
+				return
+			}
+
+			var b labels.ScratchBuilder
+			expectedLabels, err := writeV2RequestFixture.Timeseries[0].ToLabels(&b, writeV2RequestFixture.Symbols)
+			require.NoError(t, err)
+			require.Equal(t, []tsdb.NativeMetricMetadataSeries{{
+				Labels: expectedLabels,
+				Versions: []tsdb.NativeMetricMetadataVersion{
+					{EffectiveFrom: 10, Metadata: writeV2RequestSeries1Metadata},
+					{EffectiveFrom: 20, Metadata: writeV2RequestSeries2Metadata},
+					{EffectiveFrom: 30, Metadata: writeV2RequestSeries1Metadata},
+					{EffectiveFrom: 50, Metadata: writeV2RequestSeries2Metadata},
+				},
+			}}, result)
 		})
 	}
 }
@@ -1355,7 +1404,6 @@ type mockAppendable struct {
 	latestFloatHist map[uint64]int64
 	histograms      []mockHistogram
 	metadata        []mockMetadata
-	nativeMetadata  []mockMetadata
 
 	// optional errors to inject.
 	commitErr             error
@@ -1455,9 +1503,6 @@ func (a *mockAppenderV2) Append(ref storage.SeriesRef, l labels.Labels, st, t in
 	if err != nil {
 		return ref, err
 	}
-	if !opts.NativeMetricMetadata.IsEmpty() {
-		a.asV1().nativeMetadata = append(a.asV1().nativeMetadata, mockMetadata{l: l, m: opts.NativeMetricMetadata})
-	}
 	if !opts.Metadata.IsEmpty() {
 		// Metadata is best-effort within Append; errors are not surfaced to the caller.
 		_, _ = a.asV1().UpdateMetadata(ref, l, opts.Metadata)
@@ -1528,7 +1573,6 @@ func (m *mockAppendable) Rollback() error {
 	m.exemplars = m.exemplars[:0]
 	m.histograms = m.histograms[:0]
 	m.metadata = m.metadata[:0]
-	m.nativeMetadata = m.nativeMetadata[:0]
 	return nil
 }
 

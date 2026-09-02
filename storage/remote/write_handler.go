@@ -368,8 +368,7 @@ func (h *writeHandler) appendV2(app *remoteWriteAppenderV2, req *writev2.Request
 		}
 
 		var ref storage.SeriesRef
-		// Native metadata is independent of the existing metadata ingestion path.
-		opts := storage.AOptions{NativeMetricMetadata: m}
+		opts := storage.AOptions{}
 		if h.appendMetadata {
 			opts.Metadata = m
 		}

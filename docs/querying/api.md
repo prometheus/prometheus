@@ -1381,7 +1381,8 @@ curl -G http://localhost:9090/api/v1/metadata?metric=http_requests_total
 ### Querying native metric metadata by series
 
 The following experimental endpoint returns versioned metric metadata ingested
-through Remote Write 2.0. It requires `--enable-feature=native-metadata`.
+from scrapes, OTLP, and Remote Write 2.0. It requires
+`--enable-feature=native-metadata`.
 
 ```
 GET /api/v1/metadata/series

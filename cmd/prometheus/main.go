@@ -250,6 +250,8 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				features.Enable(features.TSDB, "metadata_wal_records")
 				logger.Info("Experimental metadata records in WAL enabled")
 			case "native-metadata":
+				c.scrape.AppendMetadata = true
+				c.web.AppendMetadata = true
 				c.tsdb.EnableNativeMetadata = true
 				features.Enable(features.TSDB, "native_metadata")
 				logger.Info("Experimental in-memory native metric metadata enabled")

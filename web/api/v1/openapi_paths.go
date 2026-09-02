@@ -375,7 +375,7 @@ func (*OpenAPIBuilder) nativeMetricMetadataPath() *v3.PathItem {
 		Get: &v3.Operation{
 			OperationId: "get-native-metric-metadata",
 			Summary:     "Get versioned native metric metadata by series",
-			Description: "Experimental endpoint enabled by --enable-feature=native-metadata. Only metadata ingested through Remote Write 2.0 is exposed, and data is not persisted across restarts.",
+			Description: "Experimental endpoint enabled by --enable-feature=native-metadata. Metadata ingested from scrapes, OTLP, and Remote Write 2.0 is exposed, and data is not persisted across restarts.",
 			Tags:        []string{"metadata"},
 			Parameters:  params,
 			Responses:   responsesWithErrorExamples("NativeMetricMetadataOutputBody", nativeMetricMetadataResponseExamples(), errorResponseExamples(), "Native metric metadata retrieved successfully.", "Error retrieving native metric metadata."),

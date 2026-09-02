@@ -2052,7 +2052,7 @@ paths:
             tags:
                 - metadata
             summary: Get versioned native metric metadata by series
-            description: Experimental endpoint enabled by --enable-feature=native-metadata. Only metadata ingested through Remote Write 2.0 is exposed, and data is not persisted across restarts.
+            description: Experimental endpoint enabled by --enable-feature=native-metadata. Metadata ingested from scrapes, OTLP, and Remote Write 2.0 is exposed, and data is not persisted across restarts.
             operationId: get-native-metric-metadata
             parameters:
                 - name: match[]
