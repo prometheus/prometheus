@@ -70,9 +70,8 @@ func AwareStorage(s storage.Storage) storage.Storage {
 // and __schema_url__ matchers against an operator-provided registry instead of
 // the embedded one, which it fully replaces. files holds the registry-root files
 // keyed by base name (e.g. "registry.yaml", "1.0.0"). It returns an error if
-// files is not a valid registry (empty, a file fails to parse as the semconv or
-// OTel schema its name implies, or metric attribute inheritance is invalid), so
-// callers can fail fast at startup.
+// files is not a valid registry (empty, or a file fails to parse as the semconv
+// or OTel schema its name implies), so callers can fail fast at startup.
 func AwareStorageWithRegistry(s storage.Storage, files map[string][]byte) (storage.Storage, error) {
 	if err := validateRegistryFiles(files); err != nil {
 		return nil, err
@@ -1334,7 +1333,7 @@ func (s *awareSeriesSet) Next() bool {
 		result := at
 		lbls := at.Labels()
 		if s.alwaysTransform || labelMappingChangesLabels(lbls, s.mapping) {
-			transformed, err := transformChangedOTelSchemaLabels(lbls, s.mapping)
+			transformed, err := transformOTelSchemaLabels(lbls, s.mapping)
 			if err != nil {
 				s.err = err
 				return false
@@ -1400,7 +1399,7 @@ func (s *awareChunkSeriesSet) Next() bool {
 		result := at
 		lbls := at.Labels()
 		if s.alwaysTransform || labelMappingChangesLabels(lbls, s.mapping) {
-			transformed, err := transformChangedOTelSchemaLabels(lbls, s.mapping)
+			transformed, err := transformOTelSchemaLabels(lbls, s.mapping)
 			if err != nil {
 				s.err = err
 				return false

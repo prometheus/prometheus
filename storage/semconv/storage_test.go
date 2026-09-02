@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -45,6 +46,18 @@ func requireWarningsContain(t *testing.T, warnings []string, substr string) {
 	t.Fatalf("expected a warning containing %q, got %v", substr, warnings)
 }
 
+func metricSemconv(metricName, unit, instrument string) []byte {
+	return fmt.Appendf(nil, `groups:
+  - id: metric.%s
+    type: metric
+    metric_name: %s
+    unit: %q
+    instrument: %s
+    attributes:
+      - ref: http.response.status_code
+`, metricName, metricName, unit, instrument)
+}
+
 // newAwareStorage builds a TestStorage and wraps it with AwareStorage. It
 // returns both so tests can append directly into the underlying storage.
 func newAwareStorage(t *testing.T) (storage.Storage, *teststorage.TestStorage) {
@@ -61,6 +74,100 @@ func newAwareStorage(t *testing.T) (storage.Storage, *teststorage.TestStorage) {
 type erroringStorage struct {
 	storage.Storage
 	errsByMetric map[string]error
+}
+
+type queryCallCounts struct {
+	mu               sync.Mutex
+	selectSeries     int64
+	selectChunks     int64
+	labelNames       int64
+	labelValues      int64
+	chunkLabelNames  int64
+	chunkLabelValues int64
+}
+
+func (c *queryCallCounts) reset() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.selectSeries = 0
+	c.selectChunks = 0
+	c.labelNames = 0
+	c.labelValues = 0
+	c.chunkLabelNames = 0
+	c.chunkLabelValues = 0
+}
+
+func (c *queryCallCounts) total() int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.selectSeries + c.selectChunks + c.labelNames + c.labelValues + c.chunkLabelNames + c.chunkLabelValues
+}
+
+func (c *queryCallCounts) increment(counter *int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	(*counter)++
+}
+
+type countingStorage struct {
+	storage.Storage
+	counts *queryCallCounts
+}
+
+func (s *countingStorage) Querier(mint, maxt int64) (storage.Querier, error) {
+	q, err := s.Storage.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return &countingQuerier{Querier: q, counts: s.counts}, nil
+}
+
+func (s *countingStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	q, err := s.Storage.ChunkQuerier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return &countingChunkQuerier{ChunkQuerier: q, counts: s.counts}, nil
+}
+
+type countingQuerier struct {
+	storage.Querier
+	counts *queryCallCounts
+}
+
+func (q *countingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	q.counts.increment(&q.counts.selectSeries)
+	return q.Querier.Select(ctx, sortSeries, hints, matchers...)
+}
+
+func (q *countingQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	q.counts.increment(&q.counts.labelNames)
+	return q.Querier.LabelNames(ctx, hints, matchers...)
+}
+
+func (q *countingQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	q.counts.increment(&q.counts.labelValues)
+	return q.Querier.LabelValues(ctx, name, hints, matchers...)
+}
+
+type countingChunkQuerier struct {
+	storage.ChunkQuerier
+	counts *queryCallCounts
+}
+
+func (q *countingChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
+	q.counts.increment(&q.counts.selectChunks)
+	return q.ChunkQuerier.Select(ctx, sortSeries, hints, matchers...)
+}
+
+func (q *countingChunkQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	q.counts.increment(&q.counts.chunkLabelNames)
+	return q.ChunkQuerier.LabelNames(ctx, hints, matchers...)
+}
+
+func (q *countingChunkQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	q.counts.increment(&q.counts.chunkLabelValues)
+	return q.ChunkQuerier.LabelValues(ctx, name, hints, matchers...)
 }
 
 func (s *erroringStorage) Querier(mint, maxt int64) (storage.Querier, error) {
@@ -300,7 +407,7 @@ func TestSchemaAttributeRenamesWithoutSemconvDeclarations(t *testing.T) {
 	}
 }
 
-func TestSchemaMixedMetricAndAttributeEras(t *testing.T) {
+func TestSchemaMetricAndAttributeRevisionBoundaries(t *testing.T) {
 	for _, anchor := range []struct {
 		name      string
 		version   string
@@ -315,18 +422,10 @@ func TestSchemaMixedMetricAndAttributeEras(t *testing.T) {
 			underlying := teststorage.New(t)
 			wrapper, err := semconv.AwareStorageWithRegistry(underlying, undeclaredAttributeRegistry())
 			require.NoError(t, err)
-			for i, combination := range []struct {
-				metric    string
-				attribute string
-			}{
-				{metric: "m.old", attribute: "svc.env"},
-				{metric: "m.old", attribute: "svc.environment"},
-				{metric: "m", attribute: "svc.env"},
-				{metric: "m", attribute: "svc.environment"},
-			} {
-				appendSeries(t, underlying, combination.metric, int64(i+1), float64(i+1),
-					"instance", fmt.Sprintf("combination-%d", i), combination.attribute, "prod")
-			}
+			appendSeries(t, underlying, "m.old", 1, 1,
+				"instance", "old-boundary", "svc.env", "prod")
+			appendSeries(t, underlying, "m", 2, 2,
+				"instance", "current-boundary", "svc.environment", "prod")
 			appendSeries(t, underlying, "m", 10, 10,
 				"instance", "dual", "svc.env", "prod", "svc.environment", "prod")
 
@@ -346,7 +445,7 @@ func TestSchemaMixedMetricAndAttributeEras(t *testing.T) {
 						set = storage.NewSeriesSetFromChunkSeriesSet(querier.Select(t.Context(), true, nil, matchers...))
 					}
 					got := collectSeriesSampleCounts(t, set)
-					require.Len(t, got, 5)
+					require.Len(t, got, 3)
 					for labelSet, sampleCount := range got {
 						require.Contains(t, labelSet, `__name__="`+anchor.metric+`"`)
 						require.Contains(t, labelSet, `"`+anchor.attribute+`"="prod"`)
@@ -433,6 +532,97 @@ func warningStrings(a map[string]error) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+func metricVariantOverflowRegistry(sources int) map[string][]byte {
+	schema := []byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.0.0:
+  1.1.0:
+    metrics:
+      changes:
+        - rename_metrics:
+`)
+	for i := range sources {
+		schema = fmt.Appendf(schema, "            metric.old.%03d: metric.current\n", i)
+	}
+	return map[string][]byte{
+		"registry.yaml": schema,
+		"1.1.0":         metricSemconv("metric.current", "s", "histogram"),
+	}
+}
+
+func aggregateExpansionOverflowRegistry(attributes, sources int) map[string][]byte {
+	files := metricVariantOverflowRegistry(sources)
+	semconvFile := []byte(`groups:
+  - id: metric.metric.current
+    type: metric
+    metric_name: metric.current
+    unit: s
+    instrument: histogram
+    attributes:
+`)
+	for i := range attributes {
+		name := "attr.current"
+		if i > 0 {
+			name = fmt.Sprintf("attr.current.%03d", i)
+		}
+		semconvFile = fmt.Appendf(semconvFile, "      - ref: %s\n", name)
+	}
+	files["1.1.0"] = semconvFile
+	return files
+}
+
+func labelValueJobOverflowRegistry(aliases int) map[string][]byte {
+	schema := []byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.0.0:
+  1.1.0:
+    metrics:
+      changes:
+        - rename_attributes:
+            attribute_map:
+`)
+	for i := range aliases {
+		schema = fmt.Appendf(schema, "              attr.old.%03d: attr.current\n", i)
+	}
+	schema = append(schema, []byte(`        - rename_metrics:
+            metric.a: metric.current
+            metric.b: metric.current
+`)...)
+	return map[string][]byte{
+		"registry.yaml": schema,
+		"1.1.0": []byte(`groups:
+  - id: metric.metric.current
+    type: metric
+    metric_name: metric.current
+    unit: s
+    instrument: histogram
+    attributes:
+      - ref: attr.current
+`),
+	}
+}
+
+func newCountingAwareStorage(t *testing.T, files map[string][]byte) (storage.Storage, *queryCallCounts) {
+	t.Helper()
+	counts := &queryCallCounts{}
+	underlying := &countingStorage{Storage: teststorage.New(t), counts: counts}
+	wrapped, err := semconv.AwareStorageWithRegistry(underlying, files)
+	require.NoError(t, err)
+	return wrapped, counts
+}
+
+func collectChunkSeriesCount(t *testing.T, set storage.ChunkSeriesSet) int {
+	t.Helper()
+	count := 0
+	for set.Next() {
+		count++
+	}
+	require.NoError(t, set.Err())
+	return count
 }
 
 // TestAwareStorage tests AwareStorage.
@@ -571,6 +761,27 @@ func TestAwareStorage(t *testing.T) {
 		require.True(t, found, "expected the renamed metric under its 1.1.0 name in: %v", got)
 	})
 
+	t.Run("rewrites duplicate metric name matchers", func(t *testing.T) {
+		wrapped, _ := newAwareStorage(t)
+		appendSeries(t, wrapped, "test.counter", 1, 7.0)
+
+		q, err := wrapped.Querier(0, 10)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = q.Close() })
+
+		set := q.Select(context.Background(), false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+			labels.MustNewMatcher(labels.MatchEqual, "__semconv_url__", "registry/1.1.0"),
+			labels.MustNewMatcher(labels.MatchEqual, "__schema_url__", "registry/registry.yaml"),
+		)
+		got := collectSeries(t, set)
+		require.Len(t, got, 1, "both canonical metric matchers must follow the historical lineage: %v", got)
+		for key := range got {
+			require.Contains(t, key, `__name__="test"`)
+		}
+	})
+
 	// When the fan-out probes multiple historical names, the wrapper surfaces
 	// every underlying failure via errors.Is rather than only the first.
 	t.Run("aggregates variant errors", func(t *testing.T) {
@@ -669,9 +880,9 @@ func TestAwareStorage(t *testing.T) {
 }
 
 func TestMetricNameConstraintsKeepPromQLSemantics(t *testing.T) {
-	wrapper, _ := newAwareStorage(t)
-	appendSeries(t, wrapper, "test.counter", 1, 1, "era", "old")
-	appendSeries(t, wrapper, "test", 1, 2, "era", "current")
+	wrapped, _ := newAwareStorage(t)
+	appendSeries(t, wrapped, "test.counter", 1, 1.0, "era", "old")
+	appendSeries(t, wrapped, "test", 1, 2.0, "era", "current")
 
 	tests := []struct {
 		name          string
@@ -707,21 +918,22 @@ func TestMetricNameConstraintsKeepPromQLSemantics(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchEqual, "__schema_url__", "registry/registry.yaml"),
 			)
 
-			q, err := wrapper.Querier(0, 10)
+			q, err := wrapped.Querier(0, 10)
 			require.NoError(t, err)
-			t.Cleanup(func() { require.NoError(t, q.Close()) })
+			t.Cleanup(func() { _ = q.Close() })
 
-			got := collectSeries(t, q.Select(t.Context(), false, nil, matchers...))
+			set := q.Select(context.Background(), false, nil, matchers...)
+			got := collectSeries(t, set)
 			require.Len(t, got, tc.wantSeries)
 			for key := range got {
 				require.Contains(t, key, `__name__="test"`)
 			}
 
-			names, _, err := q.LabelNames(t.Context(), nil, matchers...)
+			names, _, err := q.LabelNames(context.Background(), nil, matchers...)
 			require.NoError(t, err)
 			require.Equal(t, tc.wantLabelName, slices.Contains(names, "era"))
 
-			values, _, err := q.LabelValues(t.Context(), "era", nil, matchers...)
+			values, _, err := q.LabelValues(context.Background(), "era", nil, matchers...)
 			require.NoError(t, err)
 			if len(tc.wantValues) == 0 {
 				require.Empty(t, values)
@@ -729,13 +941,183 @@ func TestMetricNameConstraintsKeepPromQLSemantics(t *testing.T) {
 				require.Equal(t, tc.wantValues, values)
 			}
 
-			cq, err := wrapper.ChunkQuerier(0, 10)
+			cq, err := wrapped.ChunkQuerier(0, 10)
 			require.NoError(t, err)
-			t.Cleanup(func() { require.NoError(t, cq.Close()) })
-			chunks := storage.NewSeriesSetFromChunkSeriesSet(cq.Select(t.Context(), false, nil, matchers...))
-			require.Len(t, collectSeries(t, chunks), tc.wantSeries)
+			t.Cleanup(func() { _ = cq.Close() })
+			require.Equal(t, tc.wantSeries, collectChunkSeriesCount(t,
+				cq.Select(context.Background(), false, nil, matchers...)))
 		})
 	}
+}
+
+func TestSchemaAwareQueriesRequireExactMetricNameAnchor(t *testing.T) {
+	controlMatchers := func(metricMatcher *labels.Matcher) []*labels.Matcher {
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "api")}
+		if metricMatcher != nil {
+			matchers = append(matchers, metricMatcher)
+		}
+		return append(matchers,
+			labels.MustNewMatcher(labels.MatchEqual, "__semconv_url__", "registry/1.1.0"),
+			labels.MustNewMatcher(labels.MatchEqual, "__schema_url__", "registry/registry.yaml"),
+		)
+	}
+
+	for _, tc := range []struct {
+		name          string
+		metricMatcher *labels.Matcher
+	}{
+		{name: "missing"},
+		{name: "regexp", metricMatcher: labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "metric.*")},
+		{name: "negative", metricMatcher: labels.MustNewMatcher(labels.MatchNotEqual, model.MetricNameLabel, "metric.old")},
+		{name: "empty equality", metricMatcher: labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wrapped, counts := newCountingAwareStorage(t, canonicalLabelRegistry())
+			q, err := wrapped.Querier(0, 10)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = q.Close() })
+			cq, err := wrapped.ChunkQuerier(0, 10)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = cq.Close() })
+			matchers := controlMatchers(tc.metricMatcher)
+
+			counts.reset()
+			set := q.Select(context.Background(), false, nil, matchers...)
+			require.False(t, set.Next())
+			require.ErrorContains(t, set.Err(), "requires a non-empty equality matcher on __name__")
+			require.Zero(t, counts.total())
+
+			counts.reset()
+			chunkSet := cq.Select(context.Background(), false, nil, matchers...)
+			require.False(t, chunkSet.Next())
+			require.ErrorContains(t, chunkSet.Err(), "requires a non-empty equality matcher on __name__")
+			require.Zero(t, counts.total())
+
+			counts.reset()
+			_, _, err = q.LabelNames(context.Background(), nil, matchers...)
+			require.ErrorContains(t, err, "requires a non-empty equality matcher on __name__")
+			require.Zero(t, counts.total())
+
+			counts.reset()
+			_, _, err = cq.LabelValues(context.Background(), "job", nil, matchers...)
+			require.ErrorContains(t, err, "requires a non-empty equality matcher on __name__")
+			require.Zero(t, counts.total())
+		})
+	}
+}
+
+func TestSchemaExpansionOverflowFailsBeforeStorage(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		files       map[string][]byte
+		errorDetail string
+	}{
+		{
+			name:        "collection cardinality",
+			files:       metricVariantOverflowRegistry(256),
+			errorDetail: "matcher variants would exceed 256",
+		},
+		{
+			name:        "aggregate resolver work",
+			files:       aggregateExpansionOverflowRegistry(255, 255),
+			errorDetail: "resolver work would exceed 65536",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testSchemaExpansionOverflowFailsBeforeStorage(t, tc.files, tc.errorDetail)
+		})
+	}
+}
+
+func testSchemaExpansionOverflowFailsBeforeStorage(t *testing.T, files map[string][]byte, errorDetail string) {
+	wrapped, counts := newCountingAwareStorage(t, files)
+	appendSeries(t, wrapped, "metric.current", 1, 7.0, "attr.current", "value")
+	matchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric.current"),
+		labels.MustNewMatcher(labels.MatchEqual, "__semconv_url__", "registry/1.1.0"),
+		labels.MustNewMatcher(labels.MatchEqual, "__schema_url__", "registry/registry.yaml"),
+	}
+
+	q, err := wrapped.Querier(0, 10)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = q.Close() })
+	cq, err := wrapped.ChunkQuerier(0, 10)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = cq.Close() })
+
+	assertExpansionError := func(t *testing.T, err error) {
+		t.Helper()
+		require.ErrorContains(t, err, "schema expansion limit exceeded")
+		require.ErrorContains(t, err, errorDetail)
+		require.Zero(t, counts.total(), "overflow must fail before querying storage")
+	}
+
+	t.Run("Select", func(t *testing.T) {
+		counts.reset()
+		set := q.Select(context.Background(), false, nil, matchers...)
+		require.False(t, set.Next())
+		assertExpansionError(t, set.Err())
+		require.Empty(t, set.Warnings())
+	})
+
+	t.Run("LabelNames", func(t *testing.T) {
+		counts.reset()
+		names, anns, err := q.LabelNames(context.Background(), nil, matchers...)
+		assertExpansionError(t, err)
+		require.Nil(t, names)
+		require.Empty(t, anns)
+	})
+
+	t.Run("LabelValues", func(t *testing.T) {
+		counts.reset()
+		values, anns, err := q.LabelValues(context.Background(), "attr.current", nil, matchers...)
+		assertExpansionError(t, err)
+		require.Nil(t, values)
+		require.Empty(t, anns)
+	})
+
+	t.Run("ChunkSelect", func(t *testing.T) {
+		counts.reset()
+		set := cq.Select(context.Background(), false, nil, matchers...)
+		require.False(t, set.Next())
+		assertExpansionError(t, set.Err())
+		require.Empty(t, set.Warnings())
+	})
+
+	t.Run("ChunkLabelNames", func(t *testing.T) {
+		counts.reset()
+		names, anns, err := cq.LabelNames(context.Background(), nil, matchers...)
+		assertExpansionError(t, err)
+		require.Nil(t, names)
+		require.Empty(t, anns)
+	})
+
+	t.Run("ChunkLabelValues", func(t *testing.T) {
+		counts.reset()
+		values, anns, err := cq.LabelValues(context.Background(), "attr.current", nil, matchers...)
+		assertExpansionError(t, err)
+		require.Nil(t, values)
+		require.Empty(t, anns)
+	})
+}
+
+func TestLabelValueJobOverflowFailsClosed(t *testing.T) {
+	wrapped, counts := newCountingAwareStorage(t, labelValueJobOverflowRegistry(128))
+	appendSeries(t, wrapped, "metric.current", 1, 7.0, "attr.current", "value")
+	q, err := wrapped.Querier(0, 10)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = q.Close() })
+
+	counts.reset()
+	values, anns, err := q.LabelValues(context.Background(), "attr.current", nil,
+		labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric.current"),
+		labels.MustNewMatcher(labels.MatchEqual, "__semconv_url__", "registry/1.1.0"),
+		labels.MustNewMatcher(labels.MatchEqual, "__schema_url__", "registry/registry.yaml"),
+	)
+	require.ErrorContains(t, err, "schema expansion limit exceeded")
+	require.Empty(t, values)
+	require.Empty(t, anns)
+	require.Zero(t, counts.total(), "job overflow must not query storage")
 }
 
 func TestSchemaWarning_ClassifiedAsWarning(t *testing.T) {

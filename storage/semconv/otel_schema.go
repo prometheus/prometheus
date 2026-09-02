@@ -72,9 +72,18 @@ type semconv struct {
 
 	version string
 
-	// attributesPerMetric lists the attributes each metric declares at this
-	// semconv version. The legacy rename-map helper uses this metadata.
-	attributesPerMetric map[string][]string
+	// metrics indexes this version's metric groups by metric_name.
+	metrics map[string]metricDef
+}
+
+type metricDef struct {
+	attributes []string
+}
+
+// attributesOf returns the attributes the named metric declares at this semconv
+// version, or nil if the name is not a metric here.
+func (s semconv) attributesOf(name string) []string {
+	return s.metrics[name].attributes
 }
 
 // otelSchema represents an OpenTelemetry schema file.
@@ -99,27 +108,67 @@ type otelSchema struct {
 	SchemaURL  string                       `yaml:"schema_url"`
 	Versions   map[string]otelSchemaVersion `yaml:"versions"`
 
-	// versionRenames holds per-version renames for generating matcher variants
-	// (populated by loadOTelSchema).
-	versionRenames []versionRenames
+	// revisions holds the schema revisions that contain transformations, sorted
+	// by version. Transformations retain their file order because applying a
+	// revision backwards requires replaying them in the exact reverse order.
+	revisions []schemaRevision
 }
 
-// versionRenames holds the ordered rename steps from a single schema version,
-// plus bidirectional maps retained for the legacy rename helpers.
-type versionRenames struct {
-	version    string            // e.g., "1.1.0"
-	metrics    map[string]string // metric name → its variant (bidirectional)
-	attributes map[string]string // attribute name → its variant (bidirectional)
-	changes    []schemaRenameChange
+// metricBoundaryWithBudget reports whether name exists immediately before and
+// after this revision. A name used only between ordered transformations is
+// mentioned but absent at both version boundaries.
+func (r schemaRevision) metricBoundaryWithBudget(name string, budget *schemaExpansionBudget) (before, after, mentioned bool, err error) {
+	for _, change := range r.changes {
+		if err := budget.reserveWork(1); err != nil {
+			return false, false, false, err
+		}
+		if change.metricRenames == nil {
+			continue
+		}
+		if _, source := change.metricRenames.forward[name]; source {
+			before = true
+			mentioned = true
+			break
+		}
+		if _, target := change.metricRenames.reverse[name]; target {
+			mentioned = true
+			break
+		}
+	}
+	for _, change := range slices.Backward(r.changes) {
+		if err := budget.reserveWork(1); err != nil {
+			return false, false, false, err
+		}
+		if change.metricRenames == nil {
+			continue
+		}
+		if _, target := change.metricRenames.reverse[name]; target {
+			after = true
+			break
+		}
+		if _, source := change.metricRenames.forward[name]; source {
+			break
+		}
+	}
+	return before, after, mentioned, nil
 }
 
-// A schema rename change retains the order and direction of one supported
-// metrics-schema transformation.
-type schemaRenameChange struct {
-	metrics    *directedRenames
-	attributes *attributeRenameStep
+// schemaRevision describes the ordered transformations that convert the
+// preceding schema version to version. Revisions without transformations are
+// omitted.
+type schemaRevision struct {
+	version string
+	changes []schemaChange
 }
 
+type schemaChange struct {
+	metricRenames    *directedRenames
+	attributeRenames *attributeRenameStep
+}
+
+// directedRenames preserves the direction declared by the schema. reverse may
+// contain several predecessors because real schemas contain many-to-one metric
+// and attribute renames.
 type directedRenames struct {
 	forward map[string]string
 	reverse map[string][]string
@@ -129,18 +178,18 @@ func newDirectedRenames(forward map[string]string) *directedRenames {
 	if len(forward) == 0 {
 		return nil
 	}
-	renames := &directedRenames{
+	r := &directedRenames{
 		forward: make(map[string]string, len(forward)),
 		reverse: make(map[string][]string),
 	}
 	for oldName, newName := range forward {
-		renames.forward[oldName] = newName
-		renames.reverse[newName] = append(renames.reverse[newName], oldName)
+		r.forward[oldName] = newName
+		r.reverse[newName] = append(r.reverse[newName], oldName)
 	}
-	for newName := range renames.reverse {
-		slices.Sort(renames.reverse[newName])
+	for newName := range r.reverse {
+		slices.Sort(r.reverse[newName])
 	}
-	return renames
+	return r
 }
 
 type attributeRenameStep struct {
@@ -157,72 +206,47 @@ func newAttributeRenameStep(rename *otelRenameAttributes, scoped bool) *attribut
 	if scoped && rename.ApplyToMetrics != nil {
 		step.scopeSpecified = true
 		step.applyToMetrics = make(map[string]struct{}, len(*rename.ApplyToMetrics))
-		for _, metric := range *rename.ApplyToMetrics {
-			step.applyToMetrics[metric] = struct{}{}
+		for _, name := range *rename.ApplyToMetrics {
+			step.applyToMetrics[name] = struct{}{}
 		}
 	}
 	return step
 }
 
-func (s *attributeRenameStep) appliesTo(metric string) bool {
+func (s *attributeRenameStep) appliesTo(metricName string) bool {
 	if !s.scopeSpecified {
 		return true
 	}
-	_, ok := s.applyToMetrics[metric]
+	_, ok := s.applyToMetrics[metricName]
 	return ok
 }
 
-// collectVersionRenames extracts bidirectional rename mappings from a schema version.
-func collectVersionRenames(versionStr string, version otelSchemaVersion) *versionRenames {
-	renames := &versionRenames{
-		version:    versionStr,
-		metrics:    make(map[string]string),
-		attributes: make(map[string]string),
-	}
-
-	// Collect attribute renames from "all" section.
+// collectSchemaRevision preserves the transformation order defined by the
+// schema format: all-section changes precede metric-section changes, and each
+// section is processed top-to-bottom.
+func collectSchemaRevision(versionStr string, version otelSchemaVersion) *schemaRevision {
+	revision := &schemaRevision{version: versionStr}
 	if version.All != nil {
 		for _, change := range version.All.Changes {
-			if change.RenameAttributes != nil {
-				if step := newAttributeRenameStep(change.RenameAttributes, false); step != nil {
-					renames.changes = append(renames.changes, schemaRenameChange{attributes: step})
-				}
-				for oldName, newName := range change.RenameAttributes.AttributeMap {
-					renames.attributes[oldName] = newName
-					renames.attributes[newName] = oldName
-				}
+			if step := newAttributeRenameStep(change.RenameAttributes, false); step != nil {
+				revision.changes = append(revision.changes, schemaChange{attributeRenames: step})
 			}
 		}
 	}
-
-	// Collect metric and attribute renames from "metrics" section.
 	if version.Metrics != nil {
 		for _, change := range version.Metrics.Changes {
-			if len(change.RenameMetrics) > 0 {
-				if step := newDirectedRenames(change.RenameMetrics); step != nil {
-					renames.changes = append(renames.changes, schemaRenameChange{metrics: step})
-				}
-				for oldName, newName := range change.RenameMetrics {
-					renames.metrics[oldName] = newName
-					renames.metrics[newName] = oldName
-				}
+			if step := newAttributeRenameStep(change.RenameAttributes, true); step != nil {
+				revision.changes = append(revision.changes, schemaChange{attributeRenames: step})
 			}
-			if change.RenameAttributes != nil {
-				if step := newAttributeRenameStep(change.RenameAttributes, true); step != nil {
-					renames.changes = append(renames.changes, schemaRenameChange{attributes: step})
-				}
-				for oldName, newName := range change.RenameAttributes.AttributeMap {
-					renames.attributes[oldName] = newName
-					renames.attributes[newName] = oldName
-				}
+			if renames := newDirectedRenames(change.RenameMetrics); renames != nil {
+				revision.changes = append(revision.changes, schemaChange{metricRenames: renames})
 			}
 		}
 	}
-
-	if len(renames.changes) == 0 {
+	if len(revision.changes) == 0 {
 		return nil
 	}
-	return renames
+	return revision
 }
 
 // semconvGroup represents a semantic conventions group definition.
@@ -249,8 +273,18 @@ type otelSchemaSection struct {
 
 type otelSchemaChange struct {
 	RenameAttributes *otelRenameAttributes `yaml:"rename_attributes,omitempty"`
-	// RenameMetrics maps old metric names directly to their new names. Unlike
-	// rename_attributes, the schema format defines no nested name_map key.
+
+	// RenameMetrics maps each old metric name to its new name directly, with no
+	// intervening key. This is asymmetric with RenameAttributes, which nests its
+	// mapping under attribute_map, but it is what the file format specifies:
+	//
+	//	metrics:
+	//	  changes:
+	//	    - rename_metrics:
+	//	        http.server.duration: http.server.request.duration
+	//
+	// See the rename_metrics transformation in
+	// https://opentelemetry.io/docs/specs/otel/schemas/file_format_v1.1.0/.
 	RenameMetrics map[string]string `yaml:"rename_metrics,omitempty"`
 }
 
@@ -301,10 +335,9 @@ func (e *schemaEngine) fetchOTelSchema(url string) (otelSchema, error) {
 	return s, nil
 }
 
-// loadOTelSchema parses raw OTel schema YAML bytes and post-processes them
-// (validates file_format and per-version semver, collects attribute renames,
-// sorts versions). It is the YAML-parsing core of fetchOTelSchema and is
-// directly callable from tests that load fixtures off disk.
+// loadOTelSchema parses raw OTel schema YAML bytes, validates its versions, and
+// collects its ordered transformations. It is the parsing core of
+// fetchOTelSchema and is directly callable from tests.
 func loadOTelSchema(b []byte) (otelSchema, error) {
 	var s otelSchema
 	if err := yaml.Unmarshal(b, &s); err != nil {
@@ -314,18 +347,18 @@ func loadOTelSchema(b []byte) (otelSchema, error) {
 		return otelSchema{}, fmt.Errorf("unsupported OTel schema file format %q (expected 1.0.0 or 1.1.0)", s.FileFormat)
 	}
 
-	s.versionRenames = make([]versionRenames, 0, len(s.Versions))
+	s.revisions = make([]schemaRevision, 0, len(s.Versions))
 
 	for versionStr, version := range s.Versions {
 		if err := validateSemver(versionStr); err != nil {
 			return otelSchema{}, err
 		}
-		if renames := collectVersionRenames(versionStr, version); renames != nil {
-			s.versionRenames = append(s.versionRenames, *renames)
+		if revision := collectSchemaRevision(versionStr, version); revision != nil {
+			s.revisions = append(s.revisions, *revision)
 		}
 	}
 
-	slices.SortFunc(s.versionRenames, func(a, b versionRenames) int {
+	slices.SortFunc(s.revisions, func(a, b schemaRevision) int {
 		return compareSemver(a.version, b.version)
 	})
 
@@ -379,16 +412,22 @@ func loadSemconv(b []byte, version string) (semconv, error) {
 		return semconv{}, fmt.Errorf("unmarshal: %w", err)
 	}
 	s.version = version
-	s.attributesPerMetric = make(map[string][]string)
+	s.metrics = make(map[string]metricDef)
 	for _, group := range s.Groups {
-		if group.Type != "metric" || group.MetricName == "" || len(group.Attributes) == 0 {
+		if group.Type != "metric" || group.MetricName == "" {
 			continue
 		}
-		attrs := make([]string, 0, len(group.Attributes))
-		for _, attr := range group.Attributes {
-			attrs = append(attrs, attr.Ref)
+		if _, dup := s.metrics[group.MetricName]; dup {
+			continue
 		}
-		s.attributesPerMetric[group.MetricName] = attrs
+		var attrs []string
+		if len(group.Attributes) > 0 {
+			attrs = make([]string, 0, len(group.Attributes))
+			for _, attr := range group.Attributes {
+				attrs = append(attrs, attr.Ref)
+			}
+		}
+		s.metrics[group.MetricName] = metricDef{attributes: attrs}
 	}
 	return s, nil
 }
