@@ -417,7 +417,8 @@ type headAppenderBase struct {
 	series     []*memSeries       // New series held by this appender (using corresponding slices indexes from seriesRefs)
 	batches    []*appendBatch     // Holds all the other data to append. (In regular cases, there should be only one of these.)
 
-	typesInBatch map[chunks.HeadSeriesRef]sampleType // Which (one) sample type each series holds in the most recent batch.
+	typesInBatch         map[chunks.HeadSeriesRef]sampleType // Which (one) sample type each series holds in the most recent batch.
+	nativeMetricMetadata *nativeMetricMetadataAppender
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
@@ -425,6 +426,35 @@ type headAppenderBase struct {
 	useXOR2                         bool // Whether XOR2 encoding is used for float chunks in this append.
 	useHistogramST                  bool // Whether ST-capable histogram chunk encoding is used in this append.
 }
+
+func (a *headAppenderBase) observeNativeMetricMetadata(s *memSeries, timestamp int64, m metadata.Metadata) {
+	if a.head.nativeMetricMetadata == nil || m.IsEmpty() {
+		return
+	}
+	if a.nativeMetricMetadata == nil {
+		a.nativeMetricMetadata = a.head.nativeMetricMetadata.getAppender()
+	}
+	m = canonicalMetricMetadata(m)
+	a.nativeMetricMetadata.observe(a.head.nativeMetricMetadata, s.ref, timestamp, m)
+}
+
+func (a *headAppenderBase) clearNativeMetricMetadata() {
+	if a.nativeMetricMetadata == nil {
+		return
+	}
+	appender := a.nativeMetricMetadata
+	a.nativeMetricMetadata = nil
+	a.head.nativeMetricMetadata.putAppender(appender)
+}
+
+func (a *headAppenderBase) commitNativeMetricMetadata() {
+	if a.nativeMetricMetadata == nil {
+		return
+	}
+	a.head.nativeMetricMetadata.commitAppender(a.nativeMetricMetadata)
+	a.clearNativeMetricMetadata()
+}
+
 type headAppender struct {
 	headAppenderBase
 	hints *storage.AppendOptions
@@ -1821,6 +1851,9 @@ func (a *headAppenderBase) Commit() (err error) {
 		}
 	}()
 
+	// Publish native metadata before sample commits release the reservations
+	// that keep their series indexed.
+	a.commitNativeMetricMetadata()
 	for _, b := range a.batches {
 		// Do not change the order of these calls. We depend on it for
 		// correct commit order of samples and for the staleness marker
@@ -2303,6 +2336,7 @@ func (a *headAppenderBase) Rollback() (err error) {
 	}
 	h := a.head
 	defer func() {
+		a.clearNativeMetricMetadata()
 		a.releaseCreatedSeriesReservations()
 		h.iso.closeAppend(a.appendID)
 		h.metrics.activeAppenders.Dec()

@@ -152,7 +152,24 @@ Fall back to serving the old (Prometheus 2.x) web UI instead of the new UI. The 
 When enabled, Prometheus will store metadata in-memory and keep track of
 metadata changes as WAL records on a per-series basis.
 
-This must be used if you would like to send metadata using the new remote write 2.0.
+This flag controls the legacy WAL-backed metadata path. The separate
+`native-metadata` feature can expose versioned per-series metadata without
+writing metadata WAL records.
+
+## Native metadata
+
+`--enable-feature=native-metadata`
+
+> **This feature is experimental and may change in future releases.**
+
+When enabled, Prometheus ingests metric type, unit, and help from scrapes, OTLP,
+and Remote Write 2.0 as versioned metadata attached to each series. The
+metadata is exposed by the experimental `/api/v1/metadata/series` endpoint.
+
+This prototype stores metadata only in the Head's memory. It is not written to
+the WAL, checkpoints, snapshots, or blocks, so it is lost on restart and when
+the corresponding Head series is removed. Remote Write 1.0 does not populate
+this store. At most 32 versions are retained per series.
 
 ## Delay compaction start time
 

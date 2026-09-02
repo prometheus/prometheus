@@ -225,6 +225,10 @@ type TSDBAdminStats interface {
 	BlockMetas() ([]tsdb.BlockMeta, error)
 }
 
+type nativeMetricMetadataReader interface {
+	NativeMetricMetadata(context.Context, [][]*labels.Matcher, int) ([]tsdb.NativeMetricMetadataSeries, bool, error)
+}
+
 type QueryOpts interface {
 	EnablePerStepStats() bool
 	LookbackDelta() time.Duration
@@ -473,6 +477,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alertmanagers", wrapAgent(api.alertmanagers))
 
 	r.Get("/metadata", wrap(api.metricMetadata))
+	r.Get("/metadata/series", wrapAgent(api.nativeMetricMetadata))
 
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
@@ -1651,6 +1656,100 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	}
 
 	return apiFuncResult{res, nil, nil, nil}
+}
+
+type nativeMetricMetadataResponse struct {
+	Results   []nativeMetricMetadataSeriesResponse `json:"results"`
+	Truncated bool                                 `json:"truncated"`
+}
+
+type nativeMetricMetadataSeriesResponse struct {
+	Labels   labels.Labels  `json:"labels"`
+	Metadata nativeMetadata `json:"metadata"`
+}
+
+type nativeMetadata struct {
+	Categories nativeMetadataCategories `json:"categories"`
+}
+
+type nativeMetadataCategories struct {
+	Metric nativeMetricMetadataCategory `json:"metric"`
+}
+
+type nativeMetricMetadataCategory struct {
+	Versions  []nativeMetricMetadataVersion `json:"versions"`
+	Truncated bool                          `json:"truncated"`
+}
+
+type nativeMetricMetadataVersion struct {
+	EffectiveFrom  int64            `json:"effectiveFrom"`
+	EffectiveUntil *int64           `json:"effectiveUntil,omitempty"`
+	Type           model.MetricType `json:"type"`
+	Unit           string           `json:"unit"`
+	Help           string           `json:"help"`
+}
+
+func (api *API) nativeMetricMetadata(r *http.Request) apiFuncResult {
+	if err := r.ParseForm(); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
+	}
+	if len(r.Form["match[]"]) == 0 {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
+	}
+
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+	matcherSets, err := api.parseMatchersParam(r.Form["match[]"])
+	if err != nil {
+		return invalidParamError(err, "match[]")
+	}
+
+	reader, ok := api.db.(nativeMetricMetadataReader)
+	if !ok {
+		return apiFuncResult{nil, &apiError{errorExec, tsdb.ErrNativeMetadataDisabled}, nil, nil}
+	}
+	series, truncated, err := reader.NativeMetricMetadata(r.Context(), matcherSets, limit)
+	if errors.Is(err, tsdb.ErrNativeMetadataDisabled) {
+		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
+	}
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return apiFuncResult{nil, returnAPIError(err), nil, nil}
+		}
+		return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
+	}
+
+	result := nativeMetricMetadataResponse{
+		Results:   make([]nativeMetricMetadataSeriesResponse, 0, len(series)),
+		Truncated: truncated,
+	}
+	for _, item := range series {
+		versions := make([]nativeMetricMetadataVersion, len(item.Versions))
+		for i, version := range item.Versions {
+			versions[i] = nativeMetricMetadataVersion{
+				EffectiveFrom: version.EffectiveFrom,
+				Type:          version.Metadata.Type,
+				Unit:          version.Metadata.Unit,
+				Help:          version.Metadata.Help,
+			}
+			if i+1 < len(item.Versions) {
+				until := item.Versions[i+1].EffectiveFrom
+				versions[i].EffectiveUntil = &until
+			}
+		}
+		result.Results = append(result.Results, nativeMetricMetadataSeriesResponse{
+			Labels: item.Labels,
+			Metadata: nativeMetadata{Categories: nativeMetadataCategories{
+				Metric: nativeMetricMetadataCategory{
+					Versions:  versions,
+					Truncated: item.Truncated,
+				},
+			}},
+		})
+	}
+	return apiFuncResult{result, nil, nil, nil}
 }
 
 // RuleDiscovery has info for all rules.

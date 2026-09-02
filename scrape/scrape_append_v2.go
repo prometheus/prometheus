@@ -296,19 +296,18 @@ loop:
 				slices.SortFunc(exemplars, exemplar.Compare)
 			}
 
-			// Metadata path mimics the scrape appender V1 flow. Once we remove v2
-			// flow we should rename "appendMetadataToWAL" flag to "passMetadata" because for v2 flow
-			// the metadata storage detail is behind the appendableV2 contract. V2 also means we always pass the metadata,
-			// we don't check if it changed (that code can be removed).
+			// Metadata path mimics the scrape appender V1 flow. With AppenderV2,
+			// storage details are behind the appender contract, and metadata is
+			// passed on every append rather than only when it changes.
 			//
 			// Long term, we should always attach the metadata without any flag. Unfortunately because of the limitation
 			// of the TEXT and OpenMetrics 1.0 (hopefully fixed in OpenMetrics 2.0) there are edge cases around unknown
 			// metadata + suffixes that is expensive (isSeriesPartOfFamily) or in some cases impossible to detect. For this
-			// reason metadata (appendMetadataToWAL=true) appender V2 flow scrape might taking ~3% more CPU in our benchmarks.
+			// reason passing metadata in the AppenderV2 scrape flow adds measurable CPU overhead.
 			//
 			// TODO(https://github.com/prometheus/prometheus/issues/17900): Optimize this, notably move this check to parsers that require this (ensuring parser
 			// interface always yields correct metadata), deliver OpenMetrics 2.0 that removes suffixes.
-			if sl.appendMetadataToWAL && lastMeta != nil {
+			if sl.passMetadata && lastMeta != nil {
 				// In majority cases we can trust that the current series/histogram is matching the lastMeta and lastMFName.
 				// However, optional TYPE, etc metadata and broken OM text can break this, detect those cases here.
 				if !isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, lastMeta.Type) {

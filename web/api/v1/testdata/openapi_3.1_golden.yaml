@@ -2047,6 +2047,83 @@ paths:
                                         error: TSDB not ready
                                         errorType: internal
                                         status: error
+    /metadata/series:
+        get:
+            tags:
+                - metadata
+            summary: Get versioned native metric metadata by series
+            description: Experimental endpoint enabled by --enable-feature=native-metadata. Metadata ingested from scrapes, OTLP, and Remote Write 2.0 is exposed, and data is not persisted across restarts.
+            operationId: get-native-metric-metadata
+            parameters:
+                - name: match[]
+                  in: query
+                  description: Series selector argument. Multiple selectors are combined with OR semantics.
+                  required: true
+                  explode: false
+                  schema:
+                    type: array
+                    items:
+                        type: string
+                  examples:
+                    example:
+                        value:
+                            - '{job="prometheus"}'
+                - name: limit
+                  in: query
+                  description: Maximum number of series to return. Zero means unlimited.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 100
+            responses:
+                "200":
+                    description: Native metric metadata retrieved successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/NativeMetricMetadataOutputBody'
+                            examples:
+                                versionedMetricMetadata:
+                                    summary: Versioned native metric metadata for a series
+                                    value:
+                                        data:
+                                            results:
+                                                - labels:
+                                                    __name__: http_requests_total
+                                                    job: api
+                                                  metadata:
+                                                    categories:
+                                                        metric:
+                                                            truncated: false
+                                                            versions:
+                                                                - effectiveFrom: 1750000000000
+                                                                  effectiveUntil: 1750003600000
+                                                                  help: HTTP requests.
+                                                                  type: counter
+                                                                  unit: requests
+                                                                - effectiveFrom: 1750003600000
+                                                                  help: Total HTTP requests.
+                                                                  type: counter
+                                                                  unit: requests
+                                            truncated: false
+                                        status: success
+                default:
+                    description: Error retrieving native metric metadata.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
     /scrape_pools:
         get:
             tags:
@@ -4415,6 +4492,117 @@ components:
                 - unit
             additionalProperties: false
             description: Target metric metadata.
+        NativeMetricMetadataVersion:
+            type: object
+            properties:
+                effectiveFrom:
+                    type: integer
+                    format: int64
+                    description: Inclusive timestamp in milliseconds at which this version became effective.
+                effectiveUntil:
+                    type: integer
+                    format: int64
+                    description: Exclusive timestamp in milliseconds at which this version stopped being effective. Omitted for the current version.
+                type:
+                    type: string
+                    description: Metric type.
+                unit:
+                    type: string
+                    description: Unit of the metric.
+                help:
+                    type: string
+                    description: Help text describing the metric.
+            required:
+                - effectiveFrom
+                - type
+                - unit
+                - help
+            additionalProperties: false
+            description: One native metric metadata version.
+        NativeMetricMetadataCategory:
+            type: object
+            properties:
+                versions:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/NativeMetricMetadataVersion'
+                truncated:
+                    type: boolean
+            required:
+                - versions
+                - truncated
+            additionalProperties: false
+            description: Versioned metadata in the metric category.
+        NativeMetadataCategories:
+            type: object
+            properties:
+                metric:
+                    $ref: '#/components/schemas/NativeMetricMetadataCategory'
+            required:
+                - metric
+            description: Native metadata grouped by category. Clients must ignore unknown categories.
+        NativeMetadata:
+            type: object
+            properties:
+                categories:
+                    $ref: '#/components/schemas/NativeMetadataCategories'
+            required:
+                - categories
+            additionalProperties: false
+            description: Native metadata attached to a series.
+        NativeMetricMetadataSeries:
+            type: object
+            properties:
+                labels:
+                    $ref: '#/components/schemas/Labels'
+                metadata:
+                    $ref: '#/components/schemas/NativeMetadata'
+            required:
+                - labels
+                - metadata
+            additionalProperties: false
+            description: Native metadata for one series.
+        NativeMetricMetadataResponse:
+            type: object
+            properties:
+                results:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/NativeMetricMetadataSeries'
+                truncated:
+                    type: boolean
+            required:
+                - results
+                - truncated
+            additionalProperties: false
+            description: Native metric metadata query result.
+        NativeMetricMetadataOutputBody:
+            type: object
+            properties:
+                status:
+                    type: string
+                    enum:
+                        - success
+                        - error
+                    description: Response status.
+                    example: success
+                data:
+                    $ref: '#/components/schemas/NativeMetricMetadataResponse'
+                warnings:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were warnings while executing the request. There will still be data in the data field.
+                infos:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were info-level annotations while executing the request.
+            required:
+                - status
+                - data
+            additionalProperties: false
+            description: Response body for native metric metadata.
         Target:
             type: object
             properties:
