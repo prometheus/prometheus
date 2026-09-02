@@ -1,0 +1,119 @@
+# Verbatim excerpts of the metric groups from
+#   open-telemetry/semantic-conventions v1.22.0 : model/metrics/http.yaml
+#   open-telemetry/semantic-conventions v1.22.0 : model/metrics/jvm-metrics-experimental.yaml
+# Combined under one groups key so rename validation is exercised against
+# real semantic-conventions data rather than hand-written fixtures.
+groups:
+  - id: metric.http.server.request.duration
+    type: metric
+    metric_name: http.server.request.duration
+    brief: "Duration of HTTP server requests."
+    instrument: histogram
+    unit: "s"
+    extends: metric_attributes.http.server
+
+  - id: metric.http.server.active_requests
+    type: metric
+    metric_name: http.server.active_requests
+    brief: "Number of active HTTP server requests."
+    instrument: updowncounter
+    unit: "{request}"
+    attributes:
+      - ref: http.request.method
+        requirement_level: required
+      - ref: url.scheme
+        requirement_level: required
+        examples: ["http", "https"]
+      - ref: server.address
+        requirement_level: opt_in
+        brief: >
+          Name of the local HTTP server that received the request.
+        note: |
+          Determined by using the first of the following that applies
+
+          - The [primary server name](/docs/http/http-spans.md#http-server-definitions) of the matched virtual host. MUST only
+            include host identifier.
+          - Host identifier of the [request target](https://www.rfc-editor.org/rfc/rfc9110.html#target.resource)
+            if it's sent in absolute-form.
+          - Host identifier of the `Host` header
+
+          SHOULD NOT be set if only IP address is available and capturing name would require a reverse DNS lookup.
+
+      - ref: server.port
+        requirement_level: opt_in
+        brief: >
+          Port of the local HTTP server that received the request.
+        note: |
+          Determined by using the first of the following that applies
+
+          - Port identifier of the [primary server host](/docs/http/http-spans.md#http-server-definitions) of the matched virtual host.
+          - Port identifier of the [request target](https://www.rfc-editor.org/rfc/rfc9110.html#target.resource)
+            if it's sent in absolute-form.
+          - Port identifier of the `Host` header
+
+  - id: metric.http.server.request.body.size
+    type: metric
+    metric_name: http.server.request.body.size
+    brief: "Size of HTTP server request bodies."
+    instrument: histogram
+    unit: "By"
+    note: >
+      The size of the request payload body in bytes. This is the number of bytes transferred excluding headers and
+      is often, but not always, present as the [Content-Length](https://www.rfc-editor.org/rfc/rfc9110.html#field.content-length)
+      header. For requests using transport encoding, this should be the compressed size.
+    extends: metric_attributes.http.server
+
+  - id: metric.http.server.response.body.size
+    type: metric
+    metric_name: http.server.response.body.size
+    brief: "Size of HTTP server response bodies."
+    instrument: histogram
+    unit: "By"
+    note: >
+      The size of the response payload body in bytes. This is the number of bytes transferred excluding headers and
+      is often, but not always, present as the [Content-Length](https://www.rfc-editor.org/rfc/rfc9110.html#field.content-length)
+      header. For requests using transport encoding, this should be the compressed size.
+    extends: metric_attributes.http.server
+
+  - id: metric.http.client.request.duration
+    type: metric
+    metric_name: http.client.request.duration
+    brief: "Duration of HTTP client requests."
+    instrument: histogram
+    unit: "s"
+    extends: metric_attributes.http.client
+
+  - id: metric.http.client.request.body.size
+    type: metric
+    metric_name: http.client.request.body.size
+    brief: "Size of HTTP client request bodies."
+    instrument: histogram
+    unit: "By"
+    note: >
+      The size of the request payload body in bytes. This is the number of bytes transferred excluding headers and
+      is often, but not always, present as the [Content-Length](https://www.rfc-editor.org/rfc/rfc9110.html#field.content-length)
+      header. For requests using transport encoding, this should be the compressed size.
+    extends: metric_attributes.http.client
+
+  - id: metric.http.client.response.body.size
+    type: metric
+    metric_name: http.client.response.body.size
+    brief: "Size of HTTP client response bodies."
+    instrument: histogram
+    unit: "By"
+    note: >
+      The size of the response payload body in bytes. This is the number of bytes transferred excluding headers and
+      is often, but not always, present as the [Content-Length](https://www.rfc-editor.org/rfc/rfc9110.html#field.content-length)
+      header. For requests using transport encoding, this should be the compressed size.
+    extends: metric_attributes.http.client
+  - id: metric.jvm.system.cpu.load_1m
+    type: metric
+    metric_name: jvm.system.cpu.load_1m
+    brief: "Average CPU load of the whole system for the last minute as reported by the JVM."
+    note: >
+      The value range is [0,n], where n is the number of CPU cores - or a negative number if the value is not available.
+      This utilization is not defined as being for the specific interval since last measurement
+      (unlike `system.cpu.utilization`).
+      [Reference](https://docs.oracle.com/en/java/javase/17/docs/api/java.management/java/lang/management/OperatingSystemMXBean.html#getSystemLoadAverage()).
+    instrument: gauge
+    unit: "{run_queue_item}"

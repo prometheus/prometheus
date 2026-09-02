@@ -14,7 +14,8 @@
 package semconv
 
 import (
-	"slices"
+	"fmt"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -22,16 +23,115 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+func metricChange(renames map[string]string) schemaChange {
+	return schemaChange{metricRenames: newDirectedRenames(renames)}
+}
+
+func attributeChange(renames map[string]string, metrics ...string) schemaChange {
+	step := &attributeRenameStep{renames: newDirectedRenames(renames)}
+	if len(metrics) > 0 {
+		step.scopeSpecified = true
+		step.applyToMetrics = make(map[string]struct{}, len(metrics))
+		for _, metric := range metrics {
+			step.applyToMetrics[metric] = struct{}{}
+		}
+	}
+	return schemaChange{attributeRenames: step}
+}
+
+func testSchema(revisions ...schemaRevision) *otelSchema {
+	return &otelSchema{revisions: revisions}
+}
+
+func equalMatchers(metric string, attrs ...string) []*labels.Matcher {
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metric)}
+	for _, attr := range attrs {
+		matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, attr, "value"))
+	}
+	return matchers
+}
+
+func requireMatcherVariants(t *testing.T, version string, schema *otelSchema, matchers []*labels.Matcher, canonicalAttrs []string, rv *renameValidator) []matcherVariant {
+	t.Helper()
+	variants, err := generateMatcherVariantsWithBudget(version, schema, matchers, canonicalAttrs, rv, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+	require.NoError(t, err)
+	return variants
+}
+
+func requireVariantAccumulator(t *testing.T, anchorMetric string, canonicalAttrs []string, rv *renameValidator) *variantAccumulator {
+	t.Helper()
+	acc, err := newVariantAccumulatorWithBudget(anchorMetric, canonicalAttrs, rv, true, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+	require.NoError(t, err)
+	return acc
+}
+
+func requireLineageStateKey(t *testing.T, state lineageState) string {
+	t.Helper()
+	key, err := lineageStateKeyWithBudget(state, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+	require.NoError(t, err)
+	return key
+}
+
+func variantNames(variants []matcherVariant) []string {
+	names := make([]string, 0, len(variants))
+	for _, variant := range variants {
+		name, err := extractMetricName(variant.matchers)
+		if err == nil {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+func variantMetricAndAttribute(variant matcherVariant) string {
+	metric, attr := "", ""
+	for _, matcher := range variant.matchers {
+		if matcher.Name == labels.MetricName {
+			metric = matcher.Value
+		} else {
+			attr = matcher.Name
+		}
+	}
+	return metric + "/" + attr
+}
+
 func TestFindMatcherVariants_RequiresSemconvURL(t *testing.T) {
 	e := newSchemaEngine(embeddedRegistry)
-
-	matchers := []*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "http.server.duration"),
-	}
-
-	_, _, err := e.findMatcherVariants("", "", matchers)
+	_, _, err := e.findMatcherVariants("", "", equalMatchers("http.server.duration"))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "semconvURL is required")
+}
+
+func TestFindMatcherVariants_RequiresMetricNameAnchorBeforeRegistryLookup(t *testing.T) {
+	e := newSchemaEngine(embeddedRegistry)
+	_, _, err := e.findMatcherVariants("not-a-registry-path", "also-invalid", []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchEqual, "job", "api"),
+	})
+	require.ErrorIs(t, err, errMetricNameAnchor)
+}
+
+func TestRevisionPartition(t *testing.T) {
+	revisions := []schemaRevision{{version: "1.0.0"}, {version: "1.1.0"}, {version: "1.2.0"}}
+	tests := []struct {
+		version string
+		want    int
+	}{
+		{version: "0.9.0", want: 0},
+		{version: "1.0.0", want: 1},
+		{version: "1.0.5", want: 1},
+		{version: "v1.1.0", want: 2},
+		{version: "2.0.0", want: 3},
+	}
+	for _, tc := range tests {
+		t.Run(tc.version, func(t *testing.T) {
+			got, err := revisionPartitionWithBudget(revisions, tc.version, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+	got, err := revisionPartitionWithBudget(nil, "1.0.0", newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+	require.NoError(t, err)
+	require.Zero(t, got)
 }
 
 func TestNormalizeMetricMatchers(t *testing.T) {
@@ -96,1161 +196,852 @@ func TestNormalizeMetricMatchers(t *testing.T) {
 }
 
 func TestGenerateMatcherVariants(t *testing.T) {
-	t.Run("applies per-version renames", func(t *testing.T) {
-		schema := &otelSchema{
-			versionRenames: []versionRenames{
-				{
-					version:    "1.0.0",
-					metrics:    map[string]string{"metric.v2": "metric.v1", "metric.v1": "metric.v2"},
-					attributes: map[string]string{},
-				},
-			},
-		}
-		matchers := []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric.v2"),
-		}
+	t.Run("walks chained revisions in both directions", func(t *testing.T) {
+		schema := testSchema(
+			schemaRevision{version: "1.1.0", changes: []schemaChange{
+				metricChange(map[string]string{"metric.v1": "metric.v2"}),
+				attributeChange(map[string]string{"attr.v1": "attr.v2"}),
+			}},
+			schemaRevision{version: "1.2.0", changes: []schemaChange{
+				metricChange(map[string]string{"metric.v2": "metric.v3"}),
+				attributeChange(map[string]string{"attr.v2": "attr.v3"}),
+			}},
+		)
 
-		result, err := generateMatcherVariants("1.0.0", schema, matchers)
-		require.NoError(t, err)
-
-		// Should have original + 1 version variant.
-		require.Len(t, result, 2)
-		metricNames := extractMetricNames(result)
-		require.Contains(t, metricNames, "metric.v2")
-		require.Contains(t, metricNames, "metric.v1")
-	})
-
-	t.Run("applies metric and attribute renames together", func(t *testing.T) {
-		schema := &otelSchema{
-			versionRenames: []versionRenames{
-				{
-					version:    "1.0.0",
-					metrics:    map[string]string{"metric.new": "metric.old", "metric.old": "metric.new"},
-					attributes: map[string]string{"attr.new": "attr.old", "attr.old": "attr.new"},
-				},
-			},
-		}
-		matchers := []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric.new"),
-			labels.MustNewMatcher(labels.MatchEqual, "attr.new", "value"),
-		}
-
-		result, err := generateMatcherVariants("1.0.0", schema, matchers)
-		require.NoError(t, err)
-
-		// Should have original + 1 version variant (both metric AND attr renamed together).
-		require.Len(t, result, 2)
-
-		// Verify the combinations.
-		found := make(map[string]bool)
-		for _, m := range result {
-			metricName := ""
-			attrName := ""
-			for _, matcher := range m {
-				if matcher.Name == labels.MetricName {
-					metricName = matcher.Value
-				} else {
-					attrName = matcher.Name
-				}
-			}
-			found[metricName+"/"+attrName] = true
-		}
-		// Original: metric.new/attr.new
-		// Version rename: metric.old/attr.old (BOTH renamed together)
-		require.True(t, found["metric.new/attr.new"])
-		require.True(t, found["metric.old/attr.old"])
-		// Should NOT have mix-and-match combinations.
-		require.False(t, found["metric.new/attr.old"])
-		require.False(t, found["metric.old/attr.new"])
-	})
-
-	t.Run("resolves transitive rename chains", func(t *testing.T) {
-		// Versions are sorted: 1.0.0 (v1↔v2), then 1.1.0 (v2↔v3).
-		schema := &otelSchema{
-			versionRenames: []versionRenames{
-				{
-					version:    "1.0.0",
-					metrics:    map[string]string{"metric.v2": "metric.v1", "metric.v1": "metric.v2"},
-					attributes: map[string]string{},
-				},
-				{
-					version:    "1.1.0",
-					metrics:    map[string]string{"metric.v3": "metric.v2", "metric.v2": "metric.v3"},
-					attributes: map[string]string{},
-				},
-			},
-		}
-		matchers := []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric.v3"),
-		}
-
-		result, err := generateMatcherVariants("1.1.0", schema, matchers)
-		require.NoError(t, err)
-
-		// Anchored at 1.1.0, backward walk resolves: v3 → v2 (via 1.1.0) → v1 (via 1.0.0).
-		require.Len(t, result, 3)
-		metricNames := extractMetricNames(result)
-		require.Contains(t, metricNames, "metric.v3")
-		require.Contains(t, metricNames, "metric.v2")
-		require.Contains(t, metricNames, "metric.v1")
-	})
-
-	t.Run("resolves transitive chains with paired attributes", func(t *testing.T) {
-		schema := &otelSchema{
-			versionRenames: []versionRenames{
-				{
-					version:    "1.0.0",
-					metrics:    map[string]string{"metric.v2": "metric.v1", "metric.v1": "metric.v2"},
-					attributes: map[string]string{"attr.v2": "attr.v1", "attr.v1": "attr.v2"},
-				},
-				{
-					version:    "1.1.0",
-					metrics:    map[string]string{"metric.v3": "metric.v2", "metric.v2": "metric.v3"},
-					attributes: map[string]string{"attr.v3": "attr.v2", "attr.v2": "attr.v3"},
-				},
-			},
-		}
-		matchers := []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric.v3"),
-			labels.MustNewMatcher(labels.MatchEqual, "attr.v3", "value"),
-		}
-
-		result, err := generateMatcherVariants("1.1.0", schema, matchers)
-		require.NoError(t, err)
-
-		// Anchored at 1.1.0, should have 3 variants with metric+attr paired correctly.
-		require.Len(t, result, 3)
-
-		found := make(map[string]bool)
-		for _, m := range result {
-			metricName := ""
-			attrName := ""
-			for _, matcher := range m {
-				if matcher.Name == labels.MetricName {
-					metricName = matcher.Value
-				} else {
-					attrName = matcher.Name
-				}
-			}
-			found[metricName+"/"+attrName] = true
-		}
-
-		// Each version's renames are applied together via backward walk.
-		require.True(t, found["metric.v3/attr.v3"]) // Original
-		require.True(t, found["metric.v2/attr.v2"]) // v1.1.0 renames applied
-		require.True(t, found["metric.v1/attr.v1"]) // v1.0.0 renames applied to v2
-
-		// Should NOT have cross-version combinations.
-		require.False(t, found["metric.v3/attr.v2"])
-		require.False(t, found["metric.v3/attr.v1"])
-		require.False(t, found["metric.v2/attr.v3"])
-		require.False(t, found["metric.v2/attr.v1"])
-		require.False(t, found["metric.v1/attr.v3"])
-		require.False(t, found["metric.v1/attr.v2"])
-	})
-	t.Run("no renames returns original only", func(t *testing.T) {
-		schema := &otelSchema{}
-		matchers := []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my.metric"),
-		}
-
-		result, err := generateMatcherVariants("1.0.0", schema, matchers)
-		require.NoError(t, err)
-
-		require.Len(t, result, 1)
-		require.Equal(t, matchers, result[0])
-	})
-}
-
-func extractMetricNames(matcherSets [][]*labels.Matcher) []string {
-	names := make([]string, 0, len(matcherSets))
-	for _, set := range matcherSets {
-		for _, m := range set {
-			if m.Name == labels.MetricName {
-				names = append(names, m.Value)
-			}
-		}
-	}
-	return names
-}
-
-func TestFindVersionAnchorIndex(t *testing.T) {
-	versions := []versionRenames{
-		{version: "1.0.0"},
-		{version: "1.1.0"},
-		{version: "1.2.0"},
-	}
-
-	tests := []struct {
-		name          string
-		targetVersion string
-		expectedIndex int
-	}{
-		{"exact match first", "1.0.0", 0},
-		{"exact match middle", "1.1.0", 1},
-		{"exact match last", "1.2.0", 2},
-		{"between versions", "1.0.5", 0},
-		{"before all versions", "0.9.0", 0},
-		{"after all versions", "2.0.0", 2},
-		{"with v prefix", "v1.1.0", 1},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			idx := findVersionAnchorIndex(versions, tc.targetVersion)
-			require.Equal(t, tc.expectedIndex, idx)
+		backward := requireMatcherVariants(t, "1.2.0", schema, equalMatchers("metric.v3", "attr.v3"), []string{"attr.v3"}, nil)
+		require.Equal(t, []string{"metric.v3/attr.v3", "metric.v2/attr.v2", "metric.v1/attr.v1"}, []string{
+			variantMetricAndAttribute(backward[0]),
+			variantMetricAndAttribute(backward[1]),
+			variantMetricAndAttribute(backward[2]),
 		})
+
+		forward := requireMatcherVariants(t, "1.0.0", schema, equalMatchers("metric.v1", "attr.v1"), []string{"attr.v1"}, nil)
+		require.Equal(t, []string{"metric.v1/attr.v1", "metric.v2/attr.v2", "metric.v3/attr.v3"}, []string{
+			variantMetricAndAttribute(forward[0]),
+			variantMetricAndAttribute(forward[1]),
+			variantMetricAndAttribute(forward[2]),
+		})
+	})
+
+	t.Run("emits only revision boundaries", func(t *testing.T) {
+		schema := testSchema(schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{
+				metricChange(map[string]string{"metric.a": "metric.b"}),
+				attributeChange(map[string]string{"attr.a": "attr.b"}),
+				metricChange(map[string]string{"metric.b": "metric.c"}),
+				attributeChange(map[string]string{"attr.b": "attr.c"}),
+			},
+		})
+		variants := requireMatcherVariants(t, "1.1.0", schema, equalMatchers("metric.c", "attr.c"), []string{"attr.c"}, nil)
+		require.Len(t, variants, 2)
+		require.Equal(t, "metric.c/attr.c", variantMetricAndAttribute(variants[0]))
+		require.Equal(t, "metric.a/attr.a", variantMetricAndAttribute(variants[1]))
+	})
+
+	t.Run("branches many-to-one renames deterministically", func(t *testing.T) {
+		schema := testSchema(schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{metricChange(map[string]string{
+				"metric.b": "metric.current",
+				"metric.a": "metric.current",
+			})},
+		})
+		variants := requireMatcherVariants(t, "1.1.0", schema, equalMatchers("metric.current"), nil, nil)
+		require.Equal(t, []string{"metric.current", "metric.a", "metric.b"}, variantNames(variants))
+	})
+
+	t.Run("preserves convergence across ordered metric changes", func(t *testing.T) {
+		schema := testSchema(schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{
+				metricChange(map[string]string{"metric.a": "metric.current"}),
+				metricChange(map[string]string{"metric.b": "metric.current"}),
+			},
+		})
+
+		backward := requireMatcherVariants(t, "1.1.0", schema, equalMatchers("metric.current"), nil, nil)
+		require.ElementsMatch(t, []string{"metric.current", "metric.a", "metric.b"}, variantNames(backward))
+
+		for _, predecessor := range []string{"metric.a", "metric.b"} {
+			forward := requireMatcherVariants(t, "1.0.0", schema, equalMatchers(predecessor), nil, nil)
+			require.ElementsMatch(t, []string{predecessor, "metric.current"}, variantNames(forward))
+		}
+	})
+
+	t.Run("preserves convergence across ordered attribute changes", func(t *testing.T) {
+		schema := testSchema(schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{
+				attributeChange(map[string]string{"attr.a": "attr.current"}),
+				attributeChange(map[string]string{"attr.b": "attr.current"}),
+			},
+		})
+
+		backward := requireMatcherVariants(t, "1.1.0", schema, equalMatchers("metric", "attr.current"), []string{"attr.current"}, nil)
+		require.ElementsMatch(t, []string{"metric/attr.current", "metric/attr.a", "metric/attr.b"}, []string{
+			variantMetricAndAttribute(backward[0]),
+			variantMetricAndAttribute(backward[1]),
+			variantMetricAndAttribute(backward[2]),
+		})
+		for _, variant := range backward[1:] {
+			require.Equal(t, map[string]string{
+				"attr.a": "attr.current",
+				"attr.b": "attr.current",
+			}, variant.mapping.translatedLabels)
+		}
+
+		for _, predecessor := range []string{"attr.a", "attr.b"} {
+			forward := requireMatcherVariants(t, "1.0.0", schema, equalMatchers("metric", predecessor), []string{predecessor}, nil)
+			require.ElementsMatch(t, []string{"metric/" + predecessor, "metric/attr.current"}, []string{
+				variantMetricAndAttribute(forward[0]),
+				variantMetricAndAttribute(forward[1]),
+			})
+		}
+	})
+
+	t.Run("an anchor before every revision has no backward step", func(t *testing.T) {
+		schema := testSchema(schemaRevision{
+			version: "1.0.0",
+			changes: []schemaChange{metricChange(map[string]string{"metric.old": "metric.new"})},
+		})
+		variants := requireMatcherVariants(t, "0.9.0", schema, equalMatchers("metric.old"), nil, nil)
+		require.Equal(t, []string{"metric.old", "metric.new"}, variantNames(variants))
+	})
+
+	t.Run("no revisions returns the direct variant", func(t *testing.T) {
+		variants := requireMatcherVariants(t, "1.0.0", &otelSchema{}, equalMatchers("metric"), nil, nil)
+		require.Len(t, variants, 1)
+		require.Equal(t, "metric", variantNames(variants)[0])
+	})
+}
+
+func TestMetricLifecycleBoundaries(t *testing.T) {
+	t.Run("stops a retired name from a later anchor", func(t *testing.T) {
+		schema := testSchema(schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{metricChange(map[string]string{"metric.old": "metric.current"})},
+		})
+		rv := &renameValidator{seen: map[string]struct{}{}}
+
+		variants := requireMatcherVariants(t, "1.2.0", schema, equalMatchers("metric.old"), nil, rv)
+		require.Equal(t, []string{"metric.old"}, variantNames(variants))
+		require.Len(t, rv.warnings, 1)
+		require.Contains(t, rv.warnings[0], "metric lifecycle boundary")
+	})
+
+	t.Run("stops a reused old-side name even without identity evidence", func(t *testing.T) {
+		schema := testSchema(schemaRevision{
+			version: "2.0.0",
+			changes: []schemaChange{metricChange(map[string]string{"foo": "bar"})},
+		})
+		rv := &renameValidator{seen: map[string]struct{}{}}
+		variants := requireMatcherVariants(t, "5.0.0", schema, equalMatchers("foo"), nil, rv)
+		require.Equal(t, []string{"foo"}, variantNames(variants))
+		require.Len(t, rv.warnings, 1)
+		require.Contains(t, rv.warnings[0], "metric lifecycle boundary")
+	})
+
+	t.Run("rejects a name reused within one revision", func(t *testing.T) {
+		schema := testSchema(schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{
+				metricChange(map[string]string{"metric.a": "metric.b"}),
+				metricChange(map[string]string{"metric.c": "metric.a"}),
+			},
+		})
+
+		rv := &renameValidator{anchorDeclared: true, seen: map[string]struct{}{}}
+		_, err := generateMatcherVariantsWithBudget("1.1.0", schema, equalMatchers("metric.a"), nil, rv, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+		require.ErrorIs(t, err, errAmbiguousSchemaRename)
+		require.ErrorContains(t, err, `metric name "metric.a"`)
+	})
+
+	t.Run("rejects a later identity claiming a retired name", func(t *testing.T) {
+		schema := testSchema(
+			schemaRevision{version: "1.1.0", changes: []schemaChange{metricChange(map[string]string{"foo": "bar"})}},
+			schemaRevision{version: "1.2.0", changes: []schemaChange{metricChange(map[string]string{"baz": "foo"})}},
+		)
+
+		for _, metric := range []string{"bar", "foo"} {
+			t.Run(metric, func(t *testing.T) {
+				_, err := generateMatcherVariantsWithBudget("1.2.0", schema, equalMatchers(metric), nil, nil, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+				require.ErrorIs(t, err, errAmbiguousSchemaRename)
+				require.ErrorContains(t, err, `metric name "foo"`)
+			})
+		}
+	})
+
+	t.Run("later convergence does not erase earlier reuse", func(t *testing.T) {
+		schema := testSchema(
+			schemaRevision{version: "1.1.0", changes: []schemaChange{metricChange(map[string]string{"foo": "bar"})}},
+			schemaRevision{version: "1.2.0", changes: []schemaChange{metricChange(map[string]string{"baz": "foo"})}},
+			schemaRevision{version: "1.3.0", changes: []schemaChange{metricChange(map[string]string{"foo": "bar"})}},
+		)
+
+		_, err := generateMatcherVariantsWithBudget("1.3.0", schema, equalMatchers("bar"), nil, nil, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+		require.ErrorIs(t, err, errAmbiguousSchemaRename)
+		require.ErrorContains(t, err, `metric name "foo"`)
+	})
+
+	t.Run("allows a repeated historical source to converge", func(t *testing.T) {
+		schema := testSchema(
+			schemaRevision{version: "1.1.0", changes: []schemaChange{metricChange(map[string]string{"metric.long": "metric.short"})}},
+			schemaRevision{version: "1.2.0", changes: []schemaChange{metricChange(map[string]string{
+				"metric.long":  "metric.current",
+				"metric.short": "metric.current",
+			})}},
+		)
+
+		variants := requireMatcherVariants(t, "1.2.0", schema, equalMatchers("metric.current"), nil, nil)
+		require.ElementsMatch(t, []string{"metric.current", "metric.long", "metric.short"}, variantNames(variants))
+	})
+
+	t.Run("applies one rename map atomically", func(t *testing.T) {
+		schema := testSchema(schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{metricChange(map[string]string{"metric.a": "metric.b", "metric.b": "metric.a"})},
+		})
+
+		_, err := generateMatcherVariantsWithBudget("1.1.0", schema, equalMatchers("metric.a"), nil, nil, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+		require.ErrorIs(t, err, errAmbiguousSchemaRename)
+	})
+
+	t.Run("does not turn a transient name into a version era", func(t *testing.T) {
+		schema := testSchema(schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{
+				metricChange(map[string]string{"metric.c": "metric.transient"}),
+				metricChange(map[string]string{"metric.transient": "metric.d"}),
+			},
+		})
+		rv := &renameValidator{seen: map[string]struct{}{}}
+
+		variants := requireMatcherVariants(t, "1.2.0", schema, equalMatchers("metric.transient"), nil, rv)
+		require.Equal(t, []string{"metric.transient"}, variantNames(variants))
+	})
+
+	t.Run("allows a legitimate rename back", func(t *testing.T) {
+		schema := testSchema(
+			schemaRevision{version: "2.0.0", changes: []schemaChange{metricChange(map[string]string{"foo": "bar"})}},
+			schemaRevision{version: "3.0.0", changes: []schemaChange{metricChange(map[string]string{"bar": "foo"})}},
+		)
+		rv := &renameValidator{seen: map[string]struct{}{}}
+		variants := requireMatcherVariants(t, "3.0.0", schema, equalMatchers("foo"), nil, rv)
+		require.Equal(t, []string{"foo", "bar"}, variantNames(variants))
+		require.Empty(t, rv.warnings)
+	})
+}
+
+func TestManyToOneMetricRenames(t *testing.T) {
+	t.Run("follows each predecessor's history", func(t *testing.T) {
+		schema := testSchema(
+			schemaRevision{version: "1.1.0", changes: []schemaChange{
+				metricChange(map[string]string{"metric.b.older": "metric.b"}),
+			}},
+			schemaRevision{version: "1.2.0", changes: []schemaChange{
+				metricChange(map[string]string{"metric.a": "metric.merged", "metric.b": "metric.merged"}),
+			}},
+		)
+
+		variants := requireMatcherVariants(t, "1.2.0", schema, equalMatchers("metric.merged"), nil, nil)
+		require.ElementsMatch(t,
+			[]string{"metric.merged", "metric.a", "metric.b", "metric.b.older"},
+			variantNames(variants))
+	})
+
+	t.Run("upstream schema collapses two spellings deterministically", func(t *testing.T) {
+		b, err := os.ReadFile("./testdata/upstream/schema-1.44.0.yaml")
+		require.NoError(t, err)
+		schema, err := loadOTelSchema(b)
+		require.NoError(t, err)
+
+		variants := requireMatcherVariants(t, "1.44.0", &schema,
+			equalMatchers("k8s.replicationcontroller.pod.available"), nil, nil)
+		require.Equal(t, []string{
+			"k8s.replicationcontroller.pod.available",
+			"k8s.replication_controller.available_pods",
+			"k8s.replicationcontroller.available_pods",
+		}, variantNames(variants))
+	})
+}
+
+func TestAttributeScopingFollowsMetricBranches(t *testing.T) {
+	t.Run("scope is evaluated at its transformation position", func(t *testing.T) {
+		beforeRename := testSchema(schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{
+				attributeChange(map[string]string{"user": "tenant"}, "metric.old"),
+				metricChange(map[string]string{"metric.old": "metric.new"}),
+			},
+		})
+		variants := requireMatcherVariants(t, "1.1.0", beforeRename, equalMatchers("metric.new", "tenant"), []string{"tenant"}, nil)
+		require.Equal(t, []string{"metric.new/tenant", "metric.old/user"}, []string{
+			variantMetricAndAttribute(variants[0]), variantMetricAndAttribute(variants[1]),
+		})
+
+		afterRename := testSchema(schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{
+				metricChange(map[string]string{"metric.old": "metric.new"}),
+				attributeChange(map[string]string{"user": "tenant"}, "metric.old"),
+			},
+		})
+		variants = requireMatcherVariants(t, "1.1.0", afterRename, equalMatchers("metric.new", "tenant"), []string{"tenant"}, nil)
+		require.Equal(t, []string{"metric.new/tenant", "metric.old/tenant"}, []string{
+			variantMetricAndAttribute(variants[0]), variantMetricAndAttribute(variants[1]),
+		})
+	})
+
+	t.Run("a scope applies only to its many-to-one predecessor", func(t *testing.T) {
+		schema := testSchema(schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{
+				attributeChange(map[string]string{"user": "tenant"}, "metric.a"),
+				metricChange(map[string]string{"metric.a": "metric.current", "metric.b": "metric.current"}),
+			},
+		})
+		variants := requireMatcherVariants(t, "1.1.0", schema, equalMatchers("metric.current", "tenant"), []string{"tenant"}, nil)
+		require.Len(t, variants, 3)
+		require.Equal(t, "metric.current/tenant", variantMetricAndAttribute(variants[0]))
+		require.Equal(t, "metric.a/user", variantMetricAndAttribute(variants[1]))
+		require.Equal(t, map[string]string{"user": "tenant"}, variants[1].mapping.translatedLabels)
+		require.Equal(t, "metric.b/tenant", variantMetricAndAttribute(variants[2]))
+		require.Empty(t, variants[2].mapping.translatedLabels)
+	})
+
+	t.Run("an inapplicable earlier scope does not resolve a temporary origin", func(t *testing.T) {
+		schema := testSchema(schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{
+				attributeChange(map[string]string{"attr.a": "attr.current"}, "metric.a"),
+				attributeChange(map[string]string{"attr.b": "attr.current"}, "metric.b"),
+			},
+		})
+
+		variants := requireMatcherVariants(t, "1.1.0", schema, equalMatchers("metric.b", "attr.current"), []string{"attr.current"}, nil)
+		require.Equal(t, []string{"metric.b/attr.current", "metric.b/attr.b"}, []string{
+			variantMetricAndAttribute(variants[0]),
+			variantMetricAndAttribute(variants[1]),
+		})
+		require.Equal(t, map[string]string{"attr.b": "attr.current"}, variants[1].mapping.translatedLabels)
+	})
+}
+
+func TestAttributeMatcherExpansion(t *testing.T) {
+	t.Run("moves duplicate matchers together", func(t *testing.T) {
+		schema := testSchema(schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{attributeChange(map[string]string{
+				"attr.a": "attr.current",
+				"attr.b": "attr.current",
+				"attr.c": "attr.current",
+			})},
+		})
+		matchers := equalMatchers("metric")
+		for range 13 {
+			matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, "attr.current", "value"))
+		}
+
+		variants := requireMatcherVariants(t, "1.1.0", schema, matchers, []string{"attr.current"}, nil)
+		require.Len(t, variants, 4)
+		for _, variant := range variants {
+			var attributeName string
+			for _, matcher := range variant.matchers[1:] {
+				if attributeName == "" {
+					attributeName = matcher.Name
+				}
+				require.Equal(t, attributeName, matcher.Name)
+			}
+		}
+	})
+
+	t.Run("caps products across distinct attributes", func(t *testing.T) {
+		for _, tc := range []struct {
+			groups  int
+			wantLen int
+			wantErr bool
+		}{
+			{groups: 8, wantLen: 256},
+			{groups: 9, wantErr: true},
+		} {
+			t.Run(fmt.Sprintf("%d groups", tc.groups), func(t *testing.T) {
+				renamed := map[string]string{}
+				state := lineageState{metric: "metric", matchers: equalMatchers("metric")}
+				for i := range tc.groups {
+					current := fmt.Sprintf("attr.current.%d", i)
+					renamed[fmt.Sprintf("attr.a.%d", i)] = current
+					renamed[fmt.Sprintf("attr.b.%d", i)] = current
+					state.matchers = append(state.matchers, labels.MustNewMatcher(labels.MatchEqual, current, "value"))
+				}
+
+				states, err := transformAttributeMatcherStatesWithBudget(state, newDirectedRenames(renamed), traverseBackward, 0, nil, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+				if tc.wantErr {
+					require.ErrorIs(t, err, errSchemaExpansion)
+					return
+				}
+				require.NoError(t, err)
+				require.Len(t, states, tc.wantLen)
+			})
+		}
+	})
+}
+
+func TestReplaceMetricMatchers(t *testing.T) {
+	matchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric.current"),
+		labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "metric.current"),
+		labels.MustNewMatcher(labels.MatchNotEqual, labels.MetricName, "metric.current"),
+		labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric.other"),
+		labels.MustNewMatcher(labels.MatchEqual, "attribute", "value"),
 	}
-	t.Run("empty versions", func(t *testing.T) {
-		idx := findVersionAnchorIndex([]versionRenames{}, "1.0.0")
-		require.Equal(t, 0, idx)
+	got, err := replaceMetricMatchersWithBudget(matchers, "metric.current", "metric.old", newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+	require.NoError(t, err)
+
+	require.Equal(t, labels.MatchEqual, got[0].Type)
+	require.Equal(t, "metric.old", got[0].Value)
+	require.Same(t, matchers[1], got[1], "non-equality constraints are normalized before traversal")
+	require.Same(t, matchers[2], got[2], "non-equality constraints are normalized before traversal")
+	require.Same(t, matchers[3], got[3], "a different metric constraint must remain untouched")
+	require.Same(t, matchers[4], got[4], "a non-metric constraint must remain untouched")
+}
+
+func TestVariantAccumulatorMergesAttributeAliases(t *testing.T) {
+	t.Run("compatible mappings", func(t *testing.T) {
+		schema := testSchema(schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{attributeChange(map[string]string{"user": "tenant"})},
+		})
+		variants := requireMatcherVariants(t, "1.1.0", schema, equalMatchers("metric"), []string{"tenant"}, nil)
+		require.Len(t, variants, 1)
+		require.Equal(t, map[string]string{"user": "tenant"}, variants[0].mapping.translatedLabels)
+	})
+
+	t.Run("conflicting mappings", func(t *testing.T) {
+		rv := &renameValidator{seen: map[string]struct{}{}}
+		acc := requireVariantAccumulator(t, "metric", []string{"tenant", "account"}, rv)
+		matchers := equalMatchers("metric")
+		require.NoError(t, acc.add(lineageState{matchers: matchers, metric: "metric", attrs: attributeLineage{
+			"tenant": {"user": attributeOriginResolved},
+		}}))
+		require.NoError(t, acc.add(lineageState{matchers: matchers, metric: "metric", attrs: attributeLineage{
+			"account": {"user": attributeOriginResolved},
+		}}))
+
+		require.Len(t, acc.variants, 1)
+		require.NotContains(t, acc.variants[0].mapping.translatedLabels, "user")
+		require.Len(t, rv.warnings, 1)
+		require.Contains(t, rv.warnings[0], `attribute name "user" resolves to both "tenant" and "account"`)
+	})
+
+	t.Run("identity reuse across matcher variants", func(t *testing.T) {
+		acc := requireVariantAccumulator(t, "metric", nil, nil)
+		require.NoError(t, acc.add(lineageState{
+			matchers: equalMatchers("metric", "first"),
+			metric:   "metric",
+			attrs: attributeLineage{
+				"user": {"account": attributeOriginResolved},
+			},
+		}))
+		err := acc.add(lineageState{
+			matchers: equalMatchers("metric", "second"),
+			metric:   "metric",
+			attrs: attributeLineage{
+				"tenant": {"user": attributeOriginResolved},
+			},
+		})
+		require.ErrorIs(t, err, errAmbiguousSchemaRename)
+		require.ErrorContains(t, err, `attribute name "user"`)
+	})
+
+	t.Run("identities stay scoped to a physical metric", func(t *testing.T) {
+		acc := requireVariantAccumulator(t, "metric.current", nil, nil)
+		require.NoError(t, acc.add(lineageState{
+			matchers: equalMatchers("metric.old"),
+			metric:   "metric.old",
+			attrs: attributeLineage{
+				"user": {"account": attributeOriginResolved},
+			},
+		}))
+		require.NoError(t, acc.add(lineageState{
+			matchers: equalMatchers("metric.new"),
+			metric:   "metric.new",
+			attrs: attributeLineage{
+				"tenant": {"user": attributeOriginResolved},
+			},
+		}))
 	})
 }
 
-func TestGenerateMatcherVariants_AnchoredTraversal(t *testing.T) {
-	t.Run("anchored at middle version walks both directions", func(t *testing.T) {
-		// Schema: [1.0.0: v1<->v2], [1.1.0: v2<->v3], [1.2.0: v3<->v4]
-		schema := &otelSchema{
-			versionRenames: []versionRenames{
-				{version: "1.0.0", metrics: map[string]string{"metric.v2": "metric.v1", "metric.v1": "metric.v2"}},
-				{version: "1.1.0", metrics: map[string]string{"metric.v3": "metric.v2", "metric.v2": "metric.v3"}},
-				{version: "1.2.0", metrics: map[string]string{"metric.v4": "metric.v3", "metric.v3": "metric.v4"}},
-			},
-		}
-		matchers := []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric.v3"),
-		}
+func TestAttributeLifecycleReuse(t *testing.T) {
+	t.Run("rejects a distinct identity claiming an alias", func(t *testing.T) {
+		schema := testSchema(
+			schemaRevision{version: "1.1.0", changes: []schemaChange{attributeChange(map[string]string{"user": "tenant"})}},
+			schemaRevision{version: "1.2.0", changes: []schemaChange{attributeChange(map[string]string{"account": "user"})}},
+		)
 
-		// Anchored at 1.1.0: backward walks [1.0.0, 1.1.0], forward walks [1.1.0, 1.2.0].
-		result, err := generateMatcherVariants("1.1.0", schema, matchers)
-		require.NoError(t, err)
-
-		require.Len(t, result, 4) // v1, v2, v3, v4
-		names := extractMetricNames(result)
-		require.Contains(t, names, "metric.v1")
-		require.Contains(t, names, "metric.v2")
-		require.Contains(t, names, "metric.v3")
-		require.Contains(t, names, "metric.v4")
+		_, err := generateMatcherVariantsWithBudget("1.2.0", schema, equalMatchers("metric", "user"), nil, nil, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+		require.ErrorIs(t, err, errAmbiguousSchemaRename)
+		require.ErrorContains(t, err, `attribute name "user"`)
 	})
 
-	t.Run("anchored at first version only walks forward for newer", func(t *testing.T) {
-		schema := &otelSchema{
-			versionRenames: []versionRenames{
-				{version: "1.0.0", metrics: map[string]string{"metric.v2": "metric.v1", "metric.v1": "metric.v2"}},
-				{version: "1.1.0", metrics: map[string]string{"metric.v3": "metric.v2", "metric.v2": "metric.v3"}},
-			},
-		}
-		matchers := []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric.v2"),
-		}
+	t.Run("allows a legitimate rename back", func(t *testing.T) {
+		schema := testSchema(
+			schemaRevision{version: "1.1.0", changes: []schemaChange{attributeChange(map[string]string{"user": "tenant"})}},
+			schemaRevision{version: "1.2.0", changes: []schemaChange{attributeChange(map[string]string{"tenant": "user"})}},
+		)
 
-		// Anchored at 1.0.0: backward walks [1.0.0], forward walks [1.0.0, 1.1.0].
-		result, err := generateMatcherVariants("1.0.0", schema, matchers)
-		require.NoError(t, err)
-
-		names := extractMetricNames(result)
-		require.Contains(t, names, "metric.v1") // backward from anchor
-		require.Contains(t, names, "metric.v2") // original
-		require.Contains(t, names, "metric.v3") // forward from anchor
+		variants := requireMatcherVariants(t, "1.2.0", schema, equalMatchers("metric", "user"), nil, nil)
+		require.NotEmpty(t, variants)
 	})
 
-	t.Run("handles version with v prefix", func(t *testing.T) {
-		schema := &otelSchema{
-			versionRenames: []versionRenames{
-				{version: "1.0.0", metrics: map[string]string{"metric.old": "metric.new", "metric.new": "metric.old"}},
-			},
-		}
-		matchers := []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric.new"),
-		}
+	t.Run("allows explicit convergence into an occupied identity", func(t *testing.T) {
+		schema := testSchema(schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{attributeChange(map[string]string{
+				"tls.client.server_name": "server.address",
+			})},
+		})
 
-		result, err := generateMatcherVariants("v1.0.0", schema, matchers)
-		require.NoError(t, err)
-
-		require.Len(t, result, 2)
-		names := extractMetricNames(result)
-		require.Contains(t, names, "metric.new")
-		require.Contains(t, names, "metric.old")
+		variants := requireMatcherVariants(t, "1.0.0", schema, equalMatchers("metric"), []string{"server.address"}, nil)
+		require.NotEmpty(t, variants)
 	})
 }
 
-func TestBuildAttributeRenameMap(t *testing.T) {
-	t.Run("single rename maps the historical alias to the anchor name", func(t *testing.T) {
-		schema := &otelSchema{
-			versionRenames: []versionRenames{
-				{version: "1.1.0", attributes: map[string]string{"user": "tenant", "tenant": "user"}},
-			},
+func TestSchemaExpansionLimits(t *testing.T) {
+	t.Run("attribute lineage includes canonical definitions", func(t *testing.T) {
+		for _, tc := range []struct {
+			attributes int
+			wantLen    int
+			wantErr    bool
+		}{
+			{attributes: maxSchemaExpansion, wantLen: maxSchemaExpansion},
+			{attributes: maxSchemaExpansion + 1, wantErr: true},
+		} {
+			t.Run(fmt.Sprintf("%d attributes", tc.attributes), func(t *testing.T) {
+				attributes := make([]string, 0, tc.attributes)
+				for i := range tc.attributes {
+					attributes = append(attributes, fmt.Sprintf("attr.%03d", i))
+				}
+				lineage, err := newAttributeLineageWithBudget(attributes, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+				if tc.wantErr {
+					require.ErrorIs(t, err, errSchemaExpansion)
+					return
+				}
+				require.NoError(t, err)
+				require.Len(t, lineage, tc.wantLen)
+			})
 		}
-		got, err := buildAttributeRenameMap("1.1.0", schema, []string{"tenant"})
-		require.NoError(t, err)
-		require.Equal(t, map[string]string{"user": "tenant"}, got)
 	})
 
-	t.Run("transitive chain collapses every alias to the anchor name", func(t *testing.T) {
-		// Anchored at 1.1.0, attr.v3 resolves backward: v3 → v2 (via 1.1.0) → v1
-		// (via 1.0.0), so every historical alias maps to the anchor name.
-		schema := &otelSchema{
-			versionRenames: []versionRenames{
-				{version: "1.0.0", attributes: map[string]string{"attr.v1": "attr.v2", "attr.v2": "attr.v1"}},
-				{version: "1.1.0", attributes: map[string]string{"attr.v2": "attr.v3", "attr.v3": "attr.v2"}},
-			},
+	t.Run("matcher variants include the anchor", func(t *testing.T) {
+		for _, tc := range []struct {
+			sources int
+			wantLen int
+			wantErr bool
+		}{
+			{sources: maxSchemaExpansion - 1, wantLen: maxSchemaExpansion},
+			{sources: maxSchemaExpansion, wantErr: true},
+		} {
+			t.Run(fmt.Sprintf("%d sources", tc.sources), func(t *testing.T) {
+				renamed := make(map[string]string, tc.sources)
+				for i := range tc.sources {
+					renamed[fmt.Sprintf("metric.old.%03d", i)] = "metric.current"
+				}
+				schema := testSchema(schemaRevision{
+					version: "1.1.0",
+					changes: []schemaChange{metricChange(renamed)},
+				})
+
+				variants, err := generateMatcherVariantsWithBudget("1.1.0", schema, equalMatchers("metric.current"), nil, nil, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+				if tc.wantErr {
+					require.ErrorIs(t, err, errSchemaExpansion)
+					return
+				}
+				require.NoError(t, err)
+				require.Len(t, variants, tc.wantLen)
+			})
 		}
-		got, err := buildAttributeRenameMap("1.1.0", schema, []string{"attr.v3"})
-		require.NoError(t, err)
-		require.Equal(t, map[string]string{"attr.v2": "attr.v3", "attr.v1": "attr.v3"}, got)
 	})
 
-	t.Run("no schema renames returns nil", func(t *testing.T) {
-		got, err := buildAttributeRenameMap("1.1.0", &otelSchema{}, []string{"tenant"})
-		require.NoError(t, err)
-		require.Nil(t, got)
+	t.Run("attribute mappings are bounded across states", func(t *testing.T) {
+		acc := requireVariantAccumulator(t, "metric", []string{"attr.current"}, nil)
+		matchers := equalMatchers("metric")
+		for i := range maxSchemaExpansion {
+			err := acc.add(lineageState{matchers: matchers, metric: "metric", attrs: attributeLineage{
+				"attr.current": {fmt.Sprintf("attr.old.%03d", i): attributeOriginResolved},
+			}})
+			require.NoError(t, err)
+		}
+		err := acc.add(lineageState{matchers: matchers, metric: "metric", attrs: attributeLineage{
+			"attr.current": {"attr.overflow": attributeOriginResolved},
+		}})
+		require.ErrorIs(t, err, errSchemaExpansion)
 	})
 
-	t.Run("no canonical attributes returns nil", func(t *testing.T) {
-		schema := &otelSchema{
-			versionRenames: []versionRenames{
-				{version: "1.1.0", attributes: map[string]string{"user": "tenant", "tenant": "user"}},
-			},
+	t.Run("label value jobs include the canonical name", func(t *testing.T) {
+		for _, tc := range []struct {
+			aliases int
+			wantLen int
+			wantErr bool
+		}{
+			{aliases: maxSchemaExpansion - 1, wantLen: maxSchemaExpansion},
+			{aliases: maxSchemaExpansion, wantErr: true},
+		} {
+			t.Run(fmt.Sprintf("%d aliases", tc.aliases), func(t *testing.T) {
+				mapping := make(map[string]string, tc.aliases)
+				for i := range tc.aliases {
+					mapping[fmt.Sprintf("attr.old.%03d", i)] = "attr.current"
+				}
+				jobs, err := buildLabelValueJobs([]matcherVariant{{
+					matchers: equalMatchers("metric"),
+					mapping:  buildLabelMapping("metric", mapping),
+				}}, "attr.current")
+				if tc.wantErr {
+					require.ErrorIs(t, err, errSchemaExpansion)
+					return
+				}
+				require.NoError(t, err)
+				require.Len(t, jobs, tc.wantLen)
+			})
 		}
-		got, err := buildAttributeRenameMap("1.1.0", schema, nil)
-		require.NoError(t, err)
-		require.Nil(t, got)
 	})
 }
 
 func TestSchemaExpansionBudget(t *testing.T) {
-	matchers := []*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric.current"),
+	state := lineageState{
+		matchers: equalMatchers("metric", "tenant"),
+		metric:   "metric",
+		attrs: attributeLineage{
+			"tenant": {"tenant": attributeOriginResolved, "user": attributeOriginResolved},
+		},
 	}
 
 	t.Run("find variants returns no partial result", func(t *testing.T) {
-		for name, limits := range map[string]schemaExpansionLimits{
-			"work":      {work: 1, keyBytes: 1_000},
-			"key bytes": {work: 1_000, keyBytes: 1},
+		files := map[string][]byte{
+			"registry.yaml": []byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.1.0:
+`),
+			"1.1.0": []byte(`groups:
+  - id: metric.metric
+    type: metric
+    metric_name: metric
+    unit: s
+    instrument: histogram
+`),
+		}
+		for name, tc := range map[string]struct {
+			limits schemaExpansionLimits
+			detail string
+		}{
+			"work": {
+				limits: schemaExpansionLimits{work: 1, keyBytes: 1_000},
+				detail: "resolver work",
+			},
+			"key bytes": {
+				limits: schemaExpansionLimits{work: 1_000, keyBytes: 1},
+				detail: "deduplication key bytes",
+			},
 		} {
 			t.Run(name, func(t *testing.T) {
-				e := newSchemaEngine(embeddedRegistry)
-				e.limits = limits
-				variants, _, err := e.findMatcherVariants(
+				engine := newSchemaEngine(newRegistrySource(files))
+				engine.limits = tc.limits
+				variants, _, err := engine.findMatcherVariants(
 					"registry/1.1.0",
 					"registry/registry.yaml",
-					[]*labels.Matcher{
-						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test"),
-					},
+					equalMatchers("metric"),
 				)
 				require.ErrorIs(t, err, errSchemaExpansion)
-				require.ErrorContains(t, err, name)
+				require.ErrorContains(t, err, tc.detail)
 				require.Nil(t, variants)
 			})
 		}
 	})
 
-	t.Run("preflights keys before allocation", func(t *testing.T) {
-		keyBytes := uint64(len(matcherKey(matchers)))
-		require.Positive(t, keyBytes)
-
-		budget := newSchemaExpansionBudget(schemaExpansionLimits{work: 10, keyBytes: keyBytes - 1})
-		key, err := matcherKeyWithBudget(matchers, budget)
+	t.Run("metric ownership analysis returns no partial result", func(t *testing.T) {
+		revisions := []schemaRevision{{
+			version: "1.1.0",
+			changes: []schemaChange{metricChange(map[string]string{"metric.old": "metric.current"})},
+		}}
+		reused, err := reusedMetricNamesWithBudget(revisions, newSchemaExpansionBudget(schemaExpansionLimits{work: 1, keyBytes: 1_000}))
 		require.ErrorIs(t, err, errSchemaExpansion)
-		require.ErrorContains(t, err, "deduplication key bytes")
-		require.Empty(t, key)
-		require.Zero(t, budget.keyBytes)
+		require.Nil(t, reused)
 	})
 
-	t.Run("charges duplicate candidate attempts", func(t *testing.T) {
-		schema := &otelSchema{versionRenames: []versionRenames{{
-			version: "1.0.0",
-			metrics: map[string]string{
-				"metric.current": "metric.old",
-				"metric.old":     "metric.current",
-			},
-		}}}
-		probe := newSchemaExpansionBudget(schemaExpansionLimits{work: 100, keyBytes: 10_000})
-		variants, err := generateMatcherVariantsWithBudget("1.0.0", schema, matchers, probe)
+	t.Run("cached metric ownership work is charged to every query", func(t *testing.T) {
+		files := map[string][]byte{
+			"registry.yaml": []byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.0.0:
+  1.1.0:
+    metrics:
+      changes:
+        - rename_metrics:
+            metric.old: metric.current
+`),
+			"1.1.0": []byte(`groups:
+  - id: metric.metric.current
+    type: metric
+    metric_name: metric.current
+    unit: s
+    instrument: histogram
+`),
+		}
+		engine := newSchemaEngine(newRegistrySource(files))
+		schema, err := engine.getOTelSchema("registry/registry.yaml")
 		require.NoError(t, err)
-		require.Len(t, variants, 2)
-		require.Positive(t, probe.work)
+		analysis := engine.schemaSafetyAnalysis("registry/registry.yaml", &schema)
+		require.NoError(t, analysis.err)
+		require.Positive(t, analysis.work)
 
-		budget := newSchemaExpansionBudget(schemaExpansionLimits{work: probe.work - 1, keyBytes: 10_000})
-		variants, err = generateMatcherVariantsWithBudget("1.0.0", schema, matchers, budget)
+		engine.limits = schemaExpansionLimits{work: analysis.work - 1, keyBytes: 1_000_000}
+		variants, _, err := engine.findMatcherVariants(
+			"registry/1.1.0",
+			"registry/registry.yaml",
+			equalMatchers("metric.current"),
+		)
 		require.ErrorIs(t, err, errSchemaExpansion)
-		require.ErrorContains(t, err, "resolver work")
 		require.Nil(t, variants)
 	})
 
-	t.Run("shares work across traversal directions", func(t *testing.T) {
-		backward := &otelSchema{versionRenames: []versionRenames{
-			{version: "1.0.0", metrics: map[string]string{"metric.middle": "metric.old", "metric.old": "metric.middle"}},
-			{version: "1.1.0", metrics: map[string]string{"metric.current": "metric.middle", "metric.middle": "metric.current"}},
-		}}
-		forward := &otelSchema{versionRenames: []versionRenames{
-			{version: "1.1.0"},
-			{version: "1.2.0", metrics: map[string]string{"metric.current": "metric.new", "metric.new": "metric.current"}},
-		}}
-		combined := &otelSchema{versionRenames: append(slices.Clone(backward.versionRenames), forward.versionRenames[1:]...)}
+	t.Run("preflights keys before allocation and state mutation", func(t *testing.T) {
+		keyBytes := uint64(len(requireLineageStateKey(t, state)))
+		require.Positive(t, keyBytes)
 
-		measure := func(t *testing.T, schema *otelSchema) uint64 {
+		budget := newSchemaExpansionBudget(schemaExpansionLimits{work: 1_000, keyBytes: keyBytes - 1})
+		states := newLineageStateSet(1, budget)
+		err := states.add(state)
+		require.ErrorIs(t, err, errSchemaExpansion)
+		require.ErrorContains(t, err, "deduplication key bytes")
+		require.Empty(t, states.states)
+		require.Empty(t, states.seen)
+		require.Zero(t, budget.keyBytes)
+
+		budget = newSchemaExpansionBudget(schemaExpansionLimits{work: 1_000, keyBytes: keyBytes})
+		states = newLineageStateSet(1, budget)
+		require.NoError(t, states.add(state))
+		require.Len(t, states.states, 1)
+		require.Equal(t, keyBytes, budget.keyBytes)
+	})
+
+	t.Run("charges duplicate attempts", func(t *testing.T) {
+		probe := newSchemaExpansionBudget(schemaExpansionLimits{work: 1_000, keyBytes: 1_000})
+		require.NoError(t, newLineageStateSet(1, probe).add(state))
+		require.Positive(t, probe.work)
+		require.Positive(t, probe.keyBytes)
+
+		budget := newSchemaExpansionBudget(schemaExpansionLimits{
+			work:     probe.work*2 - 1,
+			keyBytes: probe.keyBytes * 2,
+		})
+		states := newLineageStateSet(1, budget)
+		require.NoError(t, states.add(state))
+		err := states.add(state)
+		require.ErrorIs(t, err, errSchemaExpansion)
+		require.ErrorContains(t, err, "resolver work")
+		require.Len(t, states.states, 1)
+		require.Len(t, states.seen, 1)
+		require.Equal(t, probe.keyBytes, budget.keyBytes)
+	})
+
+	t.Run("shares one budget across traversal directions", func(t *testing.T) {
+		backward := testSchema(schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{metricChange(map[string]string{"metric.old": "metric.current"})},
+		})
+		forward := testSchema(schemaRevision{
+			version: "1.2.0",
+			changes: []schemaChange{metricChange(map[string]string{"metric.current": "metric.new"})},
+		})
+		combined := testSchema(
+			schemaRevision{
+				version: "1.1.0",
+				changes: []schemaChange{metricChange(map[string]string{"metric.old": "metric.current"})},
+			},
+			schemaRevision{
+				version: "1.2.0",
+				changes: []schemaChange{metricChange(map[string]string{"metric.current": "metric.new"})},
+			},
+		)
+
+		measure := func(t *testing.T, schema *otelSchema, wantVariants int) uint64 {
 			t.Helper()
-			budget := newSchemaExpansionBudget(schemaExpansionLimits{work: 1_000, keyBytes: 100_000})
-			_, err := generateMatcherVariantsWithBudget("1.1.0", schema, matchers, budget)
+			budget := newSchemaExpansionBudget(schemaExpansionLimits{work: 1_000, keyBytes: 1_000_000})
+			variants, err := generateMatcherVariantsWithBudget("1.1.0", schema, equalMatchers("metric.current"), nil, nil, budget)
 			require.NoError(t, err)
+			require.Len(t, variants, wantVariants)
 			return budget.work
 		}
-		limit := max(measure(t, backward), measure(t, forward))
-		require.Greater(t, measure(t, combined), limit)
+
+		backwardWork := measure(t, backward, 2)
+		forwardWork := measure(t, forward, 2)
+		combinedWork := measure(t, combined, 3)
+		limit := max(backwardWork, forwardWork)
+		require.Greater(t, combinedWork, limit)
 
 		for name, schema := range map[string]*otelSchema{"backward": backward, "forward": forward} {
 			t.Run(name+" fits independently", func(t *testing.T) {
-				budget := newSchemaExpansionBudget(schemaExpansionLimits{work: limit, keyBytes: 100_000})
-				_, err := generateMatcherVariantsWithBudget("1.1.0", schema, matchers, budget)
+				budget := newSchemaExpansionBudget(schemaExpansionLimits{work: limit, keyBytes: 1_000_000})
+				_, err := generateMatcherVariantsWithBudget("1.1.0", schema, equalMatchers("metric.current"), nil, nil, budget)
 				require.NoError(t, err)
 			})
 		}
 
-		budget := newSchemaExpansionBudget(schemaExpansionLimits{work: limit, keyBytes: 100_000})
-		variants, err := generateMatcherVariantsWithBudget("1.1.0", combined, matchers, budget)
+		budget := newSchemaExpansionBudget(schemaExpansionLimits{work: limit, keyBytes: 1_000_000})
+		variants, err := generateMatcherVariantsWithBudget("1.1.0", combined, equalMatchers("metric.current"), nil, nil, budget)
 		require.ErrorIs(t, err, errSchemaExpansion)
-		require.Nil(t, variants)
-	})
-
-	t.Run("shares work with attribute mapping", func(t *testing.T) {
-		schema := &otelSchema{versionRenames: []versionRenames{{
-			version:    "1.0.0",
-			metrics:    map[string]string{"metric.current": "metric.old", "metric.old": "metric.current"},
-			attributes: map[string]string{"tenant": "user", "user": "tenant"},
-		}}}
-		measureVariants := newSchemaExpansionBudget(schemaExpansionLimits{work: 100, keyBytes: 10_000})
-		_, err := generateMatcherVariantsWithBudget("1.0.0", schema, matchers, measureVariants)
-		require.NoError(t, err)
-		measureAttributes := newSchemaExpansionBudget(schemaExpansionLimits{work: 100, keyBytes: 10_000})
-		_, err = buildAttributeRenameMapWithBudget("1.0.0", schema, []string{"tenant"}, measureAttributes)
-		require.NoError(t, err)
-
-		budget := newSchemaExpansionBudget(schemaExpansionLimits{
-			work:     measureVariants.work + measureAttributes.work - 1,
-			keyBytes: 10_000,
-		})
-		_, err = generateMatcherVariantsWithBudget("1.0.0", schema, matchers, budget)
-		require.NoError(t, err)
-		mapping, err := buildAttributeRenameMapWithBudget("1.0.0", schema, []string{"tenant"}, budget)
-		require.ErrorIs(t, err, errSchemaExpansion)
-		require.Nil(t, mapping)
-	})
-
-	t.Run("bounds resolver collections", func(t *testing.T) {
-		schema := &otelSchema{versionRenames: []versionRenames{{
-			version:    "1.0.0",
-			metrics:    map[string]string{"metric.current": "metric.old"},
-			attributes: map[string]string{"tenant": "user"},
-		}}}
-		budget := newSchemaExpansionBudget(schemaExpansionLimits{work: 100, keyBytes: 10_000})
-		key, err := matcherKeyWithBudget(matchers, budget)
-		require.NoError(t, err)
-		result := make([][]*labels.Matcher, maxSchemaExpansion)
-		variants, err := walkVersionsWithBudget(schema.versionRenames, matchers, map[string]struct{}{key: {}}, result, false, budget)
-		require.ErrorIs(t, err, errSchemaExpansion)
-		require.Nil(t, variants)
-
-		canonicalAttrs := make([]string, maxSchemaExpansion+1)
-		mapping, err := buildAttributeRenameMapWithBudget("1.0.0", schema, canonicalAttrs, budget)
-		require.ErrorIs(t, err, errSchemaExpansion)
-		require.Nil(t, mapping)
+		require.ErrorContains(t, err, "resolver work")
+		require.Nil(t, variants, "overflow must not return partial variants")
 	})
 }
 
-func orderedMetricChange(renames map[string]string) schemaRenameChange {
-	return schemaRenameChange{metrics: newDirectedRenames(renames)}
-}
+func BenchmarkMetricOwnershipAnalysisUpstream(b *testing.B) {
+	raw, err := os.ReadFile("./testdata/upstream/schema-1.44.0.yaml")
+	require.NoError(b, err)
+	schema, err := loadOTelSchema(raw)
+	require.NoError(b, err)
 
-func orderedAttributeChange(renames map[string]string, metrics ...string) schemaRenameChange {
-	step := &attributeRenameStep{renames: newDirectedRenames(renames)}
-	if len(metrics) > 0 {
-		step.scopeSpecified = true
-		step.applyToMetrics = make(map[string]struct{}, len(metrics))
-		for _, metric := range metrics {
-			step.applyToMetrics[metric] = struct{}{}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		reused, err := reusedMetricNamesWithBudget(schema.revisions, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+		if err != nil {
+			b.Fatal(err)
+		}
+		if reused == nil {
+			b.Fatal("ownership analysis returned a nil result")
 		}
 	}
-	return schemaRenameChange{attributes: step}
 }
 
-func orderedVariantByMetric(t *testing.T, variants []matcherVariant, metric string) matcherVariant {
-	t.Helper()
-	for _, variant := range variants {
-		name, err := extractMetricName(variant.matchers)
-		require.NoError(t, err)
-		if name == metric {
-			return variant
-		}
+func TestDeduplicateLineageStatesPreservesCanonicalIdentity(t *testing.T) {
+	matchers := equalMatchers("metric")
+	states := []lineageState{
+		{matchers: matchers, metric: "metric", attrs: attributeLineage{"tenant": {"tenant": attributeOriginResolved, "user": attributeOriginResolved}}},
+		{matchers: matchers, metric: "metric", attrs: attributeLineage{"tenant": {"user": attributeOriginResolved}}},
+		{matchers: matchers, metric: "metric", attrs: attributeLineage{"tenant": {"user": attributeOriginResolved}, "user": {"tenant": attributeOriginResolved}}},
 	}
-	t.Fatalf("variant for metric %q not found in %v", metric, variants)
-	return matcherVariant{}
-}
 
-func TestGenerateOrderedMatcherVariants(t *testing.T) {
-	schema := &otelSchema{versionRenames: []versionRenames{{
-		version: "1.1.0",
-		changes: []schemaRenameChange{
-			orderedMetricChange(map[string]string{"metric.old": "metric.middle"}),
-			orderedAttributeChange(map[string]string{"attr.old": "attr.middle"}, "metric.middle"),
-			orderedMetricChange(map[string]string{"metric.middle": "metric.current"}),
-			orderedAttributeChange(map[string]string{"attr.middle": "attr.current"}, "metric.current"),
-		},
-	}}}
-
-	t.Run("replays scoped steps in both directions", func(t *testing.T) {
-		for _, tc := range []struct {
-			name             string
-			version          string
-			metric           string
-			attribute        string
-			otherMetric      string
-			otherAttribute   string
-			wantTranslations map[string]string
-		}{
-			{
-				name:             "backward",
-				version:          "1.1.0",
-				metric:           "metric.current",
-				attribute:        "attr.current",
-				otherMetric:      "metric.old",
-				otherAttribute:   "attr.old",
-				wantTranslations: map[string]string{"attr.middle": "attr.current", "attr.old": "attr.current"},
-			},
-			{
-				name:             "forward",
-				version:          "1.0.0",
-				metric:           "metric.old",
-				attribute:        "attr.old",
-				otherMetric:      "metric.current",
-				otherAttribute:   "attr.current",
-				wantTranslations: map[string]string{"attr.middle": "attr.old", "attr.current": "attr.old"},
-			},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				matchers := []*labels.Matcher{
-					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, tc.metric),
-					labels.MustNewMatcher(labels.MatchEqual, tc.attribute, "value"),
-				}
-				variants, err := generateOrderedMatcherVariantsWithBudget(
-					tc.version,
-					schema,
-					matchers,
-					tc.metric,
-					newSchemaExpansionBudget(productionSchemaExpansionLimits()),
-				)
-				require.NoError(t, err)
-				require.Len(t, variants, 4)
-				got := map[string]struct{}{}
-				for _, variant := range variants {
-					require.Equal(t, tc.wantTranslations, variant.mapping.translatedLabels)
-					got[matcherKey(variant.matchers)] = struct{}{}
-				}
-				for _, metric := range []string{tc.metric, tc.otherMetric} {
-					for _, attribute := range []string{tc.attribute, tc.otherAttribute} {
-						require.Contains(t, got, labels.MetricName+"="+metric+"|"+attribute+"=value")
-					}
-				}
-			})
-		}
-	})
-
-	t.Run("folds attribute-only eras into one physical query", func(t *testing.T) {
-		attributeOnly := &otelSchema{versionRenames: []versionRenames{
-			{
-				version: "1.0.0",
-				changes: []schemaRenameChange{
-					orderedAttributeChange(map[string]string{"attr.old.one": "attr.current"}),
-				},
-			},
-			{
-				version: "1.1.0",
-				changes: []schemaRenameChange{
-					orderedAttributeChange(map[string]string{"attr.old.two": "attr.current"}),
-				},
-			},
-		}}
-		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric")}
-		variants, err := generateOrderedMatcherVariantsWithBudget(
-			"1.1.0",
-			attributeOnly,
-			matchers,
-			"metric",
-			newSchemaExpansionBudget(productionSchemaExpansionLimits()),
-		)
-		require.NoError(t, err)
-		require.Len(t, variants, 1)
-		require.Equal(t, map[string]string{
-			"attr.old.one": "attr.current",
-			"attr.old.two": "attr.current",
-		}, variants[0].mapping.translatedLabels)
-	})
-
-	t.Run("fans out independent attribute eras across metric eras", func(t *testing.T) {
-		schema := &otelSchema{versionRenames: []versionRenames{{
-			version: "1.1.0",
-			changes: []schemaRenameChange{
-				orderedMetricChange(map[string]string{"metric.old": "metric.current"}),
-				orderedAttributeChange(map[string]string{"first.old": "first.current"}, "metric.current"),
-				orderedAttributeChange(map[string]string{"second.old": "second.current"}, "metric.current"),
-			},
-		}}}
-		matchers := []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric.current"),
-			labels.MustNewMatcher(labels.MatchEqual, "first.current", "one"),
-			labels.MustNewMatcher(labels.MatchRegexp, "second.current", ".+"),
-		}
-		variants, err := generateOrderedMatcherVariantsWithBudget(
-			"1.1.0",
-			schema,
-			matchers,
-			"metric.current",
-			newSchemaExpansionBudget(productionSchemaExpansionLimits()),
-		)
-		require.NoError(t, err)
-		require.Len(t, variants, 8)
-		for _, variant := range variants {
-			require.Equal(t, map[string]string{
-				"first.old":  "first.current",
-				"second.old": "second.current",
-			}, variant.mapping.translatedLabels)
-			require.Equal(t, matcherKey(matchers), matcherKey(variant.canonicalMatchers))
-		}
-	})
-
-	t.Run("rewrites one canonical matcher group together", func(t *testing.T) {
-		schema := &otelSchema{versionRenames: []versionRenames{{
-			version: "1.1.0",
-			changes: []schemaRenameChange{
-				orderedAttributeChange(map[string]string{"attr.old": "attr.current"}),
-			},
-		}}}
-		matchers := []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
-			labels.MustNewMatcher(labels.MatchEqual, "attr.current", "value"),
-			labels.MustNewMatcher(labels.MatchNotEqual, "attr.current", "other"),
-		}
-		variants, err := generateOrderedMatcherVariantsWithBudget(
-			"1.1.0",
-			schema,
-			matchers,
-			"metric",
-			newSchemaExpansionBudget(productionSchemaExpansionLimits()),
-		)
-		require.NoError(t, err)
-		require.Len(t, variants, 2)
-		for _, variant := range variants {
-			require.Equal(t, variant.matchers[1].Name, variant.matchers[2].Name)
-		}
-	})
-
-	t.Run("rejects only matcher groups whose conjunction matches absence", func(t *testing.T) {
-		schema := &otelSchema{versionRenames: []versionRenames{{
-			version: "1.1.0",
-			changes: []schemaRenameChange{
-				orderedAttributeChange(map[string]string{"attr.old": "attr.current"}),
-			},
-		}}}
-		for _, tc := range []struct {
-			name     string
-			matchers []*labels.Matcher
-			wantErr  bool
-		}{
-			{
-				name: "negative matcher alone",
-				matchers: []*labels.Matcher{
-					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
-					labels.MustNewMatcher(labels.MatchNotEqual, "attr.current", "other"),
-				},
-				wantErr: true,
-			},
-			{
-				name: "group requires presence",
-				matchers: []*labels.Matcher{
-					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
-					labels.MustNewMatcher(labels.MatchNotEqual, "attr.current", "other"),
-					labels.MustNewMatcher(labels.MatchRegexp, "attr.current", ".+"),
-				},
-			},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				variants, err := generateOrderedMatcherVariantsWithBudget(
-					"1.1.0",
-					schema,
-					tc.matchers,
-					"metric",
-					newSchemaExpansionBudget(productionSchemaExpansionLimits()),
-				)
-				if tc.wantErr {
-					require.ErrorIs(t, err, errUnsafeSchemaMatcher)
-					require.Nil(t, variants)
-					return
-				}
-				require.NoError(t, err)
-				require.Len(t, variants, 2)
-			})
-		}
-	})
-
-	t.Run("fails closed when a metric needs branching", func(t *testing.T) {
-		for _, tc := range []struct {
-			name      string
-			version   string
-			revisions []versionRenames
-		}{
-			{
-				name:    "within one change",
-				version: "1.1.0",
-				revisions: []versionRenames{{
-					version: "1.1.0",
-					changes: []schemaRenameChange{
-						orderedMetricChange(map[string]string{"metric.old.one": "metric.current", "metric.old.two": "metric.current"}),
-					},
-				}},
-			},
-			{
-				name:    "across ordered changes",
-				version: "1.1.0",
-				revisions: []versionRenames{{
-					version: "1.1.0",
-					changes: []schemaRenameChange{
-						orderedMetricChange(map[string]string{"metric.old.one": "metric.current"}),
-						orderedMetricChange(map[string]string{"metric.old.two": "metric.current"}),
-					},
-				}},
-			},
-			{
-				name:    "across revisions",
-				version: "1.1.0",
-				revisions: []versionRenames{
-					{version: "1.0.0", changes: []schemaRenameChange{orderedMetricChange(map[string]string{"metric.old.one": "metric.current"})}},
-					{version: "1.1.0", changes: []schemaRenameChange{orderedMetricChange(map[string]string{"metric.old.two": "metric.current"})}},
-				},
-			},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric.current")}
-				variants, err := generateOrderedMatcherVariantsWithBudget(
-					tc.version,
-					&otelSchema{versionRenames: tc.revisions},
-					matchers,
-					"metric.current",
-					newSchemaExpansionBudget(productionSchemaExpansionLimits()),
-				)
-				require.ErrorIs(t, err, errAmbiguousSchemaRename)
-				require.Nil(t, variants)
-			})
-		}
-	})
-
-	t.Run("fails closed on forward metric convergence", func(t *testing.T) {
-		for _, tc := range []struct {
-			name      string
-			revisions []versionRenames
-		}{
-			{
-				name: "within one change",
-				revisions: []versionRenames{{
-					version: "1.1.0",
-					changes: []schemaRenameChange{
-						orderedMetricChange(map[string]string{"metric.old.one": "metric.current", "metric.old.two": "metric.current"}),
-					},
-				}},
-			},
-			{
-				name: "competitor before selected edge",
-				revisions: []versionRenames{{
-					version: "1.1.0",
-					changes: []schemaRenameChange{
-						orderedMetricChange(map[string]string{"metric.old.two": "metric.current"}),
-						orderedMetricChange(map[string]string{"metric.old.one": "metric.current"}),
-					},
-				}},
-			},
-			{
-				name: "competitor after selected edge",
-				revisions: []versionRenames{{
-					version: "1.1.0",
-					changes: []schemaRenameChange{
-						orderedMetricChange(map[string]string{"metric.old.one": "metric.current"}),
-						orderedMetricChange(map[string]string{"metric.old.two": "metric.current"}),
-					},
-				}},
-			},
-			{
-				name: "across revisions",
-				revisions: []versionRenames{
-					{version: "1.1.0", changes: []schemaRenameChange{orderedMetricChange(map[string]string{"metric.old.two": "metric.current"})}},
-					{version: "1.2.0", changes: []schemaRenameChange{orderedMetricChange(map[string]string{"metric.old.one": "metric.current"})}},
-				},
-			},
-			{
-				name: "intermediate lineage name",
-				revisions: []versionRenames{{
-					version: "1.1.0",
-					changes: []schemaRenameChange{
-						orderedMetricChange(map[string]string{"metric.old.one": "metric.middle", "metric.old.two": "metric.middle"}),
-						orderedMetricChange(map[string]string{"metric.middle": "metric.current"}),
-					},
-				}},
-			},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric.old.one")}
-				variants, err := generateOrderedMatcherVariantsWithBudget(
-					"1.0.0",
-					&otelSchema{versionRenames: tc.revisions},
-					matchers,
-					"metric.old.one",
-					newSchemaExpansionBudget(productionSchemaExpansionLimits()),
-				)
-				require.ErrorIs(t, err, errAmbiguousSchemaRename)
-				require.Nil(t, variants)
-			})
-		}
-	})
-
-	t.Run("keeps unrelated convergence and repeated forward edges", func(t *testing.T) {
-		schema := &otelSchema{versionRenames: []versionRenames{
-			{
-				version: "1.1.0",
-				changes: []schemaRenameChange{
-					orderedMetricChange(map[string]string{
-						"metric.old":        "metric.current",
-						"unrelated.old.one": "unrelated.current",
-						"unrelated.old.two": "unrelated.current",
-					}),
-				},
-			},
-			{version: "1.2.0", changes: []schemaRenameChange{orderedMetricChange(map[string]string{"metric.old": "metric.current"})}},
-		}}
-		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric.old")}
-		variants, err := generateOrderedMatcherVariantsWithBudget(
-			"1.0.0",
-			schema,
-			matchers,
-			"metric.old",
-			newSchemaExpansionBudget(productionSchemaExpansionLimits()),
-		)
-		require.NoError(t, err)
-		require.Len(t, variants, 2)
-		orderedVariantByMetric(t, variants, "metric.current")
-	})
-
-	t.Run("keeps a single-predecessor metric cycle", func(t *testing.T) {
-		schema := &otelSchema{versionRenames: []versionRenames{
-			{version: "1.0.0", changes: []schemaRenameChange{orderedMetricChange(map[string]string{"metric.one": "metric.two"})}},
-			{version: "1.1.0", changes: []schemaRenameChange{orderedMetricChange(map[string]string{"metric.two": "metric.one"})}},
-		}}
-		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric.one")}
-		variants, err := generateOrderedMatcherVariantsWithBudget(
-			"1.1.0",
-			schema,
-			matchers,
-			"metric.one",
-			newSchemaExpansionBudget(productionSchemaExpansionLimits()),
-		)
-		require.NoError(t, err)
-		require.Len(t, variants, 2)
-		orderedVariantByMetric(t, variants, "metric.two")
-	})
-
-	t.Run("keeps single metric lineages across revisions", func(t *testing.T) {
-		for _, tc := range []struct {
-			name         string
-			revisions    []versionRenames
-			wantVariants int
-			wantMetric   string
-		}{
-			{
-				name: "rename chain",
-				revisions: []versionRenames{
-					{version: "1.0.0", changes: []schemaRenameChange{orderedMetricChange(map[string]string{"metric.old": "metric.middle"})}},
-					{version: "1.1.0", changes: []schemaRenameChange{orderedMetricChange(map[string]string{"metric.middle": "metric.current"})}},
-				},
-				wantVariants: 3,
-				wantMetric:   "metric.old",
-			},
-			{
-				name: "repeated identical predecessor",
-				revisions: []versionRenames{
-					{version: "1.0.0", changes: []schemaRenameChange{orderedMetricChange(map[string]string{"metric.old": "metric.current"})}},
-					{version: "1.1.0", changes: []schemaRenameChange{orderedMetricChange(map[string]string{"metric.old": "metric.current"})}},
-				},
-				wantVariants: 2,
-				wantMetric:   "metric.old",
-			},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric.current")}
-				variants, err := generateOrderedMatcherVariantsWithBudget(
-					"1.1.0",
-					&otelSchema{versionRenames: tc.revisions},
-					matchers,
-					"metric.current",
-					newSchemaExpansionBudget(productionSchemaExpansionLimits()),
-				)
-				require.NoError(t, err)
-				require.Len(t, variants, tc.wantVariants)
-				orderedVariantByMetric(t, variants, tc.wantMetric)
-			})
-		}
-	})
-
-	t.Run("fails closed when an attribute matcher branches across revisions", func(t *testing.T) {
-		for _, tc := range []struct {
-			name      string
-			version   string
-			revisions []versionRenames
-		}{
-			{
-				name:    "convergence",
-				version: "1.1.0",
-				revisions: []versionRenames{
-					{version: "1.0.0", changes: []schemaRenameChange{orderedAttributeChange(map[string]string{"attr.old.one": "attr.current"})}},
-					{version: "1.1.0", changes: []schemaRenameChange{orderedAttributeChange(map[string]string{"attr.old.two": "attr.current"})}},
-				},
-			},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				matchers := []*labels.Matcher{
-					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
-					labels.MustNewMatcher(labels.MatchEqual, "attr.current", "value"),
-				}
-				variants, err := generateOrderedMatcherVariantsWithBudget(
-					tc.version,
-					&otelSchema{versionRenames: tc.revisions},
-					matchers,
-					"metric",
-					newSchemaExpansionBudget(productionSchemaExpansionLimits()),
-				)
-				require.ErrorIs(t, err, errAmbiguousSchemaRename)
-				require.Nil(t, variants)
-			})
-		}
-	})
-
-	t.Run("keeps single attribute lineages across revisions", func(t *testing.T) {
-		for _, tc := range []struct {
-			name        string
-			revisions   []versionRenames
-			wantMatcher string
-		}{
-			{
-				name: "rename chain",
-				revisions: []versionRenames{
-					{version: "1.0.0", changes: []schemaRenameChange{orderedAttributeChange(map[string]string{"attr.old": "attr.middle"})}},
-					{version: "1.1.0", changes: []schemaRenameChange{orderedAttributeChange(map[string]string{"attr.middle": "attr.current"})}},
-				},
-				wantMatcher: "attr.old=value",
-			},
-			{
-				name: "repeated identical predecessor",
-				revisions: []versionRenames{
-					{version: "1.0.0", changes: []schemaRenameChange{orderedAttributeChange(map[string]string{"attr.old": "attr.current"})}},
-					{version: "1.1.0", changes: []schemaRenameChange{orderedAttributeChange(map[string]string{"attr.old": "attr.current"})}},
-				},
-				wantMatcher: "attr.old=value",
-			},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				matchers := []*labels.Matcher{
-					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
-					labels.MustNewMatcher(labels.MatchEqual, "attr.current", "value"),
-				}
-				variants, err := generateOrderedMatcherVariantsWithBudget(
-					"1.1.0",
-					&otelSchema{versionRenames: tc.revisions},
-					matchers,
-					"metric",
-					newSchemaExpansionBudget(productionSchemaExpansionLimits()),
-				)
-				require.NoError(t, err)
-				require.Contains(t, matcherKey(variants[len(variants)-1].matchers), tc.wantMatcher)
-			})
-		}
-	})
-
-	t.Run("skips an unrelated attribute scope", func(t *testing.T) {
-		unrelated := &otelSchema{versionRenames: []versionRenames{{
-			version: "1.1.0",
-			changes: []schemaRenameChange{
-				orderedAttributeChange(map[string]string{"attr.old": "attr.current"}, "other.metric"),
-			},
-		}}}
-		matchers := []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
-			labels.MustNewMatcher(labels.MatchEqual, "attr.current", "value"),
-		}
-		variants, err := generateOrderedMatcherVariantsWithBudget(
-			"1.1.0",
-			unrelated,
-			matchers,
-			"metric",
-			newSchemaExpansionBudget(productionSchemaExpansionLimits()),
-		)
-		require.NoError(t, err)
-		require.Len(t, variants, 1)
-		require.Nil(t, variants[0].mapping.translatedLabels)
-		require.Contains(t, matcherKey(variants[0].matchers), "attr.current=value")
-	})
-
-	t.Run("skips an explicitly empty attribute scope", func(t *testing.T) {
-		emptyScope := &otelSchema{versionRenames: []versionRenames{{
-			version: "1.1.0",
-			changes: []schemaRenameChange{{attributes: &attributeRenameStep{
-				renames:        newDirectedRenames(map[string]string{"attr.old": "attr.current"}),
-				applyToMetrics: map[string]struct{}{},
-				scopeSpecified: true,
-			}}},
-		}}}
-		matchers := []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
-			labels.MustNewMatcher(labels.MatchEqual, "attr.current", "value"),
-		}
-		variants, err := generateOrderedMatcherVariantsWithBudget(
-			"1.1.0",
-			emptyScope,
-			matchers,
-			"metric",
-			newSchemaExpansionBudget(productionSchemaExpansionLimits()),
-		)
-		require.NoError(t, err)
-		require.Len(t, variants, 1)
-		require.Nil(t, variants[0].mapping.translatedLabels)
-		require.Equal(t, matcherKey(matchers), matcherKey(variants[0].matchers))
-	})
-
-	t.Run("fails closed when a matcher needs branching", func(t *testing.T) {
-		for _, tc := range []struct {
-			name    string
-			changes []schemaRenameChange
-		}{
-			{
-				name: "within one change",
-				changes: []schemaRenameChange{
-					orderedAttributeChange(map[string]string{"attr.old.one": "attr.current", "attr.old.two": "attr.current"}),
-				},
-			},
-			{
-				name: "across ordered changes",
-				changes: []schemaRenameChange{
-					orderedAttributeChange(map[string]string{"attr.old.one": "attr.current"}),
-					orderedAttributeChange(map[string]string{"attr.old.two": "attr.current"}),
-				},
-			},
-			{
-				name: "through an intermediate predecessor",
-				changes: []schemaRenameChange{
-					orderedAttributeChange(map[string]string{"attr.old": "attr.current"}),
-					orderedAttributeChange(map[string]string{"attr.old": "attr.middle"}),
-					orderedAttributeChange(map[string]string{"attr.middle": "attr.current"}),
-				},
-			},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				ambiguous := &otelSchema{versionRenames: []versionRenames{{
-					version: "1.1.0",
-					changes: tc.changes,
-				}}}
-				matchers := []*labels.Matcher{
-					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
-					labels.MustNewMatcher(labels.MatchEqual, "attr.current", "value"),
-				}
-				variants, err := generateOrderedMatcherVariantsWithBudget(
-					"1.1.0",
-					ambiguous,
-					matchers,
-					"metric",
-					newSchemaExpansionBudget(productionSchemaExpansionLimits()),
-				)
-				require.ErrorIs(t, err, errAmbiguousSchemaRename)
-				require.Nil(t, variants)
-			})
-		}
-	})
-
-	t.Run("keeps single-lineage ordered changes", func(t *testing.T) {
-		for _, tc := range []struct {
-			name         string
-			changes      []schemaRenameChange
-			attribute    string
-			wantVariants int
-			wantMatcher  string
-			wantMapping  map[string]string
-		}{
-			{
-				name: "convergence without an attribute matcher",
-				changes: []schemaRenameChange{
-					orderedAttributeChange(map[string]string{"attr.old.one": "attr.current"}),
-					orderedAttributeChange(map[string]string{"attr.old.two": "attr.current"}),
-				},
-				wantVariants: 1,
-				wantMapping: map[string]string{
-					"attr.old.one": "attr.current",
-					"attr.old.two": "attr.current",
-				},
-			},
-			{
-				name: "rename chain",
-				changes: []schemaRenameChange{
-					orderedAttributeChange(map[string]string{"attr.old": "attr.middle"}),
-					orderedAttributeChange(map[string]string{"attr.middle": "attr.current"}),
-				},
-				attribute:    "attr.current",
-				wantVariants: 2,
-				wantMatcher:  "attr.old=value",
-				wantMapping: map[string]string{
-					"attr.old":    "attr.current",
-					"attr.middle": "attr.current",
-				},
-			},
-			{
-				name: "repeated identical predecessor",
-				changes: []schemaRenameChange{
-					orderedAttributeChange(map[string]string{"attr.old": "attr.current"}),
-					orderedAttributeChange(map[string]string{"attr.old": "attr.current"}),
-				},
-				attribute:    "attr.current",
-				wantVariants: 2,
-				wantMatcher:  "attr.old=value",
-				wantMapping:  map[string]string{"attr.old": "attr.current"},
-			},
-			{
-				name: "disjoint metric scopes",
-				changes: []schemaRenameChange{
-					orderedAttributeChange(map[string]string{"attr.other": "attr.current"}, "other.metric"),
-					orderedAttributeChange(map[string]string{"attr.old": "attr.current"}, "metric"),
-				},
-				attribute:    "attr.current",
-				wantVariants: 2,
-				wantMatcher:  "attr.old=value",
-				wantMapping:  map[string]string{"attr.old": "attr.current"},
-			},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				schema := &otelSchema{versionRenames: []versionRenames{{
-					version: "1.1.0",
-					changes: tc.changes,
-				}}}
-				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric")}
-				if tc.attribute != "" {
-					matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, tc.attribute, "value"))
-				}
-				variants, err := generateOrderedMatcherVariantsWithBudget(
-					"1.1.0",
-					schema,
-					matchers,
-					"metric",
-					newSchemaExpansionBudget(productionSchemaExpansionLimits()),
-				)
-				require.NoError(t, err)
-				require.Len(t, variants, tc.wantVariants)
-				resolved := variants[len(variants)-1]
-				require.Equal(t, tc.wantMapping, resolved.mapping.translatedLabels)
-				if tc.wantMatcher != "" {
-					require.Contains(t, matcherKey(resolved.matchers), tc.wantMatcher)
-				}
-			})
-		}
-	})
+	deduplicated, err := deduplicateLineageStatesWithBudget(states, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+	require.NoError(t, err)
+	require.Len(t, deduplicated, 3)
+	require.NotEqual(t,
+		requireLineageStateKey(t, lineageState{matchers: matchers, attrs: attributeLineage{"a": {"b": attributeOriginResolved}, "c": {"d": attributeOriginResolved}}}),
+		requireLineageStateKey(t, lineageState{matchers: matchers, attrs: attributeLineage{"a": {"b": attributeOriginResolved, "c": attributeOriginResolved, "d": attributeOriginResolved}}}),
+	)
+	require.NotEqual(t,
+		requireLineageStateKey(t, lineageState{matchers: matchers, metric: "metric"}),
+		requireLineageStateKey(t, lineageState{matchers: matchers, metric: "metric", metricOriginPending: true}),
+	)
+	require.NotEqual(t,
+		requireLineageStateKey(t, lineageState{matchers: matchers, metric: "metric"}),
+		requireLineageStateKey(t, lineageState{matchers: matchers, metric: "metric", pendingAttributeMatchers: map[int]struct{}{1: {}}}),
+	)
+	require.NotEqual(t,
+		requireLineageStateKey(t, lineageState{matchers: matchers, attrs: attributeLineage{"a": {"b": attributeOriginResolved}}}),
+		requireLineageStateKey(t, lineageState{matchers: matchers, attrs: attributeLineage{"a": {"b": attributeOriginPending}}}),
+	)
 }

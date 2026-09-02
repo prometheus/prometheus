@@ -447,26 +447,70 @@ For `test` in semconv 1.1.0, this matches the metric's earlier names (e.g.
 `test.counter` in 1.0.0) declared by the schema's `versions` section and merges
 the results under the queried name `test`.
 
+Attribute aliases come from the ordered schema changes even when the anchor
+semconv does not declare the attribute. In a metric-scoped attribute change,
+omitting `apply_to_metrics` applies the change globally, an explicit empty list
+applies it to no metrics, and a non-empty list applies it only to the named
+metrics at that transformation's position. Fan-out emits schema revision
+boundaries rather than inventing combinations between changes in one revision;
+valid converging histories branch deterministically within the resolver bounds.
+
+### Errors
+
+The query fails before issuing a storage read when ordered transformations prove
+that a physical name cannot be selected safely across the full query time range:
+
+- **A metric name is reused by a disconnected lineage.** A name renamed away is
+  later claimed by another metric without a rename path connecting their
+  identities. Prometheus cannot separate the two eras in storage, so neither the
+  reused name nor a lineage that uses it as a historical alias is selected.
+- **An attribute alias is also a distinct attribute identity.** Rewriting that
+  physical label would merge values from two attributes that used the same name
+  in different schema eras.
+
+### Warnings
+
+The query returns a safe partial or direct result in each case below, with a
+warning attached:
+
+- **The schema crosses a metric lifecycle boundary.** Ordered transformations
+  encounter a name only on the side where it cannot belong to the queried metric,
+  without enough transformation evidence to prove that another identity claimed
+  it. That branch is not followed.
+- **An attribute alias has conflicting destinations.** The same historical label
+  name resolves to more than one anchor-version name. Prometheus leaves that label
+  unmodified instead of merging distinct attributes.
+
+Warnings are surfaced as PromQL warnings, and appear in the `warnings` field of an
+API response and in the expression browser.
+
+Canonicalising a stored series can also make an old attribute alias collide with
+the canonical attribute already present on that series. Prometheus collapses the
+two labels when their values agree. If their values differ, the series or chunk
+query fails instead of returning an invalid or ambiguous label set.
+
+Matchers on renamed attributes are rechecked against the canonicalized result.
+A matcher group whose whole conjunction also matches an absent label is rejected,
+because alias fan-out cannot preserve that selector's semantics safely.
+
 Schema fan-out runs serially through the query's single underlying querier so
-all variants share one storage snapshot. Canonicalized series are sorted before
-merging. Metric and attribute migrations may overlap: selectors fan out across
-the bounded combinations of names observed along the resolved rename lineage.
-During a label migration, historical and canonical labels with the same value
-coalesce; if their values differ, the whole query fails instead of dropping the
-series or returning invalid labels. A matcher group on a renamed label that also
-matches an absent label is rejected because alias fan-out cannot preserve its
-semantics safely; another matcher on the same label that requires presence makes
-the group safe. Schema resolution, fan-out reads, and canonical-series
-materialization are bounded, and query limits are applied after canonicalization.
-A query that would exceed a resolution, fan-out, or materialization bound fails
-instead of falling back to an incomplete direct read. Schema-aware series and
-chunk reads also fail if stored data contains either control label, since those
-labels are reserved for query-time schema selection. Ordered rename histories
-that converge in either traversal direction and require matcher branching also
-fail instead of returning incomplete results. When the underlying storage
-supports them, Search API endpoints remain available through the wrapper for
-ordinary selectors, but reject `match[]` selectors containing either control
-label; search fan-out is not supported.
+all variants share one storage snapshot. Schema resolution bounds lineage
+states, matcher variants, attribute mappings, cumulative traversal work, and
+deduplication-key allocation. A query that exceeds a resolution bound fails
+before issuing any storage call. A resolved query that requires more than 32
+fan-out storage calls also fails before issuing any of them. Query limits are
+applied after canonicalization.
+
+Attribute rewrites require Prometheus to reorder canonical series before
+merging them. At most 65,536 input series or chunk series may enter that path
+across all variants of one selection; exceeding the limit fails the query.
+
+The two schema matchers are virtual query controls. Schema-aware series and
+chunk reads fail if returned data contains a stored label with either name, and
+label metadata does not expose them. Prometheus does not query label metadata as
+part of a series or chunk selection. When the underlying storage implements the
+optional Search API, the wrapper preserves it for ordinary selectors but rejects
+search selectors containing either schema matcher; search fan-out is unsupported.
 
 This feature is experimental: the matcher names, the registry layout, and the
 `semconv` configuration block are subject to change.
