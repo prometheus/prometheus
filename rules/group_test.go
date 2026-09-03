@@ -14,11 +14,54 @@
 package rules
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 )
+
+func TestGroupEvalJSONLoggerRule(t *testing.T) {
+	const wantRule = "record: recorded_metric\nexpr: up\n"
+
+	var output bytes.Buffer
+	format := promslog.NewFormat()
+	require.NoError(t, format.Set("json"))
+	logger := promslog.New(&promslog.Config{Writer: &output, Format: format})
+
+	expr, err := testParser.ParseExpr("up")
+	require.NoError(t, err)
+	queryErr := errors.New("query failed")
+	rule := NewRecordingRule("recorded_metric", expr, labels.EmptyLabels())
+	group := NewGroup(GroupOptions{
+		Name:     "test-group",
+		File:     "test.rules",
+		Interval: time.Minute,
+		Rules:    []Rule{rule},
+		Opts: &ManagerOptions{
+			Logger: logger,
+			QueryFunc: func(context.Context, string, time.Time) (promql.Vector, error) {
+				return nil, queryErr
+			},
+		},
+	})
+
+	group.Eval(t.Context(), time.Unix(0, 0))
+	require.ErrorIs(t, rule.LastError(), queryErr)
+
+	var entry struct {
+		Rule string `json:"rule"`
+	}
+	require.NoError(t, json.Unmarshal(output.Bytes(), &entry))
+	require.Equal(t, wantRule, entry.Rule)
+}
 
 func TestGroup_Equals(t *testing.T) {
 	tests := map[string]struct {
