@@ -23,6 +23,7 @@ import (
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/sigv4"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -61,7 +62,7 @@ func newAlertmanagerSet(cfg *config.AlertmanagerConfig, opts *Options, logger *s
 		}
 	}
 
-	client.Transport = t
+	client.Transport = otelhttp.NewTransport(t)
 
 	s := &alertmanagerSet{
 		client:    client,
