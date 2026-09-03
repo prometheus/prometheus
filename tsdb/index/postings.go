@@ -196,17 +196,25 @@ type PostingsStats struct {
 // Stats calculates the cardinality statistics from postings.
 // Caller can pass in a function which computes the space required for n series with a given label.
 func (p *MemPostings) Stats(label string, limit int, labelSizeFunc func(string, string, uint64) uint64) *PostingsStats {
+	return p.StatsForMatchedSeries(label, limit, labelSizeFunc, nil)
+}
+
+// StatsForMatchedSeries calculates cardinality statistics from postings,
+// considering only the series whose refs are present in matchedSeries.
+// A nil matchedSeries means all series are included (equivalent to Stats).
+// Caller can pass in a function which computes the space required for n series with a given label.
+func (p *MemPostings) StatsForMatchedSeries(label string, limit int, labelSizeFunc func(string, string, uint64) uint64, matchedSeries map[storage.SeriesRef]struct{}) *PostingsStats {
 	var size uint64
 	p.mtx.RLock()
 
 	metrics := &maxHeap{}
-	labels := &maxHeap{}
+	lbls := &maxHeap{}
 	labelValueLength := &maxHeap{}
 	labelValuePairs := &maxHeap{}
 	numLabelPairs := 0
 
 	metrics.init(limit)
-	labels.init(limit)
+	lbls.init(limit)
 	labelValueLength.init(limit)
 	labelValuePairs.init(limit)
 
@@ -214,17 +222,34 @@ func (p *MemPostings) Stats(label string, limit int, labelSizeFunc func(string, 
 		if n == "" {
 			continue
 		}
-		labels.push(Stat{Name: n, Count: uint64(len(e))})
-		numLabelPairs += len(e)
 		size = 0
+		labelValueCount := 0
 		for name, values := range e {
-			if n == label {
-				metrics.push(Stat{Name: name, Count: uint64(len(values))})
+			var filteredCount uint64
+			if matchedSeries == nil {
+				filteredCount = uint64(len(values))
+			} else {
+				for _, ref := range values {
+					if _, ok := matchedSeries[ref]; ok {
+						filteredCount++
+					}
+				}
 			}
-			seriesCnt := uint64(len(values))
-			labelValuePairs.push(Stat{Name: n + "=" + name, Count: seriesCnt})
-			size += labelSizeFunc(n, name, seriesCnt)
+			if filteredCount == 0 {
+				continue
+			}
+			labelValueCount++
+			numLabelPairs++
+			if n == label {
+				metrics.push(Stat{Name: name, Count: filteredCount})
+			}
+			labelValuePairs.push(Stat{Name: n + "=" + name, Count: filteredCount})
+			size += labelSizeFunc(n, name, filteredCount)
 		}
+		if labelValueCount == 0 {
+			continue
+		}
+		lbls.push(Stat{Name: n, Count: uint64(labelValueCount)})
 		labelValueLength.push(Stat{Name: n, Count: size})
 	}
 
@@ -232,7 +257,7 @@ func (p *MemPostings) Stats(label string, limit int, labelSizeFunc func(string, 
 
 	return &PostingsStats{
 		CardinalityMetricsStats: metrics.get(),
-		CardinalityLabelStats:   labels.get(),
+		CardinalityLabelStats:   lbls.get(),
 		LabelValueStats:         labelValueLength.get(),
 		LabelValuePairsStats:    labelValuePairs.get(),
 		NumLabelPairs:           numLabelPairs,
