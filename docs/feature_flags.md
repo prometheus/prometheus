@@ -423,7 +423,10 @@ semconv:
 Exactly one of `files` or `url` must be set. A registry must contain at least one
 OTel schema file (e.g. `registry.yaml`) plus the semver-named semconv files (e.g.
 `1.0.0`) you query as `__semconv_url__` anchors. Files are addressed by base name,
-so each must be unique.
+so each must be unique. Include the semconv versions on both sides of relevant
+rename boundaries to corroborate those renames. A missing boundary version is
+allowed, but the query follows its explicit renames without corroboration and
+reports a warning.
 
 The registry is loaded and validated at startup: it must be reachable and every
 file must parse (a semver-named file as a semconv file, any other as an OTel
@@ -470,13 +473,50 @@ that a physical name cannot be selected safely across the full query time range:
 
 ### Warnings
 
-The query returns a safe partial or direct result in each case below, with a
-warning attached:
+A schema rename names metrics only by their surface names, so the edge itself
+cannot separate a genuine rename from one joining unrelated metrics. Before
+following a structurally safe rename, Prometheus therefore checks it against the
+semconv files of the versions it connects: `unit` and `instrument` describe what a
+metric is rather than what it is called. Semantic conventions forbid a stable
+metric from changing either, so a disagreement between values specified by two
+explicitly stable definitions means the two names denote different metrics.
+Incomplete, development, experimental, deprecated, and unspecified definitions
+may legitimately evolve; Prometheus follows an explicit schema rename between
+them but reports the metadata disagreement.
 
+The query still returns a safe partial or direct result in every case below,
+with a warning attached:
+
+- **The rename was contradicted.** The schema links two explicitly stable metric
+  definitions that disagree on a specified unit or instrument. That rename is not
+  followed and its series are left out, because combining metrics measured in
+  different units yields meaningless numbers.
+- **Metadata is incomplete or non-stable.** The schema links definitions with
+  different units or instruments, but the metadata is not a positive contradiction
+  between values specified by two explicitly stable definitions. The rename is
+  followed because the schema is the available lineage authority, and the query
+  reports that the metadata does not prove the metrics are different.
+- **The rename could not be corroborated.** The semconv file for a rename boundary
+  is unavailable, or it does not declare the referenced name as a metric, so there
+  is nothing to check the rename against. The rename is still followed: a registry
+  may legitimately omit unqueried versions or ship semconv files trimmed to the
+  metrics its operator cares about.
+- **The queried metric's identity is unknown.** No semconv version declares the
+  queried name, or the versions that do disagree on what it is. This can occur
+  across an explicit rename-back history whose metadata changed. Renames that are
+  valid from the query's lifecycle position are followed unchecked, so the result
+  may merge unrelated series.
+- **The metric name is ambiguous.** More than one group in the anchor semconv
+  declares the same `metric_name`, so its unit and attributes have no single
+  answer. Only the queried surface name is selected. An ambiguous declaration in
+  a historical version instead excludes that rename branch.
 - **The schema crosses a metric lifecycle boundary.** Ordered transformations
   encounter a name only on the side where it cannot belong to the queried metric,
   without enough transformation evidence to prove that another identity claimed
-  it. That branch is not followed.
+  it. That branch is not followed. In particular, querying a historical name from
+  an anchor later than its retirement returns only that name's direct series, even
+  if an older semconv file identifies it, because a trimmed anchor cannot show
+  whether the name has since been reused.
 - **An attribute alias has conflicting destinations.** The same historical label
   name resolves to more than one anchor-version name. Prometheus leaves that label
   unmodified instead of merging distinct attributes.
