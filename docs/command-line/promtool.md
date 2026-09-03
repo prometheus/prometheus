@@ -12,6 +12,7 @@ Tooling for the Prometheus monitoring system.
 | <code class="text-nowrap">-h</code>, <code class="text-nowrap">--help</code> | Show context-sensitive help (also try --help-long and --help-man). |
 | <code class="text-nowrap">--version</code> | Show application version. |
 | <code class="text-nowrap">--experimental</code> | Enable experimental commands. |
+| <code class="text-nowrap">--http.debug</code> | Log outgoing HTTP requests and responses to stderr (credentials are redacted). Useful for diagnosing connectivity and authentication issues. |
 | <code class="text-nowrap">--enable-feature</code> <code class="text-nowrap">...</code> | Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal, promql-extended-range-selectors. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details |
 
 
