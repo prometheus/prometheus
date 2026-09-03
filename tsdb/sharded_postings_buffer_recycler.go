@@ -32,14 +32,16 @@ const (
 // ShardedPostingsBufferRecycler reuses dirty-repair buffers across Heads.
 // It is safe for concurrent use.
 type ShardedPostingsBufferRecycler struct {
+	// Keep 64-bit atomics first for alignment on 32-bit platforms.
+	pendingBuffers atomic.Uint64
+	pendingBytes   atomic.Uint64
+
 	mtx              sync.Mutex
 	maxRetainedBytes uint64
 	retainedBytes    uint64
 	idle             [][]storage.SeriesRef // Oldest to newest.
 
-	pendingBuffers atomic.Uint64
-	pendingBytes   atomic.Uint64
-	metrics        shardedPostingsBufferRecyclerMetrics
+	metrics shardedPostingsBufferRecyclerMetrics
 }
 
 type shardedPostingsBufferRecyclerMetrics struct {
