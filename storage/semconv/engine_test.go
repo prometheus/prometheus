@@ -43,6 +43,10 @@ func testSchema(revisions ...schemaRevision) *otelSchema {
 	return &otelSchema{revisions: revisions}
 }
 
+func testSchemaWithVersions(allVersions []string, revisions ...schemaRevision) *otelSchema {
+	return &otelSchema{allVersions: allVersions, revisions: revisions}
+}
+
 func equalMatchers(metric string, attrs ...string) []*labels.Matcher {
 	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metric)}
 	for _, attr := range attrs {
@@ -239,6 +243,32 @@ func TestGenerateMatcherVariants(t *testing.T) {
 		require.Equal(t, "metric.a/attr.a", variantMetricAndAttribute(variants[1]))
 	})
 
+	t.Run("validates only the final name of an ordered revision", func(t *testing.T) {
+		schema := testSchemaWithVersions([]string{"1.0.0", "1.1.0"}, schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{
+				metricChange(map[string]string{"metric.a": "metric.intermediate"}),
+				metricChange(map[string]string{"metric.intermediate": "metric.current"}),
+			},
+		})
+		rv := &renameValidator{
+			anchorName:    "metric.current",
+			anchorVersion: "1.1.0",
+			anchorDef:     metricDef{unit: "s", instrument: "histogram"},
+			anchorKnown:   true,
+			seen:          map[string]struct{}{},
+			lookup: func(version, name string) (metricDef, metricLookupStatus) {
+				if version == "1.0.0" && name == "metric.a" {
+					return metricDef{unit: "s", instrument: "histogram"}, metricDeclared
+				}
+				return metricDef{}, metricUndeclared
+			},
+		}
+		variants := requireMatcherVariants(t, "1.1.0", schema, equalMatchers("metric.current"), nil, rv)
+		require.Equal(t, []string{"metric.current", "metric.a"}, variantNames(variants))
+		require.Empty(t, rv.warnings, "the intermediate name is not a semconv-version endpoint")
+	})
+
 	t.Run("branches many-to-one renames deterministically", func(t *testing.T) {
 		schema := testSchema(schemaRevision{
 			version: "1.1.0",
@@ -316,13 +346,60 @@ func TestGenerateMatcherVariants(t *testing.T) {
 	})
 }
 
+func TestRenameValidatorLookupFailures(t *testing.T) {
+	t.Run("deduplicates an unavailable semconv at one boundary", func(t *testing.T) {
+		rv := &renameValidator{
+			anchorKnown: true,
+			seen:        map[string]struct{}{},
+			lookup: func(string, string) (metricDef, metricLookupStatus) {
+				return metricDef{}, metricFileMissing
+			},
+		}
+
+		require.True(t, rv.allowRevision("1.1.0", "1.0.0", "metric.current", "metric.a"))
+		require.True(t, rv.allowRevision("1.1.0", "1.0.0", "metric.current", "metric.b"))
+		require.Len(t, rv.warnings, 1)
+		require.Contains(t, rv.warnings[0], "version 1.0.0 is unavailable")
+	})
+
+	t.Run("reports an unavailable semconv before an unknown anchor", func(t *testing.T) {
+		rv := &renameValidator{
+			anchorName:    "metric.current",
+			anchorVersion: "1.1.0",
+			seen:          map[string]struct{}{},
+			lookup: func(string, string) (metricDef, metricLookupStatus) {
+				return metricDef{}, metricFileMissing
+			},
+		}
+
+		require.True(t, rv.allowRevision("1.1.0", "1.0.0", "metric.current", "metric.old"))
+		require.Len(t, rv.warnings, 1)
+		require.Contains(t, rv.warnings[0], "version 1.0.0 is unavailable")
+		require.NotContains(t, rv.warnings[0], "no other version")
+	})
+
+	t.Run("fails open for an unknown lookup status", func(t *testing.T) {
+		rv := &renameValidator{
+			anchorKnown: true,
+			seen:        map[string]struct{}{},
+			lookup: func(string, string) (metricDef, metricLookupStatus) {
+				return metricDef{}, metricLookupStatus(255)
+			},
+		}
+
+		require.True(t, rv.allowRevision("1.1.0", "1.0.0", "metric.current", "metric.old"))
+		require.Len(t, rv.warnings, 1)
+		require.Contains(t, rv.warnings[0], "unknown metric lookup status 255")
+	})
+}
+
 func TestMetricLifecycleBoundaries(t *testing.T) {
-	t.Run("stops a retired name from a later anchor", func(t *testing.T) {
-		schema := testSchema(schemaRevision{
+	t.Run("stops a corroborated retired name from a later anchor", func(t *testing.T) {
+		schema := testSchemaWithVersions([]string{"1.0.0", "1.1.0", "1.2.0"}, schemaRevision{
 			version: "1.1.0",
 			changes: []schemaChange{metricChange(map[string]string{"metric.old": "metric.current"})},
 		})
-		rv := &renameValidator{seen: map[string]struct{}{}}
+		rv := &renameValidator{anchorKnown: true, seen: map[string]struct{}{}}
 
 		variants := requireMatcherVariants(t, "1.2.0", schema, equalMatchers("metric.old"), nil, rv)
 		require.Equal(t, []string{"metric.old"}, variantNames(variants))
@@ -351,7 +428,7 @@ func TestMetricLifecycleBoundaries(t *testing.T) {
 			},
 		})
 
-		rv := &renameValidator{anchorDeclared: true, seen: map[string]struct{}{}}
+		rv := &renameValidator{anchorDeclared: true, anchorKnown: true, seen: map[string]struct{}{}}
 		_, err := generateMatcherVariantsWithBudget("1.1.0", schema, equalMatchers("metric.a"), nil, rv, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
 		require.ErrorIs(t, err, errAmbiguousSchemaRename)
 		require.ErrorContains(t, err, `metric name "metric.a"`)
@@ -415,7 +492,7 @@ func TestMetricLifecycleBoundaries(t *testing.T) {
 				metricChange(map[string]string{"metric.transient": "metric.d"}),
 			},
 		})
-		rv := &renameValidator{seen: map[string]struct{}{}}
+		rv := &renameValidator{anchorKnown: true, seen: map[string]struct{}{}}
 
 		variants := requireMatcherVariants(t, "1.2.0", schema, equalMatchers("metric.transient"), nil, rv)
 		require.Equal(t, []string{"metric.transient"}, variantNames(variants))
@@ -947,6 +1024,22 @@ versions:
 		require.Equal(t, probe.keyBytes, budget.keyBytes)
 	})
 
+	t.Run("starts before identity recovery", func(t *testing.T) {
+		schema := testSchemaWithVersions([]string{"1.0.0", "1.1.0"}, schemaRevision{
+			version: "1.1.0",
+			changes: []schemaChange{metricChange(map[string]string{"metric.old": "metric.current"})},
+		})
+		anchor := semconv{version: "1.1.0", metrics: map[string]metricDef{}}
+		lookup := func(string, string) (metricDef, metricLookupStatus) {
+			return metricDef{unit: "s", instrument: "histogram"}, metricDeclared
+		}
+		budget := newSchemaExpansionBudget(schemaExpansionLimits{work: 1, keyBytes: 1_000})
+
+		_, err := newRenameValidator(schema, lookup, anchor, "metric.old", budget)
+		require.ErrorIs(t, err, errSchemaExpansion)
+		require.ErrorContains(t, err, "resolver work")
+	})
+
 	t.Run("shares one budget across traversal directions", func(t *testing.T) {
 		backward := testSchema(schemaRevision{
 			version: "1.1.0",
@@ -1031,6 +1124,10 @@ func TestDeduplicateLineageStatesPreservesCanonicalIdentity(t *testing.T) {
 	require.NotEqual(t,
 		requireLineageStateKey(t, lineageState{matchers: matchers, attrs: attributeLineage{"a": {"b": attributeOriginResolved}, "c": {"d": attributeOriginResolved}}}),
 		requireLineageStateKey(t, lineageState{matchers: matchers, attrs: attributeLineage{"a": {"b": attributeOriginResolved, "c": attributeOriginResolved, "d": attributeOriginResolved}}}),
+	)
+	require.NotEqual(t,
+		requireLineageStateKey(t, lineageState{matchers: matchers, metric: "metric", renamedFrom: "metric.old"}),
+		requireLineageStateKey(t, lineageState{matchers: matchers, metric: "metric", renamedFrom: "metric.other"}),
 	)
 	require.NotEqual(t,
 		requireLineageStateKey(t, lineageState{matchers: matchers, metric: "metric"}),

@@ -1,0 +1,13 @@
+# Verbatim excerpt from open-telemetry/semantic-conventions v1.44.0
+# (commit e10a930844c6951757a43b849d364f7d056ac32b): model/jvm/metrics.yaml.
+groups:
+  - id: metric.jvm.cpu.count
+    type: metric
+    metric_name: jvm.cpu.count
+    annotations:
+      code_generation:
+        metric_value_type: int
+    brief: "Number of processors available to the Java virtual machine."
+    instrument: updowncounter
+    unit: "{cpu}"
+    stability: stable

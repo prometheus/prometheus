@@ -16,6 +16,7 @@ package semconv
 import (
 	"embed"
 	"fmt"
+	"maps"
 	"path"
 	"slices"
 	"strconv"
@@ -72,12 +73,55 @@ type semconv struct {
 
 	version string
 
-	// metrics indexes this version's metric groups by metric_name.
+	// metrics indexes this version's metric groups by their metric_name
+	// (populated by loadSemconv). It answers both "is this name a metric at this
+	// version" and "what does it declare", which is what validating a resolved
+	// rename lineage needs.
 	metrics map[string]metricDef
+
+	// ambiguousMetrics lists metric names declared by more than one group at
+	// this version, sorted. Such a name has no single definition, so anything
+	// resolved through it is unreliable and is reported to the caller rather
+	// than silently resolved to whichever group happened to be parsed last.
+	ambiguousMetrics []string
 }
 
+// metricDef is the part of a semconv metric group that describes what the metric
+// measures, as opposed to what it is currently called. Upstream semantic
+// conventions forbid a stable metric from changing unit or instrument (see
+// policies/compatibility.rego in open-telemetry/semantic-conventions), so a
+// mismatch is evidence against a schema rename branch. Equality alone is not
+// identity evidence because unrelated metrics may share both fields.
+//
+// Note that a group's id is deliberately not part of this: upstream lints id to
+// be exactly "metric.<metric_name>" (policies/yaml_schema.rego), so it is a pure
+// function of the surface name and changes in lockstep with every rename. It
+// therefore carries no identity information a rename edge does not already have.
 type metricDef struct {
+	unit       string
+	instrument string
+	stability  string
 	attributes []string
+}
+
+// sameMetricAs reports whether d and other have no unit or instrument
+// contradiction. Directional schema traversal, not this comparison, establishes
+// the candidate lineage.
+func (d metricDef) sameMetricAs(other metricDef) bool {
+	return d.unit == other.unit && d.instrument == other.instrument
+}
+
+// stablyContradicts reports whether both definitions are explicitly stable and
+// disagree on identity metadata that both of them specify.
+func (d metricDef) stablyContradicts(other metricDef) bool {
+	if d.stability != "stable" || other.stability != "stable" {
+		return false
+	}
+	return specifiedDifference(d.unit, other.unit) || specifiedDifference(d.instrument, other.instrument)
+}
+
+func specifiedDifference(a, b string) bool {
+	return a != "" && b != "" && a != b
 }
 
 // attributesOf returns the attributes the named metric declares at this semconv
@@ -112,6 +156,76 @@ type otelSchema struct {
 	// by version. Transformations retain their file order because applying a
 	// revision backwards requires replaying them in the exact reverse order.
 	revisions []schemaRevision
+
+	// allVersions lists every declared schema version in ascending order,
+	// including versions without transformations.
+	allVersions []string
+}
+
+// predecessorOfWithBudget returns the version immediately before v in the
+// complete schema history.
+func (s *otelSchema) predecessorOfWithBudget(v string, budget *schemaExpansionBudget) (string, bool, error) {
+	for i, have := range s.allVersions {
+		if err := budget.reserveWork(1); err != nil {
+			return "", false, err
+		}
+		if have == v {
+			if i == 0 {
+				return "", false, nil
+			}
+			return s.allVersions[i-1], true, nil
+		}
+	}
+	return "", false, nil
+}
+
+// eraVersionsOfWithBudget returns schema boundaries where name is current.
+// Names used only between transformations in one revision have no boundary.
+func (s *otelSchema) eraVersionsOfWithBudget(name string, budget *schemaExpansionBudget) ([]string, error) {
+	seen := map[string]struct{}{}
+	var versions []string
+	add := func(version string) error {
+		if version == "" {
+			return nil
+		}
+		if _, exists := seen[version]; exists {
+			return nil
+		}
+		if err := budget.reserveWork(1); err != nil {
+			return err
+		}
+		seen[version] = struct{}{}
+		versions = append(versions, version)
+		return nil
+	}
+
+	for _, revision := range s.revisions {
+		if err := budget.reserveWork(1); err != nil {
+			return nil, err
+		}
+		before, after, _, err := revision.metricBoundaryWithBudget(name, budget)
+		if err != nil {
+			return nil, err
+		}
+		if before {
+			predecessor, ok, err := s.predecessorOfWithBudget(revision.version, budget)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				if err := add(predecessor); err != nil {
+					return nil, err
+				}
+			}
+		}
+		if after {
+			if err := add(revision.version); err != nil {
+				return nil, err
+			}
+		}
+	}
+	slices.SortFunc(versions, compareSemver)
+	return versions, nil
 }
 
 // metricBoundaryWithBudget reports whether name exists immediately before and
@@ -155,7 +269,7 @@ func (r schemaRevision) metricBoundaryWithBudget(name string, budget *schemaExpa
 
 // schemaRevision describes the ordered transformations that convert the
 // preceding schema version to version. Revisions without transformations are
-// omitted.
+// omitted; allVersions retains them for predecessor lookup.
 type schemaRevision struct {
 	version string
 	changes []schemaChange
@@ -252,8 +366,11 @@ func collectSchemaRevision(versionStr string, version otelSchemaVersion) *schema
 // semconvGroup represents a semantic conventions group definition.
 type semconvGroup struct {
 	ID         string             `yaml:"id"`
-	Type       string             `yaml:"type"`        // "metric", "attribute", "span", etc.
+	Type       string             `yaml:"type"` // "metric", "attribute", "span", etc.
+	Stability  string             `yaml:"stability"`
 	MetricName string             `yaml:"metric_name"` // Only for type="metric"
+	Unit       string             `yaml:"unit"`        // Only for type="metric", e.g. "s", "By"
+	Instrument string             `yaml:"instrument"`  // Only for type="metric", e.g. "histogram", "counter"
 	Attributes []semconvAttribute `yaml:"attributes,omitempty"`
 }
 
@@ -348,11 +465,13 @@ func loadOTelSchema(b []byte) (otelSchema, error) {
 	}
 
 	s.revisions = make([]schemaRevision, 0, len(s.Versions))
+	s.allVersions = make([]string, 0, len(s.Versions))
 
 	for versionStr, version := range s.Versions {
 		if err := validateSemver(versionStr); err != nil {
 			return otelSchema{}, err
 		}
+		s.allVersions = append(s.allVersions, versionStr)
 		if revision := collectSchemaRevision(versionStr, version); revision != nil {
 			s.revisions = append(s.revisions, *revision)
 		}
@@ -361,6 +480,7 @@ func loadOTelSchema(b []byte) (otelSchema, error) {
 	slices.SortFunc(s.revisions, func(a, b schemaRevision) int {
 		return compareSemver(a.version, b.version)
 	})
+	slices.SortFunc(s.allVersions, compareSemver)
 
 	return s, nil
 }
@@ -413,11 +533,20 @@ func loadSemconv(b []byte, version string) (semconv, error) {
 	}
 	s.version = version
 	s.metrics = make(map[string]metricDef)
+	// A metric name declared by two groups has no single definition. Keeping the
+	// first declaration rather than the last makes the outcome depend on file
+	// order in one direction only, but either choice is arbitrary, so the name is
+	// also recorded as ambiguous and reported to the querier as a warning.
+	var ambiguous map[string]struct{}
 	for _, group := range s.Groups {
 		if group.Type != "metric" || group.MetricName == "" {
 			continue
 		}
 		if _, dup := s.metrics[group.MetricName]; dup {
+			if ambiguous == nil {
+				ambiguous = map[string]struct{}{}
+			}
+			ambiguous[group.MetricName] = struct{}{}
 			continue
 		}
 		var attrs []string
@@ -427,7 +556,15 @@ func loadSemconv(b []byte, version string) (semconv, error) {
 				attrs = append(attrs, attr.Ref)
 			}
 		}
-		s.metrics[group.MetricName] = metricDef{attributes: attrs}
+		s.metrics[group.MetricName] = metricDef{
+			unit:       group.Unit,
+			instrument: group.Instrument,
+			stability:  group.Stability,
+			attributes: attrs,
+		}
+	}
+	if len(ambiguous) > 0 {
+		s.ambiguousMetrics = slices.Sorted(maps.Keys(ambiguous))
 	}
 	return s, nil
 }
