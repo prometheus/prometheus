@@ -545,7 +545,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			// Canceled queries are intentional termination of queries. This normally
 			// happens on shutdown and thus we skip logging of any errors here.
 			if _, ok := errors.AsType[promql.ErrQueryCanceled](err); !ok {
-				logger.Warn("Evaluating rule failed", "rule", rule, "err", err)
+				logger.Warn("Evaluating rule failed", "rule", rule.String(), "err", err)
 			}
 			return
 		}

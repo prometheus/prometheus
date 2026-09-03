@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -767,6 +768,39 @@ func TestDB_Snapshot(t *testing.T) {
 	require.NoError(t, seriesSet.Err())
 	require.Empty(t, seriesSet.Warnings())
 	require.Equal(t, 1000.0, sum)
+}
+
+func TestDBSnapshotJSONLoggerBlock(t *testing.T) {
+	var output bytes.Buffer
+	format := promslog.NewFormat()
+	require.NoError(t, format.Set("json"))
+	logger := promslog.New(&promslog.Config{Writer: &output, Format: format})
+
+	dbDir := t.TempDir()
+	blockDir := createBlock(t, dbDir, genSeries(1, 1, 0, 10))
+	db, err := Open(dbDir, logger, nil, DefaultOptions(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	db.DisableCompactions()
+
+	require.NoError(t, db.Snapshot(t.TempDir(), false))
+
+	found := false
+	scanner := bufio.NewScanner(&output)
+	for scanner.Scan() {
+		var entry struct {
+			Message string `json:"msg"`
+			Block   string `json:"block"`
+		}
+		require.NoError(t, json.Unmarshal(scanner.Bytes(), &entry))
+		if entry.Message != "Snapshotting block" {
+			continue
+		}
+		require.Equal(t, filepath.Base(blockDir), entry.Block)
+		found = true
+	}
+	require.NoError(t, scanner.Err())
+	require.True(t, found, "snapshot block log not found")
 }
 
 // TestDB_Snapshot_ChunksOutsideOfCompactedRange ensures that a snapshot removes chunks samples
