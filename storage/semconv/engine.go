@@ -16,6 +16,7 @@ package semconv
 import (
 	"errors"
 	"fmt"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -424,17 +425,157 @@ func (e *schemaEngine) schemaSafetyAnalysis(url string, schema *otelSchema) sche
 	return analysis
 }
 
-// renameValidator carries traversal diagnostics. Semconv-backed consistency
-// checks are layered onto it separately from the ordered lineage walk.
-type renameValidator struct {
-	anchorDeclared bool
-	warnings       []string
-	seen           map[string]struct{}
+type metricLookupStatus uint8
+
+const (
+	metricFileMissing metricLookupStatus = iota
+	metricUndeclared
+	metricAmbiguous
+	metricDeclared
+)
+
+// metricLookup resolves what a semconv version declares for a metric name. A
+// registry need not ship every version referenced by its schema, so an absent
+// file is distinct from a file that omits or ambiguously declares the name.
+type metricLookup func(version, name string) (metricDef, metricLookupStatus)
+
+// newMetricLookup resolves sibling semconv versions in semconvURL's registry
+// directory and memoizes both successful and failed loads for one query.
+func (e *schemaEngine) newMetricLookup(semconvURL string) metricLookup {
+	dir, _ := path.Split(semconvURL)
+	// Memo distinguishes "loaded" from "tried and failed" so an absent semconv
+	// is not re-fetched for every hop that consults it.
+	memo := map[string]*semconv{}
+	return func(version, name string) (metricDef, metricLookupStatus) {
+		sc, tried := memo[version]
+		if !tried {
+			if loaded, err := e.getSemconv(dir + version); err == nil {
+				sc = &loaded
+			}
+			memo[version] = sc
+		}
+		if sc == nil {
+			return metricDef{}, metricFileMissing
+		}
+		if slices.Contains(sc.ambiguousMetrics, name) {
+			return metricDef{}, metricAmbiguous
+		}
+		def, declared := sc.metrics[name]
+		if !declared {
+			return metricDef{}, metricUndeclared
+		}
+		return def, metricDeclared
+	}
 }
 
-func newRenameValidator(anchor semconv, anchorName string) *renameValidator {
-	_, declared := anchor.metrics[anchorName]
-	return &renameValidator{anchorDeclared: declared, seen: map[string]struct{}{}}
+// renameValidator corroborates resolved metric lineages against the semconv
+// files at schema-version boundaries.
+//
+// The OTel schema format names metrics only by their surface name, so the rename
+// graph alone cannot distinguish a genuine rename of one metric from an edge
+// that happens to join two unrelated metrics sharing a name at different
+// versions. The semconv files can: each version states the unit and instrument
+// of the metric it declares under that name, and upstream semantic conventions
+// forbid a stable metric from changing either (policies/compatibility.rego). A
+// disagreement therefore means the two names denote different metrics.
+//
+// A group's id is of no use here even though it looks like a stable identifier:
+// upstream lints it to be exactly "metric.<metric_name>"
+// (policies/yaml_schema.rego), so it is renamed in lockstep with the metric and
+// comparing ids only restates whether the name changed.
+// Checks are made against the metric the query asked for — the anchor — and not
+// between an edge's own two endpoints. Schema safety rejects proven disconnected
+// name reuse before this validator runs. For histories where lifecycle ownership
+// remains unproven, directional traversal supplies the boundary; unit and
+// instrument reject a branch only when semconv data positively identifies a
+// different metric.
+type renameValidator struct {
+	lookup metricLookup
+
+	// anchorName/anchorVersion/anchorDef describe the metric the query asked for.
+	// anchorVersion is the queried semconv version where it declares the name, and
+	// otherwise the version the identity was recovered from; see
+	// identityFromOwnEra. anchorKnown is false only when no version settles what
+	// the name denotes, leaving no identity to compare hops against.
+	// anchorDeclared distinguishes the requested version from recovered identity.
+	anchorName     string
+	anchorVersion  string
+	anchorDef      metricDef
+	anchorDeclared bool
+	anchorKnown    bool
+
+	warnings []string
+	seen     map[string]struct{}
+}
+
+func newRenameValidator(schema *otelSchema, lookup metricLookup, anchor semconv, anchorName string, budget *schemaExpansionBudget) (*renameValidator, error) {
+	def, known := anchor.metrics[anchorName]
+	declared := known
+	version := anchor.version
+	if !known {
+		// The anchor semconv does not declare the queried name, which is an
+		// ordinary thing to query: the walk deliberately supports asking for a name
+		// the anchor version has already renamed away. Rather than give up on
+		// checking anything, take the metric's identity from a version where the
+		// name is the current one.
+		// version stays the queried one when this fails, so the warning that
+		// follows names the semconv the user actually asked for.
+		eraDef, eraVersion, eraKnown, err := identityFromOwnEra(schema, lookup, anchorName, budget)
+		if err != nil {
+			return nil, err
+		}
+		if eraKnown {
+			def, version, known = eraDef, eraVersion, true
+		}
+	}
+	return &renameValidator{
+		lookup:         lookup,
+		anchorName:     anchorName,
+		anchorVersion:  version,
+		anchorDef:      def,
+		anchorDeclared: declared,
+		anchorKnown:    known,
+		seen:           map[string]struct{}{},
+	}, nil
+}
+
+// identityFromOwnEra resolves what name meant at a version where it is the current
+// name, for use when the queried semconv version does not declare it.
+//
+// It declines to answer when the schema retires the name and later reintroduces it
+// and the two eras disagree on what the metric is, because then there is no single
+// answer to what the queried name denotes and picking one would corroborate hops
+// against an identity the user never asked for.
+func identityFromOwnEra(schema *otelSchema, lookup metricLookup, name string, budget *schemaExpansionBudget) (metricDef, string, bool, error) {
+	var (
+		found   metricDef
+		version string
+		ok      bool
+	)
+	eras, err := schema.eraVersionsOfWithBudget(name, budget)
+	if err != nil {
+		return metricDef{}, "", false, err
+	}
+	for _, era := range eras {
+		if err := budget.reserveWork(1); err != nil {
+			return metricDef{}, "", false, err
+		}
+		def, status := lookup(era, name)
+		switch status {
+		case metricAmbiguous:
+			return metricDef{}, "", false, nil
+		case metricDeclared:
+		default:
+			continue
+		}
+		if ok && !def.sameMetricAs(found) {
+			return metricDef{}, "", false, nil
+		}
+		if !ok {
+			found, version, ok = def, era, true
+		}
+	}
+	return found, version, ok, nil
 }
 
 func (rv *renameValidator) warn(format string, args ...any) {
@@ -444,6 +585,79 @@ func (rv *renameValidator) warn(format string, args ...any) {
 	}
 	rv.seen[msg] = struct{}{}
 	rv.warnings = append(rv.warnings, msg)
+}
+
+// allowRevision reports whether a branch that changed from fromName to toName while
+// replaying revision may continue at destinationVersion. Validation happens
+// after the whole revision: names between two ordered transformations are not
+// schema-version endpoints and therefore cannot be looked up meaningfully.
+func (rv *renameValidator) allowRevision(revision, destinationVersion, fromName, toName string) bool {
+	if rv == nil || rv.lookup == nil || destinationVersion == "" {
+		return true
+	}
+
+	def, status := rv.lookup(destinationVersion, toName)
+	if status == metricAmbiguous {
+		rv.warn("schema version %s resolves metric %q to %q, but semconv %s declares %q more than once; not following this ambiguous rename branch",
+			revision, fromName, toName, destinationVersion, toName)
+		return false
+	}
+	if status == metricFileMissing {
+		rv.warn("version %s is unavailable while checking metric renames at schema revision %s. Prometheus is following explicit schema renames at that boundary without corroboration",
+			destinationVersion, revision)
+		return true
+	}
+	if !rv.anchorKnown {
+		// No semconv version declares the queried name, or the ones that do
+		// disagree on what it is. Every hop is then traversed unchecked, which is
+		// reported rather than left silent: this is the case the corroboration
+		// exists for, so a caller should know it did not run. Reported only here,
+		// where a metric rename is actually being followed, so a query that crosses
+		// no rename says nothing.
+		rv.warn("metric %q is not declared by semconv %s, and no other version of it settles what the metric is; schema renames of it are being followed without corroboration and may merge unrelated series",
+			rv.anchorName, rv.anchorVersion)
+		return true
+	}
+
+	switch status {
+	case metricUndeclared:
+		rv.warn("schema version %s resolves metric %q to %q, but semconv %s does not declare %q as a metric; the rename could not be corroborated",
+			revision, fromName, toName, destinationVersion, toName)
+		return true
+	case metricDeclared:
+		if def.sameMetricAs(rv.anchorDef) {
+			return true
+		}
+		if !def.stablyContradicts(rv.anchorDef) {
+			rv.warn("queried metric %q is declared as %s/%s with %s stability by semconv %s, while schema version %s resolves it to %q, declared as %s/%s with %s stability by semconv %s. Prometheus is following the explicit schema rename because the metadata does not prove the metrics are different",
+				rv.anchorName, describeOrUnspecified(rv.anchorDef.unit), describeOrUnspecified(rv.anchorDef.instrument), describeStability(rv.anchorDef.stability), rv.anchorVersion,
+				revision, toName, describeOrUnspecified(def.unit), describeOrUnspecified(def.instrument), describeStability(def.stability), destinationVersion)
+			return true
+		}
+		rv.warn("queried metric %q is declared as %s/%s by semconv %s, but schema version %s resolves it to %q, which semconv %s declares as %s/%s; treating them as different metrics and not merging their series",
+			rv.anchorName, describeOrUnspecified(rv.anchorDef.unit), describeOrUnspecified(rv.anchorDef.instrument), rv.anchorVersion,
+			revision, toName, destinationVersion, describeOrUnspecified(def.unit), describeOrUnspecified(def.instrument))
+		return false
+	default:
+		rv.warn("version %s returned unknown metric lookup status %d while checking schema revision %s. Prometheus is following the explicit schema rename without corroboration",
+			destinationVersion, status, revision)
+		return true
+	}
+}
+
+// describeOrUnspecified renders an empty unit or instrument explicitly in warnings.
+func describeOrUnspecified(s string) string {
+	if s == "" {
+		return "(unspecified)"
+	}
+	return s
+}
+
+func describeStability(s string) string {
+	if s == "" {
+		return "unspecified"
+	}
+	return s
 }
 
 var errMetricNameAnchor = errors.New("schema-aware query requires a non-empty equality matcher on __name__")
@@ -599,6 +813,10 @@ type lineageState struct {
 	matchers []*labels.Matcher
 	metric   string
 	attrs    attributeLineage
+
+	// renamedFrom is set to the metric name at the start of the first metric
+	// transformation in a revision. It is cleared at revision boundaries.
+	renamedFrom string
 
 	// metricProduced is set while walking a revision forward when an earlier
 	// transformation produced metric. metricOriginPending marks a temporary
@@ -1034,10 +1252,10 @@ func generateMatcherVariantsWithAnalysis(version string, schema *otelSchema, mat
 		return nil, err
 	}
 	backwardEnd, forwardStart := partition, partition
-	if err := walkSchemaRevisions(schema.revisions[:backwardEnd], anchor, traverseBackward, rv, acc, budget); err != nil {
+	if err := walkSchemaRevisions(schema.revisions[:backwardEnd], anchor, traverseBackward, schema, rv, acc, budget); err != nil {
 		return nil, err
 	}
-	if err := walkSchemaRevisions(schema.revisions[forwardStart:], anchor, traverseForward, rv, acc, budget); err != nil {
+	if err := walkSchemaRevisions(schema.revisions[forwardStart:], anchor, traverseForward, schema, rv, acc, budget); err != nil {
 		return nil, err
 	}
 	return finalizeMatcherVariants(acc.variants, matchers, budget)
@@ -1120,7 +1338,7 @@ func (s *lineageStateSet) add(state lineageState) error {
 	return nil
 }
 
-func walkSchemaRevisions(revisions []schemaRevision, anchor lineageState, direction traversalDirection, rv *renameValidator, acc *variantAccumulator, budget *schemaExpansionBudget) error {
+func walkSchemaRevisions(revisions []schemaRevision, anchor lineageState, direction traversalDirection, schema *otelSchema, rv *renameValidator, acc *variantAccumulator, budget *schemaExpansionBudget) error {
 	states := []lineageState{anchor}
 	for step := 0; step < len(revisions) && len(states) > 0; step++ {
 		if err := budget.reserveWork(1); err != nil {
@@ -1139,6 +1357,7 @@ func walkSchemaRevisions(revisions []schemaRevision, anchor lineageState, direct
 			if err := budget.reserveWork(1); err != nil {
 				return err
 			}
+			states[i].renamedFrom = ""
 			states[i].metricProduced = false
 			states[i].metricOriginPending = false
 			states[i].pendingAttributeMatchers = nil
@@ -1165,6 +1384,17 @@ func walkSchemaRevisions(revisions []schemaRevision, anchor lineageState, direct
 			}
 		}
 
+		destinationVersion := revision.version
+		if direction == traverseBackward {
+			var found bool
+			destinationVersion, found, err = schema.predecessorOfWithBudget(revision.version, budget)
+			if err != nil {
+				return err
+			}
+			if !found {
+				destinationVersion = ""
+			}
+		}
 		validated := newLineageStateSet(len(states), budget)
 		for _, state := range states {
 			if err := budget.reserveWork(1); err != nil {
@@ -1177,6 +1407,10 @@ func walkSchemaRevisions(revisions []schemaRevision, anchor lineageState, direct
 			if err != nil {
 				return err
 			}
+			if state.renamedFrom != "" && !rv.allowRevision(revision.version, destinationVersion, state.renamedFrom, state.metric) {
+				continue
+			}
+			state.renamedFrom = ""
 			state.metricProduced = false
 			state.metricOriginPending = false
 			state.pendingAttributeMatchers = nil
@@ -1241,6 +1475,9 @@ func applyMetricRenames(states []lineageState, renames *directedRenames, directi
 				return nil, err
 			}
 			next := state
+			if next.renamedFrom == "" {
+				next.renamedFrom = state.metric
+			}
 			next.metric = target
 			var err error
 			next.matchers, err = replaceMetricMatchersWithBudget(state.matchers, state.metric, target, budget)
@@ -1682,6 +1919,9 @@ func lineageStateKeyWithBudget(state lineageState, budget *schemaExpansionBudget
 	if err := addPart(state.metric); err != nil {
 		return "", err
 	}
+	if err := addPart(state.renamedFrom); err != nil {
+		return "", err
+	}
 	if err := addSize(2); err != nil {
 		return "", err
 	}
@@ -1734,6 +1974,7 @@ func lineageStateKeyWithBudget(state lineageState, budget *schemaExpansionBudget
 		writeKeyPart(&b, matcher.Value)
 	}
 	writeKeyPart(&b, state.metric)
+	writeKeyPart(&b, state.renamedFrom)
 	if state.metricProduced {
 		b.WriteByte(1)
 	} else {
@@ -1908,6 +2149,15 @@ func (e *schemaEngine) findMatcherVariants(semconvURL, schemaURL string, origina
 		return nil, queryContext{}, err
 	}
 
+	var warnings []string
+	ambiguousAnchor := slices.Contains(sc.ambiguousMetrics, metricName)
+	if ambiguousAnchor {
+		warnings = append(warnings, fmt.Sprintf(
+			"metric %q is declared by more than one group in semconv %s; its attributes and unit are ambiguous and results may fuse distinct metrics",
+			metricName, sc.version,
+		))
+	}
+
 	// Generate schema-version rename variants. In production schemaURL is always
 	// set (classifyMatchers gates fan-out on it); the empty case is reached only
 	// by direct unit tests and falls through to the unmodified matchers.
@@ -1920,6 +2170,16 @@ func (e *schemaEngine) findMatcherVariants(semconvURL, schemaURL string, origina
 		if err != nil {
 			return nil, queryContext{}, err
 		}
+		if ambiguousAnchor {
+			// There is no unique anchor definition with which to validate a
+			// lineage or canonicalise its attributes. Query the surface name
+			// directly and report the ambiguity instead of choosing one group.
+			return allVariants, queryContext{warnings: warnings}, nil
+		}
+
+		// Corroborate each rename against the semconv of the versions it
+		// connects, so a schema edge that joins two unrelated metrics sharing a
+		// surface name is reported rather than silently merged.
 		budget := newSchemaExpansionBudget(e.limits)
 		analysis := e.schemaSafetyAnalysis(schemaURL, &schema)
 		if analysis.err != nil {
@@ -1928,15 +2188,18 @@ func (e *schemaEngine) findMatcherVariants(semconvURL, schemaURL string, origina
 		if err := budget.reserveWork(analysis.work); err != nil {
 			return nil, queryContext{}, err
 		}
-		rv := newRenameValidator(sc, metricName)
+		rv, err := newRenameValidator(&schema, e.newMetricLookup(semconvURL), sc, metricName, budget)
+		if err != nil {
+			return nil, queryContext{}, err
+		}
 		allVariants, err = generateMatcherVariantsWithAnalysis(sc.version, &schema, matchers, sc.attributesOf(metricName), rv, &analysis, budget)
 		if err != nil {
 			return nil, queryContext{}, err
 		}
-		return allVariants, queryContext{warnings: rv.warnings}, nil
+		warnings = append(warnings, rv.warnings...)
 	}
 
-	return allVariants, queryContext{}, nil
+	return allVariants, queryContext{warnings: warnings}, nil
 }
 
 // labelMapping rewrites a returned series' names to the queried semantic-
