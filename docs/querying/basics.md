@@ -360,9 +360,13 @@ locations; arbitrary HTTP URLs and filesystem paths are rejected.
 
 The selector must also include a non-empty equality matcher on `__name__`; a
 regular-expression or negative name matcher alone cannot anchor rename
-resolution and is rejected. See
+resolution and is rejected.
+
+Renames are checked against the semconv files before being followed, and a query
+returns a warning when one is contradicted, cannot be checked, or the metric name
+is ambiguous. See
 [Semconv Versioned Read](../feature_flags.md#semconv-versioned-read) for
-the supported registry layout, examples, and the limitations of the
+the supported registry layout, examples, the warnings, and the limitations of the
 fan-out.
 
 ### Range Vector Selectors

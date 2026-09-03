@@ -235,8 +235,78 @@ func TestFetchSemconv(t *testing.T) {
 	})
 }
 
+func TestPredecessorOfWithBudget(t *testing.T) {
+	schema := loadOTelSchemaFile(t, "./testdata/otel_with_chained_renames.yaml")
+	require.Equal(t, []string{"1.0.0", "1.1.0"}, schema.allVersions)
+
+	for _, tc := range []struct {
+		version  string
+		expected string
+		found    bool
+	}{
+		{version: "1.1.0", expected: "1.0.0", found: true},
+		{version: "1.0.0"},
+		{version: "9.9.9"},
+		{version: ""},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			got, found, err := schema.predecessorOfWithBudget(tc.version, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+			require.NoError(t, err)
+			require.Equal(t, tc.found, found)
+			require.Equal(t, tc.expected, got)
+		})
+	}
+}
+
+func TestEraVersionsOfWithBudget(t *testing.T) {
+	eraVersions := func(t *testing.T, schema *otelSchema, name string) []string {
+		t.Helper()
+		versions, err := schema.eraVersionsOfWithBudget(name, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+		require.NoError(t, err)
+		return versions
+	}
+
+	schema, err := loadOTelSchema([]byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.0.0:
+  1.1.0:
+    metrics:
+      changes:
+        - rename_metrics:
+            old.name: new.name
+  1.2.0:
+    metrics:
+      changes:
+        - rename_metrics:
+            other.name: old.name
+`))
+	require.NoError(t, err)
+	require.Equal(t, []string{"1.0.0", "1.2.0"}, eraVersions(t, &schema, "old.name"))
+	require.Equal(t, []string{"1.1.0"}, eraVersions(t, &schema, "new.name"))
+	require.Equal(t, []string{"1.1.0"}, eraVersions(t, &schema, "other.name"))
+	require.Empty(t, eraVersions(t, &schema, "unrelated.name"))
+
+	ordered, err := loadOTelSchema([]byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.0.0:
+  1.1.0:
+    metrics:
+      changes:
+        - rename_metrics:
+            old.name: intermediate.name
+        - rename_metrics:
+            intermediate.name: current.name
+`))
+	require.NoError(t, err)
+	require.Equal(t, []string{"1.0.0"}, eraVersions(t, &ordered, "old.name"))
+	require.Empty(t, eraVersions(t, &ordered, "intermediate.name"), "a name used only between ordered changes is not a version boundary")
+	require.Equal(t, []string{"1.1.0"}, eraVersions(t, &ordered, "current.name"))
+}
+
 func TestLoadSemconv(t *testing.T) {
-	t.Run("indexes metric groups with attributes", func(t *testing.T) {
+	t.Run("indexes metric groups with unit and instrument", func(t *testing.T) {
 		sc, err := loadSemconv([]byte(`
 groups:
   - id: metric.http.server.request.duration
@@ -249,7 +319,13 @@ groups:
       - ref: http.request.method
 `), "1.0.0")
 		require.NoError(t, err)
-		require.Equal(t, metricDef{attributes: []string{"http.request.method"}}, sc.metrics["http.server.request.duration"])
+		require.Equal(t, metricDef{
+			unit:       "s",
+			instrument: "histogram",
+			stability:  "stable",
+			attributes: []string{"http.request.method"},
+		}, sc.metrics["http.server.request.duration"])
+		require.Empty(t, sc.ambiguousMetrics)
 	})
 
 	t.Run("indexes a metric group that declares no attributes", func(t *testing.T) {
@@ -269,7 +345,10 @@ groups:
 		require.Empty(t, sc.attributesOf("queue.depth"))
 	})
 
-	t.Run("keeps the first declaration of a duplicate metric name", func(t *testing.T) {
+	t.Run("reports a metric name declared by more than one group", func(t *testing.T) {
+		// Two groups, same surface name, different semantics. Previously the
+		// second silently overwrote the first, so the queue.depth attributes
+		// were dropped and its unit was reported as the HTTP metric's.
 		sc, err := loadSemconv([]byte(`
 groups:
   - id: metric.shared.name
@@ -288,6 +367,9 @@ groups:
       - ref: queue.name
 `), "1.0.0")
 		require.NoError(t, err)
+		require.Equal(t, []string{"shared.name"}, sc.ambiguousMetrics)
+		// Resolution is deterministic (first declaration wins) rather than
+		// dependent on which group happened to be parsed last.
 		require.Equal(t, []string{"http.request.method"}, sc.attributesOf("shared.name"))
 	})
 }
@@ -470,6 +552,9 @@ func TestUpstreamSemconvAttributes(t *testing.T) {
 	require.Empty(t, sc.attributesOf("http.server.request.duration"),
 		"extends is not resolved, so this group has no attributes; if that changes, so must this")
 
-	// Either way the group is indexed as a metric for lifecycle traversal.
+	// Either way the group is indexed as a metric, which is what rename
+	// corroboration needs from it.
 	require.Contains(t, sc.metrics, "http.server.request.duration")
+	require.Equal(t, "s", sc.metrics["http.server.request.duration"].unit)
+	require.Equal(t, "histogram", sc.metrics["http.server.request.duration"].instrument)
 }

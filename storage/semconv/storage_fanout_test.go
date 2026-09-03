@@ -708,11 +708,20 @@ versions:
       changes:
         - rename_metrics:
 `)
+	previousSemconv := []byte("groups:\n")
 	for i := range variants - 1 {
 		schema = fmt.Appendf(schema, "            metric.old.%02d: metric.current\n", i)
+		previousSemconv = fmt.Appendf(previousSemconv, `  - id: metric.metric.old.%02d
+    type: metric
+    metric_name: metric.old.%02d
+    unit: s
+    instrument: histogram
+    stability: stable
+`, i, i)
 	}
 	return map[string][]byte{
 		"registry.yaml": schema,
+		"1.0.0":         previousSemconv,
 		"1.1.0":         metricSemconv("metric.current", "s", "histogram"),
 	}
 }

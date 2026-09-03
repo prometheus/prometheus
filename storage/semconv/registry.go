@@ -84,11 +84,10 @@ func newRegistrySource(files map[string][]byte) registrySource {
 // set in which every semver-named file (e.g. "1.0.0") parses as a semconv file,
 // every other file (e.g. "registry.yaml") parses as an OTel schema, and at least
 // one OTel schema is present. It rejects a malformed or schema-less registry at
-// startup instead of letting it fail only at query time. It does not require a
-// semconv file for every version a schema references — an OTel schema enumerates
-// its full version history, but only versions queried as __semconv_url__ anchors
-// need a file, which is the operator's responsibility to ship. It reuses
-// loadSemconv/loadOTelSchema so validation matches what queries rely on.
+// startup instead of letting it fail only at query time. Only versions queried
+// as __semconv_url__ anchors require a semconv file; a missing sibling version
+// disables corroboration for that boundary and produces a query warning. It
+// reuses loadSemconv/loadOTelSchema so validation matches what queries rely on.
 func validateRegistryFiles(files map[string][]byte) error {
 	if len(files) == 0 {
 		return errors.New("registry is empty")
