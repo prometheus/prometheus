@@ -5399,6 +5399,58 @@ func TestTargetScraperZstdWindowLimit(t *testing.T) {
 	require.ErrorContains(t, err, "decompressed size exceeds configured limit")
 }
 
+func TestTargetScraperZstdFeatureFlag(t *testing.T) {
+	const responseBody = "metric_a 1\nmetric_b 2\n"
+
+	encoder, err := zstd.NewWriter(nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { encoder.Close() })
+	compressed := encoder.EncodeAll([]byte(responseBody), nil)
+
+	for _, tc := range []struct {
+		name       string
+		enableZstd bool
+		expectErr  string
+	}{
+		{
+			name:       "enabled decompresses the body",
+			enableZstd: true,
+		},
+		{
+			name:       "disabled rejects the response",
+			enableZstd: false,
+			expectErr:  "zstd-scrape",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Encoding": []string{"zstd"},
+				},
+				Body: io.NopCloser(bytes.NewReader(compressed)),
+			}
+			ts := &targetScraper{
+				bodySizeLimit: math.MaxInt64,
+				metrics:       newTestScrapeMetrics(t),
+				enableZstd:    tc.enableZstd,
+				logger:        promslog.NewNopLogger(),
+			}
+
+			var buf bytes.Buffer
+			_, err := ts.readResponse(context.Background(), resp, &buf)
+			if tc.expectErr != "" {
+				require.ErrorContains(t, err, tc.expectErr)
+				// The undecoded frame must not reach the parser.
+				require.Empty(t, buf.String())
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, responseBody, buf.String())
+		})
+	}
+}
+
 // testScraper implements the scraper interface and allows setting values
 // returned by its methods. It also allows setting a custom scrape function.
 type testScraper struct {
