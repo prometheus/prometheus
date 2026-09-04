@@ -76,10 +76,38 @@ type nativeMetricMetadataValue struct {
 }
 
 type nativeMetricMetadataObservation struct {
-	ref           chunks.HeadSeriesRef
+	series        *memSeries
 	effectiveFrom int64
 	metadataRef   uint32
 	next          uint32
+}
+
+// nativeSeriesMetadata is the newest metadata committed for a series. An append
+// carrying the same metadata at or after effectiveFrom would not change the
+// series' history, so it can skip recording an observation entirely.
+//
+// metadata points at the value as the caller supplied it, not at the interned
+// handle the history stores. Callers hand back the same allocation each time,
+// so comparing against their copy settles on pointer equality, where the
+// interned copy is a different allocation and forces a full string comparison
+// on every append. That difference is most of what this check costs.
+//
+// The pointee is shared by every series carrying the same metadata and is never
+// mutated after it is published, so 48 bytes of string headers are paid once
+// per distinct value rather than once per series. The struct around it is not
+// shared and is still updated in place under the series lock.
+type nativeSeriesMetadata struct {
+	metadata      *metadata.Metadata
+	effectiveFrom int64
+}
+
+// nativeMetricMetadataPendingCache is a nativeSeriesMetadata update waiting for
+// the stripe lock to be released.
+type nativeMetricMetadataPendingCache struct {
+	series        *memSeries
+	handle        unique.Handle[metadata.Metadata]
+	metadata      metadata.Metadata
+	effectiveFrom int64
 }
 
 type nativeMetricMetadataAppender struct {
@@ -90,6 +118,8 @@ type nativeMetricMetadataAppender struct {
 	sorted          []uint32
 	points          []nativeMetricMetadataPoint
 	groups          []nativeMetricMetadataGroup
+	pending         []nativeMetricMetadataPendingCache
+	shared          map[unique.Handle[metadata.Metadata]]*metadata.Metadata
 	touched         []uint8
 	stripeFirst     [nativeMetricMetadataStripes]uint32
 	stripeLast      [nativeMetricMetadataStripes]uint32
@@ -104,6 +134,7 @@ func newNativeMetricMetadataAppender() *nativeMetricMetadataAppender {
 		values:       make([]nativeMetricMetadataValue, 0, maxNativeMetricMetadataValues),
 		valueRefs:    make(map[metadata.Metadata]uint32, maxNativeMetricMetadataValues),
 		groups:       make([]nativeMetricMetadataGroup, 0, maxNativeMetricMetadataBatch),
+		shared:       make(map[unique.Handle[metadata.Metadata]]*metadata.Metadata, maxNativeMetricMetadataValues),
 		touched:      make([]uint8, 0, nativeMetricMetadataStripes),
 	}
 }
@@ -168,11 +199,11 @@ func (a *nativeMetricMetadataAppender) appendDirectHandle(handle unique.Handle[m
 	return ref
 }
 
-func (a *nativeMetricMetadataAppender) appendObservation(ref chunks.HeadSeriesRef, effectiveFrom int64, metadataRef uint32) uint32 {
-	stripe := uint8(uint64(ref) & (nativeMetricMetadataStripes - 1))
+func (a *nativeMetricMetadataAppender) appendObservation(s *memSeries, effectiveFrom int64, metadataRef uint32) uint32 {
+	stripe := uint8(uint64(s.ref) & (nativeMetricMetadataStripes - 1))
 	observationRef := uint32(len(a.observations) + 1)
 	a.observations = append(a.observations, nativeMetricMetadataObservation{
-		ref:           ref,
+		series:        s,
 		effectiveFrom: effectiveFrom,
 		metadataRef:   metadataRef,
 	})
@@ -186,15 +217,15 @@ func (a *nativeMetricMetadataAppender) appendObservation(ref chunks.HeadSeriesRe
 	return observationRef
 }
 
-func (a *nativeMetricMetadataAppender) observe(store *nativeMetricMetadataStore, ref chunks.HeadSeriesRef, effectiveFrom int64, m metadata.Metadata) {
+func (a *nativeMetricMetadataAppender) observe(store *nativeMetricMetadataStore, s *memSeries, effectiveFrom int64, m metadata.Metadata) {
 	var metadataRef uint32
 	if a.haveLast && a.lastMetadata == m {
 		metadataRef = a.observations[a.lastObservation-1].metadataRef
 	} else {
-		metadataRef = a.metadataReference(store, ref, m)
+		metadataRef = a.metadataReference(store, s.ref, m)
 	}
 
-	observationRef := a.appendObservation(ref, effectiveFrom, metadataRef)
+	observationRef := a.appendObservation(s, effectiveFrom, metadataRef)
 	a.lastMetadata = m
 	a.lastObservation = observationRef
 	a.haveLast = true
@@ -239,6 +270,7 @@ func (s *nativeMetricMetadataStore) putAppender(appender *nativeMetricMetadataAp
 		appender.stripeFirst[stripe] = 0
 		appender.stripeLast[stripe] = 0
 	}
+	clear(appender.observations)
 	appender.observations = appender.observations[:0]
 	clear(appender.values)
 	appender.values = appender.values[:0]
@@ -249,6 +281,9 @@ func (s *nativeMetricMetadataStore) putAppender(appender *nativeMetricMetadataAp
 	clear(appender.points[:cap(appender.points)])
 	appender.points = appender.points[:0]
 	appender.groups = appender.groups[:0]
+	clear(appender.pending)
+	appender.pending = appender.pending[:0]
+	clear(appender.shared)
 	appender.touched = appender.touched[:0]
 	appender.lastMetadata = metadata.Metadata{}
 	appender.lastObservation = 0
@@ -266,7 +301,7 @@ func nativeMetricMetadataObservationStable(history nativeMetricMetadataHistory, 
 
 func nativeMetricMetadataGroupStable(stripe *nativeMetricMetadataStripe, appender *nativeMetricMetadataAppender, observationRefs []uint32) bool {
 	first := appender.observations[observationRefs[0]-1]
-	history, ok := stripe.histories[first.ref]
+	history, ok := stripe.histories[first.series.ref]
 	if !ok {
 		return false
 	}
@@ -280,7 +315,7 @@ func nativeMetricMetadataGroupStable(stripe *nativeMetricMetadataStripe, appende
 
 func nativeMetricMetadataGroupStableResolved(stripe *nativeMetricMetadataStripe, appender *nativeMetricMetadataAppender, observationRefs []uint32) bool {
 	first := appender.observations[observationRefs[0]-1]
-	history, ok := stripe.histories[first.ref]
+	history, ok := stripe.histories[first.series.ref]
 	if !ok || len(history.versions) == 0 {
 		return false
 	}
@@ -299,7 +334,7 @@ func nativeMetricMetadataStripeStable(stripe *nativeMetricMetadataStripe, append
 	defer stripe.mtx.RUnlock()
 	for observationRef := first; observationRef != 0; {
 		observation := appender.observations[observationRef-1]
-		history, ok := stripe.histories[observation.ref]
+		history, ok := stripe.histories[observation.series.ref]
 		if !ok || !nativeMetricMetadataObservationStable(history, appender, observation) {
 			return false
 		}
@@ -317,9 +352,9 @@ func compareNativeMetricMetadataObservationRefs(appender *nativeMetricMetadataAp
 	left := appender.observations[a-1]
 	right := appender.observations[b-1]
 	switch {
-	case left.ref < right.ref:
+	case left.series.ref < right.series.ref:
 		return -1
-	case left.ref > right.ref:
+	case left.series.ref > right.series.ref:
 		return 1
 	case left.effectiveFrom < right.effectiveFrom:
 		return -1
@@ -364,8 +399,8 @@ func (s *nativeMetricMetadataStore) commitAppenderStripe(stripeIndex uint8, appe
 		stripe.mtx.RLock()
 		for position < len(appender.sorted) && examinedGroups < maxNativeMetricMetadataBatch {
 			end := position + 1
-			ref := appender.observations[appender.sorted[position]-1].ref
-			for end < len(appender.sorted) && appender.observations[appender.sorted[end]-1].ref == ref {
+			ref := appender.observations[appender.sorted[position]-1].series.ref
+			for end < len(appender.sorted) && appender.observations[appender.sorted[end]-1].series.ref == ref {
 				end++
 			}
 			if !nativeMetricMetadataGroupStable(stripe, appender, appender.sorted[position:end]) {
@@ -404,12 +439,74 @@ func (s *nativeMetricMetadataStore) commitAppenderStripe(stripeIndex uint8, appe
 				}
 				appender.points = append(appender.points, point)
 			}
-			ref := appender.observations[observationRefs[0]-1].ref
-			history, exists := stripe.histories[ref]
-			s.mergeLocked(stripe, ref, history, exists, appender.points)
+			series := appender.observations[observationRefs[0]-1].series
+			history, exists := stripe.histories[series.ref]
+			newest := s.mergeLocked(stripe, series.ref, history, exists, appender.points)
+			// Cache the caller's own copy of the newest metadata where we have
+			// one, so a later append comparing against it stops at pointer
+			// equality. Matching handles mean matching content, so the caller's
+			// copy describes the newest version even when that version came
+			// from an earlier transaction. Out-of-order observations behind the
+			// newest version leave only the interned copy to fall back on.
+			cached := newest.metadata.Value()
+			last := appender.observations[observationRefs[len(observationRefs)-1]-1]
+			if appender.metadataHandle(last.metadataRef) == newest.metadata {
+				cached = appender.metadataValue(last.metadataRef)
+			}
+			appender.pending = append(appender.pending, nativeMetricMetadataPendingCache{
+				series:        series,
+				handle:        newest.metadata,
+				metadata:      cached,
+				effectiveFrom: newest.effectiveFrom,
+			})
 		}
 		stripe.mtx.Unlock()
+		appender.applyPendingCache()
 	}
+}
+
+// sharedMetadataFor returns the copy of m that every series committing this
+// value in this transaction will point at, allocating it on first use. Keying
+// on the handle costs one pointer hash, where the metadata itself would have to
+// hash three strings.
+//
+// The result is published to series and never written again, so it needs no
+// synchronisation of its own beyond the series lock that publishes it.
+func (a *nativeMetricMetadataAppender) sharedMetadataFor(handle unique.Handle[metadata.Metadata], m metadata.Metadata) *metadata.Metadata {
+	if shared, ok := a.shared[handle]; ok {
+		return shared
+	}
+	// Copy into a fresh allocation rather than taking the address of m: escape
+	// analysis is not path-sensitive, so &m would move the parameter to the
+	// heap on every call rather than only when a value is first seen.
+	shared := new(metadata.Metadata)
+	*shared = m
+	a.shared[handle] = shared
+	return shared
+}
+
+// applyPendingCache publishes each series' newest committed metadata so a later
+// append carrying the same metadata can skip recording it.
+//
+// Must run with no stripe lock held. The store's lock order is stripe before
+// series: observeNativeMetricMetadata releases the series lock before reaching
+// the store, and nothing takes a stripe lock while holding a series one.
+func (a *nativeMetricMetadataAppender) applyPendingCache() {
+	for _, pending := range a.pending {
+		shared := a.sharedMetadataFor(pending.handle, pending.metadata)
+		// Reuse the series' entry rather than replacing it. A series whose
+		// metadata changes every scrape would otherwise allocate one per
+		// commit, which costs more than the skip saves.
+		pending.series.Lock()
+		if pending.series.nativeMeta == nil {
+			pending.series.nativeMeta = &nativeSeriesMetadata{}
+		}
+		pending.series.nativeMeta.metadata = shared
+		pending.series.nativeMeta.effectiveFrom = pending.effectiveFrom
+		pending.series.Unlock()
+	}
+	clear(a.pending)
+	a.pending = a.pending[:0]
 }
 
 func appendNativeMetricMetadataPoint(versions []nativeMetricMetadataPoint, point nativeMetricMetadataPoint) ([]nativeMetricMetadataPoint, bool) {
@@ -512,7 +609,10 @@ func mergeOverlappingNativeMetricMetadata(existing, observations []nativeMetricM
 	return versions, evictions
 }
 
-func (s *nativeMetricMetadataStore) mergeLocked(stripe *nativeMetricMetadataStripe, ref chunks.HeadSeriesRef, history nativeMetricMetadataHistory, exists bool, observations []nativeMetricMetadataPoint) {
+// mergeLocked applies observations and returns the newest version of the
+// resulting history, which is not necessarily the newest observation: an
+// out-of-order transaction can leave an older version in front of it.
+func (s *nativeMetricMetadataStore) mergeLocked(stripe *nativeMetricMetadataStripe, ref chunks.HeadSeriesRef, history nativeMetricMetadataHistory, exists bool, observations []nativeMetricMetadataPoint) nativeMetricMetadataPoint {
 	oldLen := len(history.versions)
 	var evictions int
 	if len(history.versions) == 0 || observations[0].effectiveFrom >= history.versions[len(history.versions)-1].effectiveFrom {
@@ -530,6 +630,7 @@ func (s *nativeMetricMetadataStore) mergeLocked(stripe *nativeMetricMetadataStri
 		s.series.Add(1)
 	}
 	s.versions.Add(int64(len(history.versions) - oldLen))
+	return history.versions[len(history.versions)-1]
 }
 
 func (s *nativeMetricMetadataStore) get(ref chunks.HeadSeriesRef) ([]NativeMetricMetadataVersion, bool, bool) {

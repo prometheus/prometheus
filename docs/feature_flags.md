@@ -171,6 +171,13 @@ the WAL, checkpoints, snapshots, or blocks, so it is lost on restart and when
 the corresponding Head series is removed. Remote Write 1.0 does not populate
 this store. At most 32 versions are retained per series.
 
+An append whose metadata already matches the series records nothing, which is
+what keeps the feature's cost off the ingestion path. A consequence is that
+overlapping writers to one series can lose a version: if one transaction
+observes the current metadata while another changes it and commits first, the
+first has nothing left to re-assert, and the change is not reverted at the later
+timestamp.
+
 ## Delay compaction start time
 
 `--enable-feature=delayed-compaction`

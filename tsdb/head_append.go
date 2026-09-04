@@ -435,11 +435,24 @@ func (a *headAppenderBase) observeNativeMetricMetadata(s *memSeries, timestamp i
 	if a.head.nativeMetricMetadata == nil || m.IsEmpty() {
 		return
 	}
+	m = canonicalMetricMetadata(m)
+
+	// An observation that would not change the series' history is worth
+	// nothing, and recording one costs both the entry and a lookup to discard
+	// it at commit. Checking before the appender is taken from the pool means a
+	// transaction that changes no metadata never touches the store at all.
+	s.Lock()
+	unchanged := s.nativeMeta != nil && s.nativeMeta.effectiveFrom <= timestamp &&
+		*s.nativeMeta.metadata == m
+	s.Unlock()
+	if unchanged {
+		return
+	}
+
 	if a.nativeMetricMetadata == nil {
 		a.nativeMetricMetadata = a.head.nativeMetricMetadata.getAppender()
 	}
-	m = canonicalMetricMetadata(m)
-	a.nativeMetricMetadata.observe(a.head.nativeMetricMetadata, s.ref, timestamp, m)
+	a.nativeMetricMetadata.observe(a.head.nativeMetricMetadata, s, timestamp, m)
 }
 
 func (a *headAppenderBase) clearNativeMetricMetadata() {

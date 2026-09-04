@@ -120,8 +120,9 @@ type Head struct {
 	// All series addressable by their ID or hash.
 	series *stripeSeries
 
-	// Native metric metadata is kept outside memSeries so disabled instances
-	// pay no per-series memory cost.
+	// Native metric metadata histories are kept outside memSeries, which holds
+	// only a pointer to the newest committed entry so that appends can tell
+	// whether they have anything to record.
 	nativeMetricMetadata *nativeMetricMetadataStore
 
 	walExpiriesMtx sync.Mutex
@@ -2815,6 +2816,16 @@ type memSeries struct {
 	sync.Mutex
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
+
+	// Newest native metadata committed for this series, nil until the first is
+	// recorded. Distinct from meta, which belongs to the metadata WAL path:
+	// this one must only ever be set once the native store has actually been
+	// updated, or an append would skip recording metadata the store never saw.
+	//
+	// The pointee is mutated in place under the series lock, so readers must
+	// dereference it inside their critical section and must not retain the
+	// pointer beyond it.
+	nativeMeta *nativeSeriesMetadata
 
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
