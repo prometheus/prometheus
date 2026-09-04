@@ -602,3 +602,67 @@ func BenchmarkFanoutAppenderV2(b *testing.B) {
 		})
 	}
 }
+
+func TestFanout_ChunkQuerierFloatEncoding(t *testing.T) {
+	ctx := context.Background()
+	lbls := labels.FromStrings(model.MetricNameLabel, "a")
+
+	// The primary and the secondary hold interleaved samples for the same
+	// series, so their chunks overlap and have to be re-encoded on merge.
+	newStorage := func(timestamps ...int64) storage.Storage {
+		s := teststorage.New(t)
+		app := s.Appender(ctx)
+		for _, ts := range timestamps {
+			_, err := app.Append(0, lbls, ts, float64(ts))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+		return s
+	}
+
+	for name, tc := range map[string]struct {
+		newFanout func(primary, secondary storage.Storage) storage.Storage
+		expected  chunkenc.Encoding
+	}{
+		"nil getter defaults to xor": {
+			newFanout: func(primary, secondary storage.Storage) storage.Storage {
+				return storage.NewFanout(nil, primary, secondary)
+			},
+			expected: chunkenc.EncXOR,
+		},
+		"xor": {
+			newFanout: func(primary, secondary storage.Storage) storage.Storage {
+				return storage.NewFanoutWithOptions(nil, storage.FanoutOptions{FloatEncoding: func() chunkenc.Encoding { return chunkenc.EncXOR }}, primary, secondary)
+			},
+			expected: chunkenc.EncXOR,
+		},
+		"xor2": {
+			newFanout: func(primary, secondary storage.Storage) storage.Storage {
+				return storage.NewFanoutWithOptions(nil, storage.FanoutOptions{FloatEncoding: func() chunkenc.Encoding { return chunkenc.EncXOR2 }}, primary, secondary)
+			},
+			expected: chunkenc.EncXOR2,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := tc.newFanout(newStorage(0, 2000, 4000), newStorage(1000, 3000, 5000))
+
+			q, err := f.ChunkQuerier(0, 5000)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+			ss := q.Select(ctx, true, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "a"))
+			require.True(t, ss.Next())
+			chks, err := storage.ExpandChunks(ss.At().Iterator(nil))
+			require.NoError(t, err)
+			require.Len(t, chks, 1)
+			require.Equal(t, tc.expected, chks[0].Chunk.Encoding())
+
+			samples, err := storage.ExpandSamples(chks[0].Chunk.Iterator(nil), nil)
+			require.NoError(t, err)
+			require.Len(t, samples, 6)
+
+			require.False(t, ss.Next())
+			require.NoError(t, ss.Err())
+		})
+	}
+}

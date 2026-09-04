@@ -1096,7 +1096,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			PD:                          opts.PostingsDecoderFactory,
 			UseUncachedIO:               opts.UseUncachedIO,
 			BlockExcludeFilter:          opts.BlockCompactionExcludeFunc,
-			FloatChunkEncoding:          db.floatChunkEncoding,
+			FloatChunkEncoding:          db.FloatChunkEncoding,
 		})
 	}
 	if err != nil {
@@ -2735,11 +2735,12 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 	return blockQueriers, nil
 }
 
-// floatChunkEncoding returns the float chunk encoding currently in effect,
-// following runtime configuration reloads. Falls back to the startup option before
-// the head exists; only called from compaction and queries, which start after
-// open() has set db.head.
-func (db *DB) floatChunkEncoding() chunkenc.Encoding {
+// FloatChunkEncoding returns the float chunk encoding currently in effect,
+// following runtime configuration reloads. It is safe for concurrent use:
+// db.head is read without holding db.mtx because open() assigns it once, before
+// it returns the DB, and never reassigns it. The startup option is only reached
+// from open() itself, while it builds the head.
+func (db *DB) FloatChunkEncoding() chunkenc.Encoding {
 	if h := db.head; h != nil {
 		return chunkenc.Encoding(h.opts.FloatChunkEncoding.Load())
 	}
@@ -2752,7 +2753,7 @@ func (db *DB) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	if err != nil {
 		return nil, err
 	}
-	return storage.NewMergeChunkQuerier(blockQueriers, nil, storage.NewCompactingChunkSeriesMergerWithFloatEncoding(storage.ChainedSeriesMerge, db.floatChunkEncoding)), nil
+	return storage.NewMergeChunkQuerier(blockQueriers, nil, storage.NewCompactingChunkSeriesMergerWithFloatEncoding(storage.ChainedSeriesMerge, db.FloatChunkEncoding)), nil
 }
 
 func (db *DB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {

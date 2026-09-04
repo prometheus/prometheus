@@ -22,6 +22,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,6 +39,7 @@ import (
 	"github.com/grafana/regexp"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -47,6 +49,11 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/agent"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -1314,4 +1321,169 @@ func TestFeatureFlagsDocumented(t *testing.T) {
 	require.NotEmpty(t, docFlags)
 	require.True(t, slices.IsSorted(helpFlags))
 	require.ElementsMatch(t, helpFlags, docFlags)
+}
+
+func TestReadyStorageFloatChunkEncoding(t *testing.T) {
+	// floatEncodingConfig returns a config setting chunk_encoding.floats to the
+	// given value, as a runtime configuration reload would.
+	floatEncodingConfig := func(floats string) *config.Config {
+		return &config.Config{
+			StorageConfig: config.StorageConfig{
+				TSDBConfig: &config.TSDBConfig{
+					ChunkEncoding: config.ChunkEncodingConfig{Floats: floats},
+				},
+			},
+		}
+	}
+
+	s := &readyStorage{}
+	// The encoding is unknown until the local storage is ready.
+	require.Equal(t, chunkenc.EncNone, s.floatChunkEncoding())
+
+	// While the local storage is not ready, the getter serves the fallback.
+	require.Equal(t, chunkenc.EncXOR, newFloatChunkEncodingFn(s, chunkenc.EncXOR)())
+	require.Equal(t, chunkenc.EncXOR2, newFloatChunkEncodingFn(s, chunkenc.EncXOR2)())
+
+	// Agent mode does not store chunks, so the fallback keeps applying.
+	agentDB, err := agent.Open(promslog.NewNopLogger(), nil, nil, t.TempDir(), agent.DefaultOptions())
+	require.NoError(t, err)
+	s.Set(agentDB, 0)
+	require.Equal(t, chunkenc.EncNone, s.floatChunkEncoding())
+	require.Equal(t, chunkenc.EncXOR2, newFloatChunkEncodingFn(s, chunkenc.EncXOR2)())
+
+	// readyStorage.ApplyConfig is a no-op in agent mode, so the encoding stays
+	// frozen at the startup fallback and never follows a reload.
+	require.NoError(t, s.ApplyConfig(floatEncodingConfig(config.FloatChunkEncodingXOR2)))
+	require.Equal(t, chunkenc.EncNone, s.floatChunkEncoding())
+	require.Equal(t, chunkenc.EncXOR, newFloatChunkEncodingFn(s, chunkenc.EncXOR)())
+	require.NoError(t, agentDB.Close())
+
+	// Once the TSDB is ready it wins over the fallback.
+	opts := tsdb.DefaultOptions()
+	opts.FloatChunkEncoding = chunkenc.EncXOR2
+	db, err := tsdb.Open(t.TempDir(), nil, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	s.Set(db, 0)
+	require.Equal(t, chunkenc.EncXOR2, s.floatChunkEncoding())
+	require.Equal(t, chunkenc.EncXOR2, newFloatChunkEncodingFn(s, chunkenc.EncXOR)())
+
+	// The getter follows runtime configuration reloads, which is why it is a
+	// getter and not a value.
+	reloadOpts := tsdb.DefaultOptions()
+	reloadOpts.FloatChunkEncoding = chunkenc.EncXOR
+	reloadDB, err := tsdb.Open(t.TempDir(), nil, nil, reloadOpts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reloadDB.Close()) })
+
+	s.Set(reloadDB, 0)
+	require.Equal(t, chunkenc.EncXOR, s.floatChunkEncoding())
+
+	require.NoError(t, s.ApplyConfig(floatEncodingConfig(config.FloatChunkEncodingXOR2)))
+	require.Equal(t, chunkenc.EncXOR2, s.floatChunkEncoding())
+	require.Equal(t, chunkenc.EncXOR2, newFloatChunkEncodingFn(s, chunkenc.EncXOR)())
+
+	// An absent chunk_encoding.floats reverts to the encoding resolved at startup.
+	require.NoError(t, s.ApplyConfig(floatEncodingConfig("")))
+	require.Equal(t, chunkenc.EncXOR, s.floatChunkEncoding())
+
+	// And it flips back on the next reload.
+	require.NoError(t, s.ApplyConfig(floatEncodingConfig(config.FloatChunkEncodingXOR2)))
+	require.Equal(t, chunkenc.EncXOR2, s.floatChunkEncoding())
+	require.NoError(t, s.ApplyConfig(floatEncodingConfig(config.FloatChunkEncodingXOR)))
+	require.Equal(t, chunkenc.EncXOR, s.floatChunkEncoding())
+}
+
+// TestFanoutStorageFloatChunkEncoding covers the wiring newFanoutStorage does
+// for main: both the fanout, which re-encodes the overlap between the local
+// TSDB and a remote read endpoint, and the remote read queryables, which encode
+// the samples they read into chunks, must follow the local TSDB encoding.
+func TestFanoutStorageFloatChunkEncoding(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		encoding chunkenc.Encoding
+	}{
+		{name: "xor", encoding: chunkenc.EncXOR},
+		{name: "xor2", encoding: chunkenc.EncXOR2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			overlapping := labels.FromStrings("__name__", "overlapping", "job", "test")
+			remoteOnly := labels.FromStrings("__name__", "remote_only", "job", "test")
+			appendSamples := func(t *testing.T, db *tsdb.DB, lbls labels.Labels, ts ...int64) {
+				t.Helper()
+				app := db.Appender(ctx)
+				for _, s := range ts {
+					_, err := app.Append(0, lbls, s, float64(s))
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+			}
+
+			// The remote read endpoint holds samples interleaved with the local
+			// ones, so that the compacting merger has an overlap to re-encode.
+			remoteDB, err := tsdb.Open(t.TempDir(), nil, nil, tsdb.DefaultOptions(), nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, remoteDB.Close()) })
+			appendSamples(t, remoteDB, overlapping, 150, 250, 350)
+			// remote_only exists on the remote side only, so its chunk reaches the
+			// caller as the remote read queryable encoded it, without going
+			// through the fanout merger.
+			appendSamples(t, remoteDB, remoteOnly, 150, 250, 350)
+
+			srv := httptest.NewServer(remote.NewReadHandler(
+				promslog.NewNopLogger(), nil, remoteDB,
+				func() config.Config { return config.Config{GlobalConfig: config.DefaultGlobalConfig} },
+				1e6, 1, 1e6,
+			))
+			t.Cleanup(srv.Close)
+			srvURL, err := url.Parse(srv.URL)
+			require.NoError(t, err)
+
+			localOpts := tsdb.DefaultOptions()
+			localOpts.FloatChunkEncoding = tc.encoding
+			localDB, err := tsdb.Open(t.TempDir(), nil, nil, localOpts, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, localDB.Close()) })
+			appendSamples(t, localDB, overlapping, 100, 200, 300, 400)
+
+			// Wire the storage up the way main does. The fallback is deliberately
+			// EncXOR: the local TSDB is ready, so its encoding must win.
+			localStorage := &readyStorage{stats: tsdb.NewDBStats()}
+			remoteStorage := remote.NewStorage(promslog.NewNopLogger(), nil, localStorage.StartTime, t.TempDir(), time.Minute, &readyScrapeManager{}, false)
+			t.Cleanup(func() { require.NoError(t, remoteStorage.Close()) })
+			fanoutStorage := newFanoutStorage(promslog.NewNopLogger(), localStorage, remoteStorage, chunkenc.EncXOR)
+			localStorage.Set(localDB, 0)
+			rrConf := config.DefaultRemoteReadConfig
+			rrConf.URL = &config_util.URL{URL: srvURL}
+			rrConf.ReadRecent = true
+			require.NoError(t, remoteStorage.ApplyConfig(&config.Config{
+				GlobalConfig:      config.DefaultGlobalConfig,
+				RemoteReadConfigs: []*config.RemoteReadConfig{&rrConf},
+			}))
+
+			q, err := fanoutStorage.ChunkQuerier(0, 1000)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+			ss := q.Select(ctx, true, &storage.SelectHints{Start: 0, End: 1000}, labels.MustNewMatcher(labels.MatchEqual, "job", "test"))
+			samples := map[string]int{}
+			for ss.Next() {
+				series := ss.At()
+				it := series.Iterator(nil)
+				for it.Next() {
+					meta := it.At()
+					require.Equal(t, tc.encoding, meta.Chunk.Encoding(), "series %s", series.Labels())
+					samples[series.Labels().Get("__name__")] += meta.Chunk.NumSamples()
+				}
+				require.NoError(t, it.Err())
+			}
+			require.NoError(t, ss.Err())
+			require.Empty(t, ss.Warnings())
+			// The overlapping series carries all samples of both sides, proving the
+			// remote read endpoint was queried and its overlap actually merged.
+			require.Equal(t, map[string]int{"overlapping": 7, "remote_only": 3}, samples)
+		})
+	}
 }
