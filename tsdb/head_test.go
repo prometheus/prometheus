@@ -4103,10 +4103,14 @@ func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 		expShouldClose, expGetNew bool
 		expNewMint                int64
 	}{
-		{-200, -100, true, false, 0},
-		{-200, 300, true, false, 0},
-		{100, 1900, true, false, 0},
+		// Entirely below the truncation point: close without reopening, but newMint is still
+		// the truncation point so callers (e.g. the OOO wrapper) clamp their in-order read to it.
+		{-200, -100, true, false, 2000},
+		{-200, 300, true, false, 2000},
+		{100, 1900, true, false, 2000},
+		// Straddles the truncation point: close and reopen at the truncation point.
 		{1900, 2200, true, true, 2000},
+		// At/above the truncation point: no collision.
 		{2000, 2500, false, false, 0},
 	}
 
@@ -4115,7 +4119,7 @@ func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 			shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(c.mint, c.maxt)
 			require.Equal(t, c.expShouldClose, shouldClose)
 			require.Equal(t, c.expGetNew, getNew)
-			if getNew {
+			if shouldClose || getNew {
 				require.Equal(t, c.expNewMint, newMint)
 			}
 		})
@@ -4194,6 +4198,115 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 			cq, err := db.ChunkQuerier(c.mint, c.maxt)
 			require.NoError(t, err)
 			checkWaiting(cq)
+		})
+	}
+}
+
+// TestQuerierDoesNotBlockHeadTruncation verifies that a querier opened during an in-progress
+// head truncation does not hold up the truncation for the range below the truncation point.
+// The collision guard (IsQuerierCollidingWithTruncation) decides that in-order data below the
+// truncation point now lives in a block, so the querier's in-order isolation read must be
+// clamped to the truncation point. This is checked for both query paths:
+//   - the plain in-order querier, clamped directly in db.Querier (close / reopen at newMint);
+//   - the head+OOO querier, whose wrapper must take its in-order isolation read at the same
+//     clamped point rather than the raw mint.
+func TestQuerierDoesNotBlockHeadTruncation(t *testing.T) {
+	t.Parallel()
+
+	const (
+		maxT      int64 = 3000
+		truncTime int64 = 2000
+	)
+
+	// newDB builds a head with in-order samples spanning [0,maxT). When withOOO is set it also
+	// appends an OOO range over the same period, which forces db.Querier down the head+OOO path
+	// (overlapsOOO is decided from the head's global OOO min/max, not per series).
+	newDB := func(t *testing.T, withOOO bool) *DB {
+		dir := t.TempDir()
+		opts := DefaultOptions()
+		opts.OutOfOrderTimeWindow = maxT
+
+		db, err := Open(dir, nil, nil, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, db.Close()) })
+		db.DisableCompactions()
+
+		app := db.Appender(context.Background())
+		ref := storage.SeriesRef(0)
+		for i := int64(0); i < maxT; i += 100 {
+			ref, err = app.Append(ref, labels.FromStrings("a", "b"), i, float64(i))
+			require.NoError(t, err)
+		}
+		if withOOO {
+			for i := int64(50); i < maxT; i += 100 {
+				_, err = app.Append(ref, labels.FromStrings("a", "b"), i, float64(i))
+				require.NoError(t, err)
+			}
+		}
+		require.NoError(t, app.Commit())
+
+		// Mock a head memory truncation in progress up to truncTime. At this point the block
+		// for [headMin, truncTime) has already been written and reloaded, so any querier whose
+		// range falls below truncTime must read from the block and must NOT pin the head.
+		db.head.lastMemoryTruncationTime.Store(truncTime)
+		db.head.memTruncationInProcess.Store(true)
+		t.Cleanup(func() { db.head.memTruncationInProcess.Store(false) })
+		return db
+	}
+
+	assertDoesNotBlock := func(t *testing.T, db *DB, cl io.Closer) {
+		synctest.Test(t, func(t *testing.T) {
+			var waitOver atomic.Bool
+			go func() {
+				db.head.WaitForPendingReadersInTimeRange(db.head.MinTime(), truncTime)
+				waitOver.Store(true)
+			}()
+
+			// Let the goroutine run until it either finishes (no overlap) or blocks on Sleep.
+			synctest.Wait()
+			blocked := !waitOver.Load()
+
+			// Always release the querier and drain so the goroutine never leaks, regardless
+			// of outcome. Once the only overlapping read is gone the wait must complete.
+			require.NoError(t, cl.Close())
+			time.Sleep(time.Second)
+			synctest.Wait()
+			require.True(t, waitOver.Load(), "wait must complete once the querier is closed")
+
+			require.False(t, blocked,
+				"a querier whose range is below the truncation point must not block head truncation: "+
+					"its in-order isolation read must be clamped to the truncation point")
+		})
+	}
+
+	// Both ranges read in-order data below the truncation point: one straddles the truncation
+	// point (collision guard reopens the head querier at the truncation point), the other is
+	// entirely below it (guard closes the head querier without reopening). Neither must pin the head.
+	ranges := []struct {
+		name       string
+		mint, maxt int64
+	}{
+		{"straddling truncation point", 1000, 2500},
+		{"entirely below truncation point", 500, 1500},
+	}
+	for _, withOOO := range []bool{false, true} {
+		name := "in-order"
+		if withOOO {
+			name = "in-order+OOO"
+		}
+		t.Run(name, func(t *testing.T) {
+			db := newDB(t, withOOO)
+			for _, r := range ranges {
+				t.Run(r.name, func(t *testing.T) {
+					q, err := db.Querier(r.mint, r.maxt)
+					require.NoError(t, err)
+					assertDoesNotBlock(t, db, q)
+
+					cq, err := db.ChunkQuerier(r.mint, r.maxt)
+					require.NoError(t, err)
+					assertDoesNotBlock(t, db, cq)
+				})
+			}
 		})
 	}
 }
@@ -7579,6 +7692,108 @@ func testHeadAppendHistogramAndCommitConcurrency(t *testing.T, appendFn func(sto
 	wg.Wait()
 }
 
+// TestHead_WALReplayStaleMarkerTypeConsistency verifies that a float staleness
+// marker appended to a native histogram series is replayed as a histogram (or
+// float-histogram) staleness marker — matching the live commitFloats conversion
+// — rather than as a float sample landing on a histogram series. This must hold
+// even when the preceding histogram is only in an m-mapped chunk (whose samples
+// WAL replay skips), so the marker type is recovered from the chunk encoding.
+func TestHead_WALReplayStaleMarkerTypeConsistency(t *testing.T) {
+	for _, floatHistogram := range []bool{false, true} {
+		for _, mmapped := range []bool{false, true} {
+			for _, stStorage := range []bool{false, true} {
+				name := fmt.Sprintf("floatHistogram=%t/mmapped=%t/stStorage=%t", floatHistogram, mmapped, stStorage)
+				t.Run(name, func(t *testing.T) {
+					opts := newTestHeadDefaultOptions(1000, false)
+					if stStorage {
+						opts.EnableSTStorage.Store(true)
+						opts.FloatChunkEncoding.Store(uint32(chunkenc.EncXOR2))
+					}
+					head, _ := newTestHeadWithOptions(t, compression.None, opts)
+					t.Cleanup(func() {
+						// Captures head by reference, so it closes the reopened head.
+						_ = head.Close()
+					})
+					require.NoError(t, head.Init(0))
+
+					lbls := labels.FromStrings("foo", "bar")
+					wantType := chunkenc.ValHistogram
+					if floatHistogram {
+						wantType = chunkenc.ValFloatHistogram
+					}
+
+					// Establish the series as a native histogram.
+					app := head.Appender(context.Background())
+					var err error
+					if floatHistogram {
+						_, err = app.AppendHistogram(0, lbls, 100, nil, tsdbutil.GenerateTestFloatHistogram(1))
+					} else {
+						_, err = app.AppendHistogram(0, lbls, 100, tsdbutil.GenerateTestHistogram(1), nil)
+					}
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+
+					// For the m-mapped case the marker crosses the chunk-range boundary
+					// so the histogram chunk becomes a completed predecessor that gets
+					// m-mapped; on replay those histogram samples are skipped.
+					markerT := int64(200)
+					if mmapped {
+						markerT = 1000
+					}
+
+					// Append the staleness marker in a separate appender so it is logged
+					// as a float record (converted to a histogram marker for the chunk).
+					app = head.Appender(context.Background())
+					_, err = app.Append(0, lbls, markerT, math.Float64frombits(value.StaleNaN))
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+
+					if mmapped {
+						head.mmapHeadChunks()
+						s := head.series.getByHash(lbls.Hash(), lbls)
+						require.NotNil(t, s)
+						s.Lock()
+						nMmapped := len(s.mmappedChunks)
+						s.Unlock()
+						require.NotZero(t, nMmapped, "histogram chunk must be m-mapped for this case")
+					}
+
+					// Reopen, forcing WAL replay of the float staleness record.
+					require.NoError(t, head.Close())
+					wal, err := wlog.NewSize(nil, nil, filepath.Join(head.opts.ChunkDirRoot, "wal"), 32768, compression.None)
+					require.NoError(t, err)
+					head, err = NewHead(nil, nil, wal, nil, head.opts, nil)
+					require.NoError(t, err)
+					require.NoError(t, head.Init(0))
+
+					q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
+					require.NoError(t, err)
+					t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+					ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+					require.True(t, ss.Next())
+					it := ss.At().Iterator(nil)
+
+					var gotType chunkenc.ValueType
+					var found bool
+					for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+						if it.AtT() == markerT {
+							gotType = vt
+							found = true
+						}
+					}
+					require.NoError(t, it.Err())
+					require.False(t, ss.Next())
+					require.NoError(t, ss.Err())
+					require.Empty(t, ss.Warnings())
+					require.True(t, found, "staleness marker not found")
+					require.Equal(t, wantType, gotType, "replayed staleness marker must keep the series' native histogram type")
+				})
+			}
+		}
+	}
+}
+
 func TestHead_NumStaleSeries(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
 	t.Cleanup(func() {
@@ -8625,6 +8840,183 @@ func TestWALReplayRaceWithStaleSeriesCompaction(t *testing.T) {
 	require.Equal(t, uint64(0), head.NumStaleSeries())
 	require.Equal(t, uint64(numNewSeries), head.NumSeries())
 	require.NoError(t, head.Close())
+}
+
+// TestHead_ReadWAL_TombstonesAdvanceLastSeriesID verifies that replay advances
+// lastSeriesID past tombstone refs, regardless of whether the stone's series
+// record exists.
+func TestHead_ReadWAL_TombstonesAdvanceLastSeriesID(t *testing.T) {
+	cases := []struct {
+		name  string
+		stone tombstones.Stone
+	}{
+		{
+			name:  "interval tombstone",
+			stone: tombstones.Stone{Ref: 42, Intervals: []tombstones.Interval{{Mint: 0, Maxt: 100}}},
+		},
+		{
+			name:  "full-range tombstone",
+			stone: tombstones.Stone{Ref: 42, Intervals: []tombstones.Interval{{Mint: math.MinInt64, Maxt: math.MaxInt64}}},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			entries := []any{
+				[]record.RefSeries{
+					{Ref: 10, Labels: labels.FromStrings("a", "1")},
+				},
+				[]record.RefSample{
+					{Ref: 10, T: 100, V: 1},
+				},
+				[]tombstones.Stone{tc.stone},
+			}
+
+			head, w := newTestHead(t, 1000, compression.None, false)
+			defer func() {
+				require.NoError(t, head.Close())
+			}()
+
+			populateTestWL(t, w, entries, nil, false)
+
+			require.NoError(t, head.Init(math.MinInt64))
+
+			require.Equal(t, uint64(42), head.lastSeriesID.Load())
+		})
+	}
+}
+
+// TestStripeSeries_UnlinkHash verifies that unlinkHash removes a series from the hash
+// index while leaving it resolvable by ref. Lookups by labels no longer find it, and a
+// series with the same labels is created fresh instead of aliasing the unlinked one.
+func TestStripeSeries_UnlinkHash(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	lbls := labels.FromStrings("a", "1")
+	s1, created, err := head.getOrCreateWithOptionalID(1, lbls.Hash(), lbls, false)
+	require.NoError(t, err)
+	require.True(t, created)
+
+	head.series.unlinkHash(lbls.Hash(), s1.ref)
+
+	// Gone from the hash index, still resolvable by ref.
+	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
+	require.Same(t, s1, head.series.getByID(s1.ref))
+
+	// A series with the same labels isn't aliased onto s1.
+	s2, created, err := head.getOrCreateWithOptionalID(2, lbls.Hash(), lbls, false)
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Equal(t, chunks.HeadSeriesRef(2), s2.ref)
+}
+
+// TestHead_WALReplay_FullRangeTombstoneDeletesDuplicateRef verifies that a full-range
+// tombstone whose ref was mapped onto another series during replay deletes the series it was mapped to.
+func TestHead_WALReplay_FullRangeTombstoneDeletesDuplicateRef(t *testing.T) {
+	lbls := labels.FromStrings("a", "1")
+	entries := []any{
+		[]record.RefSeries{
+			{Ref: 1, Labels: lbls},
+			// Duplicate record for the same series under a different ref; replay
+			// maps ref 2 onto ref 1.
+			{Ref: 2, Labels: lbls},
+		},
+		[]record.RefSample{
+			{Ref: 2, T: 100, V: 1},
+		},
+		[]tombstones.Stone{
+			{Ref: 2, Intervals: tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}},
+		},
+	}
+
+	head, w := newTestHead(t, 1000, compression.None, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+	populateTestWL(t, w, entries, nil, false)
+
+	require.NoError(t, head.Init(math.MinInt64))
+
+	require.Equal(t, uint64(0), head.NumSeries())
+}
+
+// TestHead_WALCheckpoint_FullRangeTombstones verifies checkpointing of a series deleted
+// during replay by a full-range tombstone. Replay sets a WAL expiry at the series' max
+// sample time, so checkpoints keep its series record and tombstone while the WAL still
+// holds samples for it and drop both once those samples age out.
+func TestHead_WALCheckpoint_FullRangeTombstones(t *testing.T) {
+	lbls1 := labels.FromStrings("a", "1")
+	lbls2 := labels.FromStrings("a", "2")
+	fullRange := tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}
+	walEntries := []any{
+		[]record.RefSeries{{Ref: 1, Labels: lbls1}, {Ref: 2, Labels: lbls2}},
+		[]record.RefSample{
+			{Ref: 1, T: 100, V: 1},
+			{Ref: 1, T: 500, V: 2},
+			{Ref: 2, T: 100, V: 3},
+			{Ref: 2, T: 200, V: 4},
+		},
+		[]tombstones.Stone{
+			{Ref: 1, Intervals: fullRange},
+			{Ref: 2, Intervals: fullRange},
+		},
+	}
+
+	head, w := newTestHead(t, 1000, compression.None, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+	populateTestWL(t, w, walEntries, nil, false)
+	first, _, err := wlog.Segments(w.Dir())
+	require.NoError(t, err)
+
+	require.NoError(t, head.Init(math.MinInt64))
+
+	// Replay applied the tombstones: both series are deleted, and each ref has a WAL
+	// expiry at its max sample time.
+	require.Equal(t, uint64(0), head.NumSeries())
+	keepUntil, ok := head.getWALExpiry(1)
+	require.True(t, ok)
+	require.Equal(t, int64(500), keepUntil)
+	keepUntil, ok = head.getWALExpiry(2)
+	require.True(t, ok)
+	require.Equal(t, int64(200), keepUntil)
+
+	// Checkpoint with mint=250, between the two expiries. Each truncation creates a
+	// new segment, so attempt truncations until a checkpoint is created.
+	for {
+		head.lastWALTruncationTime.Store(0) // Reset so that it's always time to truncate the WAL.
+		require.NoError(t, head.truncateWAL(250))
+		f, _, err := wlog.Segments(w.Dir())
+		require.NoError(t, err)
+		if f > first {
+			break
+		}
+	}
+
+	// The WAL still holds a sample for ref 1 (t=500 >= mint), so its series record
+	// must be kept for the sample to resolve on replay, and its tombstone with it so
+	// the replayed series is deleted again. Ref 2's samples all age out, and its
+	// series record and tombstone are dropped with them.
+	expected := []any{
+		[]record.RefSeries{{Ref: 1, Labels: lbls1}},
+		[]record.RefSample{{Ref: 1, T: 500, V: 2}},
+		[]tombstones.Stone{{Ref: 1, Intervals: fullRange}},
+	}
+	cpDir, _, err := wlog.LastCheckpoint(w.Dir())
+	require.NoError(t, err)
+	recs := append(readTestWAL(t, cpDir), readTestWAL(t, w.Dir())...)
+	testutil.RequireEqual(t, expected, recs)
+
+	// WAL expiries are cleaned up alongside the records they retain.
+	keepUntil, ok = head.getWALExpiry(1)
+	require.True(t, ok, "ref 1 expiry must be retained (500 >= mint 250)")
+	require.Equal(t, int64(500), keepUntil)
+	_, ok = head.getWALExpiry(2)
+	require.False(t, ok, "ref 2 expiry must be cleared (200 < mint 250)")
 }
 
 func TestHead_FastStartupStateFile(t *testing.T) {

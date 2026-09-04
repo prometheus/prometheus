@@ -977,6 +977,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 					minTime:    mint,
 					maxTime:    maxt,
 					numSamples: numSamples,
+					encoding:   encoding,
 				})
 				return nil
 			}
@@ -993,6 +994,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 				minTime:    mint,
 				maxTime:    maxt,
 				numSamples: numSamples,
+				encoding:   encoding,
 			})
 
 			h.updateMinOOOMaxOOOTime(mint, maxt)
@@ -1011,6 +1013,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 				minTime:    mint,
 				maxTime:    maxt,
 				numSamples: numSamples,
+				encoding:   encoding,
 			})
 			mmappedChunks[seriesRef] = slice
 			return nil
@@ -1030,6 +1033,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			minTime:    mint,
 			maxTime:    maxt,
 			numSamples: numSamples,
+			encoding:   encoding,
 		})
 		h.updateMinMaxTime(mint, maxt)
 		if ms.headChunks != nil && maxt >= ms.headChunks.minTime {
@@ -1335,8 +1339,9 @@ func (h *Head) WaitForAppendersOverlapping(maxt int64) {
 }
 
 // IsQuerierCollidingWithTruncation returns if the current querier needs to be closed and if a new querier
-// has to be created. In the latter case, the method also returns the new mint to be used for creating the
-// new range head and the new querier. This methods helps preventing races with the truncation of in-memory data.
+// has to be created. Whenever shouldClose is true, newMint is the lowest time the querier may
+// safely read from the in-order head (the truncation point): in-order data below it has been moved to a
+// block. This methods helps preventing races with the truncation of in-memory data.
 //
 // NOTE: The querier should already be taken before calling this.
 func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) (shouldClose, getNew bool, newMint int64) {
@@ -1357,7 +1362,7 @@ func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) 
 		//   |---query---|
 		// 2.     |------truncation------|
 		//              |---query---|
-		return true, false, 0
+		return true, false, memTruncTime
 	}
 	if querierMint < memTruncTime {
 		// The truncation time is not same as head mint that we saw above but the
@@ -2280,6 +2285,14 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		h.series.hashes[hashStripe].del(hash, series.ref)
 		h.series.locks[hashStripe].Unlock()
 
+		// Keep the series record in checkpoints until its last sample time; while the
+		// WAL may still hold samples for this ref, they can't outlive maxt.
+		if h.wal != nil {
+			if maxt := series.maxTime(); maxt != math.MinInt64 {
+				h.updateWALExpiry(series.ref, maxt)
+			}
+		}
+
 		if value.IsStaleNaN(series.lastValue) ||
 			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
 			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
@@ -2444,6 +2457,16 @@ func (s *stripeSeries) getByHash(hash uint64, lset labels.Labels) *memSeries {
 	s.locks[i].RUnlock()
 
 	return series
+}
+
+// unlinkHash removes the series with the given ref from the hash index, but leaves it
+// in the by-ref map so refs to it remain resolvable until it is fully deleted.
+func (s *stripeSeries) unlinkHash(hash uint64, ref chunks.HeadSeriesRef) {
+	i := hash & uint64(s.size-1)
+
+	s.locks[i].Lock()
+	defer s.locks[i].Unlock()
+	s.hashes[i].del(hash, ref)
 }
 
 func (s *stripeSeries) setUnlessAlreadySet(hash uint64, lset labels.Labels, series *memSeries) (*memSeries, bool) {
@@ -2782,6 +2805,7 @@ func overlapsClosedInterval(mint1, maxt1, mint2, maxt2 int64) bool {
 type mmappedChunk struct {
 	ref              chunks.ChunkDiskMapperRef
 	numSamples       uint16
+	encoding         chunkenc.Encoding
 	minTime, maxTime int64
 }
 

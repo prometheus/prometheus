@@ -2211,6 +2211,7 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(o chunkOpts, logger *slog.Logger) []
 		s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
 			ref:        chunkRef,
 			numSamples: uint16(memchunk.chunk.NumSamples()),
+			encoding:   memchunk.chunk.Encoding(),
 			minTime:    memchunk.minTime,
 			maxTime:    memchunk.maxTime,
 		})
@@ -2235,6 +2236,7 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 		s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
 			ref:        chunkRef,
 			numSamples: uint16(chk.chunk.NumSamples()),
+			encoding:   chk.chunk.Encoding(),
 			minTime:    chk.minTime,
 			maxTime:    chk.maxTime,
 		})
