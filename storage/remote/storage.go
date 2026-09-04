@@ -216,7 +216,7 @@ func (s *Storage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 		}
 		queriers = append(queriers, q)
 	}
-	return storage.NewMergeChunkQuerier(nil, queriers, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), nil
+	return storage.NewMergeChunkQuerier(nil, queriers, storage.NewCompactingChunkSeriesMergerWithFloatEncoding(storage.ChainedSeriesMerge, s.floatEncodingNow)), nil
 }
 
 // Appender implements storage.Storage.
