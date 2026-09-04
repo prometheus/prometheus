@@ -16,6 +16,7 @@ package wlog
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -30,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -383,6 +385,68 @@ func TestCheckpoint(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestCheckpoint_Tombstones verifies tombstone retention. A tombstone is dropped
+// together with its series record, or once all its intervals age out of the WAL.
+func TestCheckpoint_Tombstones(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	seg, err := CreateSegment(dir, 0)
+	require.NoError(t, err)
+	require.NoError(t, seg.Close())
+
+	w, err := NewSize(nil, nil, dir, 128*1024, compression.None)
+	require.NoError(t, err)
+	var enc record.Encoder
+	fullRange := tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}
+	require.NoError(t, w.Log(enc.Tombstones([]tombstones.Stone{
+		// Full-range tombstones: kept iff keep(ref).
+		{Ref: 1, Intervals: fullRange},
+		{Ref: 2, Intervals: fullRange},
+		// Finite intervals with keep(ref) = true: kept iff they extend past mint.
+		{Ref: 3, Intervals: tombstones.Intervals{{Mint: 0, Maxt: 100}}},
+		{Ref: 4, Intervals: tombstones.Intervals{{Mint: 0, Maxt: 5}}},
+		// Dropped because keep(ref) is false, even though their intervals extend past mint.
+		{Ref: 5, Intervals: tombstones.Intervals{{Mint: 1000, Maxt: math.MaxInt64}}},
+		{Ref: 6, Intervals: tombstones.Intervals{{Mint: 0, Maxt: 100}}},
+	}, nil)))
+	first, last, err := Segments(w.Dir())
+	require.NoError(t, err)
+	_, err = w.NextSegment()
+	require.NoError(t, err)
+
+	_, err = Checkpoint(promslog.NewNopLogger(), w, first, last, func(id chunks.HeadSeriesRef) bool {
+		return id == 2 || id == 3 || id == 4
+	}, 10, false)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	cpDir, _, err := LastCheckpoint(w.Dir())
+	require.NoError(t, err)
+	sr, err := NewSegmentsReader(cpDir)
+	require.NoError(t, err)
+	defer sr.Close()
+
+	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+	r := NewReader(sr)
+	var stones []tombstones.Stone
+	for r.Next() {
+		rec := r.Record()
+		if dec.Type(rec) == record.Tombstones {
+			stones, err = dec.Tombstones(rec, stones)
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, r.Err())
+
+	expected := []tombstones.Stone{
+		// Refs 1, 5, and 6 are dropped by keep(ref); ref 4 aged out.
+		{Ref: 2, Intervals: fullRange},
+		{Ref: 3, Intervals: tombstones.Intervals{{Mint: 0, Maxt: 100}}},
+	}
+	require.Equal(t, expected, stones)
 }
 
 // TestCheckpointV2HistogramsToV1 verifies that when a WAL contains V2 histogram
