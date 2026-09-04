@@ -96,6 +96,7 @@ func DefaultOptions() *Options {
 		OutOfOrderCapMax:            DefaultOutOfOrderCapMax,
 		EnableOverlappingCompaction: true,
 		EnableSharding:              false,
+		ShardedPostingsBuckets:      DefaultShardedPostingsBuckets,
 		EnableDelayedCompaction:     false,
 		FloatChunkEncoding:          chunkenc.EncXOR,
 		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
@@ -212,6 +213,20 @@ type Options struct {
 
 	// EnableSharding enables query sharding support in TSDB.
 	EnableSharding bool
+
+	// ShardedPostingsBuckets is the number of shard hash buckets the head
+	// indexes series into for ShardedPostings. Positive values must be powers of
+	// two; shard counts that are powers of two use the bucket index, with counts
+	// larger than the bucket count served from a single bucket plus a hash
+	// sub-filter. Other shard counts fall back to per-series filtering. 0 means
+	// DefaultShardedPostingsBuckets, and negative values disable the bucket index
+	// while keeping sharding enabled through the generic fallback.
+	// Only used when EnableSharding is true.
+	ShardedPostingsBuckets int
+
+	// ShardedPostingsBufferRecycler optionally reuses dirty-repair buffers. A
+	// recycler may be shared across DBs.
+	ShardedPostingsBufferRecycler *ShardedPostingsBufferRecycler
 
 	// EnableDelayedCompaction, when set to true, assigns a random value to CompactionDelay during DB opening.
 	// When set to false, delayed compaction is disabled, unless CompactionDelay is set directly.
@@ -972,6 +987,11 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64, error) {
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
 	}
+	if opts.EnableSharding {
+		if err := validateShardedPostingsBuckets(opts.ShardedPostingsBuckets); err != nil {
+			return nil, nil, err
+		}
+	}
 	if opts.BlockReloadInterval == 0 {
 		opts.BlockReloadInterval = defaultBlockReloadInterval
 	} else if opts.BlockReloadInterval < MinBlockReloadInterval {
@@ -1162,6 +1182,8 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
+	headOpts.ShardedPostingsBuckets = opts.ShardedPostingsBuckets
+	headOpts.ShardedPostingsBufferRecycler = opts.ShardedPostingsBufferRecycler
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
 	headOpts.EnableSTStorage.Store(opts.EnableSTStorage)
 	headOpts.FloatChunkEncoding.Store(uint32(opts.FloatChunkEncoding))
