@@ -24,6 +24,23 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
+// FloatEncodingFunc returns the chunk encoding to use for float chunks encoded
+// in memory. Only EncXOR and EncXOR2 are meaningful; any other value, and a nil
+// FloatEncodingFunc, behave like EncXOR. Implementations must be safe for
+// concurrent use and may return a different value on each call, e.g. when backed
+// by runtime-reloadable configuration. Samples carrying a start timestamp are
+// always encoded as XOR2, as plain XOR chunks cannot store start timestamps.
+type FloatEncodingFunc func() chunkenc.Encoding
+
+// resolveFloatEncoding returns the encoding f asks for, defaulting to EncXOR
+// when f is nil.
+func resolveFloatEncoding(f FloatEncodingFunc) chunkenc.Encoding {
+	if f == nil {
+		return chunkenc.EncXOR
+	}
+	return f()
+}
+
 type SeriesEntry struct {
 	Lset             labels.Labels
 	SampleIteratorFn func(chunkenc.Iterator) chunkenc.Iterator
@@ -289,11 +306,22 @@ func newChunkToSeriesDecoder(labels labels.Labels, chk chunks.Meta) Series {
 
 type seriesSetToChunkSet struct {
 	SeriesSet
+	// floatEncoding is consulted on every At call.
+	floatEncoding FloatEncodingFunc
 }
 
 // NewSeriesSetToChunkSet converts SeriesSet to ChunkSeriesSet by encoding chunks from samples.
 func NewSeriesSetToChunkSet(chk SeriesSet) ChunkSeriesSet {
-	return &seriesSetToChunkSet{SeriesSet: chk}
+	return NewSeriesSetToChunkSetWithFloatEncoding(chk, nil)
+}
+
+// NewSeriesSetToChunkSetWithFloatEncoding is like NewSeriesSetToChunkSet, but
+// float samples are encoded with the encoding returned by floatEncoding. Unlike
+// NewSeriesToChunkEncoderWithFloatEncoding, which encodes a single series and so
+// takes a plain encoding, this takes a FloatEncodingFunc: it is consulted on
+// every At call, so two series of one set may be encoded differently.
+func NewSeriesSetToChunkSetWithFloatEncoding(chk SeriesSet, floatEncoding FloatEncodingFunc) ChunkSeriesSet {
+	return &seriesSetToChunkSet{SeriesSet: chk, floatEncoding: floatEncoding}
 }
 
 func (c *seriesSetToChunkSet) Next() bool {
@@ -304,7 +332,7 @@ func (c *seriesSetToChunkSet) Next() bool {
 }
 
 func (c *seriesSetToChunkSet) At() ChunkSeries {
-	return NewSeriesToChunkEncoder(c.SeriesSet.At())
+	return NewSeriesToChunkEncoderWithFloatEncoding(c.SeriesSet.At(), resolveFloatEncoding(c.floatEncoding))
 }
 
 func (c *seriesSetToChunkSet) Err() error {
