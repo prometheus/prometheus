@@ -390,7 +390,7 @@ type timestampTrackerV2 struct {
 }
 
 // Append implements storage.AppenderV2.
-func (t *timestampTrackerV2) Append(ref storage.SeriesRef, _ labels.Labels, _, ts int64, _ float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+func (t *timestampTrackerV2) Append(ref storage.SeriesRef, _ labels.Labels, _, ts int64, _ float64, h *histogram.Histogram, fh *histogram.FloatHistogram, _ storage.AOptions) (storage.SeriesRef, error) {
 	switch {
 	case fh != nil, h != nil:
 		t.histograms++
@@ -400,6 +400,10 @@ func (t *timestampTrackerV2) Append(ref storage.SeriesRef, _ labels.Labels, _, t
 	if ts > t.highestTimestamp {
 		t.highestTimestamp = ts
 	}
-	t.exemplars += int64(len(opts.Exemplars))
+	return ref, nil
+}
+
+func (t *timestampTrackerV2) AppendExemplars(ref storage.SeriesRef, _ labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	t.exemplars += int64(len(exemplars))
 	return ref, nil
 }

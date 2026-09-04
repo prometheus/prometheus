@@ -1345,12 +1345,14 @@ func TestHeadAppenderV2_AppendExemplars(t *testing.T) {
 
 	l := labels.FromStrings("trace_id", "123")
 
+	ls := labels.FromStrings("a", "b")
+	ref, err := app.Append(0, ls, 0, 100, 100, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+
 	// It is perfectly valid to add Exemplars before the current start time -
 	// histogram buckets that haven't been update in a while could still be
 	// exported exemplars from an hour ago.
-	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 100, 100, nil, nil, storage.AOptions{
-		Exemplars: []exemplar.Exemplar{{Labels: l, HasTs: true, Ts: -1000, Value: 1}},
-	})
+	_, err = app.AppendExemplars(ref, ls, []exemplar.Exemplar{{Labels: l, HasTs: true, Ts: -1000, Value: 1}})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.NoError(t, head.Close())
@@ -2052,15 +2054,15 @@ func TestChunkSnapshot_AppenderV2(t *testing.T) {
 
 					// 240 samples should m-map at least 1 chunk.
 					for ts := int64(1); ts <= 240; ts++ {
-						// Add an exemplar, but only to float sample.
-						aOpts := storage.AOptions{}
-						if ts%10 == 0 {
-							aOpts.Exemplars = []exemplar.Exemplar{newExemplar(lbls, ts)}
-						}
 						val := rand.Float64()
 						expSeries[lblStr] = append(expSeries[lblStr], sample{0, ts, val, nil, nil})
-						_, err := app.Append(0, lbls, 0, ts, val, nil, nil, aOpts)
+						ref, err := app.Append(0, lbls, 0, ts, val, nil, nil, storage.AOptions{})
 						require.NoError(t, err)
+						// Add an exemplar, but only to float sample.
+						if ts%10 == 0 {
+							_, err := app.AppendExemplars(ref, lbls, []exemplar.Exemplar{newExemplar(lbls, ts)})
+							require.NoError(t, err)
+						}
 
 						hist := histograms[int(ts)]
 						expHist[lblsHistStr] = append(expHist[lblsHistStr], sample{0, ts, 0, hist, nil})
@@ -2130,15 +2132,15 @@ func TestChunkSnapshot_AppenderV2(t *testing.T) {
 
 					// 240 samples should m-map at least 1 chunk.
 					for ts := int64(241); ts <= 480; ts++ {
-						// Add an exemplar, but only to float sample.
-						aOpts := storage.AOptions{}
-						if ts%10 == 0 {
-							aOpts.Exemplars = []exemplar.Exemplar{newExemplar(lbls, ts)}
-						}
 						val := rand.Float64()
 						expSeries[lblStr] = append(expSeries[lblStr], sample{0, ts, val, nil, nil})
-						_, err := app.Append(0, lbls, 0, ts, val, nil, nil, aOpts)
+						ref, err := app.Append(0, lbls, 0, ts, val, nil, nil, storage.AOptions{})
 						require.NoError(t, err)
+						// Add an exemplar, but only to float sample.
+						if ts%10 == 0 {
+							_, err := app.AppendExemplars(ref, lbls, []exemplar.Exemplar{newExemplar(lbls, ts)})
+							require.NoError(t, err)
+						}
 
 						hist := histograms[int(ts)]
 						expHist[lblsHistStr] = append(expHist[lblsHistStr], sample{0, ts, 0, hist, nil})
@@ -3946,19 +3948,19 @@ func TestWALSampleAndExemplarOrder_AppenderV2(t *testing.T) {
 	}{
 		"float sample": {
 			appendF: func(app storage.AppenderV2, ts int64) (storage.SeriesRef, error) {
-				return app.Append(0, lbls, 0, ts, 1.0, nil, nil, storage.AOptions{Exemplars: []exemplar.Exemplar{{Value: 1.0, Ts: 5}}})
+				return app.Append(0, lbls, 0, ts, 1.0, nil, nil, storage.AOptions{})
 			},
 			expectedType: reflect.TypeFor[[]record.RefSample](),
 		},
 		"histogram sample": {
 			appendF: func(app storage.AppenderV2, ts int64) (storage.SeriesRef, error) {
-				return app.Append(0, lbls, 0, ts, 0, tsdbutil.GenerateTestHistogram(1), nil, storage.AOptions{Exemplars: []exemplar.Exemplar{{Value: 1.0, Ts: 5}}})
+				return app.Append(0, lbls, 0, ts, 0, tsdbutil.GenerateTestHistogram(1), nil, storage.AOptions{})
 			},
 			expectedType: reflect.TypeFor[[]record.RefHistogramSample](),
 		},
 		"float histogram sample": {
 			appendF: func(app storage.AppenderV2, ts int64) (storage.SeriesRef, error) {
-				return app.Append(0, lbls, 0, ts, 0, nil, tsdbutil.GenerateTestFloatHistogram(1), storage.AOptions{Exemplars: []exemplar.Exemplar{{Value: 1.0, Ts: 5}}})
+				return app.Append(0, lbls, 0, ts, 0, nil, tsdbutil.GenerateTestFloatHistogram(1), storage.AOptions{})
 			},
 			expectedType: reflect.TypeFor[[]record.RefFloatHistogramSample](),
 		},
@@ -3972,7 +3974,10 @@ func TestWALSampleAndExemplarOrder_AppenderV2(t *testing.T) {
 			}()
 
 			app := h.AppenderV2(context.Background())
-			_, err := tc.appendF(app, 10)
+			ref, err := tc.appendF(app, 10)
+			require.NoError(t, err)
+
+			_, err = app.AppendExemplars(ref, lbls, []exemplar.Exemplar{{Value: 1.0, Ts: 5}})
 			require.NoError(t, err)
 
 			require.NoError(t, app.Commit())
