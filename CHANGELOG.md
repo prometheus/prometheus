@@ -9,6 +9,7 @@
 - [BUGFIX] Alerting: Fix 100% CPU usage on shutdown that could delay graceful shutdown and trigger timeout-based kills. #17859
 - [BUGFIX] TSDB: Fix out-of-order queries blocking compaction for hours, causing memory usage to grow. #19013
 - [BUGFIX] TSDB: Fix deleted series causing missing samples and errors after restart. #19140
+- [BUGFIX] TSDB: Fix native histogram data becoming incorrect after restart. #19202
 - [BUGFIX] TSDB: Fix goroutine and file handle leaks when Prometheus fails to open a corrupt TSDB. On Windows, the leaked directory handle also prevented TSDB directory removal. #18291
 
 ## 3.13.2 / 2026-07-29
