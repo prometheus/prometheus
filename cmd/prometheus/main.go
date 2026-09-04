@@ -952,7 +952,7 @@ func main() {
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
 		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
-		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
+		fanoutStorage = newFanoutStorage(logger, localStorage, remoteStorage, cfg.tsdb.FloatChunkEncoding)
 	)
 
 	var (
@@ -1906,6 +1906,16 @@ func (s *readyStorage) StartTime() (int64, error) {
 	return math.MaxInt64, tsdb.ErrNotReady
 }
 
+// floatChunkEncoding returns the float chunk encoding currently used by the
+// underlying TSDB, or EncNone if the storage is not ready yet or does not
+// store chunks (agent mode).
+func (s *readyStorage) floatChunkEncoding() chunkenc.Encoding {
+	if db, ok := s.get().(*tsdb.DB); ok {
+		return db.FloatChunkEncoding()
+	}
+	return chunkenc.EncNone
+}
+
 // Querier implements the Storage interface.
 func (s *readyStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 	if x := s.get(); x != nil {
@@ -1950,6 +1960,37 @@ func (s *readyStorage) AppenderV2(ctx context.Context) storage.AppenderV2 {
 		return x.AppenderV2(ctx)
 	}
 	return notReadyAppenderV2{}
+}
+
+// newFloatChunkEncodingFn returns a getter for the float chunk encoding used
+// when chunks are encoded in memory rather than read from disk, e.g. from
+// remote read samples, or while compacting overlaps between the local TSDB and
+// a remote read endpoint. It follows the local TSDB, which tracks runtime
+// configuration reloads.
+//
+// The fallback is defensive: it applies while the local storage is not ready or
+// does not store chunks (agent mode), which no chunk query reaches today, as
+// fanout.ChunkQuerier returns early when the primary errors with tsdb.ErrNotReady
+// or with agent.ErrUnsupported.
+func newFloatChunkEncodingFn(localStorage *readyStorage, fallback chunkenc.Encoding) storage.FloatEncodingFunc {
+	return func() chunkenc.Encoding {
+		if enc := localStorage.floatChunkEncoding(); enc != chunkenc.EncNone {
+			return enc
+		}
+		return fallback
+	}
+}
+
+// newFanoutStorage returns the storage fanout used by the Prometheus server,
+// with the float chunk encoding getter wired into both halves of the read path:
+// the fanout, which re-encodes overlaps between the local TSDB and the remote
+// read endpoints, and the remote storage, whose read queryables encode the
+// samples they read into chunks. Both must see the same getter, otherwise a
+// single chunk query can mix encodings.
+func newFanoutStorage(logger *slog.Logger, localStorage *readyStorage, remoteStorage *remote.Storage, fallbackFloatChunkEncoding chunkenc.Encoding) storage.Storage {
+	floatChunkEncoding := newFloatChunkEncodingFn(localStorage, fallbackFloatChunkEncoding)
+	remoteStorage.SetFloatEncoding(floatChunkEncoding)
+	return storage.NewFanoutWithOptions(logger, storage.FanoutOptions{FloatEncoding: floatChunkEncoding}, localStorage, remoteStorage)
 }
 
 type notReadyAppender struct{}

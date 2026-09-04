@@ -106,7 +106,7 @@ func (h *readHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch responseType {
 	case prompb.ReadRequest_STREAMED_XOR_CHUNKS:
-		h.remoteReadStreamedXORChunks(ctx, w, req, externalLabels, sortedExternalLabels)
+		h.remoteReadStreamedChunks(ctx, w, req, externalLabels, sortedExternalLabels)
 	default:
 		// On empty or unknown types in req.AcceptedResponseTypes we default to non streamed, raw samples response.
 		h.remoteReadSamples(ctx, w, req, externalLabels, sortedExternalLabels)
@@ -186,7 +186,11 @@ func (h *readHandler) remoteReadSamples(
 	}
 }
 
-func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest, externalLabels map[string]string, sortedExternalLabels []prompb.Label) {
+// remoteReadStreamedChunks streams the chunks of the queried series to the client.
+// The chunks are sent with whichever encoding the underlying storage used, which is
+// not necessarily XOR: the STREAMED_XOR_CHUNKS response type name is historical and
+// wire-visible, and the protocol does not negotiate chunk encodings.
+func (h *readHandler) remoteReadStreamedChunks(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest, externalLabels map[string]string, sortedExternalLabels []prompb.Label) {
 	w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
 
 	f, ok := w.(http.Flusher)
