@@ -19,6 +19,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -44,6 +45,63 @@ func TestParseFileSuccess(t *testing.T) {
 	require.Empty(t, errs, "unexpected errors parsing file")
 	_, errs = ParseFile("testdata/legacy_validation_annotation.good.yaml", false, model.LegacyValidation, testParser, testLogger)
 	require.Empty(t, errs, "unexpected errors parsing file")
+}
+
+func TestRecordingRuleMetadata(t *testing.T) {
+	ruleFile := []byte(`groups:
+- name: example
+  rules:
+  - record: job:http_requests_total:sum
+    expr: sum by (job) (http_requests_total)
+    description: Total HTTP requests by job.
+    type: counter
+`)
+
+	groups, errs := Parse(ruleFile, false, model.UTF8Validation, testParser, testLogger)
+	require.Empty(t, errs)
+	require.Len(t, groups.Groups, 1)
+	require.Len(t, groups.Groups[0].Rules, 1)
+	require.Equal(t, "Total HTTP requests by job.", groups.Groups[0].Rules[0].Description)
+	require.Equal(t, model.MetricTypeCounter, groups.Groups[0].Rules[0].Type)
+}
+
+func TestRecordingRuleMetadataValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		rule    string
+		errText string
+	}{
+		{
+			name: "invalid metric type",
+			rule: `record: test_metric
+expr: vector(1)
+type: invalid`,
+			errText: "invalid recording rule metric type: invalid",
+		},
+		{
+			name: "description on alerting rule",
+			rule: `alert: TestAlert
+expr: vector(1)
+description: not supported`,
+			errText: "invalid field 'description' in alerting rule",
+		},
+		{
+			name: "metric type on alerting rule",
+			rule: `alert: TestAlert
+expr: vector(1)
+type: gauge`,
+			errText: "invalid field 'type' in alerting rule",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ruleFile := []byte("groups:\n- name: example\n  rules:\n  - " + strings.ReplaceAll(test.rule, "\n", "\n    ") + "\n")
+			_, errs := Parse(ruleFile, false, model.UTF8Validation, testParser, testLogger)
+			require.NotEmpty(t, errs)
+			require.ErrorContains(t, errs[0], test.errText)
+		})
+	}
 }
 
 func TestParseFileSuccessWithAliases(t *testing.T) {
