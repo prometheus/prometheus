@@ -162,6 +162,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 
 				l := labels.Labels{}
 				p.Labels(&l)
+				l = l.Copy()
 
 				lb.Reset(l)
 				for name, value := range customLabels {

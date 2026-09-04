@@ -148,7 +148,7 @@ func (p *NHCBParser) Labels(l *labels.Labels) {
 		*l = p.lsetNHCB
 		return
 	}
-	*l = p.lset
+	*l = p.lset.Copy()
 }
 
 func (p *NHCBParser) Exemplar(ex *exemplar.Exemplar) bool {
