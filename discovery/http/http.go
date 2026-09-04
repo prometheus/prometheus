@@ -56,6 +56,7 @@ type SDConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
 	URL              string                  `yaml:"url"`
+	UseETag          bool                    `yaml:"use_etag"`
 }
 
 // NewDiscovererMetrics implements discovery.Config.
@@ -111,6 +112,8 @@ type Discovery struct {
 	refreshInterval time.Duration
 	tgLastLength    int
 	metrics         *httpMetrics
+	useEtag         bool
+	etag            string
 }
 
 // NewDiscovery returns a new HTTP discovery for the given config.
@@ -135,6 +138,7 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery,
 		client:          client,
 		refreshInterval: time.Duration(conf.RefreshInterval), // Stored to be sent as headers.
 		metrics:         m,
+		useEtag:         conf.UseETag,
 	}
 
 	d.Discovery = refresh.NewDiscovery(
@@ -158,6 +162,9 @@ func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Prometheus-Refresh-Interval-Seconds", strconv.FormatFloat(d.refreshInterval.Seconds(), 'f', -1, 64))
+	if d.useEtag && d.etag != "" {
+		req.Header.Set("If-None-Match", d.etag)
+	}
 
 	resp, err := d.client.Do(req.WithContext(ctx))
 	if err != nil {
@@ -169,6 +176,9 @@ func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		resp.Body.Close()
 	}()
 
+	if d.useEtag && req.Header.Get("If-None-Match") != "" && resp.StatusCode == http.StatusNotModified {
+		return nil, nil
+	}
 	if resp.StatusCode != http.StatusOK {
 		d.metrics.failuresCount.Inc()
 		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
@@ -213,6 +223,9 @@ func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	}
 	d.tgLastLength = l
 
+	if d.useEtag {
+		d.etag = resp.Header.Get("etag")
+	}
 	return targetGroups, nil
 }
 
