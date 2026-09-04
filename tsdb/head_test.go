@@ -284,15 +284,25 @@ func BenchmarkLoadWLs(b *testing.B) {
 			bucketsPerHistogram: 8,
 		},
 	}
+	if testing.Short() {
+		for i := range cases {
+			cases[i].batches = min(cases[i].batches, 2)
+			cases[i].seriesPerBatch = min(cases[i].seriesPerBatch, 10)
+			cases[i].samplesPerSeries = min(cases[i].samplesPerSeries, 100)
+			if cases[i].mmappedChunkT > 0 {
+				cases[i].mmappedChunkT = 500
+			}
+		}
+	}
 
 	labelsPerSeries := 5
 	// Rough estimates of most common % of samples that have an exemplar for each scrape.
 	exemplarsPercentages := []float64{0, 0.5, 1, 5}
-	lastExemplarsPerSeries := -1
 	for _, enableSTStorage := range []bool{false, true} {
 		for _, c := range cases {
 			missingSeriesPercentages := []float64{0, 0.1}
 			for _, missingSeriesPct := range missingSeriesPercentages {
+				lastExemplarsPerSeries := -1
 				for _, p := range exemplarsPercentages {
 					exemplarsPerSeries := int(math.RoundToEven(float64(c.samplesPerSeries) * p / 100))
 					// For tests with low samplesPerSeries we could end up testing with 0 exemplarsPerSeries
@@ -495,6 +505,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 							b.ResetTimer()
 
 							// Load the WAL.
+							var heads []*Head
 							for b.Loop() {
 								opts := DefaultHeadOptions()
 								opts.ChunkRange = 1000
@@ -504,9 +515,17 @@ func BenchmarkLoadWLs(b *testing.B) {
 								}
 								h, err := NewHead(nil, nil, wal, wbl, opts, nil)
 								require.NoError(b, err)
-								h.Init(0)
+								require.NoError(b, h.Init(0))
+								heads = append(heads, h)
 							}
 							b.StopTimer()
+							for _, h := range heads {
+								// Each iteration replays the same logs, which are owned by the
+								// benchmark and closed after all Heads are cleaned up.
+								h.wal = nil
+								h.wbl = nil
+								require.NoError(b, h.Close())
+							}
 							wal.Close()
 							if wbl != nil {
 								wbl.Close()
@@ -1562,7 +1581,10 @@ func TestHead_UnknownWALRecord(t *testing.T) {
 // BenchmarkHead_Truncate is quite heavy, so consider running it with
 // -benchtime=10x or similar to get more stable and comparable results.
 func BenchmarkHead_Truncate(b *testing.B) {
-	const total = 1e6
+	total := 1000000
+	if testing.Short() {
+		total = 1000
+	}
 
 	prepare := func(b *testing.B, churn int) *Head {
 		h, _ := newTestHead(b, 1000, compression.None, false)
@@ -1585,9 +1607,9 @@ func BenchmarkHead_Truncate(b *testing.B) {
 			return s
 		}
 
-		allSeries := [total]labels.Labels{}
+		allSeries := make([]labels.Labels, total)
 		nameValues := make([]string, 0, 100)
-		for i := range int(total) {
+		for i := range total {
 			nameValues = nameValues[:0]
 
 			// A thousand labels like lbl_x_of_1000, each with total/1000 values
@@ -4104,6 +4126,9 @@ func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 	app := head.Appender(context.Background())
 
 	metricCount := 1000000
+	if testing.Short() {
+		metricCount = 1000
+	}
 	for i := range metricCount {
 		_, err := app.Append(0, labels.FromStrings(
 			"a_unique", fmt.Sprintf("value%d", i),

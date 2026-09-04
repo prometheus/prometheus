@@ -45,10 +45,14 @@ func BenchmarkQuerier(b *testing.B) {
 	addSeries := func(l labels.Labels) {
 		app.Append(0, l, 0, 0)
 	}
+	seriesPerValue := 100000
+	if testing.Short() {
+		seriesPerValue = 100
+	}
 
 	for n := range 10 {
 		addSeries(labels.FromStrings("a", strconv.Itoa(n)+postingsBenchSuffix))
-		for i := range 100000 {
+		for i := range seriesPerValue {
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", strconv.Itoa(n)+postingsBenchSuffix, "j", "foo"))
 			// Have some series that won't be matched, to properly test inverted matches.
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", strconv.Itoa(n)+postingsBenchSuffix, "j", "bar"))
@@ -311,6 +315,9 @@ func benchmarkSelect(b *testing.B, queryable storage.Queryable, numSeries int, s
 
 func BenchmarkQuerierSelect(b *testing.B) {
 	numSeries := 1000000
+	if testing.Short() {
+		numSeries = 100
+	}
 	h, db := createHeadForBenchmarkSelect(b, numSeries, func(app storage.Appender, i int) {
 		_, err := app.Append(0, labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0)
 		if err != nil {
@@ -348,6 +355,9 @@ func (pb *queryableBlock) Querier(mint, maxt int64) (storage.Querier, error) {
 
 func BenchmarkQuerierSelectWithOutOfOrder(b *testing.B) {
 	numSeries := 1000000
+	if testing.Short() {
+		numSeries = 100
+	}
 	_, db := createHeadForBenchmarkSelect(b, numSeries, func(app storage.Appender, i int) {
 		l := labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix))
 		ref, err := app.Append(0, l, int64(i+1), 0)
