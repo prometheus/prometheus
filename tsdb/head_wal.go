@@ -672,6 +672,109 @@ func (h *Head) appendChunkAndMmap(ms *memSeries, appendFn func() bool) bool {
 	return chunkCreated
 }
 
+// valueTypeForChunkEncoding maps a chunk encoding to the sample value type it holds.
+func valueTypeForChunkEncoding(enc chunkenc.Encoding) chunkenc.ValueType {
+	switch enc {
+	case chunkenc.EncXOR, chunkenc.EncXOR2:
+		return chunkenc.ValFloat
+	case chunkenc.EncHistogram:
+		return chunkenc.ValHistogram
+	case chunkenc.EncFloatHistogram:
+		return chunkenc.ValFloatHistogram
+	default:
+		return chunkenc.ValNone
+	}
+}
+
+// latestInOrderValueType reports the value type of the series' most recent
+// in-order sample, taken from the newest materialized chunk. During WAL replay a
+// series' last-value pointers do not reflect samples already covered by m-mapped
+// chunks (those samples are skipped), so the chunk encoding is authoritative: it
+// recovers the histogram type when the preceding samples live only in an m-mapped
+// chunk. It falls back to the last-value fields when no chunk is present, and
+// defaults to ValFloat for a series with no in-order sample yet.
+func (s *memSeries) latestInOrderValueType() chunkenc.ValueType {
+	switch {
+	case s.headChunks != nil:
+		return valueTypeForChunkEncoding(s.headChunks.chunk.Encoding())
+	case len(s.mmappedChunks) > 0:
+		return valueTypeForChunkEncoding(s.mmappedChunks[len(s.mmappedChunks)-1].encoding)
+	case s.lastHistogramValue != nil:
+		return chunkenc.ValHistogram
+	case s.lastFloatHistogramValue != nil:
+		return chunkenc.ValFloatHistogram
+	default:
+		return chunkenc.ValFloat
+	}
+}
+
+// appendWALFloat replays a float sample and updates the stale-series gauge. A
+// staleness marker for a series whose most recent in-order sample is a native
+// histogram is converted to a (float) histogram staleness marker, matching the
+// live commitFloats path, so replay reproduces the same chunk types instead of
+// appending a float to a histogram series.
+func (h *Head) appendWALFloat(ms *memSeries, s record.RefSample, opts chunkOpts) {
+	if value.IsStaleNaN(s.V) {
+		// Mirror commitFloats: decide the marker type from the series' most recent
+		// in-order sample. Its type is taken from the newest chunk so that a
+		// preceding histogram in an m-mapped chunk (whose samples replay skips) is
+		// still recognised.
+		switch ms.latestInOrderValueType() {
+		case chunkenc.ValHistogram:
+			h.appendWALHistogram(ms, s.ST, s.T, &histogram.Histogram{Sum: s.V}, nil, opts)
+			return
+		case chunkenc.ValFloatHistogram:
+			h.appendWALHistogram(ms, s.ST, s.T, nil, &histogram.FloatHistogram{Sum: s.V}, opts)
+			return
+		}
+	}
+
+	if !value.IsStaleNaN(ms.lastValue) && value.IsStaleNaN(s.V) {
+		h.numStaleSeries.Inc()
+	}
+	if value.IsStaleNaN(ms.lastValue) && !value.IsStaleNaN(s.V) {
+		h.numStaleSeries.Dec()
+	}
+
+	h.appendChunkAndMmap(ms, func() bool {
+		_, chunkCreated := ms.append(s.ST, s.T, s.V, 0, opts)
+		return chunkCreated
+	})
+}
+
+// appendWALHistogram replays an integer or float histogram sample (exactly one of
+// hist/floatHist must be non-nil) and updates the stale-series gauge.
+func (h *Head) appendWALHistogram(ms *memSeries, st, t int64, hist *histogram.Histogram, floatHist *histogram.FloatHistogram, opts chunkOpts) {
+	var newlyStale, staleToNonStale bool
+	if hist != nil {
+		newlyStale = value.IsStaleNaN(hist.Sum)
+		if ms.lastHistogramValue != nil {
+			newlyStale = newlyStale && !value.IsStaleNaN(ms.lastHistogramValue.Sum)
+			staleToNonStale = value.IsStaleNaN(ms.lastHistogramValue.Sum) && !value.IsStaleNaN(hist.Sum)
+		}
+		h.appendChunkAndMmap(ms, func() bool {
+			_, chunkCreated := ms.appendHistogram(st, t, hist, 0, opts)
+			return chunkCreated
+		})
+	} else {
+		newlyStale = value.IsStaleNaN(floatHist.Sum)
+		if ms.lastFloatHistogramValue != nil {
+			newlyStale = newlyStale && !value.IsStaleNaN(ms.lastFloatHistogramValue.Sum)
+			staleToNonStale = value.IsStaleNaN(ms.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(floatHist.Sum)
+		}
+		h.appendChunkAndMmap(ms, func() bool {
+			_, chunkCreated := ms.appendFloatHistogram(st, t, floatHist, 0, opts)
+			return chunkCreated
+		})
+	}
+	if newlyStale {
+		h.numStaleSeries.Inc()
+	}
+	if staleToNonStale {
+		h.numStaleSeries.Dec()
+	}
+}
+
 // processWALSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
 // Samples before the minValidTime timestamp are discarded.
@@ -717,17 +820,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				continue
 			}
 
-			if !value.IsStaleNaN(ms.lastValue) && value.IsStaleNaN(s.V) {
-				h.numStaleSeries.Inc()
-			}
-			if value.IsStaleNaN(ms.lastValue) && !value.IsStaleNaN(s.V) {
-				h.numStaleSeries.Dec()
-			}
-
-			h.appendChunkAndMmap(ms, func() bool {
-				_, chunkCreated := ms.append(s.ST, s.T, s.V, 0, appendChunkOpts)
-				return chunkCreated
-			})
+			h.appendWALFloat(ms, s, appendChunkOpts)
 			if s.T > maxt {
 				maxt = s.T
 			}
@@ -753,35 +846,11 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if s.t <= ms.mmMaxTime {
 				continue
 			}
-			var newlyStale, staleToNonStale bool
+			// TODO(krajorama,ywwg): Pass ST when available in WBL.
 			if s.h != nil {
-				newlyStale = value.IsStaleNaN(s.h.Sum)
-				if ms.lastHistogramValue != nil {
-					newlyStale = newlyStale && !value.IsStaleNaN(ms.lastHistogramValue.Sum)
-					staleToNonStale = value.IsStaleNaN(ms.lastHistogramValue.Sum) && !value.IsStaleNaN(s.h.Sum)
-				}
-				// TODO(krajorama,ywwg): Pass ST when available in WBL.
-				h.appendChunkAndMmap(ms, func() bool {
-					_, chunkCreated := ms.appendHistogram(0, s.t, s.h, 0, appendChunkOpts)
-					return chunkCreated
-				})
+				h.appendWALHistogram(ms, 0, s.t, s.h, nil, appendChunkOpts)
 			} else {
-				newlyStale = value.IsStaleNaN(s.fh.Sum)
-				if ms.lastFloatHistogramValue != nil {
-					newlyStale = newlyStale && !value.IsStaleNaN(ms.lastFloatHistogramValue.Sum)
-					staleToNonStale = value.IsStaleNaN(ms.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.fh.Sum)
-				}
-				// TODO(krajorama,ywwg): Pass ST when available in WBL.
-				h.appendChunkAndMmap(ms, func() bool {
-					_, chunkCreated := ms.appendFloatHistogram(0, s.t, s.fh, 0, appendChunkOpts)
-					return chunkCreated
-				})
-			}
-			if newlyStale {
-				h.numStaleSeries.Inc()
-			}
-			if staleToNonStale {
-				h.numStaleSeries.Dec()
+				h.appendWALHistogram(ms, 0, s.t, nil, s.fh, appendChunkOpts)
 			}
 			if s.t > maxt {
 				maxt = s.t
