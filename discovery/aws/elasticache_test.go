@@ -16,7 +16,9 @@ package aws
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -482,6 +484,19 @@ type mockElasticacheClient struct {
 	// onDescribe, when set, runs at the start of every DescribeServerlessCaches
 	// and DescribeCacheClusters call.
 	onDescribe func()
+
+	// describeRequests records one entry per describe call, so a test can show
+	// which requests a single refresh issues.
+	describeMu       sync.Mutex
+	describeRequests []string
+}
+
+// recordDescribe stores a describe request, identified by the input fields the
+// discovery varies between calls.
+func (m *mockElasticacheClient) recordDescribe(request string) {
+	m.describeMu.Lock()
+	m.describeRequests = append(m.describeRequests, request)
+	m.describeMu.Unlock()
 }
 
 func newMockElasticacheClient(data *elasticacheDataStore) *mockElasticacheClient {
@@ -492,6 +507,8 @@ func (m *mockElasticacheClient) DescribeServerlessCaches(_ context.Context, inpu
 	if m.onDescribe != nil {
 		m.onDescribe()
 	}
+	m.recordDescribe(fmt.Sprintf("DescribeServerlessCaches name=%s token=%s",
+		aws.ToString(input.ServerlessCacheName), aws.ToString(input.NextToken)))
 	if input.ServerlessCacheName != nil {
 		// Filter by name
 		for _, cache := range m.data.serverlessCaches {
@@ -515,6 +532,9 @@ func (m *mockElasticacheClient) DescribeCacheClusters(_ context.Context, input *
 	if m.onDescribe != nil {
 		m.onDescribe()
 	}
+	m.recordDescribe(fmt.Sprintf("DescribeCacheClusters id=%s marker=%s notInReplicationGroups=%t",
+		aws.ToString(input.CacheClusterId), aws.ToString(input.Marker),
+		aws.ToBool(input.ShowCacheClustersNotInReplicationGroups)))
 	if input.CacheClusterId != nil {
 		// Single cluster lookup
 		for _, cluster := range m.data.cacheClusters {
@@ -977,4 +997,42 @@ func BenchmarkElasticacheRefreshAPILatency(b *testing.B) {
 			b.Fatalf("got %d distinct targets, want %d", got, resourceCount*2)
 		}
 	}
+}
+
+// TestElasticacheRefreshDescribesEachResourceOnce covers refresh() asking the
+// API for the same resources twice: once to collect the ARNs the tag lookup
+// needs, and once more to build the targets. Both rounds send identical
+// requests and get identical answers, so the second one only spends the
+// account's API quota.
+func TestElasticacheRefreshDescribesEachResourceOnce(t *testing.T) {
+	t.Parallel()
+
+	data := elasticacheFixture(2, 2, 1)
+	client := newMockElasticacheClient(data)
+	d := &ElasticacheDiscovery{
+		logger:            promslog.NewNopLogger(),
+		elasticacheClient: client,
+		cfg: &ElasticacheSDConfig{
+			Region:             data.region,
+			RequestConcurrency: 10,
+		},
+		region: data.region,
+	}
+
+	_, err := d.refresh(context.Background())
+	require.NoError(t, err)
+
+	counts := make(map[string]int, len(client.describeRequests))
+	for _, request := range client.describeRequests {
+		counts[request]++
+	}
+
+	var repeated []string
+	for request, count := range counts {
+		if count > 1 {
+			repeated = append(repeated, fmt.Sprintf("%s: %d times", request, count))
+		}
+	}
+	slices.Sort(repeated)
+	require.Empty(t, repeated, "a refresh must not issue the same describe request more than once")
 }
