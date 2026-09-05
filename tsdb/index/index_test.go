@@ -18,14 +18,18 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -237,6 +241,65 @@ func TestIndexRW_Postings(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestReaderRetainsIndexOwner(t *testing.T) {
+	ctx := context.Background()
+	_, fn, _ := createFileReader(ctx, t, indexWriterSeriesSlice{
+		&indexWriterSeries{labels: labels.FromStrings("a", "1", "b", "2")},
+	})
+
+	cleaned := exerciseOwnedIndexReader(t, fn)
+	requireIndexOwnerCleaned(t, cleaned)
+}
+
+func exerciseOwnedIndexReader(t *testing.T, fn string) *atomic.Bool {
+	t.Helper()
+	r, cleaned := newOwnedIndexReader(t, fn)
+	postings, err := r.Postings(context.Background(), "a", "1")
+	require.NoError(t, err)
+	symbols := r.Symbols()
+	values, err := r.LabelValues(context.Background(), "b", nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"2"}, values)
+
+	var matched string
+	_ = r.PostingsForLabelMatching(context.Background(), "b", func(v string) bool {
+		matched = v
+		return false
+	})
+	require.Equal(t, "2", matched)
+
+	runtime.GC()
+	runtime.KeepAlive(r)
+	require.False(t, cleaned.Load())
+	require.True(t, postings.Next())
+	require.True(t, symbols.Next())
+	runtime.KeepAlive(r)
+	return cleaned
+}
+
+func newOwnedIndexReader(t *testing.T, fn string) (*Reader, *atomic.Bool) {
+	t.Helper()
+	b, err := os.ReadFile(fn)
+	require.NoError(t, err)
+	owner := new([64]byte)
+	cleaned := &atomic.Bool{}
+	runtime.AddCleanup(owner, func(cleaned *atomic.Bool) {
+		cleaned.Store(true)
+	}, cleaned)
+	view := encoding.NewByteViewWithOwner(b, owner)
+	r, err := newReaderWithView(realByteSlice(b), view, io.NopCloser(nil), DecodePostingsRaw)
+	require.NoError(t, err)
+	return r, cleaned
+}
+
+func requireIndexOwnerCleaned(t *testing.T, cleaned *atomic.Bool) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		runtime.GC()
+		return cleaned.Load()
+	}, 2*time.Second, 10*time.Millisecond)
 }
 
 func TestPostingsMany(t *testing.T) {
@@ -524,6 +587,31 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 		require.NoError(b, err)
 
 		ir.ShardedPostings(allPostings, uint64(n%numShards), numShards)
+	}
+}
+
+func BenchmarkReader_PostingsForLabelMatching(b *testing.B) {
+	ctx := context.Background()
+	for _, numValues := range []int{100, 1000, 10000} {
+		b.Run(fmt.Sprintf("values=%d", numValues), func(b *testing.B) {
+			input := make(indexWriterSeriesSlice, 0, numValues)
+			for i := range numValues {
+				input = append(input, &indexWriterSeries{
+					labels: labels.FromStrings("label", fmt.Sprintf("%08d", i)),
+				})
+			}
+			ir, _, _ := createFileReader(ctx, b, input)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				p := ir.PostingsForLabelMatching(ctx, "label", func(string) bool { return false })
+				if err := p.Err(); err != nil {
+					b.Fatal(err)
+				}
+			}
+			runtime.KeepAlive(ir)
+		})
 	}
 }
 
