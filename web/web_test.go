@@ -122,15 +122,20 @@ func TestReadyAndHealthy(t *testing.T) {
 
 	waitForServerReady(t, baseURL, 5*time.Second)
 
-	resp, err := http.Get(baseURL + "/-/healthy")
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	cleanupTestResponse(t, resp)
+	var resp *http.Response
+	var err error
 
-	resp, err = http.Head(baseURL + "/-/healthy")
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	cleanupTestResponse(t, resp)
+	for _, path := range []string{"/-/healthy", "/health", "/healthz"} {
+		resp, err = http.Get(baseURL + path)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		cleanupTestResponse(t, resp)
+
+		resp, err = http.Head(baseURL + path)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		cleanupTestResponse(t, resp)
+	}
 
 	for _, u := range []string{
 		baseURL + "/-/ready",
@@ -182,6 +187,8 @@ func TestReadyAndHealthy(t *testing.T) {
 
 	for _, u := range []string{
 		baseURL + "/-/healthy",
+		baseURL + "/health",
+		baseURL + "/healthz",
 		baseURL + "/-/ready",
 	} {
 		resp, err = http.Get(u)
