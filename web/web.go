@@ -69,15 +69,8 @@ import (
 
 // Paths handled by the React router that should all serve the main React app's index.html,
 // no matter if agent mode is enabled or not.
-var oldUIReactRouterPaths = []string{
-	"/config",
-	"/flags",
-	"/service-discovery",
-	"/status",
-	"/targets",
-}
 
-var newUIReactRouterPaths = []string{
+var reactRouterPaths = []string{
 	"/config",
 	"/flags",
 	"/service-discovery",
@@ -92,14 +85,7 @@ var reactRouterAgentPaths = []string{
 }
 
 // Paths that are handled by the React router when the Agent mode is not set.
-var oldUIReactRouterServerPaths = []string{
-	"/alerts",
-	"/graph",
-	"/rules",
-	"/tsdb-status",
-}
-
-var newUIReactRouterServerPaths = []string{
+var reactRouterServerPaths = []string{
 	"/alerts",
 	"/query", // The old /graph redirects to /query on the server side.
 	"/rules",
@@ -461,8 +447,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		r.Enable(features.API, "exclude_alerts")     // exclude_alerts parameter for /rules endpoint.
 		r.Enable(features.API, "openapi_3.1")        // OpenAPI 3.1 specification support.
 		r.Enable(features.API, "openapi_3.2")        // OpenAPI 3.2 specification support.
-		r.Set(features.UI, "ui_v3", !o.UseOldUI)
-		r.Set(features.UI, "ui_v2", o.UseOldUI)
+		r.Enable(features.UI, "ui_v3")
 	}
 
 	if o.RoutePrefix != "/" {
@@ -474,9 +459,6 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	}
 
 	homePage := "/query"
-	if o.UseOldUI {
-		homePage = "/graph"
-	}
 	if o.IsAgent {
 		homePage = "/agent"
 	}
@@ -487,16 +469,11 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		http.Redirect(w, r, path.Join(o.ExternalURL.Path, homePage), http.StatusFound)
 	})
 
-	if !o.UseOldUI {
-		router.Get("/graph", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/query?"+r.URL.RawQuery), http.StatusFound)
-		})
-	}
+	router.Get("/graph", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/query?"+r.URL.RawQuery), http.StatusFound)
+	})
 
-	reactAssetsRoot := "/static/mantine-ui"
-	if h.options.UseOldUI {
-		reactAssetsRoot = "/static/react-app"
-	}
+	const reactAssetsRoot = "/static/mantine-ui"
 
 	router.Get("/version", h.version)
 	router.Get("/metrics", promhttp.Handler().ServeHTTP)
@@ -530,14 +507,6 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		w.Write(replacedIdx)
 	}
 
-	// Serve the React app.
-	reactRouterPaths := newUIReactRouterPaths
-	reactRouterServerPaths := newUIReactRouterServerPaths
-	if h.options.UseOldUI {
-		reactRouterPaths = oldUIReactRouterPaths
-		reactRouterServerPaths = oldUIReactRouterServerPaths
-	}
-
 	for _, p := range reactRouterPaths {
 		router.Get(p, serveReactApp)
 	}
@@ -563,10 +532,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		})
 	}
 
-	reactStaticAssetsDir := "/assets"
-	if h.options.UseOldUI {
-		reactStaticAssetsDir = "/static"
-	}
+	const reactStaticAssetsDir = "/assets"
 	// Static files required by the React app.
 	router.Get(reactStaticAssetsDir+"/*filepath", func(w http.ResponseWriter, r *http.Request) {
 		r.URL.Path = path.Join(reactAssetsRoot+reactStaticAssetsDir, route.Param(r.Context(), "filepath"))
