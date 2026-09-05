@@ -380,6 +380,43 @@ func BenchmarkRangeQuery(b *testing.B) {
 	}
 }
 
+func BenchmarkInstantQuery(b *testing.B) {
+	stor := teststorage.New(b)
+	stor.DisableCompactions()
+
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 50000000,
+		Timeout:    100 * time.Second,
+	}
+	engine := promqltest.NewTestEngineWithOpts(b, opts)
+
+	const (
+		interval     = 10000
+		numIntervals = 50
+	)
+	require.NoError(b, setupRangeQueryTestData(stor, engine, interval, numIntervals))
+
+	ctx := context.Background()
+	queryTime := timestamp.Time(int64(numIntervals * interval))
+	queryFn := func() {
+		qry, err := engine.NewInstantQuery(ctx, stor, nil, "abs(a_hundred)", queryTime)
+		require.NoError(b, err)
+
+		res := qry.Exec(ctx)
+		require.NoError(b, res.Err)
+		qry.Close()
+	}
+
+	queryFn()
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		queryFn()
+	}
+}
+
 func BenchmarkJoinQuery(b *testing.B) {
 	stor := teststorage.New(b)
 	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
