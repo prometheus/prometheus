@@ -3581,6 +3581,22 @@ are set to the scheme and metrics path of the target respectively, as specified 
 
 The `__param_<name>`
 label is set to the value of the first passed URL parameter called `<name>`, as defined in `scrape_config`.
+Setting it during relabeling replaces the first value of that parameter, or adds
+the parameter if it is not configured; any further values from `scrape_config`
+are kept.
+
+Further values of a URL parameter can be set with `__param_<name>_<i>` labels,
+where `<i>` is the zero-based position of the value, written as a decimal
+integer greater than zero without leading zeros (`_1`, `_2`, ..., `_10`). Such
+a label replaces the configured value at that position if it exists and is
+appended to the parameter's values otherwise. Indexed labels are applied after
+`__param_<name>`, in ascending numeric order of `<i>` (so `_2` before `_10`).
+For example, setting `__param_match[]` and `__param_match[]_1` on a federation
+target results in `?match[]=<first value>&match[]=<second value>`. A suffix
+that is not a valid index (`_0`, `_01`, `_x`, or a trailing `_`) is not
+special and names the parameter literally. Consequently, a parameter whose own
+name ends in `_<i>` cannot have its first value set via labels. Only the first
+value of each parameter is exposed as a `__param_<name>` label.
 
 The `__scrape_interval__` and `__scrape_timeout__` labels are set to the target's
 interval and timeout, as specified in `scrape_config`.
