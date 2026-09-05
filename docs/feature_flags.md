@@ -169,7 +169,16 @@ metadata is exposed by the experimental `/api/v1/metadata/series` endpoint.
 This prototype stores metadata only in the Head's memory. It is not written to
 the WAL, checkpoints, snapshots, or blocks, so it is lost on restart and when
 the corresponding Head series is removed. Remote Write 1.0 does not populate
-this store. At most 32 versions are retained per series.
+this store. At most 5 versions are retained per series.
+
+The store costs Head memory per series, along two axes. Version history is the
+smaller one: a series whose metadata never changes costs roughly 90 bytes, and
+one that has reached the 5-version limit around 175. Metadata cardinality is the
+larger — identical values are stored once and shared, so a series carrying help
+text unique to it costs around 460 bytes even at a single version, which no
+version limit bounds. Sizing therefore runs from roughly 90 MB per million
+series where a metric family shares its metadata, to around 460 MB per million
+where every series has its own.
 
 An append whose metadata already matches the series records nothing, which is
 what keeps the feature's cost off the ingestion path. A consequence is that

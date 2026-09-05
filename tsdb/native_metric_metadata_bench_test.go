@@ -520,7 +520,12 @@ func benchmarkHeadMetricMetadataAppend(b *testing.B, withWAL bool) {
 				b.ReportAllocs()
 				var iteration int64
 				for b.Loop() {
-					variant := int(iteration) % benchmarkCase.numVariants
+					// Continue the setup's variant sequence rather than restarting
+					// it, so the first timed append always changes metadata.
+					// Restarting repeats the last seeded variant when setupVersions
+					// is odd, and the unchanged-metadata skip then drops a version
+					// the validation counts.
+					variant := (benchmarkCase.setupVersions + int(iteration)) % benchmarkCase.numVariants
 					appendMetricMetadataBenchmarkRound(b, h, fixture, refs, variant, 1_000+iteration)
 					iteration++
 				}

@@ -32,7 +32,7 @@ import (
 
 const (
 	nativeMetricMetadataStripes       = 256
-	maxNativeMetricMetadataVersions   = 32
+	maxNativeMetricMetadataVersions   = 5
 	maxNativeMetricMetadataValues     = 128 // Limits raw metadata retained by a transaction.
 	maxNativeMetricMetadataBatch      = 256 // Limits series merged under one stripe lock.
 	nativeMetricMetadataDirectRefMask = uint32(1 << 31)
