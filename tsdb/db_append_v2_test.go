@@ -7637,7 +7637,7 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 				require.NoError(t, indexr.Series(p.At(), &builder, &chks))
 
 				for _, chk := range chks {
-					chunk, _, err := chunkr.ChunkOrIterable(chk)
+					chunk, _, _, err := chunkr.ChunkOrIterable(chk)
 					require.NoError(t, err)
 					require.Equal(t, c.expectedEncoding, chunk.Encoding(),
 						"unexpected chunk encoding, got %s", chunk.Encoding())

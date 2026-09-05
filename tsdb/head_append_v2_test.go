@@ -3879,7 +3879,7 @@ func TestCuttingNewHeadChunks_AppenderV2(t *testing.T) {
 				require.Len(t, chkMetas, len(tc.expectedChks))
 
 				for i, expected := range tc.expectedChks {
-					chk, iterable, err := chkReader.ChunkOrIterable(chkMetas[i])
+					chk, iterable, _, err := chkReader.ChunkOrIterable(chkMetas[i])
 					require.NoError(t, err)
 					require.Nil(t, iterable)
 
@@ -3929,7 +3929,7 @@ func TestHeadDetectsDuplicateSampleAtSizeLimit_AppenderV2(t *testing.T) {
 
 	storedSampleCount := 0
 	for _, chunkMeta := range chunks {
-		chunk, iterable, err := chunkReader.ChunkOrIterable(chunkMeta)
+		chunk, iterable, _, err := chunkReader.ChunkOrIterable(chunkMeta)
 		require.NoError(t, err)
 		require.Nil(t, iterable)
 		storedSampleCount += chunk.NumSamples()
@@ -5051,7 +5051,7 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 
 			var actualSTs []int64
 			for _, meta := range chkMetas {
-				chk, iterable, err := chkReader.ChunkOrIterable(meta)
+				chk, iterable, _, err := chkReader.ChunkOrIterable(meta)
 				require.NoError(t, err)
 				require.Nil(t, iterable)
 
@@ -5186,7 +5186,7 @@ func TestHeadAppenderV2_Histogram_STStorage(t *testing.T) {
 
 			var chunkSTs []int64
 			for _, meta := range chkMetas {
-				chk, iterable, err := chkReader.ChunkOrIterable(meta)
+				chk, iterable, _, err := chkReader.ChunkOrIterable(meta)
 				require.NoError(t, err)
 				require.Nil(t, iterable)
 

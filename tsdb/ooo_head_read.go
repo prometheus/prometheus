@@ -39,15 +39,32 @@ type HeadAndOOOIndexReader struct {
 	lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef
 }
 
-var _ chunkenc.Iterable = &mergedOOOChunks{}
+var (
+	_ chunkenc.Iterable     = &mergedOOOChunks{}
+	_ ChunkIterableReleaser = &mergedOOOChunks{}
+)
 
 // mergedOOOChunks holds the list of iterables for overlapping chunks.
+// poolChunks tracks component chunks that came from the pool and must be
+// returned via putChunk after iteration is done.
 type mergedOOOChunks struct {
+	putChunk       func(chunkenc.Chunk) error
 	chunkIterables []chunkenc.Iterable
+	poolChunks     []chunkenc.Chunk
 }
 
-func (o mergedOOOChunks) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
+func (o *mergedOOOChunks) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
 	return storage.ChainSampleIteratorFromIterables(iterator, o.chunkIterables)
+}
+
+// Release implements ChunkIterableReleaser. It returns pool-owned component
+// chunks to the pool. Must be called after the iterator created from this
+// iterable is no longer in use.
+func (o *mergedOOOChunks) Release() {
+	for _, c := range o.poolChunks {
+		_ = o.putChunk(c)
+	}
+	o.poolChunks = o.poolChunks[:0]
 }
 
 func NewHeadAndOOOIndexReader(head *Head, inoMint, mint, maxt int64, lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef) *HeadAndOOOIndexReader {
@@ -230,23 +247,28 @@ func NewHeadAndOOOChunkReader(head *Head, mint, maxt int64, cr *headChunkReader,
 	}
 }
 
-func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
-	c, it, _, err := cr.chunkOrIterable(meta, false)
-	return c, it, err
+func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, bool, error) {
+	c, it, _, fromPool, err := cr.chunkOrIterable(meta, false)
+	return c, it, fromPool, err
+}
+
+// PutChunk returns a chunk to the pool.
+func (cr *HeadAndOOOChunkReader) PutChunk(c chunkenc.Chunk) error {
+	return cr.head.putSafeHeadChunk(c)
 }
 
 // ChunkOrIterableWithCopy implements ChunkReaderWithCopy. The special Copy
 // behaviour is only implemented for the in-order head chunk.
-func (cr *HeadAndOOOChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
+func (cr *HeadAndOOOChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, bool, error) {
 	return cr.chunkOrIterable(meta, true)
 }
 
-func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk bool) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
+func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk bool) (chunkenc.Chunk, chunkenc.Iterable, int64, bool, error) {
 	sid, cid, isOOO := unpackHeadChunkRef(meta.Ref)
 	s := cr.head.series.getByID(sid)
 	// This means that the series has been garbage collected.
 	if s == nil {
-		return nil, nil, 0, storage.ErrNotFound
+		return nil, nil, 0, false, storage.ErrNotFound
 	}
 	var isoState *isolationState
 	if cr.cr != nil {
@@ -261,15 +283,17 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 		if !isOOO {
 			headChunks = cr.collectOrGetHeadChunks(s)
 		}
-		c, maxt, err := cr.head.chunkFromSeries(s, cid, isOOO, meta.MinTime, meta.MaxTime, isoState, copyLastChunk, headChunks)
-		return c, nil, maxt, err
+		c, maxt, fromPool, err := cr.head.chunkFromSeries(s, cid, isOOO, meta.MinTime, meta.MaxTime, isoState, copyLastChunk, headChunks)
+		return c, nil, maxt, fromPool, err
 	}
 	mm, ok := meta.Chunk.(*multiMeta)
 	if !ok { // Complete chunk was supplied.
-		return meta.Chunk, nil, meta.MaxTime, nil
+		return meta.Chunk, nil, meta.MaxTime, false, nil
 	}
 	// We have a composite meta: construct a composite iterable.
-	mc := &mergedOOOChunks{}
+	mc := &mergedOOOChunks{putChunk: func(c chunkenc.Chunk) error {
+		return cr.head.opts.ChunkPool.Put(c.(*safeHeadChunk).Chunk)
+	}}
 	var headChunks []*memChunk
 	for _, m := range mm.metas {
 		switch {
@@ -280,14 +304,19 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 			if !isOOO && headChunks == nil {
 				headChunks = cr.collectOrGetHeadChunks(s)
 			}
-			iterable, _, err := cr.head.chunkFromSeries(s, cid, isOOO, m.MinTime, m.MaxTime, isoState, copyLastChunk, headChunks)
+			chk, _, fromPool, err := cr.head.chunkFromSeries(s, cid, isOOO, m.MinTime, m.MaxTime, isoState, copyLastChunk, headChunks)
 			if err != nil {
-				return nil, nil, 0, fmt.Errorf("invalid head chunk: %w", err)
+				// Release any component chunks already collected.
+				mc.Release()
+				return nil, nil, 0, false, fmt.Errorf("invalid head chunk: %w", err)
 			}
-			mc.chunkIterables = append(mc.chunkIterables, iterable)
+			mc.chunkIterables = append(mc.chunkIterables, chk)
+			if fromPool {
+				mc.poolChunks = append(mc.poolChunks, chk)
+			}
 		}
 	}
-	return nil, mc, meta.MaxTime, nil
+	return nil, mc, meta.MaxTime, false, nil
 }
 
 // collectOrGetHeadChunks returns the pre-collected head chunks for s. When the
