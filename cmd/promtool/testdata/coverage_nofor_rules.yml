@@ -1,0 +1,7 @@
+# An alert with no "for" is promoted to firing before its first sample, so it can
+# never be observed as pending.
+groups:
+  - name: g
+    rules:
+      - alert: NoFor
+        expr: vector(1)
