@@ -2328,6 +2328,18 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 
 	// For one series, truncate old chunks and check if any chunks left. If not, mark as deleted and collect the ID.
 	check := func(hashShard int, hash uint64, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
+		// Acquire the ref-stripe lock before the series lock to enforce a consistent
+		// global lock order: stripe-lock → series-lock. This matches the order used
+		// by mmapHeadChunksInStripe (locks[i].RLock → series.Lock) and prevents an
+		// ABBA deadlock when gcSeries runs concurrently with mmapHeadChunks (e.g.
+		// when CompactSelectedSeries is called from an external goroutine). See
+		// https://github.com/prometheus/prometheus/issues/19445
+		stripe := s.refStripe(series.ref)
+		if hashShard != stripe {
+			s.locks[stripe].Lock()
+			defer s.locks[stripe].Unlock()
+		}
+
 		series.Lock()
 		defer series.Unlock()
 
@@ -2367,16 +2379,8 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			}
 			return
 		}
-		// The series is gone entirely. We need to keep the series lock
-		// and make sure we have acquired the stripe locks for hash and ID of the
-		// series alike.
-		// If we don't hold them all, there's a very small chance that a series receives
-		// samples again while we are half-way into deleting it.
-		stripe := s.refStripe(series.ref)
-		if hashShard != stripe {
-			s.locks[stripe].Lock()
-			defer s.locks[stripe].Unlock()
-		}
+		// The series is gone entirely. The ref-stripe lock (stripe) was already
+		// acquired above before the series lock, so we hold both now.
 
 		stale, isHist, buckets := series.sampleState()
 		if stale {
@@ -2392,7 +2396,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
 		delete(s.series[stripe], series.ref)
-		deletedForCallback[series.ref] = series.lset // OK to access lset; series is locked at the top of this function.
+		deletedForCallback[series.ref] = series.lset // OK to access lset; series is locked above.
 	}
 
 	s.iterForDeletion(check)
@@ -2557,6 +2561,18 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 			return
 		}
 
+		// Acquire the ref-stripe lock before the series lock to enforce a consistent
+		// global lock order: stripe-lock → series-lock. This matches the order used
+		// by mmapHeadChunksInStripe (locks[i].RLock → series.Lock) and prevents an
+		// ABBA deadlock when gcSeries runs concurrently with mmapHeadChunks (e.g.
+		// when CompactSelectedSeries is called from an external goroutine). See
+		// https://github.com/prometheus/prometheus/issues/19445
+		stripe := s.refStripe(series.ref)
+		if hashShard != stripe {
+			s.locks[stripe].Lock()
+			defer s.locks[stripe].Unlock()
+		}
+
 		series.Lock()
 		defer series.Unlock()
 
@@ -2577,13 +2593,9 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		// series alike.
 		// If we don't hold them all, there's a very small chance that a series receives
 		// samples again while we are half-way into deleting it.
-		stripe := s.refStripe(series.ref)
+		// Note: stripe lock was already acquired above before the series lock.
 		if headChunkCount >= 2 {
 			s.decMmapReady(series.ref)
-		}
-		if hashShard != stripe {
-			s.locks[stripe].Lock()
-			defer s.locks[stripe].Unlock()
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
@@ -2599,7 +2611,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
 		delete(s.series[stripe], series.ref)
-		deletedForCallback[series.ref] = series.lset // OK to access lset; series is locked at the top of this function.
+		deletedForCallback[series.ref] = series.lset // OK to access lset; series is locked above.
 	}
 
 	s.iterForDeletion(check)
