@@ -33,7 +33,7 @@ require (
 	golang.org/x/text v0.40.0 // indirect
 	google.golang.org/api v0.290.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260720155508-bb71a54f79dc // indirect
-	google.golang.org/grpc v1.82.1 // indirect
+	google.golang.org/grpc v1.83.1 // indirect
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 )
 
