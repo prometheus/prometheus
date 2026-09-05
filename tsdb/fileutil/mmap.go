@@ -14,13 +14,28 @@
 package fileutil
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"runtime"
 )
+
+type mmapRef struct {
+	b []byte
+}
+
+func (m *mmapRef) close() error {
+	if m.b == nil {
+		return errors.New("mmap already closed")
+	}
+	err := munmap(m.b)
+	m.b = nil
+	return err
+}
 
 type MmapFile struct {
 	f *os.File
-	b []byte
+	m *mmapRef
 }
 
 func OpenMmapFile(path string) (*MmapFile, error) {
@@ -50,11 +65,17 @@ func OpenMmapFileWithSize(path string, size int) (mf *MmapFile, retErr error) {
 		return nil, fmt.Errorf("mmap, size %d: %w", size, err)
 	}
 
-	return &MmapFile{f: f, b: b}, nil
+	mmapFile := &MmapFile{f: f, m: &mmapRef{b: b}}
+
+	runtime.AddCleanup(mmapFile, func(m *mmapRef) {
+		_ = m.close()
+	}, mmapFile.m)
+
+	return mmapFile, nil
 }
 
 func (f *MmapFile) Close() error {
-	err0 := munmap(f.b)
+	err0 := f.m.close()
 	err1 := f.f.Close()
 
 	if err0 != nil {
@@ -68,5 +89,5 @@ func (f *MmapFile) File() *os.File {
 }
 
 func (f *MmapFile) Bytes() []byte {
-	return f.b
+	return f.m.b
 }
