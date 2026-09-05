@@ -2929,7 +2929,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ refresh_interval: <duration> | default = 60s ]
 [ region: <string> | default = global ]
 # The URL to connect to the API.
-[ server: <string> ]
+[ server: <string> | default = http://localhost:4646 ]
 [ tag_separator: <string> | default = , ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
