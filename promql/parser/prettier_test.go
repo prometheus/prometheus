@@ -683,11 +683,11 @@ func TestDurationExprPretty(t *testing.T) {
 			duration: `2 * 1h`,
 		},
 		{
-			in: `rate(foo[(2+1)*1h])`,
+			in: `rate(foo[2*1h])`,
 			out: `rate(
-  foo[(2 + 1) * 1h]
+  foo[2 * 1h]
 )`,
-			duration: `(2 + 1) * 1h`,
+			duration: `2 * 1h`,
 		},
 		{
 			in: `rate(foo[-5m+35m])`,
@@ -695,6 +695,13 @@ func TestDurationExprPretty(t *testing.T) {
   foo[-5m + 35m]
 )`,
 			duration: `-5m + 35m`,
+		},
+		{
+			in: `rate(foo[(2+1)*1h])`,
+			out: `rate(
+  foo[(2 + 1) * 1h]
+)`,
+			duration: `(2 + 1) * 1h`,
 		},
 		{
 			in: `rate(http_requests_total[min_of(5m,10m)])`,
