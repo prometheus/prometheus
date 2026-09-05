@@ -1206,6 +1206,11 @@ type evaluator struct {
 	enableTypeAndUnitLabels  bool
 	useStartTimestamps       bool
 	querier                  storage.Querier
+
+	// hpointScratch stores *FloatHistogram pointers that matrixIterSlice
+	// removes from the histogram slice. It prevents a heap allocation
+	// on each step of a range query.
+	hpointScratch []*histogram.FloatHistogram
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -3021,13 +3026,27 @@ func (ev *evaluator) matrixIterSlice(
 		for drop = 0; histograms[drop].T <= mint; drop++ {
 		}
 		droppedSize := totalHPointSize(histograms[:drop])
-		// Rotate the buffer around the drop index so that points before mint can be
-		// reused to store new histograms.
-		tail := make([]HPoint, drop)
-		copy(tail, histograms[:drop])
+		// Save the *FloatHistogram pointers from the dropped elements.
+		// matrixIterSlice reuses these pointers for new histograms after
+		// the shift. This prevents a heap allocation of a temporary
+		// []HPoint slice on each step.
+		if cap(ev.hpointScratch) < drop {
+			ev.hpointScratch = make([]*histogram.FloatHistogram, drop)
+		} else {
+			ev.hpointScratch = ev.hpointScratch[:drop]
+		}
+		for i := 0; i < drop; i++ {
+			ev.hpointScratch[i] = histograms[i].H
+		}
 		copy(histograms, histograms[drop:])
-		copy(histograms[len(histograms)-drop:], tail)
-		histograms = histograms[:len(histograms)-drop]
+		// Put the saved pointers into the tail of the slice.
+		// AtFloatHistogram reuses these pointers for new histograms.
+		// Do this before the truncation so the indices stay valid.
+		n := len(histograms)
+		for i := 0; i < drop; i++ {
+			histograms[n-drop+i].H = ev.hpointScratch[i]
+		}
+		histograms = histograms[:n-drop]
 		ev.currentSamples -= droppedSize
 		// Only append points with timestamps after the last timestamp we have.
 		mintHistograms = histograms[len(histograms)-1].T
