@@ -10364,6 +10364,104 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		}
 	})
 
+	// Regression test for https://github.com/prometheus/prometheus/issues/19445:
+	// mmapHeadChunksInStripe used to hold a stripe's RLock while locking each series
+	// in it, while stripeSeries.gcSeries's check function, invoked under
+	// iterForDeletion locks the series first and then (under some conditions) the
+	// stripe's lock. This is a deadlock.
+	//
+	// Since a pure timing/scheduling based test is unlikely to fail, this test
+	// mimics gcSeries locking behavior and drives the real mmapHeadChunksInStripe.
+	// The test fails if it regresses to holding the stripe's RLock while locking a series.
+	t.Run("mmapHeadChunksInStripe releases the stripe lock before locking a series", func(t *testing.T) {
+		h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+		require.NoError(t, h.Init(0))
+
+		lbls := labels.FromStrings("__name__", "series")
+		app := h.Appender(t.Context())
+		var (
+			ref storage.SeriesRef
+			ts  int64
+		)
+		for range DefaultSamplesPerChunk + 10 {
+			var err error
+			ref, err = app.Append(ref, lbls, ts, float64(ts))
+			require.NoError(t, err)
+			ts += interval
+		}
+		require.NoError(t, app.Commit())
+
+		series := h.series.getByID(chunks.HeadSeriesRef(ref))
+		require.NotNil(t, series)
+		require.GreaterOrEqual(t, series.headChunkCount.Load(), uint32(2), "series must be mmap-ready")
+		stripe := h.series.refStripe(chunks.HeadSeriesRef(ref))
+
+		// gcSeries: hold the series lock.
+		series.Lock()
+		mmapDone := make(chan struct{})
+		go func() {
+			defer close(mmapDone)
+			var candidates []*memSeries
+			h.mmapHeadChunksInStripe(stripe, &candidates)
+		}()
+		select {
+		case <-mmapDone:
+			t.Fatal("mmapHeadChunksInStripe returned without ever blocking on the series lock")
+		case <-time.After(time.Second):
+		}
+
+		// If mmapHeadChunksInStripe still holds the stripe's RLock, this TryLock (write)
+		// fails (it's blocked on the series lock while also holding the stripe lock).
+		// This can only pass if the RLock has been released before ever locking the
+		// series lock.
+		gotLock := h.series.locks[stripe].TryLock()
+		if gotLock {
+			h.series.locks[stripe].Unlock()
+		}
+
+		// Unblock mmapHeadChunksInStripe and wait for it to finish before asserting, so
+		// this test doesn't leak a goroutine regardless of the outcome.
+		series.Unlock()
+		select {
+		case <-mmapDone:
+		case <-time.After(5 * time.Second):
+			t.Fatal("mmapHeadChunksInStripe never completed after the series lock was released")
+		}
+
+		require.True(t, gotLock, "mmapHeadChunksInStripe held the stripe's RLock while blocked on a series lock; "+
+			"this deadlocks against a concurrent gcSeries")
+	})
+
+	// gcSeries clears an evicted series' headChunks such that mmapHeadChunksInStripe
+	// doesn't mmap its chunks into an orphaned chunk file.
+	t.Run("gcSeries clears headChunks so a stale mmap is a no-op", func(t *testing.T) {
+		h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+		require.NoError(t, h.Init(0))
+
+		lbls := labels.FromStrings("__name__", "series")
+		app := h.Appender(t.Context())
+		var (
+			ref storage.SeriesRef
+			ts  int64
+		)
+		for range DefaultSamplesPerChunk + 10 {
+			var err error
+			ref, err = app.Append(ref, lbls, ts, float64(ts))
+			require.NoError(t, err)
+			ts += interval
+		}
+		require.NoError(t, app.Commit())
+
+		series := h.series.getByID(chunks.HeadSeriesRef(ref))
+		require.NotNil(t, series)
+		require.GreaterOrEqual(t, series.headChunkCount.Load(), uint32(2), "series must be mmap-ready")
+
+		deleted := h.gcSeries([]storage.SeriesRef{ref}, math.MaxInt64, func(*memSeries) bool { return true })
+		require.Contains(t, deleted, ref)
+
+		require.Equal(t, 0, h.mmapSeriesChunks(series), "mmapSeriesChunks must be a no-op on an evicted series")
+	})
+
 	t.Run("ooo does not inflate count", func(t *testing.T) {
 		h, _ := newTestHead(t, DefaultBlockDuration, compression.None, true /* oooEnabled */)
 		require.NoError(t, h.Init(0))
