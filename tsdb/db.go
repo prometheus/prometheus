@@ -781,7 +781,7 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 	if len(corrupted) > 0 {
 		for _, b := range loadable {
 			if err := b.Close(); err != nil {
-				db.logger.Warn("Closing block failed", "err", err, "block", b)
+				db.logger.Warn("Closing block failed", "err", err, "block", b.String())
 			}
 		}
 		var errs []error
@@ -2558,7 +2558,7 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 	defer db.mtx.RUnlock()
 
 	for _, b := range db.blocks {
-		db.logger.Info("Snapshotting block", "block", b)
+		db.logger.Info("Snapshotting block", "block", b.String())
 
 		if err := b.Snapshot(dir); err != nil {
 			return fmt.Errorf("error snapshotting block: %s: %w", b.Dir(), err)
