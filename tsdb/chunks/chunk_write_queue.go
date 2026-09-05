@@ -36,12 +36,12 @@ const (
 )
 
 type chunkWriteJob struct {
-	cutFile   bool
 	seriesRef HeadSeriesRef
 	mint      int64
 	maxt      int64
 	chk       chunkenc.Chunk
 	ref       ChunkDiskMapperRef
+	cutFile   bool
 	isOOO     bool
 	callback  func(error)
 }
