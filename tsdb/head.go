@@ -159,6 +159,8 @@ type Head struct {
 	// testAfterSeriesLookup is invoked after getByID in appenders, before the
 	// series is locked. Tests use it to race GC against a resolved pointer.
 	testAfterSeriesLookup func(*memSeries)
+
+	walReplayExemplarDrainHook func(<-chan struct{}) // For testing purposes.
 }
 
 type ExemplarStorage interface {
@@ -271,6 +273,8 @@ func (o *HeadOptions) UseXOR2FloatEncoding() bool {
 // SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
 // It is always a no-op in Prometheus and mainly meant for external users who import TSDB.
 // All the callbacks should be safe to be called concurrently.
+// During WAL replay, callbacks for a label set are invoked in lifecycle order.
+// Callbacks must not wait for a later WAL replay lifecycle callback.
 // It is up to the user to implement soft or hard consistency by making the callbacks
 // atomic or non-atomic. Atomic callbacks can cause degradation performance.
 type SeriesLifecycleCallback interface {
@@ -1083,11 +1087,10 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			// The most recent head chunk was completed and m-mapped after the snapshot
 			// was taken, so its samples are now covered by the mmapped chunk we just
 			// loaded. Drop the in-memory head chunk chain.
+			// No series.Lock: loadMmappedChunks runs at startup before any
+			// appender goroutine can reach this series.
 			ms.nextAt = 0
-			if ms.headChunkCount.Load() >= 2 {
-				h.series.decMmapReady(ms.ref)
-			}
-			ms.setHeadChunks(nil, 0)
+			ms.setHeadChunks(nil, 0, h.series)
 			ms.app = nil
 		}
 		return nil
@@ -2121,15 +2124,11 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	return s, true, nil
 }
 
-// onChunkCreated bumps the head chunk metrics for any newly created chunk, in-order or OOO.
-// If prevHeadChunkCount < 2 and series.headChunkCount == 2, the corresponding
-// stripe's count of mmap ready series is incremented.
-func (h *Head) onChunkCreated(series *memSeries, prevHeadChunkCount uint32) {
+// onChunkCreatedMetrics bumps metrics for a newly created in-order or OOO
+// chunk. The memSeries setters own mmap-ready accounting.
+func (h *Head) onChunkCreatedMetrics() {
 	h.metrics.chunks.Inc()
 	h.metrics.chunksCreated.Inc()
-	if prevHeadChunkCount < 2 && series.headChunkCount.Load() == 2 {
-		h.series.incMmapReady(series.ref)
-	}
 }
 
 // mmapHeadChunks iterates all memSeries stored on Head ready for m-mapping and calls
@@ -2169,7 +2168,6 @@ func (h *Head) mmapHeadChunksInStripe(i int) (count int) {
 		n := h.mmapSeriesChunks(series)
 		if n > 0 {
 			count += n
-			h.series.decMmapReady(series.ref)
 		}
 	}
 	return count
@@ -2178,7 +2176,7 @@ func (h *Head) mmapHeadChunksInStripe(i int) (count int) {
 func (h *Head) mmapSeriesChunks(s *memSeries) int {
 	s.Lock()
 	defer s.Unlock()
-	return s.mmapChunks(h.chunkDiskMapper)
+	return s.mmapChunks(h.chunkDiskMapper, h.series)
 }
 
 // seriesHashmap lets TSDB find a memSeries by its label set, via a 64-bit hash.
@@ -2331,11 +2329,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		series.Lock()
 		defer series.Unlock()
 
-		wasMmapReady := series.headChunkCount.Load() >= 2
-		rmChunks += series.truncateChunksBefore(mint, minOOOMmapRef)
-		if wasMmapReady && series.headChunkCount.Load() < 2 {
-			s.decMmapReady(series.ref)
-		}
+		rmChunks += series.truncateChunksBefore(mint, minOOOMmapRef, s)
 
 		if len(series.mmappedChunks) > 0 {
 			seq, _ := series.mmappedChunks[0].ref.Unpack()
@@ -2447,9 +2441,11 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 	return deleted
 }
 
-// deleteSeriesByID deletes the series with the given reference.
+// deleteSeriesByID deletes the series with the given reference and returns the
+// payload for the lifecycle callback. The caller must invoke PostDeletion before
+// completing the associated replay-deletion barrier.
 // Only used for WAL replay.
-func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
+func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) map[chunks.HeadSeriesRef]labels.Labels {
 	var (
 		deleted                 = map[storage.SeriesRef]struct{}{}
 		deletedForCallback      = map[chunks.HeadSeriesRef]labels.Labels{}
@@ -2500,13 +2496,22 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		headChunkCount := series.headChunkCount.Load()
 		chunksRemoved += len(series.mmappedChunks)
 		chunksRemoved += int(headChunkCount)
-		if headChunkCount >= 2 {
-			h.series.decMmapReady(series.ref)
+		if series.ooo != nil {
+			chunksRemoved += len(series.ooo.oooMmappedChunks)
+			if series.ooo.oooHeadChunk != nil {
+				chunksRemoved++
+			}
 		}
-		// Clear to prevent a double-subtraction from the chunksRemoved gauge if
-		// resetSeriesWithMMappedChunks is queued on the same WAL-replay processor
-		// after this deletion (it would otherwise subtract len(mmappedChunks) again).
+		// No series.Lock: deleteSeriesByID is only invoked during WAL replay,
+		// where walSubsetProcessor partitions inputs by series ref so this
+		// series has no concurrent writer.
+		// Release all chunk data and keep the head-chunk list and count in sync.
+		// A stale reference may remain queued on this WAL-replay processor after
+		// the series has been removed from the lookup maps.
 		series.mmappedChunks = nil
+		series.setHeadChunks(nil, 0, h.series)
+		series.app = nil
+		series.ooo = nil
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		deletedForCallback[series.ref] = series.lset
@@ -2527,9 +2532,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
 
-	if len(deletedForCallback) > 0 {
-		h.series.seriesLifecycleCallback.PostDeletion(deletedForCallback)
-	}
+	return deletedForCallback
 }
 
 // gcSeries walks all series and removes those whose ref is in seriesRefs, whose maxTime is
@@ -2578,9 +2581,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		// If we don't hold them all, there's a very small chance that a series receives
 		// samples again while we are half-way into deleting it.
 		stripe := s.refStripe(series.ref)
-		if headChunkCount >= 2 {
-			s.decMmapReady(series.ref)
-		}
+		series.setHeadChunks(nil, 0, s)
 		if hashShard != stripe {
 			s.locks[stripe].Lock()
 			defer s.locks[stripe].Unlock()
@@ -2641,14 +2642,10 @@ func (s *stripeSeries) refStripe(ref chunks.HeadSeriesRef) int {
 	return int(uint64(ref) & uint64(s.size-1))
 }
 
-// incMmapReady increments the per-stripe mmap-ready counter for the given series.
-func (s *stripeSeries) incMmapReady(ref chunks.HeadSeriesRef) {
-	s.mmapReady[s.refStripe(ref)].Add(1)
-}
-
-// decMmapReady decrements the per-stripe mmap-ready counter for the given series.
-func (s *stripeSeries) decMmapReady(ref chunks.HeadSeriesRef) {
-	s.mmapReady[s.refStripe(ref)].Add(-1)
+// mmapReadyFor returns the per-stripe mmap-ready counter for the stripe that
+// the given series ref belongs to.
+func (s *stripeSeries) mmapReadyFor(ref chunks.HeadSeriesRef) *paddedAtomicInt32 {
+	return &s.mmapReady[s.refStripe(ref)]
 }
 
 func (s *stripeSeries) getByID(id chunks.HeadSeriesRef) *memSeries {
@@ -2786,11 +2783,12 @@ type memSeries struct {
 	// The state packs the pending-sample count and infrequent flags to avoid increasing memSeries size.
 	state uint32
 	// headChunkCount tracks the number of head chunks. All mutations of the
-	// headChunks/headChunkCount pair go through pushHeadChunk and setHeadChunks.
+	// headChunks/headChunkCount pair go through pushHeadChunk and setHeadChunks,
+	// which also keep the owning stripe's mmapReady counter in sync.
 	// Chunk counts are bounded by the 3-byte field in HeadChunkRef, so cannot overflow uint32.
-	// Explicitly uses sync/atomic.Uint32 (4 bytes) so state and the chunk count
-	// occupy one 8-byte word before lastValue.
-	headChunkCount stdatomic.Uint32
+	// The wrapped sync/atomic.Uint32 remains 4 bytes, so state and the chunk
+	// count occupy one 8-byte word before lastValue.
+	headChunkCount headChunkCounter
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastValue float64
@@ -2902,6 +2900,38 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64,
 	return s
 }
 
+// headChunkCounter exposes reads while reserving mutations for memSeries setters.
+type headChunkCounter struct {
+	n stdatomic.Uint32
+}
+
+// Load returns the current head chunk count.
+func (c *headChunkCounter) Load() uint32 { return c.n.Load() }
+
+// incHeadChunkCount increments the count and records the 1 -> 2 readiness edge.
+// The caller must serialize setters with the series lock or exclusive write
+// ownership. A nil stripes denotes an unregistered standalone series.
+func (s *memSeries) incHeadChunkCount(stripes *stripeSeries) {
+	if s.headChunkCount.n.Add(1) == 2 && stripes != nil {
+		stripes.mmapReadyFor(s.ref).Add(1)
+	}
+}
+
+// setHeadChunkCount sets the count and records readiness threshold crossings.
+// It has the same serialization and nil-stripes contract as incHeadChunkCount.
+func (s *memSeries) setHeadChunkCount(n uint32, stripes *stripeSeries) {
+	prev := s.headChunkCount.n.Swap(n)
+	if stripes == nil {
+		return
+	}
+	switch {
+	case prev < 2 && n >= 2:
+		stripes.mmapReadyFor(s.ref).Add(1)
+	case prev >= 2 && n < 2:
+		stripes.mmapReadyFor(s.ref).Add(-1)
+	}
+}
+
 func (s *memSeries) minTime() int64 {
 	if len(s.mmappedChunks) > 0 {
 		return s.mmappedChunks[0].minTime
@@ -2928,7 +2958,7 @@ func (s *memSeries) maxTime() int64 {
 // list length whenever the series lock is released; direct prev unlinks
 // (mmapChunks, truncateChunksBefore) must be immediately paired with a
 // setHeadChunks call.
-func (s *memSeries) pushHeadChunk(chk *memChunk) *memChunk {
+func (s *memSeries) pushHeadChunk(chk *memChunk, stripes *stripeSeries) *memChunk {
 	// Chunk IDs can only be 23 bits, so a series cannot hold more than 2^23 chunks
 	// without two of them sharing an ID. This is not reachable in practice (head
 	// compaction keeps the live set tiny); panic rather than serve an ambiguous ID.
@@ -2938,22 +2968,22 @@ func (s *memSeries) pushHeadChunk(chk *memChunk) *memChunk {
 
 	chk.prev = s.headChunks
 	s.headChunks = chk
-	s.headChunkCount.Add(1)
+	s.incHeadChunkCount(stripes)
 	return chk
 }
 
 // setHeadChunks replaces the head-chunk list with head, which must be a list
 // of count chunks, keeping headChunkCount in sync with the list length. See
 // pushHeadChunk for the invariant.
-func (s *memSeries) setHeadChunks(head *memChunk, count uint32) {
+func (s *memSeries) setHeadChunks(head *memChunk, count uint32, stripes *stripeSeries) {
 	s.headChunks = head
-	s.headChunkCount.Store(count)
+	s.setHeadChunkCount(count, stripes)
 }
 
 // truncateChunksBefore removes all chunks from the series that
 // have no timestamp at or after mint.
 // Chunk IDs remain unchanged.
-func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) int {
+func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef, stripes *stripeSeries) int {
 	var removedInOrder int
 	if s.headChunks != nil {
 		var i uint32
@@ -2966,11 +2996,11 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 				s.firstChunkID = wrapChunkID(s.firstChunkID + chunks.HeadChunkID(removedInOrder))
 				if i == 0 {
 					// This is the first chunk on the list so we need to remove the entire list.
-					s.setHeadChunks(nil, 0)
+					s.setHeadChunks(nil, 0, stripes)
 				} else {
 					// This is NOT the first chunk, unlink it from parent.
 					nextChk.prev = nil
-					s.setHeadChunks(s.headChunks, i)
+					s.setHeadChunks(s.headChunks, i, stripes)
 				}
 				s.mmappedChunks = nil
 				break
