@@ -64,6 +64,7 @@ const (
 	reasonDroppedSeries              = "dropped_series"
 	reasonUnintentionalDroppedSeries = "unintentionally_dropped_series"
 	reasonNHCBNotSupported           = "nhcb_in_rw1_not_supported"
+	reasonNativeHistogramNotSent     = "native_histogram_not_sent"
 )
 
 type queueManagerMetrics struct {
@@ -442,11 +443,12 @@ type QueueManager struct {
 	protoMsg    remoteapi.WriteMessageType
 	compr       compression.Type
 
-	seriesMtx      sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries and builder.
-	seriesLabels   map[chunks.HeadSeriesRef]labels.Labels
-	seriesMetadata map[chunks.HeadSeriesRef]*metadata.Metadata
-	droppedSeries  map[chunks.HeadSeriesRef]struct{}
-	builder        *labels.Builder
+	seriesMtx             sync.Mutex // Covers seriesLabels, seriesMetadata, unsentHistogramSeries, droppedSeries and builder.
+	seriesLabels          map[chunks.HeadSeriesRef]labels.Labels
+	seriesMetadata        map[chunks.HeadSeriesRef]*metadata.Metadata
+	unsentHistogramSeries map[chunks.HeadSeriesRef]struct{}
+	droppedSeries         map[chunks.HeadSeriesRef]struct{}
+	builder               *labels.Builder
 
 	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
@@ -516,11 +518,12 @@ func NewQueueManager(
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 		failedRequestLogging:    failedRequestLogging,
 
-		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
-		seriesMetadata:       make(map[chunks.HeadSeriesRef]*metadata.Metadata),
-		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
-		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
-		builder:              labels.NewBuilder(labels.EmptyLabels()),
+		seriesLabels:          make(map[chunks.HeadSeriesRef]labels.Labels),
+		seriesMetadata:        make(map[chunks.HeadSeriesRef]*metadata.Metadata),
+		unsentHistogramSeries: make(map[chunks.HeadSeriesRef]struct{}),
+		seriesSegmentIndexes:  make(map[chunks.HeadSeriesRef]int),
+		droppedSeries:         make(map[chunks.HeadSeriesRef]struct{}),
+		builder:               labels.NewBuilder(labels.EmptyLabels()),
 
 		numShards:   cfg.MinShards,
 		reshardChan: make(chan int),
@@ -748,6 +751,11 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
+		if len(t.unsentHistogramSeries) > 0 {
+			// This sample of the series is sent, so its exemplars have something
+			// to attach to again.
+			delete(t.unsentHistogramSeries, s.Ref)
+		}
 		// TODO(cstyan): Handle or at least log an error if no metadata is found.
 		// See https://github.com/prometheus/prometheus/issues/14405
 		meta := t.seriesMetadata[s.Ref]
@@ -812,6 +820,15 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
+		if len(t.unsentHistogramSeries) > 0 {
+			if _, ok := t.unsentHistogramSeries[e.Ref]; ok {
+				// The native histogram samples of this series are not sent, so the
+				// remote endpoint has no series to attach this exemplar to.
+				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonNativeHistogramNotSent).Inc()
+				t.seriesMtx.Unlock()
+				continue
+			}
+		}
 		meta := t.seriesMetadata[e.Ref]
 		t.seriesMtx.Unlock()
 		// This will only loop if the queues are being resharded.
@@ -844,8 +861,29 @@ outer:
 	return true
 }
 
+// markUnsentHistogramSeries records that a native histogram sample of the given
+// series is not sent to the remote endpoint, so that AppendExemplars drops the
+// exemplars of that series as well.
+func (t *QueueManager) markUnsentHistogramSeries(ref chunks.HeadSeriesRef) {
+	if !t.sendExemplars {
+		return
+	}
+	t.seriesMtx.Lock()
+	t.unsentHistogramSeries[ref] = struct{}{}
+	t.seriesMtx.Unlock()
+}
+
 func (t *QueueManager) AppendHistograms(histograms []record.RefHistogramSample) bool {
 	if !t.sendNativeHistograms {
+		if t.sendExemplars {
+			// None of these histograms are sent, so their exemplars must be
+			// dropped too, see markUnsentHistogramSeries.
+			t.seriesMtx.Lock()
+			for _, h := range histograms {
+				t.unsentHistogramSeries[h.Ref] = struct{}{}
+			}
+			t.seriesMtx.Unlock()
+		}
 		return true
 	}
 	currentTime := time.Now()
@@ -859,6 +897,7 @@ outer:
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
 			t.logger.Warn("Dropped native histogram with custom buckets (NHCB) as remote write v1 does not support itB", "ref", h.Ref)
+			t.markUnsentHistogramSeries(h.Ref)
 			continue
 		}
 		t.seriesMtx.Lock()
@@ -873,6 +912,9 @@ outer:
 			}
 			t.seriesMtx.Unlock()
 			continue
+		}
+		if len(t.unsentHistogramSeries) > 0 {
+			delete(t.unsentHistogramSeries, h.Ref)
 		}
 		meta := t.seriesMetadata[h.Ref]
 		t.seriesMtx.Unlock()
@@ -908,6 +950,15 @@ outer:
 
 func (t *QueueManager) AppendFloatHistograms(floatHistograms []record.RefFloatHistogramSample) bool {
 	if !t.sendNativeHistograms {
+		if t.sendExemplars {
+			// None of these histograms are sent, so their exemplars must be
+			// dropped too, see markUnsentHistogramSeries.
+			t.seriesMtx.Lock()
+			for _, h := range floatHistograms {
+				t.unsentHistogramSeries[h.Ref] = struct{}{}
+			}
+			t.seriesMtx.Unlock()
+		}
 		return true
 	}
 	currentTime := time.Now()
@@ -921,6 +972,7 @@ outer:
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
 			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
 			t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support itB", "ref", h.Ref)
+			t.markUnsentHistogramSeries(h.Ref)
 			continue
 		}
 		t.seriesMtx.Lock()
@@ -935,6 +987,11 @@ outer:
 			}
 			t.seriesMtx.Unlock()
 			continue
+		}
+		if len(t.unsentHistogramSeries) > 0 {
+			// This sample of the series is sent, so its exemplars have something
+			// to attach to again.
+			delete(t.unsentHistogramSeries, h.Ref)
 		}
 		meta := t.seriesMetadata[h.Ref]
 		t.seriesMtx.Unlock()
@@ -1069,12 +1126,14 @@ func (t *QueueManager) SeriesReset(index int) {
 	// Check for series that are in segments older than the checkpoint
 	// that were not also present in the checkpoint.
 	for k, v := range t.seriesSegmentIndexes {
-		if v < index {
-			delete(t.seriesSegmentIndexes, k)
-			delete(t.seriesLabels, k)
-			delete(t.seriesMetadata, k)
-			delete(t.droppedSeries, k)
+		if v >= index {
+			continue
 		}
+		delete(t.seriesSegmentIndexes, k)
+		delete(t.seriesLabels, k)
+		delete(t.seriesMetadata, k)
+		delete(t.unsentHistogramSeries, k)
+		delete(t.droppedSeries, k)
 	}
 }
 
