@@ -108,9 +108,8 @@ type Options struct {
 	// Option used by downstream scraper users like OpenTelemetry Collector
 	// to help lookup metric metadata. Should be false for Prometheus.
 	PassMetadataInContext bool
-	// Option to enable appending of scraped Metadata to the TSDB/other appenders. Individual appenders
-	// can decide what to do with metadata, but for practical purposes this flag exists so that metadata
-	// can be written to the WAL and thus read for remote write.
+	// Option to pass scraped metadata to the TSDB and other appenders. Individual
+	// appenders decide whether and how to store it.
 	AppendMetadata bool
 	// Option to increase the interval used by scrape manager to throttle target groups updates.
 	DiscoveryReloadInterval model.Duration

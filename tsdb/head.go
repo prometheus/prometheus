@@ -120,6 +120,11 @@ type Head struct {
 	// All series addressable by their ID or hash.
 	series *stripeSeries
 
+	// Native metric metadata histories are kept outside memSeries, which holds
+	// only a pointer to the newest committed entry so that appends can tell
+	// whether they have anything to record.
+	nativeMetricMetadata *nativeMetricMetadataStore
+
 	walExpiriesMtx sync.Mutex
 	walExpiries    map[chunks.HeadSeriesRef]int64 // Series no longer in the head, and what time they must be kept until.
 
@@ -234,6 +239,9 @@ type HeadOptions struct {
 	// is implemented.
 	EnableMetadataWALRecords bool
 
+	// EnableNativeMetadata enables experimental in-memory native metadata.
+	EnableNativeMetadata bool
+
 	// EnableFastStartup enables scraping in parallel with WAL replay but with queries still disabled.
 	EnableFastStartup bool
 }
@@ -330,6 +338,9 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		reg:             r,
 		seriesStateQuit: make(chan struct{}),
 	}
+	if opts.EnableNativeMetadata {
+		h.nativeMetricMetadata = newNativeMetricMetadataStore()
+	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
 	}
@@ -395,6 +406,9 @@ func (h *Head) resetInMemoryState() error {
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
 	h.walExpiries = map[chunks.HeadSeriesRef]int64{}
+	if h.nativeMetricMetadata != nil {
+		h.nativeMetricMetadata.reset()
+	}
 	h.chunkRange.Store(h.opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
 	h.maxTime.Store(math.MinInt64)
@@ -417,40 +431,43 @@ func (h *Head) resetWLReplayResources() {
 }
 
 type headMetrics struct {
-	activeAppenders           prometheus.Gauge
-	appendersCreated          prometheus.Counter
-	series                    prometheus.GaugeFunc
-	staleSeries               prometheus.GaugeFunc
-	nativeHistogramSeries     prometheus.GaugeFunc
-	nativeHistogramBuckets    prometheus.GaugeFunc
-	seriesCreated             prometheus.Counter
-	seriesRemoved             prometheus.Counter
-	seriesNotFound            prometheus.Counter
-	pendingCommitUnderflow    prometheus.Counter
-	chunks                    prometheus.Gauge
-	chunksCreated             prometheus.Counter
-	chunksRemoved             prometheus.Counter
-	gcDuration                prometheus.Summary
-	samplesAppended           *prometheus.CounterVec
-	outOfOrderSamplesAppended *prometheus.CounterVec
-	outOfBoundSamples         *prometheus.CounterVec
-	outOfOrderSamples         *prometheus.CounterVec
-	tooOldSamples             *prometheus.CounterVec
-	walTruncateDuration       prometheus.Summary
-	walCorruptionsTotal       prometheus.Counter
-	dataTotalReplayDuration   prometheus.Gauge
-	headTruncateFail          prometheus.Counter
-	headTruncateTotal         prometheus.Counter
-	checkpointDeleteFail      prometheus.Counter
-	checkpointDeleteTotal     prometheus.Counter
-	checkpointCreationFail    prometheus.Counter
-	checkpointCreationTotal   prometheus.Counter
-	mmapChunkCorruptionTotal  prometheus.Counter
-	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
-	oooHistogram              prometheus.Histogram
-	mmapChunksTotal           prometheus.Counter
-	walReplayUnknownRefsTotal *prometheus.CounterVec
-	wblReplayUnknownRefsTotal *prometheus.CounterVec
+	activeAppenders               prometheus.Gauge
+	appendersCreated              prometheus.Counter
+	series                        prometheus.GaugeFunc
+	staleSeries                   prometheus.GaugeFunc
+	nativeHistogramSeries         prometheus.GaugeFunc
+	nativeHistogramBuckets        prometheus.GaugeFunc
+	nativeMetricMetadataSeries    prometheus.GaugeFunc
+	nativeMetricMetadataVersions  prometheus.GaugeFunc
+	nativeMetricMetadataEvictions prometheus.CounterFunc
+	seriesCreated                 prometheus.Counter
+	seriesRemoved                 prometheus.Counter
+	seriesNotFound                prometheus.Counter
+	pendingCommitUnderflow        prometheus.Counter
+	chunks                        prometheus.Gauge
+	chunksCreated                 prometheus.Counter
+	chunksRemoved                 prometheus.Counter
+	gcDuration                    prometheus.Summary
+	samplesAppended               *prometheus.CounterVec
+	outOfOrderSamplesAppended     *prometheus.CounterVec
+	outOfBoundSamples             *prometheus.CounterVec
+	outOfOrderSamples             *prometheus.CounterVec
+	tooOldSamples                 *prometheus.CounterVec
+	walTruncateDuration           prometheus.Summary
+	walCorruptionsTotal           prometheus.Counter
+	dataTotalReplayDuration       prometheus.Gauge
+	headTruncateFail              prometheus.Counter
+	headTruncateTotal             prometheus.Counter
+	checkpointDeleteFail          prometheus.Counter
+	checkpointDeleteTotal         prometheus.Counter
+	checkpointCreationFail        prometheus.Counter
+	checkpointCreationTotal       prometheus.Counter
+	mmapChunkCorruptionTotal      prometheus.Counter
+	snapshotReplayErrorTotal      prometheus.Counter // Will be either 0 or 1.
+	oooHistogram                  prometheus.Histogram
+	mmapChunksTotal               prometheus.Counter
+	walReplayUnknownRefsTotal     *prometheus.CounterVec
+	wblReplayUnknownRefsTotal     *prometheus.CounterVec
 }
 
 const (
@@ -491,6 +508,33 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Help: "Number of positive and negative bucket entries in the most recent in-order native histogram sample of each series, including entries carried by staleness markers.",
 		}, func() float64 {
 			return float64(h.NumNativeHistogramBuckets())
+		}),
+		nativeMetricMetadataSeries: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_native_metric_metadata_series",
+			Help: "Number of Head series with native metric metadata.",
+		}, func() float64 {
+			if h.nativeMetricMetadata == nil {
+				return 0
+			}
+			return float64(h.nativeMetricMetadata.series.Load())
+		}),
+		nativeMetricMetadataVersions: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_native_metric_metadata_versions",
+			Help: "Number of native metric metadata versions in the Head.",
+		}, func() float64 {
+			if h.nativeMetricMetadata == nil {
+				return 0
+			}
+			return float64(h.nativeMetricMetadata.versions.Load())
+		}),
+		nativeMetricMetadataEvictions: prometheus.NewCounterFunc(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_native_metric_metadata_version_evictions_total",
+			Help: "Total number of native metric metadata versions evicted by the per-series limit.",
+		}, func() float64 {
+			if h.nativeMetricMetadata == nil {
+				return 0
+			}
+			return float64(h.nativeMetricMetadata.evictions.Load())
 		}),
 		seriesCreated: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_series_created_total",
@@ -626,6 +670,9 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.staleSeries,
 			m.nativeHistogramSeries,
 			m.nativeHistogramBuckets,
+			m.nativeMetricMetadataSeries,
+			m.nativeMetricMetadataVersions,
+			m.nativeMetricMetadataEvictions,
 			m.chunks,
 			m.chunksCreated,
 			m.chunksRemoved,
@@ -1898,6 +1945,9 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
+	if h.nativeMetricMetadata != nil {
+		h.nativeMetricMetadata.delete(deleted)
+	}
 
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
@@ -2426,6 +2476,9 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
+	if h.nativeMetricMetadata != nil {
+		h.nativeMetricMetadata.delete(deleted)
+	}
 
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
@@ -2523,6 +2576,9 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
+	if h.nativeMetricMetadata != nil {
+		h.nativeMetricMetadata.delete(deleted)
+	}
 
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
@@ -2749,8 +2805,7 @@ func (s sample) Copy() chunks.Sample {
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
 	// Members up to the Mutex are not changed after construction, so can be accessed without a lock.
-	ref  chunks.HeadSeriesRef
-	meta *metadata.Metadata
+	ref chunks.HeadSeriesRef
 
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
 	// been explicitly enabled in TSDB.
@@ -2760,6 +2815,9 @@ type memSeries struct {
 	sync.Mutex
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
+
+	// Lazily allocated after either metadata path commits state for this series.
+	metadata *memSeriesMetadata
 
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
@@ -2806,6 +2864,43 @@ type memSeries struct {
 
 	// txs is nil if isolation is disabled.
 	txs *txRing
+}
+
+// memSeriesMetadata holds the independent native and legacy metadata state.
+type memSeriesMetadata struct {
+	native nativeSeriesMetadata
+	legacy *metadata.Metadata
+}
+
+func (s *memSeries) ensureMetadataLocked() *memSeriesMetadata {
+	if s.metadata == nil {
+		s.metadata = &memSeriesMetadata{}
+	}
+	return s.metadata
+}
+
+func (s *memSeries) legacyMetadataLocked() *metadata.Metadata {
+	if s.metadata == nil {
+		return nil
+	}
+	return s.metadata.legacy
+}
+
+func (s *memSeries) setLegacyMetadataLocked(m *metadata.Metadata) {
+	s.ensureMetadataLocked().legacy = m
+}
+
+func (s *memSeries) nativeMetadataLocked() *nativeSeriesMetadata {
+	if s.metadata == nil || s.metadata.native.metadata == nil {
+		return nil
+	}
+	return &s.metadata.native
+}
+
+func (s *memSeries) setNativeMetadataLocked(m *metadata.Metadata, effectiveFrom int64) {
+	native := &s.ensureMetadataLocked().native
+	native.metadata = m
+	native.effectiveFrom = effectiveFrom
 }
 
 // Layout of memSeries.state. After construction, it is only read or written with

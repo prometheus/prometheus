@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/compression"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -380,6 +381,12 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedCode: http.StatusNoContent,
 		},
 		{
+			desc:           "All timeseries accepted/legacy_metadata_enabled",
+			input:          writeV2RequestFixture.Timeseries,
+			expectedCode:   http.StatusNoContent,
+			appendMetadata: true,
+		},
+		{
 			desc: "Partial write; first series with invalid labels (no metric name)",
 			input: append(
 				// Series with test_metric1="test_metric1" labels.
@@ -544,6 +551,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			desc:              "Partial write; skipped metadata; metadata storage errs are noop",
 			input:             writeV2RequestFixture.Timeseries,
 			updateMetadataErr: errors.New("some metadata update error"),
+			appendMetadata:    true,
 
 			expectedCode: http.StatusNoContent,
 		},
@@ -817,12 +825,20 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 
 			// Double check what was actually appended.
 			var (
-				b          = labels.NewScratchBuilder(0)
-				i, j, k, m int
+				b       = labels.NewScratchBuilder(0)
+				i, j, k int
 			)
+			var expectedMetadata []mockMetadata
 			for _, ts := range writeV2RequestFixture.Timeseries {
 				ls, err := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
 				require.NoError(t, err)
+				expectedMeta, err := ts.ToMetadata(writeV2RequestFixture.Symbols)
+				require.NoError(t, err)
+				for range len(ts.Samples) + len(ts.Histograms) {
+					if tc.appendMetadata && tc.updateMetadataErr == nil {
+						expectedMetadata = append(expectedMetadata, mockMetadata{ls, expectedMeta})
+					}
+				}
 
 				for _, s := range ts.Samples {
 					if s.StartTimestamp != 0 && tc.ingestSTZeroSample {
@@ -859,18 +875,59 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 						j++
 					}
 				}
-				if tc.appendMetadata && tc.updateMetadataErr == nil {
-					expectedMeta, err := ts.ToMetadata(writeV2RequestFixture.Symbols)
-					require.NoError(t, err)
-					requireEqual(t, mockMetadata{ls, expectedMeta}, appendable.metadata[m])
-					m++
-				}
+			}
+			requireEqual(t, expectedMetadata, appendable.metadata)
+		})
+	}
+}
+
+func TestRemoteWriteHandler_V2NativeMetadata(t *testing.T) {
+	payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name         string
+		passMetadata bool
+	}{
+		{name: "metadata passing disabled"},
+		{name: "metadata passing enabled", passMetadata: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := teststorage.New(t, func(opts *tsdb.Options) {
+				opts.EnableNativeMetadata = true
+			})
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, db, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, false, false, tc.passMetadata)
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+			req.Header.Set("Content-Encoding", compression.Snappy)
+			req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			require.Equal(t, http.StatusNoContent, recorder.Code)
+
+			nameMatcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric1")
+			result, truncated, err := db.NativeMetricMetadata(t.Context(), [][]*labels.Matcher{{nameMatcher}}, 0)
+			require.NoError(t, err)
+			require.False(t, truncated)
+			if !tc.passMetadata {
+				require.Empty(t, result)
+				return
 			}
 
-			// Verify that when the feature flag is disabled, no metadata is stored in WAL.
-			if !tc.appendMetadata {
-				require.Empty(t, appendable.metadata, "metadata should not be stored when appendMetadata (metadata-wal-records) is false")
-			}
+			var b labels.ScratchBuilder
+			expectedLabels, err := writeV2RequestFixture.Timeseries[0].ToLabels(&b, writeV2RequestFixture.Symbols)
+			require.NoError(t, err)
+			require.Equal(t, []tsdb.NativeMetricMetadataSeries{{
+				Labels: expectedLabels,
+				Versions: []tsdb.NativeMetricMetadataVersion{
+					{EffectiveFrom: 10, Metadata: writeV2RequestSeries1Metadata},
+					{EffectiveFrom: 20, Metadata: writeV2RequestSeries2Metadata},
+					{EffectiveFrom: 30, Metadata: writeV2RequestSeries1Metadata},
+					{EffectiveFrom: 50, Metadata: writeV2RequestSeries2Metadata},
+				},
+			}}, result)
 		})
 	}
 }

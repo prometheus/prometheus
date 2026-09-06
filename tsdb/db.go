@@ -257,6 +257,9 @@ type Options struct {
 	// is implemented.
 	EnableMetadataWALRecords bool
 
+	// EnableNativeMetadata enables experimental in-memory native metadata.
+	EnableNativeMetadata bool
+
 	// BlockCompactionExcludeFunc is a function which returns true for blocks that should NOT be compacted.
 	// It's passed down to the TSDB compactor.
 	BlockCompactionExcludeFunc BlockExcludeFilterFunc
@@ -1158,6 +1161,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.FloatChunkEncoding.Store(uint32(opts.FloatChunkEncoding))
 	headOpts.EnableHistogramSTEncoding.Store(opts.EnableHistogramSTEncoding)
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
+	headOpts.EnableNativeMetadata = opts.EnableNativeMetadata
 	headOpts.EnableFastStartup = opts.EnableFastStartup
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency

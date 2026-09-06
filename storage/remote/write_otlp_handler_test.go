@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -47,6 +48,7 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -258,6 +260,52 @@ func TestOTLPWriteHandler(t *testing.T) {
 			teststorage.RequireEqual(t, expectedSamples, appendable.ResultSamples())
 		})
 	}
+
+	t.Run("native metadata store", func(t *testing.T) {
+		db := teststorage.New(t, func(opts *tsdb.Options) {
+			opts.EnableNativeMetadata = true
+		})
+		handler := NewOTLPWriteHandler(promslog.NewNopLogger(), prometheus.NewRegistry(), db, func() config.Config {
+			return config.Config{OTLPConfig: config.OTLPConfig{TranslationStrategy: otlptranslator.NoTranslation}}
+		}, OTLPOptions{})
+		metrics := pmetric.NewMetrics()
+		resourceMetrics := metrics.ResourceMetrics().AppendEmpty()
+		resourceMetrics.Resource().Attributes().PutStr("service.name", "test-service")
+		resourceMetrics.Resource().Attributes().PutStr("service.instance.id", "test-instance")
+		metric := resourceMetrics.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		metric.SetName("test.counter")
+		metric.SetDescription("test-counter-description")
+		metric.SetUnit("By")
+		sum := metric.SetEmptySum()
+		sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+		sum.SetIsMonotonic(true)
+		dataPoint := sum.DataPoints().AppendEmpty()
+		dataPoint.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+		dataPoint.SetStartTimestamp(pcommon.NewTimestampFromTime(st))
+		dataPoint.SetDoubleValue(10)
+		payload, err := pmetricotlp.NewExportRequestFromMetrics(metrics).MarshalProto()
+		require.NoError(t, err)
+		req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/x-protobuf")
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+
+		nameMatcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test.counter")
+		result, truncated, err := db.NativeMetricMetadata(t.Context(), [][]*labels.Matcher{{nameMatcher}}, 0)
+		require.NoError(t, err)
+		require.False(t, truncated)
+		require.Len(t, result, 1)
+		require.Equal(t, []tsdb.NativeMetricMetadataVersion{{
+			EffectiveFrom: timestamp.FromTime(ts),
+			Metadata: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Unit: "bytes",
+				Help: "test-counter-description",
+			},
+		}}, result[0].Versions)
+	})
 
 	t.Run("translation warnings metric", func(t *testing.T) {
 		newExporter := func() *rwExporter {

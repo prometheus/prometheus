@@ -180,13 +180,9 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			// an optimization for the more likely case.
 			switch a.typesInBatch[s.ref] {
 			case stHistogram, stCustomBucketHistogram:
-				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, &histogram.Histogram{Sum: v}, nil, storage.AOptions{
-					RejectOutOfOrder: opts.RejectOutOfOrder,
-				})
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, &histogram.Histogram{Sum: v}, nil, opts)
 			case stFloatHistogram, stCustomBucketFloatHistogram:
-				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, nil, &histogram.FloatHistogram{Sum: v}, storage.AOptions{
-					RejectOutOfOrder: opts.RejectOutOfOrder,
-				})
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, nil, &histogram.FloatHistogram{Sum: v}, opts)
 			}
 			// Note that a series reference not yet in the map will come out
 			// as stNone, but since we do not handle that case separately,
@@ -206,15 +202,19 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		return 0, appErr
 	}
 	s = appended
+	if a.head.nativeMetricMetadata != nil {
+		a.observeNativeMetricMetadata(s, t, opts.Metadata)
+	}
 
 	if isStale {
-		// For stale values we never attempt to process metadata/exemplars, claim the success.
+		// Legacy WAL metadata is not updated for stale values.
 		return storage.SeriesRef(s.ref), nil
 	}
 
 	if a.head.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
 		s.Lock()
-		metaChanged := s.meta == nil || !s.meta.Equals(opts.Metadata)
+		currentMetadata := s.legacyMetadataLocked()
+		metaChanged := currentMetadata == nil || !currentMetadata.Equals(opts.Metadata)
 		s.Unlock()
 		if metaChanged {
 			b := a.getCurrentBatch(stNone, s.ref)

@@ -152,7 +152,41 @@ Fall back to serving the old (Prometheus 2.x) web UI instead of the new UI. The 
 When enabled, Prometheus will store metadata in-memory and keep track of
 metadata changes as WAL records on a per-series basis.
 
-This must be used if you would like to send metadata using the new remote write 2.0.
+This flag controls the legacy WAL-backed metadata path. The separate
+`native-metadata` feature can expose versioned per-series metadata without
+writing metadata WAL records.
+
+## Native metadata
+
+`--enable-feature=native-metadata`
+
+> **This feature is experimental and may change in future releases.**
+
+When enabled, Prometheus ingests metric type, unit, and help from scrapes, OTLP,
+and Remote Write 2.0 as versioned metadata attached to each series. The
+metadata is exposed by the experimental `/api/v1/metadata/series` endpoint.
+
+This prototype stores metadata only in the Head's memory. It is not written to
+the WAL, checkpoints, snapshots, or blocks, so it is lost on restart and when
+the corresponding Head series is removed. Remote Write 1.0 does not populate
+this store. At most 5 versions are retained per series.
+
+The store costs Head memory per series, along two axes. Version history is the
+smaller one: a series whose metadata never changes costs roughly 100 bytes, and
+one that has reached the 5-version limit around 185. Metadata cardinality is the
+larger — identical values are stored once and shared, so a series carrying help
+text unique to it costs around 470 bytes even at a single version, which no
+version limit bounds. Sizing therefore runs from roughly 100 MB per million
+series where a metric family shares its metadata, to around 470 MB per million
+where every series has its own.
+
+An append whose metadata already matches the series records nothing, which is
+what keeps the feature's cost off the ingestion path. The discarded observation
+cannot be reconstructed if a later append in the same transaction arrives with
+a lower timestamp and different metadata. The same applies to overlapping
+writers: if one transaction observes the current metadata while another changes
+it and commits first, the first has nothing left to re-assert, and the change is
+not reverted at the later timestamp.
 
 ## Delay compaction start time
 

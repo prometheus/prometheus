@@ -218,16 +218,8 @@ func runScrapeLoopTest(t *testing.T, appV2 bool, s *teststorage.TestStorage, exp
 	}
 }
 
-// Regression test against https://github.com/prometheus/prometheus/issues/15831.
-func TestScrapeAppend_MetadataUpdate(t *testing.T) {
-	foreachAppendable(t, func(t *testing.T, appV2 bool) {
-		testScrapeAppendMetadataUpdate(t, appV2)
-	})
-}
-
-func testScrapeAppendMetadataUpdate(t *testing.T, appV2 bool) {
-	const (
-		scrape1 = `# TYPE test_metric counter
+const (
+	metadataUpdateScrape1 = `# TYPE test_metric counter
 # HELP test_metric some help text
 # UNIT test_metric metric
 test_metric_total 1
@@ -238,7 +230,7 @@ test_metric2{foo="bar"} 2
 # HELP test_metric3 this represents tricky case of "broken" text that is not trivial to detect
 test_metric3_metric4{foo="bar"} 2
 # EOF`
-		scrape2 = `# TYPE test_metric counter
+	metadataUpdateScrape2 = `# TYPE test_metric counter
 # HELP test_metric different help text
 test_metric_total 11
 # TYPE test_metric2 gauge
@@ -246,14 +238,23 @@ test_metric_total 11
 # UNIT test_metric2 metric2
 test_metric2{foo="bar"} 22
 # EOF`
-	)
+)
 
+// Regression test against https://github.com/prometheus/prometheus/issues/15831.
+func TestScrapeAppend_MetadataUpdate(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testScrapeAppendMetadataUpdate(t, appV2)
+	})
+	t.Run("native metadata store", testScrapeAppendNativeMetadata)
+}
+
+func testScrapeAppendMetadataUpdate(t *testing.T, appV2 bool) {
 	appTest := teststorage.NewAppendable()
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2))
 
 	now := time.Now()
 	app := sl.appender()
-	_, _, _, err := app.append([]byte(scrape1), "application/openmetrics-text", now)
+	_, _, _, err := app.append([]byte(metadataUpdateScrape1), "application/openmetrics-text", now)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	teststorage.RequireEqual(t, []sample{
@@ -263,7 +264,7 @@ test_metric2{foo="bar"} 22
 	appTest.ResultReset()
 
 	app = sl.appender()
-	_, _, _, err = app.append([]byte(scrape1), "application/openmetrics-text", now.Add(15*time.Second))
+	_, _, _, err = app.append([]byte(metadataUpdateScrape1), "application/openmetrics-text", now.Add(15*time.Second))
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	if appV2 {
@@ -279,7 +280,7 @@ test_metric2{foo="bar"} 22
 	appTest.ResultReset()
 
 	app = sl.appender()
-	_, _, _, err = app.append([]byte(scrape2), "application/openmetrics-text", now.Add(15*time.Second))
+	_, _, _, err = app.append([]byte(metadataUpdateScrape2), "application/openmetrics-text", now.Add(15*time.Second))
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	teststorage.RequireEqual(t, []sample{
@@ -287,6 +288,44 @@ test_metric2{foo="bar"} 22
 		{L: labels.FromStrings("__name__", "test_metric2", "foo", "bar"), M: metadata.Metadata{Type: "gauge", Unit: "metric2", Help: "other help text"}},
 	}, appTest.ResultMetadata())
 	appTest.ResultReset()
+}
+
+func testScrapeAppendNativeMetadata(t *testing.T) {
+	db := teststorage.New(t, func(opts *tsdb.Options) {
+		opts.EnableNativeMetadata = true
+	})
+	sl, _ := newTestScrapeLoop(t, withAppendable(db, true), func(sl *scrapeLoop) {
+		sl.passMetadata = true
+	})
+	now := time.Unix(1_700_000_000, 0)
+
+	app := sl.appender()
+	_, _, _, err := app.append([]byte(metadataUpdateScrape1), "application/openmetrics-text", now)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	app = sl.appender()
+	_, _, _, err = app.append([]byte(metadataUpdateScrape2), "application/openmetrics-text", now.Add(15*time.Second))
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	nameMatcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric_total")
+	result, truncated, err := db.NativeMetricMetadata(t.Context(), [][]*labels.Matcher{{nameMatcher}}, 0)
+	require.NoError(t, err)
+	require.False(t, truncated)
+	require.Equal(t, []tsdb.NativeMetricMetadataSeries{{
+		Labels: labels.FromStrings(labels.MetricName, "test_metric_total"),
+		Versions: []tsdb.NativeMetricMetadataVersion{
+			{
+				EffectiveFrom: timestamp.FromTime(now),
+				Metadata:      metadata.Metadata{Type: model.MetricTypeCounter, Unit: "metric", Help: "some help text"},
+			},
+			{
+				EffectiveFrom: timestamp.FromTime(now.Add(15 * time.Second)),
+				Metadata:      metadata.Metadata{Type: model.MetricTypeCounter, Unit: "metric", Help: "different help text"},
+			},
+		},
+	}}, result)
 }
 
 func TestScrapeReportMetadata(t *testing.T) {
@@ -2600,8 +2639,8 @@ metric: <
 // * `withStorage`: without storage isolates the benchmark to the scrape loop append code. With storage is an
 // integration benchmark with the TSDB head appender code. For acceptance criteria run with storage, without for debugging.
 // * `appV2`: appender V1 or V2.
-// * `appendMetadataToWAL`: metadata-wal-records feature enabled or not (problematic feature we might need to change
-// soon, see https://github.com/prometheus/prometheus/issues/15911.
+// * `appendMetadataToWAL` and `nativeMetadata`: metadata storage mode. Native metadata is measured only with
+// storage and AppenderV2. See https://github.com/prometheus/prometheus/issues/15911.
 // * `data`: different sizes of metrics scraped e.g. one big gauge metric family
 //  with a thousand series and more realistic scenario with common types.
 // * `fmt`: different scrape formats which will benchmark different parsers e.g.
@@ -2629,9 +2668,21 @@ metric: <
 		| tee ${bench}.txt
 */
 func BenchmarkScrapeLoopAppend(b *testing.B) {
+	type metadataMode struct {
+		name                 string
+		appendMetadataToWAL  bool
+		enableNativeMetadata bool
+	}
 	for _, withStorage := range []bool{false, true} {
 		for _, appV2 := range []bool{false, true} {
-			for _, appendMetadataToWAL := range []bool{false, true} {
+			metadataModes := []metadataMode{
+				{name: "appendMetadataToWAL=false"},
+				{name: "appendMetadataToWAL=true", appendMetadataToWAL: true},
+			}
+			if withStorage && appV2 {
+				metadataModes = append(metadataModes, metadataMode{name: "appendMetadataToWAL=false/nativeMetadata=true", enableNativeMetadata: true})
+			}
+			for _, metadataMode := range metadataModes {
 				for _, data := range []struct {
 					name         string
 					parsableText []byte
@@ -2639,7 +2690,7 @@ func BenchmarkScrapeLoopAppend(b *testing.B) {
 					{name: "1Fam2000Gauges", parsableText: makeTestGauges(2000)},         // ~68.1 KB, ~77.9 KB in proto.
 					{name: "237FamsAllTypes", parsableText: readTextParseTestMetrics(b)}, // ~185.7 KB, ~70.6 KB in proto.
 				} {
-					b.Run(fmt.Sprintf("withStorage=%v/appV2=%v/appendMetadataToWAL=%v/data=%v", withStorage, appV2, appendMetadataToWAL, data.name), func(b *testing.B) {
+					b.Run(fmt.Sprintf("withStorage=%v/appV2=%v/%s/data=%v", withStorage, appV2, metadataMode.name, data.name), func(b *testing.B) {
 						metricsProto := promTextToProto(b, data.parsableText)
 
 						for _, bcase := range []struct {
@@ -2652,7 +2703,7 @@ func BenchmarkScrapeLoopAppend(b *testing.B) {
 							{name: "PromProto", contentType: "application/vnd.google.protobuf", parsable: metricsProto},
 						} {
 							b.Run(fmt.Sprintf("fmt=%v", bcase.name), func(b *testing.B) {
-								benchScrapeLoopAppend(b, withStorage, appV2, bcase.parsable, bcase.contentType, appendMetadataToWAL, false, false, false)
+								benchScrapeLoopAppend(b, withStorage, appV2, bcase.parsable, bcase.contentType, metadataMode.appendMetadataToWAL, metadataMode.enableNativeMetadata, false, false, false)
 							})
 						}
 					})
@@ -2678,7 +2729,7 @@ func BenchmarkScrapeLoopAppend_STSynthesis(b *testing.B) {
 				{name: "237FamsAllTypes", parsableText: readTextParseTestMetrics(b), contentType: "application/openmetrics-text", convertToNHCB: true}, // ~185.7 KB, ~70.6 KB in proto.
 			} {
 				b.Run(fmt.Sprintf("withStorage=%v/synthesizeST=%v/data=%v", withStorage, synthesizeST, data.name), func(b *testing.B) {
-					benchScrapeLoopAppend(b, withStorage, true, data.parsableText, data.contentType, false, false, synthesizeST, data.convertToNHCB)
+					benchScrapeLoopAppend(b, withStorage, true, data.parsableText, data.contentType, false, false, false, synthesizeST, data.convertToNHCB)
 				})
 			}
 		}
@@ -2692,6 +2743,7 @@ func benchScrapeLoopAppend(
 	parsable []byte,
 	contentType string,
 	appendMetadataToWAL bool,
+	enableNativeMetadata bool,
 	enableExemplarStorage bool,
 	synthesizeST bool,
 	convertToNHCB bool,
@@ -2700,6 +2752,7 @@ func benchScrapeLoopAppend(
 	if withStorage {
 		a = teststorage.New(b, func(opt *tsdb.Options) {
 			opt.EnableMetadataWALRecords = appendMetadataToWAL
+			opt.EnableNativeMetadata = enableNativeMetadata
 			if enableExemplarStorage {
 				opt.EnableExemplarStorage = true
 				opt.MaxExemplars = 1e5
@@ -2707,7 +2760,7 @@ func benchScrapeLoopAppend(
 		})
 	}
 	sl, _ := newTestScrapeLoop(b, withAppendable(a, appV2), func(sl *scrapeLoop) {
-		sl.appendMetadataToWAL = appendMetadataToWAL
+		sl.passMetadata = appendMetadataToWAL || enableNativeMetadata
 		sl.synthesizeST = synthesizeST
 		sl.enableNativeHistogramScraping = true
 		sl.convertClassicHistToNHCB = convertToNHCB
@@ -2747,7 +2800,7 @@ func BenchmarkScrapeLoopAppend_HistogramsWithExemplars(b *testing.B) {
 	for _, appV2 := range []bool{false, true} {
 		b.Run(fmt.Sprintf("appV2=%v", appV2), func(b *testing.B) {
 			parsable := makeTestHistogramsWithExemplars(100) // ~255.8 KB in OM text.
-			benchScrapeLoopAppend(b, true, appV2, parsable, "application/openmetrics-text", false, true, false, false)
+			benchScrapeLoopAppend(b, true, appV2, parsable, "application/openmetrics-text", false, false, true, false, false)
 		})
 	}
 }
@@ -4507,7 +4560,7 @@ metric: <
 				// Having this true would mean we need to add metadata to sample
 				// expectations.
 				// TODO(bwplotka): Add cases for append metadata to WAL and pass metadata.
-				sl.appendMetadataToWAL = false
+				sl.passMetadata = false
 			})
 			app := sl.appender()
 
@@ -4605,7 +4658,7 @@ func testScrapeLoopAppendExemplarSeries(t *testing.T, appV2 bool) {
 		}
 		// This test does not care about metadata. Having this true would mean we need to add metadata to sample
 		// expectations.
-		sl.appendMetadataToWAL = false
+		sl.passMetadata = false
 	})
 
 	now := time.Now()

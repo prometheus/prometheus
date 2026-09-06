@@ -59,11 +59,10 @@ type AppendV2Options struct {
 	// the MetricFamilyName can be removed as MetricFamilyName will equal to __name__ always.
 	MetricFamilyName string
 
-	// Metadata (optional) attached to the appended sample.
-	// Metadata strings are safe for reuse.
-	// IMPORTANT: Appender v1 was only providing update. This field MUST be
-	// set (if known) even if it didn't change since the last iteration.
-	// This moves the responsibility for metadata storage options to TSDB.
+	// Metadata optionally supplies metric-family metadata observed for the
+	// appended series at t. Callers that provide it must do so on every Append,
+	// not only when it changes. Implementations may ignore it. Metadata strings
+	// are safe for reuse.
 	Metadata metadata.Metadata
 
 	// RejectOutOfOrder tells implementation that this append should not be out

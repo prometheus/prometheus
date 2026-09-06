@@ -417,7 +417,8 @@ type headAppenderBase struct {
 	series     []*memSeries       // New series held by this appender (using corresponding slices indexes from seriesRefs)
 	batches    []*appendBatch     // Holds all the other data to append. (In regular cases, there should be only one of these.)
 
-	typesInBatch map[chunks.HeadSeriesRef]sampleType // Which (one) sample type each series holds in the most recent batch.
+	typesInBatch         map[chunks.HeadSeriesRef]sampleType // Which (one) sample type each series holds in the most recent batch.
+	nativeMetricMetadata *nativeMetricMetadataAppender
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
@@ -425,6 +426,54 @@ type headAppenderBase struct {
 	useXOR2                         bool // Whether XOR2 encoding is used for float chunks in this append.
 	useHistogramST                  bool // Whether ST-capable histogram chunk encoding is used in this append.
 }
+
+// observeNativeMetricMetadata records m for s at timestamp. The store check is
+// repeated at the call site, which skips the call entirely when the Head has no
+// native metadata store, so that the disabled case costs a branch rather than a
+// call. This one keeps the method safe for callers that do not.
+func (a *headAppenderBase) observeNativeMetricMetadata(s *memSeries, timestamp int64, m metadata.Metadata) {
+	if a.head.nativeMetricMetadata == nil || m.IsEmpty() {
+		return
+	}
+	m = canonicalMetricMetadata(m)
+
+	// An observation that would not change the series' history is worth
+	// nothing, and recording one costs both the entry and a lookup to discard
+	// it at commit. Checking before the appender is taken from the pool means a
+	// transaction that changes no metadata never touches the store at all.
+	if a.nativeMetricMetadata == nil || !a.nativeMetricMetadata.mayHaveObservedSeries(s.ref) {
+		s.Lock()
+		native := s.nativeMetadataLocked()
+		unchanged := native != nil && native.effectiveFrom <= timestamp && *native.metadata == m
+		s.Unlock()
+		if unchanged {
+			return
+		}
+	}
+
+	if a.nativeMetricMetadata == nil {
+		a.nativeMetricMetadata = a.head.nativeMetricMetadata.getAppender()
+	}
+	a.nativeMetricMetadata.observe(a.head.nativeMetricMetadata, s, timestamp, m)
+}
+
+func (a *headAppenderBase) clearNativeMetricMetadata() {
+	if a.nativeMetricMetadata == nil {
+		return
+	}
+	appender := a.nativeMetricMetadata
+	a.nativeMetricMetadata = nil
+	a.head.nativeMetricMetadata.putAppender(appender)
+}
+
+func (a *headAppenderBase) commitNativeMetricMetadata() {
+	if a.nativeMetricMetadata == nil {
+		return
+	}
+	a.head.nativeMetricMetadata.commitAppender(a.nativeMetricMetadata)
+	a.clearNativeMetricMetadata()
+}
+
 type headAppender struct {
 	headAppenderBase
 	hints *storage.AppendOptions
@@ -1078,7 +1127,8 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 	}
 
 	s.Lock()
-	hasNewMetadata := s.meta == nil || *s.meta != meta
+	currentMetadata := s.legacyMetadataLocked()
+	hasNewMetadata := currentMetadata == nil || *currentMetadata != meta
 	s.Unlock()
 
 	if hasNewMetadata {
@@ -1732,7 +1782,7 @@ func commitMetadata(b *appendBatch) {
 	for i, m := range b.metadata {
 		series = b.metadataSeries[i]
 		series.Lock()
-		series.meta = &metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help}
+		series.setLegacyMetadataLocked(&metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help})
 		series.Unlock()
 	}
 }
@@ -1821,6 +1871,9 @@ func (a *headAppenderBase) Commit() (err error) {
 		}
 	}()
 
+	// Publish native metadata before sample commits release the reservations
+	// that keep their series indexed.
+	a.commitNativeMetricMetadata()
 	for _, b := range a.batches {
 		// Do not change the order of these calls. We depend on it for
 		// correct commit order of samples and for the staleness marker
@@ -2303,6 +2356,7 @@ func (a *headAppenderBase) Rollback() (err error) {
 	}
 	h := a.head
 	defer func() {
+		a.clearNativeMetricMetadata()
 		a.releaseCreatedSeriesReservations()
 		h.iso.closeAppend(a.appendID)
 		h.metrics.activeAppenders.Dec()
