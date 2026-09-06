@@ -123,7 +123,6 @@ func TestReadyAndHealthy(t *testing.T) {
 	waitForServerReady(t, baseURL, 5*time.Second)
 
 	var resp *http.Response
-	var err error
 
 	for _, path := range []string{"/-/healthy", "/health", "/healthz"} {
 		resp, err = http.Get(baseURL + path)
