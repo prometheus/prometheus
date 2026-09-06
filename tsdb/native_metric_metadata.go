@@ -123,6 +123,7 @@ type nativeMetricMetadataAppender struct {
 	touched         []uint8
 	stripeFirst     [nativeMetricMetadataStripes]uint32
 	stripeLast      [nativeMetricMetadataStripes]uint32
+	stripeCollision [nativeMetricMetadataStripes / 64]uint64
 	lastMetadata    metadata.Metadata
 	lastObservation uint32
 	haveLast        bool
@@ -211,10 +212,28 @@ func (a *nativeMetricMetadataAppender) appendObservation(s *memSeries, effective
 		a.stripeFirst[stripe] = observationRef
 		a.touched = append(a.touched, stripe)
 	} else {
+		first := a.observations[a.stripeFirst[stripe]-1]
+		if first.series.ref != s.ref {
+			a.stripeCollision[stripe/64] |= uint64(1) << (stripe % 64)
+		}
 		a.observations[a.stripeLast[stripe]-1].next = observationRef
 	}
 	a.stripeLast[stripe] = observationRef
 	return observationRef
+}
+
+// mayHaveObservedSeries reports whether this transaction may already contain
+// an observation for ref. Stripe collisions conservatively return true.
+func (a *nativeMetricMetadataAppender) mayHaveObservedSeries(ref chunks.HeadSeriesRef) bool {
+	stripe := uint8(uint64(ref) & (nativeMetricMetadataStripes - 1))
+	first := a.stripeFirst[stripe]
+	if first == 0 {
+		return false
+	}
+	if a.observations[first-1].series.ref == ref {
+		return true
+	}
+	return a.stripeCollision[stripe/64]&(uint64(1)<<(stripe%64)) != 0
 }
 
 func (a *nativeMetricMetadataAppender) observe(store *nativeMetricMetadataStore, s *memSeries, effectiveFrom int64, m metadata.Metadata) {
@@ -270,6 +289,7 @@ func (s *nativeMetricMetadataStore) putAppender(appender *nativeMetricMetadataAp
 		appender.stripeFirst[stripe] = 0
 		appender.stripeLast[stripe] = 0
 	}
+	appender.stripeCollision = [nativeMetricMetadataStripes / 64]uint64{}
 	clear(appender.observations)
 	appender.observations = appender.observations[:0]
 	clear(appender.values)
@@ -461,7 +481,7 @@ func (s *nativeMetricMetadataStore) commitAppenderStripe(stripeIndex uint8, appe
 			})
 		}
 		stripe.mtx.Unlock()
-		appender.applyPendingCache()
+		appender.applyPendingCache(stripe)
 	}
 }
 
@@ -488,23 +508,30 @@ func (a *nativeMetricMetadataAppender) sharedMetadataFor(handle unique.Handle[me
 // applyPendingCache publishes each series' newest committed metadata so a later
 // append carrying the same metadata can skip recording it.
 //
-// Must run with no stripe lock held. The store's lock order is stripe before
-// series: observeNativeMetricMetadata releases the series lock before reaching
-// the store, and nothing takes a stripe lock while holding a series one.
-func (a *nativeMetricMetadataAppender) applyPendingCache() {
+// Called with no stripe lock held. Shared copies are allocated before the
+// newest store state is revalidated under stripe-before-series lock order.
+func (a *nativeMetricMetadataAppender) applyPendingCache(stripe *nativeMetricMetadataStripe) {
 	for _, pending := range a.pending {
-		shared := a.sharedMetadataFor(pending.handle, pending.metadata)
-		// Reuse the series' entry rather than replacing it. A series whose
-		// metadata changes every scrape would otherwise allocate one per
-		// commit, which costs more than the skip saves.
-		pending.series.Lock()
-		if pending.series.nativeMeta == nil {
-			pending.series.nativeMeta = &nativeSeriesMetadata{}
+		a.sharedMetadataFor(pending.handle, pending.metadata)
+	}
+
+	stripe.mtx.RLock()
+	for _, pending := range a.pending {
+		history, ok := stripe.histories[pending.series.ref]
+		if !ok || len(history.versions) == 0 {
+			continue
 		}
-		pending.series.nativeMeta.metadata = shared
-		pending.series.nativeMeta.effectiveFrom = pending.effectiveFrom
+		newest := history.versions[len(history.versions)-1]
+		if newest.metadata != pending.handle || newest.effectiveFrom != pending.effectiveFrom {
+			continue
+		}
+		// Reuse the series' sidecar rather than replacing it. A series whose
+		// metadata changes every scrape would otherwise allocate one per commit.
+		pending.series.Lock()
+		pending.series.setNativeMetadataLocked(a.shared[pending.handle], pending.effectiveFrom)
 		pending.series.Unlock()
 	}
+	stripe.mtx.RUnlock()
 	clear(a.pending)
 	a.pending = a.pending[:0]
 }

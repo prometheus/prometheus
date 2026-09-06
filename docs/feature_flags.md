@@ -172,20 +172,21 @@ the corresponding Head series is removed. Remote Write 1.0 does not populate
 this store. At most 5 versions are retained per series.
 
 The store costs Head memory per series, along two axes. Version history is the
-smaller one: a series whose metadata never changes costs roughly 90 bytes, and
-one that has reached the 5-version limit around 175. Metadata cardinality is the
+smaller one: a series whose metadata never changes costs roughly 100 bytes, and
+one that has reached the 5-version limit around 185. Metadata cardinality is the
 larger — identical values are stored once and shared, so a series carrying help
-text unique to it costs around 460 bytes even at a single version, which no
-version limit bounds. Sizing therefore runs from roughly 90 MB per million
-series where a metric family shares its metadata, to around 460 MB per million
+text unique to it costs around 470 bytes even at a single version, which no
+version limit bounds. Sizing therefore runs from roughly 100 MB per million
+series where a metric family shares its metadata, to around 470 MB per million
 where every series has its own.
 
 An append whose metadata already matches the series records nothing, which is
-what keeps the feature's cost off the ingestion path. A consequence is that
-overlapping writers to one series can lose a version: if one transaction
-observes the current metadata while another changes it and commits first, the
-first has nothing left to re-assert, and the change is not reverted at the later
-timestamp.
+what keeps the feature's cost off the ingestion path. The discarded observation
+cannot be reconstructed if a later append in the same transaction arrives with
+a lower timestamp and different metadata. The same applies to overlapping
+writers: if one transaction observes the current metadata while another changes
+it and commits first, the first has nothing left to re-assert, and the change is
+not reverted at the later timestamp.
 
 ## Delay compaction start time
 

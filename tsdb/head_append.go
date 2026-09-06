@@ -441,12 +441,14 @@ func (a *headAppenderBase) observeNativeMetricMetadata(s *memSeries, timestamp i
 	// nothing, and recording one costs both the entry and a lookup to discard
 	// it at commit. Checking before the appender is taken from the pool means a
 	// transaction that changes no metadata never touches the store at all.
-	s.Lock()
-	unchanged := s.nativeMeta != nil && s.nativeMeta.effectiveFrom <= timestamp &&
-		*s.nativeMeta.metadata == m
-	s.Unlock()
-	if unchanged {
-		return
+	if a.nativeMetricMetadata == nil || !a.nativeMetricMetadata.mayHaveObservedSeries(s.ref) {
+		s.Lock()
+		native := s.nativeMetadataLocked()
+		unchanged := native != nil && native.effectiveFrom <= timestamp && *native.metadata == m
+		s.Unlock()
+		if unchanged {
+			return
+		}
 	}
 
 	if a.nativeMetricMetadata == nil {
@@ -1125,7 +1127,8 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 	}
 
 	s.Lock()
-	hasNewMetadata := s.meta == nil || *s.meta != meta
+	currentMetadata := s.legacyMetadataLocked()
+	hasNewMetadata := currentMetadata == nil || *currentMetadata != meta
 	s.Unlock()
 
 	if hasNewMetadata {
@@ -1779,7 +1782,7 @@ func commitMetadata(b *appendBatch) {
 	for i, m := range b.metadata {
 		series = b.metadataSeries[i]
 		series.Lock()
-		series.meta = &metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help}
+		series.setLegacyMetadataLocked(&metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help})
 		series.Unlock()
 	}
 }

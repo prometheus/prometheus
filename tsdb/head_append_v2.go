@@ -213,7 +213,8 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 
 	if a.head.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
 		s.Lock()
-		metaChanged := s.meta == nil || !s.meta.Equals(opts.Metadata)
+		currentMetadata := s.legacyMetadataLocked()
+		metaChanged := currentMetadata == nil || !currentMetadata.Equals(opts.Metadata)
 		s.Unlock()
 		if metaChanged {
 			b := a.getCurrentBatch(stNone, s.ref)

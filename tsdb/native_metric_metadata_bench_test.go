@@ -39,10 +39,10 @@ type metricMetadataBenchmarkMode struct {
 }
 
 // metricMetadataBenchmarkModes returns the metadata storage configurations
-// under test: "off" stores none, "legacy" writes metadata WAL records, and
-// "native" fills the in-memory versioned store.
+// under test: "off" stores none, "legacy" writes metadata WAL records,
+// "native" fills the in-memory versioned store, and "dual" enables both.
 //
-// All three receive Metadata and MetricFamilyName from the fixture, because
+// All four receive Metadata and MetricFamilyName from the fixture, because
 // clients supply them regardless of what the Head does with them. "off"
 // therefore measures a caller handing over metadata that the Head discards,
 // which is what makes it the control for the other two rather than simply a
@@ -53,6 +53,7 @@ func metricMetadataBenchmarkModes() []metricMetadataBenchmarkMode {
 		{name: "off"},
 		{name: "legacy", legacyEnabled: true},
 		{name: "native", nativeEnabled: true},
+		{name: "dual", legacyEnabled: true, nativeEnabled: true},
 	}
 }
 
@@ -201,8 +202,7 @@ func validateMetricMetadataBenchmarkState(b *testing.B, h *Head, mode metricMeta
 		b.Fatalf("unexpected series count: got %d, want %d", got, want)
 	}
 
-	switch {
-	case mode.nativeEnabled:
+	if mode.nativeEnabled {
 		if h.nativeMetricMetadata == nil {
 			b.Fatal("native metadata store was not created")
 		}
@@ -229,7 +229,8 @@ func validateMetricMetadataBenchmarkState(b *testing.B, h *Head, mode metricMeta
 				b.Fatalf("unexpected native metadata truncation for series %d: got %t, want %t", refs[i], truncated, want)
 			}
 		}
-	case mode.legacyEnabled:
+	}
+	if mode.legacyEnabled {
 		lastVariant := (numVersions - 1) % len(fixture.options)
 		for _, i := range []int{0, len(refs) - 1} {
 			series := h.series.getByID(chunks.HeadSeriesRef(refs[i]))
@@ -237,14 +238,15 @@ func validateMetricMetadataBenchmarkState(b *testing.B, h *Head, mode metricMeta
 				b.Fatalf("series %d was not found", refs[i])
 			}
 			series.Lock()
-			got := series.meta
+			got := series.legacyMetadataLocked()
 			series.Unlock()
 			want := fixture.options[lastVariant][fixture.familyBySeries[i]].Metadata
 			if got == nil || !got.Equals(want) {
 				b.Fatalf("unexpected legacy metadata for series %d: got %v, want %v", refs[i], got, want)
 			}
 		}
-	default:
+	}
+	if !mode.nativeEnabled && !mode.legacyEnabled {
 		if h.nativeMetricMetadata != nil {
 			b.Fatal("mode=off unexpectedly created a native metadata store")
 		}
@@ -254,7 +256,7 @@ func validateMetricMetadataBenchmarkState(b *testing.B, h *Head, mode metricMeta
 				b.Fatalf("series %d was not found", refs[i])
 			}
 			series.Lock()
-			got := series.meta
+			got := series.legacyMetadataLocked()
 			series.Unlock()
 			if got != nil {
 				b.Fatalf("mode=off unexpectedly retained metadata for series %d", refs[i])
@@ -322,6 +324,70 @@ func BenchmarkHeadMetricMetadataRetained(b *testing.B) {
 				b.ReportMetric(float64(totalWALBytes)/operations, "wal-B/series")
 			})
 		}
+	}
+}
+
+// BenchmarkHeadMetricMetadataUntouchedSeriesRetained verifies that enabling
+// either metadata path does not allocate per-series state without metadata.
+// Run each case in a fresh process with -benchtime=1x.
+func BenchmarkHeadMetricMetadataUntouchedSeriesRetained(b *testing.B) {
+	const numSeries = 100_000
+	fixture := newMetricMetadataBenchmarkFixture(numSeries, 100, 1)
+
+	for _, mode := range metricMetadataBenchmarkModes() {
+		b.Run("mode="+mode.name, func(b *testing.B) {
+			refs := make([]storage.SeriesRef, numSeries)
+			var totalHeapBytes uint64
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				b.StopTimer()
+				clear(refs)
+				beforeHeap := metricMetadataBenchmarkHeapAlloc()
+				h, _, closeHead := newMetricMetadataBenchmarkHead(b, mode, 1_000_000_000, false)
+				b.StartTimer()
+
+				app := h.AppenderV2(b.Context())
+				for i, lset := range fixture.labels {
+					ref, err := app.Append(0, lset, 0, 100, float64(i), nil, nil, storage.AOptions{})
+					if err != nil {
+						b.Fatal(err)
+					}
+					refs[i] = ref
+				}
+				if err := app.Commit(); err != nil {
+					b.Fatal(err)
+				}
+
+				b.StopTimer()
+				afterHeap := metricMetadataBenchmarkHeapAlloc()
+				if afterHeap < beforeHeap {
+					b.Fatalf("heap allocation decreased during benchmark: before %d, after %d", beforeHeap, afterHeap)
+				}
+				totalHeapBytes += afterHeap - beforeHeap
+				if got := h.NumSeries(); got != numSeries {
+					b.Fatalf("unexpected series count: got %d, want %d", got, numSeries)
+				}
+				for _, i := range []int{0, numSeries - 1} {
+					series := h.series.getByID(chunks.HeadSeriesRef(refs[i]))
+					series.Lock()
+					state := series.metadata
+					series.Unlock()
+					if state != nil {
+						b.Fatalf("untouched series %d allocated metadata state", refs[i])
+					}
+				}
+				if mode.nativeEnabled && h.nativeMetricMetadata.series.Load() != 0 {
+					b.Fatalf("native store unexpectedly contains %d series", h.nativeMetricMetadata.series.Load())
+				}
+				runtime.KeepAlive(fixture)
+				runtime.KeepAlive(refs)
+				runtime.KeepAlive(h)
+				closeHead()
+			}
+
+			b.ReportMetric(float64(totalHeapBytes)/float64(b.N*numSeries), "heap-B/series")
+		})
 	}
 }
 
@@ -394,6 +460,83 @@ func BenchmarkHeadMetricMetadataAppendConcurrent(b *testing.B) {
 				b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*seriesPerWorker), "ns/sample")
 			})
 		}
+	}
+}
+
+// BenchmarkHeadMetricMetadataAppendSparseChangesInMemory measures a scrape in
+// which one percent of series change metadata while the rest remain stable.
+func BenchmarkHeadMetricMetadataAppendSparseChangesInMemory(b *testing.B) {
+	const (
+		numSeries  = 10_000
+		changeEach = 100
+	)
+	fixture := newMetricMetadataBenchmarkFixture(numSeries, 100, 3)
+
+	for _, mode := range []metricMetadataBenchmarkMode{
+		{name: "off"},
+		{name: "native", nativeEnabled: true},
+		{name: "dual", legacyEnabled: true, nativeEnabled: true},
+	} {
+		b.Run("mode="+mode.name, func(b *testing.B) {
+			refs := make([]storage.SeriesRef, numSeries)
+			h, _, closeHead := newMetricMetadataBenchmarkHead(b, mode, 1_000_000_000, false)
+			b.Cleanup(closeHead)
+			appendMetricMetadataBenchmarkRound(b, h, fixture, refs, 0, 100)
+
+			b.ReportAllocs()
+			var iteration int64
+			for b.Loop() {
+				app := h.AppenderV2(b.Context())
+				changedVariant := 1 + int(iteration&1)
+				for i, lset := range fixture.labels {
+					variant := 0
+					if i%changeEach == 0 {
+						variant = changedVariant
+					}
+					ref, err := app.Append(refs[i], lset, 0, 1_000+iteration, float64(iteration), nil, nil, fixture.options[variant][fixture.familyBySeries[i]])
+					if err != nil {
+						b.Fatal(err)
+					}
+					refs[i] = ref
+				}
+				if err := app.Commit(); err != nil {
+					b.Fatal(err)
+				}
+				iteration++
+			}
+
+			if mode.nativeEnabled {
+				changed, _, ok := h.nativeMetricMetadata.get(chunks.HeadSeriesRef(refs[0]))
+				if !ok || len(changed) < 2 {
+					b.Fatalf("changed series metadata was not retained: %v", changed)
+				}
+				lastChangedVariant := 1 + int((iteration-1)&1)
+				if want := fixture.options[lastChangedVariant][fixture.familyBySeries[0]].Metadata; !changed[len(changed)-1].Metadata.Equals(want) {
+					b.Fatalf("unexpected changed series metadata: got %v, want %v", changed[len(changed)-1].Metadata, want)
+				}
+				stable, _, ok := h.nativeMetricMetadata.get(chunks.HeadSeriesRef(refs[1]))
+				if !ok || len(stable) != 1 {
+					b.Fatalf("stable series metadata changed: %v", stable)
+				}
+			}
+			if mode.legacyEnabled {
+				lastChangedVariant := 1 + int((iteration-1)&1)
+				for _, i := range []int{0, 1} {
+					variant := 0
+					if i == 0 {
+						variant = lastChangedVariant
+					}
+					series := h.series.getByID(chunks.HeadSeriesRef(refs[i]))
+					series.Lock()
+					got := series.legacyMetadataLocked()
+					series.Unlock()
+					want := fixture.options[variant][fixture.familyBySeries[i]].Metadata
+					if got == nil || !got.Equals(want) {
+						b.Fatalf("unexpected legacy metadata for series %d: got %v, want %v", refs[i], got, want)
+					}
+				}
+			}
+		})
 	}
 }
 

@@ -465,11 +465,13 @@ Outer:
 					missingSeries[m.Ref] = struct{}{}
 					continue
 				}
-				s.meta = &metadata.Metadata{
+				s.Lock()
+				s.setLegacyMetadataLocked(&metadata.Metadata{
 					Type: record.ToMetricType(m.Type),
 					Unit: m.Unit,
 					Help: m.Help,
-				}
+				})
+				s.Unlock()
 			}
 			clear(v) // Zero out to avoid retaining metadata strings.
 			h.wlReplayMetadataPool.Put(v[:0])
