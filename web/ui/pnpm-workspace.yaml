@@ -1,6 +1,9 @@
 packages:
   - "mantine-ui"
   - "module/*"
+trustPolicy: no-downgrade
+blockExoticSubdeps: true
+minimumReleaseAge: 10080
 allowBuilds:
   esbuild: true
   unrs-resolver: true
