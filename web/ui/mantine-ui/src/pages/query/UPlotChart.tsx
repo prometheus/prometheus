@@ -1,4 +1,4 @@
-import { FC, useEffect, useState } from "react";
+import { FC, useEffect, useRef, useState } from "react";
 import { RangeSamples } from "../../api/responseTypes/query";
 import classes from "./Graph.module.css";
 import { GraphDisplayMode } from "../../state/queryPageSlice";
@@ -20,6 +20,7 @@ export interface UPlotChartRange {
 
 export interface UPlotChartProps {
   data: RangeSamples[];
+  expr: string;
   range: UPlotChartRange;
   width: number;
   showExemplars: boolean;
@@ -32,6 +33,7 @@ export interface UPlotChartProps {
 // uPlot format and sets up the uPlot options object depending on the UI settings.
 const UPlotChart: FC<UPlotChartProps> = ({
   data,
+  expr,
   range: { startTime, endTime, resolution },
   width,
   displayMode,
@@ -45,10 +47,22 @@ const UPlotChart: FC<UPlotChartProps> = ({
   const { useLocalTime } = useSettings();
   const theme = useComputedColorScheme();
 
+  // Per-series legend isolation state, keyed by series label so it survives
+  // even if series order shifts between requests. Cleared on expr changes
+  // below, kept across everything else (theme, resize, re-executing the same
+  // query, ...) since none of those should feel like a "new" chart.
+  const seriesVisibility = useRef<Map<string, boolean>>(new Map());
+  const prevExpr = useRef<string | null>(null);
+
   useEffect(() => {
     if (width === 0) {
       return;
     }
+
+    if (prevExpr.current !== expr) {
+      seriesVisibility.current.clear();
+    }
+    prevExpr.current = expr;
 
     const seriesData: uPlot.AlignedData = getUPlotData(
       data,
@@ -64,7 +78,8 @@ const UPlotChart: FC<UPlotChartProps> = ({
       useLocalTime,
       yAxisMin,
       theme === "light",
-      onSelectRange
+      onSelectRange,
+      seriesVisibility.current
     );
 
     if (displayMode === GraphDisplayMode.Stacked) {
@@ -77,6 +92,7 @@ const UPlotChart: FC<UPlotChartProps> = ({
   }, [
     width,
     data,
+    expr,
     displayMode,
     startTime,
     endTime,

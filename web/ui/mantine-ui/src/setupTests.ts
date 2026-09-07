@@ -1,5 +1,19 @@
 import "@testing-library/jest-dom";
 
+// uplot calls matchMedia on import; jsdom doesn't implement it
+if (typeof window.matchMedia !== "function") {
+  window.matchMedia = (query: string): MediaQueryList => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  });
+}
+
 // Node.js v22+ pre-defines localStorage on globalThis as undefined (when
 // --localstorage-file is omitted), which prevents jsdom from installing its
 // Storage implementation. Provide an in-memory mock so module-level code that

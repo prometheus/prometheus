@@ -221,6 +221,7 @@ const Graph: FC<GraphProps> = ({
         />
         <UPlotChart
           data={dataAndRange.data.data.result}
+          expr={effectiveExpr}
           range={dataAndRange.range}
           width={width}
           showExemplars={showExemplars}
