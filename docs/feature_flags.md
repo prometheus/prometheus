@@ -461,10 +461,11 @@ reports a warning.
 
 The registry is loaded and validated at startup: it must be reachable and every
 file must parse (a semver-named file as a semconv file, any other as an OTel
-schema). A malformed or schema-less registry fails startup rather than surfacing
-only at query time. It is read once; the block is re-validated on configuration
-reload but changes take effect only on restart, and it is ignored unless the
-feature flag is set.
+schema). A malformed or schema-less registry, invalid group inheritance, or
+attribute materialization beyond the safety limits fails startup rather than
+surfacing only at query time. It is read once; the block is re-validated on
+configuration reload but changes take effect only on restart, and it is ignored
+unless the feature flag is set.
 
 For a remote `url`, the archive is fetched once at startup using `http_client_config`
 (so redirects follow `follow_redirects`, default `true`; set it to `false` to

@@ -15,10 +15,12 @@ package semconv
 
 import (
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -328,6 +330,249 @@ groups:
 		require.Empty(t, sc.ambiguousMetrics)
 	})
 
+	t.Run("resolves transitive inheritance and group-local inline prefixes", func(t *testing.T) {
+		sc, err := loadSemconv([]byte(`
+groups:
+  - id: metric.queue.depth
+    type: metric
+    metric_name: queue.depth
+    unit: "{item}"
+    instrument: updowncounter
+    extends: attributes.queue
+    prefix: metric
+    attributes:
+      - id: local
+      - ref: queue.name
+      - ref: queue.name
+  - id: metric.service.info
+    type: metric
+    metric_name: service.info
+    extends: attributes.common
+  - id: attributes.common
+    type: attribute_group
+    prefix: service
+    attributes:
+      - id: name
+  - id: attributes.queue
+    type: attribute_group
+    extends: attributes.queue.base
+    prefix: queue
+    attributes:
+      - id: capacity
+      - ref: queue.name
+  - id: attributes.queue.base
+    type: attribute_group
+    extends: attributes.common
+    prefix: queue
+    attributes:
+      - id: priority
+`), "1.0.0")
+		require.NoError(t, err)
+		require.Equal(t,
+			[]string{"service.name", "queue.priority", "queue.capacity", "queue.name", "metric.local"},
+			sc.attributesOf("queue.depth"),
+		)
+		require.Equal(t, []string{"service.name"}, sc.attributesOf("service.info"),
+			"resolving a child must not mutate its memoized parent")
+	})
+
+	t.Run("does not inherit prefixes for inline attributes", func(t *testing.T) {
+		sc, err := loadSemconv([]byte(`
+groups:
+  - id: attributes.parent
+    type: attribute_group
+    prefix: parent
+    attributes:
+      - id: inherited
+  - id: metric.child.absent
+    type: metric
+    metric_name: child.absent
+    extends: attributes.parent
+    attributes:
+      - id: local
+  - id: metric.child.empty
+    type: metric
+    metric_name: child.empty
+    extends: attributes.parent
+    prefix: ""
+    attributes:
+      - id: local
+  - id: metric.child.explicit
+    type: metric
+    metric_name: child.explicit
+    extends: attributes.parent
+    prefix: child
+    attributes:
+      - id: local
+`), "1.0.0")
+		require.NoError(t, err)
+		require.Equal(t, []string{"parent.inherited", "local"}, sc.attributesOf("child.absent"))
+		require.Equal(t, []string{"parent.inherited", "local"}, sc.attributesOf("child.empty"))
+		require.Equal(t, []string{"parent.inherited", "child.local"}, sc.attributesOf("child.explicit"))
+	})
+
+	for _, tc := range []struct {
+		name    string
+		yaml    string
+		wantErr string
+	}{
+		{
+			name: "unused group with missing parent",
+			yaml: `
+groups:
+  - id: attributes.queue
+    type: attribute_group
+    extends: attributes.missing
+`,
+			wantErr: `semconv group "attributes.queue" extends unknown group "attributes.missing"`,
+		},
+		{
+			name: "unused inheritance cycle",
+			yaml: `
+groups:
+  - id: attributes.a
+    type: attribute_group
+    extends: attributes.b
+  - id: attributes.b
+    type: attribute_group
+    extends: attributes.a
+`,
+			wantErr: "attributes.a -> attributes.b -> attributes.a",
+		},
+		{
+			name: "duplicate group id",
+			yaml: `
+groups:
+  - id: attributes.queue
+    type: attribute_group
+  - id: attributes.queue
+    type: attribute_group
+`,
+			wantErr: `duplicate semconv group id "attributes.queue"`,
+		},
+		{
+			name: "unused group attribute has id and ref",
+			yaml: `
+groups:
+  - id: attributes.queue
+    type: attribute_group
+    attributes:
+      - id: queue.name
+        ref: queue.name
+`,
+			wantErr: "declares both id",
+		},
+		{
+			name: "unused group attribute has neither id nor ref",
+			yaml: `
+groups:
+  - id: attributes.queue
+    type: attribute_group
+    attributes:
+      - requirement_level: recommended
+`,
+			wantErr: "declares neither id nor ref",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := loadSemconv([]byte(tc.yaml), "1.0.0")
+			require.ErrorContains(t, err, tc.wantErr)
+		})
+	}
+
+	t.Run("rejects a malformed discarded metric definition", func(t *testing.T) {
+		_, err := loadSemconv([]byte(`
+groups:
+  - id: metric.shared.first
+    type: metric
+    metric_name: shared
+    attributes:
+      - ref: queue.name
+  - id: metric.shared.second
+    type: metric
+    metric_name: shared
+    attributes:
+      - requirement_level: recommended
+`), "1.0.0")
+		require.ErrorContains(t, err, `semconv group "metric.shared.second" attribute declares neither id nor ref`)
+	})
+
+	for _, tc := range []struct {
+		name            string
+		metricAttrs     int
+		wantErrContains string
+	}{
+		{name: "accepts 256 resolved attributes", metricAttrs: 6},
+		{name: "rejects 257 resolved attributes", metricAttrs: 7, wantErrContains: "semconv group attributes would exceed 256"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := loadSemconv(inheritedAttributeSemconv(t, 250, tc.metricAttrs), "1.0.0")
+			if tc.wantErrContains != "" {
+				require.ErrorContains(t, err, tc.wantErrContains)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+
+	t.Run("rejects 257 resolved attributes in an unused group", func(t *testing.T) {
+		_, err := loadSemconv(marshalSemconv(t, []semconvGroup{
+			{
+				ID:         "attributes.unused",
+				Type:       "attribute_group",
+				Attributes: semconvAttributeRefs("unused.", maxSchemaExpansion+1),
+			},
+		}), "1.0.0")
+		require.ErrorContains(t, err, "semconv group attributes would exceed 256")
+	})
+
+	t.Run("deduplicates before enforcing the resolved attribute limit", func(t *testing.T) {
+		_, err := loadSemconv(marshalSemconv(t, []semconvGroup{
+			{
+				ID:         "attributes.base",
+				Type:       "attribute_group",
+				Attributes: semconvAttributeRefs("base.", maxSchemaExpansion),
+			},
+			{
+				ID:         "metric.queue.depth",
+				Type:       "metric",
+				MetricName: "queue.depth",
+				Extends:    "attributes.base",
+				Attributes: []semconvAttribute{{Ref: "base.0"}},
+			},
+		}), "1.0.0")
+		require.NoError(t, err)
+	})
+
+	exactFanoutChildren := int(maxSemconvFileAttributeSlots)/maxSchemaExpansion - 1
+	for _, tc := range []struct {
+		name            string
+		children        int
+		wantErrContains string
+	}{
+		{name: "accepts exact file attribute slot limit", children: exactFanoutChildren},
+		{
+			name:            "rejects file attribute slots above limit",
+			children:        exactFanoutChildren + 1,
+			wantErrContains: "semconv file attribute slots would exceed 65536",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := loadSemconv(inheritedAttributeFanoutSemconv(t, tc.children), "1.0.0")
+			if tc.wantErrContains != "" {
+				require.ErrorContains(t, err, tc.wantErrContains)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+
+	t.Run("charges allocated capacity before deduplication", func(t *testing.T) {
+		groupsAtLimit := int(maxSemconvFileAttributeSlots) / maxSchemaExpansion
+		_, err := loadSemconv(duplicateHeavySemconv(t, groupsAtLimit+1), "1.0.0")
+		require.ErrorContains(t, err, "semconv file attribute slots would exceed 65536")
+	})
+
 	t.Run("indexes a metric group that declares no attributes", func(t *testing.T) {
 		// Such a group is still a metric, so it must be visible to the
 		// existence check that validates rename edges, even though it
@@ -372,6 +617,74 @@ groups:
 		// dependent on which group happened to be parsed last.
 		require.Equal(t, []string{"http.request.method"}, sc.attributesOf("shared.name"))
 	})
+}
+
+func inheritedAttributeSemconv(t *testing.T, parentAttrs, metricAttrs int) []byte {
+	t.Helper()
+	return marshalSemconv(t, []semconvGroup{
+		{
+			ID:         "attributes.base",
+			Type:       "attribute_group",
+			Attributes: semconvAttributeRefs("base.", parentAttrs),
+		},
+		{
+			ID:         "metric.queue.depth",
+			Type:       "metric",
+			MetricName: "queue.depth",
+			Extends:    "attributes.base",
+			Attributes: semconvAttributeRefs("metric.", metricAttrs),
+		},
+	})
+}
+
+func inheritedAttributeFanoutSemconv(t *testing.T, children int) []byte {
+	t.Helper()
+	groups := make([]semconvGroup, 0, children+1)
+	groups = append(groups, semconvGroup{
+		ID:         "attributes.base",
+		Type:       "attribute_group",
+		Attributes: semconvAttributeRefs("base.", maxSchemaExpansion),
+	})
+	for i := range children {
+		groups = append(groups, semconvGroup{
+			ID:      "attributes.child." + strconv.Itoa(i),
+			Type:    "attribute_group",
+			Extends: "attributes.base",
+		})
+	}
+	return marshalSemconv(t, groups)
+}
+
+func duplicateHeavySemconv(t *testing.T, groupCount int) []byte {
+	t.Helper()
+	attributes := make([]semconvAttribute, maxSchemaExpansion)
+	for i := range attributes {
+		attributes[i].Ref = "shared"
+	}
+	groups := make([]semconvGroup, groupCount)
+	for i := range groups {
+		groups[i] = semconvGroup{
+			ID:         "attributes.duplicates." + strconv.Itoa(i),
+			Type:       "attribute_group",
+			Attributes: attributes,
+		}
+	}
+	return marshalSemconv(t, groups)
+}
+
+func semconvAttributeRefs(prefix string, count int) []semconvAttribute {
+	result := make([]semconvAttribute, count)
+	for i := range count {
+		result[i].Ref = prefix + strconv.Itoa(i)
+	}
+	return result
+}
+
+func marshalSemconv(t *testing.T, groups []semconvGroup) []byte {
+	t.Helper()
+	b, err := yaml.Marshal(semconv{Groups: groups})
+	require.NoError(t, err)
+	return b
 }
 
 func TestTransformOTelSchemaLabels(t *testing.T) {
@@ -528,33 +841,42 @@ func TestReadRegistryFile(t *testing.T) {
 	})
 }
 
-// TestUpstreamSemconvAttributes pins how the real semconv files' metric attributes
-// parse, against the unmodified v1.44.0 artefact for semconv 1.22.0.
-//
-// It records a gap as much as a guarantee. Most real metric groups declare their
-// attributes with extends, naming an attribute_group to inherit from, and
-// semconvGroup has no such field: those groups parse with no attributes at all, so
-// nothing canonicalises their attribute names across a rename and no
-// apply_to_metrics scoping applies to them either. Only groups that list attributes
-// inline are seen. If extends is resolved later, the second assertion here is the
-// one that should change.
+// TestUpstreamSemconvAttributes pins inherited metric attributes from the real
+// v1.21.0 and v1.22.0 HTTP semantic-convention groups.
 func TestUpstreamSemconvAttributes(t *testing.T) {
-	b, err := os.ReadFile("./testdata/upstream/semconv-1.22.0.yaml")
-	require.NoError(t, err)
-	sc, err := loadSemconv(b, "1.22.0")
-	require.NoError(t, err)
+	for _, tc := range []struct {
+		version    string
+		metric     string
+		attributes []string
+	}{
+		{
+			version: "1.21.0",
+			metric:  "http.server.duration",
+			attributes: []string{
+				"http.route", "server.address", "server.port", "url.scheme",
+				"http.request.method", "http.response.status_code",
+				"network.protocol.name", "network.protocol.version",
+			},
+		},
+		{
+			version: "1.22.0",
+			metric:  "http.server.request.duration",
+			attributes: []string{
+				"http.request.method", "http.response.status_code", "error.type",
+				"network.protocol.name", "network.protocol.version", "http.route",
+				"server.address", "server.port", "url.scheme",
+			},
+		},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			b, err := os.ReadFile("./testdata/upstream/semconv-" + tc.version + ".yaml")
+			require.NoError(t, err)
+			sc, err := loadSemconv(b, tc.version)
+			require.NoError(t, err)
 
-	// Declared inline, so they are parsed.
-	require.Contains(t, sc.attributesOf("http.server.active_requests"), "http.request.method",
-		"inline attributes of a real metric group must be parsed")
-
-	// Declared via "extends: metric_attributes.http.server", so they are not.
-	require.Empty(t, sc.attributesOf("http.server.request.duration"),
-		"extends is not resolved, so this group has no attributes; if that changes, so must this")
-
-	// Either way the group is indexed as a metric, which is what rename
-	// corroboration needs from it.
-	require.Contains(t, sc.metrics, "http.server.request.duration")
-	require.Equal(t, "s", sc.metrics["http.server.request.duration"].unit)
-	require.Equal(t, "histogram", sc.metrics["http.server.request.duration"].instrument)
+			require.Equal(t, tc.attributes, sc.attributesOf(tc.metric))
+			require.Equal(t, "s", sc.metrics[tc.metric].unit)
+			require.Equal(t, "histogram", sc.metrics[tc.metric].instrument)
+		})
+	}
 }

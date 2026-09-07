@@ -15,6 +15,7 @@ package semconv
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -25,6 +26,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -80,22 +82,38 @@ func newRegistrySource(files map[string][]byte) registrySource {
 	return prefixedRegistry{prefix: registryPrefix, inner: registryFiles(files)}
 }
 
+func cloneRegistryFiles(files map[string][]byte) map[string][]byte {
+	cloned := make(map[string][]byte, len(files))
+	for name, b := range files {
+		cloned[name] = bytes.Clone(b)
+	}
+	return cloned
+}
+
 // validateRegistryFiles reports whether files form a usable registry: a non-empty
 // set in which every semver-named file (e.g. "1.0.0") parses as a semconv file,
 // every other file (e.g. "registry.yaml") parses as an OTel schema, and at least
-// one OTel schema is present. It rejects a malformed or schema-less registry at
-// startup instead of letting it fail only at query time. Only versions queried
-// as __semconv_url__ anchors require a semconv file; a missing sibling version
-// disables corroboration for that boundary and produces a query warning. It
-// reuses loadSemconv/loadOTelSchema so validation matches what queries rely on.
+// one OTel schema is present. Semconv materialization is bounded cumulatively
+// across the registry. It rejects invalid input at startup instead of letting it
+// fail only at query time. Only versions queried as __semconv_url__ anchors
+// require a semconv file; a missing sibling version disables corroboration for
+// that boundary and produces a query warning. It reuses loadSemconv/loadOTelSchema
+// so validation matches what queries rely on.
 func validateRegistryFiles(files map[string][]byte) error {
 	if len(files) == 0 {
 		return errors.New("registry is empty")
 	}
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	registryBudget := &semconvRegistryMaterializationBudget{}
 	hasSchema := false
-	for name, b := range files {
+	for _, name := range names {
+		b := files[name]
 		if semverRe.MatchString(name) {
-			if _, err := loadSemconv(b, name); err != nil {
+			if _, err := loadSemconvWithBudget(b, name, registryBudget); err != nil {
 				return fmt.Errorf("registry semconv %q: %w", name, err)
 			}
 			continue
