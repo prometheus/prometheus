@@ -58,7 +58,7 @@ require (
 	github.com/oklog/run v1.2.0
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor v0.157.0
-	github.com/outscale/osc-sdk-go/v2 v2.34.0
+	github.com/outscale/osc-sdk-go/v2 v2.35.0
 	github.com/ovh/go-ovh v1.9.0
 	github.com/pb33f/libopenapi v0.38.7
 	github.com/pb33f/libopenapi-validator v0.14.0
