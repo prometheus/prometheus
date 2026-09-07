@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.13.3 / unreleased
+## 3.13.3 / 2026-09-07
 
 - [SECURITY] Bump github.com/klauspost/compress to v1.18.7 (GO-2026-5841) and golang.org/x/crypto to v0.55.0 (GO-2026-6303).
 - [BUGFIX] Docker SD: Fix panic in Docker Swarm service discovery when a service runs as a plugin or network-attachment. #19102
