@@ -27,20 +27,18 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
-// The files under testdata/upstream contain a real OTel schema and verbatim
-// semantic-convention group excerpts pinned to their upstream commits.
+// The files under testdata/upstream combine a real v1.44.0 schema with verbatim
+// HTTP and JVM semantic-convention groups from v1.21.0, v1.22.0, v1.43.0, and
+// v1.44.0. Each fixture names its upstream source; the HTTP groups retain their
+// inheritance structure.
 // Hand-written fixtures are free to encode whatever shape the parser happens to
 // expect, which is how rename_metrics came to be read from a name_map key that
 // the file format does not have: every fixture agreed with the bug, so the tests
 // passed while metric renames silently did nothing on real data. These tests
 // exist so the real file format is what the parser is held to.
 //
-// Attribute-rename scoping is deliberately not covered from these artefacts. Real
-// http metric groups declare their attributes with extends (see
-// TestUpstreamSemconvAttributes), which the loader does not resolve, so such a
-// metric has no attributes to rename and any assertion about scoping here would
-// hold no matter what the scoping code did. The hand-written fixtures in
-// storage_rename_validation_test.go and otel_schema_test.go cover it instead.
+// Attribute-rename scoping uses a focused fixture elsewhere because the real
+// schema's HTTP attribute renames in this version apply only to spans.
 const (
 	upstreamSchema        = "./testdata/upstream/schema-1.44.0.yaml"
 	upstreamSemconv1_21_0 = "./testdata/upstream/semconv-1.21.0.yaml"

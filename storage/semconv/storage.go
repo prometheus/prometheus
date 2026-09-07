@@ -69,14 +69,18 @@ func AwareStorage(s storage.Storage) storage.Storage {
 // AwareStorageWithRegistry behaves like AwareStorage but resolves __semconv_url__
 // and __schema_url__ matchers against an operator-provided registry instead of
 // the embedded one, which it fully replaces. files holds the registry-root files
-// keyed by base name (e.g. "registry.yaml", "1.0.0"). It returns an error if
-// files is not a valid registry (empty, or a file fails to parse as the semconv
-// or OTel schema its name implies), so callers can fail fast at startup.
+// keyed by base name (e.g. "registry.yaml", "1.0.0"). The map and file contents
+// are copied during the call, so the caller retains ownership after it returns.
+// It returns an error if files is not a valid registry (empty, a file fails to
+// parse as the semconv or OTel schema its name implies, group attribute
+// inheritance is invalid, or attribute materialization exceeds a supported
+// limit), so callers can fail fast at startup.
 func AwareStorageWithRegistry(s storage.Storage, files map[string][]byte) (storage.Storage, error) {
-	if err := validateRegistryFiles(files); err != nil {
+	ownedFiles := cloneRegistryFiles(files)
+	if err := validateRegistryFiles(ownedFiles); err != nil {
 		return nil, err
 	}
-	return newAwareStorage(s, newSchemaEngine(newRegistrySource(files))), nil
+	return newAwareStorage(s, newSchemaEngine(newRegistrySource(ownedFiles))), nil
 }
 
 type awareStorage struct {
