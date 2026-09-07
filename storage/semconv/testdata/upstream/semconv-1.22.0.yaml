@@ -1,9 +1,128 @@
-# Verbatim excerpts of the metric groups from
+# Verbatim excerpts of the HTTP attribute and metric groups from
+#   open-telemetry/semantic-conventions v1.22.0 : model/http-common.yaml
 #   open-telemetry/semantic-conventions v1.22.0 : model/metrics/http.yaml
 #   open-telemetry/semantic-conventions v1.22.0 : model/metrics/jvm-metrics-experimental.yaml
-# Combined under one groups key so rename validation is exercised against
-# real semantic-conventions data rather than hand-written fixtures.
+# Combined under one groups key so inheritance is exercised exactly as it is in
+# the upstream registry.
 groups:
+  - id: attributes.http.common
+    type: attribute_group
+    brief: "Describes HTTP attributes."
+    attributes:
+      - ref: http.request.method
+        requirement_level: required
+      - ref: http.response.status_code
+        requirement_level:
+          conditionally_required: If and only if one was received/sent.
+      - ref: error.type
+        requirement_level:
+          conditionally_required: If request has ended with an error.
+        examples: ['timeout', 'name_resolution_error', '500']
+        note: |
+          If the request fails with an error before response status code was sent or received,
+          `error.type` SHOULD be set to exception type or a component-specific low cardinality error code.
+
+          If response status code was sent or received and status indicates an error according to [HTTP span status definition](/docs/http/http-spans.md),
+          `error.type` SHOULD be set to the status code number (represented as a string), an exception type (if thrown) or a component-specific error code.
+
+          The `error.type` value SHOULD be predictable and SHOULD have low cardinality.
+          Instrumentations SHOULD document the list of errors they report.
+
+          The cardinality of `error.type` within one instrumentation library SHOULD be low, but
+          telemetry consumers that aggregate data from multiple instrumentation libraries and applications
+          should be prepared for `error.type` to have high cardinality at query time, when no
+          additional filters are applied.
+
+          If the request has completed successfully, instrumentations SHOULD NOT set `error.type`.
+      - ref: network.protocol.name
+        examples: ['http', 'spdy']
+        requirement_level:
+          recommended: if not default (`http`).
+      - ref: network.protocol.version
+        examples: ['1.0', '1.1', '2', '3']
+
+  - id: attributes.http.client
+    type: attribute_group
+    brief: 'HTTP Client attributes'
+    extends: attributes.http.common
+    attributes:
+      - ref: server.address
+        requirement_level: required
+        brief: >
+          Host identifier of the ["URI origin"](https://www.rfc-editor.org/rfc/rfc9110.html#name-uri-origin) HTTP request is sent to.
+        note: |
+          Determined by using the first of the following that applies
+
+          - Host identifier of the [request target](https://www.rfc-editor.org/rfc/rfc9110.html#target.resource)
+            if it's sent in absolute-form
+          - Host identifier of the `Host` header
+
+          If an HTTP client request is explicitly made to an IP address, e.g. `http://x.x.x.x:8080`, then
+          `server.address` SHOULD be the IP address `x.x.x.x`. A DNS lookup SHOULD NOT be used.
+      - ref: server.port
+        requirement_level:
+          conditionally_required: If not default (`80` for `http` scheme, `443` for `https`).
+        brief: >
+          Port identifier of the ["URI origin"](https://www.rfc-editor.org/rfc/rfc9110.html#name-uri-origin) HTTP request is sent to.
+        note: >
+          When [request target](https://www.rfc-editor.org/rfc/rfc9110.html#target.resource) is absolute URI, `server.port` MUST match
+          URI port identifier, otherwise it MUST match `Host` header port identifier.
+
+  - id: attributes.http.server
+    type: attribute_group
+    brief: 'HTTP Server attributes'
+    extends: attributes.http.common
+    attributes:
+      - ref: http.route
+        requirement_level:
+          conditionally_required: If and only if it's available
+      - ref: server.address
+        brief: >
+          Name of the local HTTP server that received the request.
+        note: |
+          Determined by using the first of the following that applies
+
+          - The [primary server name](/docs/http/http-spans.md#http-server-definitions) of the matched virtual host. MUST only
+            include host identifier.
+          - Host identifier of the [request target](https://www.rfc-editor.org/rfc/rfc9110.html#target.resource)
+            if it's sent in absolute-form.
+          - Host identifier of the `Host` header
+
+          SHOULD NOT be set if only IP address is available and capturing name would require a reverse DNS lookup.
+
+      - ref: server.port
+        brief: >
+          Port of the local HTTP server that received the request.
+        note: |
+          Determined by using the first of the following that applies
+
+          - Port identifier of the [primary server host](/docs/http/http-spans.md#http-server-definitions) of the matched virtual host.
+          - Port identifier of the [request target](https://www.rfc-editor.org/rfc/rfc9110.html#target.resource)
+            if it's sent in absolute-form.
+          - Port identifier of the `Host` header
+        requirement_level:
+          recommended: If not default (`80` for `http` scheme, `443` for `https`).
+      - ref: url.scheme
+        requirement_level: required
+        examples: ["http", "https"]
+  - id: metric_attributes.http.server
+    type: attribute_group
+    brief: 'HTTP server attributes'
+    extends: attributes.http.server
+    attributes:
+      - ref: server.address
+        requirement_level: opt_in
+      - ref: server.port
+        requirement_level: opt_in
+
+  - id: metric_attributes.http.client
+    type: attribute_group
+    brief: 'HTTP client attributes'
+    extends: attributes.http.client
+    attributes:
+      - ref: url.scheme
+        requirement_level: required
+
   - id: metric.http.server.request.duration
     type: metric
     metric_name: http.server.request.duration
@@ -106,6 +225,7 @@ groups:
       is often, but not always, present as the [Content-Length](https://www.rfc-editor.org/rfc/rfc9110.html#field.content-length)
       header. For requests using transport encoding, this should be the compressed size.
     extends: metric_attributes.http.client
+
   - id: metric.jvm.system.cpu.load_1m
     type: metric
     metric_name: jvm.system.cpu.load_1m

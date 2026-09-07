@@ -99,6 +99,27 @@ func TestValidateRegistryFiles(t *testing.T) {
 		require.NoError(t, validateRegistryFiles(embeddedRegistryFiles(t)))
 	})
 
+	registryWithFanoutVersions := func(t *testing.T, versionCount int) map[string][]byte {
+		t.Helper()
+		exactFanoutChildren := int(maxSemconvFileAttributeSlots)/maxSchemaExpansion - 1
+		semconvFile := inheritedAttributeFanoutSemconv(t, exactFanoutChildren)
+		files := map[string][]byte{"registry.yaml": []byte("file_format: 1.1.0\n")}
+		for i := range versionCount {
+			files[fmt.Sprintf("1.%d.0", i)] = semconvFile
+		}
+		return files
+	}
+
+	registryVersionsAtLimit := int(maxSemconvRegistryAttributeSlots / maxSemconvFileAttributeSlots)
+	t.Run("accepts exact registry attribute slot limit", func(t *testing.T) {
+		require.NoError(t, validateRegistryFiles(registryWithFanoutVersions(t, registryVersionsAtLimit)))
+	})
+
+	t.Run("rejects registry attribute slots above limit", func(t *testing.T) {
+		err := validateRegistryFiles(registryWithFanoutVersions(t, registryVersionsAtLimit+1))
+		require.ErrorContains(t, err, "semconv registry attribute slots would exceed 1048576")
+	})
+
 	t.Run("rejects an empty registry", func(t *testing.T) {
 		require.Error(t, validateRegistryFiles(nil))
 	})
@@ -125,6 +146,16 @@ func TestValidateRegistryFiles(t *testing.T) {
 		files := embeddedRegistryFiles(t)
 		files["1.0.0"] = []byte("groups: [unterminated")
 		require.Error(t, validateRegistryFiles(files))
+	})
+
+	t.Run("validates files in name order", func(t *testing.T) {
+		files := map[string][]byte{
+			"registry.yaml": []byte("file_format: 1.1.0\n"),
+			"2.0.0":         []byte("groups: [second"),
+			"1.0.0":         []byte("groups: [first"),
+		}
+		err := validateRegistryFiles(files)
+		require.ErrorContains(t, err, `registry semconv "1.0.0"`)
 	})
 }
 

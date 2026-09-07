@@ -367,6 +367,8 @@ func collectSchemaRevision(versionStr string, version otelSchemaVersion) *schema
 type semconvGroup struct {
 	ID         string             `yaml:"id"`
 	Type       string             `yaml:"type"` // "metric", "attribute", "span", etc.
+	Extends    string             `yaml:"extends"`
+	Prefix     string             `yaml:"prefix"`
 	Stability  string             `yaml:"stability"`
 	MetricName string             `yaml:"metric_name"` // Only for type="metric"
 	Unit       string             `yaml:"unit"`        // Only for type="metric", e.g. "s", "By"
@@ -375,8 +377,171 @@ type semconvGroup struct {
 }
 
 type semconvAttribute struct {
-	// Ref to attribute ID.
+	ID  string `yaml:"id"`
 	Ref string `yaml:"ref"`
+}
+
+const (
+	// maxSemconvFileAttributeSlots bounds the cumulative capacity of flattened
+	// attribute slices materialized while loading one semconv file.
+	maxSemconvFileAttributeSlots uint64 = maxSchemaExpansionWork
+
+	// maxSemconvRegistryAttributeSlots bounds that capacity across every semconv
+	// file in an operator-provided registry.
+	maxSemconvRegistryAttributeSlots uint64 = 1 << 20
+)
+
+type semconvRegistryMaterializationBudget struct {
+	attributeSlots uint64
+}
+
+type semconvMaterializationBudget struct {
+	attributeSlots uint64
+	registry       *semconvRegistryMaterializationBudget
+}
+
+func (b *semconvMaterializationBudget) reserveAttributeSlots(n int) error {
+	slots := uint64(n)
+	if b.attributeSlots > maxSemconvFileAttributeSlots || slots > maxSemconvFileAttributeSlots-b.attributeSlots {
+		return schemaExpansionLimitError("semconv file attribute slots", maxSemconvFileAttributeSlots)
+	}
+	if b.registry != nil && (b.registry.attributeSlots > maxSemconvRegistryAttributeSlots || slots > maxSemconvRegistryAttributeSlots-b.registry.attributeSlots) {
+		return schemaExpansionLimitError("semconv registry attribute slots", maxSemconvRegistryAttributeSlots)
+	}
+	b.attributeSlots += slots
+	if b.registry != nil {
+		b.registry.attributeSlots += slots
+	}
+	return nil
+}
+
+type semconvAttributeResolver struct {
+	groups    map[string]*semconvGroup
+	resolved  map[string]resolvedSemconvGroup
+	resolving map[string]int
+	stack     []string
+	budget    *semconvMaterializationBudget
+}
+
+type resolvedSemconvGroup struct {
+	attributes []string
+}
+
+func newSemconvAttributeResolver(groups []semconvGroup, registryBudget *semconvRegistryMaterializationBudget) (*semconvAttributeResolver, error) {
+	byID := make(map[string]*semconvGroup, len(groups))
+	for i := range groups {
+		if groups[i].ID == "" {
+			continue
+		}
+		if _, exists := byID[groups[i].ID]; exists {
+			return nil, fmt.Errorf("duplicate semconv group id %q", groups[i].ID)
+		}
+		byID[groups[i].ID] = &groups[i]
+	}
+	return &semconvAttributeResolver{
+		groups:    byID,
+		resolved:  map[string]resolvedSemconvGroup{},
+		resolving: map[string]int{},
+		budget:    &semconvMaterializationBudget{registry: registryBudget},
+	}, nil
+}
+
+// resolve returns a group's deduplicated attributes, following extends
+// transitively. Full transitivity follows the language contract even though
+// historical build tools sometimes made schemas re-list grandparent references.
+func (r *semconvAttributeResolver) resolve(group *semconvGroup) (resolvedSemconvGroup, error) {
+	if group.ID != "" {
+		if resolved, ok := r.resolved[group.ID]; ok {
+			return resolved, nil
+		}
+		if start, ok := r.resolving[group.ID]; ok {
+			cycle := append(slices.Clone(r.stack[start:]), group.ID)
+			return resolvedSemconvGroup{}, fmt.Errorf("semconv group inheritance cycle: %s", strings.Join(cycle, " -> "))
+		}
+		r.resolving[group.ID] = len(r.stack)
+		r.stack = append(r.stack, group.ID)
+		defer func() {
+			delete(r.resolving, group.ID)
+			r.stack = r.stack[:len(r.stack)-1]
+		}()
+	}
+
+	var inherited resolvedSemconvGroup
+	if group.Extends != "" {
+		parent, ok := r.groups[group.Extends]
+		if !ok {
+			return resolvedSemconvGroup{}, fmt.Errorf("semconv group %q extends unknown group %q", semconvGroupName(group), group.Extends)
+		}
+		var err error
+		inherited, err = r.resolve(parent)
+		if err != nil {
+			return resolvedSemconvGroup{}, err
+		}
+	}
+
+	capacity := min(len(inherited.attributes)+len(group.Attributes), maxSchemaExpansion)
+	if err := r.budget.reserveAttributeSlots(capacity); err != nil {
+		return resolvedSemconvGroup{}, err
+	}
+	attributes := make([]string, 0, capacity)
+	seen := make(map[string]struct{}, capacity)
+	add := func(name string) error {
+		if _, exists := seen[name]; exists {
+			return nil
+		}
+		if len(attributes) >= maxSchemaExpansion {
+			return schemaExpansionError("semconv group attributes")
+		}
+		seen[name] = struct{}{}
+		attributes = append(attributes, name)
+		return nil
+	}
+	for _, name := range inherited.attributes {
+		if err := add(name); err != nil {
+			return resolvedSemconvGroup{}, err
+		}
+	}
+	for _, attribute := range group.Attributes {
+		name, err := semconvAttributeName(*group, group.Prefix, attribute)
+		if err != nil {
+			return resolvedSemconvGroup{}, err
+		}
+		if err := add(name); err != nil {
+			return resolvedSemconvGroup{}, err
+		}
+	}
+
+	resolved := resolvedSemconvGroup{attributes: attributes}
+	if group.ID != "" {
+		r.resolved[group.ID] = resolved
+	}
+	return resolved, nil
+}
+
+func semconvGroupName(group *semconvGroup) string {
+	if group.ID != "" {
+		return group.ID
+	}
+	if group.MetricName != "" {
+		return group.MetricName
+	}
+	return "(unnamed)"
+}
+
+func semconvAttributeName(group semconvGroup, prefix string, attribute semconvAttribute) (string, error) {
+	switch {
+	case attribute.ID != "" && attribute.Ref != "":
+		return "", fmt.Errorf("semconv group %q attribute declares both id %q and ref %q", semconvGroupName(&group), attribute.ID, attribute.Ref)
+	case attribute.Ref != "":
+		return attribute.Ref, nil
+	case attribute.ID != "":
+		if prefix == "" {
+			return attribute.ID, nil
+		}
+		return prefix + "." + attribute.ID, nil
+	default:
+		return "", fmt.Errorf("semconv group %q attribute declares neither id nor ref", semconvGroupName(&group))
+	}
 }
 
 type otelSchemaVersion struct {
@@ -524,6 +689,10 @@ func (e *schemaEngine) fetchSemconv(url string) (semconv, error) {
 // version is supplied by the caller (semconv files do not record their own
 // version inside the YAML) and must satisfy validateSemver.
 func loadSemconv(b []byte, version string) (semconv, error) {
+	return loadSemconvWithBudget(b, version, nil)
+}
+
+func loadSemconvWithBudget(b []byte, version string, registryBudget *semconvRegistryMaterializationBudget) (semconv, error) {
 	if err := validateSemver(version); err != nil {
 		return semconv{}, err
 	}
@@ -533,12 +702,26 @@ func loadSemconv(b []byte, version string) (semconv, error) {
 	}
 	s.version = version
 	s.metrics = make(map[string]metricDef)
+	resolver, err := newSemconvAttributeResolver(s.Groups, registryBudget)
+	if err != nil {
+		return semconv{}, err
+	}
+	resolvedGroups := make([]resolvedSemconvGroup, len(s.Groups))
+	for i := range s.Groups {
+		group := &s.Groups[i]
+		resolved, err := resolver.resolve(group)
+		if err != nil {
+			return semconv{}, fmt.Errorf("resolve attributes for semconv group %q: %w", semconvGroupName(group), err)
+		}
+		resolvedGroups[i] = resolved
+	}
 	// A metric name declared by two groups has no single definition. Keeping the
 	// first declaration rather than the last makes the outcome depend on file
 	// order in one direction only, but either choice is arbitrary, so the name is
 	// also recorded as ambiguous and reported to the querier as a warning.
 	var ambiguous map[string]struct{}
-	for _, group := range s.Groups {
+	for i := range s.Groups {
+		group := &s.Groups[i]
 		if group.Type != "metric" || group.MetricName == "" {
 			continue
 		}
@@ -549,18 +732,11 @@ func loadSemconv(b []byte, version string) (semconv, error) {
 			ambiguous[group.MetricName] = struct{}{}
 			continue
 		}
-		var attrs []string
-		if len(group.Attributes) > 0 {
-			attrs = make([]string, 0, len(group.Attributes))
-			for _, attr := range group.Attributes {
-				attrs = append(attrs, attr.Ref)
-			}
-		}
 		s.metrics[group.MetricName] = metricDef{
 			unit:       group.Unit,
 			instrument: group.Instrument,
 			stability:  group.Stability,
-			attributes: attrs,
+			attributes: resolvedGroups[i].attributes,
 		}
 	}
 	if len(ambiguous) > 0 {
