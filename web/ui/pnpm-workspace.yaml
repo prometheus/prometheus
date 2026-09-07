@@ -4,6 +4,9 @@ packages:
 allowBuilds:
   esbuild: true
   unrs-resolver: true
+# Wait three days before installing newly published packages.
+minimumReleaseAge: 4320
+minimumReleaseAgeStrict: true
 minimumReleaseAgeExclude:
   - '@mantine/code-highlight@9.5.0'
   - '@mantine/core@9.5.0'
