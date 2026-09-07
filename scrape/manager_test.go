@@ -767,6 +767,26 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	}
 }
 
+func TestManagerRunReturnsWhenTargetSetsClosed(t *testing.T) {
+	m, err := NewManager(&Options{}, nil, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
+	require.NoError(t, err)
+	defer m.Stop()
+
+	targetSetsCh := make(chan map[string][]*targetgroup.Group)
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- m.Run(targetSetsCh)
+	}()
+	close(targetSetsCh)
+
+	select {
+	case err := <-runErr:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("scrape manager did not stop after target sets channel was closed")
+	}
+}
+
 func TestSetOffsetSeed(t *testing.T) {
 	getConfig := func(prometheus string) *config.Config {
 		cfgText := `

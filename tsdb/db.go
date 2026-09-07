@@ -984,6 +984,8 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		}
 	}
 
+	var wal, wbl *wlog.WL
+
 	db := &DB{
 		dir:            dir,
 		logger:         l,
@@ -1000,6 +1002,23 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		// Close files if startup fails somewhere.
 		if returnedErr == nil {
 			return
+		}
+
+		// If head was never initialized, WAL/WBL goroutines need explicit
+		// cleanup since db.Close() -> head.Close() won't reach them.
+		if db.head == nil {
+			if wal != nil {
+				returnedErr = errors.Join(returnedErr, wal.Close())
+			}
+			if wbl != nil {
+				returnedErr = errors.Join(returnedErr, wbl.Close())
+			}
+		}
+
+		// db.Close() short-circuits once db.donec is closed below, so release
+		// the lockfile here to ensure it is always released on error.
+		if db.locker != nil {
+			returnedErr = errors.Join(returnedErr, db.locker.Release())
 		}
 
 		close(db.donec) // DB is never run if it was an error, so close this channel here.
@@ -1059,7 +1078,6 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		db.fsSizeFunc = opts.FsSizeFunc
 	}
 
-	var wal, wbl *wlog.WL
 	segmentSize := wlog.DefaultSegmentSize
 	// Wal is enabled.
 	if opts.WALSegmentSize >= 0 {
@@ -2387,6 +2405,7 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 		// won't run into a race later since any truncation that comes after will wait on this querier if it overlaps.
 		shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(mint, maxt)
 		if shouldClose {
+			inoMint = newMint
 			if err := headQuerier.Close(); err != nil {
 				return nil, fmt.Errorf("closing head block querier %s: %w", rh, err)
 			}
@@ -2398,7 +2417,6 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 			if err != nil {
 				return nil, fmt.Errorf("open block querier for head while getting new querier %s: %w", rh, err)
 			}
-			inoMint = newMint
 		}
 	}
 
@@ -2464,6 +2482,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 		// won't run into a race later since any truncation that comes after will wait on this querier if it overlaps.
 		shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(mint, maxt)
 		if shouldClose {
+			inoMint = newMint
 			if err := headQuerier.Close(); err != nil {
 				return nil, fmt.Errorf("closing head querier %s: %w", rh, err)
 			}
@@ -2475,7 +2494,6 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 			if err != nil {
 				return nil, fmt.Errorf("open querier for head while getting new querier %s: %w", rh, err)
 			}
-			inoMint = newMint
 		}
 	}
 

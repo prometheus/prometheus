@@ -59,12 +59,17 @@ func (d *Discovery) refreshServices(ctx context.Context) ([]*targetgroup.Group, 
 
 	for _, s := range services.Items {
 		commonLabels := map[string]string{
-			swarmLabelServiceID:                    s.ID,
-			swarmLabelServiceName:                  s.Spec.Name,
-			swarmLabelServiceTaskContainerHostname: s.Spec.TaskTemplate.ContainerSpec.Hostname,
-			swarmLabelServiceTaskContainerImage:    s.Spec.TaskTemplate.ContainerSpec.Image,
+			swarmLabelServiceID:   s.ID,
+			swarmLabelServiceName: s.Spec.Name,
 		}
 		commonLabels[swarmLabelServiceMode] = getServiceValueMode(s)
+
+		// ContainerSpec is only set for services whose task runtime is a
+		// container. It is nil for plugin and network-attachment services.
+		if s.Spec.TaskTemplate.ContainerSpec != nil {
+			commonLabels[swarmLabelServiceTaskContainerHostname] = s.Spec.TaskTemplate.ContainerSpec.Hostname
+			commonLabels[swarmLabelServiceTaskContainerImage] = s.Spec.TaskTemplate.ContainerSpec.Image
+		}
 
 		if s.UpdateStatus != nil {
 			commonLabels[swarmLabelServiceUpdatingStatus] = string(s.UpdateStatus.State)

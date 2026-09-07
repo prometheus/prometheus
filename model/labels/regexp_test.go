@@ -106,6 +106,15 @@ var (
 		"((.*))(?i:f)((.*))o((.*))o((.*))",
 		"((.*))f((.*))(?i:o)((.*))o((.*))",
 		"(.*0.*)",
+		// Case-insensitive literal prefixes and suffixes containing runes
+		// whose case folding changes their encoded length: 'k' folds with
+		// 'K' (Kelvin sign, U+212A) and 's' folds with 'ſ' (long s, U+017F).
+		"(?i)k.*",
+		"(?i)k-(a|b)",
+		"(?i)(ka.+|kb.+)",
+		".*(?i:k)",
+		"a.*(?i:sk)",
+		"(?i:some)-pattern.*",
 	}
 	values = []string{
 		"foo", " foo bar", "bar", "buzz\nbar", "bar foo", "bfoo", "\n", "\nfoo", "foo\n", "hello foo world", "hello foo\n world", "",
@@ -121,6 +130,10 @@ var (
 
 		// Values matching / not matching the test regexps on long alternations.
 		"zQPbMkNO", "zQPbMkNo", "jyyfj00j0061", "jyyfj00j006", "jyyfj00j00612", "NNSPdvMi", "NNSPdvMiXXX", "NNSPdvMixxx", "nnSPdvMi", "nnSPdvMiXXX",
+
+		// Values with runes whose case folding changes their encoded length.
+		"\u212a", "\u212aa", "\u212ab", "\u212a-a", "\u212a-abc", "\u212aelvin", "abc\u212a", "a\u212a", "axſk", "axs\u212a",
+		"ſome-pattern", "SOME-pattern", "ſk", "kſ",
 
 		// Invalid utf8
 		"\xfefoo",
@@ -1280,6 +1293,16 @@ func TestLiteralPrefixInsensitiveStringMatcher(t *testing.T) {
 	require.False(t, m.Matches("marco"))
 	require.False(t, m.Matches("ma"))
 	require.True(t, m.Matches("mAr"))
+
+	// The prefix of the matched string can have a different length than the
+	// literal prefix due to Unicode simple case folding ('k' folds with the
+	// Kelvin sign 'K', U+212A).
+	m = &literalPrefixInsensitiveStringMatcher{prefix: "kar", right: &equalStringMatcher{s: "co", caseSensitive: false}}
+	require.True(t, m.Matches("karco"))
+	require.True(t, m.Matches("\u212aarco"))
+	require.True(t, m.Matches("\u212aarCO"))
+	require.False(t, m.Matches("\u212aar"))
+	require.False(t, m.Matches("\u212aarcopracucci"))
 }
 
 func TestLiteralSuffixStringMatcher(t *testing.T) {
@@ -1308,6 +1331,16 @@ func TestLiteralSuffixStringMatcher(t *testing.T) {
 	require.True(t, m.Matches("marCO"))
 	require.False(t, m.Matches("mar"))
 	require.False(t, m.Matches("marcopracucci"))
+
+	// The suffix of the matched string can have a different length than the
+	// literal suffix due to Unicode simple case folding ('k' folds with the
+	// Kelvin sign 'K', U+212A).
+	m = &literalSuffixStringMatcher{left: &equalStringMatcher{s: "mar", caseSensitive: false}, suffix: "ck", suffixCaseSensitive: false}
+	require.True(t, m.Matches("marck"))
+	require.True(t, m.Matches("marc\u212a"))
+	require.True(t, m.Matches("MARc\u212a"))
+	require.False(t, m.Matches("marc"))
+	require.False(t, m.Matches("c\u212a"))
 }
 
 func TestHasPrefixCaseInsensitive(t *testing.T) {
@@ -1319,14 +1352,82 @@ func TestHasPrefixCaseInsensitive(t *testing.T) {
 
 	require.False(t, hasPrefixCaseInsensitive("marco", "a"))
 	require.False(t, hasPrefixCaseInsensitive("marco", "abcdefghi"))
+
+	// Case folding can change the encoded length of a rune, e.g. 'k' folds
+	// with 'K' (Kelvin sign, U+212A) and 's' folds with 'ſ' (long s, U+017F).
+	require.True(t, hasPrefixCaseInsensitive("\u212aelvin", "k"))
+	require.True(t, hasPrefixCaseInsensitive("\u212aelvin", "kel"))
+	require.True(t, hasPrefixCaseInsensitive("kelvin", "\u212a"))
+	require.True(t, hasPrefixCaseInsensitive("ſtreet", "st"))
+	require.False(t, hasPrefixCaseInsensitive("\u212aelvin", "s"))
 }
 
-func TestHasSuffixCaseInsensitive(t *testing.T) {
-	require.True(t, hasSuffixCaseInsensitive("marco", "rco"))
-	require.True(t, hasSuffixCaseInsensitive("marco", "RcO"))
-	require.True(t, hasSuffixCaseInsensitive("marco", "marco"))
-	require.False(t, hasSuffixCaseInsensitive("marco", "a"))
-	require.False(t, hasSuffixCaseInsensitive("marco", "abcdefghi"))
+func TestPrefixCaseInsensitiveMatchLen(t *testing.T) {
+	for _, c := range []struct {
+		s, prefix   string
+		expectedLen int
+		expectedOK  bool
+	}{
+		{"marco", "mar", 3, true},
+		{"mArco", "MaR", 3, true},
+		{"marco", "marco", 5, true},
+		{"mar", "marco", 0, false},
+		{"marco", "x", 0, false},
+		{"", "", 0, true},
+		{"marco", "", 0, true},
+		// The matched prefix of s can have a different length than the
+		// searched prefix due to Unicode simple case folding.
+		{"\u212aelvin", "k", 3, true},
+		{"\u212aelvin", "kel", 5, true},
+		{"kelvin", "\u212a", 1, true},
+		{"ſtreet", "st", 3, true},
+		{"streets", "ſt", 2, true},
+		{"ſſs", "sss", 5, true},
+		{"ſtreet", "str", 4, true},
+		{"\u212aelvin", "s", 0, false},
+		{"ſtreet", "sx", 0, false},
+		// Invalid UTF-8 is decoded to U+FFFD, which folds only with itself.
+		{"\xff", "\xff", 1, true},
+		{"\xffabc", "\xffab", 3, true},
+		{"\u212aelvin", "\xff", 0, false},
+	} {
+		n, ok := prefixCaseInsensitiveMatchLen(c.s, c.prefix)
+		require.Equal(t, c.expectedOK, ok, "s=%q prefix=%q", c.s, c.prefix)
+		require.Equal(t, c.expectedLen, n, "s=%q prefix=%q", c.s, c.prefix)
+	}
+}
+
+func TestSuffixCaseInsensitiveMatchLen(t *testing.T) {
+	for _, c := range []struct {
+		s, suffix   string
+		expectedLen int
+		expectedOK  bool
+	}{
+		{"marco", "rco", 3, true},
+		{"marco", "RcO", 3, true},
+		{"marco", "marco", 5, true},
+		{"rco", "marco", 0, false},
+		{"marco", "x", 0, false},
+		{"", "", 0, true},
+		{"marco", "", 0, true},
+		// The matched suffix of s can have a different length than the
+		// searched suffix due to Unicode simple case folding.
+		{"a\u212a", "k", 3, true},
+		{"drin\u212a", "ink", 5, true},
+		{"drink", "in\u212a", 3, true},
+		{"streetſ", "ts", 3, true},
+		{"ſſs", "sss", 5, true},
+		{"a\u212a", "s", 0, false},
+		{"streetſ", "tſt", 0, false},
+		// Invalid UTF-8 is decoded to U+FFFD, which folds only with itself.
+		{"\xff", "\xff", 1, true},
+		{"abc\xff", "bc\xff", 3, true},
+		{"a\u212a", "\xff", 0, false},
+	} {
+		n, ok := suffixCaseInsensitiveMatchLen(c.s, c.suffix)
+		require.Equal(t, c.expectedOK, ok, "s=%q suffix=%q", c.s, c.suffix)
+		require.Equal(t, c.expectedLen, n, "s=%q suffix=%q", c.s, c.suffix)
+	}
 }
 
 func TestContainsInOrder(t *testing.T) {
