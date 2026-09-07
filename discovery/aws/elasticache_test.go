@@ -15,6 +15,10 @@ package aws
 
 import (
 	"context"
+	"fmt"
+	"slices"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -476,6 +480,23 @@ func TestAddCacheClusterTargets(t *testing.T) {
 // Mock Elasticache client.
 type mockElasticacheClient struct {
 	data *elasticacheDataStore
+
+	// onDescribe, when set, runs at the start of every DescribeServerlessCaches
+	// and DescribeCacheClusters call.
+	onDescribe func()
+
+	// describeRequests records one entry per describe call, so a test can show
+	// which requests a single refresh issues.
+	describeMu       sync.Mutex
+	describeRequests []string
+}
+
+// recordDescribe stores a describe request, identified by the input fields the
+// discovery varies between calls.
+func (m *mockElasticacheClient) recordDescribe(request string) {
+	m.describeMu.Lock()
+	m.describeRequests = append(m.describeRequests, request)
+	m.describeMu.Unlock()
 }
 
 func newMockElasticacheClient(data *elasticacheDataStore) *mockElasticacheClient {
@@ -483,6 +504,11 @@ func newMockElasticacheClient(data *elasticacheDataStore) *mockElasticacheClient
 }
 
 func (m *mockElasticacheClient) DescribeServerlessCaches(_ context.Context, input *elasticache.DescribeServerlessCachesInput, _ ...func(*elasticache.Options)) (*elasticache.DescribeServerlessCachesOutput, error) {
+	if m.onDescribe != nil {
+		m.onDescribe()
+	}
+	m.recordDescribe(fmt.Sprintf("DescribeServerlessCaches name=%s token=%s",
+		aws.ToString(input.ServerlessCacheName), aws.ToString(input.NextToken)))
 	if input.ServerlessCacheName != nil {
 		// Filter by name
 		for _, cache := range m.data.serverlessCaches {
@@ -503,6 +529,12 @@ func (m *mockElasticacheClient) DescribeServerlessCaches(_ context.Context, inpu
 }
 
 func (m *mockElasticacheClient) DescribeCacheClusters(_ context.Context, input *elasticache.DescribeCacheClustersInput, _ ...func(*elasticache.Options)) (*elasticache.DescribeCacheClustersOutput, error) {
+	if m.onDescribe != nil {
+		m.onDescribe()
+	}
+	m.recordDescribe(fmt.Sprintf("DescribeCacheClusters id=%s marker=%s notInReplicationGroups=%t",
+		aws.ToString(input.CacheClusterId), aws.ToString(input.Marker),
+		aws.ToBool(input.ShowCacheClustersNotInReplicationGroups)))
 	if input.CacheClusterId != nil {
 		// Single cluster lookup
 		for _, cluster := range m.data.cacheClusters {
@@ -842,4 +874,165 @@ func TestElasticacheRefreshCacheClusterNilOptionalFields(t *testing.T) {
 			}
 		})
 	}
+}
+
+// elasticacheFixture builds a data store holding serverlessCount serverless
+// caches and clusterCount cache clusters, every cluster carrying nodeCount
+// nodes.
+func elasticacheFixture(serverlessCount, clusterCount, nodeCount int) *elasticacheDataStore {
+	data := &elasticacheDataStore{
+		region: "us-east-1",
+		tags:   make(map[string][]types.Tag, serverlessCount+clusterCount),
+	}
+
+	for s := range serverlessCount {
+		name := "serverless-" + strconv.Itoa(s)
+		arn := "arn:aws:elasticache:us-east-1:123456789012:serverlesscache:" + name
+		cache := fullyPopulatedServerlessCache()
+		cache.ARN = strptr(arn)
+		cache.ServerlessCacheName = strptr(name)
+		cache.Endpoint = &types.Endpoint{
+			Address: strptr(name + ".serverless.use1.cache.amazonaws.com"),
+			Port:    aws.Int32(6379),
+		}
+		data.serverlessCaches = append(data.serverlessCaches, cache)
+		data.tags[arn] = []types.Tag{{Key: strptr("Environment"), Value: strptr("bench")}}
+	}
+
+	for c := range clusterCount {
+		id := "cluster-" + strconv.Itoa(c)
+		arn := "arn:aws:elasticache:us-east-1:123456789012:cluster:" + id
+		cluster := fullyPopulatedCacheCluster()
+		cluster.ARN = strptr(arn)
+		cluster.CacheClusterId = strptr(id)
+		cluster.CacheNodes = make([]types.CacheNode, 0, nodeCount)
+		for n := range nodeCount {
+			cluster.CacheNodes = append(cluster.CacheNodes, types.CacheNode{
+				CacheNodeId: strptr(fmt.Sprintf("%04d", n+1)),
+				Endpoint: &types.Endpoint{
+					Address: strptr(fmt.Sprintf("%s-%04d.use1.cache.amazonaws.com", id, n+1)),
+					Port:    aws.Int32(6379),
+				},
+			})
+		}
+		data.cacheClusters = append(data.cacheClusters, cluster)
+		data.tags[arn] = []types.Tag{{Key: strptr("Environment"), Value: strptr("bench")}}
+	}
+
+	return data
+}
+
+// distinctTargetAddresses counts the unique addresses in a target group, which
+// is what the fixture size predicts however many times the API reported the
+// same resource.
+func distinctTargetAddresses(tg *targetgroup.Group) int {
+	addresses := make(map[model.LabelValue]struct{}, len(tg.Targets))
+	for _, target := range tg.Targets {
+		addresses[target[model.AddressLabel]] = struct{}{}
+	}
+	return len(addresses)
+}
+
+func BenchmarkElasticacheRefresh(b *testing.B) {
+	benchmarks := []struct {
+		name       string
+		serverless int
+		clusters   int
+		nodes      int
+	}{
+		{"1Serverless/1Cluster", 1, 1, 1},
+		{"8Serverless/8Clusters", 8, 8, 1},
+		{"20Serverless/20Clusters", 20, 20, 2},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			d := elasticacheTestDiscovery(elasticacheFixture(bm.serverless, bm.clusters, bm.nodes))
+			want := bm.serverless + bm.clusters*bm.nodes
+
+			b.ReportAllocs()
+			for b.Loop() {
+				tgs, err := d.refresh(context.Background())
+				if err != nil {
+					b.Fatal(err)
+				}
+				if got := distinctTargetAddresses(tgs[0]); got != want {
+					b.Fatalf("got %d distinct targets, want %d", got, want)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkElasticacheRefreshAPILatency models the describe round trip, which
+// dominates a refresh and which BenchmarkElasticacheRefresh cannot show because
+// its client answers instantly. The absolute latency is arbitrary; the ratio
+// between the two benchmarks is what the number says.
+func BenchmarkElasticacheRefreshAPILatency(b *testing.B) {
+	const (
+		resourceCount = 20
+		roundTrip     = time.Millisecond
+	)
+	data := elasticacheFixture(resourceCount, resourceCount, 1)
+
+	client := newMockElasticacheClient(data)
+	client.onDescribe = func() { time.Sleep(roundTrip) }
+	d := &ElasticacheDiscovery{
+		logger:            promslog.NewNopLogger(),
+		elasticacheClient: client,
+		cfg: &ElasticacheSDConfig{
+			Region:             data.region,
+			RequestConcurrency: 10,
+		},
+		region: data.region,
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		tgs, err := d.refresh(context.Background())
+		if err != nil {
+			b.Fatal(err)
+		}
+		if got := distinctTargetAddresses(tgs[0]); got != resourceCount*2 {
+			b.Fatalf("got %d distinct targets, want %d", got, resourceCount*2)
+		}
+	}
+}
+
+// TestElasticacheRefreshDescribesEachResourceOnce covers refresh() asking the
+// API for the same resources twice: once to collect the ARNs the tag lookup
+// needs, and once more to build the targets. Both rounds send identical
+// requests and get identical answers, so the second one only spends the
+// account's API quota.
+func TestElasticacheRefreshDescribesEachResourceOnce(t *testing.T) {
+	t.Parallel()
+
+	data := elasticacheFixture(2, 2, 1)
+	client := newMockElasticacheClient(data)
+	d := &ElasticacheDiscovery{
+		logger:            promslog.NewNopLogger(),
+		elasticacheClient: client,
+		cfg: &ElasticacheSDConfig{
+			Region:             data.region,
+			RequestConcurrency: 10,
+		},
+		region: data.region,
+	}
+
+	_, err := d.refresh(context.Background())
+	require.NoError(t, err)
+
+	counts := make(map[string]int, len(client.describeRequests))
+	for _, request := range client.describeRequests {
+		counts[request]++
+	}
+
+	var repeated []string
+	for request, count := range counts {
+		if count > 1 {
+			repeated = append(repeated, fmt.Sprintf("%s: %d times", request, count))
+		}
+	}
+	slices.Sort(repeated)
+	require.Empty(t, repeated, "a refresh must not issue the same describe request more than once")
 }
