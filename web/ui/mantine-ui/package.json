@@ -71,7 +71,7 @@
     "postcss-preset-mantine": "^1.18.0",
     "postcss-simple-vars": "^7.0.1",
     "rollup-plugin-license": "^3.7.1",
-    "vite": "^6.4.3",
+    "vite": "^8.0.0",
     "vitest": "^3.2.7"
   }
 }
