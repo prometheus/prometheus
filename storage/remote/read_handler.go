@@ -164,13 +164,14 @@ func (h *readHandler) remoteReadSamples(
 			for _, w := range ws {
 				h.logger.Warn("Warnings on remote read query", "err", w.Error())
 			}
-			for _, ts := range resp.Results[i].Timeseries {
-				ts.Labels = MergeLabels(ts.Labels, sortedExternalLabels)
+			if len(sortedExternalLabels) > 0 {
+				for _, ts := range resp.Results[i].Timeseries {
+					ts.Labels = MergeLabels(ts.Labels, sortedExternalLabels)
+				}
 			}
 			return nil
 		}(); err != nil {
-			var httpErr HTTPError
-			if errors.As(err, &httpErr) {
+			if httpErr, ok := errors.AsType[HTTPError](err); ok {
 				http.Error(w, httpErr.Error(), httpErr.Status())
 				return
 			}
@@ -245,8 +246,7 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 			}
 			return nil
 		}(); err != nil {
-			var httpErr HTTPError
-			if errors.As(err, &httpErr) {
+			if httpErr, ok := errors.AsType[HTTPError](err); ok {
 				http.Error(w, httpErr.Error(), httpErr.Status())
 				return
 			}

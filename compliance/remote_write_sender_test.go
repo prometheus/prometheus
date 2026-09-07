@@ -86,9 +86,8 @@ func (p internalPrometheus) Run(ctx context.Context, opts sender.Options) error 
 		args = append(args, "--enable-feature=st-storage")
 		args = append(args, fmt.Sprintf("--storage.agent.path=%v", dir), "--agent")
 	} else {
-		// Server mode: st-storage requires XOR2 chunk encoding so that start
-		// timestamps can be stored in float chunks.
-		args = append(args, "--enable-feature=st-storage,xor2-encoding")
+		// Server mode: st-storage enables the ST-capable chunk encodings.
+		args = append(args, "--enable-feature=st-storage")
 		args = append(args, fmt.Sprintf("--storage.tsdb.path=%v", dir))
 	}
 	return sender.RunCommand(ctx, "../cmd/prometheus", nil, "go", args...)

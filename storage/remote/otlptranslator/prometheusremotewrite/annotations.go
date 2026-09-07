@@ -62,8 +62,7 @@ func newCategorizedWarningf(category WarningCategory, format string, args ...any
 // WarningCategoryOf returns the category of an annotation error, or
 // WarningCategoryOther if it carries none.
 func WarningCategoryOf(err error) WarningCategory {
-	var cw *categorizedWarning
-	if errors.As(err, &cw) {
+	if cw, ok := errors.AsType[*categorizedWarning](err); ok {
 		return cw.category
 	}
 	return WarningCategoryOther

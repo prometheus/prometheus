@@ -65,13 +65,13 @@
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.5.3",
-    "globals": "^16.5.0",
-    "jsdom": "^25.0.1",
+    "globals": "^17.0.0",
+    "jsdom": "^30.0.0",
     "postcss": "^8.5.23",
     "postcss-preset-mantine": "^1.18.0",
     "postcss-simple-vars": "^7.0.1",
     "rollup-plugin-license": "^3.7.1",
-    "vite": "^6.4.3",
+    "vite": "^8.0.0",
     "vitest": "^3.2.7"
   }
 }

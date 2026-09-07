@@ -42,6 +42,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/regexp"
+	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
@@ -310,6 +311,127 @@ func testScrapeReportMetadata(t *testing.T, appV2 bool) {
 		{L: labels.FromStrings("__name__", "scrape_samples_post_metric_relabeling"), M: samplesPostRelabelMetric.Metadata},
 		{L: labels.FromStrings("__name__", "scrape_series_added"), M: scrapeSeriesAddedMetric.Metadata},
 	}, appTest.ResultMetadata())
+}
+
+func TestScrapeCacheSizeMetadata(t *testing.T) {
+	cases := []struct {
+		name  string
+		steps func(t *testing.T, c *scrapeCache)
+	}{
+		{
+			name: "insert type on new family",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				require.Equal(t, 7, c.SizeMetadata())
+			},
+		},
+		{
+			name: "insert help on new family",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setHelp([]byte("metric_b"), []byte("help text"))
+				require.Equal(t, 16, c.SizeMetadata())
+			},
+		},
+		{
+			name: "insert unit on new family",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setUnit([]byte("metric_c"), []byte("bytes"))
+				require.Equal(t, 12, c.SizeMetadata())
+			},
+		},
+		{
+			name: "update type on existing family",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setType([]byte("metric_a"), model.MetricTypeGauge)
+				require.Equal(t, 5, c.SizeMetadata())
+			},
+		},
+		{
+			name: "update help on existing family",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setHelp([]byte("metric_a"), []byte("new help"))
+				require.Equal(t, 15, c.SizeMetadata())
+			},
+		},
+		{
+			name: "repeated set with same value does not grow size",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				require.Equal(t, 7, c.SizeMetadata())
+			},
+		},
+		{
+			name: "multiple families accumulate",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setType([]byte("metric_b"), model.MetricTypeGauge)
+				c.setHelp([]byte("metric_b"), []byte("help"))
+				require.Equal(t, 16, c.SizeMetadata())
+			},
+		},
+		{
+			name: "stale entry removed on flush",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setHelp([]byte("metric_a"), []byte("help"))
+				c.iter = 20
+				c.iterDone(true)
+				require.Equal(t, 0, c.SizeMetadata())
+			},
+		},
+		{
+			name: "non-stale entry survives flush",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.iter = 5
+				c.iterDone(true)
+				require.Equal(t, 7, c.SizeMetadata())
+			},
+		},
+		{
+			name: "partial stale removal on flush",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.iter = 2
+				c.setType([]byte("metric_b"), model.MetricTypeGauge)
+				c.iter = 12
+				c.iterDone(true)
+				require.Equal(t, 5, c.SizeMetadata())
+			},
+		},
+		{
+			name: "full flush clears all stale entries",
+			steps: func(t *testing.T, c *scrapeCache) {
+				c.iter = 1
+				c.setType([]byte("metric_a"), model.MetricTypeCounter)
+				c.setHelp([]byte("metric_a"), []byte("help"))
+				c.setType([]byte("metric_b"), model.MetricTypeGauge)
+				c.setUnit([]byte("metric_b"), []byte("bytes"))
+				c.iter = 100
+				c.iterDone(true)
+				require.Equal(t, 0, c.SizeMetadata())
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newScrapeCache(newTestScrapeMetrics(t))
+			tc.steps(t, c)
+		})
+	}
 }
 
 func TestIsSeriesPartOfFamily(t *testing.T) {
@@ -1371,6 +1493,56 @@ func testScrapeLoopSeriesAdded(t *testing.T, appV2 bool) {
 	require.Equal(t, 0, seriesAdded)
 }
 
+func TestScrapeLoopAppendOpenMetrics2(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testScrapeLoopAppendOpenMetrics2(t, appV2)
+	})
+}
+
+func testScrapeLoopAppendOpenMetrics2(t *testing.T, appV2 bool) {
+	const (
+		contentType = "application/openmetrics-text; version=2.0.0"
+		body        = "# TYPE test_metric gauge\ntest_metric 1\n# EOF\n"
+	)
+
+	t.Run("enabled", func(t *testing.T) {
+		sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2), func(sl *scrapeLoop) {
+			sl.enableOpenMetrics2 = true
+		})
+
+		app := sl.appender()
+		total, added, seriesAdded, err := app.append([]byte(body), contentType, time.Time{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Equal(t, 1, total)
+		require.Equal(t, 1, added)
+		require.Equal(t, 1, seriesAdded)
+	})
+
+	// TODO(r.bizos): drop this subtest when OM2 is GA and the feature flag is gone.
+	t.Run("disabled", func(t *testing.T) {
+		sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2))
+
+		app := sl.appender()
+		_, _, _, err := app.append([]byte(body), contentType, time.Time{})
+		require.ErrorContains(t, err, "the openmetrics2 feature flag is not enabled")
+	})
+
+	// TODO(r.bizos): drop this subtest when OM2 is GA and the feature flag is gone.
+	t.Run("disabled falls back", func(t *testing.T) {
+		sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2), func(sl *scrapeLoop) {
+			sl.fallbackScrapeProtocol = "text/plain"
+		})
+
+		app := sl.appender()
+		total, added, _, err := app.append([]byte("test_metric 1\n"), contentType, time.Time{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Equal(t, 1, total)
+		require.Equal(t, 1, added)
+	})
+}
+
 func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
 	foreachAppendable(t, func(t *testing.T, appV2 bool) {
 		testScrapeLoopFailWithInvalidLabelsAfterRelabel(t, appV2)
@@ -1923,7 +2095,6 @@ func TestScrapeLoopAppend_StartTimeSynthesis_WithSTStorage(t *testing.T) {
 
 	s := teststorage.New(t, func(opt *tsdb.Options) {
 		opt.EnableSTStorage = true
-		opt.XOR2EncodingAllowed = true
 		opt.FloatChunkEncoding = chunkenc.EncXOR2
 		opt.EnableHistogramSTEncoding = true
 	})
@@ -1991,7 +2162,8 @@ func TestScrapeLoopAppend_StartTimeSynthesis_OutOfOrder(t *testing.T) {
 				return storage.ErrOutOfOrderSample
 			}
 			return nil
-		}, nil, nil).Then(s)
+		}, nil, nil,
+	).Then(s)
 
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
 		sl.synthesizeST = true
@@ -2064,7 +2236,8 @@ func TestScrapeLoopAppend_StartTimeSynthesis_OOO_StateMutation(t *testing.T) {
 				return storage.ErrOutOfOrderSample
 			}
 			return nil
-		}, nil, nil).Then(s)
+		}, nil, nil,
+	).Then(s)
 
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
 		sl.synthesizeST = true
@@ -4514,7 +4687,8 @@ func testScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 			default:
 				return nil
 			}
-		}, nil, nil)
+		}, nil, nil,
+	)
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2))
 
 	now := time.Unix(1, 0)
@@ -4633,25 +4807,32 @@ func TestAcceptHeader(t *testing.T) {
 			name:            "default scrape protocols with underscore escaping",
 			scrapeProtocols: config.DefaultScrapeProtocols,
 			scheme:          model.UnderscoreEscaping,
-			expectedHeader:  "application/openmetrics-text;version=1.0.0;escaping=underscores;q=0.6,application/openmetrics-text;version=0.0.1;q=0.5,text/plain;version=1.0.0;escaping=underscores;q=0.4,text/plain;version=0.0.4;q=0.3,*/*;q=0.2",
+			expectedHeader:  "application/openmetrics-text;version=1.0.0;escaping=underscores;q=0.7,application/openmetrics-text;version=0.0.1;q=0.6,text/plain;version=1.0.0;escaping=underscores;q=0.5,text/plain;version=0.0.4;q=0.4,*/*;q=0.3",
 		},
 		{
 			name:            "default proto first scrape protocols with underscore escaping",
 			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
 			scheme:          model.DotsEscaping,
-			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.6,application/openmetrics-text;version=1.0.0;escaping=dots;q=0.5,application/openmetrics-text;version=0.0.1;q=0.4,text/plain;version=1.0.0;escaping=dots;q=0.3,text/plain;version=0.0.4;q=0.2,*/*;q=0.1",
+			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,application/openmetrics-text;version=1.0.0;escaping=dots;q=0.6,application/openmetrics-text;version=0.0.1;q=0.5,text/plain;version=1.0.0;escaping=dots;q=0.4,text/plain;version=0.0.4;q=0.3,*/*;q=0.2",
 		},
 		{
 			name:            "default scrape protocols with no escaping",
 			scrapeProtocols: config.DefaultScrapeProtocols,
 			scheme:          model.NoEscaping,
-			expectedHeader:  "application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.6,application/openmetrics-text;version=0.0.1;q=0.5,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.4,text/plain;version=0.0.4;q=0.3,*/*;q=0.2",
+			expectedHeader:  "application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.7,application/openmetrics-text;version=0.0.1;q=0.6,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.5,text/plain;version=0.0.4;q=0.4,*/*;q=0.3",
 		},
 		{
 			name:            "default proto first scrape protocols with no escaping",
 			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
 			scheme:          model.NoEscaping,
-			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.6,application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.5,application/openmetrics-text;version=0.0.1;q=0.4,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.3,text/plain;version=0.0.4;q=0.2,*/*;q=0.1",
+			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.6,application/openmetrics-text;version=0.0.1;q=0.5,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.4,text/plain;version=0.0.4;q=0.3,*/*;q=0.2",
+		},
+		{
+			// OpenMetrics 2.0 is UTF-8 native, so it carries no escaping parameter.
+			name:            "openmetrics 2.0.0 first, with underscore escaping",
+			scrapeProtocols: []config.ScrapeProtocol{config.OpenMetricsText2_0_0, config.OpenMetricsText1_0_0},
+			scheme:          model.UnderscoreEscaping,
+			expectedHeader:  "application/openmetrics-text;version=2.0.0;q=0.7,application/openmetrics-text;version=1.0.0;escaping=underscores;q=0.6,*/*;q=0.5",
 		},
 	}
 
@@ -5111,73 +5292,163 @@ func TestTargetScraperBodySizeLimit(t *testing.T) {
 		bodySizeLimit = 15
 		responseBody  = "metric_a 1\nmetric_b 2\n"
 	)
-	var gzipResponse bool
-	server := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
-			if gzipResponse {
-				w.Header().Set("Content-Encoding", "gzip")
-				gw := gzip.NewWriter(w)
-				defer func() { _ = gw.Close() }()
-				_, _ = gw.Write([]byte(responseBody))
+
+	for _, encoding := range []string{"identity", "gzip", "zstd"} {
+		t.Run(encoding, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				switch encoding {
+				case "gzip":
+					w.Header().Set("Content-Encoding", encoding)
+					gw := gzip.NewWriter(w)
+					defer func() { _ = gw.Close() }()
+					_, _ = gw.Write([]byte(responseBody))
+				case "zstd":
+					w.Header().Set("Content-Encoding", encoding)
+					zw, err := zstd.NewWriter(w)
+					require.NoError(t, err)
+					defer func() { _ = zw.Close() }()
+					_, _ = zw.Write([]byte(responseBody))
+				default:
+					_, _ = w.Write([]byte(responseBody))
+				}
+			}))
+			defer server.Close()
+
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			ts := &targetScraper{
+				Target: &Target{
+					labels: labels.FromStrings(
+						model.SchemeLabel, serverURL.Scheme,
+						model.AddressLabel, serverURL.Host,
+					),
+					scrapeConfig: &config.ScrapeConfig{},
+				},
+				client:        http.DefaultClient,
+				bodySizeLimit: bodySizeLimit,
+				acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.UnderscoreEscaping),
+				metrics:       newTestScrapeMetrics(t),
+				enableZstd:    true,
+				logger:        promslog.NewNopLogger(),
+			}
+			var buf bytes.Buffer
+
+			resp, err := ts.scrape(context.Background())
+			require.NoError(t, err)
+			_, err = ts.readResponse(context.Background(), resp, &buf)
+			require.ErrorIs(t, err, errBodySizeLimit)
+			require.Equal(t, bodySizeLimit, buf.Len())
+
+			buf.Reset()
+			ts.bodySizeLimit = 0
+			resp, err = ts.scrape(context.Background())
+			require.NoError(t, err)
+			_, err = ts.readResponse(context.Background(), resp, &buf)
+			require.NoError(t, err)
+			require.Equal(t, responseBody, buf.String())
+		})
+	}
+}
+
+func TestTargetScraperMalformedCompressedResponse(t *testing.T) {
+	for _, encoding := range []string{"gzip", "zstd"} {
+		t.Run(encoding, func(t *testing.T) {
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Encoding": []string{encoding},
+				},
+				Body: io.NopCloser(strings.NewReader("not compressed")),
+			}
+			ts := &targetScraper{
+				bodySizeLimit: math.MaxInt64,
+				metrics:       newTestScrapeMetrics(t),
+				enableZstd:    true,
+				logger:        promslog.NewNopLogger(),
+			}
+
+			_, err := ts.readResponse(context.Background(), resp, io.Discard)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestTargetScraperZstdWindowLimit(t *testing.T) {
+	encoder, err := zstd.NewWriter(nil, zstd.WithWindowSize(2*zstdMaxWindowSize))
+	require.NoError(t, err)
+	t.Cleanup(func() { encoder.Close() })
+
+	compressed := encoder.EncodeAll(bytes.Repeat([]byte("a"), zstdMaxWindowSize+1), nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Encoding": []string{"zstd"},
+		},
+		Body: io.NopCloser(bytes.NewReader(compressed)),
+	}
+	ts := &targetScraper{
+		bodySizeLimit: math.MaxInt64,
+		metrics:       newTestScrapeMetrics(t),
+		enableZstd:    true,
+		logger:        promslog.NewNopLogger(),
+	}
+
+	_, err = ts.readResponse(context.Background(), resp, io.Discard)
+	require.ErrorContains(t, err, "decompressed size exceeds configured limit")
+}
+
+func TestTargetScraperZstdFeatureFlag(t *testing.T) {
+	const responseBody = "metric_a 1\nmetric_b 2\n"
+
+	encoder, err := zstd.NewWriter(nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { encoder.Close() })
+	compressed := encoder.EncodeAll([]byte(responseBody), nil)
+
+	for _, tc := range []struct {
+		name       string
+		enableZstd bool
+		expectErr  string
+	}{
+		{
+			name:       "enabled decompresses the body",
+			enableZstd: true,
+		},
+		{
+			name:       "disabled rejects the response",
+			enableZstd: false,
+			expectErr:  "zstd-scrape",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Encoding": []string{"zstd"},
+				},
+				Body: io.NopCloser(bytes.NewReader(compressed)),
+			}
+			ts := &targetScraper{
+				bodySizeLimit: math.MaxInt64,
+				metrics:       newTestScrapeMetrics(t),
+				enableZstd:    tc.enableZstd,
+				logger:        promslog.NewNopLogger(),
+			}
+
+			var buf bytes.Buffer
+			_, err := ts.readResponse(context.Background(), resp, &buf)
+			if tc.expectErr != "" {
+				require.ErrorContains(t, err, tc.expectErr)
+				// The undecoded frame must not reach the parser.
+				require.Empty(t, buf.String())
 				return
 			}
-			_, _ = w.Write([]byte(responseBody))
-		}),
-	)
-	defer server.Close()
-
-	serverURL, err := url.Parse(server.URL)
-	if err != nil {
-		panic(err)
+			require.NoError(t, err)
+			require.Equal(t, responseBody, buf.String())
+		})
 	}
-
-	ts := &targetScraper{
-		Target: &Target{
-			labels: labels.FromStrings(
-				model.SchemeLabel, serverURL.Scheme,
-				model.AddressLabel, serverURL.Host,
-			),
-			scrapeConfig: &config.ScrapeConfig{},
-		},
-		client:        http.DefaultClient,
-		bodySizeLimit: bodySizeLimit,
-		acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.UnderscoreEscaping),
-		metrics:       newTestScrapeMetrics(t),
-	}
-	var buf bytes.Buffer
-
-	// Target response uncompressed body, scrape with body size limit.
-	resp, err := ts.scrape(context.Background())
-	require.NoError(t, err)
-	_, err = ts.readResponse(context.Background(), resp, &buf)
-	require.ErrorIs(t, err, errBodySizeLimit)
-	require.Equal(t, bodySizeLimit, buf.Len())
-	// Target response gzip compressed body, scrape with body size limit.
-	gzipResponse = true
-	buf.Reset()
-	resp, err = ts.scrape(context.Background())
-	require.NoError(t, err)
-	_, err = ts.readResponse(context.Background(), resp, &buf)
-	require.ErrorIs(t, err, errBodySizeLimit)
-	require.Equal(t, bodySizeLimit, buf.Len())
-	// Target response uncompressed body, scrape without body size limit.
-	gzipResponse = false
-	buf.Reset()
-	ts.bodySizeLimit = 0
-	resp, err = ts.scrape(context.Background())
-	require.NoError(t, err)
-	_, err = ts.readResponse(context.Background(), resp, &buf)
-	require.NoError(t, err)
-	require.Len(t, responseBody, buf.Len())
-	// Target response gzip compressed body, scrape without body size limit.
-	gzipResponse = true
-	buf.Reset()
-	resp, err = ts.scrape(context.Background())
-	require.NoError(t, err)
-	_, err = ts.readResponse(context.Background(), resp, &buf)
-	require.NoError(t, err)
-	require.Len(t, responseBody, buf.Len())
 }
 
 // testScraper implements the scraper interface and allows setting values
@@ -6820,8 +7091,14 @@ func testScrapeLoopCompression(t *testing.T, appV2 bool) {
 
 	for _, tc := range []struct {
 		enableCompression bool
+		enableZstd        bool
 		acceptEncoding    string
 	}{
+		{
+			enableCompression: true,
+			acceptEncoding:    "zstd,gzip",
+			enableZstd:        true,
+		},
 		{
 			enableCompression: true,
 			acceptEncoding:    "gzip",
@@ -6853,7 +7130,7 @@ func testScrapeLoopCompression(t *testing.T, appV2 bool) {
 			}
 
 			sa := selectAppendable(s, appV2)
-			sp, err := newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+			sp, err := newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{EnableZstdScrape: tc.enableZstd}, newTestScrapeMetrics(t))
 			require.NoError(t, err)
 			defer sp.stop()
 

@@ -384,7 +384,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			input: append(
 				// Series with test_metric1="test_metric1" labels.
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{2, 2}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
-				writeV2RequestFixture.Timeseries...),
+				writeV2RequestFixture.Timeseries...,
+			),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "invalid metric name or labels, got {test_metric1=\"test_metric1\"}\n",
 		},
@@ -393,7 +394,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			input: append(
 				// Series with __name__="" labels.
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 0}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
-				writeV2RequestFixture.Timeseries...),
+				writeV2RequestFixture.Timeseries...,
+			),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "invalid metric name or labels, got {__name__=\"\"}\n",
 		},
@@ -402,7 +404,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			input: append(
 				// Series with __name__="test_metric1",test_metric1="test_metric1",test_metric1="test_metric1" labels.
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 2, 2, 2, 2}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
-				writeV2RequestFixture.Timeseries...),
+				writeV2RequestFixture.Timeseries...,
+			),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "invalid labels for series, labels {__name__=\"test_metric1\", test_metric1=\"test_metric1\", test_metric1=\"test_metric1\"}, duplicated label test_metric1\n",
 		},
@@ -410,7 +413,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			desc: "Partial write; first series with odd number of label refs",
 			input: append(
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 3}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
-				writeV2RequestFixture.Timeseries...),
+				writeV2RequestFixture.Timeseries...,
+			),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "parsing labels for series [1 2 3]: invalid labelRefs length 3\n",
 		},
@@ -418,7 +422,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			desc: "Partial write; first series with out-of-bounds symbol references",
 			input: append(
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 999}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
-				writeV2RequestFixture.Timeseries...),
+				writeV2RequestFixture.Timeseries...,
+			),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "parsing labels for series [1 999]: labelRefs 1 (name) = 999 (value) outside of symbols table (size 18)\n",
 		},
@@ -433,7 +438,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 					},
 					Samples: []writev2.Sample{{Value: 1, Timestamp: 1}},
 				}},
-				writeV2RequestFixture.Timeseries...),
+				writeV2RequestFixture.Timeseries...,
+			),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "parsing metadata for series [1 2]: metadata unit_ref 999 outside of symbols table (size 18)\n",
 		},
@@ -448,7 +454,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 					},
 					Samples: []writev2.Sample{{Value: 1, Timestamp: 1}},
 				}},
-				writeV2RequestFixture.Timeseries...),
+				writeV2RequestFixture.Timeseries...,
+			),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "parsing metadata for series [1 2]: metadata help_ref 999 outside of symbols table (size 18)\n",
 		},
@@ -464,7 +471,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 						Timestamp:  1,
 					}},
 				}},
-				writeV2RequestFixture.Timeseries...),
+				writeV2RequestFixture.Timeseries...,
+			),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "TimeSeries must contain at least one sample or histogram for series {__name__=\"test_metric1\"}\n",
 		},

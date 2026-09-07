@@ -202,6 +202,10 @@ global:
   [ extra_scrape_metrics: <boolean> | default = false ]
 
 runtime:
+  # The minimum severity of messages emitted by the process logger.
+  # This setting can be changed by reloading the configuration.
+  [ log_level: <string> | default = info ]
+
   # Configure the Go garbage collector GOGC parameter
   # See: https://tip.golang.org/doc/gc-guide#GOGC
   # Lowering this number increases CPU usage.
@@ -3743,6 +3747,22 @@ sigv4:
   # Can only be used with role_arn.
   [ external_id: <string> ]
 
+  # Session name used when assuming a role, mapped to the AWS RoleSessionName.
+  # Can only be used with role_arn. Must match the pattern ^[\w+=,.@-]{2,64}$.
+  # Requires Prometheus >= 3.15.0.
+  [ session_name: <string> ]
+
+  # STS session tags used for cost allocation when assuming a role.
+  # Can only be used with role_arn. Tag keys must not be empty and must be
+  # <= 128 characters; tag values must be <= 256 characters.
+  # Requires Prometheus >= 3.15.0.
+  [ tags:
+    [ <string>: <string> ... ] ]
+
+  # AWS service name used to scope the SigV4 signing (e.g. "aps" for
+  # Amazon Managed Service for Prometheus).
+  [ service_name: <string> ]
+
   # Defines the FIPS mode for the AWS STS endpoint.
   # Requires Prometheus >= 2.54.0
   # Note: FIPS STS selection should be configured via use_fips_sts_endpoint rather than environment variables. (The problem report that motivated this: AWS_USE_FIPS_ENDPOINT no longer works.)
@@ -3966,6 +3986,22 @@ sigv4:
   # Can only be used with role_arn.
   [ external_id: <string> ]
 
+  # Session name used when assuming a role, mapped to the AWS RoleSessionName.
+  # Can only be used with role_arn. Must match the pattern ^[\w+=,.@-]{2,64}$.
+  # Requires Prometheus >= 3.15.0.
+  [ session_name: <string> ]
+
+  # STS session tags used for cost allocation when assuming a role.
+  # Can only be used with role_arn. Tag keys must not be empty and must be
+  # <= 128 characters; tag values must be <= 256 characters.
+  # Requires Prometheus >= 3.15.0.
+  [ tags:
+    [ <string>: <string> ... ] ]
+
+  # AWS service name used to scope the SigV4 signing (e.g. "aps" for
+  # Amazon Managed Service for Prometheus).
+  [ service_name: <string> ]
+
   # Defines the FIPS mode for the AWS STS endpoint.
   # Requires Prometheus >= 2.54.0
   # Note: FIPS STS selection should be configured via use_fips_sts_endpoint rather than environment variables. (The problem report that motivated this: AWS_USE_FIPS_ENDPOINT no longer works.)
@@ -4156,15 +4192,19 @@ with this feature.
 [ stale_series_compaction_threshold: <float> | default = 0 ]
 
 # Configures the float chunk encoding to use for new chunks.
-# Valid values are 'xor' and 'xor2'. When absent, the encoding follows the
-# --enable-feature=xor2-encoding flag: 'xor2' if the flag is set, 'xor' otherwise.
-# Setting 'xor' forces standard XOR encoding even when --enable-feature=xor2-encoding is set.
-# Setting 'xor2' is only valid when --enable-feature=xor2-encoding is set;
-# Prometheus will refuse to reload if 'xor2' is set without the feature flag.
+# Valid values are 'xor' and 'xor2'. XOR2 gives better disk compression than XOR for
+# typical Prometheus workloads and can store start timestamps.
+#
+# WARNING: chunks encoded with XOR2 cannot be read by older Prometheus versions that do
+# not support the encoding, nor by downstream tools and LTS systems that do not support
+# it yet (e.g. blocks uploaded by the Thanos sidecar). Once XOR2 chunks have been
+# written, downgrading to a version without XOR2 support requires deleting the affected
+# blocks from disk manually, otherwise Prometheus returns an error on all queries.
+#
+# When absent, the encoding is 'xor2' if --enable-feature=xor2-encoding or
+# --enable-feature=st-storage is set, and 'xor' otherwise.
 # Setting 'xor' is incompatible with --enable-feature=st-storage (XOR chunks do not store
-# start timestamps); Prometheus will refuse to reload in that case too.
-# Omitting 'floats' (or the entire 'chunk_encoding' field) is equivalent; the encoding
-# follows the --enable-feature=xor2-encoding flag.
+# start timestamps); Prometheus will refuse to start or reload in that case.
 # This field is runtime-reloadable.
 # When --enable-feature=st-storage is disabled, XOR and XOR2 are compatible
 # encodings and in-progress chunks are not cut on an encoding change; the new
@@ -4172,6 +4212,8 @@ with this feature.
 # When --enable-feature=st-storage is enabled, XOR and XOR2 are not compatible
 # (XOR chunks do not store start timestamps), so an in-progress chunk is cut
 # on the next append after the encoding changes.
+# For the equivalent ST-capable encoding for native histograms, see the experimental
+# histograms-st-encoding feature flag. The st-storage feature enables that encoding too.
 [ chunk_encoding:
   [ floats: <string> ] ]
 

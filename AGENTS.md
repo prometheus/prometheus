@@ -79,6 +79,9 @@ Example:
   functions, even if the existing test needs minor adjustments to fit the new
   case. Where it helps, convert an existing test into a table-driven test
   rather than duplicating it.
+- Inline subtests in their parent test function. Extract a helper only when
+  setup or behavior is genuinely reused; do not extract one-off subtests merely
+  to avoid indentation.
 
 ---
 

@@ -1373,7 +1373,7 @@ func TestOOOChunk_ResolveAfterWrap(t *testing.T) {
 
 	// Simulate truncation of the first 8 chunks.
 	s.ooo.oooMmappedChunks = s.ooo.oooMmappedChunks[8:]
-	s.ooo.firstOOOChunkID = (s.ooo.firstOOOChunkID + 8) & (oooChunkIDMask - 1)
+	s.ooo.firstOOOChunkID = (s.ooo.firstOOOChunkID + 8) % oooChunkIDMask
 	require.Equal(t, chunks.HeadChunkID(3), s.ooo.firstOOOChunkID)
 
 	// Surviving chunks (original positions 8, 9) must resolve.

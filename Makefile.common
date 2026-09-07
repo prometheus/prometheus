@@ -61,7 +61,7 @@ PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_
 SKIP_GOLANGCI_LINT :=
 GOLANGCI_LINT :=
 GOLANGCI_LINT_OPTS ?=
-GOLANGCI_LINT_VERSION ?= v2.12.2
+GOLANGCI_LINT_VERSION ?= v2.13.1
 GOLANGCI_FMT_OPTS ?=
 # golangci-lint only supports linux, darwin and windows platforms on i386/amd64/arm64.
 # windows isn't included here because of the path separator being different.
@@ -247,6 +247,11 @@ common-docker-repo-name:
 
 .PHONY: common-docker $(BUILD_DOCKER_ARCHS)
 common-docker: $(BUILD_DOCKER_ARCHS)
+
+.PHONY: common-docker-current-arch
+common-docker-current-arch:
+	$(MAKE) common-docker-$(GOHOSTARCH)
+
 # DOCKER_ARCHS holds promu architecture names, which are not OCI platform strings.
 $(BUILD_DOCKER_ARCHS): common-docker-%:
 	@for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \

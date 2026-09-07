@@ -29,6 +29,14 @@
   "prHourlyLimit": 5,
   "packageRules": [
     {
+      "description": "Wait for npm releases to satisfy pnpm's cooldown",
+      "matchDatasources": [
+        "npm"
+      ],
+      "minimumReleaseAge": "1 day",
+      "internalChecksFilter": "strict"
+    },
+    {
       "description": "Don't update replace directives",
       "matchPackageNames": [
         "github.com/fsnotify/fsnotify"

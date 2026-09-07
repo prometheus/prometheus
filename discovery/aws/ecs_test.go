@@ -1548,7 +1548,8 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 							"__meta_ecs_cluster_arn": model.LabelValue("arn:aws:ecs:us-west-2:123456789012:cluster/nil-cluster"),
 							"__meta_ecs_task_arn":    model.LabelValue("arn:aws:ecs:us-west-2:123456789012:task/nil-cluster/task-nil"),
 							"__meta_ecs_task_definition": model.LabelValue(
-								"arn:aws:ecs:us-west-2:123456789012:task-definition/nil-task:1"),
+								"arn:aws:ecs:us-west-2:123456789012:task-definition/nil-task:1",
+							),
 							"__meta_ecs_region":        model.LabelValue("us-west-2"),
 							"__meta_ecs_ip_address":    model.LabelValue("10.0.4.10"),
 							"__meta_ecs_launch_type":   model.LabelValue("FARGATE"),

@@ -104,6 +104,7 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 		ConvertClassicHistogramsToNHCB:          sl.convertClassicHistToNHCB,
 		KeepClassicOnClassicAndNativeHistograms: sl.alwaysScrapeClassicHist,
 		OpenMetricsSkipSTSeries:                 sl.parseST,
+		EnableOpenMetrics2:                      sl.enableOpenMetrics2,
 		FallbackContentType:                     sl.fallbackScrapeProtocol,
 	})
 	if p == nil {

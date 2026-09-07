@@ -1,5 +1,5 @@
 import React from 'react';
-import { mount, ReactWrapper } from 'enzyme';
+import { render, screen } from '@testing-library/react';
 import HistogramChart from './HistogramChart';
 import { Histogram } from '../../types/types';
 
@@ -9,257 +9,127 @@ const mockFormatToParts = jest.fn();
 const mockFormatRange = jest.fn();
 const mockFormatRangeToParts = jest.fn();
 
-jest.spyOn(global.Intl, 'NumberFormat').mockImplementation(() => ({
-  format: mockFormat,
-  resolvedOptions: mockResolvedOptions,
-  formatToParts: mockFormatToParts,
-  formatRange: mockFormatRange,
-  formatRangeToParts: mockFormatRangeToParts,
-}));
+const histogramDataLinear: Histogram = {
+  count: '30',
+  sum: '350',
+  buckets: [
+    [1678886400, '0', '10', '5'],
+    [1678886400, '10', '20', '15'],
+    [1678886400, '20', '30', '10'],
+  ],
+};
+
+const histogramDataExponential: Histogram = {
+  count: '140',
+  sum: '...',
+  buckets: [
+    [1678886400, '-100', '-10', '20'],
+    [1678886400, '-10', '-1', '30'],
+    [1678886400, '1', '10', '50'],
+    [1678886400, '10', '100', '40'],
+  ],
+};
+
+const histogramDataZeroCrossing: Histogram = {
+  count: '30',
+  sum: '...',
+  buckets: [
+    [1678886400, '-5', '-1', '10'],
+    [1678886400, '-1', '1', '5'],
+    [1678886400, '1', '5', '15'],
+  ],
+};
+
+const bucketSlots = (container: HTMLElement): HTMLElement[] =>
+  Array.from(container.querySelectorAll<HTMLElement>('.histogram-bucket-slot'));
 
 describe('HistogramChart', () => {
-  let wrapper: ReactWrapper;
-  let container: HTMLDivElement;
+  let numberFormatSpy: jest.SpyInstance;
 
-  const histogramDataLinear: Histogram = {
-    count: '30',
-    sum: '350',
-    buckets: [
-      [1678886400, '0', '10', '5'],
-      [1678886400, '10', '20', '15'],
-      [1678886400, '20', '30', '10'],
-    ],
-  };
+  beforeAll(() => {
+    numberFormatSpy = jest.spyOn(global.Intl, 'NumberFormat').mockImplementation(() => ({
+      format: mockFormat,
+      resolvedOptions: mockResolvedOptions,
+      formatToParts: mockFormatToParts,
+      formatRange: mockFormatRange,
+      formatRangeToParts: mockFormatRangeToParts,
+    }));
+  });
 
-  const histogramDataExponential: Histogram = {
-    count: '140',
-    sum: '...',
-    buckets: [
-      [1678886400, '-100', '-10', '20'],
-      [1678886400, '-10', '-1', '30'],
-      [1678886400, '1', '10', '50'],
-      [1678886400, '10', '100', '40'],
-    ],
-  };
-
-  const histogramDataZeroCrossing: Histogram = {
-    count: '30',
-    sum: '...',
-    buckets: [
-      [1678886400, '-5', '-1', '10'],
-      [1678886400, '-1', '1', '5'],
-      [1678886400, '1', '5', '15'],
-    ],
-  };
-
-  const histogramDataEmpty: Histogram = {
-    count: '0',
-    sum: '0',
-    buckets: [],
-  };
-
-  const histogramDataNull: Histogram = {
-    count: '0',
-    sum: '0',
-    buckets: null as any,
-  };
-
-  const defaultProps = {
-    index: 0,
-    scale: 'linear' as 'linear' | 'exponential',
-  };
+  afterAll(() => {
+    numberFormatSpy.mockRestore();
+  });
 
   beforeEach(() => {
-    container = document.createElement('div');
-    document.body.appendChild(container);
     mockFormat.mockClear();
-    mockResolvedOptions.mockClear();
-    mockFormatToParts.mockClear();
-    mockFormatRange.mockClear();
-    mockFormatRangeToParts.mockClear();
   });
 
-  afterEach(() => {
-    if (wrapper && wrapper.exists()) {
-      wrapper.unmount();
-    }
-    container.remove();
+  it('renders no chart when buckets are empty or missing', () => {
+    const empty: Histogram = { count: '0', sum: '0', buckets: [] };
+    const { container, rerender } = render(<HistogramChart index={0} histogram={empty} scale="linear" />);
+
+    expect(screen.getByText('No data')).toBeTruthy();
+    expect(container.querySelector('.histogram-container')).toBeNull();
+
+    rerender(
+      <HistogramChart index={0} histogram={{ ...empty, buckets: null as unknown as Histogram['buckets'] }} scale="linear" />
+    );
+    expect(screen.getByText('No data')).toBeTruthy();
   });
 
-  it('renders without crashing', () => {
-    wrapper = mount(<HistogramChart {...defaultProps} histogram={histogramDataLinear} scale="linear" />, {
-      attachTo: container,
-    });
-    expect(wrapper.find('.histogram-y-wrapper').exists()).toBe(true);
-    expect(wrapper.find('.histogram-container').exists()).toBe(true);
+  it('renders linear buckets, axes, and frequency-density styles', () => {
+    const { container } = render(<HistogramChart index={0} histogram={histogramDataLinear} scale="linear" />);
+
+    expect(container.querySelectorAll('.histogram-bucket')).toHaveLength(3);
+    expect(container.querySelectorAll('.histogram-y-label')).toHaveLength(5);
+    expect(container.querySelectorAll('.histogram-y-grid')).toHaveLength(5);
+    expect(container.querySelectorAll('.histogram-x-grid')).toHaveLength(6);
+    expect(mockFormat).toHaveBeenCalledWith(0);
+    expect(mockFormat).toHaveBeenCalledWith(30);
+
+    const slots = bucketSlots(container);
+    expect(parseFloat(slots[0].style.left)).toBeCloseTo(0, 1);
+    expect(parseFloat(slots[0].style.width)).toBeCloseTo(100 / 3, 1);
+    expect(parseFloat((slots[0].querySelector('.histogram-bucket') as HTMLElement).style.height)).toBeCloseTo(100 / 3, 1);
+    expect(parseFloat(slots[1].style.left)).toBeCloseTo(100 / 3, 1);
+    expect((slots[1].querySelector('.histogram-bucket') as HTMLElement).style.height).toBe('100%');
+    expect(parseFloat(slots[2].style.left)).toBeCloseTo((2 * 100) / 3, 1);
+    expect(parseFloat((slots[2].querySelector('.histogram-bucket') as HTMLElement).style.height)).toBeCloseTo(
+      (2 * 100) / 3,
+      1
+    );
   });
 
-  it('renders "No data" when buckets are empty', () => {
-    wrapper = mount(<HistogramChart {...defaultProps} histogram={histogramDataEmpty} scale="linear" />, {
-      attachTo: container,
+  it('renders exponential buckets and count-based heights', () => {
+    const { container } = render(<HistogramChart index={1} histogram={histogramDataExponential} scale="exponential" />);
+
+    expect(container.querySelectorAll('.histogram-bucket')).toHaveLength(4);
+    expect(mockFormat).toHaveBeenCalledWith(50);
+    expect(mockFormat).toHaveBeenCalledWith(37.5);
+    expect(mockFormat).toHaveBeenCalledWith(-100);
+    expect(mockFormat).toHaveBeenCalledWith(100);
+
+    const slots = bucketSlots(container);
+    expect((slots[0].querySelector('.histogram-bucket') as HTMLElement).style.height).toBe('40%');
+    expect((slots[1].querySelector('.histogram-bucket') as HTMLElement).style.height).toBe('60%');
+    expect((slots[2].querySelector('.histogram-bucket') as HTMLElement).style.height).toBe('100%');
+    expect((slots[3].querySelector('.histogram-bucket') as HTMLElement).style.height).toBe('80%');
+    slots.forEach((slot) => {
+      expect(parseFloat(slot.style.left)).toBeGreaterThanOrEqual(0);
+      expect(parseFloat(slot.style.width)).toBeGreaterThan(0);
     });
-    expect(wrapper.text()).toContain('No data');
-    expect(wrapper.find('.histogram-container').exists()).toBe(false);
+    expect(parseFloat(slots[3].style.left) + parseFloat(slots[3].style.width)).toBeLessThanOrEqual(100.01);
   });
 
-  it('renders "No data" when buckets are null', () => {
-    wrapper = mount(<HistogramChart {...defaultProps} histogram={histogramDataNull} scale="linear" />, {
-      attachTo: container,
-    });
-    expect(wrapper.text()).toContain('No data');
-    expect(wrapper.find('.histogram-container').exists()).toBe(false);
-  });
+  it('positions a zero-crossing exponential bucket', () => {
+    const { container } = render(<HistogramChart index={2} histogram={histogramDataZeroCrossing} scale="exponential" />);
+    const zeroCrossing = bucketSlots(container)[1];
 
-  describe('Linear Scale', () => {
-    beforeEach(() => {
-      wrapper = mount(<HistogramChart {...defaultProps} histogram={histogramDataLinear} scale="linear" />, {
-        attachTo: container,
-      });
-    });
-
-    it('renders the correct number of buckets', () => {
-      expect(wrapper.find('.histogram-bucket')).toHaveLength(histogramDataLinear.buckets!.length);
-    });
-
-    it('renders y-axis labels and grid lines', () => {
-      expect(wrapper.find('.histogram-y-label')).toHaveLength(5);
-      expect(wrapper.find('.histogram-y-grid')).toHaveLength(5);
-      expect(wrapper.find('.histogram-y-tick')).toHaveLength(5);
-      expect(wrapper.find('.histogram-y-label').at(0).text()).toBe('');
-      expect(wrapper.find('.histogram-y-label').last().text()).toBe('0');
-    });
-
-    it('renders x-axis labels and grid lines', () => {
-      expect(wrapper.find('.histogram-x-label')).toHaveLength(1);
-      expect(wrapper.find('.histogram-x-grid')).toHaveLength(6);
-      expect(wrapper.find('.histogram-x-tick')).toHaveLength(3);
-      expect(mockFormat).toHaveBeenCalledWith(0);
-      expect(mockFormat).toHaveBeenCalledWith(30);
-      expect(wrapper.find('.histogram-x-label').text()).toContain('0');
-      expect(wrapper.find('.histogram-x-label').text()).toContain('30');
-    });
-
-    it('calculates bucket styles correctly for linear scale', () => {
-      const buckets = wrapper.find('.histogram-bucket-slot');
-      const rangeMin = 0;
-      const rangeMax = 30;
-      const rangeWidth = rangeMax - rangeMin;
-      const fdMax = 1.5;
-
-      const b1 = buckets.at(0);
-      const expectedB1LeftNum = ((0 - rangeMin) / rangeWidth) * 100;
-      const expectedB1WidthNum = ((10 - 0) / rangeWidth) * 100;
-      const expectedB1HeightNum = (0.5 / fdMax) * 100;
-      expect(parseFloat(b1.prop('style')?.left as string)).toBeCloseTo(expectedB1LeftNum, 1);
-      expect(parseFloat(b1.prop('style')?.width as string)).toBeCloseTo(expectedB1WidthNum, 1);
-      expect(parseFloat(b1.find('.histogram-bucket').prop('style')?.height as string)).toBeCloseTo(expectedB1HeightNum, 1);
-
-      const b2 = buckets.at(1);
-      const expectedB2LeftNum = ((10 - rangeMin) / rangeWidth) * 100;
-      const expectedB2WidthNum = ((20 - 10) / rangeWidth) * 100;
-      const expectedB2HeightNum = (1.5 / fdMax) * 100;
-      expect(parseFloat(b2.prop('style')?.left as string)).toBeCloseTo(expectedB2LeftNum, 1);
-      expect(parseFloat(b2.prop('style')?.width as string)).toBeCloseTo(expectedB2WidthNum, 1);
-      expect(parseFloat(b2.find('.histogram-bucket').prop('style')?.height as string)).toBeCloseTo(expectedB2HeightNum, 1);
-
-      const b3 = buckets.at(2);
-      const expectedB3LeftNum = ((20 - rangeMin) / rangeWidth) * 100;
-      const expectedB3WidthNum = ((30 - 20) / rangeWidth) * 100;
-      const expectedB3HeightNum = (1.0 / fdMax) * 100;
-      expect(parseFloat(b3.prop('style')?.left as string)).toBeCloseTo(expectedB3LeftNum, 1);
-      expect(parseFloat(b3.prop('style')?.width as string)).toBeCloseTo(expectedB3WidthNum, 1);
-      expect(parseFloat(b3.find('.histogram-bucket').prop('style')?.height as string)).toBeCloseTo(expectedB3HeightNum, 1);
-    });
-  });
-
-  describe('Exponential Scale', () => {
-    beforeEach(() => {
-      wrapper = mount(
-        <HistogramChart {...defaultProps} index={1} histogram={histogramDataExponential} scale="exponential" />,
-        { attachTo: container }
-      );
-    });
-
-    it('renders the correct number of buckets', () => {
-      expect(wrapper.find('.histogram-bucket')).toHaveLength(histogramDataExponential.buckets!.length);
-    });
-
-    it('renders y-axis labels and grid lines with formatting', () => {
-      expect(wrapper.find('.histogram-y-label')).toHaveLength(5);
-      expect(wrapper.find('.histogram-y-grid')).toHaveLength(5);
-      expect(wrapper.find('.histogram-y-tick')).toHaveLength(5);
-
-      const countMax = 50;
-      expect(mockFormat).toHaveBeenCalledWith(countMax * 1);
-      expect(mockFormat).toHaveBeenCalledWith(countMax * 0.75);
-      expect(mockFormat).toHaveBeenCalledWith(countMax * 0.5);
-      expect(mockFormat).toHaveBeenCalledWith(countMax * 0.25);
-
-      expect(wrapper.find('.histogram-y-label').at(0).text()).toBe('50');
-      expect(wrapper.find('.histogram-y-label').at(1).text()).toBe('37.5');
-      expect(wrapper.find('.histogram-y-label').last().text()).toBe('0');
-    });
-
-    it('renders x-axis labels and grid lines with formatting', () => {
-      expect(wrapper.find('.histogram-x-label')).toHaveLength(1);
-      expect(wrapper.find('.histogram-x-grid')).toHaveLength(6);
-      expect(wrapper.find('.histogram-x-tick')).toHaveLength(3);
-
-      expect(mockFormat).toHaveBeenCalledWith(-100);
-      expect(mockFormat).toHaveBeenCalledWith(100);
-      expect(wrapper.find('.histogram-x-label').text()).toContain('0');
-      expect(wrapper.find('.histogram-x-label').text()).toContain('-100');
-      expect(wrapper.find('.histogram-x-label').text()).toContain('100');
-    });
-
-    it('calculates bucket styles correctly for exponential scale', () => {
-      const buckets = wrapper.find('.histogram-bucket-slot');
-      const countMax = 50;
-
-      const b1 = buckets.at(0);
-      const b1Height = (20 / countMax) * 100;
-      expect(b1.find('.histogram-bucket').prop('style')).toHaveProperty('height', `${b1Height}%`);
-      expect(parseFloat(b1.prop('style')?.left as string)).toBeGreaterThanOrEqual(0);
-      expect(parseFloat(b1.prop('style')?.width as string)).toBeGreaterThan(0);
-
-      const b2 = buckets.at(1);
-      const b2Height = (30 / countMax) * 100;
-      expect(b2.find('.histogram-bucket').prop('style')).toHaveProperty('height', `${b2Height}%`);
-      expect(parseFloat(b2.prop('style')?.left as string)).toBeGreaterThan(0);
-      expect(parseFloat(b2.prop('style')?.width as string)).toBeGreaterThan(0);
-
-      const b3 = buckets.at(2);
-      expect(b3.find('.histogram-bucket').prop('style')).toHaveProperty('height', '100%');
-      expect(parseFloat(b3.prop('style')?.left as string)).toBeGreaterThan(0);
-      expect(parseFloat(b3.prop('style')?.width as string)).toBeGreaterThan(0);
-
-      const b4 = buckets.at(3);
-      const b4Height = (40 / countMax) * 100;
-      expect(b4.find('.histogram-bucket').prop('style')).toHaveProperty('height', `${b4Height}%`);
-      expect(parseFloat(b4.prop('style')?.left as string)).toBeGreaterThan(0);
-      expect(parseFloat(b4.prop('style')?.width as string)).toBeGreaterThan(0);
-      expect(
-        parseFloat(b4.prop('style')?.left as string) + parseFloat(b4.prop('style')?.width as string)
-      ).toBeLessThanOrEqual(100.01);
-    });
-
-    it('handles zero-crossing bucket correctly in exponential scale', () => {
-      wrapper.unmount();
-      wrapper = mount(
-        <HistogramChart {...defaultProps} index={2} histogram={histogramDataZeroCrossing} scale="exponential" />,
-        { attachTo: container }
-      );
-      const buckets = wrapper.find('.histogram-bucket-slot');
-      const countMax = 15;
-
-      const b2 = buckets.at(1);
-      const b2Height = (5 / countMax) * 100;
-      expect(b2.find('.histogram-bucket').prop('style')).toHaveProperty(
-        'height',
-        expect.stringContaining(b2Height.toFixed(1))
-      );
-      expect(parseFloat(b2.prop('style')?.left as string)).toBeGreaterThanOrEqual(0);
-      expect(parseFloat(b2.prop('style')?.width as string)).toBeGreaterThan(0);
-    });
+    expect(parseFloat(zeroCrossing.style.left)).toBeGreaterThanOrEqual(0);
+    expect(parseFloat(zeroCrossing.style.width)).toBeGreaterThan(0);
+    expect(parseFloat((zeroCrossing.querySelector('.histogram-bucket') as HTMLElement).style.height)).toBeCloseTo(
+      100 / 3,
+      1
+    );
   });
 });

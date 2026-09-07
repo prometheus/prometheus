@@ -1807,7 +1807,8 @@ func createDummyTimeSeries(instances int) []timeSeries {
 		"cluster", "some-cluster-0",
 		"container", "prometheus",
 		"job", "some-namespace/prometheus",
-		"namespace", "some-namespace")
+		"namespace", "some-namespace",
+	)
 
 	var result []timeSeries
 	r := rand.New(rand.NewSource(0))
@@ -1853,8 +1854,8 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 				b.Fatal(err)
 			}
 			totalSize += len(req)
-			b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
 		}
+		b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
 	}
 
 	twoBatch := createDummyTimeSeries(2)
@@ -1901,8 +1902,8 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 				b.Fatal(err)
 			}
 			totalSize += len(req)
-			b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
 		}
+		b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
 	}
 
 	twoBatch := createDummyTimeSeries(2)
@@ -2293,7 +2294,8 @@ func TestPopulateV2TimeSeries_UnexpectedMetadata(t *testing.T) {
 	}
 
 	nSamples, nExemplars, nHistograms, nMetadata, nUnexpected := populateV2TimeSeries(
-		&symbolTable, batch, pendingData, false, false, false)
+		&symbolTable, batch, pendingData, false, false, false,
+	)
 
 	require.Equal(t, 2, nSamples, "Should count 2 samples")
 	require.Equal(t, 0, nExemplars, "Should count 0 exemplars")

@@ -33,6 +33,7 @@ import (
 )
 
 func TestHTTPValidRefresh(t *testing.T) {
+	t.Parallel()
 	ts := httptest.NewServer(http.FileServer(http.Dir("./fixtures")))
 	t.Cleanup(ts.Close)
 
@@ -80,6 +81,7 @@ func TestHTTPValidRefresh(t *testing.T) {
 }
 
 func TestHTTPInvalidCode(t *testing.T) {
+	t.Parallel()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 	}))
@@ -114,6 +116,7 @@ func TestHTTPInvalidCode(t *testing.T) {
 }
 
 func TestHTTPInvalidFormat(t *testing.T) {
+	t.Parallel()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, "{}")
 	}))
@@ -168,6 +171,7 @@ func getFailureCount(failuresCount prometheus.Counter) float64 {
 }
 
 func TestContentTypeRegex(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		header string
 		match  bool
@@ -226,6 +230,7 @@ func TestContentTypeRegex(t *testing.T) {
 }
 
 func TestSourceDisappeared(t *testing.T) {
+	t.Parallel()
 	var stubResponse string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
