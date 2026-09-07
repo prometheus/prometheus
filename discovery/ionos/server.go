@@ -83,20 +83,52 @@ func newServerDiscovery(conf *SDConfig, _ *slog.Logger) (*serverDiscovery, error
 	return d, nil
 }
 
-func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+// serverPageLimit is the page size used when listing servers. The API
+// truncates results without pagination, so this must stay below the API's
+// own per-page maximum.
+const serverPageLimit = 100
+
+// listServers fetches all servers in the datacenter, following pagination
+// via the response's next link. It also returns the servers collection ID,
+// which is the same across pages.
+func (d *serverDiscovery) listServers(ctx context.Context) ([]ionoscloud.Server, *string, error) {
 	api := d.client.ServersApi
 
-	servers, _, err := api.DatacentersServersGet(ctx, d.datacenterID).
-		Depth(3).
-		Execute()
+	var (
+		items        []ionoscloud.Server
+		collectionID *string
+		offset       int32
+	)
+	for {
+		servers, _, err := api.DatacentersServersGet(ctx, d.datacenterID).
+			Depth(3).
+			Offset(offset).
+			Limit(serverPageLimit).
+			Execute()
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if collectionID == nil {
+			collectionID = servers.Id
+		}
+		// Items is omitted from the response when the page holds no servers.
+		if servers.Items != nil {
+			items = append(items, *servers.Items...)
+		}
+
+		if servers.Links == nil || servers.Links.Next == nil {
+			break
+		}
+		offset += serverPageLimit
+	}
+	return items, collectionID, nil
+}
+
+func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	serverItems, collectionID, err := d.listServers(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	// Items is omitted from the response when the datacenter holds no servers.
-	var serverItems []ionoscloud.Server
-	if servers.Items != nil {
-		serverItems = *servers.Items
 	}
 
 	var targets []model.LabelSet
@@ -150,8 +182,8 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		if props.CpuFamily != nil {
 			labels[serverCPUFamilyLabel] = model.LabelValue(*props.CpuFamily)
 		}
-		if servers.Id != nil {
-			labels[serverServersIDLabel] = model.LabelValue(*servers.Id)
+		if collectionID != nil {
+			labels[serverServersIDLabel] = model.LabelValue(*collectionID)
 		}
 		if server.Id != nil {
 			labels[serverIDLabel] = model.LabelValue(*server.Id)
