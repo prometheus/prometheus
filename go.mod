@@ -136,7 +136,7 @@ require (
 	github.com/go-openapi/swag/typeutils v0.27.1 // indirect
 	github.com/go-openapi/swag/yamlutils v0.27.1 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
-	github.com/oracle/oci-go-sdk/v65 v65.121.1
+	github.com/oracle/oci-go-sdk/v65 v65.124.1
 	github.com/pb33f/jsonpath v0.8.2 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
