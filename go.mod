@@ -74,7 +74,7 @@ require (
 	github.com/shurcooL/httpfs v0.0.0-20230704072500-f1e31cf0ba5c
 	github.com/stackitcloud/stackit-sdk-go/core v0.27.0
 	github.com/stretchr/testify v1.12.1
-	github.com/vultr/govultr/v3 v3.32.0
+	github.com/vultr/govultr/v3 v3.33.0
 	go.opentelemetry.io/collector/component v1.66.0
 	go.opentelemetry.io/collector/consumer v1.66.0
 	go.opentelemetry.io/collector/pdata v1.66.0
