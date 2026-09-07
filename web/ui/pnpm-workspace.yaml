@@ -2,6 +2,8 @@ packages:
   - "mantine-ui"
   - "module/*"
 allowBuilds:
+  # The platform packages are prebuilt, so source compilation is intentionally disabled.
+  '@parcel/watcher@2.6.0': false
   esbuild: true
   unrs-resolver: true
 minimumReleaseAgeExclude:
