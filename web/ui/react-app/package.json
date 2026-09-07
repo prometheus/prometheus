@@ -76,7 +76,7 @@
     "@types/react-copy-to-clipboard": "^5.0.7",
     "@types/react-dom": "^18.3.7",
     "@types/sanitize-html": "^2.16.1",
-    "eslint": "^8.57.1",
+    "eslint": "^9.0.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-config-react-app": "^7.0.1",
     "eslint-plugin-prettier": "^5.5.6",
