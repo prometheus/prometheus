@@ -184,17 +184,39 @@ load_with_nhcb 5m
 	negative_buckets_lower_falls_in_the_first_bucket_bucket{le="-1"}	 15+0x10
 	negative_buckets_lower_falls_in_the_first_bucket_bucket{le="+Inf"} 100+0x10
 
-# - Bucket [-Inf, -3]: contributes zero observations (no interpolation with infinite width bucket).
+# - Bucket [-Inf, -3]: all 10 observations assumed at upper boundary -3, which is in [-4, -2].
 # - Bucket [-3, -2]: contributes 12-10 = 2.0 observations (full bucket).
-# Total: 2.0 / 100.0 = 0.02
+# Total: 12.0 / 100.0 = 0.12
 
 eval instant at 50m histogram_fraction(-4, -2, negative_buckets_lower_falls_in_the_first_bucket_bucket)
 	expect no_warn
-	{} 0.02
+	{} 0.12
 
+# Check consistency with histogram_quantile. Quantile treats observations in (-Inf, -3] bucket as being at -3 boundary,
+# therefore 0.10 quantile is -3. If it treated values in that bucket at -Inf, it would be -Inf. It follows that
+# the fraction has to count those 10 observations at -3, not -Inf, otherwise fraction returns 0.
+eval instant at 50m histogram_quantile(0.10, negative_buckets_lower_falls_in_the_first_bucket_bucket)
+    expect no_warn
+	{} -3
+
+eval instant at 50m histogram_fraction(-4, -3, negative_buckets_lower_falls_in_the_first_bucket_bucket)
+	{} 0.10
+
+eval instant at 50m histogram_quantile(0.10, negative_buckets_lower_falls_in_the_first_bucket)
+    expect no_warn
+	{} -3
+
+eval instant at 50m histogram_fraction(-4, -3, negative_buckets_lower_falls_in_the_first_bucket)
+	{} 0.10
+
+# For NHCB, observations in the first bucket [-Inf, -3] are assumed to be at the upper
+# boundary -3, which lies in the query range [-4, -2]: 10 observations are included.
+# - Bucket [-Inf, -3]: 10 observations assumed at -3 (in range).
+# - Bucket [-3, -2]: 12-10 = 2.0 observations (full bucket).
+# Total: 12.0 / 100.0 = 0.12
 eval instant at 50m histogram_fraction(-4, -2, negative_buckets_lower_falls_in_the_first_bucket)
 	expect no_warn
-	{} 0.02
+	{} 0.12
 
 # Lower is -Inf.
 load_with_nhcb 5m
