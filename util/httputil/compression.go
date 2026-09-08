@@ -38,11 +38,25 @@ type compressedResponseWriter struct {
 
 // Writes HTTP response content data.
 func (c *compressedResponseWriter) Write(p []byte) (int, error) {
+	c.removeContentLength()
 	return c.writer.Write(p)
+}
+
+func (c *compressedResponseWriter) WriteHeader(statusCode int) {
+	c.removeContentLength()
+	c.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (c *compressedResponseWriter) removeContentLength() {
+	switch c.writer.(type) {
+	case *zlib.Writer, *gzip.Writer:
+		c.Header().Del("Content-Length")
+	}
 }
 
 // Closes the compressedResponseWriter and ensures to flush all data before.
 func (c *compressedResponseWriter) Close() {
+	c.removeContentLength()
 	if zlibWriter, ok := c.writer.(*zlib.Writer); ok {
 		zlibWriter.Flush()
 	}
@@ -67,7 +81,6 @@ func newCompressedResponseWriter(writer http.ResponseWriter, req *http.Request) 
 		switch strings.TrimSpace(encoding) {
 		case gzipEncoding:
 			h := writer.Header()
-			h.Del("Content-Length") // avoid stale length after compression
 			h.Set(contentEncodingHeader, gzipEncoding)
 			return &compressedResponseWriter{
 				ResponseWriter: writer,
@@ -75,7 +88,6 @@ func newCompressedResponseWriter(writer http.ResponseWriter, req *http.Request) 
 			}
 		case deflateEncoding:
 			h := writer.Header()
-			h.Del("Content-Length")
 			h.Set(contentEncodingHeader, deflateEncoding)
 			return &compressedResponseWriter{
 				ResponseWriter: writer,
