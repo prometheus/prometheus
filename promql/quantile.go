@@ -441,7 +441,15 @@ func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram, metric
 			return rank + b.Count*b.FractionBelow(v, false)
 		}
 
-		if b.Lower <= 0 && b.Upper >= 0 {
+		if h.UsesCustomBuckets() {
+			// Custom buckets have no zero bucket. Only the first bucket has a
+			// lower bound of -Inf, and 0 is its lower bound if its upper bound
+			// is positive, as done for classic histograms and in
+			// HistogramQuantile above.
+			if b.Lower == math.Inf(-1) && b.Upper > 0 {
+				b.Lower = 0
+			}
+		} else if b.Lower <= 0 && b.Upper >= 0 {
 			zeroBucket = true
 			switch {
 			case len(h.NegativeBuckets) == 0 && len(h.PositiveBuckets) > 0:
