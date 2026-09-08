@@ -14,12 +14,15 @@
 package notifier
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"log/slog"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -149,4 +152,22 @@ func TestAlertmanagerSetSync(t *testing.T) {
 
 	am3LoopAfter := ams.sendLoops["http://am3.example.com:9093/api/v2/alerts"]
 	require.Same(t, am3Loop, am3LoopAfter, "AM3 sendloop should not be recreated")
+}
+
+func TestAlertmanagerSetConfigHash(t *testing.T) {
+	cfg := &config.AlertmanagerConfig{
+		Scheme:     "http",
+		PathPrefix: "/test",
+	}
+	ams := &alertmanagerSet{cfg: cfg}
+
+	// Calculate expected hash
+	b, err := yaml.Marshal(cfg)
+	require.NoError(t, err)
+	hash := sha256.Sum256(b)
+	expected := hex.EncodeToString(hash[:])
+
+	actual, err := ams.configHash()
+	require.NoError(t, err)
+	require.Equal(t, expected, actual)
 }
