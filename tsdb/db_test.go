@@ -10882,9 +10882,12 @@ func TestInOrderBlocksMaxTime_ExcludesSelectedSeriesBlocks(t *testing.T) {
 //
 // The sample is committed too late to be included in the generated
 // block, but early enough that its timestamp still falls within the
-// compaction range. Without the appendID watermark check, the series
-// would be evicted, causing the late sample to disappear from both the
-// head and the WAL replay path after restart.
+// compaction range. Without a guard, the series would be evicted,
+// causing the late sample to disappear from both the head and the WAL
+// replay path after restart.
+//
+// Must hold regardless of isolation: hasAppendIDAbove catches it when isolation is on;
+// the isolation-independent fingerprint check catches it when the watermark is a no-op.
 //
 // The test injects such an append via
 // compactHeadViewBeforeEvictTestingCallback and verifies that the
@@ -10943,35 +10946,14 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 
 	require.Len(t, db.Blocks(), 1)
 
-	// The watermark guard only fires when isolation is enabled, because it
-	// relies on per-sample append-IDs that s.txs only tracks in that mode.
-	//   - isolation enabled: hasAppendIDAbove catches the post-watermark
-	//     commit, sel survives eviction, and all three samples are queryable.
-	//   - isolation disabled: per-sample append-IDs aren't tracked, the guard
-	//     is a no-op, sel gets evicted along with the late sample, and the
-	//     WAL tombstone drops the late sample permanently on replay. Only the
-	//     two samples the block captured remain queryable.
-	var (
-		expectedHeadSeries uint64
-		expectedSamples    []chunks.Sample
-	)
-	if defaultIsolationDisabled {
-		expectedHeadSeries = 1 // only filler remains; sel was evicted
-		expectedSamples = []chunks.Sample{
-			sample{t: 100, f: 10.0},
-			sample{t: 200, f: 20.0},
-		}
-	} else {
-		expectedHeadSeries = 2 // filler + sel
-		expectedSamples = []chunks.Sample{
-			sample{t: 100, f: 10.0},
-			sample{t: 200, f: 20.0},
-			sample{t: lateT, f: lateV},
-		}
+	// sel survives regardless of isolation, so all three samples remain queryable.
+	expectedSamples := []chunks.Sample{
+		sample{t: 100, f: 10.0},
+		sample{t: 200, f: 20.0},
+		sample{t: lateT, f: lateV},
 	}
 
-	require.Equal(t, expectedHeadSeries, db.Head().NumSeries(),
-		"head series count must match the expected watermark-guard outcome for this isolation mode")
+	require.Equal(t, uint64(2), db.Head().NumSeries(), "filler + sel: sel must survive eviction")
 
 	querySelected := func(d *DB) []chunks.Sample {
 		q, err := d.Querier(0, chunkRange)
@@ -10981,8 +10963,7 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 	}
 
 	beforeRestart := querySelected(db)
-	require.Equal(t, expectedSamples, beforeRestart,
-		"visible samples before restart must match the expected watermark-guard outcome")
+	require.Equal(t, expectedSamples, beforeRestart, "all three samples must be visible before restart")
 
 	// Verify the same data is visible after a restart driven by WAL replay.
 	require.NoError(t, db.Close())
@@ -10991,8 +10972,70 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 
 	afterRestart := querySelected(db)
-	require.Equal(t, expectedSamples, afterRestart,
-		"visible samples after restart must match the expected watermark-guard outcome")
+	require.Equal(t, expectedSamples, afterRestart, "all three samples must survive restart")
+}
+
+// TestCompactSelectedSeries_OOOAppendDuringCompactionSurvives verifies that a series is
+// retained, not evicted, when an out-of-order sample transitions it from s.ooo == nil to
+// non-nil during compaction.
+//
+// Unlike an in-order late append, an OOO sample changes neither headChunkCount nor the
+// current chunk's sample count, so the fingerprint check plays no part here. Instead,
+// isSeriesWithoutOOO -- re-evaluated live at eviction-check time, not from the
+// selection-time snapshot -- catches the transition on its own. Confirmed by temporarily
+// dropping isSeriesWithoutOOO from the eviction predicate and observing this test fail.
+func TestCompactSelectedSeries_OOOAppendDuringCompactionSurvives(t *testing.T) {
+	const chunkRange = 1000
+	opts := DefaultOptions()
+	opts.MinBlockDuration = chunkRange
+	opts.MaxBlockDuration = chunkRange
+	opts.OutOfOrderTimeWindow = chunkRange // enable OOO ingestion
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	filler := labels.FromStrings("name", "filler")
+	sel := labels.FromStrings("name", "selected")
+
+	app := db.Appender(context.Background())
+	_, err := app.Append(0, filler, 100, 0.1)
+	require.NoError(t, err)
+	_, err = app.Append(0, filler, 700, 0.7)
+	require.NoError(t, err)
+	selRef, err := app.Append(0, sel, 100, 10.0)
+	require.NoError(t, err)
+	_, err = app.Append(selRef, sel, 200, 20.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.Equal(t, uint64(2), db.Head().NumSeries())
+
+	// The hook fires after the block is written but before eviction. This sample, earlier
+	// than sel's max (200) but within the OOO window, flips sel's s.ooo from nil to non-nil.
+	const oooT, oooV = int64(150), 15.0
+	var hookErr error
+	compactHeadViewBeforeEvictTestingCallback = func() {
+		hookApp := db.Appender(context.Background())
+		if _, err := hookApp.Append(selRef, sel, oooT, oooV); err != nil {
+			hookErr = err
+			return
+		}
+		hookErr = hookApp.Commit()
+	}
+	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+
+	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{selRef}))
+	require.NoError(t, hookErr, "the OOO append/commit inside the hook must itself succeed")
+
+	require.Equal(t, uint64(2), db.Head().NumSeries(), "filler + sel: sel must survive eviction")
+
+	q, err := db.Querier(0, chunkRange)
+	require.NoError(t, err)
+	seriesSet := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+	require.Equal(t, []chunks.Sample{
+		sample{t: 100, f: 10.0},
+		sample{t: oooT, f: oooV},
+		sample{t: 200, f: 20.0},
+	}, seriesSet[`{name="selected"}`], "all three samples, including the OOO one, must be visible")
 }
 
 // TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction verifies
