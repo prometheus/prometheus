@@ -63,7 +63,7 @@
     "@typescript-eslint/parser": "^8.65.0",
     "@vitejs/plugin-react": "^6.0.0",
     "eslint": "^10.0.0",
-    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-hooks": "^7.0.0",
     "eslint-plugin-react-refresh": "^0.5.3",
     "globals": "^17.0.0",
     "jsdom": "^30.0.0",
