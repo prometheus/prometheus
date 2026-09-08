@@ -223,9 +223,9 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
         const expBucketWidth =
           logWidth === 0 ? defaultExpBucketWidth : logWidth;
 
-        let bucketWidth = "";
-        let bucketLeft = "";
-        let bucketHeight = "";
+        let bucketWidth: string;
+        let bucketLeft: string;
+        let bucketHeight: string;
 
         switch (scale) {
           case "linear": {

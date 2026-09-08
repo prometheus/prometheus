@@ -74,14 +74,16 @@ const createQueryFn =
       return apiRes as SuccessAPIResponse<T>;
     } catch (error) {
       if (!(error instanceof Error)) {
-        throw new Error("Unknown error");
+        throw new Error("Unknown error", { cause: error });
       }
 
       switch (error.name) {
         case "TypeError":
-          throw new Error("Network error or unable to reach the server");
+          throw new Error("Network error or unable to reach the server", {
+            cause: error,
+          });
         case "SyntaxError":
-          throw new Error("Invalid JSON response");
+          throw new Error("Invalid JSON response", { cause: error });
         default:
           throw error;
       }
