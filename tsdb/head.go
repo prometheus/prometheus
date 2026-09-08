@@ -130,6 +130,12 @@ type Head struct {
 
 	iso *isolation
 
+	// Commits hold commitBarrier for reading while assigning appendSeq and applying
+	// samples. Compaction takes it for writing to capture a watermark after all
+	// preceding commits have applied their samples, even with isolation disabled.
+	commitBarrier sync.RWMutex
+	appendSeq     atomic.Uint64
+
 	oooIso *oooIsolation
 
 	cardinalityMutex      sync.Mutex
@@ -1338,9 +1344,10 @@ func isStaleSeries(s *memSeries) bool {
 // appendIDWatermark is the lastAppendID captured before the upstream block write. Series that
 // have received samples with greater appendIDs are skipped, because those samples may not be
 // present in the generated block.
-func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64, appendIDWatermark uint64) error {
+// appendSeqWatermark provides the same protection when isolation is disabled.
+func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64, appendIDWatermark, appendSeqWatermark uint64) error {
 	_, err := h.truncateSeries(seriesRefs, maxt, func(s *memSeries) bool {
-		return isSeriesWithoutOOO(s) && isStaleSeries(s) && !hasAppendIDAbove(s, appendIDWatermark)
+		return isSeriesWithoutOOO(s) && isStaleSeries(s) && !hasAppendIDAbove(s, appendIDWatermark) && s.lastAppendSeq <= appendSeqWatermark
 	})
 	return err
 }
@@ -1351,18 +1358,18 @@ func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64, a
 // appendIDWatermark is the lastAppendID captured before the upstream block write. Series that
 // have received samples with greater appendIDs are skipped, because those samples may not be
 // present in the generated block.
-func (h *Head) truncateSelectedSeries(seriesRefs []storage.SeriesRef, maxt int64, appendIDWatermark uint64) error {
+// appendSeqWatermark provides the same protection when isolation is disabled.
+func (h *Head) truncateSelectedSeries(seriesRefs []storage.SeriesRef, maxt int64, appendIDWatermark, appendSeqWatermark uint64) error {
 	_, err := h.truncateSeries(seriesRefs, maxt, func(s *memSeries) bool {
-		return isSeriesWithoutOOO(s) && !hasAppendIDAbove(s, appendIDWatermark)
+		return isSeriesWithoutOOO(s) && !hasAppendIDAbove(s, appendIDWatermark) && s.lastAppendSeq <= appendSeqWatermark
 	})
 	return err
 }
 
 // hasAppendIDAbove reports whether s contains any in-memory sample with an appendID
 // greater than watermark.
-// When isolation is disabled (s.txs == nil), it always returns false;  in that mode,
-// CompactSelectedSeries and CompactStaleHead rely on their existing requirement that
-// no concurrent writes target the affected series.
+// When isolation is disabled (s.txs == nil), it always returns false;
+// selected- and stale-series eviction use lastAppendSeq instead.
 // Must be called with s.Lock held.
 func hasAppendIDAbove(s *memSeries, watermark uint64) bool {
 	if s.txs == nil {
@@ -2783,6 +2790,8 @@ type memSeries struct {
 	mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
 
 	nextAt int64 // Timestamp at which to cut the next chunk.
+	// Commit sequence of the last sample application, protected by the series lock.
+	lastAppendSeq uint64
 	// The state packs the pending-sample count and infrequent flags to avoid increasing memSeries size.
 	state uint32
 	// headChunkCount tracks the number of head chunks. All mutations of the
