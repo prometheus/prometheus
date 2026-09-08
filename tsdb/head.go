@@ -2203,6 +2203,9 @@ func (h *Head) mmapHeadChunksInStripe(i int, candidates *[]*memSeries) (count in
 func (h *Head) mmapSeriesChunks(s *memSeries) int {
 	s.Lock()
 	defer s.Unlock()
+	if s.isGCed() {
+		return 0
+	}
 	return s.mmapChunks(h.chunkDiskMapper)
 }
 
@@ -2606,14 +2609,13 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		if headChunkCount >= 2 {
 			s.decMmapReady(series.ref)
 		}
-		// Detach the head chunks now to avoid mmaping an evicted series.
-		series.setHeadChunks(nil, 0)
 		if hashShard != stripe {
 			s.locks[stripe].Lock()
 			defer s.locks[stripe].Unlock()
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		// Keep head chunks intact for readers that still reference the series.
 		series.setGCed()
 		stale, isHist, buckets := series.sampleState()
 		if stale {
