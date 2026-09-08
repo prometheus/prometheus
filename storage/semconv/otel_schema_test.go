@@ -14,6 +14,7 @@
 package semconv
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"testing"
@@ -45,12 +46,175 @@ func loadOTelSchemaFile(t *testing.T, path string) otelSchema {
 }
 
 func TestLoadOTelSchema(t *testing.T) {
+	schemaWithChange := func(section, change string) []byte {
+		return []byte(fmt.Sprintf(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.1.0:
+    %s:
+      changes:
+%s
+`, section, change))
+	}
+
 	t.Run("rejects unsupported file format", func(t *testing.T) {
 		b, err := os.ReadFile("./testdata/otel_unsupported_format.yaml")
 		require.NoError(t, err)
 		_, err = loadOTelSchema(b)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unsupported OTel schema file format")
+	})
+
+	t.Run("rejects unsupported metric splits", func(t *testing.T) {
+		_, err := loadOTelSchema([]byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.1.0:
+    metrics:
+      changes:
+        - split:
+            apply_to_metric: http.server.duration
+            by_attribute: http.request.method
+            metrics_from_attributes:
+              http.server.get.duration: GET
+`))
+		require.EqualError(t, err, `schema version "1.1.0" contains unsupported metric split transformation`)
+	})
+
+	for _, tc := range []struct {
+		name    string
+		section string
+		change  string
+		wantErr string
+	}{
+		{
+			name:    "misspelled metric rename",
+			section: "metrics",
+			change:  "        - rename_metric: {}",
+			wantErr: `schema version "1.1.0" metrics change 1 contains unsupported transformation "rename_metric"`,
+		},
+		{
+			name:    "misspelled split",
+			section: "metrics",
+			change:  "        - splitt: {}",
+			wantErr: `schema version "1.1.0" metrics change 1 contains unsupported transformation "splitt"`,
+		},
+		{
+			name:    "unknown transformation",
+			section: "metrics",
+			change:  "        - unknown: {}",
+			wantErr: `schema version "1.1.0" metrics change 1 contains unsupported transformation "unknown"`,
+		},
+		{
+			name:    "split in all section",
+			section: "all",
+			change:  "        - split: {}",
+			wantErr: `schema version "1.1.0" all change 1 contains unsupported transformation "split"`,
+		},
+		{
+			name:    "multiple transformations",
+			section: "metrics",
+			change: `        - rename_attributes: {}
+          rename_metrics: {}`,
+			wantErr: `schema version "1.1.0" metrics change 1 must contain exactly one transformation, found ["rename_attributes" "rename_metrics"]`,
+		},
+		{
+			name:    "empty change",
+			section: "metrics",
+			change:  "        - {}",
+			wantErr: `schema version "1.1.0" metrics change 1 must contain exactly one transformation, found []`,
+		},
+		{
+			name:    "misspelled attribute map",
+			section: "metrics",
+			change: `        - rename_attributes:
+            attribute_maps: {}`,
+			wantErr: `schema version "1.1.0" metrics change 1 rename_attributes contains unsupported field "attribute_maps"`,
+		},
+		{
+			name:    "misspelled metric scope",
+			section: "metrics",
+			change: `        - rename_attributes:
+            apply_to_metric: []`,
+			wantErr: `schema version "1.1.0" metrics change 1 rename_attributes contains unsupported field "apply_to_metric"`,
+		},
+		{
+			name:    "metric scope in all section",
+			section: "all",
+			change: `        - rename_attributes:
+            apply_to_metrics: []`,
+			wantErr: `schema version "1.1.0" all change 1 rename_attributes contains unsupported field "apply_to_metrics"`,
+		},
+		{
+			name:    "empty split",
+			section: "metrics",
+			change:  "        - split: {}",
+			wantErr: `schema version "1.1.0" contains unsupported metric split transformation`,
+		},
+		{
+			name:    "null split",
+			section: "metrics",
+			change:  "        - split:",
+			wantErr: `schema version "1.1.0" contains unsupported metric split transformation`,
+		},
+	} {
+		t.Run("rejects "+tc.name, func(t *testing.T) {
+			_, err := loadOTelSchema(schemaWithChange(tc.section, tc.change))
+			require.EqualError(t, err, tc.wantErr)
+		})
+	}
+
+	t.Run("accepts recognized empty transformations", func(t *testing.T) {
+		schema, err := loadOTelSchema([]byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.1.0:
+    metrics:
+      changes:
+        - rename_attributes: {}
+        - rename_attributes:
+            attribute_map: {}
+        - rename_attributes:
+            apply_to_metrics: []
+        - rename_metrics: {}
+`))
+		require.NoError(t, err)
+		require.Empty(t, schema.revisions)
+	})
+
+	t.Run("resolves merged transformations", func(t *testing.T) {
+		schema, err := loadOTelSchema([]byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+attributes: &attributes
+  attribute_map:
+    old.name: new.name
+change: &change
+  rename_attributes:
+    <<: *attributes
+versions:
+  1.1.0:
+    metrics:
+      changes:
+        - <<: *change
+`))
+		require.NoError(t, err)
+		require.Len(t, schema.revisions, 1)
+		require.Equal(t, "new.name", schema.revisions[0].changes[0].attributeRenames.renames.forward["old.name"])
+	})
+
+	t.Run("rejects merged multiple transformations", func(t *testing.T) {
+		_, err := loadOTelSchema([]byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+change: &change
+  rename_attributes: {}
+versions:
+  1.1.0:
+    metrics:
+      changes:
+        - <<: *change
+          rename_metrics: {}
+`))
+		require.EqualError(t, err, `schema version "1.1.0" metrics change 1 must contain exactly one transformation, found ["rename_attributes" "rename_metrics"]`)
 	})
 
 	t.Run("collects renames from the all section", func(t *testing.T) {

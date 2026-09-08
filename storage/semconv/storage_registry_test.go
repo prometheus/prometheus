@@ -110,6 +110,38 @@ func TestAwareStorageWithRegistry(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("rejects unsupported metric splits", func(t *testing.T) {
+		_, err := semconv.AwareStorageWithRegistry(teststorage.New(t), map[string][]byte{
+			"registry.yaml": []byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.1.0:
+    metrics:
+      changes:
+        - split:
+            apply_to_metric: http.server.duration
+            by_attribute: http.request.method
+            metrics_from_attributes:
+              http.server.get.duration: GET
+`),
+		})
+		require.EqualError(t, err, `registry schema "registry.yaml": schema version "1.1.0" contains unsupported metric split transformation`)
+	})
+
+	t.Run("rejects unknown schema transformations", func(t *testing.T) {
+		_, err := semconv.AwareStorageWithRegistry(teststorage.New(t), map[string][]byte{
+			"registry.yaml": []byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.1.0:
+    metrics:
+      changes:
+        - rename_metric: {}
+`),
+		})
+		require.EqualError(t, err, `registry schema "registry.yaml": schema version "1.1.0" metrics change 1 contains unsupported transformation "rename_metric"`)
+	})
+
 	t.Run("rejects an empty registry", func(t *testing.T) {
 		_, err := semconv.AwareStorageWithRegistry(teststorage.New(t), nil)
 		require.Error(t, err)

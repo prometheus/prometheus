@@ -467,6 +467,10 @@ surfacing only at query time. It is read once; the block is re-validated on
 configuration reload but changes take effect only on restart, and it is ignored
 unless the feature flag is set.
 
+Schema-aware metric reads support `rename_metrics` and `rename_attributes`
+transformations. A schema containing a metric `split` transformation is rejected
+because split conversion is not supported.
+
 For a remote `url`, the archive is fetched once at startup using `http_client_config`
 (so redirects follow `follow_redirects`, default `true`; set it to `false` to
 forbid them); the fetch blocks startup, is not retried, and both the download and
