@@ -369,7 +369,7 @@ func TestRemoteWriteHandler_ReceiveRelabeling(t *testing.T) {
 
 			appendable := &mockAppendable{}
 			configFunc := func() config.Config { return config.Config{ReceiveRelabelConfigs: tc.configs} }
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, NewRelabelingAppendable(appendable, configFunc),
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, NewRelabelingAppendable(appendable, configFunc, NewRelabelCache()),
 				[]remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false, false)
 
 			recorder := httptest.NewRecorder()

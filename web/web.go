@@ -391,8 +391,13 @@ func New(logger *slog.Logger, o *Options) *Handler {
 				defer h.mtx.RUnlock()
 				return *h.config
 			}
-			app = remote.NewRelabelingAppendable(app, relabelConfigFunc)
-			appV2 = remote.NewRelabelingAppendableV2(appV2, relabelConfigFunc)
+			// Shared across both wrappers: a relabel result depends only on
+			// the input labels and rules, not on which write protocol
+			// produced it, so a series seen on either path benefits from
+			// the other's cache entries.
+			relabelCache := remote.NewRelabelCache()
+			app = remote.NewRelabelingAppendable(app, relabelConfigFunc, relabelCache)
+			appV2 = remote.NewRelabelingAppendableV2(appV2, relabelConfigFunc, relabelCache)
 		}
 	}
 
