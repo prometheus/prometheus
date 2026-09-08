@@ -438,7 +438,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 									// ignores the latest chunk, so we need to cut a new head chunk to guarantee the chunk with
 									// the sample at c.mmappedChunkT is mmapped.
 									s.cutNewHeadChunk(c.mmappedChunkT, chunkenc.EncXOR, c.mmappedChunkT)
-									s.mmapChunks(chunkDiskMapper)
+									s.mmapChunks(chunkDiskMapper, nil)
 								}
 								require.NoError(b, chunkDiskMapper.Close())
 							}
@@ -1743,7 +1743,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 		ok, _ := s.append(0, int64(i), float64(i), 0, cOpts)
 		require.True(t, ok, "sample append failed")
 	}
-	s.mmapChunks(chunkDiskMapper)
+	s.mmapChunks(chunkDiskMapper, nil)
 
 	// Check that truncate removes half of the chunks and afterwards
 	// that the ID of the last chunk still gives us the same chunk afterwards.
@@ -1893,7 +1893,7 @@ func TestMemSeries_truncateChunks_scenarios(t *testing.T) {
 					ok, _ := series.append(0, int64(i), float64(i), 0, cOpts)
 					require.True(t, ok, "sample append failed")
 				}
-				series.mmapChunks(chunkDiskMapper)
+				series.mmapChunks(chunkDiskMapper, nil)
 			}
 
 			if tc.headChunks == 0 {
@@ -2634,7 +2634,7 @@ func testMemSeriesAppend(t *testing.T, useXOR2 bool, stFunc func(ts int64) int64
 	ok, chunkCreated = s.append(stFunc(999), 999, 2, 0, cOpts)
 	require.True(t, ok, "append failed")
 	require.False(t, chunkCreated, "second sample should use same chunk")
-	s.mmapChunks(chunkDiskMapper)
+	s.mmapChunks(chunkDiskMapper, nil)
 
 	ok, chunkCreated = s.append(stFunc(1000), 1000, 3, 0, cOpts)
 	require.True(t, ok, "append failed")
@@ -2644,7 +2644,7 @@ func testMemSeriesAppend(t *testing.T, useXOR2 bool, stFunc func(ts int64) int64
 	require.True(t, ok, "append failed")
 	require.False(t, chunkCreated, "second sample should use same chunk")
 
-	s.mmapChunks(chunkDiskMapper)
+	s.mmapChunks(chunkDiskMapper, nil)
 	require.Len(t, s.mmappedChunks, 1, "there should be only 1 mmapped chunk")
 	require.Equal(t, int64(998), s.mmappedChunks[0].minTime, "wrong chunk range")
 	require.Equal(t, int64(999), s.mmappedChunks[0].maxTime, "wrong chunk range")
@@ -2658,7 +2658,7 @@ func testMemSeriesAppend(t *testing.T, useXOR2 bool, stFunc func(ts int64) int64
 		ok, _ := s.append(stFunc(ts), ts, float64(i), 0, cOpts)
 		require.True(t, ok, "append failed")
 	}
-	s.mmapChunks(chunkDiskMapper)
+	s.mmapChunks(chunkDiskMapper, nil)
 
 	require.Greater(t, len(s.mmappedChunks)+1, 7, "expected intermediate chunks")
 
@@ -2753,7 +2753,7 @@ func testMemSeriesAppendHistogram(t *testing.T, useXOR2 bool, stFunc func(ts int
 	require.True(t, ok, "append failed")
 	require.False(t, chunkCreated, "second sample should use same chunk")
 
-	s.mmapChunks(chunkDiskMapper)
+	s.mmapChunks(chunkDiskMapper, nil)
 	require.Len(t, s.mmappedChunks, 1, "there should be only 1 mmapped chunk")
 	require.Equal(t, int64(998), s.mmappedChunks[0].minTime, "wrong chunk range")
 	require.Equal(t, int64(999), s.mmappedChunks[0].maxTime, "wrong chunk range")
@@ -2764,7 +2764,7 @@ func testMemSeriesAppendHistogram(t *testing.T, useXOR2 bool, stFunc func(ts int
 	require.True(t, ok, "append failed")
 	require.False(t, chunkCreated, "third sample should trigger a re-encoded chunk")
 
-	s.mmapChunks(chunkDiskMapper)
+	s.mmapChunks(chunkDiskMapper, nil)
 	require.Len(t, s.mmappedChunks, 1, "there should be only 1 mmapped chunk")
 	require.Equal(t, int64(998), s.mmappedChunks[0].minTime, "wrong chunk range")
 	require.Equal(t, int64(999), s.mmappedChunks[0].maxTime, "wrong chunk range")
@@ -2813,7 +2813,7 @@ func TestMemSeries_append_atVariableRate(t *testing.T) {
 	require.True(t, ok, "new chunk sample was not appended")
 	require.True(t, chunkCreated, "sample at block duration timestamp should create a new chunk")
 
-	s.mmapChunks(chunkDiskMapper)
+	s.mmapChunks(chunkDiskMapper, nil)
 	var totalSamplesInChunks int
 	for i, c := range s.mmappedChunks {
 		totalSamplesInChunks += int(c.numSamples)
@@ -3249,7 +3249,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 			require.True(t, ok, "series append failed")
 			require.False(t, chunkCreated, "chunk was created")
 			h.chunkDiskMapper.CutNewFile()
-			s.mmapChunks(h.chunkDiskMapper)
+			s.mmapChunks(h.chunkDiskMapper, nil)
 		}
 		require.NoError(t, h.Close())
 
@@ -5669,7 +5669,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 
 				ms, _, err := head.getOrCreate(l.Hash(), l, false)
 				require.NoError(t, err)
-				ms.mmapChunks(head.chunkDiskMapper)
+				ms.mmapChunks(head.chunkDiskMapper, nil)
 				require.Len(t, ms.mmappedChunks, len(expHeaders)-1) // One is the head chunk.
 
 				for i, mmapChunk := range ms.mmappedChunks {
@@ -6580,7 +6580,7 @@ func TestHeadInit_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
 	require.False(t, created, "should already exist")
 	require.NotNil(t, series, "should return the series we created above")
 
-	series.mmapChunks(h.chunkDiskMapper)
+	series.mmapChunks(h.chunkDiskMapper, nil)
 	expChunks := make([]*mmappedChunk, len(series.mmappedChunks))
 	copy(expChunks, series.mmappedChunks)
 
@@ -10315,6 +10315,53 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		require.Equal(t, uint32(1), getCount(lblsB), "series B headChunkCount should be 1 after mmap")
 	})
 
+	t.Run("scratch buffer reuse policy", func(t *testing.T) {
+		t.Run("small buffer retained and cleared", func(t *testing.T) {
+			buf := make([]*memChunk, 2, headChunksBufMaxCap)
+			buf[0] = &memChunk{}
+			buf[1] = &memChunk{}
+
+			var scratch headChunksScratch
+			scratch.reuse(buf)
+			require.NotNil(t, scratch.buf)
+			require.Empty(t, scratch.buf)
+			require.Equal(t, headChunksBufMaxCap, cap(scratch.buf))
+			require.NotNil(t, buf[0])
+			require.NotNil(t, buf[1])
+
+			scratch.release()
+			require.NotNil(t, scratch.buf)
+			require.Empty(t, scratch.buf)
+			require.Equal(t, headChunksBufMaxCap, cap(scratch.buf))
+			for _, chk := range buf[:cap(buf)] {
+				require.Nil(t, chk)
+			}
+		})
+
+		t.Run("oversized buffer released", func(t *testing.T) {
+			buf := make([]*memChunk, 1, headChunksBufMaxCap+1)
+			buf[0] = &memChunk{}
+
+			scratch := headChunksScratch{buf: buf}
+			scratch.release()
+			require.Nil(t, scratch.buf)
+		})
+
+		t.Run("oversized buffer replaced during prepare", func(t *testing.T) {
+			scratch := headChunksScratch{buf: make([]*memChunk, 0, headChunksBufMaxCap+1)}
+
+			prepared := scratch.prepare(4)
+			require.Len(t, prepared, 4)
+			require.Equal(t, 4, cap(prepared))
+		})
+
+		t.Run("oversized buffer dropped during reuse", func(t *testing.T) {
+			var scratch headChunksScratch
+			scratch.reuse(make([]*memChunk, 0, headChunksBufMaxCap+1))
+			require.Nil(t, scratch.buf)
+		})
+	})
+
 	// Regression test for https://github.com/prometheus/prometheus/issues/17941:
 	// if mmapChunks panics (via handleChunkWriteError) while mmapHeadChunks holds
 	// the stripe and series locks, those locks must still be released. A leaked
@@ -10546,7 +10593,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 				// Invoke the WAL-replay-style helper with a sample timestamped
 				// past the next chunk boundary to force a chunk cut.
 				s.Lock()
-				_, chunkCreated := h.appendChunkAndMmap(s, func() (bool, bool) {
+				_, chunkCreated := h.appendChunkAndMmap(s, nil, func() (bool, bool) {
 					return tc.appendInternal(s, ts+h.chunkRange.Load(), chunkOpts{
 						chunkDiskMapper: h.chunkDiskMapper,
 						chunkRange:      h.chunkRange.Load(),
