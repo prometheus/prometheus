@@ -311,8 +311,9 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 		readRecent       bool
 		callback         startTimeCallback
 
-		expectedQuery  *prompb.Query
-		expectedSeries []labels.Labels
+		expectedQuery     *prompb.Query
+		expectedSeries    []labels.Labels
+		exemplarQueryable storage.ExemplarQueryable
 	}{
 		{
 			name: "empty",
@@ -527,6 +528,7 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 				tc.requiredMatchers,
 				tc.readRecent,
 				tc.callback,
+				tc.exemplarQueryable,
 			)
 			q, err := c.Querier(tc.mint, tc.maxt)
 			require.NoError(t, err)
