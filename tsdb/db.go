@@ -1981,8 +1981,8 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 		func(h *Head, mint, maxt int64) BlockReader {
 			return NewSelectedSeriesHead(h, mint, maxt, selectedSeriesRefs)
 		},
-		func(maxt int64, appendIDWatermark uint64) error {
-			return db.head.truncateSelectedSeries(selectedSeriesRefs.sortedByRef, maxt, appendIDWatermark, fingerprints)
+		func(maxt int64, _ uint64) error {
+			return db.head.truncateSelectedSeries(selectedSeriesRefs.sortedByRef, maxt, fingerprints)
 		},
 		func(meta *BlockMeta) { meta.Compaction.SetSelectedSeries() },
 	); err != nil {

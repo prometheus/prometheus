@@ -10886,8 +10886,8 @@ func TestInOrderBlocksMaxTime_ExcludesSelectedSeriesBlocks(t *testing.T) {
 // causing the late sample to disappear from both the head and the WAL
 // replay path after restart.
 //
-// Must hold regardless of isolation: hasAppendIDAbove catches it when isolation is on;
-// the isolation-independent fingerprint check catches it when the watermark is a no-op.
+// The fingerprint check that catches this doesn't depend on isolation, so this holds
+// regardless of how isolation is configured.
 //
 // The test injects such an append via
 // compactHeadViewBeforeEvictTestingCallback and verifies that the
@@ -11044,15 +11044,12 @@ func TestCompactSelectedSeries_OOOAppendDuringCompactionSurvives(t *testing.T) {
 // The test covers the case where a write starts before compaction begins but
 // only commits after block generation and before eviction. Such a sample may
 // not be included in the generated blocks, so compaction must ensure the
-// corresponding series is retained in the head.
+// corresponding series is retained in the head. The commit lands after the
+// fingerprint snapshot is taken, so the check catches it regardless of isolation.
 //
 // The test verifies that the sample remains queryable both immediately after
 // compaction and after a restart.
 func TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction(t *testing.T) {
-	if defaultIsolationDisabled {
-		t.Skip("watermark guard relies on per-sample append-IDs that s.txs only tracks when isolation is enabled")
-	}
-
 	const chunkRange = 1000
 	opts := DefaultOptions()
 	opts.MinBlockDuration = chunkRange
@@ -11083,12 +11080,10 @@ func TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction(t *testing
 		lateV = 40.0
 	)
 
-	// Open the appender BEFORE CompactSelectedSeries: this is the key
-	// difference from TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart,
-	// where the appender is opened inside the hook (and so gets an appendID
-	// strictly greater than the captured watermark). Here, the appender's ID
-	// is issued before the watermark capture, so a watermark based on
-	// lastAppendID() would incorrectly cover it.
+	// Open the appender BEFORE CompactSelectedSeries -- the key difference from
+	// TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart, where the appender
+	// is opened inside the hook. Append() only reserves a pending commit here; the chunk
+	// mutation that the fingerprint notices happens later, at Commit() time inside the hook.
 	late := db.Appender(context.Background())
 	_, err = late.Append(selRef, sel, lateT, lateV)
 	require.NoError(t, err)
@@ -11107,7 +11102,7 @@ func TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction(t *testing
 
 	require.Len(t, db.Blocks(), 1)
 	require.Equal(t, uint64(2), db.Head().NumSeries(),
-		"sel must survive eviction because its late commit has an appendID > watermark")
+		"sel must survive eviction: its late commit changed the fingerprint taken before the block was written")
 
 	expected := []chunks.Sample{
 		sample{t: 100, f: 10.0},

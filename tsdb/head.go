@@ -1347,13 +1347,11 @@ func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64, a
 
 // truncateSelectedSeries removes the series identified by the provided refs from the head.
 // Series that received fresh samples or acquired OOO data after the caller collected the ref
-// list are skipped. The latter must be flushed by CompactOOOHead before they can be evicted.
-// appendIDWatermark is the lastAppendID captured before the upstream block write. Series that
-// have received samples with greater appendIDs are skipped, because those samples may not be
-// present in the generated block.
-func (h *Head) truncateSelectedSeries(seriesRefs []storage.SeriesRef, maxt int64, appendIDWatermark uint64, fingerprints map[storage.SeriesRef]seriesFingerprint) error {
+// list are skipped, via fingerprints -- see fingerprintChangedForRef. The latter must be
+// flushed by CompactOOOHead before they can be evicted.
+func (h *Head) truncateSelectedSeries(seriesRefs []storage.SeriesRef, maxt int64, fingerprints map[storage.SeriesRef]seriesFingerprint) error {
 	_, err := h.truncateSeries(seriesRefs, maxt, func(s *memSeries) bool {
-		return isSeriesWithoutOOO(s) && !hasAppendIDAbove(s, appendIDWatermark) && !fingerprintChangedForRef(s, fingerprints)
+		return isSeriesWithoutOOO(s) && !fingerprintChangedForRef(s, fingerprints)
 	})
 	return err
 }
@@ -1361,9 +1359,9 @@ func (h *Head) truncateSelectedSeries(seriesRefs []storage.SeriesRef, maxt int64
 // hasAppendIDAbove reports whether s contains any in-memory sample with an appendID
 // greater than watermark.
 // When isolation is disabled (s.txs == nil), it always returns false; in that mode,
-// CompactSelectedSeries and CompactStaleHead rely on their existing requirement that no
-// concurrent writes target the affected series -- CompactSelectedSeries additionally backs
-// this with fingerprintChangedForRef.
+// CompactStaleHead relies on its existing requirement that no concurrent writes target
+// the affected series. CompactSelectedSeries no longer uses this: fingerprintChangedForRef
+// covers the same ground without needing isolation.
 // Must be called with s.Lock held.
 func hasAppendIDAbove(s *memSeries, watermark uint64) bool {
 	if s.txs == nil {
