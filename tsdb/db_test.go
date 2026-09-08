@@ -10414,6 +10414,67 @@ func TestStaleSeriesCompactionWithZeroSeries(t *testing.T) {
 	require.Empty(t, db.Blocks())
 }
 
+// TestCompactStaleHead_LateStaleAppendSurvives verifies that a stale series is not evicted
+// when another sample is appended after CompactStaleHead writes the block but before eviction,
+// even if the new sample is also a stale marker.
+//
+// This is the CompactStaleHead counterpart of
+// TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart. A live isStaleSeries
+// re-check cannot detect this case because the series is stale both before and after the append.
+// The fingerprint detects that the series changed and prevents its eviction.
+func TestCompactStaleHead_LateStaleAppendSurvives(t *testing.T) {
+	const chunkRange = 1000
+	opts := DefaultOptions()
+	opts.MinBlockDuration = chunkRange
+	opts.MaxBlockDuration = chunkRange
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	staleV := math.Float64frombits(value.StaleNaN)
+
+	// Filler series keeps head.MaxTime at 700, ensuring the late append at t=400 remains
+	// within appendableMinValidTime() = max(700-500, 0) = 200.
+	filler := labels.FromStrings("name", "filler")
+	sel := labels.FromStrings("name", "stale-selected")
+
+	app := db.Appender(context.Background())
+	_, err := app.Append(0, filler, 100, 0.1)
+	require.NoError(t, err)
+	_, err = app.Append(0, filler, 700, 0.7)
+	require.NoError(t, err)
+	selRef, err := app.Append(0, sel, 100, 10.0)
+	require.NoError(t, err)
+	_, err = app.Append(selRef, sel, 200, staleV)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.Equal(t, int64(700), db.Head().MaxTime())
+	require.Equal(t, uint64(1), db.Head().NumStaleSeries())
+
+	// The hook fires after the block is written but before eviction.
+	const lateT = int64(400)
+	var hookErr error
+	compactHeadViewBeforeEvictTestingCallback = func() {
+		hookApp := db.Appender(context.Background())
+		if _, err := hookApp.Append(selRef, sel, lateT, staleV); err != nil {
+			hookErr = err
+			return
+		}
+		hookErr = hookApp.Commit()
+	}
+	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+
+	require.NoError(t, db.CompactStaleHead())
+	require.NoError(t, hookErr, "the late stale append/commit inside the hook must itself succeed")
+
+	// A block is written regardless -- it captures sel's t=100,200 samples as they stood when
+	// the write started. What the fingerprint protects is eviction: sel must still be in the
+	// head afterward too, so the late sample at t=400 isn't lost.
+	require.Len(t, db.Blocks(), 1)
+	require.Equal(t, uint64(2), db.Head().NumSeries(), "filler + sel: sel must survive eviction")
+}
+
 // TestCompactStaleHead_EvictedSeriesRecordKeptInCheckpoint verifies that after
 // CompactStaleHead evicts a stale series, the series's label record is retained
 // in the next WAL checkpoint while the WAL still holds sample records
@@ -10975,15 +11036,14 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 	require.Equal(t, expectedSamples, afterRestart, "all three samples must survive restart")
 }
 
-// TestCompactSelectedSeries_OOOAppendDuringCompactionSurvives verifies that a series is
-// retained, not evicted, when an out-of-order sample transitions it from s.ooo == nil to
-// non-nil during compaction.
+// TestCompactSelectedSeries_OOOAppendDuringCompactionSurvives verifies that a series is not
+// evicted when an out-of-order sample transitions it from s.ooo == nil to non-nil during
+// compaction.
 //
-// Unlike an in-order late append, an OOO sample changes neither headChunkCount nor the
-// current chunk's sample count, so the fingerprint check plays no part here. Instead,
-// isSeriesWithoutOOO -- re-evaluated live at eviction-check time, not from the
-// selection-time snapshot -- catches the transition on its own. Confirmed by temporarily
-// dropping isSeriesWithoutOOO from the eviction predicate and observing this test fail.
+// Unlike a late in-order append, an OOO sample changes neither headChunkCount nor the current
+// chunk’s sample count, so the fingerprint cannot detect it. Instead, isSeriesWithoutOOO is
+// re-evaluated at eviction time and detects the transition, preventing the series from being
+// evicted.
 func TestCompactSelectedSeries_OOOAppendDuringCompactionSurvives(t *testing.T) {
 	const chunkRange = 1000
 	opts := DefaultOptions()
