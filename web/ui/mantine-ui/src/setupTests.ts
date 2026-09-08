@@ -1,4 +1,4 @@
-import "@testing-library/jest-dom";
+import "@testing-library/jest-dom/vitest";
 
 // Node.js v22+ pre-defines localStorage on globalThis as undefined (when
 // --localstorage-file is omitted), which prevents jsdom from installing its

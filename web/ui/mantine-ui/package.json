@@ -71,6 +71,6 @@
     "postcss-simple-vars": "^7.0.1",
     "rollup-plugin-license": "^3.7.1",
     "vite": "^8.0.0",
-    "vitest": "^3.2.7"
+    "vitest": "^5.0.0"
   }
 }
