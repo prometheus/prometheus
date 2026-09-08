@@ -36,7 +36,8 @@ type QueryResult<T> = {
   metadata: APIQueryMetadata;
 };
 
-type QueryParams = Record<string, string> | (() => Record<string, string>);
+type QueryParams =
+  Record<string, string> | ((requestTimeMs: number) => Record<string, string>);
 
 const createQueryFn =
   <T>({
@@ -53,7 +54,8 @@ const createQueryFn =
   async ({ signal }: { signal: AbortSignal }) => {
     try {
       const startTime = Date.now();
-      const resolvedParams = typeof params === "function" ? params() : params;
+      const resolvedParams =
+        typeof params === "function" ? params(startTime) : params;
       const requestParams = { ...resolvedParams };
       const queryString = resolvedParams
         ? `?${new URLSearchParams(requestParams).toString()}`
@@ -124,10 +126,13 @@ type QueryOptions = {
   keepPreviousData?: boolean;
 } & (
   | { key?: QueryKey; params?: Record<string, string> }
-  | { key: QueryKey; params: () => Record<string, string> }
+  | { key: QueryKey; params: (requestTimeMs: number) => Record<string, string> }
 );
 
-/** useAPIQuery optionally selects a response together with its request metadata. */
+/**
+ * Queries the API, optionally selecting a response with its request metadata.
+ * Deferred params receive the fetch start time in milliseconds and require an explicit key.
+ */
 export function useAPIQuery<T>(
   options: QueryOptions,
 ): UseQueryResult<SuccessAPIResponse<T>>;

@@ -158,7 +158,9 @@ describe("API queries", () => {
 
   it("evaluates deferred params only when an enabled, online request starts", async () => {
     onlineManager.setOnline(false);
-    const params = vi.fn(() => ({ time: "123" }));
+    const params = vi.fn((requestTimeMs: number) => ({
+      time: `${requestTimeMs}`,
+    }));
     const fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ status: "success", data: 1 }),
@@ -178,9 +180,10 @@ describe("API queries", () => {
     rerender({ enabled: true });
     expect(result.current.fetchStatus).toBe("paused");
     expect(params).not.toHaveBeenCalled();
+    vi.spyOn(Date, "now").mockReturnValue(123);
     act(() => onlineManager.setOnline(true));
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(params).toHaveBeenCalledTimes(1);
+    expect(params).toHaveBeenCalledExactlyOnceWith(123);
     expect(fetch.mock.calls[0][0]).toBe("/prometheus/api/v1/query?time=123");
   });
 

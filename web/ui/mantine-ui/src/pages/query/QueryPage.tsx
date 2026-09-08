@@ -22,7 +22,7 @@ import { buttonIconStyle } from "../../styles";
 export default function QueryPage() {
   const panels = useAppSelector((state) => state.queryPage.panels);
   const dispatch = useAppDispatch();
-  const [timeDelta, setTimeDelta] = useState(0);
+  const [dismissedSample, setDismissedSample] = useState<number | null>(null);
 
   // Update the panels whenever the URL params change.
   useEffect(() => {
@@ -54,27 +54,26 @@ export default function QueryPage() {
       path: "/label/__name__/values",
     });
 
-  const { data: timeResult, error: timeError } =
-    useAPIQuery<InstantQueryResult>({
-      path: "/query",
-      params: {
-        query: "time()",
-      },
-    });
-
-  useEffect(() => {
-    if (!timeResult) {
-      return;
-    }
-
-    if (timeResult.data.resultType !== "scalar") {
-      throw new Error("Unexpected result type from time query");
-    }
-
-    const browserTime = new Date().getTime() / 1000;
-    const serverTime = timeResult.data.result[0];
-    setTimeDelta(Math.abs(browserTime - serverTime));
-  }, [timeResult]);
+  const { data: timeResult, error: timeError } = useAPIQuery<
+    InstantQueryResult,
+    { delta: number; receivedAtMs: number }
+  >({
+    path: "/query",
+    params: { query: "time()" },
+    select: (response, { receivedAtMs }) => {
+      if (response.data.resultType !== "scalar") {
+        throw new Error("Unexpected result type from time query");
+      }
+      return {
+        delta: Math.abs(receivedAtMs / 1000 - response.data.result[0]),
+        receivedAtMs,
+      };
+    },
+  });
+  const timeDelta =
+    timeResult && timeResult.receivedAtMs !== dismissedSample
+      ? timeResult.delta
+      : 0;
 
   return (
     <Box mt="xs">
@@ -104,7 +103,9 @@ export default function QueryPage() {
           title="Server time is out of sync"
           color="red"
           icon={<IconAlertCircle />}
-          onClose={() => setTimeDelta(0)}
+          withCloseButton
+          closeButtonLabel="Close"
+          onClose={() => setDismissedSample(timeResult!.receivedAtMs)}
         >
           Detected a time difference of{" "}
           <strong>{humanizeDuration(timeDelta * 1000)}</strong> between your
