@@ -1178,6 +1178,7 @@ type Target struct {
 	LastScrape         time.Time           `json:"lastScrape"`
 	LastScrapeDuration float64             `json:"lastScrapeDuration"`
 	Health             scrape.TargetHealth `json:"health"`
+	ScrapeTimeoutUsage float64             `json:"scrapeTimeoutUsage"`
 
 	ScrapeInterval string `json:"scrapeInterval"`
 	ScrapeTimeout  string `json:"scrapeTimeout"`
@@ -1268,6 +1269,14 @@ func getGlobalURL(u *url.URL, opts GlobalURLOptions) (*url.URL, error) {
 	return u, nil
 }
 
+func scrapeTimeoutUsage(lastScrapeDuration time.Duration, scrapeTimeout string) float64 {
+	timeout, err := parseDuration(scrapeTimeout)
+	if err != nil || timeout <= 0 {
+		return 0
+	}
+	return lastScrapeDuration.Seconds() / timeout.Seconds()
+}
+
 func (api *API) scrapePools(r *http.Request) apiFuncResult {
 	names := api.scrapePoolsRetriever(r.Context()).ScrapePools()
 	sort.Strings(names)
@@ -1331,6 +1340,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 
 				globalURL, err := getGlobalURL(target.URL(), api.globalURLOptions)
 
+				scrapeTimeout := target.GetValue(model.ScrapeTimeoutLabel)
 				res.ActiveTargets = append(res.ActiveTargets, &Target{
 					DiscoveredLabels: target.DiscoveredLabels(builder),
 					Labels:           target.Labels(builder),
@@ -1351,7 +1361,8 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 					LastScrapeDuration: target.LastScrapeDuration().Seconds(),
 					Health:             target.Health(),
 					ScrapeInterval:     target.GetValue(model.ScrapeIntervalLabel),
-					ScrapeTimeout:      target.GetValue(model.ScrapeTimeoutLabel),
+					ScrapeTimeout:      scrapeTimeout,
+					ScrapeTimeoutUsage: scrapeTimeoutUsage(target.LastScrapeDuration(), scrapeTimeout),
 				})
 			}
 		}
