@@ -152,9 +152,6 @@ importers:
       uplot:
         specifier: ^1.6.32
         version: 1.6.32
-      uplot-react:
-        specifier: ^1.2.4
-        version: 1.2.4(react@19.2.8)(uplot@1.6.32)
       use-query-params:
         specifier: ^2.2.2
         version: 2.2.2(react-dom@19.2.8(react@19.2.8))(react-router-dom@7.18.3(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)
@@ -3724,13 +3721,6 @@ packages:
     hasBin: true
     peerDependencies:
       browserslist: '>= 4.21.0'
-
-  uplot-react@1.2.4:
-    resolution: {integrity: sha512-mDe/mqD9KtXeHDR8llSJaUFpDcEJvYpHNS+cyUhJ2qvkbT9GPKod1BVXG+hNegRqYiV1ldsFBlI5+OKSi/yPNA==}
-    engines: {node: '>=8.10'}
-    peerDependencies:
-      react: '>=16.8.6'
-      uplot: ^1.6.32
 
   uplot@1.6.32:
     resolution: {integrity: sha512-KIMVnG68zvu5XXUbC4LQEPnhwOxBuLyW1AHtpm6IKTXImkbLgkMy+jabjLgSLMasNuGGzQm/ep3tOkyTxpiQIw==}
@@ -7465,11 +7455,6 @@ snapshots:
       browserslist: 4.28.4
       escalade: 3.2.0
       picocolors: 1.1.1
-
-  uplot-react@1.2.4(react@19.2.8)(uplot@1.6.32):
-    dependencies:
-      react: 19.2.8
-      uplot: 1.6.32
 
   uplot@1.6.32: {}
 
