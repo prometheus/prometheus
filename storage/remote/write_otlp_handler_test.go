@@ -45,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -384,6 +385,42 @@ func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg c
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	return appendable
+}
+
+// TestOTLPWriteHandler_ReceiveRelabeling verifies that wrapping the appendable
+// passed to NewOTLPWriteHandler with NewRelabelingAppendableV2 applies to every
+// series the OTLP converter emits, including the synthetic target_info series.
+func TestOTLPWriteHandler_ReceiveRelabeling(t *testing.T) {
+	exportRequest := generateOTLPWriteRequest(time.Unix(0, 0), time.Time{})
+	buf, err := exportRequest.MarshalProto()
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(buf))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/x-protobuf")
+
+	configFunc := func() config.Config {
+		return config.Config{
+			OTLPConfig: config.DefaultOTLPConfig,
+			ReceiveRelabelConfigs: []*relabel.Config{{
+				SourceLabels:         model.LabelNames{"__name__"},
+				Regex:                relabel.MustNewRegexp(".+"),
+				Action:               relabel.Drop,
+				NameValidationScheme: model.UTF8Validation,
+			}},
+		}
+	}
+
+	appendable := teststorage.NewAppendable()
+	wrapped := NewRelabelingAppendableV2(appendable, configFunc)
+	handler := NewOTLPWriteHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})), nil, wrapped, configFunc, OTLPOptions{})
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
+
+	// Every series, including target_info, matched the drop-all rule.
+	require.Empty(t, appendable.ResultSamples())
 }
 
 func generateOTLPWriteRequest(timestamp, startTime time.Time) pmetricotlp.ExportRequest {

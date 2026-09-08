@@ -58,6 +58,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -285,34 +286,35 @@ type Options struct {
 	NotificationsSub      func() (<-chan notifications.Notification, func(), bool)
 	Flags                 map[string]string
 
-	ListenAddresses            []string
-	CORSOrigin                 *regexp.Regexp
-	ReadTimeout                time.Duration
-	MaxConnections             int
-	ExternalURL                *url.URL
-	RoutePrefix                string
-	UseLocalAssets             bool
-	UserAssetsPath             string
-	ConsoleTemplatesPath       string
-	ConsoleLibrariesPath       string
-	UseOldUI                   bool
-	EnableLifecycle            bool
-	EnableAdminAPI             bool
-	EnableSearch               bool
-	MaxSearchLimit             int
-	PageTitle                  string
-	RemoteReadSampleLimit      int
-	RemoteReadConcurrencyLimit int
-	RemoteReadBytesInFrame     int
-	EnableRemoteWriteReceiver  bool
-	EnableOTLPWriteReceiver    bool
-	ConvertOTLPDelta           bool
-	NativeOTLPDeltaIngestion   bool
-	IsAgent                    bool
-	STZeroIngestionEnabled     bool
-	EnableTypeAndUnitLabels    bool
-	AppendMetadata             bool
-	AppName                    string
+	ListenAddresses             []string
+	CORSOrigin                  *regexp.Regexp
+	ReadTimeout                 time.Duration
+	MaxConnections              int
+	ExternalURL                 *url.URL
+	RoutePrefix                 string
+	UseLocalAssets              bool
+	UserAssetsPath              string
+	ConsoleTemplatesPath        string
+	ConsoleLibrariesPath        string
+	UseOldUI                    bool
+	EnableLifecycle             bool
+	EnableAdminAPI              bool
+	EnableSearch                bool
+	MaxSearchLimit              int
+	PageTitle                   string
+	RemoteReadSampleLimit       int
+	RemoteReadConcurrencyLimit  int
+	RemoteReadBytesInFrame      int
+	EnableRemoteWriteReceiver   bool
+	EnableOTLPWriteReceiver     bool
+	ConvertOTLPDelta            bool
+	NativeOTLPDeltaIngestion    bool
+	IsAgent                     bool
+	STZeroIngestionEnabled      bool
+	EnableTypeAndUnitLabels     bool
+	AppendMetadata              bool
+	EnableReceiveRelabelConfigs bool
+	AppName                     string
 
 	AcceptRemoteWriteProtoMsgs remoteapi.MessageTypes
 
@@ -383,6 +385,15 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	)
 	if o.EnableRemoteWriteReceiver || o.EnableOTLPWriteReceiver {
 		app, appV2 = h.storage, h.storage
+		if o.EnableReceiveRelabelConfigs {
+			relabelConfigFunc := func() config.Config {
+				h.mtx.RLock()
+				defer h.mtx.RUnlock()
+				return *h.config
+			}
+			app = remote.NewRelabelingAppendable(app, relabelConfigFunc)
+			appV2 = remote.NewRelabelingAppendableV2(appV2, relabelConfigFunc)
+		}
 	}
 
 	version := ""
@@ -447,6 +458,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		r.Set(features.API, "admin", o.EnableAdminAPI)
 		r.Set(features.API, "remote_write_receiver", o.EnableRemoteWriteReceiver)
 		r.Set(features.API, "otlp_write_receiver", o.EnableOTLPWriteReceiver)
+		r.Set(features.API, "receive_relabel_configs", o.EnableReceiveRelabelConfigs)
 		r.Set(features.API, "search", o.EnableSearch)
 		for _, alg := range api_v1.FuzzAlgorithms() {
 			r.Enable(features.API, "search_fuzz_alg_"+alg)

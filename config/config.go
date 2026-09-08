@@ -305,6 +305,11 @@ type Config struct {
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
 	OTLPConfig         OTLPConfig           `yaml:"otlp,omitempty"`
 
+	// ReceiveRelabelConfigs are applied to samples ingested via the
+	// remote-write and OTLP receivers, before they reach storage. Only takes
+	// effect when the receive-relabel-configs feature flag is enabled.
+	ReceiveRelabelConfigs []*relabel.Config `yaml:"receive_relabel_configs,omitempty"`
+
 	loaded bool // Certain methods require configuration to use Load validation.
 }
 
@@ -477,6 +482,16 @@ func (c *Config) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 		rrNames[rrcfg.Name] = struct{}{}
 	}
+
+	for _, rlcfg := range c.ReceiveRelabelConfigs {
+		if rlcfg == nil {
+			return errors.New("empty or null relabeling rule in receive_relabel_configs")
+		}
+		if err := rlcfg.Validate(c.GlobalConfig.MetricNameValidationScheme); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

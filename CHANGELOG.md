@@ -2,6 +2,7 @@
 
 ## main / unreleased
 
+- [FEATURE] Remote write / OTLP: Add experimental `receive_relabel_configs`, applied to samples ingested via the remote-write and OTLP receivers before they reach storage. Hidden behind the `receive-relabel-configs` feature flag.
 - [ENHANCEMENT] Remote write / Alertmanager: Upgrade `github.com/prometheus/sigv4` to v0.5.0, adding `session_name` and `tags` fields to the `sigv4` configuration block for STS AssumeRole sessions. The existing but previously undocumented `service_name` field is also documented.
 
 ## 3.14.0 / 2026-08-17

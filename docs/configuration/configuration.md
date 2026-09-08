@@ -294,6 +294,13 @@ otlp:
 remote_read:
   [ - <remote_read> ... ]
 
+# List of relabel configurations applied to samples ingested via the
+# remote-write and OTLP receivers, before they reach storage. Only takes
+# effect when the receive-relabel-configs feature flag is enabled; see
+# https://prometheus.io/docs/prometheus/latest/feature_flags/#receive-relabeling.
+receive_relabel_configs:
+  [ - <relabel_config> ... ]
+
 # Storage related settings that are runtime reloadable.
 storage:
   [ tsdb: <tsdb> ]
