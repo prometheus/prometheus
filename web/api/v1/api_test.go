@@ -4568,6 +4568,22 @@ func TestParseDuration(t *testing.T) {
 			input: "148966367200.372",
 			fail:  true,
 		}, {
+			// Exactly 2^63 nanoseconds, the value float64(math.MaxInt64) rounds to.
+			input: "9223372036.854776",
+			fail:  true,
+		}, {
+			input: "NaN",
+			fail:  true,
+		}, {
+			// Largest duration that still fits in int64.
+			input:  "9223372036.85477",
+			result: time.Duration(9223372036854770688),
+		}, {
+			// float64(math.MinInt64) is exactly -2^63, which int64 does hold,
+			// so the lower bound stays exclusive.
+			input:  "-9223372036.854775808",
+			result: time.Duration(-9223372036854775808),
+		}, {
 			input:  "123",
 			result: 123 * time.Second,
 		}, {
