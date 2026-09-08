@@ -338,29 +338,74 @@ func (s *attributeRenameStep) appliesTo(metricName string) bool {
 // collectSchemaRevision preserves the transformation order defined by the
 // schema format: all-section changes precede metric-section changes, and each
 // section is processed top-to-bottom.
-func collectSchemaRevision(versionStr string, version otelSchemaVersion) *schemaRevision {
+func collectSchemaRevision(versionStr string, version otelSchemaVersion) (*schemaRevision, error) {
 	revision := &schemaRevision{version: versionStr}
 	if version.All != nil {
-		for _, change := range version.All.Changes {
+		for i, change := range version.All.Changes {
+			transformation, err := validateSchemaChange(versionStr, "all", i+1, change)
+			if err != nil {
+				return nil, err
+			}
+			if transformation != "rename_attributes" {
+				return nil, fmt.Errorf("schema version %q all change %d contains unsupported transformation %q", versionStr, i+1, transformation)
+			}
+			if err := validateRenameAttributes(versionStr, "all", i+1, change.RenameAttributes); err != nil {
+				return nil, err
+			}
 			if step := newAttributeRenameStep(change.RenameAttributes, false); step != nil {
 				revision.changes = append(revision.changes, schemaChange{attributeRenames: step})
 			}
 		}
 	}
 	if version.Metrics != nil {
-		for _, change := range version.Metrics.Changes {
-			if step := newAttributeRenameStep(change.RenameAttributes, true); step != nil {
-				revision.changes = append(revision.changes, schemaChange{attributeRenames: step})
+		for i, change := range version.Metrics.Changes {
+			transformation, err := validateSchemaChange(versionStr, "metrics", i+1, change)
+			if err != nil {
+				return nil, err
 			}
-			if renames := newDirectedRenames(change.RenameMetrics); renames != nil {
-				revision.changes = append(revision.changes, schemaChange{metricRenames: renames})
+			switch transformation {
+			case "split":
+				return nil, fmt.Errorf("schema version %q contains unsupported metric split transformation", versionStr)
+			case "rename_attributes":
+				if err := validateRenameAttributes(versionStr, "metrics", i+1, change.RenameAttributes); err != nil {
+					return nil, err
+				}
+				if step := newAttributeRenameStep(change.RenameAttributes, true); step != nil {
+					revision.changes = append(revision.changes, schemaChange{attributeRenames: step})
+				}
+			case "rename_metrics":
+				if renames := newDirectedRenames(change.RenameMetrics); renames != nil {
+					revision.changes = append(revision.changes, schemaChange{metricRenames: renames})
+				}
+			default:
+				return nil, fmt.Errorf("schema version %q metrics change %d contains unsupported transformation %q", versionStr, i+1, transformation)
 			}
 		}
 	}
 	if len(revision.changes) == 0 {
+		return nil, nil
+	}
+	return revision, nil
+}
+
+func validateSchemaChange(versionStr, section string, index int, change otelSchemaChange) (string, error) {
+	if len(change.transformationKeys) != 1 {
+		return "", fmt.Errorf("schema version %q %s change %d must contain exactly one transformation, found %q", versionStr, section, index, change.transformationKeys)
+	}
+	return change.transformationKeys[0], nil
+}
+
+func validateRenameAttributes(versionStr, section string, index int, rename *otelRenameAttributes) error {
+	if rename == nil {
 		return nil
 	}
-	return revision
+	for _, field := range rename.fieldKeys {
+		if field == "attribute_map" || section == "metrics" && field == "apply_to_metrics" {
+			continue
+		}
+		return fmt.Errorf("schema version %q %s change %d rename_attributes contains unsupported field %q", versionStr, section, index, field)
+	}
+	return nil
 }
 
 // semconvGroup represents a semantic conventions group definition.
@@ -568,11 +613,67 @@ type otelSchemaChange struct {
 	// See the rename_metrics transformation in
 	// https://opentelemetry.io/docs/specs/otel/schemas/file_format_v1.1.0/.
 	RenameMetrics map[string]string `yaml:"rename_metrics,omitempty"`
+
+	// transformationKeys contains the sorted effective mapping keys, including
+	// keys introduced by YAML merges.
+	transformationKeys []string
 }
 
 type otelRenameAttributes struct {
 	AttributeMap   map[string]string `yaml:"attribute_map,omitempty"`
 	ApplyToMetrics *[]string         `yaml:"apply_to_metrics,omitempty"`
+
+	// fieldKeys contains the sorted effective mapping keys, including keys
+	// introduced by YAML merges.
+	fieldKeys []string
+}
+
+func (c *otelSchemaChange) UnmarshalYAML(value *yaml.Node) error {
+	fields, keys, err := decodeEffectiveYAMLMapping(value)
+	if err != nil {
+		return err
+	}
+	c.transformationKeys = keys
+	if len(keys) != 1 {
+		return nil
+	}
+
+	switch keys[0] {
+	case "rename_attributes":
+		field := fields[keys[0]]
+		return field.Decode(&c.RenameAttributes)
+	case "rename_metrics":
+		field := fields[keys[0]]
+		return field.Decode(&c.RenameMetrics)
+	}
+	return nil
+}
+
+func (r *otelRenameAttributes) UnmarshalYAML(value *yaml.Node) error {
+	fields, keys, err := decodeEffectiveYAMLMapping(value)
+	if err != nil {
+		return err
+	}
+	r.fieldKeys = keys
+	if field, ok := fields["attribute_map"]; ok {
+		if err := field.Decode(&r.AttributeMap); err != nil {
+			return err
+		}
+	}
+	if field, ok := fields["apply_to_metrics"]; ok {
+		if err := field.Decode(&r.ApplyToMetrics); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func decodeEffectiveYAMLMapping(value *yaml.Node) (map[string]yaml.Node, []string, error) {
+	var fields map[string]yaml.Node
+	if err := value.Decode(&fields); err != nil {
+		return nil, nil, err
+	}
+	return fields, slices.Sorted(maps.Keys(fields)), nil
 }
 
 // staticCache is a generic, goroutine-safe cache keyed by URL for static
@@ -637,7 +738,11 @@ func loadOTelSchema(b []byte) (otelSchema, error) {
 			return otelSchema{}, err
 		}
 		s.allVersions = append(s.allVersions, versionStr)
-		if revision := collectSchemaRevision(versionStr, version); revision != nil {
+		revision, err := collectSchemaRevision(versionStr, version)
+		if err != nil {
+			return otelSchema{}, err
+		}
+		if revision != nil {
 			s.revisions = append(s.revisions, *revision)
 		}
 	}
