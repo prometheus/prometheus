@@ -147,9 +147,6 @@ func TestRelabelCache(t *testing.T) {
 		result1, keep1 := cache.relabel(l, relabelTestRewriteConfig)
 		require.True(t, keep1)
 
-		// Directly inspect the stored entry: a bare "same visible result"
-		// check on a second call wouldn't distinguish a cache hit from a
-		// correct recompute.
 		cache.mu.RLock()
 		entry, ok := cache.entries[l.Hash()]
 		cache.mu.RUnlock()
@@ -166,8 +163,6 @@ func TestRelabelCache(t *testing.T) {
 		cache := NewRelabelCache()
 		result1, _ := cache.relabel(l, relabelTestRewriteConfig)
 
-		// A config reload always allocates fresh *relabel.Config values,
-		// even when the rules are textually identical.
 		reloaded := []*relabel.Config{{
 			SourceLabels:         relabelTestRewriteConfig[0].SourceLabels,
 			Regex:                relabelTestRewriteConfig[0].Regex,
@@ -177,12 +172,12 @@ func TestRelabelCache(t *testing.T) {
 			NameValidationScheme: relabelTestRewriteConfig[0].NameValidationScheme,
 		}}
 		result2, _ := cache.relabel(l, reloaded)
-		require.True(t, labels.Equal(result1, result2)) // same rules, same result...
+		require.True(t, labels.Equal(result1, result2))
 
 		cache.mu.RLock()
 		ident := cache.cfgsIdent
 		cache.mu.RUnlock()
-		require.Same(t, reloaded[0], ident) // ...but the cache rebuilt against the new generation.
+		require.Same(t, reloaded[0], ident)
 	})
 
 	t.Run("clears on overflow instead of growing unbounded", func(t *testing.T) {
@@ -195,15 +190,11 @@ func TestRelabelCache(t *testing.T) {
 		cache.mu.RLock()
 		size := len(cache.entries)
 		cache.mu.RUnlock()
-		// The cache clears itself entirely exactly once it reaches the cap,
-		// so only the entries inserted after that single clear remain.
 		require.Equal(t, overflowBy, size)
 	})
 }
 
-// TestRelabelCache_ConcurrentAccess exercises RelabelCache under many
-// goroutines hitting it at once -- the realistic shape of a shared cache
-// serving concurrent remote-write and OTLP requests. Run with -race.
+// Run with -race.
 func TestRelabelCache_ConcurrentAccess(t *testing.T) {
 	cache := NewRelabelCache()
 	const goroutines = 50
@@ -215,8 +206,6 @@ func TestRelabelCache_ConcurrentAccess(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := range iterations {
-				// A handful of distinct series shared across goroutines, so
-				// most calls are genuine concurrent cache hits, not misses.
 				l := labels.FromStrings("__name__", "keep_me", "env", "prod", "shard", strconv.Itoa(i%5))
 				result, keep := cache.relabel(l, relabelTestRewriteConfig)
 				require.True(t, keep)
@@ -227,11 +216,6 @@ func TestRelabelCache_ConcurrentAccess(t *testing.T) {
 	wg.Wait()
 }
 
-// TestRelabelCache_SharedAcrossV1AndV2 verifies the actual point of sharing
-// one *RelabelCache between NewRelabelingAppendable and
-// NewRelabelingAppendableV2: a series relabeled via one write protocol is
-// served from cache, not recomputed, when the same series arrives via the
-// other.
 func TestRelabelCache_SharedAcrossV1AndV2(t *testing.T) {
 	cache := NewRelabelCache()
 	configFunc := relabelTestConfigFunc(relabelTestRewriteConfig)

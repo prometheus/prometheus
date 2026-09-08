@@ -305,9 +305,8 @@ type Config struct {
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
 	OTLPConfig         OTLPConfig           `yaml:"otlp,omitempty"`
 
-	// ReceiveRelabelConfigs are applied to samples ingested via the
-	// remote-write and OTLP receivers, before they reach storage. Only takes
-	// effect when the receive-relabel-configs feature flag is enabled.
+	// ReceiveRelabelConfigs apply to samples ingested via the remote-write
+	// and OTLP receivers. Gated by the receive-relabel-configs feature flag.
 	ReceiveRelabelConfigs []*relabel.Config `yaml:"receive_relabel_configs,omitempty"`
 
 	loaded bool // Certain methods require configuration to use Load validation.

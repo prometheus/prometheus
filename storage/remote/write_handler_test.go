@@ -341,10 +341,6 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	}
 }
 
-// TestRemoteWriteHandler_ReceiveRelabeling verifies that wrapping the
-// appendable passed to NewWriteHandler with NewRelabelingAppendable applies
-// receive_relabel_configs consistently across samples, exemplars and
-// histograms of a dropped or relabeled series.
 func TestRemoteWriteHandler_ReceiveRelabeling(t *testing.T) {
 	payload, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
 	require.NoError(t, err)

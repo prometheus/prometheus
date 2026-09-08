@@ -27,10 +27,6 @@ import (
 )
 
 // relabelLabels applies cfgs to l and reports whether the series should be kept.
-// It always starts from l, never from a previously relabeled result, so
-// calling it multiple times for the same original series (e.g. once for a
-// sample and once for an exemplar) yields consistent keep/drop decisions
-// without needing any shared state between calls.
 func relabelLabels(l labels.Labels, cfgs []*relabel.Config) (labels.Labels, bool) {
 	if len(cfgs) == 0 {
 		return l, true
@@ -42,38 +38,22 @@ func relabelLabels(l labels.Labels, cfgs []*relabel.Config) (labels.Labels, bool
 	return lb.Labels(), true
 }
 
-// relabelCacheMaxEntries bounds RelabelCache memory use. On overflow the
-// whole cache is cleared rather than partially evicted: a config reload
-// already requires a full clear (the rule set changed), so reusing that
-// same clear-all path for overflow avoids adding separate LRU/eviction
-// bookkeeping for what should be a rare event in practice.
+// relabelCacheMaxEntries bounds RelabelCache size; overflow clears it entirely.
 const relabelCacheMaxEntries = 100_000
 
-// RelabelCache caches receive-path relabeling decisions across requests, so
-// that a series whose labels recur across many remote-write or OTLP requests
-// (the common case: a given sender keeps shipping the same series) doesn't
-// pay the relabel_config evaluation cost on every single append.
-//
-// A relabel result depends only on the input labels and the configured
-// rules, not on which write protocol produced it, so one RelabelCache can
-// safely be shared between the v1 (remote-write) and v2 (OTLP) relabeling
-// appendables. It is safe for concurrent use.
+// RelabelCache memoizes receive-path relabeling decisions. Safe for
+// concurrent use and for sharing between a v1 and v2 relabeling appendable.
 type RelabelCache struct {
 	mu sync.RWMutex
 
 	entries map[uint64]relabelCacheEntry
-	// cfgsIdent identifies the []*relabel.Config generation the entries
-	// below were computed from (its first element's pointer -- cfgs is
-	// always non-empty here, since an empty rule set never reaches the
-	// cache; see relabel()). Every config reload allocates brand-new
-	// *relabel.Config values, even if the rules are textually unchanged, so
-	// a pointer mismatch reliably signals "rules may have changed, clear
-	// the cache".
+	// cfgsIdent: reload always allocates new *relabel.Config values, so a
+	// mismatch here means the rules may have changed.
 	cfgsIdent *relabel.Config
 }
 
 type relabelCacheEntry struct {
-	orig   labels.Labels // original input labels, to verify against Hash() collisions.
+	orig   labels.Labels // verifies against Hash() collisions.
 	result labels.Labels
 	keep   bool
 }
@@ -83,8 +63,7 @@ func NewRelabelCache() *RelabelCache {
 	return &RelabelCache{}
 }
 
-// relabel is relabelLabels, but memoized in c for the lifetime of cfgs'
-// current generation (see RelabelCache.cfgsIdent).
+// relabel is relabelLabels, memoized in c.
 func (c *RelabelCache) relabel(l labels.Labels, cfgs []*relabel.Config) (labels.Labels, bool) {
 	if len(cfgs) == 0 {
 		return l, true
@@ -115,21 +94,10 @@ func (c *RelabelCache) relabel(l labels.Labels, cfgs []*relabel.Config) (labels.
 	return result, keep
 }
 
-// NewRelabelingAppendable wraps next so that every series appended through it
-// is passed through the relabel_config rules configured in
-// Config.ReceiveRelabelConfigs before reaching storage. Series dropped by
-// relabeling are silently discarded, the same as scrape-time
-// metric_relabel_configs.
-//
-// configFunc is called on every Appender call, so relabel_config changes take
-// effect on config reload without a restart. cache memoizes relabel results
-// across calls and across Appender instances; pass the same *RelabelCache
-// used by NewRelabelingAppendableV2, if both are constructed, so a series
-// seen on either write path benefits from the other's cache entries.
-//
-// NOTE: the returned Appender does not implement storage.GetRef. Since
-// relabeling can change a series' labels, the ref/hash passthrough GetRef
-// exists for would be semantically wrong while relabeling is active.
+// NewRelabelingAppendable wraps next to apply Config.ReceiveRelabelConfigs
+// before samples reach storage, dropping series like metric_relabel_configs
+// does at scrape time. Does not implement storage.GetRef, since relabeling
+// can change a series' labels.
 func NewRelabelingAppendable(next storage.Appendable, configFunc func() config.Config, cache *RelabelCache) storage.Appendable {
 	return &relabelingAppendable{next: next, configFunc: configFunc, cache: cache}
 }

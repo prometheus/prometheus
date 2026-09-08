@@ -387,9 +387,6 @@ func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg c
 	return appendable
 }
 
-// TestOTLPWriteHandler_ReceiveRelabeling verifies that wrapping the appendable
-// passed to NewOTLPWriteHandler with NewRelabelingAppendableV2 applies to every
-// series the OTLP converter emits, including the synthetic target_info series.
 func TestOTLPWriteHandler_ReceiveRelabeling(t *testing.T) {
 	exportRequest := generateOTLPWriteRequest(time.Unix(0, 0), time.Time{})
 	buf, err := exportRequest.MarshalProto()
@@ -419,7 +416,6 @@ func TestOTLPWriteHandler_ReceiveRelabeling(t *testing.T) {
 	handler.ServeHTTP(recorder, req)
 	require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
 
-	// Every series, including target_info, matched the drop-all rule.
 	require.Empty(t, appendable.ResultSamples())
 }
 
