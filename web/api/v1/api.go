@@ -666,13 +666,7 @@ func extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
 	}
 
 	var useStartTimestamps *bool
-	if val := r.FormValue("use_start_timestamps"); val != "" {
-		b, err := strconv.ParseBool(val)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing use_start_timestamps parameter: %w", err)
-		}
-		useStartTimestamps = &b
-	} else if val := r.Header.Get("X-Prometheus-Use-Start-Timestamps"); val != "" {
+	if val := r.Header.Get("X-Prometheus-Use-Start-Timestamps"); val != "" {
 		b, err := strconv.ParseBool(val)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing X-Prometheus-Use-Start-Timestamps header: %w", err)
