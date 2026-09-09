@@ -566,8 +566,8 @@ func (a *headAppenderBase) getOrCreate(lset labels.Labels) (s *memSeries, create
 	if lset.IsEmpty() {
 		return nil, false, fmt.Errorf("empty labelset: %w", ErrInvalidSample)
 	}
-	if l, outOfOrder := lset.HasOutOfOrderLabel(); outOfOrder {
-		return nil, false, fmt.Errorf(`label name "%s" is out of order: %w`, l, ErrInvalidSample)
+	if err := lset.ValidateOrder(); err != nil {
+		return nil, false, fmt.Errorf("%w: %w", err, ErrInvalidSample)
 	}
 	s, created, err = a.head.getOrCreate(lset.Hash(), lset, true)
 	if err != nil {

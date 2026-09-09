@@ -17,6 +17,7 @@ package labels
 
 import (
 	"bytes"
+	"fmt"
 	"slices"
 	"strings"
 	"unique"
@@ -219,29 +220,19 @@ func (ls Labels) Has(name string) bool {
 	return false
 }
 
-// HasDuplicateLabelNames returns whether ls has duplicate label names.
-// It assumes that the labelset is sorted.
-func (ls Labels) HasDuplicateLabelNames() (string, bool) {
-	for i, l := range ls {
-		if i == 0 {
-			continue
-		}
-		if l.Name == ls[i-1].Name {
-			return l.Name, true
-		}
-	}
-	return "", false
-}
-
-// HasOutOfOrderLabel checks if labels are not sorted by name (including duplicates).
-// Since labels are expected to be sorted, out-of-order labels indicate corruption.
-func (ls Labels) HasOutOfOrderLabel() (string, bool) {
+// ValidateOrder checks that label names are strictly increasing.
+// It returns an error for the first duplicate or out-of-order name.
+func (ls Labels) ValidateOrder() error {
 	for i := 1; i < len(ls); i++ {
-		if ls[i].Name <= ls[i-1].Name {
-			return ls[i].Name, true
+		name, prev := ls[i].Name, ls[i-1].Name
+		if name <= prev {
+			if name == prev {
+				return fmt.Errorf("label name %q is not unique", name)
+			}
+			return fmt.Errorf("label name %q is out of order", name)
 		}
 	}
-	return "", false
+	return nil
 }
 
 // WithoutEmpty returns the labelset without empty labels.

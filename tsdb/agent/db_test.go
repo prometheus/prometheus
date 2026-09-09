@@ -21,6 +21,7 @@ import (
 	"math"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -46,47 +47,235 @@ import (
 )
 
 func TestDB_InvalidSeries(t *testing.T) {
-	s := createTestAgentDB(t, nil, DefaultOptions())
-	defer s.Close()
+	cases := []struct {
+		name    string
+		pairs   []string
+		wantErr string
+	}{
+		{name: "empty labels", wantErr: "empty labelset"},
+		{name: "duplicate labels", pairs: []string{"a", "1", "a", "2"}, wantErr: `label name "a" is not unique`},
+		{name: "non-adjacent duplicates", pairs: []string{"__name__", "up", "job", "prometheus", "__name__", "down"}, wantErr: `label name "__name__" is out of order`},
+		{name: "descending labels", pairs: []string{"z", "1", "a", "2"}, wantErr: `label name "a" is out of order`},
+		{name: "duplicate empty names", pairs: []string{"", "first", "", "second"}, wantErr: `label name "" is not unique`},
+	}
+	for _, useV2 := range []bool{false, true} {
+		for _, commit := range []bool{false, true} {
+			t.Run(fmt.Sprintf("appV2=%t/commit=%t", useV2, commit), func(t *testing.T) {
+				s := createTestAgentDB(t, nil, DefaultOptions())
+				dbClosed := false
+				t.Cleanup(func() {
+					if !dbClosed {
+						require.NoError(t, s.Close())
+					}
+				})
+				var app storage.AppenderTransaction
+				var a1 storage.Appender
+				var a2 storage.AppenderV2
+				if useV2 {
+					a2 = s.AppenderV2(t.Context())
+					app = a2
+				} else {
+					a1 = s.Appender(t.Context())
+					app = a1
+				}
+				appClosed := false
+				t.Cleanup(func() {
+					if !appClosed {
+						require.NoError(t, app.Rollback())
+					}
+				})
+				appendSample := func(ref storage.SeriesRef, ls labels.Labels, ts int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+					if useV2 {
+						return a2.Append(ref, ls, 0, ts, 0, h, fh, storage.AOptions{})
+					}
+					if h != nil || fh != nil {
+						return a1.AppendHistogram(ref, ls, ts, h, fh)
+					}
+					return a1.Append(ref, ls, ts, 0)
+				}
+				for _, sampleType := range []struct {
+					name string
+					h    *histogram.Histogram
+					fh   *histogram.FloatHistogram
+				}{
+					{name: "samples"},
+					{name: "histograms", h: tsdbutil.GenerateTestHistograms(1)[0]},
+					{name: "float histograms", fh: tsdbutil.GenerateTestFloatHistograms(1)[0]},
+				} {
+					for _, tc := range cases {
+						t.Run(sampleType.name+"/"+tc.name, func(t *testing.T) {
+							builder := labels.NewScratchBuilder(len(tc.pairs) / 2)
+							for i := 0; i < len(tc.pairs); i += 2 {
+								builder.Add(tc.pairs[i], tc.pairs[i+1])
+							}
+							_, err := appendSample(0, builder.Labels(), 1, sampleType.h, sampleType.fh)
+							require.ErrorIs(t, err, tsdb.ErrInvalidSample, "Should reject "+tc.name)
+							require.EqualError(t, err, tc.wantErr+": invalid sample")
+						})
+					}
+				}
 
-	app := s.Appender(context.Background())
+				ref, err := appendSample(0, labels.FromStrings("a", "1"), 10, nil, nil)
+				require.NoError(t, err)
+				// A valid reference must continue to bypass series-label validation.
+				nextRef, err := appendSample(ref, labels.EmptyLabels(), 11, nil, nil)
+				require.NoError(t, err)
+				require.Equal(t, ref, nextRef)
+				headRef := chunks.HeadSeriesRef(ref)
+				wantSeries := []record.RefSeries{{Ref: headRef, Labels: labels.FromStrings("a", "1")}}
+				wantSamples := []record.RefSample{{Ref: headRef, T: 10}, {Ref: headRef, T: 11}}
+				var wantExemplars []record.RefExemplar
+				if !useV2 {
+					_, err := a1.AppendExemplar(0, labels.EmptyLabels(), exemplar.Exemplar{})
+					require.EqualError(t, err, "unknown series ref when trying to add exemplar: 0")
+				}
+				for i, tc := range cases {
+					if len(tc.pairs) == 0 {
+						continue // Empty exemplar label sets are allowed.
+					}
+					t.Run("exemplars/"+tc.name, func(t *testing.T) {
+						builder := labels.NewScratchBuilder(len(tc.pairs) / 2)
+						for j := 0; j < len(tc.pairs); j += 2 {
+							builder.Add(tc.pairs[j], tc.pairs[j+1])
+						}
+						exemplars := []exemplar.Exemplar{
+							{Labels: labels.FromStrings("trace_id", fmt.Sprintf("before_%d", i)), Value: 1, Ts: int64(20 + i), HasTs: true},
+							{Labels: builder.Labels(), Value: 1, Ts: int64(20 + i), HasTs: true},
+							{Labels: labels.FromStrings("trace_id", fmt.Sprintf("after_%d", i)), Value: 1, Ts: int64(20 + i), HasTs: true},
+						}
+						var validationErr error
+						if useV2 {
+							_, err := a2.Append(ref, labels.EmptyLabels(), 0, int64(20+i), 0, nil, nil, storage.AOptions{Exemplars: exemplars})
+							var partialErr *storage.AppendPartialError
+							require.ErrorAs(t, err, &partialErr)
+							require.Len(t, partialErr.ExemplarErrors, 1)
+							validationErr = partialErr.ExemplarErrors[0]
+							wantSamples = append(wantSamples, record.RefSample{Ref: headRef, T: int64(20 + i)})
+						} else {
+							_, err := a1.AppendExemplar(ref, labels.EmptyLabels(), exemplars[0])
+							require.NoError(t, err)
+							_, validationErr = a1.AppendExemplar(ref, labels.EmptyLabels(), exemplars[1])
+							_, err = a1.AppendExemplar(ref, labels.EmptyLabels(), exemplars[2])
+							require.NoError(t, err)
+						}
+						require.ErrorIs(t, validationErr, tsdb.ErrInvalidExemplar, "Should reject "+tc.name)
+						require.EqualError(t, validationErr, tc.wantErr+": invalid exemplar")
+						for _, e := range []exemplar.Exemplar{exemplars[0], exemplars[2]} {
+							wantExemplars = append(wantExemplars, record.RefExemplar{Ref: headRef, T: e.Ts, V: e.Value, Labels: e.Labels})
+						}
+					})
+				}
+				t.Run("exemplars/too long labels", func(t *testing.T) {
+					e := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", strings.Repeat("a", exemplar.ExemplarMaxLabelSetLength))}
+					if useV2 {
+						_, err := a2.Append(ref, labels.EmptyLabels(), 0, 100, 0, nil, nil, storage.AOptions{Exemplars: []exemplar.Exemplar{e}})
+						var partialErr *storage.AppendPartialError
+						require.ErrorAs(t, err, &partialErr)
+						require.Len(t, partialErr.ExemplarErrors, 1)
+						require.ErrorIs(t, partialErr.ExemplarErrors[0], storage.ErrExemplarLabelLength)
+						wantSamples = append(wantSamples, record.RefSample{Ref: headRef, T: 100})
+					} else {
+						_, err := a1.AppendExemplar(ref, labels.EmptyLabels(), e)
+						require.ErrorIs(t, err, storage.ErrExemplarLabelLength)
+					}
+				})
+				if useV2 {
+					for _, tc := range []struct {
+						name        string
+						ls          labels.Labels
+						e           exemplar.Exemplar
+						wantErr     error
+						wantErrText string
+					}{
+						{
+							name:        "duplicate labels",
+							ls:          labels.FromStrings("a", "2"),
+							e:           exemplar.Exemplar{Labels: labels.FromStrings("a", "1", "a", "2")},
+							wantErr:     tsdb.ErrInvalidExemplar,
+							wantErrText: `label name "a" is not unique: invalid exemplar`,
+						},
+						{
+							name:    "too long labels",
+							ls:      labels.FromStrings("a", "3"),
+							e:       exemplar.Exemplar{Labels: labels.FromStrings("a_somewhat_long_trace_id", "nYJSNtFrFTY37VR7mHzEE/LIDt7cdAQcuOzFajgmLDAdBSRHYPDzrxhMA4zz7el8naI/AoXFv9/e/G0vcETcIoNUi3OieeLfaIRQci2oa")},
+							wantErr: storage.ErrExemplarLabelLength,
+						},
+					} {
+						t.Run("exemplars/new series/"+tc.name, func(t *testing.T) {
+							newRef, err := a2.Append(0, tc.ls, 0, 0, 0, nil, nil, storage.AOptions{Exemplars: []exemplar.Exemplar{tc.e}})
+							var partialErr *storage.AppendPartialError
+							require.ErrorAs(t, err, &partialErr)
+							require.Len(t, partialErr.ExemplarErrors, 1)
+							require.ErrorIs(t, partialErr.ExemplarErrors[0], tc.wantErr)
+							if tc.wantErrText != "" {
+								require.EqualError(t, partialErr.ExemplarErrors[0], tc.wantErrText)
+							}
+							require.NotZero(t, newRef)
+							newHeadRef := chunks.HeadSeriesRef(newRef)
+							for _, series := range wantSeries {
+								require.NotEqual(t, series.Ref, newHeadRef)
+							}
+							wantSeries = append(wantSeries, record.RefSeries{Ref: newHeadRef, Labels: tc.ls})
+							wantSamples = append(wantSamples, record.RefSample{Ref: newHeadRef})
 
-	t.Run("Samples", func(t *testing.T) {
-		_, err := app.Append(0, labels.Labels{}, 0, 0)
-		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject empty labels")
+							// Look up the newly created series by labels and accept a valid exemplar.
+							e := exemplar.Exemplar{Labels: labels.FromStrings("a", "1"), Value: 20, Ts: 10, HasTs: true}
+							nextRef, err := a2.Append(0, tc.ls, 0, 0, 0, nil, nil, storage.AOptions{Exemplars: []exemplar.Exemplar{e}})
+							require.NoError(t, err)
+							require.Equal(t, newRef, nextRef)
+							wantSamples = append(wantSamples, record.RefSample{Ref: newHeadRef})
+							wantExemplars = append(wantExemplars, record.RefExemplar{Ref: newHeadRef, T: e.Ts, V: e.Value, Labels: e.Labels})
+						})
+					}
+				}
+				if commit {
+					err = app.Commit()
+				} else {
+					err = app.Rollback()
+					// Rollback still writes series records so later appends can reference them.
+					wantSamples, wantExemplars = nil, nil
+				}
+				appClosed = true
+				require.NoError(t, err)
+				require.NoError(t, s.Close())
+				dbClosed = true
 
-		_, err = app.Append(0, labels.FromStrings("a", "1", "a", "2"), 0, 0)
-		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject out of order labels")
-	})
-
-	t.Run("Histograms", func(t *testing.T) {
-		_, err := app.AppendHistogram(0, labels.Labels{}, 0, tsdbutil.GenerateTestHistograms(1)[0], nil)
-		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject empty labels")
-
-		_, err = app.AppendHistogram(0, labels.FromStrings("a", "1", "a", "2"), 0, tsdbutil.GenerateTestHistograms(1)[0], nil)
-		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject out of order labels")
-	})
-
-	t.Run("Exemplars", func(t *testing.T) {
-		sRef, err := app.Append(0, labels.FromStrings("a", "1"), 0, 0)
-		require.NoError(t, err, "should not reject valid series")
-
-		_, err = app.AppendExemplar(0, labels.EmptyLabels(), exemplar.Exemplar{})
-		require.EqualError(t, err, "unknown series ref when trying to add exemplar: 0")
-
-		e := exemplar.Exemplar{Labels: labels.FromStrings("a", "1", "a", "2")}
-		_, err = app.AppendExemplar(sRef, labels.EmptyLabels(), e)
-		require.ErrorIs(t, err, tsdb.ErrInvalidExemplar, "should reject out of order labels")
-
-		e = exemplar.Exemplar{Labels: labels.FromStrings("a_somewhat_long_trace_id", "nYJSNtFrFTY37VR7mHzEE/LIDt7cdAQcuOzFajgmLDAdBSRHYPDzrxhMA4zz7el8naI/AoXFv9/e/G0vcETcIoNUi3OieeLfaIRQci2oa")}
-		_, err = app.AppendExemplar(sRef, labels.EmptyLabels(), e)
-		require.ErrorIs(t, err, storage.ErrExemplarLabelLength, "should reject too long label length")
-
-		// Inverse check
-		e = exemplar.Exemplar{Labels: labels.FromStrings("a", "1"), Value: 20, Ts: 10, HasTs: true}
-		_, err = app.AppendExemplar(sRef, labels.EmptyLabels(), e)
-		require.NoError(t, err, "should not reject valid exemplars")
-	})
+				sr, err := wlog.NewSegmentsReader(s.wal.Dir())
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, sr.Close()) })
+				r := wlog.NewReader(sr)
+				dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+				var (
+					gotSeries    []record.RefSeries
+					gotSamples   []record.RefSample
+					gotExemplars []record.RefExemplar
+				)
+				for r.Next() {
+					rec := r.Record()
+					switch dec.Type(rec) {
+					case record.Series:
+						series, err := dec.Series(rec, nil)
+						require.NoError(t, err)
+						gotSeries = append(gotSeries, series...)
+					case record.Samples, record.SamplesV2:
+						samples, err := dec.Samples(rec, nil)
+						require.NoError(t, err)
+						gotSamples = append(gotSamples, samples...)
+					case record.Exemplars:
+						exemplars, err := dec.Exemplars(rec, nil)
+						require.NoError(t, err)
+						gotExemplars = append(gotExemplars, exemplars...)
+					default:
+						t.Fatalf("Unexpected WAL record type: %v", dec.Type(rec))
+					}
+				}
+				require.NoError(t, r.Err())
+				testutil.RequireEqual(t, wantSeries, gotSeries, "Only the valid series should reach the WAL")
+				testutil.RequireEqual(t, wantSamples, gotSamples)
+				testutil.RequireEqual(t, wantExemplars, gotExemplars)
+			})
+		}
+	}
 }
 
 func createTestAgentDB(t testing.TB, reg prometheus.Registerer, opts *Options) *DB {

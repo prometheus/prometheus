@@ -940,15 +940,14 @@ func (a *appenderBase) getOrCreate(ref chunks.HeadSeriesRef, l labels.Labels) (s
 		}
 	}
 
-	// Ensure no empty or out-of-order labels have gotten through. This mirrors the
-	// equivalent validation code in the TSDB's headAppender.
+	// Match the TSDB head's label normalization and validation.
 	l = l.WithoutEmpty()
 	if l.IsEmpty() {
 		return nil, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
 	}
 
-	if lbl, outOfOrder := l.HasOutOfOrderLabel(); outOfOrder {
-		return nil, fmt.Errorf(`label name "%s" is out of order: %w`, lbl, tsdb.ErrInvalidSample)
+	if err := l.ValidateOrder(); err != nil {
+		return nil, fmt.Errorf("%w: %w", err, tsdb.ErrInvalidSample)
 	}
 
 	hash := l.Hash()
@@ -1014,8 +1013,8 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, e exem
 }
 
 func (a *appenderBase) validateExemplar(ref chunks.HeadSeriesRef, e exemplar.Exemplar) error {
-	if lbl, outOfOrder := e.Labels.HasOutOfOrderLabel(); outOfOrder {
-		return fmt.Errorf(`label name "%s" is out of order: %w`, lbl, tsdb.ErrInvalidExemplar)
+	if err := e.Labels.ValidateOrder(); err != nil {
+		return fmt.Errorf("%w: %w", err, tsdb.ErrInvalidExemplar)
 	}
 
 	// Exemplar label length does not include chars involved in text rendering such as quotes

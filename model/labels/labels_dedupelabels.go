@@ -17,6 +17,7 @@ package labels
 
 import (
 	"bytes"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -366,35 +367,26 @@ func (ls Labels) Has(name string) bool {
 	return false
 }
 
-// HasDuplicateLabelNames returns whether ls has duplicate label names.
-// It assumes that the labelset is sorted.
-func (ls Labels) HasDuplicateLabelNames() (string, bool) {
-	prevNum := -1
-	for i := 0; i < len(ls.data); {
-		var lNum int
-		lNum, i = decodeVarint(ls.data, i)
-		_, i = decodeVarint(ls.data, i)
-		if lNum == prevNum {
-			return ls.syms.ToName(lNum), true
-		}
-		prevNum = lNum
+// ValidateOrder checks that label names are strictly increasing.
+// It returns an error for the first duplicate or out-of-order name.
+func (ls Labels) ValidateOrder() error {
+	if ls.data == "" {
+		return nil
 	}
-	return "", false
-}
-
-// HasOutOfOrderLabel checks if labels are not sorted by name (including duplicates).
-// Since labels are expected to be sorted, out-of-order labels indicate corruption.
-func (ls Labels) HasOutOfOrderLabel() (string, bool) {
-	var prev string
-	for i := 0; i < len(ls.data); {
-		lName, newI := decodeString(ls.syms, ls.data, i)
-		_, i = decodeVarint(ls.data, newI)
-		if prev != "" && lName <= prev {
-			return lName, true
+	prev, i := decodeString(ls.syms, ls.data, 0)
+	_, i = decodeVarint(ls.data, i)
+	for i < len(ls.data) {
+		name, next := decodeString(ls.syms, ls.data, i)
+		_, i = decodeVarint(ls.data, next)
+		if name <= prev {
+			if name == prev {
+				return fmt.Errorf("label name %q is not unique", name)
+			}
+			return fmt.Errorf("label name %q is out of order", name)
 		}
-		prev = lName
+		prev = name
 	}
-	return "", false
+	return nil
 }
 
 // WithoutEmpty returns the labelset without empty labels.
