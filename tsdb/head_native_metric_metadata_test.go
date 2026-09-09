@@ -16,6 +16,7 @@ package tsdb
 import (
 	"context"
 	"math"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -280,6 +281,33 @@ func TestNativeMetricMetadataAppenderCommit(t *testing.T) {
 	b := metadata.Metadata{Type: model.MetricTypeCounter, Help: "B"}
 	c := metadata.Metadata{Type: model.MetricTypeUnknown, Help: "C"}
 
+	t.Run("accounts for growth collapse and eviction within one batch", func(t *testing.T) {
+		store := newNativeMetricMetadataStore()
+		first := chunks.HeadSeriesRef(1)
+		second := first + nativeMetricMetadataStripes
+		third := second + nativeMetricMetadataStripes
+		commitNativeMetricMetadata(store, first,
+			makeNativeMetricMetadataPoint(100, a), makeNativeMetricMetadataPoint(200, b),
+			makeNativeMetricMetadataPoint(300, a), makeNativeMetricMetadataPoint(400, c))
+		commitNativeMetricMetadata(store, third,
+			makeNativeMetricMetadataPoint(0, a), makeNativeMetricMetadataPoint(10, b),
+			makeNativeMetricMetadataPoint(20, a), makeNativeMetricMetadataPoint(30, b), makeNativeMetricMetadataPoint(40, a))
+		require.Equal(t, int64(9), store.versions.Load())
+		appender := store.getAppender()
+		appender.observe(store, nativeMetadataSeries(first), 200, a)
+		appender.observe(store, nativeMetadataSeries(second), 100, b)
+		appender.observe(store, nativeMetadataSeries(third), 50, b)
+		store.commitAppender(appender)
+		store.putAppender(appender)
+		require.Equal(t, int64(3), store.series.Load())
+		require.Equal(t, int64(8), store.versions.Load())
+		require.Equal(t, uint64(1), store.evictions.Load())
+		store.delete(map[storage.SeriesRef]struct{}{storage.SeriesRef(first): {}, storage.SeriesRef(third): {}})
+		require.Equal(t, int64(1), store.series.Load())
+		require.Equal(t, int64(1), store.versions.Load())
+		require.Equal(t, uint64(1), store.evictions.Load())
+	})
+
 	t.Run("does not intern a stable stripe", func(t *testing.T) {
 		store := newNativeMetricMetadataStore()
 		ref := chunks.HeadSeriesRef(1)
@@ -482,7 +510,6 @@ func TestNativeMetricMetadataAppenderCommit(t *testing.T) {
 		stale.pending = append(stale.pending, nativeMetricMetadataPendingCache{
 			series:        series,
 			handle:        unique.Make(a),
-			metadata:      a,
 			effectiveFrom: 100,
 		})
 
@@ -1530,4 +1557,82 @@ func TestHeadNativeMetricMetadataSampleKinds(t *testing.T) {
 			require.Equal(t, []NativeMetricMetadataVersion{{EffectiveFrom: 100, Metadata: wantMetadata}}, versions, "synthetic ST samples must not carry metadata")
 		})
 	}
+}
+
+func TestNativeMetricMetadataCacheOwnership(t *testing.T) {
+	for _, mode := range []string{"raw", "direct", "committed"} {
+		t.Run(mode, func(t *testing.T) {
+			store := newNativeMetricMetadataStore()
+			m := metadata.Metadata{Type: model.MetricTypeUnknown, Help: strings.Clone("published metadata"), Unit: "seconds"}
+			point := makeNativeMetricMetadataPoint(100, m)
+			first, second := nativeMetadataSeries(1), nativeMetadataSeries(1+nativeMetricMetadataStripes)
+			for _, series := range []*memSeries{first, second} {
+				commitNativeMetricMetadata(store, series.ref, point)
+			}
+			appender := newNativeMetricMetadataAppender()
+			if mode == "direct" {
+				for i := range maxNativeMetricMetadataValues {
+					appender.metadataReference(store, first.ref, metadata.Metadata{Help: strconv.Itoa(i)})
+				}
+			}
+			var ref nativeMetricMetadataValueRef
+			if mode != "committed" {
+				ref = appender.metadataReference(store, first.ref, m)
+				require.Equal(t, mode == "direct", ref&nativeMetricMetadataDirectRefMask != 0)
+			}
+			for _, series := range []*memSeries{first, second} {
+				appender.pending = append(appender.pending, nativeMetricMetadataPendingCache{
+					series: series, handle: point.metadata, metadataRef: ref, effectiveFrom: 100,
+				})
+			}
+			appender.applyPendingCache(store.stripe(first.ref))
+			cached := nativeMetadataForTest(first)
+			require.NotNil(t, cached)
+			require.Same(t, cached.metadata, nativeMetadataForTest(second).metadata)
+			require.Equal(t, m, *cached.metadata)
+			if mode == "raw" {
+				require.Same(t, unsafe.StringData(m.Help), unsafe.StringData(cached.metadata.Help), "retain caller-backed comparison strings")
+			}
+			for _, pending := range appender.pending[:cap(appender.pending)] {
+				require.Equal(t, nativeMetricMetadataPendingCache{}, pending)
+			}
+			store.putAppender(appender)
+			// Overwrite this exact object's scratch, without relying on sync.Pool
+			// to return it. There are no concurrent users of this test's store.
+			poison := metadata.Metadata{Help: "reused transaction"}
+			appender.values = append(appender.values, nativeMetricMetadataValue{metadata: poison})
+			appender.pending = append(appender.pending, nativeMetricMetadataPendingCache{metadata: &poison})
+			appender.shared[point.metadata] = &poison
+			runtime.GC()
+			require.Equal(t, m, *cached.metadata)
+			require.Equal(t, m, *nativeMetadataForTest(second).metadata)
+		})
+	}
+
+	t.Run("revalidation rejects replacement and deleted histories", func(t *testing.T) {
+		for _, tc := range []struct {
+			name    string
+			deleted bool
+		}{
+			{name: "replacement"},
+			{name: "deletion", deleted: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				store := newNativeMetricMetadataStore()
+				series := nativeMetadataSeries(1)
+				old := makeNativeMetricMetadataPoint(100, metadata.Metadata{Help: "old"})
+				commitNativeMetricMetadata(store, series.ref, old)
+				appender := newNativeMetricMetadataAppender()
+				appender.pending = append(appender.pending, nativeMetricMetadataPendingCache{series: series, handle: old.metadata, effectiveFrom: 100})
+				if tc.deleted {
+					store.delete(map[storage.SeriesRef]struct{}{storage.SeriesRef(series.ref): {}})
+				} else {
+					commitNativeMetricMetadata(store, series.ref, makeNativeMetricMetadataPoint(100, metadata.Metadata{Help: "replacement"}))
+				}
+				appender.applyPendingCache(store.stripe(series.ref))
+				require.Nil(t, nativeMetadataForTest(series), "stale publication must not allocate a sidecar")
+				require.Empty(t, appender.pending)
+			})
+		}
+	})
 }

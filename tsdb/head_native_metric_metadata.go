@@ -106,30 +106,6 @@ func (s *nativeMetricMetadataStore) stripe(ref chunks.HeadSeriesRef) *nativeMetr
 	return &s.stripes[uint64(ref)%nativeMetricMetadataStripes]
 }
 
-// mergeLocked applies observations and returns the newest version of the
-// resulting history, which is not necessarily the newest observation: an
-// out-of-order transaction can leave an older version in front of it.
-func (s *nativeMetricMetadataStore) mergeLocked(stripe *nativeMetricMetadataStripe, ref chunks.HeadSeriesRef, history nativeMetricMetadataHistory, exists bool, observations []nativeMetricMetadataPoint) nativeMetricMetadataPoint {
-	oldLen := len(history.versions)
-	var evictions int
-	if len(history.versions) == 0 || observations[0].effectiveFrom >= history.versions[len(history.versions)-1].effectiveFrom {
-		history.versions, evictions = mergeChronologicalNativeMetricMetadata(history.versions, observations)
-	} else {
-		history.versions, evictions = mergeOverlappingNativeMetricMetadata(history.versions, observations)
-	}
-	if evictions > 0 {
-		history.truncated = true
-		s.evictions.Add(uint64(evictions))
-	}
-
-	stripe.histories[ref] = history
-	if !exists {
-		s.series.Add(1)
-	}
-	s.versions.Add(int64(len(history.versions) - oldLen))
-	return history.versions[len(history.versions)-1]
-}
-
 // snapshot takes the stripe read lock and copies ref's history into snapshot.
 // It reports whether the history exists, leaving snapshot unchanged on a miss.
 func (s *nativeMetricMetadataStore) snapshot(ref chunks.HeadSeriesRef, snapshot *nativeMetricMetadataSnapshot) bool {
@@ -298,6 +274,29 @@ func mergeOverlappingNativeMetricMetadata(existing, observations []nativeMetricM
 		versions[i] = retained[(start+i)%len(retained)]
 	}
 	return versions, evictions
+}
+
+// mergeNativeMetricMetadataLocked merges observations into the stored history
+// for ref. It returns the newest retained point (which may come from history),
+// the net change in retained versions, and the count evicted by the version cap.
+//
+// Observations must be non-empty and ordered by strictly increasing effectiveFrom.
+// The caller supplies history from its lookup of stripe.histories[ref] to avoid
+// a second map lookup. It must hold the stripe write lock from that lookup
+// until the returned accounting deltas have been applied.
+func mergeNativeMetricMetadataLocked(stripe *nativeMetricMetadataStripe, ref chunks.HeadSeriesRef, history nativeMetricMetadataHistory, observations []nativeMetricMetadataPoint) (newest nativeMetricMetadataPoint, versionDelta, evictions int) {
+	oldLen := len(history.versions)
+	if len(history.versions) == 0 || observations[0].effectiveFrom >= history.versions[len(history.versions)-1].effectiveFrom {
+		history.versions, evictions = mergeChronologicalNativeMetricMetadata(history.versions, observations)
+	} else {
+		history.versions, evictions = mergeOverlappingNativeMetricMetadata(history.versions, observations)
+	}
+	if evictions > 0 {
+		history.truncated = true
+	}
+
+	stripe.histories[ref] = history
+	return history.versions[len(history.versions)-1], len(history.versions) - oldLen, evictions
 }
 
 // nativeMetricMetadataSnapshot owns its points independently of the store lock.
