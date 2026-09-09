@@ -31,6 +31,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"go.uber.org/atomic"
 
@@ -84,6 +85,7 @@ type Head struct {
 	lastWALTruncationTime    atomic.Int64
 	lastMemoryTruncationTime atomic.Int64
 	lastSeriesID             atomic.Uint64
+	lastMetadataID           atomic.Uint64
 	// All the ooo m-map chunks should be after this. This is used to truncate old ooo m-map chunks.
 	// This should be typecasted to chunks.ChunkDiskMapperRef after loading.
 	minOOOMmapRef atomic.Uint64
@@ -95,33 +97,48 @@ type Head struct {
 	exemplars       ExemplarStorage
 	logger          *slog.Logger
 	// TODO(bwplotka): Consider using record.Pools that's reused with WAL watchers.
-	refSeriesPool       zeropool.Pool[[]record.RefSeries]
-	floatsPool          zeropool.Pool[[]record.RefSample]
-	exemplarsPool       zeropool.Pool[[]exemplarWithSeriesRef]
-	histogramsPool      zeropool.Pool[[]record.RefHistogramSample]
-	floatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
-	metadataPool        zeropool.Pool[[]record.RefMetadata]
-	seriesPool          zeropool.Pool[[]*memSeries]
-	typeMapPool         zeropool.Pool[map[chunks.HeadSeriesRef]sampleType]
-	bytesPool           zeropool.Pool[[]byte]
-	memChunkPool        sync.Pool
+	refSeriesPool          zeropool.Pool[[]record.RefSeries]
+	floatsPool             zeropool.Pool[[]record.RefSample]
+	exemplarsPool          zeropool.Pool[[]exemplarWithSeriesRef]
+	histogramsPool         zeropool.Pool[[]record.RefHistogramSample]
+	floatHistogramsPool    zeropool.Pool[[]record.RefFloatHistogramSample]
+	metadataDefsPool       zeropool.Pool[[]record.RefMetadataDefinition]
+	seriesMetadataRefsPool zeropool.Pool[[]record.RefSeriesMetadataRef]
+	seriesPool             zeropool.Pool[[]*memSeries]
+	typeMapPool            zeropool.Pool[map[chunks.HeadSeriesRef]sampleType]
+	bytesPool              zeropool.Pool[[]byte]
+	memChunkPool           sync.Pool
 
 	// These pools are only used during WAL/WBL replay and are reset at the end.
 	// NOTE: Adjust resetWLReplayResources() upon changes to the pools.
-	wlReplaySeriesPool          zeropool.Pool[[]record.RefSeries]
-	wlReplaySamplesPool         zeropool.Pool[[]record.RefSample]
-	wlReplaytStonesPool         zeropool.Pool[[]tombstones.Stone]
-	wlReplayExemplarsPool       zeropool.Pool[[]record.RefExemplar]
-	wlReplayHistogramsPool      zeropool.Pool[[]record.RefHistogramSample]
-	wlReplayFloatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
-	wlReplayMetadataPool        zeropool.Pool[[]record.RefMetadata]
-	wlReplayMmapMarkersPool     zeropool.Pool[[]record.RefMmapMarker]
+	wlReplaySeriesPool             zeropool.Pool[[]record.RefSeries]
+	wlReplaySamplesPool            zeropool.Pool[[]record.RefSample]
+	wlReplaytStonesPool            zeropool.Pool[[]tombstones.Stone]
+	wlReplayExemplarsPool          zeropool.Pool[[]record.RefExemplar]
+	wlReplayHistogramsPool         zeropool.Pool[[]record.RefHistogramSample]
+	wlReplayFloatHistogramsPool    zeropool.Pool[[]record.RefFloatHistogramSample]
+	wlReplayMetadataPool           zeropool.Pool[[]record.RefMetadata] // Decode buffer for the pre-MetadataRef record.Metadata format, kept for replaying WAL segments written before the upgrade.
+	wlReplayMetadataDefsPool       zeropool.Pool[[]record.RefMetadataDefinition]
+	wlReplaySeriesMetadataRefsPool zeropool.Pool[[]record.RefSeriesMetadataRef]
+	wlReplayMmapMarkersPool        zeropool.Pool[[]record.RefMmapMarker]
 
 	// All series addressable by their ID or hash.
 	series *stripeSeries
 
 	walExpiriesMtx sync.Mutex
 	walExpiries    map[chunks.HeadSeriesRef]int64 // Series no longer in the head, and what time they must be kept until.
+
+	// metadataMtx guards the two maps below, which together intern metadata
+	// content (type, unit, help) behind a MetadataRef so that series sharing
+	// identical metadata (e.g. all series of the same metric family) share a
+	// single copy instead of each holding their own. Entries are never
+	// removed while the Head is alive: the map is bounded by the number of
+	// distinct metadata contents ever observed, not by the number of series,
+	// which is the entire point of interning it. Checkpoint GC of refs no
+	// longer used by any live series happens independently in wlog.Checkpoint.
+	metadataMtx          sync.Mutex
+	metadataByRef        map[record.MetadataRef]metadata.Metadata
+	metadataRefByContent map[metadata.Metadata]record.MetadataRef
 
 	// TODO(codesome): Extend MemPostings to return only OOOPostings, Set OOOStatus, ... Like an additional map of ooo postings.
 	postings *index.MemPostings // Postings lists for terms.
@@ -395,6 +412,8 @@ func (h *Head) resetInMemoryState() error {
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
 	h.walExpiries = map[chunks.HeadSeriesRef]int64{}
+	h.metadataByRef = map[record.MetadataRef]metadata.Metadata{}
+	h.metadataRefByContent = map[metadata.Metadata]record.MetadataRef{}
 	h.chunkRange.Store(h.opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
 	h.maxTime.Store(math.MinInt64)
@@ -413,6 +432,8 @@ func (h *Head) resetWLReplayResources() {
 	h.wlReplayHistogramsPool = zeropool.Pool[[]record.RefHistogramSample]{}
 	h.wlReplayFloatHistogramsPool = zeropool.Pool[[]record.RefFloatHistogramSample]{}
 	h.wlReplayMetadataPool = zeropool.Pool[[]record.RefMetadata]{}
+	h.wlReplayMetadataDefsPool = zeropool.Pool[[]record.RefMetadataDefinition]{}
+	h.wlReplaySeriesMetadataRefsPool = zeropool.Pool[[]record.RefSeriesMetadataRef]{}
 	h.wlReplayMmapMarkersPool = zeropool.Pool[[]record.RefMmapMarker]{}
 }
 
@@ -1613,6 +1634,50 @@ func (h *Head) updateWALExpiry(id chunks.HeadSeriesRef, keepUntil int64) {
 	defer h.walExpiriesMtx.Unlock()
 
 	h.walExpiries[id] = max(keepUntil, h.walExpiries[id])
+}
+
+// getOrCreateMetadataRef interns m behind a MetadataRef, allocating a new,
+// never-reused ref the first time this exact content is seen. isNew reports
+// whether a ref was just allocated, i.e. whether the caller must log a
+// MetadataDefinition record for it.
+func (h *Head) getOrCreateMetadataRef(m metadata.Metadata) (ref record.MetadataRef, isNew bool) {
+	if m.Type == "" {
+		// Canonicalize so content that's semantically the same, per
+		// metadata.Metadata.Equals, maps to the same ref.
+		m.Type = model.MetricTypeUnknown
+	}
+
+	h.metadataMtx.Lock()
+	defer h.metadataMtx.Unlock()
+
+	if ref, ok := h.metadataRefByContent[m]; ok {
+		return ref, false
+	}
+
+	ref = record.MetadataRef(h.lastMetadataID.Inc())
+	h.metadataByRef[ref] = m
+	h.metadataRefByContent[m] = ref
+	return ref, true
+}
+
+// setMetadataRefDefinition installs a (ref, content) pair read back from the
+// WAL or checkpoint, e.g. during replay, where the ref value is already
+// determined rather than allocated fresh.
+func (h *Head) setMetadataRefDefinition(ref record.MetadataRef, m metadata.Metadata) {
+	h.metadataMtx.Lock()
+	defer h.metadataMtx.Unlock()
+
+	h.metadataByRef[ref] = m
+	h.metadataRefByContent[m] = ref
+}
+
+// getMetadata returns the metadata content associated with ref.
+func (h *Head) getMetadata(ref record.MetadataRef) (metadata.Metadata, bool) {
+	h.metadataMtx.Lock()
+	defer h.metadataMtx.Unlock()
+
+	m, ok := h.metadataByRef[ref]
+	return m, ok
 }
 
 // keepSeriesInWALCheckpointFn returns a function that is used to determine whether a series record should be kept in the checkpoint.
@@ -2877,8 +2942,8 @@ func (s sample) Copy() chunks.Sample {
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
 	// Members up to the Mutex are not changed after construction, so can be accessed without a lock.
-	ref  chunks.HeadSeriesRef
-	meta *metadata.Metadata
+	ref         chunks.HeadSeriesRef
+	metadataRef record.MetadataRef // MetadataRef of the metadata currently associated with this series, or 0 if none.
 
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
 	// been explicitly enabled in TSDB.
