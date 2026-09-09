@@ -1333,36 +1333,41 @@ func isStaleSeries(s *memSeries) bool {
 	}
 }
 
-// truncateStaleSeries removes the provided series as long as they are still stale and
-// carry no out-of-order data.
-// appendIDWatermark is the lastAppendID captured before the upstream block write. Series that
-// have received samples with greater appendIDs are skipped, because those samples may not be
-// present in the generated block.
-func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64, appendIDWatermark uint64) error {
+// truncateStaleSeries removes the provided series as long as they're still stale and carry no
+// out-of-order data -- both checked live, not from a stale snapshot.
+//
+// Two independent guards protect a series that changed after it was selected: fingerprints
+// (see fingerprintChangedForRef) catches a new sample already visible in the chunk, including
+// a fresh stale marker that isStaleSeries alone wouldn't flag; appendIDWatermark (see
+// hasAppendIDAbove) catches one from a transaction still open when it was captured, even if
+// that transaction had already mutated the chunk before the fingerprint was ever snapshotted.
+func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64, appendIDWatermark uint64, fingerprints map[storage.SeriesRef]seriesFingerprint) error {
 	_, err := h.truncateSeries(seriesRefs, maxt, func(s *memSeries) bool {
-		return isSeriesWithoutOOO(s) && isStaleSeries(s) && !hasAppendIDAbove(s, appendIDWatermark)
+		return isSeriesWithoutOOO(s) && isStaleSeries(s) && !hasAppendIDAbove(s, appendIDWatermark) && !fingerprintChangedForRef(s, fingerprints)
 	})
 	return err
 }
 
-// truncateSelectedSeries removes the series identified by the provided refs from the head.
-// Series that received fresh samples or acquired OOO data after the caller collected the ref
-// list are skipped. The latter must be flushed by CompactOOOHead before they can be evicted.
-// appendIDWatermark is the lastAppendID captured before the upstream block write. Series that
-// have received samples with greater appendIDs are skipped, because those samples may not be
-// present in the generated block.
-func (h *Head) truncateSelectedSeries(seriesRefs []storage.SeriesRef, maxt int64, appendIDWatermark uint64) error {
+// truncateSelectedSeries removes the series identified by the provided refs from the head. OOO
+// data must first be flushed by CompactOOOHead before a series can be evicted; isSeriesWithoutOOO
+// checks that live, not from a stale snapshot.
+//
+// Two independent guards protect a series that changed after its ref was collected: fingerprints
+// (see fingerprintChangedForRef) catches a new sample already visible in the chunk;
+// appendIDWatermark (see hasAppendIDAbove) catches one from a transaction still open when it was
+// captured, even if that transaction had already mutated the chunk before the fingerprint was
+// ever snapshotted.
+func (h *Head) truncateSelectedSeries(seriesRefs []storage.SeriesRef, maxt int64, appendIDWatermark uint64, fingerprints map[storage.SeriesRef]seriesFingerprint) error {
 	_, err := h.truncateSeries(seriesRefs, maxt, func(s *memSeries) bool {
-		return isSeriesWithoutOOO(s) && !hasAppendIDAbove(s, appendIDWatermark)
+		return isSeriesWithoutOOO(s) && !hasAppendIDAbove(s, appendIDWatermark) && !fingerprintChangedForRef(s, fingerprints)
 	})
 	return err
 }
 
-// hasAppendIDAbove reports whether s contains any in-memory sample with an appendID
-// greater than watermark.
-// When isolation is disabled (s.txs == nil), it always returns false;  in that mode,
-// CompactSelectedSeries and CompactStaleHead rely on their existing requirement that
-// no concurrent writes target the affected series.
+// hasAppendIDAbove reports whether s contains any in-memory sample with an appendID greater
+// than watermark. When isolation is disabled (s.txs == nil), it always returns false: in that
+// mode there is no per-sample append-ID tracking to consult, and fingerprintChangedForRef is
+// the sole guard.
 // Must be called with s.Lock held.
 func hasAppendIDAbove(s *memSeries, watermark uint64) bool {
 	if s.txs == nil {
@@ -1376,6 +1381,100 @@ func hasAppendIDAbove(s *memSeries, watermark uint64) bool {
 		it.Next()
 	}
 	return false
+}
+
+// seriesFingerprint is an isolation-independent snapshot of a series' in-order head chunk
+// shape. Comparing two snapshots detects an in-order append in between, whether still in
+// flight or already committed.
+//
+// currentChunkID identifies which chunk is the active (most recently created) one, not how
+// many head chunks currently exist: a plain head-chunk count can return to a prior value after
+// a chunk cut is followed by mmap moving the older chunk out of headChunks, even though the
+// series was mutated in between. currentChunkID can't collide the same way, because mmap only
+// moves a chunk from headChunks into mmappedChunks -- it never creates, destroys, or reorders
+// one -- so the identity of "the newest chunk this series has" is unaffected by it. Only a
+// genuinely new chunk (pushHeadChunk) advances currentChunkID.
+//
+// lastChunkSamples still catches the complementary case: a sample landing in that same active
+// chunk without cutting a new one, which currentChunkID alone can't see.
+//
+// No field tracks OOO transitions: isSeriesWithoutOOO is re-evaluated live at eviction-check
+// time, so a series that turns OOO after being selected is already caught there, for free.
+// Likewise, no field tracks staleness: isStaleSeries is re-evaluated live too.
+//
+// What this snapshot cannot see: a mutation that already happened by the time it's taken. A
+// multi-series Commit() applies each series' samples one at a time and only closes its
+// isolation transaction at the very end, so a sample can already be sitting in a chunk here
+// while still excluded from the block the writer is about to produce. hasAppendIDAbove, kept
+// alongside this fingerprint, is what catches that case when isolation is enabled.
+type seriesFingerprint struct {
+	currentChunkID   chunks.HeadChunkID
+	lastChunkSamples int
+}
+
+// currentChunkID returns the HeadChunkID of s's active (most recently created) chunk -- the
+// last one, whether it's still in headChunks or has already been mmapped -- or the zero value
+// if s has no chunks at all. Must be called with s.Lock held.
+func currentChunkID(s *memSeries) chunks.HeadChunkID {
+	total := len(s.mmappedChunks) + int(s.headChunkCount.Load())
+	if total == 0 {
+		return 0
+	}
+	return s.headChunkID(total - 1)
+}
+
+// snapshotFingerprint captures s's current fingerprint. Must be called with s.Lock held.
+func snapshotFingerprint(s *memSeries) seriesFingerprint {
+	fp := seriesFingerprint{
+		currentChunkID: currentChunkID(s),
+	}
+	if s.headChunks != nil {
+		fp.lastChunkSamples = s.headChunks.chunk.NumSamples()
+	}
+	return fp
+}
+
+// fingerprintChanged reports whether s's current fingerprint no longer matches fp. Must be
+// called with s.Lock held.
+func fingerprintChanged(s *memSeries, fp seriesFingerprint) bool {
+	if currentChunkID(s) != fp.currentChunkID {
+		return true
+	}
+	var lastChunkSamples int
+	if s.headChunks != nil {
+		lastChunkSamples = s.headChunks.chunk.NumSamples()
+	}
+	return lastChunkSamples != fp.lastChunkSamples
+}
+
+// fingerprintChangedForRef looks up s's snapshot in fingerprints and reports whether it has
+// since changed. A missing entry is treated as changed -- retain rather than risk evicting --
+// though every ref CompactSelectedSeries or CompactStaleHead passes through should have one.
+// Must be called with s.Lock held.
+func fingerprintChangedForRef(s *memSeries, fingerprints map[storage.SeriesRef]seriesFingerprint) bool {
+	fp, ok := fingerprints[storage.SeriesRef(s.ref)]
+	if !ok {
+		return true
+	}
+	return fingerprintChanged(s, fp)
+}
+
+// snapshotFingerprints captures a seriesFingerprint per ref, before the caller
+// (CompactSelectedSeries or CompactStaleHead) writes any blocks, so the later eviction check
+// can detect -- independently of isolation -- a sample received since this point. Refs that no
+// longer resolve to a live series are omitted.
+func (h *Head) snapshotFingerprints(seriesRefs []storage.SeriesRef) map[storage.SeriesRef]seriesFingerprint {
+	fingerprints := make(map[storage.SeriesRef]seriesFingerprint, len(seriesRefs))
+	for _, ref := range seriesRefs {
+		s := h.series.getByID(chunks.HeadSeriesRef(ref))
+		if s == nil {
+			continue
+		}
+		s.Lock()
+		fingerprints[ref] = snapshotFingerprint(s)
+		s.Unlock()
+	}
+	return fingerprints
 }
 
 // truncateSeries removes the provided series from the head, taking the chunk-snapshot lock,

@@ -10414,6 +10414,67 @@ func TestStaleSeriesCompactionWithZeroSeries(t *testing.T) {
 	require.Empty(t, db.Blocks())
 }
 
+// TestCompactStaleHead_LateStaleAppendSurvives verifies that a stale series is not evicted
+// when another sample is appended after CompactStaleHead writes the block but before eviction,
+// even if the new sample is also a stale marker.
+//
+// This is the CompactStaleHead counterpart of
+// TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart. A live isStaleSeries
+// re-check cannot detect this case because the series is stale both before and after the append.
+// The fingerprint detects that the series changed and prevents its eviction.
+func TestCompactStaleHead_LateStaleAppendSurvives(t *testing.T) {
+	const chunkRange = 1000
+	opts := DefaultOptions()
+	opts.MinBlockDuration = chunkRange
+	opts.MaxBlockDuration = chunkRange
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	staleV := math.Float64frombits(value.StaleNaN)
+
+	// Filler series keeps head.MaxTime at 700, ensuring the late append at t=400 remains
+	// within appendableMinValidTime() = max(700-500, 0) = 200.
+	filler := labels.FromStrings("name", "filler")
+	sel := labels.FromStrings("name", "stale-selected")
+
+	app := db.Appender(context.Background())
+	_, err := app.Append(0, filler, 100, 0.1)
+	require.NoError(t, err)
+	_, err = app.Append(0, filler, 700, 0.7)
+	require.NoError(t, err)
+	selRef, err := app.Append(0, sel, 100, 10.0)
+	require.NoError(t, err)
+	_, err = app.Append(selRef, sel, 200, staleV)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.Equal(t, int64(700), db.Head().MaxTime())
+	require.Equal(t, uint64(1), db.Head().NumStaleSeries())
+
+	// The hook fires after the block is written but before eviction.
+	const lateT = int64(400)
+	var hookErr error
+	compactHeadViewBeforeEvictTestingCallback = func() {
+		hookApp := db.Appender(context.Background())
+		if _, err := hookApp.Append(selRef, sel, lateT, staleV); err != nil {
+			hookErr = err
+			return
+		}
+		hookErr = hookApp.Commit()
+	}
+	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+
+	require.NoError(t, db.CompactStaleHead())
+	require.NoError(t, hookErr, "the late stale append/commit inside the hook must itself succeed")
+
+	// A block is written regardless -- it captures sel's t=100,200 samples as they stood when
+	// the write started. What the fingerprint protects is eviction: sel must still be in the
+	// head afterward too, so the late sample at t=400 isn't lost.
+	require.Len(t, db.Blocks(), 1)
+	require.Equal(t, uint64(2), db.Head().NumSeries(), "filler + sel: sel must survive eviction")
+}
+
 // TestCompactStaleHead_EvictedSeriesRecordKeptInCheckpoint verifies that after
 // CompactStaleHead evicts a stale series, the series's label record is retained
 // in the next WAL checkpoint while the WAL still holds sample records
@@ -10882,9 +10943,7 @@ func TestInOrderBlocksMaxTime_ExcludesSelectedSeriesBlocks(t *testing.T) {
 //
 // The sample is committed too late to be included in the generated
 // block, but early enough that its timestamp still falls within the
-// compaction range. Without the appendID watermark check, the series
-// would be evicted, causing the late sample to disappear from both the
-// head and the WAL replay path after restart.
+// compaction range.
 //
 // The test injects such an append via
 // compactHeadViewBeforeEvictTestingCallback and verifies that the
@@ -10943,35 +11002,14 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 
 	require.Len(t, db.Blocks(), 1)
 
-	// The watermark guard only fires when isolation is enabled, because it
-	// relies on per-sample append-IDs that s.txs only tracks in that mode.
-	//   - isolation enabled: hasAppendIDAbove catches the post-watermark
-	//     commit, sel survives eviction, and all three samples are queryable.
-	//   - isolation disabled: per-sample append-IDs aren't tracked, the guard
-	//     is a no-op, sel gets evicted along with the late sample, and the
-	//     WAL tombstone drops the late sample permanently on replay. Only the
-	//     two samples the block captured remain queryable.
-	var (
-		expectedHeadSeries uint64
-		expectedSamples    []chunks.Sample
-	)
-	if defaultIsolationDisabled {
-		expectedHeadSeries = 1 // only filler remains; sel was evicted
-		expectedSamples = []chunks.Sample{
-			sample{t: 100, f: 10.0},
-			sample{t: 200, f: 20.0},
-		}
-	} else {
-		expectedHeadSeries = 2 // filler + sel
-		expectedSamples = []chunks.Sample{
-			sample{t: 100, f: 10.0},
-			sample{t: 200, f: 20.0},
-			sample{t: lateT, f: lateV},
-		}
+	// sel survives regardless of isolation, so all three samples remain queryable.
+	expectedSamples := []chunks.Sample{
+		sample{t: 100, f: 10.0},
+		sample{t: 200, f: 20.0},
+		sample{t: lateT, f: lateV},
 	}
 
-	require.Equal(t, expectedHeadSeries, db.Head().NumSeries(),
-		"head series count must match the expected watermark-guard outcome for this isolation mode")
+	require.Equal(t, uint64(2), db.Head().NumSeries(), "filler + sel: sel must survive eviction")
 
 	querySelected := func(d *DB) []chunks.Sample {
 		q, err := d.Querier(0, chunkRange)
@@ -10981,8 +11019,7 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 	}
 
 	beforeRestart := querySelected(db)
-	require.Equal(t, expectedSamples, beforeRestart,
-		"visible samples before restart must match the expected watermark-guard outcome")
+	require.Equal(t, expectedSamples, beforeRestart, "all three samples must be visible before restart")
 
 	// Verify the same data is visible after a restart driven by WAL replay.
 	require.NoError(t, db.Close())
@@ -10991,8 +11028,69 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 
 	afterRestart := querySelected(db)
-	require.Equal(t, expectedSamples, afterRestart,
-		"visible samples after restart must match the expected watermark-guard outcome")
+	require.Equal(t, expectedSamples, afterRestart, "all three samples must survive restart")
+}
+
+// TestCompactSelectedSeries_OOOAppendDuringCompactionSurvives verifies that a series is not
+// evicted when an out-of-order sample transitions it from s.ooo == nil to non-nil during
+// compaction.
+//
+// Unlike a late in-order append, an OOO sample changes neither headChunkCount nor the current
+// chunk’s sample count, so the fingerprint cannot detect it. Instead, isSeriesWithoutOOO is
+// re-evaluated at eviction time and detects the transition, preventing the series from being
+// evicted.
+func TestCompactSelectedSeries_OOOAppendDuringCompactionSurvives(t *testing.T) {
+	const chunkRange = 1000
+	opts := DefaultOptions()
+	opts.MinBlockDuration = chunkRange
+	opts.MaxBlockDuration = chunkRange
+	opts.OutOfOrderTimeWindow = chunkRange // enable OOO ingestion
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	filler := labels.FromStrings("name", "filler")
+	sel := labels.FromStrings("name", "selected")
+
+	app := db.Appender(context.Background())
+	_, err := app.Append(0, filler, 100, 0.1)
+	require.NoError(t, err)
+	_, err = app.Append(0, filler, 700, 0.7)
+	require.NoError(t, err)
+	selRef, err := app.Append(0, sel, 100, 10.0)
+	require.NoError(t, err)
+	_, err = app.Append(selRef, sel, 200, 20.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.Equal(t, uint64(2), db.Head().NumSeries())
+
+	// The hook fires after the block is written but before eviction. This sample, earlier
+	// than sel's max (200) but within the OOO window, flips sel's s.ooo from nil to non-nil.
+	const oooT, oooV = int64(150), 15.0
+	var hookErr error
+	compactHeadViewBeforeEvictTestingCallback = func() {
+		hookApp := db.Appender(context.Background())
+		if _, err := hookApp.Append(selRef, sel, oooT, oooV); err != nil {
+			hookErr = err
+			return
+		}
+		hookErr = hookApp.Commit()
+	}
+	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+
+	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{selRef}))
+	require.NoError(t, hookErr, "the OOO append/commit inside the hook must itself succeed")
+
+	require.Equal(t, uint64(2), db.Head().NumSeries(), "filler + sel: sel must survive eviction")
+
+	q, err := db.Querier(0, chunkRange)
+	require.NoError(t, err)
+	seriesSet := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+	require.Equal(t, []chunks.Sample{
+		sample{t: 100, f: 10.0},
+		sample{t: oooT, f: oooV},
+		sample{t: 200, f: 20.0},
+	}, seriesSet[`{name="selected"}`], "all three samples, including the OOO one, must be visible")
 }
 
 // TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction verifies
@@ -11001,15 +11099,12 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 // The test covers the case where a write starts before compaction begins but
 // only commits after block generation and before eviction. Such a sample may
 // not be included in the generated blocks, so compaction must ensure the
-// corresponding series is retained in the head.
+// corresponding series is retained in the head. The commit lands after the
+// fingerprint snapshot is taken, so the check catches it regardless of isolation.
 //
 // The test verifies that the sample remains queryable both immediately after
 // compaction and after a restart.
 func TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction(t *testing.T) {
-	if defaultIsolationDisabled {
-		t.Skip("watermark guard relies on per-sample append-IDs that s.txs only tracks when isolation is enabled")
-	}
-
 	const chunkRange = 1000
 	opts := DefaultOptions()
 	opts.MinBlockDuration = chunkRange
@@ -11040,12 +11135,10 @@ func TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction(t *testing
 		lateV = 40.0
 	)
 
-	// Open the appender BEFORE CompactSelectedSeries: this is the key
-	// difference from TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart,
-	// where the appender is opened inside the hook (and so gets an appendID
-	// strictly greater than the captured watermark). Here, the appender's ID
-	// is issued before the watermark capture, so a watermark based on
-	// lastAppendID() would incorrectly cover it.
+	// Open the appender BEFORE CompactSelectedSeries -- the key difference from
+	// TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart, where the appender
+	// is opened inside the hook. Append() only reserves a pending commit here; the chunk
+	// mutation that the fingerprint notices happens later, at Commit() time inside the hook.
 	late := db.Appender(context.Background())
 	_, err = late.Append(selRef, sel, lateT, lateV)
 	require.NoError(t, err)
@@ -11064,7 +11157,7 @@ func TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction(t *testing
 
 	require.Len(t, db.Blocks(), 1)
 	require.Equal(t, uint64(2), db.Head().NumSeries(),
-		"sel must survive eviction because its late commit has an appendID > watermark")
+		"sel must survive eviction: its late commit changed the fingerprint taken before the block was written")
 
 	expected := []chunks.Sample{
 		sample{t: 100, f: 10.0},
@@ -11898,4 +11991,116 @@ func testInOrderCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeSce
 	querier, err = db.Querier(0, maxT)
 	require.NoError(t, err)
 	requireEqualSeries(t, map[string][]chunks.Sample{l.String(): expSamples}, query(t, querier, matcher), true)
+}
+
+// TestCompactionSurvivesChunkRollAndMmap verifies that a series receiving a sample that cuts a
+// new chunk, immediately followed by mmap of the now-inactive previous chunk, is still
+// correctly retained by selected-series and stale-series compaction. That sequence can leave
+// the head chunk count and the active chunk's sample count exactly as they were before the
+// append, so the fingerprint must identify the chunk itself rather than rely on those counts.
+func TestCompactionSurvivesChunkRollAndMmap(t *testing.T) {
+	for _, stale := range []bool{false, true} {
+		name := "selected"
+		if stale {
+			name = "stale"
+		}
+		t.Run(name, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.MinBlockDuration = 1000
+			opts.MaxBlockDuration = 1000
+			db := newTestDB(t, withOpts(opts))
+			db.DisableCompactions()
+			sel := labels.FromStrings("name", "selected")
+			v := 1.0
+			if stale {
+				v = math.Float64frombits(value.StaleNaN)
+			}
+			app := db.Appender(context.Background())
+			_, err := app.Append(0, labels.FromStrings("name", "filler"), 1400, 1)
+			require.NoError(t, err)
+			ref, err := app.Append(0, sel, 900, v)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			refs := []storage.SeriesRef{ref}
+			before := db.head.snapshotFingerprints(refs)
+			compactHeadViewBeforeEvictTestingCallback = func() {
+				app := db.Appender(context.Background())
+				_, err := app.Append(ref, sel, 1000, v)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				db.ForceHeadMMap()
+				// The chunk roll and mmap alone must not make the fingerprint look unchanged --
+				// otherwise the eviction check below would wrongly trust it.
+				require.NotEqual(t, before, db.head.snapshotFingerprints(refs), "the fingerprint must reflect the append across a chunk roll and mmap")
+			}
+			t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+			if stale {
+				require.NoError(t, db.CompactStaleHead())
+			} else {
+				require.NoError(t, db.CompactSelectedSeries(refs))
+			}
+			q, err := db.Querier(0, 2000)
+			require.NoError(t, err)
+			got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+			require.Len(t, got[`{name="selected"}`], 2, "The sample at 1000 must survive compaction.")
+		})
+	}
+}
+
+// TestCompactSelectedSeries_SurvivesMutationFromStillOpenTransaction verifies that a sample
+// survives compaction even when it's already in the chunk before the fingerprint snapshot is
+// taken, as long as its transaction was still open (not isolation-closed) at that point.
+//
+// A multi-series Commit() writes each series in turn and only closes the whole transaction at
+// the end. This test pauses Commit() right after it writes the selected series but before it
+// can close the transaction, so the fingerprint snapshot already reflects the new sample and
+// can never see it change. Only appendIDWatermark (via hasAppendIDAbove) catches this case.
+func TestCompactSelectedSeries_SurvivesMutationFromStillOpenTransaction(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("This reproduction needs isolation to exclude the incomplete appender.")
+	}
+	opts := DefaultOptions()
+	opts.MinBlockDuration = 1000
+	opts.MaxBlockDuration = 1000
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+	sel := labels.FromStrings("name", "selected")
+	filler := labels.FromStrings("name", "filler")
+	app := db.Appender(context.Background())
+	ref, err := app.Append(0, sel, 100, 1)
+	require.NoError(t, err)
+	fillerRef, err := app.Append(0, filler, 700, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	app = db.Appender(context.Background())
+	_, err = app.Append(ref, sel, 400, 2)
+	require.NoError(t, err)
+	_, err = app.Append(fillerRef, filler, 700, 1)
+	require.NoError(t, err)
+
+	// Pause Commit on its second series after it mutates the selected series.
+	blocker := db.head.series.getByID(chunks.HeadSeriesRef(fillerRef))
+	blocker.Lock()
+	var unlockOnce sync.Once
+	unlock := func() { unlockOnce.Do(blocker.Unlock) }
+	defer unlock()
+	done := make(chan error, 1)
+	go func() { done <- app.Commit() }()
+	series := db.head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.Eventually(t, func() bool {
+		series.Lock()
+		defer series.Unlock()
+		return series.maxTime() == 400 && !series.hasPendingCommit()
+	}, 5*time.Second, time.Millisecond)
+
+	compactHeadViewBeforeEvictTestingCallback = func() {
+		unlock()
+		require.NoError(t, <-done)
+	}
+	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+	q, err := db.Querier(0, 1000)
+	require.NoError(t, err)
+	got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+	require.Len(t, got[`{name="selected"}`], 2, "The sample at 400 must survive compaction.")
 }
