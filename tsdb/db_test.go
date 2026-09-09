@@ -10943,12 +10943,7 @@ func TestInOrderBlocksMaxTime_ExcludesSelectedSeriesBlocks(t *testing.T) {
 //
 // The sample is committed too late to be included in the generated
 // block, but early enough that its timestamp still falls within the
-// compaction range. Without a guard, the series would be evicted,
-// causing the late sample to disappear from both the head and the WAL
-// replay path after restart.
-//
-// The fingerprint check that catches this doesn't depend on isolation, so this holds
-// regardless of how isolation is configured.
+// compaction range.
 //
 // The test injects such an append via
 // compactHeadViewBeforeEvictTestingCallback and verifies that the
@@ -12052,8 +12047,15 @@ func TestCompactionSurvivesChunkRollAndMmap(t *testing.T) {
 	}
 }
 
-/*
-func TestCommitAlreadyMutatedSeries(t *testing.T) {
+// TestCompactSelectedSeries_SurvivesMutationFromStillOpenTransaction verifies that a sample
+// survives compaction even when it's already in the chunk before the fingerprint snapshot is
+// taken, as long as its transaction was still open (not isolation-closed) at that point.
+//
+// A multi-series Commit() writes each series in turn and only closes the whole transaction at
+// the end. This test pauses Commit() right after it writes the selected series but before it
+// can close the transaction, so the fingerprint snapshot already reflects the new sample and
+// can never see it change. Only appendIDWatermark (via hasAppendIDAbove) catches this case.
+func TestCompactSelectedSeries_SurvivesMutationFromStillOpenTransaction(t *testing.T) {
 	if defaultIsolationDisabled {
 		t.Skip("This reproduction needs isolation to exclude the incomplete appender.")
 	}
@@ -12102,4 +12104,3 @@ func TestCommitAlreadyMutatedSeries(t *testing.T) {
 	got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
 	require.Len(t, got[`{name="selected"}`], 2, "The sample at 400 must survive compaction.")
 }
-*/
