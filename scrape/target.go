@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"log/slog"
 	"net/url"
 	"strconv"
 	"strings"
@@ -84,6 +85,14 @@ func NewTarget(labels labels.Labels, scrapeConfig *config.ScrapeConfig, tLabels,
 		scrapeConfig: scrapeConfig,
 		health:       HealthUnknown,
 	}
+}
+
+// LogValue returns the target's representation for logging.
+func (t *Target) LogValue() slog.Value {
+	if t == nil {
+		return slog.AnyValue(nil)
+	}
+	return slog.StringValue(t.String())
 }
 
 func (t *Target) String() string {

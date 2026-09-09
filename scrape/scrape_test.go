@@ -19,6 +19,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -8070,6 +8071,28 @@ func BenchmarkScrapePoolRestartLoops(b *testing.B) {
 	for b.Loop() {
 		sp.restartLoops(true)
 	}
+}
+
+func TestNewScrapeLoopJSONLoggerTarget(t *testing.T) {
+	var output bytes.Buffer
+	format := promslog.NewFormat()
+	require.NoError(t, format.Set("json"))
+	sp := newTestScrapePool(t, nil, false, nil)
+	sp.logger = promslog.New(&promslog.Config{Writer: &output, Format: format})
+
+	sl := newScrapeLoop(scrapeLoopOptions{
+		target: newTestTarget("test.invalid:9090", 0, labels.EmptyLabels()),
+		cache:  newScrapeCache(sp.metrics),
+		sp:     sp,
+	})
+	t.Cleanup(sl.cancel)
+	sl.l.Info("test")
+
+	var entry struct {
+		Target string `json:"target"`
+	}
+	require.NoError(t, json.Unmarshal(output.Bytes(), &entry))
+	require.Equal(t, "http://test.invalid:9090/metrics", entry.Target)
 }
 
 // TestNewScrapeLoopHonorLabelsWiring verifies that newScrapeLoop correctly wires
