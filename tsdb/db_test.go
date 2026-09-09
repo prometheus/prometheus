@@ -12022,7 +12022,7 @@ func TestCompactionSurvivesChunkRollAndMmap(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 			refs := []storage.SeriesRef{ref}
-			before := db.head.snapshotFingerprints(refs)
+			before := db.head.snapshotFingerprints(refs, math.MaxUint64)
 			compactHeadViewBeforeEvictTestingCallback = func() {
 				app := db.Appender(context.Background())
 				_, err := app.Append(ref, sel, 1000, v)
@@ -12031,7 +12031,7 @@ func TestCompactionSurvivesChunkRollAndMmap(t *testing.T) {
 				db.ForceHeadMMap()
 				// The chunk roll and mmap alone must not make the fingerprint look unchanged --
 				// otherwise the eviction check below would wrongly trust it.
-				require.NotEqual(t, before, db.head.snapshotFingerprints(refs), "the fingerprint must reflect the append across a chunk roll and mmap")
+				require.NotEqual(t, before, db.head.snapshotFingerprints(refs, math.MaxUint64), "the fingerprint must reflect the append across a chunk roll and mmap")
 			}
 			t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
 			if stale {
@@ -12096,6 +12096,77 @@ func TestCompactSelectedSeries_SurvivesMutationFromStillOpenTransaction(t *testi
 	compactHeadViewBeforeEvictTestingCallback = func() {
 		unlock()
 		require.NoError(t, <-done)
+	}
+	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+	q, err := db.Querier(0, 1000)
+	require.NoError(t, err)
+	got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+	require.Len(t, got[`{name="selected"}`], 2, "The sample at 400 must survive compaction.")
+}
+
+// TestCompactSelectedSeries_SurvivesEvidenceErasedByUnrelatedCleanup verifies that a sample
+// survives compaction even when the one piece of evidence that would have proven it's missing
+// from the block gets erased before the eviction check ever looks at it.
+//
+// The sequence: a transaction writes the sample, then closes. Afterward, a totally unrelated
+// write lands on the same series -- an exact duplicate that changes no data -- but even that
+// no-op write triggers routine append-ID cleanup, which happens to wipe out the record of the
+// original write ever happening. If that record were the only evidence, eviction would see
+// nothing wrong and delete the series. It doesn't, because the violation was already recorded
+// as a durable fact the moment it was first seen (see seriesFingerprint.watermarkViolatedAtSnapshot),
+// so later cleanup can't erase it.
+func TestCompactSelectedSeries_SurvivesEvidenceErasedByUnrelatedCleanup(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("This reproduction needs isolation to exclude the incomplete appender.")
+	}
+	opts := DefaultOptions()
+	opts.MinBlockDuration = 1000
+	opts.MaxBlockDuration = 1000
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+	sel := labels.FromStrings("name", "selected")
+	filler := labels.FromStrings("name", "filler")
+	app := db.Appender(context.Background())
+	ref, err := app.Append(0, sel, 100, 1)
+	require.NoError(t, err)
+	fillerRef, err := app.Append(0, filler, 700, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	app = db.Appender(context.Background())
+	_, err = app.Append(ref, sel, 400, 2)
+	require.NoError(t, err)
+	_, err = app.Append(fillerRef, filler, 700, 1)
+	require.NoError(t, err)
+
+	// Pause Commit on its second series after it mutates the selected series.
+	blocker := db.head.series.getByID(chunks.HeadSeriesRef(fillerRef))
+	blocker.Lock()
+	var unlockOnce sync.Once
+	unlock := func() { unlockOnce.Do(blocker.Unlock) }
+	defer unlock()
+	done := make(chan error, 1)
+	go func() { done <- app.Commit() }()
+	series := db.head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.Eventually(t, func() bool {
+		series.Lock()
+		defer series.Unlock()
+		return series.maxTime() == 400 && !series.hasPendingCommit()
+	}, 5*time.Second, time.Millisecond)
+
+	compactHeadViewBeforeEvictTestingCallback = func() {
+		unlock()
+		require.NoError(t, <-done)
+		// A duplicate sample changes no chunks but runs append-ID cleanup.
+		cleanup := db.Appender(context.Background())
+		_, err := cleanup.Append(ref, sel, 400, 2)
+		require.NoError(t, err)
+		require.NoError(t, cleanup.Commit())
+		series.Lock()
+		if series.txs != nil {
+			require.Zero(t, series.txs.txIDCount)
+		}
+		series.Unlock()
 	}
 	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
 	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))

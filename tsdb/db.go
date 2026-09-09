@@ -1783,20 +1783,11 @@ type headViewFactory func(head *Head, mint, maxt int64) BlockReader
 //
 // The evictor must preserve any series that may have received samples
 // after compaction began, as those samples might not be present in the
-// generated blocks -- see fingerprintChangedForRef.
+// generated blocks -- see hasMutatedSinceSnapshot.
 //
 // maxt is the head's MaxTime at compaction start and is used to detect
 // obvious late writes via sample timestamps.
-//
-// appendIDWatermark is the head's append-ID counter at compaction
-// start. A series containing samples with appendID >
-// appendIDWatermark must not be evicted, as those samples were appended
-// after compaction began and may not be present in any block.
-//
-// When isolation is disabled, appendIDWatermark is always 0 and the
-// append-ID check becomes a no-op. In that mode, the caller must ensure
-// that no concurrent writes target the selected series.
-type headSeriesEvictor func(maxt int64, appendIDWatermark uint64) error
+type headSeriesEvictor func(maxt int64) error
 
 // compactHeadViewLocked writes a block (or sequence of blocks, one per chunk range) for the
 // restricted head view produced by viewFactory, then runs evictor to remove those series from the
@@ -1806,22 +1797,6 @@ type headSeriesEvictor func(maxt int64, appendIDWatermark uint64) error
 // The caller must hold db.cmtx.
 func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSeriesEvictor, configure func(*BlockMeta)) error {
 	mint, maxt := db.head.opts.ChunkRange*(db.head.MinTime()/db.head.opts.ChunkRange), db.head.MaxTime()
-	// Capture the highest guaranteed-committed appendID as an eviction watermark
-	// before writing any blocks.
-	//
-	// Samples with appendID <= watermark are guaranteed to be present in some
-	// generated block. Samples with higher IDs may or may not be present,
-	// depending on block-writer snapshot timing.
-	//
-	// The watermark is used during eviction: a series is removed only if it has
-	// not received any samples with appendID > watermark since compaction began.
-	//
-	// We use committedAppendID instead of lastAppendID because open appenders are
-	// excluded from all block snapshots via incompleteAppends. If one of those
-	// appenders commits between the write and evict phases, using lastAppendID
-	// could evict a series whose newest sample is present in neither the block nor
-	// the head, causing that sample to be lost on WAL replay.
-	appendIDWatermark := db.head.iso.committedAppendID()
 	// The bound is inclusive so that a sample sitting exactly on a chunk-range boundary
 	// (mint == maxt) still gets a block written before its series is evicted.
 	for ; mint <= maxt; mint += db.head.chunkRange.Load() {
@@ -1861,7 +1836,7 @@ func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSerie
 		compactHeadViewBeforeEvictTestingCallback = nil
 	}
 
-	if err := evict(maxt, appendIDWatermark); err != nil {
+	if err := evict(maxt); err != nil {
 		return fmt.Errorf("head truncate: %w", err)
 	}
 	db.head.RebuildSymbolTable(db.logger)
@@ -1890,16 +1865,21 @@ func (db *DB) CompactStaleHead() (err error) {
 		return err
 	}
 
+	// Capture the append-ID watermark before anything else, so the immediate per-series check
+	// inside snapshotFingerprints below sees it before any block write -- or any unrelated
+	// commit's append-ID cleanup -- has a chance to run. See seriesFingerprint.
+	appendIDWatermark := db.head.iso.committedAppendID()
+
 	// Snapshot each stale series' in-memory shape before writing any blocks. The eviction
 	// check below compares against this snapshot to catch a sample -- stale or not -- that
 	// arrived for the series after this point, independently of whether isolation is enabled.
-	fingerprints := db.head.snapshotFingerprints(staleSeriesRefs.sortedByRef)
+	fingerprints := db.head.snapshotFingerprints(staleSeriesRefs.sortedByRef, appendIDWatermark)
 
 	if err := db.compactHeadViewLocked(
 		func(h *Head, mint, maxt int64) BlockReader {
 			return NewSelectedSeriesHead(h, mint, maxt, staleSeriesRefs)
 		},
-		func(maxt int64, appendIDWatermark uint64) error {
+		func(maxt int64) error {
 			return db.head.truncateStaleSeries(staleSeriesRefs.sortedByRef, maxt, appendIDWatermark, fingerprints)
 		},
 		func(meta *BlockMeta) { meta.Compaction.SetStaleSeries() },
@@ -1978,16 +1958,21 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 		return nil
 	}
 
+	// Capture the append-ID watermark before anything else, so the immediate per-series check
+	// inside snapshotFingerprints below sees it before any block write -- or any unrelated
+	// commit's append-ID cleanup -- has a chance to run. See seriesFingerprint.
+	appendIDWatermark := db.head.iso.committedAppendID()
+
 	// Snapshot each selected series' in-memory shape before writing any blocks. The eviction
 	// check below compares against this snapshot to catch a sample that arrived for the series
 	// after this point, independently of whether isolation is enabled.
-	fingerprints := db.head.snapshotFingerprints(selectedSeriesRefs.sortedByRef)
+	fingerprints := db.head.snapshotFingerprints(selectedSeriesRefs.sortedByRef, appendIDWatermark)
 
 	if err := db.compactHeadViewLocked(
 		func(h *Head, mint, maxt int64) BlockReader {
 			return NewSelectedSeriesHead(h, mint, maxt, selectedSeriesRefs)
 		},
-		func(maxt int64, appendIDWatermark uint64) error {
+		func(maxt int64) error {
 			return db.head.truncateSelectedSeries(selectedSeriesRefs.sortedByRef, maxt, appendIDWatermark, fingerprints)
 		},
 		func(meta *BlockMeta) { meta.Compaction.SetSelectedSeries() },
