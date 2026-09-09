@@ -5115,7 +5115,6 @@ func TestHistogram_CounterResetHint(t *testing.T) {
 
 func TestQueryStartTimestampsOverride(t *testing.T) {
 	testStorageOpts := func(opts *tsdb.Options) {
-		opts.XOR2EncodingAllowed = true
 		opts.FloatChunkEncoding = chunkenc.EncXOR2
 		opts.EnableSTStorage = true
 	}
