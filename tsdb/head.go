@@ -1361,18 +1361,40 @@ func (h *Head) truncateSelectedSeries(seriesRefs []storage.SeriesRef, maxt int64
 // shape. Comparing two snapshots detects an in-order append in between, whether still in
 // flight or already committed.
 //
+// currentChunkID identifies which chunk is the active (most recently created) one, not how
+// many head chunks currently exist: a plain head-chunk count can return to a prior value after
+// a chunk cut is followed by mmap moving the older chunk out of headChunks, even though the
+// series was mutated in between. currentChunkID can't collide the same way, because mmap only
+// moves a chunk from headChunks into mmappedChunks -- it never creates, destroys, or reorders
+// one -- so the identity of "the newest chunk this series has" is unaffected by it. Only a
+// genuinely new chunk (pushHeadChunk) advances currentChunkID.
+//
+// lastChunkSamples still catches the complementary case: a sample landing in that same active
+// chunk without cutting a new one, which currentChunkID alone can't see.
+//
 // No field tracks OOO transitions: isSeriesWithoutOOO is re-evaluated live at eviction-check
 // time, so a series that turns OOO after being selected is already caught there, for free.
 // Likewise, no field tracks staleness: isStaleSeries is re-evaluated live too.
 type seriesFingerprint struct {
-	headChunkCount   uint32
+	currentChunkID   chunks.HeadChunkID
 	lastChunkSamples int
+}
+
+// currentChunkID returns the HeadChunkID of s's active (most recently created) chunk -- the
+// last one, whether it's still in headChunks or has already been mmapped -- or the zero value
+// if s has no chunks at all. Must be called with s.Lock held.
+func currentChunkID(s *memSeries) chunks.HeadChunkID {
+	total := len(s.mmappedChunks) + int(s.headChunkCount.Load())
+	if total == 0 {
+		return 0
+	}
+	return s.headChunkID(total - 1)
 }
 
 // snapshotFingerprint captures s's current fingerprint. Must be called with s.Lock held.
 func snapshotFingerprint(s *memSeries) seriesFingerprint {
 	fp := seriesFingerprint{
-		headChunkCount: s.headChunkCount.Load(),
+		currentChunkID: currentChunkID(s),
 	}
 	if s.headChunks != nil {
 		fp.lastChunkSamples = s.headChunks.chunk.NumSamples()
@@ -1383,7 +1405,7 @@ func snapshotFingerprint(s *memSeries) seriesFingerprint {
 // fingerprintChanged reports whether s's current fingerprint no longer matches fp. Must be
 // called with s.Lock held.
 func fingerprintChanged(s *memSeries, fp seriesFingerprint) bool {
-	if s.headChunkCount.Load() != fp.headChunkCount {
+	if currentChunkID(s) != fp.currentChunkID {
 		return true
 	}
 	var lastChunkSamples int

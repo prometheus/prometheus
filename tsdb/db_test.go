@@ -11997,3 +11997,109 @@ func testInOrderCompactionAcrossChunkIDWrap(t *testing.T, scenario sampleTypeSce
 	require.NoError(t, err)
 	requireEqualSeries(t, map[string][]chunks.Sample{l.String(): expSamples}, query(t, querier, matcher), true)
 }
+
+// TestCompactionSurvivesChunkRollAndMmap verifies that a series receiving a sample that cuts a
+// new chunk, immediately followed by mmap of the now-inactive previous chunk, is still
+// correctly retained by selected-series and stale-series compaction. That sequence can leave
+// the head chunk count and the active chunk's sample count exactly as they were before the
+// append, so the fingerprint must identify the chunk itself rather than rely on those counts.
+func TestCompactionSurvivesChunkRollAndMmap(t *testing.T) {
+	for _, stale := range []bool{false, true} {
+		name := "selected"
+		if stale {
+			name = "stale"
+		}
+		t.Run(name, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.MinBlockDuration = 1000
+			opts.MaxBlockDuration = 1000
+			db := newTestDB(t, withOpts(opts))
+			db.DisableCompactions()
+			sel := labels.FromStrings("name", "selected")
+			v := 1.0
+			if stale {
+				v = math.Float64frombits(value.StaleNaN)
+			}
+			app := db.Appender(context.Background())
+			_, err := app.Append(0, labels.FromStrings("name", "filler"), 1400, 1)
+			require.NoError(t, err)
+			ref, err := app.Append(0, sel, 900, v)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			refs := []storage.SeriesRef{ref}
+			before := db.head.snapshotFingerprints(refs)
+			compactHeadViewBeforeEvictTestingCallback = func() {
+				app := db.Appender(context.Background())
+				_, err := app.Append(ref, sel, 1000, v)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				db.ForceHeadMMap()
+				// The chunk roll and mmap alone must not make the fingerprint look unchanged --
+				// otherwise the eviction check below would wrongly trust it.
+				require.NotEqual(t, before, db.head.snapshotFingerprints(refs), "the fingerprint must reflect the append across a chunk roll and mmap")
+			}
+			t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+			if stale {
+				require.NoError(t, db.CompactStaleHead())
+			} else {
+				require.NoError(t, db.CompactSelectedSeries(refs))
+			}
+			q, err := db.Querier(0, 2000)
+			require.NoError(t, err)
+			got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+			require.Len(t, got[`{name="selected"}`], 2, "The sample at 1000 must survive compaction.")
+		})
+	}
+}
+
+/*
+func TestCommitAlreadyMutatedSeries(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("This reproduction needs isolation to exclude the incomplete appender.")
+	}
+	opts := DefaultOptions()
+	opts.MinBlockDuration = 1000
+	opts.MaxBlockDuration = 1000
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+	sel := labels.FromStrings("name", "selected")
+	filler := labels.FromStrings("name", "filler")
+	app := db.Appender(context.Background())
+	ref, err := app.Append(0, sel, 100, 1)
+	require.NoError(t, err)
+	fillerRef, err := app.Append(0, filler, 700, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	app = db.Appender(context.Background())
+	_, err = app.Append(ref, sel, 400, 2)
+	require.NoError(t, err)
+	_, err = app.Append(fillerRef, filler, 700, 1)
+	require.NoError(t, err)
+
+	// Pause Commit on its second series after it mutates the selected series.
+	blocker := db.head.series.getByID(chunks.HeadSeriesRef(fillerRef))
+	blocker.Lock()
+	var unlockOnce sync.Once
+	unlock := func() { unlockOnce.Do(blocker.Unlock) }
+	defer unlock()
+	done := make(chan error, 1)
+	go func() { done <- app.Commit() }()
+	series := db.head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.Eventually(t, func() bool {
+		series.Lock()
+		defer series.Unlock()
+		return series.maxTime() == 400 && !series.hasPendingCommit()
+	}, 5*time.Second, time.Millisecond)
+
+	compactHeadViewBeforeEvictTestingCallback = func() {
+		unlock()
+		require.NoError(t, <-done)
+	}
+	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+	q, err := db.Querier(0, 1000)
+	require.NoError(t, err)
+	got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+	require.Len(t, got[`{name="selected"}`], 2, "The sample at 400 must survive compaction.")
+}
+*/
