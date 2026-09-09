@@ -202,16 +202,14 @@ func TestRelabelCache_ConcurrentAccess(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range goroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := range iterations {
 				l := labels.FromStrings("__name__", "keep_me", "env", "prod", "shard", strconv.Itoa(i%5))
 				result, keep := cache.relabel(l, relabelTestRewriteConfig)
 				require.True(t, keep)
 				require.True(t, result.Has("environment"))
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
