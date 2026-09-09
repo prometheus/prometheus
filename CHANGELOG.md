@@ -2,7 +2,85 @@
 
 ## main / unreleased
 
-- [ENHANCEMENT] Remote write / Alertmanager: Upgrade `github.com/prometheus/sigv4` to v0.5.0, adding `session_name` and `tags` fields to the `sigv4` configuration block for STS AssumeRole sessions. The existing but previously undocumented `service_name` field is also documented.
+## 3.15.0-rc.0 / 2026-09-09
+- [CHANGE] PromQL: A range query whose `end` was not aligned to `step` caused subqueries inside it to evaluate past the parent's last actual step, inflating `peakSamples` in the query stats and against the `query.max-samples` limit, and wasting storage I/O reading samples that were never used in the result. Add tests to prevent regression of the fix made in #18081. #18598
+- [CHANGE] PromQL: Do not register a start timestamp reset if the start timestamp hasn't changed between subsequent samples. #19454
+- [CHANGE] Logging: Deprecate `--log.level`; it now supplies the startup and configuration-default level. #19511
+- [FEATURE] Configuration: Allow changing the process log level through `runtime.log_level` on configuration reload. #19511
+- [FEATURE] Prometheus: Add `--auto-gomemlimit.refresh-interval` flag to periodically re-detect the container or system memory limit and update `GOMEMLIMIT` at runtime. #18843
+- [FEATURE] Scraping: Add support for scraping targets via Unix Domain Sockets. #12024. #18091
+- [FEATURE] scrape: Implement OM2.0 scrape format. #18606
+- [ENHANCEMENT] Reduce TSDB head CPU utilization when initializing. #18001
+- [ENHANCEMENT] Docker SD: Add labels `__meta_docker_container_image` and `__meta_docker_container_image_id`. #19386
+- [ENHANCEMENT] Mixin: Add a p95/p99 remote-write send-batch latency panel to the remote-write dashboard. #19500
+- [ENHANCEMENT] Mixin: Support native histograms in the remote-write send-batch latency panel. #19522
+- [ENHANCEMENT] PromQL/TSDB: The `--enable-feature=st-storage` flag now automatically enables XOR2 float chunk encoding and ST-capable histogram chunk encoding, so you no longer need to pass `xor2-encoding` and `histograms-st-encoding` alongside it. #19518
+- [ENHANCEMENT] Remote write / Alertmanager: upgrade sigv4 to v0.5.0, adding `session_name` and `tags` fields for STS AssumeRole sessions. The previously undocumented `service_name` field is now also documented. #19569
+- [ENHANCEMENT] Scraping: Support zstd-compressed scrape responses, enabled via feature flag `zstd-scrape`. #19502
+- [ENHANCEMENT] TSDB: Stabilize the XOR2 float chunk encoding. `--enable-feature=xor2-encoding` is deprecated; use `storage.tsdb.chunk_encoding.floats: xor2` instead. Check that other software reading the TSDB directly (e.g. Thanos sidecar) supports XOR2 before enabling. #19461
+- [ENHANCEMENT] TSDB: add prometheus_tsdb_head_appenders_created_total metric. #19411
+- [ENHANCEMENT] Tracing: add more spans to scrapes, API queries and rule evaluations. #19410
+- [ENHANCEMENT] UI: Show the effective configuration for each scrape pool on the Targets and Service Discovery pages. #19384
+- [ENHANCEMENT] scrape: Enable start time synthesis for summary `_count` and `_sum` series in scrape appender v2. #19323
+- [ENHANCEMENT] scrape: stop all pools in parallel for faster shutdowns. #19295
+- [ENHANCEMENT] storage/remote: Add undocumented failed_request_logging config field to debug log remote write V2 requests on send errors. #19249
+- [ENHANCEMENT] tsdb: Add fast path for XOR chunk decompression to speed up queries. #18049
+- [ENHANCEMENT] UI: Improve native histogram table formatting and add a background bar indicating the bucket count. #19332
+- [ENHANCEMENT] TSDB: Add prometheus_tsdb_head_series_pending_commit_underflow_total to report pending-sample reservation underflows. #19470
+- [PERF] AWS SD: Build RDS cluster labels once per cluster instead of once per instance. #19504
+- [PERF] AWS SD: Describe RDS instances of different clusters concurrently, bounded by `request_concurrency`. #19506
+- [PERF] AWS SD: Describe each ElastiCache resource once per refresh instead of twice. #19585
+- [PERF] Remote read: Avoid cloning labels for sampled reads when no external labels are configured. #19503
+- [PERF] Remote write: Reuse OTLP converter scratch state between requests. #19388
+- [PERF] scrape: conversion from classic to native histograms should only parse start times when enabled. #19446
+- [BUGFIX] PromQL: Fix `info()` enrichment for composite expressions with mixed `@`/offset references or selector-free vector branches, preventing metadata from being evaluated at an unrelated timestamp. #19387
+- [BUGFIX] PromQL: Fix info() enrichment when input series use different subsets of identifying labels. #19557
+- [BUGFIX] PromQL: Preserve metric-name dropping through the info function when delayed name removal is enabled. #19413
+- [BUGFIX] TSDB: Don't silently drop samples when head garbage collection removes a series while it is being appended to. #19272
+- [BUGFIX] TSDB: Keep series with uncommitted samples during selected- and stale-series compaction, including when appenders overlap. #19470
+- [BUGFIX] TSDB: Do not retain head series after a synthetic start-timestamp zero sample is rejected. #19470
+- [BUGFIX] TSDB: Prevent query panics during series eviction after WAL replay. #19664
+- [BUGFIX] TSDB: fix potential deadlock between mmapSeriesChunks and gcSeries. #19460
+- [BUGFIX] tsdb: fix default block reload interval for custom options. #19368
+- [BUGFIX] AWS SD: Do not crash on serverless MSK clusters or MSK clusters without Open Monitoring. #19194
+- [BUGFIX] AWS SD: Do not panic when the ElastiCache API omits optional fields of a serverless cache or cache cluster. #19435
+- [BUGFIX] AWS SD: Reject non-positive `request_concurrency` instead of hanging service discovery indefinitely. #19524
+- [BUGFIX] Discovery/AWS: Avoid a panic when discovering standalone ECS tasks with custom task groups. #19302
+- [BUGFIX] Discovery: Do not panic in AWS Lightsail service discovery when an instance is missing optional fields such as availability zone, blueprint, bundle, name, state or support code. #19324
+- [BUGFIX] Discovery: delete the stale `prometheus_sd_last_update_timestamp_seconds` series for a config that is removed on reload. #19131
+- [BUGFIX] HTTP: Avoid truncating compressed responses when handlers set Content-Length. #19661
+- [BUGFIX] IONOS SD: Do not panic when the API response omits the server, NIC or volume collections, or a server's properties. #19438
+- [BUGFIX] Metadata will not affect the number of Remote Write v2 shards. #19218
+- [BUGFIX] Mixins: Fix label mismatches that prevented PrometheusHAGroupNotIngestingSamples and PrometheusHAGroupCrashlooping from firing. #19444
+- [BUGFIX] Native histograms: `DetectReset` no longer misses a counter reset when a populated bucket behind an empty one disappears, which could make histogram `rate()`/`increase()` undercount. #19367
+- [BUGFIX] Never skip histogram buckets for histogram_stddev and histogram_stdvar functions. #19521
+- [BUGFIX] OTLP: Do not abort an entire OTLP payload ingestion if one metric has no datapoints. #19343
+- [BUGFIX] PromQL: Fix FastRegexMatcher false-positive match when a capturing group is directly adjacent to a literal (e.g. `.*\|(foo)\|.*`). #19516
+- [BUGFIX] PromQL: Fix a panic in range selectors using the experimental `anchored` or `smoothed` modifier when the selected series has no samples inside the query window, for example a query evaluated inside a scrape gap. #19431
+- [BUGFIX] PromQL: Fix empty results when a subquery with `@` is used as the matrix argument of a call that is not step-invariant (for example `quantile_over_time(scalar(x), metric[...:...] @ T)`). #19187
+- [BUGFIX] PromQL: Make the "found duplicate series for the match group" many-to-many matching error message deterministic by sorting the two duplicate labels. #18810
+- [BUGFIX] PromQL: Preserve parentheses around duration literals on Expr.String() round-trip. #19403
+- [BUGFIX] PromQL: Reject duration-expression offsets and `@ start()` / `@ end()` before range selectors, matching the existing rejection of literal offsets and `@ <timestamp>`. #19406
+- [BUGFIX] PromQL: Report the position of the histogram argument rather than of a scalar argument in the native histogram NaN observation annotations of `histogram_quantile` and `histogram_fraction`. #19330
+- [BUGFIX] PromQL: info() now applies the @ modifier/offset when evaluating the info series, so info(v @ T) enriches as of T consistently instead of depending on the query start/eval time. #19266
+- [BUGFIX] Rules: Fix a panic when a rule manager created without a logger loads a rule file containing multiple YAML documents. #19433
+- [BUGFIX] Scrape: Do not append a stale marker for a series that is still exposed when the storage returns a new series reference for it. #19328
+- [BUGFIX] Scrape: JSON log formatter correctly format scrape target info. #19472
+- [BUGFIX] TSDB: Fix in-order chunk ID overflow by wrapping head chunk IDs modulo 2^23 so they never collide with the out-of-order flag bit. #19450
+- [BUGFIX] TSDB: Fix out-of-order chunk ID overflow by wrapping `firstOOOChunkID` modulo 2^23 instead of growing unbounded. #19216
+- [BUGFIX] UI: Remove an extraneous X-axis tick mark in the native histogram chart when using the "linear" display mode. #19326
+- [BUGFIX] discovery/aws: Avoid a panic when an ElastiCache ARN is missing its resource ID. #19333
+- [BUGFIX] discovery/aws: Do not panic on MSK clusters whose optional API fields are absent. #19584
+- [BUGFIX] discovery/aws: Do not panic when the EC2 API omits optional instance fields. #19512
+- [BUGFIX] discovery/aws: Don't panic on ECS tasks with absent optional fields. #19396
+- [BUGFIX] discovery/aws: MSK Optional Custom Configuration Fields #19422. #19422
+- [BUGFIX] discovery/ionos: Fix panic when the IONOS API omits optional server fields. #19418
+- [BUGFIX] discovery/kubernetes: Populate `__meta_kubernetes_service_loadbalancer_ip` from `status.loadBalancer.ingress`, falling back to deprecated `spec.loadBalancerIP`. #19404
+- [BUGFIX] histogram: Fix Compact moving buckets to wrong indices, and producing negative bucket counts for integer histograms, when more than one span is merged in the same pass. #19312
+- [BUGFIX] promtool: Fixed `tsdb dump` silently dropping native histogram samples. #18051
+- [BUGFIX] scrape: fix data race in Manager.TargetsDroppedCounts when called concurrently with Sync. #19304
+- [BUGFIX] textparse: fix nil histogram when native and classic histograms are mixed in one metric family. #19452
+- [BUGFIX] tsdb: Fix WAL and GC log messages to emit human-readable duration strings instead of nanosecond integers. #19307
 
 ## 3.14.0 / 2026-08-17
 
