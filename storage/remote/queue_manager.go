@@ -491,6 +491,7 @@ func NewQueueManager(
 	protoMsg remoteapi.WriteMessageType,
 	recordBuf *record.BuffersPool,
 	failedRequestLogging bool,
+	startSegment int,
 ) *QueueManager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -541,7 +542,7 @@ func NewQueueManager(
 
 	walMetadata := t.protoMsg != remoteapi.WriteV1MessageType
 
-	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata, recordBuf)
+	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata, recordBuf, startSegment)
 
 	// The current MetadataWatcher implementation is mutually exclusive
 	// with the new approach, which stores metadata as WAL records and
@@ -1189,7 +1190,8 @@ func (t *QueueManager) calculateDesiredShards() int {
 		desiredShards = timePerSample * (dataInRate*dataKeptRatio + backlogCatchup)
 	)
 	t.metrics.desiredNumShards.Set(desiredShards)
-	t.logger.Debug("QueueManager.calculateDesiredShards",
+	t.logger.Debug(
+		"QueueManager.calculateDesiredShards",
 		"dataInRate", dataInRate,
 		"dataOutRate", dataOutRate,
 		"dataKeptRatio", dataKeptRatio,
@@ -1934,8 +1936,9 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 			// Check the case mentioned in PRW 2.0
 			// https://prometheus.io/docs/specs/remote_write_spec_2_0/#required-written-response-headers.
 			if sampleCount+histogramCount+exemplarCount > 0 && rs.NoDataWritten() {
-				err = fmt.Errorf("sent v2 request with %v samples, %v histograms and %v exemplars; got 2xx, but PRW 2.0 response header statistics indicate %v samples, %v histograms and %v exemplars were accepted;"+
-					" assumining failure e.g. the target only supports PRW 1.0 prometheus.WriteRequest, but does not check the Content-Type header correctly",
+				err = fmt.Errorf(
+					"sent v2 request with %v samples, %v histograms and %v exemplars; got 2xx, but PRW 2.0 response header statistics indicate %v samples, %v histograms and %v exemplars were accepted;"+
+						" assumining failure e.g. the target only supports PRW 1.0 prometheus.WriteRequest, but does not check the Content-Type header correctly",
 					sampleCount, histogramCount, exemplarCount,
 					rs.Samples, rs.Histograms, rs.Exemplars,
 				)
