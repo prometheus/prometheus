@@ -10432,9 +10432,74 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 			"this deadlocks against a concurrent gcSeries")
 	})
 
-	// gcSeries clears an evicted series' headChunks such that mmapHeadChunksInStripe
-	// doesn't mmap its chunks into an orphaned chunk file.
-	t.Run("gcSeries clears headChunks so a stale mmap is a no-op", func(t *testing.T) {
+	t.Run("gcSeries preserves head chunks for active readers after WAL replay", func(t *testing.T) {
+		if defaultIsolationDisabled {
+			t.Skip("skipping test since tsdb isolation is disabled")
+		}
+
+		dir := t.TempDir()
+		db, err := Open(dir, nil, nil, DefaultOptions(), nil)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			if db != nil {
+				require.NoError(t, db.Close())
+			}
+		})
+		db.DisableCompactions()
+
+		app := db.Appender(t.Context())
+		ref, err := app.Append(0, labels.FromStrings("__name__", "series"), 100, 1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		err = db.Close()
+		db = nil
+		require.NoError(t, err)
+
+		db, err = Open(dir, nil, nil, DefaultOptions(), nil)
+		require.NoError(t, err)
+		db.DisableCompactions()
+		h := db.Head()
+		series := h.series.getByID(chunks.HeadSeriesRef(ref))
+		require.NotNil(t, series)
+		series.Lock()
+		txIDCount, txIDsLen := series.txs.txIDCount, len(series.txs.txIDs)
+		series.Unlock()
+		require.Zero(t, txIDCount)
+		require.Zero(t, txIDsLen, "WAL replay must leave the transaction ring empty")
+
+		rh := NewRangeHead(h, 100, 100)
+		ir, err := rh.Index()
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, ir.Close()) })
+		cr, err := rh.Chunks()
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, cr.Close()) })
+		builder := labels.NewScratchBuilder(0)
+		var metas []chunks.Meta
+		require.NoError(t, ir.Series(ref, &builder, &metas))
+		require.Len(t, metas, 1)
+		chk, _, err := cr.ChunkOrIterable(metas[0])
+		require.NoError(t, err)
+		require.NotNil(t, chk)
+
+		// Retire the series directly to test the saved chunk independently of reader waiting.
+		deleted := h.gcSeries([]storage.SeriesRef{ref}, 100, func(*memSeries) bool { return true })
+		require.Contains(t, deleted, ref)
+		require.Zero(t, h.NumSeries())
+		require.Nil(t, h.series.getByID(chunks.HeadSeriesRef(ref)))
+
+		var it chunkenc.Iterator
+		require.NotPanics(t, func() { it = chk.Iterator(nil) })
+		require.Equal(t, chunkenc.ValFloat, it.Next())
+		ts, v := it.At()
+		require.Equal(t, int64(100), ts)
+		require.Equal(t, 1.0, v)
+		require.Equal(t, chunkenc.ValNone, it.Next())
+		require.NoError(t, it.Err())
+	})
+
+	// A stale mmap candidate must not write a retired series' retained chunks to disk.
+	t.Run("gcSeries preserves head chunks and a stale mmap is a no-op", func(t *testing.T) {
 		h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
 		require.NoError(t, h.Init(0))
 
@@ -10454,12 +10519,26 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 
 		series := h.series.getByID(chunks.HeadSeriesRef(ref))
 		require.NotNil(t, series)
-		require.GreaterOrEqual(t, series.headChunkCount.Load(), uint32(2), "series must be mmap-ready")
+		headChunksBefore := series.headChunks
+		headChunkCountBefore := series.headChunkCount.Load()
+		mmappedChunksBefore := len(series.mmappedChunks)
+		require.GreaterOrEqual(t, headChunkCountBefore, uint32(2), "series must be mmap-ready")
+		stripe := h.series.refStripe(series.ref)
+		require.Equal(t, int32(1), h.series.mmapReady[stripe].Load())
 
 		deleted := h.gcSeries([]storage.SeriesRef{ref}, math.MaxInt64, func(*memSeries) bool { return true })
 		require.Contains(t, deleted, ref)
+		require.Nil(t, h.series.getByID(chunks.HeadSeriesRef(ref)))
+		require.True(t, series.isGCed())
+		require.Same(t, headChunksBefore, series.headChunks)
+		require.Equal(t, headChunkCountBefore, series.headChunkCount.Load())
+		require.Zero(t, h.series.mmapReady[stripe].Load())
 
 		require.Equal(t, 0, h.mmapSeriesChunks(series), "mmapSeriesChunks must be a no-op on an evicted series")
+		require.Same(t, headChunksBefore, series.headChunks)
+		require.Equal(t, headChunkCountBefore, series.headChunkCount.Load())
+		require.Len(t, series.mmappedChunks, mmappedChunksBefore)
+		require.Zero(t, h.series.mmapReady[stripe].Load())
 	})
 
 	t.Run("ooo does not inflate count", func(t *testing.T) {
