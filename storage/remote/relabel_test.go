@@ -199,6 +199,40 @@ func TestRelabelCache(t *testing.T) {
 		cache.mu.RUnlock()
 		require.Equal(t, overflowBy, size)
 	})
+
+	t.Run("an entry reused before overflow survives it, one that wasn't does not", func(t *testing.T) {
+		cache := NewRelabelCache()
+		hot := labels.FromStrings("__name__", "m", "kind", "hot")
+		cold := labels.FromStrings("__name__", "m", "kind", "cold")
+		cache.relabel(hot, relabelTestRewriteConfig)
+		cache.relabel(cold, relabelTestRewriteConfig)
+		for i := range relabelCacheMaxEntries - 2 {
+			cache.relabel(labels.FromStrings("__name__", "m", "pad", strconv.Itoa(i)), relabelTestRewriteConfig)
+		}
+		cache.relabel(hot, relabelTestRewriteConfig) // reused since insertion.
+
+		cache.relabel(labels.FromStrings("__name__", "m", "kind", "trigger"), relabelTestRewriteConfig) // overflows, sweeps.
+
+		cache.mu.RLock()
+		_, hotSurvived := cache.entries[hot.Hash()]
+		_, coldSurvived := cache.entries[cold.Hash()]
+		cache.mu.RUnlock()
+		require.True(t, hotSurvived)
+		require.False(t, coldSurvived)
+	})
+}
+
+func TestRelabelCache_sweep(t *testing.T) {
+	cache := NewRelabelCache()
+	hot := &relabelCacheEntry{orig: labels.FromStrings("__name__", "hot")}
+	hot.touched.Store(true)
+	cold := &relabelCacheEntry{orig: labels.FromStrings("__name__", "cold")}
+	cache.entries = map[uint64]*relabelCacheEntry{1: hot, 2: cold}
+
+	cache.sweep()
+
+	require.Equal(t, map[uint64]*relabelCacheEntry{1: hot}, cache.entries)
+	require.False(t, hot.touched.Load(), "a survivor's mark is cleared, so it must be reused again before the next sweep")
 }
 
 // Run with -race.

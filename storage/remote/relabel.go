@@ -16,6 +16,7 @@ package remote
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 
 	"github.com/prometheus/common/model"
 
@@ -45,7 +46,7 @@ func relabelLabels(l labels.Labels, cfgs []*relabel.Config) (labels.Labels, bool
 	return result, true
 }
 
-// relabelCacheMaxEntries bounds RelabelCache size; overflow clears it entirely.
+// relabelCacheMaxEntries bounds RelabelCache size.
 const relabelCacheMaxEntries = 100_000
 
 // RelabelCache memoizes receive-path relabeling decisions. Safe for
@@ -53,7 +54,7 @@ const relabelCacheMaxEntries = 100_000
 type RelabelCache struct {
 	mu sync.RWMutex
 
-	entries map[uint64]relabelCacheEntry
+	entries map[uint64]*relabelCacheEntry
 	// cfgsIdent: reload always allocates new *relabel.Config values, so a
 	// mismatch here means the rules may have changed.
 	cfgsIdent *relabel.Config
@@ -63,6 +64,10 @@ type relabelCacheEntry struct {
 	orig   labels.Labels // verifies against Hash() collisions.
 	result labels.Labels
 	keep   bool
+	// touched marks the entry as used since the last sweep; sweep evicts
+	// only entries left unmarked, so an actively reused entry survives
+	// overflow instead of being wiped along with unrelated churn.
+	touched atomic.Bool
 }
 
 // NewRelabelCache returns an empty RelabelCache.
@@ -82,6 +87,7 @@ func (c *RelabelCache) relabel(l labels.Labels, cfgs []*relabel.Config) (labels.
 	c.mu.RLock()
 	if c.cfgsIdent == ident {
 		if e, ok := c.entries[h]; ok && labels.Equal(e.orig, l) {
+			e.touched.Store(true)
 			c.mu.RUnlock()
 			return e.result, e.keep
 		}
@@ -91,14 +97,35 @@ func (c *RelabelCache) relabel(l labels.Labels, cfgs []*relabel.Config) (labels.
 	result, keep := relabelLabels(l, cfgs)
 
 	c.mu.Lock()
-	if c.cfgsIdent != ident || len(c.entries) >= relabelCacheMaxEntries {
-		c.entries = make(map[uint64]relabelCacheEntry)
+	switch {
+	case c.cfgsIdent != ident:
+		c.entries = make(map[uint64]*relabelCacheEntry)
 		c.cfgsIdent = ident
+	case len(c.entries) >= relabelCacheMaxEntries:
+		c.sweep()
+		if len(c.entries) >= relabelCacheMaxEntries {
+			// The working set itself is at or above the cap: sweeping freed
+			// nothing. Clear fully so memory stays bounded.
+			c.entries = make(map[uint64]*relabelCacheEntry)
+		}
 	}
-	c.entries[h] = relabelCacheEntry{orig: l, result: result, keep: keep}
+	// touched starts false: an entry only counts as "used" once something
+	// looks it up again after this insert, so a sweep can tell a reused
+	// entry apart from a one-off it never sees twice.
+	c.entries[h] = &relabelCacheEntry{orig: l, result: result, keep: keep}
 	c.mu.Unlock()
 
 	return result, keep
+}
+
+// sweep deletes entries not touched since the previous sweep and clears the
+// mark on survivors. Called with c.mu held.
+func (c *RelabelCache) sweep() {
+	for h, e := range c.entries {
+		if !e.touched.Swap(false) {
+			delete(c.entries, h)
+		}
+	}
 }
 
 // NewRelabelingAppendable wraps next to apply Config.ReceiveRelabelConfigs
