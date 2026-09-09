@@ -44,12 +44,8 @@ type metricMetadataBenchmarkMode struct {
 // under test: "off" stores none, "legacy" writes metadata WAL records,
 // "native" fills the in-memory versioned store, and "dual" enables both.
 //
-// All four receive Metadata and MetricFamilyName from the fixture, because
-// clients supply them regardless of what the Head does with them. "off"
-// therefore measures a caller handing over metadata that the Head discards,
-// which is what makes it the control for the other two rather than simply a
-// cheaper benchmark. The name avoids "baseline", which benchstat already uses
-// for the left-hand side of a comparison.
+// All modes receive fixture metadata, matching callers that supply it
+// independently of the enabled storage features.
 func metricMetadataBenchmarkModes() []metricMetadataBenchmarkMode {
 	return []metricMetadataBenchmarkMode{
 		{name: "off"},
@@ -553,6 +549,16 @@ func BenchmarkHeadMetricMetadataAppendConcurrent(b *testing.B) {
 				})
 				b.StopTimer()
 				b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*seriesPerWorker), "ns/sample")
+				validateMetricMetadataBenchmarkSamples(b, h, int64(numSeries)+int64(b.N)*int64(seriesPerWorker))
+				validateMetricMetadataBenchmarkState(b, h, mode, fixture, refs, 1)
+				if mode.nativeEnabled {
+					for i, ref := range refs {
+						versions, _, ok := h.nativeMetricMetadata.get(chunks.HeadSeriesRef(ref))
+						if !ok || !versions[0].Metadata.Equals(fixture.options[0][fixture.familyBySeries[i]].Metadata) {
+							b.Fatal("unexpected concurrent metadata value")
+						}
+					}
+				}
 			})
 		}
 	}
@@ -600,6 +606,7 @@ func BenchmarkHeadMetricMetadataAppendSparseChangesInMemory(b *testing.B) {
 				iteration++
 			}
 
+			validateMetricMetadataBenchmarkSamples(b, h, int64(numSeries)*(iteration+1))
 			if mode.nativeEnabled {
 				changed, _, ok := h.nativeMetricMetadata.get(chunks.HeadSeriesRef(refs[0]))
 				if !ok || len(changed) < 2 {
@@ -870,9 +877,13 @@ func BenchmarkHeadMetricMetadataCollapsedHistoryRetainedHeap(b *testing.B) {
 					b.Fatal(err)
 				}
 				b.StopTimer()
-				heap += metricMetadataBenchmarkHeapAlloc() - before
+				afterHeap := metricMetadataBenchmarkHeapAlloc()
 				var after runtime.MemStats
 				runtime.ReadMemStats(&after)
+				if afterHeap < before || after.HeapObjects < beforeMem.HeapObjects {
+					b.Fatal("retained heap or object count decreased")
+				}
+				heap += afterHeap - before
 				objects += after.HeapObjects - beforeMem.HeapObjects
 				if mode.nativeEnabled {
 					for _, ref := range []storage.SeriesRef{refs[0], refs[len(refs)-1]} {
@@ -882,6 +893,8 @@ func BenchmarkHeadMetricMetadataCollapsedHistoryRetainedHeap(b *testing.B) {
 						}
 					}
 				}
+				runtime.KeepAlive(fixture)
+				runtime.KeepAlive(refs)
 				runtime.KeepAlive(h)
 				closeHead()
 			}
