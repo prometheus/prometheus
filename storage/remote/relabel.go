@@ -16,9 +16,9 @@ package remote
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 
 	"github.com/prometheus/common/model"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
