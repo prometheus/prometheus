@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	deltatocumulative "github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor"
@@ -67,6 +68,11 @@ func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appenda
 		allowDeltaTemporality:   opts.NativeDelta,
 		lookbackDelta:           opts.LookbackDelta,
 		enableTypeAndUnitLabels: opts.EnableTypeAndUnitLabels,
+		converterPool: sync.Pool{
+			New: func() any {
+				return otlptranslator.NewPrometheusConverter(nil)
+			},
+		},
 		translationWarnings: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "prometheus",
 			Subsystem: "api",
@@ -113,6 +119,7 @@ type rwExporter struct {
 	lookbackDelta           time.Duration
 	enableTypeAndUnitLabels bool
 	translationWarnings     *prometheus.CounterVec
+	converterPool           sync.Pool
 }
 
 func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
@@ -121,7 +128,8 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		AppenderV2: rw.appendable.AppenderV2(ctx),
 		maxTime:    timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
-	converter := otlptranslator.NewPrometheusConverter(app)
+	converter := rw.converterPool.Get().(*otlptranslator.PrometheusConverter)
+	converter.Reset(app)
 	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
 		AddMetricSuffixes:                    otlpCfg.TranslationStrategy.ShouldAddSuffixes(),
 		AllowUTF8:                            !otlpCfg.TranslationStrategy.ShouldEscape(),
@@ -139,9 +147,11 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 	defer func() {
 		if err != nil {
 			_ = app.Rollback()
-			return
+		} else {
+			err = app.Commit()
 		}
-		err = app.Commit()
+		converter.Reset(nil)
+		rw.converterPool.Put(converter)
 	}()
 	ws, _ := annots.AsStrings("", 0, 0)
 	if len(ws) > 0 {

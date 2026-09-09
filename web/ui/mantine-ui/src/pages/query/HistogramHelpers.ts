@@ -86,6 +86,14 @@ export function findZeroAxisLeft(
   expBucketWidth: number
 ): string {
   if (scale === "linear") {
+    // Clamp the zero axis to the chart bounds, otherwise it is rendered
+    // outside of the chart for all-positive or all-negative histograms.
+    if (rangeMin > 0) {
+      return "0%";
+    }
+    if (rangeMax < 0) {
+      return "100%";
+    }
     return ((0 - rangeMin) / (rangeMax - rangeMin)) * 100 + "%";
   } else {
     if (maxNegative === 0) {

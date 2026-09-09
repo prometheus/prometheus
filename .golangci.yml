@@ -132,9 +132,7 @@ linters:
         - hugeParam
         - importShadow
         - ptrToRefParam
-        - preferStringWriter
         - rangeValCopy
-        - redundantSprint
         - regexpSimplify
         - returnAfterHttpError
         - sloppyReassign

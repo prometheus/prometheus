@@ -1,11 +1,14 @@
-import { configure } from 'enzyme';
-import Adapter from '@wojtekmaj/enzyme-adapter-react-17';
 import { GlobalWithFetchMock } from 'jest-fetch-mock';
+import { TextDecoder, TextEncoder } from 'util';
 import 'mutationobserver-shim'; // Needed for CodeMirror.
 import './globals';
 import 'jest-canvas-mock';
 
-configure({ adapter: new Adapter() });
+Object.defineProperties(global, {
+  TextDecoder: { value: TextDecoder },
+  TextEncoder: { value: TextEncoder },
+});
+
 const customGlobal: GlobalWithFetchMock = global as GlobalWithFetchMock;
 customGlobal.fetch = require('jest-fetch-mock');
 customGlobal.fetchMock = customGlobal.fetch;

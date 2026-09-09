@@ -106,6 +106,11 @@ var (
 		"((.*))(?i:f)((.*))o((.*))o((.*))",
 		"((.*))f((.*))(?i:o)((.*))o((.*))",
 		"(.*0.*)",
+		// Capturing groups directly adjacent to a literal, with no
+		// intervening wildcard (regression test for a false-positive match
+		// against RE2, see #18896).
+		`.*\|(foo)\|.*`,
+		".*-(ab)-.*",
 		// Case-insensitive literal prefixes and suffixes containing runes
 		// whose case folding changes their encoded length: 'k' folds with
 		// 'K' (Kelvin sign, U+212A) and 's' folds with 'ſ' (long s, U+017F).
@@ -127,6 +132,10 @@ var (
 		"aaaaaa----eeeeee",
 		"----",
 		"-a-a-a-",
+		"|foo|",
+		"|foo-bar|",
+		"x-ab-y",
+		"x-abc-y",
 
 		// Values matching / not matching the test regexps on long alternations.
 		"zQPbMkNO", "zQPbMkNo", "jyyfj00j0061", "jyyfj00j006", "jyyfj00j00612", "NNSPdvMi", "NNSPdvMiXXX", "NNSPdvMixxx", "nnSPdvMi", "nnSPdvMiXXX",
@@ -1528,6 +1537,8 @@ func TestIsSimpleConcatenationPattern(t *testing.T) {
 		".*-.*-.*-.*-":   false,
 		"-":              false,
 		".*":             false,
+		`.*\|foo\|.*`:    true,
+		`.*\|(foo)\|.*`:  false,
 	}
 
 	for testCase, expected := range testCases {

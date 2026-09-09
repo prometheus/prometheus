@@ -213,6 +213,34 @@ eval instant at 0s sum_over_time(timestamp(metric{job="1"} @ 10)[100s:10s] @ 300
 eval instant at 0s sum_over_time(timestamp(timestamp(metric{job="1"} @ 999))[10s:1s] @ 10)
   {job="1"} 55
 
+clear
+
+# Step-invariant matrix/subquery passed as an argument in a non-step-invariant function call.
+
+load 30s
+  arg 0 0.5 1 0.75
+  metric 1 2 3 4 5
+
+eval range from 0 to 1m30s step 30s quantile_over_time(scalar(arg), metric[2m1s] @ 2m)
+  {} 1 3 5 4
+
+eval instant at 0 quantile_over_time(scalar(arg), metric[2m1s] @ 2m)
+  {} 1
+
+eval range from 0 to 1m30s step 30s quantile_over_time(scalar(arg), metric[2m1s:30s] @ 2m)
+  {} 1 3 5 4
+
+eval instant at 0 quantile_over_time(scalar(arg), metric[2m1s:30s] @ 2m)
+  {} 1
+
+eval range from 0 to 1m30s step 30s quantile_over_time(0.5, metric[2m1s:30s] @ 2m)
+  {} 3 3 3 3
+
+eval instant at 0 quantile_over_time(0.5, metric[2m1s:30s] @ 2m)
+  {} 3
+
+eval range from 0 to 1m30s step 30s quantile_over_time(scalar(arg), metric[2m1s:30s])
+  {} 1 1.5 3 3.25
 
 clear
 
@@ -306,5 +334,3 @@ eval range from 0 to 60s step 10s timestamp(abs(metric @ 11))
 
 eval range from 0 to 60s step 10s timestamp(abs(metric_missing @ 11))
  {} 0 10 20 30 40 50 60
-
-clear

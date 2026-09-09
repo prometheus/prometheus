@@ -134,38 +134,6 @@ func (m *SDMock) HandleHcloudServers() {
         "longitude": 12.370071,
         "network_zone": "eu-central"
       },
-      "datacenter": {
-        "id": 1,
-        "name": "fsn1-dc8",
-        "description": "Falkenstein 1 DC 8",
-        "location": {
-          "id": 1,
-          "name": "fsn1",
-          "description": "Falkenstein DC Park 1",
-          "country": "DE",
-          "city": "Falkenstein",
-          "latitude": 50.47612,
-          "longitude": 12.370071,
-          "network_zone": "eu-central"
-        },
-        "server_types": {
-          "supported": [
-            1,
-            2,
-            3
-          ],
-          "available": [
-            1,
-            2,
-            3
-          ],
-          "available_for_migration": [
-            1,
-            2,
-            3
-          ]
-        }
-      },
       "image": {
         "id": 4711,
         "type": "system",
@@ -263,38 +231,6 @@ func (m *SDMock) HandleHcloudServers() {
         "latitude": 50.47612,
         "longitude": 12.370071,
         "network_zone": "eu-central"
-      },
-      "datacenter": {
-        "id": 2,
-        "name": "fsn1-dc14",
-        "description": "Falkenstein 1 DC 14",
-        "location": {
-          "id": 1,
-          "name": "fsn1",
-          "description": "Falkenstein DC Park 1",
-          "country": "DE",
-          "city": "Falkenstein",
-          "latitude": 50.47612,
-          "longitude": 12.370071,
-          "network_zone": "eu-central"
-        },
-        "server_types": {
-          "supported": [
-            1,
-            2,
-            3
-          ],
-          "available": [
-            1,
-            2,
-            3
-          ],
-          "available_for_migration": [
-            1,
-            2,
-            3
-          ]
-        }
       },
       "image": {
         "id": 4711,
@@ -394,38 +330,6 @@ func (m *SDMock) HandleHcloudServers() {
         "latitude": 50.47612,
         "longitude": 12.370071,
         "network_zone": "eu-central"
-      },
-      "datacenter": {
-        "id": 2,
-        "name": "fsn1-dc14",
-        "description": "Falkenstein 1 DC 14",
-        "location": {
-          "id": 1,
-          "name": "fsn1",
-          "description": "Falkenstein DC Park 1",
-          "country": "DE",
-          "city": "Falkenstein",
-          "latitude": 50.47612,
-          "longitude": 12.370071,
-          "network_zone": "eu-central"
-        },
-        "server_types": {
-          "supported": [
-            1,
-            2,
-            3
-          ],
-          "available": [
-            1,
-            2,
-            3
-          ],
-          "available_for_migration": [
-            1,
-            2,
-            3
-          ]
-        }
       },
       "image": null,
       "iso": null,

@@ -15,6 +15,7 @@ package chunks
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -818,10 +819,7 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 	// Make a copy of the chunk data to prevent a panic occurring because the returned
 	// chunk data slice references an mmap-ed file which could be closed after the
 	// function returns but while the chunk is still in use.
-	chkDataCopy := make([]byte, len(chkData))
-	copy(chkDataCopy, chkData)
-
-	chk, err := cdm.pool.Get(chunkenc.Encoding(chkEnc), chkDataCopy)
+	chk, err := cdm.pool.Get(chunkenc.Encoding(chkEnc), bytes.Clone(chkData))
 	if err != nil {
 		return nil, &CorruptionErr{
 			Dir:       cdm.dir.Name(),
@@ -932,8 +930,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 			// Extract the encoding from the byte. ChunkDiskMapper uses only the last 7 bits for the encoding.
 			chkEnc = cdm.RemoveMasks(chkEnc)
 			if err := f(seriesRef, chunkRef, mint, maxt, numSamples, chkEnc, isOOO); err != nil {
-				var cerr *CorruptionErr
-				if errors.As(err, &cerr) {
+				if cerr, ok := errors.AsType[*CorruptionErr](err); ok {
 					cerr.Dir = cdm.dir.Name()
 					cerr.FileIndex = segID
 					return cerr

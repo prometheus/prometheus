@@ -1,0 +1,9 @@
+# A rule file with a second YAML document, which makes the group loader log a
+# warning that only the first document is processed.
+groups:
+  - name: multi_doc
+    rules:
+      - record: job:http_requests:rate1m
+        expr: sum by (job)(rate(http_requests_total[1m]))
+---
+groups: []

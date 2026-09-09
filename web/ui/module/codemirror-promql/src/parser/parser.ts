@@ -348,9 +348,8 @@ export class Parser {
       }
     }
 
-    let j = 0;
     for (let i = 0; i < args.length; i++) {
-      j = i;
+      let j = i;
       if (j >= funcSignature.argTypes.length) {
         if (funcSignature.variadic === 0) {
           // This is not a vararg function so we should not check the

@@ -217,6 +217,9 @@ func BucketQuantile(q float64, buckets Buckets) (
 // HistogramQuantile is for calculating the histogram_quantile() of native
 // histograms. See also: BucketQuantile for classic histograms.
 //
+// The returned annotations are all about the histogram h, so pos must be the
+// position of the expression that h was derived from, not the position of q.
+//
 // HistogramQuantile is exported as it may be used by other PromQL engine
 // implementations.
 func HistogramQuantile(q float64, h *histogram.FloatHistogram, metricName string, pos posrange.PositionRange) (float64, annotations.Annotations) {
@@ -389,6 +392,9 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram, metricName string
 // thus histogram_fraction(-Inf, +Inf, v) might be less than 1.0. The function
 // returns an info level annotation in this case.
 //
+// The returned annotation is about the histogram h, so pos must be the position
+// of the expression that h was derived from, not the position of lower or upper.
+//
 // HistogramFraction is exported as it may be used by other PromQL engine
 // implementations.
 func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram, metricName string, pos posrange.PositionRange) (float64, annotations.Annotations) {
@@ -426,25 +432,13 @@ func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram, metric
 			if b.Lower == math.Inf(-1) {
 				return b.Count
 			}
-			return rank + b.Count*(v-b.Lower)/(b.Upper-b.Lower)
+			return rank + b.Count*b.FractionBelow(v, true)
 		}
 
-		// interpolateExponentially is using the same exponential
-		// interpolation method as above for histogramQuantile. This
-		// method is a better fit for exponential bucketing.
+		// interpolateExponentially interpolates on a logarithmic scale, which
+		// is a better fit for exponential bucketing. See Bucket.FractionBelow.
 		interpolateExponentially := func(v float64) float64 {
-			var (
-				logLower = math.Log2(math.Abs(b.Lower))
-				logUpper = math.Log2(math.Abs(b.Upper))
-				logV     = math.Log2(math.Abs(v))
-				fraction float64
-			)
-			if v > 0 {
-				fraction = (logV - logLower) / (logUpper - logLower)
-			} else {
-				fraction = 1 - ((logV - logUpper) / (logLower - logUpper))
-			}
-			return rank + b.Count*fraction
+			return rank + b.Count*b.FractionBelow(v, false)
 		}
 
 		if b.Lower <= 0 && b.Upper >= 0 {

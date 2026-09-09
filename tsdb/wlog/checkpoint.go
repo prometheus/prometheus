@@ -358,7 +358,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			stats.TotalExemplars += len(exemplars)
 			stats.DroppedExemplars += len(exemplars) - len(repl)
 		case record.Metadata:
-			metadata, err := dec.Metadata(rec, metadata)
+			metadata, err = dec.Metadata(rec, metadata)
 			if err != nil {
 				return nil, fmt.Errorf("decode metadata: %w", err)
 			}

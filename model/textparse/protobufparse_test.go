@@ -6016,6 +6016,378 @@ metric: <
 	}
 }
 
+// TestProtobufParseMixedNativeAndClassicHistograms tests a metric family that
+// contains both a native histogram (with classic buckets) and a classic-only
+// histogram as separate series. With parseClassicHistograms=true and
+// ignoreNativeHistograms=false, the parser must emit the native histogram,
+// then the classic series for the first metric, then the classic series for the
+// second metric.
+func TestProtobufParseMixedNativeAndClassicHistograms(t *testing.T) {
+	testMetricFamilies := []string{
+		`name: "test_histogram"
+help: "Mixed native and classic histograms in one metric family."
+type: HISTOGRAM
+metric: <
+  label: <
+    name: "foo"
+    value: "bar"
+  >
+  histogram: <
+    sample_count: 10
+    sample_sum: 5.0
+    bucket: <
+      cumulative_count: 2
+      upper_bound: 1.0
+    >
+    bucket: <
+      cumulative_count: 10
+      upper_bound: 2.0
+    >
+    schema: 3
+    zero_threshold: 0.001
+    zero_count: 1
+    positive_span: <
+      offset: 4
+      length: 1
+    >
+    positive_delta: 5
+  >
+>
+metric: <
+  label: <
+    name: "foo"
+    value: "baz"
+  >
+  histogram: <
+    sample_count: 20
+    sample_sum: 15.0
+    bucket: <
+      cumulative_count: 5
+      upper_bound: 1.0
+    >
+    bucket: <
+      cumulative_count: 20
+      upper_bound: 2.0
+    >
+  >
+>
+`,
+	}
+
+	buf := metricFamiliesToProtobuf(t, testMetricFamilies)
+
+	// ignoreNativeHistograms=false, parseClassicHistograms=true,
+	// convertClassicHistogramsToNHCB=false, enableTypeAndUnitLabels=false.
+	p := NewProtobufParser(buf.Bytes(), false, true, false, false, labels.NewSymbolTable())
+
+	expected := []parsedEntry{
+		{
+			m:    "test_histogram",
+			help: "Mixed native and classic histograms in one metric family.",
+		},
+		{
+			m:   "test_histogram",
+			typ: model.MetricTypeHistogram,
+		},
+		{
+			m: "test_histogram\xfffoo\xffbar",
+			shs: &histogram.Histogram{
+				Count:         10,
+				Sum:           5.0,
+				ZeroThreshold: 0.001,
+				ZeroCount:     1,
+				Schema:        3,
+				PositiveSpans: []histogram.Span{
+					{Offset: 4, Length: 1},
+				},
+				PositiveBuckets: []int64{5},
+			},
+			lset: labels.FromStrings(
+				"__name__", "test_histogram",
+				"foo", "bar",
+			),
+		},
+		{
+			m: "test_histogram_count\xfffoo\xffbar",
+			v: 10,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_count",
+				"foo", "bar",
+			),
+		},
+		{
+			m: "test_histogram_sum\xfffoo\xffbar",
+			v: 5.0,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_sum",
+				"foo", "bar",
+			),
+		},
+		{
+			m: "test_histogram_bucket\xfffoo\xffbar\xffle\xff1.0",
+			v: 2,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_bucket",
+				"foo", "bar",
+				"le", "1.0",
+			),
+		},
+		{
+			m: "test_histogram_bucket\xfffoo\xffbar\xffle\xff2.0",
+			v: 10,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_bucket",
+				"foo", "bar",
+				"le", "2.0",
+			),
+		},
+		{
+			m: "test_histogram_bucket\xfffoo\xffbar\xffle\xff+Inf",
+			v: 10,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_bucket",
+				"foo", "bar",
+				"le", "+Inf",
+			),
+		},
+		{
+			m: "test_histogram_count\xfffoo\xffbaz",
+			v: 20,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_count",
+				"foo", "baz",
+			),
+		},
+		{
+			m: "test_histogram_sum\xfffoo\xffbaz",
+			v: 15.0,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_sum",
+				"foo", "baz",
+			),
+		},
+		{
+			m: "test_histogram_bucket\xfffoo\xffbaz\xffle\xff1.0",
+			v: 5,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_bucket",
+				"foo", "baz",
+				"le", "1.0",
+			),
+		},
+		{
+			m: "test_histogram_bucket\xfffoo\xffbaz\xffle\xff2.0",
+			v: 20,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_bucket",
+				"foo", "baz",
+				"le", "2.0",
+			),
+		},
+		{
+			m: "test_histogram_bucket\xfffoo\xffbaz\xffle\xff+Inf",
+			v: 20,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_bucket",
+				"foo", "baz",
+				"le", "+Inf",
+			),
+		},
+	}
+
+	got := testParse(t, p)
+	requireEntries(t, expected, got)
+}
+
+// TestProtobufParseMixedClassicAndNativeHistogramsReverseOrder tests a metric
+// family that contains a classic-only histogram followed by a native
+// histogram (with classic buckets) as separate series, i.e. the reverse
+// order of TestProtobufParseMixedNativeAndClassicHistograms. With
+// parseClassicHistograms=true and ignoreNativeHistograms=false, the parser
+// must emit the classic series for the first metric, then the native
+// histogram for the second metric, then the classic series for the second
+// metric.
+func TestProtobufParseMixedClassicAndNativeHistogramsReverseOrder(t *testing.T) {
+	testMetricFamilies := []string{
+		`name: "test_histogram"
+help: "Mixed classic and native histograms in one metric family, classic first."
+type: HISTOGRAM
+metric: <
+  label: <
+    name: "foo"
+    value: "baz"
+  >
+  histogram: <
+    sample_count: 20
+    sample_sum: 15.0
+    bucket: <
+      cumulative_count: 5
+      upper_bound: 1.0
+    >
+    bucket: <
+      cumulative_count: 20
+      upper_bound: 2.0
+    >
+  >
+>
+metric: <
+  label: <
+    name: "foo"
+    value: "bar"
+  >
+  histogram: <
+    sample_count: 10
+    sample_sum: 5.0
+    bucket: <
+      cumulative_count: 2
+      upper_bound: 1.0
+    >
+    bucket: <
+      cumulative_count: 10
+      upper_bound: 2.0
+    >
+    schema: 3
+    zero_threshold: 0.001
+    zero_count: 1
+    positive_span: <
+      offset: 4
+      length: 1
+    >
+    positive_delta: 5
+  >
+>
+`,
+	}
+
+	buf := metricFamiliesToProtobuf(t, testMetricFamilies)
+
+	// ignoreNativeHistograms=false, parseClassicHistograms=true,
+	// convertClassicHistogramsToNHCB=false, enableTypeAndUnitLabels=false.
+	p := NewProtobufParser(buf.Bytes(), false, true, false, false, labels.NewSymbolTable())
+
+	expected := []parsedEntry{
+		{
+			m:    "test_histogram",
+			help: "Mixed classic and native histograms in one metric family, classic first.",
+		},
+		{
+			m:   "test_histogram",
+			typ: model.MetricTypeHistogram,
+		},
+		{
+			m: "test_histogram_count\xfffoo\xffbaz",
+			v: 20,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_count",
+				"foo", "baz",
+			),
+		},
+		{
+			m: "test_histogram_sum\xfffoo\xffbaz",
+			v: 15.0,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_sum",
+				"foo", "baz",
+			),
+		},
+		{
+			m: "test_histogram_bucket\xfffoo\xffbaz\xffle\xff1.0",
+			v: 5,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_bucket",
+				"foo", "baz",
+				"le", "1.0",
+			),
+		},
+		{
+			m: "test_histogram_bucket\xfffoo\xffbaz\xffle\xff2.0",
+			v: 20,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_bucket",
+				"foo", "baz",
+				"le", "2.0",
+			),
+		},
+		{
+			m: "test_histogram_bucket\xfffoo\xffbaz\xffle\xff+Inf",
+			v: 20,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_bucket",
+				"foo", "baz",
+				"le", "+Inf",
+			),
+		},
+		// The bug drops this entry: the second series is a native
+		// histogram and must be emitted as such before its classic
+		// fields, exactly as it would be if it were the first series in
+		// the metric family.
+		{
+			m: "test_histogram\xfffoo\xffbar",
+			shs: &histogram.Histogram{
+				Count:         10,
+				Sum:           5.0,
+				ZeroThreshold: 0.001,
+				ZeroCount:     1,
+				Schema:        3,
+				PositiveSpans: []histogram.Span{
+					{Offset: 4, Length: 1},
+				},
+				PositiveBuckets: []int64{5},
+			},
+			lset: labels.FromStrings(
+				"__name__", "test_histogram",
+				"foo", "bar",
+			),
+		},
+		{
+			m: "test_histogram_count\xfffoo\xffbar",
+			v: 10,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_count",
+				"foo", "bar",
+			),
+		},
+		{
+			m: "test_histogram_sum\xfffoo\xffbar",
+			v: 5.0,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_sum",
+				"foo", "bar",
+			),
+		},
+		{
+			m: "test_histogram_bucket\xfffoo\xffbar\xffle\xff1.0",
+			v: 2,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_bucket",
+				"foo", "bar",
+				"le", "1.0",
+			),
+		},
+		{
+			m: "test_histogram_bucket\xfffoo\xffbar\xffle\xff2.0",
+			v: 10,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_bucket",
+				"foo", "bar",
+				"le", "2.0",
+			),
+		},
+		{
+			m: "test_histogram_bucket\xfffoo\xffbar\xffle\xff+Inf",
+			v: 10,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram_bucket",
+				"foo", "bar",
+				"le", "+Inf",
+			),
+		},
+	}
+
+	got := testParse(t, p)
+	requireEntries(t, expected, got)
+}
+
 func generateString(r *rand.Rand, firstRunes, restRunes []rune) string {
 	result := make([]rune, 1+r.Intn(20))
 	for i := range result {

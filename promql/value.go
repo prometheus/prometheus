@@ -419,7 +419,9 @@ func (r *Result) String() string {
 
 // StartTimestamps stores sample start timestamps aligned with points.
 type StartTimestamps struct {
-	// Floats stores start timestamps for float samples.
+	// Floats stores start timestamps for float samples in range-vector functions.
+	// NB: for simplicity, this is also used in instant-vector functions (e.g. start_timestamp()) for
+	// sample start timestamps irrespective of the sample type.
 	Floats []int64
 	// Histograms stores start timestamps for histogram samples.
 	Histograms []int64

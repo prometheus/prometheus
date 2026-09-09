@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
@@ -557,6 +558,276 @@ func (m *mockEC2Client) DescribeAvailabilityZones(context.Context, *ec2.Describe
 	return &ec2.DescribeAvailabilityZonesOutput{
 		AvailabilityZones: azs,
 	}, nil
+}
+
+// ec2TestDiscovery returns a discovery backed by the mock client, so refresh()
+// can be exercised without reaching AWS. ec2Client returns early when ec2 is
+// already set, which also leaves region unset, so it is populated here.
+func ec2TestDiscovery(data *ec2DataStore) *EC2Discovery {
+	return &EC2Discovery{
+		logger: promslog.NewNopLogger(),
+		ec2:    newMockEC2Client(data),
+		cfg: &EC2SDConfig{
+			Port:   4242,
+			Region: data.region,
+		},
+		region: data.region,
+	}
+}
+
+// fullyPopulatedEC2Instance is the shape the AWS API returns when every
+// optional field happens to be set. Each subtest below blanks exactly one of
+// them.
+func fullyPopulatedEC2Instance() ec2Types.Instance {
+	return ec2Types.Instance{
+		Architecture:      "x86_64",
+		ImageId:           strptr("ami-full"),
+		InstanceId:        strptr("i-full"),
+		InstanceLifecycle: "spot",
+		InstanceType:      "t3.micro",
+		Placement:         &ec2Types.Placement{AvailabilityZone: strptr("azname-a")},
+		Platform:          "windows",
+		PrivateDnsName:    strptr("ip-10-0-0-1.ec2.internal"),
+		PrivateIpAddress:  strptr("10.0.0.1"),
+		PublicDnsName:     strptr("ec2-42-42-42-42.compute-1.amazonaws.com"),
+		PublicIpAddress:   strptr("42.42.42.42"),
+		State:             &ec2Types.InstanceState{Name: "running"},
+		SubnetId:          strptr("subnet-full"),
+		VpcId:             strptr("vpc-full"),
+		NetworkInterfaces: []ec2Types.InstanceNetworkInterface{
+			{
+				Attachment: &ec2Types.InstanceNetworkInterfaceAttachment{
+					DeviceIndex: aws.Int32(0),
+				},
+				Ipv6Addresses: []ec2Types.InstanceIpv6Address{
+					{
+						Ipv6Address:   strptr("2001:db8::1"),
+						IsPrimaryIpv6: boolptr(true),
+					},
+				},
+				SubnetId: strptr("subnet-full"),
+			},
+		},
+	}
+}
+
+// fullyPopulatedEC2DataStore backs the instance above with the region, AZ map
+// and owner ID the mock client needs.
+func fullyPopulatedEC2DataStore() *ec2DataStore {
+	return &ec2DataStore{
+		region:    "region-full",
+		azToAZID:  map[string]string{"azname-a": "azid-1"},
+		ownerID:   "owner-id-full",
+		instances: []ec2Types.Instance{fullyPopulatedEC2Instance()},
+	}
+}
+
+// TestEC2DiscoveryRefreshFullyPopulated pins the happy path so the nil handling
+// added for the cases below cannot silently drop labels that used to be set.
+func TestEC2DiscoveryRefreshFullyPopulated(t *testing.T) {
+	t.Parallel()
+
+	tgs, err := ec2TestDiscovery(fullyPopulatedEC2DataStore()).refresh(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []*targetgroup.Group{
+		{
+			Source: "region-full",
+			Targets: []model.LabelSet{
+				{
+					"__address__":                       model.LabelValue("10.0.0.1:4242"),
+					"__meta_ec2_ami":                    model.LabelValue("ami-full"),
+					"__meta_ec2_architecture":           model.LabelValue("x86_64"),
+					"__meta_ec2_availability_zone":      model.LabelValue("azname-a"),
+					"__meta_ec2_availability_zone_id":   model.LabelValue("azid-1"),
+					"__meta_ec2_default_ipv6_address":   model.LabelValue("2001:db8::1"),
+					"__meta_ec2_instance_id":            model.LabelValue("i-full"),
+					"__meta_ec2_instance_lifecycle":     model.LabelValue("spot"),
+					"__meta_ec2_instance_state":         model.LabelValue("running"),
+					"__meta_ec2_instance_type":          model.LabelValue("t3.micro"),
+					"__meta_ec2_ipv6_addresses":         model.LabelValue(",2001:db8::1,"),
+					"__meta_ec2_owner_id":               model.LabelValue("owner-id-full"),
+					"__meta_ec2_platform":               model.LabelValue("windows"),
+					"__meta_ec2_primary_ipv6_addresses": model.LabelValue(",2001:db8::1,"),
+					"__meta_ec2_primary_subnet_id":      model.LabelValue("subnet-full"),
+					"__meta_ec2_private_dns_name":       model.LabelValue("ip-10-0-0-1.ec2.internal"),
+					"__meta_ec2_private_ip":             model.LabelValue("10.0.0.1"),
+					"__meta_ec2_public_dns_name":        model.LabelValue("ec2-42-42-42-42.compute-1.amazonaws.com"),
+					"__meta_ec2_public_ip":              model.LabelValue("42.42.42.42"),
+					"__meta_ec2_region":                 model.LabelValue("region-full"),
+					"__meta_ec2_subnet_id":              model.LabelValue(",subnet-full,"),
+					"__meta_ec2_vpc_id":                 model.LabelValue("vpc-full"),
+				},
+			},
+		},
+	}, tgs)
+}
+
+// TestEC2DiscoveryRefreshInstanceNilOptionalFields covers instances where the
+// AWS API omitted an optional field. None of these members are marked required
+// by the SDK, yet refresh() dereferenced them without a nil check, so a single
+// missing field panicked the whole Prometheus process during service discovery
+// rather than degrading the target.
+func TestEC2DiscoveryRefreshInstanceNilOptionalFields(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(*ec2Types.Instance)
+		absent []model.LabelName
+	}{
+		{
+			name:   "NilImageId",
+			mutate: func(i *ec2Types.Instance) { i.ImageId = nil },
+			absent: []model.LabelName{ec2LabelAMI},
+		},
+		{
+			name:   "NilInstanceId",
+			mutate: func(i *ec2Types.Instance) { i.InstanceId = nil },
+			absent: []model.LabelName{ec2LabelInstanceID},
+		},
+		{
+			name:   "NilPlacement",
+			mutate: func(i *ec2Types.Instance) { i.Placement = nil },
+			absent: []model.LabelName{ec2LabelAZ, ec2LabelAZID},
+		},
+		{
+			name:   "NilAvailabilityZone",
+			mutate: func(i *ec2Types.Instance) { i.Placement.AvailabilityZone = nil },
+			absent: []model.LabelName{ec2LabelAZ, ec2LabelAZID},
+		},
+		{
+			name:   "NilState",
+			mutate: func(i *ec2Types.Instance) { i.State = nil },
+			absent: []model.LabelName{ec2LabelInstanceState},
+		},
+		{
+			name:   "NilSubnetId",
+			mutate: func(i *ec2Types.Instance) { i.SubnetId = nil },
+			absent: []model.LabelName{ec2LabelPrimarySubnetID},
+		},
+		{
+			name:   "NilPublicDnsName",
+			mutate: func(i *ec2Types.Instance) { i.PublicDnsName = nil },
+			absent: []model.LabelName{ec2LabelPublicDNS},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			data := fullyPopulatedEC2DataStore()
+			tc.mutate(&data.instances[0])
+
+			tgs, err := ec2TestDiscovery(data).refresh(context.Background())
+			require.NoError(t, err)
+			require.Len(t, tgs, 1)
+			require.Len(t, tgs[0].Targets, 1,
+				"instance must still be discovered when an optional field is absent")
+
+			target := tgs[0].Targets[0]
+			for _, label := range tc.absent {
+				require.NotContains(t, target, label,
+					"label sourced from the absent field should be omitted")
+			}
+			// The instance is still usable: the address is what makes it a target.
+			require.Equal(t, model.LabelValue("10.0.0.1:4242"), target[model.AddressLabel])
+		})
+	}
+}
+
+// TestEC2DiscoveryRefreshIPv6NilOptionalFields covers the IPv6 fields
+// getInstanceIPv6Addresses dereferenced without a nil check. IsPrimaryIpv6 is
+// only populated once a primary IPv6 address has been enabled on the interface,
+// and the attachment device index is optional too, so an instance holding a
+// plain IPv6 address was enough to panic the process.
+func TestEC2DiscoveryRefreshIPv6NilOptionalFields(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		// mutate operates on the single fully populated network interface.
+		mutate func(*ec2Types.InstanceNetworkInterface)
+		// expected holds the IPv6 labels left once the absent field is handled;
+		// a label missing from the map must be absent from the target.
+		expected model.LabelSet
+	}{
+		{
+			name: "NilIpv6Address",
+			mutate: func(eni *ec2Types.InstanceNetworkInterface) {
+				eni.Ipv6Addresses[0].Ipv6Address = nil
+			},
+			// Nothing identifies the address, so it drops out entirely.
+			expected: model.LabelSet{},
+		},
+		{
+			name: "NilIsPrimaryIpv6",
+			mutate: func(eni *ec2Types.InstanceNetworkInterface) {
+				eni.Ipv6Addresses[0].IsPrimaryIpv6 = nil
+			},
+			// An absent flag means the address is not primary.
+			expected: model.LabelSet{
+				ec2LabelIPv6Addresses:      model.LabelValue(",2001:db8::1,"),
+				ec2LabelDefaultIPv6Address: model.LabelValue("2001:db8::1"),
+			},
+		},
+		{
+			name: "NilAttachment",
+			mutate: func(eni *ec2Types.InstanceNetworkInterface) {
+				eni.Attachment = nil
+			},
+			// Without an attachment there is no device index to record the
+			// primary address at, but the address itself is still discovered.
+			expected: model.LabelSet{
+				ec2LabelIPv6Addresses:      model.LabelValue(",2001:db8::1,"),
+				ec2LabelDefaultIPv6Address: model.LabelValue("2001:db8::1"),
+			},
+		},
+		{
+			name: "NilDeviceIndex",
+			mutate: func(eni *ec2Types.InstanceNetworkInterface) {
+				eni.Attachment.DeviceIndex = nil
+			},
+			expected: model.LabelSet{
+				ec2LabelIPv6Addresses:      model.LabelValue(",2001:db8::1,"),
+				ec2LabelDefaultIPv6Address: model.LabelValue("2001:db8::1"),
+			},
+		},
+		{
+			name: "NegativeDeviceIndex",
+			mutate: func(eni *ec2Types.InstanceNetworkInterface) {
+				eni.Attachment.DeviceIndex = aws.Int32(-1)
+			},
+			// A negative index has no slot in the positional list.
+			expected: model.LabelSet{
+				ec2LabelIPv6Addresses:      model.LabelValue(",2001:db8::1,"),
+				ec2LabelDefaultIPv6Address: model.LabelValue("2001:db8::1"),
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			data := fullyPopulatedEC2DataStore()
+			tc.mutate(&data.instances[0].NetworkInterfaces[0])
+
+			tgs, err := ec2TestDiscovery(data).refresh(context.Background())
+			require.NoError(t, err)
+			require.Len(t, tgs, 1)
+			require.Len(t, tgs[0].Targets, 1,
+				"instance must still be discovered when an optional field is absent")
+
+			target := tgs[0].Targets[0]
+			for _, label := range []model.LabelName{ec2LabelIPv6Addresses, ec2LabelPrimaryIPv6Addresses, ec2LabelDefaultIPv6Address} {
+				if want, ok := tc.expected[label]; ok {
+					require.Equal(t, want, target[label])
+					continue
+				}
+				require.NotContains(t, target, label,
+					"label sourced from the absent field should be omitted")
+			}
+			// The instance keeps its IPv4 address either way.
+			require.Equal(t, model.LabelValue("10.0.0.1:4242"), target[model.AddressLabel])
+		})
+	}
 }
 
 func (m *mockEC2Client) DescribeInstances(_ context.Context, input *ec2.DescribeInstancesInput, _ ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {

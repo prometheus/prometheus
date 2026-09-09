@@ -52,6 +52,9 @@ type NHCBParser struct {
 	parser Parser
 	// Option to keep classic histograms along with converted histograms.
 	keepClassicHistograms bool
+	// parseST tells if the caller needs start timestamps. When false,
+	// StartTimestamp calls are skipped because they are expensive.
+	parseST bool
 
 	// Labels builder.
 	builder labels.ScratchBuilder
@@ -103,10 +106,11 @@ type NHCBParser struct {
 	hBuffer []byte
 }
 
-func NewNHCBParser(p Parser, st *labels.SymbolTable, keepClassicHistograms bool) Parser {
+func NewNHCBParser(p Parser, st *labels.SymbolTable, keepClassicHistograms, parseST bool) Parser {
 	return &NHCBParser{
 		parser:                p,
 		keepClassicHistograms: keepClassicHistograms,
+		parseST:               parseST,
 		builder:               labels.NewScratchBuilderWithSymbolTable(st, 16),
 		tempNHCB:              convertnhcb.NewTempHistogram(),
 	}
@@ -258,7 +262,8 @@ func (p *NHCBParser) differentMetric() bool {
 		// Different metric name.
 		return true
 	}
-	nextHash, _ := p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
+	nextHash, hBuffer := p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
+	p.hBuffer = hBuffer
 	// Different label values.
 	return p.lastHistogramLabelsHash != nextHash
 }
@@ -266,12 +271,12 @@ func (p *NHCBParser) differentMetric() bool {
 // Save the label set of the classic histogram without suffix and bucket `le` label.
 func (p *NHCBParser) storeClassicLabels(name string) {
 	p.lastHistogramName = name
-	p.lastHistogramLabelsHash, _ = p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
+	p.lastHistogramLabelsHash, p.hBuffer = p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
 }
 
 func (p *NHCBParser) storeExponentialLabels() {
 	p.lastHistogramName = p.lset.Get(labels.MetricName)
-	p.lastHistogramLabelsHash, _ = p.lset.HashWithoutLabels(p.hBuffer)
+	p.lastHistogramLabelsHash, p.hBuffer = p.lset.HashWithoutLabels(p.hBuffer)
 }
 
 // handleClassicHistogramSeries collates the classic histogram series to be converted to NHCB
@@ -318,7 +323,11 @@ func (p *NHCBParser) handleClassicHistogramSeries(lset labels.Labels) bool {
 func (p *NHCBParser) processClassicHistogramSeries(lset labels.Labels, name string, updateHist func(*convertnhcb.TempHistogram)) {
 	if p.state != stateCollecting {
 		p.storeClassicLabels(name)
-		p.tempST = p.parser.StartTimestamp()
+		if p.parseST {
+			p.tempST = p.parser.StartTimestamp()
+		} else {
+			p.tempST = 0
+		}
 		p.state = stateCollecting
 		p.tempLsetNHCB = convertnhcb.GetHistogramMetricBase(lset, name)
 	}
