@@ -10622,6 +10622,188 @@ func TestCompactSelectedSeries(t *testing.T) {
 	require.Equal(t, float64(0), prom_testutil.ToFloat64(db.metrics.selectedSeriesCompactionsFailed))
 }
 
+func TestCompactHeadView_ConcurrentCommitSurvivesRestart(t *testing.T) {
+	for _, compact := range []string{"selected", "stale"} {
+		for _, v2 := range []bool{false, true} {
+			for _, kind := range []string{"float", "histogram", "float_histogram"} {
+				t.Run(fmt.Sprintf("%s/v2=%t/%s", compact, v2, kind), func(t *testing.T) {
+					opts := DefaultOptions()
+					opts.MinBlockDuration, opts.MaxBlockDuration = 1000, 1000
+					db := newTestDB(t, withOpts(opts))
+					db.DisableCompactions()
+					t.Cleanup(func() {
+						compactHeadViewBeforeEvictTestingCallback = nil
+						require.NoError(t, db.Close())
+					})
+
+					// Keep the late sample in order but below the compaction's max time.
+					filler := labels.FromStrings("name", "filler")
+					app := db.Appender(context.Background())
+					_, err := app.Append(0, filler, 100, 1)
+					require.NoError(t, err)
+					_, err = app.Append(0, filler, 700, 7)
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+
+					lset := labels.FromStrings("name", "compacted")
+					appendSample := func(ts int64) storage.SeriesRef {
+						v := float64(ts)
+						h := &histogram.Histogram{CounterResetHint: histogram.GaugeType, Schema: 0, ZeroThreshold: 0.001, Count: 1, ZeroCount: 1}
+						if compact == "stale" {
+							// Remain stale after the late commit, so staleness alone cannot prevent eviction.
+							v = math.Float64frombits(value.StaleNaN)
+							h = &histogram.Histogram{Sum: v}
+						}
+						var fh *histogram.FloatHistogram
+						switch kind {
+						case "float":
+							h = nil
+						case "float_histogram":
+							fh, h = h.ToFloat(nil), nil
+						}
+						if v2 {
+							app := db.AppenderV2(context.Background())
+							ref, err := app.Append(0, lset, 0, ts, v, h, fh, storage.AOptions{})
+							require.NoError(t, err)
+							require.NoError(t, app.Commit())
+							return ref
+						}
+						app := db.Appender(context.Background())
+						var ref storage.SeriesRef
+						var err error
+						if kind == "float" {
+							ref, err = app.Append(0, lset, ts, v)
+						} else {
+							ref, err = app.AppendHistogram(0, lset, ts, h, fh)
+						}
+						require.NoError(t, err)
+						require.NoError(t, app.Commit())
+						return ref
+					}
+
+					ref := appendSample(300)
+					compactHeadViewBeforeEvictTestingCallback = func() {
+						appendSample(400)
+					}
+					if compact == "selected" {
+						require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+					} else {
+						require.NoError(t, db.CompactStaleHead())
+					}
+
+					check := func() {
+						q, err := db.Querier(0, 1000)
+						require.NoError(t, err)
+						got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "compacted"))
+						var timestamps []int64
+						for _, s := range got[lset.String()] {
+							timestamps = append(timestamps, s.T())
+						}
+						require.Equal(t, []int64{300, 400}, timestamps)
+					}
+					check()
+					require.NoError(t, db.Close())
+					db, err = Open(db.Dir(), nil, nil, opts, nil)
+					require.NoError(t, err)
+					db.DisableCompactions()
+					check()
+				})
+			}
+		}
+	}
+}
+
+func TestCompactSelectedSeries_CommitsRacingCompactionNotLost(t *testing.T) {
+	for _, isolationDisabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("isolation disabled=%t", isolationDisabled), func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.MinBlockDuration = 1000
+			opts.MaxBlockDuration = 1000
+			opts.IsolationDisabled = isolationDisabled
+			db := newTestDB(t, withOpts(opts))
+			db.DisableCompactions()
+			t.Cleanup(func() {
+				compactHeadViewBeforeEvictTestingCallback = nil
+				require.NoError(t, db.Close())
+			})
+
+			filler := labels.FromStrings("name", "filler")
+			sel := labels.FromStrings("name", "selected")
+
+			app := db.Appender(context.Background())
+			_, err := app.Append(0, filler, 700, 0.7)
+			require.NoError(t, err)
+			selRef, err := app.Append(0, sel, 200, 2.0)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// The writer commits one in-order sample per iteration, racing the
+			// compaction. Timestamps stay below the head max time (700) so the
+			// series-maxTime guard never protects them.
+			const maxTS = 690
+			var (
+				committed atomic.Int64 // highest successfully committed timestamp
+				writerErr error
+				stop      = make(chan struct{})
+				done      = make(chan struct{})
+			)
+			committed.Store(200)
+			go func() {
+				defer close(done)
+				for ts := int64(201); ts <= maxTS; ts++ {
+					select {
+					case <-stop:
+						return
+					default:
+					}
+					app := db.Appender(context.Background())
+					if _, err := app.Append(0, sel, ts, float64(ts)); err != nil {
+						writerErr = fmt.Errorf("append ts=%d: %w", ts, err)
+						_ = app.Rollback()
+						return
+					}
+					if err := app.Commit(); err != nil {
+						writerErr = fmt.Errorf("commit ts=%d: %w", ts, err)
+						return
+					}
+					committed.Store(ts)
+				}
+			}()
+
+			// Hold the window between block write and eviction open until several
+			// commits have landed inside it (bounded so the test cannot hang if the
+			// writer finishes early).
+			compactHeadViewBeforeEvictTestingCallback = func() {
+				target := committed.Load() + 5
+				for committed.Load() < target && committed.Load() < maxTS {
+					select {
+					case <-done:
+						return
+					default:
+						runtime.Gosched()
+					}
+				}
+			}
+
+			require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{selRef}))
+			close(stop)
+			<-done
+			require.NoError(t, writerErr)
+
+			q, err := db.Querier(math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			res := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+			present := map[int64]bool{}
+			for _, s := range res[sel.String()] {
+				present[s.T()] = true
+			}
+			for ts := int64(200); ts <= committed.Load(); ts++ {
+				require.True(t, present[ts], "committed sample ts=%d must not be lost", ts)
+			}
+		})
+	}
+}
+
 // TestCompactSelectedSeries_UnsortedDuplicateRefs verifies that CompactSelectedSeries
 // tolerates an input slice that is unsorted and contains duplicate refs:
 //   - The postings list backing the selected-series view must observe sorted, unique refs,
@@ -10943,35 +11125,19 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 
 	require.Len(t, db.Blocks(), 1)
 
-	// The watermark guard only fires when isolation is enabled, because it
-	// relies on per-sample append-IDs that s.txs only tracks in that mode.
-	//   - isolation enabled: hasAppendIDAbove catches the post-watermark
-	//     commit, sel survives eviction, and all three samples are queryable.
-	//   - isolation disabled: per-sample append-IDs aren't tracked, the guard
-	//     is a no-op, sel gets evicted along with the late sample, and the
-	//     WAL tombstone drops the late sample permanently on replay. Only the
-	//     two samples the block captured remain queryable.
-	var (
-		expectedHeadSeries uint64
-		expectedSamples    []chunks.Sample
-	)
-	if defaultIsolationDisabled {
-		expectedHeadSeries = 1 // only filler remains; sel was evicted
-		expectedSamples = []chunks.Sample{
-			sample{t: 100, f: 10.0},
-			sample{t: 200, f: 20.0},
-		}
-	} else {
-		expectedHeadSeries = 2 // filler + sel
-		expectedSamples = []chunks.Sample{
-			sample{t: 100, f: 10.0},
-			sample{t: 200, f: 20.0},
-			sample{t: lateT, f: lateV},
-		}
+	// The late commit lands after the watermark capture, so the eviction skips sel in
+	// both isolation modes: with isolation enabled hasAppendIDAbove catches it, and with
+	// isolation disabled the appendSeq stamp does. Sel survives eviction and all three
+	// samples stay queryable.
+	expectedHeadSeries := uint64(2) // filler + sel
+	expectedSamples := []chunks.Sample{
+		sample{t: 100, f: 10.0},
+		sample{t: 200, f: 20.0},
+		sample{t: lateT, f: lateV},
 	}
 
 	require.Equal(t, expectedHeadSeries, db.Head().NumSeries(),
-		"head series count must match the expected watermark-guard outcome for this isolation mode")
+		"a series appended to during the compaction must be skipped by the eviction")
 
 	querySelected := func(d *DB) []chunks.Sample {
 		q, err := d.Querier(0, chunkRange)
@@ -11006,10 +11172,6 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 // The test verifies that the sample remains queryable both immediately after
 // compaction and after a restart.
 func TestCompactSelectedSeries_OpenAppenderCommittingDuringCompaction(t *testing.T) {
-	if defaultIsolationDisabled {
-		t.Skip("watermark guard relies on per-sample append-IDs that s.txs only tracks when isolation is enabled")
-	}
-
 	const chunkRange = 1000
 	opts := DefaultOptions()
 	opts.MinBlockDuration = chunkRange

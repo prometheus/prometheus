@@ -426,6 +426,7 @@ type headAppenderBase struct {
 	typesInBatch map[chunks.HeadSeriesRef]sampleType // Which (one) sample type each series holds in the most recent batch.
 
 	appendID, cleanupAppendIDsBelow uint64
+	appendSeq                       uint64 // Commit sequence assigned under Head.commitBarrier.
 	closed                          bool
 	storeST                         bool // Whether start-timestamp storage is enabled for this append.
 	useXOR2                         bool // Whether XOR2 encoding is used for float chunks in this append.
@@ -1520,6 +1521,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
+		series.lastAppendSeq = a.appendSeq
 		a.releasePendingCommit(series)
 		series.Unlock()
 	}
@@ -1622,6 +1624,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
+		series.lastAppendSeq = a.appendSeq
 		a.releasePendingCommit(series)
 		series.Unlock()
 	}
@@ -1724,6 +1727,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
+		series.lastAppendSeq = a.appendSeq
 		a.releasePendingCommit(series)
 		series.Unlock()
 	}
@@ -1827,6 +1831,10 @@ func (a *headAppenderBase) Commit() (err error) {
 		}
 	}()
 
+	// No commit may span the compaction watermark capture: its samples must all
+	// be applied before the capture or stamped above the watermark.
+	h.commitBarrier.RLock()
+	a.appendSeq = h.appendSeq.Add(1)
 	for _, b := range a.batches {
 		// Do not change the order of these calls. We depend on it for
 		// correct commit order of samples and for the staleness marker
@@ -1838,6 +1846,7 @@ func (a *headAppenderBase) Commit() (err error) {
 	}
 	// Release the reservations that protected newly indexed series before their first sample was queued.
 	a.releaseCreatedSeriesReservations()
+	h.commitBarrier.RUnlock()
 
 	h.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatOOORejected))
 	h.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histoOOORejected))

@@ -1020,7 +1020,7 @@ func TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative(t *testing.T) {
 
 	// Truncate stale series: removes ref1 from the head and writes a
 	// [MinInt64, MaxInt64] tombstone record to the WAL.
-	require.NoError(t, head.truncateStaleSeries([]storage.SeriesRef{ref1}, 3500, math.MaxUint64))
+	require.NoError(t, head.truncateStaleSeries([]storage.SeriesRef{ref1}, 3500, math.MaxUint64, math.MaxUint64))
 
 	// Append a single sample with the same labels to create ref2.
 	// Ref2 has 0 m-mapped chunks, fewer than ref1's 3.
@@ -8360,7 +8360,7 @@ func TestHead_NumStaleSeries_MixedTypeRemoval(t *testing.T) {
 		{
 			name: "truncate_stale_series",
 			remove: func(t *testing.T, head *Head, refs []storage.SeriesRef) {
-				require.NoError(t, head.truncateStaleSeries(refs, 1000, math.MaxUint64))
+				require.NoError(t, head.truncateStaleSeries(refs, 1000, math.MaxUint64, math.MaxUint64))
 			},
 			wantSeries:        2, // Only the genuinely stale series is evicted.
 			crossTypeSurvives: true,
@@ -8807,7 +8807,7 @@ func TestHead_NumNativeHistogramSeriesAndBuckets(t *testing.T) {
 
 						series := testHead.series.getByHash(lbls.Hash(), lbls)
 						require.NotNil(t, series)
-						require.NoError(t, testHead.truncateStaleSeries([]storage.SeriesRef{storage.SeriesRef(series.ref)}, 100, math.MaxUint64))
+						require.NoError(t, testHead.truncateStaleSeries([]storage.SeriesRef{storage.SeriesRef(series.ref)}, 100, math.MaxUint64, math.MaxUint64))
 						require.Zero(t, testHead.NumSeries())
 						require.Zero(t, testHead.NumStaleSeries())
 						require.Zero(t, testHead.NumNativeHistogramSeries())
@@ -9865,7 +9865,7 @@ func TestWALReplayRaceWithStaleSeriesCompaction(t *testing.T) {
 		require.NotNil(t, ms)
 		staleRefs = append(staleRefs, storage.SeriesRef(ms.ref))
 	}
-	require.NoError(t, head.truncateStaleSeries(staleRefs, 300, math.MaxUint64))
+	require.NoError(t, head.truncateStaleSeries(staleRefs, 300, math.MaxUint64, math.MaxUint64))
 	require.Equal(t, uint64(0), head.NumStaleSeries())
 	require.Equal(t, uint64(0), head.NumSeries())
 
@@ -10799,7 +10799,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 
 		// Use truncateStaleSeries which calls gcStaleSeries internally.
 		require.NoError(t, h.truncateStaleSeries(
-			[]storage.SeriesRef{storage.SeriesRef(sB.ref)}, ts, math.MaxUint64,
+			[]storage.SeriesRef{storage.SeriesRef(sB.ref)}, ts, math.MaxUint64, math.MaxUint64,
 		))
 		requireCounterConsistent("after truncateStaleSeries")
 		require.Less(t, mmapReadyCounter(), readyBefore,
