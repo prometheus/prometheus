@@ -46,6 +46,11 @@ var (
 		Action:               relabel.Replace,
 		NameValidationScheme: model.UTF8Validation,
 	}}
+	relabelTestStripNameConfig = []*relabel.Config{{
+		Regex:                relabel.MustNewRegexp("__name__"),
+		Action:               relabel.LabelDrop,
+		NameValidationScheme: model.UTF8Validation,
+	}}
 )
 
 func relabelTestConfigFunc(cfgs []*relabel.Config) func() config.Config {
@@ -69,6 +74,7 @@ func TestNewRelabelingAppendable(t *testing.T) {
 		{name: "no configs, passthrough", configs: nil, in: keepLabels, wantLabels: keepLabels},
 		{name: "kept and relabeled", configs: relabelTestRewriteConfig, in: keepLabels, wantLabels: relabeledLabels},
 		{name: "dropped", configs: relabelTestDropConfig, in: dropLabels, wantDropped: true},
+		{name: "dropped because result loses __name__", configs: relabelTestStripNameConfig, in: keepLabels, wantDropped: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			appendable := teststorage.NewAppendable()
@@ -112,6 +118,7 @@ func TestNewRelabelingAppendableV2(t *testing.T) {
 		{name: "no configs, passthrough", configs: nil, in: keepLabels, wantLabels: keepLabels},
 		{name: "kept and relabeled", configs: relabelTestRewriteConfig, in: keepLabels, wantLabels: relabeledLabels},
 		{name: "dropped", configs: relabelTestDropConfig, in: dropLabels, wantDropped: true},
+		{name: "dropped because result loses __name__", configs: relabelTestStripNameConfig, in: keepLabels, wantDropped: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			appendable := teststorage.NewAppendable()

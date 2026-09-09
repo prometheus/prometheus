@@ -17,6 +17,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -26,7 +28,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-// relabelLabels applies cfgs to l and reports whether the series should be kept.
+// relabelLabels applies cfgs to l and reports whether the series should be
+// kept. An invalid result (e.g. missing __name__) is also treated as dropped.
 func relabelLabels(l labels.Labels, cfgs []*relabel.Config) (labels.Labels, bool) {
 	if len(cfgs) == 0 {
 		return l, true
@@ -35,7 +38,11 @@ func relabelLabels(l labels.Labels, cfgs []*relabel.Config) (labels.Labels, bool
 	if !relabel.ProcessBuilder(lb, cfgs...) {
 		return labels.EmptyLabels(), false
 	}
-	return lb.Labels(), true
+	result := lb.Labels()
+	if !result.Has(labels.MetricName) || !result.IsValid(model.UTF8Validation) {
+		return labels.EmptyLabels(), false
+	}
+	return result, true
 }
 
 // relabelCacheMaxEntries bounds RelabelCache size; overflow clears it entirely.
