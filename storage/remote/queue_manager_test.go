@@ -346,49 +346,71 @@ func TestMetadataDelivery(t *testing.T) {
 }
 
 func TestWALMetadataDelivery(t *testing.T) {
-	dir := t.TempDir()
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
-	defer s.Close()
-
-	cfg := config.DefaultQueueConfig
-	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
-	cfg.MaxShards = 1
-
-	writeConfig := baseRemoteWriteConfig("http://test-storage.com")
-	writeConfig.QueueConfig = cfg
-	writeConfig.ProtobufMessage = remoteapi.WriteV2MessageType
-
-	conf := &config.Config{
-		GlobalConfig: config.DefaultGlobalConfig,
-		RemoteWriteConfigs: []*config.RemoteWriteConfig{
-			writeConfig,
+	// storeMetadata pushes recs.Metadata into qm using either the pre-MetadataRef
+	// format (StoreMetadata) or the MetadataDefinition/SeriesMetadataRef format
+	// that superseded it; both must resolve to the same metadata at send time.
+	for name, storeMetadata := range map[string]func(qm *QueueManager, recs testwal.Records){
+		"RefMetadata": func(qm *QueueManager, recs testwal.Records) {
+			qm.StoreMetadata(recs.Metadata)
 		},
+		"MetadataDefinition+SeriesMetadataRef": func(qm *QueueManager, recs testwal.Records) {
+			defs := make([]record.RefMetadataDefinition, len(recs.Metadata))
+			refs := make([]record.RefSeriesMetadataRef, len(recs.Metadata))
+			for i, m := range recs.Metadata {
+				ref := record.MetadataRef(i + 1)
+				defs[i] = record.RefMetadataDefinition{Ref: ref, Type: m.Type, Unit: m.Unit, Help: m.Help}
+				refs[i] = record.RefSeriesMetadataRef{Ref: m.Ref, MetadataRef: ref}
+			}
+			qm.StoreMetadataDefinitions(defs)
+			qm.StoreSeriesMetadataRef(refs)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
+			defer s.Close()
+
+			cfg := config.DefaultQueueConfig
+			cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
+			cfg.MaxShards = 1
+
+			writeConfig := baseRemoteWriteConfig("http://test-storage.com")
+			writeConfig.QueueConfig = cfg
+			writeConfig.ProtobufMessage = remoteapi.WriteV2MessageType
+
+			conf := &config.Config{
+				GlobalConfig: config.DefaultGlobalConfig,
+				RemoteWriteConfigs: []*config.RemoteWriteConfig{
+					writeConfig,
+				},
+			}
+
+			n := 3
+			recs := testwal.GenerateRecords(recCase{Series: n, SamplesPerSeries: n})
+
+			require.NoError(t, s.ApplyConfig(conf))
+			hash, err := toHash(writeConfig)
+			require.NoError(t, err)
+			qm := s.rws.queues[hash]
+
+			c := NewTestWriteClient(remoteapi.WriteV2MessageType)
+			qm.SetClient(c)
+
+			qm.StoreSeries(recs.Series, 0)
+			storeMetadata(qm, recs)
+
+			require.Len(t, qm.seriesLabels, n)
+			require.Len(t, qm.seriesMetadataRef, n)
+
+			c.expectSamples(recs.Samples, recs.Series)
+			c.expectMetadataForBatch(recs.Metadata, recs.Series, recs.Samples, nil, nil, nil)
+			qm.Append(recs.Samples)
+			c.waitForExpectedData(t, 30*time.Second)
+
+			// Metadata is cached state, not a queue item used for shard scaling.
+			require.Equal(t, int64(len(recs.Samples)), qm.dataOut.newEvents.Load())
+		})
 	}
-
-	n := 3
-	recs := testwal.GenerateRecords(recCase{Series: n, SamplesPerSeries: n})
-
-	require.NoError(t, s.ApplyConfig(conf))
-	hash, err := toHash(writeConfig)
-	require.NoError(t, err)
-	qm := s.rws.queues[hash]
-
-	c := NewTestWriteClient(remoteapi.WriteV2MessageType)
-	qm.SetClient(c)
-
-	qm.StoreSeries(recs.Series, 0)
-	qm.StoreMetadata(recs.Metadata)
-
-	require.Len(t, qm.seriesLabels, n)
-	require.Len(t, qm.seriesMetadata, n)
-
-	c.expectSamples(recs.Samples, recs.Series)
-	c.expectMetadataForBatch(recs.Metadata, recs.Series, recs.Samples, nil, nil, nil)
-	qm.Append(recs.Samples)
-	c.waitForExpectedData(t, 30*time.Second)
-
-	// Metadata is cached state, not a queue item used for shard scaling.
-	require.Equal(t, int64(len(recs.Samples)), qm.dataOut.newEvents.Load())
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
@@ -507,17 +529,19 @@ func TestSeriesReset(t *testing.T) {
 				m.StoreMetadata(metadata)
 			}
 			require.Len(t, m.seriesLabels, numSegments*numSeries)
-			// V2 stores metadata in seriesMetadata map for inline sending.
-			// V1 sends metadata separately via MetadataWatcher, so seriesMetadata is not populated.
+			// V2 stores metadata in seriesMetadataRef/metadataDefs maps for inline sending.
+			// V1 sends metadata separately via MetadataWatcher, so they are not populated.
 			if protoMsg == remoteapi.WriteV2MessageType {
-				require.Len(t, m.seriesMetadata, numSegments*numSeries)
+				require.Len(t, m.seriesMetadataRef, numSegments*numSeries)
+				require.Len(t, m.metadataDefs, numSegments*numSeries)
 			}
 
 			m.SeriesReset(2)
 			require.Len(t, m.seriesLabels, numSegments*numSeries/2)
 			// Verify metadata is also reset for V2
 			if protoMsg == remoteapi.WriteV2MessageType {
-				require.Len(t, m.seriesMetadata, numSegments*numSeries/2)
+				require.Len(t, m.seriesMetadataRef, numSegments*numSeries/2)
+				require.Len(t, m.metadataDefs, numSegments*numSeries/2)
 			}
 		})
 	}

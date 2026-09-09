@@ -442,11 +442,12 @@ type QueueManager struct {
 	protoMsg    remoteapi.WriteMessageType
 	compr       compression.Type
 
-	seriesMtx      sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries and builder.
-	seriesLabels   map[chunks.HeadSeriesRef]labels.Labels
-	seriesMetadata map[chunks.HeadSeriesRef]*metadata.Metadata
-	droppedSeries  map[chunks.HeadSeriesRef]struct{}
-	builder        *labels.Builder
+	seriesMtx         sync.Mutex // Covers seriesLabels, seriesMetadataRef, metadataDefs, droppedSeries and builder.
+	seriesLabels      map[chunks.HeadSeriesRef]labels.Labels
+	seriesMetadataRef map[chunks.HeadSeriesRef]record.MetadataRef
+	metadataDefs      map[record.MetadataRef]*metadata.Metadata
+	droppedSeries     map[chunks.HeadSeriesRef]struct{}
+	builder           *labels.Builder
 
 	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
@@ -517,7 +518,8 @@ func NewQueueManager(
 		failedRequestLogging:    failedRequestLogging,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
-		seriesMetadata:       make(map[chunks.HeadSeriesRef]*metadata.Metadata),
+		seriesMetadataRef:    make(map[chunks.HeadSeriesRef]record.MetadataRef),
+		metadataDefs:         make(map[record.MetadataRef]*metadata.Metadata),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
 		builder:              labels.NewBuilder(labels.EmptyLabels()),
@@ -750,7 +752,7 @@ outer:
 		}
 		// TODO(cstyan): Handle or at least log an error if no metadata is found.
 		// See https://github.com/prometheus/prometheus/issues/14405
-		meta := t.seriesMetadata[s.Ref]
+		meta := t.metadataDefs[t.seriesMetadataRef[s.Ref]]
 		t.seriesMtx.Unlock()
 		// Start with a very small backoff. This should not be t.cfg.MinBackoff
 		// as it can happen without errors, and we want to pickup work after
@@ -812,7 +814,7 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
-		meta := t.seriesMetadata[e.Ref]
+		meta := t.metadataDefs[t.seriesMetadataRef[e.Ref]]
 		t.seriesMtx.Unlock()
 		// This will only loop if the queues are being resharded.
 		backoff := t.cfg.MinBackoff
@@ -874,7 +876,7 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
-		meta := t.seriesMetadata[h.Ref]
+		meta := t.metadataDefs[t.seriesMetadataRef[h.Ref]]
 		t.seriesMtx.Unlock()
 
 		backoff := model.Duration(5 * time.Millisecond)
@@ -936,7 +938,7 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
-		meta := t.seriesMetadata[h.Ref]
+		meta := t.metadataDefs[t.seriesMetadataRef[h.Ref]]
 		t.seriesMtx.Unlock()
 
 		backoff := model.Duration(5 * time.Millisecond)
@@ -1040,11 +1042,48 @@ func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 	for _, m := range meta {
-		t.seriesMetadata[m.Ref] = &metadata.Metadata{
+		// Pre-MetadataDefinition/SeriesMetadataRef format: give each series its
+		// own MetadataRef (its series ref, offset to avoid clashing with refs
+		// allocated from the new format) pointing at its own definition, so
+		// both formats resolve through the same metadataDefs/seriesMetadataRef
+		// maps at the send path.
+		ref := record.MetadataRef(m.Ref) + math.MaxUint32
+		t.metadataDefs[ref] = &metadata.Metadata{
 			Type: record.ToMetricType(m.Type),
 			Unit: m.Unit,
 			Help: m.Help,
 		}
+		t.seriesMetadataRef[m.Ref] = ref
+	}
+}
+
+// StoreMetadataDefinitions records the content for each newly-seen MetadataRef.
+func (t *QueueManager) StoreMetadataDefinitions(defs []record.RefMetadataDefinition) {
+	if t.protoMsg == remoteapi.WriteV1MessageType {
+		return
+	}
+
+	t.seriesMtx.Lock()
+	defer t.seriesMtx.Unlock()
+	for _, def := range defs {
+		t.metadataDefs[def.Ref] = &metadata.Metadata{
+			Type: record.ToMetricType(def.Type),
+			Unit: def.Unit,
+			Help: def.Help,
+		}
+	}
+}
+
+// StoreSeriesMetadataRef associates each series with its (possibly new) MetadataRef.
+func (t *QueueManager) StoreSeriesMetadataRef(refs []record.RefSeriesMetadataRef) {
+	if t.protoMsg == remoteapi.WriteV1MessageType {
+		return
+	}
+
+	t.seriesMtx.Lock()
+	defer t.seriesMtx.Unlock()
+	for _, r := range refs {
+		t.seriesMetadataRef[r.Ref] = r.MetadataRef
 	}
 }
 
@@ -1072,8 +1111,18 @@ func (t *QueueManager) SeriesReset(index int) {
 		if v < index {
 			delete(t.seriesSegmentIndexes, k)
 			delete(t.seriesLabels, k)
-			delete(t.seriesMetadata, k)
+			delete(t.seriesMetadataRef, k)
 			delete(t.droppedSeries, k)
+		}
+	}
+	// Drop metadata definitions no longer referenced by any series.
+	liveMetadataRefs := make(map[record.MetadataRef]struct{}, len(t.seriesMetadataRef))
+	for _, ref := range t.seriesMetadataRef {
+		liveMetadataRefs[ref] = struct{}{}
+	}
+	for ref := range t.metadataDefs {
+		if _, ok := liveMetadataRefs[ref]; !ok {
+			delete(t.metadataDefs, ref)
 		}
 	}
 }
