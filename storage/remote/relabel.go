@@ -75,7 +75,6 @@ func NewRelabelCache() *RelabelCache {
 	return &RelabelCache{}
 }
 
-// relabel is relabelLabels, memoized in c.
 func (c *RelabelCache) relabel(l labels.Labels, cfgs []*relabel.Config) (labels.Labels, bool) {
 	if len(cfgs) == 0 {
 		return l, true
@@ -128,10 +127,9 @@ func (c *RelabelCache) sweep() {
 	}
 }
 
-// NewRelabelingAppendable wraps next to apply Config.ReceiveRelabelConfigs
-// before samples reach storage, dropping series like metric_relabel_configs
-// does at scrape time. Does not implement storage.GetRef, since relabeling
-// can change a series' labels.
+// NewRelabelingAppendable applies Config.ReceiveRelabelConfigs to samples
+// before they reach next. Embedding storage.Appender does not promote
+// storage.GetRef, so a ref lookup can't bypass relabeling.
 func NewRelabelingAppendable(next storage.Appendable, configFunc func() config.Config, cache *RelabelCache) storage.Appendable {
 	return &relabelingAppendable{next: next, configFunc: configFunc, cache: cache}
 }
