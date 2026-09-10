@@ -636,6 +636,32 @@ Dump data (series+samples or optionally just series) from a TSDB.
 
 
 
+##### `promtool tsdb check-histograms`
+
+[Experimental] Scan classic histogram float series for stored inconsistencies: non-monotonic cumulative buckets, le="+Inf" disagreeing with _count, unparsable le labels, duplicate le values, and missing le="+Inf" buckets.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--sandbox-dir-root</code> | Root directory where a sandbox directory will be created, this sandbox is used in case WAL replay generates chunks (default is the database path). The sandbox is cleaned up at the end. |  |
+| <code class="text-nowrap">--min-time</code> | Minimum timestamp to check, in milliseconds since the Unix epoch. | `-9223372036854775808` |
+| <code class="text-nowrap">--max-time</code> | Maximum timestamp to check, in milliseconds since the Unix epoch. | `9223372036854775807` |
+
+
+
+
+###### Arguments
+
+| Argument | Description | Default |
+| --- | --- | --- |
+| db path | Database path (default is data/). | `data/` |
+
+
+
+
 ##### `promtool tsdb create-blocks-from`
 
 [Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.
