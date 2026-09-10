@@ -1272,8 +1272,7 @@ func TestHead_WALCheckpointMultiRef(t *testing.T) {
 				// Each truncation creates a new segment, so attempt truncations until a checkpoint is created
 				for {
 					h.lastWALTruncationTime.Store(0) // Reset so that it's always time to truncate the WAL
-					err := h.truncateWAL(tc.walTruncateMinT)
-					require.NoError(t, err)
+					h.truncateWAL(tc.walTruncateMinT)
 					h.waitForWALCheckpoints()
 					f, _, err := wlog.Segments(w.Dir())
 					require.NoError(t, err)
@@ -1319,7 +1318,7 @@ func TestHead_TruncateWALInBackground(t *testing.T) {
 	// checkpoint is created.
 	for {
 		h.lastWALTruncationTime.Store(0) // Reset so that it's always time to truncate the WAL.
-		require.NoError(t, h.truncateWAL(50))
+		h.truncateWAL(50)
 		h.waitForWALCheckpoints()
 		if _, _, err := wlog.LastCheckpoint(w.Dir()); err == nil {
 			break
@@ -1385,7 +1384,7 @@ func TestHead_CloseDuringBackgroundCheckpoint(t *testing.T) {
 	// stays in the worker while Close runs.
 	h.chunkSnapshotMtx.Lock()
 	h.lastWALTruncationTime.Store(0)
-	require.NoError(t, h.truncateWAL(500))
+	h.truncateWAL(500)
 	// The worker takes the job and then blocks on chunkSnapshotMtx.
 	require.Eventually(t, func() bool {
 		return len(h.walCheckpointJobs) == 0
@@ -10160,7 +10159,7 @@ func TestHead_WALCheckpoint_FullRangeTombstones(t *testing.T) {
 	// new segment, so attempt truncations until a checkpoint is created.
 	for {
 		head.lastWALTruncationTime.Store(0) // Reset so that it's always time to truncate the WAL.
-		require.NoError(t, head.truncateWAL(250))
+		head.truncateWAL(250)
 		head.waitForWALCheckpoints()
 		f, _, err := wlog.Segments(w.Dir())
 		require.NoError(t, err)

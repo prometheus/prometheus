@@ -1268,7 +1268,8 @@ func (h *Head) Truncate(mint int64) (err error) {
 	if !initialized {
 		return nil
 	}
-	return h.truncateWAL(mint)
+	h.truncateWAL(mint)
+	return nil
 }
 
 // OverlapsClosedInterval returns true if the head overlaps [mint, maxt].
@@ -1549,9 +1550,9 @@ func (h *Head) keepSeriesInWALCheckpointFn(mint int64) func(id chunks.HeadSeries
 // needs no lock. The worker runs one checkpoint at a time, and takes
 // chunkSnapshotMtx while a checkpoint runs. This blocks Head methods that
 // modify Head series, like Head GC, for the duration of the checkpoint.
-func (h *Head) truncateWAL(mint int64) error {
+func (h *Head) truncateWAL(mint int64) {
 	if h.wal == nil || mint <= h.lastWALTruncationTime.Load() {
-		return nil
+		return
 	}
 
 	select {
@@ -1562,7 +1563,6 @@ func (h *Head) truncateWAL(mint int64) error {
 		// truncates the WAL.
 		h.logger.Info("WAL checkpoint already queued", "mint", mint)
 	}
-	return nil
 }
 
 // waitForWALCheckpoints blocks until the worker finished every queued

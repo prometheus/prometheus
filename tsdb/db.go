@@ -1529,9 +1529,7 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 
 	lastBlockMaxt := int64(math.MinInt64)
 	defer func() {
-		if err := db.head.truncateWAL(lastBlockMaxt); err != nil {
-			returnErr = errors.Join(returnErr, fmt.Errorf("WAL truncation in Compact defer: %w", err))
-		}
+		db.head.truncateWAL(lastBlockMaxt)
 	}()
 
 	start := time.Now()
@@ -1587,9 +1585,7 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 
 	// Clear some disk space before compacting blocks, especially important
 	// when Head compaction happened over a long time range.
-	if err := db.head.truncateWAL(lastBlockMaxt); err != nil {
-		return fmt.Errorf("WAL truncation in Compact: %w", err)
-	}
+	db.head.truncateWAL(lastBlockMaxt)
 
 	compactionDuration := time.Since(start)
 	if compactionDuration.Milliseconds() > db.head.chunkRange.Load() {
@@ -1619,9 +1615,7 @@ func (db *DB) CompactHead(head *RangeHead) error {
 		return fmt.Errorf("compact head: %w", err)
 	}
 
-	if err := db.head.truncateWAL(head.BlockMaxTime()); err != nil {
-		return fmt.Errorf("WAL truncation: %w", err)
-	}
+	db.head.truncateWAL(head.BlockMaxTime())
 	return nil
 }
 

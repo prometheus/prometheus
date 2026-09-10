@@ -10457,7 +10457,7 @@ func TestCompactStaleHead_EvictedSeriesRecordKeptInCheckpoint(t *testing.T) {
 	// is actually produced.
 	for range 10 {
 		db.head.lastWALTruncationTime.Store(0) // force re-truncation each iteration
-		require.NoError(t, db.head.truncateWAL(truncateMint))
+		db.head.truncateWAL(truncateMint)
 		db.head.waitForWALCheckpoints()
 		if _, _, err := wlog.LastCheckpoint(db.head.wal.Dir()); err == nil {
 			break
@@ -11698,7 +11698,7 @@ func TestCompactSelectedSeries_EvictedSeriesRecordKeptInCheckpoint(t *testing.T)
 	// is actually produced.
 	for range 10 {
 		db.head.lastWALTruncationTime.Store(0) // force re-truncation each iteration
-		require.NoError(t, db.head.truncateWAL(truncateMint))
+		db.head.truncateWAL(truncateMint)
 		db.head.waitForWALCheckpoints()
 		if _, _, err := wlog.LastCheckpoint(db.head.wal.Dir()); err == nil {
 			break
