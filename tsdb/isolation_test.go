@@ -42,7 +42,7 @@ func TestIsolation(t *testing.T) {
 	require.Equal(t, 0, countOpenReads(iso))
 	require.Equal(t, int64(10), iso.lowestAppendTime())
 
-	// Now we start a read.
+	// Start a read.
 	stateA := iso.State(10, 20)
 	require.Equal(t, 1, countOpenReads(iso))
 
@@ -169,11 +169,15 @@ func BenchmarkIsolation(b *testing.B) {
 			wg := sync.WaitGroup{}
 			start := make(chan struct{})
 
-			for range goroutines {
+			for worker := range goroutines {
+				iterations := b.N / goroutines
+				if worker < b.N%goroutines {
+					iterations++
+				}
 				wg.Go(func() {
 					<-start
 
-					for b.Loop() {
+					for range iterations {
 						appendID, _ := iso.newAppendID(0)
 
 						iso.closeAppend(appendID)
@@ -192,15 +196,26 @@ func BenchmarkIsolationWithState(b *testing.B) {
 	for _, goroutines := range []int{10, 100, 1000, 10000} {
 		b.Run(strconv.Itoa(goroutines), func(b *testing.B) {
 			iso := newIsolation(false)
+			openAppenders := make([]uint64, goroutines)
+			for appender := range openAppenders {
+				openAppenders[appender], _ = iso.newAppendID(0)
+			}
 
 			wg := sync.WaitGroup{}
 			start := make(chan struct{})
 
-			for range goroutines {
+			readers := max(goroutines/100, 1)
+			workers := goroutines + readers
+
+			for worker := range goroutines {
+				iterations := b.N / workers
+				if worker < b.N%workers {
+					iterations++
+				}
 				wg.Go(func() {
 					<-start
 
-					for b.Loop() {
+					for range iterations {
 						appendID, _ := iso.newAppendID(0)
 
 						iso.closeAppend(appendID)
@@ -208,16 +223,16 @@ func BenchmarkIsolationWithState(b *testing.B) {
 				})
 			}
 
-			readers := goroutines / 100
-			if readers == 0 {
-				readers++
-			}
-
-			for g := 0; g < readers; g++ {
+			for reader := range readers {
+				worker := goroutines + reader
+				iterations := b.N / workers
+				if worker < b.N%workers {
+					iterations++
+				}
 				wg.Go(func() {
 					<-start
 
-					for b.Loop() {
+					for range iterations {
 						s := iso.State(math.MinInt64, math.MaxInt64)
 						s.Close()
 					}
@@ -227,6 +242,11 @@ func BenchmarkIsolationWithState(b *testing.B) {
 			b.ResetTimer()
 			close(start)
 			wg.Wait()
+			b.StopTimer()
+
+			for _, appendID := range openAppenders {
+				iso.closeAppend(appendID)
+			}
 		})
 	}
 }
