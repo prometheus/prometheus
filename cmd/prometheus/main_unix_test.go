@@ -47,29 +47,24 @@ func TestStartupInterrupt(t *testing.T) {
 		done <- prom.Wait()
 	}()
 
-	var startedOk bool
-	var stoppedErr error
-
 	url := "http://localhost" + port + "/graph"
 
-Loop:
-	for range 10 {
-		// error=nil means prometheus has started, so we can send the interrupt
-		// signal and wait for the graceful shutdown.
-		if _, err := http.Get(url); err == nil {
-			startedOk = true
-			prom.Process.Signal(os.Interrupt)
-			select {
-			case stoppedErr = <-done:
-				break Loop
-			case <-time.After(10 * time.Second):
-			}
-			break Loop
+	require.Eventually(t, func() bool {
+		r, err := http.Get(url)
+		if err != nil {
+			return false
 		}
-		time.Sleep(500 * time.Millisecond)
+		r.Body.Close()
+		return true
+	}, startupTime, 500*time.Millisecond, "prometheus didn't start in the specified timeout")
+
+	prom.Process.Signal(os.Interrupt)
+	var stoppedErr error
+	select {
+	case stoppedErr = <-done:
+	case <-time.After(10 * time.Second):
 	}
 
-	require.True(t, startedOk, "prometheus didn't start in the specified timeout")
 	err = prom.Process.Kill()
 	require.Error(t, err, "prometheus didn't shutdown gracefully after sending the Interrupt signal")
 	// TODO - find a better way to detect when the process didn't exit as expected!
