@@ -142,6 +142,14 @@ type Head struct {
 
 	chunkSnapshotMtx sync.Mutex
 
+	// The background WAL checkpoint worker. truncateWAL sends the checkpoint
+	// work to walCheckpointJobs, the worker runs one job at a time. Close
+	// signals walCheckpointQuit and waits for walCheckpointDone.
+	walCheckpointJobs   chan func()
+	walCheckpointQuit   chan struct{}
+	walCheckpointDone   chan struct{}
+	walCheckpointClosed atomic.Bool
+
 	closedMtx sync.Mutex
 	closed    bool
 
@@ -353,6 +361,11 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		return nil, err
 	}
 	h.metrics = newHeadMetrics(h, r)
+
+	h.walCheckpointJobs = make(chan func(), 1)
+	h.walCheckpointQuit = make(chan struct{})
+	h.walCheckpointDone = make(chan struct{})
+	go h.runWALCheckpoints()
 
 	return h, nil
 }
@@ -1531,29 +1544,76 @@ func (h *Head) keepSeriesInWALCheckpointFn(mint int64) func(id chunks.HeadSeries
 	}
 }
 
-// truncateWAL removes old data before mint from the WAL.
+// truncateWAL removes old data before mint from the WAL. The checkpoint runs
+// in a background worker, so the caller does not wait for it. The caller
+// needs no lock. The worker runs one checkpoint at a time, and takes
+// chunkSnapshotMtx while a checkpoint runs. This blocks Head methods that
+// modify Head series, like Head GC, for the duration of the checkpoint.
 func (h *Head) truncateWAL(mint int64) error {
-	h.chunkSnapshotMtx.Lock()
-	defer h.chunkSnapshotMtx.Unlock()
-
 	if h.wal == nil || mint <= h.lastWALTruncationTime.Load() {
 		return nil
 	}
+
+	select {
+	case h.walCheckpointJobs <- func() { h.runWALCheckpoint(mint) }:
+		h.lastWALTruncationTime.Store(mint)
+	default:
+		// A checkpoint is already queued or running. The next cycle
+		// truncates the WAL.
+		h.logger.Info("WAL checkpoint already queued", "mint", mint)
+	}
+	return nil
+}
+
+// waitForWALCheckpoints blocks until the worker finished every queued
+// checkpoint. Only for tests.
+func (h *Head) waitForWALCheckpoints() {
+	done := make(chan struct{})
+	h.walCheckpointJobs <- func() { close(done) }
+	<-done
+}
+
+// runWALCheckpoints runs one checkpoint job at a time, in the background. It
+// does not run a job that is still queued when Close started.
+func (h *Head) runWALCheckpoints() {
+	defer close(h.walCheckpointDone)
+	// The quit case wakes the worker when it waits for a job.
+	for !h.walCheckpointClosed.Load() {
+		select {
+		case job := <-h.walCheckpointJobs:
+			job()
+		case <-h.walCheckpointQuit:
+			// A queued checkpoint is dropped, not run. Running it would
+			// delay the shutdown more then having more WAL to replay because
+			// replay uses multiple goroutines while checkpoint doesn't.
+			return
+		}
+	}
+}
+
+// runWALCheckpoint creates a checkpoint and truncates the WAL below it. It
+// holds chunkSnapshotMtx for the whole run, so that the keep function gives
+// a stable answer for every series while the checkpoint runs.
+func (h *Head) runWALCheckpoint(mint int64) {
+	h.chunkSnapshotMtx.Lock()
+	defer h.chunkSnapshotMtx.Unlock()
+
 	start := time.Now()
-	h.lastWALTruncationTime.Store(mint)
 
 	first, last, err := wlog.Segments(h.wal.Dir())
 	if err != nil {
-		return fmt.Errorf("get segment range: %w", err)
+		h.logger.Error("get segment range", "err", err)
+		return
 	}
 	// Start a new segment, so low ingestion volume TSDB don't have more WAL than
 	// needed.
 	if _, err := h.wal.NextSegment(); err != nil {
-		return fmt.Errorf("next segment: %w", err)
+		h.logger.Error("next segment", "err", err)
+		return
 	}
 	last-- // Never consider last segment for checkpoint.
 	if last < 0 {
-		return nil // no segments yet.
+		return // no segments yet.
 	}
 	// The lower two thirds of segments should contain mostly obsolete samples.
 	// If we have less than two segments, it's not worth checkpointing yet.
@@ -1561,7 +1621,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	// of WAL segments.
 	last = first + (last-first)*2/3
 	if last <= first {
-		return nil
+		return
 	}
 
 	h.metrics.checkpointCreationTotal.Inc()
@@ -1570,7 +1630,8 @@ func (h *Head) truncateWAL(mint int64) error {
 		if _, ok := errors.AsType[*chunks.CorruptionErr](err); ok {
 			h.metrics.walCorruptionsTotal.Inc()
 		}
-		return fmt.Errorf("create checkpoint: %w", err)
+		h.logger.Error("create checkpoint", "err", err)
+		return
 	}
 	if err := h.wal.Truncate(last + 1); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.
@@ -1600,8 +1661,6 @@ func (h *Head) truncateWAL(mint int64) error {
 
 	h.logger.Info("WAL checkpoint complete",
 		"first", first, "last", last, "duration", time.Since(start).String())
-
-	return nil
 }
 
 // truncateOOO
@@ -2053,6 +2112,13 @@ func (h *Head) Close() error {
 		h.seriesStateQuit = nil
 		// Flush the final clean state.
 		h.writeSeriesState(true)
+	}
+
+	// Stop the background WAL checkpoint worker and wait for the running
+	// checkpoint, so that no checkpoint uses the WAL after this point.
+	if !h.walCheckpointClosed.Swap(true) {
+		close(h.walCheckpointQuit)
+		<-h.walCheckpointDone
 	}
 
 	// mmap all but last chunk in case we're performing snapshot since that only

@@ -437,6 +437,9 @@ func TestHeadAppenderV2_DeleteSamplesAndSeriesStillInWALAfterCheckpoint(t *testi
 	}
 	require.NoError(t, hb.Delete(context.Background(), 0, int64(numSamples), labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 	require.NoError(t, hb.Truncate(1))
+	// The checkpoint runs in the background; wait for it before the head
+	// closes, a queued checkpoint would be dropped at close.
+	hb.waitForWALCheckpoints()
 	require.NoError(t, hb.Close())
 
 	// Confirm there's been a checkpoint.
@@ -760,12 +763,14 @@ func TestHeadAppenderV2_NewWalSegmentOnTruncate(t *testing.T) {
 
 	add(1)
 	require.NoError(t, h.Truncate(1))
+	h.waitForWALCheckpoints()
 	_, last, err = wlog.Segments(wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 1, last)
 
 	add(2)
 	require.NoError(t, h.Truncate(2))
+	h.waitForWALCheckpoints()
 	_, last, err = wlog.Segments(wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 2, last)

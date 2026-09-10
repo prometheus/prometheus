@@ -1274,6 +1274,7 @@ func TestHead_WALCheckpointMultiRef(t *testing.T) {
 					h.lastWALTruncationTime.Store(0) // Reset so that it's always time to truncate the WAL
 					err := h.truncateWAL(tc.walTruncateMinT)
 					require.NoError(t, err)
+					h.waitForWALCheckpoints()
 					f, _, err := wlog.Segments(w.Dir())
 					require.NoError(t, err)
 					if f > first {
@@ -1293,6 +1294,114 @@ func TestHead_WALCheckpointMultiRef(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestHead_TruncateWALInBackground verifies that truncateWAL creates the
+// checkpoint in the background, and that the truncated WAL still replays.
+func TestHead_TruncateWALInBackground(t *testing.T) {
+	h, w := newTestHead(t, 1000, compression.None, false)
+	populateTestWL(t, w, []any{
+		[]record.RefSeries{
+			{Ref: 1, Labels: labels.FromStrings("a", "1")},
+			{Ref: 2, Labels: labels.FromStrings("a", "2")},
+		},
+		[]record.RefSample{
+			{Ref: 1, T: 100, V: 1},
+			{Ref: 2, T: 100, V: 2},
+		},
+	}, nil, false)
+	first, _, err := wlog.Segments(w.Dir())
+	require.NoError(t, err)
+
+	require.NoError(t, h.Init(0))
+
+	// Each truncation creates a new segment, so attempt truncations until a
+	// checkpoint is created.
+	for {
+		h.lastWALTruncationTime.Store(0) // Reset so that it's always time to truncate the WAL.
+		require.NoError(t, h.truncateWAL(50))
+		h.waitForWALCheckpoints()
+		if _, _, err := wlog.LastCheckpoint(w.Dir()); err == nil {
+			break
+		}
+	}
+
+	// The checkpoint truncated the segments below it.
+	f, _, err := wlog.Segments(w.Dir())
+	require.NoError(t, err)
+	require.Greater(t, f, first)
+
+	// The checkpoint kept both series and their samples.
+	checkpointDir, _, err := wlog.LastCheckpoint(w.Dir())
+	require.NoError(t, err)
+	recs := readTestWAL(t, checkpointDir)
+	recs = append(recs, readTestWAL(t, w.Dir())...)
+	testutil.RequireEqual(t, []any{
+		[]record.RefSeries{
+			{Ref: 1, Labels: labels.FromStrings("a", "1")},
+			{Ref: 2, Labels: labels.FromStrings("a", "2")},
+		},
+		[]record.RefSample{
+			{Ref: 1, T: 100, V: 1},
+			{Ref: 2, T: 100, V: 2},
+		},
+	}, recs)
+
+	// The truncated WAL replays into a fresh head.
+	require.NoError(t, h.Close())
+	w2, err := wlog.New(nil, nil, w.Dir(), compression.None)
+	require.NoError(t, err)
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.ChunkDirRoot = t.TempDir()
+	h2, err := NewHead(nil, nil, w2, nil, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, h2.Init(0))
+	require.Equal(t, uint64(2), h2.NumSeries())
+	require.NoError(t, h2.Close())
+}
+
+// TestHead_CloseDuringBackgroundCheckpoint verifies that Close waits for a
+// running background checkpoint before it closes the WAL.
+func TestHead_CloseDuringBackgroundCheckpoint(t *testing.T) {
+	h, w := newTestHead(t, 1000, compression.None, false)
+	// Enough records for several segments, so that a real checkpoint is
+	// created.
+	walEntries := []any{
+		[]record.RefSeries{
+			{Ref: 1, Labels: labels.FromStrings("a", "1")},
+			{Ref: 2, Labels: labels.FromStrings("a", "2")},
+		},
+	}
+	for i := 1; i <= 5000; i++ {
+		walEntries = append(walEntries, []record.RefSample{
+			{Ref: 1, T: int64(i), V: float64(i)},
+			{Ref: 2, T: int64(i), V: float64(i)},
+		})
+	}
+	populateTestWL(t, w, walEntries, nil, false)
+	require.NoError(t, h.Init(0))
+
+	// Hold the mutex that the checkpoint runs under, so that the checkpoint
+	// stays in the worker while Close runs.
+	h.chunkSnapshotMtx.Lock()
+	h.lastWALTruncationTime.Store(0)
+	require.NoError(t, h.truncateWAL(500))
+	// The worker takes the job and then blocks on chunkSnapshotMtx.
+	require.Eventually(t, func() bool {
+		return len(h.walCheckpointJobs) == 0
+	}, 5*time.Second, 10*time.Millisecond)
+
+	closed := make(chan error, 1)
+	go func() {
+		closed <- h.Close()
+	}()
+	// Let the checkpoint finish while Close waits for it.
+	h.chunkSnapshotMtx.Unlock()
+	require.NoError(t, <-closed)
+
+	// The checkpoint completed before the WAL closed.
+	_, _, err := wlog.LastCheckpoint(w.Dir())
+	require.NoError(t, err)
 }
 
 func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
@@ -2295,6 +2404,9 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 	}
 	require.NoError(t, hb.Delete(context.Background(), 0, int64(numSamples), labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 	require.NoError(t, hb.Truncate(1))
+	// The checkpoint runs in the background; wait for it before the head
+	// closes, a queued checkpoint would be dropped at close.
+	hb.waitForWALCheckpoints()
 	require.NoError(t, hb.Close())
 
 	// Confirm there's been a checkpoint.
@@ -3304,12 +3416,14 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 
 	add(1)
 	require.NoError(t, h.Truncate(1))
+	h.waitForWALCheckpoints()
 	_, last, err = wlog.Segments(wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 1, last)
 
 	add(2)
 	require.NoError(t, h.Truncate(2))
+	h.waitForWALCheckpoints()
 	_, last, err = wlog.Segments(wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 2, last)
@@ -10047,6 +10161,7 @@ func TestHead_WALCheckpoint_FullRangeTombstones(t *testing.T) {
 	for {
 		head.lastWALTruncationTime.Store(0) // Reset so that it's always time to truncate the WAL.
 		require.NoError(t, head.truncateWAL(250))
+		head.waitForWALCheckpoints()
 		f, _, err := wlog.Segments(w.Dir())
 		require.NoError(t, err)
 		if f > first {
