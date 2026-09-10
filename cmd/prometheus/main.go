@@ -225,7 +225,8 @@ type flagConfig struct {
 
 	parserOpts parser.Options
 
-	promslogConfig promslog.Config
+	promslogConfig  promslog.Config
+	logLevelFlagSet bool
 }
 
 // setFeatureListOptions sets the corresponding options from the featureList.
@@ -659,6 +660,7 @@ func main() {
 
 	promslogflag.AddFlags(a, &cfg.promslogConfig)
 	a.GetFlag(promslogflag.LevelFlagName).
+		IsSetByUser(&cfg.logLevelFlagSet).
 		Help(promslogflag.LevelFlagHelp + " Deprecated: set runtime.log_level in the configuration file instead.")
 
 	a.Flag("write-documentation", "Generate command line documentation. Internal use.").Hidden().Action(func(*kingpin.ParseContext) error {
@@ -679,6 +681,9 @@ func main() {
 
 	logger := promslog.New(&cfg.promslogConfig)
 	slog.SetDefault(logger)
+	if cfg.logLevelFlagSet {
+		logger.Warn("The flag --log.level is deprecated. Set runtime.log_level in the configuration file instead. This flag will be removed in the next version.")
+	}
 
 	// The CLI log level controls startup logging and supplies the default when
 	// runtime.log_level is absent from the configuration file.
