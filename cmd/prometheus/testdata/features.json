@@ -270,7 +270,6 @@
     "xor2_encoding": true
   },
   "ui": {
-    "ui_v2": false,
     "ui_v3": true
   }
 }

@@ -318,8 +318,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.parserOpts.EnableBinopFillModifiers = true
 				logger.Info("Experimental PromQL binary operator fill modifiers enabled.")
 			case "old-ui":
-				c.web.UseOldUI = true
-				logger.Info("Serving previous version of the Prometheus web UI.")
+				logger.Warn("The old React UI has been removed in Prometheus 4.0. The --enable-feature=old-ui flag is now a no-op.")
 			case "otlp-deltatocumulative":
 				c.web.ConvertOTLPDelta = true
 				logger.Info("Converting delta OTLP metrics to cumulative")
