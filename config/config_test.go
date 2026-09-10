@@ -1628,6 +1628,7 @@ var expectedConf = &Config{
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&stackit.SDConfig{
+					Role:              stackit.RoleServer,
 					Project:           "11111111-1111-1111-1111-111111111111",
 					ServiceAccountKey: "mysecret_sa_key",
 					PrivateKey:        "mysecret_private_key",
