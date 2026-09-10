@@ -106,7 +106,7 @@ func (Histogram_ResetHint) EnumDescriptor() ([]byte, []int) {
 // The canonical Content-Type request header value for this message is
 // "application/x-protobuf;proto=io.prometheus.write.v2.Request"
 //
-// Version: v2.0-rc.4
+// Version: v2.0-rc.5
 //
 // NOTE: gogoproto options might change in future for this file, they
 // are not part of the spec proto (they only modify the generated Go code, not
@@ -185,14 +185,15 @@ type TimeSeries struct {
 	// Requests with the same labels e.g. for different exemplars, metadata
 	// or start timestamp.
 	LabelsRefs []uint32 `protobuf:"varint,1,rep,packed,name=labels_refs,json=labelsRefs,proto3" json:"labels_refs,omitempty"`
-	// Timeseries messages can either specify samples or (native) histogram samples
-	// (histogram field), but not both. For a typical sender (real-time metric
-	// streaming), in healthy cases, there will be only one sample or histogram.
+	// TimeSeries messages must specify at least one float sample, native histogram sample
+	// or exemplar. Samples and histograms must not be specified at the same time.
+	// Exemplars may be specified without samples or histograms. For a typical sender
+	// (real-time metric streaming), in healthy cases, there will be only one sample or histogram.
 	//
 	// Samples and histograms are sorted by timestamp (older first).
 	Samples    []Sample    `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples"`
 	Histograms []Histogram `protobuf:"bytes,3,rep,name=histograms,proto3" json:"histograms"`
-	// exemplars represents an optional set of exemplars attached to this series' samples.
+	// exemplars represents an optional set of exemplars for this series.
 	Exemplars []Exemplar `protobuf:"bytes,4,rep,name=exemplars,proto3" json:"exemplars"`
 	// metadata represents the metadata associated with the given series' samples.
 	Metadata             Metadata `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata"`
@@ -269,7 +270,7 @@ func (m *TimeSeries) GetMetadata() Metadata {
 	return Metadata{}
 }
 
-// Exemplar is an additional information attached to some series' samples.
+// Exemplar contains additional information associated with a series.
 // It is typically used to attach an example trace or request ID associated with
 // the metric changes.
 type Exemplar struct {
