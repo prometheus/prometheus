@@ -58,6 +58,8 @@ consumer_key: %s`, mock.URL, ovhcloudApplicationKeyTest, ovhcloudApplicationSecr
 			"__address__": "1.2.3.4",
 			"__meta_ovhcloud_dedicated_server_commercial_range": "Advance-1 Gen 2",
 			"__meta_ovhcloud_dedicated_server_datacenter":       "gra3",
+			"__meta_ovhcloud_dedicated_server_iam_display_name": "abcde",
+			"__meta_ovhcloud_dedicated_server_iam_state":        "test",
 			"__meta_ovhcloud_dedicated_server_ipv4":             "1.2.3.4",
 			"__meta_ovhcloud_dedicated_server_ipv6":             "",
 			"__meta_ovhcloud_dedicated_server_link_speed":       "123",

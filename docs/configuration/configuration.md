@@ -2063,6 +2063,8 @@ For OVHcloud's [public cloud instances](https://www.ovhcloud.com/en/public-cloud
 
 * `__meta_ovhcloud_dedicated_server_commercial_range`: the commercial range of the server
 * `__meta_ovhcloud_dedicated_server_datacenter`: the datacenter of the server
+* `__meta_ovhcloud_dedicated_server_iam_display_name`: the IAM display name of the server
+* `__meta_ovhcloud_dedicated_server_iam_state`: the IAM state of the server
 * `__meta_ovhcloud_dedicated_server_ipv4`: the IPv4 of the server
 * `__meta_ovhcloud_dedicated_server_ipv6`: the IPv6 of the server
 * `__meta_ovhcloud_dedicated_server_link_speed`: the link speed of the server
