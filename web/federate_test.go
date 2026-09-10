@@ -367,11 +367,31 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 				F:      float64(i * 100),
 				Metric: expL,
 			})
+		case 1, 2:
+			// Use two float histograms to ensure buffer reuse does not overwrite the first.
+			hist.ZeroCount++
+			hist.Count++
+			fh := hist.ToFloat(nil)
+			_, err = app.AppendHistogram(0, l, 100*60*1000, nil, fh.Copy())
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				H:      fh,
+				Metric: expL,
+			})
 		case 4:
 			_, err = app.AppendHistogram(0, l, 100*60*1000, histWithoutZeroBucket.Copy(), nil)
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				H:      histWithoutZeroBucket.ToFloat(nil),
+				Metric: expL,
+			})
+		case 5:
+			hist.ZeroCount++
+			hist.Count++
+			_, err = app.AppendHistogram(0, l, 100*60*1000, hist.Copy(), nil)
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				H:      hist.ToFloat(nil),
 				Metric: expL,
 			})
 		case 6:
@@ -422,15 +442,6 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				F:      6,
-				Metric: expL,
-			})
-		default:
-			hist.ZeroCount++
-			hist.Count++
-			_, err = app.AppendHistogram(0, l, 100*60*1000, hist.Copy(), nil)
-			expVec = append(expVec, promql.Sample{
-				T:      100 * 60 * 1000,
-				H:      hist.ToFloat(nil),
 				Metric: expL,
 			})
 		}
