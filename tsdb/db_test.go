@@ -9410,6 +9410,139 @@ func (c *mockCompactorFn) Write(string, BlockReader, int64, int64, *BlockMeta) (
 	return c.writeFn()
 }
 
+type observingCompactor struct {
+	Compactor
+	afterCompact func()
+}
+
+func (c *observingCompactor) Compact(dest string, dirs []string, open []*Block) ([]ulid.ULID, error) {
+	ulids, err := c.Compactor.Compact(dest, dirs, open)
+	if err == nil {
+		c.afterCompact()
+	}
+	return ulids, err
+}
+
+func TestCompactBlocksReservesSizeRetentionForCompaction(t *testing.T) {
+	testCases := map[string]func(*DB, int64){
+		"fixed size": func(db *DB, maxBytes int64) {
+			db.opts.MaxBytes = maxBytes
+		},
+		"percentage": func(db *DB, maxBytes int64) {
+			db.opts.MaxPercentage = 50
+			db.fsSizeFunc = func(string) uint64 { return uint64(maxBytes * 2) }
+		},
+	}
+
+	for name, setLimit := range testCases {
+		t.Run(name, func(t *testing.T) {
+			db := newTestDB(t, withRngs(100))
+
+			for i := range 8 {
+				mint := int64(i * 100)
+				createBlock(t, db.Dir(), genSeries(100, 10, mint, mint+100))
+			}
+			require.NoError(t, db.reloadBlocks())
+			require.Len(t, db.Blocks(), 8)
+
+			blocks := db.Blocks()
+			plan := []string{blocks[6].Dir(), blocks[7].Dir()}
+			plannedSize := blocks[6].Size() + blocks[7].Size()
+			maxBytes := db.Head().Size()
+			for _, block := range blocks {
+				maxBytes += block.Size()
+			}
+			setLimit(db, maxBytes)
+
+			compactCalled := false
+			db.compactor = &mockCompactorFn{
+				planFn: func() ([]string, error) {
+					if compactCalled {
+						return nil, nil
+					}
+					return plan, nil
+				},
+				compactFn: func() ([]ulid.ULID, error) {
+					compactCalled = true
+					retainedSize := db.Head().Size()
+					for _, block := range db.Blocks() {
+						retainedSize += block.Size()
+					}
+					require.LessOrEqual(t, retainedSize+plannedSize, maxBytes)
+					return nil, nil
+				},
+				writeFn: func() ([]ulid.ULID, error) { return nil, nil },
+			}
+
+			require.NoError(t, db.compactBlocks())
+			require.True(t, compactCalled)
+			require.Less(t, len(db.Blocks()), len(blocks))
+		})
+	}
+}
+
+func TestCompactBlocksDoesNotApplySizeRetentionWithCustomDeletionPolicy(t *testing.T) {
+	opts := DefaultOptions()
+	opts.BlocksToDelete = func([]*Block) map[ulid.ULID]struct{} { return nil }
+	db := newTestDB(t, withOpts(opts), withRngs(100))
+
+	for i := range 2 {
+		mint := int64(i * 100)
+		createBlock(t, db.Dir(), genSeries(10, 10, mint, mint+100))
+	}
+	require.NoError(t, db.reloadBlocks())
+	blocks := db.Blocks()
+	require.Len(t, blocks, 2)
+	db.opts.MaxBytes = 1
+
+	compactCalled := false
+	db.compactor = &mockCompactorFn{
+		planFn: func() ([]string, error) {
+			if compactCalled {
+				return nil, nil
+			}
+			return []string{blocks[0].Dir(), blocks[1].Dir()}, nil
+		},
+		compactFn: func() ([]ulid.ULID, error) {
+			compactCalled = true
+			return nil, nil
+		},
+		writeFn: func() ([]ulid.ULID, error) { return nil, nil },
+	}
+
+	require.NoError(t, db.compactBlocks())
+	require.True(t, compactCalled)
+	require.Len(t, db.Blocks(), len(blocks))
+}
+
+func TestCompactBlocksPeakDiskUsageStaysWithinSizeRetention(t *testing.T) {
+	db := newTestDB(t, withRngs(100, 300, 900))
+
+	for i := range 12 {
+		mint := int64(i * 100)
+		createBlock(t, db.Dir(), genSeries(100, 10, mint, mint+100))
+	}
+	require.NoError(t, db.reloadBlocks())
+
+	maxBytes, err := fileutil.DirSize(db.Dir())
+	require.NoError(t, err)
+	db.opts.MaxBytes = maxBytes
+
+	compactions := 0
+	db.compactor = &observingCompactor{
+		Compactor: db.compactor,
+		afterCompact: func() {
+			compactions++
+			size, err := fileutil.DirSize(db.Dir())
+			require.NoError(t, err)
+			require.LessOrEqual(t, size, maxBytes)
+		},
+	}
+
+	require.NoError(t, db.compactBlocks())
+	require.Positive(t, compactions)
+}
+
 // Regression test for https://github.com/prometheus/prometheus/pull/13754
 func TestAbortBlockCompactions(t *testing.T) {
 	// Create a test DB
