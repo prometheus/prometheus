@@ -42,6 +42,7 @@ type dedicatedServer struct {
 	CommercialRange string `json:"commercialRange"`
 	LinkSpeed       int    `json:"linkSpeed"`
 	Rack            string `json:"rack"`
+	Monitoring      bool   `json:"monitoring"`
 	NoIntervention  bool   `json:"noIntervention"`
 	Os              string `json:"os"`
 	SupportLevel    string `json:"supportLevel"`
@@ -49,6 +50,9 @@ type dedicatedServer struct {
 	Reverse         string `json:"reverse"`
 	Datacenter      string `json:"datacenter"`
 	Name            string `json:"name"`
+	Iam             struct {
+		DisplayName string `json:"displayName"`
+	} `json:"iam"`
 }
 
 type dedicatedServerDiscovery struct {
@@ -142,6 +146,7 @@ func (d *dedicatedServerDiscovery) refresh(context.Context) ([]*targetgroup.Grou
 			dedicatedServerLabelPrefix + "commercial_range": model.LabelValue(server.CommercialRange),
 			dedicatedServerLabelPrefix + "link_speed":       model.LabelValue(strconv.Itoa(server.LinkSpeed)),
 			dedicatedServerLabelPrefix + "rack":             model.LabelValue(server.Rack),
+			dedicatedServerLabelPrefix + "monitoring":       model.LabelValue(strconv.FormatBool(server.Monitoring)),
 			dedicatedServerLabelPrefix + "no_intervention":  model.LabelValue(strconv.FormatBool(server.NoIntervention)),
 			dedicatedServerLabelPrefix + "os":               model.LabelValue(server.Os),
 			dedicatedServerLabelPrefix + "support_level":    model.LabelValue(server.SupportLevel),
@@ -151,6 +156,7 @@ func (d *dedicatedServerDiscovery) refresh(context.Context) ([]*targetgroup.Grou
 			dedicatedServerLabelPrefix + "name":             model.LabelValue(server.Name),
 			dedicatedServerLabelPrefix + "ipv4":             model.LabelValue(ipv4),
 			dedicatedServerLabelPrefix + "ipv6":             model.LabelValue(ipv6),
+			dedicatedServerLabelPrefix + "iam_display_name": model.LabelValue(server.Iam.DisplayName),
 		}
 		targets = append(targets, labels)
 	}
