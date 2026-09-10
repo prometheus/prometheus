@@ -594,10 +594,12 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		router.Put("/-/reload", forbiddenAPINotEnabled)
 	}
 	router.Get("/-/quit", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Allow", "POST, PUT")
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		w.Write([]byte("Only POST or PUT requests allowed"))
 	})
 	router.Get("/-/reload", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Allow", "POST, PUT")
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		w.Write([]byte("Only POST or PUT requests allowed"))
 	})
