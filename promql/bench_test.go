@@ -380,6 +380,92 @@ func BenchmarkRangeQuery(b *testing.B) {
 	}
 }
 
+func BenchmarkInstantQuery(b *testing.B) {
+	stor := teststorage.New(b)
+	stor.DisableCompactions()
+
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 50000000,
+		Timeout:    100 * time.Second,
+	}
+	engine := promqltest.NewTestEngineWithOpts(b, opts)
+
+	const (
+		interval     = 10000
+		numIntervals = 50
+	)
+
+	// Add some Native Histogram samples so we can benchmark NH queries.
+	app := stor.Appender(context.Background())
+	histograms := tsdbutil.GenerateTestHistograms(numIntervals)
+	for _, name := range []string{"nh_a_hundred", "nh_b_hundred"} {
+		for i := range 100 {
+			lbls := labels.FromStrings("__name__", name, "l", strconv.Itoa(i))
+			for s, h := range histograms {
+				_, err := app.AppendHistogram(0, lbls, int64(s*interval), h, nil)
+				require.NoError(b, err)
+			}
+		}
+	}
+	require.NoError(b, app.Commit())
+
+	require.NoError(b, setupRangeQueryTestData(stor, engine, interval, numIntervals))
+
+	ctx := context.Background()
+	queryTime := timestamp.Time(int64(numIntervals * interval))
+
+	for _, expr := range []string{
+		// Function call without vector matching, one result per input series.
+		"abs(a_hundred)",
+		// Function with multiple arguments.
+		"clamp(a_hundred, 0, 10)",
+		// Aggregation returning a single series.
+		"sum(a_hundred)",
+		// Aggregation returning a subset of the input series.
+		"topk(5, a_hundred)",
+		// Binary operations have custom code branches.
+		"a_hundred - b_hundred",
+		"a_hundred - on(l) b_hundred",
+		"a_hundred + on(l) group_left b_hundred{l=~'.*[0-4]$'}",
+		"a_hundred and b_hundred",
+		"a_hundred or b_hundred{l=~'.*[0-4]$'}",
+		"a_hundred unless b_hundred{l=~'.*[0-4]$'}",
+		"a_hundred * 2",
+		"2 * a_hundred",
+		// Histogram samples instead of floats.
+		"nh_a_hundred * 2",
+		"nh_a_hundred + nh_b_hundred",
+		// No input series.
+		"1 + 2",
+		"1",
+		// count_values is the only aggregation going via rangeEval instead of rangeEvalAgg.
+		"count_values('v', a_hundred)",
+		// Dedicated code path.
+		"timestamp(a_hundred)",
+	} {
+		b.Run("expr="+expr, func(b *testing.B) {
+			queryFn := func() {
+				qry, err := engine.NewInstantQuery(ctx, stor, nil, expr, queryTime)
+				require.NoError(b, err)
+
+				res := qry.Exec(ctx)
+				require.NoError(b, res.Err)
+				qry.Close()
+			}
+
+			queryFn() // Warm up run.
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for b.Loop() {
+				queryFn()
+			}
+		})
+	}
+}
+
 func BenchmarkJoinQuery(b *testing.B) {
 	stor := teststorage.New(b)
 	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
