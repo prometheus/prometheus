@@ -247,6 +247,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "metadata-wal-records":
 				c.scrape.AppendMetadata = true
 				c.web.AppendMetadata = true
+				c.tsdb.EnableMetadataWALRecords = true
 				features.Enable(features.TSDB, "metadata_wal_records")
 				logger.Info("Experimental metadata records in WAL enabled")
 			case "promql-per-step-stats":
@@ -2145,6 +2146,7 @@ type tsdbOptions struct {
 	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
 	FloatChunkEncoding             chunkenc.Encoding
+	EnableMetadataWALRecords       bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -2178,6 +2180,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
 		FloatChunkEncoding:             opts.FloatChunkEncoding,
+		EnableMetadataWALRecords:       opts.EnableMetadataWALRecords,
 	}
 }
 
