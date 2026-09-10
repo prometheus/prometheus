@@ -2740,6 +2740,197 @@ func TestAppendHistogramSchemaValidation(t *testing.T) {
 	}
 }
 
+// TestExemplarsDroppedForUnsentHistograms is a regression test for
+// https://github.com/prometheus/prometheus/issues/13552: an exemplar must only
+// be sent if the sample it belongs to is sent as well, otherwise the remote
+// endpoint rejects it as it has no series to attach it to. A native histogram
+// sample is not sent if native histograms are disabled for the queue, or if it
+// has custom buckets (NHCB), which remote write 1.0 cannot represent.
+func TestExemplarsDroppedForUnsentHistograms(t *testing.T) {
+	const (
+		histogramSeriesRef = chunks.HeadSeriesRef(0)
+		floatSeriesRef     = chunks.HeadSeriesRef(1)
+		ts                 = int64(1234567890)
+	)
+	series := []record.RefSeries{
+		{Ref: histogramSeriesRef, Labels: labels.FromStrings("__name__", "test_histogram")},
+		{Ref: floatSeriesRef, Labels: labels.FromStrings("__name__", "test_float")},
+	}
+
+	for _, tc := range []struct {
+		name                 string
+		protoMsg             remoteapi.WriteMessageType
+		sendNativeHistograms bool
+		// schemas are the schemas of the native histogram samples appended for
+		// the histogram series, in order.
+		schemas []int32
+		// floatHistograms appends float native histograms instead of integer ones.
+		floatHistograms bool
+		// sentIdxs indexes the appended native histogram samples that are
+		// expected to reach the remote endpoint.
+		sentIdxs []int
+		// recycleRef appends a float sample for the histogram series, as happens
+		// once its series ref is reused for another series.
+		recycleRef bool
+		// wantExemplarSent is whether the exemplar of the histogram series is
+		// expected to reach the remote endpoint.
+		wantExemplarSent bool
+	}{
+		{
+			name:     "native histograms disabled, remote write 1.0",
+			protoMsg: remoteapi.WriteV1MessageType,
+			schemas:  []int32{0},
+		},
+		{
+			name:     "native histograms disabled, remote write 2.0",
+			protoMsg: remoteapi.WriteV2MessageType,
+			schemas:  []int32{0},
+		},
+		{
+			name:            "float native histograms disabled",
+			protoMsg:        remoteapi.WriteV2MessageType,
+			schemas:         []int32{0},
+			floatHistograms: true,
+		},
+		{
+			name:                 "NHCB unsupported by remote write 1.0",
+			protoMsg:             remoteapi.WriteV1MessageType,
+			sendNativeHistograms: true,
+			schemas:              []int32{histogram.CustomBucketsSchema},
+		},
+		{
+			name:                 "float NHCB unsupported by remote write 1.0",
+			protoMsg:             remoteapi.WriteV1MessageType,
+			sendNativeHistograms: true,
+			schemas:              []int32{histogram.CustomBucketsSchema},
+			floatHistograms:      true,
+		},
+		{
+			name:                 "NHCB sent via remote write 2.0",
+			protoMsg:             remoteapi.WriteV2MessageType,
+			sendNativeHistograms: true,
+			schemas:              []int32{histogram.CustomBucketsSchema},
+			sentIdxs:             []int{0},
+			wantExemplarSent:     true,
+		},
+		{
+			name:                 "series stops using custom buckets",
+			protoMsg:             remoteapi.WriteV1MessageType,
+			sendNativeHistograms: true,
+			schemas:              []int32{histogram.CustomBucketsSchema, 0},
+			sentIdxs:             []int{1},
+			wantExemplarSent:     true,
+		},
+		{
+			name:             "series ref recycled for float samples",
+			protoMsg:         remoteapi.WriteV1MessageType,
+			schemas:          []int32{0},
+			recycleRef:       true,
+			wantExemplarSent: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := NewTestWriteClient(tc.protoMsg)
+			cfg := testDefaultQueueConfig()
+			cfg.MaxShards = 1
+			m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, c, tc.protoMsg)
+			m.sendExemplars = true
+			m.sendNativeHistograms = tc.sendNativeHistograms
+			m.StoreSeries(series, 0)
+
+			var (
+				histograms      []record.RefHistogramSample
+				floatHistograms []record.RefFloatHistogramSample
+			)
+			for i, schema := range tc.schemas {
+				// NHCBs need custom bucket boundaries, other schemas must not have any.
+				var customValues []float64
+				if schema == histogram.CustomBucketsSchema {
+					customValues = []float64{2.0}
+				}
+				if tc.floatHistograms {
+					floatHistograms = append(floatHistograms, record.RefFloatHistogramSample{
+						Ref: histogramSeriesRef,
+						T:   ts + int64(i),
+						FH: &histogram.FloatHistogram{
+							Schema:          schema,
+							Count:           2,
+							Sum:             5.0,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+							PositiveBuckets: []float64{2},
+							CustomValues:    customValues,
+						},
+					})
+					continue
+				}
+				histograms = append(histograms, record.RefHistogramSample{
+					Ref: histogramSeriesRef,
+					T:   ts + int64(i),
+					H: &histogram.Histogram{
+						Schema:          schema,
+						Count:           2,
+						Sum:             5.0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []int64{2},
+						CustomValues:    customValues,
+					},
+				})
+			}
+			floatSamples := []record.RefSample{{Ref: floatSeriesRef, T: ts, V: 1}}
+			if tc.recycleRef {
+				floatSamples = append(floatSamples, record.RefSample{Ref: histogramSeriesRef, T: ts, V: 2})
+			}
+			exemplars := []record.RefExemplar{
+				{Ref: histogramSeriesRef, T: ts, V: 1, Labels: labels.FromStrings("traceID", "histogram-exemplar")},
+				{Ref: floatSeriesRef, T: ts, V: 1, Labels: labels.FromStrings("traceID", "float-exemplar")},
+			}
+
+			var (
+				sentHistograms      []record.RefHistogramSample
+				sentFloatHistograms []record.RefFloatHistogramSample
+			)
+			for _, i := range tc.sentIdxs {
+				if tc.floatHistograms {
+					sentFloatHistograms = append(sentFloatHistograms, floatHistograms[i])
+					continue
+				}
+				sentHistograms = append(sentHistograms, histograms[i])
+			}
+			expectedExemplars := exemplars[1:] // Only the float series' exemplar.
+			if tc.wantExemplarSent {
+				expectedExemplars = exemplars
+			}
+			c.expectSamples(floatSamples, series)
+			c.expectExemplars(expectedExemplars, series)
+			c.expectHistograms(sentHistograms, series)
+			c.expectFloatHistograms(sentFloatHistograms, series)
+
+			m.Start()
+			defer m.Stop()
+
+			// Append the histograms first, as the WAL also records the exemplars of
+			// a series after its samples.
+			require.True(t, m.AppendHistograms(histograms))
+			require.True(t, m.AppendFloatHistograms(floatHistograms))
+			require.True(t, m.Append(floatSamples))
+			require.True(t, m.AppendExemplars(exemplars))
+
+			c.waitForExpectedData(t, 30*time.Second)
+
+			wantDropped := 1.0
+			if tc.wantExemplarSent {
+				wantDropped = 0.0
+			}
+			require.Equal(t, wantDropped, client_testutil.ToFloat64(m.metrics.droppedExemplarsTotal.WithLabelValues(reasonNativeHistogramNotSent)))
+
+			c.mtx.Lock()
+			defer c.mtx.Unlock()
+			require.Len(t, c.receivedExemplars[getSeriesIDFromRef(series[histogramSeriesRef])], len(expectedExemplars)-1,
+				"an exemplar must only be sent if the sample it belongs to is sent")
+		})
+	}
+}
+
 // TestAppendHistogramsWithStartTimestamp verifies that AppendHistograms and
 // AppendFloatHistograms propagate the per-sample start timestamp end-to-end
 // through the queue manager into a Remote Write 2.0 request. ST is only
