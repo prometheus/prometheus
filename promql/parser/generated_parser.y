@@ -582,7 +582,7 @@ positive_duration_expr : duration_expr
                             if numLit, ok := $1.(*NumberLiteral); ok {
                                 if numLit.Val <= 0 {
                                     yylex.(*parser).addParseErrf(numLit.PositionRange(), "duration must be greater than 0")
-                                    $$ = &NumberLiteral{Val: 0} // Return 0 on error.
+                                    $$ = &NumberLiteral{Val: 0, PosRange: numLit.PosRange} // Return 0 on error.
                                     break
                                 }
                                 $$ = $1
@@ -1200,7 +1200,7 @@ offset_duration_expr    : number_duration_literal
                                 nl := $1.(*NumberLiteral)
                                 if durationLiteralOutOfRange(nl.Val) {
                                         yylex.(*parser).addParseErrf(nl.PosRange, "duration out of range")
-                                        $$ = &NumberLiteral{Val: 0}
+                                        $$ = &NumberLiteral{Val: 0, PosRange: nl.PosRange}
                                         break
                                 }
                                 $$ = nl
@@ -1213,7 +1213,7 @@ offset_duration_expr    : number_duration_literal
                                 }
                                 if durationLiteralOutOfRange(nl.Val) {
                                         yylex.(*parser).addParseErrf($1.PositionRange(), "duration out of range")
-                                        $$ = &NumberLiteral{Val: 0}
+                                        $$ = &NumberLiteral{Val: 0, PosRange: $1.PositionRange()}
                                         break
                                 }
                                 nl.PosRange.Start = $1.Pos
@@ -1310,7 +1310,7 @@ duration_expr   : number_duration_literal
                         nl := $1.(*NumberLiteral)
                         if durationLiteralOutOfRange(nl.Val) {
                                 yylex.(*parser).addParseErrf(nl.PosRange, "duration out of range")
-                                $$ = &NumberLiteral{Val: 0}
+                                $$ = &NumberLiteral{Val: 0, PosRange: nl.PosRange}
                                 break
                         }
                         $$ = nl
@@ -1339,7 +1339,7 @@ duration_expr   : number_duration_literal
                         yylex.(*parser).experimentalDurationExpr($1.(Expr))
                         if nl, ok := $3.(*NumberLiteral); ok && nl.Val == 0 {
                                 yylex.(*parser).addParseErrf($2.PositionRange(), "division by zero")
-                                $$ = &NumberLiteral{Val: 0}
+                                $$ = &NumberLiteral{Val: 0, PosRange: mergeRanges($1.(Node), $3.(Node))}
                                 break
                         }
                         $$ = &DurationExpr{Op: DIV, LHS: $1.(Expr), RHS: $3.(Expr)}
@@ -1349,7 +1349,7 @@ duration_expr   : number_duration_literal
                         yylex.(*parser).experimentalDurationExpr($1.(Expr))
                         if nl, ok := $3.(*NumberLiteral); ok && nl.Val == 0 {
                             yylex.(*parser).addParseErrf($2.PositionRange(), "modulo by zero")
-                            $$ = &NumberLiteral{Val: 0}
+                            $$ = &NumberLiteral{Val: 0, PosRange: mergeRanges($1.(Node), $3.(Node))}
                             break
                         }
                         $$ = &DurationExpr{Op: MOD, LHS: $1.(Expr), RHS: $3.(Expr)}
