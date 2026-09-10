@@ -1759,6 +1759,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 					errChan <- err
 					return
 				}
+
 				localRefSeries[csr.ref] = series
 				for {
 					seriesID := uint64(series.ref)
