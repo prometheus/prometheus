@@ -93,6 +93,12 @@ export const functionSignatures: Record<string, Func> = {
   idelta: { name: "idelta", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   increase: { name: "increase", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   info: { name: "info", argTypes: [valueType.vector, valueType.vector], variadic: 1, returnType: valueType.vector },
+  integral: {
+    name: "integral",
+    argTypes: [valueType.matrix, valueType.scalar],
+    variadic: 1,
+    returnType: valueType.vector,
+  },
   irate: { name: "irate", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   label_join: {
     name: "label_join",
