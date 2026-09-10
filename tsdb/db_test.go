@@ -12054,7 +12054,8 @@ func TestCompactionSurvivesChunkRollAndMmap(t *testing.T) {
 // A multi-series Commit() writes each series in turn and only closes the whole transaction at
 // the end. This test pauses Commit() right after it writes the selected series but before it
 // can close the transaction, so the fingerprint snapshot already reflects the new sample and
-// can never see it change. Only appendIDWatermark (via hasAppendIDAbove) catches this case.
+// can never see it change. Only the durable watermarkViolatedAtSnapshot flag, captured via
+// hasAppendIDAbove at snapshot time, catches this case.
 func TestCompactSelectedSeries_SurvivesMutationFromStillOpenTransaction(t *testing.T) {
 	if defaultIsolationDisabled {
 		t.Skip("This reproduction needs isolation to exclude the incomplete appender.")
@@ -12174,4 +12175,73 @@ func TestCompactSelectedSeries_SurvivesEvidenceErasedByUnrelatedCleanup(t *testi
 	require.NoError(t, err)
 	got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
 	require.Len(t, got[`{name="selected"}`], 2, "The sample at 400 must survive compaction.")
+}
+
+// TestCompactionSurvivesLateAppendWithErasedWatermarkEvidence verifies that a sample appended
+// after the fingerprint snapshot survives compaction even when a later, unrelated duplicate
+// write erases the only watermark evidence that it happened.
+//
+// The append itself is real, not a duplicate, so it mutates the chunk -- the fingerprint alone
+// would already catch that. What this test adds is the duplicate that follows: it changes no
+// data, but its Commit() still runs routine append-ID cleanup, which wipes out the append-ID
+// that would have proven the earlier sample wasn't committed yet. Nothing is lost, because the
+// fingerprint never depended on that append-ID in the first place -- it's comparing chunk
+// shape, which the cleanup can't touch.
+func TestCompactionSurvivesLateAppendWithErasedWatermarkEvidence(t *testing.T) {
+	for _, stale := range []bool{false, true} {
+		name := "selected"
+		if stale {
+			name = "stale"
+		}
+		t.Run(name, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.MinBlockDuration = 1000
+			opts.MaxBlockDuration = 1000
+			db := newTestDB(t, withOpts(opts))
+			db.DisableCompactions()
+			sel := labels.FromStrings("name", "selected")
+			v := 2.0
+			if stale {
+				v = math.Float64frombits(value.StaleNaN)
+			}
+			app := db.Appender(t.Context())
+			ref, err := app.Append(0, sel, 100, 1)
+			require.NoError(t, err)
+			_, err = app.Append(ref, sel, 200, v)
+			require.NoError(t, err)
+			_, err = app.Append(0, labels.FromStrings("name", "filler"), 700, 1)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			compactHeadViewBeforeEvictTestingCallback = func() {
+				// Both transactions start after the snapshot and block generation.
+				for range 2 {
+					app := db.Appender(t.Context())
+					_, err := app.Append(ref, sel, 400, v)
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+				}
+			}
+			t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+			if stale {
+				require.NoError(t, db.CompactStaleHead())
+			} else {
+				require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+			}
+			q, err := db.Querier(0, 1000)
+			require.NoError(t, err)
+			got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+			if len(got[sel.String()]) != 3 {
+				t.Errorf("Before restart: want 3 samples, got %v", got[sel.String()])
+			}
+			require.NoError(t, db.Close())
+			db, err = Open(db.Dir(), nil, nil, opts, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, db.Close()) })
+			q, err = db.Querier(0, 1000)
+			require.NoError(t, err)
+			got = query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+			require.Len(t, got[sel.String()], 3, "The sample at 400 must survive restart.")
+		})
+	}
 }

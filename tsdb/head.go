@@ -1337,9 +1337,9 @@ func isStaleSeries(s *memSeries) bool {
 // out-of-order data -- both checked live, not from a stale snapshot. hasMutatedSinceSnapshot
 // protects a series that changed after it was selected, including a fresh stale marker that
 // isStaleSeries alone wouldn't flag.
-func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64, appendIDWatermark uint64, fingerprints map[storage.SeriesRef]seriesFingerprint) error {
+func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64, fingerprints map[storage.SeriesRef]seriesFingerprint) error {
 	_, err := h.truncateSeries(seriesRefs, maxt, func(s *memSeries) bool {
-		return isSeriesWithoutOOO(s) && isStaleSeries(s) && !hasMutatedSinceSnapshot(s, appendIDWatermark, fingerprints)
+		return isSeriesWithoutOOO(s) && isStaleSeries(s) && !hasMutatedSinceSnapshot(s, fingerprints)
 	})
 	return err
 }
@@ -1348,9 +1348,9 @@ func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64, a
 // data must first be flushed by CompactOOOHead before a series can be evicted; isSeriesWithoutOOO
 // checks that live, not from a stale snapshot. hasMutatedSinceSnapshot protects a series that
 // changed after its ref was collected.
-func (h *Head) truncateSelectedSeries(seriesRefs []storage.SeriesRef, maxt int64, appendIDWatermark uint64, fingerprints map[storage.SeriesRef]seriesFingerprint) error {
+func (h *Head) truncateSelectedSeries(seriesRefs []storage.SeriesRef, maxt int64, fingerprints map[storage.SeriesRef]seriesFingerprint) error {
 	_, err := h.truncateSeries(seriesRefs, maxt, func(s *memSeries) bool {
-		return isSeriesWithoutOOO(s) && !hasMutatedSinceSnapshot(s, appendIDWatermark, fingerprints)
+		return isSeriesWithoutOOO(s) && !hasMutatedSinceSnapshot(s, fingerprints)
 	})
 	return err
 }
@@ -1441,28 +1441,28 @@ func fingerprintChanged(s *memSeries, fp seriesFingerprint) bool {
 	return lastChunkSamples != fp.lastChunkSamples
 }
 
-// hasMutatedSinceSnapshot reports whether s has been appended to since appendIDWatermark and
-// fingerprints were captured.
+// hasMutatedSinceSnapshot reports whether s has been appended to since fingerprints were
+// captured.
 //
 // fp.watermarkViolatedAtSnapshot is checked first: it's a durable fact recorded the moment the
 // snapshot was taken, immune to s.txs being pruned by an unrelated commit's append-ID cleanup
-// afterward -- see seriesFingerprint. Only if that's clear do we fall back to a live check:
-// hasAppendIDAbove, for a transaction that started after the snapshot, while isolation is
-// enabled; fingerprintChanged otherwise.
+// afterward -- see seriesFingerprint. It only catches a transaction that was already open at
+// snapshot time, though, so any append arriving after the snapshot still needs a live check:
+// fingerprintChanged. That's also what any such append would show up as -- a real append always
+// changes the chunk in the same step it would add to s.txs, so there's nothing hasAppendIDAbove
+// could still catch here that fingerprintChanged wouldn't, and unlike s.txs, chunk shape isn't
+// something a later, unrelated commit can prune away.
 //
 // A missing fingerprint entry is treated as mutated -- retain rather than risk evicting --
 // though every ref CompactSelectedSeries or CompactStaleHead passes through should have one.
 // Must be called with s.Lock held.
-func hasMutatedSinceSnapshot(s *memSeries, appendIDWatermark uint64, fingerprints map[storage.SeriesRef]seriesFingerprint) bool {
+func hasMutatedSinceSnapshot(s *memSeries, fingerprints map[storage.SeriesRef]seriesFingerprint) bool {
 	fp, ok := fingerprints[storage.SeriesRef(s.ref)]
 	if !ok {
 		return true
 	}
 	if fp.watermarkViolatedAtSnapshot {
 		return true
-	}
-	if s.txs != nil {
-		return hasAppendIDAbove(s, appendIDWatermark)
 	}
 	return fingerprintChanged(s, fp)
 }

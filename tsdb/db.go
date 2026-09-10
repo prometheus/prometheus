@@ -1880,7 +1880,7 @@ func (db *DB) CompactStaleHead() (err error) {
 			return NewSelectedSeriesHead(h, mint, maxt, staleSeriesRefs)
 		},
 		func(maxt int64) error {
-			return db.head.truncateStaleSeries(staleSeriesRefs.sortedByRef, maxt, appendIDWatermark, fingerprints)
+			return db.head.truncateStaleSeries(staleSeriesRefs.sortedByRef, maxt, fingerprints)
 		},
 		func(meta *BlockMeta) { meta.Compaction.SetStaleSeries() },
 	); err != nil {
@@ -1973,7 +1973,7 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 			return NewSelectedSeriesHead(h, mint, maxt, selectedSeriesRefs)
 		},
 		func(maxt int64) error {
-			return db.head.truncateSelectedSeries(selectedSeriesRefs.sortedByRef, maxt, appendIDWatermark, fingerprints)
+			return db.head.truncateSelectedSeries(selectedSeriesRefs.sortedByRef, maxt, fingerprints)
 		},
 		func(meta *BlockMeta) { meta.Compaction.SetSelectedSeries() },
 	); err != nil {
