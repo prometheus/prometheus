@@ -120,6 +120,11 @@ var (
 		".*(?i:k)",
 		"a.*(?i:sk)",
 		"(?i:some)-pattern.*",
+		// Case-insensitive alternations long enough to be optimized into a map
+		// of values or of prefixes (see minEqualMultiStringMatcherMapThreshold).
+		"(?i:(fi|v1|v2|v3|v4|v5|v6|v7|v8|v9|v10|v11|v12|v13|v14|v15))",
+		"(?i)(ſ.*|a.*|b.*|c.*|d.*|e.*|f.*|g.*|h.*|i.*|j.*|k.*|l.*|m.*|n.*|o.*)",
+		"(?i)(µx.*|aa.*|bb.*|cc.*|dd.*|ee.*|ff.*|gg.*|hh.*|ii.*|jj.*|kk.*|ll.*|mm.*|nn.*|oo.*)",
 	}
 	values = []string{
 		"foo", " foo bar", "bar", "buzz\nbar", "bar foo", "bfoo", "\n", "\nfoo", "foo\n", "hello foo world", "hello foo\n world", "",
@@ -143,6 +148,13 @@ var (
 		// Values with runes whose case folding changes their encoded length.
 		"\u212a", "\u212aa", "\u212ab", "\u212a-a", "\u212a-abc", "\u212aelvin", "abc\u212a", "a\u212a", "axſk", "axs\u212a",
 		"ſome-pattern", "SOME-pattern", "ſk", "kſ",
+		"ſx", "ſX", "SX", "Sx",
+
+		// Values that are equal to a pattern literal under Unicode compatibility
+		// normalisation, but not under case folding.
+		"ﬁ", "ｆｉ", "ｆi", "ａ", "①",
+		// The micro sign folds with the Greek mu and its capital form.
+		"µxZ", "μxZ", "ΜxZ", "aaZ",
 
 		// Invalid utf8
 		"\xfefoo",
@@ -343,7 +355,7 @@ func BenchmarkFastRegexMatcher(b *testing.B) {
 	}
 }
 
-func BenchmarkToNormalizedLower(b *testing.B) {
+func BenchmarkToFoldedCanonical(b *testing.B) {
 	benchCase := func(l int, uppercase string, asciiOnly bool, alt int) string {
 		chars := "abcdefghijklmnopqrstuvwxyz"
 		if !asciiOnly {
@@ -380,7 +392,7 @@ func BenchmarkToNormalizedLower(b *testing.B) {
 							b.ResetTimer()
 							for n := 0; b.Loop(); n++ {
 								var a [256]byte
-								toNormalisedLower(inputs[n%len(inputs)], a[:])
+								toFoldedCanonical(inputs[n%len(inputs)], a[:])
 							}
 						})
 					}
@@ -876,6 +888,14 @@ func TestNewEqualMultiStringMatcher(t *testing.T) {
 			expectedValuesMap:   map[string]struct{}{"a": {}, "b": {}, "c": {}, "d": {}, "e": {}, "f": {}, "g": {}, "h": {}, "i": {}, "l": {}, "m": {}, "n": {}, "o": {}, "p": {}, "q": {}, "r": {}},
 			expectedPrefixesMap: map[string][]StringMatcher{},
 		},
+		"many case insensitive values with non-ASCII runes": {
+			// The long s and the Kelvin sign fold with an ASCII letter, and the
+			// micro sign folds with the Greek mu, so they share its canonical form.
+			values:              []string{"\u017f", "\u212a", "\u00b5", "\u03bc", "d", "e", "f", "g", "h", "i", "l", "m", "n", "o", "p", "q"},
+			caseSensitive:       false,
+			expectedValuesMap:   map[string]struct{}{"s": {}, "k": {}, "\u00b5": {}, "d": {}, "e": {}, "f": {}, "g": {}, "h": {}, "i": {}, "l": {}, "m": {}, "n": {}, "o": {}, "p": {}, "q": {}},
+			expectedPrefixesMap: map[string][]StringMatcher{},
+		},
 	}
 
 	for testName, testData := range tests {
@@ -980,6 +1000,25 @@ func TestEqualMultiStringMatcher_Matches(t *testing.T) {
 			caseSensitive:      false,
 			expectedMatches:    []string{"a", "A", "b", "B"},
 			expectedNotMatches: []string{"x", "X"},
+		},
+		"many case insensitive values with non-ASCII runes": {
+			// Values are matched under Unicode simple case folding, the same
+			// folding the regexp engine applies: 'ſ' folds with 's' and the
+			// micro sign folds with the Greek mu, while the 'ﬁ' ligature and
+			// the fullwidth 'ａ' fold only with themselves.
+			values:             []string{"ſſs", "µx", "fi", "a", "e", "f", "g", "h", "i", "l", "m", "n", "o", "p", "q", "r"},
+			caseSensitive:      false,
+			expectedMatches:    []string{"ſſs", "sss", "SSS", "ſSs", "µx", "μX", "ΜX", "fi", "FI", "a", "A"},
+			expectedNotMatches: []string{"ﬁ", "ｆｉ", "ａ", "x", "X"},
+		},
+		"case insensitive prefixes with multi-byte runes": {
+			prefixes: []StringMatcher{
+				&literalPrefixInsensitiveStringMatcher{prefix: "ſ", right: anyStringWithoutNewlineMatcher{}},
+				&literalPrefixInsensitiveStringMatcher{prefix: "µx", right: anyStringWithoutNewlineMatcher{}},
+			},
+			caseSensitive:      false,
+			expectedMatches:    []string{"ſ", "ſx", "S", "sX", "µx", "μX", "ΜXy"},
+			expectedNotMatches: []string{"ﬁ", "x", "µy"},
 		},
 		"mixed values and prefixes": {
 			values:             []string{"a"},
@@ -1512,7 +1551,7 @@ func visitStringMatcher(matcher StringMatcher, callback func(matcher StringMatch
 	}
 }
 
-func TestToNormalisedLower(t *testing.T) {
+func TestToFoldedCanonical(t *testing.T) {
 	testCases := map[string]string{
 		"foo":                      "foo",
 		"FOO":                      "foo",
@@ -1523,9 +1562,53 @@ func TestToNormalisedLower(t *testing.T) {
 		"cccccccccccccccccccccccC": "cccccccccccccccccccccccc",
 		"ſſſſſſſſſſſſſſſſſſſſſſſſS": "sssssssssssssssssssssssss",
 		"ſſAſſa": "ssassa",
+		// Runes folding with each other have the same canonical form, even when
+		// their encoded length differs.
+		"\u212aelvin": "kelvin",
+		"\u00b5x":     "\u00b5x",
+		"\u03bcx":     "\u00b5x",
+		"\u039cX":     "\u00b5x",
+		// Runes that only compatibility normalisation would fold together keep
+		// their own canonical form, as the regexp engine tells them apart.
+		"\ufb01":  "\ufb01",
+		"\uff41":  "\uff21",
+		"\u2460":  "\u2460",
+		"e\u0301": "e\u0301",
+		"\u00e9":  "\u00c9",
 	}
 	for input, expectedOutput := range testCases {
-		require.Equal(t, expectedOutput, toNormalisedLower(input, nil))
+		require.Equal(t, expectedOutput, toFoldedCanonical(input, nil), "input: %q", input)
+	}
+}
+
+func TestToFoldedCanonicalPrefix(t *testing.T) {
+	for _, c := range []struct {
+		s              string
+		n              int
+		expectedPrefix string
+		expectedOK     bool
+	}{
+		{"marco", 3, "mar", true},
+		{"mArco", 3, "mar", true},
+		{"marco", 5, "marco", true},
+		{"marco", 6, "", false},
+		{"", 1, "", false},
+		{"marco", 0, "", true},
+		// The prefix is a number of runes, not of bytes.
+		{"\u017fx", 1, "s", true},
+		{"\u017fx", 2, "sx", true},
+		{"\u017fx", 3, "", false},
+		{"\u212aelvin", 1, "k", true},
+		{"\u00b5xy", 2, "\u00b5x", true},
+		{"\u039cxy", 2, "\u00b5x", true},
+		// Every byte of an invalid rune is decoded to U+FFFD, like the regexp
+		// engine does.
+		{"\xff\xff", 2, "\ufffd\ufffd", true},
+		{"\xff", 2, "", false},
+	} {
+		prefix, ok := toFoldedCanonicalPrefix(c.s, c.n, nil)
+		require.Equal(t, c.expectedOK, ok, "s=%q n=%d", c.s, c.n)
+		require.Equal(t, c.expectedPrefix, prefix, "s=%q n=%d", c.s, c.n)
 	}
 }
 
