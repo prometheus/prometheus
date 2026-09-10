@@ -1190,6 +1190,10 @@ func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
 	return s, nil
 }
 
+// Lookup returns the symbol at the given offset. The returned string is a
+// reference to data in the mmap'd index file, not a copy. It becomes invalid
+// when the index Reader is closed. Callers that need to retain the string
+// past Reader.Close must copy it.
 func (s Symbols) Lookup(o uint32) (string, error) {
 	d := encoding.Decbuf{
 		B: s.bs.Range(0, s.bs.Len()),
@@ -1207,7 +1211,7 @@ func (s Symbols) Lookup(o uint32) (string, error) {
 			d.UvarintBytes()
 		}
 	}
-	sym := d.UvarintStr()
+	sym := yoloString(d.UvarintBytes())
 	if d.Err() != nil {
 		return "", d.Err()
 	}
@@ -1358,8 +1362,8 @@ func (r *Reader) SortedLabelValues(ctx context.Context, name string, hints *stor
 }
 
 // LabelValues returns value tuples that exist for the given label name.
-// It is not safe to use the return value beyond the lifetime of the byte slice
-// passed into the Reader.
+// The returned strings are references to data in the mmap'd index file, not
+// copies. They become invalid when the index Reader is closed.
 // TODO(replay): Support filtering by matchers.
 func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) > 0 {
@@ -1406,6 +1410,8 @@ func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.La
 
 // LabelNamesFor returns all the label names for the series referred to by IDs.
 // The names returned are sorted.
+// The returned strings are references to data in the mmap'd index file, not
+// copies. They become invalid when the index Reader is closed.
 func (r *Reader) LabelNamesFor(ctx context.Context, postings Postings) ([]string, error) {
 	// Gather offsetsMap the name offsetsMap in the symbol table first
 	offsetsMap := make(map[uint32]struct{})
@@ -1470,6 +1476,11 @@ func (r *Reader) Series(id storage.SeriesRef, builder *labels.ScratchBuilder, ch
 		return d.Err()
 	}
 	builder.SetSymbolTable(r.st)
+	// Symbols.Lookup returns yoloStrings that point into the mmap'd index
+	// file. These strings are unsafe to retain past Reader.Close(). Tell the
+	// builder to copy them so that slicelabels (which shares string pointers
+	// in Labels()) does not retain mmap-backed strings.
+	builder.SetUnsafeAdd(true)
 	builder.Reset()
 	err := r.dec.Series(d.Get(), builder, chks)
 	if err != nil {
