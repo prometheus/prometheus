@@ -5,7 +5,7 @@
 ## 3.15.0-rc.0 / 2026-09-09
 - [CHANGE] PromQL: A range query whose `end` was not aligned to `step` caused subqueries inside it to evaluate past the parent's last actual step, inflating `peakSamples` in the query stats and against the `query.max-samples` limit, and wasting storage I/O reading samples that were never used in the result. Add tests to prevent regression of the fix made in #18081. #18598
 - [CHANGE] PromQL: Do not register a start timestamp reset if the start timestamp hasn't changed between subsequent samples. #19454
-- [CHANGE] Logging: Deprecate `--log.level`; it now supplies the startup and configuration-default level. #19511
+- [CHANGE] Logging: Deprecate `--log.level`; use `runtime.log_level` configuration to supply the default level. #19511
 - [FEATURE] Configuration: Allow changing the process log level through `runtime.log_level` on configuration reload. #19511
 - [FEATURE] Prometheus: Add `--auto-gomemlimit.refresh-interval` flag to periodically re-detect the container or system memory limit and update `GOMEMLIMIT` at runtime. #18843
 - [FEATURE] Scraping: Add support for scraping targets via Unix Domain Sockets. #12024. #18091
@@ -18,15 +18,15 @@
 - [ENHANCEMENT] Remote write / Alertmanager: upgrade sigv4 to v0.5.0, adding `session_name` and `tags` fields for STS AssumeRole sessions. The previously undocumented `service_name` field is now also documented. #19569
 - [ENHANCEMENT] Scraping: Support zstd-compressed scrape responses, enabled via feature flag `zstd-scrape`. #19502
 - [ENHANCEMENT] TSDB: Stabilize the XOR2 float chunk encoding. `--enable-feature=xor2-encoding` is deprecated; use `storage.tsdb.chunk_encoding.floats: xor2` instead. Check that other software reading the TSDB directly (e.g. Thanos sidecar) supports XOR2 before enabling. #19461
-- [ENHANCEMENT] TSDB: add prometheus_tsdb_head_appenders_created_total metric. #19411
+- [ENHANCEMENT] TSDB: add `prometheus_tsdb_head_appenders_created_total` metric. #19411
 - [ENHANCEMENT] Tracing: add more spans to scrapes, API queries and rule evaluations. #19410
 - [ENHANCEMENT] UI: Show the effective configuration for each scrape pool on the Targets and Service Discovery pages. #19384
 - [ENHANCEMENT] scrape: Enable start time synthesis for summary `_count` and `_sum` series in scrape appender v2. #19323
 - [ENHANCEMENT] scrape: stop all pools in parallel for faster shutdowns. #19295
 - [ENHANCEMENT] storage/remote: Add undocumented failed_request_logging config field to debug log remote write V2 requests on send errors. #19249
-- [ENHANCEMENT] tsdb: Add fast path for XOR chunk decompression to speed up queries. #18049
+- [ENHANCEMENT] TSDB: Add fast path for XOR chunk decompression to speed up queries. #18049
 - [ENHANCEMENT] UI: Improve native histogram table formatting and add a background bar indicating the bucket count. #19332
-- [ENHANCEMENT] TSDB: Add prometheus_tsdb_head_series_pending_commit_underflow_total to report pending-sample reservation underflows. #19470
+- [ENHANCEMENT] TSDB: Add `prometheus_tsdb_head_series_pending_commit_underflow_total` to report pending-sample reservation underflows. #19470
 - [PERF] AWS SD: Build RDS cluster labels once per cluster instead of once per instance. #19504
 - [PERF] AWS SD: Describe RDS instances of different clusters concurrently, bounded by `request_concurrency`. #19506
 - [PERF] AWS SD: Describe each ElastiCache resource once per refresh instead of twice. #19585
@@ -41,7 +41,7 @@
 - [BUGFIX] TSDB: Do not retain head series after a synthetic start-timestamp zero sample is rejected. #19470
 - [BUGFIX] TSDB: Prevent query panics during series eviction after WAL replay. #19664
 - [BUGFIX] TSDB: fix potential deadlock between mmapSeriesChunks and gcSeries. #19460
-- [BUGFIX] tsdb: fix default block reload interval for custom options. #19368
+- [BUGFIX] TSDB: fix default block reload interval for custom options. #19368
 - [BUGFIX] AWS SD: Do not crash on serverless MSK clusters or MSK clusters without Open Monitoring. #19194
 - [BUGFIX] AWS SD: Do not panic when the ElastiCache API omits optional fields of a serverless cache or cache cluster. #19435
 - [BUGFIX] AWS SD: Reject non-positive `request_concurrency` instead of hanging service discovery indefinitely. #19524
@@ -78,9 +78,9 @@
 - [BUGFIX] discovery/kubernetes: Populate `__meta_kubernetes_service_loadbalancer_ip` from `status.loadBalancer.ingress`, falling back to deprecated `spec.loadBalancerIP`. #19404
 - [BUGFIX] histogram: Fix Compact moving buckets to wrong indices, and producing negative bucket counts for integer histograms, when more than one span is merged in the same pass. #19312
 - [BUGFIX] promtool: Fixed `tsdb dump` silently dropping native histogram samples. #18051
-- [BUGFIX] scrape: fix data race in Manager.TargetsDroppedCounts when called concurrently with Sync. #19304
-- [BUGFIX] textparse: fix nil histogram when native and classic histograms are mixed in one metric family. #19452
-- [BUGFIX] tsdb: Fix WAL and GC log messages to emit human-readable duration strings instead of nanosecond integers. #19307
+- [BUGFIX] scrape: fix data race in `Manager.TargetsDroppedCounts` to avoid miscounting dropped targets. #19304
+- [BUGFIX] scrape: fix nil histogram when native and classic histograms are mixed in one metric family. #19452
+- [BUGFIX] TSDB: Fix WAL and GC log messages to emit human-readable duration strings instead of nanosecond integers. #19307
 
 ## 3.14.0 / 2026-08-17
 
