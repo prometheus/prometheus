@@ -1615,6 +1615,22 @@ func (db *DB) CompactHead(head *RangeHead) error {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
+	// The periodic compaction loop in Compact never races with in-flight
+	// appends: by the time a range becomes head.compactable(), appendableMinValidTime()
+	// has already been rejecting new appends into it for a while (see the comment
+	// there), so the only appenders left to worry about are ones that validated
+	// against the old boundary before it moved; WaitForAppendersOverlapping waits
+	// those out. CompactHead lets a caller force-compact an arbitrary range,
+	// including one still inside the normally-protected appendable window, so it
+	// has to establish that same guarantee itself here. Skipping this allowed an
+	// in-flight append validated under the old minValidTime to commit after the
+	// block was already written, sliding the head's mint back below the block's
+	// maxt (updateMinMaxTime only ever moves bounds outward) and producing an
+	// overlapping block on the next compaction. See
+	// https://github.com/prometheus/prometheus/issues/8055.
+	db.head.raiseMinValidTime(head.BlockMaxTime())
+	db.head.WaitForAppendersOverlapping(head.MaxTime())
+
 	if err := db.compactHead(head); err != nil {
 		return fmt.Errorf("compact head: %w", err)
 	}

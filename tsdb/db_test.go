@@ -35,6 +35,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -3503,6 +3504,89 @@ func TestCompactHeadWithDeletion(t *testing.T) {
 
 	// This recreates the bug.
 	require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), 0, 100)))
+}
+
+// TestCompactHeadWaitsForRacingAppend reproduces
+// https://github.com/prometheus/prometheus/issues/8055: forcing compaction of
+// a range that reaches into the still-appendable portion of the head must
+// not let a concurrent append that started beforehand slide the head's mint
+// back into the block that compaction just wrote, which would make the next
+// compaction produce an overlapping block.
+func TestCompactHeadWaitsForRacingAppend(t *testing.T) {
+	t.Parallel()
+
+	// The whole DB lifecycle, including Close, is kept inside the synctest
+	// bubble below: compaction lazily touches internals (e.g. the
+	// compactor's context) that must not be created inside the bubble and
+	// then torn down from outside it once the bubble exits, which
+	// testing/synctest forbids.
+	synctest.Test(t, func(t *testing.T) {
+		db := newTestDB(t)
+		db.DisableCompactions()
+
+		ctx := context.Background()
+
+		app := db.Appender(ctx)
+		_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 0)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		// Open (but do not commit) an appender for a sample inside the range
+		// about to be force-compacted below. It captures the head's current,
+		// low minValidTime when created: without CompactHead waiting for it
+		// to finish, compaction could write a block covering [0, 100] before
+		// this sample lands, and the sample's later commit would then widen
+		// the head's mint back down to 50 via updateMinMaxTime -- which only
+		// ever moves bounds outward -- landing it inside the block that was
+		// just persisted.
+		racingApp := db.Appender(ctx)
+		_, err = racingApp.Append(0, labels.FromStrings("a", "b"), 50, 0)
+		require.NoError(t, err)
+
+		var compactErr error
+		var compactDone atomic.Bool
+		go func() {
+			compactErr = db.CompactHead(NewRangeHead(db.Head(), 0, 100))
+			compactDone.Store(true)
+		}()
+
+		// Let the compaction goroutine run until it blocks waiting for racingApp.
+		synctest.Wait()
+		require.False(t, compactDone.Load(), "CompactHead must wait for the racing append to finish")
+		require.Empty(t, db.Blocks(), "no block should be written while an overlapping append is still open")
+
+		require.NoError(t, racingApp.Commit())
+
+		// Advance fake time past the 500ms poll interval used by WaitForAppendersOverlapping.
+		time.Sleep(time.Second)
+		synctest.Wait()
+		require.True(t, compactDone.Load(), "CompactHead should complete once the racing append finishes")
+		require.NoError(t, compactErr)
+
+		require.Len(t, db.Blocks(), 1)
+		block := db.Blocks()[0].Meta()
+		require.GreaterOrEqual(t, db.Head().MinTime(), block.MaxTime,
+			"head mint must not slide back into the block that was just compacted")
+
+		// The sample committed mid-compaction must not have been lost: it
+		// should still be readable, from either the block or the head.
+		q, err := db.Querier(0, 100)
+		require.NoError(t, err)
+		ss := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+		var count int
+		for ss.Next() {
+			it := ss.At().Iterator(nil)
+			for it.Next() != chunkenc.ValNone {
+				count++
+			}
+			require.NoError(t, it.Err())
+		}
+		require.NoError(t, ss.Err())
+		require.Equal(t, 2, count) // Samples at t=0 and t=50.
+		require.NoError(t, q.Close())
+
+		require.NoError(t, db.Close())
+	})
 }
 
 func deleteNonBlocks(dbDir string) error {
