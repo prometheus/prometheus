@@ -84,6 +84,7 @@ var newUIReactRouterPaths = []string{
 	"/alertmanager-discovery",
 	"/status",
 	"/targets",
+	"/remote-write",
 }
 
 // Paths that are handled by the React router when the Agent mode is set.
