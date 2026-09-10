@@ -105,6 +105,7 @@ type Head struct {
 	typeMapPool         zeropool.Pool[map[chunks.HeadSeriesRef]sampleType]
 	bytesPool           zeropool.Pool[[]byte]
 	memChunkPool        sync.Pool
+	safeHeadChunkPool   sync.Pool
 
 	// These pools are only used during WAL/WBL replay and are reset at the end.
 	// NOTE: Adjust resetWLReplayResources() upon changes to the pools.
@@ -324,6 +325,11 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		memChunkPool: sync.Pool{
 			New: func() any {
 				return &memChunk{}
+			},
+		},
+		safeHeadChunkPool: sync.Pool{
+			New: func() any {
+				return &safeHeadChunk{}
 			},
 		},
 		stats:           stats,

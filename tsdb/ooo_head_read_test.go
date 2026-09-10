@@ -501,7 +501,7 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 
 		cr := NewHeadAndOOOChunkReader(db.head, 0, 1000, nil, nil, 0)
 		defer cr.Close()
-		c, iterable, err := cr.ChunkOrIterable(chunks.Meta{
+		c, iterable, _, err := cr.ChunkOrIterable(chunks.Meta{
 			Ref: 0x1800000, Chunk: chunkenc.Chunk(nil), MinTime: 100, MaxTime: 300,
 		})
 		require.Nil(t, iterable)
@@ -863,7 +863,7 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 			cr := NewHeadAndOOOChunkReader(db.head, tc.queryMinT, tc.queryMaxT, nil, nil, 0)
 			defer cr.Close()
 			for i := 0; i < len(chks); i++ {
-				c, iterable, err := cr.ChunkOrIterable(chks[i])
+				c, iterable, _, err := cr.ChunkOrIterable(chks[i])
 				require.NoError(t, err)
 				var it chunkenc.Iterator
 				if tc.expSingleChunks {
@@ -1041,7 +1041,7 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			cr := NewHeadAndOOOChunkReader(db.head, tc.queryMinT, tc.queryMaxT, nil, nil, 0)
 			defer cr.Close()
 			for i := 0; i < len(chks); i++ {
-				c, iterable, err := cr.ChunkOrIterable(chks[i])
+				c, iterable, _, err := cr.ChunkOrIterable(chks[i])
 				require.NoError(t, err)
 				require.Nil(t, c)
 

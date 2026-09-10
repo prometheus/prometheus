@@ -23,6 +23,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
@@ -265,15 +266,15 @@ func BenchmarkMergedStringIter(b *testing.B) {
 	b.ReportAllocs()
 }
 
-func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(app storage.Appender, i int)) (*Head, *DB) {
-	dir := b.TempDir()
+func createHeadForBenchmarkSelect(tb testing.TB, numSeries int, addSeries func(app storage.Appender, i int)) (*Head, *DB) {
+	dir := tb.TempDir()
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 255
 	opts.OutOfOrderTimeWindow = 1000
 	db, err := Open(dir, nil, nil, opts, nil)
-	require.NoError(b, err)
-	b.Cleanup(func() {
-		require.NoError(b, db.Close())
+	require.NoError(tb, err)
+	tb.Cleanup(func() {
+		require.NoError(tb, db.Close())
 	})
 	h := db.Head()
 
@@ -281,11 +282,11 @@ func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(ap
 	for i := range numSeries {
 		addSeries(app, i)
 		if i%1000 == 999 { // Commit every so often, so the appender doesn't get too big.
-			require.NoError(b, app.Commit())
+			require.NoError(tb, app.Commit())
 			app = h.Appender(context.Background())
 		}
 	}
-	require.NoError(b, app.Commit())
+	require.NoError(tb, app.Commit())
 	return h, db
 }
 
@@ -337,6 +338,60 @@ func BenchmarkQuerierSelect(b *testing.B) {
 
 		benchmarkSelect(b, (*queryableBlock)(block), numSeries, false)
 	})
+}
+
+// BenchmarkQuerierSelectWithSamples is like BenchmarkQuerierSelect but also
+// iterates all samples in each series. This exercises the chunk loading and
+// pool return path.
+func BenchmarkQuerierSelectWithSamples(b *testing.B) {
+	numSeries := 1000000
+	h, db := createHeadForBenchmarkSelect(b, numSeries, func(app storage.Appender, i int) {
+		_, err := app.Append(0, labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0)
+		if err != nil {
+			b.Fatal(err)
+		}
+	})
+
+	b.Run("Head", func(b *testing.B) {
+		benchmarkSelectWithSamples(b, db, numSeries, false)
+	})
+
+	b.Run("Block", func(b *testing.B) {
+		tmpdir := b.TempDir()
+
+		blockdir := createBlockFromHead(b, tmpdir, h)
+		block, err := OpenBlock(nil, blockdir, nil, nil)
+		require.NoError(b, err)
+		defer func() {
+			require.NoError(b, block.Close())
+		}()
+
+		benchmarkSelectWithSamples(b, (*queryableBlock)(block), numSeries, false)
+	})
+}
+
+func benchmarkSelectWithSamples(b *testing.B, queryable storage.Queryable, numSeries int, sorted bool) {
+	matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
+	b.ResetTimer()
+	for s := 1; s <= numSeries; s *= 10 {
+		b.Run(fmt.Sprintf("%dof%d", s, numSeries), func(b *testing.B) {
+			q, err := queryable.Querier(0, int64(s-1))
+			require.NoError(b, err)
+
+			b.ResetTimer()
+			var it chunkenc.Iterator
+			for b.Loop() {
+				ss := q.Select(context.Background(), sorted, nil, matcher)
+				for ss.Next() {
+					it = ss.At().Iterator(it)
+					for it.Next() != chunkenc.ValNone {
+					}
+				}
+				require.NoError(b, ss.Err())
+			}
+			q.Close()
+		})
+	}
 }
 
 // Type wrapper to let a Block be a Queryable in benchmarkSelect().

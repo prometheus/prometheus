@@ -694,9 +694,28 @@ type populateWithDelGenericSeriesIterator struct {
 	// the chunk returned from cr.ChunkOrIterable(). As that can return a nil
 	// chunk, currMeta.Chunk is not always guaranteed to be set.
 	currMeta chunks.Meta
+	// poolChunk is true if current chunk is pool-owned and must be
+	// returned via PutChunk before next iteration.
+	poolChunk bool
+	// canReturnChunks is true for the sample iterator which returns
+	// chunks to the pool. False for the chunk series iterator which
+	// exposes chunks via At() for the caller to return.
+	canReturnChunks bool
+	// currReleaser is set when the current chunk came from an iterable that
+	// holds pool-owned component chunks (e.g. mergedOOOChunks). It must be
+	// called before advancing to the next chunk or when iteration ends.
+	currReleaser func()
 }
 
 func (p *populateWithDelGenericSeriesIterator) reset(blockID ulid.ULID, cr ChunkReader, chks []chunks.Meta, intervals tombstones.Intervals) {
+	if p.canReturnChunks {
+		if p.poolChunk && p.currMeta.Chunk != nil {
+			_ = p.cr.PutChunk(p.currMeta.Chunk)
+		}
+		if p.currReleaser != nil {
+			p.currReleaser()
+		}
+	}
 	p.blockID = blockID
 	p.cr = cr
 	p.metas = chks
@@ -707,6 +726,8 @@ func (p *populateWithDelGenericSeriesIterator) reset(blockID ulid.ULID, cr Chunk
 	p.intervals = intervals
 	p.currDelIter = nil
 	p.currMeta = chunks.Meta{}
+	p.poolChunk = false
+	p.currReleaser = nil
 }
 
 // If copyHeadChunk is true, then the head chunk (i.e. the in-memory chunk of the TSDB)
@@ -716,6 +737,16 @@ func (p *populateWithDelGenericSeriesIterator) reset(blockID ulid.ULID, cr Chunk
 func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 	if p.err != nil || p.i >= len(p.metas)-1 {
 		return false
+	}
+
+	// Return the previous chunk to the pool before loading the next one.
+	if p.canReturnChunks {
+		if p.poolChunk && p.currMeta.Chunk != nil {
+			_ = p.cr.PutChunk(p.currMeta.Chunk)
+		}
+		if p.currReleaser != nil {
+			p.currReleaser()
+		}
 	}
 
 	p.i++
@@ -733,13 +764,13 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 	if ok && copyHeadChunk && len(p.bufIter.Intervals) == 0 {
 		// ChunkOrIterableWithCopy will copy the head chunk, if it can.
 		var maxt int64
-		p.currMeta.Chunk, iterable, maxt, p.err = hcr.ChunkOrIterableWithCopy(p.currMeta)
+		p.currMeta.Chunk, iterable, maxt, p.poolChunk, p.err = hcr.ChunkOrIterableWithCopy(p.currMeta)
 		if p.currMeta.Chunk != nil {
 			// For the in-memory head chunk the index reader sets maxt as MaxInt64. We fix it here.
 			p.currMeta.MaxTime = maxt
 		}
 	} else {
-		p.currMeta.Chunk, iterable, p.err = p.cr.ChunkOrIterable(p.currMeta)
+		p.currMeta.Chunk, iterable, p.poolChunk, p.err = p.cr.ChunkOrIterable(p.currMeta)
 	}
 
 	if p.err != nil {
@@ -749,6 +780,7 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 
 	// Use the single chunk if possible.
 	if p.currMeta.Chunk != nil {
+		p.currReleaser = nil
 		if len(p.bufIter.Intervals) == 0 {
 			// If there is no overlap with deletion intervals and a single chunk is
 			// returned, we can take chunk as it is.
@@ -765,6 +797,13 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 	// Otherwise, use the iterable to create an iterator.
 	p.bufIter.Iter = iterable.Iterator(p.bufIter.Iter)
 	p.currDelIter = &p.bufIter
+	// If the iterable holds pool-owned component chunks, set up the releaser
+	// so they are returned when advancing past this chunk.
+	if releaser, ok := iterable.(ChunkIterableReleaser); ok {
+		p.currReleaser = releaser.Release
+	} else {
+		p.currReleaser = nil
+	}
 	return true
 }
 
@@ -808,6 +847,7 @@ type populateWithDelSeriesIterator struct {
 }
 
 func (p *populateWithDelSeriesIterator) reset(blockID ulid.ULID, cr ChunkReader, chks []chunks.Meta, intervals tombstones.Intervals) {
+	p.canReturnChunks = true
 	p.populateWithDelGenericSeriesIterator.reset(blockID, cr, chks, intervals)
 	p.curr = nil
 }
@@ -827,6 +867,18 @@ func (p *populateWithDelSeriesIterator) Next() chunkenc.ValueType {
 		}
 		if valueType := p.curr.Next(); valueType != chunkenc.ValNone {
 			return valueType
+		}
+	}
+	// All chunks exhausted. Return the last chunk to the pool.
+	if p.canReturnChunks {
+		if p.poolChunk && p.currMeta.Chunk != nil {
+			_ = p.cr.PutChunk(p.currMeta.Chunk)
+			p.currMeta.Chunk = nil
+			p.poolChunk = false
+		}
+		if p.currReleaser != nil {
+			p.currReleaser()
+			p.currReleaser = nil
 		}
 	}
 	return chunkenc.ValNone
@@ -894,6 +946,7 @@ type populateWithDelChunkSeriesIterator struct {
 }
 
 func (p *populateWithDelChunkSeriesIterator) reset(blockID ulid.ULID, cr ChunkReader, chks []chunks.Meta, intervals tombstones.Intervals) {
+	p.canReturnChunks = false
 	p.populateWithDelGenericSeriesIterator.reset(blockID, cr, chks, intervals)
 	p.currMetaWithChunk = chunks.Meta{}
 	p.chunksFromIterable = p.chunksFromIterable[:0]
@@ -925,13 +978,33 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 			// If ChunkOrIterable() returned a non-nil chunk, the samples in
 			// p.currDelIter will only form one chunk, as the only change
 			// p.currDelIter might make is deleting some samples.
-			if p.populateCurrForSingleChunk() {
+			hasChunk := p.populateCurrForSingleChunk()
+			// The original chunk has been consumed by the re-encoding
+			// iterator and is no longer needed. Return it to the pool if
+			// it came from there. This is safe because the iterator holds
+			// its own copy of the chunk's byte slice, so Reset(nil) in
+			// Pool.Put does not corrupt the iterator.
+			if p.poolChunk {
+				_ = p.cr.PutChunk(p.currMeta.Chunk)
+				p.poolChunk = false
+			}
+			p.currMeta.Chunk = nil
+			if p.currReleaser != nil {
+				p.currReleaser()
+				p.currReleaser = nil
+			}
+			if hasChunk {
 				return true
 			}
 		} else {
 			// If ChunkOrIterable() returned an iterable, multiple chunks may be
 			// created from the samples in p.currDelIter.
-			if p.populateChunksFromIterable() {
+			hasChunk := p.populateChunksFromIterable()
+			if p.currReleaser != nil {
+				p.currReleaser()
+				p.currReleaser = nil
+			}
+			if hasChunk {
 				return true
 			}
 		}
@@ -1361,8 +1434,10 @@ func newNopChunkReader() ChunkReader {
 	}
 }
 
-func (cr nopChunkReader) ChunkOrIterable(chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
-	return cr.emptyChunk, nil, nil
+func (cr nopChunkReader) ChunkOrIterable(chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, bool, error) {
+	return cr.emptyChunk, nil, false, nil
 }
+
+func (nopChunkReader) PutChunk(chunkenc.Chunk) error { return nil }
 
 func (nopChunkReader) Close() error { return nil }

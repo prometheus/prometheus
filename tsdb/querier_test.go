@@ -30,6 +30,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -772,16 +773,18 @@ func createFakeReaderAndIterables(s ...[]chunks.Sample) (*fakeChunksReader, []ch
 	return f, chks
 }
 
-func (r *fakeChunksReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
+func (r *fakeChunksReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, bool, error) {
 	if chk, ok := r.chks[meta.Ref]; ok {
-		return chk, nil, nil
+		return chk, nil, false, nil
 	}
 
 	if it, ok := r.iterables[meta.Ref]; ok {
-		return nil, it, nil
+		return nil, it, false, nil
 	}
-	return nil, nil, fmt.Errorf("chunk or iterable not found at ref %v", meta.Ref)
+	return nil, nil, false, fmt.Errorf("chunk or iterable not found at ref %v", meta.Ref)
 }
+
+func (*fakeChunksReader) PutChunk(chunkenc.Chunk) error { return nil }
 
 type mockIterable struct {
 	s []chunks.Sample
@@ -2314,14 +2317,16 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 
 type mockChunkReader map[chunks.ChunkRef]chunkenc.Chunk
 
-func (cr mockChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
+func (cr mockChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, bool, error) {
 	chk, ok := cr[meta.Ref]
 	if ok {
-		return chk, nil, nil
+		return chk, nil, false, nil
 	}
 
-	return nil, nil, errors.New("Chunk with ref not found")
+	return nil, nil, false, errors.New("Chunk with ref not found")
 }
+
+func (mockChunkReader) PutChunk(chunkenc.Chunk) error { return nil }
 
 func (mockChunkReader) Close() error {
 	return nil
@@ -4309,4 +4314,84 @@ func TestBlockBaseQuerierSearchLabelValues(t *testing.T) {
 		}
 		require.Equal(t, []string{"staging", "prod", "dev"}, gotValues)
 	})
+}
+
+// countingPool wraps chunkenc.Pool and counts Get and Put calls.
+type countingPool struct {
+	inner chunkenc.Pool
+	gets  atomic.Int64
+	puts  atomic.Int64
+}
+
+func (p *countingPool) Get(e chunkenc.Encoding, b []byte) (chunkenc.Chunk, error) {
+	p.gets.Inc()
+	return p.inner.Get(e, b)
+}
+
+func (p *countingPool) Put(c chunkenc.Chunk) error {
+	p.puts.Inc()
+	return p.inner.Put(c)
+}
+
+// TestQuerierChunkPoolReturn verifies that chunks obtained from the pool during
+// block query iteration are returned to the pool after the iterator advances
+// to the next chunk or is reset for a new series.
+func TestQuerierChunkPoolReturn(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a head with series that span multiple chunks.
+	// Each series gets 300 samples at 1-second intervals, which with the default
+	// samples-per-chunk setting produces multiple chunks per series.
+	const numSeries = 10
+	const samplesPerSeries = 300
+	h, db := createHeadForBenchmarkSelect(t, numSeries, func(app storage.Appender, i int) {
+		for s := range samplesPerSeries {
+			_, err := app.Append(
+				0,
+				labels.FromStrings("foo", "bar", "i", strconv.Itoa(i)),
+				int64(s),
+				float64(s),
+			)
+			require.NoError(t, err)
+		}
+	})
+	defer func() { require.NoError(t, db.Close()) }()
+
+	// Compact the head into a block.
+	blockdir := createBlockFromHead(t, dir, h)
+
+	// Open the block with a counting pool.
+	pool := &countingPool{inner: chunkenc.NewPool()}
+	block, err := OpenBlock(nil, blockdir, pool, nil)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, block.Close()) }()
+
+	q, err := NewBlockQuerier(block, 0, samplesPerSeries)
+	require.NoError(t, err)
+	defer q.Close()
+
+	matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
+	ss := q.Select(context.Background(), false, nil, matcher)
+
+	// Iterate all series and all samples. Reuse the iterator across series
+	// to exercise the reset() path that returns the last chunk.
+	var it chunkenc.Iterator
+	seriesCount := 0
+	for ss.Next() {
+		seriesCount++
+		it = ss.At().Iterator(it)
+		sampleCount := 0
+		for it.Next() != chunkenc.ValNone {
+			sampleCount++
+		}
+		require.NoError(t, it.Err())
+		require.Positive(t, sampleCount)
+	}
+	require.NoError(t, ss.Err())
+	require.Equal(t, numSeries, seriesCount)
+
+	gets := pool.gets.Load()
+	puts := pool.puts.Load()
+	require.Positive(t, gets, "expected chunks to be obtained from the pool")
+	require.Equal(t, gets, puts, "all chunks should be returned to the pool")
 }
