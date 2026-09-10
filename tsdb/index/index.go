@@ -947,9 +947,13 @@ type StringIter interface {
 	Err() error
 }
 
+// Reader reads an index. Returned strings and iterators may borrow index data.
+// Keep the Reader reachable and open through their final use; defer Close or
+// use runtime.KeepAlive as needed.
 type Reader struct {
-	b   ByteSlice
-	toc *TOC
+	b    ByteSlice
+	view encoding.ByteView
+	toc  *TOC
 
 	// Close that releases the underlying resources of the byte slice.
 	c io.Closer
@@ -1007,7 +1011,13 @@ func NewFileReader(path string, decoder PostingsDecoder) (*Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	r, err := newReader(realByteSlice(f.Bytes()), f, decoder)
+	view := f.BytesView()
+	var mapped realByteSlice
+	_ = view.WithBytes(func(b []byte) error {
+		mapped = realByteSlice(b)
+		return nil
+	})
+	r, err := newReaderWithView(mapped, view, f, decoder)
 	if err != nil {
 		return nil, errors.Join(
 			err,
@@ -1019,8 +1029,14 @@ func NewFileReader(path string, decoder PostingsDecoder) (*Reader, error) {
 }
 
 func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder) (*Reader, error) {
+	return newReaderWithView(b, encoding.ByteView{}, c, postingsDecoder)
+}
+
+func newReaderWithView(b ByteSlice, view encoding.ByteView, c io.Closer, postingsDecoder PostingsDecoder) (*Reader, error) {
+	defer view.KeepAlive()
 	r := &Reader{
 		b:        b,
+		view:     view,
 		c:        c,
 		postings: map[string][]postingOffset{},
 		st:       labels.NewSymbolTable(),
@@ -1135,6 +1151,7 @@ type Range struct {
 // PostingsRanges returns a new map of byte range in the underlying index file
 // for all postings lists.
 func (r *Reader) PostingsRanges() (map[labels.Label]Range, error) {
+	defer r.view.KeepAlive()
 	m := map[labels.Label]Range{}
 	if err := ReadPostingsOffsetTable(r.b, r.toc.PostingsTable, func(name, value []byte, off uint64, _ int) error {
 		d := encoding.NewDecbufAt(r.b, int(off), castagnoliTable)
@@ -1333,12 +1350,17 @@ func (r *Reader) lookupSymbol(_ context.Context, o uint32) (string, error) {
 	if s, ok := r.nameSymbols[o]; ok {
 		return s, nil
 	}
-	return r.symbols.Lookup(o)
+	s, err := r.symbols.Lookup(o)
+	r.view.KeepAlive()
+	return s, err
 }
 
 // Symbols returns an iterator over the symbols that exist within the index.
+// Keep the Reader reachable and open through the final use of returned strings.
 func (r *Reader) Symbols() StringIter {
-	return r.symbols.Iter()
+	it := r.symbols.Iter()
+	r.view.KeepAlive()
+	return it
 }
 
 // SymbolTableSize returns the symbol table size in bytes.
@@ -1347,8 +1369,7 @@ func (r *Reader) SymbolTableSize() uint64 {
 }
 
 // SortedLabelValues returns value tuples that exist for the given label name.
-// It is not safe to use the return value beyond the lifetime of the byte slice
-// passed into the Reader.
+// Keep the Reader reachable and open through the final use of returned values.
 func (r *Reader) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	values, err := r.LabelValues(ctx, name, hints, matchers...)
 	if err == nil && r.version == FormatV1 {
@@ -1358,8 +1379,7 @@ func (r *Reader) SortedLabelValues(ctx context.Context, name string, hints *stor
 }
 
 // LabelValues returns value tuples that exist for the given label name.
-// It is not safe to use the return value beyond the lifetime of the byte slice
-// passed into the Reader.
+// Keep the Reader reachable and open through the final use of returned values.
 // TODO(replay): Support filtering by matchers.
 func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) > 0 {
@@ -1407,6 +1427,7 @@ func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.La
 // LabelNamesFor returns all the label names for the series referred to by IDs.
 // The names returned are sorted.
 func (r *Reader) LabelNamesFor(ctx context.Context, postings Postings) ([]string, error) {
+	defer r.view.KeepAlive()
 	// Gather offsetsMap the name offsetsMap in the symbol table first
 	offsetsMap := make(map[uint32]struct{})
 	i := 0
@@ -1459,6 +1480,7 @@ func (r *Reader) LabelNamesFor(ctx context.Context, postings Postings) ([]string
 
 // Series reads the series with the given ID and writes its labels and chunks into builder and chks.
 func (r *Reader) Series(id storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
+	defer r.view.KeepAlive()
 	offset := id
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
@@ -1481,6 +1503,7 @@ func (r *Reader) Series(id storage.SeriesRef, builder *labels.ScratchBuilder, ch
 // traversePostingOffsets traverses r's posting offsets table, starting at off, and calls cb with every label value and postings offset.
 // If cb returns false (or an error), the traversing is interrupted.
 func (r *Reader) traversePostingOffsets(ctx context.Context, off int, cb func(string, uint64) (bool, error)) error {
+	defer r.view.KeepAlive()
 	// Don't Crc32 the entire postings offset table, this is very slow
 	// so hope any issues were caught at startup.
 	d := encoding.NewDecbufAt(r.b, int(r.toc.PostingsTable), nil)
@@ -1517,6 +1540,7 @@ func (r *Reader) traversePostingOffsets(ctx context.Context, off int, cb func(st
 }
 
 func (r *Reader) Postings(ctx context.Context, name string, values ...string) (Postings, error) {
+	defer r.view.KeepAlive()
 	if r.version == FormatV1 {
 		e, ok := r.postingsV1[name]
 		if !ok {
@@ -1598,6 +1622,8 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 	return Merge(ctx, res...), nil
 }
 
+// PostingsForLabelMatching returns postings for matching label values. Values
+// passed to match are borrowed and must not be retained.
 func (r *Reader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
 	return r.postingsForLabelMatching(ctx, name, match)
 }
@@ -1608,6 +1634,7 @@ func (r *Reader) PostingsForAllLabelValues(ctx context.Context, name string) Pos
 
 // postingsForLabelMatching implements PostingsForLabelMatching if match is non-nil, and PostingsForAllLabelValues otherwise.
 func (r *Reader) postingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
+	defer r.view.KeepAlive()
 	if r.version == FormatV1 {
 		return r.postingsForLabelMatchingV1(ctx, name, match)
 	}

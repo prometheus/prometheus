@@ -25,6 +25,7 @@ import (
 	"strconv"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -605,19 +606,21 @@ func (b realByteSlice) Range(start, end int) []byte {
 	return b[start:end]
 }
 
-// Reader implements a ChunkReader for a serialized byte stream
-// of series data.
+// Reader implements a ChunkReader for serialized series data. Returned chunks
+// may borrow segment data. Keep the Reader reachable and open through their
+// final use; defer Close or use runtime.KeepAlive as needed.
 type Reader struct {
 	// The underlying bytes holding the encoded series data.
 	// Each slice holds the data for a different segment.
-	bs   []ByteSlice
-	cs   []io.Closer // Closers for resources behind the byte slices.
-	size int64       // The total size of bytes in the reader.
-	pool chunkenc.Pool
+	bs    []ByteSlice
+	views []encoding.ByteView
+	cs    []io.Closer // Closers for resources behind the byte slices.
+	size  int64       // The total size of bytes in the reader.
+	pool  chunkenc.Pool
 }
 
-func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, error) {
-	cr := Reader{pool: pool, bs: bs, cs: cs}
+func newReader(bs []ByteSlice, views []encoding.ByteView, cs []io.Closer, pool chunkenc.Pool) (*Reader, error) {
+	cr := Reader{pool: pool, bs: bs, views: views, cs: cs}
 	for i, b := range cr.bs {
 		if b.Len() < SegmentHeaderSize {
 			return nil, fmt.Errorf("invalid segment header in segment %d: %w", i, errInvalidSize)
@@ -648,8 +651,9 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 	}
 
 	var (
-		bs []ByteSlice
-		cs []io.Closer
+		bs    []ByteSlice
+		views []encoding.ByteView
+		cs    []io.Closer
 	)
 	for _, fn := range files {
 		f, err := fileutil.OpenMmapFile(fn)
@@ -660,10 +664,17 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 			)
 		}
 		cs = append(cs, f)
-		bs = append(bs, realByteSlice(f.Bytes()))
+		view := f.BytesView()
+		if err := view.WithBytes(func(b []byte) error {
+			bs = append(bs, realByteSlice(b))
+			return nil
+		}); err != nil {
+			return nil, errors.Join(err, closeAll(cs))
+		}
+		views = append(views, view)
 	}
 
-	reader, err := newReader(bs, cs, pool)
+	reader, err := newReader(bs, views, cs, pool)
 	if err != nil {
 		return nil, errors.Join(
 			err,
@@ -682,7 +693,8 @@ func (s *Reader) Size() int64 {
 	return s.size
 }
 
-// ChunkOrIterable returns a chunk from a given reference.
+// ChunkOrIterable returns a chunk from a given reference. The result may borrow
+// segment data; keep the Reader reachable and open through its final use.
 func (s *Reader) ChunkOrIterable(meta Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
 	sgmIndex, chkStart := BlockChunkRef(meta.Ref).Unpack()
 
@@ -691,6 +703,11 @@ func (s *Reader) ChunkOrIterable(meta Meta) (chunkenc.Chunk, chunkenc.Iterable, 
 	}
 
 	sgmBytes := s.bs[sgmIndex]
+	var view encoding.ByteView
+	if sgmIndex < len(s.views) {
+		view = s.views[sgmIndex]
+	}
+	defer view.KeepAlive()
 
 	if chkStart+MaxChunkLengthFieldSize > sgmBytes.Len() {
 		return nil, nil, fmt.Errorf("segment doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", chkStart+MaxChunkLengthFieldSize, sgmBytes.Len())
@@ -717,9 +734,8 @@ func (s *Reader) ChunkOrIterable(meta Meta) (chunkenc.Chunk, chunkenc.Iterable, 
 		return nil, nil, err
 	}
 
-	chkData := sgmBytes.Range(chkDataStart, chkDataEnd)
 	chkEnc := sgmBytes.Range(chkEncStart, chkEncStart+ChunkEncodingSize)[0]
-	chk, err := s.pool.Get(chunkenc.Encoding(chkEnc), chkData)
+	chk, err := s.pool.Get(chunkenc.Encoding(chkEnc), sgmBytes.Range(chkDataStart, chkDataEnd))
 	return chk, nil, err
 }
 
