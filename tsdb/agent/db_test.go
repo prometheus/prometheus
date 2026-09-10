@@ -700,97 +700,98 @@ func TestWALReplay(t *testing.T) {
 		numDatapoints = 1000
 		numHistograms = 100
 		numSeries     = 8
-		lastTs        = 500
+		// seriesTsStride is larger than any per-series sample count so that
+		// each series can be given a unique, non-overlapping timestamp range.
+		seriesTsStride = 2000
 	)
 
-	s := createTestAgentDB(t, nil, DefaultOptions())
-	app := s.Appender(context.TODO())
+	// Every series is appended samples with strictly increasing timestamps
+	// ending at a value that is unique per series. On replay, a series' lastTs
+	// must equal that unique maximum. This detects samples that were dropped,
+	// miss-sharded, or reprocessed from a reused buffer, which a single shared
+	// timestamp would hide.
+	for _, concurrency := range []int{1, 4} {
+		t.Run(fmt.Sprintf("concurrency=%d", concurrency), func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.WALReplayConcurrency = concurrency
 
-	lbls := labelsForTest(t.Name(), numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
+			s := createTestAgentDB(t, nil, opts)
+			app := s.Appender(context.TODO())
 
-		for range numDatapoints {
-			_, err := app.Append(0, lset, lastTs, 0)
+			// expectedMax maps a series label set to the highest timestamp
+			// appended for it, which is what its lastTs must be after replay.
+			expectedMax := map[string]int64{}
+			seriesIdx := 0
+
+			appendFloats := func(groupName string) {
+				for _, l := range labelsForTest(groupName, numSeries) {
+					lset := labels.New(l...)
+					base := int64(seriesIdx) * seriesTsStride
+					var lastTs int64
+					for k := range numDatapoints {
+						lastTs = base + int64(k)
+						_, err := app.Append(0, lset, lastTs, 0)
+						require.NoError(t, err)
+					}
+					expectedMax[lset.String()] = lastTs
+					seriesIdx++
+				}
+			}
+
+			appendHistograms := func(groupName string, hs []*histogram.Histogram, fhs []*histogram.FloatHistogram) {
+				for _, l := range labelsForTest(groupName, numSeries) {
+					lset := labels.New(l...)
+					base := int64(seriesIdx) * seriesTsStride
+					var lastTs int64
+					for k := range numHistograms {
+						lastTs = base + int64(k)
+						var err error
+						if hs != nil {
+							_, err = app.AppendHistogram(0, lset, lastTs, hs[k], nil)
+						} else {
+							_, err = app.AppendHistogram(0, lset, lastTs, nil, fhs[k])
+						}
+						require.NoError(t, err)
+					}
+					expectedMax[lset.String()] = lastTs
+					seriesIdx++
+				}
+			}
+
+			appendFloats(t.Name())
+			appendHistograms(t.Name()+"_histogram", tsdbutil.GenerateTestHistograms(numHistograms), nil)
+			appendHistograms(t.Name()+"_custom_buckets_histogram", tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms), nil)
+			appendHistograms(t.Name()+"_float_histogram", nil, tsdbutil.GenerateTestFloatHistograms(numHistograms))
+			appendHistograms(t.Name()+"_custom_buckets_float_histogram", nil, tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms))
+
+			require.NoError(t, app.Commit())
+			require.NoError(t, s.Close())
+
+			// Hack: s.wal.Dir() is the /wal subdirectory of the original storage path.
+			// We need the original directory so we can recreate the storage for replay.
+			storageDir := filepath.Dir(s.wal.Dir())
+
+			reg := prometheus.NewRegistry()
+			replayStorage, err := Open(s.logger, reg, nil, storageDir, opts)
 			require.NoError(t, err)
-		}
-	}
+			defer func() {
+				require.NoError(t, replayStorage.Close())
+			}()
 
-	lbls = labelsForTest(t.Name()+"_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
+			// Check that all the series are retrieved back from the WAL.
+			m := gatherFamily(t, reg, "prometheus_agent_active_series")
+			require.Equal(t, float64(numSeries*5), m.Metric[0].Gauge.GetValue(), "agent wal replay mismatch of active series count")
 
-		histograms := tsdbutil.GenerateTestHistograms(numHistograms)
-
-		for i := range numHistograms {
-			_, err := app.AppendHistogram(0, lset, lastTs, histograms[i], nil)
-			require.NoError(t, err)
-		}
-	}
-
-	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
-
-		for i := range numHistograms {
-			_, err := app.AppendHistogram(0, lset, lastTs, histograms[i], nil)
-			require.NoError(t, err)
-		}
-	}
-
-	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
-
-		for i := range numHistograms {
-			_, err := app.AppendHistogram(0, lset, lastTs, nil, floatHistograms[i])
-			require.NoError(t, err)
-		}
-	}
-
-	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
-
-		for i := range numHistograms {
-			_, err := app.AppendHistogram(0, lset, lastTs, nil, floatHistograms[i])
-			require.NoError(t, err)
-		}
-	}
-
-	require.NoError(t, app.Commit())
-	require.NoError(t, s.Close())
-
-	// Hack: s.wal.Dir() is the /wal subdirectory of the original storage path.
-	// We need the original directory so we can recreate the storage for replay.
-	storageDir := filepath.Dir(s.wal.Dir())
-
-	reg := prometheus.NewRegistry()
-	replayStorage, err := Open(s.logger, reg, nil, storageDir, s.opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
-	defer func() {
-		require.NoError(t, replayStorage.Close())
-	}()
-
-	// Check if all the series are retrieved back from the WAL.
-	m := gatherFamily(t, reg, "prometheus_agent_active_series")
-	require.Equal(t, float64(numSeries*5), m.Metric[0].Gauge.GetValue(), "agent wal replay mismatch of active series count")
-
-	// Check if lastTs of the samples retrieved from the WAL is retained.
-	metrics := replayStorage.series.series
-	for i := range metrics {
-		mp := metrics[i]
-		for _, v := range mp {
-			require.Equal(t, v.lastTs, int64(lastTs))
-		}
+			// Check that every series has exactly its expected lastTs and no
+			// unexpected series exist, by comparing the whole map at once.
+			actualMax := map[string]int64{}
+			for i := range replayStorage.series.series {
+				for _, v := range replayStorage.series.series[i] {
+					actualMax[v.lset.String()] = v.lastTs
+				}
+			}
+			require.Equal(t, expectedMax, actualMax)
+		})
 	}
 }
 
