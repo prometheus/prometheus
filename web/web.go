@@ -786,7 +786,11 @@ func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig s
 	case e := <-errCh:
 		return e
 	case <-ctx.Done():
-		httpSrv.Shutdown(ctx)
+		// Use a fresh context for shutdown so that Shutdown can actually wait
+		// for in-flight requests to drain. The original ctx is already cancelled.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		httpSrv.Shutdown(shutdownCtx)
 		return nil
 	}
 }
