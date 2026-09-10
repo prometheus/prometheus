@@ -17,6 +17,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -106,36 +107,109 @@ func TestTargetOffset(t *testing.T) {
 }
 
 func TestTargetURL(t *testing.T) {
-	scrapeConfig := &config.ScrapeConfig{
-		Params: url.Values{
-			"abc": []string{"foo", "bar", "baz"},
-			"xyz": []string{"hoo"},
+	for _, tc := range []struct {
+		name     string
+		params   url.Values
+		labels   map[string]string
+		expected url.Values
+	}{
+		{
+			// The first value for each URL query parameter can be set/modified via labels.
+			name: "first value overridden by bare label",
+			params: url.Values{
+				"abc": []string{"foo", "bar", "baz"},
+				"xyz": []string{"hoo"},
+			},
+			labels: map[string]string{
+				"__param_abc": "overwrite",
+				"__param_cde": "huu",
+			},
+			expected: url.Values{
+				"abc": []string{"overwrite", "bar", "baz"},
+				"cde": []string{"huu"},
+				"xyz": []string{"hoo"},
+			},
 		},
-	}
-	labels := labels.FromMap(map[string]string{
-		model.AddressLabel:     "example.com:1234",
-		model.SchemeLabel:      "https",
-		model.MetricsPathLabel: "/metricz",
-		"__param_abc":          "overwrite",
-		"__param_cde":          "huu",
-	})
-	target := NewTarget(labels, scrapeConfig, nil, nil)
+		{
+			name:     "indexed label overrides configured value",
+			params:   url.Values{"abc": []string{"foo", "bar", "baz"}},
+			labels:   map[string]string{"__param_abc_1": "overwrite"},
+			expected: url.Values{"abc": []string{"foo", "overwrite", "baz"}},
+		},
+		{
+			name:   "indexed label beyond configured values is appended",
+			params: url.Values{"abc": []string{"foo", "bar", "baz"}},
+			labels: map[string]string{
+				"__param_abc":   "first",
+				"__param_abc_1": "second",
+				"__param_abc_5": "appended",
+			},
+			expected: url.Values{"abc": []string{"first", "second", "baz", "appended"}},
+		},
+		{
+			name:   "indexed labels applied in numeric order",
+			params: url.Values{"abc": []string{"foo"}},
+			labels: map[string]string{
+				"__param_abc_10": "ten",
+				"__param_abc_2":  "two",
+			},
+			expected: url.Values{"abc": []string{"foo", "two", "ten"}},
+		},
+		{
+			name: "indexed labels with gaps and without configured params",
+			labels: map[string]string{
+				"__param_abc_3": "three",
+				"__param_abc_1": "one",
+			},
+			expected: url.Values{"abc": []string{"one", "three"}},
+		},
+		{
+			name: "bare and indexed labels without configured params",
+			labels: map[string]string{
+				"__param_abc":   "first",
+				"__param_abc_1": "second",
+			},
+			expected: url.Values{"abc": []string{"first", "second"}},
+		},
+		{
+			name:   "invalid index suffix names the parameter literally",
+			params: url.Values{"abc": []string{"foo"}},
+			labels: map[string]string{
+				"__param_abc_0":  "zero",
+				"__param_abc_01": "leading-zero",
+				"__param_abc_x":  "letter",
+				"__param_abc_":   "trailing",
+				"__param__1":     "no-name",
+			},
+			expected: url.Values{
+				"abc":    []string{"foo"},
+				"abc_0":  []string{"zero"},
+				"abc_01": []string{"leading-zero"},
+				"abc_x":  []string{"letter"},
+				"abc_":   []string{"trailing"},
+				"_1":     []string{"no-name"},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lbls := map[string]string{
+				model.AddressLabel:     "example.com:1234",
+				model.SchemeLabel:      "https",
+				model.MetricsPathLabel: "/metricz",
+			}
+			maps.Copy(lbls, tc.labels)
+			target := NewTarget(labels.FromMap(lbls), &config.ScrapeConfig{Params: tc.params}, nil, nil)
 
-	// The reserved labels are concatenated into a full URL. The first value for each
-	// URL query parameter can be set/modified via labels as well.
-	expectedParams := url.Values{
-		"abc": []string{"overwrite", "bar", "baz"},
-		"cde": []string{"huu"},
-		"xyz": []string{"hoo"},
+			// The reserved labels are concatenated into a full URL.
+			expectedURL := &url.URL{
+				Scheme:   "https",
+				Host:     "example.com:1234",
+				Path:     "/metricz",
+				RawQuery: tc.expected.Encode(),
+			}
+			require.Equal(t, expectedURL, target.URL())
+		})
 	}
-	expectedURL := &url.URL{
-		Scheme:   "https",
-		Host:     "example.com:1234",
-		Path:     "/metricz",
-		RawQuery: expectedParams.Encode(),
-	}
-
-	require.Equal(t, expectedURL, target.URL())
 }
 
 func TestTargetURL_Unix(t *testing.T) {
