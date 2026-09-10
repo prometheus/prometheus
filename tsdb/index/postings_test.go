@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -1518,4 +1520,186 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	})
 	require.Error(t, p.Err())
 	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
+}
+
+func TestMemPostings_Unordered_Add_Get(t *testing.T) {
+	mp := NewMemPostings()
+	for ref := storage.SeriesRef(1); ref < 8; ref += 2 {
+		// First, add next series.
+		next := ref + 1
+		mp.Add(next, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(next))))
+		nextPostings := mp.Postings(context.Background(), labels.MetricName, "test")
+
+		// Now add current ref.
+		mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
+
+		// Next postings should still reference the next series.
+		nextExpanded, err := ExpandPostings(nextPostings)
+		require.NoError(t, err)
+		require.Len(t, nextExpanded, int(ref))
+		require.Equal(t, next, nextExpanded[len(nextExpanded)-1])
+	}
+}
+
+func TestMemPostings_Concurrent_Add_Get(t *testing.T) {
+	refs := make(chan storage.SeriesRef)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	t.Cleanup(wg.Wait)
+	t.Cleanup(func() { close(refs) })
+
+	mp := NewMemPostings()
+	go func() {
+		defer wg.Done()
+		for ref := range refs {
+			mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
+			p := mp.Postings(context.Background(), labels.MetricName, "test")
+
+			_, err := ExpandPostings(p)
+			if err != nil {
+				t.Errorf("unexpected error: %s", err)
+			}
+		}
+	}()
+
+	for ref := storage.SeriesRef(1); ref < 8; ref += 2 {
+		// Add next ref in another goroutine so they would race.
+		refs <- ref + 1
+		// Add current ref here.
+		mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
+
+		// This test only checks that there's no data race, the values are checked in TestMemPostings_Unordered_Add_Get where determinism is easier.
+		p := mp.Postings(context.Background(), labels.MetricName, "test")
+		_, err := ExpandPostings(p)
+		require.NoError(t, err)
+	}
+}
+
+// TestMemPostings_ConcurrentAddGet_LargeList exercises the path where lists are long enough that addFor repairs order violations in place.
+func TestMemPostings_ConcurrentAddGet_LargeList(t *testing.T) {
+	const (
+		readers    = 2
+		writers    = 4
+		perWriter  = 400
+		labelValue = "big"
+	)
+
+	mp := NewMemPostings()
+	// Seed the list well past trackedListMinLen, which is what makes addFor track reader exposure rather than copying on every repair.
+	seeded := storage.SeriesRef(trackedListMinLen * 2)
+	for i := range seeded {
+		mp.Add(i*2, labels.FromStrings("name", labelValue))
+	}
+
+	var (
+		wg      sync.WaitGroup
+		stop    = make(chan struct{})
+		next    atomic.Uint64
+		readIts atomic.Int64
+	)
+	next.Store(uint64(seeded * 2))
+
+	for range writers {
+		wg.Go(func() {
+			for range perWriter {
+				// Grab a ref, then yield before adding it, so writers interleave and produce out-of-order inserts just like the head does.
+				ref := storage.SeriesRef(next.Add(2))
+				runtime.Gosched()
+				mp.Add(ref, labels.FromStrings("name", labelValue))
+			}
+		})
+	}
+
+	var readWG sync.WaitGroup
+	for range readers {
+		readWG.Go(func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				// Expand the postings outside of any lock like a query does, the result must always be sorted and duplicate-free.
+				refs, err := ExpandPostings(mp.Postings(context.Background(), "name", labelValue))
+				if err != nil {
+					t.Errorf("unexpected error: %s", err)
+					return
+				}
+				for i := 1; i < len(refs); i++ {
+					if refs[i] <= refs[i-1] {
+						t.Errorf("postings not strictly sorted at %d: %d then %d", i, refs[i-1], refs[i])
+						return
+					}
+				}
+				readIts.Add(1)
+				// Let the writers get the lock, otherwise they starve and the interesting interleavings never happen.
+				runtime.Gosched()
+			}
+		})
+	}
+
+	wg.Wait()
+	close(stop)
+	readWG.Wait()
+	require.Positive(t, readIts.Load(), "readers never got to read")
+
+	// Every ref that was added must be present exactly once, and in order.
+	refs, err := ExpandPostings(mp.Postings(context.Background(), "name", labelValue))
+	require.NoError(t, err)
+	require.Len(t, refs, int(seeded)+writers*perWriter)
+	require.IsIncreasing(t, refs)
+}
+
+// BenchmarkMemPostings_Add benchmarks adding series to already large postings lists, where repairing an order violation is expensive, see https://github.com/prometheus/prometheus/issues/15317.
+func BenchmarkMemPostings_Add(b *testing.B) {
+	const (
+		seeded = 200000
+		// Out of order refs go back this far at most, the order of magnitude observed for concurrent series creation in the head.
+		maxShift = 256
+	)
+
+	for _, bc := range []struct {
+		name string
+		// outOfOrderEvery is how often an added ref is lower than the previous one.
+		outOfOrderEvery int
+		// readEvery is how often a reader takes a reference to the postings list.
+		readEvery int
+	}{
+		{name: "ordered", outOfOrderEvery: 0, readEvery: 0},
+		{name: "ordered_with_reads", outOfOrderEvery: 0, readEvery: 100},
+		{name: "out_of_order", outOfOrderEvery: 30, readEvery: 0},
+		{name: "out_of_order_with_reads", outOfOrderEvery: 30, readEvery: 100},
+		{name: "out_of_order_read_every_add", outOfOrderEvery: 30, readEvery: 1},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			mp := NewMemPostings()
+			lbls := labels.FromStrings("job", "bench")
+			// Refs go up in steps of maxShift*2 so that out of order refs never collide with one that was already added.
+			next := storage.SeriesRef(0)
+			step := storage.SeriesRef(maxShift * 2)
+			for range seeded {
+				next += step
+				mp.Add(next, lbls)
+			}
+
+			rnd := rand.New(rand.NewSource(1))
+			i := 0
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				i++
+				next += step
+				ref := next
+				if bc.outOfOrderEvery > 0 && i%bc.outOfOrderEvery == 0 {
+					// Go back a random number of positions, subtracting one to stay unique since every in-order ref is a multiple of step.
+					ref = next - storage.SeriesRef(rnd.Intn(maxShift)+1)*step - 1
+				}
+				mp.Add(ref, lbls)
+				if bc.readEvery > 0 && i%bc.readEvery == 0 {
+					// A query taking a reference to the postings list, which is what makes it unsafe to repair order violations in place afterwards.
+					mp.Postings(context.Background(), "job", "bench")
+				}
+			}
+		})
+	}
 }
