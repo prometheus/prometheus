@@ -202,6 +202,36 @@ func QueryLabels(url *url.URL, roundTripper http.RoundTripper, matchers []string
 	return successExitCode
 }
 
+// QueryLabelNames queries for all label names against a Prometheus server.
+func QueryLabelNames(url *url.URL, roundTripper http.RoundTripper, matchers []string, start, end string, p printer) int {
+	api, err := newAPI(url, roundTripper, nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		return failureExitCode
+	}
+
+	stime, etime, err := parseStartTimeAndEndTime(start, end)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return failureExitCode
+	}
+
+	// Run query against client.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	val, warn, err := api.LabelNames(ctx, matchers, stime, etime)
+	cancel()
+
+	for _, v := range warn {
+		fmt.Fprintln(os.Stderr, "query warning:", v)
+	}
+	if err != nil {
+		return handleAPIError(err)
+	}
+
+	p.printLabelNames(val)
+	return successExitCode
+}
+
 func handleAPIError(err error) int {
 	var apiErr *v1.Error
 	if errors.As(err, &apiErr) && apiErr.Detail != "" {
