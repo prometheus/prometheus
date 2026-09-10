@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"log/slog"
 	"math"
 	"net"
@@ -118,6 +119,21 @@ var (
 	fgprofHandler = fgprof.Handler()
 	fgprofMu      sync.Mutex
 )
+
+// httpErrorLogger is an io.Writer that logs HTTP server errors through the
+// provided slog.Logger. Using this instead of slog.NewLogLogger avoids issues
+// with IPv6 addresses in TLS handshake error messages being mangled.
+type httpErrorLogger struct {
+	logger *slog.Logger
+}
+
+func (l *httpErrorLogger) Write(p []byte) (int, error) {
+	msg := strings.TrimRight(string(p), "\n\r")
+	if msg != "" {
+		l.logger.Error(msg)
+	}
+	return len(p), nil
+}
 
 // withStackTracer logs the stack trace in case the request panics. The function
 // will re-raise the error which will then be handled by the net/http package.
@@ -765,7 +781,7 @@ func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig s
 
 	mux.Handle(apiPath+"/v1/", http.StripPrefix(apiPath+"/v1", av1))
 
-	errlog := slog.NewLogLogger(h.logger.Handler(), slog.LevelError)
+	errlog := log.New(&httpErrorLogger{h.logger}, "", 0)
 
 	spanNameFormatter := otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
 		return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
