@@ -605,13 +605,20 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	router.Get("/debug/*subpath", serveDebug)
 	router.Post("/debug/*subpath", serveDebug)
 
-	router.Get("/-/healthy", func(w http.ResponseWriter, _ *http.Request) {
+	healthyHandler := func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "%s is Healthy.\n", o.AppName)
-	})
-	router.Head("/-/healthy", func(w http.ResponseWriter, _ *http.Request) {
+	}
+	healthyHeadHandler := func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	})
+	}
+
+	router.Get("/-/healthy", healthyHandler)
+	router.Head("/-/healthy", healthyHeadHandler)
+	router.Get("/health", healthyHandler)
+	router.Head("/health", healthyHeadHandler)
+	router.Get("/healthz", healthyHandler)
+	router.Head("/healthz", healthyHeadHandler)
 	router.Get("/-/ready", readyf(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "%s is Ready.\n", o.AppName)
