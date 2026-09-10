@@ -764,6 +764,17 @@ func TestShouldReshard(t *testing.T) {
 	}
 }
 
+func TestUpdateMetricsRecordsLastSuccessfulSend(t *testing.T) {
+	_, m := newTestClientAndQueueManager(t, defaultFlushDeadline, remoteapi.WriteV1MessageType)
+	s := m.newShards()
+
+	s.updateMetrics(context.Background(), errors.New("failed send"), 0, 0, 0, 0, WriteResponseStats{}, 0)
+	require.Zero(t, m.lastSendTimestamp.Load())
+
+	s.updateMetrics(context.Background(), nil, 0, 0, 0, 0, WriteResponseStats{}, 0)
+	require.NotZero(t, m.lastSendTimestamp.Load())
+}
+
 // TestDisableReshardOnRetry asserts that resharding should be disabled when a
 // recoverable error is returned from remote_write.
 func TestDisableReshardOnRetry(t *testing.T) {
