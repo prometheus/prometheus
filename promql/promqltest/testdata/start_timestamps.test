@@ -311,3 +311,66 @@ eval range from 10s to 50s step 10s start_timestamp(series * 1)
     # no results
 
 clear
+
+# Tests for ignore_start_times().
+# This function should return the input series as-is but without start timestamp processing.
+# When used with rate/increase/delta, it should behave as if use-start-timestamps is disabled.
+load 1m
+    cumulative{type="no_st"}              _ _ 0+60x14
+    cumulative{type="st_resets"}@st       _ _ -30s-1mx2 -1m-1mx2 -59999ms-1mx2 -1s-1mx2 -1ms-1mx2
+    cumulative{type="st_resets"}          _ _ 0+60x14
+    cumulative{type="normalized_resets"}  _ _ 0 60 120 300 360 420 780 840 900 1440 1500 1560 2280 2340 2400
+    delta{type="no_st"}                   _ _  60x15
+    delta{type="otel"}@st                 _ _ -1mx15
+    delta{type="otel"}                    _ _  60x15
+    delta{type="gcp"}@st                  _ _ -59999msx15
+    delta{type="gcp"}                     _ _       60x15
+    delta{type="minimal_range"}@st        _ _ -1msx15
+    delta{type="minimal_range"}           _ _   60x15
+    delta{type="empty_range"}@st          _ _ -0msx15
+    delta{type="empty_range"}             _ _   60x15
+    delta{type="normalized_resets"}       _ _ 60+60x15
+
+# ignore_start_times should return the raw samples without start timestamp processing
+eval range from 7m to 15m step 1m ignore_start_times(cumulative)
+    {type="no_st"}              0 60 120 180 240 300 360 420 480
+    {type="st_resets"}          0 60 120 180 240 300 360 420 480
+    {type="normalized_resets"}  0 60 120 300 360 420 780 840 900
+
+eval range from 10m to 15m step 1m ignore_start_times(delta)
+    {type="no_st"}                60 60 60 60 60
+    {type="otel"}                 60 60 60 60 60
+    {type="gcp"}                  60 60 60 60 60
+    {type="minimal_range"}        60 60 60 60 60
+    {type="empty_range"}          60 60 60 60 60
+    {type="normalized_resets"}    60 120 180 240 300
+
+# ignore_start_times with rate should behave as if start timestamps are disabled
+eval range from 7m to 15m step 1m rate(ignore_start_times(cumulative[5m]))
+    {type="no_st"}              1 1 1 1 1 1 1 1 1
+    {type="st_resets"}          1 1 1 1 1 1 1 1 1
+    {type="normalized_resets"}  1 1 1 1 1 1 1 1 1
+
+eval range from 10m to 15m step 1m rate(ignore_start_times(delta[5m]))
+    {type="no_st"}                1 1 1 1 1
+    {type="otel"}                 1 1 1 1 1
+    {type="gcp"}                  1 1 1 1 1
+    {type="minimal_range"}        1 1 1 1 1
+    {type="empty_range"}          1 1 1 1 1
+    {type="normalized_resets"}    1 1 1 1 1
+
+# ignore_start_times with increase should behave as if start timestamps are disabled
+eval range from 7m to 15m step 1m increase(ignore_start_times(cumulative[5m]))
+    {type="no_st"}              300 300 300 300 300 300 300 300 300
+    {type="st_resets"}          300 300 300 300 300 300 300 300 300
+    {type="normalized_resets"}  300 300 300 300 300 300 300 300 300
+
+eval range from 10m to 15m step 1m increase(ignore_start_times(delta[5m]))
+    {type="no_st"}                0 0 0 0 0
+    {type="otel"}                 0 0 0 0 0
+    {type="gcp"}                  0 0 0 0 0
+    {type="minimal_range"}        0 0 0 0 0
+    {type="empty_range"}          0 0 0 0 0
+    {type="normalized_resets"}    0 0 0 0 0
+
+clear
