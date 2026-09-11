@@ -408,3 +408,22 @@ instead.
 When enabled, Prometheus advertises support for Zstandard-compressed scrape responses in addition to gzip. The uncompressed response remains subject to the configured `body_size_limit`.
 
 When the flag is disabled, Prometheus does not advertise `zstd`. A target that answers with `Content-Encoding: zstd` regardless fails the scrape, because Prometheus cannot decode the body.
+
+## Receive relabeling
+
+`--enable-feature=receive-relabel-configs`
+
+Enables applying the top-level `receive_relabel_configs` list to samples ingested
+through the remote-write receiver (`--web.enable-remote-write-receiver`) and the
+OTLP receiver (`--web.enable-otlp-receiver`). Both receivers see the same rules
+applied to the same, final label set (for OTLP, this is after the OTLP-to-Prometheus
+translation), so one set of rules covers samples arriving from either protocol.
+
+`receive_relabel_configs` uses the same [`<relabel_config>`](configuration/configuration.md#relabel_config)
+syntax as scrape-time `metric_relabel_configs`. A series dropped by these rules
+(e.g. via `action: drop`), or left invalid (e.g. missing `__name__`), is
+discarded before it reaches storage.
+
+This is disabled by default and, when disabled, `receive_relabel_configs` in the
+config file has no effect. The rules are re-read on every config reload, so
+changes take effect without restarting Prometheus.
