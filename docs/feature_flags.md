@@ -53,6 +53,24 @@ The Prometheus server exposes two counters for observability: `prometheus_engine
 When disabled in either the engine or the query, per-step statistics are not
 computed at all.
 
+## Unquoted UTF-8 names in PromQL
+
+`--enable-feature=promql-unquoted-utf8-names`
+
+Allows Unicode letters and dots after the first character in unquoted metric and
+label names. For example:
+
+```promql
+http.server.request.duration{service.name="api"}
+温度{場所="東京"}
+sum by (service.name) (rate(http.server.requests[5m]))
+requests_total + on (service.name) group_left (équipe) service_info
+```
+
+See [metric and label names](querying/basics.md#metric-and-label-names) for the
+character rules and compatibility details. This flag is also supported by
+promtool when checking or testing rules and parsing or formatting queries.
+
 ## Experimental PromQL functions
 
 `--enable-feature=promql-experimental-functions`

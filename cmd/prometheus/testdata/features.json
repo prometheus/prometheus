@@ -47,6 +47,7 @@
     "smoothed": false,
     "subqueries": true,
     "type_and_unit_labels": false,
+    "unquoted_utf8_names": false,
     "without": true
   },
   "promql_functions": {

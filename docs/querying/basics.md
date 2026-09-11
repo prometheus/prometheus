@@ -337,6 +337,52 @@ A workaround for this restriction is to use the `__name__` label:
 
     {__name__="on"} # Good!
 
+### Metric and label names
+
+Metric and label names containing characters outside the traditional ASCII name
+syntax can be quoted. A quoted metric name goes inside the selector's braces:
+
+```promql
+{"http.server.request.duration", "service.name"="api"}
+```
+
+With [`--enable-feature=promql-unquoted-utf8-names`](../feature_flags.md#unquoted-utf-8-names-in-promql),
+the same selector can be written as:
+
+```promql
+http.server.request.duration{service.name="api"}
+```
+
+When this feature is enabled, unquoted names follow these rules:
+
+| Name | First character | Subsequent characters |
+| --- | --- | --- |
+| Metric | Unicode letter, `_`, or `:` | Unicode letter, ASCII digit `0`–`9`, `_`, `:`, or `.` |
+| Label | Unicode letter or `_` | Unicode letter, ASCII digit `0`–`9`, `_`, or `.` |
+
+Unicode letters are the characters recognized by Go's `unicode.IsLetter`
+(Unicode category L), using the Unicode version bundled with the Go compiler.
+These rules also apply to grouping labels, vector matching, and labels in
+`group_left` and `group_right` modifiers. Existing keyword restrictions still
+apply, and string arguments containing label names remain strings.
+
+Dots are ordinary name characters: `resource.k8s.namespace`, `target.info`, and
+`histogram.count` have no metadata lookup, namespace, or histogram field access
+semantics. Consecutive and trailing dots are allowed, as in `foo..bar` and `foo.`.
+Names beginning with a dot or digit still require quoting; `.5` is a numeric
+literal. Combining marks, non-ASCII digits, emoji, spaces, and other punctuation
+also require quoting.
+
+Names retain their exact spelling without Unicode normalization or case folding.
+For example, Latin `a` and Cyrillic `а` are distinct names. Precomposed `ö` can be
+unquoted, while `o` followed by a combining diaeresis requires quotes and denotes
+a different name.
+
+Quoted and unquoted spellings of the same name select the same series. Quoting
+remains supported and is required when targeting older PromQL parsers or servers
+without this feature enabled. The feature does not change storage, ingestion
+validation, text exposition, or metric name translation.
+
 ### Range Vector Selectors
 
 Range vector literals work like instant vector literals, except that they
