@@ -1614,7 +1614,7 @@ func TestSizeRetention(t *testing.T) {
 			// Create a WAL checkpoint, and compare sizes.
 			first, last, err := wlog.Segments(db.Head().wal.Dir())
 			require.NoError(t, err)
-			_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0, enableSTStorage)
+			_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0, enableSTStorage, nil)
 			require.NoError(t, err)
 			blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 			walSize, err = db.Head().wal.Size()
@@ -5067,8 +5067,9 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 			s2 := labels.FromStrings("c", "d")
 			s3 := labels.FromStrings("e", "f")
 			s4 := labels.FromStrings("g", "h")
+			s5 := labels.FromStrings("i", "j")
 
-			for _, s := range []labels.Labels{s1, s2, s3, s4} {
+			for _, s := range []labels.Labels{s1, s2, s3, s4, s5} {
 				_, err := app.Append(0, s, 0, 0)
 				require.NoError(t, err)
 			}
@@ -5080,11 +5081,13 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 			m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2"}
 			m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"}
 			m4 := metadata.Metadata{Type: "gauge", Unit: "unit_4", Help: "help_4"}
+			m7 := metadata.Metadata{Type: "gauge", Unit: "unit_7", Help: "help_7"}
 			app = hb.Appender(ctx)
 			updateMetadata(t, app, s1, m1)
 			updateMetadata(t, app, s2, m2)
 			updateMetadata(t, app, s3, m3)
 			updateMetadata(t, app, s4, m4)
+			updateMetadata(t, app, s5, m7)
 			require.NoError(t, app.Commit())
 
 			// Update metadata for first series.
@@ -5117,13 +5120,18 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 			updateMetadata(t, app, s2, m6)
 			require.NoError(t, app.Commit())
 
+			// Evict the fifth series from the head. Its series record is still kept by
+			// keep via its WAL expiry, so its metadata has to survive with it even
+			// though there is no memSeries left to read it from.
+			require.Len(t, hb.gcSeries([]storage.SeriesRef{5}, 0, func(*memSeries) bool { return true }), 1)
+
 			// Let's create a checkpoint.
 			first, last, err := wlog.Segments(w.Dir())
 			require.NoError(t, err)
 			keep := func(id chunks.HeadSeriesRef) bool {
 				return id != 3
 			}
-			_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0, enableSTStorage)
+			_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0, enableSTStorage, hb.seriesMetadataForWALCheckpoint())
 			require.NoError(t, err)
 
 			// Confirm there's been a checkpoint.
@@ -5145,9 +5153,10 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 				{Ref: 1, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
 				{Ref: 2, Type: record.GetMetricType(m6.Type), Unit: m6.Unit, Help: m6.Help},
 				{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
+				{Ref: 5, Type: record.GetMetricType(m7.Type), Unit: m7.Unit, Help: m7.Help},
 			}
 			require.Len(t, gotMetadataBlocks, 1)
-			require.Len(t, gotMetadataBlocks[0], 3)
+			require.Len(t, gotMetadataBlocks[0], 4)
 			gotMetadataBlock := gotMetadataBlocks[0]
 
 			sort.Slice(gotMetadataBlock, func(i, j int) bool { return gotMetadataBlock[i].Ref < gotMetadataBlock[j].Ref })
@@ -5232,6 +5241,117 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	require.Equal(t, *db.head.series.getByHash(s2.Hash(), s2).meta, m5)
 	require.Equal(t, *db.head.series.getByHash(s3.Hash(), s3).meta, m3)
 	require.Equal(t, *db.head.series.getByHash(s4.Hash(), s4).meta, m4)
+}
+
+// TestMetadataUpdateAgainstSeriesGC covers the split that opens when an in-flight
+// metadata update meets series garbage collection. Checkpoints take metadata from
+// the head rather than from WAL metadata records, so a logged record whose value
+// never reaches the head, or reaches only an unlinked series, would be dropped at
+// the next checkpoint while the WAL briefly claimed it.
+func TestMetadataUpdateAgainstSeriesGC(t *testing.T) {
+	lset := labels.FromStrings("a", "b")
+	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
+	m2 := metadata.Metadata{Type: "counter", Unit: "unit_2", Help: "help_2"}
+
+	// seed appends a sample and m1, returning the series ref.
+	seed := func(t *testing.T, db *DB) storage.SeriesRef {
+		app := db.Appender(t.Context())
+		ref, err := app.Append(0, lset, 100, 1)
+		require.NoError(t, err)
+		_, err = app.UpdateMetadata(ref, lset, m1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		return ref
+	}
+
+	newDB := func(t *testing.T) *DB {
+		opts := DefaultOptions()
+		opts.MinBlockDuration = 1000
+		opts.MaxBlockDuration = 1000
+		db := newTestDB(t, withOpts(opts))
+		db.DisableCompactions()
+		return db
+	}
+
+	expiryMetadata := func(h *Head, ref storage.SeriesRef) *metadata.Metadata {
+		h.walExpiriesMtx.Lock()
+		defer h.walExpiriesMtx.Unlock()
+		return h.walExpiries[chunks.HeadSeriesRef(ref)].meta
+	}
+
+	t.Run("in-flight update holds the series against eviction", func(t *testing.T) {
+		db := newDB(t)
+		h := db.Head()
+		ref := seed(t, db)
+
+		app := db.Appender(t.Context())
+		_, err := app.UpdateMetadata(ref, lset, m2)
+		require.NoError(t, err)
+
+		// The buffered update reserves the series, so eviction has to leave it alone.
+		require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+		require.NotNil(t, h.series.getByID(chunks.HeadSeriesRef(ref)), "eviction took a series with a metadata update in flight")
+
+		require.NoError(t, app.Commit())
+		s := h.series.getByID(chunks.HeadSeriesRef(ref))
+		require.NotNil(t, s)
+		require.Equal(t, &m2, s.meta)
+		require.Zero(t, prom_testutil.ToFloat64(h.metrics.pendingCommitUnderflow))
+	})
+
+	t.Run("update resolved before eviction is dropped", func(t *testing.T) {
+		db := newDB(t)
+		h := db.Head()
+		ref := seed(t, db)
+		seriesBefore := h.series.getByID(chunks.HeadSeriesRef(ref))
+		require.NotNil(t, seriesBefore)
+
+		// Pause the update after it resolves the series but before it can reserve it,
+		// leaving it holding a pointer that eviction unlinks.
+		lookupDone := make(chan struct{})
+		resume := make(chan struct{})
+		h.testAfterSeriesLookup = func(series *memSeries) {
+			if series != seriesBefore {
+				return
+			}
+			close(lookupDone)
+			<-resume
+		}
+		t.Cleanup(func() { h.testAfterSeriesLookup = nil })
+
+		app := db.Appender(t.Context())
+		updateDone := make(chan error, 1)
+		go func() {
+			_, err := app.UpdateMetadata(ref, lset, m2)
+			updateDone <- err
+		}()
+		select {
+		case <-lookupDone:
+		case err := <-updateDone:
+			require.NoError(t, app.Rollback())
+			t.Fatalf("update completed before reaching the series lookup hook: %v", err)
+		}
+
+		require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+		close(resume)
+		require.NoError(t, <-updateDone)
+		require.NoError(t, app.Commit())
+
+		require.Nil(t, h.series.getByID(chunks.HeadSeriesRef(ref)), "eviction should have unlinked the series")
+		// The expiry snapshot is what a checkpoint writes, so the update must not have
+		// been logged claiming a value the snapshot disagrees with.
+		require.Equal(t, &m1, expiryMetadata(h, ref))
+		for _, rec := range readTestWAL(t, path.Join(db.Dir(), "wal")) {
+			mr, ok := rec.([]record.RefMetadata)
+			if !ok {
+				continue
+			}
+			for _, m := range mr {
+				require.NotEqual(t, m2.Help, m.Help, "logged metadata for an evicted series that no checkpoint will keep")
+			}
+		}
+		require.Zero(t, prom_testutil.ToFloat64(h.metrics.pendingCommitUnderflow))
+	})
 }
 
 // TestMultipleEncodingsCommitOrder mainly serves to demonstrate when happens when committing a batch of samples for the
