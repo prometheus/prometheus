@@ -1865,9 +1865,9 @@ func (db *DB) CompactStaleHead() (err error) {
 		return err
 	}
 
-	// Capture the append-ID watermark before anything else, so the immediate per-series check
-	// inside snapshotFingerprints below sees it before any block write -- or any unrelated
-	// commit's append-ID cleanup -- has a chance to run. See seriesFingerprint.
+	// Capture the committed append-ID watermark before snapshotting any series.
+	// The snapshotFingerprints call records each series' watermark check under its lock,
+	// so later append-ID cleanup cannot erase the result. See seriesFingerprint.
 	appendIDWatermark := db.head.iso.committedAppendID()
 
 	// Snapshot each stale series' in-memory shape before writing any blocks. The eviction
@@ -1958,9 +1958,9 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 		return nil
 	}
 
-	// Capture the append-ID watermark before anything else, so the immediate per-series check
-	// inside snapshotFingerprints below sees it before any block write -- or any unrelated
-	// commit's append-ID cleanup -- has a chance to run. See seriesFingerprint.
+	// Capture the committed append-ID watermark before snapshotting any series.
+	// The snapshotFingerprints call records each series' watermark check under its lock,
+	// so later append-ID cleanup cannot erase the result. See seriesFingerprint.
 	appendIDWatermark := db.head.iso.committedAppendID()
 
 	// Snapshot each selected series' in-memory shape before writing any blocks. The eviction
