@@ -55,4 +55,5 @@ func (pql *promQLParser) RegisterFeatures(r features.Collector) {
 
 	// Register experimental parser features.
 	r.Set(features.PromQL, "duration_expr", pql.options.ExperimentalDurationExpr)
+	r.Set(features.PromQL, "unquoted_utf8_names", pql.options.EnableUnquotedUTF8Names)
 }

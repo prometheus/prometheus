@@ -5112,3 +5112,61 @@ func TestHistogram_CounterResetHint(t *testing.T) {
 		})
 	}
 }
+
+func TestUnquotedUTF8NamesEvaluation(t *testing.T) {
+	store := promqltest.LoadedStorage(t, `
+load 1m
+    {"http.server.requests", "service.name"="api", "resource.k8s.namespace"="system"} 0 60 120
+    {"http.server.requests", "service.name"="web", "resource.k8s.namespace"="system"} 0 120 240
+    service_info{"service.name"="api", "équipe"="infra"} 2 2 2
+    service_info{"service.name"="web", "équipe"="frontend"} 3 3 3
+    {"温度", "場所"="東京"} 10 20 30
+    {"histogram.count"} 1 2 3
+    {"target.info"} 4 5 6
+    {"foo..bar."} 7 8 9
+    a 1 1 1
+    {"а"} 2 2 2
+    {"ö"} 3 3 3
+    {"ö"} 4 4 4
+`)
+	defer store.Close()
+	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples: 10000,
+		Timeout:    time.Minute,
+		Parser:     parser.NewParser(parser.Options{EnableUnquotedUTF8Names: true}),
+	})
+	for _, tc := range []struct{ unquoted, quoted string }{
+		{`http.server.requests{resource.k8s.namespace="system",service.name="api"}`, `{"http.server.requests","resource.k8s.namespace"="system","service.name"="api"}`},
+		{`温度{場所="東京"}`, `{"温度","場所"="東京"}`},
+		{`sum by (service.name) (http.server.requests)`, `sum by ("service.name") ({"http.server.requests"})`},
+		{`sum without (service.name) (http.server.requests)`, `sum without ("service.name") ({"http.server.requests"})`},
+		{`http.server.requests + on (service.name) group_left (équipe) service_info`, `{"http.server.requests"} + on ("service.name") group_left ("équipe") service_info`},
+		{`service_info + on (service.name) group_right (équipe) http.server.requests`, `service_info + on ("service.name") group_right ("équipe") {"http.server.requests"}`},
+		{`rate(http.server.requests[2m])`, `rate({"http.server.requests"}[2m])`},
+		{`histogram.count`, `{"histogram.count"}`},
+		{`target.info`, `{"target.info"}`},
+		{`foo..bar.`, `{"foo..bar."}`},
+		{`a or on (__name__) а`, `{"a"} or on (__name__) {"а"}`},
+		{`ö or on (__name__) {"ö"}`, `{"ö"} or on (__name__) {"ö"}`},
+	} {
+		t.Run(tc.unquoted, func(t *testing.T) {
+			unquoted, err := engine.NewInstantQuery(t.Context(), store, nil, tc.unquoted, time.Unix(120, 0))
+			require.NoError(t, err)
+			defer unquoted.Close()
+			quoted, err := engine.NewInstantQuery(t.Context(), store, nil, tc.quoted, time.Unix(120, 0))
+			require.NoError(t, err)
+			defer quoted.Close()
+			actual := unquoted.Exec(t.Context())
+			expected := quoted.Exec(t.Context())
+			require.NoError(t, actual.Err)
+			require.NoError(t, expected.Err)
+			require.NotEmpty(t, actual.Value)
+			require.Equal(t, expected.Value, actual.Value)
+			if tc.unquoted == "a or on (__name__) а" || tc.unquoted == `ö or on (__name__) {"ö"}` {
+				vector := actual.Value.(promql.Vector)
+				require.Len(t, vector, 2)
+				require.NotEqual(t, vector[0].F, vector[1].F)
+			}
+		})
+	}
+}

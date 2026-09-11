@@ -95,26 +95,42 @@ func (node *AggregateExpr) writeAggOpStr(b *bytes.Buffer) {
 	switch {
 	case node.Without:
 		b.WriteString(" without (")
-		writeLabels(b, node.Grouping)
+		writeLabels(b, node.Grouping, node.unquotedUTF8Names)
 		b.WriteString(") ")
 	case len(node.Grouping) > 0:
 		b.WriteString(" by (")
-		writeLabels(b, node.Grouping)
+		writeLabels(b, node.Grouping, node.unquotedUTF8Names)
 		b.WriteString(") ")
 	}
 }
 
-func writeLabels(b *bytes.Buffer, ss []string) {
+func writeLabels(b *bytes.Buffer, ss []string, unquotedUTF8Names bool) {
 	for i, s := range ss {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		if !model.LegacyValidation.IsValidLabelName(s) {
+		if !canPrintLabelName(s, unquotedUTF8Names) {
 			b.Write(strconv.AppendQuote(b.AvailableBuffer(), s))
 		} else {
 			b.WriteString(s)
 		}
 	}
+}
+
+func canPrintLabelName(s string, unquotedUTF8Names bool) bool {
+	if !unquotedUTF8Names {
+		return model.LegacyValidation.IsValidLabelName(s)
+	}
+	if s == "" {
+		return false
+	}
+	l := Lexer{unquotedUTF8Names: true}
+	for i, r := range s {
+		if (i == 0 && !l.isNameStart(r)) || (i > 0 && !l.isNameContinue(r)) {
+			return false
+		}
+	}
+	return true
 }
 
 // writeStringsJoin is like strings.Join but appending to a bytes.Buffer.
@@ -156,7 +172,7 @@ func (node *BinaryExpr) getMatchingStr() string {
 				vmTag = "on"
 			}
 			b.WriteString(" " + vmTag + " (")
-			writeLabels(&b, vm.MatchingLabels)
+			writeLabels(&b, vm.MatchingLabels, node.unquotedUTF8Names)
 			b.WriteString(")")
 			matching = b.String()
 		}
@@ -168,7 +184,7 @@ func (node *BinaryExpr) getMatchingStr() string {
 			}
 			b.Reset()
 			b.WriteString(" group_" + vmCard + " (")
-			writeLabels(&b, vm.Include)
+			writeLabels(&b, vm.Include, node.unquotedUTF8Names)
 			b.WriteString(")")
 			matching += b.String()
 		}
@@ -391,7 +407,11 @@ func (node *VectorSelector) String() string {
 		if matcher.Name == labels.MetricName && matcher.Type == labels.MatchEqual && matcher.Value == node.Name && matcher.Value != "" {
 			continue
 		}
-		labelStrings = append(labelStrings, matcher.String())
+		if node.unquotedUTF8Names && canPrintLabelName(matcher.Name, true) {
+			labelStrings = append(labelStrings, matcher.Name+matcher.Type.String()+strconv.Quote(matcher.Value))
+		} else {
+			labelStrings = append(labelStrings, matcher.String())
+		}
 	}
 	b := bytes.NewBuffer(make([]byte, 0, 1024))
 	b.WriteString(node.Name)

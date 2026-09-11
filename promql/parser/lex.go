@@ -306,6 +306,8 @@ type Lexer struct {
 	itemp       *Item        // Pointer to where the next scanned item should be placed.
 	scannedItem bool         // Set to true every time an item is scanned.
 
+	unquotedUTF8Names bool // Whether Unicode letters and non-leading dots are allowed in names.
+
 	parenDepth  int  // Nesting depth of ( ) exprs.
 	braceOpen   bool // Whether a { is opened.
 	bracketOpen bool // Whether a [ is opened.
@@ -496,7 +498,7 @@ func lexStatements(l *Lexer) stateFn {
 	case r == '`':
 		l.stringOpen = r
 		return lexRawString
-	case isAlpha(r) || r == ':':
+	case l.isNameStart(r) || r == ':':
 		if !l.bracketOpen {
 			l.backup()
 			return lexKeywordOrIdentifier
@@ -703,7 +705,7 @@ func lexInsideBraces(l *Lexer) stateFn {
 		return l.errorf("unexpected end of input inside braces")
 	case isSpace(r):
 		return lexSpace
-	case isAlpha(r):
+	case l.isNameStart(r):
 		l.backup()
 		return lexIdentifier
 	case r == ',':
@@ -1109,8 +1111,8 @@ func (l *Lexer) scanNumber() bool {
 // lexIdentifier scans an alphanumeric identifier. The next character
 // is known to be a letter.
 func lexIdentifier(l *Lexer) stateFn {
-	for isAlphaNumeric(l.next()) {
-		// absorb
+	for l.isNameContinue(l.next()) {
+		// Absorb.
 	}
 	l.backup()
 	l.emit(IDENTIFIER)
@@ -1124,12 +1126,22 @@ func lexKeywordOrIdentifier(l *Lexer) stateFn {
 Loop:
 	for {
 		switch r := l.next(); {
-		case isAlphaNumeric(r) || r == ':':
+		case l.isNameContinue(r) || r == ':':
 			// absorb.
 		default:
 			l.backup()
 			word := l.input[l.start:l.pos]
-			switch kw, ok := key[strings.ToLower(word)]; {
+			kw, ok := key[strings.ToLower(word)]
+			if ok {
+				// Unicode letters that lowercase to ASCII must retain their identity as names.
+				for _, r := range word {
+					if r >= utf8.RuneSelf {
+						ok = false
+						break
+					}
+				}
+			}
+			switch {
 			case ok:
 				// For fill/fill_left/fill_right, only treat as keyword if followed by '('
 				// This allows using these as metric names (e.g., "fill + fill").
@@ -1198,6 +1210,14 @@ func isDigit(r rune) bool {
 // isAlpha reports whether r is an alphabetic or underscore.
 func isAlpha(r rune) bool {
 	return r == '_' || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z')
+}
+
+func (l *Lexer) isNameStart(r rune) bool {
+	return isAlpha(r) || (l.unquotedUTF8Names && r >= utf8.RuneSelf && unicode.IsLetter(r))
+}
+
+func (l *Lexer) isNameContinue(r rune) bool {
+	return l.isNameStart(r) || isDigit(r) || (l.unquotedUTF8Names && r == '.')
 }
 
 // lexDurationExpr scans arithmetic expressions within brackets for duration expressions.

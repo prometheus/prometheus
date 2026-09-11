@@ -130,3 +130,14 @@ func TestSetFeatureListOptions_MetadataWALRecords(t *testing.T) {
 	require.True(t, c.web.AppendMetadata)
 	require.True(t, c.tsdb.EnableMetadataWALRecords)
 }
+
+func TestSetFeatureListOptions_UnquotedUTF8Names(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		c := &flagConfig{}
+		if enabled {
+			c.featureList = []string{"promql-unquoted-utf8-names"}
+		}
+		require.NoError(t, c.setFeatureListOptions(promslog.NewNopLogger()))
+		require.Equal(t, enabled, c.parserOpts.EnableUnquotedUTF8Names)
+	}
+}
