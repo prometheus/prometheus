@@ -123,14 +123,7 @@ func runTestSteps(t *testing.T, steps []struct {
 	require.NoError(t, prom.Start())
 
 	baseURL := "http://localhost:" + strconv.Itoa(port)
-	require.Eventually(t, func() bool {
-		resp, err := http.Get(baseURL + "/-/ready")
-		if err != nil {
-			return false
-		}
-		defer resp.Body.Close()
-		return resp.StatusCode == http.StatusOK
-	}, 5*time.Second, 100*time.Millisecond, "Prometheus didn't become ready in time")
+	waitForPrometheusReady(t, port)
 
 	for i, step := range steps {
 		t.Logf("Step %d", i)
@@ -240,4 +233,26 @@ func prometheusCommandWithLogging(t testing.TB, configFilePath string, port int,
 	}
 	args = append(args, extraArgs...)
 	return commandWithLogging(t, nil, promPath, args...)
+}
+
+// readyTimeout is how long we wait for a Prometheus process to become ready. It
+// is generous on purpose: CI runs these tests with the race detector, which
+// slows down both the test binary and the Prometheus processes it spawns in
+// parallel.
+const readyTimeout = 30 * time.Second
+
+// waitForPrometheusReady waits until the Prometheus instance listening on port
+// reports itself as ready, which means it has opened its storage and applied
+// its initial configuration.
+func waitForPrometheusReady(t testing.TB, port int) {
+	t.Helper()
+
+	require.Eventually(t, func() bool {
+		resp, err := http.Get("http://127.0.0.1:" + strconv.Itoa(port) + "/-/ready")
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}, readyTimeout, 100*time.Millisecond, "Prometheus didn't become ready in time")
 }

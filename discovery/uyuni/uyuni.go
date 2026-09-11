@@ -208,7 +208,8 @@ func getEndpointInfoForSystems(
 	var endpointInfos []endpointInfo
 	err := rpcclient.Call(
 		"system.monitoring.listEndpoints",
-		[]any{token, systemIDs}, &endpointInfos)
+		[]any{token, systemIDs}, &endpointInfos,
+	)
 	return endpointInfos, err
 }
 
@@ -324,7 +325,8 @@ func (d *Discovery) getTargetsForSystems(
 		labels := d.getEndpointLabels(
 			endpoint,
 			systemGroupIDsBySystemID[systemID],
-			networkInfoBySystemID[systemID])
+			networkInfoBySystemID[systemID],
+		)
 		result = append(result, labels)
 	}
 

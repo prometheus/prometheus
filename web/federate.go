@@ -72,7 +72,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	var (
 		mint   = timestamp.FromTime(h.now().Time().Add(-h.lookbackDelta))
 		maxt   = timestamp.FromTime(h.now().Time())
-		format = expfmt.Negotiate(req.Header)
+		format = expfmt.NegotiateAccept(req.Header, expfmt.NewFormat(expfmt.TypeProtoDelim), expfmt.NewFormat(expfmt.TypeProtoText), expfmt.NewFormat(expfmt.TypeProtoCompact), expfmt.NewFormat(expfmt.TypeTextPlain))
 		enc    = expfmt.NewEncoder(w, format)
 	)
 	w.Header().Set("Content-Type", string(format))
@@ -132,9 +132,11 @@ Loop:
 			case chunkenc.ValFloat:
 				f = sample.F()
 			case chunkenc.ValHistogram:
+				// ToFloat(nil) returns an independent copy of the buffered histogram.
 				fh = sample.H().ToFloat(nil)
 			case chunkenc.ValFloatHistogram:
-				fh = sample.FH()
+				// The buffer is reset and reused for every series, so retain a copy.
+				fh = sample.FH().Copy()
 			default:
 				continue Loop
 			}

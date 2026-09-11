@@ -786,7 +786,7 @@ func TestDecodeWriteRequest(t *testing.T) {
 }
 
 func TestDecodeWriteV2Request(t *testing.T) {
-	buf, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	buf, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
 	actual, err := DecodeWriteV2Request(bytes.NewReader(buf))

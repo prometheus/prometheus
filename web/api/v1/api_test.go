@@ -108,8 +108,9 @@ func (*testMetaStore) LengthMetadata() int { return 0 }
 // testTargetRetriever represents a list of targets to scrape.
 // It is used to represent targets as part of test cases.
 type testTargetRetriever struct {
-	activeTargets  map[string][]*scrape.Target
-	droppedTargets map[string][]*scrape.Target
+	activeTargets       map[string][]*scrape.Target
+	droppedTargets      map[string][]*scrape.Target
+	scrapePoolConfigErr error
 }
 
 type testTargetParams struct {
@@ -171,8 +172,18 @@ func (t testTargetRetriever) TargetsDroppedCounts() map[string]int {
 	return r
 }
 
-func (testTargetRetriever) ScrapePoolConfig(pool string) (*config.ScrapeConfig, error) {
+func (t testTargetRetriever) ScrapePoolConfig(pool string) (*config.ScrapeConfig, error) {
+	if t.scrapePoolConfigErr != nil {
+		return nil, t.scrapePoolConfigErr
+	}
+
 	cfg := &config.ScrapeConfig{
+		JobName: pool,
+		HTTPClientConfig: config_util.HTTPClientConfig{
+			Authorization: &config_util.Authorization{
+				Credentials: config_util.Secret("credential helper secret"),
+			},
+		},
 		RelabelConfigs: []*relabel.Config{
 			{
 				Action:               relabel.Replace,
@@ -579,6 +590,43 @@ func TestEndpoints(t *testing.T) {
 			parser:                testParser,
 		}
 		testEndpoints(t, api, testTargetRetriever, false)
+	})
+}
+
+func TestScrapePoolConfig(t *testing.T) {
+	api := &API{targetRetriever: (&testTargetRetriever{}).toFactory()}
+
+	t.Run("returns redacted effective config", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/?scrapePool=testpool", http.NoBody)
+		res := api.scrapePoolConfig(req)
+
+		require.Nil(t, res.err)
+		cfg, ok := res.data.(*prometheusConfig)
+		require.True(t, ok)
+		require.Contains(t, cfg.YAML, "job_name: testpool")
+		require.Contains(t, cfg.YAML, "credentials: <secret>")
+		require.NotContains(t, cfg.YAML, "credential helper secret")
+	})
+
+	t.Run("requires scrape pool", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+		res := api.scrapePoolConfig(req)
+
+		assertAPIError(t, res.err, errorBadData)
+		require.EqualError(t, res.err.err, "no scrapePool parameter provided")
+	})
+
+	t.Run("reports unknown scrape pool", func(t *testing.T) {
+		api := &API{
+			targetRetriever: (&testTargetRetriever{
+				scrapePoolConfigErr: errors.New("scrape pool not found"),
+			}).toFactory(),
+		}
+		req := httptest.NewRequest(http.MethodGet, "/?scrapePool=missing", http.NoBody)
+		res := api.scrapePoolConfig(req)
+
+		assertAPIError(t, res.err, errorBadData)
+		require.EqualError(t, res.err.err, "error retrieving scrape config: scrape pool not found")
 	})
 }
 
@@ -4906,9 +4954,13 @@ func (t *testCodec) Encode(*Response) ([]byte, error) {
 }
 
 func TestExtractQueryOpts(t *testing.T) {
+	trueVal := true
+	falseVal := false
+
 	tests := []struct {
 		name   string
 		form   url.Values
+		header http.Header
 		expect promql.QueryOpts
 		err    error
 	}{
@@ -4917,7 +4969,7 @@ func TestExtractQueryOpts(t *testing.T) {
 			form: url.Values{
 				"stats": []string{"all"},
 			},
-			expect: promql.NewPrometheusQueryOpts(true, 0),
+			expect: promql.NewPrometheusQueryOpts(true, 0, nil),
 
 			err: nil,
 		},
@@ -4926,7 +4978,7 @@ func TestExtractQueryOpts(t *testing.T) {
 			form: url.Values{
 				"stats": []string{"none"},
 			},
-			expect: promql.NewPrometheusQueryOpts(false, 0),
+			expect: promql.NewPrometheusQueryOpts(false, 0, nil),
 			err:    nil,
 		},
 		{
@@ -4935,8 +4987,32 @@ func TestExtractQueryOpts(t *testing.T) {
 				"stats":          []string{"all"},
 				"lookback_delta": []string{"30s"},
 			},
-			expect: promql.NewPrometheusQueryOpts(true, 30*time.Second),
+			expect: promql.NewPrometheusQueryOpts(true, 30*time.Second, nil),
 			err:    nil,
+		},
+		{
+			name: "with X-Prometheus-Use-Start-Timestamps header true",
+			header: http.Header{
+				"X-Prometheus-Use-Start-Timestamps": []string{"true"},
+			},
+			expect: promql.NewPrometheusQueryOpts(false, 0, &trueVal),
+			err:    nil,
+		},
+		{
+			name: "with X-Prometheus-Use-Start-Timestamps header false",
+			header: http.Header{
+				"X-Prometheus-Use-Start-Timestamps": []string{"false"},
+			},
+			expect: promql.NewPrometheusQueryOpts(false, 0, &falseVal),
+			err:    nil,
+		},
+		{
+			name: "with invalid X-Prometheus-Use-Start-Timestamps header",
+			header: http.Header{
+				"X-Prometheus-Use-Start-Timestamps": []string{"invalid"},
+			},
+			expect: nil,
+			err:    errors.New(`error parsing X-Prometheus-Use-Start-Timestamps header: strconv.ParseBool: parsing "invalid": invalid syntax`),
 		},
 		{
 			name: "with invalid lookback delta",
@@ -4950,7 +5026,10 @@ func TestExtractQueryOpts(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			req := &http.Request{Form: test.form}
+			req := &http.Request{Form: test.form, Header: test.header}
+			if req.Header == nil {
+				req.Header = make(http.Header)
+			}
 			opts, err := extractQueryOpts(req)
 			require.Equal(t, test.expect, opts)
 			if test.err == nil {

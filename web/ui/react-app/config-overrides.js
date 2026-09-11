@@ -12,6 +12,31 @@
 // limitations under the License.
 
 const path = require('path');
+const ESLintPlugin = require('eslint-webpack-plugin');
+
+class ESLintWarningsPlugin {
+  constructor(formatter) {
+    const format = typeof formatter === 'function' ? formatter : require(formatter);
+    this.messages = new Set();
+    this.format = (results) => {
+      const message = format(results);
+      this.messages.add(`[eslint] ${message}`);
+      return message;
+    };
+  }
+
+  apply(compiler) {
+    compiler.hooks.thisCompilation.tap('ESLintWarningsPlugin', () => this.messages.clear());
+    compiler.hooks.afterCompile.tap('ESLintWarningsPlugin', (compilation) => {
+      compilation.errors = compilation.errors.filter((error) => {
+        // Only downgrade formatted diagnostics, preserving configuration failures.
+        if (error.name !== 'ESLintError' || !this.messages.has(error.message)) return true;
+        compilation.warnings.push(error);
+        return false;
+      });
+    });
+  }
+}
 
 // @prometheus-io/codemirror-promql is consumed via pnpm's "link:" protocol, so
 // it is a symlink into the workspace and carries its own node_modules. Without
@@ -33,7 +58,35 @@ const singletons = [
   '@lezer/lr',
 ];
 
-module.exports = function override(config) {
+function override(config) {
+  // CRA's bundled plugin only supports legacy ESLint options. Preserve its
+  // build behavior while selecting the app's ESLint and flat configuration.
+  config.plugins = (config.plugins || []).flatMap((plugin) => {
+    if (plugin.constructor.name !== 'ESLintWebpackPlugin') {
+      return plugin;
+    }
+    const { extensions, formatter, failOnError, context, cache, cacheLocation, cwd, baseConfig } = plugin.options;
+    const warnings = !failOnError && new ESLintWarningsPlugin(formatter);
+    const eslint = new ESLintPlugin({
+      extensions,
+      formatter: warnings ? warnings.format : formatter,
+      // Compilation errors still fail CRA builds. Throwing a fatal error here
+      // would stop webpack's watcher before it can detect a corrected file.
+      failOnError: false,
+      context,
+      cache,
+      cacheLocation,
+      cwd,
+      eslintPath: require.resolve('eslint'),
+      configType: 'flat',
+      overrideConfigFile: path.resolve(__dirname, 'eslint.config.mjs'),
+      // CRA requires React in scope when the classic JSX transform is selected.
+      overrideConfig: { rules: baseConfig.rules },
+    });
+    // CRA's ESLINT_NO_DEV_ERRORS flag downgrades lint diagnostics, while
+    // plugin v6's failOnError only controls whether to abort compilation.
+    return warnings ? [eslint, warnings] : eslint;
+  });
   config.resolve = config.resolve || {};
   config.resolve.alias = Object.assign(
     {},
@@ -47,4 +100,21 @@ module.exports = function override(config) {
     (plugin) => !(plugin.constructor && plugin.constructor.name === 'ModuleScopePlugin')
   );
   return config;
+}
+
+override.jest = function overrideJest(config) {
+  config.moduleNameMapper = Object.assign(
+    {},
+    config.moduleNameMapper,
+    Object.fromEntries(singletons.map((pkg) => [`^${pkg}$`, `<rootDir>/node_modules/${pkg}`]))
+  );
+  // Jest 27 does not honor conditional CommonJS exports for these dependencies,
+  // so transpile their ESM entrypoints while leaving other node modules untouched.
+  config.transformIgnorePatterns = [
+    '<rootDir>/node_modules/(?!(@prometheus-io/(codemirror-promql|lezer-promql)|\\.pnpm/(@marijn\\+find-cluster-break|dom-serializer|domelementtype|domhandler|domutils|entities|htmlparser2)@)).+\\.(js|jsx|mjs|cjs|ts|tsx)$',
+    '^.+\\.module\\.(css|sass|scss)$',
+  ];
+  return config;
 };
+
+module.exports = override;

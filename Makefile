@@ -80,8 +80,12 @@ ui-build-module:
 	cd $(UI_PATH) && pnpm run build:module
 
 .PHONY: ui-test
-ui-test:
+ui-test: ui-build-module
 	cd $(UI_PATH) && CI=true pnpm run test
+	# The old React app has been separated from the npm workspaces setup to avoid
+	# issues with conflicting dependencies. This is a temporary solution until the
+	# new Mantine-based UI is fully integrated and the old app can be removed.
+	cd $(UI_PATH)/react-app && CI=true pnpm run test
 
 .PHONY: ui-lint
 ui-lint:
@@ -172,7 +176,7 @@ install-goyacc:
 ifeq ($(GO_ONLY),1)
 test: common-test check-go-mod-version
 else
-test: check-generated-parser common-test check-node-version ui-build-module ui-test ui-lint check-go-mod-version
+test: check-generated-parser common-test check-node-version ui-test ui-lint check-go-mod-version
 endif
 
 .PHONY: tarball
@@ -222,8 +226,9 @@ update-all-go-deps: update-go-deps
 .PHONY: update-go-deps-in-dir
 update-go-deps-in-dir:
 	@echo ">> updating Go dependencies in ./$(DIR)/"
+	# GOTOOLCHAIN prevents go get from pulling deps that require a newer Go version.
 	@cd ./$(DIR) && for m in $$($(GO) list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
-		$(GO) get $$m; \
+		GOTOOLCHAIN=go$$($(GO) mod edit -json | jq -r .Go) $(GO) get $$m; \
 	done
 	@cd ./$(DIR) && $(GO) mod tidy
 

@@ -24,6 +24,7 @@ import (
 func strptr(s string) *string { return &s }
 
 func TestVmsToLabelSets(t *testing.T) {
+	t.Parallel()
 	cfg := &SDConfig{
 		Region: "eu-west-2",
 		Port:   9090,

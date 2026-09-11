@@ -1,9 +1,8 @@
-import { FC, useEffect, useState } from "react";
+import { FC, useEffect, useMemo, useRef } from "react";
 import { RangeSamples } from "../../api/responseTypes/query";
 import classes from "./Graph.module.css";
 import { GraphDisplayMode } from "../../state/queryPageSlice";
 import uPlot from "uplot";
-import UplotReact from "uplot-react";
 import { useSettings } from "../../state/settingsSlice";
 import { useComputedColorScheme, Text } from "@mantine/core";
 
@@ -38,23 +37,20 @@ const UPlotChart: FC<UPlotChartProps> = ({
   yAxisMin,
   onSelectRange,
 }) => {
-  const [options, setOptions] = useState<uPlot.Options | null>(null);
-  const [processedData, setProcessedData] = useState<uPlot.AlignedData | null>(
-    null
-  );
+  const hostRef = useRef<HTMLDivElement>(null);
   const { useLocalTime } = useSettings();
   const theme = useComputedColorScheme();
 
-  useEffect(() => {
+  const chartSpec = useMemo(() => {
     if (width === 0) {
-      return;
+      return null;
     }
 
     const seriesData: uPlot.AlignedData = getUPlotData(
       data,
       startTime,
       endTime,
-      resolution
+      resolution,
     );
 
     const opts = getUPlotOptions(
@@ -64,16 +60,16 @@ const UPlotChart: FC<UPlotChartProps> = ({
       useLocalTime,
       yAxisMin,
       theme === "light",
-      onSelectRange
+      onSelectRange,
     );
 
-    if (displayMode === GraphDisplayMode.Stacked) {
-      setProcessedData(setStackedOpts(opts, seriesData).data);
-    } else {
-      setProcessedData(seriesData);
-    }
-
-    setOptions(opts);
+    return {
+      options: opts,
+      data:
+        displayMode === GraphDisplayMode.Stacked
+          ? setStackedOpts(opts, seriesData).data
+          : seriesData,
+    };
   }, [
     width,
     data,
@@ -87,17 +83,21 @@ const UPlotChart: FC<UPlotChartProps> = ({
     yAxisMin,
   ]);
 
-  if (options === null || processedData === null) {
-    return;
+  useEffect(() => {
+    if (chartSpec === null || hostRef.current === null) {
+      return;
+    }
+    const chart = new uPlot(chartSpec.options, chartSpec.data, hostRef.current);
+    return () => chart.destroy();
+  }, [chartSpec]);
+
+  if (chartSpec === null) {
+    return null;
   }
 
   return (
     <>
-      <UplotReact
-        options={options}
-        data={processedData}
-        className={classes.uplotChart}
-      />
+      <div ref={hostRef} className={classes.uplotChart} />
       <Text fz="xs" c="dimmed" ml={40} mt={-25} mb="lg">
         Click: show single series,{" "}
         {navigator.userAgent.includes("Mac") ? "⌘" : "Ctrl"} + click: hide

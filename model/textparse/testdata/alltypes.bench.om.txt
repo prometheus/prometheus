@@ -1,0 +1,194 @@
+# HELP http_requests Total number of HTTP requests.
+# TYPE http_requests counter
+# UNIT http_requests requests
+http_requests_total{method="GET",status="200"} 12034.0 1710000000.0 # {trace_id="t-001"} 1.0 1709999999.5
+http_requests_total{method="GET",status="404"} 87.0 1710000000.0
+http_requests_total{method="GET",status="500"} 12.0 1710000000.0
+http_requests_total{method="POST",status="200"} 4521.0 1710000000.0 # {trace_id="t-002"} 1.0 1709999999.7
+http_requests_total{method="POST",status="404"} 9.0 1710000000.0
+http_requests_total{method="POST",status="500"} 31.0 1710000000.0
+# HELP grpc_calls Total number of gRPC calls.
+# TYPE grpc_calls counter
+grpc_calls_total{service="catalog"} 19234.0 1710000000.0
+grpc_calls_total{service="orders"} 8231.0 1710000000.0
+grpc_calls_total{service="payments"} 5612.0 1710000000.0
+# HELP db_queries Total number of database queries.
+# TYPE db_queries counter
+db_queries_total 482910.0 1710000000.0
+# HELP cache_hits Total number of cache hits.
+# TYPE cache_hits counter
+cache_hits_total 921830.0 1710000000.0
+# HELP cache_misses Total number of cache misses.
+# TYPE cache_misses counter
+cache_misses_total 32198.0 1710000000.0
+# HELP errors Total number of errors by code.
+# TYPE errors counter
+errors_total{code="EINVAL"} 23.0 1710000000.0
+errors_total{code="ETIMEDOUT"} 7.0 1710000000.0
+errors_total{code="ECONNRESET"} 14.0 1710000000.0
+errors_total{code="EIO"} 2.0 1710000000.0
+# HELP network_received_bytes Total bytes received.
+# TYPE network_received_bytes counter
+# UNIT network_received_bytes bytes
+network_received_bytes_total 9.83e+10 1710000000.0
+# HELP network_sent_bytes Total bytes sent.
+# TYPE network_sent_bytes counter
+# UNIT network_sent_bytes bytes
+network_sent_bytes_total 1.27e+11 1710000000.0
+# HELP jobs_completed Total number of jobs completed.
+# TYPE jobs_completed counter
+jobs_completed_total 18234.0 1710000000.0
+# HELP jobs_failed Total number of jobs failed.
+# TYPE jobs_failed counter
+jobs_failed_total 142.0 1710000000.0
+# HELP signals_received Total number of signals received.
+# TYPE signals_received counter
+signals_received_total 8.0 1710000000.0
+# HELP gc_invocations Total number of GC invocations.
+# TYPE gc_invocations counter
+gc_invocations_total 4821.0 1710000000.0
+# HELP allocations Total allocations by pool.
+# TYPE allocations counter
+allocations_total{pool="small"} 9.31e+08 1710000000.0
+allocations_total{pool="medium"} 1.42e+07 1710000000.0
+allocations_total{pool="large"} 832.0 1710000000.0
+# HELP mutex_contentions Total mutex contentions.
+# TYPE mutex_contentions counter
+mutex_contentions_total 6831.0 1710000000.0
+# HELP scrape_samples Total samples scraped.
+# TYPE scrape_samples counter
+scrape_samples_total 8412.0 1710000000.0
+# HELP memory_bytes Memory in use by area.
+# TYPE memory_bytes gauge
+# UNIT memory_bytes bytes
+memory_bytes{area="heap"} 1.234e+09 1710000000.0
+memory_bytes{area="stack"} 8.3e+06 1710000000.0
+memory_bytes{area="static"} 2.1e+06 1710000000.0
+# HELP goroutines Number of goroutines.
+# TYPE goroutines gauge
+goroutines 312.0 1710000000.0
+# HELP threads Number of OS threads.
+# TYPE threads gauge
+threads 47.0 1710000000.0
+# HELP file_descriptors Open file descriptors.
+# TYPE file_descriptors gauge
+file_descriptors 184.0 1710000000.0
+# HELP queue_depth Items currently queued.
+# TYPE queue_depth gauge
+queue_depth{queue="ingest"} 14.0 1710000000.0
+queue_depth{queue="export"} 3.0 1710000000.0
+queue_depth{queue="retry"} 27.0 1710000000.0
+# HELP active_connections Currently active connections.
+# TYPE active_connections gauge
+active_connections 412.0 1710000000.0
+# HELP temperature_celsius Sensor temperature.
+# TYPE temperature_celsius gauge
+# UNIT temperature_celsius celsius
+temperature_celsius{sensor="cpu0"} 62.4 1710000000.0
+temperature_celsius{sensor="cpu1"} 64.1 1710000000.0
+temperature_celsius{sensor="gpu"} 71.8 1710000000.0
+# HELP request_duration_seconds Request duration histogram.
+# TYPE request_duration_seconds histogram
+# UNIT request_duration_seconds seconds
+request_duration_seconds_bucket{handler="/api/query",le="0.005"} 120 1710000000.0
+request_duration_seconds_bucket{handler="/api/query",le="0.01"} 560 1710000000.0
+request_duration_seconds_bucket{handler="/api/query",le="0.025"} 2100 1710000000.0
+request_duration_seconds_bucket{handler="/api/query",le="0.05"} 5310 1710000000.0
+request_duration_seconds_bucket{handler="/api/query",le="0.1"} 7200 1710000000.0
+request_duration_seconds_bucket{handler="/api/query",le="0.25"} 8100 1710000000.0
+request_duration_seconds_bucket{handler="/api/query",le="0.5"} 8350 1710000000.0
+request_duration_seconds_bucket{handler="/api/query",le="1.0"} 8410 1710000000.0
+request_duration_seconds_bucket{handler="/api/query",le="2.5"} 8420 1710000000.0
+request_duration_seconds_bucket{handler="/api/query",le="5.0"} 8421 1710000000.0
+request_duration_seconds_bucket{handler="/api/query",le="10.0"} 8421 1710000000.0
+request_duration_seconds_bucket{handler="/api/query",le="+Inf"} 8421 1710000000.0
+request_duration_seconds_sum{handler="/api/query"} 1234.5 1710000000.0
+request_duration_seconds_count{handler="/api/query"} 8421 1710000000.0
+request_duration_seconds_bucket{handler="/api/write",le="0.005"} 80 1710000000.0
+request_duration_seconds_bucket{handler="/api/write",le="0.01"} 312 1710000000.0
+request_duration_seconds_bucket{handler="/api/write",le="0.025"} 1100 1710000000.0
+request_duration_seconds_bucket{handler="/api/write",le="0.05"} 2400 1710000000.0
+request_duration_seconds_bucket{handler="/api/write",le="0.1"} 3800 1710000000.0
+request_duration_seconds_bucket{handler="/api/write",le="0.25"} 4100 1710000000.0
+request_duration_seconds_bucket{handler="/api/write",le="0.5"} 4180 1710000000.0
+request_duration_seconds_bucket{handler="/api/write",le="1.0"} 4205 1710000000.0
+request_duration_seconds_bucket{handler="/api/write",le="2.5"} 4210 1710000000.0
+request_duration_seconds_bucket{handler="/api/write",le="5.0"} 4210 1710000000.0
+request_duration_seconds_bucket{handler="/api/write",le="10.0"} 4210 1710000000.0
+request_duration_seconds_bucket{handler="/api/write",le="+Inf"} 4210 1710000000.0
+request_duration_seconds_sum{handler="/api/write"} 512.3 1710000000.0
+request_duration_seconds_count{handler="/api/write"} 4210 1710000000.0
+request_duration_seconds_bucket{handler="/api/health",le="0.005"} 119800 1710000000.0
+request_duration_seconds_bucket{handler="/api/health",le="0.01"} 119980 1710000000.0
+request_duration_seconds_bucket{handler="/api/health",le="0.025"} 119999 1710000000.0
+request_duration_seconds_bucket{handler="/api/health",le="0.05"} 120000 1710000000.0
+request_duration_seconds_bucket{handler="/api/health",le="0.1"} 120000 1710000000.0
+request_duration_seconds_bucket{handler="/api/health",le="0.25"} 120000 1710000000.0
+request_duration_seconds_bucket{handler="/api/health",le="0.5"} 120000 1710000000.0
+request_duration_seconds_bucket{handler="/api/health",le="1.0"} 120000 1710000000.0
+request_duration_seconds_bucket{handler="/api/health",le="2.5"} 120000 1710000000.0
+request_duration_seconds_bucket{handler="/api/health",le="5.0"} 120000 1710000000.0
+request_duration_seconds_bucket{handler="/api/health",le="10.0"} 120000 1710000000.0
+request_duration_seconds_bucket{handler="/api/health",le="+Inf"} 120000 1710000000.0
+request_duration_seconds_sum{handler="/api/health"} 48.2 1710000000.0
+request_duration_seconds_count{handler="/api/health"} 120000 1710000000.0
+# HELP response_size_bytes Response size histogram.
+# TYPE response_size_bytes histogram
+# UNIT response_size_bytes bytes
+response_size_bytes_bucket{le="128"} 300 1710000000.0
+response_size_bytes_bucket{le="512"} 1800 1710000000.0
+response_size_bytes_bucket{le="2048"} 4200 1710000000.0
+response_size_bytes_bucket{le="8192"} 7100 1710000000.0
+response_size_bytes_bucket{le="32768"} 9100 1710000000.0
+response_size_bytes_bucket{le="131072"} 9800 1710000000.0
+response_size_bytes_bucket{le="524288"} 9821 1710000000.0
+response_size_bytes_bucket{le="+Inf"} 9821 1710000000.0
+response_size_bytes_sum 1.23e+09 1710000000.0
+response_size_bytes_count 9821 1710000000.0
+# HELP db_query_duration_seconds Database query duration.
+# TYPE db_query_duration_seconds histogram
+# UNIT db_query_duration_seconds seconds
+db_query_duration_seconds_bucket{le="0.001"} 120000 1710000000.0
+db_query_duration_seconds_bucket{le="0.005"} 380000 1710000000.0
+db_query_duration_seconds_bucket{le="0.01"} 445000 1710000000.0
+db_query_duration_seconds_bucket{le="0.05"} 478000 1710000000.0
+db_query_duration_seconds_bucket{le="0.1"} 482000 1710000000.0
+db_query_duration_seconds_bucket{le="0.5"} 482800 1710000000.0
+db_query_duration_seconds_bucket{le="1.0"} 482910 1710000000.0
+db_query_duration_seconds_bucket{le="+Inf"} 482910 1710000000.0
+db_query_duration_seconds_sum 3120.4 1710000000.0
+db_query_duration_seconds_count 482910 1710000000.0
+# HELP gc_duration_seconds GC duration summary.
+# TYPE gc_duration_seconds summary
+# UNIT gc_duration_seconds seconds
+gc_duration_seconds{quantile="0.5"} 0.0023 1710000000.0
+gc_duration_seconds{quantile="0.9"} 0.0081 1710000000.0
+gc_duration_seconds{quantile="0.99"} 0.0145 1710000000.0
+gc_duration_seconds{quantile="1.0"} 0.0312 1710000000.0
+gc_duration_seconds_sum 12.4 1710000000.0
+gc_duration_seconds_count 4821 1710000000.0
+# HELP allocation_duration_seconds Allocation duration summary.
+# TYPE allocation_duration_seconds summary
+# UNIT allocation_duration_seconds seconds
+allocation_duration_seconds{pool="small",quantile="0.5"} 0.00012 1710000000.0
+allocation_duration_seconds{pool="small",quantile="0.9"} 0.00034 1710000000.0
+allocation_duration_seconds{pool="small",quantile="0.99"} 0.00091 1710000000.0
+allocation_duration_seconds_sum{pool="small"} 142.3 1710000000.0
+allocation_duration_seconds_count{pool="small"} 9.31e+08 1710000000.0
+allocation_duration_seconds{pool="medium",quantile="0.5"} 0.00041 1710000000.0
+allocation_duration_seconds{pool="medium",quantile="0.9"} 0.0012 1710000000.0
+allocation_duration_seconds{pool="medium",quantile="0.99"} 0.0034 1710000000.0
+allocation_duration_seconds_sum{pool="medium"} 84.1 1710000000.0
+allocation_duration_seconds_count{pool="medium"} 1.42e+07 1710000000.0
+# HELP build_info Build information.
+# TYPE build_info info
+build_info{version="2.51.0",revision="abc123",branch="main"} 1.0
+# HELP feature_flags Feature flag stateset.
+# TYPE feature_flags stateset
+feature_flags{feature_flags="native_histograms"} 1.0
+feature_flags{feature_flags="exemplar_storage"} 1.0
+feature_flags{feature_flags="otlp_receiver"} 0.0
+# HELP legacy_metric Legacy metric of unknown type.
+# TYPE legacy_metric unknown
+legacy_metric 42.0
+# EOF

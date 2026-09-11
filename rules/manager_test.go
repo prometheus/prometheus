@@ -1521,6 +1521,24 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 	require.Equal(t, chunkenc.ValNone, it.Next())
 }
 
+// TestManager_LoadGroups_WithoutLogger covers the nil pointer dereference in the
+// default GroupLoader. ManagerOptions.Logger is optional, but NewManager used to
+// build FileLoader before substituting a no-op logger for a nil one, so the loader
+// kept the nil and panicked on the first rule file it had to warn about.
+func TestManager_LoadGroups_WithoutLogger(t *testing.T) {
+	ruleManager := NewManager(&ManagerOptions{})
+
+	var (
+		groups map[string]*Group
+		errs   []error
+	)
+	require.NotPanics(t, func() {
+		groups, errs = ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, false, "fixtures/rules_multi_doc.yaml")
+	})
+	require.Empty(t, errs)
+	require.Len(t, groups, 1)
+}
+
 func TestManager_LoadGroups_ShouldCheckWhetherEachRuleHasDependentsAndDependencies(t *testing.T) {
 	storage := teststorage.New(t)
 

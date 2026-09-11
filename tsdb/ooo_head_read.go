@@ -125,8 +125,7 @@ func getOOOSeriesChunks(s *memSeries, useXOR2, useHistogramST bool, mint, maxt i
 			}
 		}
 	}
-	for i := len(s.ooo.oooMmappedChunks) - 1; i >= 0; i-- {
-		c := s.ooo.oooMmappedChunks[i]
+	for i, c := range slices.Backward(s.ooo.oooMmappedChunks) {
 		if c.OverlapsClosedInterval(mint, maxt) && (maxMmapRef == 0 || maxMmapRef.GreaterThanOrEqualTo(c.ref)) && (lastGarbageCollectedMmapRef == 0 || c.ref.GreaterThan(lastGarbageCollectedMmapRef)) {
 			ref := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(i)))
 			addChunk(c.minTime, c.maxTime, ref, nil)

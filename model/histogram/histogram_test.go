@@ -1259,6 +1259,24 @@ func TestHistogramCompact(t *testing.T) {
 			},
 		},
 		{
+			"more than one span merged in the same pass",
+			&Histogram{
+				Count:           30,
+				PositiveSpans:   []Span{{0, 2}, {2, 2}, {2, 2}},
+				PositiveBuckets: []int64{1, 1, 1, 1, 1, 1},
+				NegativeSpans:   []Span{{0, 1}, {1, 1}, {1, 1}},
+				NegativeBuckets: []int64{2, 1, 1},
+			},
+			3,
+			&Histogram{
+				Count:           30,
+				PositiveSpans:   []Span{{0, 10}},
+				PositiveBuckets: []int64{1, 1, -2, 0, 3, 1, -4, 0, 5, 1},
+				NegativeSpans:   []Span{{0, 5}},
+				NegativeBuckets: []int64{2, -2, 3, -3, 4},
+			},
+		},
+		{
 			"only empty buckets and maxEmptyBuckets greater zero",
 			&Histogram{
 				PositiveSpans:   []Span{{-4, 6}, {3, 3}},
@@ -1409,9 +1427,13 @@ func TestHistogramCompact(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			wasValid := c.in.Validate() == nil
 			require.Equal(t, c.expected, c.in.Compact(c.maxEmptyBuckets))
 			// Compact has happened in-place, too.
 			require.Equal(t, c.expected, c.in)
+			if wasValid {
+				require.NoError(t, c.in.Validate(), "Compact turned a valid histogram into an invalid one")
+			}
 		})
 	}
 }

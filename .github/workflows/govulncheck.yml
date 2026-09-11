@@ -28,6 +28,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get -y install libsnmp-dev
         if: github.repository == 'prometheus/snmp_exporter'
       - id: govulncheck
-        uses: golang/govulncheck-action@3fa7bd9cee2cfdf3499a8803b226e43de7b7cdb4 # master
+        uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # master
         env:
           GOOS: ${{ contains(github.repository, 'windows_exporter') && 'windows' || '' }}

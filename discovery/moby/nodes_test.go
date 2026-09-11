@@ -28,6 +28,7 @@ import (
 )
 
 func TestDockerSwarmNodesSDRefresh(t *testing.T) {
+	t.Parallel()
 	sdmock := NewSDMock(t, "swarmprom")
 	sdmock.Setup()
 

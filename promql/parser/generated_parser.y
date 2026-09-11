@@ -650,9 +650,9 @@ matrix_selector : expr LEFT_BRACKET positive_duration_expr RIGHT_BRACKET
                         vs, ok := $1.(*VectorSelector)
                         if !ok{
                                 errMsg = "ranges only allowed for vector selectors"
-                        } else if vs.OriginalOffset != 0{
+                        } else if vs.OriginalOffset != 0 || vs.OriginalOffsetExpr != nil {
                                 errMsg = "no offset modifiers allowed before range"
-                        } else if vs.Timestamp != nil {
+                        } else if vs.Timestamp != nil || vs.StartOrEnd != 0 {
                                 errMsg = "no @ modifiers allowed before range"
                         }
 
@@ -1397,12 +1397,7 @@ duration_expr   : number_duration_literal
 paren_duration_expr : LEFT_PAREN duration_expr RIGHT_PAREN
                         {
                             yylex.(*parser).experimentalDurationExpr($2.(Expr))
-                            if durationExpr, ok := $2.(*DurationExpr); ok {
-                                durationExpr.Wrapped = true
-                                $$ = durationExpr
-                                break
-                            }
-                            $$ = $2
+                            $$ = yylex.(*parser).wrapParenDurationExpr($2.(Expr), $1.PositionRange().Start, $3.PositionRange().End)
                         }
                 ;
 

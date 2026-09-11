@@ -1,46 +1,31 @@
-import * as React from 'react';
-import { mount, ReactWrapper } from 'enzyme';
+import React from 'react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import MetricsExplorer from './MetricsExplorer';
-import { Input } from 'reactstrap';
+
+const metrics = ['go_test_1', 'prometheus_test_1'];
+const getMetric = (name: string): HTMLElement =>
+  screen.getByText((_, element) => element?.classList.contains('metric') === true && element.textContent === name);
 
 describe('MetricsExplorer', () => {
-  const spyInsertAtCursor = jest.fn().mockImplementation((value: string) => {
-    value = value;
-  });
-  const metricsExplorerProps = {
-    show: true,
-    updateShow: (show: boolean): void => {
-      show = show;
-    },
-    metrics: ['go_test_1', 'prometheus_test_1'],
-    insertAtCursor: spyInsertAtCursor,
-  };
+  it('lists and filters metrics', () => {
+    render(<MetricsExplorer show updateShow={jest.fn()} metrics={metrics} insertAtCursor={jest.fn()} />);
 
-  let metricsExplorer: ReactWrapper;
-  beforeEach(() => {
-    metricsExplorer = mount(<MetricsExplorer {...metricsExplorerProps} />);
+    expect(screen.getByRole('heading', { name: 'Metrics Explorer' })).toBeTruthy();
+    expect(getMetric('go_test_1')).toBeTruthy();
+    expect(getMetric('prometheus_test_1')).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText('Search'), { target: { value: 'go' } });
+    expect(getMetric('go_test_1')).toBeTruthy();
+    expect(screen.queryByText('prometheus_test_1')).toBeNull();
   });
 
-  it('renders an Input[type=text]', () => {
-    const input = metricsExplorer.find(Input);
-    expect(input.prop('type')).toEqual('text');
-  });
+  it('inserts the selected metric and closes the explorer', () => {
+    const insertAtCursor = jest.fn();
+    const updateShow = jest.fn();
+    render(<MetricsExplorer show updateShow={updateShow} metrics={metrics} insertAtCursor={insertAtCursor} />);
 
-  it('lists all metrics in props', () => {
-    const metrics = metricsExplorer.find('.metric');
-    expect(metrics).toHaveLength(metricsExplorerProps.metrics.length);
-  });
-
-  it('filters metrics with search', () => {
-    const input = metricsExplorer.find(Input);
-    input.simulate('change', { target: { value: 'go' } });
-    const metrics = metricsExplorer.find('.metric');
-    expect(metrics).toHaveLength(1);
-  });
-
-  it('handles click on metric', () => {
-    const metric = metricsExplorer.find('.metric').at(0);
-    metric.simulate('click');
-    expect(metricsExplorerProps.insertAtCursor).toHaveBeenCalled();
+    fireEvent.click(getMetric('go_test_1'));
+    expect(insertAtCursor).toHaveBeenCalledWith('go_test_1');
+    expect(updateShow).toHaveBeenCalledWith(false);
   });
 });

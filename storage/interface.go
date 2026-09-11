@@ -107,6 +107,10 @@ type ExemplarStorage interface {
 // Use it when you need to have access to all samples without chunk encoding abstraction e.g promQL.
 type Queryable interface {
 	// Querier returns a new Querier on the storage.
+	//
+	// mint and maxt are inclusive time bounds in milliseconds. The returned
+	// Querier is scoped to this range and its methods only consider series
+	// data within [mint, maxt].
 	Querier(mint, maxt int64) (Querier, error)
 }
 

@@ -1415,6 +1415,47 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 			},
 			false, // No reset: all mapped buckets increase
 		},
+		{
+			// The previous histogram's first negative bucket is empty and a
+			// later one is populated. The current histogram has no negative
+			// buckets at all, so the populated previous bucket disappeared,
+			// which is a reset.
+			"reset when a populated bucket following an empty one disappears",
+			&FloatHistogram{
+				ZeroThreshold:   0.001,
+				Count:           10,
+				PositiveSpans:   []Span{{0, 1}},
+				PositiveBuckets: []float64{5},
+				NegativeSpans:   []Span{{1, 2}},
+				NegativeBuckets: []float64{0, 5},
+			},
+			&FloatHistogram{
+				ZeroThreshold:   0.001,
+				Count:           20,
+				PositiveSpans:   []Span{{0, 1}},
+				PositiveBuckets: []float64{20},
+			},
+			true,
+		},
+		{
+			// The current histogram runs out of buckets before a later
+			// populated bucket of the previous histogram, which sits behind an
+			// empty one. That populated bucket disappeared, so it is a reset.
+			"reset when current ends before a later populated previous bucket",
+			&FloatHistogram{
+				ZeroThreshold:   0.001,
+				Count:           7,
+				PositiveSpans:   []Span{{0, 3}},
+				PositiveBuckets: []float64{2, 0, 5},
+			},
+			&FloatHistogram{
+				ZeroThreshold:   0.001,
+				Count:           100,
+				PositiveSpans:   []Span{{0, 1}},
+				PositiveBuckets: []float64{100},
+			},
+			true,
+		},
 	}
 
 	for _, c := range cases {
@@ -1677,6 +1718,22 @@ func TestFloatHistogramCompact(t *testing.T) {
 			},
 		},
 		{
+			"more than one span merged in the same pass",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 2}, {2, 2}, {2, 2}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3, 2},
+				NegativeSpans:   []Span{{0, 1}, {1, 1}, {1, 1}},
+				NegativeBuckets: []float64{3.1, 1000, 4},
+			},
+			3,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 10}},
+				PositiveBuckets: []float64{1, 3.3, 0, 0, 4.2, 0.1, 0, 0, 3.3, 2},
+				NegativeSpans:   []Span{{0, 5}},
+				NegativeBuckets: []float64{3.1, 0, 1000, 0, 4},
+			},
+		},
+		{
 			"only empty buckets and maxEmptyBuckets greater zero",
 			&FloatHistogram{
 				PositiveSpans:   []Span{{-4, 6}, {3, 3}},
@@ -1776,11 +1833,35 @@ func TestFloatHistogramCompact(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			wasValid := c.in.Validate() == nil
 			require.Equal(t, c.expected, c.in.Compact(c.maxEmptyBuckets))
 			// Compact has happened in-place, too.
 			require.Equal(t, c.expected, c.in)
+			if wasValid {
+				require.NoError(t, c.in.Validate(), "Compact turned a valid histogram into an invalid one")
+			}
 		})
 	}
+}
+
+// TestFloatHistogramKahanCompactSpanMerge makes sure the Kahan compensation
+// terms stay aligned with the buckets they belong to when more than one span is
+// merged in the same pass.
+func TestFloatHistogramKahanCompactSpanMerge(t *testing.T) {
+	h := &FloatHistogram{
+		PositiveSpans:   []Span{{0, 1}, {1, 1}, {1, 1}},
+		PositiveBuckets: []float64{1, 2, 3},
+	}
+	c := &FloatHistogram{
+		PositiveSpans:   []Span{{0, 1}, {1, 1}, {1, 1}},
+		PositiveBuckets: []float64{0.1, 0.2, 0.3},
+	}
+
+	h, c = h.kahanCompact(3, c)
+
+	require.Equal(t, []Span{{0, 5}}, h.PositiveSpans)
+	require.Equal(t, []float64{1, 0, 2, 0, 3}, h.PositiveBuckets)
+	require.Equal(t, []float64{0.1, 0, 0.2, 0, 0.3}, c.PositiveBuckets)
 }
 
 func TestFloatHistogramAdd(t *testing.T) {

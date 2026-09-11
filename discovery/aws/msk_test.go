@@ -16,6 +16,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"testing"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/kafka"
 	"github.com/aws/aws-sdk-go-v2/service/kafka/types"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -33,6 +35,8 @@ type mskDataStore struct {
 	region   string
 	clusters []types.Cluster
 	nodes    map[string][]types.NodeInfo // keyed by cluster ARN
+	// ARNs DescribeClusterV2 answers without any cluster information.
+	clustersWithoutInfo []string
 }
 
 func TestMSKDiscoveryListClusters(t *testing.T) {
@@ -137,6 +141,41 @@ func TestMSKDiscoveryDescribeClusters(t *testing.T) {
 		expected    []types.Cluster
 	}{
 		{
+			name: "ServerlessClusterIsSkipped",
+			mskData: &mskDataStore{
+				region: "us-west-2",
+				clusters: []types.Cluster{
+					{
+						ClusterName:    strptr("provisioned-cluster"),
+						ClusterArn:     strptr("arn:aws:kafka:us-west-2:123456789012:cluster/provisioned-cluster/abc-123"),
+						State:          types.ClusterStateActive,
+						ClusterType:    types.ClusterTypeProvisioned,
+						CurrentVersion: strptr("1.2.3"),
+					},
+					{
+						ClusterName:    strptr("serverless-cluster"),
+						ClusterArn:     strptr("arn:aws:kafka:us-west-2:123456789012:cluster/serverless-cluster/def-456"),
+						State:          types.ClusterStateActive,
+						ClusterType:    types.ClusterTypeServerless,
+						CurrentVersion: strptr("1.0.0"),
+					},
+				},
+			},
+			clusterARNs: []string{
+				"arn:aws:kafka:us-west-2:123456789012:cluster/provisioned-cluster/abc-123",
+				"arn:aws:kafka:us-west-2:123456789012:cluster/serverless-cluster/def-456",
+			},
+			expected: []types.Cluster{
+				{
+					ClusterName:    strptr("provisioned-cluster"),
+					ClusterArn:     strptr("arn:aws:kafka:us-west-2:123456789012:cluster/provisioned-cluster/abc-123"),
+					State:          types.ClusterStateActive,
+					ClusterType:    types.ClusterTypeProvisioned,
+					CurrentVersion: strptr("1.2.3"),
+				},
+			},
+		},
+		{
 			name: "SingleCluster",
 			mskData: &mskDataStore{
 				region: "us-west-2",
@@ -218,7 +257,8 @@ func TestMSKDiscoveryDescribeClusters(t *testing.T) {
 			client := newMockMSKClient(tt.mskData)
 
 			d := &MSKDiscovery{
-				msk: client,
+				msk:    client,
+				logger: promslog.NewNopLogger(),
 				cfg: &MSKSDConfig{
 					Region:             tt.mskData.region,
 					RequestConcurrency: 10,
@@ -502,6 +542,202 @@ func TestMSKDiscoveryRefresh(t *testing.T) {
 							"__meta_msk_broker_client_vpc_ip":           model.LabelValue("10.0.1.100"),
 							"__meta_msk_broker_node_exporter_enabled":   model.LabelValue("true"),
 							"__meta_msk_broker_endpoint_index":          model.LabelValue("0"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "ServerlessClusterProducesNoTargets",
+			mskData: &mskDataStore{
+				region: "us-west-2",
+				clusters: []types.Cluster{
+					{
+						ClusterName:    strptr("serverless-cluster"),
+						ClusterArn:     strptr("arn:aws:kafka:us-west-2:123456789012:cluster/serverless-cluster/def-456"),
+						State:          types.ClusterStateActive,
+						ClusterType:    types.ClusterTypeServerless,
+						CurrentVersion: strptr("1.0.0"),
+						// Serverless clusters have no Provisioned configuration.
+					},
+				},
+				nodes: map[string][]types.NodeInfo{
+					"arn:aws:kafka:us-west-2:123456789012:cluster/serverless-cluster/def-456": {
+						{
+							NodeARN:            strptr("arn:aws:kafka:us-west-2:123456789012:node/broker-2"),
+							AddedToClusterTime: strptr("2023-01-01T00:00:00Z"),
+							InstanceType:       strptr("kafka.m5.xlarge"),
+							BrokerNodeInfo: &types.BrokerNodeInfo{
+								BrokerId:           aws.Float64(2),
+								ClientSubnet:       strptr("subnet-67890"),
+								ClientVpcIpAddress: strptr("10.0.2.100"),
+								Endpoints:          []string{"b-2.serverless-cluster.def456.kafka.us-west-2.amazonaws.com"},
+								AttachedENIId:      strptr("eni-67890"),
+							},
+						},
+					},
+				},
+			},
+			config: &MSKSDConfig{
+				Region:             "us-west-2",
+				Port:               80,
+				RequestConcurrency: 10,
+				Clusters:           []string{"arn:aws:kafka:us-west-2:123456789012:cluster/serverless-cluster/def-456"},
+			},
+			// Serverless clusters are skipped by describeClusters, so no
+			// targets are produced even though the cluster has nodes.
+			expected: []*targetgroup.Group{
+				{
+					Source: "us-west-2",
+				},
+			},
+		},
+		{
+			name: "ProvisionedClusterWithoutOpenMonitoring",
+			mskData: &mskDataStore{
+				region: "us-west-2",
+				clusters: []types.Cluster{
+					{
+						ClusterName:    strptr("no-monitoring-cluster"),
+						ClusterArn:     strptr("arn:aws:kafka:us-west-2:123456789012:cluster/no-monitoring-cluster/ghi-789"),
+						State:          types.ClusterStateActive,
+						ClusterType:    types.ClusterTypeProvisioned,
+						CurrentVersion: strptr("1.2.3"),
+						Provisioned: &types.Provisioned{
+							CurrentBrokerSoftwareInfo: &types.BrokerSoftwareInfo{
+								ConfigurationArn:      strptr("arn:aws:kafka:us-west-2:123456789012:configuration/my-config/ghi-789"),
+								ConfigurationRevision: aws.Int64(2),
+								KafkaVersion:          strptr("2.8.1"),
+							},
+							// Open Monitoring is not enabled on this cluster.
+						},
+					},
+				},
+				nodes: map[string][]types.NodeInfo{
+					"arn:aws:kafka:us-west-2:123456789012:cluster/no-monitoring-cluster/ghi-789": {
+						{
+							NodeARN:            strptr("arn:aws:kafka:us-west-2:123456789012:node/broker-3"),
+							AddedToClusterTime: strptr("2023-01-01T00:00:00Z"),
+							InstanceType:       strptr("kafka.m5.large"),
+							BrokerNodeInfo: &types.BrokerNodeInfo{
+								BrokerId:           aws.Float64(3),
+								ClientSubnet:       strptr("subnet-12345"),
+								ClientVpcIpAddress: strptr("10.0.3.100"),
+								Endpoints:          []string{"b-3.no-monitoring-cluster.ghi789.kafka.us-west-2.amazonaws.com"},
+								AttachedENIId:      strptr("eni-12345"),
+							},
+						},
+					},
+				},
+			},
+			config: &MSKSDConfig{
+				Region:             "us-west-2",
+				Port:               80,
+				RequestConcurrency: 10,
+				Clusters:           []string{"arn:aws:kafka:us-west-2:123456789012:cluster/no-monitoring-cluster/ghi-789"},
+			},
+			expected: []*targetgroup.Group{
+				{
+					Source: "us-west-2",
+					Targets: []model.LabelSet{
+						{
+							model.AddressLabel:                          model.LabelValue("b-3.no-monitoring-cluster.ghi789.kafka.us-west-2.amazonaws.com:80"),
+							"__meta_msk_cluster_name":                   model.LabelValue("no-monitoring-cluster"),
+							"__meta_msk_cluster_arn":                    model.LabelValue("arn:aws:kafka:us-west-2:123456789012:cluster/no-monitoring-cluster/ghi-789"),
+							"__meta_msk_cluster_state":                  model.LabelValue("ACTIVE"),
+							"__meta_msk_cluster_type":                   model.LabelValue("PROVISIONED"),
+							"__meta_msk_cluster_version":                model.LabelValue("1.2.3"),
+							"__meta_msk_cluster_configuration_arn":      model.LabelValue("arn:aws:kafka:us-west-2:123456789012:configuration/my-config/ghi-789"),
+							"__meta_msk_cluster_configuration_revision": model.LabelValue("2"),
+							"__meta_msk_cluster_kafka_version":          model.LabelValue("2.8.1"),
+							"__meta_msk_node_type":                      model.LabelValue("BROKER"),
+							"__meta_msk_node_arn":                       model.LabelValue("arn:aws:kafka:us-west-2:123456789012:node/broker-3"),
+							"__meta_msk_node_added_time":                model.LabelValue("2023-01-01T00:00:00Z"),
+							"__meta_msk_node_instance_type":             model.LabelValue("kafka.m5.large"),
+							"__meta_msk_node_attached_eni":              model.LabelValue("eni-12345"),
+							"__meta_msk_broker_id":                      model.LabelValue("3"),
+							"__meta_msk_broker_client_subnet":           model.LabelValue("subnet-12345"),
+							"__meta_msk_broker_client_vpc_ip":           model.LabelValue("10.0.3.100"),
+							"__meta_msk_broker_endpoint_index":          model.LabelValue("0"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "ProvisionedClusterWithoutCustomConfiguration",
+			mskData: &mskDataStore{
+				region: "us-west-2",
+				clusters: []types.Cluster{
+					{
+						ClusterName:    strptr("no-monitoring-cluster"),
+						ClusterArn:     strptr("arn:aws:kafka:us-west-2:123456789012:cluster/no-monitoring-cluster/ghi-789"),
+						State:          types.ClusterStateActive,
+						ClusterType:    types.ClusterTypeProvisioned,
+						CurrentVersion: strptr("1.2.3"),
+						Provisioned: &types.Provisioned{
+							CurrentBrokerSoftwareInfo: &types.BrokerSoftwareInfo{
+								KafkaVersion: strptr("2.8.1"),
+							},
+							OpenMonitoring: &types.OpenMonitoringInfo{
+								Prometheus: &types.PrometheusInfo{
+									JmxExporter: &types.JmxExporterInfo{
+										EnabledInBroker: aws.Bool(true),
+									},
+									NodeExporter: &types.NodeExporterInfo{
+										EnabledInBroker: aws.Bool(true),
+									},
+								},
+							},
+						},
+					},
+				},
+				nodes: map[string][]types.NodeInfo{
+					"arn:aws:kafka:us-west-2:123456789012:cluster/no-monitoring-cluster/ghi-789": {
+						{
+							NodeARN:            strptr("arn:aws:kafka:us-west-2:123456789012:node/broker-3"),
+							AddedToClusterTime: strptr("2023-01-01T00:00:00Z"),
+							InstanceType:       strptr("kafka.m5.large"),
+							BrokerNodeInfo: &types.BrokerNodeInfo{
+								BrokerId:           aws.Float64(3),
+								ClientSubnet:       strptr("subnet-12345"),
+								ClientVpcIpAddress: strptr("10.0.3.100"),
+								Endpoints:          []string{"b-3.no-monitoring-cluster.ghi789.kafka.us-west-2.amazonaws.com"},
+								AttachedENIId:      strptr("eni-12345"),
+							},
+						},
+					},
+				},
+			},
+			config: &MSKSDConfig{
+				Region:             "us-west-2",
+				Port:               80,
+				RequestConcurrency: 10,
+				Clusters:           []string{"arn:aws:kafka:us-west-2:123456789012:cluster/no-monitoring-cluster/ghi-789"},
+			},
+			expected: []*targetgroup.Group{
+				{
+					Source: "us-west-2",
+					Targets: []model.LabelSet{
+						{
+							model.AddressLabel:                        model.LabelValue("b-3.no-monitoring-cluster.ghi789.kafka.us-west-2.amazonaws.com:80"),
+							"__meta_msk_cluster_name":                 model.LabelValue("no-monitoring-cluster"),
+							"__meta_msk_cluster_arn":                  model.LabelValue("arn:aws:kafka:us-west-2:123456789012:cluster/no-monitoring-cluster/ghi-789"),
+							"__meta_msk_cluster_state":                model.LabelValue("ACTIVE"),
+							"__meta_msk_cluster_type":                 model.LabelValue("PROVISIONED"),
+							"__meta_msk_cluster_version":              model.LabelValue("1.2.3"),
+							"__meta_msk_cluster_jmx_exporter_enabled": model.LabelValue("true"),
+							"__meta_msk_cluster_kafka_version":        model.LabelValue("2.8.1"),
+							"__meta_msk_node_type":                    model.LabelValue("BROKER"),
+							"__meta_msk_node_arn":                     model.LabelValue("arn:aws:kafka:us-west-2:123456789012:node/broker-3"),
+							"__meta_msk_node_added_time":              model.LabelValue("2023-01-01T00:00:00Z"),
+							"__meta_msk_node_instance_type":           model.LabelValue("kafka.m5.large"),
+							"__meta_msk_node_attached_eni":            model.LabelValue("eni-12345"),
+							"__meta_msk_broker_id":                    model.LabelValue("3"),
+							"__meta_msk_broker_client_subnet":         model.LabelValue("subnet-12345"),
+							"__meta_msk_broker_client_vpc_ip":         model.LabelValue("10.0.3.100"),
+							"__meta_msk_broker_endpoint_index":        model.LabelValue("0"),
+							"__meta_msk_broker_node_exporter_enabled": model.LabelValue("true"),
 						},
 					},
 				},
@@ -1007,6 +1243,7 @@ func TestMSKDiscoveryRefresh(t *testing.T) {
 
 			d := &MSKDiscovery{
 				msk:    client,
+				logger: promslog.NewNopLogger(),
 				cfg:    config,
 				region: tt.mskData.region,
 			}
@@ -1071,6 +1308,188 @@ func TestNodeType(t *testing.T) {
 	}
 }
 
+const fullyPopulatedMSKClusterARN = "arn:aws:kafka:region-full:123456789012:cluster/cluster-full/abc-123"
+
+// mskTestDiscovery wires a discovery to the mock, configured to describe the
+// clusters held by data rather than list them.
+func mskTestDiscovery(data *mskDataStore) *MSKDiscovery {
+	clusterARNs := make([]string, 0, len(data.clusters))
+	for _, cluster := range data.clusters {
+		clusterARNs = append(clusterARNs, aws.ToString(cluster.ClusterArn))
+	}
+
+	return &MSKDiscovery{
+		logger: promslog.NewNopLogger(),
+		msk:    newMockMSKClient(data),
+		cfg: &MSKSDConfig{
+			Port:               4242,
+			Region:             data.region,
+			RequestConcurrency: 10,
+			Clusters:           clusterARNs,
+		},
+		region: data.region,
+	}
+}
+
+// fullyPopulatedMSKCluster is the shape the AWS API returns when every optional
+// field happens to be set. Each subtest below blanks exactly one of them.
+func fullyPopulatedMSKCluster() types.Cluster {
+	return types.Cluster{
+		ClusterName:    strptr("cluster-full"),
+		ClusterArn:     strptr(fullyPopulatedMSKClusterARN),
+		State:          types.ClusterStateActive,
+		ClusterType:    types.ClusterTypeProvisioned,
+		CurrentVersion: strptr("1.2.3"),
+		Provisioned: &types.Provisioned{
+			CurrentBrokerSoftwareInfo: &types.BrokerSoftwareInfo{
+				ConfigurationArn:      strptr("arn:aws:kafka:region-full:123456789012:configuration/config-full/def-456"),
+				ConfigurationRevision: aws.Int64(1),
+				KafkaVersion:          strptr("3.4.0"),
+			},
+			OpenMonitoring: &types.OpenMonitoringInfo{
+				Prometheus: &types.PrometheusInfo{
+					JmxExporter:  &types.JmxExporterInfo{EnabledInBroker: aws.Bool(true)},
+					NodeExporter: &types.NodeExporterInfo{EnabledInBroker: aws.Bool(true)},
+				},
+			},
+		},
+	}
+}
+
+func fullyPopulatedMSKDataStore() *mskDataStore {
+	return &mskDataStore{
+		region:   "region-full",
+		clusters: []types.Cluster{fullyPopulatedMSKCluster()},
+		nodes: map[string][]types.NodeInfo{
+			fullyPopulatedMSKClusterARN: {
+				{
+					NodeARN:            strptr("arn:aws:kafka:region-full:123456789012:node/broker-full"),
+					AddedToClusterTime: strptr("2023-01-01T00:00:00Z"),
+					InstanceType:       strptr("kafka.m5.large"),
+					BrokerNodeInfo: &types.BrokerNodeInfo{
+						BrokerId:           aws.Float64(1),
+						ClientSubnet:       strptr("subnet-full"),
+						ClientVpcIpAddress: strptr("10.0.0.1"),
+						Endpoints:          []string{"b-1.cluster-full.kafka.region-full.amazonaws.com"},
+						AttachedENIId:      strptr("eni-full"),
+					},
+				},
+			},
+		},
+	}
+}
+
+// TestMSKDiscoveryRefreshFullyPopulated pins the happy path so the nil handling
+// added for the cases below cannot silently drop labels that used to be set.
+func TestMSKDiscoveryRefreshFullyPopulated(t *testing.T) {
+	t.Parallel()
+
+	tgs, err := mskTestDiscovery(fullyPopulatedMSKDataStore()).refresh(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []*targetgroup.Group{
+		{
+			Source: "region-full",
+			Targets: []model.LabelSet{
+				{
+					model.AddressLabel:                   model.LabelValue("b-1.cluster-full.kafka.region-full.amazonaws.com:4242"),
+					mskLabelClusterName:                  model.LabelValue("cluster-full"),
+					mskLabelClusterARN:                   model.LabelValue(fullyPopulatedMSKClusterARN),
+					mskLabelClusterState:                 model.LabelValue("ACTIVE"),
+					mskLabelClusterType:                  model.LabelValue("PROVISIONED"),
+					mskLabelClusterVersion:               model.LabelValue("1.2.3"),
+					mskLabelClusterKafkaVersion:          model.LabelValue("3.4.0"),
+					mskLabelClusterConfigurationARN:      model.LabelValue("arn:aws:kafka:region-full:123456789012:configuration/config-full/def-456"),
+					mskLabelClusterConfigurationRevision: model.LabelValue("1"),
+					mskLabelClusterJmxExporterEnabled:    model.LabelValue("true"),
+					mskLabelNodeType:                     model.LabelValue("BROKER"),
+					mskLabelNodeARN:                      model.LabelValue("arn:aws:kafka:region-full:123456789012:node/broker-full"),
+					mskLabelNodeAddedTime:                model.LabelValue("2023-01-01T00:00:00Z"),
+					mskLabelNodeInstanceType:             model.LabelValue("kafka.m5.large"),
+					mskLabelNodeAttachedENI:              model.LabelValue("eni-full"),
+					mskLabelBrokerID:                     model.LabelValue("1"),
+					mskLabelBrokerClientSubnet:           model.LabelValue("subnet-full"),
+					mskLabelBrokerClientVPCIP:            model.LabelValue("10.0.0.1"),
+					mskLabelBrokerNodeExporterEnabled:    model.LabelValue("true"),
+					mskLabelBrokerEndpointIndex:          model.LabelValue("0"),
+				},
+			},
+		},
+	}, tgs)
+}
+
+// TestMSKDiscoveryRefreshClusterNilOptionalFields covers clusters where the AWS
+// API omitted an optional field. Neither Provisioned nor
+// CurrentBrokerSoftwareInfo is marked required by the SDK, yet refresh()
+// dereferenced both without a nil check. The dereference happens inside a
+// goroutine, so a single missing field panicked the whole Prometheus process
+// during service discovery rather than degrading the target.
+func TestMSKDiscoveryRefreshClusterNilOptionalFields(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(*types.Cluster)
+		absent []model.LabelName
+	}{
+		{
+			name:   "NilProvisioned",
+			mutate: func(c *types.Cluster) { c.Provisioned = nil },
+			absent: []model.LabelName{
+				mskLabelClusterKafkaVersion,
+				mskLabelClusterConfigurationARN,
+				mskLabelClusterConfigurationRevision,
+				mskLabelClusterJmxExporterEnabled,
+				mskLabelBrokerNodeExporterEnabled,
+			},
+		},
+		{
+			name:   "NilCurrentBrokerSoftwareInfo",
+			mutate: func(c *types.Cluster) { c.Provisioned.CurrentBrokerSoftwareInfo = nil },
+			absent: []model.LabelName{
+				mskLabelClusterKafkaVersion,
+				mskLabelClusterConfigurationARN,
+				mskLabelClusterConfigurationRevision,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			data := fullyPopulatedMSKDataStore()
+			tc.mutate(&data.clusters[0])
+
+			tgs, err := mskTestDiscovery(data).refresh(context.Background())
+			require.NoError(t, err)
+			require.Len(t, tgs, 1)
+			require.Len(t, tgs[0].Targets, 1,
+				"broker must still be discovered when an optional cluster field is absent")
+
+			target := tgs[0].Targets[0]
+			for _, label := range tc.absent {
+				require.NotContains(t, target, label,
+					"label sourced from the absent field should be omitted")
+			}
+			// The broker is still usable: the address is what makes it a target.
+			require.Equal(t, model.LabelValue("b-1.cluster-full.kafka.region-full.amazonaws.com:4242"), target[model.AddressLabel])
+		})
+	}
+}
+
+// TestMSKDiscoveryDescribeClustersNilClusterInfo covers a DescribeClusterV2
+// response carrying no cluster information. ClusterInfo is not marked required
+// by the SDK, and describeClusters read its ClusterType straight away, so such a
+// response panicked the process instead of leaving the cluster out.
+func TestMSKDiscoveryDescribeClustersNilClusterInfo(t *testing.T) {
+	t.Parallel()
+
+	data := fullyPopulatedMSKDataStore()
+	data.clustersWithoutInfo = []string{fullyPopulatedMSKClusterARN}
+
+	clusters, err := mskTestDiscovery(data).describeClusters(context.Background(), []string{fullyPopulatedMSKClusterARN})
+	require.NoError(t, err)
+	require.Empty(t, clusters, "a cluster described without information cannot be turned into targets")
+}
+
 // MSK client mock.
 type mockMSKClient struct {
 	mskData mskDataStore
@@ -1084,6 +1503,9 @@ func newMockMSKClient(mskData *mskDataStore) *mockMSKClient {
 
 func (m *mockMSKClient) DescribeClusterV2(_ context.Context, input *kafka.DescribeClusterV2Input, _ ...func(*kafka.Options)) (*kafka.DescribeClusterV2Output, error) {
 	inputARN := aws.ToString(input.ClusterArn)
+	if slices.Contains(m.mskData.clustersWithoutInfo, inputARN) {
+		return &kafka.DescribeClusterV2Output{}, nil
+	}
 	for i := range m.mskData.clusters {
 		cluster := &m.mskData.clusters[i]
 		if aws.ToString(cluster.ClusterArn) == inputARN {

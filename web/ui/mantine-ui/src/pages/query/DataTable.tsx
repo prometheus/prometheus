@@ -4,7 +4,6 @@ import {
   Alert,
   Box,
   SegmentedControl,
-  ScrollArea,
   Group,
   Stack,
   Text,
@@ -175,37 +174,55 @@ const DataTable: FC<DataTableProps> = ({
   );
 };
 
-const histogramTable = (h: Histogram): ReactNode => (
-  <Table withTableBorder fz="xs">
-    <Table.Tbody
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-      }}
-    >
-      <Table.Tr
-        style={{
-          display: "flex",
-          flexDirection: "row",
-          justifyContent: "space-between",
-        }}
+const histogramTable = (h: Histogram): ReactNode => {
+  const buckets = h.buckets || [];
+  // The bucket with the highest count sets the scale for the in-cell count bars.
+  const maxCount = buckets.reduce(
+    (max, b) => Math.max(max, parseFloat(b[3])),
+    0
+  );
+
+  return (
+    // A native scroll container (rather than Mantine's ScrollArea) is used so
+    // that the sticky header positions itself against the scrolling element.
+    <Table.ScrollContainer type="native" minWidth={200} mah={265}>
+      <Table
+        withTableBorder
+        stickyHeader
+        tabularNums
+        fz="xs"
+        ta="left"
       >
-        <Table.Th>Bucket range</Table.Th>
-        <Table.Th>Count</Table.Th>
-      </Table.Tr>
-      <ScrollArea w={"100%"} h={265}>
-        {h.buckets?.map((b, i) => (
-          <Table.Tr key={i}>
-            <Table.Td style={{ textAlign: "left" }}>
-              {bucketRangeString(b)}
-            </Table.Td>
-            <Table.Td>{b[3]}</Table.Td>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Bucket range</Table.Th>
+            <Table.Th className={classes.numberCell}>Count</Table.Th>
           </Table.Tr>
-        ))}
-      </ScrollArea>
-    </Table.Tbody>
-  </Table>
-);
+        </Table.Thead>
+        <Table.Tbody>
+          {buckets.map((b, i) => (
+            <Table.Tr key={i}>
+              <Table.Td>{bucketRangeString(b)}</Table.Td>
+              <Table.Td
+                className={classes.bucketCountCell}
+                // Set max bucket count CSS variable for background bar width calculation.
+                style={
+                  {
+                    "--bucket-count-fraction":
+                      maxCount > 0
+                        ? `${(parseFloat(b[3]) / maxCount) * 100}%`
+                        : "0%",
+                  }
+                }
+              >
+                {b[3]}
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Table.ScrollContainer>
+  );
+};
 
 export default DataTable;

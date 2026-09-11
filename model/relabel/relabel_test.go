@@ -1029,7 +1029,8 @@ func BenchmarkRelabel(b *testing.B) {
 				"__scheme__", "http",
 				"__scrape_interval__", "15s",
 				"__scrape_timeout__", "10s",
-				"job", "kubernetes-pods"),
+				"job", "kubernetes-pods",
+			),
 		},
 		{
 			name: "static label pair",

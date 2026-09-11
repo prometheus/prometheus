@@ -2162,7 +2162,8 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					numSpans:               c.numSpans,
 					gapBetweenSpans:        c.gapBetweenSpans,
 				})
-			})
+			},
+		)
 	}
 
 	for _, s := range summaries {
