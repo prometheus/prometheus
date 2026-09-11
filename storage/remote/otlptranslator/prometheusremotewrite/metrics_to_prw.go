@@ -99,6 +99,10 @@ type PrometheusConverter struct {
 	// This avoids repeated string allocations for the same label names.
 	sanitizedLabels map[string]string
 
+	// plusInfAnnots collects warning annotations about classic histogram data
+	// points that define +Inf as an explicit bound. Reset on every FromMetrics
+	// call.
+	plusInfAnnots annotations.Annotations
 	// collisionAnnots collects warning annotations about attribute names that
 	// collide after label name sanitization, causing their values to be
 	// concatenated. Reset on every FromMetrics call.
@@ -242,9 +246,13 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 	c.everyN = everyNTimes{n: 128}
 	c.seenTargetInfo = make(map[targetInfoKey]struct{})
 	c.collisionAnnots = nil
+	c.plusInfAnnots = nil
 	c.recordedCollisions = nil
 	c.collisionSource = collisionFromDataPoint
-	defer func() { annots.Merge(c.collisionAnnots) }()
+	defer func() {
+		annots.Merge(c.collisionAnnots)
+		annots.Merge(c.plusInfAnnots)
+	}()
 	resourceMetricsSlice := md.ResourceMetrics()
 
 	for i := range resourceMetricsSlice.Len() {

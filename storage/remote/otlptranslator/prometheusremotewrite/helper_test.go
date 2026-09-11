@@ -18,6 +18,7 @@ package prometheusremotewrite
 
 import (
 	"context"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -885,6 +886,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 		scope        scope
 		promoteScope bool
 		want         func() []sample
+		wantWarnings map[WarningCategory]int
 	}{
 		{
 			name: "histogram with start time and without scope promotion",
@@ -1003,6 +1005,208 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				}
 			},
 		},
+		{
+			// An explicit +Inf bound leaves the implicit last bucket spanning
+			// (+Inf, +infinity), so its count can only be 0. This is the shape a
+			// producer emits, and the duplicate le="+Inf" appears in it.
+			name:         "histogram with an explicit +Inf bound and an empty trailing bucket",
+			wantWarnings: map[WarningCategory]int{WarningCategoryHistogramPlusInfBound: 1},
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist")
+				metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetTimestamp(ts)
+				pt.SetCount(35)
+				pt.SetSum(35)
+				pt.BucketCounts().FromRaw([]uint64{5, 10, 20, 0})
+				pt.ExplicitBounds().FromRaw([]float64{1, 2, math.Inf(1)})
+
+				return metric
+			},
+			want: func() []sample {
+				return []sample{
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+sumStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 35,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+countStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 35,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "1",
+						),
+						T: convertTimeStamp(ts),
+						V: 5,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "2",
+						),
+						T: convertTimeStamp(ts),
+						V: 15,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "+Inf",
+						),
+						T: convertTimeStamp(ts),
+						V: 35,
+					},
+				}
+			},
+		},
+		{
+			// Invalid input: a trailing count of 7 could not have been observed.
+			// The two le="+Inf" values then differ.
+			name:         "histogram with an explicit +Inf bound and a non-empty trailing bucket",
+			wantWarnings: map[WarningCategory]int{WarningCategoryHistogramPlusInfBound: 1},
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist")
+				metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetTimestamp(ts)
+				pt.SetCount(42)
+				pt.SetSum(42)
+				pt.BucketCounts().FromRaw([]uint64{5, 10, 20, 7})
+				pt.ExplicitBounds().FromRaw([]float64{1, 2, math.Inf(1)})
+
+				return metric
+			},
+			want: func() []sample {
+				return []sample{
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+sumStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 42,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+countStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 42,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "1",
+						),
+						T: convertTimeStamp(ts),
+						V: 5,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "2",
+						),
+						T: convertTimeStamp(ts),
+						V: 15,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "+Inf",
+						),
+						T: convertTimeStamp(ts),
+						V: 42,
+					},
+				}
+			},
+		},
+		{
+			// Invalid the other way: the trailing bucket is empty, but count is
+			// not the sum of the bucket counts, which also makes them differ.
+			name: "histogram with an explicit +Inf bound and a count above its bucket sum",
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist")
+				metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetTimestamp(ts)
+				pt.SetCount(99)
+				pt.SetSum(99)
+				pt.BucketCounts().FromRaw([]uint64{5, 10, 20, 0})
+				pt.ExplicitBounds().FromRaw([]float64{1, 2, math.Inf(1)})
+
+				return metric
+			},
+			wantWarnings: map[WarningCategory]int{WarningCategoryHistogramPlusInfBound: 1},
+			want: func() []sample {
+				return []sample{
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+sumStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 99,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+countStr,
+						),
+						T: convertTimeStamp(ts),
+						V: 99,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "1",
+						),
+						T: convertTimeStamp(ts),
+						V: 5,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "2",
+						),
+						T: convertTimeStamp(ts),
+						V: 15,
+					},
+					{
+						MF: "test_hist",
+						L: labels.FromStrings(
+							model.MetricNameLabel, "test_hist"+bucketStr,
+							model.BucketLabel, "+Inf",
+						),
+						T: convertTimeStamp(ts),
+						V: 99,
+					},
+				}
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1029,6 +1233,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			))
 			require.NoError(t, app.Commit())
 			teststorage.RequireEqual(t, tt.want(), appTest.ResultSamples())
+			require.Equal(t, tt.wantWarnings, CountWarningsByCategory(converter.plusInfAnnots))
 		})
 	}
 }

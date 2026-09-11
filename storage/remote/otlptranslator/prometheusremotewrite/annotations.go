@@ -37,6 +37,10 @@ const (
 	// point has a zero count but a non-zero sum, for both exponential and
 	// classic (NHCB) histograms.
 	WarningCategoryHistogramZeroCountNonZeroSum WarningCategory = "histogram_zero_count_non_zero_sum"
+	// WarningCategoryHistogramPlusInfBound is set when a classic histogram data
+	// point defines +Inf as an explicit bound; its le="+Inf" series is taken
+	// from count instead.
+	WarningCategoryHistogramPlusInfBound WarningCategory = "histogram_plus_inf_bound"
 	// WarningCategoryOther is the fallback for any warning that has not been
 	// assigned a category. It keeps the label space bounded.
 	WarningCategoryOther WarningCategory = "other"
