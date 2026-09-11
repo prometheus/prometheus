@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -31,6 +32,8 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
@@ -1248,6 +1251,289 @@ func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 
 			got := readWALSamples(t, s.wal.Dir())
 			testutil.RequireEqualWithOptions(t, tc.expectedSamples, got, cmp.Options{cmp.AllowUnexported(walSample{})})
+		})
+	}
+}
+
+func TestMetadataInWAL_AppenderV2(t *testing.T) {
+	t.Run("feature disabled", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.EnableMetadataWALRecords = false
+		s := createTestAgentDB(t, nil, opts)
+		defer s.Close()
+
+		app := s.AppenderV2(t.Context())
+		lbls := labels.FromStrings("a", "b")
+		m := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
+		_, err := app.Append(0, lbls, 0, 1000, 1.0, nil, nil, storage.AOptions{Metadata: m})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		recs := readTestWAL(t, s.wal.Dir())
+		for _, rec := range recs {
+			_, ok := rec.([]record.RefMetadata)
+			require.False(t, ok, "unexpected metadata record in WAL when feature is disabled")
+		}
+	})
+
+	t.Run("stale sample skips metadata", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.EnableMetadataWALRecords = true
+		s := createTestAgentDB(t, nil, opts)
+		defer s.Close()
+
+		app := s.AppenderV2(t.Context())
+		lbls := labels.FromStrings("a", "b")
+		m := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
+		_, err := app.Append(0, lbls, 0, 1000, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{Metadata: m})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		recs := readTestWAL(t, s.wal.Dir())
+		for _, rec := range recs {
+			_, ok := rec.([]record.RefMetadata)
+			require.False(t, ok, "stale sample append should not write metadata to WAL")
+		}
+	})
+
+	t.Run("metadata logged and deduplicated", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.EnableMetadataWALRecords = true
+		s := createTestAgentDB(t, nil, opts)
+		defer s.Close()
+		ctx := t.Context()
+
+		// Add some series so we can attach metadata to them.
+		s1 := labels.FromStrings("a", "b")
+		s2 := labels.FromStrings("c", "d")
+		s3 := labels.FromStrings("e", "f")
+		s4 := labels.FromStrings("g", "h")
+
+		// Add a first round of metadata to the first three series.
+		m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
+		m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2"}
+		m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"}
+
+		app := s.AppenderV2(ctx)
+		ts := int64(0)
+		_, err := app.Append(0, s1, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m1})
+		require.NoError(t, err)
+		_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m2})
+		require.NoError(t, err)
+		_, err = app.Append(0, s3, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m3})
+		require.NoError(t, err)
+		_, err = app.Append(0, s4, 0, ts, 0, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		// Add a replicated metadata entry to the first series (deduplication check),
+		// a completely new metadata entry for the fourth series,
+		// and a changed metadata entry to the second series.
+		m4 := metadata.Metadata{Type: "counter", Unit: "unit_4", Help: "help_4"}
+		m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
+		app = s.AppenderV2(ctx)
+		ts++
+		_, err = app.Append(0, s1, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m1})
+		require.NoError(t, err)
+		_, err = app.Append(0, s4, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m4})
+		require.NoError(t, err)
+		_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m5})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		// Read the WAL to see if the disk storage format is correct.
+		recs := readTestWAL(t, s.wal.Dir())
+		var gotMetadataBlocks [][]record.RefMetadata
+		for _, rec := range recs {
+			if mr, ok := rec.([]record.RefMetadata); ok {
+				gotMetadataBlocks = append(gotMetadataBlocks, mr)
+			}
+		}
+
+		expectedMetadata := []record.RefMetadata{
+			{Ref: 1, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help},
+			{Ref: 2, Type: record.GetMetricType(m2.Type), Unit: m2.Unit, Help: m2.Help},
+			{Ref: 3, Type: record.GetMetricType(m3.Type), Unit: m3.Unit, Help: m3.Help},
+			{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
+			{Ref: 2, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
+		}
+		require.Len(t, gotMetadataBlocks, 2)
+		require.Equal(t, expectedMetadata[:3], gotMetadataBlocks[0])
+		require.Equal(t, expectedMetadata[3:], gotMetadataBlocks[1])
+	})
+}
+
+func TestMetadataAssertInMemoryData_AppenderV2(t *testing.T) {
+	opts := DefaultOptions()
+	opts.EnableMetadataWALRecords = true
+	s := createTestAgentDB(t, nil, opts)
+	defer s.Close()
+	ctx := t.Context()
+
+	s1 := labels.FromStrings("a", "b")
+	s2 := labels.FromStrings("c", "d")
+	s3 := labels.FromStrings("e", "f")
+	s4 := labels.FromStrings("g", "h")
+
+	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
+	m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2"}
+	m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"}
+
+	app := s.AppenderV2(ctx)
+	ts := int64(0)
+	_, err := app.Append(0, s1, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m1})
+	require.NoError(t, err)
+	_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m2})
+	require.NoError(t, err)
+	_, err = app.Append(0, s3, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m3})
+	require.NoError(t, err)
+	_, err = app.Append(0, s4, 0, ts, 0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	series1 := s.series.GetByHash(s1.Hash(), s1)
+	series2 := s.series.GetByHash(s2.Hash(), s2)
+	series3 := s.series.GetByHash(s3.Hash(), s3)
+	series4 := s.series.GetByHash(s4.Hash(), s4)
+	require.Equal(t, m1, *series1.Metadata())
+	require.Equal(t, m2, *series2.Metadata())
+	require.Equal(t, m3, *series3.Metadata())
+	require.Nil(t, series4.Metadata())
+
+	// Update metadata.
+	m4 := metadata.Metadata{Type: "counter", Unit: "unit_4", Help: "help_4"}
+	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
+	app = s.AppenderV2(ctx)
+	ts++
+	_, err = app.Append(0, s1, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m1})
+	require.NoError(t, err)
+	_, err = app.Append(0, s4, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m4})
+	require.NoError(t, err)
+	_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m5})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.Equal(t, m1, *series1.Metadata())
+	require.Equal(t, m5, *series2.Metadata())
+	require.Equal(t, m3, *series3.Metadata())
+	require.Equal(t, m4, *series4.Metadata())
+}
+
+func TestMetadataCheckpointing_AppenderV2(t *testing.T) {
+	for _, inMemCheckpoint := range []bool{false, true} {
+		t.Run("CheckpointFromInMemorySeries="+strconv.FormatBool(inMemCheckpoint), func(t *testing.T) {
+			ctx := t.Context()
+			opts := DefaultOptions()
+			opts.EnableMetadataWALRecords = true
+			opts.CheckpointFromInMemorySeries = inMemCheckpoint
+			opts.WALSegmentSize = walSegmentSize
+
+			s := createTestAgentDB(t, nil, opts)
+			defer s.Close()
+
+			s1 := labels.FromStrings("a", "b")
+			s2 := labels.FromStrings("c", "d")
+			s3 := labels.FromStrings("e", "f")
+			s4 := labels.FromStrings("g", "h")
+
+			m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
+			m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2"}
+			m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"}
+			m4 := metadata.Metadata{Type: "gauge", Unit: "unit_4", Help: "help_4"}
+
+			app := s.AppenderV2(ctx)
+			ts := int64(0)
+			_, err := app.Append(0, s1, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m1})
+			require.NoError(t, err)
+			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m2})
+			require.NoError(t, err)
+			_, err = app.Append(0, s3, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m3})
+			require.NoError(t, err)
+			_, err = app.Append(0, s4, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m4})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// Update metadata for first series.
+			m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
+			app = s.AppenderV2(ctx)
+			ts++
+			_, err = app.Append(0, s1, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m5})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// Switch back-and-forth metadata for second series.
+			// Since it ended on a new metadata record, we expect m6.
+			m6 := metadata.Metadata{Type: "counter", Unit: "unit_6", Help: "help_6"}
+
+			app = s.AppenderV2(ctx)
+			ts++
+			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m6})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			app = s.AppenderV2(ctx)
+			ts++
+			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m2})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			app = s.AppenderV2(ctx)
+			ts++
+			_, err = app.Append(0, s2, 0, ts, 0, nil, nil, storage.AOptions{Metadata: m6})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// Create a checkpoint directly using the configured checkpoint strategy.
+			first, last, err := wlog.Segments(s.wal.Dir())
+			require.NoError(t, err)
+
+			if inMemCheckpoint {
+				err = Checkpoint(promslog.NewNopLogger(), s.wal, last, 1000, s.series.allSeries(), nil)
+				require.NoError(t, err)
+			} else {
+				keep := func(id chunks.HeadSeriesRef) bool {
+					return id != 3 // Exclude series 3 from checkpoint.
+				}
+				_, err = wlog.Checkpoint(promslog.NewNopLogger(), s.wal, first, last, keep, 0, false)
+				require.NoError(t, err)
+			}
+
+			// Confirm checkpoint exists.
+			cdir, _, err := wlog.LastCheckpoint(s.wal.Dir())
+			require.NoError(t, err)
+
+			// Read checkpoint records.
+			recs := readTestWAL(t, cdir)
+			var gotMetadataBlocks [][]record.RefMetadata
+			for _, rec := range recs {
+				if mr, ok := rec.([]record.RefMetadata); ok {
+					gotMetadataBlocks = append(gotMetadataBlocks, mr)
+				}
+			}
+
+			require.Len(t, gotMetadataBlocks, 1)
+			gotMetadataBlock := gotMetadataBlocks[0]
+			sort.Slice(gotMetadataBlock, func(i, j int) bool { return gotMetadataBlock[i].Ref < gotMetadataBlock[j].Ref })
+
+			var wantMetadata []record.RefMetadata
+			if inMemCheckpoint {
+				// In-memory checkpoint keeps all live series including series 3.
+				wantMetadata = []record.RefMetadata{
+					{Ref: 1, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
+					{Ref: 2, Type: record.GetMetricType(m6.Type), Unit: m6.Unit, Help: m6.Help},
+					{Ref: 3, Type: record.GetMetricType(m3.Type), Unit: m3.Unit, Help: m3.Help},
+					{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
+				}
+			} else {
+				// wlog checkpoint filtered out series 3 via keep predicate.
+				wantMetadata = []record.RefMetadata{
+					{Ref: 1, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
+					{Ref: 2, Type: record.GetMetricType(m6.Type), Unit: m6.Unit, Help: m6.Help},
+					{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
+				}
+			}
+
+			require.Equal(t, wantMetadata, gotMetadataBlock)
 		})
 	}
 }
