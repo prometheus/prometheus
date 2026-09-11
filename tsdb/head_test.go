@@ -3040,6 +3040,86 @@ func TestHead_ReturnsSortedLabelValues(t *testing.T) {
 	require.NoError(t, q.Close())
 }
 
+// Regression test for #19673 where SearchLabelValues applied limit before sorting.
+func TestSearchLabelValuesLimit(t *testing.T) {
+	h, _ := newTestHead(t, 1000, compression.None, false)
+	ctx := t.Context()
+	app := h.Appender(ctx)
+
+	// 1. Insert in non-alphabetical order so Head insertion order differs from sorted order.
+	for _, name := range []string{"z_metric", "m_metric", "a_metric"} {
+		_, err := app.Append(0, labels.FromStrings("__name__", name, "job", "api"), 2100, 1)
+		require.NoError(t, err)
+	}
+
+	// 2. Add series where series ID order in a compacted block differs from label value order:
+	// metric_1 gets a lower series ID than metric_2, but metric_1 has env="z_env" and metric_2 has env="a_env".
+	_, err := app.Append(0, labels.FromStrings("__name__", "metric_1", "job", "api", "env", "z_env"), 2100, 1)
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings("__name__", "metric_2", "job", "api", "env", "a_env"), 2100, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	block, err := OpenBlock(nil, createBlockFromHead(t, t.TempDir(), h), nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, block.Close()) })
+
+	headQuerier, err := NewBlockQuerier(h, 1500, 2500)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, headQuerier.Close()) })
+
+	blockQuerier, err := NewBlockQuerier(block, 1500, 2500)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, blockQuerier.Close()) })
+
+	headSearcher := headQuerier.(storage.Searcher)
+	blockSearcher := blockQuerier.(storage.Searcher)
+
+	t.Run("Head sorts before limit for both nil and accept-all filters", func(t *testing.T) {
+		want := []storage.SearchResult{
+			{Value: "a_metric", Score: 1},
+			{Value: "m_metric", Score: 1},
+		}
+		for _, filter := range []storage.Filter{nil, prefixFilter{prefix: ""}} {
+			rs := headSearcher.SearchLabelValues(ctx, "__name__", &storage.SearchHints{
+				OrderBy: storage.OrderByValueAsc,
+				Limit:   2,
+				Filter:  filter,
+			})
+			require.Equal(t, want, collectSearchResultSet(t, rs))
+		}
+	})
+
+	t.Run("Format-v2 block fast path preserves sorted limit", func(t *testing.T) {
+		for _, tc := range []struct {
+			limit int
+			want  []string
+		}{
+			{limit: 0, want: []string{"a_metric", "m_metric", "metric_1", "metric_2", "z_metric"}},
+			{limit: 2, want: []string{"a_metric", "m_metric"}},
+		} {
+			expected := make([]storage.SearchResult, len(tc.want))
+			for i, v := range tc.want {
+				expected[i] = storage.SearchResult{Value: v, Score: 1}
+			}
+			rs := blockSearcher.SearchLabelValues(ctx, "__name__", &storage.SearchHints{
+				OrderBy: storage.OrderByValueAsc,
+				Limit:   tc.limit,
+			})
+			require.Equal(t, expected, collectSearchResultSet(t, rs))
+		}
+	})
+
+	t.Run("Matcher-filtered queries sort before limit across Head and Block", func(t *testing.T) {
+		want := []storage.SearchResult{{Value: "a_env", Score: 1}}
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "api")}
+		hints := &storage.SearchHints{OrderBy: storage.OrderByValueAsc, Limit: 1}
+
+		require.Equal(t, want, collectSearchResultSet(t, headSearcher.SearchLabelValues(ctx, "env", hints, matchers...)))
+		require.Equal(t, want, collectSearchResultSet(t, blockSearcher.SearchLabelValues(ctx, "env", hints, matchers...)))
+	})
+}
+
 // TestWalRepair_DecodingError ensures that a repair is run for an error
 // when decoding a record.
 func TestWalRepair_DecodingError(t *testing.T) {
