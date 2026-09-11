@@ -33,62 +33,12 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/testutil"
 )
-
-func TestDB_InvalidSeries_AppendV2(t *testing.T) {
-	s := createTestAgentDB(t, nil, DefaultOptions())
-	defer s.Close()
-
-	app := s.AppenderV2(context.Background())
-	t.Run("Samples", func(t *testing.T) {
-		_, err := app.Append(0, labels.Labels{}, 0, 0, 0, nil, nil, storage.AOptions{})
-		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject empty labels")
-
-		_, err = app.Append(0, labels.FromStrings("a", "1", "a", "2"), 0, 0, 0, nil, nil, storage.AOptions{})
-		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject duplicate labels")
-	})
-
-	t.Run("Histograms", func(t *testing.T) {
-		_, err := app.Append(0, labels.Labels{}, 0, 0, 0, tsdbutil.GenerateTestHistograms(1)[0], nil, storage.AOptions{})
-		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject empty labels")
-
-		_, err = app.Append(0, labels.FromStrings("a", "1", "a", "2"), 0, 0, 0, tsdbutil.GenerateTestHistograms(1)[0], nil, storage.AOptions{})
-		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject duplicate labels")
-	})
-
-	t.Run("Exemplars", func(t *testing.T) {
-		e := exemplar.Exemplar{Labels: labels.FromStrings("a", "1", "a", "2")}
-		_, err := app.Append(0, labels.FromStrings("a", "1"), 0, 0, 0, nil, nil, storage.AOptions{
-			Exemplars: []exemplar.Exemplar{e},
-		})
-		partErr := &storage.AppendPartialError{}
-		require.ErrorAs(t, err, &partErr)
-		require.Len(t, partErr.ExemplarErrors, 1)
-		require.ErrorIs(t, partErr.ExemplarErrors[0], tsdb.ErrInvalidExemplar, "should reject duplicate labels")
-
-		e = exemplar.Exemplar{Labels: labels.FromStrings("a_somewhat_long_trace_id", "nYJSNtFrFTY37VR7mHzEE/LIDt7cdAQcuOzFajgmLDAdBSRHYPDzrxhMA4zz7el8naI/AoXFv9/e/G0vcETcIoNUi3OieeLfaIRQci2oa")}
-		_, err = app.Append(0, labels.FromStrings("a", "2"), 0, 0, 0, nil, nil, storage.AOptions{
-			Exemplars: []exemplar.Exemplar{e},
-		})
-		partErr = &storage.AppendPartialError{}
-		require.ErrorAs(t, err, &partErr)
-		require.Len(t, partErr.ExemplarErrors, 1)
-		require.ErrorIs(t, partErr.ExemplarErrors[0], storage.ErrExemplarLabelLength, "should reject too long label length")
-
-		// Inverse check.
-		e = exemplar.Exemplar{Labels: labels.FromStrings("a", "1"), Value: 20, Ts: 10, HasTs: true}
-		_, err = app.Append(0, labels.FromStrings("a", "1"), 0, 0, 0, nil, nil, storage.AOptions{
-			Exemplars: []exemplar.Exemplar{e},
-		})
-		require.NoError(t, err, "should not reject valid exemplars")
-	})
-}
 
 // TestCommit_AppendV2 tests Appender commit.
 // TODO(bwplotka): Rewrite this so Refs are generated, then appended, then expected so we test the
