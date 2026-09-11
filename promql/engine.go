@@ -2356,7 +2356,10 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				counter := 0
 				for j := range e.Args {
 					if j != matrixArgIndex {
-						vectorVals[counter] = Vector{Sample{F: evalVals[j][0].Floats[step].F}}
+						if vectorVals[counter] == nil {
+							vectorVals[counter] = make(Vector, 1)
+						}
+						vectorVals[counter][0] = Sample{F: evalVals[j][0].Floats[step].F}
 						counter++
 					}
 				}
