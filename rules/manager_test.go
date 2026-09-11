@@ -58,6 +58,29 @@ func TestMain(m *testing.M) {
 	prom_testutil.TolerantVerifyLeak(m)
 }
 
+func TestLoadGroupsRecordingRuleMetadata(t *testing.T) {
+	ruleFile := filepath.Join(t.TempDir(), "rules.yml")
+	require.NoError(t, os.WriteFile(ruleFile, []byte(`groups:
+- name: example
+  rules:
+  - record: job:http_requests_total:sum
+    expr: sum by (job) (http_requests_total)
+    description: Total HTTP requests by job.
+    type: counter
+`), 0o600))
+
+	manager := NewManager(&ManagerOptions{Logger: promslog.NewNopLogger()})
+	groups, errs := manager.LoadGroups(time.Minute, labels.EmptyLabels(), "", nil, false, ruleFile)
+	require.Empty(t, errs)
+
+	rules := groups[GroupKey(ruleFile, "example")].Rules()
+	require.Len(t, rules, 1)
+	recordingRule, ok := rules[0].(*RecordingRule)
+	require.True(t, ok)
+	require.Equal(t, model.MetricTypeCounter, recordingRule.Metadata().Type)
+	require.Equal(t, "Total HTTP requests by job.", recordingRule.Metadata().Help)
+}
+
 func TestAlertingRule(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `
 		load 5m

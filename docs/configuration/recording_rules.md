@@ -107,6 +107,13 @@ record: <string>
 # time series with the metric name as given by 'record'.
 expr: <string>
 
+# An optional description exposed as the metric's HELP metadata.
+[ description: <string> ]
+
+# An optional metric type exposed as TYPE metadata. Valid values are counter,
+# gauge, histogram, gaugehistogram, summary, info, stateset, and unknown.
+[ type: <string> ]
+
 # Labels to add or overwrite before storing the result.
 labels:
   [ <labelname>: <labelvalue> ]
