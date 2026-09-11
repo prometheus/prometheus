@@ -243,7 +243,18 @@ data over a long range of times, it may be advantageous to use a larger value fo
 the block duration to backfill faster and prevent additional compactions by TSDB later.
 
 The `--max-block-duration` flag allows the user to configure a maximum duration of blocks.
-The backfilling tool will pick a suitable block duration no larger than this.
+The backfilling tool will pick a suitable block duration no larger than this, rounding
+down to a duration Prometheus itself compacts to (2h, 6h, 18h, 54h, ...).
+
+The `--block-duration` flag instead sets the duration exactly, without rounding. Block
+start times are aligned to the Unix epoch, so a duration that divides or is a multiple
+of 24h, such as `24h`, produces blocks that never cross a day boundary. This is intended
+for other TSDB systems, such as Cortex, Mimir and Thanos, which store daily blocks. The
+two flags are mutually exclusive.
+
+A duration that does not match a Prometheus compaction range is reported with a warning.
+Prometheus can read such blocks, but its compactor groups blocks by aligned ranges and
+will not merge them as efficiently as blocks it produced itself.
 
 While larger blocks may improve the performance of backfilling large datasets,
 drawbacks exist as well. Time-based retention policies must keep the entire block

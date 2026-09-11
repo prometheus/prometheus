@@ -290,7 +290,8 @@ func main() {
 	importCmd := tsdbCmd.Command("create-blocks-from", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
 	importHumanReadable := importCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
 	importQuiet := importCmd.Flag("quiet", "Do not print created blocks.").Short('q').Bool()
-	maxBlockDuration := importCmd.Flag("max-block-duration", "Maximum duration created blocks may span. Anything less than 2h is ignored.").Hidden().PlaceHolder("<duration>").Duration()
+	maxBlockDuration := importCmd.Flag("max-block-duration", "Maximum duration created blocks may span, rounded down to a Prometheus compaction range. Anything less than 2h is ignored.").PlaceHolder("<duration>").Duration()
+	blockDuration := importCmd.Flag("block-duration", "Exact duration created blocks span, used as is so that blocks can be aligned to boundaries other TSDB systems expect, for example 24h for daily blocks. Mutually exclusive with --max-block-duration.").PlaceHolder("<duration>").Duration()
 	openMetricsImportCmd := importCmd.Command("openmetrics", "Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.")
 	openMetricsLabels := openMetricsImportCmd.Flag("label", "Label to attach to metrics. Can be specified multiple times. Example --label=label_name=label_value").StringMap()
 	importFilePath := openMetricsImportCmd.Arg("input file", "OpenMetrics file to read samples from.").Required().String()
@@ -460,12 +461,11 @@ func main() {
 
 	case tsdbDumpOpenMetricsCmd.FullCommand():
 		os.Exit(checkErr(dumpTSDBData(ctx, *dumpOpenMetricsPath, *dumpOpenMetricsSandboxDirRoot, *dumpOpenMetricsMinTime, *dumpOpenMetricsMaxTime, *dumpOpenMetricsMatch, formatSeriesSetOpenMetrics, promtoolParser)))
-	// TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
-		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration, *openMetricsLabels))
+		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *blockDuration, *maxBlockDuration, *openMetricsLabels))
 
 	case importRulesCmd.FullCommand():
-		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, model.UTF8Validation, *importRulesFiles...)))
+		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *blockDuration, *maxBlockDuration, model.UTF8Validation, *importRulesFiles...)))
 
 	case queryAnalyzeCmd.FullCommand():
 		os.Exit(checkErr(queryAnalyzeCfg.run(serverURL, httpRoundTripper)))
@@ -1284,10 +1284,14 @@ func (*jsonPrinter) printLabelValues(v model.LabelValues) {
 
 // importRules backfills recording rules from the files provided. The output are blocks of data
 // at the outputDir location.
-func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outputDir string, evalInterval, maxBlockDuration time.Duration, nameValidationScheme model.ValidationScheme, files ...string) error {
+func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outputDir string, evalInterval, blockDuration, maxBlockDuration time.Duration, nameValidationScheme model.ValidationScheme, files ...string) error {
+	resolvedBlockDuration, err := resolveBlockDuration(blockDuration, maxBlockDuration)
+	if err != nil {
+		return err
+	}
+
 	ctx := context.Background()
 	var stime, etime time.Time
-	var err error
 	if end == "" {
 		etime = time.Now().UTC().Add(-3 * time.Hour)
 	} else {
@@ -1311,7 +1315,7 @@ func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outpu
 		start:                stime,
 		end:                  etime,
 		evalInterval:         evalInterval,
-		maxBlockDuration:     maxBlockDuration,
+		blockDuration:        resolvedBlockDuration,
 		nameValidationScheme: nameValidationScheme,
 	}
 	api, err := newAPI(url, roundTripper, nil)
