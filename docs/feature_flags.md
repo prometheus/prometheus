@@ -408,3 +408,185 @@ instead.
 When enabled, Prometheus advertises support for Zstandard-compressed scrape responses in addition to gzip. The uncompressed response remains subject to the configured `body_size_limit`.
 
 When the flag is disabled, Prometheus does not advertise `zstd`. A target that answers with `Content-Encoding: zstd` regardless fails the scrape, because Prometheus cannot decode the body.
+
+## Semconv Versioned Read
+
+`--enable-feature=semconv-versioned-read`
+
+Wraps the query path with a semconv-aware storage layer that recognises two
+special matchers in PromQL queries:
+
+- `__semconv_url__="registry/<version>"` selects the semantic conventions
+  version that supplies metric metadata. It is required by `__schema_url__` and
+  has no effect on its own.
+- `__schema_url__="registry/<file>"` selects an OTel schema file that declares
+  per-version attribute and metric renames; it triggers version-rename fan-out,
+  matching the metric's historical names and rendering the merged results under
+  the queried version's name.
+
+A schema-aware selector must also contain a non-empty equality matcher on
+`__name__`. Other `__name__` constraints may accompany it, but a selector with
+only a regular-expression or negative name matcher is rejected because it has no
+single metric identity from which to resolve renames.
+
+Both matchers may only reference paths inside the active registry under the
+`registry/` namespace; they are matcher values, not locations, so arbitrary HTTP
+URLs and local file paths are rejected regardless of the registry source.
+
+By default the registry embedded in the binary (under `storage/semconv/registry/`)
+is used. Operators can instead supply their own registry via the `semconv` block
+in the main configuration file, which fully replaces the embedded one:
+
+```yaml
+semconv:
+  registry:
+    # Either local files/globs of the registry root (the registry.yaml schema
+    # index plus the per-version semconv files), resolved relative to the config
+    # file like rule_files:
+    files:
+      - /etc/prometheus/semconv/*
+    # ...or a remote .tar.gz archive of the registry root, fetched once at startup:
+    # url: https://example.com/semconv-registry.tar.gz
+    # Optional HTTP client settings used only with `url`:
+    # basic_auth: { username: u, password: p }
+```
+
+Exactly one of `files` or `url` must be set. A registry must contain at least one
+OTel schema file (e.g. `registry.yaml`) plus the semver-named semconv files (e.g.
+`1.0.0`) you query as `__semconv_url__` anchors. Files are addressed by base name,
+so each must be unique. Include the semconv versions on both sides of relevant
+rename boundaries to corroborate those renames. A missing boundary version is
+allowed, but the query follows its explicit renames without corroboration and
+reports a warning.
+
+The registry is loaded and validated at startup: it must be reachable and every
+file must parse (a semver-named file as a semconv file, any other as an OTel
+schema). A malformed or schema-less registry, invalid group inheritance, or
+attribute materialization beyond the safety limits fails startup rather than
+surfacing only at query time. It is read once; the block is re-validated on
+configuration reload but changes take effect only on restart, and it is ignored
+unless the feature flag is set.
+
+Schema-aware metric reads support `rename_metrics` and `rename_attributes`
+transformations. A schema containing a metric `split` transformation is rejected
+because split conversion is not supported.
+
+For a remote `url`, the archive is fetched once at startup using `http_client_config`
+(so redirects follow `follow_redirects`, default `true`; set it to `false` to
+forbid them); the fetch blocks startup, is not retried, and both the download and
+its decompressed size are bounded.
+
+Example:
+
+```
+test{__semconv_url__="registry/1.1.0", __schema_url__="registry/registry.yaml"}
+```
+
+For `test` in semconv 1.1.0, this matches the metric's earlier names (e.g.
+`test.counter` in 1.0.0) declared by the schema's `versions` section and merges
+the results under the queried name `test`.
+
+Attribute aliases come from the ordered schema changes even when the anchor
+semconv does not declare the attribute. In a metric-scoped attribute change,
+omitting `apply_to_metrics` applies the change globally, an explicit empty list
+applies it to no metrics, and a non-empty list applies it only to the named
+metrics at that transformation's position. Fan-out emits schema revision
+boundaries rather than inventing combinations between changes in one revision;
+valid converging histories branch deterministically within the resolver bounds.
+
+### Errors
+
+The query fails before issuing a storage read when ordered transformations prove
+that a physical name cannot be selected safely across the full query time range:
+
+- **A metric name is reused by a disconnected lineage.** A name renamed away is
+  later claimed by another metric without a rename path connecting their
+  identities. Prometheus cannot separate the two eras in storage, so neither the
+  reused name nor a lineage that uses it as a historical alias is selected.
+- **An attribute alias is also a distinct attribute identity.** Rewriting that
+  physical label would merge values from two attributes that used the same name
+  in different schema eras.
+
+### Warnings
+
+A schema rename names metrics only by their surface names, so the edge itself
+cannot separate a genuine rename from one joining unrelated metrics. Before
+following a structurally safe rename, Prometheus therefore checks it against the
+semconv files of the versions it connects: `unit` and `instrument` describe what a
+metric is rather than what it is called. Semantic conventions forbid a stable
+metric from changing either, so a disagreement between values specified by two
+explicitly stable definitions means the two names denote different metrics.
+Incomplete, development, experimental, deprecated, and unspecified definitions
+may legitimately evolve; Prometheus follows an explicit schema rename between
+them but reports the metadata disagreement.
+
+The query still returns a safe partial or direct result in every case below,
+with a warning attached:
+
+- **The rename was contradicted.** The schema links two explicitly stable metric
+  definitions that disagree on a specified unit or instrument. That rename is not
+  followed and its series are left out, because combining metrics measured in
+  different units yields meaningless numbers.
+- **Metadata is incomplete or non-stable.** The schema links definitions with
+  different units or instruments, but the metadata is not a positive contradiction
+  between values specified by two explicitly stable definitions. The rename is
+  followed because the schema is the available lineage authority, and the query
+  reports that the metadata does not prove the metrics are different.
+- **The rename could not be corroborated.** The semconv file for a rename boundary
+  is unavailable, or it does not declare the referenced name as a metric, so there
+  is nothing to check the rename against. The rename is still followed: a registry
+  may legitimately omit unqueried versions or ship semconv files trimmed to the
+  metrics its operator cares about.
+- **The queried metric's identity is unknown.** No semconv version declares the
+  queried name, or the versions that do disagree on what it is. This can occur
+  across an explicit rename-back history whose metadata changed. Renames that are
+  valid from the query's lifecycle position are followed unchecked, so the result
+  may merge unrelated series.
+- **The metric name is ambiguous.** More than one group in the anchor semconv
+  declares the same `metric_name`, so its unit and attributes have no single
+  answer. Only the queried surface name is selected. An ambiguous declaration in
+  a historical version instead excludes that rename branch.
+- **The schema crosses a metric lifecycle boundary.** Ordered transformations
+  encounter a name only on the side where it cannot belong to the queried metric,
+  without enough transformation evidence to prove that another identity claimed
+  it. That branch is not followed. In particular, querying a historical name from
+  an anchor later than its retirement returns only that name's direct series, even
+  if an older semconv file identifies it, because a trimmed anchor cannot show
+  whether the name has since been reused.
+- **An attribute alias has conflicting destinations.** The same historical label
+  name resolves to more than one anchor-version name. Prometheus leaves that label
+  unmodified instead of merging distinct attributes.
+
+Warnings are surfaced as PromQL warnings, and appear in the `warnings` field of an
+API response and in the expression browser.
+
+Canonicalising a stored series can also make an old attribute alias collide with
+the canonical attribute already present on that series. Prometheus collapses the
+two labels when their values agree. If their values differ, the series or chunk
+query fails instead of returning an invalid or ambiguous label set.
+
+Matchers on renamed attributes are rechecked against the canonicalized result.
+A matcher group whose whole conjunction also matches an absent label is rejected,
+because alias fan-out cannot preserve that selector's semantics safely.
+
+Schema fan-out runs serially through the query's single underlying querier so
+all variants share one storage snapshot. Schema resolution bounds lineage
+states, matcher variants, attribute mappings, cumulative traversal work, and
+deduplication-key allocation. A query that exceeds a resolution bound fails
+before issuing any storage call. A resolved query that requires more than 32
+fan-out storage calls also fails before issuing any of them. Query limits are
+applied after canonicalization.
+
+Attribute rewrites require Prometheus to reorder canonical series before
+merging them. At most 65,536 input series or chunk series may enter that path
+across all variants of one selection; exceeding the limit fails the query.
+
+The two schema matchers are virtual query controls. Schema-aware series and
+chunk reads fail if returned data contains a stored label with either name, and
+label metadata does not expose them. Prometheus does not query label metadata as
+part of a series or chunk selection. When the underlying storage implements the
+optional Search API, the wrapper preserves it for ordinary selectors but rejects
+search selectors containing either schema matcher; search fan-out is unsupported.
+
+This feature is experimental: the matcher names, the registry layout, and the
+`semconv` configuration block are subject to change.
