@@ -889,6 +889,50 @@ func TestSeriesToChunkEncoderFloatEncoding(t *testing.T) {
 	}
 }
 
+func TestSeriesSetToChunkSetFloatEncoding(t *testing.T) {
+	samples := []chunks.Sample{fSample{0, 10, 1}, fSample{0, 20, 2}, fSample{0, 30, 3}}
+	series := []Series{
+		NewListSeries(labels.FromStrings("__name__", "up"), samples),
+		NewListSeries(labels.FromStrings("__name__", "down"), samples),
+	}
+
+	for name, tc := range map[string]struct {
+		floatEncoding func() chunkenc.Encoding
+		expected      chunkenc.Encoding
+	}{
+		"nil getter defaults to xor": {
+			floatEncoding: nil,
+			expected:      chunkenc.EncXOR,
+		},
+		"xor": {
+			floatEncoding: func() chunkenc.Encoding { return chunkenc.EncXOR },
+			expected:      chunkenc.EncXOR,
+		},
+		"xor2": {
+			floatEncoding: func() chunkenc.Encoding { return chunkenc.EncXOR2 },
+			expected:      chunkenc.EncXOR2,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			css := NewSeriesSetToChunkSetWithFloatEncoding(NewMockSeriesSet(series...), tc.floatEncoding)
+
+			var got int
+			for css.Next() {
+				got++
+				chks, err := ExpandChunks(css.At().Iterator(nil))
+				require.NoError(t, err)
+				require.Len(t, chks, 1)
+				require.Equal(t, tc.expected, chks[0].Chunk.Encoding())
+				actSamples, err := ExpandSamples(chks[0].Chunk.Iterator(nil), nil)
+				require.NoError(t, err)
+				require.Equal(t, samples, actSamples)
+			}
+			require.NoError(t, css.Err())
+			require.Equal(t, len(series), got)
+		})
+	}
+}
+
 func getCounterResetHint(chunk chunks.Meta) chunkenc.CounterResetHeader {
 	switch chk := chunk.Chunk.(type) {
 	case *chunkenc.HistogramChunk:
