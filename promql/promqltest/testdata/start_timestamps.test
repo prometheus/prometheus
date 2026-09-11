@@ -53,7 +53,7 @@ clear
 # * ST = T
 load 1m
     delta{type="no_st"}               _ _  60x15
-    delta{type="otel"}@st             _ _ _ ~x14
+    delta{type="otel"}@st             _ _ _ ~x15
     delta{type="otel"}                _ _  60x15
     delta{type="gcp"}@st              _ _ -59999msx15
     delta{type="gcp"}                 _ _       60x15
@@ -222,7 +222,7 @@ clear
 # Tests for rate(), irate() and increase() on delta histograms.
 # TODO(ywwg): confirm the expected values for histograms and float histograms are correct
 load 1m
-    delta{type="otel"}@st             _ _ -1m ~x14
+    delta{type="otel"}@st             _ _ -1m ~x15
     delta{type="otel"}                _ _ {{schema:0 sum:60 count:60}}x15
     delta{type="gcp"}@st              _ _ -59999msx15
     delta{type="gcp"}                 _ _ {{schema:0 sum:60 count:60}}x15
