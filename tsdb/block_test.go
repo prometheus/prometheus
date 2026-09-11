@@ -14,11 +14,14 @@
 package tsdb
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"log/slog"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -98,6 +101,77 @@ func TestSetCompactionFailed(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, b.meta.Compaction.Failed)
 	require.NoError(t, b.Close())
+}
+
+func TestBlockLogValue(t *testing.T) {
+	blockDir := createBlock(t, t.TempDir(), genSeries(1, 1, 0, 10))
+	block, err := OpenBlock(nil, blockDir, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, block.Close()) })
+
+	for _, tc := range []struct {
+		name  string
+		block *Block
+		want  any
+	}{
+		{name: "block", block: block, want: filepath.Base(blockDir)},
+		{name: "nil"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, slog.AnyValue(tc.block).Resolve().Any())
+
+			data, err := json.Marshal(map[string]*Block{"block": tc.block})
+			require.NoError(t, err)
+			if tc.want == nil {
+				require.JSONEq(t, "{\"block\":null}", string(data))
+			} else {
+				require.JSONEq(t, "{\"block\":{}}", string(data))
+			}
+
+			for _, style := range []promslog.LogStyle{promslog.SlogStyle, promslog.GoKitStyle} {
+				for _, formatName := range []string{"json", "logfmt"} {
+					for _, placement := range []string{"direct", "with", "group", "with-group"} {
+						t.Run(string(style)+"/"+formatName+"/"+placement, func(t *testing.T) {
+							var output bytes.Buffer
+							format := promslog.NewFormat()
+							require.NoError(t, format.Set(formatName))
+							logger := promslog.New(&promslog.Config{Writer: &output, Format: format, Style: style})
+							switch placement {
+							case "direct":
+								logger.Info("test", "block", tc.block)
+							case "with":
+								logger.With("block", tc.block).Info("test")
+							case "group":
+								logger.Info("test", slog.Group("group", "block", tc.block))
+							case "with-group":
+								logger.WithGroup("group").With("block", tc.block).Info("test")
+							}
+
+							if formatName == "json" {
+								var entry map[string]any
+								require.NoError(t, json.Unmarshal(output.Bytes(), &entry))
+								if placement == "group" || placement == "with-group" {
+									entry = entry["group"].(map[string]any)
+								}
+								require.Contains(t, entry, "block")
+								require.Equal(t, tc.want, entry["block"])
+							} else {
+								key := "block"
+								if placement == "group" || placement == "with-group" {
+									key = "group.block"
+								}
+								want := "<nil>"
+								if tc.want != nil {
+									want = tc.want.(string)
+								}
+								require.Contains(t, output.String(), key+"="+want)
+							}
+						})
+					}
+				}
+			}
+		})
+	}
 }
 
 func TestCreateBlock(t *testing.T) {
