@@ -99,8 +99,9 @@ given, all samples have ST=0 (backward compatible).
 | `@<dur>xN` | N+1 positions all with the same absolute ST. |
 | `@<dur>+<dur>xN` | N+1 positions, absolute ST increasing by step each position. |
 | `@<dur>-<dur>xN` | N+1 positions, absolute ST decreasing by step each position. |
-| `^` | Repeat the previous sample's absolute ST value. |
-| `^xN` | N+1 positions, all repeating the previous absolute ST. |
+| `<dur>^xN` | N+1 positions: first has the given offset, and the next N positions all repeat that same absolute ST value. Useful for "constant ST" blocks that stay symmetrical with the value sequence. |
+| `~` | One position whose ST equals the previous appended sample's timestamp (`st[i] = t[i-1]`). Invalid on the first sample. |
+| `~xN` | N positions all using the previous sample's timestamp. |
 
 Durations use Prometheus duration syntax (e.g. `-1m`, `30s`, `0s`).
 
@@ -122,18 +123,33 @@ load 5m
 
 This produces samples at t=0m,5m,10m,15m,20m with STs at t=-1m,4m,9m,14m,19m.
 
-**Absolute timestamp with repeat** — all samples share the same constant ST
-(useful for cumulative counters where ST marks the process start):
+**Constant ST block** — all samples in a batch share the same absolute ST
+(useful for cumulative counters where ST marks the process start or last reset):
 
 ```
 load 5m
-    my_counter@st @0s ^x3
+    my_counter@st @0s^x3
     my_counter 0+1x3
 ```
 
 This produces 4 samples at t=0m,5m,10m,15m, all with ST=0s (the test start
-time). The `@0s` sets the first ST absolutely, and `^x3` repeats that same
-value for the remaining 3 samples.
+time). `@0s^x3` sets the first ST to `testStartTime + 0s` and repeats that
+same absolute value for the next 3 positions.
+
+Note the symmetry with the value side: `0+1x3` is 4 values, `@0s^x3` is also
+4 ST entries — one declaration each, with the same repeat count.
+
+**OTel delta — ST equals previous sample's timestamp** (`st[i] = t[i-1]`):
+
+```
+load 5m
+    delta@st _ ~x3
+    delta    _ 1+1x3
+```
+
+The first sample has no ST. For samples at t=5m,10m,15m the ST is set to the
+timestamp of the preceding sample (t=0m,5m,10m respectively). `~xN` produces
+N entries, so `~x3` here gives 3 entries.
 
 **Mixed** — first sample has an absolute ST, rest are omitted:
 

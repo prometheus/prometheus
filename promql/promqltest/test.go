@@ -362,10 +362,11 @@ func isSTLine(defLine string) bool {
 }
 
 type stSequenceValue struct {
-	offset  int64
-	omitted bool
-	abs     bool
-	repeat  bool
+	offset     int64
+	omitted    bool
+	abs        bool
+	repeat     bool
+	prevSample bool
 }
 
 // parseSTLine parses a start-timestamp line of the form:
@@ -397,14 +398,17 @@ func parseSTLine(defLine string, line int) (labels.Labels, []stSequenceValue, er
 // parseSTSequence parses a space-separated sequence of start-timestamp offset
 // items. The grammar for each item is:
 //
-//	_            – one omitted position
+//	_            – one omitted position (ST=0)
 //	_xN          – N omitted positions
-//	<dur>        – one position with the given offset
-//	<dur>xN      – N+1 positions all with the same offset
+//	<dur>        – one position with the given relative offset
+//	<dur>xN      – N+1 positions all with the same relative offset
 //	<dur>+<dur>xN – N+1 positions, offset increasing by delta each step
 //	<dur>-<dur>xN – N+1 positions, offset decreasing by delta each step
-//	@<dur>       – absolute timestamp (testStartTime + dur)
-//	^            – repeat previous absolute ST
+//	@<dur>       – one absolute position (testStartTime + dur)
+//	@<dur>xN     – N+1 absolute positions with the same value
+//	<dur>^xN     – N+1 positions: first has offset <dur>, rest repeat that same absolute ST
+//	~            – one position whose ST equals the previous sample's timestamp
+//	~xN          – N positions all using the previous sample's timestamp
 //
 // Offsets are Prometheus durations (e.g. -1m, 30s, 0s).
 func parseSTSequence(input string) ([]stSequenceValue, error) {
@@ -434,17 +438,17 @@ func parseSTItem(item string) ([]stSequenceValue, error) {
 		}
 		return vals, nil
 	}
-	if item == "^" {
-		return []stSequenceValue{{repeat: true}}, nil
+	if item == "~" {
+		return []stSequenceValue{{prevSample: true}}, nil
 	}
-	if strings.HasPrefix(item, "^x") {
+	if strings.HasPrefix(item, "~x") {
 		n, err := strconv.ParseUint(item[2:], 10, 64)
 		if err != nil || n == 0 {
 			return nil, errors.New("invalid repeat count")
 		}
-		vals := make([]stSequenceValue, n+1)
+		vals := make([]stSequenceValue, n)
 		for i := range vals {
-			vals[i] = stSequenceValue{repeat: true}
+			vals[i] = stSequenceValue{prevSample: true}
 		}
 		return vals, nil
 	}
@@ -459,9 +463,21 @@ func parseSTItem(item string) ([]stSequenceValue, error) {
 	if err != nil {
 		return nil, err
 	}
-	// No step: <dur> or <dur>xN.
+	// No step: <dur> or <dur>xN or <dur>^xN.
 	if rest == "" {
 		return []stSequenceValue{{offset: base, abs: abs}}, nil
+	}
+	if strings.HasPrefix(rest, "^x") {
+		n, err := strconv.ParseUint(rest[2:], 10, 64)
+		if err != nil || n == 0 {
+			return nil, errors.New("invalid repeat count")
+		}
+		vals := make([]stSequenceValue, n+1)
+		vals[0] = stSequenceValue{offset: base, abs: abs}
+		for i := 1; i <= int(n); i++ {
+			vals[i] = stSequenceValue{repeat: true}
+		}
+		return vals, nil
 	}
 	if rest[0] == 'x' {
 		n, err := strconv.ParseUint(rest[1:], 10, 64)
@@ -944,6 +960,13 @@ func (cmd *loadCmd) set(m labels.Labels, vals []parser.SequenceValue, stVals []s
 						return errors.New("repeat requested but no previous start timestamp exists")
 					}
 					s.ST = lastST
+				case stVals[i].prevSample:
+					if len(samples) == 0 {
+						return errors.New("cannot use previous sample timestamp when there is no previous sample")
+					}
+					s.ST = samples[len(samples)-1].T
+					lastST = s.ST
+					hasLastST = true
 				case stVals[i].abs:
 					s.ST = cmd.startTime.UnixNano()/int64(time.Millisecond) + stVals[i].offset
 					lastST = s.ST

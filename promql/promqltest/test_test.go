@@ -1170,15 +1170,22 @@ func TestParseSTSequence(t *testing.T) {
 			},
 		},
 		{
-			input:    "^",
-			expected: []stSequenceValue{{repeat: true}},
+			input: "-1m^x2",
+			expected: []stSequenceValue{
+				{offset: -60000},
+				{repeat: true},
+				{repeat: true},
+			},
 		},
 		{
-			input: "^x2",
+			input:    "~",
+			expected: []stSequenceValue{{prevSample: true}},
+		},
+		{
+			input: "~x2",
 			expected: []stSequenceValue{
-				{repeat: true},
-				{repeat: true},
-				{repeat: true},
+				{prevSample: true},
+				{prevSample: true},
 			},
 		},
 		{
@@ -1193,11 +1200,21 @@ func TestParseSTSequence(t *testing.T) {
 				{offset: 720000, abs: true},
 			},
 		},
+		{
+			input: "@10m^x2",
+			expected: []stSequenceValue{
+				{offset: 600000, abs: true},
+				{repeat: true},
+				{repeat: true},
+			},
+		},
 		{input: "", expected: nil},
 		{input: "badunit", wantErr: true},
 		{input: "_x0", wantErr: true},
 		{input: "_x-2", wantErr: true},
 		{input: "-1m+15s", wantErr: true}, // step without xN
+		{input: "^", wantErr: true},       // standalone ^ removed
+		{input: "^x2", wantErr: true},     // standalone ^xN removed
 	}
 
 	for _, tc := range cases {
@@ -1223,7 +1240,7 @@ func TestParseLoad_STLine(t *testing.T) {
 		"load 5m",
 		"  my_counter@st -1mx4",
 		"  my_counter 0+1x4",
-		"  my_counter2@st @10m ^x3",
+		"  my_counter2@st @10m^x4",
 		"  my_counter2 0+1x4",
 	}
 	_, cmd, err := parseLoad(lines, 0, testStartTime)
