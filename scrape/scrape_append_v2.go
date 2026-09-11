@@ -107,6 +107,7 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 		EnableOpenMetrics2:                      sl.enableOpenMetrics2,
 		FallbackContentType:                     sl.fallbackScrapeProtocol,
 	})
+
 	if p == nil {
 		sl.l.Error(
 			"Failed to determine correct type of scrape target.",
@@ -161,12 +162,14 @@ loop:
 			skipAppend               bool
 			stCache                  *stCache
 		)
+
 		if et, err = p.Next(); err != nil {
 			if errors.Is(err, io.EOF) {
 				err = nil
 			}
 			break
 		}
+
 		switch et {
 		// TODO(bwplotka): Consider changing parser to give metadata at once instead of type, help and unit in separation, ideally on `Series()/Histogram()
 		// otherwise we can expose metadata without series on metadata API.
@@ -363,6 +366,10 @@ loop:
 			} else if seriesCached {
 				ce.st = nil // Clear state on failure for existing series.
 			}
+		}
+
+		if sampleAdded && lastMeta != nil {
+			lastMeta.lastIterSurvived = sl.cache.iter
 		}
 
 		// We track staleness for a series to ensure that if it disappears in a future scrape,
