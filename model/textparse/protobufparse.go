@@ -180,11 +180,9 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 //
 // The Compact method is called before returning the Histogram (or FloatHistogram).
 //
-// If the SampleCountFloat or the ZeroCountFloat in the proto message is > 0,
-// the histogram is parsed and returned as a FloatHistogram and nil is returned
-// as the (integer) Histogram return value. Otherwise, it is parsed and returned
-// as an (integer) Histogram and nil is returned as the FloatHistogram return
-// value.
+// A histogram with a positive SampleCountFloat or ZeroCountFloat, or any
+// PositiveCount or NegativeCount entries, is parsed and returned as a
+// FloatHistogram. Otherwise, it is parsed and returned as an integer Histogram.
 func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
 	var (
 		ts = &p.dec.TimestampMs // To save memory allocations, never nil.
@@ -203,7 +201,7 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 	if p.parseClassicHistograms && len(h.GetBucket()) > 0 {
 		p.redoClassic = true
 	}
-	if h.GetSampleCountFloat() > 0 || h.GetZeroCountFloat() > 0 {
+	if isFloatHistogram(h) {
 		// It is a float histogram.
 		fh := histogram.FloatHistogram{
 			Count:         h.GetSampleCountFloat(),
@@ -734,6 +732,14 @@ func isNativeHistogram(h *dto.Histogram) bool {
 		h.GetZeroCount() > 0
 }
 
+func isFloatHistogram(h *dto.Histogram) bool {
+	// Bucket count entries identify float histograms even when all counts are zero.
+	return h.GetSampleCountFloat() > 0 ||
+		h.GetZeroCountFloat() > 0 ||
+		len(h.GetPositiveCount()) > 0 ||
+		len(h.GetNegativeCount()) > 0
+}
+
 func (p *ProtobufParser) convertToNHCB(t dto.MetricType) (*histogram.Histogram, *histogram.FloatHistogram, error) {
 	h := p.dec.GetHistogram()
 	p.tmpNHCB.Reset()
@@ -779,9 +785,8 @@ func (p *ProtobufParser) convertToNHCB(t dto.MetricType) (*histogram.Histogram, 
 // message. It catches malformed input before it reaches compactBuckets, where
 // a mismatch would cause a panic.
 func checkNativeHistogramConsistency(h *dto.Histogram) error {
-	isFloat := h.GetSampleCountFloat() > 0 || h.GetZeroCountFloat() > 0
 	var positiveBuckets, negativeBuckets int
-	if isFloat {
+	if isFloatHistogram(h) {
 		positiveBuckets = len(h.GetPositiveCount())
 		negativeBuckets = len(h.GetNegativeCount())
 	} else {
