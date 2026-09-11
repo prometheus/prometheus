@@ -112,12 +112,15 @@ func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, h
 		hints = &storage.SearchHints{}
 	}
 
-	// Limit pushdown is only correct when natural (ascending) index order
-	// is preserved all the way to the output and no filtering discards
-	// values ahead of the limit.
+	// Preserve limit pushdown for known sorted format-v2 block indexes.
+	// Head and format-v1 indexes may limit an unordered subset before sorting.
 	labelHints := &storage.LabelHints{}
 	if hints.OrderBy == storage.OrderByValueAsc && hints.Filter == nil {
-		labelHints.Limit = hints.Limit
+		if block, ok := q.index.(blockIndexReader); ok {
+			if reader, ok := block.ir.(*index.Reader); ok && reader.Version() == index.FormatV2 {
+				labelHints.Limit = hints.Limit
+			}
+		}
 	}
 
 	var (

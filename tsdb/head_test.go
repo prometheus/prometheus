@@ -3040,6 +3040,57 @@ func TestHead_ReturnsSortedLabelValues(t *testing.T) {
 	require.NoError(t, q.Close())
 }
 
+func TestSearchLabelValuesLimit(t *testing.T) {
+	h, _ := newTestHead(t, 1000, compression.None, false)
+	ctx := t.Context()
+	app := h.Appender(ctx)
+	for _, name := range []string{"z_metric", "m_metric", "a_metric"} {
+		_, err := app.Append(0, labels.FromStrings("__name__", name, "job", "api"), 2100, 1)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	block, err := OpenBlock(nil, createBlockFromHead(t, t.TempDir(), h), nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, block.Close()) })
+	for _, backend := range []struct {
+		name   string
+		reader BlockReader
+	}{{"Head", h}, {"Block", block}} {
+		t.Run(backend.name, func(t *testing.T) {
+			q, err := NewBlockQuerier(backend.reader, 1500, 2500)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+			for _, matchers := range [][]*labels.Matcher{
+				nil,
+				{labels.MustNewMatcher(labels.MatchEqual, "job", "api")},
+			} {
+				t.Run(fmt.Sprint(matchers), func(t *testing.T) {
+					for _, limit := range []int{0, 1, 2, 3, 4} {
+						t.Run(strconv.Itoa(limit), func(t *testing.T) {
+							want := []storage.SearchResult{
+								{Value: "a_metric", Score: 1},
+								{Value: "m_metric", Score: 1},
+								{Value: "z_metric", Score: 1},
+							}
+							if limit > 0 && limit < len(want) {
+								want = want[:limit]
+							}
+							// A nil filter and an accept-all filter must return the same ranked results.
+							for _, filter := range []storage.Filter{nil, prefixFilter{prefix: ""}} {
+								rs := q.(storage.Searcher).SearchLabelValues(ctx, "__name__", &storage.SearchHints{
+									OrderBy: storage.OrderByValueAsc, Limit: limit, Filter: filter,
+								}, matchers...)
+								require.Equal(t, want, collectSearchResultSet(t, rs), "filter: %T", filter)
+							}
+						})
+					}
+				})
+			}
+		})
+	}
+}
+
 // TestWalRepair_DecodingError ensures that a repair is run for an error
 // when decoding a record.
 func TestWalRepair_DecodingError(t *testing.T) {
