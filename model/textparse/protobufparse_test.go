@@ -6016,6 +6016,45 @@ metric: <
 	}
 }
 
+func TestProtobufParseZeroFloatHistogram(t *testing.T) {
+	buf := metricFamiliesToProtobuf(t, []string{`
+name: "test_float_histogram"
+help: "Test zero float histogram with a retained bucket layout."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count_float: 0
+    sample_sum: 0
+    schema: 3
+    zero_threshold: 0.001
+    zero_count_float: 0
+    positive_span: <
+      offset: -2
+      length: 5
+    >
+    positive_count: 0
+    positive_count: 0
+    positive_count: 0
+    positive_count: 0
+    positive_count: 0
+  >
+>
+	`})
+
+	p := NewProtobufParser(buf.Bytes(), false, false, false, false, labels.NewSymbolTable())
+	for _, expected := range []Entry{EntryHelp, EntryType, EntryHistogram} {
+		entry, err := p.Next()
+		require.NoError(t, err)
+		require.Equal(t, expected, entry)
+	}
+
+	_, _, h, fh := p.Histogram()
+	require.Nil(t, h)
+	require.NotNil(t, fh)
+	require.Zero(t, fh.Count)
+	require.Zero(t, fh.ZeroCount)
+}
+
 // TestProtobufParseMixedNativeAndClassicHistograms tests a metric family that
 // contains both a native histogram (with classic buckets) and a classic-only
 // histogram as separate series. With parseClassicHistograms=true and
