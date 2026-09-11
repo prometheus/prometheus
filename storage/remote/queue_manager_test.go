@@ -140,7 +140,7 @@ func TestBasicContentNegotiation(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false, false)
 			defer s.Close()
 
 			recs := testwal.GenerateRecords(recCase{
@@ -225,7 +225,7 @@ func TestSampleDelivery(t *testing.T) {
 		} {
 			t.Run(fmt.Sprintf("proto=%s/case=%s", protoMsg, rc.Name), func(t *testing.T) {
 				dir := t.TempDir()
-				s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
+				s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false, true)
 				defer s.Close()
 
 				rc.NoST = protoMsg == remoteapi.WriteV1MessageType // RW1 does not support ST.
@@ -300,13 +300,13 @@ func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, pro
 	c := NewTestWriteClient(protoMsg)
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
-	return c, newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg)
+	return c, newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 }
 
-func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg remoteapi.WriteMessageType) *QueueManager {
+func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg remoteapi.WriteMessageType, enableMetadataWALRecords bool) *QueueManager {
 	dir := t.TempDir()
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg, record.NewBuffersPool(), false)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, enableMetadataWALRecords, protoMsg, record.NewBuffersPool(), false)
 
 	return m
 }
@@ -346,49 +346,70 @@ func TestMetadataDelivery(t *testing.T) {
 }
 
 func TestWALMetadataDelivery(t *testing.T) {
-	dir := t.TempDir()
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
-	defer s.Close()
-
-	cfg := config.DefaultQueueConfig
-	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
-	cfg.MaxShards = 1
-
-	writeConfig := baseRemoteWriteConfig("http://test-storage.com")
-	writeConfig.QueueConfig = cfg
-	writeConfig.ProtobufMessage = remoteapi.WriteV2MessageType
-
-	conf := &config.Config{
-		GlobalConfig: config.DefaultGlobalConfig,
-		RemoteWriteConfigs: []*config.RemoteWriteConfig{
-			writeConfig,
+	// storeMetadata pushes recs.Metadata into qm using either the pre-MetadataRef
+	// format (StoreMetadata) or the MetadataDefinition/SeriesMetadataRef format
+	// that superseded it; both must resolve to the same metadata at send time.
+	for name, storeMetadata := range map[string]func(qm *QueueManager, recs testwal.Records){
+		"RefMetadata": func(qm *QueueManager, recs testwal.Records) {
+			qm.StoreMetadata(recs.Metadata)
 		},
+		"MetadataDefinition+SeriesMetadataRef": func(qm *QueueManager, recs testwal.Records) {
+			defs := make([]record.RefMetadataDefinition, len(recs.Metadata))
+			refs := make([]record.RefSeriesMetadataRef, len(recs.Metadata))
+			for i, m := range recs.Metadata {
+				ref := record.MetadataRef(i + 1)
+				defs[i] = record.RefMetadataDefinition{Ref: ref, Type: m.Type, Unit: m.Unit, Help: m.Help}
+				refs[i] = record.RefSeriesMetadataRef{Ref: m.Ref, MetadataRef: ref}
+			}
+			qm.StoreMetadataDefinitions(defs)
+			qm.StoreSeriesMetadataRef(refs)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false, true)
+			defer s.Close()
+
+			cfg := config.DefaultQueueConfig
+			cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
+			cfg.MaxShards = 1
+
+			writeConfig := baseRemoteWriteConfig("http://test-storage.com")
+			writeConfig.QueueConfig = cfg
+			writeConfig.ProtobufMessage = remoteapi.WriteV2MessageType
+
+			conf := &config.Config{
+				GlobalConfig: config.DefaultGlobalConfig,
+				RemoteWriteConfigs: []*config.RemoteWriteConfig{
+					writeConfig,
+				},
+			}
+
+			n := 3
+			recs := testwal.GenerateRecords(recCase{Series: n, SamplesPerSeries: n})
+
+			require.NoError(t, s.ApplyConfig(conf))
+			hash, err := toHash(writeConfig)
+			require.NoError(t, err)
+			qm := s.rws.queues[hash]
+
+			c := NewTestWriteClient(remoteapi.WriteV2MessageType)
+			qm.SetClient(c)
+
+			qm.StoreSeries(recs.Series, 0)
+			storeMetadata(qm, recs)
+
+			require.Len(t, qm.series.entries, n)
+
+			c.expectSamples(recs.Samples, recs.Series)
+			c.expectMetadataForBatch(recs.Metadata, recs.Series, recs.Samples, nil, nil, nil)
+			qm.Append(recs.Samples)
+			c.waitForExpectedData(t, 30*time.Second)
+
+			// Metadata is cached state, not a queue item used for shard scaling.
+			require.Equal(t, int64(len(recs.Samples)), qm.dataOut.newEvents.Load())
+		})
 	}
-
-	n := 3
-	recs := testwal.GenerateRecords(recCase{Series: n, SamplesPerSeries: n})
-
-	require.NoError(t, s.ApplyConfig(conf))
-	hash, err := toHash(writeConfig)
-	require.NoError(t, err)
-	qm := s.rws.queues[hash]
-
-	c := NewTestWriteClient(remoteapi.WriteV2MessageType)
-	qm.SetClient(c)
-
-	qm.StoreSeries(recs.Series, 0)
-	qm.StoreMetadata(recs.Metadata)
-
-	require.Len(t, qm.seriesLabels, n)
-	require.Len(t, qm.seriesMetadata, n)
-
-	c.expectSamples(recs.Samples, recs.Series)
-	c.expectMetadataForBatch(recs.Metadata, recs.Series, recs.Samples, nil, nil, nil)
-	qm.Append(recs.Samples)
-	c.waitForExpectedData(t, 30*time.Second)
-
-	// Metadata is cached state, not a queue item used for shard scaling.
-	require.Equal(t, int64(len(recs.Samples)), qm.dataOut.newEvents.Load())
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
@@ -404,7 +425,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 			cfg.MaxShards = 1
 
 			c := NewTestWriteClient(protoMsg)
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 			m.StoreSeries(recs.Series, 0)
 			m.Start()
 			defer m.Stop()
@@ -456,7 +477,7 @@ func TestShutdown(t *testing.T) {
 				cfg := config.DefaultQueueConfig
 				mcfg := config.DefaultMetadataConfig
 
-				m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg)
+				m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 				// Send 2x batch size, so we know it will need at least two sends.
 				n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
 				recs := testwal.GenerateRecords(recCase{
@@ -484,6 +505,122 @@ func TestShutdown(t *testing.T) {
 	}
 }
 
+func TestSeriesStorage(t *testing.T) {
+	ref1 := chunks.HeadSeriesRef(1)
+	lbls1 := labels.FromStrings("a", "b")
+
+	t.Run("withMeta=false", func(t *testing.T) {
+		s := &seriesStorage{
+			labels:  make(map[chunks.HeadSeriesRef]labels.Labels),
+			dropped: make(map[chunks.HeadSeriesRef]struct{}),
+		}
+
+		// Never-seen ref: not active, not dropped.
+		lbls, meta, active, dropped := s.lookup(ref1)
+		require.False(t, active)
+		require.False(t, dropped)
+		require.Nil(t, meta)
+
+		s.storeLocked(ref1, lbls1)
+		lbls, meta, active, dropped = s.lookup(ref1)
+		require.True(t, active)
+		require.False(t, dropped)
+		testutil.RequireEqual(t, lbls1, lbls)
+		require.Nil(t, meta) // withMeta=false never resolves metadata, even after StoreMetadata-style calls would be no-ops.
+
+		// storeMetadataDefinitionLocked/storeSeriesMetadataRefLocked are no-ops.
+		s.storeMetadataDefinitionLocked(1, metadata.Metadata{Help: "should be ignored"})
+		s.storeSeriesMetadataRefLocked(ref1, 1)
+		_, meta, _, _ = s.lookup(ref1)
+		require.Nil(t, meta)
+
+		s.dropLocked(ref1)
+		_, _, active, dropped = s.lookup(ref1)
+		require.False(t, active)
+		require.True(t, dropped)
+
+		s.deleteLocked(ref1)
+		_, _, active, dropped = s.lookup(ref1)
+		require.False(t, active)
+		require.False(t, dropped)
+	})
+
+	t.Run("withMeta=true", func(t *testing.T) {
+		s := &seriesStorage{
+			withMeta:     true,
+			entries:      make(map[chunks.HeadSeriesRef]seriesEntry),
+			metadataDefs: make(map[record.MetadataRef]*metadata.Metadata),
+			dropped:      make(map[chunks.HeadSeriesRef]struct{}),
+		}
+		m1 := metadata.Metadata{Type: model.MetricTypeCounter, Help: "first"}
+		m2 := metadata.Metadata{Type: model.MetricTypeCounter, Help: "second"}
+
+		// A series can get its MetadataRef before StoreSeries ever sees it (a
+		// SeriesMetadataRef record can't outrun StoreSeries in practice, since
+		// Head only ever produces one after the series already exists, but the
+		// method must still degrade safely if it somehow did): storeSeriesMetadataRefLocked
+		// is then a no-op, matching storeMetadataLocked's documented behavior of
+		// not storing metadata for series it doesn't know about yet.
+		s.storeMetadataDefinitionLocked(1, m1)
+		s.storeSeriesMetadataRefLocked(ref1, 1)
+		_, meta, active, _ := s.lookup(ref1)
+		require.False(t, active)
+		require.Nil(t, meta)
+
+		s.storeLocked(ref1, lbls1)
+		lbls, meta, active, dropped := s.lookup(ref1)
+		require.True(t, active)
+		require.False(t, dropped)
+		testutil.RequireEqual(t, lbls1, lbls)
+		require.Nil(t, meta) // storeLocked doesn't touch metadataRef; none was set while active.
+
+		// Now that the series is active, storeSeriesMetadataRefLocked takes effect.
+		s.storeSeriesMetadataRefLocked(ref1, 1)
+		_, meta, _, _ = s.lookup(ref1)
+		require.Equal(t, &m1, meta)
+
+		// storeLocked preserves the existing metadataRef.
+		s.storeLocked(ref1, lbls1)
+		_, meta, _, _ = s.lookup(ref1)
+		require.Equal(t, &m1, meta)
+
+		// Content is immutable per ref; a changed definition gets a new ref.
+		s.storeMetadataDefinitionLocked(2, m2)
+		s.storeSeriesMetadataRefLocked(ref1, 2)
+		_, meta, _, _ = s.lookup(ref1)
+		require.Equal(t, &m2, meta)
+
+		// pruneUnreferencedMetadataDefsLocked drops the now-unreferenced ref 1,
+		// keeps the still-referenced ref 2.
+		s.pruneUnreferencedMetadataDefsLocked()
+		require.NotContains(t, s.metadataDefs, record.MetadataRef(1))
+		require.Contains(t, s.metadataDefs, record.MetadataRef(2))
+
+		s.dropLocked(ref1)
+		_, _, active, dropped = s.lookup(ref1)
+		require.False(t, active)
+		require.True(t, dropped)
+
+		// dropLocked removes the entry, so its metadataRef is no longer referenced.
+		s.pruneUnreferencedMetadataDefsLocked()
+		require.Empty(t, s.metadataDefs)
+
+		// storeLocked on a previously-dropped ref restores it as active, with no metadataRef.
+		s.storeLocked(ref1, lbls1)
+		_, meta, active, dropped = s.lookup(ref1)
+		require.True(t, active)
+		require.False(t, dropped)
+		require.Nil(t, meta)
+
+		// deleteLocked removes both the active entry and the dropped flag.
+		s.dropLocked(ref1) // move ref1 back to dropped before deleting.
+		s.deleteLocked(ref1)
+		_, _, active, dropped = s.lookup(ref1)
+		require.False(t, active)
+		require.False(t, dropped)
+	})
+}
+
 func TestSeriesReset(t *testing.T) {
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
@@ -494,7 +631,7 @@ func TestSeriesReset(t *testing.T) {
 
 			cfg := config.DefaultQueueConfig
 			mcfg := config.DefaultMetadataConfig
-			m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 			for i := range numSegments {
 				series := []record.RefSeries{}
 				metadata := []record.RefMetadata{}
@@ -506,18 +643,23 @@ func TestSeriesReset(t *testing.T) {
 				m.StoreSeries(series, i)
 				m.StoreMetadata(metadata)
 			}
-			require.Len(t, m.seriesLabels, numSegments*numSeries)
-			// V2 stores metadata in seriesMetadata map for inline sending.
-			// V1 sends metadata separately via MetadataWatcher, so seriesMetadata is not populated.
+			// V2 stores active series in the combined entries+metadataDefs maps for
+			// inline sending. V1 sends metadata separately via MetadataWatcher, so
+			// active series live in the plain labels map instead.
 			if protoMsg == remoteapi.WriteV2MessageType {
-				require.Len(t, m.seriesMetadata, numSegments*numSeries)
+				require.Len(t, m.series.entries, numSegments*numSeries)
+				require.Len(t, m.series.metadataDefs, numSegments*numSeries)
+			} else {
+				require.Len(t, m.series.labels, numSegments*numSeries)
 			}
 
 			m.SeriesReset(2)
-			require.Len(t, m.seriesLabels, numSegments*numSeries/2)
-			// Verify metadata is also reset for V2
+			// Verify series (and, for V2, metadata) are also reset.
 			if protoMsg == remoteapi.WriteV2MessageType {
-				require.Len(t, m.seriesMetadata, numSegments*numSeries/2)
+				require.Len(t, m.series.entries, numSegments*numSeries/2)
+				require.Len(t, m.series.metadataDefs, numSegments*numSeries/2)
+			} else {
+				require.Len(t, m.series.labels, numSegments*numSeries/2)
 			}
 		})
 	}
@@ -541,7 +683,7 @@ func TestReshard(t *testing.T) {
 			cfg.MaxShards = 1
 
 			c := NewTestWriteClient(protoMsg)
-			m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 			c.expectSamples(recs.Samples, recs.Series)
 			m.StoreSeries(recs.Series, 0)
 
@@ -581,7 +723,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 			exitCh := make(chan struct{})
 			go func() {
 				for {
-					m = newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+					m = newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 
 					m.Start()
 					h.Unlock()
@@ -623,7 +765,7 @@ func TestReshardPartialBatch(t *testing.T) {
 			flushDeadline := 10 * time.Millisecond
 			cfg.BatchSendDeadline = model.Duration(batchSendDeadline)
 
-			m := newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 			m.StoreSeries(recs.Series, 0)
 
 			m.Start()
@@ -673,7 +815,7 @@ func TestQueueFilledDeadlock(t *testing.T) {
 			batchSendDeadline := time.Millisecond
 			cfg.BatchSendDeadline = model.Duration(batchSendDeadline)
 
-			m := newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 			m.StoreSeries(recs.Series, 0)
 			m.Start()
 			defer m.Stop()
@@ -794,7 +936,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		}
 	)
 
-	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, nil, false)
+	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, false, remoteapi.WriteV1MessageType, nil, false)
 	m.StoreSeries(recs.Series, 0)
 
 	// Attempt to samples while the manager is running. We immediately stop the
@@ -1339,7 +1481,7 @@ func BenchmarkSampleSend(b *testing.B) {
 	// todo: test with new proto type(s)
 	for _, format := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		b.Run(string(format), func(b *testing.B) {
-			m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, format)
+			m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, format, format != remoteapi.WriteV1MessageType)
 			m.StoreSeries(recs.Series, 0)
 
 			// These should be received by the client.
@@ -1402,7 +1544,7 @@ func BenchmarkStoreSeries(b *testing.B) {
 				mcfg := config.DefaultMetadataConfig
 				metrics := newQueueManagerMetrics(nil, "", "")
 
-				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, record.NewBuffersPool(), false)
+				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, false, remoteapi.WriteV1MessageType, record.NewBuffersPool(), false)
 				m.externalLabels = tc.externalLabels
 				m.relabelConfigs = tc.relabelConfigs
 
@@ -1961,7 +2103,7 @@ func TestDropOldTimeSeries(t *testing.T) {
 			mcfg := config.DefaultMetadataConfig
 			cfg.MaxShards = 1
 			cfg.SampleAgeLimit = model.Duration(60 * time.Second)
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 			m.StoreSeries(series, 0)
 
 			m.Start()
@@ -2005,7 +2147,7 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 			metadataCfg.SendInterval = model.Duration(time.Second * 60)
 			metadataCfg.MaxSamplesPerSend = maxSamplesPerSend
 			c := NewTestWriteClient(protoMsg)
-			m := newTestQueueManager(t, cfg, metadataCfg, time.Second, c, protoMsg)
+			m := newTestQueueManager(t, cfg, metadataCfg, time.Second, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 
 			m.Start()
 
@@ -2598,7 +2740,7 @@ func TestAppendHistogramSchemaValidation(t *testing.T) {
 			mcfg := config.DefaultMetadataConfig
 			cfg.MaxShards = 1
 
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 			m.sendNativeHistograms = true
 
 			// Create series for the histograms
@@ -2752,7 +2894,7 @@ func TestAppendHistogramsWithStartTimestamp(t *testing.T) {
 	mcfg := config.DefaultMetadataConfig
 	cfg.MaxShards = 1
 
-	m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+	m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 	m.sendNativeHistograms = true
 
 	series := []record.RefSeries{

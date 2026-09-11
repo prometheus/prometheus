@@ -69,19 +69,23 @@ func overwriteReadTimeout(t *testing.T, val time.Duration) {
 type writeToMock struct {
 	mu sync.Mutex
 
-	seriesStored            []record.RefSeries
-	metadataStored          []record.RefMetadata
-	samplesAppended         []record.RefSample
-	exemplarsAppended       []record.RefExemplar
-	histogramsAppended      []record.RefHistogramSample
-	floatHistogramsAppended []record.RefFloatHistogramSample
+	seriesStored             []record.RefSeries
+	metadataStored           []record.RefMetadata
+	metadataDefsStored       []record.RefMetadataDefinition
+	seriesMetadataRefsStored []record.RefSeriesMetadataRef
+	samplesAppended          []record.RefSample
+	exemplarsAppended        []record.RefExemplar
+	histogramsAppended       []record.RefHistogramSample
+	floatHistogramsAppended  []record.RefFloatHistogramSample
 
-	seriesStores           int
-	metadataStores         int
-	sampleAppends          int
-	exemplarAppends        int
-	histogramAppends       int
-	floatHistogramsAppends int
+	seriesStores             int
+	metadataStores           int
+	metadataDefsStores       int
+	seriesMetadataRefsStores int
+	sampleAppends            int
+	exemplarAppends          int
+	histogramAppends         int
+	floatHistogramsAppends   int
 
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
 
@@ -147,6 +151,24 @@ func (wtm *writeToMock) StoreMetadata(meta []record.RefMetadata) {
 
 	wtm.metadataStores++
 	wtm.metadataStored = append(wtm.metadataStored, meta...)
+	time.Sleep(wtm.delay)
+}
+
+func (wtm *writeToMock) StoreMetadataDefinitions(defs []record.RefMetadataDefinition) {
+	wtm.mu.Lock()
+	defer wtm.mu.Unlock()
+
+	wtm.metadataDefsStores++
+	wtm.metadataDefsStored = append(wtm.metadataDefsStored, defs...)
+	time.Sleep(wtm.delay)
+}
+
+func (wtm *writeToMock) StoreSeriesMetadataRef(refs []record.RefSeriesMetadataRef) {
+	wtm.mu.Lock()
+	defer wtm.mu.Unlock()
+
+	wtm.seriesMetadataRefsStores++
+	wtm.seriesMetadataRefsStored = append(wtm.seriesMetadataRefsStored, refs...)
 	time.Sleep(wtm.delay)
 }
 
@@ -272,11 +294,28 @@ func TestWatcher_Tail(t *testing.T) {
 					{Ref: 2, T: timestamp.FromTime(now), V: 123.1},
 				}, nil)))
 
+				// metadataDefs/seriesMetadataRefs derived from records[i].Metadata: one
+				// MetadataRef per series, reusing the series ref as the MetadataRef value
+				// since RefPadding already keeps them from colliding across batches.
+				metadataDefs := make([][]record.RefMetadataDefinition, batches)
+				seriesMetadataRefs := make([][]record.RefSeriesMetadataRef, batches)
+				for i := range records {
+					metadataDefs[i] = make([]record.RefMetadataDefinition, len(records[i].Metadata))
+					seriesMetadataRefs[i] = make([]record.RefSeriesMetadataRef, len(records[i].Metadata))
+					for j, m := range records[i].Metadata {
+						ref := record.MetadataRef(m.Ref)
+						metadataDefs[i][j] = record.RefMetadataDefinition{Ref: ref, Type: m.Type, Unit: m.Unit, Help: m.Help}
+						seriesMetadataRefs[i][j] = record.RefSeriesMetadataRef{Ref: m.Ref, MetadataRef: ref}
+					}
+				}
+
 				for i := range records {
 					// Similar order as tsdb/head_appender.go.headAppenderBase.log
 					// https://github.com/prometheus/prometheus/blob/1751685dd4f6430757ba3078a96cffeffcb2bb47/tsdb/head_append.go#L1053
 					require.NoError(t, w.Log(enc.Series(records[i].Series, nil)))
 					require.NoError(t, w.Log(enc.Metadata(records[i].Metadata, nil)))
+					require.NoError(t, w.Log(enc.MetadataDefinition(metadataDefs[i], nil)))
+					require.NoError(t, w.Log(enc.SeriesMetadataRef(seriesMetadataRefs[i], nil)))
 					require.NoError(t, w.Log(enc.Samples(records[i].Samples, nil)))
 
 					hs, cbHs := enc.HistogramSamples(records[i].Histograms, nil)
@@ -308,6 +347,8 @@ func TestWatcher_Tail(t *testing.T) {
 
 				require.Equal(t, batches, wt.seriesStores)
 				require.Equal(t, batches, wt.metadataStores)
+				require.Equal(t, batches, wt.metadataDefsStores)
+				require.Equal(t, batches, wt.seriesMetadataRefsStores)
 				require.Equal(t, batches, wt.sampleAppends)
 				require.Equal(t, 2*batches, wt.histogramAppends)
 				require.Equal(t, 2*batches, wt.floatHistogramsAppends)
@@ -318,6 +359,8 @@ func TestWatcher_Tail(t *testing.T) {
 					testutil.RequireEqual(t, records[i].Series, wt.seriesStored[i*sector:(i+1)*sector], i)
 					sector = len(records[i].Metadata)
 					require.Equal(t, records[i].Metadata, wt.metadataStored[i*sector:(i+1)*sector], i)
+					require.Equal(t, metadataDefs[i], wt.metadataDefsStored[i*sector:(i+1)*sector], i)
+					require.Equal(t, seriesMetadataRefs[i], wt.seriesMetadataRefsStored[i*sector:(i+1)*sector], i)
 					sector = len(records[i].Samples)
 					require.Equal(t, records[i].Samples, wt.samplesAppended[i*sector:(i+1)*sector], i)
 

@@ -66,6 +66,143 @@ const (
 	reasonNHCBNotSupported           = "nhcb_in_rw1_not_supported"
 )
 
+// seriesEntry holds the labels and MetadataRef for a single active (non-dropped) series.
+type seriesEntry struct {
+	labels      labels.Labels
+	metadataRef record.MetadataRef
+}
+
+// seriesStorage holds per-series label and metadata state, selecting its internal
+// layout at construction time based on whether metadata WAL records are in use:
+//
+//   - withMeta=false (RWv1, or RWv2 without metadata-wal-records): only labels is
+//     populated. Each Append lookup requires a single map access.
+//   - withMeta=true (RWv2 with metadata-wal-records enabled): only entries and
+//     metadataDefs are populated. Each Append lookup retrieves the labels and
+//     MetadataRef in a single map access, then resolves the ref against the much
+//     smaller, deduplicated metadataDefs map.
+//
+// The hot-path method lookup acquires and releases mu internally.
+// Callers that must hold both series.mu and seriesSegmentMtx must take series.mu first.
+type seriesStorage struct {
+	mu sync.Mutex
+	// withMeta is set once in NewQueueManager and never modified; it is safe to
+	// read without holding mu.
+	withMeta bool
+
+	// withMeta=false: labels is used; entries and metadataDefs are nil.
+	labels map[chunks.HeadSeriesRef]labels.Labels
+	// withMeta=true: entries and metadataDefs are used; labels is nil.
+	entries map[chunks.HeadSeriesRef]seriesEntry
+	// metadataDefs holds metadata content once per distinct MetadataRef, shared
+	// across every series entry pointing at it.
+	metadataDefs map[record.MetadataRef]*metadata.Metadata
+
+	dropped map[chunks.HeadSeriesRef]struct{}
+}
+
+func (s *seriesStorage) lock()   { s.mu.Lock() }
+func (s *seriesStorage) unlock() { s.mu.Unlock() }
+
+// lookup returns the labels and metadata for ref, taking and releasing mu internally.
+// active is true when the series is known and not dropped.
+// dropped is only meaningful when active=false: true means the series was explicitly
+// filtered by relabelling, false means it was never seen.
+func (s *seriesStorage) lookup(ref chunks.HeadSeriesRef) (lbls labels.Labels, meta *metadata.Metadata, active, dropped bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.withMeta {
+		e, ok := s.entries[ref]
+		if !ok {
+			_, d := s.dropped[ref]
+			return labels.EmptyLabels(), nil, false, d
+		}
+		return e.labels, s.metadataDefs[e.metadataRef], true, false
+	}
+	l, ok := s.labels[ref]
+	if !ok {
+		_, d := s.dropped[ref]
+		return labels.EmptyLabels(), nil, false, d
+	}
+	return l, nil, true, false
+}
+
+// storeLocked records ref as an active series with the given labels, preserving any
+// existing MetadataRef. Must be called with mu held.
+func (s *seriesStorage) storeLocked(ref chunks.HeadSeriesRef, lbls labels.Labels) {
+	delete(s.dropped, ref)
+	if s.withMeta {
+		existing := s.entries[ref]
+		s.entries[ref] = seriesEntry{labels: lbls, metadataRef: existing.metadataRef}
+	} else {
+		s.labels[ref] = lbls
+	}
+}
+
+// dropLocked marks ref as an explicitly-dropped series and removes it from the active
+// maps. Must be called with mu held.
+func (s *seriesStorage) dropLocked(ref chunks.HeadSeriesRef) {
+	if s.withMeta {
+		delete(s.entries, ref)
+	} else {
+		delete(s.labels, ref)
+	}
+	s.dropped[ref] = struct{}{}
+}
+
+// deleteLocked removes ref from all maps. Must be called with mu held.
+func (s *seriesStorage) deleteLocked(ref chunks.HeadSeriesRef) {
+	if s.withMeta {
+		delete(s.entries, ref)
+	} else {
+		delete(s.labels, ref)
+	}
+	delete(s.dropped, ref)
+}
+
+// storeMetadataDefinitionLocked records the content for a MetadataRef. Content is
+// immutable per ref, so this only ever adds an entry, never changes one. Must be
+// called with mu held. No-op when withMeta is false.
+func (s *seriesStorage) storeMetadataDefinitionLocked(ref record.MetadataRef, m metadata.Metadata) {
+	if !s.withMeta {
+		return
+	}
+	s.metadataDefs[ref] = &m
+}
+
+// storeSeriesMetadataRefLocked points ref at metadataRef, if ref is an active
+// series. A series not yet known via StoreSeries is silently skipped: Append
+// already discards dropped/unknown series before reading metadata, so this has
+// no effect on what gets sent. Must be called with mu held. No-op when withMeta
+// is false.
+func (s *seriesStorage) storeSeriesMetadataRefLocked(ref chunks.HeadSeriesRef, metadataRef record.MetadataRef) {
+	if !s.withMeta {
+		return
+	}
+	if e, ok := s.entries[ref]; ok {
+		e.metadataRef = metadataRef
+		s.entries[ref] = e
+	}
+}
+
+// pruneUnreferencedMetadataDefsLocked drops metadataDefs entries no longer
+// referenced by any entries value. Must be called with mu held. No-op when
+// withMeta is false.
+func (s *seriesStorage) pruneUnreferencedMetadataDefsLocked() {
+	if !s.withMeta {
+		return
+	}
+	liveMetadataRefs := make(map[record.MetadataRef]struct{}, len(s.entries))
+	for _, e := range s.entries {
+		liveMetadataRefs[e.metadataRef] = struct{}{}
+	}
+	for ref := range s.metadataDefs {
+		if _, ok := liveMetadataRefs[ref]; !ok {
+			delete(s.metadataDefs, ref)
+		}
+	}
+}
+
 type queueManagerMetrics struct {
 	reg prometheus.Registerer
 
@@ -442,13 +579,10 @@ type QueueManager struct {
 	protoMsg    remoteapi.WriteMessageType
 	compr       compression.Type
 
-	seriesMtx      sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries and builder.
-	seriesLabels   map[chunks.HeadSeriesRef]labels.Labels
-	seriesMetadata map[chunks.HeadSeriesRef]*metadata.Metadata
-	droppedSeries  map[chunks.HeadSeriesRef]struct{}
-	builder        *labels.Builder
+	series  seriesStorage
+	builder *labels.Builder // Accessed under series.mu during StoreSeries.
 
-	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
+	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock series.mu, take series.mu first.
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
 
 	shards      *shards
@@ -488,6 +622,7 @@ func NewQueueManager(
 	enableExemplarRemoteWrite bool,
 	enableNativeHistogramRemoteWrite bool,
 	enableTypeAndUnitLabels bool,
+	enableMetadataWALRecords bool,
 	protoMsg remoteapi.WriteMessageType,
 	recordBuf *record.BuffersPool,
 	failedRequestLogging bool,
@@ -516,10 +651,7 @@ func NewQueueManager(
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 		failedRequestLogging:    failedRequestLogging,
 
-		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
-		seriesMetadata:       make(map[chunks.HeadSeriesRef]*metadata.Metadata),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
-		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
 		builder:              labels.NewBuilder(labels.EmptyLabels()),
 
 		numShards:   cfg.MinShards,
@@ -539,7 +671,16 @@ func NewQueueManager(
 		compr:    compression.Snappy, // Hardcoded for now, but scaffolding exists for likely future use.
 	}
 
-	walMetadata := t.protoMsg != remoteapi.WriteV1MessageType
+	walMetadata := protoMsg != remoteapi.WriteV1MessageType && enableMetadataWALRecords
+
+	t.series.withMeta = walMetadata
+	t.series.dropped = make(map[chunks.HeadSeriesRef]struct{})
+	if walMetadata {
+		t.series.entries = make(map[chunks.HeadSeriesRef]seriesEntry)
+		t.series.metadataDefs = make(map[record.MetadataRef]*metadata.Metadata)
+	} else {
+		t.series.labels = make(map[chunks.HeadSeriesRef]labels.Labels)
+	}
 
 	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata, recordBuf)
 
@@ -735,23 +876,19 @@ outer:
 			t.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
-		t.seriesMtx.Lock()
-		lbls, ok := t.seriesLabels[s.Ref]
+		lbls, meta, ok, dropped := t.series.lookup(s.Ref)
 		if !ok {
 			t.dataDropped.incr(1)
-			if _, ok := t.droppedSeries[s.Ref]; !ok {
+			if dropped {
+				t.metrics.droppedSamplesTotal.WithLabelValues(reasonDroppedSeries).Inc()
+			} else {
 				t.logger.Info("Dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
 				t.metrics.droppedSamplesTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
-			} else {
-				t.metrics.droppedSamplesTotal.WithLabelValues(reasonDroppedSeries).Inc()
 			}
-			t.seriesMtx.Unlock()
 			continue
 		}
 		// TODO(cstyan): Handle or at least log an error if no metadata is found.
 		// See https://github.com/prometheus/prometheus/issues/14405
-		meta := t.seriesMetadata[s.Ref]
-		t.seriesMtx.Unlock()
 		// Start with a very small backoff. This should not be t.cfg.MinBackoff
 		// as it can happen without errors, and we want to pickup work after
 		// filling a queue/resharding as quickly as possible.
@@ -798,22 +935,18 @@ outer:
 			t.metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
-		t.seriesMtx.Lock()
-		lbls, ok := t.seriesLabels[e.Ref]
+		lbls, meta, ok, dropped := t.series.lookup(e.Ref)
 		if !ok {
 			// Track dropped exemplars in the same EWMA for sharding calc.
 			t.dataDropped.incr(1)
-			if _, ok := t.droppedSeries[e.Ref]; !ok {
+			if dropped {
+				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+			} else {
 				t.logger.Info("Dropped exemplar for series that was not explicitly dropped via relabelling", "ref", e.Ref)
 				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
-			} else {
-				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDroppedSeries).Inc()
 			}
-			t.seriesMtx.Unlock()
 			continue
 		}
-		meta := t.seriesMetadata[e.Ref]
-		t.seriesMtx.Unlock()
 		// This will only loop if the queues are being resharded.
 		backoff := t.cfg.MinBackoff
 		for {
@@ -861,21 +994,17 @@ outer:
 			t.logger.Warn("Dropped native histogram with custom buckets (NHCB) as remote write v1 does not support itB", "ref", h.Ref)
 			continue
 		}
-		t.seriesMtx.Lock()
-		lbls, ok := t.seriesLabels[h.Ref]
+		lbls, meta, ok, dropped := t.series.lookup(h.Ref)
 		if !ok {
 			t.dataDropped.incr(1)
-			if _, ok := t.droppedSeries[h.Ref]; !ok {
+			if dropped {
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+			} else {
 				t.logger.Info("Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
 				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
-			} else {
-				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
 			}
-			t.seriesMtx.Unlock()
 			continue
 		}
-		meta := t.seriesMetadata[h.Ref]
-		t.seriesMtx.Unlock()
 
 		backoff := model.Duration(5 * time.Millisecond)
 		for {
@@ -923,21 +1052,17 @@ outer:
 			t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support itB", "ref", h.Ref)
 			continue
 		}
-		t.seriesMtx.Lock()
-		lbls, ok := t.seriesLabels[h.Ref]
+		lbls, meta, ok, dropped := t.series.lookup(h.Ref)
 		if !ok {
 			t.dataDropped.incr(1)
-			if _, ok := t.droppedSeries[h.Ref]; !ok {
+			if dropped {
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+			} else {
 				t.logger.Info("Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
 				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
-			} else {
-				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
 			}
-			t.seriesMtx.Unlock()
 			continue
 		}
-		meta := t.seriesMetadata[h.Ref]
-		t.seriesMtx.Unlock()
 
 		backoff := model.Duration(5 * time.Millisecond)
 		for {
@@ -1011,8 +1136,8 @@ func (t *QueueManager) Stop() {
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
 func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
-	t.seriesMtx.Lock()
-	defer t.seriesMtx.Unlock()
+	t.series.lock()
+	defer t.series.unlock()
 	t.seriesSegmentMtx.Lock()
 	defer t.seriesSegmentMtx.Unlock()
 	for _, s := range series {
@@ -1023,28 +1148,65 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 		processExternalLabels(t.builder, t.externalLabels)
 		keep := relabel.ProcessBuilder(t.builder, t.relabelConfigs...)
 		if !keep {
-			t.droppedSeries[s.Ref] = struct{}{}
+			t.series.dropLocked(s.Ref)
 			continue
 		}
-		lbls := t.builder.Labels()
-		t.seriesLabels[s.Ref] = lbls
+		t.series.storeLocked(s.Ref, t.builder.Labels())
 	}
 }
 
 // StoreMetadata keeps track of known series' metadata for lookups when sending samples to remote.
+// This is the pre-MetadataDefinition/SeriesMetadataRef format, kept for WAL segments written
+// before that format existed.
 func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
-	if t.protoMsg == remoteapi.WriteV1MessageType {
+	if !t.series.withMeta {
 		return
 	}
 
-	t.seriesMtx.Lock()
-	defer t.seriesMtx.Unlock()
+	t.series.lock()
+	defer t.series.unlock()
 	for _, m := range meta {
-		t.seriesMetadata[m.Ref] = &metadata.Metadata{
+		// Give each series its own MetadataRef (its series ref, offset to avoid
+		// clashing with refs allocated from the new format) pointing at its own
+		// definition, so both formats resolve through the same seriesStorage
+		// state at the send path.
+		ref := record.MetadataRef(m.Ref) + math.MaxUint32
+		t.series.storeMetadataDefinitionLocked(ref, metadata.Metadata{
 			Type: record.ToMetricType(m.Type),
 			Unit: m.Unit,
 			Help: m.Help,
-		}
+		})
+		t.series.storeSeriesMetadataRefLocked(m.Ref, ref)
+	}
+}
+
+// StoreMetadataDefinitions records the content for each newly-seen MetadataRef.
+func (t *QueueManager) StoreMetadataDefinitions(defs []record.RefMetadataDefinition) {
+	if !t.series.withMeta {
+		return
+	}
+
+	t.series.lock()
+	defer t.series.unlock()
+	for _, def := range defs {
+		t.series.storeMetadataDefinitionLocked(def.Ref, metadata.Metadata{
+			Type: record.ToMetricType(def.Type),
+			Unit: def.Unit,
+			Help: def.Help,
+		})
+	}
+}
+
+// StoreSeriesMetadataRef associates each series with its (possibly new) MetadataRef.
+func (t *QueueManager) StoreSeriesMetadataRef(refs []record.RefSeriesMetadataRef) {
+	if !t.series.withMeta {
+		return
+	}
+
+	t.series.lock()
+	defer t.series.unlock()
+	for _, r := range refs {
+		t.series.storeSeriesMetadataRefLocked(r.Ref, r.MetadataRef)
 	}
 }
 
@@ -1062,8 +1224,8 @@ func (t *QueueManager) UpdateSeriesSegment(series []record.RefSeries, index int)
 // stored series records with the checkpoints index number, so we can now
 // delete any ref ID's lower than that # from the two maps.
 func (t *QueueManager) SeriesReset(index int) {
-	t.seriesMtx.Lock()
-	defer t.seriesMtx.Unlock()
+	t.series.lock()
+	defer t.series.unlock()
 	t.seriesSegmentMtx.Lock()
 	defer t.seriesSegmentMtx.Unlock()
 	// Check for series that are in segments older than the checkpoint
@@ -1071,11 +1233,11 @@ func (t *QueueManager) SeriesReset(index int) {
 	for k, v := range t.seriesSegmentIndexes {
 		if v < index {
 			delete(t.seriesSegmentIndexes, k)
-			delete(t.seriesLabels, k)
-			delete(t.seriesMetadata, k)
-			delete(t.droppedSeries, k)
+			t.series.deleteLocked(k)
 		}
 	}
+	// Drop metadata definitions no longer referenced by any series.
+	t.series.pruneUnreferencedMetadataDefsLocked()
 }
 
 // SetClient updates the client used by a queue. Used when only client specific

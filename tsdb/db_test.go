@@ -5028,25 +5028,45 @@ func TestMetadataInWAL(t *testing.T) {
 	updateMetadata(t, app, s2, m5)
 	require.NoError(t, app.Commit())
 
-	// Read the WAL to see if the disk storage format is correct.
+	// Read the WAL to see if the disk storage format is correct: metadata content
+	// is deduplicated behind MetadataDefinition records, and series point at that
+	// content via SeriesMetadataRef records.
 	recs := readTestWAL(t, path.Join(db.Dir(), "wal"))
-	var gotMetadataBlocks [][]record.RefMetadata
+	var gotMetadataDefBlocks [][]record.RefMetadataDefinition
+	var gotSeriesMetadataRefBlocks [][]record.RefSeriesMetadataRef
 	for _, rec := range recs {
-		if mr, ok := rec.([]record.RefMetadata); ok {
-			gotMetadataBlocks = append(gotMetadataBlocks, mr)
+		switch r := rec.(type) {
+		case []record.RefMetadataDefinition:
+			gotMetadataDefBlocks = append(gotMetadataDefBlocks, r)
+		case []record.RefSeriesMetadataRef:
+			gotSeriesMetadataRefBlocks = append(gotSeriesMetadataRefBlocks, r)
 		}
 	}
 
-	expectedMetadata := []record.RefMetadata{
+	// m1, m2, m3 are new content the first time they're seen (refs 1-3). The
+	// second batch repeats m1 for s1 (no-op, same ref already assigned), sees
+	// m4 for the first time (ref 4), and sees m5 for the first time (ref 5).
+	expectedMetadataDefs := []record.RefMetadataDefinition{
 		{Ref: 1, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help},
 		{Ref: 2, Type: record.GetMetricType(m2.Type), Unit: m2.Unit, Help: m2.Help},
 		{Ref: 3, Type: record.GetMetricType(m3.Type), Unit: m3.Unit, Help: m3.Help},
 		{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
-		{Ref: 2, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
+		{Ref: 5, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
 	}
-	require.Len(t, gotMetadataBlocks, 2)
-	require.Equal(t, expectedMetadata[:3], gotMetadataBlocks[0])
-	require.Equal(t, expectedMetadata[3:], gotMetadataBlocks[1])
+	require.Len(t, gotMetadataDefBlocks, 2)
+	require.Equal(t, expectedMetadataDefs[:3], gotMetadataDefBlocks[0])
+	require.Equal(t, expectedMetadataDefs[3:], gotMetadataDefBlocks[1])
+
+	expectedSeriesMetadataRefs := []record.RefSeriesMetadataRef{
+		{Ref: 1, MetadataRef: 1}, // s1
+		{Ref: 2, MetadataRef: 2}, // s2
+		{Ref: 3, MetadataRef: 3}, // s3
+		{Ref: 4, MetadataRef: 4}, // s4
+		{Ref: 2, MetadataRef: 5}, // s2, changed to m5
+	}
+	require.Len(t, gotSeriesMetadataRefBlocks, 2)
+	require.Equal(t, expectedSeriesMetadataRefs[:3], gotSeriesMetadataRefBlocks[0])
+	require.Equal(t, expectedSeriesMetadataRefs[3:], gotSeriesMetadataRefBlocks[1])
 }
 
 func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
@@ -5132,26 +5152,39 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 
 			// Read in checkpoint and WAL.
 			recs := readTestWAL(t, cdir)
-			var gotMetadataBlocks [][]record.RefMetadata
+			var gotSeriesMetadataRefBlocks [][]record.RefSeriesMetadataRef
+			var gotMetadataDefBlocks [][]record.RefMetadataDefinition
 			for _, rec := range recs {
-				if mr, ok := rec.([]record.RefMetadata); ok {
-					gotMetadataBlocks = append(gotMetadataBlocks, mr)
+				switch r := rec.(type) {
+				case []record.RefSeriesMetadataRef:
+					gotSeriesMetadataRefBlocks = append(gotSeriesMetadataRefBlocks, r)
+				case []record.RefMetadataDefinition:
+					gotMetadataDefBlocks = append(gotMetadataDefBlocks, r)
 				}
 			}
 
-			// There should only be 1 metadata block present, with only the latest
-			// metadata kept around.
-			wantMetadata := []record.RefMetadata{
-				{Ref: 1, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
-				{Ref: 2, Type: record.GetMetricType(m6.Type), Unit: m6.Unit, Help: m6.Help},
-				{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
+			// There should only be 1 block of each present, with only the latest
+			// metadata ref kept per series (s3 dropped entirely per keep()), and
+			// only the MetadataDefinitions still referenced by a kept series.
+			wantSeriesMetadataRefs := []record.RefSeriesMetadataRef{
+				{Ref: 1, MetadataRef: 5}, // s1, ends on m5
+				{Ref: 2, MetadataRef: 6}, // s2, ends on m6
+				{Ref: 4, MetadataRef: 4}, // s4, ends on m4
 			}
-			require.Len(t, gotMetadataBlocks, 1)
-			require.Len(t, gotMetadataBlocks[0], 3)
-			gotMetadataBlock := gotMetadataBlocks[0]
+			require.Len(t, gotSeriesMetadataRefBlocks, 1)
+			gotSeriesMetadataRefBlock := gotSeriesMetadataRefBlocks[0]
+			sort.Slice(gotSeriesMetadataRefBlock, func(i, j int) bool { return gotSeriesMetadataRefBlock[i].Ref < gotSeriesMetadataRefBlock[j].Ref })
+			require.Equal(t, wantSeriesMetadataRefs, gotSeriesMetadataRefBlock)
 
-			sort.Slice(gotMetadataBlock, func(i, j int) bool { return gotMetadataBlock[i].Ref < gotMetadataBlock[j].Ref })
-			require.Equal(t, wantMetadata, gotMetadataBlock)
+			wantMetadataDefs := []record.RefMetadataDefinition{
+				{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
+				{Ref: 5, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
+				{Ref: 6, Type: record.GetMetricType(m6.Type), Unit: m6.Unit, Help: m6.Help},
+			}
+			require.Len(t, gotMetadataDefBlocks, 1)
+			gotMetadataDefBlock := gotMetadataDefBlocks[0]
+			sort.Slice(gotMetadataDefBlock, func(i, j int) bool { return gotMetadataDefBlock[i].Ref < gotMetadataDefBlock[j].Ref })
+			require.Equal(t, wantMetadataDefs, gotMetadataDefBlock)
 			require.NoError(t, hb.Close())
 		})
 	}
@@ -5194,10 +5227,10 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	series2 := db.head.series.getByHash(s2.Hash(), s2)
 	series3 := db.head.series.getByHash(s3.Hash(), s3)
 	series4 := db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, *series1.meta, m1)
-	require.Equal(t, *series2.meta, m2)
-	require.Equal(t, *series3.meta, m3)
-	require.Nil(t, series4.meta)
+	requireSeriesMetadataEqual(t, db.head, series1, m1)
+	requireSeriesMetadataEqual(t, db.head, series2, m2)
+	requireSeriesMetadataEqual(t, db.head, series3, m3)
+	requireNoSeriesMetadata(t, db.head, series4)
 
 	// Add a replicated metadata entry to the first series,
 	// a changed metadata entry to the second series,
@@ -5215,10 +5248,10 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	series2 = db.head.series.getByHash(s2.Hash(), s2)
 	series3 = db.head.series.getByHash(s3.Hash(), s3)
 	series4 = db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, *series1.meta, m1)
-	require.Equal(t, *series2.meta, m5)
-	require.Equal(t, *series3.meta, m3)
-	require.Equal(t, *series4.meta, m4)
+	requireSeriesMetadataEqual(t, db.head, series1, m1)
+	requireSeriesMetadataEqual(t, db.head, series2, m5)
+	requireSeriesMetadataEqual(t, db.head, series3, m3)
+	requireSeriesMetadataEqual(t, db.head, series4, m4)
 
 	require.NoError(t, db.Close())
 
@@ -5228,10 +5261,10 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	_, err := db.head.wal.Size()
 	require.NoError(t, err)
 
-	require.Equal(t, *db.head.series.getByHash(s1.Hash(), s1).meta, m1)
-	require.Equal(t, *db.head.series.getByHash(s2.Hash(), s2).meta, m5)
-	require.Equal(t, *db.head.series.getByHash(s3.Hash(), s3).meta, m3)
-	require.Equal(t, *db.head.series.getByHash(s4.Hash(), s4).meta, m4)
+	requireSeriesMetadataEqual(t, db.head, db.head.series.getByHash(s1.Hash(), s1), m1)
+	requireSeriesMetadataEqual(t, db.head, db.head.series.getByHash(s2.Hash(), s2), m5)
+	requireSeriesMetadataEqual(t, db.head, db.head.series.getByHash(s3.Hash(), s3), m3)
+	requireSeriesMetadataEqual(t, db.head, db.head.series.getByHash(s4.Hash(), s4), m4)
 }
 
 // TestMultipleEncodingsCommitOrder mainly serves to demonstrate when happens when committing a batch of samples for the
