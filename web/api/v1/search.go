@@ -54,6 +54,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
@@ -727,9 +728,18 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 		return nil
 	}
 
+	if api.Queryable == nil {
+		api.respondPreStreamSearchError(w, tsdb.ErrNotReady)
+		return nil
+	}
+
 	q, err := api.Queryable.Querier(timestamp.FromTime(sp.start), timestamp.FromTime(sp.end))
 	if err != nil {
 		api.respondPreStreamSearchError(w, err)
+		return nil
+	}
+	if q == nil {
+		api.respondPreStreamSearchError(w, tsdb.ErrNotReady)
 		return nil
 	}
 

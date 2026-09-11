@@ -160,11 +160,19 @@ func (q errorSearchQuerier) SearchLabelValues(context.Context, string, *storage.
 func TestSearchEndpointsMapTSDBNotReadyToUnavailable(t *testing.T) {
 	testCases := []struct {
 		name      string
-		queryable errorTestQueryable
+		queryable storage.SampleAndChunkQueryable
 	}{
 		{
 			name:      "querier error",
 			queryable: errorTestQueryable{err: tsdb.ErrNotReady},
+		},
+		{
+			name:      "nil querier",
+			queryable: errorTestQueryable{},
+		},
+		{
+			name:      "nil queryable",
+			queryable: nil,
 		},
 		{
 			name: "search result error",
@@ -201,6 +209,35 @@ func TestSearchEndpointsMapTSDBNotReadyToUnavailable(t *testing.T) {
 					require.Contains(t, response.Error, tsdb.ErrNotReady.Error())
 				})
 			}
+		})
+	}
+}
+
+func TestSearchEndpointsStorageNotSupported(t *testing.T) {
+	endpoints := []struct {
+		name   string
+		path   string
+		params url.Values
+	}{
+		{name: "metric names", path: "/search/metric_names"},
+		{name: "label names", path: "/search/label_names"},
+		{name: "label values", path: "/search/label_values", params: url.Values{"label": []string{"job"}}},
+	}
+
+	api := minimalSearchAPI()
+	// errorTestQuerier does not implement storage.Searcher.
+	api.Queryable = errorTestQueryable{q: errorTestQuerier{}}
+
+	for _, endpoint := range endpoints {
+		t.Run(endpoint.name, func(t *testing.T) {
+			rec := doSearchRequest(t, api, endpoint.path, endpoint.params)
+			require.Equal(t, http.StatusInternalServerError, rec.Code)
+
+			var response Response
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+			require.Equal(t, statusError, response.Status)
+			require.Equal(t, errorInternal.str, response.ErrorType)
+			require.Equal(t, "search not supported by storage", response.Error)
 		})
 	}
 }
