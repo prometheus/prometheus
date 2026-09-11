@@ -374,7 +374,7 @@ func TestForStateRestore(t *testing.T) {
 			ng := testEngine(t)
 			opts := &ManagerOptions{
 				QueryFunc:       EngineQueryFunc(ng, storage),
-				Appendable:      storage,
+				AppendableV2:    storage,
 				Queryable:       storage,
 				Context:         context.Background(),
 				Logger:          promslog.NewNopLogger(),
@@ -546,11 +546,11 @@ func TestStaleness(t *testing.T) {
 		}
 		engine := promqltest.NewTestEngineWithOpts(t, engineOpts)
 		opts := &ManagerOptions{
-			QueryFunc:  EngineQueryFunc(engine, st),
-			Appendable: st,
-			Queryable:  st,
-			Context:    context.Background(),
-			Logger:     promslog.NewNopLogger(),
+			QueryFunc:    EngineQueryFunc(engine, st),
+			AppendableV2: st,
+			Queryable:    st,
+			Context:      context.Background(),
+			Logger:       promslog.NewNopLogger(),
 		}
 
 		expr, err := testParser.ParseExpr("a + 1")
@@ -738,7 +738,7 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 		rules:                []Rule{},
 		seriesInPreviousEval: []map[string]labels.Labels{},
 		opts: &ManagerOptions{
-			Appendable:                st,
+			AppendableV2:              st,
 			RuleConcurrencyController: sequentialRuleEvalController{},
 		},
 		metrics: NewGroupMetrics(nil),
@@ -780,11 +780,11 @@ func TestUpdate(t *testing.T) {
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable: st,
-		Queryable:  st,
-		QueryFunc:  EngineQueryFunc(engine, st),
-		Context:    context.Background(),
-		Logger:     promslog.NewNopLogger(),
+		AppendableV2: st,
+		Queryable:    st,
+		QueryFunc:    EngineQueryFunc(engine, st),
+		Context:      context.Background(),
+		Logger:       promslog.NewNopLogger(),
 	})
 	ruleManager.start()
 	defer ruleManager.Stop()
@@ -922,13 +922,13 @@ func TestNotify(t *testing.T) {
 		lastNotified = alerts
 	}
 	opts := &ManagerOptions{
-		QueryFunc:   EngineQueryFunc(engine, storage),
-		Appendable:  storage,
-		Queryable:   storage,
-		Context:     context.Background(),
-		Logger:      promslog.NewNopLogger(),
-		NotifyFunc:  notifyFunc,
-		ResendDelay: 2 * time.Second,
+		QueryFunc:    EngineQueryFunc(engine, storage),
+		AppendableV2: storage,
+		Queryable:    storage,
+		Context:      context.Background(),
+		Logger:       promslog.NewNopLogger(),
+		NotifyFunc:   notifyFunc,
+		ResendDelay:  2 * time.Second,
 	}
 
 	expr, err := testParser.ParseExpr("a > 1")
@@ -994,12 +994,12 @@ func TestMetricsUpdate(t *testing.T) {
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable: storage,
-		Queryable:  storage,
-		QueryFunc:  EngineQueryFunc(engine, storage),
-		Context:    context.Background(),
-		Logger:     promslog.NewNopLogger(),
-		Registerer: registry,
+		AppendableV2: storage,
+		Queryable:    storage,
+		QueryFunc:    EngineQueryFunc(engine, storage),
+		Context:      context.Background(),
+		Logger:       promslog.NewNopLogger(),
+		Registerer:   registry,
 	})
 	ruleManager.start()
 	defer ruleManager.Stop()
@@ -1066,11 +1066,11 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable: storage,
-		Queryable:  storage,
-		QueryFunc:  EngineQueryFunc(engine, storage),
-		Context:    context.Background(),
-		Logger:     promslog.NewNopLogger(),
+		AppendableV2: storage,
+		Queryable:    storage,
+		QueryFunc:    EngineQueryFunc(engine, storage),
+		Context:      context.Background(),
+		Logger:       promslog.NewNopLogger(),
 	})
 	var stopped bool
 	ruleManager.start()
@@ -1144,11 +1144,11 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable: storage,
-		Queryable:  storage,
-		QueryFunc:  EngineQueryFunc(engine, storage),
-		Context:    context.Background(),
-		Logger:     promslog.NewNopLogger(),
+		AppendableV2: storage,
+		Queryable:    storage,
+		QueryFunc:    EngineQueryFunc(engine, storage),
+		Context:      context.Background(),
+		Logger:       promslog.NewNopLogger(),
 	})
 	var stopped bool
 	ruleManager.start()
@@ -1214,11 +1214,11 @@ func TestRuleMovedBetweenGroups(t *testing.T) {
 	}
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable: storage,
-		Queryable:  storage,
-		QueryFunc:  EngineQueryFunc(engine, storage),
-		Context:    context.Background(),
-		Logger:     promslog.NewNopLogger(),
+		AppendableV2: storage,
+		Queryable:    storage,
+		QueryFunc:    EngineQueryFunc(engine, storage),
+		Context:      context.Background(),
+		Logger:       promslog.NewNopLogger(),
 	})
 	var stopped bool
 	ruleManager.start()
@@ -1296,11 +1296,11 @@ func TestRuleHealthUpdates(t *testing.T) {
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, engineOpts)
 	opts := &ManagerOptions{
-		QueryFunc:  EngineQueryFunc(engine, st),
-		Appendable: st,
-		Queryable:  st,
-		Context:    context.Background(),
-		Logger:     promslog.NewNopLogger(),
+		QueryFunc:    EngineQueryFunc(engine, st),
+		AppendableV2: st,
+		Queryable:    st,
+		Context:      context.Background(),
+		Logger:       promslog.NewNopLogger(),
 	}
 
 	expr, err := testParser.ParseExpr("a + 1")
@@ -1395,7 +1395,7 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 	testFunc := func(tst testInput) {
 		opts := &ManagerOptions{
 			QueryFunc:       EngineQueryFunc(ng, storage),
-			Appendable:      storage,
+			AppendableV2:    storage,
 			Queryable:       storage,
 			Context:         context.Background(),
 			Logger:          promslog.NewNopLogger(),
@@ -1477,11 +1477,11 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 
 	ng := testEngine(t)
 	opts := &ManagerOptions{
-		QueryFunc:  EngineQueryFunc(ng, storage),
-		Appendable: storage,
-		Queryable:  storage,
-		Context:    context.Background(),
-		Logger:     promslog.NewNopLogger(),
+		QueryFunc:    EngineQueryFunc(ng, storage),
+		AppendableV2: storage,
+		Queryable:    storage,
+		Context:      context.Background(),
+		Logger:       promslog.NewNopLogger(),
 	}
 
 	expr, err := testParser.ParseExpr("sum(histogram_metric)")
@@ -1543,10 +1543,10 @@ func TestManager_LoadGroups_ShouldCheckWhetherEachRuleHasDependentsAndDependenci
 	storage := teststorage.New(t)
 
 	ruleManager := NewManager(&ManagerOptions{
-		Context:    context.Background(),
-		Logger:     promslog.NewNopLogger(),
-		Appendable: storage,
-		QueryFunc:  func(context.Context, string, time.Time) (promql.Vector, error) { return nil, nil },
+		Context:      context.Background(),
+		Logger:       promslog.NewNopLogger(),
+		AppendableV2: storage,
+		QueryFunc:    func(context.Context, string, time.Time) (promql.Vector, error) { return nil, nil },
 	})
 
 	t.Run("load a mix of dependent and independent rules", func(t *testing.T) {
@@ -1972,11 +1972,11 @@ func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
 
 	files := []string{"fixtures/rules.yaml"}
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable: storage,
-		Queryable:  storage,
-		QueryFunc:  EngineQueryFunc(engine, storage),
-		Context:    context.Background(),
-		Logger:     promslog.NewNopLogger(),
+		AppendableV2: storage,
+		Queryable:    storage,
+		QueryFunc:    EngineQueryFunc(engine, storage),
+		Context:      context.Background(),
+		Logger:       promslog.NewNopLogger(),
 	})
 
 	ruleManager.start()
@@ -2369,7 +2369,7 @@ func TestNewRuleGroupRestoration(t *testing.T) {
 
 	option := optsFactory(store, &maxInflight, &inflightQueries, maxConcurrency)
 	option.Queryable = store
-	option.Appendable = store
+	option.AppendableV2 = store
 	option.NotifyFunc = func(context.Context, string, ...*Alert) {}
 
 	var evalCount atomic.Int32
@@ -2433,7 +2433,7 @@ func TestNewRuleGroupRestorationWithRestoreNewGroupOption(t *testing.T) {
 
 	option := optsFactory(store, &maxInflight, &inflightQueries, maxConcurrency)
 	option.Queryable = store
-	option.Appendable = store
+	option.AppendableV2 = store
 	option.RestoreNewRuleGroups = true
 	option.NotifyFunc = func(context.Context, string, ...*Alert) {}
 
@@ -2574,7 +2574,7 @@ func optsFactory(storage storage.Storage, maxInflight, inflightQueries *atomic.I
 		Logger:                 promslog.NewNopLogger(),
 		ConcurrentEvalsEnabled: concurrent,
 		MaxConcurrentEvals:     maxConcurrent,
-		Appendable:             storage,
+		AppendableV2:           storage,
 		QueryFunc: func(_ context.Context, _ string, ts time.Time) (promql.Vector, error) {
 			inflightMu.Lock()
 
@@ -2750,10 +2750,10 @@ func TestRuleDependencyController_AnalyseRules(t *testing.T) {
 			storage := teststorage.New(t)
 
 			ruleManager := NewManager(&ManagerOptions{
-				Context:    context.Background(),
-				Logger:     promslog.NewNopLogger(),
-				Appendable: storage,
-				QueryFunc:  func(context.Context, string, time.Time) (promql.Vector, error) { return nil, nil },
+				Context:      context.Background(),
+				Logger:       promslog.NewNopLogger(),
+				AppendableV2: storage,
+				QueryFunc:    func(context.Context, string, time.Time) (promql.Vector, error) { return nil, nil },
 			})
 
 			groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, false, tc.ruleFile)
@@ -2778,10 +2778,10 @@ func BenchmarkRuleDependencyController_AnalyseRules(b *testing.B) {
 	storage := teststorage.New(b)
 
 	ruleManager := NewManager(&ManagerOptions{
-		Context:    context.Background(),
-		Logger:     promslog.NewNopLogger(),
-		Appendable: storage,
-		QueryFunc:  func(context.Context, string, time.Time) (promql.Vector, error) { return nil, nil },
+		Context:      context.Background(),
+		Logger:       promslog.NewNopLogger(),
+		AppendableV2: storage,
+		QueryFunc:    func(context.Context, string, time.Time) (promql.Vector, error) { return nil, nil },
 	})
 
 	groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, false, "fixtures/rules_multiple.yaml")
