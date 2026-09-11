@@ -1468,9 +1468,11 @@ func hasMutatedSinceSnapshot(s *memSeries, fingerprints map[storage.SeriesRef]se
 }
 
 // snapshotFingerprints captures a seriesFingerprint per ref against appendIDWatermark, before
-// the caller (CompactSelectedSeries or CompactStaleHead) writes any blocks or lets any other
-// commit run -- see seriesFingerprint. Refs that no longer resolve to a live series are
-// omitted.
+// the caller (CompactSelectedSeries or CompactStaleHead) writes any blocks. Each snapshot is
+// taken under the series lock, but concurrent commits can run between snapshots. Cleanup cannot
+// remove an open transaction's append ID; transactions that close before their series is
+// snapshotted are visible to the subsequent block readers. See seriesFingerprint.
+// Refs that no longer resolve to a live series are omitted.
 func (h *Head) snapshotFingerprints(seriesRefs []storage.SeriesRef, appendIDWatermark uint64) map[storage.SeriesRef]seriesFingerprint {
 	fingerprints := make(map[storage.SeriesRef]seriesFingerprint, len(seriesRefs))
 	for _, ref := range seriesRefs {
