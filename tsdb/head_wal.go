@@ -978,6 +978,9 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 	// The records are always replayed from the oldest to the newest.
 	missingSeries := make(map[chunks.HeadSeriesRef]struct{})
+	// References that this WBL resolves through multiRef. Their series records
+	// have to outlive the WAL checkpoint that follows, see pinWBLAliases.
+	aliasSeries := make(map[chunks.HeadSeriesRef]struct{})
 	for d := range decodedCh {
 		switch v := d.(type) {
 		case []record.RefSample:
@@ -995,6 +998,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				}
 				for _, sam := range samples[:m] {
 					if r, ok := multiRef[sam.Ref]; ok {
+						aliasSeries[sam.Ref] = struct{}{}
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
@@ -1021,6 +1025,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				}
 
 				if r, ok := multiRef[rm.Ref]; ok {
+					aliasSeries[rm.Ref] = struct{}{}
 					rm.Ref = r
 				}
 
@@ -1048,6 +1053,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				}
 				for _, sam := range samples[:m] {
 					if r, ok := multiRef[sam.Ref]; ok {
+						aliasSeries[sam.Ref] = struct{}{}
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
@@ -1078,6 +1084,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				}
 				for _, sam := range samples[:m] {
 					if r, ok := multiRef[sam.Ref]; ok {
+						aliasSeries[sam.Ref] = struct{}{}
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
@@ -1098,6 +1105,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		}
 	}
 	unknownSeriesRefs.merge(missingSeries)
+	h.pinWBLAliases(aliasSeries)
 
 	if decodeErr != nil {
 		return decodeErr

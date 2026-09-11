@@ -7213,6 +7213,139 @@ func testOOODisabled(t *testing.T, scenario sampleTypeScenario) {
 	require.Nil(t, ms.ooo)
 }
 
+// TestOOOSampleLossOnWALCheckpointBeforeOOOCompaction covers the loss of
+// acknowledged out-of-order samples when a WAL checkpoint drops a series record
+// that the WBL still references.
+//
+// A series that is evicted from the head and appended to again is recreated
+// under a new reference, while the earlier reference's series record stays in
+// the WAL. WAL replay collapses both onto a single in-memory series and holds
+// that mapping in multiRef, which is never persisted. Out-of-order samples
+// appended before such a replay are logged to the WBL under the newer
+// reference, so they can only be resolved while the WAL still carries that
+// reference's series record.
+//
+// An in-order head compaction checkpoints the WAL before out-of-order
+// compaction persists the WBL. The checkpoint drops the newer reference,
+// because it is not live in the head and its WAL expiry lies below the
+// checkpoint's mint. If the process stops in that window the WBL holds the only
+// copy of those samples, and they are skipped by the next replay.
+func TestOOOSampleLossOnWALCheckpointBeforeOOOCompaction(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOSampleLossOnWALCheckpointBeforeOOOCompaction(t, scenario)
+		})
+	}
+}
+
+func testOOOSampleLossOnWALCheckpointBeforeOOOCompaction(t *testing.T, scenario sampleTypeScenario) {
+	var (
+		evictedTime = 100 * time.Minute.Milliseconds()
+		inOrderTime = 300 * time.Minute.Milliseconds()
+		oooTime     = 250 * time.Minute.Milliseconds()
+	)
+
+	series := labels.FromStrings("foo", "bar")
+	dir := t.TempDir()
+
+	openDB := func() *DB {
+		opts := DefaultOptions()
+		opts.WALSegmentSize = 32 * 1024
+		opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+		db := newTestDB(t, withDir(dir), withOpts(opts))
+		db.DisableCompactions() // We want to call the compactions manually.
+		return db
+	}
+
+	appendSample := func(db *DB, ts int64) chunks.HeadSeriesRef {
+		app := db.Appender(context.Background())
+		ref, _, err := scenario.appendFunc(app, series, ts, ts)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		return chunks.HeadSeriesRef(ref)
+	}
+
+	// Appending large label values fills WAL segments, so that the in-order
+	// compaction below has enough segments to checkpoint. Checkpointing only
+	// considers the lower two thirds of the existing segments.
+	fillWALSegments := func(db *DB) {
+		app := db.Appender(context.Background())
+		padding := string(bytes.Repeat([]byte("x"), 8192))
+		for i := range 32 {
+			_, err := app.Append(0, labels.FromStrings("foo", "pad", "id", strconv.Itoa(i), "padding", padding), inOrderTime, float64(i))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	querySeries := func(db *DB) map[string][]chunks.Sample {
+		q, err := db.Querier(math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		return query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	}
+
+	// Compact the series into a block and evict it from the head, so that the
+	// next append recreates it under a new series reference. The WAL is too
+	// short to be checkpointed here, so the evicted reference's series record
+	// survives in the WAL.
+	db := openDB()
+	evictedRef := appendSample(db, evictedTime)
+	require.NoError(t, db.CompactHead(NewRangeHead(db.head, 0, evictedTime)))
+	require.Equal(t, uint64(0), db.head.NumSeries(), "the series must be evicted from the head")
+
+	// Recreate the series under a new reference and append an out-of-order
+	// sample, which is written to the WBL under that new reference.
+	recreatedRef := appendSample(db, inOrderTime)
+	require.NotEqual(t, evictedRef, recreatedRef, "the series must be recreated under a new reference")
+	appendSample(db, oooTime)
+	fillWALSegments(db)
+	require.NoError(t, db.Close())
+
+	// Replaying the WAL maps the newer reference onto the evicted one. The
+	// mapping only exists in memory, and the out-of-order sample recovered from
+	// the WBL does not extend the newer reference's WAL retention.
+	db = openDB()
+	expected := map[string][]chunks.Sample{
+		series.String(): {
+			scenario.sampleFunc(evictedTime, evictedTime),
+			scenario.sampleFunc(oooTime, oooTime),
+			scenario.sampleFunc(inOrderTime, inOrderTime),
+		},
+	}
+	requireEqualSeries(t, expected, querySeries(db), true)
+
+	// Only the WBL addresses the out-of-order sample, through a reference that
+	// no longer identifies a series in the head. Its WAL expiry is the in-order
+	// sample's timestamp, which the checkpoint below truncates past.
+	require.Nil(t, db.head.series.getByID(recreatedRef), "the recreated reference must not be live in the head")
+	keepUntil, ok := db.head.getWALExpiry(recreatedRef)
+	require.True(t, ok)
+	require.Equal(t, inOrderTime, keepUntil)
+
+	// Compacting the in-order head checkpoints the WAL. Out-of-order compaction
+	// would persist the WBL afterwards, but is not reached here.
+	require.NoError(t, db.CompactHead(NewRangeHead(db.head, db.head.MinTime(), inOrderTime)))
+	require.Positive(t, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal), "the in-order compaction must checkpoint the WAL")
+	require.NoError(t, db.Close())
+
+	// The WBL is now the only copy of the out-of-order sample.
+	db = openDB()
+	requireEqualSeries(t, expected, querySeries(db), true)
+	require.Zero(t,
+		prom_testutil.ToFloat64(db.head.metrics.wblReplayUnknownRefsTotal.WithLabelValues("series")),
+		"WBL replay must not encounter unknown series references",
+	)
+
+	// Out-of-order compaction persists the WBL into a block and truncates it,
+	// after which the reference the WBL used is no longer needed.
+	require.NoError(t, db.CompactOOOHead(context.Background()))
+	require.False(t, db.head.isWBLAlias(recreatedRef), "the reference must be released once the WBL is truncated")
+	require.NoError(t, db.Close())
+
+	db = openDB()
+	requireEqualSeries(t, expected, querySeries(db), true)
+}
+
 func TestWBLAndMmapReplay(t *testing.T) {
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
