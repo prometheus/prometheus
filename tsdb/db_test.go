@@ -12022,7 +12022,7 @@ func TestCompactionSurvivesChunkRollAndMmap(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 			refs := []storage.SeriesRef{ref}
-			before := db.head.snapshotFingerprints(refs)
+			before := db.head.snapshotFingerprints(refs, math.MaxUint64)
 			compactHeadViewBeforeEvictTestingCallback = func() {
 				app := db.Appender(context.Background())
 				_, err := app.Append(ref, sel, 1000, v)
@@ -12031,7 +12031,7 @@ func TestCompactionSurvivesChunkRollAndMmap(t *testing.T) {
 				db.ForceHeadMMap()
 				// The chunk roll and mmap alone must not make the fingerprint look unchanged --
 				// otherwise the eviction check below would wrongly trust it.
-				require.NotEqual(t, before, db.head.snapshotFingerprints(refs), "the fingerprint must reflect the append across a chunk roll and mmap")
+				require.NotEqual(t, before, db.head.snapshotFingerprints(refs, math.MaxUint64), "the fingerprint must reflect the append across a chunk roll and mmap")
 			}
 			t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
 			if stale {
@@ -12054,7 +12054,8 @@ func TestCompactionSurvivesChunkRollAndMmap(t *testing.T) {
 // A multi-series Commit() writes each series in turn and only closes the whole transaction at
 // the end. This test pauses Commit() right after it writes the selected series but before it
 // can close the transaction, so the fingerprint snapshot already reflects the new sample and
-// can never see it change. Only appendIDWatermark (via hasAppendIDAbove) catches this case.
+// can never see it change. Only the durable watermarkViolatedAtSnapshot flag, captured via
+// hasAppendIDAbove at snapshot time, catches this case.
 func TestCompactSelectedSeries_SurvivesMutationFromStillOpenTransaction(t *testing.T) {
 	if defaultIsolationDisabled {
 		t.Skip("This reproduction needs isolation to exclude the incomplete appender.")
@@ -12103,4 +12104,144 @@ func TestCompactSelectedSeries_SurvivesMutationFromStillOpenTransaction(t *testi
 	require.NoError(t, err)
 	got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
 	require.Len(t, got[`{name="selected"}`], 2, "The sample at 400 must survive compaction.")
+}
+
+// TestCompactSelectedSeries_SurvivesEvidenceErasedByUnrelatedCleanup verifies that a sample
+// survives compaction even when the one piece of evidence that would have proven it's missing
+// from the block gets erased before the eviction check ever looks at it.
+//
+// The sequence: a transaction writes the sample, then closes. Afterward, a totally unrelated
+// write lands on the same series -- an exact duplicate that changes no data -- but even that
+// no-op write triggers routine append-ID cleanup, which happens to wipe out the record of the
+// original write ever happening. If that record were the only evidence, eviction would see
+// nothing wrong and delete the series. It doesn't, because the violation was already recorded
+// as a durable fact the moment it was first seen (see seriesFingerprint.watermarkViolatedAtSnapshot),
+// so later cleanup can't erase it.
+func TestCompactSelectedSeries_SurvivesEvidenceErasedByUnrelatedCleanup(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("This reproduction needs isolation to exclude the incomplete appender.")
+	}
+	opts := DefaultOptions()
+	opts.MinBlockDuration = 1000
+	opts.MaxBlockDuration = 1000
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+	sel := labels.FromStrings("name", "selected")
+	filler := labels.FromStrings("name", "filler")
+	app := db.Appender(context.Background())
+	ref, err := app.Append(0, sel, 100, 1)
+	require.NoError(t, err)
+	fillerRef, err := app.Append(0, filler, 700, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	app = db.Appender(context.Background())
+	_, err = app.Append(ref, sel, 400, 2)
+	require.NoError(t, err)
+	_, err = app.Append(fillerRef, filler, 700, 1)
+	require.NoError(t, err)
+
+	// Pause Commit on its second series after it mutates the selected series.
+	blocker := db.head.series.getByID(chunks.HeadSeriesRef(fillerRef))
+	blocker.Lock()
+	var unlockOnce sync.Once
+	unlock := func() { unlockOnce.Do(blocker.Unlock) }
+	defer unlock()
+	done := make(chan error, 1)
+	go func() { done <- app.Commit() }()
+	series := db.head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.Eventually(t, func() bool {
+		series.Lock()
+		defer series.Unlock()
+		return series.maxTime() == 400 && !series.hasPendingCommit()
+	}, 5*time.Second, time.Millisecond)
+
+	compactHeadViewBeforeEvictTestingCallback = func() {
+		unlock()
+		require.NoError(t, <-done)
+		// A duplicate sample changes no chunks but runs append-ID cleanup.
+		cleanup := db.Appender(context.Background())
+		_, err := cleanup.Append(ref, sel, 400, 2)
+		require.NoError(t, err)
+		require.NoError(t, cleanup.Commit())
+		series.Lock()
+		if series.txs != nil {
+			require.Zero(t, series.txs.txIDCount)
+		}
+		series.Unlock()
+	}
+	t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+	q, err := db.Querier(0, 1000)
+	require.NoError(t, err)
+	got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+	require.Len(t, got[`{name="selected"}`], 2, "The sample at 400 must survive compaction.")
+}
+
+// TestCompactionSurvivesLateAppendWithErasedWatermarkEvidence verifies that a sample appended
+// after the fingerprint snapshot survives compaction even when a later, unrelated duplicate
+// write erases the only watermark evidence that it happened.
+//
+// The append itself is real, not a duplicate, so it mutates the chunk -- the fingerprint alone
+// would already catch that. What this test adds is the duplicate that follows: it changes no
+// data, but its Commit() still runs routine append-ID cleanup, which wipes out the append-ID
+// that would have proven the earlier sample wasn't committed yet. Nothing is lost, because the
+// fingerprint never depended on that append-ID in the first place -- it's comparing chunk
+// shape, which the cleanup can't touch.
+func TestCompactionSurvivesLateAppendWithErasedWatermarkEvidence(t *testing.T) {
+	for _, stale := range []bool{false, true} {
+		name := "selected"
+		if stale {
+			name = "stale"
+		}
+		t.Run(name, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.MinBlockDuration = 1000
+			opts.MaxBlockDuration = 1000
+			db := newTestDB(t, withOpts(opts))
+			db.DisableCompactions()
+			sel := labels.FromStrings("name", "selected")
+			v := 2.0
+			if stale {
+				v = math.Float64frombits(value.StaleNaN)
+			}
+			app := db.Appender(t.Context())
+			ref, err := app.Append(0, sel, 100, 1)
+			require.NoError(t, err)
+			_, err = app.Append(ref, sel, 200, v)
+			require.NoError(t, err)
+			_, err = app.Append(0, labels.FromStrings("name", "filler"), 700, 1)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			compactHeadViewBeforeEvictTestingCallback = func() {
+				// Both transactions start after the snapshot and block generation.
+				for range 2 {
+					app := db.Appender(t.Context())
+					_, err := app.Append(ref, sel, 400, v)
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+				}
+			}
+			t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+			if stale {
+				require.NoError(t, db.CompactStaleHead())
+			} else {
+				require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+			}
+			q, err := db.Querier(0, 1000)
+			require.NoError(t, err)
+			got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+			if len(got[sel.String()]) != 3 {
+				t.Errorf("Before restart: want 3 samples, got %v", got[sel.String()])
+			}
+			require.NoError(t, db.Close())
+			db, err = Open(db.Dir(), nil, nil, opts, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, db.Close()) })
+			q, err = db.Querier(0, 1000)
+			require.NoError(t, err)
+			got = query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+			require.Len(t, got[sel.String()], 3, "The sample at 400 must survive restart.")
+		})
+	}
 }
