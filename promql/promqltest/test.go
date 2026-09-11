@@ -73,8 +73,12 @@ var testStartTime = time.Unix(0, 0).UTC()
 
 // LoadedStorage returns storage with generated data using the provided load statements.
 // Non-load statements will cause test errors.
-func LoadedStorage(t testing.TB, input string) *teststorage.TestStorage {
-	test, err := newTest(t, input, false, newTestStorage)
+// Optional teststorage.Option functions can be passed to configure the underlying TSDB storage.
+func LoadedStorage(t testing.TB, input string, opts ...teststorage.Option) *teststorage.TestStorage {
+	testStorage := func(t testing.TB) storage.Storage {
+		return teststorage.New(t, opts...)
+	}
+	test, err := newTest(t, input, false, testStorage)
 	require.NoError(t, err)
 
 	for _, cmd := range test.cmds {
