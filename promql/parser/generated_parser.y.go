@@ -1482,7 +1482,7 @@ yydefault:
 	case 69:
 		yyDollar = yyS[yypt-1 : yypt+1]
 		{
-			if !model.UTF8Validation.IsValidLabelName(yyDollar[1].item.Val) {
+			if !model.UTF8Validation.IsValidLabelName(yyDollar[1].item.Val) || (yylex.(*parser).options.EnableUnquotedUTF8Names && !canPrintLabelName(yyDollar[1].item.Val, true)) {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "invalid label name for grouping: %q", yyDollar[1].item.Val)
 			}
 			yyVAL.item = yyDollar[1].item
