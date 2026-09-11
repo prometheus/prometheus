@@ -69,6 +69,99 @@ Use `clear` to remove all loaded data.
 
 When loading a batch of classic histogram float series, you can optionally append the suffix `_with_nhcb` to convert them to native histograms with custom buckets and load both the original float series and the new histogram series.
 
+### Start timestamps (`@st`)
+
+You can specify a start timestamp (ST) for each sample in a loaded series. The
+ST line immediately precedes the corresponding sample line and uses the same
+metric selector suffixed with `@st`:
+
+```
+load <interval>
+    <series>@st <st_sequence>
+    <series> <points>
+```
+
+The `<st_sequence>` is a space-separated list of ST items. The number of ST
+items must exactly match the number of sample values. If no `@st` line is
+given, all samples have ST=0 (backward compatible).
+
+#### ST item grammar
+
+| Syntax | Meaning |
+|---|---|
+| `_` | Omit ST for this position (ST=0). |
+| `_xN` | N omitted positions. |
+| `<dur>` | One position with the given offset relative to the sample timestamp. |
+| `<dur>xN` | N+1 positions all with the same relative offset. |
+| `<dur>+<dur>xN` | N+1 positions, offset increasing by the step each position. |
+| `<dur>-<dur>xN` | N+1 positions, offset decreasing by the step each position. |
+| `@<dur>` | Absolute ST: `testStartTime + dur` (not relative to the sample timestamp). |
+| `@<dur>xN` | N+1 positions all with the same absolute ST. |
+| `@<dur>+<dur>xN` | N+1 positions, absolute ST increasing by step each position. |
+| `@<dur>-<dur>xN` | N+1 positions, absolute ST decreasing by step each position. |
+| `<dur>^xN` | N+1 positions: first has the given offset, and the next N positions all repeat that same absolute ST value. Useful for "constant ST" blocks that stay symmetrical with the value sequence. |
+| `~` | One position whose ST equals the previous appended sample's timestamp (`st[i] = t[i-1]`). Invalid on the first sample. |
+| `~xN` | N positions all using the previous sample's timestamp. |
+
+Durations use Prometheus duration syntax (e.g. `-1m`, `30s`, `0s`).
+
+For **relative offsets** (without `@`), the absolute ST stored for each sample
+is: `sample_timestamp + offset`.
+
+For **absolute timestamps** (with `@`), the absolute ST is:
+`testStartTime + dur`, regardless of the sample's timestamp.
+
+#### Examples
+
+**Relative offset** — each sample's ST is 1 minute before its own timestamp:
+
+```
+load 5m
+    my_counter@st -1mx4
+    my_counter 0+1x4
+```
+
+This produces samples at t=0m,5m,10m,15m,20m with STs at t=-1m,4m,9m,14m,19m.
+
+**Constant ST block** — all samples in a batch share the same absolute ST
+(useful for cumulative counters where ST marks the process start or last reset):
+
+```
+load 5m
+    my_counter@st @0s^x3
+    my_counter 0+1x3
+```
+
+This produces 4 samples at t=0m,5m,10m,15m, all with ST=0s (the test start
+time). `@0s^x3` sets the first ST to `testStartTime + 0s` and repeats that
+same absolute value for the next 3 positions.
+
+Note the symmetry with the value side: `0+1x3` is 4 values, `@0s^x3` is also
+4 ST entries — one declaration each, with the same repeat count.
+
+**OTel delta — ST equals previous sample's timestamp** (`st[i] = t[i-1]`):
+
+```
+load 5m
+    delta@st _ ~x3
+    delta    _ 1+1x3
+```
+
+The first sample has no ST. For samples at t=5m,10m,15m the ST is set to the
+timestamp of the preceding sample (t=0m,5m,10m respectively). `~xN` produces
+N entries, so `~x3` here gives 3 entries.
+
+**Mixed** — first sample has an absolute ST, rest are omitted:
+
+```
+load 5m
+    my_counter@st @0s _x3
+    my_counter 0+1x3
+```
+
+Only the first sample (t=0m) has ST=0s; the remaining three have ST=0
+(unknown).
+
 ## `clear` command
 
 `clear` removes all data previously loaded with `load` commands.
