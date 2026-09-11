@@ -483,7 +483,7 @@ func splitByRange(ds []dirMeta, tr int64) [][]dirMeta {
 		} else {
 			t0 = tr * ((m.MinTime - tr + 1) / tr)
 		}
-		// Skip blocks that don't fall into the range. This can happen via mis-alignment or
+		// Skip blocks that don't fall into the range. This can happen via misalignment or
 		// by being a multiple of the intended range.
 		if m.MaxTime > t0+tr {
 			i++
