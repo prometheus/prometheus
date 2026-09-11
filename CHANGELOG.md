@@ -3,7 +3,6 @@
 ## main / unreleased
 
 - [ENHANCEMENT] Remote write / Alertmanager: Upgrade `github.com/prometheus/sigv4` to v0.5.0, adding `session_name` and `tags` fields to the `sigv4` configuration block for STS AssumeRole sessions. The existing but previously undocumented `service_name` field is also documented.
-- [FEATURE] API: Support per-query toggling of start timestamp processing via the `X-Prometheus-Use-Start-Timestamps` header on `/api/v1/query` and `/api/v1/query_range`.
 
 ## 3.14.0 / 2026-08-17
 
