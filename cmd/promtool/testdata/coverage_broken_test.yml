@@ -1,0 +1,6 @@
+# Declares no test groups, so nothing else loads the broken rule file. Coverage
+# must not silently report 0/0 as fully covered.
+rule_files:
+  - coverage_broken_rules.yml
+
+tests: []

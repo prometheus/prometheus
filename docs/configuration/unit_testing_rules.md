@@ -310,3 +310,135 @@ When you set `start_timestamp`:
 - All `input_series` samples will be timestamped starting from `start_timestamp`
 - The `eval_time` field in test cases is interpreted as a duration relative to `start_timestamp`
 - The `time()` function will return `start_timestamp + eval_time`
+
+## Rule test coverage
+
+`promtool test rules --coverage` reports to stderr which alerting and recording
+rules of the loaded rule files are exercised by the test assertions. All test
+files given on the command line form a single suite, so a rule file shared by
+several of them is counted once.
+
+```shell
+promtool test rules --coverage test.yml
+```
+
+`--coverage-threshold` additionally fails the command with exit code 1 when total
+coverage is below the given percentage, which is intended for CI gating. A
+positive value implies `--coverage`; `0` disables the check.
+
+```shell
+promtool test rules --coverage-threshold=80 test.yml
+```
+
+Rules no assertion could be attributed to are listed by rule file and group, with
+their position in the group, since two declarations in one group can otherwise
+look identical:
+
+```
+  Uncovered rules:
+    group "partial" in rules.yml:
+      - alert: Twin (rule #1)
+```
+
+### What counts as covered
+
+Coverage is *assertion presence*, not expression branch coverage: it answers
+"does any test assert on this rule's output?", not "does every branch of its
+expression get evaluated?". A rule is covered when:
+
+- an `alert_rule_test` names it in `alertname`, or
+- a `promql_expr_test` expression contains a selector that could read its output.
+
+A failing assertion still counts as covered, because the rule is being tested.
+The test failure fails the command on its own.
+
+Because several alerting rules can share an `alertname`, and promtool evaluates
+same-named alerts together, an `alert_rule_test` covers every rule with that name.
+Only the test groups selected by `--run` contribute coverage; the denominator
+always stays the full set of rules the suite declares.
+
+### Selector attribution
+
+A `promql_expr_test` covers a recording rule when every `__name__` matcher of one
+of its selectors accepts the rule's output metric, and covers an alerting rule
+when a selector reads its `ALERTS` or `ALERTS_FOR_STATE` series with a matching
+`alertname`. Repeated matchers on a label are combined, as in PromQL.
+
+The generated `alertstate` label is matched against the states the rule can
+actually reach. A rule with no `for` is promoted to firing before its first
+sample, so a selector asking for its `pending` state observes nothing and does not
+cover it.
+
+Attribution is a static analysis of the selectors, so it may both under-report and
+over-report:
+
+- A selector with no `__name__` matcher, or an alert selector with no `alertname`
+  matcher, is indeterminate and covers nothing. This under-reports.
+- A matcher on a label the rule does not set is compatible when some value could
+  satisfy every matcher on it, whether or not the rule ever produces that value.
+  `job:up:sum{job="prod"}` therefore counts even if the rule only ever emits
+  `job="staging"`, which over-reports.
+- A matcher set that no value can satisfy does not count. That value is looked
+  for rather than proven, and the search is bounded, so there are three outcomes
+  rather than two. A value is found, and the rule is covered. The matchers confine
+  the label to a finite set, every member is tried, and none works, which rules
+  the selector out. Or the search runs out of candidates or budget, and the result
+  is undecided.
+
+Undecided rules are reported separately from uncovered ones, because the analysis
+does not know whether they have a test. `{job=~"a+",job!~"a|aa|aaa"}` is satisfied
+by `aaaa` and `{job=~".*foo",job=~"xyz.*"}` by `xyzfoo`, but neither value is one
+the search builds. A threshold still fails over undecided rules, so the gate stays
+closed; the report says the coverage lies between two bounds rather than claiming
+the rules are untested.
+- Alert labels containing template syntax are expanded per alert instance, so
+  their value is treated as unknown rather than compared literally. A selector
+  that would not have matched the expanded value still counts, which
+  over-reports.
+
+Attribution also matches on the selectors alone, and deliberately does not
+establish where the samples an assertion sees come from or when they exist:
+
+- The rule the selector names is credited even when every matching sample came
+  from `input_series` rather than from the rule. A test may supply `ALERTS` or a
+  recorded metric directly and still count as covering the rule of that name.
+- `eval_time`, `offset` and `@` are not taken into account, so an assertion
+  reading a time at which the rule produced nothing still counts.
+- A selector inside an expression counts even when it does not affect the result,
+  as in `r or vector(1)`.
+
+### What the denominator contains
+
+Coverage counts the rules of the rule files the given test files reach through
+their `rule_files`, and nothing else. A rule file that no test file references is
+not part of the suite: it produces no warning, adds nothing to the total, and
+cannot lower the percentage.
+
+That matters when the threshold is used to catch a rule added without a test,
+because a whole rule file added without a test file would pass. Point `rule_files`
+at the production rule tree with a glob, or generate the test files from the same
+manifest the rules are deployed from, so that a new rule file is always reached.
+
+### Reliability of the threshold
+
+The threshold is compared against the exact covered and total counts, never the
+rounded percentage in the report, so a threshold of 100 requires every rule to be
+covered *as this analysis counts coverage*.
+
+Two different guarantees are worth keeping apart. Deciding which rules exist fails
+closed: if a rule file fails to load or matches nothing, or the suite declares no
+rules at all, the command reports the problem and exits 1 rather than treating the
+unknown as fully covered. Deciding which rules an assertion covers is the
+analysis described above. It reasons about what a selector *could* read, not what
+it did read, so it can over-report. A passing threshold therefore means every rule
+was attributed an assertion by this model, not that every rule was proven to be
+observed by one.
+
+Reporting without a threshold keeps its exit code: `--coverage` on its own warns
+about rule files it could not analyse but still exits 0, since the test run
+reports rule file errors of its own. Only a positive threshold turns incomplete
+coverage into a failure.
+
+A threshold failure is also written to the JUnit XML output as a failing
+`coverage threshold` test case, so a run that fails only on coverage does not
+appear green to whatever consumes that file.

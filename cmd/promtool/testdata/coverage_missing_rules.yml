@@ -1,0 +1,7 @@
+# Referenced alongside a missing rule file, to check that a partially resolved
+# rule_files list cannot satisfy a coverage threshold.
+groups:
+  - name: g
+    rules:
+      - record: covered:metric
+        expr: vector(1)

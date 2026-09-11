@@ -1,0 +1,6 @@
+# Deliberately unparseable: the expression is not valid PromQL.
+groups:
+  - name: broken
+    rules:
+      - record: broken_metric
+        expr: "("

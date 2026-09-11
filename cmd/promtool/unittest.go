@@ -48,10 +48,20 @@ import (
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
 func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, p parser.Parser, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
-	return RulesUnitTestResult(io.Discard, queryOpts, p, runStrings, diffFlag, debug, ignoreUnknownFields, files...)
+	return RulesUnitTestResult(io.Discard, queryOpts, p, runStrings, diffFlag, debug, ignoreUnknownFields, false, 0, files...)
 }
 
-func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
+// RulesUnitTestResult runs unit tests for rules and writes JUnit XML results to
+// results. coverage reports to stderr which rules the assertions exercise. A
+// coverageThreshold above zero also enables that report and fails the run when
+// coverage is below it or could not be determined.
+func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, runStrings []string, diffFlag, debug, ignoreUnknownFields, coverage bool, coverageThreshold float64, files ...string) int {
+	// Reject non-finite values explicitly: NaN compares false against both bounds,
+	// so it would pass the range check and then disable the gate it was asked for.
+	if math.IsNaN(coverageThreshold) || math.IsInf(coverageThreshold, 0) || coverageThreshold < 0 || coverageThreshold > 100 {
+		fmt.Fprintf(os.Stderr, "invalid --coverage-threshold %s: must be a number between 0 and 100\n", formatThreshold(coverageThreshold))
+		return failureExitCode
+	}
 	failed := false
 	junit := &junitxml.JUnitXML{}
 
@@ -60,8 +70,15 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 		run = regexp.MustCompile(strings.Join(runStrings, "|"))
 	}
 
+	// A positive threshold implies reporting; gating without naming the untested
+	// rules would not be actionable.
+	var cov *ruleCoverage
+	if coverage || coverageThreshold > 0 {
+		cov = newRuleCoverage(p, ignoreUnknownFields)
+	}
+
 	for _, f := range files {
-		if errs := ruleUnitTest(f, queryOpts, p, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f)); errs != nil {
+		if errs := ruleUnitTest(f, queryOpts, p, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f), cov); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -73,6 +90,17 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 		}
 		fmt.Println()
 	}
+	// Gate before writing the XML, so that a run failing only on coverage is not
+	// reported as all green by whatever consumes the JUnit output.
+	if cov != nil {
+		if reason := cov.reportAndGate(os.Stderr, coverageThreshold); reason != "" {
+			fmt.Fprintln(os.Stderr, reason)
+			suite := junit.Suite("rule coverage")
+			suite.Settime(time.Now().Format("2006-01-02T15:04:05"))
+			suite.Case("coverage threshold").Fail(reason)
+			failed = true
+		}
+	}
 	err := junit.WriteXML(results)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to write JUnit XML: %s\n", err)
@@ -83,7 +111,7 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite) []error {
+func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite, cov *ruleCoverage) []error {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		ts.Abort(err)
@@ -102,6 +130,12 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser
 
 	if unitTestInp.EvaluationInterval == 0 {
 		unitTestInp.EvaluationInterval = model.Duration(1 * time.Minute)
+	}
+
+	// Record rule coverage for the suite before running the tests, so rules in
+	// files whose tests fail (or that have no tests at all) are still counted.
+	if cov != nil {
+		cov.record(run, &unitTestInp)
 	}
 
 	evalInterval := time.Duration(unitTestInp.EvaluationInterval)
@@ -163,6 +197,11 @@ type unitTestFile struct {
 	GroupEvalOrder     []string       `yaml:"group_eval_order"`
 	Tests              []testGroup    `yaml:"tests"`
 	FuzzyCompare       bool           `yaml:"fuzzy_compare,omitempty"`
+
+	// unmatchedRuleFiles are the rule_files entries that matched nothing. They
+	// are dropped from RuleFiles, so coverage records them separately to avoid
+	// mistaking a rule file it never saw for one with no untested rules.
+	unmatchedRuleFiles []string `yaml:"-"`
 }
 
 // resolveAndGlobFilepaths joins all relative paths in a configuration
@@ -182,6 +221,7 @@ func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
 		}
 		if len(m) == 0 {
 			fmt.Fprintln(os.Stderr, "  WARNING: no file match pattern", rf)
+			utf.unmatchedRuleFiles = append(utf.unmatchedRuleFiles, rf)
 		}
 		globbedFiles = append(globbedFiles, m...)
 	}
