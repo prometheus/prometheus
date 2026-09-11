@@ -248,6 +248,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.scrape.AppendMetadata = true
 				c.web.AppendMetadata = true
 				c.tsdb.EnableMetadataWALRecords = true
+				c.agent.EnableMetadataWALRecords = true
 				features.Enable(features.TSDB, "metadata_wal_records")
 				logger.Info("Experimental metadata records in WAL enabled")
 			case "promql-per-step-stats":
@@ -1594,6 +1595,7 @@ func main() {
 					"OutOfOrderTimeWindow", cfg.agent.OutOfOrderTimeWindow,
 					"EnableSTAsZeroSample", cfg.agent.EnableSTAsZeroSample,
 					"EnableSTStorage", cfg.tsdb.EnableSTStorage,
+					"EnableMetadataWALRecords", cfg.agent.EnableMetadataWALRecords,
 				)
 
 				localStorage.Set(db, 0)
@@ -2196,6 +2198,7 @@ type agentOptions struct {
 	OutOfOrderTimeWindow         int64 // TODO(bwplotka): Unused option, fix it or remove.
 	EnableSTAsZeroSample         bool
 	EnableSTStorage              bool
+	EnableMetadataWALRecords     bool
 	CheckpointFromInMemorySeries bool
 	CheckpointBatchSize          int
 }
@@ -2215,6 +2218,7 @@ func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Option
 		OutOfOrderTimeWindow:         outOfOrderTimeWindow,
 		EnableSTAsZeroSample:         opts.EnableSTAsZeroSample,
 		EnableSTStorage:              opts.EnableSTStorage,
+		EnableMetadataWALRecords:     opts.EnableMetadataWALRecords,
 		CheckpointFromInMemorySeries: opts.CheckpointFromInMemorySeries,
 		CheckpointBatchSize:          opts.CheckpointBatchSize,
 	}

@@ -19,6 +19,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
@@ -32,6 +33,8 @@ type memSeries struct {
 	// Last recorded timestamp. Used by Storage.gc to determine if a series is
 	// stale.
 	lastTs int64
+
+	meta *metadata.Metadata
 }
 
 // updateTimestamp obtains the lock on s and will attempt to update lastTs.
@@ -56,6 +59,13 @@ func (m *memSeries) Labels() labels.Labels {
 
 func (m *memSeries) LastSampleTimestamp() int64 {
 	return m.lastTs
+}
+
+// Metadata returns the metadata associated with the series, or nil if none is set.
+func (m *memSeries) Metadata() *metadata.Metadata {
+	m.Lock()
+	defer m.Unlock()
+	return m.meta
 }
 
 // seriesHashmap lets agent find a memSeries by its label set, via a 64-bit hash.
@@ -325,7 +335,10 @@ func (s *stripeSeries) refLock(ref chunks.HeadSeriesRef) uint64 {
 	return uint64(ref) & uint64(s.size-1)
 }
 
-var _ ActiveSeries = (*seriesSnapshot)(nil)
+var (
+	_ ActiveSeries             = (*seriesSnapshot)(nil)
+	_ ActiveSeriesWithMetadata = (*seriesSnapshot)(nil)
+)
 
 // seriesSnapshot is a point-in-time copy of a memSeries fields.
 // It is used to avoid holding series locks during checkpoint I/O.
@@ -333,6 +346,7 @@ type seriesSnapshot struct {
 	ref    chunks.HeadSeriesRef
 	lset   labels.Labels
 	lastTs int64
+	meta   *metadata.Metadata
 }
 
 func (s *seriesSnapshot) Ref() chunks.HeadSeriesRef {
@@ -345,6 +359,10 @@ func (s *seriesSnapshot) Labels() labels.Labels {
 
 func (s *seriesSnapshot) LastSampleTimestamp() int64 {
 	return s.lastTs
+}
+
+func (s *seriesSnapshot) Metadata() *metadata.Metadata {
+	return s.meta
 }
 
 func (s *stripeSeries) allSeries() iter.Seq[ActiveSeries] {
@@ -368,6 +386,7 @@ func (s *stripeSeries) allSeries() iter.Seq[ActiveSeries] {
 					ref:    series.ref,
 					lset:   series.lset,
 					lastTs: series.lastTs,
+					meta:   series.meta,
 				}
 				series.Unlock()
 

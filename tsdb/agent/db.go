@@ -100,6 +100,9 @@ type Options struct {
 	// supported record types.
 	EnableSTStorage bool
 
+	// EnableMetadataWALRecords represents 'metadata-wal-records' feature flag.
+	EnableMetadataWALRecords bool
+
 	// CheckpointFromInMemorySeries changes checkpoint implementation to use only in-memory series data when building a checkpoint.
 	// This prevents re-reading the previous checkpoint and segments from disk.
 	CheckpointFromInMemorySeries bool
@@ -272,6 +275,7 @@ type DB struct {
 	walReplaySamplesPool         zeropool.Pool[[]record.RefSample]
 	walReplayHistogramsPool      zeropool.Pool[[]record.RefHistogramSample]
 	walReplayFloatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
+	walReplayMetadataPool        zeropool.Pool[[]record.RefMetadata]
 
 	nextRef *atomic.Uint64
 	series  *stripeSeries
@@ -340,6 +344,8 @@ func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir str
 				pendingHistograms:      make([]record.RefHistogramSample, 0, 100),
 				pendingFloatHistograms: make([]record.RefFloatHistogramSample, 0, 100),
 				pendingExamplars:       make([]record.RefExemplar, 0, 10),
+				pendingMetadata:        make([]record.RefMetadata, 0, 100),
+				metadataSeries:         make([]*memSeries, 0, 100),
 			},
 		}
 	}
@@ -352,6 +358,8 @@ func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir str
 				pendingHistograms:      make([]record.RefHistogramSample, 0, 100),
 				pendingFloatHistograms: make([]record.RefFloatHistogramSample, 0, 100),
 				pendingExamplars:       make([]record.RefExemplar, 0, 10),
+				pendingMetadata:        make([]record.RefMetadata, 0, 100),
+				metadataSeries:         make([]*memSeries, 0, 100),
 			},
 		}
 	}
@@ -476,6 +484,7 @@ func (db *DB) resetWALReplayResources() {
 	db.walReplaySamplesPool = zeropool.Pool[[]record.RefSample]{}
 	db.walReplayHistogramsPool = zeropool.Pool[[]record.RefHistogramSample]{}
 	db.walReplayFloatHistogramsPool = zeropool.Pool[[]record.RefFloatHistogramSample]{}
+	db.walReplayMetadataPool = zeropool.Pool[[]record.RefMetadata]{}
 }
 
 func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, currentSegmentOrCheckpoint int) (err error) {
@@ -542,6 +551,18 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 					return
 				}
 				decoded <- floatHistograms
+			case record.Metadata:
+				meta := db.walReplayMetadataPool.Get()[:0]
+				meta, err = dec.Metadata(rec, meta)
+				if err != nil {
+					errCh <- &wlog.CorruptionErr{
+						Err:     fmt.Errorf("decode metadata: %w", err),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- meta
 			case record.Tombstones, record.Exemplars:
 				// We don't care about tombstones or exemplars during replay.
 				// TODO: If decide to decode exemplars, we should make sure to prepopulate
@@ -667,6 +688,29 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 			}
 			clear(v) // Zero out to avoid retaining histogram data.
 			db.walReplayFloatHistogramsPool.Put(v[:0])
+		case []record.RefMetadata:
+			for _, entry := range v {
+				if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
+					if meta, ok := db.deleted[entry.Ref]; ok && meta.lastSegment <= currentSegmentOrCheckpoint {
+						meta.lastSegment = currentSegmentOrCheckpoint
+						db.deleted[entry.Ref] = meta
+					}
+					entry.Ref = ref
+				}
+				series := db.series.GetByID(entry.Ref)
+				if series == nil {
+					nonExistentSeriesRefs.Inc()
+					continue
+				}
+
+				series.meta = &metadata.Metadata{
+					Type: record.ToMetricType(entry.Type),
+					Unit: entry.Unit,
+					Help: entry.Help,
+				}
+			}
+			clear(v) // Zero out to avoid retaining metadata strings.
+			db.walReplayMetadataPool.Put(v[:0])
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}
@@ -882,6 +926,7 @@ type appenderBase struct {
 	pendingHistograms      []record.RefHistogramSample
 	pendingFloatHistograms []record.RefFloatHistogramSample
 	pendingExamplars       []record.RefExemplar
+	pendingMetadata        []record.RefMetadata
 
 	// Pointers to the series referenced by each element of pendingSamples.
 	// Series lock is not held on elements.
@@ -894,6 +939,10 @@ type appenderBase struct {
 	// Pointers to the series referenced by each element of pendingFloatHistograms.
 	// Series lock is not held on elements.
 	floatHistogramSeries []*memSeries
+
+	// Pointers to the series referenced by each element of pendingMetadata.
+	// Series lock is not held on elements.
+	metadataSeries []*memSeries
 }
 
 type appender struct {
@@ -1090,9 +1139,37 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 	return storage.SeriesRef(series.ref), nil
 }
 
-func (*appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
-	// TODO: Wire metadata in the Agent's appender.
-	return 0, nil
+func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, meta metadata.Metadata) (storage.SeriesRef, error) {
+	if !a.opts.EnableMetadataWALRecords || meta.IsEmpty() {
+		return 0, nil
+	}
+
+	var series *memSeries
+	if ref != 0 {
+		series = a.series.GetByID(chunks.HeadSeriesRef(ref))
+	}
+	if series == nil {
+		series = a.series.GetByHash(l.Hash(), l)
+	}
+	if series == nil {
+		return 0, fmt.Errorf("unknown series when trying to add metadata with HeadSeriesRef: %d and labels: %s", ref, l)
+	}
+
+	series.Lock()
+	hasNewMetadata := series.meta == nil || !series.meta.Equals(meta)
+	series.Unlock()
+
+	if hasNewMetadata {
+		a.pendingMetadata = append(a.pendingMetadata, record.RefMetadata{
+			Ref:  series.ref,
+			Type: record.GetMetricType(meta.Type),
+			Unit: meta.Unit,
+			Help: meta.Help,
+		})
+		a.metadataSeries = append(a.metadataSeries, series)
+	}
+
+	return storage.SeriesRef(series.ref), nil
 }
 
 func (a *appender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.Labels, t, st int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
@@ -1236,6 +1313,14 @@ func (a *appenderBase) log() error {
 		buf = buf[:0]
 	}
 
+	if len(a.pendingMetadata) > 0 {
+		buf = encoder.Metadata(a.pendingMetadata, buf)
+		if err := a.wal.Log(buf); err != nil {
+			return err
+		}
+		buf = buf[:0]
+	}
+
 	if len(a.pendingSamples) > 0 {
 		buf = encoder.Samples(a.pendingSamples, buf)
 		if err := a.wal.Log(buf); err != nil {
@@ -1307,6 +1392,16 @@ func (a *appenderBase) log() error {
 			a.metrics.totalOutOfOrderSamples.Inc()
 		}
 	}
+	for i, m := range a.pendingMetadata {
+		series = a.metadataSeries[i]
+		series.Lock()
+		series.meta = &metadata.Metadata{
+			Type: record.ToMetricType(m.Type),
+			Unit: m.Unit,
+			Help: m.Help,
+		}
+		series.Unlock()
+	}
 
 	return nil
 }
@@ -1318,9 +1413,13 @@ func (a *appenderBase) clearData() {
 	a.pendingHistograms = a.pendingHistograms[:0]
 	a.pendingFloatHistograms = a.pendingFloatHistograms[:0]
 	a.pendingExamplars = a.pendingExamplars[:0]
+	clear(a.pendingMetadata)
+	a.pendingMetadata = a.pendingMetadata[:0]
 	a.sampleSeries = a.sampleSeries[:0]
 	a.histogramSeries = a.histogramSeries[:0]
 	a.floatHistogramSeries = a.floatHistogramSeries[:0]
+	clear(a.metadataSeries)
+	a.metadataSeries = a.metadataSeries[:0]
 }
 
 func (a *appenderBase) rollback() error {

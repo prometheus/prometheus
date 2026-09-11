@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
@@ -1578,4 +1579,240 @@ func BenchmarkGetOrCreate(b *testing.B) {
 			app.getOrCreate(0, lbls[i%n])
 		}
 	})
+}
+
+func readTestWAL(t testing.TB, dir string) (recs []any) {
+	sr, err := wlog.NewSegmentsReader(dir)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, sr.Close())
+	}()
+
+	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+	r := wlog.NewReader(sr)
+
+	for r.Next() {
+		rec := r.Record()
+
+		switch dec.Type(rec) {
+		case record.Series:
+			series, err := dec.Series(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, series)
+		case record.Samples, record.SamplesV2:
+			samples, err := dec.Samples(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, samples)
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
+			samples, err := dec.HistogramSamples(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, samples)
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
+			samples, err := dec.FloatHistogramSamples(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, samples)
+		case record.Tombstones:
+			tstones, err := dec.Tombstones(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, tstones)
+		case record.Metadata:
+			meta, err := dec.Metadata(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, meta)
+		case record.Exemplars:
+			exemplars, err := dec.Exemplars(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, exemplars)
+		default:
+			require.Fail(t, "unknown record type")
+		}
+	}
+	require.NoError(t, r.Err())
+	return recs
+}
+
+func TestUpdateMetadata(t *testing.T) {
+	t.Run("feature disabled", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.EnableMetadataWALRecords = false
+		s := createTestAgentDB(t, nil, opts)
+		defer s.Close()
+
+		app := s.Appender(t.Context())
+		lbls := labels.FromStrings("__name__", "m1")
+		ref, err := app.Append(0, lbls, 1000, 1.0)
+		require.NoError(t, err)
+
+		m := metadata.Metadata{Type: model.MetricTypeGauge, Unit: "bytes", Help: "help"}
+		_, err = app.UpdateMetadata(ref, lbls, m)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		// WAL should not contain any metadata records.
+		recs := readTestWAL(t, s.wal.Dir())
+		for _, rec := range recs {
+			_, ok := rec.([]record.RefMetadata)
+			require.False(t, ok, "unexpected metadata record in WAL when feature is disabled")
+		}
+	})
+
+	t.Run("unknown series", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.EnableMetadataWALRecords = true
+		s := createTestAgentDB(t, nil, opts)
+		defer s.Close()
+
+		app := s.Appender(t.Context())
+		m := metadata.Metadata{Type: model.MetricTypeGauge, Unit: "bytes", Help: "help"}
+		_, err := app.UpdateMetadata(0, labels.FromStrings("__name__", "unknown"), m)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unknown series")
+	})
+
+	t.Run("metadata logged, deduplicated, and updated", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.EnableMetadataWALRecords = true
+		s := createTestAgentDB(t, nil, opts)
+		defer s.Close()
+
+		ctx := t.Context()
+		s1 := labels.FromStrings("__name__", "m1")
+		s2 := labels.FromStrings("__name__", "m2")
+
+		m1 := metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds", Help: "help 1"}
+		m2 := metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help 2"}
+
+		// First transaction: create series and update metadata.
+		app := s.Appender(ctx)
+		ref1, err := app.Append(0, s1, 1000, 1.0)
+		require.NoError(t, err)
+		ref2, err := app.Append(0, s2, 1000, 2.0)
+		require.NoError(t, err)
+
+		_, err = app.UpdateMetadata(ref1, s1, m1)
+		require.NoError(t, err)
+		_, err = app.UpdateMetadata(ref2, s2, m2)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		// Check in-memory metadata.
+		memS1 := s.series.GetByID(chunks.HeadSeriesRef(ref1))
+		require.NotNil(t, memS1)
+		require.Equal(t, &m1, memS1.Metadata())
+
+		memS2 := s.series.GetByID(chunks.HeadSeriesRef(ref2))
+		require.NotNil(t, memS2)
+		require.Equal(t, &m2, memS2.Metadata())
+
+		// Second transaction: append same metadata (dedup) for s1, new metadata for s2.
+		m2Updated := metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help 2 updated"}
+		app = s.Appender(ctx)
+		_, err = app.Append(ref1, s1, 2000, 1.5)
+		require.NoError(t, err)
+		_, err = app.UpdateMetadata(ref1, s1, m1)
+		require.NoError(t, err)
+
+		_, err = app.Append(ref2, s2, 2000, 2.5)
+		require.NoError(t, err)
+		_, err = app.UpdateMetadata(ref2, s2, m2Updated)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		// Verify in-memory updated metadata.
+		require.Equal(t, &m2Updated, memS2.Metadata())
+
+		// Verify WAL content: expected 2 metadata blocks (first has m1, m2; second has only m2Updated).
+		recs := readTestWAL(t, s.wal.Dir())
+		var gotMeta [][]record.RefMetadata
+		for _, rec := range recs {
+			if mr, ok := rec.([]record.RefMetadata); ok {
+				gotMeta = append(gotMeta, mr)
+			}
+		}
+		require.Len(t, gotMeta, 2)
+		require.Equal(t, []record.RefMetadata{
+			{Ref: chunks.HeadSeriesRef(ref1), Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help},
+			{Ref: chunks.HeadSeriesRef(ref2), Type: record.GetMetricType(m2.Type), Unit: m2.Unit, Help: m2.Help},
+		}, gotMeta[0])
+		require.Equal(t, []record.RefMetadata{
+			{Ref: chunks.HeadSeriesRef(ref2), Type: record.GetMetricType(m2Updated.Type), Unit: m2Updated.Unit, Help: m2Updated.Help},
+		}, gotMeta[1])
+	})
+
+	t.Run("rollback does not update metadata", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.EnableMetadataWALRecords = true
+		s := createTestAgentDB(t, nil, opts)
+		defer s.Close()
+
+		ctx := t.Context()
+		s1 := labels.FromStrings("__name__", "m1")
+		m1 := metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds", Help: "help 1"}
+
+		app := s.Appender(ctx)
+		ref1, err := app.Append(0, s1, 1000, 1.0)
+		require.NoError(t, err)
+		_, err = app.UpdateMetadata(ref1, s1, m1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		// Start second transaction and rollback.
+		m1New := metadata.Metadata{Type: model.MetricTypeGauge, Unit: "minutes", Help: "help 1 changed"}
+		app = s.Appender(ctx)
+		_, err = app.UpdateMetadata(ref1, s1, m1New)
+		require.NoError(t, err)
+		require.NoError(t, app.Rollback())
+
+		// Verify in-memory metadata was NOT changed.
+		memS1 := s.series.GetByID(chunks.HeadSeriesRef(ref1))
+		require.NotNil(t, memS1)
+		require.Equal(t, &m1, memS1.Metadata())
+	})
+}
+
+func TestWALReplayMetadata(t *testing.T) {
+	opts := DefaultOptions()
+	opts.EnableMetadataWALRecords = true
+	dir := t.TempDir()
+
+	l := promslog.NewNopLogger()
+	rs := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dir, 30*time.Second, nil, false)
+	defer rs.Close()
+
+	db, err := Open(l, nil, rs, dir, opts)
+	require.NoError(t, err)
+
+	ctx := t.Context()
+	s1 := labels.FromStrings("__name__", "cpu_usage")
+	s2 := labels.FromStrings("__name__", "mem_bytes")
+
+	m1 := metadata.Metadata{Type: model.MetricTypeGauge, Unit: "percent", Help: "CPU usage percentage"}
+	m2 := metadata.Metadata{Type: model.MetricTypeGauge, Unit: "bytes", Help: "Memory used in bytes"}
+
+	app := db.Appender(ctx)
+	ref1, err := app.Append(0, s1, 1000, 50.0)
+	require.NoError(t, err)
+	ref2, err := app.Append(0, s2, 1000, 1024.0)
+	require.NoError(t, err)
+
+	_, err = app.UpdateMetadata(ref1, s1, m1)
+	require.NoError(t, err)
+	_, err = app.UpdateMetadata(ref2, s2, m2)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.NoError(t, db.Close())
+
+	// Reopen DB and verify metadata is restored during WAL replay.
+	db2, err := Open(l, nil, rs, dir, opts)
+	require.NoError(t, err)
+	defer db2.Close()
+
+	mem1 := db2.series.GetByID(chunks.HeadSeriesRef(ref1))
+	require.NotNil(t, mem1)
+	require.Equal(t, &m1, mem1.Metadata())
+
+	mem2 := db2.series.GetByID(chunks.HeadSeriesRef(ref2))
+	require.NotNil(t, mem2)
+	require.Equal(t, &m2, mem2.Metadata())
 }
