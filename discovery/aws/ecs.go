@@ -361,7 +361,7 @@ func (d *ECSDiscovery) listClusterARNs(ctx context.Context) ([]string, error) {
 	return clusterARNs, nil
 }
 
-// describeClusters returns a map of cluster ARN to a slice of clusters.
+// describeClusters returns a map of the requested cluster identifier to its cluster.
 // Uses concurrent requests limited by RequestConcurrency to respect AWS API throttling.
 // Clusters are described in batches of 100 to respect AWS API limits (DescribeClusters allows up to 100 clusters per call).
 func (d *ECSDiscovery) describeClusters(ctx context.Context, clusters []string) (map[string]types.Cluster, error) {
@@ -381,10 +381,20 @@ func (d *ECSDiscovery) describeClusters(ctx context.Context, clusters []string) 
 			}
 
 			for _, cluster := range resp.Clusters {
-				if cluster.ClusterArn != nil {
-					mu.Lock()
-					clusterMap[*cluster.ClusterArn] = cluster
-					mu.Unlock()
+				if cluster.ClusterArn == nil {
+					continue
+				}
+				// A cluster can be requested by its short name or by its ARN,
+				// but is always described with its ARN. Index it by the
+				// identifier it was requested with, as the rest of the
+				// discovery joins on the identifiers it was given.
+				for _, identifier := range batch {
+					if identifier == *cluster.ClusterArn || (cluster.ClusterName != nil && identifier == *cluster.ClusterName) {
+						mu.Lock()
+						clusterMap[identifier] = cluster
+						mu.Unlock()
+						break
+					}
 				}
 			}
 			return nil
@@ -394,7 +404,7 @@ func (d *ECSDiscovery) describeClusters(ctx context.Context, clusters []string) 
 	return clusterMap, errg.Wait()
 }
 
-// listServiceARNs returns a map of cluster ARN to a slice of service ARNs.
+// listServiceARNs returns a map of the requested cluster identifier to a slice of service ARNs.
 // Uses concurrent requests limited by RequestConcurrency to respect AWS API throttling.
 // Services are listed in batches of 100 to respect AWS API limits (ListServices allows up to 100 services per call).
 func (d *ECSDiscovery) listServiceARNs(ctx context.Context, clusters []string) (map[string][]string, error) {
@@ -402,18 +412,18 @@ func (d *ECSDiscovery) listServiceARNs(ctx context.Context, clusters []string) (
 	services := make(map[string][]string)
 	errg, ectx := errgroup.WithContext(ctx)
 	errg.SetLimit(d.cfg.RequestConcurrency)
-	for _, clusterARN := range clusters {
+	for _, clusterIdentifier := range clusters {
 		errg.Go(func() error {
 			var nextToken *string
 			var serviceARNs []string
 			for {
 				resp, err := d.ecs.ListServices(ectx, &ecs.ListServicesInput{
-					Cluster:    aws.String(clusterARN),
+					Cluster:    aws.String(clusterIdentifier),
 					NextToken:  nextToken,
 					MaxResults: aws.Int32(100),
 				})
 				if err != nil {
-					return fmt.Errorf("could not list services for cluster %q: %w", clusterARN, err)
+					return fmt.Errorf("could not list services for cluster %q: %w", clusterIdentifier, err)
 				}
 
 				serviceARNs = append(serviceARNs, resp.ServiceArns...)
@@ -425,7 +435,7 @@ func (d *ECSDiscovery) listServiceARNs(ctx context.Context, clusters []string) (
 			}
 
 			mu.Lock()
-			services[clusterARN] = serviceARNs
+			services[clusterIdentifier] = serviceARNs
 			mu.Unlock()
 			return nil
 		})
@@ -468,16 +478,16 @@ func (d *ECSDiscovery) describeServices(ctx context.Context, clusterARN string, 
 	return services, errg.Wait()
 }
 
-// listTaskARNs returns a map of clustersARN to a slice of task ARNs.
+// listTaskARNs returns a map of the requested cluster identifier to a slice of task ARNs.
 // Uses concurrent requests limited by RequestConcurrency to respect AWS API throttling.
 // Tasks are listed in batches of 100 to respect AWS API limits (ListTasks allows up to 100 tasks per call).
 // This method also uses pagination to handle cases where there are more than 100 tasks in a cluster.
-func (d *ECSDiscovery) listTaskARNs(ctx context.Context, clusterARNs []string) (map[string][]string, error) {
+func (d *ECSDiscovery) listTaskARNs(ctx context.Context, clusters []string) (map[string][]string, error) {
 	mu := sync.Mutex{}
 	tasks := make(map[string][]string)
 	errg, ectx := errgroup.WithContext(ctx)
 	errg.SetLimit(d.cfg.RequestConcurrency)
-	for _, clusterARN := range clusterARNs {
+	for _, clusterIdentifier := range clusters {
 		errg.Go(func() error {
 			var (
 				nextToken *string
@@ -485,12 +495,12 @@ func (d *ECSDiscovery) listTaskARNs(ctx context.Context, clusterARNs []string) (
 			)
 			for {
 				resp, err := d.ecs.ListTasks(ectx, &ecs.ListTasksInput{
-					Cluster:    aws.String(clusterARN),
+					Cluster:    aws.String(clusterIdentifier),
 					NextToken:  nextToken,
 					MaxResults: aws.Int32(100),
 				})
 				if err != nil {
-					return fmt.Errorf("could not list tasks for cluster %q: %w", clusterARN, err)
+					return fmt.Errorf("could not list tasks for cluster %q: %w", clusterIdentifier, err)
 				}
 
 				taskARNs = append(taskARNs, resp.TaskArns...)
@@ -502,7 +512,7 @@ func (d *ECSDiscovery) listTaskARNs(ctx context.Context, clusterARNs []string) (
 			}
 
 			mu.Lock()
-			tasks[clusterARN] = taskARNs
+			tasks[clusterIdentifier] = taskARNs
 			mu.Unlock()
 			return nil
 		})
@@ -729,7 +739,9 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 		Source: d.region,
 	}
 
-	// Fetch cluster details, service ARNs, and task ARNs in parallel
+	// Fetch cluster details, service ARNs, and task ARNs in parallel.
+	// All three are keyed by the identifiers of the clusters slice, so they can
+	// be joined below whether those identifiers are cluster names or ARNs.
 	var (
 		clusterMap map[string]types.Cluster
 		serviceMap map[string][]string
@@ -764,8 +776,17 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 		clusterTargets []model.LabelSet
 	)
 
-	for clusterARN, taskARNs := range taskMap {
+	for clusterIdentifier, taskARNs := range taskMap {
 		if len(taskARNs) == 0 {
+			continue
+		}
+
+		cluster, ok := clusterMap[clusterIdentifier]
+		if !ok {
+			// The cluster has tasks but could not be described, for instance
+			// because it was deleted after its tasks were listed. Skip it
+			// rather than dereferencing the zero cluster below.
+			d.logger.Debug("Cluster not found in DescribeClusters response", "cluster", clusterIdentifier)
 			continue
 		}
 
@@ -1072,7 +1093,7 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 			clusterMu.Lock()
 			clusterTargets = append(clusterTargets, taskTargets...)
 			clusterMu.Unlock()
-		}(clusterMap[clusterARN], serviceMap[clusterARN], taskARNs)
+		}(cluster, serviceMap[clusterIdentifier], taskARNs)
 	}
 
 	clusterWg.Wait()

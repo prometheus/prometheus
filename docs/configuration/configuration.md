@@ -1350,7 +1350,8 @@ filters:
       values: <string>, [...] ]
 
 # List of ECS, ElastiCache, MSK, or RDS cluster identifiers (ecs, elasticache, msk, and rds roles only) to discover.
-# A List of ARNs of clusters to discover. If empty, all clusters in the region are discovered.
+# A List of ARNs of clusters to discover. The ecs role also accepts cluster names.
+# If empty, all clusters in the region are discovered.
 # This can significantly improve performance when you only need to monitor specific clusters/caches.
 [ clusters: [<string>, ...] ]
 
