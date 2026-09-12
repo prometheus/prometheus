@@ -82,7 +82,8 @@ func TestReinstallingTracerProviderWithTLS(t *testing.T) {
 			Endpoint:   "localhost:1234",
 			ClientType: config.TracingClientGRPC,
 			TLSConfig: config_util.TLSConfig{
-				CAFile: "testdata/ca.cer",
+				CAFile:     "testdata/ca.cer",
+				NextProtos: []string{"h2"},
 			},
 		},
 	}
