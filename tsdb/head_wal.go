@@ -1290,9 +1290,10 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 }
 
 const (
-	chunkSnapshotRecordTypeSeries     uint8 = 1
-	chunkSnapshotRecordTypeTombstones uint8 = 2
-	chunkSnapshotRecordTypeExemplars  uint8 = 3
+	chunkSnapshotRecordTypeSeries      uint8 = 1
+	chunkSnapshotRecordTypeTombstones  uint8 = 2
+	chunkSnapshotRecordTypeExemplars   uint8 = 3
+	chunkSnapshotRecordTypeWALExpiries uint8 = 4
 )
 
 type chunkSnapshotRecord struct {
@@ -1439,8 +1440,8 @@ const chunkSnapshotPrefix = "chunk_snapshot."
 // M is the offset in segment N upto which data was written.
 //
 // The snapshot first contains all series (each in individual records and not sorted), followed by
-// tombstones (a single record), and finally exemplars (>= 1 record). Exemplars are in the order they
-// were written to the circular buffer.
+// tombstones (a single record), exemplars, and WAL series expiries (>= 1 record).
+// Exemplars are in the order they were written to the circular buffer.
 func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 	if h.wal == nil {
 		// If we are not storing any WAL, does not make sense to take a snapshot too.
@@ -1580,6 +1581,30 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 	// Flush remaining exemplars.
 	if err := flushExemplars(); err != nil {
 		return stats, fmt.Errorf("flush exemplars at the end: %w", err)
+	}
+
+	// Preserve references no longer in the Head which are still needed by WAL readers.
+	// Write bounded batches without copying the entire expiry map.
+	const maxWALExpiriesPerRecord = 10000
+	encbuf := encoding.Encbuf{B: buf[:0]}
+	encbuf.PutByte(chunkSnapshotRecordTypeWALExpiries)
+	h.walExpiriesMtx.Lock()
+	for ref, keepUntil := range h.walExpiries {
+		encbuf.PutBE64(uint64(ref))
+		encbuf.PutBE64int64(keepUntil)
+		if len(encbuf.Get()) >= 1+16*maxWALExpiriesPerRecord {
+			if err := cp.Log(encbuf.Get()); err != nil {
+				h.walExpiriesMtx.Unlock()
+				return stats, fmt.Errorf("flush WAL expiries: %w", err)
+			}
+			encbuf.Reset()
+			encbuf.PutByte(chunkSnapshotRecordTypeWALExpiries)
+		}
+	}
+	h.walExpiriesMtx.Unlock()
+	// Even an empty record marks the snapshot as preserving WAL expiry state.
+	if err := cp.Log(encbuf.Get()); err != nil {
+		return stats, fmt.Errorf("flush remaining WAL expiries: %w", err)
 	}
 
 	if err := cp.Close(); err != nil {
@@ -1804,6 +1829,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 
 	r := wlog.NewReader(sr)
 	var loopErr error
+	var walExpiriesLoaded bool
 Outer:
 	for r.Next() {
 		select {
@@ -1882,6 +1908,30 @@ Outer:
 				}
 			}
 
+		case chunkSnapshotRecordTypeWALExpiries:
+			if (len(rec)-1)%16 != 0 {
+				loopErr = errors.New("invalid WAL expiry record length")
+				break Outer
+			}
+			decbuf := encoding.Decbuf{B: rec[1:]}
+			var maxRef uint64
+			h.walExpiriesMtx.Lock()
+			for len(decbuf.B) > 0 {
+				ref := decbuf.Be64()
+				h.walExpiries[chunks.HeadSeriesRef(ref)] = decbuf.Be64int64()
+				maxRef = max(maxRef, ref)
+			}
+			h.walExpiriesMtx.Unlock()
+			// Snapshot series loaders also advance the counter. Do not reuse an
+			// alias reference that is absent from the snapshot's live series.
+			for {
+				lastSeriesID := h.lastSeriesID.Load()
+				if lastSeriesID >= maxRef || h.lastSeriesID.CompareAndSwap(lastSeriesID, maxRef) {
+					break
+				}
+			}
+			walExpiriesLoaded = true
+
 		default:
 			// This is a record type we don't understand. It is either an old format from earlier versions,
 			// or a new format and the code was rolled back to old version.
@@ -1908,6 +1958,12 @@ Outer:
 
 	if err := r.Err(); err != nil {
 		return -1, -1, nil, fmt.Errorf("read records: %w", err)
+	}
+
+	if !walExpiriesLoaded && h.wal != nil {
+		// Legacy snapshots omit the state needed to retain series in future
+		// checkpoints. Recover it by falling back to a complete WAL replay.
+		return -1, -1, nil, errors.New("snapshot is missing WAL series expiries")
 	}
 
 	if len(refSeries) == 0 {
