@@ -85,6 +85,11 @@ name: <string>
 # Offset the rule evaluation timestamp of this particular group by the specified duration into the past.
 [ query_offset: <duration> | default = global.rule_query_offset ]
 
+# How to handle the remaining rules in the group after one of them
+# fails to evaluate: "independent" (the default) evaluates the remaining
+# rules as usual, while "abort" stops evaluating the rest of the group.
+[ partial_evaluation_strategy: <string> | default = independent ]
+
 # Labels to add or overwrite before storing the result for its rules.
 # Labels defined in <rule> will override the key if it has a collision.
 labels:
@@ -154,6 +159,13 @@ written.
 
 ## Rule query offset
 This is useful to ensure the underlying metrics have been received and stored in Prometheus. Metric availability delays are more likely to occur when Prometheus is running as a remote write target due to the nature of distributed systems, but can also occur when there's anomalies with scraping and/or short evaluation intervals.
+
+## Partial evaluation strategies
+
+Rules in a group are evaluated sequentially, and the evaluation of later rules can be affected when an earlier rule fails. The `partial_evaluation_strategy` field configures how the rest of the group is handled in that case:
+
+- `independent` (the default): all rules in the group are evaluated independently. If a rule fails to evaluate, the remaining rules in the group are still evaluated in the same cycle.
+- `abort`: as soon as a rule fails to evaluate, the evaluation of the remaining rules in the group is skipped for the current cycle.
 
 ## Failed rule evaluations due to slow evaluation
 

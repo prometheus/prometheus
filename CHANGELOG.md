@@ -2,6 +2,7 @@
 
 ## main / unreleased
 
+- [ENHANCEMENT] Rules: Add `partial_evaluation_strategy` field to rule groups, allowing `independent` (default) or `abort` evaluation after a rule fails. #13591
 - [ENHANCEMENT] Remote write / Alertmanager: Upgrade `github.com/prometheus/sigv4` to v0.5.0, adding `session_name` and `tags` fields to the `sigv4` configuration block for STS AssumeRole sessions. The existing but previously undocumented `service_name` field is also documented.
 
 ## 3.14.0 / 2026-08-17
