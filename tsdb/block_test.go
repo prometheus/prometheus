@@ -109,7 +109,11 @@ func TestCreateBlock(t *testing.T) {
 
 func BenchmarkOpenBlock(b *testing.B) {
 	tmpdir := b.TempDir()
-	blockDir := createBlock(b, tmpdir, genSeries(1e6, 20, 0, 10))
+	seriesCount := 1000000
+	if testing.Short() {
+		seriesCount = 100
+	}
+	blockDir := createBlock(b, tmpdir, genSeries(seriesCount, 20, 0, 10))
 	b.Run("benchmark", func(b *testing.B) {
 		for b.Loop() {
 			block, err := OpenBlock(nil, blockDir, nil, nil)
@@ -457,6 +461,9 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 
 	var seriesEntries []storage.Series
 	metricCount := 1000000
+	if testing.Short() {
+		metricCount = 1000
+	}
 	for i := range metricCount {
 		// Note these series are not created in sort order: 'value2' sorts after 'value10'.
 		// This makes a big difference to the benchmark timing.
@@ -765,7 +772,7 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 	require.NoError(tb, app.Commit())
 
 	oooSamplesAppended := 0
-	require.Equal(tb, float64(0), prom_testutil.ToFloat64(head.metrics.outOfOrderSamplesAppended))
+	require.Equal(tb, float64(0), prom_testutil.ToFloat64(head.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat)))
 
 	app = head.Appender(context.Background())
 	for i, lset := range oooSampleLabels {
@@ -778,11 +785,11 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 	}
 	require.NoError(tb, app.Commit())
 
-	actOOOAppended := prom_testutil.ToFloat64(head.metrics.outOfOrderSamplesAppended)
+	actOOOAppended := prom_testutil.ToFloat64(head.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat))
 	require.GreaterOrEqual(tb, actOOOAppended, float64(oooSamplesAppended-len(series)))
 	require.LessOrEqual(tb, actOOOAppended, float64(oooSamplesAppended))
 
-	require.Equal(tb, float64(totalSamples), prom_testutil.ToFloat64(head.metrics.samplesAppended))
+	require.Equal(tb, float64(totalSamples), prom_testutil.ToFloat64(head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat)))
 
 	return head
 }

@@ -51,7 +51,11 @@ func BenchmarkLabelValues_SlowPath(b *testing.B) {
 
 	// Create 100k series with the same label value ("common") but without the matcher label.
 	// This results in a single large posting list for that value, simulating a dense candidate.
-	for i := range 100000 {
+	seriesCount := 100000
+	if testing.Short() {
+		seriesCount = 100
+	}
+	for i := range seriesCount {
 		_, err := app.Append(0, labels.FromStrings("val1", "common", "extra", strconv.Itoa(i)), time.Now().UnixMilli(), 1)
 		require.NoError(b, err)
 	}
