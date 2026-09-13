@@ -1,0 +1,6 @@
+groups:
+  - name: example
+    partial_evaluation_strategy: invalid
+    rules:
+      - record: example_metric:sum
+        expr: sum(example_metric)

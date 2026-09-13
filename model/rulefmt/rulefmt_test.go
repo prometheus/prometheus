@@ -73,6 +73,28 @@ sum without(instance) (rate(requests_total[5m]))
 	}
 }
 
+func TestParsePartialEvaluationStrategy(t *testing.T) {
+	content := []byte(`
+groups:
+  - name: independent_group
+    partial_evaluation_strategy: independent
+    rules:
+      - record: group:up:avg
+        expr: avg(up)
+  - name: abort_group
+    partial_evaluation_strategy: abort
+    rules:
+      - record: group:up:count
+        expr: count(up)
+`)
+	rgs, errs := Parse(content, false, model.UTF8Validation, testParser, testLogger)
+	require.Empty(t, errs, "unexpected errors parsing rules")
+	require.Len(t, rgs.Groups, 2)
+
+	require.Equal(t, PartialEvaluationStrategyIndependent, rgs.Groups[0].PartialEvaluationStrategy)
+	require.Equal(t, PartialEvaluationStrategyAbort, rgs.Groups[1].PartialEvaluationStrategy)
+}
+
 func TestParseFileFailure(t *testing.T) {
 	for _, c := range []struct {
 		filename             string
@@ -118,6 +140,10 @@ func TestParseFileFailure(t *testing.T) {
 		{
 			filename: "record_and_keep_firing_for.bad.yaml",
 			errMsg:   "invalid field 'keep_firing_for' in recording rule",
+		},
+		{
+			filename: "invalid_partial_evaluation_strategy.bad.yaml",
+			errMsg:   "invalid partial_evaluation_strategy",
 		},
 		{
 			filename:             "legacy_validation_annotation.bad.yaml",

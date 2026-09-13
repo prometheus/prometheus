@@ -118,6 +118,20 @@ func (g *RuleGroups) Validate(node ruleGroups, nameValidationScheme model.Valida
 			)
 		}
 
+		if !g.PartialEvaluationStrategy.IsValid() {
+			if j < len(node.Groups) {
+				errs = append(
+					errs,
+					fmt.Errorf("%d:%d: invalid partial_evaluation_strategy: %q", node.Groups[j].Line, node.Groups[j].Column, g.PartialEvaluationStrategy),
+				)
+			} else {
+				errs = append(
+					errs,
+					fmt.Errorf("invalid partial_evaluation_strategy: %q", g.PartialEvaluationStrategy),
+				)
+			}
+		}
+
 		for k, v := range g.Labels {
 			if !nameValidationScheme.IsValidLabelName(k) || k == model.MetricNameLabel {
 				errs = append(
@@ -155,25 +169,46 @@ func (g *RuleGroups) Validate(node ruleGroups, nameValidationScheme model.Valida
 	return errs
 }
 
+// PartialEvaluationStrategy defines how the remaining rules of a rule group
+// are handled after one of its rules fails to evaluate.
+type PartialEvaluationStrategy string
+
+const (
+	// PartialEvaluationStrategyIndependent is the default strategy: the
+	// remaining rules in the group are evaluated as usual after a rule fails.
+	PartialEvaluationStrategyIndependent PartialEvaluationStrategy = "independent"
+	// PartialEvaluationStrategyAbort aborts the evaluation of the remaining
+	// rules in the group as soon as one of them fails.
+	PartialEvaluationStrategyAbort PartialEvaluationStrategy = "abort"
+)
+
+// IsValid reports whether s is a valid PartialEvaluationStrategy. An empty
+// string is valid and treated as PartialEvaluationStrategyIndependent.
+func (s PartialEvaluationStrategy) IsValid() bool {
+	return s == "" || s == PartialEvaluationStrategyIndependent || s == PartialEvaluationStrategyAbort
+}
+
 // RuleGroup is a list of sequentially evaluated recording and alerting rules.
 type RuleGroup struct {
-	Name        string            `yaml:"name"`
-	Interval    model.Duration    `yaml:"interval,omitempty"`
-	QueryOffset *model.Duration   `yaml:"query_offset,omitempty"`
-	Limit       int               `yaml:"limit,omitempty"`
-	Rules       []Rule            `yaml:"rules"`
-	Labels      map[string]string `yaml:"labels,omitempty"`
+	Name                      string                    `yaml:"name"`
+	Interval                  model.Duration            `yaml:"interval,omitempty"`
+	QueryOffset               *model.Duration           `yaml:"query_offset,omitempty"`
+	Limit                     int                       `yaml:"limit,omitempty"`
+	PartialEvaluationStrategy PartialEvaluationStrategy `yaml:"partial_evaluation_strategy,omitempty"`
+	Rules                     []Rule                    `yaml:"rules"`
+	Labels                    map[string]string         `yaml:"labels,omitempty"`
 }
 
 // RuleGroupNode adds yaml.v3 layer to support line and columns outputs for invalid rule groups.
 type RuleGroupNode struct {
 	yaml.Node
-	Name        string            `yaml:"name"`
-	Interval    model.Duration    `yaml:"interval,omitempty"`
-	QueryOffset *model.Duration   `yaml:"query_offset,omitempty"`
-	Limit       int               `yaml:"limit,omitempty"`
-	Rules       []RuleNode        `yaml:"rules"`
-	Labels      map[string]string `yaml:"labels,omitempty"`
+	Name                      string                    `yaml:"name"`
+	Interval                  model.Duration            `yaml:"interval,omitempty"`
+	QueryOffset               *model.Duration           `yaml:"query_offset,omitempty"`
+	Limit                     int                       `yaml:"limit,omitempty"`
+	PartialEvaluationStrategy PartialEvaluationStrategy `yaml:"partial_evaluation_strategy,omitempty"`
+	Rules                     []RuleNode                `yaml:"rules"`
+	Labels                    map[string]string         `yaml:"labels,omitempty"`
 }
 
 // Rule describes an alerting or recording rule.
