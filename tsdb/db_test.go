@@ -591,6 +591,35 @@ func TestDeleteSimple(t *testing.T) {
 	}
 }
 
+// TestDBDeleteConcurrentMatchers ensures that DB.Delete does not alter the passed
+// matchers when deleting from several blocks and the head concurrently.
+// PostingsForMatchers sorts the matchers in place, so sharing the slice between
+// goroutines is a data race. See https://github.com/prometheus/prometheus/issues/14723
+func TestDBDeleteConcurrentMatchers(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	app := db.Appender(ctx)
+	_, err := app.Append(0, labels.FromStrings("__name__", "metric", "job", "a"), 0, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	for range 2 {
+		createBlock(t, db.Dir(), genSeries(1, 1, 0, 10))
+	}
+	require.NoError(t, db.reloadBlocks())
+
+	// Subtracting matcher first, as the parser emits it for metric{job!="x"}.
+	originalMatchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchNotEqual, "job", "x"),
+		labels.MustNewMatcher(labels.MatchEqual, "__name__", "metric"),
+	}
+	matchers := append([]*labels.Matcher{}, originalMatchers...)
+
+	require.NoError(t, db.Delete(ctx, 0, 10, matchers...))
+	require.Equal(t, originalMatchers, matchers)
+}
+
 func TestAmendHistogramDatapointCausesError(t *testing.T) {
 	db := newTestDB(t)
 
