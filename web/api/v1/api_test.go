@@ -1021,26 +1021,14 @@ func TestStats(t *testing.T) {
 			},
 		},
 		{
-			name:        "stats is an unsupported value",
-			param:       "foo",
-			wantWarning: true,
-			expected: func(t *testing.T, i any) {
-				// Deprecated values keep the historical behaviour for now:
-				// any non-empty value enables basic statistics.
-				require.IsType(t, &QueryData{}, i)
-				qd := i.(*QueryData)
-				require.NotNil(t, qd.Stats)
-			},
+			name:    "stats is an unsupported value",
+			param:   "foo",
+			wantErr: errorBadData,
 		},
 		{
-			name:        "stats is an unsupported truthy value",
-			param:       "1",
-			wantWarning: true,
-			expected: func(t *testing.T, i any) {
-				require.IsType(t, &QueryData{}, i)
-				qd := i.(*QueryData)
-				require.NotNil(t, qd.Stats)
-			},
+			name:    "stats is an unsupported truthy value",
+			param:   "1",
+			wantErr: errorBadData,
 		},
 		{
 			name:  "stats is true",
@@ -4974,12 +4962,20 @@ func TestExtractQueryOpts(t *testing.T) {
 			err: nil,
 		},
 		{
+			name: "with stats true",
+			form: url.Values{
+				"stats": []string{"true"},
+			},
+			expect: promql.NewPrometheusQueryOpts(false, 0, nil),
+			err:    nil,
+		},
+		{
 			name: "with stats none",
 			form: url.Values{
 				"stats": []string{"none"},
 			},
-			expect: promql.NewPrometheusQueryOpts(false, 0, nil),
-			err:    nil,
+			expect: nil,
+			err:    errors.New(`invalid value "none" for parameter "stats", supported values are "true" and "all"`),
 		},
 		{
 			name: "with lookback delta",
@@ -5024,13 +5020,14 @@ func TestExtractQueryOpts(t *testing.T) {
 		},
 	}
 
+	api := &API{}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			req := &http.Request{Form: test.form, Header: test.header}
 			if req.Header == nil {
 				req.Header = make(http.Header)
 			}
-			opts, err := extractQueryOpts(req)
+			opts, err := api.extractQueryOpts(req)
 			require.Equal(t, test.expect, opts)
 			if test.err == nil {
 				require.NoError(t, err)
