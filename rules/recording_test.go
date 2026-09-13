@@ -128,7 +128,7 @@ func TestRuleEval(t *testing.T) {
 	for _, scenario := range ruleEvalTestScenarios {
 		t.Run(scenario.name, func(t *testing.T) {
 			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
-			result, err := rule.Eval(context.TODO(), 0, ruleEvaluationTime, EngineQueryFunc(ng, storage), nil, 0)
+			result, err := rule.Eval(context.TODO(), 0, 0, ruleEvaluationTime, EngineQueryFunc(ng, storage), nil, 0)
 			require.NoError(t, err)
 			testutil.RequireEqual(t, scenario.expected, result)
 		})
@@ -147,7 +147,7 @@ func BenchmarkRuleEval(b *testing.B) {
 			b.ResetTimer()
 
 			for b.Loop() {
-				_, err := rule.Eval(context.TODO(), 0, ruleEvaluationTime, EngineQueryFunc(ng, storage), nil, 0)
+				_, err := rule.Eval(context.TODO(), 0, 0, ruleEvaluationTime, EngineQueryFunc(ng, storage), nil, 0)
 				if err != nil {
 					require.NoError(b, err)
 				}
@@ -174,7 +174,7 @@ func TestRuleEvalDuplicate(t *testing.T) {
 
 	expr, _ := testParser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
 	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"))
-	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
+	_, err := rule.Eval(ctx, 0, 0, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrDuplicateRecordingLabelSet)
 }
@@ -216,7 +216,7 @@ func TestRecordingRuleLimit(t *testing.T) {
 	evalTime := time.Unix(0, 0)
 
 	for _, test := range tests {
-		switch _, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, test.limit); {
+		switch _, err := rule.Eval(context.TODO(), 0, 0, evalTime, EngineQueryFunc(ng, storage), nil, test.limit); {
 		case err != nil:
 			require.EqualError(t, err, test.err)
 		case test.err != "":
@@ -244,7 +244,7 @@ func TestRecordingEvalWithOrigin(t *testing.T) {
 	require.NoError(t, err)
 
 	rule := NewRecordingRule(name, expr, lbs)
-	_, err = rule.Eval(ctx, 0, now, func(ctx context.Context, _ string, _ time.Time) (promql.Vector, error) {
+	_, err = rule.Eval(ctx, 0, 0, now, func(ctx context.Context, _ string, _ time.Time) (promql.Vector, error) {
 		detail = FromOriginContext(ctx)
 		return nil, nil
 	}, nil, 0)

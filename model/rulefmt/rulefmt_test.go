@@ -124,6 +124,14 @@ func TestParseFileFailure(t *testing.T) {
 			nameValidationScheme: model.LegacyValidation,
 			errMsg:               "invalid annotation name: ins-tance",
 		},
+		{
+			filename: "invalid_evaluation_delay.bad.yaml",
+			errMsg:   "not a valid duration string",
+		},
+		{
+			filename: "invalid_negative_evaluation_delay.bad.yaml",
+			errMsg:   "not a valid duration string",
+		},
 	} {
 		t.Run(c.filename, func(t *testing.T) {
 			if c.nameValidationScheme == model.UnsetValidation {

@@ -83,6 +83,50 @@ func TestGroup_Equals(t *testing.T) {
 			},
 			expected: false,
 		},
+		"evaluation delay set only on the first group": {
+			first: &Group{
+				name:            "group-1",
+				file:            "file-1",
+				interval:        time.Minute,
+				evaluationDelay: pointerOf[time.Duration](time.Minute),
+			},
+			second: &Group{
+				name:     "group-1",
+				file:     "file-1",
+				interval: time.Minute,
+			},
+			expected: false,
+		},
+		"evaluation delay set on both groups to the same value": {
+			first: &Group{
+				name:            "group-1",
+				file:            "file-1",
+				interval:        time.Minute,
+				evaluationDelay: pointerOf[time.Duration](time.Minute),
+			},
+			second: &Group{
+				name:            "group-1",
+				file:            "file-1",
+				interval:        time.Minute,
+				evaluationDelay: pointerOf[time.Duration](time.Minute),
+			},
+			expected: true,
+		},
+		"evaluation delay set on both groups to different value": {
+			first: &Group{
+				name:            "group-1",
+				file:            "file-1",
+				interval:        time.Minute,
+				evaluationDelay: pointerOf[time.Duration](time.Minute),
+			},
+			second: &Group{
+				name:            "group-1",
+				file:            "file-1",
+				interval:        time.Minute,
+				evaluationDelay: pointerOf[time.Duration](2 * time.Minute),
+			},
+			expected: false,
+		},
 	}
 
 	for testName, testData := range tests {

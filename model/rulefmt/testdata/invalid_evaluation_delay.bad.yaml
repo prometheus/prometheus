@@ -1,0 +1,6 @@
+groups:
+  - name: test
+    evaluation_delay: not_a_duration
+    rules:
+      - record: foo
+        expr: sum(up)

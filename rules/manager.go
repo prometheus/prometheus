@@ -432,6 +432,7 @@ func (m *Manager) LoadGroups(
 				ShouldRestore:     shouldRestore,
 				Opts:              m.opts,
 				QueryOffset:       (*time.Duration)(rg.QueryOffset),
+				EvaluationDelay:   (*time.Duration)(rg.EvaluationDelay),
 				done:              m.done,
 				EvalIterationFunc: groupEvalIterationFunc,
 			})

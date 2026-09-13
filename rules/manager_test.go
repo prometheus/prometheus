@@ -169,7 +169,7 @@ func TestAlertingRule(t *testing.T) {
 
 		evalTime := baseTime.Add(test.time)
 
-		res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, 0)
+		res, err := rule.Eval(context.TODO(), 0, 0, evalTime, EngineQueryFunc(ng, storage), nil, 0)
 		require.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
@@ -317,7 +317,7 @@ func TestForStateAddSamples(t *testing.T) {
 					forState = float64(value.StaleNaN)
 				}
 
-				res, err := rule.Eval(context.TODO(), queryOffset, evalTime, EngineQueryFunc(ng, storage), nil, 0)
+				res, err := rule.Eval(context.TODO(), queryOffset, 0, evalTime, EngineQueryFunc(ng, storage), nil, 0)
 				require.NoError(t, err)
 
 				var filteredRes promql.Vector // After removing 'ALERTS' samples.
@@ -2826,3 +2826,86 @@ func (*closeCountingQuery) Statement() parser.Statement { return nil }
 func (*closeCountingQuery) Stats() *stats.Statistics    { return nil }
 func (*closeCountingQuery) Cancel()                     {}
 func (*closeCountingQuery) String() string              { return "" }
+
+func TestGroup_EvaluationDelay(t *testing.T) {
+	config := `
+groups:
+  - name: delayed
+    evaluation_delay: 2m
+    rules:
+      - record: job:up:sum
+        expr: sum(up)
+  - name: zero_explicit
+    evaluation_delay: 0s
+    rules:
+      - record: job:up:sum
+        expr: sum(up)
+  - name: default
+    rules:
+      - record: job:up:sum
+        expr: sum(up)
+`
+
+	dir := t.TempDir()
+	fname := path.Join(dir, "rules.yaml")
+	err := os.WriteFile(fname, []byte(config), fs.ModePerm)
+	require.NoError(t, err)
+
+	m := NewManager(&ManagerOptions{Logger: promslog.NewNopLogger()})
+	m.start()
+
+	err = m.Update(time.Second, []string{fname}, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
+
+	rgs := m.RuleGroups()
+	sort.Slice(rgs, func(i, j int) bool {
+		return rgs[i].Name() < rgs[j].Name()
+	})
+
+	require.Len(t, rgs, 3)
+
+	require.Equal(t, "default", rgs[0].Name())
+	require.Equal(t, time.Duration(0), rgs[0].EvaluationDelay())
+
+	require.Equal(t, "delayed", rgs[1].Name())
+	require.Equal(t, 2*time.Minute, rgs[1].EvaluationDelay())
+
+	require.Equal(t, "zero_explicit", rgs[2].Name())
+	require.Equal(t, time.Duration(0), rgs[2].EvaluationDelay())
+
+	m.Stop()
+}
+
+func TestGroupEval_EvaluationDelay(t *testing.T) {
+	storage := teststorage.New(t)
+
+	expr, err := testParser.ParseExpr("vector(1)")
+	require.NoError(t, err)
+	rule := NewRecordingRule("test_rule", expr, labels.EmptyLabels())
+
+	var gotTs time.Time
+	opts := &ManagerOptions{
+		Logger:     promslog.NewNopLogger(),
+		Appendable: storage,
+		QueryFunc: func(_ context.Context, _ string, ts time.Time) (promql.Vector, error) {
+			gotTs = ts
+			return promql.Vector{}, nil
+		},
+	}
+
+	queryOffset := 1 * time.Minute
+	evaluationDelay := 2 * time.Minute
+	g := NewGroup(GroupOptions{
+		Name:            "test",
+		Interval:        time.Minute,
+		Rules:           []Rule{rule},
+		QueryOffset:     &queryOffset,
+		EvaluationDelay: &evaluationDelay,
+		Opts:            opts,
+	})
+
+	evalTs := time.Unix(0, 0).UTC().Add(10 * time.Minute)
+	g.Eval(context.Background(), evalTs)
+
+	require.Equal(t, evalTs.Add(-queryOffset).Add(-evaluationDelay), gotTs)
+}

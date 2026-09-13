@@ -118,6 +118,10 @@ func (g *RuleGroups) Validate(node ruleGroups, nameValidationScheme model.Valida
 			)
 		}
 
+		if g.EvaluationDelay != nil && time.Duration(*g.EvaluationDelay) < 0 {
+			errs = append(errs, fmt.Errorf("%d:%d: evaluation_delay must not be negative", node.Groups[j].Line, node.Groups[j].Column))
+		}
+
 		for k, v := range g.Labels {
 			if !nameValidationScheme.IsValidLabelName(k) || k == model.MetricNameLabel {
 				errs = append(
@@ -157,23 +161,25 @@ func (g *RuleGroups) Validate(node ruleGroups, nameValidationScheme model.Valida
 
 // RuleGroup is a list of sequentially evaluated recording and alerting rules.
 type RuleGroup struct {
-	Name        string            `yaml:"name"`
-	Interval    model.Duration    `yaml:"interval,omitempty"`
-	QueryOffset *model.Duration   `yaml:"query_offset,omitempty"`
-	Limit       int               `yaml:"limit,omitempty"`
-	Rules       []Rule            `yaml:"rules"`
-	Labels      map[string]string `yaml:"labels,omitempty"`
+	Name            string            `yaml:"name"`
+	Interval        model.Duration    `yaml:"interval,omitempty"`
+	QueryOffset     *model.Duration   `yaml:"query_offset,omitempty"`
+	EvaluationDelay *model.Duration   `yaml:"evaluation_delay,omitempty"`
+	Limit           int               `yaml:"limit,omitempty"`
+	Rules           []Rule            `yaml:"rules"`
+	Labels          map[string]string `yaml:"labels,omitempty"`
 }
 
 // RuleGroupNode adds yaml.v3 layer to support line and columns outputs for invalid rule groups.
 type RuleGroupNode struct {
 	yaml.Node
-	Name        string            `yaml:"name"`
-	Interval    model.Duration    `yaml:"interval,omitempty"`
-	QueryOffset *model.Duration   `yaml:"query_offset,omitempty"`
-	Limit       int               `yaml:"limit,omitempty"`
-	Rules       []RuleNode        `yaml:"rules"`
-	Labels      map[string]string `yaml:"labels,omitempty"`
+	Name            string            `yaml:"name"`
+	Interval        model.Duration    `yaml:"interval,omitempty"`
+	QueryOffset     *model.Duration   `yaml:"query_offset,omitempty"`
+	EvaluationDelay *model.Duration   `yaml:"evaluation_delay,omitempty"`
+	Limit           int               `yaml:"limit,omitempty"`
+	Rules           []RuleNode        `yaml:"rules"`
+	Labels          map[string]string `yaml:"labels,omitempty"`
 }
 
 // Rule describes an alerting or recording rule.

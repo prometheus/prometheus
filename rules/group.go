@@ -47,6 +47,7 @@ type Group struct {
 	file                  string
 	interval              time.Duration
 	queryOffset           *time.Duration
+	evaluationDelay       *time.Duration
 	limit                 int
 	rules                 []Rule
 	seriesInPreviousEval  []map[string]labels.Labels // One per Rule.
@@ -91,6 +92,7 @@ type GroupOptions struct {
 	ShouldRestore     bool
 	Opts              *ManagerOptions
 	QueryOffset       *time.Duration
+	EvaluationDelay   *time.Duration
 	done              chan struct{}
 	EvalIterationFunc GroupEvalIterationFunc
 }
@@ -132,6 +134,7 @@ func NewGroup(o GroupOptions) *Group {
 		file:                 o.File,
 		interval:             o.Interval,
 		queryOffset:          o.QueryOffset,
+		evaluationDelay:      o.EvaluationDelay,
 		limit:                o.Limit,
 		rules:                o.Rules,
 		shouldRestore:        o.ShouldRestore,
@@ -506,6 +509,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		samplesTotal    atomic.Float64
 		ruleQueryOffset = g.QueryOffset()
 	)
+	evalDelay := g.EvaluationDelay()
 	eval := func(i int, rule Rule, cleanup func()) {
 		if cleanup != nil {
 			defer cleanup()
@@ -535,7 +539,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 		g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
-		vector, err := rule.Eval(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
+		vector, err := rule.Eval(ctx, ruleQueryOffset, evalDelay, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
 		if err != nil {
 			rule.SetHealth(HealthBad)
 			rule.SetLastError(err)
@@ -642,7 +646,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		for metric, lset := range g.seriesInPreviousEval[i] {
 			if _, ok := seriesReturned[metric]; !ok {
 				// Series no longer exposed, mark it stale.
-				_, err = app.Append(0, lset, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN))
+				_, err = app.Append(0, lset, timestamp.FromTime(ts.Add(-ruleQueryOffset).Add(-evalDelay)), math.Float64frombits(value.StaleNaN))
 				unwrappedErr := errors.Unwrap(err)
 				if unwrappedErr == nil {
 					unwrappedErr = err
@@ -724,6 +728,13 @@ func (g *Group) QueryOffset() time.Duration {
 	return time.Duration(0)
 }
 
+func (g *Group) EvaluationDelay() time.Duration {
+	if g.evaluationDelay != nil {
+		return *g.evaluationDelay
+	}
+	return time.Duration(0)
+}
+
 func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 	if len(g.staleSeries) == 0 {
 		return
@@ -731,9 +742,10 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 	app := g.opts.Appendable.Appender(ctx)
 	app.SetOptions(g.appOpts)
 	queryOffset := g.QueryOffset()
+	evalDelay := g.EvaluationDelay()
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
-		_, err := app.Append(0, s, timestamp.FromTime(ts.Add(-queryOffset)), math.Float64frombits(value.StaleNaN))
+		_, err := app.Append(0, s, timestamp.FromTime(ts.Add(-queryOffset).Add(-evalDelay)), math.Float64frombits(value.StaleNaN))
 		unwrappedErr := errors.Unwrap(err)
 		if unwrappedErr == nil {
 			unwrappedErr = err
@@ -907,6 +919,10 @@ func (g *Group) Equals(ng *Group) bool {
 	}
 
 	if ((g.queryOffset == nil) != (ng.queryOffset == nil)) || (g.queryOffset != nil && ng.queryOffset != nil && *g.queryOffset != *ng.queryOffset) {
+		return false
+	}
+
+	if ((g.evaluationDelay == nil) != (ng.evaluationDelay == nil)) || (g.evaluationDelay != nil && ng.evaluationDelay != nil && *g.evaluationDelay != *ng.evaluationDelay) {
 		return false
 	}
 
