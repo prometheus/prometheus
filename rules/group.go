@@ -33,6 +33,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
@@ -48,6 +49,7 @@ type Group struct {
 	interval              time.Duration
 	queryOffset           *time.Duration
 	limit                 int
+	partialEvalStrategy   rulefmt.PartialEvaluationStrategy
 	rules                 []Rule
 	seriesInPreviousEval  []map[string]labels.Labels // One per Rule.
 	staleSeries           []labels.Labels
@@ -84,15 +86,16 @@ type Group struct {
 type GroupEvalIterationFunc func(ctx context.Context, g *Group, evalTimestamp time.Time)
 
 type GroupOptions struct {
-	Name, File        string
-	Interval          time.Duration
-	Limit             int
-	Rules             []Rule
-	ShouldRestore     bool
-	Opts              *ManagerOptions
-	QueryOffset       *time.Duration
-	done              chan struct{}
-	EvalIterationFunc GroupEvalIterationFunc
+	Name, File          string
+	Interval            time.Duration
+	Limit               int
+	Rules               []Rule
+	ShouldRestore       bool
+	Opts                *ManagerOptions
+	QueryOffset         *time.Duration
+	PartialEvalStrategy rulefmt.PartialEvaluationStrategy
+	done                chan struct{}
+	EvalIterationFunc   GroupEvalIterationFunc
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -123,6 +126,12 @@ func NewGroup(o GroupOptions) *Group {
 		evalIterationFunc = DefaultEvalIterationFunc
 	}
 
+	partialEvalStrategy := o.PartialEvalStrategy
+	if partialEvalStrategy == "" {
+		// An empty strategy is treated as independent.
+		partialEvalStrategy = rulefmt.PartialEvaluationStrategyIndependent
+	}
+
 	if opts.Logger == nil {
 		opts.Logger = promslog.NewNopLogger()
 	}
@@ -133,6 +142,7 @@ func NewGroup(o GroupOptions) *Group {
 		interval:             o.Interval,
 		queryOffset:          o.QueryOffset,
 		limit:                o.Limit,
+		partialEvalStrategy:  partialEvalStrategy,
 		rules:                o.Rules,
 		shouldRestore:        o.ShouldRestore,
 		opts:                 opts,
@@ -506,7 +516,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		samplesTotal    atomic.Float64
 		ruleQueryOffset = g.QueryOffset()
 	)
-	eval := func(i int, rule Rule, cleanup func()) {
+	eval := func(i int, rule Rule, cleanup func()) error {
 		if cleanup != nil {
 			defer cleanup()
 		}
@@ -547,7 +557,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			if _, ok := errors.AsType[promql.ErrQueryCanceled](err); !ok {
 				logger.Warn("Evaluating rule failed", "rule", rule, "err", err)
 			}
-			return
+			return err
 		}
 		rule.SetHealth(HealthGood)
 		rule.SetLastError(nil)
@@ -570,10 +580,12 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		app := g.opts.Appendable.Appender(ctx)
 		appenderSp.End()
 		seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
+		var commitErr error
 		defer func() {
 			_, commitSp := otel.Tracer("").Start(ctx, "ruleCommit")
 			err := app.Commit()
 			if err != nil {
+				commitErr = err
 				commitSp.RecordError(err)
 				commitSp.SetStatus(codes.Error, err.Error())
 			}
@@ -659,6 +671,8 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				}
 			}
 		}
+
+		return commitErr
 	}
 
 	var wg sync.WaitGroup
@@ -678,11 +692,15 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				return
 			default:
 			}
-			eval(i, rule, nil)
+			if err := eval(i, rule, nil); err != nil && g.partialEvalStrategy == rulefmt.PartialEvaluationStrategyAbort {
+				// Abort the evaluation of the remaining rules in the group.
+				break
+			}
 		}
 	} else {
 		// Concurrent evaluation.
 		for _, batch := range batches {
+			var batchFailed atomic.Bool
 			for _, ruleIndex := range batch {
 				// Check if the group has been stopped.
 				select {
@@ -695,16 +713,27 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				if len(batch) > 1 && ctrl.Allow(ctx, g, rule) {
 					wg.Add(1)
 
-					go eval(ruleIndex, rule, func() {
-						wg.Done()
-						ctrl.Done(ctx)
-					})
+					go func(ruleIndex int, rule Rule) {
+						if err := eval(ruleIndex, rule, func() {
+							wg.Done()
+							ctrl.Done(ctx)
+						}); err != nil {
+							batchFailed.Store(true)
+						}
+					}(ruleIndex, rule)
 				} else {
-					eval(ruleIndex, rule, nil)
+					if err := eval(ruleIndex, rule, nil); err != nil {
+						batchFailed.Store(true)
+					}
 				}
 			}
 			// It is important that we finish processing any rules in this current batch - before we move into the next one.
 			wg.Wait()
+			// With the abort strategy, a failed rule in the batch means the
+			// evaluation of the remaining batches is skipped.
+			if batchFailed.Load() && g.partialEvalStrategy == rulefmt.PartialEvaluationStrategyAbort {
+				return
+			}
 		}
 	}
 
@@ -903,6 +932,20 @@ func (g *Group) Equals(ng *Group) bool {
 	}
 
 	if g.limit != ng.limit {
+		return false
+	}
+
+	// Treat an empty strategy as "independent" to avoid spurious group
+	// recreations.
+	gStrategy := g.partialEvalStrategy
+	if gStrategy == "" {
+		gStrategy = rulefmt.PartialEvaluationStrategyIndependent
+	}
+	ngStrategy := ng.partialEvalStrategy
+	if ngStrategy == "" {
+		ngStrategy = rulefmt.PartialEvaluationStrategyIndependent
+	}
+	if gStrategy != ngStrategy {
 		return false
 	}
 

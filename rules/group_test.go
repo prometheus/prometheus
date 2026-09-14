@@ -14,10 +14,18 @@
 package rules
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/util/teststorage"
 )
 
 func TestGroup_Equals(t *testing.T) {
@@ -95,4 +103,66 @@ func TestGroup_Equals(t *testing.T) {
 
 func pointerOf[T any](value T) *T {
 	return &value
+}
+
+func TestGroup_PartialEvaluationStrategy(t *testing.T) {
+	storage := teststorage.New(t)
+	engine := testEngine(t)
+
+	firstExpr, err := testParser.ParseExpr("vector(0)")
+	require.NoError(t, err)
+	secondExpr, err := testParser.ParseExpr("vector(1)")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name                  string
+		strategy              rulefmt.PartialEvaluationStrategy
+		expectSecondEvaluated bool
+	}{
+		{
+			name:                  "independent",
+			strategy:              rulefmt.PartialEvaluationStrategyIndependent,
+			expectSecondEvaluated: true,
+		},
+		{
+			name:                  "abort",
+			strategy:              rulefmt.PartialEvaluationStrategyAbort,
+			expectSecondEvaluated: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var secondEvaluated bool
+			base := EngineQueryFunc(engine, storage)
+			qf := func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) {
+				if q == "vector(0)" {
+					return nil, errors.New("boom")
+				}
+				if q == "vector(1)" {
+					secondEvaluated = true
+				}
+				return base(ctx, q, ts)
+			}
+
+			g := NewGroup(GroupOptions{
+				Name:                "test",
+				Interval:            time.Minute,
+				PartialEvalStrategy: tt.strategy,
+				Rules: []Rule{
+					NewRecordingRule("first", firstExpr, labels.EmptyLabels()),
+					NewRecordingRule("second", secondExpr, labels.EmptyLabels()),
+				},
+				Opts: &ManagerOptions{
+					Appendable: storage,
+					Queryable:  storage,
+					QueryFunc:  qf,
+					Logger:     promslog.NewNopLogger(),
+				},
+			})
+
+			g.Eval(context.Background(), time.Unix(0, 0))
+			require.Equal(t, tt.expectSecondEvaluated, secondEvaluated, "second rule evaluation mismatch")
+		})
+	}
 }

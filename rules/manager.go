@@ -424,16 +424,17 @@ func (m *Manager) LoadGroups(
 			m.opts.RuleDependencyController.AnalyseRules(rules)
 
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
-				Name:              rg.Name,
-				File:              fn,
-				Interval:          itv,
-				Limit:             rg.Limit,
-				Rules:             rules,
-				ShouldRestore:     shouldRestore,
-				Opts:              m.opts,
-				QueryOffset:       (*time.Duration)(rg.QueryOffset),
-				done:              m.done,
-				EvalIterationFunc: groupEvalIterationFunc,
+				Name:                rg.Name,
+				File:                fn,
+				Interval:            itv,
+				Limit:               rg.Limit,
+				Rules:               rules,
+				ShouldRestore:       shouldRestore,
+				Opts:                m.opts,
+				QueryOffset:         (*time.Duration)(rg.QueryOffset),
+				PartialEvalStrategy: rg.PartialEvaluationStrategy,
+				done:                m.done,
+				EvalIterationFunc:   groupEvalIterationFunc,
 			})
 		}
 	}
