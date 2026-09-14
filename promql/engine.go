@@ -1495,8 +1495,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 		if !isInstantQuery {
 			// Keep a copy of the original point slices so that they
 			// can be returned to the pool.
-			origMatrixes[i] = make(Matrix, len(matrixes[i]))
-			copy(origMatrixes[i], matrixes[i])
+			origMatrixes[i] = slices.Clone(matrixes[i])
 		}
 	}
 
