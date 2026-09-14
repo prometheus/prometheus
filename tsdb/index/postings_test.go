@@ -1526,8 +1526,8 @@ func TestMemPostings_LabelValuesLimitSmallest(t *testing.T) {
 	// Added in descending order
 	p := NewMemPostings()
 	all := []string{"a", "b", "c", "d", "e"}
-	for i := len(all) - 1; i >= 0; i-- {
-		p.Add(storage.SeriesRef(i+1), labels.FromStrings("lbl", all[i]))
+	for i, v := range slices.Backward(all) {
+		p.Add(storage.SeriesRef(i+1), labels.FromStrings("lbl", v))
 	}
 
 	shared := slices.Clone(p.lvs["lbl"])
