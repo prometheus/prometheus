@@ -3715,6 +3715,11 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
 	require.NoError(t, db.Compact(ctx))
+	waitForWALCheckpoint(
+		t,
+		db.head,
+		db.head.lastMemoryTruncationTime.Load(),
+	)
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
 
 	// As the data spans for 59 blocks, 58 go to disk and 1 remains in Head.
@@ -3772,6 +3777,11 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
 	require.NoError(t, db.Compact(ctx))
+	waitForWALCheckpoint(
+		t,
+		db.head,
+		db.head.lastMemoryTruncationTime.Load(),
+	)
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
 
 	// No new blocks should be created as there was not data in between the new samples and the blocks.
