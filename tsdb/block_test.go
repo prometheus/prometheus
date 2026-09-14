@@ -451,6 +451,66 @@ func TestReadIndexFormatV1(t *testing.T) {
 	}, query(t, q, labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^.?$")))
 }
 
+// TestSearchLabelValuesIndexFormatV1 covers the limit selection on a FormatV1
+// index, whose label values are held in a map and so are read in an arbitrary
+// order. The current writer only emits FormatV2, so this fixture is the only
+// way to reach that branch of index.Reader.LabelValues.
+func TestSearchLabelValuesIndexFormatV1(t *testing.T) {
+	ctx := context.Background()
+
+	block, err := OpenBlock(nil, filepath.Join("testdata", "index_format_v1"), nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, block.Close()) })
+	require.Equal(t, index.FormatV1, block.meta.Version, "fixture must exercise the FormatV1 branch")
+
+	// The fixture holds "bar" values "0" to "99", so the lexically smallest are
+	// not the numerically smallest and an arbitrary subset is easy to spot.
+	wantSmallest := []string{"0", "1", "10", "11", "12"}
+
+	t.Run("index reader keeps the smallest values", func(t *testing.T) {
+		ir, err := block.Index()
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, ir.Close()) })
+
+		all, err := ir.LabelValues(ctx, "bar", nil)
+		require.NoError(t, err)
+		require.Len(t, all, 100)
+		require.False(t, slices.IsSorted(all), "precondition: the map read is unordered")
+
+		got, err := ir.LabelValues(ctx, "bar", &storage.LabelHints{Limit: 5, LimitSmallest: true})
+		require.NoError(t, err)
+		require.Equal(t, wantSmallest, got)
+	})
+
+	t.Run("legacy limit still takes any subset", func(t *testing.T) {
+		ir, err := block.Index()
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, ir.Close()) })
+
+		// Without LimitSmallest the read may stop early, so only the count is
+		// guaranteed. Asserting the values would pin Go's map order.
+		got, err := ir.LabelValues(ctx, "bar", &storage.LabelHints{Limit: 5})
+		require.NoError(t, err)
+		require.Len(t, got, 5)
+	})
+
+	t.Run("search returns the smallest values", func(t *testing.T) {
+		q, err := NewBlockQuerier(block, 0, 1000)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+		rs := q.(storage.Searcher).SearchLabelValues(ctx, "bar", &storage.SearchHints{Limit: 5})
+		t.Cleanup(func() { require.NoError(t, rs.Close()) })
+
+		var got []string
+		for rs.Next() {
+			got = append(got, rs.At().Value)
+		}
+		require.NoError(t, rs.Err())
+		require.Equal(t, wantSmallest, got)
+	})
+}
+
 func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 	tmpdir := b.TempDir()
 	ctx := context.Background()
