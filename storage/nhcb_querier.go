@@ -284,7 +284,8 @@ func (s *nhcbToClassicSeriesSet) Next() bool {
 		lsetBuilder := labels.NewBuilder(labels.EmptyLabels())
 
 		convertedSeries := make([]*convertedSeriesData, 0)
-		convertedSeriesIndex := make(map[string]int)
+		// Keyed by label hash rather than the Labels.String().
+		convertedSeriesIndex := make(map[uint64][]int)
 		for s.nhcbSet.Next() {
 			nhcbSeries := s.nhcbSet.At()
 			if nhcbSeries == nil {
@@ -297,6 +298,8 @@ func (s *nhcbToClassicSeriesSet) Next() bool {
 			if it == nil {
 				continue
 			}
+
+			seriesCache := &histogram.ClassicSeriesCache{}
 
 			for {
 				valType := it.Next()
@@ -331,20 +334,18 @@ func (s *nhcbToClassicSeriesSet) Next() bool {
 					nhcb = fh
 				}
 
-				// We could try to find a way to cache the names and do only once the string concatenation
-				// also this convert to all parts of the Histogram (buckets sum, count) while we only need one
-				err := histogram.ConvertNHCBToClassic(nhcb, nhcbLabels, lsetBuilder, func(l labels.Labels, value float64) error {
-					// keep only series matching the requested suffix
-					name := l.Get(model.MetricNameLabel)
-					if !strings.HasSuffix(name, s.suffix) {
-						return nil
+				err := histogram.ConvertNHCBToClassic(nhcb, nhcbLabels, lsetBuilder, s.suffix, seriesCache, func(l labels.Labels, value float64) error {
+					h := l.Hash()
+					idx := -1
+					for _, candidate := range convertedSeriesIndex[h] {
+						if labels.Equal(convertedSeries[candidate].labels, l) {
+							idx = candidate
+							break
+						}
 					}
-
-					key := l.String()
-					idx, exists := convertedSeriesIndex[key]
-					if !exists {
+					if idx == -1 {
 						idx = len(convertedSeries)
-						convertedSeriesIndex[key] = idx
+						convertedSeriesIndex[h] = append(convertedSeriesIndex[h], idx)
 						convertedSeries = append(convertedSeries, &convertedSeriesData{
 							labels:  l,
 							samples: make([]chunks.Sample, 0),
