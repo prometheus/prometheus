@@ -665,6 +665,32 @@ func metadataResponseExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
+func nativeMetricMetadataResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+	examples.Set("versionedMetricMetadata", &base.Example{
+		Summary: "Versioned native metric metadata for a series",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string]any{
+				"results": []map[string]any{
+					{
+						"labels": map[string]string{"__name__": "http_requests_total", "job": "api"},
+						"metadata": map[string]any{"categories": map[string]any{"metric": map[string]any{
+							"versions": []map[string]any{
+								{"effectiveFrom": int64(1750000000000), "effectiveUntil": int64(1750003600000), "type": "counter", "unit": "requests", "help": "HTTP requests."},
+								{"effectiveFrom": int64(1750003600000), "type": "counter", "unit": "requests", "help": "Total HTTP requests."},
+							},
+							"truncated": false,
+						}}},
+					},
+				},
+				"truncated": false,
+			},
+		}),
+	})
+	return examples
+}
+
 // scrapePoolsResponseExamples returns examples for /scrape_pools response.
 func scrapePoolsResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
