@@ -105,6 +105,8 @@ func init() {
 	prometheus.MustRegister(remoteReadQueriesTotal, remoteReadQueries, remoteReadQueryDuration)
 }
 
+var tracer = otel.Tracer("")
+
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
 	remoteName string // Used to differentiate clients in metrics.
@@ -288,7 +290,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	ctx, span := otel.Tracer("").Start(ctx, "Remote Store", trace.WithSpanKind(trace.SpanKindClient))
+	ctx, span := tracer.Start(ctx, "Remote Store", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
 	httpResp, err := c.Client.Do(httpReq.WithContext(ctx))
@@ -400,7 +402,7 @@ func (c *Client) executeReadRequest(ctx context.Context, req *prompb.ReadRequest
 	errTimeout := fmt.Errorf("%w: request timed out after %s", context.DeadlineExceeded, c.timeout)
 	ctx, cancel := context.WithTimeoutCause(ctx, c.timeout, errTimeout)
 
-	ctx, span := otel.Tracer("").Start(ctx, "Remote Read", trace.WithSpanKind(trace.SpanKindClient))
+	ctx, span := tracer.Start(ctx, "Remote Read", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
 	start := time.Now()

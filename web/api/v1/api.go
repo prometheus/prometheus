@@ -113,6 +113,8 @@ var (
 	errorNotAcceptable = errorType{ErrorNotAcceptable, "not_acceptable"}
 )
 
+var tracer = otel.Tracer("")
+
 // OverrideErrorCode can be used to override status code for different error types.
 // Return false to fall back to default status code.
 type OverrideErrorCode func(errorNum, error) (code int, override bool)
@@ -575,13 +577,15 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
-	ctx, span := otel.Tracer("").Start(ctx, "promqlInstantQuery")
+	ctx, span := tracer.Start(ctx, "promqlInstantQuery")
 	defer span.End()
-	span.SetAttributes(
-		attribute.String("query", r.FormValue("query")),
-		attribute.String("timeout", r.FormValue("timeout")),
-		attribute.String("time", ts.Format(time.RFC3339Nano)),
-	)
+	if span.IsRecording() {
+		span.SetAttributes(
+			attribute.String("query", r.FormValue("query")),
+			attribute.String("timeout", r.FormValue("timeout")),
+			attribute.String("time", ts.Format(time.RFC3339Nano)),
+		)
+	}
 
 	qry, err := api.QueryEngine.NewInstantQuery(ctx, api.Queryable, opts, r.FormValue("query"), ts)
 	if err != nil {
@@ -747,15 +751,17 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
-	ctx, span := otel.Tracer("").Start(ctx, "promqlRangeQuery")
+	ctx, span := tracer.Start(ctx, "promqlRangeQuery")
 	defer span.End()
-	span.SetAttributes(
-		attribute.String("query", r.FormValue("query")),
-		attribute.String("timeout", r.FormValue("timeout")),
-		attribute.String("start", start.Format(time.RFC3339Nano)),
-		attribute.String("end", end.Format(time.RFC3339Nano)),
-		attribute.Stringer("step", step),
-	)
+	if span.IsRecording() {
+		span.SetAttributes(
+			attribute.String("query", r.FormValue("query")),
+			attribute.String("timeout", r.FormValue("timeout")),
+			attribute.String("start", start.Format(time.RFC3339Nano)),
+			attribute.String("end", end.Format(time.RFC3339Nano)),
+			attribute.Stringer("step", step),
+		)
+	}
 
 	qry, err := api.QueryEngine.NewRangeQuery(ctx, api.Queryable, opts, r.FormValue("query"), start, end, step)
 	if err != nil {

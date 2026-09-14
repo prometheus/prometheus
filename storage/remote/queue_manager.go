@@ -29,7 +29,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	"go.opentelemetry.io/otel/trace"
@@ -601,18 +600,20 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 	metadataCount := len(metadata)
 
 	attemptStore := func(try int) error {
-		ctx, span := otel.Tracer("").Start(ctx, "Remote Metadata Send Batch")
+		ctx, span := tracer.Start(ctx, "Remote Metadata Send Batch")
 		defer span.End()
 
-		span.SetAttributes(
-			attribute.Int("metadata", metadataCount),
-			attribute.Int("try", try),
-			attribute.String("remote_name", t.storeClient.Name()),
-			attribute.String("remote_url", t.storeClient.Endpoint()),
-		)
-		// Attributes defined by OpenTelemetry semantic conventions.
-		if try > 0 {
-			span.SetAttributes(semconv.HTTPResendCount(try))
+		if span.IsRecording() {
+			span.SetAttributes(
+				attribute.Int("metadata", metadataCount),
+				attribute.Int("try", try),
+				attribute.String("remote_name", t.storeClient.Name()),
+				attribute.String("remote_url", t.storeClient.Endpoint()),
+			)
+			// Attributes defined by OpenTelemetry semantic conventions.
+			if try > 0 {
+				span.SetAttributes(semconv.HTTPResendCount(try))
+			}
 		}
 
 		begin := time.Now()
@@ -2315,19 +2316,21 @@ func (b *batchMetricsUpdater) recordRetry(sc sendBatchContext) {
 
 // createBatchSpan creates and configures an OpenTelemetry span for batch sending.
 func createBatchSpan(ctx context.Context, sc sendBatchContext, remoteName, remoteURL string, try int) (context.Context, trace.Span) {
-	ctx, span := otel.Tracer("").Start(ctx, "Remote Send Batch")
-	span.SetAttributes(
-		attribute.Int("request_size", sc.reqSize),
-		attribute.Int("samples", sc.sampleCount),
-		attribute.Int("try", try),
-		attribute.String("remote_name", remoteName),
-		attribute.String("remote_url", remoteURL),
-	)
-	if sc.exemplarCount > 0 {
-		span.SetAttributes(attribute.Int("exemplars", sc.exemplarCount))
-	}
-	if sc.histogramCount > 0 {
-		span.SetAttributes(attribute.Int("histograms", sc.histogramCount))
+	ctx, span := tracer.Start(ctx, "Remote Send Batch")
+	if span.IsRecording() {
+		span.SetAttributes(
+			attribute.Int("request_size", sc.reqSize),
+			attribute.Int("samples", sc.sampleCount),
+			attribute.Int("try", try),
+			attribute.String("remote_name", remoteName),
+			attribute.String("remote_url", remoteURL),
+		)
+		if sc.exemplarCount > 0 {
+			span.SetAttributes(attribute.Int("exemplars", sc.exemplarCount))
+		}
+		if sc.histogramCount > 0 {
+			span.SetAttributes(attribute.Int("histograms", sc.histogramCount))
+		}
 	}
 	return ctx, span
 }

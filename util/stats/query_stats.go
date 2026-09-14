@@ -217,6 +217,8 @@ func (qs *QuerySamples) samplesReadPerStepPoints() []stepStat {
 	return ts
 }
 
+var tracer = otel.Tracer("")
+
 // SpanTimer unifies tracing and timing, to reduce repetition.
 type SpanTimer struct {
 	timer     *Timer
@@ -226,7 +228,7 @@ type SpanTimer struct {
 }
 
 func NewSpanTimer(ctx context.Context, operation string, timer *Timer, observers ...prometheus.Observer) (*SpanTimer, context.Context) {
-	ctx, span := otel.Tracer("").Start(ctx, operation)
+	ctx, span := tracer.Start(ctx, operation)
 	timer.Start()
 
 	return &SpanTimer{
