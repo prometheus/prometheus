@@ -325,8 +325,7 @@ func ErrSearchResultSet(err error, warnings ...annotations.Annotations) SearchRe
 // This is used only as an option for implementation to use.
 // Results are returned in natural (alphabetical) order.
 type LabelHints struct {
-	// Maximum number of results returned. Use a value of zero or less to
-	// disable.
+	// Maximum number of results returned. Use a value of 0 to disable.
 	Limit int
 
 	// LimitSmallest requires Limit and will select the lexically smallest N
