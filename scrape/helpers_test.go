@@ -106,8 +106,8 @@ func newTestScrapeLoop(t testing.TB, opts ...func(sl *scrapeLoop)) (_ *scrapeLoo
 		validationScheme:    model.UTF8Validation,
 		symbolTable:         labels.NewSymbolTable(),
 		// Tests assume those features are enabled, unless explicitly turned off.
-		appendMetadataToWAL: true,
-		parseST:             true,
+		passMetadata: true,
+		parseST:      true,
 	}
 	for _, o := range opts {
 		o(sl)

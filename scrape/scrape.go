@@ -937,7 +937,7 @@ type scrapeLoop struct {
 	enableTypeAndUnitLabels bool
 	enableOpenMetrics2      bool
 	reportExtraMetrics      bool
-	appendMetadataToWAL     bool
+	passMetadata            bool
 	passMetadataInContext   bool
 	skipJitterOffsetting    bool // For testability.
 	scrapeOnShutdown        bool
@@ -1333,7 +1333,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		synthesizeST:            opts.sp.options.SynthesizeST,
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
 		enableOpenMetrics2:      opts.sp.options.EnableOpenMetrics2,
-		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
+		passMetadata:            opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
 		skipJitterOffsetting:    opts.sp.options.skipJitterOffsetting,
 		scrapeOnShutdown:        opts.sp.options.ScrapeOnShutdown,
@@ -2000,7 +2000,7 @@ loop:
 			sl.metrics.targetScrapeExemplarOutOfOrder.Add(float64(outOfOrderExemplars))
 		}
 
-		if sl.appendMetadataToWAL && lastMeta != nil {
+		if sl.passMetadata && lastMeta != nil {
 			// Is it new series OR did metadata change for this family?
 			if !seriesCached || lastMeta.lastIterChange == sl.cache.iter {
 				// In majority cases we can trust that the current series/histogram is matching the lastMeta and lastMFName.
@@ -2364,7 +2364,7 @@ func (sl *scrapeLoopAppender) addReportSample(s reportSample, t int64, v float64
 		if !ok {
 			sl.cache.addRef(s.name, ref, lset, lset.Hash())
 			// We only need to add metadata once a scrape target appears.
-			if sl.appendMetadataToWAL {
+			if sl.passMetadata {
 				if _, merr := sl.UpdateMetadata(ref, lset, s.Metadata); merr != nil {
 					sl.l.Debug("Error when appending metadata in addReportSample", "ref", fmt.Sprintf("%d", ref), "metadata", fmt.Sprintf("%+v", s.Metadata), "err", merr)
 				}
