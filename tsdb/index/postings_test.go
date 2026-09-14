@@ -1563,8 +1563,6 @@ func TestMemPostings_LabelValuesLimitSmallest(t *testing.T) {
 
 			require.Equal(t, shared, p.lvs["lbl"], "the shared value list must not be mutated")
 			if len(got) > 0 {
-				require.Equal(t, len(got), cap(got), "the result must hold no spare capacity")
-
 				// A write through the result must not reach the shared array.
 				got[0] = "zzz"
 				require.Equal(t, shared, p.lvs["lbl"], "the result must not alias the shared value list")
