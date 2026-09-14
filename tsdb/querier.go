@@ -501,7 +501,7 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, hi
 
 	// If we don't have any matchers for other labels, then we're done.
 	if !hasMatchersForOtherLabels {
-		allValues, _ = hints.ApplyLimit(allValues)	
+		allValues, _ = hints.ApplyLimit(allValues)
 		return allValues, nil
 	}
 
