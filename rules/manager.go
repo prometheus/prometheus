@@ -29,7 +29,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/semaphore"
@@ -90,19 +89,23 @@ func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.
 
 	// Start the group evaluation span at the scheduled evaluation time.
 	// This allows our trace to show if the actual evaluation was delayed.
-	ctx, sp := otel.Tracer("").Start(ctx, "rule group", trace.WithTimestamp(evalTimestamp))
-	sp.SetAttributes(
-		attribute.String("name", g.Name()),
-		attribute.String("file", g.File()),
-		attribute.Stringer("interval", g.interval),
-		attribute.String("scheduled", evalTimestamp.Format(time.RFC3339Nano)),
-	)
+	ctx, sp := tracer.Start(ctx, "rule group", trace.WithTimestamp(evalTimestamp))
+	if sp.IsRecording() {
+		// evalTimestamp.Format(...) allocates, so only build the attributes when
+		// the span is actually recorded.
+		sp.SetAttributes(
+			attribute.String("name", g.Name()),
+			attribute.String("file", g.File()),
+			attribute.Stringer("interval", g.interval),
+			attribute.String("scheduled", evalTimestamp.Format(time.RFC3339Nano)),
+		)
+	}
 	defer sp.End()
 
 	// If there's a delay then record that as a dedicated span, so it's clear
 	// from the trace that the whole group evaluated later then scheduled.
 	if start.After(evalTimestamp) {
-		_, delaySp := otel.Tracer("").Start(ctx, "scheduleDelay", trace.WithTimestamp(evalTimestamp))
+		_, delaySp := tracer.Start(ctx, "scheduleDelay", trace.WithTimestamp(evalTimestamp))
 		delaySp.End(trace.WithTimestamp(start))
 	}
 

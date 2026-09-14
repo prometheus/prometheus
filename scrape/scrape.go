@@ -821,6 +821,8 @@ func acceptEncodingHeader(enableCompression, enableZstd bool) string {
 
 var UserAgent = version.PrometheusUserAgent()
 
+var tracer = otel.Tracer("")
+
 func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	if s.req == nil {
 		req, err := http.NewRequest(http.MethodGet, s.URL().String(), http.NoBody)
@@ -834,8 +836,11 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 
 		s.req = req
 	}
-	ctx, span := otel.Tracer("").Start(ctx, "scrapeRequest", trace.WithSpanKind(trace.SpanKindClient))
-	span.SetAttributes(attribute.String("url", s.URL().Redacted()))
+	ctx, span := tracer.Start(ctx, "scrapeRequest", trace.WithSpanKind(trace.SpanKindClient))
+	if span.IsRecording() {
+		// URL().Redacted() allocates, so only build it when the span is recorded.
+		span.SetAttributes(attribute.String("url", s.URL().Redacted()))
+	}
 	defer span.End()
 
 	return s.client.Do(s.req.WithContext(ctx))
@@ -1488,7 +1493,7 @@ func (sl *scrapeLoop) appender() scrapeLoopAppendAdapter {
 func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- error) time.Time {
 	start := time.Now()
 
-	spanCtx, span := otel.Tracer("").Start(sl.appenderCtx, "scrape")
+	spanCtx, span := tracer.Start(sl.appenderCtx, "scrape")
 	defer span.End()
 
 	// Only record after the first scrape.
@@ -1504,7 +1509,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	var total, added, seriesAdded, bytesRead int
 	var err, appErr, scrapeErr error
 
-	_, appenderSpan := otel.Tracer("").Start(spanCtx, "newAppender")
+	_, appenderSpan := tracer.Start(spanCtx, "newAppender")
 	app := sl.appender()
 	appenderSpan.End()
 	defer func() {
@@ -1512,7 +1517,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 			_ = app.Rollback()
 			return
 		}
-		_, commitSpan := otel.Tracer("").Start(spanCtx, "scrapeCommit")
+		_, commitSpan := tracer.Start(spanCtx, "scrapeCommit")
 		err = app.Commit()
 		if err != nil {
 			commitSpan.RecordError(err)
@@ -1530,7 +1535,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	}()
 
 	defer func() {
-		_, reportSpan := otel.Tracer("").Start(spanCtx, "scrapeReport")
+		_, reportSpan := tracer.Start(spanCtx, "scrapeReport")
 		err = sl.report(app, appendTime, time.Since(start), total, added, seriesAdded, bytesRead, scrapeErr)
 		if err != nil {
 			reportSpan.RecordError(err)
@@ -1571,7 +1576,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		defer sl.buffers.Put(b)
 		buf = bytes.NewBuffer(b)
 		// Trace the response body read and decompression into the buffer.
-		_, readSpan := otel.Tracer("").Start(spanCtx, "scrapeRead")
+		_, readSpan := tracer.Start(spanCtx, "scrapeRead")
 		contentType, scrapeErr = sl.scraper.readResponse(scrapeCtx, resp, buf)
 		if scrapeErr != nil {
 			readSpan.RecordError(scrapeErr)
@@ -1610,7 +1615,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 
 	// A failed scrape is the same as an empty scrape,
 	// we still call sl.append to trigger stale markers.
-	_, appendSpan := otel.Tracer("").Start(spanCtx, "scrapeAppend")
+	_, appendSpan := tracer.Start(spanCtx, "scrapeAppend")
 	total, added, seriesAdded, appErr = app.append(b, contentType, appendTime)
 	if appErr != nil {
 		appendSpan.RecordError(appErr)

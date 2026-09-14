@@ -129,6 +129,8 @@ type QueryEngine interface {
 	NewRangeQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error)
 }
 
+var tracer = otel.Tracer("")
+
 var _ QueryLogger = (*logging.JSONFileLogger)(nil)
 
 // QueryLogger is an interface that can be used to log all the queries logged
@@ -789,10 +791,13 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime, ng.metrics.queryPrepareTimeHistogram)
 	mint, maxt := FindMinMaxTime(s)
 
-	_, querierSpan := otel.Tracer("").Start(ctxPrepare, "Querier", trace.WithAttributes(
-		attribute.Int64("mint", mint),
-		attribute.Int64("maxt", maxt),
-	))
+	_, querierSpan := tracer.Start(ctxPrepare, "Querier")
+	if querierSpan.IsRecording() {
+		querierSpan.SetAttributes(
+			attribute.Int64("mint", mint),
+			attribute.Int64("maxt", maxt),
+		)
+	}
 	querier, err := query.queryable.Querier(mint, maxt)
 	if err != nil {
 		querierSpan.RecordError(err)
@@ -1092,11 +1097,16 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			}
 			evalRange = 0
 			hints.By, hints.Grouping = extractGroupsFromPath(path)
-			selectCtx, selectSpan := otel.Tracer("").Start(ctx, "querierSelect", trace.WithAttributes(
-				attribute.String("selector", n.String()),
-				attribute.Int64("start", hints.Start),
-				attribute.Int64("end", hints.End),
-			))
+			selectCtx, selectSpan := tracer.Start(ctx, "querierSelect")
+			if selectSpan.IsRecording() {
+				// n.String() serializes the AST node, so only build it when the
+				// span is actually recorded.
+				selectSpan.SetAttributes(
+					attribute.String("selector", n.String()),
+					attribute.Int64("start", hints.Start),
+					attribute.Int64("end", hints.End),
+				)
+			}
 			n.UnexpandedSeriesSet = querier.Select(selectCtx, false, hints, n.LabelMatchers...)
 			selectSpan.End()
 		case *parser.MatrixSelector:
@@ -1149,8 +1159,13 @@ func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) (annotations
 		// This span is created only when a selector is read from storage. The
 		// result is cached in e.Series. At most one span is produced per storage
 		// selector per query. The span is not produced per step or per series.
-		ctx, span := otel.Tracer("").Start(ctx, "promqlExpandSeries", trace.WithAttributes(attribute.String("selector", e.String())))
+		ctx, span := tracer.Start(ctx, "promqlExpandSeries")
 		defer span.End()
+		if span.IsRecording() {
+			// e.String() serializes the AST node, so only build it when the span
+			// is actually recorded.
+			span.SetAttributes(attribute.String("selector", e.String()))
+		}
 		series, ws, err := expandSeriesSet(ctx, e.UnexpandedSeriesSet)
 		if e.SkipHistogramBuckets {
 			for i := range series {
@@ -1158,7 +1173,9 @@ func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) (annotations
 			}
 		}
 		e.Series = series
-		span.SetAttributes(attribute.Int("num_series", len(series)))
+		if span.IsRecording() {
+			span.SetAttributes(attribute.Int("num_series", len(series)))
+		}
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
@@ -2120,10 +2137,13 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 
 	// Create a new span to help investigate inner evaluation performances.
-	ctx, span := otel.Tracer("").Start(ctx, stats.InnerEvalTime.SpanOperation()+" eval "+reflect.TypeOf(expr).String())
+	ctx, span := tracer.Start(ctx, stats.InnerEvalTime.SpanOperation()+" eval "+reflect.TypeOf(expr).String())
 	defer span.End()
-	if ss, ok := expr.(interface{ ShortString() string }); ok {
-		span.SetAttributes(attribute.String("operation", ss.ShortString()))
+	if span.IsRecording() {
+		// ShortString() allocates, so only build it when the span is recorded.
+		if ss, ok := expr.(interface{ ShortString() string }); ok {
+			span.SetAttributes(attribute.String("operation", ss.ShortString()))
+		}
 	}
 
 	switch e := expr.(type) {
