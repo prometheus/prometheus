@@ -760,12 +760,14 @@ func TestHeadAppenderV2_NewWalSegmentOnTruncate(t *testing.T) {
 
 	add(1)
 	require.NoError(t, h.Truncate(1))
+	waitForWALCheckpoint(t, h, 1)
 	_, last, err = wlog.Segments(wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 1, last)
 
 	add(2)
 	require.NoError(t, h.Truncate(2))
+	waitForWALCheckpoint(t, h, 2)
 	_, last, err = wlog.Segments(wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 2, last)
