@@ -450,11 +450,43 @@ var tests = []struct {
 		name: "selectors",
 		tests: []testCase{
 			{
-				input: `台北`,
+				input:    `台北`,
+				expected: []Item{{IDENTIFIER, 0, `台北`}},
+			}, {
+				input:    `Übergröße_Ω`,
+				expected: []Item{{IDENTIFIER, 0, `Übergröße_Ω`}},
+			}, {
+				input:    `http.server.request.duration`,
+				expected: []Item{{IDENTIFIER, 0, `http.server.request.duration`}},
+			}, {
+				input:    `foo.bar:baz.qux`,
+				expected: []Item{{METRIC_IDENTIFIER, 0, `foo.bar:baz.qux`}},
+			}, {
+				// Identifiers must not start with a dot, as that is ambiguous
+				// with numbers like ".5".
+				input: `.foo`,
+				fail:  true,
+			}, {
+				input: `{.foo='a'}`,
 				fail:  true,
 			}, {
 				input: `{台北='a'}`,
-				fail:  true,
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{IDENTIFIER, 1, `台北`},
+					{EQL, 7, `=`},
+					{STRING, 8, `'a'`},
+					{RIGHT_BRACE, 11, `}`},
+				},
+			}, {
+				input: `{http.method='a'}`,
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{IDENTIFIER, 1, `http.method`},
+					{EQL, 12, `=`},
+					{STRING, 13, `'a'`},
+					{RIGHT_BRACE, 16, `}`},
+				},
 			}, {
 				input: `{0a='a'}`,
 				fail:  true,
@@ -995,6 +1027,49 @@ func TestLexer(t *testing.T) {
 
 				out = out[:len(out)-1]
 				require.Equal(t, test.expected, out, "%d: input %q", i, test.input)
+			}
+		})
+	}
+}
+
+// BenchmarkLexer lexes a number of queries, once with names from the
+// traditional character set only, and once with names that make use of the
+// extended character set.
+func BenchmarkLexer(b *testing.B) {
+	for _, bc := range []struct {
+		name    string
+		queries []string
+	}{
+		{
+			name: "traditional charset",
+			queries: []string{
+				`sum by (job, instance) (rate(http_requests_total{job="api-server",group=~"canary|production",code!~"5.."}[5m])) / 60`,
+				`histogram_quantile(0.9, sum by (le, service, method, status_code) (rate(request_duration_seconds_bucket[10m])))`,
+				`node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100 < 10 and node_filesystem_avail_bytes{mountpoint="/"} > 0`,
+			},
+		},
+		{
+			name: "extended charset",
+			queries: []string{
+				`sum by (server.address, service.name) (rate(http.server.request.duration{service.name=~"canary|production",http.response.status_code!~"5.."}[5m])) / 60`,
+				`histogram_quantile(0.9, sum by (le, service.name, http.request.method, http.response.status_code) (rate(http.server.request.duration_bucket[10m])))`,
+				`system.memory.available / system.memory.limit * 100 < 10 and system.filesystem.usage{system.device="/"} > 0`,
+			},
+		},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			var item Item
+			for b.Loop() {
+				for _, q := range bc.queries {
+					l := Lex(q)
+					for item.Typ != EOF && item.Typ != ERROR {
+						l.NextItem(&item)
+					}
+					if item.Typ == ERROR {
+						b.Fatalf("lexing %q failed: %s", q, item)
+					}
+					item = Item{}
+				}
 			}
 		})
 	}

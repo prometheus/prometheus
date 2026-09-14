@@ -233,6 +233,46 @@ Examples of equivalent durations:
 * `max_of(step(), 5s)` is equivalent to the larger of the query step width and `5s`.
 * `min_of(2 * step() + 5s, 5m)` is equivalent to the smaller of twice the query step increased by `5s` and `5m`.
 
+## Metric and label names
+
+Metric and label names may contain any valid UTF-8 characters. In PromQL, a
+name can be written verbatim (i.e. without quoting it) if it only consists of
+the following characters:
+
+* letters, i.e. any Unicode character that is classified as a letter, which
+  includes but is not limited to `a`-`z` and `A`-`Z`,
+* digits `0`-`9`,
+* underscores (`_`),
+* dots (`.`),
+* colons (`:`), in metric names only (colons are reserved for
+  [recording rules](../configuration/recording_rules.md) and must not be used
+  in the names of metrics exposed by instrumented software).
+
+In addition, a name written verbatim must not start with a digit or a dot, as
+that would be ambiguous with a number, and a metric name must not be one of the
+keywords `bool`, `on`, `ignoring`, `group_left`, and `group_right`.
+
+All other names have to be quoted with single quotes, double quotes, or
+backticks, following the same rules as [string literals](#string-literals). A
+quoted metric name has to be placed inside the curly braces of the selector,
+e.g. as the first element of the label matcher list:
+
+    {"metric name with spaces", "label name with spaces"="value"}
+
+Alternatively, a metric name can always be matched via the `__name__` label,
+see [instant vector selectors](#instant-vector-selectors) below.
+
+Note that names may be quoted even if they do not need to be, so the following
+two expressions are equivalent:
+
+    http.server.request.duration{http.request.method="GET"}
+    {"http.server.request.duration", "http.request.method"="GET"}
+
+Note also that the character set allowed for names verbatim in PromQL is
+different from (and more permissive than) the “legacy” character set that
+Prometheus enforces for ingested metric and label names if the
+`metric_name_validation_scheme` is set to `legacy`.
+
 ## Time series selectors
 
 These are the basic building-blocks that instruct PromQL what data to fetch.

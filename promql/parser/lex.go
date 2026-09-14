@@ -1106,10 +1106,10 @@ func (l *Lexer) scanNumber() bool {
 	return false
 }
 
-// lexIdentifier scans an alphanumeric identifier. The next character
-// is known to be a letter.
+// lexIdentifier scans an identifier. The next character is known to be a
+// letter or an underscore.
 func lexIdentifier(l *Lexer) stateFn {
-	for isAlphaNumeric(l.next()) {
+	for r := l.next(); isASCIIIdentifierRune(r) || isNonASCIILetter(r); r = l.next() {
 		// absorb
 	}
 	l.backup()
@@ -1117,14 +1117,13 @@ func lexIdentifier(l *Lexer) stateFn {
 	return lexStatements
 }
 
-// lexKeywordOrIdentifier scans an alphanumeric identifier which may contain
-// a colon rune. If the identifier is a keyword the respective keyword Item
-// is scanned.
+// lexKeywordOrIdentifier scans an identifier which may contain a colon rune.
+// If the identifier is a keyword the respective keyword Item is scanned.
 func lexKeywordOrIdentifier(l *Lexer) stateFn {
 Loop:
 	for {
 		switch r := l.next(); {
-		case isAlphaNumeric(r) || r == ':':
+		case isASCIIIdentifierRune(r) || r == ':' || isNonASCIILetter(r):
 			// absorb.
 		default:
 			l.backup()
@@ -1183,7 +1182,8 @@ func isEndOfLine(r rune) bool {
 	return r == '\r' || r == '\n'
 }
 
-// isAlphaNumeric reports whether r is an alphabetic, digit, or underscore.
+// isAlphaNumeric reports whether r is a digit or anything isAlpha accepts, i.e.
+// an underscore or a letter.
 func isAlphaNumeric(r rune) bool {
 	return isAlpha(r) || isDigit(r)
 }
@@ -1195,9 +1195,39 @@ func isDigit(r rune) bool {
 	return '0' <= r && r <= '9'
 }
 
-// isAlpha reports whether r is an alphabetic or underscore.
+// isAlpha reports whether r is an underscore or a letter, where any Unicode
+// rune classified as a letter counts, not just the ASCII ones, so that metric
+// and label names written in other scripts do not have to be quoted.
 func isAlpha(r rune) bool {
+	return isASCIIAlpha(r) || isNonASCIILetter(r)
+}
+
+// isASCIIAlpha reports whether r is an underscore or an ASCII letter. It is
+// kept separate from isAlpha because, unlike the latter, it is cheap enough to
+// be inlined into the loops scanning identifiers.
+func isASCIIAlpha(r rune) bool {
 	return r == '_' || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z')
+}
+
+// isNonASCIILetter reports whether r is a non-ASCII rune that Unicode
+// classifies as a letter. Note that Unicode marks (e.g. combining accents) are
+// not letters, so names relying on them still have to be quoted.
+func isNonASCIILetter(r rune) bool {
+	return r > unicode.MaxASCII && unicode.IsLetter(r)
+}
+
+// isASCIIIdentifierRune reports whether r is an ASCII rune that may occur in an
+// identifier past its first rune, i.e. an underscore, an ASCII letter, a digit,
+// or a dot. Dots are allowed mostly for OpenTelemetry compatibility.
+// Identifiers must not start with a dot, as that would be ambiguous with
+// numbers like ".5".
+//
+// Non-ASCII letters may occur in identifiers as well, but they are checked
+// separately with isNonASCIILetter, so that this cheap check, which covers the
+// vast majority of the runes encountered in practice, can be inlined into the
+// loops scanning identifiers.
+func isASCIIIdentifierRune(r rune) bool {
+	return isASCIIAlpha(r) || isDigit(r) || r == '.'
 }
 
 // lexDurationExpr scans arithmetic expressions within brackets for duration expressions.

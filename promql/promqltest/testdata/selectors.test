@@ -205,3 +205,30 @@ eval instant at 0h testmetric
 	testmetric{a="abb"} 2
 
 clear
+
+# Metric and label names containing dots or non-ASCII letters do not need to be
+# quoted.
+load 10s
+	http.server.request.duration{http.request.method="GET", 台北="1"} 0+10x10
+	http.server.request.duration{http.request.method="POST", 台北="2"} 0+20x10
+
+eval instant at 50s http.server.request.duration
+	http.server.request.duration{http.request.method="GET", 台北="1"} 50
+	http.server.request.duration{http.request.method="POST", 台北="2"} 100
+
+eval instant at 50s http.server.request.duration{http.request.method="GET"}
+	http.server.request.duration{http.request.method="GET", 台北="1"} 50
+
+eval instant at 50s sum by (http.request.method) (http.server.request.duration)
+	{http.request.method="GET"} 50
+	{http.request.method="POST"} 100
+
+eval instant at 50s sum without (台北) (rate(http.server.request.duration[30s]))
+	{http.request.method="GET"} 1
+	{http.request.method="POST"} 2
+
+# Quoting the same names still works and yields the same result.
+eval instant at 50s {"http.server.request.duration", "http.request.method"="GET"}
+	http.server.request.duration{http.request.method="GET", 台北="1"} 50
+
+clear

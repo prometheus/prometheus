@@ -355,8 +355,17 @@ durationPrimary[@inline] {
     ( ( std.digit+ "y" )? ( std.digit+ "w" )? ( std.digit+ "d" )? ( std.digit+ "h" )? ( std.digit+ "m" )? ( std.digit+ "s" ) ( std.digit+ "ms" )? ) |
     ( ( std.digit+ "y" )? ( std.digit+ "w" )? ( std.digit+ "d" )? ( std.digit+ "h" )? ( std.digit+ "m" )? ( std.digit+ "s" )? ( std.digit+ "ms" ) )
   }
-  Identifier { (std.asciiLetter | "_" | ":") (std.asciiLetter | std.digit | "_" | ":" )*}
-  LabelName { (std.asciiLetter | "_") (std.asciiLetter | std.digit | "_")* }
+  // Besides ASCII letters, names may contain any non-ASCII character that is a
+  // letter. Since the tokenizer cannot check Unicode character classes, any
+  // non-ASCII character is accepted here. Names containing non-letters still
+  // have to be quoted, which the PromQL parser in Prometheus enforces.
+  // The ranges below cover all non-ASCII characters except whitespace.
+  nameLetter {
+    std.asciiLetter |
+    $[\u{a1}-\u{167f}\u{1681}-\u{1fff}\u{200b}-\u{2027}\u{202a}-\u{202e}\u{2030}-\u{205e}\u{2060}-\u{2fff}\u{3001}-\u{10ffff}]
+  }
+  Identifier { (nameLetter | "_" | ":") (nameLetter | std.digit | "_" | ":" | ".")* }
+  LabelName { (nameLetter | "_") (nameLetter | std.digit | "_" | ".")* }
 
   // Operator
   Sub { "-" }

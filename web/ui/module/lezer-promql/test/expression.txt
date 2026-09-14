@@ -904,3 +904,31 @@ PromQL(
     VectorSelector(Identifier)
   )
 )
+
+# Dots in metric and label names
+
+http.server.request.duration{http.request.method="GET"}
+
+==>
+PromQL(VectorSelector(Identifier,LabelMatchers(UnquotedLabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral))))
+
+# Non-ASCII letters in metric and label names
+
+台北{台北="1"}
+
+==>
+PromQL(VectorSelector(Identifier,LabelMatchers(UnquotedLabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral))))
+
+# Dots in grouping labels
+
+sum by (http.request.method) (http.server.request.duration)
+
+==>
+PromQL(AggregateExpr(AggregateOp(Sum),AggregateModifier(By,GroupingLabels(LabelName)),FunctionCallBody(VectorSelector(Identifier))))
+
+# Names must not start with a dot
+
+.foo
+
+==>
+PromQL(⚠,VectorSelector(Identifier))

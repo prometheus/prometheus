@@ -2009,6 +2009,65 @@ var testExpr = []struct {
 		},
 	},
 	{
+		// Dots do not have to be quoted in metric or label names.
+		input: `http.server.request.duration{http.method="GET"}`,
+		expected: &VectorSelector{
+			Name: "http.server.request.duration",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, "http.method", "GET"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "http.server.request.duration"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 47},
+		},
+	},
+	{
+		input: `foo.bar:baz.qux{a="b"}`,
+		expected: &VectorSelector{
+			Name: "foo.bar:baz.qux",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, "a", "b"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo.bar:baz.qux"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 22},
+		},
+	},
+	{
+		// Non-ASCII letters do not have to be quoted in metric or label names.
+		input: `台北{台北="x"}`,
+		expected: &VectorSelector{
+			Name: "台北",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, "台北", "x"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "台北"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 18},
+		},
+	},
+	{
+		// Names still must not start with a dot, as that would be ambiguous
+		// with numbers like ".5".
+		input: `.foo`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 4},
+				Err:           errors.New("unexpected character: '.'"),
+				Query:         `.foo`,
+			},
+		},
+	},
+	{
+		input: `{.foo="bar"}`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 1, End: 12},
+				Err:           errors.New("unexpected character inside braces: '.'"),
+				Query:         `{.foo="bar"}`,
+			},
+		},
+	},
+	{
 		input: `{"foo"}`,
 		expected: &VectorSelector{
 			// When a metric is named inside the braces, the Name field is not set.
@@ -2958,6 +3017,23 @@ var testExpr = []struct {
 			},
 			Grouping: []string{"foo bar"},
 			PosRange: posrange.PositionRange{Start: 0, End: 35},
+		},
+	},
+	{
+		// Grouping labels containing dots or non-ASCII letters do not have to
+		// be quoted either.
+		input: `sum by (http.method, 台北)(http.server.duration)`,
+		expected: &AggregateExpr{
+			Op: SUM,
+			Expr: &VectorSelector{
+				Name: "http.server.duration",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "http.server.duration"),
+				},
+				PosRange: posrange.PositionRange{Start: 29, End: 49},
+			},
+			Grouping: []string{"http.method", "台北"},
+			PosRange: posrange.PositionRange{Start: 0, End: 50},
 		},
 	},
 	{
@@ -5566,6 +5642,20 @@ func TestParseSeriesDesc(t *testing.T) {
 				"group", "canary",
 				"instance", "0",
 				"service.name", "api-server",
+			),
+			expectedValues: []SequenceValue{
+				{Value: 0, Omitted: false, Histogram: (*histogram.FloatHistogram)(nil)},
+				{Value: 50, Omitted: false, Histogram: (*histogram.FloatHistogram)(nil)},
+				{Value: 100, Omitted: false, Histogram: (*histogram.FloatHistogram)(nil)},
+			},
+		},
+		{
+			name:  "label name characters that no longer require quoting",
+			input: `http.requests{service.name="api-server", 台北="0"}		0+50x2`,
+			expectedLabels: labels.FromStrings(
+				"__name__", "http.requests",
+				"service.name", "api-server",
+				"台北", "0",
 			),
 			expectedValues: []SequenceValue{
 				{Value: 0, Omitted: false, Histogram: (*histogram.FloatHistogram)(nil)},
