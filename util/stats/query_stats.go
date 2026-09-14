@@ -217,7 +217,7 @@ func (qs *QuerySamples) samplesReadPerStepPoints() []stepStat {
 	return ts
 }
 
-var tracer = otel.Tracer("")
+var tracer = otel.Tracer("github.com/prometheus/prometheus/util/stats")
 
 // SpanTimer unifies tracing and timing, to reduce repetition.
 type SpanTimer struct {

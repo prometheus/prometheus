@@ -41,7 +41,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
-var tracer = otel.Tracer("")
+var tracer = otel.Tracer("github.com/prometheus/prometheus/rules")
 
 // Group is a set of rules that have a logical relation.
 type Group struct {

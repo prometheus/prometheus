@@ -113,7 +113,7 @@ var (
 	errorNotAcceptable = errorType{ErrorNotAcceptable, "not_acceptable"}
 )
 
-var tracer = otel.Tracer("")
+var tracer = otel.Tracer("github.com/prometheus/prometheus/web/api/v1")
 
 // OverrideErrorCode can be used to override status code for different error types.
 // Return false to fall back to default status code.

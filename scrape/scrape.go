@@ -821,7 +821,7 @@ func acceptEncodingHeader(enableCompression, enableZstd bool) string {
 
 var UserAgent = version.PrometheusUserAgent()
 
-var tracer = otel.Tracer("")
+var tracer = otel.Tracer("github.com/prometheus/prometheus/scrape")
 
 func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	if s.req == nil {

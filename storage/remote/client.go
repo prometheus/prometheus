@@ -105,7 +105,7 @@ func init() {
 	prometheus.MustRegister(remoteReadQueriesTotal, remoteReadQueries, remoteReadQueryDuration)
 }
 
-var tracer = otel.Tracer("")
+var tracer = otel.Tracer("github.com/prometheus/prometheus/storage/remote")
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {

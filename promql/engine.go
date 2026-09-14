@@ -129,7 +129,7 @@ type QueryEngine interface {
 	NewRangeQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error)
 }
 
-var tracer = otel.Tracer("")
+var tracer = otel.Tracer("github.com/prometheus/prometheus/promql")
 
 var _ QueryLogger = (*logging.JSONFileLogger)(nil)
 
