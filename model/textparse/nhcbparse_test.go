@@ -519,6 +519,84 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 	requireEntries(t, exp, got)
 }
 
+func TestNHCBParserDoesNotConvertSumOnlyHistogram(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		keepClassic bool
+		expected    []parsedEntry
+	}{
+		{
+			name: "drop classic histogram",
+			input: `# TYPE sum_only histogram
+sum_only_sum 123.5
+`,
+			expected: []parsedEntry{
+				{
+					m:   "sum_only",
+					typ: model.MetricTypeHistogram,
+				},
+			},
+		},
+		{
+			name: "keep classic histogram",
+			input: `# TYPE sum_only histogram
+sum_only_sum 123.5
+`,
+			keepClassic: true,
+			expected: []parsedEntry{
+				{
+					m:   "sum_only",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m:    "sum_only_sum",
+					v:    123.5,
+					lset: labels.FromStrings("__name__", "sum_only_sum"),
+				},
+			},
+		},
+		{
+			name: "convert histogram with count and sum",
+			input: `# TYPE bucketless histogram
+bucketless_sum 123.5
+bucketless_count 42
+`,
+			expected: []parsedEntry{
+				{
+					m:   "bucketless",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "bucketless",
+					shs: &histogram.Histogram{
+						Schema:          histogram.CustomBucketsSchema,
+						Count:           42,
+						Sum:             123.5,
+						PositiveSpans:   []histogram.Span{{Length: 1}},
+						PositiveBuckets: []int64{42},
+					},
+					lset: labels.FromStrings("__name__", "bucketless"),
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			p, err := New([]byte(test.input), "text/plain", labels.NewSymbolTable(), ParserOptions{
+				ConvertClassicHistogramsToNHCB:          true,
+				KeepClassicOnClassicAndNativeHistograms: test.keepClassic,
+			})
+			require.NoError(t, err)
+			require.NotNil(t, p)
+
+			got := testParse(t, p)
+			requireEntries(t, test.expected, got)
+		})
+	}
+}
+
 // Verify the requirement tables from
 // https://github.com/prometheus/prometheus/issues/13532 .
 // "classic" means the option "always_scrape_classic_histograms".

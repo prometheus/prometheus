@@ -34,11 +34,7 @@ func TestNHCBConvert(t *testing.T) {
 				h := NewTempHistogram()
 				return &h
 			},
-			expectedH: &histogram.Histogram{
-				Schema:          histogram.CustomBucketsSchema,
-				PositiveSpans:   []histogram.Span{},
-				PositiveBuckets: []int64{},
-			},
+			expectedErr: errMissingCount,
 		},
 		"sum only": {
 			setup: func() *TempHistogram {
@@ -46,11 +42,21 @@ func TestNHCBConvert(t *testing.T) {
 				h.SetSum(1000.25)
 				return &h
 			},
+			expectedErr: errMissingCount,
+		},
+		"count and sum without buckets": {
+			setup: func() *TempHistogram {
+				h := NewTempHistogram()
+				h.SetCount(1000)
+				h.SetSum(1000.25)
+				return &h
+			},
 			expectedH: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
+				Count:           1000,
 				Sum:             1000.25,
-				PositiveSpans:   []histogram.Span{},
-				PositiveBuckets: []int64{},
+				PositiveSpans:   []histogram.Span{{Length: 1}},
+				PositiveBuckets: []int64{1000},
 			},
 		},
 		"single integer bucket": {
