@@ -1257,41 +1257,106 @@ func TestHead_WALCheckpointMultiRef(t *testing.T) {
 	}
 
 	for _, enableSTStorage := range []bool{false, true} {
-		for _, tc := range cases {
-			t.Run(tc.name+",stStorage="+strconv.FormatBool(enableSTStorage), func(t *testing.T) {
-				h, w := newTestHead(t, 1000, compression.None, false)
-				populateTestWL(t, w, tc.walEntries, nil, enableSTStorage)
-				first, _, err := wlog.Segments(w.Dir())
-				require.NoError(t, err)
-
-				require.NoError(t, h.Init(0))
-
-				keepUntil, ok := h.getWALExpiry(2)
-				require.True(t, ok)
-				require.Equal(t, tc.expectedWalExpiry, keepUntil)
-
-				// Each truncation creates a new segment, so attempt truncations until a checkpoint is created
-				for {
-					h.lastWALTruncationTime.Store(0) // Reset so that it's always time to truncate the WAL
-					err := h.truncateWAL(tc.walTruncateMinT)
-					require.NoError(t, err)
-					f, _, err := wlog.Segments(w.Dir())
-					require.NoError(t, err)
-					if f > first {
-						break
+		for _, snapshot := range []bool{false, true} {
+			for _, tc := range cases {
+				t.Run(tc.name+",stStorage="+strconv.FormatBool(enableSTStorage)+",snapshot="+strconv.FormatBool(snapshot), func(t *testing.T) {
+					h, w := newTestHead(t, 1000, compression.None, false)
+					defer func() {
+						h.opts.EnableMemorySnapshotOnShutdown = false
+						_ = h.Close()
+					}()
+					reopen := func(mint int64) {
+						var err error
+						w, err = wlog.NewSize(nil, nil, w.Dir(), 32768, compression.None)
+						require.NoError(t, err)
+						h, err = NewHead(nil, nil, w, nil, h.opts, nil)
+						require.NoError(t, err)
+						require.NoError(t, h.Init(mint))
 					}
-				}
+					querySamples := func() map[string][]chunks.Sample {
+						q, err := NewBlockQuerier(h, tc.walTruncateMinT, math.MaxInt64)
+						require.NoError(t, err)
+						return query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
+					}
+					populateTestWL(t, w, tc.walEntries, nil, enableSTStorage)
+					first, _, err := wlog.Segments(w.Dir())
+					require.NoError(t, err)
 
-				// Read test WAL , checkpoint first
-				checkpointDir, _, err := wlog.LastCheckpoint(w.Dir())
-				require.NoError(t, err)
-				cprecs := readTestWAL(t, checkpointDir)
-				recs := readTestWAL(t, w.Dir())
-				recs = append(cprecs, recs...)
+					require.NoError(t, h.Init(0))
 
-				// Use testutil.RequireEqual which handles labels properly with dedupelabels
-				testutil.RequireEqual(t, tc.expectedWalEntries, recs)
-			})
+					keepUntil, ok := h.getWALExpiry(2)
+					require.True(t, ok)
+					require.Equal(t, tc.expectedWalExpiry, keepUntil)
+					expectedSamples := querySamples()
+
+					if snapshot {
+						// Recover from the snapshot before the WAL aliases are checkpointed.
+						h.opts.EnableMemorySnapshotOnShutdown = true
+						require.NoError(t, h.Close())
+						reopen(0)
+						require.Zero(t, prom_testutil.ToFloat64(h.metrics.snapshotReplayErrorTotal))
+						require.Equal(t, expectedSamples, querySamples())
+					}
+
+					// Each truncation creates a new segment, so attempt truncations until a checkpoint is created.
+					for {
+						h.lastWALTruncationTime.Store(0) // Reset so that it's always time to truncate the WAL
+						err := h.truncateWAL(tc.walTruncateMinT)
+						require.NoError(t, err)
+						f, _, err := wlog.Segments(w.Dir())
+						require.NoError(t, err)
+						if f > first {
+							break
+						}
+					}
+
+					// Read the test WAL, checkpoint first.
+					checkpointDir, _, err := wlog.LastCheckpoint(w.Dir())
+					require.NoError(t, err)
+					cprecs := readTestWAL(t, checkpointDir)
+					recs := readTestWAL(t, w.Dir())
+					recs = append(cprecs, recs...)
+
+					// Use testutil.RequireEqual which handles labels properly with dedupelabels.
+					testutil.RequireEqual(t, tc.expectedWalEntries, recs)
+
+					if snapshot {
+						// An alias absent from the snapshot's live series must not be reused.
+						app := h.Appender(context.Background())
+						ref, err := app.Append(0, labels.FromStrings("a", "2"), 1000, 1)
+						require.NoError(t, err)
+						require.NoError(t, app.Commit())
+						require.Equal(t, storage.SeriesRef(3), ref)
+					}
+
+					// Recover from the checkpoint without a snapshot to verify that the
+					// retained samples still have the series records needed to replay them.
+					h.opts.EnableMemorySnapshotOnShutdown = false
+					require.NoError(t, h.Close())
+					reopen(tc.walTruncateMinT)
+					actualSamples := querySamples()
+					// Truncating earlier samples can remove the first histogram's
+					// information that no counter reset occurred. All sample data
+					// and subsequent counter reset hints must still match.
+					for lset, samples := range actualSamples {
+						if len(samples) == 0 || len(expectedSamples[lset]) == 0 {
+							continue
+						}
+						got, want := samples[0], expectedSamples[lset][0]
+						if got.H() != nil && want.H() != nil &&
+							got.H().CounterResetHint == histogram.UnknownCounterReset &&
+							want.H().CounterResetHint == histogram.NotCounterReset {
+							got.H().CounterResetHint = histogram.NotCounterReset
+						}
+						if got.FH() != nil && want.FH() != nil &&
+							got.FH().CounterResetHint == histogram.UnknownCounterReset &&
+							want.FH().CounterResetHint == histogram.NotCounterReset {
+							got.FH().CounterResetHint = histogram.NotCounterReset
+						}
+					}
+					require.Equal(t, expectedSamples, actualSamples)
+				})
+			}
 		}
 	}
 }
@@ -5353,89 +5418,176 @@ func TestSnapshotError(t *testing.T) {
 	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.seriesCreated))
 }
 
-// TestSnapshotUnknownEncodingFallsBackToWAL verifies that a snapshot containing
-// an unknown chunk encoding causes the entire snapshot load to fail and fall back
-// to full WAL replay, recovering all series without data loss.
-func TestSnapshotUnknownEncodingFallsBackToWAL(t *testing.T) {
-	head, _ := newTestHead(t, 120*4, compression.None, false)
-	defer func() {
-		head.opts.EnableMemorySnapshotOnShutdown = false
-		require.NoError(t, head.Close())
-	}()
-
-	floatHist := tsdbutil.GenerateTestGaugeFloatHistograms(1)[0]
-	lblsFloatHist := labels.FromStrings("floathist", "bar")
-	lblsFloat := labels.FromStrings("foo", "bar")
-
-	app := head.Appender(context.Background())
-	_, err := app.AppendHistogram(0, lblsFloatHist, 99, nil, floatHist)
-	require.NoError(t, err)
-	_, err = app.Append(0, lblsFloat, 99, 99.0)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-
-	head.opts.EnableMemorySnapshotOnShutdown = true
-	require.NoError(t, head.Close())
-
-	// Find the snapshot and corrupt the encoding byte of the float histogram series.
-	snapDir, _, _, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
-	require.NoError(t, err)
-
-	sr, err := wlog.NewSegmentsReader(snapDir)
-	require.NoError(t, err)
-	r := wlog.NewReader(sr)
-	syms := labels.NewSymbolTable()
-	rdec := record.NewDecoder(syms, promslog.NewNopLogger())
-	var (
-		records [][]byte
-		mutated bool
-	)
-	for r.Next() {
-		rec := append([]byte(nil), r.Record()...)
-		if rec[0] == chunkSnapshotRecordTypeSeries {
-			buf := encoding.Decbuf{B: rec}
-			_ = buf.Byte() // flag
-			_ = buf.Be64() // ref
-			lset := rdec.DecodeLabels(&buf)
-			_ = buf.Be64int64() // chunkRange
-			if buf.Uvarint() == 1 && lset.Get("floathist") == "bar" {
-				_ = buf.Be64int64() // minTime
-				_ = buf.Be64int64() // maxTime
-				encPos := len(rec) - buf.Len()
-				require.Equal(t, byte(chunkenc.EncFloatHistogram), rec[encPos],
-					"expected float histogram encoding at computed offset")
-				rec[encPos] = 0xFF
-				mutated = true
+// TestSnapshotInvalidRecordFallsBackToWAL verifies recovery from invalid or legacy
+// snapshots, falling back to full WAL replay when available.
+func TestSnapshotInvalidRecordFallsBackToWAL(t *testing.T) {
+	for _, corruption := range []string{
+		"unknown chunk encoding",
+		"missing WAL expiry record",
+		"truncated WAL expiry record",
+		"missing WAL expiry record without WAL",
+	} {
+		t.Run(corruption, func(t *testing.T) {
+			head, _ := newTestHead(t, 120*4, compression.None, false)
+			querySamples := func() map[string][]chunks.Sample {
+				q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
+				return query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 			}
-		}
-		records = append(records, rec)
+			defer func() {
+				head.opts.EnableMemorySnapshotOnShutdown = false
+				require.NoError(t, head.Close())
+			}()
+
+			floatHist := tsdbutil.GenerateTestGaugeFloatHistograms(1)[0]
+			lblsFloatHist := labels.FromStrings("floathist", "bar")
+			lblsFloat := labels.FromStrings("foo", "bar")
+
+			app := head.Appender(context.Background())
+			_, err := app.AppendHistogram(0, lblsFloatHist, 99, nil, floatHist)
+			require.NoError(t, err)
+			_, err = app.Append(0, lblsFloat, 99, 99.0)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			expectedSamples := querySamples()
+			require.Len(t, expectedSamples, 2)
+
+			head.opts.EnableMemorySnapshotOnShutdown = true
+			require.NoError(t, head.Close())
+
+			// Find the snapshot and corrupt or remove the selected record.
+			snapDir, _, _, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
+			require.NoError(t, err)
+
+			sr, err := wlog.NewSegmentsReader(snapDir)
+			require.NoError(t, err)
+			r := wlog.NewReader(sr)
+			syms := labels.NewSymbolTable()
+			rdec := record.NewDecoder(syms, promslog.NewNopLogger())
+			var (
+				records [][]byte
+				mutated bool
+			)
+			for r.Next() {
+				rec := append([]byte(nil), r.Record()...)
+				switch {
+				case corruption == "unknown chunk encoding" && rec[0] == chunkSnapshotRecordTypeSeries:
+					buf := encoding.Decbuf{B: rec}
+					_ = buf.Byte() // flag
+					_ = buf.Be64() // ref
+					lset := rdec.DecodeLabels(&buf)
+					_ = buf.Be64int64() // chunkRange
+					if buf.Uvarint() == 1 && lset.Get("floathist") == "bar" {
+						_ = buf.Be64int64() // minTime
+						_ = buf.Be64int64() // maxTime
+						encPos := len(rec) - buf.Len()
+						require.Equal(t, byte(chunkenc.EncFloatHistogram), rec[encPos],
+							"expected float histogram encoding at computed offset")
+						rec[encPos] = 0xFF
+						mutated = true
+					}
+				case strings.HasPrefix(corruption, "missing WAL expiry record") && rec[0] == chunkSnapshotRecordTypeWALExpiries:
+					mutated = true
+					continue
+				case corruption == "truncated WAL expiry record" && rec[0] == chunkSnapshotRecordTypeWALExpiries:
+					rec = append(rec, 0) // Incomplete reference/expiry pair.
+					mutated = true
+				}
+				records = append(records, rec)
+			}
+			require.NoError(t, r.Err())
+			require.NoError(t, sr.Close())
+			require.True(t, mutated, "expected to find the record to mutate")
+
+			// Rewrite the snapshot with the mutated records.
+			files, err := os.ReadDir(snapDir)
+			require.NoError(t, err)
+			for _, f := range files {
+				require.NoError(t, os.Remove(filepath.Join(snapDir, f.Name())))
+			}
+			cp, err := wlog.New(nil, nil, snapDir, compression.None)
+			require.NoError(t, err)
+			require.NoError(t, cp.Log(records...))
+			require.NoError(t, cp.Close())
+
+			// Legacy snapshots remain usable without a WAL. Otherwise invalid
+			// snapshots must fall back to replaying the WAL.
+			var w *wlog.WL
+			if corruption != "missing WAL expiry record without WAL" {
+				w, err = wlog.NewSize(nil, nil, head.wal.Dir(), 32768, compression.None)
+				require.NoError(t, err)
+			}
+			head, err = NewHead(prometheus.NewRegistry(), nil, w, nil, head.opts, nil)
+			require.NoError(t, err)
+			require.NoError(t, head.Init(math.MinInt64))
+
+			if w == nil {
+				require.Zero(t, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+			} else {
+				require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+			}
+			require.Equal(t, uint64(2), head.NumSeries(), "both series must be recovered")
+			require.NotNil(t, head.series.getByHash(lblsFloat.Hash(), lblsFloat))
+			require.NotNil(t, head.series.getByHash(lblsFloatHist.Hash(), lblsFloatHist))
+			require.Equal(t, expectedSamples, querySamples())
+		})
 	}
-	require.NoError(t, r.Err())
-	require.NoError(t, sr.Close())
-	require.True(t, mutated, "expected to find and corrupt the float histogram series record")
+}
 
-	// Rewrite the snapshot with the mutated records.
-	files, err := os.ReadDir(snapDir)
-	require.NoError(t, err)
-	for _, f := range files {
-		require.NoError(t, os.Remove(filepath.Join(snapDir, f.Name())))
+func TestChunkSnapshotWALExpiries(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		entries   int
+		keepUntil int64
+	}{
+		{name: "empty"},
+		{name: "negative timestamp", entries: 1, keepUntil: -1},
+		{name: "minimum timestamp", entries: 1, keepUntil: math.MinInt64},
+		{name: "maximum timestamp", entries: 1, keepUntil: math.MaxInt64},
+		{name: "multiple records", entries: 10001, keepUntil: 100},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			head, w := newTestHead(t, 1000, compression.None, false)
+			defer func() {
+				head.opts.EnableMemorySnapshotOnShutdown = false
+				_ = head.Close()
+			}()
+			require.NoError(t, head.Init(math.MinInt64))
+			// A committed sample advances the WAL so that shutdown takes a snapshot.
+			app := head.Appender(context.Background())
+			ref, err := app.Append(0, labels.FromStrings("a", "1"), 0, 1)
+			require.NoError(t, err)
+			require.Equal(t, storage.SeriesRef(1), ref)
+			require.NoError(t, app.Commit())
+
+			// GC can retain negative timestamps, unlike updateWALExpiry's zero floor.
+			head.walExpiriesMtx.Lock()
+			for i := range tc.entries {
+				head.walExpiries[chunks.HeadSeriesRef(i+2)] = tc.keepUntil
+			}
+			head.walExpiriesMtx.Unlock()
+			head.opts.EnableMemorySnapshotOnShutdown = true
+			require.NoError(t, head.Close())
+			_, _, _, err = LastChunkSnapshot(head.opts.ChunkDirRoot)
+			require.NoError(t, err)
+
+			w, err = wlog.NewSize(nil, nil, w.Dir(), 32768, compression.None)
+			require.NoError(t, err)
+			head, err = NewHead(nil, nil, w, nil, head.opts, nil)
+			require.NoError(t, err)
+			require.NoError(t, head.Init(math.MinInt64))
+
+			// Even an empty expiry map must carry the completeness marker.
+			require.Zero(t, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+			require.Len(t, head.walExpiries, tc.entries)
+			for i := range tc.entries {
+				keepUntil, ok := head.getWALExpiry(chunks.HeadSeriesRef(i + 2))
+				require.True(t, ok)
+				require.Equal(t, tc.keepUntil, keepUntil)
+			}
+			require.Equal(t, uint64(tc.entries+1), head.lastSeriesID.Load())
+		})
 	}
-	cp, err := wlog.New(nil, nil, snapDir, compression.None)
-	require.NoError(t, err)
-	require.NoError(t, cp.Log(records...))
-	require.NoError(t, cp.Close())
-
-	// Reload the head; snapshot should fail due to unknown encoding and fall back to WAL.
-	w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, compression.None)
-	require.NoError(t, err)
-	head, err = NewHead(prometheus.NewRegistry(), nil, w, nil, head.opts, nil)
-	require.NoError(t, err)
-	require.NoError(t, head.Init(math.MinInt64))
-
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
-	require.Equal(t, uint64(2), head.NumSeries(), "both series must be recovered from WAL")
-	require.NotNil(t, head.series.getByHash(lblsFloat.Hash(), lblsFloat))
-	require.NotNil(t, head.series.getByHash(lblsFloatHist.Hash(), lblsFloatHist))
 }
 
 func TestHistogramMetrics(t *testing.T) {
