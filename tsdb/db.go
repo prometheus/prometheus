@@ -2771,12 +2771,15 @@ func (db *DB) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matche
 
 	for _, b := range db.blocks {
 		if b.OverlapsClosedInterval(mint, maxt) {
-			g.Go(func(b *Block) func() error {
+			// Copy the matchers as PostingsForMatchers sorts the slice in place.
+			// See https://github.com/prometheus/prometheus/issues/14723
+			g.Go(func(b *Block, ms []*labels.Matcher) func() error {
 				return func() error { return b.Delete(ctx, mint, maxt, ms...) }
-			}(b))
+			}(b, slices.Clone(ms)))
 		}
 	}
 	if db.head.OverlapsClosedInterval(mint, maxt) {
+		ms := slices.Clone(ms)
 		g.Go(func() error {
 			return db.head.Delete(ctx, mint, maxt, ms...)
 		})
