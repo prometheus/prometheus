@@ -2532,8 +2532,8 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			}, warnings
 		}
 
-		if !ev.enableDelayedNameRemoval && mat.ContainsSameLabelset() {
-			ev.errorf("vector cannot contain metrics with the same labelset")
+		if !ev.enableDelayedNameRemoval {
+			mat = ev.mergeSeriesWithSameLabelset(mat)
 		}
 		return mat, warnings
 
@@ -4417,6 +4417,19 @@ func (ev *evaluator) mergeSeriesWithSameLabelset(mat Matrix) Matrix {
 		for i := 1; i < len(base.Histograms); i++ {
 			if base.Histograms[i].T == base.Histograms[i-1].T {
 				ev.errorf("vector cannot contain metrics with the same labelset")
+			}
+		}
+
+		// Check for a float and a histogram sample sharing the same timestamp,
+		// since the checks above only catch duplicates within the same type.
+		for fi, hi := 0, 0; fi < len(base.Floats) && hi < len(base.Histograms); {
+			switch ft, ht := base.Floats[fi].T, base.Histograms[hi].T; {
+			case ft == ht:
+				ev.errorf("vector cannot contain metrics with the same labelset")
+			case ft < ht:
+				fi++
+			default:
+				hi++
 			}
 		}
 
