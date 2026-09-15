@@ -440,8 +440,7 @@ export const computeVectorVectorBinOp = (
       mg.rhs.forEach((rs) => {
         mg.lhs.forEach((ls, lIdx) => {
           if (!ls.value || !rs.value) {
-            // TODO: Implement native histogram support.
-            throw new Error("native histogram support not implemented yet");
+            return;
           }
 
           const [vl, vr] =
