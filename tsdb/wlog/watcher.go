@@ -61,6 +61,11 @@ type WriteTo interface {
 	AppendFloatHistograms([]record.RefFloatHistogramSample) bool
 	StoreSeries([]record.RefSeries, int)
 	StoreMetadata([]record.RefMetadata)
+	// StoreMetadataDefinitions and StoreSeriesMetadataRef supersede StoreMetadata:
+	// StoreMetadataDefinitions stores the content for a record.MetadataRef, and
+	// StoreSeriesMetadataRef associates a series with a (possibly new) ref.
+	StoreMetadataDefinitions([]record.RefMetadataDefinition)
+	StoreSeriesMetadataRef([]record.RefSeriesMetadataRef)
 
 	// UpdateSeriesSegment and SeriesReset are intended for
 	// garbage-collection:
@@ -518,6 +523,8 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries bool) er
 	histograms := w.recordBuf.GetHistograms(512)
 	floatHistograms := w.recordBuf.GetFloatHistograms(512)
 	metadata := w.recordBuf.GetMetadata(512)
+	metadataDefs := w.recordBuf.GetMetadataDefinitions(8)
+	seriesMetadataRefs := w.recordBuf.GetSeriesMetadataRefs(512)
 	defer func() {
 		w.recordBuf.PutRefSeries(series)
 		w.recordBuf.PutSamples(samples)
@@ -525,6 +532,8 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries bool) er
 		w.recordBuf.PutHistograms(histograms)
 		w.recordBuf.PutFloatHistograms(floatHistograms)
 		w.recordBuf.PutMetadata(metadata)
+		w.recordBuf.PutMetadataDefinitions(metadataDefs)
+		w.recordBuf.PutSeriesMetadataRefs(seriesMetadataRefs)
 	}()
 
 	dec := record.NewDecoder(labels.NewSymbolTable(), w.logger) // One table per WAL segment means it won't grow indefinitely.
@@ -657,6 +666,28 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries bool) er
 				return err
 			}
 			w.writer.StoreMetadata(metadata)
+
+		case record.MetadataDefinition:
+			if !w.sendMetadata {
+				break
+			}
+			metadataDefs, err = dec.MetadataDefinition(rec, metadataDefs[:0])
+			if err != nil {
+				w.recordDecodeFailsMetric.Inc()
+				return err
+			}
+			w.writer.StoreMetadataDefinitions(metadataDefs)
+
+		case record.SeriesMetadataRef:
+			if !w.sendMetadata {
+				break
+			}
+			seriesMetadataRefs, err = dec.SeriesMetadataRef(rec, seriesMetadataRefs[:0])
+			if err != nil {
+				w.recordDecodeFailsMetric.Inc()
+				return err
+			}
+			w.writer.StoreSeriesMetadataRef(seriesMetadataRefs)
 
 		case record.Unknown:
 			// Could be corruption, or reading from a WAL from a newer Prometheus.

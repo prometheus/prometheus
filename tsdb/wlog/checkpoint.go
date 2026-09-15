@@ -171,6 +171,8 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		tstones               []tombstones.Stone
 		exemplars             []record.RefExemplar
 		metadata              []record.RefMetadata
+		metadataDefs          []record.RefMetadataDefinition
+		seriesMetadataRefs    []record.RefSeriesMetadataRef
 		st                    = labels.NewSymbolTable() // Needed for decoding; labels do not outlive this function.
 		dec                   = record.NewDecoder(st, logger)
 		enc                   = record.Encoder{EnableSTStorage: enableSTStorage}
@@ -178,9 +180,17 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		recs                  [][]byte
 
 		latestMetadataMap = make(map[chunks.HeadSeriesRef]record.RefMetadata)
+
+		// MetadataDefinition content is immutable per ref, so every definition
+		// ever seen is buffered here; which ones are still reachable is only
+		// known once latestSeriesMetadataRefMap is final, so the actual
+		// filtering happens in a final pass after the main loop below.
+		metadataDefsSeen           = make(map[record.MetadataRef]record.RefMetadataDefinition)
+		latestSeriesMetadataRefMap = make(map[chunks.HeadSeriesRef]record.RefSeriesMetadataRef)
 	)
 	for r.Next() {
-		series, samples, histogramSamples, floatHistogramSamples, tstones, exemplars, metadata = series[:0], samples[:0], histogramSamples[:0], floatHistogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0]
+		series, samples, histogramSamples, floatHistogramSamples, tstones, exemplars, metadata, metadataDefs, seriesMetadataRefs =
+			series[:0], samples[:0], histogramSamples[:0], floatHistogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0], metadataDefs[:0], seriesMetadataRefs[:0]
 
 		// We don't reset the buffer since we batch up multiple records
 		// before writing them to the checkpoint.
@@ -374,6 +384,35 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			}
 			stats.TotalMetadata += len(metadata)
 			stats.DroppedMetadata += len(metadata) - repl
+		case record.MetadataDefinition:
+			metadataDefs, err = dec.MetadataDefinition(rec, metadataDefs)
+			if err != nil {
+				return nil, fmt.Errorf("decode metadata definitions: %w", err)
+			}
+			// Content is immutable per ref, so just remember every definition seen;
+			// which ones are still reachable is decided once the final
+			// latestSeriesMetadataRefMap is known, after the main loop.
+			for _, def := range metadataDefs {
+				metadataDefsSeen[def.Ref] = def
+			}
+			stats.TotalMetadata += len(metadataDefs)
+		case record.SeriesMetadataRef:
+			seriesMetadataRefs, err = dec.SeriesMetadataRef(rec, seriesMetadataRefs)
+			if err != nil {
+				return nil, fmt.Errorf("decode series metadata refs: %w", err)
+			}
+			// Only keep reference to the latest found MetadataRef for each series ref.
+			repl := 0
+			for _, sm := range seriesMetadataRefs {
+				if keep(sm.Ref) {
+					if _, ok := latestSeriesMetadataRefMap[sm.Ref]; !ok {
+						repl++
+					}
+					latestSeriesMetadataRefMap[sm.Ref] = sm
+				}
+			}
+			stats.TotalMetadata += len(seriesMetadataRefs)
+			stats.DroppedMetadata += len(seriesMetadataRefs) - repl
 		default:
 			// Unknown record type, probably from a future Prometheus version.
 			continue
@@ -410,6 +449,34 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		}
 		if err := cp.Log(enc.Metadata(latestMetadata, buf[:0])); err != nil {
 			return nil, fmt.Errorf("flush metadata records: %w", err)
+		}
+	}
+
+	// Flush the latest series-to-MetadataRef association for each kept series,
+	// and only the MetadataDefinitions still reachable from one of those
+	// associations. Definitions must be logged before the associations that
+	// reference them.
+	if len(latestSeriesMetadataRefMap) > 0 {
+		liveMetadataRefs := make(map[record.MetadataRef]struct{}, len(latestSeriesMetadataRefMap))
+		latestSeriesMetadataRefs := make([]record.RefSeriesMetadataRef, 0, len(latestSeriesMetadataRefMap))
+		for _, sm := range latestSeriesMetadataRefMap {
+			latestSeriesMetadataRefs = append(latestSeriesMetadataRefs, sm)
+			liveMetadataRefs[sm.MetadataRef] = struct{}{}
+		}
+
+		liveMetadataDefs := make([]record.RefMetadataDefinition, 0, len(liveMetadataRefs))
+		for ref := range liveMetadataRefs {
+			if def, ok := metadataDefsSeen[ref]; ok {
+				liveMetadataDefs = append(liveMetadataDefs, def)
+			}
+		}
+		if len(liveMetadataDefs) > 0 {
+			if err := cp.Log(enc.MetadataDefinition(liveMetadataDefs, buf[:0])); err != nil {
+				return nil, fmt.Errorf("flush metadata definition records: %w", err)
+			}
+		}
+		if err := cp.Log(enc.SeriesMetadataRef(latestSeriesMetadataRefs, buf[:0])); err != nil {
+			return nil, fmt.Errorf("flush series metadata ref records: %w", err)
 		}
 	}
 

@@ -76,6 +76,39 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, metadata, decMetadata)
 
+	metadataDefs := []RefMetadataDefinition{
+		{
+			Ref:  100,
+			Type: uint8(Counter),
+			Unit: "",
+			Help: "some magic counter",
+		},
+		{
+			Ref:  1,
+			Type: uint8(Counter),
+			Unit: "seconds",
+			Help: "CPU time counter",
+		},
+		{
+			Ref:  147741,
+			Type: uint8(Gauge),
+			Unit: "percentage",
+			Help: "current memory usage",
+		},
+	}
+	decMetadataDefs, err := dec.MetadataDefinition(enc.MetadataDefinition(metadataDefs, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, metadataDefs, decMetadataDefs)
+
+	seriesMetadataRefs := []RefSeriesMetadataRef{
+		{Ref: 100, MetadataRef: 1},
+		{Ref: 1, MetadataRef: 1},
+		{Ref: 435245, MetadataRef: 147741},
+	}
+	decSeriesMetadataRefs, err := dec.SeriesMetadataRef(enc.SeriesMetadataRef(seriesMetadataRefs, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, seriesMetadataRefs, decSeriesMetadataRefs)
+
 	// Without ST.
 	samples := []RefSample{
 		{Ref: 0, T: 12423423, V: 1.2345},
@@ -1053,6 +1086,14 @@ func TestRecord_Type(t *testing.T) {
 	metadata := []RefMetadata{{Ref: 147, Type: uint8(Counter), Unit: "unit", Help: "help"}}
 	recordType = dec.Type(enc.Metadata(metadata, nil))
 	require.Equal(t, Metadata, recordType)
+
+	metadataDefs := []RefMetadataDefinition{{Ref: 1, Type: uint8(Counter), Unit: "unit", Help: "help"}}
+	recordType = dec.Type(enc.MetadataDefinition(metadataDefs, nil))
+	require.Equal(t, MetadataDefinition, recordType)
+
+	seriesMetadataRefs := []RefSeriesMetadataRef{{Ref: 147, MetadataRef: 1}}
+	recordType = dec.Type(enc.SeriesMetadataRef(seriesMetadataRefs, nil))
+	require.Equal(t, SeriesMetadataRef, recordType)
 
 	histograms := []RefHistogramSample{
 		{
