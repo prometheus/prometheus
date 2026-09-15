@@ -29,6 +29,7 @@ import (
 )
 
 func TestDockerSDRefresh(t *testing.T) {
+	t.Parallel()
 	sdmock := NewSDMock(t, "dockerprom")
 	sdmock.Setup()
 
@@ -227,6 +228,7 @@ host: %s
 }
 
 func TestDockerSDRefreshMatchAllNetworks(t *testing.T) {
+	t.Parallel()
 	sdmock := NewSDMock(t, "dockerprom")
 	sdmock.Setup()
 
@@ -523,6 +525,7 @@ func sortFunc(labelSets []model.LabelSet) {
 }
 
 func TestDockerSDRefreshIPv6Only(t *testing.T) {
+	t.Parallel()
 	sdmock := NewSDMock(t, "dockeripv6")
 	sdmock.Setup()
 

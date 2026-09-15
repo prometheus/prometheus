@@ -1,4 +1,4 @@
-import { ComponentType, useEffect, useState } from "react";
+import { ComponentType, useState } from "react";
 import InfiniteScroll from "react-infinite-scroll-component";
 
 const initialNumberOfItemsDisplayed = 50;
@@ -16,30 +16,31 @@ const CustomInfiniteScroll = <T,>({
   allItems,
   child,
 }: CustomInfiniteScrollProps<T>) => {
-  const [items, setItems] = useState<T[]>(allItems.slice(0, 50));
-  const [index, setIndex] = useState<number>(initialNumberOfItemsDisplayed);
-  const [hasMore, setHasMore] = useState<boolean>(
-    allItems.length > initialNumberOfItemsDisplayed
-  );
+  const [page, setPage] = useState({
+    source: allItems,
+    count: initialNumberOfItemsDisplayed,
+    generation: 0,
+  });
+  if (page.source !== allItems) {
+    setPage({
+      source: allItems,
+      count: initialNumberOfItemsDisplayed,
+      generation: page.generation + 1,
+    });
+  }
+  const items = allItems.slice(0, page.count);
+  const hasMore = page.count < allItems.length;
   const Child = child;
+  const fetchMoreData = () =>
+    setPage((current) => ({
+      ...current,
+      count: current.count + initialNumberOfItemsDisplayed,
+    }));
 
-  useEffect(() => {
-    setItems(allItems.slice(0, initialNumberOfItemsDisplayed));
-    setHasMore(allItems.length > initialNumberOfItemsDisplayed);
-  }, [allItems]);
-
-  const fetchMoreData = () => {
-    if (items.length === allItems.length) {
-      setHasMore(false);
-    } else {
-      const newIndex = index + initialNumberOfItemsDisplayed;
-      setIndex(newIndex);
-      setItems(allItems.slice(0, newIndex));
-    }
-  };
-
+  // Reset the widget's load latch even when the new page has the same length.
   return (
     <InfiniteScroll
+      key={page.generation}
       next={fetchMoreData}
       hasMore={hasMore}
       loader={<h4>loading...</h4>}

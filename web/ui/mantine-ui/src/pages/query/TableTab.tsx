@@ -1,8 +1,12 @@
-import { FC, useEffect, useId, useLayoutEffect, useState } from "react";
+import { FC, useId, useState } from "react";
 import { Alert, Skeleton, Box, Group, Stack } from "@mantine/core";
 import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import { InstantQueryResult } from "../../api/responseTypes/query";
-import { useAPIQuery } from "../../api/api";
+import {
+  APIQueryMetadata,
+  SuccessAPIResponse,
+  useAPIQuery,
+} from "../../api/api";
 import dayjs from "dayjs";
 import timezone from "dayjs/plugin/timezone";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
@@ -20,38 +24,36 @@ export interface TableTabProps {
 }
 
 const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
-  const [responseTime, setResponseTime] = useState<number>(0);
-  const [limitResults, setLimitResults] = useState<boolean>(true);
-
   const { visualizer } = useAppSelector(
-    (state) => state.queryPage.panels[panelIdx]
+    (state) => state.queryPage.panels[panelIdx],
   );
   const dispatch = useAppDispatch();
   const { showQueryWarnings, showQueryInfoNotices } = useSettings();
 
   const { endTime, range } = visualizer;
 
-  const { data, error, isFetching, refetch } = useAPIQuery<InstantQueryResult>({
-    key: [useId()],
+  const queryKey = [useId(), "/query", expr, endTime, retriggerIdx];
+  const {
+    data: result,
+    error,
+    isFetching,
+  } = useAPIQuery<
+    InstantQueryResult,
+    {
+      response: SuccessAPIResponse<InstantQueryResult>;
+      metadata: APIQueryMetadata;
+    }
+  >({
+    key: queryKey,
     path: "/query",
-    params: {
-      query: expr,
-      time: `${(endTime !== null ? endTime : Date.now()) / 1000}`,
-      stats: "true",
+    params: (requestTimeMs) => {
+      const time = (endTime ?? requestTimeMs) / 1000;
+      return { query: expr, time: `${time}`, stats: "true" };
     },
     enabled: expr !== "",
-    recordResponseTime: setResponseTime,
+    select: (response, metadata) => ({ response, metadata }),
   });
-
-  useEffect(() => {
-    if (expr !== "") {
-      refetch();
-    }
-  }, [retriggerIdx, refetch, expr, endTime]);
-
-  useLayoutEffect(() => {
-    setLimitResults(true);
-  }, [data, isFetching]);
+  const data = result?.response;
 
   return (
     <Stack gap="lg" mt="sm">
@@ -65,14 +67,14 @@ const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
               setVisualizer({
                 idx: panelIdx,
                 visualizer: { ...visualizer, endTime: time },
-              })
+              }),
             )
           }
         />
         {!isFetching && data !== undefined && (
           <QueryStatsDisplay
             numResults={data.data.result.length}
-            responseTime={responseTime}
+            responseTime={result!.metadata.responseTimeMs}
             stats={data.data.stats!}
           />
         )}
@@ -124,14 +126,24 @@ const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
                 {w}
               </Alert>
             ))}
-          <DataTable
+          <LimitedDataTable
+            key={JSON.stringify([queryKey, result!.metadata.receivedAtMs])}
             data={data.data}
-            limitResults={limitResults}
-            setLimitResults={setLimitResults}
           />
         </>
       )}
     </Stack>
+  );
+};
+
+const LimitedDataTable: FC<{ data: InstantQueryResult }> = ({ data }) => {
+  const [limitResults, setLimitResults] = useState(true);
+  return (
+    <DataTable
+      data={data}
+      limitResults={limitResults}
+      setLimitResults={setLimitResults}
+    />
   );
 };
 

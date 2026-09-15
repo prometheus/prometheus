@@ -39,6 +39,7 @@ func (s *serverSDTestSuite) SetupTest(t *testing.T) {
 }
 
 func TestServerSDRefresh(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		cfg  SDConfig

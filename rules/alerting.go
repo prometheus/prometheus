@@ -632,6 +632,14 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 	notifyFunc(ctx, r.vector.String(), alerts...)
 }
 
+// LogValue returns the rule's representation for logging.
+func (r *AlertingRule) LogValue() slog.Value {
+	if r == nil {
+		return slog.AnyValue(nil)
+	}
+	return slog.StringValue(r.String())
+}
+
 func (r *AlertingRule) String() string {
 	ar := rulefmt.Rule{
 		Alert:         r.name,

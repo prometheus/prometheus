@@ -459,10 +459,10 @@ storage:
 			exitCode: 1,
 		},
 		{
-			name:     "st-storage without any float chunk encoding set",
+			name:     "st-storage implies ST-capable encodings",
 			config:   "",
 			features: "st-storage",
-			exitCode: 1,
+			exitCode: 0,
 		},
 		{
 			name: "xor without st-storage feature",
@@ -718,8 +718,7 @@ func TestModeSpecificFlags(t *testing.T) {
 
 			err = prom.Wait()
 			require.Error(t, err)
-			var exitError *exec.ExitError
-			if errors.As(err, &exitError) {
+			if exitError, ok := errors.AsType[*exec.ExitError](err); ok {
 				status := exitError.Sys().(syscall.WaitStatus)
 				require.Equal(t, tc.exitStatus, status.ExitStatus())
 			} else {

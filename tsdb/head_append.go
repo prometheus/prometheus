@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"runtime"
 	"time"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -130,8 +131,13 @@ func (h *Head) initTime(t int64) {
 		for h.minTime.Load() == math.MaxInt64 {
 			select {
 			case <-antiDeadlockTimeout:
+				// This should never happen in normal operation.
+				// If it does, there may be a bug or the system is severely overloaded.
+				h.logger.Warn("initTime timeout waiting for minTime initialization")
 				return
 			default:
+				// Yield to allow the initializing goroutine to complete.
+				runtime.Gosched()
 			}
 		}
 		return
@@ -443,6 +449,9 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if hook := a.head.testAfterSeriesLookup; hook != nil {
+		hook(s)
+	}
 	if s == nil {
 		var err error
 		s, _, err = a.getOrCreate(lset)
@@ -471,7 +480,10 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		// series" and "known series with stNone".
 	}
 
-	s.Lock()
+	s, err := a.lockForAppend(s)
+	if err != nil {
+		return 0, err
+	}
 	defer s.Unlock()
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
@@ -481,7 +493,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 			return 0, storage.ErrOutOfOrderSample
 		}
-		s.pendingCommit = true
+		s.markPendingCommit()
 	}
 	if delta > 0 {
 		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
@@ -526,18 +538,21 @@ func (a *headAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 	// Check if ST wouldn't be OOO vs samples we already might have for this series.
 	// NOTE(bwplotka): This will be often hit as it's expected for long living
 	// counters to share the same ST.
-	s.Lock()
-	isOOO, _, err := s.appendable(st, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
-	if err == nil {
-		s.pendingCommit = true
-	}
-	s.Unlock()
+	s, err := a.lockForAppend(s)
 	if err != nil {
 		return 0, err
 	}
+	isOOO, _, err := s.appendable(st, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	if err != nil {
+		s.Unlock()
+		return 0, err
+	}
 	if isOOO {
+		s.Unlock()
 		return storage.SeriesRef(s.ref), storage.ErrOutOfOrderST
 	}
+	s.markPendingCommit()
+	s.Unlock()
 
 	b := a.getCurrentBatch(stFloat, s.ref)
 	b.floats = append(b.floats, record.RefSample{Ref: s.ref, T: st, V: 0.0})
@@ -566,6 +581,30 @@ func (a *headAppenderBase) getOrCreate(lset labels.Labels) (s *memSeries, create
 		a.series = append(a.series, s)
 	}
 	return s, created, nil
+}
+
+// lockForAppend locks s and returns it, ready to be marked as pending commit.
+//
+// Looking a series up only holds the stripe lock for the duration of the lookup, so
+// garbage collection can remove the series from the head index before the appender gets
+// to lock it and mark it as pending commit. Appending to such a series succeeds but the
+// samples are unreachable from the head, i.e. they are silently lost. When that
+// happened, a live series for the same labels is created and returned locked instead,
+// which is the same outcome as garbage collection winning the race outright.
+func (a *headAppenderBase) lockForAppend(s *memSeries) (*memSeries, error) {
+	for {
+		s.Lock()
+		if !s.isGCed() {
+			return s, nil
+		}
+		lset := s.lset // Safe to access; the series is locked.
+		s.Unlock()
+
+		var err error
+		if s, _, err = a.getOrCreate(lset); err != nil {
+			return nil, err
+		}
+	}
 }
 
 // getCurrentBatch returns the current batch if it fits the provided sampleType
@@ -847,12 +886,15 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 
 	switch {
 	case h != nil:
-		s.Lock()
+		var lockErr error
+		if s, lockErr = a.lockForAppend(s); lockErr != nil {
+			return 0, lockErr
+		}
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
 		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err == nil {
-			s.pendingCommit = true
+			s.markPendingCommit()
 		}
 		s.Unlock()
 		if delta > 0 {
@@ -879,12 +921,15 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		})
 		b.histogramSeries = append(b.histogramSeries, s)
 	case fh != nil:
-		s.Lock()
+		var lockErr error
+		if s, lockErr = a.lockForAppend(s); lockErr != nil {
+			return 0, lockErr
+		}
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
 		_, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err == nil {
-			s.pendingCommit = true
+			s.markPendingCommit()
 		}
 		s.Unlock()
 		if delta > 0 {
@@ -939,7 +984,10 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			ZeroThreshold: h.ZeroThreshold,
 			CustomValues:  h.CustomValues,
 		}
-		s.Lock()
+		var lockErr error
+		if s, lockErr = a.lockForAppend(s); lockErr != nil {
+			return 0, lockErr
+		}
 		// For STZeroSamples OOO is not allowed.
 		// We set it to true to make this implementation as close as possible to the float implementation.
 		isOOO, _, err := s.appendableHistogram(st, zeroHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow)
@@ -959,7 +1007,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			return 0, storage.ErrOutOfOrderST
 		}
 
-		s.pendingCommit = true
+		s.markPendingCommit()
 		s.Unlock()
 		sTyp := stHistogram
 		if h.UsesCustomBuckets() {
@@ -981,7 +1029,10 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			ZeroThreshold: fh.ZeroThreshold,
 			CustomValues:  fh.CustomValues,
 		}
-		s.Lock()
+		var lockErr error
+		if s, lockErr = a.lockForAppend(s); lockErr != nil {
+			return 0, lockErr
+		}
 		// We set it to true to make this implementation as close as possible to the float implementation.
 		isOOO, _, err := s.appendableFloatHistogram(st, zeroFloatHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow) // OOO is not allowed for STZeroSamples.
 		if err != nil {
@@ -1000,7 +1051,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			return 0, storage.ErrOutOfOrderST
 		}
 
-		s.pendingCommit = true
+		s.markPendingCommit()
 		s.Unlock()
 		sTyp := stFloatHistogram
 		if fh.UsesCustomBuckets() {
@@ -1469,7 +1520,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-		series.pendingCommit = false
+		a.releasePendingCommit(series)
 		series.Unlock()
 	}
 }
@@ -1571,7 +1622,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-		series.pendingCommit = false
+		a.releasePendingCommit(series)
 		series.Unlock()
 	}
 }
@@ -1673,7 +1724,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-		series.pendingCommit = false
+		a.releasePendingCommit(series)
 		series.Unlock()
 	}
 }
@@ -1692,12 +1743,26 @@ func commitMetadata(b *appendBatch) {
 	}
 }
 
-func (a *headAppenderBase) unmarkCreatedSeriesAsPendingCommit() {
+func (a *headAppenderBase) releaseCreatedSeriesReservations() {
 	for _, s := range a.series {
 		s.Lock()
-		s.pendingCommit = false
+		a.releasePendingCommit(s)
 		s.Unlock()
 	}
+}
+
+// releasePendingCommit releases one of the series' pending-sample reservations.
+// Reservations are taken once per queued sample and once per series created by
+// this appender. Decrementing without one would underflow into the packed flag
+// bits, so the accounting error is reported instead.
+//
+// Must be called with the series lock held.
+func (a *headAppenderBase) releasePendingCommit(s *memSeries) {
+	if s.unmarkPendingCommit() {
+		return
+	}
+	a.head.metrics.pendingCommitUnderflow.Inc()
+	a.head.logger.Error("Tried to release a pending commit that was not held", "series", s.lset.String())
 }
 
 // Commit writes to the WAL and adds the data to the Head.
@@ -1771,8 +1836,8 @@ func (a *headAppenderBase) Commit() (err error) {
 		a.commitFloatHistograms(b, acc)
 		commitMetadata(b)
 	}
-	// Unmark all series as pending commit after all samples have been committed.
-	a.unmarkCreatedSeriesAsPendingCommit()
+	// Release the reservations that protected newly indexed series before their first sample was queued.
+	a.releaseCreatedSeriesReservations()
 
 	h.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatOOORejected))
 	h.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histoOOORejected))
@@ -2076,7 +2141,7 @@ func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o
 	//  - The current chunk range is ending before chunkenc.MinSamplesPerHistogramChunk will be satisfied.
 	//  - s.nextAt was set while loading a chunk snapshot with the intent that a new chunk be cut on the next append.
 	var nextChunkRangeStart int64
-	if s.histogramChunkHasComputedEndTime {
+	if s.hasComputedHistogramChunkEndTime() {
 		nextChunkRangeStart = rangeForTimestamp(c.minTime, o.chunkRange)
 	} else {
 		// If we haven't yet computed an end time yet, s.nextAt is either set to
@@ -2089,10 +2154,10 @@ func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o
 	// for this chunk that will try to make samples equally distributed within
 	// the remaining chunks in the current chunk range.
 	// At the latest it must happen at the timestamp set when the chunk was cut.
-	if !s.histogramChunkHasComputedEndTime && numBytes >= targetBytes/4 {
+	if !s.hasComputedHistogramChunkEndTime() && numBytes >= targetBytes/4 {
 		ratioToFull := float64(targetBytes) / float64(numBytes)
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt, ratioToFull)
-		s.histogramChunkHasComputedEndTime = true
+		s.setComputedHistogramChunkEndTime(true)
 	}
 	// If numBytes > targetBytes*2 then our previous prediction was invalid. This could happen if the sample rate has
 	// increased or if the bucket/span count has increased.
@@ -2104,7 +2169,7 @@ func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o
 
 	// The new chunk will also need a new computed end time.
 	if chunkCreated {
-		s.histogramChunkHasComputedEndTime = false
+		s.setComputedHistogramChunkEndTime(false)
 	}
 
 	return c, true, chunkCreated
@@ -2244,7 +2309,7 @@ func (a *headAppenderBase) Rollback() (err error) {
 	}
 	h := a.head
 	defer func() {
-		a.unmarkCreatedSeriesAsPendingCommit()
+		a.releaseCreatedSeriesReservations()
 		h.iso.closeAppend(a.appendID)
 		h.metrics.activeAppenders.Dec()
 		a.closed = true
@@ -2259,21 +2324,21 @@ func (a *headAppenderBase) Rollback() (err error) {
 			series = b.floatSeries[i]
 			series.Lock()
 			series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-			series.pendingCommit = false
+			a.releasePendingCommit(series)
 			series.Unlock()
 		}
 		for i := range b.histograms {
 			series = b.histogramSeries[i]
 			series.Lock()
 			series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-			series.pendingCommit = false
+			a.releasePendingCommit(series)
 			series.Unlock()
 		}
 		for i := range b.floatHistograms {
 			series = b.floatHistogramSeries[i]
 			series.Lock()
 			series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-			series.pendingCommit = false
+			a.releasePendingCommit(series)
 			series.Unlock()
 		}
 		b.close(h)

@@ -247,6 +247,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "metadata-wal-records":
 				c.scrape.AppendMetadata = true
 				c.web.AppendMetadata = true
+				c.tsdb.EnableMetadataWALRecords = true
 				features.Enable(features.TSDB, "metadata_wal_records")
 				logger.Info("Experimental metadata records in WAL enabled")
 			case "promql-per-step-stats":
@@ -294,12 +295,14 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "st-storage":
 				c.scrape.ParseST = true
 				c.tsdb.EnableSTStorage = true
+				c.tsdb.FloatChunkEncoding = chunkenc.EncXOR2
+				c.tsdb.EnableHistogramSTEncoding = true
 				c.agent.EnableSTStorage = true
 
 				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers. This is to widen the ST support surface.
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
-				logger.Info("Experimental start timestamp storage enabled. OpenMetrics 1.0 parsing will parse <metric>_created metrics as ST instead of normal sample. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
+				logger.Info("Experimental start timestamp storage enabled. XOR2 and ST-capable histogram chunk encodings enabled. OpenMetrics 1.0 parsing will parse <metric>_created metrics as ST instead of normal sample. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "use-start-timestamps":
 				c.useStartTimestamps = true
 				logger.Info("Experimental usage of start timestamps in PromQL engine is enabled.")
@@ -310,8 +313,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.promqlEnableDelayedNameRemoval = true
 				logger.Info("Experimental PromQL delayed name removal enabled.")
 			case "promql-extended-range-selectors":
-				c.parserOpts.EnableExtendedRangeSelectors = true
-				logger.Info("Experimental PromQL extended range selectors enabled.")
+				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			case "promql-binop-fill-modifiers":
 				c.parserOpts.EnableBinopFillModifiers = true
 				logger.Info("Experimental PromQL binary operator fill modifiers enabled.")
@@ -328,10 +330,16 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				// See proposal: https://github.com/prometheus/proposals/pull/48
 				c.web.NativeOTLPDeltaIngestion = true
 				logger.Info("Enabling native ingestion of delta OTLP metrics, storing the raw sample values without conversion. WARNING: Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
+			case "openmetrics2":
+				c.scrape.EnableOpenMetrics2 = true
+				logger.Info("Experimental OpenMetrics 2.0 scrape format enabled. WARNING: OpenMetrics 2.0 is not stable yet, the parser will be made stricter before stabilization and the exposition format may still change.")
 			case "type-and-unit-labels":
 				c.scrape.EnableTypeAndUnitLabels = true
 				c.web.EnableTypeAndUnitLabels = true
 				logger.Info("Experimental type and unit labels enabled")
+			case "zstd-scrape":
+				c.scrape.EnableZstdScrape = true
+				logger.Info("Experimental zstd scrape compression enabled")
 			case "use-uncached-io":
 				if !fileutil.UncachedIOSupported() {
 					return errors.New("experimental Uncached IO is not supported")
@@ -394,9 +402,12 @@ func main() {
 			FeatureRegistry: features.DefaultRegistry,
 		},
 		promslogConfig: promslog.Config{},
-		// Duration expressions are enabled by default; the promql-duration-expr
-		// feature flag is now a no-op.
-		parserOpts: parser.Options{ExperimentalDurationExpr: true},
+		// Duration expressions and extended range selectors are enabled by default.
+		// Their feature flags are now no-ops.
+		parserOpts: parser.Options{
+			ExperimentalDurationExpr:     true,
+			EnableExtendedRangeSelectors: true,
+		},
 		scrape: scrape.Options{
 			FeatureRegistry: features.DefaultRegistry,
 		},
@@ -644,7 +655,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -787,9 +798,11 @@ func main() {
 		}
 		cfg.tsdb.MaxExemplars = cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars
 	}
-	if cfg.tsdb.BlockReloadInterval < model.Duration(1*time.Second) {
-		logger.Warn("The option --storage.tsdb.block-reload-interval is set to a value less than 1s. Setting it to 1s to avoid overload.")
-		cfg.tsdb.BlockReloadInterval = model.Duration(1 * time.Second)
+	minBlockReloadInterval := model.Duration(tsdb.MinBlockReloadInterval)
+	if cfg.tsdb.BlockReloadInterval < minBlockReloadInterval {
+		minBlockReloadIntervalString := minBlockReloadInterval.String()
+		logger.Warn("The option --storage.tsdb.block-reload-interval is set to a value less than " + minBlockReloadIntervalString + ". Setting it to " + minBlockReloadIntervalString + " to avoid overload.")
+		cfg.tsdb.BlockReloadInterval = minBlockReloadInterval
 	}
 	// The configuration file takes precedence over the flag-derived default. An
 	// absent field keeps that default; other values are rejected when the
@@ -2135,6 +2148,7 @@ type tsdbOptions struct {
 	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
 	FloatChunkEncoding             chunkenc.Encoding
+	EnableMetadataWALRecords       bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -2168,6 +2182,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
 		FloatChunkEncoding:             opts.FloatChunkEncoding,
+		EnableMetadataWALRecords:       opts.EnableMetadataWALRecords,
 	}
 }
 

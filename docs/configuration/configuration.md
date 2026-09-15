@@ -3744,6 +3744,22 @@ sigv4:
   # Can only be used with role_arn.
   [ external_id: <string> ]
 
+  # Session name used when assuming a role, mapped to the AWS RoleSessionName.
+  # Can only be used with role_arn. Must match the pattern ^[\w+=,.@-]{2,64}$.
+  # Requires Prometheus >= 3.15.0.
+  [ session_name: <string> ]
+
+  # STS session tags used for cost allocation when assuming a role.
+  # Can only be used with role_arn. Tag keys must not be empty and must be
+  # <= 128 characters; tag values must be <= 256 characters.
+  # Requires Prometheus >= 3.15.0.
+  [ tags:
+    [ <string>: <string> ... ] ]
+
+  # AWS service name used to scope the SigV4 signing (e.g. "aps" for
+  # Amazon Managed Service for Prometheus).
+  [ service_name: <string> ]
+
   # Defines the FIPS mode for the AWS STS endpoint.
   # Requires Prometheus >= 2.54.0
   # Note: FIPS STS selection should be configured via use_fips_sts_endpoint rather than environment variables. (The problem report that motivated this: AWS_USE_FIPS_ENDPOINT no longer works.)
@@ -3967,6 +3983,22 @@ sigv4:
   # Can only be used with role_arn.
   [ external_id: <string> ]
 
+  # Session name used when assuming a role, mapped to the AWS RoleSessionName.
+  # Can only be used with role_arn. Must match the pattern ^[\w+=,.@-]{2,64}$.
+  # Requires Prometheus >= 3.15.0.
+  [ session_name: <string> ]
+
+  # STS session tags used for cost allocation when assuming a role.
+  # Can only be used with role_arn. Tag keys must not be empty and must be
+  # <= 128 characters; tag values must be <= 256 characters.
+  # Requires Prometheus >= 3.15.0.
+  [ tags:
+    [ <string>: <string> ... ] ]
+
+  # AWS service name used to scope the SigV4 signing (e.g. "aps" for
+  # Amazon Managed Service for Prometheus).
+  [ service_name: <string> ]
+
   # Defines the FIPS mode for the AWS STS endpoint.
   # Requires Prometheus >= 2.54.0
   # Note: FIPS STS selection should be configured via use_fips_sts_endpoint rather than environment variables. (The problem report that motivated this: AWS_USE_FIPS_ENDPOINT no longer works.)
@@ -4166,8 +4198,8 @@ with this feature.
 # written, downgrading to a version without XOR2 support requires deleting the affected
 # blocks from disk manually, otherwise Prometheus returns an error on all queries.
 #
-# When absent, the encoding follows the deprecated --enable-feature=xor2-encoding
-# flag: 'xor2' if the flag is set, 'xor' otherwise.
+# When absent, the encoding is 'xor2' if --enable-feature=xor2-encoding or
+# --enable-feature=st-storage is set, and 'xor' otherwise.
 # Setting 'xor' is incompatible with --enable-feature=st-storage (XOR chunks do not store
 # start timestamps); Prometheus will refuse to start or reload in that case.
 # This field is runtime-reloadable.
@@ -4178,7 +4210,7 @@ with this feature.
 # (XOR chunks do not store start timestamps), so an in-progress chunk is cut
 # on the next append after the encoding changes.
 # For the equivalent ST-capable encoding for native histograms, see the experimental
-# histograms-st-encoding feature flag.
+# histograms-st-encoding feature flag. The st-storage feature enables that encoding too.
 [ chunk_encoding:
   [ floats: <string> ] ]
 
