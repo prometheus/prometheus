@@ -12229,54 +12229,120 @@ func TestCompactionSurvivesLateAppendWithErasedWatermarkEvidence(t *testing.T) {
 			name = "stale"
 		}
 		t.Run(name, func(t *testing.T) {
-			opts := DefaultOptions()
-			opts.MinBlockDuration = 1000
-			opts.MaxBlockDuration = 1000
-			db := newTestDB(t, withOpts(opts))
-			db.DisableCompactions()
-			sel := labels.FromStrings("name", "selected")
-			v := 2.0
-			if stale {
-				v = math.Float64frombits(value.StaleNaN)
-			}
-			app := db.Appender(t.Context())
-			ref, err := app.Append(0, sel, 100, 1)
-			require.NoError(t, err)
-			_, err = app.Append(ref, sel, 200, v)
-			require.NoError(t, err)
-			_, err = app.Append(0, labels.FromStrings("name", "filler"), 700, 1)
-			require.NoError(t, err)
-			require.NoError(t, app.Commit())
+			for _, tc := range []struct {
+				name           string
+				nativeMetadata bool
+				appenderV2     bool
+			}{
+				{name: "samples"},
+				{name: "native_metadata_v1", nativeMetadata: true},
+				{name: "native_metadata_v2", nativeMetadata: true, appenderV2: true},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					opts := DefaultOptions()
+					opts.MinBlockDuration = 1000
+					opts.MaxBlockDuration = 1000
+					opts.EnableNativeMetadata = tc.nativeMetadata
+					db := newTestDB(t, withOpts(opts))
+					db.DisableCompactions()
+					sel := labels.FromStrings("name", "selected")
+					v := 2.0
+					if stale {
+						v = math.Float64frombits(value.StaleNaN)
+					}
 
-			compactHeadViewBeforeEvictTestingCallback = func() {
-				// Both transactions start after the snapshot and block generation.
-				for range 2 {
+					var ref storage.SeriesRef
+					appendSelected := func(ts int64, v float64, host string) {
+						t.Helper()
+						resource := &storage.ResourceContext{
+							Identifying: map[string]string{"service.name": "api"},
+							Descriptive: map[string]string{"host.name": host},
+						}
+						var err error
+						if tc.appenderV2 {
+							app := db.AppenderV2(t.Context())
+							ref, err = app.Append(ref, sel, 0, ts, v, nil, nil, storage.AOptions{Resource: resource})
+							require.NoError(t, err)
+							require.NoError(t, app.Commit())
+							return
+						}
+						app := db.Appender(t.Context())
+						ref, err = app.Append(ref, sel, ts, v)
+						require.NoError(t, err)
+						if tc.nativeMetadata {
+							_, err = app.UpdateResource(ref, sel, resource.Identifying, resource.Descriptive, ts)
+							require.NoError(t, err)
+						}
+						require.NoError(t, app.Commit())
+					}
+
+					appendSelected(100, 1, "old")
+					appendSelected(200, v, "old")
 					app := db.Appender(t.Context())
-					_, err := app.Append(ref, sel, 400, v)
+					_, err := app.Append(0, labels.FromStrings("name", "filler"), 700, 1)
 					require.NoError(t, err)
 					require.NoError(t, app.Commit())
-				}
+
+					compactHeadViewBeforeEvictTestingCallback = func() {
+						if stale && tc.nativeMetadata {
+							// AppenderV2 skips metadata on stale markers. Update it
+							// on a live sample before making the series stale again.
+							appendSelected(300, 2, "new")
+						}
+						// The duplicate clears append-ID evidence without changing the chunk.
+						for range 2 {
+							appendSelected(400, v, "new")
+						}
+					}
+					t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
+					if stale {
+						require.NoError(t, db.CompactStaleHead())
+					} else {
+						require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
+					}
+
+					check := func() {
+						t.Helper()
+						q, err := db.Querier(0, 1000)
+						require.NoError(t, err)
+						got := queryWithoutReplacingNaNs(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+						require.Len(t, got, 1)
+						samples := got[sel.String()]
+						expectedSamples := []sample{{t: 100, f: 1}, {t: 200, f: v}}
+						if stale && tc.nativeMetadata {
+							expectedSamples = append(expectedSamples, sample{t: 300, f: 2})
+						}
+						expectedSamples = append(expectedSamples, sample{t: 400, f: v})
+						require.Len(t, samples, len(expectedSamples))
+						for i, expected := range expectedSamples {
+							require.Equal(t, expected.t, samples[i].T())
+							require.Equal(t, math.Float64bits(expected.f), math.Float64bits(samples[i].F()))
+						}
+						if !tc.nativeMetadata {
+							return
+						}
+						reader, err := db.SeriesMetadata()
+						require.NoError(t, err)
+						defer reader.Close()
+						for _, version := range []struct {
+							time int64
+							host string
+						}{{100, "old"}, {400, "new"}} {
+							resource, ok := reader.GetResourceAt(labels.StableHash(sel), version.time)
+							require.True(t, ok)
+							require.Equal(t, "api", resource.Identifying["service.name"])
+							require.Equal(t, version.host, resource.Descriptive["host.name"])
+						}
+					}
+					check()
+
+					require.NoError(t, db.Close())
+					db, err = Open(db.Dir(), nil, nil, opts, nil)
+					require.NoError(t, err)
+					t.Cleanup(func() { require.NoError(t, db.Close()) })
+					check()
+				})
 			}
-			t.Cleanup(func() { compactHeadViewBeforeEvictTestingCallback = nil })
-			if stale {
-				require.NoError(t, db.CompactStaleHead())
-			} else {
-				require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{ref}))
-			}
-			q, err := db.Querier(0, 1000)
-			require.NoError(t, err)
-			got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
-			if len(got[sel.String()]) != 3 {
-				t.Errorf("Before restart: want 3 samples, got %v", got[sel.String()])
-			}
-			require.NoError(t, db.Close())
-			db, err = Open(db.Dir(), nil, nil, opts, nil)
-			require.NoError(t, err)
-			t.Cleanup(func() { require.NoError(t, db.Close()) })
-			q, err = db.Querier(0, 1000)
-			require.NoError(t, err)
-			got = query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
-			require.Len(t, got[sel.String()], 3, "The sample at 400 must survive restart.")
 		})
 	}
 }

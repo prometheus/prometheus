@@ -80,7 +80,7 @@ require (
 	go.opentelemetry.io/collector/component v1.66.0
 	go.opentelemetry.io/collector/consumer v1.66.0
 	go.opentelemetry.io/collector/pdata v1.66.0
-	go.opentelemetry.io/collector/pdata/xpdata v0.157.0
+	go.opentelemetry.io/collector/pdata/xpdata v0.160.0
 	go.opentelemetry.io/collector/processor v1.66.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.71.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0

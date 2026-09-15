@@ -680,6 +680,63 @@ func TestInfoNativeMetadata(t *testing.T) {
 		require.Empty(t, mat[0].Metric.Get("region"))
 	})
 
+	t.Run("mixed identifying label presence", func(t *testing.T) {
+		for _, tc := range []struct {
+			strategy   promql.InfoResourceStrategy
+			query      string
+			wantNative bool
+		}{
+			{promql.InfoResourceStrategyTargetInfo, `info(metric, {__name__="build_info"})`, false},
+			{promql.InfoResourceStrategyResourceAttributes, `info(metric, {__name__=~"target_info|build_info"})`, true},
+			{promql.InfoResourceStrategyHybrid, `info(metric, {__name__=~"target_info|build_info"})`, true},
+		} {
+			t.Run(string(tc.strategy), func(t *testing.T) {
+				stor := newNativeMetadataStorage(t)
+				engine := newEngineWithStrategy(t, tc.strategy)
+				for _, series := range []struct {
+					name        string
+					identifying []string
+				}{
+					{"both", []string{"job", "j1", "instance", "i1"}},
+					{"job", []string{"job", "j2"}},
+					{"instance", []string{"instance", "i3"}},
+					{"neither", nil},
+				} {
+					ls := labels.FromStrings(append([]string{"__name__", "metric", "series", series.name}, series.identifying...)...)
+					appendWithResource(t, stor, ls, defaultTimestamps, defaultValues, &storage.ResourceContext{
+						Descriptive: map[string]string{"host.name": "native"},
+					})
+					buildInfo := labels.FromStrings(append([]string{"__name__", "build_info", "version", series.name}, series.identifying...)...)
+					appendSamples(t, stor, buildInfo, defaultTimestamps, []float64{1, 1, 1})
+					targetInfo := labels.FromStrings(append([]string{"__name__", "target_info", "region", "from_target_info"}, series.identifying...)...)
+					appendSamples(t, stor, targetInfo, defaultTimestamps, []float64{1, 1, 1})
+				}
+
+				mat := execRangeQuery(t, engine, stor, tc.query, defaultStart, defaultEnd, defaultStep)
+				require.Len(t, mat, 4)
+				for _, series := range mat {
+					name := series.Metric.Get("series")
+					if name == "neither" {
+						require.Empty(t, series.Metric.Get("version"))
+					} else {
+						require.Equal(t, name, series.Metric.Get("version"))
+					}
+					if tc.wantNative {
+						require.Equal(t, "native", series.Metric.Get("host.name"))
+					} else {
+						require.Empty(t, series.Metric.Get("host.name"))
+					}
+					if tc.strategy == promql.InfoResourceStrategyHybrid && name != "neither" {
+						require.Equal(t, "from_target_info", series.Metric.Get("region"))
+					} else {
+						require.Empty(t, series.Metric.Get("region"))
+					}
+					require.Len(t, series.Floats, len(defaultTimestamps))
+				}
+			})
+		}
+	})
+
 	t.Run("hybrid multiple series different resources", func(t *testing.T) {
 		stor := newNativeMetadataStorage(t)
 		engine := newNativeMetadataEngine(t)
