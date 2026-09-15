@@ -2410,11 +2410,11 @@ func TestParserConfigIsolation(t *testing.T) {
 	`)
 	t.Cleanup(func() { storage.Close() })
 
-	query := "metric[10s] smoothed"
+	query := "mad_over_time(metric[10s])"
 	t.Run("engine_with_feature_disabled_rejects", func(t *testing.T) {
 		engine := promql.NewEngine(promql.EngineOpts{
 			MaxSamples: 1000, Timeout: 10 * time.Second,
-			Parser: parser.NewParser(parser.Options{EnableExtendedRangeSelectors: false}),
+			Parser: parser.NewParser(parser.Options{EnableExperimentalFunctions: false}),
 		})
 		t.Cleanup(func() { _ = engine.Close() })
 		_, err := engine.NewInstantQuery(ctx, storage, nil, query, time.Unix(10, 0))
@@ -2424,7 +2424,7 @@ func TestParserConfigIsolation(t *testing.T) {
 	t.Run("engine_with_feature_enabled_accepts", func(t *testing.T) {
 		engine := promql.NewEngine(promql.EngineOpts{
 			MaxSamples: 1000, Timeout: 10 * time.Second,
-			Parser: parser.NewParser(parser.Options{EnableExtendedRangeSelectors: true}),
+			Parser: parser.NewParser(parser.Options{EnableExperimentalFunctions: true}),
 		})
 		t.Cleanup(func() { _ = engine.Close() })
 		q, err := engine.NewInstantQuery(ctx, storage, nil, query, time.Unix(10, 0))

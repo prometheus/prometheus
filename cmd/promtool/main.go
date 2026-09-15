@@ -64,13 +64,8 @@ import (
 
 var (
 	promqlEnableDelayedNameRemoval = false
-	// Duration expressions and extended range selectors are enabled by default.
-	// Their feature flags are now no-ops.
-	promtoolParserOpts = parser.Options{
-		ExperimentalDurationExpr:     true,
-		EnableExtendedRangeSelectors: true,
-	}
-	logger = promslog.New(&promslog.Config{})
+	promtoolParserOpts             = parser.Options{}
+	logger                         = promslog.New(&promslog.Config{})
 )
 
 func init() {
