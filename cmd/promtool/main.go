@@ -196,6 +196,20 @@ func main() {
 	queryRangeEnd := queryRangeCmd.Flag("end", "Query range end time (RFC3339 or Unix timestamp).").String()
 	queryRangeStep := queryRangeCmd.Flag("step", "Query step size (duration).").Duration()
 
+	// The maps must be non-nil: kingpin assigns into them without allocating.
+	backtestCfg := backtestConfig{ruleLabels: map[string]string{}, headers: map[string]string{}}
+	queryBacktestCmd := queryCmd.Command("backtest", "Replay an alerting rule over historical data and report when it would have been pending and firing.")
+	queryBacktestCmd.Arg("server", "Prometheus server to query.").Required().URLVar(&serverURL)
+	queryBacktestCmd.Arg("expr", "PromQL alerting rule expression.").Required().StringVar(&backtestCfg.expr)
+	queryBacktestCmd.Flag("name", "Name of the simulated alert.").Default("Backtest").StringVar(&backtestCfg.name)
+	queryBacktestCmd.Flag("for", "The 'for' duration to simulate.").DurationVar(&backtestCfg.forDuration)
+	queryBacktestCmd.Flag("keep-firing-for", "The 'keep_firing_for' duration to simulate.").DurationVar(&backtestCfg.keepFiringFor)
+	queryBacktestCmd.Flag("label", "Label to attach to the simulated alert. Can be specified multiple times.").StringMapVar(&backtestCfg.ruleLabels)
+	queryBacktestCmd.Flag("start", "Backtest range start time (RFC3339 or Unix timestamp), defaults to one hour before the end.").StringVar(&backtestCfg.start)
+	queryBacktestCmd.Flag("end", "Backtest range end time (RFC3339 or Unix timestamp), defaults to now.").StringVar(&backtestCfg.end)
+	queryBacktestCmd.Flag("interval", "Evaluation interval to simulate. Determines the resolution of the 'for' duration.").Default("1m").DurationVar(&backtestCfg.interval)
+	queryBacktestCmd.Flag("header", "Extra headers to send to server.").StringMapVar(&backtestCfg.headers)
+
 	querySeriesCmd := queryCmd.Command("series", "Run series query.")
 	querySeriesCmd.Arg("server", "Prometheus server to query.").Required().URLVar(&serverURL)
 	querySeriesMatch := querySeriesCmd.Flag("match", "Series selector. Can be specified multiple times.").Required().Strings()
@@ -407,6 +421,9 @@ func main() {
 
 	case queryRangeCmd.FullCommand():
 		os.Exit(QueryRange(serverURL, httpRoundTripper, *queryRangeHeaders, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, p))
+
+	case queryBacktestCmd.FullCommand():
+		os.Exit(BacktestAlert(serverURL, httpRoundTripper, backtestCfg, promtoolParser, p))
 
 	case querySeriesCmd.FullCommand():
 		os.Exit(QuerySeries(serverURL, httpRoundTripper, *querySeriesMatch, *querySeriesBegin, *querySeriesEnd, p))
