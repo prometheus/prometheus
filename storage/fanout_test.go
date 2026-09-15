@@ -314,9 +314,49 @@ func TestFanoutErrors(t *testing.T) {
 	}
 }
 
+func TestFanoutSearcherCapability(t *testing.T) {
+	primary := teststorage.New(t)
+
+	for _, tc := range []struct {
+		name      string
+		secondary storage.Storage
+		expected  bool
+	}{
+		{
+			name:      "active unsupported secondary",
+			secondary: errStorage{},
+			expected:  false,
+		},
+		{
+			name:      "noop secondary",
+			secondary: fixedQuerierStorage{q: storage.NoopQuerier()},
+			expected:  true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fanoutStorage := storage.NewFanout(nil, primary, tc.secondary)
+			querier, err := fanoutStorage.Querier(0, 1)
+			require.NoError(t, err)
+			defer querier.Close()
+
+			_, ok := querier.(storage.Searcher)
+			require.Equal(t, tc.expected, ok)
+		})
+	}
+}
+
 var errSelect = errors.New("select error")
 
 type errStorage struct{}
+
+type fixedQuerierStorage struct {
+	storage.Storage
+	q storage.Querier
+}
+
+func (s fixedQuerierStorage) Querier(_, _ int64) (storage.Querier, error) {
+	return s.q, nil
+}
 
 type errQuerier struct{}
 

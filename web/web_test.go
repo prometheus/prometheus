@@ -39,8 +39,42 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func TestInfoLabelSearchFeature(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		search        bool
+		experimental  bool
+		agent         bool
+		expectedValue bool
+	}{
+		{name: "both flags", search: true, experimental: true, expectedValue: true},
+		{name: "search disabled", experimental: true},
+		{name: "experimental functions disabled", search: true},
+		{name: "both flags disabled"},
+		{name: "agent mode", search: true, experimental: true, agent: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			registry := features.NewRegistry()
+			New(nil, &Options{
+				ListenAddresses:             []string{"localhost:9090"},
+				RoutePrefix:                 "/",
+				ExternalURL:                 &url.URL{Scheme: "http", Host: "localhost:9090"},
+				Version:                     &PrometheusVersion{},
+				Flags:                       map[string]string{},
+				EnableSearch:                tc.search,
+				EnableExperimentalFunctions: tc.experimental,
+				IsAgent:                     tc.agent,
+				FeatureRegistry:             registry,
+			})
+
+			require.Equal(t, tc.expectedValue, registry.Get()[features.API]["info_label_search"])
+		})
+	}
+}
 
 func TestMain(m *testing.M) {
 	// On linux with a global proxy the tests will fail as the go client(http,grpc) tries to connect through the proxy.
