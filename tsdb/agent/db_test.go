@@ -104,6 +104,56 @@ func createTestAgentDB(t testing.TB, reg prometheus.Registerer, opts *Options) *
 	return db
 }
 
+func TestAppenderBufferResetAfterWALWriteError(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(*appenderBase)
+		log     func(*appenderBase) error
+	}{
+		{
+			name: "log",
+			prepare: func(a *appenderBase) {
+				a.pendingSamples = append(a.pendingSamples, record.RefSample{Ref: 1, T: 1, V: 1})
+			},
+			log: func(a *appenderBase) error {
+				return a.log()
+			},
+		},
+		{
+			name: "logSeries",
+			prepare: func(a *appenderBase) {
+				a.pendingSeries = append(a.pendingSeries, record.RefSeries{
+					Ref:    1,
+					Labels: labels.FromStrings("__name__", "test_metric"),
+				})
+			},
+			log: func(a *appenderBase) error {
+				return a.logSeries()
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			wal, err := wlog.New(promslog.NewNopLogger(), nil, t.TempDir(), DefaultOptions().WALCompression)
+			require.NoError(t, err)
+			require.NoError(t, wal.Close())
+
+			db := &DB{wal: wal, opts: DefaultOptions()}
+			db.bufPool.New = func() any {
+				return make([]byte, 0, 1024)
+			}
+
+			app := &appenderBase{DB: db}
+			test.prepare(app)
+			require.Error(t, test.log(app))
+
+			buf := db.bufPool.Get().([]byte)
+			require.Empty(t, buf)
+		})
+	}
+}
+
 // TestConcurrentAppendSameLabels verifies that concurrent appends for the same
 // label set produce exactly one series in memory and one series record in the WAL.
 func TestConcurrentAppendSameLabels(t *testing.T) {
