@@ -1,0 +1,766 @@
+file_format: 1.1.0
+schema_url: https://opentelemetry.io/schemas/1.44.0
+versions:
+  1.44.0:
+    metrics:
+      changes:
+        - rename_metrics:
+            container.memory.paging.faults: container.paging.faults
+            k8s.node.memory.paging.faults: k8s.node.paging.faults
+            k8s.pod.memory.paging.faults: k8s.pod.paging.faults
+  1.43.0:
+  1.42.0:
+    metrics:
+      changes:
+        - rename_metrics:
+            v8js.memory.heap.limit: v8js.memory.heap.space.size
+  1.41.1:
+  1.41.0:
+    metrics:
+      changes:
+        - rename_metrics:
+            k8s.container.cpu.limit: k8s.container.cpu.limit.desired
+            k8s.container.cpu.limit_utilization: k8s.container.cpu.limit.utilization
+            k8s.container.cpu.request: k8s.container.cpu.request.desired
+            k8s.container.cpu.request_utilization: k8s.container.cpu.request.utilization
+            k8s.container.memory.limit: k8s.container.memory.limit.desired
+            k8s.container.memory.request: k8s.container.memory.request.desired
+  1.40.0:
+    all:
+      changes:
+        - rename_attributes:
+            attribute_map:
+              feature_flag.evaluation.error.message: feature_flag.error.message
+    metrics:
+      changes:
+        - rename_metrics:
+            system.memory.shared: system.memory.linux.shared
+  1.39.0:
+    all:
+      changes:
+        - rename_attributes:
+            attribute_map:
+              linux.memory.slab.state: system.memory.linux.slab.state
+              peer.service: service.peer.name
+              rpc.connect_rpc.error_code: rpc.response.status_code
+              rpc.connect_rpc.request.metadata: rpc.request.metadata
+              rpc.connect_rpc.response.metadata: rpc.response.metadata
+              rpc.grpc.request.metadata: rpc.request.metadata
+              rpc.grpc.response.metadata: rpc.response.metadata
+              rpc.jsonrpc.request_id: jsonrpc.request.id
+              rpc.jsonrpc.version: jsonrpc.protocol.version
+              rpc.system: rpc.system.name
+    metrics:
+      changes:
+        - rename_metrics:
+            process.open_file_descriptor.count: process.unix.file_descriptor.count
+            system.linux.memory.available: system.memory.linux.available
+            system.linux.memory.slab.usage: system.memory.linux.slab.usage
+  1.38.0:
+    all:
+      changes:
+        - rename_attributes:
+            attribute_map:
+              process.context_switch_type: process.context_switch.type
+              process.paging.fault_type: system.paging.fault.type
+              system.cpu.logical_number: cpu.logical_number
+              system.paging.type: system.paging.fault.type
+              system.process.status: process.state
+              system.processes.status: process.state
+    metrics:
+      changes:
+        - rename_metrics:
+            k8s.cronjob.active_jobs: k8s.cronjob.job.active
+            k8s.daemonset.current_scheduled_nodes: k8s.daemonset.node.current_scheduled
+            k8s.daemonset.desired_scheduled_nodes: k8s.daemonset.node.desired_scheduled
+            k8s.daemonset.misscheduled_nodes: k8s.daemonset.node.misscheduled
+            k8s.daemonset.ready_nodes: k8s.daemonset.node.ready
+            k8s.deployment.available_pods: k8s.deployment.pod.available
+            k8s.deployment.desired_pods: k8s.deployment.pod.desired
+            k8s.hpa.current_pods: k8s.hpa.pod.current
+            k8s.hpa.desired_pods: k8s.hpa.pod.desired
+            k8s.hpa.max_pods: k8s.hpa.pod.max
+            k8s.hpa.min_pods: k8s.hpa.pod.min
+            k8s.job.active_pods: k8s.job.pod.active
+            k8s.job.desired_successful_pods: k8s.job.pod.desired_successful
+            k8s.job.failed_pods: k8s.job.pod.failed
+            k8s.job.max_parallel_pods: k8s.job.pod.max_parallel
+            k8s.job.successful_pods: k8s.job.pod.successful
+            k8s.node.allocatable.cpu: k8s.node.cpu.allocatable
+            k8s.node.allocatable.ephemeral_storage: k8s.node.ephemeral_storage.allocatable
+            k8s.node.allocatable.memory: k8s.node.memory.allocatable
+            k8s.node.allocatable.pods: k8s.node.pod.allocatable
+            k8s.replicaset.available_pods: k8s.replicaset.pod.available
+            k8s.replicaset.desired_pods: k8s.replicaset.pod.desired
+            k8s.replication_controller.available_pods: k8s.replicationcontroller.pod.available
+            k8s.replication_controller.desired_pods: k8s.replicationcontroller.pod.desired
+            k8s.replicationcontroller.available_pods: k8s.replicationcontroller.pod.available
+            k8s.replicationcontroller.desired_pods: k8s.replicationcontroller.pod.desired
+            k8s.statefulset.current_pods: k8s.statefulset.pod.current
+            k8s.statefulset.desired_pods: k8s.statefulset.pod.desired
+            k8s.statefulset.ready_pods: k8s.statefulset.pod.ready
+            k8s.statefulset.updated_pods: k8s.statefulset.pod.updated
+            v8js.heap.space.available_size: v8js.memory.heap.space.available_size
+            v8js.heap.space.physical_size: v8js.memory.heap.space.physical_size
+  1.37.0:
+    all:
+      changes:
+        - rename_attributes:
+            attribute_map:
+              android.state: android.app.state
+              container.runtime: container.runtime.name
+              enduser.role: user.roles
+              gen_ai.openai.request.service_tier: openai.request.service_tier
+              gen_ai.openai.response.service_tier: openai.response.service_tier
+              gen_ai.openai.response.system_fingerprint: openai.response.system_fingerprint
+              gen_ai.system: gen_ai.provider.name
+              ios.state: ios.app.state
+  1.36.0:
+  1.35.0:
+    all:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/1698
+        - rename_attributes:
+            attribute_map:
+              az.namespace: azure.resource_provider.namespace
+              az.service_request_id: azure.service.request.id
+    metrics:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/issues/1800
+        - rename_metrics:
+            system.network.connections: system.network.connection.count
+  1.34.0:
+    metrics:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/2295
+        - rename_metrics:
+            cpu.time: system.cpu.time
+            cpu.utilization: system.cpu.utilization
+            cpu.frequency: system.cpu.frequency
+  1.33.0:
+    all:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/1982
+        - rename_attributes:
+            attribute_map:
+              feature_flag.provider_name: feature_flag.provider.name
+        # https://github.com/open-telemetry/semantic-conventions/pull/1994
+        - rename_attributes:
+            attribute_map:
+              feature_flag.evaluation.error.message: error.message
+  1.32.0:
+    all:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/1989
+        - rename_attributes:
+            attribute_map:
+              feature_flag.evaluation.reason: feature_flag.result.reason
+              feature_flag.variant: feature_flag.result.variant
+    metrics:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/2042
+        - rename_metrics:
+            otel.sdk.span.live.count: otel.sdk.span.live
+            otel.sdk.span.ended.count: otel.sdk.span.ended
+            otel.sdk.processor.span.processed.count: otel.sdk.processor.span.processed
+            otel.sdk.exporter.span.inflight.count: otel.sdk.exporter.span.inflight
+            otel.sdk.exporter.span.exported.count: otel.sdk.exporter.span.exported
+  1.31.0:
+    all:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/1880
+        - rename_attributes:
+            attribute_map:
+              android.state: android.app.state
+              io.state: ios.app.state
+    metrics:
+      changes:
+        - rename_metrics:
+            k8s.replication_controller.desired_pods: k8s.replicationcontroller.desired_pods
+            k8s.replication_controller.available_pods: k8s.replicationcontroller.available_pods
+        # https://github.com/open-telemetry/semantic-conventions/pull/1896
+        - rename_metrics:
+            system.cpu.time: cpu.time
+            system.cpu.utilization: cpu.utilization
+            system.cpu.frequency: cpu.frequency
+        # https://github.com/open-telemetry/semantic-conventions/pull/1896
+        - rename_attributes:
+            attribute_map:
+              system.cpu.logical_number: cpu.logical_number
+  1.30.0:
+    all:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/1632
+        - rename_attributes:
+            attribute_map:
+              gen_ai.openai.request.seed: gen_ai.request.seed
+              system.network.state: network.connection.state
+        # https://github.com/open-telemetry/semantic-conventions/pull/1624
+        - rename_attributes:
+            attribute_map:
+              code.function: code.function.name
+              code.filepath: code.file.path
+              code.lineno: code.line.number
+              code.column: code.column.number
+        # https://github.com/open-telemetry/semantic-conventions/pull/1734
+        - rename_attributes:
+            attribute_map:
+              db.system: db.system.name
+              db.cassandra.coordinator.dc: cassandra.coordinator.dc
+              db.cassandra.coordinator.id: cassandra.coordinator.id
+              db.cassandra.consistency_level: cassandra.consistency.level
+              db.cassandra.idempotence: cassandra.query.idempotent
+              db.cassandra.page_size: cassandra.page.size
+              db.cassandra.speculative_execution_count: cassandra.speculative_execution.count
+              db.cosmosdb.client_id: azure.client.id
+              db.cosmosdb.connection_mode: azure.cosmosdb.connection.mode
+              db.cosmosdb.consistency_level: azure.cosmosdb.consistency.level
+              db.cosmosdb.request_charge: azure.cosmosdb.operation.request_charge
+              db.cosmosdb.request_content_length: azure.cosmosdb.request.body.size
+              db.cosmosdb.regions_contacted: azure.cosmosdb.operation.contacted_regions
+              db.cosmosdb.sub_status_code: azure.cosmosdb.response.sub_status_code
+              db.elasticsearch.node.name: elasticsearch.node.name
+              # db.elasticsearch.path_parts is a template attribute, schema transformation
+              # does not support it, adding as a comment for consistency
+              # db.elasticsearch.path_parts.<key> -> db.operation.parameter.<key>
+    metrics:
+      changes:
+        - rename_metrics:
+            db.client.cosmosdb.operation.request_charge: azure.cosmosdb.client.operation.request_charge
+            db.client.cosmosdb.active_instance.count: azure.cosmosdb.client.active_instance.count
+
+  1.29.0:
+    all:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/1520
+        - rename_attributes:
+            attribute_map:
+              process.executable.build_id.profiling: process.executable.build_id.htlhash
+        # https://github.com/open-telemetry/semantic-conventions/pull/1383
+        - rename_attributes:
+            attribute_map:
+              vcs.repository.change.id: vcs.change.id
+              vcs.repository.change.title: vcs.change.title
+              vcs.repository.ref.name: vcs.ref.head.name
+              vcs.repository.ref.revision: vcs.ref.head.revision
+              vcs.repository.ref.type: vcs.ref.head.type
+    metrics:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/1492
+        - rename_attributes:
+            attribute_map:
+              system.device: network.interface.name
+            apply_to_metrics:
+              - container.network.io
+              - system.network.dropped
+              - system.network.errors
+              - system.network.io
+              - system.network.connections
+  1.28.0:
+    metrics:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/1422
+        - rename_metrics:
+            messaging.client.published.messages: messaging.client.sent.messages
+  1.27.0:
+    all:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/1216
+        - rename_attributes:
+            attribute_map:
+              tls.client.server_name: server.address
+        # https://github.com/open-telemetry/semantic-conventions/pull/1075
+        - rename_attributes:
+            attribute_map:
+              deployment.environment: deployment.environment.name
+        # https://github.com/open-telemetry/semantic-conventions/pull/1245
+        - rename_attributes:
+            attribute_map:
+              messaging.kafka.message.offset: messaging.kafka.offset
+        # https://github.com/open-telemetry/semantic-conventions/pull/815
+        - rename_attributes:
+            attribute_map:
+              messaging.kafka.consumer.group: messaging.consumer.group.name
+              messaging.rocketmq.client_group: messaging.consumer.group.name
+              messaging.eventhubs.consumer.group: messaging.consumer.group.name
+              messaging.servicebus.destination.subscription_name: messaging.destination.subscription.name
+        # https://github.com/open-telemetry/semantic-conventions/pull/1200
+        - rename_attributes:
+            attribute_map:
+              gen_ai.usage.completion_tokens: gen_ai.usage.output_tokens
+              gen_ai.usage.prompt_tokens: gen_ai.usage.input_tokens
+    spans:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/1002
+        - rename_attributes:
+            attribute_map:
+              db.elasticsearch.cluster.name: db.namespace
+    metrics:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/1125
+        - rename_attributes:
+            attribute_map:
+              db.client.connections.state: db.client.connection.state
+            apply_to_metrics:
+              - db.client.connection.count
+        - rename_attributes:
+            attribute_map:
+              db.client.connections.pool.name: db.client.connection.pool.name
+            apply_to_metrics:
+              - db.client.connection.count
+              - db.client.connection.idle.max
+              - db.client.connection.idle.min
+              - db.client.connection.max
+              - db.client.connection.pending_requests
+              - db.client.connection.timeouts
+              - db.client.connection.create_time
+              - db.client.connection.wait_time
+              - db.client.connection.use_time
+        # https://github.com/open-telemetry/semantic-conventions/pull/1006
+        - rename_metrics:
+            messaging.publish.messages: messaging.client.published.messages
+        # https://github.com/open-telemetry/semantic-conventions/pull/1026
+        - rename_attributes:
+            attribute_map:
+              system.cpu.state: cpu.mode
+              process.cpu.state: cpu.mode
+              container.cpu.state: cpu.mode
+            apply_to_metrics:
+              - system.cpu.time
+              - system.cpu.utilization
+              - process.cpu.time
+              - process.cpu.utilization
+              - container.cpu.time
+        # https://github.com/open-telemetry/semantic-conventions/pull/1265
+        - rename_metrics:
+            jvm.buffer.memory.usage: jvm.buffer.memory.used
+  1.26.0:
+    metrics:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/966
+        - rename_metrics:
+            db.client.connections.usage: db.client.connection.count
+            db.client.connections.idle.max: db.client.connection.idle.max
+            db.client.connections.idle.min: db.client.connection.idle.min
+            db.client.connections.max: db.client.connection.max
+            db.client.connections.pending_requests: db.client.connection.pending_requests
+            db.client.connections.timeouts: db.client.connection.timeouts
+        # https://github.com/open-telemetry/semantic-conventions/pull/948
+        - rename_attributes:
+            attribute_map:
+              messaging.client_id: messaging.client.id
+        # https://github.com/open-telemetry/semantic-conventions/pull/909
+        - rename_attributes:
+            attribute_map:
+              state: db.client.connections.state
+            apply_to_metrics:
+              - db.client.connections.usage
+        - rename_attributes:
+            attribute_map:
+              pool.name: db.client.connections.pool.name
+            apply_to_metrics:
+              - db.client.connections.usage
+              - db.client.connections.idle.max
+              - db.client.connections.idle.min
+              - db.client.connections.max
+              - db.client.connections.pending_requests
+              - db.client.connections.timeouts
+              - db.client.connections.create_time
+              - db.client.connections.wait_time
+              - db.client.connections.use_time
+    all:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/731
+        - rename_attributes:
+            attribute_map:
+              enduser.id: user.id
+
+  1.25.0:
+    spans:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/911
+        - rename_attributes:
+            attribute_map:
+              db.name: db.namespace
+        # https://github.com/open-telemetry/semantic-conventions/pull/870
+        - rename_attributes:
+            attribute_map:
+              db.sql.table: db.collection.name
+              db.mongodb.collection: db.collection.name
+              db.cosmosdb.container: db.collection.name
+              db.cassandra.table: db.collection.name
+        # https://github.com/open-telemetry/semantic-conventions/pull/798
+        - rename_attributes:
+            attribute_map:
+              messaging.kafka.destination.partition: messaging.destination.partition.id
+        # https://github.com/open-telemetry/semantic-conventions/pull/875
+        - rename_attributes:
+            attribute_map:
+              db.operation: db.operation.name
+        # https://github.com/open-telemetry/semantic-conventions/pull/913
+        - rename_attributes:
+            attribute_map:
+              messaging.operation: messaging.operation.type
+        # https://github.com/open-telemetry/semantic-conventions/pull/866
+        - rename_attributes:
+            attribute_map:
+              db.statement: db.query.text
+    metrics:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/484
+        - rename_attributes:
+            attribute_map:
+              system.processes.status: system.process.status
+            apply_to_metrics:
+              - system.processes.count
+        - rename_metrics:
+            system.processes.count: system.process.count
+            system.processes.created: system.process.created
+        # https://github.com/open-telemetry/semantic-conventions/pull/625
+        - rename_attributes:
+            attribute_map:
+              container.labels: container.label
+              k8s.pod.labels: k8s.pod.label
+        # https://github.com/open-telemetry/semantic-conventions/pull/330
+        - rename_metrics:
+            process.threads: process.thread.count
+            process.open_file_descriptors: process.open_file_descriptor.count
+        - rename_attributes:
+            attribute_map:
+              state: process.cpu.state
+            apply_to_metrics:
+              - process.cpu.time
+              - process.cpu.utilization
+        - rename_attributes:
+            attribute_map:
+              direction: disk.io.direction
+            apply_to_metrics:
+              - process.disk.io
+        - rename_attributes:
+            attribute_map:
+              type: process.context_switch_type
+            apply_to_metrics:
+              - process.context_switches
+        - rename_attributes:
+            attribute_map:
+              direction: network.io.direction
+            apply_to_metrics:
+              - process.network.io
+        - rename_attributes:
+            attribute_map:
+              type: process.paging.fault_type
+            apply_to_metrics:
+              - process.paging.faults
+    all:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/854
+        - rename_attributes:
+            attribute_map:
+              message.type: rpc.message.type
+              message.id: rpc.message.id
+              message.compressed_size: rpc.message.compressed_size
+              message.uncompressed_size: rpc.message.uncompressed_size
+
+  1.24.0:
+    metrics:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/536
+        - rename_metrics:
+            jvm.memory.usage: jvm.memory.used
+            jvm.memory.usage_after_last_gc: jvm.memory.used_after_last_gc
+        # https://github.com/open-telemetry/semantic-conventions/pull/530
+        - rename_attributes:
+            attribute_map:
+              system.network.io.direction: network.io.direction
+              system.disk.io.direction: disk.io.direction
+  1.23.1:
+  1.23.0:
+    metrics:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/20
+        - rename_attributes:
+            attribute_map:
+              thread.daemon: jvm.thread.daemon
+            apply_to_metrics:
+              - jvm.thread.count
+  1.22.0:
+    spans:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/229
+        - rename_attributes:
+            attribute_map:
+              messaging.message.payload_size_bytes: messaging.message.body.size
+        # https://github.com/open-telemetry/opentelemetry-specification/pull/374
+        - rename_attributes:
+            attribute_map:
+              http.resend_count: http.request.resend_count
+    metrics:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/224
+        - rename_metrics:
+            http.client.duration: http.client.request.duration
+            http.server.duration: http.server.request.duration
+        # https://github.com/open-telemetry/semantic-conventions/pull/241
+        - rename_metrics:
+            process.runtime.jvm.memory.usage: jvm.memory.usage
+            process.runtime.jvm.memory.committed: jvm.memory.committed
+            process.runtime.jvm.memory.limit: jvm.memory.limit
+            process.runtime.jvm.memory.usage_after_last_gc: jvm.memory.usage_after_last_gc
+            process.runtime.jvm.gc.duration: jvm.gc.duration
+            # also https://github.com/open-telemetry/semantic-conventions/pull/252
+            process.runtime.jvm.threads.count: jvm.thread.count
+            # also https://github.com/open-telemetry/semantic-conventions/pull/252
+            process.runtime.jvm.classes.loaded: jvm.class.loaded
+            # also https://github.com/open-telemetry/semantic-conventions/pull/252
+            process.runtime.jvm.classes.unloaded: jvm.class.unloaded
+            # also https://github.com/open-telemetry/semantic-conventions/pull/252
+            # and https://github.com/open-telemetry/semantic-conventions/pull/60
+            process.runtime.jvm.classes.current_loaded: jvm.class.count
+            process.runtime.jvm.cpu.time: jvm.cpu.time
+            process.runtime.jvm.cpu.recent_utilization: jvm.cpu.recent_utilization
+            process.runtime.jvm.memory.init: jvm.memory.init
+            process.runtime.jvm.system.cpu.utilization: jvm.system.cpu.utilization
+            process.runtime.jvm.system.cpu.load_1m: jvm.system.cpu.load_1m
+            # https://github.com/open-telemetry/semantic-conventions/pull/253
+            process.runtime.jvm.buffer.usage: jvm.buffer.memory.usage
+            # https://github.com/open-telemetry/semantic-conventions/pull/253
+            process.runtime.jvm.buffer.limit: jvm.buffer.memory.limit
+            process.runtime.jvm.buffer.count: jvm.buffer.count
+        # https://github.com/open-telemetry/semantic-conventions/pull/20
+        - rename_attributes:
+            attribute_map:
+              type: jvm.memory.type
+              pool: jvm.memory.pool.name
+            apply_to_metrics:
+              - jvm.memory.usage
+              - jvm.memory.committed
+              - jvm.memory.limit
+              - jvm.memory.usage_after_last_gc
+              - jvm.memory.init
+        - rename_attributes:
+            attribute_map:
+              name: jvm.gc.name
+              action: jvm.gc.action
+            apply_to_metrics:
+              - jvm.gc.duration
+        - rename_attributes:
+            attribute_map:
+              daemon: thread.daemon
+            apply_to_metrics:
+              - jvm.threads.count
+        - rename_attributes:
+            attribute_map:
+              pool: jvm.buffer.pool.name
+            apply_to_metrics:
+              - jvm.buffer.memory.usage
+              - jvm.buffer.memory.limit
+              - jvm.buffer.count
+        # https://github.com/open-telemetry/semantic-conventions/pull/89
+        - rename_attributes:
+            attribute_map:
+              state: system.cpu.state
+              cpu: system.cpu.logical_number
+            apply_to_metrics:
+              - system.cpu.time
+              - system.cpu.utilization
+        - rename_attributes:
+            attribute_map:
+              state: system.memory.state
+            apply_to_metrics:
+              - system.memory.usage
+              - system.memory.utilization
+        - rename_attributes:
+            attribute_map:
+              state: system.paging.state
+            apply_to_metrics:
+              - system.paging.usage
+              - system.paging.utilization
+        - rename_attributes:
+            attribute_map:
+              type: system.paging.type
+              direction: system.paging.direction
+            apply_to_metrics:
+              - system.paging.faults
+              - system.paging.operations
+        - rename_attributes:
+            attribute_map:
+              device: system.device
+              direction: system.disk.direction
+            apply_to_metrics:
+              - system.disk.io
+              - system.disk.operations
+              - system.disk.io_time
+              - system.disk.operation_time
+              - system.disk.merged
+        - rename_attributes:
+            attribute_map:
+              device: system.device
+              state: system.filesystem.state
+              type: system.filesystem.type
+              mode: system.filesystem.mode
+              mountpoint: system.filesystem.mountpoint
+            apply_to_metrics:
+              - system.filesystem.usage
+              - system.filesystem.utilization
+        - rename_attributes:
+            attribute_map:
+              device: system.device
+              direction: system.network.direction
+              protocol: network.protocol
+              state: system.network.state
+            apply_to_metrics:
+              - system.network.dropped
+              - system.network.packets
+              - system.network.errors
+              - system.network.io
+              - system.network.connections
+        - rename_attributes:
+            attribute_map:
+              status: system.processes.status
+            apply_to_metrics:
+              - system.processes.count
+        # https://github.com/open-telemetry/semantic-conventions/pull/247
+        - rename_metrics:
+            http.server.request.size: http.server.request.body.size
+            http.server.response.size: http.server.response.body.size
+    resources:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/178
+        - rename_attributes:
+            attribute_map:
+              telemetry.auto.version: telemetry.distro.version
+  1.21.0:
+    spans:
+      changes:
+        # https://github.com/open-telemetry/opentelemetry-specification/pull/3336
+        - rename_attributes:
+            attribute_map:
+              messaging.kafka.client_id: messaging.client_id
+              messaging.rocketmq.client_id: messaging.client_id
+        # https://github.com/open-telemetry/opentelemetry-specification/pull/3402
+        - rename_attributes:
+            attribute_map:
+              # net.peer.(name|port) attributes were usually populated on client side
+              # so they should be usually translated to server.(address|port)
+              # net.host.* attributes were only populated on server side
+              net.host.name: server.address
+              net.host.port: server.port
+              # was only populated on client side
+              net.sock.peer.name: server.socket.domain
+              # net.sock.peer.(addr|port) mapping is not possible
+              # since they applied to both client and server side
+              # were only populated on server side
+              net.sock.host.addr: server.socket.address
+              net.sock.host.port: server.socket.port
+              http.client_ip: client.address
+        # https://github.com/open-telemetry/opentelemetry-specification/pull/3426
+        - rename_attributes:
+            attribute_map:
+              net.protocol.name: network.protocol.name
+              net.protocol.version: network.protocol.version
+              net.host.connection.type: network.connection.type
+              net.host.connection.subtype: network.connection.subtype
+              net.host.carrier.name: network.carrier.name
+              net.host.carrier.mcc: network.carrier.mcc
+              net.host.carrier.mnc: network.carrier.mnc
+              net.host.carrier.icc: network.carrier.icc
+        # https://github.com/open-telemetry/opentelemetry-specification/pull/3355
+        - rename_attributes:
+            attribute_map:
+              http.method: http.request.method
+              http.status_code: http.response.status_code
+              http.scheme: url.scheme
+              http.url: url.full
+              http.request_content_length: http.request.body.size
+              http.response_content_length: http.response.body.size
+    metrics:
+      changes:
+        # https://github.com/open-telemetry/semantic-conventions/pull/53
+        - rename_metrics:
+            process.runtime.jvm.cpu.utilization: process.runtime.jvm.cpu.recent_utilization
+  1.20.0:
+    spans:
+      changes:
+        # https://github.com/open-telemetry/opentelemetry-specification/pull/3272
+        - rename_attributes:
+            attribute_map:
+              net.app.protocol.name: net.protocol.name
+              net.app.protocol.version: net.protocol.version
+  1.19.0:
+    spans:
+      changes:
+        # https://github.com/open-telemetry/opentelemetry-specification/pull/3209
+        - rename_attributes:
+            attribute_map:
+              faas.execution: faas.invocation_id
+        # https://github.com/open-telemetry/opentelemetry-specification/pull/3188
+        - rename_attributes:
+            attribute_map:
+              faas.id: cloud.resource_id
+        # https://github.com/open-telemetry/opentelemetry-specification/pull/3190
+        - rename_attributes:
+            attribute_map:
+              http.user_agent: user_agent.original
+    resources:
+      changes:
+        # https://github.com/open-telemetry/opentelemetry-specification/pull/3190
+        - rename_attributes:
+            attribute_map:
+              browser.user_agent: user_agent.original
+  1.18.0:
+  1.17.0:
+    spans:
+      changes:
+        # https://github.com/open-telemetry/opentelemetry-specification/pull/2957
+        - rename_attributes:
+            attribute_map:
+              messaging.consumer_id: messaging.consumer.id
+              messaging.protocol: net.app.protocol.name
+              messaging.protocol_version: net.app.protocol.version
+              messaging.destination: messaging.destination.name
+              messaging.temp_destination: messaging.destination.temporary
+              messaging.destination_kind: messaging.destination.kind
+              messaging.message_id: messaging.message.id
+              messaging.conversation_id: messaging.message.conversation_id
+              messaging.message_payload_size_bytes: messaging.message.payload_size_bytes
+              messaging.message_payload_compressed_size_bytes: messaging.message.payload_compressed_size_bytes
+              messaging.rabbitmq.routing_key: messaging.rabbitmq.destination.routing_key
+              messaging.kafka.message_key: messaging.kafka.message.key
+              messaging.kafka.partition: messaging.kafka.destination.partition
+              messaging.kafka.tombstone: messaging.kafka.message.tombstone
+              messaging.rocketmq.message_type: messaging.rocketmq.message.type
+              messaging.rocketmq.message_tag: messaging.rocketmq.message.tag
+              messaging.rocketmq.message_keys: messaging.rocketmq.message.keys
+              messaging.kafka.consumer_group: messaging.kafka.consumer.group
+  1.16.0:
+  1.15.0:
+    spans:
+      changes:
+        # https://github.com/open-telemetry/opentelemetry-specification/pull/2743
+        - rename_attributes:
+            attribute_map:
+              http.retry_count: http.resend_count
+  1.14.0:
+  1.13.0:
+    spans:
+      changes:
+        # https://github.com/open-telemetry/opentelemetry-specification/pull/2614
+        - rename_attributes:
+            attribute_map:
+              net.peer.ip: net.sock.peer.addr
+              net.host.ip: net.sock.host.addr
+  1.12.0:
+  1.11.0:
+  1.10.0:
+  1.9.0:
+  1.8.0:
+    spans:
+      changes:
+        - rename_attributes:
+            attribute_map:
+              db.cassandra.keyspace: db.name
+              db.hbase.namespace: db.name
+  1.7.0:
+  1.6.1:
+  1.5.0:
+  1.4.0:

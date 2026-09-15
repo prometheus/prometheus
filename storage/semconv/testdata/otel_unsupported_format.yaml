@@ -1,0 +1,7 @@
+file_format: "2.0.0"
+schema_url: https://example.com/schemas/2.0.0
+
+versions:
+  2.0.0:
+    metrics:
+      changes: []
