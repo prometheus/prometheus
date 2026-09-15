@@ -2654,7 +2654,11 @@ func BenchmarkScrapeLoopAppend(b *testing.B) {
 							{name: "PromProto", contentType: "application/vnd.google.protobuf", parsable: metricsProto},
 						} {
 							b.Run(fmt.Sprintf("fmt=%v", bcase.name), func(b *testing.B) {
-								benchScrapeLoopAppend(b, withStorage, appV2, bcase.parsable, bcase.contentType, appendMetadataToWAL, false, false, false)
+								for _, coldCache := range []bool{false, true} {
+									b.Run(fmt.Sprintf("coldCache=%v", coldCache), func(b *testing.B) {
+										benchScrapeLoopAppend(b, withStorage, appV2, bcase.parsable, bcase.contentType, appendMetadataToWAL, false, false, false, coldCache)
+									})
+								}
 							})
 						}
 					})
@@ -2680,7 +2684,7 @@ func BenchmarkScrapeLoopAppend_STSynthesis(b *testing.B) {
 				{name: "237FamsAllTypes", parsableText: readTextParseTestMetrics(b), contentType: "application/openmetrics-text", convertToNHCB: true}, // ~185.7 KB, ~70.6 KB in proto.
 			} {
 				b.Run(fmt.Sprintf("withStorage=%v/synthesizeST=%v/data=%v", withStorage, synthesizeST, data.name), func(b *testing.B) {
-					benchScrapeLoopAppend(b, withStorage, true, data.parsableText, data.contentType, false, false, synthesizeST, data.convertToNHCB)
+					benchScrapeLoopAppend(b, withStorage, true, data.parsableText, data.contentType, false, false, synthesizeST, data.convertToNHCB, false)
 				})
 			}
 		}
@@ -2697,6 +2701,7 @@ func benchScrapeLoopAppend(
 	enableExemplarStorage bool,
 	synthesizeST bool,
 	convertToNHCB bool,
+	coldCache bool,
 ) {
 	var a compatAppendable = teststorage.NewAppendable().SkipRecording(true) // Make it noop for benchmark purposes.
 	if withStorage {
@@ -2720,6 +2725,10 @@ func benchScrapeLoopAppend(
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
+		if coldCache {
+			// Model the first scrape of a target, before any series are cached.
+			sl.cache = newScrapeCache(sl.metrics)
+		}
 		app := sl.appender()
 		ts = ts.Add(time.Second)
 		_, _, _, err := app.append(parsable, contentType, ts)
@@ -2749,7 +2758,7 @@ func BenchmarkScrapeLoopAppend_HistogramsWithExemplars(b *testing.B) {
 	for _, appV2 := range []bool{false, true} {
 		b.Run(fmt.Sprintf("appV2=%v", appV2), func(b *testing.B) {
 			parsable := makeTestHistogramsWithExemplars(100) // ~255.8 KB in OM text.
-			benchScrapeLoopAppend(b, true, appV2, parsable, "application/openmetrics-text", false, true, false, false)
+			benchScrapeLoopAppend(b, true, appV2, parsable, "application/openmetrics-text", false, true, false, false, false)
 		})
 	}
 }
@@ -3525,10 +3534,9 @@ func testScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T, appV2 bool) {
 	_, err := p.Next()
 	require.NoError(t, err)
 	p.Labels(&lset)
-	hash := lset.Hash()
 
 	// Create a fake entry in the cache
-	sl.cache.addRef(metric, fakeRef, lset, hash)
+	sl.cache.addRef(metric, fakeRef, lset)
 	now := time.Now()
 
 	app := sl.appender()
