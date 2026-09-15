@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/notifications"
 )
 
@@ -70,6 +71,7 @@ type TSDBAdminStats interface {
 	Stats(statsByLabelName string, limit int) (*tsdb.Stats, error)
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
 	BlockMetas() ([]tsdb.BlockMeta, error)
+	SeriesMetadata() (seriesmetadata.Reader, error)
 }
 
 // APIConfig holds configuration for creating a test API instance.

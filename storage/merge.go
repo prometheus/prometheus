@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -276,6 +277,59 @@ func (q *mergeGenericQuerier) Close() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// extractResourceQuerier unwraps a genericQuerier to find the underlying ResourceQuerier.
+// Handles both *genericQuerierAdapter (primary queriers) and *secondaryQuerier (remote storage).
+func extractResourceQuerier(gq genericQuerier) ResourceQuerier {
+	switch q := gq.(type) {
+	case *genericQuerierAdapter:
+		if q.q != nil {
+			if rq, ok := q.q.(ResourceQuerier); ok {
+				return rq
+			}
+		}
+		if q.cq != nil {
+			if rq, ok := q.cq.(ResourceQuerier); ok {
+				return rq
+			}
+		}
+	case *secondaryQuerier:
+		return extractResourceQuerier(q.genericQuerier)
+	}
+	return nil
+}
+
+// GetResourceAt implements ResourceQuerier by trying each underlying querier.
+// Returns the first non-nil result from any querier that supports ResourceQuerier.
+func (q *mergeGenericQuerier) GetResourceAt(labelsHash uint64, timestamp int64) (*seriesmetadata.ResourceVersion, bool) {
+	for _, gq := range q.queriers {
+		if rq := extractResourceQuerier(gq); rq != nil {
+			if rv, found := rq.GetResourceAt(labelsHash, timestamp); found {
+				return rv, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// IterUniqueAttributeNames implements ResourceQuerier by iterating unique attribute
+// names across all underlying queriers that support ResourceQuerier.
+func (q *mergeGenericQuerier) IterUniqueAttributeNames(fn func(name string)) error {
+	seen := make(map[string]struct{})
+	for _, gq := range q.queriers {
+		if rq := extractResourceQuerier(gq); rq != nil {
+			if err := rq.IterUniqueAttributeNames(func(name string) {
+				if _, ok := seen[name]; !ok {
+					seen[name] = struct{}{}
+					fn(name)
+				}
+			}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func truncateToLimit(s []string, hints *LabelHints) []string {

@@ -628,6 +628,166 @@ func labelValuesResponseExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
+// resourcesResponseExamples returns examples for /resources response.
+func resourcesResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("defaultFormat", &base.Example{
+		Summary: "Full resource data with labels and versions",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string]any{
+				"results": []map[string]any{{
+					"labels": map[string]string{
+						"__name__": "http_requests_total",
+						"instance": "localhost:8080",
+						"job":      "myservice",
+					},
+					"versions": []map[string]any{
+						{
+							"resource_attributes": map[string]any{
+								"identifying": map[string]string{
+									"service.name":      "myservice",
+									"service.namespace": "production",
+								},
+								"descriptive": map[string]string{
+									"service.version": "1.0.0",
+									"host.name":       "server-01",
+								},
+							},
+							"min_time_ms": int64(1767357420000),
+							"max_time_ms": int64(1767361020000),
+						},
+					},
+				}},
+				"nextToken": "a1b2c3d4e5f6",
+			},
+		}),
+	})
+
+	examples.Set("attributesFormat", &base.Example{
+		Summary: "Simplified attribute name to values map (format=attributes)",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string][]string{
+				"service.name":      {"myservice", "otherservice"},
+				"service.namespace": {"production", "staging"},
+				"host.name":         {"server-01", "server-02"},
+			},
+		}),
+	})
+
+	examples.Set("verboseAttributesFormat", &base.Example{
+		Summary: "Verbose attribute schema (format=attributes&verbose=true)",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string]any{
+				"service.name": map[string]any{
+					"role":      "identifying",
+					"otel_name": "service.name",
+					"prom_name": "service_name",
+					"values":    []string{"myservice", "otherservice"},
+				},
+			},
+		}),
+	})
+
+	return examples
+}
+
+// resourcesSeriesResponseExamples returns examples for /resources/series.
+func resourcesSeriesResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+	examples.Set("full", &base.Example{
+		Summary: "Full paginated series view",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string]any{
+				"results": []map[string]any{{
+					"labels": map[string]string{"__name__": "http_requests_total", "job": "shop"},
+					"versions": []map[string]any{{
+						"resource_attributes": map[string]any{
+							"identifying": map[string]string{"service.name": "payment"},
+							"descriptive": map[string]string{"host.name": "server-01"},
+						},
+						"min_time_ms": int64(1767357420000),
+						"max_time_ms": int64(1767361020000),
+					}},
+				}},
+			},
+		}),
+	})
+	examples.Set("names", &base.Example{
+		Summary: "Compact metric names view",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string]any{
+				"metrics":      []string{"http_requests_total", "orders_total"},
+				"series_count": 3,
+				"truncated":    false,
+				"limit_unit":   "metrics",
+			},
+		}),
+	})
+	examples.Set("summary", &base.Example{
+		Summary: "Compact per-metric summary view",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string]any{
+				"metrics": []map[string]any{{
+					"__name__":       "http_requests_total",
+					"series_count":   2,
+					"example_labels": map[string]string{"__name__": "http_requests_total", "job": "shop"},
+				}},
+				"series_count": 2,
+				"truncated":    false,
+				"limit_unit":   "metrics",
+			},
+		}),
+	})
+	return examples
+}
+
+// resourcesDiffResponseExamples returns examples for /resources/diff.
+func resourcesDiffResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+	examples.Set("changedResource", &base.Example{
+		Summary: "Resource attributes changed between versions",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string]any{
+				"results": []map[string]any{{
+					"labels": map[string]string{"__name__": "http_requests_total", "job": "shop"},
+					"before": map[string]any{
+						"resource_attributes": map[string]any{
+							"identifying": map[string]string{"service.name": "payment"},
+							"descriptive": map[string]string{"service.version": "1", "host.name": "old"},
+						},
+						"min_time_ms": int64(1767357420000),
+						"max_time_ms": int64(1767360000000),
+					},
+					"after": map[string]any{
+						"resource_attributes": map[string]any{
+							"identifying": map[string]string{"service.name": "payment"},
+							"descriptive": map[string]string{"service.version": "2", "host.name": "new"},
+						},
+						"min_time_ms": int64(1767360060000),
+						"max_time_ms": int64(1767361020000),
+					},
+					"changed": map[string]any{
+						"identifying": map[string]string{},
+						"descriptive": map[string]string{
+							"service.version": "1->2",
+							"host.name":       "old->new",
+						},
+					},
+				}},
+			},
+		}),
+	})
+	return examples
+}
+
 // metadataResponseExamples returns examples for /metadata response.
 func metadataResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
