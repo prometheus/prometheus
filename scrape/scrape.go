@@ -1004,7 +1004,8 @@ type scrapeLoop struct {
 // scrapes.
 // Cache is meant to be used per a single target.
 type scrapeCache struct {
-	iter uint64 // Current scrape iteration.
+	iter     uint64 // Current scrape iteration.
+	scrapeID uint64 // Scrape attempt ID, incremented on every append attempt.
 
 	// How many series and metadata entries there were at the last success.
 	successfulCount int
@@ -1021,6 +1022,14 @@ type scrapeCache struct {
 	seriesCur  map[storage.SeriesRef]*cacheEntry
 	seriesPrev map[storage.SeriesRef]*cacheEntry
 
+	// Cache of post-relabeling label sets seen in the current scrape iteration,
+	// keyed by label-set hash. Used to detect duplicate labels after relabeling.
+	// A separate conflict map handles the rare case of hash collisions, following
+	// the same approach as TSDB's seriesHashmap.
+	// Both use generational versioning (iter) to avoid map clearing per scrape.
+	seriesHashes        map[uint64]hashEntry
+	seriesHashConflicts map[uint64][]hashEntry
+
 	// TODO(bwplotka): Consider moving metadata caching to head. See
 	// https://github.com/prometheus/prometheus/issues/17619.
 	metaMtx  sync.Mutex            // Mutex is needed due to api touching it when metadata is queried.
@@ -1030,6 +1039,13 @@ type scrapeCache struct {
 	metadataSize int
 
 	metrics *scrapeMetrics
+}
+
+// hashEntry is used for generation-based duplicate hash detection without
+// needing to clear maps per scrape.
+type hashEntry struct {
+	lset     labels.Labels
+	scrapeID uint64
 }
 
 // metaEntry holds meta information about a metric.
@@ -1051,6 +1067,7 @@ func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 		droppedSeries: map[string]*uint64{},
 		seriesCur:     map[storage.SeriesRef]*cacheEntry{},
 		seriesPrev:    map[storage.SeriesRef]*cacheEntry{},
+		seriesHashes:  map[uint64]hashEntry{},
 		metadata:      map[string]*metaEntry{},
 		metrics:       metrics,
 	}
@@ -1083,6 +1100,11 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 				delete(c.series, s)
 			}
 		}
+		// Clean up hashes that haven't been seen in the current success iteration
+		// to prevent unbounded growth across label/hash changes.
+		// We'll just clear the hashes map fully on cache flush.
+		// It's rare enough (forced flush) that clearing it is fine.
+		clear(c.seriesHashes)
 		for s, iter := range c.droppedSeries {
 			if c.iter != *iter {
 				delete(c.droppedSeries, s)
@@ -1097,6 +1119,9 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 			}
 		}
 		c.metaMtx.Unlock()
+
+		// Clear hash conflicts fully on cache flush since they are rare.
+		c.seriesHashConflicts = nil
 	}
 
 	// Swap current and previous series then clear the new current, to save allocations.
@@ -1104,6 +1129,41 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 	clear(c.seriesCur)
 
 	c.iter++
+}
+
+// isSeriesHashDuplicate reports whether lset was already seen in the current
+// scrape iteration. It follows the same approach as TSDB's seriesHashmap:
+// a primary map holds the first label set per hash, and a lazily-allocated
+// conflict map handles the rare case of different label sets sharing a hash.
+// It uses generational versioning (scrapeID) so maps don't need clearing per scrape.
+func (c *scrapeCache) isSeriesHashDuplicate(hash uint64, lset labels.Labels) bool {
+	if existing, ok := c.seriesHashes[hash]; ok && existing.scrapeID == c.scrapeID {
+		if labels.Equal(existing.lset, lset) {
+			return true
+		}
+		// Hash collision — check the conflict bucket.
+		for _, conflict := range c.seriesHashConflicts[hash] {
+			if conflict.scrapeID == c.scrapeID && labels.Equal(conflict.lset, lset) {
+				return true
+			}
+		}
+		// New series with a colliding hash in this iteration.
+		if c.seriesHashConflicts == nil {
+			c.seriesHashConflicts = make(map[uint64][]hashEntry)
+		}
+		c.seriesHashConflicts[hash] = append(c.seriesHashConflicts[hash], hashEntry{lset: lset, scrapeID: c.scrapeID})
+		return false
+	}
+	c.seriesHashes[hash] = hashEntry{lset: lset, scrapeID: c.scrapeID}
+	return false
+}
+
+// trackHashScrapeAttempt bumps the scrape attempt ID to ensure previous scrape hash state
+// doesn't leak into the next scrape if the previous scrape failed (iterDone skipped).
+func (c *scrapeCache) trackHashScrapeAttempt() {
+	c.scrapeID++
+	// Note: We don't clear seriesHashConflicts map here because it's rarely used.
+	// It's cleared entirely on flushCache.
 }
 
 func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
@@ -1827,6 +1887,8 @@ func (sl *scrapeLoopAppender) append(b []byte, contentType string, ts time.Time)
 	// Take an appender with limits.
 	app := appenderWithLimits(sl.Appender, sl.sampleLimit, sl.bucketLimit, sl.maxSchema)
 
+	sl.cache.trackHashScrapeAttempt()
+
 	defer func() {
 		if err != nil {
 			return
@@ -1890,7 +1952,7 @@ loop:
 		if sl.cache.getDropped(met) {
 			continue
 		}
-		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
+		ce, seriesCached, _ := sl.cache.get(met)
 		var (
 			ref  storage.SeriesRef
 			hash uint64
@@ -1902,10 +1964,8 @@ loop:
 			hash = ce.hash
 		} else {
 			p.Labels(&lset)
-			hash = lset.Hash()
 
-			// Hash label set as it is seen local to the target. Then add target labels
-			// and relabeling and store the final label set.
+			// Add target labels and relabeling and store the final label set.
 			lset = sl.sampleMutator(lset)
 
 			// The label set may be set to empty to indicate dropping.
@@ -1928,9 +1988,16 @@ loop:
 				sl.metrics.targetScrapePoolExceededLabelLimits.Inc()
 				break loop
 			}
+
+			hash = lset.Hash()
 		}
 
-		if seriesAlreadyScraped && parsedTimestamp == nil {
+		var isDuplicate bool
+		if parsedTimestamp == nil {
+			isDuplicate = sl.cache.isSeriesHashDuplicate(hash, lset)
+		}
+
+		if isDuplicate {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
 			if sl.enableSTZeroIngestion {
