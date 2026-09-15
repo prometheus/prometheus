@@ -1,0 +1,21 @@
+rule_files:
+  - coverage_twothirds_rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'up{job="prometheus"}'
+        values: "1x5"
+    promql_expr_test:
+      - expr: a:metric
+        eval_time: 1m
+        exp_samples:
+          - value: 1
+            labels: 'a:metric{job="prometheus"}'
+      - expr: b:metric
+        eval_time: 1m
+        exp_samples:
+          - value: 1
+            labels: 'b:metric{job="prometheus"}'
