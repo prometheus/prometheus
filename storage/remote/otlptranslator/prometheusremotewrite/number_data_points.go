@@ -112,9 +112,14 @@ func (c *PrometheusConverter) addSumNumberDataPoints(
 			return err
 		}
 
-		appOpts.Exemplars = exemplars
-		if _, err = c.appender.Append(0, lbls, st, ts, val, nil, nil, appOpts); err != nil {
+		ref, err := c.appender.Append(0, lbls, st, ts, val, nil, nil, appOpts)
+		if err != nil {
 			return err
+		}
+		if len(exemplars) > 0 {
+			if _, err := c.appender.AppendExemplars(ref, lbls, exemplars); err != nil {
+				return err
+			}
 		}
 	}
 

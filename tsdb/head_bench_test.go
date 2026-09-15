@@ -127,17 +127,17 @@ func appendV2FloatOrHistogramWithExemplars(b *testing.B, h *Head, ts int64, seri
 	for i, s := range series {
 		var ref storage.SeriesRef
 		for sampleIndex := range samplesPerAppend {
-			aOpts := storage.AOptions{Exemplars: ex[:0]}
-
 			// if i is even, append a sample, else append a histogram.
 			if i%2 == 0 {
+				ref, err = app.Append(ref, s.Labels(), 0, ts, float64(ts), nil, nil, storage.AOptions{})
+				require.NoError(b, err)
 				// Every sample also has an exemplar attached.
-				aOpts.Exemplars = append(aOpts.Exemplars, exemplar.Exemplar{
+				ex = append(ex[:0], exemplar.Exemplar{
 					Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
 					Value:  rand.Float64(),
 					Ts:     ts + sampleIndex,
 				})
-				ref, err = app.Append(ref, s.Labels(), 0, ts, float64(ts), nil, nil, aOpts)
+				_, err = app.AppendExemplars(ref, s.Labels(), ex)
 				require.NoError(b, err)
 				continue
 			}
@@ -153,9 +153,11 @@ func appendV2FloatOrHistogramWithExemplars(b *testing.B, h *Head, ts int64, seri
 				},
 				PositiveBuckets: []int64{ts + 1, 1, -1, 0},
 			}
+			ref, err = app.Append(ref, s.Labels(), 0, ts, 0, h, nil, storage.AOptions{})
+			require.NoError(b, err)
 
 			// Every histogram sample also has 3 exemplars attached.
-			aOpts.Exemplars = append(aOpts.Exemplars,
+			ex = append(ex[:0],
 				exemplar.Exemplar{
 					Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
 					Value:  rand.Float64(),
@@ -172,7 +174,7 @@ func appendV2FloatOrHistogramWithExemplars(b *testing.B, h *Head, ts int64, seri
 					Ts:     ts + sampleIndex,
 				},
 			)
-			ref, err = app.Append(ref, s.Labels(), 0, ts, 0, h, nil, aOpts)
+			_, err = app.AppendExemplars(ref, s.Labels(), ex)
 			require.NoError(b, err)
 		}
 	}

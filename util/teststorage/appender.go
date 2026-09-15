@@ -584,26 +584,7 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 		}
 	}
 
-	var partialErr error
 	if !a.a.skipRecording {
-		var es []exemplar.Exemplar
-
-		if len(opts.Exemplars) > 0 {
-			if a.a.appendExemplarsError != nil {
-				var exErrs []error
-				for range opts.Exemplars {
-					exErrs = append(exErrs, a.a.appendExemplarsError)
-				}
-				if len(exErrs) > 0 {
-					partialErr = &storage.AppendPartialError{ExemplarErrors: exErrs}
-				}
-			} else {
-				// As per AppenderV2 interface, opts.Exemplar slice is unsafe for reuse.
-				es = make([]exemplar.Exemplar, len(opts.Exemplars))
-				copy(es, opts.Exemplars)
-			}
-		}
-
 		a.a.mtx.Lock()
 		a.a.pendingSamples = append(a.a.pendingSamples, Sample{
 			MF: opts.MetricFamilyName,
@@ -611,7 +592,6 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 			L:  ls,
 			ST: st, T: t,
 			V: v, H: h, FH: fh,
-			ES: es,
 		})
 		a.a.mtx.Unlock()
 	}
@@ -623,6 +603,60 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 		}
 	} else {
 		ref, err = a.a.computeOrCheckRef(ref, ls)
+		if err != nil {
+			return ref, err
+		}
+	}
+	return ref, nil
+}
+
+// AppendExemplars implements the mandatory storage.AppenderV2.AppendExemplars capability.
+func (a *appenderV2) AppendExemplars(ref storage.SeriesRef, l labels.Labels, exemplars []exemplar.Exemplar) (_ storage.SeriesRef, err error) {
+	if err := a.checkErr(); err != nil {
+		return 0, err
+	}
+	if len(exemplars) == 0 {
+		return 0, nil
+	}
+
+	var partialErr error
+	if !a.a.skipRecording {
+		if a.a.appendExemplarsError != nil {
+			exErrs := make([]error, len(exemplars))
+			for i := range exemplars {
+				exErrs[i] = a.a.appendExemplarsError
+			}
+			partialErr = &storage.AppendPartialError{ExemplarErrors: exErrs}
+		} else {
+			var appended bool
+
+			a.a.mtx.Lock()
+			i := len(a.a.pendingSamples) - 1
+			for ; i >= 0; i-- { // Attach exemplars to the last matching sample.
+				if !labels.Equal(l, a.a.pendingSamples[i].L) {
+					continue
+				}
+				// As per AppenderV2 interface, the exemplars slice is unsafe for reuse.
+				es := make([]exemplar.Exemplar, len(exemplars))
+				copy(es, exemplars)
+				a.a.pendingSamples[i].ES = append(a.a.pendingSamples[i].ES, es...)
+				appended = true
+				break
+			}
+			a.a.mtx.Unlock()
+			if !appended {
+				return 0, fmt.Errorf("teststorage.appenderV2: exemplars appended without series; ref %v; l %v; exemplars: %v", ref, l, exemplars)
+			}
+		}
+	}
+
+	if a.next != nil {
+		ref, err = a.next.AppendExemplars(ref, l, exemplars)
+		if err != nil {
+			return 0, err
+		}
+	} else {
+		ref, err = a.a.computeOrCheckRef(ref, l)
 		if err != nil {
 			return ref, err
 		}

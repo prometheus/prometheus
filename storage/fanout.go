@@ -300,16 +300,32 @@ type fanoutAppenderV2 struct {
 }
 
 func (f *fanoutAppenderV2) Append(ref SeriesRef, l labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts AOptions) (SeriesRef, error) {
+	ref, err := f.primary.Append(ref, l, st, t, v, h, fh, opts)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		if _, err := appender.Append(ref, l, st, t, v, h, fh, opts); err != nil {
+			return ref, err
+		}
+	}
+	return ref, nil
+}
+
+// AppendExemplars implements the mandatory AppenderV2.AppendExemplars capability.
+// It dispatches the exemplars to the primary and all secondaries.
+func (f *fanoutAppenderV2) AppendExemplars(ref SeriesRef, l labels.Labels, exemplars []exemplar.Exemplar) (SeriesRef, error) {
 	var partialErr *AppendPartialError
 
-	ref, err := f.primary.Append(ref, l, st, t, v, h, fh, opts)
+	ref, err := f.primary.AppendExemplars(ref, l, exemplars)
 	partialErr, err = partialErr.Handle(err)
 	if err != nil {
 		return ref, err
 	}
 
 	for _, appender := range f.secondaries {
-		_, serr := appender.Append(ref, l, st, t, v, h, fh, opts)
+		_, serr := appender.AppendExemplars(ref, l, exemplars)
 		partialErr, serr = partialErr.Handle(serr)
 		if serr != nil {
 			return ref, serr

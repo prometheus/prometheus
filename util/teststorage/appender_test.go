@@ -89,11 +89,13 @@ func testAppendableV2(t *testing.T, appTest *Appendable, a storage.AppendableV2)
 
 		m1 := metadata.Metadata{Type: "gauge", Unit: "", Help: "other help text"}
 		e1 := exemplar.Exemplar{Labels: labels.FromStrings(model.MetricNameLabel, "yolo"), HasTs: true, Ts: 1}
-		_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "test_metric1", "app", "v2"), -1, 1, 2, nil, nil, storage.AOptions{
+		ref1, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "test_metric1", "app", "v2"), -1, 1, 2, nil, nil, storage.AOptions{
 			MetricFamilyName: "test_metric1",
 			Metadata:         m1,
-			Exemplars:        []exemplar.Exemplar{e1},
 		})
+		require.NoError(t, err)
+
+		_, err = app.AppendExemplars(ref1, labels.FromStrings(model.MetricNameLabel, "test_metric1", "app", "v2"), []exemplar.Exemplar{e1})
 		require.NoError(t, err)
 
 		h := tsdbutil.GenerateTestHistogram(0)

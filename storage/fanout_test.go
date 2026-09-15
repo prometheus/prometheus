@@ -516,18 +516,24 @@ func TestFanoutAppenderV2(t *testing.T) {
 			f := storage.NewFanout(nil, mockStorage{appV2: tt.primary}, mockStorage{appV2: tt.secondary})
 
 			app := f.AppenderV2(t.Context())
-			_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "metric1"), -1, 0, 1, nil, nil, storage.AOptions{
-				Exemplars: []exemplar.Exemplar{ex},
-			})
+			ref, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "metric1"), -1, 0, 1, nil, nil, storage.AOptions{})
+			if tt.expectAppendErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			_, err = app.AppendExemplars(ref, labels.FromStrings(model.MetricNameLabel, "metric1"), []exemplar.Exemplar{ex})
 			switch {
 			case tt.expectAppendErr:
+				// Secondary never got a chance to append the sample (fanout short-circuits
+				// on the primary's fatal Append error), so it has no series to attach the
+				// exemplar to; we only assert a generic error here, same as V1.
 				require.Error(t, err)
 			case tt.expectExemplarError:
 				var pErr *storage.AppendPartialError
 				require.ErrorAs(t, err, &pErr)
 				// One for primary, one for secondary.
-				// This is because in V2 flow we must append sample even when first append partially failed with exemplars.
-				// Filtering out exemplars is neither feasible, nor important.
 				require.Len(t, pErr.ExemplarErrors, 2)
 			default:
 				require.NoError(t, err)
@@ -593,9 +599,8 @@ func BenchmarkFanoutAppenderV2(b *testing.B) {
 				app := f.AppenderV2(b.Context())
 				for _, s := range series {
 					// Purposefully skip errors as we want to benchmark error cases too (majority of the fanout logic).
-					_, _ = app.Append(0, s, 0, 0, 1, nil, nil, storage.AOptions{
-						Exemplars: ex,
-					})
+					ref, _ := app.Append(0, s, 0, 0, 1, nil, nil, storage.AOptions{})
+					_, _ = app.AppendExemplars(ref, s, ex)
 				}
 				require.NoError(b, app.Rollback())
 			}

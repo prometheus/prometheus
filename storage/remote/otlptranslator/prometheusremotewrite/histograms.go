@@ -74,10 +74,15 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(
 			return annots, err
 		}
 
-		appOpts.Exemplars = exemplars
 		// OTel exponential histograms are always integer histograms.
-		if _, err = c.appender.Append(0, lbls, st, ts, 0, hp, nil, appOpts); err != nil {
+		ref, err := c.appender.Append(0, lbls, st, ts, 0, hp, nil, appOpts)
+		if err != nil {
 			return annots, err
+		}
+		if len(exemplars) > 0 {
+			if _, err := c.appender.AppendExemplars(ref, lbls, exemplars); err != nil {
+				return annots, err
+			}
 		}
 	}
 
@@ -296,9 +301,14 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(
 			return annots, err
 		}
 
-		appOpts.Exemplars = exemplars
-		if _, err = c.appender.Append(0, lbls, st, ts, 0, hp, nil, appOpts); err != nil {
+		ref, err := c.appender.Append(0, lbls, st, ts, 0, hp, nil, appOpts)
+		if err != nil {
 			return annots, err
+		}
+		if len(exemplars) > 0 {
+			if _, err := c.appender.AppendExemplars(ref, lbls, exemplars); err != nil {
+				return annots, err
+			}
 		}
 	}
 

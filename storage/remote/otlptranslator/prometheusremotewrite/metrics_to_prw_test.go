@@ -31,6 +31,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
@@ -1593,6 +1594,10 @@ func (a *noOpAppender) Append(_ storage.SeriesRef, _ labels.Labels, _, _ int64, 
 		return 1, nil
 	}
 	a.samples++
+	return 1, nil
+}
+
+func (*noOpAppender) AppendExemplars(_ storage.SeriesRef, _ labels.Labels, _ []exemplar.Exemplar) (storage.SeriesRef, error) {
 	return 1, nil
 }
 
