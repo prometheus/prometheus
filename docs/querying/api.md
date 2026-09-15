@@ -101,7 +101,7 @@ URL query parameters:
 - `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
    is capped by the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Doesn't affect scalars or strings but truncates the number of series for matrices and vectors. Optional. 0 means disabled.
-- `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
+- `lookback_delta=<duration | float>`: Override the [lookback period](basics.md#staleness) just for this query in `duration` format or float number of seconds. Optional.
 - `stats=<string>`: Include query statistics in the response. Supported values are `true` (basic statistics) and `all` (additionally includes detailed per-step statistics: timings and sample counts). Any other non-empty value currently behaves like `true`, but is deprecated, adds a warning to the response, and will be rejected in the next major release. Optional. See [Query statistics](#query-statistics).
 
 Optional HTTP request headers:
@@ -179,7 +179,7 @@ URL query parameters:
 - `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
    is capped by the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
-- `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
+- `lookback_delta=<duration | float>`: Override the [lookback period](basics.md#staleness) just for this query in `duration` format or float number of seconds. Optional.
 - `stats=<string>`: Include query statistics in the response. Supported values are `true` (basic statistics) and `all` (additionally includes detailed per-step statistics: timings and sample counts). Any other non-empty value currently behaves like `true`, but is deprecated, adds a warning to the response, and will be rejected in the next major release. Optional. See [Query statistics](#query-statistics).
 
 Optional HTTP request headers:
