@@ -255,6 +255,9 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 
 	s.Lock()
 	defer s.Unlock()
+	if cr.cr != nil {
+		cr.cr.releaseOversizedCacheOnSeriesSwitch(storage.SeriesRef(s.ref))
+	}
 
 	if meta.Chunk == nil {
 		var headChunks []*memChunk
