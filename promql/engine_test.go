@@ -4887,6 +4887,25 @@ load 6m
 
 eval_fail instant at 12m max_over_time({__name__=~"metric_.*"}[30m])
 
+# Test cross-type (float vs histogram) timestamp collision detection.
+# When one series has floats and another has histograms at the same labelset,
+# non-overlapping timestamps should merge successfully.
+clear
+load 6m
+  float_metric{common="label"} 0 1 _ _
+  hist_metric{common="label"} _ _ {{schema:0 sum:3 count:3}} {{schema:0 sum:4 count:4}}
+
+eval range from 0 to 18m step 6m sum_over_time({__name__=~".*_metric"}[5m])
+  {common="label"} 0 1 {{schema:0 sum:3 count:3}} {{schema:0 sum:4 count:4}}
+
+# Overlapping float and histogram at the same timestamp should fail.
+clear
+load 6m
+  float_metric{common="label"} 0 1 2
+  hist_metric{common="label"} {{schema:0 sum:1 count:1}} {{schema:0 sum:2 count:2}} {{schema:0 sum:3 count:3}}
+
+eval_fail range from 0 to 12m step 6m sum_over_time({__name__=~".*_metric"}[5m])
+
 `, engine)
 }
 
