@@ -119,6 +119,7 @@ func main() {
 	).Default("5m").Duration()
 
 	experimental := app.Flag("experimental", "Enable experimental commands.").Bool()
+	httpDebug := app.Flag("http.debug", "Log outgoing HTTP requests and responses to stderr (credentials are redacted). Useful for diagnosing connectivity and authentication issues.").Bool()
 
 	sdCheckCmd := checkCmd.Command("service-discovery", "Perform service discovery for the given job name and report the results, including relabeling.")
 	sdConfigFile := sdCheckCmd.Arg("config-file", "The prometheus config file.").Required().ExistingFile()
@@ -353,6 +354,9 @@ func main() {
 		if err != nil {
 			kingpin.Fatalf("Failed to create a new HTTP round tripper: %v", err)
 		}
+	}
+	if *httpDebug {
+		httpRoundTripper = promconfig.NewDebugRoundTripper(os.Stderr, httpRoundTripper)
 	}
 
 	for _, f := range *featureList {
