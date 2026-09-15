@@ -465,6 +465,79 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 	}
 }
 
+// TestGracefulShutdownWaitsForActiveRequests verifies that when the context is
+// cancelled, Shutdown waits for in-flight requests to complete rather than
+// immediately terminating them.
+func TestGracefulShutdownWaitsForActiveRequests(t *testing.T) {
+	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+
+	opts := &Options{
+		ListenAddresses: []string{port},
+		ReadTimeout:     30 * time.Second,
+		MaxConnections:  512,
+		RoutePrefix:     "/",
+		ExternalURL: &url.URL{
+			Scheme: "http",
+			Host:   "localhost" + port,
+			Path:   "/",
+		},
+	}
+	webHandler := New(nil, opts)
+	webHandler.config = &config.Config{}
+	webHandler.notifier = &notifier.Manager{}
+
+	// Register a slow handler (2s) and a channel to know when it starts.
+	requestStarted := make(chan struct{})
+	webHandler.router.Get("/slow", func(w http.ResponseWriter, _ *http.Request) {
+		close(requestStarted)
+		time.Sleep(2 * time.Second)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	l, err := webHandler.Listeners()
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	closed := make(chan struct{})
+	go func() {
+		webHandler.Run(ctx, l, "")
+		close(closed)
+	}()
+
+	baseURL := "http://localhost" + port
+	waitForServerReady(t, baseURL, 5*time.Second)
+
+	// Fire a slow request in the background.
+	go func() {
+		resp, err := http.Get(baseURL + "/slow")
+		if err == nil {
+			resp.Body.Close()
+		}
+	}()
+
+	// Wait until the handler is executing, then cancel the context.
+	select {
+	case <-requestStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("request did not start within 5s")
+	}
+
+	cancel()
+	cancelTime := time.Now()
+
+	// Run() must wait for the slow handler to finish (~2s).
+	// With the bug, Shutdown(ctx) returns immediately because ctx is already cancelled.
+	select {
+	case <-closed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Run() did not return within 10s after context cancellation")
+	}
+
+	elapsed := time.Since(cancelTime)
+	require.GreaterOrEqual(t, elapsed.Milliseconds(), int64(1500),
+		"Run() returned too quickly (%dms) — Shutdown is not waiting for active requests", elapsed.Milliseconds())
+}
+
 func TestHandleMultipleQuitRequests(t *testing.T) {
 	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
 
