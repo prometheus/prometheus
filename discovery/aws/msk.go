@@ -312,6 +312,12 @@ func (d *MSKDiscovery) describeClusters(ctx context.Context, clusterARNs []strin
 			if err != nil {
 				return fmt.Errorf("could not describe cluster %v: %w", clusterARN, err)
 			}
+			// The API may answer without any cluster information, which leaves
+			// nothing to build targets from.
+			if cluster.ClusterInfo == nil {
+				d.logger.Warn("Skipping MSK cluster described without cluster information", "cluster", clusterARN)
+				return nil
+			}
 			// Only provisioned clusters expose broker nodes; skip anything
 			// else (e.g. serverless clusters) that was explicitly configured.
 			if cluster.ClusterInfo.ClusterType != types.ClusterTypeProvisioned {
@@ -431,30 +437,48 @@ func (d *MSKDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 
 		go func(cluster types.Cluster, nodes []types.NodeInfo) {
 			defer wg.Done()
+
+			// The provisioned configuration carries the broker software and
+			// monitoring details, and the API omits it for clusters it does
+			// not report as provisioned.
+			var (
+				brokerSoftware *types.BrokerSoftwareInfo
+				openMonitoring *types.OpenMonitoringInfo
+			)
+			if p := cluster.Provisioned; p != nil {
+				brokerSoftware = p.CurrentBrokerSoftwareInfo
+				openMonitoring = p.OpenMonitoring
+			}
+
 			for _, node := range nodes {
 				labels := model.LabelSet{
-					mskLabelClusterName:         model.LabelValue(aws.ToString(cluster.ClusterName)),
-					mskLabelClusterARN:          model.LabelValue(aws.ToString(cluster.ClusterArn)),
-					mskLabelClusterState:        model.LabelValue(string(cluster.State)),
-					mskLabelClusterType:         model.LabelValue(string(cluster.ClusterType)),
-					mskLabelClusterVersion:      model.LabelValue(aws.ToString(cluster.CurrentVersion)),
-					mskLabelNodeARN:             model.LabelValue(aws.ToString(node.NodeARN)),
-					mskLabelNodeAddedTime:       model.LabelValue(aws.ToString(node.AddedToClusterTime)),
-					mskLabelNodeInstanceType:    model.LabelValue(aws.ToString(node.InstanceType)),
-					mskLabelClusterKafkaVersion: model.LabelValue(aws.ToString(cluster.Provisioned.CurrentBrokerSoftwareInfo.KafkaVersion)),
+					mskLabelClusterName:      model.LabelValue(aws.ToString(cluster.ClusterName)),
+					mskLabelClusterARN:       model.LabelValue(aws.ToString(cluster.ClusterArn)),
+					mskLabelClusterState:     model.LabelValue(string(cluster.State)),
+					mskLabelClusterType:      model.LabelValue(string(cluster.ClusterType)),
+					mskLabelClusterVersion:   model.LabelValue(aws.ToString(cluster.CurrentVersion)),
+					mskLabelNodeARN:          model.LabelValue(aws.ToString(node.NodeARN)),
+					mskLabelNodeAddedTime:    model.LabelValue(aws.ToString(node.AddedToClusterTime)),
+					mskLabelNodeInstanceType: model.LabelValue(aws.ToString(node.InstanceType)),
 				}
 
-				// The configuration ARN and revision labels are omitted when the cluster is not using a custom configuration.
-				if cluster.Provisioned.CurrentBrokerSoftwareInfo.ConfigurationArn != nil {
-					labels[mskLabelClusterConfigurationARN] = model.LabelValue(aws.ToString(cluster.Provisioned.CurrentBrokerSoftwareInfo.ConfigurationArn))
-				}
-				if cluster.Provisioned.CurrentBrokerSoftwareInfo.ConfigurationRevision != nil {
-					labels[mskLabelClusterConfigurationRevision] = model.LabelValue(strconv.FormatInt(aws.ToInt64(cluster.Provisioned.CurrentBrokerSoftwareInfo.ConfigurationRevision), 10))
+				// The broker software labels are omitted when the API did not
+				// report the software running on the cluster.
+				if brokerSoftware != nil {
+					labels[mskLabelClusterKafkaVersion] = model.LabelValue(aws.ToString(brokerSoftware.KafkaVersion))
+
+					// The configuration ARN and revision labels are omitted when the cluster is not using a custom configuration.
+					if brokerSoftware.ConfigurationArn != nil {
+						labels[mskLabelClusterConfigurationARN] = model.LabelValue(aws.ToString(brokerSoftware.ConfigurationArn))
+					}
+					if brokerSoftware.ConfigurationRevision != nil {
+						labels[mskLabelClusterConfigurationRevision] = model.LabelValue(strconv.FormatInt(aws.ToInt64(brokerSoftware.ConfigurationRevision), 10))
+					}
 				}
 
 				// The JMX exporter label is omitted when Open Monitoring is
 				// not enabled on the cluster.
-				if om := cluster.Provisioned.OpenMonitoring; om != nil && om.Prometheus != nil && om.Prometheus.JmxExporter != nil {
+				if om := openMonitoring; om != nil && om.Prometheus != nil && om.Prometheus.JmxExporter != nil {
 					labels[mskLabelClusterJmxExporterEnabled] = model.LabelValue(strconv.FormatBool(aws.ToBool(om.Prometheus.JmxExporter.EnabledInBroker)))
 				}
 
@@ -471,7 +495,7 @@ func (d *MSKDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					labels[mskLabelBrokerClientVPCIP] = model.LabelValue(aws.ToString(node.BrokerNodeInfo.ClientVpcIpAddress))
 					// The node exporter label is omitted when Open Monitoring
 					// is not enabled on the cluster.
-					if om := cluster.Provisioned.OpenMonitoring; om != nil && om.Prometheus != nil && om.Prometheus.NodeExporter != nil {
+					if om := openMonitoring; om != nil && om.Prometheus != nil && om.Prometheus.NodeExporter != nil {
 						labels[mskLabelBrokerNodeExporterEnabled] = model.LabelValue(strconv.FormatBool(aws.ToBool(om.Prometheus.NodeExporter.EnabledInBroker)))
 					}
 

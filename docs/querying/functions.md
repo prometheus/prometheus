@@ -635,6 +635,11 @@ When only negated `__name__` matchers are provided (e.g.
 because negated matchers alone cannot positively identify which info
 metrics to consider.
 
+Identifying-label presence is evaluated per input series. Inputs containing
+only `job`, only `instance`, or both can therefore gain data labels from the
+corresponding info-series group; a missing identifying label is not treated as
+a wildcard.
+
 These limitations are partially defeating the purpose of the `info` function.
 At the current stage, this is an experiment to find out how useful the approach
 turns out to be in practice. A final version of the `info` function will indeed
