@@ -2708,13 +2708,14 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 	// canEvict reports whether a series can be evicted during GC.
 	// Must be called with series.Lock held.
 	canEvict := func(series *memSeries) bool {
-		if _, exists := refsSet[storage.SeriesRef(series.ref)]; !exists {
-			return false
-		}
 		return !series.hasPendingCommit() && series.maxTime() <= maxt && shouldEvict(series)
 	}
 
+	// checkSeries locks the passed series and reports if it can be evicted.
 	checkSeries := func(_ int, _ uint64, series *memSeries) bool {
+		if _, exists := refsSet[storage.SeriesRef(series.ref)]; !exists {
+			return false
+		}
 		series.Lock()
 		defer series.Unlock()
 		return canEvict(series)
@@ -2730,7 +2731,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		defer series.Unlock()
 
 		// The series may have received samples after the check pass released the read lock.
-		if !canEvict(series) {
+		if _, exists := refsSet[storage.SeriesRef(series.ref)]; !exists || !canEvict(series) {
 			return
 		}
 
