@@ -73,7 +73,7 @@ type Group struct {
 	// defaults to DefaultEvalIterationFunc.
 	evalIterationFunc GroupEvalIterationFunc
 
-	appOpts *storage.AppendOptions
+	appOpts storage.AOptions
 }
 
 // GroupEvalIterationFunc is used to implement and extend rule group
@@ -143,7 +143,7 @@ func NewGroup(o GroupOptions) *Group {
 		logger:               opts.Logger.With("file", o.File, "group", o.Name),
 		metrics:              metrics,
 		evalIterationFunc:    evalIterationFunc,
-		appOpts:              &storage.AppendOptions{DiscardOutOfOrder: true},
+		appOpts:              storage.AOptions{RejectOutOfOrder: true},
 	}
 }
 
@@ -567,7 +567,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		// be the majority of trace duration. Trace it using dedicated span
 		// so it's clear from the trace where did all the duration go.
 		_, appenderSp := otel.Tracer("").Start(ctx, "newAppender")
-		app := g.opts.Appendable.Appender(ctx)
+		app := g.opts.AppendableV2.AppenderV2(ctx)
 		appenderSp.End()
 		seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
 		defer func() {
@@ -597,10 +597,9 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 		for _, s := range vector {
 			if s.H != nil {
-				_, err = app.AppendHistogram(0, s.Metric, s.T, nil, s.H)
+				_, err = app.Append(0, s.Metric, 0, s.T, 0, nil, s.H, g.appOpts)
 			} else {
-				app.SetOptions(g.appOpts)
-				_, err = app.Append(0, s.Metric, s.T, s.F)
+				_, err = app.Append(0, s.Metric, 0, s.T, s.F, nil, nil, g.appOpts)
 			}
 
 			if err != nil {
@@ -642,7 +641,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		for metric, lset := range g.seriesInPreviousEval[i] {
 			if _, ok := seriesReturned[metric]; !ok {
 				// Series no longer exposed, mark it stale.
-				_, err = app.Append(0, lset, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN))
+				_, err = app.Append(0, lset, 0, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, g.appOpts)
 				unwrappedErr := errors.Unwrap(err)
 				if unwrappedErr == nil {
 					unwrappedErr = err
@@ -728,12 +727,11 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 	if len(g.staleSeries) == 0 {
 		return
 	}
-	app := g.opts.Appendable.Appender(ctx)
-	app.SetOptions(g.appOpts)
+	app := g.opts.AppendableV2.AppenderV2(ctx)
 	queryOffset := g.QueryOffset()
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
-		_, err := app.Append(0, s, timestamp.FromTime(ts.Add(-queryOffset)), math.Float64frombits(value.StaleNaN))
+		_, err := app.Append(0, s, 0, timestamp.FromTime(ts.Add(-queryOffset)), math.Float64frombits(value.StaleNaN), nil, nil, g.appOpts)
 		unwrappedErr := errors.Unwrap(err)
 		if unwrappedErr == nil {
 			unwrappedErr = err
