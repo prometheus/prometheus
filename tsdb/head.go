@@ -1246,6 +1246,22 @@ func (h *Head) SetMinValidTime(minValidTime int64) {
 	h.minValidTime.Store(minValidTime)
 }
 
+// raiseMinValidTime advances the minimum timestamp the head can ingest to at
+// least minValidTime. Unlike SetMinValidTime, it never moves the bound
+// backwards, so it is safe to call concurrently with other code that may be
+// advancing minValidTime too, such as truncateMemory.
+func (h *Head) raiseMinValidTime(minValidTime int64) {
+	for {
+		cur := h.minValidTime.Load()
+		if minValidTime <= cur {
+			return
+		}
+		if h.minValidTime.CompareAndSwap(cur, minValidTime) {
+			return
+		}
+	}
+}
+
 // Truncate removes old data before mint from the head and WAL.
 func (h *Head) Truncate(mint int64) (err error) {
 	initialized := h.initialized()
