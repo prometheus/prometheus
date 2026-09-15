@@ -7469,6 +7469,56 @@ func TestStripeSeries_getOrSet(t *testing.T) {
 	require.Same(t, ms2, got)
 }
 
+// TestStripeSeries_iterForDeletion verifies that a blocked checkFunc does not
+// block stripe writers or reference lookups. It also verifies that deletion
+// skips a snapshot candidate that a writer unlinked.
+func TestStripeSeries_iterForDeletion(t *testing.T) {
+	// Force all index operations to use one lock.
+	lset := labels.FromStrings("a", "1")
+	series := newMemSeries(lset, 1, 0, defaultIsolationDisabled, false)
+	hash := lset.Hash()
+	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
+	got, created := s.setUnlessAlreadySet(hash, lset, series)
+	require.True(t, created)
+	require.Same(t, series, got)
+
+	checkStarted := make(chan struct{})
+	continueCheck := make(chan struct{})
+	iterationDone := make(chan struct{})
+	deleteCalled := false
+	go func() {
+		s.iterForDeletion(
+			func(_ int, _ uint64, _ *memSeries) bool {
+				close(checkStarted)
+				<-continueCheck
+				return true
+			},
+			func(_ int, _ uint64, _ *memSeries, _ map[chunks.HeadSeriesRef]labels.Labels) {
+				deleteCalled = true
+			},
+		)
+		close(iterationDone)
+	}()
+
+	// Unlink the candidate while checkFunc is paused.
+	<-checkStarted
+	writerAcquired := s.locks[0].TryLock()
+	if writerAcquired {
+		s.hashes[0].del(hash, series.ref)
+		s.locks[0].Unlock()
+	}
+	queried := s.getByID(series.ref)
+
+	close(continueCheck)
+	<-iterationDone
+
+	require.True(t, writerAcquired)
+	require.Same(t, series, queried)
+	require.False(t, deleteCalled)
+	require.Nil(t, s.getByHash(hash, lset))
+	require.Same(t, series, s.getByID(series.ref))
+}
+
 func TestStripeSeries_gc(t *testing.T) {
 	t.Run("marks collected series", func(t *testing.T) {
 		s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)

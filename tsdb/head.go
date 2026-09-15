@@ -2790,26 +2790,44 @@ func (s *stripeSeries) iterForDeletion(
 	// Run through all series shard by shard.
 	for i := 0; i < s.size; i++ {
 		candidates = candidates[:0]
+
+		// Build a snapshot of every series in this hash stripe.
+		// The goal is to create this snapshot quickly, spending as little
+		// time on it as we can, to minimise duration of the stripe lock.
+		// We simply build a list of candidates from all keys and the actual
+		// inspection of each candidate series happens by walking the snapshot,
+		// without any lock.
 		s.locks[i].RLock()
-		// Iterate conflicts first so f doesn't move them to the `unique` field,
+		// Iterate conflicts first so deleteFunc doesn't move them to the `unique` field,
 		// after deleting `unique`.
 		for hash, all := range s.hashes[i].conflicts {
 			for _, series := range all {
-				if checkFunc == nil || checkFunc(i, hash, series) {
-					candidates = append(candidates, candidate{hash, series})
-				}
+				candidates = append(candidates, candidate{hash: hash, series: series})
 			}
 		}
 
 		for hash, series := range s.hashes[i].unique {
-			if checkFunc == nil || checkFunc(i, hash, series) {
-				candidates = append(candidates, candidate{
-					hash:   hash,
-					series: series,
-				})
-			}
+			candidates = append(candidates, candidate{
+				hash:   hash,
+				series: series,
+			})
 		}
 		s.locks[i].RUnlock()
+
+		if checkFunc != nil {
+			// Inspect each snapshot candidate by calling checkFunc for it.
+			// If checkFunc returns true then it means that given series can be
+			// deleted. We don't delete it yet, we'll do another safety check
+			// before we do this. For now we only build a list of series to delete
+			// by filtering the candidates slice in-place.
+			checked := candidates[:0]
+			for _, c := range candidates {
+				if checkFunc(i, c.hash, c.series) {
+					checked = append(checked, c)
+				}
+			}
+			candidates = checked
+		}
 
 		if len(candidates) == 0 {
 			seriesSetFromPrevStripe = 0
@@ -2817,8 +2835,15 @@ func (s *stripeSeries) iterForDeletion(
 		}
 
 		seriesSet := make(map[chunks.HeadSeriesRef]labels.Labels, seriesSetFromPrevStripe)
+		// The snapshot can become stale while checkFunc runs without the stripe lock.
+		// A writer can unlink a candidate or replace it with another series.
+		// Grab the write lock and do final check on the series pointer, to ensure
+		// that our series wasn't replaced.
 		s.locks[i].Lock()
 		for _, c := range candidates {
+			if s.hashes[i].get(c.hash, c.series.lset) != c.series {
+				continue
+			}
 			deleteFunc(i, c.hash, c.series, seriesSet)
 		}
 		s.locks[i].Unlock()
