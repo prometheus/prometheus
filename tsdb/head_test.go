@@ -3316,18 +3316,85 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 	require.Equal(t, 2, last)
 }
 
-func TestAddDuplicateLabelName(t *testing.T) {
-	h, _ := newTestHead(t, 1000, compression.None, false)
-
-	add := func(labels labels.Labels, labelName string) {
-		app := h.Appender(context.Background())
-		_, err := app.Append(0, labels, 0, 0)
-		require.EqualError(t, err, fmt.Sprintf(`label name "%s" is not unique: invalid sample`, labelName))
+func TestHeadAppender_ValidateOrder(t *testing.T) {
+	for _, appV2 := range []bool{false, true} {
+		for _, sampleType := range []string{"float", "histogram", "float histogram"} {
+			for _, commit := range []bool{false, true} {
+				t.Run(fmt.Sprintf("appV2=%t/type=%s/commit=%t", appV2, sampleType, commit), func(t *testing.T) {
+					h, wal := newTestHead(t, 1000, compression.None, false)
+					var app storage.AppenderTransaction
+					var appendSample func(labels.Labels) error
+					var hist *histogram.Histogram
+					var floatHist *histogram.FloatHistogram
+					switch sampleType {
+					case "histogram":
+						hist = tsdbutil.GenerateTestHistograms(1)[0]
+					case "float histogram":
+						floatHist = tsdbutil.GenerateTestFloatHistograms(1)[0]
+					}
+					if appV2 {
+						a := h.AppenderV2(t.Context())
+						app = a
+						appendSample = func(ls labels.Labels) error {
+							_, err := a.Append(0, ls, 0, 1, 1, hist, floatHist, storage.AOptions{})
+							return err
+						}
+					} else {
+						a := h.Appender(t.Context())
+						app = a
+						appendSample = func(ls labels.Labels) error {
+							if hist != nil || floatHist != nil {
+								_, err := a.AppendHistogram(0, ls, 1, hist, floatHist)
+								return err
+							}
+							_, err := a.Append(0, ls, 1, 1)
+							return err
+						}
+					}
+					closed := false
+					t.Cleanup(func() {
+						if !closed {
+							require.NoError(t, app.Rollback())
+						}
+					})
+					for _, tc := range []struct {
+						name    string
+						pairs   []string
+						wantErr string
+					}{
+						{name: "duplicate labels", pairs: []string{"a", "c", "a", "b"}, wantErr: `label name "a" is not unique`},
+						{name: "identical labels", pairs: []string{"a", "c", "a", "c"}, wantErr: `label name "a" is not unique`},
+						{name: "duplicate bucket labels", pairs: []string{"__name__", "up", "job", "prometheus", "le", "500", "le", "400", "unit", "s"}, wantErr: `label name "le" is not unique`},
+						{name: "duplicate empty names", pairs: []string{"", "first", "", "second"}, wantErr: `label name "" is not unique`},
+						{name: "non-adjacent duplicates", pairs: []string{"__name__", "up", "job", "prometheus", "__name__", "down"}, wantErr: `label name "__name__" is out of order`},
+						{name: "descending labels", pairs: []string{"z", "1", "a", "2"}, wantErr: `label name "a" is out of order`},
+						{name: "descending labels before last", pairs: []string{"b", "1", "a", "2", "c", "3"}, wantErr: `label name "a" is out of order`},
+					} {
+						t.Run(tc.name, func(t *testing.T) {
+							builder := labels.NewScratchBuilder(len(tc.pairs) / 2)
+							for i := 0; i < len(tc.pairs); i += 2 {
+								builder.Add(tc.pairs[i], tc.pairs[i+1])
+							}
+							err := appendSample(builder.Labels())
+							require.ErrorIs(t, err, ErrInvalidSample)
+							require.EqualError(t, err, tc.wantErr+": invalid sample")
+						})
+					}
+					var err error
+					if commit {
+						err = app.Commit()
+					} else {
+						err = app.Rollback()
+					}
+					closed = true
+					require.NoError(t, err)
+					require.Zero(t, h.NumSeries())
+					require.NoError(t, h.Close())
+					require.Empty(t, readTestWAL(t, wal.Dir()), "Rejected series must not reach the WAL")
+				})
+			}
+		}
 	}
-
-	add(labels.FromStrings("a", "c", "a", "b"), "a")
-	add(labels.FromStrings("a", "c", "a", "c"), "a")
-	add(labels.FromStrings("__name__", "up", "job", "prometheus", "le", "500", "le", "400", "unit", "s"), "le")
 }
 
 func TestMemSeriesIsolation(t *testing.T) {

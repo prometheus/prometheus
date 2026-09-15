@@ -183,26 +183,46 @@ func TestLabels_MatchLabels(t *testing.T) {
 	}
 }
 
-func TestLabels_HasDuplicateLabelNames(t *testing.T) {
-	cases := []struct {
-		Input     Labels
-		Duplicate bool
-		LabelName string
-	}{
-		{
-			Input:     FromMap(map[string]string{"__name__": "up", "hostname": "localhost"}),
-			Duplicate: false,
-		}, {
-			Input:     FromStrings("__name__", "up", "hostname", "localhost", "hostname", "127.0.0.1"),
-			Duplicate: true,
-			LabelName: "hostname",
-		},
-	}
+func TestLabels_ValidateOrder(t *testing.T) {
+	// Seed names in reverse order so symbol IDs cannot stand in for name ordering.
+	syms := NewSymbolTable()
+	seed := NewScratchBuilderWithSymbolTable(syms, 2)
+	seed.Add("z", "last")
+	seed.Add("a", "first")
+	_ = seed.Labels()
 
-	for i, c := range cases {
-		l, d := c.Input.HasDuplicateLabelNames()
-		require.Equal(t, c.Duplicate, d, "test %d: incorrect duplicate bool", i)
-		require.Equal(t, c.LabelName, l, "test %d: incorrect label name", i)
+	for _, tc := range []struct {
+		name    string
+		pairs   []string
+		wantErr string
+	}{
+		{name: "empty labels"},
+		{name: "single label", pairs: []string{"a", "1"}},
+		{name: "single empty name", pairs: []string{"", "1"}},
+		{name: "leading empty name", pairs: []string{"", "1", "a", "2"}},
+		{name: "sorted labels", pairs: []string{"__name__", "up", "hostname", "localhost"}},
+		{name: "sorted names with reverse symbol IDs", pairs: []string{"a", "1", "z", "2"}},
+		{name: "duplicate labels", pairs: []string{"a", "1", "a", "2"}, wantErr: `label name "a" is not unique`},
+		{name: "identical labels", pairs: []string{"a", "1", "a", "1"}, wantErr: `label name "a" is not unique`},
+		{name: "duplicate empty names", pairs: []string{"", "1", "", "2"}, wantErr: `label name "" is not unique`},
+		{name: "non-adjacent duplicates", pairs: []string{"__name__", "up", "job", "prometheus", "__name__", "down"}, wantErr: `label name "__name__" is out of order`},
+		{name: "descending names", pairs: []string{"z", "1", "a", "2"}, wantErr: `label name "a" is out of order`},
+		{name: "descending empty name", pairs: []string{"a", "1", "", "2"}, wantErr: `label name "" is out of order`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			builder := NewScratchBuilderWithSymbolTable(syms, len(tc.pairs)/2)
+			for i := 0; i < len(tc.pairs); i += 2 {
+				builder.Add(tc.pairs[i], tc.pairs[i+1])
+			}
+			ls := builder.Labels()
+			before := ls.Copy()
+			if tc.wantErr == "" {
+				require.NoError(t, ls.ValidateOrder())
+			} else {
+				require.EqualError(t, ls.ValidateOrder(), tc.wantErr)
+			}
+			require.True(t, Equal(before, ls), "Validation must not change labels")
+		})
 	}
 }
 
