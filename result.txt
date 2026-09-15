@@ -1,0 +1,41 @@
+goos: linux
+goarch: amd64
+pkg: github.com/prometheus/prometheus/scrape
+cpu: 12th Gen Intel(R) Core(TM) i5-12450H
+                                 │   hashmap10.txt    │               radix10.txt                │
+                                 │    sec/op    │    sec/op     vs base                │
+ScrapeCacheMemory/trie/n=999-4     1.796m ±  3%   2.228m ±  4%  +24.03% (p=0.000 n=10)
+ScrapeCacheMemory/trie/n=9999-4    5.417m ± 15%   6.725m ± 20%  +24.14% (p=0.000 n=10)
+ScrapeCacheMemory/trie/n=99999-4   53.03m ±  3%   47.65m ±  2%  -10.15% (p=0.000 n=10)
+ScrapeCacheGet-4                   22.78n ±  8%   32.79n ±  6%  +43.97% (p=0.000 n=10)
+ScrapeCacheAddRef-4                604.8µ ±  6%   546.3µ ±  4%   -9.67% (p=0.000 n=10)
+geomean                            371.8µ         418.2µ        +12.46%
+
+                                 │  h10.txt   │              r10.txt               │
+                                 │  B/series  │  B/series   vs base                │
+ScrapeCacheMemory/trie/n=999-4     278.2 ± 0%   205.3 ± 0%  -26.20% (p=0.000 n=10)
+ScrapeCacheMemory/trie/n=9999-4    267.6 ± 0%   194.6 ± 0%  -27.28% (p=0.000 n=10)
+ScrapeCacheMemory/trie/n=99999-4   258.9 ± 0%   193.5 ± 0%  -25.26% (p=0.000 n=10)
+geomean                            268.1        197.7       -26.25%
+
+                                 │    h10.txt     │                r10.txt                 │
+                                 │      B/op      │     B/op      vs base                  │
+ScrapeCacheMemory/trie/n=999-4     324.3Ki ± 0%     211.8Ki ± 0%  -34.68% (p=0.000 n=10)
+ScrapeCacheMemory/trie/n=9999-4    2.968Mi ± 0%     1.970Mi ± 0%  -33.63% (p=0.000 n=10)
+ScrapeCacheMemory/trie/n=99999-4   28.03Mi ± 0%     19.59Mi ± 0%  -30.11% (p=0.000 n=10)
+ScrapeCacheGet-4                     0.000 ± 0%       0.000 ± 0%        ~ (p=1.000 n=10) ¹
+ScrapeCacheAddRef-4                706.3Ki ± 0%     240.0Ki ± 0%  -66.02% (p=0.000 n=10)
+geomean                                         ²                 -36.53%                ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+
+                                 │    h10.txt     │                r10.txt                 │
+                                 │   allocs/op    │  allocs/op   vs base                   │
+ScrapeCacheMemory/trie/n=999-4      2.019k ± 0%     5.474k ± 0%  +171.12% (p=0.000 n=10)
+ScrapeCacheMemory/trie/n=9999-4     20.08k ± 0%     54.82k ± 0%  +173.03% (p=0.000 n=10)
+ScrapeCacheMemory/trie/n=99999-4    200.5k ± 0%     547.8k ± 0%  +173.20% (p=0.000 n=10)
+ScrapeCacheGet-4                     0.000 ± 0%      0.000 ± 0%         ~ (p=1.000 n=10) ¹
+ScrapeCacheAddRef-4                10.007k ± 0%     5.172k ± 0%   -48.32% (p=0.000 n=10)
+geomean                                         ²                 +59.90%                ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean
