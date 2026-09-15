@@ -130,3 +130,16 @@ func TestSetFeatureListOptions_MetadataWALRecords(t *testing.T) {
 	require.True(t, c.web.AppendMetadata)
 	require.True(t, c.tsdb.EnableMetadataWALRecords)
 }
+
+func TestSetFeatureListOptions_WarnDuplicateTargets(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("enabled=%t", enabled), func(t *testing.T) {
+			c := &flagConfig{}
+			if enabled {
+				c.featureList = []string{"warn-duplicate-targets"}
+			}
+			require.NoError(t, c.setFeatureListOptions(promslog.NewNopLogger()))
+			require.Equal(t, enabled, c.scrape.WarnDuplicateTargets)
+		})
+	}
+}
