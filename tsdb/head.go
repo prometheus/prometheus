@@ -121,7 +121,7 @@ type Head struct {
 	series *stripeSeries
 
 	walExpiriesMtx sync.Mutex
-	walExpiries    map[chunks.HeadSeriesRef]int64 // Series no longer in the head, and what time they must be kept until.
+	walExpiries    map[chunks.HeadSeriesRef]walExpiry // Series no longer in the head, and what must be kept for them.
 
 	// TODO(codesome): Extend MemPostings to return only OOOPostings, Set OOOStatus, ... Like an additional map of ooo postings.
 	postings *index.MemPostings // Postings lists for terms.
@@ -394,7 +394,7 @@ func (h *Head) resetInMemoryState() error {
 	h.exemplars = es
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
-	h.walExpiries = map[chunks.HeadSeriesRef]int64{}
+	h.walExpiries = map[chunks.HeadSeriesRef]walExpiry{}
 	h.chunkRange.Store(h.opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
 	h.maxTime.Store(math.MinInt64)
@@ -1609,20 +1609,32 @@ func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) 
 	return false, false, 0
 }
 
+// walExpiry is what the Head must keep in WAL checkpoints for a series it no longer holds.
+type walExpiry struct {
+	keepUntil int64              // The time the series records must be kept until.
+	meta      *metadata.Metadata // The last metadata written for the series, if any.
+}
+
 func (h *Head) getWALExpiry(id chunks.HeadSeriesRef) (int64, bool) {
 	h.walExpiriesMtx.Lock()
 	defer h.walExpiriesMtx.Unlock()
 
-	keepUntil, ok := h.walExpiries[id]
-	return keepUntil, ok
+	e, ok := h.walExpiries[id]
+	return e.keepUntil, ok
 }
 
-// updateWALExpiry updates the WAL expiry for a series, keeping the higher of the current value and keepUntil.
-func (h *Head) updateWALExpiry(id chunks.HeadSeriesRef, keepUntil int64) {
+// updateWALExpiry updates the WAL expiry for a series, keeping the higher of the current
+// value and keepUntil. A nil meta leaves any metadata already recorded in place.
+func (h *Head) updateWALExpiry(id chunks.HeadSeriesRef, keepUntil int64, meta *metadata.Metadata) {
 	h.walExpiriesMtx.Lock()
 	defer h.walExpiriesMtx.Unlock()
 
-	h.walExpiries[id] = max(keepUntil, h.walExpiries[id])
+	e := h.walExpiries[id]
+	e.keepUntil = max(keepUntil, e.keepUntil)
+	if meta != nil {
+		e.meta = meta
+	}
+	h.walExpiries[id] = e
 }
 
 // keepSeriesInWALCheckpointFn returns a function that is used to determine whether a series record should be kept in the checkpoint.
@@ -1637,6 +1649,38 @@ func (h *Head) keepSeriesInWALCheckpointFn(mint int64) func(id chunks.HeadSeries
 		// Keep the record if the series has an expiry set.
 		keepUntil, ok := h.getWALExpiry(id)
 		return ok && keepUntil >= mint
+	}
+}
+
+// seriesMetadataForWALCheckpoint looks up the metadata a checkpoint must write for a series
+// it is keeping, reporting false when none was ever recorded for the ref.
+//
+// Chunk snapshots do not carry metadata, so after a snapshot restart the Head's metadata,
+// and any checkpoint built from it, is incomplete.
+// TODO: restore metadata on snapshot load.
+//
+// Callers must be serialized against series deletion via chunkSnapshotMtx, the same
+// invariant keepSeriesInWALCheckpointFn relies on.
+func (h *Head) seriesMetadataForWALCheckpoint() func(chunks.HeadSeriesRef) (metadata.Metadata, bool) {
+	return func(ref chunks.HeadSeriesRef) (metadata.Metadata, bool) {
+		if s := h.series.getByID(ref); s != nil {
+			s.Lock()
+			meta := s.meta
+			s.Unlock()
+			if meta == nil {
+				return metadata.Metadata{}, false
+			}
+			return *meta, true
+		}
+
+		// Series already removed but kept by a WAL expiry. No mint check: the ref only
+		// reaches here after satisfying keepSeriesInWALCheckpointFn.
+		h.walExpiriesMtx.Lock()
+		defer h.walExpiriesMtx.Unlock()
+		if e, ok := h.walExpiries[ref]; ok && e.meta != nil {
+			return *e.meta, true
+		}
+		return metadata.Metadata{}, false
 	}
 }
 
@@ -1674,7 +1718,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	}
 
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load()); err != nil {
+	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load(), h.seriesMetadataForWALCheckpoint()); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		if _, ok := errors.AsType[*chunks.CorruptionErr](err); ok {
 			h.metrics.walCorruptionsTotal.Inc()
@@ -1690,8 +1734,8 @@ func (h *Head) truncateWAL(mint int64) error {
 
 	// The checkpoint is written and data before mint is truncated, so stop tracking expired series.
 	h.walExpiriesMtx.Lock()
-	for ref, keepUntil := range h.walExpiries {
-		if keepUntil < mint {
+	for ref, e := range h.walExpiries {
+		if e.keepUntil < mint {
 			delete(h.walExpiries, ref)
 		}
 	}
@@ -1994,7 +2038,8 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
+	deletedMeta, onDelete := h.deletedMetadataCollector()
+	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef, onDelete)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -2019,12 +2064,32 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 		// If we didn't keep these series records then on start up when we replay the WAL, or any other code that reads the WAL,
 		// wouldn't be able to use those samples since we would have no labels for that ref ID.
 		for ref := range deleted {
-			h.walExpiries[chunks.HeadSeriesRef(ref)] = actualInOrderMint
+			h.walExpiries[chunks.HeadSeriesRef(ref)] = walExpiry{
+				keepUntil: actualInOrderMint,
+				meta:      deletedMeta[chunks.HeadSeriesRef(ref)],
+			}
 		}
 		h.walExpiriesMtx.Unlock()
 	}
 
 	return actualInOrderMint, minOOOTime, minMmapFile
+}
+
+// deletedMetadataCollector returns a map receiving the metadata of every series a GC pass
+// removes, plus the callback that fills it. Both are nil when there is no WAL.
+//
+// A removed series' record lives on via walExpiries with no memSeries left to read, so its
+// metadata has to be captured at the deletion point.
+func (h *Head) deletedMetadataCollector() (map[chunks.HeadSeriesRef]*metadata.Metadata, func(*memSeries)) {
+	if h.wal == nil {
+		return nil, nil
+	}
+	collected := map[chunks.HeadSeriesRef]*metadata.Metadata{}
+	return collected, func(s *memSeries) {
+		if s.meta != nil {
+			collected[s.ref] = s.meta
+		}
+	}
 }
 
 // Tombstones returns a new reader over the head's tombstones.
@@ -2450,7 +2515,8 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 // but the returned map goes into postings.Delete() which expects a map[storage.SeriesRef]struct
 // and there's no easy way to cast maps.
 // minMmapFile is the min mmap file number seen in the series (in-order and out-of-order) after gc'ing the series.
-func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _, _, _ int, _, _ int64, minMmapFile int) {
+// onDelete, if non-nil, is called for each removed series with the series lock held.
+func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef, onDelete func(*memSeries)) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _, _, _ int, _, _ int64, minMmapFile int) {
 	var (
 		deleted                       = map[storage.SeriesRef]struct{}{}
 		affected                      = map[labels.Label]struct{}{}
@@ -2525,6 +2591,9 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		if onDelete != nil {
+			onDelete(series)
+		}
 		series.setGCed()
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
@@ -2550,7 +2619,8 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) map[storage.SeriesRef]struct{} {
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, shouldEvict)
+	deletedMeta, onDelete := h.deletedMetadataCollector()
+	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, shouldEvict, onDelete)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -2576,7 +2646,10 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 		// that reads the WAL, wouldn't be able to use those
 		// samples since we would have no labels for that ref ID.
 		for ref := range deleted {
-			h.walExpiries[chunks.HeadSeriesRef(ref)] = maxt
+			h.walExpiries[chunks.HeadSeriesRef(ref)] = walExpiry{
+				keepUntil: maxt,
+				meta:      deletedMeta[chunks.HeadSeriesRef(ref)],
+			}
 		}
 		h.walExpiriesMtx.Unlock()
 	}
@@ -2621,7 +2694,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		// WAL may still hold samples for this ref, they can't outlive maxt.
 		if h.wal != nil {
 			if maxt := series.maxTime(); maxt != math.MinInt64 {
-				h.updateWALExpiry(series.ref, maxt)
+				h.updateWALExpiry(series.ref, maxt, series.meta)
 			}
 		}
 
@@ -2673,7 +2746,8 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 // <= maxt, and for which shouldEvict returns true. Returns the set of deleted refs, the set
 // of label-name/value pairs whose postings are affected, the count of removed chunks, and
 // the number of deleted series that carried a stale-NaN last value.
-func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _, _, _ int) {
+// onDelete, if non-nil, is called for each removed series with the series lock held.
+func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool, onDelete func(*memSeries)) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _, _, _ int) {
 	var (
 		deleted                 = map[storage.SeriesRef]struct{}{}
 		affected                = map[labels.Label]struct{}{}
@@ -2724,6 +2798,9 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		if onDelete != nil {
+			onDelete(series)
+		}
 		// Keep head chunks intact for readers that still reference the series.
 		series.setGCed()
 		stale, isHist, buckets := series.sampleState()
