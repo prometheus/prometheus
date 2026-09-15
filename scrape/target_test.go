@@ -14,12 +14,10 @@
 package scrape
 
 import (
-	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -31,7 +29,6 @@ import (
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
@@ -41,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 const (
@@ -65,8 +63,6 @@ func TestTargetLogValue(t *testing.T) {
 		{name: "nil target", target: (*Target)(nil)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, slog.AnyValue(tc.target).Resolve().Any())
-
 			data, err := json.Marshal(map[string]any{"target": tc.target})
 			require.NoError(t, err)
 			if tc.want == nil {
@@ -75,48 +71,7 @@ func TestTargetLogValue(t *testing.T) {
 				require.JSONEq(t, `{"target":{}}`, string(data))
 			}
 
-			for _, style := range []promslog.LogStyle{promslog.SlogStyle, promslog.GoKitStyle} {
-				for _, formatName := range []string{"json", "logfmt"} {
-					for _, placement := range []string{"direct", "with", "group", "with-group"} {
-						t.Run(string(style)+"/"+formatName+"/"+placement, func(t *testing.T) {
-							var output bytes.Buffer
-							format := promslog.NewFormat()
-							require.NoError(t, format.Set(formatName))
-							logger := promslog.New(&promslog.Config{Writer: &output, Format: format, Style: style})
-							switch placement {
-							case "direct":
-								logger.Info("test", "target", tc.target)
-							case "with":
-								logger.With("target", tc.target).Info("test")
-							case "group":
-								logger.Info("test", slog.Group("group", "target", tc.target))
-							case "with-group":
-								logger.WithGroup("group").With("target", tc.target).Info("test")
-							}
-
-							if formatName == "json" {
-								var entry map[string]any
-								require.NoError(t, json.Unmarshal(output.Bytes(), &entry))
-								if placement == "group" || placement == "with-group" {
-									entry = entry["group"].(map[string]any)
-								}
-								require.Contains(t, entry, "target")
-								require.Equal(t, tc.want, entry["target"])
-							} else {
-								key := "target"
-								if placement == "group" || placement == "with-group" {
-									key = "group.target"
-								}
-								want := "<nil>"
-								if tc.want != nil {
-									want = fmt.Sprintf("%q", tc.want)
-								}
-								require.Contains(t, output.String(), key+"="+want)
-							}
-						})
-					}
-				}
-			}
+			testutil.RequireLogValue(t, "target", tc.target, tc.want)
 		})
 	}
 }
