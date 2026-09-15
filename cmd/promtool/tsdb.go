@@ -847,7 +847,12 @@ func checkErr(err error) int {
 	return 0
 }
 
-func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration, customLabels map[string]string) int {
+func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, blockDuration, maxBlockDuration time.Duration, customLabels map[string]string) int {
+	resolvedBlockDuration, err := resolveBlockDuration(blockDuration, maxBlockDuration)
+	if err != nil {
+		return checkErr(err)
+	}
+
 	var buf []byte
 	info, err := os.Stat(path)
 	if err != nil {
@@ -872,7 +877,7 @@ func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxB
 		return checkErr(fmt.Errorf("create output dir: %w", err))
 	}
 
-	return checkErr(backfill(5000, buf, outputDir, humanReadable, quiet, maxBlockDuration, customLabels))
+	return checkErr(backfill(5000, buf, outputDir, humanReadable, quiet, resolvedBlockDuration, customLabels))
 }
 
 func displayHistogram(dataType string, datas []int, total int) {

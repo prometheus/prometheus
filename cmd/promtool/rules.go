@@ -52,7 +52,7 @@ type ruleImporterConfig struct {
 	start                time.Time
 	end                  time.Time
 	evalInterval         time.Duration
-	maxBlockDuration     time.Duration
+	blockDuration        int64
 	nameValidationScheme model.ValidationScheme
 }
 
@@ -87,7 +87,7 @@ func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 
 		for i, r := range group.Rules() {
 			importer.logger.Info("processing rule", "component", "backfiller", "id", i, "name", r.Name())
-			if err := importer.importRule(ctx, r.Query().String(), r.Name(), r.Labels(), importer.config.start, importer.config.end, int64(importer.config.maxBlockDuration/time.Millisecond), group); err != nil {
+			if err := importer.importRule(ctx, r.Query().String(), r.Name(), r.Labels(), importer.config.start, importer.config.end, importer.config.blockDuration, group); err != nil {
 				errs = append(errs, err)
 			}
 		}
@@ -97,9 +97,8 @@ func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 
 // importRule queries a prometheus API to evaluate rules at times in the past.
 func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName string, ruleLabels labels.Labels, start, end time.Time,
-	maxBlockDuration int64, grp *rules.Group,
+	blockDuration int64, grp *rules.Group,
 ) (err error) {
-	blockDuration := getCompatibleBlockDuration(maxBlockDuration)
 	startInMs := start.Unix() * int64(time.Second/time.Millisecond)
 	endInMs := end.Unix() * int64(time.Second/time.Millisecond)
 
