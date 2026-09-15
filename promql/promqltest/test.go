@@ -94,10 +94,8 @@ func LoadedStorage(t testing.TB, input string, opts ...teststorage.Option) *test
 
 // TestParserOpts are the parser options used for all built-in test engines.
 var TestParserOpts = parser.Options{
-	EnableExperimentalFunctions:  true,
-	ExperimentalDurationExpr:     true,
-	EnableExtendedRangeSelectors: true,
-	EnableBinopFillModifiers:     true,
+	EnableExperimentalFunctions: true,
+	EnableBinopFillModifiers:    true,
 }
 
 // NewTestEngine creates a promql.Engine with enablePerStepStats, lookbackDelta and maxSamples, and returns it.

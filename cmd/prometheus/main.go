@@ -402,12 +402,6 @@ func main() {
 			FeatureRegistry: features.DefaultRegistry,
 		},
 		promslogConfig: promslog.Config{},
-		// Duration expressions and extended range selectors are enabled by default.
-		// Their feature flags are now no-ops.
-		parserOpts: parser.Options{
-			ExperimentalDurationExpr:     true,
-			EnableExtendedRangeSelectors: true,
-		},
 		scrape: scrape.Options{
 			FeatureRegistry: features.DefaultRegistry,
 		},
