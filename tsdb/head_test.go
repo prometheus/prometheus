@@ -7469,54 +7469,116 @@ func TestStripeSeries_getOrSet(t *testing.T) {
 	require.Same(t, ms2, got)
 }
 
-// TestStripeSeries_iterForDeletion verifies that a blocked checkFunc does not
-// block stripe writers or reference lookups. It also verifies that deletion
-// skips a snapshot candidate that a writer unlinked.
+// TestStripeSeries_iterForDeletion verifies that checks permit stripe access and
+// identity revalidation skips unlinked candidates without locking other series.
 func TestStripeSeries_iterForDeletion(t *testing.T) {
-	// Force all index operations to use one lock.
-	lset := labels.FromStrings("a", "1")
-	series := newMemSeries(lset, 1, 0, defaultIsolationDisabled, false)
-	hash := lset.Hash()
-	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
-	got, created := s.setUnlessAlreadySet(hash, lset, series)
-	require.True(t, created)
-	require.Same(t, series, got)
+	for _, tc := range []struct {
+		name      string
+		colliding bool
+	}{
+		{name: "single series"},
+		{name: "colliding series", colliding: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var s *stripeSeries
+			var series, remaining *memSeries
+			if tc.colliding {
+				s, remaining, series = stripeSeriesWithCollidingSeries(t)
+			} else {
+				lset := labels.FromStrings("a", "1")
+				series = newMemSeries(lset, 1, 0, defaultIsolationDisabled, false)
+				s = newStripeSeries(1, noopSeriesLifecycleCallback{})
+				got, created := s.setUnlessAlreadySet(lset.Hash(), lset, series)
+				require.True(t, created)
+				require.Same(t, series, got)
+			}
+			lset := series.labels()
+			hash := lset.Hash()
+			var remainingLabels labels.Labels
+			if remaining != nil {
+				remainingLabels = remaining.labels()
+			}
 
-	checkStarted := make(chan struct{})
-	continueCheck := make(chan struct{})
-	iterationDone := make(chan struct{})
-	deleteCalled := false
-	go func() {
-		s.iterForDeletion(
-			func(_ int, _ uint64, _ *memSeries) bool {
-				close(checkStarted)
-				<-continueCheck
-				return true
-			},
-			func(_ int, _ uint64, _ *memSeries, _ map[chunks.HeadSeriesRef]labels.Labels) {
-				deleteCalled = true
-			},
-		)
-		close(iterationDone)
-	}()
+			checkStarted := make(chan struct{})
+			continueCheck := make(chan struct{})
+			iterationDone := make(chan int, 1)
+			deleteCalled := false
+			go func() {
+				iterationDone <- s.iterForDeletion(
+					func(_ int, _ uint64, candidate *memSeries) bool {
+						if candidate != series {
+							return false
+						}
+						close(checkStarted)
+						<-continueCheck
+						return true
+					},
+					func(_ int, _ uint64, _ *memSeries, _ map[chunks.HeadSeriesRef]labels.Labels) {
+						deleteCalled = true
+					},
+				)
+			}()
 
-	// Unlink the candidate while checkFunc is paused.
-	<-checkStarted
-	writerAcquired := s.locks[0].TryLock()
-	if writerAcquired {
-		s.hashes[0].del(hash, series.ref)
-		s.locks[0].Unlock()
+			var checkReached bool
+			select {
+			case <-checkStarted:
+				checkReached = true
+			case <-time.After(5 * time.Second):
+			}
+
+			// Make the snapshot stale so revalidation must skip the candidate.
+			// Leave its ID entry intact to verify lookups while checkFunc is paused.
+			writerAcquired := checkReached && s.locks[0].TryLock()
+			var queried *memSeries
+			if writerAcquired {
+				s.hashes[0].del(hash, series.ref)
+				s.locks[0].Unlock()
+				queried = s.getByID(series.ref)
+			}
+
+			// With dedupelabels, label-based revalidation would wait on the remaining
+			// series' mutex while holding the stripe write lock. Require iteration
+			// to finish before releasing that mutex.
+			remainingLocked := writerAcquired && remaining != nil
+			if remainingLocked {
+				remaining.Lock()
+			}
+			close(continueCheck)
+
+			var deletedCount int
+			var completed bool
+			select {
+			case deletedCount = <-iterationDone:
+				completed = true
+			case <-time.After(5 * time.Second):
+			}
+			// Release the lock and join the worker before asserting, even on failure.
+			if remainingLocked {
+				remaining.Unlock()
+			}
+			// Keep completed unchanged: finishing during cleanup must not hide the timeout.
+			if !completed {
+				select {
+				case deletedCount = <-iterationDone:
+				case <-time.After(5 * time.Second):
+					t.Fatal("iteration did not finish after releasing the check and series lock")
+				}
+			}
+
+			require.True(t, checkReached, "deletion check did not start")
+			require.True(t, writerAcquired, "stripe write lock must be available during the deletion check")
+			require.True(t, completed, "identity revalidation waited for an unrelated series lock")
+			require.Same(t, series, queried)
+			require.False(t, deleteCalled)
+			require.Zero(t, deletedCount)
+			require.Nil(t, s.getByHash(hash, lset))
+			require.Same(t, series, s.getByID(series.ref))
+			if remaining != nil {
+				require.Same(t, remaining, s.getByHash(hash, remainingLabels))
+				require.Same(t, remaining, s.getByID(remaining.ref))
+			}
+		})
 	}
-	queried := s.getByID(series.ref)
-
-	close(continueCheck)
-	<-iterationDone
-
-	require.True(t, writerAcquired)
-	require.Same(t, series, queried)
-	require.False(t, deleteCalled)
-	require.Nil(t, s.getByHash(hash, lset))
-	require.Same(t, series, s.getByID(series.ref))
 }
 
 func TestStripeSeries_gc(t *testing.T) {
