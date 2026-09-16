@@ -342,31 +342,50 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 }
 
 func TestRemoteWriteHandler_ReceiveRelabeling(t *testing.T) {
-	payload, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
+	payloadV1, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
 	require.NoError(t, err)
+	payloadV2, _, _, _, err := buildV2WriteRequest(nil, writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	dropAllConfigs := []*relabel.Config{{
+		SourceLabels:         model.LabelNames{"__name__"},
+		Regex:                relabel.MustNewRegexp("test_metric1"),
+		Action:               relabel.Drop,
+		NameValidationScheme: model.UTF8Validation,
+	}}
 
 	for _, tc := range []struct {
 		name    string
+		msgType remoteapi.WriteMessageType
+		payload []byte
 		configs []*relabel.Config
 	}{
 		{
-			name: "drop all series matching __name__",
-			configs: []*relabel.Config{{
-				SourceLabels:         model.LabelNames{"__name__"},
-				Regex:                relabel.MustNewRegexp("test_metric1"),
-				Action:               relabel.Drop,
-				NameValidationScheme: model.UTF8Validation,
-			}},
+			name:    "v1: drop all series matching __name__",
+			msgType: remoteapi.WriteV1MessageType,
+			payload: payloadV1,
+			configs: dropAllConfigs,
+		},
+		{
+			name:    "v2: drop all series matching __name__",
+			msgType: remoteapi.WriteV2MessageType,
+			payload: payloadV2,
+			configs: dropAllConfigs,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(tc.payload))
 			require.NoError(t, err)
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[tc.msgType])
+			req.Header.Set("Content-Encoding", compression.Snappy)
+			if tc.msgType == remoteapi.WriteV2MessageType {
+				req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+			}
 
 			appendable := &mockAppendable{}
 			configFunc := func() config.Config { return config.Config{ReceiveRelabelConfigs: tc.configs} }
 			handler := NewWriteHandler(promslog.NewNopLogger(), nil, NewRelabelingAppendable(appendable, configFunc, NewRelabelCache()),
-				[]remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false, false)
+				[]remoteapi.WriteMessageType{tc.msgType}, false, false, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
