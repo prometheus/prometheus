@@ -52,6 +52,10 @@ type writeHandler struct {
 
 const maxAheadTime = 10 * time.Minute
 
+// errInvalidV1Labels signals that the v1 remote write had invalid labels.
+// The caller (Store) uses this to return HTTP 400 instead of 500.
+var errInvalidV1Labels = errors.New("invalid labels in remote write request")
+
 // NewWriteHandler creates a http.Handler that accepts remote write requests with
 // the given message in acceptedMsgs and writes them to the provided appendable.
 //
@@ -114,6 +118,9 @@ func (h *writeHandler) Store(r *http.Request, msgType remoteapi.WriteMessageType
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrOutOfBounds), errors.Is(err, storage.ErrDuplicateSampleForTimestamp), errors.Is(err, storage.ErrTooOldSample):
 				// Indicated an out-of-order sample is a bad request to prevent retries.
+				wr.SetStatusCode(http.StatusBadRequest)
+				return wr, err
+			case errors.Is(err, errInvalidV1Labels):
 				wr.SetStatusCode(http.StatusBadRequest)
 				return wr, err
 			case isHistogramValidationError(err):
@@ -180,7 +187,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
 			h.logger.Warn("Invalid labels for series.", "labels", ls.String(), "duplicated_label", duplicateLabel)
 			samplesWithInvalidLabels++
-			continue
+			return fmt.Errorf("%w: duplicate label %q", errInvalidV1Labels, duplicateLabel)
 		}
 
 		if err := h.appendV1Samples(app, ts.Samples, ls); err != nil {
