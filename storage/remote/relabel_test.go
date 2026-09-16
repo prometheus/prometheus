@@ -183,9 +183,13 @@ func TestRelabelCache(t *testing.T) {
 		require.True(t, labels.Equal(result1, result2))
 	})
 
-	t.Run("invalidates on a new config generation", func(t *testing.T) {
+	t.Run("reload with unchanged rule content adopts the new identity but keeps entries", func(t *testing.T) {
 		cache := NewRelabelCache()
-		result1, _ := cache.relabel(l, relabelTestRewriteConfig, model.UTF8Validation)
+		cache.relabel(l, relabelTestRewriteConfig, model.UTF8Validation)
+
+		cache.mu.RLock()
+		before := cache.entries[l.Hash()]
+		cache.mu.RUnlock()
 
 		reloaded := []*relabel.Config{{
 			SourceLabels:         relabelTestRewriteConfig[0].SourceLabels,
@@ -195,13 +199,32 @@ func TestRelabelCache(t *testing.T) {
 			Action:               relabelTestRewriteConfig[0].Action,
 			NameValidationScheme: relabelTestRewriteConfig[0].NameValidationScheme,
 		}}
-		result2, _ := cache.relabel(l, reloaded, model.UTF8Validation)
-		require.True(t, labels.Equal(result1, result2))
+		cache.relabel(l, reloaded, model.UTF8Validation)
 
 		cache.mu.RLock()
-		ident := cache.cfgsIdent
+		after := cache.entries[l.Hash()]
+		cfgs := cache.cfgs
 		cache.mu.RUnlock()
-		require.Same(t, reloaded[0], ident)
+		require.Same(t, before, after, "content-identical reload must not recompute the cached entry")
+		require.Same(t, reloaded[0], cfgs[0])
+	})
+
+	t.Run("reload with changed rule content wipes stale entries", func(t *testing.T) {
+		cache := NewRelabelCache()
+		result1, _ := cache.relabel(l, relabelTestRewriteConfig, model.UTF8Validation)
+		require.True(t, result1.Has("environment"))
+		require.Equal(t, "prod", result1.Get("environment"))
+
+		changed := []*relabel.Config{{
+			SourceLabels:         relabelTestRewriteConfig[0].SourceLabels,
+			Regex:                relabelTestRewriteConfig[0].Regex,
+			TargetLabel:          relabelTestRewriteConfig[0].TargetLabel,
+			Replacement:          "changed-$1",
+			Action:               relabelTestRewriteConfig[0].Action,
+			NameValidationScheme: relabelTestRewriteConfig[0].NameValidationScheme,
+		}}
+		result2, _ := cache.relabel(l, changed, model.UTF8Validation)
+		require.Equal(t, "changed-prod", result2.Get("environment"))
 	})
 
 	t.Run("clears on overflow instead of growing unbounded", func(t *testing.T) {

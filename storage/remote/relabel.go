@@ -15,6 +15,8 @@ package remote
 
 import (
 	"context"
+	"reflect"
+	"slices"
 	"sync"
 
 	"github.com/prometheus/common/model"
@@ -56,9 +58,8 @@ type relabelCache struct {
 	mu sync.RWMutex
 
 	entries map[uint64]*relabelCacheEntry
-	// cfgsIdent: reload always allocates new *relabel.Config values, so a
-	// mismatch here means the rules may have changed.
-	cfgsIdent *relabel.Config
+	// cfgs is the last-seen rule set.
+	cfgs []*relabel.Config
 }
 
 type relabelCacheEntry struct {
@@ -82,27 +83,21 @@ func (c *relabelCache) relabel(l labels.Labels, cfgs []*relabel.Config, validati
 		return l, true
 	}
 
-	ident := cfgs[0]
+	c.syncGeneration(cfgs)
 	h := l.Hash()
 
 	c.mu.RLock()
-	if c.cfgsIdent == ident {
-		if e, ok := c.entries[h]; ok && labels.Equal(e.orig, l) {
-			e.touched.Store(true)
-			c.mu.RUnlock()
-			return e.result, e.keep
-		}
+	if e, ok := c.entries[h]; ok && labels.Equal(e.orig, l) {
+		e.touched.Store(true)
+		c.mu.RUnlock()
+		return e.result, e.keep
 	}
 	c.mu.RUnlock()
 
 	result, keep := relabelLabels(l, cfgs, validationScheme)
 
 	c.mu.Lock()
-	switch {
-	case c.cfgsIdent != ident:
-		c.entries = make(map[uint64]*relabelCacheEntry)
-		c.cfgsIdent = ident
-	case len(c.entries) >= relabelCacheMaxEntries:
+	if len(c.entries) >= relabelCacheMaxEntries {
 		c.sweep()
 		if len(c.entries) >= relabelCacheMaxEntries {
 			// The working set itself is at or above the cap: sweeping freed
@@ -119,21 +114,43 @@ func (c *relabelCache) relabel(l labels.Labels, cfgs []*relabel.Config, validati
 	return result, keep
 }
 
-// clear drops all entries and resets cfgsIdent.
+// syncGeneration reconciles c.cfgs with cfgs: a cheap pointer check first,
+// falling back to a content comparison, so entries are kept when the rules
+// are unchanged and dropped when they genuinely differ.
+func (c *relabelCache) syncGeneration(cfgs []*relabel.Config) {
+	c.mu.RLock()
+	same := slices.Equal(c.cfgs, cfgs)
+	c.mu.RUnlock()
+	if same {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if slices.Equal(c.cfgs, cfgs) {
+		return
+	}
+	if !reflect.DeepEqual(c.cfgs, cfgs) {
+		c.entries = make(map[uint64]*relabelCacheEntry)
+	}
+	c.cfgs = cfgs
+}
+
+// clear drops all entries and resets cfgs.
 func (c *relabelCache) clear() {
 	if c.empty() {
 		return
 	}
 	c.mu.Lock()
 	c.entries = nil
-	c.cfgsIdent = nil
+	c.cfgs = nil
 	c.mu.Unlock()
 }
 
 func (c *relabelCache) empty() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.cfgsIdent == nil
+	return c.cfgs == nil
 }
 
 // sweep deletes entries not touched since the previous sweep and clears the
