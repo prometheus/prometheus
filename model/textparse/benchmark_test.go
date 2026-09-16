@@ -57,6 +57,7 @@ func BenchmarkParsePromText(b *testing.B) {
 
 	for _, parser := range []string{
 		"promtext",
+		"promtext-exact",
 		"omtext", // Compare how omtext parser deals with Prometheus text format.
 		"expfmt-promtext",
 	} {
@@ -143,7 +144,10 @@ func benchParse(b *testing.B, data []byte, parser string) {
 
 	var newParserFn newParser
 	switch parser {
-	case "promtext":
+	case "promtext", "promtext-exact":
+		if parser == "promtext-exact" {
+			data = data[:len(data):len(data)]
+		}
 		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
 			return NewPromParser(b, st, false)
 		}
@@ -336,42 +340,4 @@ Inner2:
 			}
 		}
 	})
-}
-
-/*
-	export bench=v1 && go test ./model/textparse/... \
-		 -run '^$' -bench '^BenchmarkNewPromParser' \
-		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
-	 | tee ${bench}.txt
-*/
-func BenchmarkNewPromParser(b *testing.B) {
-	data := readTestdataFile(b, "alltypes.237mfs.prom.txt")
-	require.Equal(b, byte('\n'), data[len(data)-1])
-
-	for _, tcase := range []struct {
-		name string
-		body []byte
-	}{
-		{name: "exact", body: exactSized(data)},
-		{name: "no-newline", body: exactSized(data[:len(data)-1])},
-		{name: "spare-cap", body: append(make([]byte, 0, len(data)+1), data...)},
-	} {
-		b.Run(tcase.name, func(b *testing.B) {
-			st := labels.NewSymbolTable()
-
-			b.ReportAllocs()
-			b.ResetTimer()
-			for b.Loop() {
-				benchNewParserSink = NewPromParser(tcase.body, st, false)
-			}
-		})
-	}
-}
-
-var benchNewParserSink Parser
-
-func exactSized(b []byte) []byte {
-	out := make([]byte, len(b))
-	copy(out, b)
-	return out
 }

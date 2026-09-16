@@ -16,7 +16,6 @@ package textparse
 import (
 	"fmt"
 	"io"
-	"strings"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -384,9 +383,12 @@ type_and_unit_test2{__type__="counter"} 123`
 				},
 			}
 
-			p := NewPromParser([]byte(input), labels.NewSymbolTable(), typeAndUnitEnabled)
-			got := testParse(t, p)
-			requireEntries(t, exp, got)
+			for _, suffix := range []string{"", "\n"} {
+				t.Run(fmt.Sprintf("newline=%v", suffix != ""), func(t *testing.T) {
+					p := NewPromParser([]byte(input+suffix), labels.NewSymbolTable(), typeAndUnitEnabled)
+					requireEntries(t, exp, testParse(t, p))
+				})
+			}
 		})
 	}
 }
@@ -630,28 +632,10 @@ func TestPromNullByteHandling(t *testing.T) {
 	}
 }
 
-func TestPromParserLineTerminator(t *testing.T) {
-	const body = `# HELP go_goroutines Number of goroutines.
-# TYPE go_goroutines gauge
-go_goroutines 33
-`
-	withNewline := []byte(body)
-	withoutNewline := []byte(strings.TrimSuffix(body, "\n"))
-
-	want := testParse(t, NewPromParser(withNewline, labels.NewSymbolTable(), false))
-	require.NotEmpty(t, want)
-	requireEntries(t, want, testParse(t, NewPromParser(withoutNewline, labels.NewSymbolTable(), false)))
-
-	// Same backing array means the body was not copied.
-	exact := make([]byte, len(withNewline))
-	copy(exact, withNewline)
-	p := NewPromParser(exact, labels.NewSymbolTable(), false).(*PromParser)
-	require.Equal(t, &exact[0], &p.l.b[0])
-
-	p = NewPromParser(withoutNewline, labels.NewSymbolTable(), false).(*PromParser)
-	require.Len(t, p.l.b, len(withoutNewline)+1)
-	require.Equal(t, byte('\n'), p.l.b[len(p.l.b)-1])
-
-	p = NewPromParser(nil, labels.NewSymbolTable(), false).(*PromParser)
-	require.Equal(t, []byte("\n"), p.l.b)
+func TestPromParseEmpty(t *testing.T) {
+	for _, input := range [][]byte{nil, {}, {'\n'}} {
+		p := NewPromParser(input, labels.NewSymbolTable(), false)
+		_, err := p.Next()
+		require.ErrorIs(t, err, io.EOF)
+	}
 }

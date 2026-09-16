@@ -126,11 +126,6 @@ type labelLimits struct {
 
 const maxAheadTime = 10 * time.Minute
 
-// scrapeBufferSlack avoids copying the whole body at the end of a scrape:
-// bytes.Buffer.ReadFrom reallocates unless this much capacity is spare, and
-// keeping cap > len also lets textparse append its line terminator in place.
-const scrapeBufferSlack = bytes.MinRead
-
 // returning an empty label set is interpreted as "drop".
 type labelsMutator func(labels.Labels) labels.Labels
 
@@ -1467,7 +1462,8 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	scrapeCtx, cancel := context.WithTimeout(sl.parentCtx, sl.timeout)
 	resp, scrapeErr = sl.scraper.scrape(scrapeCtx)
 	if scrapeErr == nil {
-		b = sl.buffers.Get(sl.lastScrapeSize + scrapeBufferSlack).([]byte)
+		// Avoid copying the body when bytes.Buffer.ReadFrom grows before reading EOF.
+		b = sl.buffers.Get(sl.lastScrapeSize + bytes.MinRead).([]byte)
 		defer sl.buffers.Put(b)
 		buf = bytes.NewBuffer(b)
 		contentType, scrapeErr = sl.scraper.readResponse(scrapeCtx, resp, buf)

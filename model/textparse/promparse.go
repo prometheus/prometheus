@@ -172,16 +172,13 @@ type PromParser struct {
 // NewPromParser returns a new parser of the byte slice.
 func NewPromParser(b []byte, st *labels.SymbolTable, enableTypeAndUnitLabels bool) Parser {
 	return &PromParser{
-		l:                       &promlexer{b: appendLineTerminator(b)},
+		l:                       &promlexer{b: ensureEndsWithNewline(b)},
 		builder:                 labels.NewScratchBuilderWithSymbolTable(st, 16),
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 	}
 }
 
-// appendLineTerminator gives the lexer the trailing newline it needs to
-// terminate the final entry. Appending unconditionally would copy the whole
-// body when b has no spare capacity, and the copy lives as long as the parser.
-func appendLineTerminator(b []byte) []byte {
+func ensureEndsWithNewline(b []byte) []byte {
 	if len(b) > 0 && b[len(b)-1] == '\n' {
 		return b
 	}
