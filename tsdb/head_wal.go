@@ -524,6 +524,62 @@ Outer:
 	return nil
 }
 
+// restoreMmappedLastSamples restores duplicate-checking state that WAL replay
+// skips for samples already in mmap chunks. It runs at the end of Init, before
+// the head can be used by appenders.
+func (h *Head) restoreMmappedLastSamples() error {
+	for _, stripe := range h.series.hashes {
+		for _, s := range stripe.unique {
+			if err := h.restoreMmappedLastSample(s); err != nil {
+				return err
+			}
+		}
+		for _, all := range stripe.conflicts {
+			for _, s := range all {
+				if err := h.restoreMmappedLastSample(s); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (h *Head) restoreMmappedLastSample(s *memSeries) error {
+	if s.headChunks != nil || len(s.mmappedChunks) == 0 {
+		return nil
+	}
+	last := s.mmappedChunks[len(s.mmappedChunks)-1]
+	c, err := h.chunkDiskMapper.Chunk(last.ref)
+	if err != nil {
+		return fmt.Errorf("read last mmap chunk for series %d: %w", s.ref, err)
+	}
+	it := c.Iterator(nil)
+	typ := it.Seek(last.maxTime)
+	if err := it.Err(); err != nil {
+		return fmt.Errorf("read last mmap sample for series %d: %w", s.ref, err)
+	}
+	if typ == chunkenc.ValNone || it.AtT() != last.maxTime {
+		return fmt.Errorf("last sample at %d not found in mmap chunk for series %d", last.maxTime, s.ref)
+	}
+
+	wasStale, wasHistogram, oldBuckets := s.sampleState()
+	s.lastHistogramValue = nil
+	s.lastFloatHistogramValue = nil
+	switch typ {
+	case chunkenc.ValFloat:
+		_, s.lastValue = it.At()
+	case chunkenc.ValHistogram:
+		_, s.lastHistogramValue = it.AtHistogram(nil)
+	case chunkenc.ValFloatHistogram:
+		_, s.lastFloatHistogramValue = it.AtFloatHistogram(nil)
+	}
+	isStale, isHistogram, buckets := s.sampleState()
+	h.updateStaleSeriesMetricOnAppend(wasStale, isStale)
+	h.updateNativeHistogramMetricsOnAppend(wasHistogram, isHistogram, oldBuckets, buckets)
+	return nil
+}
+
 // resetSeriesWithMMappedChunks is only used during the WAL replay.
 func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*mmappedChunk, walSeriesRef chunks.HeadSeriesRef) (overlapped bool) {
 	if mSeries.ref != walSeriesRef {
