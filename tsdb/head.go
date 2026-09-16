@@ -2343,6 +2343,13 @@ func (m *seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 	return nil
 }
 
+func (m *seriesHashmap) containsSeries(hash uint64, series *memSeries) bool {
+	if m.unique[hash] == series {
+		return true
+	}
+	return slices.Contains(m.conflicts[hash], series)
+}
+
 func (m *seriesHashmap) set(hash uint64, s *memSeries) {
 	if existing, found := m.unique[hash]; !found || labels.Equal(existing.labels(), s.labels()) {
 		m.unique[hash] = s
@@ -2842,7 +2849,7 @@ func (s *stripeSeries) iterForDeletion(
 		// that our series wasn't replaced.
 		s.locks[i].Lock()
 		for _, c := range candidates {
-			if s.hashes[i].get(c.hash, c.series.lset) != c.series {
+			if !s.hashes[i].containsSeries(c.hash, c.series) {
 				continue
 			}
 			deleteFunc(i, c.hash, c.series, seriesSet)
