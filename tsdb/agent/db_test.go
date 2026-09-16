@@ -104,6 +104,66 @@ func createTestAgentDB(t testing.TB, reg prometheus.Registerer, opts *Options) *
 	return db
 }
 
+func TestAppenderBufferResetAfterWALWriteError(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(*appenderBase)
+		log     func(*appenderBase) error
+	}{
+		{
+			name: "log",
+			prepare: func(a *appenderBase) {
+				a.pendingSamples = append(a.pendingSamples, record.RefSample{Ref: 1, T: 1, V: 1})
+			},
+			log: func(a *appenderBase) error {
+				return a.log()
+			},
+		},
+		{
+			name: "logSeries",
+			prepare: func(a *appenderBase) {
+				a.pendingSeries = append(a.pendingSeries, record.RefSeries{
+					Ref:    1,
+					Labels: labels.FromStrings("__name__", "test_metric"),
+				})
+			},
+			log: func(a *appenderBase) error {
+				return a.logSeries()
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			wal, err := wlog.New(promslog.NewNopLogger(), nil, t.TempDir(), DefaultOptions().WALCompression)
+			require.NoError(t, err)
+			require.NoError(t, wal.Close())
+
+			db := &DB{wal: wal, opts: DefaultOptions()}
+			app := &appenderBase{DB: db}
+			test.prepare(app)
+
+			for range 100 {
+				db.bufPool.New = func() any {
+					return make([]byte, 0, 1024)
+				}
+				require.Error(t, test.log(app))
+
+				// A pool may discard buffers, especially under -race. Disable New so
+				// a fresh buffer cannot satisfy the assertion.
+				db.bufPool.New = nil
+				buf := db.bufPool.Get()
+				if buf == nil {
+					continue
+				}
+				require.Empty(t, buf.([]byte))
+				return
+			}
+			t.Fatal("no buffer returned from pool after 100 attempts")
+		})
+	}
+}
+
 // TestConcurrentAppendSameLabels verifies that concurrent appends for the same
 // label set produce exactly one series in memory and one series record in the WAL.
 func TestConcurrentAppendSameLabels(t *testing.T) {
