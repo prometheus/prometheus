@@ -29,6 +29,19 @@
   "prHourlyLimit": 5,
   "packageRules": [
     {
+      "description": "Keep the legacy app on the TypeScript major supported by react-scripts 5",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchFileNames": [
+        "web/ui/react-app/package.json"
+      ],
+      "matchPackageNames": [
+        "typescript"
+      ],
+      "allowedVersions": "<5"
+    },
+    {
       "description": "Wait for npm releases to satisfy pnpm's cooldown",
       "matchDatasources": [
         "npm"

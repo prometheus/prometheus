@@ -65,7 +65,7 @@ describe('GraphHelpers', () => {
       });
     });
     it('should throw error if no match', () => {
-      expect(() => formatValue(undefined as any)).toThrowError("couldn't format a value, this is a bug");
+      expect(() => formatValue(undefined as any)).toThrow("couldn't format a value, this is a bug");
     });
   });
   describe('parseValue', () => {

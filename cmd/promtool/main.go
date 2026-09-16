@@ -64,10 +64,8 @@ import (
 
 var (
 	promqlEnableDelayedNameRemoval = false
-	// Duration expressions are enabled by default; the promql-duration-expr
-	// feature flag is now a no-op.
-	promtoolParserOpts = parser.Options{ExperimentalDurationExpr: true}
-	logger             = promslog.New(&promslog.Config{})
+	promtoolParserOpts             = parser.Options{}
+	logger                         = promslog.New(&promslog.Config{})
 )
 
 func init() {
@@ -325,7 +323,7 @@ func main() {
 	promQLLabelsDeleteQuery := promQLLabelsDeleteCmd.Arg("query", "PromQL query.").Required().String()
 	promQLLabelsDeleteName := promQLLabelsDeleteCmd.Arg("name", "Name of the label to delete.").Required().String()
 
-	featureList := app.Flag("enable-feature", "Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal, promql-extended-range-selectors. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details").Default("").Strings()
+	featureList := app.Flag("enable-feature", "Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details").Default("").Strings()
 
 	documentationCmd := app.Command("write-documentation", "Generate command line documentation. Internal use.").Hidden()
 
@@ -365,7 +363,7 @@ func main() {
 			case "promql-duration-expr":
 				// This feature is now permanently enabled and therefore a no-op.
 			case "promql-extended-range-selectors":
-				promtoolParserOpts.EnableExtendedRangeSelectors = true
+				// This feature is now permanently enabled and therefore a no-op.
 			case "promql-binop-fill-modifiers":
 				promtoolParserOpts.EnableBinopFillModifiers = true
 			case "":
