@@ -2088,6 +2088,55 @@ paths:
                                         error: TSDB not ready
                                         errorType: internal
                                         status: error
+    /scrape_pools/config:
+        get:
+            tags:
+                - targets
+            summary: Get scrape pool configuration
+            operationId: get-scrape-pool-config
+            parameters:
+                - name: scrapePool
+                  in: query
+                  description: Name of the scrape pool.
+                  required: true
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: prometheus
+            responses:
+                "200":
+                    description: Scrape pool configuration retrieved successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ScrapePoolConfigOutputBody'
+                            examples:
+                                scrapePoolConfig:
+                                    summary: Effective configuration for a scrape pool
+                                    value:
+                                        data:
+                                            yaml: |
+                                                job_name: prometheus
+                                                scrape_interval: 15s
+                                                scrape_timeout: 10s
+                                                metrics_path: /metrics
+                                                scheme: http
+                                        status: success
+                default:
+                    description: Error retrieving scrape pool configuration.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
     /targets:
         get:
             tags:
@@ -4591,6 +4640,43 @@ components:
                 - data
             additionalProperties: false
             description: Response body for scrape pools endpoint.
+        ScrapePoolConfigData:
+            type: object
+            properties:
+                yaml:
+                    type: string
+                    description: Effective scrape pool configuration in YAML format.
+            required:
+                - yaml
+            additionalProperties: false
+            description: Effective configuration for a scrape pool.
+        ScrapePoolConfigOutputBody:
+            type: object
+            properties:
+                status:
+                    type: string
+                    enum:
+                        - success
+                        - error
+                    description: Response status.
+                    example: success
+                data:
+                    $ref: '#/components/schemas/ScrapePoolConfigData'
+                warnings:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were warnings while executing the request. There will still be data in the data field.
+                infos:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were info-level annotations while executing the request.
+            required:
+                - status
+                - data
+            additionalProperties: false
+            description: Response body for scrape pool config endpoint.
         Config:
             type: object
             properties:

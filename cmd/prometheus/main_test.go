@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
@@ -402,27 +403,53 @@ func TestChunkEncodingStartupValidation(t *testing.T) {
 		exitCode int
 	}{
 		{
-			name: "xor2 without xor2-encoding feature",
+			name: "xor2 without any feature flag",
 			config: `
 storage:
   tsdb:
     chunk_encoding:
       floats: xor2`,
 			features: "",
-			exitCode: 1,
+			exitCode: 0,
 		},
 		{
-			name: "xor2 with xor2-encoding feature",
+			name: "xor2 with st-storage feature",
 			config: `
 storage:
   tsdb:
     chunk_encoding:
       floats: xor2`,
+			features: "st-storage",
+			exitCode: 0,
+		},
+		{
+			name: "xor with st-storage feature",
+			config: `
+storage:
+  tsdb:
+    chunk_encoding:
+      floats: xor`,
+			features: "st-storage",
+			exitCode: 1,
+		},
+		{
+			name: "xor2-encoding flag with explicit xor in config",
+			config: `
+storage:
+  tsdb:
+    chunk_encoding:
+      floats: xor`,
 			features: "xor2-encoding",
 			exitCode: 0,
 		},
 		{
-			name: "xor with st-storage and xor2-encoding features",
+			name:     "st-storage with the xor2-encoding flag and no config field",
+			config:   "",
+			features: "st-storage,xor2-encoding",
+			exitCode: 0,
+		},
+		{
+			name: "st-storage and xor2-encoding flags with explicit xor in config",
 			config: `
 storage:
   tsdb:
@@ -430,6 +457,12 @@ storage:
       floats: xor`,
 			features: "st-storage,xor2-encoding",
 			exitCode: 1,
+		},
+		{
+			name:     "st-storage implies ST-capable encodings",
+			config:   "",
+			features: "st-storage",
+			exitCode: 0,
 		},
 		{
 			name: "xor without st-storage feature",
@@ -685,8 +718,7 @@ func TestModeSpecificFlags(t *testing.T) {
 
 			err = prom.Wait()
 			require.Error(t, err)
-			var exitError *exec.ExitError
-			if errors.As(err, &exitError) {
+			if exitError, ok := errors.AsType[*exec.ExitError](err); ok {
 				status := exitError.Sys().(syscall.WaitStatus)
 				require.Equal(t, tc.exitStatus, status.ExitStatus())
 			} else {
@@ -940,6 +972,56 @@ runtime:
 			ensureGOGCValue(99.0)
 		})
 	}
+}
+
+func TestReloadConfigLogLevel(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "prometheus.yml")
+	require.NoError(t, os.WriteFile(configFile, []byte(`runtime:
+  log_level: debug
+`), 0o600))
+
+	level := promslog.NewLevel()
+	require.NoError(t, level.Set("info"))
+	var output bytes.Buffer
+	logger := promslog.New(&promslog.Config{Level: level, Writer: &output})
+	interval := &safePromQLNoStepSubqueryInterval{}
+
+	require.NoError(t, reloadConfig(configFile, false, logger, interval, level, func(bool) {}))
+	require.Equal(t, "debug", level.String())
+	output.Reset()
+	logger.Debug("debug message")
+	require.Contains(t, output.String(), "debug message")
+
+	require.NoError(t, os.WriteFile(configFile, []byte(`runtime:
+  log_level: error
+`), 0o600))
+	err := reloadConfig(configFile, false, logger, interval, level, func(bool) {}, reloader{
+		name: "failing",
+		reloader: func(*config.Config) error {
+			return errors.New("failed to apply")
+		},
+	})
+	require.Error(t, err)
+	require.Equal(t, "debug", level.String())
+	output.Reset()
+	logger.Debug("still visible")
+	require.Contains(t, output.String(), "still visible")
+
+	require.NoError(t, reloadConfig(configFile, false, logger, interval, level, func(bool) {}))
+	require.Equal(t, "error", level.String())
+	output.Reset()
+	logger.Warn("hidden warning")
+	require.Empty(t, output.String())
+	logger.Error("visible error")
+	require.Contains(t, output.String(), "visible error")
+
+	require.NoError(t, os.WriteFile(configFile, []byte("{}\n"), 0o600))
+	require.NoError(t, reloadConfig(configFile, false, logger, interval, level, func(bool) {}))
+	require.Equal(t, "info", level.String())
+	output.Reset()
+	logger.Info("visible info")
+	require.Contains(t, output.String(), "visible info")
 }
 
 // TestHeadCompactionWhileScraping verifies that running a head compaction

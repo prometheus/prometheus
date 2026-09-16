@@ -38,13 +38,15 @@ func newDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetric
 				Namespace: namespace,
 				Name:      "sd_dns_lookups_total",
 				Help:      "The number of DNS-SD lookups.",
-			}),
+			},
+		),
 		dnsSDLookupFailuresCount: prometheus.NewCounter(
 			prometheus.CounterOpts{
 				Namespace: namespace,
 				Name:      "sd_dns_lookup_failures_total",
 				Help:      "The number of DNS-SD lookup failures.",
-			}),
+			},
+		),
 	}
 
 	m.metricRegisterer = discovery.NewMetricRegisterer(reg, []prometheus.Collector{

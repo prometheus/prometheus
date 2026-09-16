@@ -930,8 +930,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 			// Extract the encoding from the byte. ChunkDiskMapper uses only the last 7 bits for the encoding.
 			chkEnc = cdm.RemoveMasks(chkEnc)
 			if err := f(seriesRef, chunkRef, mint, maxt, numSamples, chkEnc, isOOO); err != nil {
-				var cerr *CorruptionErr
-				if errors.As(err, &cerr) {
+				if cerr, ok := errors.AsType[*CorruptionErr](err); ok {
 					cerr.Dir = cdm.dir.Name()
 					cerr.FileIndex = segID
 					return cerr

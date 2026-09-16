@@ -16,9 +16,11 @@ package remote
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -37,131 +39,231 @@ import (
 )
 
 func TestSampledReadEndpoint(t *testing.T) {
-	store := promqltest.LoadedStorage(t, `
+	executeSampledRead := func(
+		t *testing.T,
+		queryable storage.SampleAndChunkQueryable,
+		getConfig func() config.Config,
+		req *prompb.ReadRequest,
+	) (int, *prompb.ReadResponse) {
+		t.Helper()
+
+		h := NewReadHandler(nil, nil, queryable, getConfig, 1e6, 1, 0)
+
+		data, err := proto.Marshal(req)
+		require.NoError(t, err)
+
+		compressed := snappy.Encode(nil, data)
+		request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(compressed))
+		require.NoError(t, err)
+
+		recorder := httptest.NewRecorder()
+		h.ServeHTTP(recorder, request)
+
+		require.Equal(t, 2, recorder.Code/100)
+		result := recorder.Result()
+		require.Equal(t, "application/x-protobuf", result.Header.Get("Content-Type"))
+		require.Equal(t, "snappy", result.Header.Get("Content-Encoding"))
+
+		compressed, err = io.ReadAll(result.Body)
+		require.NoError(t, err)
+
+		uncompressed, err := snappy.Decode(nil, compressed)
+		require.NoError(t, err)
+
+		var resp prompb.ReadResponse
+		require.NoError(t, proto.Unmarshal(uncompressed, &resp))
+		return recorder.Code, &resp
+	}
+
+	t.Run("with external labels", func(t *testing.T) {
+		store := promqltest.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar",baz="qux"} 1
 	`)
-	defer store.Close()
+		defer store.Close()
 
-	addNativeHistogramsToTestSuite(t, store, 1)
+		addNativeHistogramsToTestSuite(t, store, 1)
 
-	h := NewReadHandler(nil, nil, store, func() config.Config {
-		return config.Config{
-			GlobalConfig: config.GlobalConfig{
-				// We expect external labels to be added, with the source labels honored.
-				ExternalLabels: labels.FromStrings("b", "c", "baz", "a", "d", "e"),
-			},
-		}
-	}, 1e6, 1, 0)
+		matcher1, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
+		require.NoError(t, err)
 
-	// Encode the request.
-	matcher1, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
-	require.NoError(t, err)
+		matcher2, err := labels.NewMatcher(labels.MatchEqual, "d", "e")
+		require.NoError(t, err)
 
-	matcher2, err := labels.NewMatcher(labels.MatchEqual, "d", "e")
-	require.NoError(t, err)
+		matcher3, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_histogram_metric1")
+		require.NoError(t, err)
 
-	matcher3, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_histogram_metric1")
-	require.NoError(t, err)
+		matcher4, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_nhcb_metric1")
+		require.NoError(t, err)
 
-	matcher4, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_nhcb_metric1")
-	require.NoError(t, err)
+		query1, err := ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, &storage.SelectHints{Step: 0, Func: "avg"})
+		require.NoError(t, err)
 
-	query1, err := ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, &storage.SelectHints{Step: 0, Func: "avg"})
-	require.NoError(t, err)
+		query2, err := ToQuery(0, 1, []*labels.Matcher{matcher3, matcher2}, &storage.SelectHints{Step: 0, Func: "avg"})
+		require.NoError(t, err)
 
-	query2, err := ToQuery(0, 1, []*labels.Matcher{matcher3, matcher2}, &storage.SelectHints{Step: 0, Func: "avg"})
-	require.NoError(t, err)
+		query3, err := ToQuery(0, 1, []*labels.Matcher{matcher4, matcher2}, &storage.SelectHints{Step: 0, Func: "avg"})
+		require.NoError(t, err)
 
-	query3, err := ToQuery(0, 1, []*labels.Matcher{matcher4, matcher2}, &storage.SelectHints{Step: 0, Func: "avg"})
-	require.NoError(t, err)
-
-	req := &prompb.ReadRequest{Queries: []*prompb.Query{query1, query2, query3}}
-	data, err := proto.Marshal(req)
-	require.NoError(t, err)
-
-	compressed := snappy.Encode(nil, data)
-	request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(compressed))
-	require.NoError(t, err)
-
-	recorder := httptest.NewRecorder()
-	h.ServeHTTP(recorder, request)
-
-	require.Equal(t, 2, recorder.Code/100)
-
-	require.Equal(t, "application/x-protobuf", recorder.Result().Header.Get("Content-Type"))
-	require.Equal(t, "snappy", recorder.Result().Header.Get("Content-Encoding"))
-
-	// Decode the response.
-	compressed, err = io.ReadAll(recorder.Result().Body)
-	require.NoError(t, err)
-
-	uncompressed, err := snappy.Decode(nil, compressed)
-	require.NoError(t, err)
-
-	var resp prompb.ReadResponse
-	err = proto.Unmarshal(uncompressed, &resp)
-	require.NoError(t, err)
-
-	require.Len(t, resp.Results, 3, "Expected 3 results.")
-
-	require.Equal(t, &prompb.QueryResult{
-		Timeseries: []*prompb.TimeSeries{
-			{
-				Labels: []prompb.Label{
-					{Name: "__name__", Value: "test_metric1"},
-					{Name: "b", Value: "c"},
-					{Name: "baz", Value: "qux"},
-					{Name: "d", Value: "e"},
-					{Name: "foo", Value: "bar"},
+		_, resp := executeSampledRead(t, store, func() config.Config {
+			return config.Config{
+				GlobalConfig: config.GlobalConfig{
+					// We expect external labels to be added, with the source labels honored.
+					ExternalLabels: labels.FromStrings("b", "c", "baz", "a", "d", "e"),
 				},
-				Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
-			},
-		},
-	}, resp.Results[0])
+			}
+		}, &prompb.ReadRequest{Queries: []*prompb.Query{query1, query2, query3}})
 
-	require.Equal(t, &prompb.QueryResult{
-		Timeseries: []*prompb.TimeSeries{
-			{
-				Labels: []prompb.Label{
-					{Name: "__name__", Value: "test_histogram_metric1"},
-					{Name: "b", Value: "c"},
-					{Name: "baz", Value: "qux"},
-					{Name: "d", Value: "e"},
-				},
-				Histograms: []prompb.Histogram{
-					prompb.FromFloatHistogram(0, tsdbutil.GenerateTestFloatHistogram(0)),
-				},
-			},
-		},
-	}, resp.Results[1])
+		require.Len(t, resp.Results, 3, "Expected 3 results.")
 
-	require.Equal(t, &prompb.QueryResult{
-		Timeseries: []*prompb.TimeSeries{
-			{
-				Labels: []prompb.Label{
-					{Name: "__name__", Value: "test_nhcb_metric1"},
-					{Name: "b", Value: "c"},
-					{Name: "baz", Value: "qux"},
-					{Name: "d", Value: "e"},
-				},
-				Histograms: []prompb.Histogram{{
-					// We cannot use prompb.FromFloatHistogram as that's one
-					// of the things we are testing here.
-					Schema:    histogram.CustomBucketsSchema,
-					Count:     &prompb.Histogram_CountFloat{CountFloat: 5},
-					Sum:       18.4,
-					ZeroCount: &prompb.Histogram_ZeroCountFloat{},
-					PositiveSpans: []prompb.BucketSpan{
-						{Offset: 0, Length: 2},
-						{Offset: 1, Length: 2},
+		require.Equal(t, &prompb.QueryResult{
+			Timeseries: []*prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_metric1"},
+						{Name: "b", Value: "c"},
+						{Name: "baz", Value: "qux"},
+						{Name: "d", Value: "e"},
+						{Name: "foo", Value: "bar"},
 					},
-					PositiveCounts: []float64{1, 2, 1, 1},
-					CustomValues:   []float64{0, 1, 2, 3, 4},
-				}},
+					Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
+				},
 			},
-		},
-	}, resp.Results[2])
+		}, resp.Results[0])
+
+		require.Equal(t, &prompb.QueryResult{
+			Timeseries: []*prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_histogram_metric1"},
+						{Name: "b", Value: "c"},
+						{Name: "baz", Value: "qux"},
+						{Name: "d", Value: "e"},
+					},
+					Histograms: []prompb.Histogram{
+						prompb.FromFloatHistogram(0, tsdbutil.GenerateTestFloatHistogram(0)),
+					},
+				},
+			},
+		}, resp.Results[1])
+
+		require.Equal(t, &prompb.QueryResult{
+			Timeseries: []*prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_nhcb_metric1"},
+						{Name: "b", Value: "c"},
+						{Name: "baz", Value: "qux"},
+						{Name: "d", Value: "e"},
+					},
+					Histograms: []prompb.Histogram{{
+						// We cannot use prompb.FromFloatHistogram as that's one
+						// of the things we are testing here.
+						Schema:    histogram.CustomBucketsSchema,
+						Count:     &prompb.Histogram_CountFloat{CountFloat: 5},
+						Sum:       18.4,
+						ZeroCount: &prompb.Histogram_ZeroCountFloat{},
+						PositiveSpans: []prompb.BucketSpan{
+							{Offset: 0, Length: 2},
+							{Offset: 1, Length: 2},
+						},
+						PositiveCounts: []float64{1, 2, 1, 1},
+						CustomValues:   []float64{0, 1, 2, 3, 4},
+					}},
+				},
+			},
+		}, resp.Results[2])
+	})
+
+	t.Run("without external labels", func(t *testing.T) {
+		store := promqltest.LoadedStorage(t, `
+		load 1m
+			test_metric{foo="bar"} 1
+		`)
+		defer store.Close()
+
+		matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric")
+		require.NoError(t, err)
+		query, err := ToQuery(0, 1, []*labels.Matcher{matcher}, nil)
+		require.NoError(t, err)
+
+		statusCode, resp := executeSampledRead(t, store, func() config.Config {
+			return config.Config{}
+		}, &prompb.ReadRequest{Queries: []*prompb.Query{query}})
+
+		require.Equal(t, http.StatusOK, statusCode)
+		require.Equal(t, &prompb.ReadResponse{
+			Results: []*prompb.QueryResult{{
+				Timeseries: []*prompb.TimeSeries{{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_metric"},
+						{Name: "foo", Value: "bar"},
+					},
+					Samples: []prompb.Sample{{Value: 1}},
+				}},
+			}},
+		}, resp)
+	})
+}
+
+func BenchmarkSampledReadEndpointWithoutExternalLabels(b *testing.B) {
+	for _, seriesCount := range []int{1, 10, 100} {
+		for _, labelCount := range []int{3, 12, 24} {
+			b.Run(fmt.Sprintf("series_%d_labels_%d", seriesCount, labelCount), func(b *testing.B) {
+				store := teststorage.New(b)
+				app := store.Appender(b.Context())
+				for i := range seriesCount {
+					labelStrings := make([]string, 0, 2*labelCount)
+					labelStrings = append(labelStrings, "__name__", "test_metric", "series", strconv.Itoa(i))
+					for j := 2; j < labelCount; j++ {
+						labelStrings = append(labelStrings, fmt.Sprintf("label_%d", j), "value")
+					}
+					_, err := app.Append(0, labels.FromStrings(labelStrings...), 0, 1)
+					require.NoError(b, err)
+				}
+				require.NoError(b, app.Commit())
+
+				api := NewReadHandler(nil, nil, store, func() config.Config {
+					return config.Config{}
+				}, 0, 1, 0)
+				matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric")
+				require.NoError(b, err)
+				query, err := ToQuery(0, 0, []*labels.Matcher{matcher}, nil)
+				require.NoError(b, err)
+				data, err := proto.Marshal(&prompb.ReadRequest{Queries: []*prompb.Query{query}})
+				require.NoError(b, err)
+				compressed := snappy.Encode(nil, data)
+				request := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(compressed))
+
+				serve := func() *httptest.ResponseRecorder {
+					request.Body = io.NopCloser(bytes.NewReader(compressed))
+					recorder := httptest.NewRecorder()
+					api.ServeHTTP(recorder, request)
+					return recorder
+				}
+
+				recorder := serve()
+				require.Equal(b, http.StatusOK, recorder.Code)
+				uncompressed, err := snappy.Decode(nil, recorder.Body.Bytes())
+				require.NoError(b, err)
+				var resp prompb.ReadResponse
+				require.NoError(b, proto.Unmarshal(uncompressed, &resp))
+				require.Len(b, resp.Results, 1)
+				require.Len(b, resp.Results[0].Timeseries, seriesCount)
+				for _, ts := range resp.Results[0].Timeseries {
+					require.Len(b, ts.Labels, labelCount)
+				}
+
+				b.ReportAllocs()
+				for b.Loop() {
+					recorder := serve()
+					if recorder.Code != http.StatusOK {
+						require.Equal(b, http.StatusOK, recorder.Code)
+					}
+				}
+			})
+		}
+	}
 }
 
 func BenchmarkStreamReadEndpoint(b *testing.B) {

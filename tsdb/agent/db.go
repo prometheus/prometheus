@@ -782,8 +782,7 @@ func (db *DB) truncate(mint int64) error {
 
 	if err != nil {
 		db.metrics.checkpointCreationFail.Inc()
-		var cerr *wlog.CorruptionErr
-		if errors.As(err, &cerr) {
+		if _, ok := errors.AsType[*wlog.CorruptionErr](err); ok {
 			db.metrics.walCorruptionsTotal.Inc()
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
@@ -971,7 +970,7 @@ func (a *appenderBase) getOrCreate(ref chunks.HeadSeriesRef, l labels.Labels) (s
 	}
 
 	// Known limitation: unlike the TSDB head, agent memSeries has no
-	// pendingCommit flag. Between this point and the first sample write that
+	// pending-commit protection. Between this point and the first sample write that
 	// updates series.lastTs, GC may remove the series (lastTs == math.MinInt64
 	// satisfies mint > lastTs). The WAL record appended below would then
 	// reference a ref with no corresponding in-memory series.
@@ -1226,7 +1225,7 @@ func (a *appenderBase) log() error {
 	encoder := record.Encoder{EnableSTStorage: a.opts.EnableSTStorage}
 	buf := a.bufPool.Get().([]byte)
 	defer func() {
-		a.bufPool.Put(buf) //nolint:staticcheck
+		a.bufPool.Put(buf[:0]) //nolint:staticcheck
 	}()
 
 	if len(a.pendingSeries) > 0 {
@@ -1344,7 +1343,7 @@ func (a *appenderBase) logSeries() error {
 	if len(a.pendingSeries) > 0 {
 		buf := a.bufPool.Get().([]byte)
 		defer func() {
-			a.bufPool.Put(buf) //nolint:staticcheck
+			a.bufPool.Put(buf[:0]) //nolint:staticcheck
 		}()
 
 		encoder := record.Encoder{EnableSTStorage: a.opts.EnableSTStorage}

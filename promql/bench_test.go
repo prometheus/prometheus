@@ -365,7 +365,8 @@ func BenchmarkRangeQuery(b *testing.B) {
 				qry, err := engine.NewRangeQuery(
 					ctx, stor, nil, c.expr,
 					time.Unix(int64((numIntervals-c.steps)*10), 0),
-					time.Unix(int64(numIntervals*10), 0), time.Second*10)
+					time.Unix(int64(numIntervals*10), 0), time.Second*10,
+				)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -433,7 +434,8 @@ func BenchmarkJoinQuery(b *testing.B) {
 					ctx, stor, nil, c.expr,
 					timestamp.Time(int64((numIntervals-c.steps)*10_000)),
 					timestamp.Time(int64(numIntervals*10_000)),
-					time.Second*10)
+					time.Second*10,
+				)
 				require.NoError(b, err)
 
 				res := qry.Exec(ctx)

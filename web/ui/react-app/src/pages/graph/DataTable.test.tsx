@@ -1,350 +1,137 @@
-import * as React from 'react';
-import { shallow } from 'enzyme';
+import React from 'react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import DataTable, { DataTableProps } from './DataTable';
-import { Alert, Table } from 'reactstrap';
-import SeriesName from './SeriesName';
+
+jest.mock('./SeriesName', () => {
+  const React = jest.requireActual('react');
+  return {
+    __esModule: true,
+    default: ({ labels, format }: { labels: Record<string, string> | null; format: boolean }) =>
+      React.createElement('span', { 'data-testid': 'series-name', 'data-formatted': format }, labels?.__name__ || 'scalar'),
+  };
+});
+
+jest.mock('./HistogramChart', () => {
+  const React = jest.requireActual('react');
+  return {
+    __esModule: true,
+    default: ({ scale }: { scale: string }) =>
+      React.createElement('div', { 'data-testid': 'histogram-chart', 'data-scale': scale }),
+  };
+});
 
 describe('DataTable', () => {
-  describe('when data is null', () => {
-    it('renders an alert', () => {
-      const table = shallow(<DataTable useLocalTime={false} data={null} />);
-      const alert = table.find(Alert);
-      expect(Object.keys(alert.props())).toHaveLength(7);
-      expect(alert.prop('color')).toEqual('light');
-      expect(alert.prop('children')).toEqual('No data queried yet');
-    });
+  it.each([
+    { data: null, color: 'light', message: 'No data queried yet' },
+    { data: { resultType: 'vector', result: [] }, color: 'secondary', message: 'Empty query result' },
+  ])('renders an alert for unavailable data', ({ data, color, message }) => {
+    render(<DataTable useLocalTime={false} data={data as DataTableProps['data']} />);
+
+    const alert = screen.getByRole('alert');
+    expect(alert.classList.contains(`alert-${color}`)).toBe(true);
+    expect(alert.textContent).toBe(message);
   });
 
-  describe('when data.result is empty', () => {
-    it('renders an alert', () => {
-      const dataTableProps: DataTableProps = {
-        data: {
-          resultType: 'vector',
-          result: [],
+  it('renders vector values with series names', () => {
+    const data: DataTableProps['data'] = {
+      resultType: 'vector',
+      result: [
+        { metric: { __name__: 'metric_name_1', label: 'value' }, value: [1572098246.599, '0'] },
+        { metric: { __name__: 'metric_name_2', label: 'value' }, value: [1572098246.599, '1'] },
+      ],
+    };
+
+    render(<DataTable data={data} useLocalTime={false} />);
+
+    expect(screen.getAllByTestId('series-name').map((series) => series.textContent)).toEqual([
+      'metric_name_1',
+      'metric_name_2',
+    ]);
+    expect(screen.getAllByRole('row').map((row) => row.textContent)).toEqual(['metric_name_10', 'metric_name_21']);
+  });
+
+  it('renders histogram values and switches their scale', () => {
+    const data: DataTableProps['data'] = {
+      resultType: 'vector',
+      result: [
+        {
+          metric: { __name__: 'request_duration' },
+          histogram: [
+            1572098246.599,
+            {
+              count: '10',
+              sum: '3.3',
+              buckets: [
+                [1, '-1', '-0.5', '2'],
+                [3, '-0.5', '0.5', '3'],
+              ],
+            },
+          ],
         },
-        useLocalTime: false,
-      };
-      const table = shallow(<DataTable {...dataTableProps} />);
-      const alert = table.find(Alert);
-      expect(Object.keys(alert.props())).toHaveLength(7);
-      expect(alert.prop('color')).toEqual('secondary');
-      expect(alert.prop('children')).toEqual('Empty query result');
-    });
+      ],
+    };
+
+    render(<DataTable data={data} useLocalTime={false} />);
+
+    expect(screen.getByTestId('histogram-chart').getAttribute('data-scale')).toBe('exponential');
+    expect(screen.getByText('Total count:').parentElement?.textContent).toContain('10');
+    expect(screen.getByText('Sum:').parentElement?.textContent).toContain('3.3');
+    expect(screen.getByText('[-1 -> -0.5)')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Linear' }));
+    expect(screen.getByTestId('histogram-chart').getAttribute('data-scale')).toBe('linear');
   });
 
-  describe('when resultType is a vector with values', () => {
-    const dataTableProps: DataTableProps = {
-      data: {
-        resultType: 'vector',
-        result: [
-          {
-            metric: {
-              __name__: 'metric_name_1',
-              label1: 'value_1',
-              labeln: 'value_n',
-            },
-            value: [1572098246.599, '0'],
-          },
-          {
-            metric: {
-              __name__: 'metric_name_2',
-              label1: 'value_1',
-              labeln: 'value_n',
-            },
-            value: [1572098246.599, '1'],
-          },
-        ],
-      },
-      useLocalTime: false,
+  it('limits large vector results and disables expensive label formatting', () => {
+    const data: DataTableProps['data'] = {
+      resultType: 'vector',
+      result: Array.from({ length: 10001 }, (_, i) => ({
+        metric: { __name__: `metric_name_${i}` },
+        value: [1572098246.599, `${i}`],
+      })),
     };
-    const dataTable = shallow(<DataTable {...dataTableProps} />);
 
-    it('renders a table', () => {
-      const table = dataTable.find(Table);
-      expect(table.prop('hover')).toBe(true);
-      expect(table.prop('size')).toEqual('sm');
-      expect(table.prop('className')).toEqual('data-table');
-      expect(table.find('tbody')).toHaveLength(1);
-    });
+    const { container } = render(<DataTable data={data} useLocalTime={false} />);
 
-    it('renders rows', () => {
-      const table = dataTable.find(Table);
-      table.find('tr').forEach((row, idx) => {
-        expect(row.find(SeriesName)).toHaveLength(1);
-        expect(row.find('td').at(1).text()).toEqual(`${idx}`);
-      });
-    });
+    expect(container.querySelectorAll('.data-table > tbody > tr')).toHaveLength(10000);
+    expect(screen.getByText(/Fetched 10001 metrics/).closest('[role="alert"]')?.textContent).toContain(
+      'only displaying first 10000'
+    );
+    expect(screen.getByText(/Showing more than 1000 series/).closest('[role="alert"]')?.textContent).toContain(
+      'turning off label formatting'
+    );
+    expect(screen.getAllByTestId('series-name')[0].getAttribute('data-formatted')).toBe('false');
   });
 
-  describe('when resultType is a vector with histograms', () => {
-    const dataTableProps: DataTableProps = {
-      data: {
-        resultType: 'vector',
-        result: [
-          {
-            metric: {
-              __name__: 'metric_name_1',
-              label1: 'value_1',
-              labeln: 'value_n',
-            },
-            histogram: [
-              1572098246.599,
-              {
-                count: '10',
-                sum: '3.3',
-                buckets: [
-                  [1, '-1', '-0.5', '2'],
-                  [3, '-0.5', '0.5', '3'],
-                  [0, '0.5', '1', '5'],
-                ],
-              },
-            ],
-          },
-          {
-            metric: {
-              __name__: 'metric_name_2',
-              label1: 'value_1',
-              labeln: 'value_n',
-            },
-            histogram: [
-              1572098247.599,
-              {
-                count: '5',
-                sum: '1.11',
-                buckets: [
-                  [0, '0.5', '1', '2'],
-                  [0, '1', '2', '3'],
-                ],
-              },
-            ],
-          },
-          {
-            metric: {
-              __name__: 'metric_name_2',
-              label1: 'value_1',
-              labeln: 'value_n',
-            },
-          },
-        ],
-      },
-      useLocalTime: false,
+  it('renders matrix values with timestamp details', () => {
+    const data: DataTableProps['data'] = {
+      resultType: 'matrix',
+      result: [
+        {
+          metric: { __name__: 'requests_total' },
+          values: [
+            [1572097950.93, '9'],
+            [1572097965.931, '10'],
+          ],
+        },
+      ],
     };
-    const dataTable = shallow(<DataTable {...dataTableProps} />);
 
-    it('renders a table', () => {
-      const table = dataTable.find(Table).first();
-      expect(table.prop('hover')).toBe(true);
-      expect(table.prop('size')).toEqual('sm');
-      expect(table.prop('className')).toEqual('data-table');
-      expect(table.find('tbody')).toHaveLength(dataTableProps.data?.result.length as number);
-    });
+    const { container } = render(<DataTable data={data} useLocalTime={false} />);
 
-    it('renders rows', () => {
-      const table = dataTable.find(Table);
-      table.find('tr').forEach((row, idx) => {
-        const seriesNameComponent = dataTable.find('SeriesName');
-        expect(seriesNameComponent).toHaveLength(dataTableProps.data?.result.length as number);
-      });
-    });
+    expect(screen.getByRole('row').textContent).toContain('requests_total9 @1572097950.9310 @1572097965.931');
+    expect(Array.from(container.querySelectorAll('span[title]')).map((span) => span.getAttribute('title'))).toEqual([
+      '2019-10-26T13:52:30.930Z',
+      '2019-10-26T13:52:45.931Z',
+    ]);
   });
 
-  describe('when resultType is a vector with too many values', () => {
-    const dataTableProps: DataTableProps = {
-      data: {
-        resultType: 'vector',
-        result: Array.from(Array(10001).keys()).map((i) => {
-          return {
-            metric: {
-              __name__: `metric_name_${i}`,
-              label1: 'value_1',
-              labeln: 'value_n',
-            },
-            value: [1572098246.599, `${i}`],
-          };
-        }),
-      },
-      useLocalTime: false,
-    };
-    const dataTable = shallow(<DataTable {...dataTableProps} />);
+  it.each([
+    { resultType: 'scalar' as const, value: '5' },
+    { resultType: 'string' as const, value: 'test' },
+  ])('renders $resultType results', ({ resultType, value }) => {
+    render(<DataTable data={{ resultType, result: [1572098246.599, value] }} useLocalTime={false} />);
 
-    it('renders limited rows', () => {
-      const table = dataTable.find(Table);
-      expect(table.find('tr')).toHaveLength(10000);
-    });
-
-    it('renders a warning', () => {
-      const alerts = dataTable.find(Alert);
-      expect(alerts.first().render().text()).toEqual('Warning: Fetched 10001 metrics, only displaying first 10000.');
-    });
-  });
-
-  describe('when resultType is vector and size is more than maximum limit of formatting', () => {
-    const dataTableProps: DataTableProps = {
-      data: {
-        resultType: 'vector',
-        result: Array.from(Array(1001).keys()).map((i) => {
-          return {
-            metric: {
-              __name__: `metric_name_${i}`,
-              label1: 'value_1',
-              labeln: 'value_n',
-            },
-            value: [1572098246.599, `${i}`],
-          };
-        }),
-      },
-      useLocalTime: false,
-    };
-    const dataTable = shallow(<DataTable {...dataTableProps} />);
-
-    it('renders a warning', () => {
-      const alerts = dataTable.find(Alert);
-      expect(alerts.first().render().text()).toEqual(
-        'Notice: Showing more than 1000 series, turning off label formatting for performance reasons.'
-      );
-    });
-  });
-
-  describe('when result type is a matrix', () => {
-    const dataTableProps: DataTableProps = {
-      data: {
-        resultType: 'matrix',
-        result: [
-          {
-            metric: {
-              __name__: 'promhttp_metric_handler_requests_total',
-              code: '200',
-              instance: 'localhost:9090',
-              job: 'prometheus',
-            },
-            values: [
-              [1572097950.93, '9'],
-              [1572097965.931, '10'],
-              [1572097980.929, '11'],
-              [1572097995.931, '12'],
-              [1572098010.932, '13'],
-              [1572098025.933, '14'],
-              [1572098040.93, '15'],
-              [1572098055.93, '16'],
-              [1572098070.93, '17'],
-              [1572098085.936, '18'],
-              [1572098100.936, '19'],
-              [1572098115.933, '20'],
-              [1572098130.932, '21'],
-              [1572098145.932, '22'],
-              [1572098160.933, '23'],
-              [1572098175.934, '24'],
-              [1572098190.937, '25'],
-              [1572098205.934, '26'],
-              [1572098220.933, '27'],
-              [1572098235.934, '28'],
-            ],
-          },
-          {
-            metric: {
-              __name__: 'promhttp_metric_handler_requests_total',
-              code: '500',
-              instance: 'localhost:9090',
-              job: 'prometheus',
-            },
-            values: [
-              [1572097950.93, '0'],
-              [1572097965.931, '0'],
-              [1572097980.929, '0'],
-              [1572097995.931, '0'],
-              [1572098010.932, '0'],
-              [1572098025.933, '0'],
-              [1572098040.93, '0'],
-              [1572098055.93, '0'],
-              [1572098070.93, '0'],
-              [1572098085.936, '0'],
-              [1572098100.936, '0'],
-              [1572098115.933, '0'],
-              [1572098130.932, '0'],
-              [1572098145.932, '0'],
-              [1572098160.933, '0'],
-              [1572098175.934, '0'],
-              [1572098190.937, '0'],
-              [1572098205.934, '0'],
-              [1572098220.933, '0'],
-              [1572098235.934, '0'],
-            ],
-          },
-          {
-            metric: {
-              __name__: 'promhttp_metric_handler_requests_total',
-              code: '503',
-              instance: 'localhost:9090',
-              job: 'prometheus',
-            },
-            values: [
-              [1572097950.93, '0'],
-              [1572097965.931, '0'],
-              [1572097980.929, '0'],
-              [1572097995.931, '0'],
-              [1572098010.932, '0'],
-              [1572098025.933, '0'],
-              [1572098040.93, '0'],
-              [1572098055.93, '0'],
-              [1572098070.93, '0'],
-              [1572098085.936, '0'],
-              [1572098100.936, '0'],
-              [1572098115.933, '0'],
-              [1572098130.932, '0'],
-              [1572098145.932, '0'],
-              [1572098160.933, '0'],
-              [1572098175.934, '0'],
-              [1572098190.937, '0'],
-              [1572098205.934, '0'],
-              [1572098220.933, '0'],
-              [1572098235.934, '0'],
-            ],
-          },
-        ],
-      },
-      useLocalTime: false,
-    };
-    const dataTable = shallow(<DataTable {...dataTableProps} />);
-    it('renders rows', () => {
-      const table = dataTable.find(Table);
-      const rows = table.find('tr');
-      expect(table.find('tr')).toHaveLength(3);
-      const row = rows.at(0);
-      expect(row.text()).toEqual(
-        `<SeriesName />9 @1572097950.9310 @1572097965.93111 @1572097980.92912 @1572097995.93113 @1572098010.93214 @1572098025.93315 @1572098040.9316 @1572098055.9317 @1572098070.9318 @1572098085.93619 @1572098100.93620 @1572098115.93321 @1572098130.93222 @1572098145.93223 @1572098160.93324 @1572098175.93425 @1572098190.93726 @1572098205.93427 @1572098220.93328 @1572098235.934 `
-      );
-    });
-  });
-
-  describe('when resultType is a scalar', () => {
-    const dataTableProps: DataTableProps = {
-      data: {
-        resultType: 'scalar',
-        result: [1572098246.599, '5'],
-      },
-      useLocalTime: false,
-    };
-    const dataTable = shallow(<DataTable {...dataTableProps} />);
-    it('renders a scalar row', () => {
-      const table = dataTable.find(Table);
-      const rows = table.find('tr');
-      expect(rows.text()).toEqual('scalar5');
-    });
-  });
-
-  describe('when resultType is a string', () => {
-    const dataTableProps: DataTableProps = {
-      data: {
-        resultType: 'string',
-        result: [1572098246.599, 'test'],
-      },
-      useLocalTime: false,
-    };
-    const dataTable = shallow(<DataTable {...dataTableProps} />);
-    it('renders a string row', () => {
-      const table = dataTable.find(Table);
-      const rows = table.find('tr');
-      expect(rows.text()).toEqual('stringtest');
-    });
+    expect(screen.getByRole('row').textContent).toBe(`${resultType}${value}`);
   });
 });

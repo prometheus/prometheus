@@ -1,9 +1,15 @@
 packages:
   - "mantine-ui"
   - "module/*"
+strictDepBuilds: true
 allowBuilds:
+  # The platform packages are prebuilt, so source compilation is intentionally disabled.
+  '@parcel/watcher@2.6.0': false
   esbuild: true
   unrs-resolver: true
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+blockExoticSubdeps: true
 minimumReleaseAgeExclude:
   - '@mantine/code-highlight@9.5.0'
   - '@mantine/core@9.5.0'

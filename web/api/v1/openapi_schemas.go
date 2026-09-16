@@ -75,6 +75,8 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	schemas.Set("TargetMetadataOutputBody", b.metricMetadataArrayResponseBodySchema())
 	schemas.Set("ScrapePoolsDiscovery", b.scrapePoolsDiscoverySchema())
 	schemas.Set("ScrapePoolsOutputBody", b.refResponseBodySchema("ScrapePoolsDiscovery", "Response body for scrape pools endpoint."))
+	schemas.Set("ScrapePoolConfigData", b.scrapePoolConfigDataSchema())
+	schemas.Set("ScrapePoolConfigOutputBody", b.refResponseBodySchema("ScrapePoolConfigData", "Response body for scrape pool config endpoint."))
 
 	// Relabel schemas.
 	schemas.Set("Config", b.configSchema())
@@ -958,6 +960,19 @@ func (*OpenAPIBuilder) scrapePoolsDiscoverySchema() *base.SchemaProxy {
 		Description:          "List of all configured scrape pools.",
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
 		Required:             []string{"scrapePools"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) scrapePoolConfigDataSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("yaml", stringSchemaWithDescription("Effective scrape pool configuration in YAML format."))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Effective configuration for a scrape pool.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"yaml"},
 		Properties:           props,
 	})
 }
