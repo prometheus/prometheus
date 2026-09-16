@@ -389,6 +389,9 @@ func New(logger *slog.Logger, o *Options) *Handler {
 			relabelConfigFunc := func() config.Config {
 				h.mtx.RLock()
 				defer h.mtx.RUnlock()
+				if h.config == nil {
+					return config.Config{}
+				}
 				return *h.config
 			}
 			relabelCache := remote.NewRelabelCache()
