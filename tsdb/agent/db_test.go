@@ -140,16 +140,26 @@ func TestAppenderBufferResetAfterWALWriteError(t *testing.T) {
 			require.NoError(t, wal.Close())
 
 			db := &DB{wal: wal, opts: DefaultOptions()}
-			db.bufPool.New = func() any {
-				return make([]byte, 0, 1024)
-			}
-
 			app := &appenderBase{DB: db}
 			test.prepare(app)
-			require.Error(t, test.log(app))
 
-			buf := db.bufPool.Get().([]byte)
-			require.Empty(t, buf)
+			for range 100 {
+				db.bufPool.New = func() any {
+					return make([]byte, 0, 1024)
+				}
+				require.Error(t, test.log(app))
+
+				// A pool may discard buffers, especially under -race. Disable New so
+				// a fresh buffer cannot satisfy the assertion.
+				db.bufPool.New = nil
+				buf := db.bufPool.Get()
+				if buf == nil {
+					continue
+				}
+				require.Empty(t, buf.([]byte))
+				return
+			}
+			t.Fatal("no buffer returned from pool after 100 attempts")
 		})
 	}
 }
