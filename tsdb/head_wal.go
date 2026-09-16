@@ -525,8 +525,8 @@ Outer:
 }
 
 // restoreMmappedLastSamples restores duplicate-checking state that WAL replay
-// skips for samples already in mmap chunks. It runs at the end of Init, before
-// the head can be used by appenders.
+// skips for samples already in mmap chunks. The caller must have exclusive access
+// to the head during recovery, before appenders can use it.
 func (h *Head) restoreMmappedLastSamples() error {
 	for _, stripe := range h.series.hashes {
 		for _, s := range stripe.unique {

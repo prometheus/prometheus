@@ -1224,7 +1224,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		}
 		// Init returned before restoring the last values of mmap-only series.
 		if err := db.head.restoreMmappedLastSamples(); err != nil {
-			return nil, fmt.Errorf("restore last samples after WAL repair: %w", err)
+			return nil, fmt.Errorf("restore last samples after WAL/WBL repair: %w", err)
 		}
 	}
 
