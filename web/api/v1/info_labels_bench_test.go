@@ -375,8 +375,8 @@ type infoBenchOperation struct {
 
 func newInfoBenchOperation(c infoBenchCase, mode string) infoBenchOperation {
 	return infoBenchOperation{
-		namesURL:  "/api/v1/info_labels?" + c.params(false).Encode(),
-		valuesURL: "/api/v1/info_label_values?" + c.params(true).Encode(),
+		namesURL:  "/api/v1/search/info_labels?" + c.params(false).Encode(),
+		valuesURL: "/api/v1/search/info_label_values?" + c.params(true).Encode(),
 		mode:      mode, scores: c.search == "subsequence",
 	}
 }
@@ -456,7 +456,7 @@ func validateInfoBenchObservations(tb testing.TB, expected infoBenchExpectation,
 
 func verifyInfoBenchScope(tb testing.TB, api *API, c infoBenchCase) {
 	tb.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/info_labels?"+c.params(false).Encode(), http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/search/info_labels?"+c.params(false).Encode(), http.NoBody)
 	prepared := api.prepareAutocompleteRequest(httptest.NewRecorder(), req, "info_labels", autocompleteRequestOptions{exprControlsTimeRange: true})
 	require.NotNil(tb, prepared)
 	sets, warnings, empty, mint, maxt, apiErr := api.infoMetricMatcherSets(tb.Context(), req, prepared.sp)
@@ -669,7 +669,7 @@ func BenchmarkInfoAutocompletePhases(b *testing.B) {
 		api, engine, _ := newInfoBenchAPI(db)
 		defer func() { require.NoError(b, engine.Close()) }()
 		verifyInfoBenchScope(b, api, c)
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/info_labels?"+c.params(false).Encode(), http.NoBody)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/search/info_labels?"+c.params(false).Encode(), http.NoBody)
 		prepared := api.prepareAutocompleteRequest(httptest.NewRecorder(), req, "info_labels", autocompleteRequestOptions{exprControlsTimeRange: true})
 		require.NotNil(b, prepared)
 		sets, _, _, mint, maxt, apiErr := api.infoMetricMatcherSets(b.Context(), req, prepared.sp)

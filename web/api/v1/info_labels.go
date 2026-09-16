@@ -126,7 +126,7 @@ func (api *API) infoLabelFeaturesEnabled(w http.ResponseWriter, r *http.Request,
 	return false
 }
 
-// infoLabels handles GET/POST /api/v1/info_labels and streams data-label
+// infoLabels handles GET/POST /api/v1/search/info_labels and streams data-label
 // names from the scoped info metrics.
 func (api *API) infoLabels(w http.ResponseWriter, r *http.Request) {
 	req := api.newInfoLabelSearchRequest(w, r, "info_labels")
@@ -168,7 +168,7 @@ func (api *API) infoLabels(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// infoLabelValues handles GET/POST /api/v1/info_label_values and streams
+// infoLabelValues handles GET/POST /api/v1/search/info_label_values and streams
 // values for one exact data-label name from the scoped info metrics.
 func (api *API) infoLabelValues(w http.ResponseWriter, r *http.Request) {
 	req := api.newInfoLabelSearchRequest(w, r, "info_label_values")

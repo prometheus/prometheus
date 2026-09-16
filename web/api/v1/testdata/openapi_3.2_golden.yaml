@@ -1796,7 +1796,7 @@ paths:
                                         error: TSDB not ready
                                         errorType: internal
                                         status: error
-    /info_labels:
+    /search/info_labels:
         get:
             tags:
                 - labels
@@ -2128,7 +2128,7 @@ paths:
                                         error: TSDB not ready
                                         errorType: internal
                                         status: error
-    /info_label_values:
+    /search/info_label_values:
         get:
             tags:
                 - labels
