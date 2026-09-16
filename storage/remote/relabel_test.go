@@ -163,6 +163,49 @@ func TestNewRelabelingAppendableV2(t *testing.T) {
 	}
 }
 
+func TestNewRelabelingAppendableV2_MetricFamilyName(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		configs    []*relabel.Config
+		in         labels.Labels
+		wantFamily string
+	}{
+		{
+			name:       "name unchanged, family name preserved",
+			configs:    relabelTestRewriteConfig,
+			in:         labels.FromStrings("__name__", "keep_me", "env", "prod"),
+			wantFamily: "keep_me",
+		},
+		{
+			name: "name changed, stale family name cleared",
+			configs: []*relabel.Config{{
+				Regex:                relabel.MustNewRegexp("keep_me"),
+				SourceLabels:         model.LabelNames{"__name__"},
+				TargetLabel:          "__name__",
+				Replacement:          "renamed",
+				Action:               relabel.Replace,
+				NameValidationScheme: model.UTF8Validation,
+			}},
+			in:         labels.FromStrings("__name__", "keep_me", "env", "prod"),
+			wantFamily: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			appendable := teststorage.NewAppendable()
+			wrapped := NewRelabelingAppendableV2(appendable, relabelTestConfigFunc(tc.configs, model.UTF8Validation), NewRelabelCache())
+			app := wrapped.AppenderV2(context.Background())
+
+			_, err := app.Append(0, tc.in, 0, 10, 1, nil, nil, storage.AOptions{MetricFamilyName: "keep_me"})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			results := appendable.ResultSamples()
+			require.Len(t, results, 1)
+			require.Equal(t, tc.wantFamily, results[0].MF)
+		})
+	}
+}
+
 func TestRelabelCache(t *testing.T) {
 	l := labels.FromStrings("__name__", "keep_me", "env", "prod")
 

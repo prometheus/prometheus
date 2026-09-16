@@ -280,5 +280,9 @@ func (a *relabelingAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, s
 	if !keep {
 		return ref, nil
 	}
+	if nl.Get(labels.MetricName) != ls.Get(labels.MetricName) {
+		// opts.MetricFamilyName was derived from the pre-relabel name.
+		opts.MetricFamilyName = ""
+	}
 	return a.AppenderV2.Append(ref, nl, st, t, v, h, fh, opts)
 }
