@@ -78,6 +78,7 @@ func NewRelabelCache() *relabelCache {
 
 func (c *relabelCache) relabel(l labels.Labels, cfgs []*relabel.Config, validationScheme model.ValidationScheme) (labels.Labels, bool) {
 	if len(cfgs) == 0 {
+		c.clear()
 		return l, true
 	}
 
@@ -116,6 +117,23 @@ func (c *relabelCache) relabel(l labels.Labels, cfgs []*relabel.Config, validati
 	c.mu.Unlock()
 
 	return result, keep
+}
+
+// clear drops all entries and resets cfgsIdent.
+func (c *relabelCache) clear() {
+	if c.empty() {
+		return
+	}
+	c.mu.Lock()
+	c.entries = nil
+	c.cfgsIdent = nil
+	c.mu.Unlock()
+}
+
+func (c *relabelCache) empty() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.cfgsIdent == nil
 }
 
 // sweep deletes entries not touched since the previous sweep and clears the

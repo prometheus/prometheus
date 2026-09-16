@@ -237,6 +237,15 @@ func TestRelabelCache(t *testing.T) {
 		require.True(t, hotSurvived)
 		require.False(t, coldSurvived)
 	})
+
+	t.Run("clears entries once reloaded to no configs", func(t *testing.T) {
+		cache := NewRelabelCache()
+		cache.relabel(l, relabelTestRewriteConfig, model.UTF8Validation)
+		require.False(t, cache.empty())
+
+		cache.relabel(l, nil, model.UTF8Validation)
+		require.True(t, cache.empty())
+	})
 }
 
 func TestRelabelCache_sweep(t *testing.T) {
