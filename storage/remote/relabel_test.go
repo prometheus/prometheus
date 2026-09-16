@@ -226,12 +226,14 @@ func TestRelabelCache(t *testing.T) {
 		require.True(t, labels.Equal(result1, result2))
 	})
 
-	t.Run("reload with unchanged rule content adopts the new identity but keeps entries", func(t *testing.T) {
+	t.Run("reload with unchanged rule content adopts the new identity without evicting unrelated entries", func(t *testing.T) {
 		cache := NewRelabelCache()
+		other := labels.FromStrings("__name__", "keep_me_2", "env", "prod")
 		cache.relabel(l, relabelTestRewriteConfig, model.UTF8Validation)
+		cache.relabel(other, relabelTestRewriteConfig, model.UTF8Validation)
 
 		cache.mu.RLock()
-		before := cache.entries[l.Hash()]
+		otherBefore := cache.entries[other.Hash()]
 		cache.mu.RUnlock()
 
 		reloaded := []*relabel.Config{{
@@ -245,11 +247,21 @@ func TestRelabelCache(t *testing.T) {
 		cache.relabel(l, reloaded, model.UTF8Validation)
 
 		cache.mu.RLock()
-		after := cache.entries[l.Hash()]
+		otherAfter := cache.entries[other.Hash()]
 		cfgs := cache.cfgs
 		cache.mu.RUnlock()
-		require.Same(t, before, after, "content-identical reload must not recompute the cached entry")
+		require.Same(t, otherBefore, otherAfter, "content-identical reload must not evict unrelated cached entries")
 		require.Same(t, reloaded[0], cfgs[0])
+
+		// Once the new identity is established, further lookups for l hit the cache.
+		cache.mu.RLock()
+		entryAfterReload := cache.entries[l.Hash()]
+		cache.mu.RUnlock()
+		cache.relabel(l, reloaded, model.UTF8Validation)
+		cache.mu.RLock()
+		entryStillSame := cache.entries[l.Hash()]
+		cache.mu.RUnlock()
+		require.Same(t, entryAfterReload, entryStillSame)
 	})
 
 	t.Run("reload with changed rule content wipes stale entries", func(t *testing.T) {
@@ -359,6 +371,51 @@ func TestRelabelCache_ConcurrentAccess(t *testing.T) {
 				result, keep := cache.relabel(l, relabelTestRewriteConfig, model.UTF8Validation)
 				require.True(t, keep)
 				require.True(t, result.Has("environment"))
+			}
+		})
+	}
+	wg.Wait()
+}
+
+// Run with -race. Concurrent callers pass two genuinely different config
+// generations for the same series; a call for one generation must never
+// observe a result computed under the other, even while both race to
+// establish their generation in the shared cache.
+func TestRelabelCache_ConcurrentReload(t *testing.T) {
+	cache := NewRelabelCache()
+	l := labels.FromStrings("__name__", "keep_me", "env", "prod")
+
+	cfgsA := []*relabel.Config{{
+		SourceLabels:         model.LabelNames{"env"},
+		Regex:                relabel.MustNewRegexp("(.*)"),
+		TargetLabel:          "environment",
+		Replacement:          "A-$1",
+		Action:               relabel.Replace,
+		NameValidationScheme: model.UTF8Validation,
+	}}
+	cfgsB := []*relabel.Config{{
+		SourceLabels:         model.LabelNames{"env"},
+		Regex:                relabel.MustNewRegexp("(.*)"),
+		TargetLabel:          "environment",
+		Replacement:          "B-$1",
+		Action:               relabel.Replace,
+		NameValidationScheme: model.UTF8Validation,
+	}}
+
+	const goroutines = 20
+	const iterations = 1000
+
+	var wg sync.WaitGroup
+	for i := range goroutines {
+		cfgs, want := cfgsA, "A-prod"
+		if i%2 == 1 {
+			cfgs, want = cfgsB, "B-prod"
+		}
+		wg.Go(func() {
+			for range iterations {
+				result, keep := cache.relabel(l, cfgs, model.UTF8Validation)
+				require.True(t, keep)
+				require.Equal(t, want, result.Get("environment"))
 			}
 		})
 	}

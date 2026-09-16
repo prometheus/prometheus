@@ -83,21 +83,30 @@ func (c *RelabelCache) relabel(l labels.Labels, cfgs []*relabel.Config, validati
 		return l, true
 	}
 
-	c.syncGeneration(cfgs)
 	h := l.Hash()
 
 	c.mu.RLock()
-	if e, ok := c.entries[h]; ok && labels.Equal(e.orig, l) {
-		e.touched.Store(true)
-		c.mu.RUnlock()
-		return e.result, e.keep
+	if slices.Equal(c.cfgs, cfgs) {
+		if e, ok := c.entries[h]; ok && labels.Equal(e.orig, l) {
+			e.touched.Store(true)
+			c.mu.RUnlock()
+			return e.result, e.keep
+		}
 	}
 	c.mu.RUnlock()
 
 	result, keep := relabelLabels(l, cfgs, validationScheme)
 
 	c.mu.Lock()
-	if len(c.entries) >= relabelCacheMaxEntries {
+	if !slices.Equal(c.cfgs, cfgs) {
+		// A reload always allocates new *relabel.Config values even when
+		// the rules are textually unchanged; fall back to a content
+		// comparison so entries are dropped only on a genuine rule change.
+		if !reflect.DeepEqual(c.cfgs, cfgs) {
+			c.entries = make(map[uint64]*relabelCacheEntry)
+		}
+		c.cfgs = cfgs
+	} else if len(c.entries) >= relabelCacheMaxEntries {
 		c.sweep()
 		// Evict arbitrary entries down to the cap instead of wiping the
 		// map, so a stampede doesn't force every hot entry to recompute.
@@ -115,28 +124,6 @@ func (c *RelabelCache) relabel(l labels.Labels, cfgs []*relabel.Config, validati
 	c.mu.Unlock()
 
 	return result, keep
-}
-
-// syncGeneration reconciles c.cfgs with cfgs: a cheap pointer check first,
-// falling back to a content comparison, so entries are kept when the rules
-// are unchanged and dropped when they genuinely differ.
-func (c *RelabelCache) syncGeneration(cfgs []*relabel.Config) {
-	c.mu.RLock()
-	same := slices.Equal(c.cfgs, cfgs)
-	c.mu.RUnlock()
-	if same {
-		return
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if slices.Equal(c.cfgs, cfgs) {
-		return
-	}
-	if !reflect.DeepEqual(c.cfgs, cfgs) {
-		c.entries = make(map[uint64]*relabelCacheEntry)
-	}
-	c.cfgs = cfgs
 }
 
 // clear drops all entries and resets cfgs.
