@@ -1,0 +1,5 @@
+scrape_configs:
+  - job_name: prometheus
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        include_no_network_targets: true
