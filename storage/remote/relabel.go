@@ -49,12 +49,12 @@ func relabelLabels(l labels.Labels, cfgs []*relabel.Config, validationScheme mod
 	return result, true
 }
 
-// relabelCacheMaxEntries bounds relabelCache size.
+// relabelCacheMaxEntries bounds RelabelCache size.
 const relabelCacheMaxEntries = 100_000
 
-// relabelCache memoizes receive-path relabeling decisions. Safe for
+// RelabelCache memoizes receive-path relabeling decisions. Safe for
 // concurrent use and for sharing between a v1 and v2 relabeling appendable.
-type relabelCache struct {
+type RelabelCache struct {
 	mu sync.RWMutex
 
 	entries map[uint64]*relabelCacheEntry
@@ -72,12 +72,12 @@ type relabelCacheEntry struct {
 	touched atomic.Bool
 }
 
-// NewRelabelCache returns an empty relabelCache.
-func NewRelabelCache() *relabelCache {
-	return &relabelCache{}
+// NewRelabelCache returns an empty RelabelCache.
+func NewRelabelCache() *RelabelCache {
+	return &RelabelCache{}
 }
 
-func (c *relabelCache) relabel(l labels.Labels, cfgs []*relabel.Config, validationScheme model.ValidationScheme) (labels.Labels, bool) {
+func (c *RelabelCache) relabel(l labels.Labels, cfgs []*relabel.Config, validationScheme model.ValidationScheme) (labels.Labels, bool) {
 	if len(cfgs) == 0 {
 		c.clear()
 		return l, true
@@ -120,7 +120,7 @@ func (c *relabelCache) relabel(l labels.Labels, cfgs []*relabel.Config, validati
 // syncGeneration reconciles c.cfgs with cfgs: a cheap pointer check first,
 // falling back to a content comparison, so entries are kept when the rules
 // are unchanged and dropped when they genuinely differ.
-func (c *relabelCache) syncGeneration(cfgs []*relabel.Config) {
+func (c *RelabelCache) syncGeneration(cfgs []*relabel.Config) {
 	c.mu.RLock()
 	same := slices.Equal(c.cfgs, cfgs)
 	c.mu.RUnlock()
@@ -140,7 +140,7 @@ func (c *relabelCache) syncGeneration(cfgs []*relabel.Config) {
 }
 
 // clear drops all entries and resets cfgs.
-func (c *relabelCache) clear() {
+func (c *RelabelCache) clear() {
 	if c.empty() {
 		return
 	}
@@ -150,7 +150,7 @@ func (c *relabelCache) clear() {
 	c.mu.Unlock()
 }
 
-func (c *relabelCache) empty() bool {
+func (c *RelabelCache) empty() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.cfgs == nil
@@ -158,7 +158,7 @@ func (c *relabelCache) empty() bool {
 
 // sweep deletes entries not touched since the previous sweep and clears the
 // mark on survivors. Called with c.mu held.
-func (c *relabelCache) sweep() {
+func (c *RelabelCache) sweep() {
 	for h, e := range c.entries {
 		if !e.touched.Swap(false) {
 			delete(c.entries, h)
@@ -169,14 +169,14 @@ func (c *relabelCache) sweep() {
 // NewRelabelingAppendable applies Config.ReceiveRelabelConfigs to samples
 // before they reach next. Embedding storage.Appender does not promote
 // storage.GetRef, so a ref lookup can't bypass relabeling.
-func NewRelabelingAppendable(next storage.Appendable, configFunc func() config.Config, cache *relabelCache) storage.Appendable {
+func NewRelabelingAppendable(next storage.Appendable, configFunc func() config.Config, cache *RelabelCache) storage.Appendable {
 	return &relabelingAppendable{next: next, configFunc: configFunc, cache: cache}
 }
 
 type relabelingAppendable struct {
 	next       storage.Appendable
 	configFunc func() config.Config
-	cache      *relabelCache
+	cache      *RelabelCache
 }
 
 func (a *relabelingAppendable) Appender(ctx context.Context) storage.Appender {
@@ -194,7 +194,7 @@ type relabelingAppender struct {
 
 	configs          []*relabel.Config
 	validationScheme model.ValidationScheme
-	cache            *relabelCache
+	cache            *RelabelCache
 }
 
 func (a *relabelingAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
@@ -247,14 +247,14 @@ func (a *relabelingAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labe
 
 // NewRelabelingAppendableV2 is the AppenderV2 equivalent of NewRelabelingAppendable.
 // See NewRelabelingAppendable for the semantics.
-func NewRelabelingAppendableV2(next storage.AppendableV2, configFunc func() config.Config, cache *relabelCache) storage.AppendableV2 {
+func NewRelabelingAppendableV2(next storage.AppendableV2, configFunc func() config.Config, cache *RelabelCache) storage.AppendableV2 {
 	return &relabelingAppendableV2{next: next, configFunc: configFunc, cache: cache}
 }
 
 type relabelingAppendableV2 struct {
 	next       storage.AppendableV2
 	configFunc func() config.Config
-	cache      *relabelCache
+	cache      *RelabelCache
 }
 
 func (a *relabelingAppendableV2) AppenderV2(ctx context.Context) storage.AppenderV2 {
@@ -272,7 +272,7 @@ type relabelingAppenderV2 struct {
 
 	configs          []*relabel.Config
 	validationScheme model.ValidationScheme
-	cache            *relabelCache
+	cache            *RelabelCache
 }
 
 func (a *relabelingAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
