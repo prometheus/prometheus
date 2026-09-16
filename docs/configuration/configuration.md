@@ -3702,6 +3702,16 @@ relabeling is applied after external labels.
 One use for this is ensuring a HA pair of Prometheus servers with different
 external labels send identical alerts.
 
+### `<receive_relabel_configs>`
+
+Receive relabeling is applied to samples ingested via the remote-write and
+OTLP receivers, before they reach storage. It has the same configuration
+format and actions as target relabeling.
+
+Requires the `receive-relabel-configs` feature flag; see
+[Receive relabeling](../feature_flags.md#receive-relabeling). Without it,
+`receive_relabel_configs` in the config file has no effect.
+
 ### `<alertmanager_config>`
 
 An `alertmanager_config` section specifies Alertmanager instances the Prometheus
