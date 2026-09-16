@@ -976,6 +976,61 @@ type infoLabelsResult struct {
 	WireValues json.RawMessage `json:"values,omitempty"`
 }
 
+func TestInfoLabelSearchRoutes(t *testing.T) {
+	api := minimalSearchAPI()
+	api.Queryable = promqltest.LoadedStorage(t, `
+		load 1m
+			target_info{job="api", instance="one", env="prod", version="2.0"} 1+0x130
+			target_info{job="api", instance="two", env="staging", version="3.0", region="eu"} 1+0x130
+			target_info{job="node", instance="three", env="prod", version="4.0", zone="a"} 1+0x130
+			up{job="api", instance="one"} 1+0x130
+			up{job="api", instance="two"} 1+0x130
+			up{job="node", instance="three"} 1+0x130
+	`)
+	api.QueryEngine = testEngine(t)
+	api.enableExperimentalFunctions = true
+	api.queryTimeout = 2 * time.Minute
+	router := route.New().WithPrefix("/api/v1")
+	api.Register(router)
+
+	for _, tc := range []struct {
+		path     string
+		label    string
+		expected []map[string]string
+	}{
+		{
+			path:     "/api/v1/search/info_labels",
+			expected: []map[string]string{{"name": "env"}, {"name": "version"}},
+		},
+		{
+			path:     "/api/v1/search/info_label_values",
+			label:    "version",
+			expected: []map[string]string{{"value": "2.0"}},
+		},
+	} {
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			t.Run(method+tc.path, func(t *testing.T) {
+				params := url.Values{
+					"expr":         {`up{job="api"}`},
+					"data_match[]": {`env="prod"`},
+					"sort_by":      {"alpha"},
+				}
+				if tc.label != "" {
+					params.Set("label", tc.label)
+				}
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, infoEndpointRequest(t, method, tc.path, params))
+				require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+				require.Equal(t, "application/x-ndjson; charset=utf-8", rec.Header().Get("Content-Type"))
+				records, trailer, errLine := parseInfoSearchNDJSON[map[string]string](t, rec.Body.String())
+				require.Nil(t, errLine)
+				require.Equal(t, tc.expected, records)
+				require.Equal(t, &searchTrailer{Status: "success"}, trailer)
+			})
+		}
+	}
+}
+
 func TestInfoLabels(t *testing.T) {
 	// Data spans [0s, 7800s] at 1m intervals so that the default search
 	// window [now-1h, now] and instant-query lookback at now both include
@@ -1338,7 +1393,7 @@ func TestInfoLabels(t *testing.T) {
 			expectedHTTPCode:  http.StatusInternalServerError,
 		},
 		{
-			// /info_labels is dual-gated; the experimental-functions flag
+			// /search/info_labels is dual-gated; the experimental-functions flag
 			// must also be enabled because the endpoint only exists to
 			// serve info() autocomplete.
 			name:   "experimental-functions flag disabled returns errorUnavailable",
@@ -1504,7 +1559,7 @@ func newInfoTimeoutTestAPI(t *testing.T, queryTimeout time.Duration) (*API, *fak
 }
 
 func TestInfoLabelTimeoutContext(t *testing.T) {
-	for _, endpoint := range []string{"/api/v1/info_labels", "/api/v1/info_label_values"} {
+	for _, endpoint := range []string{"/api/v1/search/info_labels", "/api/v1/search/info_label_values"} {
 		for _, method := range []string{http.MethodGet, http.MethodPost} {
 			for _, tc := range []struct {
 				name     string
@@ -1518,7 +1573,7 @@ func TestInfoLabelTimeoutContext(t *testing.T) {
 				t.Run(endpoint+"/"+method+"/"+tc.name, func(t *testing.T) {
 					api, engine, querier := newInfoTimeoutTestAPI(t, 2*time.Minute)
 					params := url.Values{"expr": {"metric"}}
-					if endpoint == "/api/v1/info_label_values" {
+					if endpoint == "/api/v1/search/info_label_values" {
 						params.Set("label", "version")
 					}
 					if tc.timeout != "" {
@@ -1529,7 +1584,7 @@ func TestInfoLabelTimeoutContext(t *testing.T) {
 					before := time.Now()
 					req := infoEndpointRequest(t, method, endpoint, params).WithContext(ctx)
 					rec := httptest.NewRecorder()
-					if endpoint == "/api/v1/info_labels" {
+					if endpoint == "/api/v1/search/info_labels" {
 						api.infoLabels(rec, req)
 					} else {
 						api.infoLabelValues(rec, req)
@@ -1553,7 +1608,7 @@ func TestInfoLabelTimeoutContext(t *testing.T) {
 }
 
 func TestInfoLabelTimeoutErrors(t *testing.T) {
-	for _, endpoint := range []string{"/api/v1/info_labels", "/api/v1/info_label_values"} {
+	for _, endpoint := range []string{"/api/v1/search/info_labels", "/api/v1/search/info_label_values"} {
 		for _, method := range []string{http.MethodGet, http.MethodPost} {
 			for _, tc := range []struct {
 				name      string
@@ -1567,12 +1622,12 @@ func TestInfoLabelTimeoutErrors(t *testing.T) {
 				t.Run(endpoint+"/"+method+"/"+tc.name, func(t *testing.T) {
 					api, _, _ := newInfoTimeoutTestAPI(t, 2*time.Minute)
 					params := url.Values{"timeout": {tc.timeout}}
-					if endpoint == "/api/v1/info_label_values" {
+					if endpoint == "/api/v1/search/info_label_values" {
 						params.Set("label", "version")
 					}
 					req := infoEndpointRequest(t, method, endpoint, params)
 					rec := httptest.NewRecorder()
-					if endpoint == "/api/v1/info_labels" {
+					if endpoint == "/api/v1/search/info_labels" {
 						api.infoLabels(rec, req)
 					} else {
 						api.infoLabelValues(rec, req)
@@ -1816,7 +1871,7 @@ func TestInfoLabelValues(t *testing.T) {
 				if api == nil {
 					api = newAPI()
 				}
-				req := infoEndpointRequest(t, method, "/api/v1/info_label_values", tc.params)
+				req := infoEndpointRequest(t, method, "/api/v1/search/info_label_values", tc.params)
 				rec := httptest.NewRecorder()
 				api.infoLabelValues(rec, req)
 
@@ -1959,7 +2014,7 @@ func TestInfoLabels_WriteErrorMidStream(t *testing.T) {
 }
 
 func infoLabelsRequest(t *testing.T, method string, params url.Values) *http.Request {
-	return infoEndpointRequest(t, method, "/api/v1/info_labels", params)
+	return infoEndpointRequest(t, method, "/api/v1/search/info_labels", params)
 }
 
 // infoEndpointRequest builds a GET or form-encoded POST request.

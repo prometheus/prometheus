@@ -659,20 +659,22 @@ curl -g 'http://localhost:9090/api/v1/search/label_values?label=instance&match[]
 The experimental info-label endpoints support autocomplete for the second
 argument of the experimental `info()` PromQL function. They discover data
 labels on info metrics such as `target_info`; `__name__`, `job`, and `instance`
-are excluded. They are top-level endpoints because their `expr` scope,
-info-specific matchers, and dual `info()` feature gate are function-specific;
-reusing the search API's storage and NDJSON machinery does not make them
-general `/search/*` resources.
+are excluded. These are dedicated operations within the Search API family,
+sharing its storage and NDJSON infrastructure. Their separate routes keep the
+info-specific scope parameters and expression-dependent time semantics explicit.
 
 ```
-GET /api/v1/info_labels
-POST /api/v1/info_labels
-GET /api/v1/info_label_values
-POST /api/v1/info_label_values
+GET /api/v1/search/info_labels
+POST /api/v1/search/info_labels
+GET /api/v1/search/info_label_values
+POST /api/v1/search/info_label_values
 ```
 
 Both endpoints accept the common search parameters described above, except
-`match[]`. They additionally accept:
+`match[]`. The metric-name endpoint's `include_metadata` option enriches metrics
+with type, help, and unit; it is not part of the info-label request contract.
+Metadata enrichment for info-label results would need a separately defined
+source and schema. The info-label endpoints additionally accept:
 
 - `data_match[]=<matcher>`: Repeated full PromQL matcher copied from `info()`'s
   data-label selector, including its special `__name__` matcher. Multiple
@@ -701,11 +703,11 @@ Supplied timestamps must still be syntactically valid. Without `expr`, `start`
 and `end` directly bound the info-metric storage search and must not be
 inverted.
 
-`/api/v1/info_labels` applies `search[]` and `limit` to data-label names and
+`/api/v1/search/info_labels` applies `search[]` and `limit` to data-label names and
 streams `{name, score?}` records. It rejects the `label` parameter.
 
 ```bash
-curl -N -g 'http://localhost:9090/api/v1/info_labels?expr=http_requests_total{job="prometheus"}&data_match[]=__name__=~".+_info"&data_match[]=env="prod"&search[]=ver&sort_by=score'
+curl -N -g 'http://localhost:9090/api/v1/search/info_labels?expr=http_requests_total{job="prometheus"}&data_match[]=__name__=~".+_info"&data_match[]=env="prod"&search[]=ver&sort_by=score'
 ```
 
 ```json
@@ -713,13 +715,13 @@ curl -N -g 'http://localhost:9090/api/v1/info_labels?expr=http_requests_total{jo
 {"status":"success","has_more":false}
 ```
 
-`/api/v1/info_label_values` requires an exact decoded `label` parameter. It
+`/api/v1/search/info_label_values` requires an exact decoded `label` parameter. It
 applies `search[]` and `limit` to that label's values and streams
 `{value, score?}` records. Empty labels and the non-data labels `__name__`,
 `job`, and `instance` are rejected.
 
 ```bash
-curl -N -g 'http://localhost:9090/api/v1/info_label_values?label=version&expr=http_requests_total{job="prometheus"}&search[]=2.'
+curl -N -g 'http://localhost:9090/api/v1/search/info_label_values?label=version&expr=http_requests_total{job="prometheus"}&search[]=2.'
 ```
 
 ```json
@@ -735,10 +737,11 @@ or false value means the endpoint pair is unavailable.
 Requests containing `expr` are query operations: sample values can affect
 which labels are returned. They must receive the same authorization as
 `/api/v1/query`; deployments that cannot authorize based on request parameters
-should protect both routes as query surfaces. One deadline covers expression
-evaluation and storage search. Expiry before streaming returns a normal HTTP
-503 JSON timeout error; expiry after streaming starts produces a terminal
-NDJSON timeout error. Client cancellation may instead leave an abrupt EOF.
+should protect both routes as query surfaces.
+
+One deadline covers expression evaluation and storage search. Expiry before
+streaming returns a normal HTTP 503 JSON timeout error; expiry after streaming
+starts produces a terminal NDJSON timeout error. Client cancellation may instead leave an abrupt EOF.
 
 Their default result limit is 100, reduced when `--web.search.max-limit` is
 lower. Limits bound the endpoint's retained result state and wire output;

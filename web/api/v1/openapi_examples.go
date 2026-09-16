@@ -628,7 +628,7 @@ func labelValuesResponseExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
-// infoLabelsResponseExamples returns NDJSON name examples for /info_labels.
+// infoLabelsResponseExamples returns NDJSON name examples for /search/info_labels.
 func infoLabelsResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
 
@@ -645,7 +645,7 @@ func infoLabelsResponseExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
-// infoLabelsPostExamples returns examples for POST /info_labels endpoint.
+// infoLabelsPostExamples returns examples for POST /search/info_labels endpoint.
 func infoLabelsPostExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
 

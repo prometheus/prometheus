@@ -49,9 +49,10 @@ This returns metrics enriched with their `target_info` labels.
 
 ### 4. API Endpoint
 
-`/api/v1/info_labels` and `/api/v1/info_label_values` are top-level companion
-endpoints for `info()`. They reuse the experimental search API's storage and
-NDJSON infrastructure, but remain function-specific and are dual-gated behind
+`/api/v1/search/info_labels` and `/api/v1/search/info_label_values` are dedicated
+operations within the Search API family for `info()` autocomplete. They share
+its storage and NDJSON infrastructure, with distinct scope parameters and
+expression-dependent time semantics. Both endpoints are dual-gated behind
 `--enable-feature=search-api` (NDJSON + parsing infrastructure) and
 `--enable-feature=promql-experimental-functions` (the `info()` function
 itself — the endpoints' only consumer). The demo
@@ -62,19 +63,19 @@ the first batch:
 
 ```bash
 # Get all data labels from target_info
-curl -N 'http://localhost:9090/api/v1/info_labels'
+curl -N 'http://localhost:9090/api/v1/search/info_labels'
 # Stream:
 #   {"results":[{"name":"cluster"},...]}
 #   {"status":"success","has_more":false}
 
 # Restrict by an expression's identifying labels
-curl -N 'http://localhost:9090/api/v1/info_labels?expr=http_requests_total{job="api-gateway"}'
+curl -N 'http://localhost:9090/api/v1/search/info_labels?expr=http_requests_total{job="api-gateway"}'
 
 # Use a different info metric
-curl -N -g 'http://localhost:9090/api/v1/info_labels?data_match[]=__name__="build_info"'
+curl -N -g 'http://localhost:9090/api/v1/search/info_labels?data_match[]=__name__="build_info"'
 
 # Fetch and refine values for one exact data label
-curl -N 'http://localhost:9090/api/v1/info_label_values?label=cluster&search[]=us-'
+curl -N 'http://localhost:9090/api/v1/search/info_label_values?label=cluster&search[]=us-'
 ```
 
 ### 5. Search, Sort, and Score
@@ -86,19 +87,19 @@ from the shared search-api parameter set:
 
 ```bash
 # Exact match on "env"
-curl -N 'http://localhost:9090/api/v1/info_labels?search[]=env'
+curl -N 'http://localhost:9090/api/v1/search/info_labels?search[]=env'
 
 # Substring "ion" with score ordering (region scores higher than version)
-curl -N 'http://localhost:9090/api/v1/info_labels?search[]=ion&sort_by=score&include_score=true'
+curl -N 'http://localhost:9090/api/v1/search/info_labels?search[]=ion&sort_by=score&include_score=true'
 
 # OR-match: anything containing "env" OR "region"
-curl -N 'http://localhost:9090/api/v1/info_labels?search[]=env&search[]=region'
+curl -N 'http://localhost:9090/api/v1/search/info_labels?search[]=env&search[]=region'
 
 # Jaro-Winkler fuzzy match with a non-zero threshold
-curl -N 'http://localhost:9090/api/v1/info_labels?search[]=envi&fuzz_alg=jarowinkler&fuzz_threshold=80'
+curl -N 'http://localhost:9090/api/v1/search/info_labels?search[]=envi&fuzz_alg=jarowinkler&fuzz_threshold=80'
 
 # Combined with expr filtering
-curl -N 'http://localhost:9090/api/v1/info_labels?expr=http_requests_total{job="api-gateway"}&search[]=cl'
+curl -N 'http://localhost:9090/api/v1/search/info_labels?expr=http_requests_total{job="api-gateway"}&search[]=cl'
 ```
 
 ## Test Data

@@ -184,9 +184,9 @@ func runInfoCancellation(tb testing.TB, queryable storage.SampleAndChunkQueryabl
 	trace := &infoCancelTrace{stage: stage, cancel: cancel}
 	_, engine, handler := newInfoBenchAPI(infoCancelQueryable{SampleAndChunkQueryable: queryable, trace: trace})
 	defer func() { require.NoError(tb, engine.Close()) }()
-	path := "/api/v1/info_labels"
+	path := "/api/v1/search/info_labels"
 	if values {
-		path = "/api/v1/info_label_values"
+		path = "/api/v1/search/info_label_values"
 	}
 	params := c.params(values)
 	request := httptest.NewRequestWithContext(ctx, method, path+"?"+params.Encode(), http.NoBody)

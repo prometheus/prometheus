@@ -72,33 +72,50 @@ describe('HTTPPrometheusClient info-label NDJSON parsing', () => {
     expect(result).toEqual({ results: ['env', 'region'], hasMore: false });
   });
 
-  it('uses the exact label and typed search without a client-selected limit', async () => {
-    let requestURL = '';
-    const client = new HTTPPrometheusClient({
-      url: 'http://localhost:8080',
-      httpMethod: 'GET',
-      fetchFn: (input) => {
-        requestURL = String(input);
-        return Promise.resolve(ndjsonResponse(['{"results":[{"value":"prod"}]}\n', '{"status":"success","has_more":false}\n']));
-      },
-    });
-
-    await expect(
-      client.infoLabelValues('k8s.cluster', {
+  describe.each(['GET', 'POST'] as const)('%s request routing', (httpMethod) => {
+    it.each([
+      { name: 'default API prefix', apiPrefix: undefined, expectedPrefix: '/api/v1' },
+      { name: 'custom API prefix', apiPrefix: '/prometheus/api/v1', expectedPrefix: '/prometheus/api/v1' },
+    ])('uses the search endpoints with $name', async ({ apiPrefix, expectedPrefix }) => {
+      const requests: { url: URL; init?: RequestInit }[] = [];
+      const client = new HTTPPrometheusClient({
+        url: 'http://localhost:8080',
+        httpMethod,
+        apiPrefix,
+        fetchFn: (input, init) => {
+          requests.push({ url: new URL(String(input)), init });
+          const record = requests.length === 1 ? { name: 'k8s.cluster' } : { value: 'prod' };
+          return Promise.resolve(ndjsonResponse([JSON.stringify({ results: [record] }) + '\n', '{"status":"success","has_more":false}\n']));
+        },
+      });
+      const request = {
         expr: 'up',
         dataMatches: ['__name__=~".*_info"', '__name__!~"build.*"', 'env="prod"'],
         search: 'pr',
-      })
-    ).resolves.toEqual({
-      results: ['prod'],
-      hasMore: false,
+      };
+
+      await expect(client.infoLabelNames(request)).resolves.toEqual({ results: ['k8s.cluster'], hasMore: false });
+      await expect(client.infoLabelValues('k8s.cluster', request)).resolves.toEqual({ results: ['prod'], hasMore: false });
+      expect(requests).toHaveLength(2);
+      for (const [i, endpoint] of ['info_labels', 'info_label_values'].entries()) {
+        const { url, init } = requests[i];
+        expect(url.origin).toBe('http://localhost:8080');
+        expect(url.pathname).toBe(`${expectedPrefix}/search/${endpoint}`);
+        expect(init?.method).toBe(httpMethod);
+        const params = httpMethod === 'GET' ? url.searchParams : new URLSearchParams(String(init?.body));
+        if (httpMethod === 'POST') {
+          expect(url.search).toBe('');
+        } else {
+          expect(init?.body).toBeNull();
+        }
+        expect(params.get('label')).toBe(i === 0 ? null : 'k8s.cluster');
+        expect(params.get('expr')).toBe('up');
+        expect(params.get('search[]')).toBe('pr');
+        expect(params.getAll('data_match[]')).toEqual(request.dataMatches);
+        expect(params.has('limit')).toBe(false);
+        expect(params.has('match[]')).toBe(false);
+      }
     });
-    const url = new URL(requestURL);
-    expect(url.pathname).toBe('/api/v1/info_label_values');
-    expect(url.searchParams.get('label')).toBe('k8s.cluster');
-    expect(url.searchParams.get('search[]')).toBe('pr');
-    expect(url.searchParams.getAll('data_match[]')).toEqual(['__name__=~".*_info"', '__name__!~"build.*"', 'env="prod"']);
-    expect(url.searchParams.has('limit')).toBe(false);
   });
 
   it('surfaces an in-band errorType line as a rejected Promise to the error handler', async () => {

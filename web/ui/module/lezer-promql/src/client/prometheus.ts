@@ -456,11 +456,11 @@ export class HTTPPrometheusClient implements PrometheusClient {
   }
 
   private infoLabelsEndpoint(): string {
-    return `${this.apiPrefix}/info_labels`;
+    return `${this.apiPrefix}/search/info_labels`;
   }
 
   private infoLabelValuesEndpoint(): string {
-    return `${this.apiPrefix}/info_label_values`;
+    return `${this.apiPrefix}/search/info_label_values`;
   }
 }
 
