@@ -30,8 +30,9 @@ import (
 )
 
 // relabelLabels applies cfgs to l and reports whether the series should be
-// kept. An invalid result (e.g. missing __name__) is also treated as dropped.
-func relabelLabels(l labels.Labels, cfgs []*relabel.Config) (labels.Labels, bool) {
+// kept. A result missing __name__, or invalid under validationScheme, is
+// also treated as dropped.
+func relabelLabels(l labels.Labels, cfgs []*relabel.Config, validationScheme model.ValidationScheme) (labels.Labels, bool) {
 	if len(cfgs) == 0 {
 		return l, true
 	}
@@ -40,7 +41,7 @@ func relabelLabels(l labels.Labels, cfgs []*relabel.Config) (labels.Labels, bool
 		return labels.EmptyLabels(), false
 	}
 	result := lb.Labels()
-	if !result.Has(labels.MetricName) || !result.IsValid(model.UTF8Validation) {
+	if !result.Has(labels.MetricName) || !result.IsValid(validationScheme) {
 		return labels.EmptyLabels(), false
 	}
 	return result, true
@@ -75,7 +76,7 @@ func NewRelabelCache() *RelabelCache {
 	return &RelabelCache{}
 }
 
-func (c *RelabelCache) relabel(l labels.Labels, cfgs []*relabel.Config) (labels.Labels, bool) {
+func (c *RelabelCache) relabel(l labels.Labels, cfgs []*relabel.Config, validationScheme model.ValidationScheme) (labels.Labels, bool) {
 	if len(cfgs) == 0 {
 		return l, true
 	}
@@ -93,7 +94,7 @@ func (c *RelabelCache) relabel(l labels.Labels, cfgs []*relabel.Config) (labels.
 	}
 	c.mu.RUnlock()
 
-	result, keep := relabelLabels(l, cfgs)
+	result, keep := relabelLabels(l, cfgs, validationScheme)
 
 	c.mu.Lock()
 	switch {
@@ -141,22 +142,25 @@ type relabelingAppendable struct {
 }
 
 func (a *relabelingAppendable) Appender(ctx context.Context) storage.Appender {
+	cfg := a.configFunc()
 	return &relabelingAppender{
-		Appender: a.next.Appender(ctx),
-		configs:  a.configFunc().ReceiveRelabelConfigs,
-		cache:    a.cache,
+		Appender:         a.next.Appender(ctx),
+		configs:          cfg.ReceiveRelabelConfigs,
+		validationScheme: cfg.GlobalConfig.MetricNameValidationScheme,
+		cache:            a.cache,
 	}
 }
 
 type relabelingAppender struct {
 	storage.Appender
 
-	configs []*relabel.Config
-	cache   *RelabelCache
+	configs          []*relabel.Config
+	validationScheme model.ValidationScheme
+	cache            *RelabelCache
 }
 
 func (a *relabelingAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	nl, keep := a.cache.relabel(l, a.configs)
+	nl, keep := a.cache.relabel(l, a.configs, a.validationScheme)
 	if !keep {
 		return ref, nil
 	}
@@ -164,7 +168,7 @@ func (a *relabelingAppender) Append(ref storage.SeriesRef, l labels.Labels, t in
 }
 
 func (a *relabelingAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
-	nl, keep := a.cache.relabel(l, a.configs)
+	nl, keep := a.cache.relabel(l, a.configs, a.validationScheme)
 	if !keep {
 		return ref, nil
 	}
@@ -172,7 +176,7 @@ func (a *relabelingAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labe
 }
 
 func (a *relabelingAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	nl, keep := a.cache.relabel(l, a.configs)
+	nl, keep := a.cache.relabel(l, a.configs, a.validationScheme)
 	if !keep {
 		return ref, nil
 	}
@@ -180,7 +184,7 @@ func (a *relabelingAppender) AppendHistogram(ref storage.SeriesRef, l labels.Lab
 }
 
 func (a *relabelingAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.Labels, t, st int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	nl, keep := a.cache.relabel(l, a.configs)
+	nl, keep := a.cache.relabel(l, a.configs, a.validationScheme)
 	if !keep {
 		return ref, nil
 	}
@@ -188,7 +192,7 @@ func (a *relabelingAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, 
 }
 
 func (a *relabelingAppender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t, st int64) (storage.SeriesRef, error) {
-	nl, keep := a.cache.relabel(l, a.configs)
+	nl, keep := a.cache.relabel(l, a.configs, a.validationScheme)
 	if !keep {
 		return ref, nil
 	}
@@ -196,7 +200,7 @@ func (a *relabelingAppender) AppendSTZeroSample(ref storage.SeriesRef, l labels.
 }
 
 func (a *relabelingAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
-	nl, keep := a.cache.relabel(l, a.configs)
+	nl, keep := a.cache.relabel(l, a.configs, a.validationScheme)
 	if !keep {
 		return ref, nil
 	}
@@ -216,22 +220,25 @@ type relabelingAppendableV2 struct {
 }
 
 func (a *relabelingAppendableV2) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	cfg := a.configFunc()
 	return &relabelingAppenderV2{
-		AppenderV2: a.next.AppenderV2(ctx),
-		configs:    a.configFunc().ReceiveRelabelConfigs,
-		cache:      a.cache,
+		AppenderV2:       a.next.AppenderV2(ctx),
+		configs:          cfg.ReceiveRelabelConfigs,
+		validationScheme: cfg.GlobalConfig.MetricNameValidationScheme,
+		cache:            a.cache,
 	}
 }
 
 type relabelingAppenderV2 struct {
 	storage.AppenderV2
 
-	configs []*relabel.Config
-	cache   *RelabelCache
+	configs          []*relabel.Config
+	validationScheme model.ValidationScheme
+	cache            *RelabelCache
 }
 
 func (a *relabelingAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
-	nl, keep := a.cache.relabel(ls, a.configs)
+	nl, keep := a.cache.relabel(ls, a.configs, a.validationScheme)
 	if !keep {
 		return ref, nil
 	}

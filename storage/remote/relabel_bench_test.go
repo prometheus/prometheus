@@ -44,7 +44,7 @@ func BenchmarkRelabel_Uncached(b *testing.B) {
 		b.Run(nRulesName(n), func(b *testing.B) {
 			b.ReportAllocs()
 			for range b.N {
-				relabelLabels(l, cfgs)
+				relabelLabels(l, cfgs, model.UTF8Validation)
 			}
 		})
 	}
@@ -56,11 +56,11 @@ func BenchmarkRelabel_CacheSteadyState(b *testing.B) {
 		cfgs := benchRelabelConfigs(n)
 		b.Run(nRulesName(n), func(b *testing.B) {
 			cache := NewRelabelCache()
-			cache.relabel(l, cfgs)
+			cache.relabel(l, cfgs, model.UTF8Validation)
 
 			b.ReportAllocs()
 			for range b.N {
-				cache.relabel(l, cfgs)
+				cache.relabel(l, cfgs, model.UTF8Validation)
 			}
 		})
 	}
@@ -72,12 +72,12 @@ func BenchmarkRelabel_CacheSteadyStateParallel(b *testing.B) {
 		cfgs := benchRelabelConfigs(n)
 		b.Run(nRulesName(n), func(b *testing.B) {
 			cache := NewRelabelCache()
-			cache.relabel(l, cfgs)
+			cache.relabel(l, cfgs, model.UTF8Validation)
 
 			b.ReportAllocs()
 			b.RunParallel(func(pb *testing.PB) {
 				for pb.Next() {
-					cache.relabel(l, cfgs)
+					cache.relabel(l, cfgs, model.UTF8Validation)
 				}
 			})
 		})

@@ -51,11 +51,24 @@ var (
 		Action:               relabel.LabelDrop,
 		NameValidationScheme: model.UTF8Validation,
 	}}
+	// relabelTestLegacyDottedNameConfig rewrites __name__ to a value containing
+	// a dot, valid under UTF-8 validation but not under legacy validation.
+	relabelTestLegacyDottedNameConfig = []*relabel.Config{{
+		SourceLabels:         model.LabelNames{"__name__"},
+		Regex:                relabel.MustNewRegexp("(.*)"),
+		TargetLabel:          "__name__",
+		Replacement:          "${1}.suffix",
+		Action:               relabel.Replace,
+		NameValidationScheme: model.LegacyValidation,
+	}}
 )
 
-func relabelTestConfigFunc(cfgs []*relabel.Config) func() config.Config {
+func relabelTestConfigFunc(cfgs []*relabel.Config, validationScheme model.ValidationScheme) func() config.Config {
 	return func() config.Config {
-		return config.Config{ReceiveRelabelConfigs: cfgs}
+		return config.Config{
+			GlobalConfig:          config.GlobalConfig{MetricNameValidationScheme: validationScheme},
+			ReceiveRelabelConfigs: cfgs,
+		}
 	}
 }
 
@@ -67,18 +80,20 @@ func TestNewRelabelingAppendable(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		configs     []*relabel.Config
+		scheme      model.ValidationScheme
 		in          labels.Labels
 		wantDropped bool
 		wantLabels  labels.Labels
 	}{
-		{name: "no configs, passthrough", configs: nil, in: keepLabels, wantLabels: keepLabels},
-		{name: "kept and relabeled", configs: relabelTestRewriteConfig, in: keepLabels, wantLabels: relabeledLabels},
-		{name: "dropped", configs: relabelTestDropConfig, in: dropLabels, wantDropped: true},
-		{name: "dropped because result loses __name__", configs: relabelTestStripNameConfig, in: keepLabels, wantDropped: true},
+		{name: "no configs, passthrough", configs: nil, scheme: model.UTF8Validation, in: keepLabels, wantLabels: keepLabels},
+		{name: "kept and relabeled", configs: relabelTestRewriteConfig, scheme: model.UTF8Validation, in: keepLabels, wantLabels: relabeledLabels},
+		{name: "dropped", configs: relabelTestDropConfig, scheme: model.UTF8Validation, in: dropLabels, wantDropped: true},
+		{name: "dropped because result loses __name__", configs: relabelTestStripNameConfig, scheme: model.UTF8Validation, in: keepLabels, wantDropped: true},
+		{name: "dropped because result is invalid under the configured legacy validation scheme", configs: relabelTestLegacyDottedNameConfig, scheme: model.LegacyValidation, in: keepLabels, wantDropped: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			appendable := teststorage.NewAppendable()
-			wrapped := NewRelabelingAppendable(appendable, relabelTestConfigFunc(tc.configs), NewRelabelCache())
+			wrapped := NewRelabelingAppendable(appendable, relabelTestConfigFunc(tc.configs, tc.scheme), NewRelabelCache())
 			app := wrapped.Appender(context.Background())
 
 			ref, err := app.Append(0, tc.in, 10, 1)
@@ -111,18 +126,20 @@ func TestNewRelabelingAppendableV2(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		configs     []*relabel.Config
+		scheme      model.ValidationScheme
 		in          labels.Labels
 		wantDropped bool
 		wantLabels  labels.Labels
 	}{
-		{name: "no configs, passthrough", configs: nil, in: keepLabels, wantLabels: keepLabels},
-		{name: "kept and relabeled", configs: relabelTestRewriteConfig, in: keepLabels, wantLabels: relabeledLabels},
-		{name: "dropped", configs: relabelTestDropConfig, in: dropLabels, wantDropped: true},
-		{name: "dropped because result loses __name__", configs: relabelTestStripNameConfig, in: keepLabels, wantDropped: true},
+		{name: "no configs, passthrough", configs: nil, scheme: model.UTF8Validation, in: keepLabels, wantLabels: keepLabels},
+		{name: "kept and relabeled", configs: relabelTestRewriteConfig, scheme: model.UTF8Validation, in: keepLabels, wantLabels: relabeledLabels},
+		{name: "dropped", configs: relabelTestDropConfig, scheme: model.UTF8Validation, in: dropLabels, wantDropped: true},
+		{name: "dropped because result loses __name__", configs: relabelTestStripNameConfig, scheme: model.UTF8Validation, in: keepLabels, wantDropped: true},
+		{name: "dropped because result is invalid under the configured legacy validation scheme", configs: relabelTestLegacyDottedNameConfig, scheme: model.LegacyValidation, in: keepLabels, wantDropped: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			appendable := teststorage.NewAppendable()
-			wrapped := NewRelabelingAppendableV2(appendable, relabelTestConfigFunc(tc.configs), NewRelabelCache())
+			wrapped := NewRelabelingAppendableV2(appendable, relabelTestConfigFunc(tc.configs, tc.scheme), NewRelabelCache())
 			app := wrapped.AppenderV2(context.Background())
 
 			_, err := app.Append(0, tc.in, 0, 10, 1, nil, nil, storage.AOptions{
@@ -151,7 +168,7 @@ func TestRelabelCache(t *testing.T) {
 
 	t.Run("caches and reuses result for the same config generation", func(t *testing.T) {
 		cache := NewRelabelCache()
-		result1, keep1 := cache.relabel(l, relabelTestRewriteConfig)
+		result1, keep1 := cache.relabel(l, relabelTestRewriteConfig, model.UTF8Validation)
 		require.True(t, keep1)
 
 		cache.mu.RLock()
@@ -161,14 +178,14 @@ func TestRelabelCache(t *testing.T) {
 		require.True(t, labels.Equal(entry.orig, l))
 		require.True(t, labels.Equal(entry.result, result1))
 
-		result2, keep2 := cache.relabel(l, relabelTestRewriteConfig)
+		result2, keep2 := cache.relabel(l, relabelTestRewriteConfig, model.UTF8Validation)
 		require.Equal(t, keep1, keep2)
 		require.True(t, labels.Equal(result1, result2))
 	})
 
 	t.Run("invalidates on a new config generation", func(t *testing.T) {
 		cache := NewRelabelCache()
-		result1, _ := cache.relabel(l, relabelTestRewriteConfig)
+		result1, _ := cache.relabel(l, relabelTestRewriteConfig, model.UTF8Validation)
 
 		reloaded := []*relabel.Config{{
 			SourceLabels:         relabelTestRewriteConfig[0].SourceLabels,
@@ -178,7 +195,7 @@ func TestRelabelCache(t *testing.T) {
 			Action:               relabelTestRewriteConfig[0].Action,
 			NameValidationScheme: relabelTestRewriteConfig[0].NameValidationScheme,
 		}}
-		result2, _ := cache.relabel(l, reloaded)
+		result2, _ := cache.relabel(l, reloaded, model.UTF8Validation)
 		require.True(t, labels.Equal(result1, result2))
 
 		cache.mu.RLock()
@@ -191,7 +208,7 @@ func TestRelabelCache(t *testing.T) {
 		cache := NewRelabelCache()
 		const overflowBy = 10
 		for i := range relabelCacheMaxEntries + overflowBy {
-			cache.relabel(labels.FromStrings("__name__", "m", "i", strconv.Itoa(i)), relabelTestRewriteConfig)
+			cache.relabel(labels.FromStrings("__name__", "m", "i", strconv.Itoa(i)), relabelTestRewriteConfig, model.UTF8Validation)
 		}
 
 		cache.mu.RLock()
@@ -204,14 +221,14 @@ func TestRelabelCache(t *testing.T) {
 		cache := NewRelabelCache()
 		hot := labels.FromStrings("__name__", "m", "kind", "hot")
 		cold := labels.FromStrings("__name__", "m", "kind", "cold")
-		cache.relabel(hot, relabelTestRewriteConfig)
-		cache.relabel(cold, relabelTestRewriteConfig)
+		cache.relabel(hot, relabelTestRewriteConfig, model.UTF8Validation)
+		cache.relabel(cold, relabelTestRewriteConfig, model.UTF8Validation)
 		for i := range relabelCacheMaxEntries - 2 {
-			cache.relabel(labels.FromStrings("__name__", "m", "pad", strconv.Itoa(i)), relabelTestRewriteConfig)
+			cache.relabel(labels.FromStrings("__name__", "m", "pad", strconv.Itoa(i)), relabelTestRewriteConfig, model.UTF8Validation)
 		}
-		cache.relabel(hot, relabelTestRewriteConfig) // reused since insertion.
+		cache.relabel(hot, relabelTestRewriteConfig, model.UTF8Validation) // reused since insertion.
 
-		cache.relabel(labels.FromStrings("__name__", "m", "kind", "trigger"), relabelTestRewriteConfig) // overflows, sweeps.
+		cache.relabel(labels.FromStrings("__name__", "m", "kind", "trigger"), relabelTestRewriteConfig, model.UTF8Validation) // overflows, sweeps.
 
 		cache.mu.RLock()
 		_, hotSurvived := cache.entries[hot.Hash()]
@@ -246,7 +263,7 @@ func TestRelabelCache_ConcurrentAccess(t *testing.T) {
 		wg.Go(func() {
 			for i := range iterations {
 				l := labels.FromStrings("__name__", "keep_me", "env", "prod", "shard", strconv.Itoa(i%5))
-				result, keep := cache.relabel(l, relabelTestRewriteConfig)
+				result, keep := cache.relabel(l, relabelTestRewriteConfig, model.UTF8Validation)
 				require.True(t, keep)
 				require.True(t, result.Has("environment"))
 			}
@@ -257,7 +274,7 @@ func TestRelabelCache_ConcurrentAccess(t *testing.T) {
 
 func TestRelabelCache_SharedAcrossV1AndV2(t *testing.T) {
 	cache := NewRelabelCache()
-	configFunc := relabelTestConfigFunc(relabelTestRewriteConfig)
+	configFunc := relabelTestConfigFunc(relabelTestRewriteConfig, model.UTF8Validation)
 
 	v1 := NewRelabelingAppendable(teststorage.NewAppendable(), configFunc, cache)
 	v2Appendable := teststorage.NewAppendable()
