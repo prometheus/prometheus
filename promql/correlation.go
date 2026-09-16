@@ -27,12 +27,26 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// Correlation method constants.
+// correlation_over_time method names.
 const (
-	correlationPearson  = 0
-	correlationSpearman = 1
-	correlationKendall  = 2
+	correlationMethodPearson  = "pearson"
+	correlationMethodSpearman = "spearman"
+	correlationMethodKendall  = "kendall"
 )
+
+// parseCorrelationMethod resolves the method argument to one of the supported
+// coefficient names. An empty string selects the default, so an explicit ""
+// behaves like omitting the argument. It returns ok=false for an unknown
+// method.
+func parseCorrelationMethod(s string) (method string, ok bool) {
+	switch s {
+	case "":
+		return correlationMethodPearson, true
+	case correlationMethodPearson, correlationMethodSpearman, correlationMethodKendall:
+		return s, true
+	}
+	return s, false
+}
 
 // maxKendallCorrelationPairs is the soft warning threshold for Kendall's
 // naive O(n²) implementation.
@@ -197,43 +211,55 @@ func fractionalRanks(vals []float64) []float64 {
 }
 
 // evalCorrelationOverTime implements the correlation_over_time PromQL
-// function. It takes two range vectors and an optional method scalar
-// (0=Pearson, 1=Spearman, 2=Kendall tau-b; defaults to Pearson), pairs
-// series across the two selectors by exact match on all labels except
-// __name__, and at each evaluation step returns the correlation
-// coefficient over the float samples whose timestamps appear in both
-// range windows (see alignByTimestamp).
+// function. It takes two range vectors, an optional method string
+// ("pearson" (the default), "spearman" or "kendall"), and an
+// optional `on` comma-separated label list. Series across the two selectors
+// are paired by exact match on all labels except __name__ by default, or by
+// exactly the `on` labels when given — letting series with differing extra
+// labels (different metrics, different label schemas) still pair, as long as
+// they agree on the `on` labels. At each evaluation step it returns the
+// correlation coefficient over the float samples whose timestamps appear in
+// both range windows (see alignByTimestamp).
 //
 // The result is NaN when a window has fewer than 2 paired samples or
 // when the variance is zero (constant series, single distinct value,
 // or all-tied pairs for Kendall). Histogram samples are skipped and
 // do not contribute to the correlation. Series without a matching pair
-// in the second selector are silently dropped from the output. When
-// multiple series in the second selector match the same label signature
-// the first encountered series is used and a PromQL warning annotation
-// is emitted (pairing is non-deterministic in that case).
+// in the second selector are silently dropped from the output. Multiple
+// series in the FIRST selector matching the same second-selector series is
+// normal fan-out (e.g. several first-selector series correlated against one
+// shared second-selector series) and is not treated as ambiguous. But when
+// multiple series in the SECOND selector match the same signature, the pair
+// is ambiguous — which one should the first selector's series pair against?
+// — so the whole pair is skipped (not picked arbitrarily) and a PromQL
+// warning annotation is emitted once.
 //
-// An invalid method (anything other than 0/1/2, including NaN) yields
-// NaN for every step and a PromQL warning annotation. Kendall is naive
-// O(n^2); large range windows can be expensive.
+// An unknown method yields an empty result and a PromQL warning
+// annotation, mirroring lm_over_time. Kendall is naive O(n^2); large range
+// windows can be expensive.
 func (ev *evaluator) evalCorrelationOverTime(ctx context.Context, e *parser.Call) (parser.Value, annotations.Annotations) {
 	var warnings annotations.Annotations
 
-	// Evaluate the optional method argument. Scalar expressions produce one
-	// sample per query step, so validation happens inside the step loop.
-	var methodMat Matrix
-	methodHasArg := len(e.Args) > 2
-	if methodHasArg {
-		val, ws := ev.eval(ctx, e.Args[2])
-		warnings.Merge(ws)
+	// Optional method argument, resolved once up front. methodPos is where
+	// method-related annotations point; the argument may be absent.
+	method := correlationMethodPearson
+	methodPos := e.PositionRange()
+	if len(e.Args) > 2 {
+		methodPos = e.Args[2].PositionRange()
+		methodArg := stringFromArg(e.Args[2])
 		var ok bool
-		methodMat, ok = val.(Matrix)
+		method, ok = parseCorrelationMethod(methodArg)
 		if !ok {
-			ev.error(errWithWarnings{
-				fmt.Errorf("correlation_over_time: expected scalar method argument, got %T", val),
-				warnings,
-			})
+			warnings.Add(annotations.NewInvalidCorrelationMethodWarning(methodArg, methodPos))
+			return Matrix{}, warnings
 		}
+	}
+
+	// Optional `on` label list, narrowing/widening the pairing key from the
+	// default (all labels except __name__) to exactly these labels.
+	var on []string
+	if len(e.Args) > 3 {
+		on = parseOnLabels(stringFromArg(e.Args[3]))
 	}
 
 	// Each range-vector argument can be either a MatrixSelector (e.g.
@@ -274,24 +300,28 @@ func (ev *evaluator) evalCorrelationOverTime(ctx context.Context, e *parser.Call
 	vs0 := sel0.VectorSelector.(*parser.VectorSelector)
 	vs1 := sel1.VectorSelector.(*parser.VectorSelector)
 
-	// Build a map from label-signature (without __name__) to series index for
-	// the second selector. Reuse a single byte buffer across hash calls to
-	// avoid per-series allocations. Collisions are warned (non-deterministic
-	// pairing) and the first series wins.
+	// Build a map from matching signature to series index for the second
+	// selector. Reuse a single byte buffer across hash calls to avoid
+	// per-series allocations. A signature matched by more than one series is
+	// ambiguous — which one should pair with the first selector? — so it is
+	// excluded from sig1Map entirely (skip the whole pair) rather than
+	// guessing, with a single warning per ambiguous signature.
 	sig1Map := make(map[uint64]int, len(vs1.Series))
-	ambiguousReported := make(map[uint64]struct{})
+	ambiguousSig1 := make(map[uint64]struct{})
 	var hashBuf []byte
 	for i, s := range vs1.Series {
 		var sig uint64
-		sig, hashBuf = s.Labels().HashWithoutLabels(hashBuf, model.MetricNameLabel)
+		sig, hashBuf = matchSig(s.Labels(), hashBuf, on, model.MetricNameLabel)
+		if _, amb := ambiguousSig1[sig]; amb {
+			continue // Already known-ambiguous; warned once already.
+		}
 		if _, dup := sig1Map[sig]; dup {
-			if _, seen := ambiguousReported[sig]; !seen {
-				ambiguousReported[sig] = struct{}{}
-				warnings.Add(annotations.NewAmbiguousCorrelationPairWarning(
-					s.Labels().DropReserved(schema.IsMetadataLabel).String(),
-					e.Args[1].PositionRange(),
-				))
-			}
+			delete(sig1Map, sig)
+			ambiguousSig1[sig] = struct{}{}
+			warnings.Add(annotations.NewAmbiguousCorrelationPairWarning(
+				s.Labels().DropReserved(schema.IsMetadataLabel).String(),
+				e.Args[1].PositionRange(),
+			))
 			continue
 		}
 		sig1Map[sig] = i
@@ -314,7 +344,7 @@ func (ev *evaluator) evalCorrelationOverTime(ctx context.Context, e *parser.Call
 	// Process each series from the first selector and find its pair.
 	for _, s0 := range vs0.Series {
 		var sig uint64
-		sig, hashBuf = s0.Labels().HashWithoutLabels(hashBuf, model.MetricNameLabel)
+		sig, hashBuf = matchSig(s0.Labels(), hashBuf, on, model.MetricNameLabel)
 		j, ok := sig1Map[sig]
 		if !ok {
 			continue // No matching pair in the second selector.
@@ -364,37 +394,25 @@ func (ev *evaluator) evalCorrelationOverTime(ctx context.Context, e *parser.Call
 				warnings.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, e.Args[0].PositionRange()))
 			}
 
-			method := float64(correlationPearson)
-			if methodHasArg && len(methodMat) > 0 && len(methodMat[0].Floats) > step {
-				method = methodMat[0].Floats[step].F
-			}
-			validMethod := method == correlationPearson || method == correlationSpearman || method == correlationKendall
-			if !validMethod && methodHasArg {
-				warnings.Add(annotations.NewInvalidCorrelationMethodWarning(method, e.Args[2].PositionRange()))
-			}
-
 			if len(floats0) == 0 || len(floats1) == 0 {
 				continue
 			}
 
 			var r float64
-			if !validMethod || len(floats0) < 2 || len(floats1) < 2 {
+			if len(floats0) < 2 || len(floats1) < 2 {
 				r = math.NaN()
 			} else {
 				x, y := alignByTimestamp(floats0, floats1)
 				switch method {
-				case correlationPearson:
+				case correlationMethodPearson:
 					r = pearsonOnSlices(x, y)
-				case correlationSpearman:
+				case correlationMethodSpearman:
 					r = pearsonOnSlices(fractionalRanks(x), fractionalRanks(y))
-				case correlationKendall:
+				case correlationMethodKendall:
 					nPairs := len(x) * (len(x) - 1) / 2
 					if nPairs > maxKendallCorrelationPairs && !largeKendallRangeSeen {
 						largeKendallRangeSeen = true
-						warnings.Add(annotations.NewLargeKendallCorrelationRangeInfo(
-							nPairs,
-							e.Args[2].PositionRange(),
-						))
+						warnings.Add(annotations.NewLargeKendallCorrelationRangeInfo(nPairs, methodPos))
 					}
 					r = kendallOnSlices(x, y)
 				}

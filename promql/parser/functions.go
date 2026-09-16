@@ -102,8 +102,8 @@ var Functions = map[string]*Function{
 	},
 	"correlation_over_time": {
 		Name:         "correlation_over_time",
-		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeMatrix, ValueTypeScalar},
-		Variadic:     1,
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeMatrix, ValueTypeString},
+		Variadic:     2,
 		ReturnType:   ValueTypeVector,
 		Experimental: true,
 	},
@@ -295,8 +295,14 @@ var Functions = map[string]*Function{
 		ReturnType: ValueTypeVector,
 	},
 	"lm_over_time": {
-		Name:         "lm_over_time",
-		ArgTypes:     []ValueType{ValueTypeString, ValueTypeMatrix, ValueTypeMatrix, ValueTypeString, ValueTypeScalar},
+		Name: "lm_over_time",
+		// on is required (like labelName) rather than an optional trailing
+		// arg, because it sits before the two genuinely-optional trailing
+		// scalars (lambda, halflife) and the parser's Variadic mechanism
+		// supports only one optional trailing type. Pass on="" for "no
+		// restriction" (the previous implicit default) when supplying
+		// lambda or halflife.
+		ArgTypes:     []ValueType{ValueTypeString, ValueTypeMatrix, ValueTypeMatrix, ValueTypeString, ValueTypeString, ValueTypeScalar},
 		Variadic:     2,
 		ReturnType:   ValueTypeVector,
 		Experimental: true,

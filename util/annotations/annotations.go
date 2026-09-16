@@ -154,8 +154,8 @@ var (
 	NativeHistogramNotGaugeWarning          = fmt.Errorf("%w: this native histogram metric is not a gauge:", PromQLWarning)
 	MixedExponentialCustomHistogramsWarning = fmt.Errorf("%w: vector contains a mix of histograms with exponential and custom buckets schemas for metric name", PromQLWarning)
 	IncompatibleBucketLayoutInBinOpWarning  = fmt.Errorf("%w: incompatible bucket layout encountered for binary operator", PromQLWarning)
-	InvalidCorrelationMethodWarning         = fmt.Errorf("%w: correlation method must be 0 (Pearson), 1 (Spearman) or 2 (Kendall)", PromQLWarning)
-	AmbiguousCorrelationPairWarning         = fmt.Errorf("%w: correlation_over_time: multiple series in the second range vector match the same label signature; pairing is non-deterministic", PromQLWarning)
+	InvalidCorrelationMethodWarning         = fmt.Errorf("%w: correlation_over_time method must be \"pearson\", \"spearman\" or \"kendall\"", PromQLWarning)
+	AmbiguousCorrelationPairWarning         = fmt.Errorf("%w: correlation_over_time: multiple series in the second range vector match the same label signature; the pair is skipped", PromQLWarning)
 	LargeKendallCorrelationRangeInfo        = fmt.Errorf("%w: correlation_over_time: Kendall correlation is O(n²) and this range has many paired samples", PromQLInfo)
 	InvalidRegressionOutputWarning          = fmt.Errorf("%w: regression_over_time output must be 0 (slope), 1 (intercept), 2 (prediction) or 3 (r2)", PromQLWarning)
 	InvalidRegressionLinkWarning            = fmt.Errorf("%w: regression_over_time link must be 0 (identity) or 1 (log)", PromQLWarning)
@@ -163,7 +163,8 @@ var (
 	NonPositiveRegressionLogValueInfo       = fmt.Errorf("%w: regression_over_time: log link dropped samples with non-positive dependent values", PromQLInfo)
 	InvalidLMMethodWarning                  = fmt.Errorf("%w: lm_over_time method must be \"lm\" or \"ridge\"", PromQLWarning)
 	InvalidRidgeLambdaWarning               = fmt.Errorf("%w: lm_over_time: ridge method requires a lambda > 0", PromQLWarning)
-	AmbiguousLMResponseWarning              = fmt.Errorf("%w: lm_over_time: multiple response series match the same predictor group; pairing is non-deterministic", PromQLWarning)
+	AmbiguousLMResponseWarning              = fmt.Errorf("%w: lm_over_time: multiple response series match the same predictor group; group skipped", PromQLWarning)
+	AmbiguousLMPredictorValueWarning        = fmt.Errorf("%w: lm_over_time: two predictor series in the same group share the same pivot label value; group skipped", PromQLWarning)
 	ReservedLMInterceptLabelWarning         = fmt.Errorf("%w: lm_over_time: a predictor label value collides with the reserved \"(intercept)\" value; group skipped", PromQLWarning)
 	TooManyLMPredictorsWarning              = fmt.Errorf("%w: lm_over_time: predictor cardinality exceeds the supported maximum; group skipped", PromQLWarning)
 	RankDeficientLMDesignInfo               = fmt.Errorf("%w: lm_over_time: design matrix is rank deficient (collinear predictors or too few samples); coefficients are NaN", PromQLInfo)
@@ -253,19 +254,20 @@ func NewInvalidRatioWarning(q, to float64, pos posrange.PositionRange) error {
 	}
 }
 
-// NewInvalidCorrelationMethodWarning is used when the user specifies an invalid
-// correlation method value for correlation_over_time.
-func NewInvalidCorrelationMethodWarning(method float64, pos posrange.PositionRange) error {
+// NewInvalidCorrelationMethodWarning is used when the user specifies an
+// unknown correlation method name for correlation_over_time.
+func NewInvalidCorrelationMethodWarning(method string, pos posrange.PositionRange) error {
 	return &annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w, got %g", InvalidCorrelationMethodWarning, method),
+		Err:           fmt.Errorf("%w, got %q", InvalidCorrelationMethodWarning, method),
 	}
 }
 
 // NewAmbiguousCorrelationPairWarning is used when more than one series in the
-// second range vector of correlation_over_time matches the same label signature
-// (all labels except __name__) as a series from the first range vector, so the
-// pairing is non-deterministic.
+// second range vector of correlation_over_time matches the same matching
+// signature (all labels except __name__ by default, or exactly the `on`
+// labels when given) as a series from the first range vector; the ambiguous
+// pair is skipped rather than picked arbitrarily.
 func NewAmbiguousCorrelationPairWarning(labels string, pos posrange.PositionRange) error {
 	return &annoErr{
 		PositionRange: pos,
@@ -340,11 +342,27 @@ func NewInvalidRidgeLambdaWarning(lambda float64, pos posrange.PositionRange) er
 }
 
 // NewAmbiguousLMResponseWarning is used when more than one response series in
-// lm_over_time's first range vector matches the same predictor group signature.
+// lm_over_time's first range vector matches the same predictor group
+// signature (all labels except __name__ and labelName by default, or exactly
+// the `on` labels when given); the group is skipped rather than guessing
+// which response series to use.
 func NewAmbiguousLMResponseWarning(labels string, pos posrange.PositionRange) error {
 	return &annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w: %s", AmbiguousLMResponseWarning, labels),
+	}
+}
+
+// NewAmbiguousLMPredictorValueWarning is used when two predictor series
+// within the same lm_over_time group carry the same labelName pivot value —
+// typically because narrowing the matching key with `on` dropped the label
+// that used to distinguish them. The group is skipped: two design-matrix
+// columns with the same header would make the fitted coefficient for that
+// pivot value meaningless.
+func NewAmbiguousLMPredictorValueWarning(group, value string, pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w: group %s, value %q", AmbiguousLMPredictorValueWarning, group, value),
 	}
 }
 

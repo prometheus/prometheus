@@ -705,15 +705,20 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
 
       <p>
-        <code>correlation_over_time(a range-vector, b range-vector, method=0 scalar)</code>
+        <code>
+          correlation_over_time(a range-vector, b range-vector, method=&quot;pearson&quot; string, on=&quot;&quot;
+          string)
+        </code>
         returns the correlation coefficient between paired float samples of <code>a</code> and
         <code>b</code> over the given range, per matched series pair. Series across the two selectors are paired by
-        exact match on all labels except <code>__name__</code>; unpaired series are silently dropped. At each evaluation
-        step, only samples whose timestamps appear in both range windows are correlated.
+        exact match on all labels except <code>__name__</code> by default, or by exactly the <code>on</code> labels
+        (comma-separated) when given — letting series with differing extra labels (different metrics, different label
+        schemas) still pair, as long as they agree on the <code>on</code> labels. Unpaired series are silently dropped.
+        At each evaluation step, only samples whose timestamps appear in both range windows are correlated.
       </p>
 
       <p>
-        The optional <code>method</code> scalar selects the coefficient:
+        The optional <code>method</code> string selects the coefficient:
       </p>
 
       <table>
@@ -729,26 +734,31 @@ const funcDocs: Record<string, React.ReactNode> = {
         <tbody>
           <tr>
             <td>
-              <code>0</code>
+              <code>&quot;pearson&quot;</code>
             </td>
-            <td>Pearson product-moment (default)</td>
+            <td>Pearson product-moment (the default)</td>
           </tr>
 
           <tr>
             <td>
-              <code>1</code>
+              <code>&quot;spearman&quot;</code>
             </td>
             <td>Spearman rank, with average-rank ties</td>
           </tr>
 
           <tr>
             <td>
-              <code>2</code>
+              <code>&quot;kendall&quot;</code>
             </td>
             <td>Kendall tau-b</td>
           </tr>
         </tbody>
       </table>
+      <p>
+        An empty <code>method</code> behaves like omitting the argument. An unknown method name yields an empty result
+        plus a PromQL warning annotation.
+      </p>
+
       <p>
         Pearson and Spearman are computed in a single Kahan-compensated pass. Kendall is the naive O(n²) implementation,
         which is acceptable for the range sizes typical of Prometheus queries but can be expensive for very long
@@ -756,13 +766,15 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
 
       <p>
-        Returns <code>NaN</code> for a step when the paired window has fewer than 2 samples, the variance is zero
-        (constant input, single distinct value, or all-tied pairs for Kendall), or <code>method</code> is outside{" "}
-        <code>
-          {"{"}0, 1, 2{"}"}
-        </code>{" "}
-        — in the last case a PromQL warning annotation is also emitted. Histogram samples are skipped and do not
+        Returns <code>NaN</code> for a step when the paired window has fewer than 2 samples or the variance is zero
+        (constant input, single distinct value, or all-tied pairs for Kendall). Histogram samples are skipped and do not
         contribute to the correlation.
+      </p>
+
+      <p>
+        Multiple series in <code>a</code> matching the same series in <code>b</code> is normal fan-out, not ambiguity.
+        But when more than one series in <code>b</code> matches the same signature, the pairing is ambiguous — the
+        whole pair is skipped (not picked arbitrarily) and a PromQL warning annotation is emitted once.
       </p>
 
       <p>
@@ -774,6 +786,21 @@ const funcDocs: Record<string, React.ReactNode> = {
         <code>
           correlation_over_time( rate(http_request_errors_total[1m])[1h:1m], histogram_quantile(0.99,
           rate(http_request_duration_seconds_bucket[1m]))[1h:1m] ) &gt; 0.8
+        </code>
+      </pre>
+
+      <p>
+        <code>on</code> lets the two sides carry different extra labels — for example, errors labeled by{" "}
+        <code>code</code> and latency labeled by <code>quantile</code>, correlated per <code>job</code>/
+        <code>instance</code> regardless. Since <code>on</code> is positional, <code>method</code> has to be given too
+        (<code>&quot;&quot;</code> or <code>&quot;pearson&quot;</code> for the default):
+      </p>
+
+      <pre>
+        <code>
+          correlation_over_time( rate(http_request_errors_total[1m])[1h:1m],
+          rate(http_request_duration_seconds_sum[1m])[1h:1m], &quot;pearson&quot;, &quot;job,instance&quot; ) &gt;
+          0.8
         </code>
       </pre>
     </>
@@ -2243,8 +2270,8 @@ const funcDocs: Record<string, React.ReactNode> = {
 
       <p>
         <code>
-          lm_over_time(method string, y range-vector, X range-vector, labelName string, lambda=0 scalar, halflife=0
-          scalar)
+          lm_over_time(method string, y range-vector, X range-vector, labelName string, on string, lambda=0 scalar,
+          halflife=0 scalar)
         </code>
         fits a multiple linear regression of the response series <code>y</code> on the predictor series <code>X</code>{" "}
         at each evaluation step, and returns the fitted coefficients. It is the multivariate generalization of
@@ -2252,7 +2279,9 @@ const funcDocs: Record<string, React.ReactNode> = {
           <code>regression_over_time()</code>
         </a>
         : <code>labelName</code> is the pivot that reshapes <code>X</code> into a design matrix whose columns are the
-        distinct values of that label.
+        distinct values of that label. <code>on</code> must be given (pass <code>&quot;&quot;</code> for &quot;no
+        restriction&quot;) whenever <code>lambda</code> or <code>halflife</code> are supplied, mirroring{" "}
+        <code>labelName</code>&rsquo;s own required-but-defaultable convention.
       </p>
 
       <p>
@@ -2312,16 +2341,25 @@ const funcDocs: Record<string, React.ReactNode> = {
       </ul>
 
       <p>
-        Predictor series are grouped by all labels except <code>__name__</code> and <code>labelName</code>; each group
-        is one independent regression, and its distinct <code>labelName</code> values become the design-matrix columns.
-        The response series is matched to a group by those same grouping labels. Each emitted series carries the
-        group&rsquo;s labels with
+        Predictor series are grouped by all labels except <code>__name__</code> and <code>labelName</code> by default,
+        or by exactly the <code>on</code> labels (comma-separated) when non-empty — letting <code>y</code> and{" "}
+        <code>X</code> carry differing extra labels and still group together, as long as they agree on the{" "}
+        <code>on</code> labels. Each group is one independent regression, and its distinct <code>labelName</code>{" "}
+        values become the design-matrix columns. The response series is matched to a group by those same grouping
+        labels. Each emitted series carries the group&rsquo;s labels (from <code>X</code>) with
         <code>labelName</code> set to the predictor&rsquo;s value — or to the reserved value
         <code>(intercept)</code> for the intercept term — and its value is the fitted coefficient. Each group also emits
         a <code>(r2)</code> series carrying the coefficient of determination (the fraction of the response variance
         explained), so a meaningful fit can be told apart from a spurious one that the coefficients alone would hide; it
         is
         <code>NaN</code> when the fit is undefined.
+      </p>
+
+      <p>
+        Two ambiguity cases are skipped (with a warning) rather than resolved arbitrarily: more than one response
+        series matching the same group, and two predictor series in the same group ending up with the same{" "}
+        <code>labelName</code> pivot value (which would otherwise produce two design-matrix columns with the same
+        header) — the latter typically happens once <code>on</code> drops the label that used to distinguish them.
       </p>
 
       <p>
@@ -2348,7 +2386,20 @@ const funcDocs: Record<string, React.ReactNode> = {
       <pre>
         <code>
           lm_over_time( &quot;lm&quot;, request_latency_p99[1h:1m], rate(node_cpu_seconds_total{"{"}
-          mode!=&quot;idle&quot;{"}"}[1m])[1h:1m], &quot;mode&quot; )
+          mode!=&quot;idle&quot;{"}"}[1m])[1h:1m], &quot;mode&quot;, &quot;&quot; )
+        </code>
+      </pre>
+
+      <p>
+        <code>on</code> lets <code>y</code> and <code>X</code> carry differing extra labels — for example, a{" "}
+        <code>y</code> recording rule that adds a <code>team</code> label the exporter&rsquo;s CPU metrics don&rsquo;t
+        have, grouped by <code>instance</code> regardless:
+      </p>
+
+      <pre>
+        <code>
+          lm_over_time( &quot;lm&quot;, request_latency_p99[1h:1m], rate(node_cpu_seconds_total{"{"}
+          mode!=&quot;idle&quot;{"}"}[1m])[1h:1m], &quot;mode&quot;, &quot;instance&quot; )
         </code>
       </pre>
     </>

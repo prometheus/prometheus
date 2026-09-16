@@ -431,17 +431,20 @@ type lmPredictor struct {
 // columns are the distinct values of labelName.
 //
 // Signature: lm_over_time(method string, y range-vector, X range-vector,
-// labelName string, lambda=0 scalar). method is "lm" (ordinary least squares)
-// or "ridge" (L2-penalized, requires lambda > 0), optionally with the
-// comma-separated ",diff" flag (e.g. "ridge,diff") to fit on first differences
-// (Δ-on-Δ), which removes a shared time trend so the coefficients and r²
-// reflect co-movement rather than common drift. Predictor series are grouped
-// by all labels except __name__ and labelName; each group is one regression,
-// and its distinct labelName values become the design-matrix columns. The
-// response series is matched to a group by those same grouping labels. Each
-// emitted series carries the group's labels plus labelName set to the
-// predictor's value (or the reserved "(intercept)" for the intercept), and its
-// value is the fitted coefficient.
+// labelName string, on="" string, lambda=0 scalar, halflife=0 scalar). method
+// is "lm" (ordinary least squares) or "ridge" (L2-penalized, requires
+// lambda > 0), optionally with the comma-separated ",diff" flag (e.g.
+// "ridge,diff") to fit on first differences (Δ-on-Δ), which removes a shared
+// time trend so the coefficients and r² reflect co-movement rather than
+// common drift. Predictor series are grouped by all labels except __name__
+// and labelName by default, or by exactly the `on` labels when given — the
+// latter lets y and X (or X's own predictors) carry differing extra labels
+// and still group together, as long as they agree on the `on` labels. Each
+// group is one regression, and its distinct labelName values become the
+// design-matrix columns. The response series is matched to a group by those
+// same grouping labels. Each emitted series carries the group's labels plus
+// labelName set to the predictor's value (or the reserved "(intercept)" for
+// the intercept), and its value is the fitted coefficient.
 //
 // When labelName is empty the function degenerates to the bivariate case and
 // returns the regression slope per matched pair, matching regression_over_time
@@ -456,7 +459,13 @@ type lmPredictor struct {
 // still yields all-NaN coefficients only when there are fewer samples than
 // columns (nothing left to solve). Groups whose predictor cardinality exceeds
 // maxLMPredictors, or that include a predictor whose pivot value collides with
-// "(intercept)", are skipped with a warning. Histogram samples are ignored.
+// "(intercept)" or "(r2)", are skipped with a warning. Two ambiguity cases are
+// also skipped rather than resolved arbitrarily: more than one response series
+// matching the same group (which response should the fit use?), and — new
+// once `on` can narrow the grouping key — two predictor series in the same
+// group ending up with the same labelName pivot value (which would produce
+// two design-matrix columns with the same header). Histogram samples are
+// ignored.
 func (ev *evaluator) evalLMOverTime(ctx context.Context, e *parser.Call) (parser.Value, annotations.Annotations) {
 	var warnings annotations.Annotations
 
@@ -468,11 +477,19 @@ func (ev *evaluator) evalLMOverTime(ctx context.Context, e *parser.Call) (parser
 	}
 	labelName := stringFromArg(e.Args[3])
 
+	// Optional `on` label list, narrowing/widening the grouping key from the
+	// default (all labels except __name__ and labelName) to exactly these
+	// labels.
+	var on []string
+	if len(e.Args) > 4 {
+		on = parseOnLabels(stringFromArg(e.Args[4]))
+	}
+
 	// Optional lambda scalar, evaluated per step like correlation's method arg.
 	var lambdaMat Matrix
-	lambdaHasArg := len(e.Args) > 4
+	lambdaHasArg := len(e.Args) > 5
 	if lambdaHasArg {
-		val, ws := ev.eval(ctx, e.Args[4])
+		val, ws := ev.eval(ctx, e.Args[5])
 		warnings.Merge(ws)
 		var ok bool
 		lambdaMat, ok = val.(Matrix)
@@ -487,9 +504,9 @@ func (ev *evaluator) evalLMOverTime(ctx context.Context, e *parser.Call) (parser
 	// Optional half-life scalar (seconds) for the ,wls exponential time-decay
 	// weights, evaluated per step like lambda.
 	var halflifeMat Matrix
-	halflifeHasArg := len(e.Args) > 5
+	halflifeHasArg := len(e.Args) > 6
 	if halflifeHasArg {
-		val, ws := ev.eval(ctx, e.Args[5])
+		val, ws := ev.eval(ctx, e.Args[6])
 		warnings.Merge(ws)
 		var ok bool
 		halflifeMat, ok = val.(Matrix)
@@ -553,29 +570,36 @@ func (ev *evaluator) evalLMOverTime(ctx context.Context, e *parser.Call) (parser
 		return 0
 	}
 
-	// Build the response lookup keyed by the grouping signature (all labels
-	// except __name__ and, defensively, labelName).
-	dropForGroup := func(lb labels.Labels, buf []byte) (uint64, []byte) {
+	// Build the response lookup keyed by the grouping signature: all labels
+	// except __name__ and, defensively, labelName, by default; or exactly the
+	// `on` labels when given.
+	groupSig := func(lb labels.Labels, buf []byte) (uint64, []byte) {
 		if labelName == "" {
-			return lb.HashWithoutLabels(buf, model.MetricNameLabel)
+			return matchSig(lb, buf, on, model.MetricNameLabel)
 		}
-		return lb.HashWithoutLabels(buf, model.MetricNameLabel, labelName)
+		return matchSig(lb, buf, on, model.MetricNameLabel, labelName)
 	}
 
+	// A signature matched by more than one response series is ambiguous —
+	// which one should the group's fit use? — so it is excluded from
+	// respBySig entirely (skip the whole group) rather than guessing, with a
+	// single warning per ambiguous signature.
 	var hashBuf []byte
 	respBySig := make(map[uint64]int, len(vsY.Series))
 	ambiguousResp := make(map[uint64]struct{})
 	for i, s := range vsY.Series {
 		var sig uint64
-		sig, hashBuf = dropForGroup(s.Labels(), hashBuf)
+		sig, hashBuf = groupSig(s.Labels(), hashBuf)
+		if _, amb := ambiguousResp[sig]; amb {
+			continue // Already known-ambiguous; warned once already.
+		}
 		if _, dup := respBySig[sig]; dup {
-			if _, seen := ambiguousResp[sig]; !seen {
-				ambiguousResp[sig] = struct{}{}
-				warnings.Add(annotations.NewAmbiguousLMResponseWarning(
-					s.Labels().DropReserved(schema.IsMetadataLabel).String(),
-					e.Args[1].PositionRange(),
-				))
-			}
+			delete(respBySig, sig)
+			ambiguousResp[sig] = struct{}{}
+			warnings.Add(annotations.NewAmbiguousLMResponseWarning(
+				s.Labels().DropReserved(schema.IsMetadataLabel).String(),
+				e.Args[1].PositionRange(),
+			))
 			continue
 		}
 		respBySig[sig] = i
@@ -587,7 +611,7 @@ func (ev *evaluator) evalLMOverTime(ctx context.Context, e *parser.Call) (parser
 			// regression) path for now; warn rather than silently ignore.
 			warnings.Add(annotations.NewWLSRequiresPivotWarning(e.Args[0].PositionRange()))
 		}
-		return ev.lmBivariate(ctx, e, selX, selY, vsX, vsY, respBySig, difference,
+		return ev.lmBivariate(ctx, e, selX, selY, vsX, vsY, respBySig, difference, on,
 			rangeX, rangeY, offsetX, offsetY, numSteps, &warnings)
 	}
 
@@ -601,7 +625,7 @@ func (ev *evaluator) evalLMOverTime(ctx context.Context, e *parser.Call) (parser
 	var groups []*lmGroup
 	for i, s := range vsX.Series {
 		var sig uint64
-		sig, hashBuf = dropForGroup(s.Labels(), hashBuf)
+		sig, hashBuf = groupSig(s.Labels(), hashBuf)
 		g := groupBySig[sig]
 		if g == nil {
 			g = &lmGroup{sig: sig, metric: s.Labels().DropReserved(schema.IsMetadataLabel)}
@@ -643,6 +667,25 @@ func (ev *evaluator) evalLMOverTime(ctx context.Context, e *parser.Call) (parser
 		}
 		if reserved {
 			warnings.Add(annotations.NewReservedLMInterceptLabelWarning(g.metric.String(), e.Args[2].PositionRange()))
+			continue
+		}
+
+		// Two predictors sharing the same pivot value would produce two
+		// design-matrix columns with the same header — typically because `on`
+		// dropped the label that used to distinguish them. g.predictors is
+		// sorted by value, so a collision is an adjacent duplicate. Skip the
+		// whole group rather than guessing which one to keep.
+		ambiguousPredictor := false
+		for j := 1; j < len(g.predictors); j++ {
+			if g.predictors[j].value == g.predictors[j-1].value {
+				ambiguousPredictor = true
+				warnings.Add(annotations.NewAmbiguousLMPredictorValueWarning(
+					g.metric.String(), g.predictors[j].value, e.Args[2].PositionRange(),
+				))
+				break
+			}
+		}
+		if ambiguousPredictor {
 			continue
 		}
 
@@ -878,14 +921,19 @@ func (ev *evaluator) evalLMOverTime(ctx context.Context, e *parser.Call) (parser
 }
 
 // lmBivariate handles the no-pivot degenerate case: pair the response and
-// predictor range vectors by label set (ignoring __name__) and emit the OLS
-// slope per matched pair, matching regression_over_time's default output.
+// predictor range vectors by label set (ignoring __name__ by default, or by
+// exactly the `on` labels when given — see matchSig) and emit the OLS slope
+// per matched pair, matching regression_over_time's default output. Multiple
+// X series matching the same Y series is normal fan-out, not ambiguity;
+// respBySig already excludes any Y-side signature matched by more than one
+// series (see the caller).
 func (ev *evaluator) lmBivariate(
 	ctx context.Context, e *parser.Call,
 	_, _ *parser.MatrixSelector,
 	vsX, vsY *parser.VectorSelector,
 	respBySig map[uint64]int,
 	difference bool,
+	on []string,
 	rangeX, rangeY, offsetX, offsetY int64,
 	numSteps int, warnings *annotations.Annotations,
 ) (parser.Value, annotations.Annotations) {
@@ -898,7 +946,7 @@ func (ev *evaluator) lmBivariate(
 
 	for _, sx := range vsX.Series {
 		var sig uint64
-		sig, hashBuf = sx.Labels().HashWithoutLabels(hashBuf, model.MetricNameLabel)
+		sig, hashBuf = matchSig(sx.Labels(), hashBuf, on, model.MetricNameLabel)
 		yIdx, ok := respBySig[sig]
 		if !ok {
 			continue

@@ -2803,7 +2803,7 @@ load 1m
   corr_load{job="test"} 10 20 30 40 50
   corr_lat{job="test"} 1 4 9 16 25
 
-eval instant at 5m correlation_over_time(corr_load{job="test"}[5m], corr_lat{job="test"}[5m], 1)
+eval instant at 5m correlation_over_time(corr_load{job="test"}[5m], corr_lat{job="test"}[5m], "spearman")
   {job="test"} 1
 
 clear
@@ -2813,7 +2813,7 @@ load 1m
   corr_x{job="test"} 1 2 3 4 5
   corr_y{job="test"} 2 4 6 8 10
 
-eval instant at 5m correlation_over_time(corr_x{job="test"}[5m], corr_y{job="test"}[5m], 2)
+eval instant at 5m correlation_over_time(corr_x{job="test"}[5m], corr_y{job="test"}[5m], "kendall")
   {job="test"} 1
 
 clear
@@ -2839,18 +2839,21 @@ eval instant at 1m correlation_over_time(corr_two_a{job="test"}[2m], corr_two_b{
 
 clear
 
-# Invalid method (out of {0,1,2}) => NaN per step + warning annotation.
+# An unknown method name => empty result + warning annotation.
 load 1m
   corr_a{job="test"} 1 2 3 4 5
   corr_b{job="test"} 10 20 30 40 50
 
-eval instant at 5m correlation_over_time(corr_a{job="test"}[5m], corr_b{job="test"}[5m], 99)
+eval instant at 5m correlation_over_time(corr_a{job="test"}[5m], corr_b{job="test"}[5m], "kendal")
   expect warn
-  {job="test"} NaN
 
-eval instant at 5m correlation_over_time(corr_a{job="test"}[5m], corr_b{job="test"}[5m], NaN)
-  expect warn
-  {job="test"} NaN
+# An explicit empty method behaves like omitting the argument (Pearson).
+eval instant at 5m correlation_over_time(corr_a{job="test"}[5m], corr_b{job="test"}[5m], "")
+  {job="test"} 1
+
+# The default is also selectable by name.
+eval instant at 5m correlation_over_time(corr_a{job="test"}[5m], corr_b{job="test"}[5m], "pearson")
+  {job="test"} 1
 
 clear
 
@@ -2884,8 +2887,9 @@ eval instant at 5m correlation_over_time(corr_mix_a{job="test"}[5m], corr_mix_b{
 clear
 
 # Ambiguous pairing: two series in the second range vector share the same
-# label signature (all labels except __name__), so pairing is non-deterministic.
-# A PromQL warning annotation is emitted; the first matching series wins.
+# label signature (all labels except __name__), so pairing is ambiguous. The
+# whole pair is skipped (not picked arbitrarily), plus a PromQL warning
+# annotation.
 load 1m
   ambi_a{job="test"} 1 2 3 4 5
   ambi_b{job="test"} 2 4 6 8 10
@@ -2893,7 +2897,6 @@ load 1m
 
 eval instant at 5m correlation_over_time(ambi_a{job="test"}[5m], {__name__=~"ambi_b|ambi_c", job="test"}[5m])
   expect warn
-  {job="test"} 1
 
 clear
 
@@ -2927,6 +2930,31 @@ load 1m
 
 eval instant at 5m correlation_over_time(corr_sub_a{job="test"}[5m], last_over_time(corr_sub_b{job="test"}[1m])[5m:1m])
   {job="test"} 1
+
+clear
+
+# `on` narrows the matching key to exactly the given labels, so series with
+# differing extra labels can still pair: errors carry "code", latency carries
+# "quantile" — full-label matching (the on="" default) would never pair them.
+load 1m
+  onc_errors{job="api", instance="i1", code="500"}       1 2 3 4 5
+  onc_latency{job="api", instance="i1", quantile="0.99"} 10 20 30 40 50
+
+eval instant at 5m correlation_over_time(onc_errors{job="api"}[5m], onc_latency{job="api"}[5m], "pearson", "job,instance")
+  {job="api", instance="i1", code="500"} 1
+
+clear
+
+# Ambiguous under `on`: two second-selector series share job/instance once
+# `on` drops the label ("code") that used to distinguish them. The pair is
+# skipped (not picked arbitrarily), plus a warning annotation.
+load 1m
+  onamb_a{job="api", instance="i1"}               1 2 3 4 5
+  onamb_b{job="api", instance="i1", code="200"}    2 4 6 8 10
+  onamb_b{job="api", instance="i1", code="500"}    3 6 9 12 15
+
+eval instant at 5m correlation_over_time(onamb_a{job="api"}[5m], onamb_b{job="api"}[5m], "", "job,instance")
+  expect warn
 
 clear
 
@@ -3045,7 +3073,7 @@ load 1m
   lm_x{job="test", p="a"}   1 2  3  4  5
   lm_x{job="test", p="b"}   1 0  2  1  3
 
-eval instant at 5m lm_over_time("lm", lm_y{job="test"}[5m], lm_x{job="test"}[5m], "p")
+eval instant at 5m lm_over_time("lm", lm_y{job="test"}[5m], lm_x{job="test"}[5m], "p", "")
   {job="test", p="a"} 2
   {job="test", p="b"} 3
   {job="test", p="(intercept)"} 1
@@ -3058,7 +3086,7 @@ load 1m
   lm_uni_y{job="test"} 2 4 6 8 10
   lm_uni_x{job="test"} 10 20 30 40 50
 
-eval instant at 5m lm_over_time("lm", lm_uni_y{job="test"}[5m], lm_uni_x{job="test"}[5m], "")
+eval instant at 5m lm_over_time("lm", lm_uni_y{job="test"}[5m], lm_uni_x{job="test"}[5m], "", "")
   {job="test"} 0.2
 
 clear
@@ -3072,7 +3100,7 @@ load 1m
   lmc_x{job="test", p="a"}  1 2 3 4 5
   lmc_x{job="test", p="b"}  2 4 6 8 10
 
-eval instant at 5m lm_over_time("lm", lmc_y{job="test"}[5m], lmc_x{job="test"}[5m], "p")
+eval instant at 5m lm_over_time("lm", lmc_y{job="test"}[5m], lmc_x{job="test"}[5m], "p", "")
   expect info
   {job="test", p="a"} NaN
   {job="test", p="b"} 0.5
@@ -3092,7 +3120,7 @@ load 1m
   lmg_x{job="test", p="b"}  1 0  2  1  3
   lmg_x{job="test", p="d"}  2 4  6  8 10
 
-eval instant at 5m lm_over_time("lm", lmg_y{job="test"}[5m], lmg_x{job="test"}[5m], "p")
+eval instant at 5m lm_over_time("lm", lmg_y{job="test"}[5m], lmg_x{job="test"}[5m], "p", "")
   expect info
   {job="test", p="a"} NaN
   {job="test", p="b"} 3
@@ -3107,7 +3135,7 @@ load 1m
   lmm_y{job="test"}        1 2 3 4 5
   lmm_x{job="test", p="a"} 1 2 3 4 5
 
-eval instant at 5m lm_over_time("lme4", lmm_y{job="test"}[5m], lmm_x{job="test"}[5m], "p")
+eval instant at 5m lm_over_time("lme4", lmm_y{job="test"}[5m], lmm_x{job="test"}[5m], "p", "")
   expect warn
 
 clear
@@ -3119,7 +3147,7 @@ load 1m
   lmr_x{job="test", p="a"}           1 2 3 4 5
   lmr_x{job="test", p="(intercept)"} 1 0 2 1 3
 
-eval instant at 5m lm_over_time("lm", lmr_y{job="test"}[5m], lmr_x{job="test"}[5m], "p")
+eval instant at 5m lm_over_time("lm", lmr_y{job="test"}[5m], lmr_x{job="test"}[5m], "p", "")
   expect warn
 
 clear
@@ -3131,7 +3159,7 @@ load 1m
   lmd_y{job="test"}        100 105 112 121 132
   lmd_x{job="test", p="a"}   1   3   6  10  15
 
-eval instant at 5m lm_over_time("lm,diff", lmd_y{job="test"}[5m], lmd_x{job="test"}[5m], "p")
+eval instant at 5m lm_over_time("lm,diff", lmd_y{job="test"}[5m], lmd_x{job="test"}[5m], "p", "")
   {job="test", p="a"} 2
   {job="test", p="(intercept)"} 1
   {job="test", p="(r2)"} 1
@@ -3144,7 +3172,7 @@ load 1m
   lmd_uni_y{job="test"} 100 105 112 121 132
   lmd_uni_x{job="test"}   1   3   6  10  15
 
-eval instant at 5m lm_over_time("lm,diff", lmd_uni_y{job="test"}[5m], lmd_uni_x{job="test"}[5m], "")
+eval instant at 5m lm_over_time("lm,diff", lmd_uni_y{job="test"}[5m], lmd_uni_x{job="test"}[5m], "", "")
   {job="test"} 2
 
 clear
@@ -3152,20 +3180,20 @@ clear
 # The ",wls" flag applies exponential time-decay weights (recent samples count
 # more), with the half-life as the last scalar (seconds). On an exact linear fit
 # residuals are zero, so any weighting recovers the same coefficients — this
-# checks ,wls integrates cleanly. Args: method, y, X, labelName, lambda, halflife.
+# checks ,wls integrates cleanly. Args: method, y, X, labelName, on, lambda, halflife.
 load 1m
   lmw_y{job="test"}          6 5 13 12 20
   lmw_x{job="test", p="a"}   1 2  3  4  5
   lmw_x{job="test", p="b"}   1 0  2  1  3
 
-eval instant at 5m lm_over_time("lm,wls", lmw_y{job="test"}[5m], lmw_x{job="test"}[5m], "p", 0, 120)
+eval instant at 5m lm_over_time("lm,wls", lmw_y{job="test"}[5m], lmw_x{job="test"}[5m], "p", "", 0, 120)
   {job="test", p="a"} 2
   {job="test", p="b"} 3
   {job="test", p="(intercept)"} 1
   {job="test", p="(r2)"} 1
 
 # A non-positive half-life warns and falls back to an unweighted fit.
-eval instant at 5m lm_over_time("lm,wls", lmw_y{job="test"}[5m], lmw_x{job="test"}[5m], "p", 0, 0)
+eval instant at 5m lm_over_time("lm,wls", lmw_y{job="test"}[5m], lmw_x{job="test"}[5m], "p", "", 0, 0)
   expect warn
   {job="test", p="a"} 2
   {job="test", p="b"} 3
@@ -3180,8 +3208,54 @@ load 1m
   lmwb_y{job="test"} 2 4 6 8 10
   lmwb_x{job="test"} 10 20 30 40 50
 
-eval instant at 5m lm_over_time("lm,wls", lmwb_y{job="test"}[5m], lmwb_x{job="test"}[5m], "", 0, 60)
+eval instant at 5m lm_over_time("lm,wls", lmwb_y{job="test"}[5m], lmwb_x{job="test"}[5m], "", "", 0, 60)
   expect warn
   {job="test"} 0.2
+
+clear
+
+# `on` narrows the grouping key to exactly "instance", so y's extra "team"
+# label (absent from X) no longer blocks grouping — the pre-`on` default
+# (all labels except __name__/labelName) would never match y to X here.
+# Output labels come from X's own group (labelName aside), so "team" is not
+# expected to appear on the emitted series.
+load 1m
+  onlm_y{instance="i1", team="checkout"} 6 5 13 12 20
+  onlm_x{instance="i1", p="a"}           1 2  3  4  5
+  onlm_x{instance="i1", p="b"}           1 0  2  1  3
+
+eval instant at 5m lm_over_time("lm", onlm_y{instance="i1"}[5m], onlm_x{instance="i1"}[5m], "p", "instance")
+  {instance="i1", p="a"} 2
+  {instance="i1", p="b"} 3
+  {instance="i1", p="(intercept)"} 1
+  {instance="i1", p="(r2)"} 1
+
+clear
+
+# Response-side ambiguity under `on`: two y series share "instance" once `on`
+# drops the label ("team") that used to distinguish them. The group is
+# skipped (not picked arbitrarily), plus a warning annotation.
+load 1m
+  onambresp_y{instance="i1", team="a"} 6 5 13 12 20
+  onambresp_y{instance="i1", team="b"} 1 1  1  1  1
+  onambresp_x{instance="i1", p="a"}    1 2  3  4  5
+
+eval instant at 5m lm_over_time("lm", onambresp_y{instance="i1"}[5m], onambresp_x{instance="i1"}[5m], "p", "instance")
+  expect warn
+
+clear
+
+# Predictor-side ambiguity under `on`: two X series in the same group end up
+# with the same "p" pivot value once `on` drops the label ("region") that
+# used to distinguish them — that would produce two design-matrix columns
+# with the same header, so the group is skipped (not guessed), plus a
+# warning annotation.
+load 1m
+  onamblm_y{instance="i1"}                     6 5 13 12 20
+  onamblm_x{instance="i1", region="us", p="a"} 1 2  3  4  5
+  onamblm_x{instance="i1", region="eu", p="a"} 2 4  6  8 10
+
+eval instant at 5m lm_over_time("lm", onamblm_y{instance="i1"}[5m], onamblm_x{instance="i1"}[5m], "p", "instance")
+  expect warn
 
 clear

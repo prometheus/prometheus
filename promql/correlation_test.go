@@ -105,3 +105,24 @@ func TestSpearmanCorrelation(t *testing.T) {
 	}
 	require.InDelta(t, 1.0, spearmanCorrelation(x, y), 1e-9)
 }
+
+func TestParseCorrelationMethod(t *testing.T) {
+	cases := []struct {
+		in     string
+		method string
+		ok     bool
+	}{
+		{"", correlationMethodPearson, true}, // Empty == omitted == default.
+		{"pearson", correlationMethodPearson, true},
+		{"spearman", correlationMethodSpearman, true},
+		{"kendall", correlationMethodKendall, true},
+		{"kendal", "kendal", false},
+		{"Pearson", "Pearson", false},
+		{"0", "0", false},
+	}
+	for _, c := range cases {
+		method, ok := parseCorrelationMethod(c.in)
+		require.Equal(t, c.ok, ok, "ok for %q", c.in)
+		require.Equal(t, c.method, method, "method for %q", c.in)
+	}
+}

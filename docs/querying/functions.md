@@ -122,31 +122,41 @@ Special cases:
 flag](../feature_flags.md#experimental-promql-functions)
 `--enable-feature=promql-experimental-functions`.**
 
-`correlation_over_time(a range-vector, b range-vector, method=0 scalar)`
+`correlation_over_time(a range-vector, b range-vector, method="pearson" string, on="" string)`
 returns the correlation coefficient between paired float samples of `a` and
 `b` over the given range, per matched series pair. Series across the two
-selectors are paired by exact match on all labels except `__name__`;
-unpaired series are silently dropped. At each evaluation step, only samples
-whose timestamps appear in both range windows are correlated.
+selectors are paired by exact match on all labels except `__name__` by
+default, or by exactly the `on` labels (comma-separated) when given — letting
+series with differing extra labels (different metrics, different label
+schemas) still pair, as long as they agree on the `on` labels. Unpaired
+series are silently dropped. At each evaluation step, only samples whose
+timestamps appear in both range windows are correlated.
 
-The optional `method` scalar selects the coefficient:
+The optional `method` string selects the coefficient:
 
-| `method` | meaning                              |
-|----------|--------------------------------------|
-| `0`      | Pearson product-moment (default)     |
-| `1`      | Spearman rank, with average-rank ties |
-| `2`      | Kendall tau-b                        |
+| `method`     | meaning                               |
+|--------------|---------------------------------------|
+| `"pearson"`  | Pearson product-moment (the default)  |
+| `"spearman"` | Spearman rank, with average-rank ties |
+| `"kendall"`  | Kendall tau-b                         |
+
+An empty `method` behaves like omitting the argument. An unknown method name
+yields an empty result plus a PromQL warning annotation.
 
 Pearson and Spearman are computed in a single Kahan-compensated pass.
 Kendall is the naive O(n²) implementation, which is acceptable for the range
 sizes typical of Prometheus queries but can be expensive for very long
 windows.
 
-Returns `NaN` for a step when the paired window has fewer than 2 samples, the
-variance is zero (constant input, single distinct value, or all-tied pairs
-for Kendall), or `method` is outside `{0, 1, 2}` — in the last case a
-PromQL warning annotation is also emitted. Histogram samples are skipped
-and do not contribute to the correlation.
+Returns `NaN` for a step when the paired window has fewer than 2 samples or
+the variance is zero (constant input, single distinct value, or all-tied
+pairs for Kendall). Histogram samples are skipped and do not contribute to
+the correlation.
+
+Multiple series in `a` matching the same series in `b` is normal fan-out, not
+ambiguity. But when more than one series in `b` matches the same signature,
+the pairing is ambiguous — the whole pair is skipped (not picked arbitrarily)
+and a PromQL warning annotation is emitted once.
 
 For example, to surface request-error-rate and request-latency series whose
 per-minute behaviour over the past hour moves together (potentially the
@@ -156,6 +166,19 @@ same upstream problem causing both):
 correlation_over_time(
   rate(http_request_errors_total[1m])[1h:1m],
   histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[1m]))[1h:1m]
+) > 0.8
+```
+
+`on` lets the two sides carry different extra labels — for example, errors
+labeled by `code` and latency labeled by `quantile`, correlated per
+`job`/`instance` regardless. Since `on` is positional, `method` has to be
+given too (`""` or `"pearson"` for the default):
+
+```
+correlation_over_time(
+  rate(http_request_errors_total[1m])[1h:1m],
+  rate(http_request_duration_seconds_sum[1m])[1h:1m],
+  "pearson", "job,instance"
 ) > 0.8
 ```
 
@@ -783,13 +806,15 @@ label_replace(up{job="api-server",service="a:c"}, "foo", "$name", "service", "(?
 flag](../feature_flags.md#experimental-promql-functions)
 `--enable-feature=promql-experimental-functions`.**
 
-`lm_over_time(method string, y range-vector, X range-vector, labelName string, lambda=0 scalar, halflife=0 scalar)`
+`lm_over_time(method string, y range-vector, X range-vector, labelName string, on string, lambda=0 scalar, halflife=0 scalar)`
 fits a multiple linear regression of the response series `y` on the predictor
 series `X` at each evaluation step, and returns the fitted coefficients. It is
 the multivariate generalization of
 [`regression_over_time()`](#regression_over_time): `labelName` is the pivot that
 reshapes `X` into a design matrix whose columns are the distinct values of that
-label.
+label. `on` must be given (pass `""` for "no restriction") whenever `lambda` or
+`halflife` are supplied, mirroring `labelName`'s own required-but-defaultable
+convention.
 
 `method` selects the estimator:
 
@@ -815,16 +840,26 @@ compose (for example `"ridge,diff,wls"`):
   `labelName` pivot is given (not the bivariate case). The reported `(r2)` is
   measured against the unweighted observations.
 
-Predictor series are grouped by all labels except `__name__` and `labelName`;
-each group is one independent regression, and its distinct `labelName` values
-become the design-matrix columns. The response series is matched to a group by
-those same grouping labels. Each emitted series carries the group's labels with
+Predictor series are grouped by all labels except `__name__` and `labelName`
+by default, or by exactly the `on` labels (comma-separated) when non-empty —
+letting `y` and `X` carry differing extra labels and still group together, as
+long as they agree on the `on` labels. Each group is one independent
+regression, and its distinct `labelName` values become the design-matrix
+columns. The response series is matched to a group by those same grouping
+labels. Each emitted series carries the group's labels (from `X`) with
 `labelName` set to the predictor's value — or to the reserved value
 `(intercept)` for the intercept term — and its value is the fitted coefficient.
 Each group also emits a `(r2)` series carrying the coefficient of determination
 (the fraction of the response variance explained), so a meaningful fit can be
 told apart from a spurious one that the coefficients alone would hide; it is
 `NaN` when the fit is undefined.
+
+Two ambiguity cases are skipped (with a warning) rather than resolved
+arbitrarily: more than one response series matching the same group, and two
+predictor series in the same group ending up with the same `labelName` pivot
+value (which would otherwise produce two design-matrix columns with the same
+header) — the latter typically happens once `on` drops the label that used to
+distinguish them.
 
 When `labelName` is empty, the function degenerates to the bivariate case and
 returns the regression slope per matched pair, matching `regression_over_time`
@@ -852,7 +887,22 @@ lm_over_time(
   "lm",
   request_latency_p99[1h:1m],
   rate(node_cpu_seconds_total{mode!="idle"}[1m])[1h:1m],
-  "mode"
+  "mode",
+  ""
+)
+```
+
+`on` lets `y` and `X` carry differing extra labels — for example, a `y`
+recording rule that adds a `team` label the exporter's CPU metrics don't
+have, grouped by `instance` regardless:
+
+```
+lm_over_time(
+  "lm",
+  request_latency_p99[1h:1m],
+  rate(node_cpu_seconds_total{mode!="idle"}[1m])[1h:1m],
+  "mode",
+  "instance"
 )
 ```
 

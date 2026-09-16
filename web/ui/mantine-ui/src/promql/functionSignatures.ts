@@ -38,8 +38,8 @@ export const functionSignatures: Record<string, Func> = {
   },
   correlation_over_time: {
     name: "correlation_over_time",
-    argTypes: [valueType.matrix, valueType.matrix, valueType.scalar],
-    variadic: 1,
+    argTypes: [valueType.matrix, valueType.matrix, valueType.string],
+    variadic: 2,
     returnType: valueType.vector,
   },
   cos: { name: "cos", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
@@ -121,7 +121,14 @@ export const functionSignatures: Record<string, Func> = {
   last_over_time: { name: "last_over_time", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   lm_over_time: {
     name: "lm_over_time",
-    argTypes: [valueType.string, valueType.matrix, valueType.matrix, valueType.string, valueType.scalar],
+    argTypes: [
+      valueType.string,
+      valueType.matrix,
+      valueType.matrix,
+      valueType.string,
+      valueType.string,
+      valueType.scalar,
+    ],
     variadic: 2,
     returnType: valueType.vector,
   },
