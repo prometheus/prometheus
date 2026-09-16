@@ -240,6 +240,24 @@ func TestRelabelCache(t *testing.T) {
 		require.Equal(t, overflowBy, size)
 	})
 
+	t.Run("sweep freeing nothing evicts arbitrary entries instead of wiping the cache", func(t *testing.T) {
+		cache := NewRelabelCache()
+		for i := range relabelCacheMaxEntries {
+			cache.relabel(labels.FromStrings("__name__", "m", "i", strconv.Itoa(i)), relabelTestRewriteConfig, model.UTF8Validation)
+		}
+		// Touch every entry so sweep finds nothing untouched to free.
+		for i := range relabelCacheMaxEntries {
+			cache.relabel(labels.FromStrings("__name__", "m", "i", strconv.Itoa(i)), relabelTestRewriteConfig, model.UTF8Validation)
+		}
+
+		cache.relabel(labels.FromStrings("__name__", "m", "kind", "trigger"), relabelTestRewriteConfig, model.UTF8Validation)
+
+		cache.mu.RLock()
+		size := len(cache.entries)
+		cache.mu.RUnlock()
+		require.Equal(t, relabelCacheMaxEntries, size, "sweep freeing nothing must evict arbitrary entries, not wipe the whole cache")
+	})
+
 	t.Run("an entry reused before overflow survives it, one that wasn't does not", func(t *testing.T) {
 		cache := NewRelabelCache()
 		hot := labels.FromStrings("__name__", "m", "kind", "hot")

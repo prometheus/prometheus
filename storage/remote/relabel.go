@@ -99,10 +99,13 @@ func (c *relabelCache) relabel(l labels.Labels, cfgs []*relabel.Config, validati
 	c.mu.Lock()
 	if len(c.entries) >= relabelCacheMaxEntries {
 		c.sweep()
-		if len(c.entries) >= relabelCacheMaxEntries {
-			// The working set itself is at or above the cap: sweeping freed
-			// nothing. Clear fully so memory stays bounded.
-			c.entries = make(map[uint64]*relabelCacheEntry)
+		// Evict arbitrary entries down to the cap instead of wiping the
+		// map, so a stampede doesn't force every hot entry to recompute.
+		for evict := range c.entries {
+			if len(c.entries) < relabelCacheMaxEntries {
+				break
+			}
+			delete(c.entries, evict)
 		}
 	}
 	// touched starts false: an entry only counts as "used" once something
