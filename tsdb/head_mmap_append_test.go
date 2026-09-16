@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -131,6 +132,74 @@ func TestHeadAppendAfterMmapOnlyRecovery(t *testing.T) {
 						require.NoError(t, set.Err())
 					})
 				}
+			}
+		}
+	}
+}
+
+func TestHeadAppendAfterMmapOnlyWALRepair(t *testing.T) {
+	for _, useV2 := range []bool{false, true} {
+		for name, scenario := range sampleTypeScenarios {
+			for _, corrupt := range []bool{false, true} {
+				t.Run(fmt.Sprintf("v2=%t/%s/corrupt=%t", useV2, name, corrupt), func(t *testing.T) {
+					h, w := newTestHead(t, 100, compression.None, false)
+					require.NoError(t, h.Init(0))
+					ls := labels.FromStrings("metric", "wal_repair")
+					a := h.Appender(t.Context())
+					ref, _, err := scenario.appendFunc(a, ls, 100, 1)
+					require.NoError(t, err)
+					_, _, err = scenario.appendFunc(a, ls, 150, 2)
+					require.NoError(t, err)
+					require.NoError(t, a.Commit())
+					seg, offset, err := w.LastSegmentAndOffset()
+					require.NoError(t, err)
+					a = h.Appender(t.Context())
+					_, _, err = scenario.appendFunc(a, ls, 200, 3)
+					require.NoError(t, err)
+					require.NoError(t, a.Commit())
+					h.mmapHeadChunks()
+					ms := h.series.getByID(chunks.HeadSeriesRef(ref))
+					require.Len(t, ms.mmappedChunks, 1)
+					require.Equal(t, int64(150), ms.mmappedChunks[0].maxTime)
+					require.NotNil(t, ms.headChunks)
+					require.Equal(t, int64(200), ms.headChunks.maxTime)
+					require.NoError(t, h.Close())
+					if corrupt {
+						// Damage only the newer chunk's WAL record; the older chunk is already mapped.
+						f, err := os.OpenFile(wlog.SegmentName(w.Dir(), seg), os.O_WRONLY, 0)
+						require.NoError(t, err)
+						_, err = f.WriteAt([]byte{255}, int64(offset))
+						require.NoError(t, err)
+						require.NoError(t, f.Close())
+					}
+					db, err := Open(h.opts.ChunkDirRoot, nil, nil, DefaultOptions(), nil)
+					require.NoError(t, err)
+					defer func() { require.NoError(t, db.Close()) }()
+					ms = db.Head().series.getByID(chunks.HeadSeriesRef(ref))
+					require.NotNil(t, ms)
+					ts, val := int64(200), int64(3)
+					if corrupt {
+						require.Nil(t, ms.headChunks)
+						require.NotEmpty(t, ms.mmappedChunks)
+						ts, val = 150, 2
+					} else {
+						require.NotNil(t, ms.headChunks)
+					}
+					newAppender := func() storage.LimitedAppenderV1 {
+						if useV2 {
+							return storage.AppenderV2AsLimitedV1(db.AppenderV2(t.Context()))
+						}
+						return db.Appender(t.Context())
+					}
+					app := newAppender()
+					_, _, err = scenario.appendFunc(app, ls, ts, val)
+					require.NoError(t, err, "the last stored sample remains an exact duplicate after repair")
+					require.NoError(t, app.Commit())
+					app = newAppender()
+					_, _, err = scenario.appendFunc(app, ls, ts, 999)
+					require.ErrorIs(t, err, storage.ErrDuplicateSampleForTimestamp)
+					require.NoError(t, app.Rollback())
+				})
 			}
 		}
 	}
