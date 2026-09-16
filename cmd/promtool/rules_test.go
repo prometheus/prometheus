@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -208,6 +209,133 @@ func createMultiRuleTestFiles(path string) error {
         testlabel11: testlabelvalue13
 `
 	return os.WriteFile(path, []byte(recordingRules), 0o777)
+}
+
+// TestBackfillEmptyFirstBlock confirms that the importer keeps going when an aligned
+// block within the requested window contains no rule evaluation points. When the
+// requested start falls so late in a 2h block that the first evaluation point lands in
+// the next block, the empty leading block must be skipped and the later blocks must
+// still be backfilled, instead of terminating the whole backfill with no output.
+func TestBackfillEmptyFirstBlock(t *testing.T) {
+	t.Parallel()
+
+	const interval = 15 * time.Minute
+	blockDuration := time.Duration(tsdb.DefaultBlockDuration) * time.Millisecond
+
+	// blockStart is aligned to the default 2h block duration.
+	blockStart := time.Date(2009, time.November, 10, 4, 0, 0, 0, time.UTC)
+
+	ctx := context.Background()
+	ruleDir := t.TempDir()
+	path := filepath.Join(ruleDir, "rules.yaml")
+
+	// The group's evaluation timestamps are offset from the perfect interval boundaries
+	// by hash(group name, rule file path) % interval, and the rule file path varies per
+	// run. Probe the loaded group for its actual offset, and pick a group name whose
+	// offset keeps at least a second of headroom from the interval boundaries so the
+	// windows below behave the same for every hash value.
+	var (
+		groupName string
+		offset    time.Duration
+	)
+	for i := 0; ; i++ {
+		require.Less(t, i, 100, "no group name with a usable evaluation offset found")
+		name := fmt.Sprintf("group%d", i)
+		recordingRules := fmt.Sprintf(`groups:
+- name: %s
+  interval: 15m
+  rules:
+  - record: rule1
+    expr: ruleExpr
+`, name)
+		require.NoError(t, os.WriteFile(path, []byte(recordingRules), 0o777))
+
+		probe := newRuleImporter(promslog.NewNopLogger(), ruleImporterConfig{
+			outputDir:            ruleDir,
+			start:                blockStart,
+			end:                  blockStart,
+			evalInterval:         interval,
+			maxBlockDuration:     blockDuration,
+			nameValidationScheme: model.UTF8Validation,
+		}, mockQueryRangeAPI{})
+		for _, err := range probe.loadGroups(ctx, []string{path}) {
+			require.NoError(t, err)
+		}
+		grp := probe.groups[path+";"+name]
+		require.NotNil(t, grp)
+		off := time.Duration(grp.EvalTimestamp(blockStart.UnixNano()).UnixNano() % int64(interval))
+		if off >= time.Second && off <= interval-2*time.Second {
+			groupName, offset = name, off
+			break
+		}
+	}
+	t.Logf("using group %q with evaluation offset %s", groupName, offset)
+
+	// The last evaluation point inside the 2h block starting at blockStart.
+	lastEval := blockStart.Add(7*interval + offset)
+
+	testCases := []struct {
+		name               string
+		start              time.Time
+		end                time.Time
+		expectedBlockCount int
+	}{
+		{
+			// The start falls after the last evaluation point of its aligned block, so
+			// the first block is empty, but the second block still has evaluation
+			// points that must be backfilled.
+			name:               "first block has no evaluation points",
+			start:              lastEval.Add(time.Second),
+			end:                blockStart.Add(2*blockDuration - time.Second),
+			expectedBlockCount: 1,
+		},
+		{
+			// The whole window ends before the first evaluation point after start, so
+			// there is nothing to backfill at all.
+			name:               "window ends before the first evaluation point",
+			start:              lastEval.Add(time.Second),
+			end:                lastEval.Add(2 * time.Second),
+			expectedBlockCount: 0,
+		},
+		{
+			// Both blocks in the window contain evaluation points.
+			name:               "normal window",
+			start:              blockStart.Add(time.Second),
+			end:                blockStart.Add(2*blockDuration - time.Second),
+			expectedBlockCount: 2,
+		},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			outputDir := t.TempDir()
+
+			samples := model.Matrix{{
+				Metric: model.Metric{"name1": "val1"},
+				Values: []model.SamplePair{{Timestamp: model.TimeFromUnixNano(blockStart.UnixNano()), Value: 123}},
+			}}
+			importer := newRuleImporter(promslog.NewNopLogger(), ruleImporterConfig{
+				outputDir:            outputDir,
+				start:                tt.start,
+				end:                  tt.end,
+				evalInterval:         interval,
+				maxBlockDuration:     blockDuration,
+				nameValidationScheme: model.UTF8Validation,
+			}, mockQueryRangeAPI{samples: samples})
+			for _, err := range importer.loadGroups(ctx, []string{path}) {
+				require.NoError(t, err)
+			}
+			for _, err := range importer.importAll(ctx) {
+				require.NoError(t, err)
+			}
+
+			db, err := tsdb.Open(outputDir, nil, nil, tsdb.DefaultOptions(), nil)
+			require.NoError(t, err)
+			require.Len(t, db.Blocks(), tt.expectedBlockCount)
+			require.NoError(t, db.Close())
+		})
+	}
 }
 
 // TestBackfillLabels confirms that the labels in the rule file override the labels from the metrics
