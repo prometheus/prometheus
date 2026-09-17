@@ -1468,11 +1468,12 @@ h_neg_zero_count{a="1"} 3
 		require.False(t, math.Signbit(got[1].shs.CustomValues[1]), "expected -0.0 bucket bound to be normalized to positive 0.0")
 	})
 
-	t.Run("invalid histogram validation failure does not corrupt next series", func(t *testing.T) {
+	t.Run("invalid histogram conversion failure does not corrupt next series", func(t *testing.T) {
 		input := `# TYPE h_val_err histogram
-h_val_err_count{a="1"} 5
+h_val_err_count{a="1"} 18
 h_val_err_sum{a="1"} 10.0
-h_val_err_bucket{a="1",le="1.0"} 10
+h_val_err_bucket{a="1",le="1.0"} 18
+h_val_err_bucket{a="1",le="+Inf"} 5
 h_val_err_bucket{a="2",le="1.0"} 1
 h_val_err_bucket{a="2",le="+Inf"} 2
 h_val_err_sum{a="2"} 1.5
@@ -1485,13 +1486,22 @@ h_val_err_count{a="2"} 2
 		require.NoError(t, err)
 		got := testParse(t, p)
 
-		// Verify that a="2" is not merged into a="1" via fast path.
-		for _, entry := range got {
-			if entry.shs != nil {
-				require.Equal(t, `h_val_err{a="2"}`, entry.m)
-				require.True(t, labels.Equal(labels.FromStrings("__name__", "h_val_err", "a", "2"), entry.lset))
-			}
+		exp := []parsedEntry{
+			{m: "h_val_err", typ: model.MetricTypeHistogram},
+			{
+				m: `h_val_err{a="2"}`,
+				shs: &histogram.Histogram{
+					Schema:          histogram.CustomBucketsSchema,
+					Count:           2,
+					Sum:             1.5,
+					PositiveSpans:   []histogram.Span{{Length: 2}},
+					PositiveBuckets: []int64{1, 0},
+					CustomValues:    []float64{1.0},
+				},
+				lset: labels.FromStrings("__name__", "h_val_err", "a", "2"),
+			},
 		}
+		requireEntries(t, exp, got)
 	})
 
 	t.Run("escaped quotes and le substrings in label values", func(t *testing.T) {
