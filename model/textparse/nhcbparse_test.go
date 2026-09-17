@@ -516,7 +516,7 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 	requireEntries(t, exp, got)
 }
 
-func TestNHCBParserDoesNotConvertSumOnlyHistogram(t *testing.T) {
+func TestNHCBParser_DoesNotConvertSumOnlyHistogram(t *testing.T) {
 	tests := []struct {
 		name        string
 		input       string
