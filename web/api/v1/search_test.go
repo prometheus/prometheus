@@ -18,9 +18,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1319,4 +1321,76 @@ func TestSearchParamsRejectsExcessSearchTerms(t *testing.T) {
 	})
 	require.Equal(t, http.StatusOK, rec.Code,
 		"a request with exactly maxSearchTermsPerRequest terms must be accepted")
+}
+
+func TestSearchBatchSize(t *testing.T) {
+	api := newSearchTestAPI(t)
+	t.Run("oversized batch on all endpoints", func(t *testing.T) {
+		for _, path := range []string{"/search/metric_names", "/search/label_names", "/search/label_values"} {
+			t.Run(path, func(t *testing.T) {
+				rec := doSearchRequest(t, api, path, url.Values{
+					"batch_size": {strconv.Itoa(math.MaxInt)},
+					"limit":      {"1"},
+					"label":      {"job"},
+				})
+				require.Equal(t, http.StatusOK, rec.Code)
+				lines := parseNDJSON(t, rec.Body.String())
+				require.Len(t, lines, 2)
+				var batch searchBatch[json.RawMessage]
+				require.NoError(t, json.Unmarshal(lines[0], &batch))
+				require.Len(t, batch.Results, 1)
+				var trailer searchTrailer
+				require.NoError(t, json.Unmarshal(lines[1], &trailer))
+				require.Equal(t, "success", trailer.Status)
+				require.True(t, trailer.HasMore)
+			})
+		}
+	})
+
+	for _, tc := range []struct {
+		name      string
+		batchSize string
+		limit     string
+		maxLimit  int
+		want      int
+	}{
+		{name: "default", want: 100},
+		{name: "small batch", batchSize: "2", want: 2},
+		{name: "default limited by result limit", limit: "1", want: 1},
+		{name: "default limited by operator cap", maxLimit: 3, want: 3},
+		{name: "large batch limited by result limit", batchSize: strconv.Itoa(math.MaxInt), limit: "1", want: 1},
+		{name: "large batch limited by operator cap", batchSize: strconv.Itoa(math.MaxInt), maxLimit: 3, want: 3},
+		{name: "large batch with uncapped limit", batchSize: strconv.Itoa(math.MaxInt), limit: strconv.Itoa(math.MaxInt), want: 1000},
+		{name: "batch at maximum", batchSize: "1000", limit: "2000", want: 1000},
+		{name: "batch above maximum", batchSize: "1001", limit: "2000", want: 1000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api.maxSearchLimit = tc.maxLimit
+			params := url.Values{"batch_size": {tc.batchSize}, "limit": {tc.limit}}
+			req := httptest.NewRequest(http.MethodGet, "/search/metric_names?"+params.Encode(), http.NoBody)
+			sp, err := api.parseSearchParams(req)
+			require.Nil(t, err)
+			require.Equal(t, tc.want, sp.batchSize)
+		})
+	}
+}
+
+func TestSearchResultStreamerBatchCapacity(t *testing.T) {
+	for _, count := range []int{3, 4} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			rs := storage.NewSearchResultSetFromSlice(make([]storage.SearchResult, count), nil)
+			t.Cleanup(func() { require.NoError(t, rs.Close()) })
+			streamer := searchResultStreamer[string]{
+				rs: rs, limit: 3, batchSize: 2,
+				toResult: func(sr storage.SearchResult) string { return sr.Value },
+			}
+			for _, want := range []int{2, 1, 0} {
+				batch, err := streamer.nextBatch()
+				require.NoError(t, err)
+				require.Len(t, batch, want)
+				require.LessOrEqual(t, cap(batch), want)
+			}
+			require.Equal(t, count > 3, streamer.hasMore)
+		})
+	}
 }
