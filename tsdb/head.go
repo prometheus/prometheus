@@ -1662,7 +1662,7 @@ func (h *Head) releaseWBLPinnedSeriesRefs() {
 	h.wblPinnedSeriesRefsMtx.Lock()
 	defer h.wblPinnedSeriesRefsMtx.Unlock()
 
-	clear(h.wblPinnedSeriesRefs)
+	h.wblPinnedSeriesRefs = map[chunks.HeadSeriesRef]struct{}{}
 }
 
 // keepSeriesInWALCheckpointFn returns a function that is used to determine whether a series record should be kept in the checkpoint.
