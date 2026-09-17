@@ -1651,6 +1651,17 @@ func (h *Head) truncateWAL(mint int64) error {
 	start := time.Now()
 	h.lastWALTruncationTime.Store(mint)
 
+	// Persist mint so that, on restart, minValidTime can be recovered as at least this value
+	// even if no block on disk reflects it (e.g. a block produced by CompactSelectedSeries or
+	// CompactStaleHead is excluded from that search, or a truncation whose range had nothing
+	// left to write never produced a block at all).
+	if err := wlog.WriteMinValidTime(h.wal.Dir(), mint); err != nil {
+		// Best-effort: on restart, minValidTime falls back to being computed from blocks on
+		// disk, which may recover a lower value than mint, but truncation itself must not
+		// fail just because this optional persistence step did.
+		h.logger.Error("persist min valid time", "err", err)
+	}
+
 	first, last, err := wlog.Segments(h.wal.Dir())
 	if err != nil {
 		return fmt.Errorf("get segment range: %w", err)
