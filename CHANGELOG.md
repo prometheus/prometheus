@@ -3,6 +3,7 @@
 ## main / unreleased
 
 - [ENHANCEMENT] Remote write / Alertmanager: Upgrade `github.com/prometheus/sigv4` to v0.5.0, adding `session_name` and `tags` fields to the `sigv4` configuration block for STS AssumeRole sessions. The existing but previously undocumented `service_name` field is also documented.
+- [BUGFIX] TSDB: Fix loss of out-of-order samples when a WAL checkpoint drops a series record that the out-of-order write-behind log still needs. This affects series that left the head and then received samples again under a new series reference.
 
 ## 3.14.0 / 2026-08-17
 
