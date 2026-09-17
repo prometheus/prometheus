@@ -7339,7 +7339,7 @@ func testOOOSampleLossOnWALCheckpointBeforeOOOCompaction(t *testing.T, scenario 
 	// Out-of-order compaction persists the WBL into a block and truncates it,
 	// after which the reference the WBL used is no longer needed.
 	require.NoError(t, db.CompactOOOHead(context.Background()))
-	require.False(t, db.head.isWBLAlias(recreatedRef), "the reference must be released once the WBL is truncated")
+	require.False(t, db.head.isWBLPinnedSeriesRef(recreatedRef), "the reference must be released once the WBL is truncated")
 	require.NoError(t, db.Close())
 
 	db = openDB()
