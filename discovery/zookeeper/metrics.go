@@ -65,10 +65,7 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 		m.numWatchers = are.ExistingCollector.(prometheus.Gauge)
 	}
 
-	return &zookeeperMetrics{
-		failureCounter: m.failureCounter,
-		numWatchers:    m.numWatchers,
-	}
+	return m
 }
 
 // Register implements discovery.DiscovererMetrics.

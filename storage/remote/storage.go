@@ -61,8 +61,7 @@ type Storage struct {
 	// For reads.
 	queryables             []storage.SampleAndChunkQueryable
 	localStartTimeCallback startTimeCallback
-
-	readRemotes map[string]struct{}
+	readMetrics            *ReadClientMetrics
 }
 
 var _ storage.Storage = &Storage{}
@@ -82,7 +81,7 @@ func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeC
 		logger:                 logger,
 		deduper:                deduper,
 		localStartTimeCallback: stCallback,
-		readRemotes:            make(map[string]struct{}),
+		readMetrics:            NewReadClientMetrics(reg),
 	}
 	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm, enableTypeAndUnitLabels)
 	return s
@@ -100,9 +99,6 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	if err := s.rws.ApplyConfig(conf); err != nil {
 		return err
 	}
-
-	// Track active remote_read keys in the current config.
-	activeReadRemotes := make(map[string]struct{})
 
 	// Update read clients
 	readHashes := make(map[string]struct{})
@@ -126,18 +122,13 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			name = rrConf.Name
 		}
 
-		// Generate the remote key and track it. Use the redacted URL so it
-		// matches the cache key used in newRemoteReadMetrics and never embeds credentials.
-		key := name + "|" + rrConf.URL.Redacted()
-		activeReadRemotes[key] = struct{}{}
-
 		c, err := NewReadClient(name, &ClientConfig{
 			URL:              rrConf.URL,
 			Timeout:          rrConf.RemoteTimeout,
 			ChunkedReadLimit: rrConf.ChunkedReadLimit,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
 			Headers:          rrConf.Headers,
-		}, s.rws.reg)
+		}, s.readMetrics)
 		if err != nil {
 			return err
 		}
@@ -156,15 +147,6 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		))
 	}
 
-	// Unregister metrics for any remote_read configs that were removed
-	for oldKey := range s.readRemotes {
-		if _, stillExists := activeReadRemotes[oldKey]; !stillExists {
-			unregisterRemoteReadMetrics(oldKey)
-		}
-	}
-
-	// Save new state
-	s.readRemotes = activeReadRemotes
 	s.queryables = queryables
 
 	return nil

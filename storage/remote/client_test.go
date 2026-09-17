@@ -27,6 +27,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
+	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -369,12 +370,7 @@ func TestReadClient(t *testing.T) {
 				Timeout:          model.Duration(test.timeout),
 				ChunkedReadLimit: config.DefaultChunkedReadLimit,
 			}
-			reg := prometheus.NewRegistry()
-			old := prometheus.DefaultRegisterer
-			prometheus.DefaultRegisterer = reg
-			t.Cleanup(func() { prometheus.DefaultRegisterer = old })
-			t.Cleanup(func() { unregisterRemoteReadMetrics("test|" + conf.URL.Redacted()) })
-			c, err := NewReadClient("test", conf, reg)
+			c, err := NewReadClient("test", conf, NewReadClientMetrics(prometheus.NewRegistry()))
 			require.NoError(t, err)
 
 			query := &prompb.Query{}
@@ -928,7 +924,7 @@ func TestReadMultipleWithChunks(t *testing.T) {
 				ChunkedReadLimit: config.DefaultChunkedReadLimit,
 			}
 
-			client, err := NewReadClient("test", cfg, prometheus.NewRegistry())
+			client, err := NewReadClient("test", cfg, NewReadClientMetrics(prometheus.NewRegistry()))
 			require.NoError(t, err)
 
 			// Test ReadMultiple
@@ -1099,4 +1095,35 @@ func createOverlappingSeriesHandler(t *testing.T, queries []*prompb.Query) http.
 			require.NoError(t, err)
 		}
 	})
+}
+
+func TestReadClientMetricsSurviveClientRecreation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// A successful response with a content type the client does not support
+		// is the cheapest way to reach the query counter.
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	u, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	conf := &ClientConfig{
+		URL:              &config_util.URL{URL: u},
+		Timeout:          model.Duration(5 * time.Second),
+		ChunkedReadLimit: config.DefaultChunkedReadLimit,
+	}
+	metrics := NewReadClientMetrics(prometheus.NewRegistry())
+
+	// A configuration reload builds a new client for the same remote. The
+	// counters must keep their values instead of starting at zero again.
+	for range 2 {
+		c, err := NewReadClient("test", conf, metrics)
+		require.NoError(t, err)
+		_, err = c.Read(context.Background(), &prompb.Query{}, false)
+		require.Error(t, err)
+	}
+
+	queries := metrics.queriesTotal.WithLabelValues("test", u.String(), "unsupported", "200")
+	require.Equal(t, 2.0, client_testutil.ToFloat64(queries))
 }
