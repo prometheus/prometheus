@@ -85,19 +85,37 @@ func (c *RelabelCache) relabel(l labels.Labels, cfgs []*relabel.Config, validati
 
 	h := l.Hash()
 
-	c.mu.RLock()
-	if slices.Equal(c.cfgs, cfgs) {
-		if e, ok := c.entries[h]; ok && labels.Equal(e.orig, l) {
-			e.touched.Store(true)
-			c.mu.RUnlock()
-			return e.result, e.keep
-		}
+	if result, keep, ok := c.get(h, l, cfgs); ok {
+		return result, keep
 	}
-	c.mu.RUnlock()
 
 	result, keep := relabelLabels(l, cfgs, validationScheme)
+	c.put(h, l, result, keep, cfgs)
 
+	return result, keep
+}
+
+func (c *RelabelCache) get(h uint64, l labels.Labels, cfgs []*relabel.Config) (result labels.Labels, keep, ok bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	// An entry only reflects the rules it was computed under; serving it
+	// for a different cfgs would risk returning a stale relabeling decision.
+	if !slices.Equal(c.cfgs, cfgs) {
+		return labels.EmptyLabels(), false, false
+	}
+	e, found := c.entries[h]
+	if !found || !labels.Equal(e.orig, l) {
+		return labels.EmptyLabels(), false, false
+	}
+	e.touched.Store(true)
+	return e.result, e.keep, true
+}
+
+func (c *RelabelCache) put(h uint64, orig, result labels.Labels, keep bool, cfgs []*relabel.Config) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if !slices.Equal(c.cfgs, cfgs) {
 		// A reload always allocates new *relabel.Config values even when
 		// the rules are textually unchanged; fall back to a content
@@ -106,7 +124,9 @@ func (c *RelabelCache) relabel(l labels.Labels, cfgs []*relabel.Config, validati
 			c.entries = make(map[uint64]*relabelCacheEntry)
 		}
 		c.cfgs = cfgs
-	} else if len(c.entries) >= relabelCacheMaxEntries {
+	}
+
+	if len(c.entries) >= relabelCacheMaxEntries {
 		c.sweep()
 		// Evict arbitrary entries down to the cap instead of wiping the
 		// map, so a stampede doesn't force every hot entry to recompute.
@@ -120,10 +140,7 @@ func (c *RelabelCache) relabel(l labels.Labels, cfgs []*relabel.Config, validati
 	// touched starts false: an entry only counts as "used" once something
 	// looks it up again after this insert, so a sweep can tell a reused
 	// entry apart from a one-off it never sees twice.
-	c.entries[h] = &relabelCacheEntry{orig: l, result: result, keep: keep}
-	c.mu.Unlock()
-
-	return result, keep
+	c.entries[h] = &relabelCacheEntry{orig: orig, result: result, keep: keep}
 }
 
 // clear drops all entries and resets cfgs.
