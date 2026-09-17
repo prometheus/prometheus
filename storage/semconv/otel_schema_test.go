@@ -1,0 +1,1046 @@
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package semconv
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"testing"
+
+	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
+
+	"github.com/prometheus/prometheus/model/labels"
+)
+
+// testEngine returns a schemaEngine backed by the embedded registry, for tests
+// that exercise the engine's fetch/read methods directly.
+func testEngine() *schemaEngine {
+	return newSchemaEngine(embeddedRegistry)
+}
+
+// loadOTelSchemaFile is a test helper that reads a YAML fixture from disk and
+// parses it via the same code path fetchOTelSchema uses. Tests use this rather
+// than fetchOTelSchema directly because fetch* is restricted to the embedded
+// registry.
+func loadOTelSchemaFile(t *testing.T, path string) otelSchema {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	s, err := loadOTelSchema(b)
+	require.NoError(t, err)
+	return s
+}
+
+func TestLoadOTelSchema(t *testing.T) {
+	schemaWithChange := func(section, change string) []byte {
+		return []byte(fmt.Sprintf(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.1.0:
+    %s:
+      changes:
+%s
+`, section, change))
+	}
+
+	t.Run("rejects unsupported file format", func(t *testing.T) {
+		b, err := os.ReadFile("./testdata/otel_unsupported_format.yaml")
+		require.NoError(t, err)
+		_, err = loadOTelSchema(b)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unsupported OTel schema file format")
+	})
+
+	t.Run("rejects unsupported metric splits", func(t *testing.T) {
+		_, err := loadOTelSchema([]byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.1.0:
+    metrics:
+      changes:
+        - split:
+            apply_to_metric: http.server.duration
+            by_attribute: http.request.method
+            metrics_from_attributes:
+              http.server.get.duration: GET
+`))
+		require.EqualError(t, err, `schema version "1.1.0" contains unsupported metric split transformation`)
+	})
+
+	for _, tc := range []struct {
+		name    string
+		section string
+		change  string
+		wantErr string
+	}{
+		{
+			name:    "misspelled metric rename",
+			section: "metrics",
+			change:  "        - rename_metric: {}",
+			wantErr: `schema version "1.1.0" metrics change 1 contains unsupported transformation "rename_metric"`,
+		},
+		{
+			name:    "misspelled split",
+			section: "metrics",
+			change:  "        - splitt: {}",
+			wantErr: `schema version "1.1.0" metrics change 1 contains unsupported transformation "splitt"`,
+		},
+		{
+			name:    "unknown transformation",
+			section: "metrics",
+			change:  "        - unknown: {}",
+			wantErr: `schema version "1.1.0" metrics change 1 contains unsupported transformation "unknown"`,
+		},
+		{
+			name:    "split in all section",
+			section: "all",
+			change:  "        - split: {}",
+			wantErr: `schema version "1.1.0" all change 1 contains unsupported transformation "split"`,
+		},
+		{
+			name:    "multiple transformations",
+			section: "metrics",
+			change: `        - rename_attributes: {}
+          rename_metrics: {}`,
+			wantErr: `schema version "1.1.0" metrics change 1 must contain exactly one transformation, found ["rename_attributes" "rename_metrics"]`,
+		},
+		{
+			name:    "empty change",
+			section: "metrics",
+			change:  "        - {}",
+			wantErr: `schema version "1.1.0" metrics change 1 must contain exactly one transformation, found []`,
+		},
+		{
+			name:    "misspelled attribute map",
+			section: "metrics",
+			change: `        - rename_attributes:
+            attribute_maps: {}`,
+			wantErr: `schema version "1.1.0" metrics change 1 rename_attributes contains unsupported field "attribute_maps"`,
+		},
+		{
+			name:    "misspelled metric scope",
+			section: "metrics",
+			change: `        - rename_attributes:
+            apply_to_metric: []`,
+			wantErr: `schema version "1.1.0" metrics change 1 rename_attributes contains unsupported field "apply_to_metric"`,
+		},
+		{
+			name:    "metric scope in all section",
+			section: "all",
+			change: `        - rename_attributes:
+            apply_to_metrics: []`,
+			wantErr: `schema version "1.1.0" all change 1 rename_attributes contains unsupported field "apply_to_metrics"`,
+		},
+		{
+			name:    "empty split",
+			section: "metrics",
+			change:  "        - split: {}",
+			wantErr: `schema version "1.1.0" contains unsupported metric split transformation`,
+		},
+		{
+			name:    "null split",
+			section: "metrics",
+			change:  "        - split:",
+			wantErr: `schema version "1.1.0" contains unsupported metric split transformation`,
+		},
+	} {
+		t.Run("rejects "+tc.name, func(t *testing.T) {
+			_, err := loadOTelSchema(schemaWithChange(tc.section, tc.change))
+			require.EqualError(t, err, tc.wantErr)
+		})
+	}
+
+	t.Run("accepts recognized empty transformations", func(t *testing.T) {
+		schema, err := loadOTelSchema([]byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.1.0:
+    metrics:
+      changes:
+        - rename_attributes: {}
+        - rename_attributes:
+            attribute_map: {}
+        - rename_attributes:
+            apply_to_metrics: []
+        - rename_metrics: {}
+`))
+		require.NoError(t, err)
+		require.Empty(t, schema.revisions)
+	})
+
+	t.Run("resolves merged transformations", func(t *testing.T) {
+		schema, err := loadOTelSchema([]byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+attributes: &attributes
+  attribute_map:
+    old.name: new.name
+change: &change
+  rename_attributes:
+    <<: *attributes
+versions:
+  1.1.0:
+    metrics:
+      changes:
+        - <<: *change
+`))
+		require.NoError(t, err)
+		require.Len(t, schema.revisions, 1)
+		require.Equal(t, "new.name", schema.revisions[0].changes[0].attributeRenames.renames.forward["old.name"])
+	})
+
+	t.Run("rejects merged multiple transformations", func(t *testing.T) {
+		_, err := loadOTelSchema([]byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+change: &change
+  rename_attributes: {}
+versions:
+  1.1.0:
+    metrics:
+      changes:
+        - <<: *change
+          rename_metrics: {}
+`))
+		require.EqualError(t, err, `schema version "1.1.0" metrics change 1 must contain exactly one transformation, found ["rename_attributes" "rename_metrics"]`)
+	})
+
+	t.Run("collects renames from the all section", func(t *testing.T) {
+		schema := loadOTelSchemaFile(t, "./testdata/otel_with_all_section.yaml")
+		require.Len(t, schema.revisions, 1)
+		require.Len(t, schema.revisions[0].changes, 2)
+
+		global := schema.revisions[0].changes[0].attributeRenames
+		require.Equal(t, "global.new", global.renames.forward["global.old"])
+		require.Equal(t, []string{"global.old"}, global.renames.reverse["global.new"])
+		require.True(t, global.appliesTo("any.metric"))
+
+		scoped := schema.revisions[0].changes[1].attributeRenames
+		require.Equal(t, "metric.new", scoped.renames.forward["metric.old"])
+		require.True(t, scoped.appliesTo("my.metric"))
+		require.False(t, scoped.appliesTo("other.metric"))
+	})
+
+	t.Run("collects per-version metric renames", func(t *testing.T) {
+		schema := loadOTelSchemaFile(t, "./testdata/otel_with_metric_renames.yaml")
+		require.Len(t, schema.revisions, 1)
+		renames := schema.revisions[0].changes[0].metricRenames
+		require.Equal(t, "new.metric.name", renames.forward["old.metric.name"])
+		require.Equal(t, []string{"old.metric.name"}, renames.reverse["new.metric.name"])
+		require.Equal(t, "another.new.metric", renames.forward["another.old.metric"])
+		require.Equal(t, []string{"another.old.metric"}, renames.reverse["another.new.metric"])
+	})
+
+	t.Run("scopes per-version attribute renames to apply_to_metrics", func(t *testing.T) {
+		schema := loadOTelSchemaFile(t, "./testdata/otel.yaml")
+		require.Len(t, schema.revisions, 1)
+		require.Len(t, schema.revisions[0].changes, 2)
+		http := schema.revisions[0].changes[0].attributeRenames
+		for _, metric := range []string{"http.server.duration", "http.server.request.count"} {
+			require.True(t, http.appliesTo(metric))
+		}
+		require.False(t, http.appliesTo("process.cpu.time"))
+		require.Equal(t, "http.request.method", http.renames.forward["http.method"])
+
+		cpu := schema.revisions[0].changes[1].attributeRenames
+		require.True(t, cpu.appliesTo("process.cpu.time"))
+		require.False(t, cpu.appliesTo("http.server.duration"))
+		require.Equal(t, "cpu.mode", cpu.renames.forward["process.cpu.state"])
+	})
+
+	t.Run("preserves empty metric scope", func(t *testing.T) {
+		schema, err := loadOTelSchema([]byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.1.0:
+    metrics:
+      changes:
+        - rename_attributes:
+            attribute_map:
+              omitted.old: omitted.new
+        - rename_attributes:
+            attribute_map:
+              empty.old: empty.new
+            apply_to_metrics: []
+        - rename_attributes:
+            attribute_map:
+              scoped.old: scoped.new
+            apply_to_metrics:
+              - selected.metric
+`))
+		require.NoError(t, err)
+		require.Len(t, schema.revisions, 1)
+		changes := schema.revisions[0].changes
+		require.Len(t, changes, 3)
+
+		require.True(t, changes[0].attributeRenames.appliesTo("any.metric"))
+		require.False(t, changes[1].attributeRenames.appliesTo("any.metric"))
+		require.True(t, changes[2].attributeRenames.appliesTo("selected.metric"))
+		require.False(t, changes[2].attributeRenames.appliesTo("other.metric"))
+	})
+
+	t.Run("collects renames from multiple versions", func(t *testing.T) {
+		schema := loadOTelSchemaFile(t, "./testdata/otel_with_chained_renames.yaml")
+		require.Len(t, schema.revisions, 2)
+		require.Equal(t, "metric.v2", schema.revisions[0].changes[0].metricRenames.forward["metric.v1"])
+		require.Equal(t, "metric.v3", schema.revisions[1].changes[0].metricRenames.forward["metric.v2"])
+	})
+
+	t.Run("sorts versions by semver", func(t *testing.T) {
+		schema := loadOTelSchemaFile(t, "./testdata/otel_with_chained_renames.yaml")
+		require.Len(t, schema.revisions, 2)
+		require.Equal(t, "1.0.0", schema.revisions[0].version)
+		require.Equal(t, "1.1.0", schema.revisions[1].version)
+	})
+
+	t.Run("keeps every predecessor of a real many-to-one rename", func(t *testing.T) {
+		schema := loadOTelSchemaFile(t, "./testdata/upstream/schema-1.44.0.yaml")
+		var renames *directedRenames
+		for _, revision := range schema.revisions {
+			if revision.version != "1.38.0" {
+				continue
+			}
+			for _, change := range revision.changes {
+				if change.metricRenames != nil {
+					renames = change.metricRenames
+					break
+				}
+			}
+		}
+		require.NotNil(t, renames)
+		require.Equal(t, []string{
+			"k8s.replication_controller.available_pods",
+			"k8s.replicationcontroller.available_pods",
+		}, renames.reverse["k8s.replicationcontroller.pod.available"])
+
+		variants := requireMatcherVariants(t, "1.38.0", &schema,
+			equalMatchers("k8s.replicationcontroller.pod.available"), nil, nil)
+		require.ElementsMatch(t, []string{
+			"k8s.replicationcontroller.pod.available",
+			"k8s.replication_controller.available_pods",
+			"k8s.replicationcontroller.available_pods",
+		}, variantNames(variants))
+	})
+}
+
+func TestCompareSemver(t *testing.T) {
+	tests := []struct {
+		a, b     string
+		expected int
+	}{
+		{"1.0.0", "1.0.0", 0},
+		{"1.0.0", "1.0.1", -1},
+		{"1.0.1", "1.0.0", 1},
+		{"1.0.0", "1.1.0", -1},
+		{"1.1.0", "1.0.0", 1},
+		{"1.0.0", "2.0.0", -1},
+		{"2.0.0", "1.0.0", 1},
+		{"1.10.0", "1.9.0", 1}, // Numeric comparison, not string.
+		{"10.0.0", "9.0.0", 1}, // Double-digit major.
+	}
+	for _, tc := range tests {
+		t.Run(tc.a+"_vs_"+tc.b, func(t *testing.T) {
+			result := compareSemver(tc.a, tc.b)
+			require.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestValidateSemver(t *testing.T) {
+	for _, v := range []string{"1.0.0", "10.20.30", "0.0.0"} {
+		require.NoErrorf(t, validateSemver(v), "expected %q to be accepted", v)
+	}
+	for _, v := range []string{"", "1", "1.0", "1.0.0.0", "1.0.x", "1.0.0-rc1", "v1.0.0"} {
+		require.Errorf(t, validateSemver(v), "expected %q to be rejected", v)
+	}
+}
+
+func TestFetchSemconv(t *testing.T) {
+	t.Run("registry: loads embedded version file", func(t *testing.T) {
+		sc, err := testEngine().fetchSemconv("registry/1.0.0")
+		require.NoError(t, err)
+		require.Equal(t, "1.0.0", sc.version)
+	})
+
+	t.Run("registry: rejects path traversal", func(t *testing.T) {
+		e := testEngine()
+		for _, url := range []string{
+			"registry/../etc/passwd",
+			"registry/..",
+			"../etc/passwd",
+			"/etc/passwd",
+			"http://example.com/x.yaml",
+			"https://example.com/x.yaml",
+			"./testdata/otel.yaml",
+			"registry/",
+			"",
+		} {
+			_, err := e.fetchSemconv(url)
+			require.Errorf(t, err, "expected %q to be rejected", url)
+		}
+	})
+
+	t.Run("registry: rejects non-semver version segment", func(t *testing.T) {
+		// registry.yaml passes the URL regex but is not a semver-named file,
+		// so version derivation fails.
+		_, err := testEngine().fetchSemconv("registry/registry.yaml")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid semver")
+	})
+}
+
+func TestPredecessorOfWithBudget(t *testing.T) {
+	schema := loadOTelSchemaFile(t, "./testdata/otel_with_chained_renames.yaml")
+	require.Equal(t, []string{"1.0.0", "1.1.0"}, schema.allVersions)
+
+	for _, tc := range []struct {
+		version  string
+		expected string
+		found    bool
+	}{
+		{version: "1.1.0", expected: "1.0.0", found: true},
+		{version: "1.0.0"},
+		{version: "9.9.9"},
+		{version: ""},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			got, found, err := schema.predecessorOfWithBudget(tc.version, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+			require.NoError(t, err)
+			require.Equal(t, tc.found, found)
+			require.Equal(t, tc.expected, got)
+		})
+	}
+}
+
+func TestEraVersionsOfWithBudget(t *testing.T) {
+	eraVersions := func(t *testing.T, schema *otelSchema, name string) []string {
+		t.Helper()
+		versions, err := schema.eraVersionsOfWithBudget(name, newSchemaExpansionBudget(productionSchemaExpansionLimits()))
+		require.NoError(t, err)
+		return versions
+	}
+
+	schema, err := loadOTelSchema([]byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.0.0:
+  1.1.0:
+    metrics:
+      changes:
+        - rename_metrics:
+            old.name: new.name
+  1.2.0:
+    metrics:
+      changes:
+        - rename_metrics:
+            other.name: old.name
+`))
+	require.NoError(t, err)
+	require.Equal(t, []string{"1.0.0", "1.2.0"}, eraVersions(t, &schema, "old.name"))
+	require.Equal(t, []string{"1.1.0"}, eraVersions(t, &schema, "new.name"))
+	require.Equal(t, []string{"1.1.0"}, eraVersions(t, &schema, "other.name"))
+	require.Empty(t, eraVersions(t, &schema, "unrelated.name"))
+
+	ordered, err := loadOTelSchema([]byte(`file_format: 1.1.0
+schema_url: https://example.com/schemas/1.1.0
+versions:
+  1.0.0:
+  1.1.0:
+    metrics:
+      changes:
+        - rename_metrics:
+            old.name: intermediate.name
+        - rename_metrics:
+            intermediate.name: current.name
+`))
+	require.NoError(t, err)
+	require.Equal(t, []string{"1.0.0"}, eraVersions(t, &ordered, "old.name"))
+	require.Empty(t, eraVersions(t, &ordered, "intermediate.name"), "a name used only between ordered changes is not a version boundary")
+	require.Equal(t, []string{"1.1.0"}, eraVersions(t, &ordered, "current.name"))
+}
+
+func TestLoadSemconv(t *testing.T) {
+	t.Run("indexes metric groups with unit and instrument", func(t *testing.T) {
+		sc, err := loadSemconv([]byte(`
+groups:
+  - id: metric.http.server.request.duration
+    type: metric
+    metric_name: http.server.request.duration
+    stability: stable
+    unit: s
+    instrument: histogram
+    attributes:
+      - ref: http.request.method
+`), "1.0.0")
+		require.NoError(t, err)
+		require.Equal(t, metricDef{
+			unit:       "s",
+			instrument: "histogram",
+			stability:  "stable",
+			attributes: []string{"http.request.method"},
+		}, sc.metrics["http.server.request.duration"])
+		require.Empty(t, sc.ambiguousMetrics)
+	})
+
+	t.Run("resolves transitive inheritance and group-local inline prefixes", func(t *testing.T) {
+		sc, err := loadSemconv([]byte(`
+groups:
+  - id: metric.queue.depth
+    type: metric
+    metric_name: queue.depth
+    unit: "{item}"
+    instrument: updowncounter
+    extends: attributes.queue
+    prefix: metric
+    attributes:
+      - id: local
+      - ref: queue.name
+      - ref: queue.name
+  - id: metric.service.info
+    type: metric
+    metric_name: service.info
+    extends: attributes.common
+  - id: attributes.common
+    type: attribute_group
+    prefix: service
+    attributes:
+      - id: name
+  - id: attributes.queue
+    type: attribute_group
+    extends: attributes.queue.base
+    prefix: queue
+    attributes:
+      - id: capacity
+      - ref: queue.name
+  - id: attributes.queue.base
+    type: attribute_group
+    extends: attributes.common
+    prefix: queue
+    attributes:
+      - id: priority
+`), "1.0.0")
+		require.NoError(t, err)
+		require.Equal(t,
+			[]string{"service.name", "queue.priority", "queue.capacity", "queue.name", "metric.local"},
+			sc.attributesOf("queue.depth"),
+		)
+		require.Equal(t, []string{"service.name"}, sc.attributesOf("service.info"),
+			"resolving a child must not mutate its memoized parent")
+	})
+
+	t.Run("does not inherit prefixes for inline attributes", func(t *testing.T) {
+		sc, err := loadSemconv([]byte(`
+groups:
+  - id: attributes.parent
+    type: attribute_group
+    prefix: parent
+    attributes:
+      - id: inherited
+  - id: metric.child.absent
+    type: metric
+    metric_name: child.absent
+    extends: attributes.parent
+    attributes:
+      - id: local
+  - id: metric.child.empty
+    type: metric
+    metric_name: child.empty
+    extends: attributes.parent
+    prefix: ""
+    attributes:
+      - id: local
+  - id: metric.child.explicit
+    type: metric
+    metric_name: child.explicit
+    extends: attributes.parent
+    prefix: child
+    attributes:
+      - id: local
+`), "1.0.0")
+		require.NoError(t, err)
+		require.Equal(t, []string{"parent.inherited", "local"}, sc.attributesOf("child.absent"))
+		require.Equal(t, []string{"parent.inherited", "local"}, sc.attributesOf("child.empty"))
+		require.Equal(t, []string{"parent.inherited", "child.local"}, sc.attributesOf("child.explicit"))
+	})
+
+	for _, tc := range []struct {
+		name    string
+		yaml    string
+		wantErr string
+	}{
+		{
+			name: "unused group with missing parent",
+			yaml: `
+groups:
+  - id: attributes.queue
+    type: attribute_group
+    extends: attributes.missing
+`,
+			wantErr: `semconv group "attributes.queue" extends unknown group "attributes.missing"`,
+		},
+		{
+			name: "unused inheritance cycle",
+			yaml: `
+groups:
+  - id: attributes.a
+    type: attribute_group
+    extends: attributes.b
+  - id: attributes.b
+    type: attribute_group
+    extends: attributes.a
+`,
+			wantErr: "attributes.a -> attributes.b -> attributes.a",
+		},
+		{
+			name: "duplicate group id",
+			yaml: `
+groups:
+  - id: attributes.queue
+    type: attribute_group
+  - id: attributes.queue
+    type: attribute_group
+`,
+			wantErr: `duplicate semconv group id "attributes.queue"`,
+		},
+		{
+			name: "unused group attribute has id and ref",
+			yaml: `
+groups:
+  - id: attributes.queue
+    type: attribute_group
+    attributes:
+      - id: queue.name
+        ref: queue.name
+`,
+			wantErr: "declares both id",
+		},
+		{
+			name: "unused group attribute has neither id nor ref",
+			yaml: `
+groups:
+  - id: attributes.queue
+    type: attribute_group
+    attributes:
+      - requirement_level: recommended
+`,
+			wantErr: "declares neither id nor ref",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := loadSemconv([]byte(tc.yaml), "1.0.0")
+			require.ErrorContains(t, err, tc.wantErr)
+		})
+	}
+
+	t.Run("rejects a malformed discarded metric definition", func(t *testing.T) {
+		_, err := loadSemconv([]byte(`
+groups:
+  - id: metric.shared.first
+    type: metric
+    metric_name: shared
+    attributes:
+      - ref: queue.name
+  - id: metric.shared.second
+    type: metric
+    metric_name: shared
+    attributes:
+      - requirement_level: recommended
+`), "1.0.0")
+		require.ErrorContains(t, err, `semconv group "metric.shared.second" attribute declares neither id nor ref`)
+	})
+
+	for _, tc := range []struct {
+		name            string
+		metricAttrs     int
+		wantErrContains string
+	}{
+		{name: "accepts 256 resolved attributes", metricAttrs: 6},
+		{name: "rejects 257 resolved attributes", metricAttrs: 7, wantErrContains: "semconv group attributes would exceed 256"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := loadSemconv(inheritedAttributeSemconv(t, 250, tc.metricAttrs), "1.0.0")
+			if tc.wantErrContains != "" {
+				require.ErrorContains(t, err, tc.wantErrContains)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+
+	t.Run("rejects 257 resolved attributes in an unused group", func(t *testing.T) {
+		_, err := loadSemconv(marshalSemconv(t, []semconvGroup{
+			{
+				ID:         "attributes.unused",
+				Type:       "attribute_group",
+				Attributes: semconvAttributeRefs("unused.", maxSchemaExpansion+1),
+			},
+		}), "1.0.0")
+		require.ErrorContains(t, err, "semconv group attributes would exceed 256")
+	})
+
+	t.Run("deduplicates before enforcing the resolved attribute limit", func(t *testing.T) {
+		_, err := loadSemconv(marshalSemconv(t, []semconvGroup{
+			{
+				ID:         "attributes.base",
+				Type:       "attribute_group",
+				Attributes: semconvAttributeRefs("base.", maxSchemaExpansion),
+			},
+			{
+				ID:         "metric.queue.depth",
+				Type:       "metric",
+				MetricName: "queue.depth",
+				Extends:    "attributes.base",
+				Attributes: []semconvAttribute{{Ref: "base.0"}},
+			},
+		}), "1.0.0")
+		require.NoError(t, err)
+	})
+
+	exactFanoutChildren := int(maxSemconvFileAttributeSlots)/maxSchemaExpansion - 1
+	for _, tc := range []struct {
+		name            string
+		children        int
+		wantErrContains string
+	}{
+		{name: "accepts exact file attribute slot limit", children: exactFanoutChildren},
+		{
+			name:            "rejects file attribute slots above limit",
+			children:        exactFanoutChildren + 1,
+			wantErrContains: "semconv file attribute slots would exceed 65536",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := loadSemconv(inheritedAttributeFanoutSemconv(t, tc.children), "1.0.0")
+			if tc.wantErrContains != "" {
+				require.ErrorContains(t, err, tc.wantErrContains)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+
+	t.Run("charges allocated capacity before deduplication", func(t *testing.T) {
+		groupsAtLimit := int(maxSemconvFileAttributeSlots) / maxSchemaExpansion
+		_, err := loadSemconv(duplicateHeavySemconv(t, groupsAtLimit+1), "1.0.0")
+		require.ErrorContains(t, err, "semconv file attribute slots would exceed 65536")
+	})
+
+	t.Run("indexes a metric group that declares no attributes", func(t *testing.T) {
+		// Such a group is still a metric, so it must be visible to the
+		// existence check that validates rename edges, even though it
+		// contributes nothing to attribute-rename normalisation.
+		sc, err := loadSemconv([]byte(`
+groups:
+  - id: metric.queue.depth
+    type: metric
+    metric_name: queue.depth
+    unit: "{item}"
+    instrument: updowncounter
+`), "1.0.0")
+		require.NoError(t, err)
+		require.Contains(t, sc.metrics, "queue.depth")
+		require.Empty(t, sc.attributesOf("queue.depth"))
+	})
+
+	t.Run("reports a metric name declared by more than one group", func(t *testing.T) {
+		// Two groups, same surface name, different semantics. Previously the
+		// second silently overwrote the first, so the queue.depth attributes
+		// were dropped and its unit was reported as the HTTP metric's.
+		sc, err := loadSemconv([]byte(`
+groups:
+  - id: metric.shared.name
+    type: metric
+    metric_name: shared.name
+    unit: s
+    instrument: histogram
+    attributes:
+      - ref: http.request.method
+  - id: metric.shared.name.other
+    type: metric
+    metric_name: shared.name
+    unit: "{item}"
+    instrument: updowncounter
+    attributes:
+      - ref: queue.name
+`), "1.0.0")
+		require.NoError(t, err)
+		require.Equal(t, []string{"shared.name"}, sc.ambiguousMetrics)
+		// Resolution is deterministic (first declaration wins) rather than
+		// dependent on which group happened to be parsed last.
+		require.Equal(t, []string{"http.request.method"}, sc.attributesOf("shared.name"))
+	})
+}
+
+func inheritedAttributeSemconv(t *testing.T, parentAttrs, metricAttrs int) []byte {
+	t.Helper()
+	return marshalSemconv(t, []semconvGroup{
+		{
+			ID:         "attributes.base",
+			Type:       "attribute_group",
+			Attributes: semconvAttributeRefs("base.", parentAttrs),
+		},
+		{
+			ID:         "metric.queue.depth",
+			Type:       "metric",
+			MetricName: "queue.depth",
+			Extends:    "attributes.base",
+			Attributes: semconvAttributeRefs("metric.", metricAttrs),
+		},
+	})
+}
+
+func inheritedAttributeFanoutSemconv(t *testing.T, children int) []byte {
+	t.Helper()
+	groups := make([]semconvGroup, 0, children+1)
+	groups = append(groups, semconvGroup{
+		ID:         "attributes.base",
+		Type:       "attribute_group",
+		Attributes: semconvAttributeRefs("base.", maxSchemaExpansion),
+	})
+	for i := range children {
+		groups = append(groups, semconvGroup{
+			ID:      "attributes.child." + strconv.Itoa(i),
+			Type:    "attribute_group",
+			Extends: "attributes.base",
+		})
+	}
+	return marshalSemconv(t, groups)
+}
+
+func duplicateHeavySemconv(t *testing.T, groupCount int) []byte {
+	t.Helper()
+	attributes := make([]semconvAttribute, maxSchemaExpansion)
+	for i := range attributes {
+		attributes[i].Ref = "shared"
+	}
+	groups := make([]semconvGroup, groupCount)
+	for i := range groups {
+		groups[i] = semconvGroup{
+			ID:         "attributes.duplicates." + strconv.Itoa(i),
+			Type:       "attribute_group",
+			Attributes: attributes,
+		}
+	}
+	return marshalSemconv(t, groups)
+}
+
+func semconvAttributeRefs(prefix string, count int) []semconvAttribute {
+	result := make([]semconvAttribute, count)
+	for i := range count {
+		result[i].Ref = prefix + strconv.Itoa(i)
+	}
+	return result
+}
+
+func marshalSemconv(t *testing.T, groups []semconvGroup) []byte {
+	t.Helper()
+	b, err := yaml.Marshal(semconv{Groups: groups})
+	require.NoError(t, err)
+	return b
+}
+
+func TestTransformOTelSchemaLabels(t *testing.T) {
+	t.Run("transforms metric and label names", func(t *testing.T) {
+		lbls := labels.FromStrings(
+			model.MetricNameLabel, "http_server_duration_seconds",
+			"http_method", "GET",
+			"http_status_code", "200",
+			"instance", "localhost:8080",
+		)
+
+		mapping := &labelMapping{
+			translatedMetric: "http.server.duration",
+			translatedLabels: map[string]string{
+				"http_method":      "http.method",
+				"http_status_code": "http.status_code",
+			},
+		}
+
+		result, err := transformOTelSchemaLabels(lbls, mapping)
+		require.NoError(t, err)
+
+		require.Equal(t, "http.server.duration", result.Get(model.MetricNameLabel))
+		require.Equal(t, "GET", result.Get("http.method"))
+		require.Equal(t, "200", result.Get("http.status_code"))
+		require.Equal(t, "localhost:8080", result.Get("instance"))
+		require.Empty(t, result.Get("http_method"))
+		require.Empty(t, result.Get("http_status_code"))
+	})
+
+	t.Run("removes __schema_url__", func(t *testing.T) {
+		lbls := labels.FromStrings(
+			model.MetricNameLabel, "http_server_duration_seconds",
+			schemaURLLabel, "https://example.com/otel.yaml",
+			"http_method", "GET",
+		)
+
+		mapping := &labelMapping{
+			translatedMetric: "http.server.duration",
+			translatedLabels: map[string]string{},
+		}
+
+		result, err := transformOTelSchemaLabels(lbls, mapping)
+		require.NoError(t, err)
+
+		require.Empty(t, result.Get(schemaURLLabel))
+		require.Equal(t, "http.server.duration", result.Get(model.MetricNameLabel))
+	})
+
+	t.Run("sorts labels after a rename", func(t *testing.T) {
+		lbls := labels.FromStrings(
+			model.MetricNameLabel, "jvm.thread.count",
+			"service.name", "api",
+			"thread.daemon", "true",
+		)
+		mapping := &labelMapping{
+			translatedMetric: "jvm.thread.count",
+			translatedLabels: map[string]string{"thread.daemon": "jvm.thread.daemon"},
+		}
+
+		result, err := transformOTelSchemaLabels(lbls, mapping)
+		require.NoError(t, err)
+		require.Equal(t, labels.FromStrings(
+			model.MetricNameLabel, "jvm.thread.count",
+			"jvm.thread.daemon", "true",
+			"service.name", "api",
+		), result)
+		require.Equal(t, "true", result.Get("jvm.thread.daemon"))
+	})
+
+	t.Run("collapses aliases with equal values", func(t *testing.T) {
+		lbls := labels.FromStrings(
+			model.MetricNameLabel, "jvm.thread.count",
+			"jvm.thread.daemon", "true",
+			"thread.daemon", "true",
+		)
+		mapping := &labelMapping{
+			translatedMetric: "jvm.thread.count",
+			translatedLabels: map[string]string{"thread.daemon": "jvm.thread.daemon"},
+		}
+
+		result, err := transformOTelSchemaLabels(lbls, mapping)
+		require.NoError(t, err)
+		require.Equal(t, labels.FromStrings(
+			model.MetricNameLabel, "jvm.thread.count",
+			"jvm.thread.daemon", "true",
+		), result)
+	})
+
+	t.Run("rejects aliases with conflicting values", func(t *testing.T) {
+		lbls := labels.FromStrings(
+			model.MetricNameLabel, "jvm.thread.count",
+			"jvm.thread.daemon", "false",
+			"thread.daemon", "true",
+		)
+		mapping := &labelMapping{
+			translatedMetric: "jvm.thread.count",
+			translatedLabels: map[string]string{"thread.daemon": "jvm.thread.daemon"},
+		}
+
+		_, err := transformOTelSchemaLabels(lbls, mapping)
+		require.ErrorContains(t, err, `maps "jvm.thread.daemon" and "thread.daemon" to "jvm.thread.daemon" with conflicting values`)
+	})
+
+	t.Run("handles many-to-one mappings", func(t *testing.T) {
+		mapping := &labelMapping{
+			translatedMetric: "metric.current",
+			translatedLabels: map[string]string{
+				"legacy.a": "current",
+				"legacy.b": "current",
+			},
+		}
+
+		result, err := transformOTelSchemaLabels(labels.FromStrings(
+			model.MetricNameLabel, "metric.old",
+			"legacy.a", "same",
+			"legacy.b", "same",
+		), mapping)
+		require.NoError(t, err)
+		require.Equal(t, labels.FromStrings(
+			model.MetricNameLabel, "metric.current",
+			"current", "same",
+		), result)
+
+		_, err = transformOTelSchemaLabels(labels.FromStrings(
+			model.MetricNameLabel, "metric.old",
+			"legacy.a", "one",
+			"legacy.b", "two",
+		), mapping)
+		require.ErrorContains(t, err, `maps "legacy.a" and "legacy.b" to "current" with conflicting values`)
+	})
+}
+
+func TestReadRegistryFile(t *testing.T) {
+	t.Run("loads embedded registry entry", func(t *testing.T) {
+		b, err := testEngine().readRegistryFile("registry/1.0.0")
+		require.NoError(t, err)
+		require.NotEmpty(t, b)
+	})
+
+	t.Run("rejects HTTP, absolute paths, traversal, and non-registry paths", func(t *testing.T) {
+		e := testEngine()
+		for _, url := range []string{
+			"http://example.com/x.yaml",
+			"/etc/passwd",
+			"registry/../etc/passwd",
+			"registry/..",
+			"./testdata/otel.yaml",
+			"registry/",
+		} {
+			_, err := e.readRegistryFile(url)
+			require.Errorf(t, err, "expected %q to be rejected", url)
+		}
+	})
+}
+
+// TestUpstreamSemconvAttributes pins inherited metric attributes from the real
+// v1.21.0 and v1.22.0 HTTP semantic-convention groups.
+func TestUpstreamSemconvAttributes(t *testing.T) {
+	for _, tc := range []struct {
+		version    string
+		metric     string
+		attributes []string
+	}{
+		{
+			version: "1.21.0",
+			metric:  "http.server.duration",
+			attributes: []string{
+				"http.route", "server.address", "server.port", "url.scheme",
+				"http.request.method", "http.response.status_code",
+				"network.protocol.name", "network.protocol.version",
+			},
+		},
+		{
+			version: "1.22.0",
+			metric:  "http.server.request.duration",
+			attributes: []string{
+				"http.request.method", "http.response.status_code", "error.type",
+				"network.protocol.name", "network.protocol.version", "http.route",
+				"server.address", "server.port", "url.scheme",
+			},
+		},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			b, err := os.ReadFile("./testdata/upstream/semconv-" + tc.version + ".yaml")
+			require.NoError(t, err)
+			sc, err := loadSemconv(b, tc.version)
+			require.NoError(t, err)
+
+			require.Equal(t, tc.attributes, sc.attributesOf(tc.metric))
+			require.Equal(t, "s", sc.metrics[tc.metric].unit)
+			require.Equal(t, "histogram", sc.metrics[tc.metric].instrument)
+		})
+	}
+}

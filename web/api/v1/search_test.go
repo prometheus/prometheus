@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -35,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/semconv"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -203,6 +205,58 @@ func TestSearchEndpointsMapTSDBNotReadyToUnavailable(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSearchEndpointsWithSemconvAwareStorage(t *testing.T) {
+	api := newSearchTestAPI(t)
+	underlying, ok := api.Queryable.(storage.Storage)
+	require.True(t, ok)
+	api.Queryable = semconv.AwareStorage(underlying)
+
+	for _, endpoint := range []struct {
+		name   string
+		path   string
+		params url.Values
+	}{
+		{name: "metric names", path: "/search/metric_names", params: url.Values{"search[]": []string{"go_gc"}}},
+		{name: "label names", path: "/search/label_names", params: url.Values{"search[]": []string{"inst"}}},
+		{name: "label values", path: "/search/label_values", params: url.Values{"label": []string{"job"}, "search[]": []string{"prom"}}},
+	} {
+		t.Run(endpoint.name, func(t *testing.T) {
+			recorder := doSearchRequest(t, api, endpoint.path, endpoint.params)
+			require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+		})
+		t.Run(endpoint.name+" rejects schema-aware selectors", func(t *testing.T) {
+			params := make(url.Values, len(endpoint.params)+1)
+			maps.Copy(params, endpoint.params)
+			params.Set("match[]", `{__name__="up",__semconv_url__="registry/1.1.0",__schema_url__="registry/registry.yaml"}`)
+			recorder := doSearchRequest(t, api, endpoint.path, params)
+			require.Equal(t, http.StatusUnprocessableEntity, recorder.Code, recorder.Body.String())
+
+			var response Response
+			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+			require.Equal(t, statusError, response.Status)
+			require.Equal(t, errorExec.str, response.ErrorType)
+			require.Contains(t, response.Error, "schema-aware search does not support")
+		})
+	}
+
+	t.Run("mixed matcher sets terminate with an error", func(t *testing.T) {
+		recorder := doSearchRequest(t, api, "/search/metric_names", url.Values{
+			"match[]": []string{
+				"up",
+				`{__name__="up",__semconv_url__="registry/1.1.0",__schema_url__="registry/registry.yaml"}`,
+			},
+		})
+		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+
+		lines := parseNDJSON(t, recorder.Body.String())
+		require.NotEmpty(t, lines)
+		var last searchTrailer
+		require.NoError(t, json.Unmarshal(lines[len(lines)-1], &last))
+		require.Equal(t, "error", last.Status)
+		require.Contains(t, recorder.Body.String(), "schema-aware search does not support")
+	})
 }
 
 func TestSearchMetricNames(t *testing.T) {
