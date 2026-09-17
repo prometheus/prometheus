@@ -1336,7 +1336,7 @@ func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 			// record is needed.
 			name: "keep series that the WBL references, past mint",
 			prepare: func(_ *testing.T, h *Head) {
-				h.pinWBLAliases(map[chunks.HeadSeriesRef]struct{}{chunks.HeadSeriesRef(existingRef): {}})
+				h.pinWBLSeriesRefs(map[chunks.HeadSeriesRef]struct{}{chunks.HeadSeriesRef(existingRef): {}})
 			},
 			mint:     keepUntil + 1,
 			expected: true,
@@ -1344,8 +1344,8 @@ func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 		{
 			name: "drop series once the WBL reference is released",
 			prepare: func(_ *testing.T, h *Head) {
-				h.pinWBLAliases(map[chunks.HeadSeriesRef]struct{}{chunks.HeadSeriesRef(existingRef): {}})
-				h.releaseWBLAliases()
+				h.pinWBLSeriesRefs(map[chunks.HeadSeriesRef]struct{}{chunks.HeadSeriesRef(existingRef): {}})
+				h.releaseWBLPinnedSeriesRefs()
 			},
 			mint:     keepUntil + 1,
 			expected: false,
