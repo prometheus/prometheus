@@ -279,7 +279,20 @@ importers:
         version: 14.0.17
 
   module/lezer-promql:
+    dependencies:
+      lru-cache:
+        specifier: ^11.5.2
+        version: 11.5.2
     devDependencies:
+      '@eslint/compat':
+        specifier: ^2.0.0
+        version: 2.1.1(eslint@10.10.0(supports-color@8.1.1))
+      '@eslint/eslintrc':
+        specifier: ^3.3.6
+        version: 3.3.7(supports-color@8.1.1)
+      '@eslint/js':
+        specifier: ^10.0.0
+        version: 10.0.1(eslint@10.10.0(supports-color@8.1.1))
       '@lezer/generator':
         specifier: ^1.8.0
         version: 1.8.0
@@ -292,12 +305,33 @@ importers:
       '@rollup/plugin-node-resolve':
         specifier: ^16.0.3
         version: 16.0.3(rollup@4.63.1)
+      '@rollup/plugin-typescript':
+        specifier: ^12.1.0
+        version: 12.3.0(@typescript/typescript6@6.0.2)(rollup@4.63.1)(tslib@2.8.1)
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^8.65.0
+        version: 8.69.0(@typescript-eslint/parser@8.69.0(@typescript/typescript6@6.0.2)(eslint@10.10.0(supports-color@8.1.1))(supports-color@8.1.1))(@typescript/typescript6@6.0.2)(eslint@10.10.0(supports-color@8.1.1))(supports-color@8.1.1)
+      '@typescript-eslint/parser':
+        specifier: ^8.65.0
+        version: 8.69.0(@typescript/typescript6@6.0.2)(eslint@10.10.0(supports-color@8.1.1))(supports-color@8.1.1)
+      eslint:
+        specifier: ^10.0.0
+        version: 10.10.0(supports-color@8.1.1)
+      eslint-plugin-prettier:
+        specifier: ^5.5.6
+        version: 5.5.6(eslint-config-prettier@10.1.8(eslint@10.10.0(supports-color@8.1.1)))(eslint@10.10.0(supports-color@8.1.1))(prettier@3.9.6)
       jest:
         specifier: ^30.4.2
         version: 30.5.1(@types/node@26.0.1)(supports-color@8.1.1)
       rollup:
         specifier: ^4.62.3
         version: 4.63.1
+      tslib:
+        specifier: ^2.8.0
+        version: 2.8.1
+      typescript:
+        specifier: npm:@typescript/typescript6@^6.0.2
+        version: '@typescript/typescript6@6.0.2'
 
 packages:
 
@@ -1084,6 +1118,19 @@ packages:
       rollup: ^2.78.0||^3.0.0||^4.0.0
     peerDependenciesMeta:
       rollup:
+        optional: true
+
+  '@rollup/plugin-typescript@12.3.0':
+    resolution: {integrity: sha512-7DP0/p7y3t67+NabT9f8oTBFE6gGkto4SA6Np2oudYmZE/m1dt8RB0SjL1msMxFpLo631qjRCcBlAbq1ml/Big==}
+    engines: {node: '>=14.0.0'}
+    peerDependencies:
+      rollup: ^2.14.0||^3.0.0||^4.0.0
+      tslib: '*'
+      typescript: '>=3.7.0'
+    peerDependenciesMeta:
+      rollup:
+        optional: true
+      tslib:
         optional: true
 
   '@rollup/pluginutils@5.3.0':
@@ -4544,6 +4591,15 @@ snapshots:
       resolve: 1.22.12
     optionalDependencies:
       rollup: 4.63.1
+
+  '@rollup/plugin-typescript@12.3.0(@typescript/typescript6@6.0.2)(rollup@4.63.1)(tslib@2.8.1)':
+    dependencies:
+      '@rollup/pluginutils': 5.3.0(rollup@4.63.1)
+      resolve: 1.22.12
+      typescript: '@typescript/typescript6@6.0.2'
+    optionalDependencies:
+      rollup: 4.63.1
+      tslib: 2.8.1
 
   '@rollup/pluginutils@5.3.0(rollup@4.63.1)':
     dependencies:
