@@ -49,8 +49,13 @@ func relabelLabels(l labels.Labels, cfgs []*relabel.Config, validationScheme mod
 	return result, true
 }
 
-// relabelCacheMaxEntries bounds RelabelCache size.
-const relabelCacheMaxEntries = 100_000
+// relabelCacheLowWatermark is the eviction target on overflow. The gap below
+// relabelCacheMaxEntries gives touched marks room to accumulate across many
+// puts before the next sweep judges them.
+const (
+	relabelCacheMaxEntries   = 100_000
+	relabelCacheLowWatermark = 90_000
+)
 
 // RelabelCache memoizes receive-path relabeling decisions. Safe for
 // concurrent use and for sharing between a v1 and v2 relabeling appendable.
@@ -128,10 +133,11 @@ func (c *RelabelCache) put(h uint64, orig, result labels.Labels, keep bool, cfgs
 
 	if len(c.entries) >= relabelCacheMaxEntries {
 		c.sweep()
-		// Evict arbitrary entries down to the cap instead of wiping the
-		// map, so a stampede doesn't force every hot entry to recompute.
+		// Evict arbitrary entries down to the low watermark instead of
+		// wiping the map, so a stampede doesn't force every hot entry to
+		// recompute.
 		for evict := range c.entries {
-			if len(c.entries) < relabelCacheMaxEntries {
+			if len(c.entries) <= relabelCacheLowWatermark {
 				break
 			}
 			delete(c.entries, evict)

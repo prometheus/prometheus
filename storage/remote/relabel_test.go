@@ -310,7 +310,26 @@ func TestRelabelCache(t *testing.T) {
 		cache.mu.RLock()
 		size := len(cache.entries)
 		cache.mu.RUnlock()
-		require.Equal(t, relabelCacheMaxEntries, size, "sweep freeing nothing must evict arbitrary entries, not wipe the whole cache")
+		require.Equal(t, relabelCacheLowWatermark+1, size, "sweep freeing nothing must evict down to the low watermark, not wipe the whole cache")
+	})
+
+	t.Run("consecutive misses with nothing touched in between don't collapse the cache", func(t *testing.T) {
+		cache := NewRelabelCache()
+		for i := range relabelCacheMaxEntries {
+			cache.relabel(labels.FromStrings("__name__", "m", "i", strconv.Itoa(i)), relabelTestRewriteConfig, model.UTF8Validation)
+		}
+		// Touch every entry so the first miss below finds nothing to free.
+		for i := range relabelCacheMaxEntries {
+			cache.relabel(labels.FromStrings("__name__", "m", "i", strconv.Itoa(i)), relabelTestRewriteConfig, model.UTF8Validation)
+		}
+
+		cache.relabel(labels.FromStrings("__name__", "m", "kind", "trigger1"), relabelTestRewriteConfig, model.UTF8Validation)
+		cache.relabel(labels.FromStrings("__name__", "m", "kind", "trigger2"), relabelTestRewriteConfig, model.UTF8Validation)
+
+		cache.mu.RLock()
+		size := len(cache.entries)
+		cache.mu.RUnlock()
+		require.Equal(t, relabelCacheLowWatermark+2, size, "a second miss right after the first must not re-sweep an already-shrunk cache")
 	})
 
 	t.Run("an entry reused before overflow survives it, one that wasn't does not", func(t *testing.T) {
