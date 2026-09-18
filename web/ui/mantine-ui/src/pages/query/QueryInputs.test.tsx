@@ -54,6 +54,7 @@ const wrapper = ({ children }: PropsWithChildren) => (
   </MantineProvider>
 );
 const props = {
+  panelIdx: 0,
   initialExpr: "up+1",
   metricNames: [],
   executeQuery: vi.fn(),

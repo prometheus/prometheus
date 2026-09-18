@@ -22,6 +22,7 @@ const SettingsMenu: FC = () => {
     enableLinter,
     showAnnotations,
     showQueryWarnings,
+    showQueryCost,
     showQueryInfoNotices,
     ruleGroupsPerPage,
     alertGroupsPerPage,
@@ -121,6 +122,18 @@ const SettingsMenu: FC = () => {
                     dispatch(
                       updateSettings({
                         showQueryInfoNotices: event.currentTarget.checked,
+                      })
+                    )
+                  }
+                />
+                <Checkbox
+                  checked={showQueryCost}
+                  label="Show query cost"
+                  description="Asks the server to estimate each query in addition to executing it."
+                  onChange={(event) =>
+                    dispatch(
+                      updateSettings({
+                        showQueryCost: event.currentTarget.checked,
                       })
                     )
                   }

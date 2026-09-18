@@ -21,15 +21,17 @@ import TableTab from "./TableTab";
 import { UPlotChartProps } from "./UPlotChart";
 import { GraphDisplayMode } from "../../state/queryPageSlice";
 
-const { visualizer } = vi.hoisted(() => ({
+const { visualizer, settings } = vi.hoisted(() => ({
   visualizer: { endTime: null as number | null, range: 10000 },
-}));
-vi.mock("../../state/settingsSlice", () => ({
-  useSettings: () => ({
+  settings: {
     pathPrefix: "/prometheus",
     showQueryWarnings: true,
     showQueryInfoNotices: true,
-  }),
+    showQueryCost: false,
+  },
+}));
+vi.mock("../../state/settingsSlice", () => ({
+  useSettings: () => settings,
 }));
 vi.mock("../../state/hooks", () => ({
   useAppSelector: () => ({ visualizer }),
@@ -116,16 +118,15 @@ beforeEach(() => {
   client = new QueryClient();
   now = 100000;
   visualizer.endTime = null;
+  settings.showQueryCost = false;
   vi.spyOn(Date, "now").mockImplementation(() => now);
   vi.stubGlobal(
     "matchMedia",
-    vi
-      .fn()
-      .mockReturnValue({
-        matches: false,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-      }),
+    vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }),
   );
   vi.stubGlobal(
     "ResizeObserver",
@@ -198,6 +199,31 @@ describe("graph query executions", () => {
 });
 
 describe("table query executions", () => {
+  it("refreshes cost comparisons when the setting changes using the request time", async () => {
+    const props = { panelIdx: 0, retriggerIdx: 0, expr: "up" };
+    const { rerender } = render(<TableTab {...props} />, { wrapper });
+    expect(
+      new URL(pending[0].url, "http://localhost").searchParams.has("cost"),
+    ).toBe(false);
+    await reply(0, true);
+
+    now = 200000;
+    settings.showQueryCost = true;
+    rerender(<TableTab {...props} />);
+    await waitFor(() => expect(pending).toHaveLength(2));
+    const params = new URL(pending[1].url, "http://localhost").searchParams;
+    expect(params.get("cost")).toBe("true");
+    expect(params.get("time")).toBe("200");
+    await reply(1, true);
+
+    settings.showQueryCost = false;
+    rerender(<TableTab {...props} />);
+    await waitFor(() => expect(pending).toHaveLength(3));
+    expect(
+      new URL(pending[2].url, "http://localhost").searchParams.has("cost"),
+    ).toBe(false);
+  });
+
   it("resets expanded results after repeated identical queries, including an offline execution", async () => {
     const { rerender } = render(
       <TableTab panelIdx={0} retriggerIdx={0} expr="up" />,
