@@ -46,6 +46,9 @@ type ActiveSeries interface {
 // can provide metadata without depending on Prometheus internal series types.
 type ActiveSeriesWithMetadata interface {
 	ActiveSeries
+	// Metadata returns the metadata associated with the series, or nil if the
+	// series has no metadata. The returned value must not be mutated after return,
+	// as [Checkpoint] reads it without holding any lock.
 	Metadata() *metadata.Metadata
 }
 
@@ -58,8 +61,10 @@ type DeletedSeries interface {
 	Labels() labels.Labels
 }
 
-// Checkpoint creates an unindexed checkpoint containing record.RefSeries and
-// last timestamp for ActiveSeries and record.RefSeries for DeletedSeries.
+// Checkpoint creates an unindexed checkpoint containing record.RefSeries,
+// optional record.RefMetadata (when ActiveSeries implements [ActiveSeriesWithMetadata]),
+// and last timestamp (as record.RefSample) for ActiveSeries, and record.RefSeries
+// for DeletedSeries.
 //
 // This API accepts interfaces so downstream users of this package can provide
 // their own series storage while reusing Prometheus checkpoint writing logic.
