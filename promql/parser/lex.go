@@ -535,6 +535,7 @@ func lexStatements(l *Lexer) stateFn {
 			return l.errorf("unexpected left bracket %q", r)
 		}
 		l.gotColon = false
+		l.gotDuration = false
 		l.emit(LEFT_BRACKET)
 		if isSpace(l.peek()) {
 			skipSpaces(l)
@@ -1257,6 +1258,7 @@ func lexDurationExpr(l *Lexer) stateFn {
 		return lexDurationExpr
 	case isDurationKeywordStartChar(r):
 		if l.scanDurationKeyword() {
+			l.gotDuration = true
 			return lexDurationExpr
 		}
 		return l.errorf("unexpected character in duration expression: %q", r)
