@@ -67,6 +67,7 @@ type ExemplarMetrics struct {
 	lastExemplarsTs              prometheus.Gauge
 	maxExemplars                 prometheus.Gauge
 	outOfOrderExemplars          prometheus.Counter
+	tooOldExemplars              prometheus.Counter
 }
 
 func NewExemplarMetrics(reg prometheus.Registerer) *ExemplarMetrics {
@@ -93,6 +94,10 @@ func NewExemplarMetrics(reg prometheus.Registerer) *ExemplarMetrics {
 			Name: "prometheus_tsdb_exemplar_out_of_order_exemplars_total",
 			Help: "Total number of out of order exemplar ingestion failed attempts.",
 		}),
+		tooOldExemplars: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_exemplar_too_old_exemplars_total",
+			Help: "Total number of exemplars not stored because they were older than the exemplar they would have evicted from the full circular storage.",
+		}),
 		maxExemplars: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_exemplar_max_exemplars",
 			Help: "Total number of exemplars the exemplar storage can store, resizeable.",
@@ -106,6 +111,7 @@ func NewExemplarMetrics(reg prometheus.Registerer) *ExemplarMetrics {
 			m.seriesWithExemplarsInStorage,
 			m.lastExemplarsTs,
 			m.outOfOrderExemplars,
+			m.tooOldExemplars,
 			m.maxExemplars,
 		)
 	}
@@ -420,6 +426,18 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 				return nil
 			}
 		}
+	}
+
+	// When the buffer is full, do not store an exemplar that is older than the
+	// entry it would evict. This happens when a rarely updated series (e.g. a
+	// sparsely populated histogram bucket) keeps exposing an exemplar that was
+	// already evicted from the buffer (#9377); storing it again would evict a
+	// newer exemplar of another series on every scrape. The out-of-order time
+	// window is subtracted so that an out-of-order exemplar accepted by
+	// validateExemplar is still stored. No index entry is created or changed.
+	if displaced := &ce.exemplars[ce.nextIndex]; displaced.ref != nil && e.Ts < displaced.exemplar.Ts-ce.oooTimeWindowMillis {
+		ce.metrics.tooOldExemplars.Inc()
+		return nil
 	}
 
 	// If the index didn't exist (new series), create one.
