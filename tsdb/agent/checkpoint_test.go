@@ -194,6 +194,7 @@ func requireStripeSeriesEqual(t *testing.T, want, got *stripeSeries) {
 
 	require.Len(t, gotByRef, len(wantByRef), "series count mismatch")
 
+	var metadataCount int
 	for ref, w := range wantByRef {
 		g, ok := gotByRef[ref]
 		require.Truef(t, ok, "ref %d present in wlog path, missing in agent path", ref)
@@ -201,7 +202,11 @@ func requireStripeSeriesEqual(t *testing.T, want, got *stripeSeries) {
 			"ref %d labels mismatch: wlog=%s agent=%s", ref, w.lset.String(), g.lset.String())
 		require.Equalf(t, w.lastTs, g.lastTs, "ref %d lastTs mismatch", ref)
 		require.Equalf(t, w.Metadata(), g.Metadata(), "ref %d metadata mismatch", ref)
+		if g.Metadata() != nil {
+			metadataCount++
+		}
 	}
+	require.NotZero(t, metadataCount, "expected non-nil metadata on replayed series")
 }
 
 func assertCheckpointExists(t *testing.T, walDir string, checkpointID int) {
