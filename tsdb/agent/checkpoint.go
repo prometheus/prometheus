@@ -21,6 +21,7 @@ import (
 	"os"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -39,6 +40,18 @@ type ActiveSeries interface {
 	LastSampleTimestamp() int64
 }
 
+// ActiveSeriesWithMetadata describes a live series that also provides metadata to be written by [Checkpoint].
+//
+// This interface is intentionally exported so downstream users of this package
+// can provide metadata without depending on Prometheus internal series types.
+type ActiveSeriesWithMetadata interface {
+	ActiveSeries
+	// Metadata returns the metadata associated with the series, or nil if the
+	// series has no metadata. The returned value must not be mutated after return,
+	// as [Checkpoint] reads it without holding any lock.
+	Metadata() *metadata.Metadata
+}
+
 // DeletedSeries describes a deleted series to be written by [Checkpoint].
 //
 // This interface is intentionally exported so downstream users of this package
@@ -48,8 +61,10 @@ type DeletedSeries interface {
 	Labels() labels.Labels
 }
 
-// Checkpoint creates an unindexed checkpoint containing record.RefSeries and
-// last timestamp for ActiveSeries and record.RefSeries for DeletedSeries.
+// Checkpoint creates an unindexed checkpoint containing record.RefSeries,
+// optional record.RefMetadata (when ActiveSeries implements [ActiveSeriesWithMetadata]),
+// and last timestamp (as record.RefSample) for ActiveSeries, and record.RefSeries
+// for DeletedSeries.
 //
 // This API accepts interfaces so downstream users of this package can provide
 // their own series storage while reusing Prometheus checkpoint writing logic.
@@ -67,7 +82,7 @@ func Checkpoint(logger *slog.Logger, w *wlog.WL, atIndex, batchSize int, activeS
 		return fmt.Errorf("can't find last checkpoint: %w", err)
 	}
 
-	if idx >= atIndex {
+	if err == nil && idx >= atIndex {
 		logger.Info(
 			"checkpoint already exists",
 			"dir", dir,
@@ -139,9 +154,11 @@ type checkpointWriter struct {
 	checkpoint  *wlog.WL
 	seriesBuff  []byte
 	samplesBuff []byte
+	metaBuff    []byte
 
 	seriesRecords []record.RefSeries
 	sampleRecords []record.RefSample
+	metaRecords   []record.RefMetadata
 	batchSize     int
 }
 
@@ -151,18 +168,28 @@ func newCheckpointFlusher(checkpoint *wlog.WL, batchSize int) *checkpointWriter 
 		checkpoint:    checkpoint,
 		seriesRecords: make([]record.RefSeries, 0, batchSize),
 		sampleRecords: make([]record.RefSample, 0, batchSize),
+		metaRecords:   make([]record.RefMetadata, 0, batchSize),
 	}
 }
 
 func (cf *checkpointWriter) flushRecords() error {
 	withSamples := len(cf.sampleRecords) > 0
+	withMeta := len(cf.metaRecords) > 0
 	cf.seriesBuff = cf.enc.Series(cf.seriesRecords, cf.seriesBuff)
 
 	var err error
-	if withSamples {
+	switch {
+	case withMeta && withSamples:
+		cf.metaBuff = cf.enc.Metadata(cf.metaRecords, cf.metaBuff)
+		cf.samplesBuff = cf.enc.Samples(cf.sampleRecords, cf.samplesBuff)
+		err = cf.checkpoint.Log(cf.seriesBuff, cf.metaBuff, cf.samplesBuff)
+	case withMeta:
+		cf.metaBuff = cf.enc.Metadata(cf.metaRecords, cf.metaBuff)
+		err = cf.checkpoint.Log(cf.seriesBuff, cf.metaBuff)
+	case withSamples:
 		cf.samplesBuff = cf.enc.Samples(cf.sampleRecords, cf.samplesBuff)
 		err = cf.checkpoint.Log(cf.seriesBuff, cf.samplesBuff)
-	} else {
+	default:
 		err = cf.checkpoint.Log(cf.seriesBuff)
 	}
 
@@ -172,8 +199,10 @@ func (cf *checkpointWriter) flushRecords() error {
 
 	cf.seriesBuff = cf.seriesBuff[:0]
 	cf.samplesBuff = cf.samplesBuff[:0]
+	cf.metaBuff = cf.metaBuff[:0]
 	cf.seriesRecords = cf.seriesRecords[:0]
 	cf.sampleRecords = cf.sampleRecords[:0]
+	cf.metaRecords = cf.metaRecords[:0]
 	return nil
 }
 
@@ -191,6 +220,17 @@ func (cf *checkpointWriter) writeSeries(seriesIter iter.Seq[ActiveSeries]) error
 			Labels: series.Labels(),
 		})
 
+		if sm, ok := series.(ActiveSeriesWithMetadata); ok {
+			if m := sm.Metadata(); m != nil && !m.IsEmpty() {
+				cf.metaRecords = append(cf.metaRecords, record.RefMetadata{
+					Ref:  series.Ref(),
+					Type: record.GetMetricType(m.Type),
+					Unit: m.Unit,
+					Help: m.Help,
+				})
+			}
+		}
+
 		// Sample value is irrelevant, we only need the timestamp.
 		cf.sampleRecords = append(cf.sampleRecords, record.RefSample{
 			Ref: series.Ref(),
@@ -199,7 +239,7 @@ func (cf *checkpointWriter) writeSeries(seriesIter iter.Seq[ActiveSeries]) error
 		})
 	}
 
-	// Flush the last batch if we have one
+	// Flush the last batch if we have one.
 	if len(cf.seriesRecords) != 0 {
 		return cf.flushRecords()
 	}

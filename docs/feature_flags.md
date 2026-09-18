@@ -149,7 +149,7 @@ Fall back to serving the old (Prometheus 2.x) web UI instead of the new UI. The 
 
 `--enable-feature=metadata-wal-records`
 
-When enabled, Prometheus will store metadata in-memory and keep track of
+When enabled, Prometheus (both in server and agent modes) will store metadata in-memory and keep track of
 metadata changes as WAL records on a per-series basis.
 
 This must be used if you would like to send metadata using the new remote write 2.0.
