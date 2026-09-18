@@ -111,15 +111,20 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 		for startWithAlignment.Unix() < currStart {
 			startWithAlignment = startWithAlignment.Add(grp.Interval())
 		}
-		end := time.Unix(min(endOfBlock/int64(time.Second/time.Millisecond), end.Unix()), 0).UTC()
+		blockEnd := time.Unix(min(endOfBlock/int64(time.Second/time.Millisecond), end.Unix()), 0).UTC()
 		if end.Before(startWithAlignment) {
+			// The next evaluation point is after the requested end, so we are done.
 			break
+		}
+		if blockEnd.Before(startWithAlignment) {
+			// This block contains no evaluation points, but later blocks do.
+			continue
 		}
 		val, warnings, err := importer.apiClient.QueryRange(ctx,
 			ruleExpr,
 			v1.Range{
 				Start: startWithAlignment,
-				End:   end,
+				End:   blockEnd,
 				Step:  grp.Interval(),
 			},
 		)
