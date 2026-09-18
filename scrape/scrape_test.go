@@ -7299,9 +7299,8 @@ func BenchmarkTargetScraperGzip(b *testing.B) {
 			}
 			b.ResetTimer()
 			for b.Loop() {
-				resp, err := ts.scrape(context.Background())
+				_, err = ts.scrape(context.Background())
 				require.NoError(b, err)
-				require.NoError(b, resp.Body.Close())
 			}
 		})
 	}
