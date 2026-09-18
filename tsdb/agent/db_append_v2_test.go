@@ -1270,6 +1270,7 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 		require.NoError(t, app.Commit())
 
 		recs := readTestWAL(t, s.wal.Dir())
+		require.NotEmpty(t, recs)
 		for _, rec := range recs {
 			_, ok := rec.([]record.RefMetadata)
 			require.False(t, ok, "unexpected metadata record in WAL when feature is disabled")
@@ -1290,6 +1291,7 @@ func TestMetadataInWAL_AppenderV2(t *testing.T) {
 		require.NoError(t, app.Commit())
 
 		recs := readTestWAL(t, s.wal.Dir())
+		require.NotEmpty(t, recs)
 		for _, rec := range recs {
 			_, ok := rec.([]record.RefMetadata)
 			require.False(t, ok, "stale sample append should not write metadata to WAL")

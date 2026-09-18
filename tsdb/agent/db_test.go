@@ -1729,6 +1729,7 @@ func TestUpdateMetadata(t *testing.T) {
 
 		// WAL should not contain any metadata records.
 		recs := readTestWAL(t, s.wal.Dir())
+		require.NotEmpty(t, recs)
 		for _, rec := range recs {
 			_, ok := rec.([]record.RefMetadata)
 			require.False(t, ok, "unexpected metadata record in WAL when feature is disabled")
