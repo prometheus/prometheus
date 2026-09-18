@@ -3302,6 +3302,199 @@ func TestPostingsForMatchers(t *testing.T) {
 			require.Empty(t, exp, "Evaluating %v", c.matchers)
 		})
 	}
+
+	t.Run("concurrent append", func(t *testing.T) {
+		emptyMatchingSet := labels.MustNewMatcher(labels.MatchRegexp, "b", "good|")
+		require.NotEmpty(t, emptyMatchingSet.SetMatches())
+		require.True(t, emptyMatchingSet.Matches(""))
+		for _, exclusion := range []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchNotEqual, "b", "bad"),
+			labels.MustNewMatcher(labels.MatchNotRegexp, "b", "bad.*"),
+			labels.MustNewMatcher(labels.MatchNotRegexp, "b", ".+"),
+			labels.MustNewMatcher(labels.MatchEqual, "b", ""),
+			emptyMatchingSet,
+		} {
+			t.Run(exclusion.String(), func(t *testing.T) {
+				h := newTestDB(t).Head()
+				appendSeries := func(ls labels.Labels) {
+					app := h.Appender(context.Background())
+					_, err := app.Append(0, ls, 0, 1)
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+				}
+				allowed := labels.FromStrings("__name__", "metric", "a", "xz", "id", "allowed")
+				appendSeries(allowed)
+				appendSeries(labels.FromStrings("__name__", "metric", "a", "xz", "b", "bad", "id", "old"))
+
+				rh := NewRangeHead(h, 0, 1)
+				ir, err := rh.Index()
+				require.NoError(t, err)
+				appended := false
+				hooked := postingsHookIndexReader{IndexReader: ir, afterRead: func(name string) {
+					if name == "b" && !appended {
+						// Append after the exclusion snapshot has been captured.
+						appendSeries(labels.FromStrings("__name__", "metric", "a", "xz", "b", "bad", "id", "new"))
+						appended = true
+					}
+				}}
+				q, err := NewBlockQuerier(rangeHeadWithIndexReader{rh, hooked}, 0, 1)
+				require.NoError(t, err)
+				defer func() { require.NoError(t, q.Close()) }()
+
+				// The series API reads metadata without loading isolated samples.
+				ss := q.Select(context.Background(), false, &storage.SelectHints{Func: "series", Start: 0, End: 1},
+					exclusion,
+					labels.MustNewMatcher(labels.MatchRegexp, "a", "x.*"),
+					labels.MustNewMatcher(labels.MatchRegexp, "a", ".*z"),
+				)
+				var got []labels.Labels
+				for ss.Next() {
+					got = append(got, ss.At().Labels())
+				}
+				require.NoError(t, ss.Err())
+				require.True(t, appended, "The excluded series must be appended during the query")
+				require.Equal(t, []labels.Labels{allowed}, got)
+			})
+		}
+	})
+
+	t.Run("matcher combinations", func(t *testing.T) {
+		h := newTestDB(t).Head()
+		app := h.Appender(context.Background())
+		var want []storage.SeriesRef
+		for _, value := range []string{"xz", "xyz", "xyyz", "xzzz"} {
+			ref, err := app.Append(0, labels.FromStrings("__name__", "metric", "a", value, "b", "bad"), 0, 1)
+			require.NoError(t, err)
+			if value == "xz" || value == "xyz" {
+				want = append(want, ref)
+			}
+		}
+		require.NoError(t, app.Commit())
+		ir, err := h.Index()
+		require.NoError(t, err)
+		defer func() { require.NoError(t, ir.Close()) }()
+
+		positive := labels.MustNewMatcher(labels.MatchRegexp, "a", "x.*")
+		negative := labels.MustNewMatcher(labels.MatchNotRegexp, "a", ".*yy.*")
+		t.Run("direct lookup after regexps", func(t *testing.T) {
+			for _, tc := range []struct {
+				matcher *labels.Matcher
+				want    []storage.SeriesRef
+			}{
+				{
+					matcher: labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "absent"),
+				},
+				{
+					matcher: labels.MustNewMatcher(labels.MatchEqual, "b", "absent"),
+				},
+				{
+					matcher: labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "absent|missing"),
+				},
+				{
+					matcher: labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+					want:    want,
+				},
+			} {
+				t.Run(tc.matcher.String(), func(t *testing.T) {
+					p, err := PostingsForMatchers(context.Background(), ir,
+						positive,
+						labels.MustNewMatcher(labels.MatchRegexp, "a", ".*z"),
+						negative,
+						labels.MustNewMatcher(labels.MatchNotRegexp, "a", ".*zz.*"),
+						tc.matcher,
+					)
+					require.NoError(t, err)
+					got, err := index.ExpandPostings(p)
+					require.NoError(t, err)
+					require.Equal(t, tc.want, got)
+				})
+			}
+		})
+		t.Run("repeated pointers and both polarities", func(t *testing.T) {
+			p, err := PostingsForMatchers(context.Background(), ir,
+				negative, positive,
+				labels.MustNewMatcher(labels.MatchNotRegexp, "a", ".*zz.*"),
+				labels.MustNewMatcher(labels.MatchRegexp, "a", ".*z"),
+				positive, negative,
+			)
+			require.NoError(t, err)
+			got, err := index.ExpandPostings(p)
+			require.NoError(t, err)
+			require.Equal(t, want, got)
+		})
+		t.Run("empty intersection", func(t *testing.T) {
+			p, err := PostingsForMatchers(context.Background(), ir,
+				labels.MustNewMatcher(labels.MatchNotRegexp, "b", "bad.*"),
+				positive,
+				labels.MustNewMatcher(labels.MatchRegexp, "a", ".*missing"),
+			)
+			require.NoError(t, err)
+			got, err := index.ExpandPostings(p)
+			require.NoError(t, err)
+			require.Empty(t, got)
+		})
+		t.Run("canceled after first scan", func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var reads []string
+			hooked := postingsHookIndexReader{IndexReader: ir, afterRead: func(name string) {
+				reads = append(reads, name)
+				cancel()
+			}}
+			_, err := PostingsForMatchers(ctx, hooked,
+				positive,
+				labels.MustNewMatcher(labels.MatchRegexp, "a", ".*z"),
+				negative,
+				labels.MustNewMatcher(labels.MatchNotRegexp, "a", ".*zz.*"),
+			)
+			require.ErrorIs(t, err, context.Canceled)
+			require.Equal(t, []string{"a"}, reads)
+		})
+	})
+
+	t.Run("scan error", func(t *testing.T) {
+		for _, typ := range []labels.MatchType{labels.MatchRegexp, labels.MatchNotRegexp} {
+			t.Run(typ.String(), func(t *testing.T) {
+				_, err := PostingsForMatchers(context.Background(), mockMatcherIndex{},
+					labels.MustNewMatcher(typ, "a", "x.*"),
+					labels.MustNewMatcher(typ, "a", ".*z"),
+				)
+				require.EqualError(t, err, "PostingsForLabelMatching called")
+			})
+		}
+	})
+}
+
+type postingsHookIndexReader struct {
+	IndexReader
+	afterRead func(string)
+}
+
+func (r postingsHookIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
+	p, err := r.IndexReader.Postings(ctx, name, values...)
+	r.afterRead(name)
+	return p, err
+}
+
+func (r postingsHookIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
+	p := r.IndexReader.PostingsForLabelMatching(ctx, name, match)
+	r.afterRead(name)
+	return p
+}
+
+func (r postingsHookIndexReader) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
+	p := r.IndexReader.PostingsForAllLabelValues(ctx, name)
+	r.afterRead(name)
+	return p
+}
+
+type rangeHeadWithIndexReader struct {
+	*RangeHead
+	indexReader IndexReader
+}
+
+func (h rangeHeadWithIndexReader) Index() (IndexReader, error) {
+	return h.indexReader, nil
 }
 
 // TestQuerierIndexQueriesRace tests the index queries with racing appends.
