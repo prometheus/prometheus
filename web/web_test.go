@@ -39,7 +39,6 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -64,6 +63,20 @@ func (*dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
 }
 
+// loopbackListener opens a TCP listener on 127.0.0.1:0 and returns it
+// alongside the bound ":port" string. The listener stays open until t
+// cleans up (or until the caller hands it to webHandler.Run, which closes
+// it on shutdown). Holding the listener across the whole test rather than
+// pre-allocating a port via testutil.RandomUnprivilegedPort eliminates
+// the close-then-bind window: the kernel reservation is continuous.
+func loopbackListener(t *testing.T) (ln net.Listener, port string) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { ln.Close() })
+	return ln, ":" + strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
+}
+
 func TestReadyAndHealthy(t *testing.T) {
 	t.Parallel()
 
@@ -74,7 +87,7 @@ func TestReadyAndHealthy(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
 	})
-	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+	ln, port := loopbackListener(t)
 
 	opts := &Options{
 		ListenAddresses: []string{port},
@@ -105,14 +118,10 @@ func TestReadyAndHealthy(t *testing.T) {
 
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
-	l, err := webHandler.Listeners()
-	if err != nil {
-		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
-	}
 
 	ctx := t.Context()
 	go func() {
-		err := webHandler.Run(ctx, l, "")
+		err := webHandler.Run(ctx, []net.Listener{ln}, "")
 		if err != nil {
 			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
@@ -217,7 +226,7 @@ func TestRoutePrefix(t *testing.T) {
 		require.NoError(t, db.Close())
 	})
 
-	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+	ln, port := loopbackListener(t)
 
 	opts := &Options{
 		ListenAddresses: []string{port},
@@ -242,13 +251,9 @@ func TestRoutePrefix(t *testing.T) {
 	opts.Flags = map[string]string{}
 
 	webHandler := New(nil, opts)
-	l, err := webHandler.Listeners()
-	if err != nil {
-		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
-	}
 	ctx := t.Context()
 	go func() {
-		err := webHandler.Run(ctx, l, "")
+		err := webHandler.Run(ctx, []net.Listener{ln}, "")
 		if err != nil {
 			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
@@ -399,7 +404,7 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 	})
 	timeout := 10 * time.Second
 
-	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+	ln, port := loopbackListener(t)
 
 	opts := &Options{
 		ListenAddresses: []string{port},
@@ -429,16 +434,12 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
-	l, err := webHandler.Listeners()
-	if err != nil {
-		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
-	}
 
 	closed := make(chan struct{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		err := webHandler.Run(ctx, l, "")
+		err := webHandler.Run(ctx, []net.Listener{ln}, "")
 		if err != nil {
 			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
@@ -466,7 +467,7 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 }
 
 func TestHandleMultipleQuitRequests(t *testing.T) {
-	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+	ln, port := loopbackListener(t)
 
 	opts := &Options{
 		ListenAddresses: []string{port},
@@ -482,14 +483,10 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 	webHandler := New(nil, opts)
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
-	l, err := webHandler.Listeners()
-	if err != nil {
-		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	closed := make(chan struct{})
 	go func() {
-		err := webHandler.Run(ctx, l, "")
+		err := webHandler.Run(ctx, []net.Listener{ln}, "")
 		if err != nil {
 			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
@@ -527,7 +524,7 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 func TestAgentAPIEndPoints(t *testing.T) {
 	t.Parallel()
 
-	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+	ln, port := loopbackListener(t)
 
 	opts := &Options{
 		ListenAddresses: []string{port},
@@ -557,14 +554,10 @@ func TestAgentAPIEndPoints(t *testing.T) {
 	webHandler.SetReady(Ready)
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
-	l, err := webHandler.Listeners()
-	if err != nil {
-		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
-	}
 
 	ctx := t.Context()
 	go func() {
-		err := webHandler.Run(ctx, l, "")
+		err := webHandler.Run(ctx, []net.Listener{ln}, "")
 		if err != nil {
 			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
@@ -656,9 +649,9 @@ func TestMultipleListenAddresses(t *testing.T) {
 		require.NoError(t, db.Close())
 	})
 
-	// Create multiple ports for testing multiple ListenAddresses
-	port1 := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
-	port2 := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+	// Create multiple listeners for testing multiple ListenAddresses.
+	ln1, port1 := loopbackListener(t)
+	ln2, port2 := loopbackListener(t)
 
 	opts := &Options{
 		ListenAddresses: []string{port1, port2},
@@ -689,14 +682,10 @@ func TestMultipleListenAddresses(t *testing.T) {
 
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
-	l, err := webHandler.Listeners()
-	if err != nil {
-		panic(fmt.Sprintf("Unable to start web listener: %s", err))
-	}
 
 	ctx := t.Context()
 	go func() {
-		err := webHandler.Run(ctx, l, "")
+		err := webHandler.Run(ctx, []net.Listener{ln1, ln2}, "")
 		if err != nil {
 			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
