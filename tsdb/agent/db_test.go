@@ -930,6 +930,15 @@ func Test_validateOptions(t *testing.T) {
 		require.Equal(t, DefaultOptions(), validateOptions(nil))
 	})
 
+	t.Run("Memory series retention ignores minimum WAL retention", func(t *testing.T) {
+		opts := validateOptions(&Options{
+			DisableWAL: true,
+			MinWALTime: int64(24 * time.Hour / time.Millisecond),
+			MaxWALTime: int64(4 * time.Hour / time.Millisecond),
+		})
+		require.Equal(t, int64(4*time.Hour/time.Millisecond), opts.MaxWALTime)
+	})
+
 	t.Run("MaxWALTime should not be lower than TruncateFrequency", func(t *testing.T) {
 		opts := validateOptions(&Options{
 			MaxWALTime:        int64(time.Hour / time.Millisecond),
