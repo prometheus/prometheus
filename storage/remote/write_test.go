@@ -118,31 +118,67 @@ func TestWriteStorageApplyConfig_NoDuplicateWriteConfigs(t *testing.T) {
 	}
 }
 
-func TestWriteStorageApplyConfig_RestartOnNameChange(t *testing.T) {
-	dir := t.TempDir()
+func TestWriteStorageApplyConfig_RestartOnConfigChange(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		protobufMessage remoteapi.WriteMessageType
+		update          func(*config.RemoteWriteConfig)
+	}{
+		{
+			name:            "name change",
+			protobufMessage: remoteapi.WriteV1MessageType,
+			update: func(cfg *config.RemoteWriteConfig) {
+				cfg.Name = "dev-2"
+			},
+		},
+		{
+			name:            "v1 to v2",
+			protobufMessage: remoteapi.WriteV1MessageType,
+			update: func(cfg *config.RemoteWriteConfig) {
+				cfg.ProtobufMessage = remoteapi.WriteV2MessageType
+			},
+		},
+		{
+			name:            "v2 to v1",
+			protobufMessage: remoteapi.WriteV2MessageType,
+			update: func(cfg *config.RemoteWriteConfig) {
+				cfg.ProtobufMessage = remoteapi.WriteV1MessageType
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := testRemoteWriteConfig()
+			cfg.ProtobufMessage = tc.protobufMessage
+			hash, err := toHash(cfg)
+			require.NoError(t, err)
 
-	cfg := testRemoteWriteConfig()
+			s := NewWriteStorage(nil, nil, t.TempDir(), time.Millisecond, nil, false)
+			t.Cleanup(func() { require.NoError(t, s.Close()) })
 
-	hash, err := toHash(cfg)
-	require.NoError(t, err)
+			conf := &config.Config{
+				GlobalConfig:       config.DefaultGlobalConfig,
+				RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
+			}
+			require.NoError(t, s.ApplyConfig(conf))
+			require.Len(t, s.queues, 1)
+			previousQueue := s.queues[hash]
+			require.NotNil(t, previousQueue)
+			require.Equal(t, cfg.Name, previousQueue.client().Name())
+			require.Equal(t, cfg.ProtobufMessage, previousQueue.protoMsg)
 
-	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false)
-
-	conf := &config.Config{
-		GlobalConfig:       config.DefaultGlobalConfig,
-		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
+			tc.update(cfg)
+			require.NoError(t, s.ApplyConfig(conf))
+			require.Len(t, s.queues, 1)
+			require.NotContains(t, s.queues, hash)
+			hash, err = toHash(cfg)
+			require.NoError(t, err)
+			queue := s.queues[hash]
+			require.NotNil(t, queue)
+			require.NotSame(t, previousQueue, queue)
+			require.Equal(t, cfg.Name, queue.client().Name())
+			require.Equal(t, cfg.ProtobufMessage, queue.protoMsg)
+		})
 	}
-	require.NoError(t, s.ApplyConfig(conf))
-	require.Equal(t, s.queues[hash].client().Name(), cfg.Name)
-
-	// Change the queues name, ensure the queue has been restarted.
-	conf.RemoteWriteConfigs[0].Name = "dev-2"
-	require.NoError(t, s.ApplyConfig(conf))
-	hash, err = toHash(cfg)
-	require.NoError(t, err)
-	require.Equal(t, s.queues[hash].client().Name(), conf.RemoteWriteConfigs[0].Name)
-
-	require.NoError(t, s.Close())
 }
 
 func TestWriteStorageApplyConfig_UpdateWithRegisterer(t *testing.T) {
