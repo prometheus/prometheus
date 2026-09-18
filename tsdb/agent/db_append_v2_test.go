@@ -1488,7 +1488,7 @@ func TestMetadataCheckpointing_AppenderV2(t *testing.T) {
 			require.NoError(t, err)
 
 			if inMemCheckpoint {
-				err = Checkpoint(promslog.NewNopLogger(), s.wal, last, 1000, s.series.allSeries(), nil)
+				err = Checkpoint(promslog.NewNopLogger(), s.wal, last, 1000, s.series.allSeries(), deletedSeriesIter(s.deleted, last))
 				require.NoError(t, err)
 			} else {
 				keep := func(id chunks.HeadSeriesRef) bool {
