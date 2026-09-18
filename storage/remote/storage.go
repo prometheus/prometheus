@@ -61,22 +61,27 @@ type Storage struct {
 	// For reads.
 	queryables             []storage.SampleAndChunkQueryable
 	localStartTimeCallback startTimeCallback
+	readMetrics            *ReadClientMetrics
 }
 
 var _ storage.Storage = &Storage{}
 
 // NewStorage returns a remote.Storage.
 func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels bool) *Storage {
+	if reg != nil {
+		reg.MustRegister(samplesIn, histogramsIn, exemplarsIn)
+	}
+
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
 	deduper := logging.Dedupe(l, 1*time.Minute)
 	logger := slog.New(deduper)
-
 	s := &Storage{
 		logger:                 logger,
 		deduper:                deduper,
 		localStartTimeCallback: stCallback,
+		readMetrics:            NewReadClientMetrics(reg),
 	}
 	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm, enableTypeAndUnitLabels)
 	return s
@@ -98,6 +103,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	// Update read clients
 	readHashes := make(map[string]struct{})
 	queryables := make([]storage.SampleAndChunkQueryable, 0, len(conf.RemoteReadConfigs))
+
 	for _, rrConf := range conf.RemoteReadConfigs {
 		hash, err := toHash(rrConf)
 		if err != nil {
@@ -110,9 +116,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		}
 		readHashes[hash] = struct{}{}
 
-		// Set the queue name to the config hash if the user has not set
-		// a name in their remote write config so we can still differentiate
-		// between queues that have the same remote write endpoint.
+		// Generate the remote name.
 		name := hash[:6]
 		if rrConf.Name != "" {
 			name = rrConf.Name
@@ -124,7 +128,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			ChunkedReadLimit: rrConf.ChunkedReadLimit,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
 			Headers:          rrConf.Headers,
-		})
+		}, s.readMetrics)
 		if err != nil {
 			return err
 		}
@@ -133,6 +137,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		if !rrConf.FilterExternalLabels {
 			externalLabels = labels.EmptyLabels()
 		}
+
 		queryables = append(queryables, NewSampleAndChunkQueryableClient(
 			c,
 			externalLabels,
@@ -141,6 +146,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			s.localStartTimeCallback,
 		))
 	}
+
 	s.queryables = queryables
 
 	return nil

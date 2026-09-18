@@ -34,7 +34,7 @@ func TestNewDiscoveryError(t *testing.T) {
 		[]string{"unreachable.invalid"},
 		time.Second, []string{"/"},
 		nil,
-		func([]byte, string) (model.LabelSet, error) { return nil, nil },
+		func([]byte, string) (model.LabelSet, error) { return nil, nil }, nil,
 	)
 	require.Error(t, err)
 }
