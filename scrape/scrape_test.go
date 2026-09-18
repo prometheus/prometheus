@@ -2801,29 +2801,35 @@ func testScrapeLoopScrapeAndReport(t *testing.T, appV2 bool) {
 */
 func BenchmarkScrapeLoopScrapeAndReport(b *testing.B) {
 	for _, appV2 := range []bool{false, true} {
-		b.Run(fmt.Sprintf("appV2=%v", appV2), func(b *testing.B) {
-			parsableText := readTextParseTestMetrics(b)
+		for _, pooled := range []bool{true, false} {
+			b.Run(fmt.Sprintf("appV2=%v/pooled=%v", appV2, pooled), func(b *testing.B) {
+				parsableText := readTextParseTestMetrics(b)
 
-			s := teststorage.New(b)
+				s := teststorage.New(b)
+				sl, scraper := newTestScrapeLoop(b, withAppendable(s, appV2), func(sl *scrapeLoop) {
+					sl.fallbackScrapeProtocol = "application/openmetrics-text"
+					if !pooled {
+						// Keep the fixture above the largest bucket.
+						sl.buffers = pool.New(1e3, 1e3, 3, func(sz int) any { return make([]byte, 0, sz) })
+					}
+				})
+				scraper.scrapeFunc = func(_ context.Context, writer io.Writer) error {
+					// LimitReader prevents io.Copy from using bytes.Reader.WriteTo.
+					_, err := io.Copy(writer, io.LimitReader(bytes.NewReader(parsableText), int64(len(parsableText))))
+					return err
+				}
 
-			sl, scraper := newTestScrapeLoop(b, withAppendable(s, appV2), func(sl *scrapeLoop) {
-				sl.fallbackScrapeProtocol = "application/openmetrics-text"
+				ts := time.Time{}
+
+				b.ReportAllocs()
+				b.ResetTimer()
+				for b.Loop() {
+					ts = ts.Add(time.Second)
+					sl.scrapeAndReport(time.Time{}, ts, nil)
+					require.NoError(b, scraper.lastError)
+				}
 			})
-			scraper.scrapeFunc = func(_ context.Context, writer io.Writer) error {
-				_, err := writer.Write(parsableText)
-				return err
-			}
-
-			ts := time.Time{}
-
-			b.ReportAllocs()
-			b.ResetTimer()
-			for b.Loop() {
-				ts = ts.Add(time.Second)
-				sl.scrapeAndReport(time.Time{}, ts, nil)
-				require.NoError(b, scraper.lastError)
-			}
-		})
+		}
 	}
 }
 

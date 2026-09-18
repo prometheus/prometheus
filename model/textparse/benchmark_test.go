@@ -20,6 +20,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -58,6 +59,7 @@ func BenchmarkParsePromText(b *testing.B) {
 
 	for _, parser := range []string{
 		"promtext",
+		"promtext-exact",
 		"omtext", // Compare how omtext parser deals with Prometheus text format.
 		"expfmt-promtext",
 	} {
@@ -226,7 +228,10 @@ func benchParse(b *testing.B, data []byte, parser string) {
 
 	var newParserFn newParser
 	switch parser {
-	case "promtext":
+	case "promtext", "promtext-exact":
+		if parser == "promtext-exact" {
+			data = slices.Clip(data)
+		}
 		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
 			return NewPromParser(b, st, false)
 		}
