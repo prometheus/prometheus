@@ -1,0 +1,2 @@
+receive_relabel_configs:
+  -
