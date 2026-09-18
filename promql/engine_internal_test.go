@@ -16,6 +16,7 @@ package promql
 import (
 	"bytes"
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -277,6 +278,28 @@ func TestVectorElemBinop_Histograms(t *testing.T) {
 			}
 
 			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestCostFallbackSampleWindow(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		end       int64
+		interval  time.Duration
+		wantStart int64
+	}{
+		{name: "default", end: 0, wantStart: -300000},
+		{name: "negative interval", end: 0, interval: -time.Second, wantStart: -300000},
+		{name: "minimum duration", end: 0, interval: time.Duration(math.MinInt64), wantStart: -300000},
+		{name: "eight intervals", end: 0, interval: time.Minute, wantStart: -480000},
+		{name: "maximum duration", end: 0, interval: time.Duration(math.MaxInt64), wantStart: -1800000},
+		{name: "timestamp underflow", end: math.MinInt64 + 1, interval: time.Minute, wantStart: math.MinInt64},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			start, end := fallbackSampleWindow(tc.end, tc.interval)
+			require.Equal(t, tc.wantStart, start)
+			require.Equal(t, tc.end, end)
 		})
 	}
 }

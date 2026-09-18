@@ -278,7 +278,8 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 		matchers = append(matchers, effectiveNameMatchers...)
 
 		infoIt := ev.querier.Select(ctx, false, &selectHints, matchers...)
-		series, ws, err := expandSeriesSet(ctx, infoIt)
+		// Account for each info series in the shared query cost budget.
+		series, ws, err := ev.expandSeriesSet(ctx, infoIt)
 		warnings.Merge(ws)
 		if err != nil {
 			return nil, warnings, err

@@ -53,6 +53,7 @@ func TestQueryStatsWithTimersAndSamples(t *testing.T) {
 	qs.IncrementSamplesAtTimestamp(25001000, 5)
 	qs.IncrementSamplesReadAtTimestamp(20001000, 5)
 	qs.IncrementSamplesReadAtTimestamp(25001000, 5)
+	qs.TotalSeries = 3
 
 	qstats := NewQueryStats(&Statistics{Timers: qt, Samples: qs})
 	actual, err := json.Marshal(qstats)
@@ -66,6 +67,9 @@ func TestQueryStatsWithTimersAndSamples(t *testing.T) {
 	require.Regexpf(t, `[,{]"totalQueryableSamplesPerStep":\[\[20001,5\],\[21001,0\],\[22001,0\],\[23001,0\],\[24001,0\],\[25001,5\]\]`, string(actual), "expected totalQueryableSamplesPerStep")
 	require.Regexpf(t, `[,{]"samplesRead":10[,}]`, string(actual), "expected samplesRead")
 	require.Regexpf(t, `[,{]"samplesReadPerStep":\[\[20001,5\],\[21001,0\],\[22001,0\],\[23001,0\],\[24001,0\],\[25001,5\]\]`, string(actual), "expected samplesReadPerStep")
+
+	require.Regexp(t, `[,\{]"seriesTouched":3[,}]`, string(actual))
+	require.NotContains(t, string(actual), `"cost"`, "the statistics object must not carry a cost field")
 }
 
 func TestQueryStatsWithSpanTimers(t *testing.T) {
