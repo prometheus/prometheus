@@ -7470,6 +7470,77 @@ func TestStripeSeries_getOrSet(t *testing.T) {
 }
 
 func TestStripeSeries_gc(t *testing.T) {
+	t.Run("gcSeries does not wait on unselected series", func(t *testing.T) {
+		for _, tc := range []struct {
+			name        string
+			selectedRef storage.SeriesRef
+		}{
+			{name: "unique entry", selectedRef: 1},
+			{name: "conflicting entry", selectedRef: 2},
+			{name: "empty selection"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
+				// Keep the locked series in the same stripe but outside the colliding hash bucket.
+				unselectedLabels := labels.FromStrings("series", "unselected")
+				require.NotEqual(t, ms1.lset.Hash(), unselectedLabels.Hash())
+				unselected := newMemSeries(unselectedLabels, 3, 0, defaultIsolationDisabled, false)
+				got, created := s.setUnlessAlreadySet(unselectedLabels.Hash(), unselectedLabels, unselected)
+				require.True(t, created)
+				require.Same(t, unselected, got)
+
+				var refs []storage.SeriesRef
+				wantDeleted := map[storage.SeriesRef]struct{}{}
+				if tc.selectedRef != 0 {
+					refs = append(refs, tc.selectedRef)
+					wantDeleted[tc.selectedRef] = struct{}{}
+				}
+
+				unselected.Lock()
+				done := make(chan map[storage.SeriesRef]struct{}, 1)
+				go func() {
+					deleted, _, _, _, _, _ := s.gcSeries(refs, 0, func(*memSeries) bool { return true })
+					done <- deleted
+				}()
+
+				var deleted map[storage.SeriesRef]struct{}
+				var completedWhileLocked bool
+				select {
+				case deleted = <-done:
+					completedWhileLocked = true
+				case <-time.After(5 * time.Second):
+				}
+				// Release the lock and join the worker before asserting, even on failure.
+				unselected.Unlock()
+				if !completedWhileLocked {
+					select {
+					case deleted = <-done:
+					case <-time.After(5 * time.Second):
+						t.Fatal("gcSeries did not finish after releasing the unselected series lock")
+					}
+				}
+
+				require.True(t, completedWhileLocked, "gcSeries waited for an unselected series lock")
+				require.Equal(t, wantDeleted, deleted)
+				for _, series := range []*memSeries{ms1, ms2, unselected} {
+					selected := storage.SeriesRef(series.ref) == tc.selectedRef
+					lset := series.labels()
+					if selected {
+						require.Nil(t, s.getByID(series.ref))
+						require.Nil(t, s.getByHash(lset.Hash(), lset))
+					} else {
+						require.Same(t, series, s.getByID(series.ref))
+						require.Same(t, series, s.getByHash(lset.Hash(), lset))
+					}
+					series.Lock()
+					gced := series.isGCed()
+					series.Unlock()
+					require.Equal(t, selected, gced)
+				}
+			})
+		}
+	})
+
 	t.Run("marks collected series", func(t *testing.T) {
 		s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
 		hash := ms1.lset.Hash()
