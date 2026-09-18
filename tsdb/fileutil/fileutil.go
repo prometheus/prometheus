@@ -20,6 +20,7 @@ package fileutil
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -124,5 +125,76 @@ func Replace(from, to string) error {
 		}
 	}
 
-	return Rename(from, to)
+	if err := Rename(from, to); err != nil {
+		// On Windows, renaming a directory can fail when the data directory
+		// lives on a bind-mounted volume (for example a Docker volume), in
+		// which case MoveFileEx returns "The system cannot find the path
+		// specified.". Fall back to copying the directory and removing the
+		// source. See https://github.com/prometheus/prometheus/issues/18308.
+		if runtime.GOOS != "windows" {
+			return err
+		}
+		if fi, statErr := os.Stat(from); statErr != nil || !fi.IsDir() {
+			return err
+		}
+		return replaceDirByCopy(from, to)
+	}
+	return nil
+}
+
+// replaceDirByCopy moves the directory at from to to by copying it and then
+// removing the source. It is used as a fallback when Rename fails.
+func replaceDirByCopy(from, to string) error {
+	if err := os.RemoveAll(to); err != nil {
+		return err
+	}
+	if err := CopyDirs(from, to); err != nil {
+		return err
+	}
+	if err := syncTree(to); err != nil {
+		return err
+	}
+	return os.RemoveAll(from)
+}
+
+// syncTree fsyncs every file and directory under dir as well as dir's parent,
+// so the copied data and the new directory entry are persisted to disk.
+func syncTree(dir string) error {
+	if err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			d, err := OpenDir(path)
+			if err != nil {
+				return err
+			}
+			if err := d.Sync(); err != nil {
+				d.Close()
+				return err
+			}
+			return d.Close()
+		}
+		f, err := os.OpenFile(path, os.O_RDWR, 0)
+		if err != nil {
+			return err
+		}
+		if err := Fdatasync(f); err != nil {
+			f.Close()
+			return err
+		}
+		return f.Close()
+	}); err != nil {
+		return err
+	}
+
+	pdir, err := OpenDir(filepath.Dir(dir))
+	if err != nil {
+		return err
+	}
+	if err := pdir.Sync(); err != nil {
+		pdir.Close()
+		return err
+	}
+	return pdir.Close()
 }
