@@ -948,6 +948,16 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 	if !ok {
 		return nil, nil, fmt.Errorf("missing required field: %s", countKey)
 	}
+	// A negative count wraps around in the conversion to uint64 on the integer
+	// path below, and Validate only catches the result when sum is not NaN: a
+	// NaN sum relaxes its check to "count is at least the bucket total", which
+	// a wrapped count always satisfies.
+	// The spec does permit a negative gcount, but neither histogram type can
+	// hold one: Count is a uint64 in the integer form, and Validate rejects a
+	// negative count in the float form.
+	if count < 0 {
+		return nil, nil, fmt.Errorf("%s must not be negative, got %v", countKey, count)
+	}
 	sum, ok, err := getFloat(sumKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid %s: %w", sumKey, err)
@@ -973,12 +983,18 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 	if !ok {
 		return nil, nil, errors.New("missing required field: zero_count")
 	}
+	if zeroCount < 0 {
+		return nil, nil, fmt.Errorf("zero_count must not be negative, got %v", zeroCount)
+	}
 
 	// Treat as FloatHistogram if count, zero_count, or any bucket value is non-integer.
 	// sum is always float64 in both histogram types and does not determine the kind.
+	// A count of MaxUint64 or more, +Inf included, has no uint64 representation and
+	// would wrap around in the conversion below, so it takes the float form too.
 	// Bucket strings are scanned for '.', 'e', or 'E' since OM2 emits floats with
 	// decimals or exponent notation; the cheap pre-scan avoids parsing buckets twice.
 	isFloat := count != math.Trunc(count) || zeroCount != math.Trunc(zeroCount) ||
+		count >= float64(math.MaxUint64) || zeroCount >= float64(math.MaxUint64) ||
 		bucketsHaveFloat(kv["positive_buckets"]) || bucketsHaveFloat(kv["negative_buckets"])
 
 	posSpans, err := parseSpans(kv["positive_spans"])
@@ -1235,6 +1251,12 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 		if err != nil {
 			return nil, fmt.Errorf("invalid bucket: %w", err)
 		}
+		// Classic bucket values are counters for a histogram, which the spec
+		// forbids from being negative. A gauge histogram's bucket values are
+		// gauges, where the spec only discourages it.
+		if b.count < 0 && p.mtype != model.MetricTypeGaugeHistogram {
+			return nil, fmt.Errorf("invalid bucket: value must not be negative, got %v", b.count)
+		}
 		if b.le == "+Inf" {
 			hasPosInf = true
 		}
@@ -1409,6 +1431,7 @@ func parseBuckets(s string) iter.Seq2[bucketEntry, error] {
 		}
 		inner := s[1 : len(s)-1]
 		prevLe := math.Inf(-1)
+		firstLe := true
 		for part := range strings.SplitSeq(inner, ",") {
 			part = strings.TrimSpace(part)
 			if part == "" {
@@ -1425,15 +1448,25 @@ func parseBuckets(s string) iter.Seq2[bucketEntry, error] {
 				yield(bucketEntry{}, fmt.Errorf("invalid bucket count %q: %w", part[idx+1:], err))
 				return
 			}
-			// Normalise le to OpenMetrics float format.
-			if lef, err := strconv.ParseFloat(le, 64); err == nil {
-				if lef <= prevLe {
-					yield(bucketEntry{}, fmt.Errorf("classic histogram buckets must be sorted in increasing order: %q", part))
-					return
-				}
-				prevLe = lef
-				le = labels.FormatOpenMetricsFloat(lef)
+			lef, err := strconv.ParseFloat(le, 64)
+			if err != nil {
+				yield(bucketEntry{}, fmt.Errorf("invalid bucket threshold %q: %w", le, err))
+				return
 			}
+			if math.IsNaN(lef) {
+				yield(bucketEntry{}, fmt.Errorf("bucket threshold must not be NaN: %q", part))
+				return
+			}
+			// OM2 permits -Inf as the first bucket threshold, so the ordering
+			// check starts at the second one.
+			if !firstLe && lef <= prevLe {
+				yield(bucketEntry{}, fmt.Errorf("classic histogram buckets must be sorted in increasing order: %q", part))
+				return
+			}
+			firstLe = false
+			prevLe = lef
+			// Normalise le to OpenMetrics float format.
+			le = labels.FormatOpenMetricsFloat(lef)
 			if !yield(bucketEntry{le: le, count: count}, nil) {
 				return
 			}
@@ -1477,15 +1510,26 @@ func parseQuantiles(s string) iter.Seq2[quantileEntry, error] {
 				yield(quantileEntry{}, fmt.Errorf("invalid quantile value %q: %w", after, err))
 				return
 			}
-			// Normalise quantile label to OpenMetrics float format.
-			if qf, err := strconv.ParseFloat(q, 64); err == nil {
-				if qf <= prevQ {
-					yield(quantileEntry{}, fmt.Errorf("quantiles must be sorted in increasing order: %q", part))
-					return
-				}
-				prevQ = qf
-				q = labels.FormatOpenMetricsFloat(qf)
+			qf, err := strconv.ParseFloat(q, 64)
+			if err != nil {
+				yield(quantileEntry{}, fmt.Errorf("invalid quantile %q: %w", q, err))
+				return
 			}
+			if math.IsNaN(qf) {
+				yield(quantileEntry{}, fmt.Errorf("quantile must not be NaN: %q", part))
+				return
+			}
+			if qf < 0 || qf > 1 {
+				yield(quantileEntry{}, fmt.Errorf("quantile must be between 0.0 and 1.0, got %q", q))
+				return
+			}
+			if qf <= prevQ {
+				yield(quantileEntry{}, fmt.Errorf("quantiles must be sorted in increasing order: %q", part))
+				return
+			}
+			prevQ = qf
+			// Normalise quantile label to OpenMetrics float format.
+			q = labels.FormatOpenMetricsFloat(qf)
 			if !yield(quantileEntry{q: q, val: val}, nil) {
 				return
 			}
