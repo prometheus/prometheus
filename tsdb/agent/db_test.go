@@ -1440,11 +1440,15 @@ func TestDBStartTimestampSamplesIngestion(t *testing.T) {
 func TestDuplicateSeriesRefsByHash(t *testing.T) {
 	dbDir := t.TempDir()
 	opts := DefaultOptions()
+	opts.EnableMetadataWALRecords = true
 	rs1 := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
 	db, err := Open(promslog.NewNopLogger(), nil, rs1, dbDir, opts)
 	require.NoError(t, err)
 
 	app := db.Appender(context.Background())
+
+	initialMeta := metadata.Metadata{Type: model.MetricTypeGauge, Unit: "bytes", Help: "initial metadata"}
+	updatedMeta := metadata.Metadata{Type: model.MetricTypeCounter, Unit: "seconds", Help: "updated metadata"}
 
 	metricNames := []string{"foo", "bar", "baz", "blerg"}
 	originalSeriesRefs := make([]chunks.HeadSeriesRef, 0, len(metricNames))
@@ -1457,6 +1461,8 @@ func TestDuplicateSeriesRefsByHash(t *testing.T) {
 		ref2, err := app.Append(ref, lbls, int64(10), 100.0)
 		require.NoError(t, err)
 		require.Equal(t, ref, ref2)
+		_, err = app.UpdateMetadata(ref, lbls, initialMeta)
+		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
 
@@ -1483,9 +1489,20 @@ func TestDuplicateSeriesRefsByHash(t *testing.T) {
 		lbls := labels.FromMap(map[string]string{"__name__": metricName})
 		ref, err := app.Append(storage.SeriesRef(0), lbls, int64(20), 10.0)
 		require.NoError(t, err)
+		_, err = app.UpdateMetadata(ref, lbls, updatedMeta)
+		require.NoError(t, err)
 		duplicateSeriesRefs = append(duplicateSeriesRefs, chunks.HeadSeriesRef(ref))
 	}
 	require.NoError(t, app.Commit())
+
+	// Write a raw metadata record for a non-existent series ref to exercise the nil series skip path on replay.
+	var enc record.Encoder
+	require.NoError(t, db.wal.Log(enc.Metadata([]record.RefMetadata{{
+		Ref:  9999,
+		Type: record.GetMetricType(model.MetricTypeGauge),
+		Unit: "bytes",
+		Help: "orphan metadata",
+	}}, nil)))
 
 	// The duplicate SeriesRefs should be in series.
 	for _, ref := range duplicateSeriesRefs {
@@ -1504,9 +1521,11 @@ func TestDuplicateSeriesRefsByHash(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 
-	// The original SeriesRefs should be in series.
+	// The original SeriesRefs should be in series and have the metadata remapped from duplicateSeriesRefs.
 	for _, ref := range originalSeriesRefs {
-		require.NotNil(t, db.series.GetByID(ref))
+		s := db.series.GetByID(ref)
+		require.NotNil(t, s)
+		require.Equal(t, &updatedMeta, s.Metadata())
 		require.NotContains(t, db.deleted, ref)
 	}
 
