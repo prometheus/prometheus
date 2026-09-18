@@ -158,10 +158,9 @@ type StatsRenderer func(context.Context, *stats.Statistics, string) stats.QueryS
 
 // DefaultStatsRenderer is the default stats renderer for the API: any
 // non-empty `stats` value includes statistics in the response. The API
-// handlers attach a deprecation warning to the response for values outside
-// the supported enum ("true", "all"); those values will be rejected in the
-// next major release. Custom StatsRenderer implementations are exempt and
-// may define their own values.
+// handlers reject unsupported values of the parameter with a bad_data error
+// before they reach the renderer. Custom StatsRenderer implementations are
+// exempt and may define their own values.
 func DefaultStatsRenderer(_ context.Context, s *stats.Statistics, param string) stats.QueryStats {
 	if param != "" {
 		return stats.NewQueryStats(s)
@@ -571,7 +570,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		defer cancel()
 	}
 
-	opts, err := extractQueryOpts(r)
+	opts, err := api.extractQueryOpts(r)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
@@ -619,9 +618,6 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 			warnings = warnings.Add(errors.New("results truncated due to limit"))
 		}
 	}
-	if warn := api.statsParamWarning(r.FormValue("stats")); warn != nil {
-		warnings = warnings.Add(warn)
-	}
 	// Optional stats field in response if parameter "stats" is not empty.
 	sr := api.statsRenderer
 	if sr == nil {
@@ -654,7 +650,11 @@ func (api *API) parseQuery(r *http.Request) apiFuncResult {
 	return apiFuncResult{data: translateAST(expr), err: nil, warnings: nil, finalizer: nil}
 }
 
-func extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
+func (api *API) extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
+	if err := api.validateStatsParam(r.FormValue("stats")); err != nil {
+		return nil, err
+	}
+
 	var duration time.Duration
 
 	if strDuration := r.FormValue("lookback_delta"); strDuration != "" {
@@ -681,21 +681,17 @@ func extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
 // when the default stats renderer is in use: statsTrue includes basic query
 // statistics in the response, statsAll additionally includes per-step
 // statistics (with --enable-feature=promql-per-step-stats). Empty disables
-// statistics.
+// statistics. Any other value is rejected with a bad_data error.
 const (
 	statsTrue = "true"
 	statsAll  = "all"
 )
 
-// statsParamWarning returns a deprecation warning for unsupported values of
-// the `stats` query parameter, to be attached to the response's warnings.
-// Historically any non-empty value silently enabled basic statistics; that
-// behaviour is kept for compatibility within the current major release, but
-// values outside the supported enum ("true", "all") are deprecated and will
-// be rejected in the next major release. Embedders that install a custom
-// StatsRenderer define their own vocabulary for the parameter, so no warning
-// is attached then.
-func (api *API) statsParamWarning(s string) error {
+// validateStatsParam checks that the `stats` query parameter is a supported
+// enum value ("true", "all", or empty). When the API uses a custom
+// StatsRenderer, the parameter vocabulary is defined by the embedder, so
+// validation is skipped.
+func (api *API) validateStatsParam(s string) error {
 	if api.customStatsRenderer {
 		return nil
 	}
@@ -703,7 +699,7 @@ func (api *API) statsParamWarning(s string) error {
 	case "", statsTrue, statsAll:
 		return nil
 	default:
-		return fmt.Errorf("value %q for parameter \"stats\" is deprecated and will be rejected in the next major release, use %q or %q", s, statsTrue, statsAll)
+		return fmt.Errorf("invalid value %q for parameter \"stats\", supported values are %q and %q", s, statsTrue, statsAll)
 	}
 }
 
@@ -752,7 +748,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		defer cancel()
 	}
 
-	opts, err := extractQueryOpts(r)
+	opts, err := api.extractQueryOpts(r)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
@@ -801,10 +797,6 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 			warnings = warnings.Add(errors.New("results truncated due to limit"))
 		}
 	}
-	if warn := api.statsParamWarning(r.FormValue("stats")); warn != nil {
-		warnings = warnings.Add(warn)
-	}
-
 	// Optional stats field in response if parameter "stats" is not empty.
 	sr := api.statsRenderer
 	if sr == nil {
