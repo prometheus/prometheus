@@ -1,0 +1,4 @@
+rule_files:
+  - coverage_norules_rules.yml
+
+tests: []

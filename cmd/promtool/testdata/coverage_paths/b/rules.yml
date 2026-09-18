@@ -1,0 +1,5 @@
+groups:
+  - name: samegroup
+    rules:
+      - record: same:metric
+        expr: up
