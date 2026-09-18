@@ -916,6 +916,23 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	return nil
 }
 
+// scrapeTimingOverridable reports whether the scrape interval can change per
+// target, either through relabeling or through target labels provided by a
+// service discovery mechanism other than static configs. In that case the
+// load-time interval and timeout pair check is not final, and the per-target
+// check when building the target labels is the source of truth.
+func (c *ScrapeConfig) scrapeTimingOverridable() bool {
+	if len(c.RelabelConfigs) > 0 {
+		return true
+	}
+	for _, cfg := range c.ServiceDiscoveryConfigs {
+		if _, ok := cfg.(discovery.StaticConfig); !ok {
+			return true
+		}
+	}
+	return false
+}
+
 // Validate validates scrape config, but also fills relevant default values from global config if needed.
 func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	if c == nil {
@@ -926,11 +943,19 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	if c.ScrapeInterval == 0 {
 		c.ScrapeInterval = globalConfig.ScrapeInterval
 	}
-	if c.ScrapeTimeout > c.ScrapeInterval {
+	overridable := c.scrapeTimingOverridable()
+	if c.ScrapeTimeout > c.ScrapeInterval && !overridable {
 		return fmt.Errorf("scrape timeout greater than scrape interval for scrape config with job name %q", c.JobName)
 	}
 	if c.ScrapeTimeout == 0 {
-		c.ScrapeTimeout = min(globalConfig.ScrapeTimeout, c.ScrapeInterval)
+		if overridable {
+			// The interval can change per target, so the timeout default is
+			// resolved against the final per-target interval when the target
+			// labels are built.
+			c.ScrapeTimeout = globalConfig.ScrapeTimeout
+		} else {
+			c.ScrapeTimeout = min(globalConfig.ScrapeTimeout, c.ScrapeInterval)
+		}
 	}
 	if c.BodySizeLimit == 0 {
 		c.BodySizeLimit = globalConfig.BodySizeLimit

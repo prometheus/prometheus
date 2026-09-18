@@ -682,7 +682,14 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLabels, tgLab
 	}
 
 	if timeoutDuration > intervalDuration {
-		return labels.EmptyLabels(), fmt.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
+		// A timeout inherited from the scrape configuration adapts to the
+		// final per-target interval, because service discovery or relabeling
+		// may set the interval after the configuration was validated. A
+		// timeout that was set explicitly per target is an error instead.
+		if timeout != cfg.ScrapeTimeout.String() {
+			return labels.EmptyLabels(), fmt.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
+		}
+		lb.Set(model.ScrapeTimeoutLabel, intervalDuration.String())
 	}
 
 	for _, l := range []struct{ name, desc string }{

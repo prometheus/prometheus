@@ -2206,6 +2206,14 @@ func TestScrapeIntervalLarger(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, c.ScrapeConfigs, 1)
 	for _, sc := range c.ScrapeConfigs {
+		if sc.scrapeTimingOverridable() {
+			// Service discovery can override the interval per target, so the
+			// global timeout is inherited uncapped and the interval and
+			// timeout pair is checked per target when the target labels are
+			// built.
+			require.Equal(t, c.GlobalConfig.ScrapeTimeout, sc.ScrapeTimeout)
+			continue
+		}
 		require.GreaterOrEqual(t, sc.ScrapeInterval, sc.ScrapeTimeout)
 	}
 }
