@@ -920,7 +920,6 @@ type loop interface {
 type cacheEntry struct {
 	ref      storage.SeriesRef
 	lastIter uint64
-	hash     uint64
 	lset     labels.Labels
 
 	// st is an optional state for ST synthesis.
@@ -1116,8 +1115,8 @@ func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
 	return e, true, alreadyScraped
 }
 
-func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels, hash uint64) (ce *cacheEntry) {
-	ce = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
+func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels) (ce *cacheEntry) {
+	ce = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset}
 	c.series[string(met)] = ce
 	return ce
 }
@@ -1891,21 +1890,15 @@ loop:
 			continue
 		}
 		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
-		var (
-			ref  storage.SeriesRef
-			hash uint64
-		)
+		var ref storage.SeriesRef
 
 		if seriesCached {
 			ref = ce.ref
 			lset = ce.lset
-			hash = ce.hash
 		} else {
 			p.Labels(&lset)
-			hash = lset.Hash()
 
-			// Hash label set as it is seen local to the target. Then add target labels
-			// and relabeling and store the final label set.
+			// Add target labels and apply relabeling before storing the final label set.
 			lset = sl.sampleMutator(lset)
 
 			// The label set may be set to empty to indicate dropping.
@@ -1986,7 +1979,7 @@ loop:
 		// If a series was new but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
-			ce = sl.cache.addRef(met, ref, lset, hash)
+			ce = sl.cache.addRef(met, ref, lset)
 			if ce != nil && ce.ref != 0 && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
 				// Bypass staleness logic if there is an explicit timestamp.
 				// But make sure we only do this if we have a cache entry (ce) for our series.
@@ -2396,7 +2389,7 @@ func (sl *scrapeLoopAppender) addReportSample(s reportSample, t int64, v float64
 	switch {
 	case err == nil:
 		if !ok {
-			sl.cache.addRef(s.name, ref, lset, lset.Hash())
+			sl.cache.addRef(s.name, ref, lset)
 			// We only need to add metadata once a scrape target appears.
 			if sl.appendMetadataToWAL {
 				if _, merr := sl.UpdateMetadata(ref, lset, s.Metadata); merr != nil {

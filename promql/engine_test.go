@@ -2410,11 +2410,11 @@ func TestParserConfigIsolation(t *testing.T) {
 	`)
 	t.Cleanup(func() { storage.Close() })
 
-	query := "metric[10s] smoothed"
+	query := "mad_over_time(metric[10s])"
 	t.Run("engine_with_feature_disabled_rejects", func(t *testing.T) {
 		engine := promql.NewEngine(promql.EngineOpts{
 			MaxSamples: 1000, Timeout: 10 * time.Second,
-			Parser: parser.NewParser(parser.Options{EnableExtendedRangeSelectors: false}),
+			Parser: parser.NewParser(parser.Options{EnableExperimentalFunctions: false}),
 		})
 		t.Cleanup(func() { _ = engine.Close() })
 		_, err := engine.NewInstantQuery(ctx, storage, nil, query, time.Unix(10, 0))
@@ -2424,7 +2424,7 @@ func TestParserConfigIsolation(t *testing.T) {
 	t.Run("engine_with_feature_enabled_accepts", func(t *testing.T) {
 		engine := promql.NewEngine(promql.EngineOpts{
 			MaxSamples: 1000, Timeout: 10 * time.Second,
-			Parser: parser.NewParser(parser.Options{EnableExtendedRangeSelectors: true}),
+			Parser: parser.NewParser(parser.Options{EnableExperimentalFunctions: true}),
 		})
 		t.Cleanup(func() { _ = engine.Close() })
 		q, err := engine.NewInstantQuery(ctx, storage, nil, query, time.Unix(10, 0))
@@ -4866,6 +4866,45 @@ load 10m
 # Use "-" unary operator as a simple way to remove the metric name.
 eval range from 0 to 20m step 10m -metric_a or -metric_b
     {} -1  -4
+
+# Test range vector functions with non-overlapping series that have the same labelset
+# after __name__ removal. This verifies the fix for issue #14695.
+# When evaluated as a range query, at each step only one series has data in the
+# window, so the results should merge correctly without collision.
+clear
+load 6m
+  metric_1{common="label"} 0 1 _ _ 4
+  metric_2{common="label"} _ _ 2 3 _
+
+eval range from 0 to 24m step 6m max_over_time({__name__=~"metric_.*"}[5m])
+  {common="label"} 0 1 2 3 4
+
+# Range vector function should fail when both series have data within the same window.
+clear
+load 6m
+  metric_1{common="label"} 0 1 2
+  metric_2{common="label"} 3 4 5
+
+eval_fail instant at 12m max_over_time({__name__=~"metric_.*"}[30m])
+
+# Test cross-type (float vs histogram) timestamp collision detection.
+# When one series has floats and another has histograms at the same labelset,
+# non-overlapping timestamps should merge successfully.
+clear
+load 6m
+  float_metric{common="label"} 0 1 _ _
+  hist_metric{common="label"} _ _ {{schema:0 sum:3 count:3}} {{schema:0 sum:4 count:4}}
+
+eval range from 0 to 18m step 6m sum_over_time({__name__=~".*_metric"}[5m])
+  {common="label"} 0 1 {{schema:0 sum:3 count:3}} {{schema:0 sum:4 count:4}}
+
+# Overlapping float and histogram at the same timestamp should fail.
+clear
+load 6m
+  float_metric{common="label"} 0 1 2
+  hist_metric{common="label"} {{schema:0 sum:1 count:1}} {{schema:0 sum:2 count:2}} {{schema:0 sum:3 count:3}}
+
+eval_fail range from 0 to 12m step 6m sum_over_time({__name__=~".*_metric"}[5m])
 
 `, engine)
 }
