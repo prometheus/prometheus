@@ -1640,7 +1640,10 @@ func (r *Reader) postingsForLabelMatching(ctx context.Context, name string, matc
 			if err != nil {
 				return false, fmt.Errorf("decode postings: %w", err)
 			}
-			its = append(its, p)
+			// Grow exponentially: one scan combined for several matchers on the
+			// same label can match many values, and the runtime's growth of a
+			// large slice allocates more in total than doubling does.
+			its = appendWithExponentialGrowth(its, p)
 		}
 		return val != lastVal, nil
 	}); err != nil {
