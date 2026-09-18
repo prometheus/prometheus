@@ -117,16 +117,12 @@ func Checkpoint(logger *slog.Logger, w *wlog.WL, atIndex, batchSize int, activeS
 	}()
 
 	flusher := newCheckpointFlusher(cp, batchSize)
-	if activeSeries != nil {
-		if err := flusher.writeSeries(activeSeries); err != nil {
-			return err
-		}
+	if err := flusher.writeSeries(activeSeries); err != nil {
+		return err
 	}
 
-	if deletedSeries != nil {
-		if err := flusher.writeDeletedRecords(deletedSeries); err != nil {
-			return err
-		}
+	if err := flusher.writeDeletedRecords(deletedSeries); err != nil {
+		return err
 	}
 
 	success = true
