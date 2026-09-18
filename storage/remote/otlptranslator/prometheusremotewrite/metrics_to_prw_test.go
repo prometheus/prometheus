@@ -1169,6 +1169,13 @@ func TestTemporality(t *testing.T) {
 				require.NoError(t, err)
 			}
 			require.NoError(t, app.Commit())
+			// Every expected native histogram here must be one the appender would
+			// accept; otherwise the expectation is unreachable.
+			for _, es := range tc.expectedSamples {
+				if es.H != nil {
+					require.NoError(t, es.H.Validate(), "expected histogram for %s does not validate", es.L)
+				}
+			}
 			teststorage.RequireEqual(t, tc.expectedSamples, appTest.ResultSamples())
 		})
 	}
@@ -1221,6 +1228,7 @@ func createOtelExponentialHistogram(name string, temporality pmetric.Aggregation
 	dp := hist.DataPoints().AppendEmpty()
 	dp.SetCount(1)
 	dp.SetSum(5)
+	dp.Positive().BucketCounts().FromRaw([]uint64{1})
 	dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
 	dp.Attributes().PutStr("test_label", "test_value")
 	return m
@@ -1240,6 +1248,8 @@ func createPromNativeHistogramSeries(name string, hint histogram.CounterResetHin
 			Schema:           0,
 			ZeroThreshold:    1e-128,
 			ZeroCount:        0,
+			PositiveSpans:    []histogram.Span{{Offset: 1, Length: 1}},
+			PositiveBuckets:  []int64{1},
 			CounterResetHint: hint,
 		},
 	}
