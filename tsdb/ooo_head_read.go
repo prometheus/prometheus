@@ -487,8 +487,27 @@ func NewOOOCompactionHeadIndexReader(ch *OOOCompactionHead) IndexReader {
 }
 
 func (ir *OOOCompactionHeadIndexReader) Symbols() index.StringIter {
-	hr := headIndexReader{head: ir.ch.head, mint: ir.ch.mint, maxt: ir.ch.maxt}
-	return hr.Symbols()
+	symbols := make(map[string]struct{})
+	for _, ref := range ir.ch.postings {
+		s := ir.ch.head.series.getByID(chunks.HeadSeriesRef(ref))
+		if s == nil {
+			continue
+		}
+
+		s.Lock()
+		for _, l := range s.labels() {
+			symbols[l.Name] = struct{}{}
+			symbols[l.Value] = struct{}{}
+		}
+		s.Unlock()
+	}
+
+	result := make([]string, 0, len(symbols))
+	for symbol := range symbols {
+		result = append(result, symbol)
+	}
+	slices.Sort(result)
+	return index.NewStringListIter(result)
 }
 
 func (ir *OOOCompactionHeadIndexReader) Postings(_ context.Context, name string, values ...string) (index.Postings, error) {
