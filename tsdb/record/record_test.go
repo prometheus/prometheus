@@ -653,6 +653,27 @@ func TestRecord_V2HistogramRoundTrip(t *testing.T) {
 	gotFloat, err := dec.FloatHistogramSamples(floatBuf, nil)
 	require.NoError(t, err)
 	require.Equal(t, floatSamples, gotFloat)
+
+	// Resources round-trip.
+	resources := []RefResource{
+		{
+			Ref:         100,
+			MinTime:     1000,
+			MaxTime:     2000,
+			Identifying: map[string]string{"service.name": "frontend", "service.namespace": "prod"},
+			Descriptive: map[string]string{"host.name": "node-1"},
+		},
+		{
+			Ref:         200,
+			MinTime:     3000,
+			MaxTime:     4000,
+			Identifying: map[string]string{"service.name": "backend"},
+			Descriptive: nil,
+		},
+	}
+	decResources, err := dec.Resources(enc.Resources(resources, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, resources, decResources)
 }
 
 func TestRecord_DecodeInvalidHistogramSchema(t *testing.T) {
