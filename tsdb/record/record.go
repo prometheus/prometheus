@@ -64,6 +64,10 @@ const (
 	HistogramSamplesV2 Type = 12
 	// FloatHistogramSamplesV2 is an enhanced float histogram record that supports start time per sample.
 	FloatHistogramSamplesV2 Type = 13
+	// MetadataDefinition is used to match WAL records that define the content for a MetadataRef.
+	MetadataDefinition Type = 14
+	// SeriesMetadataRef is used to match WAL records that associate a series with a MetadataRef.
+	SeriesMetadataRef Type = 15
 )
 
 func (rt Type) String() string {
@@ -94,6 +98,10 @@ func (rt Type) String() string {
 		return "mmapmarkers"
 	case Metadata:
 		return "metadata"
+	case MetadataDefinition:
+		return "metadata_definition"
+	case SeriesMetadataRef:
+		return "series_metadata_ref"
 	default:
 		return "unknown"
 	}
@@ -185,6 +193,30 @@ type RefMetadata struct {
 	Help string
 }
 
+// MetadataRef is a unique identifier for a metadata entry's content
+// (type, unit and help). Unlike a series ID, it is not tied to a single
+// series: every series sharing the same metadata content shares the same
+// MetadataRef. Like chunks.HeadSeriesRef, a MetadataRef is never reused; if
+// the content changes, a new MetadataRef is allocated.
+type MetadataRef uint64
+
+// RefMetadataDefinition defines the content for a MetadataRef. It is written
+// exactly once per MetadataRef, the first time that content is seen.
+type RefMetadataDefinition struct {
+	Ref  MetadataRef
+	Type uint8
+	Unit string
+	Help string
+}
+
+// RefSeriesMetadataRef associates a series with the MetadataRef that
+// describes its current metadata. It is written whenever a series starts
+// pointing at a (possibly new) MetadataRef.
+type RefSeriesMetadataRef struct {
+	Ref         chunks.HeadSeriesRef
+	MetadataRef MetadataRef
+}
+
 // RefExemplar is an exemplar with the labels, timestamp, value the exemplar was collected/observed with, and a reference to a series.
 type RefExemplar struct {
 	Ref    chunks.HeadSeriesRef
@@ -234,7 +266,7 @@ func (*Decoder) Type(rec []byte) Type {
 	switch t := Type(rec[0]); t {
 	case Series, Samples, SamplesV2, Tombstones, Exemplars, MmapMarkers, Metadata,
 		HistogramSamples, FloatHistogramSamples, CustomBucketsHistogramSamples, CustomBucketsFloatHistogramSamples,
-		HistogramSamplesV2, FloatHistogramSamplesV2:
+		HistogramSamplesV2, FloatHistogramSamplesV2, MetadataDefinition, SeriesMetadataRef:
 		return t
 	}
 	return Unknown
@@ -306,6 +338,60 @@ func (*Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, err
 		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return metadata, nil
+}
+
+// MetadataDefinition appends metadata definitions in rec to the given slice.
+func (*Decoder) MetadataDefinition(rec []byte, defs []RefMetadataDefinition) ([]RefMetadataDefinition, error) {
+	dec := encoding.Decbuf{B: rec}
+
+	if Type(dec.Byte()) != MetadataDefinition {
+		return nil, errors.New("invalid record type")
+	}
+	for len(dec.B) > 0 && dec.Err() == nil {
+		ref := dec.Uvarint64()
+		typ := dec.Byte()
+		unit := dec.UvarintStr()
+		help := dec.UvarintStr()
+
+		defs = append(defs, RefMetadataDefinition{
+			Ref:  MetadataRef(ref),
+			Type: typ,
+			Unit: unit,
+			Help: help,
+		})
+	}
+	if dec.Err() != nil {
+		return nil, dec.Err()
+	}
+	if len(dec.B) > 0 {
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return defs, nil
+}
+
+// SeriesMetadataRef appends series-to-metadata-ref associations in rec to the given slice.
+func (*Decoder) SeriesMetadataRef(rec []byte, refs []RefSeriesMetadataRef) ([]RefSeriesMetadataRef, error) {
+	dec := encoding.Decbuf{B: rec}
+
+	if Type(dec.Byte()) != SeriesMetadataRef {
+		return nil, errors.New("invalid record type")
+	}
+	for len(dec.B) > 0 && dec.Err() == nil {
+		ref := dec.Uvarint64()
+		metadataRef := dec.Uvarint64()
+
+		refs = append(refs, RefSeriesMetadataRef{
+			Ref:         chunks.HeadSeriesRef(ref),
+			MetadataRef: MetadataRef(metadataRef),
+		})
+	}
+	if dec.Err() != nil {
+		return nil, dec.Err()
+	}
+	if len(dec.B) > 0 {
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return refs, nil
 }
 
 func yoloString(b []byte) string {
@@ -907,6 +993,34 @@ func (*Encoder) Metadata(metadata []RefMetadata, b []byte) []byte {
 		buf.PutUvarintStr(m.Unit)
 		buf.PutUvarintStr(helpMetaName)
 		buf.PutUvarintStr(m.Help)
+	}
+
+	return buf.Get()
+}
+
+// MetadataDefinition appends the encoded metadata definitions to b and returns the resulting slice.
+func (*Encoder) MetadataDefinition(defs []RefMetadataDefinition, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(MetadataDefinition))
+
+	for _, m := range defs {
+		buf.PutUvarint64(uint64(m.Ref))
+		buf.PutByte(m.Type)
+		buf.PutUvarintStr(m.Unit)
+		buf.PutUvarintStr(m.Help)
+	}
+
+	return buf.Get()
+}
+
+// SeriesMetadataRef appends the encoded series-to-metadata-ref associations to b and returns the resulting slice.
+func (*Encoder) SeriesMetadataRef(refs []RefSeriesMetadataRef, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(SeriesMetadataRef))
+
+	for _, r := range refs {
+		buf.PutUvarint64(uint64(r.Ref))
+		buf.PutUvarint64(uint64(r.MetadataRef))
 	}
 
 	return buf.Get()

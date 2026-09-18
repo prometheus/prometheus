@@ -46,6 +46,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
@@ -61,6 +62,26 @@ import (
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+// seriesMetadata returns the metadata content currently associated with s, if any.
+func seriesMetadata(h *Head, s *memSeries) (metadata.Metadata, bool) {
+	return h.getMetadata(s.metadataRef)
+}
+
+// requireSeriesMetadataEqual asserts that s currently points at metadata content equal to want.
+func requireSeriesMetadataEqual(t testing.TB, h *Head, s *memSeries, want metadata.Metadata) {
+	t.Helper()
+	got, ok := seriesMetadata(h, s)
+	require.True(t, ok, "expected series to have metadata")
+	require.Equal(t, want, got)
+}
+
+// requireNoSeriesMetadata asserts that s currently has no metadata associated with it.
+func requireNoSeriesMetadata(t testing.TB, h *Head, s *memSeries) {
+	t.Helper()
+	_, ok := seriesMetadata(h, s)
+	require.False(t, ok, "expected series to have no metadata")
+}
 
 // newTestHeadDefaultOptions returns the HeadOptions that should be used by default in unit tests.
 func newTestHeadDefaultOptions(chunkRange int64, oooEnabled bool) *HeadOptions {
@@ -181,6 +202,14 @@ func readTestWAL(t testing.TB, dir string) (recs []any) {
 			meta, err := dec.Metadata(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, meta)
+		case record.MetadataDefinition:
+			defs, err := dec.MetadataDefinition(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, defs)
+		case record.SeriesMetadataRef:
+			refs, err := dec.SeriesMetadataRef(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, refs)
 		case record.Exemplars:
 			exemplars, err := dec.Exemplars(rec, nil)
 			require.NoError(t, err)
@@ -908,9 +937,10 @@ func TestHead_ReadWAL(t *testing.T) {
 				require.NotEmpty(t, e[0].Exemplars)
 				require.True(t, exemplar.Exemplar{Ts: 101, Value: 7, Labels: labels.FromStrings("trace_id", "zxcv")}.Equals(e[0].Exemplars[0]))
 
-				require.NotNil(t, s100.meta)
-				require.Equal(t, "foo", s100.meta.Unit)
-				require.Equal(t, "total foo", s100.meta.Help)
+				s100Meta, ok := seriesMetadata(head, s100)
+				require.True(t, ok)
+				require.Equal(t, "foo", s100Meta.Unit)
+				require.Equal(t, "total foo", s100Meta.Help)
 
 				intervals, err := head.tombstones.Get(storage.SeriesRef(s100.ref))
 				require.NoError(t, err)

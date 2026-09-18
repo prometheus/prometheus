@@ -194,6 +194,7 @@ func (h *Head) appender() *headAppender {
 			oooTimeWindow:         h.opts.OutOfOrderTimeWindow.Load(),
 			seriesRefs:            h.getRefSeriesBuffer(),
 			series:                h.getSeriesBuffer(),
+			metadataDefs:          h.getMetadataDefsBuffer(),
 			typesInBatch:          h.getTypeMap(),
 			appendID:              appendID,
 			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
@@ -300,17 +301,29 @@ func (h *Head) putFloatHistogramBuffer(b []record.RefFloatHistogramSample) {
 	h.floatHistogramsPool.Put(b[:0])
 }
 
-func (h *Head) getMetadataBuffer() []record.RefMetadata {
-	b := h.metadataPool.Get()
+func (h *Head) getMetadataDefsBuffer() []record.RefMetadataDefinition {
+	b := h.metadataDefsPool.Get()
 	if b == nil {
-		return make([]record.RefMetadata, 0, 512)
+		return make([]record.RefMetadataDefinition, 0, 8)
 	}
 	return b
 }
 
-func (h *Head) putMetadataBuffer(b []record.RefMetadata) {
+func (h *Head) putMetadataDefsBuffer(b []record.RefMetadataDefinition) {
 	clear(b)
-	h.metadataPool.Put(b[:0])
+	h.metadataDefsPool.Put(b[:0])
+}
+
+func (h *Head) getSeriesMetadataRefsBuffer() []record.RefSeriesMetadataRef {
+	b := h.seriesMetadataRefsPool.Get()
+	if b == nil {
+		return make([]record.RefSeriesMetadataRef, 0, 512)
+	}
+	return b
+}
+
+func (h *Head) putSeriesMetadataRefsBuffer(b []record.RefSeriesMetadataRef) {
+	h.seriesMetadataRefsPool.Put(b[:0])
 }
 
 func (h *Head) getSeriesBuffer() []*memSeries {
@@ -386,8 +399,8 @@ type appendBatch struct {
 	histogramSeries      []*memSeries                     // HistogramSamples series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
 	floatHistograms      []record.RefFloatHistogramSample // New float histogram samples held by this appender.
 	floatHistogramSeries []*memSeries                     // FloatHistogramSamples series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
-	metadata             []record.RefMetadata             // New metadata held by this appender.
-	metadataSeries       []*memSeries                     // Series corresponding to the metadata held by this appender.
+	seriesMetadataRefs   []record.RefSeriesMetadataRef    // New series-to-MetadataRef associations held by this appender.
+	metadataSeries       []*memSeries                     // Series corresponding to the seriesMetadataRefs held by this appender (using corresponding slice indices).
 	exemplars            []exemplarWithSeriesRef          // New exemplars held by this appender.
 }
 
@@ -405,8 +418,8 @@ func (b *appendBatch) close(h *Head) {
 	b.floatHistograms = nil
 	h.putSeriesBuffer(b.floatHistogramSeries)
 	b.floatHistogramSeries = nil
-	h.putMetadataBuffer(b.metadata)
-	b.metadata = nil
+	h.putSeriesMetadataRefsBuffer(b.seriesMetadataRefs)
+	b.seriesMetadataRefs = nil
 	h.putSeriesBuffer(b.metadataSeries)
 	b.metadataSeries = nil
 	h.putExemplarBuffer(b.exemplars)
@@ -422,6 +435,13 @@ type headAppenderBase struct {
 	seriesRefs []record.RefSeries // New series records held by this appender.
 	series     []*memSeries       // New series held by this appender (using corresponding slices indexes from seriesRefs)
 	batches    []*appendBatch     // Holds all the other data to append. (In regular cases, there should be only one of these.)
+
+	// metadataDefs holds newly-allocated MetadataRef definitions. Like
+	// seriesRefs, this lives outside batches and is always logged, even on
+	// Rollback: getOrCreateMetadataRef interns the ref into the Head
+	// immediately and irreversibly (mirroring series creation), so the WAL
+	// must record it regardless of whether the rest of this append commits.
+	metadataDefs []record.RefMetadataDefinition
 
 	typesInBatch map[chunks.HeadSeriesRef]sampleType // Which (one) sample type each series holds in the most recent batch.
 
@@ -620,7 +640,7 @@ func (a *headAppenderBase) getCurrentBatch(st sampleType, s chunks.HeadSeriesRef
 			histogramSeries:      h.getSeriesBuffer(),
 			floatHistograms:      h.getFloatHistogramBuffer(),
 			floatHistogramSeries: h.getSeriesBuffer(),
-			metadata:             h.getMetadataBuffer(),
+			seriesMetadataRefs:   h.getSeriesMetadataRefsBuffer(),
 			metadataSeries:       h.getSeriesBuffer(),
 		}
 
@@ -1083,22 +1103,41 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 		return 0, fmt.Errorf("unknown series when trying to add metadata with HeadSeriesRef: %d and labels: %s", ref, lset)
 	}
 
-	s.Lock()
-	hasNewMetadata := s.meta == nil || *s.meta != meta
-	s.Unlock()
+	a.updateSeriesMetadata(s, meta)
 
-	if hasNewMetadata {
-		b := a.getCurrentBatch(stNone, s.ref)
-		b.metadata = append(b.metadata, record.RefMetadata{
-			Ref:  s.ref,
+	return ref, nil
+}
+
+// updateSeriesMetadata interns meta behind a MetadataRef and, unless s
+// already points at that ref, buffers the WAL records needed to point it
+// there: a MetadataDefinition the first time this exact content is seen
+// (buffered in a.metadataDefs, see its doc comment for why that must live
+// outside batches), and a SeriesMetadataRef associating s with the ref,
+// applied to s at commit time by commitMetadata.
+func (a *headAppenderBase) updateSeriesMetadata(s *memSeries, meta metadata.Metadata) {
+	ref, isNew := a.head.getOrCreateMetadataRef(meta)
+	if isNew {
+		a.metadataDefs = append(a.metadataDefs, record.RefMetadataDefinition{
+			Ref:  ref,
 			Type: record.GetMetricType(meta.Type),
 			Unit: meta.Unit,
 			Help: meta.Help,
 		})
-		b.metadataSeries = append(b.metadataSeries, s)
 	}
 
-	return ref, nil
+	s.Lock()
+	changed := s.metadataRef != ref
+	s.Unlock()
+	if !changed {
+		return
+	}
+
+	b := a.getCurrentBatch(stNone, s.ref)
+	b.seriesMetadataRefs = append(b.seriesMetadataRefs, record.RefSeriesMetadataRef{
+		Ref:         s.ref,
+		MetadataRef: ref,
+	})
+	b.metadataSeries = append(b.metadataSeries, s)
 }
 
 var _ storage.GetRef = &headAppender{}
@@ -1132,13 +1171,22 @@ func (a *headAppenderBase) log() error {
 			return fmt.Errorf("log series: %w", err)
 		}
 	}
+	if len(a.metadataDefs) > 0 {
+		// Must be logged before any SeriesMetadataRef record can reference these refs.
+		rec = enc.MetadataDefinition(a.metadataDefs, buf)
+		buf = rec[:0]
+
+		if err := a.head.wal.Log(rec); err != nil {
+			return fmt.Errorf("log metadata definitions: %w", err)
+		}
+	}
 	for _, b := range a.batches {
-		if len(b.metadata) > 0 {
-			rec = enc.Metadata(b.metadata, buf)
+		if len(b.seriesMetadataRefs) > 0 {
+			rec = enc.SeriesMetadataRef(b.seriesMetadataRefs, buf)
 			buf = rec[:0]
 
 			if err := a.head.wal.Log(rec); err != nil {
-				return fmt.Errorf("log metadata: %w", err)
+				return fmt.Errorf("log series metadata refs: %w", err)
 			}
 		}
 		// It's important to do (float) Samples before histogram samples
@@ -1729,16 +1777,16 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 	}
 }
 
-// commitMetadata commits the metadata for each series in the provided batch.
-// It iterates over the metadata slice and updates the corresponding series
-// with the new metadata information. The series is locked during the update
-// to ensure thread safety.
+// commitMetadata commits the metadata ref for each series in the provided
+// batch. It iterates over the seriesMetadataRefs slice and points the
+// corresponding series at its (already WAL-logged) MetadataRef. The series is
+// locked during the update to ensure thread safety.
 func commitMetadata(b *appendBatch) {
 	var series *memSeries
-	for i, m := range b.metadata {
+	for i, m := range b.seriesMetadataRefs {
 		series = b.metadataSeries[i]
 		series.Lock()
-		series.meta = &metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help}
+		series.metadataRef = m.MetadataRef
 		series.Unlock()
 	}
 }
@@ -1780,6 +1828,7 @@ func (a *headAppenderBase) Commit() (err error) {
 		}
 		h.putRefSeriesBuffer(a.seriesRefs)
 		h.putSeriesBuffer(a.series)
+		h.putMetadataDefsBuffer(a.metadataDefs)
 		h.putTypeMap(a.typesInBatch)
 		a.closed = true
 	}()
@@ -2315,6 +2364,7 @@ func (a *headAppenderBase) Rollback() (err error) {
 		a.closed = true
 		h.putRefSeriesBuffer(a.seriesRefs)
 		h.putSeriesBuffer(a.series)
+		h.putMetadataDefsBuffer(a.metadataDefs)
 		h.putTypeMap(a.typesInBatch)
 	}()
 
