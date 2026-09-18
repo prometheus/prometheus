@@ -211,6 +211,8 @@ func BenchmarkParseOpenMetricsNHCB(b *testing.B) {
 	data := readTestdataFile(b, "1histogram.om.txt")
 
 	for _, parser := range []string{
+		"promtext",            // Measure Prom text parser baseline for histograms.
+		"promtext_with_nhcb",  // Measure NHCB over Prom text parser.
 		"omtext",              // Measure OM parser baseline for histograms.
 		"omtext_with_nhcb",    // Measure NHCB over OM parser without ST parsing.
 		"omtext_with_nhcb_st", // Measure NHCB over OM parser with ST parsing enabled.
@@ -229,6 +231,12 @@ func benchParse(b *testing.B, data []byte, parser string) {
 	case "promtext":
 		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
 			return NewPromParser(b, st, false)
+		}
+	case "promtext_with_nhcb":
+		newParserFn = func(buf []byte, st *labels.SymbolTable) Parser {
+			p, err := New(buf, "text/plain", st, ParserOptions{ConvertClassicHistogramsToNHCB: true})
+			require.NoError(b, err)
+			return p
 		}
 	case "promproto":
 		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
