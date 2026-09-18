@@ -840,7 +840,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 	if h.wal == nil {
 		h.logger.Info("WAL not found")
-		return nil
+		return h.restoreMmappedLastSamples()
 	}
 
 	h.logger.Info("Replaying WAL, this may take a while")
@@ -972,6 +972,10 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 
 	wblReplayDuration := time.Since(wblReplayStart)
+
+	if err := h.restoreMmappedLastSamples(); err != nil {
+		return err
+	}
 
 	totalReplayDuration := time.Since(start)
 	h.metrics.dataTotalReplayDuration.Set(totalReplayDuration.Seconds())

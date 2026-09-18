@@ -694,7 +694,7 @@ func (a *headAppenderBase) getCurrentBatch(st sampleType, s chunks.HeadSeriesRef
 func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
 	// Check if we can append in the in-order chunk.
 	if t >= minValidTime {
-		if s.headChunks == nil {
+		if s.headChunks == nil && len(s.mmappedChunks) == 0 {
 			// The series has no sample and was freshly created.
 			return false, 0, nil
 		}
@@ -739,7 +739,7 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
 	// Check if we can append in the in-order chunk.
 	if t >= minValidTime {
-		if s.headChunks == nil {
+		if s.headChunks == nil && len(s.mmappedChunks) == 0 {
 			// The series has no sample and was freshly created.
 			return false, 0, nil
 		}
@@ -781,7 +781,7 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMax
 func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogram, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
 	// Check if we can append in the in-order chunk.
 	if t >= minValidTime {
-		if s.headChunks == nil {
+		if s.headChunks == nil && len(s.mmappedChunks) == 0 {
 			// The series has no sample and was freshly created.
 			return false, 0, nil
 		}
