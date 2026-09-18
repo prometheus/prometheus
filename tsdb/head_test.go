@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -46,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
@@ -1300,6 +1302,7 @@ func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 	existingRef := 1
 	existingLbls := labels.FromStrings("foo", "bar")
 	keepUntil := int64(10)
+	meta := metadata.Metadata{Type: model.MetricTypeCounter, Unit: "seconds", Help: "help"}
 
 	cases := []struct {
 		name     string
@@ -1310,8 +1313,9 @@ func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 		{
 			name: "keep series still in the head",
 			prepare: func(t *testing.T, h *Head) {
-				_, _, err := h.getOrCreateWithOptionalID(chunks.HeadSeriesRef(existingRef), existingLbls.Hash(), existingLbls, false)
+				s, _, err := h.getOrCreateWithOptionalID(chunks.HeadSeriesRef(existingRef), existingLbls.Hash(), existingLbls, false)
 				require.NoError(t, err)
+				s.meta = &meta
 			},
 			expected: true,
 		},
@@ -1339,11 +1343,18 @@ func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 			if tc.prepare != nil {
 				tc.prepare(t, h)
 			} else {
-				h.updateWALExpiry(chunks.HeadSeriesRef(existingRef), keepUntil)
+				h.updateWALExpiry(chunks.HeadSeriesRef(existingRef), keepUntil, &meta)
 			}
 
 			keep := h.keepSeriesInWALCheckpointFn(tc.mint)
 			require.Equal(t, tc.expected, keep(chunks.HeadSeriesRef(existingRef)))
+
+			// A checkpoint only looks up metadata for refs that satisfied keep.
+			if tc.expected {
+				got, ok := h.seriesMetadataForWALCheckpoint()(chunks.HeadSeriesRef(existingRef))
+				require.True(t, ok, "checkpoint would write no metadata for a kept series")
+				require.Equal(t, meta, got)
+			}
 		})
 	}
 }
@@ -7474,7 +7485,7 @@ func TestStripeSeries_gc(t *testing.T) {
 		s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
 		hash := ms1.lset.Hash()
 
-		s.gc(0, 0)
+		s.gc(0, 0, nil)
 
 		// Verify that we can get neither ms1 nor ms2 after garbage collection.
 		require.Nil(t, s.getByHash(hash, ms1.lset))
@@ -7502,14 +7513,14 @@ func TestStripeSeries_gc(t *testing.T) {
 		require.True(t, created)
 		require.Same(t, series, got)
 
-		deleted, _, _, _, _, _, _, _, _ := s.gc(0, 0)
+		deleted, _, _, _, _, _, _, _, _ := s.gc(0, 0, nil)
 		require.Empty(t, deleted)
 		require.Same(t, series, s.getByID(series.ref))
 
 		series.Lock()
 		require.True(t, series.unmarkPendingCommit())
 		series.Unlock()
-		deleted, _, _, _, _, _, _, _, _ = s.gc(0, 0)
+		deleted, _, _, _, _, _, _, _, _ = s.gc(0, 0, nil)
 		require.Contains(t, deleted, storage.SeriesRef(series.ref))
 		require.Nil(t, s.getByID(series.ref))
 	})

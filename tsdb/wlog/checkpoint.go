@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -41,12 +42,12 @@ type CheckpointStats struct {
 	DroppedSamples    int // Includes histograms.
 	DroppedTombstones int
 	DroppedExemplars  int
-	DroppedMetadata   int
+	DroppedMetadata   int // Always zero: metadata is looked up per kept series rather than filtered.
 	TotalSeries       int // Processed series including dropped ones.
 	TotalSamples      int // Processed float and histogram samples including dropped ones.
 	TotalTombstones   int // Processed tombstones including dropped ones.
 	TotalExemplars    int // Processed exemplars including dropped ones.
-	TotalMetadata     int // Processed metadata including dropped ones.
+	TotalMetadata     int // Metadata records written.
 }
 
 // LastCheckpoint returns the directory name and index of the most recent checkpoint.
@@ -95,9 +96,11 @@ func DeleteTempCheckpoints(logger *slog.Logger, dir string) error {
 
 // Checkpoint creates a compacted checkpoint of segments in range [from, to] in the given WAL.
 // It includes the most recent checkpoint if it exists.
-// All series not satisfying keep, samples/exemplars below mint, tombstones not
-// satisfying keep or with all intervals below mint, and metadata that are not the
-// latest are dropped.
+// All series not satisfying keep, samples/exemplars below mint, and tombstones not
+// satisfying keep or with all intervals below mint are dropped.
+//
+// Metadata in the segments is skipped. seriesMetadata supplies what to write instead, after
+// each kept series' own record, and a nil seriesMetadata writes none.
 //
 // keep is evaluated per record as segments are read, so its result for a given ref
 // must not change while Checkpoint runs. Otherwise records for the same ref could be
@@ -109,7 +112,7 @@ func DeleteTempCheckpoints(logger *slog.Logger, dir string) error {
 // segmented format as the original WAL itself.
 // This makes it easy to read it through the WAL package and concatenate
 // it with the original WAL.
-func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64, enableSTStorage bool) (*CheckpointStats, error) {
+func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64, enableSTStorage bool, seriesMetadata func(id chunks.HeadSeriesRef) (metadata.Metadata, bool)) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
 	var sgmReader io.ReadCloser
 
@@ -176,11 +179,9 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		enc                   = record.Encoder{EnableSTStorage: enableSTStorage}
 		buf                   []byte
 		recs                  [][]byte
-
-		latestMetadataMap = make(map[chunks.HeadSeriesRef]record.RefMetadata)
 	)
 	for r.Next() {
-		series, samples, histogramSamples, floatHistogramSamples, tstones, exemplars, metadata = series[:0], samples[:0], histogramSamples[:0], floatHistogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0]
+		series, samples, histogramSamples, floatHistogramSamples, tstones, exemplars = series[:0], samples[:0], histogramSamples[:0], floatHistogramSamples[:0], tstones[:0], exemplars[:0]
 
 		// We don't reset the buffer since we batch up multiple records
 		// before writing them to the checkpoint.
@@ -203,6 +204,34 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			}
 			if len(repl) > 0 {
 				buf = enc.Series(repl, buf)
+
+				// Emitted here rather than from a separate pass over the caller's state,
+				// so a ref gets metadata exactly when it gets a series record.
+				if seriesMetadata != nil {
+					metadata = metadata[:0]
+					for _, s := range repl {
+						m, ok := seriesMetadata(s.Ref)
+						if !ok {
+							continue
+						}
+						metadata = append(metadata, record.RefMetadata{
+							Ref:  s.Ref,
+							Type: record.GetMetricType(m.Type),
+							Unit: m.Unit,
+							Help: m.Help,
+						})
+					}
+					if len(metadata) > 0 {
+						// Flush the series record before appending the metadata record so
+						// they are written as two separate WAL records.
+						if seriesEnd := len(buf); seriesEnd > start {
+							recs = append(recs, buf[start:seriesEnd])
+							start = seriesEnd
+						}
+						buf = enc.Metadata(metadata, buf)
+						stats.TotalMetadata += len(metadata)
+					}
+				}
 			}
 			stats.TotalSeries += len(series)
 			stats.DroppedSeries += len(series) - len(repl)
@@ -358,22 +387,8 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			stats.TotalExemplars += len(exemplars)
 			stats.DroppedExemplars += len(exemplars) - len(repl)
 		case record.Metadata:
-			metadata, err = dec.Metadata(rec, metadata)
-			if err != nil {
-				return nil, fmt.Errorf("decode metadata: %w", err)
-			}
-			// Only keep reference to the latest found metadata for each refID.
-			repl := 0
-			for _, m := range metadata {
-				if keep(m.Ref) {
-					if _, ok := latestMetadataMap[m.Ref]; !ok {
-						repl++
-					}
-					latestMetadataMap[m.Ref] = m
-				}
-			}
-			stats.TotalMetadata += len(metadata)
-			stats.DroppedMetadata += len(metadata) - repl
+			// Dropped without decoding. The series case above writes seriesMetadata instead.
+			continue
 		default:
 			// Unknown record type, probably from a future Prometheus version.
 			continue
@@ -400,17 +415,6 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 	// Flush remaining records.
 	if err := cp.Log(recs...); err != nil {
 		return nil, fmt.Errorf("flush records: %w", err)
-	}
-
-	// Flush latest metadata records for each series.
-	if len(latestMetadataMap) > 0 {
-		latestMetadata := make([]record.RefMetadata, 0, len(latestMetadataMap))
-		for _, m := range latestMetadataMap {
-			latestMetadata = append(latestMetadata, m)
-		}
-		if err := cp.Log(enc.Metadata(latestMetadata, buf[:0])); err != nil {
-			return nil, fmt.Errorf("flush metadata records: %w", err)
-		}
 	}
 
 	if err := cp.Close(); err != nil {

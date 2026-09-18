@@ -24,11 +24,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -302,10 +304,25 @@ func TestCheckpoint(t *testing.T) {
 				}
 				require.NoError(t, w.Close())
 
+				// Ref 6 satisfies keep and is supplied but has no series record anywhere,
+				// so no metadata may be written for it.
+				suppliedMetadata := map[chunks.HeadSeriesRef]metadata.Metadata{
+					0: {Type: model.MetricTypeCounter, Unit: "supplied-unit-0", Help: "supplied-help-0"},
+					1: {Type: model.MetricTypeGauge, Unit: "supplied-unit-1", Help: "supplied-help-1"},
+					2: {Type: model.MetricTypeCounter, Unit: "supplied-unit-2", Help: "supplied-help-2"},
+					4: {Type: model.MetricTypeGauge, Unit: "supplied-unit-4", Help: "supplied-help-4"},
+					6: {Type: model.MetricTypeGauge, Unit: "supplied-unit-6", Help: "supplied-help-6"},
+				}
+
 				stats, err := Checkpoint(promslog.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
 					return x%2 == 0
-				}, last/2, enableSTStorage)
+				}, last/2, enableSTStorage, func(ref chunks.HeadSeriesRef) (metadata.Metadata, bool) {
+					m, ok := suppliedMetadata[ref]
+					return m, ok
+				})
 				require.NoError(t, err)
+				require.Equal(t, 3, stats.TotalMetadata)
+				require.Zero(t, stats.DroppedMetadata)
 				require.NoError(t, w.Truncate(107))
 				require.NoError(t, DeleteCheckpoints(w.Dir(), 106))
 				require.Equal(t, histogramsInWAL+floatHistogramsInWAL+samplesInWAL, stats.TotalSamples)
@@ -399,9 +416,9 @@ func TestCheckpoint(t *testing.T) {
 				testutil.RequireEqual(t, expectedRefSeries, series)
 
 				expectedRefMetadata := []record.RefMetadata{
-					{Ref: 0, Unit: strconv.FormatInt(last-100, 10), Help: strconv.FormatInt(last-100, 10)},
-					{Ref: 2, Unit: strconv.FormatInt(last-100, 10), Help: strconv.FormatInt(last-100, 10)},
-					{Ref: 4, Unit: "unit", Help: "help"},
+					{Ref: 0, Type: record.GetMetricType(model.MetricTypeCounter), Unit: "supplied-unit-0", Help: "supplied-help-0"},
+					{Ref: 2, Type: record.GetMetricType(model.MetricTypeCounter), Unit: "supplied-unit-2", Help: "supplied-help-2"},
+					{Ref: 4, Type: record.GetMetricType(model.MetricTypeGauge), Unit: "supplied-unit-4", Help: "supplied-help-4"},
 				}
 				sort.Slice(metadata, func(i, j int) bool { return metadata[i].Ref < metadata[j].Ref })
 				require.Equal(t, expectedRefMetadata, metadata)
@@ -442,7 +459,7 @@ func TestCheckpoint_Tombstones(t *testing.T) {
 
 	_, err = Checkpoint(promslog.NewNopLogger(), w, first, last, func(id chunks.HeadSeriesRef) bool {
 		return id == 2 || id == 3 || id == 4
-	}, 10, false)
+	}, 10, false, nil)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
@@ -542,7 +559,7 @@ func TestCheckpointV2HistogramsToV1(t *testing.T) {
 
 	// Run Checkpoint with V1 encoding (enableSTStorage=false) to force the
 	// V1 leftover path in checkpoint.go.
-	stats, err := Checkpoint(promslog.NewNopLogger(), w, 0, last, func(_ chunks.HeadSeriesRef) bool { return true }, 0, false)
+	stats, err := Checkpoint(promslog.NewNopLogger(), w, 0, last, func(_ chunks.HeadSeriesRef) bool { return true }, 0, false, nil)
 	require.NoError(t, err)
 	require.Equal(t, len(histSamples)+len(floatHistSamples), stats.TotalSamples)
 	require.Zero(t, stats.DroppedSamples, "no histogram samples should be dropped")
@@ -627,7 +644,7 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 			require.NoError(t, f.Close())
 
 			// Run the checkpoint and since the wlog contains corrupt data this should return an error.
-			_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, nil, 0, enableSTStorage)
+			_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, nil, 0, enableSTStorage, nil)
 			require.Error(t, err)
 
 			// Walk the wlog dir to make sure there are no tmp folder left behind after the error.
@@ -655,7 +672,7 @@ func TestCheckpointDeletesTemporaryCheckpoints(t *testing.T) {
 	require.NoError(t, err)
 	defer w.Close()
 
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(_ chunks.HeadSeriesRef) bool { return true }, 1000, false)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(_ chunks.HeadSeriesRef) bool { return true }, 1000, false, nil)
 	require.NoError(t, err)
 
 	files, err := os.ReadDir(dir)
@@ -719,6 +736,114 @@ func TestDeleteTempCheckpoints(t *testing.T) {
 				actualDirectories = append(actualDirectories, f.Name())
 			}
 			require.Equal(t, tc.expectedDirectories, actualDirectories)
+		})
+	}
+}
+
+// BenchmarkCheckpoint measures a steady-state checkpoint: the metadata for every live
+// series sits in the previous checkpoint, which this one re-reads, and the segments
+// carry nothing but samples.
+//
+// To compare two revisions:
+//
+//	go test -run ^$ -bench BenchmarkCheckpoint -benchmem -count=6 ./tsdb/wlog/ | tee new.txt
+//	benchstat old.txt new.txt
+func BenchmarkCheckpoint(b *testing.B) {
+	const (
+		helpText  = "Total number of requests handled by this instance, partitioned by method and response code."
+		batchSize = 1000
+	)
+
+	for _, numSeries := range []int{1_000, 10_000, 100_000} {
+		b.Run(fmt.Sprintf("series=%d", numSeries), func(b *testing.B) {
+			dir := b.TempDir()
+			var enc record.Encoder
+
+			// The previous checkpoint holds the series and metadata records. Checkpoints
+			// chain, so every one of them reads all of this back.
+			prev, err := New(nil, nil, filepath.Join(dir, "checkpoint.00000000"), compression.None)
+			require.NoError(b, err)
+
+			seriesMetadata := make(map[chunks.HeadSeriesRef]metadata.Metadata, numSeries)
+			series := make([]record.RefSeries, 0, batchSize)
+			meta := make([]record.RefMetadata, 0, batchSize)
+			for i := range numSeries {
+				ref := chunks.HeadSeriesRef(i + 1)
+				m := metadata.Metadata{
+					Type: model.MetricTypeCounter,
+					Unit: "seconds",
+					Help: fmt.Sprintf("%s (series %d)", helpText, i),
+				}
+				seriesMetadata[ref] = m
+
+				series = append(series, record.RefSeries{
+					Ref:    ref,
+					Labels: labels.FromStrings("__name__", "http_requests_total", "instance", strconv.Itoa(i)),
+				})
+				meta = append(meta, record.RefMetadata{
+					Ref:  ref,
+					Type: record.GetMetricType(m.Type),
+					Unit: m.Unit,
+					Help: m.Help,
+				})
+				if len(series) == batchSize {
+					require.NoError(b, prev.Log(enc.Series(series, nil), enc.Metadata(meta, nil)))
+					series, meta = series[:0], meta[:0]
+				}
+			}
+			if len(series) > 0 {
+				require.NoError(b, prev.Log(enc.Series(series, nil), enc.Metadata(meta, nil)))
+			}
+			require.NoError(b, prev.Close())
+
+			// Fresh segments, holding one sample per series. Segment numbering has to
+			// start above the previous checkpoint's index.
+			seg, err := CreateSegment(dir, 1)
+			require.NoError(b, err)
+			require.NoError(b, seg.Close())
+
+			w, err := NewSize(nil, nil, dir, 8*1024*1024, compression.None)
+			require.NoError(b, err)
+			samples := make([]record.RefSample, 0, batchSize)
+			for i := range numSeries {
+				samples = append(samples, record.RefSample{Ref: chunks.HeadSeriesRef(i + 1), T: 1, V: float64(i)})
+				if len(samples) == batchSize {
+					require.NoError(b, w.Log(enc.Samples(samples, nil)))
+					samples = samples[:0]
+				}
+			}
+			if len(samples) > 0 {
+				require.NoError(b, w.Log(enc.Samples(samples, nil)))
+			}
+			first, last, err := Segments(dir)
+			require.NoError(b, err)
+			require.NoError(b, w.Close())
+
+			keep := func(chunks.HeadSeriesRef) bool { return true }
+			var checkpointSize int64
+
+			b.ReportAllocs()
+			for b.Loop() {
+				_, err := Checkpoint(promslog.NewNopLogger(), w, first, last, keep, 0, false, func(ref chunks.HeadSeriesRef) (metadata.Metadata, bool) {
+					m, ok := seriesMetadata[ref]
+					return m, ok
+				})
+				require.NoError(b, err)
+
+				b.StopTimer()
+				cpDir := CheckpointDir(dir, last)
+				entries, err := os.ReadDir(cpDir)
+				require.NoError(b, err)
+				checkpointSize = 0
+				for _, e := range entries {
+					info, err := e.Info()
+					require.NoError(b, err)
+					checkpointSize += info.Size()
+				}
+				require.NoError(b, os.RemoveAll(cpDir))
+				b.StartTimer()
+			}
+			b.ReportMetric(float64(checkpointSize), "checkpoint_size")
 		})
 	}
 }

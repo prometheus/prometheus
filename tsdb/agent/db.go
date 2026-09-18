@@ -777,7 +777,8 @@ func (db *DB) truncate(mint int64) error {
 	if db.opts.CheckpointFromInMemorySeries {
 		err = Checkpoint(db.logger, db.wal, last, db.opts.CheckpointBatchSize, db.series.allSeries(), deletedSeriesIter(db.deleted, last))
 	} else {
-		_, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint, db.opts.EnableSTStorage)
+		// Agent mode writes no metadata records, so there is none to supply.
+		_, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint, db.opts.EnableSTStorage, nil)
 	}
 
 	if err != nil {

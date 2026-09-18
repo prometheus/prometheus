@@ -211,6 +211,11 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	if a.head.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
 		s.Lock()
 		metaChanged := s.meta == nil || !s.meta.Equals(opts.Metadata)
+		if metaChanged {
+			// The sample appended above already holds s against GC, so this cannot lose
+			// the v1 race. Reserved anyway to balance what commitMetadata releases.
+			s.markPendingCommit()
+		}
 		s.Unlock()
 		if metaChanged {
 			b := a.getCurrentBatch(stNone, s.ref)

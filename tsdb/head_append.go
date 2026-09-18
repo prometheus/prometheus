@@ -1083,20 +1083,36 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 		return 0, fmt.Errorf("unknown series when trying to add metadata with HeadSeriesRef: %d and labels: %s", ref, lset)
 	}
 
-	s.Lock()
-	hasNewMetadata := s.meta == nil || *s.meta != meta
-	s.Unlock()
-
-	if hasNewMetadata {
-		b := a.getCurrentBatch(stNone, s.ref)
-		b.metadata = append(b.metadata, record.RefMetadata{
-			Ref:  s.ref,
-			Type: record.GetMetricType(meta.Type),
-			Unit: meta.Unit,
-			Help: meta.Help,
-		})
-		b.metadataSeries = append(b.metadataSeries, s)
+	if hook := a.head.testAfterSeriesLookup; hook != nil {
+		hook(s)
 	}
+
+	s.Lock()
+	defer s.Unlock()
+
+	// GC can remove the series between the lookup above and this lock, having already
+	// snapshotted its metadata onto the WAL expiry. Logging an update now would record a
+	// value no checkpoint keeps, so drop it, as lockForAppend does for samples.
+	if s.isGCed() {
+		return ref, nil
+	}
+
+	if s.meta != nil && *s.meta == meta {
+		return ref, nil
+	}
+
+	// Hold the series against GC until commit, or the logged record and the snapshotted
+	// expiry would disagree. Released by commitMetadata and Rollback.
+	s.markPendingCommit()
+
+	b := a.getCurrentBatch(stNone, s.ref)
+	b.metadata = append(b.metadata, record.RefMetadata{
+		Ref:  s.ref,
+		Type: record.GetMetricType(meta.Type),
+		Unit: meta.Unit,
+		Help: meta.Help,
+	})
+	b.metadataSeries = append(b.metadataSeries, s)
 
 	return ref, nil
 }
@@ -1733,12 +1749,13 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 // It iterates over the metadata slice and updates the corresponding series
 // with the new metadata information. The series is locked during the update
 // to ensure thread safety.
-func commitMetadata(b *appendBatch) {
+func (a *headAppenderBase) commitMetadata(b *appendBatch) {
 	var series *memSeries
 	for i, m := range b.metadata {
 		series = b.metadataSeries[i]
 		series.Lock()
 		series.meta = &metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help}
+		a.releasePendingCommit(series)
 		series.Unlock()
 	}
 }
@@ -1834,7 +1851,7 @@ func (a *headAppenderBase) Commit() (err error) {
 		a.commitFloats(b, acc)
 		a.commitHistograms(b, acc)
 		a.commitFloatHistograms(b, acc)
-		commitMetadata(b)
+		a.commitMetadata(b)
 	}
 	// Release the reservations that protected newly indexed series before their first sample was queued.
 	a.releaseCreatedSeriesReservations()
@@ -2338,6 +2355,13 @@ func (a *headAppenderBase) Rollback() (err error) {
 			series = b.floatHistogramSeries[i]
 			series.Lock()
 			series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
+			a.releasePendingCommit(series)
+			series.Unlock()
+		}
+		// The metadata is discarded but its GC reservation still has to go back.
+		for i := range b.metadata {
+			series = b.metadataSeries[i]
+			series.Lock()
 			a.releasePendingCommit(series)
 			series.Unlock()
 		}

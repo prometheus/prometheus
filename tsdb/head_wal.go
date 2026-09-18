@@ -297,7 +297,7 @@ Outer:
 					}
 					if r, ok := multiRef[sam.Ref]; ok {
 						// This is a sample for a duplicate series, so we need to keep the series record at least until this record's timestamp.
-						h.updateWALExpiry(sam.Ref, sam.T)
+						h.updateWALExpiry(sam.Ref, sam.T, nil)
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
@@ -345,7 +345,7 @@ Outer:
 					}
 					if r, ok := multiRef[chunks.HeadSeriesRef(s.Ref)]; ok {
 						// This is a tombstone for a duplicate series, so we need to keep the series record at least until this record's timestamp.
-						h.updateWALExpiry(chunks.HeadSeriesRef(s.Ref), itv.Maxt)
+						h.updateWALExpiry(chunks.HeadSeriesRef(s.Ref), itv.Maxt, nil)
 						s.Ref = storage.SeriesRef(r)
 					}
 					if m := h.series.getByID(chunks.HeadSeriesRef(s.Ref)); m == nil {
@@ -373,7 +373,7 @@ Outer:
 				}
 				if r, ok := multiRef[e.Ref]; ok {
 					// This is an exemplar for a duplicate series, so we need to keep the series record at least until this record's timestamp.
-					h.updateWALExpiry(e.Ref, e.T)
+					h.updateWALExpiry(e.Ref, e.T, nil)
 					e.Ref = r
 				}
 				exemplarsInput <- e
@@ -402,7 +402,7 @@ Outer:
 					}
 					if r, ok := multiRef[sam.Ref]; ok {
 						// This is a histogram sample for a duplicate series, so we need to keep the series record at least until this record's timestamp.
-						h.updateWALExpiry(sam.Ref, sam.T)
+						h.updateWALExpiry(sam.Ref, sam.T, nil)
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
@@ -438,7 +438,7 @@ Outer:
 					}
 					if r, ok := multiRef[sam.Ref]; ok {
 						// This is a float histogram sample for a duplicate series, so we need to keep the series record at least until this record's timestamp.
-						h.updateWALExpiry(sam.Ref, sam.T)
+						h.updateWALExpiry(sam.Ref, sam.T, nil)
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
