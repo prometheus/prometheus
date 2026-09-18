@@ -547,6 +547,10 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 				// TODO: If decide to decode exemplars, we should make sure to prepopulate
 				// stripeSeries.exemplars in the next block by using setLatestExemplar.
 				continue
+			case record.MinValidTime:
+				// Internal checkpoint bookkeeping written by wlog.Checkpoint; the agent has no
+				// use for it during replay.
+				continue
 			default:
 				errCh <- &wlog.CorruptionErr{
 					Err:     fmt.Errorf("invalid record type %v", dec.Type(rec)),

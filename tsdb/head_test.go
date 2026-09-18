@@ -185,6 +185,11 @@ func readTestWAL(t testing.TB, dir string) (recs []any) {
 			exemplars, err := dec.Exemplars(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, exemplars)
+		case record.MinValidTime:
+			// Internal checkpoint bookkeeping, not WAL content callers of readTestWAL care
+			// about; see TestReadMinValidTime_* in tsdb/wlog for coverage of this record.
+			_, err := dec.MinValidTime(rec)
+			require.NoError(t, err)
 		default:
 			require.Fail(t, "unknown record type")
 		}

@@ -114,6 +114,83 @@ func TestDeleteCheckpoints(t *testing.T) {
 	require.Equal(t, []string{"checkpoint.100000000", "checkpoint.100000001"}, fns)
 }
 
+func TestReadMinValidTime_NoCheckpointYet(t *testing.T) {
+	dir := t.TempDir()
+
+	mint, ok, err := ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.False(t, ok, "a WAL with no checkpoint yet must have no recoverable min valid time")
+	require.Zero(t, mint)
+}
+
+func TestReadMinValidTime_AfterCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	w, err := New(nil, nil, dir, compression.None)
+	require.NoError(t, err)
+	defer w.Close()
+
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false)
+	require.NoError(t, err)
+
+	mint, ok, err := ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, int64(100), mint)
+}
+
+func TestReadMinValidTime_ReflectsOnlyLatestCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	w, err := New(nil, nil, dir, compression.None)
+	require.NoError(t, err)
+	defer w.Close()
+
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false)
+	require.NoError(t, err)
+
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 1001, 2000, func(chunks.HeadSeriesRef) bool { return true }, 200, false)
+	require.NoError(t, err)
+
+	// The second checkpoint's own mint must win, and the first checkpoint's carried-forward
+	// copy must not have been kept alongside it (there must be exactly one such record).
+	mint, ok, err := ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, int64(200), mint)
+
+	checkpointDir, _, err := LastCheckpoint(dir)
+	require.NoError(t, err)
+	sr, err := NewSegmentsReader(checkpointDir)
+	require.NoError(t, err)
+	defer sr.Close()
+	dec := record.NewDecoder(nil, promslog.NewNopLogger())
+	r := NewReader(sr)
+	minValidTimeRecords := 0
+	for r.Next() {
+		if dec.Type(r.Record()) == record.MinValidTime {
+			minValidTimeRecords++
+		}
+	}
+	require.NoError(t, r.Err())
+	require.Equal(t, 1, minValidTimeRecords, "a checkpoint must carry exactly one min valid time record")
+}
+
+func TestReadMinValidTime_OlderCheckpointWithoutRecord(t *testing.T) {
+	dir := t.TempDir()
+
+	// Simulate a checkpoint written before this record existed: its first (and only) record
+	// is a Series record, not a MinValidTime one.
+	w, err := New(nil, nil, filepath.Join(dir, "checkpoint.0000"), compression.None)
+	require.NoError(t, err)
+	var enc record.Encoder
+	require.NoError(t, w.Log(enc.Series([]record.RefSeries{{Ref: 0, Labels: labels.FromStrings("a", "b")}}, nil)))
+	require.NoError(t, w.Close())
+
+	mint, ok, err := ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.False(t, ok, "an older checkpoint with no min valid time record must not be mistaken for one recording 0")
+	require.Zero(t, mint)
+}
+
 func TestCheckpoint(t *testing.T) {
 	t.Parallel()
 	makeHistogram := func(i int) *histogram.Histogram {
