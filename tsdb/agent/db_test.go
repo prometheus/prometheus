@@ -1805,10 +1805,13 @@ func TestUpdateMetadata(t *testing.T) {
 		ref2, err := app.Append(0, s2, 1000, 2.0)
 		require.NoError(t, err)
 
-		_, err = app.UpdateMetadata(ref1, s1, m1)
+		gotRef1, err := app.UpdateMetadata(ref1, s1, m1)
 		require.NoError(t, err)
-		_, err = app.UpdateMetadata(ref2, s2, m2)
+		require.Equal(t, ref1, gotRef1)
+		// Pass 0 as ref to exercise the GetByHash fallback for an existing series.
+		gotRef2, err := app.UpdateMetadata(0, s2, m2)
 		require.NoError(t, err)
+		require.Equal(t, ref2, gotRef2)
 		require.NoError(t, app.Commit())
 
 		// Check in-memory metadata.
