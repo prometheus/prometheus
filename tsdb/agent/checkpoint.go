@@ -201,7 +201,6 @@ func (cf *checkpointWriter) flushRecords() error {
 	cf.metaBuff = cf.metaBuff[:0]
 	cf.seriesRecords = cf.seriesRecords[:0]
 	cf.sampleRecords = cf.sampleRecords[:0]
-	clear(cf.metaRecords)
 	cf.metaRecords = cf.metaRecords[:0]
 	return nil
 }
