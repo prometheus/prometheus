@@ -1872,16 +1872,31 @@ func TestWALReplayMetadata(t *testing.T) {
 
 	require.NoError(t, db.Close())
 
-	// Reopen DB and verify metadata is restored during WAL replay.
+	// Reopen DB with EnableMetadataWALRecords=true and verify metadata is restored during WAL replay.
 	db2, err := Open(l, nil, rs, dir, opts)
 	require.NoError(t, err)
-	defer db2.Close()
 
 	mem1 := db2.series.GetByID(chunks.HeadSeriesRef(ref1))
 	require.NotNil(t, mem1)
 	require.Equal(t, &m1, mem1.Metadata())
 
 	mem2 := db2.series.GetByID(chunks.HeadSeriesRef(ref2))
+	require.NotNil(t, mem2)
+	require.Equal(t, &m2, mem2.Metadata())
+	require.NoError(t, db2.Close())
+
+	// Reopen DB with EnableMetadataWALRecords=false and verify existing metadata in WAL is still restored.
+	optsDisabled := DefaultOptions()
+	optsDisabled.EnableMetadataWALRecords = false
+	db3, err := Open(l, nil, rs, dir, optsDisabled)
+	require.NoError(t, err)
+	defer db3.Close()
+
+	mem1 = db3.series.GetByID(chunks.HeadSeriesRef(ref1))
+	require.NotNil(t, mem1)
+	require.Equal(t, &m1, mem1.Metadata())
+
+	mem2 = db3.series.GetByID(chunks.HeadSeriesRef(ref2))
 	require.NotNil(t, mem2)
 	require.Equal(t, &m2, mem2.Metadata())
 }

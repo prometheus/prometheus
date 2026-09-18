@@ -686,6 +686,8 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 			clear(v) // Zero out to avoid retaining histogram data.
 			db.walReplayFloatHistogramsPool.Put(v[:0])
 		case []record.RefMetadata:
+			// Metadata records are replayed unconditionally regardless of EnableMetadataWALRecords
+			// to preserve existing metadata from the WAL for forward compatibility (matching TSDB Head replay).
 			for _, entry := range v {
 				if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
 					if meta, ok := db.deleted[entry.Ref]; ok && meta.lastSegment <= currentSegmentOrCheckpoint {
