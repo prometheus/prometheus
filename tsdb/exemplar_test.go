@@ -1122,8 +1122,9 @@ func BenchmarkAddExemplar_OutOfOrder(b *testing.B) {
 
 	multipleSeries := func(f func(*int64, *labels.Labels)) func(*int64, *labels.Labels) {
 		return func(ts *int64, l *labels.Labels) {
+			series := *ts
 			f(ts, l)
-			*l = labels.FromStrings("service", strconv.Itoa(int(*ts)))
+			*l = labels.FromStrings("service", strconv.Itoa(int(series)))
 		}
 	}
 
