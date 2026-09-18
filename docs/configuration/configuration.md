@@ -4197,6 +4197,11 @@ with this feature.
 # it yet (e.g. blocks uploaded by the Thanos sidecar). Once XOR2 chunks have been
 # written, downgrading to a version without XOR2 support requires deleting the affected
 # blocks from disk manually, otherwise Prometheus returns an error on all queries.
+# The same holds on the wire: the remote read protocol does not negotiate chunk
+# encodings, as accepted_response_types only selects between SAMPLES and
+# STREAMED_XOR_CHUNKS, so a chunked remote read response carries whichever encoding the
+# server used. A remote read client that does not understand XOR2 fails the whole query
+# with an 'invalid chunk encoding' error.
 #
 # When absent, the encoding is 'xor2' if --enable-feature=xor2-encoding or
 # --enable-feature=st-storage is set, and 'xor' otherwise.
@@ -4209,6 +4214,11 @@ with this feature.
 # When --enable-feature=st-storage is enabled, XOR and XOR2 are not compatible
 # (XOR chunks do not store start timestamps), so an in-progress chunk is cut
 # on the next append after the encoding changes.
+# The encoding also applies to the float chunks that Prometheus encodes in memory
+# instead of reading them from disk: the chunks built from the samples that a remote
+# read client receives from its remote read endpoint, and the chunks re-encoded when
+# the chunk querier compacts overlapping series. Both affect every chunk querier
+# consumer, in particular the chunked remote read responses this Prometheus serves.
 # For the equivalent ST-capable encoding for native histograms, see the experimental
 # histograms-st-encoding feature flag. The st-storage feature enables that encoding too.
 [ chunk_encoding:

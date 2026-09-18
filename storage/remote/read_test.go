@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -290,7 +291,57 @@ func (c *mockedRemoteClient) reset() {
 	c.gotMultiple = nil
 }
 
-// NOTE: We don't need to test ChunkQuerier as it's uses querier for all operations anyway.
+func TestChunkQuerierFloatEncoding(t *testing.T) {
+	for name, tc := range map[string]struct {
+		floatEncoding storage.FloatEncodingFunc
+		expected      chunkenc.Encoding
+	}{
+		"nil getter defaults to xor": {
+			floatEncoding: nil,
+			expected:      chunkenc.EncXOR,
+		},
+		"xor": {
+			floatEncoding: func() chunkenc.Encoding { return chunkenc.EncXOR },
+			expected:      chunkenc.EncXOR,
+		},
+		"xor2": {
+			floatEncoding: func() chunkenc.Encoding { return chunkenc.EncXOR2 },
+			expected:      chunkenc.EncXOR2,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := &mockedRemoteClient{
+				store: []*prompb.TimeSeries{
+					{
+						Labels:  []prompb.Label{{Name: "a", Value: "b"}},
+						Samples: []prompb.Sample{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}},
+					},
+				},
+			}
+			c := NewSampleAndChunkQueryableClientWithOptions(
+				m,
+				labels.EmptyLabels(),
+				nil,
+				true,
+				func() (int64, error) { return 0, nil },
+				SampleAndChunkQueryableClientOptions{FloatEncoding: tc.floatEncoding},
+			)
+			q, err := c.ChunkQuerier(0, 10)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+			ss := q.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+			require.True(t, ss.Next())
+			chks, err := storage.ExpandChunks(ss.At().Iterator(nil))
+			require.NoError(t, err)
+			require.Len(t, chks, 1)
+			require.Equal(t, tc.expected, chks[0].Chunk.Encoding())
+			require.False(t, ss.Next())
+			require.NoError(t, ss.Err())
+		})
+	}
+}
+
 func TestSampleAndChunkQueryableClient(t *testing.T) {
 	m := &mockedRemoteClient{
 		// Samples does not matter for below tests.
