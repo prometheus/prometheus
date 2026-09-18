@@ -329,6 +329,7 @@ Example query:
 
 See [the fill modifiers documentation](querying/operators.md#filling-in-missing-matches) for more details and examples.
 
+
 ## Search API
 
 `--enable-feature=search-api`
@@ -377,7 +378,7 @@ When the flag is disabled, Prometheus does not advertise `zstd`. A target that a
 
 ## NHCB as classic histograms in PromQL
 
-`--enable-feature=promq-nhcb-as-classic`
+`--enable-feature=promql-nhcb-as-classic`
 
 When enabled, PromQL queries for classic histogram series (e.g. `_bucket`, `_count`, `_sum`) will
 automatically convert Native Histograms with Custom Buckets (NHCB) into classic histogram series.
