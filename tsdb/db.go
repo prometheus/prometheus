@@ -370,27 +370,29 @@ type DB struct {
 }
 
 type dbMetrics struct {
-	loadedBlocks                       prometheus.GaugeFunc
-	symbolTableSize                    prometheus.GaugeFunc
-	reloads                            prometheus.Counter
-	reloadsFailed                      prometheus.Counter
-	compactionsFailed                  prometheus.Counter
-	compactionsTriggered               prometheus.Counter
-	compactionsSkipped                 prometheus.Counter
-	sizeRetentionCount                 prometheus.Counter
-	timeRetentionCount                 prometheus.Counter
-	startTime                          prometheus.GaugeFunc
-	tombCleanTimer                     prometheus.Histogram
-	blocksBytes                        prometheus.Gauge
-	maxBytes                           prometheus.Gauge
-	maxPercentage                      prometheus.Gauge
-	retentionDuration                  prometheus.Gauge
-	staleSeriesCompactionsTriggered    prometheus.Counter
-	staleSeriesCompactionsFailed       prometheus.Counter
-	staleSeriesCompactionDuration      prometheus.Histogram
-	selectedSeriesCompactionsTriggered prometheus.Counter
-	selectedSeriesCompactionsFailed    prometheus.Counter
-	selectedSeriesCompactionDuration   prometheus.Histogram
+	loadedBlocks                          prometheus.GaugeFunc
+	symbolTableSize                       prometheus.GaugeFunc
+	reloads                               prometheus.Counter
+	reloadsFailed                         prometheus.Counter
+	compactionsFailed                     prometheus.Counter
+	compactionsTriggered                  prometheus.Counter
+	compactionsSkipped                    prometheus.Counter
+	sizeRetentionCount                    prometheus.Counter
+	timeRetentionCount                    prometheus.Counter
+	startTime                             prometheus.GaugeFunc
+	tombCleanTimer                        prometheus.Histogram
+	blocksBytes                           prometheus.Gauge
+	maxBytes                              prometheus.Gauge
+	maxPercentage                         prometheus.Gauge
+	retentionDuration                     prometheus.Gauge
+	staleSeriesCompactionsTriggered       prometheus.Counter
+	staleSeriesCompactionsFailed          prometheus.Counter
+	staleSeriesCompactionDuration         prometheus.Histogram
+	staleSeriesCompactionSeriesEvicted    prometheus.Counter
+	selectedSeriesCompactionsTriggered    prometheus.Counter
+	selectedSeriesCompactionsFailed       prometheus.Counter
+	selectedSeriesCompactionDuration      prometheus.Histogram
+	selectedSeriesCompactionSeriesEvicted prometheus.Counter
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -495,6 +497,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
+	m.staleSeriesCompactionSeriesEvicted = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_stale_series_compaction_series_evicted_total",
+		Help: "Total number of series actually evicted from the head by stale series compaction.",
+	})
 	m.selectedSeriesCompactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_selected_series_compactions_triggered_total",
 		Help: "Total number of compactions triggered for an explicit caller-provided list of series references.",
@@ -510,6 +516,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: 1 * time.Hour,
+	})
+	m.selectedSeriesCompactionSeriesEvicted = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_selected_series_compaction_series_evicted_total",
+		Help: "Total number of series actually evicted from the head by selected series compaction.",
 	})
 
 	if r != nil {
@@ -532,9 +542,11 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.staleSeriesCompactionsTriggered,
 			m.staleSeriesCompactionsFailed,
 			m.staleSeriesCompactionDuration,
+			m.staleSeriesCompactionSeriesEvicted,
 			m.selectedSeriesCompactionsTriggered,
 			m.selectedSeriesCompactionsFailed,
 			m.selectedSeriesCompactionDuration,
+			m.selectedSeriesCompactionSeriesEvicted,
 		)
 	}
 	return m
@@ -1875,12 +1887,15 @@ func (db *DB) CompactStaleHead() (err error) {
 	// arrived for the series after this point, independently of whether isolation is enabled.
 	fingerprints := db.head.snapshotFingerprints(staleSeriesRefs.sortedByRef, appendIDWatermark)
 
+	var evicted int
 	if err := db.compactHeadViewLocked(
 		func(h *Head, mint, maxt int64) BlockReader {
 			return NewSelectedSeriesHead(h, mint, maxt, staleSeriesRefs)
 		},
 		func(maxt int64) error {
-			return db.head.truncateStaleSeries(staleSeriesRefs.sortedByRef, maxt, fingerprints)
+			n, err := db.head.truncateStaleSeries(staleSeriesRefs.sortedByRef, maxt, fingerprints)
+			evicted = n
+			return err
 		},
 		func(meta *BlockMeta) { meta.Compaction.SetStaleSeries() },
 	); err != nil {
@@ -1889,7 +1904,8 @@ func (db *DB) CompactStaleHead() (err error) {
 
 	elapsed := time.Since(start)
 	db.metrics.staleSeriesCompactionDuration.Observe(elapsed.Seconds())
-	db.logger.Info("Ending stale series compaction", "num_series", len(staleSeriesRefs.sortedByRef), "duration", elapsed)
+	db.metrics.staleSeriesCompactionSeriesEvicted.Add(float64(evicted))
+	db.logger.Info("Ending stale series compaction", "num_series", len(staleSeriesRefs.sortedByRef), "num_evicted", evicted, "duration", elapsed)
 	return nil
 }
 
@@ -1968,12 +1984,15 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 	// after this point, independently of whether isolation is enabled.
 	fingerprints := db.head.snapshotFingerprints(selectedSeriesRefs.sortedByRef, appendIDWatermark)
 
+	var evicted int
 	if err := db.compactHeadViewLocked(
 		func(h *Head, mint, maxt int64) BlockReader {
 			return NewSelectedSeriesHead(h, mint, maxt, selectedSeriesRefs)
 		},
 		func(maxt int64) error {
-			return db.head.truncateSelectedSeries(selectedSeriesRefs.sortedByRef, maxt, fingerprints)
+			n, err := db.head.truncateSelectedSeries(selectedSeriesRefs.sortedByRef, maxt, fingerprints)
+			evicted = n
+			return err
 		},
 		func(meta *BlockMeta) { meta.Compaction.SetSelectedSeries() },
 	); err != nil {
@@ -1982,7 +2001,8 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 
 	elapsed := time.Since(start)
 	db.metrics.selectedSeriesCompactionDuration.Observe(elapsed.Seconds())
-	db.logger.Info("Ending selected series compaction", "num_series", len(selectedSeriesRefs.sortedByRef), "num_skipped_ooo", skippedSeries, "duration", elapsed)
+	db.metrics.selectedSeriesCompactionSeriesEvicted.Add(float64(evicted))
+	db.logger.Info("Ending selected series compaction", "num_series", len(selectedSeriesRefs.sortedByRef), "num_evicted", evicted, "num_skipped_ooo", skippedSeries, "duration", elapsed)
 	return nil
 }
 

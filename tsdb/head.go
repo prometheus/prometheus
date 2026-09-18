@@ -1337,22 +1337,20 @@ func isStaleSeries(s *memSeries) bool {
 // out-of-order data -- both checked live, not from a stale snapshot. hasMutatedSinceSnapshot
 // protects a series that changed after it was selected, including a fresh stale marker that
 // isStaleSeries alone wouldn't flag.
-func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64, fingerprints map[storage.SeriesRef]seriesFingerprint) error {
-	_, err := h.truncateSeries(seriesRefs, maxt, func(s *memSeries) bool {
+func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64, fingerprints map[storage.SeriesRef]seriesFingerprint) (int, error) {
+	return h.truncateSeries(seriesRefs, maxt, func(s *memSeries) bool {
 		return isSeriesWithoutOOO(s) && isStaleSeries(s) && !hasMutatedSinceSnapshot(s, fingerprints)
 	})
-	return err
 }
 
 // truncateSelectedSeries removes the series identified by the provided refs from the head. OOO
 // data must first be flushed by CompactOOOHead before a series can be evicted; isSeriesWithoutOOO
 // checks that live, not from a stale snapshot. hasMutatedSinceSnapshot protects a series that
 // changed after its ref was collected.
-func (h *Head) truncateSelectedSeries(seriesRefs []storage.SeriesRef, maxt int64, fingerprints map[storage.SeriesRef]seriesFingerprint) error {
-	_, err := h.truncateSeries(seriesRefs, maxt, func(s *memSeries) bool {
+func (h *Head) truncateSelectedSeries(seriesRefs []storage.SeriesRef, maxt int64, fingerprints map[storage.SeriesRef]seriesFingerprint) (int, error) {
+	return h.truncateSeries(seriesRefs, maxt, func(s *memSeries) bool {
 		return isSeriesWithoutOOO(s) && !hasMutatedSinceSnapshot(s, fingerprints)
 	})
-	return err
 }
 
 // hasAppendIDAbove reports whether s contains any in-memory sample with an appendID greater
