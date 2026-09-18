@@ -3655,3 +3655,20 @@ func TestGetScrapeConfigs_Loaded(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
+
+func TestDockerSDWithIncludeNoNetworkTargets(t *testing.T) {
+	want, err := LoadFile("testdata/docker_with_include_no_network_targets.good.yml", false, promslog.NewNopLogger())
+	require.NoError(t, err)
+
+	out, err := yaml.Marshal(want)
+	require.NoError(t, err)
+
+	got := &Config{}
+	require.NoError(t, yaml.UnmarshalStrict(out, got))
+
+	require.Len(t, got.ScrapeConfigs, 1)
+	require.Len(t, got.ScrapeConfigs[0].ServiceDiscoveryConfigs, 1)
+	dockerSd, ok := got.ScrapeConfigs[0].ServiceDiscoveryConfigs[0].(*moby.DockerSDConfig)
+	require.True(t, ok)
+	require.True(t, dockerSd.IncludeNoNetworkTargets)
+}
