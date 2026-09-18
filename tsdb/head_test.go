@@ -7469,7 +7469,190 @@ func TestStripeSeries_getOrSet(t *testing.T) {
 	require.Same(t, ms2, got)
 }
 
+// TestStripeSeries_iterForDeletion verifies that checks permit stripe access and
+// identity revalidation skips unlinked candidates without locking other series.
+func TestStripeSeries_iterForDeletion(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		colliding bool
+	}{
+		{name: "single series"},
+		{name: "colliding series", colliding: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var s *stripeSeries
+			var series, remaining *memSeries
+			if tc.colliding {
+				s, remaining, series = stripeSeriesWithCollidingSeries(t)
+			} else {
+				lset := labels.FromStrings("a", "1")
+				series = newMemSeries(lset, 1, 0, defaultIsolationDisabled, false)
+				s = newStripeSeries(1, noopSeriesLifecycleCallback{})
+				got, created := s.setUnlessAlreadySet(lset.Hash(), lset, series)
+				require.True(t, created)
+				require.Same(t, series, got)
+			}
+			lset := series.labels()
+			hash := lset.Hash()
+			var remainingLabels labels.Labels
+			if remaining != nil {
+				remainingLabels = remaining.labels()
+			}
+
+			checkStarted := make(chan struct{})
+			continueCheck := make(chan struct{})
+			iterationDone := make(chan int, 1)
+			deleteCalled := false
+			go func() {
+				iterationDone <- s.iterForDeletion(
+					func(_ int, _ uint64, candidate *memSeries) bool {
+						if candidate != series {
+							return false
+						}
+						close(checkStarted)
+						<-continueCheck
+						return true
+					},
+					func(_ int, _ uint64, _ *memSeries, _ map[chunks.HeadSeriesRef]labels.Labels) {
+						deleteCalled = true
+					},
+				)
+			}()
+
+			var checkReached bool
+			select {
+			case <-checkStarted:
+				checkReached = true
+			case <-time.After(5 * time.Second):
+			}
+
+			// Make the snapshot stale so revalidation must skip the candidate.
+			// Leave its ID entry intact to verify lookups while checkFunc is paused.
+			writerAcquired := checkReached && s.locks[0].TryLock()
+			var queried *memSeries
+			if writerAcquired {
+				s.hashes[0].del(hash, series.ref)
+				s.locks[0].Unlock()
+				queried = s.getByID(series.ref)
+			}
+
+			// With dedupelabels, label-based revalidation would wait on the remaining
+			// series' mutex while holding the stripe write lock. Require iteration
+			// to finish before releasing that mutex.
+			remainingLocked := writerAcquired && remaining != nil
+			if remainingLocked {
+				remaining.Lock()
+			}
+			close(continueCheck)
+
+			var deletedCount int
+			var completed bool
+			select {
+			case deletedCount = <-iterationDone:
+				completed = true
+			case <-time.After(5 * time.Second):
+			}
+			// Release the lock and join the worker before asserting, even on failure.
+			if remainingLocked {
+				remaining.Unlock()
+			}
+			// Keep completed unchanged: finishing during cleanup must not hide the timeout.
+			if !completed {
+				select {
+				case deletedCount = <-iterationDone:
+				case <-time.After(5 * time.Second):
+					t.Fatal("iteration did not finish after releasing the check and series lock")
+				}
+			}
+
+			require.True(t, checkReached, "deletion check did not start")
+			require.True(t, writerAcquired, "stripe write lock must be available during the deletion check")
+			require.True(t, completed, "identity revalidation waited for an unrelated series lock")
+			require.Same(t, series, queried)
+			require.False(t, deleteCalled)
+			require.Zero(t, deletedCount)
+			require.Nil(t, s.getByHash(hash, lset))
+			require.Same(t, series, s.getByID(series.ref))
+			if remaining != nil {
+				require.Same(t, remaining, s.getByHash(hash, remainingLabels))
+				require.Same(t, remaining, s.getByID(remaining.ref))
+			}
+		})
+	}
+}
+
 func TestStripeSeries_gc(t *testing.T) {
+	t.Run("gcSeries does not wait on unselected series", func(t *testing.T) {
+		for _, tc := range []struct {
+			name        string
+			selectedRef storage.SeriesRef
+		}{
+			{name: "unique entry", selectedRef: 1},
+			{name: "conflicting entry", selectedRef: 2},
+			{name: "empty selection"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
+				// Keep the locked series in the same stripe but outside the colliding hash bucket.
+				unselectedLabels := labels.FromStrings("series", "unselected")
+				require.NotEqual(t, ms1.lset.Hash(), unselectedLabels.Hash())
+				unselected := newMemSeries(unselectedLabels, 3, 0, defaultIsolationDisabled, false)
+				got, created := s.setUnlessAlreadySet(unselectedLabels.Hash(), unselectedLabels, unselected)
+				require.True(t, created)
+				require.Same(t, unselected, got)
+
+				var refs []storage.SeriesRef
+				wantDeleted := map[storage.SeriesRef]struct{}{}
+				if tc.selectedRef != 0 {
+					refs = append(refs, tc.selectedRef)
+					wantDeleted[tc.selectedRef] = struct{}{}
+				}
+
+				unselected.Lock()
+				done := make(chan map[storage.SeriesRef]struct{}, 1)
+				go func() {
+					deleted, _, _, _, _, _ := s.gcSeries(refs, 0, func(*memSeries) bool { return true })
+					done <- deleted
+				}()
+
+				var deleted map[storage.SeriesRef]struct{}
+				var completedWhileLocked bool
+				select {
+				case deleted = <-done:
+					completedWhileLocked = true
+				case <-time.After(5 * time.Second):
+				}
+				// Release the lock and join the worker before asserting, even on failure.
+				unselected.Unlock()
+				if !completedWhileLocked {
+					select {
+					case deleted = <-done:
+					case <-time.After(5 * time.Second):
+						t.Fatal("gcSeries did not finish after releasing the unselected series lock")
+					}
+				}
+
+				require.True(t, completedWhileLocked, "gcSeries waited for an unselected series lock")
+				require.Equal(t, wantDeleted, deleted)
+				for _, series := range []*memSeries{ms1, ms2, unselected} {
+					selected := storage.SeriesRef(series.ref) == tc.selectedRef
+					lset := series.labels()
+					if selected {
+						require.Nil(t, s.getByID(series.ref))
+						require.Nil(t, s.getByHash(lset.Hash(), lset))
+					} else {
+						require.Same(t, series, s.getByID(series.ref))
+						require.Same(t, series, s.getByHash(lset.Hash(), lset))
+					}
+					series.Lock()
+					gced := series.isGCed()
+					series.Unlock()
+					require.Equal(t, selected, gced)
+				}
+			})
+		}
+	})
+
 	t.Run("marks collected series", func(t *testing.T) {
 		s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
 		hash := ms1.lset.Hash()
