@@ -1744,6 +1744,34 @@ func TestUpdateMetadata(t *testing.T) {
 		}
 	})
 
+	t.Run("empty metadata", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.EnableMetadataWALRecords = true
+		s := createTestAgentDB(t, nil, opts)
+		defer s.Close()
+
+		app := s.Appender(t.Context())
+		lbls := labels.FromStrings("__name__", "m1")
+		ref, err := app.Append(0, lbls, 1000, 1.0)
+		require.NoError(t, err)
+
+		metaRef, err := app.UpdateMetadata(ref, lbls, metadata.Metadata{})
+		require.NoError(t, err)
+		require.Equal(t, storage.SeriesRef(0), metaRef)
+		require.NoError(t, app.Commit())
+
+		memS := s.series.GetByID(chunks.HeadSeriesRef(ref))
+		require.NotNil(t, memS)
+		require.Nil(t, memS.Metadata())
+
+		recs := readTestWAL(t, s.wal.Dir())
+		require.NotEmpty(t, recs)
+		for _, rec := range recs {
+			_, ok := rec.([]record.RefMetadata)
+			require.False(t, ok, "unexpected metadata record in WAL for empty metadata")
+		}
+	})
+
 	t.Run("unknown series", func(t *testing.T) {
 		opts := DefaultOptions()
 		opts.EnableMetadataWALRecords = true
