@@ -87,6 +87,27 @@ func isHistogramValidationError(err error) bool {
 	return errors.As(err, &e)
 }
 
+func labelProtosOutOfOrder(lbls []prompb.Label) (current, previous string, ok bool) {
+	for i, l := range lbls {
+		if i > 0 && l.Name < previous {
+			return l.Name, previous, true
+		}
+		previous = l.Name
+	}
+	return "", "", false
+}
+
+func labelRefsOutOfOrder(labelRefs []uint32, symbols []string) (current, previous string, ok bool) {
+	for i := 0; i < len(labelRefs); i += 2 {
+		name := symbols[labelRefs[i]]
+		if i > 0 && name < previous {
+			return name, previous, true
+		}
+		previous = name
+	}
+	return "", "", false
+}
+
 // Store implements remoteapi.writeStorage interface.
 // TODO(bwplotka): Improve remoteapi.Store API. Right now it's confusing if PRWv1 flows should use WriteResponse or not.
 // If it's not filled, it will be "confirmed zero" which caused partial error reporting on client side in the past.
@@ -169,6 +190,11 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 
 	b := labels.NewScratchBuilder(0)
 	for _, ts := range req.Timeseries {
+		if current, previous, ok := labelProtosOutOfOrder(ts.Labels); ok {
+			h.logger.Warn("Invalid labels for series.", "labels", ts.Labels, "label", current, "previous_label", previous)
+			samplesWithInvalidLabels++
+			continue
+		}
 		ls := ts.ToLabels(&b, nil)
 
 		// TODO(bwplotka): Even as per 1.0 spec, this should be a 400 error, while other samples are
@@ -315,6 +341,11 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		ls, err := ts.ToLabels(&b, req.Symbols)
 		if err != nil {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing labels for series %v: %w", ts.LabelsRefs, err))
+			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			continue
+		}
+		if current, previous, ok := labelRefsOutOfOrder(ts.LabelsRefs, req.Symbols); ok {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf(`invalid labels for series, labels %v, label name %q is out of order after %q`, ls.String(), current, previous))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
 			continue
 		}
