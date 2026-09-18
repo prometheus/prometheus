@@ -129,7 +129,7 @@ func TestReadMinValidTime_AfterCheckpoint(t *testing.T) {
 	require.NoError(t, err)
 	defer w.Close()
 
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false, true)
 	require.NoError(t, err)
 
 	mint, ok, err := ReadMinValidTime(dir)
@@ -144,10 +144,10 @@ func TestReadMinValidTime_ReflectsOnlyLatestCheckpoint(t *testing.T) {
 	require.NoError(t, err)
 	defer w.Close()
 
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false, true)
 	require.NoError(t, err)
 
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 1001, 2000, func(chunks.HeadSeriesRef) bool { return true }, 200, false)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 1001, 2000, func(chunks.HeadSeriesRef) bool { return true }, 200, false, true)
 	require.NoError(t, err)
 
 	// The second checkpoint's own mint must win, and the first checkpoint's carried-forward
@@ -381,7 +381,7 @@ func TestCheckpoint(t *testing.T) {
 
 				stats, err := Checkpoint(promslog.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
 					return x%2 == 0
-				}, last/2, enableSTStorage)
+				}, last/2, enableSTStorage, false)
 				require.NoError(t, err)
 				require.NoError(t, w.Truncate(107))
 				require.NoError(t, DeleteCheckpoints(w.Dir(), 106))
@@ -519,7 +519,7 @@ func TestCheckpoint_Tombstones(t *testing.T) {
 
 	_, err = Checkpoint(promslog.NewNopLogger(), w, first, last, func(id chunks.HeadSeriesRef) bool {
 		return id == 2 || id == 3 || id == 4
-	}, 10, false)
+	}, 10, false, false)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
@@ -619,7 +619,7 @@ func TestCheckpointV2HistogramsToV1(t *testing.T) {
 
 	// Run Checkpoint with V1 encoding (enableSTStorage=false) to force the
 	// V1 leftover path in checkpoint.go.
-	stats, err := Checkpoint(promslog.NewNopLogger(), w, 0, last, func(_ chunks.HeadSeriesRef) bool { return true }, 0, false)
+	stats, err := Checkpoint(promslog.NewNopLogger(), w, 0, last, func(_ chunks.HeadSeriesRef) bool { return true }, 0, false, false)
 	require.NoError(t, err)
 	require.Equal(t, len(histSamples)+len(floatHistSamples), stats.TotalSamples)
 	require.Zero(t, stats.DroppedSamples, "no histogram samples should be dropped")
@@ -704,7 +704,7 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 			require.NoError(t, f.Close())
 
 			// Run the checkpoint and since the wlog contains corrupt data this should return an error.
-			_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, nil, 0, enableSTStorage)
+			_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, nil, 0, enableSTStorage, false)
 			require.Error(t, err)
 
 			// Walk the wlog dir to make sure there are no tmp folder left behind after the error.
@@ -732,7 +732,7 @@ func TestCheckpointDeletesTemporaryCheckpoints(t *testing.T) {
 	require.NoError(t, err)
 	defer w.Close()
 
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(_ chunks.HeadSeriesRef) bool { return true }, 1000, false)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(_ chunks.HeadSeriesRef) bool { return true }, 1000, false, false)
 	require.NoError(t, err)
 
 	files, err := os.ReadDir(dir)

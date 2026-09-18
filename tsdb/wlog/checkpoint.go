@@ -148,7 +148,14 @@ func DeleteTempCheckpoints(logger *slog.Logger, dir string) error {
 // segmented format as the original WAL itself.
 // This makes it easy to read it through the WAL package and concatenate
 // it with the original WAL.
-func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64, enableSTStorage bool) (*CheckpointStats, error) {
+//
+// writeMinValidTime controls whether the checkpoint also carries a record of mint, readable
+// back with ReadMinValidTime. It is opt-in because a reader that doesn't know about that
+// record type may not tolerate it as gracefully as ordinary WAL replay does: unlike Head's
+// replay, the agent's treats any unrecognized record type as corruption, so writing this
+// record into an agent checkpoint risks data loss on a downgrade to an older agent. Callers
+// that don't consume ReadMinValidTime, such as the agent, should pass false.
+func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64, enableSTStorage, writeMinValidTime bool) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
 	var sgmReader io.ReadCloser
 
@@ -200,16 +207,18 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		os.RemoveAll(cpdirtmp)
 	}()
 
-	// Persist mint as the checkpoint's first record, so a restart can recover it without
-	// depending on whether any block on disk happens to reflect it: a block produced by
-	// CompactSelectedSeries or CompactStaleHead is deliberately excluded from that search,
-	// and a truncation whose range had nothing left to write never produces a block at all.
-	// mint is already the highest ever used by a checkpoint, since truncateWAL only calls
-	// Checkpoint with a strictly increasing mint, so there's no need to carry forward
-	// whatever the previous checkpoint recorded.
-	var minValidTimeEnc record.Encoder
-	if err := cp.Log(minValidTimeEnc.MinValidTime(mint, nil)); err != nil {
-		return nil, fmt.Errorf("write min valid time record: %w", err)
+	if writeMinValidTime {
+		// Persist mint as the checkpoint's first record, so a restart can recover it without
+		// depending on whether any block on disk happens to reflect it: a block produced by
+		// CompactSelectedSeries or CompactStaleHead is deliberately excluded from that search,
+		// and a truncation whose range had nothing left to write never produces a block at all.
+		// mint is already the highest ever used by a checkpoint, since truncateWAL only calls
+		// Checkpoint with a strictly increasing mint, so there's no need to carry forward
+		// whatever the previous checkpoint recorded.
+		var minValidTimeEnc record.Encoder
+		if err := cp.Log(minValidTimeEnc.MinValidTime(mint, nil)); err != nil {
+			return nil, fmt.Errorf("write min valid time record: %w", err)
+		}
 	}
 
 	r := NewReader(sgmReader)
