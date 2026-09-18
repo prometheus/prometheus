@@ -648,6 +648,8 @@ Dump data (series+samples or optionally just series) from a TSDB.
 | --- | --- |
 | <code class="text-nowrap">-r</code>, <code class="text-nowrap">--human-readable</code> | Print human readable values. |
 | <code class="text-nowrap">-q</code>, <code class="text-nowrap">--quiet</code> | Do not print created blocks. |
+| <code class="text-nowrap">--max-block-duration</code> | Maximum duration created blocks may span, rounded down to a Prometheus compaction range. Anything less than 2h is ignored. |
+| <code class="text-nowrap">--block-duration</code> | Exact duration created blocks span, used as is so that blocks can be aligned to boundaries other TSDB systems expect, for example 24h for daily blocks. Mutually exclusive with --max-block-duration. |
 
 
 

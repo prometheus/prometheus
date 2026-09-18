@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -84,8 +85,29 @@ func getCompatibleBlockDuration(maxBlockDuration int64) int64 {
 	return blockDuration
 }
 
-func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesInAppender int, outputDir string, humanReadable, quiet bool, customLabels map[string]string) (returnErr error) {
-	blockDuration := getCompatibleBlockDuration(maxBlockDuration)
+// resolveBlockDuration returns the duration created blocks span, in milliseconds:
+// blockDuration as is, or maxBlockDuration rounded down to a compaction range.
+func resolveBlockDuration(blockDuration, maxBlockDuration time.Duration) (int64, error) {
+	switch {
+	case blockDuration > 0 && maxBlockDuration > 0:
+		return 0, errors.New("--block-duration and --max-block-duration are mutually exclusive")
+	case blockDuration < 0:
+		return 0, fmt.Errorf("--block-duration must be positive, got %s", blockDuration)
+	case blockDuration == 0:
+		return getCompatibleBlockDuration(int64(maxBlockDuration / time.Millisecond)), nil
+	}
+
+	d := int64(blockDuration / time.Millisecond)
+	if d == 0 {
+		return 0, fmt.Errorf("--block-duration must be at least 1ms, got %s", blockDuration)
+	}
+	if !slices.Contains(tsdb.ExponentialBlockRanges(tsdb.DefaultBlockDuration, 10, 3), d) {
+		logger.Warn("Creating blocks that do not match a Prometheus compaction range. Prometheus can read these blocks, but its compactor will not group them efficiently.", "block_duration", blockDuration)
+	}
+	return d, nil
+}
+
+func createBlocks(input []byte, mint, maxt, blockDuration int64, maxSamplesInAppender int, outputDir string, humanReadable, quiet bool, customLabels map[string]string) (returnErr error) {
 	mint = blockDuration * (mint / blockDuration)
 
 	db, err := tsdb.OpenDBReadOnly(outputDir, "", nil)
@@ -228,13 +250,13 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 	return nil
 }
 
-func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration, customLabels map[string]string) (err error) {
+func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable, quiet bool, blockDuration int64, customLabels map[string]string) (err error) {
 	p := textparse.NewOpenMetricsParser(input, nil) // Don't need a SymbolTable to get max and min timestamps.
 	maxt, mint, err := getMinAndMaxTimestamps(p)
 	if err != nil {
 		return fmt.Errorf("getting min and max timestamp: %w", err)
 	}
-	if err = createBlocks(input, mint, maxt, int64(maxBlockDuration/time.Millisecond), maxSamplesInAppender, outputDir, humanReadable, quiet, customLabels); err != nil {
+	if err = createBlocks(input, mint, maxt, blockDuration, maxSamplesInAppender, outputDir, humanReadable, quiet, customLabels); err != nil {
 		return fmt.Errorf("block creation: %w", err)
 	}
 	return nil

@@ -54,22 +54,28 @@ func TestBackfillRuleIntegration(t *testing.T) {
 		testTime                  = model.Time(start.Add(-9 * time.Hour).Unix())
 		testTime2                 = model.Time(start.Add(-8 * time.Hour).Unix())
 		twentyFourHourDuration, _ = time.ParseDuration("24h")
+		// dayBoundaryStart puts the import window inside one 18h range, either side of a day boundary.
+		dayBoundaryStart    = time.Date(2009, time.November, 10, 9, 34, 0, 0, time.UTC)
+		dayBoundaryTestTime = model.Time(dayBoundaryStart.Add(-9 * time.Hour).Unix())
 	)
 
 	testCases := []struct {
 		name                string
+		start               time.Time
 		runcount            int
-		maxBlockDuration    time.Duration
+		blockDuration       time.Duration
 		expectedBlockCount  int
 		expectedSeriesCount int
 		expectedSampleCount int
 		samples             []*model.SampleStream
 	}{
-		{"no samples", 1, defaultBlockDuration, 0, 0, 0, []*model.SampleStream{}},
-		{"run importer once", 1, defaultBlockDuration, 8, 4, 4, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}}}}},
-		{"run importer with dup name label", 1, defaultBlockDuration, 8, 4, 4, []*model.SampleStream{{Metric: model.Metric{"__name__": "val1", "name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}}}}},
-		{"one importer twice", 2, defaultBlockDuration, 8, 4, 8, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}, {Timestamp: testTime2, Value: testValue2}}}}},
-		{"run importer once with larger blocks", 1, twentyFourHourDuration, 4, 4, 4, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}}}}},
+		{"no samples", start, 1, defaultBlockDuration, 0, 0, 0, []*model.SampleStream{}},
+		{"run importer once", start, 1, defaultBlockDuration, 8, 4, 4, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}}}}},
+		{"run importer with dup name label", start, 1, defaultBlockDuration, 8, 4, 4, []*model.SampleStream{{Metric: model.Metric{"__name__": "val1", "name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}}}}},
+		{"one importer twice", start, 2, defaultBlockDuration, 8, 4, 8, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}, {Timestamp: testTime2, Value: testValue2}}}}},
+		{"run importer once with larger blocks", start, 1, twentyFourHourDuration, 4, 4, 4, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}}}}},
+		// One 18h block would cover this window, so 8 blocks show the day boundary split.
+		{"run importer once with day aligned blocks across a day boundary", dayBoundaryStart, 1, twentyFourHourDuration, 8, 4, 4, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: dayBoundaryTestTime, Value: testValue}}}}},
 	}
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -80,7 +86,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 			// Execute the test more than once to simulate running the rule importer twice with the same data.
 			// We expect duplicate blocks with the same series are created when run more than once.
 			for i := 0; i < tt.runcount; i++ {
-				ruleImporter, err := newTestRuleImporter(ctx, start, tmpDir, tt.samples, tt.maxBlockDuration)
+				ruleImporter, err := newTestRuleImporter(ctx, tt.start, tmpDir, tt.samples, tt.blockDuration)
 				require.NoError(t, err)
 				path1 := filepath.Join(tmpDir, "test.file")
 				require.NoError(t, createSingleRuleTestFiles(path1))
@@ -145,9 +151,9 @@ func TestBackfillRuleIntegration(t *testing.T) {
 						samplesCount++
 						ts, v := it.At()
 						if v == testValue {
-							require.Equal(t, int64(testTime), ts)
+							require.Equal(t, tt.start.Add(-9*time.Hour).Unix(), ts)
 						} else {
-							require.Equal(t, int64(testTime2), ts)
+							require.Equal(t, tt.start.Add(-8*time.Hour).Unix(), ts)
 						}
 					}
 					require.NoError(t, it.Err())
@@ -162,14 +168,14 @@ func TestBackfillRuleIntegration(t *testing.T) {
 	}
 }
 
-func newTestRuleImporter(_ context.Context, start time.Time, tmpDir string, testSamples model.Matrix, maxBlockDuration time.Duration) (*ruleImporter, error) {
+func newTestRuleImporter(_ context.Context, start time.Time, tmpDir string, testSamples model.Matrix, blockDuration time.Duration) (*ruleImporter, error) {
 	logger := promslog.NewNopLogger()
 	cfg := ruleImporterConfig{
 		outputDir:            tmpDir,
 		start:                start.Add(-10 * time.Hour),
 		end:                  start.Add(-7 * time.Hour),
 		evalInterval:         60 * time.Second,
-		maxBlockDuration:     maxBlockDuration,
+		blockDuration:        int64(blockDuration / time.Millisecond),
 		nameValidationScheme: model.UTF8Validation,
 	}
 
