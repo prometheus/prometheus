@@ -4801,10 +4801,10 @@ var testExpr = []struct {
 						},
 					},
 					StartPos: 12,
-					EndPos:   31,
+					EndPos:   32,
 				},
 				StartPos: 11,
-				EndPos:   31,
+				EndPos:   32,
 			},
 		},
 	},
@@ -5453,6 +5453,50 @@ func readable(s string) string {
 		return s
 	}
 	return s[:maxReadableStringLen] + "..."
+}
+
+func TestDurationExprPositionRange(t *testing.T) {
+	for _, tc := range []struct {
+		input string
+		span  string
+	}{
+		{input: "foo[min_of(1m, 2m)]", span: "min_of(1m, 2m)"},
+		{input: "foo[max_of(1m, 2m):]", span: "max_of(1m, 2m)"},
+		{input: "foo[1h:min_of(1m, 2m)]", span: "min_of(1m, 2m)"},
+		{input: "foo offset min_of(1m, 2m)", span: "min_of(1m, 2m)"},
+		{input: "foo offset +min_of(1m, 2m)", span: "+min_of(1m, 2m)"},
+		{input: "foo offset -min_of(1m, 2m)", span: "-min_of(1m, 2m)"},
+		{input: "foo offset +max_of(1m, 2m)", span: "+max_of(1m, 2m)"},
+		{input: "foo offset -max_of(1m, 2m)", span: "-max_of(1m, 2m)"},
+		{input: "foo[min_of(1m, max_of(2m, 3m)) + 1m]", span: "min_of(1m, max_of(2m, 3m)) + 1m"},
+		{input: "foo[1m + max_of(2m, 3m)]", span: "1m + max_of(2m, 3m)"},
+		{input: "foo[1m + 2m]", span: "1m + 2m"},
+		{input: "foo offset -step()", span: "-step()"},
+		{input: "foo[range()]", span: "range()"},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			expr, err := testParser.ParseExpr(tc.input)
+			require.NoError(t, err)
+			var duration *DurationExpr
+			switch e := expr.(type) {
+			case *MatrixSelector:
+				duration = e.RangeExpr
+			case *SubqueryExpr:
+				duration = e.RangeExpr
+				if e.StepExpr != nil {
+					duration = e.StepExpr
+				}
+			case *VectorSelector:
+				duration = e.OriginalOffsetExpr
+			}
+			require.NotNil(t, duration)
+			start := strings.Index(tc.input, tc.span)
+			require.Equal(t, posrange.PositionRange{
+				Start: posrange.Pos(start),
+				End:   posrange.Pos(start + len(tc.span)),
+			}, duration.PositionRange())
+		})
+	}
 }
 
 func TestParseExpressions(t *testing.T) {

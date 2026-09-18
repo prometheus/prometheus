@@ -1279,11 +1279,11 @@ offset_duration_expr    : number_duration_literal
                                     de := &DurationExpr{
                                         Op:       $1.Typ,
                                         StartPos: $1.Pos,
-                                        EndPos:   $6.PositionRange().End,
+                                        EndPos:   $7.PositionRange().End,
                                         RHS: &DurationExpr{
                                                 Op:       $2.Typ,
                                                 StartPos: $2.PositionRange().Start,
-                                                EndPos:   $6.PositionRange().End,
+                                                EndPos:   $7.PositionRange().End,
                                                 LHS:      $4.(Expr),
                                                 RHS:      $6.(Expr),
                                         },
