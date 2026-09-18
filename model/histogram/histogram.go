@@ -534,7 +534,6 @@ type cumulativeBucketIterator struct {
 	posBucketsIdx int    // Index in h.PositiveBuckets.
 	idxInSpan     uint32 // Index in the current span. 0 <= idxInSpan < span.Length.
 
-	initialized         bool
 	currIdx             int32   // The actual bucket index after decoding from spans.
 	currUpper           float64 // The upper boundary of the current bucket.
 	currCount           int64   // Current non-cumulative count for the current bucket. Does not apply for empty bucket.
@@ -545,6 +544,8 @@ type cumulativeBucketIterator struct {
 	// When we hit the end of a span, we use this to iterate
 	// through the empty buckets.
 	emptyBucketCount int32
+
+	initialized bool
 }
 
 func (c *cumulativeBucketIterator) Next() bool {
