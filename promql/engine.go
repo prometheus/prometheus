@@ -4807,7 +4807,11 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 
 			case *parser.Call:
 				switch p.Func.Name {
-				case "histogram_count", "histogram_sum", "histogram_avg":
+				case "histogram_count", "histogram_sum", "histogram_avg", "timestamp", "start_timestamp", "absent":
+					// These functions only need the count and sum
+					// of a histogram (histogram_count, histogram_sum,
+					// histogram_avg), or do not look at sample values
+					// at all (timestamp, start_timestamp, absent).
 					// We allow skipping buckets preliminarily. But
 					// we will continue through the path to see if
 					// we find a subquery (or a histogram function)
