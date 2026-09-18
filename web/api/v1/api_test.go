@@ -68,6 +68,36 @@ import (
 
 var testParser = parser.NewParser(parser.Options{})
 
+func TestMetricMetadataIncludesRecordingRules(t *testing.T) {
+	expr, err := testParser.ParseExpr("vector(1)")
+	require.NoError(t, err)
+
+	want := metadata.Metadata{Type: model.MetricTypeGauge, Help: "Current queue depth."}
+	rule := rules.NewRecordingRuleWithMetadata("job:queue_depth:sum", expr, labels.EmptyLabels(), want)
+	group := rules.NewGroup(rules.GroupOptions{
+		Name:     "recording-rules",
+		File:     "rules.yml",
+		Interval: time.Minute,
+		Rules:    []rules.Rule{rule},
+	})
+	ruleRetriever := &rulesRetrieverMock{testing: t, ruleGroups: []*rules.Group{group}}
+	targetRetriever := setupTestTargetRetriever(t)
+	api := &API{
+		targetRetriever: targetRetriever.toFactory(),
+		rulesRetriever:  ruleRetriever.toFactory(),
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/metadata", http.NoBody)
+	result := api.metricMetadata(request)
+	require.Nil(t, result.err)
+	require.Equal(t, map[string][]metadata.Metadata{"job:queue_depth:sum": {want}}, result.data)
+
+	request = httptest.NewRequest(http.MethodGet, "/api/v1/metadata?metric=other", http.NoBody)
+	result = api.metricMetadata(request)
+	require.Nil(t, result.err)
+	require.Equal(t, map[string][]metadata.Metadata{}, result.data)
+}
+
 func testEngine(t *testing.T) *promql.Engine {
 	t.Helper()
 	return promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
