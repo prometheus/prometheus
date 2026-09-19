@@ -11,7 +11,7 @@ require (
 	github.com/KimMachineGun/automemlimit v0.7.5
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
-	github.com/aws/aws-sdk-go-v2 v1.46.0
+	github.com/aws/aws-sdk-go-v2 v1.47.0
 	github.com/aws/aws-sdk-go-v2/config v1.33.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.3
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.329.0
@@ -19,6 +19,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/elasticache v1.60.0
 	github.com/aws/aws-sdk-go-v2/service/kafka v1.63.0
 	github.com/aws/aws-sdk-go-v2/service/lightsail v1.64.0
+	github.com/aws/aws-sdk-go-v2/service/mq v1.45.0
 	github.com/aws/aws-sdk-go-v2/service/rds v1.128.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.49.0
 	github.com/aws/smithy-go v1.28.1
@@ -159,8 +160,8 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.19.2
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.2 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.2 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.3 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.19 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.37.0 // indirect

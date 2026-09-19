@@ -47,6 +47,7 @@ const (
 	RoleECS         Role = "ecs"
 	RoleElasticache Role = "elasticache"
 	RoleLightsail   Role = "lightsail"
+	RoleMQ          Role = "mq"
 	RoleMSK         Role = "msk"
 	RoleRDS         Role = "rds"
 )
@@ -57,7 +58,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 	switch *c {
-	case RoleEC2, RoleECS, RoleElasticache, RoleLightsail, RoleMSK, RoleRDS:
+	case RoleEC2, RoleECS, RoleElasticache, RoleLightsail, RoleMQ, RoleMSK, RoleRDS:
 		return nil
 	default:
 		return fmt.Errorf("unknown AWS SD role %q", *c)
@@ -99,6 +100,7 @@ type SDConfig struct {
 	*ECSSDConfig         `yaml:"-"`
 	*ElasticacheSDConfig `yaml:"-"`
 	*LightsailSDConfig   `yaml:"-"`
+	*MQSDConfig          `yaml:"-"`
 	*MSKSDConfig         `yaml:"-"`
 	*RDSSDConfig         `yaml:"-"`
 }
@@ -250,6 +252,34 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		if c.RefreshInterval != 0 {
 			c.LightsailSDConfig.RefreshInterval = c.RefreshInterval
 		}
+	case RoleMQ:
+		if c.MQSDConfig == nil {
+			mqConfig := DefaultMQSDConfig
+			c.MQSDConfig = &mqConfig
+		}
+		c.MQSDConfig.HTTPClientConfig = c.HTTPClientConfig
+		c.MQSDConfig.Region = c.Region
+		if c.Endpoint != "" {
+			c.MQSDConfig.Endpoint = c.Endpoint
+		}
+		if c.AccessKey != "" {
+			c.MQSDConfig.AccessKey = c.AccessKey
+		}
+		if c.SecretKey != "" {
+			c.MQSDConfig.SecretKey = c.SecretKey
+		}
+		if c.Profile != "" {
+			c.MQSDConfig.Profile = c.Profile
+		}
+		if c.RoleARN != "" {
+			c.MQSDConfig.RoleARN = c.RoleARN
+		}
+		if c.ExternalID != "" {
+			c.MQSDConfig.ExternalID = c.ExternalID
+		}
+		if c.RefreshInterval != 0 {
+			c.MQSDConfig.RefreshInterval = c.RefreshInterval
+		}
 	case RoleMSK:
 		if c.MSKSDConfig == nil {
 			mskConfig := DefaultMSKSDConfig
@@ -355,6 +385,9 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 	case RoleLightsail:
 		opts.Metrics = &lightsailMetrics{refreshMetrics: awsMetrics.refreshMetrics}
 		return NewLightsailDiscovery(c.LightsailSDConfig, opts)
+	case RoleMQ:
+		opts.Metrics = &mqMetrics{refreshMetrics: awsMetrics.refreshMetrics}
+		return NewMQDiscovery(c.MQSDConfig, opts)
 	case RoleMSK:
 		opts.Metrics = &mskMetrics{refreshMetrics: awsMetrics.refreshMetrics}
 		return NewMSKDiscovery(c.MSKSDConfig, opts)
@@ -384,6 +417,10 @@ func (c *SDConfig) SetDirectory(dir string) {
 	case RoleLightsail:
 		if c.LightsailSDConfig != nil {
 			c.LightsailSDConfig.SetDirectory(dir)
+		}
+	case RoleMQ:
+		if c.MQSDConfig != nil {
+			c.MQSDConfig.SetDirectory(dir)
 		}
 	case RoleMSK:
 		if c.MSKSDConfig != nil {
