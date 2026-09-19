@@ -472,7 +472,7 @@ req_duration {count:3,sum:6.0,schema:0,zero_threshold:0.001,zero_count:0,positiv
 func TestOpenMetrics2ParseNativeHistogram(t *testing.T) {
 	input := `# HELP test_histogram Native histogram.
 # TYPE test_histogram histogram
-test_histogram {count:6,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:3],positive_buckets:[1,2,1],negative_spans:[],negative_buckets:[]}
+test_histogram {count:6,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,negative_spans:[],negative_buckets:[],positive_spans:[0:3],positive_buckets:[1,2,1]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -812,6 +812,34 @@ foo_total 1.0 # {id="x"} 1.0
 			input: "# TYPE foo_total counter\nfoo_total NaN\n# EOF\n",
 			err:   "counter sample value must not be NaN",
 		},
+		{
+			input: "# TYPE foo summary\nfoo {sum:2.0,count:1,quantile:[0.5:1.0]}\n# EOF\n",
+			err:   "composite field \"count\" out of order",
+		},
+		{
+			input: "# TYPE foo summary\nfoo {count:1,quantile:[0.5:1.0],sum:2.0}\n# EOF\n",
+			err:   "composite field \"sum\" out of order",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {sum:2.0,count:1,bucket:[+Inf:1]}\n# EOF\n",
+			err:   "composite field \"count\" out of order",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:1,bucket:[+Inf:1],sum:2.0}\n# EOF\n",
+			err:   "composite field \"sum\" out of order",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:1,sum:1.0,zero_threshold:0,schema:0,zero_count:0}\n# EOF\n",
+			err:   "composite field \"schema\" out of order",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:6,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2,positive_spans:[0:3],positive_buckets:[1,2,1],negative_spans:[],negative_buckets:[]}\n# EOF\n",
+			err:   "composite field \"negative_spans\" out of order",
+		},
+		{
+			input: "# TYPE foo histogram\nfoo {count:3,sum:6.0,bucket:[+Inf:3],schema:0,zero_threshold:0.001,zero_count:0,positive_spans:[0:2],positive_buckets:[1,2]}\n# EOF\n",
+			err:   "composite field \"schema\" out of order",
+		},
 	} {
 		t.Run(tc.err, func(t *testing.T) {
 			p := NewOpenMetrics2Parser([]byte(tc.input), labels.NewSymbolTable(), ParserOptions{})
@@ -1092,7 +1120,7 @@ req_duration {count:2,sum:4.0,bucket:[+Inf:2]} 1234567.0 st@1000.0
 
 func TestOpenMetrics2ParseFloatHistogram(t *testing.T) {
 	input := `# TYPE test_histogram histogram
-test_histogram {count:5.5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2.5,positive_spans:[0:2],positive_buckets:[2.0,1.0],negative_spans:[],negative_buckets:[]}
+test_histogram {count:5.5,sum:12.1,schema:0,zero_threshold:0.001,zero_count:2.5,negative_spans:[],negative_buckets:[],positive_spans:[0:2],positive_buckets:[2.0,1.0]}
 # EOF
 `
 	exp := []parsedEntry{
@@ -1213,7 +1241,7 @@ func TestOpenMetrics2ParseNativeHistogramIntVsFloatDiscriminator(t *testing.T) {
 
 func TestOpenMetrics2ParseCompositeGaugeHistogram(t *testing.T) {
 	input := `# TYPE req_size gaugehistogram
-req_size {gcount:6,gsum:100.0,schema:0,zero_threshold:0.001,zero_count:1,positive_spans:[0:2],positive_buckets:[3,2],negative_spans:[],negative_buckets:[]}
+req_size {gcount:6,gsum:100.0,schema:0,zero_threshold:0.001,zero_count:1,negative_spans:[],negative_buckets:[],positive_spans:[0:2],positive_buckets:[3,2]}
 # EOF
 `
 	exp := []parsedEntry{
