@@ -121,12 +121,16 @@ var (
 
 // withStackTracer logs the stack trace in case the request panics. The function
 // will re-raise the error which will then be handled by the net/http package.
+// Intentional HTTP aborts are re-raised without logging.
 // It is needed because the go-kit log package doesn't manage properly the
 // panics from net/http (see https://github.com/go-kit/kit/issues/233).
 func withStackTracer(h http.Handler, l *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
+				if err == http.ErrAbortHandler { //nolint:errorlint // Match net/http: only the exact sentinel suppresses panic logging.
+					panic(err)
+				}
 				const size = 64 << 10
 				buf := make([]byte, size)
 				buf = buf[:runtime.Stack(buf, false)]
