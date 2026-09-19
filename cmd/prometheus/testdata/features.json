@@ -211,6 +211,7 @@
     "lightsail": true,
     "linode": true,
     "marathon": true,
+    "mq": true,
     "msk": true,
     "nerve": true,
     "nomad": true,
