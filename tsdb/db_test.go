@@ -309,6 +309,8 @@ func TestDBDeleteConcurrentMatchers(t *testing.T) {
 	app := db.AppenderV2(ctx)
 	_, err := app.Append(0, labels.FromStrings("__name__", "metric", "job", "a"), 0, 0, 1, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings("__name__", "metric", "job", "x"), 0, 0, 2, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	for range 2 {
@@ -325,6 +327,15 @@ func TestDBDeleteConcurrentMatchers(t *testing.T) {
 
 	require.NoError(t, db.Delete(ctx, 0, 10, matchers...))
 	require.Equal(t, originalMatchers, matchers)
+
+	// Only metric{job="a"} must be gone. Losing the __name__ matcher would
+	// also delete the block series, losing job!="x" would delete metric{job="x"}.
+	q, err := db.Querier(0, 10)
+	require.NoError(t, err)
+	res := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+	require.Len(t, res, 2)
+	require.Equal(t, []chunks.Sample{sample{t: 0, f: 2}}, res[`{__name__="metric", job="x"}`])
+	require.Len(t, res[`{labelName="0"}`], 10)
 }
 
 // TestTombstoneCleanFail tests that a failing TombstoneClean doesn't leave any blocks behind.
