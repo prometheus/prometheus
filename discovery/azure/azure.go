@@ -547,6 +547,11 @@ func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualM
 	}
 
 	for k, v := range vm.Tags {
+		// A tag with a JSON null value unmarshals to a nil pointer that is still
+		// present in the map, so it has to be skipped before dereferencing.
+		if v == nil {
+			continue
+		}
 		name := strutil.SanitizeLabelName(k)
 		labels[azureLabelMachineTag+model.LabelName(name)] = model.LabelValue(*v)
 	}
