@@ -59,7 +59,7 @@ func (l *openMetrics2Lexer) next() byte {
 	}
 	// Lex struggles with null bytes. If we are in a label value or help
 	// string, where they are allowed, consume them here immediately.
-	for l.b[l.i] == 0 && (l.state == sLValue || l.state == sMeta2 || l.state == sComment) {
+	for l.b[l.i] == 0 && (l.state == sLValue || l.state == sEValue || l.state == sMeta2 || l.state == sComment) {
 		l.i++
 		if l.i >= len(l.b) {
 			l.err = io.EOF
@@ -89,15 +89,14 @@ type om2Exemplar struct {
 	e exemplar.Exemplar
 }
 
-// OpenMetrics2Parser parses samples from a byte slice in the OpenMetrics 2.0
+// openMetrics2Parser parses samples from a byte slice in the OpenMetrics 2.0
 // text exposition format.
 // Specification: https://prometheus.io/docs/specs/om/open_metrics_spec_2_0/
 //
 // Note for exposer and client library implementers: this parser is not a
 // conformance test for OpenMetrics 2.0. It is not yet generally available
 // thus it might be stricter in the future.
-
-type OpenMetrics2Parser struct {
+type openMetrics2Parser struct {
 	l       *openMetrics2Lexer
 	builder labels.ScratchBuilder
 
@@ -148,6 +147,7 @@ type OpenMetrics2Parser struct {
 	seriesBuf []byte
 
 	enableTypeAndUnitLabels bool
+	ignoreNativeHistograms  bool
 
 	// When true, a composite histogram that exposes both native fields and a
 	// classic bucket list emits the native histogram followed by classic
@@ -159,16 +159,17 @@ type OpenMetrics2Parser struct {
 // NewOpenMetrics2Parser returns a new parser for the OpenMetrics 2.0 text
 // format.
 func NewOpenMetrics2Parser(b []byte, st *labels.SymbolTable, opts ParserOptions) Parser {
-	return &OpenMetrics2Parser{
+	return &openMetrics2Parser{
 		l:                       &openMetrics2Lexer{b: b},
 		builder:                 labels.NewScratchBuilderWithSymbolTable(st, 16),
 		enableTypeAndUnitLabels: opts.EnableTypeAndUnitLabels,
+		ignoreNativeHistograms:  opts.IgnoreNativeHistograms,
 		keepClassicOnNativeHist: opts.KeepClassicOnClassicAndNativeHistograms,
 	}
 }
 
 // resetOnFamilyChange resets mtype/unit when name differs from curFamilyName.
-func (p *OpenMetrics2Parser) resetOnFamilyChange(name []byte) {
+func (p *openMetrics2Parser) resetOnFamilyChange(name []byte) {
 	if !bytes.Equal(name, p.curFamilyName) {
 		p.mtype = model.MetricTypeUnknown
 		p.unit = ""
@@ -178,7 +179,7 @@ func (p *OpenMetrics2Parser) resetOnFamilyChange(name []byte) {
 
 // hasFamilyNameLabel reports whether the current sample's labelsinclude a label key matching
 // p.curFamilyName. Used to enforce the OM2 stateset requirements.
-func (p *OpenMetrics2Parser) hasFamilyNameLabel() bool {
+func (p *openMetrics2Parser) hasFamilyNameLabel() bool {
 	for i := 2; i < len(p.offsets); i += 4 {
 		if bytes.Equal(p.l.b[p.offsets[i]:p.offsets[i+1]], p.curFamilyName) {
 			return true
@@ -189,7 +190,7 @@ func (p *OpenMetrics2Parser) hasFamilyNameLabel() bool {
 
 // Series returns the bytes of the current series, the timestamp if set, and
 // the sample value.
-func (p *OpenMetrics2Parser) Series() ([]byte, *int64, float64) {
+func (p *openMetrics2Parser) Series() ([]byte, *int64, float64) {
 	if p.pendingIdx > 0 {
 		pe := p.pending[p.pendingIdx-1]
 		return pe.series, pe.ts, pe.val
@@ -203,7 +204,7 @@ func (p *OpenMetrics2Parser) Series() ([]byte, *int64, float64) {
 
 // Histogram returns the bytes of the current series, the timestamp if set,
 // and the native histogram value.
-func (p *OpenMetrics2Parser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
+func (p *openMetrics2Parser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
 	if p.hasTS {
 		ts := p.ts
 		return p.series, &ts, p.h, p.fh
@@ -213,7 +214,7 @@ func (p *OpenMetrics2Parser) Histogram() ([]byte, *int64, *histogram.Histogram, 
 
 // Help returns the metric name and help text of the current entry.
 // Must only be called after Next returned EntryHelp.
-func (p *OpenMetrics2Parser) Help() ([]byte, []byte) {
+func (p *openMetrics2Parser) Help() ([]byte, []byte) {
 	m := p.l.b[p.offsets[0]:p.offsets[1]]
 	if bytes.IndexByte(p.text, byte('\\')) >= 0 {
 		return m, []byte(lvalReplacer.Replace(string(p.text)))
@@ -223,24 +224,24 @@ func (p *OpenMetrics2Parser) Help() ([]byte, []byte) {
 
 // Type returns the metric name and type of the current entry.
 // Must only be called after Next returned EntryType.
-func (p *OpenMetrics2Parser) Type() ([]byte, model.MetricType) {
+func (p *openMetrics2Parser) Type() ([]byte, model.MetricType) {
 	return p.l.b[p.offsets[0]:p.offsets[1]], p.mtype
 }
 
 // Unit returns the metric name and unit of the current entry.
 // Must only be called after Next returned EntryUnit.
-func (p *OpenMetrics2Parser) Unit() ([]byte, []byte) {
+func (p *openMetrics2Parser) Unit() ([]byte, []byte) {
 	return p.l.b[p.offsets[0]:p.offsets[1]], []byte(p.unit)
 }
 
 // Comment returns the text of the current comment.
 // Must only be called after Next returned EntryComment.
-func (p *OpenMetrics2Parser) Comment() []byte {
+func (p *openMetrics2Parser) Comment() []byte {
 	return p.text
 }
 
 // Labels writes the labels of the current sample into l.
-func (p *OpenMetrics2Parser) Labels(l *labels.Labels) {
+func (p *openMetrics2Parser) Labels(l *labels.Labels) {
 	if p.pendingIdx > 0 {
 		*l = p.pending[p.pendingIdx-1].lset
 		return
@@ -276,7 +277,7 @@ func (p *OpenMetrics2Parser) Labels(l *labels.Labels) {
 
 // Exemplar writes the next exemplar of the current sample into e and returns
 // true.  Returns false when all exemplars have been consumed.
-func (p *OpenMetrics2Parser) Exemplar(e *exemplar.Exemplar) bool {
+func (p *openMetrics2Parser) Exemplar(e *exemplar.Exemplar) bool {
 	if p.exemplarIdx >= len(p.exemplars) {
 		return false
 	}
@@ -288,25 +289,25 @@ func (p *OpenMetrics2Parser) Exemplar(e *exemplar.Exemplar) bool {
 // StartTimestamp returns the inline start timestamp for the current sample
 // (from the "st@<ts>" token), or 0 if none was present.  This is O(1); there
 // is no forward scan.
-func (p *OpenMetrics2Parser) StartTimestamp() int64 {
+func (p *openMetrics2Parser) StartTimestamp() int64 {
 	if p.hasST {
 		return p.st
 	}
 	return 0
 }
 
-func (p *OpenMetrics2Parser) nextToken() token {
+func (p *openMetrics2Parser) nextToken() token {
 	return p.l.Lex()
 }
 
-func (p *OpenMetrics2Parser) parseError(exp string, got token) error {
+func (p *openMetrics2Parser) parseError(exp string, got token) error {
 	e := min(len(p.l.b), p.l.i+1)
 	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
 }
 
 // Next advances the parser to the next entry.
 // It returns (EntryInvalid, io.EOF) when there are no more entries.
-func (p *OpenMetrics2Parser) Next() (Entry, error) {
+func (p *openMetrics2Parser) Next() (Entry, error) {
 	// Drain pending composite-value entries.
 	if p.pendingIdx < len(p.pending) {
 		p.pendingIdx++
@@ -362,6 +363,9 @@ func (p *OpenMetrics2Parser) Next() (Entry, error) {
 			} else {
 				p.text = []byte{}
 			}
+			if bytes.IndexByte(p.text, '\r') >= 0 {
+				return EntryInvalid, fmt.Errorf("unexpected carriage return in %s: %q", t.String(), p.text)
+			}
 		default:
 			return EntryInvalid, fmt.Errorf("expected text in %s", t.String())
 		}
@@ -379,6 +383,9 @@ func (p *OpenMetrics2Parser) Next() (Entry, error) {
 			case "summary":
 				p.mtype = model.MetricTypeSummary
 			case "info":
+				if !bytes.HasSuffix(p.curFamilyName, []byte("_info")) {
+					return EntryInvalid, fmt.Errorf("info metric family name %q must end with _info", p.curFamilyName)
+				}
 				p.mtype = model.MetricTypeInfo
 			case "stateset":
 				p.mtype = model.MetricTypeStateset
@@ -396,11 +403,17 @@ func (p *OpenMetrics2Parser) Next() (Entry, error) {
 		case tHelp:
 			return EntryHelp, nil
 		case tType:
+			if (p.mtype == model.MetricTypeInfo || p.mtype == model.MetricTypeStateset) && p.unit != "" {
+				return EntryInvalid, fmt.Errorf("%s metric %q must have an empty unit, got %q", p.mtype, p.curFamilyName, p.unit)
+			}
 			return EntryType, nil
 		case tUnit:
 			// OM2 only RECOMMENDS the unit be an underscore-separated suffix
 			// of the MetricFamily name; it is not a hard requirement.
 			p.unit = string(p.text)
+			if (p.mtype == model.MetricTypeInfo || p.mtype == model.MetricTypeStateset) && p.unit != "" {
+				return EntryInvalid, fmt.Errorf("%s metric %q must have an empty unit, got %q", p.mtype, p.curFamilyName, p.unit)
+			}
 			return EntryUnit, nil
 		}
 
@@ -442,7 +455,7 @@ func (p *OpenMetrics2Parser) Next() (Entry, error) {
 
 // parseSeriesEndOfLine parses the rest of a data line starting from the value
 // token.  It dispatches to composite or scalar value parsing.
-func (p *OpenMetrics2Parser) parseSeriesEndOfLine(t token) (Entry, error) {
+func (p *openMetrics2Parser) parseSeriesEndOfLine(t token) (Entry, error) {
 	if p.offsets[0] == -1 {
 		return EntryInvalid, fmt.Errorf("metric name not set while parsing: %q", p.l.b[p.start:p.l.i])
 	}
@@ -483,6 +496,10 @@ func (p *OpenMetrics2Parser) parseSeriesEndOfLine(t token) (Entry, error) {
 		p.val = math.Float64frombits(value.NormalNaN)
 	}
 
+	if p.mtype == model.MetricTypeInfo && p.val != 1 {
+		return EntryInvalid, fmt.Errorf("info sample value must be 1, got %v while parsing: %q", p.val, p.l.b[p.start:p.l.i])
+	}
+
 	if p.mtype == model.MetricTypeStateset {
 		if p.val != 0 && p.val != 1 {
 			return EntryInvalid, fmt.Errorf("stateset sample value must be 0 or 1, got %v while parsing: %q", p.val, p.l.b[p.start:p.l.i])
@@ -504,7 +521,7 @@ func (p *OpenMetrics2Parser) parseSeriesEndOfLine(t token) (Entry, error) {
 //
 // It returns after consuming tLinebreak (either directly or via exemplar
 // parsing).
-func (p *OpenMetrics2Parser) parseAfterValue() error {
+func (p *openMetrics2Parser) parseAfterValue() error {
 	for {
 		switch t := p.nextToken(); t {
 		case tEOF:
@@ -559,7 +576,7 @@ func (p *OpenMetrics2Parser) parseAfterValue() error {
 
 // parseExemplars parses one or more exemplars up to and including the
 // tLinebreak.  It is called after tComment has been consumed.
-func (p *OpenMetrics2Parser) parseExemplars() error {
+func (p *openMetrics2Parser) parseExemplars() error {
 	for {
 		done, err := p.parseSingleExemplar()
 		if err != nil {
@@ -577,7 +594,7 @@ func (p *OpenMetrics2Parser) parseExemplars() error {
 // timestamp.  It reads one token after (from sETimestamp state):
 //   - tLinebreak → done=true
 //   - tComment   → done=false (caller loops for next exemplar)
-func (p *OpenMetrics2Parser) parseSingleExemplar() (done bool, err error) {
+func (p *openMetrics2Parser) parseSingleExemplar() (done bool, err error) {
 	var ex om2Exemplar
 
 	// Parse exemplar label set (the "{" was opened by the tComment token).
@@ -605,7 +622,7 @@ func (p *OpenMetrics2Parser) parseSingleExemplar() (done bool, err error) {
 		b := eOffsets[i+1]
 		c := eOffsets[i+2]
 		d := eOffsets[i+3]
-		p.builder.Add(string(p.l.b[a:b]), unreplace(string(p.l.b[c:d])))
+		p.builder.Add(unreplace(string(p.l.b[a:b])), unreplace(string(p.l.b[c:d])))
 	}
 	p.builder.Sort()
 	ex.e.Labels = p.builder.Labels()
@@ -645,7 +662,7 @@ func (p *OpenMetrics2Parser) parseSingleExemplar() (done bool, err error) {
 }
 
 // parseLVals parses the label set "{k="v",...}" and appends byte offsets.
-func (p *OpenMetrics2Parser) parseLVals(offsets []int, isExemplar bool) ([]int, error) {
+func (p *openMetrics2Parser) parseLVals(offsets []int, isExemplar bool) ([]int, error) {
 	t := p.nextToken()
 	first := true
 	for {
@@ -693,6 +710,9 @@ func (p *OpenMetrics2Parser) parseLVals(offsets []int, isExemplar bool) ([]int, 
 			curTStart++
 			curTI--
 		}
+		if curTStart == curTI {
+			return nil, errors.New("label name must not be empty")
+		}
 		if !utf8.Valid(p.l.b[curTStart:curTI]) {
 			return nil, fmt.Errorf("invalid UTF-8 label name: %q", p.l.b[curTStart:curTI])
 		}
@@ -723,7 +743,10 @@ func (p *OpenMetrics2Parser) parseLVals(offsets []int, isExemplar bool) ([]int, 
 // (EntrySeries) from the composite value token.
 //
 // raw is the raw composite value bytes including the surrounding {}.
-func (p *OpenMetrics2Parser) parseCompositeValue(raw []byte) (Entry, error) {
+func (p *openMetrics2Parser) parseCompositeValue(raw []byte) (Entry, error) {
+	if bytes.IndexByte(raw, '\r') >= 0 {
+		return EntryInvalid, fmt.Errorf("unexpected carriage return in composite value: %q", raw)
+	}
 	// Consume the rest of the line (timestamp, st@, exemplars) before building
 	// the pending entries, so the exemplar and ST fields are set correctly.
 	if err := p.parseAfterValue(); err != nil {
@@ -832,11 +855,11 @@ func splitCompositeFields(b []byte) iter.Seq[[]byte] {
 //
 // or a classic histogram:
 //
-//	{count:12,sum:5.5,bucket:[+Inf:12,1.0:3,2.0:7]}
+//	{count:12,sum:5.5,bucket:[1.0:3,2.0:7,+Inf:12]}
 //
 // When native buckets are present it returns EntryHistogram.  Otherwise it
 // populates the pending queue and returns EntrySeries for the first entry.
-func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) {
+func (p *openMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) {
 	kv, err := kvMap(raw)
 	if err != nil {
 		return EntryInvalid, err
@@ -849,7 +872,7 @@ func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 	// ones, so its presence is the sole reliable signal.
 	_, isNative := kv["schema"]
 
-	if isNative {
+	if isNative && !p.ignoreNativeHistograms {
 		h, fh, err := buildNativeHistogram(kv, p.mtype == model.MetricTypeGaugeHistogram)
 		if err != nil {
 			return EntryInvalid, fmt.Errorf("error parsing native histogram composite: %w", err)
@@ -860,7 +883,7 @@ func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 		// caller asked to keep it, queue the classic flat series so that
 		// subsequent Next() calls drain them after the EntryHistogram.
 		if _, hasBucket := kv["bucket"]; hasBucket && p.keepClassicOnNativeHist {
-			pending, err := p.buildClassicHistogramPending(kv, p.hasTS, p.ts)
+			pending, err := p.buildClassicHistogramPending(kv, false, p.hasTS, p.ts)
 			if err != nil {
 				return EntryInvalid, fmt.Errorf("error parsing classic histogram composite: %w", err)
 			}
@@ -870,8 +893,8 @@ func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 		return EntryHistogram, nil
 	}
 
-	// Classic histogram: explode into flat pending entries.
-	pending, err := p.buildClassicHistogramPending(kv, p.hasTS, p.ts)
+	// Classic histogram (or native histogram with ignoreNativeHistograms): explode into flat pending entries.
+	pending, err := p.buildClassicHistogramPending(kv, isNative, p.hasTS, p.ts)
 	if err != nil {
 		return EntryInvalid, fmt.Errorf("error parsing classic histogram composite: %w", err)
 	}
@@ -881,7 +904,7 @@ func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 // parseSummaryComposite parses a composite summary value such as:
 //
 //	{count:12,sum:5.5,quantile:[0.5:1.0,0.9:2.0,0.99:3.0]}
-func (p *OpenMetrics2Parser) parseSummaryComposite(raw []byte) (Entry, error) {
+func (p *openMetrics2Parser) parseSummaryComposite(raw []byte) (Entry, error) {
 	kv, err := kvMap(raw)
 	if err != nil {
 		return EntryInvalid, err
@@ -898,7 +921,7 @@ func (p *OpenMetrics2Parser) parseSummaryComposite(raw []byte) (Entry, error) {
 }
 
 // servePending stores pending and returns the first entry.
-func (p *OpenMetrics2Parser) servePending(pending []pendingEntry) (Entry, error) {
+func (p *openMetrics2Parser) servePending(pending []pendingEntry) (Entry, error) {
 	if len(pending) == 0 {
 		return EntryInvalid, errors.New("composite value produced no series")
 	}
@@ -1163,8 +1186,9 @@ func parseFloatBuckets(s string) ([]float64, error) {
 	return buckets, nil
 }
 
-func (p *OpenMetrics2Parser) buildClassicHistogramPending(
+func (p *openMetrics2Parser) buildClassicHistogramPending(
 	kv map[string]string,
+	isNative bool,
 	hasTS bool,
 	ts int64,
 ) ([]pendingEntry, error) {
@@ -1193,7 +1217,7 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 	if !ok {
 		return nil, fmt.Errorf("missing required field: %s", countKey)
 	}
-	v, err := strconv.ParseFloat(cv, 64)
+	countVal, err := strconv.ParseFloat(cv, 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid %s: %w", countKey, err)
 	}
@@ -1202,7 +1226,7 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 	pending = append(pending, pendingEntry{
 		series: p.appendSeriesBytes(lset),
 		lset:   lset,
-		val:    v,
+		val:    countVal,
 		ts:     tsPtr,
 	})
 
@@ -1210,7 +1234,7 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 	if !ok {
 		return nil, fmt.Errorf("missing required field: %s", sumKey)
 	}
-	v, err = strconv.ParseFloat(sv, 64)
+	v, err := strconv.ParseFloat(sv, 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid %s: %w", sumKey, err)
 	}
@@ -1227,7 +1251,20 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 	// +Inf threshold.
 	bv, ok := kv["bucket"]
 	if !ok {
-		return nil, errors.New("missing required field: bucket")
+		if !isNative {
+			return nil, errors.New("missing required field: bucket")
+		}
+		// When IgnoreNativeHistograms is enabled on a native-only histogram,
+		// emit the +Inf bucket with the total count.
+		name = mfName + "_bucket"
+		lset := p.buildPendingLabels(name, extraLabels, "le", "+Inf")
+		pending = append(pending, pendingEntry{
+			series: p.appendSeriesBytes(lset),
+			lset:   lset,
+			val:    countVal,
+			ts:     tsPtr,
+		})
+		return pending, nil
 	}
 	name = mfName + "_bucket"
 	hasPosInf := false
@@ -1253,7 +1290,7 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 	return pending, nil
 }
 
-func (p *OpenMetrics2Parser) buildSummaryPending(
+func (p *openMetrics2Parser) buildSummaryPending(
 	kv map[string]string,
 	hasTS bool,
 	ts int64,
@@ -1326,7 +1363,7 @@ func (p *OpenMetrics2Parser) buildSummaryPending(
 // nameAndExtraLabelsFromOffsets returns the metric family name and the extra
 // (non metric name) labels for the line currently being parsed, reusing the
 // offsets parseLVals already computed.
-func (p *OpenMetrics2Parser) nameAndExtraLabelsFromOffsets() (string, []labels.Label) {
+func (p *openMetrics2Parser) nameAndExtraLabelsFromOffsets() (string, []labels.Label) {
 	s := string(p.series)
 	name := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
 	if len(p.offsets) <= 2 {
@@ -1345,7 +1382,7 @@ func (p *OpenMetrics2Parser) nameAndExtraLabelsFromOffsets() (string, []labels.L
 // label set, appended into the shared p.seriesBuf (reset per batch in Next(),
 // so sub-slices stay valid until then). Mirrors
 // ProtobufParser.onSeriesOrHistogramUpdate's entryBytes.
-func (p *OpenMetrics2Parser) appendSeriesBytes(lset labels.Labels) []byte {
+func (p *openMetrics2Parser) appendSeriesBytes(lset labels.Labels) []byte {
 	start := len(p.seriesBuf)
 	lset.Range(func(l labels.Label) {
 		if l.Name == labels.MetricName {
@@ -1368,7 +1405,7 @@ func (p *OpenMetrics2Parser) appendSeriesBytes(lset labels.Labels) []byte {
 // p.builder must not be in use elsewhere while this runs; it is safe to call
 // once parseAfterValue has finished consuming the line (any exemplar labels
 // have already been materialised into their own labels.Labels values).
-func (p *OpenMetrics2Parser) buildPendingLabels(name string, extra []labels.Label, injectKey, injectVal string) labels.Labels {
+func (p *openMetrics2Parser) buildPendingLabels(name string, extra []labels.Label, injectKey, injectVal string) labels.Labels {
 	p.builder.Reset()
 	m := schema.Metadata{Name: name, Type: p.mtype, Unit: p.unit}
 	if p.enableTypeAndUnitLabels {
@@ -1395,7 +1432,7 @@ type bucketEntry struct {
 	count float64
 }
 
-// parseBuckets yields each entry from "[+Inf:12,1.0:3,2.0:7]" without
+// parseBuckets yields each entry from "[1.0:3,2.0:7,+Inf:12]" without
 // materialising an intermediate slice.
 func parseBuckets(s string) iter.Seq2[bucketEntry, error] {
 	return func(yield func(bucketEntry, error) bool) {
