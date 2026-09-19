@@ -15,7 +15,9 @@ package remote
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -366,10 +368,42 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 }
 
 func TestWriteStorage_CanRegisterMetricsAfterClosing(t *testing.T) {
-	dir := t.TempDir()
-	reg := prometheus.NewPedanticRegistry()
+	for _, workers := range []int{1, 2} {
+		t.Run(fmt.Sprintf("workers=%d", workers), func(t *testing.T) {
+			regs := make([]*prometheus.Registry, workers)
+			dirs := make([]string, workers)
+			// Complete one lifecycle first so every worker iteration recreates
+			// storage with a previously used registry.
+			for i := range workers {
+				regs[i] = prometheus.NewPedanticRegistry()
+				dirs[i] = t.TempDir()
+				s := NewWriteStorage(nil, regs[i], dirs[i], time.Millisecond, nil, false)
+				require.NoError(t, s.Close())
+			}
 
-	s := NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false)
-	require.NoError(t, s.Close())
-	require.NotPanics(t, func() { NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false) })
+			// Repeat creation across independent registries to help expose races
+			// in shared state when running with -race.
+			start := make(chan struct{})
+			errs := make(chan error, workers)
+			var wg sync.WaitGroup
+			for i := range workers {
+				wg.Go(func() {
+					<-start
+					for range 32 {
+						s := NewWriteStorage(nil, regs[i], dirs[i], time.Millisecond, nil, false)
+						if err := s.Close(); err != nil {
+							errs <- fmt.Errorf("worker %d: %w", i, err)
+							return
+						}
+					}
+				})
+			}
+			close(start)
+			wg.Wait()
+			close(errs)
+			for err := range errs {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
