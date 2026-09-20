@@ -26,16 +26,13 @@ import (
 	"go.uber.org/atomic"
 )
 
-var noReferenceReleases = prometheus.NewCounter(prometheus.CounterOpts{
-	Namespace: namespace,
-	Subsystem: subsystem,
-	Name:      "string_interner_zero_reference_releases_total",
-	Help:      "The number of times release has been called for strings that are not interned.",
-})
-
 type pool struct {
 	mtx  sync.RWMutex
 	pool map[string]*entry
+
+	// noReferenceReleases belongs to the pool, not to the package, so that two
+	// pools created at the same time do not write over each other's counter.
+	noReferenceReleases prometheus.Counter
 }
 
 type entry struct {
@@ -49,6 +46,12 @@ func newEntry(s string) *entry {
 }
 
 func newPool(reg prometheus.Registerer) *pool {
+	noReferenceReleases := prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "string_interner_zero_reference_releases_total",
+		Help:      "The number of times release has been called for strings that are not interned.",
+	})
 	if reg != nil {
 		if err := reg.Register(noReferenceReleases); err != nil {
 			var are prometheus.AlreadyRegisteredError
@@ -56,13 +59,15 @@ func newPool(reg prometheus.Registerer) *pool {
 			if !errors.As(err, &are) {
 				panic(err)
 			}
-			// Reuse the existing collector so increments go to the same series.
+			// A pool created earlier with this registry already registered the
+			// counter. Reuse it so increments go to the same series.
 			noReferenceReleases = are.ExistingCollector.(prometheus.Counter)
 		}
 	}
 
 	return &pool{
-		pool: map[string]*entry{},
+		pool:                map[string]*entry{},
+		noReferenceReleases: noReferenceReleases,
 	}
 }
 
@@ -100,7 +105,7 @@ func (p *pool) release(s string) {
 	p.mtx.RUnlock()
 
 	if !ok {
-		noReferenceReleases.Inc()
+		p.noReferenceReleases.Inc()
 		return
 	}
 
