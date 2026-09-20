@@ -392,13 +392,23 @@ func main() {
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
 
+	// Some libraries register their metrics with the default registry in an init
+	// function and keep the collectors unexported, so there is no way to hand
+	// them our registry. go-conntrack, which the HTTP client library dials
+	// through, is one of them. Serve the default registry next to ours to keep
+	// those series. The Go and process collectors are registered above, so drop
+	// the copies that the default registry holds to avoid duplicates.
+	prometheus.Unregister(collectors.NewGoCollector())
+	prometheus.Unregister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	gatherer := prometheus.Gatherers{registry, prometheus.DefaultGatherer}
+
 	cfg := flagConfig{
 		notifier: notifier.Options{
 			Registerer: registry,
 		},
 		web: web.Options{
 			Registerer:      registry,
-			Gatherer:        registry,
+			Gatherer:        gatherer,
 			FeatureRegistry: features.DefaultRegistry,
 		},
 		promslogConfig: promslog.Config{},

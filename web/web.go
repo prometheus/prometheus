@@ -504,7 +504,13 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	}
 
 	router.Get("/version", h.version)
-	router.Get("/metrics", promhttp.HandlerFor(o.Gatherer, promhttp.HandlerOpts{}).ServeHTTP)
+	metricsHandler := promhttp.HandlerFor(o.Gatherer, promhttp.HandlerOpts{})
+	if o.Registerer != nil {
+		// promhttp.Handler(), which this replaces, exposes the handler's own
+		// metrics as well.
+		metricsHandler = promhttp.InstrumentMetricHandler(o.Registerer, metricsHandler)
+	}
+	router.Get("/metrics", metricsHandler.ServeHTTP)
 
 	router.Get("/federate", readyf(httputil.CompressionHandler{
 		Handler: http.HandlerFunc(h.federation),
