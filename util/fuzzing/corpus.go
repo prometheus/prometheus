@@ -234,14 +234,23 @@ type APIFormPOSTFuzzSeed struct {
 // GetCorpusForFuzzAPIQueryGET returns the seed corpus for FuzzAPIQueryGET.
 func GetCorpusForFuzzAPIQueryGET() []APIGETFuzzSeed {
 	return []APIGETFuzzSeed{
+		// Valid instant query with all supported optional parameters.
 		{Endpoint: apiQueryEndpoint, RawQuery: "query=up&time=0&timeout=1m&limit=1&lookback_delta=5m"},
+		// Valid nested PromQL expression: sum(rate(up[5m])).
 		{Endpoint: apiQueryEndpoint, RawQuery: "query=sum%28rate%28up%5B5m%5D%29"},
+		// Invalid evaluation timestamp.
 		{Endpoint: apiQueryEndpoint, RawQuery: "query=up&time=NaN"},
+		// Limit overflows an integer.
 		{Endpoint: apiQueryEndpoint, RawQuery: "query=up&limit=999999999999999999999"},
+		// Valid range query with all supported optional parameters.
 		{Endpoint: apiQueryRangeEndpoint, RawQuery: "query=up&start=0&end=100&step=10&timeout=1m&limit=1"},
+		// Invalid range with end before start.
 		{Endpoint: apiQueryRangeEndpoint, RawQuery: "query=up&start=100&end=0&step=10"},
+		// Invalid range with a zero step.
 		{Endpoint: apiQueryRangeEndpoint, RawQuery: "query=up&start=0&end=100&step=0"},
+		// Valid exemplar query.
 		{Endpoint: apiQueryExemplarsEndpoint, RawQuery: "query=up&start=0&end=100"},
+		// Invalid exemplar range with end before start.
 		{Endpoint: apiQueryExemplarsEndpoint, RawQuery: "query=up&start=100&end=0"},
 	}
 }
@@ -249,15 +258,25 @@ func GetCorpusForFuzzAPIQueryGET() []APIGETFuzzSeed {
 // GetCorpusForFuzzAPIQueryPOST returns the seed corpus for FuzzAPIQueryPOST.
 func GetCorpusForFuzzAPIQueryPOST() []APIFormPOSTFuzzSeed {
 	return []APIFormPOSTFuzzSeed{
+		// Valid matcher with a multi-byte UTF-8 label value: up{region="東京"}.
 		{Endpoint: apiQueryEndpoint, FormBody: "query=up%7Bregion%3D%22%E6%9D%B1%E4%BA%AC%22%7D"},
+		// Valid request with time in the URL and query in the form body.
 		{Endpoint: apiQueryEndpoint, RawQuery: "time=0", FormBody: "query=up"},
+		// Invalid query timeout.
 		{Endpoint: apiQueryEndpoint, FormBody: "query=up&timeout=NaN"},
+		// Malformed percent-encoding in the form body.
 		{Endpoint: apiQueryEndpoint, FormBody: "query=%"},
+		// Valid range query with the multi-byte UTF-8 label value up{region="東京"}.
 		{Endpoint: apiQueryRangeEndpoint, FormBody: "query=up%7Bregion%3D%22%E6%9D%B1%E4%BA%AC%22%7D&start=0&end=100&step=10"},
+		// Valid range query using sum(rate(up[5m])).
 		{Endpoint: apiQueryRangeEndpoint, FormBody: "query=sum%28rate%28up%5B5m%5D%29&start=0&end=100&step=10"},
+		// Valid exemplar query with the multi-byte UTF-8 label value up{region="東京"}.
 		{Endpoint: apiQueryExemplarsEndpoint, FormBody: "query=up%7Bregion%3D%22%E6%9D%B1%E4%BA%AC%22%7D&start=0&end=100"},
+		// Invalid exemplar start timestamp.
 		{Endpoint: apiQueryExemplarsEndpoint, FormBody: "query=up&start=NaN&end=100"},
+		// Invalid exemplar end timestamp.
 		{Endpoint: apiQueryExemplarsEndpoint, FormBody: "query=up&start=0&end=NaN"},
+		// Invalid PromQL expression: {.
 		{Endpoint: apiQueryExemplarsEndpoint, FormBody: "query=%7B&start=0&end=100"},
 	}
 }
