@@ -14,18 +14,31 @@
 package fuzzing
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"math"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/common/route"
+
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/web/api/testhelpers"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 )
 
 const (
@@ -376,4 +389,137 @@ func FuzzParseExpr(f *testing.F) {
 			t.Fatalf("parser panicked on input %q: %v", in, err)
 		}
 	})
+}
+
+// FuzzAPIQueryGET fuzzes GET request parsing and validation for PromQL HTTP API endpoints.
+func FuzzAPIQueryGET(f *testing.F) {
+	for _, seed := range GetCorpusForFuzzAPIQueryGET() {
+		f.Add(seed.Endpoint, seed.RawQuery)
+	}
+
+	handler := newFuzzAPI(f)
+	f.Fuzz(func(t *testing.T, endpoint uint8, rawQuery string) {
+		if len(rawQuery) > maxInputSize {
+			t.Skip()
+		}
+
+		path := apiQueryPath(endpoint)
+		recorder := runAPIRequest(t, handler, http.MethodGet, path, rawQuery, "")
+		assertAPIResponse(t, recorder, http.MethodGet, path)
+	})
+}
+
+// FuzzAPIQueryPOST fuzzes form-encoded POST request parsing and validation for PromQL HTTP API endpoints.
+func FuzzAPIQueryPOST(f *testing.F) {
+	for _, seed := range GetCorpusForFuzzAPIQueryPOST() {
+		f.Add(seed.Endpoint, seed.RawQuery, seed.FormBody)
+	}
+
+	handler := newFuzzAPI(f)
+	f.Fuzz(func(t *testing.T, endpoint uint8, rawQuery, formBody string) {
+		if len(rawQuery)+len(formBody) > maxInputSize {
+			t.Skip()
+		}
+
+		path := apiQueryPath(endpoint)
+		recorder := runAPIRequest(t, handler, http.MethodPost, path, rawQuery, formBody)
+		assertAPIResponse(t, recorder, http.MethodPost, path)
+	})
+}
+
+func apiQueryPath(endpoint uint8) string {
+	switch endpoint % apiEndpointCount {
+	case apiQueryEndpoint:
+		return "/api/v1/query"
+	case apiQueryRangeEndpoint:
+		return "/api/v1/query_range"
+	case apiQueryExemplarsEndpoint:
+		return "/api/v1/query_exemplars"
+	default:
+		panic("unreachable")
+	}
+}
+
+func runAPIRequest(t *testing.T, handler http.Handler, method, path, rawQuery, formBody string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	var body io.Reader = http.NoBody
+	if formBody != "" {
+		body = strings.NewReader(formBody)
+	}
+
+	req := httptest.NewRequest(method, path, body)
+	req.URL.RawQuery = rawQuery
+	if method == http.MethodPost {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	return recorder
+}
+
+func assertAPIResponse(t *testing.T, recorder *httptest.ResponseRecorder, method, path string) {
+	t.Helper()
+
+	if recorder.Code >= http.StatusInternalServerError && recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unexpected HTTP status %d for %s %s: %s", recorder.Code, method, path, recorder.Body.String())
+	}
+	expectsJSON := recorder.Code != http.StatusNoContent &&
+		recorder.Code != http.StatusNotFound &&
+		recorder.Code != http.StatusMethodNotAllowed &&
+		(recorder.Code < http.StatusMultipleChoices || recorder.Code >= http.StatusBadRequest)
+	if expectsJSON && !json.Valid(recorder.Body.Bytes()) {
+		t.Fatalf("response is not valid JSON for HTTP status %d: %q", recorder.Code, recorder.Body.String())
+	}
+}
+
+func newFuzzAPI(tb testing.TB) http.Handler {
+	logger := promslog.NewNopLogger()
+	queryEngine := promqltest.NewTestEngine(tb, true, 5*time.Minute, 10000)
+	registerer := prometheus.NewRegistry()
+
+	api := v1.NewAPI(
+		queryEngine,
+		testhelpers.NewEmptyQueryable(),
+		nil, nil,
+		testhelpers.NewEmptyExemplarQueryable(),
+		nil, nil, nil,
+		func() config.Config { return config.Config{} },
+		nil,
+		v1.GlobalURLOptions{},
+		func(f http.HandlerFunc) http.HandlerFunc { return f },
+		nil,
+		"",
+		false,
+		false,
+		0,
+		logger,
+		nil,
+		0, 0, 0,
+		false,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		registerer,
+		nil,
+		false,
+		nil,
+		false, false, false,
+		false,
+		5*time.Minute,
+		false,
+		false,
+		nil,
+		nil,
+		v1.OpenAPIOptions{},
+		parser.NewParser(parser.Options{}),
+	)
+
+	router := route.New()
+	api.Register(router.WithPrefix("/api/v1"))
+	return router
 }
