@@ -463,6 +463,15 @@ scrape_configs:
         access_key: A1B2C3D4E5F6G7H8I9J0
         secret_key: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
+  - job_name: aliyun-ecs
+    aliyun_sd_configs:
+      - region: cn-hangzhou
+        role: ecs
+        port: 80
+        tags:
+          - key: ack.aliyun.com
+            value: cd386715790e44917bxxxxxxxb7e782e2
+
 alerting:
   alertmanagers:
     - scheme: https
