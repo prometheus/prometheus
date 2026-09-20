@@ -7216,6 +7216,124 @@ func testOOODisabled(t *testing.T, scenario sampleTypeScenario) {
 func TestWBLAndMmapReplay(t *testing.T) {
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
+			t.Run("checkpoint after series recreation", func(t *testing.T) {
+				var (
+					evictedTime = 100 * time.Minute.Milliseconds()
+					inOrderTime = 300 * time.Minute.Milliseconds()
+					oooTime     = 250 * time.Minute.Milliseconds()
+				)
+				series := labels.FromStrings("foo", "bar")
+				dir := t.TempDir()
+				openDB := func() *DB {
+					opts := DefaultOptions()
+					opts.WALSegmentSize = 32 * 1024
+					opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+					db := newTestDB(t, withDir(dir), withOpts(opts))
+					db.DisableCompactions()
+					return db
+				}
+				appendSample := func(db *DB, ts int64) chunks.HeadSeriesRef {
+					app := db.Appender(context.Background())
+					ref, _, err := scenario.appendFunc(app, series, ts, ts)
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+					return chunks.HeadSeriesRef(ref)
+				}
+				querySeries := func(db *DB) map[string][]chunks.Sample {
+					q, err := db.Querier(math.MinInt64, math.MaxInt64)
+					require.NoError(t, err)
+					return query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+				}
+
+				// Evict the series while retaining its definition in the WAL.
+				db := openDB()
+				evictedRef := appendSample(db, evictedTime)
+				require.NoError(t, db.CompactHead(NewRangeHead(db.head, 0, evictedTime)))
+				require.Equal(t, uint64(0), db.head.NumSeries())
+				_, _, err := wlog.LastCheckpoint(db.head.wal.Dir())
+				require.ErrorIs(t, err, record.ErrNotFound)
+
+				// Recreate it under a new reference, also used by the WBL.
+				recreatedRef := appendSample(db, inOrderTime)
+				require.NotEqual(t, evictedRef, recreatedRef)
+				recreatedSegment, _, err := db.head.wal.LastSegmentAndOffset()
+				require.NoError(t, err)
+				appendSample(db, oooTime)
+
+				// Rotate after recreation so a later checkpoint covers both definitions.
+				for range 4 {
+					_, err := db.head.wal.NextSegmentSync()
+					require.NoError(t, err)
+				}
+				require.NoError(t, db.Close())
+
+				// Replay resolves the recreated reference to the original series.
+				db = openDB()
+				expected := map[string][]chunks.Sample{
+					series.String(): {
+						scenario.sampleFunc(evictedTime, evictedTime),
+						scenario.sampleFunc(oooTime, oooTime),
+						scenario.sampleFunc(inOrderTime, inOrderTime),
+					},
+				}
+				requireEqualSeries(t, expected, querySeries(db), true)
+				require.Nil(t, db.head.series.getByID(recreatedRef))
+				liveSeries := db.head.series.getByID(evictedRef)
+				require.NotNil(t, liveSeries)
+
+				// New appends mmap the recovered OOO sample under the live reference.
+				expected[series.String()] = []chunks.Sample{
+					scenario.sampleFunc(evictedTime, evictedTime),
+					scenario.sampleFunc(oooTime, oooTime),
+				}
+				for delta := int64(1); delta <= DefaultOutOfOrderCapMax; delta++ {
+					appendSample(db, oooTime+delta)
+					expected[series.String()] = append(expected[series.String()], scenario.sampleFunc(oooTime+delta, oooTime+delta))
+				}
+				expected[series.String()] = append(expected[series.String()], scenario.sampleFunc(inOrderTime, inOrderTime))
+				require.NotNil(t, liveSeries.ooo)
+				require.NotEmpty(t, liveSeries.ooo.oooMmappedChunks)
+				requireEqualSeries(t, expected, querySeries(db), true)
+
+				// Checkpoint past the recreated definition without compacting OOO data.
+				require.NoError(t, db.CompactHead(NewRangeHead(db.head, db.head.MinTime(), inOrderTime)))
+				_, checkpointSegment, err := wlog.LastCheckpoint(db.head.wal.Dir())
+				require.NoError(t, err)
+				require.GreaterOrEqual(t, checkpointSegment, recreatedSegment)
+				firstSegment, _, err := wlog.Segments(db.head.wal.Dir())
+				require.NoError(t, err)
+				require.Greater(t, firstSegment, recreatedSegment)
+				for _, block := range db.Blocks() {
+					meta := block.Meta()
+					require.False(t, meta.Compaction.FromOutOfOrder())
+				}
+				require.NoError(t, db.Close())
+
+				// All samples must survive WBL and mmap replay after checkpointing.
+				db = openDB()
+				requireEqualSeries(t, expected, querySeries(db), true)
+
+				// OOO compaction persists the remaining samples and truncates the WBL.
+				_, lastWBLBeforeCompaction, err := wlog.Segments(db.head.wbl.Dir())
+				require.NoError(t, err)
+				require.NoError(t, db.CompactOOOHead(context.Background()))
+				firstWBL, _, err := wlog.Segments(db.head.wbl.Dir())
+				require.NoError(t, err)
+				require.Greater(t, firstWBL, lastWBLBeforeCompaction)
+				oooBlocks := 0
+				for _, block := range db.Blocks() {
+					meta := block.Meta()
+					if meta.Compaction.FromOutOfOrder() {
+						oooBlocks++
+					}
+				}
+				require.Positive(t, oooBlocks)
+				require.NoError(t, db.Close())
+
+				db = openDB()
+				requireEqualSeries(t, expected, querySeries(db), true)
+			})
+
 			testWBLAndMmapReplay(t, scenario)
 		})
 	}
