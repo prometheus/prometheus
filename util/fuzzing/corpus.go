@@ -205,3 +205,59 @@ func GetCorpusForFuzzXOR2Chunk() []XOR2ChunkFuzzSeed {
 		{Seed: 7, N: 9, NaNMask: ^uint64(0), STMode: 4},
 	}
 }
+
+const (
+	apiQueryEndpoint uint8 = iota
+	apiQueryRangeEndpoint
+	apiQueryExemplarsEndpoint
+	apiEndpointCount
+)
+
+// APIGETFuzzSeed is a seed corpus entry for an HTTP GET API fuzzer.
+type APIGETFuzzSeed struct {
+	// Endpoint selects the HTTP API endpoint exercised by the seed.
+	Endpoint uint8
+	// RawQuery contains the URL-encoded query string.
+	RawQuery string
+}
+
+// APIFormPOSTFuzzSeed is a seed corpus entry for a form-encoded HTTP POST API fuzzer.
+type APIFormPOSTFuzzSeed struct {
+	// Endpoint selects the HTTP API endpoint exercised by the seed.
+	Endpoint uint8
+	// RawQuery contains the URL-encoded query string.
+	RawQuery string
+	// FormBody contains the URL-encoded request body.
+	FormBody string
+}
+
+// GetCorpusForFuzzAPIQueryGET returns the seed corpus for FuzzAPIQueryGET.
+func GetCorpusForFuzzAPIQueryGET() []APIGETFuzzSeed {
+	return []APIGETFuzzSeed{
+		{Endpoint: apiQueryEndpoint, RawQuery: "query=up&time=0&timeout=1m&limit=1&lookback_delta=5m"},
+		{Endpoint: apiQueryEndpoint, RawQuery: "query=sum%28rate%28up%5B5m%5D%29"},
+		{Endpoint: apiQueryEndpoint, RawQuery: "query=up&time=NaN"},
+		{Endpoint: apiQueryEndpoint, RawQuery: "query=up&limit=999999999999999999999"},
+		{Endpoint: apiQueryRangeEndpoint, RawQuery: "query=up&start=0&end=100&step=10&timeout=1m&limit=1"},
+		{Endpoint: apiQueryRangeEndpoint, RawQuery: "query=up&start=100&end=0&step=10"},
+		{Endpoint: apiQueryRangeEndpoint, RawQuery: "query=up&start=0&end=100&step=0"},
+		{Endpoint: apiQueryExemplarsEndpoint, RawQuery: "query=up&start=0&end=100"},
+		{Endpoint: apiQueryExemplarsEndpoint, RawQuery: "query=up&start=100&end=0"},
+	}
+}
+
+// GetCorpusForFuzzAPIQueryPOST returns the seed corpus for FuzzAPIQueryPOST.
+func GetCorpusForFuzzAPIQueryPOST() []APIFormPOSTFuzzSeed {
+	return []APIFormPOSTFuzzSeed{
+		{Endpoint: apiQueryEndpoint, FormBody: "query=up%7Bregion%3D%22%E6%9D%B1%E4%BA%AC%22%7D"},
+		{Endpoint: apiQueryEndpoint, RawQuery: "time=0", FormBody: "query=up"},
+		{Endpoint: apiQueryEndpoint, FormBody: "query=up&timeout=NaN"},
+		{Endpoint: apiQueryEndpoint, FormBody: "query=%"},
+		{Endpoint: apiQueryRangeEndpoint, FormBody: "query=up%7Bregion%3D%22%E6%9D%B1%E4%BA%AC%22%7D&start=0&end=100&step=10"},
+		{Endpoint: apiQueryRangeEndpoint, FormBody: "query=sum%28rate%28up%5B5m%5D%29&start=0&end=100&step=10"},
+		{Endpoint: apiQueryExemplarsEndpoint, FormBody: "query=up%7Bregion%3D%22%E6%9D%B1%E4%BA%AC%22%7D&start=0&end=100"},
+		{Endpoint: apiQueryExemplarsEndpoint, FormBody: "query=up&start=NaN&end=100"},
+		{Endpoint: apiQueryExemplarsEndpoint, FormBody: "query=up&start=0&end=NaN"},
+		{Endpoint: apiQueryExemplarsEndpoint, FormBody: "query=%7B&start=0&end=100"},
+	}
+}
