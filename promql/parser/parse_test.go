@@ -5531,29 +5531,38 @@ func TestParseExpressions(t *testing.T) {
 // AST returned alongside the error is still well-formed enough to inspect and print.
 // Tooling that stringifies queries relies on this and must not panic on a rejected
 // query. Each group below covers one way the parser used to leave a malformed node
-// behind.
+// behind. Where the printed form is meaningful, want pins it.
 func TestParsePartialASTPrintable(t *testing.T) {
-	for _, input := range []string{
+	for _, tc := range []struct {
+		input string
+		want  string // Expected String() output; empty means only check it does not panic.
+	}{
 		// Label matcher with a regexp that does not compile.
-		`metric{a="1",b=~"[a-z)("}`,
-		`{__name__=~".*(bucket",foo="bar"}`,
-		`count by (__name__) ({foo="bar",__name__=~".*(bucket"})`,
+		{input: `metric{a="1",b=~"[a-z)("}`},
+		{input: `{__name__=~".*(bucket",foo="bar"}`},
+		{input: `count by (__name__) ({foo="bar",__name__=~".*(bucket"})`},
 		// Label matcher that is syntactically incomplete.
-		`metric{a="1",b=~}`,
-		`metric{a="1",b=}`,
-		`{a="1",b=~}`,
+		{input: `metric{a="1",b=~}`},
+		{input: `metric{a="1",b=}`},
+		{input: `{a="1",b=~}`},
 		// Range applied to an expression that is not a vector selector.
-		`1[5m]`,
-		`1[5m] anchored`,
-		`1[5m] smoothed`,
-		`(foo + bar)[5m]`,
-		`rate(food[1m])[1h] @ 100`,
-		`rate(food[1m])[1h] offset 1h`,
-		`""[5m]`,
-		`a[5m][5m]`,
+		{input: `1[5m]`},
+		{input: `1[5m] anchored`},
+		{input: `1[5m] smoothed`},
+		{input: `(foo + bar)[5m]`},
+		{input: `rate(food[1m])[1h] @ 100`},
+		{input: `rate(food[1m])[1h] offset 1h`},
+		{input: `""[5m]`},
+		{input: `a[5m][5m]`},
+		// Call to an unknown function. The name must survive in the AST.
+		{input: `non_existent_function_far_bar()`, want: `non_existent_function_far_bar()`},
+		{input: `unknown(1)`, want: `unknown(1)`},
+		{input: `unknown(a, b)`, want: `unknown(a, b)`},
+		{input: `a>b()`, want: `a > b()`},
+		{input: `unknown(1)[5m]`, want: `unknown(1)[5m]`},
 	} {
-		t.Run(input, func(t *testing.T) {
-			expr, err := NewParser(Options{}).ParseExpr(input)
+		t.Run(tc.input, func(t *testing.T) {
+			expr, err := NewParser(Options{}).ParseExpr(tc.input)
 			require.Error(t, err)
 			require.NotNil(t, expr)
 
@@ -5566,7 +5575,11 @@ func TestParsePartialASTPrintable(t *testing.T) {
 				return nil
 			})
 
-			require.NotPanics(t, func() { _ = expr.String() })
+			var got string
+			require.NotPanics(t, func() { got = expr.String() })
+			if tc.want != "" {
+				require.Equal(t, tc.want, got)
+			}
 		})
 	}
 }
