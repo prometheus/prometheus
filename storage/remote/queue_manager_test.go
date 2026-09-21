@@ -606,6 +606,53 @@ func TestReshardRaceWithStop(t *testing.T) {
 	}
 }
 
+// TestSetClientRace runs SetClient concurrently with sample and metadata sends.
+// It exists to fail under the race detector if send paths read storeClient without clientMtx.
+func TestSetClientRace(t *testing.T) {
+	t.Parallel()
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			c := NewTestWriteClient(protoMsg)
+			cfg := testDefaultQueueConfig()
+			cfg.MaxShards = 4
+			m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, c, protoMsg)
+
+			recs := testwal.GenerateRecords(recCase{
+				NoST:             protoMsg == remoteapi.WriteV1MessageType,
+				Series:           8,
+				SamplesPerSeries: 20,
+			})
+			m.StoreSeries(recs.Series, 0)
+			m.StoreMetadata(recs.Metadata)
+			m.Start()
+			defer m.Stop()
+
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				for range 200 {
+					m.SetClient(c)
+				}
+			}()
+			go func() {
+				defer wg.Done()
+				for range 50 {
+					m.Append(recs.Samples)
+					if protoMsg == remoteapi.WriteV1MessageType {
+						m.AppendWatcherMetadata(context.Background(), []scrape.MetricMetadata{{
+							MetricFamily: "test_metric",
+							Type:         model.MetricTypeCounter,
+							Help:         "help",
+						}})
+					}
+				}
+			}()
+			wg.Wait()
+		})
+	}
+}
+
 func TestReshardPartialBatch(t *testing.T) {
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
