@@ -73,11 +73,17 @@ func (node *AggregateExpr) String() string {
 	b := bytes.NewBuffer(make([]byte, 0, 1024))
 	node.writeAggOpStr(b)
 	b.WriteString("(")
-	if node.Op.IsAggregatorWithParam() {
+	// A failed parse (e.g. missing or too few arguments) can leave Param or Expr nil.
+	// Print only the parts that were parsed.
+	if node.Op.IsAggregatorWithParam() && node.Param != nil {
 		b.WriteString(node.Param.String())
-		b.WriteString(", ")
+		if node.Expr != nil {
+			b.WriteString(", ")
+		}
 	}
-	b.WriteString(node.Expr.String())
+	if node.Expr != nil {
+		b.WriteString(node.Expr.String())
+	}
 	b.WriteString(")")
 
 	return b.String()
