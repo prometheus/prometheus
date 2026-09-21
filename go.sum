@@ -606,8 +606,8 @@ go.opentelemetry.io/proto/slim/otlp/collector/profiles/v1development v0.4.0 h1:m
 go.opentelemetry.io/proto/slim/otlp/collector/profiles/v1development v0.4.0/go.mod h1:7UXaX/7uT+kumUHd3LIWyjMlklEp0mPlrE9xmtbG6/8=
 go.opentelemetry.io/proto/slim/otlp/profiles/v1development v0.4.0 h1:rLHkdB6eHDiRSIoz0cvNuTJsVJBxaL6IyS1e9BSaXLY=
 go.opentelemetry.io/proto/slim/otlp/profiles/v1development v0.4.0/go.mod h1:BrX0dmOGsMuWNXXbFafTD7Gb6F3yK+2czVQ6+c24Cnk=
-go.uber.org/atomic v1.11.0 h1:ZvwS0R+56ePWxUNi+Atn9dWONBPp/AUETXlHW0DxSjE=
-go.uber.org/atomic v1.11.0/go.mod h1:LUxbIzbOniOlMKjJjyPfpl4v+PKK2cNJn91OQbhoJI0=
+go.uber.org/atomic v1.12.0 h1:BvcXdFKuviU4fTL/f+SxdQ5qJX/Jix8pAkgdUcb3XOE=
+go.uber.org/atomic v1.12.0/go.mod h1:I6c4cg+6HCxRjfjSsYtApoFILnpc0CGUdGkXVqbYVNk=
 go.uber.org/automaxprocs v1.6.0 h1:O3y2/QNTOdbF+e/dpXNNW7Rx2hZ4sTIPyybbxyNqTUs=
 go.uber.org/automaxprocs v1.6.0/go.mod h1:ifeIMSnPZuznNm6jmdzmU3/bfk01Fe2fotchwEFJ8r8=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
