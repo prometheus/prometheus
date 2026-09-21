@@ -263,8 +263,8 @@ github.com/googleapis/enterprise-certificate-proxy v0.3.20 h1:t/xL64VUoN69MuMRQu
 github.com/googleapis/enterprise-certificate-proxy v0.3.20/go.mod h1:L3D/IQExI6LqEjBdXcZQ1WluSgigQmSwBboFstVPM4w=
 github.com/googleapis/gax-go/v2 v2.24.0 h1:myMaPYyF9MecEmvQqMqomIwn9t/4KCZN9qnwsS76wlg=
 github.com/googleapis/gax-go/v2 v2.24.0/go.mod h1:IaTHBDd7NHxSCiu0vEs8pQZu4dGZrWwuSoxCnk16OFM=
-github.com/gophercloud/gophercloud/v2 v2.14.0 h1:xGxKCvyaOxJDc5FqrnKDNqtdYn43ocQPuJ2Cm4KX/cs=
-github.com/gophercloud/gophercloud/v2 v2.14.0/go.mod h1:4fs5I9VH6Wg2LyocDL9xf0ASb8VD63tyLA8sgAX/69U=
+github.com/gophercloud/gophercloud/v2 v2.15.0 h1:4zLiLYTFraZMlJ77FH1Kzq7itjfVP+BIbWcCurCrgic=
+github.com/gophercloud/gophercloud/v2 v2.15.0/go.mod h1:4fs5I9VH6Wg2LyocDL9xf0ASb8VD63tyLA8sgAX/69U=
 github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 h1:JeSE6pjso5THxAzdVpqr6/geYxZytqFMBCOtn/ujyeo=
 github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674/go.mod h1:r4w70xmWCQKmi1ONH4KIaBptdivuRPyosB9RmPlGEwA=
 github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853 h1:cLN4IBkmkYZNnk7EAJ0BHIethd+J6LqxFNw5mSiI2bM=
