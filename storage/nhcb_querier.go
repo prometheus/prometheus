@@ -233,7 +233,7 @@ func (m *multipleSeriesSet) Next() bool {
 	if m.idx >= len(m.seriesSet) {
 		return false
 	}
-	if !(m.seriesSet[m.idx].Next()) {
+	if !m.seriesSet[m.idx].Next() {
 		m.idx++
 		return m.Next()
 	}

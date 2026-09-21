@@ -16,6 +16,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -40,18 +41,18 @@ func buildBenchNHCBSeries(numSeries, numBuckets, numSamples int) []Series {
 	positiveBuckets[0] = 1
 
 	series := make([]Series, numSeries)
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		lset := labels.FromStrings(
 			"__name__", "bench_request_duration_seconds",
 			"tenant", fmt.Sprintf("tenant-%d", i%100),
 			"handler", fmt.Sprintf("/api/%d", i%50),
 			"method", []string{"GET", "POST"}[i%2],
 			"status", []string{"200", "400", "500"}[i%3],
-			"series", fmt.Sprintf("%d", i),
+			"series", strconv.Itoa(i),
 		)
 
 		samples := make([]chunks.Sample, numSamples)
-		for j := 0; j < numSamples; j++ {
+		for j := range numSamples {
 			samples[j] = hSample{
 				t: int64(j * 60000),
 				h: &histogram.Histogram{

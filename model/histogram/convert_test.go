@@ -336,7 +336,7 @@ func TestConvertNHCBToClassicHistogram_CacheMatchesNoCache(t *testing.T) {
 	}))
 
 	cache := &ClassicSeriesCache{}
-	for iteration := 0; iteration < 3; iteration++ {
+	for iteration := range 3 {
 		var with []sample
 		require.NoError(t, ConvertNHCBToClassic(h, lset, labelBuilder, "", cache, func(lbls labels.Labels, val float64) error {
 			with = append(with, sample{lset: lbls, val: val})
