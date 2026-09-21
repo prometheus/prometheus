@@ -255,7 +255,12 @@ func (node *Call) ShortString() string {
 }
 
 func (node *MatrixSelector) atOffset() (string, string) {
-	vecSelector := node.VectorSelector.(*VectorSelector)
+	vecSelector, ok := node.VectorSelector.(*VectorSelector)
+	if !ok {
+		// A failed parse can leave a non-vector expression here (e.g. `1[5m]`). Such an
+		// operand cannot carry @ or offset modifiers, so there is nothing to print.
+		return "", ""
+	}
 	offset := ""
 	switch {
 	case vecSelector.OriginalOffsetExpr != nil:
@@ -278,9 +283,24 @@ func (node *MatrixSelector) atOffset() (string, string) {
 }
 
 func (node *MatrixSelector) String() string {
+	rangeStr := model.Duration(node.Range).String()
+	if node.RangeExpr != nil {
+		rangeStr = node.RangeExpr.String()
+	}
+	vs, ok := node.VectorSelector.(*VectorSelector)
+	if !ok {
+		// A failed parse can leave a non-vector expression here (e.g. `1[5m]`), and a
+		// hand-built node may have no operand at all. Neither can carry the selector-only
+		// modifiers handled below, so print whatever is there with the range.
+		inner := ""
+		if node.VectorSelector != nil {
+			inner = node.VectorSelector.String()
+		}
+		return fmt.Sprintf("%s[%s]", inner, rangeStr)
+	}
 	at, offset := node.atOffset()
 	// Copy the Vector selector so we can modify it to not print @, offset, and other modifiers twice.
-	vecSelector := *node.VectorSelector.(*VectorSelector)
+	vecSelector := *vs
 	anchored, smoothed := vecSelector.Anchored, vecSelector.Smoothed
 	vecSelector.OriginalOffset = 0
 	vecSelector.OriginalOffsetExpr = nil
@@ -295,10 +315,6 @@ func (node *MatrixSelector) String() string {
 		extendedAttribute = " anchored"
 	case smoothed:
 		extendedAttribute = " smoothed"
-	}
-	rangeStr := model.Duration(node.Range).String()
-	if node.RangeExpr != nil {
-		rangeStr = node.RangeExpr.String()
 	}
 	str := fmt.Sprintf("%s[%s]%s%s%s", vecSelector.String(), rangeStr, extendedAttribute, at, offset)
 
