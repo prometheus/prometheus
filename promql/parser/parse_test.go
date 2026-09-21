@@ -5527,22 +5527,30 @@ func TestParseExpressions(t *testing.T) {
 	}
 }
 
-// TestParseSelectorInvalidMatcherPrintableAST checks that a selector containing an
-// invalid label matcher still yields a well-formed, printable AST. The parser
-// records the error and rejects the query, but the returned partial AST must not
-// contain a nil matcher, so callers that inspect or print it (e.g. via String())
-// do not panic. Both ways a matcher can fail are covered: a regexp that does not
-// compile, and a matcher that is syntactically incomplete.
-func TestParseSelectorInvalidMatcherPrintableAST(t *testing.T) {
+// TestParsePartialASTPrintable checks that when parsing fails, the partially-built
+// AST returned alongside the error is still well-formed enough to inspect and print.
+// Tooling that stringifies queries relies on this and must not panic on a rejected
+// query. Each group below covers one way the parser used to leave a malformed node
+// behind.
+func TestParsePartialASTPrintable(t *testing.T) {
 	for _, input := range []string{
-		// Invalid regexp.
+		// Label matcher with a regexp that does not compile.
 		`metric{a="1",b=~"[a-z)("}`,
 		`{__name__=~".*(bucket",foo="bar"}`,
 		`count by (__name__) ({foo="bar",__name__=~".*(bucket"})`,
-		// Incomplete matcher (missing value).
+		// Label matcher that is syntactically incomplete.
 		`metric{a="1",b=~}`,
 		`metric{a="1",b=}`,
 		`{a="1",b=~}`,
+		// Range applied to an expression that is not a vector selector.
+		`1[5m]`,
+		`1[5m] anchored`,
+		`1[5m] smoothed`,
+		`(foo + bar)[5m]`,
+		`rate(food[1m])[1h] @ 100`,
+		`rate(food[1m])[1h] offset 1h`,
+		`""[5m]`,
+		`a[5m][5m]`,
 	} {
 		t.Run(input, func(t *testing.T) {
 			expr, err := NewParser(Options{}).ParseExpr(input)
