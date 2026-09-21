@@ -461,6 +461,9 @@ function_call   : IDENTIFIER function_call_body
                         fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                                // Keep the name so the partially-built AST stays printable; the
+                                // recorded error still rejects the query.
+                                fn = &Function{Name: $1.Val}
                         }
                         if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
@@ -479,6 +482,9 @@ function_call   : IDENTIFIER function_call_body
                         fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                                // Keep the name so the partially-built AST stays printable; the
+                                // recorded error still rejects the query.
+                                fn = &Function{Name: $1.Val}
                         }
                         if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
@@ -497,6 +503,9 @@ function_call   : IDENTIFIER function_call_body
                         fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                                // Keep the name so the partially-built AST stays printable; the
+                                // recorded error still rejects the query.
+                                fn = &Function{Name: $1.Val}
                         }
                         if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
@@ -515,6 +524,9 @@ function_call   : IDENTIFIER function_call_body
                         fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                                // Keep the name so the partially-built AST stays printable; the
+                                // recorded error still rejects the query.
+                                fn = &Function{Name: $1.Val}
                         }
                         if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
@@ -533,6 +545,9 @@ function_call   : IDENTIFIER function_call_body
                         fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                                // Keep the name so the partially-built AST stays printable; the
+                                // recorded error still rejects the query.
+                                fn = &Function{Name: $1.Val}
                         }
                         if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)

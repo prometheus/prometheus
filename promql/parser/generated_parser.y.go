@@ -1525,6 +1525,9 @@ yydefault:
 			fn, exist := getFunction(yyDollar[1].item.Val, yylex.(*parser).functions)
 			if !exist {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "unknown function with name %q", yyDollar[1].item.Val)
+				// Keep the name so the partially-built AST stays printable; the
+				// recorded error still rejects the query.
+				fn = &Function{Name: yyDollar[1].item.Val}
 			}
 			if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "function %q is not enabled", yyDollar[1].item.Val)
@@ -1544,6 +1547,9 @@ yydefault:
 			fn, exist := getFunction(yyDollar[1].item.Val, yylex.(*parser).functions)
 			if !exist {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "unknown function with name %q", yyDollar[1].item.Val)
+				// Keep the name so the partially-built AST stays printable; the
+				// recorded error still rejects the query.
+				fn = &Function{Name: yyDollar[1].item.Val}
 			}
 			if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "function %q is not enabled", yyDollar[1].item.Val)
@@ -1563,6 +1569,9 @@ yydefault:
 			fn, exist := getFunction(yyDollar[1].item.Val, yylex.(*parser).functions)
 			if !exist {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "unknown function with name %q", yyDollar[1].item.Val)
+				// Keep the name so the partially-built AST stays printable; the
+				// recorded error still rejects the query.
+				fn = &Function{Name: yyDollar[1].item.Val}
 			}
 			if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "function %q is not enabled", yyDollar[1].item.Val)
@@ -1582,6 +1591,9 @@ yydefault:
 			fn, exist := getFunction(yyDollar[1].item.Val, yylex.(*parser).functions)
 			if !exist {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "unknown function with name %q", yyDollar[1].item.Val)
+				// Keep the name so the partially-built AST stays printable; the
+				// recorded error still rejects the query.
+				fn = &Function{Name: yyDollar[1].item.Val}
 			}
 			if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "function %q is not enabled", yyDollar[1].item.Val)
@@ -1601,6 +1613,9 @@ yydefault:
 			fn, exist := getFunction(yyDollar[1].item.Val, yylex.(*parser).functions)
 			if !exist {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "unknown function with name %q", yyDollar[1].item.Val)
+				// Keep the name so the partially-built AST stays printable; the
+				// recorded error still rejects the query.
+				fn = &Function{Name: yyDollar[1].item.Val}
 			}
 			if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "function %q is not enabled", yyDollar[1].item.Val)

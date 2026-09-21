@@ -247,10 +247,15 @@ func (node *DurationExpr) ShortString() string {
 }
 
 func (node *Call) String() string {
-	return node.Func.Name + "(" + node.Args.String() + ")"
+	return node.ShortString() + "(" + node.Args.String() + ")"
 }
 
 func (node *Call) ShortString() string {
+	// A failed parse leaves Func nil for an unknown function name, and the AST does
+	// not keep the name itself, so there is nothing to print for it.
+	if node.Func == nil {
+		return ""
+	}
 	return node.Func.Name
 }
 
