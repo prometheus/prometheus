@@ -2,6 +2,9 @@
 
 ## main / unreleased
 
+## 3.15.0-rc.1 / 2026-09-21
+- [BUGFIX] TSDB: Avoid WAL corruption after a failed WAL write in Agent mode. #19700
+
 ## 3.15.0-rc.0 / 2026-09-09
 - [CHANGE] PromQL: A range query whose `end` was not aligned to `step` caused subqueries inside it to evaluate past the parent's last actual step, inflating `peakSamples` in the query stats and against the `query.max-samples` limit, and wasting storage I/O reading samples that were never used in the result. Add tests to prevent regression of the fix made in #18081. #18598
 - [CHANGE] PromQL: Do not register a start timestamp reset if the start timestamp hasn't changed between subsequent samples. #19454
