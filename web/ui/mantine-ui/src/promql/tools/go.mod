@@ -24,5 +24,3 @@ require (
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 )
-
-replace cloud.google.com/go => cloud.google.com/go v0.123.0
