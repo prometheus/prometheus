@@ -2394,6 +2394,17 @@ var testExpr = []struct {
 			},
 		},
 	},
+	{
+		input: `foo{a="b",c=~"[a-z"}`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 10, End: 19},
+				Err:           errors.New("error parsing regexp: missing closing ]: `[a-z`"),
+				Query:         `foo{a="b",c=~"[a-z"}`,
+			},
+		},
+	},
 	// Test matrix selector.
 	{
 		input: "test[1000ms]",
@@ -5512,6 +5523,42 @@ func TestParseExpressions(t *testing.T) {
 					require.LessOrEqual(t, e.PositionRange.End, posrange.Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
 				}
 			}
+		})
+	}
+}
+
+// TestParseSelectorInvalidMatcherPrintableAST checks that a selector containing an
+// invalid label matcher still yields a well-formed, printable AST. The parser
+// records the error and rejects the query, but the returned partial AST must not
+// contain a nil matcher, so callers that inspect or print it (e.g. via String())
+// do not panic. Both ways a matcher can fail are covered: a regexp that does not
+// compile, and a matcher that is syntactically incomplete.
+func TestParseSelectorInvalidMatcherPrintableAST(t *testing.T) {
+	for _, input := range []string{
+		// Invalid regexp.
+		`metric{a="1",b=~"[a-z)("}`,
+		`{__name__=~".*(bucket",foo="bar"}`,
+		`count by (__name__) ({foo="bar",__name__=~".*(bucket"})`,
+		// Incomplete matcher (missing value).
+		`metric{a="1",b=~}`,
+		`metric{a="1",b=}`,
+		`{a="1",b=~}`,
+	} {
+		t.Run(input, func(t *testing.T) {
+			expr, err := NewParser(Options{}).ParseExpr(input)
+			require.Error(t, err)
+			require.NotNil(t, expr)
+
+			Inspect(expr, func(node Node, _ []Node) error {
+				if vs, ok := node.(*VectorSelector); ok {
+					for i, m := range vs.LabelMatchers {
+						require.NotNilf(t, m, "label matcher %d is nil", i)
+					}
+				}
+				return nil
+			})
+
+			require.NotPanics(t, func() { _ = expr.String() })
 		})
 	}
 }
