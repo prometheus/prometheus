@@ -68,10 +68,6 @@ var _ storage.Storage = &Storage{}
 
 // NewStorage returns a remote.Storage.
 func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels bool) *Storage {
-	if reg != nil {
-		reg.MustRegister(samplesIn, histogramsIn, exemplarsIn)
-	}
-
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
@@ -216,6 +212,7 @@ func (s *Storage) Close() error {
 	s.deduper.Stop()
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
+	s.readMetrics.Unregister()
 	return s.rws.Close()
 }
 

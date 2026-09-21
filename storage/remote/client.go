@@ -118,6 +118,7 @@ type ReadClient interface {
 // configuration reload then builds new clients without touching the metrics,
 // which keeps the counters running.
 type ReadClientMetrics struct {
+	reg           prometheus.Registerer
 	queries       *prometheus.GaugeVec
 	queriesTotal  *prometheus.CounterVec
 	queryDuration *prometheus.HistogramVec
@@ -127,6 +128,7 @@ type ReadClientMetrics struct {
 // reg registers nothing, which is useful in tests.
 func NewReadClientMetrics(reg prometheus.Registerer) *ReadClientMetrics {
 	m := &ReadClientMetrics{
+		reg: reg,
 		queries: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: "remote_read_client",
@@ -154,6 +156,19 @@ func NewReadClientMetrics(reg prometheus.Registerer) *ReadClientMetrics {
 		reg.MustRegister(m.queries, m.queriesTotal, m.queryDuration)
 	}
 	return m
+}
+
+// Unregister removes the metrics from the registry they were registered with.
+// Call it when the owning remote.Storage closes, so that a later storage can
+// register them again with the same registry.
+func (m *ReadClientMetrics) Unregister() {
+	if m.reg == nil {
+		return
+	}
+
+	m.reg.Unregister(m.queries)
+	m.reg.Unregister(m.queriesTotal)
+	m.reg.Unregister(m.queryDuration)
 }
 
 // NewReadClient creates a new client for remote read.
