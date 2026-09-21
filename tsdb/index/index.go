@@ -1507,12 +1507,16 @@ func (r *Reader) traversePostingOffsets(ctx context.Context, off int, cb func(st
 		}
 		v := yoloString(d.UvarintBytes()) // Label value.
 		postingsOff := d.Uvarint64()      // Offset.
-		if ok, err := cb(v, postingsOff); err != nil {
+		ok, err := cb(v, postingsOff)
+		if err != nil {
 			return err
-		} else if !ok {
+		}
+		// Read the context before the break: a callback that stops the scan can
+		// have canceled it, and the caller has to hear about that.
+		ctxErr = ctx.Err()
+		if !ok {
 			break
 		}
-		ctxErr = ctx.Err()
 	}
 	if d.Err() != nil {
 		return fmt.Errorf("get postings offset entry: %w", d.Err())

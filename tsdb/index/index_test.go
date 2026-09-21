@@ -627,6 +627,59 @@ func TestReader_PostingsForAllLabelValues(t *testing.T) {
 	require.Equal(t, []storage.SeriesRef{3, 4, 5, 6, 7, 8, 9, 10, 11}, refs)
 }
 
+// TestReader_PostingsHonorsContextCancelFromLastCallback covers a scan that is
+// canceled while it reads its last value. The traversal stops on that value, so
+// it has to read the context before it stops.
+func TestReader_PostingsHonorsContextCancelFromLastCallback(t *testing.T) {
+	const seriesCount = 8
+	var input indexWriterSeriesSlice
+	for i := range seriesCount {
+		input = append(input, &indexWriterSeries{
+			labels: labels.FromStrings("__name__", fmt.Sprintf("%03d", i)),
+			chunks: []chunks.Meta{{Ref: 1, MinTime: 0, MaxTime: 10}},
+		})
+	}
+	_, filename, _ := createFileReader(context.Background(), t, input)
+
+	for _, tc := range []struct {
+		name string
+		read func(context.Context, *Reader) Postings
+	}{
+		{
+			name: "PostingsForAllLabelValues",
+			read: func(ctx context.Context, r *Reader) Postings {
+				return r.PostingsForAllLabelValues(ctx, "__name__")
+			},
+		},
+		{
+			name: "PostingsForLabelMatching",
+			read: func(ctx context.Context, r *Reader) Postings {
+				return r.PostingsForLabelMatching(ctx, "__name__", func(string) bool { return true })
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			decoded := 0
+			r, err := NewFileReader(filename, func(d encoding.Decbuf) (int, Postings, error) {
+				decoded++
+				if decoded == seriesCount {
+					cancel()
+				}
+				return DecodePostingsRaw(d)
+			})
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, r.Close()) })
+
+			p := tc.read(ctx, r)
+			require.ErrorIs(t, p.Err(), context.Canceled)
+			require.False(t, p.Next())
+		})
+	}
+}
+
 func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	const seriesCount = 1000
 	var input indexWriterSeriesSlice
