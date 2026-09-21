@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -314,12 +315,12 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 	// there is no chance that the set we subtract from
 	// contains postings of series that didn't exist when
 	// we constructed the set we subtract by.
+	//
+	// Among the intersecting matchers, those resolved by a direct postings
+	// lookup run before those that scan all values of a label. An empty result
+	// from a lookup ends the whole call, so the scan is never paid for.
 	slices.SortStableFunc(ms, func(i, j *labels.Matcher) int {
-		if !isSubtractingMatcher(i) && isSubtractingMatcher(j) {
-			return -1
-		}
-
-		return +1
+		return cmp.Compare(matcherOrder(i, isSubtractingMatcher), matcherOrder(j, isSubtractingMatcher))
 	})
 
 	for i, m := range ms {
@@ -479,6 +480,19 @@ func scanGroup(ms []*labels.Matcher, i int, isSubtracting func(*labels.Matcher) 
 		}
 	}
 	return group, false
+}
+
+// matcherOrder returns the rank of m in the order the matchers are resolved in:
+// intersecting lookups, then intersecting scans, then the subtracting matchers.
+func matcherOrder(m *labels.Matcher, isSubtracting func(*labels.Matcher) bool) int {
+	switch {
+	case isSubtracting(m):
+		return 2
+	case matcherScans(m):
+		return 1
+	default:
+		return 0
+	}
 }
 
 // matcherScans reports whether resolving m requires scanning all values of its
