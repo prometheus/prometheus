@@ -439,53 +439,50 @@ func (d *ElasticacheDiscovery) describeCacheClusters(ctx context.Context, caches
 	mu := &sync.Mutex{}
 	errg, ectx := errgroup.WithContext(ctx)
 	errg.SetLimit(d.cfg.RequestConcurrency)
-	showCacheClustersNotInReplicationGroupsBools := []bool{false, true}
 	var cacheClusters []types.CacheCluster
+	// ShowCacheClustersNotInReplicationGroups is deliberately left unset:
+	// DescribeCacheClusters then returns every provisioned cluster, whereas
+	// setting it narrows the response to the subset that are not replication
+	// group members. Querying both ways returns each standalone cluster twice.
 	if len(caches) == 0 {
-		for _, showCacheClustersNotInReplicationGroupsBool := range showCacheClustersNotInReplicationGroupsBools {
-			errg.Go(func() error {
-				var nextToken *string
-				for {
-					output, err := d.elasticacheClient.DescribeCacheClusters(ectx, &elasticache.DescribeCacheClustersInput{
-						MaxRecords:                              aws.Int32(100),
-						Marker:                                  nextToken,
-						ShowCacheNodeInfo:                       aws.Bool(true),
-						ShowCacheClustersNotInReplicationGroups: aws.Bool(showCacheClustersNotInReplicationGroupsBool),
-					})
-					if err != nil {
-						return fmt.Errorf("failed to describe cache clusters: %w", err)
-					}
-					mu.Lock()
-					cacheClusters = append(cacheClusters, output.CacheClusters...)
-					mu.Unlock()
-					if output.Marker == nil {
-						break
-					}
-					nextToken = output.Marker
+		errg.Go(func() error {
+			var nextToken *string
+			for {
+				output, err := d.elasticacheClient.DescribeCacheClusters(ectx, &elasticache.DescribeCacheClustersInput{
+					MaxRecords:        aws.Int32(100),
+					Marker:            nextToken,
+					ShowCacheNodeInfo: aws.Bool(true),
+				})
+				if err != nil {
+					return fmt.Errorf("failed to describe cache clusters: %w", err)
 				}
-				return nil
-			})
-		}
+				mu.Lock()
+				cacheClusters = append(cacheClusters, output.CacheClusters...)
+				mu.Unlock()
+				if output.Marker == nil {
+					break
+				}
+				nextToken = output.Marker
+			}
+			return nil
+		})
 	} else {
 		for _, cacheID := range caches {
-			for _, showCacheClustersNotInReplicationGroupsBool := range showCacheClustersNotInReplicationGroupsBools {
-				errg.Go(func() error {
-					output, err := d.elasticacheClient.DescribeCacheClusters(ectx, &elasticache.DescribeCacheClustersInput{
-						MaxRecords:                              aws.Int32(100),
-						Marker:                                  nil,
-						ShowCacheNodeInfo:                       aws.Bool(true),
-						ShowCacheClustersNotInReplicationGroups: aws.Bool(showCacheClustersNotInReplicationGroupsBool),
-						CacheClusterId:                          aws.String(cacheID),
-					})
-					if err != nil {
-						return fmt.Errorf("failed to describe cache cluster %s: %w", cacheID, err)
-					}
-					mu.Lock()
-					cacheClusters = append(cacheClusters, output.CacheClusters...)
-					mu.Unlock()
-					return nil
+			errg.Go(func() error {
+				output, err := d.elasticacheClient.DescribeCacheClusters(ectx, &elasticache.DescribeCacheClustersInput{
+					MaxRecords:        aws.Int32(100),
+					Marker:            nil,
+					ShowCacheNodeInfo: aws.Bool(true),
+					CacheClusterId:    aws.String(cacheID),
 				})
-			}
+				if err != nil {
+					return fmt.Errorf("failed to describe cache cluster %s: %w", cacheID, err)
+				}
+				mu.Lock()
+				cacheClusters = append(cacheClusters, output.CacheClusters...)
+				mu.Unlock()
+				return nil
+			})
 		}
 	}
 
