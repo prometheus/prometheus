@@ -55,9 +55,16 @@ func TestNewParser(t *testing.T) {
 		require.True(t, ok)
 	}
 
+	requireOpenMetrics2Parser := func(t *testing.T, p Parser) {
+		require.NotNil(t, p)
+		_, ok := p.(*OpenMetrics2Parser)
+		require.True(t, ok)
+	}
+
 	for name, tt := range map[string]*struct {
 		contentType            string
 		fallbackScrapeProtocol config.ScrapeProtocol
+		enableOpenMetrics2     bool
 		validateParser         func(*testing.T, Parser)
 		err                    string
 	}{
@@ -138,6 +145,29 @@ func TestNewParser(t *testing.T) {
 			contentType:    "application/openmetrics-text; version=1.0.0; charset=utf-8",
 			validateParser: requireOpenMetricsParser,
 		},
+		"openmetrics-v2": {
+			contentType:        "application/openmetrics-text; version=2.0.0",
+			enableOpenMetrics2: true,
+			validateParser:     requireOpenMetrics2Parser,
+		},
+		"openmetrics-v2-with-charset": {
+			contentType:        "application/openmetrics-text; version=2.0.0; charset=utf-8",
+			enableOpenMetrics2: true,
+			validateParser:     requireOpenMetrics2Parser,
+		},
+		// TODO(r.bizos): drop the two disabled cases below when OM2 is GA and the
+		// feature flag is gone.
+		"openmetrics-v2-disabled": {
+			contentType:    "application/openmetrics-text; version=2.0.0",
+			validateParser: requireNilParser,
+			err:            "received OpenMetrics 2.0 Content-Type \"application/openmetrics-text; version=2.0.0\", but the openmetrics2 feature flag is not enabled and no fallback_scrape_protocol specified for target",
+		},
+		"openmetrics-v2-disabled-fallback-openmetrics": {
+			contentType:            "application/openmetrics-text; version=2.0.0",
+			fallbackScrapeProtocol: config.OpenMetricsText1_0_0,
+			validateParser:         requireOpenMetricsParser,
+			err:                    "received OpenMetrics 2.0 Content-Type \"application/openmetrics-text; version=2.0.0\", but the openmetrics2 feature flag is not enabled, using fallback_scrape_protocol \"application/openmetrics-text\"",
+		},
 		"plain-text": {
 			contentType:    "text/plain",
 			validateParser: requirePromParser,
@@ -168,7 +198,10 @@ func TestNewParser(t *testing.T) {
 
 			fallbackProtoMediaType := tt.fallbackScrapeProtocol.HeaderMediaType()
 
-			p, err := New([]byte{}, tt.contentType, labels.NewSymbolTable(), ParserOptions{FallbackContentType: fallbackProtoMediaType})
+			p, err := New([]byte{}, tt.contentType, labels.NewSymbolTable(), ParserOptions{
+				FallbackContentType: fallbackProtoMediaType,
+				EnableOpenMetrics2:  tt.enableOpenMetrics2,
+			})
 			tt.validateParser(t, p)
 			if tt.err == "" {
 				require.NoError(t, err)

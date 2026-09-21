@@ -443,7 +443,10 @@ foobar{quantile="0.99"} 150.1`
 		},
 	}
 
-	p, err := New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{ConvertClassicHistogramsToNHCB: true})
+	p, err := New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{
+		ConvertClassicHistogramsToNHCB: true,
+		OpenMetricsSkipSTSeries:        true,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	got := testParse(t, p)
@@ -514,6 +517,84 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 	require.NotNil(t, p)
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
+}
+
+func TestNHCBParser_DoesNotConvertSumOnlyHistogram(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		keepClassic bool
+		expected    []parsedEntry
+	}{
+		{
+			name: "drop classic histogram",
+			input: `# TYPE sum_only histogram
+sum_only_sum 123.5
+`,
+			expected: []parsedEntry{
+				{
+					m:   "sum_only",
+					typ: model.MetricTypeHistogram,
+				},
+			},
+		},
+		{
+			name: "keep classic histogram",
+			input: `# TYPE sum_only histogram
+sum_only_sum 123.5
+`,
+			keepClassic: true,
+			expected: []parsedEntry{
+				{
+					m:   "sum_only",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m:    "sum_only_sum",
+					v:    123.5,
+					lset: labels.FromStrings("__name__", "sum_only_sum"),
+				},
+			},
+		},
+		{
+			name: "convert histogram with count and sum",
+			input: `# TYPE bucketless histogram
+bucketless_sum 123.5
+bucketless_count 42
+`,
+			expected: []parsedEntry{
+				{
+					m:   "bucketless",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "bucketless",
+					shs: &histogram.Histogram{
+						Schema:          histogram.CustomBucketsSchema,
+						Count:           42,
+						Sum:             123.5,
+						PositiveSpans:   []histogram.Span{{Length: 1}},
+						PositiveBuckets: []int64{42},
+					},
+					lset: labels.FromStrings("__name__", "bucketless"),
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			p, err := New([]byte(test.input), "text/plain", labels.NewSymbolTable(), ParserOptions{
+				ConvertClassicHistogramsToNHCB:          true,
+				KeepClassicOnClassicAndNativeHistograms: test.keepClassic,
+			})
+			require.NoError(t, err)
+			require.NotNil(t, p)
+
+			got := testParse(t, p)
+			requireEntries(t, test.expected, got)
+		})
+	}
 }
 
 // Verify the requirement tables from
@@ -603,7 +684,11 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 		func() (string, parserFactory, []int, parserOptions) {
 			factory := func(keepClassic, nhcb bool) (Parser, error) {
 				input := createTestOpenMetricsHistogram()
-				return New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{KeepClassicOnClassicAndNativeHistograms: keepClassic, ConvertClassicHistogramsToNHCB: nhcb})
+				return New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{
+					KeepClassicOnClassicAndNativeHistograms: keepClassic,
+					ConvertClassicHistogramsToNHCB:          nhcb,
+					OpenMetricsSkipSTSeries:                 true,
+				})
 			}
 			return "OpenMetrics", factory, []int{1}, parserOptions{hasStartTimestamp: true}
 		},
@@ -956,7 +1041,10 @@ something_bucket{a="b",le="+Inf"} 9
 		},
 	}
 
-	p, err := New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{ConvertClassicHistogramsToNHCB: true})
+	p, err := New([]byte(input), "application/openmetrics-text", labels.NewSymbolTable(), ParserOptions{
+		ConvertClassicHistogramsToNHCB: true,
+		OpenMetricsSkipSTSeries:        true,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	got := testParse(t, p)
@@ -1087,7 +1175,10 @@ metric: <
 		},
 	}
 
-	p, err := New(buf.Bytes(), "application/vnd.google.protobuf", labels.NewSymbolTable(), ParserOptions{ConvertClassicHistogramsToNHCB: true})
+	p, err := New(buf.Bytes(), "application/vnd.google.protobuf", labels.NewSymbolTable(), ParserOptions{
+		ConvertClassicHistogramsToNHCB: true,
+		OpenMetricsSkipSTSeries:        true,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	got := testParse(t, p)

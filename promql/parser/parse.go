@@ -42,10 +42,8 @@ var parserPool = sync.Pool{
 
 // Options holds the configuration for the PromQL parser.
 type Options struct {
-	EnableExperimentalFunctions  bool
-	ExperimentalDurationExpr     bool
-	EnableExtendedRangeSelectors bool
-	EnableBinopFillModifiers     bool
+	EnableExperimentalFunctions bool
+	EnableBinopFillModifiers    bool
 }
 
 // Parser provides PromQL parsing methods. Create one with NewParser.
@@ -250,12 +248,10 @@ func (errs ParseErrors) Error() string {
 
 // EnrichParseError enriches a single or list of parse errors (used for unit tests and promtool).
 func EnrichParseError(err error, enrich func(parseErr *ParseErr)) {
-	var parseErr *ParseErr
-	if errors.As(err, &parseErr) {
+	if parseErr, ok := errors.AsType[*ParseErr](err); ok {
 		enrich(parseErr)
 	}
-	var parseErrors ParseErrors
-	if errors.As(err, &parseErrors) {
+	if parseErrors, ok := errors.AsType[ParseErrors](err); ok {
 		for i, e := range parseErrors {
 			enrich(&e)
 			parseErrors[i] = e
@@ -1076,10 +1072,6 @@ func (p *parser) addOffsetExpr(e Node, expr *DurationExpr) {
 }
 
 func (p *parser) setAnchored(e Node) {
-	if !p.options.EnableExtendedRangeSelectors {
-		p.addParseErrf(e.PositionRange(), "anchored modifier is experimental and not enabled")
-		return
-	}
 	switch s := e.(type) {
 	case *VectorSelector:
 		s.Anchored = true
@@ -1103,10 +1095,6 @@ func (p *parser) setAnchored(e Node) {
 }
 
 func (p *parser) setSmoothed(e Node) {
-	if !p.options.EnableExtendedRangeSelectors {
-		p.addParseErrf(e.PositionRange(), "smoothed modifier is experimental and not enabled")
-		return
-	}
 	switch s := e.(type) {
 	case *VectorSelector:
 		s.Smoothed = true
@@ -1208,9 +1196,20 @@ func durationLiteralOutOfRange(val float64) bool {
 	return val > 1<<63/1e9 || val < -(1<<63)/1e9
 }
 
-func (p *parser) experimentalDurationExpr(e Expr) {
-	if !p.options.ExperimentalDurationExpr {
-		p.addParseErrf(e.PositionRange(), "experimental duration expression is not enabled")
+// wrapParenDurationExpr marks a duration expression as parenthesised so
+// Expr.String() round-trips. A bare *NumberLiteral has no Wrapped flag, so it
+// is wrapped in a unary-plus *DurationExpr (see DurationExpr.writeTo).
+func (*parser) wrapParenDurationExpr(expr Expr, start, end posrange.Pos) Expr {
+	if de, ok := expr.(*DurationExpr); ok {
+		de.Wrapped = true
+		return de
+	}
+	return &DurationExpr{
+		Op:       ADD,
+		RHS:      expr,
+		Wrapped:  true,
+		StartPos: start,
+		EndPos:   end,
 	}
 }
 
@@ -1218,29 +1217,35 @@ func (p *parser) experimentalDurationExpr(e Expr) {
 // node, which may be a *DurationExpr or a *NumberLiteral. When wrapped is true
 // (parenthesised form), the Wrapped flag is set on *DurationExpr nodes.
 func (p *parser) applyUnaryOpToDurationExpr(op Item, expr Node, wrapped bool) Node {
-	switch e := expr.(type) {
+	e, ok := expr.(Expr)
+	if !ok {
+		p.addParseErrf(op.PositionRange(), "expected number literal or duration expression")
+		return &NumberLiteral{Val: 0}
+	}
+	if wrapped {
+		pr := e.PositionRange()
+		e = p.wrapParenDurationExpr(e, pr.Start, pr.End)
+	}
+	switch de := e.(type) {
 	case *DurationExpr:
-		if wrapped {
-			e.Wrapped = true
-		}
 		if op.Typ == SUB {
 			return &DurationExpr{
 				Op:       SUB,
-				RHS:      e,
+				RHS:      de,
 				StartPos: op.Pos,
 			}
 		}
-		return e
+		return de
 	case *NumberLiteral:
 		if op.Typ == SUB {
-			e.Val *= -1
+			de.Val *= -1
 		}
-		if durationLiteralOutOfRange(e.Val) {
+		if durationLiteralOutOfRange(de.Val) {
 			p.addParseErrf(op.PositionRange(), "duration out of range")
 			return &NumberLiteral{Val: 0}
 		}
-		e.PosRange.Start = op.Pos
-		return e
+		de.PosRange.Start = op.Pos
+		return de
 	default:
 		p.addParseErrf(op.PositionRange(), "expected number literal or duration expression")
 		return &NumberLiteral{Val: 0}

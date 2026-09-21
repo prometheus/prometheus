@@ -1711,9 +1711,9 @@ yydefault:
 			vs, ok := yyDollar[1].node.(*VectorSelector)
 			if !ok {
 				errMsg = "ranges only allowed for vector selectors"
-			} else if vs.OriginalOffset != 0 {
+			} else if vs.OriginalOffset != 0 || vs.OriginalOffsetExpr != nil {
 				errMsg = "no offset modifiers allowed before range"
-			} else if vs.Timestamp != nil {
+			} else if vs.Timestamp != nil || vs.StartOrEnd != 0 {
 				errMsg = "no @ modifiers allowed before range"
 			}
 
@@ -2360,7 +2360,6 @@ yydefault:
 				StartPos: yyDollar[1].item.PositionRange().Start,
 				EndPos:   yyDollar[3].item.PositionRange().End,
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 288:
@@ -2371,7 +2370,6 @@ yydefault:
 				StartPos: yyDollar[1].item.PositionRange().Start,
 				EndPos:   yyDollar[3].item.PositionRange().End,
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 289:
@@ -2386,7 +2384,6 @@ yydefault:
 				},
 				StartPos: yyDollar[1].item.Pos,
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 290:
@@ -2401,7 +2398,6 @@ yydefault:
 				},
 				StartPos: yyDollar[1].item.Pos,
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 291:
@@ -2414,7 +2410,6 @@ yydefault:
 				LHS:      yyDollar[3].node.(Expr),
 				RHS:      yyDollar[5].node.(Expr),
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 292:
@@ -2432,7 +2427,6 @@ yydefault:
 					RHS:      yyDollar[6].node.(Expr),
 				},
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 293:
@@ -2459,25 +2453,21 @@ yydefault:
 	case 299:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			yylex.(*parser).experimentalDurationExpr(yyDollar[1].node.(Expr))
 			yyVAL.node = &DurationExpr{Op: ADD, LHS: yyDollar[1].node.(Expr), RHS: yyDollar[3].node.(Expr)}
 		}
 	case 300:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			yylex.(*parser).experimentalDurationExpr(yyDollar[1].node.(Expr))
 			yyVAL.node = &DurationExpr{Op: SUB, LHS: yyDollar[1].node.(Expr), RHS: yyDollar[3].node.(Expr)}
 		}
 	case 301:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			yylex.(*parser).experimentalDurationExpr(yyDollar[1].node.(Expr))
 			yyVAL.node = &DurationExpr{Op: MUL, LHS: yyDollar[1].node.(Expr), RHS: yyDollar[3].node.(Expr)}
 		}
 	case 302:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			yylex.(*parser).experimentalDurationExpr(yyDollar[1].node.(Expr))
 			if nl, ok := yyDollar[3].node.(*NumberLiteral); ok && nl.Val == 0 {
 				yylex.(*parser).addParseErrf(yyDollar[2].item.PositionRange(), "division by zero")
 				yyVAL.node = &NumberLiteral{Val: 0}
@@ -2488,7 +2478,6 @@ yydefault:
 	case 303:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			yylex.(*parser).experimentalDurationExpr(yyDollar[1].node.(Expr))
 			if nl, ok := yyDollar[3].node.(*NumberLiteral); ok && nl.Val == 0 {
 				yylex.(*parser).addParseErrf(yyDollar[2].item.PositionRange(), "modulo by zero")
 				yyVAL.node = &NumberLiteral{Val: 0}
@@ -2499,7 +2488,6 @@ yydefault:
 	case 304:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			yylex.(*parser).experimentalDurationExpr(yyDollar[1].node.(Expr))
 			yyVAL.node = &DurationExpr{Op: POW, LHS: yyDollar[1].node.(Expr), RHS: yyDollar[3].node.(Expr)}
 		}
 	case 305:
@@ -2510,7 +2498,6 @@ yydefault:
 				StartPos: yyDollar[1].item.PositionRange().Start,
 				EndPos:   yyDollar[3].item.PositionRange().End,
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 306:
@@ -2521,7 +2508,6 @@ yydefault:
 				StartPos: yyDollar[1].item.PositionRange().Start,
 				EndPos:   yyDollar[3].item.PositionRange().End,
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 307:
@@ -2534,19 +2520,12 @@ yydefault:
 				LHS:      yyDollar[3].node.(Expr),
 				RHS:      yyDollar[5].node.(Expr),
 			}
-			yylex.(*parser).experimentalDurationExpr(de)
 			yyVAL.node = de
 		}
 	case 309:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			yylex.(*parser).experimentalDurationExpr(yyDollar[2].node.(Expr))
-			if durationExpr, ok := yyDollar[2].node.(*DurationExpr); ok {
-				durationExpr.Wrapped = true
-				yyVAL.node = durationExpr
-				break
-			}
-			yyVAL.node = yyDollar[2].node
+			yyVAL.node = yylex.(*parser).wrapParenDurationExpr(yyDollar[2].node.(Expr), yyDollar[1].item.PositionRange().Start, yyDollar[3].item.PositionRange().End)
 		}
 	}
 	goto yystack /* stack new state and value */

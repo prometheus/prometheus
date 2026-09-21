@@ -226,8 +226,8 @@ update-all-go-deps: update-go-deps
 .PHONY: update-go-deps-in-dir
 update-go-deps-in-dir:
 	@echo ">> updating Go dependencies in ./$(DIR)/"
+	# GOTOOLCHAIN prevents go get from pulling deps that require a newer Go version.
 	@cd ./$(DIR) && for m in $$($(GO) list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
-		# Prevent go get from pulling deps that require a newer Go version.
 		GOTOOLCHAIN=go$$($(GO) mod edit -json | jq -r .Go) $(GO) get $$m; \
 	done
 	@cd ./$(DIR) && $(GO) mod tidy

@@ -36,7 +36,8 @@ func newDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetric
 			prometheus.CounterOpts{
 				Name: "prometheus_sd_http_failures_total",
 				Help: "Number of HTTP service discovery refresh failures.",
-			}),
+			},
+		),
 	}
 
 	m.metricRegisterer = discovery.NewMetricRegisterer(reg, []prometheus.Collector{

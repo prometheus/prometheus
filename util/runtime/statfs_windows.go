@@ -51,7 +51,8 @@ func FsSize(path string) uint64 {
 		uintptr(unsafe.Pointer(utf16Path)),
 		uintptr(unsafe.Pointer(&avail)),
 		uintptr(unsafe.Pointer(&total)),
-		uintptr(unsafe.Pointer(&free)))
+		uintptr(unsafe.Pointer(&free)),
+	)
 
 	if ret == 0 || uint64(free) > uint64(total) {
 		return 0

@@ -41,6 +41,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	"go.yaml.in/yaml/v2"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/prometheus/prometheus/config"
@@ -223,6 +228,7 @@ type TSDBAdminStats interface {
 type QueryOpts interface {
 	EnablePerStepStats() bool
 	LookbackDelta() time.Duration
+	UseStartTimestamps() *bool
 }
 
 // API can register a set of endpoints in a router and handle
@@ -461,6 +467,7 @@ func (api *API) Register(r *route.Router) {
 	r.Post("/series", wrapAgent(api.series))
 
 	r.Get("/scrape_pools", wrap(api.scrapePools))
+	r.Get("/scrape_pools/config", wrap(api.scrapePoolConfig))
 	r.Get("/targets", wrap(api.targets))
 	r.Get("/targets/metadata", wrap(api.targetMetadata))
 	r.Get("/targets/relabel_steps", wrap(api.targetRelabelSteps))
@@ -523,6 +530,26 @@ func (*API) options(*http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
+func setQueryResultSpanAttributes(span trace.Span, qry promql.Query, value parser.Value) {
+	var resultSeries int
+	switch v := value.(type) {
+	case promql.Matrix:
+		resultSeries = v.Len()
+	case promql.Vector:
+		resultSeries = len(v)
+	}
+
+	var totalSamples int64
+	if s := qry.Stats(); s != nil && s.Samples != nil {
+		totalSamples = s.Samples.TotalSamples
+	}
+
+	span.SetAttributes(
+		attribute.Int("result_series", resultSeries),
+		attribute.Int64("total_samples", totalSamples),
+	)
+}
+
 func (api *API) query(r *http.Request) (result apiFuncResult) {
 	limit, err := parseLimitParam(r.FormValue("limit"))
 	if err != nil {
@@ -548,8 +575,19 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
+
+	ctx, span := otel.Tracer("").Start(ctx, "promqlInstantQuery")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("query", r.FormValue("query")),
+		attribute.String("timeout", r.FormValue("timeout")),
+		attribute.String("time", ts.Format(time.RFC3339Nano)),
+	)
+
 	qry, err := api.QueryEngine.NewInstantQuery(ctx, api.Queryable, opts, r.FormValue("query"), ts)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return invalidParamError(err, "query")
 	}
 
@@ -566,8 +604,11 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 
 	res := qry.Exec(ctx)
 	if res.Err != nil {
+		span.RecordError(res.Err)
+		span.SetStatus(codes.Error, res.Err.Error())
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
+	setQueryResultSpanAttributes(span, qry, res.Value)
 
 	warnings := res.Warnings
 	if limit > 0 {
@@ -624,7 +665,16 @@ func extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
 		duration = parsedDuration
 	}
 
-	return promql.NewPrometheusQueryOpts(r.FormValue("stats") == statsAll, duration), nil
+	var useStartTimestamps *bool
+	if val := r.Header.Get("X-Prometheus-Use-Start-Timestamps"); val != "" {
+		b, err := strconv.ParseBool(val)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing X-Prometheus-Use-Start-Timestamps header: %w", err)
+		}
+		useStartTimestamps = &b
+	}
+
+	return promql.NewPrometheusQueryOpts(r.FormValue("stats") == statsAll, duration, useStartTimestamps), nil
 }
 
 // Accepted values of the `stats` query parameter on /query and /query_range
@@ -706,8 +756,21 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
+
+	ctx, span := otel.Tracer("").Start(ctx, "promqlRangeQuery")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("query", r.FormValue("query")),
+		attribute.String("timeout", r.FormValue("timeout")),
+		attribute.String("start", start.Format(time.RFC3339Nano)),
+		attribute.String("end", end.Format(time.RFC3339Nano)),
+		attribute.Stringer("step", step),
+	)
+
 	qry, err := api.QueryEngine.NewRangeQuery(ctx, api.Queryable, opts, r.FormValue("query"), start, end, step)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return invalidParamError(err, "query")
 	}
 	// From now on, we must only return with a finalizer in the result (to
@@ -723,8 +786,11 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 
 	res := qry.Exec(ctx)
 	if res.Err != nil {
+		span.RecordError(res.Err)
+		span.SetStatus(codes.Error, res.Err.Error())
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
+	setQueryResultSpanAttributes(span, qry, res.Value)
 
 	warnings := res.Warnings
 	if limit > 0 {
@@ -1217,6 +1283,25 @@ func (api *API) scrapePools(r *http.Request) apiFuncResult {
 	sort.Strings(names)
 	res := &ScrapePoolsDiscovery{ScrapePools: names}
 	return apiFuncResult{data: res, err: nil, warnings: nil, finalizer: nil}
+}
+
+func (api *API) scrapePoolConfig(r *http.Request) apiFuncResult {
+	scrapePool := r.FormValue("scrapePool")
+	if scrapePool == "" {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no scrapePool parameter provided")}, nil, nil}
+	}
+
+	scrapeConfig, err := api.targetRetriever(r.Context()).ScrapePoolConfig(scrapePool)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error retrieving scrape config: %w", err)}, nil, nil}
+	}
+
+	configYAML, err := yaml.Marshal(scrapeConfig)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error marshaling scrape config: %w", err)}, nil, nil}
+	}
+
+	return apiFuncResult{&prometheusConfig{YAML: string(configYAML)}, nil, nil, nil}
 }
 
 func (api *API) targets(r *http.Request) apiFuncResult {
@@ -2331,7 +2416,8 @@ func parseTime(s string) (time.Time, error) {
 func parseDuration(s string) (time.Duration, error) {
 	if d, err := strconv.ParseFloat(s, 64); err == nil {
 		ts := d * float64(time.Second)
-		if ts > float64(math.MaxInt64) || ts < float64(math.MinInt64) {
+		// float64(math.MaxInt64) is 2^63, which int64 cannot hold, and NaN passes every comparison.
+		if math.IsNaN(ts) || ts >= float64(math.MaxInt64) || ts < float64(math.MinInt64) {
 			return 0, fmt.Errorf("cannot parse %q to a valid duration. It overflows int64", s)
 		}
 		return time.Duration(ts), nil

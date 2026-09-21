@@ -36,13 +36,15 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 				Namespace: namespace,
 				Name:      "sd_kuma_fetch_failures_total",
 				Help:      "The number of Kuma MADS fetch call failures.",
-			}),
+			},
+		),
 		fetchSkipUpdateCount: prometheus.NewCounter(
 			prometheus.CounterOpts{
 				Namespace: namespace,
 				Name:      "sd_kuma_fetch_skipped_updates_total",
 				Help:      "The number of Kuma MADS fetch calls that result in no updates to the targets.",
-			}),
+			},
+		),
 		fetchDuration: prometheus.NewSummary(
 			prometheus.SummaryOpts{
 				Namespace:  namespace,

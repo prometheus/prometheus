@@ -1,28 +1,26 @@
-import React, { useEffect, useState } from 'react';
-import { useSettings } from '../state/settingsSlice';
-import { NotificationsContext } from '../state/useNotifications';
-import { Notification, NotificationsResult } from "../api/responseTypes/notifications";
-import { useAPIQuery } from '../api/api';
-import { fetchEventSource } from '@microsoft/fetch-event-source';
+import React, { useEffect, useState } from "react";
+import { useSettings } from "../state/settingsSlice";
+import { NotificationsContext } from "../state/useNotifications";
+import {
+  Notification,
+  NotificationsResult,
+} from "../api/responseTypes/notifications";
+import { useAPIQuery } from "../api/api";
+import { fetchEventSource } from "@microsoft/fetch-event-source";
 
-export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const { pathPrefix } = useSettings();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isConnectionError, setIsConnectionError] = useState(false);
   const [shouldFetchFromAPI, setShouldFetchFromAPI] = useState(false);
 
   const { data, isError } = useAPIQuery<NotificationsResult>({
-    path: '/notifications',
+    path: "/notifications",
     enabled: shouldFetchFromAPI,
     refetchInterval: 10000,
   });
-
-  useEffect(() => {
-    if (data && data.data) {
-      setNotifications(data.data);
-    }
-    setIsConnectionError(isError);
-  }, [data, isError]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -39,14 +37,18 @@ export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({
           }
         } else {
           setIsConnectionError(true);
-          throw new Error(`Unexpected response: ${response.status} ${response.statusText}`);
+          throw new Error(
+            `Unexpected response: ${response.status} ${response.statusText}`,
+          );
         }
       },
       onmessage(event) {
         const notification: Notification = JSON.parse(event.data);
 
         setNotifications((prev: Notification[]) => {
-          const updatedNotifications = [...prev.filter((n: Notification) => n.text !== notification.text)];
+          const updatedNotifications = [
+            ...prev.filter((n: Notification) => n.text !== notification.text),
+          ];
 
           if (notification.active) {
             updatedNotifications.push(notification);
@@ -56,7 +58,7 @@ export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({
         });
       },
       onclose() {
-          throw new Error("Server closed the connection");
+        throw new Error("Server closed the connection");
       },
       onerror() {
         setIsConnectionError(true);
@@ -70,7 +72,14 @@ export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [pathPrefix]);
 
   return (
-    <NotificationsContext.Provider value={{ notifications, isConnectionError }}>
+    <NotificationsContext.Provider
+      value={{
+        notifications: shouldFetchFromAPI
+          ? (data?.data ?? notifications)
+          : notifications,
+        isConnectionError: shouldFetchFromAPI ? isError : isConnectionError,
+      }}
+    >
       {children}
     </NotificationsContext.Provider>
   );

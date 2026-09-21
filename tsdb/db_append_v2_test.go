@@ -7593,7 +7593,6 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 		MaxBlockDuration:          int64(time.Hour * 2 / time.Millisecond),
 		WALCompression:            compression.Snappy,
 		EnableSTStorage:           true,
-		XOR2EncodingAllowed:       true,
 		FloatChunkEncoding:        chunkenc.EncXOR2,
 		EnableHistogramSTEncoding: true,
 	}
@@ -7748,7 +7747,6 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 			opts := DefaultOptions()
 			opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 			opts.EnableSTStorage = true
-			opts.XOR2EncodingAllowed = true
 			opts.FloatChunkEncoding = chunkenc.EncXOR2
 			opts.EnableHistogramSTEncoding = true
 			db := newTestDB(t, withOpts(opts))

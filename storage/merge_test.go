@@ -2011,7 +2011,7 @@ func TestMergeQuerierSearch(t *testing.T) {
 		}
 		q2 := &mockQuerier{resp: []string{"should_be_ignored"}}
 		// Verify precondition: mockQuerier does not implement Searcher.
-		_, isSearcher := (Querier)(q2).(Searcher)
+		_, isSearcher := Querier(q2).(Searcher)
 		require.False(t, isSearcher)
 		merged := newMerged(q1, q2)
 		defer merged.Close()
@@ -2026,7 +2026,7 @@ func TestMergeQuerierSearch(t *testing.T) {
 		q1 := &mockQuerier{resp: []string{"a", "b"}}
 		q2 := &mockQuerier{resp: []string{"c", "d"}}
 		// Verify precondition.
-		_, isSearcher := (Querier)(q1).(Searcher)
+		_, isSearcher := Querier(q1).(Searcher)
 		require.False(t, isSearcher)
 		merged := newMerged(q1, q2)
 		defer merged.Close()

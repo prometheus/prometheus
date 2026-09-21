@@ -66,6 +66,9 @@ const defaultSearchLimit = 100
 // defaultSearchBatchSize is the default value for the batch_size parameter when the client omits it.
 const defaultSearchBatchSize = 100
 
+// maxSearchBatchSize bounds batch allocations even when the result limit is uncapped.
+const maxSearchBatchSize = 1000
+
 // maxSearchTermsPerRequest caps the number of search[] query parameters
 // accepted in one request. Per-value filter cost grows with the number of
 // terms (each term adds at least one substring filter, optionally a fuzzy
@@ -293,6 +296,7 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 		}
 		sp.batchSize = bs
 	}
+	sp.batchSize = min(sp.batchSize, sp.limit, maxSearchBatchSize)
 
 	return sp, nil
 }
@@ -461,7 +465,11 @@ func (s *searchResultStreamer[T]) nextBatch() ([]T, error) {
 	if s.hasMore {
 		return nil, nil
 	}
-	batch := make([]T, 0, s.batchSize)
+	capacity := s.batchSize
+	if s.limit > 0 {
+		capacity = min(capacity, s.limit-s.emitted)
+	}
+	batch := make([]T, 0, capacity)
 	for len(batch) < s.batchSize {
 		if s.limit > 0 && s.emitted >= s.limit {
 			if s.rs.Next() {
