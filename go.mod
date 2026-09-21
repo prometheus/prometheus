@@ -62,7 +62,7 @@ require (
 	github.com/ovh/go-ovh v1.9.0
 	github.com/pb33f/libopenapi v0.38.7
 	github.com/pb33f/libopenapi-validator v0.14.0
-	github.com/prometheus/alertmanager v0.34.0
+	github.com/prometheus/alertmanager v0.34.1
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_golang/exp v0.0.0-20260918131830-9bf26f79511f
 	github.com/prometheus/client_model v0.6.3
