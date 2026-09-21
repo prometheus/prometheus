@@ -5560,6 +5560,18 @@ func TestParsePartialASTPrintable(t *testing.T) {
 		{input: `unknown(a, b)`, want: `unknown(a, b)`},
 		{input: `a>b()`, want: `a > b()`},
 		{input: `unknown(1)[5m]`, want: `unknown(1)[5m]`},
+		// Aggregation with missing or too few arguments.
+		{input: `sum()`, want: `sum()`},
+		{input: `sum(`, want: `sum()`},
+		{input: `sum () by (test)`, want: `sum by (test) ()`},
+		{input: `sum(rate(`, want: `sum()`},
+		{input: `topk()`, want: `topk()`},
+		{input: `topk(some_metric)`, want: `topk(some_metric)`},
+		{input: `topk(some_metric,)`, want: `topk(some_metric)`},
+		{input: `topk(5, a, b)`},
+		{input: `quantile(0.5)`, want: `quantile(0.5)`},
+		{input: `count_values("x")`, want: `count_values("x")`},
+		{input: `sum()[5m]`, want: `sum()[5m]`},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
 			expr, err := NewParser(Options{}).ParseExpr(tc.input)
