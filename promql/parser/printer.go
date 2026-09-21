@@ -387,6 +387,11 @@ func (node *VectorSelector) String() string {
 		labelStrings = make([]string, 0, len(node.LabelMatchers)-1)
 	}
 	for _, matcher := range node.LabelMatchers {
+		// A partially-built AST from a failed parse, or a hand-constructed selector, may
+		// hold a nil matcher. Skip it so printing never panics.
+		if matcher == nil {
+			continue
+		}
 		// Only include the __name__ label if its equality matching and matches the name, but don't skip if it's an explicit empty name matcher.
 		if matcher.Name == labels.MetricName && matcher.Type == labels.MatchEqual && matcher.Value == node.Name && matcher.Value != "" {
 			continue

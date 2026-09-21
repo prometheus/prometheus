@@ -1862,7 +1862,10 @@ yydefault:
 	case 109:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			if yyDollar[1].matchers != nil {
+			// A nil matcher failed to build (invalid regexp or incomplete syntax)
+			// and its error is already recorded. Drop it so the partially-built
+			// AST never holds a nil matcher.
+			if yyDollar[1].matchers != nil && yyDollar[3].matcher != nil {
 				yyVAL.matchers = append(yyDollar[1].matchers, yyDollar[3].matcher)
 			} else {
 				yyVAL.matchers = yyDollar[1].matchers
@@ -1871,7 +1874,11 @@ yydefault:
 	case 110:
 		yyDollar = yyS[yypt-1 : yypt+1]
 		{
-			yyVAL.matchers = []*labels.Matcher{yyDollar[1].matcher}
+			if yyDollar[1].matcher != nil {
+				yyVAL.matchers = []*labels.Matcher{yyDollar[1].matcher}
+			} else {
+				yyVAL.matchers = []*labels.Matcher{}
+			}
 		}
 	case 111:
 		yyDollar = yyS[yypt-2 : yypt+1]
