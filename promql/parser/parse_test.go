@@ -5517,6 +5517,21 @@ func TestParseExpressions(t *testing.T) {
 					t.Errorf("mismatch (-want +got):\n%s\nErrors: %+v", diff, errorList)
 				}
 
+				// A failed parse may still return a partially-built AST. Callers that
+				// inspect or print it must not panic, so it must never hold a nil label
+				// matcher and must always be printable.
+				if expr != nil {
+					Inspect(expr, func(node Node, _ []Node) error {
+						if vs, ok := node.(*VectorSelector); ok {
+							for i, m := range vs.LabelMatchers {
+								require.NotNilf(t, m, "label matcher %d is nil for input '%s'", i, test.input)
+							}
+						}
+						return nil
+					})
+					require.NotPanics(t, func() { _ = expr.String() }, "String() panicked on partial AST for input '%s'", test.input)
+				}
+
 				for _, e := range errorList {
 					require.LessOrEqual(t, 0, e.PositionRange.Start, "parse error has negative position\nExpression '%s'\nError: %v", test.input, e)
 					require.LessOrEqual(t, e.PositionRange.Start, e.PositionRange.End, "parse error has negative length\nExpression '%s'\nError: %v", test.input, e)
@@ -5530,8 +5545,9 @@ func TestParseExpressions(t *testing.T) {
 // TestParsePartialASTPrintable checks that when parsing fails, the partially-built
 // AST returned alongside the error is still well-formed enough to inspect and print.
 // Tooling that stringifies queries relies on this and must not panic on a rejected
-// query. Each group below covers one way the parser used to leave a malformed node
-// behind. Where the printed form is meaningful, want pins it.
+// query. TestParseExpressions applies the same no-panic check to every failing case
+// in its table; this test groups the inputs by the way the parser used to leave a
+// malformed node behind and, where the printed form is meaningful, pins it with want.
 func TestParsePartialASTPrintable(t *testing.T) {
 	for _, tc := range []struct {
 		input string
