@@ -10971,6 +10971,105 @@ func TestInOrderBlocksMaxTime_ExcludesSelectedSeriesBlocks(t *testing.T) {
 	require.False(t, ok, "selected-series block must be excluded from inOrderBlocksMaxTime")
 }
 
+// TestDBOpen_MinValidTime pins down the max() in open() between the min valid time computed
+// from on-disk blocks (inOrderBlocksMaxTime) and the one persisted in the WAL's checkpoint
+// (wlog.ReadMinValidTime): whichever of the two is higher must win, a missing record must fall
+// back to the blocks-derived value, and a checkpoint that fails to read back must do the same
+// while logging a warning rather than failing Open.
+func TestDBOpen_MinValidTime(t *testing.T) {
+	// newDBDirWithBlock creates a fresh DB directory containing a single in-order block, and
+	// returns that block's actual on-disk maxt (rather than the mint/maxt passed to genSeries,
+	// which createBlock's compaction doesn't necessarily preserve verbatim).
+	newDBDirWithBlock := func(t *testing.T) (dir string, blockMaxTime int64) {
+		t.Helper()
+		dir = t.TempDir()
+		blockDir := createBlock(t, dir, genSeries(1, 1, 0, 5000))
+		meta, _, err := readMetaFile(blockDir)
+		require.NoError(t, err)
+		return dir, meta.MaxTime
+	}
+
+	// writeMinValidTimeCheckpoint writes a standalone checkpoint carrying mint as its
+	// persisted min valid time, into a WAL that open() will then pick up as db's own.
+	writeMinValidTimeCheckpoint := func(t *testing.T, dir string, mint int64) {
+		t.Helper()
+		w, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
+		require.NoError(t, err)
+		_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, mint, false, true)
+		require.NoError(t, err)
+		require.NoError(t, w.Close())
+	}
+
+	// corruptLastCheckpoint flips a byte in the checkpoint's first record, which is always the
+	// min valid time record written by writeMinValidTimeCheckpoint above, making
+	// wlog.ReadMinValidTime fail instead of returning ok == false.
+	corruptLastCheckpoint := func(t *testing.T, dir string) {
+		t.Helper()
+		cpDir, _, err := wlog.LastCheckpoint(filepath.Join(dir, "wal"))
+		require.NoError(t, err)
+		f, err := os.OpenFile(wlog.SegmentName(cpDir, 0), os.O_WRONLY, 0o666)
+		require.NoError(t, err)
+		_, err = f.WriteAt([]byte{42}, 1)
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+	}
+
+	const warnMsg = "Failed to read persisted min valid time"
+
+	for _, tc := range []struct {
+		name         string
+		setup        func(t *testing.T, dir string)
+		wantMinValid func(blockMaxTime int64) int64
+		wantWarn     bool
+	}{
+		{
+			name: "stored wins when higher than the blocks-derived value",
+			setup: func(t *testing.T, dir string) {
+				writeMinValidTimeCheckpoint(t, dir, 999999)
+			},
+			wantMinValid: func(int64) int64 { return 999999 },
+		},
+		{
+			name: "blocks win when higher than the stored value",
+			setup: func(t *testing.T, dir string) {
+				writeMinValidTimeCheckpoint(t, dir, 1)
+			},
+			wantMinValid: func(blockMaxTime int64) int64 { return blockMaxTime },
+		},
+		{
+			name:         "no record falls back to the blocks-derived value",
+			setup:        func(*testing.T, string) {},
+			wantMinValid: func(blockMaxTime int64) int64 { return blockMaxTime },
+		},
+		{
+			name: "corrupt checkpoint falls back to the blocks-derived value and warns",
+			setup: func(t *testing.T, dir string) {
+				writeMinValidTimeCheckpoint(t, dir, 999999)
+				corruptLastCheckpoint(t, dir)
+			},
+			wantMinValid: func(blockMaxTime int64) int64 { return blockMaxTime },
+			wantWarn:     true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, blockMaxTime := newDBDirWithBlock(t)
+			tc.setup(t, dir)
+
+			var logs bytes.Buffer
+			db, err := Open(dir, slog.New(slog.NewTextHandler(&logs, nil)), nil, DefaultOptions(), nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+			require.Equal(t, tc.wantMinValid(blockMaxTime), db.head.minValidTime.Load())
+			if tc.wantWarn {
+				require.Contains(t, logs.String(), warnMsg)
+			} else {
+				require.NotContains(t, logs.String(), warnMsg)
+			}
+		})
+	}
+}
+
 // TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart
 // verifies that a sample appended after the block write starts but
 // before eviction is not lost.
