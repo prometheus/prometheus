@@ -551,8 +551,8 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	}
 
 	// Preserve chunks that were already on disk at startup, including those
-	// attached through another WAL reference or a snapshot. Chunks written during
-	// this replay belong to the obsolete generation and must still be discarded.
+	// attached through another WAL reference. Chunks written during this replay
+	// belong to the obsolete generation and must still be discarded.
 	mmc = mergeReplayMmappedChunks(mSeries.mmappedChunks, mmc, lastMmapRef, false)
 	if mSeries.ooo != nil {
 		oooMmc = mergeReplayMmappedChunks(mSeries.ooo.oooMmappedChunks, oooMmc, lastMmapRef, true)

@@ -7470,6 +7470,34 @@ func TestStripeSeries_getOrSet(t *testing.T) {
 }
 
 func TestStripeSeries_gc(t *testing.T) {
+	t.Run("retains the oldest referenced file regardless of timestamp order", func(t *testing.T) {
+		lset := labels.FromStrings("a", "1")
+		series := newMemSeries(lset, 1, 0, defaultIsolationDisabled, false)
+		// File numbers occupy the upper 32 bits of the disk reference.
+		series.mmappedChunks = []*mmappedChunk{
+			{ref: chunks.ChunkDiskMapperRef(3 << 32), minTime: 0, maxTime: 50},
+			{ref: chunks.ChunkDiskMapperRef(1 << 32), minTime: 100, maxTime: 150},
+			{ref: chunks.ChunkDiskMapperRef(2 << 32), minTime: 200, maxTime: 250},
+		}
+		s := newStripeSeries(1, noopSeriesLifecycleCallback{})
+		_, created := s.setUnlessAlreadySet(lset.Hash(), lset, series)
+		require.True(t, created)
+
+		for _, tc := range []struct {
+			mint               int64
+			minFile, remaining int
+		}{
+			{mint: 0, minFile: 1, remaining: 3},
+			{mint: 51, minFile: 1, remaining: 2},
+			{mint: 151, minFile: 2, remaining: 1},
+			{mint: 251, minFile: math.MaxInt32, remaining: 0},
+		} {
+			_, _, _, _, _, _, _, _, minFile := s.gc(tc.mint, 0)
+			require.Equal(t, tc.minFile, minFile, "mint=%d", tc.mint)
+			require.Len(t, series.mmappedChunks, tc.remaining)
+		}
+	})
+
 	t.Run("marks collected series", func(t *testing.T) {
 		s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
 		hash := ms1.lset.Hash()
