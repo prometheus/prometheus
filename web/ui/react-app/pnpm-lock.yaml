@@ -102,8 +102,8 @@ importers:
         specifier: ^6.1.1
         version: 6.1.1(react@18.3.1)
       react-resize-detector:
-        specifier: ^7.1.2
-        version: 7.1.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        specifier: ^8.0.0
+        version: 8.1.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react-router-dom:
         specifier: ^7.0.0
         version: 7.18.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -5213,8 +5213,8 @@ packages:
     resolution: {integrity: sha512-F27qZr8uUqwhWZboondsPx8tnC3Ct3SxZA3V5WyEvujRyyNv0VYPhoBg1gZ8/MV5tubQp76Trw8lTv9hzRBa+A==}
     engines: {node: '>=0.10.0'}
 
-  react-resize-detector@7.1.2:
-    resolution: {integrity: sha512-zXnPJ2m8+6oq9Nn8zsep/orts9vQv3elrpA+R8XTcW7DVVUJ9vwDwMXaBtykAYjMnkCIaOoK9vObyR7ZgFNlOw==}
+  react-resize-detector@8.1.0:
+    resolution: {integrity: sha512-S7szxlaIuiy5UqLhLL1KY3aoyGHbZzsTpYal9eYMwCyKqoqoVLCmIgAgNyIM1FhnP2KyBygASJxdhejrzjMb+w==}
     peerDependencies:
       react: ^16.0.0 || ^17.0.0 || ^18.0.0
       react-dom: ^16.0.0 || ^17.0.0 || ^18.0.0
@@ -12358,7 +12358,7 @@ snapshots:
 
   react-refresh@0.11.0: {}
 
-  react-resize-detector@7.1.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+  react-resize-detector@8.1.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       lodash: 4.18.1
       react: 18.3.1
