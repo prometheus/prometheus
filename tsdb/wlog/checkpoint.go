@@ -150,11 +150,9 @@ func DeleteTempCheckpoints(logger *slog.Logger, dir string) error {
 // it with the original WAL.
 //
 // writeMinValidTime controls whether the checkpoint also carries a record of mint, readable
-// back with ReadMinValidTime. It is opt-in because a reader that doesn't know about that
-// record type may not tolerate it as gracefully as ordinary WAL replay does: unlike Head's
-// replay, the agent's treats any unrecognized record type as corruption, so writing this
-// record into an agent checkpoint risks data loss on a downgrade to an older agent. Callers
-// that don't consume ReadMinValidTime, such as the agent, should pass false.
+// back with ReadMinValidTime. It is opt-in because not every caller's own replay path
+// tolerates an unrecognized record type equally gracefully; callers that don't consume
+// ReadMinValidTime should pass false.
 func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64, enableSTStorage, writeMinValidTime bool) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
 	var sgmReader io.ReadCloser
