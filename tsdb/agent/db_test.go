@@ -1639,3 +1639,58 @@ func BenchmarkGetOrCreate(b *testing.B) {
 		}
 	})
 }
+
+func TestWALReplay_UnknownRecordType(t *testing.T) {
+	// A record type replay does not recognise must not cost us the records that
+	// follow it, so a WAL written by a newer Prometheus stays readable by an
+	// older one. Treating it as corruption instead makes Open repair the WAL,
+	// which discards everything from that record onwards, so the loss only
+	// shows up on the next startup.
+	dbDir := t.TempDir()
+	logger := promslog.NewNopLogger()
+
+	openDB := func(t *testing.T) *DB {
+		t.Helper()
+		rs := remote.NewStorage(logger, nil, startTime, dbDir, time.Second*30, nil, false)
+		t.Cleanup(func() {
+			require.NoError(t, rs.Close())
+		})
+		db, err := Open(logger, nil, rs, dbDir, DefaultOptions())
+		require.NoError(t, err)
+		return db
+	}
+
+	db := openDB(t)
+	app := db.Appender(context.Background())
+	_, err := app.Append(0, labels.FromStrings("job", "before"), 100, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.NoError(t, db.Close())
+
+	// An unrecognised record, then a real series and sample after it. The
+	// ordering is the point: with the unknown record last there would be
+	// nothing left for replay to lose.
+	w, err := wlog.New(logger, nil, filepath.Join(dbDir, "wal"), DefaultOptions().WALCompression)
+	require.NoError(t, err)
+
+	var enc record.Encoder
+	const afterRef = chunks.HeadSeriesRef(100)
+	require.NoError(t, w.Log([]byte{99}))
+	require.NoError(t, w.Log(
+		enc.Series([]record.RefSeries{{Ref: afterRef, Labels: labels.FromStrings("job", "after")}}, nil),
+		enc.Samples([]record.RefSample{{Ref: afterRef, T: 200, V: 2}}, nil),
+	))
+	require.NoError(t, w.Close())
+
+	// The first reopen is where the WAL would be repaired.
+	require.NoError(t, openDB(t).Close())
+
+	db = openDB(t)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	series := db.series.GetByID(afterRef)
+	require.NotNil(t, series, "series written after the unknown record should have survived replay")
+	require.Equal(t, int64(200), series.lastTs, "sample written after the unknown record should have survived replay")
+}
