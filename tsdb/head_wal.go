@@ -233,6 +233,8 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				}
 				decoded <- hists
 			case record.Metadata:
+				// Kept for replaying WAL segments written before the introduction of
+				// MetadataDefinition/SeriesMetadataRef, which superseded this per-series format.
 				meta := h.wlReplayMetadataPool.Get()[:0]
 				meta, err := dec.Metadata(r.Record(), meta)
 				if err != nil {
@@ -244,6 +246,30 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 					return
 				}
 				decoded <- meta
+			case record.MetadataDefinition:
+				defs := h.wlReplayMetadataDefsPool.Get()[:0]
+				defs, err = dec.MetadataDefinition(r.Record(), defs)
+				if err != nil {
+					decodeErr = &wlog.CorruptionErr{
+						Err:     fmt.Errorf("decode metadata definitions: %w", err),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- defs
+			case record.SeriesMetadataRef:
+				refs := h.wlReplaySeriesMetadataRefsPool.Get()[:0]
+				refs, err = dec.SeriesMetadataRef(r.Record(), refs)
+				if err != nil {
+					decodeErr = &wlog.CorruptionErr{
+						Err:     fmt.Errorf("decode series metadata refs: %w", err),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- refs
 			default:
 				// Noop.
 			}
@@ -455,6 +481,9 @@ Outer:
 			clear(v) // Zero out to avoid retaining histogram data.
 			h.wlReplayFloatHistogramsPool.Put(v[:0])
 		case []record.RefMetadata:
+			// Pre-MetadataDefinition/SeriesMetadataRef format; intern the content
+			// the same way the new format does, so replay ends up in the same
+			// in-memory state regardless of which format wrote the WAL.
 			for _, m := range v {
 				if r, ok := multiRef[m.Ref]; ok {
 					m.Ref = r
@@ -465,14 +494,42 @@ Outer:
 					missingSeries[m.Ref] = struct{}{}
 					continue
 				}
-				s.meta = &metadata.Metadata{
+				ref, _ := h.getOrCreateMetadataRef(metadata.Metadata{
 					Type: record.ToMetricType(m.Type),
 					Unit: m.Unit,
 					Help: m.Help,
-				}
+				})
+				s.metadataRef = ref
 			}
 			clear(v) // Zero out to avoid retaining metadata strings.
 			h.wlReplayMetadataPool.Put(v[:0])
+		case []record.RefMetadataDefinition:
+			for _, def := range v {
+				h.setMetadataRefDefinition(def.Ref, metadata.Metadata{
+					Type: record.ToMetricType(def.Type),
+					Unit: def.Unit,
+					Help: def.Help,
+				})
+				if record.MetadataRef(h.lastMetadataID.Load()) < def.Ref {
+					h.lastMetadataID.Store(uint64(def.Ref))
+				}
+			}
+			clear(v) // Zero out to avoid retaining metadata strings.
+			h.wlReplayMetadataDefsPool.Put(v[:0])
+		case []record.RefSeriesMetadataRef:
+			for _, m := range v {
+				if r, ok := multiRef[m.Ref]; ok {
+					m.Ref = r
+				}
+				s := h.series.getByID(m.Ref)
+				if s == nil {
+					unknownMetadataRefs.Inc()
+					missingSeries[m.Ref] = struct{}{}
+					continue
+				}
+				s.metadataRef = m.MetadataRef
+			}
+			h.wlReplaySeriesMetadataRefsPool.Put(v[:0])
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}

@@ -93,6 +93,7 @@ func (h *Head) appenderV2() *headAppenderV2 {
 			oooTimeWindow:         h.opts.OutOfOrderTimeWindow.Load(),
 			seriesRefs:            h.getRefSeriesBuffer(),
 			series:                h.getSeriesBuffer(),
+			metadataDefs:          h.getMetadataDefsBuffer(),
 			typesInBatch:          h.getTypeMap(),
 			appendID:              appendID,
 			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
@@ -209,19 +210,7 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		partialErr = a.appendExemplars(s, opts.Exemplars)
 	}
 	if a.head.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
-		s.Lock()
-		metaChanged := s.meta == nil || !s.meta.Equals(opts.Metadata)
-		s.Unlock()
-		if metaChanged {
-			b := a.getCurrentBatch(stNone, s.ref)
-			b.metadata = append(b.metadata, record.RefMetadata{
-				Ref:  s.ref,
-				Type: record.GetMetricType(opts.Metadata.Type),
-				Unit: opts.Metadata.Unit,
-				Help: opts.Metadata.Help,
-			})
-			b.metadataSeries = append(b.metadataSeries, s)
-		}
+		a.updateSeriesMetadata(s, opts.Metadata)
 	}
 	return storage.SeriesRef(s.ref), partialErr
 }

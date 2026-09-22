@@ -20,12 +20,14 @@ import (
 
 // BuffersPool offers pool of zero-ed record buffers.
 type BuffersPool struct {
-	series          zeropool.Pool[[]RefSeries]
-	samples         zeropool.Pool[[]RefSample]
-	exemplars       zeropool.Pool[[]RefExemplar]
-	histograms      zeropool.Pool[[]RefHistogramSample]
-	floatHistograms zeropool.Pool[[]RefFloatHistogramSample]
-	metadata        zeropool.Pool[[]RefMetadata]
+	series             zeropool.Pool[[]RefSeries]
+	samples            zeropool.Pool[[]RefSample]
+	exemplars          zeropool.Pool[[]RefExemplar]
+	histograms         zeropool.Pool[[]RefHistogramSample]
+	floatHistograms    zeropool.Pool[[]RefFloatHistogramSample]
+	metadata           zeropool.Pool[[]RefMetadata]
+	metadataDefs       zeropool.Pool[[]RefMetadataDefinition]
+	seriesMetadataRefs zeropool.Pool[[]RefSeriesMetadataRef]
 }
 
 // NewBuffersPool returns a new BuffersPool object.
@@ -112,4 +114,29 @@ func (p *BuffersPool) GetMetadata(capacity int) []RefMetadata {
 func (p *BuffersPool) PutMetadata(b []RefMetadata) {
 	clear(b)
 	p.metadata.Put(b[:0])
+}
+
+func (p *BuffersPool) GetMetadataDefinitions(capacity int) []RefMetadataDefinition {
+	b := p.metadataDefs.Get()
+	if b == nil {
+		return make([]RefMetadataDefinition, 0, capacity)
+	}
+	return b
+}
+
+func (p *BuffersPool) PutMetadataDefinitions(b []RefMetadataDefinition) {
+	clear(b)
+	p.metadataDefs.Put(b[:0])
+}
+
+func (p *BuffersPool) GetSeriesMetadataRefs(capacity int) []RefSeriesMetadataRef {
+	b := p.seriesMetadataRefs.Get()
+	if b == nil {
+		return make([]RefSeriesMetadataRef, 0, capacity)
+	}
+	return b
+}
+
+func (p *BuffersPool) PutSeriesMetadataRefs(b []RefSeriesMetadataRef) {
+	p.seriesMetadataRefs.Put(b[:0])
 }
