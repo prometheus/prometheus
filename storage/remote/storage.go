@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/logging"
 )
 
@@ -61,6 +62,9 @@ type Storage struct {
 	// For reads.
 	queryables             []storage.SampleAndChunkQueryable
 	localStartTimeCallback startTimeCallback
+	// floatEncoding is guarded by mtx. The queryables built by ApplyConfig read
+	// it through floatEncodingNow, so it may be set at any time.
+	floatEncoding storage.FloatEncodingFunc
 }
 
 var _ storage.Storage = &Storage{}
@@ -80,6 +84,30 @@ func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeC
 	}
 	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm, enableTypeAndUnitLabels)
 	return s
+}
+
+// SetFloatEncoding sets the encoding used for the float chunks encoded from the
+// samples read from the configured remote read endpoints, in chunk queries. See
+// storage.FloatEncodingFunc. It takes effect on the queries that follow,
+// including on queryables that ApplyConfig has already built.
+func (s *Storage) SetFloatEncoding(f storage.FloatEncodingFunc) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	s.floatEncoding = f
+}
+
+// floatEncodingNow returns the encoding the float chunks encoded from remote
+// read samples currently use. It is a storage.FloatEncodingFunc, so that the
+// read path follows SetFloatEncoding instead of capturing whichever getter was
+// set when ApplyConfig built it.
+func (s *Storage) floatEncodingNow() chunkenc.Encoding {
+	s.mtx.Lock()
+	f := s.floatEncoding
+	s.mtx.Unlock()
+	if f == nil {
+		return chunkenc.EncXOR
+	}
+	return f()
 }
 
 func (s *Storage) Notify() {
@@ -133,12 +161,13 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		if !rrConf.FilterExternalLabels {
 			externalLabels = labels.EmptyLabels()
 		}
-		queryables = append(queryables, NewSampleAndChunkQueryableClient(
+		queryables = append(queryables, NewSampleAndChunkQueryableClientWithOptions(
 			c,
 			externalLabels,
 			labelsToEqualityMatchers(rrConf.RequiredMatchers),
 			rrConf.ReadRecent,
 			s.localStartTimeCallback,
+			SampleAndChunkQueryableClientOptions{FloatEncoding: s.floatEncodingNow},
 		))
 	}
 	s.queryables = queryables
@@ -187,7 +216,7 @@ func (s *Storage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 		}
 		queriers = append(queriers, q)
 	}
-	return storage.NewMergeChunkQuerier(nil, queriers, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), nil
+	return storage.NewMergeChunkQuerier(nil, queriers, storage.NewCompactingChunkSeriesMergerWithFloatEncoding(storage.ChainedSeriesMerge, s.floatEncodingNow)), nil
 }
 
 // Appender implements storage.Storage.

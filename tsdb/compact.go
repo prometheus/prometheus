@@ -171,10 +171,10 @@ type LeveledCompactorOptions struct {
 	// MergeFunc is used for merging series together in vertical compaction. By default storage.NewCompactingChunkSeriesMergerWithFloatEncoding(storage.ChainedSeriesMerge, opts.FloatChunkEncoding) is used.
 	MergeFunc storage.VerticalChunkSeriesMergeFunc
 
-	// FloatChunkEncoding returns the encoding used for float chunks re-encoded during
-	// vertical (overlapping) compaction. Consulted at compaction time, so it may
-	// reflect runtime-reloaded configuration. Nil means EncXOR. Ignored when MergeFunc
-	// is set.
+	// FloatChunkEncoding returns the encoding used for float chunks re-encoded
+	// during vertical (overlapping) compaction. It is left as a plain func because
+	// storage.FloatEncodingFunc would reject a caller passing its own named func
+	// type; it carries the contract documented there. Ignored when MergeFunc is set.
 	FloatChunkEncoding func() chunkenc.Encoding
 
 	// BlockExcludeFilter is used to decide which blocks are excluded from compactions.

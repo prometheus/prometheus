@@ -31,6 +31,17 @@ type fanout struct {
 
 	primary     Storage
 	secondaries []Storage
+
+	// floatEncoding is consulted on every Iterator call of a merged series in
+	// the chunk querier.
+	floatEncoding FloatEncodingFunc
+}
+
+// FanoutOptions holds the optional settings of a fanout Storage.
+type FanoutOptions struct {
+	// FloatEncoding returns the encoding used for float chunks re-encoded while
+	// compacting overlaps in the chunk querier. See FloatEncodingFunc.
+	FloatEncoding FloatEncodingFunc
 }
 
 // NewFanout returns a new fanout Storage, which proxies reads and writes
@@ -43,10 +54,17 @@ type fanout struct {
 //
 // NOTE: In the case of Prometheus, it treats all remote storages as secondary / best effort.
 func NewFanout(logger *slog.Logger, primary Storage, secondaries ...Storage) Storage {
+	return NewFanoutWithOptions(logger, FanoutOptions{}, primary, secondaries...)
+}
+
+// NewFanoutWithOptions is like NewFanout, with additional options. The options
+// precede primary because of the variadic secondaries.
+func NewFanoutWithOptions(logger *slog.Logger, opts FanoutOptions, primary Storage, secondaries ...Storage) Storage {
 	return &fanout{
-		logger:      logger,
-		primary:     primary,
-		secondaries: secondaries,
+		logger:        logger,
+		primary:       primary,
+		secondaries:   secondaries,
+		floatEncoding: opts.FloatEncoding,
 	}
 }
 
@@ -120,7 +138,7 @@ func (f *fanout) ChunkQuerier(mint, maxt int64) (ChunkQuerier, error) {
 		}
 		secondaries = append(secondaries, querier)
 	}
-	return NewMergeChunkQuerier([]ChunkQuerier{primary}, secondaries, NewCompactingChunkSeriesMerger(ChainedSeriesMerge)), nil
+	return NewMergeChunkQuerier([]ChunkQuerier{primary}, secondaries, NewCompactingChunkSeriesMergerWithFloatEncoding(ChainedSeriesMerge, f.floatEncoding)), nil
 }
 
 func (f *fanout) Appender(ctx context.Context) Appender {
