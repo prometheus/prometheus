@@ -210,11 +210,23 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		// depending on whether any block on disk happens to reflect it: a block produced by
 		// CompactSelectedSeries or CompactStaleHead is deliberately excluded from that search,
 		// and a truncation whose range had nothing left to write never produces a block at all.
-		// mint is already the highest ever used by a checkpoint, since truncateWAL only calls
-		// Checkpoint with a strictly increasing mint, so there's no need to carry forward
-		// whatever the previous checkpoint recorded.
+		//
+		// mint by itself is only guaranteed to be the highest ever used within this process:
+		// the guard that makes truncateWAL's calls strictly increasing lives in memory
+		// (Head.lastWALTruncationTime) and resets on every restart, so a later checkpoint
+		// could otherwise persist a lower mint than an earlier one already did. Read back
+		// whatever the previous checkpoint recorded and keep the higher of the two, so the
+		// persisted value never regresses across restarts. This is also what makes it safe to
+		// unconditionally drop the previous checkpoint's own copy of this record further down:
+		// its value has already been folded into the one written here.
+		persistedMinValidTime := mint
+		if previous, ok, err := ReadMinValidTime(w.Dir()); err != nil {
+			return nil, fmt.Errorf("read previous min valid time: %w", err)
+		} else if ok && previous > persistedMinValidTime {
+			persistedMinValidTime = previous
+		}
 		var minValidTimeEnc record.Encoder
-		if err := cp.Log(minValidTimeEnc.MinValidTime(mint, nil)); err != nil {
+		if err := cp.Log(minValidTimeEnc.MinValidTime(persistedMinValidTime, nil)); err != nil {
 			return nil, fmt.Errorf("write min valid time record: %w", err)
 		}
 	}
@@ -433,8 +445,9 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			stats.TotalMetadata += len(metadata)
 			stats.DroppedMetadata += len(metadata) - repl
 		case record.MinValidTime:
-			// A copy carried over from the previous checkpoint, now superseded by the record
-			// this call already wrote above with the current, higher mint. Drop it.
+			// The previous checkpoint's own copy. Safe to drop unconditionally: its value was
+			// already read back and folded into the record written above, via max(mint, this
+			// same value), so nothing it could contribute is lost.
 			continue
 		default:
 			// Unknown record type, probably from a future Prometheus version.

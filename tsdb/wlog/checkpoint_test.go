@@ -174,6 +174,38 @@ func TestReadMinValidTime_ReflectsOnlyLatestCheckpoint(t *testing.T) {
 	require.Equal(t, 1, minValidTimeRecords, "a checkpoint must carry exactly one min valid time record")
 }
 
+// TestCheckpoint_MinValidTimeNeverRegressesAcrossRestarts covers the case a restart
+// introduces: the guard that makes truncateWAL's calls to Checkpoint use a strictly
+// increasing mint (Head.lastWALTruncationTime) lives only in memory and resets on every
+// restart, so a later checkpoint, in a later process, can legitimately be asked to persist a
+// mint lower than what an earlier checkpoint already recorded. The persisted value must
+// still never regress.
+func TestCheckpoint_MinValidTimeNeverRegressesAcrossRestarts(t *testing.T) {
+	dir := t.TempDir()
+	w, err := New(nil, nil, dir, compression.None)
+	require.NoError(t, err)
+	defer w.Close()
+
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 5000, false, true)
+	require.NoError(t, err)
+
+	mint, ok, err := ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, int64(5000), mint)
+
+	// A restart happened here: lastWALTruncationTime is gone, so this next checkpoint is free
+	// to use a mint lower than 5000 -- it's still a legitimate, real truncation point for the
+	// process it's running in now, just not the highest one ever seen.
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 1001, 2000, func(chunks.HeadSeriesRef) bool { return true }, 100, false, true)
+	require.NoError(t, err)
+
+	mint, ok, err = ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, int64(5000), mint, "the persisted min valid time must never regress, even across a restart")
+}
+
 func TestReadMinValidTime_OlderCheckpointWithoutRecord(t *testing.T) {
 	dir := t.TempDir()
 
