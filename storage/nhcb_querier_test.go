@@ -544,6 +544,25 @@ func TestNHCBAsClassicQuerier_WarningPropagation(t *testing.T) {
 		require.Equal(t, warn, ss.Warnings())
 	})
 
+	t.Run("classic set warnings propagate", func(t *testing.T) {
+		warn := annotations.New().Add(errors.New("classic warning"))
+		classicSeries := []Series{NewListSeries(
+			labels.FromStrings("__name__", "http_requests_bucket", "le", "1"),
+			[]chunks.Sample{fSample{t: 1, f: 5}},
+		)}
+		q := NewNHCBAsClassicQuerier(&nhcbSetQuerier{
+			classicSet: &mockSeriesSet{idx: -1, series: classicSeries, warnings: warn},
+			nhcbSet:    NewMockSeriesSet(),
+		})
+
+		ss := q.Select(context.Background(), false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
+		for ss.Next() {
+		}
+		require.NoError(t, ss.Err())
+		require.Equal(t, warn, ss.Warnings())
+	})
+
 	t.Run("non-histogram passthrough preserves warnings", func(t *testing.T) {
 		warn := annotations.New().Add(errors.New("passthrough warning"))
 		series := []Series{NewListSeries(labels.FromStrings("__name__", "my_gauge"), []chunks.Sample{fSample{t: 1, f: 1}})}

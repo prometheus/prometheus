@@ -112,7 +112,7 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 
 	seriesSets := make([]SeriesSet, 0, 2)
 	if len(classicSeries) > 0 {
-		seriesSets = append(seriesSets, &bufferedSeriesSet{series: classicSeries})
+		seriesSets = append(seriesSets, &bufferedSeriesSet{series: classicSeries, warnings: classicSet.Warnings()})
 	}
 	matchersWithoutLe := make([]*labels.Matcher, 0, len(matchers)-1)
 	var leMatcher *labels.Matcher
@@ -143,8 +143,9 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 
 // bufferedSeriesSet wraps a buffered list of series.
 type bufferedSeriesSet struct {
-	series []Series
-	idx    int
+	series   []Series
+	idx      int
+	warnings annotations.Annotations
 }
 
 func (b *bufferedSeriesSet) Next() bool {
@@ -166,8 +167,8 @@ func (*bufferedSeriesSet) Err() error {
 	return nil
 }
 
-func (*bufferedSeriesSet) Warnings() annotations.Annotations {
-	return nil
+func (b *bufferedSeriesSet) Warnings() annotations.Annotations {
+	return b.warnings
 }
 
 // histogramSuffix returns the classic histogram suffix (_bucket, _count, _sum)
