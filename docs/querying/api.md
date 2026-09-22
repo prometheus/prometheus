@@ -611,7 +611,8 @@ Common URL query parameters:
   may reduce the default; setting the flag to 0 disables that operator cap but
   does not make `limit=0` valid.
 - `batch_size=<number>`: Preferred number of results per NDJSON batch.
-  Optional. Default is 100. Clamped to 1000 and the effective result limit.
+  Optional and positive. Default is 100. Clamped to 1000 and the effective
+  result limit.
 
 The `start` and `end` parameters narrow results to the selected time window.
 Results may include values from series active slightly outside that window,

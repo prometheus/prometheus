@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -994,39 +995,110 @@ func TestInfoLabelSearchRoutes(t *testing.T) {
 	api.Register(router)
 
 	for _, tc := range []struct {
-		path     string
-		label    string
-		expected []map[string]string
+		path                string
+		label               string
+		expected            []map[string]string
+		expectedWithoutExpr []map[string]string
 	}{
 		{
-			path:     "/api/v1/search/info_labels",
-			expected: []map[string]string{{"name": "env"}, {"name": "version"}},
+			path:                "/api/v1/search/info_labels",
+			expected:            []map[string]string{{"name": "env"}, {"name": "version"}},
+			expectedWithoutExpr: []map[string]string{{"name": "env"}, {"name": "version"}, {"name": "zone"}},
 		},
 		{
-			path:     "/api/v1/search/info_label_values",
-			label:    "version",
-			expected: []map[string]string{{"value": "2.0"}},
+			path:                "/api/v1/search/info_label_values",
+			label:               "version",
+			expected:            []map[string]string{{"value": "2.0"}},
+			expectedWithoutExpr: []map[string]string{{"value": "2.0"}, {"value": "4.0"}},
 		},
 	} {
 		for _, method := range []string{http.MethodGet, http.MethodPost} {
-			t.Run(method+tc.path, func(t *testing.T) {
-				params := url.Values{
-					"expr":         {`up{job="api"}`},
-					"data_match[]": {`env="prod"`},
-					"sort_by":      {"alpha"},
+			for _, withExpr := range []bool{false, true} {
+				for _, oversizedBatch := range []bool{false, true} {
+					t.Run(fmt.Sprintf("%s/%s/expr=%t/oversized_batch=%t", strings.ToLower(method), strings.TrimPrefix(tc.path, "/api/v1/"), withExpr, oversizedBatch), func(t *testing.T) {
+						params := url.Values{
+							"data_match[]": {`env="prod"`},
+							"sort_by":      {"alpha"},
+						}
+						expected := tc.expectedWithoutExpr
+						if withExpr {
+							params.Set("expr", `up{job="api"}`)
+							expected = tc.expected
+						}
+						hasMore := false
+						if oversizedBatch {
+							params.Set("batch_size", strconv.Itoa(math.MaxInt))
+							params.Set("limit", "1")
+							hasMore = len(expected) > 1
+							expected = expected[:1]
+						}
+						if tc.label != "" {
+							params.Set("label", tc.label)
+						}
+						rec := httptest.NewRecorder()
+						router.ServeHTTP(rec, infoEndpointRequest(t, method, tc.path, params))
+						require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+						require.Equal(t, "application/x-ndjson; charset=utf-8", rec.Header().Get("Content-Type"))
+						records, trailer, errLine := parseInfoSearchNDJSON[map[string]string](t, rec.Body.String())
+						require.Nil(t, errLine)
+						require.Equal(t, expected, records)
+						require.Equal(t, &searchTrailer{Status: "success", HasMore: hasMore}, trailer)
+					})
 				}
-				if tc.label != "" {
-					params.Set("label", tc.label)
-				}
-				rec := httptest.NewRecorder()
-				router.ServeHTTP(rec, infoEndpointRequest(t, method, tc.path, params))
-				require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-				require.Equal(t, "application/x-ndjson; charset=utf-8", rec.Header().Get("Content-Type"))
-				records, trailer, errLine := parseInfoSearchNDJSON[map[string]string](t, rec.Body.String())
-				require.Nil(t, errLine)
-				require.Equal(t, tc.expected, records)
-				require.Equal(t, &searchTrailer{Status: "success"}, trailer)
-			})
+			}
+		}
+	}
+}
+
+func TestInfoLabelSearchBatching(t *testing.T) {
+	results := make([]storage.SearchResult, 1002)
+	for i := range results {
+		results[i].Value = fmt.Sprintf("value_%04d", i)
+	}
+	for _, tc := range []struct {
+		path  string
+		field string
+		label string
+	}{
+		{path: "/api/v1/search/info_labels", field: "name"},
+		{path: "/api/v1/search/info_label_values", field: "value", label: "version"},
+	} {
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			for _, limit := range []int{1001, 1002} {
+				t.Run(fmt.Sprintf("%s/%s/limit=%d", strings.ToLower(method), strings.TrimPrefix(tc.path, "/api/v1/"), limit), func(t *testing.T) {
+					api := minimalSearchAPI()
+					api.enableExperimentalFunctions = true
+					api.queryTimeout = time.Minute
+					api.Queryable = errorTestQueryable{q: fixedSearchQuerier{rs: storage.NewSearchResultSetFromSlice(results, nil)}}
+					router := route.New().WithPrefix("/api/v1")
+					api.Register(router)
+					params := url.Values{"batch_size": {"10000"}, "limit": {strconv.Itoa(limit)}}
+					if tc.label != "" {
+						params.Set("label", tc.label)
+					}
+					rec := httptest.NewRecorder()
+					router.ServeHTTP(rec, infoEndpointRequest(t, method, tc.path, params))
+					require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+					require.Equal(t, "application/x-ndjson; charset=utf-8", rec.Header().Get("Content-Type"))
+					lines := parseNDJSON(t, rec.Body.String())
+					require.Len(t, lines, 3)
+					var records []map[string]string
+					for i, size := range []int{1000, limit - 1000} {
+						var batch searchBatch[map[string]string]
+						require.NoError(t, json.Unmarshal(lines[i], &batch))
+						require.Len(t, batch.Results, size)
+						records = append(records, batch.Results...)
+					}
+					expected := make([]map[string]string, limit)
+					for i := range expected {
+						expected[i] = map[string]string{tc.field: results[i].Value}
+					}
+					require.Equal(t, expected, records)
+					var trailer searchTrailer
+					require.NoError(t, json.Unmarshal(lines[2], &trailer))
+					require.Equal(t, searchTrailer{Status: "success", HasMore: limit < len(results)}, trailer)
+				})
+			}
 		}
 	}
 }
