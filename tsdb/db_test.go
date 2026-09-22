@@ -11164,7 +11164,7 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 	require.Equal(t, expectedSamples, afterRestart, "all three samples must survive restart")
 }
 
-// TestCompactSelectedSeries_RestartReplaysOrphanedSampleAsUnknownSeriesRef checks that WAL
+// TestCompactSelectedSeries_RestartDoesNotReplayOrphanedSampleAsUnknownSeriesRef checks that WAL
 // replay, after a restart, does not report an unknown series reference for a sample left
 // behind by CompactSelectedSeries.
 //
@@ -11183,7 +11183,7 @@ func TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart(t *test
 //
 // After the DB is closed and reopened, the test asserts that WAL replay does not flag sel's
 // leftover sample as an unknown series reference.
-func TestCompactSelectedSeries_RestartReplaysOrphanedSampleAsUnknownSeriesRef(t *testing.T) {
+func TestCompactSelectedSeries_RestartDoesNotReplayOrphanedSampleAsUnknownSeriesRef(t *testing.T) {
 	const chunkRange = 1000
 	opts := DefaultOptions()
 	opts.MinBlockDuration = chunkRange
@@ -11225,19 +11225,28 @@ func TestCompactSelectedSeries_RestartReplaysOrphanedSampleAsUnknownSeriesRef(t 
 	require.Equal(t, int64(1200), keepUntil)
 
 	// forceCheckpointAt repeatedly retries truncateWAL with the given mint, resetting
-	// lastWALTruncationTime each time, until it actually produces a checkpoint. Each call
+	// lastWALTruncationTime each time, until it actually produces a new checkpoint. Each call
 	// rolls to a new WAL segment regardless, so once enough segments have accumulated, a
-	// checkpoint is produced immediately.
+	// checkpoint is produced immediately. The checkpoint index is captured before the loop and
+	// required to strictly increase: once a first checkpoint exists on disk, a bare
+	// LastCheckpoint success would otherwise keep finding that same old checkpoint on the very
+	// first iteration, regardless of whether this call produced a fresh one.
 	forceCheckpointAt := func(mint int64) {
 		t.Helper()
+		_, lastIdx, err := wlog.LastCheckpoint(db.head.wal.Dir())
+		if errors.Is(err, record.ErrNotFound) {
+			lastIdx = -1
+		} else {
+			require.NoError(t, err)
+		}
 		for range 10 {
 			db.head.lastWALTruncationTime.Store(0)
 			require.NoError(t, db.head.truncateWAL(mint))
-			if _, _, err := wlog.LastCheckpoint(db.head.wal.Dir()); err == nil {
+			if _, idx, err := wlog.LastCheckpoint(db.head.wal.Dir()); err == nil && idx > lastIdx {
 				return
 			}
 		}
-		t.Fatalf("no checkpoint produced for mint=%d", mint)
+		t.Fatalf("no new checkpoint produced for mint=%d", mint)
 	}
 	checkpointHasSelRecord := func() bool {
 		checkpointDir, _, err := wlog.LastCheckpoint(db.head.wal.Dir())
@@ -11272,11 +11281,11 @@ func TestCompactSelectedSeries_RestartReplaysOrphanedSampleAsUnknownSeriesRef(t 
 	t.Cleanup(func() { require.NoError(t, reopened.Close()) })
 
 	// minValidTime must reflect the real WAL truncation point, not just the maxt of blocks
-	// that happen to carry neither the FromSelectedSeries nor the FromStaleSeries hint. Today
-	// it does not: both blocks on disk are selected-series blocks, inOrderBlocksMaxTime finds
-	// no qualifying block, and minValidTime falls back to math.MinInt64. That lets replay walk
-	// straight into sel's leftover sample instead of skipping it as "before minValidTime",
-	// so replay looks up sel's series, does not find it, and logs an unknown series reference.
+	// that happen to carry neither the FromSelectedSeries nor the FromStaleSeries hint. Before
+	// this fix, it did not: both blocks on disk are selected-series blocks, inOrderBlocksMaxTime
+	// finds no qualifying block, and minValidTime fell back to math.MinInt64. That let replay
+	// walk straight into sel's leftover sample instead of skipping it as "before minValidTime",
+	// so replay looked up sel's series, did not find it, and logged an unknown series reference.
 	unknownSamples := prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("samples"))
 	require.Zero(t, unknownSamples,
 		"WAL replay must not report unknown series references for sel's leftover sample; its "+
