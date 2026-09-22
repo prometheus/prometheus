@@ -393,6 +393,47 @@ histogram_quantile(0.95, rate(request_duration_seconds_bucket[5m]))
 rate(request_duration_seconds[5m])
 ```
 
-This feature only affects PromQL query evaluation. It does not apply to remote write
-(NHCB series are not converted when being forwarded to remote endpoints) and does not
-affect the series API (the `/api/v1/series` endpoint will not return the converted classic series).
+## Classic histograms as NHCB in PromQL
+
+`--enable-feature=promql-classic-as-nhcb`
+
+The opposite direction of `promql-nhcb-as-classic`. When enabled, a PromQL query for a native
+histogram also selects the classic histogram series of the same metric (`_bucket`, `_count` and
+`_sum`) and folds them into Native Histograms with Custom Buckets (NHCB) at query time.
+
+For example, if `request_duration_seconds` is only stored as a classic histogram:
+
+```promql
+# Querying the base name returns an NHCB assembled from the classic series:
+histogram_quantile(0.95, rate(request_duration_seconds[5m]))
+
+# Querying a classic suffix still returns the stored classic series:
+rate(request_duration_seconds_bucket[5m])
+```
+
+The conversion is skipped when the selector contains a `le` matcher, because native histogram
+series never carry that label.
+
+A classic histogram that cannot be converted (e.g. non-cumulative bucket counts, or a `_count`
+that does not match the `+Inf` bucket) is skipped for the affected timestamps, and a warning
+annotation is attached to the query result.
+
+Both flags cannot be enabled at the same time, as each layer would convert the output of the
+other one back, duplicating every histogram series.
+
+### Common limitations
+
+Both features only affect PromQL query evaluation. They do not apply to remote write (series are
+not converted when being forwarded to remote endpoints) and do not affect the series API (the
+`/api/v1/series` endpoint will not return the converted series).
+
+The converted series are returned *in addition to* the stored ones, they are not merged. During a
+migration, where classic and native histograms are written for the same metric, this means:
+
+* If the classic and the native representation cover **disjoint** time ranges (e.g. the classic
+  histogram was dropped when the native one was enabled), instant queries work, and range
+  functions such as `rate()` succeed as long as no evaluation step sees samples of both
+  representations.
+* If they **overlap**, i.e. both representations have a sample for the same series at the same
+  timestamp, the query fails with `vector cannot contain metrics with the same labelset`. Use
+  `__name__` matchers, or stop writing one of the two representations, to avoid this.
