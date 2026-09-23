@@ -105,7 +105,6 @@ func (c *ECSSDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the ECS Config.
-// Region resolution is deferred to initEcsClient; see loadRegion.
 func (c *ECSSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultECSSDConfig
 	type plain ECSSDConfig
@@ -161,7 +160,7 @@ func NewECSDiscovery(conf *ECSSDConfig, opts discovery.DiscovererOptions) (*ECSD
 	return d, nil
 }
 
-func (d *ECSDiscovery) initEcsClient() error {
+func (d *ECSDiscovery) initECSClient() error {
 	if d.ecs != nil {
 		return nil
 	}
@@ -199,7 +198,7 @@ func (d *ECSDiscovery) initEcsClient() error {
 }
 
 func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	err := d.initEcsClient()
+	err := d.initECSClient()
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +229,7 @@ func (d *ECSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	for paginator.hasMorePages() {
 		resp, err := paginator.nextPage()
 		if err != nil {
-			return nil, fmt.Errorf("")
+			return nil, fmt.Errorf("refresh target groups, err: %w", err)
 		}
 		instances := resp.Body.Instances.Instance
 		for _, inst := range instances {
