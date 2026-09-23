@@ -164,7 +164,7 @@ region: cn-beijing
 endpoint: ecs.aliyuncs.com
 port: 9100
 tags:
-  - key: ack.aliyun.com
+  - key: ack.alibabacloud.com
     value: cd386715790e44917bxxxxxxxb7e782e2`,
 			validateFunc: func(t *testing.T, cfg *SDConfig) {
 				require.Equal(t, RoleECS, cfg.Role)
@@ -173,7 +173,7 @@ tags:
 				require.Equal(t, "ecs.aliyuncs.com", cfg.ECSSDConfig.Endpoint)
 				require.Equal(t, 9100, cfg.ECSSDConfig.Port)
 				require.Len(t, cfg.ECSSDConfig.Tags, 1)
-				require.Equal(t, "ack.aliyun.com", cfg.ECSSDConfig.Tags[0].Key)
+				require.Equal(t, "ack.alibabacloud.com", cfg.ECSSDConfig.Tags[0].Key)
 				require.Equal(t, "cd386715790e44917bxxxxxxxb7e782e2", cfg.ECSSDConfig.Tags[0].Value)
 			},
 		},

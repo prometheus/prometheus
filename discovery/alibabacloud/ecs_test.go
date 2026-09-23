@@ -47,7 +47,7 @@ func TestECSSDConfigUnmarshalYAML(t *testing.T) {
 endpoint: ecs.aliyuncs.com
 port: 9100
 tags:
-  - key: ack.aliyun.com
+  - key: ack.alibabacloud.com
     value: cd386715790e44917bxxxxxxxb7e782e2`,
 			validateFunc: func(t *testing.T, cfg *ECSSDConfig) {
 				require.NotNil(t, cfg)
@@ -55,7 +55,7 @@ tags:
 				require.Equal(t, "ecs.aliyuncs.com", cfg.Endpoint)
 				require.Equal(t, 9100, cfg.Port)
 				require.Len(t, cfg.Tags, 1)
-				require.Equal(t, "ack.aliyun.com", cfg.Tags[0].Key)
+				require.Equal(t, "ack.alibabacloud.com", cfg.Tags[0].Key)
 				require.Equal(t, "cd386715790e44917bxxxxxxxb7e782e2", cfg.Tags[0].Value)
 			},
 		},
@@ -360,7 +360,7 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 								TagValue: new("npaaexxxxxxxad4194aaa5f15c8f672216"),
 							},
 							{
-								TagKey:   new("ack.aliyun.com"),
+								TagKey:   new("ack.alibabacloud.com"),
 								TagValue: new("cd386xxxxxxx44917b65842f9b7e782e2"),
 							},
 						},
@@ -389,7 +389,7 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 							ecsLabelECSInstanceNetworkType: model.LabelValue("vpc"),
 							model.AddressLabel:             model.LabelValue("192.168.0.108:9100"),
 							ecsLabelTag + "ack_alibabacloud_com_nodepool_id": model.LabelValue("npaaexxxxxxxad4194aaa5f15c8f672216"),
-							ecsLabelTag + "ack_aliyun_com":                   model.LabelValue("cd386xxxxxxx44917b65842f9b7e782e2"),
+							ecsLabelTag + "ack_alibabacloud_com":             model.LabelValue("cd386xxxxxxx44917b65842f9b7e782e2"),
 						},
 					},
 				},
