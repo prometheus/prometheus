@@ -363,7 +363,7 @@ func (p *openMetrics2Parser) Next() (Entry, error) {
 			} else {
 				p.text = []byte{}
 			}
-			if bytes.IndexByte(p.text, '\r') >= 0 {
+			if len(p.text) > 0 && p.text[len(p.text)-1] == '\r' {
 				return EntryInvalid, fmt.Errorf("unexpected carriage return in %s: %q", t.String(), p.text)
 			}
 		default:

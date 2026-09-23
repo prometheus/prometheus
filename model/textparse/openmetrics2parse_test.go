@@ -1897,3 +1897,21 @@ func TestOpenMetrics2ParseSpecValidationErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenMetrics2ParseCarriageReturnInHelp(t *testing.T) {
+	input := "# HELP foo first\rsecond\nfoo 1\n# EOF\n"
+	p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
+	got := testParse(t, p)
+	exp := []parsedEntry{
+		{
+			m:    "foo",
+			help: "first\rsecond",
+		},
+		{
+			m:    "foo",
+			v:    1,
+			lset: labels.FromStrings("__name__", "foo"),
+		},
+	}
+	requireEntries(t, exp, got)
+}
