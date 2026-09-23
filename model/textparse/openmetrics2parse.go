@@ -147,6 +147,15 @@ type OpenMetrics2Parser struct {
 	// allocating one identity per entry.
 	seriesBuf []byte
 
+	// compositeOffsets stores trimmed byte offsets [k1Start, k1End, v1Start,
+	// v1End, ...] into the raw composite value slice, reused across composite
+	// parses to avoid map and string allocations.
+	compositeOffsets []int
+
+	// extraLabels holds the non-__name__ labels for the current composite line,
+	// reused across composite parses.
+	extraLabels []labels.Label
+
 	enableTypeAndUnitLabels bool
 
 	// When true, a composite histogram that exposes both native fields and a
@@ -743,92 +752,231 @@ func (p *OpenMetrics2Parser) parseCompositeValue(raw []byte) (Entry, error) {
 	}
 }
 
-// kvMap parses "{k:v,...}" into a string map.  Values are returned verbatim
-// (not unquoted).  Nested brackets in values are supported.
-func kvMap(raw []byte) (map[string]string, error) {
+// parseCompositeOffsets parses "{k:v,...}" by recording trimmed key and value
+// byte offsets [k1Start, k1End, v1Start, v1End, ...] into raw in
+// p.compositeOffsets. Nested brackets in values are supported.
+func (p *OpenMetrics2Parser) parseCompositeOffsets(raw []byte) error {
 	if len(raw) < 2 || raw[0] != '{' || raw[len(raw)-1] != '}' {
-		return nil, fmt.Errorf("composite value must be wrapped in {}: %q", raw)
+		return fmt.Errorf("composite value must be wrapped in {}: %q", raw)
 	}
-	inner := raw[1 : len(raw)-1]
-	m := map[string]string{}
-	for part := range splitCompositeFields(inner) {
-		part = bytes.TrimSpace(part)
-		if len(part) == 0 {
+	p.compositeOffsets = p.compositeOffsets[:0]
+	end := len(raw) - 1
+	depth := 0
+	fieldStart := 1
+	for i := 1; i <= end; i++ {
+		if i < end {
+			switch raw[i] {
+			case '[', '(':
+				depth++
+				continue
+			case ']', ')':
+				depth--
+				continue
+			case ',':
+				if depth != 0 {
+					continue
+				}
+			default:
+				continue
+			}
+		}
+		fStart, fEnd := trimSpaceOffsets(raw, fieldStart, i)
+		fieldStart = i + 1
+		if fStart == fEnd {
 			continue
 		}
-		before, after, ok := bytes.Cut(part, []byte{':'})
-		if !ok {
-			return nil, fmt.Errorf("invalid composite field (missing ':'): %q", part)
+		colonIdx := bytes.IndexByte(raw[fStart:fEnd], ':')
+		if colonIdx < 0 {
+			return fmt.Errorf("invalid composite field (missing ':'): %q", raw[fStart:fEnd])
 		}
-		k := string(bytes.TrimSpace(before))
-		v := string(bytes.TrimSpace(after))
-		if _, dup := m[k]; dup {
-			return nil, fmt.Errorf("duplicate composite field %q: %q", k, raw)
-		}
-		m[k] = v
-	}
-	return m, nil
-}
-
-// histogramCompositeFields are the field names recognized in a Histogram or
-// GaugeHistogram composite value, across both the classic-bucket and native
-// qq representations.
-var histogramCompositeFields = map[string]struct{}{
-	"count": {}, "sum": {}, "gcount": {}, "gsum": {}, "bucket": {},
-	"schema": {}, "zero_threshold": {}, "zero_count": {},
-	"positive_spans": {}, "positive_buckets": {},
-	"negative_spans": {}, "negative_buckets": {},
-}
-
-// summaryCompositeFields are the field names recognised in a Summary
-// composite value.
-var summaryCompositeFields = map[string]struct{}{
-	"count": {}, "sum": {}, "quantile": {},
-}
-
-// validateCompositeFields rejects any key in kv not present in allowed —
-// the ABNF for composite values is a closed grammar with no unknown fields,
-// so an unrecognised key (e.g. a typo) must be rejected rather than silently
-// ignored.
-func validateCompositeFields(kv map[string]string, allowed map[string]struct{}, raw []byte) error {
-	for k := range kv {
-		if _, ok := allowed[k]; !ok {
-			return fmt.Errorf("unknown composite field %q: %q", k, raw)
-		}
+		colonIdx += fStart
+		kStart, kEnd := trimSpaceOffsets(raw, fStart, colonIdx)
+		vStart, vEnd := trimSpaceOffsets(raw, colonIdx+1, fEnd)
+		p.compositeOffsets = append(p.compositeOffsets, kStart, kEnd, vStart, vEnd)
 	}
 	return nil
 }
 
-// splitCompositeFields yields each top-level field of b (split at commas not
-// inside brackets) as a sub-slice of b.
-func splitCompositeFields(b []byte) iter.Seq[[]byte] {
-	return func(yield func([]byte) bool) {
-		depth := 0
-		start := 0
-		for i, ch := range b {
-			switch ch {
-			case '[', '(':
-				depth++
-			case ']', ')':
-				depth--
-			case ',':
-				if depth == 0 {
-					if !yield(b[start:i]) {
-						return
-					}
-					start = i + 1
-				}
-			}
-		}
-		yield(b[start:])
+func trimSpaceOffsets(b []byte, start, end int) (int, int) {
+	for start < end && isASCIIOrUTF8Space(b[start]) {
+		start++
 	}
+	for end > start && isASCIIOrUTF8Space(b[end-1]) {
+		end--
+	}
+	return start, end
+}
+
+func isASCIIOrUTF8Space(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f'
+}
+
+// Composite field indices.
+const (
+	compFieldCount = iota
+	compFieldGCount
+	compFieldSum
+	compFieldGSum
+	compFieldSchema
+	compFieldZeroThreshold
+	compFieldZeroCount
+	compFieldNegativeSpans
+	compFieldNegativeBuckets
+	compFieldPositiveSpans
+	compFieldPositiveBuckets
+	compFieldBucket
+	compFieldQuantile
+	numCompFields
+)
+
+const (
+	histogramAllowedMask = (1 << compFieldCount) | (1 << compFieldGCount) |
+		(1 << compFieldSum) | (1 << compFieldGSum) |
+		(1 << compFieldSchema) | (1 << compFieldZeroThreshold) | (1 << compFieldZeroCount) |
+		(1 << compFieldNegativeSpans) | (1 << compFieldNegativeBuckets) |
+		(1 << compFieldPositiveSpans) | (1 << compFieldPositiveBuckets) |
+		(1 << compFieldBucket)
+
+	summaryAllowedMask = (1 << compFieldCount) | (1 << compFieldSum) | (1 << compFieldQuantile)
+)
+
+type compositeFields struct {
+	fields [numCompFields][]byte
+	seen   uint16
+}
+
+func (cf *compositeFields) has(field int) bool {
+	return cf.seen&(1<<field) != 0
+}
+
+func (cf *compositeFields) get(field int) ([]byte, bool) {
+	return cf.fields[field], cf.has(field)
+}
+
+func compositeFieldIndex(k []byte) int {
+	switch {
+	case bytes.Equal(k, []byte("count")):
+		return compFieldCount
+	case bytes.Equal(k, []byte("gcount")):
+		return compFieldGCount
+	case bytes.Equal(k, []byte("sum")):
+		return compFieldSum
+	case bytes.Equal(k, []byte("gsum")):
+		return compFieldGSum
+	case bytes.Equal(k, []byte("schema")):
+		return compFieldSchema
+	case bytes.Equal(k, []byte("zero_threshold")):
+		return compFieldZeroThreshold
+	case bytes.Equal(k, []byte("zero_count")):
+		return compFieldZeroCount
+	case bytes.Equal(k, []byte("negative_spans")):
+		return compFieldNegativeSpans
+	case bytes.Equal(k, []byte("negative_buckets")):
+		return compFieldNegativeBuckets
+	case bytes.Equal(k, []byte("positive_spans")):
+		return compFieldPositiveSpans
+	case bytes.Equal(k, []byte("positive_buckets")):
+		return compFieldPositiveBuckets
+	case bytes.Equal(k, []byte("bucket")):
+		return compFieldBucket
+	case bytes.Equal(k, []byte("quantile")):
+		return compFieldQuantile
+	default:
+		return -1
+	}
+}
+
+func (p *OpenMetrics2Parser) parseCompositeFields(raw []byte, allowedMask uint16) (compositeFields, error) {
+	var cf compositeFields
+	if err := p.parseCompositeOffsets(raw); err != nil {
+		return cf, err
+	}
+	for i := 0; i < len(p.compositeOffsets); i += 4 {
+		k := raw[p.compositeOffsets[i]:p.compositeOffsets[i+1]]
+		v := raw[p.compositeOffsets[i+2]:p.compositeOffsets[i+3]]
+		idx := compositeFieldIndex(k)
+		if idx < 0 || allowedMask&(1<<idx) == 0 {
+			return cf, fmt.Errorf("unknown composite field %q: %q", k, raw)
+		}
+		if cf.has(idx) {
+			return cf, fmt.Errorf("duplicate composite field %q: %q", k, raw)
+		}
+		cf.seen |= 1 << idx
+		cf.fields[idx] = v
+	}
+	return cf, nil
+}
+
+func (p *OpenMetrics2Parser) parseHistogramFields(raw []byte, isGauge bool) (compositeFields, error) {
+	cf, err := p.parseCompositeFields(raw, histogramAllowedMask)
+	if err != nil {
+		return cf, err
+	}
+
+	countField, sumField := compFieldCount, compFieldSum
+	countKey, sumKey := "count", "sum"
+	if isGauge {
+		countField, sumField = compFieldGCount, compFieldGSum
+		countKey, sumKey = "gcount", "gsum"
+	}
+	if !cf.has(countField) {
+		return cf, fmt.Errorf("missing required field: %s", countKey)
+	}
+	if !cf.has(sumField) {
+		return cf, fmt.Errorf("missing required field: %s", sumKey)
+	}
+	if !isGauge {
+		if cf.has(compFieldGCount) {
+			return cf, fmt.Errorf("unknown composite field %q: %q", "gcount", raw)
+		}
+		if cf.has(compFieldGSum) {
+			return cf, fmt.Errorf("unknown composite field %q: %q", "gsum", raw)
+		}
+	} else {
+		if cf.has(compFieldCount) {
+			return cf, fmt.Errorf("unknown composite field %q: %q", "count", raw)
+		}
+		if cf.has(compFieldSum) {
+			return cf, fmt.Errorf("unknown composite field %q: %q", "sum", raw)
+		}
+	}
+
+	if cf.has(compFieldSchema) {
+		if !cf.has(compFieldZeroThreshold) {
+			return cf, errors.New("missing required field: zero_threshold")
+		}
+		if !cf.has(compFieldZeroCount) {
+			return cf, errors.New("missing required field: zero_count")
+		}
+	} else if !cf.has(compFieldBucket) {
+		return cf, errors.New("missing required field: bucket")
+	}
+
+	return cf, nil
+}
+
+func (p *OpenMetrics2Parser) parseSummaryFields(raw []byte) (compositeFields, error) {
+	cf, err := p.parseCompositeFields(raw, summaryAllowedMask)
+	if err != nil {
+		return cf, err
+	}
+	if !cf.has(compFieldCount) {
+		return cf, errors.New("missing required field: count")
+	}
+	if !cf.has(compFieldSum) {
+		return cf, errors.New("missing required field: sum")
+	}
+	if !cf.has(compFieldQuantile) {
+		return cf, errors.New("missing required field: quantile")
+	}
+	return cf, nil
 }
 
 // parseHistogramComposite parses a composite histogram value such as:
 //
 //	{count:12,sum:5.5,schema:0,zero_threshold:0.001,zero_count:2,
-//	 positive_spans:[0:3,2:1],positive_buckets:[1,1,-1,2],
-//	 negative_spans:[],negative_buckets:[]}
+//	 negative_spans:[],negative_buckets:[],
+//	 positive_spans:[0:3,2:1],positive_buckets:[1,2,1,3]}
 //
 // or a classic histogram:
 //
@@ -837,20 +985,18 @@ func splitCompositeFields(b []byte) iter.Seq[[]byte] {
 // When native buckets are present it returns EntryHistogram.  Otherwise it
 // populates the pending queue and returns EntrySeries for the first entry.
 func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) {
-	kv, err := kvMap(raw)
+	isGauge := p.mtype == model.MetricTypeGaugeHistogram
+	cf, err := p.parseHistogramFields(raw, isGauge)
 	if err != nil {
-		return EntryInvalid, err
-	}
-	if err := validateCompositeFields(kv, histogramCompositeFields, raw); err != nil {
 		return EntryInvalid, err
 	}
 
 	// schema is mandatory for native histograms and absent from classic
 	// ones, so its presence is the sole reliable signal.
-	_, isNative := kv["schema"]
+	isNative := cf.has(compFieldSchema)
 
 	if isNative {
-		h, fh, err := buildNativeHistogram(kv, p.mtype == model.MetricTypeGaugeHistogram)
+		h, fh, err := buildNativeHistogram(cf, isGauge)
 		if err != nil {
 			return EntryInvalid, fmt.Errorf("error parsing native histogram composite: %w", err)
 		}
@@ -859,8 +1005,8 @@ func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 		// When the composite also carries a classic bucket list and the
 		// caller asked to keep it, queue the classic flat series so that
 		// subsequent Next() calls drain them after the EntryHistogram.
-		if _, hasBucket := kv["bucket"]; hasBucket && p.keepClassicOnNativeHist {
-			pending, err := p.buildClassicHistogramPending(kv, p.hasTS, p.ts)
+		if cf.has(compFieldBucket) && p.keepClassicOnNativeHist {
+			pending, err := p.buildClassicHistogramPending(cf, p.hasTS, p.ts)
 			if err != nil {
 				return EntryInvalid, fmt.Errorf("error parsing classic histogram composite: %w", err)
 			}
@@ -871,7 +1017,7 @@ func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 	}
 
 	// Classic histogram: explode into flat pending entries.
-	pending, err := p.buildClassicHistogramPending(kv, p.hasTS, p.ts)
+	pending, err := p.buildClassicHistogramPending(cf, p.hasTS, p.ts)
 	if err != nil {
 		return EntryInvalid, fmt.Errorf("error parsing classic histogram composite: %w", err)
 	}
@@ -882,15 +1028,12 @@ func (p *OpenMetrics2Parser) parseHistogramComposite(raw []byte) (Entry, error) 
 //
 //	{count:12,sum:5.5,quantile:[0.5:1.0,0.9:2.0,0.99:3.0]}
 func (p *OpenMetrics2Parser) parseSummaryComposite(raw []byte) (Entry, error) {
-	kv, err := kvMap(raw)
+	cf, err := p.parseSummaryFields(raw)
 	if err != nil {
 		return EntryInvalid, err
 	}
-	if err := validateCompositeFields(kv, summaryCompositeFields, raw); err != nil {
-		return EntryInvalid, err
-	}
 
-	pending, err := p.buildSummaryPending(kv, p.hasTS, p.ts)
+	pending, err := p.buildSummaryPending(cf, p.hasTS, p.ts)
 	if err != nil {
 		return EntryInvalid, fmt.Errorf("error parsing summary composite: %w", err)
 	}
@@ -907,27 +1050,27 @@ func (p *OpenMetrics2Parser) servePending(pending []pendingEntry) (Entry, error)
 	return EntrySeries, nil
 }
 
-func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histogram, *histogram.FloatHistogram, error) {
-	getFloat := func(key string) (float64, bool, error) {
-		v, ok := kv[key]
+func buildNativeHistogram(cf compositeFields, isGauge bool) (*histogram.Histogram, *histogram.FloatHistogram, error) {
+	getFloat := func(field int) (float64, bool, error) {
+		v, ok := cf.get(field)
 		if !ok {
 			return 0, false, nil
 		}
-		f, err := strconv.ParseFloat(v, 64)
+		f, err := strconv.ParseFloat(yoloString(v), 64)
 		return f, true, err
 	}
-	getInt := func(key string) (int64, bool, error) {
-		v, ok := kv[key]
+	getInt := func(field int) (int64, bool, error) {
+		v, ok := cf.get(field)
 		if !ok {
 			return 0, false, nil
 		}
-		n, err := strconv.ParseInt(v, 10, 64)
+		n, err := strconv.ParseInt(yoloString(v), 10, 64)
 		return n, true, err
 	}
 
 	// schema is guaranteed present: the caller only reaches buildNativeHistogram
-	// when kv["schema"] exists.
-	schema64, _, err := getInt("schema")
+	// when compFieldSchema exists.
+	schema64, _, err := getInt(compFieldSchema)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid schema: %w", err)
 	}
@@ -937,11 +1080,13 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 		return nil, nil, fmt.Errorf("schema must be between -4 and 8, got %d", schema64)
 	}
 
+	countField, sumField := compFieldCount, compFieldSum
 	countKey, sumKey := "count", "sum"
 	if isGauge {
+		countField, sumField = compFieldGCount, compFieldGSum
 		countKey, sumKey = "gcount", "gsum"
 	}
-	count, ok, err := getFloat(countKey)
+	count, ok, err := getFloat(countField)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid %s: %w", countKey, err)
 	}
@@ -958,14 +1103,14 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 	if count < 0 {
 		return nil, nil, fmt.Errorf("%s must not be negative, got %v", countKey, count)
 	}
-	sum, ok, err := getFloat(sumKey)
+	sum, ok, err := getFloat(sumField)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid %s: %w", sumKey, err)
 	}
 	if !ok {
 		return nil, nil, fmt.Errorf("missing required field: %s", sumKey)
 	}
-	zeroThreshold, ok, err := getFloat("zero_threshold")
+	zeroThreshold, ok, err := getFloat(compFieldZeroThreshold)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid zero_threshold: %w", err)
 	}
@@ -976,7 +1121,7 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 	if math.IsNaN(zeroThreshold) || math.IsInf(zeroThreshold, 0) || zeroThreshold < 0 {
 		return nil, nil, fmt.Errorf("zero_threshold must be a non-negative, finite number, got %v", zeroThreshold)
 	}
-	zeroCount, ok, err := getFloat("zero_count")
+	zeroCount, ok, err := getFloat(compFieldZeroCount)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid zero_count: %w", err)
 	}
@@ -993,25 +1138,27 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 	// would wrap around in the conversion below, so it takes the float form too.
 	// Bucket strings are scanned for '.', 'e', or 'E' since OM2 emits floats with
 	// decimals or exponent notation; the cheap pre-scan avoids parsing buckets twice.
+	posBucketsRaw := cf.fields[compFieldPositiveBuckets]
+	negBucketsRaw := cf.fields[compFieldNegativeBuckets]
 	isFloat := count != math.Trunc(count) || zeroCount != math.Trunc(zeroCount) ||
 		count >= float64(math.MaxUint64) || zeroCount >= float64(math.MaxUint64) ||
-		bucketsHaveFloat(kv["positive_buckets"]) || bucketsHaveFloat(kv["negative_buckets"])
+		bucketsHaveFloat(posBucketsRaw) || bucketsHaveFloat(negBucketsRaw)
 
-	posSpans, err := parseSpans(kv["positive_spans"])
+	posSpans, err := parseSpans(cf.fields[compFieldPositiveSpans])
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid positive_spans: %w", err)
 	}
-	negSpans, err := parseSpans(kv["negative_spans"])
+	negSpans, err := parseSpans(cf.fields[compFieldNegativeSpans])
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid negative_spans: %w", err)
 	}
 
 	if isFloat {
-		posBuckets, err := parseFloatBuckets(kv["positive_buckets"])
+		posBuckets, err := parseFloatBuckets(posBucketsRaw)
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid positive_buckets: %w", err)
 		}
-		negBuckets, err := parseFloatBuckets(kv["negative_buckets"])
+		negBuckets, err := parseFloatBuckets(negBucketsRaw)
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid negative_buckets: %w", err)
 		}
@@ -1035,11 +1182,11 @@ func buildNativeHistogram(kv map[string]string, isGauge bool) (*histogram.Histog
 		return nil, fh, nil
 	}
 
-	posBuckets, err := parseIntBuckets(kv["positive_buckets"])
+	posBuckets, err := parseIntBuckets(posBucketsRaw)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid positive_buckets: %w", err)
 	}
-	negBuckets, err := parseIntBuckets(kv["negative_buckets"])
+	negBuckets, err := parseIntBuckets(negBucketsRaw)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid negative_buckets: %w", err)
 	}
@@ -1075,33 +1222,33 @@ func absoluteToIntDeltas(abs []int64) {
 }
 
 // parseSpans parses "[offset:length,...]" into a []histogram.Span.
-func parseSpans(s string) ([]histogram.Span, error) {
-	s = strings.TrimSpace(s)
-	if s == "" || s == "[]" {
+func parseSpans(b []byte) ([]histogram.Span, error) {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || bytes.Equal(b, []byte("[]")) {
 		return nil, nil
 	}
-	if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
-		return nil, fmt.Errorf("spans must be wrapped in []: %q", s)
+	if len(b) < 2 || b[0] != '[' || b[len(b)-1] != ']' {
+		return nil, fmt.Errorf("spans must be wrapped in []: %q", b)
 	}
-	inner := s[1 : len(s)-1]
-	if strings.TrimSpace(inner) == "" {
+	inner := bytes.TrimSpace(b[1 : len(b)-1])
+	if len(inner) == 0 {
 		return nil, nil
 	}
-	var spans []histogram.Span
-	for part := range strings.SplitSeq(inner, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
+	spans := make([]histogram.Span, 0, bytes.Count(inner, []byte{','})+1)
+	for part := range bytes.SplitSeq(inner, []byte{','}) {
+		part = bytes.TrimSpace(part)
+		if len(part) == 0 {
 			continue
 		}
-		before, after, ok := strings.Cut(part, ":")
+		before, after, ok := bytes.Cut(part, []byte{':'})
 		if !ok {
 			return nil, fmt.Errorf("span missing ':': %q", part)
 		}
-		offset, err := strconv.ParseInt(strings.TrimSpace(before), 10, 32)
+		offset, err := strconv.ParseInt(yoloString(bytes.TrimSpace(before)), 10, 32)
 		if err != nil {
 			return nil, fmt.Errorf("invalid span offset %q: %w", before, err)
 		}
-		length, err := strconv.ParseUint(strings.TrimSpace(after), 10, 32)
+		length, err := strconv.ParseUint(yoloString(bytes.TrimSpace(after)), 10, 32)
 		if err != nil {
 			return nil, fmt.Errorf("invalid span length %q: %w", after, err)
 		}
@@ -1110,12 +1257,12 @@ func parseSpans(s string) ([]histogram.Span, error) {
 	return spans, nil
 }
 
-// bucketsHaveFloat reports whether the raw bucket string contains any non-integer
+// bucketsHaveFloat reports whether the raw bucket bytes contain any non-integer
 // value. OM2 formats floats with a decimal point or exponent, so a byte-level scan
 // for '.', 'e', or 'E' is sufficient to discriminate integer from float buckets.
-func bucketsHaveFloat(s string) bool {
-	for i := 0; i < len(s); i++ {
-		switch s[i] {
+func bucketsHaveFloat(b []byte) bool {
+	for _, ch := range b {
+		switch ch {
 		case '.', 'e', 'E':
 			return true
 		}
@@ -1123,64 +1270,64 @@ func bucketsHaveFloat(s string) bool {
 	return false
 }
 
-// parseIntBuckets parses "[b1,b2,...]" into delta-encoded []int64 buckets.
-func parseIntBuckets(s string) ([]int64, error) {
-	s = strings.TrimSpace(s)
-	if s == "" || s == "[]" {
+// parseIntBuckets parses "[b1,b2,...]" into absolute []int64 bucket counts.
+func parseIntBuckets(b []byte) ([]int64, error) {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || bytes.Equal(b, []byte("[]")) {
 		return nil, nil
 	}
-	if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
-		return nil, fmt.Errorf("buckets must be wrapped in []: %q", s)
+	if len(b) < 2 || b[0] != '[' || b[len(b)-1] != ']' {
+		return nil, fmt.Errorf("buckets must be wrapped in []: %q", b)
 	}
-	inner := s[1 : len(s)-1]
-	if strings.TrimSpace(inner) == "" {
+	inner := bytes.TrimSpace(b[1 : len(b)-1])
+	if len(inner) == 0 {
 		return nil, nil
 	}
-	var buckets []int64
-	for part := range strings.SplitSeq(inner, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
+	buckets := make([]int64, 0, bytes.Count(inner, []byte{','})+1)
+	for part := range bytes.SplitSeq(inner, []byte{','}) {
+		part = bytes.TrimSpace(part)
+		if len(part) == 0 {
 			continue
 		}
-		b, err := strconv.ParseInt(part, 10, 64)
+		v, err := strconv.ParseInt(yoloString(part), 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("invalid bucket %q: %w", part, err)
 		}
-		buckets = append(buckets, b)
+		buckets = append(buckets, v)
 	}
 	return buckets, nil
 }
 
 // parseFloatBuckets parses "[b1,b2,...]" into []float64 bucket values.
-func parseFloatBuckets(s string) ([]float64, error) {
-	s = strings.TrimSpace(s)
-	if s == "" || s == "[]" {
+func parseFloatBuckets(b []byte) ([]float64, error) {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || bytes.Equal(b, []byte("[]")) {
 		return nil, nil
 	}
-	if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
-		return nil, fmt.Errorf("float buckets must be wrapped in []: %q", s)
+	if len(b) < 2 || b[0] != '[' || b[len(b)-1] != ']' {
+		return nil, fmt.Errorf("float buckets must be wrapped in []: %q", b)
 	}
-	inner := s[1 : len(s)-1]
-	if strings.TrimSpace(inner) == "" {
+	inner := bytes.TrimSpace(b[1 : len(b)-1])
+	if len(inner) == 0 {
 		return nil, nil
 	}
-	var buckets []float64
-	for part := range strings.SplitSeq(inner, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
+	buckets := make([]float64, 0, bytes.Count(inner, []byte{','})+1)
+	for part := range bytes.SplitSeq(inner, []byte{','}) {
+		part = bytes.TrimSpace(part)
+		if len(part) == 0 {
 			continue
 		}
-		b, err := strconv.ParseFloat(part, 64)
+		v, err := strconv.ParseFloat(yoloString(part), 64)
 		if err != nil {
 			return nil, fmt.Errorf("invalid float bucket %q: %w", part, err)
 		}
-		buckets = append(buckets, b)
+		buckets = append(buckets, v)
 	}
 	return buckets, nil
 }
 
 func (p *OpenMetrics2Parser) buildClassicHistogramPending(
-	kv map[string]string,
+	cf compositeFields,
 	hasTS bool,
 	ts int64,
 ) ([]pendingEntry, error) {
@@ -1188,7 +1335,8 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 
 	var tsPtr *int64
 	if hasTS {
-		tsPtr = &ts
+		p.ts = ts
+		tsPtr = &p.ts
 	}
 
 	// p.pending has been reset to [:0] by Next() before any parsing begins,
@@ -1198,18 +1346,20 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 	// GaugeHistogram Samples with Classic Buckets expose count/sum as
 	// gcount/gsum, mirroring Count/Sum's role for a plain Histogram.
 	// https://prometheus.io/docs/specs/om/open_metrics_spec_2_0/#gaugehistogram-1
+	countField, sumField := compFieldCount, compFieldSum
 	countKey, sumKey := "count", "sum"
 	countSuffix, sumSuffix := "_count", "_sum"
 	if p.mtype == model.MetricTypeGaugeHistogram {
+		countField, sumField = compFieldGCount, compFieldGSum
 		countKey, sumKey = "gcount", "gsum"
 		countSuffix, sumSuffix = "_gcount", "_gsum"
 	}
 
-	cv, ok := kv[countKey]
+	cv, ok := cf.get(countField)
 	if !ok {
 		return nil, fmt.Errorf("missing required field: %s", countKey)
 	}
-	v, err := strconv.ParseFloat(cv, 64)
+	v, err := strconv.ParseFloat(yoloString(cv), 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid %s: %w", countKey, err)
 	}
@@ -1222,11 +1372,11 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 		ts:     tsPtr,
 	})
 
-	sv, ok := kv[sumKey]
+	sv, ok := cf.get(sumField)
 	if !ok {
 		return nil, fmt.Errorf("missing required field: %s", sumKey)
 	}
-	v, err = strconv.ParseFloat(sv, 64)
+	v, err = strconv.ParseFloat(yoloString(sv), 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid %s: %w", sumKey, err)
 	}
@@ -1241,13 +1391,13 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 
 	// _bucket entries. The spec requires a Classic Bucket list to include a
 	// +Inf threshold.
-	bv, ok := kv["bucket"]
+	bv, ok := cf.get(compFieldBucket)
 	if !ok {
 		return nil, errors.New("missing required field: bucket")
 	}
 	name = mfName + "_bucket"
 	hasPosInf := false
-	for b, err := range parseBuckets(bv) {
+	for b, err := range parseBuckets(yoloString(bv)) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid bucket: %w", err)
 		}
@@ -1276,7 +1426,7 @@ func (p *OpenMetrics2Parser) buildClassicHistogramPending(
 }
 
 func (p *OpenMetrics2Parser) buildSummaryPending(
-	kv map[string]string,
+	cf compositeFields,
 	hasTS bool,
 	ts int64,
 ) ([]pendingEntry, error) {
@@ -1284,18 +1434,16 @@ func (p *OpenMetrics2Parser) buildSummaryPending(
 
 	var tsPtr *int64
 	if hasTS {
-		tsPtr = &ts
+		p.ts = ts
+		tsPtr = &p.ts
 	}
 
 	// p.pending has been reset to [:0] by Next() before any parsing begins,
 	// so we reuse its backing array across composite parses.
 	pending := p.pending
 
-	cv, ok := kv["count"]
-	if !ok {
-		return nil, errors.New("missing required field: count")
-	}
-	v, err := strconv.ParseFloat(cv, 64)
+	cv := cf.fields[compFieldCount]
+	v, err := strconv.ParseFloat(yoloString(cv), 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid count: %w", err)
 	}
@@ -1308,11 +1456,8 @@ func (p *OpenMetrics2Parser) buildSummaryPending(
 		ts:     tsPtr,
 	})
 
-	sv, ok := kv["sum"]
-	if !ok {
-		return nil, errors.New("missing required field: sum")
-	}
-	v, err = strconv.ParseFloat(sv, 64)
+	sv := cf.fields[compFieldSum]
+	v, err = strconv.ParseFloat(yoloString(sv), 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid sum: %w", err)
 	}
@@ -1325,11 +1470,8 @@ func (p *OpenMetrics2Parser) buildSummaryPending(
 		ts:     tsPtr,
 	})
 
-	qv, ok := kv["quantile"]
-	if !ok {
-		return nil, errors.New("missing required field: quantile")
-	}
-	for q, err := range parseQuantiles(qv) {
+	qv := cf.fields[compFieldQuantile]
+	for q, err := range parseQuantiles(yoloString(qv)) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid quantile: %w", err)
 		}
@@ -1354,13 +1496,13 @@ func (p *OpenMetrics2Parser) nameAndExtraLabelsFromOffsets() (string, []labels.L
 	if len(p.offsets) <= 2 {
 		return name, nil
 	}
-	extra := make([]labels.Label, 0, (len(p.offsets)-2)/4)
+	p.extraLabels = p.extraLabels[:0]
 	for i := 2; i < len(p.offsets); i += 4 {
 		k := unreplace(s[p.offsets[i]-p.start : p.offsets[i+1]-p.start])
 		v := unreplace(s[p.offsets[i+2]-p.start : p.offsets[i+3]-p.start])
-		extra = append(extra, labels.Label{Name: k, Value: v})
+		p.extraLabels = append(p.extraLabels, labels.Label{Name: k, Value: v})
 	}
-	return name, extra
+	return name, p.extraLabels
 }
 
 // appendSeriesBytes returns a byte identity for lset, unique per distinct
