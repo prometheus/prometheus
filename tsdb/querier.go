@@ -483,16 +483,24 @@ func scanGroup(ms []*labels.Matcher, i int, isSubtracting func(*labels.Matcher) 
 }
 
 // matcherOrder returns the rank of m in the order the matchers are resolved in:
-// intersecting lookups, then intersecting scans, then the subtracting matchers.
+// intersecting lookups, then intersecting matchers that read the postings of
+// many values, then the subtracting matchers.
 func matcherOrder(m *labels.Matcher, isSubtracting func(*labels.Matcher) bool) int {
 	switch {
 	case isSubtracting(m):
 		return 2
-	case matcherScans(m):
-		return 1
-	default:
+	case matcherLooksUp(m):
 		return 0
+	default:
+		return 1
 	}
+}
+
+// matcherLooksUp reports whether an intersecting m is resolved by a direct
+// postings lookup of the values it names. Matchers such as l!="" and l=~".+"
+// are not, because they read the postings of every value of the label.
+func matcherLooksUp(m *labels.Matcher) bool {
+	return m.Type == labels.MatchEqual || (m.Type == labels.MatchRegexp && m.HasSetMatches())
 }
 
 // matcherScans reports whether resolving m requires scanning all values of its

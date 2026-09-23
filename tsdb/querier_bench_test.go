@@ -187,6 +187,10 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		{`n="1",i=~".+",i!~"2.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNot2Star, jFoo}},
 		{`n="1",i=~".+",i!~".*2.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNotStar2Star, jFoo}},
 		{`n="X",i=~".+",i!~".*2.*",j="foo"`, []*labels.Matcher{nX, iPlus, iNotStar2Star, jFoo}},
+		// A matcher that reads all values of a label listed before an empty
+		// lookup. The lookup must run first, so the read is never paid for.
+		{`i!="",n="X"`, []*labels.Matcher{iNotEmpty, nX}},
+		{`i=~".+",n="X"`, []*labels.Matcher{iPlus, nX}},
 		// Multiple regexp matchers on the same label name. These exercise the
 		// same-label scan-combining path: without combining, each matcher scans
 		// all values of "i" independently. See issue #14619.
