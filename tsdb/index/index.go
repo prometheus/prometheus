@@ -1652,31 +1652,55 @@ func (r *Reader) postingsForLabelMatching(ctx context.Context, name string, matc
 	// the matching values, so the iterator slice below is allocated once at the
 	// exact size: growing it one match at a time allocates more in total, and one
 	// scan combined for several matchers on the same label matches many values.
-	// Most scans match few values, so start from a stack buffer and let append
-	// move to the heap only if the scan outgrows it.
-	var offsetsBuf [32]uint64
-	offsets := offsetsBuf[:0]
+	// Most scans match few values, so the first offsets go to a stack buffer.
+	// The rest go to heap chunks that double in size. A full chunk is kept as it
+	// is, so no offset is copied again when the scan outgrows a chunk.
+	var first [32]uint64
+	nFirst := 0
+	// 16 doubling chunks hold about four million offsets before rest itself
+	// has to grow on the heap.
+	var restBuf [16][]uint64
+	rest := restBuf[:0]
 	if err := r.traversePostingOffsets(ctx, e[0].off, func(val string, postingsOff uint64) (bool, error) {
-		if match(val) {
-			offsets = append(offsets, postingsOff)
+		if !match(val) {
+			return val != lastVal, nil
 		}
+		if nFirst < len(first) {
+			first[nFirst] = postingsOff
+			nFirst++
+			return val != lastVal, nil
+		}
+		if len(rest) == 0 || len(rest[len(rest)-1]) == cap(rest[len(rest)-1]) {
+			rest = append(rest, make([]uint64, 0, len(first)<<(len(rest)+1)))
+		}
+		rest[len(rest)-1] = append(rest[len(rest)-1], postingsOff)
 		return val != lastVal, nil
 	}); err != nil {
 		return ErrPostings(err)
 	}
 
-	its := make([]Postings, 0, len(offsets))
-	for i, off := range offsets {
-		// traversePostingOffsets checks the context while it scans, so this loop
-		// has to check it as well to stay cancelable.
-		if i%checkContextEveryNIterations == 0 && ctx.Err() != nil {
-			return ErrPostings(ctx.Err())
+	n := nFirst
+	for _, c := range rest {
+		n += len(c)
+	}
+	its := make([]Postings, 0, n)
+	for k := -1; k < len(rest); k++ {
+		offsets := first[:nFirst]
+		if k >= 0 {
+			offsets = rest[k]
 		}
-		p, err := r.decodePostingsAt(off)
-		if err != nil {
-			return ErrPostings(err)
+		for _, off := range offsets {
+			// traversePostingOffsets checks the context while it scans, so this
+			// loop has to check it as well to stay cancelable.
+			if len(its)%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+				return ErrPostings(ctx.Err())
+			}
+			p, err := r.decodePostingsAt(off)
+			if err != nil {
+				return ErrPostings(err)
+			}
+			its = append(its, p)
 		}
-		its = append(its, p)
 	}
 	// The loop above checks the context every checkContextEveryNIterations, and
 	// the decoder can cancel it between two checks, so check it once more here.
