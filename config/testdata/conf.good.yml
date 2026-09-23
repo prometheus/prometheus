@@ -465,7 +465,7 @@ scrape_configs:
 
   - job_name: aliyun-ecs
     aliyun_sd_configs:
-      - region: cn-hangzhou
+      - region: cn-beijing
         role: ecs
         port: 80
         tags:
