@@ -27,6 +27,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/prometheus/common/promslog"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
@@ -63,6 +65,43 @@ func LastCheckpoint(dir string) (string, int, error) {
 
 	checkpoint := checkpoints[len(checkpoints)-1]
 	return filepath.Join(dir, checkpoint.name), checkpoint.index, nil
+}
+
+// ReadMinValidTime returns the mint recorded by the most recent checkpoint in dir, i.e. the
+// highest mint any WAL truncation has used so far. ok is false, with no error, if dir has no
+// checkpoint yet, or its most recent checkpoint predates this record (e.g. it was written by
+// an older Prometheus version).
+func ReadMinValidTime(dir string) (mint int64, ok bool, err error) {
+	cpdir, _, err := LastCheckpoint(dir)
+	if errors.Is(err, record.ErrNotFound) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("find last checkpoint: %w", err)
+	}
+
+	sr, err := NewSegmentsReader(cpdir)
+	if err != nil {
+		return 0, false, fmt.Errorf("open checkpoint: %w", err)
+	}
+	defer sr.Close()
+
+	r := NewReader(sr)
+	if !r.Next() {
+		return 0, false, r.Err()
+	}
+
+	dec := record.NewDecoder(nil, promslog.NewNopLogger())
+	rec := r.Record()
+	if dec.Type(rec) != record.MinValidTime {
+		// An older checkpoint, written before this record existed.
+		return 0, false, nil
+	}
+	mint, err = dec.MinValidTime(rec)
+	if err != nil {
+		return 0, false, fmt.Errorf("decode min valid time: %w", err)
+	}
+	return mint, true, nil
 }
 
 // DeleteCheckpoints deletes all checkpoints in a directory below a given index.
@@ -109,7 +148,12 @@ func DeleteTempCheckpoints(logger *slog.Logger, dir string) error {
 // segmented format as the original WAL itself.
 // This makes it easy to read it through the WAL package and concatenate
 // it with the original WAL.
-func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64, enableSTStorage bool) (*CheckpointStats, error) {
+//
+// writeMinValidTime controls whether the checkpoint also carries a record of mint, readable
+// back with ReadMinValidTime. It is opt-in because not every caller's own replay path
+// tolerates an unrecognized record type equally gracefully; callers that don't consume
+// ReadMinValidTime should pass false.
+func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64, enableSTStorage, writeMinValidTime bool) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
 	var sgmReader io.ReadCloser
 
@@ -160,6 +204,34 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		cp.Close()
 		os.RemoveAll(cpdirtmp)
 	}()
+
+	if writeMinValidTime {
+		// Persist mint as the checkpoint's first record, so a restart can recover it without
+		// depending on whether any block on disk happens to reflect it: a block produced by
+		// CompactSelectedSeries or CompactStaleHead is deliberately excluded from that search,
+		// and a truncation whose range had nothing left to write never produces a block at all.
+		//
+		// mint by itself is only guaranteed to be the highest ever used within this process:
+		// the guard that makes truncateWAL's calls strictly increasing lives in memory
+		// (Head.lastWALTruncationTime) and resets on every restart, so a later checkpoint
+		// could otherwise persist a lower mint than an earlier one already did. Read back
+		// whatever the previous checkpoint recorded and keep the higher of the two, so the
+		// persisted value never regresses across restarts. This is also what makes it safe to
+		// unconditionally drop the previous checkpoint's own copy of this record further down:
+		// its value has already been folded into the one written here.
+		persistedMinValidTime := mint
+		previous, ok, err := ReadMinValidTime(w.Dir())
+		if err != nil {
+			return nil, fmt.Errorf("read previous min valid time: %w", err)
+		}
+		if ok && previous > persistedMinValidTime {
+			persistedMinValidTime = previous
+		}
+		var minValidTimeEnc record.Encoder
+		if err := cp.Log(minValidTimeEnc.MinValidTime(persistedMinValidTime, nil)); err != nil {
+			return nil, fmt.Errorf("write min valid time record: %w", err)
+		}
+	}
 
 	r := NewReader(sgmReader)
 
@@ -374,6 +446,11 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			}
 			stats.TotalMetadata += len(metadata)
 			stats.DroppedMetadata += len(metadata) - repl
+		case record.MinValidTime:
+			// The previous checkpoint's own copy. Safe to drop unconditionally: its value was
+			// already read back and folded into the record written above, via max(mint, this
+			// same value), so nothing it could contribute is lost.
+			continue
 		default:
 			// Unknown record type, probably from a future Prometheus version.
 			continue
