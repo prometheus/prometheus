@@ -669,6 +669,37 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedLabels:          labels.FromStrings("__name__", "test_metric_wal", "instance", "localhost"),
 		},
 		{
+			desc: "Metadata-wal-records enabled - metadata stored via AppendV2Options",
+			input: func() []writev2.TimeSeries {
+				symbolTable := writev2.NewSymbolTable()
+				labelRefs := symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric_wal", "instance", "localhost"), nil)
+				helpRef := symbolTable.Symbolize("Test metric for WAL verification")
+				unitRef := symbolTable.Symbolize("seconds")
+				return []writev2.TimeSeries{
+					{
+						LabelsRefs: labelRefs,
+						Metadata: writev2.Metadata{
+							Type:    writev2.Metadata_METRIC_TYPE_GAUGE,
+							HelpRef: helpRef,
+							UnitRef: unitRef,
+						},
+						Samples: []writev2.Sample{{Value: 42.0, Timestamp: 2000}},
+					},
+				}
+			}(),
+			symbols: func() []string {
+				symbolTable := writev2.NewSymbolTable()
+				symbolTable.SymbolizeLabels(labels.FromStrings("__name__", "test_metric_wal", "instance", "localhost"), nil)
+				symbolTable.Symbolize("Test metric for WAL verification")
+				symbolTable.Symbolize("seconds")
+				return symbolTable.Symbols()
+			}(),
+			expectedCode:            http.StatusNoContent,
+			enableTypeAndUnitLabels: false,
+			appendMetadata:          true,
+			expectedLabels:          labels.FromStrings("__name__", "test_metric_wal", "instance", "localhost"),
+		},
+		{
 			desc: "Type and unit labels enabled but no metadata",
 			input: func() []writev2.TimeSeries {
 				symbolTable := writev2.NewSymbolTable()
@@ -771,6 +802,13 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			if !tc.expectedLabels.IsEmpty() {
 				require.Len(t, appendable.samples, 1)
 				testutil.RequireEqual(t, tc.expectedLabels, appendable.samples[0].l)
+				if tc.appendMetadata && tc.updateMetadataErr == nil {
+					expectedMeta, err := tc.input[0].ToMetadata(tc.symbols)
+					require.NoError(t, err)
+					requireEqual(t, []mockMetadata{{l: tc.expectedLabels, m: expectedMeta}}, appendable.metadata)
+				} else if !tc.appendMetadata {
+					require.Empty(t, appendable.metadata)
+				}
 				return
 			}
 
@@ -1009,7 +1047,11 @@ func TestOutOfOrderExemplar_V1Message(t *testing.T) {
 			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
 			require.NoError(t, err)
 
-			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
+			hash := labels.FromStrings("__name__", "test_metric").Hash()
+			appendable := &mockAppendable{
+				latestSample:   map[uint64]int64{hash: 100},
+				latestExemplar: map[uint64]int64{hash: 100},
+			}
 			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false, false)
 
 			recorder := httptest.NewRecorder()
@@ -1380,6 +1422,94 @@ func (*mockAppendable) SetOptions(*storage.AppendOptions) {
 	panic("unimplemented")
 }
 
+// AppenderV2 returns a storage.AppenderV2 (which also implements
+// storage.ExemplarAppenderV2) that records into the same slices
+// as the V1 appender.
+func (m *mockAppendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	m.Appender(ctx) // Ensure the latest* maps are initialized.
+	return (*mockAppenderV2)(m)
+}
+
+type mockAppenderV2 mockAppendable
+
+func (a *mockAppenderV2) asV1() *mockAppendable {
+	return (*mockAppendable)(a)
+}
+
+func (a *mockAppenderV2) Append(ref storage.SeriesRef, l labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+	if st != 0 && t != 0 {
+		// Mirror a real AppenderV2 implementation, which owns ST zero-sample
+		// injection internally and does not surface its errors to the caller
+		// (e.g. TSDB head's bestEffortAppendSTZeroSample).
+		if h != nil || fh != nil {
+			_, _ = a.asV1().AppendHistogramSTZeroSample(ref, l, t, st, h, fh)
+		} else {
+			_, _ = a.asV1().AppendSTZeroSample(ref, l, t, st)
+		}
+	}
+
+	var err error
+	if h != nil || fh != nil {
+		ref, err = a.asV1().AppendHistogram(ref, l, t, h, fh)
+	} else {
+		ref, err = a.asV1().Append(ref, l, t, v)
+	}
+	if err != nil {
+		return ref, err
+	}
+	if !opts.Metadata.IsEmpty() {
+		// Metadata is best-effort within Append; errors are not surfaced to the caller.
+		_, _ = a.asV1().UpdateMetadata(ref, l, opts.Metadata)
+	}
+	if len(opts.Exemplars) > 0 {
+		return a.AppendExemplars(ref, l, opts.Exemplars)
+	}
+	return ref, nil
+}
+
+func (m *mockAppendable) seriesExists(hash uint64) bool {
+	_, okS := m.latestSample[hash]
+	_, okH := m.latestHistogram[hash]
+	_, okFH := m.latestFloatHist[hash]
+	return okS || okH || okFH
+}
+
+func (a *mockAppenderV2) AppendExemplars(ref storage.SeriesRef, l labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	m := a.asV1()
+	hash := uint64(ref)
+	if hash == 0 {
+		hash = l.Hash()
+	}
+	if !m.seriesExists(hash) {
+		return 0, fmt.Errorf("unknown series ref %d: %w", ref, storage.ErrNotFound)
+	}
+	ref = storage.SeriesRef(hash)
+	var errs []error
+	for _, e := range exemplars {
+		r, err := m.AppendExemplar(ref, l, e)
+		if err != nil {
+			if errors.Is(err, storage.ErrDuplicateExemplar) {
+				continue
+			}
+			errs = append(errs, err)
+			continue
+		}
+		ref = r
+	}
+	if len(errs) > 0 {
+		return ref, &storage.AppendPartialError{ExemplarErrors: errs}
+	}
+	return ref, nil
+}
+
+func (a *mockAppenderV2) Commit() error {
+	return a.asV1().Commit()
+}
+
+func (a *mockAppenderV2) Rollback() error {
+	return a.asV1().Rollback()
+}
+
 func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	if m.appendSampleErr != nil {
 		return 0, m.appendSampleErr
@@ -1424,18 +1554,24 @@ func (m *mockAppendable) AppendExemplar(ref storage.SeriesRef, l labels.Labels, 
 	if m.appendExemplarErr != nil {
 		return 0, m.appendExemplarErr
 	}
-
-	latestTs := m.latestExemplar[uint64(ref)]
-	if e.Ts < latestTs {
-		return 0, storage.ErrOutOfOrderExemplar
-	}
-	if e.Ts == latestTs {
-		return 0, storage.ErrDuplicateExemplar
+	hash := uint64(ref)
+	if hash == 0 {
+		hash = l.Hash()
 	}
 
-	m.latestExemplar[uint64(ref)] = e.Ts
+	latestTs, hasExemplar := m.latestExemplar[hash]
+	if hasExemplar {
+		if e.Ts < latestTs {
+			return 0, storage.ErrOutOfOrderExemplar
+		}
+		if e.Ts == latestTs {
+			return 0, storage.ErrDuplicateExemplar
+		}
+	}
+
+	m.latestExemplar[hash] = e.Ts
 	m.exemplars = append(m.exemplars, mockExemplar{l, e.Labels, e.Ts, e.Value})
-	return ref, nil
+	return storage.SeriesRef(hash), nil
 }
 
 func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
@@ -1516,6 +1652,14 @@ func (m *mockAppendable) AppendHistogramSTZeroSample(_ storage.SeriesRef, l labe
 func (m *mockAppendable) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, mp metadata.Metadata) (storage.SeriesRef, error) {
 	if m.updateMetadataErr != nil {
 		return 0, m.updateMetadataErr
+	}
+	for i := len(m.metadata) - 1; i >= 0; i-- {
+		if labels.Equal(m.metadata[i].l, l) {
+			if m.metadata[i].m.Equals(mp) {
+				return ref, nil
+			}
+			break
+		}
 	}
 
 	m.metadata = append(m.metadata, mockMetadata{l: l, m: mp})
@@ -1718,4 +1862,287 @@ func TestRemoteWriteHandler_ResponseStats(t *testing.T) {
 			}
 		})
 	}
+}
+
+type mockAppenderV2Only struct {
+	storage.AppenderV2
+	rolledBack bool
+}
+
+func (m *mockAppenderV2Only) Rollback() error {
+	m.rolledBack = true
+	return nil
+}
+
+type mockAppendableV2Only struct {
+	app *mockAppenderV2Only
+}
+
+func (m *mockAppendableV2Only) AppenderV2(context.Context) storage.AppenderV2 {
+	return m.app
+}
+
+func TestRemoteWriteHandler_RequiresExemplarAppenderV2(t *testing.T) {
+	payloadV1, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+	payloadV2, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name    string
+		msgType remoteapi.WriteMessageType
+		payload []byte
+	}{
+		{name: "v1", msgType: remoteapi.WriteV1MessageType, payload: payloadV1},
+		{name: "v2", msgType: remoteapi.WriteV2MessageType, payload: payloadV2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := &mockAppenderV2Only{}
+			appendable := &mockAppendableV2Only{app: app}
+			handler := NewWriteHandler(
+				promslog.NewNopLogger(),
+				nil,
+				appendable,
+				[]remoteapi.WriteMessageType{tc.msgType},
+				false,
+				false,
+				false,
+			)
+
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(tc.payload))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[tc.msgType])
+			req.Header.Set("Content-Encoding", compression.Snappy)
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			resp := recorder.Result()
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+
+			require.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+			require.Contains(t, string(body), "requires a storage.ExemplarAppenderV2")
+			require.True(t, app.rolledBack, "expected Rollback to be called when ExemplarAppenderV2 is not implemented")
+		})
+	}
+}
+
+func TestRemoteWriteHandler_HistogramWithExemplars(t *testing.T) {
+	// Verify that for RW 1.0 and RW 2.0 requests containing only histograms and exemplars (no float samples),
+	// histograms are appended before exemplars so that the series exists and its SeriesRef is passed
+	// to AppendExemplars.
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		t.Run(string(protoMsg), func(t *testing.T) {
+			appendable := &mockAppendable{}
+			handler := NewWriteHandler(
+				promslog.NewNopLogger(),
+				nil,
+				appendable,
+				[]remoteapi.WriteMessageType{protoMsg},
+				false,
+				false,
+				false,
+			)
+
+			lbls := labels.FromStrings("__name__", "hist_only_metric")
+			var (
+				payload []byte
+				err     error
+			)
+			if protoMsg == remoteapi.WriteV1MessageType {
+				payload, _, _, err = buildWriteRequest(nil, []prompb.TimeSeries{
+					{
+						Labels:     prompb.FromLabels(lbls, nil),
+						Histograms: []prompb.Histogram{prompb.FromIntHistogram(1000, highSchemaHistogram)},
+						Exemplars: []prompb.Exemplar{
+							{
+								Labels:    []prompb.Label{{Name: "trace_id", Value: "abc"}},
+								Value:     1.5,
+								Timestamp: 1000,
+							},
+						},
+					},
+				}, nil, nil, nil, nil, "snappy")
+			} else {
+				payload, _, _, _, err = buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
+					{
+						LabelsRefs: []uint32{0, 1},
+						Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, 1000, highSchemaHistogram)},
+						Exemplars: []writev2.Exemplar{
+							{
+								LabelsRefs: []uint32{2, 3},
+								Value:      1.5,
+								Timestamp:  1000,
+							},
+						},
+					},
+				}, []string{"__name__", "hist_only_metric", "trace_id", "abc"}, nil, nil, nil, "snappy")
+			}
+			require.NoError(t, err)
+
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[protoMsg])
+			req.Header.Set("Content-Encoding", compression.Snappy)
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			require.Equal(t, http.StatusNoContent, recorder.Result().StatusCode)
+
+			require.Len(t, appendable.histograms, 1)
+			require.Len(t, appendable.exemplars, 1)
+			// Verify that AppendExemplar received the non-zero SeriesRef returned by AppendHistogram.
+			require.Equal(t, int64(1000), appendable.latestExemplar[lbls.Hash()])
+		})
+	}
+}
+
+func TestRemoteWriteHandler_V2ExemplarOrderingAndRejectedSeries(t *testing.T) {
+	t.Run("unsorted in-batch exemplars are sorted and ingested", func(t *testing.T) {
+		appendable := &mockAppendable{}
+		handler := NewWriteHandler(
+			promslog.NewNopLogger(),
+			nil,
+			appendable,
+			[]remoteapi.WriteMessageType{remoteapi.WriteV2MessageType},
+			false,
+			false,
+			false,
+		)
+		payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
+			{
+				LabelsRefs: []uint32{0, 1},
+				Samples:    []writev2.Sample{{Timestamp: 2000, Value: 1}},
+				Exemplars: []writev2.Exemplar{
+					{LabelsRefs: []uint32{2, 3}, Value: 2, Timestamp: 2000},
+					{LabelsRefs: []uint32{2, 4}, Value: 1, Timestamp: 1000},
+				},
+			},
+		}, []string{"__name__", "test_metric", "trace_id", "t2", "t1"}, nil, nil, nil, "snappy")
+		require.NoError(t, err)
+
+		req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+		req.Header.Set("Content-Encoding", compression.Snappy)
+
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		resp := recorder.Result()
+		require.Equal(t, http.StatusNoContent, resp.StatusCode)
+		expectHeaderValue(t, 2, resp.Header.Get(rw20WrittenExemplarsHeader))
+		require.Len(t, appendable.exemplars, 2)
+		require.Equal(t, int64(1000), appendable.exemplars[0].t)
+		require.Equal(t, int64(2000), appendable.exemplars[1].t)
+	})
+
+	t.Run("out of order exemplar vs earlier transaction returns 400", func(t *testing.T) {
+		lbls := labels.FromStrings("__name__", "test_metric")
+		appendable := &mockAppendable{
+			latestSample:   map[uint64]int64{lbls.Hash(): 1000},
+			latestExemplar: map[uint64]int64{lbls.Hash(): 1000},
+		}
+		handler := NewWriteHandler(
+			promslog.NewNopLogger(),
+			nil,
+			appendable,
+			[]remoteapi.WriteMessageType{remoteapi.WriteV2MessageType},
+			false,
+			false,
+			false,
+		)
+		payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
+			{
+				LabelsRefs: []uint32{0, 1},
+				Samples:    []writev2.Sample{{Timestamp: 2000, Value: 1}},
+				Exemplars: []writev2.Exemplar{
+					{LabelsRefs: []uint32{2, 3}, Value: 1, Timestamp: 500},
+				},
+			},
+		}, []string{"__name__", "test_metric", "trace_id", "t1"}, nil, nil, nil, "snappy")
+		require.NoError(t, err)
+
+		req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+		req.Header.Set("Content-Encoding", compression.Snappy)
+
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		resp := recorder.Result()
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		expectHeaderValue(t, 1, resp.Header.Get(rw20WrittenSamplesHeader))
+		expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenExemplarsHeader))
+	})
+
+	t.Run("new series with rejected sample does not ingest exemplar", func(t *testing.T) {
+		appendable := &mockAppendable{}
+		handler := NewWriteHandler(
+			promslog.NewNopLogger(),
+			nil,
+			appendable,
+			[]remoteapi.WriteMessageType{remoteapi.WriteV2MessageType},
+			false,
+			false,
+			false,
+		)
+		payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), []writev2.TimeSeries{
+			{
+				LabelsRefs: []uint32{0, 1},
+				Samples:    []writev2.Sample{{Timestamp: math.MaxInt64, Value: 1}},
+				Exemplars: []writev2.Exemplar{
+					{LabelsRefs: []uint32{2, 3}, Value: 1, Timestamp: 1000},
+				},
+			},
+		}, []string{"__name__", "new_metric", "trace_id", "t1"}, nil, nil, nil, "snappy")
+		require.NoError(t, err)
+
+		req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+		req.Header.Set("Content-Encoding", compression.Snappy)
+
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		resp := recorder.Result()
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenSamplesHeader))
+		expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenExemplarsHeader))
+		require.Empty(t, appendable.exemplars)
+	})
+}
+
+func TestRemoteWriteAppenderV2_AppendExemplarsDoesNotMutateCallerSlice(t *testing.T) {
+	appendable := &mockAppendable{}
+	baseApp := appendable.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+	rwApp := &remoteWriteAppenderV2{
+		AppenderV2: baseApp,
+		exApp:      baseApp,
+		maxTime:    1000,
+	}
+
+	lbls := labels.FromStrings("__name__", "test_metric")
+	ref, err := rwApp.Append(0, lbls, 0, 500, 1.0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+
+	input := []exemplar.Exemplar{
+		{Labels: labels.FromStrings("id", "1"), Value: 1, Ts: 2000}, // future (> maxTime)
+		{Labels: labels.FromStrings("id", "2"), Value: 2, Ts: 900},  // valid (<= maxTime)
+	}
+	origFirstID := input[0].Labels.Get("id")
+	origSecondID := input[1].Labels.Get("id")
+
+	_, err = rwApp.AppendExemplars(ref, lbls, input)
+	var pErr *storage.AppendPartialError
+	require.ErrorAs(t, err, &pErr)
+	require.Len(t, pErr.ExemplarErrors, 1)
+	require.ErrorIs(t, pErr.ExemplarErrors[0], storage.ErrOutOfBounds)
+
+	// Caller's input slice must not be mutated in place.
+	require.Equal(t, origFirstID, input[0].Labels.Get("id"))
+	require.Equal(t, origSecondID, input[1].Labels.Get("id"))
+	require.Len(t, appendable.exemplars, 1)
+	require.Equal(t, int64(900), appendable.exemplars[0].t)
 }
