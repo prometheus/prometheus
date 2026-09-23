@@ -261,7 +261,7 @@ func TestVMToLabelSetWithNilTagValue(t *testing.T) {
 	require.NoError(t, err)
 	// The tag with a value is kept, the one with a nil value is skipped.
 	require.Equal(t, model.LabelValue("prod"), labelSet[azureLabelMachineTag+"env"])
-	require.NotContains(t, labelSet, azureLabelMachineTag+"CostCenter")
+	require.NotContains(t, labelSet, model.LabelName(azureLabelMachineTag+"CostCenter"))
 }
 
 func TestMapFromVMWithEmptyOSType(t *testing.T) {
