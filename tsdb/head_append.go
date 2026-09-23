@@ -702,7 +702,9 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 		if t > msMaxt {
 			return false, 0, nil
 		}
-		if t == msMaxt {
+		// Without a head chunk the cached last value may not match the last mmapped
+		// sample, so an equal timestamp goes through the out-of-order path instead.
+		if t == msMaxt && s.headChunks != nil {
 			// We are allowing exact duplicates as we can encounter them in valid cases
 			// like federation and erroring out at that time would be extremely noisy.
 			// This only checks against the latest in-order sample.
@@ -747,7 +749,9 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMax
 		if t > msMaxt {
 			return false, 0, nil
 		}
-		if t == msMaxt {
+		// Without a head chunk the cached last value may not match the last mmapped
+		// sample, so an equal timestamp goes through the out-of-order path instead.
+		if t == msMaxt && s.headChunks != nil {
 			// We are allowing exact duplicates as we can encounter them in valid cases
 			// like federation and erroring out at that time would be extremely noisy.
 			// This only checks against the latest in-order sample.
@@ -789,7 +793,9 @@ func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogr
 		if t > msMaxt {
 			return false, 0, nil
 		}
-		if t == msMaxt {
+		// Without a head chunk the cached last value may not match the last mmapped
+		// sample, so an equal timestamp goes through the out-of-order path instead.
+		if t == msMaxt && s.headChunks != nil {
 			// We are allowing exact duplicates as we can encounter them in valid cases
 			// like federation and erroring out at that time would be extremely noisy.
 			// This only checks against the latest in-order sample.
