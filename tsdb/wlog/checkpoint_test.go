@@ -536,7 +536,7 @@ func TestCheckpointMetadataAcrossBatches(t *testing.T) {
 	expected := make([]record.RefMetadata, 0, numSeries)
 	for i := range numSeries {
 		ref := chunks.HeadSeriesRef(i)
-		m := record.RefMetadata{Ref: ref, Unit: "seconds", Help: strconv.Itoa(i)}
+		m := record.RefMetadata{Ref: ref, Unit: "seconds", Help: strings.Repeat("x", flushThreshold/metadataBatchSize) + strconv.Itoa(i)}
 		expected = append(expected, m)
 		require.NoError(t, w.Log(
 			enc.Series([]record.RefSeries{{Ref: ref, Labels: labels.FromStrings("a", strconv.Itoa(i))}}, nil),
@@ -556,8 +556,9 @@ func TestCheckpointMetadataAcrossBatches(t *testing.T) {
 	defer sr.Close()
 
 	var (
-		dec = record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
-		got []record.RefMetadata
+		dec        = record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+		got        []record.RefMetadata
+		batchSizes []int
 	)
 	r := NewReader(sr)
 	for r.Next() {
@@ -565,10 +566,13 @@ func TestCheckpointMetadataAcrossBatches(t *testing.T) {
 		if dec.Type(rec) != record.Metadata {
 			continue
 		}
-		got, err = dec.Metadata(rec, got)
+		batch, err := dec.Metadata(rec, nil)
 		require.NoError(t, err)
+		batchSizes = append(batchSizes, len(batch))
+		got = append(got, batch...)
 	}
 	require.NoError(t, r.Err())
+	require.Equal(t, []int{metadataBatchSize, metadataBatchSize, 1}, batchSizes)
 
 	sort.Slice(got, func(i, j int) bool { return got[i].Ref < got[j].Ref })
 	require.Equal(t, expected, got)
