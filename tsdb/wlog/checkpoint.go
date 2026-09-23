@@ -149,11 +149,8 @@ func DeleteTempCheckpoints(logger *slog.Logger, dir string) error {
 // This makes it easy to read it through the WAL package and concatenate
 // it with the original WAL.
 //
-// writeMinValidTime controls whether the checkpoint also carries a record of mint, readable
-// back with ReadMinValidTime. It is opt-in because not every caller's own replay path
-// tolerates an unrecognized record type equally gracefully; callers that don't consume
-// ReadMinValidTime should pass false.
-func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64, enableSTStorage, writeMinValidTime bool) (*CheckpointStats, error) {
+// The checkpoint starts with the minimum valid time, readable with ReadMinValidTime.
+func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64, enableSTStorage bool) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
 	var sgmReader io.ReadCloser
 
@@ -205,32 +202,30 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		os.RemoveAll(cpdirtmp)
 	}()
 
-	if writeMinValidTime {
-		// Persist mint as the checkpoint's first record, so a restart can recover it without
-		// depending on whether any block on disk happens to reflect it: a block produced by
-		// CompactSelectedSeries or CompactStaleHead is deliberately excluded from that search,
-		// and a truncation whose range had nothing left to write never produces a block at all.
-		//
-		// mint by itself is only guaranteed to be the highest ever used within this process:
-		// the guard that makes truncateWAL's calls strictly increasing lives in memory
-		// (Head.lastWALTruncationTime) and resets on every restart, so a later checkpoint
-		// could otherwise persist a lower mint than an earlier one already did. Read back
-		// whatever the previous checkpoint recorded and keep the higher of the two, so the
-		// persisted value never regresses across restarts. This is also what makes it safe to
-		// unconditionally drop the previous checkpoint's own copy of this record further down:
-		// its value has already been folded into the one written here.
-		persistedMinValidTime := mint
-		previous, ok, err := ReadMinValidTime(w.Dir())
-		if err != nil {
-			return nil, fmt.Errorf("read previous min valid time: %w", err)
-		}
-		if ok && previous > persistedMinValidTime {
-			persistedMinValidTime = previous
-		}
-		var minValidTimeEnc record.Encoder
-		if err := cp.Log(minValidTimeEnc.MinValidTime(persistedMinValidTime, nil)); err != nil {
-			return nil, fmt.Errorf("write min valid time record: %w", err)
-		}
+	// Persist mint as the checkpoint's first record, so a restart can recover it without
+	// depending on whether any block on disk happens to reflect it: a block produced by
+	// CompactSelectedSeries or CompactStaleHead is deliberately excluded from that search,
+	// and a truncation whose range had nothing left to write never produces a block at all.
+	//
+	// mint by itself is only guaranteed to be the highest ever used within this process:
+	// the guard that makes truncateWAL's calls strictly increasing lives in memory
+	// (Head.lastWALTruncationTime) and resets on every restart, so a later checkpoint
+	// could otherwise persist a lower mint than an earlier one already did. Read back
+	// whatever the previous checkpoint recorded and keep the higher of the two, so the
+	// persisted value never regresses across restarts. This is also what makes it safe to
+	// unconditionally drop the previous checkpoint's own copy of this record further down:
+	// its value has already been folded into the one written here.
+	persistedMinValidTime := mint
+	previous, ok, err := ReadMinValidTime(w.Dir())
+	if err != nil {
+		return nil, fmt.Errorf("read previous min valid time: %w", err)
+	}
+	if ok && previous > persistedMinValidTime {
+		persistedMinValidTime = previous
+	}
+	var minValidTimeEnc record.Encoder
+	if err := cp.Log(minValidTimeEnc.MinValidTime(persistedMinValidTime, nil)); err != nil {
+		return nil, fmt.Errorf("write min valid time record: %w", err)
 	}
 
 	r := NewReader(sgmReader)
