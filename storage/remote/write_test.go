@@ -21,13 +21,16 @@ import (
 
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/storage"
 )
 
 func testRemoteWriteConfig() *config.RemoteWriteConfig {
@@ -372,4 +375,30 @@ func TestWriteStorage_CanRegisterMetricsAfterClosing(t *testing.T) {
 	s := NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false)
 	require.NoError(t, s.Close())
 	require.NotPanics(t, func() { NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false) })
+}
+
+func TestWriteStorage_AppenderV2_AppendExemplars(t *testing.T) {
+	dir := t.TempDir()
+	reg := prometheus.NewPedanticRegistry()
+
+	s := NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false)
+	defer func() { require.NoError(t, s.Close()) }()
+
+	app, ok := s.AppenderV2(t.Context()).(storage.ExemplarAppenderV2)
+	require.True(t, ok)
+
+	before := prom_testutil.ToFloat64(exemplarsIn)
+
+	lbls := labels.FromStrings("__name__", "test_metric")
+	ref, err := app.Append(0, lbls, 0, 100, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+
+	_, err = app.AppendExemplars(ref, lbls, []exemplar.Exemplar{
+		{Labels: labels.FromStrings("trace_id", "1"), Value: 1, Ts: 100},
+		{Labels: labels.FromStrings("trace_id", "2"), Value: 2, Ts: 100},
+	})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.Equal(t, before+2, prom_testutil.ToFloat64(exemplarsIn))
 }

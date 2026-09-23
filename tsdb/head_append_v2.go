@@ -30,11 +30,14 @@ import (
 // initAppenderV2 is a helper to initialize the time bounds of the head
 // upon the first sample it receives.
 type initAppenderV2 struct {
-	app  storage.AppenderV2
+	app  *headAppenderV2
 	head *Head
 }
 
-var _ storage.GetRef = &initAppenderV2{}
+var (
+	_ storage.GetRef             = &initAppenderV2{}
+	_ storage.ExemplarAppenderV2 = &initAppenderV2{}
+)
 
 func (a *initAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	if a.app == nil {
@@ -44,9 +47,21 @@ func (a *initAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	return a.app.Append(ref, ls, st, t, v, h, fh, opts)
 }
 
+func (a *initAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	if a.app == nil {
+		if !a.head.initialized() {
+			// AppendExemplars MUST be called after an Append for the same series,
+			// which would have already initialized the head.
+			return 0, fmt.Errorf("AppendExemplars called before any Append; no series exists yet: %w", storage.ErrNotFound)
+		}
+		a.app = a.head.appenderV2()
+	}
+	return a.app.AppendExemplars(ref, ls, exemplars)
+}
+
 func (a *initAppenderV2) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
-	if g, ok := a.app.(storage.GetRef); ok {
-		return g.GetRef(lset, hash)
+	if a.app != nil {
+		return a.app.GetRef(lset, hash)
 	}
 	return 0, labels.EmptyLabels()
 }
@@ -226,6 +241,25 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	return storage.SeriesRef(s.ref), partialErr
 }
 
+// AppendExemplars implements storage.ExemplarAppenderV2.
+// The series identified by ref and/or ls MUST already exist (it MUST have been
+// appended to via Append in the same or an earlier transaction).
+func (a *headAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		ls = ls.WithoutEmpty()
+		s = a.head.series.getByHash(ls.Hash(), ls)
+	}
+	if s == nil {
+		return 0, fmt.Errorf("unknown HeadSeriesRef when trying to add exemplars: %d: %w", ref, storage.ErrNotFound)
+	}
+	if len(exemplars) == 0 || !a.head.opts.EnableExemplarStorage || a.head.opts.MaxExemplars.Load() <= 0 {
+		return storage.SeriesRef(s.ref), nil
+	}
+
+	return storage.SeriesRef(s.ref), a.appendExemplars(s, exemplars)
+}
+
 // appendFloat appends v to s, and returns the series the sample was appended to, which
 // may differ from s if s was garbage-collected in the meantime (see lockForAppend).
 func (a *headAppenderV2) appendFloat(s *memSeries, st, t int64, v float64, fastRejectOOO bool) (*memSeries, error) {
@@ -326,9 +360,9 @@ func (a *headAppenderV2) appendFloatHistogram(s *memSeries, st, t int64, fh *his
 	return s, nil
 }
 
-func (a *headAppenderV2) appendExemplars(s *memSeries, exemplar []exemplar.Exemplar) error {
+func (a *headAppenderV2) appendExemplars(s *memSeries, exemplars []exemplar.Exemplar) error {
 	var errs []error
-	for _, e := range exemplar {
+	for _, e := range exemplars {
 		// Ensure no empty labels have gotten through.
 		e.Labels = e.Labels.WithoutEmpty()
 		if err := a.head.exemplars.ValidateExemplar(s.labels(), e); err != nil {
@@ -410,4 +444,7 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 	return appended
 }
 
-var _ storage.GetRef = &headAppenderV2{}
+var (
+	_ storage.GetRef             = &headAppenderV2{}
+	_ storage.ExemplarAppenderV2 = &headAppenderV2{}
+)

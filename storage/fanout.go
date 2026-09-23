@@ -16,6 +16,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/prometheus/common/model"
@@ -310,6 +311,39 @@ func (f *fanoutAppenderV2) Append(ref SeriesRef, l labels.Labels, st, t int64, v
 
 	for _, appender := range f.secondaries {
 		_, serr := appender.Append(ref, l, st, t, v, h, fh, opts)
+		partialErr, serr = partialErr.Handle(serr)
+		if serr != nil {
+			return ref, serr
+		}
+	}
+	return ref, partialErr.ToError()
+}
+
+var _ ExemplarAppenderV2 = &fanoutAppenderV2{}
+
+// AppendExemplars implements ExemplarAppenderV2.
+// It dispatches the exemplars to the primary and all secondaries that implement
+// ExemplarAppenderV2.
+func (f *fanoutAppenderV2) AppendExemplars(ref SeriesRef, l labels.Labels, exemplars []exemplar.Exemplar) (SeriesRef, error) {
+	pa, ok := f.primary.(ExemplarAppenderV2)
+	if !ok {
+		return 0, fmt.Errorf("primary appender %T does not implement ExemplarAppenderV2", f.primary)
+	}
+
+	var partialErr *AppendPartialError
+
+	ref, err := pa.AppendExemplars(ref, l, exemplars)
+	partialErr, err = partialErr.Handle(err)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		sa, ok := appender.(ExemplarAppenderV2)
+		if !ok {
+			continue
+		}
+		_, serr := sa.AppendExemplars(ref, l, exemplars)
 		partialErr, serr = partialErr.Handle(serr)
 		if serr != nil {
 			return ref, serr
