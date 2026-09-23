@@ -405,6 +405,10 @@ params:
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
 [ <http_config> ]
 
+# List of Alibaba Cloud service discovery configurations.
+alibabacloud_sd_configs:
+  [ - <alibabacloud_sd_config> ... ]
+
 # List of AWS service discovery configurations.
 aws_sd_configs:
   [ - <aws_sd_config> ... ]
@@ -866,6 +870,99 @@ tls_config:
 # Specifies headers to send to proxies during CONNECT requests.
 [ proxy_connect_header:
   [ <string>: [<secret>, ...] ] ]
+```
+
+
+### `<alibabacloud_sd_config>`
+
+Alibaba Cloud SD configurations allow retrieving scrape targets from [Alibaba Cloud](https://www.alibabacloud.com/)
+services. This is a unified service discovery that supports multiple Alibaba Cloud service types through the `role` parameter.
+
+One of the following `role` types can be configured to discover targets:
+
+#### `ecs`
+
+The `ecs` role discovers targets from [Alibaba Cloud ECS](https://www.alibabacloud.com/product/ecs) instances.
+The primary ENI IP address is used by default, but may be changed with relabeling.
+
+The credentials used must have the `ecs:DescribeInstances` permission to discover scrape targets.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_alibabacloud_ecs_instance_id`: the ECS instance ID
+* `__meta_alibabacloud_ecs_instance_name`: the ECS instance name
+* `__meta_alibabacloud_ecs_instance_type`: the ECS instance type
+* `__meta_alibabacloud_ecs_instance_type_family`: the ECS instance type family
+* `__meta_alibabacloud_ecs_instance_status`: the status of the ECS instance
+* `__meta_alibabacloud_ecs_instance_network_type`: the network type of the ECS instance
+* `__meta_alibabacloud_ecs_inner_ip`: comma separated list of inner IP addresses of the instance
+* `__meta_alibabacloud_ecs_eip`: the elastic IP address of the instance, if available
+* `__meta_alibabacloud_ecs_vpc_private_ip`: comma separated list of VPC private IP addresses of the instance
+* `__meta_alibabacloud_ecs_public_ip`: comma separated list of public IP addresses of the instance
+* `__meta_alibabacloud_ecs_os_type`: the operating system type of the instance
+* `__meta_alibabacloud_ecs_image_id`: the image ID of the instance
+* `__meta_alibabacloud_ecs_region`: the region of the instance
+* `__meta_alibabacloud_ecs_zone`: the zone of the instance
+* `__meta_alibabacloud_ecs_tag_<tagkey>`: each tag value of the instance
+
+See below for the configuration options for Alibaba Cloud discovery:
+
+```yaml
+# The Alibaba Cloud service role. Must be one of: ecs.
+role: <string>
+
+# The Alibaba Cloud region. If blank, the region from the environment is used.
+[ region: <string> ]
+
+# Custom endpoint to be used.
+[ endpoint: <string> ]
+
+# Refresh interval to re-read the instance list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# Alibaba Cloud credential configuration.
+credential:
+  # The credential type. Must be one of: access_key, sts, bearer,
+  # ecs_ram_role, ram_role_arn, oidc_role_arn, credentials_uri.
+  [ type: <string> ]
+
+  # Access key ID and secret. Used when the type is access_key or sts.
+  [ access_key_id: <secret> ]
+  [ access_key_secret: <secret> ]
+
+  # Security token. Used when the type is sts.
+  [ security_token: <secret> ]
+
+  # Bearer token. Used when the type is bearer.
+  [ bearer_token: <secret> ]
+
+  # Role ARN configuration. Used when the type is ram_role_arn or oidc_role_arn.
+  [ oidc_provider_arn: <string> ]
+  [ oidc_token: <string> ]
+  [ role_arn: <string> ]
+  [ role_session_name: <string> ]
+  [ role_session_expiration: <int> ]
+  [ policy: <string> ]
+  [ external_id: <string> ]
+  [ sts_endpoint: <string> ]
+
+  # Role name. Used when the type is ecs_ram_role.
+  [ role_name: <string> ]
+
+  # URL to fetch credentials from. Used when the type is credentials_uri.
+  [ url: <string> ]
+
+# Tags can be used optionally to filter the instance list by tag key/value pairs.
+tags:
+  [ - key: <string>
+      value: <string> ]
+
+# HTTP client settings, including authentication methods (such as basic auth and
+# authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+[ <http_config> ]
 ```
 
 ### `<aws_sd_config>`
@@ -3768,6 +3865,10 @@ sigv4:
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
 [ <http_config> ]
+
+# List of Alibaba Cloud service discovery configurations.
+alibabacloud_sd_configs:
+  [ - <alibabacloud_sd_config> ... ]
 
 # List of AWS service discovery configurations.
 aws_sd_configs:
