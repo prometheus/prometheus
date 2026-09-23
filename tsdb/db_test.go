@@ -3410,10 +3410,35 @@ func TestRangeForTimestamp(t *testing.T) {
 		{args{6, 5}, 10},
 		{args{13, 5}, 15},
 		{args{95, 5}, 100},
+		{args{-1, 5}, 0},
+		{args{-4, 5}, 0},
+		{args{-5, 5}, 0},
+		{args{-6, 5}, -5},
+		{args{-13, 5}, -10},
+		{args{math.MinInt64, 1000}, math.MinInt64 + 808},
+		{args{math.MinInt64 + 998, 1000}, math.MinInt64 + 1808},
 	}
 	for _, tt := range tests {
 		got := rangeForTimestamp(tt.args.t, tt.args.width)
 		require.Equal(t, tt.expected, got)
+	}
+}
+
+func TestRangeStartForTimestamp(t *testing.T) {
+	for _, tt := range []struct {
+		t, width, expected int64
+	}{
+		{0, 5, 0},
+		{6, 5, 5},
+		{-1, 5, -5},
+		{-5, 5, -5},
+		{-6, 5, -10},
+		{math.MinInt64 + 900, 1000, math.MinInt64 + 808},
+		// The range containing these starts below math.MinInt64.
+		{math.MinInt64 + 600, 1000, math.MinInt64},
+		{math.MinInt64, 1000, math.MinInt64},
+	} {
+		require.Equal(t, tt.expected, rangeStartForTimestamp(tt.t, tt.width), "t=%d width=%d", tt.t, tt.width)
 	}
 }
 
@@ -11707,6 +11732,90 @@ func TestCompactSelectedSeries_ChunkBoundarySampleNotLost(t *testing.T) {
 			"in a block. With the loop bound `mint < maxt`, the iteration that "+
 			"would have produced a block over [chunkRange, 2*chunkRange-1] never "+
 			"runs, so the boundary sample is lost when sel is evicted.")
+}
+
+// TestCompactSelectedSeries_NegativeHeadMinTimeNotLost verifies that
+// CompactSelectedSeries preserves samples in the first chunk range when the
+// head's MinTime is negative and not a multiple of the chunk range.
+//
+// The walk starts at the chunk range containing the head's MinTime. Aligning
+// MinTime with plain integer division truncates toward zero, so for t=-500 it
+// starts the walk at 0 instead of -chunkRange, never writes a block for
+// [-chunkRange, -1], and then removes the series from memory along with the
+// samples that were only ever in the head.
+func TestCompactSelectedSeries_NegativeHeadMinTimeNotLost(t *testing.T) {
+	const chunkRange = 1000
+	opts := DefaultOptions()
+	opts.MinBlockDuration = chunkRange
+	opts.MaxBlockDuration = chunkRange
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	sel := labels.FromStrings("name", "selected")
+	app := db.Appender(context.Background())
+	selRef, err := app.Append(0, sel, -500, 1.0)
+	require.NoError(t, err)
+	_, err = app.Append(selRef, sel, -100, 2.0)
+	require.NoError(t, err)
+	_, err = app.Append(selRef, sel, 200, 3.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.Equal(t, int64(-500), db.Head().MinTime(), "test precondition")
+	require.Equal(t, int64(200), db.Head().MaxTime(), "test precondition")
+
+	require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{selRef}))
+
+	q, err := db.Querier(-chunkRange, chunkRange)
+	require.NoError(t, err)
+	seriesSet := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "selected"))
+	actual := seriesSet[`{name="selected"}`]
+
+	expected := []chunks.Sample{
+		sample{t: -500, f: 1.0},
+		sample{t: -100, f: 2.0},
+		sample{t: 200, f: 3.0},
+	}
+	require.Equal(t, expected, actual,
+		"the samples in [-chunkRange, -1] must be captured in a block before sel is evicted")
+	require.Zero(t, db.Head().NumSeries(), "sel must have been evicted, so the samples above come from blocks")
+	require.Len(t, db.Blocks(), 2, "one block per chunk range: [-chunkRange, 0) and [0, chunkRange)")
+}
+
+// TestCompactOOOHead_NegativeMinTimeNotLost verifies that out-of-order compaction
+// writes the samples in the first block range when the OOO head's MinTime is
+// negative and not a multiple of the block range. Aligning it with plain integer
+// division starts at 0 instead, and the OOO samples below 0 are dropped with the
+// rest of the OOO head.
+func TestCompactOOOHead_NegativeMinTimeNotLost(t *testing.T) {
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = 10000
+	db := newTestDB(t, withOpts(opts), withRngs(100))
+	db.DisableCompactions()
+
+	lbls := labels.FromStrings("name", "ooo")
+	app := db.Appender(context.Background())
+	_, err := app.Append(0, lbls, 200, 200)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	app = db.Appender(context.Background())
+	for _, ts := range []int64{-50, -10, 20} {
+		_, err = app.Append(0, lbls, ts, float64(ts))
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	require.NoError(t, db.CompactOOOHead(context.Background()))
+
+	q, err := db.Querier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	expected := []chunks.Sample{
+		sample{t: -50, f: -50},
+		sample{t: -10, f: -10},
+		sample{t: 20, f: 20},
+		sample{t: 200, f: 200},
+	}
+	require.Equal(t, expected, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "name", "ooo"))[`{name="ooo"}`])
 }
 
 // TestCompactSelectedSeries_SparseSelectedAcrossWideHead verifies that when the
