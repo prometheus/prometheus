@@ -220,9 +220,11 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		// unconditionally drop the previous checkpoint's own copy of this record further down:
 		// its value has already been folded into the one written here.
 		persistedMinValidTime := mint
-		if previous, ok, err := ReadMinValidTime(w.Dir()); err != nil {
+		previous, ok, err := ReadMinValidTime(w.Dir())
+		if err != nil {
 			return nil, fmt.Errorf("read previous min valid time: %w", err)
-		} else if ok && previous > persistedMinValidTime {
+		}
+		if ok && previous > persistedMinValidTime {
 			persistedMinValidTime = previous
 		}
 		var minValidTimeEnc record.Encoder
