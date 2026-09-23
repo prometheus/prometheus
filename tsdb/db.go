@@ -37,6 +37,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -1483,7 +1484,20 @@ type dbAppenderV2 struct {
 	db *DB
 }
 
-var _ storage.GetRef = dbAppenderV2{}
+var (
+	_ storage.GetRef             = dbAppenderV2{}
+	_ storage.ExemplarAppenderV2 = dbAppenderV2{}
+)
+
+// AppendExemplars implements storage.ExemplarAppenderV2 by delegating to the
+// wrapped head appender.
+func (a dbAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	ea, ok := a.AppenderV2.(storage.ExemplarAppenderV2)
+	if !ok {
+		return 0, fmt.Errorf("appender %T does not implement storage.ExemplarAppenderV2", a.AppenderV2)
+	}
+	return ea.AppendExemplars(ref, ls, exemplars)
+}
 
 func (a dbAppenderV2) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
 	if g, ok := a.AppenderV2.(storage.GetRef); ok {

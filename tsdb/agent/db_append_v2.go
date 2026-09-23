@@ -125,6 +125,27 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 	return storage.SeriesRef(s.ref), partialErr
 }
 
+// AppendExemplars implements storage.ExemplarAppenderV2.
+// The series identified by ref and/or ls MUST already exist (it MUST have been
+// appended to via Append in the same or an earlier transaction).
+func (a *appenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	// Series references and chunk references are identical for agent mode.
+	s := a.series.GetByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		ls = ls.WithoutEmpty()
+		s = a.series.GetByHash(ls.Hash(), ls)
+	}
+	if s == nil {
+		return 0, fmt.Errorf("unknown series ref when trying to add exemplars: %d: %w", ref, storage.ErrNotFound)
+	}
+	if len(exemplars) == 0 {
+		return storage.SeriesRef(s.ref), nil
+	}
+	return storage.SeriesRef(s.ref), a.appendExemplars(s, exemplars)
+}
+
+var _ storage.ExemplarAppenderV2 = &appenderV2{}
+
 func (a *appenderV2) Commit() error {
 	defer a.appenderV2Pool.Put(a)
 	return a.commit()

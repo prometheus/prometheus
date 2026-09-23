@@ -403,3 +403,11 @@ func (t *timestampTrackerV2) Append(ref storage.SeriesRef, _ labels.Labels, _, t
 	t.exemplars += int64(len(opts.Exemplars))
 	return ref, nil
 }
+
+// AppendExemplars implements storage.ExemplarAppenderV2.
+func (t *timestampTrackerV2) AppendExemplars(ref storage.SeriesRef, _ labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
+	t.exemplars += int64(len(exemplars))
+	return ref, nil
+}
+
+var _ storage.ExemplarAppenderV2 = &timestampTrackerV2{}

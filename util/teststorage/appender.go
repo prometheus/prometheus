@@ -629,3 +629,79 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 	}
 	return ref, partialErr
 }
+
+var _ storage.ExemplarAppenderV2 = &appenderV2{}
+
+// AppendExemplars implements storage.ExemplarAppenderV2.
+func (a *appenderV2) AppendExemplars(ref storage.SeriesRef, l labels.Labels, exemplars []exemplar.Exemplar) (_ storage.SeriesRef, err error) {
+	if err := a.checkErr(); err != nil {
+		return 0, err
+	}
+
+	pendingIdx := -1
+	var matchedLabels labels.Labels
+	if !a.a.skipRecording {
+		a.a.mtx.Lock()
+		for i := len(a.a.pendingSamples) - 1; i >= 0; i-- { // Attach exemplars to the last matching sample.
+			s := a.a.pendingSamples[i]
+			if (!l.IsEmpty() && labels.Equal(l, s.L)) || (ref != 0 && storage.SeriesRef(s.L.Hash()) == ref) {
+				pendingIdx = i
+				matchedLabels = s.L
+				break
+			}
+		}
+		if pendingIdx == -1 {
+			for i := len(a.a.resultSamples) - 1; i >= 0; i-- {
+				s := a.a.resultSamples[i]
+				if (!l.IsEmpty() && labels.Equal(l, s.L)) || (ref != 0 && storage.SeriesRef(s.L.Hash()) == ref) {
+					matchedLabels = s.L
+					break
+				}
+			}
+		}
+		a.a.mtx.Unlock()
+		if matchedLabels.IsEmpty() {
+			return 0, fmt.Errorf("teststorage.appenderV2: exemplars appended without series; ref %v; l %v; exemplars: %v: %w", ref, l, exemplars, storage.ErrNotFound)
+		}
+	}
+
+	var partialErr *storage.AppendPartialError
+	if next, ok := a.next.(storage.ExemplarAppenderV2); ok {
+		ref, err = next.AppendExemplars(ref, l, exemplars)
+		partialErr, err = partialErr.Handle(err)
+		if err != nil {
+			return 0, err
+		}
+	} else {
+		checkL := l
+		if checkL.IsEmpty() {
+			checkL = matchedLabels
+		}
+		ref, err = a.a.computeOrCheckRef(ref, checkL)
+		if err != nil {
+			return ref, err
+		}
+	}
+
+	if !a.a.skipRecording && len(exemplars) > 0 {
+		if a.a.appendExemplarsError != nil {
+			exErrs := make([]error, len(exemplars))
+			for i := range exemplars {
+				exErrs[i] = a.a.appendExemplarsError
+			}
+			partialErr, _ = partialErr.Handle(&storage.AppendPartialError{ExemplarErrors: exErrs})
+		} else {
+			// As per ExemplarAppenderV2 interface, the exemplars slice is unsafe for reuse.
+			es := make([]exemplar.Exemplar, len(exemplars))
+			copy(es, exemplars)
+			a.a.mtx.Lock()
+			if pendingIdx >= 0 && pendingIdx < len(a.a.pendingSamples) {
+				a.a.pendingSamples[pendingIdx].ES = append(a.a.pendingSamples[pendingIdx].ES, es...)
+			} else {
+				a.a.pendingSamples = append(a.a.pendingSamples, Sample{L: matchedLabels, ES: es})
+			}
+			a.a.mtx.Unlock()
+		}
+	}
+	return ref, partialErr.ToError()
+}
