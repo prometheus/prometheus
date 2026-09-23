@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package aliyun
+package alibabacloud
 
 import (
 	"context"
@@ -38,7 +38,7 @@ import (
 )
 
 const (
-	ecsLabel                       = model.MetaLabelPrefix + "aliyun_ecs_"
+	ecsLabel                       = model.MetaLabelPrefix + "alibabacloud_ecs_"
 	ecsLabelECSInstanceID          = ecsLabel + "instance_id"
 	ecsLabelECSInstanceName        = ecsLabel + "instance_name"
 	ecsLabelECSInstanceType        = ecsLabel + "instance_type"
@@ -91,8 +91,8 @@ func (*ECSSDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.
 }
 
 // Name returns the name of the ECS Config.
-// The name `aliyun_ecs` is used to avoid conflicts with AWS ECS.
-func (*ECSSDConfig) Name() string { return "aliyun_ecs" }
+// The name `alibabacloud_ecs` is used to avoid conflicts with AWS ECS.
+func (*ECSSDConfig) Name() string { return "alibabacloud_ecs" }
 
 // NewDiscoverer returns a Discoverer for the EC2 Config.
 func (c *ECSSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
@@ -128,8 +128,8 @@ type ECSDiscovery struct {
 	cfg    *ECSSDConfig
 	ecs    ecsClient
 
-	// region is the resolved region used for the Aliyun client and for the
-	// Source / __meta_aliyun_ecs_region labels.
+	// region is the resolved region used for the Alibaba Cloud client and for the
+	// Source / __meta_alibabacloud_ecs_region labels.
 	region string
 }
 

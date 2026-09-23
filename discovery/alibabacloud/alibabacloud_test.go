@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package aliyun
+package alibabacloud
 
 import (
 	"errors"
@@ -71,7 +71,7 @@ func TestRoleUnmarshalYAML(t *testing.T) {
 func TestSDConfigName(t *testing.T) {
 	t.Parallel()
 	cfg := &SDConfig{}
-	require.Equal(t, "aliyun", cfg.Name())
+	require.Equal(t, "alibabacloud", cfg.Name())
 }
 
 func TestRoleString(t *testing.T) {
@@ -225,7 +225,7 @@ func TestNewDiscovery(t *testing.T) {
 	t.Parallel()
 
 	refreshMetrics := discovery.NewRefreshMetrics(prometheus.NewRegistry())
-	aliyunMetrics := DefaultSDConfig.NewDiscovererMetrics(nil, refreshMetrics)
+	alibabacloudMetrics := DefaultSDConfig.NewDiscovererMetrics(nil, refreshMetrics)
 
 	tests := []struct {
 		name    string
@@ -254,7 +254,7 @@ func TestNewDiscovery(t *testing.T) {
 				},
 			},
 			opts: discovery.DiscovererOptions{
-				Metrics: aliyunMetrics,
+				Metrics: alibabacloudMetrics,
 			},
 		},
 	}

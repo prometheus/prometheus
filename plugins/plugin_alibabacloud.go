@@ -11,22 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package aliyun
+//go:build !remove_all_sd || enable_alibabacloud_sd
+
+package plugins
 
 import (
-	"github.com/prometheus/prometheus/discovery"
+	_ "github.com/prometheus/prometheus/discovery/alibabacloud" // Register alibabacloud plugin.
 )
-
-type aliyunMetrics struct {
-	refreshMetrics discovery.RefreshMetricsInstantiator
-}
-
-var _ discovery.DiscovererMetrics = (*aliyunMetrics)(nil)
-
-// Register implements discovery.DiscovererMetrics.
-func (*aliyunMetrics) Register() error {
-	return nil
-}
-
-// Unregister implements discovery.DiscovererMetrics.
-func (*aliyunMetrics) Unregister() {}

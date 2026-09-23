@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package aliyun
+package alibabacloud
 
 import (
 	"net/http"
@@ -30,7 +30,7 @@ import (
 
 func TestECSSDConfigName(t *testing.T) {
 	conf := DefaultECSSDConfig
-	require.Equal(t, "aliyun_ecs", conf.Name())
+	require.Equal(t, "alibabacloud_ecs", conf.Name())
 }
 
 func TestECSSDConfigUnmarshalYAML(t *testing.T) {

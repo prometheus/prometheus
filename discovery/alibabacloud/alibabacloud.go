@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package aliyun
+package alibabacloud
 
 import (
 	"errors"
@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 )
 
-// DefaultSDConfig is the default Aliyun SD configuration.
+// DefaultSDConfig is the default Alibaba Cloud SD configuration.
 var DefaultSDConfig = SDConfig{
 	RefreshInterval:  model.Duration(60 * time.Second),
 	HTTPClientConfig: config.DefaultHTTPClientConfig,
@@ -36,7 +36,7 @@ func init() {
 	discovery.RegisterConfig(&SDConfig{})
 }
 
-// Role is role of the service in Aliyun.
+// Role is role of the service in Alibaba Cloud.
 type Role string
 
 // The valid options for Role.
@@ -53,7 +53,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(any) error) error {
 	case RoleECS:
 		return nil
 	default:
-		return fmt.Errorf("unknown Aliyun SD role %q", *c)
+		return fmt.Errorf("unknown Alibaba Cloud SD role %q", *c)
 	}
 }
 
@@ -61,7 +61,7 @@ func (c Role) String() string {
 	return string(c)
 }
 
-// Tag is the configuration for filtering Aliyun resources.
+// Tag is the configuration for filtering Alibaba Cloud resources.
 type Tag struct {
 	Key   string `yaml:"key"`
 	Value string `yaml:"value"`
@@ -134,7 +134,7 @@ func (config *CredentialConfig) Convert() *credentials.Config {
 	}
 }
 
-// SDConfig is the configuration for Aliyun service discovery.
+// SDConfig is the configuration for Alibaba Cloud service discovery.
 type SDConfig struct {
 	Role             Role                    `yaml:"role"`
 	Region           string                  `yaml:"region,omitempty"`
@@ -184,32 +184,32 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 			c.ECSSDConfig.Tags = c.Tags
 		}
 	default:
-		return fmt.Errorf("unknown Aliyun SD role %q", c.Role)
+		return fmt.Errorf("unknown Alibaba Cloud SD role %q", c.Role)
 	}
 	return nil
 }
 
-// Name returns the name of the Aliyun Config.
-func (*SDConfig) Name() string { return "aliyun" }
+// Name returns the name of the Alibaba Cloud Config.
+func (*SDConfig) Name() string { return "alibabacloud" }
 
 // NewDiscovererMetrics implements discovery.Config.
 func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
-	return &aliyunMetrics{refreshMetrics: rmi}
+	return &alibabacloudMetrics{refreshMetrics: rmi}
 }
 
-// NewDiscoverer returns a Discoverer for the Aliyun Config.
+// NewDiscoverer returns a Discoverer for the Alibaba Cloud Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	aliyunMetrics, ok := opts.Metrics.(*aliyunMetrics)
+	alibabacloudMetrics, ok := opts.Metrics.(*alibabacloudMetrics)
 	if !ok {
-		return nil, errors.New("invalid discovery metrics type for Aliyun SD")
+		return nil, errors.New("invalid discovery metrics type for Alibaba Cloud SD")
 	}
 
 	switch c.Role {
 	case RoleECS:
-		opts.Metrics = &ecsMetrics{refreshMetrics: aliyunMetrics.refreshMetrics}
+		opts.Metrics = &ecsMetrics{refreshMetrics: alibabacloudMetrics.refreshMetrics}
 		return NewECSDiscovery(c.ECSSDConfig, opts)
 	default:
-		return nil, fmt.Errorf("unknown Aliyun SD role %q", c.Role)
+		return nil, fmt.Errorf("unknown Alibaba Cloud SD role %q", c.Role)
 	}
 }
 

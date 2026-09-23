@@ -35,6 +35,7 @@ import (
 	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/discovery/alibabacloud"
 	"github.com/prometheus/prometheus/discovery/aws"
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
@@ -1797,6 +1798,54 @@ var expectedConf = &Config{
 					Port:             80,
 					RefreshInterval:  model.Duration(60 * time.Second),
 					HTTPClientConfig: config.DefaultHTTPClientConfig,
+				},
+			},
+		},
+		{
+			JobName: "alibabacloud-ecs",
+
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
+			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&alibabacloud.SDConfig{
+					Role:             alibabacloud.RoleECS,
+					Region:           "cn-beijing",
+					Port:             80,
+					RefreshInterval:  model.Duration(60 * time.Second),
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
+					Tags: []*alibabacloud.Tag{
+						{Key: "ack.alibabacloud.com", Value: "cd386715790e44917bxxxxxxxb7e782e2"},
+					},
+					ECSSDConfig: &alibabacloud.ECSSDConfig{
+						Region:           "cn-beijing",
+						Port:             80,
+						RefreshInterval:  model.Duration(60 * time.Second),
+						HTTPClientConfig: config.DefaultHTTPClientConfig,
+						Tags: []*alibabacloud.Tag{
+							{Key: "ack.alibabacloud.com", Value: "cd386715790e44917bxxxxxxxb7e782e2"},
+						},
+					},
 				},
 			},
 		},

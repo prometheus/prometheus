@@ -11,22 +11,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package aliyun
+package alibabacloud
 
 import (
 	"github.com/prometheus/prometheus/discovery"
 )
 
-type ecsMetrics struct {
+type alibabacloudMetrics struct {
 	refreshMetrics discovery.RefreshMetricsInstantiator
 }
 
-var _ discovery.DiscovererMetrics = (*ecsMetrics)(nil)
+var _ discovery.DiscovererMetrics = (*alibabacloudMetrics)(nil)
 
 // Register implements discovery.DiscovererMetrics.
-func (*ecsMetrics) Register() error {
+func (*alibabacloudMetrics) Register() error {
 	return nil
 }
 
 // Unregister implements discovery.DiscovererMetrics.
-func (*ecsMetrics) Unregister() {}
+func (*alibabacloudMetrics) Unregister() {}
