@@ -99,6 +99,11 @@ func TestHeadAppendAfterMmapOnlyRecovery(t *testing.T) {
 							}
 							require.NoError(t, a.Commit())
 							require.Nil(t, ms.headChunks, "an OOO append must not create an in-order head chunk")
+							if tc.window > 0 {
+								require.NotNil(t, ms.ooo)
+								require.NotNil(t, ms.ooo.oooHeadChunk)
+								require.Contains(t, ms.ooo.oooHeadChunk.chunk.samples, scenario.sampleFunc(200, 999), "the conflicting sample must reach OOO storage")
+							}
 						}
 						a = newAppender()
 						_, _, err = scenario.appendFunc(a, ls, 300, 4)
@@ -227,6 +232,11 @@ func TestHeadAppendAfterMmapOnlyWALRepair(t *testing.T) {
 								}
 								require.NoError(t, app.Commit())
 								require.Nil(t, ms.headChunks)
+								if window > 0 {
+									require.NotNil(t, ms.ooo)
+									require.NotNil(t, ms.ooo.oooHeadChunk)
+									require.Contains(t, ms.ooo.oooHeadChunk.chunk.samples, scenario.sampleFunc(ts, 999), "the conflicting sample must reach OOO storage after repair")
+								}
 							}
 							return
 						}
