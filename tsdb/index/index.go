@@ -1633,7 +1633,8 @@ func (r *Reader) postingsForLabelMatching(ctx context.Context, name string, matc
 	if match == nil {
 		// The caller wants every value, so the number of iterators is already
 		// known well enough to size the slice, and each one is decoded as the
-		// scan reaches it.
+		// scan reaches it. traversePostingOffsets checks the context after each
+		// decode.
 		its := make([]Postings, 0, len(e)*symbolFactor)
 		if err := r.traversePostingOffsets(ctx, e[0].off, func(val string, postingsOff uint64) (bool, error) {
 			p, err := r.decodePostingsAt(postingsOff)
@@ -1679,6 +1680,11 @@ func (r *Reader) postingsForLabelMatching(ctx context.Context, name string, matc
 		return ErrPostings(err)
 	}
 
+	// Each decode verifies the checksum of a whole postings list, so the context
+	// is checked before each one, as traversePostingOffsets does between lists.
+	if ctx.Err() != nil {
+		return ErrPostings(ctx.Err())
+	}
 	n := nFirst
 	for _, c := range rest {
 		n += len(c)
@@ -1690,9 +1696,7 @@ func (r *Reader) postingsForLabelMatching(ctx context.Context, name string, matc
 			offsets = rest[k]
 		}
 		for _, off := range offsets {
-			// traversePostingOffsets checks the context while it scans, so this
-			// loop has to check it as well to stay cancelable.
-			if len(its)%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+			if ctx.Err() != nil {
 				return ErrPostings(ctx.Err())
 			}
 			p, err := r.decodePostingsAt(off)
@@ -1702,8 +1706,7 @@ func (r *Reader) postingsForLabelMatching(ctx context.Context, name string, matc
 			its = append(its, p)
 		}
 	}
-	// The loop above checks the context every checkContextEveryNIterations, and
-	// the decoder can cancel it between two checks, so check it once more here.
+	// The last decode can cancel the context.
 	if ctx.Err() != nil {
 		return ErrPostings(ctx.Err())
 	}
