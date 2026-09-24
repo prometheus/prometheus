@@ -431,6 +431,18 @@ var tests = []struct {
 				input:    "atan2",
 				expected: []Item{{ATAN2, 0, "atan2"}},
 			},
+			{
+				input:    "bitand",
+				expected: []Item{{BITAND, 0, "bitand"}},
+			},
+			{
+				input:    "bitor",
+				expected: []Item{{BITOR, 0, "bitor"}},
+			},
+			{
+				input:    "bitxor",
+				expected: []Item{{BITXOR, 0, "bitxor"}},
+			},
 		},
 	},
 	{

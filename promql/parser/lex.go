@@ -110,6 +110,9 @@ var key = map[string]ItemType{
 	"or":     LOR,
 	"unless": LUNLESS,
 	"atan2":  ATAN2,
+	"bitand": BITAND,
+	"bitor":  BITOR,
+	"bitxor": BITXOR,
 
 	// Aggregators.
 	"sum":          SUM,
