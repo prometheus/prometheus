@@ -189,7 +189,7 @@ const formatSelector = (
       {!metricExtendedCharset && (
         <span className="promql-metric-name">{metricName}</span>
       )}
-      {(matchLabels.length > 0 || metricName === "") && (
+      {matchLabels.length > 0 && (
         <>
           {"{"}
           <span className="promql-metric-name">{matchLabels}</span>

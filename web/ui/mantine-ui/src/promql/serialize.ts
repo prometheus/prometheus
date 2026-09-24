@@ -99,7 +99,7 @@ const serializeSelector = (node: VectorSelector | MatrixSelector): string => {
     node.offsetExpr
   );
 
-  return `${!metricExtendedCharset ? metricName : ""}${matchers.length > 0 || metricName === "" ? `{${matchers.join(",")}}` : ""}${range}${extendedAttribute}${atAndOffset}`;
+  return `${!metricExtendedCharset ? metricName : ""}${matchers.length > 0 ? `{${matchers.join(",")}}` : ""}${range}${extendedAttribute}${atAndOffset}`;
 };
 
 const serializeNode = (

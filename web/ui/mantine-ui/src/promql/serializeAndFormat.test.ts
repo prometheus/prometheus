@@ -31,37 +31,6 @@ describe("serializeNode and formatNode", () => {
         output: "metric_name",
       },
       {
-        // A selector with no name and no matchers, as in info(v, {}).
-        node: {
-          type: nodeType.vectorSelector,
-          name: "",
-          matchers: [],
-          offset: 0,
-          offsetExpr: null,
-          timestamp: null,
-          startOrEnd: null,
-          anchored: false,
-          smoothed: false,
-        },
-        output: "{}",
-      },
-      {
-        node: {
-          type: nodeType.matrixSelector,
-          name: "",
-          matchers: [],
-          range: 300000,
-          rangeExpr: null,
-          offset: 0,
-          offsetExpr: null,
-          timestamp: null,
-          startOrEnd: null,
-          anchored: false,
-          smoothed: false,
-        },
-        output: "{}[5m]",
-      },
-      {
         node: {
           type: nodeType.vectorSelector,
           name: "metric_name",
@@ -610,41 +579,6 @@ describe("serializeNode and formatNode", () => {
         output: "rate(…)",
         prettyOutput: `rate(
   …
-)`,
-      },
-      {
-        node: {
-          type: nodeType.call,
-          func: functionSignatures["info"],
-          args: [
-            {
-              type: nodeType.vectorSelector,
-              name: "foo",
-              matchers: [],
-              offset: 0,
-              offsetExpr: null,
-              timestamp: null,
-              startOrEnd: null,
-              anchored: false,
-              smoothed: false,
-            },
-            {
-              type: nodeType.vectorSelector,
-              name: "",
-              matchers: [],
-              offset: 0,
-              offsetExpr: null,
-              timestamp: null,
-              startOrEnd: null,
-              anchored: false,
-              smoothed: false,
-            },
-          ],
-        },
-        output: "info(foo, {})",
-        prettyOutput: `info(
-  foo,
-  {}
 )`,
       },
       {
