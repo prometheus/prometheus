@@ -216,7 +216,7 @@ func (d *Discovery) listInstances(ctx context.Context) ([]govultr.Instance, erro
 		}
 		instances = append(instances, pagedInstances...)
 
-		if meta.Links.Next == "" {
+		if meta == nil || meta.Links == nil || meta.Links.Next == "" {
 			break
 		}
 		listOptions.Cursor = meta.Links.Next

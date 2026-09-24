@@ -46,8 +46,7 @@ func TestConcurrentRangeQueries(t *testing.T) {
 		MaxSamples: 50000000,
 		Timeout:    100 * time.Second,
 		Parser: parser.NewParser(parser.Options{
-			EnableExperimentalFunctions:  true,
-			EnableExtendedRangeSelectors: true,
+			EnableExperimentalFunctions: true,
 		}),
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)

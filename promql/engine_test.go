@@ -2037,7 +2037,7 @@ load 10s
 	for _, c := range cases {
 		t.Run(c.Query, func(t *testing.T) {
 			t.Run("perStepEnabled", func(t *testing.T) {
-				opts := promql.NewPrometheusQueryOpts(true, 0)
+				opts := promql.NewPrometheusQueryOpts(true, 0, nil)
 				engine := promqltest.NewTestEngine(t, true, 0, promqltest.DefaultMaxSamplesPerQuery)
 
 				stats := runQuery(t, engine, opts, c, nil)
@@ -2057,7 +2057,7 @@ load 10s
 			})
 
 			t.Run("perStepDisabled", func(t *testing.T) {
-				opts := promql.NewPrometheusQueryOpts(false, 0)
+				opts := promql.NewPrometheusQueryOpts(false, 0, nil)
 				engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
 
 				stats := runQuery(t, engine, opts, c, nil)
@@ -2410,11 +2410,11 @@ func TestParserConfigIsolation(t *testing.T) {
 	`)
 	t.Cleanup(func() { storage.Close() })
 
-	query := "metric[10s] smoothed"
+	query := "mad_over_time(metric[10s])"
 	t.Run("engine_with_feature_disabled_rejects", func(t *testing.T) {
 		engine := promql.NewEngine(promql.EngineOpts{
 			MaxSamples: 1000, Timeout: 10 * time.Second,
-			Parser: parser.NewParser(parser.Options{EnableExtendedRangeSelectors: false}),
+			Parser: parser.NewParser(parser.Options{EnableExperimentalFunctions: false}),
 		})
 		t.Cleanup(func() { _ = engine.Close() })
 		_, err := engine.NewInstantQuery(ctx, storage, nil, query, time.Unix(10, 0))
@@ -2424,7 +2424,7 @@ func TestParserConfigIsolation(t *testing.T) {
 	t.Run("engine_with_feature_enabled_accepts", func(t *testing.T) {
 		engine := promql.NewEngine(promql.EngineOpts{
 			MaxSamples: 1000, Timeout: 10 * time.Second,
-			Parser: parser.NewParser(parser.Options{EnableExtendedRangeSelectors: true}),
+			Parser: parser.NewParser(parser.Options{EnableExperimentalFunctions: true}),
 		})
 		t.Cleanup(func() { _ = engine.Close() })
 		q, err := engine.NewInstantQuery(ctx, storage, nil, query, time.Unix(10, 0))
@@ -3215,6 +3215,22 @@ func TestQueryLogger_error(t *testing.T) {
 }
 
 func TestPreprocessExpr(t *testing.T) {
+	t.Run("preserve subquery duration expressions", func(t *testing.T) {
+		for _, input := range []string{
+			"foo[1h / 2:1h / 2]",
+			"foo[1h / 2:30m]",
+			"foo[1h / 2:]",
+		} {
+			t.Run(input, func(t *testing.T) {
+				expr, err := testParser.ParseExpr(input)
+				require.NoError(t, err)
+				expr, err = promql.PreprocessExpr(expr, time.Unix(1000, 0), time.Unix(9999, 0), time.Minute)
+				require.NoError(t, err)
+				require.Equal(t, input, expr.String())
+			})
+		}
+	})
+
 	t.Run("wrap step-invariant expressions", func(t *testing.T) {
 		startTime := time.Unix(1000, 0)
 		endTime := time.Unix(9999, 0)
@@ -4297,7 +4313,7 @@ metric 0 1 2
 			engine := promqltest.NewTestEngine(t, false, c.engineLookback, promqltest.DefaultMaxSamplesPerQuery)
 			storage := promqltest.LoadedStorage(t, load)
 
-			opts := promql.NewPrometheusQueryOpts(false, c.queryLookback)
+			opts := promql.NewPrometheusQueryOpts(false, c.queryLookback, nil)
 			qry, err := engine.NewInstantQuery(context.Background(), storage, opts, query, c.ts)
 			require.NoError(t, err)
 
@@ -4867,6 +4883,45 @@ load 10m
 eval range from 0 to 20m step 10m -metric_a or -metric_b
     {} -1  -4
 
+# Test range vector functions with non-overlapping series that have the same labelset
+# after __name__ removal. This verifies the fix for issue #14695.
+# When evaluated as a range query, at each step only one series has data in the
+# window, so the results should merge correctly without collision.
+clear
+load 6m
+  metric_1{common="label"} 0 1 _ _ 4
+  metric_2{common="label"} _ _ 2 3 _
+
+eval range from 0 to 24m step 6m max_over_time({__name__=~"metric_.*"}[5m])
+  {common="label"} 0 1 2 3 4
+
+# Range vector function should fail when both series have data within the same window.
+clear
+load 6m
+  metric_1{common="label"} 0 1 2
+  metric_2{common="label"} 3 4 5
+
+eval_fail instant at 12m max_over_time({__name__=~"metric_.*"}[30m])
+
+# Test cross-type (float vs histogram) timestamp collision detection.
+# When one series has floats and another has histograms at the same labelset,
+# non-overlapping timestamps should merge successfully.
+clear
+load 6m
+  float_metric{common="label"} 0 1 _ _
+  hist_metric{common="label"} _ _ {{schema:0 sum:3 count:3}} {{schema:0 sum:4 count:4}}
+
+eval range from 0 to 18m step 6m sum_over_time({__name__=~".*_metric"}[5m])
+  {common="label"} 0 1 {{schema:0 sum:3 count:3}} {{schema:0 sum:4 count:4}}
+
+# Overlapping float and histogram at the same timestamp should fail.
+clear
+load 6m
+  float_metric{common="label"} 0 1 2
+  hist_metric{common="label"} {{schema:0 sum:1 count:1}} {{schema:0 sum:2 count:2}} {{schema:0 sum:3 count:3}}
+
+eval_fail range from 0 to 12m step 6m sum_over_time({__name__=~".*_metric"}[5m])
+
 `, engine)
 }
 
@@ -5109,6 +5164,74 @@ func TestHistogram_CounterResetHint(t *testing.T) {
 			require.Len(t, v, 1)
 			require.NotNil(t, v[0].H)
 			require.Equal(t, tc.want, v[0].H.CounterResetHint)
+		})
+	}
+}
+
+func TestQueryStartTimestampsOverride(t *testing.T) {
+	testStorageOpts := func(opts *tsdb.Options) {
+		opts.FloatChunkEncoding = chunkenc.EncXOR2
+		opts.EnableSTStorage = true
+	}
+
+	load := `load 10s
+  metric@st 0 -5s
+  metric 1 1
+`
+	storage := promqltest.LoadedStorage(t, load, testStorageOpts)
+	defer storage.Close()
+
+	trueVal := true
+	falseVal := false
+
+	testCases := []struct {
+		name     string
+		engineST bool
+		queryST  *bool
+		expected string
+	}{
+		{
+			name:     "Override to false (engine default: true)",
+			engineST: true,
+			queryST:  &falseVal,
+			expected: "{} => 0 @[10000]",
+		},
+		{
+			name:     "Override to true on false default (engine default: false)",
+			engineST: false,
+			queryST:  &trueVal,
+			expected: "{} => 2 @[10000]",
+		},
+		{
+			name:     "Default is used when nil (engine default: true)",
+			engineST: true,
+			queryST:  nil,
+			expected: "{} => 2 @[10000]",
+		},
+		{
+			name:     "Default is used when nil (engine default: false)",
+			engineST: false,
+			queryST:  nil,
+			expected: "{} => 0 @[10000]",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+				UseStartTimestamps: tc.engineST,
+				Timeout:            5 * time.Minute,
+				MaxSamples:         promqltest.DefaultMaxSamplesPerQuery,
+			})
+			opts := promql.NewPrometheusQueryOpts(false, 0, tc.queryST)
+			q, err := engine.NewInstantQuery(context.Background(), storage, opts, "increase(metric[20s])", time.Unix(10, 0))
+			require.NoError(t, err)
+			defer q.Close()
+
+			res := q.Exec(context.Background())
+			require.NoError(t, res.Err)
+			require.NotNil(t, res.Value)
+			require.Equal(t, tc.expected, res.Value.String())
 		})
 	}
 }

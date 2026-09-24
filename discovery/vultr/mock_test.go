@@ -60,7 +60,7 @@ func (m *SDMock) HandleInstanceList() {
 			return
 		}
 
-		w.Header().Add("content-type", "application/json; charset=utf-8")
+		w.Header().Add("content-type", "application/json")
 		w.WriteHeader(http.StatusOK)
 
 		fmt.Fprint(w, `

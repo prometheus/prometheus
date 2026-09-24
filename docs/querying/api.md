@@ -104,6 +104,10 @@ URL query parameters:
 - `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
 - `stats=<string>`: Include query statistics in the response. Supported values are `true` (basic statistics) and `all` (additionally includes detailed per-step statistics: timings and sample counts). Any other non-empty value currently behaves like `true`, but is deprecated, adds a warning to the response, and will be rejected in the next major release. Optional. See [Query statistics](#query-statistics).
 
+Optional HTTP request headers:
+
+- `X-Prometheus-Use-Start-Timestamps: <bool>`: Override the engine-level start timestamp processing setting (`--promql.use-start-timestamps`) for this query. When set to `true`, functions such as `rate()` will use start timestamps from ingested data. When set to `false`, start timestamp processing is disabled for this query. Optional. If omitted, the engine-level default is used.
+
 The current server time is used if the `time` parameter is omitted.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
@@ -177,6 +181,10 @@ URL query parameters:
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 - `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
 - `stats=<string>`: Include query statistics in the response. Supported values are `true` (basic statistics) and `all` (additionally includes detailed per-step statistics: timings and sample counts). Any other non-empty value currently behaves like `true`, but is deprecated, adds a warning to the response, and will be rejected in the next major release. Optional. See [Query statistics](#query-statistics).
+
+Optional HTTP request headers:
+
+- `X-Prometheus-Use-Start-Timestamps: <bool>`: Override the engine-level start timestamp processing setting (`--promql.use-start-timestamps`) for this query. When set to `true`, functions such as `rate()` will use start timestamps from ingested data. When set to `false`, start timestamp processing is disabled for this query. Optional. If omitted, the engine-level default is used.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -600,7 +608,7 @@ Common URL query parameters:
 - `limit=<number>`: Maximum number of returned results. Optional. Default is
   100.
 - `batch_size=<number>`: Preferred number of results per NDJSON batch.
-  Optional. Default is 100.
+  Optional. Default is 100. Clamped to 1000 and the effective result limit.
 
 The `start` and `end` parameters narrow results to the selected time window.
 Results may include values from series active slightly outside that window,

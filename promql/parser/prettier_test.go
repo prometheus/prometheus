@@ -723,7 +723,7 @@ func TestDurationExprPretty(t *testing.T) {
 	}
 	for _, test := range inputs {
 		t.Run(test.in, func(t *testing.T) {
-			optsParser := NewParser(Options{ExperimentalDurationExpr: true})
+			optsParser := NewParser(Options{})
 			expr, err := optsParser.ParseExpr(test.in)
 			require.NoError(t, err)
 			if test.out != "" {

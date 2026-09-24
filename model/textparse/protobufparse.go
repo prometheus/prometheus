@@ -180,11 +180,9 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 //
 // The Compact method is called before returning the Histogram (or FloatHistogram).
 //
-// If the SampleCountFloat or the ZeroCountFloat in the proto message is > 0,
-// the histogram is parsed and returned as a FloatHistogram and nil is returned
-// as the (integer) Histogram return value. Otherwise, it is parsed and returned
-// as an (integer) Histogram and nil is returned as the FloatHistogram return
-// value.
+// A histogram with a positive SampleCountFloat or ZeroCountFloat, or any
+// PositiveCount or NegativeCount entries, is parsed and returned as a
+// FloatHistogram. Otherwise, it is parsed and returned as an integer Histogram.
 func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
 	var (
 		ts = &p.dec.TimestampMs // To save memory allocations, never nil.
@@ -203,7 +201,7 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 	if p.parseClassicHistograms && len(h.GetBucket()) > 0 {
 		p.redoClassic = true
 	}
-	if h.GetSampleCountFloat() > 0 || h.GetZeroCountFloat() > 0 {
+	if isFloatHistogram(h) {
 		// It is a float histogram.
 		fh := histogram.FloatHistogram{
 			Count:         h.GetSampleCountFloat(),
@@ -498,6 +496,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		// Potentially a second series in the metric family.
 		t := p.dec.GetType()
 		decodeNext := true
+		mustCheckNextSeriesKind := false
 		if t == dto.MetricType_SUMMARY ||
 			t == dto.MetricType_HISTOGRAM ||
 			t == dto.MetricType_GAUGE_HISTOGRAM {
@@ -523,18 +522,13 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			p.fieldsDone = false
 			p.exemplarPos = 0
 
-			// If this is a metric family containing native
-			// histograms, it means we are here thanks to redoClassic state.
-			// Return to native histograms for the consistent flow.
-			// If this is a metric family containing classic histograms,
-			// it means we might need to do NHCB conversion.
+			// If this is a metric family containing classic histograms
+			// and NHCB conversion is enabled, emit the NHCB for the
+			// current series without advancing. We do not advance
+			// because the NHCB is derived from the current series and
+			// must be emitted before moving to the next one.
 			if t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM {
-				if !isClassicHistogram {
-					if err := checkNativeHistogramConsistency(p.dec.GetHistogram()); err != nil {
-						return EntryInvalid, fmt.Errorf("histogram %q: %w", p.dec.GetName(), err)
-					}
-					p.state = EntryHistogram
-				} else if p.convertClassicHistogramsToNHCB {
+				if isClassicHistogram && p.convertClassicHistogramsToNHCB {
 					// We still need to spit out the NHCB.
 					var err error
 					p.nhcbH, p.nhcbFH, err = p.convertToNHCB(t)
@@ -544,6 +538,10 @@ func (p *ProtobufParser) Next() (Entry, error) {
 					p.state = EntryHistogram
 					// We have an NHCB to emit, no need to decode the next series.
 					decodeNext = false
+				} else {
+					// The next series in this metric family may be native or
+					// classic-only, and we cannot tell which without advancing it.
+					mustCheckNextSeriesKind = true
 				}
 			}
 		}
@@ -555,6 +553,25 @@ func (p *ProtobufParser) Next() (Entry, error) {
 					return p.Next()
 				}
 				return EntryInvalid, err
+			}
+			if mustCheckNextSeriesKind {
+				// The previous series was a native histogram whose
+				// classic fields were emitted via redoClassic.
+				//
+				// If the current series is classic only then we need to
+				// iterate _count, _sum, and all buckets, emitting a
+				// series per each.
+				if p.ignoreNativeHistograms || !isNativeHistogram(p.dec.GetHistogram()) {
+					p.fieldPos = -3
+					p.fieldsDone = false
+					return p.Next()
+				}
+				// If the current series is a native histogram then we
+				// simply emit it.
+				if err := checkNativeHistogramConsistency(p.dec.GetHistogram()); err != nil {
+					return EntryInvalid, fmt.Errorf("histogram %q: %w", p.dec.GetName(), err)
+				}
+				p.state = EntryHistogram
 			}
 		}
 		if err := p.onSeriesOrHistogramUpdate(); err != nil {
@@ -715,6 +732,14 @@ func isNativeHistogram(h *dto.Histogram) bool {
 		h.GetZeroCount() > 0
 }
 
+func isFloatHistogram(h *dto.Histogram) bool {
+	// Bucket count entries identify float histograms even when all counts are zero.
+	return h.GetSampleCountFloat() > 0 ||
+		h.GetZeroCountFloat() > 0 ||
+		len(h.GetPositiveCount()) > 0 ||
+		len(h.GetNegativeCount()) > 0
+}
+
 func (p *ProtobufParser) convertToNHCB(t dto.MetricType) (*histogram.Histogram, *histogram.FloatHistogram, error) {
 	h := p.dec.GetHistogram()
 	p.tmpNHCB.Reset()
@@ -760,9 +785,8 @@ func (p *ProtobufParser) convertToNHCB(t dto.MetricType) (*histogram.Histogram, 
 // message. It catches malformed input before it reaches compactBuckets, where
 // a mismatch would cause a panic.
 func checkNativeHistogramConsistency(h *dto.Histogram) error {
-	isFloat := h.GetSampleCountFloat() > 0 || h.GetZeroCountFloat() > 0
 	var positiveBuckets, negativeBuckets int
-	if isFloat {
+	if isFloatHistogram(h) {
 		positiveBuckets = len(h.GetPositiveCount())
 		negativeBuckets = len(h.GetNegativeCount())
 	} else {

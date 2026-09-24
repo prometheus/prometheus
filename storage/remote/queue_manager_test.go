@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -602,6 +603,63 @@ func TestReshardRaceWithStop(t *testing.T) {
 				h.Unlock()
 			}
 			<-exitCh
+		})
+	}
+}
+
+// TestSetClientRace runs SetClient concurrently with sample and metadata sends.
+// It exists to fail under the race detector if send paths read storeClient without clientMtx.
+// MaxShards, Series, SamplesPerSeries, and the Append count loop are set to large values to
+// increase the likelihood of a race condition.  These numbers were chosen on an Apple m5 Pro machine.
+func TestSetClientRace(t *testing.T) {
+	t.Parallel()
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			c := NewTestWriteClient(protoMsg)
+			cfg := testDefaultQueueConfig()
+			// More than one shard keeps multiple send goroutines in flight.
+			cfg.MaxShards = 4
+			m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, c, protoMsg)
+
+			// Series and samples only need to be large enough to fill a batch and hit Store.
+			recs := testwal.GenerateRecords(recCase{
+				NoST:             protoMsg == remoteapi.WriteV1MessageType,
+				Series:           8,
+				SamplesPerSeries: 20,
+			})
+			m.StoreSeries(recs.Series, 0)
+			m.StoreMetadata(recs.Metadata)
+			m.Start()
+			defer m.Stop()
+
+			ctx, cancel := context.WithCancel(t.Context())
+			g, ctx := errgroup.WithContext(ctx)
+			g.Go(func() error {
+				for {
+					select {
+					case <-ctx.Done():
+						return nil
+					default:
+						m.SetClient(c)
+					}
+				}
+			})
+			g.Go(func() error {
+				defer cancel()
+				// Repeated appends keep shards sending; the exact count is not load-bearing.
+				for range 50 {
+					m.Append(recs.Samples)
+					if protoMsg == remoteapi.WriteV1MessageType {
+						m.AppendWatcherMetadata(context.Background(), []scrape.MetricMetadata{{
+							MetricFamily: "test_metric",
+							Type:         model.MetricTypeCounter,
+							Help:         "help",
+						}})
+					}
+				}
+				return nil
+			})
+			require.NoError(t, g.Wait())
 		})
 	}
 }

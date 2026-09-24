@@ -185,6 +185,11 @@ func readTestWAL(t testing.TB, dir string) (recs []any) {
 			exemplars, err := dec.Exemplars(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, exemplars)
+		case record.MinValidTime:
+			// Internal checkpoint bookkeeping, not WAL content callers of readTestWAL care
+			// about; see TestReadMinValidTime_* in tsdb/wlog for coverage of this record.
+			_, err := dec.MinValidTime(rec)
+			require.NoError(t, err)
 		default:
 			require.Fail(t, "unknown record type")
 		}
@@ -1020,7 +1025,8 @@ func TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative(t *testing.T) {
 
 	// Truncate stale series: removes ref1 from the head and writes a
 	// [MinInt64, MaxInt64] tombstone record to the WAL.
-	require.NoError(t, head.truncateStaleSeries([]storage.SeriesRef{ref1}, 3500, math.MaxUint64))
+	staleRefs := []storage.SeriesRef{ref1}
+	require.NoError(t, head.truncateStaleSeries(staleRefs, 3500, head.snapshotFingerprints(staleRefs, math.MaxUint64)))
 
 	// Append a single sample with the same labels to create ref2.
 	// Ref2 has 0 m-mapped chunks, fewer than ref1's 3.
@@ -7469,6 +7475,34 @@ func TestStripeSeries_getOrSet(t *testing.T) {
 }
 
 func TestStripeSeries_gc(t *testing.T) {
+	t.Run("retains the oldest referenced file regardless of timestamp order", func(t *testing.T) {
+		lset := labels.FromStrings("a", "1")
+		series := newMemSeries(lset, 1, 0, defaultIsolationDisabled, false)
+		// File numbers occupy the upper 32 bits of the disk reference.
+		series.mmappedChunks = []*mmappedChunk{
+			{ref: chunks.ChunkDiskMapperRef(3 << 32), minTime: 0, maxTime: 50},
+			{ref: chunks.ChunkDiskMapperRef(1 << 32), minTime: 100, maxTime: 150},
+			{ref: chunks.ChunkDiskMapperRef(2 << 32), minTime: 200, maxTime: 250},
+		}
+		s := newStripeSeries(1, noopSeriesLifecycleCallback{})
+		_, created := s.setUnlessAlreadySet(lset.Hash(), lset, series)
+		require.True(t, created)
+
+		for _, tc := range []struct {
+			mint               int64
+			minFile, remaining int
+		}{
+			{mint: 0, minFile: 1, remaining: 3},
+			{mint: 51, minFile: 1, remaining: 2},
+			{mint: 151, minFile: 2, remaining: 1},
+			{mint: 251, minFile: math.MaxInt32, remaining: 0},
+		} {
+			_, _, _, _, _, _, _, _, minFile := s.gc(tc.mint, 0)
+			require.Equal(t, tc.minFile, minFile, "mint=%d", tc.mint)
+			require.Len(t, series.mmappedChunks, tc.remaining)
+		}
+	})
+
 	t.Run("marks collected series", func(t *testing.T) {
 		s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
 		hash := ms1.lset.Hash()
@@ -8360,7 +8394,7 @@ func TestHead_NumStaleSeries_MixedTypeRemoval(t *testing.T) {
 		{
 			name: "truncate_stale_series",
 			remove: func(t *testing.T, head *Head, refs []storage.SeriesRef) {
-				require.NoError(t, head.truncateStaleSeries(refs, 1000, math.MaxUint64))
+				require.NoError(t, head.truncateStaleSeries(refs, 1000, head.snapshotFingerprints(refs, math.MaxUint64)))
 			},
 			wantSeries:        2, // Only the genuinely stale series is evicted.
 			crossTypeSurvives: true,
@@ -8807,7 +8841,8 @@ func TestHead_NumNativeHistogramSeriesAndBuckets(t *testing.T) {
 
 						series := testHead.series.getByHash(lbls.Hash(), lbls)
 						require.NotNil(t, series)
-						require.NoError(t, testHead.truncateStaleSeries([]storage.SeriesRef{storage.SeriesRef(series.ref)}, 100, math.MaxUint64))
+						staleRefs := []storage.SeriesRef{storage.SeriesRef(series.ref)}
+						require.NoError(t, testHead.truncateStaleSeries(staleRefs, 100, testHead.snapshotFingerprints(staleRefs, math.MaxUint64)))
 						require.Zero(t, testHead.NumSeries())
 						require.Zero(t, testHead.NumStaleSeries())
 						require.Zero(t, testHead.NumNativeHistogramSeries())
@@ -9865,7 +9900,7 @@ func TestWALReplayRaceWithStaleSeriesCompaction(t *testing.T) {
 		require.NotNil(t, ms)
 		staleRefs = append(staleRefs, storage.SeriesRef(ms.ref))
 	}
-	require.NoError(t, head.truncateStaleSeries(staleRefs, 300, math.MaxUint64))
+	require.NoError(t, head.truncateStaleSeries(staleRefs, 300, head.snapshotFingerprints(staleRefs, math.MaxUint64)))
 	require.Equal(t, uint64(0), head.NumStaleSeries())
 	require.Equal(t, uint64(0), head.NumSeries())
 
@@ -10364,6 +10399,183 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		}
 	})
 
+	// Regression test for https://github.com/prometheus/prometheus/issues/19445:
+	// mmapHeadChunksInStripe used to hold a stripe's RLock while locking each series
+	// in it, while stripeSeries.gcSeries's check function, invoked under
+	// iterForDeletion locks the series first and then (under some conditions) the
+	// stripe's lock. This is a deadlock.
+	//
+	// Since a pure timing/scheduling based test is unlikely to fail, this test
+	// mimics gcSeries locking behavior and drives the real mmapHeadChunksInStripe.
+	// The test fails if it regresses to holding the stripe's RLock while locking a series.
+	t.Run("mmapHeadChunksInStripe releases the stripe lock before locking a series", func(t *testing.T) {
+		h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+		require.NoError(t, h.Init(0))
+
+		lbls := labels.FromStrings("__name__", "series")
+		app := h.Appender(t.Context())
+		var (
+			ref storage.SeriesRef
+			ts  int64
+		)
+		for range DefaultSamplesPerChunk + 10 {
+			var err error
+			ref, err = app.Append(ref, lbls, ts, float64(ts))
+			require.NoError(t, err)
+			ts += interval
+		}
+		require.NoError(t, app.Commit())
+
+		series := h.series.getByID(chunks.HeadSeriesRef(ref))
+		require.NotNil(t, series)
+		require.GreaterOrEqual(t, series.headChunkCount.Load(), uint32(2), "series must be mmap-ready")
+		stripe := h.series.refStripe(chunks.HeadSeriesRef(ref))
+
+		// gcSeries: hold the series lock.
+		series.Lock()
+		mmapDone := make(chan struct{})
+		go func() {
+			defer close(mmapDone)
+			var candidates []*memSeries
+			h.mmapHeadChunksInStripe(stripe, &candidates)
+		}()
+		select {
+		case <-mmapDone:
+			t.Fatal("mmapHeadChunksInStripe returned without ever blocking on the series lock")
+		case <-time.After(time.Second):
+		}
+
+		// If mmapHeadChunksInStripe still holds the stripe's RLock, this TryLock (write)
+		// fails (it's blocked on the series lock while also holding the stripe lock).
+		// This can only pass if the RLock has been released before ever locking the
+		// series lock.
+		gotLock := h.series.locks[stripe].TryLock()
+		if gotLock {
+			h.series.locks[stripe].Unlock()
+		}
+
+		// Unblock mmapHeadChunksInStripe and wait for it to finish before asserting, so
+		// this test doesn't leak a goroutine regardless of the outcome.
+		series.Unlock()
+		select {
+		case <-mmapDone:
+		case <-time.After(5 * time.Second):
+			t.Fatal("mmapHeadChunksInStripe never completed after the series lock was released")
+		}
+
+		require.True(t, gotLock, "mmapHeadChunksInStripe held the stripe's RLock while blocked on a series lock; "+
+			"this deadlocks against a concurrent gcSeries")
+	})
+
+	t.Run("gcSeries preserves head chunks for active readers after WAL replay", func(t *testing.T) {
+		if defaultIsolationDisabled {
+			t.Skip("skipping test since tsdb isolation is disabled")
+		}
+
+		dir := t.TempDir()
+		db, err := Open(dir, nil, nil, DefaultOptions(), nil)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			if db != nil {
+				require.NoError(t, db.Close())
+			}
+		})
+		db.DisableCompactions()
+
+		app := db.Appender(t.Context())
+		ref, err := app.Append(0, labels.FromStrings("__name__", "series"), 100, 1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		err = db.Close()
+		db = nil
+		require.NoError(t, err)
+
+		db, err = Open(dir, nil, nil, DefaultOptions(), nil)
+		require.NoError(t, err)
+		db.DisableCompactions()
+		h := db.Head()
+		series := h.series.getByID(chunks.HeadSeriesRef(ref))
+		require.NotNil(t, series)
+		series.Lock()
+		txIDCount, txIDsLen := series.txs.txIDCount, len(series.txs.txIDs)
+		series.Unlock()
+		require.Zero(t, txIDCount)
+		require.Zero(t, txIDsLen, "WAL replay must leave the transaction ring empty")
+
+		rh := NewRangeHead(h, 100, 100)
+		ir, err := rh.Index()
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, ir.Close()) })
+		cr, err := rh.Chunks()
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, cr.Close()) })
+		builder := labels.NewScratchBuilder(0)
+		var metas []chunks.Meta
+		require.NoError(t, ir.Series(ref, &builder, &metas))
+		require.Len(t, metas, 1)
+		chk, _, err := cr.ChunkOrIterable(metas[0])
+		require.NoError(t, err)
+		require.NotNil(t, chk)
+
+		// Retire the series directly to test the saved chunk independently of reader waiting.
+		deleted := h.gcSeries([]storage.SeriesRef{ref}, 100, func(*memSeries) bool { return true })
+		require.Contains(t, deleted, ref)
+		require.Zero(t, h.NumSeries())
+		require.Nil(t, h.series.getByID(chunks.HeadSeriesRef(ref)))
+
+		var it chunkenc.Iterator
+		require.NotPanics(t, func() { it = chk.Iterator(nil) })
+		require.Equal(t, chunkenc.ValFloat, it.Next())
+		ts, v := it.At()
+		require.Equal(t, int64(100), ts)
+		require.Equal(t, 1.0, v)
+		require.Equal(t, chunkenc.ValNone, it.Next())
+		require.NoError(t, it.Err())
+	})
+
+	// A stale mmap candidate must not write a retired series' retained chunks to disk.
+	t.Run("gcSeries preserves head chunks and a stale mmap is a no-op", func(t *testing.T) {
+		h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+		require.NoError(t, h.Init(0))
+
+		lbls := labels.FromStrings("__name__", "series")
+		app := h.Appender(t.Context())
+		var (
+			ref storage.SeriesRef
+			ts  int64
+		)
+		for range DefaultSamplesPerChunk + 10 {
+			var err error
+			ref, err = app.Append(ref, lbls, ts, float64(ts))
+			require.NoError(t, err)
+			ts += interval
+		}
+		require.NoError(t, app.Commit())
+
+		series := h.series.getByID(chunks.HeadSeriesRef(ref))
+		require.NotNil(t, series)
+		headChunksBefore := series.headChunks
+		headChunkCountBefore := series.headChunkCount.Load()
+		mmappedChunksBefore := len(series.mmappedChunks)
+		require.GreaterOrEqual(t, headChunkCountBefore, uint32(2), "series must be mmap-ready")
+		stripe := h.series.refStripe(series.ref)
+		require.Equal(t, int32(1), h.series.mmapReady[stripe].Load())
+
+		deleted := h.gcSeries([]storage.SeriesRef{ref}, math.MaxInt64, func(*memSeries) bool { return true })
+		require.Contains(t, deleted, ref)
+		require.Nil(t, h.series.getByID(chunks.HeadSeriesRef(ref)))
+		require.True(t, series.isGCed())
+		require.Same(t, headChunksBefore, series.headChunks)
+		require.Equal(t, headChunkCountBefore, series.headChunkCount.Load())
+		require.Zero(t, h.series.mmapReady[stripe].Load())
+
+		require.Equal(t, 0, h.mmapSeriesChunks(series), "mmapSeriesChunks must be a no-op on an evicted series")
+		require.Same(t, headChunksBefore, series.headChunks)
+		require.Equal(t, headChunkCountBefore, series.headChunkCount.Load())
+		require.Len(t, series.mmappedChunks, mmappedChunksBefore)
+		require.Zero(t, h.series.mmapReady[stripe].Load())
+	})
+
 	t.Run("ooo does not inflate count", func(t *testing.T) {
 		h, _ := newTestHead(t, DefaultBlockDuration, compression.None, true /* oooEnabled */)
 		require.NoError(t, h.Init(0))
@@ -10700,8 +10912,9 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		readyBefore := mmapReadyCounter()
 
 		// Use truncateStaleSeries which calls gcStaleSeries internally.
+		staleRefs := []storage.SeriesRef{storage.SeriesRef(sB.ref)}
 		require.NoError(t, h.truncateStaleSeries(
-			[]storage.SeriesRef{storage.SeriesRef(sB.ref)}, ts, math.MaxUint64,
+			staleRefs, ts, h.snapshotFingerprints(staleRefs, math.MaxUint64),
 		))
 		requireCounterConsistent("after truncateStaleSeries")
 		require.Less(t, mmapReadyCounter(), readyBefore,
