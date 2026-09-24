@@ -4497,6 +4497,17 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `info(http_request_counter_total{namespace="zzz"}, {})`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 50, End: 52},
+				Err:           errors.New("data label selector must contain at least one label matcher"),
+				Query:         `info(http_request_counter_total{namespace="zzz"}, {})`,
+			},
+		},
+	},
+	{
 		input: `info(http_request_counter_total{namespace="zzz"}, {foo="bar"} == 1)`,
 		fail:  true,
 		errors: ParseErrors{

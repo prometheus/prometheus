@@ -545,7 +545,8 @@ series in `v`, all info series with matching _identifying_ labels (more on
 this later), and adds the union of their _data_ (i.e., non-identifying) labels
 to the time series. The second argument `data-label-selector` is optional.
 It is not a real instant vector, but uses a subset of its syntax.
-It must start and end with curly braces (`{ ... }`) and may only contain label matchers.
+It must start and end with curly braces (`{ ... }`) and may only contain label matchers,
+at least one. To add all data labels, omit the argument instead of writing `{}`.
 The label matchers are used to constrain which info series to consider
 and which data labels to add to `v`.
 
