@@ -387,6 +387,13 @@ func TestHTTPMetrics(t *testing.T) {
 	require.Equal(t, 0, int(prom_testutil.ToFloat64(ready)))
 	require.Equal(t, 2, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusOK)))))
 	require.Equal(t, 3, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
+
+	// Options.Gatherer is nil, so /metrics serves an empty registry.
+	w := httptest.NewRecorder()
+	req, err := http.NewRequest(http.MethodGet, "/metrics", http.NoBody)
+	require.NoError(t, err)
+	handler.router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestShutdownWithStaleConnection(t *testing.T) {

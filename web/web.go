@@ -332,8 +332,11 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	if o.Parser == nil {
 		o.Parser = parser.NewParser(parser.Options{})
 	}
+	if o.Gatherer == nil {
+		o.Gatherer = prometheus.NewRegistry()
+	}
 
-	// Register the template metrics
+	// Register the template metrics.
 	if o.Registerer != nil {
 		template.RegisterTemplateMetrics(o.Registerer)
 	}
