@@ -1495,12 +1495,12 @@ func funcTsOfLastOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, en
 	}
 	el := matrixVal[0]
 
-	var tf int64
+	var tf int64 = math.MinInt64
 	if len(el.Floats) > 0 {
 		tf = el.Floats[len(el.Floats)-1].T
 	}
 
-	var th int64
+	var th int64 = math.MinInt64
 	if len(el.Histograms) > 0 {
 		th = el.Histograms[len(el.Histograms)-1].T
 	}
