@@ -2,10 +2,7 @@
 
 ## main / unreleased
 
-## 3.15.0-rc.1 / 2026-09-21
-- [BUGFIX] TSDB: Avoid WAL corruption after a failed WAL write in Agent mode. #19700
-
-## 3.15.0-rc.0 / 2026-09-09
+## 3.15.0 / 2026-09-24
 - [CHANGE] PromQL: A range query whose `end` was not aligned to `step` caused subqueries inside it to evaluate past the parent's last actual step, inflating `peakSamples` in the query stats and against the `query.max-samples` limit, and wasting storage I/O reading samples that were never used in the result. Add tests to prevent regression of the fix made in #18081. #18598
 - [CHANGE] PromQL: Do not register a start timestamp reset if the start timestamp hasn't changed between subsequent samples. #19454
 - [CHANGE] Logging: Deprecate `--log.level`; use `runtime.log_level` configuration to supply the default level. #19511
@@ -84,6 +81,8 @@
 - [BUGFIX] scrape: fix data race in `Manager.TargetsDroppedCounts` to avoid miscounting dropped targets. #19304
 - [BUGFIX] scrape: fix nil histogram when native and classic histograms are mixed in one metric family. #19452
 - [BUGFIX] TSDB: Fix WAL and GC log messages to emit human-readable duration strings instead of nanosecond integers. #19307
+- [BUGFIX] TSDB: Avoid WAL corruption after a failed WAL write in Agent mode. #19700
+- [BUGFIX] Agent: Ignore unknown WAL record types, to help users rolling back. #19814
 
 ## 3.14.0 / 2026-08-17
 
