@@ -31,6 +31,37 @@ describe("serializeNode and formatNode", () => {
         output: "metric_name",
       },
       {
+        // A selector with no name and no matchers, as in info(v, {}).
+        node: {
+          type: nodeType.vectorSelector,
+          name: "",
+          matchers: [],
+          offset: 0,
+          offsetExpr: null,
+          timestamp: null,
+          startOrEnd: null,
+          anchored: false,
+          smoothed: false,
+        },
+        output: "{}",
+      },
+      {
+        node: {
+          type: nodeType.matrixSelector,
+          name: "",
+          matchers: [],
+          range: 300000,
+          rangeExpr: null,
+          offset: 0,
+          offsetExpr: null,
+          timestamp: null,
+          startOrEnd: null,
+          anchored: false,
+          smoothed: false,
+        },
+        output: "{}[5m]",
+      },
+      {
         node: {
           type: nodeType.vectorSelector,
           name: "metric_name",
@@ -584,6 +615,41 @@ describe("serializeNode and formatNode", () => {
       {
         node: {
           type: nodeType.call,
+          func: functionSignatures["info"],
+          args: [
+            {
+              type: nodeType.vectorSelector,
+              name: "foo",
+              matchers: [],
+              offset: 0,
+              offsetExpr: null,
+              timestamp: null,
+              startOrEnd: null,
+              anchored: false,
+              smoothed: false,
+            },
+            {
+              type: nodeType.vectorSelector,
+              name: "",
+              matchers: [],
+              offset: 0,
+              offsetExpr: null,
+              timestamp: null,
+              startOrEnd: null,
+              anchored: false,
+              smoothed: false,
+            },
+          ],
+        },
+        output: "info(foo, {})",
+        prettyOutput: `info(
+  foo,
+  {}
+)`,
+      },
+      {
+        node: {
+          type: nodeType.call,
           func: functionSignatures["label_join"],
           args: [
             { type: nodeType.placeholder, children: [] },
@@ -695,6 +761,89 @@ describe("serializeNode and formatNode", () => {
         prettyOutput: `  …
 +
   …`,
+      },
+      // A signed left operand of ^ needs parentheses, since ^ binds tighter
+      // than a unary sign. Parsed queries only produce +Inf there (from Inf);
+      // the other cases are trees built by editing.
+      {
+        node: {
+          type: nodeType.binaryExpr,
+          op: binaryOperatorType.pow,
+          lhs: { type: nodeType.numberLiteral, val: "+Inf" },
+          rhs: { type: nodeType.numberLiteral, val: "2" },
+          matching: null,
+          bool: false,
+        },
+        output: "(+Inf) ^ 2",
+        prettyOutput: `  (
+    +Inf
+  )
+^
+  2`,
+      },
+      {
+        node: {
+          type: nodeType.binaryExpr,
+          op: binaryOperatorType.pow,
+          lhs: { type: nodeType.numberLiteral, val: "-2" },
+          rhs: { type: nodeType.numberLiteral, val: "2" },
+          matching: null,
+          bool: false,
+        },
+        output: "(-2) ^ 2",
+        prettyOutput: `  (
+    -2
+  )
+^
+  2`,
+      },
+      {
+        node: {
+          type: nodeType.binaryExpr,
+          op: binaryOperatorType.pow,
+          lhs: {
+            type: nodeType.unaryExpr,
+            op: unaryOperatorType.minus,
+            expr: { type: nodeType.placeholder, children: [] },
+          },
+          rhs: { type: nodeType.placeholder, children: [] },
+          matching: null,
+          bool: false,
+        },
+        output: "(-…) ^ …",
+        prettyOutput: `  (
+    -…
+  )
+^
+  …`,
+      },
+      {
+        node: {
+          type: nodeType.binaryExpr,
+          op: binaryOperatorType.pow,
+          lhs: { type: nodeType.numberLiteral, val: "2" },
+          rhs: { type: nodeType.numberLiteral, val: "-Inf" },
+          matching: null,
+          bool: false,
+        },
+        output: "2 ^ -Inf",
+        prettyOutput: `  2
+^
+  -Inf`,
+      },
+      {
+        node: {
+          type: nodeType.binaryExpr,
+          op: binaryOperatorType.mul,
+          lhs: { type: nodeType.numberLiteral, val: "+Inf" },
+          rhs: { type: nodeType.numberLiteral, val: "2" },
+          matching: null,
+          bool: false,
+        },
+        output: "+Inf * 2",
+        prettyOutput: `  +Inf
+*
+  2`,
       },
       {
         node: {

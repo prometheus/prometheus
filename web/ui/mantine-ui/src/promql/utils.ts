@@ -65,6 +65,25 @@ export const maybeParenthesizeBinopChild = (
   };
 };
 
+// A left operand of ^ that prints with a leading sign, like +Inf or -x, needs
+// parentheses too, since ^ binds tighter than a unary sign.
+export const maybeParenthesizeBinopLHS = (
+  op: binaryOperatorType,
+  lhs: ASTNode
+): ASTNode => {
+  if (
+    op === binaryOperatorType.pow &&
+    (lhs.type === nodeType.unaryExpr ||
+      (lhs.type === nodeType.numberLiteral && /^[+-]/.test(lhs.val)))
+  ) {
+    return {
+      type: nodeType.parenExpr,
+      expr: lhs,
+    };
+  }
+  return maybeParenthesizeBinopChild(op, lhs);
+};
+
 export const getNodeChildren = (node: ASTNode): ASTNode[] => {
   switch (node.type) {
     case nodeType.aggregation:

@@ -11,6 +11,7 @@ import ASTNode, {
 import {
   aggregatorsWithParam,
   maybeParenthesizeBinopChild,
+  maybeParenthesizeBinopLHS,
   escapeString,
   metricContainsExtendedCharset,
   maybeQuoteLabelName,
@@ -98,7 +99,7 @@ const serializeSelector = (node: VectorSelector | MatrixSelector): string => {
     node.offsetExpr
   );
 
-  return `${!metricExtendedCharset ? metricName : ""}${matchers.length > 0 ? `{${matchers.join(",")}}` : ""}${range}${extendedAttribute}${atAndOffset}`;
+  return `${!metricExtendedCharset ? metricName : ""}${matchers.length > 0 || metricName === "" ? `{${matchers.join(",")}}` : ""}${range}${extendedAttribute}${atAndOffset}`;
 };
 
 const serializeNode = (
@@ -209,7 +210,7 @@ const serializeNode = (
         }
       }
 
-      return `${serializeNode(maybeParenthesizeBinopChild(node.op, node.lhs), childIndent, pretty)}${childSeparator}${ind}${
+      return `${serializeNode(maybeParenthesizeBinopLHS(node.op, node.lhs), childIndent, pretty)}${childSeparator}${ind}${
         node.op
       }${node.bool ? " bool" : ""}${matching}${grouping}${fill}${childSeparator}${serializeNode(
         maybeParenthesizeBinopChild(node.op, node.rhs),

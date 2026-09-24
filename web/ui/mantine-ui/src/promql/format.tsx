@@ -11,6 +11,7 @@ import ASTNode, {
 import { formatPrometheusDuration } from "../lib/formatTime";
 import {
   maybeParenthesizeBinopChild,
+  maybeParenthesizeBinopLHS,
   escapeString,
   maybeQuoteLabelName,
   metricContainsExtendedCharset,
@@ -188,7 +189,7 @@ const formatSelector = (
       {!metricExtendedCharset && (
         <span className="promql-metric-name">{metricName}</span>
       )}
-      {matchLabels.length > 0 && (
+      {(matchLabels.length > 0 || metricName === "") && (
         <>
           {"{"}
           <span className="promql-metric-name">{matchLabels}</span>
@@ -447,7 +448,7 @@ const formatNodeInternal = (
         <>
           {showChildren &&
             formatNode(
-              maybeParenthesizeBinopChild(node.op, node.lhs),
+              maybeParenthesizeBinopLHS(node.op, node.lhs),
               showChildren,
               childMaxDepth
             )}{" "}
