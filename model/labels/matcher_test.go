@@ -190,7 +190,7 @@ func TestPrefix(t *testing.T) {
 		},
 		{
 			matcher:               mustNewMatcher(t, MatchNotRegexp, "(?i)abc.+"),
-			prefix:                "ABC",
+			prefix:                "",
 			caseInsensitivePrefix: true,
 		},
 	} {

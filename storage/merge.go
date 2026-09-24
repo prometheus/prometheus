@@ -722,6 +722,15 @@ func (h *samplesIteratorHeap) Pop() any {
 // NOTE: Use the returned merge function only when you see potentially overlapping series, as this introduces small a overhead
 // to handle overlaps between series.
 func NewCompactingChunkSeriesMerger(mergeFunc VerticalSeriesMergeFunc) VerticalChunkSeriesMergeFunc {
+	return NewCompactingChunkSeriesMergerWithFloatEncoding(mergeFunc, nil)
+}
+
+// NewCompactingChunkSeriesMergerWithFloatEncoding is like
+// NewCompactingChunkSeriesMerger, but chunks re-encoded while compacting overlaps
+// use the float encoding returned by floatEncoding. It is consulted once per merged
+// series, so it may be backed by runtime-reloadable configuration. Nil means EncXOR.
+// Samples carrying a start timestamp always use XOR2 regardless of floatEncoding.
+func NewCompactingChunkSeriesMergerWithFloatEncoding(mergeFunc VerticalSeriesMergeFunc, floatEncoding func() chunkenc.Encoding) VerticalChunkSeriesMergeFunc {
 	return func(series ...ChunkSeries) ChunkSeries {
 		if len(series) == 0 {
 			return nil
@@ -733,9 +742,14 @@ func NewCompactingChunkSeriesMerger(mergeFunc VerticalSeriesMergeFunc) VerticalC
 				for _, s := range series {
 					iterators = append(iterators, s.Iterator(nil))
 				}
+				enc := chunkenc.EncXOR
+				if floatEncoding != nil {
+					enc = floatEncoding()
+				}
 				return &compactChunkIterator{
-					mergeFunc: mergeFunc,
-					iterators: iterators,
+					mergeFunc:     mergeFunc,
+					iterators:     iterators,
+					floatEncoding: enc,
 				}
 			},
 		}
@@ -748,6 +762,9 @@ func NewCompactingChunkSeriesMerger(mergeFunc VerticalSeriesMergeFunc) VerticalC
 type compactChunkIterator struct {
 	mergeFunc VerticalSeriesMergeFunc
 	iterators []chunks.Iterator
+	// floatEncoding is the chunk encoding used for float samples when chunks are
+	// re-encoded because of overlaps.
+	floatEncoding chunkenc.Encoding
 
 	h chunkIteratorHeap
 
@@ -813,7 +830,7 @@ func (c *compactChunkIterator) Next() bool {
 	}
 
 	// Add last as it's not yet included in overlap. We operate on same series, so labels does not matter here.
-	iter = NewSeriesToChunkEncoder(c.mergeFunc(append(overlapping, newChunkToSeriesDecoder(labels.EmptyLabels(), c.curr))...)).Iterator(nil)
+	iter = NewSeriesToChunkEncoderWithFloatEncoding(c.mergeFunc(append(overlapping, newChunkToSeriesDecoder(labels.EmptyLabels(), c.curr))...), c.floatEncoding).Iterator(nil)
 	if !iter.Next() {
 		if c.err = iter.Err(); c.err != nil {
 			return false

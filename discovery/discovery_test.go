@@ -21,6 +21,7 @@ import (
 )
 
 func TestConfigsCustomUnMarshalMarshal(t *testing.T) {
+	t.Parallel()
 	input := `static_configs:
 - targets:
   - foo:1234

@@ -1,45 +1,77 @@
 import * as React from 'react';
-import { shallow } from 'enzyme';
+import { render, screen, waitFor } from '@testing-library/react';
 import App from './App';
-import Navigation from './Navbar';
-import { Container } from 'reactstrap';
-import { Route } from 'react-router-dom';
-import {
-  AgentPage,
-  AlertsPage,
-  ConfigPage,
-  FlagsPage,
-  RulesPage,
-  ServiceDiscoveryPage,
-  StatusPage,
-  TargetsPage,
-  TSDBStatusPage,
-  PanelListPage,
-} from './pages';
+
+jest.mock('./Navbar', () => {
+  const React = require('react');
+  return () => React.createElement('nav', { 'data-testid': 'navigation' });
+});
+
+jest.mock('./pages', () => {
+  const React = require('react');
+  const page = (testID: string) => () => React.createElement('div', { 'data-testid': testID });
+
+  return {
+    AgentPage: page('agent-page'),
+    AlertsPage: page('alerts-page'),
+    ConfigPage: page('config-page'),
+    FlagsPage: page('flags-page'),
+    PanelListPage: page('graph-page'),
+    RulesPage: page('rules-page'),
+    ServiceDiscoveryPage: page('service-discovery-page'),
+    StatusPage: page('status-page'),
+    TargetsPage: page('targets-page'),
+    TSDBStatusPage: page('tsdb-status-page'),
+  };
+});
+
+const renderApp = (path: string, agentMode = false): ReturnType<typeof render> => {
+  window.history.pushState({}, '', path);
+  return render(<App consolesLink={null} agentMode={agentMode} ready={false} />);
+};
 
 describe('App', () => {
-  const app = shallow(<App consolesLink={null} agentMode={false} ready={false} />);
-
-  it('navigates', () => {
-    expect(app.find(Navigation)).toHaveLength(1);
+  beforeEach(() => {
+    localStorage.clear();
   });
-  it('routes', () => {
-    [
-      AgentPage,
-      AlertsPage,
-      ConfigPage,
-      FlagsPage,
-      RulesPage,
-      ServiceDiscoveryPage,
-      StatusPage,
-      TargetsPage,
-      TSDBStatusPage,
-      PanelListPage,
-    ].forEach((component) => {
-      const c = app.find(component);
-      expect(c).toHaveLength(1);
-    });
-    expect(app.find(Route)).toHaveLength(10);
-    expect(app.find(Container)).toHaveLength(1);
+
+  it.each([
+    ['/agent', 'agent-page'],
+    ['/graph', 'graph-page'],
+    ['/alerts', 'alerts-page'],
+    ['/config', 'config-page'],
+    ['/flags', 'flags-page'],
+    ['/rules', 'rules-page'],
+    ['/service-discovery', 'service-discovery-page'],
+    ['/status', 'status-page'],
+    ['/targets', 'targets-page'],
+    ['/tsdb-status', 'tsdb-status-page'],
+  ])('renders the route at %s', (path, pageTestID) => {
+    const { container } = renderApp(path);
+
+    expect(screen.getByTestId(pageTestID)).toBeTruthy();
+    expect(screen.getByTestId('navigation')).toBeTruthy();
+    expect(container.querySelector('.container-fluid')).not.toBeNull();
+  });
+
+  it.each([
+    ['/', false, '/graph', 'graph-page'],
+    ['/', true, '/agent', 'agent-page'],
+    ['/prometheus', false, '/prometheus/graph', 'graph-page'],
+    ['/prometheus', true, '/prometheus/agent', 'agent-page'],
+  ])('redirects %s in agent mode %s to %s', async (path, agentMode, expectedPath, pageTestID) => {
+    renderApp(path, agentMode);
+
+    await waitFor(() => expect(window.location.pathname).toBe(expectedPath));
+    expect(screen.getByTestId(pageTestID)).toBeTruthy();
+  });
+
+  it.each([
+    ['/prometheus/alerts', 'alerts-page'],
+    ['/prometheus/targets/', 'targets-page'],
+  ])('renders prefixed route %s', (path, pageTestID) => {
+    renderApp(path);
+
+    expect(screen.getByTestId(pageTestID)).toBeTruthy();
   });
 });

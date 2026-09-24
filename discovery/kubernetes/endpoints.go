@@ -416,18 +416,19 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 		containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
 		for i, c := range containers {
 			for _, cport := range c.Ports {
-				if port.Port == cport.ContainerPort {
-					ports := strconv.FormatUint(uint64(port.Port), 10)
-					isInit := i >= len(pod.Spec.Containers)
-
-					target[podContainerNameLabel] = lv(c.Name)
-					target[podContainerImageLabel] = lv(c.Image)
-					target[podContainerPortNameLabel] = lv(cport.Name)
-					target[podContainerPortNumberLabel] = lv(ports)
-					target[podContainerPortProtocolLabel] = lv(string(port.Protocol))
-					target[podContainerIsInit] = lv(strconv.FormatBool(isInit))
-					break
+				if port.Port != cport.ContainerPort {
+					continue
 				}
+				ports := strconv.FormatUint(uint64(port.Port), 10)
+				isInit := i >= len(pod.Spec.Containers)
+
+				target[podContainerNameLabel] = lv(c.Name)
+				target[podContainerImageLabel] = lv(c.Image)
+				target[podContainerPortNameLabel] = lv(cport.Name)
+				target[podContainerPortNumberLabel] = lv(ports)
+				target[podContainerPortProtocolLabel] = lv(string(port.Protocol))
+				target[podContainerIsInit] = lv(strconv.FormatBool(isInit))
+				break
 			}
 		}
 

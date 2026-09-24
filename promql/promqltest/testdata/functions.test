@@ -254,15 +254,15 @@ eval instant at 20m irate(http_requests_histogram{path="/b"}[6m])
   	expect no_warn
 
 eval instant at 20m irate(http_requests_histogram{path="/c"}[20m])
-	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram"
+	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram" (1:7)
 	{path="/c"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
 eval instant at 20m irate(http_requests_histogram{path="/d"}[20m])
-	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram"
+	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram" (1:7)
 	{path="/d"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
 eval instant at 20m irate(http_requests_histogram{path="/e"}[20m])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram" (1:7)
 
 eval instant at 20m irate(http_requests_histogram{path="/f"}[20m])
   	expect no_warn
@@ -293,12 +293,12 @@ eval instant at 20m delta(http_requests_gauge[20m])
 
 # delta emits warn annotation for non-gauge histogram types.
 eval instant at 20m delta(http_requests_counter[20m])
-	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_counter"
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_counter" (1:7)
 	{path="/foo"} {{schema:0 sum:4 count:8 buckets:[4 4 4]}}
 
 # delta emits warn annotation for mix of histogram and floats.
 eval instant at 20m delta(http_requests_mix[20m])
-	expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_mix"
+	expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_mix" (1:7)
 	#empty
 
 clear
@@ -337,22 +337,22 @@ eval instant at 20m idelta(http_requests_histogram{path="/b"}[6m])
 	expect no_warn
 
 eval instant at 20m idelta(http_requests_histogram{path="/c"}[20m])
-	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram"
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram" (1:8)
 	{path="/c"} {{sum:1 count:1 counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests_histogram{path="/d"}[20m])
-	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram"
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram" (1:8)
 	{path="/d"} {{sum:1 count:1 counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests_histogram{path="/e"}[20m])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram" (1:8)
 
 eval instant at 20m idelta(http_requests_histogram{path="/f"}[20m])
-  expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "http_requests_histogram"
+  expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "http_requests_histogram" (1:8)
 
 eval instant at 20m idelta(http_requests_histogram{path="/g"}[20m])
 	expect no_warn
-	expect info msg: PromQL info: mismatched custom buckets were reconciled during subtraction
+	expect info msg: PromQL info: mismatched custom buckets were reconciled during subtraction (1:8)
 	{path="/g"} {{schema:-53 custom_values:[1] counter_reset_hint:gauge buckets:[-1]}}
 
 clear
@@ -648,6 +648,41 @@ eval instant at 0m clamp(test_clamp, NaN, 0)
 	{src="clamp-a"}	NaN
 	{src="clamp-b"}	NaN
 	{src="clamp-c"}	NaN
+
+eval instant at 0m clamp_max(test_clamp, NaN)
+	{src="clamp-a"}	NaN
+	{src="clamp-b"}	NaN
+	{src="clamp-c"}	NaN
+
+eval instant at 0m clamp_min(test_clamp, NaN)
+	{src="clamp-a"}	NaN
+	{src="clamp-b"}	NaN
+	{src="clamp-c"}	NaN
+
+eval instant at 0m clamp_max(test_clamp, Inf)
+	{src="clamp-a"}	-50
+	{src="clamp-b"}	0
+	{src="clamp-c"}	100
+
+eval instant at 0m clamp_max(test_clamp, -Inf)
+	{src="clamp-a"}	-Inf
+	{src="clamp-b"}	-Inf
+	{src="clamp-c"}	-Inf
+
+eval instant at 0m clamp_min(test_clamp, -Inf)
+	{src="clamp-a"}	-50
+	{src="clamp-b"}	0
+	{src="clamp-c"}	100
+
+eval instant at 0m clamp_min(test_clamp, Inf)
+	{src="clamp-a"}	+Inf
+	{src="clamp-b"}	+Inf
+	{src="clamp-c"}	+Inf
+
+eval instant at 0m clamp(test_clamp, -Inf, Inf)
+	{src="clamp-a"}	-50
+	{src="clamp-b"}	0
+	{src="clamp-c"}	100
 
 eval instant at 0m clamp(test_clamp, 5, -5)
 
@@ -964,10 +999,31 @@ eval instant at 55s avg_over_time(metric[1m])
 eval instant at 55s sum_over_time(metric[1m])/count_over_time(metric[1m])
   {} 3
 
+# Default integral: mid-point rule (prev+curr)/2 * delta-time
+eval instant at 55s integral(metric[1m])
+  {} 120
+
+eval instant at 55s integral(metric[1m], 2)
+  {} 120
+
+# Left-point integral: prev * delta-time
+eval instant at 55s integral(metric[1m], 0)
+  {} 100
+
+# Right-point integral: curr * delta-time
+eval instant at 55s integral(metric[1m], 1)
+  {} 140
+
+eval instant at 55s integral(metric5b[1m])
+  {} Inf
+
 eval instant at 55s avg_over_time(metric2[1m])
   {} Inf
 
 eval instant at 55s sum_over_time(metric2[1m])/count_over_time(metric2[1m])
+  {} Inf
+
+eval instant at 55s integral(metric2[1m])/count_over_time(metric2[1m])
   {} Inf
 
 eval instant at 55s avg_over_time(metric3[1m])
@@ -1230,6 +1286,199 @@ eval instant at 4s sum_over_time(metric[3002ms])
 eval instant at 4s sum_over_time(metric[3003ms])
   {} 3003
 
+# Test integral
+clear
+load 10s
+  metricbignum 0 1 1e100 1 -1e100 1 0
+  metricinf 1 Inf 1 -Inf 1
+  http_requests_total{app="ok", status="200"} 0+100x10000
+  http_requests_total{app="ok", status="500"}   0+0x10000
+  http_requests_total{app="justok", status="200"} 0+99.01x100 9901+100x9900
+  http_requests_total{app="justok", status="500"}  0+0.99x100     99+0x9900
+  http_requests_total{app="ko", status="200"} 0+99x100 9900+100x9900
+  http_requests_total{app="ko", status="500"}  0+1x100    100+0x9900
+  metricoscillator 0 1 2 1 0 -1 -2 -1 0
+  metricnan1 NaN NaN 1 NaN NaN NaN
+  metricnan2 NaN NaN 1 NaN NaN 2 NaN NaN NaN NaN NaN NaN NaN
+
+# mid-point
+eval instant at 1m integral(metricbignum[2m])
+  {} 30
+
+# mid-point fallback after warning
+eval_warn instant at 1m integral(metricbignum[2m], 3)
+  {} 30
+
+# left-point
+eval instant at 1m integral(metricbignum[2m], 0)
+  {} 30
+
+# right-point
+eval instant at 1m integral(metricbignum[2m], 1)
+  {} 30
+
+eval instant at 1m integral(metricinf[2m])
+  {} NaN
+
+## SLA and integral()
+## Note that we evaluate at 10010s (i.e. one step beyond the 10000s range) to ensure rate() has stabilized for the interval
+#
+# app="ok" has no 500s at all
+eval instant at 10010s integral(((sum by (app) (rate(http_requests_total{app="ok", status="500"}[11s])) / sum by (app) (rate(http_requests_total{app="ok"}[11s]))) < bool 0.01)[10010s:10s], 1) / 10000 * 100
+  {app="ok"} 100.00
+
+# app="justok" has 1/10th period of 500s just there below 1%
+eval instant at 10010s integral(((sum by (app) (rate(http_requests_total{app="justok", status="500"}[11s])) / sum by (app) (rate(http_requests_total{app="justok"}[11s]))) < bool 0.01)[10010s:10s], 1) / 10000 * 100
+  {app="justok"} 100.00
+
+# app="ko" has 1/10th period of 500s above 1%
+eval instant at 10010s integral(((sum by (app) (rate(http_requests_total{app="ko", status="500"}[11s])) / sum by (app) (rate(http_requests_total{app="ko"}[11s]))) < bool 0.01)[10010s:10s], 1) / 10000 * 100
+  {app="ko"} 90.00
+
+## Simple discrete zero-up-zero-down-zero oscillator
+# mid-point
+eval instant at 2m integral(metricoscillator[2m1s])
+  {} 0
+
+# left-point
+eval instant at 2m integral(metricoscillator[2m1s], 0)
+  {} 0
+
+# right-point
+eval instant at 2m integral(metricoscillator[2m1s], 1)
+  {} 0
+
+## Simple integral test for single non-NaN point
+# mid-point
+eval instant at 10s integral(metricnan1[10s])
+  {} 0
+
+eval instant at 20s integral(metricnan1[20s])
+  {} 5
+
+eval instant at 30s integral(metricnan1[30s])
+  {} 10
+
+# left-point
+eval instant at 10s integral(metricnan1[10s], 0)
+  {} 0
+
+eval instant at 20s integral(metricnan1[20s], 0)
+  {} 0
+
+eval instant at 30s integral(metricnan1[30s], 0)
+  {} 10
+
+# right-point
+eval instant at 10s integral(metricnan1[10s], 1)
+  {} 0
+
+eval instant at 20s integral(metricnan1[20s], 1)
+  {} 10
+
+eval instant at 30s integral(metricnan1[30s], 1)
+  {} 10
+
+## Integral test for couple non-NaN points
+# mid-point
+eval instant at 50s integral(metricnan2[50s])
+  {} 20
+
+eval instant at 60s integral(metricnan2[60s])
+  {} 30
+
+eval instant at 60s integral(metricnan2[60s])
+  {} 30
+
+# left-point
+eval instant at 50s integral(metricnan2[50s], 0)
+  {} 10
+
+eval instant at 60s integral(metricnan2[60s], 0)
+  {} 30
+
+eval instant at 60s integral(metricnan2[60s], 0)
+  {} 30
+
+# right-point
+eval instant at 50s integral(metricnan2[50s], 1)
+  {} 30
+
+eval instant at 60s integral(metricnan2[60s], 1)
+  {} 30
+
+eval instant at 60s integral(metricnan2[60s], 1)
+  {} 30
+
+## Below two integral tests must give same result for mid-point, left-point, and right-point
+# - integral over 2m range
+# - same integral over 2m (whole) range, slotted with sum_over_time() each 10s
+#
+# 1) mid-point
+eval instant at 2m integral(metricnan2[2m])
+  {} 30
+
+eval instant at 2m sum_over_time(integral(metricnan2[11s])[2m:10s])
+  {} 30
+
+# 2) left-point
+eval instant at 2m integral(metricnan2[2m], 0)
+  {} 30
+
+eval instant at 2m sum_over_time(integral(metricnan2[11s], 0)[2m:10s])
+  {} 30
+
+# 3) right-point
+eval instant at 2m integral(metricnan2[2m], 1)
+  {} 30
+
+eval instant at 2m sum_over_time(integral(metricnan2[11s], 1)[2m:10s])
+  {} 30
+
+# Verify: \int_{0}^{1} (3x^2 - 30x + 14) \, dx = 0
+# 0~ish with 0.005 tolerance, can't further increase resolution as you'd get too many samples error
+eval instant at 1s round(integral(vector(3 * time()^2 - 30 * time() + 14)[1050ms:50ms]), 0.005)
+  {} 0
+
+# integral of sin(x), should be 0 (with a 1e-13 tolerance)
+# mid-point
+eval instant at 1m round(integral(sin(vector(time()/60*2*pi()))[60200ms:200ms]), 1e-14)
+  {} 0
+
+# left-point
+eval instant at 1m round(integral(sin(vector(time()/60*2*pi()))[60200ms:200ms], 0), 1e-14)
+  {} 0
+
+# right-point
+eval instant at 1m round(integral(sin(vector(time()/60*2*pi()))[60200ms:200ms], 1), 1e-14)
+  {} 0
+
+# "running" integral eval range of sin(x), period at 1m
+# mid-point
+eval range from 1m to 2m step 10s round(integral(sin(vector(time()/60*2*pi()))[60200ms:200ms]), 1e-14)
+  {} 0+0x6
+
+# left-point
+eval range from 1m to 2m step 10s round(integral(sin(vector(time()/60*2*pi()))[60200ms:200ms], 0), 1e-14)
+  {} 0+0x6
+
+# right-point
+eval range from 1m to 2m step 10s round(integral(sin(vector(time()/60*2*pi()))[60200ms:200ms], 1), 1e-14)
+  {} 0+0x6
+
+# "running" integral eval range of cos(x), period at 1m
+# mid-point
+eval range from 1m to 2m step 10s round(integral(cos(vector(time()/60*2*pi()))[60200ms:200ms]), 1e-14)
+  {} 0+0x6
+
+# left-point
+eval range from 1m to 2m step 10s round(integral(cos(vector(time()/60*2*pi()))[60200ms:200ms], 0), 1e-14)
+  {} 0+0x6
+
+# right-point
+eval range from 1m to 2m step 10s round(integral(cos(vector(time()/60*2*pi()))[60200ms:200ms], 1), 1e-14)
+  {} 0+0x6
+
 # Tests for stddev_over_time and stdvar_over_time.
 clear
 load 10s
@@ -1277,12 +1526,36 @@ eval instant at 55s stddev_over_time(metric[1m])
 clear
 load 10s
 	metric 4 6 2 1 999 1 2
+	metric_odd 1 2 3 4 5
+	metric_equal 7 7 7 7 7
+	metric_single 5
+	metric_nan 1 2 NaN 4
 	metric_histogram{type="only_histogram"} {{schema:1 sum:2 count:3}}x5
 	metric_histogram{type="mix"} 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
 
 eval instant at 70s mad_over_time(metric[70s])
 	expect no_info
 	{} 1
+
+# Odd number of samples: median is the exact middle value.
+eval instant at 40s mad_over_time(metric_odd[50s])
+	expect no_info
+	{} 1
+
+# All samples equal: deviations are all zero, so MAD is zero.
+eval instant at 40s mad_over_time(metric_equal[50s])
+	expect no_info
+	{} 0
+
+# Single sample: deviation from itself is zero.
+eval instant at 0s mad_over_time(metric_single[10s])
+	expect no_info
+	{} 0
+
+# A NaN sample makes the result NaN rather than being silently dropped.
+eval instant at 30s mad_over_time(metric_nan[40s])
+	expect no_info
+	{} NaN
 
 eval instant at 70s mad_over_time(metric_histogram{type="only_histogram"}[70s])
 	expect no_info

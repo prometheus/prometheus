@@ -93,6 +93,12 @@ export const functionSignatures: Record<string, Func> = {
   idelta: { name: "idelta", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   increase: { name: "increase", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   info: { name: "info", argTypes: [valueType.vector, valueType.vector], variadic: 1, returnType: valueType.vector },
+  integral: {
+    name: "integral",
+    argTypes: [valueType.matrix, valueType.scalar],
+    variadic: 1,
+    returnType: valueType.vector,
+  },
   irate: { name: "irate", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   label_join: {
     name: "label_join",
@@ -161,6 +167,7 @@ export const functionSignatures: Record<string, Func> = {
   sort_desc: { name: "sort_desc", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   sqrt: { name: "sqrt", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   start: { name: "start", argTypes: [], variadic: 0, returnType: valueType.scalar },
+  start_timestamp: { name: "start_timestamp", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   stddev_over_time: {
     name: "stddev_over_time",
     argTypes: [valueType.matrix],

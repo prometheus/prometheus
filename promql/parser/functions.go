@@ -166,10 +166,9 @@ var Functions = map[string]*Function{
 		ReturnType: ValueTypeVector,
 	},
 	"first_over_time": {
-		Name:         "first_over_time",
-		ArgTypes:     []ValueType{ValueTypeMatrix},
-		ReturnType:   ValueTypeVector,
-		Experimental: true,
+		Name:       "first_over_time",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
 	},
 	"floor": {
 		Name:       "floor",
@@ -246,6 +245,13 @@ var Functions = map[string]*Function{
 		ReturnType:   ValueTypeVector,
 		Experimental: true,
 		Variadic:     1,
+	},
+	"integral": {
+		Name:         "integral",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		Variadic:     1,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
 	},
 	"irate": {
 		Name:       "irate",
@@ -447,6 +453,12 @@ var Functions = map[string]*Function{
 		Name:         "start",
 		ArgTypes:     []ValueType{},
 		ReturnType:   ValueTypeScalar,
+		Experimental: true,
+	},
+	"start_timestamp": {
+		Name:         "start_timestamp",
+		ArgTypes:     []ValueType{ValueTypeVector},
+		ReturnType:   ValueTypeVector,
 		Experimental: true,
 	},
 	"step": {

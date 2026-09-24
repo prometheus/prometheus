@@ -285,7 +285,7 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 	return true
 }
 
-// StartTimestamp returns the start timestamp for a current Metric if exists or nil.
+// StartTimestamp returns the start timestamp for a current Metric, or 0 if it does not exist.
 // NOTE(Maniktherana): Might use additional CPU/mem resources due to deep copy of parser required for peeking given 1.0 OM specification on _created series.
 func (p *OpenMetricsParser) StartTimestamp() int64 {
 	if !typeRequiresST(p.mtype) {
@@ -443,136 +443,137 @@ func (p *OpenMetricsParser) parseError(exp string, got token) error {
 // Next advances the parser to the next sample.
 // It returns (EntryInvalid, io.EOF) if no samples were read.
 func (p *OpenMetricsParser) Next() (Entry, error) {
-	var err error
+	for { // In some cases we skip a line and come back here to look at the next line.
+		var err error
 
-	p.start = p.l.i
-	p.offsets = p.offsets[:0]
-	if !p.ignoreExemplar {
-		p.eOffsets = p.eOffsets[:0]
-		p.exemplar = p.exemplar[:0]
-		p.exemplarVal = 0
-		p.hasExemplarTs = false
-	}
+		p.start = p.l.i
+		p.offsets = p.offsets[:0]
+		if !p.ignoreExemplar {
+			p.eOffsets = p.eOffsets[:0]
+			p.exemplar = p.exemplar[:0]
+			p.exemplarVal = 0
+			p.hasExemplarTs = false
+		}
 
-	switch t := p.nextToken(); t {
-	case tEOFWord:
-		if t := p.nextToken(); t != tEOF {
-			return EntryInvalid, errors.New("unexpected data after # EOF")
-		}
-		return EntryInvalid, io.EOF
-	case tEOF:
-		return EntryInvalid, errors.New("data does not end with # EOF")
-	case tHelp, tType, tUnit:
-		switch t2 := p.nextToken(); t2 {
-		case tMName:
-			mStart := p.l.start
-			mEnd := p.l.i
-			if p.l.b[mStart] == '"' && p.l.b[mEnd-1] == '"' {
-				mStart++
-				mEnd--
+		switch t := p.nextToken(); t { // Note every case either returns or continues.
+		case tEOFWord:
+			if t := p.nextToken(); t != tEOF {
+				return EntryInvalid, errors.New("unexpected data after # EOF")
 			}
-			p.mfNameLen = mEnd - mStart
-			p.offsets = append(p.offsets, mStart, mEnd)
-		default:
-			return EntryInvalid, p.parseError("expected metric name after "+t.String(), t2)
-		}
-		switch t2 := p.nextToken(); t2 {
-		case tText:
-			if len(p.l.buf()) > 1 {
-				p.text = p.l.buf()[1 : len(p.l.buf())-1]
-			} else {
-				p.text = []byte{}
-			}
-		default:
-			return EntryInvalid, fmt.Errorf("expected text in %s", t.String())
-		}
-		switch t {
-		case tType:
-			switch s := yoloString(p.text); s {
-			case "counter":
-				p.mtype = model.MetricTypeCounter
-			case "gauge":
-				p.mtype = model.MetricTypeGauge
-			case "histogram":
-				p.mtype = model.MetricTypeHistogram
-			case "gaugehistogram":
-				p.mtype = model.MetricTypeGaugeHistogram
-			case "summary":
-				p.mtype = model.MetricTypeSummary
-			case "info":
-				p.mtype = model.MetricTypeInfo
-			case "stateset":
-				p.mtype = model.MetricTypeStateset
-			case "unknown":
-				p.mtype = model.MetricTypeUnknown
+			return EntryInvalid, io.EOF
+		case tEOF:
+			return EntryInvalid, errors.New("data does not end with # EOF")
+		case tHelp, tType, tUnit:
+			switch t2 := p.nextToken(); t2 {
+			case tMName:
+				mStart := p.l.start
+				mEnd := p.l.i
+				if p.l.b[mStart] == '"' && p.l.b[mEnd-1] == '"' {
+					mStart++
+					mEnd--
+				}
+				p.mfNameLen = mEnd - mStart
+				p.offsets = append(p.offsets, mStart, mEnd)
 			default:
-				return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
+				return EntryInvalid, p.parseError("expected metric name after "+t.String(), t2)
 			}
-		case tHelp:
-			if !utf8.Valid(p.text) {
-				return EntryInvalid, fmt.Errorf("help text %q is not a valid utf8 string", p.text)
+			switch t2 := p.nextToken(); t2 {
+			case tText:
+				if len(p.l.buf()) > 1 {
+					p.text = p.l.buf()[1 : len(p.l.buf())-1]
+				} else {
+					p.text = []byte{}
+				}
+			default:
+				return EntryInvalid, fmt.Errorf("expected text in %s", t.String())
 			}
-		}
-		switch t {
-		case tHelp:
-			return EntryHelp, nil
-		case tType:
-			return EntryType, nil
-		case tUnit:
-			p.unit = string(p.text)
-			m := yoloString(p.l.b[p.offsets[0]:p.offsets[1]])
-			if p.unit != "" {
-				if !strings.HasSuffix(m, p.unit) || len(m) < len(p.unit)+1 || p.l.b[p.offsets[1]-len(p.unit)-1] != '_' {
-					return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", p.unit, m)
+			switch t {
+			case tType:
+				switch s := yoloString(p.text); s {
+				case "counter":
+					p.mtype = model.MetricTypeCounter
+				case "gauge":
+					p.mtype = model.MetricTypeGauge
+				case "histogram":
+					p.mtype = model.MetricTypeHistogram
+				case "gaugehistogram":
+					p.mtype = model.MetricTypeGaugeHistogram
+				case "summary":
+					p.mtype = model.MetricTypeSummary
+				case "info":
+					p.mtype = model.MetricTypeInfo
+				case "stateset":
+					p.mtype = model.MetricTypeStateset
+				case "unknown":
+					p.mtype = model.MetricTypeUnknown
+				default:
+					return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
+				}
+			case tHelp:
+				if !utf8.Valid(p.text) {
+					return EntryInvalid, fmt.Errorf("help text %q is not a valid utf8 string", p.text)
 				}
 			}
-			return EntryUnit, nil
-		}
+			switch t {
+			case tHelp:
+				return EntryHelp, nil
+			case tType:
+				return EntryType, nil
+			case tUnit:
+				p.unit = string(p.text)
+				m := yoloString(p.l.b[p.offsets[0]:p.offsets[1]])
+				if p.unit != "" {
+					if !strings.HasSuffix(m, p.unit) || len(m) < len(p.unit)+1 || p.l.b[p.offsets[1]-len(p.unit)-1] != '_' {
+						return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", p.unit, m)
+					}
+				}
+				return EntryUnit, nil
+			}
 
-	case tBraceOpen:
-		// We found a brace, so make room for the eventual metric name. If these
-		// values aren't updated, then the metric name was not set inside the
-		// braces and we can return an error.
-		if len(p.offsets) == 0 {
-			p.offsets = []int{-1, -1}
-		}
-		if p.offsets, err = p.parseLVals(p.offsets, false); err != nil {
-			return EntryInvalid, err
-		}
-
-		p.series = p.l.b[p.start:p.l.i]
-		if err := p.parseSeriesEndOfLine(p.nextToken()); err != nil {
-			return EntryInvalid, err
-		}
-		if p.skipSTSeries && p.isCreatedSeries() {
-			return p.Next()
-		}
-		return EntrySeries, nil
-	case tMName:
-		p.offsets = append(p.offsets, p.start, p.l.i)
-		p.series = p.l.b[p.start:p.l.i]
-
-		t2 := p.nextToken()
-		if t2 == tBraceOpen {
-			p.offsets, err = p.parseLVals(p.offsets, false)
-			if err != nil {
+		case tBraceOpen:
+			// We found a brace, so make room for the eventual metric name. If these
+			// values aren't updated, then the metric name was not set inside the
+			// braces and we can return an error.
+			if len(p.offsets) == 0 {
+				p.offsets = []int{-1, -1}
+			}
+			if p.offsets, err = p.parseLVals(p.offsets, false); err != nil {
 				return EntryInvalid, err
 			}
-			p.series = p.l.b[p.start:p.l.i]
-			t2 = p.nextToken()
-		}
 
-		if err := p.parseSeriesEndOfLine(t2); err != nil {
-			return EntryInvalid, err
+			p.series = p.l.b[p.start:p.l.i]
+			if err := p.parseSeriesEndOfLine(p.nextToken()); err != nil {
+				return EntryInvalid, err
+			}
+			if p.skipSTSeries && p.isCreatedSeries() {
+				continue
+			}
+			return EntrySeries, nil
+		case tMName:
+			p.offsets = append(p.offsets, p.start, p.l.i)
+			p.series = p.l.b[p.start:p.l.i]
+
+			t2 := p.nextToken()
+			if t2 == tBraceOpen {
+				p.offsets, err = p.parseLVals(p.offsets, false)
+				if err != nil {
+					return EntryInvalid, err
+				}
+				p.series = p.l.b[p.start:p.l.i]
+				t2 = p.nextToken()
+			}
+
+			if err := p.parseSeriesEndOfLine(t2); err != nil {
+				return EntryInvalid, err
+			}
+			if p.skipSTSeries && p.isCreatedSeries() {
+				continue
+			}
+			return EntrySeries, nil
+		default:
+			return EntryInvalid, p.parseError("expected a valid start token", t)
 		}
-		if p.skipSTSeries && p.isCreatedSeries() {
-			return p.Next()
-		}
-		return EntrySeries, nil
-	default:
-		err = p.parseError("expected a valid start token", t)
 	}
-	return EntryInvalid, err
 }
 
 func (p *OpenMetricsParser) parseComment() error {

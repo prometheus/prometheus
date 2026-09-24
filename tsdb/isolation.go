@@ -216,6 +216,32 @@ func (i *isolation) lastAppendID() uint64 {
 	return i.appendsOpenList.appendID
 }
 
+// committedAppendID returns the highest appendID guaranteed to be committed
+// at the time of the call. Any sample with appendID <= committedAppendID()
+// has completed its commit path (its appender has called closeAppend), so it
+// cannot appear in isolationState.incompleteAppends.
+//
+// Returns 0 when isolation is disabled. If there are no open appenders, all
+// issued IDs are committed and the result is lastAppendID(). Otherwise, the
+// lowest open appendID is still in flight, and a block writer that snapshots
+// before it commits would exclude it. In that case, the highest guaranteed-
+// committed ID is one less than the lowest open appendID.
+func (i *isolation) committedAppendID() uint64 {
+	if i.disabled {
+		return 0
+	}
+
+	i.appendMtx.RLock()
+	defer i.appendMtx.RUnlock()
+
+	// appendsOpenList is a sentinel-headed ring; .next == sentinel means no open appenders,
+	// in which case the sentinel's appendID stores the last issued ID.
+	if i.appendsOpenList.next == i.appendsOpenList {
+		return i.appendsOpenList.appendID
+	}
+	return i.appendsOpenList.next.appendID - 1
+}
+
 func (i *isolation) closeAppend(appendID uint64) {
 	if i.disabled {
 		return

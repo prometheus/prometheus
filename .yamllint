@@ -1,4 +1,7 @@
 ---
+###
+# This file is synced from https://github.com/prometheus/prometheus
+###
 extends: default
 ignore: |
   **/node_modules

@@ -27,9 +27,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 func TestGenerateBucket(t *testing.T) {
@@ -184,6 +189,90 @@ func TestTSDBDump(t *testing.T) {
 		})
 	}
 }
+
+func TestTSDBDumpNativeHistogram(t *testing.T) {
+	testStorage := promqltest.LoadedStorage(t, `
+		load 1m
+			mixed_hist{job="test"} 1 {{sum:2 count:2}} 3
+	`)
+
+	app := testStorage.AppenderV2(context.Background())
+	for i := range 3 {
+		_, err := app.Append(
+			0,
+			labels.FromStrings(labels.MetricName, "integer_hist", "job", "test"),
+			0,
+			int64(i)*int64(time.Minute/time.Millisecond),
+			0,
+			&histogram.Histogram{
+				Count:         uint64(i + 1),
+				Sum:           float64(i + 1),
+				ZeroCount:     uint64(i + 1),
+				ZeroThreshold: 0.001,
+			},
+			nil,
+			storage.AppendV2Options{},
+		)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	dumpedMetrics := getDumpedSamples(t, testStorage.Dir(), "", math.MinInt64, math.MaxInt64, []string{"{__name__=~'(?s:.*)'}"}, formatSeriesSet)
+	expected := `
+{__name__="integer_hist", job="test"} {count:1, sum:1, [-0.001,0.001]:1} 0
+{__name__="integer_hist", job="test"} {count:2, sum:2, [-0.001,0.001]:2} 60000
+{__name__="integer_hist", job="test"} {count:3, sum:3, [-0.001,0.001]:3} 120000
+{__name__="mixed_hist", job="test"} 1 0
+{__name__="mixed_hist", job="test"} {count:2, sum:2} 60000
+{__name__="mixed_hist", job="test"} 3 120000
+`
+	require.Equal(t, sortLines(strings.TrimSpace(expected)), sortLines(strings.TrimSpace(dumpedMetrics)))
+}
+
+func TestFormatSeriesSetRejectsUnknownSampleType(t *testing.T) {
+	ss := &singleSeriesSet{
+		series: &storage.SeriesEntry{
+			Lset: labels.FromStrings(labels.MetricName, "unknown"),
+			SampleIteratorFn: func(chunkenc.Iterator) chunkenc.Iterator {
+				return &unknownValueTypeIterator{}
+			},
+		},
+	}
+
+	require.EqualError(t, formatSeriesSet(ss), "unknown sample type unknown")
+}
+
+type singleSeriesSet struct {
+	series storage.Series
+	done   bool
+}
+
+func (s *singleSeriesSet) Next() bool {
+	if s.done {
+		return false
+	}
+	s.done = true
+	return true
+}
+
+func (s *singleSeriesSet) At() storage.Series              { return s.series }
+func (*singleSeriesSet) Err() error                        { return nil }
+func (*singleSeriesSet) Warnings() annotations.Annotations { return nil }
+
+type unknownValueTypeIterator struct {
+	chunkenc.Iterator
+	done bool
+}
+
+func (it *unknownValueTypeIterator) Next() chunkenc.ValueType {
+	if it.done {
+		return chunkenc.ValNone
+	}
+	it.done = true
+	return chunkenc.ValueType(255)
+}
+
+func (*unknownValueTypeIterator) Err() error { return nil }
 
 func sortLines(buf string) string {
 	lines := strings.Split(buf, "\n")

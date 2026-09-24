@@ -670,8 +670,8 @@ func (b *Builder) Labels() Labels {
 
 func marshalNumbersToSizedBuffer(nums []int, data []byte) int {
 	i := len(data)
-	for index := len(nums) - 1; index >= 0; index-- {
-		i = encodeVarint(data, i, nums[index])
+	for _, v := range slices.Backward(nums) {
+		i = encodeVarint(data, i, v)
 	}
 	return len(data) - i
 }

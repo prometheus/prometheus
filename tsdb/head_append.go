@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"runtime"
 	"time"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -130,8 +131,13 @@ func (h *Head) initTime(t int64) {
 		for h.minTime.Load() == math.MaxInt64 {
 			select {
 			case <-antiDeadlockTimeout:
+				// This should never happen in normal operation.
+				// If it does, there may be a bug or the system is severely overloaded.
+				h.logger.Warn("initTime timeout waiting for minTime initialization")
 				return
 			default:
+				// Yield to allow the initializing goroutine to complete.
+				runtime.Gosched()
 			}
 		}
 		return
@@ -165,6 +171,7 @@ func (a *initAppender) Rollback() error {
 // Appender returns a new Appender on the database.
 func (h *Head) Appender(context.Context) storage.Appender {
 	h.metrics.activeAppenders.Inc()
+	h.metrics.appendersCreated.Inc()
 
 	// The head cache might not have a starting point yet. The init appender
 	// picks up the first appended timestamp as the base.
@@ -192,6 +199,7 @@ func (h *Head) appender() *headAppender {
 			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
 			storeST:               h.opts.EnableSTStorage.Load(),
 			useXOR2:               h.opts.UseXOR2FloatEncoding(),
+			useHistogramST:        h.opts.EnableHistogramSTEncoding.Load(),
 		},
 	}
 }
@@ -421,6 +429,7 @@ type headAppenderBase struct {
 	closed                          bool
 	storeST                         bool // Whether start-timestamp storage is enabled for this append.
 	useXOR2                         bool // Whether XOR2 encoding is used for float chunks in this append.
+	useHistogramST                  bool // Whether ST-capable histogram chunk encoding is used in this append.
 }
 type headAppender struct {
 	headAppenderBase
@@ -440,6 +449,9 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if hook := a.head.testAfterSeriesLookup; hook != nil {
+		hook(s)
+	}
 	if s == nil {
 		var err error
 		s, _, err = a.getOrCreate(lset)
@@ -468,7 +480,10 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		// series" and "known series with stNone".
 	}
 
-	s.Lock()
+	s, err := a.lockForAppend(s)
+	if err != nil {
+		return 0, err
+	}
 	defer s.Unlock()
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
@@ -478,7 +493,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 			return 0, storage.ErrOutOfOrderSample
 		}
-		s.pendingCommit = true
+		s.markPendingCommit()
 	}
 	if delta > 0 {
 		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
@@ -523,18 +538,21 @@ func (a *headAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 	// Check if ST wouldn't be OOO vs samples we already might have for this series.
 	// NOTE(bwplotka): This will be often hit as it's expected for long living
 	// counters to share the same ST.
-	s.Lock()
-	isOOO, _, err := s.appendable(st, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
-	if err == nil {
-		s.pendingCommit = true
-	}
-	s.Unlock()
+	s, err := a.lockForAppend(s)
 	if err != nil {
 		return 0, err
 	}
+	isOOO, _, err := s.appendable(st, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	if err != nil {
+		s.Unlock()
+		return 0, err
+	}
 	if isOOO {
+		s.Unlock()
 		return storage.SeriesRef(s.ref), storage.ErrOutOfOrderST
 	}
+	s.markPendingCommit()
+	s.Unlock()
 
 	b := a.getCurrentBatch(stFloat, s.ref)
 	b.floats = append(b.floats, record.RefSample{Ref: s.ref, T: st, V: 0.0})
@@ -563,6 +581,30 @@ func (a *headAppenderBase) getOrCreate(lset labels.Labels) (s *memSeries, create
 		a.series = append(a.series, s)
 	}
 	return s, created, nil
+}
+
+// lockForAppend locks s and returns it, ready to be marked as pending commit.
+//
+// Looking a series up only holds the stripe lock for the duration of the lookup, so
+// garbage collection can remove the series from the head index before the appender gets
+// to lock it and mark it as pending commit. Appending to such a series succeeds but the
+// samples are unreachable from the head, i.e. they are silently lost. When that
+// happened, a live series for the same labels is created and returned locked instead,
+// which is the same outcome as garbage collection winning the race outright.
+func (a *headAppenderBase) lockForAppend(s *memSeries) (*memSeries, error) {
+	for {
+		s.Lock()
+		if !s.isGCed() {
+			return s, nil
+		}
+		lset := s.lset // Safe to access; the series is locked.
+		s.Unlock()
+
+		var err error
+		if s, _, err = a.getOrCreate(lset); err != nil {
+			return nil, err
+		}
+	}
 }
 
 // getCurrentBatch returns the current batch if it fits the provided sampleType
@@ -844,12 +886,15 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 
 	switch {
 	case h != nil:
-		s.Lock()
+		var lockErr error
+		if s, lockErr = a.lockForAppend(s); lockErr != nil {
+			return 0, lockErr
+		}
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
 		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err == nil {
-			s.pendingCommit = true
+			s.markPendingCommit()
 		}
 		s.Unlock()
 		if delta > 0 {
@@ -876,12 +921,15 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		})
 		b.histogramSeries = append(b.histogramSeries, s)
 	case fh != nil:
-		s.Lock()
+		var lockErr error
+		if s, lockErr = a.lockForAppend(s); lockErr != nil {
+			return 0, lockErr
+		}
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
 		_, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err == nil {
-			s.pendingCommit = true
+			s.markPendingCommit()
 		}
 		s.Unlock()
 		if delta > 0 {
@@ -936,7 +984,10 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			ZeroThreshold: h.ZeroThreshold,
 			CustomValues:  h.CustomValues,
 		}
-		s.Lock()
+		var lockErr error
+		if s, lockErr = a.lockForAppend(s); lockErr != nil {
+			return 0, lockErr
+		}
 		// For STZeroSamples OOO is not allowed.
 		// We set it to true to make this implementation as close as possible to the float implementation.
 		isOOO, _, err := s.appendableHistogram(st, zeroHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow)
@@ -956,7 +1007,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			return 0, storage.ErrOutOfOrderST
 		}
 
-		s.pendingCommit = true
+		s.markPendingCommit()
 		s.Unlock()
 		sTyp := stHistogram
 		if h.UsesCustomBuckets() {
@@ -978,7 +1029,10 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			ZeroThreshold: fh.ZeroThreshold,
 			CustomValues:  fh.CustomValues,
 		}
-		s.Lock()
+		var lockErr error
+		if s, lockErr = a.lockForAppend(s); lockErr != nil {
+			return 0, lockErr
+		}
 		// We set it to true to make this implementation as close as possible to the float implementation.
 		isOOO, _, err := s.appendableFloatHistogram(st, zeroFloatHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow) // OOO is not allowed for STZeroSamples.
 		if err != nil {
@@ -997,7 +1051,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			return 0, storage.ErrOutOfOrderST
 		}
 
-		s.pendingCommit = true
+		s.markPendingCommit()
 		s.Unlock()
 		sTyp := stFloatHistogram
 		if fh.UsesCustomBuckets() {
@@ -1361,6 +1415,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			case series.lastHistogramValue != nil:
 				b.histograms = append(b.histograms, record.RefHistogramSample{
 					Ref: series.ref,
+					ST:  s.ST,
 					T:   s.T,
 					H:   &histogram.Histogram{Sum: s.V},
 				})
@@ -1373,6 +1428,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			case series.lastFloatHistogramValue != nil:
 				b.floatHistograms = append(b.floatHistograms, record.RefFloatHistogramSample{
 					Ref: series.ref,
+					ST:  s.ST,
 					T:   s.T,
 					FH:  &histogram.FloatHistogram{Sum: s.V},
 				})
@@ -1439,8 +1495,8 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 				acc.floatsAppended--
 			}
 		default:
-			newlyStale := !value.IsStaleNaN(series.lastValue) && value.IsStaleNaN(s.V)
-			staleToNonStale := value.IsStaleNaN(series.lastValue) && !value.IsStaleNaN(s.V)
+			wasStale, wasHistogram, oldBuckets := series.sampleState()
+			isStale := value.IsStaleNaN(s.V)
 			ok, chunkCreated = series.append(s.ST, s.T, s.V, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
@@ -1449,11 +1505,9 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 				if s.T > acc.inOrderMaxt {
 					acc.inOrderMaxt = s.T
 				}
-				if newlyStale {
-					a.head.numStaleSeries.Inc()
-				}
-				if staleToNonStale {
-					a.head.numStaleSeries.Dec()
+				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
+				if wasHistogram {
+					a.head.updateNativeHistogramMetricsOnAppend(true, false, oldBuckets, 0)
 				}
 			} else {
 				// The sample is an exact duplicate, and should be silently dropped.
@@ -1466,7 +1520,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-		series.pendingCommit = false
+		a.releasePendingCommit(series)
 		series.Unlock()
 	}
 }
@@ -1544,12 +1598,9 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				acc.histogramsAppended--
 			}
 		default:
-			newlyStale := value.IsStaleNaN(s.H.Sum)
-			staleToNonStale := false
-			if series.lastHistogramValue != nil {
-				newlyStale = newlyStale && !value.IsStaleNaN(series.lastHistogramValue.Sum)
-				staleToNonStale = value.IsStaleNaN(series.lastHistogramValue.Sum) && !value.IsStaleNaN(s.H.Sum)
-			}
+			wasStale, wasHistogram, oldBuckets := series.sampleState()
+			isStale := value.IsStaleNaN(s.H.Sum)
+			newBuckets := len(s.H.PositiveBuckets) + len(s.H.NegativeBuckets)
 			ok, chunkCreated = series.appendHistogram(s.ST, s.T, s.H, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
@@ -1558,12 +1609,8 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				if s.T > acc.inOrderMaxt {
 					acc.inOrderMaxt = s.T
 				}
-				if newlyStale {
-					a.head.numStaleSeries.Inc()
-				}
-				if staleToNonStale {
-					a.head.numStaleSeries.Dec()
-				}
+				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
+				a.head.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
 			} else {
 				acc.histogramsAppended--
 				acc.histoOOORejected++
@@ -1575,7 +1622,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-		series.pendingCommit = false
+		a.releasePendingCommit(series)
 		series.Unlock()
 	}
 }
@@ -1653,12 +1700,9 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				acc.histogramsAppended--
 			}
 		default:
-			newlyStale := value.IsStaleNaN(s.FH.Sum)
-			staleToNonStale := false
-			if series.lastFloatHistogramValue != nil {
-				newlyStale = newlyStale && !value.IsStaleNaN(series.lastFloatHistogramValue.Sum)
-				staleToNonStale = value.IsStaleNaN(series.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.FH.Sum)
-			}
+			wasStale, wasHistogram, oldBuckets := series.sampleState()
+			isStale := value.IsStaleNaN(s.FH.Sum)
+			newBuckets := len(s.FH.PositiveBuckets) + len(s.FH.NegativeBuckets)
 			ok, chunkCreated = series.appendFloatHistogram(s.ST, s.T, s.FH, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
@@ -1667,12 +1711,8 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				if s.T > acc.inOrderMaxt {
 					acc.inOrderMaxt = s.T
 				}
-				if newlyStale {
-					a.head.numStaleSeries.Inc()
-				}
-				if staleToNonStale {
-					a.head.numStaleSeries.Dec()
-				}
+				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
+				a.head.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
 			} else {
 				acc.histogramsAppended--
 				acc.histoOOORejected++
@@ -1684,7 +1724,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-		series.pendingCommit = false
+		a.releasePendingCommit(series)
 		series.Unlock()
 	}
 }
@@ -1703,16 +1743,29 @@ func commitMetadata(b *appendBatch) {
 	}
 }
 
-func (a *headAppenderBase) unmarkCreatedSeriesAsPendingCommit() {
+func (a *headAppenderBase) releaseCreatedSeriesReservations() {
 	for _, s := range a.series {
 		s.Lock()
-		s.pendingCommit = false
+		a.releasePendingCommit(s)
 		s.Unlock()
 	}
 }
 
+// releasePendingCommit releases one of the series' pending-sample reservations.
+// Reservations are taken once per queued sample and once per series created by
+// this appender. Decrementing without one would underflow into the packed flag
+// bits, so the accounting error is reported instead.
+//
+// Must be called with the series lock held.
+func (a *headAppenderBase) releasePendingCommit(s *memSeries) {
+	if s.unmarkPendingCommit() {
+		return
+	}
+	a.head.metrics.pendingCommitUnderflow.Inc()
+	a.head.logger.Error("Tried to release a pending commit that was not held", "series", s.lset.String())
+}
+
 // Commit writes to the WAL and adds the data to the Head.
-// TODO(codesome): Refactor this method to reduce indentation and make it more readable.
 func (a *headAppenderBase) Commit() (err error) {
 	if a.closed {
 		return ErrAppenderClosed
@@ -1751,6 +1804,7 @@ func (a *headAppenderBase) Commit() (err error) {
 			chunkRange:      h.chunkRange.Load(),
 			samplesPerChunk: h.opts.SamplesPerChunk,
 			useXOR2:         a.useXOR2,
+			useHistogramST:  a.useHistogramST,
 			storeST:         a.storeST,
 		},
 		oooEnc: record.Encoder{
@@ -1782,8 +1836,8 @@ func (a *headAppenderBase) Commit() (err error) {
 		a.commitFloatHistograms(b, acc)
 		commitMetadata(b)
 	}
-	// Unmark all series as pending commit after all samples have been committed.
-	a.unmarkCreatedSeriesAsPendingCommit()
+	// Release the reservations that protected newly indexed series before their first sample was queued.
+	a.releaseCreatedSeriesReservations()
 
 	h.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatOOORejected))
 	h.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histoOOORejected))
@@ -1839,6 +1893,7 @@ type chunkOpts struct {
 	chunkRange      int64
 	samplesPerChunk int
 	useXOR2         bool // Selects XOR2 encoding for float chunks.
+	useHistogramST  bool // Selects ST-capable encoding for integer and float histogram chunks.
 	storeST         bool // Whether start-timestamp storage is enabled.
 }
 
@@ -1847,7 +1902,7 @@ type chunkOpts struct {
 // isolation for this append.)
 // Series lock must be held when calling.
 func (s *memSeries) append(st, t int64, v float64, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.ValFloat.ChunkEncoding(o.useXOR2), o)
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.ValFloat.ChunkEncoding(o.useXOR2, o.useHistogramST), o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1877,7 +1932,7 @@ func (s *memSeries) appendHistogram(st, t int64, h *histogram.Histogram, appendI
 
 	prevApp := s.app
 
-	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValHistogram.ChunkEncoding(o.useXOR2), o)
+	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValHistogram.ChunkEncoding(o.useXOR2, o.useHistogramST), o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1912,13 +1967,11 @@ func (s *memSeries) appendHistogram(st, t int64, h *histogram.Histogram, appendI
 		return true, false
 	}
 
-	s.headChunks = &memChunk{
+	s.pushHeadChunk(&memChunk{
 		chunk:   newChunk,
 		minTime: t,
 		maxTime: t,
-		prev:    s.headChunks,
-	}
-	s.headChunkCount.Add(1)
+	})
 	s.nextAt = rangeForTimestamp(t, o.chunkRange)
 	return true, true
 }
@@ -1934,7 +1987,7 @@ func (s *memSeries) appendFloatHistogram(st, t int64, fh *histogram.FloatHistogr
 
 	prevApp := s.app
 
-	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValFloatHistogram.ChunkEncoding(o.useXOR2), o)
+	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValFloatHistogram.ChunkEncoding(o.useXOR2, o.useHistogramST), o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1969,13 +2022,11 @@ func (s *memSeries) appendFloatHistogram(st, t int64, fh *histogram.FloatHistogr
 		return true, false
 	}
 
-	s.headChunks = &memChunk{
+	s.pushHeadChunk(&memChunk{
 		chunk:   newChunk,
 		minTime: t,
 		maxTime: t,
-		prev:    s.headChunks,
-	}
-	s.headChunkCount.Add(1)
+	})
 	s.nextAt = rangeForTimestamp(t, o.chunkRange)
 	return true, true
 }
@@ -2090,7 +2141,7 @@ func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o
 	//  - The current chunk range is ending before chunkenc.MinSamplesPerHistogramChunk will be satisfied.
 	//  - s.nextAt was set while loading a chunk snapshot with the intent that a new chunk be cut on the next append.
 	var nextChunkRangeStart int64
-	if s.histogramChunkHasComputedEndTime {
+	if s.hasComputedHistogramChunkEndTime() {
 		nextChunkRangeStart = rangeForTimestamp(c.minTime, o.chunkRange)
 	} else {
 		// If we haven't yet computed an end time yet, s.nextAt is either set to
@@ -2103,10 +2154,10 @@ func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o
 	// for this chunk that will try to make samples equally distributed within
 	// the remaining chunks in the current chunk range.
 	// At the latest it must happen at the timestamp set when the chunk was cut.
-	if !s.histogramChunkHasComputedEndTime && numBytes >= targetBytes/4 {
+	if !s.hasComputedHistogramChunkEndTime() && numBytes >= targetBytes/4 {
 		ratioToFull := float64(targetBytes) / float64(numBytes)
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt, ratioToFull)
-		s.histogramChunkHasComputedEndTime = true
+		s.setComputedHistogramChunkEndTime(true)
 	}
 	// If numBytes > targetBytes*2 then our previous prediction was invalid. This could happen if the sample rate has
 	// increased or if the bucket/span count has increased.
@@ -2118,7 +2169,7 @@ func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o
 
 	// The new chunk will also need a new computed end time.
 	if chunkCreated {
-		s.histogramChunkHasComputedEndTime = false
+		s.setComputedHistogramChunkEndTime(false)
 	}
 
 	return c, true, chunkCreated
@@ -2142,33 +2193,31 @@ func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange 
 	// pointing at the current .headChunks, so it forms a linked list.
 	// All but first headChunks list elements will be m-mapped as soon as possible
 	// so this is a single element list most of the time.
-	s.headChunks = &memChunk{
+	chk := s.pushHeadChunk(&memChunk{
 		minTime: mint,
 		maxTime: math.MinInt64,
-		prev:    s.headChunks,
-	}
-	s.headChunkCount.Add(1)
+	})
 
 	if chunkenc.IsValidEncoding(e) {
 		var err error
-		s.headChunks.chunk, err = chunkenc.NewEmptyChunk(e)
+		chk.chunk, err = chunkenc.NewEmptyChunk(e)
 		if err != nil {
 			panic(err) // This should never happen.
 		}
 	} else {
-		s.headChunks.chunk = chunkenc.NewXORChunk()
+		chk.chunk = chunkenc.NewXORChunk()
 	}
 
 	// Set upper bound on when the next chunk must be started. An earlier timestamp
 	// may be chosen dynamically at a later point.
 	s.nextAt = rangeForTimestamp(mint, chunkRange)
 
-	app, err := s.headChunks.chunk.Appender()
+	app, err := chk.chunk.Appender()
 	if err != nil {
 		panic(err)
 	}
 	s.app = app
-	return s.headChunks
+	return chk
 }
 
 // cutNewOOOHeadChunk cuts a new OOO chunk and m-maps the old chunk.
@@ -2191,7 +2240,7 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(o chunkOpts, logger *slog.Logger) []
 		// OOO is not enabled or there is no head chunk, so nothing to m-map here.
 		return nil
 	}
-	chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, o.useXOR2)
+	chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, o.useXOR2, o.useHistogramST)
 	if err != nil {
 		handleChunkWriteError(err)
 		return nil
@@ -2207,6 +2256,7 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(o chunkOpts, logger *slog.Logger) []
 		s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
 			ref:        chunkRef,
 			numSamples: uint16(memchunk.chunk.NumSamples()),
+			encoding:   memchunk.chunk.Encoding(),
 			minTime:    memchunk.minTime,
 			maxTime:    memchunk.maxTime,
 		})
@@ -2222,15 +2272,14 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 		return count
 	}
 
-	// Write chunks starting from the oldest one and stop before we get to current s.headChunks.
-	// If we have this chain: s.headChunks{t4} -> t3 -> t2 -> t1 -> t0
-	// then we need to write chunks t0 to t3, but skip s.headChunks.
-	for i := s.headChunks.len() - 1; i > 0; i-- {
-		chk := s.headChunks.atOffset(i)
+	// Collect head chunks in oldest-first order, then write all except the newest.
+	hc := collectHeadChunks(s.headChunks, make([]*memChunk, 0, s.headChunkCount.Load()))
+	for _, chk := range hc[:len(hc)-1] {
 		chunkRef := chunkDiskMapper.WriteChunk(s.ref, chk.minTime, chk.maxTime, chk.chunk, false, handleChunkWriteError)
 		s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
 			ref:        chunkRef,
 			numSamples: uint16(chk.chunk.NumSamples()),
+			encoding:   chk.chunk.Encoding(),
 			minTime:    chk.minTime,
 			maxTime:    chk.maxTime,
 		})
@@ -2239,7 +2288,7 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 
 	// Remove the tail of the list, leaving only the most recent head chunk.
 	s.headChunks.prev = nil
-	s.headChunkCount.Store(1)
+	s.setHeadChunks(s.headChunks, 1)
 
 	return count
 }
@@ -2260,7 +2309,7 @@ func (a *headAppenderBase) Rollback() (err error) {
 	}
 	h := a.head
 	defer func() {
-		a.unmarkCreatedSeriesAsPendingCommit()
+		a.releaseCreatedSeriesReservations()
 		h.iso.closeAppend(a.appendID)
 		h.metrics.activeAppenders.Dec()
 		a.closed = true
@@ -2275,21 +2324,21 @@ func (a *headAppenderBase) Rollback() (err error) {
 			series = b.floatSeries[i]
 			series.Lock()
 			series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-			series.pendingCommit = false
+			a.releasePendingCommit(series)
 			series.Unlock()
 		}
 		for i := range b.histograms {
 			series = b.histogramSeries[i]
 			series.Lock()
 			series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-			series.pendingCommit = false
+			a.releasePendingCommit(series)
 			series.Unlock()
 		}
 		for i := range b.floatHistograms {
 			series = b.floatHistogramSeries[i]
 			series.Lock()
 			series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-			series.pendingCommit = false
+			a.releasePendingCommit(series)
 			series.Unlock()
 		}
 		b.close(h)

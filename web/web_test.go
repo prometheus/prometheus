@@ -14,10 +14,13 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -33,6 +36,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
@@ -62,6 +66,43 @@ func (a *dbAdapter) Stats(statsByLabelName string, limit int) (*tsdb.Stats, erro
 
 func (*dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
+}
+
+func TestWithStackTracer(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		panicValue any
+		wantLog    bool
+	}{
+		{name: "success"},
+		{name: "abort", panicValue: http.ErrAbortHandler},
+		{name: "ordinary panic", panicValue: errors.New("unexpected failure"), wantLog: true},
+		{name: "wrapped abort", panicValue: fmt.Errorf("wrapped: %w", http.ErrAbortHandler), wantLog: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			handler := withStackTracer(otelhttp.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if tc.panicValue != nil {
+					panic(tc.panicValue)
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}), "test"), slog.New(slog.NewTextHandler(&logs, nil)))
+			response := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+			if tc.panicValue == nil {
+				handler.ServeHTTP(response, request)
+				require.Equal(t, http.StatusNoContent, response.Code)
+			} else {
+				require.PanicsWithValue(t, tc.panicValue, func() { handler.ServeHTTP(response, request) })
+			}
+			if tc.wantLog {
+				require.Contains(t, logs.String(), "panic while serving request")
+				require.Contains(t, logs.String(), "stack=")
+			} else {
+				require.Empty(t, logs.String())
+			}
+		})
+	}
 }
 
 func TestReadyAndHealthy(t *testing.T) {

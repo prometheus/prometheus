@@ -446,6 +446,8 @@ func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
 	require.NoError(t, hrw.Truncate(2000))
 }
 
+// TestHeadReadWriter_ReadRepairOnEmptyLastFile covers more than empty files.
+// Name kept for history context.
 func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 	t.Parallel()
 	hrw := createChunkDiskMapper(t, "")
@@ -573,7 +575,7 @@ func randomChunk(t *testing.T) chunkenc.Chunk {
 func createChunk(t *testing.T, idx int, hrw *ChunkDiskMapper) (seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, chunk chunkenc.Chunk, isOOO bool) {
 	var err error
 	seriesRef = HeadSeriesRef(rand.Int63())
-	mint = int64((idx)*1000 + 1)
+	mint = int64(idx*1000 + 1)
 	maxt = int64((idx + 1) * 1000)
 	chunk = randomChunk(t)
 	awaitCb := make(chan struct{})

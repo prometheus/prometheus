@@ -15,7 +15,6 @@
 UI_PATH = web/ui
 BUILD_UI ?= all
 UI_NODE_MODULES_PATH = $(UI_PATH)/node_modules
-REACT_APP_NPM_LICENSES_TARBALL = "npm_licenses.tar.bz2"
 
 PROMTOOL = ./promtool
 TSDB_BENCHMARK_NUM_METRICS ?= 1000
@@ -81,8 +80,12 @@ ui-build-module:
 	cd $(UI_PATH) && pnpm run build:module
 
 .PHONY: ui-test
-ui-test:
+ui-test: ui-build-module
 	cd $(UI_PATH) && CI=true pnpm run test
+	# The old React app has been separated from the npm workspaces setup to avoid
+	# issues with conflicting dependencies. This is a temporary solution until the
+	# new Mantine-based UI is fully integrated and the old app can be removed.
+	cd $(UI_PATH)/react-app && CI=true pnpm run test
 
 .PHONY: ui-lint
 ui-lint:
@@ -109,20 +112,9 @@ check-generated-promql-functions: generate-promql-functions
 .PHONY: assets
 ifndef SKIP_UI_BUILD
 assets: check-node-version ui-install ui-build
-
-.PHONY: npm_licenses
-npm_licenses: ui-install
-	@echo ">> bundling npm licenses"
-	rm -f $(REACT_APP_NPM_LICENSES_TARBALL) npm_licenses
-	ln -s . npm_licenses
-	find npm_licenses/$(UI_NODE_MODULES_PATH) -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --files-from=-
-	rm -f npm_licenses
 else
 assets:
 	@echo '>> skipping assets build, pre-built assets provided'
-
-npm_licenses:
-	@echo '>> skipping assets npm licenses, pre-built assets provided'
 endif
 
 .PHONY: assets-compress
@@ -179,22 +171,22 @@ install-goyacc:
 	@go install golang.org/x/tools/cmd/goyacc@$(GOYACC_VERSION)
 
 .PHONY: test
-# If we only want to only test go code we have to change the test target
+# If we only want to test go code we have to change the test target
 # which is called by all.
 ifeq ($(GO_ONLY),1)
 test: common-test check-go-mod-version
 else
-test: check-generated-parser common-test check-node-version ui-build-module ui-test ui-lint check-go-mod-version
+test: check-generated-parser common-test check-node-version ui-test ui-lint check-go-mod-version
 endif
 
 .PHONY: tarball
-tarball: npm_licenses common-tarball
+tarball: common-tarball
 
 .PHONY: docker
-docker: npm_licenses common-docker
+docker: common-docker
 
 .PHONY: build
-build: assets npm_licenses assets-compress common-build
+build: assets assets-compress common-build
 
 .PHONY: bench_tsdb
 bench_tsdb: $(PROMU)
@@ -234,8 +226,9 @@ update-all-go-deps: update-go-deps
 .PHONY: update-go-deps-in-dir
 update-go-deps-in-dir:
 	@echo ">> updating Go dependencies in ./$(DIR)/"
+	# GOTOOLCHAIN prevents go get from pulling deps that require a newer Go version.
 	@cd ./$(DIR) && for m in $$($(GO) list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
-		$(GO) get $$m; \
+		GOTOOLCHAIN=go$$($(GO) mod edit -json | jq -r .Go) $(GO) get $$m; \
 	done
 	@cd ./$(DIR) && $(GO) mod tidy
 

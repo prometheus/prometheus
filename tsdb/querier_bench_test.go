@@ -16,6 +16,7 @@ package tsdb
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"strconv"
 	"testing"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/util/compression"
 )
 
 // Make entries ~50B in size, to emulate real-world high cardinality.
@@ -363,4 +365,70 @@ func BenchmarkQuerierSelectWithOutOfOrder(b *testing.B) {
 	b.Run("Head", func(b *testing.B) {
 		benchmarkSelect(b, db, numSeries, false)
 	})
+}
+
+// BenchmarkSearchLabelValues measures a full result consumption over a warm
+// index. The values are appended in a permuted order, so the head's in-memory
+// value list is not ascending and a limit cannot be applied while reading.
+func BenchmarkSearchLabelValues(b *testing.B) {
+	for _, cardinality := range []int{1000, 100000} {
+		b.Run(fmt.Sprintf("values=%d", cardinality), func(b *testing.B) {
+			head, _ := newTestHead(b, 2000, compression.None, false)
+			ctx := b.Context()
+			app := head.Appender(ctx)
+			for _, i := range rand.New(rand.NewPCG(1, 2)).Perm(cardinality) {
+				_, err := app.Append(0, labels.FromStrings(
+					"__name__", fmt.Sprintf("metric_%06d%s", i, postingsBenchSuffix),
+					"job", "api",
+				), 100, 1)
+				require.NoError(b, err)
+			}
+			require.NoError(b, app.Commit())
+
+			block, err := OpenBlock(nil, createBlockFromHead(b, b.TempDir(), head), nil, nil)
+			require.NoError(b, err)
+			b.Cleanup(func() { require.NoError(b, block.Close()) })
+
+			for _, backend := range []struct {
+				name   string
+				reader BlockReader
+			}{
+				{"Head", head},
+				{"Block", block},
+			} {
+				b.Run(backend.name, func(b *testing.B) {
+					q, err := NewBlockQuerier(backend.reader, 0, 200)
+					require.NoError(b, err)
+					b.Cleanup(func() { require.NoError(b, q.Close()) })
+					searcher := q.(storage.Searcher)
+
+					for _, tc := range []struct {
+						name     string
+						hints    *storage.SearchHints
+						matchers []*labels.Matcher
+					}{
+						{"limit=100", &storage.SearchHints{Limit: 100}, nil},
+						{"limit=100_filter", &storage.SearchHints{Limit: 100, Filter: prefixFilter{"metric_00"}}, nil},
+						{"limit=100_matcher", &storage.SearchHints{Limit: 100}, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "api")}},
+						{"unlimited", &storage.SearchHints{}, nil},
+					} {
+						b.Run(tc.name, func(b *testing.B) {
+							b.ReportAllocs()
+							for b.Loop() {
+								rs := searcher.SearchLabelValues(ctx, "__name__", tc.hints, tc.matchers...)
+								count := 0
+								for rs.Next() {
+									_ = rs.At()
+									count++
+								}
+								require.NoError(b, rs.Err())
+								require.NoError(b, rs.Close())
+								require.Positive(b, count)
+							}
+						})
+					}
+				})
+			}
+		})
+	}
 }

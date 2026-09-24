@@ -1716,23 +1716,76 @@ var testExpr = []struct {
 	{
 		input: "foo offset +(5)",
 		expected: &VectorSelector{
-			Name:           "foo",
-			OriginalOffset: 5 * time.Second,
+			Name: "foo",
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
 			},
 			PosRange: posrange.PositionRange{Start: 0, End: 15},
+			OriginalOffsetExpr: &DurationExpr{
+				Op:       ADD,
+				RHS:      &NumberLiteral{Val: 5, PosRange: posrange.PositionRange{Start: 13, End: 14}},
+				Wrapped:  true,
+				StartPos: 13,
+				EndPos:   14,
+			},
 		},
 	},
 	{
 		input: "foo offset -(5)",
 		expected: &VectorSelector{
-			Name:           "foo",
-			OriginalOffset: -5 * time.Second,
+			Name: "foo",
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
 			},
 			PosRange: posrange.PositionRange{Start: 0, End: 15},
+			OriginalOffsetExpr: &DurationExpr{
+				Op:       SUB,
+				StartPos: 11,
+				RHS: &DurationExpr{
+					Op:       ADD,
+					RHS:      &NumberLiteral{Val: 5, PosRange: posrange.PositionRange{Start: 13, End: 14}},
+					Wrapped:  true,
+					StartPos: 13,
+					EndPos:   14,
+				},
+			},
+		},
+	},
+	{
+		input: "foo offset (5)",
+		expected: &VectorSelector{
+			Name: "foo",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 14},
+			OriginalOffsetExpr: &DurationExpr{
+				Op:       ADD,
+				RHS:      &NumberLiteral{Val: 5, PosRange: posrange.PositionRange{Start: 12, End: 13}},
+				Wrapped:  true,
+				StartPos: 11,
+				EndPos:   14,
+			},
+		},
+	},
+	{
+		input: "foo[(5s)]",
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			RangeExpr: &DurationExpr{
+				Op:       ADD,
+				RHS:      &NumberLiteral{Val: 5, Duration: true, PosRange: posrange.PositionRange{Start: 5, End: 7}},
+				Wrapped:  true,
+				StartPos: 4,
+				EndPos:   8,
+			},
+			EndPos: 9,
 		},
 	},
 	{
@@ -2800,6 +2853,39 @@ var testExpr = []struct {
 				PositionRange: posrange.PositionRange{Start: 19, End: 23},
 				Err:           errors.New("no @ modifiers allowed before range"),
 				Query:         `some_metric @ 1234 [5m]`,
+			},
+		},
+	},
+	{
+		input: `some_metric @ start() [5m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 22, End: 26},
+				Err:           errors.New("no @ modifiers allowed before range"),
+				Query:         `some_metric @ start() [5m]`,
+			},
+		},
+	},
+	{
+		input: `some_metric @ end()[5m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 19, End: 23},
+				Err:           errors.New("no @ modifiers allowed before range"),
+				Query:         `some_metric @ end()[5m]`,
+			},
+		},
+	},
+	{
+		input: `some_metric offset step()[5m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 25, End: 29},
+				Err:           errors.New("no offset modifiers allowed before range"),
+				Query:         `some_metric offset step()[5m]`,
 			},
 		},
 	},
@@ -4715,11 +4801,52 @@ var testExpr = []struct {
 						},
 					},
 					StartPos: 12,
-					EndPos:   31,
+					EndPos:   32,
 				},
 				StartPos: 11,
-				EndPos:   31,
+				EndPos:   32,
 			},
+		},
+	},
+	{
+		input: `foo[range():step()]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			RangeExpr: &DurationExpr{
+				Op:       RANGE,
+				StartPos: 4,
+				EndPos:   11,
+			},
+			StepExpr: &DurationExpr{
+				Op:       STEP,
+				StartPos: 12,
+				EndPos:   18,
+			},
+			EndPos: 19,
+		},
+	},
+	{
+		input: `foo[step():]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			RangeExpr: &DurationExpr{
+				Op:       STEP,
+				StartPos: 4,
+				EndPos:   10,
+			},
+			EndPos: 12,
 		},
 	},
 	{
@@ -5369,11 +5496,53 @@ func readable(s string) string {
 	return s[:maxReadableStringLen] + "..."
 }
 
+func TestDurationExprPositionRange(t *testing.T) {
+	for _, tc := range []struct {
+		input string
+		span  string
+	}{
+		{input: "foo[min_of(1m, 2m)]", span: "min_of(1m, 2m)"},
+		{input: "foo[max_of(1m, 2m):]", span: "max_of(1m, 2m)"},
+		{input: "foo[1h:min_of(1m, 2m)]", span: "min_of(1m, 2m)"},
+		{input: "foo offset min_of(1m, 2m)", span: "min_of(1m, 2m)"},
+		{input: "foo offset +min_of(1m, 2m)", span: "+min_of(1m, 2m)"},
+		{input: "foo offset -min_of(1m, 2m)", span: "-min_of(1m, 2m)"},
+		{input: "foo offset +max_of(1m, 2m)", span: "+max_of(1m, 2m)"},
+		{input: "foo offset -max_of(1m, 2m)", span: "-max_of(1m, 2m)"},
+		{input: "foo[min_of(1m, max_of(2m, 3m)) + 1m]", span: "min_of(1m, max_of(2m, 3m)) + 1m"},
+		{input: "foo[1m + max_of(2m, 3m)]", span: "1m + max_of(2m, 3m)"},
+		{input: "foo[1m + 2m]", span: "1m + 2m"},
+		{input: "foo offset -step()", span: "-step()"},
+		{input: "foo[range()]", span: "range()"},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			expr, err := testParser.ParseExpr(tc.input)
+			require.NoError(t, err)
+			var duration *DurationExpr
+			switch e := expr.(type) {
+			case *MatrixSelector:
+				duration = e.RangeExpr
+			case *SubqueryExpr:
+				duration = e.RangeExpr
+				if e.StepExpr != nil {
+					duration = e.StepExpr
+				}
+			case *VectorSelector:
+				duration = e.OriginalOffsetExpr
+			}
+			require.NotNil(t, duration)
+			start := strings.Index(tc.input, tc.span)
+			require.Equal(t, posrange.PositionRange{
+				Start: posrange.Pos(start),
+				End:   posrange.Pos(start + len(tc.span)),
+			}, duration.PositionRange())
+		})
+	}
+}
+
 func TestParseExpressions(t *testing.T) {
 	optsParser := NewParser(Options{
-		EnableExperimentalFunctions:  true,
-		ExperimentalDurationExpr:     true,
-		EnableExtendedRangeSelectors: true,
+		EnableExperimentalFunctions: true,
 	})
 
 	for _, test := range testExpr {
@@ -6130,7 +6299,6 @@ func TestParseCustomFunctions(t *testing.T) {
 func TestNewParser(t *testing.T) {
 	p := NewParser(Options{
 		EnableExperimentalFunctions: true,
-		ExperimentalDurationExpr:    true,
 	})
 
 	// ParseExpr should work.

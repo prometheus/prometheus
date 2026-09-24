@@ -54,6 +54,7 @@ import {
   Idelta,
   Increase,
   Info,
+  Integral,
   Irate,
   LabelJoin,
   LabelReplace,
@@ -89,6 +90,7 @@ import {
   SortByLabelDesc,
   Sqrt,
   StartFn,
+  StartTimestamp,
   Step,
   StddevOverTime,
   StdvarOverTime,
@@ -371,6 +373,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
     variadic: 1,
     returnType: ValueType.vector,
   },
+  [Integral]: {
+    name: 'integral',
+    argTypes: [ValueType.matrix, ValueType.scalar],
+    variadic: 1,
+    returnType: ValueType.vector,
+  },
   [Irate]: {
     name: 'irate',
     argTypes: [ValueType.matrix],
@@ -580,6 +588,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
     argTypes: [],
     variadic: 0,
     returnType: ValueType.scalar,
+  },
+  [StartTimestamp]: {
+    name: 'start_timestamp',
+    argTypes: [ValueType.vector],
+    variadic: 0,
+    returnType: ValueType.vector,
   },
   [Step]: {
     name: 'step',

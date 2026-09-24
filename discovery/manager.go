@@ -265,6 +265,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 				// Also clean up discovered targets metric. targetsMtx lock needed for safe access to m.targets.
 				delete(m.targets, poolKey{s, prov.name})
 				m.metrics.DiscoveredTargets.DeleteLabelValues(s)
+				m.metrics.LastUpdated.DeleteLabelValues(s)
 
 				if cfg, ok := prov.config.(Config); ok {
 					m.sdMetrics.RefreshManager.DeleteLabelValues(cfg.Name(), s)
@@ -287,6 +288,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 			if _, ok := prov.newSubs[s]; !ok {
 				delete(m.targets, poolKey{s, prov.name})
 				m.metrics.DiscoveredTargets.DeleteLabelValues(s)
+				m.metrics.LastUpdated.DeleteLabelValues(s)
 
 				// Also clean up refresh metrics for subs that are being removed from a provider that is still running.
 				cfg, ok := prov.config.(Config)

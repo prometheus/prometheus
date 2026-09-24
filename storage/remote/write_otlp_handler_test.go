@@ -15,6 +15,7 @@ package remote
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -25,6 +26,7 @@ import (
 	"reflect"
 	"runtime"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -256,6 +258,106 @@ func TestOTLPWriteHandler(t *testing.T) {
 			teststorage.RequireEqual(t, expectedSamples, appendable.ResultSamples())
 		})
 	}
+
+	t.Run("translation warnings metric", func(t *testing.T) {
+		newExporter := func() *rwExporter {
+			log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+			handler := NewOTLPWriteHandler(log, prometheus.NewRegistry(), teststorage.NewAppendable(), func() config.Config {
+				return config.Config{OTLPConfig: config.OTLPConfig{TranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes}}
+			}, OTLPOptions{})
+			return handler.(*otlpWriteHandler).defaultConsumer.(*rwExporter)
+		}
+
+		t.Run("label name collision", func(t *testing.T) {
+			// Two attributes that collide after sanitization (`a.b` and `a_b` both
+			// map to `a_b`) produce one collision warning. Escaping must be enabled
+			// for the collision to occur, hence UnderscoreEscapingWithSuffixes.
+			request := pmetricotlp.NewExportRequest()
+			m := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			m.SetName("test_gauge")
+			dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+			dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+			dp.SetIntValue(1)
+			dp.Attributes().PutStr("a.b", "x")
+			dp.Attributes().PutStr("a_b", "y")
+
+			ex := newExporter()
+			require.Equal(t, 0.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("label_name_collision")))
+			require.NoError(t, ex.ConsumeMetrics(t.Context(), request.Metrics()))
+			require.Equal(t, 1.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("label_name_collision")))
+		})
+
+		t.Run("histogram zero count non-zero sum", func(t *testing.T) {
+			// An exponential histogram data point with zero count but a non-zero sum
+			// produces one warning in the histogram_zero_count_non_zero_sum category.
+			request := pmetricotlp.NewExportRequest()
+			m := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			m.SetName("test_exponential_histogram")
+			m.SetEmptyExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+			h := m.ExponentialHistogram().DataPoints().AppendEmpty()
+			h.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+			h.SetCount(0)
+			h.SetSum(155)
+
+			ex := newExporter()
+			require.Equal(t, 0.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("histogram_zero_count_non_zero_sum")))
+			require.NoError(t, ex.ConsumeMetrics(t.Context(), request.Metrics()))
+			require.Equal(t, 1.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("histogram_zero_count_non_zero_sum")))
+		})
+
+		t.Run("empty data points", func(t *testing.T) {
+			request := pmetricotlp.NewExportRequest()
+			m := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			m.SetName("test_empty_gauge")
+			m.SetEmptyGauge()
+
+			ex := newExporter()
+			require.Equal(t, 0.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("empty_data_points")))
+			require.NoError(t, ex.ConsumeMetrics(t.Context(), request.Metrics()))
+			require.Equal(t, 1.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("empty_data_points")))
+		})
+	})
+
+	t.Run("empty metric does not reject healthy metrics", func(t *testing.T) {
+		request := pmetricotlp.NewExportRequest()
+		metrics := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics()
+
+		healthy := metrics.AppendEmpty()
+		healthy.SetName("healthy_metric")
+		dp := healthy.SetEmptyGauge().DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+		dp.SetIntValue(1)
+
+		empty := metrics.AppendEmpty()
+		empty.SetName("empty_metric")
+		empty.SetEmptyGauge()
+
+		appendable := handleOTLP(t, request, config.OTLPConfig{}, OTLPOptions{})
+		samples := appendable.ResultSamples()
+		require.Len(t, samples, 1)
+		require.Equal(t, "healthy_metric", samples[0].L.Get(labels.MetricName))
+	})
+
+	t.Run("concurrent requests", func(t *testing.T) {
+		handler, payload := newOTLPWriteHandlerFixture(t)
+
+		const requests = 64
+		statuses := make(chan int, requests)
+		var wg sync.WaitGroup
+		for range requests {
+			wg.Go(func() {
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, newOTLPWriteHandlerRequest(payload))
+				statuses <- recorder.Code
+			})
+		}
+		wg.Wait()
+		close(statuses)
+
+		for status := range statuses {
+			require.Equal(t, http.StatusOK, status)
+		}
+	})
 }
 
 func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg config.OTLPConfig, otlpOpts OTLPOptions) *teststorage.Appendable {
@@ -421,7 +523,87 @@ func TestOTLPDelta(t *testing.T) {
 	}
 }
 
+// BenchmarkOTLPWriteHandler measures a decoded OTLP request through the HTTP
+// handler, translation, and appender commit paths. The appendable discards
+// samples so that the benchmark does not retain prior requests.
+func BenchmarkOTLPWriteHandler(b *testing.B) {
+	handler, payload := newOTLPWriteHandlerFixture(b)
+
+	b.Run("serial", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, newOTLPWriteHandlerRequest(payload))
+			if recorder.Code != http.StatusOK {
+				b.Fatalf("unexpected status code %d", recorder.Code)
+			}
+		}
+	})
+
+	b.Run("parallel", func(b *testing.B) {
+		b.ReportAllocs()
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, newOTLPWriteHandlerRequest(payload))
+				if recorder.Code != http.StatusOK {
+					b.Errorf("unexpected status code %d", recorder.Code)
+					return
+				}
+			}
+		})
+	})
+}
+
+func newOTLPWriteHandlerFixture(tb testing.TB) (http.Handler, []byte) {
+	tb.Helper()
+
+	request := generateOTLPWriteRequest(time.Unix(0, 0), time.Unix(0, 0))
+	payload, err := request.MarshalProto()
+	require.NoError(tb, err)
+
+	handler := NewOTLPWriteHandler(
+		slog.New(slog.DiscardHandler),
+		nil,
+		discardAppendable{},
+		func() config.Config { return config.Config{OTLPConfig: config.DefaultOTLPConfig} },
+		OTLPOptions{},
+	)
+	return handler, payload
+}
+
+func newOTLPWriteHandlerRequest(payload []byte) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", pbContentType)
+	return req
+}
+
+type discardAppendable struct{}
+
+var _ storage.AppendableV2 = discardAppendable{}
+
+func (discardAppendable) AppenderV2(context.Context) storage.AppenderV2 {
+	return discardAppender{}
+}
+
+type discardAppender struct{}
+
+var _ storage.AppenderV2 = discardAppender{}
+
+func (discardAppender) Append(storage.SeriesRef, labels.Labels, int64, int64, float64, *histogram.Histogram, *histogram.FloatHistogram, storage.AOptions) (storage.SeriesRef, error) {
+	return 0, nil
+}
+
+func (discardAppender) Commit() error {
+	return nil
+}
+
+func (discardAppender) Rollback() error {
+	return nil
+}
+
 func BenchmarkOTLP(b *testing.B) {
+	b.Skip("Not supported by teststorage Appender")
 	start := time.Date(2000, 1, 2, 3, 4, 5, 0, time.UTC)
 
 	type Type struct {

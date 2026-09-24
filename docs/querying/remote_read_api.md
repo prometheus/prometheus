@@ -14,6 +14,15 @@ Request are made to the following endpoint.
 /api/v1/read
 ```
 
+## External labels and remote read
+
+The `external_labels` setting in `global` affects remote read on both sides:
+
+- **Exposing remote read:** Prometheus appends `external_labels` to every time series returned via `/api/v1/read`. The labels are not stored in TSDB; they are added at response time. Incoming equality matchers that match an external label are rewritten to match the empty string so that TSDB can satisfy the query.
+- **Using remote read:** The querying Prometheus sends its own `external_labels` as additional equality matchers in the request, then strips them from the response.
+
+If the querying Prometheus has `external_labels` that differ from or are absent on the remote server, queries may return no results because the matchers will not match. Ensure that any `external_labels` on the querying side are consistent with the labels present on the remote side.
+
 ## Samples
 
 This returns a message that includes a list of raw samples matching the

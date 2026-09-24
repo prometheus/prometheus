@@ -89,6 +89,26 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 	attrsWithUnderscores.PutStr("_metric_private", "private metric")
 	attrsWithUnderscores.PutStr("metric___multi", "multi metric")
 
+	// Attribute names that collide after sanitization (`.` and `-` both map to `_`).
+	collidingAttrs := pcommon.NewMap()
+	collidingAttrs.PutStr("a.b", "1")
+	collidingAttrs.PutStr("a_b", "2")
+	tripleCollidingAttrs := pcommon.NewMap()
+	tripleCollidingAttrs.PutStr("a-b", "1")
+	tripleCollidingAttrs.PutStr("a.b", "2")
+	tripleCollidingAttrs.PutStr("a_b", "3")
+	// Two independent collision groups in one attribute set.
+	multiGroupCollidingAttrs := pcommon.NewMap()
+	multiGroupCollidingAttrs.PutStr("a.b", "1")
+	multiGroupCollidingAttrs.PutStr("a_b", "2")
+	multiGroupCollidingAttrs.PutStr("c.d", "3")
+	multiGroupCollidingAttrs.PutStr("c_d", "4")
+	// A colliding group plus an attribute that does not participate in it.
+	collisionWithExtraAttrs := pcommon.NewMap()
+	collisionWithExtraAttrs.PutStr("a.b", "1")
+	collisionWithExtraAttrs.PutStr("a_b", "2")
+	collisionWithExtraAttrs.PutStr("unrelated", "9")
+
 	testCases := []struct {
 		name                                 string
 		resource                             pcommon.Resource
@@ -102,6 +122,7 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 		labelNameUnderscoreSanitization      bool
 		labelNamePreserveMultipleUnderscores bool
 		expectedLabels                       labels.Labels
+		expectedCollisionWarnings            []string
 	}{
 		{
 			name:                      "Successful conversion without resource attribute promotion and without scope promotion",
@@ -404,6 +425,61 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 				"metric_attr_other", "metric value other",
 			),
 		},
+		{
+			name:  "Attributes colliding after sanitization are concatenated and recorded as a warning",
+			attrs: collidingAttrs,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"a_b", "1;2",
+				"instance", "service ID",
+				"job", "service name",
+			),
+			expectedCollisionWarnings: []string{
+				`OTLP data point attributes "a.b", "a_b" collide as label "a_b" after name sanitization, values are concatenated with ';'`,
+			},
+		},
+		{
+			name:  "Three colliding attributes report all names in concatenation order",
+			attrs: tripleCollidingAttrs,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"a_b", "1;2;3",
+				"instance", "service ID",
+				"job", "service name",
+			),
+			expectedCollisionWarnings: []string{
+				`OTLP data point attributes "a-b", "a.b", "a_b" collide as label "a_b" after name sanitization, values are concatenated with ';'`,
+			},
+		},
+		{
+			name:  "Multiple independent collision groups each produce a distinct warning",
+			attrs: multiGroupCollidingAttrs,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"a_b", "1;2",
+				"c_d", "3;4",
+				"instance", "service ID",
+				"job", "service name",
+			),
+			expectedCollisionWarnings: []string{
+				`OTLP data point attributes "a.b", "a_b" collide as label "a_b" after name sanitization, values are concatenated with ';'`,
+				`OTLP data point attributes "c.d", "c_d" collide as label "c_d" after name sanitization, values are concatenated with ';'`,
+			},
+		},
+		{
+			name:  "Attributes not participating in a collision are excluded from the warning",
+			attrs: collisionWithExtraAttrs,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"a_b", "1;2",
+				"instance", "service ID",
+				"job", "service name",
+				"unrelated", "9",
+			),
+			expectedCollisionWarnings: []string{
+				`OTLP data point attributes "a.b", "a_b" collide as label "a_b" after name sanitization, values are concatenated with ';'`,
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -439,6 +515,7 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 			require.NoError(t, err)
 
 			testutil.RequireEqual(t, tc.expectedLabels, lbls)
+			require.ElementsMatch(t, tc.expectedCollisionWarnings, collisionWarnings(c.collisionAnnots))
 		})
 	}
 

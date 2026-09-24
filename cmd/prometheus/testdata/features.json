@@ -27,12 +27,12 @@
     "stringlabels": true
   },
   "promql": {
-    "anchored": false,
+    "anchored": true,
     "at_modifier": true,
     "bool": true,
     "by": true,
     "delayed_name_removal": false,
-    "duration_expr": false,
+    "duration_expr": true,
     "fill": false,
     "fill_left": false,
     "fill_right": false,
@@ -44,7 +44,7 @@
     "on": true,
     "per_query_lookback_delta": true,
     "per_step_stats": false,
-    "smoothed": false,
+    "smoothed": true,
     "subqueries": true,
     "type_and_unit_labels": false,
     "without": true
@@ -78,7 +78,7 @@
     "double_exponential_smoothing": false,
     "end": false,
     "exp": true,
-    "first_over_time": false,
+    "first_over_time": true,
     "floor": true,
     "histogram_avg": true,
     "histogram_count": true,
@@ -92,6 +92,7 @@
     "idelta": true,
     "increase": true,
     "info": false,
+    "integral": false,
     "irate": true,
     "label_join": true,
     "label_replace": true,
@@ -125,6 +126,7 @@
     "sort_desc": true,
     "sqrt": true,
     "start": false,
+    "start_timestamp": false,
     "stddev_over_time": true,
     "stdvar_over_time": true,
     "step": false,
@@ -184,6 +186,7 @@
   },
   "scrape": {
     "extra_scrape_metrics": true,
+    "openmetrics2": false,
     "start_timestamp_zero_ingestion": false,
     "type_and_unit_labels": false
   },
@@ -212,6 +215,7 @@
     "msk": true,
     "nerve": true,
     "nomad": true,
+    "oci": true,
     "openstack": true,
     "outscale": true,
     "ovhcloud": true,
@@ -259,11 +263,12 @@
   "tsdb": {
     "delayed_compaction": false,
     "exemplar_storage": false,
+    "histograms_st_encoding": false,
     "isolation": true,
     "native_histograms": true,
     "st_storage": false,
-    "xor2_encoding": false,
-    "use_uncached_io": false
+    "use_uncached_io": false,
+    "xor2_encoding": true
   },
   "ui": {
     "ui_v2": false,

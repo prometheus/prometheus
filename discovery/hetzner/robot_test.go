@@ -36,6 +36,7 @@ func (s *robotSDTestSuite) SetupTest(t *testing.T) {
 }
 
 func TestRobotSDRefresh(t *testing.T) {
+	t.Parallel()
 	suite := &robotSDTestSuite{}
 	suite.SetupTest(t)
 	cfg := DefaultSDConfig
@@ -82,12 +83,14 @@ func TestRobotSDRefresh(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, labelSet, targetGroup.Targets[i])
 		})
 	}
 }
 
 func TestRobotSDRefreshHandleError(t *testing.T) {
+	t.Parallel()
 	suite := &robotSDTestSuite{}
 	suite.SetupTest(t)
 	cfg := DefaultSDConfig

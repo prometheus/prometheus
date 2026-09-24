@@ -98,6 +98,37 @@ type PrometheusConverter struct {
 	// sanitizedLabels caches the results of label name sanitization within a request.
 	// This avoids repeated string allocations for the same label names.
 	sanitizedLabels map[string]string
+
+	// collisionAnnots collects warning annotations about attribute names that
+	// collide after label name sanitization, causing their values to be
+	// concatenated. Reset on every FromMetrics call.
+	collisionAnnots annotations.Annotations
+	// recordedCollisions tracks the sanitized label names whose collision has
+	// already been recorded during the current FromMetrics call, so that a
+	// collision repeated across data points is recorded once instead of
+	// rebuilding the annotation per data point. Reset on
+	// every FromMetrics call.
+	recordedCollisions map[string]struct{}
+	// collisionSource records whether the attributes currently being converted are
+	// data point or resource attributes, so collision warnings can name the source.
+	collisionSource collisionAttrSource
+}
+
+// collisionAttrSource identifies which OTLP attribute source is being converted,
+// so label-name collision warnings can name it. The zero value is data point,
+// which covers every path except target_info (resource attributes).
+type collisionAttrSource int
+
+const (
+	collisionFromDataPoint collisionAttrSource = iota
+	collisionFromResource
+)
+
+func (s collisionAttrSource) String() string {
+	if s == collisionFromResource {
+		return "resource"
+	}
+	return "data point"
 }
 
 // targetInfoKey uniquely identifies a target_info sample by its labelset and timestamp.
@@ -106,12 +137,41 @@ type targetInfoKey struct {
 	timestamp  int64
 }
 
+const maxSanitizedLabels = 64
+
 func NewPrometheusConverter(appender storage.AppenderV2) *PrometheusConverter {
-	return &PrometheusConverter{
-		scratchBuilder:  labels.NewScratchBuilder(0),
-		builder:         labels.NewBuilder(labels.EmptyLabels()),
+	c := &PrometheusConverter{}
+	c.Reset(appender)
+	return c
+}
+
+// Reset prepares c for conversion with appender. It must only be called after
+// Commit or Rollback has completed on the previous appender. Passing nil clears
+// request-local references before c is returned to a pool.
+func (c *PrometheusConverter) Reset(appender storage.AppenderV2) {
+	sanitizedLabels := c.sanitizedLabels
+	if len(sanitizedLabels) > maxSanitizedLabels {
+		sanitizedLabels = nil
+	} else {
+		clear(sanitizedLabels)
+	}
+
+	// Preserve only the bounded label cache across requests.
+	*c = PrometheusConverter{
 		appender:        appender,
-		sanitizedLabels: make(map[string]string, 64), // Pre-size for typical label count.
+		sanitizedLabels: sanitizedLabels,
+	}
+
+	if appender == nil {
+		return
+	}
+
+	// Builders retain their input strings in backing arrays after Reset, so use
+	// fresh builders for every request.
+	c.scratchBuilder = labels.NewScratchBuilder(0)
+	c.builder = labels.NewBuilder(labels.EmptyLabels())
+	if c.sanitizedLabels == nil {
+		c.sanitizedLabels = make(map[string]string, maxSanitizedLabels)
 	}
 }
 
@@ -181,6 +241,10 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 	unitNamer := otlptranslator.UnitNamer{}
 	c.everyN = everyNTimes{n: 128}
 	c.seenTargetInfo = make(map[targetInfoKey]struct{})
+	c.collisionAnnots = nil
+	c.recordedCollisions = nil
+	c.collisionSource = collisionFromDataPoint
+	defer func() { annots.Merge(c.collisionAnnots) }()
 	resourceMetricsSlice := md.ResourceMetrics()
 
 	for i := range resourceMetricsSlice.Len() {
@@ -253,7 +317,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeGauge:
 					dataPoints := metric.Gauge().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						annots.Add(newCategorizedWarningf(WarningCategoryEmptyDataPoints, "empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, settings, appOpts); err != nil {
@@ -265,7 +329,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeSum:
 					dataPoints := metric.Sum().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						annots.Add(newCategorizedWarningf(WarningCategoryEmptyDataPoints, "empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					if err := c.addSumNumberDataPoints(ctx, dataPoints, settings, appOpts); err != nil {
@@ -277,7 +341,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeHistogram:
 					dataPoints := metric.Histogram().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						annots.Add(newCategorizedWarningf(WarningCategoryEmptyDataPoints, "empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					if settings.ConvertHistogramsToNHCB {
@@ -302,7 +366,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeExponentialHistogram:
 					dataPoints := metric.ExponentialHistogram().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						annots.Add(newCategorizedWarningf(WarningCategoryEmptyDataPoints, "empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					ws, err := c.addExponentialHistogramDataPoints(
@@ -322,7 +386,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeSummary:
 					dataPoints := metric.Summary().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						annots.Add(newCategorizedWarningf(WarningCategoryEmptyDataPoints, "empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					if err := c.addSummaryDataPoints(ctx, dataPoints, settings, appOpts); err != nil {
@@ -412,8 +476,10 @@ func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, sett
 	}
 
 	c.labelNamer = otlptranslator.LabelNamer{
-		UTF8Allowed:                 settings.AllowUTF8,
-		UnderscoreLabelSanitization: settings.LabelNameUnderscoreSanitization,
+		UTF8Allowed: settings.AllowUTF8,
+		// The deprecated field is still the only way to opt into this
+		// behaviour, which is exposed as a Prometheus config option.
+		UnderscoreLabelSanitization: settings.LabelNameUnderscoreSanitization, //nolint:staticcheck
 		PreserveMultipleUnderscores: settings.LabelNamePreserveMultipleUnderscores,
 	}
 

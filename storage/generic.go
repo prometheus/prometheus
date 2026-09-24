@@ -366,6 +366,66 @@ func linearResultCap(numValues, limit int) int {
 	return allocCap
 }
 
+// smallestNValues returns the n smallest of values in ascending order. It does
+// not modify values, so it is safe to use on a shared slice. A bounded heap
+// avoids sorting or copying the whole input, which for a high cardinality label
+// is much larger than n.
+//
+// n must be greater than zero and less than len(values).
+func smallestNValues(values []string, n int) []string {
+	h := make(smallestNHeap, n)
+	copy(h, values[:n])
+	h.init()
+	for _, v := range values[n:] {
+		// The heap maximum is the worst value currently kept, so a smaller
+		// candidate replaces it and anything else cannot improve the result.
+		if v < h[0] {
+			h[0] = v
+			h.siftDown(0)
+		}
+	}
+	// The heap is only partially ordered, so the survivors need a sort. It runs
+	// over n entries, not over the whole input.
+	slices.Sort(h)
+	return h
+}
+
+// smallestNHeap is a typed binary max-heap over label values, so heap[0] is the
+// largest value currently kept. Replacing the maximum on smaller candidates
+// keeps the N smallest values without sorting the full input and without the
+// per-operation interface boxing that container/heap would introduce.
+type smallestNHeap []string
+
+// init establishes the heap property over the whole slice. It works bottom-up
+// from the last internal node, which is cheaper than inserting the values one
+// at a time; the indices from len(h)/2 up are leaves and so are heaps already.
+func (h smallestNHeap) init() {
+	for i := len(h)/2 - 1; i >= 0; i-- {
+		h.siftDown(i)
+	}
+}
+
+// siftDown restores the heap property at index i, assuming both subtrees of i
+// are already heaps.
+func (h smallestNHeap) siftDown(i int) {
+	n := len(h)
+	for {
+		left := 2*i + 1
+		if left >= n {
+			return
+		}
+		largest := left
+		if right := left + 1; right < n && h[right] > h[left] {
+			largest = right
+		}
+		if h[largest] <= h[i] {
+			return
+		}
+		h[i], h[largest] = h[largest], h[i]
+		i = largest
+	}
+}
+
 // topKByScore returns the top-K matches under the (Score desc, Value asc) total
 // order, using a min-heap of size limit. This avoids sorting the full matched
 // set when only the best Limit results are needed.
@@ -403,7 +463,7 @@ func topKByScore(values []string, filter Filter, limit int) []SearchResult {
 	out := make([]SearchResult, len(h))
 	// Pop returns worst-first under our heap order; place results from the tail
 	// so the final slice is best-first (Score desc, Value asc).
-	for i := len(out) - 1; i >= 0; i-- {
+	for i := range slices.Backward(out) {
 		var r SearchResult
 		r, h = h.pop()
 		out[i] = r

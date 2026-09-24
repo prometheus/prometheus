@@ -178,8 +178,8 @@ func (h *Histogram) String() string {
 			nBuckets = append(nBuckets, it.At())
 		}
 	}
-	for i := len(nBuckets) - 1; i >= 0; i-- {
-		fmt.Fprintf(&sb, ", %s", nBuckets[i].String())
+	for _, v := range slices.Backward(nBuckets) {
+		fmt.Fprintf(&sb, ", %s", v.String())
 	}
 
 	if h.ZeroCount != 0 {

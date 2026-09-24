@@ -1,7 +1,8 @@
-import React, { FC } from 'react';
+import React, { FC, ReactNode } from 'react';
 import { Button } from 'reactstrap';
 
 interface ToggleMoreLessProps {
+  children?: ReactNode;
   event(): void;
   showMore: boolean;
 }

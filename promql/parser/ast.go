@@ -116,8 +116,8 @@ type DurationExpr struct {
 	LHS, RHS Expr     // The operands on the respective sides of the operator.
 	Wrapped  bool     // Set when the duration is wrapped in parentheses.
 
-	StartPos posrange.Pos // For unary operations, step(), and range(), the start position of the operator.
-	EndPos   posrange.Pos // For step() and range(), the end position of the operator.
+	StartPos posrange.Pos // The start position of unary operations and duration function calls.
+	EndPos   posrange.Pos // The end position of duration function calls, including the closing parenthesis.
 }
 
 // Call represents a function call.
@@ -487,7 +487,7 @@ func (e *BinaryExpr) PositionRange() posrange.PositionRange {
 }
 
 func (e *DurationExpr) PositionRange() posrange.PositionRange {
-	if e.RHS == nil && e.LHS == nil {
+	if e.Op == MIN_OF || e.Op == MAX_OF || (e.RHS == nil && e.LHS == nil) {
 		return posrange.PositionRange{
 			Start: e.StartPos,
 			End:   e.EndPos,

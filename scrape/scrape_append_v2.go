@@ -19,6 +19,7 @@ import (
 	"io"
 	"math"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -103,6 +104,7 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 		ConvertClassicHistogramsToNHCB:          sl.convertClassicHistToNHCB,
 		KeepClassicOnClassicAndNativeHistograms: sl.alwaysScrapeClassicHist,
 		OpenMetricsSkipSTSeries:                 sl.parseST,
+		EnableOpenMetrics2:                      sl.enableOpenMetrics2,
 		FallbackContentType:                     sl.fallbackScrapeProtocol,
 	})
 	if p == nil {
@@ -204,21 +206,15 @@ loop:
 			continue
 		}
 		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
-		var (
-			ref  storage.SeriesRef
-			hash uint64
-		)
+		var ref storage.SeriesRef
 
 		if seriesCached {
 			ref = ce.ref
 			lset = ce.lset
-			hash = ce.hash
 		} else {
 			p.Labels(&lset)
-			hash = lset.Hash()
 
-			// Hash label set as it is seen local to the target. Then add target labels
-			// and relabeling and store the final label set.
+			// Add target labels and apply relabeling before storing the final label set.
 			lset = sl.sampleMutator(lset)
 
 			// The label set may be set to empty to indicate dropping.
@@ -325,16 +321,10 @@ loop:
 				// Append sample to the storage.
 				ref, err = app.Append(ref, lset, st, t, val, h, fh, appOpts)
 				if err == nil && ce != nil && ref != 0 {
-					ce.ref = ref
+					sl.cache.updateRef(ce, ref)
 				}
 			}
 		}
-		if err == nil {
-			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil && ce.ref != 0 {
-				sl.cache.trackStaleness(ce.ref, ce)
-			}
-		}
-
 		sampleAdded, err = sl.checkAddError(met, exemplars, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
 		if err != nil {
 			if !errors.Is(err, storage.ErrNotFound) {
@@ -348,7 +338,7 @@ loop:
 		// If a series was new, but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
-			ce = sl.cache.addRef(met, ref, lset, hash)
+			ce = sl.cache.addRef(met, ref, lset)
 
 			if sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
@@ -437,7 +427,7 @@ func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float
 	switch {
 	case err == nil:
 		if !ok {
-			sl.cache.addRef(s.name, ref, lset, lset.Hash())
+			sl.cache.addRef(s.name, ref, lset)
 		}
 		return nil
 	case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
@@ -469,9 +459,14 @@ func (sl *scrapeLoop) checkAndSynthesizeStartTime(
 			return st, val, h, fh, skipAppend, c
 		}
 
-		// TODO(bwplotka): Add support for _count and _sum summary series.
 		switch metadata.Type {
 		case model.MetricTypeCounter, model.MetricTypeHistogram:
+			// Proceed to synthesis.
+		case model.MetricTypeSummary:
+			mName := lset.Get(model.MetricNameLabel)
+			if !strings.HasSuffix(mName, "_count") && !strings.HasSuffix(mName, "_sum") {
+				return st, val, h, fh, skipAppend, c
+			}
 			// Proceed to synthesis.
 		default:
 			return st, val, h, fh, skipAppend, c

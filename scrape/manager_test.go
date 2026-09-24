@@ -767,6 +767,26 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	}
 }
 
+func TestManagerRunReturnsWhenTargetSetsClosed(t *testing.T) {
+	m, err := NewManager(&Options{}, nil, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
+	require.NoError(t, err)
+	defer m.Stop()
+
+	targetSetsCh := make(chan map[string][]*targetgroup.Group)
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- m.Run(targetSetsCh)
+	}()
+	close(targetSetsCh)
+
+	select {
+	case err := <-runErr:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("scrape manager did not stop after target sets channel was closed")
+	}
+}
+
 func TestSetOffsetSeed(t *testing.T) {
 	getConfig := func(prometheus string) *config.Config {
 		cfgText := `
@@ -801,6 +821,25 @@ global:
 	offsetSeed2 := scrapeManager.offsetSeed
 
 	require.NotEqual(t, offsetSeed1, offsetSeed2, "Offset seed should not be the same on different set of external labels.")
+
+	// The fqdn option replaces the name lookup, so the seed follows it.
+	seedFor := func(fqdn string) uint64 {
+		m, err := NewManager(&Options{fqdn: fqdn}, nil, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
+		require.NoError(t, err)
+		require.NoError(t, m.setOffsetSeed(cfg1.GlobalConfig.ExternalLabels))
+		return m.offsetSeed
+	}
+	seedA, seedB := seedFor("a.example.com"), seedFor("b.example.com")
+	require.NotEqual(t, seedA, seedB, "Offset seed should follow the fqdn option.")
+	require.Equal(t, seedA, seedFor("a.example.com"), "Offset seed should be stable for a fixed fqdn.")
+}
+
+func TestSetupSynctestManagerReplacesFQDNLookup(t *testing.T) {
+	scrapeManager, _, cleanup := setupSynctestManager(t, nil)
+	t.Cleanup(cleanup)
+
+	require.Equal(t, synctestFQDN, scrapeManager.opts.fqdn,
+		"synctest tests must not reach the resolver from inside a bubble")
 }
 
 func TestManagerScrapePools(t *testing.T) {

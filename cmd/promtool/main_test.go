@@ -558,6 +558,11 @@ func TestExitCodes(t *testing.T) {
 			file: "prometheus-config.good.yml",
 		},
 		{
+			// Regression test for https://github.com/prometheus/prometheus/issues/6092:
+			// AWS SDs with empty region must parse without IMDS calls.
+			file: "prometheus-aws-sd-empty-region.good.yml",
+		},
+		{
 			file:     "prometheus-config.bad.yml",
 			exitCode: 1,
 		},
@@ -589,8 +594,7 @@ func TestExitCodes(t *testing.T) {
 
 					require.Error(t, err)
 
-					var exitError *exec.ExitError
-					if errors.As(err, &exitError) {
+					if exitError, ok := errors.AsType[*exec.ExitError](err); ok {
 						status := exitError.Sys().(syscall.WaitStatus)
 						require.Equal(t, c.exitCode, status.ExitStatus())
 					} else {
@@ -702,7 +706,7 @@ func TestCheckRulesWithFeatureFlag(t *testing.T) {
 	// As opposed to TestCheckRules calling CheckRules directly we run promtool
 	// so the feature flag parsing can be tested.
 
-	args := []string{"-test.main", "--enable-feature=promql-experimental-functions", "--enable-feature=promql-duration-expr", "--enable-feature=promql-extended-range-selectors", "check", "rules", "testdata/features.yml"}
+	args := []string{"-test.main", "--enable-feature=promql-experimental-functions", "--enable-feature=promql-extended-range-selectors", "--enable-feature=promql-binop-fill-modifiers", "check", "rules", "testdata/features.yml"}
 	tool := exec.Command(promtoolPath, args...)
 	err := tool.Run()
 	require.NoError(t, err)

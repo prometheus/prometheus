@@ -16,6 +16,7 @@ package logging
 import (
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -28,8 +29,8 @@ func getLogLines(t *testing.T, name string) []string {
 	require.NoError(t, err)
 
 	lines := strings.Split(string(content), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if lines[i] == "" {
+	for i, v := range slices.Backward(lines) {
+		if v == "" {
 			lines = append(lines[:i], lines[i+1:]...)
 		}
 	}

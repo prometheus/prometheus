@@ -114,22 +114,23 @@ func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, h
 
 	// Limit pushdown is only correct when natural (ascending) index order
 	// is preserved all the way to the output and no filtering discards
-	// values ahead of the limit.
+	// values ahead of the limit. LimitSmallest is also set to true to ensure
+	// we obtain the smallest N results not just N results.
 	labelHints := &storage.LabelHints{}
 	if hints.OrderBy == storage.OrderByValueAsc && hints.Filter == nil {
 		labelHints.Limit = hints.Limit
+		labelHints.LimitSmallest = true
 	}
 
 	var (
 		values []string
 		err    error
 	)
-	switch hints.OrderBy {
-	case storage.OrderByScoreDesc:
-		// Score-based sorting happens in ApplySearchHints; avoid the
-		// index-level sort.
+	// ApplySearchHints needs the values ascending by value.
+	// OrderByScore relies on the score calculated by the filter.
+	if hints.OrderBy == storage.OrderByScoreDesc && hints.Filter != nil {
 		values, err = q.index.LabelValues(ctx, name, labelHints, matchers...)
-	default:
+	} else {
 		values, err = q.index.SortedLabelValues(ctx, name, labelHints, matchers...)
 	}
 	if err != nil {
@@ -170,11 +171,18 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 	return selectSeriesSet(ctx, sortSeries, hints, ms, q.index, q.chunks, q.tombstones, q.mint, q.maxt)
 }
 
-// chunkCacheToggler is an optional interface implemented by chunk readers that
-// support an in-memory head-chunk cache. The cache is only beneficial for range
-// queries (Step > 0) where every chunk of a series is accessed.
-type chunkCacheToggler interface {
+// chunkCacheEnabler is an optional interface implemented by chunk readers that
+// support an in-memory head-chunk cache. The cache is beneficial when every
+// chunk of a series is accessed sequentially, such as range queries and compaction.
+type chunkCacheEnabler interface {
 	EnableChunkCache()
+}
+
+// enableChunkCache enables the head-chunk cache on cr if it supports one.
+func enableChunkCache(cr ChunkReader) {
+	if enabler, ok := cr.(chunkCacheEnabler); ok {
+		enabler.EnableChunkCache()
+	}
 }
 
 func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms []*labels.Matcher,
@@ -184,9 +192,7 @@ func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.Select
 	sharded := hints != nil && hints.ShardCount > 0
 
 	if hints != nil && hints.Step > 0 {
-		if toggler, ok := chunks.(chunkCacheToggler); ok {
-			toggler.EnableChunkCache()
-		}
+		enableChunkCache(chunks)
 	}
 
 	p, err := PostingsForMatchers(ctx, index, ms...)
@@ -238,9 +244,7 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 	sharded := hints != nil && hints.ShardCount > 0
 
 	if hints != nil && hints.Step > 0 {
-		if toggler, ok := chunks.(chunkCacheToggler); ok {
-			toggler.EnableChunkCache()
-		}
+		enableChunkCache(chunks)
 	}
 
 	if hints != nil {
@@ -500,9 +504,7 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, hi
 
 	// If we don't have any matchers for other labels, then we're done.
 	if !hasMatchersForOtherLabels {
-		if hints != nil && hints.Limit > 0 && len(allValues) > hints.Limit {
-			allValues = allValues[:hints.Limit]
-		}
+		allValues, _ = hints.ApplyLimit(allValues)
 		return allValues, nil
 	}
 
@@ -523,14 +525,20 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, hi
 		return nil, fmt.Errorf("intersecting postings: %w", err)
 	}
 
+	// FindIntersectingPostings returns the indexes ordered by series reference,
+	// not by value, so stopping at the limit returns an arbitrary subset. A
+	// caller asking for the smallest values has to see all of them first.
+	earlyLimit := hints.AllowsEarlyStop()
 	values := make([]string, 0, len(indexes))
 	for _, idx := range indexes {
 		values = append(values, allValues[idx])
-		if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
+		if earlyLimit && len(values) >= hints.Limit {
 			break
 		}
 	}
 
+	// A no-op unless a limit needs the smallest of what we collected.
+	values, _ = hints.ApplyLimit(values)
 	return values, nil
 }
 
@@ -859,7 +867,7 @@ func (p *populateWithDelSeriesIterator) AtT() int64 {
 	return p.curr.AtT()
 }
 
-// AtST TODO(krajorama,ywwg): test AtST() when chunks support it.
+// AtST returns the start timestamp of the current sample.
 func (p *populateWithDelSeriesIterator) AtST() int64 {
 	return p.curr.AtST()
 }
@@ -1081,7 +1089,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 				p.chunksFromIterable = append(p.chunksFromIterable, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
 			}
 			cmint = p.currDelIter.AtT()
-			if currentChunk, err = currentValueType.NewChunk(needTS); err != nil {
+			if currentChunk, err = currentValueType.NewChunk(needTS, needTS); err != nil {
 				break
 			}
 			if app, err = currentChunk.Appender(); err != nil {
@@ -1293,7 +1301,7 @@ func (it *DeletedIterator) AtT() int64 {
 	return it.Iter.AtT()
 }
 
-// AtST TODO(krajorama,ywwg): test AtST() when chunks support it.
+// AtST returns the start timestamp of the current sample.
 func (it *DeletedIterator) AtST() int64 {
 	return it.Iter.AtST()
 }

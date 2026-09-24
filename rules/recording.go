@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"sync"
 	"time"
@@ -119,6 +120,14 @@ func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, 
 	rule.SetHealth(HealthGood)
 	rule.SetLastError(err)
 	return vector, nil
+}
+
+// LogValue returns the rule's representation for logging.
+func (rule *RecordingRule) LogValue() slog.Value {
+	if rule == nil {
+		return slog.AnyValue(nil)
+	}
+	return slog.StringValue(rule.String())
 }
 
 func (rule *RecordingRule) String() string {

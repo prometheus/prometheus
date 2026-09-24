@@ -51,6 +51,7 @@ func (s *OpenstackSDLoadBalancerTestSuite) openstackAuthSuccess() (refresher, er
 }
 
 func TestOpenstackSDLoadBalancerRefresh(t *testing.T) {
+	t.Parallel()
 	mock := &OpenstackSDLoadBalancerTestSuite{}
 	mock.SetupTest(t)
 
@@ -126,6 +127,7 @@ func TestOpenstackSDLoadBalancerRefresh(t *testing.T) {
 }
 
 func TestOpenstackSDLoadBalancerRefreshWithDoneContext(t *testing.T) {
+	t.Parallel()
 	mock := &OpenstackSDLoadBalancerTestSuite{}
 	mock.SetupTest(t)
 

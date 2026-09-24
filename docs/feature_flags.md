@@ -102,19 +102,17 @@ Besides enabling this feature in Prometheus, start timestamps need to be exposed
 
 > NOTE: This is an experimental feature with known limitations until fully implemented.
 > * It introduces new WAL record type (SamplesV2) that can only be replayed with Prometheus 3.11 or later versions.
-> * For persistent storage support (TSDB blocks), you need to manually opt-in for XOR2 chunk format ([`xor2-encoding` flag](#xor2-chunk-encoding)).
->   The float chunk encoding must resolve to XOR2 when `st-storage` is active, because XOR chunks do not store start timestamps.
->   If the resolved encoding is XOR (that is, `--enable-feature=xor2-encoding` is not set and `chunk_encoding.floats: xor2` is not configured), Prometheus refuses to start and fails the configuration validation with an error rather than continuing to run.
->   Likewise, explicitly setting `chunk_encoding.floats: xor` in the config file while `st-storage` is active is rejected at config reload.
->   This might change later once we finish experimentation phase with XOR2.
-> * ST for native histograms and NHCBs are not yet implemented (see [#18315](https://github.com/prometheus/prometheus/issues/18315)).
+> * For persistent storage support (TSDB blocks), this feature automatically enables the XOR2 chunk format for floats and the histogram ST chunk formats for native histograms. These are the same formats enabled independently through [`chunk_encoding.floats: xor2`](configuration/configuration.md#tsdb) and the [`histograms-st-encoding`](#histogram-st-chunk-encoding) flag.
+>   Explicitly setting `chunk_encoding.floats: xor` in the config file while `st-storage` is active is rejected at config reload because XOR chunks do not store start timestamps.
+>   These constraints might change later once we finish the experimentation phase.
+> * Other areas of ST support for native histograms and NHCBs are still in progress (see [#18315](https://github.com/prometheus/prometheus/issues/18315)).
 > * PromQL use of ST is out of scope of this feature.
 
 ## Start timestamp (ST) usage in PromQL functions
 
 `--enable-feature=use-start-timestamps`
 
-Enables the use of start timestamps (ST) in PromQL functions such as `rate()`, `irate()`, and `increase()`. This feature doesn't currently work with extended range selectors (`promql-extended-range-selectors`). 
+Enables the use of start timestamps (ST) in PromQL functions such as `rate()`, `irate()`, `increase()` and `start_timestamp()`. This feature doesn't currently work with [extended range selectors](querying/basics.md#extended-range-selectors).
 
 ## Start timestamp (ST) synthesis
 
@@ -139,7 +137,7 @@ reason to run them sequentially.
 When the `concurrent-rule-eval` feature flag is enabled, rules without any dependency on other rules within a rule group will be evaluated concurrently.
 This has the potential to improve rule group evaluation latency and resource utilization at the expense of adding more concurrent query load.
 
-The number of concurrent rule evaluations can be configured with `--rules.max-concurrent-rule-evals`, which is set to `4` by default.
+The number of concurrent rule evaluations can be configured with `--rules.max-concurrent-evals`, which is set to `4` by default.
 
 ## Serve old Prometheus UI
 
@@ -213,66 +211,6 @@ Enabling this _can_ have negative impact on performance, because the in-memory
 state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
 [d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
-
-## PromQL arithmetic expressions in time durations
-
-`--enable-feature=promql-duration-expr`
-
-With this flag, arithmetic expressions can be used in time durations in range queries and offset durations.
-
-In range queries:
-```
-rate(http_requests_total[5m * 2])  # 10 minute range
-rate(http_requests_total[(5+2) * 1m])  # 7 minute range
-```
-
-In offset durations:
-```
-http_requests_total offset (1h / 2)  # 30 minute offset
-http_requests_total offset ((2 ^ 3) * 1m)  # 8 minute offset
-```
-
-When using offset with duration expressions, you must wrap the expression in
-parentheses. Without parentheses, only the first duration value will be used in
-the offset calculation.
-
-`step()` can be used in duration expressions.
-For a **range query**, it resolves to the step width of the range query.
-For an **instant query**, it resolves to `0s`.
-
-`range()` can be used in duration expressions.
-For a **range query**, it resolves to the full range of the query (end time - start time).
-For an **instant query**, it resolves to `0s`.
-This is particularly useful in combination with `@end()` to look back over the entire query range, e.g., `max_over_time(metric[range()] @ end())`.
-
-`min_of(<duration>, <duration>)` and `max_of(<duration>, <duration>)` select between two duration expressions.
-`min_of` returns the smaller of the two, which is useful for capping a duration at a maximum value.
-`max_of` returns the larger of the two, which is useful for enforcing a minimum value.
-For example, `max_of(step(), 5s)` ensures the duration is never shorter than `5s`, while `min_of(range(), 1h)` caps the duration at `1h`.
-
-**Note**: Duration expressions are not supported in the @ timestamp operator.
-
-The following operators are supported:
-
-* `+` - addition
-* `-` - subtraction
-* `*` - multiplication
-* `/` - division
-* `%` - modulo
-* `^` - exponentiation
-
-Examples of equivalent durations:
-
-* `5m * 2` is equivalent to `10m` or `600s`
-* `10m - 1m` is equivalent to `9m` or `540s`
-* `(5+2) * 1m` is equivalent to `7m` or `420s`
-* `1h / 2` is equivalent to `30m` or `1800s`
-* `4h % 3h` is equivalent to `1h` or `3600s`
-* `(2 ^ 3) * 1m` is equivalent to `8m` or `480s`
-* `step() + 1` is equivalent to the query step width increased by 1s.
-* `max_of(step(), 5s)` is equivalent to the larger of the query step width and `5s`.
-* `min_of(2 * step() + 5s, 5m)` is equivalent to the smaller of twice the query step increased by `5s` and `5m`.
-
 
 ## OTLP Native Delta Support
 
@@ -352,59 +290,28 @@ For more details, see the [proposal](https://github.com/prometheus/proposals/pul
 
 `--enable-feature=xor2-encoding`
 
+> **Note:** This feature flag is deprecated. The XOR2 float chunk encoding is stable; select it with the `chunk_encoding.floats` field in the `storage.tsdb` section of the configuration file instead, documented in the [configuration documentation](configuration/configuration.md#tsdb). The flag only sets the default float chunk encoding to `xor2`, and will become a no-op in a future major version.
+
+The [`st-storage`](#start-timestamp-st-native-storage) feature also selects XOR2 as the default float chunk encoding because XOR chunks cannot store start timestamps.
+
+## Histogram ST chunk encoding
+
+`--enable-feature=histograms-st-encoding`
+
 > WARNING: This is highly experimental and risky setting:
-> * Chunks encoded with XOR2 **cannot be read by older Prometheus versions** that do not support the encoding. Once enabled and data is written, you need to **manually delete blocks from the disk**, otherwise Prometheus will return error on all queries.
+> * Chunks encoded with `histogramST` and `floathistogramST` **cannot be read by older Prometheus versions** that do not support the encoding. Once enabled and data is written, you need to **manually delete blocks from the disk**, otherwise Prometheus will return error on all queries.
 > * We are still experimenting on the final encoding. As of now this encoding can change in any Prometheus version. All your persistent block data will be lost between versions.
 > * This encoding is new, meaning downstream tools and LTS systems might not support it yet (e.g. Thanos sidecar uploaded blocks).
 
-This setting enables the new XOR2 chunk encoding for float samples, which provides better disk compression than the default XOR encoding for typical Prometheus workloads. This format also allows storing Start Timestamp (ST).
+This setting enables the new `histogramST` and `floathistogramST` chunk encodings for native histogram and float histogram samples. These encodings extend the corresponding histogram chunk formats with a Start Timestamp (ST) header and per-sample ST encoding, equivalent to what the [XOR2 encoding](configuration/configuration.md#tsdb) does for float chunks. The flag does not affect float chunks.
 
-The encoding can also be controlled at each configuration reload via the `chunk_encoding.floats` field in the `storage.tsdb` section of the configuration file. Setting `chunk_encoding.floats: xor` forces standard XOR encoding even when `--enable-feature=xor2-encoding` is set; setting `chunk_encoding.floats: xor2` requires `--enable-feature=xor2-encoding` to be enabled.
-
-Without [`st-storage`](#start-timestamp-st-native-storage), XOR and XOR2 are compatible encodings, so an encoding change via `chunk_encoding.floats` does not cut the current chunk; the new encoding takes effect when the current chunk is next cut for any reason (size, time range, or sample count). When `st-storage` is also enabled, XOR and XOR2 are not compatible because XOR chunks do not store start timestamps, so the in-progress chunk is cut on the next append after the encoding changes.
-
-Note that `--enable-feature=st-storage` does not automatically enable XOR2 encoding.
-However, setting `chunk_encoding.floats: xor` while `st-storage` is active is rejected at
-config reload, because XOR chunks do not store start timestamps.
+The [`st-storage`](#start-timestamp-st-native-storage) feature automatically enables these histogram encodings. When enabled without `st-storage`, Prometheus uses the ST-capable histogram chunk encodings but does not store start timestamps from ingestion.
 
 ## Extended Range Selectors
 
-`--enable-feature=promql-extended-range-selectors`
-
-Enables experimental `anchored` and `smoothed` modifiers for PromQL range and instant selectors. These modifiers provide more control over how range boundaries are handled in functions like `rate` and `increase`, especially with missing or irregular data.
-
-Native Histograms are not yet supported by the extended range selectors.
-
-### `anchored`
-
-Uses the most recent sample (within the lookback delta) at the beginning of the range, or alternatively the first sample within the range if there is no sample within the lookback delta. The last sample within the range is also used at the end of the range. No extrapolation or interpolation is applied, so this is useful to get the direct difference between sample values.
-
-Anchored range selector work with: `resets`, `changes`, `rate`, `increase`, and `delta`.
-
-Example query:
-`increase(http_requests_total[5m] anchored)`
-
-**Note**: When using the anchored modifier with the increase function, the results returned are integers.
-
-### `smoothed`
-
-In range selectors, linearly interpolates values at the range boundaries, using the sample values before and after the boundaries for an improved estimation that is robust against irregular scrapes and missing samples. However, it requires a sample after the evaluation interval to work properly, see note below.
-
-For instant selectors, values are linearly interpolated at the evaluation timestamp using the samples immediately before and after that point.
-
-Smoothed range selectors work with: `rate`, `increase`, and `delta`.
-
-Example query:
-`rate(http_requests_total[step()] smoothed)`
-
-> **Note for alerting and recording rules:**
-> The `smoothed` modifier requires samples after the evaluation interval, so using it directly in alerting or recording rules will typically *under-estimate* the result, as future samples are not available at evaluation time.
-> To use `smoothed` safely in rules, you **must** apply a `query_offset` to the rule group (see [documentation](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/#rule_group)) to ensure the calculation window is fully in the past and all needed samples are available.
-> For critical alerting, set the offset to at least one scrape interval; for less critical or more resilient use cases, consider a larger offset (multiple scrape intervals) to tolerate missed scrapes.
-
-For more details, see the [design doc](https://github.com/prometheus/proposals/blob/main/proposals/2025-04-04_extended-range-selectors-semantics.md).
-
-**Note**: Extended Range Selectors are not supported for subqueries.
+The `--enable-feature=promql-extended-range-selectors` flag is now a no-op.
+The `anchored` and `smoothed` modifiers are enabled by default. See
+[extended range selectors](querying/basics.md#extended-range-selectors).
 
 ## Binary operator fill modifiers
 
@@ -439,3 +346,32 @@ to this maximum, so an operator setting a smaller cap does not break
 no-`limit` requests. Setting the flag to `0` disables the cap entirely; this
 is **not recommended** for endpoints exposed beyond a trusted network because a
 single client can then request the entire index in one response.
+
+## OpenMetrics 2.0
+
+`--enable-feature=openmetrics2`
+
+Enables scraping targets that expose the [OpenMetrics 2.0](https://prometheus.io/docs/specs/om/open_metrics_spec_2_0/)
+text format, advertised with the `application/openmetrics-text; version=2.0.0`
+content type.
+
+OpenMetrics 2.0 support is **experimental**. The parser is not stable
+yet, so expositions that Prometheus accepts today may be rejected by a later release.
+Do not depend on the current behavior in production.
+
+When this flag is disabled, an OpenMetrics 2.0 content type is treated as an
+unsupported content type: the target's `fallback_scrape_protocol` is used if
+one is configured, and the scrape fails otherwise.
+
+If you are implementing an OpenMetrics 2.0 exporter or client library, note that
+a successful scrape by Prometheus is **not** a certification that your output is
+spec-compliant. Refer to [OpenMetrics 2.0 migration guide](https://prometheus.io/docs/guides/open_metrics_2_0_migration/)
+instead. 
+
+## Zstandard scrape compression
+
+`--enable-feature=zstd-scrape`
+
+When enabled, Prometheus advertises support for Zstandard-compressed scrape responses in addition to gzip. The uncompressed response remains subject to the configured `body_size_limit`.
+
+When the flag is disabled, Prometheus does not advertise `zstd`. A target that answers with `Content-Encoding: zstd` regardless fails the scrape, because Prometheus cannot decode the body.

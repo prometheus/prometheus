@@ -16,6 +16,7 @@ package wlog
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -30,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -110,6 +112,115 @@ func TestDeleteCheckpoints(t *testing.T) {
 		fns = append(fns, f.Name())
 	}
 	require.Equal(t, []string{"checkpoint.100000000", "checkpoint.100000001"}, fns)
+}
+
+func TestReadMinValidTime_NoCheckpointYet(t *testing.T) {
+	dir := t.TempDir()
+
+	mint, ok, err := ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.False(t, ok, "a WAL with no checkpoint yet must have no recoverable min valid time")
+	require.Zero(t, mint)
+}
+
+func TestReadMinValidTime_AfterCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	w, err := New(nil, nil, dir, compression.None)
+	require.NoError(t, err)
+	defer w.Close()
+
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false, true)
+	require.NoError(t, err)
+
+	mint, ok, err := ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, int64(100), mint)
+}
+
+func TestReadMinValidTime_ReflectsOnlyLatestCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	w, err := New(nil, nil, dir, compression.None)
+	require.NoError(t, err)
+	defer w.Close()
+
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 100, false, true)
+	require.NoError(t, err)
+
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 1001, 2000, func(chunks.HeadSeriesRef) bool { return true }, 200, false, true)
+	require.NoError(t, err)
+
+	// The second checkpoint's own mint must win, and the first checkpoint's carried-forward
+	// copy must not have been kept alongside it (there must be exactly one such record).
+	mint, ok, err := ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, int64(200), mint)
+
+	checkpointDir, _, err := LastCheckpoint(dir)
+	require.NoError(t, err)
+	sr, err := NewSegmentsReader(checkpointDir)
+	require.NoError(t, err)
+	defer sr.Close()
+	dec := record.NewDecoder(nil, promslog.NewNopLogger())
+	r := NewReader(sr)
+	minValidTimeRecords := 0
+	for r.Next() {
+		if dec.Type(r.Record()) == record.MinValidTime {
+			minValidTimeRecords++
+		}
+	}
+	require.NoError(t, r.Err())
+	require.Equal(t, 1, minValidTimeRecords, "a checkpoint must carry exactly one min valid time record")
+}
+
+// TestCheckpoint_MinValidTimeNeverRegressesAcrossRestarts covers the case a restart
+// introduces: the guard that makes truncateWAL's calls to Checkpoint use a strictly
+// increasing mint (Head.lastWALTruncationTime) lives only in memory and resets on every
+// restart, so a later checkpoint, in a later process, can legitimately be asked to persist a
+// mint lower than what an earlier checkpoint already recorded. The persisted value must
+// still never regress.
+func TestCheckpoint_MinValidTimeNeverRegressesAcrossRestarts(t *testing.T) {
+	dir := t.TempDir()
+	w, err := New(nil, nil, dir, compression.None)
+	require.NoError(t, err)
+	defer w.Close()
+
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(chunks.HeadSeriesRef) bool { return true }, 5000, false, true)
+	require.NoError(t, err)
+
+	mint, ok, err := ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, int64(5000), mint)
+
+	// A restart happened here: lastWALTruncationTime is gone, so this next checkpoint is free
+	// to use a mint lower than 5000 -- it's still a legitimate, real truncation point for the
+	// process it's running in now, just not the highest one ever seen.
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 1001, 2000, func(chunks.HeadSeriesRef) bool { return true }, 100, false, true)
+	require.NoError(t, err)
+
+	mint, ok, err = ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, int64(5000), mint, "the persisted min valid time must never regress, even across a restart")
+}
+
+func TestReadMinValidTime_OlderCheckpointWithoutRecord(t *testing.T) {
+	dir := t.TempDir()
+
+	// Simulate a checkpoint written before this record existed: its first (and only) record
+	// is a Series record, not a MinValidTime one.
+	w, err := New(nil, nil, filepath.Join(dir, "checkpoint.0000"), compression.None)
+	require.NoError(t, err)
+	var enc record.Encoder
+	require.NoError(t, w.Log(enc.Series([]record.RefSeries{{Ref: 0, Labels: labels.FromStrings("a", "b")}}, nil)))
+	require.NoError(t, w.Close())
+
+	mint, ok, err := ReadMinValidTime(dir)
+	require.NoError(t, err)
+	require.False(t, ok, "an older checkpoint with no min valid time record must not be mistaken for one recording 0")
+	require.Zero(t, mint)
 }
 
 func TestCheckpoint(t *testing.T) {
@@ -229,48 +340,55 @@ func TestCheckpoint(t *testing.T) {
 					// Write samples until the WAL has enough segments.
 					// Make them have drifting timestamps within a record to see that they
 					// get filtered properly.
-					b := enc.Samples([]record.RefSample{
-						{Ref: 0, T: last, V: float64(i)},
-						{Ref: 1, T: last + 10000, V: float64(i)},
-						{Ref: 2, T: last + 20000, V: float64(i)},
-						{Ref: 3, T: last + 30000, V: float64(i)},
-					}, nil)
+					// Start times are ignored at encoding time if start time storage is
+					// disabled.
+					samples := []record.RefSample{
+						{Ref: 0, ST: last - 1, T: last, V: float64(i)},
+						{Ref: 1, ST: last + 9999, T: last + 10000, V: float64(i)},
+						{Ref: 2, ST: last + 19999, T: last + 20000, V: float64(i)},
+						{Ref: 3, ST: last + 29999, T: last + 30000, V: float64(i)},
+					}
+					b := enc.Samples(samples, nil)
 					require.NoError(t, w.Log(b))
 					samplesInWAL += 4
 					h := makeHistogram(i)
-					b, _ = enc.HistogramSamples([]record.RefHistogramSample{
-						{Ref: 0, T: last, H: h},
-						{Ref: 1, T: last + 10000, H: h},
-						{Ref: 2, T: last + 20000, H: h},
-						{Ref: 3, T: last + 30000, H: h},
-					}, nil)
+					histograms := []record.RefHistogramSample{
+						{Ref: 0, ST: last - 1, T: last, H: h},
+						{Ref: 1, ST: last + 9999, T: last + 10000, H: h},
+						{Ref: 2, ST: last + 19999, T: last + 20000, H: h},
+						{Ref: 3, ST: last + 29999, T: last + 30000, H: h},
+					}
+					b, _ = enc.HistogramSamples(histograms, nil)
 					require.NoError(t, w.Log(b))
 					histogramsInWAL += 4
 					cbh := makeCustomBucketHistogram(i)
-					b = enc.CustomBucketsHistogramSamples([]record.RefHistogramSample{
-						{Ref: 0, T: last, H: cbh},
-						{Ref: 1, T: last + 10000, H: cbh},
-						{Ref: 2, T: last + 20000, H: cbh},
-						{Ref: 3, T: last + 30000, H: cbh},
-					}, nil)
+					customBucketHistograms := []record.RefHistogramSample{
+						{Ref: 0, ST: last - 1, T: last, H: cbh},
+						{Ref: 1, ST: last + 9999, T: last + 10000, H: cbh},
+						{Ref: 2, ST: last + 19999, T: last + 20000, H: cbh},
+						{Ref: 3, ST: last + 29999, T: last + 30000, H: cbh},
+					}
+					b = enc.CustomBucketsHistogramSamples(customBucketHistograms, nil)
 					require.NoError(t, w.Log(b))
 					histogramsInWAL += 4
 					fh := makeFloatHistogram(i)
-					b, _ = enc.FloatHistogramSamples([]record.RefFloatHistogramSample{
-						{Ref: 0, T: last, FH: fh},
-						{Ref: 1, T: last + 10000, FH: fh},
-						{Ref: 2, T: last + 20000, FH: fh},
-						{Ref: 3, T: last + 30000, FH: fh},
-					}, nil)
+					floatHistograms := []record.RefFloatHistogramSample{
+						{Ref: 0, ST: last - 1, T: last, FH: fh},
+						{Ref: 1, ST: last + 9999, T: last + 10000, FH: fh},
+						{Ref: 2, ST: last + 19999, T: last + 20000, FH: fh},
+						{Ref: 3, ST: last + 29999, T: last + 30000, FH: fh},
+					}
+					b, _ = enc.FloatHistogramSamples(floatHistograms, nil)
 					require.NoError(t, w.Log(b))
 					floatHistogramsInWAL += 4
 					cbfh := makeCustomBucketFloatHistogram(i)
-					b = enc.CustomBucketsFloatHistogramSamples([]record.RefFloatHistogramSample{
-						{Ref: 0, T: last, FH: cbfh},
-						{Ref: 1, T: last + 10000, FH: cbfh},
-						{Ref: 2, T: last + 20000, FH: cbfh},
-						{Ref: 3, T: last + 30000, FH: cbfh},
-					}, nil)
+					customBucketFloatHistograms := []record.RefFloatHistogramSample{
+						{Ref: 0, ST: last - 1, T: last, FH: cbfh},
+						{Ref: 1, ST: last + 9999, T: last + 10000, FH: cbfh},
+						{Ref: 2, ST: last + 19999, T: last + 20000, FH: cbfh},
+						{Ref: 3, ST: last + 29999, T: last + 30000, FH: cbfh},
+					}
+					b = enc.CustomBucketsFloatHistogramSamples(customBucketFloatHistograms, nil)
 					require.NoError(t, w.Log(b))
 					floatHistogramsInWAL += 4
 
@@ -295,7 +413,7 @@ func TestCheckpoint(t *testing.T) {
 
 				stats, err := Checkpoint(promslog.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
 					return x%2 == 0
-				}, last/2, enableSTStorage)
+				}, last/2, enableSTStorage, false)
 				require.NoError(t, err)
 				require.NoError(t, w.Truncate(107))
 				require.NoError(t, DeleteCheckpoints(w.Dir(), 106))
@@ -330,6 +448,12 @@ func TestCheckpoint(t *testing.T) {
 						require.NoError(t, err)
 						for _, s := range samples {
 							require.GreaterOrEqual(t, s.T, last/2, "sample with wrong timestamp")
+							if enableSTStorage {
+								require.Equal(t, s.T-1, s.ST, "sample with wrong start timestamp")
+							} else {
+								// Start times should have not survived the round trip.
+								require.Zero(t, s.ST, "sample should not have start timestamp")
+							}
 						}
 						samplesInCheckpoint += len(samples)
 					case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
@@ -337,6 +461,11 @@ func TestCheckpoint(t *testing.T) {
 						require.NoError(t, err)
 						for _, h := range histograms {
 							require.GreaterOrEqual(t, h.T, last/2, "histogram with wrong timestamp")
+							if enableSTStorage {
+								require.Equal(t, h.T-1, h.ST, "histogram with wrong start timestamp")
+							} else {
+								require.Zero(t, h.ST, "histogram should not have start timestamp")
+							}
 						}
 						histogramsInCheckpoint += len(histograms)
 					case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
@@ -344,6 +473,11 @@ func TestCheckpoint(t *testing.T) {
 						require.NoError(t, err)
 						for _, h := range floatHistograms {
 							require.GreaterOrEqual(t, h.T, last/2, "float histogram with wrong timestamp")
+							if enableSTStorage {
+								require.Equal(t, h.T-1, h.ST, "float histogram with wrong start timestamp")
+							} else {
+								require.Zero(t, h.ST, "float histogram should not have start timestamp")
+							}
 						}
 						floatHistogramsInCheckpoint += len(floatHistograms)
 					case record.Exemplars:
@@ -383,6 +517,68 @@ func TestCheckpoint(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestCheckpoint_Tombstones verifies tombstone retention. A tombstone is dropped
+// together with its series record, or once all its intervals age out of the WAL.
+func TestCheckpoint_Tombstones(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	seg, err := CreateSegment(dir, 0)
+	require.NoError(t, err)
+	require.NoError(t, seg.Close())
+
+	w, err := NewSize(nil, nil, dir, 128*1024, compression.None)
+	require.NoError(t, err)
+	var enc record.Encoder
+	fullRange := tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}
+	require.NoError(t, w.Log(enc.Tombstones([]tombstones.Stone{
+		// Full-range tombstones: kept iff keep(ref).
+		{Ref: 1, Intervals: fullRange},
+		{Ref: 2, Intervals: fullRange},
+		// Finite intervals with keep(ref) = true: kept iff they extend past mint.
+		{Ref: 3, Intervals: tombstones.Intervals{{Mint: 0, Maxt: 100}}},
+		{Ref: 4, Intervals: tombstones.Intervals{{Mint: 0, Maxt: 5}}},
+		// Dropped because keep(ref) is false, even though their intervals extend past mint.
+		{Ref: 5, Intervals: tombstones.Intervals{{Mint: 1000, Maxt: math.MaxInt64}}},
+		{Ref: 6, Intervals: tombstones.Intervals{{Mint: 0, Maxt: 100}}},
+	}, nil)))
+	first, last, err := Segments(w.Dir())
+	require.NoError(t, err)
+	_, err = w.NextSegment()
+	require.NoError(t, err)
+
+	_, err = Checkpoint(promslog.NewNopLogger(), w, first, last, func(id chunks.HeadSeriesRef) bool {
+		return id == 2 || id == 3 || id == 4
+	}, 10, false, false)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	cpDir, _, err := LastCheckpoint(w.Dir())
+	require.NoError(t, err)
+	sr, err := NewSegmentsReader(cpDir)
+	require.NoError(t, err)
+	defer sr.Close()
+
+	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+	r := NewReader(sr)
+	var stones []tombstones.Stone
+	for r.Next() {
+		rec := r.Record()
+		if dec.Type(rec) == record.Tombstones {
+			stones, err = dec.Tombstones(rec, stones)
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, r.Err())
+
+	expected := []tombstones.Stone{
+		// Refs 1, 5, and 6 are dropped by keep(ref); ref 4 aged out.
+		{Ref: 2, Intervals: fullRange},
+		{Ref: 3, Intervals: tombstones.Intervals{{Mint: 0, Maxt: 100}}},
+	}
+	require.Equal(t, expected, stones)
 }
 
 // TestCheckpointV2HistogramsToV1 verifies that when a WAL contains V2 histogram
@@ -455,7 +651,7 @@ func TestCheckpointV2HistogramsToV1(t *testing.T) {
 
 	// Run Checkpoint with V1 encoding (enableSTStorage=false) to force the
 	// V1 leftover path in checkpoint.go.
-	stats, err := Checkpoint(promslog.NewNopLogger(), w, 0, last, func(_ chunks.HeadSeriesRef) bool { return true }, 0, false)
+	stats, err := Checkpoint(promslog.NewNopLogger(), w, 0, last, func(_ chunks.HeadSeriesRef) bool { return true }, 0, false, false)
 	require.NoError(t, err)
 	require.Equal(t, len(histSamples)+len(floatHistSamples), stats.TotalSamples)
 	require.Zero(t, stats.DroppedSamples, "no histogram samples should be dropped")
@@ -540,7 +736,7 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 			require.NoError(t, f.Close())
 
 			// Run the checkpoint and since the wlog contains corrupt data this should return an error.
-			_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, nil, 0, enableSTStorage)
+			_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, nil, 0, enableSTStorage, false)
 			require.Error(t, err)
 
 			// Walk the wlog dir to make sure there are no tmp folder left behind after the error.
@@ -568,7 +764,7 @@ func TestCheckpointDeletesTemporaryCheckpoints(t *testing.T) {
 	require.NoError(t, err)
 	defer w.Close()
 
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(_ chunks.HeadSeriesRef) bool { return true }, 1000, false)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1000, func(_ chunks.HeadSeriesRef) bool { return true }, 1000, false, false)
 	require.NoError(t, err)
 
 	files, err := os.ReadDir(dir)

@@ -1,43 +1,61 @@
 import React from 'react';
-import { shallow, mount, ReactWrapper } from 'enzyme';
-import { act } from 'react-dom/test-utils';
+import { fireEvent, render, screen } from '@testing-library/react';
 import Targets from './Targets';
-import ScrapePoolList from './ScrapePoolList';
-import { FetchMock } from 'jest-fetch-mock/types';
 import { scrapePoolsSampleAPI } from './__testdata__/testdata';
+
+jest.mock('./ScrapePoolList', () => {
+  const React = jest.requireActual('react');
+  return {
+    __esModule: true,
+    default: ({
+      scrapePools,
+      selectedPool,
+      onPoolSelect,
+    }: {
+      scrapePools: string[];
+      selectedPool: string | null;
+      onPoolSelect: (name: string) => void;
+    }) =>
+      React.createElement(
+        'div',
+        { 'data-testid': 'scrape-pool-list', 'data-selected-pool': selectedPool },
+        React.createElement('span', null, scrapePools.join(',')),
+        React.createElement('button', { type: 'button', onClick: () => onPoolSelect('blackbox') }, 'Select blackbox')
+      ),
+  };
+});
 
 describe('Targets', () => {
   beforeEach(() => {
     fetchMock.resetMocks();
+    window.history.replaceState({}, '', '/targets?scrapePool=initial');
   });
 
-  let targets: ReactWrapper;
-  let mock: FetchMock;
+  it('fetches scrape pools and passes selection changes to the list', async () => {
+    fetchMock.mockResponseOnce(JSON.stringify(scrapePoolsSampleAPI));
 
-  describe('Header', () => {
-    const targets = shallow(<Targets />);
-    const h2 = targets.find('h2');
-    it('renders a header', () => {
-      expect(h2.text()).toEqual('Targets');
-    });
-    it('renders exactly one header', () => {
-      const h2 = targets.find('h2');
-      expect(h2).toHaveLength(1);
-    });
-  });
+    render(<Targets />);
 
-  it('renders a scrape pool list', async () => {
-    mock = fetchMock.mockResponseOnce(JSON.stringify(scrapePoolsSampleAPI));
-    await act(async () => {
-      targets = mount(<Targets />);
-    });
-    expect(mock).toHaveBeenCalledWith('/api/v1/scrape_pools', {
+    expect(screen.getByRole('heading', { name: 'Targets' })).toBeTruthy();
+    const list = await screen.findByTestId('scrape-pool-list');
+    expect(list.textContent).toContain('blackbox');
+    expect(list.getAttribute('data-selected-pool')).toBe('initial');
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/scrape_pools', {
       cache: 'no-store',
       credentials: 'same-origin',
     });
-    targets.update();
 
-    const scrapePoolList = targets.find(ScrapePoolList);
-    expect(scrapePoolList).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Select blackbox' }));
+    expect(screen.getByTestId('scrape-pool-list').getAttribute('data-selected-pool')).toBe('blackbox');
+    expect(window.location.search).toBe('?scrapePool=blackbox');
+  });
+
+  it('starts with all scrape pools selected when the URL has no selection', async () => {
+    window.history.replaceState({}, '', '/targets');
+    fetchMock.mockResponseOnce(JSON.stringify(scrapePoolsSampleAPI));
+
+    render(<Targets />);
+
+    expect((await screen.findByTestId('scrape-pool-list')).getAttribute('data-selected-pool')).toBeNull();
   });
 });

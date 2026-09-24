@@ -29,6 +29,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -84,6 +87,25 @@ func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.
 	g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Inc()
 
 	start := time.Now()
+
+	// Start the group evaluation span at the scheduled evaluation time.
+	// This allows our trace to show if the actual evaluation was delayed.
+	ctx, sp := otel.Tracer("").Start(ctx, "rule group", trace.WithTimestamp(evalTimestamp))
+	sp.SetAttributes(
+		attribute.String("name", g.Name()),
+		attribute.String("file", g.File()),
+		attribute.Stringer("interval", g.interval),
+		attribute.String("scheduled", evalTimestamp.Format(time.RFC3339Nano)),
+	)
+	defer sp.End()
+
+	// If there's a delay then record that as a dedicated span, so it's clear
+	// from the trace that the whole group evaluated later then scheduled.
+	if start.After(evalTimestamp) {
+		_, delaySp := otel.Tracer("").Start(ctx, "scheduleDelay", trace.WithTimestamp(evalTimestamp))
+		delaySp.End(trace.WithTimestamp(start))
+	}
+
 	g.Eval(ctx, evalTimestamp)
 	timeSinceStart := time.Since(start)
 
@@ -159,6 +181,12 @@ func NewManager(o *ManagerOptions) *Manager {
 		o.Context = context.Background()
 	}
 
+	// Default the logger first: the components built below capture it by value,
+	// so substituting it afterwards would leave them holding a nil logger.
+	if o.Logger == nil {
+		o.Logger = promslog.NewNopLogger()
+	}
+
 	if o.Metrics == nil {
 		o.Metrics = NewGroupMetrics(o.Registerer)
 	}
@@ -181,10 +209,6 @@ func NewManager(o *ManagerOptions) *Manager {
 
 	if o.RuleDependencyController == nil {
 		o.RuleDependencyController = ruleDependencyController{}
-	}
-
-	if o.Logger == nil {
-		o.Logger = promslog.NewNopLogger()
 	}
 
 	// Register rule manager features if a registry is provided.
@@ -310,7 +334,9 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 				m.GroupLastEvalTime.DeleteLabelValues(n)
 				m.GroupLastDuration.DeleteLabelValues(n)
 				m.GroupRules.DeleteLabelValues(n)
-				m.GroupSamples.DeleteLabelValues((n))
+				m.GroupSamples.DeleteLabelValues(n)
+				m.GroupLastRuleDurationSum.DeleteLabelValues(n)
+				m.GroupLastRestoreDuration.DeleteLabelValues(n)
 			}
 			wg.Done()
 		}(n, oldg)

@@ -36,18 +36,21 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 			prometheus.CounterOpts{
 				Name: "prometheus_sd_file_read_errors_total",
 				Help: "The number of File-SD read errors.",
-			}),
+			},
+		),
 		fileSDScanDuration: prometheus.NewSummary(
 			prometheus.SummaryOpts{
 				Name:       "prometheus_sd_file_scan_duration_seconds",
 				Help:       "The duration of the File-SD scan in seconds.",
 				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-			}),
+			},
+		),
 		fileWatcherErrorsCount: prometheus.NewCounter(
 			prometheus.CounterOpts{
 				Name: "prometheus_sd_file_watcher_errors_total",
 				Help: "The number of File-SD errors caused by filesystem watch failures.",
-			}),
+			},
+		),
 		fileSDTimeStamp: NewTimestampCollector(),
 	}
 

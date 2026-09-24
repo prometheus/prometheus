@@ -33,8 +33,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v8"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v8"
 	cache "github.com/Code-Hex/go-generics-cache"
 	"github.com/Code-Hex/go-generics-cache/policy/lru"
 	"github.com/prometheus/client_golang/prometheus"
@@ -547,6 +547,11 @@ func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualM
 	}
 
 	for k, v := range vm.Tags {
+		// A tag with a JSON null value unmarshals to a nil pointer that is still
+		// present in the map, so it has to be skipped before dereferencing.
+		if v == nil {
+			continue
+		}
 		name := strutil.SanitizeLabelName(k)
 		labels[azureLabelMachineTag+model.LabelName(name)] = model.LabelValue(*v)
 	}
@@ -676,7 +681,7 @@ func (client *azureClient) getScaleSetVMs(ctx context.Context, scaleSet armcompu
 		return nil, fmt.Errorf("could not parse scale set ID: %w", err)
 	}
 
-	pager := client.vmssvm.NewListPager(r.ResourceGroupName, *(scaleSet.Name), nil)
+	pager := client.vmssvm.NewListPager(r.ResourceGroupName, *scaleSet.Name, nil)
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
@@ -714,7 +719,7 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 			}
 		}
 		if vm.Properties.OSProfile != nil && vm.Properties.OSProfile.ComputerName != nil {
-			computerName = *(vm.Properties.OSProfile.ComputerName)
+			computerName = *vm.Properties.OSProfile.ComputerName
 		}
 		if vm.Properties.HardwareProfile != nil {
 			size = string(*vm.Properties.HardwareProfile.VMSize)
@@ -722,11 +727,11 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 	}
 
 	return virtualMachine{
-		ID:                *(vm.ID),
-		Name:              *(vm.Name),
+		ID:                *vm.ID,
+		Name:              *vm.Name,
 		ComputerName:      computerName,
-		Type:              *(vm.Type),
-		Location:          *(vm.Location),
+		Type:              *vm.Type,
+		Location:          *vm.Location,
 		OsType:            osType,
 		ScaleSet:          "",
 		Tags:              tags,
@@ -759,7 +764,7 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 			}
 		}
 		if vm.Properties.OSProfile != nil && vm.Properties.OSProfile.ComputerName != nil {
-			computerName = *(vm.Properties.OSProfile.ComputerName)
+			computerName = *vm.Properties.OSProfile.ComputerName
 		}
 		if vm.Properties.HardwareProfile != nil {
 			size = string(*vm.Properties.HardwareProfile.VMSize)
@@ -767,14 +772,14 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 	}
 
 	return virtualMachine{
-		ID:                *(vm.ID),
-		Name:              *(vm.Name),
+		ID:                *vm.ID,
+		Name:              *vm.Name,
 		ComputerName:      computerName,
-		Type:              *(vm.Type),
-		Location:          *(vm.Location),
+		Type:              *vm.Type,
+		Location:          *vm.Location,
 		OsType:            osType,
 		ScaleSet:          scaleSetName,
-		InstanceID:        *(vm.InstanceID),
+		InstanceID:        *vm.InstanceID,
 		Tags:              tags,
 		NetworkInterfaces: networkInterfaces,
 		Size:              size,

@@ -7,11 +7,14 @@ import ASTNode, { nodeType } from "../../../promql/ast";
 import funcDocs from "../../../promql/functionDocs";
 import { escapeString } from "../../../promql/utils";
 import { formatPrometheusDuration } from "../../../lib/formatTime";
+import { formatDurationNode } from "../../../promql/format";
+import { durationExprNote } from "../../../promql/durationExprNotes";
 import classes from "./ExplainView.module.css";
 import SelectorExplainView from "./Selector";
 import AggregationExplainView from "./Aggregation";
 import BinaryExprExplainView from "./BinaryExpr/BinaryExpr";
 import { IconInfoCircle } from "@tabler/icons-react";
+
 interface ExplainViewProps {
   node: ASTNode | null;
   treeShown: boolean;
@@ -85,13 +88,33 @@ const ExplainView: FC<ExplainViewProps> = ({
             Subquery
           </Text>
           <Text fz="sm">
-            This node evaluates the passed expression as a subquery over the
-            last{" "}
-            <span className="promql-code promql-duration">
-              {formatPrometheusDuration(node.range)}
-            </span>{" "}
+            This node evaluates the passed expression as a subquery over{" "}
+            {node.rangeExpr ? (
+              <>
+                a duration defined by{" "}
+                <span className="promql-code">
+                  {formatDurationNode(node.rangeExpr)}
+                </span>
+              </>
+            ) : (
+              <>
+                the last{" "}
+                <span className="promql-code">
+                  <span className="promql-duration">
+                    {formatPrometheusDuration(node.range)}
+                  </span>
+                </span>
+              </>
+            )}{" "}
             at a query resolution{" "}
-            {node.step > 0 ? (
+            {node.stepExpr ? (
+              <>
+                of{" "}
+                <span className="promql-code">
+                  {formatDurationNode(node.stepExpr)}
+                </span>
+              </>
+            ) : node.step > 0 ? (
               <>
                 of{" "}
                 <span className="promql-code promql-duration">
@@ -115,7 +138,19 @@ const ExplainView: FC<ExplainViewProps> = ({
             ) : (
               <></>
             )}
-            {node.offset === 0 ? (
+            {node.offsetExpr ? (
+              <>
+                , time-shifted{" "}
+                <span className="promql-code">
+                  {formatDurationNode(node.offsetExpr)}
+                </span>
+                {node.offset > 0
+                  ? " into the past"
+                  : node.offset < 0
+                    ? " into the future"
+                    : ""}
+              </>
+            ) : node.offset === 0 ? (
               <></>
             ) : node.offset > 0 ? (
               <>
@@ -136,6 +171,9 @@ const ExplainView: FC<ExplainViewProps> = ({
             )}
             .
           </Text>
+          {node.rangeExpr && durationExprNote(node.rangeExpr)}
+          {node.stepExpr && durationExprNote(node.stepExpr)}
+          {node.offsetExpr && durationExprNote(node.offsetExpr)}
         </Card>
       );
     case nodeType.numberLiteral:

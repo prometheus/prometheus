@@ -636,6 +636,7 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 
 	var (
 		samples            = vals[0]
+		startTimestamps    []int64
 		rangeStart         = enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
 		rangeEnd           = enh.Ts - durationMilliseconds(vs.Offset)
 		resultFloat        float64
@@ -645,31 +646,32 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 		annos              annotations.Annotations
 	)
 
-	// We need either at least two Histograms and no Floats, or at least two
-	// Floats and no Histograms to calculate a rate. Otherwise, drop this
-	// Vector element.
+	// Drop this vector element and return a warning if this rate window contains mixed float and histogram samples.
 	if len(samples.Histograms) > 0 && len(samples.Floats) > 0 {
 		return enh.Out, annos.Add(annotations.NewMixedFloatsHistogramsWarning(getMetricName(samples.Metric), args[0].PositionRange()))
 	}
 
+	// To calculate a rate, we normally need at least two float or two histogram samples. However,
+	// we can calculate rate with a single sample as long as there's a start timestamp reset inside the window.
 	switch {
-	case len(samples.Histograms) > 1:
+	case len(samples.Histograms) > 0:
 		numSamplesMinusOne = len(samples.Histograms) - 1
 		firstT = samples.Histograms[0].T
 		lastT = samples.Histograms[numSamplesMinusOne].T
 		var newAnnos annotations.Annotations
-		var startTimestamps []int64
 		if enh.StartTimestamps != nil {
 			startTimestamps = enh.StartTimestamps.Histograms
 		}
-		resultHistogram, newAnnos = histogramRate(samples.Histograms, startTimestamps, isCounter,
-			samples.Metric, args[0].PositionRange())
-		annos.Merge(newAnnos)
-		if resultHistogram == nil {
-			// The histograms are not compatible with each other.
-			return enh.Out, annos
+		if len(samples.Histograms) > 1 {
+			resultHistogram, newAnnos = histogramRate(samples.Histograms, startTimestamps, isCounter,
+				samples.Metric, args[0].PositionRange())
+			annos.Merge(newAnnos)
+			if resultHistogram == nil {
+				// The histograms are not compatible with each other.
+				return enh.Out, annos
+			}
 		}
-	case len(samples.Floats) > 1:
+	case len(samples.Floats) > 0:
 		numSamplesMinusOne = len(samples.Floats) - 1
 		firstT = samples.Floats[0].T
 		lastT = samples.Floats[numSamplesMinusOne].T
@@ -678,12 +680,20 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 			break
 		}
 		// Handle counter resets:
-		var startTimestamps []int64
 		if enh.StartTimestamps != nil {
 			startTimestamps = enh.StartTimestamps.Floats
 		}
+		var overlapDetected bool
 		for i, currPoint := range samples.Floats[1:] {
 			prevPoint := samples.Floats[i]
+			// Warn once per series if start timestamp overlap detected.
+			if !overlapDetected && i+1 < len(startTimestamps) {
+				if checkStartTimeOverlap(startTimestamps[i], prevPoint.T, startTimestamps[i+1]) {
+					// Extract metric name only when needed.
+					annos.Add(annotations.NewStartTimeOverlapWarning(getMetricName(samples.Metric), args[0].PositionRange()))
+					overlapDetected = true
+				}
+			}
 			if currPoint.F < prevPoint.F || (i+1 < len(startTimestamps) && isStartTimestampReset(startTimestamps[i], prevPoint.T, startTimestamps[i+1], currPoint.T)) {
 				resultFloat += prevPoint.F
 			}
@@ -698,44 +708,73 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 	durationToEnd := float64(rangeEnd-lastT) / 1000
 
 	sampledInterval := float64(lastT-firstT) / 1000
-	averageDurationBetweenSamples := sampledInterval / float64(numSamplesMinusOne)
-
-	// If samples are close enough to the (lower or upper) boundary of the
-	// range, we extrapolate the rate all the way to the boundary in
-	// question. "Close enough" is defined as "up to 10% more than the
-	// average duration between samples within the range", see
-	// extrapolationThreshold below. Essentially, we are assuming a more or
-	// less regular spacing between samples, and if we don't see a sample
-	// where we would expect one, we assume the series does not cover the
-	// whole range, but starts and/or ends within the range. We still
-	// extrapolate the rate in this case, but not all the way to the
-	// boundary, but only by half of the average duration between samples
-	// (which is our guess for where the series actually starts or ends).
-
-	extrapolationThreshold := averageDurationBetweenSamples * 1.1
-	if durationToStart >= extrapolationThreshold {
-		durationToStart = averageDurationBetweenSamples / 2
+	var averageDurationBetweenSamples float64
+	if numSamplesMinusOne > 0 {
+		averageDurationBetweenSamples = sampledInterval / float64(numSamplesMinusOne)
 	}
-	if isCounter {
-		// Counters cannot be negative. If we have any slope at all
-		// (i.e. resultFloat went up), we can extrapolate the zero point
-		// of the counter. If the duration to the zero point is shorter
-		// than the durationToStart, we take the zero point as the start
-		// of the series, thereby avoiding extrapolation to negative
-		// counter values.
-		durationToZero := durationToStart
-		if resultFloat > 0 &&
-			len(samples.Floats) > 0 &&
-			samples.Floats[0].F >= 0 {
-			durationToZero = sampledInterval * (samples.Floats[0].F / resultFloat)
-		} else if resultHistogram != nil &&
-			resultHistogram.Count > 0 &&
-			len(samples.Histograms) > 0 &&
-			samples.Histograms[0].H.Count >= 0 {
-			durationToZero = sampledInterval * (samples.Histograms[0].H.Count / resultHistogram.Count)
+	extrapolationThreshold := averageDurationBetweenSamples * 1.1
+
+	if sts := startTimestamps; isCounter && len(sts) > 0 && sts[0] != 0 && sts[0] > rangeStart && sts[0] < firstT {
+		// Take the first sample in the range and check whether its ST points inside the range
+		// (while also having a sensible value). If yes, we assume that there is a zero-value sample
+		// at the time of ST, and use that instead of extrapolating towards left side.
+		//
+		// Note that the rangeStart is exclusive, thus ST=rangeStart would be outside the range.
+		//
+		// Also note that when there's a single sample, we lose extrapolation to the right, because
+		// we need at least two samples to calculate average duration between samples, which leads
+		// to extrapolation threshold being 0.
+		durationToStart = 0
+		sampledInterval = float64(lastT-sts[0]) / 1000
+		if len(samples.Floats) > 0 {
+			resultFloat += samples.Floats[0].F
+		} else if len(samples.Histograms) > 0 {
+			if resultHistogram == nil {
+				resultHistogram = samples.Histograms[0].H.Copy()
+			} else if !addHistogramWithAnnotations(resultHistogram, samples.Histograms[0].H, &annos, getMetricName(samples.Metric), args[0].PositionRange()) {
+				return enh.Out, annos
+			}
 		}
-		if durationToZero < durationToStart {
-			durationToStart = durationToZero
+	} else if numSamplesMinusOne == 0 {
+		// There's a single sample, and we do not have suitable ST to calculate the increase. Return nothing.
+		return enh.Out, annos
+	} else {
+		// If samples are close enough to the (lower or upper) boundary of the
+		// range, we extrapolate the rate all the way to the boundary in
+		// question. "Close enough" is defined as "up to 10% more than the
+		// average duration between samples within the range", see
+		// extrapolationThreshold below. Essentially, we are assuming a more or
+		// less regular spacing between samples, and if we don't see a sample
+		// where we would expect one, we assume the series does not cover the
+		// whole range, but starts and/or ends within the range. We still
+		// extrapolate the rate in this case, but not all the way to the
+		// boundary, but only by half of the average duration between samples
+		// (which is our guess for where the series actually starts or ends).
+
+		if durationToStart >= extrapolationThreshold {
+			durationToStart = averageDurationBetweenSamples / 2
+		}
+		if isCounter {
+			// Counters cannot be negative. If we have any slope at all
+			// (i.e. resultFloat went up), we can extrapolate the zero point
+			// of the counter. If the duration to the zero point is shorter
+			// than the durationToStart, we take the zero point as the start
+			// of the series, thereby avoiding extrapolation to negative
+			// counter values.
+			durationToZero := durationToStart
+			if resultFloat > 0 &&
+				len(samples.Floats) > 0 &&
+				samples.Floats[0].F >= 0 {
+				durationToZero = sampledInterval * (samples.Floats[0].F / resultFloat)
+			} else if resultHistogram != nil &&
+				resultHistogram.Count > 0 &&
+				len(samples.Histograms) > 0 &&
+				samples.Histograms[0].H.Count >= 0 {
+				durationToZero = sampledInterval * (samples.Histograms[0].H.Count / resultHistogram.Count)
+			}
+			if durationToZero < durationToStart {
+				durationToStart = durationToZero
+			}
 		}
 	}
 
@@ -743,7 +782,10 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 		durationToEnd = averageDurationBetweenSamples / 2
 	}
 
-	factor := (sampledInterval + durationToStart + durationToEnd) / sampledInterval
+	factor := 1.0
+	if sampledInterval != 0 {
+		factor = (sampledInterval + durationToStart + durationToEnd) / sampledInterval
+	}
 	if isRate {
 		factor /= ms.Range.Seconds()
 	}
@@ -758,8 +800,9 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 
 // histogramRate is a helper function for extrapolatedRate. It requires
 // points[0] to be a histogram. It returns nil if any other Point in points is
-// not a histogram, and a warning wrapped in an annotation in that case.
-// Otherwise, it returns the calculated histogram and an empty annotation.
+// not a histogram or there are incompatibilities between histograms, and a warning
+// wrapped in an annotation in that case. Otherwise, it returns the calculated histogram,
+// and potentially some annotations.
 func histogramRate(
 	points []HPoint,
 	startTimestamps []int64,
@@ -782,13 +825,17 @@ func histogramRate(
 	// below does not run on the first and last point, so check the first
 	// and last point now.
 	if isCounter && (prev.CounterResetHint == histogram.GaugeType || last.CounterResetHint == histogram.GaugeType) {
+		// TODO(start-timestamps): for delta histograms, we plan to use Gauge counter reset hint,
+		// while the reset will be indicated via a start timestamp. This will be an expected usage pattern,
+		// thus we should not be returning the following warning. When addressing this, also check
+		// other places where this warning is being emitted.
 		annos.Add(annotations.NewNativeHistogramNotCounterWarning(getMetricName(labels), pos))
 	}
 
 	// Null out the 1st sample if there is a counter reset between the 1st
 	// and 2nd. In this case, we want to ignore any incompatibility in the
 	// bucket layout of the 1st sample because we do not need to look at it.
-	if isCounter && len(points) > 1 {
+	if isCounter {
 		second := points[1].H
 		if second != nil && (len(startTimestamps) > 1 && isStartTimestampReset(startTimestamps[0], points[0].T, startTimestamps[1], points[1].T) || second.DetectReset(prev)) {
 			prev = &histogram.FloatHistogram{}
@@ -841,8 +888,17 @@ func histogramRate(
 
 	if isCounter {
 		// Second iteration to deal with counter resets.
+		var overlapDetected bool
 		for i, currPoint := range points[1:] {
 			curr := currPoint.H
+			// Warn once per series if start timestamp overlap detected.
+			if !overlapDetected && i+1 < len(startTimestamps) {
+				if checkStartTimeOverlap(startTimestamps[i], points[i].T, startTimestamps[i+1]) {
+					// Extract metric name only when needed.
+					annos.Add(annotations.NewStartTimeOverlapWarning(getMetricName(labels), pos))
+					overlapDetected = true
+				}
+			}
 			// Check start timestamps first since it's potentially cheaper.
 			if i+1 < len(startTimestamps) && isStartTimestampReset(startTimestamps[i], points[i].T, startTimestamps[i+1], currPoint.T) || curr.DetectReset(prev) {
 				// Counter reset conflict ignored here for the same reason as above.
@@ -868,8 +924,8 @@ func histogramRate(
 
 // isStartTimestampReset tells whether there was a counter reset by checking the start timestamp value.
 func isStartTimestampReset(prevStartTimestamp, prevTimestamp, currStartTimestamp, currTimestamp int64) bool {
-	if currStartTimestamp == 0 || currStartTimestamp >= currTimestamp {
-		// No reset if start timestamp is not set (value is 0), if it is clearly invalid
+	if prevStartTimestamp == currStartTimestamp || currStartTimestamp == 0 || currStartTimestamp >= currTimestamp {
+		// No reset if start timestamp hasn't changed, if it is not set (value is 0), if it is clearly invalid
 		// (ST > T), or if it is OTel's unknown start time (ST == T).
 		return false
 	}
@@ -908,6 +964,19 @@ func isStartTimestampResetAfter(t, startTimestamps, timestamp int64) bool {
 	// datapoints with T=t and ST=t. This creates and unknown start timestamp datapoint (ST==T),
 	// which only allows resets if following datapoint ST is after it.
 	return isStartTimestampReset(t, t, startTimestamps, timestamp)
+}
+
+// checkStartTimeOverlap detects when a sample's start timestamp overlaps with a
+// previous sample's timestamp, indicating potential data quality issues.
+// Works for both delta and cumulative counter metrics.
+//
+// Returns true when: currST != 0 && currST < prevT && currST != prevST
+// This correctly handles:
+//   - Valid deltas: currST = prevT (no overlap detected)
+//   - Valid cumulative: currST = prevST (no overlap detected)
+//   - Invalid overlap: currST < prevT && currST != prevST (overlap detected)
+func checkStartTimeOverlap(prevStartTimestamp, prevTimestamp, currStartTimestamp int64) bool {
+	return currStartTimestamp != 0 && currStartTimestamp < prevTimestamp && currStartTimestamp != prevStartTimestamp
 }
 
 // === delta(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
@@ -1558,12 +1627,16 @@ func funcMadOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 	return aggrOverTime(matrixVal, enh, func(s Series) float64 {
 		values := make(vectorByValueHeap, 0, len(s.Floats))
 		for _, f := range s.Floats {
+			// A NaN sample makes the median, and therefore the deviation,
+			// undefined, so propagate NaN rather than silently dropping it.
+			if math.IsNaN(f.F) {
+				return math.NaN()
+			}
 			values = append(values, Sample{F: f.F})
 		}
 		median := quantile(0.5, values)
-		values = make(vectorByValueHeap, 0, len(s.Floats))
-		for _, f := range s.Floats {
-			values = append(values, Sample{F: math.Abs(f.F - median)})
+		for i := range values {
+			values[i].F = math.Abs(values[i].F - median)
 		}
 		return quantile(0.5, values)
 	}), annos
@@ -1750,6 +1823,148 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 		}
 		return sum + c
 	}), nil
+}
+
+const (
+	integralLeftPoint = iota
+	integralRightPoint
+	integralTrapezoidal
+)
+
+// === integral(Matrix parser.ValueTypeMatrix, strategy=2 Scalar) (Vector, Annotations) ===
+func funcIntegral(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
+	samples := matrixVal[0]
+	var annos annotations.Annotations
+	if len(samples.Floats) == 0 {
+		return enh.Out, nil
+	}
+	if len(samples.Histograms) > 0 {
+		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(getMetricName(samples.Metric), args[0].PositionRange()))
+	}
+
+	strategy := integralTrapezoidal
+	if len(vectorVals) > 0 && len(vectorVals[0]) > 0 {
+		strategyArg := vectorVals[0][0].F
+		if math.IsNaN(strategyArg) || math.IsInf(strategyArg, 0) || math.Trunc(strategyArg) != strategyArg || strategyArg < integralLeftPoint || strategyArg > integralTrapezoidal {
+			annos.Add(annotations.NewInvalidIntegralStrategyWarning(strategyArg, args[1].PositionRange()))
+		} else {
+			strategy = int(strategyArg)
+		}
+	}
+
+	nanAsZero := func(v float64) float64 {
+		if math.IsNaN(v) {
+			return 0
+		}
+		return v
+	}
+
+	return aggrOverTime(matrixVal, enh, func(s Series) float64 {
+		var sum, c float64
+		var prev FPoint
+		for i, f := range s.Floats {
+			var value, cValue float64
+			// Treat NaN as zero, to let "neighboring" non-zero values handle it
+			currVal := nanAsZero(f.F)
+			prevVal := nanAsZero(prev.F)
+
+			// Discrete integral using the selected quadrature strategy.
+			switch strategy {
+			case integralLeftPoint:
+				// Left-point rectangle rule.
+				//
+				//   metric
+				//     ^
+				//     |
+				//     |         v1
+				//     |         *........>.                  v4
+				//     |         |#########:                   *........>.
+				//     |         |######## v2                  |         :
+				//     |         |######## *........>.         |         :
+				//     |         |#########|#########:         |         :
+				//     |         |#########|#########:         |         :
+				//     |         |#########|###### (NaN)......>|       (NaN)
+				//     +---------+---------+---------+---------+---------+-------> t
+				//               t1        t2        t3        t4        t5
+				//               [<--------------------------->)
+				//
+				// integral(metric)[] @t4: +         +         +
+				//                         v1        v2        0
+				//                         *         *
+				//                      (t2-t1)   (t3-t2)
+				value = prevVal
+			case integralRightPoint:
+				// Right-point rectangle rule.
+				//
+				//   metric
+				//     ^
+				//     |
+				//     |         v1
+				//     |:<.......*                            v4
+				//     |:        |                   .<........*
+				//     |:        |         v2        :#########|
+				//     |:        |<........*         :#########|
+				//     |:        |#########|         :#########|
+				//     |:        |#########|         :#########|
+				//     |:        |#########|<......(NaN) ######|<......(NaN)
+				//     +---------+---------+---------+---------+---------+-------> t
+				//               t1        t2        t3        t4        t5
+				//               (<--------------------------->]
+				//
+				// integral(metric)[] @t4: +         +         +
+				//                         v2        0         v4
+				//                         *                   *
+				//                      (t2-t1)             (t4-t3)
+				value = currVal
+			case integralTrapezoidal:
+				// Trapezoidal rule (default).
+				// With NaN as zero, "neighboring" non-zero values are
+				// aggregated (halved at each interval eval).
+				//
+				//   metric
+				//     ^
+				//     |
+				//     |         v1
+				//     |    ....>*<....                       v4
+				//     |    :    |####:                   ....>*<....
+				//     |    :    |####:    v2             :####|    :
+				//     |    :    |####:...>*<....         :####|    :
+				//     |    :    |####:####|####:         :####|    :
+				//     |    :    |####:####|####:         :####|    :
+				//     |    :    |####:####|####:.>(NaN)<.:####|    :.>(NaN)
+				//     +---------+---------+---------+---------+---------+-------> t
+				//               t1        t2        t3        t4        t5
+				//               [<--------------------------->]
+				//
+				// integral(metric)[] @t4: +         +         +
+				//                      (v1+v2)/2 (v2+0)/2   (0+v4)/2
+				//                         *         *         *
+				//                      (t2-t1)   (t3-t2)   (t4-t3)
+				//
+
+				// Use kahansum.Inc() here also for big vs small number precision
+				// to implement (currVal+prevVal)/2.
+				if prevVal != 0 || currVal != 0 {
+					value, cValue = kahansum.Inc(currVal, prevVal, 0)
+					value /= 2
+					cValue /= 2
+				}
+			}
+			// Skip the first sample, aggregate non-zero values.
+			if i > 0 && (value != 0 || cValue != 0) {
+				deltaT := float64(f.T-prev.T) / 1000
+				sum, c = kahansum.Inc(value*deltaT, sum, c+cValue*deltaT)
+			}
+			prev = f
+		}
+		if math.IsInf(sum, 0) {
+			return sum
+		}
+		return sum + c
+	}), annos
 }
 
 // === quantile_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
@@ -2020,6 +2235,33 @@ func funcTimestamp(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *Eva
 	return enh.Out, nil
 }
 
+// === start_timestamp(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+func funcStartTimestamp(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	vec := vectorVals[0]
+	var sts []int64
+	if enh.StartTimestamps != nil {
+		sts = enh.StartTimestamps.Floats
+	}
+	for i, el := range vec {
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
+		}
+
+		if i >= len(sts) {
+			// Only return results if start timestamps slice is populated. This means that the output is empty
+			// when `use-start-timestamps` is disabled or when this function is called on an expression.
+			continue
+		}
+
+		enh.Out = append(enh.Out, Sample{
+			Metric:   el.Metric,
+			F:        float64(sts[i]) / 1000,
+			DropName: true,
+		})
+	}
+	return enh.Out, nil
+}
+
 // linearRegression performs a least-square linear regression analysis on the
 // provided SamplePairs. It returns the slope, and the intercept value at the
 // provided time.
@@ -2222,7 +2464,7 @@ func funcHistogramFraction(vectorVals []Vector, _ Matrix, args parser.Expression
 		if !enh.enableDelayedNameRemoval {
 			sample.Metric = sample.Metric.DropReserved(schema.IsMetadataLabel)
 		}
-		hf, hfAnnos := HistogramFraction(lower, upper, sample.H, getMetricName(sample.Metric), args[0].PositionRange())
+		hf, hfAnnos := HistogramFraction(lower, upper, sample.H, getMetricName(sample.Metric), args[2].PositionRange())
 		annos.Merge(hfAnnos)
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
@@ -2273,7 +2515,7 @@ func funcHistogramQuantile(vectorVals []Vector, _ Matrix, args parser.Expression
 		if !enh.enableDelayedNameRemoval {
 			sample.Metric = sample.Metric.DropReserved(schema.IsMetadataLabel)
 		}
-		hq, hqAnnos := HistogramQuantile(q, sample.H, getMetricName(sample.Metric), args[0].PositionRange())
+		hq, hqAnnos := HistogramQuantile(q, sample.H, getMetricName(sample.Metric), args[1].PositionRange())
 		annos.Merge(hqAnnos)
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
@@ -2373,7 +2615,7 @@ func funcHistogramQuantiles(vectorVals []Vector, _ Matrix, args parser.Expressio
 					if enh.enableDelayedNameRemoval {
 						metricName = getMetricName(mb.metric)
 					}
-					annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(metricName, args[1].PositionRange(), enh.Ts, minBucket, maxBucket, maxDiff))
+					annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(metricName, args[0].PositionRange(), enh.Ts, minBucket, maxBucket, maxDiff))
 				}
 
 				if !enh.enableDelayedNameRemoval {
@@ -2775,6 +3017,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"idelta":                       funcIdelta,
 	"increase":                     funcIncrease,
 	"info":                         nil,
+	"integral":                     funcIntegral,
 	"irate":                        funcIrate,
 	"max_of":                       funcMaxOf,
 	"label_replace":                nil, // evalLabelReplace not called via this map.
@@ -2811,6 +3054,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"sort_by_label":                funcSortByLabel,
 	"sort_by_label_desc":           funcSortByLabelDesc,
 	"start":                        nil, // Folded into NumberLiteral by foldQueryContextFunctions.
+	"start_timestamp":              funcStartTimestamp,
 	"step":                         nil, // Folded into NumberLiteral by foldQueryContextFunctions.
 	"sqrt":                         funcSqrt,
 	"stddev_over_time":             funcStddevOverTime,
@@ -2878,7 +3122,7 @@ func (s vectorByValueHeap) Swap(i, j int) {
 }
 
 func (s *vectorByValueHeap) Push(x any) {
-	*s = append(*s, *(x.(*Sample)))
+	*s = append(*s, *x.(*Sample))
 }
 
 func (s *vectorByValueHeap) Pop() any {
@@ -2908,7 +3152,7 @@ func (s vectorByReverseValueHeap) Swap(i, j int) {
 }
 
 func (s *vectorByReverseValueHeap) Push(x any) {
-	*s = append(*s, *(x.(*Sample)))
+	*s = append(*s, *x.(*Sample))
 }
 
 func (s *vectorByReverseValueHeap) Pop() any {
