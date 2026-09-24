@@ -92,7 +92,7 @@ func NewZookeeperTreeCache(
 		events:   make(chan zk.Event),
 		children: map[string]*zookeeperTreeCacheNode{},
 		done:     make(chan struct{}, 1),
-		stopped:  true, // head node starts stopped
+		stopped:  true, // Set head's stop to be true so that recursiveDelete will not stop the head node.
 	}
 	tc.wg.Add(1)
 	go tc.loop(path)
