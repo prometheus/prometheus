@@ -324,8 +324,10 @@ function isAggregatorWithParam(functionCallBody: SyntaxNode): boolean {
 
 // analyzeCompletion is going to determinate what should be autocompleted.
 // The value of the autocompletion is then calculate by the function buildCompletion.
+// `explicit` should reflect whether the completion was explicitly requested by the user (e.g. via Ctrl+Space)
+// rather than triggered automatically while typing; some contexts are only relevant in the former case.
 // Note: this method is exported for testing purpose only. Do not use it directly.
-export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: number): Context[] {
+export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: number, explicit = true): Context[] {
   const result: Context[] = [];
   switch (node.type.id) {
     case 0: {
@@ -614,6 +616,11 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       break;
     case FunctionCallBody:
       if (isAfterClosedFunctionCallBody(state, node, pos)) {
+        if (!explicit) {
+          // Only offer binary operators/modifiers here when explicitly requested, otherwise the
+          // dropdown would pop open as soon as the closing parenthesis is typed.
+          break;
+        }
         if (node.parent?.type.id === AggregateExpr && !containsAtLeastOneChild(node.parent, AggregateModifier)) {
           result.push({ kind: ContextKind.AggregateOpModifier });
         }
@@ -708,7 +715,7 @@ export class HybridComplete implements CompleteStrategy {
     // It's useful when you are trying to understand why it doesn't autocomplete.
     // console.log(syntaxTree(state).topNode.toString());
     // console.log(`current node: ${tree.type.name}`);
-    const contexts = analyzeCompletion(state, tree, pos);
+    const contexts = analyzeCompletion(state, tree, pos, context.explicit);
     let asyncResult: Promise<Completion[]> = Promise.resolve([]);
     let completeSnippet = false;
     let span = true;
