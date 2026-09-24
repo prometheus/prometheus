@@ -404,15 +404,15 @@ eval instant at 103m series[2m] anchored
 clear
 
 
-# Special case for to check that counter resets don't get lost when `pickOrInterpolate*()` functions
-# project/interpolate samples at range start. This might happen if there was a sample the ST of which
-# was pointing to range start. If there were no samples at range start, then this means a counter reset.
-# However, once we project/interpolate a sample at range start, with particular ST values this might
+# Special case for to check that counter resets don't get lost when `pickOrInterpolateLeft()` function
+# project/interpolate samples at the range start. This might happen if there was a sample the ST of which
+# was pointing to the range start. If there were no samples at the range start, then this means a counter reset.
+# However, once we project/interpolate a sample at the range start, with particular ST values this might
 # become unknown ST, losing the reset.
 load 1m
     series{type="potentially_unknown_ST=0"}@st     _x100    _    _  -1m    _
     series{type="potentially_unknown_ST=0"}        _x100   60    _   60    _
-    series{type="potentially_unknown_ST=T"}@st     _x100   1m    _  -1m    _
+    series{type="potentially_unknown_ST=T"}@st     _x100    0    _  -1m    _
     series{type="potentially_unknown_ST=T"}        _x100   60    _   60    _
 
 eval instant at 103m increase(series[2m] anchored)
