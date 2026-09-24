@@ -175,6 +175,10 @@ func NewDiscovery(
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
+	m, ok := metrics.(*zookeeperMetrics)
+	if !ok {
+		return nil, errors.New("invalid discovery metrics type")
+	}
 
 	conn, _, err := zk.Connect(
 		srvs, timeout,
@@ -192,7 +196,7 @@ func NewDiscovery(
 		sources: map[string]*targetgroup.Group{},
 		parse:   pf,
 		logger:  logger,
-		metrics: metrics.(*zookeeperMetrics),
+		metrics: m,
 	}
 	for _, path := range paths {
 		pathUpdate := make(chan treecache.ZookeeperTreeCacheEvent)

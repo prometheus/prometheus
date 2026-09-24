@@ -15,6 +15,7 @@ package zookeeper
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -22,15 +23,21 @@ import (
 )
 
 type zookeeperMetrics struct {
+	reg prometheus.Registerer
+
 	// The total number of ZooKeeper failures.
 	failureCounter prometheus.Counter
 	// The current number of Zookeeper watcher goroutines.
 	numWatchers prometheus.Gauge
+
+	// registered holds the collectors that Register added to reg, so that
+	// Unregister leaves the ones it reused from the other SD in place.
+	registered []prometheus.Collector
 }
 
-// Create and register metrics.
 func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
-	m := &zookeeperMetrics{
+	return &zookeeperMetrics{
+		reg: reg,
 		failureCounter: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
 			Subsystem: "treecache",
@@ -44,37 +51,49 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 			Help:      "The current number of watcher goroutines.",
 		}),
 	}
-	// For historical reasons, both ServerSet and Nerve SD share the same zookeeper metrics.
-	// To not cause double registration problems, if both SD mechanisms are instantiated with
-	// the same registry, we are handling the AlreadyRegisteredError accordingly below.
-	// Because the metrics are shared, we also do not unregister them on config reloads.
-	// TODO: Consider separate zookeeper metrics for both SD mechanisms in the future.
-	if err := reg.Register(m.failureCounter); err != nil {
-		var are prometheus.AlreadyRegisteredError
-		if !errors.As(err, &are) {
-			panic(err)
-		}
-		m.failureCounter = are.ExistingCollector.(prometheus.Counter)
-	}
-
-	if err := reg.Register(m.numWatchers); err != nil {
-		var are prometheus.AlreadyRegisteredError
-		if !errors.As(err, &are) {
-			panic(err)
-		}
-		m.numWatchers = are.ExistingCollector.(prometheus.Gauge)
-	}
-
-	return m
 }
 
 // Register implements discovery.DiscovererMetrics.
-// Metrics are registered in newDiscovererMetrics, so this is a no-op.
-func (*zookeeperMetrics) Register() error {
+//
+// For historical reasons, ServerSet and Nerve SD share the same metrics. When
+// both register with the same registry, the second one reuses the collectors of
+// the first. If a registration fails, the collectors that Register added are
+// removed again, as discovery.NewMetricRegisterer does.
+func (m *zookeeperMetrics) Register() error {
+	counter, err := registerOrReuse(m, m.failureCounter)
+	if err != nil {
+		return err
+	}
+	gauge, err := registerOrReuse(m, m.numWatchers)
+	if err != nil {
+		m.Unregister()
+		return err
+	}
+	m.failureCounter, m.numWatchers = counter, gauge
 	return nil
 }
 
 // Unregister implements discovery.DiscovererMetrics.
-// The metrics are shared between ServerSet and Nerve SD, so they are not unregistered here.
-func (*zookeeperMetrics) Unregister() {
+// It removes only the collectors that Register added.
+func (m *zookeeperMetrics) Unregister() {
+	for _, c := range m.registered {
+		m.reg.Unregister(c)
+	}
+	m.registered = nil
+}
+
+// registerOrReuse registers c with m.reg and returns it. If an equal collector
+// is already registered, it returns that one instead.
+func registerOrReuse[T prometheus.Collector](m *zookeeperMetrics, c T) (T, error) {
+	err := m.reg.Register(c)
+	if err == nil {
+		m.registered = append(m.registered, c)
+		return c, nil
+	}
+	if are, ok := errors.AsType[prometheus.AlreadyRegisteredError](err); ok {
+		if existing, ok := are.ExistingCollector.(T); ok {
+			return existing, nil
+		}
+	}
+	return c, fmt.Errorf("failed to register metric: %w", err)
 }
