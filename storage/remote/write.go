@@ -75,7 +75,7 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 		flushDeadline:     flushDeadline,
 		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		dir:               dir,
-		interner:          newPool(reg),
+		interner:          newPool(),
 		scraper:           sm,
 		quit:              make(chan struct{}),
 		highestTimestamp: &maxTimestamp{
@@ -108,7 +108,7 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 	}
 	if reg != nil {
-		reg.MustRegister(rws.highestTimestamp, rws.samplesInTotal, rws.exemplarsInTotal, rws.histogramsInTotal)
+		reg.MustRegister(rws.highestTimestamp, rws.samplesInTotal, rws.exemplarsInTotal, rws.histogramsInTotal, rws.interner.noReferenceReleases)
 	}
 	go rws.run()
 	return rws
@@ -297,6 +297,7 @@ func (rws *WriteStorage) Close() error {
 		rws.reg.Unregister(rws.samplesInTotal)
 		rws.reg.Unregister(rws.exemplarsInTotal)
 		rws.reg.Unregister(rws.histogramsInTotal)
+		rws.reg.Unregister(rws.interner.noReferenceReleases)
 	}
 
 	return nil

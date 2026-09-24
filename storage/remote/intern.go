@@ -19,7 +19,6 @@
 package remote
 
 import (
-	"errors"
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -30,8 +29,8 @@ type pool struct {
 	mtx  sync.RWMutex
 	pool map[string]*entry
 
-	// noReferenceReleases belongs to the pool, not to the package, so that two
-	// pools created at the same time do not write over each other's counter.
+	// noReferenceReleases belongs to the pool, not to the package, so that the
+	// owner of the pool can register and unregister it with its other metrics.
 	noReferenceReleases prometheus.Counter
 }
 
@@ -45,29 +44,17 @@ func newEntry(s string) *entry {
 	return &entry{s: s}
 }
 
-func newPool(reg prometheus.Registerer) *pool {
-	noReferenceReleases := prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: namespace,
-		Subsystem: subsystem,
-		Name:      "string_interner_zero_reference_releases_total",
-		Help:      "The number of times release has been called for strings that are not interned.",
-	})
-	if reg != nil {
-		if err := reg.Register(noReferenceReleases); err != nil {
-			var are prometheus.AlreadyRegisteredError
-			// Preserve current behavior for unexpected errors.
-			if !errors.As(err, &are) {
-				panic(err)
-			}
-			// A pool created earlier with this registry already registered the
-			// counter. Reuse it so increments go to the same series.
-			noReferenceReleases = are.ExistingCollector.(prometheus.Counter)
-		}
-	}
-
+// newPool returns a pool with an unregistered counter. The caller registers
+// p.noReferenceReleases if it wants the counter exposed.
+func newPool() *pool {
 	return &pool{
-		pool:                map[string]*entry{},
-		noReferenceReleases: noReferenceReleases,
+		pool: map[string]*entry{},
+		noReferenceReleases: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "string_interner_zero_reference_releases_total",
+			Help:      "The number of times release has been called for strings that are not interned.",
+		}),
 	}
 }
 

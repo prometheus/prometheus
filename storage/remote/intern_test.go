@@ -19,16 +19,13 @@
 package remote
 
 import (
-	"sync"
 	"testing"
 
-	"github.com/prometheus/client_golang/prometheus"
-	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
 
 func TestIntern(t *testing.T) {
-	interner := newPool(nil)
+	interner := newPool()
 	testString := "TestIntern"
 	interner.intern(testString)
 	interned, ok := interner.pool[testString]
@@ -38,7 +35,7 @@ func TestIntern(t *testing.T) {
 }
 
 func TestIntern_MultiRef(t *testing.T) {
-	interner := newPool(nil)
+	interner := newPool()
 	testString := "TestIntern_MultiRef"
 
 	interner.intern(testString)
@@ -55,7 +52,7 @@ func TestIntern_MultiRef(t *testing.T) {
 }
 
 func TestIntern_DeleteRef(t *testing.T) {
-	interner := newPool(nil)
+	interner := newPool()
 	testString := "TestIntern_DeleteRef"
 
 	interner.intern(testString)
@@ -70,7 +67,7 @@ func TestIntern_DeleteRef(t *testing.T) {
 }
 
 func TestIntern_MultiRef_Concurrent(t *testing.T) {
-	interner := newPool(nil)
+	interner := newPool()
 	testString := "TestIntern_MultiRef_Concurrent"
 
 	interner.intern(testString)
@@ -93,29 +90,4 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 	interner.mtx.RUnlock()
 	require.True(t, ok)
 	require.Equal(t, int64(1), interned.refs.Load(), "wrong interned refs count")
-}
-
-func TestIntern_ConcurrentPoolsShareOneCounter(t *testing.T) {
-	const pools = 4
-	reg := prometheus.NewPedanticRegistry()
-
-	created := make([]*pool, pools)
-	var wg sync.WaitGroup
-	for i := range pools {
-		wg.Go(func() {
-			created[i] = newPool(reg)
-		})
-	}
-	wg.Wait()
-
-	// Only one pool registers the counter. The others reuse it, so a release of
-	// a string that was never interned counts on the same series.
-	for _, p := range created {
-		p.release("TestIntern_ConcurrentPoolsShareOneCounter")
-	}
-
-	for _, p := range created {
-		require.Equal(t, float64(pools), client_testutil.ToFloat64(p.noReferenceReleases))
-	}
-	require.Equal(t, 1, client_testutil.CollectAndCount(created[0].noReferenceReleases))
 }
