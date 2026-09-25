@@ -16,6 +16,7 @@ package parser
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"strings"
 	"testing"
@@ -6197,20 +6198,65 @@ func TestExtractSelectors(t *testing.T) {
 }
 
 func TestParseCustomFunctions(t *testing.T) {
-	funcs := Functions
-	funcs["custom_func"] = &Function{
+	customFunc := &Function{
 		Name:       "custom_func",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	}
-	input := "custom_func(metric[1m])"
-	p := newParserWithFunctions(input, Options{}, funcs)
-	expr, err := p.parseExpr()
-	require.NoError(t, err)
+	withCustomFunc := maps.Clone(Functions)
+	withCustomFunc[customFunc.Name] = customFunc
 
-	call, ok := expr.(*Call)
-	require.True(t, ok)
-	require.Equal(t, "custom_func", call.Func.Name)
+	t.Run("custom function is parsed", func(t *testing.T) {
+		expr, err := NewParser(Options{Functions: withCustomFunc}).ParseExpr("custom_func(metric[1m])")
+		require.NoError(t, err)
+
+		call, ok := expr.(*Call)
+		require.True(t, ok)
+		require.Same(t, customFunc, call.Func)
+	})
+
+	t.Run("default parser does not accept the custom function", func(t *testing.T) {
+		_, err := NewParser(Options{}).ParseExpr("custom_func(metric[1m])")
+		require.ErrorContains(t, err, `unknown function with name "custom_func"`)
+		require.NotContains(t, Functions, customFunc.Name)
+	})
+
+	t.Run("custom functions replace the default set", func(t *testing.T) {
+		p := NewParser(Options{Functions: map[string]*Function{customFunc.Name: customFunc}})
+		_, err := p.ParseExpr("rate(metric[1m])")
+		require.ErrorContains(t, err, `unknown function with name "rate"`)
+	})
+
+	t.Run("empty functions map accepts no functions", func(t *testing.T) {
+		p := NewParser(Options{Functions: map[string]*Function{}})
+		_, err := p.ParseExpr("rate(metric[1m])")
+		require.ErrorContains(t, err, `unknown function with name "rate"`)
+	})
+
+	t.Run("experimental custom function must be enabled", func(t *testing.T) {
+		experimentalFunc := &Function{
+			Name:         "experimental_func",
+			ArgTypes:     []ValueType{ValueTypeMatrix},
+			ReturnType:   ValueTypeVector,
+			Experimental: true,
+		}
+		funcs := map[string]*Function{experimentalFunc.Name: experimentalFunc}
+
+		_, err := NewParser(Options{Functions: funcs}).ParseExpr("experimental_func(metric[1m])")
+		require.ErrorContains(t, err, `function "experimental_func" is not enabled`)
+
+		_, err = NewParser(Options{Functions: funcs, EnableExperimentalFunctions: true}).ParseExpr("experimental_func(metric[1m])")
+		require.NoError(t, err)
+	})
+
+	t.Run("changing the functions map after creating the parser has no effect", func(t *testing.T) {
+		funcs := map[string]*Function{customFunc.Name: customFunc}
+		p := NewParser(Options{Functions: funcs})
+		delete(funcs, customFunc.Name)
+
+		_, err := p.ParseExpr("custom_func(metric[1m])")
+		require.NoError(t, err)
+	})
 }
 
 func TestNewParser(t *testing.T) {
