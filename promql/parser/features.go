@@ -49,7 +49,7 @@ func (pql *promQLParser) RegisterFeatures(r features.Collector) {
 	}
 
 	// Register functions.
-	for f, fc := range Functions {
+	for f, fc := range pql.options.functions() {
 		r.Set(features.PromQLFunctions, f, !fc.Experimental || pql.options.EnableExperimentalFunctions)
 	}
 
