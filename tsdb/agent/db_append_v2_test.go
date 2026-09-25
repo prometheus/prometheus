@@ -1496,7 +1496,7 @@ func TestMetadataCheckpointing_AppenderV2(t *testing.T) {
 				keep := func(id chunks.HeadSeriesRef) bool {
 					return id != 3 // Exclude series 3 from checkpoint.
 				}
-				_, err = wlog.Checkpoint(promslog.NewNopLogger(), s.wal, first, last, keep, 0, false)
+				_, err = wlog.Checkpoint(promslog.NewNopLogger(), s.wal, first, last, keep, 0, false, false)
 				require.NoError(t, err)
 			}
 
