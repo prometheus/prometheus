@@ -31,8 +31,9 @@ const (
 	ClassicSuffixSum    = "_sum"
 )
 
-// ClassicSeriesCache holds precomputed label sets for one NHCB series across
-// repeated ConvertNHCBToClassic calls.
+// ClassicSeriesCache holds precomputed label sets for one native histogram
+// series across repeated ConvertNHCBToClassic or ConvertExponentialToClassic
+// calls.
 type ClassicSeriesCache struct {
 	baseName     string
 	customValues []float64
@@ -43,6 +44,11 @@ type ClassicSeriesCache struct {
 	haveCount    bool
 	sumLabels    labels.Labels
 	haveSum      bool
+
+	// exponentialBucketLabels holds the _bucket label sets emitted by
+	// ConvertExponentialToClassic, keyed by bucket boundary, as the set of
+	// boundaries of an exponential histogram may change from sample to sample.
+	exponentialBucketLabels map[float64]labels.Labels
 }
 
 // invalidateIfNameChanged drops every cached label set once the cache is
@@ -263,4 +269,173 @@ func emitCountAndSum(count, sum float64, lset labels.Labels, lsetBuilder *labels
 	}
 
 	return nil
+}
+
+// ConvertExponentialToClassic converts a native histogram with an exponential
+// schema to classic histogram series. It is the counterpart of
+// ConvertNHCBToClassic, with the same order of emitted series: the buckets in
+// ascending order, then the count and the sum.
+//
+// Unlike NHCB, an exponential histogram has no fixed set of bucket boundaries,
+// so the caller picks them: a _bucket series is emitted for every boundary in
+// boundaries, which must be finite and strictly ascending, followed by the +Inf
+// bucket. The value of a _bucket series is the number of observations in the
+// buckets of nh, including the zero bucket, whose upper boundary is less than
+// or equal to the boundary. That is exact for the bucket boundaries of nh, and
+// hence for the bucket boundaries of nh reduced to a lower schema, too.
+//
+// AppendClassicBoundaries returns the boundaries representing a single
+// histogram best. Classic histograms converted with different boundaries cannot
+// be aggregated by the le label, though, e.g. with sum by (le) or over time. To
+// be able to do so, convert all of them with the same boundaries, e.g. the
+// union of the boundaries of all of them reduced to the lowest schema amongst
+// them.
+//
+// When calling this function, caller must ensure that the provided histogram is
+// a valid exponential native histogram.
+func ConvertExponentialToClassic(nh any, boundaries []float64, lset labels.Labels, lsetBuilder *labels.Builder, onlySuffix string, cache *ClassicSeriesCache, emitSeriesFn func(labels labels.Labels, value float64) error) error {
+	baseName := lset.Get(model.MetricNameLabel)
+	if baseName == "" {
+		return errors.New("metric name label '__name__' is missing")
+	}
+
+	var fh *FloatHistogram
+	switch h := nh.(type) {
+	case *Histogram:
+		if !IsExponentialSchema(h.Schema) {
+			return errors.New("unsupported histogram schema, not an exponential native histogram")
+		}
+		if err := h.Validate(); err != nil {
+			return err
+		}
+		fh = h.ToFloat(nil)
+	case *FloatHistogram:
+		if !IsExponentialSchema(h.Schema) {
+			return errors.New("unsupported histogram schema, not an exponential native histogram")
+		}
+		if err := h.Validate(); err != nil {
+			return err
+		}
+		fh = h
+	default:
+		return fmt.Errorf("unsupported histogram type: %T", h)
+	}
+
+	wantBuckets := onlySuffix == "" || onlySuffix == ClassicSuffixBucket
+	if wantBuckets {
+		for i, le := range boundaries {
+			if math.IsNaN(le) || math.IsInf(le, 0) {
+				return fmt.Errorf("classic bucket boundaries must be finite, got %g", le)
+			}
+			if i > 0 && le <= boundaries[i-1] {
+				return fmt.Errorf("classic bucket boundaries must be strictly ascending, got %g after %g", le, boundaries[i-1])
+			}
+		}
+	}
+
+	if cache != nil {
+		cache.invalidateIfNameChanged(baseName)
+	}
+	// Preserve the original labels of the builder, see ConvertNHCBToClassic.
+	oldLabels := lsetBuilder.Labels()
+	defer lsetBuilder.Reset(oldLabels)
+
+	if wantBuckets {
+		var (
+			cumulativeCount float64
+			it              = fh.AllBucketIterator()
+			more            = it.Next()
+		)
+		for _, le := range boundaries {
+			// The buckets are iterated in ascending order.
+			for ; more && it.At().Upper <= le; more = it.Next() {
+				cumulativeCount += it.At().Count
+			}
+			if err := emitSeriesFn(exponentialBucketLabels(cache, lsetBuilder, lset, baseName, le), cumulativeCount); err != nil {
+				return err
+			}
+		}
+		for ; more; more = it.Next() {
+			cumulativeCount += it.At().Count
+		}
+		if err := emitSeriesFn(exponentialBucketLabels(cache, lsetBuilder, lset, baseName, math.Inf(1)), cumulativeCount); err != nil {
+			return err
+		}
+	}
+
+	return emitCountAndSum(fh.Count, fh.Sum, lset, lsetBuilder, baseName, onlySuffix, cache, emitSeriesFn)
+}
+
+// AppendClassicBoundaries appends the bucket boundaries of the classic
+// histogram representing the exponential native histogram fh best to dst, and
+// returns the extended slice. The appended boundaries are strictly ascending
+// and do not include +Inf, see ConvertExponentialToClassic.
+//
+// Those are the upper boundaries of all buckets of fh, plus the lower boundary
+// of every bucket that does not directly follow the previous one, i.e. of the
+// lowest bucket and of the first bucket after a gap. The latter keep the linear
+// interpolation of a classic histogram_quantile() within the buckets the
+// observations are in, rather than spreading it across a gap or, for the lowest
+// bucket, down to zero. The lower boundary of a zero bucket that is the lowest
+// bucket is not included, as histogram_quantile() already assumes zero as the
+// lower boundary in that case.
+func AppendClassicBoundaries(dst []float64, fh *FloatHistogram) []float64 {
+	var (
+		prevUpper float64
+		lowest    = true
+	)
+	for it := fh.AllBucketIterator(); it.Next(); {
+		b := it.At()
+		if lowerBoundaryNeeded(b, lowest, prevUpper) {
+			dst = append(dst, b.Lower)
+		}
+		lowest = false
+		if math.IsInf(b.Upper, +1) {
+			// Only the bucket for +Inf observations has an infinite upper
+			// boundary, it is represented by the +Inf bucket.
+			break
+		}
+		dst = append(dst, b.Upper)
+		prevUpper = b.Upper
+	}
+	return dst
+}
+
+// lowerBoundaryNeeded reports whether AppendClassicBoundaries includes the
+// lower boundary of bucket b, given whether b is the lowest bucket, and the
+// upper boundary of the previous bucket if it is not.
+func lowerBoundaryNeeded(b Bucket[float64], lowest bool, prevUpper float64) bool {
+	switch {
+	case math.IsInf(b.Lower, -1), b.Lower == b.Upper:
+		// Nothing is below -Inf, and the zero bucket of a histogram with a
+		// zero threshold of 0 has a single boundary.
+		return false
+	case lowest:
+		// Only the zero bucket contains 0, which is the implied lower
+		// boundary of the lowest bucket.
+		return b.Lower > 0 || b.Upper < 0
+	default:
+		return b.Lower != prevUpper
+	}
+}
+
+// exponentialBucketLabels returns the label set of the _bucket series with the
+// given boundary. The label set is cached in cache if it is not nil.
+func exponentialBucketLabels(cache *ClassicSeriesCache, lsetBuilder *labels.Builder, lset labels.Labels, baseName string, le float64) labels.Labels {
+	if cache != nil {
+		if l, ok := cache.exponentialBucketLabels[le]; ok {
+			return l
+		}
+	}
+	lsetBuilder.Reset(lset)
+	lsetBuilder.Set(model.MetricNameLabel, baseName+ClassicSuffixBucket)
+	lsetBuilder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(le))
+	l := lsetBuilder.Labels()
+	if cache != nil {
+		if cache.exponentialBucketLabels == nil {
+			cache.exponentialBucketLabels = make(map[float64]labels.Labels)
+		}
+		cache.exponentialBucketLabels[le] = l
+	}
+	return l
 }

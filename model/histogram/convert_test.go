@@ -14,6 +14,9 @@
 package histogram
 
 import (
+	"fmt"
+	"math"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -449,4 +452,363 @@ func TestConvertNHCBToClassicIntFloatAgreement(t *testing.T) {
 		}
 	}
 	require.Equal(t, count, infBucket)
+}
+
+func TestConvertExponentialToClassic(t *testing.T) {
+	bucket := func(le string, val float64) sample {
+		return sample{lset: labels.FromStrings(model.MetricNameLabel, "test_metric_bucket", model.BucketLabel, le), val: val}
+	}
+	count := func(val float64) sample {
+		return sample{lset: labels.FromStrings(model.MetricNameLabel, "test_metric_count"), val: val}
+	}
+	sum := func(val float64) sample {
+		return sample{lset: labels.FromStrings(model.MetricNameLabel, "test_metric_sum"), val: val}
+	}
+
+	// Cases converting the same series share a cache, which checks that the
+	// cache stays correct across changing bucket layouts.
+	caches := map[string]*ClassicSeriesCache{}
+	for _, tc := range []struct {
+		name string
+		h    any
+		// boundaries default to the ones of h, see AppendClassicBoundaries.
+		boundaries []float64
+		lset       labels.Labels // Defaults to {__name__="test_metric"}.
+		expectErr  bool
+		expected   []sample
+	}{
+		{
+			// The lower boundary of the lowest bucket is emitted, too, as
+			// histogram_quantile() would otherwise assume it to be 0.
+			name: "positive buckets",
+			h: &Histogram{
+				Schema:          0,
+				Count:           4,
+				Sum:             6,
+				PositiveSpans:   []Span{{Offset: 0, Length: 3}},
+				PositiveBuckets: []int64{1, 1, -1}, // 1, 2 and 1 in (0.5,1], (1,2] and (2,4].
+			},
+			expected: []sample{
+				bucket("0.5", 0), bucket("1.0", 1), bucket("2.0", 3), bucket("4.0", 4), bucket("+Inf", 4),
+				count(4), sum(6),
+			},
+		},
+		{
+			// The lower boundary of the first bucket after a gap is emitted,
+			// too, as histogram_quantile() would otherwise assume observations
+			// within the gap.
+			name: "gap between buckets",
+			h: &FloatHistogram{
+				Schema:          0,
+				Count:           4,
+				Sum:             20,
+				PositiveSpans:   []Span{{Offset: 0, Length: 1}, {Offset: 2, Length: 1}},
+				PositiveBuckets: []float64{1, 3}, // (0.5,1] and (4,8].
+			},
+			expected: []sample{
+				bucket("0.5", 0), bucket("1.0", 1), bucket("4.0", 1), bucket("8.0", 4), bucket("+Inf", 4),
+				count(4), sum(20),
+			},
+		},
+		{
+			name: "negative, zero and positive buckets",
+			h: &FloatHistogram{
+				Schema:          0,
+				ZeroThreshold:   0.25,
+				ZeroCount:       1,
+				Count:           5,
+				Sum:             0,
+				PositiveSpans:   []Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []float64{2}, // (0.5,1].
+				NegativeSpans:   []Span{{Offset: 0, Length: 1}},
+				NegativeBuckets: []float64{2}, // [-1,-0.5).
+			},
+			expected: []sample{
+				bucket("-1.0", 0), bucket("-0.5", 2), bucket("-0.25", 2), bucket("0.25", 3), bucket("0.5", 3), bucket("1.0", 5), bucket("+Inf", 5),
+				count(5), sum(0),
+			},
+		},
+		{
+			// Both classic and native histogram_quantile() assume 0 as the
+			// lower boundary of a zero bucket without negative buckets.
+			name: "zero bucket as the lowest bucket",
+			h: &FloatHistogram{
+				Schema:          0,
+				ZeroThreshold:   0.25,
+				ZeroCount:       1,
+				Count:           3,
+				Sum:             2,
+				PositiveSpans:   []Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []float64{2},
+			},
+			expected: []sample{
+				bucket("0.25", 1), bucket("0.5", 1), bucket("1.0", 3), bucket("+Inf", 3),
+				count(3), sum(2),
+			},
+		},
+		{
+			// The part of (0.5,1] covered by the zero bucket counts towards
+			// the zero bucket.
+			name: "zero bucket overlapping the lowest positive bucket",
+			h: &FloatHistogram{
+				Schema:          0,
+				ZeroThreshold:   0.75,
+				ZeroCount:       1,
+				Count:           3,
+				Sum:             2,
+				PositiveSpans:   []Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []float64{2},
+			},
+			expected: []sample{
+				bucket("0.75", 1), bucket("1.0", 3), bucket("+Inf", 3),
+				count(3), sum(2),
+			},
+		},
+		{
+			name: "zero bucket with a zero threshold of 0",
+			h: &FloatHistogram{
+				Schema:    0,
+				ZeroCount: 1,
+				Count:     1,
+			},
+			expected: []sample{
+				bucket("0.0", 1), bucket("+Inf", 1),
+				count(1), sum(0),
+			},
+		},
+		{
+			// Only the bucket for observations of +Inf has an infinite upper
+			// boundary. It must not result in a second +Inf bucket.
+			name: "observations of +Inf",
+			h: &FloatHistogram{
+				Schema:          0,
+				Count:           1,
+				Sum:             math.Inf(1),
+				PositiveSpans:   []Span{{Offset: 1025, Length: 1}},
+				PositiveBuckets: []float64{1}, // (math.MaxFloat64,+Inf].
+			},
+			expected: []sample{
+				bucket("1.7976931348623157e+308", 0), bucket("+Inf", 1),
+				count(1), sum(math.Inf(1)),
+			},
+		},
+		{
+			name: "no observations",
+			h:    &Histogram{Schema: 3},
+			expected: []sample{
+				bucket("+Inf", 0),
+				count(0), sum(0),
+			},
+		},
+		{
+			name: "labels are preserved",
+			h: &Histogram{
+				Schema:          0,
+				Count:           1,
+				Sum:             1,
+				PositiveSpans:   []Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+			},
+			lset: labels.FromStrings(model.MetricNameLabel, "test_metric", "job", "test_job"),
+			expected: []sample{
+				{lset: labels.FromStrings(model.MetricNameLabel, "test_metric_bucket", "job", "test_job", model.BucketLabel, "0.5"), val: 0},
+				{lset: labels.FromStrings(model.MetricNameLabel, "test_metric_bucket", "job", "test_job", model.BucketLabel, "1.0"), val: 1},
+				{lset: labels.FromStrings(model.MetricNameLabel, "test_metric_bucket", "job", "test_job", model.BucketLabel, "+Inf"), val: 1},
+				{lset: labels.FromStrings(model.MetricNameLabel, "test_metric_count", "job", "test_job"), val: 1},
+				{lset: labels.FromStrings(model.MetricNameLabel, "test_metric_sum", "job", "test_job"), val: 1},
+			},
+		},
+		{
+			// Every bucket boundary of a lower schema is a bucket boundary
+			// of the higher schema, too.
+			name: "boundaries of a lower schema",
+			h: &Histogram{
+				Schema:          0,
+				Count:           4,
+				Sum:             6,
+				PositiveSpans:   []Span{{Offset: 0, Length: 3}},
+				PositiveBuckets: []int64{1, 1, -1}, // 1, 2 and 1 in (0.5,1], (1,2] and (2,4].
+			},
+			boundaries: []float64{0.25, 1, 4}, // Schema -1.
+			expected: []sample{
+				bucket("0.25", 0), bucket("1.0", 1), bucket("4.0", 4), bucket("+Inf", 4),
+				count(4), sum(6),
+			},
+		},
+		{
+			name: "boundaries beyond the buckets",
+			h: &Histogram{
+				Schema:          0,
+				Count:           4,
+				Sum:             6,
+				PositiveSpans:   []Span{{Offset: 0, Length: 3}},
+				PositiveBuckets: []int64{1, 1, -1},
+			},
+			boundaries: []float64{0.125, 0.5, 1, 2, 4, 8},
+			expected: []sample{
+				bucket("0.125", 0), bucket("0.5", 0), bucket("1.0", 1), bucket("2.0", 3), bucket("4.0", 4), bucket("8.0", 4), bucket("+Inf", 4),
+				count(4), sum(6),
+			},
+		},
+		{
+			// The observations of a bucket only count towards a boundary
+			// that is at least the upper boundary of the bucket.
+			name: "boundary within a bucket",
+			h: &Histogram{
+				Schema:          0,
+				Count:           4,
+				Sum:             6,
+				PositiveSpans:   []Span{{Offset: 0, Length: 3}},
+				PositiveBuckets: []int64{1, 1, -1},
+			},
+			boundaries: []float64{1.5},
+			expected: []sample{
+				bucket("1.5", 1), bucket("+Inf", 4),
+				count(4), sum(6),
+			},
+		},
+		{
+			name: "negative boundaries and the zero bucket",
+			h: &FloatHistogram{
+				Schema:          0,
+				ZeroThreshold:   0.25,
+				ZeroCount:       1,
+				Count:           5,
+				Sum:             0,
+				PositiveSpans:   []Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []float64{2}, // (0.5,1].
+				NegativeSpans:   []Span{{Offset: 0, Length: 1}},
+				NegativeBuckets: []float64{2}, // [-1,-0.5).
+			},
+			boundaries: []float64{-2, -0.5, 0, 0.5, 2},
+			expected: []sample{
+				bucket("-2.0", 0), bucket("-0.5", 2), bucket("0.0", 2), bucket("0.5", 3), bucket("2.0", 5), bucket("+Inf", 5),
+				count(5), sum(0),
+			},
+		},
+		{
+			name: "no boundaries",
+			h: &Histogram{
+				Schema:          0,
+				Count:           4,
+				Sum:             6,
+				PositiveSpans:   []Span{{Offset: 0, Length: 3}},
+				PositiveBuckets: []int64{1, 1, -1},
+			},
+			boundaries: []float64{},
+			expected: []sample{
+				bucket("+Inf", 4),
+				count(4), sum(6),
+			},
+		},
+		{
+			name:       "unsorted boundaries",
+			h:          &Histogram{Schema: 0},
+			boundaries: []float64{1, 0.5},
+			expectErr:  true,
+		},
+		{
+			name:       "duplicate boundaries",
+			h:          &Histogram{Schema: 0},
+			boundaries: []float64{1, 1},
+			expectErr:  true,
+		},
+		{
+			name:       "infinite boundary",
+			h:          &Histogram{Schema: 0},
+			boundaries: []float64{1, math.Inf(1)},
+			expectErr:  true,
+		},
+		{
+			name:       "NaN boundary",
+			h:          &Histogram{Schema: 0},
+			boundaries: []float64{math.NaN()},
+			expectErr:  true,
+		},
+		{
+			name: "custom buckets",
+			h: &Histogram{
+				Schema:          CustomBucketsSchema,
+				Count:           1,
+				CustomValues:    []float64{1},
+				PositiveSpans:   []Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid histogram",
+			h: &FloatHistogram{
+				Schema:          0,
+				Count:           1,
+				PositiveSpans:   []Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []float64{1},
+			},
+			expectErr: true,
+		},
+		{
+			name:      "missing __name__ label",
+			h:         &Histogram{Schema: 0},
+			lset:      labels.FromStrings("job", "test_job"),
+			expectErr: true,
+		},
+		{
+			name:      "unsupported histogram type",
+			h:         nil,
+			expectErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lset := tc.lset
+			if lset.IsEmpty() {
+				lset = labels.FromStrings(model.MetricNameLabel, "test_metric")
+			}
+			cache, ok := caches[lset.String()]
+			if !ok {
+				cache = &ClassicSeriesCache{}
+				caches[lset.String()] = cache
+			}
+			boundaries := tc.boundaries
+			convert := func(h any, onlySuffix string, cache *ClassicSeriesCache) ([]string, error) {
+				var got []string
+				err := ConvertExponentialToClassic(h, boundaries, lset, labels.NewBuilder(labels.EmptyLabels()), onlySuffix, cache, func(l labels.Labels, v float64) error {
+					got = append(got, fmt.Sprintf("%s %v", l, v))
+					return nil
+				})
+				return got, err
+			}
+
+			if tc.expectErr {
+				_, err := convert(tc.h, "", nil)
+				require.Error(t, err)
+				return
+			}
+
+			histograms := []any{tc.h}
+			fh, ok := tc.h.(*FloatHistogram)
+			if h, isInt := tc.h.(*Histogram); isInt {
+				fh, ok = h.ToFloat(nil), true
+				histograms = append(histograms, fh)
+			}
+			require.True(t, ok)
+			if boundaries == nil {
+				boundaries = AppendClassicBoundaries(nil, fh)
+			}
+			for _, h := range histograms {
+				for _, suffix := range []string{"", ClassicSuffixBucket, ClassicSuffixCount, ClassicSuffixSum} {
+					var expected []string
+					for _, s := range tc.expected {
+						if strings.HasSuffix(s.lset.Get(model.MetricNameLabel), suffix) {
+							expected = append(expected, fmt.Sprintf("%s %v", s.lset, s.val))
+						}
+					}
+					for _, c := range []*ClassicSeriesCache{nil, cache} {
+						got, err := convert(h, suffix, c)
+						require.NoError(t, err)
+						require.Equal(t, expected, got, "%T, suffix %q, cached %v", h, suffix, c != nil)
+					}
+				}
+			}
+		})
+	}
 }
