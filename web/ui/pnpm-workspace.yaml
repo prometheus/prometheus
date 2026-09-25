@@ -2,5 +2,6 @@ packages:
   - "mantine-ui"
   - "module/*"
 allowBuilds:
+  '@parcel/watcher': false
   esbuild: true
   unrs-resolver: true

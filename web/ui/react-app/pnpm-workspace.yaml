@@ -6,3 +6,17 @@ allowBuilds:
   '@parcel/watcher': true
   core-js: true
   core-js-pure: true
+  unrs-resolver: false
+
+# Keep the legacy build tools on patched transitive dependencies.
+overrides:
+  'react-scripts>@svgr/webpack': ^8.1.0
+  'react-scripts>resolve-url-loader': ^5.0.0
+  'webpack-dev-server': ^5.2.6
+  'serialize-javascript@<7.0.5': ^7.0.5
+  'underscore@<1.13.8': ^1.13.8
+  'sinon>diff': ^8.0.3
+  '@tootallnate/once@<2.0.1': ^2.0.1
+  'sockjs>uuid': ^11.1.1
+  # Enzyme relies on Cheerio's pre-1.0 internal API.
+  'enzyme>cheerio': 1.0.0-rc.12

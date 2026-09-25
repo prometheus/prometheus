@@ -33,7 +33,7 @@ const singletons = [
   '@lezer/lr',
 ];
 
-module.exports = function override(config) {
+function override(config) {
   config.resolve = config.resolve || {};
   config.resolve.alias = Object.assign(
     {},
@@ -47,4 +47,37 @@ module.exports = function override(config) {
     (plugin) => !(plugin.constructor && plugin.constructor.name === 'ModuleScopePlugin')
   );
   return config;
+}
+
+module.exports = {
+  webpack: override,
+  jest: (config) => {
+    // Rewired concatenates arrays, so replace CRA's blanket dependency exclusion.
+    config.transformIgnorePatterns = require('./package.json').jest.transformIgnorePatterns;
+    // Match webpack's single CodeMirror instance for linked workspace packages.
+    Object.assign(config.moduleNameMapper, Object.fromEntries(singletons.map((pkg) => [`^${pkg}$`, require.resolve(pkg)])));
+    const requireFromScripts = require('module').createRequire(require.resolve('react-scripts/package.json'));
+    config.moduleNameMapper['^.+\\.module\\.(css|sass|scss)$'] = requireFromScripts.resolve('identity-obj-proxy');
+    return config;
+  },
+  devServer: (createConfig) => (proxy, allowedHost) => {
+    const config = createConfig(proxy, allowedHost);
+    const { https, onBeforeSetupMiddleware, onAfterSetupMiddleware } = config;
+    delete config.https;
+    delete config.onBeforeSetupMiddleware;
+    delete config.onAfterSetupMiddleware;
+    config.server = https ? { type: 'https', options: https === true ? {} : https } : 'http';
+
+    // Preserve CRA's before/after middleware ordering with webpack-dev-server 5.
+    const requireFromScripts = require('module').createRequire(require.resolve('react-scripts/package.json'));
+    const express = requireFromScripts('express');
+    config.setupMiddlewares = (middlewares, devServer) => {
+      const before = express.Router();
+      const after = express.Router();
+      onBeforeSetupMiddleware({ ...devServer, app: before });
+      onAfterSetupMiddleware({ ...devServer, app: after });
+      return [before, ...middlewares, after];
+    };
+    return config;
+  },
 };
