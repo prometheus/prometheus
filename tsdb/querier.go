@@ -337,6 +337,14 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 		case m.Type == labels.MatchNotRegexp && m.Value == ".*":
 			return index.EmptyPostings(), nil
 
+		case m.Value == "" && (m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp):
+			// !="" and !~"" match any non-empty label value: get postings for all label values.
+			it := ix.PostingsForAllLabelValues(ctx, m.Name)
+			if index.IsEmptyPostingsType(it) {
+				return index.EmptyPostings(), nil
+			}
+			its = append(its, it)
+
 		case m.Type == labels.MatchRegexp && m.Value == ".+":
 			// .+ regexp matches any non-empty string: get postings for all label values.
 			it := ix.PostingsForAllLabelValues(ctx, m.Name)
