@@ -1406,7 +1406,8 @@ func main() {
 					case <-hup:
 						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
-						} else if cfg.enableAutoReload {
+						}
+						if cfg.enableAutoReload {
 							checksum, err = config.GenerateChecksum(cfg.configFile)
 							if err != nil {
 								logger.Error("Failed to generate checksum during configuration reload", "err", err)
@@ -1418,11 +1419,11 @@ func main() {
 							rc <- err
 						} else {
 							rc <- nil
-							if cfg.enableAutoReload {
-								checksum, err = config.GenerateChecksum(cfg.configFile)
-								if err != nil {
-									logger.Error("Failed to generate checksum during configuration reload", "err", err)
-								}
+						}
+						if cfg.enableAutoReload {
+							checksum, err = config.GenerateChecksum(cfg.configFile)
+							if err != nil {
+								logger.Error("Failed to generate checksum during configuration reload", "err", err)
 							}
 						}
 					case <-time.Tick(time.Duration(cfg.autoReloadInterval)):
@@ -1431,17 +1432,15 @@ func main() {
 						}
 						currentChecksum, err := config.GenerateChecksum(cfg.configFile)
 						if err != nil {
-							checksum = currentChecksum
 							logger.Error("Failed to generate checksum during configuration reload", "err", err)
 						} else if currentChecksum == checksum {
 							continue
 						}
 						logger.Info("Configuration file change detected, reloading the configuration.")
 
+						checksum = currentChecksum
 						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
-						} else {
-							checksum = currentChecksum
 						}
 					case <-cancel:
 						logger.Info("Reloaders stopped")
