@@ -277,6 +277,45 @@ eval instant at 2m rpc_latency_seconds_count
 `,
 		},
 		{
+			name: "classic only, the converted NHCB goes stale with the classic series",
+			input: `
+load 1m
+	rpc_latency_seconds_bucket{le="1"}	1x2 stale
+	rpc_latency_seconds_bucket{le="+Inf"}	4x2 stale
+	rpc_latency_seconds_sum	6x2 stale
+	rpc_latency_seconds_count	4x2 stale
+
+eval instant at 2m rpc_latency_seconds
+	expect no_warn
+	rpc_latency_seconds{} {{schema:-53 sum:6 count:4 custom_values:[1] buckets:[1 3]}}
+
+# Without the stale marker, the converted NHCB would be returned until the end
+# of the lookback window.
+eval instant at 3m rpc_latency_seconds
+	expect no_warn
+`,
+		},
+		{
+			name: "classic only, bucket layout change",
+			input: `
+load 1m
+	rpc_latency_seconds_bucket{le="1"}	1x5
+	rpc_latency_seconds_bucket{le="2"}	3x2 stale
+	rpc_latency_seconds_bucket{le="+Inf"}	4x5
+	rpc_latency_seconds_sum	6x5
+	rpc_latency_seconds_count	4x5
+
+eval instant at 1m rpc_latency_seconds
+	expect no_warn
+	rpc_latency_seconds{} {{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}
+
+# The le="2" bucket went stale at 3m, the other series are converted.
+eval instant at 3m rpc_latency_seconds
+	expect no_warn
+	rpc_latency_seconds{} {{schema:-53 sum:6 count:4 custom_values:[1] buckets:[1 3]}}
+`,
+		},
+		{
 			// Regression test: a partially migrated metric must not hide the
 			// series that only exist in the other representation.
 			name: "partially migrated metric, classic and NHCB series are both returned",

@@ -16,6 +16,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -324,6 +326,75 @@ func TestClassicAsNHCBQuerier_ConversionWarnings(t *testing.T) {
 			require.Len(t, warnings, 1)
 			require.Contains(t, warnings[0], "classic histogram could not be converted")
 			require.Contains(t, warnings[0], tc.expectedWarning)
+		})
+	}
+}
+
+func TestClassicAsNHCBQuerier_Staleness(t *testing.T) {
+	stale := math.Float64frombits(value.StaleNaN)
+	// series returns a classic series with the given values at t=1, t=2, etc.
+	series := func(name string, lbls []string, values ...float64) Series {
+		samples := make([]chunks.Sample, 0, len(values))
+		for i, v := range values {
+			samples = append(samples, fSample{t: int64(i + 1), f: v})
+		}
+		return NewListSeries(labels.FromStrings(append([]string{model.MetricNameLabel, name}, lbls...)...), samples)
+	}
+
+	for _, tc := range []struct {
+		name          string
+		classicSeries []Series
+		expected      []string
+	}{
+		{
+			name: "all series stale",
+			classicSeries: []Series{
+				series("http_requests_bucket", []string{labels.BucketLabel, "1"}, 2, stale, 3),
+				series("http_requests_bucket", []string{labels.BucketLabel, "+Inf"}, 5, stale, 7),
+				series("http_requests_count", nil, 5, stale, 7),
+				series("http_requests_sum", nil, 10, stale, 14),
+			},
+			expected: []string{
+				`{__name__="http_requests"} {count:5, sum:10, [-Inf,1]:2, (1,+Inf]:3}@1 stale@2 {count:7, sum:14, [-Inf,1]:3, (1,+Inf]:4}@3`,
+			},
+		},
+		{
+			name: "some series stale",
+			classicSeries: []Series{
+				series("http_requests_bucket", []string{labels.BucketLabel, "1"}, 2, stale),
+				series("http_requests_bucket", []string{labels.BucketLabel, "+Inf"}, 5, 7),
+				series("http_requests_count", nil, 5, 7),
+				series("http_requests_sum", nil, 10, 14),
+			},
+			expected: []string{
+				`{__name__="http_requests"} {count:5, sum:10, [-Inf,1]:2, (1,+Inf]:3}@1 {count:7, sum:14, [-Inf,+Inf]:7}@2`,
+			},
+		},
+		{
+			name: "classic histograms go stale independently",
+			classicSeries: []Series{
+				series("http_requests_bucket", []string{labels.BucketLabel, "+Inf", "job", "a"}, 5, stale),
+				series("http_requests_bucket", []string{labels.BucketLabel, "+Inf", "job", "b"}, 5, 7),
+			},
+			expected: []string{
+				`{__name__="http_requests", job="a"} {count:5, sum:0, [-Inf,+Inf]:5}@1 stale@2`,
+				`{__name__="http_requests", job="b"} {count:5, sum:0, [-Inf,+Inf]:5}@1 {count:7, sum:0, [-Inf,+Inf]:7}@2`,
+			},
+		},
+		{
+			name: "only stale markers",
+			classicSeries: []Series{
+				series("http_requests_bucket", []string{labels.BucketLabel, "+Inf"}, stale),
+				series("http_requests_count", nil, stale),
+			},
+			expected: []string{`{__name__="http_requests"} stale@1`},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			q := NewClassicAsNHCBQuerier(&classicMockQuerier{classicSeries: tc.classicSeries})
+			ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests"))
+			require.ElementsMatch(t, tc.expected, samplesSummary(t, ss))
+			require.Empty(t, ss.Warnings())
 		})
 	}
 }

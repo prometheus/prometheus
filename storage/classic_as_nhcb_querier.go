@@ -24,7 +24,9 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -189,6 +191,8 @@ type nhcbGroup struct {
 	labels     labels.Labels
 	name       string
 	histograms map[int64]*convertnhcb.TempHistogram
+	// stale holds the timestamps of the stale markers of the classic series.
+	stale map[int64]struct{}
 }
 
 // classicToNHCBSeriesSet converts classic histogram series into NHCB series.
@@ -263,6 +267,15 @@ func (s *classicToNHCBSeriesSet) convert() bool {
 				continue
 			}
 			t, v := chkIter.At()
+			if value.IsStaleNaN(v) {
+				// Stale markers are not part of the classic histogram at t.
+				// If all its series are stale at t, the NHCB is marked stale
+				// below, e.g. because the target went away. Otherwise the
+				// remaining series are converted, e.g. because the bucket
+				// layout changed.
+				group.stale[t] = struct{}{}
+				continue
+			}
 			temp, ok := group.histograms[t]
 			if !ok {
 				h := convertnhcb.NewTempHistogram()
@@ -289,15 +302,26 @@ func (s *classicToNHCBSeriesSet) convert() bool {
 	}
 
 	for _, group := range groups {
-		timestamps := make([]int64, 0, len(group.histograms))
+		timestamps := make([]int64, 0, len(group.histograms)+len(group.stale))
 		for t := range group.histograms {
 			timestamps = append(timestamps, t)
+		}
+		for t := range group.stale {
+			if _, ok := group.histograms[t]; !ok {
+				timestamps = append(timestamps, t)
+			}
 		}
 		slices.Sort(timestamps)
 
 		samples := make([]chunks.Sample, 0, len(timestamps))
 		for _, t := range timestamps {
-			h, fh, err := group.histograms[t].Convert()
+			temp, ok := group.histograms[t]
+			if !ok {
+				// All the classic series of the histogram are stale at t.
+				samples = append(samples, hSample{t: t, h: &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
+				continue
+			}
+			h, fh, err := temp.Convert()
 			if err != nil {
 				// A classic histogram that cannot be converted (e.g. a
 				// non-cumulative or incomplete exposition) is skipped, the rest
@@ -333,6 +357,7 @@ func lookupOrCreateGroup(groups *[]*nhcbGroup, byHash map[uint64][]int, lset lab
 		labels:     lset,
 		name:       name,
 		histograms: make(map[int64]*convertnhcb.TempHistogram),
+		stale:      make(map[int64]struct{}),
 	}
 	byHash[h] = append(byHash[h], len(*groups))
 	*groups = append(*groups, group)
