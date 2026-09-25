@@ -278,84 +278,110 @@ func (s *nhcbToClassicSeriesSet) Next() bool {
 	if s.err != nil {
 		return false
 	}
-
-	// convert all NHCB series on first Next() call
-	// It is easier to implement like this as a single NHCB represents multiple series when converted
-	// to a classic Histogram.
-	if s.series == nil {
-		s.series = make([]Series, 0)
-		lsetBuilder := labels.NewBuilder(labels.EmptyLabels())
-
-		b := newClassicSeriesBuilder()
-		emit := b.emit
-		for s.nhcbSet.Next() {
-			nhcbSeries := s.nhcbSet.At()
-			if nhcbSeries == nil {
-				continue
-			}
-
-			// Check if this is an NHCB histogram series
-			nhcbLabels := nhcbSeries.Labels()
-			it := nhcbSeries.Iterator(nil)
-			if it == nil {
-				continue
-			}
-
-			seriesCache := &histogram.ClassicSeriesCache{}
-			b.startSeries()
-			for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-				// nh is the sample to convert, nil if it is not converted,
-				// e.g. a staleness marker.
-				var nh any
-				switch valType {
-				case chunkenc.ValHistogram:
-					if _, h := it.AtHistogram(nil); h != nil && s.convertible(h.Schema, h.Sum) {
-						nh = h
-					}
-				case chunkenc.ValFloatHistogram:
-					if _, fh := it.AtFloatHistogram(nil); fh != nil && s.convertible(fh.Schema, fh.Sum) {
-						nh = fh
-					}
-				}
-
-				b.startSample(it.AtT())
-				if nh != nil {
-					if err := histogram.ConvertNHCBToClassic(nh, nhcbLabels, lsetBuilder, s.suffix, seriesCache, emit); err != nil {
-						s.err = err
-						return false
-					}
-				}
-				b.endSample()
-			}
-
-			if err := it.Err(); err != nil {
-				s.err = err
-				return false
-			}
-		}
-
-		if err := s.nhcbSet.Err(); err != nil {
-			s.err = err
-			return false
-		}
-		for _, data := range b.series {
-			if s.leMatcher != nil {
-				// In case a le was provided we need to filter with it
-				if !s.leMatcher.Matches(data.labels.Get(labels.BucketLabel)) {
-					continue
-				}
-			}
-
-			s.series = append(s.series, NewListSeries(data.labels, data.samples))
-		}
+	// Convert all native histogram series on the first Next() call. A single
+	// native histogram results in multiple classic histogram series, so
+	// nothing can be returned before the whole set has been consumed.
+	if s.series == nil && !s.convert() {
+		return false
 	}
-
 	if s.idx < len(s.series) {
 		s.idx++
 		return true
 	}
-
 	return false
+}
+
+// nativeHistogramSeries holds the samples of a native histogram series.
+type nativeHistogramSeries struct {
+	labels  labels.Labels
+	samples []nativeHistogramSample
+}
+
+// nativeHistogramSample is a sample of a native histogram series. fh is the
+// histogram to convert, nil if the sample is not converted, e.g. a staleness
+// marker.
+type nativeHistogramSample struct {
+	t  int64
+	fh *histogram.FloatHistogram
+}
+
+// convert drains the wrapped series set and converts the native histograms to
+// classic histogram series. It reports whether it succeeded.
+func (s *nhcbToClassicSeriesSet) convert() bool {
+	s.series = make([]Series, 0)
+
+	nhSeries, ok := s.readNativeHistograms()
+	if !ok {
+		return false
+	}
+
+	lsetBuilder := labels.NewBuilder(labels.EmptyLabels())
+	b := newClassicSeriesBuilder()
+	emit := b.emit
+	for _, ns := range nhSeries {
+		seriesCache := &histogram.ClassicSeriesCache{}
+		b.startSeries()
+		for _, smpl := range ns.samples {
+			b.startSample(smpl.t)
+			if smpl.fh != nil {
+				if err := histogram.ConvertNHCBToClassic(smpl.fh, ns.labels, lsetBuilder, s.suffix, seriesCache, emit); err != nil {
+					s.err = err
+					return false
+				}
+			}
+			b.endSample()
+		}
+	}
+
+	for _, data := range b.series {
+		if s.leMatcher != nil {
+			// In case a le was provided we need to filter with it
+			if !s.leMatcher.Matches(data.labels.Get(labels.BucketLabel)) {
+				continue
+			}
+		}
+
+		s.series = append(s.series, NewListSeries(data.labels, data.samples))
+	}
+	return true
+}
+
+// readNativeHistograms drains the wrapped series set and returns its series.
+// It reports whether it succeeded.
+func (s *nhcbToClassicSeriesSet) readNativeHistograms() ([]nativeHistogramSeries, bool) {
+	var nhSeries []nativeHistogramSeries
+	for s.nhcbSet.Next() {
+		series := s.nhcbSet.At()
+		if series == nil {
+			continue
+		}
+		it := series.Iterator(nil)
+		if it == nil {
+			continue
+		}
+
+		ns := nativeHistogramSeries{labels: series.Labels()}
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			smpl := nativeHistogramSample{t: it.AtT()}
+			if valType == chunkenc.ValHistogram || valType == chunkenc.ValFloatHistogram {
+				// This works for histograms with integer counts, too.
+				if _, fh := it.AtFloatHistogram(nil); fh != nil && s.convertible(fh.Schema, fh.Sum) {
+					smpl.fh = fh
+				}
+			}
+			ns.samples = append(ns.samples, smpl)
+		}
+		if err := it.Err(); err != nil {
+			s.err = err
+			return nil, false
+		}
+		nhSeries = append(nhSeries, ns)
+	}
+	if err := s.nhcbSet.Err(); err != nil {
+		s.err = err
+		return nil, false
+	}
+	return nhSeries, true
 }
 
 func (s *nhcbToClassicSeriesSet) At() Series {
