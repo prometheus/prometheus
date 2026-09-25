@@ -130,3 +130,59 @@ func TestSetFeatureListOptions_MetadataWALRecords(t *testing.T) {
 	require.True(t, c.web.AppendMetadata)
 	require.True(t, c.tsdb.EnableMetadataWALRecords)
 }
+
+func TestSetFeatureListOptions_HistogramCompatLayers(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		features []string
+
+		expectedNHCBAsClassic   bool
+		expectedClassicAsNHCB   bool
+		expectedNHClassicCompat bool
+		expectedErr             string
+	}{
+		{
+			name:                  "NHCB as classic",
+			features:              []string{"promql-nhcb-as-classic"},
+			expectedNHCBAsClassic: true,
+		},
+		{
+			name:                  "classic as NHCB",
+			features:              []string{"promql-classic-as-nhcb"},
+			expectedClassicAsNHCB: true,
+		},
+		{
+			name:                    "native and classic histogram compatibility",
+			features:                []string{"promql-nh-classic-compat"},
+			expectedNHClassicCompat: true,
+		},
+		{
+			name:        "both directions have to be enabled with a single flag",
+			features:    []string{"promql-nhcb-as-classic", "promql-classic-as-nhcb"},
+			expectedErr: "enable promql-nh-classic-compat instead",
+		},
+		{
+			name:        "promql-nh-classic-compat together with promql-nhcb-as-classic",
+			features:    []string{"promql-nh-classic-compat", "promql-nhcb-as-classic"},
+			expectedErr: "it already includes both",
+		},
+		{
+			name:        "promql-nh-classic-compat together with promql-classic-as-nhcb",
+			features:    []string{"promql-classic-as-nhcb,promql-nh-classic-compat"},
+			expectedErr: "it already includes both",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &flagConfig{featureList: tc.features}
+			err := c.setFeatureListOptions(promslog.NewNopLogger())
+			if tc.expectedErr != "" {
+				require.ErrorContains(t, err, tc.expectedErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedNHCBAsClassic, c.enableNHCBasClassic)
+			require.Equal(t, tc.expectedClassicAsNHCB, c.enableClassicAsNHCB)
+			require.Equal(t, tc.expectedNHClassicCompat, c.enableNHClassicCompat)
+		})
+	}
+}

@@ -219,6 +219,7 @@ type flagConfig struct {
 	useStartTimestamps       bool
 	enableNHCBasClassic      bool
 	enableClassicAsNHCB      bool
+	enableNHClassicCompat    bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -360,6 +361,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "promql-classic-as-nhcb":
 				c.enableClassicAsNHCB = true
 				logger.Info("Experimental classic histograms as NHCB in PromQL enabled.")
+			case "promql-nh-classic-compat":
+				c.enableNHClassicCompat = true
+				logger.Info("Experimental native and classic histogram compatibility in PromQL enabled.")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -370,10 +374,13 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 		return errors.New("cannot enable otlp-deltatocumulative and otlp-native-delta-ingestion features at the same time")
 	}
 
+	if c.enableNHClassicCompat && (c.enableNHCBasClassic || c.enableClassicAsNHCB) {
+		return errors.New("cannot enable promql-nh-classic-compat together with promql-nhcb-as-classic or promql-classic-as-nhcb, it already includes both")
+	}
 	if c.enableNHCBasClassic && c.enableClassicAsNHCB {
 		// Each layer would convert the output of the other one back, resulting
 		// in duplicated series for every histogram.
-		return errors.New("cannot enable promql-nhcb-as-classic and promql-classic-as-nhcb features at the same time")
+		return errors.New("cannot enable promql-nhcb-as-classic and promql-classic-as-nhcb features at the same time, enable promql-nh-classic-compat instead")
 	}
 
 	return nil
@@ -663,7 +670,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-classic-as-nhcb, promql-delayed-name-removal, promql-experimental-functions, promql-nhcb-as-classic, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-classic-as-nhcb, promql-delayed-name-removal, promql-experimental-functions, promql-nh-classic-compat, promql-nhcb-as-classic, promql-per-step-stats, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -963,6 +970,8 @@ func main() {
 		wrappedStorage storage.Storage = localStorage
 	)
 	switch {
+	case cfg.enableNHClassicCompat:
+		wrappedStorage = storage.NewNHClassicCompatStorage(localStorage)
 	case cfg.enableNHCBasClassic:
 		wrappedStorage = storage.NewNHCBAsClassicStorage(localStorage)
 	case cfg.enableClassicAsNHCB:

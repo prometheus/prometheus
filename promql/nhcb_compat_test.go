@@ -389,3 +389,309 @@ eval instant at 10m count_over_time(rpc_latency_seconds[11m])
 		})
 	}
 }
+
+// TestNHClassicCompatLayer covers the promql-nh-classic-compat feature flag,
+// which makes native and classic histograms interchangeable in queries: classic
+// histogram queries also read native histograms, both NHCB and exponential
+// ones, and native histogram queries also read classic histograms.
+func TestNHClassicCompatLayer(t *testing.T) {
+	newStorage := func(t testing.TB) storage.Storage {
+		return storage.NewNHClassicCompatStorage(teststorage.New(t))
+	}
+
+	for _, tc := range []struct {
+		name  string
+		input string
+	}{
+		{
+			name: "classic only",
+			input: `
+load 1m
+	rpc_latency_seconds_bucket{job="a", le="1"}	1x5
+	rpc_latency_seconds_bucket{job="a", le="2"}	3x5
+	rpc_latency_seconds_bucket{job="a", le="+Inf"}	4x5
+	rpc_latency_seconds_sum{job="a"}	6x5
+	rpc_latency_seconds_count{job="a"}	4x5
+
+# Regression test: the classic series are returned once, not a second time
+# converted to NHCB and back.
+eval instant at 2m rpc_latency_seconds_bucket
+	rpc_latency_seconds_bucket{job="a", le="1"} 1
+	rpc_latency_seconds_bucket{job="a", le="2"} 3
+	rpc_latency_seconds_bucket{job="a", le="+Inf"} 4
+
+eval instant at 2m rpc_latency_seconds_count
+	rpc_latency_seconds_count{job="a"} 4
+
+eval instant at 2m histogram_quantile(0.5, rpc_latency_seconds_bucket)
+	{job="a"} 1.5
+
+eval instant at 2m rpc_latency_seconds
+	rpc_latency_seconds{job="a"} {{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}
+
+eval instant at 2m histogram_quantile(0.5, rpc_latency_seconds)
+	{job="a"} 1.5
+`,
+		},
+		{
+			name: "NHCB only",
+			input: `
+load 1m
+	rpc_latency_seconds{job="a"}	{{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}x5
+
+eval instant at 2m rpc_latency_seconds_bucket
+	rpc_latency_seconds_bucket{job="a", le="1.0"} 1
+	rpc_latency_seconds_bucket{job="a", le="2.0"} 3
+	rpc_latency_seconds_bucket{job="a", le="+Inf"} 4
+
+eval instant at 2m rpc_latency_seconds_sum
+	rpc_latency_seconds_sum{job="a"} 6
+
+eval instant at 2m histogram_quantile(0.5, rpc_latency_seconds_bucket)
+	{job="a"} 1.5
+
+# The NHCB is returned once, not a second time converted to classic series and
+# back.
+eval instant at 2m rpc_latency_seconds
+	rpc_latency_seconds{job="a"} {{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}
+`,
+		},
+		{
+			// The buckets are (0.5,1], (1,2] and (2,4].
+			name: "exponential only",
+			input: `
+load 1m
+	rpc_latency_seconds{job="a"}	{{schema:0 sum:6 count:4 buckets:[1 2 1]}}+{{schema:0 sum:6 count:4 buckets:[1 2 1]}}x10
+
+# The lower boundary of the lowest bucket is a classic bucket, too.
+eval instant at 10m rpc_latency_seconds_bucket
+	rpc_latency_seconds_bucket{job="a", le="0.5"} 0
+	rpc_latency_seconds_bucket{job="a", le="1.0"} 11
+	rpc_latency_seconds_bucket{job="a", le="2.0"} 33
+	rpc_latency_seconds_bucket{job="a", le="4.0"} 44
+	rpc_latency_seconds_bucket{job="a", le="+Inf"} 44
+
+eval instant at 10m rpc_latency_seconds_count
+	rpc_latency_seconds_count{job="a"} 44
+
+eval instant at 10m rpc_latency_seconds_sum
+	rpc_latency_seconds_sum{job="a"} 66
+
+eval instant at 10m rate(rpc_latency_seconds_count[5m])
+	{job="a"} 0.06666666666666667
+
+# histogram_quantile interpolates linearly within a classic bucket, but
+# exponentially within an exponential one.
+eval instant at 10m histogram_quantile(0.5, sum by (le) (rate(rpc_latency_seconds_bucket[5m])))
+	{} 1.5
+
+eval instant at 10m histogram_quantile(0.5, sum(rate(rpc_latency_seconds[5m])))
+	{} 1.4142135623730951
+
+eval instant at 10m rpc_latency_seconds
+	rpc_latency_seconds{job="a"} {{schema:0 sum:66 count:44 buckets:[11 22 11]}}
+`,
+		},
+		{
+			name: "partially migrated metric, classic, NHCB and exponential histograms",
+			input: `
+load 1m
+	rpc_latency_seconds_bucket{job="classic", le="1"}	1x5
+	rpc_latency_seconds_bucket{job="classic", le="2"}	3x5
+	rpc_latency_seconds_bucket{job="classic", le="+Inf"}	4x5
+	rpc_latency_seconds_sum{job="classic"}	6x5
+	rpc_latency_seconds_count{job="classic"}	4x5
+	rpc_latency_seconds{job="nhcb"}	{{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}x5
+	rpc_latency_seconds{job="exponential"}	{{schema:0 sum:6 count:4 buckets:[1 2 1]}}x5
+
+eval instant at 2m rpc_latency_seconds_bucket
+	rpc_latency_seconds_bucket{job="classic", le="1"} 1
+	rpc_latency_seconds_bucket{job="classic", le="2"} 3
+	rpc_latency_seconds_bucket{job="classic", le="+Inf"} 4
+	rpc_latency_seconds_bucket{job="nhcb", le="1.0"} 1
+	rpc_latency_seconds_bucket{job="nhcb", le="2.0"} 3
+	rpc_latency_seconds_bucket{job="nhcb", le="+Inf"} 4
+	rpc_latency_seconds_bucket{job="exponential", le="0.5"} 0
+	rpc_latency_seconds_bucket{job="exponential", le="1.0"} 1
+	rpc_latency_seconds_bucket{job="exponential", le="2.0"} 3
+	rpc_latency_seconds_bucket{job="exponential", le="4.0"} 4
+	rpc_latency_seconds_bucket{job="exponential", le="+Inf"} 4
+
+eval instant at 2m histogram_quantile(0.5, rpc_latency_seconds_bucket)
+	{job="classic"} 1.5
+	{job="nhcb"} 1.5
+	{job="exponential"} 1.5
+
+eval instant at 2m sum(rpc_latency_seconds_count)
+	{} 12
+
+eval instant at 2m rpc_latency_seconds
+	rpc_latency_seconds{job="classic"} {{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}
+	rpc_latency_seconds{job="nhcb"} {{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}
+	rpc_latency_seconds{job="exponential"} {{schema:0 sum:6 count:4 buckets:[1 2 1]}}
+
+eval instant at 2m histogram_quantile(0.5, rpc_latency_seconds)
+	{job="classic"} 1.5
+	{job="nhcb"} 1.5
+	{job="exponential"} 1.4142135623730951
+
+eval instant at 2m sum(histogram_count(rpc_latency_seconds))
+	{} 12
+`,
+		},
+		{
+			// The buckets of job a are (0.5,1] and (1,2], the one of job b is
+			// (2,4].
+			name: "exponential histograms with different buckets can be aggregated by le",
+			input: `
+load 1m
+	rpc_latency_seconds{job="a"}	{{schema:0 sum:4 count:3 buckets:[1 2]}}x5
+	rpc_latency_seconds{job="b"}	{{schema:0 sum:3 count:1 offset:2 buckets:[1]}}x5
+
+# Both are converted with the union of their buckets.
+eval instant at 2m rpc_latency_seconds_bucket
+	rpc_latency_seconds_bucket{job="a", le="0.5"} 0
+	rpc_latency_seconds_bucket{job="a", le="1.0"} 1
+	rpc_latency_seconds_bucket{job="a", le="2.0"} 3
+	rpc_latency_seconds_bucket{job="a", le="4.0"} 3
+	rpc_latency_seconds_bucket{job="a", le="+Inf"} 3
+	rpc_latency_seconds_bucket{job="b", le="0.5"} 0
+	rpc_latency_seconds_bucket{job="b", le="1.0"} 0
+	rpc_latency_seconds_bucket{job="b", le="2.0"} 0
+	rpc_latency_seconds_bucket{job="b", le="4.0"} 1
+	rpc_latency_seconds_bucket{job="b", le="+Inf"} 1
+
+eval instant at 2m sum by (le) (rpc_latency_seconds_bucket)
+	{le="0.5"} 0
+	{le="1.0"} 1
+	{le="2.0"} 3
+	{le="4.0"} 4
+	{le="+Inf"} 4
+
+eval instant at 2m histogram_quantile(0.9, sum by (le) (rpc_latency_seconds_bucket))
+	expect no_info
+	{} 3.2
+
+eval instant at 2m histogram_quantile(0.9, sum(rpc_latency_seconds))
+	{} 3.0314331330207964
+`,
+		},
+		{
+			// The resolution is reduced from schema 0 to -1 at 3m. The buckets
+			// of schema -1 are (0.25,1] and (1,4].
+			name: "exponential histogram with a schema change",
+			input: `
+load 1m
+	rpc_latency_seconds	{{schema:0 sum:6 count:4 buckets:[1 2 1]}}x2 {{schema:-1 sum:6 count:4 buckets:[1 3]}}x5
+
+# Only schema 0 samples are selected.
+eval instant at 1m rpc_latency_seconds_bucket
+	rpc_latency_seconds_bucket{le="0.5"} 0
+	rpc_latency_seconds_bucket{le="1.0"} 1
+	rpc_latency_seconds_bucket{le="2.0"} 3
+	rpc_latency_seconds_bucket{le="4.0"} 4
+	rpc_latency_seconds_bucket{le="+Inf"} 4
+
+eval instant at 1m histogram_quantile(0.5, rpc_latency_seconds_bucket)
+	{} 1.5
+
+# As soon as a schema -1 sample is selected, all samples are converted with
+# the buckets of schema -1, which lowers the resolution.
+eval instant at 4m rpc_latency_seconds_bucket
+	rpc_latency_seconds_bucket{le="0.25"} 0
+	rpc_latency_seconds_bucket{le="1.0"} 1
+	rpc_latency_seconds_bucket{le="4.0"} 4
+	rpc_latency_seconds_bucket{le="+Inf"} 4
+
+eval instant at 4m histogram_quantile(0.5, rpc_latency_seconds_bucket)
+	{} 2
+
+eval range from 0 to 4m step 1m rpc_latency_seconds_bucket
+	rpc_latency_seconds_bucket{le="0.25"} 0x4
+	rpc_latency_seconds_bucket{le="1.0"} 1x4
+	rpc_latency_seconds_bucket{le="4.0"} 4x4
+	rpc_latency_seconds_bucket{le="+Inf"} 4x4
+`,
+		},
+		{
+			name: "converted series go stale with the stored ones",
+			input: `
+load 1m
+	rpc_latency_seconds_bucket{job="classic", le="1"}	1x2 stale
+	rpc_latency_seconds_bucket{job="classic", le="+Inf"}	4x2 stale
+	rpc_latency_seconds_sum{job="classic"}	6x2 stale
+	rpc_latency_seconds_count{job="classic"}	4x2 stale
+	rpc_latency_seconds{job="exponential"}	{{schema:0 sum:6 count:4 buckets:[1 2 1]}}x2 stale
+
+eval instant at 2m rpc_latency_seconds_count
+	rpc_latency_seconds_count{job="classic"} 4
+	rpc_latency_seconds_count{job="exponential"} 4
+
+eval instant at 2m rpc_latency_seconds
+	rpc_latency_seconds{job="classic"} {{schema:-53 sum:6 count:4 custom_values:[1] buckets:[1 3]}}
+	rpc_latency_seconds{job="exponential"} {{schema:0 sum:6 count:4 buckets:[1 2 1]}}
+
+eval instant at 3m rpc_latency_seconds_bucket
+	expect no_warn
+
+eval instant at 3m rpc_latency_seconds_count
+	expect no_warn
+
+eval instant at 3m rpc_latency_seconds
+	expect no_warn
+`,
+		},
+		{
+			// load_with_nhcb writes the classic series and the equivalent NHCB
+			// at the same timestamps, i.e. the worst case of a migration.
+			name: "classic and NHCB overlap in storage",
+			input: `
+load_with_nhcb 1m
+	rpc_latency_seconds_bucket{le="1"}	1x5
+	rpc_latency_seconds_bucket{le="+Inf"}	4x5
+	rpc_latency_seconds_sum	6x5
+	rpc_latency_seconds_count	4x5
+
+# The converted series are returned in addition to the stored ones, in both
+# directions.
+eval instant at 2m rpc_latency_seconds_bucket
+	expect fail msg: vector cannot contain metrics with the same labelset
+
+eval instant at 2m rpc_latency_seconds
+	expect fail msg: vector cannot contain metrics with the same labelset
+`,
+		},
+		{
+			// E.g. with always_scrape_classic_histograms enabled.
+			name: "classic and exponential histograms scraped side by side",
+			input: `
+load 1m
+	rpc_latency_seconds_bucket{le="1"}	1x5
+	rpc_latency_seconds_bucket{le="2"}	3x5
+	rpc_latency_seconds_bucket{le="+Inf"}	4x5
+	rpc_latency_seconds_sum	6x5
+	rpc_latency_seconds_count	4x5
+	rpc_latency_seconds	{{schema:0 sum:6 count:4 buckets:[1 2 1]}}x5
+
+eval instant at 2m rpc_latency_seconds_count
+	expect fail msg: vector cannot contain metrics with the same labelset
+
+eval instant at 2m rpc_latency_seconds
+	expect fail msg: vector cannot contain metrics with the same labelset
+
+# The finite buckets do not collide, but mix both bucket layouts.
+eval instant at 2m rpc_latency_seconds_bucket{le!="+Inf"}
+	rpc_latency_seconds_bucket{le="1"} 1
+	rpc_latency_seconds_bucket{le="2"} 3
+	rpc_latency_seconds_bucket{le="0.5"} 0
+	rpc_latency_seconds_bucket{le="1.0"} 1
+	rpc_latency_seconds_bucket{le="2.0"} 3
+	rpc_latency_seconds_bucket{le="4.0"} 4
+`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			promqltest.RunTestWithStorage(t, tc.input, newTestEngine(t), newStorage)
+		})
+	}
+}

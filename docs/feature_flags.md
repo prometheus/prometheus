@@ -419,16 +419,69 @@ that does not match the `+Inf` bucket) is skipped for the affected timestamps, a
 annotation is attached to the query result.
 
 Both flags cannot be enabled at the same time, as each layer would convert the output of the
-other one back, duplicating every histogram series.
+other one back, duplicating every histogram series. Enable `promql-nh-classic-compat` instead to
+convert in both directions.
+
+## Native and classic histogram compatibility in PromQL
+
+`--enable-feature=promql-nh-classic-compat`
+
+Makes native and classic histograms interchangeable in PromQL queries, e.g. while migrating from
+one to the other. It combines `promql-nhcb-as-classic` and `promql-classic-as-nhcb`, and cannot be
+enabled together with either of them:
+
+* A query for classic histogram series (`_bucket`, `_count` or `_sum`) also returns the classic
+  series converted from the native histograms of the base metric name. Unlike with
+  `promql-nhcb-as-classic`, this includes native histograms with an exponential schema, not only
+  NHCB.
+* Any other query also returns the NHCB assembled from the classic histogram series of the queried
+  metric name, like with `promql-classic-as-nhcb`.
+
+Each series selector is handled by exactly one of the two conversions, so converted series are
+never converted back.
+
+For example, if `request_duration_seconds` is stored as a classic histogram for some targets, and
+as a native histogram for others:
+
+```promql
+# Returns the stored classic histograms and the ones converted from the native histograms:
+histogram_quantile(0.95, rate(request_duration_seconds_bucket[5m]))
+
+# Returns the stored native histograms and the NHCB assembled from the classic histograms:
+histogram_quantile(0.95, rate(request_duration_seconds[5m]))
+```
+
+Unlike NHCB, native histograms with an exponential schema have no fixed bucket boundaries. So that
+the converted `_bucket` series can be aggregated across series and over time, e.g. with
+`sum by (le)` or `rate()`, all exponential histograms selected by a query are converted with the
+same `le` boundaries: the union of their bucket boundaries, reduced to the lowest schema amongst
+them. This means:
+
+* The `le` boundaries depend on the series and the time range selected by the query.
+* A single histogram with a low resolution lowers the resolution of all of them.
+* Histograms with many populated buckets result in many `_bucket` series.
+* Stored classic histograms and NHCB keep their own bucket boundaries. As usual for classic
+  histograms, aggregating them by `le` with histograms that have different bucket boundaries
+  results in inaccurate quantiles.
+
+Also note that:
+
+* The `le` label of a converted `_bucket` series is formatted as a float, e.g. `le="1.0"` rather
+  than `le="1"`, so `le` matchers must use that format to select it.
+* `histogram_quantile()` interpolates linearly within the buckets of a classic histogram, but
+  exponentially within the buckets of a native histogram with an exponential schema. Quantiles
+  calculated from the converted classic series hence differ from the quantiles calculated from the
+  native histograms they were converted from.
 
 ### Common limitations
 
-Both features only affect PromQL query evaluation. They do not apply to remote write (series are
-not converted when being forwarded to remote endpoints) and do not affect the series API (the
+All three features only affect PromQL query evaluation. They do not apply to remote write (series
+are not converted when being forwarded to remote endpoints) and do not affect the series API (the
 `/api/v1/series` endpoint will not return the converted series).
 
 The converted series are returned *in addition to* the stored ones, they are not merged. During a
-migration, where classic and native histograms are written for the same metric, this means:
+migration, where classic and native histograms are written for the same metric (e.g. with
+`always_scrape_classic_histograms` enabled), this means:
 
 * If the classic and the native representation cover **disjoint** time ranges (e.g. the classic
   histogram was dropped when the native one was enabled), instant queries work, and range
