@@ -15,12 +15,14 @@ package storage
 
 import (
 	"context"
+	"math"
 	"strings"
 
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -284,9 +286,8 @@ func (s *nhcbToClassicSeriesSet) Next() bool {
 		s.series = make([]Series, 0)
 		lsetBuilder := labels.NewBuilder(labels.EmptyLabels())
 
-		convertedSeries := make([]*convertedSeriesData, 0)
-		// Keyed by label hash rather than the Labels.String().
-		convertedSeriesIndex := make(map[uint64][]int)
+		b := newClassicSeriesBuilder()
+		emit := b.emit
 		for s.nhcbSet.Next() {
 			nhcbSeries := s.nhcbSet.At()
 			if nhcbSeries == nil {
@@ -301,68 +302,30 @@ func (s *nhcbToClassicSeriesSet) Next() bool {
 			}
 
 			seriesCache := &histogram.ClassicSeriesCache{}
-
-			for {
-				valType := it.Next()
-				if valType == chunkenc.ValNone {
-					break
-				}
-
-				var h *histogram.Histogram
-				var fh *histogram.FloatHistogram
-				var t int64
-
+			b.startSeries()
+			for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+				// nh is the sample to convert, nil if it is not converted,
+				// e.g. a staleness marker.
+				var nh any
 				switch valType {
 				case chunkenc.ValHistogram:
-					t, h = it.AtHistogram(nil)
-					if h == nil || !histogram.IsCustomBucketsSchema(h.Schema) {
-						continue
+					if _, h := it.AtHistogram(nil); h != nil && s.convertible(h.Schema, h.Sum) {
+						nh = h
 					}
 				case chunkenc.ValFloatHistogram:
-					t, fh = it.AtFloatHistogram(nil)
-					if fh == nil || !histogram.IsCustomBucketsSchema(fh.Schema) {
-						continue
+					if _, fh := it.AtFloatHistogram(nil); fh != nil && s.convertible(fh.Schema, fh.Sum) {
+						nh = fh
 					}
-				default:
-					// Not a histogram, skip
-					continue
 				}
 
-				var nhcb any
-				if h != nil {
-					nhcb = h
-				} else {
-					nhcb = fh
-				}
-
-				err := histogram.ConvertNHCBToClassic(nhcb, nhcbLabels, lsetBuilder, s.suffix, seriesCache, func(l labels.Labels, value float64) error {
-					h := l.Hash()
-					idx := -1
-					for _, candidate := range convertedSeriesIndex[h] {
-						if labels.Equal(convertedSeries[candidate].labels, l) {
-							idx = candidate
-							break
-						}
+				b.startSample(it.AtT())
+				if nh != nil {
+					if err := histogram.ConvertNHCBToClassic(nh, nhcbLabels, lsetBuilder, s.suffix, seriesCache, emit); err != nil {
+						s.err = err
+						return false
 					}
-					if idx == -1 {
-						idx = len(convertedSeries)
-						convertedSeriesIndex[h] = append(convertedSeriesIndex[h], idx)
-						convertedSeries = append(convertedSeries, &convertedSeriesData{
-							labels:  l,
-							samples: make([]chunks.Sample, 0),
-						})
-					}
-
-					convertedSeries[idx].samples = append(convertedSeries[idx].samples, fSample{
-						t: t,
-						f: value,
-					})
-					return nil
-				})
-				if err != nil {
-					s.err = err
-					return false
 				}
+				b.endSample()
 			}
 
 			if err := it.Err(); err != nil {
@@ -375,7 +338,7 @@ func (s *nhcbToClassicSeriesSet) Next() bool {
 			s.err = err
 			return false
 		}
-		for _, data := range convertedSeries {
+		for _, data := range b.series {
 			if s.leMatcher != nil {
 				// In case a le was provided we need to filter with it
 				if !s.leMatcher.Matches(data.labels.Get(labels.BucketLabel)) {
@@ -410,7 +373,88 @@ func (s *nhcbToClassicSeriesSet) Warnings() annotations.Annotations {
 	return s.nhcbSet.Warnings()
 }
 
+// convertible reports whether a native histogram sample with the given schema
+// and sum is converted to classic histogram series.
+func (*nhcbToClassicSeriesSet) convertible(schema int32, sum float64) bool {
+	// Staleness markers are not converted, whatever their schema. The series
+	// converted from the previous sample are marked stale instead.
+	return !value.IsStaleNaN(sum) && histogram.IsCustomBucketsSchema(schema)
+}
+
 type convertedSeriesData struct {
 	labels  labels.Labels
 	samples []chunks.Sample
+}
+
+// classicSeriesBuilder collects the classic histogram series converted from
+// native histograms, one native histogram sample after the other.
+//
+// A converted series is marked stale at the first sample of its native
+// histogram that does not result in it anymore, e.g. because the native
+// histogram went stale or its bucket layout changed, just like the scrape loop
+// marks series stale that disappear from a target.
+type classicSeriesBuilder struct {
+	series []*convertedSeriesData
+	// byHash indexes series by label hash rather than by Labels.String().
+	byHash map[uint64][]int
+
+	// t is the timestamp of the current sample.
+	t int64
+	// emitted and prevEmitted are the indices of the series emitted for the
+	// current and for the previous sample of the current native histogram.
+	emitted, prevEmitted []int
+}
+
+func newClassicSeriesBuilder() *classicSeriesBuilder {
+	return &classicSeriesBuilder{byHash: make(map[uint64][]int)}
+}
+
+// startSeries prepares for the samples of the next native histogram series.
+func (b *classicSeriesBuilder) startSeries() {
+	b.prevEmitted = b.prevEmitted[:0]
+}
+
+// startSample prepares for the series converted from the sample at t.
+func (b *classicSeriesBuilder) startSample(t int64) {
+	b.t = t
+	b.emitted = b.emitted[:0]
+}
+
+// emit appends the value v at the timestamp of the current sample to the series
+// with labels l. It is the emitSeriesFn of the conversion functions.
+func (b *classicSeriesBuilder) emit(l labels.Labels, v float64) error {
+	h := l.Hash()
+	idx := -1
+	for _, candidate := range b.byHash[h] {
+		if labels.Equal(b.series[candidate].labels, l) {
+			idx = candidate
+			break
+		}
+	}
+	if idx == -1 {
+		idx = len(b.series)
+		b.byHash[h] = append(b.byHash[h], idx)
+		b.series = append(b.series, &convertedSeriesData{
+			labels:  l,
+			samples: make([]chunks.Sample, 0),
+		})
+	}
+
+	b.series[idx].samples = append(b.series[idx].samples, fSample{
+		t: b.t,
+		f: v,
+	})
+	b.emitted = append(b.emitted, idx)
+	return nil
+}
+
+// endSample marks the series emitted for the previous sample, but not for the
+// current one, stale.
+func (b *classicSeriesBuilder) endSample() {
+	for _, idx := range b.prevEmitted {
+		if samples := b.series[idx].samples; samples[len(samples)-1].T() != b.t {
+			b.series[idx].samples = append(samples, fSample{t: b.t, f: math.Float64frombits(value.StaleNaN)})
+		}
+	}
+	b.emitted, b.prevEmitted = b.prevEmitted, b.emitted
 }

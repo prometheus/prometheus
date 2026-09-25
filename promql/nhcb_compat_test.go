@@ -74,6 +74,49 @@ eval instant at 2m rpc_latency_seconds_bucket{le="1"}
 `,
 		},
 		{
+			name: "NHCB only, converted series go stale with the NHCB",
+			input: `
+load 1m
+	rpc_latency_seconds{job="a"}	{{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}x2 stale
+
+eval instant at 2m rpc_latency_seconds_bucket
+	rpc_latency_seconds_bucket{job="a", le="1.0"} 1
+	rpc_latency_seconds_bucket{job="a", le="2.0"} 3
+	rpc_latency_seconds_bucket{job="a", le="+Inf"} 4
+
+# Without the stale markers, the converted series would be returned until the
+# end of the lookback window.
+eval instant at 3m rpc_latency_seconds_bucket
+
+eval instant at 3m rpc_latency_seconds_count
+
+eval instant at 3m rpc_latency_seconds_sum
+
+eval instant at 3m rpc_latency_seconds
+`,
+		},
+		{
+			name: "NHCB only, bucket layout change",
+			input: `
+load 1m
+	rpc_latency_seconds{job="a"}	{{schema:-53 sum:6 count:4 custom_values:[1 2] buckets:[1 2 1]}}x2 {{schema:-53 sum:6 count:4 custom_values:[1 4] buckets:[1 2 1]}}x2
+
+eval instant at 1m rpc_latency_seconds_bucket
+	rpc_latency_seconds_bucket{job="a", le="1.0"} 1
+	rpc_latency_seconds_bucket{job="a", le="2.0"} 3
+	rpc_latency_seconds_bucket{job="a", le="+Inf"} 4
+
+# The le="2.0" bucket, which the NHCB does not have anymore, is stale.
+eval instant at 4m rpc_latency_seconds_bucket
+	rpc_latency_seconds_bucket{job="a", le="1.0"} 1
+	rpc_latency_seconds_bucket{job="a", le="4.0"} 3
+	rpc_latency_seconds_bucket{job="a", le="+Inf"} 4
+
+eval instant at 4m histogram_quantile(0.5, rpc_latency_seconds_bucket)
+	{job="a"} 2.5
+`,
+		},
+		{
 			// Regression test: a partially migrated metric must not hide the
 			// series that only exist in the other representation.
 			name: "partially migrated metric, classic and NHCB series are both returned",

@@ -16,6 +16,9 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -24,6 +27,8 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -342,6 +347,156 @@ func TestNHCBAsClassicQuerier_FloatHistogram(t *testing.T) {
 	}
 	require.NoError(t, ss.Err())
 	require.Equal(t, 3, count)
+}
+
+func TestNHCBAsClassicQuerier_Staleness(t *testing.T) {
+	nhcb := func(customValues ...float64) *histogram.Histogram {
+		return &histogram.Histogram{
+			Schema:          histogram.CustomBucketsSchema,
+			Count:           4,
+			Sum:             6,
+			CustomValues:    customValues,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+			PositiveBuckets: []int64{1, 1, -1},
+		}
+	}
+	exponential := &histogram.Histogram{
+		Count:           4,
+		Sum:             6,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+		PositiveBuckets: []int64{1, 1, -1},
+	}
+	// This is how the TSDB returns a stale marker of a histogram series.
+	staleMarker := &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}
+	name := func(n string) *labels.Matcher {
+		return labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, n)
+	}
+
+	for _, tc := range []struct {
+		name     string
+		series   []Series
+		matchers []*labels.Matcher
+		expected []string
+	}{
+		{
+			name: "stale marker",
+			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+				hSample{t: 1, h: nhcb(1, 2)}, hSample{t: 2, h: staleMarker}, hSample{t: 3, h: nhcb(1, 2)},
+			})},
+			matchers: []*labels.Matcher{name("foo_bucket")},
+			expected: []string{
+				`{__name__="foo_bucket", le="1.0"} 1@1 stale@2 1@3`,
+				`{__name__="foo_bucket", le="2.0"} 3@1 stale@2 3@3`,
+				`{__name__="foo_bucket", le="+Inf"} 4@1 stale@2 4@3`,
+			},
+		},
+		{
+			name: "float stale marker",
+			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+				hSample{t: 1, h: nhcb(1, 2)}, fSample{t: 2, f: math.Float64frombits(value.StaleNaN)},
+			})},
+			matchers: []*labels.Matcher{name("foo_count")},
+			expected: []string{`{__name__="foo_count"} 4@1 stale@2`},
+		},
+		{
+			name: "consecutive stale markers result in a single one",
+			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+				hSample{t: 1, h: nhcb(1, 2)}, hSample{t: 2, h: staleMarker}, hSample{t: 3, h: staleMarker}, hSample{t: 4, h: nhcb(1, 2)},
+			})},
+			matchers: []*labels.Matcher{name("foo_sum")},
+			expected: []string{`{__name__="foo_sum"} 6@1 stale@2 6@4`},
+		},
+		{
+			name: "bucket layout change",
+			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+				hSample{t: 1, h: nhcb(1, 2)}, hSample{t: 2, h: nhcb(1, 4)},
+			})},
+			matchers: []*labels.Matcher{name("foo_bucket")},
+			expected: []string{
+				`{__name__="foo_bucket", le="1.0"} 1@1 1@2`,
+				`{__name__="foo_bucket", le="2.0"} 3@1 stale@2`,
+				`{__name__="foo_bucket", le="+Inf"} 4@1 4@2`,
+				`{__name__="foo_bucket", le="4.0"} 3@2`,
+			},
+		},
+		{
+			name: "sample that is not converted",
+			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+				hSample{t: 1, h: nhcb(1, 2)}, hSample{t: 2, h: exponential}, hSample{t: 3, h: nhcb(1, 2)},
+			})},
+			matchers: []*labels.Matcher{name("foo_count")},
+			expected: []string{`{__name__="foo_count"} 4@1 stale@2 4@3`},
+		},
+		{
+			name: "le matcher",
+			series: []Series{NewListSeries(labels.FromStrings("__name__", "foo"), []chunks.Sample{
+				hSample{t: 1, h: nhcb(1, 2)}, hSample{t: 2, h: staleMarker},
+			})},
+			matchers: []*labels.Matcher{name("foo_bucket"), labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "+Inf")},
+			expected: []string{`{__name__="foo_bucket", le="+Inf"} 4@1 stale@2`},
+		},
+		{
+			name: "native histogram series go stale independently",
+			series: []Series{
+				NewListSeries(labels.FromStrings("__name__", "foo", "job", "a"), []chunks.Sample{
+					hSample{t: 1, h: nhcb(1, 2)}, hSample{t: 2, h: staleMarker},
+				}),
+				NewListSeries(labels.FromStrings("__name__", "foo", "job", "b"), []chunks.Sample{
+					hSample{t: 1, h: nhcb(1, 2)}, hSample{t: 2, h: nhcb(1, 2)},
+				}),
+			},
+			matchers: []*labels.Matcher{name("foo_count")},
+			expected: []string{
+				`{__name__="foo_count", job="a"} 4@1 stale@2`,
+				`{__name__="foo_count", job="b"} 4@1 4@2`,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{nhcbSeries: tc.series})
+			ss := q.Select(context.Background(), false, nil, tc.matchers...)
+			require.ElementsMatch(t, tc.expected, samplesSummary(t, ss))
+		})
+	}
+}
+
+// samplesSummary returns a string per series of ss with its labels and
+// samples, e.g. `{__name__="foo_count"} 4@1 stale@2`.
+func samplesSummary(t *testing.T, ss SeriesSet) []string {
+	t.Helper()
+
+	var (
+		summary []string
+		it      chunkenc.Iterator
+	)
+	for ss.Next() {
+		s := ss.At()
+		var sb strings.Builder
+		sb.WriteString(s.Labels().String())
+		it = s.Iterator(it)
+		for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+			var v string
+			switch vt {
+			case chunkenc.ValFloat:
+				_, f := it.At()
+				v = strconv.FormatFloat(f, 'g', -1, 64)
+				if value.IsStaleNaN(f) {
+					v = "stale"
+				}
+			case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+				_, fh := it.AtFloatHistogram(nil)
+				v = fh.String()
+				if value.IsStaleNaN(fh.Sum) {
+					v = "stale"
+				}
+			}
+			fmt.Fprintf(&sb, " %s@%d", v, it.AtT())
+		}
+		require.NoError(t, it.Err())
+		summary = append(summary, sb.String())
+	}
+	require.NoError(t, ss.Err())
+	return summary
 }
 
 type nhcbMockQuerier struct {
