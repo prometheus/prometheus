@@ -69,8 +69,8 @@ func funcTime(_ []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (
 // pickOrInterpolateLeft returns the value at the left boundary of the range.
 // If interpolation is needed (when smoothed is true and the first sample is before the range start),
 // it returns the interpolated value at the left boundary; otherwise, it returns the first sample's value.
-// 'first' is expected to point to a most recent sample which is before or at 'rangeStart', or if no samples
-// satisfy this condition – first sample in the slice.
+// 'first' is expected to point to the most recent sample which is before or at 'rangeStart', or if no samples
+// satisfy this condition, the first sample in the slice.
 func pickOrInterpolateLeft(
 	floats []FPoint,
 	startTimestamps []int64,
@@ -95,19 +95,19 @@ func pickOrInterpolateLeft(
 
 	if firstDP.T > rangeStart {
 		// 'first' is meant to be the index of the most recent sample with T <= rangeStart.
-		// If the latter is not true, then there are no other samples before it.
+		// If that is not the case, then there are no other samples before it.
 
 		if !isCounter {
 			return firstDP.F, returnedST
 		}
 
 		if !isStartTimestampResetAfter(lookbackStart, firstST, firstDP.T) {
-			// Check if there's a ST reset in the visible lookback.
+			// Check if there's an ST reset in the visible lookback.
 			return firstDP.F, returnedST
 		}
 
 		if isStartTimestampResetAfter(rangeStart, firstST, firstDP.T) {
-			// Check if there's a ST reset since the range start.
+			// Check if there's an ST reset since the range start.
 			return 0, returnedST
 		}
 
@@ -127,13 +127,13 @@ func pickOrInterpolateLeft(
 	case !isCounter:
 		// No adjustments.
 	case isStartTimestampResetAfter(rangeStart, nextST, nextDP.T):
-		// If there is a ST reset with 'nextST' > 'rangeStart', we adjust nextDP.
+		// If there is an ST reset with 'nextST' > 'rangeStart', we adjust nextDP.
 		nextDP = FPoint{
 			T: nextST,
 			F: 0,
 		}
 	case isStartTimestampReset(firstST, firstDP.T, nextST, nextDP.T):
-		// Otherwise if there is ST reset between '(firstDP.T, rangeStart]', we adjust firstDP.
+		// Otherwise if there is an ST reset in '(firstDP.T, rangeStart]', we adjust firstDP.
 		firstDP = FPoint{
 			T: nextST,
 			F: 0,
@@ -179,12 +179,12 @@ func pickOrInterpolateRight(
 		}
 
 		if !isStartTimestampResetAfter(lookbackStart, lastST, lastDP.T) {
-			// Check if there's a ST reset in the visible lookback.
+			// Check if there's an ST reset in the visible lookback.
 			return lastDP.F, returnedST
 		}
 
 		if isStartTimestampResetAfter(rangeEnd, lastST, lastDP.T) {
-			// Check if there's a ST reset since the range end.
+			// Check if there's an ST reset since the range end.
 			return 0, returnedST
 		}
 
@@ -205,14 +205,14 @@ func pickOrInterpolateRight(
 	case !isCounter:
 		// No adjustments.
 	case isStartTimestampResetAfter(rangeEnd, lastST, lastDP.T):
-		// If there is a ST reset with 'lastST' > 'rangeEnd', we adjust lastDP.
+		// If there is an ST reset with 'lastST' > 'rangeEnd', we adjust lastDP.
 		lastDP = FPoint{
 			T: lastST,
 			F: 0,
 		}
 		returnedST = prevST
 	case isStartTimestampReset(prevST, prevDP.T, lastST, lastDP.T):
-		// Otherwise if there is ST reset between '(prevDP.T, rangeEnd]', we adjust prevDP.
+		// Otherwise if there is an ST reset in '(prevDP.T, rangeEnd]', we adjust prevDP.
 		prevDP = FPoint{
 			T: lastST,
 			F: 0,
@@ -489,8 +489,8 @@ func extendedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isC
 	if firstT := f[firstSampleIndex].T; smoothed && firstT > rangeEnd {
 		firstST := stOrDefault(startTimestamps, firstSampleIndex, 0)
 		if !isCounter || !isStartTimestampResetAfter(lookbackStart, firstST, firstT) || isStartTimestampResetAfter(rangeEnd, firstST, firstT) {
-			// We cannot calculate a rate if there's no ST reset in inside lookback range, or if the reset is after
-			// range end.
+			// We cannot calculate a rate if there's no ST reset inside the lookback range, or if the reset is after
+			// the range end.
 			return enh.Out, annos
 		}
 	}
@@ -955,16 +955,16 @@ func isStartTimestampReset(prevStartTimestamp, prevTimestamp, currStartTimestamp
 	return prevStartTimestamp != 0 && prevStartTimestamp != prevTimestamp
 }
 
-// isStartTimestampResetAfter tells whether there is a start timestamps reset after a particular time.
-func isStartTimestampResetAfter(t, startTimestamps, timestamp int64) bool {
-	if startTimestamps <= t || timestamp <= t {
+// isStartTimestampResetAfter tells whether there is a start timestamp reset after a particular time.
+func isStartTimestampResetAfter(t, startTimestamp, timestamp int64) bool {
+	if startTimestamp <= t || timestamp <= t {
 		return false
 	}
-	// To check whether there is a start timestamps reset after a time t, we use the same function
-	// which checks for resets between two datapoints. However, for previous datapoint we pass an imaginary
-	// datapoints with T=t and ST=t. This creates and unknown start timestamp datapoint (ST==T),
-	// which only allows resets if following datapoint ST is after it.
-	return isStartTimestampReset(t, t, startTimestamps, timestamp)
+	// To check whether there is a start timestamp reset after a time t, we use the same function
+	// which checks for resets between two datapoints. However, for the previous datapoint we pass an imaginary
+	// datapoint with T=t and ST=t. This creates an unknown start timestamp datapoint (ST==T),
+	// which only allows resets if the following datapoint ST is after it.
+	return isStartTimestampReset(t, t, startTimestamp, timestamp)
 }
 
 // checkStartTimeOverlap detects when a sample's start timestamp overlaps with a

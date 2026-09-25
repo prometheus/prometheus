@@ -354,7 +354,7 @@ load 1m
     series{type="st_unknown"}@st                        _x100    0    _  -2m    _  -5m
     series{type="st_unknown"}                           _x100   60    _  120    _  180
 
-# A few tests with selected timeseries to validate that delta() function ignores start timestamps.
+# A few tests with selected timeseries to validate that the delta() function ignores start timestamps.
 eval instant at 101m delta(series[2m] smoothed)
     {type="st_no_reset"}             30
     {type="st_delta_reset"}           0
@@ -370,7 +370,7 @@ eval instant at 103m delta(series[2m] anchored)
     {type="st_unknown"}              60
 
 # A few tests for raw sample anchoring / smoothing.
-# TODO: the code currently treats these series not as counters, so STs are ignored.
+# TODO: the code currently does not treat these series as counters, so STs are ignored.
 eval instant at 101m series smoothed
     series{type="st_no_reset"}             90
     series{type="st_delta_reset"}          60
@@ -404,9 +404,9 @@ eval instant at 103m series[2m] anchored
 clear
 
 
-# Special case for to check that counter resets don't get lost when `pickOrInterpolateLeft()` function
-# project/interpolate samples at the range start. This might happen if there was a sample the ST of which
-# was pointing to the range start. If there were no samples at the range start, then this means a counter reset.
+# Special case to check that counter resets don't get lost when the `pickOrInterpolateLeft()` function
+# projects/interpolates samples at the range start. This might happen if there was a sample whose ST
+# pointed to the range start. If there were no samples at the range start, then this means a counter reset.
 # However, once we project/interpolate a sample at the range start, with particular ST values this might
 # become unknown ST, losing the reset.
 load 1m
