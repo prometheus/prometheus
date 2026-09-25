@@ -209,8 +209,8 @@ load 1m
     series{type="1_dp_before/st_at_range_edge"}                       _x100   60    _    _    _
     series{type="1_dp_before/st_inside"}@st                           _x100 -30s    _    _    _
     series{type="1_dp_before/st_inside"}                              _x100   60    _    _    _
-    series{type="1_dp_at/st_outside_range"}@st                        _x100    _ -10m    _    _
-    series{type="1_dp_at/st_outside_range"}                           _x100    _   60    _    _
+    series{type="1_dp_at/st_outside_lookback"}@st                     _x100    _ -10m    _    _
+    series{type="1_dp_at/st_outside_lookback"}                        _x100    _   60    _    _
     series{type="1_dp_at/st_outside_range"}@st                        _x100    _  -3m    _    _
     series{type="1_dp_at/st_outside_range"}                           _x100    _   60    _    _
     series{type="1_dp_at/st_at_range_edge"}@st                        _x100    _  -2m    _    _
@@ -261,7 +261,7 @@ eval instant at 101m increase(series[2m] anchored)
     {type="1_dp_before/st_outside_range"}                 60
     {type="1_dp_before/st_at_range_edge"}                 60
     {type="1_dp_before/st_inside"}                        60
-    {type="1_dp_at/st_outside_range"}                     60
+    {type="1_dp_at/st_outside_lookback"}                   0
     {type="1_dp_at/st_outside_range"}                     60
     {type="1_dp_at/st_at_range_edge"}                     60
     {type="1_dp_at/st_inside_range"}                      60
@@ -301,6 +301,7 @@ eval instant at 101m rate(series[2m] smoothed)
     {type="1_dp_before/st_outside_range"}                 0.1666666666666667
     {type="1_dp_before/st_at_range_edge"}                 0.5
     {type="1_dp_before/st_inside"}                        0.5
+    {type="1_dp_at/st_outside_lookback"}                  0
     {type="1_dp_at/st_outside_range"}                     0.3333333333333333
     {type="1_dp_at/st_at_range_edge"}                     0.5
     {type="1_dp_at/st_inside_range"}                      0.5
@@ -340,7 +341,6 @@ eval instant at 103m rate(series[2m] smoothed)
     {type="2_dp_after/st_unknown"}                        0.5
 
 clear
-
 
 load 1m
     series{type="st_no_reset"}@st                       _x100  -1m    _  -3m    _  -5m

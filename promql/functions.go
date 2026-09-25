@@ -179,7 +179,7 @@ func pickOrInterpolateRight(
 		}
 
 		if !isStartTimestampResetAfter(lookbackStart, lastST, lastDP.T) {
-			// Check if there's a ST reset in the visible lookback
+			// Check if there's a ST reset in the visible lookback.
 			return lastDP.F, returnedST
 		}
 
@@ -488,7 +488,7 @@ func extendedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isC
 	}
 	if firstT := f[firstSampleIndex].T; smoothed && firstT > rangeEnd {
 		firstST := stOrDefault(startTimestamps, firstSampleIndex, 0)
-		if !isCounter || !isStartTimestampReset(lookbackStart, lookbackStart, firstST, firstT) || isStartTimestampReset(rangeEnd, rangeEnd, firstST, firstT) {
+		if !isCounter || !isStartTimestampResetAfter(lookbackStart, firstST, firstT) || isStartTimestampResetAfter(rangeEnd, firstST, firstT) {
 			// We cannot calculate a rate if there's no ST reset in inside lookback range, or if the reset is after
 			// range end.
 			return enh.Out, annos
@@ -955,6 +955,7 @@ func isStartTimestampReset(prevStartTimestamp, prevTimestamp, currStartTimestamp
 	return prevStartTimestamp != 0 && prevStartTimestamp != prevTimestamp
 }
 
+// isStartTimestampResetAfter tells whether there is a start timestamps reset after a particular time.
 func isStartTimestampResetAfter(t, startTimestamps, timestamp int64) bool {
 	if startTimestamps <= t || timestamp <= t {
 		return false

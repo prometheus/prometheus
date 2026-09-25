@@ -5011,6 +5011,7 @@ func extendFloats(
 	if len(floats) == 0 {
 		return floats
 	}
+
 	lastSampleIndex := len(floats) - 1
 
 	firstSampleIndex := max(0, sort.Search(lastSampleIndex, func(i int) bool { return floats[i].T > mint })-1)
