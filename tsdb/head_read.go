@@ -22,6 +22,8 @@ import (
 	"slices"
 	"sync"
 
+	"go.uber.org/atomic"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -51,13 +53,11 @@ func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
 }
 
 // headIndexReader provides index reading for the head block.
-// Not safe for concurrent use from multiple goroutines.
+// It must not keep per-reader mutable state: the readers of a querier are
+// shared by concurrent Select calls and series iterators.
 type headIndexReader struct {
 	head       *Head
 	mint, maxt int64
-	// Reusable buffer for collectHeadChunks inside appendSeriesChunks,
-	// avoiding a per-series allocation during iteration.
-	headChunksBuf []*memChunk
 }
 
 func (*headIndexReader) Close() error {
@@ -207,10 +207,7 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 	defer s.Unlock()
 
 	*chks = (*chks)[:0]
-	*chks, h.headChunksBuf = appendSeriesChunks(s, h.mint, h.maxt, *chks, h.headChunksBuf)
-	if cap(h.headChunksBuf) > headChunksBufMaxCap {
-		h.headChunksBuf = nil
-	}
+	*chks = appendSeriesChunks(s, h.mint, h.maxt, *chks)
 
 	return nil
 }
@@ -353,10 +350,8 @@ func (h *Head) staleSeriesRefsNoOOOData(ctx context.Context) (seriesRefs, error)
 	})
 }
 
-// appendSeriesChunks appends chunk metadata for s to chks.
-// headChunksBuf is a reusable buffer for collectHeadChunks; the (possibly grown) buffer is returned
-// so callers can pass it back on the next call to avoid per-series allocations.
-func appendSeriesChunks(s *memSeries, mint, maxt int64, chks []chunks.Meta, headChunksBuf []*memChunk) ([]chunks.Meta, []*memChunk) {
+// appendSeriesChunks appends chunk metadata for s to chks, oldest first.
+func appendSeriesChunks(s *memSeries, mint, maxt int64, chks []chunks.Meta) []chunks.Meta {
 	for i, c := range s.mmappedChunks {
 		// Do not expose chunks that are outside of the specified range.
 		if !c.OverlapsClosedInterval(mint, maxt) {
@@ -369,38 +364,28 @@ func appendSeriesChunks(s *memSeries, mint, maxt int64, chks []chunks.Meta, head
 		})
 	}
 
-	if s.headChunks == nil {
-		return chks, headChunksBuf
-	}
-
-	// Fast path: single head chunk — no allocation, no linked-list walk.
-	if s.headChunks.prev == nil {
-		if s.headChunks.OverlapsClosedInterval(mint, maxt) {
-			chks = append(chks, chunks.Meta{
-				MinTime: s.headChunks.minTime,
-				MaxTime: math.MaxInt64,
-				Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(len(s.mmappedChunks)))),
-			})
+	// The head chunks list is newest-first, so walk it once appending the
+	// chunks in range, then reverse them into oldest-first order. This needs no
+	// scratch buffer, which could not be shared: index readers may be used
+	// concurrently.
+	start := len(chks)
+	pos := len(s.mmappedChunks) + int(s.headChunkCount.Load()) - 1
+	for chk := s.headChunks; chk != nil; chk, pos = chk.prev, pos-1 {
+		if !chk.OverlapsClosedInterval(mint, maxt) {
+			continue
 		}
-		return chks, headChunksBuf
-	}
-
-	// Multiple head chunks: collect once O(N), iterate O(N).
-	headChunksBuf = collectHeadChunks(s.headChunks, headChunksBuf[:0])
-	for i, chk := range headChunksBuf {
 		maxTime := chk.maxTime
-		if i == len(headChunksBuf)-1 {
+		if chk == s.headChunks {
 			maxTime = math.MaxInt64 // Open (newest) chunk.
 		}
-		if chk.OverlapsClosedInterval(mint, maxt) {
-			chks = append(chks, chunks.Meta{
-				MinTime: chk.minTime,
-				MaxTime: maxTime,
-				Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(len(s.mmappedChunks)+i))),
-			})
-		}
+		chks = append(chks, chunks.Meta{
+			MinTime: chk.minTime,
+			MaxTime: maxTime,
+			Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(pos))),
+		})
 	}
-	return chks, headChunksBuf
+	slices.Reverse(chks[start:])
+	return chks
 }
 
 const oooChunkIDMask = 1 << 23
@@ -500,7 +485,8 @@ func (h *Head) chunksRange(mint, maxt int64, is *isolationState) (*headChunkRead
 }
 
 // headChunkReader provides chunk reading for the head block.
-// Not safe for concurrent use from multiple goroutines.
+// It must not keep per-reader mutable state: the readers of a querier are
+// shared by concurrent Select calls and series iterators.
 type headChunkReader struct {
 	head       *Head
 	mint, maxt int64
@@ -508,11 +494,23 @@ type headChunkReader struct {
 	// When true, enables the head-chunks cache. Range queries benefit from
 	// caching because they look up every chunk of a series; instant queries
 	// only need one chunk per series, so the cache is wasted overhead.
-	enableCache bool
-	// Cache for head chunks — avoids O(n²) linked-list walks when
-	// iterating all chunks of a series oldest-to-newest.
-	cachedKey        headChunkCacheKey
-	cachedHeadChunks []*memChunk
+	// Atomic, as Select sets it while other series of the querier may be
+	// being iterated.
+	enableCache atomic.Bool
+}
+
+// headChunkCache caches the head chunks of a series — avoids O(n²)
+// linked-list walks when iterating all chunks of a series oldest-to-newest.
+// It is owned by the caller, typically a series iterator, rather than the
+// chunk reader, because a reader is shared by all series sets and iterators of
+// a querier, which may be used concurrently.
+type headChunkCache struct {
+	*cachedHeadChunks // Allocated on first use, as most series iterators never use the cache.
+}
+
+type cachedHeadChunks struct {
+	key    headChunkCacheKey
+	chunks []*memChunk
 }
 
 // headChunkCacheKey identifies the chunk-layout state of a series at
@@ -540,52 +538,74 @@ func (h *headChunkReader) Close() error {
 	if h.isoState != nil {
 		h.isoState.Close()
 	}
-	// Release the cache so a closed reader retains no chunk data.
-	h.cachedKey = headChunkCacheKey{}
-	h.cachedHeadChunks = nil
 	return nil
 }
 
-// EnableChunkCache enables the head-chunk cache for sequential chunk access
-// patterns (range queries, compaction), which look up every chunk of a series.
+// EnableChunkCache enables head-chunk lookups through the caller-owned
+// headChunkCache, for sequential chunk access patterns (range queries,
+// compaction), which look up every chunk of a series.
 // The cache is invalidated whenever the series' chunk layout changes (a
 // parallel append, mmapping, or truncation), falling back to O(n) for that
 // lookup.
 func (h *headChunkReader) EnableChunkCache() {
-	h.enableCache = true
+	h.enableCache.Store(true)
 }
 
-// getOrCollectHeadChunks returns the cached head-chunk slice for s, collecting
-// it first if the cache does not match the series' current chunk layout.
-// The series lock must be held; the fingerprint comparison is only consistent
-// against concurrent appends, mmapping, and truncation under that lock.
-func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
-	// Skip if the cache is disabled (instant queries) or there are no head chunks or there's only one.
-	if !h.enableCache || s.headChunks == nil || s.headChunks.prev == nil {
+// getOrCollectHeadChunks returns the head-chunk slice for s from cache, or nil
+// if there is no cache or it is not worth using.
+// The series lock must be held.
+func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries, cache *headChunkCache) []*memChunk {
+	// Skip if there is no cache or it is disabled (instant queries).
+	if cache == nil || !h.enableCache.Load() {
 		return nil
 	}
 
+	// Release an oversized cache before the direct lookup path for a series with
+	// at most one head chunk, while preserving it when it still serves the same
+	// series.
+	cache.releaseOversizedOnSeriesSwitch(storage.SeriesRef(s.ref))
+	if s.headChunks == nil || s.headChunks.prev == nil {
+		return nil
+	}
+	return cache.getOrCollect(s)
+}
+
+// releaseOversizedOnSeriesSwitch releases the cached slice if it is larger than
+// headChunksBufMaxCap and ref is not the cached series, so that the cache does
+// not carry oversized backing arrays from one series to the next.
+func (c *headChunkCache) releaseOversizedOnSeriesSwitch(ref storage.SeriesRef) {
+	if c.cachedHeadChunks != nil && cap(c.chunks) > headChunksBufMaxCap && ref != c.key.ref {
+		*c.cachedHeadChunks = cachedHeadChunks{}
+	}
+}
+
+// getOrCollect returns the cached head-chunk slice for s, collecting it first
+// if the cache does not match the series' current chunk layout.
+// The series lock must be held; the fingerprint comparison is only consistent
+// against concurrent appends, mmapping, and truncation under that lock.
+func (c *headChunkCache) getOrCollect(s *memSeries) []*memChunk {
+	if c.cachedHeadChunks == nil {
+		c.cachedHeadChunks = &cachedHeadChunks{}
+	}
 	key := headChunkCacheKeyFor(s)
-	if key == h.cachedKey {
-		return h.cachedHeadChunks
+	if key == c.key {
+		return c.chunks
 	}
 
-	buf := h.cachedHeadChunks[:0]
-	// Pre-size the first collection, and do not carry oversized backing arrays
-	// from one series to the next (the headChunksBufMaxCap policy used for
-	// headChunksBuf) — but keep a large array while it still serves the same
-	// series.
-	if c := cap(buf); c == 0 || (c > headChunksBufMaxCap && key.ref != h.cachedKey.ref) {
+	buf := c.chunks[:0]
+	// Pre-size the first collection. A large array is kept while it still
+	// serves the same series, see releaseOversizedOnSeriesSwitch.
+	if cap(buf) == 0 {
 		buf = make([]*memChunk, 0, s.headChunkCount.Load())
 	}
-	h.cachedHeadChunks = collectHeadChunks(s.headChunks, buf)
-	h.cachedKey = key
-	return h.cachedHeadChunks
+	c.chunks = collectHeadChunks(s.headChunks, buf)
+	c.key = key
+	return c.chunks
 }
 
 // ChunkOrIterable returns the chunk for the reference number.
 func (h *headChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
-	chk, _, err := h.chunk(meta, false)
+	chk, _, err := h.chunk(meta, false, nil)
 	return chk, nil, err
 }
 
@@ -596,14 +616,20 @@ type ChunkReaderWithCopy interface {
 // ChunkOrIterableWithCopy returns the chunk for the reference number.
 // If the chunk is the in-memory chunk, then it makes a copy and returns the copied chunk, plus the max time of the chunk.
 func (h *headChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
-	chk, maxTime, err := h.chunk(meta, true)
+	return h.chunkOrIterable(meta, true, nil)
+}
+
+// chunkOrIterable implements chunkReaderWithCache.
+func (h *headChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk bool, cache *headChunkCache) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
+	chk, maxTime, err := h.chunk(meta, copyLastChunk, cache)
 	return chk, nil, maxTime, err
 }
 
 // chunk returns the chunk for the reference number.
 // If copyLastChunk is true, then it makes a copy of the head chunk if asked for it.
+// The head chunks are looked up through cache, if not nil and the cache is enabled.
 // Also returns max time of the chunk.
-func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.Chunk, int64, error) {
+func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool, cache *headChunkCache) (chunkenc.Chunk, int64, error) {
 	sid, cid, isOOO := unpackHeadChunkRef(meta.Ref)
 
 	s := h.head.series.getByID(sid)
@@ -616,7 +642,7 @@ func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.
 	defer s.Unlock()
 	var headChunks []*memChunk
 	if !isOOO {
-		headChunks = h.getOrCollectHeadChunks(s)
+		headChunks = h.getOrCollectHeadChunks(s, cache)
 	}
 	return h.head.chunkFromSeries(s, cid, isOOO, h.mint, h.maxt, h.isoState, copyLastChunk, headChunks)
 }

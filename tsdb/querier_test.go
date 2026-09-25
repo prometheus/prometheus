@@ -17,9 +17,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"math/rand"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strconv"
@@ -3721,6 +3723,149 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 		}
 		require.Len(t, tc.expIdxs, i)
 		require.NoError(t, bcs.Err())
+	}
+}
+
+// TestHeadQuerierConcurrentUse checks that a Querier and a ChunkQuerier over the
+// head can be used from several goroutines at once: by concurrent Select calls,
+// and by iterating the series of one Select concurrently. All of these share
+// the index and chunk readers of the querier.
+func TestHeadQuerierConcurrentUse(t *testing.T) {
+	const (
+		numSeries     = 20
+		numGoroutines = 4
+		mint, maxt    = 100, 2500
+	)
+	for _, ooo := range []bool{false, true} {
+		t.Run(fmt.Sprintf("ooo=%t", ooo), func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.OutOfOrderTimeWindow = time.Hour.Milliseconds()
+			db := newTestDB(t, withOpts(opts))
+
+			// Head chunks are m-mapped only every minute, so each series keeps
+			// several of them during the test. The series have different sample
+			// counts and intervals, and thus different chunk boundaries, and each
+			// sample value identifies its series.
+			appendSamples := func(inOrder bool) {
+				app := db.Appender(t.Context())
+				for i := range numSeries {
+					lbls := labels.FromStrings("__name__", "metric", "series", strconv.Itoa(i))
+					interval := int64(2 * (1 + i%5))
+					for j := range int64(300 + 30*i) {
+						v := float64(i*1e6) + float64(j)
+						if inOrder {
+							_, err := app.Append(0, lbls, j*interval, v)
+							require.NoError(t, err)
+						} else if j%10 == 0 {
+							_, err := app.Append(0, lbls, j*interval+1, -v)
+							require.NoError(t, err)
+						}
+					}
+				}
+				require.NoError(t, app.Commit())
+			}
+			appendSamples(true)
+			if ooo {
+				appendSamples(false)
+			}
+			lbls := labels.FromStrings("__name__", "metric", "series", "0")
+			require.Greater(t, db.head.series.getByHash(lbls.Hash(), lbls).headChunkCount.Load(), uint32(1))
+
+			selectSeries := func(ss storage.SeriesSet) ([]storage.Series, error) {
+				var series []storage.Series
+				for ss.Next() {
+					series = append(series, ss.At())
+				}
+				return series, ss.Err()
+			}
+			expandSeries := func(series []storage.Series) (map[string][]chunks.Sample, error) {
+				samples := map[string][]chunks.Sample{}
+				var it chunkenc.Iterator
+				for _, s := range series {
+					it = s.Iterator(it)
+					smpls, err := storage.ExpandSamples(it, newSample)
+					if err != nil {
+						return nil, err
+					}
+					samples[s.Labels().String()] = smpls
+				}
+				return samples, nil
+			}
+			matcher := labels.MustNewMatcher(labels.MatchEqual, "__name__", "metric")
+
+			for _, hints := range []*storage.SelectHints{
+				{Start: mint, End: maxt},           // Instant query.
+				{Start: mint, End: maxt, Step: 15}, // Range query, which enables the head-chunk cache.
+			} {
+				t.Run(fmt.Sprintf("step=%d", hints.Step), func(t *testing.T) {
+					q, err := db.Querier(mint, maxt)
+					require.NoError(t, err)
+					defer func() { require.NoError(t, q.Close()) }()
+					cq, err := db.ChunkQuerier(mint, maxt)
+					require.NoError(t, err)
+					defer func() { require.NoError(t, cq.Close()) }()
+
+					selectAndExpand := func(ss storage.SeriesSet) (map[string][]chunks.Sample, error) {
+						series, err := selectSeries(ss)
+						if err != nil {
+							return nil, err
+						}
+						return expandSeries(series)
+					}
+					expected, err := selectAndExpand(q.Select(t.Context(), false, hints, matcher))
+					require.NoError(t, err)
+					require.Len(t, expected, numSeries)
+
+					series, err := selectSeries(q.Select(t.Context(), false, hints, matcher))
+					require.NoError(t, err)
+
+					var (
+						wg      sync.WaitGroup
+						results = make([]map[string][]chunks.Sample, 3*numGoroutines)
+						errs    = make([]error, 3*numGoroutines)
+					)
+					// run runs f in a new goroutine and stores its result at index i.
+					// A panic is returned as an error, so that the test fails
+					// instead of crashing.
+					run := func(i int, f func() (map[string][]chunks.Sample, error)) {
+						wg.Go(func() {
+							defer func() {
+								if r := recover(); r != nil {
+									errs[i] = fmt.Errorf("goroutine %d panicked: %v\n%s", i, r, debug.Stack())
+								}
+							}()
+							results[i], errs[i] = f()
+						})
+					}
+					for g := range numGoroutines {
+						run(g, func() (map[string][]chunks.Sample, error) {
+							return selectAndExpand(q.Select(t.Context(), false, hints, matcher))
+						})
+						run(numGoroutines+g, func() (map[string][]chunks.Sample, error) {
+							return selectAndExpand(storage.NewSeriesSetFromChunkSeriesSet(cq.Select(t.Context(), false, hints, matcher)))
+						})
+						run(2*numGoroutines+g, func() (map[string][]chunks.Sample, error) {
+							var part []storage.Series
+							for i := g; i < len(series); i += numGoroutines {
+								part = append(part, series[i])
+							}
+							return expandSeries(part)
+						})
+					}
+					wg.Wait()
+					require.NoError(t, errors.Join(errs...))
+
+					for g := range 2 * numGoroutines {
+						require.Equal(t, expected, results[g])
+					}
+					iterated := map[string][]chunks.Sample{}
+					for _, r := range results[2*numGoroutines:] {
+						maps.Copy(iterated, r)
+					}
+					require.Equal(t, expected, iterated)
+				})
+			}
+		})
 	}
 }
 

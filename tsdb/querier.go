@@ -185,6 +185,16 @@ func enableChunkCache(cr ChunkReader) {
 	}
 }
 
+// chunkReaderWithCache is implemented by the head chunk readers, which look up
+// head chunks through a cache owned by the caller when their cache is enabled.
+// Each series iterator owns a cache, as a chunk reader is shared by all series
+// sets and iterators of a querier, which may be used concurrently.
+type chunkReaderWithCache interface {
+	// chunkOrIterable is ChunkOrIterableWithCopy if copyLastChunk is set,
+	// and ChunkOrIterable otherwise.
+	chunkOrIterable(meta chunks.Meta, copyLastChunk bool, cache *headChunkCache) (chunkenc.Chunk, chunkenc.Iterable, int64, error)
+}
+
 func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms []*labels.Matcher,
 	index IndexReader, chunks ChunkReader, tombstones tombstones.Reader, mint, maxt int64,
 ) storage.SeriesSet {
@@ -699,6 +709,10 @@ type populateWithDelGenericSeriesIterator struct {
 	// the chunk returned from cr.ChunkOrIterable(). As that can return a nil
 	// chunk, currMeta.Chunk is not always guaranteed to be set.
 	currMeta chunks.Meta
+
+	// headChunks is the head-chunk cache used if cr is a chunkReaderWithCache.
+	// Retained across series for memory re-use.
+	headChunks headChunkCache
 }
 
 func (p *populateWithDelGenericSeriesIterator) reset(blockID ulid.ULID, cr ChunkReader, chks []chunks.Meta, intervals tombstones.Intervals) {
@@ -733,9 +747,16 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 		}
 	}
 
-	hcr, ok := p.cr.(ChunkReaderWithCopy)
+	copyChunk := copyHeadChunk && len(p.bufIter.Intervals) == 0
 	var iterable chunkenc.Iterable
-	if ok && copyHeadChunk && len(p.bufIter.Intervals) == 0 {
+	if ccr, ok := p.cr.(chunkReaderWithCache); ok {
+		// Like below, but looking up head chunks through this iterator's cache.
+		var maxt int64
+		p.currMeta.Chunk, iterable, maxt, p.err = ccr.chunkOrIterable(p.currMeta, copyChunk, &p.headChunks)
+		if copyChunk && p.currMeta.Chunk != nil {
+			p.currMeta.MaxTime = maxt
+		}
+	} else if hcr, ok := p.cr.(ChunkReaderWithCopy); ok && copyChunk {
 		// ChunkOrIterableWithCopy will copy the head chunk, if it can.
 		var maxt int64
 		p.currMeta.Chunk, iterable, maxt, p.err = hcr.ChunkOrIterableWithCopy(p.currMeta)
