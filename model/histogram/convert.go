@@ -108,8 +108,6 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 	defer lsetBuilder.Reset(oldLabels)
 
 	wantBuckets := onlySuffix == "" || onlySuffix == ClassicSuffixBucket
-	wantCount := onlySuffix == "" || onlySuffix == ClassicSuffixCount
-	wantSum := onlySuffix == "" || onlySuffix == ClassicSuffixSum
 
 	var (
 		customValues    []float64
@@ -217,7 +215,14 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 		}
 	}
 
-	if wantCount {
+	return emitCountAndSum(count, sum, lset, lsetBuilder, baseName, onlySuffix, cache, emitSeriesFn)
+}
+
+// emitCountAndSum emits the _count and the _sum series of a histogram
+// converted to classic histogram series, skipping the one not matching
+// onlySuffix (if set). See ConvertNHCBToClassic for the other arguments.
+func emitCountAndSum(count, sum float64, lset labels.Labels, lsetBuilder *labels.Builder, baseName, onlySuffix string, cache *ClassicSeriesCache, emitSeriesFn func(labels labels.Labels, value float64) error) error {
+	if onlySuffix == "" || onlySuffix == ClassicSuffixCount {
 		if cache != nil {
 			if !cache.haveCount {
 				lsetBuilder.Reset(lset)
@@ -237,7 +242,7 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 		}
 	}
 
-	if wantSum {
+	if onlySuffix == "" || onlySuffix == ClassicSuffixSum {
 		if cache != nil {
 			if !cache.haveSum {
 				lsetBuilder.Reset(lset)
